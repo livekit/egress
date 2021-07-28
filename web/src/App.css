@@ -1,0 +1,27 @@
+body {
+  padding: 0;
+  font-family: Avenir, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: black;
+  color: rgb(211, 210, 210);
+  box-sizing: border-box;
+  margin: 0;
+  /* overflow: hidden; */
+  height: 100vh;
+  font-size: 12px;
+}
+
+.light {
+  background: white;
+}
+
+.roomContainer {
+  height: 100vh;
+}
+
+.error {
+  color: red;
+}
