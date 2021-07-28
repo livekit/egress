@@ -53,8 +53,8 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 		let token: string
 		if (template.token) {
 			token = template.token
-		} else if (template.roomName && template.apiKey && template.apiSecret) {
-			token = buildRecorderToken(template.roomName, template.apiKey, template.apiSecret)
+		} else if (template.roomName && conf.apiKey && conf.apiSecret) {
+			token = buildRecorderToken(template.roomName, conf.apiKey, conf.apiSecret)
 		} else {
 			throw Error('Either token, or room name, api key, and secret required')
 		}
@@ -65,6 +65,12 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 		throw Error('Input url or template required')
 	}
 	await page.goto(url)
+
+	// Needed for now
+	const [muteAudio] = await page.$x("//button[contains(., 'Mute')]")
+	if (muteAudio) {
+		await muteAudio.click()
+	}
 
 	// ffmpeg output options
 	let ffmpegOutputOpts = [
@@ -125,6 +131,11 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 		'-fflags', 'nobuffer', // reduce delay
 		'-fflags', '+igndts', // generate dts
 
+		// audio (pulse grab)
+		'-thread_queue_size', '1024', // avoid thread message queue blocking
+		'-ac', '2', // 2 channels
+		'-f', 'pulse', '-i', 'grab.monitor',
+
 		// video (x11 grab)
 		"-draw_mouse", "0", // don't draw the mouse
 		'-thread_queue_size', '1024', // avoid thread message queue blocking
@@ -133,11 +144,6 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 		'-s', `${conf.input.width}x${conf.input.height}`,
 		'-r', `${conf.input.framerate}`,
 		'-f', 'x11grab', '-i', `${xvfb.display()}.0`,
-
-		// audio (pulse grab)
-		'-thread_queue_size', '1024', // avoid thread message queue blocking
-		'-ac', '2', // 2 channels
-		'-f', 'pulse', '-i', 'grab.monitor',
 
 		// output
 		...ffmpegOutputOpts, ...ffmpegOutput,

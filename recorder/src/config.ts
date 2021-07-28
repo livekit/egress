@@ -1,4 +1,6 @@
 type Config = {
+    apiKey?: string
+    apiSecret?: string
     input: {
         url?: string
         template?: {
@@ -6,8 +8,6 @@ type Config = {
             wsUrl: string
             token?: string
             roomName?: string
-            apiKey?: string
-            apiSecret?: string
         }
         width: number
         height: number

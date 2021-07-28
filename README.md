@@ -1,4 +1,4 @@
-# livekit-recording
+# LiveKit Recording
 
 ## What it does
 
@@ -14,17 +14,17 @@ The config should be passed to docker through the `LIVEKIT_RECORDING_CONFIG` env
 
 ### Using templates
 
-We have 3 templates available - grid, gallery, and speaker. Just supply your server url, api key, and secret.
+We have 3 templates available - grid, gallery, and speaker. Just supply your server api key and secret, along with the websocket url.
 
 ```json
-{   
+{
+    "apiKey": "<key>",
+    "apiSecret": "<secret>",
     "input": {
         "template": {
             "type": "grid|gallery|speaker",
             "wsUrl": "wss://your-livekit-address.com",
-            "roomName": "room-to-record",
-            "apiKey": "<key>",
-            "apiSecret": "<secret>"
+            "roomName": "room-to-record"
         }
     }
 }
@@ -47,13 +47,15 @@ To use a config file, supply the full file as a string in `LIVEKIT_RECORDING_CON
 ```bash
 LIVEKIT_RECORDING_CONFIG="$(cat config.json)"
 ```
-input: Either `url` or `template` required.  
+input: Either `url` or `template` required. For `template`, either `token`, or `apiKey`, `apiSecret`, and `roomName` required.    
 output: Either `file`, `rtmp`, or `s3` required.  
 All other fields optional.
 
 All config options:
 ```yaml
-{   
+{
+    "apiKey": livekit server api key - required if joining by room name
+    "apiSecret": livekit server api secret - required if joining by room name
     "input": {
         "url": custom url of recording web page
         "template": {
@@ -61,8 +63,6 @@ All config options:
             "wsUrl": livekit server websocket url
             "token": livekit access token
             "roomName": room name
-            "apiKey": livekit server api key
-            "apiSecret": livekit server api secret
         }
         "width": defaults to 1920
         "height": defaults to 1080
@@ -139,12 +139,12 @@ docker run -e LIVEKIT_RECORDING_CONFIG="$(cat s3.json)" -rm livekit/livekit-reco
 twitch.json
 ```json
 {
+    "apiKey": "<key>",
+    "apiSecret": "<secret>"
     "input": {
         "template": {
             "type": "speaker",
             "wsUrl": "wss://your-livekit-address.com",
-            "apiKey": "<key>",
-            "apiSecret": "<secret>"
         },
         "width": 1920,
         "height": 1080

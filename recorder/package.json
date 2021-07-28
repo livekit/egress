@@ -1,0 +1,25 @@
+{
+  "name": "livekit-recording",
+  "version": "0.0.1",
+  "description": "LiveKit Recording",
+  "repository": "git@github.com:livekit/livekit-recording.git",
+  "author": "David Colburn <xero73@gmail.com>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^16.4.1",
+    "@typescript-eslint/eslint-plugin": "^4.28.4",
+    "@typescript-eslint/parser": "^4.28.4",
+    "eslint": "^7.31.0",
+    "ts-node": "^10.1.0",
+    "typescript": "^4.3.5"
+  },
+  "scripts": {
+    "proto": "protoc --plugin=node_modules/ts-proto/protoc-gen-ts_proto --ts_proto_opt=esModuleInterop=true --ts_proto_out=./src/proto --ts_proto_opt=useOptionals=true --ts_proto_opt=outputClientImpl=false -I../../protocol ../../protocol/livekit_internal.proto"
+  },
+  "dependencies": {
+    "@types/puppeteer": "^5.4.4",
+    "aws-sdk": "^2.953.0",
+    "livekit-server-sdk": "^0.4.7",
+    "xvfb": "^0.4.0"
+  }
+}
