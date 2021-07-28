@@ -157,6 +157,8 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 		uploadFunc && uploadFunc()
 	});
 
+	// TODO: intercept SIGINT and forward to ffmpeg
+
 	// wait for END_RECORDING
 	page.on('console', async (msg) => {
 		if (msg.text() === 'END_RECORDING') {

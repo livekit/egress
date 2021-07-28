@@ -10,11 +10,13 @@ import (
 )
 
 type Config struct {
-	Redis    RedisConfig              `json:"redis"`
-	Input    *livekit.RecordingInput  `json:"input"`
-	Output   *livekit.RecordingOutput `json:"output"`
-	LogLevel string                   `json:"logLevel"`
-	Test     bool
+	Redis     RedisConfig              `json:"redis"`
+	ApiKey    string                   `json:"apiKey"`
+	ApiSecret string                   `json:"apiSecret"`
+	Input     *livekit.RecordingInput  `json:"input"`
+	Output    *livekit.RecordingOutput `json:"output"`
+	LogLevel  string                   `json:"logLevel"`
+	Test      bool
 }
 
 type RedisConfig struct {
@@ -82,15 +84,14 @@ func (conf *Config) updateFromCLI(c *cli.Context) error {
 	if c.IsSet("redis-host") {
 		conf.Redis.Address = c.String("redis-host")
 	}
-	if c.IsSet("redis-password") {
-		conf.Redis.Password = c.String("redis-password")
-	}
 
 	return nil
 }
 
 func Merge(defaults *Config, req *livekit.RecordingReservation) (string, error) {
 	merged := &Config{
+		ApiKey:    defaults.ApiKey,
+		ApiSecret: defaults.ApiSecret,
 		Input: &livekit.RecordingInput{
 			Url:       req.Input.Url,
 			Template:  req.Input.Template,

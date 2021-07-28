@@ -4,15 +4,19 @@
 
 The recorder launches Chrome and navigates to the supplied url, grabs audio from pulse and video from a virtual frame
 buffer, and feeds them into ffmpeg. You can write the output as mp4 to a file or upload it to s3, or forward the
-output to a rtmp stream. If you don't supply any output options, it will write to `/app/recording.mp4`
+output to a rtmp stream.
 
-The config should be passed to docker through the `LIVEKIT_RECORDER_CONFIG` env var.
+It can be used standalone to make a single recording of any webpage, or it can be managed by our 
+[worker](https://github.com/livekit/livekit-recorder/blob/main/worker/README.md).
+
+Once started, the recorder can be safely stopped by sending a `SIGINT` or by logging `END_RECORDING` to the console.
 
 ## Recording Options
 
 ### Using templates
 
-We have 3 templates available - grid, gallery, and speaker. Just supply your server api key and secret, along with the websocket url.
+We have 3 templates available - grid, gallery, and speaker. Just supply your server api key and secret, along with the websocket url.  
+Check out our [templates README](https://github.com/livekit/livekit-recorder/blob/main/templates/README.md) to learn more or create your own. 
 
 ```json
 {
@@ -23,6 +27,18 @@ We have 3 templates available - grid, gallery, and speaker. Just supply your ser
             "type": "grid|gallery|speaker",
             "wsUrl": "wss://your-livekit-address.com",
             "roomName": "room-to-record"
+        }
+    }
+}
+```
+Or, to use your own token instead of having the recorder generate one:
+```json
+{
+    "input": {
+        "template": {
+            "type": "grid|gallery|speaker",
+            "wsUrl": "wss://your-livekit-address.com",
+            "token": "<token>"
         }
     }
 }
@@ -39,9 +55,9 @@ You can also save or stream any other webpage - just supply the url.
 }
 ```
 
-### Using json config file
+### Config
 
-To use a config file, supply the full file as a string in `LIVEKIT_RECORDER_CONFIG`:
+Supply your config as json in `LIVEKIT_RECORDER_CONFIG`:
 ```bash
 LIVEKIT_RECORDER_CONFIG="$(cat config.json)"
 ```
@@ -52,8 +68,8 @@ All other fields optional.
 All config options:
 ```yaml
 {
-    "apiKey": livekit server api key - required if joining by room name
-    "apiSecret": livekit server api secret - required if joining by room name
+    "apiKey": livekit server api key - required if using template + roomName
+    "apiSecret": livekit server api secret - required if using template + roomName
     "input": {
         "url": custom url of recording web page
         "template": {
@@ -62,10 +78,10 @@ All config options:
             "token": livekit access token
             "roomName": room name
         }
-        "width": defaults to 1920
-        "height": defaults to 1080
-        "depth": defaults to 24
-        "framerate": defaults to 25
+        "width": defaults to 1920 (optional)
+        "height": defaults to 1080 (optional)
+        "depth": defaults to 24 (optional)
+        "framerate": defaults to 25 (optional)
     }
     "output": {
         "file": filename
@@ -76,12 +92,12 @@ All config options:
             "bucket": s3 bucket
             "key": filename
         }
-        "width": scale output width
-        "height": scale output height
-        "audioBitrate": defaults to 128k
-        "audioFrequency": defaults to 44100
-        "videoBitrate": defaults to 2976k
-        "videoBuffer": defaults to 5952k
+        "width": scale output width (optional)
+        "height": scale output height (optional)
+        "audioBitrate": defaults to 128k (optional)
+        "audioFrequency": defaults to 44100 (optional)
+        "videoBitrate": defaults to 2976k (optional)
+        "videoBuffer": defaults to 5952k (optional)
     }
 }
 ```
@@ -89,6 +105,9 @@ All config options:
 ## Examples
 
 ### Save to file
+
+Note: the file will be saved to `app/<filename.mp4>` on the docker image.  
+You can copy it to the host by running `docker cp <container_name>:app/<filename.mp4> .` after completion.
 
 file.json
 ```json
@@ -157,19 +176,4 @@ twitch.json
 
 ```bash
 docker run -e LIVEKIT_RECORDER_CONFIG="$(cat twitch.json)" -rm livekit/livekit-recorder
-```
-
-## Building your own templates
-
-When using this option, you must handle token generation/room connection - the recorder will only open the url and start recording.
-
-To stop the recorder, the page must send a `console.log('END_RECORDING')`.  
-For example, our templates do the following:
-```js  
-const onParticipantDisconnected = (room: Room) => {
-    /* Special rule for recorder */
-    if (room.participants.size === 0) {
-      console.log("END_RECORDING")
-    }
-}
 ```

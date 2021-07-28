@@ -28,17 +28,12 @@ func main() {
 			&cli.StringFlag{
 				Name:    "config-body",
 				Usage:   "Default LiveKit recording config in JSON, typically passed in as an env var in a container",
-				EnvVars: []string{"LIVEKIT_RECORDER_CONFIG"},
+				EnvVars: []string{"LIVEKIT_RECORDER_WORKER_CONFIG"},
 			},
 			&cli.StringFlag{
 				Name:    "redis-host",
 				Usage:   "host (incl. port) to redis server",
 				EnvVars: []string{"REDIS_HOST"},
-			},
-			&cli.StringFlag{
-				Name:    "redis-password",
-				Usage:   "password to redis",
-				EnvVars: []string{"REDIS_PASSWORD"},
 			},
 		},
 		Action:  startWorker,
