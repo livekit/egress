@@ -1,0 +1,24 @@
+.stage {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  grid-template-rows: 100%;
+  gap: 8px;
+  overflow: hidden;
+  height: 100%;
+}
+
+.stageCenter {
+  grid-column: 1 / 14;
+}
+
+.stageSidebar {
+  grid-column: 14 / 17;
+  display: grid;
+  gap: 8px;
+  grid-auto-rows: min-content;
+  overflow-y: hidden;
+}
+
+.stage div, .stage video {
+  border-radius: 0;
+}
