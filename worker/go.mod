@@ -1,4 +1,4 @@
-module github.com/livekit/livekit-recording/worker
+module github.com/livekit/livekit-recorder/worker
 
 go 1.16
 

@@ -2,7 +2,7 @@
   "name": "livekit-recording",
   "version": "0.0.1",
   "description": "LiveKit Recording",
-  "repository": "git@github.com:livekit/livekit-recording.git",
+  "repository": "git@github.com:livekit/livekit-recorder.git",
   "author": "David Colburn <xero73@gmail.com>",
   "license": "Apache-2.0",
   "devDependencies": {

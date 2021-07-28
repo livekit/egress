@@ -8,7 +8,7 @@ import (
 	"github.com/fatih/structs"
 	"github.com/stretchr/testify/require"
 
-	livekit "github.com/livekit/livekit-recording/worker/proto"
+	livekit "github.com/livekit/livekit-recorder/worker/proto"
 )
 
 func TestMerge(t *testing.T) {

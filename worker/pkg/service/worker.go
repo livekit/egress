@@ -13,9 +13,9 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-recording/worker/pkg/config"
-	"github.com/livekit/livekit-recording/worker/pkg/logger"
-	livekit "github.com/livekit/livekit-recording/worker/proto"
+	"github.com/livekit/livekit-recorder/worker/pkg/config"
+	"github.com/livekit/livekit-recorder/worker/pkg/logger"
+	livekit "github.com/livekit/livekit-recorder/worker/proto"
 )
 
 type Worker struct {
@@ -129,7 +129,7 @@ func (w *Worker) Run(req *livekit.RecordingReservation, key string, start, stop 
 		cmd = exec.Command("sleep", "5")
 	} else {
 		cmd = exec.Command(
-			fmt.Sprintf("LIVEKIT_RECORDING_CONFIG=%s", conf),
+			fmt.Sprintf("LIVEKIT_RECORDER_CONFIG=%s", conf),
 			"ts-node", "recorder/src/record.ts",
 		)
 	}

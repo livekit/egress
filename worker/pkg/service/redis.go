@@ -6,8 +6,8 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 
-	"github.com/livekit/livekit-recording/worker/pkg/config"
-	"github.com/livekit/livekit-recording/worker/pkg/logger"
+	"github.com/livekit/livekit-recorder/worker/pkg/config"
+	"github.com/livekit/livekit-recorder/worker/pkg/logger"
 )
 
 func StartRedis(conf *config.Config) (*redis.Client, error) {

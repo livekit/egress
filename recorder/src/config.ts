@@ -48,13 +48,13 @@ export function loadConfig(): Config {
         }
     }
 
-    if (process.env.LIVEKIT_RECORDING_CONFIG) {
+    if (process.env.LIVEKIT_RECORDER_CONFIG) {
         // load config from env
-        const json = JSON.parse(process.env.LIVEKIT_RECORDING_CONFIG)
+        const json = JSON.parse(process.env.LIVEKIT_RECORDER_CONFIG)
         conf.input = {...conf.input, ...json.input}
         conf.output = {...conf.output, ...json.output}
     } else {
-        throw Error('LIVEKIT_RECORDING_CONFIG, LIVEKIT_URL or Template required')
+        throw Error('LIVEKIT_RECORDER_CONFIG, LIVEKIT_URL or Template required')
     }
 
     // write to file if no output specified

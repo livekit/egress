@@ -20,7 +20,7 @@ import (
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/target"
 
-	"github.com/livekit/livekit-recording/worker/version"
+	"github.com/livekit/livekit-recorder/worker/version"
 )
 
 const (

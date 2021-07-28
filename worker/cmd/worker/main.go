@@ -9,10 +9,10 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/livekit/livekit-recording/worker/pkg/config"
-	"github.com/livekit/livekit-recording/worker/pkg/logger"
-	"github.com/livekit/livekit-recording/worker/pkg/service"
-	"github.com/livekit/livekit-recording/worker/version"
+	"github.com/livekit/livekit-recorder/worker/pkg/config"
+	"github.com/livekit/livekit-recorder/worker/pkg/logger"
+	"github.com/livekit/livekit-recorder/worker/pkg/service"
+	"github.com/livekit/livekit-recorder/worker/version"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 			&cli.StringFlag{
 				Name:    "config-body",
 				Usage:   "Default LiveKit recording config in JSON, typically passed in as an env var in a container",
-				EnvVars: []string{"LIVEKIT_RECORDING_CONFIG"},
+				EnvVars: []string{"LIVEKIT_RECORDER_CONFIG"},
 			},
 			&cli.StringFlag{
 				Name:    "redis-host",
