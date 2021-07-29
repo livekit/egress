@@ -1,5 +1,15 @@
 name: Go Test
-on: [push, pull_request]
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - *
+    paths-ignore:
+      - web
+      - recorder
+  pull_request:
+    branches:
+      - main
 
 jobs:
   test:
