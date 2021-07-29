@@ -27,7 +27,7 @@ export function onParticipantDisconnected(room: Room) {
 }
 
 export function stopRecording() {
-  console.log('STOP_RECORDING');
+  console.log('END_RECORDING');
 }
 
 export function startRecording() {
