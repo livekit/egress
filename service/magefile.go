@@ -128,7 +128,7 @@ func Build() error {
 		return err
 	}
 	cmd := exec.Command("go", "build", "-o", "../../bin/livekit-recorder-service")
-	cmd.Dir = "cmd/service"
+	cmd.Dir = "cmd/worker"
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
@@ -138,7 +138,7 @@ func Build() error {
 	return nil
 }
 
-// builds docker image for LiveKit server
+// builds docker images for LiveKit recorder and recorder service
 func Docker() error {
 	mg.Deps(Proto)
 	cmd := exec.Command("docker", "build", ".", "-t", fmt.Sprintf("%s:v%s", imageName, version.Version))
