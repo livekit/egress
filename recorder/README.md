@@ -7,7 +7,7 @@ buffer, and feeds them into ffmpeg. You can write the output as mp4 to a file or
 output to a rtmp stream.
 
 It can be used standalone to make a single recording of any webpage, or it can be managed by our 
-[worker](https://github.com/livekit/livekit-recorder/blob/main/worker/README.md).
+[recorder service](https://github.com/livekit/livekit-recorder/tree/main/service).
 
 Once started, the recorder can be safely stopped by sending a `SIGINT` or by logging `END_RECORDING` to the console.
 
@@ -16,7 +16,7 @@ Once started, the recorder can be safely stopped by sending a `SIGINT` or by log
 ### Using templates
 
 We have 3 templates available - grid, gallery, and speaker. Just supply your server api key and secret, along with the websocket url.  
-Check out our [templates README](https://github.com/livekit/livekit-recorder/blob/main/templates/README.md) to learn more or create your own. 
+Check out our [templates README](https://github.com/livekit/livekit-recorder/tree/main/web) to learn more or create your own. 
 
 ```json
 {
@@ -157,7 +157,7 @@ twitch.json
 ```json
 {
     "apiKey": "<key>",
-    "apiSecret": "<secret>"
+    "apiSecret": "<secret>",
     "input": {
         "template": {
             "type": "speaker",

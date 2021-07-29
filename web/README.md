@@ -1,4 +1,4 @@
-# Livekit Recording Templates
+# LiveKit Recording Templates
 
 ## Building your own templates
 

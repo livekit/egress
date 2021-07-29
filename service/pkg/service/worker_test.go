@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-recorder/worker/pkg/config"
-	"github.com/livekit/livekit-recorder/worker/pkg/logger"
-	livekit "github.com/livekit/livekit-recorder/worker/proto"
+	"github.com/livekit/livekit-recorder/service/pkg/config"
+	"github.com/livekit/livekit-recorder/service/pkg/logger"
+	livekit "github.com/livekit/livekit-recorder/service/proto"
 )
 
 func TestWorker(t *testing.T) {

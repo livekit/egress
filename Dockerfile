@@ -16,11 +16,11 @@ COPY proto/ proto/
 COPY tools/ tools/
 COPY version/ version/
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o livekit-recorder ./cmd/worker
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o livekit-recorder ./cmd/livekit-recorder-service
 
 FROM buildkite/puppeteer:latest
 
-COPY --from=builder /workspace/livekit-recorder /livekit-recorder
+COPY --from=builder /workspace/livekit-recorder-service /livekit-recorder-service
 
 # Install pulse audio
 RUN apt-get -qq update && apt-get install -y pulseaudio
@@ -42,7 +42,7 @@ RUN npm install \
     && npm install typescript \
     && npm install -g ts-node
 
-# Run the worker
+# Run the service
 WORKDIR /
 COPY entrypoint.sh .
 ENTRYPOINT ./entrypoint.sh

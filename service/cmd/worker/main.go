@@ -9,17 +9,17 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/livekit/livekit-recorder/worker/pkg/config"
-	"github.com/livekit/livekit-recorder/worker/pkg/logger"
-	"github.com/livekit/livekit-recorder/worker/pkg/service"
-	"github.com/livekit/livekit-recorder/worker/version"
+	"github.com/livekit/livekit-recorder/service/pkg/config"
+	"github.com/livekit/livekit-recorder/service/pkg/logger"
+	"github.com/livekit/livekit-recorder/service/pkg/service"
+	"github.com/livekit/livekit-recorder/service/version"
 )
 
 func main() {
 	app := &cli.App{
-		Name:        "livekit-recording-worker",
-		Usage:       "LiveKit recording worker",
-		Description: "runs the recording worker",
+		Name:        "livekit-recorder-service",
+		Usage:       "LiveKit Recorder Service",
+		Description: "runs the recording service",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:  "config",

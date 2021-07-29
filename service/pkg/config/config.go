@@ -6,7 +6,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	livekit "github.com/livekit/livekit-recorder/worker/proto"
+	livekit "github.com/livekit/livekit-recorder/service/proto"
 )
 
 type Config struct {

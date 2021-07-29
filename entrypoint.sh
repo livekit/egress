@@ -10,5 +10,5 @@ pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit
 # Load audio sink
 pactl load-module module-null-sink sink_name="grab" sink_properties=device.description="monitorOUT"
 
-# Run worker
-./livekit-recorder
+# Run service
+./livekit-recorder-service

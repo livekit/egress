@@ -20,12 +20,12 @@ import (
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/target"
 
-	"github.com/livekit/livekit-recorder/worker/version"
+	"github.com/livekit/livekit-recorder/service/version"
 )
 
 const (
 	goChecksumFile = ".checksumgo"
-	imageName      = "livekit/livekit-recorder"
+	imageName      = "livekit/recorder-service"
 )
 
 // Default target to run when none is specified
@@ -115,7 +115,7 @@ func Test() error {
 	return cmd.Run()
 }
 
-// builds LiveKit recording worker
+// builds LiveKit recorder service
 func Build() error {
 	mg.Deps(Proto)
 	if !checksummer.IsChanged() {
@@ -127,8 +127,8 @@ func Build() error {
 	if err := os.MkdirAll("bin", 0755); err != nil {
 		return err
 	}
-	cmd := exec.Command("go", "build", "-o", "../../bin/livekit-recorder")
-	cmd.Dir = "cmd/worker"
+	cmd := exec.Command("go", "build", "-o", "../../bin/livekit-recorder-service")
+	cmd.Dir = "cmd/service"
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
