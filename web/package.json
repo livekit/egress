@@ -1,5 +1,6 @@
 {
   "name": "livekit-recorder-web",
+  "homepage": "https://livekit.io",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
@@ -20,7 +21,8 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "lint": "yarn exec eslint src"
+    "lint": "eslint src",
+    "deploy": "yarn build && echo 'recorder.livekit.io' > ./build/CNAME && gh-pages -d build --no-history"
   },
   "eslintConfig": {
     "extends": [
@@ -52,6 +54,7 @@
     "eslint-plugin-import": "^2.23.4",
     "eslint-plugin-jsx-a11y": "^6.4.1",
     "eslint-plugin-react": "^7.24.0",
-    "eslint-plugin-react-hooks": "^4.2.0"
+    "eslint-plugin-react-hooks": "^4.2.0",
+    "gh-pages": "^3.2.3"
   }
 }

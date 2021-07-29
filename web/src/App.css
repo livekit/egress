@@ -9,7 +9,6 @@ body {
   color: rgb(211, 210, 210);
   box-sizing: border-box;
   margin: 0;
-  /* overflow: hidden; */
   height: 100vh;
   font-size: 12px;
 }
