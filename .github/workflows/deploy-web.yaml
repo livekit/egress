@@ -42,6 +42,6 @@ jobs:
       run: |
         echo 'recorder.livekit.io' > ./build/CNAME
         git remote set-url origin https://git:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
-        yarn exec gh-pages -d build -u "github-actions-bot <support+actions@github.com>" --no-history
+        yarn exec gh-pages -- -d build -u "github-actions-bot <support+actions@github.com>" --no-history
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
