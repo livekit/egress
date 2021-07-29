@@ -32,7 +32,7 @@ func TestMerge(t *testing.T) {
 		Id: "id",
 		Input: &livekit.RecordingInput{
 			Template: &livekit.RecordingTemplate{
-				Type:  "grid",
+				Type:  "grid-dark",
 				WsUrl: "wss://testing.livekit.io",
 				Token: "token",
 			},
@@ -55,7 +55,7 @@ func TestMerge(t *testing.T) {
 	expected := &Config{
 		Input: &livekit.RecordingInput{
 			Template: &livekit.RecordingTemplate{
-				Type:  "grid",
+				Type:  "grid-dark",
 				WsUrl: "wss://testing.livekit.io",
 				Token: "token",
 			},

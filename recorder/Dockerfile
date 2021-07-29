@@ -3,16 +3,16 @@ FROM buildkite/puppeteer:latest
 # Install pulse audio
 RUN apt-get -qq update && apt-get install -y pulseaudio
 
-# add root user to group for pulseaudio access
+# Add root user to group for pulseaudio access
 RUN adduser root pulse-access
 
-# Xvfb
+# xvfb
 RUN apt-get install -y xvfb
 
 # ffmpeg
 RUN apt-get install -y ffmpeg
 
-# copy recorder
+# Copy recorder
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src

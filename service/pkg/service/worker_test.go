@@ -30,6 +30,9 @@ func TestWorker(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
+	// wait for worker to start
+	time.Sleep(time.Millisecond * 100)
+
 	t.Run("Submit", func(t *testing.T) {
 		submit(t, ctx, rc, worker)
 		// wait to finish
@@ -70,7 +73,7 @@ func submit(t *testing.T, ctx context.Context, rc *redis.Client, worker *Worker)
 		SubmittedAt: time.Now().UnixNano(),
 		Input: &livekit.RecordingInput{
 			Template: &livekit.RecordingTemplate{
-				Type:  "grid",
+				Type:  "speaker-light",
 				WsUrl: "wss://testing.livekit.io",
 				Token: "token",
 			},
@@ -106,7 +109,7 @@ func submitReserved(t *testing.T, rc *redis.Client) {
 		SubmittedAt: time.Now().UnixNano(),
 		Input: &livekit.RecordingInput{
 			Template: &livekit.RecordingTemplate{
-				Type:  "grid",
+				Type:  "speaker-light",
 				WsUrl: "wss://testing.livekit.io",
 				Token: "token",
 			},

@@ -23,10 +23,9 @@ import (
 	"github.com/livekit/livekit-recorder/service/version"
 )
 
-const (
-	goChecksumFile = ".checksumgo"
-	imageName      = "livekit/recorder-service"
-)
+const goChecksumFile = ".checksumgo"
+
+var imageNames = []string{"livekit/recorder", "livekit/recorder-service"}
 
 // Default target to run when none is specified
 // If not set, running mage will list available targets
@@ -128,7 +127,7 @@ func Build() error {
 		return err
 	}
 	cmd := exec.Command("go", "build", "-o", "../../bin/livekit-recorder-service")
-	cmd.Dir = "cmd/service"
+	cmd.Dir = "cmd/worker"
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
@@ -138,15 +137,20 @@ func Build() error {
 	return nil
 }
 
-// builds docker image for LiveKit server
+// builds docker images for LiveKit recorder and recorder service
 func Docker() error {
 	mg.Deps(Proto)
-	cmd := exec.Command("docker", "build", ".", "-t", fmt.Sprintf("%s:v%s", imageName, version.Version))
-	cmd.Dir = "../"
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
+
+	dirs := []string{"../recorder", "../"}
+	for i, imageName := range imageNames {
+		cmd := exec.Command("docker", "build", ".", "-t", fmt.Sprintf("%s:v%s", imageName, version.Version))
+		cmd.Dir = dirs[i]
+		connectStd(cmd)
+		if err := cmd.Run(); err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 
@@ -158,13 +162,17 @@ func PublishDocker() error {
 		return errors.New("cannot publish non-snapshot versions")
 	}
 
-	versionImg := fmt.Sprintf("%s:v%s", imageName, version.Version)
-	cmd := exec.Command("docker", "push", versionImg)
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
+	var e error
+	for _, imageName := range imageNames {
+		versionImg := fmt.Sprintf("%s:v%s", imageName, version.Version)
+		cmd := exec.Command("docker", "push", versionImg)
+		connectStd(cmd)
+		if err := cmd.Run(); err != nil {
+			e = err
+		}
 	}
-	return nil
+
+	return e
 }
 
 func installTools(force bool) error {

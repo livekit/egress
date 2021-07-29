@@ -15,7 +15,8 @@ Once started, the recorder can be safely stopped by sending a `SIGINT` or by log
 
 ### Using templates
 
-We have 3 templates available - grid, gallery, and speaker. Just supply your server api key and secret, along with the websocket url.  
+We currently have 4 templates available - grid or speaker, each available in light or dark. 
+Just supply your server api key and secret, along with the websocket url.  
 Check out our [templates README](https://github.com/livekit/livekit-recorder/tree/main/web) to learn more or create your own. 
 
 ```json
@@ -24,7 +25,7 @@ Check out our [templates README](https://github.com/livekit/livekit-recorder/tre
     "apiSecret": "<secret>",
     "input": {
         "template": {
-            "type": "grid|gallery|speaker",
+            "type": "<grid|speaker>-<light|dark>",
             "wsUrl": "wss://your-livekit-address.com",
             "roomName": "room-to-record"
         }
@@ -36,7 +37,7 @@ Or, to use your own token instead of having the recorder generate one:
 {
     "input": {
         "template": {
-            "type": "grid|gallery|speaker",
+            "type": "<grid|speaker>-<light|dark>",
             "wsUrl": "wss://your-livekit-address.com",
             "token": "<token>"
         }
@@ -73,7 +74,7 @@ All config options:
     "input": {
         "url": custom url of recording web page
         "template": {
-            "type": grid | gallery | speaker
+            "type": <grid|speaker>-<light|dark>
             "wsUrl": livekit server websocket url
             "token": livekit access token
             "roomName": room name

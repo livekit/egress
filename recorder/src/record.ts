@@ -58,19 +58,13 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 		} else {
 			throw Error('Either token, or room name, api key, and secret required')
 		}
-		url = `https://recorder.livekit.io/${template.type}?url=${encodeURIComponent(template.wsUrl)}&token=${token}`
+		url = `https://recorder.livekit.io/#/${template.type}?url=${encodeURIComponent(template.wsUrl)}&token=${token}`
 	} else if (conf.input.url) {
 		url = conf.input.url
 	} else {
 		throw Error('Input url or template required')
 	}
 	await page.goto(url)
-
-	// Needed for now
-	const [muteAudio] = await page.$x("//button[contains(., 'Mute')]")
-	if (muteAudio) {
-		await muteAudio.click()
-	}
 
 	// ffmpeg output options
 	let ffmpegOutputOpts = [
