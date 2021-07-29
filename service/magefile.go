@@ -162,16 +162,17 @@ func PublishDocker() error {
 		return errors.New("cannot publish non-snapshot versions")
 	}
 
+	var e error
 	for _, imageName := range imageNames {
 		versionImg := fmt.Sprintf("%s:v%s", imageName, version.Version)
 		cmd := exec.Command("docker", "push", versionImg)
 		connectStd(cmd)
 		if err := cmd.Run(); err != nil {
-			return err
+			e = err
 		}
 	}
 
-	return nil
+	return e
 }
 
 func installTools(force bool) error {
