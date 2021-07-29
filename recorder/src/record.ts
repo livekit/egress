@@ -40,6 +40,7 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 		args: [
 			'--kiosk', // full screen, no info bar
 			'--no-sandbox', // required when running as root
+			'--autoplay-policy=no-user-gesture-required', // autoplay
 			`--window-size=${conf.input.width},${conf.input.height}`,
 			`--display=${xvfb.display()}`,
 		]
@@ -151,14 +152,23 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 		uploadFunc && uploadFunc()
 	});
 
-	// TODO: intercept SIGINT and forward to ffmpeg
+	let stopped = false
+	const stop = async () => {
+		if (stopped) {
+			return
+		}
+		stopped = true
+		console.log('End recording')
+		ffmpeg.kill('SIGINT')
+		await browser.close()
+	}
+	process.on('SIGINT', stop)
+	process.on('SIGTERM', stop)
 
 	// wait for END_RECORDING
 	page.on('console', async (msg) => {
 		if (msg.text() === 'END_RECORDING') {
-			console.log('End recording')
-			ffmpeg.kill('SIGINT')
-			await browser.close()
+			await stop()
 		}
 	})
 })().catch((err) => {
