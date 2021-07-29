@@ -46,9 +46,11 @@ jobs:
         with:
           version: latest
           args: build
+          workdir: ./service
 
       - name: Mage Test
         uses: magefile/mage-action@v1
         with:
           version: latest
           args: test
+          workdir: ./service
