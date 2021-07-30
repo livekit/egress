@@ -3,7 +3,7 @@ on:
   push:
     branches: [ main ]
     paths-ignore:
-      - web
+      - service
       - recorder
 
 jobs:
