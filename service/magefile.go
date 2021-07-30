@@ -127,7 +127,7 @@ func Build() error {
 		return err
 	}
 	cmd := exec.Command("go", "build", "-o", "../../bin/livekit-recorder-service")
-	cmd.Dir = "cmd/worker"
+	cmd.Dir = "cmd/server"
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err

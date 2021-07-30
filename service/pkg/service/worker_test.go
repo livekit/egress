@@ -37,7 +37,7 @@ func TestWorker(t *testing.T) {
 		submit(t, ctx, rc, worker)
 		// wait to finish
 		time.Sleep(time.Millisecond * 5100)
-		require.Equal(t, Available, worker.status)
+		require.Equal(t, Available, worker.Status())
 	})
 
 	t.Run("Reserved", func(t *testing.T) {
@@ -45,7 +45,7 @@ func TestWorker(t *testing.T) {
 		submitReserved(t, rc)
 		// wait to finish
 		time.Sleep(time.Millisecond * 5100)
-		require.Equal(t, Available, worker.status)
+		require.Equal(t, Available, worker.Status())
 	})
 
 	t.Run("Stop", func(t *testing.T) {
@@ -54,7 +54,7 @@ func TestWorker(t *testing.T) {
 		require.NoError(t, rc.Publish(ctx, utils.EndRecordingChannel(id), nil).Err())
 		time.Sleep(time.Millisecond * 50)
 		// check that recording has ended early
-		require.Equal(t, Available, worker.status)
+		require.Equal(t, Available, worker.Status())
 	})
 
 	t.Run("Kill", func(t *testing.T) {
@@ -63,7 +63,7 @@ func TestWorker(t *testing.T) {
 		worker.Stop()
 		time.Sleep(time.Millisecond * 50)
 		// check that recording has ended early
-		require.Equal(t, Available, worker.status)
+		require.Equal(t, Available, worker.Status())
 	})
 }
 
@@ -91,14 +91,14 @@ func submit(t *testing.T, ctx context.Context, rc *redis.Client, worker *Worker)
 	require.NoError(t, err)
 
 	// check that worker is reserved
-	require.Equal(t, Reserved, worker.status)
+	require.Equal(t, Reserved, worker.Status())
 
 	// start recording
 	require.NoError(t, rc.Publish(ctx, utils.StartRecordingChannel(id), nil).Err())
 	time.Sleep(time.Millisecond * 50)
 
 	// check that worker is recording
-	require.Equal(t, Recording, worker.status)
+	require.Equal(t, Recording, worker.Status())
 
 	return id
 }

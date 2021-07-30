@@ -5,25 +5,27 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v2"
+	"gopkg.in/yaml.v3"
 
 	livekit "github.com/livekit/livekit-recorder/service/proto"
 )
 
 type Config struct {
-	Redis     RedisConfig              `json:"redis"`
-	ApiKey    string                   `json:"apiKey"`
-	ApiSecret string                   `json:"apiSecret"`
-	Input     *livekit.RecordingInput  `json:"input"`
-	Output    *livekit.RecordingOutput `json:"output"`
-	LogLevel  string                   `json:"logLevel"`
-	Test      bool
+	Redis      RedisConfig              `yaml:"redis" json:"-"`
+	HealthPort int                      `yaml:"health_port" json:"-"`
+	ApiKey     string                   `yaml:"api_key" json:"apiKey"`
+	ApiSecret  string                   `yaml:"api_secret" json:"apiSecret"`
+	Input      *livekit.RecordingInput  `yaml:"input" json:"input"`
+	Output     *livekit.RecordingOutput `yaml:"output" json:"output"`
+	LogLevel   string                   `yaml:"log_level" json:"-"`
+	Test       bool                     `yaml:"-" json:"-"`
 }
 
 type RedisConfig struct {
-	Address  string `json:"address"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	DB       int    `json:"db"`
+	Address  string `yaml:"address"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	DB       int    `yaml:"db"`
 }
 
 func NewConfig(confString string, c *cli.Context) (*Config, error) {
@@ -45,7 +47,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 	}
 
 	if confString != "" {
-		if err := json.Unmarshal([]byte(confString), conf); err != nil {
+		if err := yaml.Unmarshal([]byte(confString), conf); err != nil {
 			return nil, fmt.Errorf("could not parse config: %v", err)
 		}
 	}

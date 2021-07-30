@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -22,26 +23,36 @@ type Worker struct {
 	ctx      context.Context
 	rc       *redis.Client
 	defaults *config.Config
+	status   atomic.Value // Status
+	shutdown atomic.Value // bool
 	kill     chan struct{}
-	status   Status
-	mock     bool
+
+	mock bool
 }
 
 type Status string
 
 const (
-	Available Status = "available"
-	Reserved  Status = "reserved"
-	Recording Status = "recording"
+	Available    Status = "available"
+	Reserved     Status = "reserved"
+	Recording    Status = "recording"
+	lockDuration        = time.Second * 5
 )
 
 func InitializeWorker(conf *config.Config, rc *redis.Client) *Worker {
+	status := atomic.Value{}
+	status.Store(Available)
+
+	shutdown := atomic.Value{}
+	shutdown.Store(false)
+
 	return &Worker{
 		ctx:      context.Background(),
 		rc:       rc,
 		defaults: conf,
+		status:   status,
+		shutdown: shutdown,
 		kill:     make(chan struct{}),
-		status:   Available,
 		mock:     conf.Test,
 	}
 }
@@ -76,46 +87,37 @@ func (w *Worker) Start() error {
 		}
 		logger.Debugw("Request claimed", "ID", req.Id)
 
-		err = w.Run(req, key, start, stop)
+		err = w.Run(req, start, stop)
 		if err != nil {
 			logger.Errorw("Recorder failed", err)
 			return err
 		}
+
+		if w.shutdown.Load().(bool) {
+			return nil
+		}
+		w.status.Store(Available)
 	}
 
 	return nil
 }
 
 func (w *Worker) Claim(id, key string) (locked bool, start, stop *redis.PubSub, err error) {
-	locked, err = w.rc.SetNX(w.ctx, key, rand.Int(), 0).Result()
+	locked, err = w.rc.SetNX(w.ctx, key, rand.Int(), lockDuration).Result()
 	if !locked || err != nil {
 		return
 	}
 
-	w.status = Reserved
+	w.status.Store(Reserved)
 	start = w.rc.Subscribe(w.ctx, utils.StartRecordingChannel(id))
 	stop = w.rc.Subscribe(w.ctx, utils.EndRecordingChannel(id))
 	err = w.rc.Publish(w.ctx, utils.ReservationResponseChannel(id), nil).Err()
-	if err != nil {
-		_ = start.Close()
-		_ = stop.Close()
-		_ = w.rc.Del(w.ctx, key).Err()
-	}
 	return
 }
 
-func (w *Worker) Run(req *livekit.RecordingReservation, key string, start, stop *redis.PubSub) error {
-	defer func() {
-		_ = start.Close()
-		_ = stop.Close()
-		if err := w.rc.Del(w.ctx, key).Err(); err != nil {
-			logger.Errorw("failed to unlock job", err, "ID", req.Id)
-		}
-		w.status = Available
-	}()
-
+func (w *Worker) Run(req *livekit.RecordingReservation, start, stop *redis.PubSub) error {
 	<-start.Channel()
-	w.status = Recording
+	w.status.Store(Recording)
 
 	conf, err := config.Merge(w.defaults, req)
 	if err != nil {
@@ -138,7 +140,7 @@ func (w *Worker) Run(req *livekit.RecordingReservation, key string, start, stop 
 	if err != nil {
 		return errors.Wrap(err, "failed to launch recorder")
 	}
-	logger.Debugw("Recording started", "ID", req.Id)
+	logger.Infow("Recording started", "ID", req.Id)
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()
@@ -164,6 +166,14 @@ func (w *Worker) Run(req *livekit.RecordingReservation, key string, start, stop 
 	}
 
 	return nil
+}
+
+func (w *Worker) Status() Status {
+	return w.status.Load().(Status)
+}
+
+func (w *Worker) Finish() {
+	w.shutdown.Store(true)
 }
 
 func (w *Worker) Stop() {

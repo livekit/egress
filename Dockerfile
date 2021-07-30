@@ -16,7 +16,7 @@ COPY service/proto/ proto/
 COPY service/tools/ tools/
 COPY service/version/ version/
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o livekit-recorder-service ./cmd/worker
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o livekit-recorder-service ./cmd/server
 
 FROM buildkite/puppeteer:latest
 
