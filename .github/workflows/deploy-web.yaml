@@ -2,6 +2,9 @@ name: Deploy
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - web
+      - recorder
 
 jobs:
   deploy:
