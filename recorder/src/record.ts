@@ -65,7 +65,7 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 	} else {
 		throw Error('Input url or template required')
 	}
-	await page.goto(url)
+	await page.goto(url, {waitUntil: "load"})
 
 	// ffmpeg output options
 	let ffmpegOutputOpts = [
