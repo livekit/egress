@@ -38,7 +38,7 @@ export function loadConfig(): Config {
             width: 1920,
             height: 1080,
             depth: 24,
-            framerate: 25,
+            framerate: 30,
         },
         output: {
             audio_bitrate: '128k',

@@ -90,7 +90,7 @@ All config options:
         "width": defaults to 1920 (optional)
         "height": defaults to 1080 (optional)
         "depth": defaults to 24 (optional)
-        "framerate": defaults to 25 (optional)
+        "framerate": defaults to 30 (optional)
     }
     "output": {
         "file": filename

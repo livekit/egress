@@ -32,7 +32,7 @@ input:
     width: defaults to 1920
     height: defaults to 1080
     depth: defaults to 24
-    framerate: defaults to 25
+    framerate: defaults to 30
 # default recording output options (optional)
 output:
     width: defaults to 0 (no scaling)
