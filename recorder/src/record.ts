@@ -126,6 +126,7 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 	const ffmpeg = spawn('ffmpeg', [
 		'-fflags', 'nobuffer', // reduce delay
 		'-fflags', '+igndts', // generate dts
+		'-y', // automatically overwrite
 
 		// audio (pulse grab)
 		'-thread_queue_size', '1024', // avoid thread message queue blocking
