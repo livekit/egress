@@ -3,7 +3,6 @@
 ## Using our templates
 
 We currently have 4 templates available - `speaker-light`, `speaker-dark`, `grid-light`, and `grid-dark`.  
-When using our templates, you should use a 16:9 input aspect ratio (our recorder defaults to 1080p).
 
 Example usage:
 ```json
