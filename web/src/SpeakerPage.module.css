@@ -2,7 +2,7 @@
   display: grid;
   grid-template-columns: repeat(16, 1fr);
   grid-template-rows: 100%;
-  gap: 8px;
+  gap: 2px;
   overflow: hidden;
   height: 100%;
 }
@@ -14,8 +14,8 @@
 .stageSidebar {
   grid-column: 14 / 17;
   display: grid;
-  gap: 8px;
-  grid-auto-rows: min-content;
+  gap: 2px;
+  grid-template-rows: repeat(4, 1fr);
   overflow-y: hidden;
 }
 

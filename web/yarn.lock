@@ -7396,10 +7396,10 @@ lines-and-columns@^1.1.6:
   resolved "https://registry.yarnpkg.com/lines-and-columns/-/lines-and-columns-1.1.6.tgz#1c00c743b433cd0a4e80758f7b64a57440d9ff00"
   integrity sha1-HADHQ7QzzQpOgHWPe2SldEDZ/wA=
 
-livekit-client@^0.10.1:
-  version "0.10.1"
-  resolved "https://registry.yarnpkg.com/livekit-client/-/livekit-client-0.10.1.tgz#9ee00ec81030aa74a9d4c531a523d25de3c5752f"
-  integrity sha512-le81C4k2vST3AAbQrZyrcmU0hhCo3qi5h70y8a5jr4fiyvyF894yAS/us51BH1rGUSMHYcNePyOXK8KuxQHQHw==
+livekit-client@^0.11.0:
+  version "0.11.0"
+  resolved "https://registry.yarnpkg.com/livekit-client/-/livekit-client-0.11.0.tgz#58b89e7fc97c53856dc1c16e70317667cf5613fb"
+  integrity sha512-uW3rWzMr7Q2sdp+MDHKo/twOfvwXHM/DNFc0waJlVaJs36VK5nzk9tkcaLAuMC4lVK5DYoguv2g32gZu3n3vEw==
   dependencies:
     "@types/ws" "^7.4.0"
     events "^3.3.0"
@@ -7407,16 +7407,16 @@ livekit-client@^0.10.1:
     protobufjs "^6.10.2"
     webrtc-adapter "^7.7.1"
 
-livekit-react@^0.3.13:
-  version "0.3.13"
-  resolved "https://registry.yarnpkg.com/livekit-react/-/livekit-react-0.3.13.tgz#0a723f3472031f4a6c7d3c29d96115f9ab0f1a92"
-  integrity sha512-qq0a42Tb22Qh68x8waJlt3W4CLmvrwR0p/gqUWUPN0ftfUNaSZibh+/UXH5mH6sGBAACZPE3TheOXQhrByBDMQ==
+livekit-react@^0.4.0:
+  version "0.4.0"
+  resolved "https://registry.yarnpkg.com/livekit-react/-/livekit-react-0.4.0.tgz#de1f97e9e731c24f9efefa66c91e9f747b65a5bb"
+  integrity sha512-uwIyiC94ZegLQCMjGKHw1ABpmO8+eiys2yf11+DOMfTPa1xCl5o5Ak8JJwuGm4Avz1+JGqaQ792KNiKQktsN9Q==
   dependencies:
     "@fortawesome/fontawesome-svg-core" "^1.2.35"
     "@fortawesome/free-solid-svg-icons" "^5.15.3"
     "@fortawesome/react-fontawesome" "^0.1.14"
     "@types/react-responsive" "^8.0.2"
-    livekit-client "^0.10.1"
+    livekit-client "^0.11.0"
     react-aspect-ratio "^1.0.49"
     react-intersection-observer "^8.32.0"
     react-responsive "^8.2.0"

@@ -2,7 +2,7 @@ import {
   Participant, RemoteParticipant, RemoteVideoTrack, VideoQuality,
 } from 'livekit-client';
 import {
-  AudioRenderer, LiveKitRoom, ParticipantView, StageProps,
+  AudioRenderer, LiveKitRoom, ParticipantView, ScreenShareView, StageProps,
 } from 'livekit-react';
 import React, { ReactElement } from 'react';
 import {
@@ -75,6 +75,7 @@ const renderStage: React.FC<StageProps> = ({ roomState }: StageProps) => {
           participant={remoteParticipants[0]}
           width="100%"
           height="100%"
+          orientation="landscape"
         />
         {audioRenderers}
       </>
@@ -86,8 +87,7 @@ const renderStage: React.FC<StageProps> = ({ roomState }: StageProps) => {
   if (screenTrack) {
     otherParticipants = remoteParticipants;
     mainView = (
-      // <ScreenShareView track={screenTrack} height="100%" width="100%" />
-      <div />
+      <ScreenShareView track={screenTrack} height="100%" width="100%" />
     );
   } else {
     otherParticipants = remoteParticipants.slice(1);
@@ -95,10 +95,9 @@ const renderStage: React.FC<StageProps> = ({ roomState }: StageProps) => {
       <ParticipantView
         key={remoteParticipants[0].identity}
         participant={remoteParticipants[0]}
-        aspectWidth={13}
-        aspectHeight={9}
         width="100%"
         height="100%"
+        orientation="landscape"
         quality={VideoQuality.HIGH}
       />
     );
@@ -113,8 +112,8 @@ const renderStage: React.FC<StageProps> = ({ roomState }: StageProps) => {
             key={participant.identity}
             participant={participant}
             width="100%"
-            aspectWidth={16}
-            aspectHeight={9}
+            height="100%"
+            orientation="landscape"
             adaptiveVideo
           />
         ))}

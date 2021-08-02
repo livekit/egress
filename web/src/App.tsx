@@ -5,6 +5,7 @@ import {
   HashRouter as Router, Route, Switch,
 } from 'react-router-dom';
 import './App.css';
+import GridPage from './GridPage';
 import HomePage from './HomePage';
 import SpeakerPage from './SpeakerPage';
 
@@ -18,6 +19,12 @@ function App() {
           </Route>
           <Route path="/speaker-dark">
             <SpeakerPage interfaceStyle="dark" />
+          </Route>
+          <Route path="/grid-light">
+            <GridPage interfaceStyle="light" />
+          </Route>
+          <Route path="/grid-dark">
+            <GridPage interfaceStyle="dark" />
           </Route>
           <Route path="/" component={HomePage} />
         </Switch>
