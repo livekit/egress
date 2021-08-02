@@ -13,8 +13,8 @@ import (
 type Config struct {
 	Redis      RedisConfig              `yaml:"redis" json:"-"`
 	HealthPort int                      `yaml:"health_port" json:"-"`
-	ApiKey     string                   `yaml:"api_key" json:"apiKey"`
-	ApiSecret  string                   `yaml:"api_secret" json:"apiSecret"`
+	ApiKey     string                   `yaml:"api_key" json:"api_key"`
+	ApiSecret  string                   `yaml:"api_secret" json:"api_secret"`
 	Input      *livekit.RecordingInput  `yaml:"input" json:"input"`
 	Output     *livekit.RecordingOutput `yaml:"output" json:"output"`
 	LogLevel   string                   `yaml:"log_level" json:"-"`
@@ -44,6 +44,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			VideoBitrate:   "2976k",
 			VideoBuffer:    "5952k",
 		},
+		LogLevel: "debug",
 	}
 
 	if confString != "" {

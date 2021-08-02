@@ -37,7 +37,58 @@ func main() {
 				EnvVars: []string{"REDIS_HOST"},
 			},
 		},
-		Action:  runService,
+		Action: runService,
+		Commands: []*cli.Command{
+			{
+				Name:   "start-recording",
+				Usage:  "Starts a recording",
+				Action: startRecording,
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "ws-url",
+						Usage:    "name of room to join",
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:     "token",
+						Usage:    "Recorder room token",
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:     "aws-key",
+						Usage:    "AWS access key",
+						Required: false,
+					},
+					&cli.StringFlag{
+						Name:     "aws-secret",
+						Usage:    "AWS access secret",
+						Required: false,
+					},
+					&cli.StringFlag{
+						Name:     "bucket",
+						Usage:    "AWS bucket",
+						Required: false,
+					},
+					&cli.StringFlag{
+						Name:     "key",
+						Usage:    "AWS file key",
+						Required: false,
+					},
+				},
+			},
+			{
+				Name:   "stop-recording",
+				Usage:  "Stops a recording",
+				Action: stopRecording,
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "id",
+						Usage:    "Recording ID",
+						Required: true,
+					},
+				},
+			},
+		},
 		Version: version.Version,
 	}
 
@@ -85,10 +136,10 @@ func runService(c *cli.Context) error {
 		select {
 		case sig := <-finishChan:
 			logger.Infow("Exit requested, finishing recording then shutting down", "signal", sig)
-			worker.Finish()
+			worker.Stop(false)
 		case sig := <-stopChan:
 			logger.Infow("Exit requested, stopping recording and shutting down", "signal", sig)
-			worker.Stop()
+			worker.Stop(true)
 		}
 	}()
 

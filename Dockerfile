@@ -34,15 +34,19 @@ RUN apt-get install -y xvfb
 # ffmpeg
 RUN apt-get install -y ffmpeg
 
-# Copy node recorder
+# node
+RUN apt-get install -y nodejs
+
+# Copy recorder
 WORKDIR /app
 COPY recorder/package.json recorder/package-lock.json recorder/tsconfig.json ./
 COPY recorder/src ./src
-RUN npm install \
-    && npm install typescript \
-    && npm install -g ts-node
+RUN npm install
+
+# Silence error about livekit-server-sdk protos
+RUN npx tsc src/*.ts; exit 0
 
 # Run the service
 WORKDIR /
 COPY entrypoint.sh .
-ENTRYPOINT ./entrypoint.sh
+ENTRYPOINT ["./entrypoint.sh"]

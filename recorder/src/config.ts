@@ -1,13 +1,13 @@
 type Config = {
-    apiKey?: string
-    apiSecret?: string
+    api_key?: string
+    api_secret?: string
     input: {
         url?: string
         template?: {
             type: string
-            wsUrl: string
+            ws_url: string
             token?: string
-            roomName?: string
+            room_name?: string
         }
         width: number
         height: number
@@ -20,15 +20,15 @@ type Config = {
         s3?: {
             bucket: string
             key: string
-            accessKey?: string
+            access_key?: string
             secret?: string
         }
         width?: number
         height?: number
-        audioBitrate: string
-        audioFrequency: string
-        videoBitrate: string
-        videoBuffer: string
+        audio_bitrate: string
+        audio_frequency: string
+        video_bitrate: string
+        video_buffer: string
     }
 }
 
@@ -41,10 +41,10 @@ export function loadConfig(): Config {
             framerate: 25,
         },
         output: {
-            audioBitrate: '128k',
-            audioFrequency: '44100',
-            videoBitrate: '2976k',
-            videoBuffer: '5952k'
+            audio_bitrate: '128k',
+            audio_frequency: '44100',
+            video_bitrate: '2976k',
+            video_buffer: '5952k'
         }
     }
 
@@ -58,8 +58,11 @@ export function loadConfig(): Config {
     }
 
     // write to file if no output specified
-    if (!(conf.output.file || conf.output.rtmp || conf.output.s3)) {
-        conf.output.file = 'recording.mp4'
+    if (!(conf.output.file || conf.output.rtmp)) {
+        const now = new Date().toISOString().
+            replace(/T/, '_').
+            replace(/\..+/, '')
+        conf.output.file = `recording_${now}.mp4`
     }
 
     return conf

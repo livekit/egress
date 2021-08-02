@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euxo pipefail
 
 # Cleanup to be "stateless" on startup, otherwise pulseaudio daemon can't start
@@ -10,5 +10,24 @@ pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit
 # Load audio sink
 pactl load-module module-null-sink sink_name="grab" sink_properties=device.description="monitorOUT"
 
-# Run
-ts-node src/record.ts
+# Forward signals to node
+pid=0
+
+# SIGTERM-handler
+term_handler() {
+  if [ $pid -ne 0 ]; then
+    kill -SIGTERM "$pid"
+    wait "$pid"
+  fi
+  exit 143; # 128 + 15 -- SIGTERM
+}
+
+# On callback, kill the last background process, which is `tail -f /dev/null` and execute the specified handler
+trap 'kill ${!}; term_handler' SIGTERM
+
+# Run recorder
+node src/record.js &
+pid="$!"
+
+# Wait
+wait ${!}

@@ -16,9 +16,10 @@ RUN apt-get install -y ffmpeg
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
-RUN npm install \
-    && npm install typescript \
-    && npm install -g ts-node
+RUN npm install
+
+# Silence error about livekit-server-sdk protos
+RUN npx tsc src/*.ts; exit 0
 
 COPY entrypoint.sh .
-ENTRYPOINT ./entrypoint.sh 
+ENTRYPOINT ["./entrypoint.sh"]
