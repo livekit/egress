@@ -32,9 +32,9 @@ func startRecording(c *cli.Context) error {
 		SubmittedAt: time.Now().UnixNano(),
 		Input: &livekit.RecordingInput{
 			Template: &livekit.RecordingTemplate{
-				Type:  "speaker-dark",
-				WsUrl: c.String("ws-url"),
-				Token: c.String("token"),
+				Layout: "speaker-dark",
+				WsUrl:  c.String("ws-url"),
+				Token:  c.String("token"),
 			},
 		},
 		Output: &livekit.RecordingOutput{
