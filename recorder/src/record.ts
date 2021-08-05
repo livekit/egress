@@ -9,7 +9,7 @@ const Xvfb = require('xvfb');
 
 function buildRecorderToken(room: string, key: string, secret: string): string {
 	const at = new AccessToken(key, secret, {
-		identity: 'livekit-recorder',
+		identity: 'recorder-'+(Math.random()+1).toString(36).substring(2),
 	})
 	at.addGrant({
 		roomJoin: true,
@@ -59,7 +59,7 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 		} else {
 			throw Error('Either token, or room name, api key, and secret required')
 		}
-		url = `https://recorder.livekit.io/#/${template.type}?url=${encodeURIComponent(template.ws_url)}&token=${token}`
+		url = `https://recorder.livekit.io/#/${template.layout}?url=${encodeURIComponent(template.ws_url)}&token=${token}`
 	} else if (conf.input.url) {
 		url = conf.input.url
 	} else {

@@ -4,7 +4,7 @@ type Config = {
     input: {
         url?: string
         template?: {
-            type: string
+            layout: string
             ws_url: string
             token?: string
             room_name?: string
