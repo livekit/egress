@@ -25,7 +25,7 @@ import (
 
 const goChecksumFile = ".checksumgo"
 
-var imageNames = []string{"livekit/recorder", "livekit/recorder-service"}
+var imageNames = []string{"livekit/livekit-recorder", "livekit/livekit-recorder-service"}
 
 // Default target to run when none is specified
 // If not set, running mage will list available targets

@@ -147,9 +147,11 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 	])
 	ffmpeg.stdout.pipe(process.stdout)
 	ffmpeg.stderr.pipe(process.stderr)
-	ffmpeg.on('error', (err) => console.log(err))
-	ffmpeg.on('close', () => {
-		console.log('ffmpeg finished')
+	ffmpeg.on('error', (err) => {
+		console.log(`ffmpeg error: ${err}`)
+	})
+	ffmpeg.on('close', (code, signal) => {
+		console.log(`ffmpeg closed. code: ${code}, signal: ${signal}`)
 		xvfb.stop()
 		uploadFunc && uploadFunc()
 	});
