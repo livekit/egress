@@ -30,7 +30,7 @@ All config options:
     "input": {
         "url": custom url of recording web page
         "template": {
-            "type": <grid|speaker>-<light|dark>
+            "layout": <grid|speaker>-<light|dark>
             "ws_url": livekit server websocket url
             "token": livekit access token
             "room_name": room name
@@ -73,7 +73,7 @@ Check out our [templates README](https://github.com/livekit/livekit-recorder/tre
     "api_secret": "<secret>",
     "input": {
         "template": {
-            "type": "<grid|speaker>-<light|dark>",
+            "layout": "<grid|speaker>-<light|dark>",
             "ws_url": "wss://your-livekit-address.com",
             "room_name": "room-to-record"
         }
@@ -85,7 +85,7 @@ Or, to use your own token instead of having the recorder generate one:
 {
     "input": {
         "template": {
-            "type": "<grid|speaker>-<light|dark>",
+            "layout": "<grid|speaker>-<light|dark>",
             "ws_url": "wss://your-livekit-address.com",
             "token": "<token>"
         }
@@ -177,7 +177,7 @@ basic.json:
   "api_secret": "<server-api-secret>",
   "input": {
     "template": {
-      "type": "speaker-dark",
+      "layout": "speaker-dark",
       "ws_url": "<wss://livekit.your-domain.com>",
       "room_name": "<my-room>"
     }
@@ -230,7 +230,7 @@ twitch.json:
 {
   "input": {
     "template": {
-      "type": "speaker-dark",
+      "layout": "speaker-dark",
       "ws_url": "<wss://livekit.your-domain.com>",
       "token": "<recording-token>"
     },

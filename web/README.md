@@ -11,7 +11,7 @@ Example usage:
   "api_secret": "<secret>",
   "input": {
     "template": {
-      "type": "speaker-dark",
+      "layout": "speaker-dark",
       "ws_url": "wss://your-livekit-address.com",
       "room_name": "room-to-record"
     }
