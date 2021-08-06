@@ -41,6 +41,7 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 			'--kiosk', // full screen, no info bar
 			'--no-sandbox', // required when running as root
 			'--autoplay-policy=no-user-gesture-required', // autoplay
+			'--window-position=0,0',
 			`--window-size=${conf.input.width},${conf.input.height}`,
 			`--display=${xvfb.display()}`,
 		]
