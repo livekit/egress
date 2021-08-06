@@ -61,6 +61,7 @@ func Proto() error {
 	updated, err := target.Path(
 		"proto/livekit_models.pb.go",
 		protoDir+"/livekit_models.proto",
+		protoDir+"/livekit_recording.proto",
 		protoDir+"/livekit_room.proto",
 		protoDir+"/livekit_rtc.proto",
 		protoDir+"/livekit_internal.proto",
@@ -94,6 +95,7 @@ func Proto() error {
 		"--plugin=go="+protocGoPath,
 		"-I="+protoDir,
 		protoDir+"/livekit_models.proto",
+		protoDir+"/livekit_recording.proto",
 		protoDir+"/livekit_room.proto",
 		protoDir+"/livekit_rtc.proto",
 		protoDir+"/livekit_internal.proto",

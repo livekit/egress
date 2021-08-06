@@ -71,18 +71,17 @@ func submit(t *testing.T, ctx context.Context, rc *redis.Client, worker *Worker)
 	// send recording reservation
 	req := &livekit.RecordingReservation{
 		SubmittedAt: time.Now().UnixNano(),
-		Input: &livekit.RecordingInput{
-			Template: &livekit.RecordingTemplate{
-				Layout: "speaker-light",
-				WsUrl:  "wss://testing.livekit.io",
-				Token:  "token",
+		Request: &livekit.StartRecordingRequest{
+			Input: &livekit.StartRecordingRequest_Template{
+				Template: &livekit.RecordingTemplate{
+					Layout: "speaker-light",
+					WsUrl:  "wss://testing.livekit.io",
+					Token:  "token",
+				},
 			},
-			Framerate: 60,
-		},
-		Output: &livekit.RecordingOutput{
-			File:         "recording.mp4",
-			VideoBitrate: "1000k",
-			VideoBuffer:  "2000k",
+			Output: &livekit.StartRecordingRequest_File{
+				File: "recording.mp4",
+			},
 		},
 	}
 
@@ -107,18 +106,17 @@ func submitReserved(t *testing.T, rc *redis.Client) {
 	// send recording reservation
 	req := &livekit.RecordingReservation{
 		SubmittedAt: time.Now().UnixNano(),
-		Input: &livekit.RecordingInput{
-			Template: &livekit.RecordingTemplate{
-				Layout: "speaker-light",
-				WsUrl:  "wss://testing.livekit.io",
-				Token:  "token",
+		Request: &livekit.StartRecordingRequest{
+			Input: &livekit.StartRecordingRequest_Template{
+				Template: &livekit.RecordingTemplate{
+					Layout: "speaker-light",
+					WsUrl:  "wss://testing.livekit.io",
+					Token:  "token",
+				},
 			},
-			Framerate: 60,
-		},
-		Output: &livekit.RecordingOutput{
-			File:         "recording.mp4",
-			VideoBitrate: "1000k",
-			VideoBuffer:  "2000k",
+			Output: &livekit.StartRecordingRequest_File{
+				File: "recording.mp4",
+			},
 		},
 	}
 

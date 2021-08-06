@@ -35,10 +35,6 @@ All config options:
             "token": livekit access token
             "room_name": room name
         }
-        "width": defaults to 1920 (optional)
-        "height": defaults to 1080 (optional)
-        "depth": defaults to 24 (optional)
-        "framerate": defaults to 30 (optional)
     }
     "output": {
         "file": filename
@@ -49,15 +45,33 @@ All config options:
             "bucket": s3 bucket
             "key": filename
         }
-        "width": scale output width (optional)
-        "height": scale output height (optional)
-        "audio_bitrate": defaults to 128k (optional)
+    }
+    "options": {
+        "preset": valid values are 720p30, 720p60, 1080p30, or 1080p60
+        "input_width": defaults to 1920 (optional)
+        "input_height": defaults to 1080 (optional)
+        "depth": defaults to 24 (optional)
+        "framerate": defaults to 30 (optional)
+        "output_width": scale output width (optional)
+        "output_height": scale output height (optional)
+        "audio_bitrate": defaults to 128 (kbps, optional)
         "audio_frequency": defaults to 44100 (optional)
-        "video_bitrate": defaults to 2976k (optional)
-        "video_buffer": defaults to 5952k (optional)
+        "video_bitrate": defaults to 4500 (kpbs, optional)
     }
 }
 ```
+
+The `options.preset` field will provide defaults using the following values:
+
+| Preset  | input_width | input_height | framerate | video_bitrate |
+|---      |---          |---           |---        |---            |
+| 720p30  | 1280        | 720          | 30        | 3000          |
+| 720p60  | 1280        | 720          | 60        | 4500          |
+| 1080p30 | 1920        | 1080         | 30        | 4500          |
+| 1080p60 | 1920        | 1080         | 60        | 6000          |
+
+If you don't supply any options, it defaults to 1080p 30 fps.
+
 
 ## Input
 
@@ -173,18 +187,18 @@ With any of these methods, the recorder will stop ffmpeg and finish uploading be
 basic.json:
 ```json
 {
-  "api_key": "<server-api-key>",
-  "api_secret": "<server-api-secret>",
-  "input": {
-    "template": {
-      "layout": "speaker-dark",
-      "ws_url": "<wss://livekit.your-domain.com>",
-      "room_name": "<my-room>"
+    "api_key": "<server-api-key>",
+    "api_secret": "<server-api-secret>",
+    "input": {
+        "template": {
+            "layout": "speaker-dark",
+            "ws_url": "<wss://livekit.your-domain.com>",
+            "room_name": "<my-room>"
+        }
+    },
+    "output": {
+        "file": "/app/out/recording.mp4"
     }
-  },
-  "output": {
-    "file": "/app/out/recording.mp4"
-  }
 }
 ```
 ```bash
@@ -201,18 +215,18 @@ s3.json:
 ```json
 {
     "input": {
-      "url": "https://your-recording-domain.com",
-      "width": 1280,
-      "height": 720,
-      "framerate": 60
+        "url": "https://your-recording-domain.com",
     },
     "output": {
-        "S3": {
+        "s3": {
             "access_key": "<aws-access-key>",
             "secret": "<aws-secret>",
             "bucket": "<my-bucket>",
             "key": "recording.mp4"
-        }
+        },
+    },
+    "options": {
+        "preset": "720p60"
     }
 }
 ```
@@ -228,20 +242,22 @@ docker stop my-recorder
 twitch.json:
 ```json
 {
-  "input": {
-    "template": {
-      "layout": "speaker-dark",
-      "ws_url": "<wss://livekit.your-domain.com>",
-      "token": "<recording-token>"
+    "input": {
+        "template": {
+              "layout": "speaker-dark",
+              "ws_url": "<wss://livekit.your-domain.com>",
+              "token": "<recording-token>"
+        }
     },
-    "width": 1920,
-    "height": 1080
-  },
-  "output": {
-    "rtmp": "rtmp://live.twitch.tv/app/<stream-key>",
-    "width": 1280,
-    "height": 720
-  }
+    "output": {
+        "rtmp": "rtmp://live.twitch.tv/app/<stream-key>",
+    },
+    "options": {
+        "input_width": 1920,
+        "input_height": 1080,
+        "output_width": 1280,
+        "output_height": 720
+    }
 }
 ```
 ```bash

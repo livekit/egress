@@ -9,10 +9,6 @@ type Config = {
             token?: string
             room_name?: string
         }
-        width: number
-        height: number
-        depth: number
-        framerate: number
     }
     output: {
         file?: string
@@ -23,38 +19,65 @@ type Config = {
             access_key?: string
             secret?: string
         }
-        width?: number
-        height?: number
-        audio_bitrate: string
-        audio_frequency: string
-        video_bitrate: string
-        video_buffer: string
+
+    }
+    options: {
+        preset?: string
+        input_width: number
+        input_height: number
+        output_width?: number
+        output_height?: number
+        depth: number
+        framerate: number
+        audio_bitrate: number
+        audio_frequency: number
+        video_bitrate: number
     }
 }
 
 export function loadConfig(): Config {
-    const conf: Config = {
-        input: {
-            width: 1920,
-            height: 1080,
-            depth: 24,
-            framerate: 30,
-        },
-        output: {
-            audio_bitrate: '128k',
-            audio_frequency: '44100',
-            video_bitrate: '2976k',
-            video_buffer: '5952k'
-        }
+    if (!process.env.LIVEKIT_RECORDER_CONFIG) {
+        throw Error('LIVEKIT_RECORDER_CONFIG, LIVEKIT_URL or Template required')
     }
 
-    if (process.env.LIVEKIT_RECORDER_CONFIG) {
-        // load config from env
-        const json = JSON.parse(process.env.LIVEKIT_RECORDER_CONFIG)
-        conf.input = {...conf.input, ...json.input}
-        conf.output = {...conf.output, ...json.output}
-    } else {
-        throw Error('LIVEKIT_RECORDER_CONFIG, LIVEKIT_URL or Template required')
+    // load config from env
+    const json = JSON.parse(process.env.LIVEKIT_RECORDER_CONFIG)
+    const conf: Config = {
+        input: json.input,
+        output: json.output,
+        options: {
+            input_width: 1920,
+            input_height: 1080,
+            depth: 24,
+            framerate: 30,
+            audio_bitrate: 128,
+            audio_frequency: 44100,
+            video_bitrate: 4500,
+        }
+    }
+    conf.input = json.input
+    conf.output = json.output
+
+    switch(json.options?.preset) {
+        case "1080p60":
+            conf.options.framerate = 60
+            conf.options.video_bitrate = 6000
+            break
+        case "1080p30":
+            // default
+            break
+        case "720p60":
+            conf.options.input_width = 1280
+            conf.options.input_height = 720
+            conf.options.framerate = 60
+            break
+        case "720p30":
+            conf.options.input_width = 1280
+            conf.options.input_height = 720
+            conf.options.video_bitrate = 3000
+            break
+        default:
+            conf.options = {...conf.options, ...json.options}
     }
 
     // write to file if no output specified

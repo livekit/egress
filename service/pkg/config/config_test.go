@@ -1,11 +1,8 @@
 package config
 
 import (
-	"encoding/json"
-	"reflect"
 	"testing"
 
-	"github.com/fatih/structs"
 	"github.com/stretchr/testify/require"
 
 	livekit "github.com/livekit/livekit-recorder/service/proto"
@@ -14,78 +11,60 @@ import (
 func TestMerge(t *testing.T) {
 	defaults := &Config{
 		Redis: RedisConfig{},
-		Input: &livekit.RecordingInput{
-			Width:     1920,
-			Height:    1080,
-			Depth:     24,
-			Framerate: 25,
-		},
-		Output: &livekit.RecordingOutput{
-			AudioBitrate:   "128k",
-			AudioFrequency: "44100",
-			VideoBitrate:   "2976k",
-			VideoBuffer:    "5952k",
+		Options: &livekit.RecordingOptions{
+			InputWidth:     1920,
+			InputHeight:    1080,
+			Depth:          24,
+			Framerate:      30,
+			AudioBitrate:   128,
+			AudioFrequency: 44100,
+			VideoBitrate:   4500,
 		},
 	}
 
 	req := &livekit.RecordingReservation{
 		Id: "id",
-		Input: &livekit.RecordingInput{
-			Template: &livekit.RecordingTemplate{
-				Layout: "grid-dark",
-				WsUrl:  "wss://testing.livekit.io",
-				Token:  "token",
+		Request: &livekit.StartRecordingRequest{
+			Input: &livekit.StartRecordingRequest_Template{
+				Template: &livekit.RecordingTemplate{
+					Layout: "grid-dark",
+					WsUrl:  "wss://testing.livekit.io",
+					Token:  "token",
+				},
 			},
-			Framerate: 60,
-		},
-		Output: &livekit.RecordingOutput{
-			File:         "recording.mp4",
-			VideoBitrate: "1000k",
-			VideoBuffer:  "2000k",
-		},
-	}
-
-	str, err := Merge(defaults, req)
-	require.NoError(t, err)
-
-	merged := &Config{}
-	err = json.Unmarshal([]byte(str), merged)
-	require.NoError(t, err)
-
-	expected := &Config{
-		Input: &livekit.RecordingInput{
-			Template: &livekit.RecordingTemplate{
-				Layout: "grid-dark",
-				WsUrl:  "wss://testing.livekit.io",
-				Token:  "token",
+			Output: &livekit.StartRecordingRequest_File{
+				File: "recording.mp4",
 			},
-			Width:     1920,
-			Height:    1080,
-			Depth:     24,
-			Framerate: 60,
-		},
-		Output: &livekit.RecordingOutput{
-			File:           "recording.mp4",
-			AudioBitrate:   "128k",
-			AudioFrequency: "44100",
-			VideoBitrate:   "1000k",
-			VideoBuffer:    "2000k",
+			Options: &livekit.RecordingOptions{
+				Framerate:    60,
+				VideoBitrate: 6000,
+			},
 		},
 	}
-	RequireProtoEqual(t, expected, merged)
-}
 
-func RequireProtoEqual(t *testing.T, expected, actual interface{}) {
-	a := structs.Fields(actual)
-	for i, field := range structs.Fields(expected) {
-		if !field.IsExported() {
-			continue
-		}
+	merged, err := Merge(defaults, req)
+	require.NoError(t, err)
+	expected := "{\"input\":{\"template\":{\"layout\":\"grid-dark\",\"ws_url\":\"wss://testing.livekit.io\",\"token\":\"token\"}},\"options\":{\"audio_bitrate\":128,\"audio_frequency\":44100,\"depth\":24,\"framerate\":60,\"input_height\":1080,\"input_width\":1920,\"video_bitrate\":6000},\"output\":{\"file\":\"recording.mp4\"}}"
+	require.Equal(t, expected, merged)
 
-		if field.Kind() == reflect.Struct {
-			RequireProtoEqual(t, field.Value(), a[i].Value())
-		} else {
-			require.Equal(t, field.Value(), a[i].Value(), "field: %s", field.Name())
-		}
+	req = &livekit.RecordingReservation{
+		Id: "id",
+		Request: &livekit.StartRecordingRequest{
+			Input: &livekit.StartRecordingRequest_Template{
+				Template: &livekit.RecordingTemplate{
+					Layout: "grid-dark",
+					WsUrl:  "wss://testing.livekit.io",
+					Token:  "token",
+				},
+			},
+			Output: &livekit.StartRecordingRequest_File{
+				File: "recording.mp4",
+			},
+		},
 	}
+
+	merged, err = Merge(defaults, req)
+	require.NoError(t, err)
+	expected = "{\"input\":{\"template\":{\"layout\":\"grid-dark\",\"ws_url\":\"wss://testing.livekit.io\",\"token\":\"token\"}},\"options\":{\"input_width\":1920,\"input_height\":1080,\"depth\":24,\"framerate\":30,\"audio_bitrate\":128,\"audio_frequency\":44100,\"video_bitrate\":4500},\"output\":{\"file\":\"recording.mp4\"}}"
+	require.Equal(t, expected, merged)
 }

@@ -28,21 +28,21 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 	const xvfb = new Xvfb({
 		displayNum: 10,
 		silent: true,
-		xvfb_args: ['-screen', '0', `${conf.input.width}x${conf.input.height}x${conf.input.depth}`, '-ac']
+		xvfb_args: ['-screen', '0', `${conf.options.input_width}x${conf.options.input_height}x${conf.options.depth}`, '-ac']
 	})
 	xvfb.start((err: Error) => { if (err) { console.log(err) } })
 
 	// launch puppeteer
 	const browser: Browser = await launch({
 		headless: false,
-		defaultViewport: {width: conf.input.width, height: conf.input.height},
+		defaultViewport: {width: conf.options.input_width, height: conf.options.input_height},
 		ignoreDefaultArgs: ["--enable-automation"],
 		args: [
 			'--kiosk', // full screen, no info bar
 			'--no-sandbox', // required when running as root
 			'--autoplay-policy=no-user-gesture-required', // autoplay
 			'--window-position=0,0',
-			`--window-size=${conf.input.width},${conf.input.height}`,
+			`--window-size=${conf.options.input_width},${conf.options.input_height}`,
 			`--display=${xvfb.display()}`,
 		]
 	})
@@ -71,21 +71,24 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 	// ffmpeg output options
 	let ffmpegOutputOpts = [
 		// audio
-		'-c:a', 'aac', '-b:a', conf.output.audio_bitrate, '-ar', conf.output.audio_frequency,
+		'-c:a', 'aac', '-b:a', `${conf.options.audio_bitrate}k`, '-ar', `${conf.options.audio_frequency}`,
 		'-ac', '2', '-af', 'aresample=async=1',
 		// video
 		'-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency',
-		'-b:v', conf.output.video_bitrate,
+		'-b:v', `${conf.options.video_bitrate}k`,
 	]
-	if (conf.output.width && conf.output.height) {
-		ffmpegOutputOpts = ffmpegOutputOpts.concat('-s', `${conf.output.width}x${conf.output.height}`)
+	if (conf.options.output_width && conf.options.output_height) {
+		ffmpegOutputOpts = ffmpegOutputOpts.concat('-s', `${conf.options.output_width}x${conf.options.output_height}`)
 	}
 
 	// ffmpeg output location
 	let ffmpegOutput: string[]
 	let uploadFunc: () => void
 	if (conf.output.rtmp) {
-		ffmpegOutputOpts = ffmpegOutputOpts.concat(['-maxrate', conf.output.video_bitrate, '-bufsize', conf.output.video_buffer])
+		ffmpegOutputOpts = ffmpegOutputOpts.concat([
+			'-maxrate', `${conf.options.video_bitrate}k`,
+			'-bufsize', `${conf.options.video_bitrate * 2}k`
+		])
 		ffmpegOutput = ['-f', 'flv', conf.output.rtmp]
 		console.log(`Streaming to ${conf.output.rtmp}`)
 	} else if (conf.output.file) {
@@ -139,10 +142,8 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 		// video (x11 grab)
 		"-draw_mouse", "0", // don't draw the mouse
 		'-thread_queue_size', '1024', // avoid thread message queue blocking
-		'-probesize', '42M', // increase probe size for bitrate estimation
-		// consider probesize 32 analyzeduration 0 for lower latency
-		'-s', `${conf.input.width}x${conf.input.height}`,
-		'-r', `${conf.input.framerate}`,
+		'-s', `${conf.options.input_width}x${conf.options.input_height}`,
+		'-r', `${conf.options.framerate}`,
 		'-f', 'x11grab', '-i', `${xvfb.display()}.0`,
 
 		// output
