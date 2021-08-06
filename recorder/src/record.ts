@@ -115,6 +115,8 @@ function buildRecorderToken(room: string, key: string, secret: string): string {
 				}
 			}
 			console.log(`Saving to s3://${conf.output.s3.bucket}/${conf.output.s3.key}`)
+		} else if (filename.startsWith('/')) {
+			console.log(`Writing to ${filename}`)
 		} else {
 			console.log(`Writing to /app/${filename}`)
 		}
