@@ -43,6 +43,8 @@ export function loadConfig(): Config {
     // load config from env
     const json = JSON.parse(process.env.LIVEKIT_RECORDER_CONFIG)
     const conf: Config = {
+        api_key: json.api_key,
+        api_secret: json.api_secret,
         input: json.input,
         output: json.output,
         options: {
