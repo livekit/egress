@@ -22,7 +22,7 @@ type Config = {
 
     }
     options: {
-        preset?: string
+        preset?: string | number
         input_width: number
         input_height: number
         output_width?: number
@@ -57,26 +57,32 @@ export function loadConfig(): Config {
             video_bitrate: 4500,
         }
     }
-    conf.input = json.input
-    conf.output = json.output
 
     switch(json.options?.preset) {
-        case "1080p60":
-            conf.options.framerate = 60
-            conf.options.video_bitrate = 6000
-            break
-        case "1080p30":
-            // default
-            break
-        case "720p60":
-            conf.options.input_width = 1280
-            conf.options.input_height = 720
-            conf.options.framerate = 60
-            break
         case "720p30":
+        case "HD_30":
+        case 1:
             conf.options.input_width = 1280
             conf.options.input_height = 720
             conf.options.video_bitrate = 3000
+            break
+        case "720p60":
+        case "HD_60":
+        case 2:
+            conf.options.input_width = 1280
+            conf.options.input_height = 720
+            conf.options.framerate = 60
+            break
+        case "1080p30":
+        case "FULL_HD_30":
+        case 3:
+            // default
+            break
+        case "1080p60":
+        case "FULL_HD_60":
+        case 4:
+            conf.options.framerate = 60
+            conf.options.video_bitrate = 6000
             break
         default:
             conf.options = {...conf.options, ...json.options}
