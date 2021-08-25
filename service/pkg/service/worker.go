@@ -71,7 +71,8 @@ func (w *Worker) Start() error {
 			req := &livekit.RecordingReservation{}
 			err := proto.Unmarshal([]byte(msg.Payload), req)
 			if err != nil {
-				return err
+				logger.Errorw("Malformed request", err)
+				continue
 			}
 
 			if req.SubmittedAt < time.Now().Add(-utils.ReservationTimeout).UnixNano() {
@@ -79,8 +80,7 @@ func (w *Worker) Start() error {
 				continue
 			}
 
-			key := w.getKey(req.Id)
-			claimed, start, stop, err := w.Claim(req.Id, key)
+			claimed, start, stop, err := w.Claim(req)
 			if err != nil {
 				logger.Errorw("Request failed", err, "ID", req.Id)
 				return err
@@ -99,16 +99,16 @@ func (w *Worker) Start() error {
 	}
 }
 
-func (w *Worker) Claim(id, key string) (claimed bool, start, stop *redis.PubSub, err error) {
-	claimed, err = w.rc.SetNX(w.ctx, key, rand.Int(), lockDuration).Result()
+func (w *Worker) Claim(req *livekit.RecordingReservation) (claimed bool, start, stop *redis.PubSub, err error) {
+	claimed, err = w.rc.SetNX(w.ctx, w.getKey(req.Id), rand.Int(), lockDuration).Result()
 	if !claimed || err != nil {
 		return
 	}
 
 	w.status.Store(Reserved)
-	start = w.rc.Subscribe(w.ctx, utils.StartRecordingChannel(id))
-	stop = w.rc.Subscribe(w.ctx, utils.EndRecordingChannel(id))
-	err = w.rc.Publish(w.ctx, utils.ReservationResponseChannel(id), nil).Err()
+	start = w.rc.Subscribe(w.ctx, utils.StartRecordingChannel(req.Id))
+	stop = w.rc.Subscribe(w.ctx, utils.EndRecordingChannel(req.Id))
+	err = w.rc.Publish(w.ctx, utils.ReservationResponseChannel(req.Id), nil).Err()
 	return
 }
 

@@ -25,14 +25,14 @@ func TestMerge(t *testing.T) {
 	req := &livekit.RecordingReservation{
 		Id: "id",
 		Request: &livekit.StartRecordingRequest{
-			Input: &livekit.StartRecordingRequest_Template{
+			Input: &livekit.RecordingInput{
 				Template: &livekit.RecordingTemplate{
 					Layout: "grid-dark",
 					WsUrl:  "wss://testing.livekit.io",
 					Token:  "token",
 				},
 			},
-			Output: &livekit.StartRecordingRequest_File{
+			Output: &livekit.RecordingOutput{
 				File: "recording.mp4",
 			},
 			Options: &livekit.RecordingOptions{
@@ -50,14 +50,14 @@ func TestMerge(t *testing.T) {
 	req = &livekit.RecordingReservation{
 		Id: "id",
 		Request: &livekit.StartRecordingRequest{
-			Input: &livekit.StartRecordingRequest_Template{
+			Input: &livekit.RecordingInput{
 				Template: &livekit.RecordingTemplate{
 					Layout: "grid-dark",
 					WsUrl:  "wss://testing.livekit.io",
 					Token:  "token",
 				},
 			},
-			Output: &livekit.StartRecordingRequest_File{
+			Output: &livekit.RecordingOutput{
 				File: "recording.mp4",
 			},
 		},

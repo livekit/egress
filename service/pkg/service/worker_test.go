@@ -72,14 +72,14 @@ func submit(t *testing.T, ctx context.Context, rc *redis.Client, worker *Worker)
 	req := &livekit.RecordingReservation{
 		SubmittedAt: time.Now().UnixNano(),
 		Request: &livekit.StartRecordingRequest{
-			Input: &livekit.StartRecordingRequest_Template{
+			Input: &livekit.RecordingInput{
 				Template: &livekit.RecordingTemplate{
 					Layout: "speaker-light",
 					WsUrl:  "wss://testing.livekit.io",
 					Token:  "token",
 				},
 			},
-			Output: &livekit.StartRecordingRequest_File{
+			Output: &livekit.RecordingOutput{
 				File: "recording.mp4",
 			},
 		},
@@ -107,14 +107,14 @@ func submitReserved(t *testing.T, rc *redis.Client) {
 	req := &livekit.RecordingReservation{
 		SubmittedAt: time.Now().UnixNano(),
 		Request: &livekit.StartRecordingRequest{
-			Input: &livekit.StartRecordingRequest_Template{
+			Input: &livekit.RecordingInput{
 				Template: &livekit.RecordingTemplate{
 					Layout: "speaker-light",
 					WsUrl:  "wss://testing.livekit.io",
 					Token:  "token",
 				},
 			},
-			Output: &livekit.StartRecordingRequest_File{
+			Output: &livekit.RecordingOutput{
 				File: "recording.mp4",
 			},
 		},

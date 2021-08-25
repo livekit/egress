@@ -31,14 +31,14 @@ func startRecording(c *cli.Context) error {
 		Id:          utils.NewGuid(utils.RecordingPrefix),
 		SubmittedAt: time.Now().UnixNano(),
 		Request: &livekit.StartRecordingRequest{
-			Input: &livekit.StartRecordingRequest_Template{
+			Input: &livekit.RecordingInput{
 				Template: &livekit.RecordingTemplate{
 					Layout: "speaker-dark",
 					WsUrl:  c.String("ws-url"),
 					Token:  c.String("token"),
 				},
 			},
-			Output: &livekit.StartRecordingRequest_S3{
+			Output: &livekit.RecordingOutput{
 				S3: &livekit.RecordingS3Output{
 					AccessKey: c.String("aws-key"),
 					Secret:    c.String("aws-secret"),

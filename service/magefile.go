@@ -59,7 +59,7 @@ func Proto() error {
 	}
 	protoDir := info.Dir
 	updated, err := target.Path(
-		"proto/livekit_models.pb.go",
+		"proto/livekit_recording.pb.go",
 		protoDir+"/livekit_models.proto",
 		protoDir+"/livekit_recording.proto",
 		protoDir+"/livekit_room.proto",
