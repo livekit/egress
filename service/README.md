@@ -53,3 +53,21 @@ options:
 log_level: valid levels are debug, info, warn, error, fatal, or panic (optional)
 
 ```
+
+## Running locally
+
+If you want to try running against a local livekit server, you'll need to make a couple changes:
+* open `/usr/local/etc/redis.conf` and comment out the line that says `bind 127.0.0.1`
+* change `protected-mode yes` to `protected-mode no` in the same file
+* add `--network host` to your `docker run` command
+  * on linux, this should be `172.17.0.1`
+  * on mac or windows, run `docker run -it --rm alpine nslookup host.docker.internal` and you should see something like 
+    `Name:	host.docker.internal
+    Address: 192.168.65.2`
+
+These changes allow the service to connect to your local redis instance from inside the docker container.
+Finally, to build and run:
+```bash
+docker build -t recorder-svc . 
+docker run --network host -e REDIS_HOST="192.168.65.2:6379" recorder-svc
+```
