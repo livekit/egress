@@ -60,6 +60,7 @@ If you want to try running against a local livekit server, you'll need to make a
 * open `/usr/local/etc/redis.conf` and comment out the line that says `bind 127.0.0.1`
 * change `protected-mode yes` to `protected-mode no` in the same file
 * add `--network host` to your `docker run` command
+* update your redis address from `localhost` to your host ip as docker sees it:
   * on linux, this should be `172.17.0.1`
   * on mac or windows, run `docker run -it --rm alpine nslookup host.docker.internal` and you should see something like 
     `Name:	host.docker.internal
