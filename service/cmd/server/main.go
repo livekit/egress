@@ -109,7 +109,7 @@ func runService(c *cli.Context) error {
 
 	logger.Init(conf.LogLevel)
 
-	rc, err := service.StartRedis(conf)
+	rc, err := service.NewMessageBus(conf)
 	if err != nil {
 		return err
 	}

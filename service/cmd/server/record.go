@@ -20,9 +20,8 @@ import (
 func startRecording(c *cli.Context) error {
 	logger.Init("debug")
 
-	ctx := context.Background()
 	conf := config.TestConfig()
-	rc, err := service.StartRedis(conf)
+	rc, err := service.NewMessageBus(conf)
 	if err != nil {
 		return err
 	}
@@ -48,16 +47,17 @@ func startRecording(c *cli.Context) error {
 		return err
 	}
 
-	sub := rc.Subscribe(ctx, utils.ReservationResponseChannel(req.Id))
+	ctx := context.Background()
+	sub, _ := rc.Subscribe(ctx, utils.ReservationResponseChannel(req.Id))
 	defer sub.Close()
 
-	if err = rc.Publish(ctx, utils.ReservationChannel, string(b)).Err(); err != nil {
+	if err = rc.Publish(ctx, utils.ReservationChannel, string(b)); err != nil {
 		return err
 	}
 
 	select {
 	case <-sub.Channel():
-		if err = rc.Publish(ctx, utils.StartRecordingChannel(req.Id), nil).Err(); err != nil {
+		if err = rc.Publish(ctx, utils.StartRecordingChannel(req.Id), nil); err != nil {
 			return err
 		}
 	case <-time.After(utils.RecorderTimeout):
@@ -71,12 +71,11 @@ func startRecording(c *cli.Context) error {
 func stopRecording(c *cli.Context) error {
 	logger.Init("debug")
 
-	ctx := context.Background()
 	conf := config.TestConfig()
-	rc, err := service.StartRedis(conf)
+	rc, err := service.NewMessageBus(conf)
 	if err != nil {
 		return err
 	}
 
-	return rc.Publish(ctx, utils.EndRecordingChannel(c.String("id")), nil).Err()
+	return rc.Publish(context.Background(), utils.EndRecordingChannel(c.String("id")), nil)
 }

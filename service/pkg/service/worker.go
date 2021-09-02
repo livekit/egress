@@ -3,14 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"os"
 	"os/exec"
 	"sync/atomic"
 	"syscall"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
@@ -22,7 +20,7 @@ import (
 
 type Worker struct {
 	ctx      context.Context
-	rc       *redis.Client
+	bus      utils.MessageBus
 	defaults *config.Config
 	status   atomic.Value // Status
 	shutdown chan struct{}
@@ -40,10 +38,10 @@ const (
 	lockDuration        = time.Second * 5
 )
 
-func InitializeWorker(conf *config.Config, rc *redis.Client) *Worker {
+func InitializeWorker(conf *config.Config, bus utils.MessageBus) *Worker {
 	return &Worker{
 		ctx:      context.Background(),
-		rc:       rc,
+		bus:      bus,
 		defaults: conf,
 		status:   atomic.Value{},
 		shutdown: make(chan struct{}, 1),
@@ -55,7 +53,10 @@ func InitializeWorker(conf *config.Config, rc *redis.Client) *Worker {
 func (w *Worker) Start() error {
 	logger.Debugw("Starting worker", "mock", w.mock)
 
-	reservations := w.rc.Subscribe(w.ctx, utils.ReservationChannel)
+	reservations, err := w.bus.Subscribe(context.Background(), utils.ReservationChannel)
+	if err != nil {
+		return err
+	}
 	defer reservations.Close()
 
 	for {
@@ -69,7 +70,8 @@ func (w *Worker) Start() error {
 		case msg := <-reservations.Channel():
 			logger.Debugw("Request received")
 			req := &livekit.RecordingReservation{}
-			err := proto.Unmarshal([]byte(msg.Payload), req)
+
+			err := proto.Unmarshal(reservations.Payload(msg), req)
 			if err != nil {
 				logger.Errorw("Malformed request", err)
 				continue
@@ -88,6 +90,7 @@ func (w *Worker) Start() error {
 				logger.Debugw("Request locked", "ID", req.Id)
 				continue
 			}
+			w.status.Store(Reserved)
 			logger.Debugw("Request claimed", "ID", req.Id)
 
 			err = w.Run(req, start, stop)
@@ -99,20 +102,25 @@ func (w *Worker) Start() error {
 	}
 }
 
-func (w *Worker) Claim(req *livekit.RecordingReservation) (claimed bool, start, stop *redis.PubSub, err error) {
-	claimed, err = w.rc.SetNX(w.ctx, w.getKey(req.Id), rand.Int(), lockDuration).Result()
-	if !claimed || err != nil {
+func (w *Worker) Claim(req *livekit.RecordingReservation) (acquired bool, start, stop utils.PubSub, err error) {
+	acquired, err = w.bus.Lock(w.ctx, w.getKey(req.Id), lockDuration)
+	if !acquired || err != nil {
 		return
 	}
 
-	w.status.Store(Reserved)
-	start = w.rc.Subscribe(w.ctx, utils.StartRecordingChannel(req.Id))
-	stop = w.rc.Subscribe(w.ctx, utils.EndRecordingChannel(req.Id))
-	err = w.rc.Publish(w.ctx, utils.ReservationResponseChannel(req.Id), nil).Err()
+	start, err = w.bus.Subscribe(w.ctx, utils.StartRecordingChannel(req.Id))
+	if err != nil {
+		return
+	}
+	stop, err = w.bus.Subscribe(w.ctx, utils.EndRecordingChannel(req.Id))
+	if err != nil {
+		return
+	}
+	err = w.bus.Publish(w.ctx, utils.ReservationResponseChannel(req.Id), nil)
 	return
 }
 
-func (w *Worker) Run(req *livekit.RecordingReservation, start, stop *redis.PubSub) error {
+func (w *Worker) Run(req *livekit.RecordingReservation, start, stop utils.PubSub) error {
 	<-start.Channel()
 	start.Close()
 	defer stop.Close()
