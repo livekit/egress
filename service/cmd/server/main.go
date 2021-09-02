@@ -65,13 +65,8 @@ func main() {
 						Required: false,
 					},
 					&cli.StringFlag{
-						Name:     "bucket",
-						Usage:    "AWS bucket",
-						Required: false,
-					},
-					&cli.StringFlag{
-						Name:     "key",
-						Usage:    "AWS file key",
+						Name:     "s3",
+						Usage:    "s3 path (\"<bucket>/<key>\")",
 						Required: false,
 					},
 				},

@@ -36,6 +36,8 @@ redis:
     username: redis username (optional)
     password: redis password (optional)
     db: redis db (optional)
+# template config
+ws_url: livekit server ws url (required if using templates)
 api_key: livekit server api key (required if using templates without supplying tokens)
 api_secret: livekit server api secret (required if using templates without supplying tokens)
 # default recording options (all optional)
@@ -48,7 +50,7 @@ options:
     width: defaults to 0 (no scaling)
     height: defaults to 0 (no scaling)
     audio_bitrate: defaults to 128 (kbps)
-    audio_frequency: defaults to 44100
+    audio_frequency: defaults to 44100 (Hz)
     video_bitrate: defaults to 4500 (kbps)
 log_level: valid levels are debug, info, warn, error, fatal, or panic (optional)
 
@@ -72,3 +74,5 @@ Finally, to build and run:
 docker build -t recorder-svc . 
 docker run --network host -e REDIS_HOST="192.168.65.2:6379" recorder-svc
 ```
+
+You can then use our [cli](https://github.com/livekit/livekit-cli) to submit recording requests to your server.

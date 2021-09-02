@@ -4,10 +4,8 @@ package main
 
 import (
 	"crypto/sha1"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"go/build"
 	"io/ioutil"
 	"log"
 	"os"
@@ -18,7 +16,6 @@ import (
 	"time"
 
 	"github.com/magefile/mage/mg"
-	"github.com/magefile/mage/target"
 
 	"github.com/livekit/livekit-recorder/service/version"
 )
@@ -41,76 +38,8 @@ type modInfo struct {
 	GoVersion string
 }
 
-func Deps() error {
-	return installTools(false)
-}
-
-// regenerate protobuf
-func Proto() error {
-	mg.Deps(Deps)
-	cmd := exec.Command("go", "list", "-m", "-json", "github.com/livekit/protocol")
-	out, err := cmd.Output()
-	if err != nil {
-		return err
-	}
-	info := modInfo{}
-	if err = json.Unmarshal(out, &info); err != nil {
-		return err
-	}
-	protoDir := info.Dir
-	updated, err := target.Path(
-		"proto/livekit_recording.pb.go",
-		protoDir+"/livekit_models.proto",
-		protoDir+"/livekit_recording.proto",
-		protoDir+"/livekit_room.proto",
-		protoDir+"/livekit_rtc.proto",
-		protoDir+"/livekit_internal.proto",
-	)
-	if err != nil {
-		return err
-	}
-	if !updated {
-		return nil
-	}
-
-	fmt.Println("generating protobuf")
-	goOut := "proto"
-	if err := os.MkdirAll(goOut, 0755); err != nil {
-		return err
-	}
-
-	protoc, err := getToolPath("protoc")
-	if err != nil {
-		return err
-	}
-	protocGoPath, err := getToolPath("protoc-gen-go")
-	if err != nil {
-		return err
-	}
-
-	// generate internal
-	cmd = exec.Command(protoc,
-		"--go_out", goOut,
-		"--go_opt=paths=source_relative",
-		"--plugin=go="+protocGoPath,
-		"-I="+protoDir,
-		protoDir+"/livekit_models.proto",
-		protoDir+"/livekit_recording.proto",
-		protoDir+"/livekit_room.proto",
-		protoDir+"/livekit_rtc.proto",
-		protoDir+"/livekit_internal.proto",
-	)
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // run unit tests
 func Test() error {
-	mg.Deps(Proto)
 	cmd := exec.Command("go", "test", "./...")
 	connectStd(cmd)
 	return cmd.Run()
@@ -118,7 +47,6 @@ func Test() error {
 
 // builds LiveKit recorder service
 func Build() error {
-	mg.Deps(Proto)
 	if !checksummer.IsChanged() {
 		fmt.Println("up to date")
 		return nil
@@ -141,8 +69,6 @@ func Build() error {
 
 // builds docker images for LiveKit recorder and recorder service
 func Docker() error {
-	mg.Deps(Proto)
-
 	dirs := []string{"../recorder", "../"}
 	for i, imageName := range imageNames {
 		cmd := exec.Command("docker", "build", ".", "-t", fmt.Sprintf("%s:v%s", imageName, version.Version))
@@ -177,59 +103,7 @@ func PublishDocker() error {
 	return e
 }
 
-func installTools(force bool) error {
-	if _, err := getToolPath("protoc"); err != nil {
-		return fmt.Errorf("protoc is required but is not found")
-	}
-
-	tools := []string{"google.golang.org/protobuf/cmd/protoc-gen-go"}
-	for _, t := range tools {
-		if err := installTool(t, force); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func installTool(url string, force bool) error {
-	name := filepath.Base(url)
-	if !force {
-		_, err := getToolPath(name)
-		if err == nil {
-			// already installed
-			return nil
-		}
-	}
-
-	fmt.Printf("installing %s\n", name)
-	cmd := exec.Command("go", "get", "-u", url)
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	// check
-	_, err := getToolPath(name)
-	return err
-}
-
 // helpers
-
-func getToolPath(name string) (string, error) {
-	if p, err := exec.LookPath(name); err == nil {
-		return p, nil
-	}
-	// check under gopath
-	gopath := os.Getenv("GOPATH")
-	if gopath == "" {
-		gopath = build.Default.GOPATH
-	}
-	p := filepath.Join(gopath, "bin", name)
-	if _, err := os.Stat(p); err != nil {
-		return "", err
-	}
-	return p, nil
-}
 
 func connectStd(cmd *exec.Cmd) {
 	cmd.Stdout = os.Stdout

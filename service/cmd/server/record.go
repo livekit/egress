@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
@@ -13,7 +14,6 @@ import (
 	"github.com/livekit/livekit-recorder/service/pkg/config"
 	"github.com/livekit/livekit-recorder/service/pkg/logger"
 	"github.com/livekit/livekit-recorder/service/pkg/service"
-	livekit "github.com/livekit/livekit-recorder/service/proto"
 )
 
 // Acts as a livekit server against a recorder-service docker container with shared redis
@@ -34,17 +34,11 @@ func startRecording(c *cli.Context) error {
 			Input: &livekit.RecordingInput{
 				Template: &livekit.RecordingTemplate{
 					Layout: "speaker-dark",
-					WsUrl:  c.String("ws-url"),
 					Token:  c.String("token"),
 				},
 			},
 			Output: &livekit.RecordingOutput{
-				S3: &livekit.RecordingS3Output{
-					AccessKey: c.String("aws-key"),
-					Secret:    c.String("aws-secret"),
-					Bucket:    c.String("bucket"),
-					Key:       c.String("key"),
-				},
+				S3Path: c.String("s3"),
 			},
 		},
 	}

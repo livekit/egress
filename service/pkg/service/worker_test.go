@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/livekit/livekit-recorder/service/pkg/config"
 	"github.com/livekit/livekit-recorder/service/pkg/logger"
-	livekit "github.com/livekit/livekit-recorder/service/proto"
 )
 
 func TestWorker(t *testing.T) {
@@ -75,12 +75,11 @@ func submit(t *testing.T, ctx context.Context, rc *redis.Client, worker *Worker)
 			Input: &livekit.RecordingInput{
 				Template: &livekit.RecordingTemplate{
 					Layout: "speaker-light",
-					WsUrl:  "wss://testing.livekit.io",
 					Token:  "token",
 				},
 			},
 			Output: &livekit.RecordingOutput{
-				File: "recording.mp4",
+				S3Path: "bucket/recording.mp4",
 			},
 		},
 	}
@@ -110,12 +109,11 @@ func submitReserved(t *testing.T, rc *redis.Client) {
 			Input: &livekit.RecordingInput{
 				Template: &livekit.RecordingTemplate{
 					Layout: "speaker-light",
-					WsUrl:  "wss://testing.livekit.io",
 					Token:  "token",
 				},
 			},
 			Output: &livekit.RecordingOutput{
-				File: "recording.mp4",
+				S3Path: "bucket/recording.mp4",
 			},
 		},
 	}

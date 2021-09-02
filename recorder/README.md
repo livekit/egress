@@ -25,8 +25,8 @@ See [Input](#input) and [Output](#output) sections below for more details.
 All config options:
 ```yaml
 {
-    "api_key": livekit server api key - required if using template + room_name
-    "api_secret": livekit server api secret - required if using template + room_name
+    "api_key": livekit server api key - required if using template with room_name instead of token
+    "api_secret": livekit server api secret - required if using template with room_name instead of token
     "input": {
         "url": custom url of recording web page
         "template": {

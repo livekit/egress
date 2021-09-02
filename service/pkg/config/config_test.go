@@ -5,12 +5,17 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	livekit "github.com/livekit/livekit-recorder/service/proto"
+	livekit "github.com/livekit/protocol/proto"
 )
 
 func TestMerge(t *testing.T) {
 	defaults := &Config{
 		Redis: RedisConfig{},
+		WsUrl: "wss://testing.livekit.io",
+		S3: S3Config{
+			AccessKey: "s3key",
+			Secret:    "s3secret",
+		},
 		Options: &livekit.RecordingOptions{
 			InputWidth:     1920,
 			InputHeight:    1080,
@@ -28,12 +33,11 @@ func TestMerge(t *testing.T) {
 			Input: &livekit.RecordingInput{
 				Template: &livekit.RecordingTemplate{
 					Layout: "grid-dark",
-					WsUrl:  "wss://testing.livekit.io",
 					Token:  "token",
 				},
 			},
 			Output: &livekit.RecordingOutput{
-				File: "recording.mp4",
+				S3Path: "bucket/recording.mp4",
 			},
 			Options: &livekit.RecordingOptions{
 				Framerate:    60,
@@ -44,7 +48,7 @@ func TestMerge(t *testing.T) {
 
 	merged, err := Merge(defaults, req)
 	require.NoError(t, err)
-	expected := "{\"input\":{\"template\":{\"layout\":\"grid-dark\",\"ws_url\":\"wss://testing.livekit.io\",\"token\":\"token\"}},\"options\":{\"audio_bitrate\":128,\"audio_frequency\":44100,\"depth\":24,\"framerate\":60,\"input_height\":1080,\"input_width\":1920,\"video_bitrate\":6000},\"output\":{\"file\":\"recording.mp4\"}}"
+	expected := "{\"input\":{\"template\":{\"layout\":\"grid-dark\",\"ws_url\":\"wss://testing.livekit.io\",\"token\":\"token\"}},\"output\":{\"s3\":{\"bucket\":\"bucket\",\"key\":\"recording.mp4\",\"access_key\":\"s3key\",\"secret\":\"s3secret\"}},\"options\":{\"audio_bitrate\":128,\"audio_frequency\":44100,\"depth\":24,\"framerate\":60,\"input_height\":1080,\"input_width\":1920,\"video_bitrate\":6000}}"
 	require.Equal(t, expected, merged)
 
 	req = &livekit.RecordingReservation{
@@ -53,18 +57,17 @@ func TestMerge(t *testing.T) {
 			Input: &livekit.RecordingInput{
 				Template: &livekit.RecordingTemplate{
 					Layout: "grid-dark",
-					WsUrl:  "wss://testing.livekit.io",
 					Token:  "token",
 				},
 			},
 			Output: &livekit.RecordingOutput{
-				File: "recording.mp4",
+				S3Path: "bucket/recording.mp4",
 			},
 		},
 	}
 
 	merged, err = Merge(defaults, req)
 	require.NoError(t, err)
-	expected = "{\"input\":{\"template\":{\"layout\":\"grid-dark\",\"ws_url\":\"wss://testing.livekit.io\",\"token\":\"token\"}},\"options\":{\"input_width\":1920,\"input_height\":1080,\"depth\":24,\"framerate\":30,\"audio_bitrate\":128,\"audio_frequency\":44100,\"video_bitrate\":4500},\"output\":{\"file\":\"recording.mp4\"}}"
+	expected = "{\"input\":{\"template\":{\"layout\":\"grid-dark\",\"ws_url\":\"wss://testing.livekit.io\",\"token\":\"token\"}},\"output\":{\"s3\":{\"bucket\":\"bucket\",\"key\":\"recording.mp4\",\"access_key\":\"s3key\",\"secret\":\"s3secret\"}},\"options\":{\"input_width\":1920,\"input_height\":1080,\"depth\":24,\"framerate\":30,\"audio_bitrate\":128,\"audio_frequency\":44100,\"video_bitrate\":4500}}"
 	require.Equal(t, expected, merged)
 }

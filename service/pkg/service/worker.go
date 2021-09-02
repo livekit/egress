@@ -11,13 +11,13 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-recorder/service/pkg/config"
 	"github.com/livekit/livekit-recorder/service/pkg/logger"
-	livekit "github.com/livekit/livekit-recorder/service/proto"
 )
 
 type Worker struct {

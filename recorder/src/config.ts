@@ -19,7 +19,6 @@ type Config = {
             access_key?: string
             secret?: string
         }
-
     }
     options: {
         preset?: string | number
