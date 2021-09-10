@@ -8,10 +8,13 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/go-logr/zapr"
+	"github.com/livekit/protocol/logger"
 	"github.com/urfave/cli/v2"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/livekit-recorder/service/pkg/config"
-	"github.com/livekit/livekit-recorder/service/pkg/logger"
 	"github.com/livekit/livekit-recorder/service/pkg/service"
 	"github.com/livekit/livekit-recorder/service/version"
 )
@@ -101,13 +104,26 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 	return config.NewConfig(confString, c)
 }
 
+func initLogger(level string) {
+	conf := zap.NewProductionConfig()
+	if level != "" {
+		lvl := zapcore.Level(0)
+		if err := lvl.UnmarshalText([]byte(level)); err == nil {
+			conf.Level = zap.NewAtomicLevelAt(lvl)
+		}
+	}
+
+	l, _ := conf.Build()
+	logger.SetLogger(zapr.NewLogger(l), "livekit-recorder")
+}
+
 func runService(c *cli.Context) error {
 	conf, err := getConfig(c)
 	if err != nil {
 		return err
 	}
 
-	logger.Init(conf.LogLevel)
+	initLogger(conf.LogLevel)
 
 	rc, err := service.NewMessageBus(conf)
 	if err != nil {

@@ -12,12 +12,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-recorder/service/pkg/config"
-	"github.com/livekit/livekit-recorder/service/pkg/logger"
 )
 
 func TestWorker(t *testing.T) {
-	logger.Init("debug")
-
 	conf := config.TestConfig()
 	rc, err := NewMessageBus(conf)
 	require.NoError(t, err)

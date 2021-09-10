@@ -12,13 +12,12 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-recorder/service/pkg/config"
-	"github.com/livekit/livekit-recorder/service/pkg/logger"
 	"github.com/livekit/livekit-recorder/service/pkg/service"
 )
 
 // Acts as a livekit server against a recorder-service docker container with shared redis
 func startRecording(c *cli.Context) error {
-	logger.Init("debug")
+	initLogger("debug")
 
 	conf := config.TestConfig()
 	rc, err := service.NewMessageBus(conf)
@@ -69,7 +68,7 @@ func startRecording(c *cli.Context) error {
 }
 
 func stopRecording(c *cli.Context) error {
-	logger.Init("debug")
+	initLogger("debug")
 
 	conf := config.TestConfig()
 	rc, err := service.NewMessageBus(conf)

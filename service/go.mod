@@ -3,10 +3,9 @@ module github.com/livekit/livekit-recorder/service
 go 1.16
 
 require (
-	github.com/go-logr/logr v1.0.0
 	github.com/go-logr/zapr v1.0.0
 	github.com/go-redis/redis/v8 v8.11.3
-	github.com/livekit/protocol v0.8.4
+	github.com/livekit/protocol v0.8.8-0.20210910184432-4a04d5c37472
 	github.com/magefile/mage v1.11.0
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.7.0

@@ -9,13 +9,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-recorder/service/pkg/config"
-	"github.com/livekit/livekit-recorder/service/pkg/logger"
 )
 
 type Worker struct {
