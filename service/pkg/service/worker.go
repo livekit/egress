@@ -12,7 +12,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
-	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-recorder/service/pkg/config"
@@ -69,8 +68,8 @@ func (w *Worker) Start() error {
 			return nil
 		case msg := <-reservations.Channel():
 			logger.Debugw("Request received")
-			req := &livekit.RecordingReservation{}
 
+			req := &livekit.RecordingReservation{}
 			err := proto.Unmarshal(reservations.Payload(msg), req)
 			if err != nil {
 				logger.Errorw("Malformed request", err)
@@ -82,54 +81,64 @@ func (w *Worker) Start() error {
 				continue
 			}
 
-			claimed, start, stop, err := w.Claim(req)
+			claimed, err := w.bus.Lock(w.ctx, w.getKey(req.Id), lockDuration)
 			if err != nil {
 				logger.Errorw("Request failed", err, "ID", req.Id)
 				return err
 			} else if !claimed {
-				logger.Debugw("Request locked", "ID", req.Id)
+				logger.Debugw("Request already claimed", "ID", req.Id)
 				continue
 			}
+
 			w.status.Store(Reserved)
 			logger.Debugw("Request claimed", "ID", req.Id)
 
-			err = w.Run(req, start, stop)
+			res, err := w.Record(req)
+			b, _ := proto.Marshal(res)
+			_ = w.bus.Publish(w.ctx, utils.RecordingResultChannel, b)
 			if err != nil {
-				logger.Errorw("Recorder failed", err)
 				return err
 			}
 		}
 	}
 }
 
-func (w *Worker) Claim(req *livekit.RecordingReservation) (acquired bool, start, stop utils.PubSub, err error) {
-	acquired, err = w.bus.Lock(w.ctx, w.getKey(req.Id), lockDuration)
-	if !acquired || err != nil {
-		return
-	}
+func (w *Worker) Record(req *livekit.RecordingReservation) (res *livekit.RecordingResult, err error) {
+	res = &livekit.RecordingResult{Id: req.Id}
+	var startedAt time.Time
+	defer func() {
+		if err != nil {
+			logger.Errorw("Recorder failed", err)
+			res.Error = err.Error()
+		} else {
+			res.Duration = time.Since(startedAt).Milliseconds()
+		}
+	}()
 
-	start, err = w.bus.Subscribe(w.ctx, utils.StartRecordingChannel(req.Id))
+	start, err := w.bus.Subscribe(w.ctx, utils.StartRecordingChannel(req.Id))
 	if err != nil {
 		return
 	}
-	stop, err = w.bus.Subscribe(w.ctx, utils.EndRecordingChannel(req.Id))
+	defer start.Close()
+
+	stop, err := w.bus.Subscribe(w.ctx, utils.EndRecordingChannel(req.Id))
 	if err != nil {
 		return
 	}
-	err = w.bus.Publish(w.ctx, utils.ReservationResponseChannel(req.Id), nil)
-	return
-}
-
-func (w *Worker) Run(req *livekit.RecordingReservation, start, stop utils.PubSub) error {
-	<-start.Channel()
-	start.Close()
 	defer stop.Close()
 
+	err = w.bus.Publish(w.ctx, utils.ReservationResponseChannel(req.Id), nil)
+	if err != nil {
+		return
+	}
+
+	// send recording started message
+	<-start.Channel()
 	w.status.Store(Recording)
 
 	conf, err := config.Merge(w.defaults, req)
 	if err != nil {
-		return errors.Wrap(err, "failed to build recorder config")
+		return
 	}
 
 	// Launch node recorder
@@ -146,40 +155,28 @@ func (w *Worker) Run(req *livekit.RecordingReservation, start, stop utils.PubSub
 
 	err = cmd.Start()
 	if err != nil {
-		return errors.Wrap(err, "failed to launch recorder")
+		return
 	}
+	startedAt = time.Now()
 	logger.Infow("Recording started", "ID", req.Id)
 
-	done := make(chan struct{}, 1)
+	done := make(chan error, 1)
 	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			case <-stop.Channel():
-				logger.Infow("Recording stopped by livekit server", "ID", req.Id)
-				if err = cmd.Process.Signal(syscall.SIGTERM); err != nil {
-					logger.Errorw("Failed to interrupt recording", err, "ID", req.Id)
-				}
-			case <-w.kill:
-				logger.Infow("Recording stopped by recording service interrupt", "ID", req.Id)
-				if err = cmd.Process.Signal(syscall.SIGTERM); err != nil {
-					logger.Errorw("Failed to interrupt recording", err, "ID", req.Id)
-				}
-			}
-		}
+		done <- cmd.Wait()
 	}()
 
-	err = cmd.Wait()
-	done <- struct{}{}
-	if err != nil && !w.mock {
-		logger.Errorw("Recording failed", err, "ID", req.Id)
-		return err
-	} else {
-		logger.Infow("Recording finished", "ID", req.Id)
+	select {
+	case err = <-done:
+		break
+	case <-stop.Channel():
+		logger.Infow("Recording stopped by livekit server", "ID", req.Id)
+		err = cmd.Process.Signal(syscall.SIGTERM)
+	case <-w.kill:
+		logger.Infow("Recording stopped by recording service interrupt", "ID", req.Id)
+		err = cmd.Process.Signal(syscall.SIGTERM)
 	}
 
-	return nil
+	return
 }
 
 func (w *Worker) Status() Status {

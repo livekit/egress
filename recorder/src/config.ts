@@ -1,3 +1,7 @@
+import {AccessToken} from "livekit-server-sdk";
+import {S3} from "aws-sdk";
+import {readFileSync} from "fs";
+
 type Config = {
     api_key?: string
     api_secret?: string
@@ -96,4 +100,67 @@ export function loadConfig(): Config {
     }
 
     return conf
+}
+
+export function getUrl(conf: Config): string {
+    const template = conf.input.template
+    if (template) {
+        let token: string
+        if (template.token) {
+            token = template.token
+        } else if (template.room_name && conf.api_key && conf.api_secret) {
+            token = buildRecorderToken(template.room_name, conf.api_key, conf.api_secret)
+        } else {
+            throw Error('Either token, or room name, api key, and secret required')
+        }
+        return `https://recorder.livekit.io/#/${template.layout}?url=${encodeURIComponent(template.ws_url)}&token=${token}`
+    } else if (conf.input.url) {
+        return conf.input.url
+    }
+
+    throw Error('Input url or template required')
+}
+
+export function upload(conf: Config): void {
+    if (!conf.output.s3) {
+        return
+    }
+    if (!conf.output.file) {
+        throw Error("output missing")
+    }
+
+    let s3: S3
+    if (conf.output.s3.access_key && conf.output.s3.secret) {
+        s3 = new S3({accessKeyId: conf.output.s3.access_key, secretAccessKey: conf.output.s3.secret})
+    } else {
+        s3 = new S3()
+    }
+
+    const params = {
+        Bucket: conf.output.s3.bucket,
+        Key: conf.output.s3.key,
+        Body: readFileSync(conf.output.file)
+    }
+
+    s3.upload(params, undefined,function(err, data) {
+        if (err) {
+            console.log(err)
+        } else {
+            console.log(`file uploaded to ${data.Location}`)
+        }
+    })
+}
+
+function buildRecorderToken(room: string, key: string, secret: string): string {
+    const at = new AccessToken(key, secret, {
+        identity: 'recorder-'+(Math.random()+1).toString(36).substring(2),
+    })
+    at.addGrant({
+        roomJoin: true,
+        room: room,
+        canPublish: false,
+        canSubscribe: true,
+        hidden: true,
+    })
+    return at.toJwt()
 }

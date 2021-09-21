@@ -40,53 +40,7 @@ func main() {
 				EnvVars: []string{"REDIS_HOST"},
 			},
 		},
-		Action: runService,
-		Commands: []*cli.Command{
-			{
-				Name:   "start-recording",
-				Usage:  "Starts a recording",
-				Action: startRecording,
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:     "ws-url",
-						Usage:    "name of room to join",
-						Required: true,
-					},
-					&cli.StringFlag{
-						Name:     "token",
-						Usage:    "Recorder room token",
-						Required: true,
-					},
-					&cli.StringFlag{
-						Name:     "aws-key",
-						Usage:    "AWS access key",
-						Required: false,
-					},
-					&cli.StringFlag{
-						Name:     "aws-secret",
-						Usage:    "AWS access secret",
-						Required: false,
-					},
-					&cli.StringFlag{
-						Name:     "s3",
-						Usage:    "s3 path (\"<bucket>/<key>\")",
-						Required: false,
-					},
-				},
-			},
-			{
-				Name:   "stop-recording",
-				Usage:  "Stops a recording",
-				Action: stopRecording,
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:     "id",
-						Usage:    "Recording ID",
-						Required: true,
-					},
-				},
-			},
-		},
+		Action:  runService,
 		Version: version.Version,
 	}
 
