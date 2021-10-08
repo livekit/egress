@@ -232,4 +232,4 @@ Once started, there are a number of ways to end the recording:
 * if using our templates, the recorder will stop automatically when the last participant leaves
 * if using your own webpage, logging `END_RECORDING` to the console
 
-With any of these methods, the recorder will stop ffmpeg and finish uploading before shutting down.
+With any of these methods, the recorder will stop gstreamer and finish uploading before shutting down.
