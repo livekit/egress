@@ -1,50 +1,48 @@
-FROM golang:1.16-alpine as builder
+FROM restreamio/gstreamer:1.18.5.0-dev as builder
 
 WORKDIR /workspace
 
+RUN apt-get update && apt-get install -y golang
+
 # Copy the Go Modules manifests
-COPY service/go.mod go.mod
-COPY service/go.sum go.sum
+COPY go.mod .
+COPY go.sum .
 # cache deps before building and copying source so that we don't need to re-download as much
 # and so that source changes don't invalidate our downloaded layer
 RUN go mod download
 
 # Copy the go source
-COPY service/cmd/ cmd/
-COPY service/pkg/ pkg/
-COPY service/version/ version/
+COPY cmd/ cmd/
+COPY pkg/ pkg/
+COPY version/ version/
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o livekit-recorder-service ./cmd/server
+WORKDIR /workspace
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o livekit-recorder ./cmd/server
 
-FROM buildkite/puppeteer:latest
+FROM restreamio/gstreamer:1.18.5.0-dev
 
-COPY --from=builder /workspace/livekit-recorder-service /livekit-recorder-service
+COPY --from=builder /workspace/livekit-recorder /livekit-recorder
 
-# Install pulse audio
-RUN apt-get -qq update && apt-get install -y pulseaudio
+# install deps
+RUN apt-get update && \
+    apt-get install -y curl unzip wget gnupg xvfb pulseaudio gstreamer1.0-pulseaudio
+
+# install chrome
+RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
+    apt-get install -y ./google-chrome-stable_current_amd64.deb
+
+# install chromedriver
+RUN wget -N http://chromedriver.storage.googleapis.com/2.46/chromedriver_linux64.zip && \
+    unzip chromedriver_linux64.zip && \
+    chmod +x chromedriver && \
+    mv -f chromedriver /usr/local/bin/chromedriver
 
 # Add root user to group for pulseaudio access
 RUN adduser root pulse-access
 
-# xvfb
-RUN apt-get install -y xvfb
+# create xdg_runtime_dir
+RUN mkdir -pv ~/.cache/xdgr
 
-# ffmpeg
-RUN apt-get install -y ffmpeg
-
-# node
-RUN apt-get install -y nodejs
-
-# Copy recorder
-WORKDIR /app
-COPY recorder/package.json recorder/package-lock.json recorder/tsconfig.json ./
-COPY recorder/src ./src
-RUN npm install
-
-# Silence error about livekit-server-sdk protos
-RUN npx tsc src/*.ts; exit 0
-
-# Run the service
-WORKDIR /
+# run
 COPY entrypoint.sh .
 ENTRYPOINT ["./entrypoint.sh"]

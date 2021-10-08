@@ -6,7 +6,6 @@ on:
       - '*'
     paths-ignore:
       - web
-      - recorder
   pull_request:
     types:
       - opened
@@ -17,9 +16,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./service
     steps:
       - uses: actions/checkout@v2
 
@@ -30,13 +26,12 @@ jobs:
             ~/go/bin
             ~/bin/protoc
             ~/.cache
-          key: livekit-recorder-service
+          key: livekit-recorder
 
       - uses: shogo82148/actions-setup-redis@v1.10.3
         with:
           redis-version: '6.x'
           auto-start: true
-      - run: redis-cli ping
 
       - name: Set up Go
         uses: actions/setup-go@v2
@@ -46,25 +41,5 @@ jobs:
       - name: Download Go modules
         run: go mod download
 
-      - name: Download protoc
-        run: |
-          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v3.15.8/protoc-3.15.8-linux-x86_64.zip
-          sudo unzip protoc-3.15.8-linux-x86_64.zip -d /usr
-          sudo chmod 755 /usr/bin/protoc
-
-      - name: Install protobuf generators
-        run: go install google.golang.org/protobuf/cmd/protoc-gen-go
-
-      - name: Mage Build
-        uses: magefile/mage-action@v1
-        with:
-          version: latest
-          args: build
-          workdir: ./service
-
-      - name: Mage Test
-        uses: magefile/mage-action@v1
-        with:
-          version: latest
-          args: test
-          workdir: ./service
+      - name: Go test
+        run: go test -tags=test ./...

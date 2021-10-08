@@ -20,8 +20,8 @@ jobs:
             ~/go/bin
             ~/bin/protoc
             ~/.cache
-          key: ${{ runner.os }}-recorder-service-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-recorder-service
+          key: ${{ runner.os }}-recorder-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-recorder
 
       - uses: actions/cache@v2
         with:
@@ -29,8 +29,8 @@ jobs:
           key: ${{ runner.os }}-recorder-modules-${{ hashFiles('**/package-lock.json') }}
           restore-keys: ${{ runner.os }}-recorder-modules
 
-      - name: Recorder docker meta
-        id: recorder-meta
+      - name: Docker metadata
+        id: docker-md
         uses: docker/metadata-action@v3
         with:
           images: livekit/livekit-recorder
@@ -39,25 +39,6 @@ jobs:
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
 
-      - name: Service docker meta
-        id: service-meta
-        uses: docker/metadata-action@v3
-        with:
-          images: livekit/livekit-recorder-service
-          # generate Docker tags based on the following events/attributes
-          tags: |
-            type=semver,pattern=v{{version}}
-            type=semver,pattern=v{{major}}.{{minor}}
-
-      - name: Set up Node
-        uses: actions/setup-node@v2
-        with:
-          node-version: '16.x'
-
-      - name: Download node modules
-        run: npm install
-        working-directory: ./recorder
-
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
@@ -65,7 +46,6 @@ jobs:
 
       - name: Download Go modules
         run: go mod download
-        working-directory: ./service
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
@@ -76,20 +56,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push recorder
-        uses: docker/build-push-action@v2
-        with:
-          context: ./recorder
-          push: true
-          platforms: linux/amd64
-          tags: ${{ steps.recorder-meta.outputs.tags }}
-          labels: ${{ steps.recorder-meta.outputs.labels }}
-
-      - name: Build and push service
+      - name: Build and push
         uses: docker/build-push-action@v2
         with:
           context: .
           push: true
           platforms: linux/amd64
-          tags: ${{ steps.service-meta.outputs.tags }}
-          labels: ${{ steps.service-meta.outputs.labels }}
+          tags: ${{ steps.docker-md.outputs.tags }}
+          labels: ${{ steps.docker-md.outputs.labels }}
