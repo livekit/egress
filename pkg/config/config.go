@@ -38,7 +38,7 @@ type S3Config struct {
 func NewConfig(confString string) (*Config, error) {
 	// start with defaults
 	conf := &Config{
-		LogLevel: "debug",
+		LogLevel: "info",
 		Defaults: &livekit.RecordingOptions{
 			Width:          1920,
 			Height:         1080,
@@ -69,9 +69,7 @@ func NewConfig(confString string) (*Config, error) {
 	switch conf.LogLevel {
 	case "debug":
 		gstDebug = 3
-	case "info", "warn":
-		gstDebug = 2
-	case "error":
+	case "info", "warn", "error":
 		gstDebug = 1
 	case "panic":
 		gstDebug = 0

@@ -50,7 +50,7 @@ func NewService(conf *config.Config, bus utils.MessageBus) *Service {
 func (s *Service) Run() error {
 	// TODO: catch panics
 
-	logger.Debugw("Starting service")
+	logger.Debugw("starting service")
 
 	reservations, err := s.bus.SubscribeQueue(context.Background(), recording.ReservationChannel)
 	if err != nil {
@@ -60,29 +60,29 @@ func (s *Service) Run() error {
 
 	for {
 		s.status.Store(Available)
-		logger.Debugw("Recorder waiting")
+		logger.Debugw("recorder waiting")
 
 		select {
 		case <-s.shutdown:
-			logger.Debugw("Shutting down")
+			logger.Infow("shutting down")
 			return nil
 		case msg := <-reservations.Channel():
-			logger.Debugw("Request received")
+			logger.Debugw("request received")
 
 			req := &livekit.RecordingReservation{}
 			err := proto.Unmarshal(reservations.Payload(msg), req)
 			if err != nil {
-				logger.Errorw("Malformed request", err)
+				logger.Errorw("malformed request", err)
 				continue
 			}
 
 			if req.SubmittedAt < time.Now().Add(-recording.ReservationTimeout).UnixNano()/1e6 {
-				logger.Debugw("Discarding old request", "ID", req.Id)
+				logger.Debugw("discarding old request", "ID", req.Id)
 				continue
 			}
 
 			s.status.Store(Reserved)
-			logger.Debugw("Request claimed", "ID", req.Id)
+			logger.Debugw("request claimed", "ID", req.Id)
 
 			// handleRecording blocks until recording is finished
 			s.recordingId = req.Id

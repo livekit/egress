@@ -19,7 +19,7 @@ COPY version/ version/
 WORKDIR /workspace
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o livekit-recorder ./cmd/server
 
-FROM restreamio/gstreamer:1.18.5.0-dev
+FROM restreamio/gstreamer:1.18.5.0-prod
 
 COPY --from=builder /workspace/livekit-recorder /livekit-recorder
 

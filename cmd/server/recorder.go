@@ -34,7 +34,7 @@ func runRecorder(c *cli.Context) error {
 	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	go func() {
 		sig := <-stopChan
-		logger.Infow("Exit requested, stopping recording and shutting down", "signal", sig)
+		logger.Infow("exit requested, stopping recording and shutting down", "signal", sig)
 		rec.Stop()
 	}()
 

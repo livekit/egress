@@ -26,7 +26,7 @@ func (s *Service) handleRecording() {
 	}
 
 	// listen for rpcs
-	logger.Debugw("Waiting for requests", "recordingId", s.recordingId)
+	logger.Debugw("waiting for requests", "recordingId", s.recordingId)
 	result := make(chan *livekit.RecordingResult, 1)
 	for {
 		select {
@@ -41,9 +41,9 @@ func (s *Service) handleRecording() {
 			LogResult(res)
 			b, err := proto.Marshal(res)
 			if err != nil {
-				logger.Errorw("Failed to marshal results", err)
+				logger.Errorw("failed to marshal results", err)
 			} else if err = s.bus.Publish(s.ctx, recording.ResultChannel, b); err != nil {
-				logger.Errorw("Failed to write results", err)
+				logger.Errorw("failed to write results", err)
 			}
 
 			// clean up
@@ -54,7 +54,7 @@ func (s *Service) handleRecording() {
 			req := &livekit.RecordingRequest{}
 			err = proto.Unmarshal(requests.Payload(msg), req)
 			if err != nil {
-				logger.Errorw("Failed to read request", err, "recordingId", s.recordingId)
+				logger.Errorw("failed to read request", err, "recordingId", s.recordingId)
 				continue
 			}
 
@@ -110,11 +110,11 @@ func (s *Service) handleRequest(req *livekit.RecordingRequest, result chan *live
 }
 
 func (s *Service) handleResponse(recordingId, requestId string, err error) error {
-	logger.Debugw("Sending response", "recordingId", recordingId, "requestId", requestId)
+	logger.Debugw("sending response", "recordingId", recordingId, "requestId", requestId)
 
 	var message string
 	if err != nil {
-		logger.Errorw("Error handling request", err,
+		logger.Errorw("error handling request", err,
 			"recordingId", recordingId, "requestId", requestId)
 		message = err.Error()
 	}
@@ -132,9 +132,9 @@ func (s *Service) handleResponse(recordingId, requestId string, err error) error
 
 func LogResult(res *livekit.RecordingResult) {
 	if res.Error != "" {
-		logger.Errorw("recording failed", errors.New(res.Error))
+		logger.Errorw("recording failed", errors.New(res.Error), "recordingId", res.Id)
 	} else {
-		values := []interface{}{"duration", time.Duration(res.Duration * 1e9)}
+		values := []interface{}{"recordingId", res.Id, "duration", time.Duration(res.Duration * 1e9)}
 		if res.DownloadUrl != "" {
 			values = append(values, "url", res.DownloadUrl)
 		}

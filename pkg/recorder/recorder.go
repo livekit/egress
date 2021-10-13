@@ -1,7 +1,6 @@
 package recorder
 
 import (
-	"errors"
 	"time"
 
 	"github.com/livekit/protocol/logger"
@@ -79,17 +78,17 @@ func (r *Recorder) getPipeline(req *livekit.StartRecordingRequest) (*pipeline.Pi
 }
 
 func (r *Recorder) AddOutput(url string) error {
-	logger.Debugw("Add Output", "url", url)
+	logger.Debugw("add output", "url", url)
 	if r.pipeline == nil {
-		return errors.New("missing pipeline")
+		return pipeline.ErrPipelineNotFound
 	}
 	return r.pipeline.AddOutput(url)
 }
 
 func (r *Recorder) RemoveOutput(url string) error {
-	logger.Debugw("Remove Output", "url", url)
+	logger.Debugw("remove output", "url", url)
 	if r.pipeline == nil {
-		return errors.New("missing pipeline")
+		return pipeline.ErrPipelineNotFound
 	}
 	return r.pipeline.RemoveOutput(url)
 }

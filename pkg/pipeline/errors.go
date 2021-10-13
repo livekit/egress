@@ -12,6 +12,7 @@ import (
 )
 
 var (
+	ErrPipelineNotFound     = errors.New("pipeline not initialized")
 	ErrCannotAddToFile      = errors.New("cannot add rtmp output to file recording")
 	ErrCannotRemoveFromFile = errors.New("cannot remove rtmp output from file recording")
 	ErrGhostPadFailed       = errors.New("failed to add ghost pad to bin")
@@ -29,8 +30,6 @@ func (p *Pipeline) handleError(gErr *gst.GError) bool {
 	element, reason, ok := parseDebugInfo(gErr.DebugString())
 	if !ok {
 		logger.Errorw("failed to parse pipeline error", errors.New(gErr.Error()),
-			"code", gErr.Code(),
-			"message", gErr.Message(),
 			"debug", gErr.DebugString(),
 		)
 		return false
@@ -58,9 +57,7 @@ func (p *Pipeline) handleError(gErr *gst.GError) bool {
 		return false
 	default:
 		// input failure or file write failure. Fatal
-		logger.Errorw("unrecognized pipeline error", errors.New(gErr.Error()),
-			"code", gErr.Code(),
-			"message", gErr.Message(),
+		logger.Errorw("pipeline error", errors.New(gErr.Error()),
 			"debug", gErr.DebugString(),
 		)
 		return false

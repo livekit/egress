@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
-// TODO: multi-part uploads
+// TODO: write to persistent volume, use separate upload process
 func (r *Recorder) upload(s3Url string) error {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(

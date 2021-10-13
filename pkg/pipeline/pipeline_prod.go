@@ -81,8 +81,6 @@ func newPipeline(input *InputBin, output *OutputBin) (*Pipeline, error) {
 		return nil, err
 	}
 
-	// TODO: output bin error handling
-
 	return &Pipeline{
 		pipeline: pipeline,
 		output:   output,
@@ -95,9 +93,9 @@ func (p *Pipeline) Start() error {
 	p.pipeline.GetPipelineBus().AddWatch(func(msg *gst.Message) bool {
 		switch msg.Type() {
 		case gst.MessageEOS:
-			logger.Infow("EOS received")
+			logger.Debugw("EOS received")
 			_ = p.pipeline.BlockSetState(gst.StateNull)
-			logger.Infow("pipeline stopped")
+			logger.Debugw("pipeline stopped")
 			loop.Quit()
 			return false
 		case gst.MessageError:
@@ -109,7 +107,7 @@ func (p *Pipeline) Start() error {
 			}
 			logger.Debugw("handled error", "error", gErr.Error())
 		default:
-			logger.Infow(msg.String())
+			logger.Debugw(msg.String())
 		}
 		return true
 	})
@@ -134,7 +132,7 @@ func (p *Pipeline) RemoveOutput(url string) error {
 }
 
 func (p *Pipeline) Close() {
-	logger.Debugw("Sending EOS to pipeline")
+	logger.Debugw("sending EOS to pipeline")
 	p.pipeline.SendEvent(gst.NewEOSEvent())
 }
 
