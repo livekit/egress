@@ -2,7 +2,6 @@ package recorder
 
 import (
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/livekit/protocol/logger"
@@ -28,42 +27,6 @@ func NewRecorder(conf *config.Config) *Recorder {
 	return &Recorder{
 		conf: conf,
 	}
-}
-
-func (r *Recorder) Validate(req *livekit.StartRecordingRequest) error {
-	r.conf.ApplyDefaults(req)
-
-	// validate input
-	url, err := r.getInputUrl(req)
-	if err != nil {
-		return err
-	}
-
-	// validate output
-	switch req.Output.(type) {
-	case *livekit.StartRecordingRequest_S3Url:
-		s3 := req.Output.(*livekit.StartRecordingRequest_S3Url).S3Url
-		idx := strings.LastIndex(s3, "/")
-		if idx < 6 ||
-			!strings.HasPrefix(s3, "s3://") ||
-			!strings.HasSuffix(s3, ".mp4") {
-			return errors.New("s3 output must be s3://bucket/{path/}filename.mp4")
-		}
-		r.filename = s3[idx+1:]
-	case *livekit.StartRecordingRequest_Rtmp:
-	case *livekit.StartRecordingRequest_File:
-		filename := req.Output.(*livekit.StartRecordingRequest_File).File
-		if !strings.HasSuffix(filename, ".mp4") {
-			return errors.New("file output must be {path/}filename.mp4")
-		}
-		r.filename = filename
-	default:
-		return errors.New("missing output")
-	}
-
-	r.req = req
-	r.url = url
-	return nil
 }
 
 // Run blocks until completion
@@ -112,7 +75,7 @@ func (r *Recorder) getPipeline(req *livekit.StartRecordingRequest) (*pipeline.Pi
 	case *livekit.StartRecordingRequest_S3Url, *livekit.StartRecordingRequest_File:
 		return pipeline.NewFilePipeline(r.filename, req.Options)
 	}
-	return nil, errors.New("output missing")
+	return nil, ErrNoOutput
 }
 
 func (r *Recorder) AddOutput(url string) error {

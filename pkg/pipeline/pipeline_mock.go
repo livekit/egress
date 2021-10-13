@@ -3,6 +3,7 @@
 package pipeline
 
 import (
+	"errors"
 	"time"
 
 	livekit "github.com/livekit/protocol/proto"
@@ -37,14 +38,14 @@ func (p *Pipeline) Start() error {
 
 func (p *Pipeline) AddOutput(url string) error {
 	if !p.isStream {
-		return ErrCannotAddToFile
+		return errors.New("cannot add rtmp output to file recording")
 	}
 	return nil
 }
 
 func (p *Pipeline) RemoveOutput(url string) error {
 	if !p.isStream {
-		return ErrCannotRemoveFromFile
+		return errors.New("cannot remove rtmp output from file recording")
 	}
 	return nil
 }

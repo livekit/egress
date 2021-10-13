@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 
 	"github.com/livekit/livekit-recorder/pkg/config"
 	"github.com/livekit/livekit-recorder/pkg/messaging"
-	"github.com/livekit/livekit-recorder/pkg/pipeline"
 )
 
 func TestService(t *testing.T) {
@@ -52,7 +52,7 @@ func TestService(t *testing.T) {
 	})
 
 	t.Run("RPC validation", func(t *testing.T) {
-		require.Equal(t, pipeline.ErrCannotAddToFile,
+		require.Equal(t, errors.New("cannot add rtmp output to file recording"),
 			recording.RPC(context.Background(), bus, id1, &livekit.RecordingRequest{
 				RequestId: utils.RandomSecret(),
 				Request: &livekit.RecordingRequest_AddOutput{

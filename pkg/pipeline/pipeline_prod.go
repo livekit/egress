@@ -17,6 +17,7 @@ var initialized = false
 type Pipeline struct {
 	pipeline *gst.Pipeline
 	output   *OutputBin
+	removed  map[string]bool
 }
 
 func NewRtmpPipeline(urls []string, options *livekit.RecordingOptions) (*Pipeline, error) {
@@ -85,6 +86,7 @@ func newPipeline(input *InputBin, output *OutputBin) (*Pipeline, error) {
 	return &Pipeline{
 		pipeline: pipeline,
 		output:   output,
+		removed:  make(map[string]bool),
 	}, nil
 }
 
@@ -97,12 +99,17 @@ func (p *Pipeline) Start() error {
 			_ = p.pipeline.BlockSetState(gst.StateNull)
 			logger.Infow("pipeline stopped")
 			loop.Quit()
+			return false
 		case gst.MessageError:
 			gErr := msg.ParseError()
-			logger.Errorw("message error", gErr, "debug", gErr.DebugString())
-			loop.Quit()
+			handled := p.handleError(gErr)
+			if !handled {
+				loop.Quit()
+				return false
+			}
+			logger.Debugw("handled error", "error", gErr.Error())
 		default:
-			fmt.Println(msg)
+			logger.Infow(msg.String())
 		}
 		return true
 	})

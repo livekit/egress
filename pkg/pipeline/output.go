@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 	"github.com/tinyzimmer/go-gst/gst"
 )
 
@@ -17,10 +18,14 @@ type OutputBin struct {
 	fileSink *gst.Element
 
 	// rtmp only
-	tee       *gst.Element
-	urls      map[string]int
-	queues    []*gst.Element
-	rtmpSinks []*gst.Element
+	tee  *gst.Element
+	rtmp map[string]*RtmpOut
+}
+
+type RtmpOut struct {
+	pad   string
+	queue *gst.Element
+	sink  *gst.Element
 }
 
 func newFileOutputBin(filename string) (*OutputBin, error) {
@@ -67,36 +72,18 @@ func newRtmpOutputBin(urls []string) (*OutputBin, error) {
 		return nil, err
 	}
 
-	indexes := make(map[string]int)
-	queues := make([]*gst.Element, len(urls))
-	sinks := make([]*gst.Element, len(urls))
-	for i, url := range urls {
-		indexes[url] = i
-
-		queues[i], err = gst.NewElement("queue")
+	rtmpOut := make(map[string]*RtmpOut)
+	for _, url := range urls {
+		rtmp, err := createRtmpOut(url)
 		if err != nil {
 			return nil, err
 		}
 
-		sink, err := gst.NewElement("rtmpsink")
-		if err != nil {
+		if err = bin.AddMany(rtmp.queue, rtmp.sink); err != nil {
 			return nil, err
 		}
-		if err = sink.SetProperty("sync", false); err != nil {
-			return nil, err
-		}
-		if err = sink.Set("location", url); err != nil {
-			return nil, err
-		}
-		sinks[i] = sink
-	}
 
-	// create bin
-	if err = bin.AddMany(queues...); err != nil {
-		return nil, err
-	}
-	if err = bin.AddMany(sinks...); err != nil {
-		return nil, err
+		rtmpOut[url] = rtmp
 	}
 
 	// add ghost pad
@@ -106,12 +93,36 @@ func newRtmpOutputBin(urls []string) (*OutputBin, error) {
 	}
 
 	return &OutputBin{
-		isStream:  true,
-		bin:       bin,
-		tee:       tee,
-		urls:      indexes,
-		queues:    queues,
-		rtmpSinks: sinks,
+		isStream: true,
+		bin:      bin,
+		tee:      tee,
+		rtmp:     rtmpOut,
+	}, nil
+}
+
+func createRtmpOut(url string) (*RtmpOut, error) {
+	id := utils.NewGuid("")
+
+	queue, err := gst.NewElementWithName("queue", fmt.Sprintf("queue_%s", id))
+	if err != nil {
+		return nil, err
+	}
+	queue.SetArg("leaky", "downstream")
+
+	sink, err := gst.NewElementWithName("rtmpsink", fmt.Sprintf("sink_%s", id))
+	if err != nil {
+		return nil, err
+	}
+	if err = sink.SetProperty("sync", false); err != nil {
+		return nil, err
+	}
+	if err = sink.Set("location", url); err != nil {
+		return nil, err
+	}
+
+	return &RtmpOut{
+		queue: queue,
+		sink:  sink,
 	}, nil
 }
 
@@ -120,16 +131,17 @@ func (b *OutputBin) Link() error {
 		return nil
 	}
 
-	for i, q := range b.queues {
+	for _, rtmp := range b.rtmp {
 		// link queue to rtmp sink
-		if err := q.Link(b.rtmpSinks[i]); err != nil {
+		if err := rtmp.queue.Link(rtmp.sink); err != nil {
 			return err
 		}
 
+		pad := b.tee.GetRequestPad("src_%u")
+		rtmp.pad = pad.GetName()
+
 		// link tee to queue
-		if err := requireLink(
-			b.tee.GetRequestPad(fmt.Sprintf("src_%d", i)),
-			q.GetStaticPad("sink")); err != nil {
+		if err := requireLink(pad, rtmp.queue.GetStaticPad("sink")); err != nil {
 			return err
 		}
 	}
@@ -142,67 +154,43 @@ func (b *OutputBin) AddRtmpSink(url string) error {
 		return ErrCannotAddToFile
 	}
 
-	if _, ok := b.urls[url]; ok {
+	if _, ok := b.rtmp[url]; ok {
 		return ErrOutputAlreadyExists
 	}
 
-	idx := -1
-	for i, q := range b.queues {
-		if q == nil {
-			idx = i
-			break
-		}
-	}
-
-	queue, err := gst.NewElement("queue")
+	rtmp, err := createRtmpOut(url)
 	if err != nil {
-		return err
-	}
-	sink, err := gst.NewElement("rtmpsink")
-	if err != nil {
-		return err
-	}
-	if err = sink.SetProperty("sync", false); err != nil {
-		return err
-	}
-	if err = sink.Set("location", url); err != nil {
 		return err
 	}
 
 	// add to bin
-	if err = b.bin.AddMany(queue, sink); err != nil {
+	if err = b.bin.AddMany(rtmp.queue, rtmp.sink); err != nil {
 		return err
 	}
-
-	if idx == -1 {
-		idx = len(b.urls)
-		b.queues = append(b.queues, queue)
-		b.rtmpSinks = append(b.rtmpSinks, sink)
-	} else {
-		b.queues[idx] = queue
-		b.rtmpSinks[idx] = sink
-	}
-	b.urls[url] = idx
 
 	// link queue to sink
-	if err = queue.Link(sink); err != nil {
+	if err = rtmp.queue.Link(rtmp.sink); err != nil {
+		_ = b.bin.RemoveMany(rtmp.queue, rtmp.sink)
 		return err
 	}
 
-	teeSrcPad := b.tee.GetRequestPad(fmt.Sprintf("src_%d", idx))
+	teeSrcPad := b.tee.GetRequestPad("src_%u")
+	rtmp.pad = teeSrcPad.GetName()
+
 	teeSrcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		// link tee to queue
-		if err = requireLink(pad, queue.GetStaticPad("sink")); err != nil {
+		if err = requireLink(pad, rtmp.queue.GetStaticPad("sink")); err != nil {
 			logger.Errorw("failed to link tee to queue", err)
 		}
 
 		// sync state
-		queue.SyncStateWithParent()
-		sink.SyncStateWithParent()
+		rtmp.queue.SyncStateWithParent()
+		rtmp.sink.SyncStateWithParent()
 
 		return gst.PadProbeRemove
 	})
 
+	b.rtmp[url] = rtmp
 	return nil
 }
 
@@ -211,32 +199,30 @@ func (b *OutputBin) RemoveRtmpSink(url string) error {
 		return ErrCannotRemoveFromFile
 	}
 
-	idx, ok := b.urls[url]
+	rtmp, ok := b.rtmp[url]
 	if !ok {
 		return ErrOutputNotFound
 	}
 
-	queue := b.queues[idx]
-	sink := b.rtmpSinks[idx]
-	srcPad := b.tee.GetStaticPad(fmt.Sprintf("src_%d", idx))
+	srcPad := b.tee.GetStaticPad(rtmp.pad)
 	srcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		// remove probe
 		pad.RemoveProbe(uint64(info.ID()))
 
 		// unlink queue
-		pad.Unlink(queue.GetStaticPad("sink"))
+		pad.Unlink(rtmp.queue.GetStaticPad("sink"))
 
 		// send EOS to queue
-		queue.GetStaticPad("sink").SendEvent(gst.NewEOSEvent())
+		rtmp.queue.GetStaticPad("sink").SendEvent(gst.NewEOSEvent())
 
 		// remove from bin
-		if err := b.bin.RemoveMany(queue, sink); err != nil {
+		if err := b.bin.RemoveMany(rtmp.queue, rtmp.sink); err != nil {
 			logger.Errorw("failed to remove rtmp queue", err)
 		}
-		if err := queue.SetState(gst.StateNull); err != nil {
+		if err := rtmp.queue.SetState(gst.StateNull); err != nil {
 			logger.Errorw("failed stop rtmp queue", err)
 		}
-		if err := sink.SetState(gst.StateNull); err != nil {
+		if err := rtmp.sink.SetState(gst.StateNull); err != nil {
 			logger.Errorw("failed to stop rtmp sink", err)
 		}
 
@@ -246,8 +232,20 @@ func (b *OutputBin) RemoveRtmpSink(url string) error {
 		return gst.PadProbeOK
 	})
 
-	delete(b.urls, url)
-	b.queues[idx] = nil
-	b.rtmpSinks[idx] = nil
+	delete(b.rtmp, url)
 	return nil
+}
+
+func (b *OutputBin) RemoveSinkByName(name string) error {
+	if !b.isStream {
+		return ErrCannotRemoveFromFile
+	}
+
+	for url, rtmp := range b.rtmp {
+		if rtmp.queue.GetName() == name || rtmp.sink.GetName() == name {
+			return b.RemoveRtmpSink(url)
+		}
+	}
+
+	return ErrOutputNotFound
 }
