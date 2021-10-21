@@ -39,10 +39,7 @@ func (s *Service) handleRecording() {
 		case res := <-result:
 			// recording stopped, send results to result channel
 			LogResult(res)
-			b, err := proto.Marshal(res)
-			if err != nil {
-				logger.Errorw("failed to marshal results", err)
-			} else if err = s.bus.Publish(s.ctx, recording.ResultChannel, b); err != nil {
+			if err = s.bus.Publish(s.ctx, recording.ResultChannel, res); err != nil {
 				logger.Errorw("failed to write results", err)
 			}
 
@@ -119,15 +116,10 @@ func (s *Service) handleResponse(recordingId, requestId string, err error) error
 		message = err.Error()
 	}
 
-	b, err := proto.Marshal(&livekit.RecordingResponse{
+	return s.bus.Publish(s.ctx, recording.ResponseChannel(recordingId), &livekit.RecordingResponse{
 		RequestId: requestId,
 		Error:     message,
 	})
-	if err != nil {
-		return err
-	}
-
-	return s.bus.Publish(s.ctx, recording.ResponseChannel(recordingId), b)
 }
 
 func LogResult(res *livekit.RecordingResult) {
