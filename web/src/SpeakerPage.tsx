@@ -41,7 +41,7 @@ const renderStage: React.FC<StageProps> = ({ roomState }: StageProps) => {
   } = roomState;
 
   if (error) {
-    return <div className="error">{error}</div>;
+    return <div className="error">{error.message}</div>;
   }
 
   if (!room) {
