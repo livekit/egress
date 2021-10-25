@@ -25,7 +25,7 @@ func (r *Recorder) Validate(req *livekit.StartRecordingRequest) error {
 	r.conf.ApplyDefaults(req)
 
 	// validate input
-	inputUrl, err := r.getInputUrl(req)
+	inputUrl, err := r.GetInputUrl(req)
 	if err != nil {
 		return err
 	}
@@ -66,7 +66,7 @@ func (r *Recorder) Validate(req *livekit.StartRecordingRequest) error {
 	return nil
 }
 
-func (r *Recorder) getInputUrl(req *livekit.StartRecordingRequest) (string, error) {
+func (r *Recorder) GetInputUrl(req *livekit.StartRecordingRequest) (string, error) {
 	switch req.Input.(type) {
 	case *livekit.StartRecordingRequest_Url:
 		return req.Input.(*livekit.StartRecordingRequest_Url).Url, nil
