@@ -133,8 +133,8 @@ func startRecordingRequest(s3 bool) *livekit.StartRecordingRequest {
 	}
 
 	if s3 {
-		req.Output = &livekit.StartRecordingRequest_S3Url{
-			S3Url: "s3://livekit/test.mp4",
+		req.Output = &livekit.StartRecordingRequest_Filepath{
+			Filepath: "test.mp4",
 		}
 	} else {
 		req.Output = &livekit.StartRecordingRequest_Rtmp{

@@ -17,11 +17,11 @@ import (
 func (r *Recorder) upload(s3Url string) error {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(
-			r.conf.S3.AccessKey,
-			r.conf.S3.Secret,
+			r.conf.FileOutput.S3.AccessKey,
+			r.conf.FileOutput.S3.Secret,
 			"",
 		),
-		Region: aws.String(r.conf.S3.Region),
+		Region: aws.String(r.conf.FileOutput.S3.Region),
 	})
 	if err != nil {
 		return err

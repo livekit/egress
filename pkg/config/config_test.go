@@ -14,7 +14,7 @@ var testRequests = []string{`
 		"layout": "grid-light",
 		"token": "recording-token"
 	},
-	"s3_url": "bucket/path/filename.mp4"
+	"filepath": "path/filename.mp4"
 }
 `, `
 {
@@ -22,7 +22,7 @@ var testRequests = []string{`
 		"layout": "speaker-dark",
 		"room_name": "test-room"
 	},
-	"file": "/out/filename.mp4",
+	"filepath": "/out/filename.mp4",
 	"options": {
 		"preset": "FULL_HD_30"
 	}
@@ -52,9 +52,9 @@ func TestRequests(t *testing.T) {
 		token, ok := template.Template.Room.(*livekit.RecordingTemplate_Token)
 		require.True(t, ok)
 		require.Equal(t, "recording-token", token.Token)
-		s3, ok := req.Output.(*livekit.StartRecordingRequest_S3Url)
+		filepath := req.Output.(*livekit.StartRecordingRequest_Filepath).Filepath
 		require.True(t, ok)
-		require.Equal(t, "bucket/path/filename.mp4", s3.S3Url)
+		require.Equal(t, "path/filename.mp4", filepath)
 	})
 
 	t.Run("file and preset", func(t *testing.T) {
@@ -69,9 +69,9 @@ func TestRequests(t *testing.T) {
 		roomName, ok := template.Template.Room.(*livekit.RecordingTemplate_RoomName)
 		require.True(t, ok)
 		require.Equal(t, "test-room", roomName.RoomName)
-		file, ok := req.Output.(*livekit.StartRecordingRequest_File)
+		filepath := req.Output.(*livekit.StartRecordingRequest_Filepath).Filepath
 		require.True(t, ok)
-		require.Equal(t, "/out/filename.mp4", file.File)
+		require.Equal(t, "/out/filename.mp4", filepath)
 		require.Equal(t, livekit.RecordingPreset_FULL_HD_30, req.Options.Preset)
 	})
 

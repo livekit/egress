@@ -26,10 +26,13 @@ redis: (service mode only)
     username: redis username (optional)
     password: redis password (optional)
     db: redis db (optional)
-s3: (required if using s3 output)
-    access_key: s3 access key
-    secret: s3 access secret
-    region: s3 region
+file_output:
+    local: true/false (will default to true if you don't supply s3 config)
+    s3: (required if using s3 output)
+        access_key: s3 access key
+        secret: s3 access secret
+        region: s3 region
+        bucket: s3 bucket
 defaults:
     preset: defaults to "NONE", see options below
     width: defaults to 1920
@@ -68,7 +71,8 @@ Check out our [web README](https://github.com/livekit/livekit-recorder/tree/main
 
 ### Output
 
-You can either output to a `file`, upload to an `s3_url`, or write to one or more `rtmp` `urls`.
+You can either output to a `filepath` or write to one or more `rtmp` `urls`. Depending on your config, the `filepath` 
+output will either write to a local file or upload to s3.
 
 ### Options
 
@@ -83,8 +87,7 @@ All request options:
         "room_name": "<room-to-record>",
         "token": "<token>"
     },
-    "file": "/out/recording.mp4",
-    "s3_url": "bucket/path/filename.mp4",
+    "filepath": "path/recording.mp4",
     "rtmp": {
         "urls": ["<rtmp://stream-url.com>"]
     },
@@ -149,10 +152,8 @@ Start by filling in a config.yaml:
 api_key: <livekit-server-api-key>
 api_secret: <livekit-server-api-secret>
 ws_url: <livekit-server-ws-url>
-s3:
-  access_key: <s3-access-key>
-  secret: <s3-secret>
-  region: <s3-region>
+file_output:
+    local: true
 ```
 
 ## Basic recording
@@ -164,7 +165,7 @@ basic.json:
     "layout": "speaker-dark",
     "room_name": "my-room"
   },
-  "file": "/out/demo.mp4"
+  "filepath": "/out/demo.mp4"
 }
 ```
 ```bash
@@ -179,11 +180,26 @@ docker run --rm \
 
 ## Record at 720p, with 2048kbps video bitrate, and upload result to s3
 
+update your config.yaml and replace 
+```yaml
+file_output:
+    local: true
+```
+with
+```yaml
+file_output:
+    s3:
+        access_key: <s3-access-key>
+        secret: <s3-secret>
+        region: <s3-region>
+        bucket: <s3-bucket>
+```
+
 s3.json:
 ```json
 {
     "url": "https://www.youtube.com/watch?v=BHACKCNDMW8",
-    "s3_url": "bucket/path/filename.mp4",
+    "filepath": "path/filename.mp4",
     "options": {
         "width": "1280",
         "height": "720",

@@ -1,6 +1,7 @@
 package recorder
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/livekit/protocol/logger"
@@ -56,12 +57,13 @@ func (r *Recorder) Run(recordingId string) *livekit.RecordingResult {
 	}
 	res.Duration = time.Since(start).Milliseconds() / 1000
 
-	if s3, ok := r.req.Output.(*livekit.StartRecordingRequest_S3Url); ok {
-		if err = r.upload(s3.S3Url); err != nil {
+	if r.filename != "" && r.conf.FileOutput.S3 != nil {
+		url := fmt.Sprintf("s3://%s/%s", r.conf.FileOutput.S3.Bucket, r.filename)
+		if err = r.upload(url); err != nil {
 			res.Error = err.Error()
 			return res
 		}
-		res.DownloadUrl = s3.S3Url
+		res.DownloadUrl = url
 	}
 
 	return res
@@ -71,7 +73,7 @@ func (r *Recorder) getPipeline(req *livekit.StartRecordingRequest) (*pipeline.Pi
 	switch req.Output.(type) {
 	case *livekit.StartRecordingRequest_Rtmp:
 		return pipeline.NewRtmpPipeline(req.Output.(*livekit.StartRecordingRequest_Rtmp).Rtmp.Urls, req.Options)
-	case *livekit.StartRecordingRequest_S3Url, *livekit.StartRecordingRequest_File:
+	case *livekit.StartRecordingRequest_Filepath:
 		return pipeline.NewFilePipeline(r.filename, req.Options)
 	}
 	return nil, ErrNoOutput

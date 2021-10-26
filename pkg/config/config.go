@@ -18,7 +18,7 @@ type Config struct {
 	HealthPort int                       `yaml:"health_port"`
 	LogLevel   string                    `yaml:"log_level"`
 	Redis      RedisConfig               `yaml:"redis"`
-	S3         S3Config                  `yaml:"s3"`
+	FileOutput FileOutput                `yaml:"file_output"`
 	Defaults   *livekit.RecordingOptions `yaml:"defaults"`
 }
 
@@ -29,10 +29,16 @@ type RedisConfig struct {
 	DB       int    `yaml:"db"`
 }
 
+type FileOutput struct {
+	Local bool      `yaml:"local"`
+	S3    *S3Config `yaml:"s3"`
+}
+
 type S3Config struct {
 	AccessKey string `yaml:"access_key"`
 	Secret    string `yaml:"secret"`
 	Region    string `yaml:"region"`
+	Bucket    string `yaml:"bucket"`
 }
 
 func NewConfig(confString string) (*Config, error) {
@@ -57,6 +63,10 @@ func NewConfig(confString string) (*Config, error) {
 	}
 
 	// apply preset options
+	if conf.FileOutput.S3 == nil {
+		conf.FileOutput.Local = true
+	}
+
 	if conf.Defaults.Preset != livekit.RecordingPreset_NONE {
 		conf.Defaults = fromPreset(conf.Defaults.Preset)
 	}

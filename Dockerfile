@@ -37,6 +37,11 @@ RUN wget -N http://chromedriver.storage.googleapis.com/2.46/chromedriver_linux64
     chmod +x chromedriver && \
     mv -f chromedriver /usr/local/bin/chromedriver
 
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm google-chrome-stable_current_amd64.deb && \
+    rm chromedriver_linux64.zip
+
 # Add root user to group for pulseaudio access
 RUN adduser root pulse-access
 

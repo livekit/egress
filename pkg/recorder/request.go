@@ -16,7 +16,6 @@ var (
 	ErrNoOutput        = errors.New("output file, s3 path, or rtmp urls required")
 	ErrInvalidUrl      = errors.New("invalid rtmp url")
 	ErrInvalidFilePath = errors.New("file output must be {path/}filename.mp4")
-	ErrInvalidS3Path   = errors.New("s3 output must be s3://bucket/{path/}filename.mp4")
 	ErrNoInput         = errors.New("input url or template required")
 	ErrInvalidTemplate = errors.New("token or room name required")
 )
@@ -32,15 +31,6 @@ func (r *Recorder) Validate(req *livekit.StartRecordingRequest) error {
 
 	// validate output
 	switch req.Output.(type) {
-	case *livekit.StartRecordingRequest_S3Url:
-		s3 := req.Output.(*livekit.StartRecordingRequest_S3Url).S3Url
-		idx := strings.LastIndex(s3, "/")
-		if idx < 6 ||
-			!strings.HasPrefix(s3, "s3://") ||
-			!strings.HasSuffix(s3, ".mp4") {
-			return ErrInvalidS3Path
-		}
-		r.filename = s3[idx+1:]
 	case *livekit.StartRecordingRequest_Rtmp:
 		urls := req.Output.(*livekit.StartRecordingRequest_Rtmp).Rtmp.Urls
 		if len(urls) == 0 {
@@ -51,8 +41,8 @@ func (r *Recorder) Validate(req *livekit.StartRecordingRequest) error {
 				return ErrInvalidUrl
 			}
 		}
-	case *livekit.StartRecordingRequest_File:
-		filename := req.Output.(*livekit.StartRecordingRequest_File).File
+	case *livekit.StartRecordingRequest_Filepath:
+		filename := req.Output.(*livekit.StartRecordingRequest_Filepath).Filepath
 		if !strings.HasSuffix(filename, ".mp4") {
 			return ErrInvalidFilePath
 		}
