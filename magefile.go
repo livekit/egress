@@ -39,6 +39,22 @@ func Test() error {
 	return cmd.Run()
 }
 
+func Integration() error {
+	cmd := exec.Command("docker", "build", "-t", "recorder-integration-test", "-f", "test/Dockerfile", ".")
+	connectStd(cmd)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	cmd = exec.Command("docker", "run", "--rm", "recorder-integration-test")
+	connectStd(cmd)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // builds docker images for LiveKit recorder and recorder service
 func Docker() error {
 	cmd := exec.Command("docker", "build", ".", "-t", fmt.Sprintf("%s:v%s", imageName, version.Version))

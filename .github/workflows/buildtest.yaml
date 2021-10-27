@@ -43,3 +43,23 @@ jobs:
 
       - name: Go test
         run: go test -tags=test ./...
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/go/bin
+            ~/bin/protoc
+            ~/.cache
+          key: livekit-recorder
+
+      - name: Build docker images
+        run: docker build -t recorder-integration-test -f ./test/Dockerfile .
+
+      - name: Run tests
+        run: docker run --rm recorder-integration-test
