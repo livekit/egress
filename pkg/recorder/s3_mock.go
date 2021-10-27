@@ -2,6 +2,6 @@
 
 package recorder
 
-func (r *Recorder) upload(s3Url string) error {
+func (r *Recorder) upload() error {
 	return nil
 }

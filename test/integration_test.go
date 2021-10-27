@@ -38,13 +38,13 @@ func TestRecorder(t *testing.T) {
 }
 
 func runFileTest(t *testing.T, conf *config.Config) {
-	filename := "file-test.mp4"
+	filepath := "path/file-test.mp4"
 	req := &livekit.StartRecordingRequest{
 		Input: &livekit.StartRecordingRequest_Url{
 			Url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
 		},
 		Output: &livekit.StartRecordingRequest_Filepath{
-			Filepath: filename,
+			Filepath: filepath,
 		},
 	}
 
@@ -57,7 +57,7 @@ func runFileTest(t *testing.T, conf *config.Config) {
 	})
 
 	res := rec.Run("room_test")
-	verifyFile(t, req, res, filename)
+	verifyFile(t, req, res, filepath)
 }
 
 func runRtmpTest(t *testing.T, conf *config.Config) {

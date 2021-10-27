@@ -5,7 +5,6 @@ package recorder
 import (
 	"bytes"
 	"os"
-	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -14,7 +13,7 @@ import (
 )
 
 // TODO: write to persistent volume, use separate upload process
-func (r *Recorder) upload(s3Url string) error {
+func (r *Recorder) upload() error {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(
 			r.conf.FileOutput.S3.AccessKey,
@@ -40,21 +39,9 @@ func (r *Recorder) upload(s3Url string) error {
 		return err
 	}
 
-	var bucket, key string
-	if strings.HasPrefix(s3Url, "s3://") {
-		s3Url = s3Url[5:]
-	}
-	if idx := strings.Index(s3Url, "/"); idx != -1 {
-		bucket = s3Url[:idx]
-		key = s3Url[idx+1:]
-	} else {
-		bucket = s3Url
-		key = "recording.mp4"
-	}
-
 	_, err = s3.New(sess).PutObject(&s3.PutObjectInput{
-		Bucket:        aws.String(bucket),
-		Key:           aws.String(key),
+		Bucket:        aws.String(r.conf.FileOutput.S3.Bucket),
+		Key:           aws.String(r.filepath),
 		Body:          bytes.NewReader(buffer),
 		ContentLength: aws.Int64(size),
 		ContentType:   aws.String("video/mp4"),
