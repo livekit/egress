@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/livekit/protocol/logger"
 
@@ -16,7 +17,7 @@ import (
 
 type Display struct {
 	xvfb         *exec.Cmd
-	chromeCancel func()
+	chromeCancel context.CancelFunc
 }
 
 func New() *Display { return &Display{} }
@@ -88,6 +89,18 @@ func (d *Display) launchChrome(url string, width, height int) error {
 	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	d.chromeCancel = cancel
+
+	chromedp.ListenTarget(ctx, func(ev interface{}) {
+		switch ev := ev.(type) {
+		case *runtime.EventConsoleAPICalled:
+			args := []interface{}{"type", ev.Type}
+			for _, arg := range ev.Args {
+				args = append(args, arg.ClassName, arg.Value)
+			}
+			logger.Debugw("console message", args...)
+		}
+	})
+
 	return chromedp.Run(ctx, chromedp.Navigate(url))
 }
 

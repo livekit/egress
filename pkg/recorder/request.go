@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 )
@@ -71,6 +72,7 @@ func (r *Recorder) Validate(req *livekit.StartRecordingRequest) error {
 
 	r.req = req
 	r.url = inputUrl
+	logger.Debugw("request validated", "url", inputUrl)
 	return nil
 }
 
@@ -106,11 +108,12 @@ func (r *Recorder) buildToken(roomName string) (string, error) {
 	f := false
 	t := true
 	grant := &auth.VideoGrant{
-		RoomRecord:   true,
-		Room:         roomName,
-		CanPublish:   &f,
-		CanSubscribe: &t,
-		Hidden:       true,
+		RoomJoin:       true,
+		Room:           roomName,
+		CanSubscribe:   &t,
+		CanPublish:     &f,
+		CanPublishData: &f,
+		Hidden:         true,
 	}
 
 	at := auth.NewAccessToken(r.conf.ApiKey, r.conf.ApiSecret).
