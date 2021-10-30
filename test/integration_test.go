@@ -48,7 +48,7 @@ func runFileTest(t *testing.T, conf *config.Config) {
 		},
 	}
 
-	rec := recorder.NewRecorder(conf)
+	rec := recorder.NewRecorder(conf, "room_test")
 	require.NoError(t, rec.Validate(req))
 
 	// record for 15s. Takes about 5s to start
@@ -56,7 +56,7 @@ func runFileTest(t *testing.T, conf *config.Config) {
 		rec.Stop()
 	})
 
-	res := rec.Run("room_test")
+	res := rec.Run()
 	verifyFile(t, req, res, filepath)
 }
 
@@ -73,11 +73,11 @@ func runRtmpTest(t *testing.T, conf *config.Config) {
 		},
 	}
 
-	rec := recorder.NewRecorder(conf)
+	rec := recorder.NewRecorder(conf, "rtmp_test")
 	require.NoError(t, rec.Validate(req))
 	resChan := make(chan *livekit.RecordingResult, 1)
 	go func() {
-		resChan <- rec.Run("rtmp_test")
+		resChan <- rec.Run()
 	}()
 
 	// wait for recorder to start

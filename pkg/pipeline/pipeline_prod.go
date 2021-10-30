@@ -20,6 +20,9 @@ type Pipeline struct {
 	pipeline *gst.Pipeline
 	output   *OutputBin
 	removed  map[string]bool
+
+	started chan struct{}
+	closed  chan struct{}
 }
 
 func NewRtmpPipeline(urls []string, options *livekit.RecordingOptions) (*Pipeline, error) {
@@ -87,6 +90,8 @@ func newPipeline(input *InputBin, output *OutputBin) (*Pipeline, error) {
 		pipeline: pipeline,
 		output:   output,
 		removed:  make(map[string]bool),
+		started:  make(chan struct{}, 1),
+		closed:   make(chan struct{}),
 	}, nil
 }
 
@@ -121,6 +126,7 @@ func (p *Pipeline) Start() error {
 	}
 
 	// Block and iterate on the main loop
+	close(p.started)
 	loop.Run()
 	return nil
 }
@@ -193,8 +199,15 @@ func (p *Pipeline) RemoveOutput(url string) error {
 }
 
 func (p *Pipeline) Close() {
-	logger.Debugw("sending EOS to pipeline")
-	p.pipeline.SendEvent(gst.NewEOSEvent())
+	<-p.started
+	select {
+	case <-p.closed:
+		return
+	default:
+		close(p.closed)
+		logger.Debugw("sending EOS to pipeline")
+		p.pipeline.SendEvent(gst.NewEOSEvent())
+	}
 }
 
 func requireLink(src, sink *gst.Pad) error {

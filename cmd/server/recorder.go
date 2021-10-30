@@ -25,7 +25,7 @@ func runRecorder(c *cli.Context) error {
 
 	initLogger(conf.LogLevel)
 
-	rec := recorder.NewRecorder(conf)
+	rec := recorder.NewRecorder(conf, "standalone")
 	if err = rec.Validate(req); err != nil {
 		return err
 	}
@@ -38,7 +38,7 @@ func runRecorder(c *cli.Context) error {
 		rec.Stop()
 	}()
 
-	res := rec.Run("standalone")
+	res := rec.Run()
 	service.LogResult(res)
 	if res.Error == "" {
 		return nil

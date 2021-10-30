@@ -9,24 +9,26 @@ import (
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/recording"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/livekit-recorder/pkg/recorder"
 )
 
-func (s *Service) handleRecording() {
+func (s *Service) handleRecording(rec *recorder.Recorder) {
 	// subscribe to request channel
-	requests, err := s.bus.Subscribe(s.ctx, recording.RequestChannel(s.recordingId))
+	requests, err := s.bus.Subscribe(s.ctx, recording.RequestChannel(rec.ID))
 	if err != nil {
 		return
 	}
 	defer requests.Close()
 
 	// ready to accept requests
-	err = s.handleResponse(s.recordingId, "", nil)
+	err = s.handleResponse(rec.ID, "", nil)
 	if err != nil {
 		return
 	}
 
 	// listen for rpcs
-	logger.Debugw("waiting for requests", "recordingId", s.recordingId)
+	logger.Debugw("waiting for requests", "recordingId", rec.ID)
 	result := make(chan *livekit.RecordingResult, 1)
 	for {
 		select {
@@ -34,7 +36,7 @@ func (s *Service) handleRecording() {
 			// kill signal received, stop recorder
 			if status := s.status.Load(); status != Stopping {
 				s.status.Store(Stopping)
-				s.rec.Stop()
+				rec.Stop()
 			}
 		case res := <-result:
 			// recording stopped, send results to result channel
@@ -44,24 +46,24 @@ func (s *Service) handleRecording() {
 			}
 
 			// clean up
-			s.rec.Close()
+			rec.Close()
 			return
 		case msg := <-requests.Channel():
 			// unmarshal request
 			req := &livekit.RecordingRequest{}
 			err = proto.Unmarshal(requests.Payload(msg), req)
 			if err != nil {
-				logger.Errorw("failed to read request", err, "recordingId", s.recordingId)
+				logger.Errorw("failed to read request", err, "recordingId", rec.ID)
 				continue
 			}
 
-			s.handleRequest(req, result)
+			s.handleRequest(rec, req, result)
 		}
 	}
 }
 
-func (s *Service) handleRequest(req *livekit.RecordingRequest, result chan *livekit.RecordingResult) {
-	logger.Debugw("handling request", "recordingId", s.recordingId, "requestId", req.RequestId)
+func (s *Service) handleRequest(rec *recorder.Recorder, req *livekit.RecordingRequest, result chan *livekit.RecordingResult) {
+	logger.Debugw("handling request", "recordingId", rec.ID, "requestId", req.RequestId)
 	var err error
 	switch req.Request.(type) {
 	case *livekit.RecordingRequest_Start:
@@ -72,7 +74,7 @@ func (s *Service) handleRequest(req *livekit.RecordingRequest, result chan *live
 
 		// launch recorder
 		start := req.Request.(*livekit.RecordingRequest_Start).Start
-		err = s.rec.Validate(start)
+		err = rec.Validate(start)
 		if err != nil {
 			break
 		}
@@ -80,30 +82,30 @@ func (s *Service) handleRequest(req *livekit.RecordingRequest, result chan *live
 		s.status.Store(Recording)
 		go func() {
 			// blocks until recorder is finished
-			result <- s.rec.Run(s.recordingId)
+			result <- rec.Run()
 		}()
 	case *livekit.RecordingRequest_AddOutput:
 		if status := s.status.Load(); status != Recording {
 			err = fmt.Errorf("tried calling AddOutput with status %s", status)
 			break
 		}
-		err = s.rec.AddOutput(req.Request.(*livekit.RecordingRequest_AddOutput).AddOutput.RtmpUrl)
+		err = rec.AddOutput(req.Request.(*livekit.RecordingRequest_AddOutput).AddOutput.RtmpUrl)
 	case *livekit.RecordingRequest_RemoveOutput:
 		if status := s.status.Load(); status != Recording {
 			err = fmt.Errorf("tried calling RemoveOutput with status %s", status)
 			break
 		}
-		err = s.rec.RemoveOutput(req.Request.(*livekit.RecordingRequest_RemoveOutput).RemoveOutput.RtmpUrl)
+		err = rec.RemoveOutput(req.Request.(*livekit.RecordingRequest_RemoveOutput).RemoveOutput.RtmpUrl)
 	case *livekit.RecordingRequest_End:
 		if status := s.status.Load(); status != Recording {
 			err = fmt.Errorf("tried calling End with status %s", status)
 			break
 		}
 		s.status.Store(Stopping)
-		s.rec.Stop()
+		rec.Stop()
 	}
 
-	_ = s.handleResponse(s.recordingId, req.RequestId, err)
+	_ = s.handleResponse(rec.ID, req.RequestId, err)
 }
 
 func (s *Service) handleResponse(recordingId, requestId string, err error) error {

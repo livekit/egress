@@ -22,9 +22,6 @@ type Service struct {
 	status   atomic.Value // Status
 	shutdown chan struct{}
 	kill     chan struct{}
-
-	rec         *recorder.Recorder
-	recordingId string
 }
 
 type Status string
@@ -48,8 +45,6 @@ func NewService(conf *config.Config, bus utils.MessageBus) *Service {
 }
 
 func (s *Service) Run() error {
-	// TODO: catch panics
-
 	logger.Debugw("starting service")
 
 	reservations, err := s.bus.SubscribeQueue(context.Background(), recording.ReservationChannel)
@@ -85,11 +80,7 @@ func (s *Service) Run() error {
 			logger.Debugw("request claimed", "ID", req.Id)
 
 			// handleRecording blocks until recording is finished
-			s.recordingId = req.Id
-			s.rec = recorder.NewRecorder(s.conf)
-			s.handleRecording()
-			s.rec = nil
-			s.recordingId = ""
+			s.handleRecording(recorder.NewRecorder(s.conf, req.Id))
 		}
 	}
 }

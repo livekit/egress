@@ -2,6 +2,7 @@ package recorder
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/livekit/protocol/logger"
@@ -13,30 +14,38 @@ import (
 )
 
 type Recorder struct {
-	conf *config.Config
+	ID string
 
+	conf     *config.Config
 	req      *livekit.StartRecordingRequest
+	display  *display.Display
+	pipeline *pipeline.Pipeline
+
 	url      string
 	filename string
 	filepath string
-
-	display  *display.Display
-	pipeline *pipeline.Pipeline
 }
 
-func NewRecorder(conf *config.Config) *Recorder {
+func NewRecorder(conf *config.Config, recordingID string) *Recorder {
 	return &Recorder{
+		ID:   recordingID,
 		conf: conf,
 	}
 }
 
 // Run blocks until completion
-func (r *Recorder) Run(recordingId string) *livekit.RecordingResult {
+func (r *Recorder) Run() *livekit.RecordingResult {
+	res := &livekit.RecordingResult{Id: r.ID}
+
 	r.display = display.New()
 	options := r.req.Options
 	err := r.display.Launch(r.url, int(options.Width), int(options.Height), int(options.Depth))
+	if err != nil {
+		logger.Errorw("error launching display", err)
+		res.Error = err.Error()
+		return res
+	}
 
-	res := &livekit.RecordingResult{Id: recordingId}
 	if r.req == nil {
 		res.Error = "recorder not initialized"
 		return res
@@ -48,6 +57,16 @@ func (r *Recorder) Run(recordingId string) *livekit.RecordingResult {
 		res.Error = err.Error()
 		return res
 	}
+
+	// wait for START_RECORDING console log
+	if strings.HasPrefix(r.url, "https://recorder.livekit.io") {
+		r.display.WaitForRoom()
+	}
+	// stop on END_RECORDING console log
+	go func(d *display.Display) {
+		<-d.EndMessage()
+		r.Stop()
+	}(r.display)
 
 	start := time.Now()
 	err = r.pipeline.Start()

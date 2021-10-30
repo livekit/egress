@@ -4,9 +4,11 @@ package display
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
@@ -15,12 +17,24 @@ import (
 	"github.com/livekit/livekit-recorder/pkg/config"
 )
 
+const (
+	startRecording = "START_RECORDING"
+	endRecording   = "END_RECORDING"
+)
+
 type Display struct {
 	xvfb         *exec.Cmd
 	chromeCancel context.CancelFunc
+	startChan    chan struct{}
+	endChan      chan struct{}
 }
 
-func New() *Display { return &Display{} }
+func New() *Display {
+	return &Display{
+		startChan: make(chan struct{}, 1),
+		endChan:   make(chan struct{}, 1),
+	}
+}
 
 func (d *Display) Launch(url string, width, height, depth int) error {
 	if err := d.launchXvfb(width, height, depth); err != nil {
@@ -93,15 +107,36 @@ func (d *Display) launchChrome(url string, width, height int) error {
 	chromedp.ListenTarget(ctx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *runtime.EventConsoleAPICalled:
-			args := []interface{}{"type", ev.Type}
+			args := make([]string, 0, len(ev.Args))
 			for _, arg := range ev.Args {
-				args = append(args, arg.ClassName, arg.Value)
+				var val interface{}
+				err := json.Unmarshal(arg.Value, &val)
+				if err != nil {
+					continue
+				}
+				msg := fmt.Sprint(val)
+				args = append(args, msg)
+				switch msg {
+				case startRecording:
+					d.startChan <- struct{}{}
+				case endRecording:
+					d.endChan <- struct{}{}
+				default:
+				}
 			}
-			logger.Debugw("console message", args...)
+			logger.Debugw(fmt.Sprintf("chrome console %s", ev.Type.String()), "msg", strings.Join(args, " "))
 		}
 	})
 
 	return chromedp.Run(ctx, chromedp.Navigate(url))
+}
+
+func (d *Display) WaitForRoom() {
+	<-d.startChan
+}
+
+func (d *Display) EndMessage() chan struct{} {
+	return d.endChan
 }
 
 func (d *Display) Close() {
@@ -109,6 +144,7 @@ func (d *Display) Close() {
 		d.chromeCancel()
 		d.chromeCancel = nil
 	}
+	close(d.endChan)
 	if d.xvfb != nil {
 		err := d.xvfb.Process.Signal(os.Interrupt)
 		if err != nil {
