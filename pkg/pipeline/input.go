@@ -55,8 +55,7 @@ func newInputBin(isStream bool, options *livekit.RecordingOptions) (*InputBin, e
 	if err != nil {
 		return nil, err
 	}
-	err = audioQueue.SetProperty("flush-on-eos", true)
-	if err != nil {
+	if err = audioQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
 		return nil, err
 	}
 
@@ -101,8 +100,7 @@ func newInputBin(isStream bool, options *livekit.RecordingOptions) (*InputBin, e
 	if err != nil {
 		return nil, err
 	}
-	err = videoQueue.SetProperty("flush-on-eos", true)
-	if err != nil {
+	if err = videoQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
 		return nil, err
 	}
 
