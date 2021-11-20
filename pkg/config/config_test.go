@@ -6,7 +6,28 @@ import (
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
+
+	"github.com/livekit/livekit-recorder/pkg/config"
 )
+
+var testConfig = `
+log_level: debug
+api_key: key
+api_secret: secret
+ws_url: wss://localhost:7880
+file_output:
+  local: true
+redis:
+  address: 192.168.65.2:6379
+defaults:
+  width: 320
+  height: 200
+  depth: 24
+  framerate: 10
+  audio_bitrate: 96
+  audio_frequency: 22050
+  video_bitrate: 750
+`
 
 var testRequests = []string{`
 {
@@ -34,11 +55,20 @@ var testRequests = []string{`
         "urls": ["rtmp://stream-url.com", "rtmp://live.twitch.tv/app/stream-key"]
     },
 	"options": {
-        "width": 1920,
-        "height": 1080
+		"audio_bitrate": 96,
+		"audio_frequency": 22050,
+		"video_bitrate": 750
 	}
 }
 `}
+
+func TestConfig(t *testing.T) {
+	conf, err := config.NewConfig(testConfig)
+	require.NoError(t, err)
+	require.Equal(t, "192.168.65.2:6379", conf.Redis.Address)
+	require.Equal(t, int32(320), conf.Defaults.Width)
+	require.Equal(t, int32(96), conf.Defaults.AudioBitrate)
+}
 
 func TestRequests(t *testing.T) {
 	t.Run("template and s3", func(t *testing.T) {
@@ -88,6 +118,8 @@ func TestRequests(t *testing.T) {
 		require.True(t, ok)
 		expected := []string{"rtmp://stream-url.com", "rtmp://live.twitch.tv/app/stream-key"}
 		require.Equal(t, expected, rtmp.Rtmp.Urls)
-		require.Equal(t, int32(1920), req.Options.Width)
+		require.Equal(t, int32(96), req.Options.AudioBitrate)
+		require.Equal(t, int32(22050), req.Options.AudioFrequency)
+		require.Equal(t, int32(750), req.Options.VideoBitrate)
 	})
 }

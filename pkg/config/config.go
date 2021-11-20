@@ -12,14 +12,14 @@ import (
 const Display = ":99"
 
 type Config struct {
-	ApiKey     string                    `yaml:"api_key"`
-	ApiSecret  string                    `yaml:"api_secret"`
-	WsUrl      string                    `yaml:"ws_url"`
-	HealthPort int                       `yaml:"health_port"`
-	LogLevel   string                    `yaml:"log_level"`
-	Redis      RedisConfig               `yaml:"redis"`
-	FileOutput FileOutput                `yaml:"file_output"`
-	Defaults   *livekit.RecordingOptions `yaml:"defaults"`
+	ApiKey     string      `yaml:"api_key"`
+	ApiSecret  string      `yaml:"api_secret"`
+	WsUrl      string      `yaml:"ws_url"`
+	HealthPort int         `yaml:"health_port"`
+	LogLevel   string      `yaml:"log_level"`
+	Redis      RedisConfig `yaml:"redis"`
+	FileOutput FileOutput  `yaml:"file_output"`
+	Defaults   Defaults    `yaml:"defaults"`
 }
 
 type RedisConfig struct {
@@ -41,11 +41,22 @@ type S3Config struct {
 	Bucket    string `yaml:"bucket"`
 }
 
+type Defaults struct {
+	Preset         livekit.RecordingPreset `yaml:"preset"`
+	Width          int32                   `yaml:"width"`
+	Height         int32                   `yaml:"height"`
+	Depth          int32                   `yaml:"depth"`
+	Framerate      int32                   `yaml:"framerate"`
+	AudioBitrate   int32                   `yaml:"audio_bitrate"`
+	AudioFrequency int32                   `yaml:"audio_frequency"`
+	VideoBitrate   int32                   `yaml:"video_bitrate"`
+}
+
 func NewConfig(confString string) (*Config, error) {
 	// start with defaults
 	conf := &Config{
 		LogLevel: "info",
-		Defaults: &livekit.RecordingOptions{
+		Defaults: Defaults{
 			Width:          1920,
 			Height:         1080,
 			Depth:          24,
@@ -68,7 +79,7 @@ func NewConfig(confString string) (*Config, error) {
 	}
 
 	if conf.Defaults.Preset != livekit.RecordingPreset_NONE {
-		conf.Defaults = fromPreset(conf.Defaults.Preset)
+		conf.Defaults = fromProto(fromPreset(conf.Defaults.Preset))
 	}
 
 	if err := os.Setenv("DISPLAY", Display); err != nil {
@@ -96,7 +107,7 @@ func TestConfig() *Config {
 		Redis: RedisConfig{
 			Address: "localhost:6379",
 		},
-		Defaults: &livekit.RecordingOptions{
+		Defaults: Defaults{
 			Width:          1920,
 			Height:         1080,
 			Depth:          24,
@@ -111,9 +122,7 @@ func TestConfig() *Config {
 func (c *Config) ApplyDefaults(req *livekit.StartRecordingRequest) {
 	if req.Options == nil {
 		req.Options = &livekit.RecordingOptions{}
-	}
-
-	if req.Options.Preset != livekit.RecordingPreset_NONE {
+	} else if req.Options.Preset != livekit.RecordingPreset_NONE {
 		req.Options = fromPreset(req.Options.Preset)
 		return
 	}
@@ -184,6 +193,18 @@ func fromPreset(preset livekit.RecordingPreset) *livekit.RecordingOptions {
 			VideoBitrate:   6000,
 		}
 	default:
-		return nil
+		return &livekit.RecordingOptions{}
+	}
+}
+
+func fromProto(opts *livekit.RecordingOptions) Defaults {
+	return Defaults{
+		Width:          opts.Width,
+		Height:         opts.Height,
+		Depth:          opts.Depth,
+		Framerate:      opts.Framerate,
+		AudioBitrate:   opts.AudioBitrate,
+		AudioFrequency: opts.AudioFrequency,
+		VideoBitrate:   opts.VideoBitrate,
 	}
 }
