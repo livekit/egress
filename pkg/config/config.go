@@ -30,8 +30,9 @@ type RedisConfig struct {
 }
 
 type FileOutput struct {
-	Local bool      `yaml:"local"`
-	S3    *S3Config `yaml:"s3"`
+	Local  bool          `yaml:"local"`
+	S3     *S3Config     `yaml:"s3"`
+	Azblob *AzblobConfig `yaml:"azblob"`
 }
 
 type S3Config struct {
@@ -39,6 +40,12 @@ type S3Config struct {
 	Secret    string `yaml:"secret"`
 	Region    string `yaml:"region"`
 	Bucket    string `yaml:"bucket"`
+}
+
+type AzblobConfig struct {
+	AccountName   string `yaml:"account_name"`
+	AccountKey    string `yaml:"account_key"`
+	ContainerName string `yaml:"container_name"`
 }
 
 type Defaults struct {
@@ -74,7 +81,7 @@ func NewConfig(confString string) (*Config, error) {
 	}
 
 	// apply preset options
-	if conf.FileOutput.S3 == nil {
+	if conf.FileOutput.S3 == nil && conf.FileOutput.Azblob == nil {
 		conf.FileOutput.Local = true
 	}
 

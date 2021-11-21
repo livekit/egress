@@ -33,6 +33,10 @@ file_output:
         secret: s3 access secret
         region: s3 region
         bucket: s3 bucket
+    azblob: (required if using azure blob output)
+        account_name: azure blob account
+        account_key: azure blob access key
+        container_name: azure blob container name
 defaults:
     preset: defaults to "NONE", see options below
     width: defaults to 1920
@@ -72,7 +76,7 @@ Check out our [web README](https://github.com/livekit/livekit-recorder/tree/main
 ### Output
 
 You can either output to a `filepath` or write to one or more `rtmp` `urls`. Depending on your config, the `filepath` 
-output will either write to a local file or upload to s3.
+output will either write to a local file or upload to s3 or azure blob.
 
 ### Options
 

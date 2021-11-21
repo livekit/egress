@@ -83,6 +83,16 @@ func (r *Recorder) Run() *livekit.RecordingResult {
 			return res
 		}
 		res.DownloadUrl = fmt.Sprintf("s3://%s/%s", r.conf.FileOutput.S3.Bucket, r.filepath)
+	} else if r.filename != "" && r.conf.FileOutput.Azblob != nil {
+		if err = r.uploadAzblob(); err != nil {
+			res.Error = err.Error()
+			return res
+		}
+		res.DownloadUrl = fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s",
+			r.conf.FileOutput.Azblob.AccountName,
+			r.conf.FileOutput.Azblob.ContainerName,
+			r.filepath,
+		)
 	}
 
 	return res
