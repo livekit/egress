@@ -38,6 +38,7 @@ type FileOutput struct {
 type S3Config struct {
 	AccessKey string `yaml:"access_key"`
 	Secret    string `yaml:"secret"`
+	Endpoint  string `yaml:"endpoint"`
 	Region    string `yaml:"region"`
 	Bucket    string `yaml:"bucket"`
 }

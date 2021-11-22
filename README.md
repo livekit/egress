@@ -31,6 +31,7 @@ file_output:
     s3: (required if using s3 output)
         access_key: s3 access key
         secret: s3 access secret
+        endpoint: s3 server endpoint (optional)
         region: s3 region
         bucket: s3 bucket
     azblob: (required if using azure blob output)

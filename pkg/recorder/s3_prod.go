@@ -20,6 +20,7 @@ func (r *Recorder) upload() error {
 			r.conf.FileOutput.S3.Secret,
 			"",
 		),
+		Endpoint: aws.String(r.conf.FileOutput.S3.Endpoint),
 		Region: aws.String(r.conf.FileOutput.S3.Region),
 	})
 	if err != nil {
