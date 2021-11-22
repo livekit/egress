@@ -78,13 +78,13 @@ func (r *Recorder) Run() *livekit.RecordingResult {
 	res.Duration = time.Since(start).Milliseconds() / 1000
 
 	if r.filename != "" && r.conf.FileOutput.S3 != nil {
-		if err = r.upload(); err != nil {
+		if err = r.uploadS3(); err != nil {
 			res.Error = err.Error()
 			return res
 		}
 		res.DownloadUrl = fmt.Sprintf("s3://%s/%s", r.conf.FileOutput.S3.Bucket, r.filepath)
 	} else if r.filename != "" && r.conf.FileOutput.Azblob != nil {
-		if err = r.uploadAzblob(); err != nil {
+		if err = r.uploadAzure(); err != nil {
 			res.Error = err.Error()
 			return res
 		}

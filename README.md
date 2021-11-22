@@ -31,9 +31,9 @@ file_output:
     s3: (required if using s3 output)
         access_key: s3 access key
         secret: s3 access secret
-        endpoint: s3 server endpoint (optional)
         region: s3 region
         bucket: s3 bucket
+        endpoint: s3 server endpoint (optional - for use with minio)
     azblob: (required if using azure blob output)
         account_name: azure blob account
         account_key: azure blob access key
