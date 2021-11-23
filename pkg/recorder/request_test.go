@@ -24,7 +24,10 @@ func TestInputUrl(t *testing.T) {
 
 	expected := "https://recorder.livekit.io/#/speaker-light?url=wss%3A%2F%2Ftest.livekit.cloud&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
 	rec := &Recorder{
-		conf: &config.Config{WsUrl: "wss://test.livekit.cloud"},
+		conf: &config.Config{
+			WsUrl:           "wss://test.livekit.cloud",
+			TemplateAddress: "https://recorder.livekit.io",
+		},
 	}
 
 	actual, err := rec.GetInputUrl(req)

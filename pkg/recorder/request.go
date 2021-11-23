@@ -97,8 +97,8 @@ func (r *Recorder) GetInputUrl(req *livekit.StartRecordingRequest) (string, erro
 			return "", ErrInvalidTemplate
 		}
 
-		return fmt.Sprintf("https://recorder.livekit.io/#/%s?url=%s&token=%s",
-			template.Layout, url.QueryEscape(r.conf.WsUrl), token), nil
+		return fmt.Sprintf("%s/#/%s?url=%s&token=%s",
+			r.conf.TemplateAddress, template.Layout, url.QueryEscape(r.conf.WsUrl), token), nil
 	default:
 		return "", ErrNoInput
 	}

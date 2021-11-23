@@ -59,7 +59,7 @@ func (r *Recorder) Run() *livekit.RecordingResult {
 	}
 
 	// wait for START_RECORDING console log
-	if strings.HasPrefix(r.url, "https://recorder.livekit.io") {
+	if strings.HasPrefix(r.url, r.conf.TemplateAddress) {
 		r.display.WaitForRoom()
 	}
 	// stop on END_RECORDING console log
