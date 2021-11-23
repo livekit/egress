@@ -66,7 +66,7 @@ const renderStage: React.FC<StageProps> = ({ roomState }: StageProps) => {
         newParticipants.push(participants[i]);
       }
       // max of 3x3 grid
-      if (newParticipants.length >= 9) {
+      if (newParticipants.length > 9) {
         return;
       }
     }
