@@ -6,12 +6,8 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/go-logr/zapr"
-	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/urfave/cli/v2"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/livekit/livekit-recorder/pkg/config"
@@ -102,17 +98,4 @@ func getRequest(c *cli.Context) (*livekit.StartRecordingRequest, error) {
 	req := &livekit.StartRecordingRequest{}
 	err = protojson.Unmarshal(content, req)
 	return req, err
-}
-
-func initLogger(level string) {
-	conf := zap.NewProductionConfig()
-	if level != "" {
-		lvl := zapcore.Level(0)
-		if err := lvl.UnmarshalText([]byte(level)); err == nil {
-			conf.Level = zap.NewAtomicLevelAt(lvl)
-		}
-	}
-
-	l, _ := conf.Build()
-	logger.SetLogger(zapr.NewLogger(l), "livekit-recorder")
 }

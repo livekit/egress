@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/go-logr/zapr"
+	"github.com/livekit/protocol/logger"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
 
 	livekit "github.com/livekit/protocol/proto"
@@ -109,11 +113,13 @@ func NewConfig(confString string) (*Config, error) {
 		return nil, err
 	}
 
+	conf.initLogger()
 	return conf, nil
 }
 
 func TestConfig() *Config {
-	return &Config{
+	conf := &Config{
+		LogLevel:        "debug",
 		TemplateAddress: "https://recorder.livekit.io",
 		Redis: RedisConfig{
 			Address: "localhost:6379",
@@ -128,6 +134,21 @@ func TestConfig() *Config {
 			VideoBitrate:   4500,
 		},
 	}
+	conf.initLogger()
+	return conf
+}
+
+func (c *Config) initLogger() {
+	conf := zap.NewProductionConfig()
+	if c.LogLevel != "" {
+		lvl := zapcore.Level(0)
+		if err := lvl.UnmarshalText([]byte(c.LogLevel)); err == nil {
+			conf.Level = zap.NewAtomicLevelAt(lvl)
+		}
+	}
+
+	l, _ := conf.Build()
+	logger.SetLogger(zapr.NewLogger(l), "livekit-recorder")
 }
 
 func (c *Config) ApplyDefaults(req *livekit.StartRecordingRequest) {

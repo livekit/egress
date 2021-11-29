@@ -76,6 +76,10 @@ func (s *Service) handleRequest(rec *recorder.Recorder, req *livekit.RecordingRe
 		start := req.Request.(*livekit.RecordingRequest_Start).Start
 		err = rec.Validate(start)
 		if err != nil {
+			result <- &livekit.RecordingResult{
+				Id:    rec.ID,
+				Error: err.Error(),
+			}
 			break
 		}
 
@@ -109,13 +113,13 @@ func (s *Service) handleRequest(rec *recorder.Recorder, req *livekit.RecordingRe
 }
 
 func (s *Service) handleResponse(recordingId, requestId string, err error) error {
-	logger.Debugw("sending response", "recordingId", recordingId, "requestId", requestId)
-
 	var message string
 	if err != nil {
 		logger.Errorw("error handling request", err,
 			"recordingId", recordingId, "requestId", requestId)
 		message = err.Error()
+	} else {
+		logger.Debugw("request handled", "recordingId", recordingId, "requestId", requestId)
 	}
 
 	return s.bus.Publish(s.ctx, recording.ResponseChannel(recordingId), &livekit.RecordingResponse{

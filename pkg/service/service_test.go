@@ -29,29 +29,55 @@ func TestService(t *testing.T) {
 	time.Sleep(time.Millisecond * 100)
 
 	var id1, id2, id3 string
-	t.Run("Reservation", func(t *testing.T) {
+	if !t.Run("Reservations", func(t *testing.T) {
 		require.Equal(t, Available, svc.Status())
 		id1, err = recording.ReserveRecorder(bus)
 		require.NoError(t, err)
 		require.Equal(t, Reserved, svc.Status())
-	})
 
-	t.Run("Double reservation fails", func(t *testing.T) {
 		// second reservation should fail
 		_, err = recording.ReserveRecorder(bus)
 		require.Error(t, err)
-	})
+	}) {
+		t.FailNow()
+	}
 
-	t.Run("Start recording", func(t *testing.T) {
+	if !t.Run("Invalid request", func(t *testing.T) {
+		require.Error(t, recording.RPC(context.Background(), bus, id1, &livekit.RecordingRequest{
+			RequestId: utils.RandomSecret(),
+			Request: &livekit.RecordingRequest_Start{
+				Start: &livekit.StartRecordingRequest{
+					Input: &livekit.StartRecordingRequest_Template{
+						Template: &livekit.RecordingTemplate{
+							Layout: "speaker-dark",
+						},
+					},
+					Output: &livekit.StartRecordingRequest_Filepath{
+						Filepath: "test.mp4",
+					},
+				},
+			},
+		}))
+		time.Sleep(time.Millisecond * 100)
+		require.Equal(t, Available, svc.Status())
+	}) {
+		t.FailNow()
+	}
+
+	if !t.Run("Start recording", func(t *testing.T) {
+		id1, err = recording.ReserveRecorder(bus)
+		require.NoError(t, err)
 		require.NoError(t, recording.RPC(context.Background(), bus, id1, &livekit.RecordingRequest{
 			RequestId: utils.RandomSecret(),
 			Request: &livekit.RecordingRequest_Start{
 				Start: startRecordingRequest(true),
 			},
 		}))
-	})
+	}) {
+		t.FailNow()
+	}
 
-	t.Run("RPC validation", func(t *testing.T) {
+	if !t.Run("RPC validation", func(t *testing.T) {
 		require.Equal(t, pipeline.ErrCannotAddToFile,
 			recording.RPC(context.Background(), bus, id1, &livekit.RecordingRequest{
 				RequestId: utils.RandomSecret(),
@@ -63,14 +89,18 @@ func TestService(t *testing.T) {
 				},
 			}),
 		)
-	})
+	}) {
+		t.FailNow()
+	}
 
-	t.Run("Recording completes", func(t *testing.T) {
+	if !t.Run("Recording completes", func(t *testing.T) {
 		time.Sleep(time.Millisecond * 3100)
 		require.Equal(t, Available, svc.Status())
-	})
+	}) {
+		t.FailNow()
+	}
 
-	t.Run("RPCs", func(t *testing.T) {
+	if !t.Run("RPCs", func(t *testing.T) {
 		id2, err = recording.ReserveRecorder(bus)
 		require.NoError(t, err)
 		require.NoError(t, recording.RPC(context.Background(), bus, id2, &livekit.RecordingRequest{
@@ -89,9 +119,11 @@ func TestService(t *testing.T) {
 				},
 			},
 		}))
-	})
+	}) {
+		t.FailNow()
+	}
 
-	t.Run("Stop recording", func(t *testing.T) {
+	if !t.Run("Stop recording", func(t *testing.T) {
 		require.NoError(t, recording.RPC(context.Background(), bus, id2, &livekit.RecordingRequest{
 			RequestId: utils.RandomSecret(),
 			Request: &livekit.RecordingRequest_End{
@@ -102,9 +134,11 @@ func TestService(t *testing.T) {
 		}))
 		status := svc.Status()
 		require.True(t, status == Stopping || status == Available)
-	})
+	}) {
+		t.FailNow()
+	}
 
-	t.Run("Kill service", func(t *testing.T) {
+	if !t.Run("Kill service", func(t *testing.T) {
 		id3, err = recording.ReserveRecorder(bus)
 		require.NoError(t, err)
 		require.NoError(t, recording.RPC(context.Background(), bus, id3, &livekit.RecordingRequest{
@@ -119,7 +153,9 @@ func TestService(t *testing.T) {
 		status := svc.Status()
 		// status will show available for a very small amount of time on shutdown
 		require.True(t, status == Stopping || status == Available)
-	})
+	}) {
+		t.FailNow()
+	}
 }
 
 func startRecordingRequest(s3 bool) *livekit.StartRecordingRequest {

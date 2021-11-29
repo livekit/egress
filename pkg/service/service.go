@@ -27,6 +27,7 @@ type Service struct {
 type Status string
 
 const (
+	Starting  Status = "starting"
 	Available Status = "available"
 	Reserved  Status = "reserved"
 	Recording Status = "recording"
@@ -34,7 +35,7 @@ const (
 )
 
 func NewService(conf *config.Config, bus utils.MessageBus) *Service {
-	return &Service{
+	s := &Service{
 		ctx:      context.Background(),
 		conf:     conf,
 		bus:      bus,
@@ -42,6 +43,8 @@ func NewService(conf *config.Config, bus utils.MessageBus) *Service {
 		shutdown: make(chan struct{}, 1),
 		kill:     make(chan struct{}, 1),
 	}
+	s.status.Store(Starting)
+	return s
 }
 
 func (s *Service) Run() error {

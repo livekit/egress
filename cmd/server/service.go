@@ -20,8 +20,6 @@ func runService(c *cli.Context) error {
 		return err
 	}
 
-	initLogger(conf.LogLevel)
-
 	rc, err := messaging.NewMessageBus(conf)
 	if err != nil {
 		return err

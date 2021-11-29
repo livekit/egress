@@ -132,5 +132,7 @@ func (r *Recorder) Stop() {
 
 // should only be called after pipeline completes
 func (r *Recorder) Close() {
-	r.display.Close()
+	if r.display != nil {
+		r.display.Close()
+	}
 }
