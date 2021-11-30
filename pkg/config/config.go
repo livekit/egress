@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-logr/zapr"
 	"github.com/livekit/protocol/logger"
@@ -152,6 +153,7 @@ func (c *Config) initDisplay() error {
 	}
 
 	if c.Display == "" {
+		rand.Seed(time.Now().UnixNano())
 		c.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
 	}
 
