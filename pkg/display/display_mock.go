@@ -12,7 +12,7 @@ func New() *Display {
 	}
 }
 
-func (d *Display) Launch(url string, width, height, depth int) error {
+func (d *Display) Launch(display, url string, width, height, depth int) error {
 	return nil
 }
 

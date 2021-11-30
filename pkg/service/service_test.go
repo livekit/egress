@@ -16,7 +16,9 @@ import (
 )
 
 func TestService(t *testing.T) {
-	conf := config.TestConfig()
+	conf, err := config.TestConfig()
+	require.NoError(t, err)
+
 	bus, err := messaging.NewMessageBus(conf)
 	require.NoError(t, err)
 

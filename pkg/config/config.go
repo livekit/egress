@@ -2,7 +2,10 @@ package config
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/go-logr/zapr"
 	"github.com/livekit/protocol/logger"
@@ -12,8 +15,6 @@ import (
 
 	livekit "github.com/livekit/protocol/proto"
 )
-
-const Display = ":99"
 
 type Config struct {
 	ApiKey          string      `yaml:"api_key"`
@@ -25,6 +26,7 @@ type Config struct {
 	Redis           RedisConfig `yaml:"redis"`
 	FileOutput      FileOutput  `yaml:"file_output"`
 	Defaults        Defaults    `yaml:"defaults"`
+	Display         string      `yaml:"-"`
 }
 
 type RedisConfig struct {
@@ -96,28 +98,28 @@ func NewConfig(confString string) (*Config, error) {
 		conf.Defaults = fromProto(fromPreset(conf.Defaults.Preset))
 	}
 
-	if err := os.Setenv("DISPLAY", Display); err != nil {
-		return nil, err
-	}
-
-	var gstDebug int
-	switch conf.LogLevel {
-	case "debug":
-		gstDebug = 3
-	case "info", "warn", "error":
-		gstDebug = 1
-	case "panic":
-		gstDebug = 0
-	}
-	if err := os.Setenv("GST_DEBUG", fmt.Sprint(gstDebug)); err != nil {
-		return nil, err
+	// GStreamer log level
+	if os.Getenv("GST_DEBUG") == "" {
+		var gstDebug int
+		switch conf.LogLevel {
+		case "debug":
+			gstDebug = 3
+		case "info", "warn", "error":
+			gstDebug = 1
+		case "panic":
+			gstDebug = 0
+		}
+		if err := os.Setenv("GST_DEBUG", fmt.Sprint(gstDebug)); err != nil {
+			return nil, err
+		}
 	}
 
 	conf.initLogger()
-	return conf, nil
+	err := conf.initDisplay()
+	return conf, err
 }
 
-func TestConfig() *Config {
+func TestConfig() (*Config, error) {
 	conf := &Config{
 		LogLevel:        "debug",
 		TemplateAddress: "https://recorder.livekit.io",
@@ -135,7 +137,30 @@ func TestConfig() *Config {
 		},
 	}
 	conf.initLogger()
-	return conf
+	err := conf.initDisplay()
+	return conf, err
+}
+
+func (c *Config) initDisplay() error {
+	d := os.Getenv("DISPLAY")
+	if d != "" && strings.HasPrefix(d, ":") {
+		num, err := strconv.Atoi(d[1:])
+		if err == nil && num > 0 && num <= 2147483647 {
+			c.Display = d
+			return nil
+		}
+	}
+
+	if c.Display == "" {
+		c.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
+	}
+
+	// GStreamer uses display from env
+	if err := os.Setenv("DISPLAY", c.Display); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (c *Config) initLogger() {

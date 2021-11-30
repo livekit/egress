@@ -13,8 +13,6 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/livekit/protocol/logger"
-
-	"github.com/livekit/livekit-recorder/pkg/config"
 )
 
 const (
@@ -36,20 +34,20 @@ func New() *Display {
 	}
 }
 
-func (d *Display) Launch(url string, width, height, depth int) error {
-	if err := d.launchXvfb(width, height, depth); err != nil {
+func (d *Display) Launch(display, url string, width, height, depth int) error {
+	if err := d.launchXvfb(display, width, height, depth); err != nil {
 		return err
 	}
-	if err := d.launchChrome(url, width, height); err != nil {
+	if err := d.launchChrome(display, url, width, height); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (d *Display) launchXvfb(width, height, depth int) error {
+func (d *Display) launchXvfb(display string, width, height, depth int) error {
 	dims := fmt.Sprintf("%dx%dx%d", width, height, depth)
 	logger.Debugw("launching xvfb", "dims", dims)
-	xvfb := exec.Command("Xvfb", config.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
+	xvfb := exec.Command("Xvfb", display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
 	if err := xvfb.Start(); err != nil {
 		return err
 	}
@@ -57,7 +55,7 @@ func (d *Display) launchXvfb(width, height, depth int) error {
 	return nil
 }
 
-func (d *Display) launchChrome(url string, width, height int) error {
+func (d *Display) launchChrome(display, url string, width, height int) error {
 	logger.Debugw("launching chrome")
 
 	opts := []chromedp.ExecAllocatorOption{
@@ -97,7 +95,7 @@ func (d *Display) launchChrome(url string, width, height int) error {
 		chromedp.Flag("autoplay-policy", "no-user-gesture-required"),
 		chromedp.Flag("window-position", "0,0"),
 		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", width, height)),
-		chromedp.Flag("display", config.Display),
+		chromedp.Flag("display", display),
 	}
 
 	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
