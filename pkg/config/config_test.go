@@ -32,14 +32,6 @@ defaults:
 var testRequests = []string{`
 {
 	"template": {
-		"layout": "grid-light",
-		"token": "recording-token"
-	},
-	"filepath": "path/filename.mp4"
-}
-`, `
-{
-	"template": {
 		"layout": "speaker-dark",
 		"room_name": "test-room"
 	},
@@ -71,34 +63,16 @@ func TestConfig(t *testing.T) {
 }
 
 func TestRequests(t *testing.T) {
-	t.Run("template and s3", func(t *testing.T) {
-		req := &livekit.StartRecordingRequest{}
-		require.NoError(t, protojson.Unmarshal([]byte(testRequests[0]), req))
-		require.NotNil(t, req.Input)
-		require.NotNil(t, req.Output)
-		template, ok := req.Input.(*livekit.StartRecordingRequest_Template)
-		require.True(t, ok)
-		require.Equal(t, "grid-light", template.Template.Layout)
-		token, ok := template.Template.Room.(*livekit.RecordingTemplate_Token)
-		require.True(t, ok)
-		require.Equal(t, "recording-token", token.Token)
-		filepath := req.Output.(*livekit.StartRecordingRequest_Filepath).Filepath
-		require.True(t, ok)
-		require.Equal(t, "path/filename.mp4", filepath)
-	})
-
 	t.Run("file and preset", func(t *testing.T) {
 		req := &livekit.StartRecordingRequest{}
-		require.NoError(t, protojson.Unmarshal([]byte(testRequests[1]), req))
+		require.NoError(t, protojson.Unmarshal([]byte(testRequests[0]), req))
 		require.NotNil(t, req.Input)
 		require.NotNil(t, req.Output)
 		require.NotNil(t, req.Options)
 		template, ok := req.Input.(*livekit.StartRecordingRequest_Template)
 		require.True(t, ok)
 		require.Equal(t, "speaker-dark", template.Template.Layout)
-		roomName, ok := template.Template.Room.(*livekit.RecordingTemplate_RoomName)
-		require.True(t, ok)
-		require.Equal(t, "test-room", roomName.RoomName)
+		require.Equal(t, "test-room", template.Template.RoomName)
 		filepath := req.Output.(*livekit.StartRecordingRequest_Filepath).Filepath
 		require.True(t, ok)
 		require.Equal(t, "/out/filename.mp4", filepath)
@@ -107,7 +81,7 @@ func TestRequests(t *testing.T) {
 
 	t.Run("rtmp and options", func(t *testing.T) {
 		req := &livekit.StartRecordingRequest{}
-		require.NoError(t, protojson.Unmarshal([]byte(testRequests[2]), req))
+		require.NoError(t, protojson.Unmarshal([]byte(testRequests[1]), req))
 		require.NotNil(t, req.Input)
 		require.NotNil(t, req.Output)
 		require.NotNil(t, req.Options)

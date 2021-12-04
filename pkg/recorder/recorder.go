@@ -2,7 +2,7 @@ package recorder
 
 import (
 	"fmt"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/livekit/protocol/logger"
@@ -24,44 +24,53 @@ type Recorder struct {
 	url      string
 	filename string
 	filepath string
+
+	// result info
+	sync.Mutex
+	result     *livekit.RecordingInfo
+	startTimes map[string]time.Time
 }
 
 func NewRecorder(conf *config.Config, recordingID string) *Recorder {
 	return &Recorder{
 		ID:   recordingID,
 		conf: conf,
+		result: &livekit.RecordingInfo{
+			Id: recordingID,
+		},
+		startTimes: make(map[string]time.Time),
 	}
 }
 
 // Run blocks until completion
-func (r *Recorder) Run() *livekit.RecordingResult {
-	res := &livekit.RecordingResult{Id: r.ID}
-
+func (r *Recorder) Run() *livekit.RecordingInfo {
 	r.display = display.New()
 	options := r.req.Options
 	err := r.display.Launch(r.conf.Display, r.url, int(options.Width), int(options.Height), int(options.Depth))
 	if err != nil {
 		logger.Errorw("error launching display", err)
-		res.Error = err.Error()
-		return res
+		r.result.Error = err.Error()
+		return r.result
 	}
 
 	if r.req == nil {
-		res.Error = "recorder not initialized"
-		return res
+		r.result.Error = "recorder not initialized"
+		return r.result
 	}
 
 	r.pipeline, err = r.getPipeline(r.req)
 	if err != nil {
 		logger.Errorw("error building pipeline", err)
-		res.Error = err.Error()
-		return res
+		r.result.Error = err.Error()
+		return r.result
 	}
 
-	// wait for START_RECORDING console log
-	if strings.HasPrefix(r.url, r.conf.TemplateAddress) {
+	// wait for START_RECORDING console log if using template
+	switch r.req.Input.(type) {
+	case *livekit.StartRecordingRequest_Template:
 		r.display.WaitForRoom()
 	}
+
 	// stop on END_RECORDING console log
 	go func(d *display.Display) {
 		<-d.EndMessage()
@@ -69,39 +78,60 @@ func (r *Recorder) Run() *livekit.RecordingResult {
 	}(r.display)
 
 	start := time.Now()
+	switch output := r.req.Output.(type) {
+	case *livekit.StartRecordingRequest_Rtmp:
+		r.Lock()
+		for _, url := range output.Rtmp.Urls {
+			r.startTimes[url] = start
+		}
+		r.Unlock()
+	}
+
 	err = r.pipeline.Start()
 	if err != nil {
 		logger.Errorw("error running pipeline", err)
-		res.Error = err.Error()
-		return res
-	}
-	res.Duration = time.Since(start).Milliseconds() / 1000
-
-	if r.filename != "" && r.conf.FileOutput.S3 != nil {
-		if err = r.uploadS3(); err != nil {
-			res.Error = err.Error()
-			return res
-		}
-		res.DownloadUrl = fmt.Sprintf("s3://%s/%s", r.conf.FileOutput.S3.Bucket, r.filepath)
-	} else if r.filename != "" && r.conf.FileOutput.Azblob != nil {
-		if err = r.uploadAzure(); err != nil {
-			res.Error = err.Error()
-			return res
-		}
-		res.DownloadUrl = fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s",
-			r.conf.FileOutput.Azblob.AccountName,
-			r.conf.FileOutput.Azblob.ContainerName,
-			r.filepath,
-		)
+		r.result.Error = err.Error()
+		return r.result
 	}
 
-	return res
+	switch r.req.Output.(type) {
+	case *livekit.StartRecordingRequest_Rtmp:
+		for url, startTime := range r.startTimes {
+			r.result.Rtmp = append(r.result.Rtmp, &livekit.RtmpResult{
+				StreamUrl: url,
+				Duration:  time.Since(startTime).Milliseconds() / 1000,
+			})
+		}
+	case *livekit.StartRecordingRequest_Filepath:
+		r.result.File = &livekit.FileResult{
+			Duration: time.Since(start).Milliseconds() / 1000,
+		}
+
+		if r.conf.FileOutput.S3 != nil {
+			if err = r.uploadS3(); err != nil {
+				r.result.Error = err.Error()
+				return r.result
+			}
+			r.result.File.DownloadUrl = fmt.Sprintf("s3://%s/%s", r.conf.FileOutput.S3.Bucket, r.filepath)
+		} else if r.conf.FileOutput.Azblob != nil {
+			if err = r.uploadAzure(); err != nil {
+				r.result.Error = err.Error()
+				return r.result
+			}
+			r.result.File.DownloadUrl = fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s",
+				r.conf.FileOutput.Azblob.AccountName,
+				r.conf.FileOutput.Azblob.ContainerName,
+				r.filepath)
+		}
+	}
+
+	return r.result
 }
 
 func (r *Recorder) getPipeline(req *livekit.StartRecordingRequest) (*pipeline.Pipeline, error) {
-	switch req.Output.(type) {
+	switch output := req.Output.(type) {
 	case *livekit.StartRecordingRequest_Rtmp:
-		return pipeline.NewRtmpPipeline(req.Output.(*livekit.StartRecordingRequest_Rtmp).Rtmp.Urls, req.Options)
+		return pipeline.NewRtmpPipeline(output.Rtmp.Urls, req.Options)
 	case *livekit.StartRecordingRequest_Filepath:
 		return pipeline.NewFilePipeline(r.filename, req.Options)
 	}
@@ -113,7 +143,17 @@ func (r *Recorder) AddOutput(url string) error {
 	if r.pipeline == nil {
 		return pipeline.ErrPipelineNotFound
 	}
-	return r.pipeline.AddOutput(url)
+
+	start := time.Now()
+	if err := r.pipeline.AddOutput(url); err != nil {
+		return err
+	}
+
+	r.Lock()
+	r.startTimes[url] = start
+	r.Unlock()
+
+	return nil
 }
 
 func (r *Recorder) RemoveOutput(url string) error {
@@ -121,7 +161,21 @@ func (r *Recorder) RemoveOutput(url string) error {
 	if r.pipeline == nil {
 		return pipeline.ErrPipelineNotFound
 	}
-	return r.pipeline.RemoveOutput(url)
+	if err := r.pipeline.RemoveOutput(url); err != nil {
+		return err
+	}
+
+	r.Lock()
+	if start, ok := r.startTimes[url]; ok {
+		r.result.Rtmp = append(r.result.Rtmp, &livekit.RtmpResult{
+			StreamUrl: url,
+			Duration:  time.Since(start).Milliseconds() / 1000,
+		})
+		delete(r.startTimes, url)
+	}
+	r.Unlock()
+
+	return nil
 }
 
 func (r *Recorder) Stop() {

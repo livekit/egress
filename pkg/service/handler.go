@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
@@ -29,7 +28,7 @@ func (s *Service) handleRecording(rec *recorder.Recorder) {
 
 	// listen for rpcs
 	logger.Debugw("waiting for requests", "recordingId", rec.ID)
-	result := make(chan *livekit.RecordingResult, 1)
+	result := make(chan *livekit.RecordingInfo, 1)
 	for {
 		select {
 		case <-s.kill:
@@ -62,7 +61,7 @@ func (s *Service) handleRecording(rec *recorder.Recorder) {
 	}
 }
 
-func (s *Service) handleRequest(rec *recorder.Recorder, req *livekit.RecordingRequest, result chan *livekit.RecordingResult) {
+func (s *Service) handleRequest(rec *recorder.Recorder, req *livekit.RecordingRequest, result chan *livekit.RecordingInfo) {
 	logger.Debugw("handling request", "recordingId", rec.ID, "requestId", req.RequestId)
 	var err error
 	switch req.Request.(type) {
@@ -76,7 +75,7 @@ func (s *Service) handleRequest(rec *recorder.Recorder, req *livekit.RecordingRe
 		start := req.Request.(*livekit.RecordingRequest_Start).Start
 		err = rec.Validate(start)
 		if err != nil {
-			result <- &livekit.RecordingResult{
+			result <- &livekit.RecordingInfo{
 				Id:    rec.ID,
 				Error: err.Error(),
 			}
@@ -128,14 +127,10 @@ func (s *Service) handleResponse(recordingId, requestId string, err error) error
 	})
 }
 
-func LogResult(res *livekit.RecordingResult) {
+func LogResult(res *livekit.RecordingInfo) {
 	if res.Error != "" {
-		logger.Errorw("recording failed", errors.New(res.Error), "recordingId", res.Id)
+		logger.Errorw("recording failed", errors.New(res.Error), "recordingID", res.Id)
 	} else {
-		values := []interface{}{"recordingId", res.Id, "duration", time.Duration(res.Duration * 1e9)}
-		if res.DownloadUrl != "" {
-			values = append(values, "url", res.DownloadUrl)
-		}
-		logger.Infow("recording complete", values...)
+		logger.Infow("recording complete", "recordingID", res.Id)
 	}
 }

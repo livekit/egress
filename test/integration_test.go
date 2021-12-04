@@ -57,7 +57,7 @@ func runFileTest(t *testing.T, conf *config.Config) {
 	})
 
 	res := rec.Run()
-	verifyFile(t, req, res, filepath)
+	verifyFileResult(t, req, res, filepath)
 }
 
 func runRtmpTest(t *testing.T, conf *config.Config) {
@@ -75,7 +75,7 @@ func runRtmpTest(t *testing.T, conf *config.Config) {
 
 	rec := recorder.NewRecorder(conf, "rtmp_test")
 	require.NoError(t, rec.Validate(req))
-	resChan := make(chan *livekit.RecordingResult, 1)
+	resChan := make(chan *livekit.RecordingInfo, 1)
 	go func() {
 		resChan <- rec.Run()
 	}()
@@ -84,16 +84,16 @@ func runRtmpTest(t *testing.T, conf *config.Config) {
 	time.Sleep(time.Second * 30)
 
 	// check stream
-	verifyRtmp(t, req, rtmpUrl)
+	verifyRtmpResult(t, req, rtmpUrl)
 
 	// add another, check both
 	rtmpUrl2 := "rtmp://localhost:1935/stream2"
 	require.NoError(t, rec.AddOutput(rtmpUrl2))
-	verifyRtmp(t, req, rtmpUrl, rtmpUrl2)
+	verifyRtmpResult(t, req, rtmpUrl, rtmpUrl2)
 
 	// remove first, check second
 	require.NoError(t, rec.RemoveOutput(rtmpUrl))
-	verifyRtmp(t, req, rtmpUrl2)
+	verifyRtmpResult(t, req, rtmpUrl2)
 
 	// stop
 	rec.Stop()
@@ -101,22 +101,24 @@ func runRtmpTest(t *testing.T, conf *config.Config) {
 
 	// check error
 	require.Empty(t, res.Error)
-	require.NotEqual(t, int64(0), res.Duration)
+	require.Len(t, res.Rtmp, 2)
+	require.NotEqual(t, int64(0), res.Rtmp[0].Duration)
+	require.NotEqual(t, int64(0), res.Rtmp[1].Duration)
 }
 
-func verifyFile(t *testing.T, req *livekit.StartRecordingRequest, res *livekit.RecordingResult, filename string) {
+func verifyFileResult(t *testing.T, req *livekit.StartRecordingRequest, res *livekit.RecordingInfo, filename string) {
 	// check error
 	require.Empty(t, res.Error)
 	verify(t, req, res, filename, false)
 }
 
-func verifyRtmp(t *testing.T, req *livekit.StartRecordingRequest, urls ...string) {
+func verifyRtmpResult(t *testing.T, req *livekit.StartRecordingRequest, urls ...string) {
 	for _, url := range urls {
 		verify(t, req, nil, url, true)
 	}
 }
 
-func verify(t *testing.T, req *livekit.StartRecordingRequest, res *livekit.RecordingResult, input string, isStream bool) {
+func verify(t *testing.T, req *livekit.StartRecordingRequest, res *livekit.RecordingInfo, input string, isStream bool) {
 	info, err := ffprobe(input)
 	require.NoError(t, err)
 
@@ -125,8 +127,9 @@ func verify(t *testing.T, req *livekit.StartRecordingRequest, res *livekit.Recor
 		require.Equal(t, "flv", info.Format.FormatName)
 	} else {
 		require.NotEqual(t, 0, info.Format.Size)
-		require.NotEqual(t, int64(0), res.Duration)
-		compareInfo(t, int32(res.Duration), info.Format.Duration, 0.95)
+		require.NotNil(t, res.File)
+		require.NotEqual(t, int64(0), res.File.Duration)
+		compareInfo(t, int32(res.File.Duration), info.Format.Duration, 0.95)
 		require.Equal(t, "x264", info.Format.Tags.Encoder)
 	}
 	require.Equal(t, 100, info.Format.ProbeScore)

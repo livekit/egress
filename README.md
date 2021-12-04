@@ -16,12 +16,12 @@ Both the standalone recorder and recorder service take a yaml config file. If yo
 All config options:
 
 ```yaml
-api_key: livekit server api key (required if using templates without supplying tokens)
-api_secret: livekit server api secret (required if using templates without supplying tokens)
-ws_url: livekit server ws url (required if using templates)
+api_key: livekit server api key
+api_secret: livekit server api secret
+ws_url: livekit server ws url
 health_port: http port to serve status (optional)
 log_level: valid levels are debug, info, warn, error, fatal, or panic. Defaults to debug
-template_address: template address override (for hosting your own templates). Defaults to https://recorder.livekit.io
+template_address: template url base, can be used to host your own templates. Defaults to https://recorder.livekit.io
 redis: (service mode only)
     address: redis address, including port
     username: redis username (optional)
@@ -69,7 +69,7 @@ the LiveKit server's recording api.
 
 ### Input
 
-You can input either a `url` to record from, or choose a `template` and a `layout`, and supply either a `room_name` or `token`.
+You can input either a `url` to record from, or choose a `template` and supply a `layout` and `room_name`.
 
 We currently have 4 templates available - grid or speaker, each available in light or dark.
 Your config will need your server api key and secret, along with the websocket url.  
@@ -87,11 +87,11 @@ You can also override any defaults set in your `config.yaml`.
 All request options:
 ```json
 {
-    "url": "<your-recording-domain.com>",
+    "url": "<external-website-to-record.com>",
     "template": {
         "layout": "<grid|speaker>-<light|dark>",
         "room_name": "<room-to-record>",
-        "token": "<token>"
+        "base_url": "optional-custom-template-host.com"
     },
     "filepath": "path/recording.mp4",
     "rtmp": {
@@ -230,7 +230,7 @@ twitch.json:
 {
     "template": {
         "layout": "speaker-dark",
-        "token": "<recording-token>"
+        "room_name": "my-room"
     },
     "rtmp": {
         "urls": ["rtmp://live.twitch.tv/app/<stream-key>"]

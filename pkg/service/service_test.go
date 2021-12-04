@@ -163,10 +163,8 @@ func TestService(t *testing.T) {
 func startRecordingRequest(s3 bool) *livekit.StartRecordingRequest {
 	req := &livekit.StartRecordingRequest{
 		Input: &livekit.StartRecordingRequest_Template{Template: &livekit.RecordingTemplate{
-			Layout: "speaker-dark",
-			Room: &livekit.RecordingTemplate_Token{
-				Token: "fake-recording-token",
-			},
+			Layout:   "speaker-dark",
+			RoomName: "hello",
 		}},
 	}
 

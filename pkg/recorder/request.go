@@ -19,7 +19,6 @@ var (
 	ErrInvalidUrl      = errors.New("invalid rtmp url")
 	ErrInvalidFilePath = errors.New("file output must be {path/}filename.mp4")
 	ErrNoInput         = errors.New("input url or template required")
-	ErrInvalidTemplate = errors.New("token or room name required")
 )
 
 func (r *Recorder) Validate(req *livekit.StartRecordingRequest) error {
@@ -82,23 +81,23 @@ func (r *Recorder) GetInputUrl(req *livekit.StartRecordingRequest) (string, erro
 		return req.Input.(*livekit.StartRecordingRequest_Url).Url, nil
 	case *livekit.StartRecordingRequest_Template:
 		template := req.Input.(*livekit.StartRecordingRequest_Template).Template
+		if template.RoomName == "" {
+			return "", errors.New("room name required for template input")
+		}
 
-		var token string
-		switch template.Room.(type) {
-		case *livekit.RecordingTemplate_RoomName:
-			var err error
-			token, err = r.buildToken(template.Room.(*livekit.RecordingTemplate_RoomName).RoomName)
-			if err != nil {
-				return "", err
-			}
-		case *livekit.RecordingTemplate_Token:
-			token = template.Room.(*livekit.RecordingTemplate_Token).Token
-		default:
-			return "", ErrInvalidTemplate
+		r.result.RoomName = template.RoomName
+		token, err := r.buildToken(template.RoomName)
+		if err != nil {
+			return "", err
+		}
+
+		baseUrl := r.conf.TemplateAddress
+		if template.BaseUrl != "" {
+			baseUrl = template.BaseUrl
 		}
 
 		return fmt.Sprintf("%s/#/%s?url=%s&token=%s",
-			r.conf.TemplateAddress, template.Layout, url.QueryEscape(r.conf.WsUrl), token), nil
+			baseUrl, template.Layout, url.QueryEscape(r.conf.WsUrl), token), nil
 	default:
 		return "", ErrNoInput
 	}
@@ -114,6 +113,7 @@ func (r *Recorder) buildToken(roomName string) (string, error) {
 		CanPublish:     &f,
 		CanPublishData: &f,
 		Hidden:         true,
+		Recorder:       true,
 	}
 
 	at := auth.NewAccessToken(r.conf.ApiKey, r.conf.ApiSecret).

@@ -1,6 +1,7 @@
 package recorder
 
 import (
+	"strings"
 	"testing"
 
 	livekit "github.com/livekit/protocol/proto"
@@ -10,27 +11,22 @@ import (
 )
 
 func TestInputUrl(t *testing.T) {
-	token := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
 	req := &livekit.StartRecordingRequest{
 		Input: &livekit.StartRecordingRequest_Template{
 			Template: &livekit.RecordingTemplate{
-				Layout: "speaker-light",
-				Room: &livekit.RecordingTemplate_Token{
-					Token: token,
-				},
+				Layout:   "speaker-light",
+				RoomName: "hello",
 			},
 		},
 	}
 
-	expected := "https://recorder.livekit.io/#/speaker-light?url=wss%3A%2F%2Ftest.livekit.cloud&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
-	rec := &Recorder{
-		conf: &config.Config{
-			WsUrl:           "wss://test.livekit.cloud",
-			TemplateAddress: "https://recorder.livekit.io",
-		},
-	}
+	conf, err := config.TestConfig()
+	conf.WsUrl = "wss://fake.url.io"
+	require.NoError(t, err)
+	rec := NewRecorder(conf, "fakeRecordingID")
 
 	actual, err := rec.GetInputUrl(req)
 	require.NoError(t, err)
-	require.Equal(t, expected, actual)
+	expected := "https://recorder.livekit.io/#/speaker-light?url=wss%3A%2F%2Ffake.url.io&token="
+	require.True(t, strings.HasPrefix(actual, expected), actual)
 }

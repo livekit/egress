@@ -122,6 +122,8 @@ func NewConfig(confString string) (*Config, error) {
 
 func TestConfig() (*Config, error) {
 	conf := &Config{
+		ApiKey:          "fakeKey",
+		ApiSecret:       "fakeSecret",
 		LogLevel:        "debug",
 		TemplateAddress: "https://recorder.livekit.io",
 		Redis: RedisConfig{
