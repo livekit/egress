@@ -13,6 +13,8 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-recorder/pkg/config"
 )
 
 const (
@@ -34,11 +36,11 @@ func New() *Display {
 	}
 }
 
-func (d *Display) Launch(display, url string, width, height, depth int) error {
-	if err := d.launchXvfb(display, width, height, depth); err != nil {
+func (d *Display) Launch(conf *config.Config, url string, width, height, depth int) error {
+	if err := d.launchXvfb(conf.Display, width, height, depth); err != nil {
 		return err
 	}
-	if err := d.launchChrome(display, url, width, height); err != nil {
+	if err := d.launchChrome(conf, url, width, height); err != nil {
 		return err
 	}
 	return nil
@@ -55,8 +57,8 @@ func (d *Display) launchXvfb(display string, width, height, depth int) error {
 	return nil
 }
 
-func (d *Display) launchChrome(display, url string, width, height int) error {
-	logger.Debugw("launching chrome")
+func (d *Display) launchChrome(conf *config.Config, url string, width, height int) error {
+	logger.Debugw("launching chrome", "url", url)
 
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.NoFirstRun,
@@ -95,7 +97,14 @@ func (d *Display) launchChrome(display, url string, width, height int) error {
 		chromedp.Flag("autoplay-policy", "no-user-gesture-required"),
 		chromedp.Flag("window-position", "0,0"),
 		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", width, height)),
-		chromedp.Flag("display", display),
+		chromedp.Flag("display", conf.Display),
+	}
+
+	if conf.Insecure {
+		opts = append(opts,
+			chromedp.Flag("disable-web-security", true),
+			chromedp.Flag("allow-running-insecure-content", true),
+		)
 	}
 
 	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)

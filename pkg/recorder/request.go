@@ -96,7 +96,7 @@ func (r *Recorder) GetInputUrl(req *livekit.StartRecordingRequest) (string, erro
 			baseUrl = template.BaseUrl
 		}
 
-		return fmt.Sprintf("%s/#/%s?url=%s&token=%s",
+		return fmt.Sprintf("%s/%s?url=%s&token=%s",
 			baseUrl, template.Layout, url.QueryEscape(r.conf.WsUrl), token), nil
 	default:
 		return "", ErrNoInput

@@ -2,6 +2,10 @@
 
 package display
 
+import (
+	"github.com/livekit/livekit-recorder/pkg/config"
+)
+
 type Display struct {
 	endChan chan struct{}
 }
@@ -12,7 +16,7 @@ func New() *Display {
 	}
 }
 
-func (d *Display) Launch(display, url string, width, height, depth int) error {
+func (d *Display) Launch(conf *config.Config, url string, width, height, depth int) error {
 	return nil
 }
 

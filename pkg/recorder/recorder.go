@@ -46,7 +46,7 @@ func NewRecorder(conf *config.Config, recordingID string) *Recorder {
 func (r *Recorder) Run() *livekit.RecordingInfo {
 	r.display = display.New()
 	options := r.req.Options
-	err := r.display.Launch(r.conf.Display, r.url, int(options.Width), int(options.Height), int(options.Depth))
+	err := r.display.Launch(r.conf, r.url, int(options.Width), int(options.Height), int(options.Depth))
 	if err != nil {
 		logger.Errorw("error launching display", err)
 		r.result.Error = err.Error()
