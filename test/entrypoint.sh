@@ -13,4 +13,4 @@ pactl load-module module-null-sink sink_name="grab" sink_properties=device.descr
 ./rtsp-simple-server &
 
 # Run service
-XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr go test --tags=integration ./test
+XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr go test -v --tags=integration ./test

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/recording"
 	"google.golang.org/protobuf/proto"
 

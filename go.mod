@@ -9,7 +9,7 @@ require (
 	github.com/chromedp/chromedp v0.7.4
 	github.com/go-logr/zapr v1.0.0
 	github.com/go-redis/redis/v8 v8.11.3
-	github.com/livekit/protocol v0.10.3
+	github.com/livekit/protocol v0.11.1-0.20211215011801-f77609470e70
 	github.com/magefile/mage v1.11.0
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.7.0

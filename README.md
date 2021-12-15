@@ -215,7 +215,7 @@ Below is a full config, with all optional parameters.
 * `log_level: error` is recommended for production setups. GStreamer logs can be noisy
 * `redis` is required for [service mode](#service-mode)
 * Only one of `file_output.s3` or `file_output.azblob` should be set.
-* If `preset` is set, it will override any other options. Any and all `defaults` can be overridden by a request
+* `defaults` can be overridden by a request
 
 All config parameters:
 
@@ -245,7 +245,7 @@ file_output:
         account_key: azure blob access key
         container_name: azure blob container name
 defaults:
-    preset: defaults to "NONE", see options below
+    preset: defaults to "NONE", see options below. If preset is used, all other options are ignored.
     width: defaults to 1920
     height: defaults to 1080
     depth: defaults to 24
@@ -253,6 +253,7 @@ defaults:
     audio_bitrate: defaults to 128 (kbps)
     audio_frequency: defaults to 44100 (Hz)
     video_bitrate: defaults to 4500 (kbps)
+    profile: x264 encoding profile (baseline, main, or high). defaults to main
 ```
 
 ### Presets
@@ -264,7 +265,8 @@ defaults:
 | "FULL_HD_30" | 1920  | 1080   | 30        | 4500          |
 | "FULL_HD_60" | 1920  | 1080   | 60        | 6000          |
 
-If you don't supply any options with your config defaults or the request, it defaults to FULL_HD_30.
+If preset is used, all other options will be ignored.
+All presets use `depth: 24`, `audio_bitrate: 128`, `audio_frequency: 44100`, and `profile: main`.
 
 ## Requests
 
@@ -299,10 +301,11 @@ All request options:
         "width": 1920,
         "height": 1080,
         "depth": 24,
-        "framerate": 60,
+        "framerate": 30,
         "audio_bitrate": 128,
         "audio_frequency": 44100,
-        "video_bitrate": 6000
+        "video_bitrate": 4500,
+        "profile": "main"
     }
 }
 ```

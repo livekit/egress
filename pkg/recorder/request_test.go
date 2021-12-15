@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-recorder/pkg/config"

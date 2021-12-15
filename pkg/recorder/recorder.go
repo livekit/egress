@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/proto"
 
 	"github.com/livekit/livekit-recorder/pkg/config"
 	"github.com/livekit/livekit-recorder/pkg/display"

@@ -1,3 +1,4 @@
+//go:build !test
 // +build !test
 
 package pipeline
@@ -5,7 +6,7 @@ package pipeline
 import (
 	"fmt"
 
-	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/livekit"
 	"github.com/tinyzimmer/go-gst/gst"
 )
 
@@ -74,11 +75,11 @@ func newInputBin(isStream bool, options *livekit.RecordingOptions) (*InputBin, e
 		return nil, err
 	}
 
-	videoCapsFilter, err := gst.NewElement("capsfilter")
+	framerateCaps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return nil, err
 	}
-	err = videoCapsFilter.SetProperty("caps", gst.NewCapsFromString(
+	err = framerateCaps.SetProperty("caps", gst.NewCapsFromString(
 		fmt.Sprintf("video/x-raw,framerate=%d/1", options.Framerate),
 	))
 	if err != nil {
@@ -89,12 +90,22 @@ func newInputBin(isStream bool, options *livekit.RecordingOptions) (*InputBin, e
 	if err != nil {
 		return nil, err
 	}
-	err = x264Enc.SetProperty("bitrate", uint(options.VideoBitrate))
-	if err != nil {
+	if err = x264Enc.SetProperty("bitrate", uint(options.VideoBitrate)); err != nil {
 		return nil, err
 	}
 	x264Enc.SetArg("speed-preset", "veryfast")
 	x264Enc.SetArg("tune", "zerolatency")
+
+	profileCaps, err := gst.NewElement("capsfilter")
+	if err != nil {
+		return nil, err
+	}
+	err = profileCaps.SetProperty("caps", gst.NewCapsFromString(
+		fmt.Sprintf("video/x-h264,profile=%s,framerate=%d/1", options.Profile, options.Framerate),
+	))
+	if err != nil {
+		return nil, err
+	}
 
 	videoQueue, err := gst.NewElement("queue")
 	if err != nil {
@@ -132,7 +143,7 @@ func newInputBin(isStream bool, options *livekit.RecordingOptions) (*InputBin, e
 		// audio
 		pulseSrc, audioConvert, audioCapsFilter, faac, audioQueue,
 		// video
-		xImageSrc, videoConvert, videoCapsFilter, x264Enc, videoQueue,
+		xImageSrc, videoConvert, framerateCaps, x264Enc, profileCaps, videoQueue,
 		// mux
 		mux,
 	)
@@ -150,7 +161,7 @@ func newInputBin(isStream bool, options *livekit.RecordingOptions) (*InputBin, e
 		isStream:      isStream,
 		bin:           bin,
 		audioElements: []*gst.Element{pulseSrc, audioConvert, audioCapsFilter, faac, audioQueue},
-		videoElements: []*gst.Element{xImageSrc, videoConvert, videoCapsFilter, x264Enc, videoQueue},
+		videoElements: []*gst.Element{xImageSrc, videoConvert, framerateCaps, x264Enc, profileCaps, videoQueue},
 		audioQueue:    audioQueue,
 		videoQueue:    videoQueue,
 		mux:           mux,

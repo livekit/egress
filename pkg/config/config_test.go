@@ -3,7 +3,7 @@ package config_test
 import (
 	"testing"
 
-	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -27,6 +27,7 @@ defaults:
   audio_bitrate: 96
   audio_frequency: 22050
   video_bitrate: 750
+  profile: high
 `
 
 var testRequests = []string{`
@@ -49,7 +50,8 @@ var testRequests = []string{`
 	"options": {
 		"audio_bitrate": 96,
 		"audio_frequency": 22050,
-		"video_bitrate": 750
+		"video_bitrate": 750,
+		"profile": "main"
 	}
 }
 `}
@@ -60,6 +62,7 @@ func TestConfig(t *testing.T) {
 	require.Equal(t, "192.168.65.2:6379", conf.Redis.Address)
 	require.Equal(t, int32(320), conf.Defaults.Width)
 	require.Equal(t, int32(96), conf.Defaults.AudioBitrate)
+	require.Equal(t, config.ProfileHigh, conf.Defaults.Profile)
 }
 
 func TestRequests(t *testing.T) {
@@ -95,5 +98,6 @@ func TestRequests(t *testing.T) {
 		require.Equal(t, int32(96), req.Options.AudioBitrate)
 		require.Equal(t, int32(22050), req.Options.AudioFrequency)
 		require.Equal(t, int32(750), req.Options.VideoBitrate)
+		require.Equal(t, config.ProfileMain, req.Options.Profile)
 	})
 }

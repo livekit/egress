@@ -1,3 +1,4 @@
+//go:build test
 // +build test
 
 package pipeline
@@ -6,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/livekit"
 )
 
 type Pipeline struct {

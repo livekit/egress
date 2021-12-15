@@ -1,3 +1,4 @@
+//go:build !test
 // +build !test
 
 package pipeline
@@ -7,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/proto"
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
 )

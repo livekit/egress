@@ -14,8 +14,20 @@ import (
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
 
-	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/livekit"
 )
+
+const (
+	ProfileBaseline = "baseline"
+	ProfileMain     = "main"
+	ProfileHigh     = "high"
+)
+
+var validProfiles = map[string]bool{
+	ProfileBaseline: true,
+	ProfileMain:     true,
+	ProfileHigh:     true,
+}
 
 type Config struct {
 	ApiKey          string      `yaml:"api_key"`
@@ -67,6 +79,7 @@ type Defaults struct {
 	AudioBitrate   int32                   `yaml:"audio_bitrate"`
 	AudioFrequency int32                   `yaml:"audio_frequency"`
 	VideoBitrate   int32                   `yaml:"video_bitrate"`
+	Profile        string                  `yaml:"profile"`
 }
 
 func NewConfig(confString string) (*Config, error) {
@@ -82,6 +95,7 @@ func NewConfig(confString string) (*Config, error) {
 			AudioBitrate:   128,
 			AudioFrequency: 44100,
 			VideoBitrate:   4500,
+			Profile:        ProfileMain,
 		},
 	}
 
@@ -100,12 +114,16 @@ func NewConfig(confString string) (*Config, error) {
 		conf.Defaults = fromProto(fromPreset(conf.Defaults.Preset))
 	}
 
+	if !validProfiles[conf.Defaults.Profile] {
+		return nil, fmt.Errorf("invalid profile %s", conf.Defaults.Profile)
+	}
+
 	// GStreamer log level
 	if os.Getenv("GST_DEBUG") == "" {
 		var gstDebug int
 		switch conf.LogLevel {
 		case "debug":
-			gstDebug = 3
+			gstDebug = 2
 		case "info", "warn", "error":
 			gstDebug = 1
 		case "panic":
@@ -138,6 +156,7 @@ func TestConfig() (*Config, error) {
 			AudioBitrate:   128,
 			AudioFrequency: 44100,
 			VideoBitrate:   4500,
+			Profile:        ProfileMain,
 		},
 	}
 	conf.initLogger()
@@ -208,6 +227,9 @@ func (c *Config) ApplyDefaults(req *livekit.StartRecordingRequest) {
 	if req.Options.VideoBitrate == 0 {
 		req.Options.VideoBitrate = c.Defaults.VideoBitrate
 	}
+	if !validProfiles[req.Options.Profile] {
+		req.Options.Profile = c.Defaults.Profile
+	}
 
 	return
 }
@@ -223,6 +245,7 @@ func fromPreset(preset livekit.RecordingPreset) *livekit.RecordingOptions {
 			AudioBitrate:   128,
 			AudioFrequency: 44100,
 			VideoBitrate:   3000,
+			Profile:        ProfileMain,
 		}
 	case livekit.RecordingPreset_HD_60:
 		return &livekit.RecordingOptions{
@@ -233,6 +256,7 @@ func fromPreset(preset livekit.RecordingPreset) *livekit.RecordingOptions {
 			AudioBitrate:   128,
 			AudioFrequency: 44100,
 			VideoBitrate:   4500,
+			Profile:        ProfileMain,
 		}
 	case livekit.RecordingPreset_FULL_HD_30:
 		return &livekit.RecordingOptions{
@@ -243,6 +267,7 @@ func fromPreset(preset livekit.RecordingPreset) *livekit.RecordingOptions {
 			AudioBitrate:   128,
 			AudioFrequency: 44100,
 			VideoBitrate:   4500,
+			Profile:        ProfileMain,
 		}
 	case livekit.RecordingPreset_FULL_HD_60:
 		return &livekit.RecordingOptions{
@@ -253,6 +278,7 @@ func fromPreset(preset livekit.RecordingPreset) *livekit.RecordingOptions {
 			AudioBitrate:   128,
 			AudioFrequency: 44100,
 			VideoBitrate:   6000,
+			Profile:        ProfileMain,
 		}
 	default:
 		return &livekit.RecordingOptions{}
@@ -268,5 +294,6 @@ func fromProto(opts *livekit.RecordingOptions) Defaults {
 		AudioBitrate:   opts.AudioBitrate,
 		AudioFrequency: opts.AudioFrequency,
 		VideoBitrate:   opts.VideoBitrate,
+		Profile:        opts.Profile,
 	}
 }
