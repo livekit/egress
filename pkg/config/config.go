@@ -9,12 +9,11 @@ import (
 	"time"
 
 	"github.com/go-logr/zapr"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
-
-	"github.com/livekit/protocol/livekit"
 )
 
 const (
