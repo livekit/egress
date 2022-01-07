@@ -393,7 +393,7 @@ You can then use our [cli](https://github.com/livekit/livekit-cli) to submit rec
 ### I'm seeing GStreamer errors. Is this normal?
 
 * It's recommended to use `log_level`: `error` in a production setup. This will remove most of the GStreamer logs.
-* `Failed to load plugin '/usr/lib/x86_64-linux-gnu/gstreamer-1.0/libgstvaapi.so': libva-wayland.so.2: cannot open shared object file: No such file or directory`
+* `Failed to load plugin '/usr/lib/x86_64-linux-gnu/gstreamer-1.0/libgstvaapi.so': libva-wayland.so.2: cannot open shared object file: No such file or directory`, or `msdkcontext gstmsdkcontext.c:140:gst_msdk_context_use_vaapi: Couldn't find a drm device node to open`
   * Expected - safe to ignore. This is caused by the wayland plugin being present in the Dockerfile, but its dependencies are not installed. We do not use this plugin - it will be removed from the Dockerfile in the future.
 * `WARN flvmux ... Got backwards dts! (0:01:10.379000000 < 0:01:10.457000000)`
   * Occurs when streaming to rtmp - safe to ignore. These warnings occur due to live sources being used for the flvmux. The dts difference should be small (under 150ms).
