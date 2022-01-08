@@ -106,7 +106,6 @@ func (r *Recorder) Run() *livekit.RecordingInfo {
 		r.result.File = &livekit.FileResult{
 			Duration: time.Since(start).Milliseconds() / 1000,
 		}
-
 		if r.conf.FileOutput.S3 != nil {
 			if err = r.uploadS3(); err != nil {
 				r.result.Error = err.Error()
@@ -122,6 +121,12 @@ func (r *Recorder) Run() *livekit.RecordingInfo {
 				r.conf.FileOutput.Azblob.AccountName,
 				r.conf.FileOutput.Azblob.ContainerName,
 				r.filepath)
+		} else if r.conf.FileOutput.GCPConfig != nil {
+			if err = r.uploadGCP(); err != nil {
+				r.result.Error = err.Error()
+				return r.result
+			}
+			r.result.File.DownloadUrl = fmt.Sprintf("gs://#{r.conf.FileOutput.GCPConfig.Bucket}/#{r.filepath}")
 		}
 	}
 

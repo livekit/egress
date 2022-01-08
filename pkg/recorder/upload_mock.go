@@ -9,3 +9,7 @@ func (r *Recorder) uploadS3() error {
 func (r *Recorder) uploadAzure() error {
 	return nil
 }
+
+func (r *Recorder) uploadGCP() error {
+	return nil
+}

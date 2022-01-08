@@ -171,6 +171,31 @@ docker stop s3-demo
 
 After the recording is stopped, the file will be uploaded to your S3 bucket.
 
+## Uploading to GCP
+
+Update `file_output` in your `config.yaml`:
+```yaml
+file_output:
+    local: false
+    gcp:
+        bucket: <storage-bucket-name>
+```
+
+Ensure you have a `room.json` created.
+Join the room, and start the recording. Be sure to include your GCP SA credentials:
+```shell
+docker run --rm --name gcp-demo \
+    -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/keys/FILENAME.json -v /path/to/local/sa-key.json:/tmp/keys/FILENAME.json:ro \
+    -e LIVEKIT_RECORDER_CONFIG="$(cat config.yaml)" \
+    -e RECORDING_REQUEST="$(cat room.json)" \
+    livekit/livekit-recorder
+```
+
+End the recording:
+```shell
+docker stop gcp-demo
+```
+
 ## Rtmp Output
 
 Create a `rtmp.json` (if you have a Twitch account you can fill in your stream key, otherwise replace the rtmp url with your provider):
@@ -244,6 +269,8 @@ file_output:
         account_name: azure blob account
         account_key: azure blob access key
         container_name: azure blob container name
+    gcp: (required if using gcp storage output)
+        bucket: bucket name
 defaults:
     preset: defaults to "NONE", see options below. If preset is used, all other options are ignored.
     width: defaults to 1920
@@ -279,7 +306,7 @@ the LiveKit server's recording api.
   * `template`: `layout` and `room_name` required. `base_url` is optional, used for custom templates
   * We currently have 4 templates available; `speaker-light`, `speaker-dark`, `grid-light`, and `grid-dark`. Check out our [web README](https://github.com/livekit/livekit-recorder/tree/main/web) to learn more or create your own.
 * Output: either `filepath` or `rtmp`. File output and stream output cannot be mixed
-  * `filepath`: whether writing to a local file, s3, or azure blob storage, this path will be used. Must end with `.mp4`
+  * `filepath`: whether writing to a local file, s3, azure blob, or gcp storage, this path will be used. Must end with `.mp4`
   * `rtmp`: a list of rtmp urls to stream to
 * `options`: will override anything in `config.defaults`. Using `preset` will override all other options
 
