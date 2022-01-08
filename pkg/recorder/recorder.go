@@ -21,9 +21,10 @@ type Recorder struct {
 	display  *display.Display
 	pipeline *pipeline.Pipeline
 
-	url      string
-	filename string
-	filepath string
+	isTemplate bool
+	url        string
+	filename   string
+	filepath   string
 
 	// result info
 	sync.Mutex
@@ -45,8 +46,7 @@ func NewRecorder(conf *config.Config, recordingID string) *Recorder {
 // Run blocks until completion
 func (r *Recorder) Run() *livekit.RecordingInfo {
 	r.display = display.New()
-	options := r.req.Options
-	err := r.display.Launch(r.conf, r.url, int(options.Width), int(options.Height), int(options.Depth))
+	err := r.display.Launch(r.conf, r.url, r.req.Options, r.isTemplate)
 	if err != nil {
 		logger.Errorw("error launching display", err)
 		r.result.Error = err.Error()
@@ -66,8 +66,8 @@ func (r *Recorder) Run() *livekit.RecordingInfo {
 	}
 
 	// wait for START_RECORDING console log if using template
-	switch r.req.Input.(type) {
-	case *livekit.StartRecordingRequest_Template:
+	if r.isTemplate {
+		logger.Infow("Waiting for room to start")
 		r.display.WaitForRoom()
 	}
 

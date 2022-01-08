@@ -1,8 +1,11 @@
+//go:build test
 // +build test
 
 package display
 
 import (
+	"github.com/livekit/protocol/livekit"
+
 	"github.com/livekit/livekit-recorder/pkg/config"
 )
 
@@ -16,7 +19,7 @@ func New() *Display {
 	}
 }
 
-func (d *Display) Launch(conf *config.Config, url string, width, height, depth int) error {
+func (d *Display) Launch(conf *config.Config, url string, opts *livekit.RecordingOptions, isTemplate bool) error {
 	return nil
 }
 

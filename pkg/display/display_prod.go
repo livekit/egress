@@ -1,3 +1,4 @@
+//go:build !test
 // +build !test
 
 package display
@@ -5,6 +6,7 @@ package display
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-recorder/pkg/config"
@@ -36,17 +39,17 @@ func New() *Display {
 	}
 }
 
-func (d *Display) Launch(conf *config.Config, url string, width, height, depth int) error {
-	if err := d.launchXvfb(conf.Display, width, height, depth); err != nil {
+func (d *Display) Launch(conf *config.Config, url string, opts *livekit.RecordingOptions, isTemplate bool) error {
+	if err := d.launchXvfb(conf.Display, opts.Width, opts.Height, opts.Depth); err != nil {
 		return err
 	}
-	if err := d.launchChrome(conf, url, width, height); err != nil {
+	if err := d.launchChrome(conf, url, opts.Width, opts.Height, isTemplate); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (d *Display) launchXvfb(display string, width, height, depth int) error {
+func (d *Display) launchXvfb(display string, width, height, depth int32) error {
 	dims := fmt.Sprintf("%dx%dx%d", width, height, depth)
 	logger.Debugw("launching xvfb", "dims", dims)
 	xvfb := exec.Command("Xvfb", display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
@@ -57,7 +60,7 @@ func (d *Display) launchXvfb(display string, width, height, depth int) error {
 	return nil
 }
 
-func (d *Display) launchChrome(conf *config.Config, url string, width, height int) error {
+func (d *Display) launchChrome(conf *config.Config, url string, width, height int32, isTemplate bool) error {
 	logger.Debugw("launching chrome", "url", url)
 
 	opts := []chromedp.ExecAllocatorOption{
@@ -135,7 +138,26 @@ func (d *Display) launchChrome(conf *config.Config, url string, width, height in
 		}
 	})
 
-	return chromedp.Run(ctx, chromedp.Navigate(url))
+	var err error
+	var errString string
+	if isTemplate {
+		err = chromedp.Run(ctx,
+			chromedp.Navigate(url),
+			chromedp.Evaluate(`
+				if (document.querySelector('div.error')) {
+					document.querySelector('div.error').innerText;
+				} else {
+					''
+				}`, &errString,
+			),
+		)
+	} else {
+		err = chromedp.Run(ctx, chromedp.Navigate(url))
+	}
+	if err == nil && errString != "" {
+		err = errors.New(errString)
+	}
+	return err
 }
 
 func (d *Display) WaitForRoom() {

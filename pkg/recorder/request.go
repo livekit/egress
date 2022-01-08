@@ -25,7 +25,7 @@ func (r *Recorder) Validate(req *livekit.StartRecordingRequest) error {
 	r.conf.ApplyDefaults(req)
 
 	// validate input
-	inputUrl, err := r.GetInputUrl(req)
+	inputUrl, isTemplate, err := r.GetInputUrl(req)
 	if err != nil {
 		return err
 	}
@@ -70,25 +70,26 @@ func (r *Recorder) Validate(req *livekit.StartRecordingRequest) error {
 	}
 
 	r.req = req
+	r.isTemplate = isTemplate
 	r.url = inputUrl
 	logger.Debugw("request validated", "url", inputUrl)
 	return nil
 }
 
-func (r *Recorder) GetInputUrl(req *livekit.StartRecordingRequest) (string, error) {
+func (r *Recorder) GetInputUrl(req *livekit.StartRecordingRequest) (string, bool, error) {
 	switch req.Input.(type) {
 	case *livekit.StartRecordingRequest_Url:
-		return req.Input.(*livekit.StartRecordingRequest_Url).Url, nil
+		return req.Input.(*livekit.StartRecordingRequest_Url).Url, false, nil
 	case *livekit.StartRecordingRequest_Template:
 		template := req.Input.(*livekit.StartRecordingRequest_Template).Template
 		if template.RoomName == "" {
-			return "", errors.New("room name required for template input")
+			return "", true, errors.New("room name required for template input")
 		}
 
 		r.result.RoomName = template.RoomName
 		token, err := r.buildToken(template.RoomName)
 		if err != nil {
-			return "", err
+			return "", true, err
 		}
 
 		baseUrl := r.conf.TemplateAddress
@@ -97,9 +98,9 @@ func (r *Recorder) GetInputUrl(req *livekit.StartRecordingRequest) (string, erro
 		}
 
 		return fmt.Sprintf("%s/%s?url=%s&token=%s",
-			baseUrl, template.Layout, url.QueryEscape(r.conf.WsUrl), token), nil
+			baseUrl, template.Layout, url.QueryEscape(r.conf.WsUrl), token), true, nil
 	default:
-		return "", ErrNoInput
+		return "", false, ErrNoInput
 	}
 }
 

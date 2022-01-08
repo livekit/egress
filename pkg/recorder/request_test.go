@@ -25,8 +25,9 @@ func TestInputUrl(t *testing.T) {
 	require.NoError(t, err)
 	rec := NewRecorder(conf, "fakeRecordingID")
 
-	actual, err := rec.GetInputUrl(req)
+	actual, isTemplate, err := rec.GetInputUrl(req)
 	require.NoError(t, err)
+	require.True(t, isTemplate)
 	expected := "https://recorder.livekit.io/#/speaker-light?url=wss%3A%2F%2Ffake.url.io&token="
 	require.True(t, strings.HasPrefix(actual, expected), actual)
 }
