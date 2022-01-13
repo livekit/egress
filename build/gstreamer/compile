@@ -1,0 +1,22 @@
+#!/bin/bash
+set -e
+
+for repo in gstreamer gst-plugins-base gst-plugins-bad gst-plugins-good gst-plugins-ugly; do
+  pushd $repo
+  if [[ $DEBUG == 'true' ]]; then
+    if [[ $OPTIMIZATIONS == 'true' ]]; then
+      meson build -D prefix=/usr -D debug=true -D optimization=2
+    else
+      meson build -D prefix=/usr -D debug=true
+    fi
+  else
+      meson build -D prefix=/usr -D debug=false -D optimization=3 -D b_lto=true
+  fi
+  # This is needed for other plugins to be built properly
+  ninja $NINJA_OPTS -C build install
+  # This is where we'll grab build artifacts from
+  DESTDIR=/compiled-binaries ninja $NINJA_OPTS -C build install
+  popd
+done
+
+gst-inspect-1.0

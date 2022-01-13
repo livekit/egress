@@ -1,11 +1,5 @@
 #!/bin/bash
 
-if ! command -v protoc &> /dev/null
-then
-  echo "protoc is required and not found. please install"
-  exit 1
-fi
-
 if ! command -v mage &> /dev/null
 then
   pushd /tmp
@@ -23,5 +17,3 @@ then
 fi
 
 go mod download
-
-go get -u google.golang.org/protobuf/cmd/protoc-gen-go@v1.27.1

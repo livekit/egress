@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/magefile/mage/mg"
 
@@ -17,54 +16,28 @@ import (
 )
 
 const (
-	imageName = "livekit/livekit-recorder"
+	imageName    = "livekit/livekit-recorder"
+	gstImageName = "livekit/gstreamer"
 )
 
 // Default target to run when none is specified
 // If not set, running mage will list available targets
 var Default = Test
 
-type modInfo struct {
-	Path      string
-	Version   string
-	Time      time.Time
-	Dir       string
-	GoMod     string
-	GoVersion string
-}
-
 // run unit tests
 func Test() error {
-	cmd := exec.Command("go", "test", "--tags=test", "./...")
-	connectStd(cmd)
-	return cmd.Run()
+	return run("go test --tags=test ./...")
 }
 
 func Integration() error {
-	cmd := exec.Command("docker", "build", "-t", "recorder-integration-test", "-f", "test/Dockerfile", ".")
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	cmd = exec.Command("docker", "run", "--rm", "recorder-integration-test")
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	return nil
+	return run(
+		"docker build -t livekit-recorder-test -f build/test/Dockerfile .",
+		"docker run --rm livekit-recorder-test",
+	)
 }
 
-// builds docker images for LiveKit recorder and recorder service
 func Docker() error {
-	cmd := exec.Command("docker", "build", ".", "-t", fmt.Sprintf("%s:v%s", imageName, version.Version))
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	return nil
+	return run(fmt.Sprintf("docker build -t %s:v%s -f build/Dockerfile .", imageName, version.Version))
 }
 
 func PublishDocker() error {
@@ -75,17 +48,34 @@ func PublishDocker() error {
 		return errors.New("cannot publish non-snapshot versions")
 	}
 
-	versionImg := fmt.Sprintf("%s:v%s", imageName, version.Version)
-	cmd := exec.Command("docker", "push", versionImg)
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	return nil
+	return run(fmt.Sprintf("docker push %s:v%s", imageName, version.Version))
 }
 
-func connectStd(cmd *exec.Cmd) {
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+func GStreamer(version string) error {
+	return run(
+		"docker pull ubuntu:21.04",
+		fmt.Sprintf("docker build -t %s:base --build-arg GSTREAMER_VERSION=%s -f build/gstreamer/Dockerfile-base ./build/gstreamer", gstImageName, version),
+		fmt.Sprintf("docker build -t %s:%s-dev -f build/gstreamer/Dockerfile-dev ./build/gstreamer", gstImageName, version),
+		fmt.Sprintf("docker build -t %s:%s-prod -f build/gstreamer/Dockerfile-prod ./build/gstreamer", gstImageName, version),
+	)
+}
+
+func PublishGStreamer(version string) error {
+	return run(
+		fmt.Sprintf("docker push %s:%s-dev", gstImageName, version),
+		fmt.Sprintf("docker push %s:%s-prod", gstImageName, version),
+	)
+}
+
+func run(commands ...string) error {
+	for _, command := range commands {
+		args := strings.Split(command, " ")
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -59,7 +59,7 @@ jobs:
           key: livekit-recorder
 
       - name: Build docker images
-        run: docker build -t recorder-integration-test -f ./test/Dockerfile .
+        run: docker build -t livekit-recorder-test -f ./build/test/Dockerfile .
 
       - name: Run tests
-        run: docker run --rm recorder-integration-test
+        run: docker run --rm livekit-recorder-test
