@@ -22,7 +22,6 @@ FROM livekit/gstreamer:1.18.5-prod
 RUN apt-get update && \
     apt-get install -y \
     curl \
-    ffmpeg \
     gnupg \
     gstreamer1.0-pulseaudio \
     pulseaudio \
