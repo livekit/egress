@@ -384,20 +384,20 @@ You can then use our [cli](https://github.com/livekit/livekit-cli) to submit rec
 
 ## FAQ
 
-### It doesn't work at all
+### I get a `"no recorders available"` error when sending a StartRecording request
+
+* Your livekit server cannot reach your recorder through redis. Make sure they are both able to reach the same redis db.
+
+### I get a different error when sending a StartRecording request
 
 * Make sure you're using the latest cli, server sdks, livekit-server and livekit-recorder.
   This is still in beta, and we still occasionally release breaking changes.
 
-### I get a `"no recorders available"` error when sending a StartRecording request
-
-* Your livekit server cannot reach your recorder through redis. Make sure they are both able to reach the same redis db.
-  
-### Docker fails to run this on my computer
-
-* The recorder currently only works on `linux` OS with `amd64` architecture. Unfortunately, this means it does not run on the new M1 macbooks.
-
 ### I'm getting a broken mp4 file
+
+* There is currently a bug where the recorder doesn't work if it isn't receiving video - if your `EndRecordingRequest`
+  isn't stopping the recording, it's usually either because there's no video, or because it never connected to the room.
+  See https://github.com/livekit/livekit-recorder/issues/22
 
 * GStreamer needs to be properly shut down - if the process is killed, the file will be unusable.   
   Make sure you're stopping the recording with either a `docker stop` or an `EndRecordingRequest`.

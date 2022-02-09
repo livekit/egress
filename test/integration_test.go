@@ -212,20 +212,14 @@ func verify(t *testing.T, req *livekit.StartRecordingRequest, res *livekit.Recor
 			require.Equal(t, req.Options.Width, stream.Width)
 			require.Equal(t, req.Options.Height, stream.Height)
 
-			// framerate always expressed as a fraction
-			if strings.HasSuffix(stream.RFrameRate, "/1") {
-				require.Equal(t, fmt.Sprintf("%d/1", req.Options.Framerate), stream.RFrameRate)
-			} else {
-				// actual value can be something like 359/12 or 30000/1001 instead of 30/1
-				framerate := strings.Split(stream.RFrameRate, "/")
-				require.Len(t, framerate, 2)
-				num, err := strconv.Atoi(framerate[0])
-				require.NoError(t, err)
-				den, err := strconv.Atoi(framerate[1])
-				require.NoError(t, err)
-				diff := (float32(num) / float32(den)) / float32(req.Options.Framerate)
-				require.True(t, diff < 1.05 && diff > 0.95)
-			}
+			// framerate value can be something like 359/12 or 30000/1001 instead of 30/1
+			framerate := strings.Split(stream.RFrameRate, "/")
+			require.Len(t, framerate, 2)
+			num, err := strconv.Atoi(framerate[0])
+			require.NoError(t, err)
+			den, err := strconv.Atoi(framerate[1])
+			require.NoError(t, err)
+			require.True(t, (float32(num)/float32(den))/float32(req.Options.Framerate) > 0.95)
 
 			if !isStream {
 				// bitrate varies greatly
