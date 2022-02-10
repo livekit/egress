@@ -1,5 +1,7 @@
 FROM livekit/gstreamer:1.18.5-dev
 
+ARG TARGETPLATFORM
+
 WORKDIR /workspace
 
 RUN apt-get update && apt-get install -y golang
@@ -14,9 +16,12 @@ COPY cmd/ cmd/
 COPY pkg/ pkg/
 COPY version/ version/
 
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o livekit-recorder ./cmd/server
+RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
+    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o livekit-recorder ./cmd/server
 
 FROM livekit/gstreamer:1.18.5-prod
+
+ARG TARGETPLATFORM
 
 # install deps
 RUN apt-get update && \
