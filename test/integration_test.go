@@ -226,7 +226,7 @@ func verify(t *testing.T, req *livekit.StartRecordingRequest, res *livekit.Recor
 		require.NotEqual(t, 0, info.Format.Size)
 		require.NotNil(t, res.File)
 		require.NotEqual(t, int64(0), res.File.Duration)
-		requireInRange(info.Format.Duration, float64(res.File.Duration-1), float64(res.File.Duration+1))
+		requireInRange(info.Format.Duration, float64(res.File.Duration)-1.5, float64(res.File.Duration)+1.5)
 		require.Equal(t, "x264", info.Format.Tags.Encoder)
 	}
 	require.Equal(t, 100, info.Format.ProbeScore)
@@ -246,7 +246,7 @@ func verify(t *testing.T, req *livekit.StartRecordingRequest, res *livekit.Recor
 			require.Equal(t, fmt.Sprint(req.Options.AudioFrequency), stream.SampleRate)
 
 			// bitrate
-			if !isStream && !isStatic {
+			if !isStream {
 				requireInRange(stream.BitRate, 0, float64(req.Options.AudioBitrate*1150))
 			}
 		case "video":
