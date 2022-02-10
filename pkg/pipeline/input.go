@@ -65,6 +65,10 @@ func newInputBin(isStream bool, options *livekit.RecordingOptions) (*InputBin, e
 	if err != nil {
 		return nil, err
 	}
+	err = xImageSrc.SetProperty("use-damage", false)
+	if err != nil {
+		return nil, err
+	}
 	err = xImageSrc.SetProperty("show-pointer", false)
 	if err != nil {
 		return nil, err

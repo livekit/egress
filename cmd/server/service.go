@@ -54,6 +54,6 @@ type handler struct {
 	svc *service.Service
 }
 
-func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *handler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(h.svc.Status()))
 }

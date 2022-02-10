@@ -29,9 +29,14 @@ func Test() error {
 }
 
 func Integration() error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
 	return run(
 		"docker build -t livekit-recorder-test -f build/test/Dockerfile .",
-		"docker run --rm livekit-recorder-test",
+		fmt.Sprintf("docker run --rm -v %s/test:/out livekit-recorder-test", dir),
 	)
 }
 

@@ -32,21 +32,20 @@ type Display struct {
 	endChan      chan struct{}
 }
 
-func New() *Display {
-	return &Display{
-		startChan: make(chan struct{}, 1),
-		endChan:   make(chan struct{}, 1),
+func Launch(conf *config.Config, url string, opts *livekit.RecordingOptions, isTemplate bool) (*Display, error) {
+	d := &Display{
+		startChan: make(chan struct{}),
+		endChan:   make(chan struct{}),
 	}
-}
 
-func (d *Display) Launch(conf *config.Config, url string, opts *livekit.RecordingOptions, isTemplate bool) error {
 	if err := d.launchXvfb(conf.Display, opts.Width, opts.Height, opts.Depth); err != nil {
-		return err
+		return nil, err
 	}
 	if err := d.launchChrome(conf, url, opts.Width, opts.Height, isTemplate); err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+
+	return d, nil
 }
 
 func (d *Display) launchXvfb(display string, width, height, depth int32) error {
@@ -128,9 +127,9 @@ func (d *Display) launchChrome(conf *config.Config, url string, width, height in
 				args = append(args, msg)
 				switch msg {
 				case startRecording:
-					d.startChan <- struct{}{}
+					close(d.startChan)
 				case endRecording:
-					d.endChan <- struct{}{}
+					close(d.endChan)
 				default:
 				}
 			}
@@ -160,11 +159,11 @@ func (d *Display) launchChrome(conf *config.Config, url string, width, height in
 	return err
 }
 
-func (d *Display) WaitForRoom() {
-	<-d.startChan
+func (d *Display) RoomStarted() chan struct{} {
+	return d.startChan
 }
 
-func (d *Display) EndMessage() chan struct{} {
+func (d *Display) RoomEnded() chan struct{} {
 	return d.endChan
 }
 
@@ -173,7 +172,7 @@ func (d *Display) Close() {
 		d.chromeCancel()
 		d.chromeCancel = nil
 	}
-	close(d.endChan)
+
 	if d.xvfb != nil {
 		err := d.xvfb.Process.Signal(os.Interrupt)
 		if err != nil {

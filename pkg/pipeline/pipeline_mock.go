@@ -11,8 +11,9 @@ import (
 )
 
 type Pipeline struct {
-	isStream bool
-	kill     chan struct{}
+	isStream  bool
+	startedAt time.Time
+	kill      chan struct{}
 }
 
 func NewRtmpPipeline(rtmp []string, options *livekit.RecordingOptions) (*Pipeline, error) {
@@ -29,12 +30,17 @@ func NewFilePipeline(filename string, options *livekit.RecordingOptions) (*Pipel
 	}, nil
 }
 
-func (p *Pipeline) Start() error {
+func (p *Pipeline) Run() error {
+	p.startedAt = time.Now()
 	select {
 	case <-time.After(time.Second * 3):
 	case <-p.kill:
 	}
 	return nil
+}
+
+func (p *Pipeline) GetStartTime() time.Time {
+	return p.startedAt
 }
 
 func (p *Pipeline) AddOutput(url string) error {
@@ -49,6 +55,10 @@ func (p *Pipeline) RemoveOutput(url string) error {
 		return errors.New("cannot remove rtmp output from file recording")
 	}
 	return nil
+}
+
+func (p *Pipeline) Abort() {
+	p.kill <- struct{}{}
 }
 
 func (p *Pipeline) Close() {

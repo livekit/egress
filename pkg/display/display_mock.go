@@ -10,22 +10,25 @@ import (
 )
 
 type Display struct {
-	endChan chan struct{}
+	startChan chan struct{}
+	endChan   chan struct{}
 }
 
-func New() *Display {
+func Launch(conf *config.Config, url string, opts *livekit.RecordingOptions, isTemplate bool) (*Display, error) {
+	startChan := make(chan struct{})
+	close(startChan)
+
 	return &Display{
-		endChan: make(chan struct{}, 1),
-	}
+		startChan: startChan,
+		endChan:   make(chan struct{}),
+	}, nil
 }
 
-func (d *Display) Launch(conf *config.Config, url string, opts *livekit.RecordingOptions, isTemplate bool) error {
-	return nil
+func (d *Display) RoomStarted() chan struct{} {
+	return d.startChan
 }
 
-func (d *Display) WaitForRoom() {}
-
-func (d *Display) EndMessage() chan struct{} {
+func (d *Display) RoomEnded() chan struct{} {
 	return d.endChan
 }
 
