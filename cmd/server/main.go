@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -10,38 +9,26 @@ import (
 	"github.com/urfave/cli/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"github.com/livekit/livekit-recorder/pkg/config"
-	"github.com/livekit/livekit-recorder/version"
+	"github.com/livekit/livekit-egress/pkg/config"
+	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/version"
 )
 
 func main() {
 	app := &cli.App{
-		Name:        "livekit-recorder",
-		Usage:       "LiveKit Recorder",
+		Name:        "livekit-egress",
+		Usage:       "LiveKit Egress",
 		Description: "runs the recorder in standalone mode or as a service",
 		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:    "service-mode",
-				Usage:   "run recorder service",
-				EnvVars: []string{"SERVICE_MODE"},
+			&cli.StringFlag{
+				Name:    "config",
+				Usage:   "LiveKit Egress config in JSON",
+				EnvVars: []string{"EGRESS_CONFIG"},
 			},
 			&cli.StringFlag{
-				Name:  "config",
-				Usage: "path to LiveKit recording config defaults",
-			},
-			&cli.StringFlag{
-				Name:    "config-body",
-				Usage:   "Default LiveKit recording config in JSON, typically passed in as an env var in a container",
-				EnvVars: []string{"LIVEKIT_RECORDER_CONFIG"},
-			},
-			&cli.StringFlag{
-				Name:  "request",
-				Usage: "path to json StartRecordingRequest file",
-			},
-			&cli.StringFlag{
-				Name:    "request-body",
-				Usage:   "StartRecordingRequest json",
-				EnvVars: []string{"RECORDING_REQUEST"},
+				Name:    "request",
+				Usage:   "StartEgressRequest in JSON",
+				EnvVars: []string{"RUN_REQUEST"},
 			},
 		},
 		Action:  run,
@@ -54,10 +41,20 @@ func main() {
 }
 
 func run(c *cli.Context) error {
-	if c.Bool("service-mode") {
-		return runService(c)
+	conf, err := getConfig(c)
+	if err != nil {
+		return err
 	}
-	return runRecorder(c)
+
+	req, err := getRequest(c)
+	if err != nil {
+		return err
+	}
+
+	if req != nil {
+		return runRecorder(conf, req)
+	}
+	return runService(conf)
 }
 
 func getConfig(c *cli.Context) (*config.Config, error) {
@@ -71,31 +68,21 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 			}
 			configBody = string(content)
 		} else {
-			return nil, errors.New("missing config")
+			return nil, errors.ErrNoConfig
 		}
 	}
 
 	return config.NewConfig(configBody)
 }
 
-func getRequest(c *cli.Context) (*livekit.StartRecordingRequest, error) {
-	reqFile := c.String("request")
-	reqBody := c.String("request-body")
-
-	var content []byte
-	var err error
-	if reqBody != "" {
-		content = []byte(reqBody)
-	} else if reqFile != "" {
-		content, err = ioutil.ReadFile(reqFile)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		return nil, errors.New("missing request")
+func getRequest(c *cli.Context) (*livekit.StartEgressRequest, error) {
+	reqBody := c.String("request")
+	if reqBody == "" {
+		return nil, nil
 	}
 
-	req := &livekit.StartRecordingRequest{}
-	err = protojson.Unmarshal(content, req)
+	content := []byte(reqBody)
+	req := &livekit.StartEgressRequest{}
+	err := protojson.Unmarshal(content, req)
 	return req, err
 }

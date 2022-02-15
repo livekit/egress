@@ -10,11 +10,11 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/livekit/livekit-recorder/version"
+	"github.com/livekit/livekit-egress/version"
 )
 
 const (
-	imageName          = "livekit/livekit-recorder"
+	imageName          = "livekit/livekit-egress"
 	gstImageName       = "livekit/gstreamer"
 	multiPlatformBuild = "docker buildx build --push --platform linux/amd64,linux/arm64"
 )
@@ -35,8 +35,8 @@ func Integration() error {
 	}
 
 	return run(
-		"docker build -t livekit-recorder-test -f build/test/Dockerfile .",
-		fmt.Sprintf("docker run --rm -v %s/test:/out livekit-recorder-test", dir),
+		"docker build -t livekit-egress-test -f build/test/Dockerfile .",
+		fmt.Sprintf("docker run --rm -v %s/test:/out livekit-egress-test", dir),
 	)
 }
 

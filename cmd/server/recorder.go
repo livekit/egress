@@ -1,30 +1,23 @@
 package main
 
 import (
-	"errors"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/urfave/cli/v2"
+	"github.com/livekit/protocol/utils"
 
-	"github.com/livekit/livekit-recorder/pkg/recorder"
-	"github.com/livekit/livekit-recorder/pkg/service"
+	"github.com/livekit/livekit-egress/pkg/config"
+	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/pkg/pipeline"
 )
 
-func runRecorder(c *cli.Context) error {
-	conf, err := getConfig(c)
+func runRecorder(conf *config.Config, req *livekit.StartEgressRequest) error {
+	req.EgressId = utils.NewGuid(utils.EgressPrefix)
+	rec, err := pipeline.New(conf, req, conf.GetRecordingOptions(req))
 	if err != nil {
-		return err
-	}
-	req, err := getRequest(c)
-	if err != nil {
-		return err
-	}
-
-	rec := recorder.NewRecorder(conf, "standalone")
-	if err = rec.Validate(req); err != nil {
 		return err
 	}
 
@@ -37,9 +30,12 @@ func runRecorder(c *cli.Context) error {
 	}()
 
 	res := rec.Run()
-	service.LogResult(res)
-	if res.Error == "" {
-		return nil
+	if res.Error != "" {
+		err = errors.New(res.Error)
+		logger.Errorw("recording failed", err, "egressID", res.EgressId)
+		return err
 	}
-	return errors.New(res.Error)
+
+	logger.Infow("recording complete", "egressID", res.EgressId)
+	return nil
 }

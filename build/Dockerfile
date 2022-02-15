@@ -17,7 +17,7 @@ COPY pkg/ pkg/
 COPY version/ version/
 
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o livekit-recorder ./cmd/server
+    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o livekit-egress ./cmd/server
 
 FROM livekit/gstreamer:1.18.5-prod
 
@@ -83,7 +83,7 @@ RUN adduser root pulse-access
 RUN mkdir -pv ~/.cache/xdgr
 
 # copy binary
-COPY --from=0 /workspace/livekit-recorder /
+COPY --from=0 /workspace/livekit-egress /
 COPY build/entrypoint.sh .
 
 ENTRYPOINT ["./entrypoint.sh"]

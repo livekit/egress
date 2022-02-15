@@ -1,5 +1,5 @@
 {
-  "name": "livekit-recorder-web",
+  "name": "livekit-egress-web",
   "homepage": "https://livekit.io",
   "version": "0.1.0",
   "private": true,

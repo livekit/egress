@@ -8,18 +8,13 @@ import (
 	"syscall"
 
 	"github.com/livekit/protocol/logger"
-	"github.com/urfave/cli/v2"
 
-	"github.com/livekit/livekit-recorder/pkg/messaging"
-	"github.com/livekit/livekit-recorder/pkg/service"
+	"github.com/livekit/livekit-egress/pkg/config"
+	"github.com/livekit/livekit-egress/pkg/messaging"
+	"github.com/livekit/livekit-egress/pkg/service"
 )
 
-func runService(c *cli.Context) error {
-	conf, err := getConfig(c)
-	if err != nil {
-		return err
-	}
-
+func runService(conf *config.Config) error {
 	rc, err := messaging.NewMessageBus(conf)
 	if err != nil {
 		return err
@@ -27,7 +22,9 @@ func runService(c *cli.Context) error {
 	svc := service.NewService(conf, rc)
 
 	if conf.HealthPort != 0 {
-		go http.ListenAndServe(fmt.Sprintf(":%d", conf.HealthPort), &handler{svc: svc})
+		go func() {
+			_ = http.ListenAndServe(fmt.Sprintf(":%d", conf.HealthPort), &handler{svc: svc})
+		}()
 	}
 
 	finishChan := make(chan os.Signal, 1)

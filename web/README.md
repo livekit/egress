@@ -15,16 +15,16 @@ It's easiest to start with a copy of one of our existing templates.
 
 ### Custom template requirements
 
-2. The template **should** use `layout` names as paths (see [src/App.tsx](https://github.com/livekit/livekit-recorder/blob/main/web/src/App.tsx)).
+2. The template **should** use `layout` names as paths (see [src/App.tsx](https://github.com/livekit/livekit-egress/blob/main/web/src/App.tsx)).
 3. The template **should** take `url` and `token` as query parameters. `url` refers to your LiveKit server websocket url (`ws_url` in the recorder's `config.yaml`).
 4. The template **should** use the `url` and `token` parameters to connect to your LiveKit room 
-   ([src/common.ts:useParams](https://github.com/livekit/livekit-recorder/blob/main/web/src/common.ts#L37)).
+   ([src/common.ts:useParams](https://github.com/livekit/livekit-egress/blob/main/web/src/common.ts#L37)).
 5. The template **must** `console.log('START_RECORDING')` to start the recording.
    1. If your template does not log `START_RECORDING`, the recording will not start.
 6. The template **should** `console.log('END_RECORDING')` to stop the recording.
    1. If your template does not log `END_RECORDING`, the recording will need to be stopped manually with either a 
       `docker stop` if recording locally, or by sending an `EndRecordingRequest` to your LiveKit server.
-   2. See [src/common.ts:onConnected](https://github.com/livekit/livekit-recorder/blob/main/web/src/common.ts#L13) 
+   2. See [src/common.ts:onConnected](https://github.com/livekit/livekit-egress/blob/main/web/src/common.ts#L13) 
       for recommended `START_RECORDING` and `END_RECORDING` implementation.
 
 ### Using your template

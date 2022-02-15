@@ -1,13 +1,16 @@
-package pipeline
+package errors
 
 import (
 	"errors"
+	"fmt"
 )
 
 var (
-	ErrPipelineNotFound     = errors.New("pipeline not initialized")
-	ErrCannotAddToFile      = errors.New("cannot add rtmp output to file recording")
-	ErrCannotRemoveFromFile = errors.New("cannot remove rtmp output from file recording")
+	ErrNoConfig = errors.New("missing config")
+
+	ErrInvalidRequest = errors.New("request missing required field")
+
+	ErrCannotMixEgressTypes = errors.New("cannot mix egress types")
 	ErrGhostPadFailed       = errors.New("failed to add ghost pad to bin")
 	ErrOutputAlreadyExists  = errors.New("output already exists")
 	ErrOutputNotFound       = errors.New("output not found")
@@ -17,3 +20,11 @@ var (
 	GErrCouldNotConnect  = "Could not connect to RTMP stream"
 	GErrStreamingStopped = "streaming stopped, reason error (-5)"
 )
+
+func New(err string) error {
+	return errors.New(err)
+}
+
+func ErrNotSupported(feature string) error {
+	return fmt.Errorf("support for %s is coming soon", feature)
+}

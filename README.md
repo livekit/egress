@@ -1,4 +1,4 @@
-# LiveKit Recording
+# LiveKit Egress
 
 All your live recording needs in one place.  
 Record any website using our recorder, or deploy our service to manage it for you.
@@ -30,10 +30,10 @@ Start the recording:
 mkdir -p ~/livekit/recordings
 
 docker run --rm --name quick-demo \
-    -e LIVEKIT_RECORDER_CONFIG="$(cat config.yaml)" \
-    -e RECORDING_REQUEST="$(cat basic.json)" \
+    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
+    -e EGRESS_REQUEST="$(cat basic.json)" \
     -v ~/livekit/recordings:/out \
-    livekit/livekit-recorder
+    livekit/livekit-egress
 ```
 
 Then, to stop the recording:
@@ -70,10 +70,10 @@ Join the room, either using https://example.livekit.io, or using your own client
 Start the recording:
 ```shell
 docker run --rm --name room-demo \
-    -e LIVEKIT_RECORDER_CONFIG="$(cat config.yaml)" \
-    -e RECORDING_REQUEST="$(cat room.json)" \
+    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
+    -e EGRESS_REQUEST="$(cat room.json)" \
     -v ~/livekit/recordings:/out \
-    livekit/livekit-recorder
+    livekit/livekit-egress
 ```
 
 To stop recording, either leave the room, or `docker stop room-demo`. You'll find the file at `~/livekit/recordings/room.mp4`
@@ -119,10 +119,10 @@ Open https://example.livekit.io, enter the `token` you generated, and connect (k
 Start the recording:
 ```shell
 docker run --rm --network host --name local-demo \
-    -e LIVEKIT_RECORDER_CONFIG="$(cat config.yaml)" \
-    -e RECORDING_REQUEST="$(cat room.json)" \
+    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
+    -e EGRESS_REQUEST="$(cat room.json)" \
     -v ~/livekit/recordings:/out \
-    livekit/livekit-recorder
+    livekit/livekit-egress
 ```
 
 To stop recording, either leave the room, or `docker stop local-demo`. You'll find the file at `~/livekit/recordings/room.mp4`
@@ -159,9 +159,9 @@ You can find the other presets and options [below](#presets).
 Join the room, and start the recording:
 ```shell
 docker run --rm --name s3-demo \
-    -e LIVEKIT_RECORDER_CONFIG="$(cat config.yaml)" \
-    -e RECORDING_REQUEST="$(cat s3.json)" \
-    livekit/livekit-recorder
+    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
+    -e EGRESS_REQUEST="$(cat s3.json)" \
+    livekit/livekit-egress
 ```
 
 End the recording:
@@ -186,9 +186,9 @@ Join the room, and start the recording. Be sure to include your GCP SA credentia
 ```shell
 docker run --rm --name gcp-demo \
     -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/keys/FILENAME.json -v /path/to/local/sa-key.json:/tmp/keys/FILENAME.json:ro \
-    -e LIVEKIT_RECORDER_CONFIG="$(cat config.yaml)" \
-    -e RECORDING_REQUEST="$(cat room.json)" \
-    livekit/livekit-recorder
+    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
+    -e EGRESS_REQUEST="$(cat room.json)" \
+    livekit/livekit-egress
 ```
 
 End the recording:
@@ -220,9 +220,9 @@ This time, we've set custom options to output 720p with a lower bitrate (2048 kb
 Join the room, then start the stream:
 ```shell
 docker run --rm --name rtmp-demo \
-    -e LIVEKIT_RECORDER_CONFIG="$(cat config.yaml)" \
-    -e RECORDING_REQUEST="$(cat rtmp.json)" \
-    livekit/livekit-recorder
+    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
+    -e EGRESS_REQUEST="$(cat rtmp.json)" \
+    livekit/livekit-egress
 ```
 Note: with Twitch, it will take about 25 seconds for them to process before they begin showing the stream. 
 May be different with other providers.
@@ -304,7 +304,7 @@ the LiveKit server's recording api.
 * Input: either `url` or `template`
   * `url`: any url that chrome can connect to for recording
   * `template`: `layout` and `room_name` required. `base_url` is optional, used for custom templates
-  * We currently have 4 templates available; `speaker-light`, `speaker-dark`, `grid-light`, and `grid-dark`. Check out our [web README](https://github.com/livekit/livekit-recorder/tree/main/web) to learn more or create your own.
+  * We currently have 4 templates available; `speaker-light`, `speaker-dark`, `grid-light`, and `grid-dark`. Check out our [web README](https://github.com/livekit/livekit-egress/tree/main/web) to learn more or create your own.
 * Output: either `filepath` or `rtmp`. File output and stream output cannot be mixed
   * `filepath`: whether writing to a local file, s3, azure blob, or gcp storage, this path will be used. Must end with `.mp4`
   * `rtmp`: a list of rtmp urls to stream to
@@ -374,11 +374,11 @@ To run against a local livekit server, you'll need to do the following:
 These changes allow the service to connect to your local redis instance from inside the docker container.
 Finally, to build and run:
 ```shell
-docker build -t livekit-recorder .
+docker build -t livekit-egress .
 docker run --network host \
     -e SERVICE_MODE=1 \
-    -e LIVEKIT_RECORDER_CONFIG="$(cat config.yaml)" \
-    livekit-recorder
+    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
+    livekit-egress
 ```
 You can then use our [cli](https://github.com/livekit/livekit-cli) to submit recording requests to your server.
 
@@ -390,14 +390,14 @@ You can then use our [cli](https://github.com/livekit/livekit-cli) to submit rec
 
 ### I get a different error when sending a StartRecording request
 
-* Make sure you're using the latest cli, server sdks, livekit-server and livekit-recorder.
+* Make sure you're using the latest cli, server sdks, livekit-server and livekit-egress.
   This is still in beta, and we still occasionally release breaking changes.
 
 ### I'm getting a broken mp4 file
 
 * There is currently a bug where the recorder doesn't work if it isn't receiving video - if your `EndRecordingRequest`
   isn't stopping the recording, it's usually either because there's no video, or because it never connected to the room.
-  See https://github.com/livekit/livekit-recorder/issues/22
+  See https://github.com/livekit/livekit-egress/issues/22
 
 * GStreamer needs to be properly shut down - if the process is killed, the file will be unusable.   
   Make sure you're stopping the recording with either a `docker stop` or an `EndRecordingRequest`.

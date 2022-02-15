@@ -1,47 +1,47 @@
-name: Deploy
-on:
-  push:
-    branches: [ main ]
-    paths:
-      - web/**
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./web
-    steps:
-    - uses: actions/checkout@v2
-
-    - uses: actions/setup-node@v2
-      with:
-        node-version: '16.x'
-
-    - uses: actions/cache@v2
-      with:
-        path: |
-          ~/.npm
-          ~/.config/yarn/global
-        key: ${{ runner.os }}-node-${{ hashFiles('**/yarn.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-node-
-
-    - name: Install Yarn
-      run: |
-        npm install -g yarn
-        yarn install
-
-    - name: Lint
-      run: yarn lint
-
-    - name: Build
-      run: yarn build
-
-    - name: Deploy
-      run: |
-        echo 'recorder.livekit.io' > ./build/CNAME
-        git remote set-url origin https://git:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
-        yarn exec gh-pages -- -d build -u "github-actions-bot <support+actions@github.com>" --no-history
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#name: Deploy
+#on:
+#  push:
+#    branches: [ main ]
+#    paths:
+#      - web/**
+#
+#jobs:
+#  deploy:
+#    runs-on: ubuntu-latest
+#    defaults:
+#      run:
+#        working-directory: ./web
+#    steps:
+#    - uses: actions/checkout@v2
+#
+#    - uses: actions/setup-node@v2
+#      with:
+#        node-version: '16.x'
+#
+#    - uses: actions/cache@v2
+#      with:
+#        path: |
+#          ~/.npm
+#          ~/.config/yarn/global
+#        key: ${{ runner.os }}-node-${{ hashFiles('**/yarn.lock') }}
+#        restore-keys: |
+#          ${{ runner.os }}-node-
+#
+#    - name: Install Yarn
+#      run: |
+#        npm install -g yarn
+#        yarn install
+#
+#    - name: Lint
+#      run: yarn lint
+#
+#    - name: Build
+#      run: yarn build
+#
+#    - name: Deploy
+#      run: |
+#        echo 'recorder.livekit.io' > ./build/CNAME
+#        git remote set-url origin https://git:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+#        yarn exec gh-pages -- -d build -u "github-actions-bot <support+actions@github.com>" --no-history
+#      env:
+#        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

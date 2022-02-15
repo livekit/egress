@@ -2,99 +2,183 @@ package service
 
 import (
 	"context"
-	"sync/atomic"
 	"time"
 
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/recording"
 	"github.com/livekit/protocol/utils"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-recorder/pkg/config"
-	"github.com/livekit/livekit-recorder/pkg/recorder"
+	"github.com/livekit/livekit-egress/pkg/config"
+	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/pkg/pipeline"
 )
 
 type Service struct {
 	ctx      context.Context
 	conf     *config.Config
 	bus      utils.MessageBus
-	status   atomic.Value // Status
 	shutdown chan struct{}
 	kill     chan struct{}
 }
-
-type Status string
-
-const (
-	Starting  Status = "starting"
-	Available Status = "available"
-	Reserved  Status = "reserved"
-	Recording Status = "recording"
-	Stopping  Status = "stopping"
-)
 
 func NewService(conf *config.Config, bus utils.MessageBus) *Service {
 	s := &Service{
 		ctx:      context.Background(),
 		conf:     conf,
 		bus:      bus,
-		status:   atomic.Value{},
 		shutdown: make(chan struct{}, 1),
 		kill:     make(chan struct{}, 1),
 	}
-	s.status.Store(Starting)
 	return s
 }
 
 func (s *Service) Run() error {
 	logger.Debugw("starting service")
 
-	reservations, err := s.bus.SubscribeQueue(context.Background(), recording.ReservationChannel)
+	requests, err := s.bus.Subscribe(s.ctx, egress.StartChannel)
 	if err != nil {
 		return err
 	}
-	defer reservations.Close()
+	defer func() {
+		err := requests.Close()
+		if err != nil {
+			logger.Errorw("failed to unsubscribe", err)
+		}
+	}()
 
 	for {
-		s.status.Store(Available)
 		logger.Debugw("recorder waiting")
 
 		select {
 		case <-s.shutdown:
 			logger.Infow("shutting down")
 			return nil
-		case msg := <-reservations.Channel():
+		case msg := <-requests.Channel():
 			logger.Debugw("request received")
 
-			req := &livekit.RecordingReservation{}
-			err := proto.Unmarshal(reservations.Payload(msg), req)
+			req := &livekit.StartEgressRequest{}
+			err := proto.Unmarshal(requests.Payload(msg), req)
 			if err != nil {
 				logger.Errorw("malformed request", err)
 				continue
 			}
 
-			if req.SubmittedAt < time.Now().Add(-recording.ReservationTimeout).UnixNano()/1e6 {
-				logger.Debugw("discarding old request", "ID", req.Id)
+			if time.Since(time.Unix(0, req.SentAt)) >= egress.LockDuration {
+				// request already handled
 				continue
 			}
 
-			s.status.Store(Reserved)
-			logger.Debugw("request claimed", "ID", req.Id)
+			// TODO: CPU estimation
 
-			// handleRecording blocks until recording is finished
-			s.handleRecording(recorder.NewRecorder(s.conf, req.Id))
+			claimed, err := s.bus.Lock(s.ctx, egress.RequestChannel(req.EgressId), egress.LockDuration)
+			if err != nil {
+				logger.Errorw("could not claim request", err)
+				continue
+			} else if !claimed {
+				continue
+			}
+
+			logger.Debugw("request claimed", "egressID", req.EgressId)
+
+			p, err := pipeline.New(s.conf, req, s.conf.GetRecordingOptions(req))
+			if err != nil {
+				s.sendEgressResponse(req.EgressId, nil, err)
+				continue
+			} else {
+				s.sendEgressResponse(req.EgressId, p.Info, nil)
+				s.handleEgress(p)
+			}
 		}
 	}
 }
 
-func (s *Service) Status() Status {
-	return s.status.Load().(Status)
+func (s *Service) Status() string {
+	return "TODO"
 }
 
 func (s *Service) Stop(kill bool) {
 	s.shutdown <- struct{}{}
 	if kill {
 		s.kill <- struct{}{}
+	}
+}
+
+func (s *Service) handleEgress(p *pipeline.Pipeline) {
+	// subscribe to request channel
+	requests, err := s.bus.Subscribe(s.ctx, egress.RequestChannel(p.Info.EgressId))
+	if err != nil {
+		return
+	}
+	defer func() {
+		err := requests.Close()
+		if err != nil {
+			logger.Errorw("failed to unsubscribe from request channel", err)
+		}
+	}()
+
+	// start egress
+	result := make(chan *livekit.EgressInfo, 1)
+	go func() {
+		result <- p.Run()
+	}()
+
+	for {
+		select {
+		case <-s.kill:
+			// kill signal received, stop recorder
+			p.Stop()
+		case res := <-result:
+			// recording stopped, send results to result channel
+			if res.Error != "" {
+				logger.Errorw("recording failed", errors.New(res.Error), "egressID", res.EgressId)
+			} else {
+				logger.Infow("recording complete", "egressID", res.EgressId)
+			}
+
+			if err = s.bus.Publish(s.ctx, egress.ResultsChannel, res); err != nil {
+				logger.Errorw("failed to write results", err)
+			}
+
+			return
+		case msg := <-requests.Channel():
+			// unmarshal request
+			request := &livekit.EgressRequest{}
+			err = proto.Unmarshal(requests.Payload(msg), request)
+			if err != nil {
+				logger.Errorw("failed to read request", err, "egressID", p.Info.EgressId)
+				continue
+			}
+
+			logger.Debugw("handling request", "egressID", p.Info.EgressId, "requestID", request.RequestId)
+
+			switch req := request.Request.(type) {
+			case *livekit.EgressRequest_UpdateStream:
+				err = p.UpdateStream(req.UpdateStream)
+			case *livekit.EgressRequest_List:
+				err = errors.ErrNotSupported("list egress rpc")
+			case *livekit.EgressRequest_Stop:
+				p.Stop()
+			}
+
+			s.sendEgressResponse(request.RequestId, p.Info, err)
+		}
+	}
+}
+
+func (s *Service) sendEgressResponse(requestID string, info *livekit.EgressInfo, err error) {
+	res := &livekit.EgressResponse{}
+	if err != nil {
+		logger.Errorw("error handling request", err,
+			"egressID", info.EgressId, "requestId", requestID)
+		res.Error = err.Error()
+	} else {
+		logger.Debugw("request handled", "egressID", info.EgressId, "requestId", requestID)
+		res.Info = info
+	}
+
+	if err = s.bus.Publish(s.ctx, egress.ResponseChannel(requestID), res); err != nil {
+		logger.Errorw("could not send response", err)
 	}
 }

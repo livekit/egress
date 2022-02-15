@@ -1,6 +1,6 @@
 {
-  "short_name": "livekit-recorder-web",
-  "name": "Web template for LiveKit Recorder",
+  "short_name": "livekit-egress-web",
+  "name": "Web template for LiveKit Egress",
   "icons": [
     {
       "src": "favicon.ico",

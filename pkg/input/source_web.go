@@ -1,23 +1,23 @@
-//go:build !test
-// +build !test
-
-package display
+package input
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
-	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
-	"github.com/livekit/livekit-recorder/pkg/config"
+	"github.com/livekit/livekit-egress/pkg/config"
 )
 
 const (
@@ -25,41 +25,92 @@ const (
 	endRecording   = "END_RECORDING"
 )
 
-type Display struct {
+type webSource struct {
 	xvfb         *exec.Cmd
 	chromeCancel context.CancelFunc
 	startChan    chan struct{}
 	endChan      chan struct{}
 }
 
-func Launch(conf *config.Config, url string, opts *livekit.RecordingOptions, isTemplate bool) (*Display, error) {
-	d := &Display{
+func newWebSource(conf *config.Config, params *Params, opts *config.RecordingOptions) (Source, error) {
+	s := &webSource{
 		startChan: make(chan struct{}),
 		endChan:   make(chan struct{}),
 	}
 
-	if err := d.launchXvfb(conf.Display, opts.Width, opts.Height, opts.Depth); err != nil {
+	var inputUrl string
+	var err error
+	if opts.CustomInputURL != "" {
+		inputUrl = opts.CustomInputURL
+		close(s.startChan)
+	} else {
+		inputUrl, err = getInputUrl(conf, params.Layout, params.RoomName, params.CustomBase)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if err = s.launchXvfb(conf.Display, opts.Width, opts.Height, opts.Depth); err != nil {
+		logger.Errorw("failed to launch xvfb", err)
 		return nil, err
 	}
-	if err := d.launchChrome(conf, url, opts.Width, opts.Height, isTemplate); err != nil {
+	if err = s.launchChrome(conf, inputUrl, opts.Width, opts.Height); err != nil {
+		logger.Errorw("failed to launch chrome", err)
+		s.Close()
 		return nil, err
 	}
 
-	return d, nil
+	return s, nil
 }
 
-func (d *Display) launchXvfb(display string, width, height, depth int32) error {
+func getInputUrl(conf *config.Config, layout, roomName, customBase string) (string, error) {
+	token, err := buildToken(conf, roomName)
+	if err != nil {
+		return "", err
+	}
+
+	baseUrl := conf.TemplateAddress
+	if customBase != "" {
+		baseUrl = customBase
+	}
+
+	return fmt.Sprintf("%s/%s?url=%s&token=%s",
+		baseUrl, layout, url.QueryEscape(conf.WsUrl), token), nil
+}
+
+func buildToken(conf *config.Config, roomName string) (string, error) {
+	f := false
+	t := true
+	grant := &auth.VideoGrant{
+		RoomJoin:       true,
+		Room:           roomName,
+		CanSubscribe:   &t,
+		CanPublish:     &f,
+		CanPublishData: &f,
+		Hidden:         true,
+		Recorder:       true,
+	}
+
+	at := auth.NewAccessToken(conf.ApiKey, conf.ApiSecret).
+		AddGrant(grant).
+		SetIdentity(utils.NewGuid(utils.EgressPrefix)).
+		SetValidFor(24 * time.Hour)
+
+	return at.ToJWT()
+}
+
+func (s *webSource) launchXvfb(display string, width, height, depth int32) error {
 	dims := fmt.Sprintf("%dx%dx%d", width, height, depth)
-	logger.Debugw("launching xvfb", "dims", dims)
+	logger.Debugw("launching xvfb", "display", display, "dims", dims)
 	xvfb := exec.Command("Xvfb", display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
 	if err := xvfb.Start(); err != nil {
 		return err
 	}
-	d.xvfb = xvfb
+	s.xvfb = xvfb
 	return nil
 }
 
-func (d *Display) launchChrome(conf *config.Config, url string, width, height int32, isTemplate bool) error {
+func (s *webSource) launchChrome(conf *config.Config, url string, width, height int32) error {
 	logger.Debugw("launching chrome", "url", url)
 
 	opts := []chromedp.ExecAllocatorOption{
@@ -111,7 +162,7 @@ func (d *Display) launchChrome(conf *config.Config, url string, width, height in
 
 	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
 	ctx, cancel := chromedp.NewContext(allocCtx)
-	d.chromeCancel = cancel
+	s.chromeCancel = cancel
 
 	chromedp.ListenTarget(ctx, func(ev interface{}) {
 		switch ev := ev.(type) {
@@ -127,9 +178,9 @@ func (d *Display) launchChrome(conf *config.Config, url string, width, height in
 				args = append(args, msg)
 				switch msg {
 				case startRecording:
-					close(d.startChan)
+					close(s.startChan)
 				case endRecording:
-					close(d.endChan)
+					close(s.endChan)
 				default:
 				}
 			}
@@ -137,47 +188,42 @@ func (d *Display) launchChrome(conf *config.Config, url string, width, height in
 		}
 	})
 
-	var err error
 	var errString string
-	if isTemplate {
-		err = chromedp.Run(ctx,
-			chromedp.Navigate(url),
-			chromedp.Evaluate(`
-				if (document.querySelector('div.error')) {
-					document.querySelector('div.error').innerText;
-				} else {
-					''
-				}`, &errString,
-			),
-		)
-	} else {
-		err = chromedp.Run(ctx, chromedp.Navigate(url))
-	}
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.Evaluate(`
+			if (document.querySelector('div.error')) {
+				document.querySelector('div.error').innerText;
+			} else {
+				''
+			}`, &errString,
+		),
+	)
 	if err == nil && errString != "" {
 		err = errors.New(errString)
 	}
 	return err
 }
 
-func (d *Display) RoomStarted() chan struct{} {
-	return d.startChan
+func (s *webSource) RoomStarted() chan struct{} {
+	return s.startChan
 }
 
-func (d *Display) RoomEnded() chan struct{} {
-	return d.endChan
+func (s *webSource) RoomEnded() chan struct{} {
+	return s.endChan
 }
 
-func (d *Display) Close() {
-	if d.chromeCancel != nil {
-		d.chromeCancel()
-		d.chromeCancel = nil
+func (s *webSource) Close() {
+	if s.chromeCancel != nil {
+		s.chromeCancel()
+		s.chromeCancel = nil
 	}
 
-	if d.xvfb != nil {
-		err := d.xvfb.Process.Signal(os.Interrupt)
+	if s.xvfb != nil {
+		err := s.xvfb.Process.Signal(os.Interrupt)
 		if err != nil {
 			logger.Errorw("failed to kill xvfb", err)
 		}
-		d.xvfb = nil
+		s.xvfb = nil
 	}
 }
