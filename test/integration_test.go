@@ -311,13 +311,13 @@ func verify(t *testing.T, input string, opts *config.RecordingOptions, res *live
 			require.Equal(t, opts.Height, stream.Height)
 
 			// framerate
-			framerate := strings.Split(stream.RFrameRate, "/")
-			require.Len(t, framerate, 2)
-			num, err := strconv.ParseFloat(framerate[0], 64)
+			frac := strings.Split(stream.RFrameRate, "/")
+			require.Len(t, frac, 2)
+			n, err := strconv.ParseFloat(frac[0], 64)
 			require.NoError(t, err)
-			den, err := strconv.ParseFloat(framerate[1], 64)
+			d, err := strconv.ParseFloat(frac[1], 64)
 			require.NoError(t, err)
-			require.InDelta(t, float64(opts.Framerate), num/den, 1.0)
+			require.Greater(t, n/d, float64(opts.Framerate)*0.95)
 
 			// bitrate
 			if !isStream {
