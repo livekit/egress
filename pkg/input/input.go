@@ -22,20 +22,6 @@ type Source interface {
 	Close()
 }
 
-type Params struct {
-	AudioOnly bool
-	VideoOnly bool
-
-	IsWebInput bool
-	Layout     string
-	RoomName   string
-	CustomBase string
-
-	IsStream       bool
-	StreamProtocol livekit.StreamProtocol
-	FileType       livekit.EncodedFileType
-}
-
 type inputBin struct {
 	Source
 
@@ -49,12 +35,12 @@ type inputBin struct {
 	isStream bool
 }
 
-func New(conf *config.Config, params *Params, opts *config.RecordingOptions) (Bin, error) {
+func New(conf *config.Config, params *config.Params) (Bin, error) {
 	// input source
 	var source Source
 	var err error
 	if params.IsWebInput {
-		source, err = newWebSource(conf, params, opts)
+		source, err = newWebSource(conf, params)
 	} else {
 		source, err = newSDKSource()
 	}
@@ -65,7 +51,7 @@ func New(conf *config.Config, params *Params, opts *config.RecordingOptions) (Bi
 	// audio elements
 	var audioElements []*gst.Element
 	var audioQueue *gst.Element
-	if !params.VideoOnly {
+	if params.AudioEnabled {
 		if params.IsWebInput {
 			pulseSrc, err := gst.NewElement("pulsesrc")
 			if err != nil {
@@ -82,7 +68,7 @@ func New(conf *config.Config, params *Params, opts *config.RecordingOptions) (Bi
 				return nil, err
 			}
 			err = audioCapsFilter.SetProperty("caps", gst.NewCapsFromString(
-				fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", opts.AudioFrequency),
+				fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", params.AudioFrequency),
 			))
 			if err != nil {
 				return nil, err
@@ -93,15 +79,19 @@ func New(conf *config.Config, params *Params, opts *config.RecordingOptions) (Bi
 			return nil, errors.ErrNotSupported("sdk input")
 		}
 
-		switch opts.AudioCodec {
+		switch params.AudioCodec {
 		case livekit.AudioCodec_OPUS:
 			return nil, errors.ErrNotSupported("opus encoding")
 		case livekit.AudioCodec_AAC:
+			if params.FileType != livekit.EncodedFileType_MP4 {
+				return nil, errors.ErrIncompatible(params.FileType, params.AudioCodec)
+			}
+
 			faac, err := gst.NewElement("faac")
 			if err != nil {
 				return nil, err
 			}
-			err = faac.SetProperty("bitrate", int(opts.AudioBitrate*1000))
+			err = faac.SetProperty("bitrate", int(params.AudioBitrate*1000))
 			if err != nil {
 				return nil, err
 			}
@@ -121,7 +111,7 @@ func New(conf *config.Config, params *Params, opts *config.RecordingOptions) (Bi
 	// video elements
 	var videoElements []*gst.Element
 	var videoQueue *gst.Element
-	if !params.VideoOnly {
+	if params.VideoEnabled {
 		if params.IsWebInput {
 			xImageSrc, err := gst.NewElement("ximagesrc")
 			if err != nil {
@@ -146,7 +136,7 @@ func New(conf *config.Config, params *Params, opts *config.RecordingOptions) (Bi
 				return nil, err
 			}
 			err = videoFramerateCaps.SetProperty("caps", gst.NewCapsFromString(
-				fmt.Sprintf("video/x-raw,framerate=%d/1", opts.Framerate),
+				fmt.Sprintf("video/x-raw,framerate=%d/1", params.Framerate),
 			))
 			if err != nil {
 				return nil, err
@@ -158,21 +148,21 @@ func New(conf *config.Config, params *Params, opts *config.RecordingOptions) (Bi
 		}
 
 		var encodingElements []*gst.Element
-		switch opts.VideoCodec {
+		switch params.VideoCodec {
 		case livekit.VideoCodec_H264_BASELINE:
-			encodingElements, err = buildH264Elements("baseline", opts)
+			encodingElements, err = buildH264Elements("baseline", params)
 		case livekit.VideoCodec_H264_MAIN:
-			encodingElements, err = buildH264Elements("main", opts)
+			encodingElements, err = buildH264Elements("main", params)
 		case livekit.VideoCodec_H264_HIGH:
-			encodingElements, err = buildH264Elements("high", opts)
+			encodingElements, err = buildH264Elements("high", params)
 		case livekit.VideoCodec_VP8:
 			err = errors.ErrNotSupported("vp8 encoding")
 		case livekit.VideoCodec_VP9:
 			err = errors.ErrNotSupported("vp9 encoding")
 		case livekit.VideoCodec_HEVC_MAIN:
-			encodingElements, err = buildHEVCElements("main")
+			encodingElements, err = buildHEVCElements("main", params)
 		case livekit.VideoCodec_HEVC_HIGH:
-			encodingElements, err = buildHEVCElements("high")
+			encodingElements, err = buildHEVCElements("high", params)
 		}
 		if err != nil {
 			return nil, err
@@ -250,12 +240,12 @@ func New(conf *config.Config, params *Params, opts *config.RecordingOptions) (Bi
 	}, nil
 }
 
-func buildH264Elements(profile string, opts *config.RecordingOptions) ([]*gst.Element, error) {
+func buildH264Elements(profile string, params *config.Params) ([]*gst.Element, error) {
 	x264Enc, err := gst.NewElement("x264enc")
 	if err != nil {
 		return nil, err
 	}
-	if err = x264Enc.SetProperty("bitrate", uint(opts.VideoBitrate)); err != nil {
+	if err = x264Enc.SetProperty("bitrate", uint(params.VideoBitrate)); err != nil {
 		return nil, err
 	}
 	x264Enc.SetArg("speed-preset", "veryfast")
@@ -266,7 +256,7 @@ func buildH264Elements(profile string, opts *config.RecordingOptions) ([]*gst.El
 		return nil, err
 	}
 	err = videoProfileCaps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-h264,profile=%s,framerate=%d/1", profile, opts.Framerate),
+		fmt.Sprintf("video/x-h264,profile=%s,framerate=%d/1", profile, params.Framerate),
 	))
 	if err != nil {
 		return nil, err
@@ -275,7 +265,7 @@ func buildH264Elements(profile string, opts *config.RecordingOptions) ([]*gst.El
 	return []*gst.Element{x264Enc, videoProfileCaps}, nil
 }
 
-func buildHEVCElements(profile string) ([]*gst.Element, error) {
+func buildHEVCElements(profile string, params *config.Params) ([]*gst.Element, error) {
 	return nil, errors.ErrNotSupported("hevc encoding")
 }
 

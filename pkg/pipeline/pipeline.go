@@ -36,73 +36,28 @@ type Pipeline struct {
 	removed map[string]bool
 }
 
-func New(conf *config.Config, request *livekit.StartEgressRequest, opts *config.RecordingOptions) (*Pipeline, error) {
+func FromRequest(conf *config.Config, request *livekit.StartEgressRequest) (*Pipeline, error) {
+	// get params
+	params, err := config.GetPipelineParams(request)
+	if err != nil {
+		return nil, err
+	}
+
+	return FromParams(conf, params)
+}
+
+func FromParams(conf *config.Config, params *config.Params) (*Pipeline, error) {
 	if !initialized {
 		gst.Init(nil)
 		initialized = true
 	}
 
-	var inputParams *input.Params
-	var outputParams *output.Params
-	info := &livekit.EgressInfo{
-		EgressId: request.EgressId,
-	}
-
-	switch req := request.Request.(type) {
-	case *livekit.StartEgressRequest_WebComposite:
-		info.EgressType = livekit.EgressType_WEB_COMPOSITE_EGRESS
-		info.Request = &livekit.EgressInfo_WebComposite{WebComposite: req.WebComposite}
-
-		inputParams = &input.Params{
-			AudioOnly:  req.WebComposite.AudioOnly,
-			VideoOnly:  req.WebComposite.VideoOnly,
-			IsWebInput: true,
-			Layout:     req.WebComposite.Layout,
-			RoomName:   req.WebComposite.RoomName,
-			CustomBase: req.WebComposite.CustomBaseUrl,
-		}
-
-		switch o := req.WebComposite.Output.(type) {
-		case *livekit.WebCompositeEgressRequest_File:
-			inputParams.FileType = o.File.FileType
-
-			outputParams = &output.Params{
-				FileUrl:  o.File.HttpUrl,
-				FileType: o.File.FileType,
-				RoomName: req.WebComposite.RoomName,
-			}
-		case *livekit.WebCompositeEgressRequest_Stream:
-			inputParams.IsStream = true
-			inputParams.StreamProtocol = o.Stream.Protocol
-
-			outputParams = &output.Params{
-				IsStream:       true,
-				StreamProtocol: o.Stream.Protocol,
-				StreamUrls:     o.Stream.Urls,
-			}
-		default:
-			return nil, errors.ErrInvalidRequest
-		}
-	case *livekit.StartEgressRequest_TrackComposite:
-		info.EgressType = livekit.EgressType_TRACK_COMPOSITE_EGRESS
-		info.Request = &livekit.EgressInfo_TrackComposite{TrackComposite: req.TrackComposite}
-
-		return nil, errors.ErrNotSupported("track composite requests")
-	case *livekit.StartEgressRequest_Track:
-		info.EgressType = livekit.EgressType_TRACK_EGRESS
-		info.Request = &livekit.EgressInfo_Track{Track: req.Track}
-
-		return nil, errors.ErrNotSupported("track requests")
-	default:
-		return nil, errors.ErrInvalidRequest
-	}
-
 	// create bins
-	in, err := input.New(conf, inputParams, opts)
+	in, err := input.New(conf, params)
 	if err != nil {
 		return nil, err
 	}
-	out, err := output.New(outputParams)
+	out, err := output.New(params)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +87,7 @@ func New(conf *config.Config, request *livekit.StartEgressRequest, opts *config.
 	}
 
 	return &Pipeline{
-		Info:     info,
+		Info:     params.Info,
 		pipeline: pipeline,
 		input:    in,
 		output:   out,

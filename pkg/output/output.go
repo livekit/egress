@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/tinyzimmer/go-gst/gst"
+
+	"github.com/livekit/livekit-egress/pkg/config"
 )
 
 type Bin interface {
@@ -18,17 +19,7 @@ type Bin interface {
 	RemoveSinkByName(name string) error
 }
 
-type Params struct {
-	IsStream       bool
-	StreamProtocol livekit.StreamProtocol
-	StreamUrls     []string
-
-	FileType livekit.EncodedFileType
-	FileUrl  string
-	RoomName string
-}
-
-func New(params *Params) (Bin, error) {
+func New(params *config.Params) (Bin, error) {
 	if params.IsStream {
 		return newStreamOutputBin(params.StreamProtocol, params.StreamUrls)
 	} else {

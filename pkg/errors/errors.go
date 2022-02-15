@@ -28,3 +28,7 @@ func New(err string) error {
 func ErrNotSupported(feature string) error {
 	return fmt.Errorf("support for %s is coming soon", feature)
 }
+
+func ErrIncompatible(format, codec interface{}) error {
+	return fmt.Errorf("format %v incompatible with codec %v", format, codec)
+}

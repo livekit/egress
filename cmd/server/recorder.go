@@ -16,7 +16,7 @@ import (
 
 func runRecorder(conf *config.Config, req *livekit.StartEgressRequest) error {
 	req.EgressId = utils.NewGuid(utils.EgressPrefix)
-	rec, err := pipeline.New(conf, req, conf.GetRecordingOptions(req))
+	rec, err := pipeline.FromRequest(conf, req)
 	if err != nil {
 		return err
 	}

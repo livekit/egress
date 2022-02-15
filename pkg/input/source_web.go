@@ -32,7 +32,7 @@ type webSource struct {
 	endChan      chan struct{}
 }
 
-func newWebSource(conf *config.Config, params *Params, opts *config.RecordingOptions) (Source, error) {
+func newWebSource(conf *config.Config, params *config.Params) (Source, error) {
 	s := &webSource{
 		startChan: make(chan struct{}),
 		endChan:   make(chan struct{}),
@@ -40,8 +40,8 @@ func newWebSource(conf *config.Config, params *Params, opts *config.RecordingOpt
 
 	var inputUrl string
 	var err error
-	if opts.CustomInputURL != "" {
-		inputUrl = opts.CustomInputURL
+	if params.CustomInputURL != "" {
+		inputUrl = params.CustomInputURL
 		close(s.startChan)
 	} else {
 		inputUrl, err = getInputUrl(conf, params.Layout, params.RoomName, params.CustomBase)
@@ -50,11 +50,11 @@ func newWebSource(conf *config.Config, params *Params, opts *config.RecordingOpt
 		}
 	}
 
-	if err = s.launchXvfb(conf.Display, opts.Width, opts.Height, opts.Depth); err != nil {
+	if err = s.launchXvfb(conf.Display, params.Width, params.Height, params.Depth); err != nil {
 		logger.Errorw("failed to launch xvfb", err)
 		return nil, err
 	}
-	if err = s.launchChrome(conf, inputUrl, opts.Width, opts.Height); err != nil {
+	if err = s.launchChrome(conf, inputUrl, params.Width, params.Height); err != nil {
 		logger.Errorw("failed to launch chrome", err)
 		s.Close()
 		return nil, err

@@ -82,7 +82,7 @@ func (s *Service) Run() error {
 
 			logger.Debugw("request claimed", "egressID", req.EgressId)
 
-			p, err := pipeline.New(s.conf, req, s.conf.GetRecordingOptions(req))
+			p, err := pipeline.FromRequest(s.conf, req)
 			if err != nil {
 				s.sendEgressResponse(req.EgressId, nil, err)
 				continue

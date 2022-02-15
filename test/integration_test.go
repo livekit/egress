@@ -107,8 +107,8 @@ func testWebCompositeFile(t *testing.T, name string, conf *config.Config, option
 		},
 	}
 
-	opts := getTestOpts(conf, req, static)
-	rec, err := pipeline.New(conf, req, opts)
+	params := getTestParams(t, req, static)
+	rec, err := pipeline.FromParams(conf, params)
 	require.NoError(t, err)
 
 	// record for ~15s. Takes about 5s to start
@@ -117,7 +117,7 @@ func testWebCompositeFile(t *testing.T, name string, conf *config.Config, option
 	})
 	res := rec.Run()
 
-	verifyFile(t, conf.GetRecordingOptions(req), res, filepath)
+	verifyFile(t, params, res, filepath)
 }
 
 func testWebCompositeStream(t *testing.T, conf *config.Config) {
@@ -138,12 +138,17 @@ func testWebCompositeStream(t *testing.T, conf *config.Config) {
 						Urls:     []string{url},
 					},
 				},
+				Options: &livekit.WebCompositeEgressRequest_Advanced{
+					Advanced: &livekit.EncodingOptions{
+						AudioCodec: livekit.AudioCodec_AAC,
+					},
+				},
 			},
 		},
 	}
 
-	opts := getTestOpts(conf, req, false)
-	rec, err := pipeline.New(conf, req, opts)
+	params := getTestParams(t, req, false)
+	rec, err := pipeline.FromParams(conf, params)
 	require.NoError(t, err)
 
 	defer func() {
@@ -160,7 +165,7 @@ func testWebCompositeStream(t *testing.T, conf *config.Config) {
 	time.Sleep(time.Second * 30)
 
 	// check stream
-	verifyStream(t, opts, url)
+	verifyStream(t, params, url)
 
 	// add another, check both
 	url2 := "rtmp://localhost:1935/stream2"
@@ -168,14 +173,14 @@ func testWebCompositeStream(t *testing.T, conf *config.Config) {
 		EgressId:      req.EgressId,
 		AddOutputUrls: []string{url2},
 	}))
-	verifyStream(t, opts, url, url2)
+	verifyStream(t, params, url, url2)
 
 	// remove first, check second
 	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
 		EgressId:         req.EgressId,
 		RemoveOutputUrls: []string{url},
 	}))
-	verifyStream(t, opts, url2)
+	verifyStream(t, params, url2)
 
 	// stop
 	rec.Stop()
@@ -186,14 +191,16 @@ func testWebCompositeStream(t *testing.T, conf *config.Config) {
 	require.NotZero(t, res.EndedAt)
 }
 
-func getTestOpts(conf *config.Config, req *livekit.StartEgressRequest, static bool) *config.RecordingOptions {
-	opts := conf.GetRecordingOptions(req)
+func getTestParams(t *testing.T, req *livekit.StartEgressRequest, static bool) *config.Params {
+	params, err := config.GetPipelineParams(req)
+	require.NoError(t, err)
+	params.AudioCodec = livekit.AudioCodec_AAC
 	if static {
-		opts.CustomInputURL = "https://www.livekit.io"
+		params.CustomInputURL = "https://www.livekit.io"
 	} else {
-		opts.CustomInputURL = "https://www.youtube.com/watch?v=4cJpiOPKH14&t=25s"
+		params.CustomInputURL = "https://www.youtube.com/watch?v=4cJpiOPKH14&t=25s"
 	}
-	return opts
+	return params
 }
 
 type FFProbeInfo struct {
@@ -225,18 +232,18 @@ type FFProbeInfo struct {
 	} `json:"format"`
 }
 
-func verifyFile(t *testing.T, opts *config.RecordingOptions, res *livekit.EgressInfo, filename string) {
+func verifyFile(t *testing.T, params *config.Params, res *livekit.EgressInfo, filename string) {
 	require.Empty(t, res.Error)
-	verify(t, filename, opts, res, false)
+	verify(t, filename, params, res, false)
 }
 
-func verifyStream(t *testing.T, opts *config.RecordingOptions, urls ...string) {
+func verifyStream(t *testing.T, params *config.Params, urls ...string) {
 	for _, url := range urls {
-		verify(t, url, opts, nil, true)
+		verify(t, url, params, nil, true)
 	}
 }
 
-func verify(t *testing.T, input string, opts *config.RecordingOptions, res *livekit.EgressInfo, isStream bool) {
+func verify(t *testing.T, input string, params *config.Params, res *livekit.EgressInfo, isStream bool) {
 	info, err := ffprobe(input)
 	require.NoError(t, err, "ffprobe error")
 
@@ -264,7 +271,7 @@ func verify(t *testing.T, input string, opts *config.RecordingOptions, res *live
 		case "audio":
 			hasAudio = true
 
-			switch opts.AudioCodec {
+			switch params.AudioCodec {
 			case livekit.AudioCodec_AAC:
 				require.Equal(t, "aac", stream.CodecName)
 			case livekit.AudioCodec_OPUS:
@@ -273,20 +280,20 @@ func verify(t *testing.T, input string, opts *config.RecordingOptions, res *live
 
 			require.Equal(t, 2, stream.Channels)
 			require.Equal(t, "stereo", stream.ChannelLayout)
-			require.Equal(t, fmt.Sprint(opts.AudioFrequency), stream.SampleRate)
+			require.Equal(t, fmt.Sprint(params.AudioFrequency), stream.SampleRate)
 
 			// audio bitrate
 			if !isStream {
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)
-				require.Less(t, int32(bitrate), opts.AudioBitrate*1100)
+				require.Less(t, int32(bitrate), params.AudioBitrate*1100)
 			}
 		case "video":
 			hasVideo = true
 
 			// encoding profile
-			switch opts.VideoCodec {
+			switch params.VideoCodec {
 			case livekit.VideoCodec_H264_BASELINE:
 				require.Equal(t, "h264", stream.CodecName)
 				require.Equal(t, "Constrained Baseline", stream.Profile)
@@ -307,8 +314,8 @@ func verify(t *testing.T, input string, opts *config.RecordingOptions, res *live
 			}
 
 			// dimensions
-			require.Equal(t, opts.Width, stream.Width)
-			require.Equal(t, opts.Height, stream.Height)
+			require.Equal(t, params.Width, stream.Width)
+			require.Equal(t, params.Height, stream.Height)
 
 			// framerate
 			frac := strings.Split(stream.RFrameRate, "/")
@@ -317,14 +324,14 @@ func verify(t *testing.T, input string, opts *config.RecordingOptions, res *live
 			require.NoError(t, err)
 			d, err := strconv.ParseFloat(frac[1], 64)
 			require.NoError(t, err)
-			require.Greater(t, n/d, float64(opts.Framerate)*0.95)
+			require.Greater(t, n/d, float64(params.Framerate)*0.95)
 
 			// bitrate
 			if !isStream {
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)
-				require.Less(t, int32(bitrate), opts.VideoBitrate*1000)
+				require.Less(t, int32(bitrate), params.VideoBitrate*1000)
 			}
 		default:
 			t.Fatalf("unrecognized stream type %s", stream.CodecType)
