@@ -109,7 +109,7 @@ func (b *streamOutputBin) LinkElements() error {
 
 		// link tee to queue
 		if linkReturn := pad.Link(sink.queue.GetStaticPad("sink")); linkReturn != gst.PadLinkOK {
-			return fmt.Errorf("pad link: %s", linkReturn.String())
+			return fmt.Errorf("tee pad link failed: %s", linkReturn.String())
 		}
 	}
 

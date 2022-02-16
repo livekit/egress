@@ -177,6 +177,7 @@ func GetPipelineParams(request *livekit.StartEgressRequest) (*Params, error) {
 		EgressId: request.EgressId,
 	}
 
+	var format string
 	switch req := request.Request.(type) {
 	case *livekit.StartEgressRequest_WebComposite:
 		params.Info.EgressType = livekit.EgressType_WEB_COMPOSITE_EGRESS
@@ -192,9 +193,11 @@ func GetPipelineParams(request *livekit.StartEgressRequest) (*Params, error) {
 
 		switch o := req.WebComposite.Output.(type) {
 		case *livekit.WebCompositeEgressRequest_File:
+			format = o.File.FileType.String()
 			params.FileType = o.File.FileType
 			params.FileUrl = o.File.HttpUrl
 		case *livekit.WebCompositeEgressRequest_Stream:
+			format = o.Stream.Protocol.String()
 			params.IsStream = true
 			params.StreamProtocol = o.Stream.Protocol
 			params.StreamUrls = o.Stream.Urls
@@ -212,9 +215,11 @@ func GetPipelineParams(request *livekit.StartEgressRequest) (*Params, error) {
 
 		switch o := req.TrackComposite.Output.(type) {
 		case *livekit.TrackCompositeEgressRequest_File:
+			format = o.File.FileType.String()
 			params.FileType = o.File.FileType
 			params.FileUrl = o.File.HttpUrl
 		case *livekit.TrackCompositeEgressRequest_Stream:
+			format = o.Stream.Protocol.String()
 			params.IsStream = true
 			params.StreamProtocol = o.Stream.Protocol
 			params.StreamUrls = o.Stream.Urls
@@ -245,74 +250,89 @@ func GetPipelineParams(request *livekit.StartEgressRequest) (*Params, error) {
 
 	// check audio codec
 	if params.AudioEnabled {
-		switch params.AudioCodec {
-		case livekit.AudioCodec_DEFAULT_AC:
-			if params.IsStream && params.StreamProtocol == livekit.StreamProtocol_RTMP {
-				// RTMP requires AAC
-				params.AudioCodec = livekit.AudioCodec_AAC
-			} else {
-				// use OPUS by default
-				params.AudioCodec = livekit.AudioCodec_OPUS
-			}
-		case livekit.AudioCodec_OPUS:
-			// RTMP requires AAC
-			if params.IsStream && params.StreamProtocol == livekit.StreamProtocol_RTMP {
-				return nil, errors.ErrIncompatible(params.StreamProtocol, params.VideoCodec)
-			}
-		case livekit.AudioCodec_AAC:
-			// WEBM and OGG require OPUS
-			if !params.IsStream && params.FileType != livekit.EncodedFileType_MP4 {
-				return nil, errors.ErrIncompatible(params.FileType, params.AudioCodec)
-			}
+		if params.AudioCodec == livekit.AudioCodec_DEFAULT_AC {
+			params.AudioCodec = defaultAudioCodecs[format]
+		} else if !compatibleAudioCodecs[format][params.AudioCodec] {
+			return nil, errors.ErrIncompatible(format, params.AudioCodec)
 		}
 	}
 
 	// check video codec
 	if params.VideoEnabled {
-		if params.FileType == livekit.EncodedFileType_OGG {
-			// OGG is audio only
-			return nil, errors.ErrIncompatible(params.FileType, params.VideoCodec)
-		}
-
-		switch params.VideoCodec {
-		case livekit.VideoCodec_DEFAULT_VC:
-			if params.IsStream || params.FileType == livekit.EncodedFileType_MP4 {
-				// H264Main default for MP4, RTMP, and SRT
-				params.VideoCodec = livekit.VideoCodec_H264_MAIN
-			} else if params.FileType == livekit.EncodedFileType_WEBM {
-				// VP8 default for WEBM
-				params.VideoCodec = livekit.VideoCodec_VP8
-			}
-
-		case livekit.VideoCodec_H264_BASELINE, livekit.VideoCodec_H264_MAIN, livekit.VideoCodec_H264_HIGH:
-			if !params.IsStream && params.FileType == livekit.EncodedFileType_WEBM {
-				// WEBM requires VP8 or VP9
-				return nil, errors.ErrIncompatible(params.FileType, params.VideoCodec)
-			}
-
-		case livekit.VideoCodec_HEVC_MAIN, livekit.VideoCodec_HEVC_HIGH:
-			if params.IsStream {
-				if params.StreamProtocol == livekit.StreamProtocol_RTMP {
-					// RTMP requires H264
-					return nil, errors.ErrIncompatible(params.StreamProtocol, params.VideoCodec)
-				}
-			} else if params.FileType == livekit.EncodedFileType_WEBM {
-				// WEBM requires VP8 or VP9
-				return nil, errors.ErrIncompatible(params.FileType, params.VideoCodec)
-			}
-
-		case livekit.VideoCodec_VP8, livekit.VideoCodec_VP9:
-			if params.IsStream {
-				if params.StreamProtocol == livekit.StreamProtocol_RTMP {
-					// RTMP requires H264
-					return nil, errors.ErrIncompatible(params.StreamProtocol, params.VideoCodec)
-				}
-			} else if params.FileType == livekit.EncodedFileType_MP4 {
-				// MP4 requires H264 or HEVC
-				return nil, errors.ErrIncompatible(params.FileType, params.VideoCodec)
-			}
+		if params.VideoCodec == livekit.VideoCodec_DEFAULT_VC {
+			params.VideoCodec = defaultVideoCodecs[format]
+		} else if !compatibleVideoCodecs[format][params.VideoCodec] {
+			return nil, errors.ErrIncompatible(format, params.VideoCodec)
 		}
 	}
 
 	return params, nil
 }
+
+var (
+	mp4  = livekit.EncodedFileType_MP4.String()
+	webm = livekit.EncodedFileType_WEBM.String()
+	ogg  = livekit.EncodedFileType_OGG.String()
+	rtmp = livekit.StreamProtocol_RTMP.String()
+	srt  = livekit.StreamProtocol_SRT.String()
+
+	defaultAudioCodecs = map[string]livekit.AudioCodec{
+		mp4:  livekit.AudioCodec_AAC,
+		webm: livekit.AudioCodec_OPUS,
+		ogg:  livekit.AudioCodec_OPUS,
+		rtmp: livekit.AudioCodec_AAC,
+		srt:  livekit.AudioCodec(-1), // unknown
+	}
+
+	defaultVideoCodecs = map[string]livekit.VideoCodec{
+		mp4:  livekit.VideoCodec_H264_MAIN,
+		webm: livekit.VideoCodec_VP8,
+		ogg:  livekit.VideoCodec_VP8,
+		rtmp: livekit.VideoCodec_H264_MAIN,
+		srt:  livekit.VideoCodec(-1), // unknown
+	}
+
+	compatibleAudioCodecs = map[string]map[livekit.AudioCodec]bool{
+		mp4: {
+			livekit.AudioCodec_AAC:  true,
+			livekit.AudioCodec_OPUS: true,
+		},
+		webm: {
+			livekit.AudioCodec_OPUS: true,
+		},
+		ogg: {
+			livekit.AudioCodec_OPUS: true,
+		},
+		rtmp: {
+			livekit.AudioCodec_AAC: true,
+		},
+		srt: {
+			// unknown
+		},
+	}
+
+	compatibleVideoCodecs = map[string]map[livekit.VideoCodec]bool{
+		mp4: {
+			livekit.VideoCodec_H264_BASELINE: true,
+			livekit.VideoCodec_H264_MAIN:     true,
+			livekit.VideoCodec_H264_HIGH:     true,
+			livekit.VideoCodec_HEVC_MAIN:     true,
+			livekit.VideoCodec_HEVC_HIGH:     true,
+		},
+		webm: {
+			livekit.VideoCodec_VP8: true,
+			livekit.VideoCodec_VP9: true,
+		},
+		ogg: {
+			livekit.VideoCodec_VP8: true,
+		},
+		rtmp: {
+			livekit.VideoCodec_H264_BASELINE: true,
+			livekit.VideoCodec_H264_MAIN:     true,
+			livekit.VideoCodec_H264_HIGH:     true,
+		},
+		srt: {
+			// unknown
+		},
+	}
+)
