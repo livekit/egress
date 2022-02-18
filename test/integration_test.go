@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-egress/pkg/config"
@@ -28,9 +27,10 @@ ws_url: ws://localhost:7880`
 
 func TestWebComposite(t *testing.T) {
 	conf, err := config.NewConfig(confString)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	testInput := "https://www.youtube.com/watch?v=4cJpiOPKH14&t=25s"
+	testInput2 := "https://www.youtube.com/watch?v=eAcFPtCyDYY&t=59s"
 	staticInput := "https://www.livekit.io"
 
 	for _, test := range []struct {
@@ -40,7 +40,7 @@ func TestWebComposite(t *testing.T) {
 		{
 			name: "web-h264-baseline-mp4",
 			f: func(t *testing.T) {
-				testWebCompositeFile(t, conf, testInput,
+				testWebCompositeFile(t, conf, testInput, true,
 					livekit.EncodedFileType_MP4,
 					&livekit.EncodingOptions{
 						AudioCodec:   livekit.AudioCodec_AAC,
@@ -54,7 +54,7 @@ func TestWebComposite(t *testing.T) {
 		{
 			name: "web-h264-main-mp4",
 			f: func(t *testing.T) {
-				testWebCompositeFile(t, conf, staticInput,
+				testWebCompositeFile(t, conf, staticInput, true,
 					livekit.EncodedFileType_MP4,
 					nil,
 				)
@@ -63,7 +63,7 @@ func TestWebComposite(t *testing.T) {
 		{
 			name: "web-h264-high-mp4",
 			f: func(t *testing.T) {
-				testWebCompositeFile(t, conf, testInput,
+				testWebCompositeFile(t, conf, testInput, true,
 					livekit.EncodedFileType_MP4,
 					&livekit.EncodingOptions{
 						Framerate:      60,
@@ -76,7 +76,7 @@ func TestWebComposite(t *testing.T) {
 		// {
 		// 	name: "web-vp8-webm",
 		// 	f: func(t *testing.T) {
-		// 		testWebCompositeFile(t, conf, testInput,
+		// 		testWebCompositeFile(t, conf, testInput, true,
 		// 			livekit.EncodedFileType_WEBM,
 		// 			&livekit.EncodingOptions{
 		// 				AudioCodec: livekit.AudioCodec_OPUS,
@@ -87,7 +87,7 @@ func TestWebComposite(t *testing.T) {
 		// {
 		// 	name: "web-vp8-ogg",
 		// 	f: func(t *testing.T) {
-		// 		testWebCompositeFile(t, conf, testInput,
+		// 		testWebCompositeFile(t, conf, testInput, true,
 		// 			livekit.EncodedFileType_OGG,
 		// 			&livekit.EncodingOptions{
 		// 				AudioCodec: livekit.AudioCodec_OPUS,
@@ -98,7 +98,7 @@ func TestWebComposite(t *testing.T) {
 		// {
 		// 	name: "web-vp9-webm",
 		// 	f: func(t *testing.T) {
-		// 		testWebCompositeFile(t, conf, testInput,
+		// 		testWebCompositeFile(t, conf, testInput, true,
 		// 			livekit.EncodedFileType_WEBM,
 		// 			&livekit.EncodingOptions{
 		// 				AudioCodec: livekit.AudioCodec_OPUS,
@@ -109,7 +109,7 @@ func TestWebComposite(t *testing.T) {
 		// {
 		// 	name: "web-h265-main-mp4",
 		// 	f: func(t *testing.T) {
-		// 		testWebCompositeFile(t, conf, testInput,
+		// 		testWebCompositeFile(t, conf, testInput, true,
 		// 			livekit.EncodedFileType_MP4,
 		// 			&livekit.EncodingOptions{
 		// 				AudioCodec: livekit.AudioCodec_AAC,
@@ -120,7 +120,7 @@ func TestWebComposite(t *testing.T) {
 		// {
 		// 	name: "web-h265-high-mp5",
 		// 	f: func(t *testing.T) {
-		// 		testWebCompositeFile(t, conf, testInput,
+		// 		testWebCompositeFile(t, conf, testInput, true,
 		// 			livekit.EncodedFileType_MP4,
 		// 			&livekit.EncodingOptions{
 		// 				AudioCodec: livekit.AudioCodec_OPUS,
@@ -128,6 +128,17 @@ func TestWebComposite(t *testing.T) {
 		// 			})
 		// 	},
 		// },
+		{
+			name: "web-opus-ogg",
+			f: func(t *testing.T) {
+				testWebCompositeFile(t, conf, testInput2, false,
+					livekit.EncodedFileType_OGG,
+					&livekit.EncodingOptions{
+						AudioCodec: livekit.AudioCodec_OPUS,
+					},
+				)
+			},
+		},
 		{
 			name: "web-h264-main-rtmp",
 			f:    func(t *testing.T) { testWebCompositeStream(t, conf, testInput) },
@@ -139,7 +150,10 @@ func TestWebComposite(t *testing.T) {
 	}
 }
 
-func testWebCompositeFile(t *testing.T, conf *config.Config, inputUrl string, fileType livekit.EncodedFileType, options *livekit.EncodingOptions) {
+func testWebCompositeFile(
+	t *testing.T, conf *config.Config, inputUrl string, videoEnabled bool,
+	fileType livekit.EncodedFileType, options *livekit.EncodingOptions,
+) {
 	videoCodec := livekit.VideoCodec_H264_MAIN
 	if options != nil {
 		videoCodec = options.VideoCodec
@@ -149,8 +163,9 @@ func testWebCompositeFile(t *testing.T, conf *config.Config, inputUrl string, fi
 		strings.ToLower(videoCodec.String()), time.Now().Unix(), strings.ToLower(fileType.String()))
 
 	webRequest := &livekit.WebCompositeEgressRequest{
-		RoomName: "myroom",
-		Layout:   "speaker-dark",
+		RoomName:  "myroom",
+		Layout:    "speaker-dark",
+		AudioOnly: !videoEnabled,
 		Output: &livekit.WebCompositeEgressRequest_File{
 			File: &livekit.EncodedFileOutput{
 				FileType: fileType,
@@ -258,8 +273,8 @@ func testWebCompositeStream(t *testing.T, conf *config.Config, inputUrl string) 
 	res := <-resChan
 
 	// check error
-	assert.Empty(t, res.Error)
-	assert.NotZero(t, res.EndedAt)
+	require.Empty(t, res.Error)
+	require.NotZero(t, res.EndedAt)
 }
 
 type FFProbeInfo struct {
@@ -292,7 +307,7 @@ type FFProbeInfo struct {
 }
 
 func verifyFile(t *testing.T, params *config.Params, res *livekit.EgressInfo, filename string, fileType livekit.EncodedFileType) {
-	assert.Empty(t, res.Error)
+	require.Empty(t, res.Error)
 	verify(t, filename, params, res, false, fileType)
 }
 
@@ -304,23 +319,28 @@ func verifyStream(t *testing.T, params *config.Params, urls ...string) {
 
 func verify(t *testing.T, input string, params *config.Params, res *livekit.EgressInfo, isStream bool, fileType livekit.EncodedFileType) {
 	info, err := ffprobe(input)
-	assert.NoError(t, err, "ffprobe error")
+	require.NoError(t, err, "ffprobe error")
 
 	if isStream {
-		assert.Equal(t, "flv", info.Format.FormatName)
+		require.Equal(t, "flv", info.Format.FormatName)
 	} else {
-		assert.NotEqual(t, "0", info.Format.Size)
-		assert.NotZero(t, res.StartedAt)
-		assert.NotZero(t, res.EndedAt)
+		require.NotEqual(t, "0", info.Format.Size)
+		require.NotZero(t, res.StartedAt)
+		require.NotZero(t, res.EndedAt)
 
 		// duration
 		expected := time.Unix(0, res.EndedAt).Sub(time.Unix(0, res.StartedAt)).Seconds()
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
-		assert.NoError(t, err)
-		assert.InDelta(t, expected, actual, 1)
+		require.NoError(t, err)
+		require.InDelta(t, expected, actual, 1)
 	}
-	assert.Equal(t, 100, info.Format.ProbeScore)
-	assert.Len(t, info.Streams, 2)
+	require.Equal(t, 100, info.Format.ProbeScore)
+
+	if params.AudioEnabled && params.VideoEnabled {
+		require.Len(t, info.Streams, 2)
+	} else {
+		require.Len(t, info.Streams, 1)
+	}
 
 	// check stream info
 	var hasAudio, hasVideo bool
@@ -331,23 +351,23 @@ func verify(t *testing.T, input string, params *config.Params, res *livekit.Egre
 
 			switch params.AudioCodec {
 			case livekit.AudioCodec_AAC:
-				assert.Equal(t, "aac", stream.CodecName)
-				assert.Equal(t, fmt.Sprint(params.AudioFrequency), stream.SampleRate)
+				require.Equal(t, "aac", stream.CodecName)
+				require.Equal(t, fmt.Sprint(params.AudioFrequency), stream.SampleRate)
 
 				// TODO: opus should be able to do stereo
-				assert.Equal(t, 2, stream.Channels)
-				assert.Equal(t, "stereo", stream.ChannelLayout)
+				require.Equal(t, 2, stream.Channels)
+				require.Equal(t, "stereo", stream.ChannelLayout)
 			case livekit.AudioCodec_OPUS:
-				assert.Equal(t, "opus", stream.CodecName)
-				assert.Equal(t, "48000", stream.SampleRate)
+				require.Equal(t, "opus", stream.CodecName)
+				require.Equal(t, "48000", stream.SampleRate)
 			}
 
 			// audio bitrate
 			if fileType == livekit.EncodedFileType_MP4 {
 				bitrate, err := strconv.Atoi(stream.BitRate)
-				assert.NoError(t, err)
-				assert.NotZero(t, bitrate)
-				assert.Less(t, int32(bitrate), params.AudioBitrate*1100)
+				require.NoError(t, err)
+				require.NotZero(t, bitrate)
+				require.Less(t, int32(bitrate), params.AudioBitrate*1100)
 			}
 		case "video":
 			hasVideo = true
@@ -355,51 +375,57 @@ func verify(t *testing.T, input string, params *config.Params, res *livekit.Egre
 			// encoding profile
 			switch params.VideoCodec {
 			case livekit.VideoCodec_H264_BASELINE:
-				assert.Equal(t, "h264", stream.CodecName)
-				assert.Equal(t, "Constrained Baseline", stream.Profile)
+				require.Equal(t, "h264", stream.CodecName)
+				require.Equal(t, "Constrained Baseline", stream.Profile)
 			case livekit.VideoCodec_H264_MAIN:
-				assert.Equal(t, "h264", stream.CodecName)
-				assert.Equal(t, "Main", stream.Profile)
+				require.Equal(t, "h264", stream.CodecName)
+				require.Equal(t, "Main", stream.Profile)
 			case livekit.VideoCodec_H264_HIGH:
-				assert.Equal(t, "h264", stream.CodecName)
-				assert.Equal(t, "High", stream.Profile)
+				require.Equal(t, "h264", stream.CodecName)
+				require.Equal(t, "High", stream.Profile)
 			case livekit.VideoCodec_VP8:
-				assert.Equal(t, "vp8", stream.CodecName)
+				require.Equal(t, "vp8", stream.CodecName)
 			case livekit.VideoCodec_VP9:
-				assert.Equal(t, "vp9", stream.CodecName)
+				require.Equal(t, "vp9", stream.CodecName)
 			case livekit.VideoCodec_HEVC_MAIN:
-				assert.Equal(t, "hevc", stream.CodecName)
-				assert.Equal(t, "Main", stream.Profile)
+				require.Equal(t, "hevc", stream.CodecName)
+				require.Equal(t, "Main", stream.Profile)
 			case livekit.VideoCodec_HEVC_HIGH:
-				assert.Equal(t, "hevc", stream.CodecName)
-				assert.Equal(t, "Main", stream.Profile)
+				require.Equal(t, "hevc", stream.CodecName)
+				require.Equal(t, "Main", stream.Profile)
 			}
 
 			// dimensions
-			assert.Equal(t, params.Width, stream.Width)
-			assert.Equal(t, params.Height, stream.Height)
+			require.Equal(t, params.Width, stream.Width)
+			require.Equal(t, params.Height, stream.Height)
 
 			// framerate
 			frac := strings.Split(stream.RFrameRate, "/")
-			assert.Len(t, frac, 2)
+			require.Len(t, frac, 2)
 			n, err := strconv.ParseFloat(frac[0], 64)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			d, err := strconv.ParseFloat(frac[1], 64)
-			assert.NoError(t, err)
-			assert.Greater(t, n/d, float64(params.Framerate)*0.95)
+			require.NoError(t, err)
+			require.Greater(t, n/d, float64(params.Framerate)*0.95)
 
 			// bitrate
 			if fileType == livekit.EncodedFileType_MP4 {
 				bitrate, err := strconv.Atoi(stream.BitRate)
-				assert.NoError(t, err)
-				assert.NotZero(t, bitrate)
-				assert.Less(t, int32(bitrate), params.VideoBitrate*1000)
+				require.NoError(t, err)
+				require.NotZero(t, bitrate)
+				require.Less(t, int32(bitrate), params.VideoBitrate*1000)
 			}
 		default:
 			t.Fatalf("unrecognized stream type %s", stream.CodecType)
 		}
 	}
-	assert.True(t, hasAudio && hasVideo)
+
+	if params.AudioEnabled {
+		require.True(t, hasAudio)
+	}
+	if params.VideoEnabled {
+		require.True(t, hasVideo)
+	}
 }
 
 func ffprobe(input string) (*FFProbeInfo, error) {

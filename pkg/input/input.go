@@ -48,10 +48,15 @@ func New(conf *config.Config, params *config.Params) (Bin, error) {
 		return nil, err
 	}
 
+	var elements []*gst.Element
+
 	// audio elements
 	audioElements, audioQueue, err := buildAudioElements(params)
 	if err != nil {
 		return nil, err
+	}
+	if audioElements != nil {
+		elements = append(elements, audioElements...)
 	}
 
 	// video elements
@@ -59,18 +64,20 @@ func New(conf *config.Config, params *config.Params) (Bin, error) {
 	if err != nil {
 		return nil, err
 	}
+	if videoElements != nil {
+		elements = append(elements, videoElements...)
+	}
 
 	// mux
 	mux, err := buildMux(params)
 	if err != nil {
 		return nil, err
 	}
+	elements = append(elements, mux)
 
 	// create bin
 	bin := gst.NewBin("input")
-	allElements := append(audioElements, videoElements...)
-	allElements = append(allElements, mux)
-	err = bin.AddMany(allElements...)
+	err = bin.AddMany(elements...)
 	if err != nil {
 		return nil, err
 	}

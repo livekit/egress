@@ -184,8 +184,8 @@ func GetPipelineParams(request *livekit.StartEgressRequest) (*Params, error) {
 		params.Info.Request = &livekit.EgressInfo_WebComposite{WebComposite: req.WebComposite}
 
 		params.Transcode = true
-		params.AudioEnabled = !req.WebComposite.AudioOnly
-		params.VideoEnabled = !req.WebComposite.VideoOnly
+		params.AudioEnabled = !req.WebComposite.VideoOnly
+		params.VideoEnabled = !req.WebComposite.AudioOnly
 		params.IsWebInput = true
 		params.Layout = req.WebComposite.Layout
 		params.RoomName = req.WebComposite.RoomName
