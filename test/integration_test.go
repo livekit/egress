@@ -19,11 +19,7 @@ import (
 	"github.com/livekit/livekit-egress/pkg/pipeline"
 )
 
-var confString = `
-log_level: debug
-api_key: key
-api_secret: secret
-ws_url: ws://localhost:7880`
+var confString = "log_level: debug"
 
 func TestWebComposite(t *testing.T) {
 	conf, err := config.NewConfig(confString)
@@ -189,7 +185,7 @@ func testWebCompositeFile(
 		},
 	}
 
-	params, err := config.GetPipelineParams(req)
+	params, err := config.GetPipelineParams(conf, req)
 	require.NoError(t, err)
 	params.CustomInputURL = inputUrl
 	rec, err := pipeline.FromParams(conf, params)
@@ -231,7 +227,7 @@ func testWebCompositeStream(t *testing.T, conf *config.Config, inputUrl string) 
 		},
 	}
 
-	params, err := config.GetPipelineParams(req)
+	params, err := config.GetPipelineParams(conf, req)
 	require.NoError(t, err)
 	params.CustomInputURL = inputUrl
 	rec, err := pipeline.FromParams(conf, params)
@@ -349,18 +345,19 @@ func verify(t *testing.T, input string, params *config.Params, res *livekit.Egre
 		case "audio":
 			hasAudio = true
 
+			// codec
 			switch params.AudioCodec {
 			case livekit.AudioCodec_AAC:
 				require.Equal(t, "aac", stream.CodecName)
 				require.Equal(t, fmt.Sprint(params.AudioFrequency), stream.SampleRate)
-
-				// TODO: opus should be able to do stereo
-				require.Equal(t, 2, stream.Channels)
-				require.Equal(t, "stereo", stream.ChannelLayout)
 			case livekit.AudioCodec_OPUS:
 				require.Equal(t, "opus", stream.CodecName)
 				require.Equal(t, "48000", stream.SampleRate)
 			}
+
+			// channels
+			require.Equal(t, 2, stream.Channels)
+			require.Equal(t, "stereo", stream.ChannelLayout)
 
 			// audio bitrate
 			if fileType == livekit.EncodedFileType_MP4 {
@@ -383,16 +380,16 @@ func verify(t *testing.T, input string, params *config.Params, res *livekit.Egre
 			case livekit.VideoCodec_H264_HIGH:
 				require.Equal(t, "h264", stream.CodecName)
 				require.Equal(t, "High", stream.Profile)
-			case livekit.VideoCodec_VP8:
-				require.Equal(t, "vp8", stream.CodecName)
-			case livekit.VideoCodec_VP9:
-				require.Equal(t, "vp9", stream.CodecName)
-			case livekit.VideoCodec_HEVC_MAIN:
-				require.Equal(t, "hevc", stream.CodecName)
-				require.Equal(t, "Main", stream.Profile)
-			case livekit.VideoCodec_HEVC_HIGH:
-				require.Equal(t, "hevc", stream.CodecName)
-				require.Equal(t, "Main", stream.Profile)
+				// case livekit.VideoCodec_VP8:
+				// 	require.Equal(t, "vp8", stream.CodecName)
+				// case livekit.VideoCodec_VP9:
+				// 	require.Equal(t, "vp9", stream.CodecName)
+				// case livekit.VideoCodec_HEVC_MAIN:
+				// 	require.Equal(t, "hevc", stream.CodecName)
+				// 	require.Equal(t, "Main", stream.Profile)
+				// case livekit.VideoCodec_HEVC_HIGH:
+				// 	require.Equal(t, "hevc", stream.CodecName)
+				// 	require.Equal(t, "Main", stream.Profile)
 			}
 
 			// dimensions

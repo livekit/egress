@@ -16,15 +16,12 @@ import (
 )
 
 type Config struct {
-	ApiKey          string      `yaml:"api_key"`
-	ApiSecret       string      `yaml:"api_secret"`
-	WsUrl           string      `yaml:"ws_url"`
-	HealthPort      int         `yaml:"health_port"`
-	LogLevel        string      `yaml:"log_level"`
-	TemplateAddress string      `yaml:"template_address"`
-	Insecure        bool        `yaml:"insecure"`
-	Redis           RedisConfig `yaml:"redis"`
-	Display         string      `yaml:"-"`
+	HealthPort   int         `yaml:"health_port"`
+	LogLevel     string      `yaml:"log_level"`
+	TemplateBase string      `yaml:"template_base"`
+	Insecure     bool        `yaml:"insecure"`
+	Redis        RedisConfig `yaml:"redis"`
+	Display      string      `yaml:"-"`
 }
 
 type RedisConfig struct {
@@ -34,20 +31,10 @@ type RedisConfig struct {
 	DB       int    `yaml:"db"`
 }
 
-type Defaults struct {
-	Width          int32 `yaml:"width"`
-	Height         int32 `yaml:"height"`
-	Depth          int32 `yaml:"depth"`
-	Framerate      int32 `yaml:"framerate"`
-	AudioBitrate   int32 `yaml:"audio_bitrate"`
-	AudioFrequency int32 `yaml:"audio_frequency"`
-	VideoBitrate   int32 `yaml:"video_bitrate"`
-}
-
 func NewConfig(confString string) (*Config, error) {
 	conf := &Config{
-		LogLevel:        "info",
-		TemplateAddress: "https://recorder.livekit.io/#",
+		LogLevel:     "info",
+		TemplateBase: "https://recorder.livekit.io/#",
 	}
 
 	if confString != "" {

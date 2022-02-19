@@ -1,4 +1,4 @@
-package input
+package source
 
 import (
 	"context"
@@ -9,52 +9,54 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
-	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-egress/pkg/config"
 )
 
 const (
-	startRecording = "START_RECORDING"
-	endRecording   = "END_RECORDING"
+	startRecordingLog = "START_RECORDING"
+	endRecordingLog   = "END_RECORDING"
 )
 
-type webSource struct {
+type WebSource struct {
 	xvfb         *exec.Cmd
 	chromeCancel context.CancelFunc
-	startChan    chan struct{}
-	endChan      chan struct{}
+
+	startRecording chan struct{}
+	endRecording   chan struct{}
 }
 
-func newWebSource(conf *config.Config, params *config.Params) (Source, error) {
-	s := &webSource{
-		startChan: make(chan struct{}),
-		endChan:   make(chan struct{}),
+func NewWebSource(conf *config.Config, params *config.Params) (*WebSource, error) {
+	s := &WebSource{
+		startRecording: make(chan struct{}),
+		endRecording:   make(chan struct{}),
 	}
 
 	var inputUrl string
-	var err error
 	if params.CustomInputURL != "" {
 		inputUrl = params.CustomInputURL
-		close(s.startChan)
+		close(s.startRecording)
 	} else {
-		inputUrl, err = getInputUrl(conf, params.Layout, params.RoomName, params.CustomBase)
+		token, err := buildToken(params.LKApiKey, params.LKApiSecret, params.RoomName)
 		if err != nil {
+			logger.Errorw("failed to create join token", err)
 			return nil, err
 		}
+		inputUrl = fmt.Sprintf(
+			"%s/%s?url=%s&token=%s",
+			params.TemplateBase, params.Layout, url.QueryEscape(params.LKUrl), token,
+		)
 	}
 
-	if err = s.launchXvfb(conf.Display, params.Width, params.Height, params.Depth); err != nil {
+	if err := s.launchXvfb(conf.Display, params.Width, params.Height, params.Depth); err != nil {
 		logger.Errorw("failed to launch xvfb", err)
 		return nil, err
 	}
-	if err = s.launchChrome(conf, inputUrl, params.Width, params.Height); err != nil {
+	if err := s.launchChrome(conf, inputUrl, params.Width, params.Height); err != nil {
 		logger.Errorw("failed to launch chrome", err)
 		s.Close()
 		return nil, err
@@ -63,43 +65,7 @@ func newWebSource(conf *config.Config, params *config.Params) (Source, error) {
 	return s, nil
 }
 
-func getInputUrl(conf *config.Config, layout, roomName, customBase string) (string, error) {
-	token, err := buildToken(conf, roomName)
-	if err != nil {
-		return "", err
-	}
-
-	baseUrl := conf.TemplateAddress
-	if customBase != "" {
-		baseUrl = customBase
-	}
-
-	return fmt.Sprintf("%s/%s?url=%s&token=%s",
-		baseUrl, layout, url.QueryEscape(conf.WsUrl), token), nil
-}
-
-func buildToken(conf *config.Config, roomName string) (string, error) {
-	f := false
-	t := true
-	grant := &auth.VideoGrant{
-		RoomJoin:       true,
-		Room:           roomName,
-		CanSubscribe:   &t,
-		CanPublish:     &f,
-		CanPublishData: &f,
-		Hidden:         true,
-		Recorder:       true,
-	}
-
-	at := auth.NewAccessToken(conf.ApiKey, conf.ApiSecret).
-		AddGrant(grant).
-		SetIdentity(utils.NewGuid(utils.EgressPrefix)).
-		SetValidFor(24 * time.Hour)
-
-	return at.ToJWT()
-}
-
-func (s *webSource) launchXvfb(display string, width, height, depth int32) error {
+func (s *WebSource) launchXvfb(display string, width, height, depth int32) error {
 	dims := fmt.Sprintf("%dx%dx%d", width, height, depth)
 	logger.Debugw("launching xvfb", "display", display, "dims", dims)
 	xvfb := exec.Command("Xvfb", display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
@@ -110,7 +76,7 @@ func (s *webSource) launchXvfb(display string, width, height, depth int32) error
 	return nil
 }
 
-func (s *webSource) launchChrome(conf *config.Config, url string, width, height int32) error {
+func (s *WebSource) launchChrome(conf *config.Config, url string, width, height int32) error {
 	logger.Debugw("launching chrome", "url", url)
 
 	opts := []chromedp.ExecAllocatorOption{
@@ -177,11 +143,20 @@ func (s *webSource) launchChrome(conf *config.Config, url string, width, height 
 				msg := fmt.Sprint(val)
 				args = append(args, msg)
 				switch msg {
-				case startRecording:
-					close(s.startChan)
-				case endRecording:
-					close(s.endChan)
-				default:
+				case startRecordingLog:
+					select {
+					case <-s.startRecording:
+						continue
+					default:
+						close(s.startRecording)
+					}
+				case endRecordingLog:
+					select {
+					case <-s.endRecording:
+						continue
+					default:
+						close(s.endRecording)
+					}
 				}
 			}
 			logger.Debugw(fmt.Sprintf("chrome console %s", ev.Type.String()), "msg", strings.Join(args, " "))
@@ -205,15 +180,15 @@ func (s *webSource) launchChrome(conf *config.Config, url string, width, height 
 	return err
 }
 
-func (s *webSource) RoomStarted() chan struct{} {
-	return s.startChan
+func (s *WebSource) StartRecording() chan struct{} {
+	return s.startRecording
 }
 
-func (s *webSource) RoomEnded() chan struct{} {
-	return s.endChan
+func (s *WebSource) EndRecording() chan struct{} {
+	return s.endRecording
 }
 
-func (s *webSource) Close() {
+func (s *WebSource) Close() {
 	if s.chromeCancel != nil {
 		s.chromeCancel()
 		s.chromeCancel = nil

@@ -8,12 +8,11 @@ import (
 var (
 	ErrNoConfig = errors.New("missing config")
 
-	ErrInvalidRequest = errors.New("request missing required field")
-
-	ErrCannotMixEgressTypes = errors.New("cannot mix egress types")
-	ErrGhostPadFailed       = errors.New("failed to add ghost pad to bin")
-	ErrOutputAlreadyExists  = errors.New("output already exists")
-	ErrOutputNotFound       = errors.New("output not found")
+	ErrInvalidInput        = errors.New("request missing required field")
+	ErrInvalidRPC          = errors.New("invalid request")
+	ErrGhostPadFailed      = errors.New("failed to add ghost pad to bin")
+	ErrOutputAlreadyExists = errors.New("output already exists")
+	ErrOutputNotFound      = errors.New("output not found")
 
 	GErrNoURI            = "No URI set before starting"
 	GErrFailedToStart    = "Failed to start"

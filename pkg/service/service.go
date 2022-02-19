@@ -87,7 +87,7 @@ func (s *Service) Run() error {
 				s.sendEgressResponse(req.EgressId, nil, err)
 				continue
 			} else {
-				s.sendEgressResponse(req.EgressId, p.Info, nil)
+				s.sendEgressResponse(req.EgressId, p.Info(), nil)
 				s.handleEgress(p)
 			}
 		}
@@ -105,9 +105,9 @@ func (s *Service) Stop(kill bool) {
 	}
 }
 
-func (s *Service) handleEgress(p *pipeline.Pipeline) {
+func (s *Service) handleEgress(p pipeline.Pipeline) {
 	// subscribe to request channel
-	requests, err := s.bus.Subscribe(s.ctx, egress.RequestChannel(p.Info.EgressId))
+	requests, err := s.bus.Subscribe(s.ctx, egress.RequestChannel(p.Info().EgressId))
 	if err != nil {
 		return
 	}
@@ -147,11 +147,11 @@ func (s *Service) handleEgress(p *pipeline.Pipeline) {
 			request := &livekit.EgressRequest{}
 			err = proto.Unmarshal(requests.Payload(msg), request)
 			if err != nil {
-				logger.Errorw("failed to read request", err, "egressID", p.Info.EgressId)
+				logger.Errorw("failed to read request", err, "egressID", p.Info().EgressId)
 				continue
 			}
 
-			logger.Debugw("handling request", "egressID", p.Info.EgressId, "requestID", request.RequestId)
+			logger.Debugw("handling request", "egressID", p.Info().EgressId, "requestID", request.RequestId)
 
 			switch req := request.Request.(type) {
 			case *livekit.EgressRequest_UpdateStream:
@@ -162,7 +162,7 @@ func (s *Service) handleEgress(p *pipeline.Pipeline) {
 				p.Stop()
 			}
 
-			s.sendEgressResponse(request.RequestId, p.Info, err)
+			s.sendEgressResponse(request.RequestId, p.Info(), err)
 		}
 	}
 }
