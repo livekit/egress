@@ -14,6 +14,7 @@ import (
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
+	"github.com/livekit/livekit-egress/pkg/sink"
 )
 
 // gst.Init needs to be called before using gst but after gst package loads
@@ -38,6 +39,7 @@ type compositePipeline struct {
 	mu             sync.RWMutex
 	isStream       bool
 	streamProtocol livekit.StreamProtocol
+	fileType       livekit.EncodedFileType
 	removed        map[string]bool
 	closed         chan struct{}
 }
@@ -70,11 +72,12 @@ func NewPipeline(conf *config.Config, p *params.Params) (*compositePipeline, err
 		pipeline:       pipeline,
 		in:             in,
 		out:            out,
-		isStream:       p.IsStream,
-		streamProtocol: p.StreamProtocol,
 		info:           p.Info,
 		fileInfo:       p.FileInfo,
 		streamInfo:     p.StreamInfo,
+		isStream:       p.IsStream,
+		streamProtocol: p.StreamProtocol,
+		fileType:       p.FileType,
 		removed:        make(map[string]bool),
 		closed:         make(chan struct{}),
 	}, nil
@@ -160,6 +163,14 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 
 	// close input source
 	p.in.Close()
+
+	// upload file
+	if !p.isStream && strings.Contains(p.fileInfo.Location, "://") {
+		err := sink.UploadFile(p.fileInfo.Filename, p.fileInfo.Location, p.fileType)
+		if err != nil {
+			p.info.Error = err.Error()
+		}
+	}
 
 	// return result
 	p.info.Status = livekit.EgressStatus_EGRESS_COMPLETE
