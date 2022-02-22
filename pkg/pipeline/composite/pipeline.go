@@ -187,7 +187,7 @@ func (p *compositePipeline) UpdateStream(req *livekit.UpdateStreamRequest) error
 		switch p.streamProtocol {
 		case livekit.StreamProtocol_RTMP:
 			if !strings.HasPrefix(url, "rtmp://") {
-				return errors.ErrInvalidURL
+				return errors.ErrInvalidUrl(url, p.streamProtocol)
 			}
 		}
 

@@ -3,7 +3,6 @@ package source
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-egress/pkg/config"
+	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
 
@@ -29,31 +29,26 @@ type WebSource struct {
 	endRecording chan struct{}
 }
 
-func NewWebSource(conf *config.Config, params *params.Params) (*WebSource, error) {
+func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 	s := &WebSource{
 		endRecording: make(chan struct{}),
 	}
 
 	var inputUrl string
-	if params.CustomInputURL != "" {
-		inputUrl = params.CustomInputURL
+	if p.CustomInputURL != "" {
+		inputUrl = p.CustomInputURL
 	} else {
-		token, err := buildToken(params.LKApiKey, params.LKApiSecret, params.RoomName)
-		if err != nil {
-			logger.Errorw("failed to create join token", err)
-			return nil, err
-		}
 		inputUrl = fmt.Sprintf(
 			"%s/%s?url=%s&token=%s",
-			params.TemplateBase, params.Layout, url.QueryEscape(params.LKUrl), token,
+			p.TemplateBase, p.Layout, url.QueryEscape(p.LKUrl), p.Token,
 		)
 	}
 
-	if err := s.launchXvfb(conf.Display, params.Width, params.Height, params.Depth); err != nil {
+	if err := s.launchXvfb(conf.Display, p.Width, p.Height, p.Depth); err != nil {
 		logger.Errorw("failed to launch xvfb", err)
 		return nil, err
 	}
-	if err := s.launchChrome(conf, inputUrl, params.Width, params.Height); err != nil {
+	if err := s.launchChrome(conf, inputUrl, p.Width, p.Height); err != nil {
 		logger.Errorw("failed to launch chrome", err)
 		s.Close()
 		return nil, err

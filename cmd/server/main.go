@@ -61,15 +61,14 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 	configFile := c.String("config")
 	configBody := c.String("config-body")
 	if configBody == "" {
-		if configFile != "" {
-			content, err := ioutil.ReadFile(configFile)
-			if err != nil {
-				return nil, err
-			}
-			configBody = string(content)
-		} else {
+		if configFile == "" {
 			return nil, errors.ErrNoConfig
 		}
+		content, err := ioutil.ReadFile(configFile)
+		if err != nil {
+			return nil, err
+		}
+		configBody = string(content)
 	}
 
 	return config.NewConfig(configBody)

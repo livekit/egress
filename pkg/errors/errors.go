@@ -3,17 +3,18 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 var (
 	ErrNoConfig = errors.New("missing config")
 
-	ErrInvalidInput        = errors.New("request missing required field")
-	ErrInvalidURL          = errors.New("invalid output url")
 	ErrInvalidRPC          = errors.New("invalid request")
 	ErrGhostPadFailed      = errors.New("failed to add ghost pad to bin")
-	ErrOutputAlreadyExists = errors.New("output already exists")
-	ErrOutputNotFound      = errors.New("output not found")
+	ErrStreamAlreadyExists = errors.New("stream already exists")
+	ErrStreamNotFound      = errors.New("stream not found")
 
 	GErrNoURI            = "No URI set before starting"
 	GErrFailedToStart    = "Failed to start"
@@ -31,4 +32,16 @@ func ErrNotSupported(feature string) error {
 
 func ErrIncompatible(format, codec interface{}) error {
 	return fmt.Errorf("format %v incompatible with codec %v", format, codec)
+}
+
+func ErrInvalidInput(field string) error {
+	return fmt.Errorf("request missing required field: %s", field)
+}
+
+func ErrInvalidUrl(url string, protocol livekit.StreamProtocol) error {
+	return fmt.Errorf("invalid %s url: %s", strings.ToLower(protocol.String()), url)
+}
+
+func ErrTrackNotFound(trackID string) error {
+	return fmt.Errorf("track %s not found", trackID)
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-egress/pkg/config"
@@ -31,10 +32,9 @@ type Params struct {
 
 type SourceParams struct {
 	// source
-	LKApiKey     string
-	LKApiSecret  string
-	LKUrl        string
 	RoomName     string
+	Token        string
+	LKUrl        string
 	TemplateBase string
 
 	// web source
@@ -74,16 +74,6 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		Status:   livekit.EgressStatus_EGRESS_STARTING,
 	}
 
-	if request.ApiKey != "" && request.ApiSecret != "" && request.WsUrl != "" {
-		params.LKApiKey = request.ApiKey
-		params.LKApiSecret = request.ApiSecret
-		params.LKUrl = request.WsUrl
-	} else {
-		params.LKApiKey = conf.ApiKey
-		params.LKApiSecret = conf.ApiSecret
-		params.LKUrl = conf.WsUrl
-	}
-
 	var format string
 	switch req := request.Request.(type) {
 	case *livekit.StartEgressRequest_WebComposite:
@@ -112,7 +102,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 				return nil, err
 			}
 		default:
-			return nil, errors.ErrInvalidInput
+			return nil, errors.ErrInvalidInput("output")
 		}
 	case *livekit.StartEgressRequest_TrackComposite:
 		params.Info.Request = &livekit.EgressInfo_TrackComposite{TrackComposite: req.TrackComposite}
@@ -151,7 +141,28 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		return nil, errors.ErrNotSupported("track requests")
 		// return params, nil
 	default:
-		return nil, errors.ErrInvalidInput
+		return nil, errors.ErrInvalidInput("request")
+	}
+
+	// token
+	if request.Token != "" {
+		params.Token = request.Token
+	} else if conf.ApiKey != "" && conf.ApiSecret != "" {
+		token, err := egress.BuildEgressToken(conf.ApiKey, conf.ApiSecret, params.RoomName)
+		if err != nil {
+			return nil, err
+		}
+		params.Token = token
+	} else {
+		return nil, errors.ErrInvalidInput("token or api key/secret")
+	}
+
+	if request.WsUrl != "" {
+		params.LKUrl = request.WsUrl
+	} else if conf.WsUrl != "" {
+		params.LKUrl = conf.WsUrl
+	} else {
+		return nil, errors.ErrInvalidInput("ws_url")
 	}
 
 	// check audio codec
@@ -251,7 +262,7 @@ func (p *Params) updateStreamInfo(protocol livekit.StreamProtocol, urls []string
 		switch protocol {
 		case livekit.StreamProtocol_RTMP:
 			if !strings.HasPrefix(url, "rtmp://") {
-				return errors.ErrInvalidURL
+				return errors.ErrInvalidUrl(url, protocol)
 			}
 		}
 

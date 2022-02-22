@@ -24,7 +24,8 @@ type Config struct {
 	TemplateBase string      `yaml:"template_base"`
 	Insecure     bool        `yaml:"insecure"`
 	Redis        RedisConfig `yaml:"redis"`
-	Display      string      `yaml:"-"`
+
+	Display string `yaml:"-"`
 }
 
 type RedisConfig struct {
@@ -39,7 +40,6 @@ func NewConfig(confString string) (*Config, error) {
 		LogLevel:     "info",
 		TemplateBase: "https://recorder.livekit.io/#",
 	}
-
 	if confString != "" {
 		if err := yaml.Unmarshal([]byte(confString), conf); err != nil {
 			return nil, fmt.Errorf("could not parse config: %v", err)

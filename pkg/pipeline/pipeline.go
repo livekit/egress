@@ -36,6 +36,6 @@ func FromParams(conf *config.Config, p *params.Params) (Pipeline, error) {
 	case *livekit.EgressInfo_Track:
 		return track.NewPipeline(p)
 	default:
-		return nil, errors.ErrInvalidInput
+		return nil, errors.ErrInvalidInput("request")
 	}
 }

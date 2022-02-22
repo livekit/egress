@@ -33,21 +33,17 @@ type SDKSource struct {
 	endRecording chan struct{}
 }
 
-func NewSDKSource(
-	params *params.Params,
-	createWriter func(*webrtc.TrackRemote) (media.Writer, error),
-) (*SDKSource, error) {
-
+func NewSDKSource(p *params.Params, createWriter func(*webrtc.TrackRemote) (media.Writer, error)) (*SDKSource, error) {
 	s := &SDKSource{
-		room:         lksdk.CreateRoom(params.LKUrl),
+		room:         lksdk.CreateRoom(p.LKUrl),
 		endRecording: make(chan struct{}),
 	}
 
-	switch params.Info.Request.(type) {
+	switch p.Info.Request.(type) {
 	case *livekit.EgressInfo_TrackComposite:
-		s.trackIDs = []string{params.AudioTrackID, params.VideoTrackID}
+		s.trackIDs = []string{p.AudioTrackID, p.VideoTrackID}
 	default:
-		s.trackIDs = []string{params.TrackID}
+		s.trackIDs = []string{p.TrackID}
 	}
 
 	s.room.Callback.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
@@ -86,18 +82,12 @@ func NewSDKSource(
 	s.room.Callback.OnTrackUnpublished = s.onTrackUnpublished
 	s.room.Callback.OnDisconnected = s.onComplete
 
-	token, err := buildToken(params.LKApiKey, params.LKApiSecret, params.RoomName)
-	if err != nil {
-		return nil, err
-	}
-
 	logger.Debugw("connecting to room")
-	err = s.room.JoinWithToken(params.LKUrl, token)
-	if err != nil {
+	if err := s.room.JoinWithToken(p.LKUrl, p.Token); err != nil {
 		return nil, err
 	}
 
-	if err = s.subscribeToTracks(); err != nil {
+	if err := s.subscribeToTracks(); err != nil {
 		return nil, err
 	}
 
@@ -105,27 +95,35 @@ func NewSDKSource(
 }
 
 func (s *SDKSource) subscribeToTracks() error {
-	expected := int32(len(s.trackIDs))
+	expecting := make(map[string]bool)
+	for _, trackID := range s.trackIDs {
+		expecting[trackID] = true
+	}
 
 	for _, p := range s.room.GetParticipants() {
 		for _, track := range p.Tracks() {
-			for _, trackID := range s.trackIDs {
-				if track.SID() == trackID {
-					if rt, ok := track.(*lksdk.RemoteTrackPublication); ok {
-						err := rt.SetSubscribed(true)
-						if err != nil {
-							return err
-						}
-						if s.active.Inc() == expected {
-							return nil
-						}
+			if expecting[track.SID()] {
+				if rt, ok := track.(*lksdk.RemoteTrackPublication); ok {
+					err := rt.SetSubscribed(true)
+					if err != nil {
+						return err
+					}
+
+					delete(expecting, track.SID())
+					s.active.Inc()
+					if len(expecting) == 0 {
+						return nil
 					}
 				}
 			}
 		}
 	}
 
-	return errors.New("could not find track")
+	for trackID := range expecting {
+		return errors.ErrTrackNotFound(trackID)
+	}
+
+	return nil
 }
 
 func (s *SDKSource) onTrackUnpublished(track *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {

@@ -244,12 +244,12 @@ func (b *inputBin) buildVideoElements(p *params.Params) error {
 	return b.bin.AddMany(b.videoElements...)
 }
 
-func (b *inputBin) buildH26XElements(num int, profile string, params *params.Params) error {
+func (b *inputBin) buildH26XElements(num int, profile string, p *params.Params) error {
 	x26XEnc, err := gst.NewElement(fmt.Sprintf("x%denc", num))
 	if err != nil {
 		return err
 	}
-	if err = x26XEnc.SetProperty("bitrate", uint(params.VideoBitrate)); err != nil {
+	if err = x26XEnc.SetProperty("bitrate", uint(p.VideoBitrate)); err != nil {
 		return err
 	}
 	x26XEnc.SetArg("speed-preset", "veryfast")
@@ -260,7 +260,7 @@ func (b *inputBin) buildH26XElements(num int, profile string, params *params.Par
 		return err
 	}
 	if err = videoProfileCaps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-h%d,profile=%s,framerate=%d/1", num, profile, params.Framerate),
+		fmt.Sprintf("video/x-h%d,profile=%s,framerate=%d/1", num, profile, p.Framerate),
 	)); err != nil {
 		return err
 	}
@@ -279,7 +279,7 @@ func (b *inputBin) buildH26XElements(num int, profile string, params *params.Par
 	return nil
 }
 
-func (b *inputBin) buildVPXElements(num int, params *params.Params) error {
+func (b *inputBin) buildVPXElements(num int, p *params.Params) error {
 	vpXEnc, err := gst.NewElement(fmt.Sprintf("vp%denc", num))
 	if err != nil {
 		return err
@@ -290,7 +290,7 @@ func (b *inputBin) buildVPXElements(num int, params *params.Params) error {
 		return err
 	}
 	if err = videoProfileCaps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-vp%d,framerate=%d/1", num, params.Framerate),
+		fmt.Sprintf("video/x-vp%d,framerate=%d/1", num, p.Framerate),
 	)); err != nil {
 		return err
 	}
@@ -299,12 +299,12 @@ func (b *inputBin) buildVPXElements(num int, params *params.Params) error {
 	return nil
 }
 
-func (b *inputBin) buildSource(conf *config.Config, params *params.Params) error {
+func (b *inputBin) buildSource(conf *config.Config, p *params.Params) error {
 	var err error
-	if params.IsWebInput {
-		b.Source, err = source.NewWebSource(conf, params)
+	if p.IsWebInput {
+		b.Source, err = source.NewWebSource(conf, p)
 	} else {
-		b.Source, err = source.NewSDKSource(params, func(track *webrtc.TrackRemote) (media.Writer, error) {
+		b.Source, err = source.NewSDKSource(p, func(track *webrtc.TrackRemote) (media.Writer, error) {
 			switch {
 			case strings.EqualFold(track.Codec().MimeType, "audio/opus"):
 				return &appWriter{src: b.audioSrc}, nil
@@ -337,10 +337,10 @@ func (w *appWriter) Close() error {
 	return nil
 }
 
-func (b *inputBin) buildMux(params *params.Params) error {
+func (b *inputBin) buildMux(p *params.Params) error {
 	var err error
-	if params.IsStream {
-		switch params.StreamProtocol {
+	if p.IsStream {
+		switch p.StreamProtocol {
 		case livekit.StreamProtocol_RTMP:
 			b.mux, err = gst.NewElement("flvmux")
 			if err != nil {
@@ -351,7 +351,7 @@ func (b *inputBin) buildMux(params *params.Params) error {
 			// 	err = errors.ErrNotSupported("srt output")
 		}
 	} else {
-		switch params.FileType {
+		switch p.FileType {
 
 		case livekit.EncodedFileType_MP4:
 			b.mux, err = gst.NewElement("mp4mux")

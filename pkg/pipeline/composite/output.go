@@ -40,7 +40,7 @@ func newOutputBin(p *params.Params) (*outputBin, error) {
 
 func (b *outputBin) addSink(url string) error {
 	if _, ok := b.sinks[url]; ok {
-		return errors.ErrOutputAlreadyExists
+		return errors.ErrStreamAlreadyExists
 	}
 
 	sink, err := buildStreamSink(b.protocol, url)
@@ -82,7 +82,7 @@ func (b *outputBin) addSink(url string) error {
 func (b *outputBin) removeSink(url string) error {
 	sink, ok := b.sinks[url]
 	if !ok {
-		return errors.ErrOutputNotFound
+		return errors.ErrStreamNotFound
 	}
 
 	srcPad := b.tee.GetStaticPad(sink.pad)
@@ -124,7 +124,7 @@ func (b *outputBin) removeSinkByName(name string) error {
 		}
 	}
 
-	return errors.ErrOutputNotFound
+	return errors.ErrStreamNotFound
 }
 
 func buildStreamOutputBin(p *params.Params) (*outputBin, error) {
