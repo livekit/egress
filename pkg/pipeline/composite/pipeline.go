@@ -88,6 +88,15 @@ func (p *compositePipeline) Info() *livekit.EgressInfo {
 }
 
 func (p *compositePipeline) Run() *livekit.EgressInfo {
+	// wait until room is ready
+	select {
+	case <-p.closed:
+		p.info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+		return p.info
+	case <-p.in.StartRecording():
+		// continue
+	}
+
 	// close when room ends
 	go func() {
 		<-p.in.EndRecording()
@@ -129,6 +138,7 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 						p.mu.RUnlock()
 					} else {
 						p.fileInfo.StartedAt = startedAt
+
 					}
 					p.info.Status = livekit.EgressStatus_EGRESS_ACTIVE
 				}
@@ -284,17 +294,17 @@ func buildPipeline(in *inputBin, out *outputBin, isStream bool) (*gst.Pipeline, 
 	}
 
 	// stream tee and sinks
-	for _, sink := range out.sinks {
+	for _, streamSink := range out.sinks {
 		// link queue to rtmp sink
-		if err := sink.queue.Link(sink.sink); err != nil {
+		if err := streamSink.queue.Link(streamSink.sink); err != nil {
 			return nil, err
 		}
 
 		pad := out.tee.GetRequestPad("src_%u")
-		sink.pad = pad.GetName()
+		streamSink.pad = pad.GetName()
 
 		// link tee to queue
-		if linkReturn := pad.Link(sink.queue.GetStaticPad("sink")); linkReturn != gst.PadLinkOK {
+		if linkReturn := pad.Link(streamSink.queue.GetStaticPad("sink")); linkReturn != gst.PadLinkOK {
 			return nil, fmt.Errorf("tee pad link failed: %s", linkReturn.String())
 		}
 	}

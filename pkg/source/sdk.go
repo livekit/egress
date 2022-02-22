@@ -146,6 +146,12 @@ func (s *SDKSource) onComplete() {
 	}
 }
 
+func (s *SDKSource) StartRecording() chan struct{} {
+	start := make(chan struct{})
+	close(start)
+	return start
+}
+
 func (s *SDKSource) EndRecording() chan struct{} {
 	return s.endRecording
 }

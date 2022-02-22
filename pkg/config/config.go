@@ -39,6 +39,9 @@ func NewConfig(confString string) (*Config, error) {
 	conf := &Config{
 		LogLevel:     "info",
 		TemplateBase: "https://recorder.livekit.io/#",
+		ApiKey:       os.Getenv("LIVEKIT_API_KEY"),
+		ApiSecret:    os.Getenv("LIVEKIT_API_SECRET"),
+		WsUrl:        os.Getenv("LIVEKIT_WS_URL"),
 	}
 	if confString != "" {
 		if err := yaml.Unmarshal([]byte(confString), conf); err != nil {

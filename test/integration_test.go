@@ -6,7 +6,6 @@ package test
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -39,8 +38,6 @@ type testCase struct {
 type sdkParams struct {
 	audioTrackID string
 	videoTrackID string
-	apiKey       string
-	apiSecret    string
 	url          string
 }
 
@@ -221,15 +218,12 @@ func TestWebCompositeStream(t *testing.T) {
 func TestTrackCompositeFile(t *testing.T) {
 	t.Skip()
 
-	apiKey := os.Getenv("LIVEKIT_API_KEY")
-	require.NotEmpty(t, apiKey)
-	apiSecret := os.Getenv("LIVEKIT_API_SECRET")
-	require.NotEmpty(t, apiSecret)
-	url := os.Getenv("LIVEKIT_WS_URL")
-	require.NotEmpty(t, url)
-
 	conf, err := config.NewConfig(confString)
 	require.NoError(t, err)
+
+	require.NotEmpty(t, conf.ApiKey)
+	require.NotEmpty(t, conf.ApiSecret)
+	require.NotEmpty(t, conf.WsUrl)
 
 	// TODO: publish files to room
 	var audioTrackID, videoTrackID string
@@ -237,9 +231,6 @@ func TestTrackCompositeFile(t *testing.T) {
 	p := &sdkParams{
 		audioTrackID: audioTrackID,
 		videoTrackID: videoTrackID,
-		apiKey:       apiKey,
-		apiSecret:    apiSecret,
-		url:          url,
 	}
 
 	for _, test := range []*testCase{} {
@@ -318,9 +309,6 @@ func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkPar
 		Request: &livekit.StartEgressRequest_TrackComposite{
 			TrackComposite: trackRequest,
 		},
-		ApiKey:    params.apiKey,
-		ApiSecret: params.apiSecret,
-		WsUrl:     params.url,
 	}
 
 	runFileTest(t, conf, test, req, filepath)
