@@ -13,6 +13,7 @@ import (
 
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-egress/pkg/source"
 )
 
@@ -37,31 +38,31 @@ type inputBin struct {
 	mux *gst.Element
 }
 
-func newInputBin(conf *config.Config, params *config.Params) (*inputBin, error) {
+func newInputBin(conf *config.Config, p *params.Params) (*inputBin, error) {
 	b := &inputBin{
 		bin: gst.NewBin("input"),
 	}
 
 	// audio elements
-	err := b.buildAudioElements(params)
+	err := b.buildAudioElements(p)
 	if err != nil {
 		return nil, err
 	}
 
 	// video elements
-	err = b.buildVideoElements(params)
+	err = b.buildVideoElements(p)
 	if err != nil {
 		return nil, err
 	}
 
 	// source
-	err = b.buildSource(conf, params)
+	err = b.buildSource(conf, p)
 	if err != nil {
 		return nil, err
 	}
 
 	// mux
-	err = b.buildMux(params)
+	err = b.buildMux(p)
 	if err != nil {
 		return nil, err
 	}
@@ -75,13 +76,13 @@ func newInputBin(conf *config.Config, params *config.Params) (*inputBin, error) 
 	return b, nil
 }
 
-func (b *inputBin) buildAudioElements(params *config.Params) error {
-	if !params.AudioEnabled {
+func (b *inputBin) buildAudioElements(p *params.Params) error {
+	if !p.AudioEnabled {
 		return nil
 	}
 
 	var err error
-	if params.IsWebInput {
+	if p.IsWebInput {
 		pulseSrc, err := gst.NewElement("pulsesrc")
 		if err != nil {
 			return err
@@ -94,7 +95,7 @@ func (b *inputBin) buildAudioElements(params *config.Params) error {
 
 		b.audioElements = append(b.audioElements, pulseSrc, audioConvert)
 
-		switch params.AudioCodec {
+		switch p.AudioCodec {
 		case livekit.AudioCodec_OPUS:
 			audioCapsFilter, err := gst.NewElement("capsfilter")
 			if err != nil {
@@ -111,7 +112,7 @@ func (b *inputBin) buildAudioElements(params *config.Params) error {
 			if err != nil {
 				return err
 			}
-			if err = opus.SetProperty("bitrate", int(params.AudioBitrate*1000)); err != nil {
+			if err = opus.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
 				return err
 			}
 
@@ -123,7 +124,7 @@ func (b *inputBin) buildAudioElements(params *config.Params) error {
 				return err
 			}
 			err = audioCapsFilter.SetProperty("caps", gst.NewCapsFromString(
-				fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", params.AudioFrequency),
+				fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", p.AudioFrequency),
 			))
 			if err != nil {
 				return err
@@ -133,7 +134,7 @@ func (b *inputBin) buildAudioElements(params *config.Params) error {
 			if err != nil {
 				return err
 			}
-			if err = faac.SetProperty("bitrate", int(params.AudioBitrate*1000)); err != nil {
+			if err = faac.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
 				return err
 			}
 			b.audioElements = append(b.audioElements, audioCapsFilter, faac)
@@ -159,13 +160,13 @@ func (b *inputBin) buildAudioElements(params *config.Params) error {
 	return b.bin.AddMany(b.audioElements...)
 }
 
-func (b *inputBin) buildVideoElements(params *config.Params) error {
-	if !params.VideoEnabled {
+func (b *inputBin) buildVideoElements(p *params.Params) error {
+	if !p.VideoEnabled {
 		return nil
 	}
 
 	var err error
-	if params.IsWebInput {
+	if p.IsWebInput {
 		xImageSrc, err := gst.NewElement("ximagesrc")
 		if err != nil {
 			return err
@@ -189,7 +190,7 @@ func (b *inputBin) buildVideoElements(params *config.Params) error {
 			return err
 		}
 		err = videoFramerateCaps.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf("video/x-raw,framerate=%d/1", params.Framerate),
+			fmt.Sprintf("video/x-raw,framerate=%d/1", p.Framerate),
 		))
 		if err != nil {
 			return err
@@ -197,13 +198,13 @@ func (b *inputBin) buildVideoElements(params *config.Params) error {
 
 		b.videoElements = append(b.videoElements, xImageSrc, videoConvert, videoFramerateCaps)
 
-		switch params.VideoCodec {
+		switch p.VideoCodec {
 		case livekit.VideoCodec_H264_BASELINE:
-			err = b.buildH26XElements(264, "baseline", params)
+			err = b.buildH26XElements(264, "baseline", p)
 		case livekit.VideoCodec_H264_MAIN:
-			err = b.buildH26XElements(264, "main", params)
+			err = b.buildH26XElements(264, "main", p)
 		case livekit.VideoCodec_H264_HIGH:
-			err = b.buildH26XElements(264, "high", params)
+			err = b.buildH26XElements(264, "high", p)
 		// case livekit.VideoCodec_VP8:
 		//  // TODO: vp8 low quality/choppy
 		// 	err = b.buildVPXElements(8, params)
@@ -217,7 +218,7 @@ func (b *inputBin) buildVideoElements(params *config.Params) error {
 		//  // TODO: hevc low quality/choppy
 		// 	err = b.buildH26XElements(265, "main", params)
 		default:
-			err = errors.ErrNotSupported(params.VideoCodec.String())
+			err = errors.ErrNotSupported(p.VideoCodec.String())
 		}
 		if err != nil {
 			return err
@@ -243,7 +244,7 @@ func (b *inputBin) buildVideoElements(params *config.Params) error {
 	return b.bin.AddMany(b.videoElements...)
 }
 
-func (b *inputBin) buildH26XElements(num int, profile string, params *config.Params) error {
+func (b *inputBin) buildH26XElements(num int, profile string, params *params.Params) error {
 	x26XEnc, err := gst.NewElement(fmt.Sprintf("x%denc", num))
 	if err != nil {
 		return err
@@ -278,7 +279,7 @@ func (b *inputBin) buildH26XElements(num int, profile string, params *config.Par
 	return nil
 }
 
-func (b *inputBin) buildVPXElements(num int, params *config.Params) error {
+func (b *inputBin) buildVPXElements(num int, params *params.Params) error {
 	vpXEnc, err := gst.NewElement(fmt.Sprintf("vp%denc", num))
 	if err != nil {
 		return err
@@ -298,7 +299,7 @@ func (b *inputBin) buildVPXElements(num int, params *config.Params) error {
 	return nil
 }
 
-func (b *inputBin) buildSource(conf *config.Config, params *config.Params) error {
+func (b *inputBin) buildSource(conf *config.Config, params *params.Params) error {
 	var err error
 	if params.IsWebInput {
 		b.Source, err = source.NewWebSource(conf, params)
@@ -336,7 +337,7 @@ func (w *appWriter) Close() error {
 	return nil
 }
 
-func (b *inputBin) buildMux(params *config.Params) error {
+func (b *inputBin) buildMux(params *params.Params) error {
 	var err error
 	if params.IsStream {
 		switch params.StreamProtocol {

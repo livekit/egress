@@ -6,6 +6,7 @@ import (
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/composite"
+	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-egress/pkg/pipeline/track"
 )
 
@@ -18,22 +19,22 @@ type Pipeline interface {
 
 func FromRequest(conf *config.Config, request *livekit.StartEgressRequest) (Pipeline, error) {
 	// get params
-	params, err := config.GetPipelineParams(conf, request)
+	p, err := params.GetPipelineParams(conf, request)
 	if err != nil {
 		return nil, err
 	}
 
-	return FromParams(conf, params)
+	return FromParams(conf, p)
 }
 
-func FromParams(conf *config.Config, params *config.Params) (Pipeline, error) {
-	switch params.Info.Request.(type) {
+func FromParams(conf *config.Config, p *params.Params) (Pipeline, error) {
+	switch p.Info.Request.(type) {
 	case *livekit.EgressInfo_WebComposite:
-		return composite.NewPipeline(conf, params)
+		return composite.NewPipeline(conf, p)
 	case *livekit.EgressInfo_TrackComposite:
-		return composite.NewPipeline(conf, params)
+		return composite.NewPipeline(conf, p)
 	case *livekit.EgressInfo_Track:
-		return track.NewPipeline(params)
+		return track.NewPipeline(p)
 	default:
 		return nil, errors.ErrInvalidInput
 	}

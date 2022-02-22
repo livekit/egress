@@ -13,6 +13,7 @@ import (
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline"
+	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
 
 type Service struct {
@@ -28,8 +29,8 @@ func NewService(conf *config.Config, bus utils.MessageBus) *Service {
 		ctx:      context.Background(),
 		conf:     conf,
 		bus:      bus,
-		shutdown: make(chan struct{}, 1),
-		kill:     make(chan struct{}, 1),
+		shutdown: make(chan struct{}),
+		kill:     make(chan struct{}),
 	}
 	return s
 }
@@ -59,19 +60,19 @@ func (s *Service) Run() error {
 			logger.Debugw("request received")
 
 			req := &livekit.StartEgressRequest{}
-			err := proto.Unmarshal(requests.Payload(msg), req)
-			if err != nil {
+			if err = proto.Unmarshal(requests.Payload(msg), req); err != nil {
 				logger.Errorw("malformed request", err)
 				continue
 			}
 
+			// check request time
 			if time.Since(time.Unix(0, req.SentAt)) >= egress.LockDuration {
-				// request already handled
 				continue
 			}
 
 			// TODO: CPU estimation
 
+			// claim request
 			claimed, err := s.bus.Lock(s.ctx, egress.RequestChannel(req.EgressId), egress.LockDuration)
 			if err != nil {
 				logger.Errorw("could not claim request", err)
@@ -79,16 +80,18 @@ func (s *Service) Run() error {
 			} else if !claimed {
 				continue
 			}
-
 			logger.Debugw("request claimed", "egressID", req.EgressId)
 
-			p, err := pipeline.FromRequest(s.conf, req)
+			// build/verify params
+			pipelineParams, err := params.GetPipelineParams(s.conf, req)
 			if err != nil {
 				s.sendEgressResponse(req.EgressId, nil, err)
 				continue
 			} else {
-				s.sendEgressResponse(req.EgressId, p.Info(), nil)
-				s.handleEgress(p)
+				s.sendEgressResponse(req.EgressId, pipelineParams.Info, nil)
+
+				// TODO: don't block while running
+				s.handleEgress(pipelineParams)
 			}
 		}
 	}
@@ -99,13 +102,31 @@ func (s *Service) Status() string {
 }
 
 func (s *Service) Stop(kill bool) {
-	s.shutdown <- struct{}{}
+	select {
+	case <-s.shutdown:
+	default:
+		close(s.shutdown)
+	}
+
 	if kill {
-		s.kill <- struct{}{}
+		select {
+		case <-s.kill:
+		default:
+			close(s.kill)
+		}
 	}
 }
 
-func (s *Service) handleEgress(p pipeline.Pipeline) {
+func (s *Service) handleEgress(pipelineParams *params.Params) {
+	// create the pipeline
+	p, err := pipeline.FromParams(s.conf, pipelineParams)
+	if err != nil {
+		info := pipelineParams.Info
+		info.Error = err.Error()
+		s.sendEgressResult(info)
+		return
+	}
+
 	// subscribe to request channel
 	requests, err := s.bus.Subscribe(s.ctx, egress.RequestChannel(p.Info().EgressId))
 	if err != nil {
@@ -127,30 +148,20 @@ func (s *Service) handleEgress(p pipeline.Pipeline) {
 	for {
 		select {
 		case <-s.kill:
-			// kill signal received, stop recorder
+			// kill signal received
 			p.Stop()
 		case res := <-result:
-			// recording stopped, send results to result channel
-			if res.Error != "" {
-				logger.Errorw("recording failed", errors.New(res.Error), "egressID", res.EgressId)
-			} else {
-				logger.Infow("recording complete", "egressID", res.EgressId)
-			}
-
-			if err = s.bus.Publish(s.ctx, egress.ResultsChannel, res); err != nil {
-				logger.Errorw("failed to write results", err)
-			}
-
+			// recording finished
+			s.sendEgressResult(res)
 			return
 		case msg := <-requests.Channel():
-			// unmarshal request
+			// request received
 			request := &livekit.EgressRequest{}
 			err = proto.Unmarshal(requests.Payload(msg), request)
 			if err != nil {
 				logger.Errorw("failed to read request", err, "egressID", p.Info().EgressId)
 				continue
 			}
-
 			logger.Debugw("handling request", "egressID", p.Info().EgressId, "requestID", request.RequestId)
 
 			switch req := request.Request.(type) {
@@ -180,5 +191,17 @@ func (s *Service) sendEgressResponse(requestID string, info *livekit.EgressInfo,
 
 	if err = s.bus.Publish(s.ctx, egress.ResponseChannel(requestID), res); err != nil {
 		logger.Errorw("could not send response", err)
+	}
+}
+
+func (s *Service) sendEgressResult(res *livekit.EgressInfo) {
+	if res.Error != "" {
+		logger.Errorw("recording failed", errors.New(res.Error), "egressID", res.EgressId)
+	} else {
+		logger.Infow("recording complete", "egressID", res.EgressId)
+	}
+
+	if err := s.bus.Publish(s.ctx, egress.ResultsChannel, res); err != nil {
+		logger.Errorw("failed to write results", err)
 	}
 }

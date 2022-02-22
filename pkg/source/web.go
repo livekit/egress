@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-egress/pkg/config"
+	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
 
 const (
@@ -28,7 +29,7 @@ type WebSource struct {
 	endRecording chan struct{}
 }
 
-func NewWebSource(conf *config.Config, params *config.Params) (*WebSource, error) {
+func NewWebSource(conf *config.Config, params *params.Params) (*WebSource, error) {
 	s := &WebSource{
 		endRecording: make(chan struct{}),
 	}

@@ -12,8 +12,8 @@ import (
 	"github.com/pion/webrtc/v3/pkg/media/ivfwriter"
 	"github.com/pion/webrtc/v3/pkg/media/oggwriter"
 
-	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-egress/pkg/source"
 )
 
@@ -24,8 +24,8 @@ type trackPipeline struct {
 	closed chan struct{}
 }
 
-func NewPipeline(params *config.Params) (*trackPipeline, error) {
-	s, err := source.NewSDKSource(params, func(track *webrtc.TrackRemote) (media.Writer, error) {
+func NewPipeline(p *params.Params) (*trackPipeline, error) {
+	s, err := source.NewSDKSource(p, func(track *webrtc.TrackRemote) (media.Writer, error) {
 		filename := fmt.Sprintf("%s-%v", track.ID(), time.Now().String())
 
 		switch {
@@ -45,7 +45,7 @@ func NewPipeline(params *config.Params) (*trackPipeline, error) {
 
 	return &trackPipeline{
 		source: s,
-		info:   params.Info,
+		info:   p.Info,
 		closed: make(chan struct{}),
 	}, nil
 }

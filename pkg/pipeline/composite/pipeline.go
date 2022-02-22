@@ -13,6 +13,7 @@ import (
 
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
 
 // gst.Init needs to be called before using gst but after gst package loads
@@ -41,26 +42,26 @@ type compositePipeline struct {
 	closed         chan struct{}
 }
 
-func NewPipeline(conf *config.Config, params *config.Params) (*compositePipeline, error) {
+func NewPipeline(conf *config.Config, p *params.Params) (*compositePipeline, error) {
 	if !initialized {
 		gst.Init(nil)
 		initialized = true
 	}
 
 	// create input bin
-	in, err := newInputBin(conf, params)
+	in, err := newInputBin(conf, p)
 	if err != nil {
 		return nil, err
 	}
 
 	// create output bin
-	out, err := newOutputBin(params)
+	out, err := newOutputBin(p)
 	if err != nil {
 		return nil, err
 	}
 
 	// link elements
-	pipeline, err := buildPipeline(in, out, params.IsStream)
+	pipeline, err := buildPipeline(in, out, p.IsStream)
 	if err != nil {
 		return nil, err
 	}
@@ -69,11 +70,11 @@ func NewPipeline(conf *config.Config, params *config.Params) (*compositePipeline
 		pipeline:       pipeline,
 		in:             in,
 		out:            out,
-		isStream:       params.IsStream,
-		streamProtocol: params.StreamProtocol,
-		info:           params.Info,
-		fileInfo:       params.FileInfo,
-		streamInfo:     params.StreamInfo,
+		isStream:       p.IsStream,
+		streamProtocol: p.StreamProtocol,
+		info:           p.Info,
+		fileInfo:       p.FileInfo,
+		streamInfo:     p.StreamInfo,
 		removed:        make(map[string]bool),
 		closed:         make(chan struct{}),
 	}, nil

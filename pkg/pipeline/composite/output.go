@@ -8,8 +8,8 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
 
 type outputBin struct {
@@ -30,11 +30,11 @@ type streamSink struct {
 	sink  *gst.Element
 }
 
-func newOutputBin(params *config.Params) (*outputBin, error) {
-	if params.IsStream {
-		return buildStreamOutputBin(params)
+func newOutputBin(p *params.Params) (*outputBin, error) {
+	if p.IsStream {
+		return buildStreamOutputBin(p)
 	} else {
-		return buildFileOutputBin(params)
+		return buildFileOutputBin(p)
 	}
 }
 
@@ -127,7 +127,7 @@ func (b *outputBin) removeSinkByName(name string) error {
 	return errors.ErrOutputNotFound
 }
 
-func buildStreamOutputBin(params *config.Params) (*outputBin, error) {
+func buildStreamOutputBin(p *params.Params) (*outputBin, error) {
 	// create elements
 	tee, err := gst.NewElement("tee")
 	if err != nil {
@@ -141,12 +141,12 @@ func buildStreamOutputBin(params *config.Params) (*outputBin, error) {
 
 	b := &outputBin{
 		bin:      bin,
-		protocol: params.StreamProtocol,
+		protocol: p.StreamProtocol,
 		tee:      tee,
 		sinks:    make(map[string]*streamSink),
 	}
 
-	for _, url := range params.StreamUrls {
+	for _, url := range p.StreamUrls {
 		sink, err := buildStreamSink(b.protocol, url)
 		if err != nil {
 			return nil, err
@@ -200,13 +200,13 @@ func buildStreamSink(protocol livekit.StreamProtocol, url string) (*streamSink, 
 	}, nil
 }
 
-func buildFileOutputBin(params *config.Params) (*outputBin, error) {
+func buildFileOutputBin(p *params.Params) (*outputBin, error) {
 	// create elements
 	sink, err := gst.NewElement("filesink")
 	if err != nil {
 		return nil, err
 	}
-	if err = sink.SetProperty("location", params.FileInfo.Filename); err != nil {
+	if err = sink.SetProperty("location", p.FileInfo.Filename); err != nil {
 		return nil, err
 	}
 	if err = sink.SetProperty("sync", false); err != nil {

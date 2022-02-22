@@ -13,8 +13,8 @@ import (
 	"github.com/pion/webrtc/v3/pkg/media"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
 
 const (
@@ -34,7 +34,7 @@ type SDKSource struct {
 }
 
 func NewSDKSource(
-	params *config.Params,
+	params *params.Params,
 	createWriter func(*webrtc.TrackRemote) (media.Writer, error),
 ) (*SDKSource, error) {
 
