@@ -49,7 +49,7 @@ func (s *Service) Run() error {
 	}()
 
 	for {
-		logger.Debugw("recorder waiting")
+		logger.Debugw("waiting for requests")
 
 		select {
 		case <-s.shutdown:
@@ -156,10 +156,10 @@ func (s *Service) handleEgress(p pipeline.Pipeline) {
 			switch req := request.Request.(type) {
 			case *livekit.EgressRequest_UpdateStream:
 				err = p.UpdateStream(req.UpdateStream)
-			case *livekit.EgressRequest_List:
-				err = errors.ErrNotSupported("list egress rpc")
 			case *livekit.EgressRequest_Stop:
 				p.Stop()
+			default:
+				err = errors.ErrInvalidRPC
 			}
 
 			s.sendEgressResponse(request.RequestId, p.Info(), err)

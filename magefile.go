@@ -17,6 +17,10 @@ const (
 	imageName          = "livekit/livekit-egress"
 	gstImageName       = "livekit/gstreamer"
 	multiPlatformBuild = "docker buildx build --push --platform linux/amd64,linux/arm64"
+
+	apiKey    = "LIVEKIT_API_KEY"
+	apiSecret = "LIVEKIT_API_SECRET"
+	url       = "LIVEKIT_WS_URL"
 )
 
 // Default target to run when none is specified
@@ -36,7 +40,8 @@ func Integration() error {
 
 	return run(
 		"docker build -t livekit-egress-test -f build/test/Dockerfile .",
-		fmt.Sprintf("docker run --rm -v %s/test:/out livekit-egress-test", dir),
+		fmt.Sprintf("docker run --rm -e %s=%s -e %s=%s -e %s=%s -v %s/test:/out livekit-egress-test",
+			apiKey, os.Getenv(apiKey), apiSecret, os.Getenv(apiSecret), url, os.Getenv(url), dir),
 	)
 }
 

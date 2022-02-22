@@ -7,7 +7,7 @@ require (
 	github.com/chromedp/chromedp v0.7.7
 	github.com/go-logr/zapr v1.2.2
 	github.com/go-redis/redis/v8 v8.11.4
-	github.com/livekit/protocol v0.11.13-0.20220218230342-d90083c3de45
+	github.com/livekit/protocol v0.11.14-0.20220222041859-a616b835d4f0
 	github.com/livekit/server-sdk-go v0.8.6-0.20220219062034-0565eed342d5
 	github.com/pion/rtp v1.7.4
 	github.com/pion/webrtc/v3 v3.1.22

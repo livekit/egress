@@ -6,6 +6,7 @@ package test
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -19,188 +20,127 @@ import (
 	"github.com/livekit/livekit-egress/pkg/pipeline"
 )
 
-var confString = "log_level: debug"
+const (
+	confString      = "log_level: info"
+	videoTestInput  = "https://www.youtube.com/watch?v=4cJpiOPKH14&t=25s"
+	audioTestInput  = "https://www.youtube.com/watch?v=eAcFPtCyDYY&t=59s"
+	staticTestInput = "https://www.livekit.io"
+)
 
-func TestWebComposite(t *testing.T) {
+type testCase struct {
+	name      string
+	inputUrl  string
+	audioOnly bool
+	fileType  livekit.EncodedFileType
+	options   *livekit.EncodingOptions
+}
+
+type sdkParams struct {
+	audioTrackID string
+	videoTrackID string
+	apiKey       string
+	apiSecret    string
+	url          string
+}
+
+func TestWebCompositeFile(t *testing.T) {
 	conf, err := config.NewConfig(confString)
 	require.NoError(t, err)
 
-	testInput := "https://www.youtube.com/watch?v=4cJpiOPKH14&t=25s"
-	testInput2 := "https://www.youtube.com/watch?v=eAcFPtCyDYY&t=59s"
-	staticInput := "https://www.livekit.io"
-
-	for _, test := range []struct {
-		name string
-		f    func(t *testing.T)
-	}{
+	for _, test := range []*testCase{
 		{
-			name: "web-h264-baseline-mp4",
-			f: func(t *testing.T) {
-				testWebCompositeFile(t, conf, testInput, true,
-					livekit.EncodedFileType_MP4,
-					&livekit.EncodingOptions{
-						AudioCodec:   livekit.AudioCodec_AAC,
-						VideoCodec:   livekit.VideoCodec_H264_BASELINE,
-						Height:       720,
-						Width:        1280,
-						VideoBitrate: 1500,
-					})
+			name:     "web-h264-baseline-mp4",
+			inputUrl: videoTestInput,
+			fileType: livekit.EncodedFileType_MP4,
+			options: &livekit.EncodingOptions{
+				AudioCodec:   livekit.AudioCodec_AAC,
+				VideoCodec:   livekit.VideoCodec_H264_BASELINE,
+				Height:       720,
+				Width:        1280,
+				VideoBitrate: 1500,
 			},
 		},
 		{
-			name: "web-h264-main-mp4",
-			f: func(t *testing.T) {
-				testWebCompositeFile(t, conf, staticInput, true,
-					livekit.EncodedFileType_MP4,
-					nil,
-				)
-			},
+			name:     "web-h264-main-mp4",
+			inputUrl: staticTestInput,
+			fileType: livekit.EncodedFileType_MP4,
 		},
 		{
-			name: "web-h264-high-mp4",
-			f: func(t *testing.T) {
-				testWebCompositeFile(t, conf, testInput, true,
-					livekit.EncodedFileType_MP4,
-					&livekit.EncodingOptions{
-						Framerate:      60,
-						AudioFrequency: 48000,
-						VideoCodec:     livekit.VideoCodec_H264_HIGH,
-						VideoBitrate:   6000,
-					})
+			name:     "web-h264-high-mp4",
+			inputUrl: videoTestInput,
+			fileType: livekit.EncodedFileType_MP4,
+			options: &livekit.EncodingOptions{
+				Framerate:      60,
+				AudioFrequency: 48000,
+				VideoCodec:     livekit.VideoCodec_H264_HIGH,
+				VideoBitrate:   6000,
 			},
 		},
 		// {
-		// 	name: "web-vp8-webm",
-		// 	f: func(t *testing.T) {
-		// 		testWebCompositeFile(t, conf, testInput, true,
-		// 			livekit.EncodedFileType_WEBM,
-		// 			&livekit.EncodingOptions{
-		// 				AudioCodec: livekit.AudioCodec_OPUS,
-		// 				VideoCodec: livekit.VideoCodec_VP8,
-		// 			})
+		// 	name:     "web-vp8-webm",
+		// 	inputUrl: videoTestInput,
+		// 	fileType: livekit.EncodedFileType_WEBM,
+		// 	options: &livekit.EncodingOptions{
+		// 		AudioCodec: livekit.AudioCodec_OPUS,
+		// 		VideoCodec: livekit.VideoCodec_VP8,
 		// 	},
 		// },
 		// {
-		// 	name: "web-vp8-ogg",
-		// 	f: func(t *testing.T) {
-		// 		testWebCompositeFile(t, conf, testInput, true,
-		// 			livekit.EncodedFileType_OGG,
-		// 			&livekit.EncodingOptions{
-		// 				AudioCodec: livekit.AudioCodec_OPUS,
-		// 				VideoCodec: livekit.VideoCodec_VP8,
-		// 			})
+		// 	name:     "web-vp8-ogg",
+		// 	inputUrl: videoTestInput,
+		// 	fileType: livekit.EncodedFileType_OGG,
+		// 	options: &livekit.EncodingOptions{
+		// 		AudioCodec: livekit.AudioCodec_OPUS,
+		// 		VideoCodec: livekit.VideoCodec_VP8,
 		// 	},
 		// },
 		// {
-		// 	name: "web-vp9-webm",
-		// 	f: func(t *testing.T) {
-		// 		testWebCompositeFile(t, conf, testInput, true,
-		// 			livekit.EncodedFileType_WEBM,
-		// 			&livekit.EncodingOptions{
-		// 				AudioCodec: livekit.AudioCodec_OPUS,
-		// 				VideoCodec: livekit.VideoCodec_VP9,
-		// 			})
+		// 	name:     "web-vp9-webm",
+		// 	inputUrl: videoTestInput,
+		// 	fileType: livekit.EncodedFileType_WEBM,
+		// 	options: &livekit.EncodingOptions{
+		// 		AudioCodec: livekit.AudioCodec_OPUS,
+		// 		VideoCodec: livekit.VideoCodec_VP9,
 		// 	},
 		// },
 		// {
-		// 	name: "web-h265-main-mp4",
-		// 	f: func(t *testing.T) {
-		// 		testWebCompositeFile(t, conf, testInput, true,
-		// 			livekit.EncodedFileType_MP4,
-		// 			&livekit.EncodingOptions{
-		// 				AudioCodec: livekit.AudioCodec_AAC,
-		// 				VideoCodec: livekit.VideoCodec_HEVC_MAIN,
-		// 			})
+		// 	name:     "web-h265-main-mp4",
+		// 	inputUrl: videoTestInput,
+		// 	fileType: livekit.EncodedFileType_MP4,
+		// 	options: &livekit.EncodingOptions{
+		// 		AudioCodec: livekit.AudioCodec_AAC,
+		// 		VideoCodec: livekit.VideoCodec_HEVC_MAIN,
 		// 	},
 		// },
 		// {
-		// 	name: "web-h265-high-mp5",
-		// 	f: func(t *testing.T) {
-		// 		testWebCompositeFile(t, conf, testInput, true,
-		// 			livekit.EncodedFileType_MP4,
-		// 			&livekit.EncodingOptions{
-		// 				AudioCodec: livekit.AudioCodec_OPUS,
-		// 				VideoCodec: livekit.VideoCodec_HEVC_HIGH,
-		// 			})
+		// 	name:     "web-h265-high-mp5",
+		// 	inputUrl: videoTestInput,
+		// 	fileType: livekit.EncodedFileType_MP4,
+		// 	options: &livekit.EncodingOptions{
+		// 		AudioCodec: livekit.AudioCodec_OPUS,
+		// 		VideoCodec: livekit.VideoCodec_HEVC_HIGH,
 		// 	},
 		// },
 		{
-			name: "web-opus-ogg",
-			f: func(t *testing.T) {
-				testWebCompositeFile(t, conf, testInput2, false,
-					livekit.EncodedFileType_OGG,
-					&livekit.EncodingOptions{
-						AudioCodec: livekit.AudioCodec_OPUS,
-					},
-				)
+			name:      "web-opus-ogg",
+			inputUrl:  audioTestInput,
+			fileType:  livekit.EncodedFileType_OGG,
+			audioOnly: true,
+			options: &livekit.EncodingOptions{
+				AudioCodec: livekit.AudioCodec_OPUS,
 			},
-		},
-		{
-			name: "web-h264-main-rtmp",
-			f:    func(t *testing.T) { testWebCompositeStream(t, conf, testInput) },
 		},
 	} {
-		if !t.Run(test.name, test.f) {
+		if !t.Run(test.name, func(t *testing.T) { runWebCompositeFileTest(t, conf, test) }) {
 			t.FailNow()
 		}
 	}
 }
 
-func testWebCompositeFile(
-	t *testing.T, conf *config.Config, inputUrl string, videoEnabled bool,
-	fileType livekit.EncodedFileType, options *livekit.EncodingOptions,
-) {
-	videoCodec := livekit.VideoCodec_H264_MAIN
-	if options != nil {
-		videoCodec = options.VideoCodec
-	}
-
-	filepath := fmt.Sprintf("/out/web-%s-%d.%s",
-		strings.ToLower(videoCodec.String()), time.Now().Unix(), strings.ToLower(fileType.String()))
-
-	webRequest := &livekit.WebCompositeEgressRequest{
-		RoomName:  "myroom",
-		Layout:    "speaker-dark",
-		AudioOnly: !videoEnabled,
-		Output: &livekit.WebCompositeEgressRequest_File{
-			File: &livekit.EncodedFileOutput{
-				FileType: fileType,
-				HttpUrl:  filepath,
-			},
-		},
-	}
-
-	if options != nil {
-		webRequest.Options = &livekit.WebCompositeEgressRequest_Advanced{
-			Advanced: options,
-		}
-	}
-
-	req := &livekit.StartEgressRequest{
-		EgressId:  filepath,
-		RequestId: filepath,
-		SentAt:    time.Now().Unix(),
-		Request: &livekit.StartEgressRequest_WebComposite{
-			WebComposite: webRequest,
-		},
-	}
-
-	params, err := config.GetPipelineParams(conf, req)
-	require.NoError(t, err)
-	params.CustomInputURL = inputUrl
-	rec, err := pipeline.FromParams(conf, params)
+func TestWebCompositeStream(t *testing.T) {
+	conf, err := config.NewConfig(confString)
 	require.NoError(t, err)
 
-	// record for ~15s. Takes about 5s to start
-	time.AfterFunc(time.Second*20, func() {
-		rec.Stop()
-	})
-	res := rec.Run()
-
-	verifyFile(t, params, res, filepath, fileType)
-}
-
-func testWebCompositeStream(t *testing.T, conf *config.Config, inputUrl string) {
 	url := "rtmp://localhost:1935/stream1"
 
 	req := &livekit.StartEgressRequest{
@@ -229,7 +169,7 @@ func testWebCompositeStream(t *testing.T, conf *config.Config, inputUrl string) 
 
 	params, err := config.GetPipelineParams(conf, req)
 	require.NoError(t, err)
-	params.CustomInputURL = inputUrl
+	params.CustomInputURL = videoTestInput
 	rec, err := pipeline.FromParams(conf, params)
 	require.NoError(t, err)
 
@@ -268,43 +208,167 @@ func testWebCompositeStream(t *testing.T, conf *config.Config, inputUrl string) 
 	rec.Stop()
 	res := <-resChan
 
-	// check error
+	// check results
 	require.Empty(t, res.Error)
-	require.NotZero(t, res.EndedAt)
+	require.Len(t, res.GetStream().Info, 2)
+	for _, info := range res.GetStream().Info {
+		require.NotZero(t, info.StartedAt)
+		require.NotZero(t, info.EndedAt)
+	}
 }
 
-type FFProbeInfo struct {
-	Streams []struct {
-		CodecName string `json:"codec_name"`
-		CodecType string `json:"codec_type"`
-		Profile   string `json:"profile"`
+func TestTrackCompositeFile(t *testing.T) {
+	t.Skip()
 
-		// audio
-		SampleRate    string `json:"sample_rate"`
-		Channels      int    `json:"channels"`
-		ChannelLayout string `json:"channel_layout"`
+	apiKey := os.Getenv("LIVEKIT_API_KEY")
+	require.NotEmpty(t, apiKey)
+	apiSecret := os.Getenv("LIVEKIT_API_SECRET")
+	require.NotEmpty(t, apiSecret)
+	url := os.Getenv("LIVEKIT_WS_URL")
+	require.NotEmpty(t, url)
 
-		// video
-		Width      int32  `json:"width"`
-		Height     int32  `json:"height"`
-		RFrameRate string `json:"r_frame_rate"`
-		BitRate    string `json:"bit_rate"`
-	} `json:"streams"`
-	Format struct {
-		Filename   string `json:"filename"`
-		FormatName string `json:"format_name"`
-		Duration   string `json:"duration"`
-		Size       string `json:"size"`
-		ProbeScore int    `json:"probe_score"`
-		Tags       struct {
-			Encoder string `json:"encoder"`
-		} `json:"tags"`
-	} `json:"format"`
+	conf, err := config.NewConfig(confString)
+	require.NoError(t, err)
+
+	// TODO: publish files to room
+	var audioTrackID, videoTrackID string
+
+	params := &sdkParams{
+		audioTrackID: audioTrackID,
+		videoTrackID: videoTrackID,
+		apiKey:       apiKey,
+		apiSecret:    apiSecret,
+		url:          url,
+	}
+
+	for _, test := range []*testCase{} {
+		if !t.Run(test.name, func(t *testing.T) {
+			runTrackCompositeFileTest(t, conf, params, test)
+		}) {
+			t.FailNow()
+		}
+	}
 }
 
-func verifyFile(t *testing.T, params *config.Params, res *livekit.EgressInfo, filename string, fileType livekit.EncodedFileType) {
+func TestTrackEgress(t *testing.T) {
+	t.Skip()
+
+	// TODO
+}
+
+func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) {
+	filepath := getFilePath(test, "web")
+
+	webRequest := &livekit.WebCompositeEgressRequest{
+		RoomName:  "web-request",
+		Layout:    "speaker-dark",
+		AudioOnly: test.audioOnly,
+		Output: &livekit.WebCompositeEgressRequest_File{
+			File: &livekit.EncodedFileOutput{
+				FileType: test.fileType,
+				HttpUrl:  filepath,
+			},
+		},
+	}
+
+	if test.options != nil {
+		webRequest.Options = &livekit.WebCompositeEgressRequest_Advanced{
+			Advanced: test.options,
+		}
+	}
+
+	req := &livekit.StartEgressRequest{
+		EgressId:  filepath,
+		RequestId: filepath,
+		SentAt:    time.Now().Unix(),
+		Request: &livekit.StartEgressRequest_WebComposite{
+			WebComposite: webRequest,
+		},
+	}
+
+	runFileTest(t, conf, test, req, filepath)
+}
+
+func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkParams, test *testCase) {
+	filepath := getFilePath(test, "track")
+
+	trackRequest := &livekit.TrackCompositeEgressRequest{
+		RoomName:     "egress-integration",
+		AudioTrackId: params.audioTrackID,
+		VideoTrackId: params.videoTrackID,
+		Output: &livekit.TrackCompositeEgressRequest_File{
+			File: &livekit.EncodedFileOutput{
+				FileType: test.fileType,
+				HttpUrl:  filepath,
+			},
+		},
+	}
+
+	if test.options != nil {
+		trackRequest.Options = &livekit.TrackCompositeEgressRequest_Advanced{
+			Advanced: test.options,
+		}
+	}
+
+	req := &livekit.StartEgressRequest{
+		EgressId:  filepath,
+		RequestId: filepath,
+		SentAt:    time.Now().Unix(),
+		Request: &livekit.StartEgressRequest_TrackComposite{
+			TrackComposite: trackRequest,
+		},
+		ApiKey:    params.apiKey,
+		ApiSecret: params.apiSecret,
+		WsUrl:     params.url,
+	}
+
+	runFileTest(t, conf, test, req, filepath)
+}
+
+func getFilePath(test *testCase, testType string) string {
+	var name string
+	if test.audioOnly {
+		if test.options != nil && test.options.AudioCodec != livekit.AudioCodec_DEFAULT_AC {
+			name = test.options.AudioCodec.String()
+		} else {
+			name = config.DefaultAudioCodecs[test.fileType.String()].String()
+		}
+	} else {
+		if test.options != nil && test.options.VideoCodec != livekit.VideoCodec_DEFAULT_VC {
+			name = test.options.VideoCodec.String()
+		} else {
+			name = config.DefaultVideoCodecs[test.fileType.String()].String()
+		}
+	}
+
+	return fmt.Sprintf("/out/%s-%s-%d.%s",
+		testType, strings.ToLower(name), time.Now().Unix(), strings.ToLower(test.fileType.String()),
+	)
+}
+
+func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit.StartEgressRequest, filename string) {
+	params, err := config.GetPipelineParams(conf, req)
+	require.NoError(t, err)
+	params.CustomInputURL = test.inputUrl
+	rec, err := pipeline.FromParams(conf, params)
+	require.NoError(t, err)
+
+	// record for ~15s. Takes about 5s to start
+	time.AfterFunc(time.Second*20, func() {
+		rec.Stop()
+	})
+	res := rec.Run()
+
+	// check results
 	require.Empty(t, res.Error)
-	verify(t, filename, params, res, false, fileType)
+	fileRes := res.GetFile()
+	require.NotNil(t, fileRes)
+	require.NotZero(t, fileRes.StartedAt)
+	require.NotZero(t, fileRes.EndedAt)
+	require.Equal(t, filename, fileRes.Filename)
+	require.NotEmpty(t, fileRes.Location)
+
+	verify(t, filename, params, res, false, test.fileType)
 }
 
 func verifyStream(t *testing.T, params *config.Params, urls ...string) {
@@ -316,26 +380,17 @@ func verifyStream(t *testing.T, params *config.Params, urls ...string) {
 func verify(t *testing.T, input string, params *config.Params, res *livekit.EgressInfo, isStream bool, fileType livekit.EncodedFileType) {
 	info, err := ffprobe(input)
 	require.NoError(t, err, "ffprobe error")
+	require.Equal(t, 100, info.Format.ProbeScore)
 
-	if isStream {
-		require.Equal(t, "flv", info.Format.FormatName)
-	} else {
+	if !isStream {
+		// size
 		require.NotEqual(t, "0", info.Format.Size)
-		require.NotZero(t, res.StartedAt)
-		require.NotZero(t, res.EndedAt)
 
 		// duration
-		expected := time.Unix(0, res.EndedAt).Sub(time.Unix(0, res.StartedAt)).Seconds()
+		expected := time.Unix(0, res.GetFile().EndedAt).Sub(time.Unix(0, res.GetFile().StartedAt)).Seconds()
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
 		require.InDelta(t, expected, actual, 1)
-	}
-	require.Equal(t, 100, info.Format.ProbeScore)
-
-	if params.AudioEnabled && params.VideoEnabled {
-		require.Len(t, info.Streams, 2)
-	} else {
-		require.Len(t, info.Streams, 1)
 	}
 
 	// check stream info
@@ -417,12 +472,37 @@ func verify(t *testing.T, input string, params *config.Params, res *livekit.Egre
 		}
 	}
 
-	if params.AudioEnabled {
-		require.True(t, hasAudio)
-	}
-	if params.VideoEnabled {
-		require.True(t, hasVideo)
-	}
+	require.Equal(t, params.AudioEnabled, hasAudio)
+	require.Equal(t, params.VideoEnabled, hasVideo)
+}
+
+type FFProbeInfo struct {
+	Streams []struct {
+		CodecName string `json:"codec_name"`
+		CodecType string `json:"codec_type"`
+		Profile   string `json:"profile"`
+
+		// audio
+		SampleRate    string `json:"sample_rate"`
+		Channels      int    `json:"channels"`
+		ChannelLayout string `json:"channel_layout"`
+
+		// video
+		Width      int32  `json:"width"`
+		Height     int32  `json:"height"`
+		RFrameRate string `json:"r_frame_rate"`
+		BitRate    string `json:"bit_rate"`
+	} `json:"streams"`
+	Format struct {
+		Filename   string `json:"filename"`
+		FormatName string `json:"format_name"`
+		Duration   string `json:"duration"`
+		Size       string `json:"size"`
+		ProbeScore int    `json:"probe_score"`
+		Tags       struct {
+			Encoder string `json:"encoder"`
+		} `json:"tags"`
+	} `json:"format"`
 }
 
 func ffprobe(input string) (*FFProbeInfo, error) {

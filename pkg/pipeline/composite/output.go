@@ -2,9 +2,6 @@ package composite
 
 import (
 	"fmt"
-	"os"
-	"strings"
-	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -204,33 +201,12 @@ func buildStreamSink(protocol livekit.StreamProtocol, url string) (*streamSink, 
 }
 
 func buildFileOutputBin(params *config.Params) (*outputBin, error) {
-	var filename string
-	if strings.Contains(params.FileUrl, "://") {
-		filename = fmt.Sprintf("%s-%v.%s",
-			params.RoomName,
-			time.Now().String(),
-			strings.ToLower(params.FileType.String()),
-		)
-	} else {
-		filename = params.FileUrl
-		if idx := strings.LastIndex(filename, "/"); idx != -1 {
-			if err := os.MkdirAll(filename[:idx], os.ModeDir); err != nil {
-				return nil, err
-			}
-		}
-
-		ext := "." + strings.ToLower(params.FileType.String())
-		if !strings.HasSuffix(filename, ext) {
-			filename = filename + ext
-		}
-	}
-
 	// create elements
 	sink, err := gst.NewElement("filesink")
 	if err != nil {
 		return nil, err
 	}
-	if err = sink.SetProperty("location", filename); err != nil {
+	if err = sink.SetProperty("location", params.FileInfo.Filename); err != nil {
 		return nil, err
 	}
 	if err = sink.SetProperty("sync", false); err != nil {

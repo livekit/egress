@@ -1,6 +1,11 @@
 package config
 
 import (
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-egress/pkg/errors"
@@ -41,18 +46,15 @@ type Params struct {
 	VideoBitrate int32
 
 	// format
-	Transcode   bool
-	OutputWSUrl string
-
 	IsStream       bool
 	StreamProtocol livekit.StreamProtocol
+	FileType       livekit.EncodedFileType
 	StreamUrls     []string
 
-	FileType livekit.EncodedFileType
-	FileUrl  string
-
 	// info
-	Info *livekit.EgressInfo
+	Info       *livekit.EgressInfo
+	FileInfo   *livekit.FileInfo
+	StreamInfo map[string]*livekit.StreamInfo
 }
 
 var (
@@ -69,6 +71,7 @@ var (
 		Framerate:      30,
 		VideoBitrate:   3000,
 	}
+
 	hd60 = Params{
 		AudioEnabled:   true,
 		AudioCodec:     livekit.AudioCodec_DEFAULT_AC,
@@ -82,6 +85,7 @@ var (
 		Framerate:      60,
 		VideoBitrate:   4500,
 	}
+
 	fullHD30 = Params{
 		AudioEnabled:   true,
 		AudioCodec:     livekit.AudioCodec_DEFAULT_AC,
@@ -95,6 +99,7 @@ var (
 		Framerate:      30,
 		VideoBitrate:   4500,
 	}
+
 	fullHD60 = Params{
 		AudioEnabled:   true,
 		AudioCodec:     livekit.AudioCodec_DEFAULT_AC,
@@ -108,7 +113,182 @@ var (
 		Framerate:      60,
 		VideoBitrate:   6000,
 	}
+
+	mp4 = livekit.EncodedFileType_MP4.String()
+	// webm = livekit.EncodedFileType_WEBM.String()
+	ogg  = livekit.EncodedFileType_OGG.String()
+	rtmp = livekit.StreamProtocol_RTMP.String()
+	// srt  = livekit.StreamProtocol_SRT.String()
+
+	DefaultAudioCodecs = map[string]livekit.AudioCodec{
+		mp4: livekit.AudioCodec_AAC,
+		// webm: livekit.AudioCodec_OPUS,
+		ogg:  livekit.AudioCodec_OPUS,
+		rtmp: livekit.AudioCodec_AAC,
+		// srt:  livekit.AudioCodec(-1), // unknown
+	}
+
+	DefaultVideoCodecs = map[string]livekit.VideoCodec{
+		mp4: livekit.VideoCodec_H264_MAIN,
+		// webm: livekit.VideoCodec_VP8,
+		// ogg:  livekit.VideoCodec_VP8,
+		rtmp: livekit.VideoCodec_H264_MAIN,
+		// srt:  livekit.VideoCodec(-1), // unknown
+	}
+
+	compatibleAudioCodecs = map[string]map[livekit.AudioCodec]bool{
+		mp4: {
+			livekit.AudioCodec_AAC:  true,
+			livekit.AudioCodec_OPUS: true,
+		},
+		// webm: {
+		// 	livekit.AudioCodec_OPUS: true,
+		// },
+		ogg: {
+			livekit.AudioCodec_OPUS: true,
+		},
+		rtmp: {
+			livekit.AudioCodec_AAC: true,
+		},
+		// srt: {
+		// 	unknown
+		// },
+	}
+
+	compatibleVideoCodecs = map[string]map[livekit.VideoCodec]bool{
+		mp4: {
+			livekit.VideoCodec_H264_BASELINE: true,
+			livekit.VideoCodec_H264_MAIN:     true,
+			livekit.VideoCodec_H264_HIGH:     true,
+			// livekit.VideoCodec_HEVC_MAIN:     true,
+			// livekit.VideoCodec_HEVC_HIGH:     true,
+		},
+		// webm: {
+		// 	livekit.VideoCodec_VP8: true,
+		// 	livekit.VideoCodec_VP9: true,
+		// },
+		ogg: {
+			// livekit.VideoCodec_VP8: true,
+		},
+		rtmp: {
+			livekit.VideoCodec_H264_BASELINE: true,
+			livekit.VideoCodec_H264_MAIN:     true,
+			livekit.VideoCodec_H264_HIGH:     true,
+		},
+		// srt: {
+		// 	unknown
+		// },
+	}
 )
+
+func GetPipelineParams(conf *Config, request *livekit.StartEgressRequest) (*Params, error) {
+	params := getEncodingParams(request)
+	params.Info = &livekit.EgressInfo{
+		EgressId: request.EgressId,
+		RoomId:   request.RoomId,
+		Status:   livekit.EgressStatus_EGRESS_STARTING,
+	}
+
+	if request.ApiKey != "" && request.ApiSecret != "" && request.WsUrl != "" {
+		params.LKApiKey = request.ApiKey
+		params.LKApiSecret = request.ApiSecret
+		params.LKUrl = request.WsUrl
+	} else {
+		params.LKApiKey = conf.ApiKey
+		params.LKApiSecret = conf.ApiSecret
+		params.LKUrl = conf.WsUrl
+	}
+
+	var format string
+	switch req := request.Request.(type) {
+	case *livekit.StartEgressRequest_WebComposite:
+		params.Info.Request = &livekit.EgressInfo_WebComposite{WebComposite: req.WebComposite}
+
+		params.AudioEnabled = !req.WebComposite.VideoOnly
+		params.VideoEnabled = !req.WebComposite.AudioOnly
+		params.IsWebInput = true
+		params.Layout = req.WebComposite.Layout
+		params.RoomName = req.WebComposite.RoomName
+		if req.WebComposite.CustomBaseUrl != "" {
+			params.TemplateBase = req.WebComposite.CustomBaseUrl
+		} else {
+			params.TemplateBase = conf.TemplateBase
+		}
+
+		switch o := req.WebComposite.Output.(type) {
+		case *livekit.WebCompositeEgressRequest_File:
+			format = o.File.FileType.String()
+			if err := params.updateFileInfo(o.File.FileType, o.File.HttpUrl); err != nil {
+				return nil, err
+			}
+		case *livekit.WebCompositeEgressRequest_Stream:
+			format = o.Stream.Protocol.String()
+			if err := params.updateStreamInfo(o.Stream.Protocol, o.Stream.Urls); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, errors.ErrInvalidInput
+		}
+	case *livekit.StartEgressRequest_TrackComposite:
+		params.Info.Request = &livekit.EgressInfo_TrackComposite{TrackComposite: req.TrackComposite}
+
+		params.AudioEnabled = req.TrackComposite.AudioTrackId != ""
+		params.VideoEnabled = req.TrackComposite.VideoTrackId != ""
+		params.RoomName = req.TrackComposite.RoomName
+
+		switch o := req.TrackComposite.Output.(type) {
+		case *livekit.TrackCompositeEgressRequest_File:
+			format = o.File.FileType.String()
+			if err := params.updateFileInfo(o.File.FileType, o.File.HttpUrl); err != nil {
+				return nil, err
+			}
+		case *livekit.TrackCompositeEgressRequest_Stream:
+			format = o.Stream.Protocol.String()
+			if err := params.updateStreamInfo(o.Stream.Protocol, o.Stream.Urls); err != nil {
+				return nil, err
+			}
+		}
+
+		return nil, errors.ErrNotSupported("track composite requests")
+	case *livekit.StartEgressRequest_Track:
+		params.Info.Request = &livekit.EgressInfo_Track{Track: req.Track}
+
+		params.RoomName = req.Track.RoomName
+		params.TrackID = req.Track.TrackId
+
+		// switch o := req.Track.Output.(type) {
+		// case *livekit.TrackEgressRequest_HttpUrl:
+		// case *livekit.TrackEgressRequest_WebsocketUrl:
+		// default:
+		// 	return nil, errors.ErrInvalidInput
+		// }
+
+		return nil, errors.ErrNotSupported("track requests")
+		// return params, nil
+	default:
+		return nil, errors.ErrInvalidInput
+	}
+
+	// check audio codec
+	if params.AudioEnabled {
+		if params.AudioCodec == livekit.AudioCodec_DEFAULT_AC {
+			params.AudioCodec = DefaultAudioCodecs[format]
+		} else if !compatibleAudioCodecs[format][params.AudioCodec] {
+			return nil, errors.ErrIncompatible(format, params.AudioCodec)
+		}
+	}
+
+	// check video codec
+	if params.VideoEnabled {
+		if params.VideoCodec == livekit.VideoCodec_DEFAULT_VC {
+			params.VideoCodec = DefaultVideoCodecs[format]
+		} else if !compatibleVideoCodecs[format][params.VideoCodec] {
+			return nil, errors.ErrIncompatible(format, params.VideoCodec)
+		}
+	}
+
+	return params, nil
+}
 
 func getEncodingParams(request *livekit.StartEgressRequest) *Params {
 	var preset livekit.EncodingOptionsPreset = -1
@@ -175,175 +355,65 @@ func getEncodingParams(request *livekit.StartEgressRequest) *Params {
 	return &params
 }
 
-func GetPipelineParams(conf *Config, request *livekit.StartEgressRequest) (*Params, error) {
-	params := getEncodingParams(request)
-	params.Info = &livekit.EgressInfo{
-		EgressId: request.EgressId,
+func (p *Params) updateStreamInfo(protocol livekit.StreamProtocol, urls []string) error {
+	p.IsStream = true
+	p.StreamProtocol = protocol
+	p.StreamUrls = urls
+
+	p.StreamInfo = make(map[string]*livekit.StreamInfo)
+	var streamInfoList []*livekit.StreamInfo
+	for _, url := range urls {
+		switch protocol {
+		case livekit.StreamProtocol_RTMP:
+			if !strings.HasPrefix(url, "rtmp://") {
+				return errors.ErrInvalidURL
+			}
+		}
+
+		info := &livekit.StreamInfo{
+			Url: url,
+		}
+		p.StreamInfo[url] = info
+		streamInfoList = append(streamInfoList, info)
 	}
-	params.LKApiKey = request.ApiKey
-	params.LKApiSecret = request.ApiSecret
-	params.LKUrl = request.WsUrl
-
-	var format string
-	switch req := request.Request.(type) {
-	case *livekit.StartEgressRequest_WebComposite:
-		params.Info.EgressType = livekit.EgressType_WEB_COMPOSITE_EGRESS
-		params.Info.Request = &livekit.EgressInfo_WebComposite{WebComposite: req.WebComposite}
-
-		params.Transcode = true
-		params.AudioEnabled = !req.WebComposite.VideoOnly
-		params.VideoEnabled = !req.WebComposite.AudioOnly
-		params.IsWebInput = true
-		params.Layout = req.WebComposite.Layout
-		params.RoomName = req.WebComposite.RoomName
-		if req.WebComposite.CustomBaseUrl != "" {
-			params.TemplateBase = req.WebComposite.CustomBaseUrl
-		} else {
-			params.TemplateBase = conf.TemplateBase
-		}
-
-		switch o := req.WebComposite.Output.(type) {
-		case *livekit.WebCompositeEgressRequest_File:
-			format = o.File.FileType.String()
-			params.FileType = o.File.FileType
-			params.FileUrl = o.File.HttpUrl
-		case *livekit.WebCompositeEgressRequest_Stream:
-			format = o.Stream.Protocol.String()
-			params.IsStream = true
-			params.StreamProtocol = o.Stream.Protocol
-			params.StreamUrls = o.Stream.Urls
-		default:
-			return nil, errors.ErrInvalidInput
-		}
-	case *livekit.StartEgressRequest_TrackComposite:
-		params.Info.EgressType = livekit.EgressType_TRACK_COMPOSITE_EGRESS
-		params.Info.Request = &livekit.EgressInfo_TrackComposite{TrackComposite: req.TrackComposite}
-
-		params.Transcode = true
-		params.AudioEnabled = req.TrackComposite.AudioTrackId != ""
-		params.VideoEnabled = req.TrackComposite.VideoTrackId != ""
-		params.RoomName = req.TrackComposite.RoomName
-
-		switch o := req.TrackComposite.Output.(type) {
-		case *livekit.TrackCompositeEgressRequest_File:
-			format = o.File.FileType.String()
-			params.FileType = o.File.FileType
-			params.FileUrl = o.File.HttpUrl
-		case *livekit.TrackCompositeEgressRequest_Stream:
-			format = o.Stream.Protocol.String()
-			params.IsStream = true
-			params.StreamProtocol = o.Stream.Protocol
-			params.StreamUrls = o.Stream.Urls
-		}
-
-		return nil, errors.ErrNotSupported("track composite requests")
-	case *livekit.StartEgressRequest_Track:
-		params.Info.EgressType = livekit.EgressType_TRACK_EGRESS
-		params.Info.Request = &livekit.EgressInfo_Track{Track: req.Track}
-
-		params.RoomName = req.Track.RoomName
-		params.TrackID = req.Track.TrackId
-
-		switch o := req.Track.Output.(type) {
-		case *livekit.TrackEgressRequest_HttpUrl:
-			params.FileUrl = o.HttpUrl
-		case *livekit.TrackEgressRequest_WebsocketUrl:
-			params.OutputWSUrl = o.WebsocketUrl
-		default:
-			return nil, errors.ErrInvalidInput
-		}
-
-		return nil, errors.ErrNotSupported("track requests")
-		// return params, nil
-	default:
-		return nil, errors.ErrInvalidInput
-	}
-
-	// check audio codec
-	if params.AudioEnabled {
-		if params.AudioCodec == livekit.AudioCodec_DEFAULT_AC {
-			params.AudioCodec = defaultAudioCodecs[format]
-		} else if !compatibleAudioCodecs[format][params.AudioCodec] {
-			return nil, errors.ErrIncompatible(format, params.AudioCodec)
-		}
-	}
-
-	// check video codec
-	if params.VideoEnabled {
-		if params.VideoCodec == livekit.VideoCodec_DEFAULT_VC {
-			params.VideoCodec = defaultVideoCodecs[format]
-		} else if !compatibleVideoCodecs[format][params.VideoCodec] {
-			return nil, errors.ErrIncompatible(format, params.VideoCodec)
-		}
-	}
-
-	return params, nil
+	p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
+	return nil
 }
 
-var (
-	mp4 = livekit.EncodedFileType_MP4.String()
-	// webm = livekit.EncodedFileType_WEBM.String()
-	ogg  = livekit.EncodedFileType_OGG.String()
-	rtmp = livekit.StreamProtocol_RTMP.String()
-	// srt  = livekit.StreamProtocol_SRT.String()
+func (p *Params) updateFileInfo(fileType livekit.EncodedFileType, fileUrl string) error {
+	p.FileType = fileType
+	filename, err := getFileName(fileUrl, fileType, p.RoomName)
+	if err != nil {
+		return err
+	}
+	p.FileInfo = &livekit.FileInfo{
+		Filename: filename,
+		Location: fileUrl,
+	}
+	p.Info.Result = &livekit.EgressInfo_File{File: p.FileInfo}
+	return nil
+}
 
-	defaultAudioCodecs = map[string]livekit.AudioCodec{
-		mp4: livekit.AudioCodec_AAC,
-		// webm: livekit.AudioCodec_OPUS,
-		ogg:  livekit.AudioCodec_OPUS,
-		rtmp: livekit.AudioCodec_AAC,
-		// srt:  livekit.AudioCodec(-1), // unknown
+func getFileName(fileUrl string, fileType livekit.EncodedFileType, roomName string) (string, error) {
+	if strings.Contains(fileUrl, "://") {
+		return fmt.Sprintf("%s-%v.%s",
+			roomName,
+			time.Now().String(),
+			strings.ToLower(fileType.String()),
+		), nil
 	}
 
-	defaultVideoCodecs = map[string]livekit.VideoCodec{
-		mp4: livekit.VideoCodec_H264_MAIN,
-		// webm: livekit.VideoCodec_VP8,
-		// ogg:  livekit.VideoCodec_VP8,
-		rtmp: livekit.VideoCodec_H264_MAIN,
-		// srt:  livekit.VideoCodec(-1), // unknown
+	filename := fileUrl
+	if idx := strings.LastIndex(filename, "/"); idx != -1 {
+		if err := os.MkdirAll(filename[:idx], os.ModeDir); err != nil {
+			return "", err
+		}
 	}
 
-	compatibleAudioCodecs = map[string]map[livekit.AudioCodec]bool{
-		mp4: {
-			livekit.AudioCodec_AAC:  true,
-			livekit.AudioCodec_OPUS: true,
-		},
-		// webm: {
-		// 	livekit.AudioCodec_OPUS: true,
-		// },
-		ogg: {
-			livekit.AudioCodec_OPUS: true,
-		},
-		rtmp: {
-			livekit.AudioCodec_AAC: true,
-		},
-		// srt: {
-		// 	unknown
-		// },
+	ext := "." + strings.ToLower(fileType.String())
+	if !strings.HasSuffix(filename, ext) {
+		filename = filename + ext
 	}
 
-	compatibleVideoCodecs = map[string]map[livekit.VideoCodec]bool{
-		mp4: {
-			livekit.VideoCodec_H264_BASELINE: true,
-			livekit.VideoCodec_H264_MAIN:     true,
-			livekit.VideoCodec_H264_HIGH:     true,
-			// livekit.VideoCodec_HEVC_MAIN:     true,
-			// livekit.VideoCodec_HEVC_HIGH:     true,
-		},
-		// webm: {
-		// 	livekit.VideoCodec_VP8: true,
-		// 	livekit.VideoCodec_VP9: true,
-		// },
-		ogg: {
-			// livekit.VideoCodec_VP8: true,
-		},
-		rtmp: {
-			livekit.VideoCodec_H264_BASELINE: true,
-			livekit.VideoCodec_H264_MAIN:     true,
-			livekit.VideoCodec_H264_HIGH:     true,
-		},
-		// srt: {
-		// 	unknown
-		// },
-	}
-)
+	return filename, nil
+}

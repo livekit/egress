@@ -43,9 +43,10 @@ func NewSDKSource(
 		endRecording: make(chan struct{}),
 	}
 
-	if params.Info.EgressType == livekit.EgressType_TRACK_COMPOSITE_EGRESS {
+	switch params.Info.Request.(type) {
+	case *livekit.EgressInfo_TrackComposite:
 		s.trackIDs = []string{params.AudioTrackID, params.VideoTrackID}
-	} else {
+	default:
 		s.trackIDs = []string{params.TrackID}
 	}
 
@@ -127,7 +128,7 @@ func (s *SDKSource) subscribeToTracks() error {
 	return errors.New("could not find track")
 }
 
-func (s *SDKSource) onTrackUnpublished(track *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+func (s *SDKSource) onTrackUnpublished(track *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
 	for _, trackID := range s.trackIDs {
 		if track.SID() == trackID {
 			if s.active.Dec() == 0 {
@@ -145,12 +146,6 @@ func (s *SDKSource) onComplete() {
 	default:
 		close(s.endRecording)
 	}
-}
-
-func (s *SDKSource) StartRecording() chan struct{} {
-	start := make(chan struct{})
-	close(start)
-	return start
 }
 
 func (s *SDKSource) EndRecording() chan struct{} {

@@ -27,12 +27,12 @@ func FromRequest(conf *config.Config, request *livekit.StartEgressRequest) (Pipe
 }
 
 func FromParams(conf *config.Config, params *config.Params) (Pipeline, error) {
-	switch params.Info.EgressType {
-	case livekit.EgressType_WEB_COMPOSITE_EGRESS:
+	switch params.Info.Request.(type) {
+	case *livekit.EgressInfo_WebComposite:
 		return composite.NewPipeline(conf, params)
-	case livekit.EgressType_TRACK_COMPOSITE_EGRESS:
+	case *livekit.EgressInfo_TrackComposite:
 		return composite.NewPipeline(conf, params)
-	case livekit.EgressType_TRACK_EGRESS:
+	case *livekit.EgressInfo_Track:
 		return track.NewPipeline(params)
 	default:
 		return nil, errors.ErrInvalidInput

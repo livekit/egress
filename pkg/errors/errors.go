@@ -9,6 +9,7 @@ var (
 	ErrNoConfig = errors.New("missing config")
 
 	ErrInvalidInput        = errors.New("request missing required field")
+	ErrInvalidURL          = errors.New("invalid output url")
 	ErrInvalidRPC          = errors.New("invalid request")
 	ErrGhostPadFailed      = errors.New("failed to add ghost pad to bin")
 	ErrOutputAlreadyExists = errors.New("output already exists")

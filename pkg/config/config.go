@@ -16,6 +16,9 @@ import (
 )
 
 type Config struct {
+	ApiKey       string      `yaml:"api_key"`
+	ApiSecret    string      `yaml:"api_secret"`
+	WsUrl        string      `yaml:"ws_url"`
 	HealthPort   int         `yaml:"health_port"`
 	LogLevel     string      `yaml:"log_level"`
 	TemplateBase string      `yaml:"template_base"`

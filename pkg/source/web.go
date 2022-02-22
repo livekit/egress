@@ -18,28 +18,24 @@ import (
 )
 
 const (
-	startRecordingLog = "START_RECORDING"
-	endRecordingLog   = "END_RECORDING"
+	endRecordingLog = "END_RECORDING"
 )
 
 type WebSource struct {
 	xvfb         *exec.Cmd
 	chromeCancel context.CancelFunc
 
-	startRecording chan struct{}
-	endRecording   chan struct{}
+	endRecording chan struct{}
 }
 
 func NewWebSource(conf *config.Config, params *config.Params) (*WebSource, error) {
 	s := &WebSource{
-		startRecording: make(chan struct{}),
-		endRecording:   make(chan struct{}),
+		endRecording: make(chan struct{}),
 	}
 
 	var inputUrl string
 	if params.CustomInputURL != "" {
 		inputUrl = params.CustomInputURL
-		close(s.startRecording)
 	} else {
 		token, err := buildToken(params.LKApiKey, params.LKApiSecret, params.RoomName)
 		if err != nil {
@@ -142,15 +138,7 @@ func (s *WebSource) launchChrome(conf *config.Config, url string, width, height 
 				}
 				msg := fmt.Sprint(val)
 				args = append(args, msg)
-				switch msg {
-				case startRecordingLog:
-					select {
-					case <-s.startRecording:
-						continue
-					default:
-						close(s.startRecording)
-					}
-				case endRecordingLog:
+				if msg == endRecordingLog {
 					select {
 					case <-s.endRecording:
 						continue
@@ -178,10 +166,6 @@ func (s *WebSource) launchChrome(conf *config.Config, url string, width, height 
 		err = errors.New(errString)
 	}
 	return err
-}
-
-func (s *WebSource) StartRecording() chan struct{} {
-	return s.startRecording
 }
 
 func (s *WebSource) EndRecording() chan struct{} {

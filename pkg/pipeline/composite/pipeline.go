@@ -28,12 +28,17 @@ type compositePipeline struct {
 	in       *inputBin
 	out      *outputBin
 
-	// info
-	mu       sync.Mutex
-	isStream bool
-	info     *livekit.EgressInfo
-	removed  map[string]bool
-	closed   chan struct{}
+	// egress info
+	info       *livekit.EgressInfo
+	fileInfo   *livekit.FileInfo
+	streamInfo map[string]*livekit.StreamInfo
+
+	// internal
+	mu             sync.RWMutex
+	isStream       bool
+	streamProtocol livekit.StreamProtocol
+	removed        map[string]bool
+	closed         chan struct{}
 }
 
 func NewPipeline(conf *config.Config, params *config.Params) (*compositePipeline, error) {
@@ -61,13 +66,16 @@ func NewPipeline(conf *config.Config, params *config.Params) (*compositePipeline
 	}
 
 	return &compositePipeline{
-		pipeline: pipeline,
-		in:       in,
-		out:      out,
-		isStream: params.IsStream,
-		info:     params.Info,
-		removed:  make(map[string]bool),
-		closed:   make(chan struct{}),
+		pipeline:       pipeline,
+		in:             in,
+		out:            out,
+		isStream:       params.IsStream,
+		streamProtocol: params.StreamProtocol,
+		info:           params.Info,
+		fileInfo:       params.FileInfo,
+		streamInfo:     params.StreamInfo,
+		removed:        make(map[string]bool),
+		closed:         make(chan struct{}),
 	}, nil
 }
 
@@ -76,15 +84,6 @@ func (p *compositePipeline) Info() *livekit.EgressInfo {
 }
 
 func (p *compositePipeline) Run() *livekit.EgressInfo {
-	// wait for room to start
-	logger.Debugw("Waiting for room to start")
-	select {
-	case <-p.in.StartRecording():
-		logger.Debugw("Room started")
-	case <-p.closed:
-		logger.Debugw("Egress aborted")
-	}
-
 	// close when room ends
 	go func() {
 		<-p.in.EndRecording()
@@ -92,6 +91,7 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 	}()
 
 	// add watch
+	started := false
 	loop := glib.NewMainLoop(glib.MainContextDefault(), false)
 	p.pipeline.GetPipelineBus().AddWatch(func(msg *gst.Message) bool {
 		switch msg.Type() {
@@ -105,20 +105,28 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 			return false
 		case gst.MessageError:
 			// handle error if possible, otherwise close and return
-			gErr := msg.ParseError()
-			err, handled := p.handleError(gErr)
-			if handled {
-				logger.Errorw("error handled", err)
-			} else {
+			err, handled := p.handleError(msg.ParseError())
+			if !handled {
 				p.info.Error = err.Error()
 				loop.Quit()
 				return false
 			}
 		case gst.MessageStateChanged:
-			if msg.Source() == pipelineSource && p.info.StartedAt == 0 {
+			if !started && msg.Source() == pipelineSource {
 				_, newState := msg.ParseStateChanged()
 				if newState == gst.StatePlaying {
-					p.info.StartedAt = time.Now().UnixNano()
+					started = true
+					startedAt := time.Now().UnixNano()
+					if p.isStream {
+						p.mu.RLock()
+						for _, streamInfo := range p.streamInfo {
+							streamInfo.StartedAt = startedAt
+						}
+						p.mu.RUnlock()
+					} else {
+						p.fileInfo.StartedAt = startedAt
+					}
+					p.info.Status = livekit.EgressStatus_EGRESS_ACTIVE
 				}
 			}
 		default:
@@ -136,10 +144,24 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 
 	// run main loop
 	loop.Run()
-	p.info.EndedAt = time.Now().UnixNano()
+
+	// add end times to egress info
+	endedAt := time.Now().UnixNano()
+	if p.isStream {
+		p.mu.RLock()
+		for _, info := range p.streamInfo {
+			info.EndedAt = endedAt
+		}
+		p.mu.RUnlock()
+	} else {
+		p.fileInfo.EndedAt = time.Now().UnixNano()
+	}
 
 	// close input source
 	p.in.Close()
+
+	// return result
+	p.info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 	return p.info
 }
 
@@ -148,15 +170,41 @@ func (p *compositePipeline) UpdateStream(req *livekit.UpdateStreamRequest) error
 		return errors.ErrInvalidRPC
 	}
 
+	now := time.Now().UnixNano()
 	for _, url := range req.AddOutputUrls {
+		switch p.streamProtocol {
+		case livekit.StreamProtocol_RTMP:
+			if !strings.HasPrefix(url, "rtmp://") {
+				return errors.ErrInvalidURL
+			}
+		}
+
 		if err := p.out.addSink(url); err != nil {
 			return err
 		}
+
+		streamInfo := &livekit.StreamInfo{
+			Url:       url,
+			StartedAt: now,
+		}
+
+		p.mu.Lock()
+		p.streamInfo[url] = streamInfo
+		p.mu.Unlock()
+
+		stream := p.info.GetStream()
+		stream.Info = append(stream.Info, streamInfo)
 	}
+
 	for _, url := range req.RemoveOutputUrls {
 		if err := p.out.removeSink(url); err != nil {
 			return err
 		}
+
+		p.mu.Lock()
+		p.streamInfo[url].EndedAt = now
+		delete(p.streamInfo, url)
+		p.mu.Unlock()
 	}
 
 	return nil
@@ -168,6 +216,7 @@ func (p *compositePipeline) Stop() {
 		return
 	default:
 		close(p.closed)
+		p.info.Status = livekit.EgressStatus_EGRESS_ENDING
 
 		logger.Debugw("sending EOS to pipeline")
 		p.pipeline.SendEvent(gst.NewEOSEvent())
