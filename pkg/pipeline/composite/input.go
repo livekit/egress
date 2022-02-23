@@ -172,12 +172,13 @@ func (b *inputBin) buildVideoElements(p *params.Params) error {
 		if err != nil {
 			return err
 		}
-		err = xImageSrc.SetProperty("use-damage", false)
-		if err != nil {
+		if err = xImageSrc.SetProperty("display-name", p.Display); err != nil {
 			return err
 		}
-		err = xImageSrc.SetProperty("show-pointer", false)
-		if err != nil {
+		if err = xImageSrc.SetProperty("use-damage", false); err != nil {
+			return err
+		}
+		if err = xImageSrc.SetProperty("show-pointer", false); err != nil {
 			return err
 		}
 

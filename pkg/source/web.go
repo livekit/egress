@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/url"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
@@ -31,6 +33,10 @@ type WebSource struct {
 	endRecording   chan struct{}
 }
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 	s := &WebSource{
 		startRecording: make(chan struct{}),
@@ -48,12 +54,12 @@ func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 		)
 	}
 
-	if err := s.launchXvfb(conf.Display, p.Width, p.Height, p.Depth); err != nil {
+	if err := s.launchXvfb(p.Display, p.Width, p.Height, p.Depth); err != nil {
 		logger.Errorw("failed to launch xvfb", err)
 		return nil, err
 	}
-	if err := s.launchChrome(conf, inputUrl, p.Width, p.Height); err != nil {
-		logger.Errorw("failed to launch chrome", err)
+	if err := s.launchChrome(inputUrl, p.Display, p.Width, p.Height, conf.Insecure); err != nil {
+		logger.Errorw("failed to launch chrome", err, "display", p.Display)
 		s.Close()
 		return nil, err
 	}
@@ -72,7 +78,7 @@ func (s *WebSource) launchXvfb(display string, width, height, depth int32) error
 	return nil
 }
 
-func (s *WebSource) launchChrome(conf *config.Config, url string, width, height int32) error {
+func (s *WebSource) launchChrome(url, display string, width, height int32, insecure bool) error {
 	logger.Debugw("launching chrome", "url", url)
 
 	opts := []chromedp.ExecAllocatorOption{
@@ -112,10 +118,10 @@ func (s *WebSource) launchChrome(conf *config.Config, url string, width, height 
 		chromedp.Flag("autoplay-policy", "no-user-gesture-required"),
 		chromedp.Flag("window-position", "0,0"),
 		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", width, height)),
-		chromedp.Flag("display", conf.Display),
+		chromedp.Flag("display", display),
 	}
 
-	if conf.Insecure {
+	if insecure {
 		opts = append(opts,
 			chromedp.Flag("disable-web-security", true),
 			chromedp.Flag("allow-running-insecure-content", true),

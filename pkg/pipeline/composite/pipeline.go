@@ -36,10 +36,10 @@ type compositePipeline struct {
 	streamInfo map[string]*livekit.StreamInfo
 
 	// internal
-	mu             sync.RWMutex
+	mu sync.RWMutex
+	params.FileParams
 	isStream       bool
 	streamProtocol livekit.StreamProtocol
-	fileType       livekit.EncodedFileType
 	removed        map[string]bool
 	closed         chan struct{}
 }
@@ -77,7 +77,7 @@ func NewPipeline(conf *config.Config, p *params.Params) (*compositePipeline, err
 		streamInfo:     p.StreamInfo,
 		isStream:       p.IsStream,
 		streamProtocol: p.StreamProtocol,
-		fileType:       p.FileType,
+		FileParams:     p.FileParams,
 		removed:        make(map[string]bool),
 		closed:         make(chan struct{}),
 	}, nil
@@ -92,6 +92,7 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 	select {
 	case <-p.closed:
 		p.info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+		p.in.Close()
 		return p.info
 	case <-p.in.StartRecording():
 		// continue
@@ -175,11 +176,22 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 	p.in.Close()
 
 	// upload file
-	if !p.isStream && strings.Contains(p.fileInfo.Location, "://") {
-		err := sink.UploadFile(p.fileInfo.Filename, p.fileInfo.Location, p.fileType)
-		if err != nil {
-			p.info.Error = err.Error()
+	var err error
+	if !p.isStream {
+		switch u := p.FileUpload.(type) {
+		case *livekit.S3Upload:
+			p.fileInfo.Location, err = sink.UploadS3(u, p.FileParams)
+		case *livekit.GCPUpload:
+			p.fileInfo.Location, err = sink.UploadGCP(u, p.FileParams)
+		case *livekit.AzureBlobUpload:
+			p.fileInfo.Location, err = sink.UploadAzure(u, p.FileParams)
+		default:
+			p.fileInfo.Location = p.FilePath
 		}
+	}
+	if err != nil {
+		logger.Errorw("could not upload file", err)
+		p.info.Error = err.Error()
 	}
 
 	// return result

@@ -9,8 +9,7 @@ import (
 )
 
 var (
-	ErrNoConfig = errors.New("missing config")
-
+	ErrNoConfig            = errors.New("missing config")
 	ErrInvalidRPC          = errors.New("invalid request")
 	ErrGhostPadFailed      = errors.New("failed to add ghost pad to bin")
 	ErrStreamAlreadyExists = errors.New("stream already exists")
@@ -44,4 +43,8 @@ func ErrInvalidUrl(url string, protocol livekit.StreamProtocol) error {
 
 func ErrTrackNotFound(trackID string) error {
 	return fmt.Errorf("track %s not found", trackID)
+}
+
+func ErrUploadFailed(status string) error {
+	return fmt.Errorf("file upload failed: %s", status)
 }

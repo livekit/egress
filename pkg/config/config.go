@@ -2,13 +2,10 @@ package config
 
 import (
 	"fmt"
-	"math/rand"
 	"os"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/go-logr/zapr"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -16,16 +13,20 @@ import (
 )
 
 type Config struct {
-	ApiKey       string      `yaml:"api_key"`
-	ApiSecret    string      `yaml:"api_secret"`
-	WsUrl        string      `yaml:"ws_url"`
-	HealthPort   int         `yaml:"health_port"`
-	LogLevel     string      `yaml:"log_level"`
-	TemplateBase string      `yaml:"template_base"`
-	Insecure     bool        `yaml:"insecure"`
-	Redis        RedisConfig `yaml:"redis"`
+	Redis     RedisConfig `yaml:"redis"`      // required
+	ApiKey    string      `yaml:"api_key"`    // required (env LIVEKIT_API_KEY)
+	ApiSecret string      `yaml:"api_secret"` // required (env LIVEKIT_API_SECRET)
+	WsUrl     string      `yaml:"ws_url"`     // required (env LIVEKIT_WS_URL)
 
-	Display string `yaml:"-"`
+	HealthPort   int    `yaml:"health_port"`
+	LogLevel     string `yaml:"log_level"`
+	TemplateBase string `yaml:"template_base"`
+	Insecure     bool   `yaml:"insecure"`
+
+	S3         *S3Config    `yaml:"s3"`
+	Azure      *AzureConfig `yaml:"az_blob"`
+	GCP        *GCPConfig   `yaml:"gcp"`
+	FileUpload interface{}  `yaml:"-"` // one of S3, Azure, or GCP
 }
 
 type RedisConfig struct {
@@ -33,6 +34,25 @@ type RedisConfig struct {
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
 	DB       int    `yaml:"db"`
+}
+
+type S3Config struct {
+	AccessKey string `yaml:"access_key"` // (env AWS_ACCESS_KEY_ID)
+	Secret    string `yaml:"secret"`     // (env AWS_SECRET_ACCESS_KEY)
+	Region    string `yaml:"region"`     // (env AWS_DEFAULT_REGION)
+	Endpoint  string `yaml:"endpoint"`
+	Bucket    string `yaml:"bucket"`
+}
+
+type AzureConfig struct {
+	AccountName   string `yaml:"account_name"` // (env AZURE_STORAGE_ACCOUNT)
+	AccountKey    string `yaml:"account_key"`  // (env AZURE_STORAGE_KEY)
+	ContainerName string `yaml:"container_name"`
+}
+
+type GCPConfig struct {
+	CredentialsJSON []byte `yaml:"credentials_json"` // (env GOOGLE_APPLICATION_CREDENTIALS)
+	Bucket          string `yaml:"bucket"`
 }
 
 func NewConfig(confString string) (*Config, error) {
@@ -49,10 +69,39 @@ func NewConfig(confString string) (*Config, error) {
 		}
 	}
 
+	if conf.S3 != nil {
+		conf.FileUpload = &livekit.S3Upload{
+			AccessKey: conf.S3.AccessKey,
+			Secret:    conf.S3.Secret,
+			Region:    conf.S3.Region,
+			Endpoint:  conf.S3.Endpoint,
+			Bucket:    conf.S3.Bucket,
+		}
+	} else if conf.GCP != nil {
+		conf.FileUpload = &livekit.GCPUpload{
+			Credentials: conf.GCP.CredentialsJSON,
+			Bucket:      conf.GCP.Bucket,
+		}
+	} else if conf.Azure != nil {
+		conf.FileUpload = &livekit.AzureBlobUpload{
+			AccountName:   conf.Azure.AccountName,
+			AccountKey:    conf.Azure.AccountKey,
+			ContainerName: conf.Azure.ContainerName,
+		}
+	}
+
+	if err := conf.initLogger(); err != nil {
+		return nil, err
+	}
+
+	return conf, nil
+}
+
+func (c *Config) initLogger() error {
 	// GStreamer log level
 	if os.Getenv("GST_DEBUG") == "" {
 		var gstDebug int
-		switch conf.LogLevel {
+		switch c.LogLevel {
 		case "debug":
 			gstDebug = 2
 		case "info", "warn", "error":
@@ -61,39 +110,10 @@ func NewConfig(confString string) (*Config, error) {
 			gstDebug = 0
 		}
 		if err := os.Setenv("GST_DEBUG", fmt.Sprint(gstDebug)); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	conf.initLogger()
-	err := conf.initDisplay()
-	return conf, err
-}
-
-func (c *Config) initDisplay() error {
-	d := os.Getenv("DISPLAY")
-	if d != "" && strings.HasPrefix(d, ":") {
-		num, err := strconv.Atoi(d[1:])
-		if err == nil && num > 0 && num <= 2147483647 {
-			c.Display = d
-			return nil
-		}
-	}
-
-	if c.Display == "" {
-		rand.Seed(time.Now().UnixNano())
-		c.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
-	}
-
-	// GStreamer uses display from env
-	if err := os.Setenv("DISPLAY", c.Display); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (c *Config) initLogger() {
 	conf := zap.NewProductionConfig()
 	if c.LogLevel != "" {
 		lvl := zapcore.Level(0)
@@ -104,4 +124,5 @@ func (c *Config) initLogger() {
 
 	l, _ := conf.Build()
 	logger.SetLogger(zapr.NewLogger(l), "livekit-egress")
+	return nil
 }

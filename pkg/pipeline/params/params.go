@@ -2,6 +2,7 @@ package params
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -21,8 +22,8 @@ type Params struct {
 	// format
 	IsStream       bool
 	StreamProtocol livekit.StreamProtocol
-	FileType       livekit.EncodedFileType
 	StreamUrls     []string
+	FileParams
 
 	// info
 	Info       *livekit.EgressInfo
@@ -39,6 +40,7 @@ type SourceParams struct {
 
 	// web source
 	IsWebInput     bool
+	Display        string
 	Layout         string
 	CustomBase     string
 	CustomInputURL string
@@ -66,6 +68,13 @@ type VideoParams struct {
 	VideoBitrate int32
 }
 
+type FileParams struct {
+	Filename   string
+	FilePath   string
+	FileType   livekit.EncodedFileType
+	FileUpload interface{}
+}
+
 func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest) (*Params, error) {
 	params := getEncodingParams(request)
 	params.Info = &livekit.EgressInfo{
@@ -79,11 +88,12 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 	case *livekit.StartEgressRequest_WebComposite:
 		params.Info.Request = &livekit.EgressInfo_WebComposite{WebComposite: req.WebComposite}
 
+		params.IsWebInput = true
+		params.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
 		params.AudioEnabled = !req.WebComposite.VideoOnly
 		params.VideoEnabled = !req.WebComposite.AudioOnly
-		params.IsWebInput = true
-		params.Layout = req.WebComposite.Layout
 		params.RoomName = req.WebComposite.RoomName
+		params.Layout = req.WebComposite.Layout
 		if req.WebComposite.CustomBaseUrl != "" {
 			params.TemplateBase = req.WebComposite.CustomBaseUrl
 		} else {
@@ -93,7 +103,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		switch o := req.WebComposite.Output.(type) {
 		case *livekit.WebCompositeEgressRequest_File:
 			format = o.File.FileType.String()
-			if err := params.updateFileInfo(o.File.FileType, o.File.HttpUrl); err != nil {
+			if err := params.updateFileInfo(conf, o.File.FileType, o.File.Filepath, o.File.Output); err != nil {
 				return nil, err
 			}
 		case *livekit.WebCompositeEgressRequest_Stream:
@@ -114,7 +124,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		switch o := req.TrackComposite.Output.(type) {
 		case *livekit.TrackCompositeEgressRequest_File:
 			format = o.File.FileType.String()
-			if err := params.updateFileInfo(o.File.FileType, o.File.HttpUrl); err != nil {
+			if err := params.updateFileInfo(conf, o.File.FileType, o.File.Filepath, o.File.Output); err != nil {
 				return nil, err
 			}
 		case *livekit.TrackCompositeEgressRequest_Stream:
@@ -148,7 +158,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 	if request.Token != "" {
 		params.Token = request.Token
 	} else if conf.ApiKey != "" && conf.ApiSecret != "" {
-		token, err := egress.BuildEgressToken(conf.ApiKey, conf.ApiSecret, params.RoomName)
+		token, err := egress.BuildEgressToken(params.Info.EgressId, conf.ApiKey, conf.ApiSecret, params.RoomName)
 		if err != nil {
 			return nil, err
 		}
@@ -276,40 +286,60 @@ func (p *Params) updateStreamInfo(protocol livekit.StreamProtocol, urls []string
 	return nil
 }
 
-func (p *Params) updateFileInfo(fileType livekit.EncodedFileType, fileUrl string) error {
-	p.FileType = fileType
-	filename, err := getFileName(fileUrl, fileType, p.RoomName)
-	if err != nil {
-		return err
-	}
-	p.FileInfo = &livekit.FileInfo{
-		Filename: filename,
-		Location: fileUrl,
-	}
-	p.Info.Result = &livekit.EgressInfo_File{File: p.FileInfo}
-	return nil
-}
-
-func getFileName(fileUrl string, fileType livekit.EncodedFileType, roomName string) (string, error) {
-	if strings.Contains(fileUrl, "://") {
-		return fmt.Sprintf("%s-%v.%s",
-			roomName,
-			time.Now().String(),
-			strings.ToLower(fileType.String()),
-		), nil
-	}
-
-	filename := fileUrl
-	if idx := strings.LastIndex(filename, "/"); idx != -1 {
-		if err := os.MkdirAll(filename[:idx], os.ModeDir); err != nil {
-			return "", err
+func (p *Params) updateFileInfo(conf *config.Config, fileType livekit.EncodedFileType, filePath string, output interface{}) error {
+	local := false
+	switch o := output.(type) {
+	case *livekit.EncodedFileOutput_S3:
+		p.FileUpload = o.S3
+	case *livekit.EncodedFileOutput_Azure:
+		p.FileUpload = o.Azure
+	case *livekit.EncodedFileOutput_Gcp:
+		p.FileUpload = o.Gcp
+	default:
+		if conf.FileUpload != nil {
+			p.FileUpload = conf.FileUpload
+		} else {
+			local = true
 		}
 	}
 
-	ext := "." + strings.ToLower(fileType.String())
-	if !strings.HasSuffix(filename, ext) {
-		filename = filename + ext
+	filename, err := getFilename(filePath, fileType, p.RoomName, local)
+	if err != nil {
+		return err
 	}
 
-	return filename, nil
+	p.Filename = filename
+	p.FilePath = filePath
+	p.FileType = fileType
+	p.FileInfo = &livekit.FileInfo{Filename: filename}
+	p.Info.Result = &livekit.EgressInfo_File{File: p.FileInfo}
+
+	return nil
+}
+
+func getFilename(filePath string, fileType livekit.EncodedFileType, roomName string, local bool) (string, error) {
+	ext := "." + strings.ToLower(fileType.String())
+	if filePath == "" {
+		return fmt.Sprintf("%s-%v%s", roomName, time.Now().String(), ext), nil
+	}
+
+	// check for extension
+	if !strings.HasSuffix(filePath, ext) {
+		filePath = filePath + ext
+	}
+
+	// get filename from path
+	idx := strings.LastIndex(filePath, "/")
+	if idx == -1 {
+		return filePath, nil
+	}
+
+	if local {
+		if err := os.MkdirAll(filePath[:idx], os.ModeDir); err != nil {
+			return "", err
+		}
+		return filePath, nil
+	}
+
+	return filePath[idx+1:], nil
 }

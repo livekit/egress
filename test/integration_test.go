@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-egress/pkg/config"
@@ -210,6 +211,7 @@ func TestWebCompositeStream(t *testing.T) {
 	require.Empty(t, res.Error)
 	require.Len(t, res.GetStream().Info, 2)
 	for _, info := range res.GetStream().Info {
+		require.NotEmpty(t, info.Url)
 		require.NotZero(t, info.StartedAt)
 		require.NotZero(t, info.EndedAt)
 	}
@@ -249,7 +251,7 @@ func TestTrackEgress(t *testing.T) {
 }
 
 func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) {
-	filepath := getFilePath(test, "web")
+	filePath, filename := getFileInfo(test, "web")
 
 	webRequest := &livekit.WebCompositeEgressRequest{
 		RoomName:  "web-request",
@@ -258,7 +260,7 @@ func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) 
 		Output: &livekit.WebCompositeEgressRequest_File{
 			File: &livekit.EncodedFileOutput{
 				FileType: test.fileType,
-				HttpUrl:  filepath,
+				Filepath: filePath,
 			},
 		},
 	}
@@ -270,19 +272,19 @@ func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) 
 	}
 
 	req := &livekit.StartEgressRequest{
-		EgressId:  filepath,
-		RequestId: filepath,
-		SentAt:    time.Now().Unix(),
+		EgressId:  utils.NewGuid(utils.EgressPrefix),
+		RequestId: utils.NewGuid(utils.RPCPrefix),
+		SentAt:    time.Now().UnixNano(),
 		Request: &livekit.StartEgressRequest_WebComposite{
 			WebComposite: webRequest,
 		},
 	}
 
-	runFileTest(t, conf, test, req, filepath)
+	runFileTest(t, conf, test, req, filename)
 }
 
 func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkParams, test *testCase) {
-	filepath := getFilePath(test, "track")
+	filePath, filename := getFileInfo(test, "track")
 
 	trackRequest := &livekit.TrackCompositeEgressRequest{
 		RoomName:     "egress-integration",
@@ -291,7 +293,7 @@ func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkPar
 		Output: &livekit.TrackCompositeEgressRequest_File{
 			File: &livekit.EncodedFileOutput{
 				FileType: test.fileType,
-				HttpUrl:  filepath,
+				Filepath: filePath,
 			},
 		},
 	}
@@ -303,18 +305,18 @@ func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkPar
 	}
 
 	req := &livekit.StartEgressRequest{
-		EgressId:  filepath,
-		RequestId: filepath,
-		SentAt:    time.Now().Unix(),
+		EgressId:  utils.NewGuid(utils.EgressPrefix),
+		RequestId: utils.NewGuid(utils.RPCPrefix),
+		SentAt:    time.Now().UnixNano(),
 		Request: &livekit.StartEgressRequest_TrackComposite{
 			TrackComposite: trackRequest,
 		},
 	}
 
-	runFileTest(t, conf, test, req, filepath)
+	runFileTest(t, conf, test, req, filename)
 }
 
-func getFilePath(test *testCase, testType string) string {
+func getFileInfo(test *testCase, testType string) (string, string) {
 	var name string
 	if test.audioOnly {
 		if test.options != nil && test.options.AudioCodec != livekit.AudioCodec_DEFAULT_AC {
@@ -330,9 +332,11 @@ func getFilePath(test *testCase, testType string) string {
 		}
 	}
 
-	return fmt.Sprintf("/out/%s-%s-%d.%s",
+	filename := fmt.Sprintf("/out/%s-%s-%d.%s",
 		testType, strings.ToLower(name), time.Now().Unix(), strings.ToLower(test.fileType.String()),
 	)
+
+	return filename, filename
 }
 
 func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit.StartEgressRequest, filename string) {
@@ -354,7 +358,7 @@ func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit
 	require.NotNil(t, fileRes)
 	require.NotZero(t, fileRes.StartedAt)
 	require.NotZero(t, fileRes.EndedAt)
-	require.Equal(t, filename, fileRes.Filename)
+	require.NotEmpty(t, fileRes.Filename)
 	require.NotEmpty(t, fileRes.Location)
 
 	verify(t, filename, p, res, false, test.fileType)
