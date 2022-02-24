@@ -49,7 +49,7 @@ func UploadS3(conf *livekit.S3Upload, p params.FileParams) (string, error) {
 
 	_, err = s3.New(sess).PutObject(&s3.PutObjectInput{
 		Bucket:        aws.String(conf.Bucket),
-		Key:           aws.String(p.FilePath),
+		Key:           aws.String(p.Filepath),
 		Body:          bytes.NewReader(buffer),
 		ContentLength: aws.Int64(size),
 		ContentType:   aws.String(getContentType(p.FileType)),
@@ -58,7 +58,7 @@ func UploadS3(conf *livekit.S3Upload, p params.FileParams) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", conf.Bucket, conf.Region, p.FilePath), nil
+	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", conf.Bucket, conf.Region, p.Filepath), nil
 }
 
 func UploadAzure(conf *livekit.AzureBlobUpload, p params.FileParams) (string, error) {
@@ -78,7 +78,7 @@ func UploadAzure(conf *livekit.AzureBlobUpload, p params.FileParams) (string, er
 	}
 
 	containerURL := azblob.NewContainerURL(*azUrl, pipeline)
-	blobURL := containerURL.NewBlockBlobURL(p.FilePath)
+	blobURL := containerURL.NewBlockBlobURL(p.Filepath)
 
 	file, err := os.Open(p.Filename)
 	if err != nil {
@@ -121,7 +121,7 @@ func UploadGCP(conf *livekit.GCPUpload, p params.FileParams) (string, error) {
 	}
 	defer file.Close()
 
-	wc := client.Bucket(conf.Bucket).Object(p.FilePath).NewWriter(ctx)
+	wc := client.Bucket(conf.Bucket).Object(p.Filepath).NewWriter(ctx)
 	if _, err = io.Copy(wc, file); err != nil {
 		return "", err
 	}
@@ -130,7 +130,7 @@ func UploadGCP(conf *livekit.GCPUpload, p params.FileParams) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", conf.Bucket, p.FilePath), nil
+	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", conf.Bucket, p.Filepath), nil
 }
 
 func getContentType(fileType livekit.EncodedFileType) string {

@@ -186,7 +186,7 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 		case *livekit.AzureBlobUpload:
 			p.fileInfo.Location, err = sink.UploadAzure(u, p.FileParams)
 		default:
-			p.fileInfo.Location = p.FilePath
+			p.fileInfo.Location = p.Filepath
 		}
 	}
 	if err != nil {

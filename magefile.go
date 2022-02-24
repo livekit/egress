@@ -18,33 +18,32 @@ const (
 	gstImageName       = "livekit/gstreamer"
 	multiPlatformBuild = "docker buildx build --push --platform linux/amd64,linux/arm64"
 
-	apiKey    = "LIVEKIT_API_KEY"
-	apiSecret = "LIVEKIT_API_SECRET"
-	url       = "LIVEKIT_WS_URL"
-	roomName  = "LIVEKIT_ROOM_NAME"
+	config   = "EGRESS_CONFIG_FILE"
+	roomName = "LIVEKIT_ROOM_NAME"
 )
 
-// Default target to run when none is specified
-// If not set, running mage will list available targets
-var Default = Test
-
-// run unit tests
 func Test() error {
-	return run("go test --tags=test ./...")
+	return Integration("")
 }
 
-func Integration() error {
+func Integration(configFile string) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		return err
 	}
 
-	forwardEnv := fmt.Sprintf("-e %s=%s -e %s=%s -e %s=%s -e%s=%s",
-		apiKey, os.Getenv(apiKey), apiSecret, os.Getenv(apiSecret), url, os.Getenv(url), roomName, os.Getenv(roomName))
+	if configFile != "" {
+		if strings.HasPrefix(configFile, "test/") {
+			configFile = configFile[5:]
+		} else {
+			return errors.New("please move config file to livekit-egress/test/")
+		}
+	}
 
 	return run(
 		"docker build -t livekit-egress-test -f build/test/Dockerfile .",
-		fmt.Sprintf("docker run --rm %s -v %s/test:/out livekit-egress-test", forwardEnv, dir),
+		fmt.Sprintf("docker run --rm -e %s=/out/%s -e %s=%s -v %s/test:/out livekit-egress-test",
+			config, configFile, roomName, os.Getenv(roomName), dir),
 	)
 }
 

@@ -70,7 +70,7 @@ type VideoParams struct {
 
 type FileParams struct {
 	Filename   string
-	FilePath   string
+	Filepath   string
 	FileType   livekit.EncodedFileType
 	FileUpload interface{}
 }
@@ -286,7 +286,7 @@ func (p *Params) updateStreamInfo(protocol livekit.StreamProtocol, urls []string
 	return nil
 }
 
-func (p *Params) updateFileInfo(conf *config.Config, fileType livekit.EncodedFileType, filePath string, output interface{}) error {
+func (p *Params) updateFileInfo(conf *config.Config, fileType livekit.EncodedFileType, filepath string, output interface{}) error {
 	local := false
 	switch o := output.(type) {
 	case *livekit.EncodedFileOutput_S3:
@@ -303,13 +303,13 @@ func (p *Params) updateFileInfo(conf *config.Config, fileType livekit.EncodedFil
 		}
 	}
 
-	filename, err := getFilename(filePath, fileType, p.RoomName, local)
+	filename, err := getFilename(filepath, fileType, p.RoomName, local)
 	if err != nil {
 		return err
 	}
 
 	p.Filename = filename
-	p.FilePath = filePath
+	p.Filepath = filepath
 	p.FileType = fileType
 	p.FileInfo = &livekit.FileInfo{Filename: filename}
 	p.Info.Result = &livekit.EgressInfo_File{File: p.FileInfo}
@@ -317,29 +317,29 @@ func (p *Params) updateFileInfo(conf *config.Config, fileType livekit.EncodedFil
 	return nil
 }
 
-func getFilename(filePath string, fileType livekit.EncodedFileType, roomName string, local bool) (string, error) {
+func getFilename(filepath string, fileType livekit.EncodedFileType, roomName string, local bool) (string, error) {
 	ext := "." + strings.ToLower(fileType.String())
-	if filePath == "" {
+	if filepath == "" {
 		return fmt.Sprintf("%s-%v%s", roomName, time.Now().String(), ext), nil
 	}
 
 	// check for extension
-	if !strings.HasSuffix(filePath, ext) {
-		filePath = filePath + ext
+	if !strings.HasSuffix(filepath, ext) {
+		filepath = filepath + ext
 	}
 
 	// get filename from path
-	idx := strings.LastIndex(filePath, "/")
+	idx := strings.LastIndex(filepath, "/")
 	if idx == -1 {
-		return filePath, nil
+		return filepath, nil
 	}
 
 	if local {
-		if err := os.MkdirAll(filePath[:idx], os.ModeDir); err != nil {
+		if err := os.MkdirAll(filepath[:idx], os.ModeDir); err != nil {
 			return "", err
 		}
-		return filePath, nil
+		return filepath, nil
 	}
 
-	return filePath[idx+1:], nil
+	return filepath[idx+1:], nil
 }

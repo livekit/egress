@@ -6,6 +6,7 @@ package test
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"strconv"
@@ -23,13 +24,15 @@ import (
 )
 
 const (
-	confString      = "log_level: debug"
-	fakeApiKey      = "fake_api_key"
-	fakeSecret      = "fake_secret"
-	fakeUrl         = "fake_ws_url"
 	videoTestInput  = "https://www.youtube.com/watch?v=4cJpiOPKH14&t=25s"
 	audioTestInput  = "https://www.youtube.com/watch?v=eAcFPtCyDYY&t=59s"
 	staticTestInput = "https://www.livekit.io"
+	defaultConfig   = `
+log_level: info
+api_key: fake_key
+api_secret: fake_secret
+ws_url: wss://fake-url.com
+`
 )
 
 type testCase struct {
@@ -44,19 +47,6 @@ type sdkParams struct {
 	audioTrackID string
 	videoTrackID string
 	url          string
-}
-
-func getTestConfig(t *testing.T) *config.Config {
-	conf, err := config.NewConfig(confString)
-	require.NoError(t, err)
-
-	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" || os.Getenv("LIVEKIT_ROOM_NAME") == "" {
-		conf.ApiKey = fakeApiKey
-		conf.ApiSecret = fakeSecret
-		conf.WsUrl = fakeUrl
-	}
-
-	return conf
 }
 
 func TestWebCompositeFile(t *testing.T) {
@@ -158,14 +148,14 @@ func TestWebCompositeStream(t *testing.T) {
 	url := "rtmp://localhost:1935/stream1"
 
 	req := &livekit.StartEgressRequest{
-		EgressId:  "web-composite-stream",
-		RequestId: "web-composite-stream",
+		EgressId:  utils.NewGuid(utils.EgressPrefix),
+		RequestId: utils.NewGuid(utils.RPCPrefix),
 		SentAt:    time.Now().Unix(),
 		Request: &livekit.StartEgressRequest_WebComposite{
 			WebComposite: &livekit.WebCompositeEgressRequest{
-				RoomName:      "myroom",
+				RoomName:      "web-composite-stream",
 				Layout:        "speaker-dark",
-				CustomBaseUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+				CustomBaseUrl: videoTestInput,
 				Output: &livekit.WebCompositeEgressRequest_Stream{
 					Stream: &livekit.StreamOutput{
 						Protocol: livekit.StreamProtocol_RTMP,
@@ -232,42 +222,49 @@ func TestWebCompositeStream(t *testing.T) {
 	}
 }
 
-func TestTrackCompositeFile(t *testing.T) {
-	conf := getTestConfig(t)
+// func TestTrackCompositeFile(t *testing.T) {
+// 	conf := getTestConfig(t)
+//
+// 	var audioTrackID, videoTrackID string
+//
+// 	p := &sdkParams{
+// 		audioTrackID: audioTrackID,
+// 		videoTrackID: videoTrackID,
+// 	}
+//
+// 	for _, test := range []*testCase{} {
+// 		if !t.Run(test.name, func(t *testing.T) {
+// 			runTrackCompositeFileTest(t, conf, p, test)
+// 		}) {
+// 			t.FailNow()
+// 		}
+// 	}
+// }
 
-	if conf.ApiKey == fakeApiKey {
-		t.Skip("api key and secret required")
-	} else {
-		t.Skip("TODO")
-	}
+// func TestTrackEgress(t *testing.T) {}
 
-	// TODO: publish files to room
-	var audioTrackID, videoTrackID string
-
-	p := &sdkParams{
-		audioTrackID: audioTrackID,
-		videoTrackID: videoTrackID,
-	}
-
-	for _, test := range []*testCase{} {
-		if !t.Run(test.name, func(t *testing.T) {
-			runTrackCompositeFileTest(t, conf, p, test)
-		}) {
-			t.FailNow()
+func getTestConfig(t *testing.T) *config.Config {
+	confString := defaultConfig
+	confFile := os.Getenv("EGRESS_CONFIG_FILE")
+	if confFile != "" {
+		b, err := ioutil.ReadFile(confFile)
+		if err == nil {
+			confString = string(b)
 		}
 	}
-}
 
-func TestTrackEgress(t *testing.T) {
-	t.Skip("TODO")
+	conf, err := config.NewConfig(confString)
+	require.NoError(t, err)
+
+	return conf
 }
 
 func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) {
-	filePath, filename := getFileInfo(test, "web")
+	filepath, filename := getFileInfo(conf, test, "web")
 
 	roomName := os.Getenv("LIVEKIT_ROOM_NAME")
 	if roomName == "" {
-		roomName = "web-request"
+		roomName = "web-composite-file"
 	}
 
 	webRequest := &livekit.WebCompositeEgressRequest{
@@ -277,7 +274,7 @@ func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) 
 		Output: &livekit.WebCompositeEgressRequest_File{
 			File: &livekit.EncodedFileOutput{
 				FileType: test.fileType,
-				Filepath: filePath,
+				Filepath: filepath,
 			},
 		},
 	}
@@ -301,7 +298,7 @@ func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) 
 }
 
 func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkParams, test *testCase) {
-	filePath, filename := getFileInfo(test, "track")
+	filepath, filename := getFileInfo(conf, test, "track")
 
 	roomName := os.Getenv("LIVEKIT_ROOM_NAME")
 	if roomName == "" {
@@ -315,7 +312,7 @@ func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkPar
 		Output: &livekit.TrackCompositeEgressRequest_File{
 			File: &livekit.EncodedFileOutput{
 				FileType: test.fileType,
-				Filepath: filePath,
+				Filepath: filepath,
 			},
 		},
 	}
@@ -338,7 +335,7 @@ func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkPar
 	runFileTest(t, conf, test, req, filename)
 }
 
-func getFileInfo(test *testCase, testType string) (string, string) {
+func getFileInfo(conf *config.Config, test *testCase, testType string) (string, string) {
 	var name string
 	if test.audioOnly {
 		if test.options != nil && test.options.AudioCodec != livekit.AudioCodec_DEFAULT_AC {
@@ -354,18 +351,22 @@ func getFileInfo(test *testCase, testType string) (string, string) {
 		}
 	}
 
-	filename := fmt.Sprintf("/out/%s-%s-%d.%s",
+	filename := fmt.Sprintf("%s-%s-%d.%s",
 		testType, strings.ToLower(name), time.Now().Unix(), strings.ToLower(test.fileType.String()),
 	)
+	filepath := fmt.Sprintf("/out/%s", filename)
 
-	return filename, filename
+	if conf.FileUpload != nil {
+		return filepath, filename
+	}
+	return filepath, filepath
 }
 
 func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit.StartEgressRequest, filename string) {
 	p, err := params.GetPipelineParams(conf, req)
 	require.NoError(t, err)
 
-	if conf.ApiKey == fakeApiKey {
+	if !strings.HasPrefix(conf.ApiKey, "API") || test.inputUrl == staticTestInput {
 		p.CustomInputURL = test.inputUrl
 	}
 
@@ -484,7 +485,7 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)
-				require.Less(t, int32(bitrate), p.VideoBitrate*1000)
+				require.Less(t, int32(bitrate), p.VideoBitrate*1010)
 			}
 		default:
 			t.Fatalf("unrecognized stream type %s", stream.CodecType)

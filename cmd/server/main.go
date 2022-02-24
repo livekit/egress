@@ -22,8 +22,13 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "config",
-				Usage:   "LiveKit Egress config in JSON",
-				EnvVars: []string{"EGRESS_CONFIG"},
+				Usage:   "LiveKit Egress yaml config file",
+				EnvVars: []string{"EGRESS_CONFIG_FILE"},
+			},
+			&cli.StringFlag{
+				Name:    "config-body",
+				Usage:   "LiveKit Egress yaml config body",
+				EnvVars: []string{"EGRESS_CONFIG_BODY"},
 			},
 			&cli.StringFlag{
 				Name:    "request",
