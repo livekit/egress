@@ -21,6 +21,7 @@ const (
 	apiKey    = "LIVEKIT_API_KEY"
 	apiSecret = "LIVEKIT_API_SECRET"
 	url       = "LIVEKIT_WS_URL"
+	roomName  = "LIVEKIT_ROOM_NAME"
 )
 
 // Default target to run when none is specified
@@ -38,10 +39,12 @@ func Integration() error {
 		return err
 	}
 
+	forwardEnv := fmt.Sprintf("-e %s=%s -e %s=%s -e %s=%s -e%s=%s",
+		apiKey, os.Getenv(apiKey), apiSecret, os.Getenv(apiSecret), url, os.Getenv(url), roomName, os.Getenv(roomName))
+
 	return run(
 		"docker build -t livekit-egress-test -f build/test/Dockerfile .",
-		fmt.Sprintf("docker run --rm -e %s=%s -e %s=%s -e %s=%s -v %s/test:/out livekit-egress-test",
-			apiKey, os.Getenv(apiKey), apiSecret, os.Getenv(apiSecret), url, os.Getenv(url), dir),
+		fmt.Sprintf("docker run --rm %s -v %s/test:/out livekit-egress-test", forwardEnv, dir),
 	)
 }
 

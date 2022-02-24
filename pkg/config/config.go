@@ -98,22 +98,6 @@ func NewConfig(confString string) (*Config, error) {
 }
 
 func (c *Config) initLogger() error {
-	// GStreamer log level
-	if os.Getenv("GST_DEBUG") == "" {
-		var gstDebug int
-		switch c.LogLevel {
-		case "debug":
-			gstDebug = 2
-		case "info", "warn", "error":
-			gstDebug = 1
-		case "panic":
-			gstDebug = 0
-		}
-		if err := os.Setenv("GST_DEBUG", fmt.Sprint(gstDebug)); err != nil {
-			return err
-		}
-	}
-
 	conf := zap.NewProductionConfig()
 	if c.LogLevel != "" {
 		lvl := zapcore.Level(0)

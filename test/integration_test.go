@@ -6,6 +6,7 @@ package test
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -22,7 +23,10 @@ import (
 )
 
 const (
-	confString      = "log_level: info"
+	confString      = "log_level: debug"
+	fakeApiKey      = "fake_api_key"
+	fakeSecret      = "fake_secret"
+	fakeUrl         = "fake_ws_url"
 	videoTestInput  = "https://www.youtube.com/watch?v=4cJpiOPKH14&t=25s"
 	audioTestInput  = "https://www.youtube.com/watch?v=eAcFPtCyDYY&t=59s"
 	staticTestInput = "https://www.livekit.io"
@@ -42,9 +46,21 @@ type sdkParams struct {
 	url          string
 }
 
-func TestWebCompositeFile(t *testing.T) {
+func getTestConfig(t *testing.T) *config.Config {
 	conf, err := config.NewConfig(confString)
 	require.NoError(t, err)
+
+	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" || os.Getenv("LIVEKIT_ROOM_NAME") == "" {
+		conf.ApiKey = fakeApiKey
+		conf.ApiSecret = fakeSecret
+		conf.WsUrl = fakeUrl
+	}
+
+	return conf
+}
+
+func TestWebCompositeFile(t *testing.T) {
+	conf := getTestConfig(t)
 
 	for _, test := range []*testCase{
 		{
@@ -137,8 +153,7 @@ func TestWebCompositeFile(t *testing.T) {
 }
 
 func TestWebCompositeStream(t *testing.T) {
-	conf, err := config.NewConfig(confString)
-	require.NoError(t, err)
+	conf := getTestConfig(t)
 
 	url := "rtmp://localhost:1935/stream1"
 
@@ -218,14 +233,13 @@ func TestWebCompositeStream(t *testing.T) {
 }
 
 func TestTrackCompositeFile(t *testing.T) {
-	t.Skip()
+	conf := getTestConfig(t)
 
-	conf, err := config.NewConfig(confString)
-	require.NoError(t, err)
-
-	require.NotEmpty(t, conf.ApiKey)
-	require.NotEmpty(t, conf.ApiSecret)
-	require.NotEmpty(t, conf.WsUrl)
+	if conf.ApiKey == fakeApiKey {
+		t.Skip("api key and secret required")
+	} else {
+		t.Skip("TODO")
+	}
 
 	// TODO: publish files to room
 	var audioTrackID, videoTrackID string
@@ -245,16 +259,19 @@ func TestTrackCompositeFile(t *testing.T) {
 }
 
 func TestTrackEgress(t *testing.T) {
-	t.Skip()
-
-	// TODO
+	t.Skip("TODO")
 }
 
 func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) {
 	filePath, filename := getFileInfo(test, "web")
 
+	roomName := os.Getenv("LIVEKIT_ROOM_NAME")
+	if roomName == "" {
+		roomName = "web-request"
+	}
+
 	webRequest := &livekit.WebCompositeEgressRequest{
-		RoomName:  "web-request",
+		RoomName:  roomName,
 		Layout:    "speaker-dark",
 		AudioOnly: test.audioOnly,
 		Output: &livekit.WebCompositeEgressRequest_File{
@@ -286,8 +303,13 @@ func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) 
 func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkParams, test *testCase) {
 	filePath, filename := getFileInfo(test, "track")
 
+	roomName := os.Getenv("LIVEKIT_ROOM_NAME")
+	if roomName == "" {
+		roomName = "egress-integration"
+	}
+
 	trackRequest := &livekit.TrackCompositeEgressRequest{
-		RoomName:     "egress-integration",
+		RoomName:     roomName,
 		AudioTrackId: params.audioTrackID,
 		VideoTrackId: params.videoTrackID,
 		Output: &livekit.TrackCompositeEgressRequest_File{
@@ -342,7 +364,11 @@ func getFileInfo(test *testCase, testType string) (string, string) {
 func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit.StartEgressRequest, filename string) {
 	p, err := params.GetPipelineParams(conf, req)
 	require.NoError(t, err)
-	p.CustomInputURL = test.inputUrl
+
+	if conf.ApiKey == fakeApiKey {
+		p.CustomInputURL = test.inputUrl
+	}
+
 	rec, err := pipeline.FromParams(conf, p)
 	require.NoError(t, err)
 
