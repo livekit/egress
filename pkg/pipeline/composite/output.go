@@ -23,6 +23,8 @@ type outputBin struct {
 	protocol livekit.StreamProtocol
 	tee      *gst.Element
 	sinks    map[string]*streamSink
+
+	logger logger.Logger
 }
 
 type streamSink struct {
@@ -66,7 +68,7 @@ func (b *outputBin) addSink(url string) error {
 	teeSrcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		// link tee to queue
 		if linkReturn := pad.Link(sink.queue.GetStaticPad("sink")); linkReturn != gst.PadLinkOK {
-			logger.Errorw("failed to link tee to queue", err)
+			b.logger.Errorw("failed to link tee to queue", err)
 		}
 
 		// sync state
@@ -99,13 +101,13 @@ func (b *outputBin) removeSink(url string) error {
 
 		// remove from bin
 		if err := b.bin.RemoveMany(sink.queue, sink.sink); err != nil {
-			logger.Errorw("failed to remove rtmp queue", err)
+			b.logger.Errorw("failed to remove rtmp queue", err)
 		}
 		if err := sink.queue.SetState(gst.StateNull); err != nil {
-			logger.Errorw("failed stop rtmp queue", err)
+			b.logger.Errorw("failed stop rtmp queue", err)
 		}
 		if err := sink.sink.SetState(gst.StateNull); err != nil {
-			logger.Errorw("failed to stop rtmp sink", err)
+			b.logger.Errorw("failed to stop rtmp sink", err)
 		}
 
 		// release tee src pad
@@ -145,6 +147,7 @@ func buildStreamOutputBin(p *params.Params) (*outputBin, error) {
 		protocol: p.StreamProtocol,
 		tee:      tee,
 		sinks:    make(map[string]*streamSink),
+		logger:   p.Logger,
 	}
 
 	for _, url := range p.StreamUrls {
@@ -229,5 +232,6 @@ func buildFileOutputBin(p *params.Params) (*outputBin, error) {
 	return &outputBin{
 		bin:      bin,
 		fileSink: sink,
+		logger:   p.Logger,
 	}, nil
 }

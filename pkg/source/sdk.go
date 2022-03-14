@@ -4,14 +4,16 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	lksdk "github.com/livekit/server-sdk-go"
-	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
+	"github.com/go-logr/logr"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/media"
 	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	lksdk "github.com/livekit/server-sdk-go"
+	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
 
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
@@ -31,12 +33,15 @@ type SDKSource struct {
 	writers  map[string]*trackWriter
 
 	endRecording chan struct{}
+
+	logger logger.Logger
 }
 
 func NewSDKSource(p *params.Params, createWriter func(*webrtc.TrackRemote) (media.Writer, error)) (*SDKSource, error) {
 	s := &SDKSource{
 		room:         lksdk.CreateRoom(p.LKUrl),
 		endRecording: make(chan struct{}),
+		logger:       p.Logger,
 	}
 
 	switch p.Info.Request.(type) {
@@ -58,13 +63,13 @@ func NewSDKSource(p *params.Params, createWriter func(*webrtc.TrackRemote) (medi
 		case strings.EqualFold(track.Codec().MimeType, "audio/opus"):
 			sb = samplebuilder.New(maxAudioLate, &codecs.OpusPacket{}, track.Codec().ClockRate)
 		default:
-			logger.Errorw("could not record track", errors.ErrNotSupported(track.Codec().MimeType))
+			s.logger.Errorw("could not record track", errors.ErrNotSupported(track.Codec().MimeType))
 			return
 		}
 
 		mw, err := createWriter(track)
 		if err != nil {
-			logger.Errorw("could not record track", err)
+			s.logger.Errorw("could not record track", err)
 		}
 
 		tw := &trackWriter{
@@ -72,6 +77,7 @@ func NewSDKSource(p *params.Params, createWriter func(*webrtc.TrackRemote) (medi
 			writer: mw,
 			track:  track,
 			closed: make(chan struct{}),
+			logger: logger.Logger(logr.Logger(p.Logger).WithValues("trackID", track.ID())),
 		}
 		go tw.start()
 
@@ -82,7 +88,7 @@ func NewSDKSource(p *params.Params, createWriter func(*webrtc.TrackRemote) (medi
 	s.room.Callback.OnTrackUnpublished = s.onTrackUnpublished
 	s.room.Callback.OnDisconnected = s.onComplete
 
-	logger.Debugw("connecting to room")
+	s.logger.Debugw("connecting to room")
 	if err := s.room.JoinWithToken(p.LKUrl, p.Token); err != nil {
 		return nil, err
 	}
@@ -170,13 +176,14 @@ type trackWriter struct {
 	writer media.Writer
 	track  *webrtc.TrackRemote
 	closed chan struct{}
+	logger logger.Logger
 }
 
 func (t *trackWriter) start() {
 	defer func() {
 		err := t.writer.Close()
 		if err != nil {
-			logger.Errorw("could not close track writer", err)
+			t.logger.Errorw("could not close track writer", err)
 		}
 	}()
 	for {
@@ -186,14 +193,14 @@ func (t *trackWriter) start() {
 		default:
 			pkt, _, err := t.track.ReadRTP()
 			if err != nil {
-				logger.Errorw("could not read from track", err)
+				t.logger.Errorw("could not read from track", err)
 				return
 			}
 			t.sb.Push(pkt)
 
 			for _, p := range t.sb.PopPackets() {
 				if err = t.writer.WriteRTP(p); err != nil {
-					logger.Errorw("could not write to file", err)
+					t.logger.Errorw("could not write to file", err)
 					return
 				}
 			}
