@@ -3,10 +3,11 @@ package composite
 import (
 	"fmt"
 
+	"github.com/tinyzimmer/go-gst/gst"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
-	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
@@ -180,7 +181,7 @@ func buildStreamSink(protocol livekit.StreamProtocol, url string) (*streamSink, 
 	var sink *gst.Element
 	switch protocol {
 	case livekit.StreamProtocol_RTMP:
-		sink, err = gst.NewElementWithName("rtmpsink", fmt.Sprintf("sink_%s", id))
+		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("sink_%s", id))
 		if err != nil {
 			return nil, err
 		}

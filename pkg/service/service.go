@@ -4,11 +4,12 @@ import (
 	"context"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
@@ -85,10 +86,10 @@ func (s *Service) Run() error {
 			// build/verify params
 			pipelineParams, err := params.GetPipelineParams(s.conf, req)
 			if err != nil {
-				s.sendEgressResponse(req.EgressId, nil, err)
+				s.sendEgressResponse(req.RequestId, nil, err)
 				continue
 			} else {
-				s.sendEgressResponse(req.EgressId, pipelineParams.Info, nil)
+				s.sendEgressResponse(req.RequestId, pipelineParams.Info, nil)
 
 				// TODO: don't block while running
 				s.handleEgress(pipelineParams)

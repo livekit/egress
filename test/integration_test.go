@@ -14,9 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
-	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/pipeline"
@@ -145,7 +146,7 @@ func TestWebCompositeFile(t *testing.T) {
 func TestWebCompositeStream(t *testing.T) {
 	conf := getTestConfig(t)
 
-	url := "rtmp://localhost:1935/stream1"
+	url := "rtmp://localhost:1935/live/stream1"
 
 	req := &livekit.StartEgressRequest{
 		EgressId:  utils.NewGuid(utils.EgressPrefix),
@@ -194,7 +195,7 @@ func TestWebCompositeStream(t *testing.T) {
 	verifyStream(t, p, url)
 
 	// add another, check both
-	url2 := "rtmp://localhost:1935/stream2"
+	url2 := "rtmp://localhost:1935/live/stream2"
 	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
 		EgressId:      req.EgressId,
 		AddOutputUrls: []string{url2},

@@ -24,7 +24,7 @@ type Config struct {
 	Insecure     bool   `yaml:"insecure"`
 
 	S3         *S3Config    `yaml:"s3"`
-	Azure      *AzureConfig `yaml:"az_blob"`
+	Azure      *AzureConfig `yaml:"azure"`
 	GCP        *GCPConfig   `yaml:"gcp"`
 	FileUpload interface{}  `yaml:"-"` // one of S3, Azure, or GCP
 }
