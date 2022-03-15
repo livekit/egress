@@ -9,13 +9,67 @@ The recorder launches Chrome and navigates to the supplied url, grabs audio from
 frame buffer, and feeds them into GStreamer. You can write the output as mp4 to a file or upload it to s3, or forward 
 the output to one or multiple rtmp streams.
 
-## Quick start
+## Deployment
 
-Start by creating a `config.yaml`:
+### Config
+
+The Egress service takes a yaml config file:
+
+```yaml
+# required fields
+api_key: livekit server api key. LIVEKIT_API_KEY env can be used instead
+api_secret: livekit server api secret. LIVEKIT_API_SECRET env can be used instead
+ws_url: livekit server websocket url. LIVEKIT_WS_URL can be used instead
+redis:
+  address: must be the same redis address used by your livekit server
+  username: redis username
+  password: redis password
+  db: redis db
+
+# optional fields
+health_port: if used, will open an http port for health checks
+log_level: debug, info, warn, or error (default info)
+template_base: can be used to host custom templates (default https://recorder.livekit.io/#)
+insecure: can be used to connect to an insecure websocket (default false)
+
+# file upload config
+s3:
+  access_key: AWS_ACCESS_KEY_ID env can be used instead
+  secret: AWS_SECRET_ACCESS_KEY env can be used instead
+  region: AWS_DEFAULT_REGION env can be used instead
+  endpoint: optional custom endpoint
+  bucket: bucket to upload files to
+azure:
+  account_name: AZURE_STORAGE_ACCOUNT env can be used instead
+  account_key: AZURE_STORAGE_KEY env can be used instead
+  container_name: container to upload files to
+gcp:
+  credentials_json: GOOGLE_APPLICATION_CREDENTIALS env can be used instead
+  bucket: bucket to upload files to
 ```
-file_output:
-    local: true
-```
+
+The config file can be added to a mounted volume with its location passed in the EGRESS_CONFIG_FILE env var, or its body can be passed in the EGRESS_CONFIG_BODY env var.
+
+## API
+
+The Egress API exists within our server sdks ([Go Egress Client](https://github.com/livekit/server-sdk-go/blob/main/egressclient.go) and [Js Egress Client](https://github.com/livekit/server-sdk-js/blob/main/src/EgressClient.ts)).  
+The API is part of LiveKit Server, which uses redis to communicate with the Egress service.
+
+### StartWebCompositeEgress
+
+
+
+### UpdateLayout
+
+### UpdateStream
+
+### ListEgress
+
+### StopEgress
+
+## Local testing
+
+
 
 Next, create a `request.json`:
 ```json
@@ -232,57 +286,6 @@ Stop the stream:
 docker stop rtmp-demo
 ```
 
-## Config
-
-Below is a full config, with all optional parameters.
-
-* `api_key`, `api_secret`, and `ws_url` are required for recording LiveKit rooms
-* `log_level: error` is recommended for production setups. GStreamer logs can be noisy
-* `redis` is required for [service mode](#service-mode)
-* Only one of `file_output.s3` or `file_output.azblob` should be set.
-* `defaults` can be overridden by a request
-
-All config parameters:
-
-```yaml
-api_key: livekit server api key
-api_secret: livekit server api secret
-ws_url: livekit server ws url
-health_port: http port to serve status (optional)
-log_level: valid levels are debug, info, warn, error, fatal, or panic. Defaults to debug
-template_address: template url base, can be used to host your own templates. Defaults to https://recorder.livekit.io/#
-insecure: should only be used for local testing
-redis: (service mode only)
-    address: redis address, including port
-    username: redis username (optional)
-    password: redis password (optional)
-    db: redis db (optional)
-file_output:
-    local: true/false (will default to true if you don't supply s3 config)
-    s3: (required if using s3 output)
-        access_key: s3 access key
-        secret: s3 access secret
-        region: s3 region
-        bucket: s3 bucket
-        endpoint: s3 server endpoint (optional - for use with minio)
-    azblob: (required if using azure blob output)
-        account_name: azure blob account
-        account_key: azure blob access key
-        container_name: azure blob container name
-    gcp: (required if using gcp storage output)
-        bucket: bucket name
-defaults:
-    preset: defaults to "NONE", see options below. If preset is used, all other options are ignored.
-    width: defaults to 1920
-    height: defaults to 1080
-    depth: defaults to 24
-    framerate: defaults to 30
-    audio_bitrate: defaults to 128 (kbps)
-    audio_frequency: defaults to 44100 (Hz)
-    video_bitrate: defaults to 4500 (kbps)
-    profile: x264 encoding profile (baseline, main, or high). defaults to main
-```
-
 ### Presets
 
 | Preset       | width | height | framerate | video_bitrate |
@@ -337,10 +340,6 @@ All request options:
 }
 ```
 
-## Service Mode
-
-Simply deploy the service, and submit requests through your LiveKit server.
-
 ### How it works
 
 The service listens to a redis subscription and waits for the LiveKit server to make a reservation. Once the reservation
@@ -348,10 +347,6 @@ is made to ensure availability, the server sends a StartRecording request to the
 
 
 A single service instance can record one room at a time.
-
-### Deployment
-
-See guides and deployment docs at https://docs.livekit.io/guides/deploy/recorder.
 
 ### Development
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
@@ -29,6 +30,9 @@ type Params struct {
 	Info       *livekit.EgressInfo
 	FileInfo   *livekit.FileInfo
 	StreamInfo map[string]*livekit.StreamInfo
+
+	// logger
+	Logger logger.Logger
 }
 
 type SourceParams struct {
@@ -82,6 +86,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		RoomId:   request.RoomId,
 		Status:   livekit.EgressStatus_EGRESS_STARTING,
 	}
+	params.Logger = logger.Logger(logger.GetLogger().WithValues("egressID", request.EgressId))
 
 	var format string
 	switch req := request.Request.(type) {

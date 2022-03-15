@@ -13,6 +13,7 @@ import (
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-egress/pkg/config"
@@ -31,6 +32,8 @@ type WebSource struct {
 
 	startRecording chan struct{}
 	endRecording   chan struct{}
+
+	logger logger.Logger
 }
 
 func init() {
@@ -41,6 +44,7 @@ func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 	s := &WebSource{
 		startRecording: make(chan struct{}),
 		endRecording:   make(chan struct{}),
+		logger:         p.Logger,
 	}
 
 	var inputUrl string
@@ -55,11 +59,11 @@ func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 	}
 
 	if err := s.launchXvfb(p.Display, p.Width, p.Height, p.Depth); err != nil {
-		logger.Errorw("failed to launch xvfb", err)
+		s.logger.Errorw("failed to launch xvfb", err)
 		return nil, err
 	}
 	if err := s.launchChrome(inputUrl, p.Display, p.Width, p.Height, conf.Insecure); err != nil {
-		logger.Errorw("failed to launch chrome", err, "display", p.Display)
+		s.logger.Errorw("failed to launch chrome", err, "display", p.Display)
 		s.Close()
 		return nil, err
 	}
@@ -69,7 +73,7 @@ func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 
 func (s *WebSource) launchXvfb(display string, width, height, depth int32) error {
 	dims := fmt.Sprintf("%dx%dx%d", width, height, depth)
-	logger.Debugw("launching xvfb", "display", display, "dims", dims)
+	s.logger.Debugw("launching xvfb", "display", display, "dims", dims)
 	xvfb := exec.Command("Xvfb", display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
 	if err := xvfb.Start(); err != nil {
 		return err
@@ -79,7 +83,7 @@ func (s *WebSource) launchXvfb(display string, width, height, depth int32) error
 }
 
 func (s *WebSource) launchChrome(url, display string, width, height int32, insecure bool) error {
-	logger.Debugw("launching chrome", "url", url)
+	s.logger.Debugw("launching chrome", "url", url)
 
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.NoFirstRun,
@@ -160,7 +164,7 @@ func (s *WebSource) launchChrome(url, display string, width, height int32, insec
 					}
 				}
 			}
-			logger.Debugw(fmt.Sprintf("chrome console %s", ev.Type.String()), "msg", strings.Join(args, " "))
+			s.logger.Debugw(fmt.Sprintf("chrome %s: %s", ev.Type.String(), strings.Join(args, " ")))
 		}
 	})
 
@@ -198,7 +202,7 @@ func (s *WebSource) Close() {
 	if s.xvfb != nil {
 		err := s.xvfb.Process.Signal(os.Interrupt)
 		if err != nil {
-			logger.Errorw("failed to kill xvfb", err)
+			s.logger.Errorw("failed to kill xvfb", err)
 		}
 		s.xvfb = nil
 	}

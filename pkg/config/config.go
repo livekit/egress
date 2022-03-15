@@ -5,11 +5,13 @@ import (
 	"os"
 
 	"github.com/go-logr/zapr"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 )
 
 type Config struct {
@@ -107,6 +109,6 @@ func (c *Config) initLogger() error {
 	}
 
 	l, _ := conf.Build()
-	logger.SetLogger(zapr.NewLogger(l), "livekit-egress")
+	logger.SetLogger(zapr.NewLogger(l).WithValues("nodeID", utils.NewGuid("NE_")), "livekit-egress")
 	return nil
 }
