@@ -1,7 +1,6 @@
 package sink
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -14,8 +13,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/livekit/protocol/livekit"
 	"google.golang.org/api/option"
+
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
@@ -40,18 +40,12 @@ func UploadS3(conf *livekit.S3Upload, p params.FileParams) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	size := fileInfo.Size()
-
-	buffer := make([]byte, size)
-	if _, err = file.Read(buffer); err != nil {
-		return "", err
-	}
 
 	_, err = s3.New(sess).PutObject(&s3.PutObjectInput{
 		Bucket:        aws.String(conf.Bucket),
 		Key:           aws.String(p.Filepath),
-		Body:          bytes.NewReader(buffer),
-		ContentLength: aws.Int64(size),
+		Body:          file,
+		ContentLength: aws.Int64(fileInfo.Size()),
 		ContentType:   aws.String(getContentType(p.FileType)),
 	})
 	if err != nil {
