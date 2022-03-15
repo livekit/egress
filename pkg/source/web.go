@@ -164,7 +164,7 @@ func (s *WebSource) launchChrome(url, display string, width, height int32, insec
 					}
 				}
 			}
-			s.logger.Debugw(fmt.Sprintf("chrome console %s", ev.Type.String()), "msg", strings.Join(args, " "))
+			s.logger.Debugw(fmt.Sprintf("chrome %s: %s", ev.Type.String(), strings.Join(args, " ")))
 		}
 	})
 

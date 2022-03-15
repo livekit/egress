@@ -183,10 +183,13 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 	if !p.isStream {
 		switch u := p.FileUpload.(type) {
 		case *livekit.S3Upload:
+			p.logger.Debugw("uploading to s3")
 			p.fileInfo.Location, err = sink.UploadS3(u, p.FileParams)
 		case *livekit.GCPUpload:
+			p.logger.Debugw("uploading to gcp")
 			p.fileInfo.Location, err = sink.UploadGCP(u, p.FileParams)
 		case *livekit.AzureBlobUpload:
+			p.logger.Debugw("uploading to azure")
 			p.fileInfo.Location, err = sink.UploadAzure(u, p.FileParams)
 		default:
 			p.fileInfo.Location = p.Filepath
