@@ -276,7 +276,7 @@ func (p *Params) updateStreamInfo(protocol livekit.StreamProtocol, urls []string
 	for _, url := range urls {
 		switch protocol {
 		case livekit.StreamProtocol_RTMP:
-			if !strings.HasPrefix(url, "rtmp://") {
+			if !strings.HasPrefix(url, "rtmp://") && !strings.HasPrefix(url, "rtmps://") {
 				return errors.ErrInvalidUrl(url, protocol)
 			}
 		}
