@@ -8,10 +8,12 @@ require (
 	github.com/aws/aws-sdk-go v1.43.3
 	github.com/chromedp/cdproto v0.0.0-20220208224320-6efb837e6bc2
 	github.com/chromedp/chromedp v0.7.7
+	github.com/go-logr/logr v1.2.2
 	github.com/go-logr/zapr v1.2.2
 	github.com/go-redis/redis/v8 v8.11.4
 	github.com/livekit/protocol v0.11.14-0.20220223230744-2d72f8bc52aa
 	github.com/livekit/server-sdk-go v0.8.6-0.20220222190301-ff5d426671e2
+	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.4
 	github.com/pion/webrtc/v3 v3.1.22
 	github.com/pkg/errors v0.9.1
@@ -40,7 +42,6 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/eapache/channels v1.1.0 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
-	github.com/go-logr/logr v1.2.2 // indirect
 	github.com/go-logr/stdr v1.0.0 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
