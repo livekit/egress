@@ -13,6 +13,7 @@ import (
 
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/pkg/load"
 	"github.com/livekit/livekit-egress/pkg/pipeline"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
@@ -119,6 +120,11 @@ func (s *Service) Stop(kill bool) {
 }
 
 func (s *Service) handleEgress(pipelineParams *params.Params) {
+	// monitor CPU usage
+	finished := make(chan struct{})
+	defer close(finished)
+	go load.MonitorCPULoad(pipelineParams.Info.EgressId, finished)
+
 	// create the pipeline
 	p, err := pipeline.FromParams(s.conf, pipelineParams)
 	if err != nil {

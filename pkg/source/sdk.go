@@ -89,7 +89,7 @@ func NewSDKSource(p *params.Params, createWriter func(*webrtc.TrackRemote) (medi
 	s.room.Callback.OnDisconnected = s.onComplete
 
 	s.logger.Debugw("connecting to room")
-	if err := s.room.JoinWithToken(p.LKUrl, p.Token); err != nil {
+	if err := s.room.JoinWithToken(p.LKUrl, p.Token, lksdk.WithAutoSubscribe(false)); err != nil {
 		return nil, err
 	}
 

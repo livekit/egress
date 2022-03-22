@@ -5,9 +5,10 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/urfave/cli/v2"
 	"google.golang.org/protobuf/encoding/protojson"
+
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"

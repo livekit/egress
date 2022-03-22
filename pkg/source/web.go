@@ -1,6 +1,7 @@
 package source
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,7 @@ const (
 )
 
 type WebSource struct {
+	pulseSink    string
 	xvfb         *exec.Cmd
 	chromeCancel context.CancelFunc
 
@@ -58,17 +60,40 @@ func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 		)
 	}
 
-	if err := s.launchXvfb(p.Display, p.Width, p.Height, p.Depth); err != nil {
-		s.logger.Errorw("failed to launch xvfb", err)
+	if err := s.loadAudioSink(p.Info.EgressId); err != nil {
+		s.logger.Errorw("failed to load pulse sink", err)
 		return nil, err
 	}
-	if err := s.launchChrome(inputUrl, p.Display, p.Width, p.Height, conf.Insecure); err != nil {
+
+	if err := s.launchXvfb(p.Display, p.Width, p.Height, p.Depth); err != nil {
+		s.logger.Errorw("failed to launch xvfb", err)
+		s.Close()
+		return nil, err
+	}
+	if err := s.launchChrome(inputUrl, p.Info.EgressId, p.Display, p.Width, p.Height, conf.Insecure); err != nil {
 		s.logger.Errorw("failed to launch chrome", err, "display", p.Display)
 		s.Close()
 		return nil, err
 	}
 
 	return s, nil
+}
+
+func (s *WebSource) loadAudioSink(egressID string) error {
+	cmd := exec.Command("pactl",
+		"load-module", "module-null-sink",
+		fmt.Sprintf("sink_name=\"%s\"", egressID),
+		fmt.Sprintf("sink_properties=device.description=\"%s\"", egressID),
+	)
+	var b bytes.Buffer
+	cmd.Stdout = &b
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+
+	s.pulseSink = b.String()
+	return nil
 }
 
 func (s *WebSource) launchXvfb(display string, width, height, depth int32) error {
@@ -82,7 +107,7 @@ func (s *WebSource) launchXvfb(display string, width, height, depth int32) error
 	return nil
 }
 
-func (s *WebSource) launchChrome(url, display string, width, height int32, insecure bool) error {
+func (s *WebSource) launchChrome(url, egressID, display string, width, height int32, insecure bool) error {
 	s.logger.Debugw("launching chrome", "url", url)
 
 	opts := []chromedp.ExecAllocatorOption{
@@ -122,6 +147,9 @@ func (s *WebSource) launchChrome(url, display string, width, height int32, insec
 		chromedp.Flag("autoplay-policy", "no-user-gesture-required"),
 		chromedp.Flag("window-position", "0,0"),
 		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", width, height)),
+
+		// output
+		chromedp.Env(fmt.Sprintf("PULSE_SINK=%s", egressID)),
 		chromedp.Flag("display", display),
 	}
 
@@ -205,5 +233,12 @@ func (s *WebSource) Close() {
 			s.logger.Errorw("failed to kill xvfb", err)
 		}
 		s.xvfb = nil
+	}
+
+	if s.pulseSink != "" {
+		err := exec.Command("pactl", "unload-module", s.pulseSink).Run()
+		if err != nil {
+			s.logger.Errorw("failed to unload pulse sink", err)
+		}
 	}
 }

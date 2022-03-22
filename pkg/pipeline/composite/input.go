@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/media"
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
+
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
@@ -88,6 +89,9 @@ func (b *inputBin) buildAudioElements(p *params.Params) error {
 		if err != nil {
 			return err
 		}
+		if err = pulseSrc.SetProperty("device", fmt.Sprintf("%s.monitor", p.Info.EgressId)); err != nil {
+			return err
+		}
 
 		audioConvert, err := gst.NewElement("audioconvert")
 		if err != nil {
@@ -102,10 +106,9 @@ func (b *inputBin) buildAudioElements(p *params.Params) error {
 			if err != nil {
 				return err
 			}
-			err = audioCapsFilter.SetProperty("caps", gst.NewCapsFromString(
+			if err = audioCapsFilter.SetProperty("caps", gst.NewCapsFromString(
 				"audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2",
-			))
-			if err != nil {
+			)); err != nil {
 				return err
 			}
 
@@ -124,10 +127,9 @@ func (b *inputBin) buildAudioElements(p *params.Params) error {
 			if err != nil {
 				return err
 			}
-			err = audioCapsFilter.SetProperty("caps", gst.NewCapsFromString(
+			if err = audioCapsFilter.SetProperty("caps", gst.NewCapsFromString(
 				fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", p.AudioFrequency),
-			))
-			if err != nil {
+			)); err != nil {
 				return err
 			}
 
@@ -138,6 +140,7 @@ func (b *inputBin) buildAudioElements(p *params.Params) error {
 			if err = faac.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
 				return err
 			}
+
 			b.audioElements = append(b.audioElements, audioCapsFilter, faac)
 		}
 
@@ -191,10 +194,9 @@ func (b *inputBin) buildVideoElements(p *params.Params) error {
 		if err != nil {
 			return err
 		}
-		err = videoFramerateCaps.SetProperty("caps", gst.NewCapsFromString(
+		if err = videoFramerateCaps.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf("video/x-raw,framerate=%d/1", p.Framerate),
-		))
-		if err != nil {
+		)); err != nil {
 			return err
 		}
 
