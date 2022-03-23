@@ -29,8 +29,7 @@ type Service struct {
 	shutdown chan struct{}
 	kill     chan struct{}
 
-	pipelines       sync.Map
-	hasWebComposite bool
+	pipelines sync.Map
 }
 
 func NewService(conf *config.Config, bus utils.MessageBus) *Service {
@@ -96,7 +95,7 @@ func (s *Service) Run() error {
 			switch req.Request.(type) {
 			case *livekit.StartEgressRequest_WebComposite:
 				// limit to one web composite at a time for now
-				if s.hasWebComposite || !sysload.CanAcceptRequest(req) {
+				if !sysload.CanAcceptRequest(req) {
 					logger.Debugw("rejecting request, not enough cpu")
 					continue
 				}
@@ -118,10 +117,6 @@ func (s *Service) Run() error {
 			}
 
 			sysload.AcceptRequest(req)
-			if isWebComposite {
-				s.hasWebComposite = true
-			}
-
 			logger.Debugw("request claimed", "egressID", req.EgressId)
 
 			// build/verify params
@@ -141,7 +136,12 @@ func (s *Service) Run() error {
 				s.sendEgressResult(info)
 			} else {
 				s.pipelines.Store(req.EgressId, info)
-				go s.handleEgress(p)
+				if isWebComposite {
+					// isolate web composite for now
+					s.handleEgress(p)
+				} else {
+					go s.handleEgress(p)
+				}
 			}
 		}
 	}
