@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -13,10 +15,12 @@ import (
 
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
-	"github.com/livekit/livekit-egress/pkg/load"
 	"github.com/livekit/livekit-egress/pkg/pipeline"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
+	"github.com/livekit/livekit-egress/pkg/sysload"
 )
+
+const shutdownTimer = time.Second * 30
 
 type Service struct {
 	ctx      context.Context
@@ -24,6 +28,9 @@ type Service struct {
 	bus      utils.MessageBus
 	shutdown chan struct{}
 	kill     chan struct{}
+
+	pipelines       sync.Map
+	hasWebComposite bool
 }
 
 func NewService(conf *config.Config, bus utils.MessageBus) *Service {
@@ -51,13 +58,25 @@ func (s *Service) Run() error {
 		}
 	}()
 
+	go sysload.MonitorCPULoad(s.shutdown)
+
 	for {
 		logger.Debugw("waiting for requests")
 
 		select {
 		case <-s.shutdown:
 			logger.Infow("shutting down")
-			return nil
+			for {
+				empty := true
+				s.pipelines.Range(func(key, value interface{}) bool {
+					empty = false
+					return false
+				})
+				if empty {
+					return nil
+				}
+				time.Sleep(shutdownTimer)
+			}
 		case msg := <-requests.Channel():
 			logger.Debugw("request received")
 
@@ -72,7 +91,22 @@ func (s *Service) Run() error {
 				continue
 			}
 
-			// TODO: CPU estimation
+			// check cpu load
+			var isWebComposite bool
+			switch req.Request.(type) {
+			case *livekit.StartEgressRequest_WebComposite:
+				// limit to one web composite at a time for now
+				if s.hasWebComposite || !sysload.CanAcceptRequest(req) {
+					logger.Debugw("rejecting request, not enough cpu")
+					continue
+				}
+				isWebComposite = true
+			default:
+				if !sysload.CanAcceptRequest(req) {
+					logger.Debugw("rejecting request, not enough cpu")
+					continue
+				}
+			}
 
 			// claim request
 			claimed, err := s.bus.Lock(s.ctx, egress.RequestChannel(req.EgressId), egress.LockDuration)
@@ -82,6 +116,12 @@ func (s *Service) Run() error {
 			} else if !claimed {
 				continue
 			}
+
+			sysload.AcceptRequest(req)
+			if isWebComposite {
+				s.hasWebComposite = true
+			}
+
 			logger.Debugw("request claimed", "egressID", req.EgressId)
 
 			// build/verify params
@@ -89,18 +129,35 @@ func (s *Service) Run() error {
 			if err != nil {
 				s.sendEgressResponse(req.RequestId, nil, err)
 				continue
-			} else {
-				s.sendEgressResponse(req.RequestId, pipelineParams.Info, nil)
+			}
 
-				// TODO: don't block while running
-				s.handleEgress(pipelineParams)
+			s.sendEgressResponse(req.RequestId, pipelineParams.Info, nil)
+
+			// create the pipeline
+			p, err := pipeline.FromParams(s.conf, pipelineParams)
+			info := pipelineParams.Info
+			if err != nil {
+				info.Error = err.Error()
+				s.sendEgressResult(info)
+			} else {
+				s.pipelines.Store(req.EgressId, info)
+				go s.handleEgress(p)
 			}
 		}
 	}
 }
 
-func (s *Service) Status() string {
-	return "TODO"
+func (s *Service) Status() ([]byte, error) {
+	info := map[string]interface{}{
+		"CpuLoad": sysload.GetCPULoad(),
+	}
+	s.pipelines.Range(func(key, value interface{}) bool {
+		egressInfo := value.(*livekit.EgressInfo)
+		info[key.(string)] = egressInfo
+		return true
+	})
+
+	return json.Marshal(info)
 }
 
 func (s *Service) Stop(kill bool) {
@@ -119,20 +176,8 @@ func (s *Service) Stop(kill bool) {
 	}
 }
 
-func (s *Service) handleEgress(pipelineParams *params.Params) {
-	// monitor CPU usage
-	finished := make(chan struct{})
-	defer close(finished)
-	go load.MonitorCPULoad(pipelineParams.Info.EgressId, finished)
-
-	// create the pipeline
-	p, err := pipeline.FromParams(s.conf, pipelineParams)
-	if err != nil {
-		info := pipelineParams.Info
-		info.Error = err.Error()
-		s.sendEgressResult(info)
-		return
-	}
+func (s *Service) handleEgress(p pipeline.Pipeline) {
+	defer s.pipelines.Delete(p.Info().EgressId)
 
 	// subscribe to request channel
 	requests, err := s.bus.Subscribe(s.ctx, egress.RequestChannel(p.Info().EgressId))
