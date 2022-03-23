@@ -52,5 +52,11 @@ type handler struct {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
-	_, _ = w.Write([]byte(h.svc.Status()))
+	info, err := h.svc.Status()
+	if err != nil {
+		logger.Errorw("failed to read status", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(info)
 }
