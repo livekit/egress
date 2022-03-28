@@ -26,17 +26,10 @@ var (
 	numCPUs         = float64(runtime.NumCPU())
 	warningThrottle = throttle.New(time.Minute)
 
-	promSysLoad prometheus.Gauge
 	promCPULoad prometheus.Gauge
 )
 
 func Init(nodeID string, close chan struct{}, isAvailable func() float64) {
-	promSysLoad = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "node",
-		Name:        "sys_load",
-		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": "EGRESS"},
-	})
 	promCPULoad = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   "livekit",
 		Subsystem:   "node",
@@ -50,7 +43,6 @@ func Init(nodeID string, close chan struct{}, isAvailable func() float64) {
 		ConstLabels: prometheus.Labels{"node_id": nodeID},
 	}, isAvailable)
 
-	prometheus.MustRegister(promSysLoad)
 	prometheus.MustRegister(promCPULoad)
 	prometheus.MustRegister(promNodeAvailable)
 
@@ -69,9 +61,7 @@ func monitorCPULoad(close chan struct{}) {
 			next, _ := cpu.Get()
 			idlePercent := float64(next.Idle-prev.Idle) / float64(next.Total-prev.Total)
 			idleCPUs.Store(numCPUs * idlePercent)
-
-			promSysLoad.Set(100 - idlePercent)
-			promCPULoad.Set(numCPUs - (numCPUs * idlePercent))
+			promCPULoad.Set(1 - idlePercent)
 
 			if idlePercent < 0.1 {
 				warningThrottle(func() { logger.Infow("high cpu load", "load", 100-idlePercent) })
