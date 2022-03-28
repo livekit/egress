@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/protobuf/proto"
 
@@ -53,20 +52,6 @@ func NewService(conf *config.Config, bus utils.MessageBus) *Service {
 			Addr:    fmt.Sprintf(":%d", conf.PrometheusPort),
 			Handler: promhttp.Handler(),
 		}
-
-		promNodeAvailable := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Namespace:   "livekit",
-			Subsystem:   "egress",
-			Name:        "available",
-			ConstLabels: prometheus.Labels{"node_id": conf.NodeID},
-		}, func() float64 {
-			if s.isIdle() {
-				return 1
-			}
-			return 0
-		})
-
-		prometheus.MustRegister(promNodeAvailable)
 	}
 
 	return s
@@ -85,6 +70,13 @@ func (s *Service) Run() error {
 		}()
 	}
 
+	sysload.Init(s.conf.NodeID, s.shutdown, func() float64 {
+		if s.isIdle() {
+			return 1
+		}
+		return 0
+	})
+
 	requests, err := s.bus.Subscribe(s.ctx, egress.StartChannel)
 	if err != nil {
 		return err
@@ -95,8 +87,6 @@ func (s *Service) Run() error {
 			logger.Errorw("failed to unsubscribe", err)
 		}
 	}()
-
-	go sysload.MonitorCPULoad(s.shutdown)
 
 	for {
 		logger.Debugw("waiting for requests")
