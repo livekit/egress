@@ -3,9 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/egress"
@@ -23,13 +27,15 @@ import (
 const shutdownTimer = time.Second * 30
 
 type Service struct {
-	ctx      context.Context
-	conf     *config.Config
-	bus      utils.MessageBus
-	shutdown chan struct{}
-	kill     chan struct{}
+	ctx  context.Context
+	conf *config.Config
+	bus  utils.MessageBus
+
+	promServer *http.Server
 
 	pipelines sync.Map
+	shutdown  chan struct{}
+	kill      chan struct{}
 }
 
 func NewService(conf *config.Config, bus utils.MessageBus) *Service {
@@ -40,11 +46,36 @@ func NewService(conf *config.Config, bus utils.MessageBus) *Service {
 		shutdown: make(chan struct{}),
 		kill:     make(chan struct{}),
 	}
+
+	if conf.PrometheusPort > 0 {
+		s.promServer = &http.Server{
+			Addr:    fmt.Sprintf(":%d", conf.PrometheusPort),
+			Handler: promhttp.Handler(),
+		}
+	}
+
 	return s
 }
 
 func (s *Service) Run() error {
 	logger.Debugw("starting service")
+
+	if s.promServer != nil {
+		promListener, err := net.Listen("tcp", s.promServer.Addr)
+		if err != nil {
+			return err
+		}
+		go func() {
+			_ = s.promServer.Serve(promListener)
+		}()
+	}
+
+	sysload.Init(s.conf.NodeID, s.shutdown, func() float64 {
+		if s.isIdle() {
+			return 1
+		}
+		return 0
+	})
 
 	requests, err := s.bus.Subscribe(s.ctx, egress.StartChannel)
 	if err != nil {
@@ -57,25 +88,16 @@ func (s *Service) Run() error {
 		}
 	}()
 
-	go sysload.MonitorCPULoad(s.shutdown)
-
 	for {
 		logger.Debugw("waiting for requests")
 
 		select {
 		case <-s.shutdown:
 			logger.Infow("shutting down")
-			for {
-				empty := true
-				s.pipelines.Range(func(key, value interface{}) bool {
-					empty = false
-					return false
-				})
-				if empty {
-					return nil
-				}
+			for !s.isIdle() {
 				time.Sleep(shutdownTimer)
 			}
+			return nil
 		case msg := <-requests.Channel():
 			logger.Debugw("request received")
 
@@ -95,6 +117,10 @@ func (s *Service) Run() error {
 			switch req.Request.(type) {
 			case *livekit.StartEgressRequest_WebComposite:
 				// limit to one web composite at a time for now
+				if !s.isIdle() {
+					logger.Debugw("rejecting web composite request, already recording")
+					continue
+				}
 				if !sysload.CanAcceptRequest(req) {
 					logger.Debugw("rejecting request, not enough cpu")
 					continue
@@ -174,6 +200,15 @@ func (s *Service) Stop(kill bool) {
 			close(s.kill)
 		}
 	}
+}
+
+func (s *Service) isIdle() bool {
+	idle := true
+	s.pipelines.Range(func(key, value interface{}) bool {
+		idle = false
+		return false
+	})
+	return idle
 }
 
 func (s *Service) handleEgress(p pipeline.Pipeline) {

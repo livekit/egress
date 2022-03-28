@@ -2,16 +2,9 @@ name: Go Test
 on:
   workflow_dispatch:
   push:
-    branches:
-      - '*'
-    paths-ignore:
-      - web
+    branches: [ main ]
   pull_request:
-    types:
-      - opened
-      - reopened
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   integration:

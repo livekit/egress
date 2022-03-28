@@ -20,15 +20,19 @@ type Config struct {
 	ApiSecret string      `yaml:"api_secret"` // required (env LIVEKIT_API_SECRET)
 	WsUrl     string      `yaml:"ws_url"`     // required (env LIVEKIT_WS_URL)
 
-	HealthPort   int    `yaml:"health_port"`
-	LogLevel     string `yaml:"log_level"`
-	TemplateBase string `yaml:"template_base"`
-	Insecure     bool   `yaml:"insecure"`
+	HealthPort     int    `yaml:"health_port"`
+	PrometheusPort int    `yaml:"prometheus_port"`
+	LogLevel       string `yaml:"log_level"`
+	TemplateBase   string `yaml:"template_base"`
+	Insecure       bool   `yaml:"insecure"`
 
-	S3         *S3Config    `yaml:"s3"`
-	Azure      *AzureConfig `yaml:"azure"`
-	GCP        *GCPConfig   `yaml:"gcp"`
-	FileUpload interface{}  `yaml:"-"` // one of S3, Azure, or GCP
+	S3    *S3Config    `yaml:"s3"`
+	Azure *AzureConfig `yaml:"azure"`
+	GCP   *GCPConfig   `yaml:"gcp"`
+
+	// internal
+	NodeID     string      `yaml:"-"`
+	FileUpload interface{} `yaml:"-"` // one of S3, Azure, or GCP
 }
 
 type RedisConfig struct {
@@ -64,6 +68,7 @@ func NewConfig(confString string) (*Config, error) {
 		ApiKey:       os.Getenv("LIVEKIT_API_KEY"),
 		ApiSecret:    os.Getenv("LIVEKIT_API_SECRET"),
 		WsUrl:        os.Getenv("LIVEKIT_WS_URL"),
+		NodeID:       utils.NewGuid("NE_"),
 	}
 	if confString != "" {
 		if err := yaml.Unmarshal([]byte(confString), conf); err != nil {
@@ -109,6 +114,6 @@ func (c *Config) initLogger() error {
 	}
 
 	l, _ := conf.Build()
-	logger.SetLogger(zapr.NewLogger(l).WithValues("nodeID", utils.NewGuid("NE_")), "livekit-egress")
+	logger.SetLogger(zapr.NewLogger(l).WithValues("nodeID", c.NodeID), "livekit-egress")
 	return nil
 }

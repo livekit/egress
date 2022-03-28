@@ -6,6 +6,7 @@ import (
 
 	"github.com/frostbyte73/go-throttle"
 	"github.com/mackerelio/go-osstat/cpu"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/logger"
@@ -24,9 +25,31 @@ var (
 	pendingCPUs     atomic.Float64
 	numCPUs         = float64(runtime.NumCPU())
 	warningThrottle = throttle.New(time.Minute)
+
+	promCPULoad prometheus.Gauge
 )
 
-func MonitorCPULoad(close chan struct{}) {
+func Init(nodeID string, close chan struct{}, isAvailable func() float64) {
+	promCPULoad = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "node",
+		Name:        "cpu_load",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": "EGRESS"},
+	})
+	promNodeAvailable := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "available",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
+	}, isAvailable)
+
+	prometheus.MustRegister(promCPULoad)
+	prometheus.MustRegister(promNodeAvailable)
+
+	go monitorCPULoad(close)
+}
+
+func monitorCPULoad(close chan struct{}) {
 	prev, _ := cpu.Get()
 
 	for {
@@ -38,9 +61,12 @@ func MonitorCPULoad(close chan struct{}) {
 			next, _ := cpu.Get()
 			idlePercent := float64(next.Idle-prev.Idle) / float64(next.Total-prev.Total)
 			idleCPUs.Store(numCPUs * idlePercent)
+			promCPULoad.Set(1 - idlePercent)
+
 			if idlePercent < 0.1 {
 				warningThrottle(func() { logger.Infow("high cpu load", "load", 100-idlePercent) })
 			}
+
 			prev = next
 		}
 	}
