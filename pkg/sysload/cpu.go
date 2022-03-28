@@ -71,7 +71,7 @@ func monitorCPULoad(close chan struct{}) {
 			idleCPUs.Store(numCPUs * idlePercent)
 
 			promSysLoad.Set(100 - idlePercent)
-			promCPULoad.Set(numCPUs * idlePercent)
+			promCPULoad.Set(numCPUs - (numCPUs * idlePercent))
 
 			if idlePercent < 0.1 {
 				warningThrottle(func() { logger.Infow("high cpu load", "load", 100-idlePercent) })
