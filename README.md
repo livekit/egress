@@ -5,9 +5,92 @@ Record any website using our recorder, or deploy our service to manage it for yo
 
 ## How it works
 
-The recorder launches Chrome and navigates to the supplied url, grabs audio from pulse and video from a virtual 
-frame buffer, and feeds them into GStreamer. You can write the output as mp4 to a file or upload it to s3, or forward 
-the output to one or multiple rtmp streams.
+Depending on your request type, the egress service will either launch a web template in Chrome and connect to the room 
+(web composite requests), or it will use the sdk directly (track and track composite requests). It uses GStreamer to
+encode, and can output to a file or to one or more streams.
+
+## API
+
+All RPC definitions and options can be found [here](https://github.com/livekit/protocol/blob/main/livekit_egress.proto).  
+
+The Egress API exists within our server sdks ([Go Egress Client](https://github.com/livekit/server-sdk-go/blob/main/egressclient.go) 
+and [JS Egress Client](https://github.com/livekit/server-sdk-js/blob/main/src/EgressClient.ts)), and our
+[cli](https://github.com/livekit/livekit-cli/blob/main/cmd/livekit-cli/egress.go) can be used to submit requests manually.  
+The API is part of LiveKit Server, which uses redis to communicate with the Egress service.
+
+The following examples are using the Go SDK.
+
+```go
+ctx := context.Background()
+egressClient := lksdk.NewEgressClient(url, apiKey, secret)
+```
+
+### StartWebCompositeEgress
+
+Starts a web composite egress (uses a web template).
+
+```go
+request := &livekit.WebCompositeEgressRequest{
+    RoomName:  "my-room",
+    Layout:    "speaker-dark",
+    Output: &livekit.WebCompositeEgressRequest_Stream{
+        Stream: &livekit.StreamOutput{
+            Protocol: livekit.StreamProtocol_RTMP,
+            Urls:     []string{"rtmp://live.twitch.tv/app/<stream-key>"},
+        },
+    },
+}
+
+info, err := egressClient.StartWebCompositeEgress(ctx, request)
+egressID := info.EgressId
+```
+
+Available layouts include `speaker-dark`, `speaker-light`, `grid-dark`, and `grid-light`.  
+To create your own web templates, see our [web README](https://github.com/livekit/livekit-egress/blob/main/web/README.md).
+
+### UpdateLayout
+
+Used to change the layout on an active WebCompositeEgress.
+
+```go
+info, err := egressClient.UpdateLayout(ctx, &livekit.UpdateLayoutRequest{
+    EgressId: egressID,
+    Layout:   "grid-dark",
+})
+```
+
+### UpdateStream
+
+Used to add or remove stream urls from an active stream
+
+```go
+info, err := egressClient.UpdateStream(ctx, &livekit.UpdateStreamRequest{
+	EgressId:      egressID,
+	AddOutputUrls: []string{"rtmp://a.rtmp.youtube.com/live2/<stream-key>"}
+})
+```
+
+### ListEgress
+
+Used to list active egress. Does not include completed egress.
+
+```go
+res, err := egressClient.ListEgress(ctx, &livekit.ListEgressRequest{})
+for _, item := range res.Items {
+	fmt.Println(item.EgressId)
+}
+```
+
+
+### StopEgress
+
+Stops an active egress.
+
+```go
+info, err := egressClient.StopEgress(ctx, &livekit.StopEgressRequest{
+	EgressId: egressID,
+})
+```
 
 ## Deployment
 
@@ -28,11 +111,12 @@ redis:
 
 # optional fields
 health_port: if used, will open an http port for health checks
+prometheus_port: port used to collect prometheus metrics. Used for autoscaling
 log_level: debug, info, warn, or error (default info)
 template_base: can be used to host custom templates (default https://recorder.livekit.io/#)
 insecure: can be used to connect to an insecure websocket (default false)
 
-# file upload config
+# file upload config - only one of the following
 s3:
   access_key: AWS_ACCESS_KEY_ID env can be used instead
   secret: AWS_SECRET_ACCESS_KEY env can be used instead
@@ -50,370 +134,46 @@ gcp:
 
 The config file can be added to a mounted volume with its location passed in the EGRESS_CONFIG_FILE env var, or its body can be passed in the EGRESS_CONFIG_BODY env var.
 
-## API
+### Autoscaling
 
-The Egress API exists within our server sdks ([Go Egress Client](https://github.com/livekit/server-sdk-go/blob/main/egressclient.go) and [Js Egress Client](https://github.com/livekit/server-sdk-js/blob/main/src/EgressClient.ts)).  
-The API is part of LiveKit Server, which uses redis to communicate with the Egress service.
+The `livekit_egress_available` Prometheus metric is provided to support autoscaling. `prometheus_port` must be defined in your config.
 
-### StartWebCompositeEgress
+## Local Testing and Development
 
+Running `mage test` will run the test suite on your machine, and will dump the resulting files into livekit-egress/test.
 
+To run these tests against your own LiveKit rooms, a deployed LiveKit server with a secure websocket url is required. 
+First, create a `livekit-egress/test/config.yaml`:
 
-### UpdateLayout
-
-### UpdateStream
-
-### ListEgress
-
-### StopEgress
-
-## Local testing
-
-
-
-Next, create a `request.json`:
-```json
-{
-  "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-  "filepath": "/out/demo.mp4"
-}
-```
-
-Start the recording:
-```shell
-mkdir -p ~/livekit/recordings
-
-docker run --rm --name quick-demo \
-    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
-    -e EGRESS_REQUEST="$(cat basic.json)" \
-    -v ~/livekit/recordings:/out \
-    livekit/livekit-egress
-```
-
-Then, to stop the recording:
-```shell
-docker stop quick-demo
-```
-
-You should find a `~/livekit/recordings/demo.mp4`.
-
-## Recording LiveKit rooms
-
-If you already have a LiveKit server deployed with SSL, recording a room is simple. If not, skip to the next example.
-
-Update your `config.yaml` with the same key and secret as your deployed server, along with your server websocket address:
 ```yaml
-api_key: <livekit-server-api-key>
-api_secret: <livekit-server-api-secret>
-ws_url: <livekit-server-ws-url>
+log_level: info
+api_key: your-api-key
+api_secret: your-api-secret
+ws_url: your-wss-url
 ```
 
-Create a `room.json`:
-```json
-{
-  "template": {
-      "layout": "speaker-dark",
-      "room_name": "my-room"
-  },
-  "filepath": "out/room.mp4"
-}
-```
-
-Join the room, either using https://example.livekit.io, or using your own client
-
-Start the recording:
-```shell
-docker run --rm --name room-demo \
-    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
-    -e EGRESS_REQUEST="$(cat room.json)" \
-    -v ~/livekit/recordings:/out \
-    livekit/livekit-egress
-```
-
-To stop recording, either leave the room, or `docker stop room-demo`. You'll find the file at `~/livekit/recordings/room.mp4`
-
-## Recording local rooms
-
-First, find your IP as seen by docker:
-* on linux, this should be `172.17.0.1`
-* on mac or windows, run `docker run -it --rm alpine nslookup host.docker.internal` and you should see something like
-  `Name:	host.docker.internal Address: 192.168.65.2`
-
-Update your `config.yaml` with `ws_url` using this IP, along with adding your `api_key` and `api_secret`, and `insecure`:
-```yaml
-api_key: <livekit-server-api-key>
-api_secret: <livekit-server-api-secret>
-ws_url: ws://192.168.65.2:7880
-insecure: true
-```
-
-Create a `room.json`:
-```json
-{
-  "template": {
-      "layout": "speaker-dark",
-      "room_name": "my-room"
-  },
-  "filepath": "out/room.mp4"
-}
-```
-
-Generate a token for yourself using livekit-server:
-```shell
-./bin/livekit-server --keys "{api_key}: {api_secret}" create-join-token --room my-room --identity me
-```
-
-Start your server using `node-ip` from above:
-```shell
-./bin/livekit-server --keys "{api_key}: {api_secret}" --node-ip 192.168.65.2 --dev
-```
-
-Open https://example.livekit.io, enter the `token` you generated, and connect (keep `ws://localhost:7880` as the LiveKit URL).
-
-Start the recording:
-```shell
-docker run --rm --network host --name local-demo \
-    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
-    -e EGRESS_REQUEST="$(cat room.json)" \
-    -v ~/livekit/recordings:/out \
-    livekit/livekit-egress
-```
-
-To stop recording, either leave the room, or `docker stop local-demo`. You'll find the file at `~/livekit/recordings/room.mp4`
-
-## Uploading to S3
-
-Update `file_output` in your `config.yaml`:
-```yaml
-file_output:
-    s3:
-        access_key: <s3-access-key>
-        secret: <s3-secret>
-        region: <s3-region>
-        bucket: <s3-bucket>
-```
-
-Create a `s3.json`:
-```json
-{
-    "template": {
-        "layout": "speaker-dark",
-        "room_name": "my-room"
-    },
-    "filepath": "path/filename.mp4",
-    "options": {
-        "preset": "HD_60"
-    }
-}
-```
-This time, we've added the `HD_60` preset. This will record at 1280x720, 60fps (the default is 1920x1080, 30fps).
-You can find the other presets and options [below](#presets).
-
-
-Join the room, and start the recording:
-```shell
-docker run --rm --name s3-demo \
-    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
-    -e EGRESS_REQUEST="$(cat s3.json)" \
-    livekit/livekit-egress
-```
-
-End the recording:
-```shell
-docker stop s3-demo
-```
-
-After the recording is stopped, the file will be uploaded to your S3 bucket.
-
-## Uploading to GCP
-
-Update `file_output` in your `config.yaml`:
-```yaml
-file_output:
-    local: false
-    gcp:
-        bucket: <storage-bucket-name>
-```
-
-Ensure you have a `room.json` created.
-Join the room, and start the recording. Be sure to include your GCP SA credentials:
-```shell
-docker run --rm --name gcp-demo \
-    -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/keys/FILENAME.json -v /path/to/local/sa-key.json:/tmp/keys/FILENAME.json:ro \
-    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
-    -e EGRESS_REQUEST="$(cat room.json)" \
-    livekit/livekit-egress
-```
-
-End the recording:
-```shell
-docker stop gcp-demo
-```
-
-## Rtmp Output
-
-Create a `rtmp.json` (if you have a Twitch account you can fill in your stream key, otherwise replace the rtmp url with your provider):
-```json
-{
-    "template": {
-        "layout": "speaker-dark",
-        "room_name": "my-room"
-    },
-    "rtmp": {
-        "urls": ["rtmp://live.twitch.tv/app/<stream-key>"]
-    },
-    "options": {
-        "width": "1280",
-        "height": "720",
-        "video_bitrate": 2048
-    }
-}
-```
-This time, we've set custom options to output 720p with a lower bitrate (2048 kbps - the default is 3000 kpbs). If you have sufficient bandwidth, try using `preset: FULL_HD_60` instead for a high quality stream.
-
-Join the room, then start the stream:
-```shell
-docker run --rm --name rtmp-demo \
-    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
-    -e EGRESS_REQUEST="$(cat rtmp.json)" \
-    livekit/livekit-egress
-```
-Note: with Twitch, it will take about 25 seconds for them to process before they begin showing the stream. 
-May be different with other providers.
-
-Stop the stream:
-```shell
-docker stop rtmp-demo
-```
-
-### Presets
-
-| Preset       | width | height | framerate | video_bitrate |
-|---           |---    |---     |---        |---            |
-| "HD_30"      | 1280  | 720    | 30        | 3000          |
-| "HD_60"      | 1280  | 720    | 60        | 4500          |
-| "FULL_HD_30" | 1920  | 1080   | 30        | 4500          |
-| "FULL_HD_60" | 1920  | 1080   | 60        | 6000          |
-
-If preset is used, all other options will be ignored.
-All presets use `depth: 24`, `audio_bitrate: 128`, `audio_frequency: 44100`, and `profile: main`.
-
-## Requests
-
-See [StartRecordingRequest](https://github.com/livekit/protocol/blob/main/livekit_recording.proto#L24).
-When using standalone mode, the request can be input as a json file. In service mode, these requests will be made through
-the LiveKit server's recording api.
-
-* Input: either `url` or `template`
-  * `url`: any url that chrome can connect to for recording
-  * `template`: `layout` and `room_name` required. `base_url` is optional, used for custom templates
-  * We currently have 4 templates available; `speaker-light`, `speaker-dark`, `grid-light`, and `grid-dark`. Check out our [web README](https://github.com/livekit/livekit-egress/tree/main/web) to learn more or create your own.
-* Output: either `filepath` or `rtmp`. File output and stream output cannot be mixed
-  * `filepath`: whether writing to a local file, s3, azure blob, or gcp storage, this path will be used. Must end with `.mp4`
-  * `rtmp`: a list of rtmp urls to stream to
-* `options`: will override anything in `config.defaults`. Using `preset` will override all other options
-
-All request options:
-```json
-{
-    "url": "website-to-record.com",
-    "template": {
-        "layout": "<grid|speaker>-<light|dark>",
-        "room_name": "my-room",
-        "base_url": "my-template-host.com"
-    },
-    "filepath": "path/output.mp4",
-    "rtmp": {
-        "urls": ["rtmp://stream-url-1.com", "rtmp://stream-url-2.com"]
-    },
-    "options": {
-        "preset": "FULL_HD_30",
-        "width": 1920,
-        "height": 1080,
-        "depth": 24,
-        "framerate": 30,
-        "audio_bitrate": 128,
-        "audio_frequency": 44100,
-        "video_bitrate": 4500,
-        "profile": "main"
-    }
-}
-```
-
-### How it works
-
-The service listens to a redis subscription and waits for the LiveKit server to make a reservation. Once the reservation
-is made to ensure availability, the server sends a StartRecording request to the reserved instance.
-
-
-A single service instance can record one room at a time.
-
-### Development
-
-This is **not** recommended for a production setup - the following redis changes make your redis server completely 
-accessible to the internet, and using `--network host` with your docker run command is also not recommended in production.
-
-To run against a local livekit server, you'll need to do the following:
-* open `/usr/local/etc/redis.conf` and comment out the line that says `bind 127.0.0.1`
-* change `protected-mode yes` to `protected-mode no` in the same file
-* add `--network host` to your `docker run` command
-* find your IP as seen by docker
-  * `ws_url` needs to be set using the IP as Docker sees it
-  * on linux, this should be `172.17.0.1`
-  * on mac or windows, run `docker run -it --rm alpine nslookup host.docker.internal` and you should see something like
-    `Name:	host.docker.internal
-    Address: 192.168.65.2`
-* update your `redis` and `ws_url` to use this IP instead of `localhost`, and set `insecure` to true in your `config.yaml`
-* your livekit-server must be run using `--node-ip` set to the above IP
-
-These changes allow the service to connect to your local redis instance from inside the docker container.
-Finally, to build and run:
-```shell
-docker build -t livekit-egress .
-docker run --network host \
-    -e SERVICE_MODE=1 \
-    -e LIVEKIT_EGRESS_CONFIG="$(cat config.yaml)" \
-    livekit-egress
-```
-You can then use our [cli](https://github.com/livekit/livekit-cli) to submit recording requests to your server.
+Join a room using https://example.livekit.io/#/ or your own client, then run `LIVEKIT_ROOM_NAME=my-room mage integration test/config.yaml`.  
+This will test recording different file types, output settings, and streams against your room.
 
 ## FAQ
 
-### I get a `"no recorders available"` error when sending a StartRecording request
+### I get a `"no response from egress service"` error when sending a request
 
-* Your livekit server cannot reach your recorder through redis. Make sure they are both able to reach the same redis db.
+* Your livekit server cannot an egress instance through redis. Make sure they are both able to reach the same redis db.
+* Each instance currently only accepts one WebCompositeRequest at a time - if it's already in use, you'll need to deploy more instances or set up autoscaling.
 
-### I get a different error when sending a StartRecording request
+### I get a different error when sending a request
 
-* Make sure you're using the latest cli, server sdks, livekit-server and livekit-egress.
-  This is still in beta, and we still occasionally release breaking changes.
+* Make sure you've updated to the latest cli, server sdks, livekit-server and livekit-egress. It's still in beta, and we are updating things regularly.
 
 ### I'm getting a broken mp4 file
 
-* There is currently a bug where the recorder doesn't work if it isn't receiving video - if your `EndRecordingRequest`
-  isn't stopping the recording, it's usually either because there's no video, or because it never connected to the room.
-  See https://github.com/livekit/livekit-egress/issues/22
-
-* GStreamer needs to be properly shut down - if the process is killed, the file will be unusable.   
-  Make sure you're stopping the recording with either a `docker stop` or an `EndRecordingRequest`.
-
-### Still getting a broken file. How can I debug?
-
-* Start with a `url` request recording from, for example, YouTube.
-* If the `url` request works, try a `template` request next.
-* Join the room yourself by connecting on https://example.livekit.io - recording an empty room will not work.
-* If the `template` request doesn't work, the recorder probably isn't connecting to the room.
-  Using `log_level: debug`, the recorder should print a message that says `launching chrome` along with a url. 
-  Try navigating to this url in your browser to see if it connects to the room.
-
-### My rtmp output is missing video. How can I debug?
-* Start with a `url` request recording from, for example, YouTube.
-* If the `url` request works, try a `template` request next.
-* Join the room yourself by connecting on https://example.livekit.io - recording an empty room will not work.
-* Try streaming to a different rtmp endpoint. For testing, we use Twitch and [RTSP Simple Server](https://github.com/aler9/rtsp-simple-server).
+* GStreamer needs to be properly shut down - if the process is killed, the file will be unusable. Make sure you're stopping the recording with a `StopEgressRequest`.
 
 ### I'm seeing GStreamer warnings/errors. Is this normal?
 
+* `GStreamer-CRITICAL **: 20:22:13.875: gst_mini_object_unref: assertion 'GST_MINI_OBJECT_REFCOUNT_VALUE (mini_object) > 0' failed`
+  * Occurs when streaming to rtmp - this is a gst bug, and is safe to ignore.
 * `WARN flvmux ... Got backwards dts! (0:01:10.379000000 < 0:01:10.457000000)`
   * Occurs when streaming to rtmp - safe to ignore. These warnings occur due to live sources being used for the flvmux. The dts difference should be small (under 150ms).
 
@@ -421,11 +181,4 @@ You can then use our [cli](https://github.com/livekit/livekit-cli) to submit rec
 
 * It's possible, but not recommended. To do so, you would need gstreamer and all the plugins installed, along with xvfb,
   and have a pulseaudio server running.
-* Since it records from system audio, each recorder needs to be run on its own machine or VM. 
-
-### How do I autoscale?
-* Currently, it's not possible to keep X recorders available at all times, although we plan to add that in the future.
-* In the meantime, you can autoscale based on CPU - each instance consistently uses 2.5-3 CPU while recording.
-* Autoscaling by listening to webhooks and launching a new instance is possible, but not recommended.
-  Note that each instance requires its own VM, and they are CPU intensive - with 16 cores on the host you should only 
-  expect to be able to run 4 or 5 instances.
+* Since it records from system audio, each recorder needs to be run on its own machine or VM.
