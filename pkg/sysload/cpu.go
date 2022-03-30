@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	minIdleWebComposite   = 3
+	minIdleRoomComposite  = 3
 	minIdleTrackComposite = 2
 	minIdleTrack          = 1
 )
@@ -81,8 +81,8 @@ func CanAcceptRequest(req *livekit.StartEgressRequest) bool {
 	available := idleCPUs.Load() - pendingCPUs.Load()
 
 	switch req.Request.(type) {
-	case *livekit.StartEgressRequest_WebComposite:
-		accept = available > minIdleWebComposite
+	case *livekit.StartEgressRequest_RoomComposite:
+		accept = available > minIdleRoomComposite
 	case *livekit.StartEgressRequest_TrackComposite:
 		accept = available > minIdleTrackComposite
 	case *livekit.StartEgressRequest_Track:
@@ -96,8 +96,8 @@ func CanAcceptRequest(req *livekit.StartEgressRequest) bool {
 func AcceptRequest(req *livekit.StartEgressRequest) {
 	var cpuHold float64
 	switch req.Request.(type) {
-	case *livekit.StartEgressRequest_WebComposite:
-		cpuHold = minIdleWebComposite
+	case *livekit.StartEgressRequest_RoomComposite:
+		cpuHold = minIdleRoomComposite
 	case *livekit.StartEgressRequest_TrackComposite:
 		cpuHold = minIdleTrackComposite
 	case *livekit.StartEgressRequest_Track:

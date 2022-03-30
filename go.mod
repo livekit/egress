@@ -12,12 +12,13 @@ require (
 	github.com/go-logr/logr v1.2.2
 	github.com/go-logr/zapr v1.2.2
 	github.com/go-redis/redis/v8 v8.11.4
-	github.com/livekit/protocol v0.11.14-0.20220223230744-2d72f8bc52aa
+	github.com/livekit/protocol v0.12.1-0.20220330223140-6ba1221db330
 	github.com/livekit/server-sdk-go v0.8.6-0.20220222190301-ff5d426671e2
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.4
 	github.com/pion/webrtc/v3 v3.1.22
 	github.com/pkg/errors v0.9.1
+	github.com/prometheus/client_golang v1.11.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tinyzimmer/go-glib v0.0.24
 	github.com/tinyzimmer/go-gst v0.2.32
@@ -76,7 +77,6 @@ require (
 	github.com/pion/turn/v2 v2.0.6 // indirect
 	github.com/pion/udp v0.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_golang v1.11.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.26.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect

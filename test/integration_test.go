@@ -54,7 +54,7 @@ type sdkParams struct {
 	url          string
 }
 
-func TestWebCompositeFile(t *testing.T) {
+func TestRoomCompositeFile(t *testing.T) {
 	conf := getTestConfig(t)
 
 	for _, test := range []*testCase{
@@ -134,7 +134,7 @@ func TestWebCompositeFile(t *testing.T) {
 	} {
 		done := make(chan struct{})
 		go printLoadAvg(t, test.name, done)
-		if !t.Run(test.name, func(t *testing.T) { runWebCompositeFileTest(t, conf, test) }) {
+		if !t.Run(test.name, func(t *testing.T) { runRoomCompositeFileTest(t, conf, test) }) {
 			t.FailNow()
 		}
 		close(done)
@@ -146,7 +146,7 @@ func TestWebCompositeFile(t *testing.T) {
 
 		finished := make(chan struct{})
 		go func() {
-			runWebCompositeFileTest(t, conf, &testCase{
+			runRoomCompositeFileTest(t, conf, &testCase{
 				inputUrl:  audioTestInput,
 				fileType:  livekit.EncodedFileType_OGG,
 				audioOnly: true,
@@ -158,7 +158,7 @@ func TestWebCompositeFile(t *testing.T) {
 			close(finished)
 		}()
 
-		runWebCompositeFileTest(t, conf, &testCase{
+		runRoomCompositeFileTest(t, conf, &testCase{
 			inputUrl:  audioTestInput2,
 			fileType:  livekit.EncodedFileType_OGG,
 			audioOnly: true,
@@ -174,7 +174,7 @@ func TestWebCompositeFile(t *testing.T) {
 	})
 }
 
-func TestWebCompositeStream(t *testing.T) {
+func TestRoomCompositeStream(t *testing.T) {
 	done := make(chan struct{})
 	go printLoadAvg(t, "web-composite-stream", done)
 
@@ -186,18 +186,18 @@ func TestWebCompositeStream(t *testing.T) {
 		EgressId:  utils.NewGuid(utils.EgressPrefix),
 		RequestId: utils.NewGuid(utils.RPCPrefix),
 		SentAt:    time.Now().Unix(),
-		Request: &livekit.StartEgressRequest_WebComposite{
-			WebComposite: &livekit.WebCompositeEgressRequest{
+		Request: &livekit.StartEgressRequest_RoomComposite{
+			RoomComposite: &livekit.RoomCompositeEgressRequest{
 				RoomName:      "web-composite-stream",
 				Layout:        "speaker-dark",
 				CustomBaseUrl: videoTestInput,
-				Output: &livekit.WebCompositeEgressRequest_Stream{
+				Output: &livekit.RoomCompositeEgressRequest_Stream{
 					Stream: &livekit.StreamOutput{
 						Protocol: livekit.StreamProtocol_RTMP,
 						Urls:     []string{url},
 					},
 				},
-				Options: &livekit.WebCompositeEgressRequest_Advanced{
+				Options: &livekit.RoomCompositeEgressRequest_Advanced{
 					Advanced: &livekit.EncodingOptions{
 						AudioCodec: livekit.AudioCodec_AAC,
 					},
@@ -304,7 +304,7 @@ func getTestConfig(t *testing.T) *config.Config {
 	return conf
 }
 
-func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) {
+func runRoomCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) {
 	filepath, filename := getFileInfo(conf, test, "web")
 
 	roomName := os.Getenv("LIVEKIT_ROOM_NAME")
@@ -312,11 +312,11 @@ func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) 
 		roomName = "web-composite-file"
 	}
 
-	webRequest := &livekit.WebCompositeEgressRequest{
+	webRequest := &livekit.RoomCompositeEgressRequest{
 		RoomName:  roomName,
 		Layout:    "speaker-dark",
 		AudioOnly: test.audioOnly,
-		Output: &livekit.WebCompositeEgressRequest_File{
+		Output: &livekit.RoomCompositeEgressRequest_File{
 			File: &livekit.EncodedFileOutput{
 				FileType: test.fileType,
 				Filepath: filepath,
@@ -325,7 +325,7 @@ func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) 
 	}
 
 	if test.options != nil {
-		webRequest.Options = &livekit.WebCompositeEgressRequest_Advanced{
+		webRequest.Options = &livekit.RoomCompositeEgressRequest_Advanced{
 			Advanced: test.options,
 		}
 	}
@@ -334,8 +334,8 @@ func runWebCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) 
 		EgressId:  utils.NewGuid(utils.EgressPrefix),
 		RequestId: utils.NewGuid(utils.RPCPrefix),
 		SentAt:    time.Now().UnixNano(),
-		Request: &livekit.StartEgressRequest_WebComposite{
-			WebComposite: webRequest,
+		Request: &livekit.StartEgressRequest_RoomComposite{
+			RoomComposite: webRequest,
 		},
 	}
 

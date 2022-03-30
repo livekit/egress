@@ -9,6 +9,39 @@ Depending on your request type, the egress service will either launch a web temp
 (web composite requests), or it will use the sdk directly (track and track composite requests). It uses GStreamer to
 encode, and can output to a file or to one or more streams.
 
+## Capabilities
+
+### Egress Types
+
+* Room Composite - export an entire room's video, audio, or both using a web layout
+* Track Composite - transcode up to one audio track and one video track
+* Track - export tracks directly, without transcoding
+
+| Egress Type     | File Output | Stream Output | Websocket Output |
+|-----------------|-------------|---------------|------------------|
+| Room Composite  | ✅           | ✅             |                  |
+| Track Composite | Coming soon | Coming soon   |                  |
+| Track           | Coming soon |               | Coming soon      |
+
+### Supported Codecs and Output Types
+
+* Room Composite and Track Composite egress can be output to an mp4 or ogg file, or an rtmp or rtmps stream.
+
+| Output type  | H264 Baseline | H264 Main   | H264 High | AAC         | OPUS        | 
+|--------------|---------------|-------------|-----------|-------------|-------------|
+| mp4 file     | ✅             | ✅ (default) | ✅         | ✅ (default) | ✅           |
+| ogg file     |               |             |           |             | ✅ (default) |
+| rtmp stream  | ✅             | ✅ (default) | ✅         | ✅ (default) |             |
+| rtmps stream | ✅             | ✅ (default) | ✅         | ✅ (default) |             |
+
+* Track egress is exported directly, without transcoding.
+
+| Track codec | File Output |
+|-------------|-------------|
+| h264        | h264 file   |
+| vp8         | ivf file    |
+| opus        | ogg file    |
+
 ## API
 
 All RPC definitions and options can be found [here](https://github.com/livekit/protocol/blob/main/livekit_egress.proto).  
@@ -25,15 +58,44 @@ ctx := context.Background()
 egressClient := lksdk.NewEgressClient(url, apiKey, secret)
 ```
 
-### StartWebCompositeEgress
+### StartRoomCompositeEgress
 
 Starts a web composite egress (uses a web template).
 
+File example:
 ```go
-request := &livekit.WebCompositeEgressRequest{
+fileRequest := &livekit.RoomCompositeEgressRequest{
     RoomName:  "my-room",
     Layout:    "speaker-dark",
-    Output: &livekit.WebCompositeEgressRequest_Stream{
+    Output: &livekit.RoomCompositeEgressRequest_File{
+        File: &livekit.EncodedFileOutput{
+            FileType: livekit.EncodedFileType_MP4,
+            Filepath: "my-room-test.mp4",
+            Output: &livekit.EncodedFileOutput_S3{
+                S3: &livekit.S3Upload{
+                    AccessKey: "<AWS access key>",
+                    Secret:    "<AWS access secret>",
+                    Region:    "<AWS region>",
+                    Bucket:    "my-bucket",
+                },
+            },
+        },
+    },
+}
+
+info, err := egressClient.StartRoomCompositeEgress(ctx, fileRequest)
+egressID := info.EgressId
+```
+
+* `fileRequest.Output.File.Output` can be left empty if one of `s3`, `azure`, or `gcp` is supplied with your config (see [below](#config)).
+* `fileRequest.Output.File.Filepath` can be left empty, and a unique filename will be generated based on the date and room name.
+
+Stream example:
+```go
+streamRequest := &livekit.RoomCompositeEgressRequest{
+    RoomName:  "my-room",
+    Layout:    "speaker-dark",
+    Output: &livekit.RoomCompositeEgressRequest_Stream{
         Stream: &livekit.StreamOutput{
             Protocol: livekit.StreamProtocol_RTMP,
             Urls:     []string{"rtmp://live.twitch.tv/app/<stream-key>"},
@@ -41,16 +103,16 @@ request := &livekit.WebCompositeEgressRequest{
     },
 }
 
-info, err := egressClient.StartWebCompositeEgress(ctx, request)
-egressID := info.EgressId
+info, err := egressClient.StartRoomCompositeEgress(ctx, streamRequest)
+streamEgressID := info.EgressId
 ```
 
-Available layouts include `speaker-dark`, `speaker-light`, `grid-dark`, and `grid-light`.  
+Built-in layouts include `speaker-dark`, `speaker-light`, `grid-dark`, and `grid-light`.  
 To create your own web templates, see our [web README](https://github.com/livekit/livekit-egress/blob/main/web/README.md).
 
-### UpdateLayout
+### UpdateLayout (coming soon)
 
-Used to change the layout on an active WebCompositeEgress.
+Used to change the web layout on an active RoomCompositeEgress.
 
 ```go
 info, err := egressClient.UpdateLayout(ctx, &livekit.UpdateLayoutRequest{
@@ -65,7 +127,7 @@ Used to add or remove stream urls from an active stream
 
 ```go
 info, err := egressClient.UpdateStream(ctx, &livekit.UpdateStreamRequest{
-	EgressId:      egressID,
+	EgressId:      streamEgressID,
 	AddOutputUrls: []string{"rtmp://a.rtmp.youtube.com/live2/<stream-key>"}
 })
 ```
@@ -116,7 +178,7 @@ log_level: debug, info, warn, or error (default info)
 template_base: can be used to host custom templates (default https://recorder.livekit.io/#)
 insecure: can be used to connect to an insecure websocket (default false)
 
-# file upload config - only one of the following
+# file upload config - only one of the following. Can be overridden 
 s3:
   access_key: AWS_ACCESS_KEY_ID env can be used instead
   secret: AWS_SECRET_ACCESS_KEY env can be used instead
@@ -160,7 +222,7 @@ This will test recording different file types, output settings, and streams agai
 ### I get a `"no response from egress service"` error when sending a request
 
 * Your livekit server cannot an egress instance through redis. Make sure they are both able to reach the same redis db.
-* Each instance currently only accepts one WebCompositeRequest at a time - if it's already in use, you'll need to deploy more instances or set up autoscaling.
+* Each instance currently only accepts one RoomCompositeRequest at a time - if it's already in use, you'll need to deploy more instances or set up autoscaling.
 
 ### I get a different error when sending a request
 

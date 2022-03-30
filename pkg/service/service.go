@@ -113,9 +113,9 @@ func (s *Service) Run() error {
 			}
 
 			// check cpu load
-			var isWebComposite bool
+			var isRoomComposite bool
 			switch req.Request.(type) {
-			case *livekit.StartEgressRequest_WebComposite:
+			case *livekit.StartEgressRequest_RoomComposite:
 				// limit to one web composite at a time for now
 				if !s.isIdle() {
 					logger.Debugw("rejecting web composite request, already recording")
@@ -125,7 +125,7 @@ func (s *Service) Run() error {
 					logger.Debugw("rejecting request, not enough cpu")
 					continue
 				}
-				isWebComposite = true
+				isRoomComposite = true
 			default:
 				if !sysload.CanAcceptRequest(req) {
 					logger.Debugw("rejecting request, not enough cpu")
@@ -162,7 +162,7 @@ func (s *Service) Run() error {
 				s.sendEgressResult(info)
 			} else {
 				s.pipelines.Store(req.EgressId, info)
-				if isWebComposite {
+				if isRoomComposite {
 					// isolate web composite for now
 					s.handleEgress(p)
 				} else {
