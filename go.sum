@@ -286,8 +286,8 @@ github.com/lithammer/shortuuid/v3 v3.0.6/go.mod h1:vMk8ke37EmiewwolSO1NLW8vP4ZaK
 github.com/lithammer/shortuuid/v3 v3.0.7 h1:trX0KTHy4Pbwo/6ia8fscyHoGA+mf1jWbPJVuvyJQQ8=
 github.com/lithammer/shortuuid/v3 v3.0.7/go.mod h1:vMk8ke37EmiewwolSO1NLW8vP4ZaKlRuDIi8tWWmAts=
 github.com/livekit/protocol v0.11.14-0.20220222082129-ec6020d8659b/go.mod h1:3pHsWUtQmWaH8mG0cXrQWpbf3Vo+kj0U+In77CEXu90=
-github.com/livekit/protocol v0.12.1-0.20220330223140-6ba1221db330 h1:C+okCyl3P7sOQouav2o7nr/jlVHiVfpwg29pRMw64EA=
-github.com/livekit/protocol v0.12.1-0.20220330223140-6ba1221db330/go.mod h1:3pHsWUtQmWaH8mG0cXrQWpbf3Vo+kj0U+In77CEXu90=
+github.com/livekit/protocol v0.13.0 h1:AdXMeUzdHeJaqBl/EBO2jwaSLNmtW95LSuNeymBuP2c=
+github.com/livekit/protocol v0.13.0/go.mod h1:3pHsWUtQmWaH8mG0cXrQWpbf3Vo+kj0U+In77CEXu90=
 github.com/livekit/server-sdk-go v0.8.6-0.20220222190301-ff5d426671e2 h1:YNj83zS8Sd5z1gTzCDWLd16vjUzpXqyyhXUEIeENcIs=
 github.com/livekit/server-sdk-go v0.8.6-0.20220222190301-ff5d426671e2/go.mod h1:F3NKKK5E98UcyjpaJS/+0FfzDGWxiWiciK75vDPj/r8=
 github.com/mackerelio/go-osstat v0.2.1 h1:5AeAcBEutEErAOlDz6WCkEvm6AKYgHTUQrfwm5RbeQc=
