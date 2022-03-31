@@ -13,17 +13,17 @@ require (
 	github.com/go-logr/zapr v1.2.2
 	github.com/go-redis/redis/v8 v8.11.4
 	github.com/livekit/protocol v0.13.0
-	github.com/livekit/server-sdk-go v0.8.6-0.20220222190301-ff5d426671e2
+	github.com/livekit/server-sdk-go v0.9.3
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.4
-	github.com/pion/webrtc/v3 v3.1.22
+	github.com/pion/webrtc/v3 v3.1.25-0.20220225075517-37e16a3b15a3
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tinyzimmer/go-glib v0.0.24
 	github.com/tinyzimmer/go-gst v0.2.32
 	github.com/urfave/cli/v2 v2.3.0
-	go.uber.org/atomic v1.7.0
+	go.uber.org/atomic v1.9.0
 	go.uber.org/zap v1.21.0
 	google.golang.org/api v0.70.0
 	google.golang.org/protobuf v1.27.1
@@ -62,9 +62,9 @@ require (
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.2 // indirect
-	github.com/pion/dtls/v2 v2.1.2 // indirect
-	github.com/pion/ice/v2 v2.1.20 // indirect
-	github.com/pion/interceptor v0.1.7 // indirect
+	github.com/pion/dtls/v2 v2.1.3 // indirect
+	github.com/pion/ice/v2 v2.2.1 // indirect
+	github.com/pion/interceptor v0.1.8 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.5 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
@@ -74,7 +74,7 @@ require (
 	github.com/pion/srtp/v2 v2.0.5 // indirect
 	github.com/pion/stun v0.3.5 // indirect
 	github.com/pion/transport v0.13.0 // indirect
-	github.com/pion/turn/v2 v2.0.6 // indirect
+	github.com/pion/turn/v2 v2.0.8 // indirect
 	github.com/pion/udp v0.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect

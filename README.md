@@ -196,6 +196,14 @@ gcp:
 
 The config file can be added to a mounted volume with its location passed in the EGRESS_CONFIG_FILE env var, or its body can be passed in the EGRESS_CONFIG_BODY env var.
 
+### Version Compatibility
+
+Egress is still in beta and subject to change. The following versions are compatible:
+
+| livekit-egress | protocol | livekit-server | server-sdk-go | server-sdk-js | livekit-cli |
+|----------------|----------|----------------|---------------|---------------|-------------|
+| v0.4+          | v0.13.0+ | v0.15.7+       | v0.9.3+       | v0.5.11+      | v0.7.2+     |
+
 ### Autoscaling
 
 The `livekit_egress_available` Prometheus metric is provided to support autoscaling. `prometheus_port` must be defined in your config.
@@ -226,7 +234,7 @@ This will test recording different file types, output settings, and streams agai
 
 ### I get a different error when sending a request
 
-* Make sure you've updated to the latest cli, server sdks, livekit-server and livekit-egress. It's still in beta, and we are updating things regularly.
+* Make sure your livekit-egress, livekit-server, server-sdk-go, server-sdk-js, and livekit-cli are compatible (see [version compatibility](#version-compatibility)).
 
 ### I'm getting a broken mp4 file
 
