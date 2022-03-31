@@ -39,7 +39,7 @@ type SDKSource struct {
 
 func NewSDKSource(p *params.Params, createWriter func(*webrtc.TrackRemote) (media.Writer, error)) (*SDKSource, error) {
 	s := &SDKSource{
-		room:         lksdk.CreateRoom(p.LKUrl),
+		room:         lksdk.CreateRoom(),
 		endRecording: make(chan struct{}),
 		logger:       p.Logger,
 	}

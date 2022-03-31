@@ -90,28 +90,28 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 
 	var format string
 	switch req := request.Request.(type) {
-	case *livekit.StartEgressRequest_WebComposite:
-		params.Info.Request = &livekit.EgressInfo_WebComposite{WebComposite: req.WebComposite}
+	case *livekit.StartEgressRequest_RoomComposite:
+		params.Info.Request = &livekit.EgressInfo_RoomComposite{RoomComposite: req.RoomComposite}
 
 		params.IsWebInput = true
 		params.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
-		params.AudioEnabled = !req.WebComposite.VideoOnly
-		params.VideoEnabled = !req.WebComposite.AudioOnly
-		params.RoomName = req.WebComposite.RoomName
-		params.Layout = req.WebComposite.Layout
-		if req.WebComposite.CustomBaseUrl != "" {
-			params.TemplateBase = req.WebComposite.CustomBaseUrl
+		params.AudioEnabled = !req.RoomComposite.VideoOnly
+		params.VideoEnabled = !req.RoomComposite.AudioOnly
+		params.RoomName = req.RoomComposite.RoomName
+		params.Layout = req.RoomComposite.Layout
+		if req.RoomComposite.CustomBaseUrl != "" {
+			params.TemplateBase = req.RoomComposite.CustomBaseUrl
 		} else {
 			params.TemplateBase = conf.TemplateBase
 		}
 
-		switch o := req.WebComposite.Output.(type) {
-		case *livekit.WebCompositeEgressRequest_File:
+		switch o := req.RoomComposite.Output.(type) {
+		case *livekit.RoomCompositeEgressRequest_File:
 			format = o.File.FileType.String()
 			if err := params.updateFileInfo(conf, o.File.FileType, o.File.Filepath, o.File.Output); err != nil {
 				return nil, err
 			}
-		case *livekit.WebCompositeEgressRequest_Stream:
+		case *livekit.RoomCompositeEgressRequest_Stream:
 			format = o.Stream.Protocol.String()
 			if err := params.updateStreamInfo(o.Stream.Protocol, o.Stream.Urls); err != nil {
 				return nil, err
@@ -206,11 +206,11 @@ func getEncodingParams(request *livekit.StartEgressRequest) *Params {
 	var advanced *livekit.EncodingOptions
 
 	switch req := request.Request.(type) {
-	case *livekit.StartEgressRequest_WebComposite:
-		switch opts := req.WebComposite.Options.(type) {
-		case *livekit.WebCompositeEgressRequest_Preset:
+	case *livekit.StartEgressRequest_RoomComposite:
+		switch opts := req.RoomComposite.Options.(type) {
+		case *livekit.RoomCompositeEgressRequest_Preset:
 			preset = opts.Preset
-		case *livekit.WebCompositeEgressRequest_Advanced:
+		case *livekit.RoomCompositeEgressRequest_Advanced:
 			advanced = opts.Advanced
 		}
 	case *livekit.StartEgressRequest_TrackComposite:

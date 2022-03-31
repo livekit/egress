@@ -29,7 +29,7 @@ func FromRequest(conf *config.Config, request *livekit.StartEgressRequest) (Pipe
 
 func FromParams(conf *config.Config, p *params.Params) (Pipeline, error) {
 	switch p.Info.Request.(type) {
-	case *livekit.EgressInfo_WebComposite:
+	case *livekit.EgressInfo_RoomComposite:
 		return composite.NewPipeline(conf, p)
 	case *livekit.EgressInfo_TrackComposite:
 		return composite.NewPipeline(conf, p)
