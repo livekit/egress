@@ -242,7 +242,7 @@ This will test recording different file types, output settings, and streams agai
 ### I'm seeing GStreamer warnings/errors. Is this normal?
 
 * `GStreamer-CRITICAL **: 20:22:13.875: gst_mini_object_unref: assertion 'GST_MINI_OBJECT_REFCOUNT_VALUE (mini_object) > 0' failed`
-  * Occurs when streaming to rtmp - this is a gst bug, and is safe to ignore.
+  * Occurs during audio-only egress - this is a gst bug, and is safe to ignore.
 * `WARN flvmux ... Got backwards dts! (0:01:10.379000000 < 0:01:10.457000000)`
   * Occurs when streaming to rtmp - safe to ignore. These warnings occur due to live sources being used for the flvmux. The dts difference should be small (under 150ms).
 
