@@ -1,12 +1,11 @@
 # LiveKit Egress
 
-All your live recording needs in one place.  
-Record any website using our recorder, or deploy our service to manage it for you.
+Record or stream your LiveKit rooms
 
 ## How it works
 
 Depending on your request type, the egress service will either launch a web template in Chrome and connect to the room 
-(web composite requests), or it will use the sdk directly (track and track composite requests). It uses GStreamer to
+(room composite requests), or it will use the sdk directly (track and track composite requests). It uses GStreamer to
 encode, and can output to a file or to one or more streams.
 
 ## Capabilities
