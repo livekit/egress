@@ -45,20 +45,20 @@ func newInputBin(conf *config.Config, p *params.Params) (*inputBin, error) {
 		bin: gst.NewBin("input"),
 	}
 
+	// source
+	err := b.buildSource(conf, p)
+	if err != nil {
+		return nil, err
+	}
+
 	// audio elements
-	err := b.buildAudioElements(p)
+	err = b.buildAudioElements(p)
 	if err != nil {
 		return nil, err
 	}
 
 	// video elements
 	err = b.buildVideoElements(p)
-	if err != nil {
-		return nil, err
-	}
-
-	// source
-	err = b.buildSource(conf, p)
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +76,61 @@ func newInputBin(conf *config.Config, p *params.Params) (*inputBin, error) {
 	}
 
 	return b, nil
+}
+
+func (b *inputBin) buildSource(conf *config.Config, p *params.Params) error {
+	var err error
+	if p.IsWebInput {
+		b.Source, err = source.NewWebSource(conf, p)
+	} else {
+		// create gstreamer sources
+		p.AudioMimeType = make(chan string, 1)
+		b.audioSrc, err = app.NewAppSrc()
+		if err != nil {
+			return err
+		}
+
+		p.VideoMimeType = make(chan string, 1)
+		b.videoSrc, err = app.NewAppSrc()
+		if err != nil {
+			return err
+		}
+
+		b.Source, err = source.NewSDKSource(p, func(track *webrtc.TrackRemote) (media.Writer, error) {
+			switch {
+			case strings.EqualFold(track.Codec().MimeType, source.MimeTypeOpus):
+				p.AudioMimeType <- source.MimeTypeOpus
+				return &appWriter{src: b.audioSrc}, nil
+			case strings.EqualFold(track.Codec().MimeType, source.MimeTypeVP8):
+				p.VideoMimeType <- source.MimeTypeVP8
+				return &appWriter{src: b.videoSrc}, nil
+			case strings.EqualFold(track.Codec().MimeType, source.MimeTypeH264):
+				p.VideoMimeType <- source.MimeTypeH264
+				return &appWriter{src: b.videoSrc}, nil
+			default:
+				return nil, errors.ErrNotSupported(track.Codec().MimeType)
+			}
+		})
+	}
+
+	return err
+}
+
+type appWriter struct {
+	src *app.Source
+}
+
+func (w *appWriter) WriteRTP(pkt *rtp.Packet) error {
+	b, err := pkt.Marshal()
+	if err != nil {
+		return err
+	}
+	w.src.PushBuffer(gst.NewBufferFromBytes(b))
+	return nil
+}
+
+func (w *appWriter) Close() error {
+	return nil
 }
 
 func (b *inputBin) buildAudioElements(p *params.Params) error {
@@ -143,14 +198,52 @@ func (b *inputBin) buildAudioElements(p *params.Params) error {
 
 			b.audioElements = append(b.audioElements, audioCapsFilter, faac)
 		}
-
 	} else {
-		b.audioSrc, err = app.NewAppSrc()
-		if err != nil {
-			return err
+		mimeType := <-p.AudioMimeType
+		switch mimeType {
+		case source.MimeTypeOpus:
+			b.audioSrc.SetCaps(gst.NewCapsFromString(
+				"audio/x-opus,channel-mapping-family=0,channels=2,rate=48000",
+			))
+			b.audioSrc.SetFormat(gst.FormatTime)
+			b.audioSrc.SetDoTimestamp(true)
+			b.audioSrc.SetLive(true)
+			b.audioElements = append(b.audioElements, b.audioSrc.Element)
+
+			switch p.AudioCodec {
+			case livekit.AudioCodec_OPUS:
+				// do nothing
+			case livekit.AudioCodec_AAC:
+				// TODO: test case
+				opusdec, err := gst.NewElement("opusdec")
+				if err != nil {
+					return err
+				}
+
+				audioCapsFilter, err := gst.NewElement("capsfilter")
+				if err != nil {
+					return err
+				}
+				if err = audioCapsFilter.SetProperty("caps", gst.NewCapsFromString(
+					fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", p.AudioFrequency),
+				)); err != nil {
+					return err
+				}
+
+				faac, err := gst.NewElement("faac")
+				if err != nil {
+					return err
+				}
+				if err = faac.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
+					return err
+				}
+
+				b.audioElements = append(b.audioElements, opusdec, audioCapsFilter, faac)
+			}
+		default:
+			return errors.ErrNotSupported(mimeType)
 		}
 
-		b.audioElements = append(b.audioElements, b.audioSrc.Element)
 	}
 
 	b.audioQueue, err = gst.NewElement("queue")
@@ -161,6 +254,7 @@ func (b *inputBin) buildAudioElements(p *params.Params) error {
 		return err
 	}
 	b.audioElements = append(b.audioElements, b.audioQueue)
+
 	return b.bin.AddMany(b.audioElements...)
 }
 
@@ -228,12 +322,7 @@ func (b *inputBin) buildVideoElements(p *params.Params) error {
 			return err
 		}
 	} else {
-		b.videoSrc, err = app.NewAppSrc()
-		if err != nil {
-			return err
-		}
-
-		b.videoElements = append(b.videoElements, b.videoSrc.Element)
+		// TODO
 	}
 
 	b.videoQueue, err = gst.NewElement("queue")
@@ -300,44 +389,6 @@ func (b *inputBin) buildVPXElements(num int, p *params.Params) error {
 	}
 
 	b.videoElements = append(b.videoElements, vpXEnc, videoProfileCaps)
-	return nil
-}
-
-func (b *inputBin) buildSource(conf *config.Config, p *params.Params) error {
-	var err error
-	if p.IsWebInput {
-		b.Source, err = source.NewWebSource(conf, p)
-	} else {
-		b.Source, err = source.NewSDKSource(p, func(track *webrtc.TrackRemote) (media.Writer, error) {
-			switch {
-			case strings.EqualFold(track.Codec().MimeType, "audio/opus"):
-				return &appWriter{src: b.audioSrc}, nil
-			case strings.EqualFold(track.Codec().MimeType, "video/vp8"),
-				strings.EqualFold(track.Codec().MimeType, "video/h264"):
-				return &appWriter{src: b.videoSrc}, nil
-			default:
-				return nil, errors.ErrNotSupported(track.Codec().MimeType)
-			}
-		})
-	}
-
-	return err
-}
-
-type appWriter struct {
-	src *app.Source
-}
-
-func (w *appWriter) WriteRTP(pkt *rtp.Packet) error {
-	b, err := pkt.Marshal()
-	if err != nil {
-		return err
-	}
-	w.src.PushBuffer(gst.NewBufferFromBytes(b))
-	return nil
-}
-
-func (w *appWriter) Close() error {
 	return nil
 }
 

@@ -26,29 +26,33 @@ type trackPipeline struct {
 }
 
 func NewPipeline(p *params.Params) (*trackPipeline, error) {
-	s, err := source.NewSDKSource(p, func(track *webrtc.TrackRemote) (media.Writer, error) {
-		filename := fmt.Sprintf("%s-%v", track.ID(), time.Now().String())
+	pipeline := &trackPipeline{
+		info:   p.Info,
+		closed: make(chan struct{}),
+	}
 
-		switch {
-		case strings.EqualFold(track.Codec().MimeType, "video/vp8"):
-			return ivfwriter.New(filename + ".ivf")
-		case strings.EqualFold(track.Codec().MimeType, "video/h264"):
-			return h264writer.New(filename + ".h264")
-		case strings.EqualFold(track.Codec().MimeType, "audio/opus"):
-			return oggwriter.New(filename+".ogg", 48000, track.Codec().Channels)
-		default:
-			return nil, errors.ErrNotSupported(track.Codec().MimeType)
-		}
-	})
+	s, err := source.NewSDKSource(p, pipeline.createMediaWriter)
 	if err != nil {
 		return nil, err
 	}
+	pipeline.source = s
 
-	return &trackPipeline{
-		source: s,
-		info:   p.Info,
-		closed: make(chan struct{}),
-	}, nil
+	return pipeline, nil
+}
+
+func (p *trackPipeline) createMediaWriter(track *webrtc.TrackRemote) (media.Writer, error) {
+	filename := fmt.Sprintf("%s-%v", track.ID(), time.Now().String())
+
+	switch {
+	case strings.EqualFold(track.Codec().MimeType, "video/vp8"):
+		return ivfwriter.New(filename + ".ivf")
+	case strings.EqualFold(track.Codec().MimeType, "video/h264"):
+		return h264writer.New(filename + ".h264")
+	case strings.EqualFold(track.Codec().MimeType, "audio/opus"):
+		return oggwriter.New(filename+".ogg", 48000, track.Codec().Channels)
+	default:
+		return nil, errors.ErrNotSupported(track.Codec().MimeType)
+	}
 }
 
 func (p *trackPipeline) Info() *livekit.EgressInfo {

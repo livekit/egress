@@ -1,8 +1,10 @@
 package source
 
 import (
+	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/pion/rtp/codecs"
@@ -20,6 +22,10 @@ import (
 )
 
 const (
+	MimeTypeOpus = "audio/opus"
+	MimeTypeH264 = "video/h264"
+	MimeTypeVP8  = "video/vp8"
+
 	maxVideoLate = 1000 // nearly 2s for fhd video
 	maxAudioLate = 200  // 4s for audio
 )
@@ -40,13 +46,19 @@ type SDKSource struct {
 func NewSDKSource(p *params.Params, createWriter func(*webrtc.TrackRemote) (media.Writer, error)) (*SDKSource, error) {
 	s := &SDKSource{
 		room:         lksdk.CreateRoom(),
+		writers:      make(map[string]*trackWriter),
 		endRecording: make(chan struct{}),
 		logger:       p.Logger,
 	}
 
 	switch p.Info.Request.(type) {
 	case *livekit.EgressInfo_TrackComposite:
-		s.trackIDs = []string{p.AudioTrackID, p.VideoTrackID}
+		if p.AudioEnabled {
+			s.trackIDs = append(s.trackIDs, p.AudioTrackID)
+		}
+		if p.VideoEnabled {
+			s.trackIDs = append(s.trackIDs, p.VideoTrackID)
+		}
 	default:
 		s.trackIDs = []string{p.TrackID}
 	}
@@ -54,13 +66,13 @@ func NewSDKSource(p *params.Params, createWriter func(*webrtc.TrackRemote) (medi
 	s.room.Callback.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		var sb *samplebuilder.SampleBuilder
 		switch {
-		case strings.EqualFold(track.Codec().MimeType, "video/vp8"):
+		case strings.EqualFold(track.Codec().MimeType, MimeTypeVP8):
 			sb = samplebuilder.New(maxVideoLate, &codecs.VP8Packet{}, track.Codec().ClockRate,
 				samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }))
-		case strings.EqualFold(track.Codec().MimeType, "video/h264"):
+		case strings.EqualFold(track.Codec().MimeType, MimeTypeH264):
 			sb = samplebuilder.New(maxVideoLate, &codecs.H264Packet{}, track.Codec().ClockRate,
 				samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }))
-		case strings.EqualFold(track.Codec().MimeType, "audio/opus"):
+		case strings.EqualFold(track.Codec().MimeType, MimeTypeOpus):
 			sb = samplebuilder.New(maxAudioLate, &codecs.OpusPacket{}, track.Codec().ClockRate)
 		default:
 			s.logger.Errorw("could not record track", errors.ErrNotSupported(track.Codec().MimeType))
@@ -105,9 +117,11 @@ func (s *SDKSource) subscribeToTracks() error {
 	for _, trackID := range s.trackIDs {
 		expecting[trackID] = true
 	}
+	fmt.Println("expecting", expecting)
 
 	for _, p := range s.room.GetParticipants() {
 		for _, track := range p.Tracks() {
+			fmt.Println("found", track.SID())
 			if expecting[track.SID()] {
 				if rt, ok := track.(*lksdk.RemoteTrackPublication); ok {
 					err := rt.SetSubscribed(true)
@@ -186,6 +200,8 @@ func (t *trackWriter) start() {
 			t.logger.Errorw("could not close track writer", err)
 		}
 	}()
+
+	started := false
 	for {
 		select {
 		case <-t.closed:
@@ -193,9 +209,16 @@ func (t *trackWriter) start() {
 		default:
 			pkt, _, err := t.track.ReadRTP()
 			if err != nil {
+				if !started && err.Error() == "EOF" {
+					time.Sleep(time.Millisecond * 100)
+					continue
+				}
 				t.logger.Errorw("could not read from track", err)
 				return
+			} else if !started {
+				started = true
 			}
+
 			t.sb.Push(pkt)
 
 			for _, p := range t.sb.PopPackets() {
