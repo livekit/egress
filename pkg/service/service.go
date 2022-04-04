@@ -148,7 +148,7 @@ func (s *Service) Run() error {
 			// build/verify params
 			pipelineParams, err := params.GetPipelineParams(s.conf, req)
 			if err != nil {
-				s.sendEgressResponse(req.RequestId, nil, err)
+				s.sendEgressResponse(req.RequestId, &livekit.EgressInfo{EgressId: req.EgressId}, err)
 				continue
 			}
 
