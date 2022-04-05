@@ -120,7 +120,13 @@ type appWriter struct {
 	src *app.Source
 }
 
+var ready = false
+
 func (w *appWriter) WriteRTP(pkt *rtp.Packet) error {
+	if !ready {
+		return nil
+	}
+
 	b, err := pkt.Marshal()
 	if err != nil {
 		return err
@@ -202,20 +208,42 @@ func (b *inputBin) buildAudioElements(p *params.Params) error {
 		mimeType := <-p.AudioMimeType
 		switch mimeType {
 		case source.MimeTypeOpus:
-			b.audioSrc.SetCaps(gst.NewCapsFromString(
-				"audio/x-opus,channel-mapping-family=0,channels=2,rate=48000",
-			))
-			b.audioSrc.SetFormat(gst.FormatTime)
 			b.audioSrc.SetDoTimestamp(true)
+			b.audioSrc.SetFormat(gst.FormatTime)
 			b.audioSrc.SetLive(true)
-			b.audioElements = append(b.audioElements, b.audioSrc.Element)
+			if err = b.audioSrc.Element.SetProperty("caps", gst.NewCapsFromString(
+				"application/x-rtp,media=audio,payload=111,encoding-name=OPUS,clock-rate=48000",
+			)); err != nil {
+				return err
+			}
+
+			rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
+			if err != nil {
+				return err
+			}
+
+			rtpOpusDepay, err := gst.NewElement("rtpopusdepay")
+			if err != nil {
+				return err
+			}
+
+			b.audioElements = append(b.audioElements, b.audioSrc.Element, rtpJitterBuffer, rtpOpusDepay)
 
 			switch p.AudioCodec {
 			case livekit.AudioCodec_OPUS:
-				// do nothing
+
 			case livekit.AudioCodec_AAC:
-				// TODO: test case
-				opusdec, err := gst.NewElement("opusdec")
+				opusDec, err := gst.NewElement("opusdec")
+				if err != nil {
+					return err
+				}
+
+				audioConvert, err := gst.NewElement("audioconvert")
+				if err != nil {
+					return err
+				}
+
+				audioResample, err := gst.NewElement("audioresample")
 				if err != nil {
 					return err
 				}
@@ -238,7 +266,7 @@ func (b *inputBin) buildAudioElements(p *params.Params) error {
 					return err
 				}
 
-				b.audioElements = append(b.audioElements, opusdec, audioCapsFilter, faac)
+				b.audioElements = append(b.audioElements, opusDec, audioConvert, audioResample, audioCapsFilter, faac)
 			}
 		default:
 			return errors.ErrNotSupported(mimeType)
@@ -322,7 +350,13 @@ func (b *inputBin) buildVideoElements(p *params.Params) error {
 			return err
 		}
 	} else {
-		// TODO
+		mimeType := <-p.VideoMimeType
+		switch mimeType {
+		case source.MimeTypeVP8:
+			// TODO
+		case source.MimeTypeH264:
+			// TODO
+		}
 	}
 
 	b.videoQueue, err = gst.NewElement("queue")

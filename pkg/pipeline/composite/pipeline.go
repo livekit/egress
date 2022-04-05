@@ -22,7 +22,8 @@ import (
 var initialized = false
 
 const (
-	pipelineSource = "pipeline"
+	pipelineMessageSource = "pipeline"
+	inputMessageSource    = "input"
 )
 
 type compositePipeline struct {
@@ -129,23 +130,31 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 				return false
 			}
 		case gst.MessageStateChanged:
-			if !started && msg.Source() == pipelineSource {
-				_, newState := msg.ParseStateChanged()
-				if newState == gst.StatePlaying {
-					started = true
-					startedAt := time.Now().UnixNano()
-					if p.isStream {
-						p.mu.RLock()
-						for _, streamInfo := range p.streamInfo {
-							streamInfo.StartedAt = startedAt
-						}
-						p.mu.RUnlock()
-					} else {
-						p.fileInfo.StartedAt = startedAt
+			if started {
+				return true
+			}
 
+			_, newState := msg.ParseStateChanged()
+			if newState != gst.StatePlaying {
+				return true
+			}
+
+			if msg.Source() == inputMessageSource {
+				ready = true
+			} else if msg.Source() == pipelineMessageSource {
+				started = true
+				startedAt := time.Now().UnixNano()
+				if p.isStream {
+					p.mu.RLock()
+					for _, streamInfo := range p.streamInfo {
+						streamInfo.StartedAt = startedAt
 					}
-					p.info.Status = livekit.EgressStatus_EGRESS_ACTIVE
+					p.mu.RUnlock()
+				} else {
+					p.fileInfo.StartedAt = startedAt
+
 				}
+				p.info.Status = livekit.EgressStatus_EGRESS_ACTIVE
 			}
 		default:
 			p.logger.Debugw(msg.String())

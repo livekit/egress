@@ -41,6 +41,112 @@ func newOutputBin(p *params.Params) (*outputBin, error) {
 	}
 }
 
+func buildFileOutputBin(p *params.Params) (*outputBin, error) {
+	// create elements
+	sink, err := gst.NewElement("filesink")
+	if err != nil {
+		return nil, err
+	}
+	if err = sink.SetProperty("location", p.FileInfo.Filename); err != nil {
+		return nil, err
+	}
+	if err = sink.SetProperty("sync", false); err != nil {
+		return nil, err
+	}
+
+	// create bin
+	bin := gst.NewBin("output")
+	if err = bin.Add(sink); err != nil {
+		return nil, err
+	}
+
+	// add ghost pad
+	ghostPad := gst.NewGhostPad("sink", sink.GetStaticPad("sink"))
+	if !bin.AddPad(ghostPad.Pad) {
+		return nil, errors.ErrGhostPadFailed
+	}
+
+	return &outputBin{
+		bin:      bin,
+		fileSink: sink,
+		logger:   p.Logger,
+	}, nil
+}
+
+func buildStreamOutputBin(p *params.Params) (*outputBin, error) {
+	// create elements
+	tee, err := gst.NewElement("tee")
+	if err != nil {
+		return nil, err
+	}
+
+	bin := gst.NewBin("output")
+	if err = bin.Add(tee); err != nil {
+		return nil, err
+	}
+
+	b := &outputBin{
+		bin:      bin,
+		protocol: p.StreamProtocol,
+		tee:      tee,
+		sinks:    make(map[string]*streamSink),
+		logger:   p.Logger,
+	}
+
+	for _, url := range p.StreamUrls {
+		sink, err := buildStreamSink(b.protocol, url)
+		if err != nil {
+			return nil, err
+		}
+
+		if err = bin.AddMany(sink.queue, sink.sink); err != nil {
+			return nil, err
+		}
+
+		b.sinks[url] = sink
+	}
+
+	// add ghost pad
+	ghostPad := gst.NewGhostPad("sink", tee.GetStaticPad("sink"))
+	if !bin.AddPad(ghostPad.Pad) {
+		return nil, errors.ErrGhostPadFailed
+	}
+
+	return b, nil
+}
+
+func buildStreamSink(protocol livekit.StreamProtocol, url string) (*streamSink, error) {
+	id := utils.NewGuid("")
+
+	queue, err := gst.NewElementWithName("queue", fmt.Sprintf("queue_%s", id))
+	if err != nil {
+		return nil, err
+	}
+	queue.SetArg("leaky", "downstream")
+
+	var sink *gst.Element
+	switch protocol {
+	case livekit.StreamProtocol_RTMP:
+		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("sink_%s", id))
+		if err != nil {
+			return nil, err
+		}
+		if err = sink.SetProperty("sync", false); err != nil {
+			return nil, err
+		}
+		if err = sink.Set("location", url); err != nil {
+			return nil, err
+		}
+		// case livekit.StreamProtocol_SRT:
+		// 	return nil, errors.ErrNotSupported("srt output")
+	}
+
+	return &streamSink{
+		queue: queue,
+		sink:  sink,
+	}, nil
+}
+
 func (b *outputBin) addSink(url string) error {
 	if _, ok := b.sinks[url]; ok {
 		return errors.ErrStreamAlreadyExists
@@ -128,110 +234,4 @@ func (b *outputBin) removeSinkByName(name string) error {
 	}
 
 	return errors.ErrStreamNotFound
-}
-
-func buildStreamOutputBin(p *params.Params) (*outputBin, error) {
-	// create elements
-	tee, err := gst.NewElement("tee")
-	if err != nil {
-		return nil, err
-	}
-
-	bin := gst.NewBin("output")
-	if err = bin.Add(tee); err != nil {
-		return nil, err
-	}
-
-	b := &outputBin{
-		bin:      bin,
-		protocol: p.StreamProtocol,
-		tee:      tee,
-		sinks:    make(map[string]*streamSink),
-		logger:   p.Logger,
-	}
-
-	for _, url := range p.StreamUrls {
-		sink, err := buildStreamSink(b.protocol, url)
-		if err != nil {
-			return nil, err
-		}
-
-		if err = bin.AddMany(sink.queue, sink.sink); err != nil {
-			return nil, err
-		}
-
-		b.sinks[url] = sink
-	}
-
-	// add ghost pad
-	ghostPad := gst.NewGhostPad("sink", tee.GetStaticPad("sink"))
-	if !bin.AddPad(ghostPad.Pad) {
-		return nil, errors.ErrGhostPadFailed
-	}
-
-	return b, nil
-}
-
-func buildStreamSink(protocol livekit.StreamProtocol, url string) (*streamSink, error) {
-	id := utils.NewGuid("")
-
-	queue, err := gst.NewElementWithName("queue", fmt.Sprintf("queue_%s", id))
-	if err != nil {
-		return nil, err
-	}
-	queue.SetArg("leaky", "downstream")
-
-	var sink *gst.Element
-	switch protocol {
-	case livekit.StreamProtocol_RTMP:
-		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("sink_%s", id))
-		if err != nil {
-			return nil, err
-		}
-		if err = sink.SetProperty("sync", false); err != nil {
-			return nil, err
-		}
-		if err = sink.Set("location", url); err != nil {
-			return nil, err
-		}
-		// case livekit.StreamProtocol_SRT:
-		// 	return nil, errors.ErrNotSupported("srt output")
-	}
-
-	return &streamSink{
-		queue: queue,
-		sink:  sink,
-	}, nil
-}
-
-func buildFileOutputBin(p *params.Params) (*outputBin, error) {
-	// create elements
-	sink, err := gst.NewElement("filesink")
-	if err != nil {
-		return nil, err
-	}
-	if err = sink.SetProperty("location", p.FileInfo.Filename); err != nil {
-		return nil, err
-	}
-	if err = sink.SetProperty("sync", false); err != nil {
-		return nil, err
-	}
-
-	// create bin
-	bin := gst.NewBin("output")
-	if err = bin.Add(sink); err != nil {
-		return nil, err
-	}
-
-	// add ghost pad
-	ghostPad := gst.NewGhostPad("sink", sink.GetStaticPad("sink"))
-	if !bin.AddPad(ghostPad.Pad) {
-		return nil, errors.ErrGhostPadFailed
-	}
-
-	return &outputBin{
-		bin:      bin,
-		fileSink: sink,
-		logger:   p.Logger,
-	}, nil
 }

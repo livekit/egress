@@ -106,7 +106,7 @@ func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit
 	require.NoError(t, err)
 
 	// record for ~15s. Takes about 5s to start
-	time.AfterFunc(time.Second*20, func() {
+	time.AfterFunc(time.Second*90, func() {
 		rec.Stop()
 	})
 	res := rec.Run()
