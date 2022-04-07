@@ -1,4 +1,4 @@
-package track
+package pipeline
 
 import (
 	"fmt"
@@ -25,7 +25,7 @@ type trackPipeline struct {
 	closed chan struct{}
 }
 
-func NewPipeline(p *params.Params) (*trackPipeline, error) {
+func NewTrackPipeline(p *params.Params) (*trackPipeline, error) {
 	pipeline := &trackPipeline{
 		info:   p.Info,
 		closed: make(chan struct{}),

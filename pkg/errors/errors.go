@@ -25,8 +25,12 @@ func New(err string) error {
 	return errors.New(err)
 }
 
+func ErrCouldNotParseConfig(err error) error {
+	return fmt.Errorf("could not parse config: %v", err)
+}
+
 func ErrNotSupported(feature string) error {
-	return fmt.Errorf("support for %s is coming soon", feature)
+	return fmt.Errorf("%s is not yet supported", feature)
 }
 
 func ErrIncompatible(format, codec interface{}) error {
@@ -43,6 +47,10 @@ func ErrInvalidUrl(url string, protocol livekit.StreamProtocol) error {
 
 func ErrTrackNotFound(trackID string) error {
 	return fmt.Errorf("track %s not found", trackID)
+}
+
+func ErrPadLinkFailed(pad, status string) error {
+	return fmt.Errorf("%s pad link failed: %s", pad, status)
 }
 
 func ErrUploadFailed(status string) error {

@@ -1,4 +1,4 @@
-package composite
+package pipeline
 
 import (
 	"fmt"
@@ -9,6 +9,8 @@ import (
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
 
+	"github.com/livekit/livekit-egress/pkg/pipeline/input"
+	"github.com/livekit/livekit-egress/pkg/pipeline/output"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -29,8 +31,8 @@ const (
 type compositePipeline struct {
 	// pipeline
 	pipeline *gst.Pipeline
-	in       *inputBin
-	out      *outputBin
+	in       *input.Bin
+	out      *output.Bin
 
 	// egress info
 	info       *livekit.EgressInfo
@@ -47,26 +49,26 @@ type compositePipeline struct {
 	closed  chan struct{}
 }
 
-func NewPipeline(conf *config.Config, p *params.Params) (*compositePipeline, error) {
+func NewCompositePipeline(conf *config.Config, p *params.Params) (*compositePipeline, error) {
 	if !initialized {
 		gst.Init(nil)
 		initialized = true
 	}
 
 	// create input bin
-	in, err := newInputBin(conf, p)
+	in, err := input.Build(conf, p)
 	if err != nil {
 		return nil, err
 	}
 
 	// create output bin
-	out, err := newOutputBin(p)
+	out, err := output.Build(p)
 	if err != nil {
 		return nil, err
 	}
 
 	// link elements
-	pipeline, err := buildPipeline(in, out, p.IsStream)
+	pipeline, err := buildPipeline(in, out)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +142,7 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 			}
 
 			if msg.Source() == inputMessageSource {
-				ready = true
+				input.Ready = true
 			} else if msg.Source() == pipelineMessageSource {
 				started = true
 				startedAt := time.Now().UnixNano()
@@ -228,7 +230,7 @@ func (p *compositePipeline) UpdateStream(req *livekit.UpdateStreamRequest) error
 			}
 		}
 
-		if err := p.out.addSink(url); err != nil {
+		if err := p.out.AddSink(url); err != nil {
 			return err
 		}
 
@@ -246,7 +248,7 @@ func (p *compositePipeline) UpdateStream(req *livekit.UpdateStreamRequest) error
 	}
 
 	for _, url := range req.RemoveOutputUrls {
-		if err := p.out.removeSink(url); err != nil {
+		if err := p.out.RemoveSink(url); err != nil {
 			return err
 		}
 
@@ -272,7 +274,7 @@ func (p *compositePipeline) Stop() {
 	}
 }
 
-func buildPipeline(in *inputBin, out *outputBin, isStream bool) (*gst.Pipeline, error) {
+func buildPipeline(in *input.Bin, out *output.Bin) (*gst.Pipeline, error) {
 	// create pipeline
 	pipeline, err := gst.NewPipeline("pipeline")
 	if err != nil {
@@ -280,64 +282,22 @@ func buildPipeline(in *inputBin, out *outputBin, isStream bool) (*gst.Pipeline, 
 	}
 
 	// add bins to pipeline
-	if err = pipeline.AddMany(in.bin.Element, out.bin.Element); err != nil {
+	if err = pipeline.AddMany(in.Element(), out.Element()); err != nil {
 		return nil, err
 	}
 
-	// link audio elements
-	if in.audioQueue != nil {
-		if err := gst.ElementLinkMany(in.audioElements...); err != nil {
-			return nil, err
-		}
-
-		var muxAudioPad *gst.Pad
-		if isStream {
-			muxAudioPad = in.mux.GetRequestPad("audio")
-		} else {
-			muxAudioPad = in.mux.GetRequestPad("audio_%u")
-		}
-
-		if linkReturn := in.audioQueue.GetStaticPad("src").Link(muxAudioPad); linkReturn != gst.PadLinkOK {
-			return nil, fmt.Errorf("audio mux pad link failed: %s", linkReturn.String())
-		}
+	// link input elements
+	if err = in.Link(); err != nil {
+		return nil, err
 	}
 
-	// link video elements
-	if in.videoQueue != nil {
-		if err := gst.ElementLinkMany(in.videoElements...); err != nil {
-			return nil, err
-		}
-
-		var muxVideoPad *gst.Pad
-		if isStream {
-			muxVideoPad = in.mux.GetRequestPad("video")
-		} else {
-			muxVideoPad = in.mux.GetRequestPad("video_%u")
-		}
-
-		if linkReturn := in.videoQueue.GetStaticPad("src").Link(muxVideoPad); linkReturn != gst.PadLinkOK {
-			return nil, fmt.Errorf("video mux pad link failed: %s", linkReturn.String())
-		}
-	}
-
-	// stream tee and sinks
-	for _, streamSink := range out.sinks {
-		// link queue to rtmp sink
-		if err := streamSink.queue.Link(streamSink.sink); err != nil {
-			return nil, err
-		}
-
-		pad := out.tee.GetRequestPad("src_%u")
-		streamSink.pad = pad.GetName()
-
-		// link tee to queue
-		if linkReturn := pad.Link(streamSink.queue.GetStaticPad("sink")); linkReturn != gst.PadLinkOK {
-			return nil, fmt.Errorf("tee pad link failed: %s", linkReturn.String())
-		}
+	// link output elements
+	if err = out.Link(); err != nil {
+		return nil, err
 	}
 
 	// link bins
-	if err := in.bin.Link(out.bin.Element); err != nil {
+	if err := in.Bin().Link(out.Element()); err != nil {
 		return nil, err
 	}
 
@@ -357,7 +317,7 @@ func (p *compositePipeline) handleError(gErr *gst.GError) (error, bool) {
 	switch reason {
 	case errors.GErrNoURI, errors.GErrCouldNotConnect:
 		// bad URI or could not connect. Remove rtmp output
-		if err := p.out.removeSinkByName(element); err != nil {
+		if err := p.out.RemoveSinkByName(element); err != nil {
 			p.logger.Errorw("failed to remove sink", err)
 			return err, false
 		}
