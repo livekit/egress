@@ -17,7 +17,7 @@ import (
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
-	"github.com/livekit/livekit-egress/pkg/sink"
+	"github.com/livekit/livekit-egress/pkg/pipeline/sink"
 )
 
 // gst.Init needs to be called before using gst but after gst package loads

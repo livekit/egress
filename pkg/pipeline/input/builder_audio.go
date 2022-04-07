@@ -7,7 +7,7 @@ import (
 
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
-	"github.com/livekit/livekit-egress/pkg/source"
+	"github.com/livekit/livekit-egress/pkg/pipeline/source"
 	"github.com/livekit/protocol/livekit"
 )
 
