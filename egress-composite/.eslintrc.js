@@ -12,6 +12,8 @@ module.exports = {
     'consistent-return': 'off',
     'class-methods-use-this': 'off',
     'react/jsx-props-no-spreading': 'off',
+    'no-restricted-syntax': 'off',
+    'no-continue': 'off',
     '@typescript-eslint/no-use-before-define': 'off',
   },
 };
