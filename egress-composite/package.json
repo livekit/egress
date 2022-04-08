@@ -1,18 +1,19 @@
 {
   "name": "livekit-egress-web",
   "homepage": "https://livekit.io",
+  "description": "Default templates for RoomComposite egress",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
     "@types/node": "^12.0.0",
     "@types/react": "^17.0.0",
     "@types/react-dom": "^17.0.0",
-    "livekit-client": "^0.13.4",
-    "livekit-react": "^0.5.0",
+    "livekit-client": "^0.17.5",
+    "livekit-react": "^0.7.1",
+    "livekit-egress-sdk": "^0.1.0",
     "react": "^17.0.2",
     "react-aspect-ratio": "^1.0.49",
     "react-dom": "^17.0.2",
-    "react-router-dom": "^5.2.0",
     "react-scripts": "4.0.3",
     "typescript": "^4.1.2"
   },
@@ -22,7 +23,7 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "lint": "eslint src",
-    "deploy": "yarn build && echo 'recorder.livekit.io' > ./build/CNAME && gh-pages -d build --no-history"
+    "deploy": "yarn build && echo 'egress-composite.livekit.io' > ./build/CNAME && gh-pages -d build --no-history"
   },
   "eslintConfig": {
     "extends": [
