@@ -5,17 +5,15 @@ import (
 
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/livekit-egress/pkg/errors"
-	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
 
 type Bin struct {
 	bin *gst.Bin
-
-	// file
-	fileSink *gst.Element
 
 	// stream
 	protocol livekit.StreamProtocol

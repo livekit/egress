@@ -5,10 +5,11 @@ import (
 
 	"github.com/tinyzimmer/go-gst/gst"
 
+	"github.com/livekit/protocol/livekit"
+
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-egress/pkg/pipeline/source"
-	"github.com/livekit/protocol/livekit"
 )
 
 func (b *Bin) buildAudioElements(p *params.Params) error {

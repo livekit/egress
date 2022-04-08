@@ -42,7 +42,7 @@ func Integration(configFile string) error {
 
 	return run(
 		"docker build -t livekit-egress-test -f build/test/Dockerfile .",
-		fmt.Sprintf("docker run --rm -e %s=/out/%s -e %s=%s -v %s/test:/out livekit-egress-test",
+		fmt.Sprintf("docker run --rm -e %s=/out/%s -e %s=%s -e GST_DEBUG=3 -v %s/test:/out livekit-egress-test",
 			config, configFile, roomName, os.Getenv(roomName), dir),
 	)
 }

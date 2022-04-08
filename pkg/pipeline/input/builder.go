@@ -8,11 +8,12 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
+	"github.com/livekit/protocol/livekit"
+
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-egress/pkg/pipeline/source"
-	"github.com/livekit/protocol/livekit"
 )
 
 func Build(conf *config.Config, p *params.Params) (*Bin, error) {

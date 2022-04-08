@@ -5,10 +5,11 @@ import (
 
 	"github.com/tinyzimmer/go-gst/gst"
 
+	"github.com/livekit/protocol/livekit"
+
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-egress/pkg/pipeline/source"
-	"github.com/livekit/protocol/livekit"
 )
 
 func (b *Bin) buildVideoElements(p *params.Params) error {
@@ -21,6 +22,9 @@ func (b *Bin) buildVideoElements(p *params.Params) error {
 		err = b.buildWebVideoInput(p)
 	} else {
 		err = b.buildSDKVideoInput(p)
+	}
+	if err != nil {
+		return err
 	}
 
 	b.videoQueue, err = gst.NewElement("queue")
@@ -98,91 +102,85 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	b.videoSrc.SetFormat(gst.FormatTime)
 	b.videoSrc.SetLive(true)
 
+	var capsStr string
+	var depay *gst.Element
+	var err error
+
 	mimeType := <-p.VideoMimeType
 	switch mimeType {
 	case source.MimeTypeH264:
-		if err := b.videoSrc.Element.SetProperty("caps", gst.NewCapsFromString(
-			// TODO
-			"application/x-rtp,media=video,payload=111,encoding-name=OPUS,clock-rate=48000",
-		)); err != nil {
-			return err
-		}
-
-		rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
-		if err != nil {
-			return err
-		}
-
-		rtpH264Depay, err := gst.NewElement("rtph264depay")
-		if err != nil {
-			return err
-		}
-
-		b.videoElements = append(b.videoElements, b.videoSrc.Element, rtpJitterBuffer, rtpH264Depay)
+		capsStr = "application/x-rtp,media=video,payload=96,clock-rate=90000,encoding-name=H264"
+		depay, err = gst.NewElement("rtph264depay")
 
 	case source.MimeTypeVP8:
-		if err := b.videoSrc.Element.SetProperty("caps", gst.NewCapsFromString(
-			// TODO
-			"application/x-rtp,media=video,payload=111,encoding-name=OPUS,clock-rate=48000",
-		)); err != nil {
-			return err
-		}
-
-		rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
-		if err != nil {
-			return err
-		}
-
-		rtpOpusDepay, err := gst.NewElement("rtpopusdepay")
-		if err != nil {
-			return err
-		}
-
-		b.videoElements = append(b.videoElements, b.videoSrc.Element, rtpJitterBuffer, rtpOpusDepay)
+		capsStr = "application/x-rtp,media=video,payload=96,clock-rate=90000,encoding-name=VP8"
+		depay, err = gst.NewElement("rtpvp8depay")
 
 	default:
 		return errors.ErrNotSupported(mimeType)
 	}
 
-	switch p.VideoCodec {
-	case livekit.VideoCodec_H264_BASELINE,
-		livekit.VideoCodec_H264_MAIN,
-		livekit.VideoCodec_H264_HIGH:
+	if err = b.videoSrc.Element.SetProperty("caps", gst.NewCapsFromString(capsStr)); err != nil {
+		return err
+	}
 
-		opusDec, err := gst.NewElement("opusdec")
+	rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
+	if err != nil {
+		return err
+	}
+
+	b.videoElements = append(b.videoElements, b.videoSrc.Element, rtpJitterBuffer, depay)
+
+	switch mimeType {
+	case source.MimeTypeH264:
+
+	case source.MimeTypeVP8:
+		vp8Dec, err := gst.NewElement("vp8dec")
 		if err != nil {
 			return err
 		}
 
-		audioConvert, err := gst.NewElement("audioconvert")
+		videoConvert, err := gst.NewElement("videoconvert")
 		if err != nil {
 			return err
 		}
 
-		audioResample, err := gst.NewElement("audioresample")
+		videoScale, err := gst.NewElement("videoscale")
 		if err != nil {
 			return err
 		}
 
-		audioCapsFilter, err := gst.NewElement("capsfilter")
+		videoRate, err := gst.NewElement("videorate")
 		if err != nil {
 			return err
 		}
-		if err = audioCapsFilter.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", p.AudioFrequency),
+
+		videoRawCaps, err := gst.NewElement("capsfilter")
+		if err != nil {
+			return err
+		}
+		if err = videoRawCaps.SetProperty("caps", gst.NewCapsFromString(
+			fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=%d/1", p.Width, p.Height, p.Framerate),
 		)); err != nil {
 			return err
 		}
 
-		faac, err := gst.NewElement("faac")
-		if err != nil {
-			return err
-		}
-		if err = faac.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
-			return err
-		}
+		b.videoElements = append(b.videoElements, vp8Dec, videoConvert, videoScale, videoRate, videoRawCaps)
 
-		b.audioElements = append(b.audioElements, opusDec, audioConvert, audioResample, audioCapsFilter, faac)
+		var profile string
+		switch p.VideoCodec {
+		case livekit.VideoCodec_H264_BASELINE:
+			profile = "baseline"
+		case livekit.VideoCodec_H264_MAIN:
+			profile = "main"
+		case livekit.VideoCodec_H264_HIGH:
+			profile = "high"
+		default:
+			return errors.ErrNotSupported(p.VideoCodec.String())
+		}
+		if err = b.buildH26XElements(264, profile, p); err != nil {
+			return err
+		}
 	}
 
 	return nil

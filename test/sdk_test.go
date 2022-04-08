@@ -51,24 +51,26 @@ func TestTrackCompositeFile(t *testing.T) {
 	p := publishSamplesToRoom(t, room)
 
 	for _, test := range []*testCase{
-		{
-			name:      "track-opus-ogg",
-			fileType:  livekit.EncodedFileType_OGG,
-			audioOnly: true,
-			options: &livekit.EncodingOptions{
-				AudioCodec: livekit.AudioCodec_OPUS,
-			},
-		},
 		// {
-		// 	name:     "track-h264-high-mp4",
-		// 	fileType: livekit.EncodedFileType_MP4,
+		// 	name:      "track-opus-ogg",
+		// 	fileType:  livekit.EncodedFileType_OGG,
+		// 	audioOnly: true,
 		// 	options: &livekit.EncodingOptions{
-		// 		Framerate:      60,
-		// 		AudioFrequency: 48000,
-		// 		VideoCodec:     livekit.VideoCodec_H264_HIGH,
-		// 		VideoBitrate:   6000,
+		// 		AudioCodec: livekit.AudioCodec_OPUS,
 		// 	},
 		// },
+		// {
+		// 	name:      "track-opus-ogg",
+		// 	fileType:  livekit.EncodedFileType_OGG,
+		// 	audioOnly: true,
+		// 	options: &livekit.EncodingOptions{
+		// 		AudioCodec: livekit.AudioCodec_AAC,
+		// 	},
+		// },
+		{
+			name:     "track-h264-main-mp4",
+			fileType: livekit.EncodedFileType_MP4,
+		},
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
 			runTrackCompositeFileTest(t, conf, p, test)
