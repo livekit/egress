@@ -59,14 +59,6 @@ func TestTrackCompositeFile(t *testing.T) {
 		// 		AudioCodec: livekit.AudioCodec_OPUS,
 		// 	},
 		// },
-		// {
-		// 	name:      "track-opus-ogg",
-		// 	fileType:  livekit.EncodedFileType_OGG,
-		// 	audioOnly: true,
-		// 	options: &livekit.EncodingOptions{
-		// 		AudioCodec: livekit.AudioCodec_AAC,
-		// 	},
-		// },
 		{
 			name:     "track-h264-main-mp4",
 			fileType: livekit.EncodedFileType_MP4,
