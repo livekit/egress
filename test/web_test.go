@@ -19,8 +19,6 @@ import (
 )
 
 func TestRoomCompositeFile(t *testing.T) {
-	t.Skip()
-
 	conf := getTestConfig(t)
 	for _, test := range []*testCase{
 		{
@@ -169,8 +167,6 @@ func runRoomCompositeFileTest(t *testing.T, conf *config.Config, test *testCase)
 }
 
 func TestRoomCompositeStream(t *testing.T) {
-	t.Skip()
-
 	done := make(chan struct{})
 	go printLoadAvg(t, "web-composite-stream-1", done)
 
