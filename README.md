@@ -41,6 +41,49 @@ encode, and can output to a file or to one or more streams.
 | vp8         | ivf file    |
 | opus        | ogg file    |
 
+## Running locally
+
+These changes are **not** recommended for a production setup.
+
+To run against a local livekit server, you'll need to do the following:
+* open `/usr/local/etc/redis.conf` and comment out the line that says `bind 127.0.0.1`
+* change `protected-mode yes` to `protected-mode no` in the same file
+* find your IP as seen by docker
+  * `ws_url` needs to be set using the IP as Docker sees it
+  * on linux, this should be `172.17.0.1`
+  * on mac or windows, run `docker run -it --rm alpine nslookup host.docker.internal` and you should see something like
+    `Name:	host.docker.internal
+    Address: 192.168.65.2`
+* your livekit-server must be run using `--node-ip` set to the above IP
+
+These changes allow the service to connect to your local redis instance from inside the docker container.
+
+Create a directory to mount. In this example, we will use `~/livekit-egress`.
+
+Create a config.yaml in the above directory.
+* `redis` and `ws_url` should use the above IP instead of `localhost` 
+* `insecure` should be set to true
+
+```yaml
+log_level: debug
+api_key: your-api-key
+api_secret: your-api-secret
+ws_url: ws://192.168.65.2:7880
+insecure: true
+redis:
+  address: 192.168.65.2:6379
+```
+
+Then to run the service:
+```shell
+docker run --rm \
+    -e EGRESS_CONFIG_FILE=/out/config.yaml \
+    -v ~/livekit-egress:/out \
+    livekit-egress
+```
+
+You can then use our [cli](https://github.com/livekit/livekit-cli) to submit recording requests to your server.
+
 ## API
 
 All RPC definitions and options can be found [here](https://github.com/livekit/protocol/blob/main/livekit_egress.proto).  
@@ -207,23 +250,6 @@ Egress is still in beta and subject to change. The following versions are compat
 
 The `livekit_egress_available` Prometheus metric is provided to support autoscaling. `prometheus_port` must be defined in your config.
 
-## Local Testing and Development
-
-Running `mage test` will run the test suite on your machine, and will dump the resulting files into livekit-egress/test.
-
-To run these tests against your own LiveKit rooms, a deployed LiveKit server with a secure websocket url is required. 
-First, create a `livekit-egress/test/config.yaml`:
-
-```yaml
-log_level: info
-api_key: your-api-key
-api_secret: your-api-secret
-ws_url: your-wss-url
-```
-
-Join a room using https://example.livekit.io/#/ or your own client, then run `LIVEKIT_ROOM_NAME=my-room mage integration test/config.yaml`.  
-This will test recording different file types, output settings, and streams against your room.
-
 ## FAQ
 
 ### I get a `"no response from egress service"` error when sending a request
@@ -251,3 +277,20 @@ This will test recording different file types, output settings, and streams agai
 * It's possible, but not recommended. To do so, you would need gstreamer and all the plugins installed, along with xvfb,
   and have a pulseaudio server running.
 * Since it records from system audio, each recorder needs to be run on its own machine or VM.
+
+## Testing and Development
+
+Running `mage test` will run the test suite on your machine, and will dump the resulting files into livekit-egress/test.
+
+To run these tests against your own LiveKit rooms, a deployed LiveKit server with a secure websocket url is required.
+First, create a `livekit-egress/test/config.yaml`:
+
+```yaml
+log_level: info
+api_key: your-api-key
+api_secret: your-api-secret
+ws_url: your-wss-url
+```
+
+Join a room using https://example.livekit.io/#/ or your own client, then run `LIVEKIT_ROOM_NAME=my-room mage integration test/config.yaml`.  
+This will test recording different file types, output settings, and streams against your room.
