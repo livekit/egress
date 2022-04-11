@@ -19,11 +19,25 @@ import (
 )
 
 func TestRoomCompositeFile(t *testing.T) {
+	t.Skip()
+
 	conf := getTestConfig(t)
 	for _, test := range []*testCase{
 		{
-			name:     "room-h264-baseline-mp4",
+			name:     "room-h264-high-mp4",
 			inputUrl: videoTestInput,
+			fileType: livekit.EncodedFileType_MP4,
+			options: &livekit.EncodingOptions{
+				AudioCodec:   livekit.AudioCodec_AAC,
+				VideoCodec:   livekit.VideoCodec_H264_HIGH,
+				Height:       720,
+				Width:        1280,
+				VideoBitrate: 4500,
+			},
+		},
+		{
+			name:     "room-h264-baseline-mp4",
+			inputUrl: staticTestInput,
 			fileType: livekit.EncodedFileType_MP4,
 			options: &livekit.EncodingOptions{
 				AudioCodec:   livekit.AudioCodec_AAC,
@@ -33,56 +47,6 @@ func TestRoomCompositeFile(t *testing.T) {
 				VideoBitrate: 1500,
 			},
 		},
-		{
-			name:     "room-h264-main-mp4",
-			inputUrl: staticTestInput,
-			fileType: livekit.EncodedFileType_MP4,
-		},
-		// {
-		// 	name:     "room-vp8-webm",
-		// 	inputUrl: videoTestInput,
-		// 	fileType: livekit.EncodedFileType_WEBM,
-		// 	options: &livekit.EncodingOptions{
-		// 		AudioCodec: livekit.AudioCodec_OPUS,
-		// 		VideoCodec: livekit.VideoCodec_VP8,
-		// 	},
-		// },
-		// {
-		// 	name:     "room-vp8-ogg",
-		// 	inputUrl: videoTestInput,
-		// 	fileType: livekit.EncodedFileType_OGG,
-		// 	options: &livekit.EncodingOptions{
-		// 		AudioCodec: livekit.AudioCodec_OPUS,
-		// 		VideoCodec: livekit.VideoCodec_VP8,
-		// 	},
-		// },
-		// {
-		// 	name:     "room-vp9-webm",
-		// 	inputUrl: videoTestInput,
-		// 	fileType: livekit.EncodedFileType_WEBM,
-		// 	options: &livekit.EncodingOptions{
-		// 		AudioCodec: livekit.AudioCodec_OPUS,
-		// 		VideoCodec: livekit.VideoCodec_VP9,
-		// 	},
-		// },
-		// {
-		// 	name:     "room-h265-main-mp4",
-		// 	inputUrl: videoTestInput,
-		// 	fileType: livekit.EncodedFileType_MP4,
-		// 	options: &livekit.EncodingOptions{
-		// 		AudioCodec: livekit.AudioCodec_AAC,
-		// 		VideoCodec: livekit.VideoCodec_HEVC_MAIN,
-		// 	},
-		// },
-		// {
-		// 	name:     "room-h265-high-mp5",
-		// 	inputUrl: videoTestInput,
-		// 	fileType: livekit.EncodedFileType_MP4,
-		// 	options: &livekit.EncodingOptions{
-		// 		AudioCodec: livekit.AudioCodec_OPUS,
-		// 		VideoCodec: livekit.VideoCodec_HEVC_HIGH,
-		// 	},
-		// },
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
 			done := make(chan struct{})
@@ -167,6 +131,8 @@ func runRoomCompositeFileTest(t *testing.T, conf *config.Config, test *testCase)
 }
 
 func TestRoomCompositeStream(t *testing.T) {
+	t.Skip()
+
 	done := make(chan struct{})
 	go printLoadAvg(t, "web-composite-stream-1", done)
 

@@ -1,7 +1,6 @@
 package source
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -117,11 +116,9 @@ func (s *SDKSource) subscribeToTracks() error {
 	for _, trackID := range s.trackIDs {
 		expecting[trackID] = true
 	}
-	fmt.Println("expecting", expecting)
 
 	for _, p := range s.room.GetParticipants() {
 		for _, track := range p.Tracks() {
-			fmt.Println("found", track.SID())
 			if expecting[track.SID()] {
 				if rt, ok := track.(*lksdk.RemoteTrackPublication); ok {
 					err := rt.SetSubscribed(true)

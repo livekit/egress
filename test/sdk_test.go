@@ -51,20 +51,15 @@ func TestTrackCompositeFile(t *testing.T) {
 	p := publishSamplesToRoom(t, room)
 
 	for _, test := range []*testCase{
-		// {
-		// 	name:      "track-opus-ogg",
-		// 	fileType:  livekit.EncodedFileType_OGG,
-		// 	audioOnly: true,
-		// 	options: &livekit.EncodingOptions{
-		// 		AudioCodec: livekit.AudioCodec_OPUS,
-		// 	},
-		// },
 		{
 			name:     "track-h264-main-mp4",
 			fileType: livekit.EncodedFileType_MP4,
 		},
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
+			// done := make(chan struct{})
+			// defer close(done)
+			// go printLoadAvg(t, test.name, done)
 			runTrackCompositeFileTest(t, conf, p, test)
 		}) {
 			t.FailNow()
@@ -117,17 +112,25 @@ func publishSamplesToRoom(t *testing.T, room *lksdk.Room) *sdkParams {
 	for i, filename := range []string{"/out/sample/matrix-trailer.ogg", "/out/sample/matrix-trailer.ivf"} {
 		filename := filename
 		var pub *lksdk.LocalTrackPublication
-		track, err := lksdk.NewLocalFileTrack(filename, lksdk.FileTrackWithOnWriteComplete(func() {
-			if pub != nil {
-				_ = room.LocalParticipant.UnpublishTrack(pub.SID())
-			}
-		}))
+		opts := []lksdk.FileSampleProviderOption{
+			lksdk.FileTrackWithOnWriteComplete(func() {
+				if pub != nil {
+					_ = room.LocalParticipant.UnpublishTrack(pub.SID())
+				}
+			}),
+		}
+		if i == 1 {
+			opts = append(opts, lksdk.FileTrackWithFrameDuration(time.Microsecond*41708))
+		}
+
+		track, err := lksdk.NewLocalFileTrack(filename, opts...)
 		require.NoError(t, err)
 
 		pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
 		require.NoError(t, err)
 		if i == 0 {
 			p.audioTrackID = pub.SID()
+			time.Sleep(time.Millisecond * 150)
 		} else {
 			p.videoTrackID = pub.SID()
 		}
