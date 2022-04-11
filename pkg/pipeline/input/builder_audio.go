@@ -103,17 +103,12 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 			return err
 		}
 
-		rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
-		if err != nil {
-			return err
-		}
-
 		rtpOpusDepay, err := gst.NewElement("rtpopusdepay")
 		if err != nil {
 			return err
 		}
 
-		b.audioElements = append(b.audioElements, b.audioSrc.Element, rtpJitterBuffer, rtpOpusDepay)
+		b.audioElements = append(b.audioElements, b.audioSrc.Element, rtpOpusDepay)
 
 		switch p.AudioCodec {
 		case livekit.AudioCodec_OPUS:

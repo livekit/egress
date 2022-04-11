@@ -124,12 +124,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 		return err
 	}
 
-	rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
-	if err != nil {
-		return err
-	}
-
-	b.videoElements = append(b.videoElements, b.videoSrc.Element, rtpJitterBuffer, depay)
+	b.videoElements = append(b.videoElements, b.videoSrc.Element, depay)
 
 	switch mimeType {
 	case source.MimeTypeH264:
