@@ -57,10 +57,11 @@ func TestTrackCompositeFile(t *testing.T) {
 		},
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
-			// done := make(chan struct{})
-			// defer close(done)
-			// go printLoadAvg(t, test.name, done)
+			done := make(chan struct{})
+			defer close(done)
+			go printLoadAvg(t, test.name, done)
 			runTrackCompositeFileTest(t, conf, p, test)
+			time.Sleep(time.Millisecond * 100)
 		}) {
 			t.FailNow()
 		}

@@ -217,7 +217,6 @@ func (t *trackWriter) start() {
 			}
 
 			t.sb.Push(pkt)
-
 			for _, p := range t.sb.PopPackets() {
 				if err = t.writer.WriteRTP(p); err != nil {
 					t.logger.Errorw("could not write to file", err)

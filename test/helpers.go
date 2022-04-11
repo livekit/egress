@@ -127,8 +127,8 @@ func printLoadAvg(t *testing.T, name string, done chan struct{}) {
 	prev, _ := cpu.Get()
 	var count, userTotal, userMax, systemTotal, systemMax, idleTotal float64
 	idleMin := 100.0
+	ticker := time.NewTicker(time.Second)
 	for {
-		time.Sleep(time.Second)
 		select {
 		case <-done:
 			avg := 100 - idleTotal/count
@@ -140,7 +140,7 @@ func printLoadAvg(t *testing.T, name string, done chan struct{}) {
 				max, max*float64(numCPUs)/100, numCPUs,
 			)
 			return
-		default:
+		case <-ticker.C:
 			cpuInfo, _ := cpu.Get()
 			total := float64(cpuInfo.Total - prev.Total)
 			user := float64(cpuInfo.User-prev.User) / total * 100
