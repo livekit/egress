@@ -2,7 +2,6 @@ package input
 
 import (
 	"fmt"
-
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/protocol/livekit"
@@ -130,44 +129,37 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	}
 	rtpJitterBuffer.SetArg("mode", "none")
 
+	// Append RTP depacketizer pipeline
 	b.videoElements = append(b.videoElements, b.videoSrc.Element, rtpJitterBuffer, depay)
 
+	// If we can containerise directly, skip decoding
+	if mimeType == source.MimeTypeH264 && p.FileParams.FileType == livekit.EncodedFileType_MP4 {
+		return nil
+	}
+	if mimeType == source.MimeTypeVP8 && p.FileParams.FileType == livekit.EncodedFileType_WEBM {
+		return nil
+	}
+
+	// Else, we need to do transcoding: first build the decoding pipeline
 	switch mimeType {
 	case source.MimeTypeH264:
-
+		err = b.buildSdkDecoderPipeline("avdec_h264", p)
 	case source.MimeTypeVP8:
-		vp8Dec, err := gst.NewElement("vp8dec")
-		if err != nil {
+		err = b.buildSdkDecoderPipeline("vp8dec", p)
+	default:
+		return errors.ErrNotSupported(p.FileType.String())
+	}
+	if err != nil {
+		return err
+	}
+
+	// Build encoding pipeline
+	switch p.FileType {
+	case livekit.EncodedFileType_WEBM:
+		if err = b.buildVPXElements(8, p); err != nil {
 			return err
 		}
-
-		videoConvert, err := gst.NewElement("videoconvert")
-		if err != nil {
-			return err
-		}
-
-		videoScale, err := gst.NewElement("videoscale")
-		if err != nil {
-			return err
-		}
-
-		videoRate, err := gst.NewElement("videorate")
-		if err != nil {
-			return err
-		}
-
-		videoRawCaps, err := gst.NewElement("capsfilter")
-		if err != nil {
-			return err
-		}
-		if err = videoRawCaps.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=%d/1", p.Width, p.Height, p.Framerate),
-		)); err != nil {
-			return err
-		}
-
-		b.videoElements = append(b.videoElements, vp8Dec, videoConvert, videoScale, videoRate, videoRawCaps)
-
+	case livekit.EncodedFileType_MP4:
 		var profile string
 		switch p.VideoCodec {
 		case livekit.VideoCodec_H264_BASELINE:
@@ -182,8 +174,45 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 		if err = b.buildH26XElements(264, profile, p); err != nil {
 			return err
 		}
+	default:
+		return errors.ErrNotSupported(p.FileType.String())
 	}
 
+	return nil
+}
+
+func (b *Bin) buildSdkDecoderPipeline(decoder string, p *params.Params) error {
+	videoDecoder, err := gst.NewElement(decoder)
+	if err != nil {
+		return nil
+	}
+
+	videoConvert, err := gst.NewElement("videoconvert")
+	if err != nil {
+		return err
+	}
+
+	videoScale, err := gst.NewElement("videoscale")
+	if err != nil {
+		return err
+	}
+
+	videoRate, err := gst.NewElement("videorate")
+	if err != nil {
+		return err
+	}
+
+	videoRawCaps, err := gst.NewElement("capsfilter")
+	if err != nil {
+		return err
+	}
+	if err = videoRawCaps.SetProperty("caps", gst.NewCapsFromString(
+		fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=%d/1", p.Width, p.Height, p.Framerate),
+	)); err != nil {
+		return err
+	}
+
+	b.videoElements = append(b.videoElements, videoDecoder, videoConvert, videoScale, videoRate, videoRawCaps)
 	return nil
 }
 
