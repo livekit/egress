@@ -87,7 +87,7 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 		expected := time.Unix(0, res.GetFile().EndedAt).Sub(time.Unix(0, res.GetFile().StartedAt)).Seconds()
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
-		require.InDelta(t, expected, actual, 1)
+		require.InDelta(t, expected, actual, 1.5)
 	}
 
 	// check stream info
