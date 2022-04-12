@@ -1,10 +1,6 @@
 package input
 
 import (
-	"strings"
-
-	"github.com/pion/webrtc/v3"
-	"github.com/pion/webrtc/v3/pkg/media"
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
@@ -73,21 +69,7 @@ func (b *Bin) buildSource(conf *config.Config, p *params.Params) error {
 			return err
 		}
 
-		b.Source, err = source.NewSDKSource(p, func(track *webrtc.TrackRemote) (media.Writer, error) {
-			switch {
-			case strings.EqualFold(track.Codec().MimeType, source.MimeTypeOpus):
-				b.audioMimeType <- source.MimeTypeOpus
-				return &appWriter{src: b.audioSrc}, nil
-			case strings.EqualFold(track.Codec().MimeType, source.MimeTypeVP8):
-				b.videoMimeType <- source.MimeTypeVP8
-				return &appWriter{src: b.videoSrc}, nil
-			case strings.EqualFold(track.Codec().MimeType, source.MimeTypeH264):
-				b.videoMimeType <- source.MimeTypeH264
-				return &appWriter{src: b.videoSrc}, nil
-			default:
-				return nil, errors.ErrNotSupported(track.Codec().MimeType)
-			}
-		})
+		b.Source, err = source.NewSDKAppSource(p, b.audioSrc, b.videoSrc, b.audioMimeType, b.videoMimeType)
 	}
 
 	return err

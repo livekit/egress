@@ -8,6 +8,7 @@ import (
 )
 
 type Source interface {
+	Ready()
 	StartRecording() chan struct{}
 	EndRecording() chan struct{}
 	Close()
