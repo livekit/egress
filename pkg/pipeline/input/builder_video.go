@@ -2,6 +2,7 @@ package input
 
 import (
 	"fmt"
+
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/protocol/livekit"
@@ -132,20 +133,23 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	// Append RTP depacketizer pipeline
 	b.videoElements = append(b.videoElements, b.videoSrc.Element, rtpJitterBuffer, depay)
 
-	// If we can containerise directly, skip decoding
-	if mimeType == source.MimeTypeH264 && p.FileParams.FileType == livekit.EncodedFileType_MP4 {
-		return nil
-	}
-	if mimeType == source.MimeTypeVP8 && p.FileParams.FileType == livekit.EncodedFileType_WEBM {
-		return nil
-	}
-
-	// Else, we need to do transcoding: first build the decoding pipeline
 	switch mimeType {
 	case source.MimeTypeH264:
-		err = b.buildSdkDecoderPipeline("avdec_h264", p)
+		if p.FileType == livekit.EncodedFileType_MP4 {
+			// skip decoding
+			return nil
+		}
+		// build decoding pipeline
+		err = b.buildDecodingElements("avdec_h264", p)
+
 	case source.MimeTypeVP8:
-		err = b.buildSdkDecoderPipeline("vp8dec", p)
+		// if p.FileType == livekit.EncodedFileType_WEBM {
+		//  // skip decoding
+		// 	return nil
+		// }
+		// build decoding pipeline
+		err = b.buildDecodingElements("vp8dec", p)
+
 	default:
 		return errors.ErrNotSupported(p.FileType.String())
 	}
@@ -155,10 +159,11 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 
 	// Build encoding pipeline
 	switch p.FileType {
-	case livekit.EncodedFileType_WEBM:
-		if err = b.buildVPXElements(8, p); err != nil {
-			return err
-		}
+	// case livekit.EncodedFileType_WEBM:
+	// 	if err = b.buildVPXElements(8, p); err != nil {
+	// 		return err
+	// 	}
+
 	case livekit.EncodedFileType_MP4:
 		var profile string
 		switch p.VideoCodec {
@@ -171,9 +176,11 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 		default:
 			return errors.ErrNotSupported(p.VideoCodec.String())
 		}
+
 		if err = b.buildH26XElements(264, profile, p); err != nil {
 			return err
 		}
+
 	default:
 		return errors.ErrNotSupported(p.FileType.String())
 	}
@@ -181,7 +188,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	return nil
 }
 
-func (b *Bin) buildSdkDecoderPipeline(decoder string, p *params.Params) error {
+func (b *Bin) buildDecodingElements(decoder string, p *params.Params) error {
 	videoDecoder, err := gst.NewElement(decoder)
 	if err != nil {
 		return nil
