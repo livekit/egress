@@ -106,7 +106,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	var depay *gst.Element
 	var err error
 
-	mimeType := <-p.VideoMimeType
+	mimeType := <-b.videoMimeType
 	switch mimeType {
 	case source.MimeTypeH264:
 		capsStr = "application/x-rtp,media=video,payload=96,clock-rate=90000,encoding-name=H264"
@@ -124,7 +124,13 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 		return err
 	}
 
-	b.videoElements = append(b.videoElements, b.videoSrc.Element, depay)
+	rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
+	if err != nil {
+		return err
+	}
+	rtpJitterBuffer.SetArg("mode", "none")
+
+	b.videoElements = append(b.videoElements, b.videoSrc.Element, rtpJitterBuffer, depay)
 
 	switch mimeType {
 	case source.MimeTypeH264:

@@ -94,7 +94,7 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 	b.audioSrc.SetFormat(gst.FormatTime)
 	b.audioSrc.SetLive(true)
 
-	mimeType := <-p.AudioMimeType
+	mimeType := <-b.audioMimeType
 	switch mimeType {
 	case source.MimeTypeOpus:
 		if err := b.audioSrc.Element.SetProperty("caps", gst.NewCapsFromString(
@@ -103,12 +103,18 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 			return err
 		}
 
+		rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
+		if err != nil {
+			return err
+		}
+		rtpJitterBuffer.SetArg("mode", "none")
+
 		rtpOpusDepay, err := gst.NewElement("rtpopusdepay")
 		if err != nil {
 			return err
 		}
 
-		b.audioElements = append(b.audioElements, b.audioSrc.Element, rtpOpusDepay)
+		b.audioElements = append(b.audioElements, b.audioSrc.Element, rtpJitterBuffer, rtpOpusDepay)
 
 		switch p.AudioCodec {
 		case livekit.AudioCodec_OPUS:

@@ -61,13 +61,13 @@ func (b *Bin) buildSource(conf *config.Config, p *params.Params) error {
 		b.Source, err = source.NewWebSource(conf, p)
 	} else {
 		// create gstreamer sources
-		p.AudioMimeType = make(chan string, 1)
+		b.audioMimeType = make(chan string, 1)
 		b.audioSrc, err = app.NewAppSrc()
 		if err != nil {
 			return err
 		}
 
-		p.VideoMimeType = make(chan string, 1)
+		b.videoMimeType = make(chan string, 1)
 		b.videoSrc, err = app.NewAppSrc()
 		if err != nil {
 			return err
@@ -76,13 +76,13 @@ func (b *Bin) buildSource(conf *config.Config, p *params.Params) error {
 		b.Source, err = source.NewSDKSource(p, func(track *webrtc.TrackRemote) (media.Writer, error) {
 			switch {
 			case strings.EqualFold(track.Codec().MimeType, source.MimeTypeOpus):
-				p.AudioMimeType <- source.MimeTypeOpus
+				b.audioMimeType <- source.MimeTypeOpus
 				return &appWriter{src: b.audioSrc}, nil
 			case strings.EqualFold(track.Codec().MimeType, source.MimeTypeVP8):
-				p.VideoMimeType <- source.MimeTypeVP8
+				b.videoMimeType <- source.MimeTypeVP8
 				return &appWriter{src: b.videoSrc}, nil
 			case strings.EqualFold(track.Codec().MimeType, source.MimeTypeH264):
-				p.VideoMimeType <- source.MimeTypeH264
+				b.videoMimeType <- source.MimeTypeH264
 				return &appWriter{src: b.videoSrc}, nil
 			default:
 				return nil, errors.ErrNotSupported(track.Codec().MimeType)

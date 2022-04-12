@@ -105,8 +105,8 @@ func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit
 	rec, err := pipeline.FromParams(conf, p)
 	require.NoError(t, err)
 
-	// record for ~15s. Takes about 5s to start
-	time.AfterFunc(time.Second*90, func() {
+	// record for ~30s. Takes about 5s to start
+	time.AfterFunc(time.Second*35, func() {
 		rec.Stop()
 	})
 	res := rec.Run()

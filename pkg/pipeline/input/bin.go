@@ -21,10 +21,12 @@ type Bin struct {
 	audioSrc      *app.Source
 	audioElements []*gst.Element
 	audioQueue    *gst.Element
+	audioMimeType chan string
 
 	videoSrc      *app.Source
 	videoElements []*gst.Element
 	videoQueue    *gst.Element
+	videoMimeType chan string
 
 	mux *gst.Element
 

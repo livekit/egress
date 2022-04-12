@@ -50,11 +50,9 @@ type SourceParams struct {
 	CustomInputURL string
 
 	// sdk source
-	TrackID       string
-	AudioTrackID  string
-	AudioMimeType chan string
-	VideoTrackID  string
-	VideoMimeType chan string
+	TrackID      string
+	AudioTrackID string
+	VideoTrackID string
 }
 
 type AudioParams struct {

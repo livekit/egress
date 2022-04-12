@@ -131,7 +131,6 @@ func publishSamplesToRoom(t *testing.T, room *lksdk.Room) *sdkParams {
 		require.NoError(t, err)
 		if i == 0 {
 			p.audioTrackID = pub.SID()
-			time.Sleep(time.Millisecond * 150)
 		} else {
 			p.videoTrackID = pub.SID()
 		}
