@@ -2,7 +2,6 @@ package input
 
 import (
 	"github.com/tinyzimmer/go-gst/gst"
-	"github.com/tinyzimmer/go-gst/gst/app"
 
 	"github.com/livekit/livekit-egress/pkg/errors"
 )
@@ -19,15 +18,11 @@ type Bin struct {
 
 	bin *gst.Bin
 
-	audioSrc      *app.Source
 	audioElements []*gst.Element
 	audioQueue    *gst.Element
-	audioMimeType chan string
 
-	videoSrc      *app.Source
 	videoElements []*gst.Element
 	videoQueue    *gst.Element
-	videoMimeType chan string
 
 	mux *gst.Element
 

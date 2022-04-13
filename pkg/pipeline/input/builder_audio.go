@@ -2,6 +2,7 @@ package input
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -90,15 +91,20 @@ func (b *Bin) buildWebAudioInput(p *params.Params) error {
 }
 
 func (b *Bin) buildSDKAudioInput(p *params.Params) error {
-	b.audioSrc.SetDoTimestamp(true)
-	b.audioSrc.SetFormat(gst.FormatTime)
-	b.audioSrc.SetLive(true)
+	src, codec := b.Source.(*source.SDKSource).GetAudioSource()
 
-	mimeType := <-b.audioMimeType
-	switch mimeType {
-	case source.MimeTypeOpus:
-		if err := b.audioSrc.Element.SetProperty("caps", gst.NewCapsFromString(
-			"application/x-rtp,media=audio,payload=111,encoding-name=OPUS,clock-rate=48000",
+	src.SetDoTimestamp(true)
+	src.SetFormat(gst.FormatTime)
+	src.SetLive(true)
+
+	codecInfo := <-codec
+	switch {
+	case strings.EqualFold(codecInfo.MimeType, source.MimeTypeOpus):
+		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
+			fmt.Sprintf(
+				"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
+				codecInfo.PayloadType, codecInfo.ClockRate,
+			),
 		)); err != nil {
 			return err
 		}
@@ -114,7 +120,7 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 			return err
 		}
 
-		b.audioElements = append(b.audioElements, b.audioSrc.Element, rtpJitterBuffer, rtpOpusDepay)
+		b.audioElements = append(b.audioElements, src.Element, rtpJitterBuffer, rtpOpusDepay)
 
 		switch p.AudioCodec {
 		case livekit.AudioCodec_OPUS:
@@ -156,7 +162,7 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 			b.audioElements = append(b.audioElements, opusDec, audioConvert, audioResample, audioCapsFilter, faac)
 		}
 	default:
-		return errors.ErrNotSupported(mimeType)
+		return errors.ErrNotSupported(codecInfo.MimeType)
 	}
 
 	return nil

@@ -20,9 +20,9 @@ import (
 type appWriter struct {
 	sb    *samplebuilder.SampleBuilder
 	track *webrtc.TrackRemote
+	src   *app.Source
 
 	logger     logger.Logger
-	src        *app.Source
 	runtime    time.Time
 	runtimeSet bool
 	ready      chan struct{}
@@ -30,14 +30,16 @@ type appWriter struct {
 }
 
 func newAppWriter(
-	track *webrtc.TrackRemote, rp *lksdk.RemoteParticipant, l logger.Logger,
-	audioSrc, videoSrc *app.Source,
-	audioMimeType, videoMimeType chan string,
+	track *webrtc.TrackRemote,
+	rp *lksdk.RemoteParticipant,
+	l logger.Logger,
+	src *app.Source,
 	ready chan struct{},
-) (writer, error) {
+) (*appWriter, error) {
 
 	w := &appWriter{
 		track:  track,
+		src:    src,
 		logger: logger.Logger(logr.Logger(l).WithValues("trackID", track.ID())),
 		ready:  ready,
 		closed: make(chan struct{}),
@@ -49,21 +51,15 @@ func newAppWriter(
 			maxVideoLate, &codecs.VP8Packet{}, track.Codec().ClockRate,
 			samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
 		)
-		videoMimeType <- MimeTypeVP8
-		w.src = videoSrc
 
 	case strings.EqualFold(track.Codec().MimeType, MimeTypeH264):
 		w.sb = samplebuilder.New(
 			maxVideoLate, &codecs.H264Packet{}, track.Codec().ClockRate,
 			samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
 		)
-		videoMimeType <- MimeTypeH264
-		w.src = videoSrc
 
 	case strings.EqualFold(track.Codec().MimeType, MimeTypeOpus):
 		w.sb = samplebuilder.New(maxAudioLate, &codecs.OpusPacket{}, track.Codec().ClockRate)
-		audioMimeType <- MimeTypeOpus
-		w.src = audioSrc
 
 	default:
 		return nil, errors.ErrNotSupported(track.Codec().MimeType)

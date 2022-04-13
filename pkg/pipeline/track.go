@@ -21,7 +21,7 @@ func NewTrackPipeline(p *params.Params) (*trackPipeline, error) {
 		closed: make(chan struct{}),
 	}
 
-	s, err := source.NewSDKFileSource(p)
+	s, err := source.NewSDKSource(p)
 	if err != nil {
 		return nil, err
 	}

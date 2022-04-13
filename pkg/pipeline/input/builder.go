@@ -2,7 +2,6 @@ package input
 
 import (
 	"github.com/tinyzimmer/go-gst/gst"
-	"github.com/tinyzimmer/go-gst/gst/app"
 
 	"github.com/livekit/protocol/livekit"
 
@@ -56,22 +55,8 @@ func (b *Bin) buildSource(conf *config.Config, p *params.Params) error {
 	if p.IsWebInput {
 		b.Source, err = source.NewWebSource(conf, p)
 	} else {
-		// create gstreamer sources
-		b.audioMimeType = make(chan string, 1)
-		b.audioSrc, err = app.NewAppSrc()
-		if err != nil {
-			return err
-		}
-
-		b.videoMimeType = make(chan string, 1)
-		b.videoSrc, err = app.NewAppSrc()
-		if err != nil {
-			return err
-		}
-
-		b.Source, err = source.NewSDKAppSource(p, b.audioSrc, b.videoSrc, b.audioMimeType, b.videoMimeType)
+		b.Source, err = source.NewSDKSource(p)
 	}
-
 	return err
 }
 

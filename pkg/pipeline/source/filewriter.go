@@ -28,7 +28,7 @@ type fileWriter struct {
 	closed chan struct{}
 }
 
-func newFileWriter(track *webrtc.TrackRemote, rp *lksdk.RemoteParticipant, l logger.Logger) (writer, error) {
+func newFileWriter(track *webrtc.TrackRemote, rp *lksdk.RemoteParticipant, l logger.Logger) (*fileWriter, error) {
 	w := &fileWriter{
 		track:  track,
 		logger: logger.Logger(logr.Logger(l).WithValues("trackID", track.ID())),

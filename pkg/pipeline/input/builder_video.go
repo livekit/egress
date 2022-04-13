@@ -98,29 +98,37 @@ func (b *Bin) buildWebVideoInput(p *params.Params) error {
 }
 
 func (b *Bin) buildSDKVideoInput(p *params.Params) error {
-	b.videoSrc.SetDoTimestamp(true)
-	b.videoSrc.SetFormat(gst.FormatTime)
-	b.videoSrc.SetLive(true)
+	src, codec := b.Source.(*source.SDKSource).GetVideoSource()
 
-	var capsStr string
+	src.SetDoTimestamp(true)
+	src.SetFormat(gst.FormatTime)
+	src.SetLive(true)
+
+	var rawCaps string
 	var depay *gst.Element
 	var err error
 
-	mimeType := <-b.videoMimeType
-	switch mimeType {
+	codecInfo := <-codec
+	switch codecInfo.MimeType {
 	case source.MimeTypeH264:
-		capsStr = "application/x-rtp,media=video,payload=96,clock-rate=90000,encoding-name=H264"
+		rawCaps = fmt.Sprintf(
+			"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
+			codecInfo.PayloadType, codecInfo.ClockRate,
+		)
 		depay, err = gst.NewElement("rtph264depay")
 
 	case source.MimeTypeVP8:
-		capsStr = "application/x-rtp,media=video,payload=96,clock-rate=90000,encoding-name=VP8"
+		rawCaps = fmt.Sprintf(
+			"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
+			codecInfo.PayloadType, codecInfo.ClockRate,
+		)
 		depay, err = gst.NewElement("rtpvp8depay")
 
 	default:
-		return errors.ErrNotSupported(mimeType)
+		return errors.ErrNotSupported(codecInfo.MimeType)
 	}
 
-	if err = b.videoSrc.Element.SetProperty("caps", gst.NewCapsFromString(capsStr)); err != nil {
+	if err = src.Element.SetProperty("caps", gst.NewCapsFromString(rawCaps)); err != nil {
 		return err
 	}
 
@@ -131,30 +139,61 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	rtpJitterBuffer.SetArg("mode", "none")
 
 	// Append RTP depacketizer pipeline
-	b.videoElements = append(b.videoElements, b.videoSrc.Element, rtpJitterBuffer, depay)
+	b.videoElements = append(b.videoElements, src.Element, rtpJitterBuffer, depay)
 
-	switch mimeType {
-	case source.MimeTypeH264:
-		if p.FileType == livekit.EncodedFileType_MP4 {
-			// skip decoding
+	skipEncoding := false
+	switch {
+	case codecInfo.MimeType == source.MimeTypeH264 && p.FileType != livekit.EncodedFileType_MP4:
+		avDecH264, err := gst.NewElement("avdec_h264")
+		if err != nil {
+			return err
+		}
+		b.videoElements = append(b.videoElements, avDecH264)
+
+	case codecInfo.MimeType == source.MimeTypeVP8: // && p.FileType != livekit.EncodedFileType_WEBM:
+		vp8Dec, err := gst.NewElement("vp8dec")
+		if err != nil {
 			return nil
 		}
-		// build decoding pipeline
-		err = b.buildDecodingElements("avdec_h264", p)
-
-	case source.MimeTypeVP8:
-		// if p.FileType == livekit.EncodedFileType_WEBM {
-		//  // skip decoding
-		// 	return nil
-		// }
-		// build decoding pipeline
-		err = b.buildDecodingElements("vp8dec", p)
+		b.videoElements = append(b.videoElements, vp8Dec)
 
 	default:
-		return errors.ErrNotSupported(p.FileType.String())
+		skipEncoding = true
 	}
+
+	if !skipEncoding {
+		videoConvert, err := gst.NewElement("videoconvert")
+		if err != nil {
+			return err
+		}
+
+		b.videoElements = append(b.videoElements, videoConvert)
+	}
+
+	videoScale, err := gst.NewElement("videoscale")
 	if err != nil {
 		return err
+	}
+
+	videoRate, err := gst.NewElement("videorate")
+	if err != nil {
+		return err
+	}
+
+	b.videoElements = append(b.videoElements, videoScale, videoRate)
+
+	if !skipEncoding {
+		decodedCaps, err := gst.NewElement("capsfilter")
+		if err != nil {
+			return err
+		}
+		if err = decodedCaps.SetProperty("caps", gst.NewCapsFromString(
+			fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=%d/1", p.Width, p.Height, p.Framerate)),
+		); err != nil {
+			return err
+		}
+
+		b.videoElements = append(b.videoElements, decodedCaps)
 	}
 
 	// Build encoding pipeline
@@ -188,41 +227,6 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	return nil
 }
 
-func (b *Bin) buildDecodingElements(decoder string, p *params.Params) error {
-	videoDecoder, err := gst.NewElement(decoder)
-	if err != nil {
-		return nil
-	}
-
-	videoConvert, err := gst.NewElement("videoconvert")
-	if err != nil {
-		return err
-	}
-
-	videoScale, err := gst.NewElement("videoscale")
-	if err != nil {
-		return err
-	}
-
-	videoRate, err := gst.NewElement("videorate")
-	if err != nil {
-		return err
-	}
-
-	videoRawCaps, err := gst.NewElement("capsfilter")
-	if err != nil {
-		return err
-	}
-	if err = videoRawCaps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=%d/1", p.Width, p.Height, p.Framerate),
-	)); err != nil {
-		return err
-	}
-
-	b.videoElements = append(b.videoElements, videoDecoder, videoConvert, videoScale, videoRate, videoRawCaps)
-	return nil
-}
-
 func (b *Bin) buildH26XElements(num int, profile string, p *params.Params) error {
 	x26XEnc, err := gst.NewElement(fmt.Sprintf("x%denc", num))
 	if err != nil {
@@ -234,18 +238,18 @@ func (b *Bin) buildH26XElements(num int, profile string, p *params.Params) error
 	x26XEnc.SetArg("speed-preset", "veryfast")
 	x26XEnc.SetArg("tune", "zerolatency")
 
-	videoProfileCaps, err := gst.NewElement("capsfilter")
+	encodedCaps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return err
 	}
-	if err = videoProfileCaps.SetProperty("caps", gst.NewCapsFromString(
+	if err = encodedCaps.SetProperty("caps", gst.NewCapsFromString(
 		fmt.Sprintf("video/x-h%d,profile=%s,framerate=%d/1", num, profile, p.Framerate),
 	)); err != nil {
 		return err
 	}
 
 	if num == 264 {
-		b.videoElements = append(b.videoElements, x26XEnc, videoProfileCaps)
+		b.videoElements = append(b.videoElements, x26XEnc, encodedCaps)
 		return nil
 	}
 
@@ -254,7 +258,7 @@ func (b *Bin) buildH26XElements(num int, profile string, p *params.Params) error
 		return err
 	}
 
-	b.videoElements = append(b.videoElements, x26XEnc, videoProfileCaps, h265parse)
+	b.videoElements = append(b.videoElements, x26XEnc, encodedCaps, h265parse)
 	return nil
 }
 
@@ -264,16 +268,16 @@ func (b *Bin) buildVPXElements(num int, p *params.Params) error {
 		return err
 	}
 
-	videoProfileCaps, err := gst.NewElement("capsfilter")
+	encodedCaps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return err
 	}
-	if err = videoProfileCaps.SetProperty("caps", gst.NewCapsFromString(
+	if err = encodedCaps.SetProperty("caps", gst.NewCapsFromString(
 		fmt.Sprintf("video/x-vp%d,framerate=%d/1", num, p.Framerate),
 	)); err != nil {
 		return err
 	}
 
-	b.videoElements = append(b.videoElements, vpXEnc, videoProfileCaps)
+	b.videoElements = append(b.videoElements, vpXEnc, encodedCaps)
 	return nil
 }

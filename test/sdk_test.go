@@ -48,11 +48,11 @@ func TestTrackCompositeFile(t *testing.T) {
 	require.NoError(t, err)
 	defer room.Disconnect()
 
-	p := publishSamplesToRoom(t, room)
+	p := publishSamplesToRoom(t, room, "opus", "h264")
 
 	for _, test := range []*testCase{
 		{
-			name:     "track-h264-main-mp4",
+			name:     "track-vp8-mp4",
 			fileType: livekit.EncodedFileType_MP4,
 		},
 	} {
@@ -107,11 +107,23 @@ func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkPar
 	runFileTest(t, conf, test, req, filename)
 }
 
-func publishSamplesToRoom(t *testing.T, room *lksdk.Room) *sdkParams {
+var (
+	samples = map[string]string{
+		"opus": "/out/sample/matrix-trailer.ogg",
+		"vp8":  "/out/sample/matrix-trailer.ivf",
+		"h264": "/out/sample/matrix-trailer.h264",
+	}
+
+	frameDurations = map[string]time.Duration{
+		"vp8":  time.Microsecond * 41708,
+		"h264": time.Microsecond * 41708,
+	}
+)
+
+func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec string) *sdkParams {
 	p := &sdkParams{roomName: room.Name}
 
-	for i, filename := range []string{"/out/sample/matrix-trailer.ogg", "/out/sample/matrix-trailer.ivf"} {
-		filename := filename
+	publish := func(filename string, frameDuration time.Duration) string {
 		var pub *lksdk.LocalTrackPublication
 		opts := []lksdk.FileSampleProviderOption{
 			lksdk.FileTrackWithOnWriteComplete(func() {
@@ -120,8 +132,9 @@ func publishSamplesToRoom(t *testing.T, room *lksdk.Room) *sdkParams {
 				}
 			}),
 		}
-		if i == 1 {
-			opts = append(opts, lksdk.FileTrackWithFrameDuration(time.Microsecond*41708))
+
+		if frameDuration != 0 {
+			opts = append(opts, lksdk.FileTrackWithFrameDuration(frameDuration))
 		}
 
 		track, err := lksdk.NewLocalFileTrack(filename, opts...)
@@ -129,11 +142,16 @@ func publishSamplesToRoom(t *testing.T, room *lksdk.Room) *sdkParams {
 
 		pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
 		require.NoError(t, err)
-		if i == 0 {
-			p.audioTrackID = pub.SID()
-		} else {
-			p.videoTrackID = pub.SID()
-		}
+
+		return pub.SID()
+	}
+
+	if samples[audioCodec] != "" {
+		p.audioTrackID = publish(samples[audioCodec], frameDurations[audioCodec])
+	}
+
+	if samples[videoCodec] != "" {
+		p.videoTrackID = publish(samples[videoCodec], frameDurations[videoCodec])
 	}
 
 	return p
