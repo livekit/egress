@@ -2,6 +2,7 @@ package input
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -104,70 +105,71 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	src.SetFormat(gst.FormatTime)
 	src.SetLive(true)
 
-	var rawCaps string
-	var depay *gst.Element
-	var err error
-
 	codecInfo := <-codec
-	switch codecInfo.MimeType {
-	case source.MimeTypeH264:
-		rawCaps = fmt.Sprintf(
-			"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
-			codecInfo.PayloadType, codecInfo.ClockRate,
-		)
-		depay, err = gst.NewElement("rtph264depay")
+	switch {
+	case strings.EqualFold(codecInfo.MimeType, source.MimeTypeH264):
+		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
+			fmt.Sprintf(
+				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
+				codecInfo.PayloadType, codecInfo.ClockRate,
+			),
+		)); err != nil {
+			return err
+		}
 
-	case source.MimeTypeVP8:
-		rawCaps = fmt.Sprintf(
-			"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
-			codecInfo.PayloadType, codecInfo.ClockRate,
-		)
-		depay, err = gst.NewElement("rtpvp8depay")
+		rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
+		if err != nil {
+			return err
+		}
+		rtpJitterBuffer.SetArg("mode", "none")
+
+		rtpH264Depay, err := gst.NewElement("rtph264depay")
+		if err != nil {
+			return err
+		}
+
+		avDecH264, err := gst.NewElement("avdec_h264")
+		if err != nil {
+			return err
+		}
+
+		b.videoElements = append(b.videoElements, rtpJitterBuffer, rtpH264Depay, avDecH264)
+
+	case strings.EqualFold(codecInfo.MimeType, source.MimeTypeVP8):
+		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
+			fmt.Sprintf(
+				"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
+				codecInfo.PayloadType, codecInfo.ClockRate,
+			),
+		)); err != nil {
+			return err
+		}
+
+		rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
+		if err != nil {
+			return err
+		}
+		rtpJitterBuffer.SetArg("mode", "none")
+
+		rtpVP8Depay, err := gst.NewElement("rtpvp8depay")
+		if err != nil {
+			return err
+		}
+
+		vp8Dec, err := gst.NewElement("vp8dec")
+		if err != nil {
+			return nil
+		}
+
+		b.videoElements = append(b.videoElements, rtpJitterBuffer, rtpVP8Depay, vp8Dec)
 
 	default:
 		return errors.ErrNotSupported(codecInfo.MimeType)
 	}
 
-	if err = src.Element.SetProperty("caps", gst.NewCapsFromString(rawCaps)); err != nil {
-		return err
-	}
-
-	rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
+	videoConvert, err := gst.NewElement("videoconvert")
 	if err != nil {
 		return err
-	}
-	rtpJitterBuffer.SetArg("mode", "none")
-
-	// Append RTP depacketizer pipeline
-	b.videoElements = append(b.videoElements, src.Element, rtpJitterBuffer, depay)
-
-	skipEncoding := false
-	switch {
-	case codecInfo.MimeType == source.MimeTypeH264 && p.FileType != livekit.EncodedFileType_MP4:
-		avDecH264, err := gst.NewElement("avdec_h264")
-		if err != nil {
-			return err
-		}
-		b.videoElements = append(b.videoElements, avDecH264)
-
-	case codecInfo.MimeType == source.MimeTypeVP8: // && p.FileType != livekit.EncodedFileType_WEBM:
-		vp8Dec, err := gst.NewElement("vp8dec")
-		if err != nil {
-			return nil
-		}
-		b.videoElements = append(b.videoElements, vp8Dec)
-
-	default:
-		skipEncoding = true
-	}
-
-	if !skipEncoding {
-		videoConvert, err := gst.NewElement("videoconvert")
-		if err != nil {
-			return err
-		}
-
-		b.videoElements = append(b.videoElements, videoConvert)
 	}
 
 	videoScale, err := gst.NewElement("videoscale")
@@ -180,29 +182,20 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 		return err
 	}
 
-	b.videoElements = append(b.videoElements, videoScale, videoRate)
-
-	if !skipEncoding {
-		decodedCaps, err := gst.NewElement("capsfilter")
-		if err != nil {
-			return err
-		}
-		if err = decodedCaps.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=%d/1", p.Width, p.Height, p.Framerate)),
-		); err != nil {
-			return err
-		}
-
-		b.videoElements = append(b.videoElements, decodedCaps)
+	decodedCaps, err := gst.NewElement("capsfilter")
+	if err != nil {
+		return err
 	}
+	if err = decodedCaps.SetProperty("caps", gst.NewCapsFromString(
+		fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=%d/1", p.Width, p.Height, p.Framerate)),
+	); err != nil {
+		return err
+	}
+
+	b.videoElements = append(b.videoElements, videoConvert, videoScale, videoRate, decodedCaps)
 
 	// Build encoding pipeline
 	switch p.FileType {
-	// case livekit.EncodedFileType_WEBM:
-	// 	if err = b.buildVPXElements(8, p); err != nil {
-	// 		return err
-	// 	}
-
 	case livekit.EncodedFileType_MP4:
 		var profile string
 		switch p.VideoCodec {
