@@ -97,8 +97,8 @@ func (b *Bin) buildMux(p *params.Params) error {
 				return err
 			}
 			err = b.mux.SetProperty("faststart", true)
-		case livekit.EncodedFileType_WEBM:
-			b.mux, err = gst.NewElement("webmmux")
+		// case livekit.EncodedFileType_WEBM:
+		// 	b.mux, err = gst.NewElement("webmmux")
 		case livekit.EncodedFileType_OGG:
 			b.mux, err = gst.NewElement("oggmux")
 		}
