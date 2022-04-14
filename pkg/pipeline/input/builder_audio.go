@@ -57,12 +57,10 @@ func (b *Bin) buildWebAudioInput(p *params.Params) error {
 func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 	src, codec := b.Source.(*source.SDKSource).GetAudioSource()
 
-	// TODO: pretty sure these are busted
-	src.SetDoTimestamp(true)
-	src.SetFormat(gst.FormatTime)
-	src.SetLive(true)
-
-	b.audioElements = append(b.audioElements, src.Element)
+	src.Element.SetArg("format", "time")
+	if err := src.Element.SetProperty("is-live", true); err != nil {
+		return err
+	}
 
 	codecInfo := <-codec
 	switch {
@@ -76,19 +74,12 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 			return err
 		}
 
-		// TODO: find a way to remove rtpJitterBuffer
-		rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
-		if err != nil {
-			return err
-		}
-		rtpJitterBuffer.SetArg("mode", "none")
-
 		rtpOpusDepay, err := gst.NewElement("rtpopusdepay")
 		if err != nil {
 			return err
 		}
 
-		b.audioElements = append(b.audioElements, rtpJitterBuffer, rtpOpusDepay)
+		b.audioElements = append(b.audioElements, src.Element, rtpOpusDepay)
 
 		if p.AudioCodec == livekit.AudioCodec_OPUS {
 			// skip encoding

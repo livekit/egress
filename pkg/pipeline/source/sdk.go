@@ -91,6 +91,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		s.trackID = p.TrackID
 	}
 
+	cs := &clockSync{}
 	s.room.Callback.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		s.logger.Debugw("track subscribed", "trackID", track.ID())
 
@@ -99,10 +100,10 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 			switch track.Kind() {
 			case webrtc.RTPCodecTypeAudio:
 				s.audioCodec <- track.Codec()
-				s.audioWriter, err = newAppWriter(track, rp, s.logger, s.audioSrc, s.audioPlaying)
+				s.audioWriter, err = newAppWriter(track, rp, s.logger, s.audioSrc, cs, s.audioPlaying)
 			case webrtc.RTPCodecTypeVideo:
 				s.videoCodec <- track.Codec()
-				s.videoWriter, err = newAppWriter(track, rp, s.logger, s.videoSrc, s.videoPlaying)
+				s.videoWriter, err = newAppWriter(track, rp, s.logger, s.videoSrc, cs, s.videoPlaying)
 			}
 		} else {
 			s.fileWriter, err = newFileWriter(track, rp, s.logger)

@@ -92,12 +92,10 @@ func (b *Bin) buildWebVideoInput(p *params.Params) error {
 func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	src, codec := b.Source.(*source.SDKSource).GetVideoSource()
 
-	// TODO: pretty sure these are busted
-	src.SetDoTimestamp(true)
-	src.SetFormat(gst.FormatTime)
-	src.SetLive(true)
-
-	b.videoElements = append(b.videoElements, src.Element)
+	src.Element.SetArg("format", "time")
+	if err := src.Element.SetProperty("is-live", true); err != nil {
+		return err
+	}
 
 	codecInfo := <-codec
 	switch {
@@ -111,13 +109,6 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 			return err
 		}
 
-		// TODO: find a way to remove rtpJitterBuffer
-		rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
-		if err != nil {
-			return err
-		}
-		rtpJitterBuffer.SetArg("mode", "none")
-
 		rtpH264Depay, err := gst.NewElement("rtph264depay")
 		if err != nil {
 			return err
@@ -128,7 +119,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 			return err
 		}
 
-		b.videoElements = append(b.videoElements, rtpJitterBuffer, rtpH264Depay, avDecH264)
+		b.videoElements = append(b.videoElements, src.Element, rtpH264Depay, avDecH264)
 
 	case strings.EqualFold(codecInfo.MimeType, source.MimeTypeVP8):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
@@ -140,13 +131,6 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 			return err
 		}
 
-		// TODO: find a way to remove rtpJitterBuffer
-		rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
-		if err != nil {
-			return err
-		}
-		rtpJitterBuffer.SetArg("mode", "none")
-
 		rtpVP8Depay, err := gst.NewElement("rtpvp8depay")
 		if err != nil {
 			return err
@@ -157,7 +141,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 			return nil
 		}
 
-		b.videoElements = append(b.videoElements, rtpJitterBuffer, rtpVP8Depay, vp8Dec)
+		b.videoElements = append(b.videoElements, src.Element, rtpVP8Depay, vp8Dec)
 
 	default:
 		return errors.ErrNotSupported(codecInfo.MimeType)

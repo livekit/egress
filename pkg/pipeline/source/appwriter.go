@@ -10,6 +10,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
@@ -19,15 +20,32 @@ import (
 )
 
 type appWriter struct {
-	sb    *samplebuilder.SampleBuilder
-	track *webrtc.TrackRemote
-	src   *app.Source
+	logger logger.Logger
+	sb     *samplebuilder.SampleBuilder
+	track  *webrtc.TrackRemote
+	src    *app.Source
 
-	logger     logger.Logger
-	runtime    time.Time
-	runtimeSet bool
-	playing    chan struct{}
-	closed     chan struct{}
+	cs          *clockSync
+	clockSynced bool
+	tsOffset    int64
+	nsOffset    int64
+	conversion  int64
+
+	playing chan struct{}
+	closed  chan struct{}
+}
+
+// a single clockSync is shared between audio and video writers
+type clockSync struct {
+	startTime atomic.Int64
+}
+
+func (c *clockSync) GetOrSetStartTime(t int64) int64 {
+	swapped := c.startTime.CAS(0, t)
+	if swapped {
+		return t
+	}
+	return c.startTime.Load()
 }
 
 func newAppWriter(
@@ -35,15 +53,18 @@ func newAppWriter(
 	rp *lksdk.RemoteParticipant,
 	l logger.Logger,
 	src *app.Source,
+	cs *clockSync,
 	playing chan struct{},
 ) (*appWriter, error) {
 
 	w := &appWriter{
-		track:   track,
-		src:     src,
-		logger:  logger.Logger(logr.Logger(l).WithValues("trackID", track.ID())),
-		playing: playing,
-		closed:  make(chan struct{}),
+		logger:     logger.Logger(logr.Logger(l).WithValues("trackID", track.ID(), "kind", track.Kind().String())),
+		track:      track,
+		src:        src,
+		cs:         cs,
+		conversion: 1e9 / int64(track.Codec().ClockRate),
+		playing:    playing,
+		closed:     make(chan struct{}),
 	}
 
 	switch {
@@ -83,6 +104,15 @@ func (w *appWriter) start() {
 			return
 		}
 
+		if !w.clockSynced {
+			// clock sync - see comment in writeRTP
+			now := time.Now().UnixNano()
+			startTime := w.cs.GetOrSetStartTime(now)
+			w.nsOffset = now - startTime
+			w.tsOffset = int64(pkt.Timestamp)
+			w.clockSynced = true
+		}
+
 		w.sb.Push(pkt)
 
 		select {
@@ -105,24 +135,25 @@ func (w *appWriter) start() {
 }
 
 func (w *appWriter) writeRTP(pkt *rtp.Packet) error {
-	// Set run time
-	if !w.runtimeSet {
-		w.runtime = time.Now()
-		w.runtimeSet = true
-	}
-
 	p, err := pkt.Marshal()
 	if err != nil {
 		return err
 	}
 
-	// Parse packet timestamp
-	ts := time.Unix(int64(pkt.Timestamp), 0)
-
-	// Create buffer and set PTS
+	// create buffer
 	b := gst.NewBufferFromBytes(p)
-	d := ts.Sub(w.runtime)
-	b.SetPresentationTimestamp(d)
+
+	// RTP packet timestamps start at a random number, and increase according to clock rate (for example, with a
+	// clock rate of 90kHz, the timestamp will increase by 90000 every second).
+	// The GStreamer clock time also starts at a random number, and increases in nanoseconds.
+	// The conversion is done by subtracting the initial RTP timestamp (w.tsOffset) from the current RTP timestamp
+	// and multiplying by a conversion rate of (1e9 ns/s / clock rate).
+	// Since the audio and video track might start pushing to their buffers at different times, we then add a
+	// synced clock offset (w.nsOffset), which is always 0 for the first track, and fixes the video starting to play too
+	// early if it's waiting for a key frame
+	cyclesElapsed := int64(pkt.Timestamp) - w.tsOffset
+	nanoSecondsElapsed := cyclesElapsed * w.conversion
+	b.SetPresentationTimestamp(time.Duration(nanoSecondsElapsed + w.nsOffset))
 
 	w.src.PushBuffer(b)
 	return nil
