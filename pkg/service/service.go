@@ -213,10 +213,10 @@ func (s *Service) isIdle() bool {
 }
 
 func (s *Service) handleEgress(p pipeline.Pipeline) {
-	defer s.pipelines.Delete(p.Info().EgressId)
+	defer s.pipelines.Delete(p.GetInfo().EgressId)
 
 	// subscribe to request channel
-	requests, err := s.bus.Subscribe(s.ctx, egress.RequestChannel(p.Info().EgressId))
+	requests, err := s.bus.Subscribe(s.ctx, egress.RequestChannel(p.GetInfo().EgressId))
 	if err != nil {
 		return
 	}
@@ -247,10 +247,10 @@ func (s *Service) handleEgress(p pipeline.Pipeline) {
 			request := &livekit.EgressRequest{}
 			err = proto.Unmarshal(requests.Payload(msg), request)
 			if err != nil {
-				logger.Errorw("failed to read request", err, "egressID", p.Info().EgressId)
+				logger.Errorw("failed to read request", err, "egressID", p.GetInfo().EgressId)
 				continue
 			}
-			logger.Debugw("handling request", "egressID", p.Info().EgressId, "requestID", request.RequestId)
+			logger.Debugw("handling request", "egressID", p.GetInfo().EgressId, "requestID", request.RequestId)
 
 			switch req := request.Request.(type) {
 			case *livekit.EgressRequest_UpdateStream:
@@ -261,7 +261,7 @@ func (s *Service) handleEgress(p pipeline.Pipeline) {
 				err = errors.ErrInvalidRPC
 			}
 
-			s.sendEgressResponse(request.RequestId, p.Info(), err)
+			s.sendEgressResponse(request.RequestId, p.GetInfo(), err)
 		}
 	}
 }

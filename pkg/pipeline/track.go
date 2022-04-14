@@ -30,7 +30,7 @@ func NewTrackPipeline(p *params.Params) (*trackPipeline, error) {
 	return pipeline, nil
 }
 
-func (p *trackPipeline) Info() *livekit.EgressInfo {
+func (p *trackPipeline) GetInfo() *livekit.EgressInfo {
 	return p.info
 }
 

@@ -9,7 +9,7 @@ import (
 )
 
 type Pipeline interface {
-	Info() *livekit.EgressInfo
+	GetInfo() *livekit.EgressInfo
 	Run() *livekit.EgressInfo
 	UpdateStream(req *livekit.UpdateStreamRequest) error
 	Stop()

@@ -9,16 +9,14 @@ import (
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/livekit-egress/pkg/pipeline/input"
-	"github.com/livekit/livekit-egress/pkg/pipeline/output"
-	"github.com/livekit/livekit-egress/pkg/pipeline/source"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/pkg/pipeline/input"
+	"github.com/livekit/livekit-egress/pkg/pipeline/output"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-egress/pkg/pipeline/sink"
+	"github.com/livekit/livekit-egress/pkg/pipeline/source"
+	"github.com/livekit/protocol/livekit"
 )
 
 // gst.Init needs to be called before using gst but after gst package loads
@@ -29,6 +27,8 @@ const (
 )
 
 type compositePipeline struct {
+	*params.Params
+
 	// gstreamer
 	pipeline *gst.Pipeline
 	in       *input.Bin
@@ -36,19 +36,10 @@ type compositePipeline struct {
 	loop     *glib.MainLoop
 
 	// internal
-	mu             sync.RWMutex
-	logger         logger.Logger
-	isStream       bool
-	streamProtocol livekit.StreamProtocol
-	params.FileParams
+	mu      sync.RWMutex
 	started bool
 	removed map[string]bool
 	closed  chan struct{}
-
-	// egress info
-	info       *livekit.EgressInfo
-	fileInfo   *livekit.FileInfo
-	streamInfo map[string]*livekit.StreamInfo
 }
 
 func NewCompositePipeline(conf *config.Config, p *params.Params) (*compositePipeline, error) {
@@ -96,23 +87,17 @@ func NewCompositePipeline(conf *config.Config, p *params.Params) (*compositePipe
 	}
 
 	return &compositePipeline{
-		pipeline:       pipeline,
-		in:             in,
-		out:            out,
-		logger:         p.Logger,
-		isStream:       p.IsStream,
-		streamProtocol: p.StreamProtocol,
-		FileParams:     p.FileParams,
-		removed:        make(map[string]bool),
-		closed:         make(chan struct{}),
-		info:           p.Info,
-		fileInfo:       p.FileInfo,
-		streamInfo:     p.StreamInfo,
+		Params:   p,
+		pipeline: pipeline,
+		in:       in,
+		out:      out,
+		removed:  make(map[string]bool),
+		closed:   make(chan struct{}),
 	}, nil
 }
 
-func (p *compositePipeline) Info() *livekit.EgressInfo {
-	return p.info
+func (p *compositePipeline) GetInfo() *livekit.EgressInfo {
+	return p.Info
 }
 
 func (p *compositePipeline) Run() *livekit.EgressInfo {
@@ -121,9 +106,9 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 	if start != nil {
 		select {
 		case <-p.closed:
-			p.info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+			p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 			p.in.Close()
-			return p.info
+			return p.Info
 		case <-start:
 			// continue
 		}
@@ -141,8 +126,8 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 
 	// set state to playing (this does not start the pipeline)
 	if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
-		p.info.Error = err.Error()
-		return p.info
+		p.Info.Error = err.Error()
+		return p.Info
 	}
 
 	// run main loop
@@ -150,14 +135,14 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 
 	// add end times to egress info
 	endedAt := time.Now().UnixNano()
-	if p.isStream {
+	if p.IsStream {
 		p.mu.RLock()
-		for _, info := range p.streamInfo {
+		for _, info := range p.StreamInfo {
 			info.EndedAt = endedAt
 		}
 		p.mu.RUnlock()
 	} else {
-		p.fileInfo.EndedAt = time.Now().UnixNano()
+		p.FileInfo.EndedAt = time.Now().UnixNano()
 	}
 
 	// close input source
@@ -165,38 +150,38 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 
 	// upload file
 	var err error
-	if !p.isStream {
+	if !p.IsStream {
 		switch u := p.FileUpload.(type) {
 		case *livekit.S3Upload:
-			p.logger.Debugw("uploading to s3")
-			p.fileInfo.Location, err = sink.UploadS3(u, p.FileParams)
+			p.Logger.Debugw("uploading to s3")
+			p.FileInfo.Location, err = sink.UploadS3(u, p.FileParams)
 		case *livekit.GCPUpload:
-			p.logger.Debugw("uploading to gcp")
-			p.fileInfo.Location, err = sink.UploadGCP(u, p.FileParams)
+			p.Logger.Debugw("uploading to gcp")
+			p.FileInfo.Location, err = sink.UploadGCP(u, p.FileParams)
 		case *livekit.AzureBlobUpload:
-			p.logger.Debugw("uploading to azure")
-			p.fileInfo.Location, err = sink.UploadAzure(u, p.FileParams)
+			p.Logger.Debugw("uploading to azure")
+			p.FileInfo.Location, err = sink.UploadAzure(u, p.FileParams)
 		default:
-			p.fileInfo.Location = p.Filepath
+			p.FileInfo.Location = p.Filepath
 		}
 	}
 	if err != nil {
-		p.logger.Errorw("could not upload file", err)
-		p.info.Error = err.Error()
+		p.Logger.Errorw("could not upload file", err)
+		p.Info.Error = err.Error()
 	}
 
 	// return result
-	p.info.Status = livekit.EgressStatus_EGRESS_COMPLETE
-	return p.info
+	p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+	return p.Info
 }
 
 func (p *compositePipeline) messageWatch(msg *gst.Message) bool {
 	switch msg.Type() {
 	case gst.MessageEOS:
 		// EOS received - close and return
-		p.logger.Debugw("EOS received, stopping pipeline")
+		p.Logger.Debugw("EOS received, stopping pipeline")
 		_ = p.pipeline.BlockSetState(gst.StateNull)
-		p.logger.Debugw("pipeline stopped")
+		p.Logger.Debugw("pipeline stopped")
 
 		p.loop.Quit()
 		return false
@@ -205,7 +190,7 @@ func (p *compositePipeline) messageWatch(msg *gst.Message) bool {
 		// handle error if possible, otherwise close and return
 		err, handled := p.handleError(msg.ParseError())
 		if !handled {
-			p.info.Error = err.Error()
+			p.Info.Error = err.Error()
 			p.loop.Quit()
 			return false
 		}
@@ -227,37 +212,37 @@ func (p *compositePipeline) messageWatch(msg *gst.Message) bool {
 		case pipelineSource:
 			p.started = true
 			startedAt := time.Now().UnixNano()
-			if p.isStream {
+			if p.IsStream {
 				p.mu.RLock()
-				for _, streamInfo := range p.streamInfo {
+				for _, streamInfo := range p.StreamInfo {
 					streamInfo.StartedAt = startedAt
 				}
 				p.mu.RUnlock()
 			} else {
-				p.fileInfo.StartedAt = startedAt
+				p.FileInfo.StartedAt = startedAt
 
 			}
-			p.info.Status = livekit.EgressStatus_EGRESS_ACTIVE
+			p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
 		}
-		
+
 	default:
-		p.logger.Debugw(msg.String())
+		p.Logger.Debugw(msg.String())
 	}
 
 	return true
 }
 
 func (p *compositePipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
-	if !p.isStream {
+	if !p.IsStream {
 		return errors.ErrInvalidRPC
 	}
 
 	now := time.Now().UnixNano()
 	for _, url := range req.AddOutputUrls {
-		switch p.streamProtocol {
+		switch p.StreamProtocol {
 		case livekit.StreamProtocol_RTMP:
 			if !strings.HasPrefix(url, "rtmp://") && !strings.HasPrefix(url, "rtmps://") {
-				return errors.ErrInvalidUrl(url, p.streamProtocol)
+				return errors.ErrInvalidUrl(url, p.StreamProtocol)
 			}
 		}
 
@@ -271,10 +256,10 @@ func (p *compositePipeline) UpdateStream(req *livekit.UpdateStreamRequest) error
 		}
 
 		p.mu.Lock()
-		p.streamInfo[url] = streamInfo
+		p.StreamInfo[url] = streamInfo
 		p.mu.Unlock()
 
-		stream := p.info.GetStream()
+		stream := p.Info.GetStream()
 		stream.Info = append(stream.Info, streamInfo)
 	}
 
@@ -284,8 +269,8 @@ func (p *compositePipeline) UpdateStream(req *livekit.UpdateStreamRequest) error
 		}
 
 		p.mu.Lock()
-		p.streamInfo[url].EndedAt = now
-		delete(p.streamInfo, url)
+		p.StreamInfo[url].EndedAt = now
+		delete(p.StreamInfo, url)
 		p.mu.Unlock()
 	}
 
@@ -298,9 +283,9 @@ func (p *compositePipeline) Stop() {
 		return
 	default:
 		close(p.closed)
-		p.info.Status = livekit.EgressStatus_EGRESS_ENDING
+		p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 
-		p.logger.Debugw("sending EOS to pipeline")
+		p.Logger.Debugw("sending EOS to pipeline")
 		p.pipeline.SendEvent(gst.NewEOSEvent())
 	}
 }
@@ -311,7 +296,7 @@ func (p *compositePipeline) handleError(gErr *gst.GError) (error, bool) {
 
 	element, reason, ok := parseDebugInfo(gErr.DebugString())
 	if !ok {
-		p.logger.Errorw("failed to parse pipeline error", err, "debug", gErr.DebugString())
+		p.Logger.Errorw("failed to parse pipeline error", err, "debug", gErr.DebugString())
 		return err, false
 	}
 
@@ -319,7 +304,7 @@ func (p *compositePipeline) handleError(gErr *gst.GError) (error, bool) {
 	case errors.GErrNoURI, errors.GErrCouldNotConnect:
 		// bad URI or could not connect. Remove rtmp output
 		if err := p.out.RemoveSinkByName(element); err != nil {
-			p.logger.Errorw("failed to remove sink", err)
+			p.Logger.Errorw("failed to remove sink", err)
 			return err, false
 		}
 		p.removed[element] = true
@@ -329,7 +314,7 @@ func (p *compositePipeline) handleError(gErr *gst.GError) (error, bool) {
 		// should be preceded by a GErrNoURI on the same sink
 		handled := p.removed[element]
 		if !handled {
-			p.logger.Errorw("element failed to start", err)
+			p.Logger.Errorw("element failed to start", err)
 		}
 		return err, handled
 	case errors.GErrStreamingStopped:
@@ -340,12 +325,12 @@ func (p *compositePipeline) handleError(gErr *gst.GError) (error, bool) {
 			handled = p.removed[fmt.Sprint("sink_", element[6:])]
 		}
 		if !handled {
-			p.logger.Errorw("streaming sink stopped", err)
+			p.Logger.Errorw("streaming sink stopped", err)
 		}
 		return err, handled
 	default:
 		// input failure or file write failure. Fatal
-		p.logger.Errorw("pipeline error", err, "debug", gErr.DebugString())
+		p.Logger.Errorw("pipeline error", err, "debug", gErr.DebugString())
 		return err, false
 	}
 }
