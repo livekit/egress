@@ -1,6 +1,8 @@
 package source
 
 import (
+	"time"
+
 	"github.com/pion/webrtc/v3"
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
@@ -31,9 +33,12 @@ type SDKSource struct {
 	logger logger.Logger
 	active atomic.Int32
 
-	// track requests
+	// track
 	trackID    string
 	fileWriter *fileWriter
+
+	// track composite
+	cs *clockSync
 
 	// track composite audio
 	audioTrackID string
@@ -66,6 +71,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 	switch p.Info.Request.(type) {
 	case *livekit.EgressInfo_TrackComposite:
 		composite = true
+		s.cs = &clockSync{}
 		if p.AudioEnabled {
 			src, err := gst.NewElementWithName("appsrc", AudioAppSource)
 			if err != nil {
@@ -93,7 +99,6 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		s.trackID = p.TrackID
 	}
 
-	cs := &clockSync{}
 	s.room.Callback.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		s.logger.Debugw("track subscribed", "trackID", track.ID())
 
@@ -102,10 +107,10 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 			switch track.Kind() {
 			case webrtc.RTPCodecTypeAudio:
 				s.audioCodec <- track.Codec()
-				s.audioWriter, err = newAppWriter(track, rp, s.logger, s.audioSrc, cs, s.audioPlaying)
+				s.audioWriter, err = newAppWriter(track, rp, s.logger, s.audioSrc, s.cs, s.audioPlaying)
 			case webrtc.RTPCodecTypeVideo:
 				s.videoCodec <- track.Codec()
-				s.videoWriter, err = newAppWriter(track, rp, s.logger, s.videoSrc, cs, s.videoPlaying)
+				s.videoWriter, err = newAppWriter(track, rp, s.logger, s.videoSrc, s.cs, s.videoPlaying)
 			}
 		} else {
 			s.fileWriter, err = newFileWriter(track, rp, s.logger)
@@ -240,11 +245,23 @@ func (s *SDKSource) Close() {
 		if s.fileWriter != nil {
 			s.fileWriter.stop()
 		}
+
+		if s.cs != nil {
+			s.cs.SetEndTime(time.Now().UnixNano())
+		}
+
+		// stop both writers then wait until finished
 		if s.audioWriter != nil {
 			s.audioWriter.stop()
 		}
 		if s.videoWriter != nil {
 			s.videoWriter.stop()
+		}
+		if s.audioWriter != nil {
+			s.audioWriter.waitUntilFinished()
+		}
+		if s.videoWriter != nil {
+			s.videoWriter.waitUntilFinished()
 		}
 
 		s.room.Disconnect()
