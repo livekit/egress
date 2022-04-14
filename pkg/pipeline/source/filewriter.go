@@ -81,7 +81,15 @@ func (w *fileWriter) start() {
 	for {
 		select {
 		case <-w.closed:
+			// drain sample builder
+			for _, p := range w.sb.ForcePopPackets() {
+				if err := w.writer.WriteRTP(p); err != nil {
+					w.logger.Errorw("could not write to file", err)
+					return
+				}
+			}
 			return
+
 		default:
 			pkt, _, err := w.track.ReadRTP()
 			if err != nil {

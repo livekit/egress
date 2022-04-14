@@ -92,7 +92,29 @@ func newAppWriter(
 }
 
 func (w *appWriter) start() {
+	defer func() {
+		if !w.isPlaying() {
+			return
+		}
+
+		// drain the sample builder
+		for _, p := range w.sb.ForcePopPackets() {
+			if err := w.writeRTP(p); err != nil {
+				w.logger.Errorw("could not write to file", err)
+				break
+			}
+		}
+
+		if flow := w.src.EndStream(); flow != gst.FlowOK {
+			logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
+		}
+	}()
+
 	for {
+		if w.isClosed() {
+			return
+		}
+
 		pkt, _, err := w.track.ReadRTP()
 		if err != nil {
 			if err.Error() == "EOF" {
@@ -115,21 +137,14 @@ func (w *appWriter) start() {
 
 		w.sb.Push(pkt)
 
-		select {
-		case <-w.closed:
-			w.src.EndStream()
-			return
-
-		case <-w.playing:
+		// buffers can only be pushed to the appsrc while in the playing state
+		if w.isPlaying() {
 			for _, p := range w.sb.PopPackets() {
 				if err = w.writeRTP(p); err != nil {
 					w.logger.Errorw("could not write to file", err)
 					return
 				}
 			}
-
-		default:
-			continue
 		}
 	}
 }
@@ -157,6 +172,24 @@ func (w *appWriter) writeRTP(pkt *rtp.Packet) error {
 
 	w.src.PushBuffer(b)
 	return nil
+}
+
+func (w *appWriter) isPlaying() bool {
+	select {
+	case <-w.playing:
+		return true
+	default:
+		return false
+	}
+}
+
+func (w *appWriter) isClosed() bool {
+	select {
+	case <-w.closed:
+		return true
+	default:
+		return false
+	}
 }
 
 func (w *appWriter) stop() {

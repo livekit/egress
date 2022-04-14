@@ -51,6 +51,7 @@ type SDKSource struct {
 
 	// app source can't push data until pipeline is in playing state
 	endRecording chan struct{}
+	closed       chan struct{}
 }
 
 func NewSDKSource(p *params.Params) (*SDKSource, error) {
@@ -58,6 +59,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		room:         lksdk.CreateRoom(),
 		logger:       p.Logger,
 		endRecording: make(chan struct{}),
+		closed:       make(chan struct{}),
 	}
 
 	composite := false
@@ -229,5 +231,22 @@ func (s *SDKSource) EndRecording() chan struct{} {
 }
 
 func (s *SDKSource) Close() {
-	s.room.Disconnect()
+	select {
+	case <-s.closed:
+		return
+	default:
+		close(s.closed)
+
+		if s.fileWriter != nil {
+			s.fileWriter.stop()
+		}
+		if s.audioWriter != nil {
+			s.audioWriter.stop()
+		}
+		if s.videoWriter != nil {
+			s.videoWriter.stop()
+		}
+
+		s.room.Disconnect()
+	}
 }

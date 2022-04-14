@@ -287,7 +287,13 @@ func (p *compositePipeline) Stop() {
 		p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 
 		p.Logger.Debugw("sending EOS to pipeline")
-		p.pipeline.SendEvent(gst.NewEOSEvent())
+
+		switch p.in.Source.(type) {
+		case *source.SDKSource:
+			p.in.Close()
+		case *source.WebSource:
+			p.pipeline.SendEvent(gst.NewEOSEvent())
+		}
 	}
 }
 
