@@ -11,6 +11,7 @@ import (
 
 	"github.com/livekit/livekit-egress/pkg/pipeline/input"
 	"github.com/livekit/livekit-egress/pkg/pipeline/output"
+	"github.com/livekit/livekit-egress/pkg/pipeline/source"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -24,20 +25,15 @@ import (
 var initialized = false
 
 const (
-	pipelineMessageSource = "pipeline"
-	inputMessageSource    = "input"
+	pipelineSource = "pipeline"
 )
 
 type compositePipeline struct {
-	// pipeline
+	// gstreamer
 	pipeline *gst.Pipeline
 	in       *input.Bin
 	out      *output.Bin
-
-	// egress info
-	info       *livekit.EgressInfo
-	fileInfo   *livekit.FileInfo
-	streamInfo map[string]*livekit.StreamInfo
+	loop     *glib.MainLoop
 
 	// internal
 	mu             sync.RWMutex
@@ -45,8 +41,14 @@ type compositePipeline struct {
 	isStream       bool
 	streamProtocol livekit.StreamProtocol
 	params.FileParams
+	started bool
 	removed map[string]bool
 	closed  chan struct{}
+
+	// egress info
+	info       *livekit.EgressInfo
+	fileInfo   *livekit.FileInfo
+	streamInfo map[string]*livekit.StreamInfo
 }
 
 func NewCompositePipeline(conf *config.Config, p *params.Params) (*compositePipeline, error) {
@@ -67,9 +69,29 @@ func NewCompositePipeline(conf *config.Config, p *params.Params) (*compositePipe
 		return nil, err
 	}
 
-	// link elements
-	pipeline, err := buildPipeline(in, out)
+	// create pipeline
+	pipeline, err := gst.NewPipeline("pipeline")
 	if err != nil {
+		return nil, err
+	}
+
+	// add bins to pipeline
+	if err = pipeline.AddMany(in.Element(), out.Element()); err != nil {
+		return nil, err
+	}
+
+	// link input elements
+	if err = in.Link(); err != nil {
+		return nil, err
+	}
+
+	// link output elements
+	if err = out.Link(); err != nil {
+		return nil, err
+	}
+
+	// link bins
+	if err := in.Bin().Link(out.Element()); err != nil {
 		return nil, err
 	}
 
@@ -77,15 +99,15 @@ func NewCompositePipeline(conf *config.Config, p *params.Params) (*compositePipe
 		pipeline:       pipeline,
 		in:             in,
 		out:            out,
-		info:           p.Info,
-		fileInfo:       p.FileInfo,
-		streamInfo:     p.StreamInfo,
 		logger:         p.Logger,
 		isStream:       p.IsStream,
 		streamProtocol: p.StreamProtocol,
 		FileParams:     p.FileParams,
 		removed:        make(map[string]bool),
 		closed:         make(chan struct{}),
+		info:           p.Info,
+		fileInfo:       p.FileInfo,
+		streamInfo:     p.StreamInfo,
 	}, nil
 }
 
@@ -114,59 +136,8 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 	}()
 
 	// add watch
-	started := false
-	loop := glib.NewMainLoop(glib.MainContextDefault(), false)
-	p.pipeline.GetPipelineBus().AddWatch(func(msg *gst.Message) bool {
-		switch msg.Type() {
-		case gst.MessageEOS:
-			// EOS received - close and return
-			p.logger.Debugw("EOS received, stopping pipeline")
-			_ = p.pipeline.BlockSetState(gst.StateNull)
-			p.logger.Debugw("pipeline stopped")
-
-			loop.Quit()
-			return false
-		case gst.MessageError:
-			// handle error if possible, otherwise close and return
-			err, handled := p.handleError(msg.ParseError())
-			if !handled {
-				p.info.Error = err.Error()
-				loop.Quit()
-				return false
-			}
-		case gst.MessageStateChanged:
-			if started {
-				return true
-			}
-
-			_, newState := msg.ParseStateChanged()
-			if newState != gst.StatePlaying {
-				return true
-			}
-
-			if msg.Source() == inputMessageSource {
-				p.in.Playing()
-			} else if msg.Source() == pipelineMessageSource {
-				started = true
-				startedAt := time.Now().UnixNano()
-				if p.isStream {
-					p.mu.RLock()
-					for _, streamInfo := range p.streamInfo {
-						streamInfo.StartedAt = startedAt
-					}
-					p.mu.RUnlock()
-				} else {
-					p.fileInfo.StartedAt = startedAt
-
-				}
-				p.info.Status = livekit.EgressStatus_EGRESS_ACTIVE
-			}
-		default:
-			p.logger.Debugw(msg.String())
-		}
-
-		return true
-	})
+	p.loop = glib.NewMainLoop(glib.MainContextDefault(), false)
+	p.pipeline.GetPipelineBus().AddWatch(p.messageWatch)
 
 	// set state to playing (this does not start the pipeline)
 	if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
@@ -175,7 +146,7 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 	}
 
 	// run main loop
-	loop.Run()
+	p.loop.Run()
 
 	// add end times to egress info
 	endedAt := time.Now().UnixNano()
@@ -217,6 +188,63 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 	// return result
 	p.info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 	return p.info
+}
+
+func (p *compositePipeline) messageWatch(msg *gst.Message) bool {
+	switch msg.Type() {
+	case gst.MessageEOS:
+		// EOS received - close and return
+		p.logger.Debugw("EOS received, stopping pipeline")
+		_ = p.pipeline.BlockSetState(gst.StateNull)
+		p.logger.Debugw("pipeline stopped")
+
+		p.loop.Quit()
+		return false
+
+	case gst.MessageError:
+		// handle error if possible, otherwise close and return
+		err, handled := p.handleError(msg.ParseError())
+		if !handled {
+			p.info.Error = err.Error()
+			p.loop.Quit()
+			return false
+		}
+
+	case gst.MessageStateChanged:
+		if p.started {
+			return true
+		}
+
+		_, newState := msg.ParseStateChanged()
+		if newState != gst.StatePlaying {
+			return true
+		}
+
+		switch msg.Source() {
+		case source.AudioAppSource, source.VideoAppSource:
+			p.in.Playing(msg.Source())
+
+		case pipelineSource:
+			p.started = true
+			startedAt := time.Now().UnixNano()
+			if p.isStream {
+				p.mu.RLock()
+				for _, streamInfo := range p.streamInfo {
+					streamInfo.StartedAt = startedAt
+				}
+				p.mu.RUnlock()
+			} else {
+				p.fileInfo.StartedAt = startedAt
+
+			}
+			p.info.Status = livekit.EgressStatus_EGRESS_ACTIVE
+		}
+		
+	default:
+		p.logger.Debugw(msg.String())
+	}
+
+	return true
 }
 
 func (p *compositePipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
@@ -275,36 +303,6 @@ func (p *compositePipeline) Stop() {
 		p.logger.Debugw("sending EOS to pipeline")
 		p.pipeline.SendEvent(gst.NewEOSEvent())
 	}
-}
-
-func buildPipeline(in *input.Bin, out *output.Bin) (*gst.Pipeline, error) {
-	// create pipeline
-	pipeline, err := gst.NewPipeline("pipeline")
-	if err != nil {
-		return nil, err
-	}
-
-	// add bins to pipeline
-	if err = pipeline.AddMany(in.Element(), out.Element()); err != nil {
-		return nil, err
-	}
-
-	// link input elements
-	if err = in.Link(); err != nil {
-		return nil, err
-	}
-
-	// link output elements
-	if err = out.Link(); err != nil {
-		return nil, err
-	}
-
-	// link bins
-	if err := in.Bin().Link(out.Element()); err != nil {
-		return nil, err
-	}
-
-	return pipeline, nil
 }
 
 // handleError returns true if the error has been handled, false if the pipeline should quit

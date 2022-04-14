@@ -11,6 +11,7 @@ import (
 	"github.com/livekit/livekit-egress/pkg/pipeline/source"
 )
 
+// TODO: save mp4 files as TS then remux to avoid losing everything on failure
 func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 	b := &Bin{
 		bin:      gst.NewBin("input"),
@@ -70,20 +71,16 @@ func (b *Bin) buildMux(p *params.Params) error {
 				return err
 			}
 			err = b.mux.Set("streamable", true)
-			// case livekit.StreamProtocol_SRT:
-			// 	err = errors.ErrNotSupported("srt output")
 		}
 	} else {
 		switch p.FileType {
-
 		case livekit.EncodedFileType_MP4:
 			b.mux, err = gst.NewElement("mp4mux")
 			if err != nil {
 				return err
 			}
 			err = b.mux.SetProperty("faststart", true)
-		// case livekit.EncodedFileType_WEBM:
-		// 	b.mux, err = gst.NewElement("webmmux")
+
 		case livekit.EncodedFileType_OGG:
 			b.mux, err = gst.NewElement("oggmux")
 		}

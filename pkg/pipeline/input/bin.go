@@ -7,7 +7,7 @@ import (
 )
 
 type Source interface {
-	Playing()
+	Playing(name string)
 	StartRecording() chan struct{}
 	EndRecording() chan struct{}
 	Close()

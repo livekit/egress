@@ -83,6 +83,10 @@ func (w *appWriter) start() {
 		w.sb.Push(pkt)
 
 		select {
+		case <-w.closed:
+			w.src.EndStream()
+			return
+
 		case <-w.playing:
 			for _, p := range w.sb.PopPackets() {
 				if err = w.writeRTP(p); err != nil {
@@ -90,8 +94,7 @@ func (w *appWriter) start() {
 					return
 				}
 			}
-		case <-w.closed:
-			return
+
 		default:
 			continue
 		}

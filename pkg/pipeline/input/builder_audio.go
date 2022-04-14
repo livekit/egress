@@ -62,6 +62,8 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 	src.SetFormat(gst.FormatTime)
 	src.SetLive(true)
 
+	b.audioElements = append(b.audioElements, src.Element)
+
 	codecInfo := <-codec
 	switch {
 	case strings.EqualFold(codecInfo.MimeType, source.MimeTypeOpus):
@@ -86,7 +88,7 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 			return err
 		}
 
-		b.audioElements = append(b.audioElements, src.Element, rtpJitterBuffer, rtpOpusDepay)
+		b.audioElements = append(b.audioElements, rtpJitterBuffer, rtpOpusDepay)
 
 		if p.AudioCodec == livekit.AudioCodec_OPUS {
 			// skip encoding

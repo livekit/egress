@@ -97,6 +97,8 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	src.SetFormat(gst.FormatTime)
 	src.SetLive(true)
 
+	b.videoElements = append(b.videoElements, src.Element)
+
 	codecInfo := <-codec
 	switch {
 	case strings.EqualFold(codecInfo.MimeType, source.MimeTypeH264):

@@ -2,6 +2,7 @@ package source
 
 import (
 	"github.com/pion/webrtc/v3"
+	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
@@ -14,6 +15,9 @@ import (
 )
 
 const (
+	AudioAppSource = "audioAppSrc"
+	VideoAppSource = "videoAppSrc"
+
 	MimeTypeOpus = "audio/opus"
 	MimeTypeH264 = "video/h264"
 	MimeTypeVP8  = "video/vp8"
@@ -23,25 +27,29 @@ const (
 )
 
 type SDKSource struct {
-	room     *lksdk.Room
-	logger   logger.Logger
-	trackIDs []string
-	active   atomic.Int32
+	room   *lksdk.Room
+	logger logger.Logger
+	active atomic.Int32
 
 	// track requests
+	trackID    string
 	fileWriter *fileWriter
 
-	// track composite requests
-	audioSrc    *app.Source
-	audioCodec  chan webrtc.RTPCodecParameters
-	audioWriter *appWriter
-	videoSrc    *app.Source
-	videoCodec  chan webrtc.RTPCodecParameters
-	videoWriter *appWriter
+	// track composite audio
+	audioTrackID string
+	audioSrc     *app.Source
+	audioCodec   chan webrtc.RTPCodecParameters
+	audioWriter  *appWriter
+	audioPlaying chan struct{}
+
+	// track composite video
+	videoTrackID string
+	videoSrc     *app.Source
+	videoCodec   chan webrtc.RTPCodecParameters
+	videoWriter  *appWriter
+	videoPlaying chan struct{}
 
 	// app source can't push data until pipeline is in playing state
-	playing chan struct{}
-
 	endRecording chan struct{}
 }
 
@@ -57,27 +65,30 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 	case *livekit.EgressInfo_TrackComposite:
 		composite = true
 		if p.AudioEnabled {
-			src, err := app.NewAppSrc()
+			src, err := gst.NewElementWithName("appsrc", AudioAppSource)
 			if err != nil {
 				return nil, err
 			}
-			s.audioSrc = src
+
+			s.audioSrc = app.SrcFromElement(src)
 			s.audioCodec = make(chan webrtc.RTPCodecParameters, 1)
-			s.trackIDs = append(s.trackIDs, p.AudioTrackID)
+			s.audioPlaying = make(chan struct{})
+			s.audioTrackID = p.AudioTrackID
 		}
 		if p.VideoEnabled {
-			src, err := app.NewAppSrc()
+			src, err := gst.NewElementWithName("appsrc", VideoAppSource)
 			if err != nil {
 				return nil, err
 			}
-			s.videoSrc = src
+
+			s.videoSrc = app.SrcFromElement(src)
 			s.videoCodec = make(chan webrtc.RTPCodecParameters, 1)
-			s.trackIDs = append(s.trackIDs, p.VideoTrackID)
+			s.videoPlaying = make(chan struct{})
+			s.videoTrackID = p.VideoTrackID
 		}
-		s.playing = make(chan struct{})
 
 	case *livekit.EgressInfo_Track:
-		s.trackIDs = []string{p.TrackID}
+		s.trackID = p.TrackID
 	}
 
 	s.room.Callback.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
@@ -88,10 +99,10 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 			switch track.Kind() {
 			case webrtc.RTPCodecTypeAudio:
 				s.audioCodec <- track.Codec()
-				s.audioWriter, err = newAppWriter(track, rp, s.logger, s.audioSrc, s.playing)
+				s.audioWriter, err = newAppWriter(track, rp, s.logger, s.audioSrc, s.audioPlaying)
 			case webrtc.RTPCodecTypeVideo:
 				s.videoCodec <- track.Codec()
-				s.videoWriter, err = newAppWriter(track, rp, s.logger, s.videoSrc, s.playing)
+				s.videoWriter, err = newAppWriter(track, rp, s.logger, s.videoSrc, s.videoPlaying)
 			}
 		} else {
 			s.fileWriter, err = newFileWriter(track, rp, s.logger)
@@ -120,8 +131,15 @@ func (s *SDKSource) join(p *params.Params) error {
 	}
 
 	expecting := make(map[string]bool)
-	for _, trackID := range s.trackIDs {
-		expecting[trackID] = true
+	if s.trackID != "" {
+		expecting[s.trackID] = true
+	} else {
+		if s.audioTrackID != "" {
+			expecting[s.audioTrackID] = true
+		}
+		if s.videoTrackID != "" {
+			expecting[s.videoTrackID] = true
+		}
 	}
 
 	for _, p := range s.room.GetParticipants() {
@@ -151,13 +169,17 @@ func (s *SDKSource) join(p *params.Params) error {
 }
 
 func (s *SDKSource) onTrackUnpublished(track *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
-	for _, trackID := range s.trackIDs {
-		if track.SID() == trackID {
-			if s.active.Dec() == 0 {
-				s.onComplete()
-			}
-			return
-		}
+	switch track.SID() {
+	case s.trackID:
+		s.fileWriter.stop()
+	case s.audioTrackID:
+		s.audioWriter.stop()
+	case s.videoTrackID:
+		s.videoWriter.stop()
+	}
+
+	if s.active.Dec() == 0 {
+		s.onComplete()
 	}
 }
 
@@ -178,12 +200,22 @@ func (s *SDKSource) GetVideoSource() (*app.Source, chan webrtc.RTPCodecParameter
 	return s.videoSrc, s.videoCodec
 }
 
-func (s *SDKSource) Playing() {
+func (s *SDKSource) Playing(name string) {
+	var playing chan struct{}
+
+	if name == AudioAppSource {
+		playing = s.audioPlaying
+	} else if name == VideoAppSource {
+		playing = s.videoPlaying
+	} else {
+		return
+	}
+
 	select {
-	case <-s.playing:
+	case <-playing:
 		return
 	default:
-		close(s.playing)
+		close(playing)
 	}
 }
 
@@ -196,9 +228,5 @@ func (s *SDKSource) EndRecording() chan struct{} {
 }
 
 func (s *SDKSource) Close() {
-	if s.fileWriter != nil {
-		s.fileWriter.stop()
-	}
-
 	s.room.Disconnect()
 }

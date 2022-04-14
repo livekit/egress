@@ -57,6 +57,7 @@ func NewService(conf *config.Config, bus utils.MessageBus) *Service {
 	return s
 }
 
+// TODO: Run each pipeline in a separate process for security reasons
 func (s *Service) Run() error {
 	logger.Debugw("starting service")
 
