@@ -25,7 +25,7 @@ type appWriter struct {
 	logger     logger.Logger
 	runtime    time.Time
 	runtimeSet bool
-	ready      chan struct{}
+	playing    chan struct{}
 	closed     chan struct{}
 }
 
@@ -34,15 +34,15 @@ func newAppWriter(
 	rp *lksdk.RemoteParticipant,
 	l logger.Logger,
 	src *app.Source,
-	ready chan struct{},
+	playing chan struct{},
 ) (*appWriter, error) {
 
 	w := &appWriter{
-		track:  track,
-		src:    src,
-		logger: logger.Logger(logr.Logger(l).WithValues("trackID", track.ID())),
-		ready:  ready,
-		closed: make(chan struct{}),
+		track:   track,
+		src:     src,
+		logger:  logger.Logger(logr.Logger(l).WithValues("trackID", track.ID())),
+		playing: playing,
+		closed:  make(chan struct{}),
 	}
 
 	switch {
@@ -65,24 +65,25 @@ func newAppWriter(
 		return nil, errors.ErrNotSupported(track.Codec().MimeType)
 	}
 
+	go w.start()
 	return w, nil
 }
 
 func (w *appWriter) start() {
 	for {
 		pkt, _, err := w.track.ReadRTP()
-
-		select {
-		case <-w.ready:
-			if err != nil {
-				if err.Error() == "EOF" {
-					continue
-				}
-				w.logger.Errorw("could not read from track", err)
-				return
+		if err != nil {
+			if err.Error() == "EOF" {
+				continue
 			}
 
-			w.sb.Push(pkt)
+			w.logger.Errorw("could not read from track", err)
+			return
+		}
+		w.sb.Push(pkt)
+
+		select {
+		case <-w.playing:
 			for _, p := range w.sb.PopPackets() {
 				if err = w.writeRTP(p); err != nil {
 					w.logger.Errorw("could not write to file", err)

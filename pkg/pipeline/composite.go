@@ -95,14 +95,14 @@ func (p *compositePipeline) Info() *livekit.EgressInfo {
 
 func (p *compositePipeline) Run() *livekit.EgressInfo {
 	// wait until room is ready
-	ready := p.in.StartRecording()
-	if ready != nil {
+	start := p.in.StartRecording()
+	if start != nil {
 		select {
 		case <-p.closed:
 			p.info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 			p.in.Close()
 			return p.info
-		case <-ready:
+		case <-start:
 			// continue
 		}
 	}
@@ -145,7 +145,7 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 			}
 
 			if msg.Source() == inputMessageSource {
-				p.in.Ready()
+				p.in.Playing()
 			} else if msg.Source() == pipelineMessageSource {
 				started = true
 				startedAt := time.Now().UnixNano()

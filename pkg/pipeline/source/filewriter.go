@@ -60,8 +60,12 @@ func newFileWriter(track *webrtc.TrackRemote, rp *lksdk.RemoteParticipant, l log
 	default:
 		err = errors.ErrNotSupported(track.Codec().MimeType)
 	}
+	if err != nil {
+		return nil, err
+	}
 
-	return w, err
+	go w.start()
+	return w, nil
 }
 
 func (w *fileWriter) start() {

@@ -49,50 +49,15 @@ func (b *Bin) buildWebAudioInput(p *params.Params) error {
 		return err
 	}
 
-	audioConvert, err := gst.NewElement("audioconvert")
-	if err != nil {
-		return err
-	}
+	b.audioElements = append(b.audioElements, pulseSrc)
 
-	var capsStr string
-	var encoder *gst.Element
-	switch p.AudioCodec {
-	case livekit.AudioCodec_OPUS:
-		capsStr = "audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2"
-
-		encoder, err = gst.NewElement("opusenc")
-		if err != nil {
-			return err
-		}
-
-	case livekit.AudioCodec_AAC:
-		capsStr = fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", p.AudioFrequency)
-
-		encoder, err = gst.NewElement("faac")
-		if err != nil {
-			return err
-		}
-	}
-
-	audioCapsFilter, err := gst.NewElement("capsfilter")
-	if err != nil {
-		return err
-	}
-	if err = audioCapsFilter.SetProperty("caps", gst.NewCapsFromString(capsStr)); err != nil {
-		return err
-	}
-
-	if err = encoder.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
-		return err
-	}
-
-	b.audioElements = append(b.audioElements, pulseSrc, audioConvert, audioCapsFilter, encoder)
-	return nil
+	return b.buildAudioEncoder(p)
 }
 
 func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 	src, codec := b.Source.(*source.SDKSource).GetAudioSource()
 
+	// TODO: pretty sure these are busted
 	src.SetDoTimestamp(true)
 	src.SetFormat(gst.FormatTime)
 	src.SetLive(true)
@@ -109,6 +74,7 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 			return err
 		}
 
+		// TODO: find a way to remove rtpJitterBuffer
 		rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
 		if err != nil {
 			return err
@@ -122,48 +88,66 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 
 		b.audioElements = append(b.audioElements, src.Element, rtpJitterBuffer, rtpOpusDepay)
 
-		switch p.AudioCodec {
-		case livekit.AudioCodec_OPUS:
-
-		case livekit.AudioCodec_AAC:
-			opusDec, err := gst.NewElement("opusdec")
-			if err != nil {
-				return err
-			}
-
-			audioConvert, err := gst.NewElement("audioconvert")
-			if err != nil {
-				return err
-			}
-
-			audioResample, err := gst.NewElement("audioresample")
-			if err != nil {
-				return err
-			}
-
-			audioCapsFilter, err := gst.NewElement("capsfilter")
-			if err != nil {
-				return err
-			}
-			if err = audioCapsFilter.SetProperty("caps", gst.NewCapsFromString(
-				fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", p.AudioFrequency),
-			)); err != nil {
-				return err
-			}
-
-			faac, err := gst.NewElement("faac")
-			if err != nil {
-				return err
-			}
-			if err = faac.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
-				return err
-			}
-
-			b.audioElements = append(b.audioElements, opusDec, audioConvert, audioResample, audioCapsFilter, faac)
+		if p.AudioCodec == livekit.AudioCodec_OPUS {
+			// skip encoding
+			return nil
 		}
+
+		opusDec, err := gst.NewElement("opusdec")
+		if err != nil {
+			return err
+		}
+
+		b.audioElements = append(b.audioElements, opusDec)
+
+		return b.buildAudioEncoder(p)
+
 	default:
 		return errors.ErrNotSupported(codecInfo.MimeType)
 	}
+}
 
+func (b *Bin) buildAudioEncoder(p *params.Params) error {
+	audioConvert, err := gst.NewElement("audioconvert")
+	if err != nil {
+		return err
+	}
+
+	// TODO: is audioresample needed?
+	audioResample, err := gst.NewElement("audioresample")
+	if err != nil {
+		return err
+	}
+	// TODO: sinc-filter-mode=full will use more memory but much less CPU
+
+	var capsStr string
+	var encoderName string
+	switch p.AudioCodec {
+	case livekit.AudioCodec_OPUS:
+		capsStr = "audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2"
+		encoderName = "opusenc"
+
+	case livekit.AudioCodec_AAC:
+		capsStr = fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", p.AudioFrequency)
+		encoderName = "faac"
+	}
+
+	audioCapsFilter, err := gst.NewElement("capsfilter")
+	if err != nil {
+		return err
+	}
+	if err = audioCapsFilter.SetProperty("caps", gst.NewCapsFromString(capsStr)); err != nil {
+		return err
+	}
+
+	encoder, err := gst.NewElement(encoderName)
+	if err != nil {
+		return err
+	}
+	if err = encoder.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
+		return err
+	}
+
+	b.audioElements = append(b.audioElements, audioConvert, audioResample, audioCapsFilter, encoder)
 	return nil
 }

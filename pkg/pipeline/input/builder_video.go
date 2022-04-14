@@ -60,6 +60,8 @@ func (b *Bin) buildWebVideoInput(p *params.Params) error {
 		return err
 	}
 
+	// TODO: is videorate needed?
+
 	videoFramerateCaps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return err
@@ -74,33 +76,23 @@ func (b *Bin) buildWebVideoInput(p *params.Params) error {
 
 	switch p.VideoCodec {
 	case livekit.VideoCodec_H264_BASELINE:
-		err = b.buildH26XElements(264, "baseline", p)
-	case livekit.VideoCodec_H264_MAIN:
-		err = b.buildH26XElements(264, "main", p)
-	case livekit.VideoCodec_H264_HIGH:
-		err = b.buildH26XElements(264, "high", p)
-	// case livekit.VideoCodec_VP8:
-	//  // TODO: vp8 low quality/choppy
-	// 	err = b.buildVPXElements(8, params)
-	// case livekit.VideoCodec_VP9:
-	//  // TODO: vp9 is extremely slow, audio gets dropped, default parameters cannot keep up with live source
-	// 	err = b.buildVPXElements(9, params)
-	// case livekit.VideoCodec_HEVC_MAIN:
-	//  // TODO: hevc low quality/choppy
-	// 	err = b.buildH26XElements(265, "main", params)
-	// case livekit.VideoCodec_HEVC_HIGH:
-	//  // TODO: hevc low quality/choppy
-	// 	err = b.buildH26XElements(265, "main", params)
-	default:
-		err = errors.ErrNotSupported(p.VideoCodec.String())
-	}
+		return b.buildH26XElements(p, 264, "baseline")
 
-	return err
+	case livekit.VideoCodec_H264_MAIN:
+		return b.buildH26XElements(p, 264, "main")
+
+	case livekit.VideoCodec_H264_HIGH:
+		return b.buildH26XElements(p, 264, "high")
+
+	default:
+		return errors.ErrNotSupported(p.VideoCodec.String())
+	}
 }
 
 func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	src, codec := b.Source.(*source.SDKSource).GetVideoSource()
 
+	// TODO: pretty sure these are busted
 	src.SetDoTimestamp(true)
 	src.SetFormat(gst.FormatTime)
 	src.SetLive(true)
@@ -117,6 +109,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 			return err
 		}
 
+		// TODO: find a way to remove rtpJitterBuffer
 		rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
 		if err != nil {
 			return err
@@ -145,6 +138,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 			return err
 		}
 
+		// TODO: find a way to remove rtpJitterBuffer
 		rtpJitterBuffer, err := gst.NewElement("rtpjitterbuffer")
 		if err != nil {
 			return err
@@ -194,33 +188,24 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 
 	b.videoElements = append(b.videoElements, videoConvert, videoScale, videoRate, decodedCaps)
 
-	// Build encoding pipeline
-	switch p.FileType {
-	case livekit.EncodedFileType_MP4:
-		var profile string
-		switch p.VideoCodec {
-		case livekit.VideoCodec_H264_BASELINE:
-			profile = "baseline"
-		case livekit.VideoCodec_H264_MAIN:
-			profile = "main"
-		case livekit.VideoCodec_H264_HIGH:
-			profile = "high"
-		default:
-			return errors.ErrNotSupported(p.VideoCodec.String())
-		}
+	// Build encoder pipeline
+	switch p.VideoCodec {
+	case livekit.VideoCodec_H264_BASELINE:
+		return b.buildH26XElements(p, 264, "baseline")
 
-		if err = b.buildH26XElements(264, profile, p); err != nil {
-			return err
-		}
+	case livekit.VideoCodec_H264_MAIN:
+		return b.buildH26XElements(p, 264, "main")
+
+	case livekit.VideoCodec_H264_HIGH:
+		return b.buildH26XElements(p, 264, "high")
 
 	default:
-		return errors.ErrNotSupported(p.FileType.String())
+		return errors.ErrNotSupported(p.VideoCodec.String())
 	}
-
-	return nil
 }
 
-func (b *Bin) buildH26XElements(num int, profile string, p *params.Params) error {
+// TODO: HEVC/265 low quality/choppy
+func (b *Bin) buildH26XElements(p *params.Params, num int, profile string) error {
 	x26XEnc, err := gst.NewElement(fmt.Sprintf("x%denc", num))
 	if err != nil {
 		return err
@@ -255,7 +240,10 @@ func (b *Bin) buildH26XElements(num int, profile string, p *params.Params) error
 	return nil
 }
 
-func (b *Bin) buildVPXElements(num int, p *params.Params) error {
+// TODO:
+//  vp8 low quality/choppy
+//  vp9 is extremely slow, audio gets dropped, default parameters cannot keep up with live source
+func (b *Bin) buildVPXElements(p *params.Params, num int) error {
 	vpXEnc, err := gst.NewElement(fmt.Sprintf("vp%denc", num))
 	if err != nil {
 		return err

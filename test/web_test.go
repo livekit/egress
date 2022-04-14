@@ -58,6 +58,9 @@ func TestRoomCompositeFile(t *testing.T) {
 		}
 	}
 
+	// TODO: get rid of this error, probably by calling Ref() on something
+	//  (test.test:9038): GStreamer-CRITICAL **: 23:46:45.257:
+	//  gst_mini_object_unref: assertion 'GST_MINI_OBJECT_REFCOUNT_VALUE (mini_object) > 0' failed
 	t.Run("room-opus-ogg-simultaneous", func(t *testing.T) {
 		done := make(chan struct{})
 		go printLoadAvg(t, "room-opus-simul-ogg", done)

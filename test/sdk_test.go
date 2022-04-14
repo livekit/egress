@@ -38,6 +38,11 @@ func TestTrackCompositeFile(t *testing.T) {
 		roomName = "egress-integration"
 	}
 
+	testTrackCompositeFile(t, conf, roomName, "opus", "vp8")
+	// testTrackCompositeFile(t, conf, roomName, "opus", "h264")
+}
+
+func testTrackCompositeFile(t *testing.T, conf *config.Config, roomName, audioCodec, videoCodec string) {
 	room, err := lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
 		APIKey:              conf.ApiKey,
 		APISecret:           conf.ApiSecret,
@@ -48,11 +53,11 @@ func TestTrackCompositeFile(t *testing.T) {
 	require.NoError(t, err)
 	defer room.Disconnect()
 
-	p := publishSamplesToRoom(t, room, "opus", "h264")
+	p := publishSamplesToRoom(t, room, audioCodec, videoCodec)
 
 	for _, test := range []*testCase{
 		{
-			name:     "track-vp8-mp4",
+			name:     fmt.Sprintf("track-%s-mp4", videoCodec),
 			fileType: livekit.EncodedFileType_MP4,
 		},
 	} {

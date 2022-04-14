@@ -81,6 +81,8 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 	}
 
 	s.room.Callback.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+		s.logger.Debugw("track subscribed", "trackID", track.ID())
+
 		var err error
 		if composite {
 			switch track.Kind() {
@@ -91,15 +93,13 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 				s.videoCodec <- track.Codec()
 				s.videoWriter, err = newAppWriter(track, rp, s.logger, s.videoSrc, s.playing)
 			}
-
 		} else {
 			s.fileWriter, err = newFileWriter(track, rp, s.logger)
-			if err != nil {
-				s.logger.Errorw("could not record track", err, "trackID", track.ID())
-				return
-			}
+		}
 
-			go s.fileWriter.start()
+		if err != nil {
+			s.logger.Errorw("could not record track", err, "trackID", track.ID())
+			return
 		}
 	}
 
@@ -178,7 +178,7 @@ func (s *SDKSource) GetVideoSource() (*app.Source, chan webrtc.RTPCodecParameter
 	return s.videoSrc, s.videoCodec
 }
 
-func (s *SDKSource) Ready() {
+func (s *SDKSource) Playing() {
 	select {
 	case <-s.playing:
 		return
