@@ -208,6 +208,14 @@ func (s *SDKSource) GetVideoSource() (*app.Source, chan webrtc.RTPCodecParameter
 	return s.videoSrc, s.videoCodec
 }
 
+func (s *SDKSource) GetStartTime() int64 {
+	return s.cs.startTime.Load()
+}
+
+func (s *SDKSource) GetEndTime() int64 {
+	return s.cs.endTime.Load()
+}
+
 func (s *SDKSource) Playing(name string) {
 	var playing chan struct{}
 

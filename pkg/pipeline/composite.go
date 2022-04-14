@@ -134,18 +134,6 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 	// run main loop
 	p.loop.Run()
 
-	// add end times to egress info
-	endedAt := time.Now().UnixNano()
-	if p.IsStream {
-		p.mu.RLock()
-		for _, info := range p.StreamInfo {
-			info.EndedAt = endedAt
-		}
-		p.mu.RUnlock()
-	} else {
-		p.FileInfo.EndedAt = time.Now().UnixNano()
-	}
-
 	// close input source
 	p.in.Close()
 
@@ -185,6 +173,26 @@ func (p *compositePipeline) messageWatch(msg *gst.Message) bool {
 		p.Logger.Debugw("pipeline stopped")
 
 		p.loop.Quit()
+
+		var endedAt int64
+		switch s := p.in.Source.(type) {
+		case *source.SDKSource:
+			endedAt = s.GetEndTime()
+		case *source.WebSource:
+			endedAt = time.Now().UnixNano()
+		}
+
+		// add end times to egress info
+		if p.IsStream {
+			p.mu.RLock()
+			for _, info := range p.StreamInfo {
+				info.EndedAt = endedAt
+			}
+			p.mu.RUnlock()
+		} else {
+			p.FileInfo.EndedAt = endedAt
+		}
+
 		return false
 
 	case gst.MessageError:
@@ -212,7 +220,15 @@ func (p *compositePipeline) messageWatch(msg *gst.Message) bool {
 
 		case pipelineSource:
 			p.started = true
-			startedAt := time.Now().UnixNano()
+
+			var startedAt int64
+			switch s := p.in.Source.(type) {
+			case *source.SDKSource:
+				startedAt = s.GetStartTime()
+			case *source.WebSource:
+				startedAt = time.Now().UnixNano()
+			}
+
 			if p.IsStream {
 				p.mu.RLock()
 				for _, streamInfo := range p.StreamInfo {
@@ -221,7 +237,6 @@ func (p *compositePipeline) messageWatch(msg *gst.Message) bool {
 				p.mu.RUnlock()
 			} else {
 				p.FileInfo.StartedAt = startedAt
-
 			}
 			p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
 		}
