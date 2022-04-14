@@ -9,6 +9,8 @@ import (
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
 
+	"github.com/livekit/protocol/livekit"
+
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/input"
@@ -16,7 +18,6 @@ import (
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-egress/pkg/pipeline/sink"
 	"github.com/livekit/livekit-egress/pkg/pipeline/source"
-	"github.com/livekit/protocol/livekit"
 )
 
 // gst.Init needs to be called before using gst but after gst package loads

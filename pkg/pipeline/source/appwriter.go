@@ -11,10 +11,11 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
-	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
 	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
+
+	"github.com/livekit/livekit-egress/pkg/errors"
 )
 
 type appWriter struct {
@@ -74,12 +75,14 @@ func (w *appWriter) start() {
 		pkt, _, err := w.track.ReadRTP()
 		if err != nil {
 			if err.Error() == "EOF" {
+				// TODO: better handling (when can/does this happen?)
 				continue
 			}
 
 			w.logger.Errorw("could not read from track", err)
 			return
 		}
+
 		w.sb.Push(pkt)
 
 		select {
