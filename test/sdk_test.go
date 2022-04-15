@@ -39,7 +39,7 @@ func TestTrackCompositeFile(t *testing.T) {
 	}
 
 	testTrackCompositeFile(t, conf, roomName, "opus", "vp8")
-	// testTrackCompositeFile(t, conf, roomName, "opus", "h264")
+	testTrackCompositeFile(t, conf, roomName, "opus", "h264")
 }
 
 func testTrackCompositeFile(t *testing.T, conf *config.Config, roomName, audioCodec, videoCodec string) {
