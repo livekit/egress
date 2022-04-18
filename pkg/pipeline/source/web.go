@@ -55,7 +55,7 @@ func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 		close(s.startRecording)
 	} else {
 		inputUrl = fmt.Sprintf(
-			"%s/%s?url=%s&token=%s",
+			"%s?layout=%s&url=%s&token=%s",
 			p.TemplateBase, p.Layout, url.QueryEscape(p.LKUrl), p.Token,
 		)
 	}

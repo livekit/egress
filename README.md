@@ -152,6 +152,39 @@ streamEgressID := info.EgressId
 Built-in layouts include `speaker-dark`, `speaker-light`, `grid-dark`, and `grid-light`.  
 To create your own web templates, see our [web README](https://github.com/livekit/livekit-egress/blob/main/web/README.md).
 
+
+### StartTrackEgress
+
+Exports a track without transcoding or processing. You can either export the file via an HTTP POST to a URL,
+or streaming it via WebSocket.
+
+In this mode, `Content-Type` header will be set to the MIME-Type of the track. The streams will be 
+exported without a container. I.e. `audio/opus` for audio tracks, and `video/h264` or `video/vp8` for video tracks.
+
+#### Websocket stream
+
+When a `TrackEgressRequest` is started with a websocket URL, we'll initiate a WebSocket request to the desired URL.
+
+This gives you a way of receiving a real-time stream of media from LiveKit rooms. It's helpful for when additional
+processing is desired on the media streams. For example, you could stream out audio tracks and send them to a real-time
+transcription service.
+
+We'll send a combination of binary and text frames. Binary frames would contain audio or video data, in the 
+encoding specified by `Content-Type`. The text frames will contain end user events on the tracks. For example: if the
+track was muted, you will receive the following:
+
+```json
+{ "muted": true }
+```
+
+And when unmuted:
+
+```json
+{ "muted": false }
+```
+
+The WebSocket connection will terminate when the track is unpublished (or if the participant leaves the room).
+
 ### UpdateLayout (coming soon)
 
 Used to change the web layout on an active RoomCompositeEgress.
