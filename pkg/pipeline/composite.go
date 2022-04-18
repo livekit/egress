@@ -139,7 +139,6 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 	p.in.Close()
 
 	// upload file
-	var err error
 	if !p.IsStream {
 		// update file size
 		fileInfo, err := os.Stat(p.Filename)
@@ -149,23 +148,27 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 			p.Logger.Errorw("could not read file size", err)
 		}
 
+		var location string
 		switch u := p.FileUpload.(type) {
 		case *livekit.S3Upload:
+			location = "S3"
 			p.Logger.Debugw("uploading to s3")
 			p.FileInfo.Location, err = sink.UploadS3(u, p.FileParams)
 		case *livekit.GCPUpload:
+			location = "GCP"
 			p.Logger.Debugw("uploading to gcp")
 			p.FileInfo.Location, err = sink.UploadGCP(u, p.FileParams)
 		case *livekit.AzureBlobUpload:
+			location = "Azure"
 			p.Logger.Debugw("uploading to azure")
 			p.FileInfo.Location, err = sink.UploadAzure(u, p.FileParams)
 		default:
 			p.FileInfo.Location = p.Filepath
 		}
-	}
-	if err != nil {
-		p.Logger.Errorw("could not upload file", err)
-		p.Info.Error = err.Error()
+		if err != nil {
+			p.Logger.Errorw("could not upload file", err, "location", location)
+			p.Info.Error = errors.ErrUploadFailed(location, err)
+		}
 	}
 
 	// return result

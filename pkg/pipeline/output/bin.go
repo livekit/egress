@@ -1,8 +1,6 @@
 package output
 
 import (
-	"fmt"
-
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/protocol/livekit"
@@ -54,7 +52,7 @@ func (b *Bin) Link() error {
 
 		// link tee to queue
 		if linkReturn := pad.Link(sink.queue.GetStaticPad("sink")); linkReturn != gst.PadLinkOK {
-			return fmt.Errorf("tee pad link failed: %s", linkReturn.String())
+			return errors.ErrPadLinkFailed("tee", linkReturn.String())
 		}
 	}
 

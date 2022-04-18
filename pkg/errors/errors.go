@@ -53,6 +53,6 @@ func ErrPadLinkFailed(pad, status string) error {
 	return fmt.Errorf("%s pad link failed: %s", pad, status)
 }
 
-func ErrUploadFailed(status string) error {
-	return fmt.Errorf("file upload failed: %s", status)
+func ErrUploadFailed(location string, err error) string {
+	return fmt.Sprintf("%s upload failed: %v", location, err)
 }
