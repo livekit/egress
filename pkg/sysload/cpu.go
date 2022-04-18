@@ -52,12 +52,14 @@ func Init(nodeID string, close chan struct{}, isAvailable func() float64) {
 func monitorCPULoad(close chan struct{}) {
 	prev, _ := cpu.Get()
 
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
 	for {
-		time.Sleep(time.Second)
 		select {
 		case <-close:
 			return
-		default:
+		case <-ticker.C:
 			next, _ := cpu.Get()
 			idlePercent := float64(next.Idle-prev.Idle) / float64(next.Total-prev.Total)
 			idleCPUs.Store(numCPUs * idlePercent)

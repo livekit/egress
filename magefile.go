@@ -23,10 +23,22 @@ const (
 )
 
 func Test() error {
-	return Integration("")
+	return integration("", 1)
+}
+
+func DebugTest() error {
+	return integration("", 3)
 }
 
 func Integration(configFile string) error {
+	return integration(configFile, 1)
+}
+
+func DebugIntegration(configFile string) error {
+	return integration(configFile, 3)
+}
+
+func integration(configFile string, gstDebug int) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		return err
@@ -42,8 +54,8 @@ func Integration(configFile string) error {
 
 	return run(
 		"docker build -t livekit-egress-test -f build/test/Dockerfile .",
-		fmt.Sprintf("docker run --rm -e %s=/out/%s -e %s=%s -v %s/test:/out livekit-egress-test",
-			config, configFile, roomName, os.Getenv(roomName), dir),
+		fmt.Sprintf("docker run --rm -e %s=/out/%s -e %s=%s -e GST_DEBUG=%d -v %s/test:/out livekit-egress-test",
+			config, configFile, roomName, os.Getenv(roomName), gstDebug, dir),
 	)
 }
 
