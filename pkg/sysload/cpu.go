@@ -53,6 +53,8 @@ func monitorCPULoad(close chan struct{}) {
 	prev, _ := cpu.Get()
 
 	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-close:
