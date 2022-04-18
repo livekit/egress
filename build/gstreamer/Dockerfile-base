@@ -30,8 +30,3 @@ RUN wget https://gstreamer.freedesktop.org/src/gst-plugins-ugly/gst-plugins-ugly
     tar -xf gst-plugins-ugly-$GSTREAMER_VERSION.tar.xz && \
     rm gst-plugins-ugly-$GSTREAMER_VERSION.tar.xz && \
     mv gst-plugins-ugly-$GSTREAMER_VERSION gst-plugins-ugly
-
-RUN wget https://gstreamer.freedesktop.org/src/gst-libav/gst-libav-$GSTREAMER_VERSION.tar.xz && \
-    tar -xf gst-libav-$GSTREAMER_VERSION.tar.xz && \
-    rm gst-libav-$GSTREAMER_VERSION.tar.xz && \
-    mv gst-libav-$GSTREAMER_VERSION gst-libav

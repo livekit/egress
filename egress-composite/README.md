@@ -22,8 +22,8 @@ It's easiest to start with a copy of one of our existing templates.
 5. The template **must** `console.log('START_RECORDING')` to start the recording.
    1. If your template does not log `START_RECORDING`, the recording will not start.
 6. The template **should** `console.log('END_RECORDING')` to stop the recording.
-   1. If your template does not log `END_RECORDING`, the recording will need to be stopped manually by sending a
-      `StopEgressRequest` to your LiveKit server.
+   1. If your template does not log `END_RECORDING`, the recording will need to be stopped manually with either a 
+      `docker stop` if recording locally, or by sending an `EndRecordingRequest` to your LiveKit server.
    2. See [src/common.ts:onConnected](https://github.com/livekit/livekit-egress/blob/main/web/src/common.ts#L13) 
       for recommended `START_RECORDING` and `END_RECORDING` implementation.
 
@@ -36,15 +36,22 @@ Once your template is deployed, update your recorder's `config.yaml` and add
 api_key: your-livekit-server-api-key
 api_secret: your-livekit-server-api-secret
 ws_url: wss://your-livekit-server-address.com
-template_base: https://your-template-address.com/#
+template_address: https://your-template-address.com/#
 ```
 * Note: the hash is necessary if using hash routing, which is what our templates use. For example, the default 
   `template_address` is `https://recorder.livekit.io/#`.
 * If you want to use both your own templates and LiveKit templates, you can override the template address per 
-  request using the `RoomCompositeRequest.CustomBaseUrl` field.
+  request using the `template.base_url` field.
 
-Send a request to your recorder using your layout name in the `RoomCompositeRequest.Layout` field.
-
+Send a request to your recorder using
+```json
+{
+    "template": {
+        "layout": "my-layout",
+        "room_name": "my-room"
+    }
+}
+```
 The recorder will generate a `token` to join the room, then build the url 
 `{config.template_address}/{request.layout}?url={encoded config.ws_url}&token={token}`.
 

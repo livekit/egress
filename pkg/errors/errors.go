@@ -25,12 +25,8 @@ func New(err string) error {
 	return errors.New(err)
 }
 
-func ErrCouldNotParseConfig(err error) error {
-	return fmt.Errorf("could not parse config: %v", err)
-}
-
 func ErrNotSupported(feature string) error {
-	return fmt.Errorf("%s is not yet supported", feature)
+	return fmt.Errorf("support for %s is coming soon", feature)
 }
 
 func ErrIncompatible(format, codec interface{}) error {
@@ -49,10 +45,6 @@ func ErrTrackNotFound(trackID string) error {
 	return fmt.Errorf("track %s not found", trackID)
 }
 
-func ErrPadLinkFailed(pad, status string) error {
-	return fmt.Errorf("%s pad link failed: %s", pad, status)
-}
-
-func ErrUploadFailed(location string, err error) string {
-	return fmt.Sprintf("%s upload failed: %v", location, err)
+func ErrUploadFailed(status string) error {
+	return fmt.Errorf("file upload failed: %s", status)
 }

@@ -57,7 +57,6 @@ func NewService(conf *config.Config, bus utils.MessageBus) *Service {
 	return s
 }
 
-// TODO: Run each pipeline in a separate process for security reasons
 func (s *Service) Run() error {
 	logger.Debugw("starting service")
 
@@ -213,10 +212,10 @@ func (s *Service) isIdle() bool {
 }
 
 func (s *Service) handleEgress(p pipeline.Pipeline) {
-	defer s.pipelines.Delete(p.GetInfo().EgressId)
+	defer s.pipelines.Delete(p.Info().EgressId)
 
 	// subscribe to request channel
-	requests, err := s.bus.Subscribe(s.ctx, egress.RequestChannel(p.GetInfo().EgressId))
+	requests, err := s.bus.Subscribe(s.ctx, egress.RequestChannel(p.Info().EgressId))
 	if err != nil {
 		return
 	}
@@ -247,10 +246,10 @@ func (s *Service) handleEgress(p pipeline.Pipeline) {
 			request := &livekit.EgressRequest{}
 			err = proto.Unmarshal(requests.Payload(msg), request)
 			if err != nil {
-				logger.Errorw("failed to read request", err, "egressID", p.GetInfo().EgressId)
+				logger.Errorw("failed to read request", err, "egressID", p.Info().EgressId)
 				continue
 			}
-			logger.Debugw("handling request", "egressID", p.GetInfo().EgressId, "requestID", request.RequestId)
+			logger.Debugw("handling request", "egressID", p.Info().EgressId, "requestID", request.RequestId)
 
 			switch req := request.Request.(type) {
 			case *livekit.EgressRequest_UpdateStream:
@@ -261,7 +260,7 @@ func (s *Service) handleEgress(p pipeline.Pipeline) {
 				err = errors.ErrInvalidRPC
 			}
 
-			s.sendEgressResponse(request.RequestId, p.GetInfo(), err)
+			s.sendEgressResponse(request.RequestId, p.Info(), err)
 		}
 	}
 }

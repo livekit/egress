@@ -1,4 +1,6 @@
 .idea/
 bin/
-test/output/*
+test/*.mp4
+test/*.webm
+test/*.ogg
 test/*.yaml

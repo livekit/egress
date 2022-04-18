@@ -4,18 +4,22 @@
 package test
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"os"
+	"os/exec"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mackerelio/go-osstat/cpu"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/livekit"
-	lksdk "github.com/livekit/server-sdk-go"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/pipeline"
@@ -35,87 +39,259 @@ ws_url: wss://fake-url.com
 `
 )
 
-var (
-	samples = map[string]string{
-		"opus": "/out/sample/matrix-trailer.ogg",
-		"vp8":  "/out/sample/matrix-trailer.ivf",
-		"h264": "/out/sample/matrix-trailer.h264",
-	}
-
-	frameDurations = map[string]time.Duration{
-		"vp8":  time.Microsecond * 41708,
-		"h264": time.Microsecond * 41708,
-	}
-)
-
 type testCase struct {
-	name             string
-	inputUrl         string
-	forceCustomInput bool
-	audioOnly        bool
-	videoOnly        bool
-	fileType         livekit.EncodedFileType
-	options          *livekit.EncodingOptions
-	filePrefix       string
+	name       string
+	inputUrl   string
+	audioOnly  bool
+	fileType   livekit.EncodedFileType
+	options    *livekit.EncodingOptions
+	filePrefix string
 }
 
 type sdkParams struct {
 	audioTrackID string
 	videoTrackID string
-	roomName     string
 	url          string
 }
 
-func TestEgress(t *testing.T) {
+func TestRoomCompositeFile(t *testing.T) {
 	conf := getTestConfig(t)
 
-	var room *lksdk.Room
-	var p *sdkParams
-
-	if strings.HasPrefix(conf.ApiKey, "API") {
-		roomName := os.Getenv("LIVEKIT_ROOM_NAME")
-		if roomName == "" {
-			roomName = "egress-integration"
+	for _, test := range []*testCase{
+		{
+			name:     "web-h264-baseline-mp4",
+			inputUrl: videoTestInput,
+			fileType: livekit.EncodedFileType_MP4,
+			options: &livekit.EncodingOptions{
+				AudioCodec:   livekit.AudioCodec_AAC,
+				VideoCodec:   livekit.VideoCodec_H264_BASELINE,
+				Height:       720,
+				Width:        1280,
+				VideoBitrate: 1500,
+			},
+		},
+		{
+			name:     "web-h264-main-mp4",
+			inputUrl: staticTestInput,
+			fileType: livekit.EncodedFileType_MP4,
+		},
+		{
+			name:     "web-h264-high-mp4",
+			inputUrl: videoTestInput,
+			fileType: livekit.EncodedFileType_MP4,
+			options: &livekit.EncodingOptions{
+				Framerate:      60,
+				AudioFrequency: 48000,
+				VideoCodec:     livekit.VideoCodec_H264_HIGH,
+				VideoBitrate:   6000,
+			},
+		},
+		// {
+		// 	name:     "web-vp8-webm",
+		// 	inputUrl: videoTestInput,
+		// 	fileType: livekit.EncodedFileType_WEBM,
+		// 	options: &livekit.EncodingOptions{
+		// 		AudioCodec: livekit.AudioCodec_OPUS,
+		// 		VideoCodec: livekit.VideoCodec_VP8,
+		// 	},
+		// },
+		// {
+		// 	name:     "web-vp8-ogg",
+		// 	inputUrl: videoTestInput,
+		// 	fileType: livekit.EncodedFileType_OGG,
+		// 	options: &livekit.EncodingOptions{
+		// 		AudioCodec: livekit.AudioCodec_OPUS,
+		// 		VideoCodec: livekit.VideoCodec_VP8,
+		// 	},
+		// },
+		// {
+		// 	name:     "web-vp9-webm",
+		// 	inputUrl: videoTestInput,
+		// 	fileType: livekit.EncodedFileType_WEBM,
+		// 	options: &livekit.EncodingOptions{
+		// 		AudioCodec: livekit.AudioCodec_OPUS,
+		// 		VideoCodec: livekit.VideoCodec_VP9,
+		// 	},
+		// },
+		// {
+		// 	name:     "web-h265-main-mp4",
+		// 	inputUrl: videoTestInput,
+		// 	fileType: livekit.EncodedFileType_MP4,
+		// 	options: &livekit.EncodingOptions{
+		// 		AudioCodec: livekit.AudioCodec_AAC,
+		// 		VideoCodec: livekit.VideoCodec_HEVC_MAIN,
+		// 	},
+		// },
+		// {
+		// 	name:     "web-h265-high-mp5",
+		// 	inputUrl: videoTestInput,
+		// 	fileType: livekit.EncodedFileType_MP4,
+		// 	options: &livekit.EncodingOptions{
+		// 		AudioCodec: livekit.AudioCodec_OPUS,
+		// 		VideoCodec: livekit.VideoCodec_HEVC_HIGH,
+		// 	},
+		// },
+	} {
+		done := make(chan struct{})
+		go printLoadAvg(t, test.name, done)
+		if !t.Run(test.name, func(t *testing.T) { runRoomCompositeFileTest(t, conf, test) }) {
+			t.FailNow()
 		}
+		close(done)
+	}
 
-		var err error
-		room, err = lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
-			APIKey:              conf.ApiKey,
-			APISecret:           conf.ApiSecret,
-			RoomName:            roomName,
-			ParticipantName:     "sample",
-			ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
+	t.Run("web-opus-ogg-simultaneous", func(t *testing.T) {
+		done := make(chan struct{})
+		go printLoadAvg(t, "web-opus-simul-ogg", done)
+
+		finished := make(chan struct{})
+		go func() {
+			runRoomCompositeFileTest(t, conf, &testCase{
+				inputUrl:  audioTestInput,
+				fileType:  livekit.EncodedFileType_OGG,
+				audioOnly: true,
+				options: &livekit.EncodingOptions{
+					AudioCodec: livekit.AudioCodec_OPUS,
+				},
+				filePrefix: "web-opus-simul-1",
+			})
+			close(finished)
+		}()
+
+		runRoomCompositeFileTest(t, conf, &testCase{
+			inputUrl:  audioTestInput2,
+			fileType:  livekit.EncodedFileType_OGG,
+			audioOnly: true,
+			options: &livekit.EncodingOptions{
+				AudioCodec: livekit.AudioCodec_OPUS,
+			},
+			filePrefix: "web-opus-simul-2",
 		})
-		require.NoError(t, err)
-		defer room.Disconnect()
 
-		p = publishSamplesToRoom(t, room, "opus", "vp8")
-	}
-
-	t.Run("RoomCompositeFile", func(t *testing.T) {
-		testRoomCompositeFile(t, conf)
-	})
-
-	t.Run("RoomCompositeStream", func(t *testing.T) {
-		testRoomCompositeStream(t, conf)
-	})
-
-	if room == nil {
-		return
-	}
-
-	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.audioTrackID))
-	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.videoTrackID))
-
-	t.Run("TrackComposite", func(t *testing.T) {
-		testTrackComposite(t, conf, room)
+		<-finished
+		close(done)
+		time.Sleep(time.Millisecond * 500)
 	})
 }
+
+func TestRoomCompositeStream(t *testing.T) {
+	done := make(chan struct{})
+	go printLoadAvg(t, "web-composite-stream", done)
+
+	conf := getTestConfig(t)
+
+	url := "rtmp://localhost:1935/live/stream1"
+
+	req := &livekit.StartEgressRequest{
+		EgressId:  utils.NewGuid(utils.EgressPrefix),
+		RequestId: utils.NewGuid(utils.RPCPrefix),
+		SentAt:    time.Now().Unix(),
+		Request: &livekit.StartEgressRequest_RoomComposite{
+			RoomComposite: &livekit.RoomCompositeEgressRequest{
+				RoomName:      "web-composite-stream",
+				Layout:        "speaker-dark",
+				CustomBaseUrl: videoTestInput,
+				Output: &livekit.RoomCompositeEgressRequest_Stream{
+					Stream: &livekit.StreamOutput{
+						Protocol: livekit.StreamProtocol_RTMP,
+						Urls:     []string{url},
+					},
+				},
+				Options: &livekit.RoomCompositeEgressRequest_Advanced{
+					Advanced: &livekit.EncodingOptions{
+						AudioCodec: livekit.AudioCodec_AAC,
+					},
+				},
+			},
+		},
+	}
+
+	p, err := params.GetPipelineParams(conf, req)
+	require.NoError(t, err)
+	p.CustomInputURL = videoTestInput
+	rec, err := pipeline.FromParams(conf, p)
+	require.NoError(t, err)
+
+	defer func() {
+		rec.Stop()
+		time.Sleep(time.Millisecond * 100)
+	}()
+
+	resChan := make(chan *livekit.EgressInfo, 1)
+	go func() {
+		resChan <- rec.Run()
+	}()
+
+	// wait for recorder to start
+	time.Sleep(time.Second * 30)
+
+	// check stream
+	verifyStream(t, p, url)
+
+	close(done)
+	done = make(chan struct{})
+	go printLoadAvg(t, "web-composite-stream-2", done)
+
+	// add another, check both
+	url2 := "rtmp://localhost:1935/live/stream2"
+	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
+		EgressId:      req.EgressId,
+		AddOutputUrls: []string{url2},
+	}))
+	verifyStream(t, p, url, url2)
+
+	close(done)
+	done = make(chan struct{})
+	go printLoadAvg(t, "web-composite-stream-3", done)
+
+	// remove first, check second
+	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
+		EgressId:         req.EgressId,
+		RemoveOutputUrls: []string{url},
+	}))
+	verifyStream(t, p, url2)
+
+	// stop
+	rec.Stop()
+	res := <-resChan
+
+	// check results
+	require.Empty(t, res.Error)
+	require.Len(t, res.GetStream().Info, 2)
+	for _, info := range res.GetStream().Info {
+		require.NotEmpty(t, info.Url)
+		require.NotZero(t, info.StartedAt)
+		require.NotZero(t, info.EndedAt)
+	}
+
+	close(done)
+}
+
+// func TestTrackCompositeFile(t *testing.T) {
+// 	conf := getTestConfig(t)
+//
+// 	var audioTrackID, videoTrackID string
+//
+// 	p := &sdkParams{
+// 		audioTrackID: audioTrackID,
+// 		videoTrackID: videoTrackID,
+// 	}
+//
+// 	for _, test := range []*testCase{} {
+// 		if !t.Run(test.name, func(t *testing.T) {
+// 			runTrackCompositeFileTest(t, conf, p, test)
+// 		}) {
+// 			t.FailNow()
+// 		}
+// 	}
+// }
+
+// func TestTrackEgress(t *testing.T) {}
 
 func getTestConfig(t *testing.T) *config.Config {
 	confString := defaultConfig
 	confFile := os.Getenv("EGRESS_CONFIG_FILE")
-	if confFile != "/out/" {
+	if confFile != "" {
 		b, err := ioutil.ReadFile(confFile)
 		if err == nil {
 			confString = string(b)
@@ -128,61 +304,100 @@ func getTestConfig(t *testing.T) *config.Config {
 	return conf
 }
 
-func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec string) *sdkParams {
-	p := &sdkParams{roomName: room.Name}
+func runRoomCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) {
+	filepath, filename := getFileInfo(conf, test, "web")
 
-	publish := func(filename string, frameDuration time.Duration) string {
-		var pub *lksdk.LocalTrackPublication
-		opts := []lksdk.FileSampleProviderOption{
-			lksdk.FileTrackWithOnWriteComplete(func() {
-				if pub != nil {
-					_ = room.LocalParticipant.UnpublishTrack(pub.SID())
-				}
-			}),
+	roomName := os.Getenv("LIVEKIT_ROOM_NAME")
+	if roomName == "" {
+		roomName = "web-composite-file"
+	}
+
+	webRequest := &livekit.RoomCompositeEgressRequest{
+		RoomName:  roomName,
+		Layout:    "speaker-dark",
+		AudioOnly: test.audioOnly,
+		Output: &livekit.RoomCompositeEgressRequest_File{
+			File: &livekit.EncodedFileOutput{
+				FileType: test.fileType,
+				Filepath: filepath,
+			},
+		},
+	}
+
+	if test.options != nil {
+		webRequest.Options = &livekit.RoomCompositeEgressRequest_Advanced{
+			Advanced: test.options,
 		}
+	}
 
-		if frameDuration != 0 {
-			opts = append(opts, lksdk.FileTrackWithFrameDuration(frameDuration))
+	req := &livekit.StartEgressRequest{
+		EgressId:  utils.NewGuid(utils.EgressPrefix),
+		RequestId: utils.NewGuid(utils.RPCPrefix),
+		SentAt:    time.Now().UnixNano(),
+		Request: &livekit.StartEgressRequest_RoomComposite{
+			RoomComposite: webRequest,
+		},
+	}
+
+	runFileTest(t, conf, test, req, filename)
+}
+
+func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkParams, test *testCase) {
+	filepath, filename := getFileInfo(conf, test, "track")
+
+	roomName := os.Getenv("LIVEKIT_ROOM_NAME")
+	if roomName == "" {
+		roomName = "egress-integration"
+	}
+
+	trackRequest := &livekit.TrackCompositeEgressRequest{
+		RoomName:     roomName,
+		AudioTrackId: params.audioTrackID,
+		VideoTrackId: params.videoTrackID,
+		Output: &livekit.TrackCompositeEgressRequest_File{
+			File: &livekit.EncodedFileOutput{
+				FileType: test.fileType,
+				Filepath: filepath,
+			},
+		},
+	}
+
+	if test.options != nil {
+		trackRequest.Options = &livekit.TrackCompositeEgressRequest_Advanced{
+			Advanced: test.options,
 		}
-
-		track, err := lksdk.NewLocalFileTrack(filename, opts...)
-		require.NoError(t, err)
-
-		pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
-		require.NoError(t, err)
-
-		return pub.SID()
 	}
 
-	if samples[audioCodec] != "" {
-		p.audioTrackID = publish(samples[audioCodec], frameDurations[audioCodec])
+	req := &livekit.StartEgressRequest{
+		EgressId:  utils.NewGuid(utils.EgressPrefix),
+		RequestId: utils.NewGuid(utils.RPCPrefix),
+		SentAt:    time.Now().UnixNano(),
+		Request: &livekit.StartEgressRequest_TrackComposite{
+			TrackComposite: trackRequest,
+		},
 	}
 
-	if samples[videoCodec] != "" {
-		p.videoTrackID = publish(samples[videoCodec], frameDurations[videoCodec])
-	}
-
-	return p
+	runFileTest(t, conf, test, req, filename)
 }
 
 func getFileInfo(conf *config.Config, test *testCase, testType string) (string, string) {
+	var name string
+	if test.audioOnly {
+		if test.options != nil && test.options.AudioCodec != livekit.AudioCodec_DEFAULT_AC {
+			name = test.options.AudioCodec.String()
+		} else {
+			name = params.DefaultAudioCodecs[test.fileType.String()].String()
+		}
+	} else {
+		if test.options != nil && test.options.VideoCodec != livekit.VideoCodec_DEFAULT_VC {
+			name = test.options.VideoCodec.String()
+		} else {
+			name = params.DefaultVideoCodecs[test.fileType.String()].String()
+		}
+	}
+
 	var filename string
 	if test.filePrefix == "" {
-		var name string
-		if test.audioOnly {
-			if test.options != nil && test.options.AudioCodec != livekit.AudioCodec_DEFAULT_AC {
-				name = test.options.AudioCodec.String()
-			} else {
-				name = params.DefaultAudioCodecs[test.fileType.String()].String()
-			}
-		} else {
-			if test.options != nil && test.options.VideoCodec != livekit.VideoCodec_DEFAULT_VC {
-				name = test.options.VideoCodec.String()
-			} else {
-				name = params.DefaultVideoCodecs[test.fileType.String()].String()
-			}
-		}
-
 		filename = fmt.Sprintf("%s-%s-%d.%s",
 			testType, strings.ToLower(name), time.Now().Unix(), strings.ToLower(test.fileType.String()),
 		)
@@ -190,12 +405,11 @@ func getFileInfo(conf *config.Config, test *testCase, testType string) (string, 
 		filename = fmt.Sprintf("%s-%d.%s", test.filePrefix, time.Now().Unix(), strings.ToLower(test.fileType.String()))
 	}
 
-	filepath := fmt.Sprintf("/out/output/%s", filename)
+	filepath := fmt.Sprintf("/out/%s", filename)
 
 	if conf.FileUpload != nil {
 		return filepath, filename
 	}
-
 	return filepath, filepath
 }
 
@@ -203,15 +417,15 @@ func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit
 	p, err := params.GetPipelineParams(conf, req)
 	require.NoError(t, err)
 
-	if !strings.HasPrefix(conf.ApiKey, "API") || test.forceCustomInput {
+	if !strings.HasPrefix(conf.ApiKey, "API") || test.inputUrl == staticTestInput {
 		p.CustomInputURL = test.inputUrl
 	}
 
 	rec, err := pipeline.FromParams(conf, p)
 	require.NoError(t, err)
 
-	// record for ~30s. Takes about 5s to start
-	time.AfterFunc(time.Second*35, func() {
+	// record for ~15s. Takes about 5s to start
+	time.AfterFunc(time.Second*20, func() {
 		rec.Stop()
 	})
 	res := rec.Run()
@@ -223,8 +437,205 @@ func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit
 	require.NotZero(t, fileRes.StartedAt)
 	require.NotZero(t, fileRes.EndedAt)
 	require.NotEmpty(t, fileRes.Filename)
-	require.NotEmpty(t, fileRes.Size)
 	require.NotEmpty(t, fileRes.Location)
 
 	verify(t, filename, p, res, false, test.fileType)
+}
+
+func verifyStream(t *testing.T, p *params.Params, urls ...string) {
+	for _, url := range urls {
+		verify(t, url, p, nil, true, -1)
+	}
+}
+
+func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, isStream bool, fileType livekit.EncodedFileType) {
+	info, err := ffprobe(input)
+	require.NoError(t, err, "ffprobe error")
+	require.Equal(t, 100, info.Format.ProbeScore)
+
+	if !isStream {
+		// size
+		require.NotEqual(t, "0", info.Format.Size)
+
+		// duration
+		expected := time.Unix(0, res.GetFile().EndedAt).Sub(time.Unix(0, res.GetFile().StartedAt)).Seconds()
+		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
+		require.NoError(t, err)
+		require.InDelta(t, expected, actual, 1)
+	}
+
+	// check stream info
+	var hasAudio, hasVideo bool
+	for _, stream := range info.Streams {
+		switch stream.CodecType {
+		case "audio":
+			hasAudio = true
+
+			// codec
+			switch p.AudioCodec {
+			case livekit.AudioCodec_AAC:
+				require.Equal(t, "aac", stream.CodecName)
+				require.Equal(t, fmt.Sprint(p.AudioFrequency), stream.SampleRate)
+			case livekit.AudioCodec_OPUS:
+				require.Equal(t, "opus", stream.CodecName)
+				require.Equal(t, "48000", stream.SampleRate)
+			}
+
+			// channels
+			require.Equal(t, 2, stream.Channels)
+			require.Equal(t, "stereo", stream.ChannelLayout)
+
+			// audio bitrate
+			if fileType == livekit.EncodedFileType_MP4 {
+				bitrate, err := strconv.Atoi(stream.BitRate)
+				require.NoError(t, err)
+				require.NotZero(t, bitrate)
+				require.Less(t, int32(bitrate), p.AudioBitrate*1100)
+			}
+		case "video":
+			hasVideo = true
+
+			// encoding profile
+			switch p.VideoCodec {
+			case livekit.VideoCodec_H264_BASELINE:
+				require.Equal(t, "h264", stream.CodecName)
+				require.Equal(t, "Constrained Baseline", stream.Profile)
+			case livekit.VideoCodec_H264_MAIN:
+				require.Equal(t, "h264", stream.CodecName)
+				require.Equal(t, "Main", stream.Profile)
+			case livekit.VideoCodec_H264_HIGH:
+				require.Equal(t, "h264", stream.CodecName)
+				require.Equal(t, "High", stream.Profile)
+				// case livekit.VideoCodec_VP8:
+				// 	require.Equal(t, "vp8", stream.CodecName)
+				// case livekit.VideoCodec_VP9:
+				// 	require.Equal(t, "vp9", stream.CodecName)
+				// case livekit.VideoCodec_HEVC_MAIN:
+				// 	require.Equal(t, "hevc", stream.CodecName)
+				// 	require.Equal(t, "Main", stream.Profile)
+				// case livekit.VideoCodec_HEVC_HIGH:
+				// 	require.Equal(t, "hevc", stream.CodecName)
+				// 	require.Equal(t, "Main", stream.Profile)
+			}
+
+			// dimensions
+			require.Equal(t, p.Width, stream.Width)
+			require.Equal(t, p.Height, stream.Height)
+
+			// framerate
+			frac := strings.Split(stream.RFrameRate, "/")
+			require.Len(t, frac, 2)
+			n, err := strconv.ParseFloat(frac[0], 64)
+			require.NoError(t, err)
+			d, err := strconv.ParseFloat(frac[1], 64)
+			require.NoError(t, err)
+			require.Greater(t, n/d, float64(p.Framerate)*0.95)
+
+			// bitrate
+			if fileType == livekit.EncodedFileType_MP4 {
+				bitrate, err := strconv.Atoi(stream.BitRate)
+				require.NoError(t, err)
+				require.NotZero(t, bitrate)
+				require.Less(t, int32(bitrate), p.VideoBitrate*1010)
+			}
+		default:
+			t.Fatalf("unrecognized stream type %s", stream.CodecType)
+		}
+	}
+
+	require.Equal(t, p.AudioEnabled, hasAudio)
+	require.Equal(t, p.VideoEnabled, hasVideo)
+}
+
+type FFProbeInfo struct {
+	Streams []struct {
+		CodecName string `json:"codec_name"`
+		CodecType string `json:"codec_type"`
+		Profile   string `json:"profile"`
+
+		// audio
+		SampleRate    string `json:"sample_rate"`
+		Channels      int    `json:"channels"`
+		ChannelLayout string `json:"channel_layout"`
+
+		// video
+		Width      int32  `json:"width"`
+		Height     int32  `json:"height"`
+		RFrameRate string `json:"r_frame_rate"`
+		BitRate    string `json:"bit_rate"`
+	} `json:"streams"`
+	Format struct {
+		Filename   string `json:"filename"`
+		FormatName string `json:"format_name"`
+		Duration   string `json:"duration"`
+		Size       string `json:"size"`
+		ProbeScore int    `json:"probe_score"`
+		Tags       struct {
+			Encoder string `json:"encoder"`
+		} `json:"tags"`
+	} `json:"format"`
+}
+
+func ffprobe(input string) (*FFProbeInfo, error) {
+	cmd := exec.Command("ffprobe",
+		"-v", "quiet",
+		"-hide_banner",
+		"-show_format",
+		"-show_streams",
+		"-print_format", "json",
+		input,
+	)
+
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	info := &FFProbeInfo{}
+	err = json.Unmarshal(out, info)
+	return info, err
+}
+
+func printLoadAvg(t *testing.T, name string, done chan struct{}) {
+	prev, _ := cpu.Get()
+	var count, userTotal, userMax, systemTotal, systemMax, idleTotal float64
+	idleMin := 100.0
+	for {
+		time.Sleep(time.Second)
+		select {
+		case <-done:
+			avg := 100 - idleTotal/count
+			max := 100 - idleMin
+			numCPUs := runtime.NumCPU()
+			t.Logf("%s cpu usage\n  avg: %.2f%% (%.2f/%v)\n  max: %.2f%% (%.2f/%v)",
+				name,
+				avg, avg*float64(numCPUs)/100, numCPUs,
+				max, max*float64(numCPUs)/100, numCPUs,
+			)
+			return
+		default:
+			cpuInfo, _ := cpu.Get()
+			total := float64(cpuInfo.Total - prev.Total)
+			user := float64(cpuInfo.User-prev.User) / total * 100
+			userTotal += user
+			if user > userMax {
+				userMax = user
+			}
+
+			system := float64(cpuInfo.System-prev.System) / total * 100
+			systemTotal += system
+			if system > systemMax {
+				systemMax = system
+			}
+
+			idle := float64(cpuInfo.Idle-prev.Idle) / total * 100
+			idleTotal += idle
+			if idle < idleMin {
+				idleMin = idle
+			}
+
+			count++
+			prev = cpuInfo
+		}
+	}
 }
