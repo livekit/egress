@@ -70,7 +70,7 @@ func TestEgress(t *testing.T) {
 	conf := getTestConfig(t)
 
 	var room *lksdk.Room
-	// var p *sdkParams
+	var p *sdkParams
 
 	if strings.HasPrefix(conf.ApiKey, "API") {
 		roomName := os.Getenv("LIVEKIT_ROOM_NAME")
@@ -89,23 +89,23 @@ func TestEgress(t *testing.T) {
 		require.NoError(t, err)
 		defer room.Disconnect()
 
-		// p = publishSamplesToRoom(t, room, "opus", "vp8")
+		p = publishSamplesToRoom(t, room, "opus", "vp8")
 	}
 
-	// t.Run("RoomCompositeFile", func(t *testing.T) {
-	// 	testRoomCompositeFile(t, conf)
-	// })
-	//
-	// t.Run("RoomCompositeStream", func(t *testing.T) {
-	// 	testRoomCompositeStream(t, conf)
-	// })
+	t.Run("RoomCompositeFile", func(t *testing.T) {
+		testRoomCompositeFile(t, conf)
+	})
+
+	t.Run("RoomCompositeStream", func(t *testing.T) {
+		testRoomCompositeStream(t, conf)
+	})
 
 	if room == nil {
 		return
 	}
 
-	// require.NoError(t, room.LocalParticipant.UnpublishTrack(p.audioTrackID))
-	// require.NoError(t, room.LocalParticipant.UnpublishTrack(p.videoTrackID))
+	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.audioTrackID))
+	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.videoTrackID))
 
 	t.Run("TrackComposite", func(t *testing.T) {
 		testTrackComposite(t, conf, room)

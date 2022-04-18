@@ -82,11 +82,6 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 
 		b.audioElements = append(b.audioElements, src.Element, rtpOpusDepay)
 
-		if p.AudioCodec == livekit.AudioCodec_OPUS {
-			// skip encoding
-			return nil
-		}
-
 		opusDec, err := gst.NewElement("opusdec")
 		if err != nil {
 			return err

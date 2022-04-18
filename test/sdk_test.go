@@ -18,11 +18,11 @@ import (
 
 func testTrackComposite(t *testing.T, conf *config.Config, room *lksdk.Room) {
 	testTrackCompositeFile(t, conf, room, "opus", "vp8", []*testCase{
-		// {
-		// 	name:       "track-vp8-mp4",
-		// 	fileType:   livekit.EncodedFileType_MP4,
-		// 	filePrefix: "track-vp8",
-		// },
+		{
+			name:       "track-vp8-mp4",
+			fileType:   livekit.EncodedFileType_MP4,
+			filePrefix: "track-vp8",
+		},
 		{
 			name:      "track-opus-only-ogg",
 			audioOnly: true,
@@ -31,11 +31,11 @@ func testTrackComposite(t *testing.T, conf *config.Config, room *lksdk.Room) {
 	})
 
 	testTrackCompositeFile(t, conf, room, "opus", "h264", []*testCase{
-		// {
-		// 	name:       "track-h264-mp4",
-		// 	fileType:   livekit.EncodedFileType_MP4,
-		// 	filePrefix: "track-h264",
-		// },
+		{
+			name:       "track-h264-mp4",
+			fileType:   livekit.EncodedFileType_MP4,
+			filePrefix: "track-h264",
+		},
 		{
 			name:      "track-h264-only-mp4",
 			videoOnly: true,
