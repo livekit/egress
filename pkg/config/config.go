@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/go-logr/zapr"
@@ -9,6 +8,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
 
+	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -72,7 +72,7 @@ func NewConfig(confString string) (*Config, error) {
 	}
 	if confString != "" {
 		if err := yaml.Unmarshal([]byte(confString), conf); err != nil {
-			return nil, fmt.Errorf("could not parse config: %v", err)
+			return nil, errors.ErrCouldNotParseConfig(err)
 		}
 	}
 

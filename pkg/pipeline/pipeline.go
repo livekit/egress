@@ -5,13 +5,11 @@ import (
 
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
-	"github.com/livekit/livekit-egress/pkg/pipeline/composite"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
-	"github.com/livekit/livekit-egress/pkg/pipeline/track"
 )
 
 type Pipeline interface {
-	Info() *livekit.EgressInfo
+	GetInfo() *livekit.EgressInfo
 	Run() *livekit.EgressInfo
 	UpdateStream(req *livekit.UpdateStreamRequest) error
 	Stop()
@@ -30,11 +28,11 @@ func FromRequest(conf *config.Config, request *livekit.StartEgressRequest) (Pipe
 func FromParams(conf *config.Config, p *params.Params) (Pipeline, error) {
 	switch p.Info.Request.(type) {
 	case *livekit.EgressInfo_RoomComposite:
-		return composite.NewPipeline(conf, p)
+		return NewCompositePipeline(conf, p)
 	case *livekit.EgressInfo_TrackComposite:
-		return composite.NewPipeline(conf, p)
+		return NewCompositePipeline(conf, p)
 	case *livekit.EgressInfo_Track:
-		return track.NewPipeline(p)
+		return NewTrackPipeline(p)
 	default:
 		return nil, errors.ErrInvalidInput("request")
 	}

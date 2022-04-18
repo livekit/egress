@@ -119,11 +119,14 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		default:
 			return nil, errors.ErrInvalidInput("output")
 		}
+
 	case *livekit.StartEgressRequest_TrackComposite:
 		params.Info.Request = &livekit.EgressInfo_TrackComposite{TrackComposite: req.TrackComposite}
 
-		params.AudioEnabled = req.TrackComposite.AudioTrackId != ""
-		params.VideoEnabled = req.TrackComposite.VideoTrackId != ""
+		params.AudioTrackID = req.TrackComposite.AudioTrackId
+		params.AudioEnabled = params.AudioTrackID != ""
+		params.VideoTrackID = req.TrackComposite.VideoTrackId
+		params.VideoEnabled = params.VideoTrackID != ""
 		params.RoomName = req.TrackComposite.RoomName
 
 		switch o := req.TrackComposite.Output.(type) {
@@ -137,9 +140,10 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			if err := params.updateStreamInfo(o.Stream.Protocol, o.Stream.Urls); err != nil {
 				return nil, err
 			}
+		default:
+			return nil, errors.ErrInvalidInput("output")
 		}
 
-		return nil, errors.ErrNotSupported("track composite requests")
 	case *livekit.StartEgressRequest_Track:
 		params.Info.Request = &livekit.EgressInfo_Track{Track: req.Track}
 
