@@ -213,7 +213,7 @@ func (s *SDKSource) GetStartTime() int64 {
 }
 
 func (s *SDKSource) GetEndTime() int64 {
-	return s.cs.endTime.Load()
+	return s.cs.endTime.Load() + s.cs.delay.Load()
 }
 
 func (s *SDKSource) Playing(name string) {

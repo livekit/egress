@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -140,6 +141,14 @@ func (p *compositePipeline) Run() *livekit.EgressInfo {
 	// upload file
 	var err error
 	if !p.IsStream {
+		// update file size
+		fileInfo, err := os.Stat(p.Filename)
+		if err == nil {
+			p.FileInfo.Size = fileInfo.Size()
+		} else {
+			p.Logger.Errorw("could not read file size", err)
+		}
+
 		switch u := p.FileUpload.(type) {
 		case *livekit.S3Upload:
 			p.Logger.Debugw("uploading to s3")

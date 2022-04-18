@@ -89,6 +89,7 @@ func (b *Bin) buildWebVideoInput(p *params.Params) error {
 	}
 }
 
+// TODO: skip decoding when possible
 func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	src, codec := b.Source.(*source.SDKSource).GetVideoSource()
 

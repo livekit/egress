@@ -11,6 +11,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
@@ -28,16 +29,16 @@ type appWriter struct {
 	// a/v sync
 	cs          *clockSync
 	clockSynced bool
-	tsOffset    int64
-	nsOffset    int64
+	rtpOffset   int64
+	ptsOffset   int64
 	conversion  float64
 	maxLate     time.Duration
-	maxTS       int64
+	maxRTP      atomic.Int64
 
 	// state
 	playing  chan struct{}
-	close    chan struct{}
-	draining bool
+	drain    chan struct{}
+	force    chan struct{}
 	finished chan struct{}
 }
 
@@ -57,7 +58,8 @@ func newAppWriter(
 		cs:         cs,
 		conversion: 1e9 / float64(track.Codec().ClockRate),
 		playing:    playing,
-		close:      make(chan struct{}),
+		drain:      make(chan struct{}),
+		force:      make(chan struct{}),
 		finished:   make(chan struct{}),
 	}
 
@@ -100,37 +102,15 @@ func (w *appWriter) start() {
 		close(w.finished)
 	}()
 
-	// used to force push any remaining packets when the pipeline is closing
-	force := make(chan struct{})
-
 	for {
-		// if close was requested, start draining
-		if w.isClosing() && !w.draining {
-			if !w.isPlaying() {
-				return
-			}
-
-			w.logger.Debugw("draining")
-			w.draining = true
-
-			// get sync info
-			startTime := w.cs.GetStartTime()
-			endTime := w.cs.GetEndTime()
-			delay := w.cs.GetDelay()
-
-			// get the expected timestamp of the last packet
-			nanoSecondsElapsed := endTime - startTime + delay - w.nsOffset
-			cyclesElapsed := int64(float64(nanoSecondsElapsed) / w.conversion)
-			w.maxTS = cyclesElapsed + w.tsOffset
-
-			// wait until maxLate before force popping
-			time.AfterFunc(w.maxLate, func() { close(force) })
+		if w.isDraining() && !w.isPlaying() {
+			// quit if draining but not yet playing
+			return
 		}
 
 		select {
-		case <-force:
+		case <-w.force:
 			// force push remaining packets and quit
-			w.logger.Debugw("force timeout exceeded")
 			_ = w.pushBuffers(true)
 			return
 		default:
@@ -140,8 +120,7 @@ func (w *appWriter) start() {
 		// read next packet
 		pkt, _, err := w.track.ReadRTP()
 		if err != nil {
-			// no more data - if closing, force push and quit
-			w.logger.Debugw("force push and close", "reason", err.Error())
+			// no more data - force push remaining packets and quit
 			_ = w.pushBuffers(true)
 			return
 		}
@@ -151,8 +130,8 @@ func (w *appWriter) start() {
 		if !w.clockSynced {
 			now := time.Now().UnixNano()
 			startTime := w.cs.GetOrSetStartTime(now)
-			w.nsOffset = now - startTime
-			w.tsOffset = int64(pkt.Timestamp)
+			w.ptsOffset = now - startTime
+			w.rtpOffset = int64(pkt.Timestamp)
 			w.clockSynced = true
 		}
 
@@ -161,6 +140,9 @@ func (w *appWriter) start() {
 
 		// push completed packets to appsrc
 		if err = w.pushBuffers(false); err != nil {
+			if err != io.EOF {
+				w.logger.Errorw("could not push buffers", err)
+			}
 			return
 		}
 	}
@@ -180,7 +162,7 @@ func (w *appWriter) pushBuffers(force bool) error {
 	}
 
 	for _, pkt := range packets {
-		if w.draining && int64(pkt.Timestamp) >= w.maxTS {
+		if w.isDraining() && int64(pkt.Timestamp) >= w.maxRTP.Load() {
 			return io.EOF
 		}
 
@@ -195,14 +177,14 @@ func (w *appWriter) pushBuffers(force bool) error {
 		// RTP packet timestamps start at a random number, and increase according to clock rate (for example, with a
 		// clock rate of 90kHz, the timestamp will increase by 90000 every second).
 		// The GStreamer clock time also starts at a random number, and increases in nanoseconds.
-		// The conversion is done by subtracting the initial RTP timestamp (w.tsOffset) from the current RTP timestamp
+		// The conversion is done by subtracting the initial RTP timestamp (w.rtpOffset) from the current RTP timestamp
 		// and multiplying by a conversion rate of (1e9 ns/s / clock rate).
 		// Since the audio and video track might start pushing to their buffers at different times, we then add a
-		// synced clock offset (w.nsOffset), which is always 0 for the first track, and fixes the video starting to play too
+		// synced clock offset (w.ptsOffset), which is always 0 for the first track, and fixes the video starting to play too
 		// early if it's waiting for a key frame
-		cyclesElapsed := int64(pkt.Timestamp) - w.tsOffset
+		cyclesElapsed := int64(pkt.Timestamp) - w.rtpOffset
 		nanoSecondsElapsed := int64(float64(cyclesElapsed) * w.conversion)
-		b.SetPresentationTimestamp(time.Duration(nanoSecondsElapsed + w.nsOffset))
+		b.SetPresentationTimestamp(time.Duration(nanoSecondsElapsed + w.ptsOffset))
 
 		w.src.PushBuffer(b)
 	}
@@ -219,21 +201,37 @@ func (w *appWriter) isPlaying() bool {
 	}
 }
 
-func (w *appWriter) stop() {
+func (w *appWriter) isDraining() bool {
 	select {
-	case <-w.close:
-		return
-	default:
-		close(w.close)
-	}
-}
-
-func (w *appWriter) isClosing() bool {
-	select {
-	case <-w.close:
+	case <-w.drain:
 		return true
 	default:
 		return false
+	}
+}
+
+func (w *appWriter) stop() {
+	select {
+	case <-w.drain:
+		return
+	default:
+		w.logger.Debugw("draining")
+
+		// get sync info
+		startTime := w.cs.GetStartTime()
+		endTime := w.cs.GetEndTime()
+		delay := w.cs.GetDelay()
+
+		// get the expected timestamp of the last packet
+		nanoSecondsElapsed := endTime - startTime + delay - w.ptsOffset
+		cyclesElapsed := int64(float64(nanoSecondsElapsed) / w.conversion)
+		w.maxRTP.Store(cyclesElapsed + w.rtpOffset)
+
+		// start draining
+		close(w.drain)
+
+		// wait until maxLate before force popping
+		time.AfterFunc(w.maxLate, func() { close(w.force) })
 	}
 }
 

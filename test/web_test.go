@@ -18,13 +18,10 @@ import (
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
 
-func TestRoomCompositeFile(t *testing.T) {
-	t.Skip()
-
-	conf := getTestConfig(t)
+func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 	for _, test := range []*testCase{
 		{
-			name:     "room-h264-high-mp4",
+			name:     "h264-high-mp4",
 			inputUrl: videoTestInput,
 			fileType: livekit.EncodedFileType_MP4,
 			options: &livekit.EncodingOptions{
@@ -36,9 +33,10 @@ func TestRoomCompositeFile(t *testing.T) {
 			},
 		},
 		{
-			name:     "room-h264-baseline-mp4",
-			inputUrl: staticTestInput,
-			fileType: livekit.EncodedFileType_MP4,
+			name:             "h264-baseline-mp4",
+			inputUrl:         staticTestInput,
+			forceCustomInput: true,
+			fileType:         livekit.EncodedFileType_MP4,
 			options: &livekit.EncodingOptions{
 				AudioCodec:   livekit.AudioCodec_AAC,
 				VideoCodec:   livekit.VideoCodec_H264_BASELINE,
@@ -49,9 +47,6 @@ func TestRoomCompositeFile(t *testing.T) {
 		},
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
-			done := make(chan struct{})
-			defer close(done)
-			go printLoadAvg(t, test.name, done)
 			runRoomCompositeFileTest(t, conf, test)
 		}) {
 			t.FailNow()
@@ -62,36 +57,33 @@ func TestRoomCompositeFile(t *testing.T) {
 	//  (test.test:9038): GStreamer-CRITICAL **: 23:46:45.257:
 	//  gst_mini_object_unref: assertion 'GST_MINI_OBJECT_REFCOUNT_VALUE (mini_object) > 0' failed
 	t.Run("room-opus-ogg-simultaneous", func(t *testing.T) {
-		done := make(chan struct{})
-		go printLoadAvg(t, "room-opus-simul-ogg", done)
-
 		finished := make(chan struct{})
 		go func() {
 			runRoomCompositeFileTest(t, conf, &testCase{
-				inputUrl:  audioTestInput,
-				fileType:  livekit.EncodedFileType_OGG,
-				audioOnly: true,
+				inputUrl:         audioTestInput,
+				forceCustomInput: true,
+				fileType:         livekit.EncodedFileType_OGG,
+				audioOnly:        true,
 				options: &livekit.EncodingOptions{
 					AudioCodec: livekit.AudioCodec_OPUS,
 				},
-				filePrefix: "room-opus-simul-1",
+				filePrefix: "room-opus-1",
 			})
 			close(finished)
 		}()
 
 		runRoomCompositeFileTest(t, conf, &testCase{
-			inputUrl:  audioTestInput2,
-			fileType:  livekit.EncodedFileType_OGG,
-			audioOnly: true,
+			inputUrl:         audioTestInput2,
+			forceCustomInput: true,
+			fileType:         livekit.EncodedFileType_OGG,
+			audioOnly:        true,
 			options: &livekit.EncodingOptions{
 				AudioCodec: livekit.AudioCodec_OPUS,
 			},
-			filePrefix: "room-opus-simul-2",
+			filePrefix: "room-opus-2",
 		})
 
 		<-finished
-		close(done)
-		time.Sleep(time.Millisecond * 100)
 	})
 }
 
@@ -133,13 +125,7 @@ func runRoomCompositeFileTest(t *testing.T, conf *config.Config, test *testCase)
 	runFileTest(t, conf, test, req, filename)
 }
 
-func TestRoomCompositeStream(t *testing.T) {
-	t.Skip()
-
-	done := make(chan struct{})
-	go printLoadAvg(t, "web-composite-stream-1", done)
-
-	conf := getTestConfig(t)
+func testRoomCompositeStream(t *testing.T, conf *config.Config) {
 	url := "rtmp://localhost:1935/live/stream1"
 	req := &livekit.StartEgressRequest{
 		EgressId:  utils.NewGuid(utils.EgressPrefix),
@@ -187,10 +173,6 @@ func TestRoomCompositeStream(t *testing.T) {
 	// check stream
 	verifyStreams(t, p, url)
 
-	close(done)
-	done = make(chan struct{})
-	go printLoadAvg(t, "web-composite-stream-2", done)
-
 	// add another, check both
 	url2 := "rtmp://localhost:1935/live/stream2"
 	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
@@ -198,10 +180,6 @@ func TestRoomCompositeStream(t *testing.T) {
 		AddOutputUrls: []string{url2},
 	}))
 	verifyStreams(t, p, url, url2)
-
-	close(done)
-	done = make(chan struct{})
-	go printLoadAvg(t, "web-composite-stream-3", done)
 
 	// remove first, check second
 	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
@@ -222,7 +200,4 @@ func TestRoomCompositeStream(t *testing.T) {
 		require.NotZero(t, info.StartedAt)
 		require.NotZero(t, info.EndedAt)
 	}
-
-	close(done)
-	time.Sleep(time.Millisecond * 100)
 }

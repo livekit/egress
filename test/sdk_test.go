@@ -4,10 +4,6 @@
 package test
 
 import (
-	"fmt"
-	"math/rand"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -20,64 +16,56 @@ import (
 	"github.com/livekit/livekit-egress/pkg/config"
 )
 
-type sdkParams struct {
-	audioTrackID string
-	videoTrackID string
-	roomName     string
-	url          string
-}
-
-func TestTrackCompositeFile(t *testing.T) {
-	conf := getTestConfig(t)
-	if !strings.HasPrefix(conf.ApiKey, "API") {
-		t.Skip("valid config required for track composite test")
-	}
-
-	roomName := os.Getenv("LIVEKIT_ROOM_NAME")
-	if roomName == "" {
-		roomName = "egress-integration"
-	}
-
-	testTrackCompositeFile(t, conf, roomName, "opus", "vp8")
-	testTrackCompositeFile(t, conf, roomName, "opus", "h264")
-}
-
-func testTrackCompositeFile(t *testing.T, conf *config.Config, roomName, audioCodec, videoCodec string) {
-	room, err := lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
-		APIKey:              conf.ApiKey,
-		APISecret:           conf.ApiSecret,
-		RoomName:            roomName,
-		ParticipantName:     "sample",
-		ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
+func testTrackComposite(t *testing.T, conf *config.Config, room *lksdk.Room) {
+	testTrackCompositeFile(t, conf, room, "opus", "vp8", []*testCase{
+		// {
+		// 	name:       "track-vp8-mp4",
+		// 	fileType:   livekit.EncodedFileType_MP4,
+		// 	filePrefix: "track-vp8",
+		// },
+		{
+			name:      "track-opus-only-ogg",
+			audioOnly: true,
+			fileType:  livekit.EncodedFileType_OGG,
+		},
 	})
-	require.NoError(t, err)
-	defer room.Disconnect()
 
+	testTrackCompositeFile(t, conf, room, "opus", "h264", []*testCase{
+		// {
+		// 	name:       "track-h264-mp4",
+		// 	fileType:   livekit.EncodedFileType_MP4,
+		// 	filePrefix: "track-h264",
+		// },
+		{
+			name:      "track-h264-only-mp4",
+			videoOnly: true,
+			fileType:  livekit.EncodedFileType_MP4,
+		},
+	})
+}
+
+func testTrackCompositeFile(t *testing.T, conf *config.Config, room *lksdk.Room, audioCodec, videoCodec string, cases []*testCase) {
 	p := publishSamplesToRoom(t, room, audioCodec, videoCodec)
 
-	for _, test := range []*testCase{
-		{
-			name:     fmt.Sprintf("track-%s-mp4", videoCodec),
-			fileType: livekit.EncodedFileType_MP4,
-		},
-	} {
+	for _, test := range cases {
 		if !t.Run(test.name, func(t *testing.T) {
-			done := make(chan struct{})
-			defer close(done)
-			go printLoadAvg(t, test.name, done)
 			runTrackCompositeFileTest(t, conf, p, test)
-			time.Sleep(time.Millisecond * 100)
 		}) {
 			t.FailNow()
 		}
 	}
+
+	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.audioTrackID))
+	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.videoTrackID))
 }
 
 func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkParams, test *testCase) {
 	filepath, filename := getFileInfo(conf, test, "track")
 
-	audioTrackID := params.audioTrackID
-	var videoTrackID string
+	var audioTrackID, videoTrackID string
+	if !test.videoOnly {
+		audioTrackID = params.audioTrackID
+	}
 	if !test.audioOnly {
 		videoTrackID = params.videoTrackID
 	}
@@ -110,54 +98,4 @@ func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkPar
 	}
 
 	runFileTest(t, conf, test, req, filename)
-}
-
-var (
-	samples = map[string]string{
-		"opus": "/out/sample/matrix-trailer.ogg",
-		"vp8":  "/out/sample/matrix-trailer.ivf",
-		"h264": "/out/sample/matrix-trailer.h264",
-	}
-
-	frameDurations = map[string]time.Duration{
-		"vp8":  time.Microsecond * 41708,
-		"h264": time.Microsecond * 41708,
-	}
-)
-
-func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec string) *sdkParams {
-	p := &sdkParams{roomName: room.Name}
-
-	publish := func(filename string, frameDuration time.Duration) string {
-		var pub *lksdk.LocalTrackPublication
-		opts := []lksdk.FileSampleProviderOption{
-			lksdk.FileTrackWithOnWriteComplete(func() {
-				if pub != nil {
-					_ = room.LocalParticipant.UnpublishTrack(pub.SID())
-				}
-			}),
-		}
-
-		if frameDuration != 0 {
-			opts = append(opts, lksdk.FileTrackWithFrameDuration(frameDuration))
-		}
-
-		track, err := lksdk.NewLocalFileTrack(filename, opts...)
-		require.NoError(t, err)
-
-		pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
-		require.NoError(t, err)
-
-		return pub.SID()
-	}
-
-	if samples[audioCodec] != "" {
-		p.audioTrackID = publish(samples[audioCodec], frameDurations[audioCodec])
-	}
-
-	if samples[videoCodec] != "" {
-		p.videoTrackID = publish(samples[videoCodec], frameDurations[videoCodec])
-	}
-
-	return p
 }

@@ -54,6 +54,7 @@ func (b *Bin) buildWebAudioInput(p *params.Params) error {
 	return b.buildAudioEncoder(p)
 }
 
+// TODO: skip decoding when possible
 func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 	src, codec := b.Source.(*source.SDKSource).GetAudioSource()
 
