@@ -95,7 +95,7 @@ func (w *appWriter) start() {
 	defer func() {
 		if w.isPlaying() {
 			if flow := w.src.EndStream(); flow != gst.FlowOK {
-				logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
+				w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
 			}
 		}
 
@@ -120,7 +120,11 @@ func (w *appWriter) start() {
 		// read next packet
 		pkt, _, err := w.track.ReadRTP()
 		if err != nil {
-			// no more data - force push remaining packets and quit
+			if !errors.Is(err, io.EOF) {
+				w.logger.Errorw("could not read packet", err)
+			}
+
+			// force push remaining packets and quit
 			_ = w.pushBuffers(true)
 			return
 		}
@@ -140,7 +144,7 @@ func (w *appWriter) start() {
 
 		// push completed packets to appsrc
 		if err = w.pushBuffers(false); err != nil {
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				w.logger.Errorw("could not push buffers", err)
 			}
 			return

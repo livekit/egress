@@ -12,7 +12,7 @@ require (
 	github.com/go-logr/logr v1.2.2
 	github.com/go-logr/zapr v1.2.2
 	github.com/go-redis/redis/v8 v8.11.4
-	github.com/livekit/protocol v0.13.0
+	github.com/livekit/protocol v0.13.1-0.20220419054903-7a6bb27499a9
 	github.com/livekit/server-sdk-go v0.9.4-0.20220415042423-bae117cbb731
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.4

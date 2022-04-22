@@ -70,11 +70,11 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 
 func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	for _, url := range urls {
-		verify(t, url, p, nil, true, -1)
+		verify(t, url, p, nil, true, "")
 	}
 }
 
-func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, isStream bool, fileType livekit.EncodedFileType) {
+func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, isStream bool, fileType string) {
 	info, err := ffprobe(input)
 	require.NoError(t, err, "ffprobe error")
 	require.Equal(t, 100, info.Format.ProbeScore)
@@ -98,11 +98,12 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 			hasAudio = true
 
 			// codec
-			switch p.AudioCodec {
-			case livekit.AudioCodec_AAC:
+			switch {
+			case p.AudioCodec == livekit.AudioCodec_AAC:
 				require.Equal(t, "aac", stream.CodecName)
 				require.Equal(t, fmt.Sprint(p.AudioFrequency), stream.SampleRate)
-			case livekit.AudioCodec_OPUS:
+
+			case p.AudioCodec == livekit.AudioCodec_OPUS || fileType == "ogg":
 				require.Equal(t, "opus", stream.CodecName)
 				require.Equal(t, "48000", stream.SampleRate)
 			}
@@ -112,36 +113,44 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 			require.Equal(t, "stereo", stream.ChannelLayout)
 
 			// audio bitrate
-			if fileType == livekit.EncodedFileType_MP4 {
+			if fileType == livekit.EncodedFileType_MP4.String() {
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)
 				require.Less(t, int32(bitrate), p.AudioBitrate*1100)
 			}
+
 		case "video":
 			hasVideo = true
 
-			// encoding profile
+			// codec and profile
 			switch p.VideoCodec {
 			case livekit.VideoCodec_H264_BASELINE:
 				require.Equal(t, "h264", stream.CodecName)
 				require.Equal(t, "Constrained Baseline", stream.Profile)
+
 			case livekit.VideoCodec_H264_MAIN:
 				require.Equal(t, "h264", stream.CodecName)
 				require.Equal(t, "Main", stream.Profile)
+
 			case livekit.VideoCodec_H264_HIGH:
 				require.Equal(t, "h264", stream.CodecName)
 				require.Equal(t, "High", stream.Profile)
-				// case livekit.VideoCodec_VP8:
-				// 	require.Equal(t, "vp8", stream.CodecName)
-				// case livekit.VideoCodec_VP9:
-				// 	require.Equal(t, "vp9", stream.CodecName)
-				// case livekit.VideoCodec_HEVC_MAIN:
-				// 	require.Equal(t, "hevc", stream.CodecName)
-				// 	require.Equal(t, "Main", stream.Profile)
-				// case livekit.VideoCodec_HEVC_HIGH:
-				// 	require.Equal(t, "hevc", stream.CodecName)
-				// 	require.Equal(t, "Main", stream.Profile)
+			}
+
+			switch fileType {
+			case "h264":
+				require.Equal(t, "h264", stream.CodecName)
+
+			case "ivf":
+				require.Equal(t, "vp8", stream.CodecName)
+
+			case livekit.EncodedFileType_MP4.String():
+				// bitrate
+				bitrate, err := strconv.Atoi(stream.BitRate)
+				require.NoError(t, err)
+				require.NotZero(t, bitrate)
+				require.Less(t, int32(bitrate), p.VideoBitrate*1010)
 			}
 
 			// dimensions
@@ -157,13 +166,6 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 			require.NoError(t, err)
 			require.Greater(t, n/d, float64(p.Framerate)*0.95)
 
-			// bitrate
-			if fileType == livekit.EncodedFileType_MP4 {
-				bitrate, err := strconv.Atoi(stream.BitRate)
-				require.NoError(t, err)
-				require.NotZero(t, bitrate)
-				require.Less(t, int32(bitrate), p.VideoBitrate*1010)
-			}
 		default:
 			t.Fatalf("unrecognized stream type %s", stream.CodecType)
 		}

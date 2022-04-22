@@ -4,6 +4,7 @@
 package test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -19,27 +20,29 @@ import (
 func testTrackComposite(t *testing.T, conf *config.Config, room *lksdk.Room) {
 	testTrackCompositeFile(t, conf, room, "opus", "vp8", []*testCase{
 		{
-			name:       "track-vp8-mp4",
+			name:       "tc-vp8-mp4",
 			fileType:   livekit.EncodedFileType_MP4,
-			filePrefix: "track-vp8",
+			filePrefix: "tc-vp8",
 		},
 		{
-			name:      "track-opus-only-ogg",
-			audioOnly: true,
-			fileType:  livekit.EncodedFileType_OGG,
+			name:       "tc-opus-only-ogg",
+			audioOnly:  true,
+			fileType:   livekit.EncodedFileType_OGG,
+			filePrefix: "tc-opus-only",
 		},
 	})
 
 	testTrackCompositeFile(t, conf, room, "opus", "h264", []*testCase{
 		{
-			name:       "track-h264-mp4",
+			name:       "tc-h264-mp4",
 			fileType:   livekit.EncodedFileType_MP4,
-			filePrefix: "track-h264",
+			filePrefix: "tc-h264",
 		},
 		{
-			name:      "track-h264-only-mp4",
-			videoOnly: true,
-			fileType:  livekit.EncodedFileType_MP4,
+			name:       "tc-h264-only-mp4",
+			videoOnly:  true,
+			fileType:   livekit.EncodedFileType_MP4,
+			filePrefix: "tc-h264-only",
 		},
 	})
 }
@@ -60,7 +63,7 @@ func testTrackCompositeFile(t *testing.T, conf *config.Config, room *lksdk.Room,
 }
 
 func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkParams, test *testCase) {
-	filepath, filename := getFileInfo(conf, test, "track")
+	filepath, filename := getFileInfo(conf, test, "tc")
 
 	var audioTrackID, videoTrackID string
 	if !test.videoOnly {
@@ -98,4 +101,71 @@ func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkPar
 	}
 
 	runFileTest(t, conf, test, req, filename)
+}
+
+func testTrack(t *testing.T, conf *config.Config, room *lksdk.Room) {
+	for _, test := range []*testCase{
+		{
+			audioOnly:     true,
+			codec:         "opus",
+			fileExtension: "ogg",
+		},
+		{
+
+			videoOnly:     true,
+			codec:         "vp8",
+			fileExtension: "ivf",
+		},
+		{
+			videoOnly:     true,
+			codec:         "h264",
+			fileExtension: "h264",
+		},
+	} {
+		test.filePrefix = fmt.Sprintf("track-%s", test.codec)
+
+		if !t.Run(test.filePrefix, func(t *testing.T) {
+			runTrackFileTest(t, conf, room, test)
+		}) {
+			// t.FailNow()
+		}
+	}
+}
+
+func runTrackFileTest(t *testing.T, conf *config.Config, room *lksdk.Room, test *testCase) {
+	var trackID string
+	if test.audioOnly {
+		p := publishSamplesToRoom(t, room, test.codec, "")
+		trackID = p.audioTrackID
+	} else {
+		p := publishSamplesToRoom(t, room, "", test.codec)
+		trackID = p.videoTrackID
+	}
+
+	time.Sleep(time.Second * 5)
+
+	filepath, filename := getFileInfo(conf, test, "track")
+
+	trackRequest := &livekit.TrackEgressRequest{
+		RoomName: room.Name,
+		TrackId:  trackID,
+		Output: &livekit.TrackEgressRequest_File{
+			File: &livekit.DirectFileOutput{
+				Filepath: filepath,
+			},
+		},
+	}
+
+	req := &livekit.StartEgressRequest{
+		EgressId:  utils.NewGuid(utils.EgressPrefix),
+		RequestId: utils.NewGuid(utils.RPCPrefix),
+		SentAt:    time.Now().UnixNano(),
+		Request: &livekit.StartEgressRequest_Track{
+			Track: trackRequest,
+		},
+	}
+
+	runFileTest(t, conf, test, req, filename)
+
+	require.NoError(t, room.LocalParticipant.UnpublishTrack(trackID))
 }

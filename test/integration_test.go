@@ -57,6 +57,8 @@ type testCase struct {
 	fileType         livekit.EncodedFileType
 	options          *livekit.EncodingOptions
 	filePrefix       string
+	codec            string
+	fileExtension    string
 }
 
 type sdkParams struct {
@@ -70,7 +72,7 @@ func TestEgress(t *testing.T) {
 	conf := getTestConfig(t)
 
 	var room *lksdk.Room
-	var p *sdkParams
+	// var p *sdkParams
 
 	if strings.HasPrefix(conf.ApiKey, "API") {
 		roomName := os.Getenv("LIVEKIT_ROOM_NAME")
@@ -89,26 +91,30 @@ func TestEgress(t *testing.T) {
 		require.NoError(t, err)
 		defer room.Disconnect()
 
-		p = publishSamplesToRoom(t, room, "opus", "vp8")
+		// p = publishSamplesToRoom(t, room, "opus", "vp8")
 	}
 
-	t.Run("RoomCompositeFile", func(t *testing.T) {
-		testRoomCompositeFile(t, conf)
-	})
-
-	t.Run("RoomCompositeStream", func(t *testing.T) {
-		testRoomCompositeStream(t, conf)
-	})
+	// t.Run("RoomCompositeFile", func(t *testing.T) {
+	// 	testRoomCompositeFile(t, conf)
+	// })
+	//
+	// t.Run("RoomCompositeStream", func(t *testing.T) {
+	// 	testRoomCompositeStream(t, conf)
+	// })
 
 	if room == nil {
 		return
 	}
 
-	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.audioTrackID))
-	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.videoTrackID))
+	// require.NoError(t, room.LocalParticipant.UnpublishTrack(p.audioTrackID))
+	// require.NoError(t, room.LocalParticipant.UnpublishTrack(p.videoTrackID))
 
-	t.Run("TrackComposite", func(t *testing.T) {
-		testTrackComposite(t, conf, room)
+	// t.Run("TrackComposite", func(t *testing.T) {
+	// 	testTrackComposite(t, conf, room)
+	// })
+
+	t.Run("Track", func(t *testing.T) {
+		testTrack(t, conf, room)
 	})
 }
 
@@ -167,6 +173,11 @@ func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec
 
 func getFileInfo(conf *config.Config, test *testCase, testType string) (string, string) {
 	var filename string
+	extension := test.fileExtension
+	if extension == "" {
+		extension = strings.ToLower(test.fileType.String())
+	}
+
 	if test.filePrefix == "" {
 		var name string
 		if test.audioOnly {
@@ -183,11 +194,9 @@ func getFileInfo(conf *config.Config, test *testCase, testType string) (string, 
 			}
 		}
 
-		filename = fmt.Sprintf("%s-%s-%d.%s",
-			testType, strings.ToLower(name), time.Now().Unix(), strings.ToLower(test.fileType.String()),
-		)
+		filename = fmt.Sprintf("%s-%s-%d.%s", testType, strings.ToLower(name), time.Now().Unix(), extension)
 	} else {
-		filename = fmt.Sprintf("%s-%d.%s", test.filePrefix, time.Now().Unix(), strings.ToLower(test.fileType.String()))
+		filename = fmt.Sprintf("%s-%d.%s", test.filePrefix, time.Now().Unix(), extension)
 	}
 
 	filepath := fmt.Sprintf("/out/output/%s", filename)
@@ -226,5 +235,10 @@ func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit
 	require.NotEmpty(t, fileRes.Size)
 	require.NotEmpty(t, fileRes.Location)
 
-	verify(t, filename, p, res, false, test.fileType)
+	fileType := test.fileExtension
+	if fileType == "" {
+		fileType = test.fileType.String()
+	}
+
+	verify(t, filename, p, res, false, fileType)
 }

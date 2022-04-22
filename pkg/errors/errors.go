@@ -25,6 +25,10 @@ func New(err string) error {
 	return errors.New(err)
 }
 
+func Is(err, target error) bool {
+	return errors.Is(err, target)
+}
+
 func ErrCouldNotParseConfig(err error) error {
 	return fmt.Errorf("could not parse config: %v", err)
 }

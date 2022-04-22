@@ -32,13 +32,12 @@ type SDKSource struct {
 	room   *lksdk.Room
 	logger logger.Logger
 	active atomic.Int32
+	cs     *clockSync
 
 	// track
 	trackID    string
 	fileWriter *fileWriter
-
-	// track composite
-	cs *clockSync
+	filePath   string
 
 	// track composite audio
 	audioTrackID string
@@ -63,6 +62,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 	s := &SDKSource{
 		room:         lksdk.CreateRoom(),
 		logger:       p.Logger,
+		cs:           &clockSync{},
 		endRecording: make(chan struct{}),
 		closed:       make(chan struct{}),
 	}
@@ -71,7 +71,6 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 	switch p.Info.Request.(type) {
 	case *livekit.EgressInfo_TrackComposite:
 		composite = true
-		s.cs = &clockSync{}
 		if p.AudioEnabled {
 			src, err := gst.NewElementWithName("appsrc", AudioAppSource)
 			if err != nil {
@@ -113,7 +112,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 				s.videoWriter, err = newAppWriter(track, rp, s.logger, s.videoSrc, s.cs, s.videoPlaying)
 			}
 		} else {
-			s.fileWriter, err = newFileWriter(track, rp, s.logger)
+			s.fileWriter, err = newFileWriter(p, track, rp, s.logger, s.cs)
 		}
 
 		if err != nil {
@@ -250,12 +249,10 @@ func (s *SDKSource) Close() {
 	default:
 		close(s.closed)
 
+		s.cs.SetEndTime(time.Now().UnixNano())
+
 		if s.fileWriter != nil {
 			s.fileWriter.stop()
-		}
-
-		if s.cs != nil {
-			s.cs.SetEndTime(time.Now().UnixNano())
 		}
 
 		// stop both writers then wait until finished

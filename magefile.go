@@ -48,11 +48,12 @@ func integration(configFile string, gstDebug int) error {
 		if strings.HasPrefix(configFile, "test/") {
 			configFile = configFile[5:]
 		} else {
-			return errors.New("please move config file to livekit-egress/test/")
+			return errors.New("please move config file to universal-io/test/")
 		}
 	}
 
 	return run(
+		"docker pull livekit/gstreamer:1.18.5-dev",
 		"docker build -t livekit-egress-test -f build/test/Dockerfile .",
 		fmt.Sprintf("docker run --rm -e %s=/out/%s -e %s=%s -e GST_DEBUG=%d -v %s/test:/out livekit-egress-test",
 			config, configFile, roomName, os.Getenv(roomName), gstDebug, dir),
