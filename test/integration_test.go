@@ -154,7 +154,10 @@ func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec
 		track, err := lksdk.NewLocalFileTrack(filename, opts...)
 		require.NoError(t, err)
 
-		pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
+		pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{
+			Name:       filename,
+			DisableDTX: true,
+		})
 		require.NoError(t, err)
 
 		return pub.SID()
@@ -216,7 +219,7 @@ func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit
 		p.CustomInputURL = test.inputUrl
 	}
 
-	rec, err := pipeline.FromParams(conf, p)
+	rec, err := pipeline.New(conf, p)
 	require.NoError(t, err)
 
 	// record for ~30s. Takes about 5s to start

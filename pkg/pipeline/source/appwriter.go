@@ -214,10 +214,10 @@ func (w *appWriter) isDraining() bool {
 	}
 }
 
+// stop blocks until finished
 func (w *appWriter) stop() {
 	select {
 	case <-w.drain:
-		return
 	default:
 		w.logger.Debugw("draining")
 
@@ -237,8 +237,6 @@ func (w *appWriter) stop() {
 		// wait until maxLate before force popping
 		time.AfterFunc(w.maxLate, func() { close(w.force) })
 	}
-}
 
-func (w *appWriter) waitUntilFinished() {
 	<-w.finished
 }

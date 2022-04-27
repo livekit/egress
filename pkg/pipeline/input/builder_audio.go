@@ -63,13 +63,12 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 		return err
 	}
 
-	codecInfo := <-codec
 	switch {
-	case strings.EqualFold(codecInfo.MimeType, source.MimeTypeOpus):
+	case strings.EqualFold(codec.MimeType, source.MimeTypeOpus):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
-				codecInfo.PayloadType, codecInfo.ClockRate,
+				codec.PayloadType, codec.ClockRate,
 			),
 		)); err != nil {
 			return err
@@ -92,7 +91,7 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 		return b.buildAudioEncoder(p)
 
 	default:
-		return errors.ErrNotSupported(codecInfo.MimeType)
+		return errors.ErrNotSupported(codec.MimeType)
 	}
 }
 

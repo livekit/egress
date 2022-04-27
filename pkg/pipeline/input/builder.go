@@ -24,6 +24,10 @@ func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 		return nil, err
 	}
 
+	if p.SkipPipeline {
+		return b, nil
+	}
+
 	// audio elements
 	err = b.buildAudioElements(p)
 	if err != nil {

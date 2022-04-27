@@ -105,13 +105,12 @@ func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkPar
 
 func testTrack(t *testing.T, conf *config.Config, room *lksdk.Room) {
 	for _, test := range []*testCase{
+		// {
+		// 	audioOnly:     true,
+		// 	codec:         "opus",
+		// 	fileExtension: "ogg",
+		// },
 		{
-			audioOnly:     true,
-			codec:         "opus",
-			fileExtension: "ogg",
-		},
-		{
-
 			videoOnly:     true,
 			codec:         "vp8",
 			fileExtension: "ivf",

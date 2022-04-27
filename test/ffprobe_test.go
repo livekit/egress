@@ -77,7 +77,18 @@ func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, isStream bool, fileType string) {
 	info, err := ffprobe(input)
 	require.NoError(t, err, "ffprobe error")
-	require.Equal(t, 100, info.Format.ProbeScore)
+
+	switch fileType {
+	case "ivf":
+		// sample file also has a probe score of 98
+		require.Equal(t, 98, info.Format.ProbeScore)
+	case "h264":
+		// sample file also has a probe score of 51 (why so low?)
+		require.Equal(t, 51, info.Format.ProbeScore)
+	default:
+		// should normally be 100
+		require.Equal(t, 100, info.Format.ProbeScore)
+	}
 
 	if !isStream {
 		// size
@@ -151,20 +162,20 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)
 				require.Less(t, int32(bitrate), p.VideoBitrate*1010)
+
+				// dimensions
+				require.Equal(t, p.Width, stream.Width)
+				require.Equal(t, p.Height, stream.Height)
+
+				// framerate
+				frac := strings.Split(stream.RFrameRate, "/")
+				require.Len(t, frac, 2)
+				n, err := strconv.ParseFloat(frac[0], 64)
+				require.NoError(t, err)
+				d, err := strconv.ParseFloat(frac[1], 64)
+				require.NoError(t, err)
+				require.Greater(t, n/d, float64(p.Framerate)*0.95)
 			}
-
-			// dimensions
-			require.Equal(t, p.Width, stream.Width)
-			require.Equal(t, p.Height, stream.Height)
-
-			// framerate
-			frac := strings.Split(stream.RFrameRate, "/")
-			require.Len(t, frac, 2)
-			n, err := strconv.ParseFloat(frac[0], 64)
-			require.NoError(t, err)
-			d, err := strconv.ParseFloat(frac[1], 64)
-			require.NoError(t, err)
-			require.Greater(t, n/d, float64(p.Framerate)*0.95)
 
 		default:
 			t.Fatalf("unrecognized stream type %s", stream.CodecType)

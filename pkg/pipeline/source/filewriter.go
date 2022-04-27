@@ -11,13 +11,12 @@ import (
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/media"
-	"github.com/pion/webrtc/v3/pkg/media/h264writer"
-	"github.com/pion/webrtc/v3/pkg/media/ivfwriter"
-	"github.com/pion/webrtc/v3/pkg/media/oggwriter"
 
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
+	"github.com/livekit/server-sdk-go/pkg/media/h264writer"
+	"github.com/livekit/server-sdk-go/pkg/media/ivfwriter"
 	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
 
 	"github.com/livekit/livekit-egress/pkg/errors"
@@ -30,17 +29,20 @@ type fileWriter struct {
 	maxLate time.Duration
 
 	started bool
-	logger  logger.Logger
-	writer  media.Writer
-	closed  chan struct{}
+
+	logger   logger.Logger
+	writer   media.Writer
+	drain    chan struct{}
+	finished chan struct{}
 }
 
 func newFileWriter(p *params.Params, track *webrtc.TrackRemote, rp *lksdk.RemoteParticipant, l logger.Logger, cs *clockSync) (*fileWriter, error) {
 	w := &fileWriter{
-		track:  track,
-		cs:     cs,
-		logger: logger.Logger(logr.Logger(l).WithValues("trackID", track.ID())),
-		closed: make(chan struct{}),
+		track:    track,
+		cs:       cs,
+		logger:   logger.Logger(logr.Logger(l).WithValues("trackID", track.ID())),
+		drain:    make(chan struct{}),
+		finished: make(chan struct{}),
 	}
 
 	filename := p.Filepath
@@ -51,14 +53,23 @@ func newFileWriter(p *params.Params, track *webrtc.TrackRemote, rp *lksdk.Remote
 
 	switch {
 	case strings.EqualFold(track.Codec().MimeType, MimeTypeVP8):
-		w.sb = samplebuilder.New(
-			maxVideoLate, &codecs.VP8Packet{}, track.Codec().ClockRate,
-			samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
-		)
 		if !strings.HasSuffix(filename, ".ivf") {
 			filename = filename + ".ivf"
 		}
-		w.writer, err = ivfwriter.New(filename)
+
+		writer, err := ivfwriter.New(filename)
+		if err != nil {
+			return nil, err
+		}
+
+		w.writer = writer
+		w.sb = samplebuilder.New(
+			maxVideoLate, &codecs.VP8Packet{}, track.Codec().ClockRate,
+			samplebuilder.WithPacketDroppedHandler(func() {
+				writer.FrameDropped()
+				rp.WritePLI(track.SSRC())
+			}),
+		)
 
 	case strings.EqualFold(track.Codec().MimeType, MimeTypeH264):
 		w.sb = samplebuilder.New(
@@ -69,13 +80,6 @@ func newFileWriter(p *params.Params, track *webrtc.TrackRemote, rp *lksdk.Remote
 			filename = filename + ".h264"
 		}
 		w.writer, err = h264writer.New(filename)
-
-	case strings.EqualFold(track.Codec().MimeType, MimeTypeOpus):
-		w.sb = samplebuilder.New(maxAudioLate, &codecs.OpusPacket{}, track.Codec().ClockRate)
-		if !strings.HasSuffix(filename, ".ogg") {
-			filename = filename + ".ogg"
-		}
-		w.writer, err = oggwriter.New(filename, 48000, track.Codec().Channels)
 
 	default:
 		err = errors.ErrNotSupported(track.Codec().MimeType)
@@ -96,11 +100,13 @@ func (w *fileWriter) start() {
 		if err := w.writer.Close(); err != nil {
 			w.logger.Errorw("could not close file writer", err)
 		}
+
+		close(w.finished)
 	}()
 
 	for {
 		select {
-		case <-w.closed:
+		case <-w.drain:
 			// drain sample builder
 			_ = w.writePackets(true)
 			return
@@ -148,11 +154,13 @@ func (w *fileWriter) writePackets(force bool) error {
 	return nil
 }
 
+// stop blocks until finished
 func (w *fileWriter) stop() {
 	select {
-	case <-w.closed:
-		return
+	case <-w.drain:
 	default:
-		close(w.closed)
+		close(w.drain)
 	}
+
+	<-w.finished
 }

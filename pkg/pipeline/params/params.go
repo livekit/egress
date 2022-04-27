@@ -53,6 +53,7 @@ type SourceParams struct {
 	TrackID      string
 	AudioTrackID string
 	VideoTrackID string
+	SkipPipeline bool
 }
 
 type AudioParams struct {
@@ -245,6 +246,8 @@ func getEncodingParams(request *livekit.StartEgressRequest) *Params {
 		case *livekit.TrackCompositeEgressRequest_Advanced:
 			advanced = options.Advanced
 		}
+	case *livekit.StartEgressRequest_Track:
+		return &Params{}
 	}
 
 	params := fullHD30

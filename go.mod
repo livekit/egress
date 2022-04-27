@@ -13,13 +13,13 @@ require (
 	github.com/go-logr/zapr v1.2.2
 	github.com/go-redis/redis/v8 v8.11.4
 	github.com/livekit/protocol v0.13.1-0.20220419054903-7a6bb27499a9
-	github.com/livekit/server-sdk-go v0.9.4-0.20220415042423-bae117cbb731
+	github.com/livekit/server-sdk-go v0.9.4-0.20220426070036-b98f90e75f92
 	github.com/mackerelio/go-osstat v0.2.1
-	github.com/pion/rtp v1.7.4
-	github.com/pion/webrtc/v3 v3.1.25-0.20220225075517-37e16a3b15a3
+	github.com/pion/rtp v1.7.13
+	github.com/pion/webrtc/v3 v3.1.34
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.1
 	github.com/tinyzimmer/go-glib v0.0.24
 	github.com/tinyzimmer/go-gst v0.2.32
 	github.com/urfave/cli/v2 v2.3.0
@@ -63,8 +63,8 @@ require (
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.2 // indirect
 	github.com/pion/dtls/v2 v2.1.3 // indirect
-	github.com/pion/ice/v2 v2.2.1 // indirect
-	github.com/pion/interceptor v0.1.8 // indirect
+	github.com/pion/ice/v2 v2.2.6 // indirect
+	github.com/pion/interceptor v0.1.10 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.5 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
@@ -86,12 +86,12 @@ require (
 	github.com/twitchtv/twirp v8.1.1+incompatible // indirect
 	go.opencensus.io v0.23.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.0.0-20220131195533-30dcbda58838 // indirect
-	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd // indirect
+	golang.org/x/crypto v0.0.0-20220411220226-7b82a4e95df4 // indirect
+	golang.org/x/net v0.0.0-20220421235706-1d1ef9303861 // indirect
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8 // indirect
-	golang.org/x/sys v0.0.0-20220209214540-3681064d5158 // indirect
+	golang.org/x/sys v0.0.0-20220422013727-9388b58f7150 // indirect
 	golang.org/x/text v0.3.7 // indirect
-	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
+	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220218161850-94dd64e39d7c // indirect
 	google.golang.org/grpc v1.44.0 // indirect

@@ -154,7 +154,7 @@ func testRoomCompositeStream(t *testing.T, conf *config.Config) {
 	p, err := params.GetPipelineParams(conf, req)
 	require.NoError(t, err)
 	p.CustomInputURL = videoTestInput
-	rec, err := pipeline.FromParams(conf, p)
+	rec, err := pipeline.New(conf, p)
 	require.NoError(t, err)
 
 	defer func() {

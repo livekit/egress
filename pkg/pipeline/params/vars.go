@@ -59,7 +59,6 @@ var (
 
 	fullHD60 = Params{
 		AudioParams: AudioParams{
-
 			AudioEnabled:   true,
 			AudioCodec:     livekit.AudioCodec_DEFAULT_AC,
 			AudioBitrate:   128,
