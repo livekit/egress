@@ -9,21 +9,16 @@ import (
 	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
-
-	"github.com/livekit/livekit-egress/pkg/errors"
-	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
 
 const (
 	AudioAppSource = "audioAppSrc"
 	VideoAppSource = "videoAppSrc"
-
-	MimeTypeOpus = "audio/opus"
-	MimeTypeH264 = "video/h264"
-	MimeTypeVP8  = "video/vp8"
 
 	maxVideoLate = 1000 // nearly 2s for fhd video
 	maxAudioLate = 200  // 4s for audio
@@ -74,24 +69,10 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 	case *livekit.EgressInfo_TrackComposite:
 		isCompositeRequest = true
 		if p.AudioEnabled {
-			src, err := gst.NewElementWithName("appsrc", AudioAppSource)
-			if err != nil {
-				return nil, err
-			}
-
-			s.audioSrc = app.SrcFromElement(src)
-			s.audioPlaying = make(chan struct{})
 			s.audioTrackID = p.AudioTrackID
 			wg.Add(1)
 		}
 		if p.VideoEnabled {
-			src, err := gst.NewElementWithName("appsrc", VideoAppSource)
-			if err != nil {
-				return nil, err
-			}
-
-			s.videoSrc = app.SrcFromElement(src)
-			s.videoPlaying = make(chan struct{})
 			s.videoTrackID = p.VideoTrackID
 			wg.Add(1)
 		}
@@ -101,32 +82,82 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		wg.Add(1)
 	}
 
+	var onSubscribeErr error
 	s.room.Callback.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer wg.Done()
 		s.logger.Debugw("track subscribed", "trackID", track.ID())
 
-		var err error
 		switch track.Kind() {
 		case webrtc.RTPCodecTypeAudio:
+			src, err := gst.NewElementWithName("appsrc", AudioAppSource)
+			if err != nil {
+				s.logger.Errorw("could not create appsrc", err)
+				onSubscribeErr = err
+				return
+			}
+
+			s.audioSrc = app.SrcFromElement(src)
+			s.audioPlaying = make(chan struct{})
+
 			s.audioCodec = track.Codec()
 			s.audioWriter, err = newAppWriter(track, rp, s.logger, s.audioSrc, s.cs, s.audioPlaying)
-			// need to set audio enabled for track egress
-			p.AudioEnabled = true
-			// TODO: p.SkipEncoding = true for websocket track egress
+			if err != nil {
+				s.logger.Errorw("could not create app writer", err)
+				onSubscribeErr = err
+				return
+			}
+
+			// update params for track egress
+			if !isCompositeRequest {
+				p.AudioEnabled = true
+				p.AudioCodec = livekit.AudioCodec_OPUS
+				p.FileType = livekit.EncodedFileType_OGG
+				if err = p.UpdateFilename(track); err != nil {
+					s.logger.Errorw("could not update filename", err)
+					onSubscribeErr = err
+					return
+				}
+			}
 
 		case webrtc.RTPCodecTypeVideo:
 			if isCompositeRequest {
+				var src *gst.Element
+				src, err := gst.NewElementWithName("appsrc", VideoAppSource)
+				if err != nil {
+					s.logger.Errorw("could not create appsrc", err)
+					onSubscribeErr = err
+					return
+				}
+
+				s.videoSrc = app.SrcFromElement(src)
+				s.videoPlaying = make(chan struct{})
+
 				s.videoCodec = track.Codec()
 				s.videoWriter, err = newAppWriter(track, rp, s.logger, s.videoSrc, s.cs, s.videoPlaying)
+				if err != nil {
+					s.logger.Errorw("could not create app writer", err)
+					onSubscribeErr = err
+					return
+				}
+
 			} else {
-				s.fileWriter, err = newFileWriter(p, track, rp, s.logger, s.cs)
-				p.VideoEnabled = true
+				// update params for track egress
 				p.SkipPipeline = true
+				p.VideoEnabled = true
+				if err := p.UpdateFilename(track); err != nil {
+					s.logger.Errorw("could not update filename", err)
+					onSubscribeErr = err
+					return
+				}
+
+				var err error
+				s.fileWriter, err = newFileWriter(p, track, rp, s.logger, s.cs)
+				if onSubscribeErr != nil {
+					s.logger.Errorw("could not create file writer", err)
+					onSubscribeErr = err
+					return
+				}
 			}
-		}
-		if err != nil {
-			s.logger.Errorw("could not record track", err, "trackID", track.ID())
-			return
 		}
 	}
 
@@ -135,7 +166,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 	}
 
 	wg.Wait()
-	return s, nil
+	return s, onSubscribeErr
 }
 
 func (s *SDKSource) join(p *params.Params) error {

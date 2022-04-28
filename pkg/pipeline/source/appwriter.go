@@ -13,6 +13,7 @@ import (
 	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
 	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
@@ -64,21 +65,21 @@ func newAppWriter(
 	}
 
 	switch {
-	case strings.EqualFold(track.Codec().MimeType, MimeTypeVP8):
+	case strings.EqualFold(track.Codec().MimeType, params.MimeTypeVP8):
 		w.sb = samplebuilder.New(
 			maxVideoLate, &codecs.VP8Packet{}, track.Codec().ClockRate,
 			samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
 		)
 		w.maxLate = time.Second * 2
 
-	case strings.EqualFold(track.Codec().MimeType, MimeTypeH264):
+	case strings.EqualFold(track.Codec().MimeType, params.MimeTypeH264):
 		w.sb = samplebuilder.New(
 			maxVideoLate, &codecs.H264Packet{}, track.Codec().ClockRate,
 			samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
 		)
 		w.maxLate = time.Second * 2
 
-	case strings.EqualFold(track.Codec().MimeType, MimeTypeOpus):
+	case strings.EqualFold(track.Codec().MimeType, params.MimeTypeOpus):
 		w.sb = samplebuilder.New(maxAudioLate, &codecs.OpusPacket{}, track.Codec().ClockRate)
 		w.maxLate = time.Second * 4
 

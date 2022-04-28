@@ -99,7 +99,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	}
 
 	switch {
-	case strings.EqualFold(codec.MimeType, source.MimeTypeH264):
+	case strings.EqualFold(codec.MimeType, params.MimeTypeH264):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
@@ -121,7 +121,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 
 		b.videoElements = append(b.videoElements, src.Element, rtpH264Depay, avDecH264)
 
-	case strings.EqualFold(codec.MimeType, source.MimeTypeVP8):
+	case strings.EqualFold(codec.MimeType, params.MimeTypeVP8):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",

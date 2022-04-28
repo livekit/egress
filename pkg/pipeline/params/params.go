@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pion/webrtc/v3"
+
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -376,6 +378,38 @@ func (p *Params) updateConnectionInfo(conf *config.Config, request *livekit.Star
 	} else {
 		return errors.ErrInvalidInput("ws_url")
 	}
+
+	return nil
+}
+
+func (p *Params) UpdateFilename(track *webrtc.TrackRemote) error {
+	filename := p.Filepath
+	if filename == "" || strings.HasSuffix(filename, "/") {
+		filename = fmt.Sprintf("%s%s-%v", filename, track.ID(), time.Now().String())
+	}
+
+	switch {
+	case strings.EqualFold(track.Codec().MimeType, MimeTypeOpus):
+		if !strings.HasSuffix(filename, ".ogg") {
+			filename = filename + ".ogg"
+		}
+
+	case strings.EqualFold(track.Codec().MimeType, MimeTypeVP8):
+		if !strings.HasSuffix(filename, ".ivf") {
+			filename = filename + ".ivf"
+		}
+
+	case strings.EqualFold(track.Codec().MimeType, MimeTypeH264):
+		if !strings.HasSuffix(filename, ".h264") {
+			filename = filename + ".h264"
+		}
+
+	default:
+		return errors.ErrNotSupported(track.Codec().MimeType)
+	}
+
+	p.Filename = filename
+	p.FileInfo.Filename = filename
 
 	return nil
 }

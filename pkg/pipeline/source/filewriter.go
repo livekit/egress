@@ -1,7 +1,6 @@
 package source
 
 import (
-	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -45,19 +44,10 @@ func newFileWriter(p *params.Params, track *webrtc.TrackRemote, rp *lksdk.Remote
 		finished: make(chan struct{}),
 	}
 
-	filename := p.Filepath
-	if filename == "" || strings.HasSuffix(filename, "/") {
-		filename = fmt.Sprintf("%s%s-%v", filename, track.ID(), time.Now().String())
-	}
 	var err error
-
 	switch {
-	case strings.EqualFold(track.Codec().MimeType, MimeTypeVP8):
-		if !strings.HasSuffix(filename, ".ivf") {
-			filename = filename + ".ivf"
-		}
-
-		writer, err := ivfwriter.New(filename)
+	case strings.EqualFold(track.Codec().MimeType, params.MimeTypeVP8):
+		writer, err := ivfwriter.New(p.Filename)
 		if err != nil {
 			return nil, err
 		}
@@ -71,15 +61,12 @@ func newFileWriter(p *params.Params, track *webrtc.TrackRemote, rp *lksdk.Remote
 			}),
 		)
 
-	case strings.EqualFold(track.Codec().MimeType, MimeTypeH264):
+	case strings.EqualFold(track.Codec().MimeType, params.MimeTypeH264):
 		w.sb = samplebuilder.New(
 			maxVideoLate, &codecs.H264Packet{}, track.Codec().ClockRate,
 			samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
 		)
-		if !strings.HasSuffix(filename, ".h264") {
-			filename = filename + ".h264"
-		}
-		w.writer, err = h264writer.New(filename)
+		w.writer, err = h264writer.New(p.Filename)
 
 	default:
 		err = errors.ErrNotSupported(track.Codec().MimeType)
@@ -87,9 +74,6 @@ func newFileWriter(p *params.Params, track *webrtc.TrackRemote, rp *lksdk.Remote
 	if err != nil {
 		return nil, err
 	}
-
-	p.Filename = filename
-	p.FileInfo.Filename = filename
 
 	go w.start()
 	return w, nil

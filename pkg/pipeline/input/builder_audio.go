@@ -64,7 +64,7 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 	}
 
 	switch {
-	case strings.EqualFold(codec.MimeType, source.MimeTypeOpus):
+	case strings.EqualFold(codec.MimeType, params.MimeTypeOpus):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
