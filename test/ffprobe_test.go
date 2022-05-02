@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -85,20 +84,35 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 	case "h264":
 		// sample file also has a probe score of 51 (why so low?)
 		require.Equal(t, 51, info.Format.ProbeScore)
+
+		// size
+		require.NotEqual(t, "0", info.Format.Size)
 	default:
 		// should normally be 100
 		require.Equal(t, 100, info.Format.ProbeScore)
 	}
 
-	if !isStream {
+	if !isStream && fileType != "h264" {
 		// size
 		require.NotEqual(t, "0", info.Format.Size)
 
 		// duration
-		expected := time.Unix(0, res.GetFile().EndedAt).Sub(time.Unix(0, res.GetFile().StartedAt)).Seconds()
+		expected := float64(res.GetFile().Duration) / 1e9
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
-		require.InDelta(t, expected, actual, 1.5)
+
+		delta := 0.5
+		if fileType == "ivf" {
+			delta = 3
+		} else {
+			switch res.Request.(type) {
+			case *livekit.EgressInfo_TrackComposite:
+				if !p.AudioEnabled {
+					delta = 3
+				}
+			}
+		}
+		require.InDelta(t, expected, actual, delta)
 	}
 
 	// check stream info

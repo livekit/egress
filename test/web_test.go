@@ -192,12 +192,15 @@ func testRoomCompositeStream(t *testing.T, conf *config.Config) {
 	rec.Stop()
 	res := <-resChan
 
-	// check results
+	// egress info
 	require.Empty(t, res.Error)
+	require.NotZero(t, res.StartedAt)
+	require.NotZero(t, res.EndedAt)
+
+	// stream info
 	require.Len(t, res.GetStream().Info, 2)
 	for _, info := range res.GetStream().Info {
 		require.NotEmpty(t, info.Url)
-		require.NotZero(t, info.StartedAt)
-		require.NotZero(t, info.EndedAt)
+		require.NotZero(t, info.Duration)
 	}
 }

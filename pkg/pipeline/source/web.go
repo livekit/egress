@@ -213,8 +213,6 @@ func (s *WebSource) launchChrome(url, egressID, display string, width, height in
 	return err
 }
 
-func (s *WebSource) Playing(_ string) {}
-
 func (s *WebSource) StartRecording() chan struct{} {
 	return s.startRecording
 }

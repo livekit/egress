@@ -110,23 +110,23 @@ func testTrack(t *testing.T, conf *config.Config, room *lksdk.Room) {
 			codec:         "opus",
 			fileExtension: "ogg",
 		},
-		// {
-		// 	videoOnly:     true,
-		// 	codec:         "vp8",
-		// 	fileExtension: "ivf",
-		// },
-		// {
-		// 	videoOnly:     true,
-		// 	codec:         "h264",
-		// 	fileExtension: "h264",
-		// },
+		{
+			videoOnly:     true,
+			codec:         "vp8",
+			fileExtension: "ivf",
+		},
+		{
+			videoOnly:     true,
+			codec:         "h264",
+			fileExtension: "h264",
+		},
 	} {
 		test.filePrefix = fmt.Sprintf("track-%s", test.codec)
 
 		if !t.Run(test.filePrefix, func(t *testing.T) {
 			runTrackFileTest(t, conf, room, test)
 		}) {
-			// t.FailNow()
+			t.FailNow()
 		}
 	}
 }
@@ -140,8 +140,7 @@ func runTrackFileTest(t *testing.T, conf *config.Config, room *lksdk.Room, test 
 		p := publishSamplesToRoom(t, room, "", test.codec)
 		trackID = p.videoTrackID
 	}
-
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second)
 
 	filepath, filename := getFileInfo(conf, test, "track")
 
@@ -167,4 +166,5 @@ func runTrackFileTest(t *testing.T, conf *config.Config, room *lksdk.Room, test 
 	runFileTest(t, conf, test, req, filename)
 
 	require.NoError(t, room.LocalParticipant.UnpublishTrack(trackID))
+	time.Sleep(time.Second)
 }

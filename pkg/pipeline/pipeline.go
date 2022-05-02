@@ -25,6 +25,7 @@ var initialized = false
 
 const (
 	pipelineSource = "pipeline"
+	fileKey        = "file"
 )
 
 type Pipeline struct {
@@ -37,10 +38,11 @@ type Pipeline struct {
 	loop     *glib.MainLoop
 
 	// internal
-	mu      sync.RWMutex
-	playing bool
-	removed map[string]bool
-	closed  chan struct{}
+	mu        sync.Mutex
+	playing   bool
+	startedAt map[string]int64
+	removed   map[string]bool
+	closed    chan struct{}
 }
 
 func FromRequest(conf *config.Config, request *livekit.StartEgressRequest) (*Pipeline, error) {
@@ -68,10 +70,11 @@ func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 	// skip pipeline used by video track egress
 	if p.SkipPipeline {
 		return &Pipeline{
-			Params:  p,
-			in:      in,
-			removed: make(map[string]bool),
-			closed:  make(chan struct{}),
+			Params:    p,
+			in:        in,
+			startedAt: make(map[string]int64),
+			removed:   make(map[string]bool),
+			closed:    make(chan struct{}),
 		}, nil
 	}
 
@@ -108,12 +111,13 @@ func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 	}
 
 	return &Pipeline{
-		Params:   p,
-		pipeline: pipeline,
-		in:       in,
-		out:      out,
-		removed:  make(map[string]bool),
-		closed:   make(chan struct{}),
+		Params:    p,
+		pipeline:  pipeline,
+		in:        in,
+		out:       out,
+		startedAt: make(map[string]int64),
+		removed:   make(map[string]bool),
+		closed:    make(chan struct{}),
 	}, nil
 }
 
@@ -122,6 +126,11 @@ func (p *Pipeline) GetInfo() *livekit.EgressInfo {
 }
 
 func (p *Pipeline) Run() *livekit.EgressInfo {
+	p.Info.StartedAt = time.Now().UnixNano()
+	defer func() {
+		p.Info.EndedAt = time.Now().UnixNano()
+	}()
+
 	// wait until room is ready
 	start := p.in.StartRecording()
 	if start != nil {
@@ -176,9 +185,10 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	// close input source
 	p.in.Close()
 
-	if p.SkipPipeline {
-		// update endedAt
-		p.updateEndTime(p.in.Source.(*source.SDKSource).GetEndTime())
+	// update endedAt from sdk source
+	switch s := p.in.Source.(type) {
+	case *source.SDKSource:
+		p.updateEndTime(s.GetEndTime())
 	}
 
 	// upload file
@@ -227,15 +237,12 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 		_ = p.pipeline.BlockSetState(gst.StateNull)
 		p.Logger.Debugw("pipeline stopped")
 
-		p.loop.Quit()
-
-		switch s := p.in.Source.(type) {
-		case *source.SDKSource:
-			p.updateEndTime(s.GetEndTime())
+		switch p.in.Source.(type) {
 		case *source.WebSource:
 			p.updateEndTime(time.Now().UnixNano())
 		}
 
+		p.loop.Quit()
 		return false
 
 	case gst.MessageError:
@@ -259,7 +266,10 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 
 		switch msg.Source() {
 		case source.AudioAppSource, source.VideoAppSource:
-			p.in.Playing(msg.Source())
+			switch s := p.in.Source.(type) {
+			case *source.SDKSource:
+				s.Playing(msg.Source())
+			}
 
 		case pipelineSource:
 			p.playing = true
@@ -280,26 +290,30 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 
 func (p *Pipeline) updateStartTime(startedAt int64) {
 	if p.IsStream {
-		p.mu.RLock()
+		p.mu.Lock()
 		for _, streamInfo := range p.StreamInfo {
-			streamInfo.StartedAt = startedAt
+			p.startedAt[streamInfo.Url] = startedAt
 		}
-		p.mu.RUnlock()
+		p.mu.Unlock()
 	} else {
-		p.FileInfo.StartedAt = startedAt
+		p.startedAt[fileKey] = startedAt
 	}
+
 	p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
 }
 
 func (p *Pipeline) updateEndTime(endedAt int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if p.IsStream {
-		p.mu.RLock()
 		for _, info := range p.StreamInfo {
-			info.EndedAt = endedAt
+			startedAt := p.startedAt[info.Url]
+			info.Duration = endedAt - startedAt
 		}
-		p.mu.RUnlock()
 	} else {
-		p.FileInfo.EndedAt = endedAt
+		startedAt := p.startedAt[fileKey]
+		p.FileInfo.Duration = endedAt - startedAt
 	}
 }
 
@@ -321,12 +335,10 @@ func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
 			return err
 		}
 
-		streamInfo := &livekit.StreamInfo{
-			Url:       url,
-			StartedAt: now,
-		}
+		streamInfo := &livekit.StreamInfo{Url: url}
 
 		p.mu.Lock()
+		p.startedAt[url] = now
 		p.StreamInfo[url] = streamInfo
 		p.mu.Unlock()
 
@@ -340,7 +352,10 @@ func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
 		}
 
 		p.mu.Lock()
-		p.StreamInfo[url].EndedAt = now
+		startedAt := p.startedAt[url]
+		p.StreamInfo[url].Duration = now - startedAt
+
+		delete(p.startedAt, url)
 		delete(p.StreamInfo, url)
 		p.mu.Unlock()
 	}
@@ -358,7 +373,9 @@ func (p *Pipeline) Stop() {
 
 		p.Logger.Debugw("sending EOS to pipeline")
 
-		switch p.in.Source.(type) {
+		switch s := p.in.Source.(type) {
+		case *source.SDKSource:
+			s.SendEOS()
 		case *source.WebSource:
 			p.pipeline.SendEvent(gst.NewEOSEvent())
 		}

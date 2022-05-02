@@ -287,7 +287,7 @@ func (s *SDKSource) EndRecording() chan struct{} {
 	return s.endRecording
 }
 
-func (s *SDKSource) Close() {
+func (s *SDKSource) SendEOS() {
 	select {
 	case <-s.closed:
 		return
@@ -316,7 +316,9 @@ func (s *SDKSource) Close() {
 			}
 			wg.Wait()
 		}
-
-		s.room.Disconnect()
 	}
+}
+
+func (s *SDKSource) Close() {
+	s.room.Disconnect()
 }
