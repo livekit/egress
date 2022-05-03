@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pion/webrtc/v3"
+
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -53,6 +55,7 @@ type SourceParams struct {
 	TrackID      string
 	AudioTrackID string
 	VideoTrackID string
+	SkipPipeline bool
 }
 
 type AudioParams struct {
@@ -107,15 +110,29 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 
 		switch o := req.RoomComposite.Output.(type) {
 		case *livekit.RoomCompositeEgressRequest_File:
+			if o.File.FileType == livekit.EncodedFileType_DEFAULT_FILETYPE {
+				if !params.VideoEnabled && params.AudioCodec != livekit.AudioCodec_AAC {
+					o.File.FileType = livekit.EncodedFileType_OGG
+				} else {
+					o.File.FileType = livekit.EncodedFileType_MP4
+				}
+			}
+
 			format = o.File.FileType.String()
 			if err := params.updateFileInfo(conf, o.File.FileType, o.File.Filepath, o.File.Output); err != nil {
 				return nil, err
 			}
+
 		case *livekit.RoomCompositeEgressRequest_Stream:
+			if o.Stream.Protocol == livekit.StreamProtocol_DEFAULT_PROTOCOL {
+				o.Stream.Protocol = livekit.StreamProtocol_RTMP
+			}
+
 			format = o.Stream.Protocol.String()
 			if err := params.updateStreamInfo(o.Stream.Protocol, o.Stream.Urls); err != nil {
 				return nil, err
 			}
+
 		default:
 			return nil, errors.ErrInvalidInput("output")
 		}
@@ -131,15 +148,29 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 
 		switch o := req.TrackComposite.Output.(type) {
 		case *livekit.TrackCompositeEgressRequest_File:
+			if o.File.FileType == livekit.EncodedFileType_DEFAULT_FILETYPE {
+				if !params.VideoEnabled && params.AudioCodec != livekit.AudioCodec_AAC {
+					o.File.FileType = livekit.EncodedFileType_OGG
+				} else {
+					o.File.FileType = livekit.EncodedFileType_MP4
+				}
+			}
+
 			format = o.File.FileType.String()
 			if err := params.updateFileInfo(conf, o.File.FileType, o.File.Filepath, o.File.Output); err != nil {
 				return nil, err
 			}
+
 		case *livekit.TrackCompositeEgressRequest_Stream:
+			if o.Stream.Protocol == livekit.StreamProtocol_DEFAULT_PROTOCOL {
+				o.Stream.Protocol = livekit.StreamProtocol_RTMP
+			}
+
 			format = o.Stream.Protocol.String()
 			if err := params.updateStreamInfo(o.Stream.Protocol, o.Stream.Urls); err != nil {
 				return nil, err
 			}
+
 		default:
 			return nil, errors.ErrInvalidInput("output")
 		}
@@ -150,38 +181,31 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		params.RoomName = req.Track.RoomName
 		params.TrackID = req.Track.TrackId
 
-		// switch o := req.Track.Output.(type) {
-		// case *livekit.TrackEgressRequest_HttpUrl:
-		// case *livekit.TrackEgressRequest_WebsocketUrl:
-		// default:
-		// 	return nil, errors.ErrInvalidInput
-		// }
+		err := params.updateConnectionInfo(conf, request)
+		if err != nil {
+			return nil, err
+		}
 
-		return nil, errors.ErrNotSupported("track requests")
-		// return params, nil
+		switch o := req.Track.Output.(type) {
+		case *livekit.TrackEgressRequest_File:
+			if err := params.updateFileInfo(conf, -1, o.File.Filepath, o.File.Output); err != nil {
+				return nil, err
+			}
+			return params, nil
+
+		case *livekit.TrackEgressRequest_WebsocketUrl:
+			return nil, errors.ErrNotSupported("websocket_url")
+
+		default:
+			return nil, errors.ErrInvalidInput("output")
+		}
+
 	default:
 		return nil, errors.ErrInvalidInput("request")
 	}
 
-	// token
-	if request.Token != "" {
-		params.Token = request.Token
-	} else if conf.ApiKey != "" && conf.ApiSecret != "" {
-		token, err := egress.BuildEgressToken(params.Info.EgressId, conf.ApiKey, conf.ApiSecret, params.RoomName)
-		if err != nil {
-			return nil, err
-		}
-		params.Token = token
-	} else {
-		return nil, errors.ErrInvalidInput("token or api key/secret")
-	}
-
-	if request.WsUrl != "" {
-		params.LKUrl = request.WsUrl
-	} else if conf.WsUrl != "" {
-		params.LKUrl = conf.WsUrl
-	} else {
-		return nil, errors.ErrInvalidInput("ws_url")
+	if err := params.updateConnectionInfo(conf, request); err != nil {
+		return nil, err
 	}
 
 	// check audio codec
@@ -224,6 +248,8 @@ func getEncodingParams(request *livekit.StartEgressRequest) *Params {
 		case *livekit.TrackCompositeEgressRequest_Advanced:
 			advanced = options.Advanced
 		}
+	case *livekit.StartEgressRequest_Track:
+		return &Params{}
 	}
 
 	params := fullHD30
@@ -312,16 +338,78 @@ func (p *Params) updateFileInfo(conf *config.Config, fileType livekit.EncodedFil
 		}
 	}
 
-	filename, err := getFilename(filepath, fileType, p.RoomName, local)
-	if err != nil {
-		return err
+	p.Filepath = filepath
+	p.FileInfo = &livekit.FileInfo{}
+
+	if fileType != -1 {
+		filename, err := getFilename(filepath, fileType, p.RoomName, local)
+		if err != nil {
+			return err
+		}
+
+		p.FileType = fileType
+		p.Filename = filename
+		p.FileInfo.Filename = filename
+	}
+
+	p.Info.Result = &livekit.EgressInfo_File{File: p.FileInfo}
+
+	return nil
+}
+
+func (p *Params) updateConnectionInfo(conf *config.Config, request *livekit.StartEgressRequest) error {
+	// token
+	if request.Token != "" {
+		p.Token = request.Token
+	} else if conf.ApiKey != "" && conf.ApiSecret != "" {
+		token, err := egress.BuildEgressToken(p.Info.EgressId, conf.ApiKey, conf.ApiSecret, p.RoomName)
+		if err != nil {
+			return err
+		}
+		p.Token = token
+	} else {
+		return errors.ErrInvalidInput("token or api key/secret")
+	}
+
+	if request.WsUrl != "" {
+		p.LKUrl = request.WsUrl
+	} else if conf.WsUrl != "" {
+		p.LKUrl = conf.WsUrl
+	} else {
+		return errors.ErrInvalidInput("ws_url")
+	}
+
+	return nil
+}
+
+func (p *Params) UpdateFilename(track *webrtc.TrackRemote) error {
+	filename := p.Filepath
+	if filename == "" || strings.HasSuffix(filename, "/") {
+		filename = fmt.Sprintf("%s%s-%v", filename, track.ID(), time.Now().String())
+	}
+
+	switch {
+	case strings.EqualFold(track.Codec().MimeType, MimeTypeOpus):
+		if !strings.HasSuffix(filename, ".ogg") {
+			filename = filename + ".ogg"
+		}
+
+	case strings.EqualFold(track.Codec().MimeType, MimeTypeVP8):
+		if !strings.HasSuffix(filename, ".ivf") {
+			filename = filename + ".ivf"
+		}
+
+	case strings.EqualFold(track.Codec().MimeType, MimeTypeH264):
+		if !strings.HasSuffix(filename, ".h264") {
+			filename = filename + ".h264"
+		}
+
+	default:
+		return errors.ErrNotSupported(track.Codec().MimeType)
 	}
 
 	p.Filename = filename
-	p.Filepath = filepath
-	p.FileType = fileType
-	p.FileInfo = &livekit.FileInfo{Filename: filename}
-	p.Info.Result = &livekit.EgressInfo_File{File: p.FileInfo}
+	p.FileInfo.Filename = filename
 
 	return nil
 }

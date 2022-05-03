@@ -156,7 +156,7 @@ func (s *Service) Run() error {
 			s.sendEgressResponse(req.RequestId, pipelineParams.Info, nil)
 
 			// create the pipeline
-			p, err := pipeline.FromParams(s.conf, pipelineParams)
+			p, err := pipeline.New(s.conf, pipelineParams)
 			info := pipelineParams.Info
 			if err != nil {
 				info.Error = err.Error()
@@ -212,7 +212,7 @@ func (s *Service) isIdle() bool {
 	return idle
 }
 
-func (s *Service) handleEgress(p pipeline.Pipeline) {
+func (s *Service) handleEgress(p *pipeline.Pipeline) {
 	defer s.pipelines.Delete(p.GetInfo().EgressId)
 
 	// subscribe to request channel

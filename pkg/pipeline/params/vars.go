@@ -2,6 +2,12 @@ package params
 
 import "github.com/livekit/protocol/livekit"
 
+const (
+	MimeTypeOpus = "audio/opus"
+	MimeTypeH264 = "video/h264"
+	MimeTypeVP8  = "video/vp8"
+)
+
 var (
 	hd30 = Params{
 		AudioParams: AudioParams{
@@ -59,7 +65,6 @@ var (
 
 	fullHD60 = Params{
 		AudioParams: AudioParams{
-
 			AudioEnabled:   true,
 			AudioCodec:     livekit.AudioCodec_DEFAULT_AC,
 			AudioBitrate:   128,

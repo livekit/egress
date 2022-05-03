@@ -98,13 +98,12 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 		return err
 	}
 
-	codecInfo := <-codec
 	switch {
-	case strings.EqualFold(codecInfo.MimeType, source.MimeTypeH264):
+	case strings.EqualFold(codec.MimeType, params.MimeTypeH264):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
-				codecInfo.PayloadType, codecInfo.ClockRate,
+				codec.PayloadType, codec.ClockRate,
 			),
 		)); err != nil {
 			return err
@@ -122,11 +121,11 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 
 		b.videoElements = append(b.videoElements, src.Element, rtpH264Depay, avDecH264)
 
-	case strings.EqualFold(codecInfo.MimeType, source.MimeTypeVP8):
+	case strings.EqualFold(codec.MimeType, params.MimeTypeVP8):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
-				codecInfo.PayloadType, codecInfo.ClockRate,
+				codec.PayloadType, codec.ClockRate,
 			),
 		)); err != nil {
 			return err
@@ -145,7 +144,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 		b.videoElements = append(b.videoElements, src.Element, rtpVP8Depay, vp8Dec)
 
 	default:
-		return errors.ErrNotSupported(codecInfo.MimeType)
+		return errors.ErrNotSupported(codec.MimeType)
 	}
 
 	videoConvert, err := gst.NewElement("videoconvert")

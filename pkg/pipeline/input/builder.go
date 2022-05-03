@@ -24,6 +24,10 @@ func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 		return nil, err
 	}
 
+	if p.SkipPipeline {
+		return b, nil
+	}
+
 	// audio elements
 	err = b.buildAudioElements(p)
 	if err != nil {
@@ -71,6 +75,9 @@ func (b *Bin) buildMux(p *params.Params) error {
 				return err
 			}
 			err = b.mux.Set("streamable", true)
+
+		default:
+			err = errors.ErrInvalidInput("stream protocol")
 		}
 	} else {
 		switch p.FileType {
@@ -83,6 +90,9 @@ func (b *Bin) buildMux(p *params.Params) error {
 
 		case livekit.EncodedFileType_OGG:
 			b.mux, err = gst.NewElement("oggmux")
+
+		default:
+			err = errors.ErrInvalidInput("file type")
 		}
 	}
 	if err != nil {

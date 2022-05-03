@@ -1,6 +1,8 @@
 package source
 
-import "go.uber.org/atomic"
+import (
+	"go.uber.org/atomic"
+)
 
 // a single clockSync is shared between audio and video writers
 // used for creating PTS

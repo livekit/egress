@@ -4,17 +4,11 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/livekit-egress/pkg/pipeline/source"
 )
 
-type Source interface {
-	Playing(name string)
-	StartRecording() chan struct{}
-	EndRecording() chan struct{}
-	Close()
-}
-
 type Bin struct {
-	Source
+	source.Source
 
 	bin *gst.Bin
 

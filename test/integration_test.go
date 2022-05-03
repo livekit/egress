@@ -57,6 +57,8 @@ type testCase struct {
 	fileType         livekit.EncodedFileType
 	options          *livekit.EncodingOptions
 	filePrefix       string
+	codec            string
+	fileExtension    string
 }
 
 type sdkParams struct {
@@ -110,6 +112,10 @@ func TestEgress(t *testing.T) {
 	t.Run("TrackComposite", func(t *testing.T) {
 		testTrackComposite(t, conf, room)
 	})
+
+	t.Run("Track", func(t *testing.T) {
+		testTrack(t, conf, room)
+	})
 }
 
 func getTestConfig(t *testing.T) *config.Config {
@@ -148,7 +154,10 @@ func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec
 		track, err := lksdk.NewLocalFileTrack(filename, opts...)
 		require.NoError(t, err)
 
-		pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
+		pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{
+			Name:       filename,
+			DisableDTX: true,
+		})
 		require.NoError(t, err)
 
 		return pub.SID()
@@ -167,6 +176,11 @@ func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec
 
 func getFileInfo(conf *config.Config, test *testCase, testType string) (string, string) {
 	var filename string
+	extension := test.fileExtension
+	if extension == "" {
+		extension = strings.ToLower(test.fileType.String())
+	}
+
 	if test.filePrefix == "" {
 		var name string
 		if test.audioOnly {
@@ -183,11 +197,9 @@ func getFileInfo(conf *config.Config, test *testCase, testType string) (string, 
 			}
 		}
 
-		filename = fmt.Sprintf("%s-%s-%d.%s",
-			testType, strings.ToLower(name), time.Now().Unix(), strings.ToLower(test.fileType.String()),
-		)
+		filename = fmt.Sprintf("%s-%s-%d.%s", testType, strings.ToLower(name), time.Now().Unix(), extension)
 	} else {
-		filename = fmt.Sprintf("%s-%d.%s", test.filePrefix, time.Now().Unix(), strings.ToLower(test.fileType.String()))
+		filename = fmt.Sprintf("%s-%d.%s", test.filePrefix, time.Now().Unix(), extension)
 	}
 
 	filepath := fmt.Sprintf("/out/output/%s", filename)
@@ -207,7 +219,7 @@ func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit
 		p.CustomInputURL = test.inputUrl
 	}
 
-	rec, err := pipeline.FromParams(conf, p)
+	rec, err := pipeline.New(conf, p)
 	require.NoError(t, err)
 
 	// record for ~30s. Takes about 5s to start
@@ -216,15 +228,23 @@ func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit
 	})
 	res := rec.Run()
 
-	// check results
+	// egress info
 	require.Empty(t, res.Error)
+	require.NotZero(t, res.StartedAt)
+	require.NotZero(t, res.EndedAt)
+
+	// file info
 	fileRes := res.GetFile()
 	require.NotNil(t, fileRes)
-	require.NotZero(t, fileRes.StartedAt)
-	require.NotZero(t, fileRes.EndedAt)
+	require.NotZero(t, fileRes.Duration)
 	require.NotEmpty(t, fileRes.Filename)
 	require.NotEmpty(t, fileRes.Size)
 	require.NotEmpty(t, fileRes.Location)
 
-	verify(t, filename, p, res, false, test.fileType)
+	fileType := test.fileExtension
+	if fileType == "" {
+		fileType = test.fileType.String()
+	}
+
+	verify(t, filename, p, res, false, fileType)
 }
