@@ -3,7 +3,6 @@ package output
 import (
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-egress/pkg/errors"
@@ -14,7 +13,7 @@ type Bin struct {
 	bin *gst.Bin
 
 	// stream
-	protocol livekit.StreamProtocol
+	protocol params.OutputType
 	tee      *gst.Element
 	sinks    map[string]*streamSink
 

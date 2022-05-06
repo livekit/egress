@@ -6,8 +6,6 @@ import (
 
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/protocol/livekit"
-
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-egress/pkg/pipeline/source"
@@ -19,7 +17,7 @@ func (b *Bin) buildVideoElements(p *params.Params) error {
 	}
 
 	var err error
-	if p.IsWebInput {
+	if p.IsWebSource {
 		err = b.buildWebVideoInput(p)
 	} else {
 		err = b.buildSDKVideoInput(p)
@@ -60,8 +58,6 @@ func (b *Bin) buildWebVideoInput(p *params.Params) error {
 		return err
 	}
 
-	// TODO: is videorate needed?
-
 	videoFramerateCaps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return err
@@ -74,19 +70,7 @@ func (b *Bin) buildWebVideoInput(p *params.Params) error {
 
 	b.videoElements = append(b.videoElements, xImageSrc, videoConvert, videoFramerateCaps)
 
-	switch p.VideoCodec {
-	case livekit.VideoCodec_H264_BASELINE:
-		return b.buildH26XElements(p, 264, "baseline")
-
-	case livekit.VideoCodec_H264_MAIN:
-		return b.buildH26XElements(p, 264, "main")
-
-	case livekit.VideoCodec_H264_HIGH:
-		return b.buildH26XElements(p, 264, "high")
-
-	default:
-		return errors.ErrNotSupported(p.VideoCodec.String())
-	}
+	return b.buildVideoEncoder(p)
 }
 
 // TODO: skip decoding when possible
@@ -99,7 +83,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	}
 
 	switch {
-	case strings.EqualFold(codec.MimeType, params.MimeTypeH264):
+	case strings.EqualFold(codec.MimeType, string(params.MimeTypeH264)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
@@ -121,7 +105,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 
 		b.videoElements = append(b.videoElements, src.Element, rtpH264Depay, avDecH264)
 
-	case strings.EqualFold(codec.MimeType, params.MimeTypeVP8):
+	case strings.EqualFold(codec.MimeType, string(params.MimeTypeVP8)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
@@ -174,77 +158,37 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 
 	b.videoElements = append(b.videoElements, videoConvert, videoScale, videoRate, decodedCaps)
 
-	// Build encoder pipeline
+	return b.buildVideoEncoder(p)
+}
+
+func (b *Bin) buildVideoEncoder(p *params.Params) error {
 	switch p.VideoCodec {
-	case livekit.VideoCodec_H264_BASELINE:
-		return b.buildH26XElements(p, 264, "baseline")
+	// we only encode h264, the rest are too slow
+	case params.MimeTypeH264:
+		x264Enc, err := gst.NewElement("x264enc")
+		if err != nil {
+			return err
+		}
+		if err = x264Enc.SetProperty("bitrate", uint(p.VideoBitrate)); err != nil {
+			return err
+		}
+		x264Enc.SetArg("speed-preset", "veryfast")
+		x264Enc.SetArg("tune", "zerolatency")
 
-	case livekit.VideoCodec_H264_MAIN:
-		return b.buildH26XElements(p, 264, "main")
+		encodedCaps, err := gst.NewElement("capsfilter")
+		if err != nil {
+			return err
+		}
+		if err = encodedCaps.SetProperty("caps", gst.NewCapsFromString(
+			fmt.Sprintf("video/x-h264,profile=%s,framerate=%d/1", p.VideoProfile, p.Framerate),
+		)); err != nil {
+			return err
+		}
 
-	case livekit.VideoCodec_H264_HIGH:
-		return b.buildH26XElements(p, 264, "high")
+		b.videoElements = append(b.videoElements, x264Enc, encodedCaps)
+		return nil
 
 	default:
-		return errors.ErrNotSupported(p.VideoCodec.String())
+		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", p.VideoCodec))
 	}
-}
-
-// TODO: HEVC/265 low quality/choppy
-func (b *Bin) buildH26XElements(p *params.Params, num int, profile string) error {
-	x26XEnc, err := gst.NewElement(fmt.Sprintf("x%denc", num))
-	if err != nil {
-		return err
-	}
-	if err = x26XEnc.SetProperty("bitrate", uint(p.VideoBitrate)); err != nil {
-		return err
-	}
-	x26XEnc.SetArg("speed-preset", "veryfast")
-	x26XEnc.SetArg("tune", "zerolatency")
-
-	encodedCaps, err := gst.NewElement("capsfilter")
-	if err != nil {
-		return err
-	}
-	if err = encodedCaps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-h%d,profile=%s,framerate=%d/1", num, profile, p.Framerate),
-	)); err != nil {
-		return err
-	}
-
-	if num == 264 {
-		b.videoElements = append(b.videoElements, x26XEnc, encodedCaps)
-		return nil
-	}
-
-	h265parse, err := gst.NewElement("h265parse")
-	if err != nil {
-		return err
-	}
-
-	b.videoElements = append(b.videoElements, x26XEnc, encodedCaps, h265parse)
-	return nil
-}
-
-// TODO:
-//  vp8 low quality/choppy
-//  vp9 is extremely slow, audio gets dropped, default parameters cannot keep up with live source
-func (b *Bin) buildVPXElements(p *params.Params, num int) error {
-	vpXEnc, err := gst.NewElement(fmt.Sprintf("vp%denc", num))
-	if err != nil {
-		return err
-	}
-
-	encodedCaps, err := gst.NewElement("capsfilter")
-	if err != nil {
-		return err
-	}
-	if err = encodedCaps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-vp%d,framerate=%d/1", num, p.Framerate),
-	)); err != nil {
-		return err
-	}
-
-	b.videoElements = append(b.videoElements, vpXEnc, encodedCaps)
-	return nil
 }

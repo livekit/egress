@@ -2,7 +2,6 @@ package source
 
 import (
 	"io"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -14,7 +13,6 @@ import (
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
-	"github.com/livekit/server-sdk-go/pkg/media/h264writer"
 	"github.com/livekit/server-sdk-go/pkg/media/ivfwriter"
 	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
 
@@ -35,7 +33,15 @@ type fileWriter struct {
 	finished chan struct{}
 }
 
-func newFileWriter(p *params.Params, track *webrtc.TrackRemote, rp *lksdk.RemoteParticipant, l logger.Logger, cs *clockSync) (*fileWriter, error) {
+func newFileWriter(
+	p *params.Params,
+	track *webrtc.TrackRemote,
+	codec params.MimeType,
+	rp *lksdk.RemoteParticipant,
+	l logger.Logger,
+	cs *clockSync,
+) (*fileWriter, error) {
+
 	w := &fileWriter{
 		track:    track,
 		cs:       cs,
@@ -45,8 +51,8 @@ func newFileWriter(p *params.Params, track *webrtc.TrackRemote, rp *lksdk.Remote
 	}
 
 	var err error
-	switch {
-	case strings.EqualFold(track.Codec().MimeType, params.MimeTypeVP8):
+	switch codec {
+	case params.MimeTypeVP8:
 		writer, err := ivfwriter.New(p.Filename)
 		if err != nil {
 			return nil, err
@@ -60,13 +66,6 @@ func newFileWriter(p *params.Params, track *webrtc.TrackRemote, rp *lksdk.Remote
 				rp.WritePLI(track.SSRC())
 			}),
 		)
-
-	case strings.EqualFold(track.Codec().MimeType, params.MimeTypeH264):
-		w.sb = samplebuilder.New(
-			maxVideoLate, &codecs.H264Packet{}, track.Codec().ClockRate,
-			samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
-		)
-		w.writer, err = h264writer.New(p.Filename)
 
 	default:
 		err = errors.ErrNotSupported(track.Codec().MimeType)

@@ -3,8 +3,6 @@ package input
 import (
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/protocol/livekit"
-
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
@@ -57,7 +55,7 @@ func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 
 func (b *Bin) buildSource(conf *config.Config, p *params.Params) error {
 	var err error
-	if p.IsWebInput {
+	if p.IsWebSource {
 		b.Source, err = source.NewWebSource(conf, p)
 	} else {
 		b.Source, err = source.NewSDKSource(p)
@@ -67,33 +65,33 @@ func (b *Bin) buildSource(conf *config.Config, p *params.Params) error {
 
 func (b *Bin) buildMux(p *params.Params) error {
 	var err error
-	if p.IsStream {
-		switch p.StreamProtocol {
-		case livekit.StreamProtocol_RTMP:
-			b.mux, err = gst.NewElement("flvmux")
-			if err != nil {
-				return err
-			}
-			err = b.mux.Set("streamable", true)
+	switch p.OutputType {
+	case params.OutputTypeOGG:
+		b.mux, err = gst.NewElement("oggmux")
 
-		default:
-			err = errors.ErrInvalidInput("stream protocol")
+	case params.OutputTypeMP4:
+		b.mux, err = gst.NewElement("mp4mux")
+		if err != nil {
+			return err
 		}
-	} else {
-		switch p.FileType {
-		case livekit.EncodedFileType_MP4:
-			b.mux, err = gst.NewElement("mp4mux")
-			if err != nil {
-				return err
-			}
-			err = b.mux.SetProperty("faststart", true)
+		err = b.mux.SetProperty("faststart", true)
 
-		case livekit.EncodedFileType_OGG:
-			b.mux, err = gst.NewElement("oggmux")
+	case params.OutputTypeTS:
+		b.mux, err = gst.NewElement("mpegtsmux")
+		// TODO: filename needs to contain %d
 
-		default:
-			err = errors.ErrInvalidInput("file type")
+	case params.OutputTypeWebM:
+		b.mux, err = gst.NewElement("webmmux")
+
+	case params.OutputTypeRTMP:
+		b.mux, err = gst.NewElement("flvmux")
+		if err != nil {
+			return err
 		}
+		err = b.mux.Set("streamable", true)
+
+	default:
+		err = errors.ErrInvalidInput("output type")
 	}
 	if err != nil {
 		return err

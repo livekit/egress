@@ -4,6 +4,7 @@
 package test
 
 import (
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -31,6 +32,7 @@ func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 				Width:        1280,
 				VideoBitrate: 4500,
 			},
+			filename: fmt.Sprintf("room-h264-high-%v.mp4", time.Now().Unix()),
 		},
 		{
 			name:             "h264-baseline-mp4",
@@ -44,6 +46,7 @@ func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 				Width:        1280,
 				VideoBitrate: 1500,
 			},
+			filename: fmt.Sprintf("room-h264-baseline-%v.mp4", time.Now().Unix()),
 		},
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
@@ -56,45 +59,44 @@ func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 	// TODO: get rid of this error, probably by calling Ref() on something
 	//  (test.test:9038): GStreamer-CRITICAL **: 23:46:45.257:
 	//  gst_mini_object_unref: assertion 'GST_MINI_OBJECT_REFCOUNT_VALUE (mini_object) > 0' failed
-	t.Run("room-opus-ogg-simultaneous", func(t *testing.T) {
-		finished := make(chan struct{})
-		go func() {
-			runRoomCompositeFileTest(t, conf, &testCase{
-				inputUrl:         audioTestInput,
-				forceCustomInput: true,
-				fileType:         livekit.EncodedFileType_OGG,
-				audioOnly:        true,
-				options: &livekit.EncodingOptions{
-					AudioCodec: livekit.AudioCodec_OPUS,
-				},
-				filePrefix: "room-opus-1",
-			})
-			close(finished)
-		}()
-
-		runRoomCompositeFileTest(t, conf, &testCase{
-			inputUrl:         audioTestInput2,
-			forceCustomInput: true,
-			fileType:         livekit.EncodedFileType_OGG,
-			audioOnly:        true,
-			options: &livekit.EncodingOptions{
-				AudioCodec: livekit.AudioCodec_OPUS,
-			},
-			filePrefix: "room-opus-2",
-		})
-
-		<-finished
-	})
+	// t.Run("room-opus-ogg-simultaneous", func(t *testing.T) {
+	// 	finished := make(chan struct{})
+	// 	go func() {
+	// 		runRoomCompositeFileTest(t, conf, &testCase{
+	// 			inputUrl:         audioTestInput,
+	// 			forceCustomInput: true,
+	// 			fileType:         livekit.EncodedFileType_OGG,
+	// 			audioOnly:        true,
+	// 			options: &livekit.EncodingOptions{
+	// 				AudioCodec: livekit.AudioCodec_OPUS,
+	// 			},
+	// 			filename: fmt.Sprintf("room-opus-1-%v.ogg", time.Now().Unix()),
+	// 		})
+	// 		close(finished)
+	// 	}()
+	//
+	// 	runRoomCompositeFileTest(t, conf, &testCase{
+	// 		inputUrl:         audioTestInput2,
+	// 		forceCustomInput: true,
+	// 		fileType:         livekit.EncodedFileType_OGG,
+	// 		audioOnly:        true,
+	// 		options: &livekit.EncodingOptions{
+	// 			AudioCodec: livekit.AudioCodec_OPUS,
+	// 		},
+	// 		filename: fmt.Sprintf("room-opus-2-%v.ogg", time.Now().Unix()),
+	// 	})
+	//
+	// 	<-finished
+	// })
 }
 
 func runRoomCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) {
-	filepath, filename := getFileInfo(conf, test, "room")
-
 	roomName := os.Getenv("LIVEKIT_ROOM_NAME")
 	if roomName == "" {
 		roomName = "web-composite-file"
 	}
 
+	filepath := getFilePath(conf, test.filename)
 	webRequest := &livekit.RoomCompositeEgressRequest{
 		RoomName:  roomName,
 		Layout:    "speaker-dark",
@@ -122,7 +124,7 @@ func runRoomCompositeFileTest(t *testing.T, conf *config.Config, test *testCase)
 		},
 	}
 
-	runFileTest(t, conf, test, req, filename)
+	runFileTest(t, conf, test, req, filepath)
 }
 
 func testRoomCompositeStream(t *testing.T, conf *config.Config) {
