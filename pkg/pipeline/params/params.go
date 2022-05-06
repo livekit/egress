@@ -33,6 +33,9 @@ type Params struct {
 	FileInfo   *livekit.FileInfo
 	StreamInfo map[string]*livekit.StreamInfo
 
+	// ws egress
+	WebSocketEgressUrl string
+
 	// logger
 	Logger logger.Logger
 }
@@ -194,7 +197,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			return params, nil
 
 		case *livekit.TrackEgressRequest_WebsocketUrl:
-			return nil, errors.ErrNotSupported("websocket_url")
+			params.WebSocketEgressUrl = o.WebsocketUrl
 
 		default:
 			return nil, errors.ErrInvalidInput("output")
@@ -409,7 +412,10 @@ func (p *Params) UpdateFilename(track *webrtc.TrackRemote) error {
 	}
 
 	p.Filename = filename
-	p.FileInfo.Filename = filename
+
+	if p.WebSocketEgressUrl == "" {
+		p.FileInfo.Filename = filename
+	}
 
 	return nil
 }

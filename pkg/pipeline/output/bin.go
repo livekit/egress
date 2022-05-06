@@ -30,6 +30,8 @@ type streamSink struct {
 func Build(p *params.Params) (*Bin, error) {
 	if p.IsStream {
 		return buildStreamOutputBin(p)
+	} else if p.WebSocketEgressUrl != "" {
+		return buildWebSocketOutputBin(p)
 	} else {
 		return buildFileOutputBin(p)
 	}

@@ -216,7 +216,9 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 			p.Logger.Debugw("uploading to azure")
 			p.FileInfo.Location, err = sink.UploadAzure(u, p.FileParams)
 		default:
-			p.FileInfo.Location = p.Filepath
+			if p.WebSocketEgressUrl == "" {
+				p.FileInfo.Location = p.Filepath
+			}
 		}
 		if err != nil {
 			p.Logger.Errorw("could not upload file", err, "location", location)
@@ -313,7 +315,9 @@ func (p *Pipeline) updateEndTime(endedAt int64) {
 		}
 	} else {
 		startedAt := p.startedAt[fileKey]
-		p.FileInfo.Duration = endedAt - startedAt
+		if p.WebSocketEgressUrl == "" {
+			p.FileInfo.Duration = endedAt - startedAt
+		}
 	}
 }
 

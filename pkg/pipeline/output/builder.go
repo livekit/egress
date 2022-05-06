@@ -4,12 +4,73 @@ import (
 	"fmt"
 
 	"github.com/tinyzimmer/go-gst/gst"
+	"github.com/tinyzimmer/go-gst/gst/app"
 
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
+
+func buildWebSocketOutputBin(p *params.Params) (*Bin, error) {
+	sink, err := app.NewAppSink()
+	if err != nil {
+		return nil, err
+	}
+
+	wsSink, err := newWebSocketSink(p.WebSocketEgressUrl, "audio/opus", p.Logger)
+	if err != nil {
+		return nil, err
+	}
+
+	sink.SetCallbacks(&app.SinkCallbacks{
+		EOSFunc: func(appSink *app.Sink) {
+			// Close WS sink on EOS
+			if err = wsSink.Close(); err != nil {
+				p.Logger.Errorw("cannot close WS sink", err)
+			}
+		},
+		NewSampleFunc: func(appsink *app.Sink) gst.FlowReturn {
+			// Pull the sample that triggered this callback
+			sample := appsink.PullSample()
+			if sample == nil {
+				return gst.FlowEOS
+			}
+
+			// Retrieve the buffer from the sample
+			buffer := sample.GetBuffer()
+			if buffer == nil {
+				return gst.FlowError
+			}
+
+			// Map the buffer to READ operation
+			samples := buffer.Map(gst.MapRead).Bytes()
+
+			// From the extracted bytes, write to WS connection
+			_, err = wsSink.Write(samples)
+			if err != nil {
+				p.Logger.Errorw("cannot read appsink samples", err)
+				return gst.FlowError
+			}
+			return gst.FlowOK
+		},
+	})
+
+	bin := gst.NewBin("output")
+	if err = bin.Add(sink.Element); err != nil {
+		return nil, err
+	}
+
+	ghostPad := gst.NewGhostPad("sink", sink.GetStaticPad("sink"))
+	if !bin.AddPad(ghostPad.Pad) {
+		return nil, errors.ErrGhostPadFailed
+	}
+
+	return &Bin{
+		bin:    bin,
+		logger: p.Logger,
+	}, nil
+}
 
 func buildFileOutputBin(p *params.Params) (*Bin, error) {
 	// create elements
