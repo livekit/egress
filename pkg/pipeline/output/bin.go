@@ -33,7 +33,7 @@ func Build(p *params.Params) (*Bin, error) {
 		return buildStreamOutputBin(p)
 	} else if p.WebSocketEgressUrl != "" {
 		// Hardcode audio Mime Type as only Opus is supported for WS egress for now
-		wsWriter, err := newWebSocketSink(p.WebSocketEgressUrl, webrtc.MimeTypeOpus, p.Logger)
+		wsWriter, err := newWebSocketSink(p.WebSocketEgressUrl, webrtc.MimeTypeOpus, p.Logger, p.MutedChan)
 		if err != nil {
 			return nil, err
 		}

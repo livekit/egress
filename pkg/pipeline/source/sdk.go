@@ -165,6 +165,18 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		}
 	}
 
+	// Track WS notification
+	s.room.Callback.OnTrackMuted = func(_ lksdk.TrackPublication, rp lksdk.Participant) {
+		if p.MutedChan != nil {
+			p.MutedChan <- true
+		}
+	}
+	s.room.Callback.OnTrackUnmuted = func(_ lksdk.TrackPublication, rp lksdk.Participant) {
+		if p.MutedChan != nil {
+			p.MutedChan <- false
+		}
+	}
+
 	if err := s.join(p); err != nil {
 		return nil, err
 	}

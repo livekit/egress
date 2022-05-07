@@ -1,6 +1,7 @@
 package output
 
 import (
+	"encoding/json"
 	"github.com/gorilla/websocket"
 	"github.com/livekit/protocol/logger"
 	"io"
@@ -10,10 +11,11 @@ import (
 type websocketSink struct {
 	conn   *websocket.Conn
 	logger logger.Logger
+	muted  chan bool
+	closed chan struct{}
 }
 
 func (s *websocketSink) Write(p []byte) (n int, err error) {
-	//websocket.IsUnexpectedCloseError()
 	return len(p), s.conn.WriteMessage(websocket.BinaryMessage, p)
 }
 
@@ -28,7 +30,39 @@ func (s *websocketSink) Close() error {
 	return s.conn.Close()
 }
 
-func newWebSocketSink(url string, mimeType string, logger logger.Logger) (io.WriteCloser, error) {
+type textMessagePayload struct {
+	muted bool `json:"muted"`
+}
+
+func (s *websocketSink) writeMutedMessage(muted bool) error {
+	data, err := json.Marshal(&textMessagePayload{
+		muted: muted,
+	})
+	if err != nil {
+		return err
+	}
+	return s.conn.WriteMessage(websocket.TextMessage, data)
+}
+
+func (s *websocketSink) listenToMutedChan() {
+	if s.muted == nil {
+		return
+	}
+	var err error
+	for {
+		select {
+		case val := <-s.muted:
+			err = s.writeMutedMessage(val)
+			if err != nil {
+				s.logger.Errorw("Error writing muted message: ", err)
+			}
+		case <-s.closed:
+			return
+		}
+	}
+}
+
+func newWebSocketSink(url string, mimeType string, logger logger.Logger, muted chan bool) (io.WriteCloser, error) {
 	// Set Content-Type in header
 	header := http.Header{}
 	header.Set("Content-Type", mimeType)
@@ -38,5 +72,13 @@ func newWebSocketSink(url string, mimeType string, logger logger.Logger) (io.Wri
 		return nil, err
 	}
 
-	return &websocketSink{conn, logger}, nil
+	s := &websocketSink{
+		conn,
+		logger,
+		muted,
+		make(chan struct{}),
+	}
+	go s.listenToMutedChan()
+
+	return s, nil
 }

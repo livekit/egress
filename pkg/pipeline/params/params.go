@@ -35,6 +35,7 @@ type Params struct {
 
 	// ws egress
 	WebSocketEgressUrl string
+	MutedChan          chan bool
 
 	// logger
 	Logger logger.Logger
@@ -198,6 +199,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 
 		case *livekit.TrackEgressRequest_WebsocketUrl:
 			params.WebSocketEgressUrl = o.WebsocketUrl
+			params.MutedChan = make(chan bool, 1)
 
 		default:
 			return nil, errors.ErrInvalidInput("output")
