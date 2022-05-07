@@ -35,6 +35,7 @@ type textMessagePayload struct {
 }
 
 func (s *websocketSink) writeMutedMessage(muted bool) error {
+	close(s.closed)
 	data, err := json.Marshal(&textMessagePayload{
 		muted: muted,
 	})
