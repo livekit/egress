@@ -154,6 +154,12 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 					}
 				}
 
+				// If we want to do WS track egress, make sure the mime type is audio/opus.
+				// Else, it's not supported
+				if p.WebSocketEgressUrl != "" && track.Codec().MimeType != webrtc.MimeTypeOpus {
+					s.logger.Errorw("cannot fulfil track egress request", errors.ErrNotSupported(track.Codec().MimeType))
+				}
+
 				var err error
 				s.fileWriter, err = newFileWriter(p, track, rp, s.logger, s.cs)
 				if onSubscribeErr != nil {
