@@ -4,6 +4,7 @@
 package test
 
 import (
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -31,6 +32,7 @@ func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 				Width:        1280,
 				VideoBitrate: 4500,
 			},
+			filename: fmt.Sprintf("room-h264-high-%v.mp4", time.Now().Unix()),
 		},
 		{
 			name:             "h264-baseline-mp4",
@@ -44,6 +46,7 @@ func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 				Width:        1280,
 				VideoBitrate: 1500,
 			},
+			filename: fmt.Sprintf("room-h264-baseline-%v.mp4", time.Now().Unix()),
 		},
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
@@ -67,7 +70,7 @@ func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 				options: &livekit.EncodingOptions{
 					AudioCodec: livekit.AudioCodec_OPUS,
 				},
-				filePrefix: "room-opus-1",
+				filename: fmt.Sprintf("room-opus-1-%v.ogg", time.Now().Unix()),
 			})
 			close(finished)
 		}()
@@ -80,7 +83,7 @@ func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 			options: &livekit.EncodingOptions{
 				AudioCodec: livekit.AudioCodec_OPUS,
 			},
-			filePrefix: "room-opus-2",
+			filename: fmt.Sprintf("room-opus-2-%v.ogg", time.Now().Unix()),
 		})
 
 		<-finished
@@ -88,13 +91,12 @@ func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 }
 
 func runRoomCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) {
-	filepath, filename := getFileInfo(conf, test, "room")
-
 	roomName := os.Getenv("LIVEKIT_ROOM_NAME")
 	if roomName == "" {
 		roomName = "web-composite-file"
 	}
 
+	filepath := getFilePath(conf, test.filename)
 	webRequest := &livekit.RoomCompositeEgressRequest{
 		RoomName:  roomName,
 		Layout:    "speaker-dark",
@@ -122,7 +124,7 @@ func runRoomCompositeFileTest(t *testing.T, conf *config.Config, test *testCase)
 		},
 	}
 
-	runFileTest(t, conf, test, req, filename)
+	runFileTest(t, conf, test, req, filepath)
 }
 
 func testRoomCompositeStream(t *testing.T, conf *config.Config) {

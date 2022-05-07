@@ -2,7 +2,6 @@ package source
 
 import (
 	"io"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -45,6 +44,7 @@ type appWriter struct {
 
 func newAppWriter(
 	track *webrtc.TrackRemote,
+	codec params.MimeType,
 	rp *lksdk.RemoteParticipant,
 	l logger.Logger,
 	src *app.Source,
@@ -64,22 +64,22 @@ func newAppWriter(
 		finished:   make(chan struct{}),
 	}
 
-	switch {
-	case strings.EqualFold(track.Codec().MimeType, params.MimeTypeVP8):
+	switch codec {
+	case params.MimeTypeVP8:
 		w.sb = samplebuilder.New(
 			maxVideoLate, &codecs.VP8Packet{}, track.Codec().ClockRate,
 			samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
 		)
 		w.maxLate = time.Second * 2
 
-	case strings.EqualFold(track.Codec().MimeType, params.MimeTypeH264):
+	case params.MimeTypeH264:
 		w.sb = samplebuilder.New(
 			maxVideoLate, &codecs.H264Packet{}, track.Codec().ClockRate,
 			samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
 		)
 		w.maxLate = time.Second * 2
 
-	case strings.EqualFold(track.Codec().MimeType, params.MimeTypeOpus):
+	case params.MimeTypeOpus:
 		w.sb = samplebuilder.New(maxAudioLate, &codecs.OpusPacket{}, track.Codec().ClockRate)
 		w.maxLate = time.Second * 4
 

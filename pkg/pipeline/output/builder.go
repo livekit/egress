@@ -7,7 +7,6 @@ import (
 
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -56,7 +55,7 @@ func buildStreamOutputBin(p *params.Params) (*Bin, error) {
 
 	b := &Bin{
 		bin:      bin,
-		protocol: p.StreamProtocol,
+		protocol: p.OutputType,
 		tee:      tee,
 		sinks:    make(map[string]*streamSink),
 		logger:   p.Logger,
@@ -84,7 +83,7 @@ func buildStreamOutputBin(p *params.Params) (*Bin, error) {
 	return b, nil
 }
 
-func buildStreamSink(protocol livekit.StreamProtocol, url string) (*streamSink, error) {
+func buildStreamSink(protocol params.OutputType, url string) (*streamSink, error) {
 	id := utils.NewGuid("")
 
 	queue, err := gst.NewElementWithName("queue", fmt.Sprintf("queue_%s", id))
@@ -95,7 +94,7 @@ func buildStreamSink(protocol livekit.StreamProtocol, url string) (*streamSink, 
 
 	var sink *gst.Element
 	switch protocol {
-	case livekit.StreamProtocol_RTMP:
+	case params.OutputTypeRTMP:
 		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("sink_%s", id))
 		if err != nil {
 			return nil, err

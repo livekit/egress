@@ -36,15 +36,15 @@ ws_url: wss://fake-url.com
 )
 
 var (
-	samples = map[string]string{
-		"opus": "/out/sample/matrix-trailer.ogg",
-		"vp8":  "/out/sample/matrix-trailer.ivf",
-		"h264": "/out/sample/matrix-trailer.h264",
+	samples = map[params.MimeType]string{
+		params.MimeTypeOpus: "/out/sample/matrix-trailer.ogg",
+		params.MimeTypeH264: "/out/sample/matrix-trailer.h264",
+		params.MimeTypeVP8:  "/out/sample/matrix-trailer.ivf",
 	}
 
-	frameDurations = map[string]time.Duration{
-		"vp8":  time.Microsecond * 41708,
-		"h264": time.Microsecond * 41708,
+	frameDurations = map[params.MimeType]time.Duration{
+		params.MimeTypeH264: time.Microsecond * 41708,
+		params.MimeTypeVP8:  time.Microsecond * 41708,
 	}
 )
 
@@ -56,9 +56,8 @@ type testCase struct {
 	videoOnly        bool
 	fileType         livekit.EncodedFileType
 	options          *livekit.EncodingOptions
-	filePrefix       string
-	codec            string
-	fileExtension    string
+	filename         string
+	codec            params.MimeType
 }
 
 type sdkParams struct {
@@ -91,16 +90,20 @@ func TestEgress(t *testing.T) {
 		require.NoError(t, err)
 		defer room.Disconnect()
 
-		p = publishSamplesToRoom(t, room, "opus", "vp8")
+		p = publishSamplesToRoom(t, room, params.MimeTypeOpus, params.MimeTypeVP8, false)
 	}
 
-	t.Run("RoomCompositeFile", func(t *testing.T) {
+	if !t.Run("RoomCompositeFile", func(t *testing.T) {
 		testRoomCompositeFile(t, conf)
-	})
+	}) {
+		t.FailNow()
+	}
 
-	t.Run("RoomCompositeStream", func(t *testing.T) {
+	if !t.Run("RoomCompositeStream", func(t *testing.T) {
 		testRoomCompositeStream(t, conf)
-	})
+	}) {
+		t.FailNow()
+	}
 
 	if room == nil {
 		return
@@ -109,13 +112,17 @@ func TestEgress(t *testing.T) {
 	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.audioTrackID))
 	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.videoTrackID))
 
-	t.Run("TrackComposite", func(t *testing.T) {
+	if !t.Run("TrackComposite", func(t *testing.T) {
 		testTrackComposite(t, conf, room)
-	})
+	}) {
+		t.FailNow()
+	}
 
-	t.Run("Track", func(t *testing.T) {
+	if !t.Run("Track", func(t *testing.T) {
 		testTrack(t, conf, room)
-	})
+	}) {
+		t.FailNow()
+	}
 }
 
 func getTestConfig(t *testing.T) *config.Config {
@@ -134,13 +141,15 @@ func getTestConfig(t *testing.T) *config.Config {
 	return conf
 }
 
-func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec string) *sdkParams {
+func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec params.MimeType, withMuting bool) *sdkParams {
 	p := &sdkParams{roomName: room.Name}
 
 	publish := func(filename string, frameDuration time.Duration) string {
 		var pub *lksdk.LocalTrackPublication
+		done := make(chan struct{})
 		opts := []lksdk.FileSampleProviderOption{
 			lksdk.FileTrackWithOnWriteComplete(func() {
+				close(done)
 				if pub != nil {
 					_ = room.LocalParticipant.UnpublishTrack(pub.SID())
 				}
@@ -154,11 +163,24 @@ func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec
 		track, err := lksdk.NewLocalFileTrack(filename, opts...)
 		require.NoError(t, err)
 
-		pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{
-			Name:       filename,
-			DisableDTX: true,
-		})
+		pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
 		require.NoError(t, err)
+
+		if withMuting {
+			go func() {
+				muted := false
+				for {
+					select {
+					case <-done:
+						return
+					default:
+						pub.SetMuted(!muted)
+						muted = !muted
+						time.Sleep(time.Second * 5)
+					}
+				}
+			}()
+		}
 
 		return pub.SID()
 	}
@@ -174,44 +196,15 @@ func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec
 	return p
 }
 
-func getFileInfo(conf *config.Config, test *testCase, testType string) (string, string) {
-	var filename string
-	extension := test.fileExtension
-	if extension == "" {
-		extension = strings.ToLower(test.fileType.String())
-	}
-
-	if test.filePrefix == "" {
-		var name string
-		if test.audioOnly {
-			if test.options != nil && test.options.AudioCodec != livekit.AudioCodec_DEFAULT_AC {
-				name = test.options.AudioCodec.String()
-			} else {
-				name = params.DefaultAudioCodecs[test.fileType.String()].String()
-			}
-		} else {
-			if test.options != nil && test.options.VideoCodec != livekit.VideoCodec_DEFAULT_VC {
-				name = test.options.VideoCodec.String()
-			} else {
-				name = params.DefaultVideoCodecs[test.fileType.String()].String()
-			}
-		}
-
-		filename = fmt.Sprintf("%s-%s-%d.%s", testType, strings.ToLower(name), time.Now().Unix(), extension)
-	} else {
-		filename = fmt.Sprintf("%s-%d.%s", test.filePrefix, time.Now().Unix(), extension)
-	}
-
-	filepath := fmt.Sprintf("/out/output/%s", filename)
-
+func getFilePath(conf *config.Config, filename string) string {
 	if conf.FileUpload != nil {
-		return filepath, filename
+		return filename
 	}
 
-	return filepath, filepath
+	return fmt.Sprintf("/out/output/%s", filename)
 }
 
-func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit.StartEgressRequest, filename string) {
+func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit.StartEgressRequest, filepath string) {
 	p, err := params.GetPipelineParams(conf, req)
 	require.NoError(t, err)
 
@@ -241,10 +234,5 @@ func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit
 	require.NotEmpty(t, fileRes.Size)
 	require.NotEmpty(t, fileRes.Location)
 
-	fileType := test.fileExtension
-	if fileType == "" {
-		fileType = test.fileType.String()
-	}
-
-	verify(t, filename, p, res, false, fileType)
+	verify(t, filepath, p, res, false)
 }
