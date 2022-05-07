@@ -1,8 +1,6 @@
 package source
 
 import (
-	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -36,7 +34,6 @@ type SDKSource struct {
 	trackID    string
 	fileWriter *fileWriter
 	filePath   string
-	trackSink  *app.Sink
 
 	// track composite audio
 	audioTrackID string
@@ -65,49 +62,6 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		endRecording: make(chan struct{}),
 		closed:       make(chan struct{}),
 	}
-
-	var err error
-	s.trackSink, err = app.NewAppSink()
-	if err != nil {
-		return nil, err
-	}
-	s.trackSink.SetCallbacks(&app.SinkCallbacks{
-		NewSampleFunc: func(sink *app.Sink) gst.FlowReturn {
-			// Pull the sample that triggered this callback
-			sample := sink.PullSample()
-			if sample == nil {
-				return gst.FlowEOS
-			}
-
-			// Retrieve the buffer from the sample
-			buffer := sample.GetBuffer()
-			if buffer == nil {
-				return gst.FlowError
-			}
-
-			// At this point, buffer is only a reference to an existing memory region somewhere.
-			// When we want to access its content, we have to map it while requesting the required
-			// mode of access (read, read/write).
-			//
-			// We also know what format to expect because we set it with the caps. So we convert
-			// the map directly to signed 16-bit little-endian integers.
-			samples := buffer.Map(gst.MapRead).AsInt16LESlice()
-			defer buffer.Unmap()
-
-			//buffer.Map(gst.MapRead).Bytes()
-
-			// Calculate the root mean square for the buffer
-			// (https://en.wikipedia.org/wiki/Root_mean_square)
-			var square float64
-			for _, i := range samples {
-				square += float64(i * i)
-			}
-			rms := math.Sqrt(square / float64(len(samples)))
-			fmt.Println("rms:", rms)
-
-			return gst.FlowOK
-		},
-	})
 
 	var wg sync.WaitGroup
 	isCompositeRequest := false
