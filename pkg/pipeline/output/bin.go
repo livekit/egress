@@ -1,6 +1,7 @@
 package output
 
 import (
+	"github.com/pion/webrtc/v3"
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/protocol/livekit"
@@ -31,7 +32,12 @@ func Build(p *params.Params) (*Bin, error) {
 	if p.IsStream {
 		return buildStreamOutputBin(p)
 	} else if p.WebSocketEgressUrl != "" {
-		return buildWebSocketOutputBin(p)
+		// Hardcode audio Mime Type as only Opus is supported for WS egress for now
+		wsWriter, err := newWebSocketSink(p.WebSocketEgressUrl, webrtc.MimeTypeOpus, p.Logger)
+		if err != nil {
+			return nil, err
+		}
+		return buildAppSinkOutputBin(p, wsWriter)
 	} else {
 		return buildFileOutputBin(p)
 	}
