@@ -20,7 +20,7 @@ import (
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
 
-func UploadS3(conf *livekit.S3Upload, p params.FileParams) (string, error) {
+func UploadS3(conf *livekit.S3Upload, p *params.Params) (string, error) {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, ""),
 		Endpoint:    aws.String(conf.Endpoint),
@@ -46,7 +46,7 @@ func UploadS3(conf *livekit.S3Upload, p params.FileParams) (string, error) {
 		Key:           aws.String(p.Filepath),
 		Body:          file,
 		ContentLength: aws.Int64(fileInfo.Size()),
-		ContentType:   aws.String(getContentType(p.FileType)),
+		ContentType:   aws.String(string(p.OutputType)),
 	})
 	if err != nil {
 		return "", err
@@ -55,7 +55,7 @@ func UploadS3(conf *livekit.S3Upload, p params.FileParams) (string, error) {
 	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", conf.Bucket, conf.Region, p.Filepath), nil
 }
 
-func UploadAzure(conf *livekit.AzureBlobUpload, p params.FileParams) (string, error) {
+func UploadAzure(conf *livekit.AzureBlobUpload, p *params.Params) (string, error) {
 	credential, err := azblob.NewSharedKeyCredential(
 		conf.AccountName,
 		conf.AccountKey,
@@ -83,7 +83,7 @@ func UploadAzure(conf *livekit.AzureBlobUpload, p params.FileParams) (string, er
 	// upload blocks in parallel for optimal performance
 	// it calls PutBlock/PutBlockList for files larger than 256 MBs and PutBlob for smaller files
 	_, err = azblob.UploadFileToBlockBlob(context.Background(), file, blobURL, azblob.UploadToBlockBlobOptions{
-		BlobHTTPHeaders: azblob.BlobHTTPHeaders{ContentType: getContentType(p.FileType)},
+		BlobHTTPHeaders: azblob.BlobHTTPHeaders{ContentType: string(p.OutputType)},
 		BlockSize:       4 * 1024 * 1024,
 		Parallelism:     16,
 	})
@@ -94,7 +94,7 @@ func UploadAzure(conf *livekit.AzureBlobUpload, p params.FileParams) (string, er
 	return sUrl, nil
 }
 
-func UploadGCP(conf *livekit.GCPUpload, p params.FileParams) (string, error) {
+func UploadGCP(conf *livekit.GCPUpload, p *params.Params) (string, error) {
 	ctx := context.Background()
 	var client *storage.Client
 	var err error
@@ -125,15 +125,4 @@ func UploadGCP(conf *livekit.GCPUpload, p params.FileParams) (string, error) {
 	}
 
 	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", conf.Bucket, p.Filepath), nil
-}
-
-func getContentType(fileType livekit.EncodedFileType) string {
-	switch fileType {
-	case livekit.EncodedFileType_MP4:
-		return "video/mp4"
-	case livekit.EncodedFileType_OGG:
-		return "audio/ogg"
-	default:
-		return ""
-	}
 }

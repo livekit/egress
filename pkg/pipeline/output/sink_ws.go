@@ -2,10 +2,13 @@ package output
 
 import (
 	"encoding/json"
-	"github.com/gorilla/websocket"
-	"github.com/livekit/protocol/logger"
 	"io"
 	"net/http"
+
+	"github.com/gorilla/websocket"
+
+	"github.com/livekit/livekit-egress/pkg/pipeline/params"
+	"github.com/livekit/protocol/logger"
 )
 
 type websocketSink struct {
@@ -63,10 +66,10 @@ func (s *websocketSink) listenToMutedChan() {
 	}
 }
 
-func newWebSocketSink(url string, mimeType string, logger logger.Logger, muted chan bool) (io.WriteCloser, error) {
+func newWebSocketSink(url string, mimeType params.MimeType, logger logger.Logger, muted chan bool) (io.WriteCloser, error) {
 	// Set Content-Type in header
 	header := http.Header{}
-	header.Set("Content-Type", mimeType)
+	header.Set("Content-Type", string(mimeType))
 
 	conn, _, err := websocket.DefaultDialer.Dial(url, header)
 	if err != nil {

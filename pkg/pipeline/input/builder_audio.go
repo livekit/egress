@@ -6,8 +6,6 @@ import (
 
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/protocol/livekit"
-
 	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-egress/pkg/pipeline/source"
@@ -19,7 +17,7 @@ func (b *Bin) buildAudioElements(p *params.Params) error {
 	}
 
 	var err error
-	if p.IsWebInput {
+	if p.IsWebSource {
 		err = b.buildWebAudioInput(p)
 	} else {
 		err = b.buildSDKAudioInput(p)
@@ -64,7 +62,7 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 	}
 
 	switch {
-	case strings.EqualFold(codec.MimeType, params.MimeTypeOpus):
+	case strings.EqualFold(codec.MimeType, string(params.MimeTypeOpus)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
@@ -111,11 +109,11 @@ func (b *Bin) buildAudioEncoder(p *params.Params) error {
 	var capsStr string
 	var encoderName string
 	switch p.AudioCodec {
-	case livekit.AudioCodec_OPUS:
+	case params.MimeTypeOpus:
 		capsStr = "audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2"
 		encoderName = "opusenc"
 
-	case livekit.AudioCodec_AAC:
+	case params.MimeTypeAAC:
 		capsStr = fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", p.AudioFrequency)
 		encoderName = "faac"
 	}

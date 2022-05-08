@@ -69,30 +69,23 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 
 func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	for _, url := range urls {
-		verify(t, url, p, nil, true, "")
+		verify(t, url, p, nil, true)
 	}
 }
 
-func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, isStream bool, fileType string) {
+func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, isStream bool) {
+	require.NotEmpty(t, p.OutputType)
+
 	info, err := ffprobe(input)
 	require.NoError(t, err, "ffprobe error")
 
-	switch fileType {
-	case "ivf":
-		// sample file also has a probe score of 98
+	if p.OutputType == params.OutputTypeIVF {
 		require.Equal(t, 98, info.Format.ProbeScore)
-	case "h264":
-		// sample file also has a probe score of 51 (why so low?)
-		require.Equal(t, 51, info.Format.ProbeScore)
-
-		// size
-		require.NotEqual(t, "0", info.Format.Size)
-	default:
-		// should normally be 100
+	} else {
 		require.Equal(t, 100, info.Format.ProbeScore)
 	}
 
-	if !isStream && fileType != "h264" {
+	if !isStream {
 		// size
 		require.NotEqual(t, "0", info.Format.Size)
 
@@ -101,18 +94,8 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
 
-		delta := 0.5
-		if fileType == "ivf" {
-			delta = 3
-		} else {
-			switch res.Request.(type) {
-			case *livekit.EgressInfo_TrackComposite:
-				if !p.AudioEnabled {
-					delta = 3
-				}
-			}
-		}
-		require.InDelta(t, expected, actual, delta)
+		// duration can be up to a couple seconds off because the beginning is missing a keyframe
+		require.InDelta(t, expected, actual, 3)
 	}
 
 	// check stream info
@@ -123,12 +106,12 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 			hasAudio = true
 
 			// codec
-			switch {
-			case p.AudioCodec == livekit.AudioCodec_AAC:
+			switch p.AudioCodec {
+			case params.MimeTypeAAC:
 				require.Equal(t, "aac", stream.CodecName)
 				require.Equal(t, fmt.Sprint(p.AudioFrequency), stream.SampleRate)
 
-			case p.AudioCodec == livekit.AudioCodec_OPUS || fileType == "ogg":
+			case params.MimeTypeOpus:
 				require.Equal(t, "opus", stream.CodecName)
 				require.Equal(t, "48000", stream.SampleRate)
 			}
@@ -138,7 +121,7 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 			require.Equal(t, "stereo", stream.ChannelLayout)
 
 			// audio bitrate
-			if fileType == livekit.EncodedFileType_MP4.String() {
+			if p.OutputType == params.OutputTypeMP4 {
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)
@@ -150,27 +133,26 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 
 			// codec and profile
 			switch p.VideoCodec {
-			case livekit.VideoCodec_H264_BASELINE:
+			case params.MimeTypeH264:
 				require.Equal(t, "h264", stream.CodecName)
-				require.Equal(t, "Constrained Baseline", stream.Profile)
 
-			case livekit.VideoCodec_H264_MAIN:
-				require.Equal(t, "h264", stream.CodecName)
-				require.Equal(t, "Main", stream.Profile)
-
-			case livekit.VideoCodec_H264_HIGH:
-				require.Equal(t, "h264", stream.CodecName)
-				require.Equal(t, "High", stream.Profile)
+				switch p.VideoProfile {
+				case params.ProfileBaseline:
+					require.Equal(t, "Constrained Baseline", stream.Profile)
+				case params.ProfileMain:
+					require.Equal(t, "Main", stream.Profile)
+				case params.ProfileHigh:
+					require.Equal(t, "High", stream.Profile)
+				}
+			case params.MimeTypeVP8:
+				require.Equal(t, "vp8", stream.CodecName)
 			}
 
-			switch fileType {
-			case "h264":
-				require.Equal(t, "h264", stream.CodecName)
-
-			case "ivf":
+			switch p.OutputType {
+			case params.OutputTypeIVF:
 				require.Equal(t, "vp8", stream.CodecName)
 
-			case livekit.EncodedFileType_MP4.String():
+			case params.OutputTypeMP4:
 				// bitrate
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
@@ -196,6 +178,13 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 		}
 	}
 
-	require.Equal(t, p.AudioEnabled, hasAudio)
-	require.Equal(t, p.VideoEnabled, hasVideo)
+	if p.AudioEnabled {
+		require.True(t, hasAudio)
+		require.NotEmpty(t, p.AudioCodec)
+	}
+
+	if p.VideoEnabled {
+		require.True(t, hasVideo)
+		require.NotEmpty(t, p.VideoCodec)
+	}
 }

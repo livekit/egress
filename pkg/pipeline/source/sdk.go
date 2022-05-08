@@ -1,6 +1,7 @@
 package source
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -63,11 +64,12 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		closed:       make(chan struct{}),
 	}
 
+	var fileIdentifier string
 	var wg sync.WaitGroup
-	isCompositeRequest := false
+
 	switch p.Info.Request.(type) {
 	case *livekit.EgressInfo_TrackComposite:
-		isCompositeRequest = true
+		fileIdentifier = p.RoomName
 		if p.AudioEnabled {
 			s.audioTrackID = p.AudioTrackID
 			wg.Add(1)
@@ -78,6 +80,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		}
 
 	case *livekit.EgressInfo_Track:
+		fileIdentifier = p.TrackID
 		s.trackID = p.TrackID
 		wg.Add(1)
 	}
@@ -87,86 +90,90 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		defer wg.Done()
 		s.logger.Debugw("track subscribed", "trackID", track.ID())
 
-		switch track.Kind() {
-		case webrtc.RTPCodecTypeAudio:
-			src, err := gst.NewElementWithName("appsrc", AudioAppSource)
-			if err != nil {
-				s.logger.Errorw("could not create appsrc", err)
-				onSubscribeErr = err
+		var codec params.MimeType
+		var appSrcName string
+		var err error
+
+		switch {
+		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeOpus)):
+			codec = params.MimeTypeOpus
+			appSrcName = AudioAppSource
+			p.AudioEnabled = true
+			if p.AudioCodec == "" {
+				p.AudioCodec = codec
+			}
+
+		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeVP8)):
+			p.VideoEnabled = true
+
+			if p.TrackID != "" || !p.AudioEnabled {
+				// only one track, use ivf file writer
+				p.SkipPipeline = true
+				codec = params.MimeTypeVP8
+				if p.VideoCodec == "" {
+					p.VideoCodec = codec
+				}
+
+				if onSubscribeErr = p.UpdateOutputTypeFromCodecs(fileIdentifier); onSubscribeErr != nil {
+					s.logger.Errorw("could not update file params", onSubscribeErr)
+					return
+				}
+
+				s.fileWriter, onSubscribeErr = newFileWriter(p, track, codec, rp, s.logger, s.cs)
+				if onSubscribeErr != nil {
+					s.logger.Errorw("could not create file writer", onSubscribeErr)
+				}
 				return
 			}
 
+			// composite request, use gstreamer
+			codec = params.MimeTypeH264
+			if p.VideoCodec == "" {
+				p.VideoCodec = codec
+			}
+			appSrcName = VideoAppSource
+
+		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeH264)):
+			codec = params.MimeTypeH264
+			appSrcName = VideoAppSource
+			p.VideoEnabled = true
+			if p.VideoCodec == "" {
+				p.VideoCodec = codec
+			}
+
+		default:
+			onSubscribeErr = errors.ErrNotSupported(track.Codec().MimeType)
+			return
+		}
+
+		src, err := gst.NewElementWithName("appsrc", appSrcName)
+		if err != nil {
+			s.logger.Errorw("could not create appsrc", err)
+			onSubscribeErr = err
+			return
+		}
+
+		switch track.Kind() {
+		case webrtc.RTPCodecTypeAudio:
 			s.audioSrc = app.SrcFromElement(src)
 			s.audioPlaying = make(chan struct{})
-
 			s.audioCodec = track.Codec()
-			s.audioWriter, err = newAppWriter(track, rp, s.logger, s.audioSrc, s.cs, s.audioPlaying)
+			s.audioWriter, err = newAppWriter(track, codec, rp, s.logger, s.audioSrc, s.cs, s.audioPlaying)
 			if err != nil {
 				s.logger.Errorw("could not create app writer", err)
 				onSubscribeErr = err
 				return
 			}
 
-			// update params for track egress
-			if !isCompositeRequest {
-				p.AudioEnabled = true
-				p.AudioCodec = livekit.AudioCodec_OPUS
-				p.FileType = livekit.EncodedFileType_OGG
-				if err = p.UpdateFilename(track); err != nil {
-					s.logger.Errorw("could not update filename", err)
-					onSubscribeErr = err
-					return
-				}
-			}
-
 		case webrtc.RTPCodecTypeVideo:
-			if isCompositeRequest {
-				var src *gst.Element
-				src, err := gst.NewElementWithName("appsrc", VideoAppSource)
-				if err != nil {
-					s.logger.Errorw("could not create appsrc", err)
-					onSubscribeErr = err
-					return
-				}
-
-				s.videoSrc = app.SrcFromElement(src)
-				s.videoPlaying = make(chan struct{})
-
-				s.videoCodec = track.Codec()
-				s.videoWriter, err = newAppWriter(track, rp, s.logger, s.videoSrc, s.cs, s.videoPlaying)
-				if err != nil {
-					s.logger.Errorw("could not create app writer", err)
-					onSubscribeErr = err
-					return
-				}
-
-			} else {
-				// update params for track egress
-				p.SkipPipeline = true
-				p.VideoEnabled = true
-
-				// Update filename only if it's not in WS mode since WS doesn't produce a file
-				if p.WebSocketEgressUrl == "" {
-					if err := p.UpdateFilename(track); err != nil {
-						s.logger.Errorw("could not update filename", err)
-						onSubscribeErr = err
-						return
-					}
-				}
-
-				// If we want to do WS track egress, make sure the mime type is audio/opus.
-				// Else, it's not supported
-				if p.WebSocketEgressUrl != "" && track.Codec().MimeType != webrtc.MimeTypeOpus {
-					s.logger.Errorw("cannot fulfil track egress request", errors.ErrNotSupported(track.Codec().MimeType))
-				}
-
-				var err error
-				s.fileWriter, err = newFileWriter(p, track, rp, s.logger, s.cs)
-				if onSubscribeErr != nil {
-					s.logger.Errorw("could not create file writer", err)
-					onSubscribeErr = err
-					return
-				}
+			s.videoSrc = app.SrcFromElement(src)
+			s.videoPlaying = make(chan struct{})
+			s.videoCodec = track.Codec()
+			s.videoWriter, err = newAppWriter(track, codec, rp, s.logger, s.videoSrc, s.cs, s.videoPlaying)
+			if err != nil {
+				s.logger.Errorw("could not create app writer", err)
+				onSubscribeErr = err
+				return
 			}
 		}
 	}
@@ -188,7 +195,18 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 	}
 
 	wg.Wait()
-	return s, onSubscribeErr
+	if onSubscribeErr != nil {
+		return nil, onSubscribeErr
+	}
+
+	if s.fileWriter == nil {
+		if err := p.UpdateOutputTypeFromCodecs(fileIdentifier); err != nil {
+			s.logger.Errorw("could not update file params", err)
+			return nil, err
+		}
+	}
+
+	return s, nil
 }
 
 func (s *SDKSource) join(p *params.Params) error {
@@ -243,8 +261,10 @@ func (s *SDKSource) onTrackUnpublished(track *lksdk.RemoteTrackPublication, _ *l
 	case s.trackID:
 		if s.fileWriter != nil {
 			s.fileWriter.stop()
-		} else {
+		} else if s.audioWriter != nil {
 			s.audioWriter.stop()
+		} else if s.videoWriter != nil {
+			s.videoWriter.stop()
 		}
 	case s.audioTrackID:
 		s.audioWriter.stop()

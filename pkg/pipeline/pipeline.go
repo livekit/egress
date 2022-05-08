@@ -206,17 +206,17 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 		case *livekit.S3Upload:
 			location = "S3"
 			p.Logger.Debugw("uploading to s3")
-			p.FileInfo.Location, err = sink.UploadS3(u, p.FileParams)
+			p.FileInfo.Location, err = sink.UploadS3(u, p.Params)
 		case *livekit.GCPUpload:
 			location = "GCP"
 			p.Logger.Debugw("uploading to gcp")
-			p.FileInfo.Location, err = sink.UploadGCP(u, p.FileParams)
+			p.FileInfo.Location, err = sink.UploadGCP(u, p.Params)
 		case *livekit.AzureBlobUpload:
 			location = "Azure"
 			p.Logger.Debugw("uploading to azure")
-			p.FileInfo.Location, err = sink.UploadAzure(u, p.FileParams)
+			p.FileInfo.Location, err = sink.UploadAzure(u, p.Params)
 		default:
-			if p.WebSocketEgressUrl == "" {
+			if p.WebsocketUrl == "" {
 				p.FileInfo.Location = p.Filepath
 			}
 		}
@@ -315,7 +315,7 @@ func (p *Pipeline) updateEndTime(endedAt int64) {
 		}
 	} else {
 		startedAt := p.startedAt[fileKey]
-		if p.WebSocketEgressUrl == "" {
+		if p.WebsocketUrl == "" {
 			p.FileInfo.Duration = endedAt - startedAt
 		}
 	}
@@ -328,10 +328,10 @@ func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
 
 	now := time.Now().UnixNano()
 	for _, url := range req.AddOutputUrls {
-		switch p.StreamProtocol {
-		case livekit.StreamProtocol_RTMP:
+		switch p.OutputType {
+		case params.OutputTypeRTMP:
 			if !strings.HasPrefix(url, "rtmp://") && !strings.HasPrefix(url, "rtmps://") {
-				return errors.ErrInvalidUrl(url, p.StreamProtocol)
+				return errors.ErrInvalidUrl(url, livekit.StreamProtocol_RTMP)
 			}
 		}
 

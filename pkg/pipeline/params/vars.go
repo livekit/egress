@@ -1,149 +1,88 @@
 package params
 
-import "github.com/livekit/protocol/livekit"
+type MimeType string
+type Profile string
+type OutputType string
+type FileExtension string
 
 const (
-	MimeTypeOpus = "audio/opus"
-	MimeTypeH264 = "video/h264"
-	MimeTypeVP8  = "video/vp8"
+	// input types
+	MimeTypeAAC  MimeType = "audio/aac"
+	MimeTypeOpus MimeType = "audio/opus"
+	MimeTypeH264 MimeType = "video/h264"
+	MimeTypeVP8  MimeType = "video/vp8"
+
+	// video profiles
+	ProfileBaseline Profile = "baseline"
+	ProfileMain     Profile = "main"
+	ProfileHigh     Profile = "high"
+
+	// output types
+	OutputTypeOGG  OutputType = "audio/ogg"
+	OutputTypeMP4  OutputType = "video/mp4"
+	OutputTypeTS   OutputType = "video/mp2t"
+	OutputTypeIVF  OutputType = "video/x-ivf"
+	OutputTypeWebM OutputType = "video/webm"
+	OutputTypeRTMP OutputType = "rtmp"
+
+	// file extensions
+	FileExtensionOGG  = ".ogg"
+	FileExtensionMP4  = ".mp4"
+	FileExtensionTS   = ".ts"
+	FileExtensionIVF  = ".ivf"
+	FileExtensionWebM = ".webm"
 )
 
 var (
-	hd30 = Params{
-		AudioParams: AudioParams{
-			AudioEnabled:   true,
-			AudioCodec:     livekit.AudioCodec_DEFAULT_AC,
-			AudioBitrate:   128,
-			AudioFrequency: 44100,
-		},
-		VideoParams: VideoParams{
-			VideoEnabled: true,
-			VideoCodec:   livekit.VideoCodec_DEFAULT_VC,
-			Width:        1280,
-			Height:       720,
-			Depth:        24,
-			Framerate:    30,
-			VideoBitrate: 3000,
-		},
+	DefaultAudioCodecs = map[OutputType]MimeType{
+		OutputTypeOGG:  MimeTypeOpus,
+		OutputTypeMP4:  MimeTypeOpus,
+		OutputTypeTS:   MimeTypeOpus,
+		OutputTypeWebM: MimeTypeOpus,
+		OutputTypeRTMP: MimeTypeAAC,
 	}
 
-	hd60 = Params{
-		AudioParams: AudioParams{
-			AudioEnabled:   true,
-			AudioCodec:     livekit.AudioCodec_DEFAULT_AC,
-			AudioBitrate:   128,
-			AudioFrequency: 44100,
-		},
-		VideoParams: VideoParams{
-			VideoEnabled: true,
-			VideoCodec:   livekit.VideoCodec_DEFAULT_VC,
-			Width:        1280,
-			Height:       720,
-			Depth:        24,
-			Framerate:    60,
-			VideoBitrate: 4500,
-		},
+	DefaultVideoCodecs = map[OutputType]MimeType{
+		OutputTypeMP4:  MimeTypeH264,
+		OutputTypeTS:   MimeTypeH264,
+		OutputTypeIVF:  MimeTypeVP8,
+		OutputTypeWebM: MimeTypeVP8,
+		OutputTypeRTMP: MimeTypeH264,
 	}
 
-	fullHD30 = Params{
-		AudioParams: AudioParams{
-			AudioEnabled:   true,
-			AudioCodec:     livekit.AudioCodec_DEFAULT_AC,
-			AudioBitrate:   128,
-			AudioFrequency: 44100,
-		},
-		VideoParams: VideoParams{
-			VideoEnabled: true,
-			VideoCodec:   livekit.VideoCodec_DEFAULT_VC,
-			Width:        1920,
-			Height:       1080,
-			Depth:        24,
-			Framerate:    30,
-			VideoBitrate: 4500,
-		},
+	FileExtensions = map[OutputType]FileExtension{
+		OutputTypeOGG:  FileExtensionOGG,
+		OutputTypeMP4:  FileExtensionMP4,
+		OutputTypeTS:   FileExtensionTS,
+		OutputTypeIVF:  FileExtensionIVF,
+		OutputTypeWebM: FileExtensionWebM,
 	}
 
-	fullHD60 = Params{
-		AudioParams: AudioParams{
-			AudioEnabled:   true,
-			AudioCodec:     livekit.AudioCodec_DEFAULT_AC,
-			AudioBitrate:   128,
-			AudioFrequency: 44100,
+	codecCompatibility = map[OutputType]map[MimeType]bool{
+		OutputTypeOGG: {
+			MimeTypeOpus: true,
 		},
-		VideoParams: VideoParams{
-			VideoEnabled: true,
-			VideoCodec:   livekit.VideoCodec_DEFAULT_VC,
-			Width:        1920,
-			Height:       1080,
-			Depth:        24,
-			Framerate:    60,
-			VideoBitrate: 6000,
+		OutputTypeMP4: {
+			MimeTypeAAC:  true,
+			MimeTypeOpus: true,
+			MimeTypeH264: true,
 		},
-	}
+		OutputTypeTS: {
+			MimeTypeAAC:  true,
+			MimeTypeOpus: true,
+			MimeTypeH264: true,
+		},
+		OutputTypeIVF: {
+			MimeTypeVP8: true,
+		},
+		OutputTypeWebM: {
+			MimeTypeOpus: true,
+			MimeTypeVP8:  true,
+		},
 
-	mp4 = livekit.EncodedFileType_MP4.String()
-	// webm = livekit.EncodedFileType_WEBM.String()
-	ogg  = livekit.EncodedFileType_OGG.String()
-	rtmp = livekit.StreamProtocol_RTMP.String()
-	// srt  = livekit.StreamProtocol_SRT.String()
-
-	DefaultAudioCodecs = map[string]livekit.AudioCodec{
-		mp4: livekit.AudioCodec_AAC,
-		// webm: livekit.AudioCodec_OPUS,
-		ogg:  livekit.AudioCodec_OPUS,
-		rtmp: livekit.AudioCodec_AAC,
-		// srt:  livekit.AudioCodec(-1), // unknown
-	}
-
-	DefaultVideoCodecs = map[string]livekit.VideoCodec{
-		mp4: livekit.VideoCodec_H264_MAIN,
-		// webm: livekit.VideoCodec_VP8,
-		// ogg:  livekit.VideoCodec_VP8,
-		rtmp: livekit.VideoCodec_H264_MAIN,
-		// srt:  livekit.VideoCodec(-1), // unknown
-	}
-
-	compatibleAudioCodecs = map[string]map[livekit.AudioCodec]bool{
-		mp4: {
-			livekit.AudioCodec_AAC:  true,
-			livekit.AudioCodec_OPUS: true,
+		OutputTypeRTMP: {
+			MimeTypeAAC:  true,
+			MimeTypeH264: true,
 		},
-		// webm: {
-		// 	livekit.AudioCodec_OPUS: true,
-		// },
-		ogg: {
-			livekit.AudioCodec_OPUS: true,
-		},
-		rtmp: {
-			livekit.AudioCodec_AAC: true,
-		},
-		// srt: {
-		// 	unknown
-		// },
-	}
-
-	compatibleVideoCodecs = map[string]map[livekit.VideoCodec]bool{
-		mp4: {
-			livekit.VideoCodec_H264_BASELINE: true,
-			livekit.VideoCodec_H264_MAIN:     true,
-			livekit.VideoCodec_H264_HIGH:     true,
-			// livekit.VideoCodec_HEVC_MAIN:     true,
-			// livekit.VideoCodec_HEVC_HIGH:     true,
-		},
-		// webm: {
-		// 	livekit.VideoCodec_VP8: true,
-		// 	livekit.VideoCodec_VP9: true,
-		// },
-		ogg: {
-			// livekit.VideoCodec_VP8: true,
-		},
-		rtmp: {
-			livekit.VideoCodec_H264_BASELINE: true,
-			livekit.VideoCodec_H264_MAIN:     true,
-			livekit.VideoCodec_H264_HIGH:     true,
-		},
-		// srt: {
-		// 	unknown
-		// },
 	}
 )

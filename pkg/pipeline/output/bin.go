@@ -1,10 +1,8 @@
 package output
 
 import (
-	"github.com/pion/webrtc/v3"
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-egress/pkg/errors"
@@ -15,7 +13,7 @@ type Bin struct {
 	bin *gst.Bin
 
 	// stream
-	protocol livekit.StreamProtocol
+	protocol params.OutputType
 	tee      *gst.Element
 	sinks    map[string]*streamSink
 
@@ -31,9 +29,9 @@ type streamSink struct {
 func Build(p *params.Params) (*Bin, error) {
 	if p.IsStream {
 		return buildStreamOutputBin(p)
-	} else if p.WebSocketEgressUrl != "" {
+	} else if p.WebsocketUrl != "" {
 		// Hardcode audio Mime Type as only Opus is supported for WS egress for now
-		wsWriter, err := newWebSocketSink(p.WebSocketEgressUrl, webrtc.MimeTypeOpus, p.Logger, p.MutedChan)
+		wsWriter, err := newWebSocketSink(p.WebsocketUrl, params.MimeTypeOpus, p.Logger, p.MutedChan)
 		if err != nil {
 			return nil, err
 		}
