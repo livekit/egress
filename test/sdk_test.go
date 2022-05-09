@@ -182,6 +182,15 @@ func testTrackWebsocket(t *testing.T, conf *config.Config, room *lksdk.Room) {
 			name:      "track-websocket",
 			audioOnly: true,
 			codec:     params.MimeTypeOpus,
+			output:    params.OutputTypeRaw,
+			filename:  fmt.Sprintf("track_ws-%v.raw", time.Now().Unix()),
+		},
+		{
+			name:      "track-websocket",
+			audioOnly: true,
+			codec:     params.MimeTypeOpus,
+			output:    params.OutputTypeOGG,
+			filename:  fmt.Sprintf("track_ws-%v.ogg", time.Now().Unix()),
 		},
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
@@ -205,7 +214,7 @@ func runTrackWebsocketTest(t *testing.T, conf *config.Config, room *lksdk.Room, 
 	time.Sleep(time.Second * 5)
 
 	filepath := getFilePath(conf, test.filename)
-	wss := newTestWebsocketServer(filepath)
+	wss := newTestWebsocketServer(filepath, test.output)
 	s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
 	defer func() {
 		wss.close()
@@ -239,31 +248,34 @@ func runTrackWebsocketTest(t *testing.T, conf *config.Config, room *lksdk.Room, 
 	time.AfterFunc(time.Second*35, func() {
 		rec.Stop()
 	})
-	rec.Run()
+	res := rec.Run()
 
 	require.NoError(t, room.LocalParticipant.UnpublishTrack(trackID))
+	verify(t, filepath, p, res, false)
 }
 
-type testWebsocketServer struct {
-	path string
-	file *os.File
-	conn *websocket.Conn
-	done chan struct{}
+type websocketTestServer struct {
+	path   string
+	file   *os.File
+	conn   *websocket.Conn
+	done   chan struct{}
+	output params.OutputType
 }
 
-func newTestWebsocketServer(filepath string) *testWebsocketServer {
-	return &testWebsocketServer{
-		path: filepath,
-		done: make(chan struct{}),
+func newTestWebsocketServer(filepath string, output params.OutputType) *websocketTestServer {
+	return &websocketTestServer{
+		path:   filepath,
+		done:   make(chan struct{}),
+		output: output,
 	}
 }
 
-func (s *testWebsocketServer) handleWebsocket(w http.ResponseWriter, r *http.Request) {
-	// Determine file type
-	ct := r.Header.Get("Content-Type")
-
+func (s *websocketTestServer) handleWebsocket(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var upgrader = websocket.Upgrader{}
+
+	// Determine file type
+	ct := r.Header.Get("Content-Type")
 
 	switch {
 	case strings.EqualFold(ct, "video/vp8"):
@@ -273,7 +285,7 @@ func (s *testWebsocketServer) handleWebsocket(w http.ResponseWriter, r *http.Req
 	case strings.EqualFold(ct, "audio/opus"):
 		s.file, err = os.Create(s.path)
 	default:
-		log.Fatal("Unsupported codec")
+		log.Fatal("Unsupported codec: ", ct)
 		return
 	}
 	if err != nil {
@@ -287,15 +299,13 @@ func (s *testWebsocketServer) handleWebsocket(w http.ResponseWriter, r *http.Req
 		log.Fatalf("Error in accepting WS connection: %s\n", err)
 		return
 	}
-
 	log.Println("Websocket connection received!")
 
 	go func() {
 		defer func() {
 			s.file.Close()
 
-			// Close the connection when we don't have unexpected EOF;
-			// we can't close a socket connection that's unexpectedly closed
+			// Close the connection only if it's not closed already
 			if !websocket.IsUnexpectedCloseError(err) {
 				s.conn.Close()
 			}
@@ -308,7 +318,9 @@ func (s *testWebsocketServer) handleWebsocket(w http.ResponseWriter, r *http.Req
 			default:
 				mt, msg, err := s.conn.ReadMessage()
 				if err != nil {
-					log.Printf("Error in reading message: %s\n", err)
+					if !websocket.IsUnexpectedCloseError(err) {
+						log.Printf("Error in reading message: %s\n", err)
+					}
 					return
 				}
 
@@ -329,6 +341,6 @@ func (s *testWebsocketServer) handleWebsocket(w http.ResponseWriter, r *http.Req
 	}()
 }
 
-func (s *testWebsocketServer) close() {
+func (s *websocketTestServer) close() {
 	close(s.done)
 }

@@ -86,6 +86,11 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 
 		b.audioElements = append(b.audioElements, opusDec)
 
+		// Skip encoding when output is raw, validate PCM
+		if p.OutputType == params.OutputTypeRaw {
+			return nil
+		}
+
 		return b.buildAudioEncoder(p)
 
 	default:

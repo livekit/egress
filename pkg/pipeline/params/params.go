@@ -209,7 +209,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		case *livekit.TrackEgressRequest_WebsocketUrl:
 			p.WebsocketUrl = o.WebsocketUrl
 			p.MutedChan = make(chan bool, 1)
-
+			err = p.updateFileParams(conf, "", o.WebsocketUrl)
 		default:
 			err = errors.ErrInvalidInput("output")
 		}

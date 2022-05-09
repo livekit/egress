@@ -24,6 +24,7 @@ const (
 	OutputTypeIVF  OutputType = "video/x-ivf"
 	OutputTypeWebM OutputType = "video/webm"
 	OutputTypeRTMP OutputType = "rtmp"
+	OutputTypeRaw  OutputType = "raw"
 
 	// file extensions
 	FileExtensionOGG  = ".ogg"
@@ -31,6 +32,7 @@ const (
 	FileExtensionTS   = ".ts"
 	FileExtensionIVF  = ".ivf"
 	FileExtensionWebM = ".webm"
+	FileExtensionRaw  = ".raw"
 )
 
 var (
