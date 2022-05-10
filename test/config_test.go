@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -51,6 +52,10 @@ func getTestConfig(t *testing.T) *testConfig {
 	require.NoError(t, err)
 
 	tc.Config = conf
+
+	if tc.GstDebug != 0 {
+		require.NoError(t, os.Setenv("GST_DEBUG", fmt.Sprint(tc.GstDebug)))
+	}
 
 	return tc
 }
