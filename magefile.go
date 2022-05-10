@@ -23,22 +23,14 @@ const (
 )
 
 func Test() error {
-	return integration("", 1)
-}
-
-func DebugTest() error {
-	return integration("", 3)
+	return integration("")
 }
 
 func Integration(configFile string) error {
-	return integration(configFile, 1)
+	return integration(configFile)
 }
 
-func DebugIntegration(configFile string) error {
-	return integration(configFile, 3)
-}
-
-func integration(configFile string, gstDebug int) error {
+func integration(configFile string) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		return err
@@ -50,13 +42,15 @@ func integration(configFile string, gstDebug int) error {
 		} else {
 			return errors.New("please move config file to universal-io/test/")
 		}
+
+		configFile = "/out/" + configFile
 	}
 
 	return run(
 		"docker pull livekit/gstreamer:1.18.5-dev",
 		"docker build -t livekit-egress-test -f build/test/Dockerfile .",
-		fmt.Sprintf("docker run --rm -e %s=/out/%s -e %s=%s -e GST_DEBUG=%d -v %s/test:/out livekit-egress-test",
-			config, configFile, roomName, os.Getenv(roomName), gstDebug, dir),
+		fmt.Sprintf("docker run --rm -e %s=%s -e %s=%s -v %s/test:/out livekit-egress-test",
+			config, configFile, roomName, os.Getenv(roomName), dir),
 	)
 }
 

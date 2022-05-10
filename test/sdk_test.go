@@ -18,7 +18,7 @@ import (
 	"github.com/livekit/livekit-egress/pkg/config"
 )
 
-func testTrackComposite(t *testing.T, conf *config.Config, room *lksdk.Room) {
+func testTrackComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	testTrackCompositeFile(t, conf, room, params.MimeTypeOpus, params.MimeTypeVP8, []*testCase{
 		{
 			name:     "tc-vp8-mp4",
@@ -48,12 +48,12 @@ func testTrackComposite(t *testing.T, conf *config.Config, room *lksdk.Room) {
 	})
 }
 
-func testTrackCompositeFile(t *testing.T, conf *config.Config, room *lksdk.Room, audioCodec, videoCodec params.MimeType, cases []*testCase) {
-	p := publishSamplesToRoom(t, room, audioCodec, videoCodec, false)
+func testTrackCompositeFile(t *testing.T, conf *testConfig, room *lksdk.Room, audioCodec, videoCodec params.MimeType, cases []*testCase) {
+	p := publishSamplesToRoom(t, room, audioCodec, videoCodec, conf.WithMuting)
 
 	for _, test := range cases {
 		if !t.Run(test.name, func(t *testing.T) {
-			runTrackCompositeFileTest(t, conf, p, test)
+			runTrackCompositeFileTest(t, conf.Config, p, test)
 		}) {
 			t.FailNow()
 		}
@@ -103,7 +103,7 @@ func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkPar
 	runFileTest(t, conf, test, req, filepath)
 }
 
-func testTrack(t *testing.T, conf *config.Config, room *lksdk.Room) {
+func testTrack(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	for _, test := range []*testCase{
 		{
 			name:      "track-opus",
@@ -132,18 +132,18 @@ func testTrack(t *testing.T, conf *config.Config, room *lksdk.Room) {
 	}
 }
 
-func runTrackFileTest(t *testing.T, conf *config.Config, room *lksdk.Room, test *testCase) {
+func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *testCase) {
 	var trackID string
 	if test.audioOnly {
-		p := publishSamplesToRoom(t, room, test.codec, "", false)
+		p := publishSamplesToRoom(t, room, test.codec, "", conf.WithMuting)
 		trackID = p.audioTrackID
 	} else {
-		p := publishSamplesToRoom(t, room, "", test.codec, false)
+		p := publishSamplesToRoom(t, room, "", test.codec, conf.WithMuting)
 		trackID = p.videoTrackID
 	}
 	time.Sleep(time.Second)
 
-	filepath := getFilePath(conf, test.filename)
+	filepath := getFilePath(conf.Config, test.filename)
 	trackRequest := &livekit.TrackEgressRequest{
 		RoomName: room.Name,
 		TrackId:  trackID,
@@ -163,7 +163,7 @@ func runTrackFileTest(t *testing.T, conf *config.Config, room *lksdk.Room, test 
 		},
 	}
 
-	runFileTest(t, conf, test, req, filepath)
+	runFileTest(t, conf.Config, test, req, filepath)
 
 	require.NoError(t, room.LocalParticipant.UnpublishTrack(trackID))
 	time.Sleep(time.Second)
