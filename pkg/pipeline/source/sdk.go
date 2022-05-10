@@ -86,6 +86,18 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 	}
 
 	var onSubscribeErr error
+	s.room.Callback.OnTrackUnpublished = s.onTrackUnpublished
+	s.room.Callback.OnDisconnected = s.onComplete
+	s.room.Callback.OnTrackMuted = func(pub lksdk.TrackPublication, p lksdk.Participant) {
+		if w := s.getWriterForTrack(pub); w != nil {
+			w.trackMuted()
+		}
+	}
+	s.room.Callback.OnTrackUnmuted = func(pub lksdk.TrackPublication, p lksdk.Participant) {
+		if w := s.getWriterForTrack(pub); w != nil {
+			w.trackUnmuted()
+		}
+	}
 	s.room.Callback.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer wg.Done()
 		s.logger.Debugw("track subscribed", "trackID", track.ID())
@@ -198,9 +210,6 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 }
 
 func (s *SDKSource) join(p *params.Params) error {
-	s.room.Callback.OnTrackUnpublished = s.onTrackUnpublished
-	s.room.Callback.OnDisconnected = s.onComplete
-
 	s.logger.Debugw("connecting to room")
 	if err := s.room.JoinWithToken(p.LKUrl, p.Token, lksdk.WithAutoSubscribe(false)); err != nil {
 		return err
@@ -239,6 +248,30 @@ func (s *SDKSource) join(p *params.Params) error {
 
 	for trackID := range expecting {
 		return errors.ErrTrackNotFound(trackID)
+	}
+
+	return nil
+}
+
+func (s *SDKSource) getWriterForTrack(pub lksdk.TrackPublication) writer {
+	// track might be nil when first joining
+	if pub.Track() == nil {
+		return nil
+	}
+
+	switch pub.Track().ID() {
+	case s.trackID:
+		if s.fileWriter != nil {
+			return s.fileWriter
+		} else if s.audioWriter != nil {
+			return s.audioWriter
+		} else if s.videoWriter != nil {
+			return s.videoWriter
+		}
+	case s.audioTrackID:
+		return s.audioWriter
+	case s.videoTrackID:
+		return s.videoWriter
 	}
 
 	return nil

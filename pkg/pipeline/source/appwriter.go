@@ -24,6 +24,7 @@ type appWriter struct {
 	logger logger.Logger
 	sb     *samplebuilder.SampleBuilder
 	track  *webrtc.TrackRemote
+	codec  params.MimeType
 	src    *app.Source
 
 	// a/v sync
@@ -31,11 +32,15 @@ type appWriter struct {
 	clockSynced bool
 	rtpOffset   int64
 	ptsOffset   int64
+	snOffset    uint16
 	conversion  float64
+	lastSN      uint16
+	lastTS      uint32
 	maxLate     time.Duration
 	maxRTP      atomic.Int64
 
 	// state
+	muted    atomic.Bool
 	playing  chan struct{}
 	drain    chan struct{}
 	force    chan struct{}
@@ -55,6 +60,7 @@ func newAppWriter(
 	w := &appWriter{
 		logger:     logger.Logger(logr.Logger(l).WithValues("trackID", track.ID(), "kind", track.Kind().String())),
 		track:      track,
+		codec:      codec,
 		src:        src,
 		cs:         cs,
 		conversion: 1e9 / float64(track.Codec().ClockRate),
@@ -112,7 +118,7 @@ func (w *appWriter) start() {
 		select {
 		case <-w.force:
 			// force push remaining packets and quit
-			_ = w.pushBuffers(true)
+			_ = w.pushPackets(true)
 			return
 		default:
 			// continue
@@ -121,12 +127,20 @@ func (w *appWriter) start() {
 		// read next packet
 		pkt, _, err := w.track.ReadRTP()
 		if err != nil {
+			if w.muted.Load() {
+				// switch to pushing blank frames until unmuted
+				err = w.pushBlankFrames()
+				if err == nil {
+					continue
+				}
+			}
+
 			if !errors.Is(err, io.EOF) {
 				w.logger.Errorw("could not read packet", err)
 			}
 
 			// force push remaining packets and quit
-			_ = w.pushBuffers(true)
+			_ = w.pushPackets(true)
 			return
 		}
 
@@ -140,11 +154,16 @@ func (w *appWriter) start() {
 			w.clockSynced = true
 		}
 
+		// update sequence number, record SN and TS
+		pkt.SequenceNumber += w.snOffset
+		w.lastSN = pkt.SequenceNumber
+		w.lastTS = pkt.Timestamp
+
 		// push packet to sample builder
 		w.sb.Push(pkt)
 
 		// push completed packets to appsrc
-		if err = w.pushBuffers(false); err != nil {
+		if err = w.pushPackets(false); err != nil {
 			if !errors.Is(err, io.EOF) {
 				w.logger.Errorw("could not push buffers", err)
 			}
@@ -153,19 +172,43 @@ func (w *appWriter) start() {
 	}
 }
 
-func (w *appWriter) pushBuffers(force bool) error {
+func (w *appWriter) pushPackets(force bool) error {
 	// buffers can only be pushed to the appsrc while in the playing state
 	if !w.isPlaying() {
 		return nil
 	}
 
-	var packets []*rtp.Packet
 	if force {
-		packets = w.sb.ForcePopPackets()
+		return w.push(w.sb.ForcePopPackets())
 	} else {
-		packets = w.sb.PopPackets()
+		return w.push(w.sb.PopPackets())
 	}
+}
 
+func (w *appWriter) pushBlankFrames() error {
+	for {
+		if !w.muted.Load() {
+			return nil
+		}
+
+		pkts, err := getBlankFrame(w.track, w.codec, w.lastSN, w.lastTS)
+		if err != nil {
+			return err
+		}
+
+		w.snOffset += uint16(len(pkts))
+		lastPacket := pkts[len(pkts)-1]
+		w.lastSN = lastPacket.SequenceNumber
+		w.lastTS = lastPacket.Timestamp
+
+		err = w.push(pkts)
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func (w *appWriter) push(packets []*rtp.Packet) error {
 	for _, pkt := range packets {
 		if w.isDraining() && int64(pkt.Timestamp) >= w.maxRTP.Load() {
 			return io.EOF
@@ -213,6 +256,16 @@ func (w *appWriter) isDraining() bool {
 	default:
 		return false
 	}
+}
+
+func (w *appWriter) trackMuted() {
+	w.logger.Debugw("track muted")
+	w.muted.Store(true)
+}
+
+func (w *appWriter) trackUnmuted() {
+	w.logger.Debugw("track unmuted")
+	w.muted.Store(false)
 }
 
 // stop blocks until finished
