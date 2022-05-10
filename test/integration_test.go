@@ -57,7 +57,6 @@ type sdkParams struct {
 	audioTrackID string
 	videoTrackID string
 	roomName     string
-	url          string
 }
 
 func TestEgress(t *testing.T) {
@@ -111,59 +110,48 @@ func TestEgress(t *testing.T) {
 	}
 }
 
-func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec params.MimeType, withMuting bool) *sdkParams {
-	p := &sdkParams{roomName: room.Name}
+func publishSampleToRoom(t *testing.T, room *lksdk.Room, codec params.MimeType, withMuting bool) string {
+	filename := samples[codec]
+	frameDuration := frameDurations[codec]
 
-	publish := func(filename string, frameDuration time.Duration) string {
-		var pub *lksdk.LocalTrackPublication
-		done := make(chan struct{})
-		opts := []lksdk.FileSampleProviderOption{
-			lksdk.FileTrackWithOnWriteComplete(func() {
-				close(done)
-				if pub != nil {
-					_ = room.LocalParticipant.UnpublishTrack(pub.SID())
+	var pub *lksdk.LocalTrackPublication
+	done := make(chan struct{})
+	opts := []lksdk.FileSampleProviderOption{
+		lksdk.FileTrackWithOnWriteComplete(func() {
+			close(done)
+			if pub != nil {
+				_ = room.LocalParticipant.UnpublishTrack(pub.SID())
+			}
+		}),
+	}
+
+	if frameDuration != 0 {
+		opts = append(opts, lksdk.FileTrackWithFrameDuration(frameDuration))
+	}
+
+	track, err := lksdk.NewLocalFileTrack(filename, opts...)
+	require.NoError(t, err)
+
+	pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
+	require.NoError(t, err)
+
+	if withMuting {
+		go func() {
+			muted := false
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					pub.SetMuted(!muted)
+					muted = !muted
+					time.Sleep(time.Second * 5)
 				}
-			}),
-		}
-
-		if frameDuration != 0 {
-			opts = append(opts, lksdk.FileTrackWithFrameDuration(frameDuration))
-		}
-
-		track, err := lksdk.NewLocalFileTrack(filename, opts...)
-		require.NoError(t, err)
-
-		pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
-		require.NoError(t, err)
-
-		if withMuting {
-			go func() {
-				muted := false
-				for {
-					select {
-					case <-done:
-						return
-					default:
-						pub.SetMuted(!muted)
-						muted = !muted
-						time.Sleep(time.Second * 5)
-					}
-				}
-			}()
-		}
-
-		return pub.SID()
+			}
+		}()
 	}
 
-	if samples[audioCodec] != "" {
-		p.audioTrackID = publish(samples[audioCodec], frameDurations[audioCodec])
-	}
-
-	if samples[videoCodec] != "" {
-		p.videoTrackID = publish(samples[videoCodec], frameDurations[videoCodec])
-	}
-
-	return p
+	return pub.SID()
 }
 
 func getFilePath(conf *config.Config, filename string) string {

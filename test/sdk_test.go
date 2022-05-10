@@ -49,7 +49,11 @@ func testTrackComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 }
 
 func testTrackCompositeFile(t *testing.T, conf *testConfig, room *lksdk.Room, audioCodec, videoCodec params.MimeType, cases []*testCase) {
-	p := publishSamplesToRoom(t, room, audioCodec, videoCodec, conf.WithMuting)
+	p := &sdkParams{
+		audioTrackID: publishSampleToRoom(t, room, audioCodec, false),
+		videoTrackID: publishSampleToRoom(t, room, videoCodec, conf.WithMuting),
+		roomName:     room.Name,
+	}
 
 	for _, test := range cases {
 		if !t.Run(test.name, func(t *testing.T) {
@@ -133,13 +137,12 @@ func testTrack(t *testing.T, conf *testConfig, room *lksdk.Room) {
 }
 
 func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *testCase) {
-	var trackID string
+	p := &sdkParams{roomName: room.Name}
+	trackID := publishSampleToRoom(t, room, test.codec, conf.WithMuting)
 	if test.audioOnly {
-		p := publishSamplesToRoom(t, room, test.codec, "", conf.WithMuting)
-		trackID = p.audioTrackID
+		p.audioTrackID = trackID
 	} else {
-		p := publishSamplesToRoom(t, room, "", test.codec, conf.WithMuting)
-		trackID = p.videoTrackID
+		p.videoTrackID = trackID
 	}
 	time.Sleep(time.Second)
 

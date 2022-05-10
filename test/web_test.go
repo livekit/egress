@@ -23,7 +23,11 @@ import (
 func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	var p *sdkParams
 	if room != nil {
-		p = publishSamplesToRoom(t, room, params.MimeTypeOpus, params.MimeTypeVP8, conf.WithMuting)
+		p = &sdkParams{
+			roomName:     room.Name,
+			audioTrackID: publishSampleToRoom(t, room, params.MimeTypeOpus, conf.WithMuting),
+			videoTrackID: publishSampleToRoom(t, room, params.MimeTypeVP8, conf.WithMuting),
+		}
 	}
 
 	for _, test := range []*testCase{
