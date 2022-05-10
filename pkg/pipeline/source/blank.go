@@ -24,47 +24,42 @@ func getBlankFrame(
 	codec params.MimeType,
 	lastSequenceNumber uint16,
 	lastTimestamp uint32,
-) ([]*rtp.Packet, error) {
+) (*rtp.Packet, error) {
 
-	pkts := make([]*rtp.Packet, 0, 7)
-	for i := 0; i < 7; i++ {
-		pkt := &rtp.Packet{
-			Header: rtp.Header{
-				Version:        2,
-				Padding:        false,
-				Marker:         true,
-				PayloadType:    uint8(track.PayloadType()),
-				SequenceNumber: lastSequenceNumber + uint16(i),
-				Timestamp:      lastTimestamp + (uint32(i) * (track.Codec().ClockRate / (24000 / 1001))),
-				SSRC:           uint32(track.SSRC()),
-				CSRC:           []uint32{},
-			},
-		}
-
-		switch codec {
-		case params.MimeTypeVP8:
-			// TODO: this is missing vp8 header
-			pkt.Payload = make([]byte, 1+len(VP8KeyFrame8x8))
-			pkt.Payload[0] = 0x10
-			copy(pkt.Payload[1:], VP8KeyFrame8x8)
-
-		case params.MimeTypeH264:
-			buf := make([]byte, 1462)
-			offset := 0
-			buf[0] = 0x18 // STAP-A
-			offset++
-			for _, payload := range H264KeyFrame2x2 {
-				binary.BigEndian.PutUint16(buf[offset:], uint16(len(payload)))
-				offset += 2
-				copy(buf[offset:offset+len(payload)], payload)
-				offset += len(payload)
-			}
-
-			pkt.Payload = buf[:offset]
-		}
-
-		pkts = append(pkts, pkt)
+	pkt := &rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			Padding:        false,
+			Marker:         true,
+			PayloadType:    uint8(track.PayloadType()),
+			SequenceNumber: lastSequenceNumber + uint16(1),
+			Timestamp:      lastTimestamp + (track.Codec().ClockRate / (24000 / 1001)),
+			SSRC:           uint32(track.SSRC()),
+			CSRC:           []uint32{},
+		},
 	}
 
-	return pkts, nil
+	switch codec {
+	case params.MimeTypeVP8:
+		// TODO: this is missing vp8 header
+		pkt.Payload = make([]byte, 1+len(VP8KeyFrame8x8))
+		pkt.Payload[0] = 0x10
+		copy(pkt.Payload[1:], VP8KeyFrame8x8)
+
+	case params.MimeTypeH264:
+		buf := make([]byte, 1462)
+		offset := 0
+		buf[0] = 0x18 // STAP-A
+		offset++
+		for _, payload := range H264KeyFrame2x2 {
+			binary.BigEndian.PutUint16(buf[offset:], uint16(len(payload)))
+			offset += 2
+			copy(buf[offset:offset+len(payload)], payload)
+			offset += len(payload)
+		}
+
+		pkt.Payload = buf[:offset]
+	}
+
+	return pkt, nil
 }

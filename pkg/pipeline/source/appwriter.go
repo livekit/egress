@@ -186,22 +186,25 @@ func (w *appWriter) pushPackets(force bool) error {
 }
 
 func (w *appWriter) pushBlankFrames() error {
+	ticker := time.NewTicker(time.Microsecond * 41708)
+	defer ticker.Stop()
+
 	for {
-		if !w.muted.Load() {
+		<-ticker.C
+		if !w.muted.Load() || w.isDraining() {
 			return nil
 		}
 
-		pkts, err := getBlankFrame(w.track, w.codec, w.lastSN, w.lastTS)
+		pkt, err := getBlankFrame(w.track, w.codec, w.lastSN, w.lastTS)
 		if err != nil {
 			return err
 		}
 
-		w.snOffset += uint16(len(pkts))
-		lastPacket := pkts[len(pkts)-1]
-		w.lastSN = lastPacket.SequenceNumber
-		w.lastTS = lastPacket.Timestamp
+		w.snOffset++
+		w.lastSN = pkt.SequenceNumber
+		w.lastTS = pkt.Timestamp
 
-		err = w.push(pkts)
+		err = w.push([]*rtp.Packet{pkt})
 		if err != nil {
 			return err
 		}
