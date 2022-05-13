@@ -12,12 +12,12 @@ require (
 	github.com/go-logr/logr v1.2.2
 	github.com/go-logr/zapr v1.2.3
 	github.com/go-redis/redis/v8 v8.11.4
-	github.com/livekit/livekit-server v0.15.8-0.20220511113617-abcd29ed9244
+	github.com/livekit/livekit-server v0.15.8-0.20220513092052-fa53da18e700
 	github.com/livekit/protocol v0.13.3-0.20220510071353-084233d23a03
 	github.com/livekit/server-sdk-go v0.9.4-0.20220509191455-dbb855119d3b
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.13
-	github.com/pion/webrtc/v3 v3.1.37
+	github.com/pion/webrtc/v3 v3.1.39
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/stretchr/testify v1.7.1
@@ -74,7 +74,7 @@ require (
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.9 // indirect
 	github.com/pion/sctp v1.8.2 // indirect
-	github.com/pion/sdp/v3 v3.0.4 // indirect
+	github.com/pion/sdp/v3 v3.0.5 // indirect
 	github.com/pion/srtp/v2 v2.0.7 // indirect
 	github.com/pion/stun v0.3.5 // indirect
 	github.com/pion/transport v0.13.0 // indirect
@@ -89,10 +89,10 @@ require (
 	github.com/twitchtv/twirp v8.1.1+incompatible // indirect
 	go.opencensus.io v0.23.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.0.0-20220507011949-2cf3adece122 // indirect
+	golang.org/x/crypto v0.0.0-20220511200225-c6db032c6c88 // indirect
 	golang.org/x/net v0.0.0-20220425223048-2871e0cb64e4 // indirect
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8 // indirect
-	golang.org/x/sys v0.0.0-20220422013727-9388b58f7150 // indirect
+	golang.org/x/sys v0.0.0-20220503163025-988cb79eb6c6 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f // indirect
 	google.golang.org/appengine v1.6.7 // indirect
@@ -100,5 +100,3 @@ require (
 	google.golang.org/grpc v1.44.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 )
-
-// replace github.com/livekit/livekit-server => ../livekit-server
