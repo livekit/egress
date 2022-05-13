@@ -57,7 +57,11 @@ func FromRequest(conf *config.Config, request *livekit.StartEgressRequest) (*Pip
 
 func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 	if !initialized {
-		gst.Init(nil)
+		args := []string{"gst-launch-1.0"}
+		if conf.LogLevel == "debug" {
+			args = append(args, []string{"--gst-debug-level=2", "-v"}...)
+		}
+		gst.Init(&args)
 		initialized = true
 	}
 
@@ -174,6 +178,7 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 
 		// set state to playing (this does not start the pipeline)
 		if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
+			p.Logger.Errorw("failed to set pipeline state", err)
 			p.Info.Error = err.Error()
 			return p.Info
 		}

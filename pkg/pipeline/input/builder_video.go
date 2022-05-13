@@ -151,7 +151,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 		return err
 	}
 	if err = decodedCaps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=%d/1", p.Width, p.Height, p.Framerate)),
+		fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=%d/1,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1", p.Width, p.Height, p.Framerate)),
 	); err != nil {
 		return err
 	}

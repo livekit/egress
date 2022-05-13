@@ -2,6 +2,7 @@ package source
 
 import (
 	"io"
+	"net"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -13,6 +14,8 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
 	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
@@ -28,16 +31,18 @@ type appWriter struct {
 	src    *app.Source
 
 	// a/v sync
-	cs          *clockSync
-	clockSynced bool
-	rtpOffset   int64
-	ptsOffset   int64
-	snOffset    uint16
-	conversion  float64
-	lastSN      uint16
-	lastTS      uint32
-	maxLate     time.Duration
-	maxRTP      atomic.Int64
+	cs              *clockSync
+	clockSynced     bool
+	rtpOffset       int64
+	ptsOffset       int64
+	snOffset        uint16
+	conversion      float64
+	lastSN          uint16
+	lastTS          uint32
+	maxLate         time.Duration
+	maxRTP          atomic.Int64
+	lastPictureId   uint16
+	pictureIdOffset uint16
 
 	// state
 	muted    atomic.Bool
@@ -45,6 +50,12 @@ type appWriter struct {
 	drain    chan struct{}
 	force    chan struct{}
 	finished chan struct{}
+
+	newSampleBuffer func() *samplebuilder.SampleBuilder
+
+	vp8Munger      *sfu.VP8Munger
+	firstPktPushed bool
+	startTime      time.Time
 }
 
 func newAppWriter(
@@ -72,21 +83,30 @@ func newAppWriter(
 
 	switch codec {
 	case params.MimeTypeVP8:
-		w.sb = samplebuilder.New(
-			maxVideoLate, &codecs.VP8Packet{}, track.Codec().ClockRate,
-			samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
-		)
+		w.newSampleBuffer = func() *samplebuilder.SampleBuilder {
+			return samplebuilder.New(
+				maxVideoLate, &codecs.VP8Packet{}, track.Codec().ClockRate,
+				samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
+			)
+		}
+		w.sb = w.newSampleBuffer()
 		w.maxLate = time.Second * 2
-
+		w.vp8Munger = sfu.NewVP8Munger(w.logger)
 	case params.MimeTypeH264:
-		w.sb = samplebuilder.New(
-			maxVideoLate, &codecs.H264Packet{}, track.Codec().ClockRate,
-			samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
-		)
+		w.newSampleBuffer = func() *samplebuilder.SampleBuilder {
+			return samplebuilder.New(
+				maxVideoLate, &codecs.H264Packet{}, track.Codec().ClockRate,
+				samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
+			)
+		}
+		w.sb = w.newSampleBuffer()
 		w.maxLate = time.Second * 2
 
 	case params.MimeTypeOpus:
-		w.sb = samplebuilder.New(maxAudioLate, &codecs.OpusPacket{}, track.Codec().ClockRate)
+		w.newSampleBuffer = func() *samplebuilder.SampleBuilder {
+			return samplebuilder.New(maxAudioLate, &codecs.OpusPacket{}, track.Codec().ClockRate)
+		}
+		w.sb = w.newSampleBuffer()
 		w.maxLate = time.Second * 4
 
 	default:
@@ -109,6 +129,8 @@ func (w *appWriter) start() {
 		close(w.finished)
 	}()
 
+	w.startTime = time.Now()
+
 	for {
 		if w.isDraining() && !w.isPlaying() {
 			// quit if draining but not yet playing
@@ -125,6 +147,7 @@ func (w *appWriter) start() {
 		}
 
 		// read next packet
+		w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
 		pkt, _, err := w.track.ReadRTP()
 		if err != nil {
 			if w.muted.Load() {
@@ -133,6 +156,12 @@ func (w *appWriter) start() {
 				if err == nil {
 					continue
 				}
+			}
+
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				w.logger.Debugw("read timeout")
+				// continue if timeout
+				continue
 			}
 
 			if !errors.Is(err, io.EOF) {
@@ -179,9 +208,9 @@ func (w *appWriter) pushPackets(force bool) error {
 	}
 
 	if force {
-		return w.push(w.sb.ForcePopPackets())
+		return w.push(w.sb.ForcePopPackets(), false)
 	} else {
-		return w.push(w.sb.PopPackets())
+		return w.push(w.sb.PopPackets(), false)
 	}
 }
 
@@ -189,30 +218,54 @@ func (w *appWriter) pushBlankFrames() error {
 	ticker := time.NewTicker(time.Microsecond * 41708)
 	defer ticker.Stop()
 
+	written := false
+	w.pushPackets(true)
+
+	// TODO: sample buffer has bug that it may pop old packet after pushPackets(true)
+	// recreated it to work now, will remove this when bug fixed
+	w.sb = w.newSampleBuffer()
+
 	for {
 		<-ticker.C
 		if !w.muted.Load() || w.isDraining() {
 			return nil
 		}
 
-		pkt, err := getBlankFrame(w.track, w.codec, w.lastSN, w.lastTS)
-		if err != nil {
-			return err
-		}
+		if !written {
+			written = true
+			pkt, err := getBlankFrame(w.track, w.codec, w.lastSN, w.lastTS)
+			if err != nil {
+				return err
+			}
 
-		w.snOffset++
-		w.lastSN = pkt.SequenceNumber
-		w.lastTS = pkt.Timestamp
+			if len(pkt.Payload) == 0 {
+				continue // no payload, skip
+			}
+			if w.codec == params.MimeTypeVP8 {
+				if err := w.getVP8BlankFrame(pkt); err != nil {
+					w.logger.Errorw("could not get blank VP8 frame", err)
+					return err
+				}
+			}
 
-		err = w.push([]*rtp.Packet{pkt})
-		if err != nil {
-			return err
+			w.snOffset++
+			w.lastSN = pkt.SequenceNumber
+			w.lastTS = pkt.Timestamp
+
+			err = w.push([]*rtp.Packet{pkt}, true)
+			if err != nil {
+				return err
+			}
 		}
 	}
 }
 
-func (w *appWriter) push(packets []*rtp.Packet) error {
+func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 	for _, pkt := range packets {
+		if !blankFrame {
+			w.translatePacket(pkt)
+		}
+
 		if w.isDraining() && int64(pkt.Timestamp) >= w.maxRTP.Load() {
 			return io.EOF
 		}
@@ -222,7 +275,6 @@ func (w *appWriter) push(packets []*rtp.Packet) error {
 			return err
 		}
 
-		// create buffer
 		b := gst.NewBufferFromBytes(p)
 
 		// RTP packet timestamps start at a random number, and increase according to clock rate (for example, with a
@@ -240,6 +292,91 @@ func (w *appWriter) push(packets []*rtp.Packet) error {
 		w.src.PushBuffer(b)
 	}
 
+	return nil
+}
+
+func (w *appWriter) translatePacket(pkt *rtp.Packet) {
+	switch w.codec {
+	case params.MimeTypeVP8:
+		ep := &buffer.ExtPacket{
+			Packet:  pkt,
+			Arrival: time.Now().UnixNano(),
+			VideoLayer: buffer.VideoLayer{
+				Spatial:  -1,
+				Temporal: -1,
+			},
+		}
+		ep.Temporal = 0
+		if w.codec == params.MimeTypeVP8 {
+			vp8Packet := buffer.VP8{}
+			if err := vp8Packet.Unmarshal(pkt.Payload); err != nil {
+				w.logger.Warnw("could not unmarshal VP8 packet", err)
+				return
+			}
+			ep.Payload = vp8Packet
+			ep.KeyFrame = vp8Packet.IsKeyFrame
+			if ep.KeyFrame {
+				w.logger.Debugw("got key frame")
+			}
+			ep.Temporal = int32(vp8Packet.TID)
+
+			if !w.firstPktPushed {
+				w.firstPktPushed = true
+				w.vp8Munger.SetLast(ep)
+			} else {
+				tpVP8, err := w.vp8Munger.UpdateAndGet(ep, sfu.SequenceNumberOrderingContiguous, ep.Temporal)
+				if err != nil {
+					w.logger.Warnw("could not update VP8 packet", err)
+					return
+				}
+
+				payload := pkt.Payload
+				payload, err = w.translateVP8PacketTo(ep.Packet, &vp8Packet, tpVP8.Header, &payload)
+				if err != nil {
+					w.logger.Warnw("could not translate VP8 packet", err)
+					return
+				}
+				pkt.Payload = payload
+			}
+		}
+
+	default:
+		return
+	}
+}
+
+func (w *appWriter) translateVP8PacketTo(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8, outbuf *[]byte) ([]byte, error) {
+	var buf []byte
+	if outbuf == &pkt.Payload {
+		buf = pkt.Payload
+	} else {
+		buf = (*outbuf)[:len(pkt.Payload)+translatedVP8.HeaderSize-incomingVP8.HeaderSize]
+
+		srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
+		dstPayload := buf[translatedVP8.HeaderSize:]
+		copy(dstPayload, srcPayload)
+	}
+
+	err := translatedVP8.MarshalTo(buf[:translatedVP8.HeaderSize])
+	return buf, err
+}
+
+func (w *appWriter) getVP8BlankFrame(pkt *rtp.Packet) error {
+	blankVP8 := w.vp8Munger.UpdateAndGetPadding(true)
+
+	// 1x1 key frame
+	// Used even when closing out a previous frame. Looks like receivers
+	// do not care about content (it will probably end up being an undecodable
+	// frame, but that should be okay as there are key frames following)
+	payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame8x8))
+	vp8Header := payload[:blankVP8.HeaderSize]
+	err := blankVP8.MarshalTo(vp8Header)
+	if err != nil {
+		return err
+	}
+
+	copy(payload[blankVP8.HeaderSize:], VP8KeyFrame8x8)
+	pkt.Payload = payload
 	return nil
 }
 
@@ -262,12 +399,12 @@ func (w *appWriter) isDraining() bool {
 }
 
 func (w *appWriter) trackMuted() {
-	w.logger.Debugw("track muted")
+	w.logger.Debugw("track muted", "timestamp", time.Since(w.startTime).Seconds())
 	w.muted.Store(true)
 }
 
 func (w *appWriter) trackUnmuted() {
-	w.logger.Debugw("track unmuted")
+	w.logger.Debugw("track unmuted", "timestamp", time.Since(w.startTime).Seconds())
 	w.muted.Store(false)
 }
 
