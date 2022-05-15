@@ -47,9 +47,12 @@ func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 	// create ghost pad
 	var ghostPad *gst.GhostPad
 	if p.OutputType == params.OutputTypeRaw {
+		// For now, since we're not supporting raw video output,
+		// return error if video is enabled
 		if p.VideoEnabled {
 			return nil, errors.ErrNotSupported("raw video output")
 		}
+		// We then create ghost pad for the bin, which is just `src` from last audio element
 		ghostPad = gst.NewGhostPad("src", b.audioElements[len(b.audioElements)-1].GetStaticPad("src"))
 	} else {
 		ghostPad = gst.NewGhostPad("src", b.mux.GetStaticPad("src"))

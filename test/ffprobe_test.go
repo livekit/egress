@@ -48,6 +48,7 @@ type FFProbeInfo struct {
 }
 
 func ffprobe(input string) (*FFProbeInfo, error) {
+	// TODO: Update args for WS track egress file
 	cmd := exec.Command("ffprobe",
 		"-v", "quiet",
 		"-hide_banner",

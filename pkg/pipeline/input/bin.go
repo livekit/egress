@@ -38,11 +38,14 @@ func (b *Bin) Link() error {
 			return err
 		}
 
+		// Skip linking mux if it's nil (possibly WS track egress)
+		if b.mux == nil {
+			return nil
+		}
+
 		var muxAudioPad *gst.Pad
 		if b.isStream {
 			muxAudioPad = b.mux.GetRequestPad("audio")
-		} else if b.mux == nil {
-			return nil
 		} else {
 			muxAudioPad = b.mux.GetRequestPad("audio_%u")
 		}

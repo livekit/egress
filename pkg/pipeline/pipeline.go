@@ -192,13 +192,16 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	}
 
 	// upload file
+	var err error
 	if !p.IsStream {
-		// update file size
-		fileInfo, err := os.Stat(p.Filename)
-		if err == nil {
-			p.FileInfo.Size = fileInfo.Size()
-		} else {
-			p.Logger.Errorw("could not read file size", err)
+		// update file size if it's not WS egress
+		if p.WebsocketUrl == "" {
+			fileInfo, err := os.Stat(p.Filename)
+			if err == nil {
+				p.FileInfo.Size = fileInfo.Size()
+			} else {
+				p.Logger.Errorw("could not read file size", err)
+			}
 		}
 
 		var location string

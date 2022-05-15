@@ -185,13 +185,6 @@ func testTrackWebsocket(t *testing.T, conf *config.Config, room *lksdk.Room) {
 			output:    params.OutputTypeRaw,
 			filename:  fmt.Sprintf("track_ws-%v.raw", time.Now().Unix()),
 		},
-		//{
-		//	name:      "track-websocket",
-		//	audioOnly: true,
-		//	codec:     params.MimeTypeOpus,
-		//	output:    params.OutputTypeOGG,
-		//	filename:  fmt.Sprintf("track_ws-%v.ogg", time.Now().Unix()),
-		//},
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
 			runTrackWebsocketTest(t, conf, room, test)
