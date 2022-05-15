@@ -94,17 +94,17 @@ func TestEgress(t *testing.T) {
 		p = publishSamplesToRoom(t, room, params.MimeTypeOpus, params.MimeTypeVP8, false)
 	}
 
-	//if !t.Run("RoomCompositeFile", func(t *testing.T) {
-	//	testRoomCompositeFile(t, conf)
-	//}) {
-	//	t.FailNow()
-	//}
-	//
-	//if !t.Run("RoomCompositeStream", func(t *testing.T) {
-	//	testRoomCompositeStream(t, conf)
-	//}) {
-	//	t.FailNow()
-	//}
+	if !t.Run("RoomCompositeFile", func(t *testing.T) {
+		testRoomCompositeFile(t, conf)
+	}) {
+		t.FailNow()
+	}
+
+	if !t.Run("RoomCompositeStream", func(t *testing.T) {
+		testRoomCompositeStream(t, conf)
+	}) {
+		t.FailNow()
+	}
 
 	if room == nil {
 		return
@@ -113,17 +113,17 @@ func TestEgress(t *testing.T) {
 	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.audioTrackID))
 	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.videoTrackID))
 
-	//if !t.Run("TrackComposite", func(t *testing.T) {
-	//	testTrackComposite(t, conf, room)
-	//}) {
-	//	t.FailNow()
-	//}
-	//
-	//if !t.Run("TrackFile", func(t *testing.T) {
-	//	testTrackFile(t, conf, room)
-	//}) {
-	//	t.FailNow()
-	//}
+	if !t.Run("TrackComposite", func(t *testing.T) {
+		testTrackComposite(t, conf, room)
+	}) {
+		t.FailNow()
+	}
+
+	if !t.Run("TrackFile", func(t *testing.T) {
+		testTrackFile(t, conf, room)
+	}) {
+		t.FailNow()
+	}
 
 	if !t.Run("TrackWebsocket", func(t *testing.T) {
 		testTrackWebsocket(t, conf, room)
