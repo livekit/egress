@@ -86,5 +86,8 @@ var (
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,
 		},
+		OutputTypeRaw: {
+			MimeTypeOpus: true,
+		},
 	}
 )
