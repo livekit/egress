@@ -24,14 +24,12 @@ type Params struct {
 	VideoParams
 
 	SkipPipeline bool
-	IsStream     bool
+	EgressType
 	OutputType
+
+	MutedChan chan bool
 	StreamParams
 	FileParams
-
-	// ws egress
-	WebsocketUrl string
-	MutedChan    chan bool
 }
 
 type SourceParams struct {
@@ -73,8 +71,9 @@ type VideoParams struct {
 }
 
 type StreamParams struct {
-	StreamUrls []string
-	StreamInfo map[string]*livekit.StreamInfo
+	WebsocketUrl string
+	StreamUrls   []string
+	StreamInfo   map[string]*livekit.StreamInfo
 }
 
 type FileParams struct {
@@ -144,7 +143,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			p.updateOutputType(o.File.FileType)
 			err = p.updateFileParams(conf, o.File.Filepath, o.File.Output)
 		case *livekit.RoomCompositeEgressRequest_Stream:
-			err = p.updateStreamParams(o.Stream.Protocol, o.Stream.Urls)
+			err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls)
 		default:
 			err = errors.ErrInvalidInput("output")
 		}
@@ -183,7 +182,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			}
 			err = p.updateFileParams(conf, o.File.Filepath, o.File.Output)
 		case *livekit.TrackCompositeEgressRequest_Stream:
-			err = p.updateStreamParams(o.Stream.Protocol, o.Stream.Urls)
+			err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls)
 		default:
 			err = errors.ErrInvalidInput("output")
 		}
@@ -207,10 +206,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		case *livekit.TrackEgressRequest_File:
 			err = p.updateFileParams(conf, o.File.Filepath, o.File.Output)
 		case *livekit.TrackEgressRequest_WebsocketUrl:
-			p.WebsocketUrl = o.WebsocketUrl
-			p.MutedChan = make(chan bool, 1)
-			p.OutputType = OutputTypeRaw
-			err = p.updateFileParams(conf, "", o.WebsocketUrl)
+			err = p.updateStreamParams(OutputTypeRaw, []string{o.WebsocketUrl})
 		default:
 			err = errors.ErrInvalidInput("output")
 		}
@@ -320,6 +316,7 @@ func (p *Params) updateOutputType(fileType livekit.EncodedFileType) {
 }
 
 func (p *Params) updateFileParams(conf *config.Config, filepath string, output interface{}) error {
+	p.EgressType = EgressTypeFile
 	p.Filepath = filepath
 	p.FileInfo = &livekit.FileInfo{}
 	p.Info.Result = &livekit.EgressInfo_File{File: p.FileInfo}
@@ -347,16 +344,24 @@ func (p *Params) updateFileParams(conf *config.Config, filepath string, output i
 	return nil
 }
 
-func (p *Params) updateStreamParams(protocol livekit.StreamProtocol, urls []string) error {
-	p.IsStream = true
-	p.OutputType = OutputTypeRTMP
-	p.StreamUrls = urls
+func (p *Params) updateStreamParams(outputType OutputType, urls []string) error {
+	p.OutputType = outputType
+
+	switch p.OutputType {
+	case OutputTypeRTMP:
+		p.EgressType = EgressTypeStream
+		p.StreamUrls = urls
+
+	case OutputTypeRaw:
+		p.EgressType = EgressTypeWebsocket
+		p.WebsocketUrl = urls[0]
+	}
 
 	p.StreamInfo = make(map[string]*livekit.StreamInfo)
 	var streamInfoList []*livekit.StreamInfo
 	for _, url := range urls {
-		if !strings.HasPrefix(url, "rtmp://") && !strings.HasPrefix(url, "rtmps://") {
-			return errors.ErrInvalidUrl(url, protocol)
+		if err := p.VerifyUrl(url); err != nil {
+			return err
 		}
 
 		info := &livekit.StreamInfo{Url: url}
@@ -467,5 +472,24 @@ func (p *Params) updateFilename(identifier string) error {
 	p.Logger.Debugw("writing to file", "filename", filename)
 	p.Filename = filename
 	p.FileInfo.Filename = filename
+	return nil
+}
+
+func (p *Params) VerifyUrl(url string) error {
+	var protocol, prefix string
+
+	switch p.OutputType {
+	case OutputTypeRTMP:
+		protocol = "rtmp"
+		prefix = "rtmp"
+	case OutputTypeRaw:
+		protocol = "websocket"
+		prefix = "ws"
+	}
+
+	if !strings.HasPrefix(url, prefix+"://") && !strings.HasPrefix(url, prefix+"s://") {
+		return errors.ErrInvalidUrl(url, protocol)
+	}
+
 	return nil
 }

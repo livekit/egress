@@ -38,20 +38,17 @@ func (b *Bin) Link() error {
 			return err
 		}
 
-		// Skip linking mux if it's nil (possibly WS track egress)
-		if b.mux == nil {
-			return nil
-		}
+		if b.mux != nil {
+			var muxAudioPad *gst.Pad
+			if b.isStream {
+				muxAudioPad = b.mux.GetRequestPad("audio")
+			} else {
+				muxAudioPad = b.mux.GetRequestPad("audio_%u")
+			}
 
-		var muxAudioPad *gst.Pad
-		if b.isStream {
-			muxAudioPad = b.mux.GetRequestPad("audio")
-		} else {
-			muxAudioPad = b.mux.GetRequestPad("audio_%u")
-		}
-
-		if linkReturn := b.audioQueue.GetStaticPad("src").Link(muxAudioPad); linkReturn != gst.PadLinkOK {
-			return errors.ErrPadLinkFailed("audio mux", linkReturn.String())
+			if linkReturn := b.audioQueue.GetStaticPad("src").Link(muxAudioPad); linkReturn != gst.PadLinkOK {
+				return errors.ErrPadLinkFailed("audio mux", linkReturn.String())
+			}
 		}
 	}
 
@@ -61,15 +58,17 @@ func (b *Bin) Link() error {
 			return err
 		}
 
-		var muxVideoPad *gst.Pad
-		if b.isStream {
-			muxVideoPad = b.mux.GetRequestPad("video")
-		} else {
-			muxVideoPad = b.mux.GetRequestPad("video_%u")
-		}
+		if b.mux != nil {
+			var muxVideoPad *gst.Pad
+			if b.isStream {
+				muxVideoPad = b.mux.GetRequestPad("video")
+			} else {
+				muxVideoPad = b.mux.GetRequestPad("video_%u")
+			}
 
-		if linkReturn := b.videoQueue.GetStaticPad("src").Link(muxVideoPad); linkReturn != gst.PadLinkOK {
-			return errors.ErrPadLinkFailed("video mux", linkReturn.String())
+			if linkReturn := b.videoQueue.GetStaticPad("src").Link(muxVideoPad); linkReturn != gst.PadLinkOK {
+				return errors.ErrPadLinkFailed("video mux", linkReturn.String())
+			}
 		}
 	}
 

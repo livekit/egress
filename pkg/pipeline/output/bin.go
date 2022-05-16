@@ -29,17 +29,8 @@ type streamSink struct {
 func Build(p *params.Params) (*Bin, error) {
 	if p.IsStream {
 		return buildStreamOutputBin(p)
-	} else if p.WebsocketUrl != "" {
-		// Video WS streaming is not supported for now
-		if p.VideoEnabled {
-			return nil, errors.ErrNotSupported("WS video stream")
-		}
-		// Use raw mime type for WS stream to avoid re-encoding
-		wsWriter, err := newWebSocketSink(p.WebsocketUrl, params.MimeTypeRawAudio, p.Logger, p.MutedChan)
-		if err != nil {
-			return nil, err
-		}
-		return buildAppSinkOutputBin(p, wsWriter)
+	} else if p.IsWebsocket {
+		return buildAppSinkOutputBin(p)
 	} else {
 		return buildFileOutputBin(p)
 	}

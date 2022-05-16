@@ -3,9 +3,6 @@ package errors
 import (
 	"errors"
 	"fmt"
-	"strings"
-
-	"github.com/livekit/protocol/livekit"
 )
 
 var (
@@ -45,8 +42,8 @@ func ErrInvalidInput(field string) error {
 	return fmt.Errorf("request missing required field: %s", field)
 }
 
-func ErrInvalidUrl(url string, protocol livekit.StreamProtocol) error {
-	return fmt.Errorf("invalid %s url: %s", strings.ToLower(protocol.String()), url)
+func ErrInvalidUrl(url, protocol string) error {
+	return fmt.Errorf("invalid %s url: %s", protocol, url)
 }
 
 func ErrTrackNotFound(trackID string) error {

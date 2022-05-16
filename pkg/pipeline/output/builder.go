@@ -2,7 +2,6 @@ package output
 
 import (
 	"fmt"
-	"io"
 
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
@@ -12,7 +11,12 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func buildAppSinkOutputBin(p *params.Params, out io.WriteCloser) (*Bin, error) {
+func buildAppSinkOutputBin(p *params.Params) (*Bin, error) {
+	writer, err := newWebSocketSink(p.WebsocketUrl, params.MimeTypeRaw, p.Logger, p.MutedChan)
+	if err != nil {
+		return nil, err
+	}
+
 	sink, err := app.NewAppSink()
 	if err != nil {
 		return nil, err
@@ -21,7 +25,7 @@ func buildAppSinkOutputBin(p *params.Params, out io.WriteCloser) (*Bin, error) {
 	sink.SetCallbacks(&app.SinkCallbacks{
 		EOSFunc: func(appSink *app.Sink) {
 			// Close writer on EOS
-			if err = out.Close(); err != nil {
+			if err = writer.Close(); err != nil {
 				p.Logger.Errorw("cannot close WS sink", err)
 			}
 		},
@@ -42,7 +46,7 @@ func buildAppSinkOutputBin(p *params.Params, out io.WriteCloser) (*Bin, error) {
 			samples := buffer.Map(gst.MapRead).Bytes()
 
 			// From the extracted bytes, send to writer
-			_, err = out.Write(samples)
+			_, err = writer.Write(samples)
 			if err != nil {
 				p.Logger.Errorw("cannot read AppSink samples", err)
 				return gst.FlowError
