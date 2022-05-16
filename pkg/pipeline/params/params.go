@@ -355,6 +355,7 @@ func (p *Params) updateStreamParams(outputType OutputType, urls []string) error 
 	case OutputTypeRaw:
 		p.EgressType = EgressTypeWebsocket
 		p.WebsocketUrl = urls[0]
+		p.MutedChan = make(chan bool, 1)
 	}
 
 	p.StreamInfo = make(map[string]*livekit.StreamInfo)
