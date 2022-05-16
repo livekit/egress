@@ -92,6 +92,7 @@ func newAppWriter(
 		w.sb = w.newSampleBuffer()
 		w.maxLate = time.Second * 2
 		w.vp8Munger = sfu.NewVP8Munger(w.logger)
+
 	case params.MimeTypeH264:
 		w.newSampleBuffer = func() *samplebuilder.SampleBuilder {
 			return samplebuilder.New(
@@ -147,7 +148,7 @@ func (w *appWriter) start() {
 		}
 
 		// read next packet
-		w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
+		_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
 		pkt, _, err := w.track.ReadRTP()
 		if err != nil {
 			if w.muted.Load() {
@@ -218,8 +219,8 @@ func (w *appWriter) pushBlankFrames() error {
 	ticker := time.NewTicker(time.Microsecond * 41708)
 	defer ticker.Stop()
 
-	written := false
-	w.pushPackets(true)
+	// written := false
+	_ = w.pushPackets(true)
 
 	// TODO: sample buffer has bug that it may pop old packet after pushPackets(true)
 	// recreated it to work now, will remove this when bug fixed
@@ -231,32 +232,29 @@ func (w *appWriter) pushBlankFrames() error {
 			return nil
 		}
 
-		if !written {
-			written = true
-			pkt, err := getBlankFrame(w.track, w.codec, w.lastSN, w.lastTS)
-			if err != nil {
-				return err
-			}
+		// if !written {
+		// 	written = true
+		pkt, err := getBlankFrame(w.track, w.codec, w.lastSN, w.lastTS)
+		if err != nil {
+			return err
+		}
 
-			if len(pkt.Payload) == 0 {
-				continue // no payload, skip
-			}
-			if w.codec == params.MimeTypeVP8 {
-				if err := w.getVP8BlankFrame(pkt); err != nil {
-					w.logger.Errorw("could not get blank VP8 frame", err)
-					return err
-				}
-			}
-
-			w.snOffset++
-			w.lastSN = pkt.SequenceNumber
-			w.lastTS = pkt.Timestamp
-
-			err = w.push([]*rtp.Packet{pkt}, true)
-			if err != nil {
+		if w.codec == params.MimeTypeVP8 {
+			if err := w.getVP8BlankFrame(pkt); err != nil {
+				w.logger.Errorw("could not get blank VP8 frame", err)
 				return err
 			}
 		}
+
+		w.snOffset++
+		w.lastSN = pkt.SequenceNumber
+		w.lastTS = pkt.Timestamp
+
+		err = w.push([]*rtp.Packet{pkt}, true)
+		if err != nil {
+			return err
+		}
+		// }
 	}
 }
 
@@ -307,37 +305,33 @@ func (w *appWriter) translatePacket(pkt *rtp.Packet) {
 			},
 		}
 		ep.Temporal = 0
-		if w.codec == params.MimeTypeVP8 {
-			vp8Packet := buffer.VP8{}
-			if err := vp8Packet.Unmarshal(pkt.Payload); err != nil {
-				w.logger.Warnw("could not unmarshal VP8 packet", err)
+
+		vp8Packet := buffer.VP8{}
+		if err := vp8Packet.Unmarshal(pkt.Payload); err != nil {
+			w.logger.Warnw("could not unmarshal VP8 packet", err)
+			return
+		}
+		ep.Payload = vp8Packet
+		ep.KeyFrame = vp8Packet.IsKeyFrame
+		ep.Temporal = int32(vp8Packet.TID)
+
+		if !w.firstPktPushed {
+			w.firstPktPushed = true
+			w.vp8Munger.SetLast(ep)
+		} else {
+			tpVP8, err := w.vp8Munger.UpdateAndGet(ep, sfu.SequenceNumberOrderingContiguous, ep.Temporal)
+			if err != nil {
+				w.logger.Warnw("could not update VP8 packet", err)
 				return
 			}
-			ep.Payload = vp8Packet
-			ep.KeyFrame = vp8Packet.IsKeyFrame
-			if ep.KeyFrame {
-				w.logger.Debugw("got key frame")
-			}
-			ep.Temporal = int32(vp8Packet.TID)
 
-			if !w.firstPktPushed {
-				w.firstPktPushed = true
-				w.vp8Munger.SetLast(ep)
-			} else {
-				tpVP8, err := w.vp8Munger.UpdateAndGet(ep, sfu.SequenceNumberOrderingContiguous, ep.Temporal)
-				if err != nil {
-					w.logger.Warnw("could not update VP8 packet", err)
-					return
-				}
-
-				payload := pkt.Payload
-				payload, err = w.translateVP8PacketTo(ep.Packet, &vp8Packet, tpVP8.Header, &payload)
-				if err != nil {
-					w.logger.Warnw("could not translate VP8 packet", err)
-					return
-				}
-				pkt.Payload = payload
+			payload := pkt.Payload
+			payload, err = w.translateVP8PacketTo(ep.Packet, &vp8Packet, tpVP8.Header, &payload)
+			if err != nil {
+				w.logger.Warnw("could not translate VP8 packet", err)
+				return
 			}
+			pkt.Payload = payload
 		}
 
 	default:

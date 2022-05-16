@@ -24,32 +24,32 @@ func testTrackComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 			fileType: livekit.EncodedFileType_MP4,
 			filename: fmt.Sprintf("tc-vp8-%v.mp4", time.Now().Unix()),
 		},
-		{
-			name:      "tc-opus-ogg",
-			audioOnly: true,
-			fileType:  livekit.EncodedFileType_OGG,
-			filename:  fmt.Sprintf("tc-opus-%v.ogg", time.Now().Unix()),
-		},
+		// {
+		// 	name:      "tc-opus-ogg",
+		// 	audioOnly: true,
+		// 	fileType:  livekit.EncodedFileType_OGG,
+		// 	filename:  fmt.Sprintf("tc-opus-%v.ogg", time.Now().Unix()),
+		// },
 	})
 
-	testTrackCompositeFile(t, conf, room, params.MimeTypeOpus, params.MimeTypeH264, []*testCase{
-		{
-			name:     "tc-h264-mp4",
-			fileType: livekit.EncodedFileType_MP4,
-			filename: fmt.Sprintf("tc-h264-%v.mp4", time.Now().Unix()),
-		},
-		{
-			name:      "tc-h264-only-mp4",
-			videoOnly: true,
-			fileType:  livekit.EncodedFileType_MP4,
-			filename:  fmt.Sprintf("tc-h264-only-%v.mp4", time.Now().Unix()),
-		},
-	})
+	// testTrackCompositeFile(t, conf, room, params.MimeTypeOpus, params.MimeTypeH264, []*testCase{
+	// 	{
+	// 		name:     "tc-h264-mp4",
+	// 		fileType: livekit.EncodedFileType_MP4,
+	// 		filename: fmt.Sprintf("tc-h264-%v.mp4", time.Now().Unix()),
+	// 	},
+	// 	{
+	// 		name:      "tc-h264-only-mp4",
+	// 		videoOnly: true,
+	// 		fileType:  livekit.EncodedFileType_MP4,
+	// 		filename:  fmt.Sprintf("tc-h264-only-%v.mp4", time.Now().Unix()),
+	// 	},
+	// })
 }
 
 func testTrackCompositeFile(t *testing.T, conf *testConfig, room *lksdk.Room, audioCodec, videoCodec params.MimeType, cases []*testCase) {
 	p := &sdkParams{
-		audioTrackID: publishSampleToRoom(t, room, audioCodec, conf.WithMuting),
+		audioTrackID: publishSampleToRoom(t, room, audioCodec, false),
 		videoTrackID: publishSampleToRoom(t, room, videoCodec, conf.WithMuting),
 		roomName:     room.Name,
 	}

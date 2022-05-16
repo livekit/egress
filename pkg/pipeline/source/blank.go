@@ -41,7 +41,6 @@ func getBlankFrame(
 
 	switch codec {
 	case params.MimeTypeVP8:
-		// TODO: this is missing vp8 header
 		pkt.Payload = make([]byte, 1+len(VP8KeyFrame8x8))
 		pkt.Payload[0] = 0x10
 		copy(pkt.Payload[1:], VP8KeyFrame8x8)

@@ -57,11 +57,7 @@ func FromRequest(conf *config.Config, request *livekit.StartEgressRequest) (*Pip
 
 func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 	if !initialized {
-		args := []string{"gst-launch-1.0"}
-		if conf.LogLevel == "debug" {
-			args = append(args, []string{"--gst-debug-level=2", "-v"}...)
-		}
-		gst.Init(&args)
+		gst.Init(nil)
 		initialized = true
 	}
 
