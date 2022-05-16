@@ -100,7 +100,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 	}
 	s.room.Callback.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer wg.Done()
-		s.logger.Debugw("track subscribed", "trackID", track.ID())
+		s.logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
 
 		var codec params.MimeType
 		var appSrcName string
@@ -181,7 +181,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 			s.videoSrc = app.SrcFromElement(src)
 			s.videoPlaying = make(chan struct{})
 			s.videoCodec = track.Codec()
-			s.videoWriter, err = newAppWriter(track, codec, rp, s.logger, s.videoSrc, s.cs, s.videoPlaying)
+			s.videoWriter, err = newAppWriter(track, params.MimeType(strings.ToLower(track.Codec().MimeType)), rp, s.logger, s.videoSrc, s.cs, s.videoPlaying)
 			if err != nil {
 				s.logger.Errorw("could not create app writer", err)
 				onSubscribeErr = err

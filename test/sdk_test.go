@@ -50,7 +50,7 @@ func testTrackComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 
 func testTrackCompositeFile(t *testing.T, conf *testConfig, room *lksdk.Room, audioCodec, videoCodec params.MimeType, cases []*testCase) {
 	p := &sdkParams{
-		audioTrackID: publishSampleToRoom(t, room, audioCodec, false),
+		audioTrackID: publishSampleToRoom(t, room, audioCodec, conf.WithMuting),
 		videoTrackID: publishSampleToRoom(t, room, videoCodec, conf.WithMuting),
 		roomName:     room.Name,
 	}
