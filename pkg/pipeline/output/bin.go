@@ -30,8 +30,12 @@ func Build(p *params.Params) (*Bin, error) {
 	if p.IsStream {
 		return buildStreamOutputBin(p)
 	} else if p.WebsocketUrl != "" {
-		// Hardcode audio Mime Type as only Opus is supported for WS egress for now
-		wsWriter, err := newWebSocketSink(p.WebsocketUrl, params.MimeTypeOpus, p.Logger, p.MutedChan)
+		// Video WS streaming is not supported for now
+		if p.VideoEnabled {
+			return nil, errors.ErrNotSupported("WS video stream")
+		}
+		// Use raw mime type for WS stream to avoid re-encoding
+		wsWriter, err := newWebSocketSink(p.WebsocketUrl, params.MimeTypeRawAudio, p.Logger, p.MutedChan)
 		if err != nil {
 			return nil, err
 		}

@@ -7,10 +7,11 @@ type FileExtension string
 
 const (
 	// input types
-	MimeTypeAAC  MimeType = "audio/aac"
-	MimeTypeOpus MimeType = "audio/opus"
-	MimeTypeH264 MimeType = "video/h264"
-	MimeTypeVP8  MimeType = "video/vp8"
+	MimeTypeAAC      MimeType = "audio/aac"
+	MimeTypeOpus     MimeType = "audio/opus"
+	MimeTypeH264     MimeType = "video/h264"
+	MimeTypeVP8      MimeType = "video/vp8"
+	MimeTypeRawAudio MimeType = "audio/x-raw"
 
 	// video profiles
 	ProfileBaseline Profile = "baseline"
@@ -87,7 +88,8 @@ var (
 			MimeTypeH264: true,
 		},
 		OutputTypeRaw: {
-			MimeTypeOpus: true,
+			MimeTypeOpus:     true,
+			MimeTypeRawAudio: true,
 		},
 	}
 )

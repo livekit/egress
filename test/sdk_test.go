@@ -277,6 +277,8 @@ func (s *websocketTestServer) handleWebsocket(w http.ResponseWriter, r *http.Req
 		s.file, err = os.Create(s.path)
 	case strings.EqualFold(ct, "audio/opus"):
 		s.file, err = os.Create(s.path)
+	case strings.EqualFold(ct, "audio/x-raw"):
+		s.file, err = os.Create(s.path)
 	default:
 		log.Fatal("Unsupported codec: ", ct)
 		return
