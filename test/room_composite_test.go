@@ -14,12 +14,22 @@ import (
 	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
+	lksdk "github.com/livekit/server-sdk-go"
 
 	"github.com/livekit/livekit-egress/pkg/pipeline"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
 
-func testRoomCompositeFile(t *testing.T, conf *config.Config) {
+func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
+	var p *sdkParams
+	if room != nil {
+		p = &sdkParams{
+			roomName:     room.Name,
+			audioTrackID: publishSampleToRoom(t, room, params.MimeTypeOpus, conf.WithMuting),
+			videoTrackID: publishSampleToRoom(t, room, params.MimeTypeVP8, conf.WithMuting),
+		}
+	}
+
 	for _, test := range []*testCase{
 		{
 			name:     "h264-high-mp4",
@@ -50,7 +60,7 @@ func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 		},
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
-			runRoomCompositeFileTest(t, conf, test)
+			runRoomCompositeFileTest(t, conf.Config, test)
 		}) {
 			t.FailNow()
 		}
@@ -59,10 +69,10 @@ func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 	// TODO: get rid of this error, probably by calling Ref() on something
 	//  (test.test:9038): GStreamer-CRITICAL **: 23:46:45.257:
 	//  gst_mini_object_unref: assertion 'GST_MINI_OBJECT_REFCOUNT_VALUE (mini_object) > 0' failed
-	t.Run("room-opus-ogg-simultaneous", func(t *testing.T) {
+	if !t.Run("room-opus-ogg-simultaneous", func(t *testing.T) {
 		finished := make(chan struct{})
 		go func() {
-			runRoomCompositeFileTest(t, conf, &testCase{
+			runRoomCompositeFileTest(t, conf.Config, &testCase{
 				inputUrl:         audioTestInput,
 				forceCustomInput: true,
 				fileType:         livekit.EncodedFileType_OGG,
@@ -75,7 +85,7 @@ func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 			close(finished)
 		}()
 
-		runRoomCompositeFileTest(t, conf, &testCase{
+		runRoomCompositeFileTest(t, conf.Config, &testCase{
 			inputUrl:         audioTestInput2,
 			forceCustomInput: true,
 			fileType:         livekit.EncodedFileType_OGG,
@@ -87,7 +97,20 @@ func testRoomCompositeFile(t *testing.T, conf *config.Config) {
 		})
 
 		<-finished
-	})
+	}) {
+		t.FailNow()
+	}
+
+	if !t.Run("room-rtmp", func(t *testing.T) {
+		testRoomCompositeStream(t, conf.Config)
+	}) {
+		t.FailNow()
+	}
+
+	if p != nil {
+		require.NoError(t, room.LocalParticipant.UnpublishTrack(p.audioTrackID))
+		require.NoError(t, room.LocalParticipant.UnpublishTrack(p.videoTrackID))
+	}
 }
 
 func runRoomCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) {
