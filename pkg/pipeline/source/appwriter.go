@@ -153,15 +153,14 @@ func (w *appWriter) start() {
 		if err != nil {
 			if w.muted.Load() {
 				// switch to pushing blank frames until unmuted
-				err = w.pushBlankFrames()
+				err = w.pushBlankFrame()
 				if err == nil {
 					continue
 				}
 			}
 
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				w.logger.Debugw("read timeout")
-				// continue if timeout
+				// continue if read timeout
 				continue
 			}
 
@@ -215,47 +214,28 @@ func (w *appWriter) pushPackets(force bool) error {
 	}
 }
 
-func (w *appWriter) pushBlankFrames() error {
-	ticker := time.NewTicker(time.Microsecond * 41708)
-	defer ticker.Stop()
-
-	// written := false
+func (w *appWriter) pushBlankFrame() error {
 	_ = w.pushPackets(true)
 
 	// TODO: sample buffer has bug that it may pop old packet after pushPackets(true)
 	// recreated it to work now, will remove this when bug fixed
 	w.sb = w.newSampleBuffer()
 
-	for {
-		<-ticker.C
-		if !w.muted.Load() || w.isDraining() {
-			return nil
-		}
-
-		// if !written {
-		// 	written = true
-		pkt, err := getBlankFrame(w.track, w.codec, w.lastSN, w.lastTS)
-		if err != nil {
-			return err
-		}
-
-		if w.codec == params.MimeTypeVP8 {
-			if err := w.getVP8BlankFrame(pkt); err != nil {
-				w.logger.Errorw("could not get blank VP8 frame", err)
-				return err
-			}
-		}
-
-		w.snOffset++
-		w.lastSN = pkt.SequenceNumber
-		w.lastTS = pkt.Timestamp
-
-		err = w.push([]*rtp.Packet{pkt}, true)
-		if err != nil {
-			return err
-		}
-		// }
+	if !w.muted.Load() || w.isDraining() {
+		return nil
 	}
+
+	pkt, err := w.getBlankFrame()
+	if err != nil {
+		return err
+	}
+
+	err = w.push([]*rtp.Packet{pkt}, true)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
@@ -353,25 +333,6 @@ func (w *appWriter) translateVP8PacketTo(pkt *rtp.Packet, incomingVP8 *buffer.VP
 
 	err := translatedVP8.MarshalTo(buf[:translatedVP8.HeaderSize])
 	return buf, err
-}
-
-func (w *appWriter) getVP8BlankFrame(pkt *rtp.Packet) error {
-	blankVP8 := w.vp8Munger.UpdateAndGetPadding(true)
-
-	// 1x1 key frame
-	// Used even when closing out a previous frame. Looks like receivers
-	// do not care about content (it will probably end up being an undecodable
-	// frame, but that should be okay as there are key frames following)
-	payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame8x8))
-	vp8Header := payload[:blankVP8.HeaderSize]
-	err := blankVP8.MarshalTo(vp8Header)
-	if err != nil {
-		return err
-	}
-
-	copy(payload[blankVP8.HeaderSize:], VP8KeyFrame8x8)
-	pkt.Payload = payload
-	return nil
 }
 
 func (w *appWriter) isPlaying() bool {

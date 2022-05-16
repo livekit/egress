@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 
 	"github.com/pion/rtp"
-	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 )
@@ -19,31 +18,37 @@ var (
 	H264KeyFrame2x2 = [][]byte{H264KeyFrame2x2SPS, H264KeyFrame2x2PPS, H264KeyFrame2x2IDR}
 )
 
-func getBlankFrame(
-	track *webrtc.TrackRemote,
-	codec params.MimeType,
-	lastSequenceNumber uint16,
-	lastTimestamp uint32,
-) (*rtp.Packet, error) {
-
+func (w *appWriter) getBlankFrame() (*rtp.Packet, error) {
 	pkt := &rtp.Packet{
 		Header: rtp.Header{
 			Version:        2,
 			Padding:        false,
 			Marker:         true,
-			PayloadType:    uint8(track.PayloadType()),
-			SequenceNumber: lastSequenceNumber + uint16(1),
-			Timestamp:      lastTimestamp + (track.Codec().ClockRate / (24000 / 1001)),
-			SSRC:           uint32(track.SSRC()),
+			PayloadType:    uint8(w.track.PayloadType()),
+			SequenceNumber: w.lastSN + uint16(1),
+			Timestamp:      w.lastTS + (w.track.Codec().ClockRate / (24000 / 1001)),
+			SSRC:           uint32(w.track.SSRC()),
 			CSRC:           []uint32{},
 		},
 	}
 
-	switch codec {
+	switch w.codec {
 	case params.MimeTypeVP8:
-		pkt.Payload = make([]byte, 1+len(VP8KeyFrame8x8))
-		pkt.Payload[0] = 0x10
-		copy(pkt.Payload[1:], VP8KeyFrame8x8)
+		blankVP8 := w.vp8Munger.UpdateAndGetPadding(true)
+
+		// 1x1 key frame
+		// Used even when closing out a previous frame. Looks like receivers
+		// do not care about content (it will probably end up being an undecodable
+		// frame, but that should be okay as there are key frames following)
+		payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame8x8))
+		vp8Header := payload[:blankVP8.HeaderSize]
+		err := blankVP8.MarshalTo(vp8Header)
+		if err != nil {
+			return nil, err
+		}
+
+		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame8x8)
+		pkt.Payload = payload
 
 	case params.MimeTypeH264:
 		buf := make([]byte, 1462)
@@ -59,6 +64,10 @@ func getBlankFrame(
 
 		pkt.Payload = buf[:offset]
 	}
+
+	w.snOffset++
+	w.lastSN = pkt.SequenceNumber
+	w.lastTS = pkt.Timestamp
 
 	return pkt, nil
 }
