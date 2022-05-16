@@ -10,12 +10,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
-
-	"github.com/livekit/livekit-egress/pkg/config"
 )
 
 func testTrackComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
@@ -105,69 +104,4 @@ func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkPar
 	}
 
 	runFileTest(t, conf, test, req, filepath)
-}
-
-func testTrack(t *testing.T, conf *testConfig, room *lksdk.Room) {
-	for _, test := range []*testCase{
-		{
-			name:      "track-opus",
-			audioOnly: true,
-			codec:     params.MimeTypeOpus,
-			filename:  fmt.Sprintf("track-opus-%v.ogg", time.Now().Unix()),
-		},
-		{
-			name:      "track-vp8",
-			videoOnly: true,
-			codec:     params.MimeTypeVP8,
-			filename:  fmt.Sprintf("track-vp8-%v.ivf", time.Now().Unix()),
-		},
-		{
-			name:      "track-h264",
-			videoOnly: true,
-			codec:     params.MimeTypeH264,
-			filename:  fmt.Sprintf("track-h264-%v.mp4", time.Now().Unix()),
-		},
-	} {
-		if !t.Run(test.name, func(t *testing.T) {
-			runTrackFileTest(t, conf, room, test)
-		}) {
-			t.FailNow()
-		}
-	}
-}
-
-func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *testCase) {
-	p := &sdkParams{roomName: room.Name}
-	trackID := publishSampleToRoom(t, room, test.codec, conf.WithMuting)
-	if test.audioOnly {
-		p.audioTrackID = trackID
-	} else {
-		p.videoTrackID = trackID
-	}
-	time.Sleep(time.Second)
-
-	filepath := getFilePath(conf.Config, test.filename)
-	trackRequest := &livekit.TrackEgressRequest{
-		RoomName: room.Name,
-		TrackId:  trackID,
-		Output: &livekit.TrackEgressRequest_File{
-			File: &livekit.DirectFileOutput{
-				Filepath: filepath,
-			},
-		},
-	}
-
-	req := &livekit.StartEgressRequest{
-		EgressId:  utils.NewGuid(utils.EgressPrefix),
-		RequestId: utils.NewGuid(utils.RPCPrefix),
-		SentAt:    time.Now().UnixNano(),
-		Request: &livekit.StartEgressRequest_Track{
-			Track: trackRequest,
-		},
-	}
-
-	runFileTest(t, conf.Config, test, req, filepath)
-
-	require.NoError(t, room.LocalParticipant.UnpublishTrack(trackID))
-	time.Sleep(time.Second)
 }

@@ -13,7 +13,7 @@ import (
 func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 	b := &Bin{
 		bin:      gst.NewBin("input"),
-		isStream: p.IsStream,
+		isStream: p.EgressType == params.EgressTypeStream,
 	}
 
 	// source
@@ -45,7 +45,15 @@ func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 	}
 
 	// create ghost pad
-	ghostPad := gst.NewGhostPad("src", b.mux.GetStaticPad("src"))
+	var ghostPad *gst.GhostPad
+	if b.mux != nil {
+		ghostPad = gst.NewGhostPad("src", b.mux.GetStaticPad("src"))
+	} else if b.audioQueue != nil && !p.VideoEnabled {
+		ghostPad = gst.NewGhostPad("src", b.audioQueue.GetStaticPad("src"))
+	} else {
+		return nil, errors.ErrNotSupported("raw video output")
+	}
+
 	if !b.bin.AddPad(ghostPad.Pad) {
 		return nil, errors.ErrGhostPadFailed
 	}
@@ -66,6 +74,10 @@ func (b *Bin) buildSource(conf *config.Config, p *params.Params) error {
 func (b *Bin) buildMux(p *params.Params) error {
 	var err error
 	switch p.OutputType {
+	case params.OutputTypeRaw:
+		// when output is raw, don't build mux
+		return nil
+
 	case params.OutputTypeOGG:
 		b.mux, err = gst.NewElement("oggmux")
 

@@ -2,6 +2,7 @@ package params
 
 type MimeType string
 type Profile string
+type EgressType string
 type OutputType string
 type FileExtension string
 
@@ -9,6 +10,7 @@ const (
 	// input types
 	MimeTypeAAC  MimeType = "audio/aac"
 	MimeTypeOpus MimeType = "audio/opus"
+	MimeTypeRaw  MimeType = "audio/x-raw"
 	MimeTypeH264 MimeType = "video/h264"
 	MimeTypeVP8  MimeType = "video/vp8"
 
@@ -17,8 +19,14 @@ const (
 	ProfileMain     Profile = "main"
 	ProfileHigh     Profile = "high"
 
+	// egress types
+	EgressTypeStream    EgressType = "stream"
+	EgressTypeWebsocket EgressType = "websocket"
+	EgressTypeFile      EgressType = "file"
+
 	// output types
 	OutputTypeOGG  OutputType = "audio/ogg"
+	OutputTypeRaw  OutputType = "audio/x-raw"
 	OutputTypeMP4  OutputType = "video/mp4"
 	OutputTypeTS   OutputType = "video/mp2t"
 	OutputTypeIVF  OutputType = "video/x-ivf"
@@ -31,6 +39,7 @@ const (
 	FileExtensionTS   = ".ts"
 	FileExtensionIVF  = ".ivf"
 	FileExtensionWebM = ".webm"
+	FileExtensionRaw  = ".raw"
 )
 
 var (
@@ -56,6 +65,7 @@ var (
 		OutputTypeTS:   FileExtensionTS,
 		OutputTypeIVF:  FileExtensionIVF,
 		OutputTypeWebM: FileExtensionWebM,
+		OutputTypeRaw:  FileExtensionRaw,
 	}
 
 	codecCompatibility = map[OutputType]map[MimeType]bool{
@@ -83,6 +93,9 @@ var (
 		OutputTypeRTMP: {
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,
+		},
+		OutputTypeRaw: {
+			MimeTypeRaw: true,
 		},
 	}
 )

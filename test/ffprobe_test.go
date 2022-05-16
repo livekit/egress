@@ -48,15 +48,25 @@ type FFProbeInfo struct {
 }
 
 func ffprobe(input string) (*FFProbeInfo, error) {
-	cmd := exec.Command("ffprobe",
+	args := []string{
 		"-v", "quiet",
 		"-hide_banner",
 		"-show_format",
 		"-show_streams",
 		"-print_format", "json",
-		input,
-	)
+	}
 
+	if strings.HasSuffix(input, ".raw") {
+		args = append(args,
+			"-f", "s16le",
+			"-ac", "2",
+			"-ar", "48k",
+		)
+	}
+
+	args = append(args, input)
+
+	cmd := exec.Command("ffprobe", args...)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -79,9 +89,12 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 	info, err := ffprobe(input)
 	require.NoError(t, err, "ffprobe error")
 
-	if p.OutputType == params.OutputTypeIVF {
+	switch p.OutputType {
+	case params.OutputTypeRaw:
+		require.Equal(t, 0, info.Format.ProbeScore)
+	case params.OutputTypeIVF:
 		require.Equal(t, 98, info.Format.ProbeScore)
-	} else {
+	default:
 		require.Equal(t, 100, info.Format.ProbeScore)
 	}
 
@@ -110,15 +123,20 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 			case params.MimeTypeAAC:
 				require.Equal(t, "aac", stream.CodecName)
 				require.Equal(t, fmt.Sprint(p.AudioFrequency), stream.SampleRate)
+				require.Equal(t, "stereo", stream.ChannelLayout)
 
 			case params.MimeTypeOpus:
 				require.Equal(t, "opus", stream.CodecName)
+				require.Equal(t, "48000", stream.SampleRate)
+				require.Equal(t, "stereo", stream.ChannelLayout)
+
+			case params.MimeTypeRaw:
+				require.Equal(t, "pcm_s16le", stream.CodecName)
 				require.Equal(t, "48000", stream.SampleRate)
 			}
 
 			// channels
 			require.Equal(t, 2, stream.Channels)
-			require.Equal(t, "stereo", stream.ChannelLayout)
 
 			// audio bitrate
 			if p.OutputType == params.OutputTypeMP4 {
