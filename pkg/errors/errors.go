@@ -57,3 +57,7 @@ func ErrPadLinkFailed(pad, status string) error {
 func ErrUploadFailed(location string, err error) string {
 	return fmt.Sprintf("%s upload failed: %v", location, err)
 }
+
+func ErrWebSocketClosed(addr string) error {
+	return errors.New(fmt.Sprintf("websocket already closed: %s", addr))
+}

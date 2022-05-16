@@ -199,7 +199,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		return nil, onSubscribeErr
 	}
 
-	if s.fileWriter == nil {
+	if s.fileWriter == nil && p.EgressType == params.EgressTypeFile {
 		if err := p.UpdateOutputTypeFromCodecs(fileIdentifier); err != nil {
 			s.logger.Errorw("could not update file params", err)
 			return nil, err

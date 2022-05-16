@@ -13,7 +13,7 @@ import (
 func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 	b := &Bin{
 		bin:      gst.NewBin("input"),
-		isStream: p.IsStream,
+		isStream: p.EgressType == params.EgressTypeStream,
 	}
 
 	// source

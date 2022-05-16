@@ -11,66 +11,6 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func buildAppSinkOutputBin(p *params.Params) (*Bin, error) {
-	writer, err := newWebSocketSink(p.WebsocketUrl, params.MimeTypeRaw, p.Logger, p.MutedChan)
-	if err != nil {
-		return nil, err
-	}
-
-	sink, err := app.NewAppSink()
-	if err != nil {
-		return nil, err
-	}
-
-	sink.SetCallbacks(&app.SinkCallbacks{
-		EOSFunc: func(appSink *app.Sink) {
-			// Close writer on EOS
-			if err = writer.Close(); err != nil {
-				p.Logger.Errorw("cannot close WS sink", err)
-			}
-		},
-		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
-			// Pull the sample that triggered this callback
-			sample := appSink.PullSample()
-			if sample == nil {
-				return gst.FlowEOS
-			}
-
-			// Retrieve the buffer from the sample
-			buffer := sample.GetBuffer()
-			if buffer == nil {
-				return gst.FlowError
-			}
-
-			// Map the buffer to READ operation
-			samples := buffer.Map(gst.MapRead).Bytes()
-
-			// From the extracted bytes, send to writer
-			_, err = writer.Write(samples)
-			if err != nil {
-				p.Logger.Errorw("cannot read AppSink samples", err)
-				return gst.FlowError
-			}
-			return gst.FlowOK
-		},
-	})
-
-	bin := gst.NewBin("output")
-	if err = bin.Add(sink.Element); err != nil {
-		return nil, err
-	}
-
-	ghostPad := gst.NewGhostPad("sink", sink.GetStaticPad("sink"))
-	if !bin.AddPad(ghostPad.Pad) {
-		return nil, errors.ErrGhostPadFailed
-	}
-
-	return &Bin{
-		bin:    bin,
-		logger: p.Logger,
-	}, nil
-}
-
 func buildFileOutputBin(p *params.Params) (*Bin, error) {
 	// create elements
 	sink, err := gst.NewElement("filesink")
@@ -166,12 +106,70 @@ func buildStreamSink(protocol params.OutputType, url string) (*streamSink, error
 		if err = sink.Set("location", url); err != nil {
 			return nil, err
 		}
-		// case livekit.StreamProtocol_SRT:
-		// 	return nil, errors.ErrNotSupported("srt output")
 	}
 
 	return &streamSink{
 		queue: queue,
 		sink:  sink,
+	}, nil
+}
+
+func buildWebsocketOutputBin(p *params.Params) (*Bin, error) {
+	writer, err := newWebSocketSink(p.WebsocketUrl, params.MimeTypeRaw, p.Logger, p.MutedChan)
+	if err != nil {
+		return nil, err
+	}
+
+	sink, err := app.NewAppSink()
+	if err != nil {
+		return nil, err
+	}
+
+	sink.SetCallbacks(&app.SinkCallbacks{
+		EOSFunc: func(appSink *app.Sink) {
+			// Close writer on EOS
+			if err = writer.Close(); err != nil {
+				p.Logger.Errorw("cannot close WS sink", err)
+			}
+		},
+		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
+			// Pull the sample that triggered this callback
+			sample := appSink.PullSample()
+			if sample == nil {
+				return gst.FlowEOS
+			}
+
+			// Retrieve the buffer from the sample
+			buffer := sample.GetBuffer()
+			if buffer == nil {
+				return gst.FlowError
+			}
+
+			// Map the buffer to READ operation
+			samples := buffer.Map(gst.MapRead).Bytes()
+
+			// From the extracted bytes, send to writer
+			_, err = writer.Write(samples)
+			if err != nil {
+				p.Logger.Errorw("cannot read AppSink samples", err)
+				return gst.FlowError
+			}
+			return gst.FlowOK
+		},
+	})
+
+	bin := gst.NewBin("output")
+	if err = bin.Add(sink.Element); err != nil {
+		return nil, err
+	}
+
+	ghostPad := gst.NewGhostPad("sink", sink.GetStaticPad("sink"))
+	if !bin.AddPad(ghostPad.Pad) {
+		return nil, errors.ErrGhostPadFailed
+	}
+
+	return &Bin{
+		bin:    bin,
+		logger: p.Logger,
 	}, nil
 }

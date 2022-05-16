@@ -2,13 +2,12 @@ package output
 
 import (
 	"encoding/json"
-	"fmt"
-	"github.com/livekit/livekit-egress/pkg/errors"
 	"io"
 	"net/http"
 
 	"github.com/gorilla/websocket"
 
+	"github.com/livekit/livekit-egress/pkg/errors"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/logger"
 )
@@ -20,10 +19,6 @@ const (
 	WebSocketClosed websocketState = "closed"
 )
 
-func ErrWebSocketClosed(addr string) error {
-	return errors.New(fmt.Sprintf("WS already closed: %s", addr))
-}
-
 type websocketSink struct {
 	conn   *websocket.Conn
 	logger logger.Logger
@@ -32,26 +27,48 @@ type websocketSink struct {
 	state  websocketState
 }
 
+func newWebSocketSink(url string, mimeType params.MimeType, logger logger.Logger, muted chan bool) (io.WriteCloser, error) {
+	// set Content-Type header
+	header := http.Header{}
+	header.Set("Content-Type", string(mimeType))
+
+	conn, _, err := websocket.DefaultDialer.Dial(url, header)
+	if err != nil {
+		return nil, err
+	}
+
+	s := &websocketSink{
+		conn:   conn,
+		logger: logger,
+		muted:  muted,
+		closed: make(chan struct{}),
+		state:  WebSocketActive,
+	}
+	go s.listenToMutedChan()
+
+	return s, nil
+}
+
 func (s *websocketSink) Write(p []byte) (n int, err error) {
 	if s.state == WebSocketClosed {
-		return 0, ErrWebSocketClosed(s.conn.RemoteAddr().String())
+		return 0, errors.ErrWebSocketClosed(s.conn.RemoteAddr().String())
 	}
+
 	return len(p), s.conn.WriteMessage(websocket.BinaryMessage, p)
 }
 
 func (s *websocketSink) Close() error {
-	// If already closed, return nil
 	if s.state == WebSocketClosed {
 		return nil
 	}
 
-	// Write close message for graceful disconnection
+	// write close message for graceful disconnection
 	err := s.conn.WriteMessage(websocket.CloseMessage, nil)
 	if err != nil {
 		s.logger.Errorw("Cannot write WS close message", err)
 	}
 
-	// Terminate connection and close the `closed` channel
+	// terminate connection and close the `closed` channel
 	err = s.conn.Close()
 	close(s.closed)
 	s.state = WebSocketClosed
@@ -59,18 +76,18 @@ func (s *websocketSink) Close() error {
 }
 
 type textMessagePayload struct {
-	muted bool `json:"muted"`
+	Muted bool `json:"muted"`
 }
 
 func (s *websocketSink) writeMutedMessage(muted bool) error {
 	// If the socket is closed, return error
 	if s.state == WebSocketClosed {
-		return ErrWebSocketClosed(s.conn.RemoteAddr().String())
+		return errors.ErrWebSocketClosed(s.conn.RemoteAddr().String())
 	}
 
 	// Marshal `muted` payload
 	data, err := json.Marshal(&textMessagePayload{
-		muted: muted,
+		Muted: muted,
 	})
 	if err != nil {
 		return err
@@ -98,26 +115,4 @@ func (s *websocketSink) listenToMutedChan() {
 			return
 		}
 	}
-}
-
-func newWebSocketSink(url string, mimeType params.MimeType, logger logger.Logger, muted chan bool) (io.WriteCloser, error) {
-	// Set Content-Type in header
-	header := http.Header{}
-	header.Set("Content-Type", string(mimeType))
-
-	conn, _, err := websocket.DefaultDialer.Dial(url, header)
-	if err != nil {
-		return nil, err
-	}
-
-	s := &websocketSink{
-		conn:   conn,
-		logger: logger,
-		muted:  muted,
-		closed: make(chan struct{}),
-		state:  WebSocketActive,
-	}
-	go s.listenToMutedChan()
-
-	return s, nil
 }

@@ -7,7 +7,7 @@ type OutputType string
 type FileExtension string
 
 const (
-	// codecs
+	// input types
 	MimeTypeAAC  MimeType = "audio/aac"
 	MimeTypeOpus MimeType = "audio/opus"
 	MimeTypeRaw  MimeType = "audio/x-raw"

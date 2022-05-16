@@ -5,7 +5,6 @@ package test
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"github.com/livekit/livekit-egress/pkg/pipeline"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
 
@@ -59,7 +59,7 @@ func testTrack(t *testing.T, conf *testConfig, room *lksdk.Room) {
 			audioOnly: true,
 			codec:     params.MimeTypeOpus,
 			output:    params.OutputTypeRaw,
-			filename:  fmt.Sprintf("track_ws-%v.raw", time.Now().Unix()),
+			filename:  fmt.Sprintf("track-ws-%v.raw", time.Now().Unix()),
 		},
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
@@ -142,7 +142,7 @@ func runTrackWebsocketTest(t *testing.T, conf *config.Config, room *lksdk.Room, 
 	res := rec.Run()
 
 	require.NoError(t, room.LocalParticipant.UnpublishTrack(trackID))
-	verify(t, filepath, p, res, false)
+	verify(t, filepath, p, res, true)
 }
 
 type websocketTestServer struct {
@@ -163,44 +163,28 @@ func newTestWebsocketServer(filepath string, output params.OutputType) *websocke
 
 func (s *websocketTestServer) handleWebsocket(w http.ResponseWriter, r *http.Request) {
 	var err error
-	var upgrader = websocket.Upgrader{}
 
-	// Determine file type
-	ct := r.Header.Get("Content-Type")
-
-	switch {
-	case strings.EqualFold(ct, "video/vp8"):
-		s.file, err = os.Create(s.path)
-	case strings.EqualFold(ct, "video/h264"):
-		s.file, err = os.Create(s.path)
-	case strings.EqualFold(ct, "audio/opus"):
-		s.file, err = os.Create(s.path)
-	case strings.EqualFold(ct, "audio/x-raw"):
-		s.file, err = os.Create(s.path)
-	default:
-		log.Fatal("Unsupported codec: ", ct)
-		return
-	}
+	s.file, err = os.Create(s.path)
 	if err != nil {
-		log.Fatalf("Error in creating file: %s\n", err)
+		logger.Errorw("could not create file", err)
 		return
 	}
 
-	// Try accepting the WS connection
+	// accept ws connection
+	upgrader := websocket.Upgrader{}
 	s.conn, err = upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Fatalf("Error in accepting WS connection: %s\n", err)
+		logger.Errorw("could not accept ws connection", err)
 		return
 	}
-	log.Println("Websocket connection received!")
 
 	go func() {
 		defer func() {
-			s.file.Close()
+			_ = s.file.Close()
 
-			// Close the connection only if it's not closed already
+			// close the connection only if it's not closed already
 			if !websocket.IsUnexpectedCloseError(err) {
-				s.conn.Close()
+				_ = s.conn.Close()
 			}
 		}()
 
@@ -212,20 +196,16 @@ func (s *websocketTestServer) handleWebsocket(w http.ResponseWriter, r *http.Req
 				mt, msg, err := s.conn.ReadMessage()
 				if err != nil {
 					if !websocket.IsUnexpectedCloseError(err) {
-						log.Printf("Error in reading message: %s\n", err)
+						logger.Errorw("unexpected ws close", err)
 					}
 					return
 				}
 
 				switch mt {
 				case websocket.BinaryMessage:
-					if s.file == nil {
-						log.Printf("File is not open")
-						return
-					}
 					_, err = s.file.Write(msg)
 					if err != nil {
-						log.Printf("Error while writing to file: %s\n", err)
+						logger.Errorw("could not write to file", err)
 						return
 					}
 				}
