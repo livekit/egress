@@ -12,9 +12,10 @@ require (
 	github.com/go-logr/logr v1.2.2
 	github.com/go-logr/zapr v1.2.3
 	github.com/go-redis/redis/v8 v8.11.4
+	github.com/gorilla/websocket v1.4.2
 	github.com/livekit/livekit-server v0.15.8-0.20220513092052-fa53da18e700
 	github.com/livekit/protocol v0.13.3-0.20220510071353-084233d23a03
-	github.com/livekit/server-sdk-go v0.9.4-0.20220509191455-dbb855119d3b
+	github.com/livekit/server-sdk-go v0.10.0
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.13
 	github.com/pion/webrtc/v3 v3.1.39
@@ -55,7 +56,6 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
-	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b // indirect

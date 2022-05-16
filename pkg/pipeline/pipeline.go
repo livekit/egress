@@ -197,8 +197,7 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	}
 
 	// upload file
-	if !p.IsStream {
-		// update file size
+	if p.EgressType == params.EgressTypeFile {
 		fileInfo, err := os.Stat(p.Filename)
 		if err == nil {
 			p.FileInfo.Size = fileInfo.Size()
@@ -223,6 +222,7 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 		default:
 			p.FileInfo.Location = p.Filepath
 		}
+
 		if err != nil {
 			p.Logger.Errorw("could not upload file", err, "location", location)
 			p.Info.Error = errors.ErrUploadFailed(location, err)
@@ -294,13 +294,14 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 }
 
 func (p *Pipeline) updateStartTime(startedAt int64) {
-	if p.IsStream {
+	switch p.EgressType {
+	case params.EgressTypeStream, params.EgressTypeWebsocket:
 		p.mu.Lock()
 		for _, streamInfo := range p.StreamInfo {
 			p.startedAt[streamInfo.Url] = startedAt
 		}
 		p.mu.Unlock()
-	} else {
+	case params.EgressTypeFile:
 		p.startedAt[fileKey] = startedAt
 	}
 
@@ -311,31 +312,31 @@ func (p *Pipeline) updateEndTime(endedAt int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.IsStream {
+	switch p.EgressType {
+	case params.EgressTypeStream, params.EgressTypeWebsocket:
 		for _, info := range p.StreamInfo {
 			startedAt := p.startedAt[info.Url]
 			info.Duration = endedAt - startedAt
 		}
-	} else {
+	case params.EgressTypeFile:
 		startedAt := p.startedAt[fileKey]
 		p.FileInfo.Duration = endedAt - startedAt
 	}
 }
 
 func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
-	if !p.IsStream {
+	if p.EgressType != params.EgressTypeStream {
 		return errors.ErrInvalidRPC
+	}
+
+	for _, url := range req.AddOutputUrls {
+		if err := p.VerifyUrl(url); err != nil {
+			return err
+		}
 	}
 
 	now := time.Now().UnixNano()
 	for _, url := range req.AddOutputUrls {
-		switch p.OutputType {
-		case params.OutputTypeRTMP:
-			if !strings.HasPrefix(url, "rtmp://") && !strings.HasPrefix(url, "rtmps://") {
-				return errors.ErrInvalidUrl(url, livekit.StreamProtocol_RTMP)
-			}
-		}
-
 		if err := p.out.AddSink(url); err != nil {
 			return err
 		}

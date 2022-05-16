@@ -51,6 +51,7 @@ type testCase struct {
 	options          *livekit.EncodingOptions
 	filename         string
 	codec            params.MimeType
+	output           params.OutputType
 }
 
 type sdkParams struct {

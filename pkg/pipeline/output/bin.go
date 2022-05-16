@@ -27,10 +27,15 @@ type streamSink struct {
 }
 
 func Build(p *params.Params) (*Bin, error) {
-	if p.IsStream {
-		return buildStreamOutputBin(p)
-	} else {
+	switch p.EgressType {
+	case params.EgressTypeFile:
 		return buildFileOutputBin(p)
+	case params.EgressTypeStream:
+		return buildStreamOutputBin(p)
+	case params.EgressTypeWebsocket:
+		return buildWebsocketOutputBin(p)
+	default:
+		return nil, errors.ErrInvalidInput("egress type")
 	}
 }
 
