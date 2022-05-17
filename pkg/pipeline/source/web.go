@@ -44,16 +44,15 @@ func init() {
 
 func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 	s := &WebSource{
-		startRecording: make(chan struct{}),
-		endRecording:   make(chan struct{}),
-		logger:         p.Logger,
+		endRecording: make(chan struct{}),
+		logger:       p.Logger,
 	}
 
 	var inputUrl string
 	if p.CustomInputURL != "" {
 		inputUrl = p.CustomInputURL
-		close(s.startRecording)
 	} else {
+		s.startRecording = make(chan struct{})
 		inputUrl = fmt.Sprintf(
 			"%s?layout=%s&url=%s&token=%s",
 			p.TemplateBase, p.Layout, url.QueryEscape(p.LKUrl), p.Token,

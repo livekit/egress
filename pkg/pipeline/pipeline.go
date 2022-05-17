@@ -174,6 +174,7 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 
 		// set state to playing (this does not start the pipeline)
 		if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
+			p.Logger.Errorw("failed to set pipeline state", err)
 			p.Info.Error = err.Error()
 			return p.Info
 		}

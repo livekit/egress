@@ -50,7 +50,7 @@ type SDKSource struct {
 	videoWriter  *appWriter
 	videoPlaying chan struct{}
 
-	// app source can't push data until pipeline is in playing state
+	mutedChan    chan bool
 	endRecording chan struct{}
 	closed       chan struct{}
 }
@@ -60,6 +60,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		room:         lksdk.CreateRoom(),
 		logger:       p.Logger,
 		cs:           &clockSync{},
+		mutedChan:    p.MutedChan,
 		endRecording: make(chan struct{}),
 		closed:       make(chan struct{}),
 	}
@@ -85,10 +86,15 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		wg.Add(1)
 	}
 
+	s.room.Callback.OnTrackMuted = s.onTrackMuted
+	s.room.Callback.OnTrackUnmuted = s.onTrackUnmuted
+	s.room.Callback.OnTrackUnpublished = s.onTrackUnpublished
+	s.room.Callback.OnDisconnected = s.onComplete
+
 	var onSubscribeErr error
 	s.room.Callback.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer wg.Done()
-		s.logger.Debugw("track subscribed", "trackID", track.ID())
+		s.logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
 
 		var codec params.MimeType
 		var appSrcName string
@@ -104,12 +110,13 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeVP8)):
+			codec = params.MimeTypeVP8
+			appSrcName = VideoAppSource
 			p.VideoEnabled = true
 
 			if p.TrackID != "" || !p.AudioEnabled {
 				// only one track, use ivf file writer
 				p.SkipPipeline = true
-				codec = params.MimeTypeVP8
 				if p.VideoCodec == "" {
 					p.VideoCodec = codec
 				}
@@ -127,11 +134,9 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 			}
 
 			// composite request, use gstreamer
-			codec = params.MimeTypeH264
 			if p.VideoCodec == "" {
-				p.VideoCodec = codec
+				p.VideoCodec = params.MimeTypeH264
 			}
-			appSrcName = VideoAppSource
 
 		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeH264)):
 			codec = params.MimeTypeH264
@@ -178,18 +183,6 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		}
 	}
 
-	// Track WS notification
-	s.room.Callback.OnTrackMuted = func(_ lksdk.TrackPublication, rp lksdk.Participant) {
-		if p.MutedChan != nil {
-			p.MutedChan <- true
-		}
-	}
-	s.room.Callback.OnTrackUnmuted = func(_ lksdk.TrackPublication, rp lksdk.Participant) {
-		if p.MutedChan != nil {
-			p.MutedChan <- false
-		}
-	}
-
 	if err := s.join(p); err != nil {
 		return nil, err
 	}
@@ -210,9 +203,6 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 }
 
 func (s *SDKSource) join(p *params.Params) error {
-	s.room.Callback.OnTrackUnpublished = s.onTrackUnpublished
-	s.room.Callback.OnDisconnected = s.onComplete
-
 	s.logger.Debugw("connecting to room")
 	if err := s.room.JoinWithToken(p.LKUrl, p.Token, lksdk.WithAutoSubscribe(false)); err != nil {
 		return err
@@ -256,6 +246,24 @@ func (s *SDKSource) join(p *params.Params) error {
 	return nil
 }
 
+func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
+	if w := s.getWriterForTrack(pub); w != nil {
+		w.trackMuted()
+	}
+	if s.mutedChan != nil {
+		s.mutedChan <- false
+	}
+}
+
+func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
+	if w := s.getWriterForTrack(pub); w != nil {
+		w.trackUnmuted()
+	}
+	if s.mutedChan != nil {
+		s.mutedChan <- false
+	}
+}
+
 func (s *SDKSource) onTrackUnpublished(track *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
 	switch track.SID() {
 	case s.trackID:
@@ -284,6 +292,34 @@ func (s *SDKSource) onComplete() {
 	default:
 		close(s.endRecording)
 	}
+}
+
+func (s *SDKSource) getWriterForTrack(pub lksdk.TrackPublication) writer {
+	// track might be nil when first joining
+	if pub.Track() == nil {
+		return nil
+	}
+
+	switch pub.Track().ID() {
+	case s.trackID:
+		if s.fileWriter != nil {
+			return s.fileWriter
+		} else if s.audioWriter != nil {
+			return s.audioWriter
+		} else if s.videoWriter != nil {
+			return s.videoWriter
+		}
+	case s.audioTrackID:
+		return s.audioWriter
+	case s.videoTrackID:
+		return s.videoWriter
+	}
+
+	return nil
+}
+
+func (s *SDKSource) StartRecording() chan struct{} {
+	return nil
 }
 
 func (s *SDKSource) GetAudioSource() (*app.Source, webrtc.RTPCodecParameters) {
@@ -319,10 +355,6 @@ func (s *SDKSource) Playing(name string) {
 	default:
 		close(playing)
 	}
-}
-
-func (s *SDKSource) StartRecording() chan struct{} {
-	return nil
 }
 
 func (s *SDKSource) EndRecording() chan struct{} {

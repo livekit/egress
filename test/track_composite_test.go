@@ -10,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/livekit-egress/pkg/config"
 	"github.com/livekit/livekit-egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
@@ -56,7 +55,7 @@ func testTrackCompositeFile(t *testing.T, conf *testConfig, room *lksdk.Room, au
 
 	for _, test := range cases {
 		if !t.Run(test.name, func(t *testing.T) {
-			runTrackCompositeFileTest(t, conf.Config, p, test)
+			runTrackCompositeFileTest(t, conf, p, test)
 		}) {
 			t.FailNow()
 		}
@@ -66,7 +65,7 @@ func testTrackCompositeFile(t *testing.T, conf *testConfig, room *lksdk.Room, au
 	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.videoTrackID))
 }
 
-func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkParams, test *testCase) {
+func runTrackCompositeFileTest(t *testing.T, conf *testConfig, params *sdkParams, test *testCase) {
 	var audioTrackID, videoTrackID string
 	if !test.videoOnly {
 		audioTrackID = params.audioTrackID
@@ -75,7 +74,7 @@ func runTrackCompositeFileTest(t *testing.T, conf *config.Config, params *sdkPar
 		videoTrackID = params.videoTrackID
 	}
 
-	filepath := getFilePath(conf, test.filename)
+	filepath := getFilePath(conf.Config, test.filename)
 	trackRequest := &livekit.TrackCompositeEgressRequest{
 		RoomName:     params.roomName,
 		AudioTrackId: audioTrackID,

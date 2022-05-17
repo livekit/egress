@@ -21,8 +21,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
-
-	"github.com/livekit/livekit-egress/pkg/config"
 )
 
 func testTrack(t *testing.T, conf *testConfig, room *lksdk.Room) {
@@ -63,7 +61,7 @@ func testTrack(t *testing.T, conf *testConfig, room *lksdk.Room) {
 		},
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
-			runTrackWebsocketTest(t, conf.Config, room, test)
+			runTrackWebsocketTest(t, conf, room, test)
 		}) {
 			t.FailNow()
 		}
@@ -94,17 +92,17 @@ func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *te
 		},
 	}
 
-	runFileTest(t, conf.Config, test, req, filepath)
+	runFileTest(t, conf, test, req, filepath)
 
 	require.NoError(t, room.LocalParticipant.UnpublishTrack(trackID))
 	time.Sleep(time.Second)
 }
 
-func runTrackWebsocketTest(t *testing.T, conf *config.Config, room *lksdk.Room, test *testCase) {
+func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *testCase) {
 	trackID := publishSampleToRoom(t, room, test.codec, false)
 	time.Sleep(time.Second)
 
-	filepath := getFilePath(conf, test.filename)
+	filepath := getFilePath(conf.Config, test.filename)
 	wss := newTestWebsocketServer(filepath, test.output)
 	s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
 	defer func() {
@@ -129,10 +127,10 @@ func runTrackWebsocketTest(t *testing.T, conf *config.Config, room *lksdk.Room, 
 		},
 	}
 
-	p, err := params.GetPipelineParams(conf, req)
+	p, err := params.GetPipelineParams(conf.Config, req)
 	require.NoError(t, err)
 
-	rec, err := pipeline.New(conf, p)
+	rec, err := pipeline.New(conf.Config, p)
 	require.NoError(t, err)
 
 	// record for ~30s. Takes about 5s to start
@@ -142,7 +140,7 @@ func runTrackWebsocketTest(t *testing.T, conf *config.Config, room *lksdk.Room, 
 	res := rec.Run()
 
 	require.NoError(t, room.LocalParticipant.UnpublishTrack(trackID))
-	verify(t, filepath, p, res, true)
+	verify(t, filepath, p, res, true, conf.WithMuting)
 }
 
 type websocketTestServer struct {

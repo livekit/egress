@@ -60,7 +60,7 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 		},
 	} {
 		if !t.Run(test.name, func(t *testing.T) {
-			runRoomCompositeFileTest(t, conf.Config, test)
+			runRoomCompositeFileTest(t, conf, test)
 		}) {
 			t.FailNow()
 		}
@@ -72,7 +72,7 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	if !t.Run("room-opus-ogg-simultaneous", func(t *testing.T) {
 		finished := make(chan struct{})
 		go func() {
-			runRoomCompositeFileTest(t, conf.Config, &testCase{
+			runRoomCompositeFileTest(t, conf, &testCase{
 				inputUrl:         audioTestInput,
 				forceCustomInput: true,
 				fileType:         livekit.EncodedFileType_OGG,
@@ -85,7 +85,7 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 			close(finished)
 		}()
 
-		runRoomCompositeFileTest(t, conf.Config, &testCase{
+		runRoomCompositeFileTest(t, conf, &testCase{
 			inputUrl:         audioTestInput2,
 			forceCustomInput: true,
 			fileType:         livekit.EncodedFileType_OGG,
@@ -113,13 +113,13 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	}
 }
 
-func runRoomCompositeFileTest(t *testing.T, conf *config.Config, test *testCase) {
+func runRoomCompositeFileTest(t *testing.T, conf *testConfig, test *testCase) {
 	roomName := os.Getenv("LIVEKIT_ROOM_NAME")
 	if roomName == "" {
 		roomName = "web-composite-file"
 	}
 
-	filepath := getFilePath(conf, test.filename)
+	filepath := getFilePath(conf.Config, test.filename)
 	webRequest := &livekit.RoomCompositeEgressRequest{
 		RoomName:  roomName,
 		Layout:    "speaker-dark",

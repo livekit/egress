@@ -79,11 +79,11 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 
 func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	for _, url := range urls {
-		verify(t, url, p, nil, true)
+		verify(t, url, p, nil, true, false)
 	}
 }
 
-func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, isStream bool) {
+func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, isStream, withMuting bool) {
 	require.NotEmpty(t, p.OutputType)
 
 	info, err := ffprobe(input)
@@ -107,8 +107,15 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
 
+		delta := 1.5
+		if withMuting {
+			delta = 8
+		} else if !p.AudioEnabled {
+			delta = 3
+		}
+
 		// duration can be up to a couple seconds off because the beginning is missing a keyframe
-		require.InDelta(t, expected, actual, 3)
+		require.InDelta(t, expected, actual, delta)
 	}
 
 	// check stream info

@@ -137,6 +137,16 @@ func (w *fileWriter) writePackets(force bool) error {
 	return nil
 }
 
+func (w *fileWriter) trackMuted() {
+	w.logger.Debugw("track muted")
+	// TODO: start writing blank frames
+}
+
+func (w *fileWriter) trackUnmuted() {
+	w.logger.Debugw("track unmuted")
+	// TODO: go back to reading from track
+}
+
 // stop blocks until finished
 func (w *fileWriter) stop() {
 	select {
