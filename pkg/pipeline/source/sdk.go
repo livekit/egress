@@ -110,12 +110,13 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeVP8)):
+			codec = params.MimeTypeVP8
+			appSrcName = VideoAppSource
 			p.VideoEnabled = true
 
 			if p.TrackID != "" || !p.AudioEnabled {
 				// only one track, use ivf file writer
 				p.SkipPipeline = true
-				codec = params.MimeTypeVP8
 				if p.VideoCodec == "" {
 					p.VideoCodec = codec
 				}
@@ -133,11 +134,9 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 			}
 
 			// composite request, use gstreamer
-			codec = params.MimeTypeH264
 			if p.VideoCodec == "" {
-				p.VideoCodec = codec
+				p.VideoCodec = params.MimeTypeH264
 			}
-			appSrcName = VideoAppSource
 
 		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeH264)):
 			codec = params.MimeTypeH264
