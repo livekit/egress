@@ -26,7 +26,7 @@ const (
 	audioTestInput  = "https://www.youtube.com/watch?v=eAcFPtCyDYY&t=59s"
 	audioTestInput2 = "https://www.youtube.com/watch?v=BlPbAq1dW3I&t=45s"
 	staticTestInput = "https://www.livekit.io"
-	muteDuration    = time.Second * 5
+	muteDuration    = time.Second * 10
 )
 
 var (

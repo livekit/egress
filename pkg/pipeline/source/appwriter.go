@@ -230,20 +230,24 @@ func (w *appWriter) pushBlankFrames() error {
 	ticker := time.NewTicker(time.Microsecond * 41708)
 	defer ticker.Stop()
 
+	written := false
 	for {
 		<-ticker.C
 		if !w.muted.Load() || w.isDraining() {
 			return nil
 		}
 
-		pkt, err := w.getBlankFrame()
-		if err != nil {
-			return err
-		}
+		if !written {
+			written = true
+			pkt, err := w.getBlankFrame()
+			if err != nil {
+				return err
+			}
 
-		err = w.push([]*rtp.Packet{pkt}, true)
-		if err != nil {
-			return err
+			err = w.push([]*rtp.Packet{pkt}, true)
+			if err != nil {
+				return err
+			}
 		}
 	}
 }
