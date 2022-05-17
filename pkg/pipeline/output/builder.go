@@ -6,8 +6,8 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
-	"github.com/livekit/livekit-egress/pkg/errors"
-	"github.com/livekit/livekit-egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/utils"
 )
 

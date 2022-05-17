@@ -11,8 +11,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
-	"github.com/livekit/livekit-egress/pkg/config"
-	"github.com/livekit/livekit-egress/pkg/errors"
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 )
 
 type Params struct {

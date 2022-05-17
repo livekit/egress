@@ -17,7 +17,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 
-	"github.com/livekit/livekit-egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 func UploadS3(conf *livekit.S3Upload, p *params.Params) (string, error) {

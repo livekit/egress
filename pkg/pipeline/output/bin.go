@@ -5,8 +5,8 @@ import (
 
 	"github.com/livekit/protocol/logger"
 
-	"github.com/livekit/livekit-egress/pkg/errors"
-	"github.com/livekit/livekit-egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 type Bin struct {

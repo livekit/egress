@@ -3,8 +3,8 @@ package input
 import (
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/livekit-egress/pkg/errors"
-	"github.com/livekit/livekit-egress/pkg/pipeline/source"
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/source"
 )
 
 type Bin struct {

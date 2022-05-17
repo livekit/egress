@@ -9,9 +9,9 @@ import (
 
 	"github.com/livekit/protocol/logger"
 
-	"github.com/livekit/livekit-egress/pkg/config"
-	"github.com/livekit/livekit-egress/pkg/messaging"
-	"github.com/livekit/livekit-egress/pkg/service"
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/messaging"
+	"github.com/livekit/egress/pkg/service"
 )
 
 func runService(conf *config.Config) error {

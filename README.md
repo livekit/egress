@@ -150,7 +150,7 @@ streamEgressID := info.EgressId
 ```
 
 Built-in layouts include `speaker-dark`, `speaker-light`, `grid-dark`, and `grid-light`.  
-To create your own web templates, see our [web README](https://github.com/livekit/livekit-egress/blob/main/web/README.md).
+To create your own web templates, see our [web README](https://github.com/livekit/egress/blob/main/web/README.md).
 
 
 ### StartTrackEgress
@@ -292,7 +292,7 @@ The `livekit_egress_available` Prometheus metric is provided to support autoscal
 
 ### I get a different error when sending a request
 
-* Make sure your livekit-egress, livekit-server, server-sdk-go, server-sdk-js, and livekit-cli are compatible (see [version compatibility](#version-compatibility)).
+* Make sure your egress, livekit-server, server-sdk-go, server-sdk-js, and livekit-cli are compatible (see [version compatibility](#version-compatibility)).
 
 ### I'm getting a broken mp4 file
 

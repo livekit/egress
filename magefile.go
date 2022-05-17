@@ -10,11 +10,11 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/livekit/livekit-egress/version"
+	"github.com/livekit/egress/version"
 )
 
 const (
-	imageName          = "livekit/livekit-egress"
+	imageName          = "livekit/egress"
 	gstImageName       = "livekit/gstreamer"
 	multiPlatformBuild = "docker buildx build --push --platform linux/amd64,linux/arm64"
 
