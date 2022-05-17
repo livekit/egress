@@ -82,7 +82,7 @@ docker run --rm \
     livekit-egress
 ```
 
-You can then use our [cli](https://github.com/livekit/livekit-cli) to submit recording requests to your server.
+You can then use our [cli](https://github.com/livekit/livekit-cli) to submit egress requests to your server.
 
 ## API
 
@@ -250,7 +250,7 @@ redis:
 health_port: if used, will open an http port for health checks
 prometheus_port: port used to collect prometheus metrics. Used for autoscaling
 log_level: debug, info, warn, or error (default info)
-template_base: can be used to host custom templates (default https://recorder.livekit.io/#)
+template_base: can be used to host custom templates (default https://egress-composite.livekit.io/#)
 insecure: can be used to connect to an insecure websocket (default false)
 
 # file upload config - only one of the following. Can be overridden 

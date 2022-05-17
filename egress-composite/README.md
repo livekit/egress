@@ -6,7 +6,7 @@ We currently have 4 templates available - `speaker-light`, `speaker-dark`, `grid
 The `speaker` templates will show the current active speaker taking up most of the screen, with other participants in the side bar.  
 The `grid` templates will show a 1x1, 2x2, or 3x3 grid for up to 1, 4, or 9 participants respectively.
 
-Our templates are deployed at https://recorder.livekit.io.
+Our templates are deployed at https://egress-composite.livekit.io.
 
 ## Building your own templates
 
@@ -39,7 +39,7 @@ ws_url: wss://your-livekit-server-address.com
 template_base: https://your-template-address.com/#
 ```
 * Note: the hash is necessary if using hash routing, which is what our templates use. For example, the default 
-  `template_address` is `https://recorder.livekit.io/#`.
+  `template_address` is `https://egress-composite.livekit.io/#`.
 * If you want to use both your own templates and LiveKit templates, you can override the template address per 
   request using the `RoomCompositeRequest.CustomBaseUrl` field.
 
