@@ -26,6 +26,7 @@ const (
 	audioTestInput  = "https://www.youtube.com/watch?v=eAcFPtCyDYY&t=59s"
 	audioTestInput2 = "https://www.youtube.com/watch?v=BlPbAq1dW3I&t=45s"
 	staticTestInput = "https://www.livekit.io"
+	muteDuration    = time.Second * 5
 )
 
 var (
@@ -139,6 +140,7 @@ func publishSampleToRoom(t *testing.T, room *lksdk.Room, codec params.MimeType, 
 	if withMuting {
 		go func() {
 			muted := false
+			time.Sleep(muteDuration)
 			for {
 				select {
 				case <-done:
@@ -146,7 +148,7 @@ func publishSampleToRoom(t *testing.T, room *lksdk.Room, codec params.MimeType, 
 				default:
 					pub.SetMuted(!muted)
 					muted = !muted
-					time.Sleep(time.Second * 5)
+					time.Sleep(muteDuration)
 				}
 			}
 		}()
@@ -163,15 +165,15 @@ func getFilePath(conf *config.Config, filename string) string {
 	return fmt.Sprintf("/out/output/%s", filename)
 }
 
-func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit.StartEgressRequest, filepath string) {
-	p, err := params.GetPipelineParams(conf, req)
+func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, filepath string) {
+	p, err := params.GetPipelineParams(conf.Config, req)
 	require.NoError(t, err)
 
 	if !strings.HasPrefix(conf.ApiKey, "API") || test.forceCustomInput {
 		p.CustomInputURL = test.inputUrl
 	}
 
-	rec, err := pipeline.New(conf, p)
+	rec, err := pipeline.New(conf.Config, p)
 	require.NoError(t, err)
 
 	// record for ~30s. Takes about 5s to start
@@ -193,5 +195,5 @@ func runFileTest(t *testing.T, conf *config.Config, test *testCase, req *livekit
 	require.NotEmpty(t, fileRes.Size)
 	require.NotEmpty(t, fileRes.Location)
 
-	verify(t, filepath, p, res, false)
+	verify(t, filepath, p, res, false, conf.WithMuting)
 }

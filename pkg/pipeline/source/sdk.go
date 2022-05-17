@@ -249,7 +249,7 @@ func (s *SDKSource) join(p *params.Params) error {
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	if w := s.getWriterForTrack(pub); w != nil {
-		w.trackUnmuted()
+		w.trackMuted()
 	}
 	if s.mutedChan != nil {
 		s.mutedChan <- false

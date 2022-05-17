@@ -1,6 +1,7 @@
 package source
 
 import (
+	"encoding/binary"
 	"io"
 	"net"
 	"time"
@@ -21,6 +22,16 @@ import (
 	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
 
 	"github.com/livekit/livekit-egress/pkg/errors"
+)
+
+var (
+	VP8KeyFrame8x8 = []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a, 0x08, 0x00, 0x08, 0x00, 0x00, 0x47, 0x08, 0x85, 0x85, 0x88, 0x85, 0x84, 0x88, 0x02, 0x02, 0x00, 0x0c, 0x0d, 0x60, 0x00, 0xfe, 0xff, 0xab, 0x50, 0x80}
+
+	H264KeyFrame2x2SPS = []byte{0x67, 0x42, 0xc0, 0x1f, 0x0f, 0xd9, 0x1f, 0x88, 0x88, 0x84, 0x00, 0x00, 0x03, 0x00, 0x04, 0x00, 0x00, 0x03, 0x00, 0xc8, 0x3c, 0x60, 0xc9, 0x20}
+	H264KeyFrame2x2PPS = []byte{0x68, 0x87, 0xcb, 0x83, 0xcb, 0x20}
+	H264KeyFrame2x2IDR = []byte{0x65, 0x88, 0x84, 0x0a, 0xf2, 0x62, 0x80, 0x00, 0xa7, 0xbe}
+
+	H264KeyFrame2x2 = [][]byte{H264KeyFrame2x2SPS, H264KeyFrame2x2PPS, H264KeyFrame2x2IDR}
 )
 
 type appWriter struct {
@@ -153,7 +164,7 @@ func (w *appWriter) start() {
 		if err != nil {
 			if w.muted.Load() {
 				// switch to pushing blank frames until unmuted
-				err = w.pushBlankFrame()
+				err = w.pushBlankFrames()
 				if err == nil {
 					continue
 				}
@@ -183,11 +194,6 @@ func (w *appWriter) start() {
 			w.clockSynced = true
 		}
 
-		// update sequence number, record SN and TS
-		pkt.SequenceNumber += w.snOffset
-		w.lastSN = pkt.SequenceNumber
-		w.lastTS = pkt.Timestamp
-
 		// push packet to sample builder
 		w.sb.Push(pkt)
 
@@ -214,38 +220,100 @@ func (w *appWriter) pushPackets(force bool) error {
 	}
 }
 
-func (w *appWriter) pushBlankFrame() error {
+func (w *appWriter) pushBlankFrames() error {
 	_ = w.pushPackets(true)
 
 	// TODO: sample buffer has bug that it may pop old packet after pushPackets(true)
-	// recreated it to work now, will remove this when bug fixed
+	//   recreated it to work now, will remove this when bug fixed
 	w.sb = w.newSampleBuffer()
 
-	if !w.muted.Load() || w.isDraining() {
-		return nil
+	ticker := time.NewTicker(time.Microsecond * 41708)
+	defer ticker.Stop()
+
+	for {
+		<-ticker.C
+		if !w.muted.Load() || w.isDraining() {
+			return nil
+		}
+
+		pkt, err := w.getBlankFrame()
+		if err != nil {
+			return err
+		}
+
+		err = w.push([]*rtp.Packet{pkt}, true)
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func (w *appWriter) getBlankFrame() (*rtp.Packet, error) {
+	// TODO: update timestamp using actual track framerate
+	pkt := &rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			Padding:        false,
+			Marker:         true,
+			PayloadType:    uint8(w.track.PayloadType()),
+			SequenceNumber: w.lastSN + uint16(1),
+			Timestamp:      w.lastTS + (w.track.Codec().ClockRate / (24000 / 1001)),
+			SSRC:           uint32(w.track.SSRC()),
+			CSRC:           []uint32{},
+		},
+	}
+	w.snOffset++
+
+	switch w.codec {
+	case params.MimeTypeVP8:
+		blankVP8 := w.vp8Munger.UpdateAndGetPadding(true)
+
+		// 1x1 key frame
+		// Used even when closing out a previous frame. Looks like receivers
+		// do not care about content (it will probably end up being an undecodable
+		// frame, but that should be okay as there are key frames following)
+		payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame8x8))
+		vp8Header := payload[:blankVP8.HeaderSize]
+		err := blankVP8.MarshalTo(vp8Header)
+		if err != nil {
+			return nil, err
+		}
+
+		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame8x8)
+		pkt.Payload = payload
+
+	case params.MimeTypeH264:
+		buf := make([]byte, 1462)
+		offset := 0
+		buf[0] = 0x18 // STAP-A
+		offset++
+		for _, payload := range H264KeyFrame2x2 {
+			binary.BigEndian.PutUint16(buf[offset:], uint16(len(payload)))
+			offset += 2
+			copy(buf[offset:offset+len(payload)], payload)
+			offset += len(payload)
+		}
+
+		pkt.Payload = buf[:offset]
 	}
 
-	pkt, err := w.getBlankFrame()
-	if err != nil {
-		return err
-	}
-
-	err = w.push([]*rtp.Packet{pkt}, true)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return pkt, nil
 }
 
 func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 	for _, pkt := range packets {
-		if !blankFrame {
-			w.translatePacket(pkt)
-		}
-
 		if w.isDraining() && int64(pkt.Timestamp) >= w.maxRTP.Load() {
 			return io.EOF
+		}
+
+		// record SN and TS
+		w.lastSN = pkt.SequenceNumber
+		w.lastTS = pkt.Timestamp
+
+		if !blankFrame {
+			// update sequence number
+			pkt.SequenceNumber += w.snOffset
+			w.translatePacket(pkt)
 		}
 
 		p, err := pkt.Marshal()
@@ -306,7 +374,7 @@ func (w *appWriter) translatePacket(pkt *rtp.Packet) {
 			}
 
 			payload := pkt.Payload
-			payload, err = w.translateVP8PacketTo(ep.Packet, &vp8Packet, tpVP8.Header, &payload)
+			payload, err = w.translateVP8Packet(ep.Packet, &vp8Packet, tpVP8.Header, &payload)
 			if err != nil {
 				w.logger.Warnw("could not translate VP8 packet", err)
 				return
@@ -319,7 +387,7 @@ func (w *appWriter) translatePacket(pkt *rtp.Packet) {
 	}
 }
 
-func (w *appWriter) translateVP8PacketTo(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8, outbuf *[]byte) ([]byte, error) {
+func (w *appWriter) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8, outbuf *[]byte) ([]byte, error) {
 	var buf []byte
 	if outbuf == &pkt.Payload {
 		buf = pkt.Payload
