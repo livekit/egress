@@ -1,4 +1,4 @@
-module github.com/livekit/livekit-egress
+module github.com/livekit/egress
 
 go 1.17
 

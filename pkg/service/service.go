@@ -17,11 +17,11 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 
-	"github.com/livekit/livekit-egress/pkg/config"
-	"github.com/livekit/livekit-egress/pkg/errors"
-	"github.com/livekit/livekit-egress/pkg/pipeline"
-	"github.com/livekit/livekit-egress/pkg/pipeline/params"
-	"github.com/livekit/livekit-egress/pkg/sysload"
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline"
+	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/sysload"
 )
 
 const shutdownTimer = time.Second * 30

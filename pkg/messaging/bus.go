@@ -9,7 +9,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 
-	"github.com/livekit/livekit-egress/pkg/config"
+	"github.com/livekit/egress/pkg/config"
 )
 
 func NewMessageBus(conf *config.Config) (utils.MessageBus, error) {

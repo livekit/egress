@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/livekit/livekit-egress/pkg/config"
+	"github.com/livekit/egress/pkg/config"
 )
 
 var defaultConfig = `

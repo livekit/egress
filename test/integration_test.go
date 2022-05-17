@@ -16,9 +16,9 @@ import (
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go"
 
-	"github.com/livekit/livekit-egress/pkg/config"
-	"github.com/livekit/livekit-egress/pkg/pipeline"
-	"github.com/livekit/livekit-egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/pipeline"
+	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 const (

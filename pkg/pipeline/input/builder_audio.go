@@ -6,9 +6,9 @@ import (
 
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/livekit-egress/pkg/errors"
-	"github.com/livekit/livekit-egress/pkg/pipeline/params"
-	"github.com/livekit/livekit-egress/pkg/pipeline/source"
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/pipeline/source"
 )
 
 func (b *Bin) buildAudioElements(p *params.Params) error {

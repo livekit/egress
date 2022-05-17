@@ -15,7 +15,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 
-	"github.com/livekit/livekit-egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 type FFProbeInfo struct {
