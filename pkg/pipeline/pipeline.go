@@ -207,6 +207,8 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 		}
 
 		var location string
+		deleteFile := true
+
 		switch u := p.FileUpload.(type) {
 		case *livekit.S3Upload:
 			location = "S3"
@@ -222,11 +224,16 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 			p.FileInfo.Location, err = sink.UploadAzure(u, p.Params)
 		default:
 			p.FileInfo.Location = p.Filepath
+			deleteFile = false
 		}
 
 		if err != nil {
 			p.Logger.Errorw("could not upload file", err, "location", location)
 			p.Info.Error = errors.ErrUploadFailed(location, err)
+		} else if deleteFile {
+			if err = os.Remove(p.Filename); err != nil {
+				p.Logger.Errorw("could not delete file", err)
+			}
 		}
 	}
 

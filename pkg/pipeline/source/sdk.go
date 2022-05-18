@@ -113,8 +113,13 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 			appSrcName = VideoAppSource
 			p.VideoEnabled = true
 
-			if p.TrackID != "" || !p.AudioEnabled {
-				// only one track, use ivf file writer
+			if s.trackID == "" && p.AudioEnabled {
+				// composite request, use gstreamer
+				if p.VideoCodec == "" {
+					p.VideoCodec = params.MimeTypeH264
+				}
+			} else {
+				// single track, use ivf file writer
 				p.SkipPipeline = true
 				if p.VideoCodec == "" {
 					p.VideoCodec = codec
@@ -130,11 +135,6 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 					s.logger.Errorw("could not create file writer", onSubscribeErr)
 				}
 				return
-			}
-
-			// composite request, use gstreamer
-			if p.VideoCodec == "" {
-				p.VideoCodec = params.MimeTypeH264
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeH264)):

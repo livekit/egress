@@ -23,12 +23,12 @@ func testTrackComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 				fileType: livekit.EncodedFileType_MP4,
 				filename: fmt.Sprintf("tc-vp8-%v.mp4", time.Now().Unix()),
 			},
-			{
-				name:      "tc-opus-ogg",
-				audioOnly: true,
-				fileType:  livekit.EncodedFileType_OGG,
-				filename:  fmt.Sprintf("tc-opus-%v.ogg", time.Now().Unix()),
-			},
+			// {
+			// 	name:      "tc-opus-ogg",
+			// 	audioOnly: true,
+			// 	fileType:  livekit.EncodedFileType_OGG,
+			// 	filename:  fmt.Sprintf("tc-opus-%v.ogg", time.Now().Unix()),
+			// },
 		})
 
 		testTrackCompositeFile(t, conf, room, params.MimeTypeOpus, params.MimeTypeH264, []*testCase{

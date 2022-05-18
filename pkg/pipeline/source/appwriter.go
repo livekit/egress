@@ -230,78 +230,64 @@ func (w *appWriter) pushBlankFrames() error {
 	ticker := time.NewTicker(time.Microsecond * 41708)
 	defer ticker.Stop()
 
-	written := false
 	for {
 		<-ticker.C
 		if !w.muted.Load() || w.isDraining() {
 			return nil
 		}
 
-		if !written {
-			written = true
-			pkt, err := w.getBlankFrame()
+		// TODO: update timestamp using actual track framerate
+		pkt := &rtp.Packet{
+			Header: rtp.Header{
+				Version:        2,
+				Padding:        false,
+				Marker:         true,
+				PayloadType:    uint8(w.track.PayloadType()),
+				SequenceNumber: w.lastSN + uint16(1),
+				Timestamp:      w.lastTS + (w.track.Codec().ClockRate / (24000 / 1001)),
+				SSRC:           uint32(w.track.SSRC()),
+				CSRC:           []uint32{},
+			},
+		}
+		w.snOffset++
+
+		switch w.codec {
+		case params.MimeTypeVP8:
+			blankVP8 := w.vp8Munger.UpdateAndGetPadding(true)
+
+			// 1x1 key frame
+			// Used even when closing out a previous frame. Looks like receivers
+			// do not care about content (it will probably end up being an undecodable
+			// frame, but that should be okay as there are key frames following)
+			payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame8x8))
+			vp8Header := payload[:blankVP8.HeaderSize]
+			err := blankVP8.MarshalTo(vp8Header)
 			if err != nil {
 				return err
 			}
 
-			err = w.push([]*rtp.Packet{pkt}, true)
-			if err != nil {
-				return err
+			copy(payload[blankVP8.HeaderSize:], VP8KeyFrame8x8)
+			pkt.Payload = payload
+
+		case params.MimeTypeH264:
+			buf := make([]byte, 1462)
+			offset := 0
+			buf[0] = 0x18 // STAP-A
+			offset++
+			for _, payload := range H264KeyFrame2x2 {
+				binary.BigEndian.PutUint16(buf[offset:], uint16(len(payload)))
+				offset += 2
+				copy(buf[offset:offset+len(payload)], payload)
+				offset += len(payload)
 			}
-		}
-	}
-}
 
-func (w *appWriter) getBlankFrame() (*rtp.Packet, error) {
-	// TODO: update timestamp using actual track framerate
-	pkt := &rtp.Packet{
-		Header: rtp.Header{
-			Version:        2,
-			Padding:        false,
-			Marker:         true,
-			PayloadType:    uint8(w.track.PayloadType()),
-			SequenceNumber: w.lastSN + uint16(1),
-			Timestamp:      w.lastTS + (w.track.Codec().ClockRate / (24000 / 1001)),
-			SSRC:           uint32(w.track.SSRC()),
-			CSRC:           []uint32{},
-		},
-	}
-	w.snOffset++
-
-	switch w.codec {
-	case params.MimeTypeVP8:
-		blankVP8 := w.vp8Munger.UpdateAndGetPadding(true)
-
-		// 1x1 key frame
-		// Used even when closing out a previous frame. Looks like receivers
-		// do not care about content (it will probably end up being an undecodable
-		// frame, but that should be okay as there are key frames following)
-		payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame8x8))
-		vp8Header := payload[:blankVP8.HeaderSize]
-		err := blankVP8.MarshalTo(vp8Header)
-		if err != nil {
-			return nil, err
+			pkt.Payload = buf[:offset]
 		}
 
-		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame8x8)
-		pkt.Payload = payload
-
-	case params.MimeTypeH264:
-		buf := make([]byte, 1462)
-		offset := 0
-		buf[0] = 0x18 // STAP-A
-		offset++
-		for _, payload := range H264KeyFrame2x2 {
-			binary.BigEndian.PutUint16(buf[offset:], uint16(len(payload)))
-			offset += 2
-			copy(buf[offset:offset+len(payload)], payload)
-			offset += len(payload)
+		if err := w.push([]*rtp.Packet{pkt}, true); err != nil {
+			return err
 		}
-
-		pkt.Payload = buf[:offset]
 	}
-
-	return pkt, nil
 }
 
 func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
