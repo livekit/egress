@@ -231,10 +231,12 @@ api_key: your-api-key
 api_secret: your-api-secret
 ws_url: wss://your-livekit-url.com
 room_name: your-room
-room_only: false
-track_composite_only: false
-track_only: false
-with_muting: false
+room: true
+track_composite: true
+track: true
+file: true
+stream: true
+muting: false
 gst_debug: 1
 ```
 
