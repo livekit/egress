@@ -25,52 +25,56 @@ import (
 )
 
 func testTrack(t *testing.T, conf *testConfig, room *lksdk.Room) {
-	for _, test := range []*testCase{
-		{
-			name:      "track-opus",
-			audioOnly: true,
-			codec:     params.MimeTypeOpus,
-			filename:  fmt.Sprintf("track-opus-%v.ogg", time.Now().Unix()),
-		},
-		{
-			name:      "track-vp8",
-			videoOnly: true,
-			codec:     params.MimeTypeVP8,
-			filename:  fmt.Sprintf("track-vp8-%v.ivf", time.Now().Unix()),
-		},
-		{
-			name:      "track-h264",
-			videoOnly: true,
-			codec:     params.MimeTypeH264,
-			filename:  fmt.Sprintf("track-h264-%v.mp4", time.Now().Unix()),
-		},
-	} {
-		if !t.Run(test.name, func(t *testing.T) {
-			runTrackFileTest(t, conf, room, test)
-		}) {
-			t.FailNow()
+	if conf.RunFileTests {
+		for _, test := range []*testCase{
+			{
+				name:      "track-opus",
+				audioOnly: true,
+				codec:     params.MimeTypeOpus,
+				filename:  fmt.Sprintf("track-opus-%v.ogg", time.Now().Unix()),
+			},
+			{
+				name:      "track-vp8",
+				videoOnly: true,
+				codec:     params.MimeTypeVP8,
+				filename:  fmt.Sprintf("track-vp8-%v.ivf", time.Now().Unix()),
+			},
+			{
+				name:      "track-h264",
+				videoOnly: true,
+				codec:     params.MimeTypeH264,
+				filename:  fmt.Sprintf("track-h264-%v.mp4", time.Now().Unix()),
+			},
+		} {
+			if !t.Run(test.name, func(t *testing.T) {
+				runTrackFileTest(t, conf, room, test)
+			}) {
+				t.FailNow()
+			}
 		}
 	}
 
-	for _, test := range []*testCase{
-		{
-			name:      "track-websocket",
-			audioOnly: true,
-			codec:     params.MimeTypeOpus,
-			output:    params.OutputTypeRaw,
-			filename:  fmt.Sprintf("track-ws-%v.raw", time.Now().Unix()),
-		},
-	} {
-		if !t.Run(test.name, func(t *testing.T) {
-			runTrackWebsocketTest(t, conf, room, test)
-		}) {
-			t.FailNow()
+	if conf.RunStreamTests {
+		for _, test := range []*testCase{
+			{
+				name:      "track-websocket",
+				audioOnly: true,
+				codec:     params.MimeTypeOpus,
+				output:    params.OutputTypeRaw,
+				filename:  fmt.Sprintf("track-ws-%v.raw", time.Now().Unix()),
+			},
+		} {
+			if !t.Run(test.name, func(t *testing.T) {
+				runTrackWebsocketTest(t, conf, room, test)
+			}) {
+				t.FailNow()
+			}
 		}
 	}
 }
 
 func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *testCase) {
-	trackID := publishSampleToRoom(t, room, test.codec, conf.WithMuting)
+	trackID := publishSampleToRoom(t, room, test.codec, conf.Muting)
 	t.Cleanup(func() {
 		_ = room.LocalParticipant.UnpublishTrack(trackID)
 		time.Sleep(time.Second)
@@ -145,7 +149,7 @@ func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, tes
 	})
 	res := rec.Run()
 
-	verify(t, filepath, p, res, true, conf.WithMuting)
+	verify(t, filepath, p, res, true, conf.Muting)
 }
 
 type websocketTestServer struct {

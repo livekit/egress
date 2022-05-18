@@ -17,92 +17,96 @@ import (
 
 func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	if room != nil {
-		audioTrackID := publishSampleToRoom(t, room, params.MimeTypeOpus, conf.WithMuting)
+		audioTrackID := publishSampleToRoom(t, room, params.MimeTypeOpus, conf.Muting)
 		t.Cleanup(func() {
 			_ = room.LocalParticipant.UnpublishTrack(audioTrackID)
 		})
 
-		videoTrackID := publishSampleToRoom(t, room, params.MimeTypeVP8, conf.WithMuting)
+		videoTrackID := publishSampleToRoom(t, room, params.MimeTypeVP8, conf.Muting)
 		t.Cleanup(func() {
 			_ = room.LocalParticipant.UnpublishTrack(videoTrackID)
 		})
 	}
 
-	for _, test := range []*testCase{
-		{
-			name:     "h264-high-mp4",
-			inputUrl: videoTestInput,
-			fileType: livekit.EncodedFileType_MP4,
-			options: &livekit.EncodingOptions{
-				AudioCodec:   livekit.AudioCodec_AAC,
-				VideoCodec:   livekit.VideoCodec_H264_HIGH,
-				Height:       720,
-				Width:        1280,
-				VideoBitrate: 4500,
+	if conf.RunFileTests {
+		for _, test := range []*testCase{
+			{
+				name:     "h264-high-mp4",
+				inputUrl: videoTestInput,
+				fileType: livekit.EncodedFileType_MP4,
+				options: &livekit.EncodingOptions{
+					AudioCodec:   livekit.AudioCodec_AAC,
+					VideoCodec:   livekit.VideoCodec_H264_HIGH,
+					Height:       720,
+					Width:        1280,
+					VideoBitrate: 4500,
+				},
+				filename: fmt.Sprintf("room-h264-high-%v.mp4", time.Now().Unix()),
 			},
-			filename: fmt.Sprintf("room-h264-high-%v.mp4", time.Now().Unix()),
-		},
-		{
-			name:             "h264-baseline-mp4",
-			inputUrl:         staticTestInput,
-			forceCustomInput: true,
-			fileType:         livekit.EncodedFileType_MP4,
-			options: &livekit.EncodingOptions{
-				AudioCodec:   livekit.AudioCodec_AAC,
-				VideoCodec:   livekit.VideoCodec_H264_BASELINE,
-				Height:       720,
-				Width:        1280,
-				VideoBitrate: 1500,
+			{
+				name:             "h264-baseline-mp4",
+				inputUrl:         staticTestInput,
+				forceCustomInput: true,
+				fileType:         livekit.EncodedFileType_MP4,
+				options: &livekit.EncodingOptions{
+					AudioCodec:   livekit.AudioCodec_AAC,
+					VideoCodec:   livekit.VideoCodec_H264_BASELINE,
+					Height:       720,
+					Width:        1280,
+					VideoBitrate: 1500,
+				},
+				filename: fmt.Sprintf("room-h264-baseline-%v.mp4", time.Now().Unix()),
 			},
-			filename: fmt.Sprintf("room-h264-baseline-%v.mp4", time.Now().Unix()),
-		},
-	} {
-		if !t.Run(test.name, func(t *testing.T) {
-			runRoomCompositeFileTest(t, conf, test)
-		}) {
-			t.FailNow()
+		} {
+			if !t.Run(test.name, func(t *testing.T) {
+				runRoomCompositeFileTest(t, conf, test)
+			}) {
+				t.FailNow()
+			}
 		}
-	}
 
-	// TODO: get rid of this error, probably by calling Ref() on something
-	//  (test.test:9038): GStreamer-CRITICAL **: 23:46:45.257:
-	//  gst_mini_object_unref: assertion 'GST_MINI_OBJECT_REFCOUNT_VALUE (mini_object) > 0' failed
-	if !t.Run("room-opus-ogg-simultaneous", func(t *testing.T) {
-		finished := make(chan struct{})
-		go func() {
+		// TODO: get rid of this error, probably by calling Ref() on something
+		//  (test.test:9038): GStreamer-CRITICAL **: 23:46:45.257:
+		//  gst_mini_object_unref: assertion 'GST_MINI_OBJECT_REFCOUNT_VALUE (mini_object) > 0' failed
+		if !t.Run("room-opus-ogg-simultaneous", func(t *testing.T) {
+			finished := make(chan struct{})
+			go func() {
+				runRoomCompositeFileTest(t, conf, &testCase{
+					inputUrl:         audioTestInput,
+					forceCustomInput: true,
+					fileType:         livekit.EncodedFileType_OGG,
+					audioOnly:        true,
+					options: &livekit.EncodingOptions{
+						AudioCodec: livekit.AudioCodec_OPUS,
+					},
+					filename: fmt.Sprintf("room-opus-1-%v.ogg", time.Now().Unix()),
+				})
+				close(finished)
+			}()
+
 			runRoomCompositeFileTest(t, conf, &testCase{
-				inputUrl:         audioTestInput,
+				inputUrl:         audioTestInput2,
 				forceCustomInput: true,
 				fileType:         livekit.EncodedFileType_OGG,
 				audioOnly:        true,
 				options: &livekit.EncodingOptions{
 					AudioCodec: livekit.AudioCodec_OPUS,
 				},
-				filename: fmt.Sprintf("room-opus-1-%v.ogg", time.Now().Unix()),
+				filename: fmt.Sprintf("room-opus-2-%v.ogg", time.Now().Unix()),
 			})
-			close(finished)
-		}()
 
-		runRoomCompositeFileTest(t, conf, &testCase{
-			inputUrl:         audioTestInput2,
-			forceCustomInput: true,
-			fileType:         livekit.EncodedFileType_OGG,
-			audioOnly:        true,
-			options: &livekit.EncodingOptions{
-				AudioCodec: livekit.AudioCodec_OPUS,
-			},
-			filename: fmt.Sprintf("room-opus-2-%v.ogg", time.Now().Unix()),
-		})
-
-		<-finished
-	}) {
-		t.FailNow()
+			<-finished
+		}) {
+			t.FailNow()
+		}
 	}
 
-	if !t.Run("room-rtmp", func(t *testing.T) {
-		testRoomCompositeStream(t, conf)
-	}) {
-		t.FailNow()
+	if conf.RunStreamTests {
+		if !t.Run("room-rtmp", func(t *testing.T) {
+			testRoomCompositeStream(t, conf)
+		}) {
+			t.FailNow()
+		}
 	}
 }
 

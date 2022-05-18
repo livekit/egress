@@ -18,22 +18,26 @@ api_key: fake_key
 api_secret: fake_secret
 ws_url: wss://fake-url.com
 room_name: egress-test
-room_only: false
-track_composite_only: false
-track_only: false
-with_muting: false
+room: true
+track_composite: true
+track: true
+file: true
+stream: true
+muting: false
 gst_debug: 1
 `
 
 type testConfig struct {
 	*config.Config
 
-	RoomName           string `yaml:"room_name"`
-	RoomOnly           bool   `yaml:"room_only"`
-	TrackCompositeOnly bool   `yaml:"track_composite_only"`
-	TrackOnly          bool   `yaml:"track_only"`
-	WithMuting         bool   `yaml:"with_muting"`
-	GstDebug           int    `yaml:"gst_debug"`
+	RoomName               string `yaml:"room_name"`
+	RunRoomTests           bool   `yaml:"room"`
+	RunTrackCompositeTests bool   `yaml:"track_composite"`
+	RunTrackTests          bool   `yaml:"track"`
+	RunFileTests           bool   `yaml:"file"`
+	RunStreamTests         bool   `yaml:"stream"`
+	Muting                 bool   `yaml:"muting"`
+	GstDebug               int    `yaml:"gst_debug"`
 }
 
 func getTestConfig(t *testing.T) *testConfig {

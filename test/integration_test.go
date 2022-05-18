@@ -73,7 +73,7 @@ func TestEgress(t *testing.T) {
 		defer room.Disconnect()
 	}
 
-	if !conf.TrackCompositeOnly && !conf.TrackOnly {
+	if conf.RunRoomTests {
 		if !t.Run("RoomComposite", func(t *testing.T) {
 			testRoomComposite(t, conf, room)
 		}) {
@@ -85,7 +85,7 @@ func TestEgress(t *testing.T) {
 		return
 	}
 
-	if !conf.RoomOnly && !conf.TrackOnly {
+	if conf.RunTrackCompositeTests {
 		if !t.Run("TrackComposite", func(t *testing.T) {
 			testTrackComposite(t, conf, room)
 		}) {
@@ -93,7 +93,7 @@ func TestEgress(t *testing.T) {
 		}
 	}
 
-	if !conf.RoomOnly && !conf.TrackCompositeOnly {
+	if conf.RunTrackTests {
 		if !t.Run("Track", func(t *testing.T) {
 			testTrack(t, conf, room)
 		}) {
@@ -185,7 +185,7 @@ func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.St
 	require.NotEmpty(t, fileRes.Size)
 	require.NotEmpty(t, fileRes.Location)
 
-	verify(t, filepath, p, res, false, conf.WithMuting)
+	verify(t, filepath, p, res, false, conf.Muting)
 }
 
 func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) {

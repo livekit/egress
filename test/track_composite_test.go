@@ -16,32 +16,36 @@ import (
 )
 
 func testTrackComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
-	testTrackCompositeFile(t, conf, room, params.MimeTypeOpus, params.MimeTypeVP8, []*testCase{
-		{
-			name:     "tc-vp8-mp4",
-			fileType: livekit.EncodedFileType_MP4,
-			filename: fmt.Sprintf("tc-vp8-%v.mp4", time.Now().Unix()),
-		},
-		{
-			name:      "tc-opus-ogg",
-			audioOnly: true,
-			fileType:  livekit.EncodedFileType_OGG,
-			filename:  fmt.Sprintf("tc-opus-%v.ogg", time.Now().Unix()),
-		},
-	})
+	if conf.RunFileTests {
+		testTrackCompositeFile(t, conf, room, params.MimeTypeOpus, params.MimeTypeVP8, []*testCase{
+			{
+				name:     "tc-vp8-mp4",
+				fileType: livekit.EncodedFileType_MP4,
+				filename: fmt.Sprintf("tc-vp8-%v.mp4", time.Now().Unix()),
+			},
+			{
+				name:      "tc-opus-ogg",
+				audioOnly: true,
+				fileType:  livekit.EncodedFileType_OGG,
+				filename:  fmt.Sprintf("tc-opus-%v.ogg", time.Now().Unix()),
+			},
+		})
 
-	testTrackCompositeFile(t, conf, room, params.MimeTypeOpus, params.MimeTypeH264, []*testCase{
-		{
-			name:     "tc-h264-mp4",
-			fileType: livekit.EncodedFileType_MP4,
-			filename: fmt.Sprintf("tc-h264-%v.mp4", time.Now().Unix()),
-		},
-	})
+		testTrackCompositeFile(t, conf, room, params.MimeTypeOpus, params.MimeTypeH264, []*testCase{
+			{
+				name:     "tc-h264-mp4",
+				fileType: livekit.EncodedFileType_MP4,
+				filename: fmt.Sprintf("tc-h264-%v.mp4", time.Now().Unix()),
+			},
+		})
+	}
 
-	if !t.Run("tc-rtmp", func(t *testing.T) {
-		testTrackCompositeStream(t, conf, room)
-	}) {
-		t.FailNow()
+	if conf.RunStreamTests {
+		if !t.Run("tc-rtmp", func(t *testing.T) {
+			testTrackCompositeStream(t, conf, room)
+		}) {
+			t.FailNow()
+		}
 	}
 }
 
@@ -51,7 +55,7 @@ func testTrackCompositeFile(t *testing.T, conf *testConfig, room *lksdk.Room, au
 		_ = room.LocalParticipant.UnpublishTrack(audioTrackID)
 	})
 
-	videoTrackID := publishSampleToRoom(t, room, videoCodec, conf.WithMuting)
+	videoTrackID := publishSampleToRoom(t, room, videoCodec, conf.Muting)
 	t.Cleanup(func() {
 		_ = room.LocalParticipant.UnpublishTrack(videoTrackID)
 	})
@@ -111,7 +115,7 @@ func testTrackCompositeStream(t *testing.T, conf *testConfig, room *lksdk.Room) 
 		_ = room.LocalParticipant.UnpublishTrack(audioTrackID)
 	})
 
-	videoTrackID := publishSampleToRoom(t, room, params.MimeTypeVP8, conf.WithMuting)
+	videoTrackID := publishSampleToRoom(t, room, params.MimeTypeVP8, conf.Muting)
 	t.Cleanup(func() {
 		_ = room.LocalParticipant.UnpublishTrack(videoTrackID)
 	})
