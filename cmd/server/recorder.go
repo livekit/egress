@@ -33,7 +33,7 @@ func runRecorder(conf *config.Config, req *livekit.StartEgressRequest) error {
 	go func() {
 		sig := <-stopChan
 		logger.Infow("exit requested, stopping recording and shutting down", "signal", sig)
-		rec.Stop()
+		rec.SendEOS()
 	}()
 
 	res := rec.Run()

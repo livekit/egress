@@ -174,7 +174,7 @@ func testRoomCompositeStream(t *testing.T, conf *testConfig) {
 	require.NoError(t, err)
 
 	defer func() {
-		rec.Stop()
+		rec.SendEOS()
 		time.Sleep(time.Millisecond * 100)
 	}()
 
@@ -205,7 +205,7 @@ func testRoomCompositeStream(t *testing.T, conf *testConfig) {
 	verifyStreams(t, p, url2)
 
 	// stop
-	rec.Stop()
+	rec.SendEOS()
 	res := <-resChan
 
 	// egress info

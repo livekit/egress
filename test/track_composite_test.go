@@ -139,7 +139,7 @@ func testTrackCompositeStream(t *testing.T, conf *testConfig, room *lksdk.Room) 
 	require.NoError(t, err)
 
 	defer func() {
-		rec.Stop()
+		rec.SendEOS()
 		time.Sleep(time.Millisecond * 100)
 	}()
 
@@ -170,7 +170,7 @@ func testTrackCompositeStream(t *testing.T, conf *testConfig, room *lksdk.Room) 
 	verifyStreams(t, p, url2)
 
 	// stop
-	rec.Stop()
+	rec.SendEOS()
 	res := <-resChan
 
 	// egress info

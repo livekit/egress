@@ -27,6 +27,7 @@ var initialized = false
 const (
 	pipelineSource = "pipeline"
 	fileKey        = "file"
+	eosTimeout     = time.Second * 15
 )
 
 type Pipeline struct {
@@ -44,6 +45,7 @@ type Pipeline struct {
 	startedAt map[string]int64
 	removed   map[string]bool
 	closed    chan struct{}
+	eosTimer  *time.Timer
 
 	// callbacks
 	onStatusUpdate func(*livekit.EgressInfo)
@@ -145,7 +147,7 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	// close when room ends
 	go func() {
 		<-p.in.EndRecording()
-		p.Stop()
+		p.SendEOS()
 	}()
 
 	if p.SkipPipeline {
@@ -188,6 +190,11 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	switch s := p.in.Source.(type) {
 	case *source.SDKSource:
 		p.updateEndTime(s.GetEndTime())
+	}
+
+	// return if there was an error
+	if p.Info.Error != "" {
+		return p.Info
 	}
 
 	// upload file
@@ -271,7 +278,7 @@ func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
 	return nil
 }
 
-func (p *Pipeline) Stop() {
+func (p *Pipeline) SendEOS() {
 	select {
 	case <-p.closed:
 		return
@@ -283,8 +290,11 @@ func (p *Pipeline) Stop() {
 		}
 
 		p.Logger.Debugw("sending EOS to pipeline")
-
-		// TODO: kill after timeout
+		p.eosTimer = time.AfterFunc(eosTimeout, func() {
+			p.Logger.Errorw("pipeline frozen", nil)
+			p.Info.Error = "pipeline frozen"
+			p.stop()
+		})
 
 		switch s := p.in.Source.(type) {
 		case *source.SDKSource:
@@ -295,20 +305,51 @@ func (p *Pipeline) Stop() {
 	}
 }
 
+func (p *Pipeline) updateStartTime(startedAt int64) {
+	switch p.EgressType {
+	case params.EgressTypeStream, params.EgressTypeWebsocket:
+		p.mu.Lock()
+		for _, streamInfo := range p.StreamInfo {
+			p.startedAt[streamInfo.Url] = startedAt
+		}
+		p.mu.Unlock()
+	case params.EgressTypeFile:
+		p.startedAt[fileKey] = startedAt
+	}
+
+	p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
+	if p.onStatusUpdate != nil {
+		p.onStatusUpdate(p.Info)
+	}
+}
+
+func (p *Pipeline) updateEndTime(endedAt int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	switch p.EgressType {
+	case params.EgressTypeStream, params.EgressTypeWebsocket:
+		for _, info := range p.StreamInfo {
+			startedAt := p.startedAt[info.Url]
+			info.Duration = endedAt - startedAt
+		}
+
+	case params.EgressTypeFile:
+		startedAt := p.startedAt[fileKey]
+		p.FileInfo.Duration = endedAt - startedAt
+	}
+}
+
 func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 	switch msg.Type() {
 	case gst.MessageEOS:
 		// EOS received - close and return
-		p.Logger.Debugw("EOS received, stopping pipeline")
-		_ = p.pipeline.BlockSetState(gst.StateNull)
-		p.Logger.Debugw("pipeline stopped")
-
-		switch p.in.Source.(type) {
-		case *source.WebSource:
-			p.updateEndTime(time.Now().UnixNano())
+		if p.eosTimer != nil {
+			p.eosTimer.Stop()
 		}
 
-		p.loop.Quit()
+		p.Logger.Debugw("EOS received, stopping pipeline")
+		p.stop()
 		return false
 
 	case gst.MessageError:
@@ -354,39 +395,24 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 	return true
 }
 
-func (p *Pipeline) updateStartTime(startedAt int64) {
-	switch p.EgressType {
-	case params.EgressTypeStream, params.EgressTypeWebsocket:
-		p.mu.Lock()
-		for _, streamInfo := range p.StreamInfo {
-			p.startedAt[streamInfo.Url] = startedAt
-		}
-		p.mu.Unlock()
-	case params.EgressTypeFile:
-		p.startedAt[fileKey] = startedAt
-	}
-
-	p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
-	if p.onStatusUpdate != nil {
-		p.onStatusUpdate(p.Info)
-	}
-}
-
-func (p *Pipeline) updateEndTime(endedAt int64) {
+func (p *Pipeline) stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	switch p.EgressType {
-	case params.EgressTypeStream, params.EgressTypeWebsocket:
-		for _, info := range p.StreamInfo {
-			startedAt := p.startedAt[info.Url]
-			info.Duration = endedAt - startedAt
-		}
-
-	case params.EgressTypeFile:
-		startedAt := p.startedAt[fileKey]
-		p.FileInfo.Duration = endedAt - startedAt
+	if p.loop == nil {
+		return
 	}
+
+	_ = p.pipeline.BlockSetState(gst.StateNull)
+	p.Logger.Debugw("pipeline stopped")
+
+	switch p.in.Source.(type) {
+	case *source.WebSource:
+		p.updateEndTime(time.Now().UnixNano())
+	}
+
+	p.loop.Quit()
+	p.loop = nil
 }
 
 // handleError returns true if the error has been handled, false if the pipeline should quit

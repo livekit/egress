@@ -237,7 +237,7 @@ func (s *Service) handleEgress(p *pipeline.Pipeline) {
 		select {
 		case <-s.kill:
 			// kill signal received
-			p.Stop()
+			p.SendEOS()
 
 		case res := <-result:
 			// recording finished
@@ -258,7 +258,7 @@ func (s *Service) handleEgress(p *pipeline.Pipeline) {
 			case *livekit.EgressRequest_UpdateStream:
 				err = p.UpdateStream(req.UpdateStream)
 			case *livekit.EgressRequest_Stop:
-				p.Stop()
+				p.SendEOS()
 			default:
 				err = errors.ErrInvalidRPC
 			}

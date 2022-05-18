@@ -59,7 +59,7 @@ func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 		)
 	}
 
-	if err := s.loadAudioSink(p.Info.EgressId); err != nil {
+	if err := s.createAudioSink(p.Info.EgressId); err != nil {
 		s.logger.Errorw("failed to load pulse sink", err)
 		return nil, err
 	}
@@ -78,7 +78,8 @@ func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 	return s, nil
 }
 
-func (s *WebSource) loadAudioSink(egressID string) error {
+// creates a new pulse audio sink
+func (s *WebSource) createAudioSink(egressID string) error {
 	cmd := exec.Command("pactl",
 		"load-module", "module-null-sink",
 		fmt.Sprintf("sink_name=\"%s\"", egressID),
@@ -95,6 +96,7 @@ func (s *WebSource) loadAudioSink(egressID string) error {
 	return nil
 }
 
+// creates a new xvfb display
 func (s *WebSource) launchXvfb(display string, width, height, depth int32) error {
 	dims := fmt.Sprintf("%dx%dx%d", width, height, depth)
 	s.logger.Debugw("launching xvfb", "display", display, "dims", dims)
@@ -106,6 +108,7 @@ func (s *WebSource) launchXvfb(display string, width, height, depth int32) error
 	return nil
 }
 
+// launches chrome and navigates to the url
 func (s *WebSource) launchChrome(url, egressID, display string, width, height int32, insecure bool) error {
 	s.logger.Debugw("launching chrome", "url", url)
 

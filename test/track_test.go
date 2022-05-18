@@ -141,7 +141,7 @@ func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, tes
 
 	// record for ~30s. Takes about 5s to start
 	time.AfterFunc(time.Second*35, func() {
-		rec.Stop()
+		rec.SendEOS()
 	})
 	res := rec.Run()
 

@@ -53,7 +53,6 @@ type SDKSource struct {
 
 	mutedChan    chan bool
 	endRecording chan struct{}
-	closed       chan struct{}
 }
 
 func NewSDKSource(p *params.Params) (*SDKSource, error) {
@@ -63,7 +62,6 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		cs:           &clockSync{},
 		mutedChan:    p.MutedChan,
 		endRecording: make(chan struct{}),
-		closed:       make(chan struct{}),
 	}
 
 	var fileIdentifier string
@@ -363,34 +361,27 @@ func (s *SDKSource) EndRecording() chan struct{} {
 }
 
 func (s *SDKSource) SendEOS() {
-	select {
-	case <-s.closed:
-		return
-	default:
-		close(s.closed)
+	s.cs.SetEndTime(time.Now().UnixNano())
 
-		s.cs.SetEndTime(time.Now().UnixNano())
-
-		if s.fileWriter != nil {
-			s.fileWriter.stop()
-		} else {
-			var wg sync.WaitGroup
-			if s.audioWriter != nil {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					s.audioWriter.stop()
-				}()
-			}
-			if s.videoWriter != nil {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					s.videoWriter.stop()
-				}()
-			}
-			wg.Wait()
+	if s.fileWriter != nil {
+		s.fileWriter.stop()
+	} else {
+		var wg sync.WaitGroup
+		if s.audioWriter != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				s.audioWriter.stop()
+			}()
 		}
+		if s.videoWriter != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				s.videoWriter.stop()
+			}()
+		}
+		wg.Wait()
 	}
 }
 
