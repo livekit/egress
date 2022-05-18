@@ -17,7 +17,7 @@ COPY pkg/ pkg/
 COPY version/ version/
 
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o livekit-egress ./cmd/server
+    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o egress ./cmd/server
 
 FROM livekit/gstreamer:1.18.5-prod
 
@@ -72,18 +72,22 @@ RUN wget -N http://chromedriver.storage.googleapis.com/2.46/chromedriver_linux64
     mv -f chromedriver /usr/local/bin/chromedriver && \
     rm chromedriver_linux64.zip
 
-# clean
-RUN apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
 # add root user to group for pulseaudio access
 RUN adduser root pulse-access
 
-# create xdg_runtime_dir
-RUN mkdir -pv ~/.cache/xdgr
+# clean up
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -rf /var/run/pulse /var/lib/pulse /root/.config/pulse && \
+    mkdir -pv ~/.cache/xdgr
+
+# set xdg_runtime_dir
+ENV XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr
+
+# start pulseaudio as system wide daemon; for debugging it helps to start in non-daemon mode
+RUN pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit
 
 # copy binary
 COPY --from=0 /workspace/egress /
-COPY build/entrypoint.sh .
 
-ENTRYPOINT ["./entrypoint.sh"]
+ENTRYPOINT ["./egress"]

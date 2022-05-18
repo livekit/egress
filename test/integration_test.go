@@ -25,6 +25,8 @@ const (
 	audioTestInput  = "https://www.youtube.com/watch?v=eAcFPtCyDYY&t=59s"
 	audioTestInput2 = "https://www.youtube.com/watch?v=BlPbAq1dW3I&t=45s"
 	staticTestInput = "https://www.livekit.io"
+	streamUrl1      = "rtmp://localhost:1935/live/stream1"
+	streamUrl2      = "rtmp://localhost:1935/live/stream2"
 	muteDuration    = time.Second * 10
 )
 
@@ -184,4 +186,58 @@ func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.St
 	require.NotEmpty(t, fileRes.Location)
 
 	verify(t, filepath, p, res, false, conf.WithMuting)
+}
+
+func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) {
+	p, err := params.GetPipelineParams(conf.Config, req)
+	require.NoError(t, err)
+
+	rec, err := pipeline.New(conf.Config, p)
+	require.NoError(t, err)
+
+	defer func() {
+		rec.SendEOS()
+		time.Sleep(time.Millisecond * 100)
+	}()
+
+	resChan := make(chan *livekit.EgressInfo, 1)
+	go func() {
+		resChan <- rec.Run()
+	}()
+
+	// wait for recorder to start
+	time.Sleep(time.Second * 30)
+
+	// check stream
+	verifyStreams(t, p, streamUrl1)
+
+	// add another, check both
+	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
+		EgressId:      req.EgressId,
+		AddOutputUrls: []string{streamUrl2},
+	}))
+	verifyStreams(t, p, streamUrl1, streamUrl2)
+
+	// remove first, check second
+	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
+		EgressId:         req.EgressId,
+		RemoveOutputUrls: []string{streamUrl1},
+	}))
+	verifyStreams(t, p, streamUrl2)
+
+	// stop
+	rec.SendEOS()
+	res := <-resChan
+
+	// egress info
+	require.Empty(t, res.Error)
+	require.NotZero(t, res.StartedAt)
+	require.NotZero(t, res.EndedAt)
+
+	// stream info
+	require.Len(t, res.GetStream().Info, 2)
+	for _, info := range res.GetStream().Info {
+		require.NotEmpty(t, info.Url)
+		require.NotZero(t, info.Duration)
+	}
 }

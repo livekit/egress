@@ -8,13 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
 
-	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
@@ -142,7 +139,6 @@ func runRoomCompositeFileTest(t *testing.T, conf *testConfig, test *testCase) {
 }
 
 func testRoomCompositeStream(t *testing.T, conf *testConfig) {
-	url := "rtmp://localhost:1935/live/stream1"
 	req := &livekit.StartEgressRequest{
 		EgressId:  utils.NewGuid(utils.EgressPrefix),
 		RequestId: utils.NewGuid(utils.RPCPrefix),
@@ -155,7 +151,7 @@ func testRoomCompositeStream(t *testing.T, conf *testConfig) {
 				Output: &livekit.RoomCompositeEgressRequest_Stream{
 					Stream: &livekit.StreamOutput{
 						Protocol: livekit.StreamProtocol_RTMP,
-						Urls:     []string{url},
+						Urls:     []string{streamUrl1},
 					},
 				},
 				Options: &livekit.RoomCompositeEgressRequest_Advanced{
@@ -167,56 +163,5 @@ func testRoomCompositeStream(t *testing.T, conf *testConfig) {
 		},
 	}
 
-	p, err := params.GetPipelineParams(conf.Config, req)
-	require.NoError(t, err)
-	p.CustomInputURL = videoTestInput
-	rec, err := pipeline.New(conf.Config, p)
-	require.NoError(t, err)
-
-	defer func() {
-		rec.SendEOS()
-		time.Sleep(time.Millisecond * 100)
-	}()
-
-	resChan := make(chan *livekit.EgressInfo, 1)
-	go func() {
-		resChan <- rec.Run()
-	}()
-
-	// wait for recorder to start
-	time.Sleep(time.Second * 30)
-
-	// check stream
-	verifyStreams(t, p, url)
-
-	// add another, check both
-	url2 := "rtmp://localhost:1935/live/stream2"
-	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
-		EgressId:      req.EgressId,
-		AddOutputUrls: []string{url2},
-	}))
-	verifyStreams(t, p, url, url2)
-
-	// remove first, check second
-	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
-		EgressId:         req.EgressId,
-		RemoveOutputUrls: []string{url},
-	}))
-	verifyStreams(t, p, url2)
-
-	// stop
-	rec.SendEOS()
-	res := <-resChan
-
-	// egress info
-	require.Empty(t, res.Error)
-	require.NotZero(t, res.StartedAt)
-	require.NotZero(t, res.EndedAt)
-
-	// stream info
-	require.Len(t, res.GetStream().Info, 2)
-	for _, info := range res.GetStream().Info {
-		require.NotEmpty(t, info.Url)
-		require.NotZero(t, info.Duration)
-	}
+	runStreamTest(t, conf, req)
 }

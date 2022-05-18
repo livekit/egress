@@ -45,8 +45,8 @@ const (
 var (
 	DefaultAudioCodecs = map[OutputType]MimeType{
 		OutputTypeOGG:  MimeTypeOpus,
-		OutputTypeMP4:  MimeTypeOpus,
-		OutputTypeTS:   MimeTypeOpus,
+		OutputTypeMP4:  MimeTypeAAC,
+		OutputTypeTS:   MimeTypeAAC,
 		OutputTypeWebM: MimeTypeOpus,
 		OutputTypeRTMP: MimeTypeAAC,
 	}

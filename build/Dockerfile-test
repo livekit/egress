@@ -61,15 +61,17 @@ RUN wget -N http://chromedriver.storage.googleapis.com/2.46/chromedriver_linux64
     mv -f chromedriver /usr/local/bin/chromedriver && \
     rm chromedriver_linux64.zip
 
-# clean up
-RUN apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
 # add root user to group for pulseaudio access
 RUN adduser root pulse-access
 
-# create xdg_runtime_dir
-RUN mkdir -pv ~/.cache/xdgr
+# clean up
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -rf /var/run/pulse /var/lib/pulse /root/.config/pulse && \
+    mkdir -pv ~/.cache/xdgr
+
+# set xdg_runtime_dir
+ENV XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr
 
 # download go modules
 COPY go.mod .
@@ -79,7 +81,9 @@ RUN go mod download
 # copy source
 COPY pkg/ pkg/
 COPY test/ test/
-COPY build/test/entrypoint.sh .
+
+# start pulseaudio as system wide daemon; for debugging it helps to start in non-daemon mode
+RUN pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit
 
 # run
-ENTRYPOINT ["./entrypoint.sh"]
+CMD RTSP_LOGDESTINATIONS=file ./rtsp-simple-server & go test -v --tags=integration ./test

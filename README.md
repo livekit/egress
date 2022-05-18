@@ -158,7 +158,6 @@ To run against a local livekit server, you'll need to do the following:
   * on mac or windows, run `docker run -it --rm alpine nslookup host.docker.internal` and you should see something like
     `Name:	host.docker.internal
     Address: 192.168.65.2`
-* your livekit-server must be run using `--node-ip` set to the above IP
 
 These changes allow the service to connect to your local redis instance from inside the docker container.
 
