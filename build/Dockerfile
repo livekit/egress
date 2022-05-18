@@ -83,7 +83,7 @@ RUN adduser root pulse-access
 RUN mkdir -pv ~/.cache/xdgr
 
 # copy binary
-COPY --from=0 /workspace/livekit-egress /
+COPY --from=0 /workspace/egress /
 COPY build/entrypoint.sh .
 
 ENTRYPOINT ["./entrypoint.sh"]

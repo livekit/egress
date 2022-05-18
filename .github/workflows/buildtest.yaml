@@ -19,10 +19,10 @@ jobs:
             ~/go/bin
             ~/bin/protoc
             ~/.cache
-          key: livekit-egress
+          key: egress
 
       - name: Build docker images
-        run: docker build -t livekit-egress-test -f ./build/test/Dockerfile .
+        run: docker build -t egress-test -f ./build/test/Dockerfile .
 
       - name: Run tests
-        run: docker run --rm livekit-egress-test
+        run: docker run --rm egress-test

@@ -17,7 +17,7 @@ import (
 
 func main() {
 	app := &cli.App{
-		Name:        "livekit-egress",
+		Name:        "egress",
 		Usage:       "LiveKit Egress",
 		Description: "runs the recorder in standalone mode or as a service",
 		Flags: []cli.Flag{

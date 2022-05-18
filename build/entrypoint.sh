@@ -23,7 +23,7 @@ term_handler() {
 trap 'kill ${!}; term_handler' SIGTERM
 
 # Run service
-XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr ./livekit-egress &
+XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr ./egress &
 pid="$!"
 
 # Wait forever

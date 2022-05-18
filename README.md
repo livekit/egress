@@ -162,7 +162,7 @@ To run against a local livekit server, you'll need to do the following:
 
 These changes allow the service to connect to your local redis instance from inside the docker container.
 
-Create a directory to mount. In this example, we will use `~/livekit-egress`.
+Create a directory to mount. In this example, we will use `~/egress-test`.
 
 Create a config.yaml in the above directory.
 * `redis` and `ws_url` should use the above IP instead of `localhost`
@@ -182,8 +182,8 @@ Then to run the service:
 ```shell
 docker run --rm \
     -e EGRESS_CONFIG_FILE=/out/config.yaml \
-    -v ~/livekit-egress:/out \
-    livekit-egress
+    -v ~/egress-test:/out \
+    livekit/egress
 ```
 
 You can then use our [cli](https://github.com/livekit/livekit-cli) to submit egress requests to your server.
