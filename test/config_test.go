@@ -17,6 +17,7 @@ log_level: error
 api_key: fake_key
 api_secret: fake_secret
 ws_url: wss://fake-url.com
+room_name: egress-test
 room_only: false
 track_composite_only: false
 track_only: false
@@ -48,10 +49,7 @@ func getTestConfig(t *testing.T) *testConfig {
 	conf, err := config.NewConfig(confString)
 	require.NoError(t, err)
 
-	tc := &testConfig{
-		RoomName: "egress-test",
-		GstDebug: 1,
-	}
+	tc := &testConfig{}
 	err = yaml.Unmarshal([]byte(confString), tc)
 	require.NoError(t, err)
 
