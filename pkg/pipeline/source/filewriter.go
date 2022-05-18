@@ -10,13 +10,13 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/media"
 
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
 	"github.com/livekit/server-sdk-go/pkg/media/ivfwriter"
 	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 type fileWriter struct {

@@ -6,9 +6,10 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
+	"github.com/livekit/protocol/utils"
+
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
-	"github.com/livekit/protocol/utils"
 )
 
 func buildFileOutputBin(p *params.Params) (*Bin, error) {

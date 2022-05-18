@@ -11,11 +11,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/egress/pkg/pipeline/params"
 )

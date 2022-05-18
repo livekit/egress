@@ -104,7 +104,6 @@ func (b *Bin) buildAudioEncoder(p *params.Params) error {
 		return err
 	}
 
-	// TODO: is audioresample needed?
 	audioResample, err := gst.NewElement("audioresample")
 	if err != nil {
 		return err

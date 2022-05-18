@@ -10,6 +10,8 @@ import (
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
 
+	"github.com/livekit/protocol/livekit"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/input"
@@ -17,7 +19,6 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
-	"github.com/livekit/protocol/livekit"
 )
 
 // gst.Init needs to be called before using gst but after gst package loads
@@ -43,16 +44,9 @@ type Pipeline struct {
 	startedAt map[string]int64
 	removed   map[string]bool
 	closed    chan struct{}
-}
 
-func FromRequest(conf *config.Config, request *livekit.StartEgressRequest) (*Pipeline, error) {
-	// get params
-	p, err := params.GetPipelineParams(conf, request)
-	if err != nil {
-		return nil, err
-	}
-
-	return New(conf, p)
+	// callbacks
+	onStatusUpdate func(*livekit.EgressInfo)
 }
 
 func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
@@ -125,10 +119,15 @@ func (p *Pipeline) GetInfo() *livekit.EgressInfo {
 	return p.Info
 }
 
+func (p *Pipeline) OnStatusUpdate(f func(info *livekit.EgressInfo)) {
+	p.onStatusUpdate = f
+}
+
 func (p *Pipeline) Run() *livekit.EgressInfo {
 	p.Info.StartedAt = time.Now().UnixNano()
 	defer func() {
 		p.Info.EndedAt = time.Now().UnixNano()
+		p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 	}()
 
 	// wait until room is ready
@@ -136,7 +135,6 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	if start != nil {
 		select {
 		case <-p.closed:
-			p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 			p.in.Close()
 			return p.Info
 		case <-start:
@@ -225,9 +223,76 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 		}
 	}
 
-	// return result
-	p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 	return p.Info
+}
+
+func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
+	if p.EgressType != params.EgressTypeStream {
+		return errors.ErrInvalidRPC
+	}
+
+	for _, url := range req.AddOutputUrls {
+		if err := p.VerifyUrl(url); err != nil {
+			return err
+		}
+	}
+
+	now := time.Now().UnixNano()
+	for _, url := range req.AddOutputUrls {
+		if err := p.out.AddSink(url); err != nil {
+			return err
+		}
+
+		streamInfo := &livekit.StreamInfo{Url: url}
+
+		p.mu.Lock()
+		p.startedAt[url] = now
+		p.StreamInfo[url] = streamInfo
+		p.mu.Unlock()
+
+		stream := p.Info.GetStream()
+		stream.Info = append(stream.Info, streamInfo)
+	}
+
+	for _, url := range req.RemoveOutputUrls {
+		if err := p.out.RemoveSink(url); err != nil {
+			return err
+		}
+
+		p.mu.Lock()
+		startedAt := p.startedAt[url]
+		p.StreamInfo[url].Duration = now - startedAt
+
+		delete(p.startedAt, url)
+		delete(p.StreamInfo, url)
+		p.mu.Unlock()
+	}
+
+	return nil
+}
+
+func (p *Pipeline) Stop() {
+	select {
+	case <-p.closed:
+		return
+	default:
+		close(p.closed)
+		p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
+		if p.onStatusUpdate != nil {
+			p.onStatusUpdate(p.Info)
+		}
+
+		p.Logger.Debugw("sending EOS to pipeline")
+
+		// TODO: kill after timeout
+
+		switch s := p.in.Source.(type) {
+		case *source.SDKSource:
+			s.SendEOS()
+		case *source.WebSource:
+			p.pipeline.SendEvent(gst.NewEOSEvent())
+		}
+	}
 }
 
 func (p *Pipeline) messageWatch(msg *gst.Message) bool {
@@ -302,6 +367,9 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 	}
 
 	p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
+	if p.onStatusUpdate != nil {
+		p.onStatusUpdate(p.Info)
+	}
 }
 
 func (p *Pipeline) updateEndTime(endedAt int64) {
@@ -314,73 +382,10 @@ func (p *Pipeline) updateEndTime(endedAt int64) {
 			startedAt := p.startedAt[info.Url]
 			info.Duration = endedAt - startedAt
 		}
+
 	case params.EgressTypeFile:
 		startedAt := p.startedAt[fileKey]
 		p.FileInfo.Duration = endedAt - startedAt
-	}
-}
-
-func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
-	if p.EgressType != params.EgressTypeStream {
-		return errors.ErrInvalidRPC
-	}
-
-	for _, url := range req.AddOutputUrls {
-		if err := p.VerifyUrl(url); err != nil {
-			return err
-		}
-	}
-
-	now := time.Now().UnixNano()
-	for _, url := range req.AddOutputUrls {
-		if err := p.out.AddSink(url); err != nil {
-			return err
-		}
-
-		streamInfo := &livekit.StreamInfo{Url: url}
-
-		p.mu.Lock()
-		p.startedAt[url] = now
-		p.StreamInfo[url] = streamInfo
-		p.mu.Unlock()
-
-		stream := p.Info.GetStream()
-		stream.Info = append(stream.Info, streamInfo)
-	}
-
-	for _, url := range req.RemoveOutputUrls {
-		if err := p.out.RemoveSink(url); err != nil {
-			return err
-		}
-
-		p.mu.Lock()
-		startedAt := p.startedAt[url]
-		p.StreamInfo[url].Duration = now - startedAt
-
-		delete(p.startedAt, url)
-		delete(p.StreamInfo, url)
-		p.mu.Unlock()
-	}
-
-	return nil
-}
-
-func (p *Pipeline) Stop() {
-	select {
-	case <-p.closed:
-		return
-	default:
-		close(p.closed)
-		p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
-
-		p.Logger.Debugw("sending EOS to pipeline")
-
-		switch s := p.in.Source.(type) {
-		case *source.SDKSource:
-			s.SendEOS()
-		case *source.WebSource:
-			p.pipeline.SendEvent(gst.NewEOSEvent())
-		}
 	}
 }
 

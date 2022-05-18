@@ -12,11 +12,18 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline"
+	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 func runRecorder(conf *config.Config, req *livekit.StartEgressRequest) error {
 	req.EgressId = utils.NewGuid(utils.EgressPrefix)
-	rec, err := pipeline.FromRequest(conf, req)
+	// get params
+	p, err := params.GetPipelineParams(conf, req)
+	if err != nil {
+		return err
+	}
+
+	rec, err := pipeline.New(conf, p)
 	if err != nil {
 		return err
 	}
