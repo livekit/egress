@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
@@ -45,39 +46,34 @@ func testTrackComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 			filename:  fmt.Sprintf("tc-h264-only-%v.mp4", time.Now().Unix()),
 		},
 	})
+
+	testTrackCompositeStream(t, conf, room)
 }
 
 func testTrackCompositeFile(t *testing.T, conf *testConfig, room *lksdk.Room, audioCodec, videoCodec params.MimeType, cases []*testCase) {
-	p := &sdkParams{
-		audioTrackID: publishSampleToRoom(t, room, audioCodec, false),
-		videoTrackID: publishSampleToRoom(t, room, videoCodec, conf.WithMuting),
-		roomName:     room.Name,
-	}
+	audioTrackID := publishSampleToRoom(t, room, audioCodec, false)
+	t.Cleanup(func() {
+		_ = room.LocalParticipant.UnpublishTrack(audioTrackID)
+	})
+
+	videoTrackID := publishSampleToRoom(t, room, videoCodec, conf.WithMuting)
+	t.Cleanup(func() {
+		_ = room.LocalParticipant.UnpublishTrack(videoTrackID)
+	})
 
 	for _, test := range cases {
 		if !t.Run(test.name, func(t *testing.T) {
-			runTrackCompositeFileTest(t, conf, p, test)
+			runTrackCompositeFileTest(t, conf, test, audioTrackID, videoTrackID)
 		}) {
 			t.FailNow()
 		}
 	}
-
-	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.audioTrackID))
-	require.NoError(t, room.LocalParticipant.UnpublishTrack(p.videoTrackID))
 }
 
-func runTrackCompositeFileTest(t *testing.T, conf *testConfig, params *sdkParams, test *testCase) {
-	var audioTrackID, videoTrackID string
-	if !test.videoOnly {
-		audioTrackID = params.audioTrackID
-	}
-	if !test.audioOnly {
-		videoTrackID = params.videoTrackID
-	}
-
+func runTrackCompositeFileTest(t *testing.T, conf *testConfig, test *testCase, audioTrackID, videoTrackID string) {
 	filepath := getFilePath(conf.Config, test.filename)
 	trackRequest := &livekit.TrackCompositeEgressRequest{
-		RoomName:     params.roomName,
+		RoomName:     conf.RoomName,
 		AudioTrackId: audioTrackID,
 		VideoTrackId: videoTrackID,
 		Output: &livekit.TrackCompositeEgressRequest_File{
@@ -104,4 +100,88 @@ func runTrackCompositeFileTest(t *testing.T, conf *testConfig, params *sdkParams
 	}
 
 	runFileTest(t, conf, test, req, filepath)
+}
+
+func testTrackCompositeStream(t *testing.T, conf *testConfig, room *lksdk.Room) {
+	audioTrackID := publishSampleToRoom(t, room, params.MimeTypeOpus, false)
+	t.Cleanup(func() {
+		_ = room.LocalParticipant.UnpublishTrack(audioTrackID)
+	})
+
+	videoTrackID := publishSampleToRoom(t, room, params.MimeTypeVP8, conf.WithMuting)
+	t.Cleanup(func() {
+		_ = room.LocalParticipant.UnpublishTrack(videoTrackID)
+	})
+
+	url := "rtmp://localhost:1935/live/stream1"
+	req := &livekit.StartEgressRequest{
+		EgressId:  utils.NewGuid(utils.EgressPrefix),
+		RequestId: utils.NewGuid(utils.RPCPrefix),
+		SentAt:    time.Now().Unix(),
+		Request: &livekit.StartEgressRequest_TrackComposite{
+			TrackComposite: &livekit.TrackCompositeEgressRequest{
+				RoomName:     conf.RoomName,
+				AudioTrackId: audioTrackID,
+				VideoTrackId: videoTrackID,
+				Output: &livekit.TrackCompositeEgressRequest_Stream{
+					Stream: &livekit.StreamOutput{
+						Urls: []string{url},
+					},
+				},
+			},
+		},
+	}
+
+	p, err := params.GetPipelineParams(conf.Config, req)
+	require.NoError(t, err)
+
+	rec, err := pipeline.New(conf.Config, p)
+	require.NoError(t, err)
+
+	defer func() {
+		rec.Stop()
+		time.Sleep(time.Millisecond * 100)
+	}()
+
+	resChan := make(chan *livekit.EgressInfo, 1)
+	go func() {
+		resChan <- rec.Run()
+	}()
+
+	// wait for recorder to start
+	time.Sleep(time.Second * 30)
+
+	// check stream
+	verifyStreams(t, p, url)
+
+	// add another, check both
+	url2 := "rtmp://localhost:1935/live/stream2"
+	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
+		EgressId:      req.EgressId,
+		AddOutputUrls: []string{url2},
+	}))
+	verifyStreams(t, p, url, url2)
+
+	// remove first, check second
+	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
+		EgressId:         req.EgressId,
+		RemoveOutputUrls: []string{url},
+	}))
+	verifyStreams(t, p, url2)
+
+	// stop
+	rec.Stop()
+	res := <-resChan
+
+	// egress info
+	require.Empty(t, res.Error)
+	require.NotZero(t, res.StartedAt)
+	require.NotZero(t, res.EndedAt)
+
+	// stream info
+	require.Len(t, res.GetStream().Info, 2)
+	for _, info := range res.GetStream().Info {
+		require.NotEmpty(t, info.Url)
+		require.NotZero(t, info.Duration)
+	}
 }

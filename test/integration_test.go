@@ -6,7 +6,6 @@ package test
 import (
 	"fmt"
 	"math/rand"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -55,27 +54,16 @@ type testCase struct {
 	output           params.OutputType
 }
 
-type sdkParams struct {
-	audioTrackID string
-	videoTrackID string
-	roomName     string
-}
-
 func TestEgress(t *testing.T) {
 	conf := getTestConfig(t)
 
 	var room *lksdk.Room
 	if strings.HasPrefix(conf.ApiKey, "API") {
-		roomName := os.Getenv("LIVEKIT_ROOM_NAME")
-		if roomName == "" {
-			roomName = "egress-integration"
-		}
-
 		var err error
 		room, err = lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
 			APIKey:              conf.ApiKey,
 			APISecret:           conf.ApiSecret,
-			RoomName:            roomName,
+			RoomName:            conf.RoomName,
 			ParticipantName:     "sample",
 			ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
 		})

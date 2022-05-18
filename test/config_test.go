@@ -27,11 +27,12 @@ gst_debug: 1
 type testConfig struct {
 	*config.Config
 
-	RoomOnly           bool `yaml:"room_only"`
-	TrackCompositeOnly bool `yaml:"track_composite_only"`
-	TrackOnly          bool `yaml:"track_only"`
-	WithMuting         bool `yaml:"with_muting"`
-	GstDebug           int  `yaml:"gst_debug"`
+	RoomName           string `yaml:"room_name"`
+	RoomOnly           bool   `yaml:"room_only"`
+	TrackCompositeOnly bool   `yaml:"track_composite_only"`
+	TrackOnly          bool   `yaml:"track_only"`
+	WithMuting         bool   `yaml:"with_muting"`
+	GstDebug           int    `yaml:"gst_debug"`
 }
 
 func getTestConfig(t *testing.T) *testConfig {
@@ -47,7 +48,10 @@ func getTestConfig(t *testing.T) *testConfig {
 	conf, err := config.NewConfig(confString)
 	require.NoError(t, err)
 
-	tc := &testConfig{}
+	tc := &testConfig{
+		RoomName: "egress-test",
+		GstDebug: 1,
+	}
 	err = yaml.Unmarshal([]byte(confString), tc)
 	require.NoError(t, err)
 

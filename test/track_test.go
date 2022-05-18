@@ -71,7 +71,10 @@ func testTrack(t *testing.T, conf *testConfig, room *lksdk.Room) {
 
 func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *testCase) {
 	trackID := publishSampleToRoom(t, room, test.codec, conf.WithMuting)
-	time.Sleep(time.Second)
+	t.Cleanup(func() {
+		_ = room.LocalParticipant.UnpublishTrack(trackID)
+		time.Sleep(time.Second)
+	})
 
 	filepath := getFilePath(conf.Config, test.filename)
 	trackRequest := &livekit.TrackEgressRequest{
@@ -94,13 +97,15 @@ func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *te
 	}
 
 	runFileTest(t, conf, test, req, filepath)
-
-	require.NoError(t, room.LocalParticipant.UnpublishTrack(trackID))
-	time.Sleep(time.Second)
 }
 
 func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *testCase) {
 	trackID := publishSampleToRoom(t, room, test.codec, false)
+	t.Cleanup(func() {
+		_ = room.LocalParticipant.UnpublishTrack(trackID)
+		time.Sleep(time.Second)
+	})
+
 	time.Sleep(time.Second)
 
 	filepath := getFilePath(conf.Config, test.filename)
@@ -140,7 +145,6 @@ func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, tes
 	})
 	res := rec.Run()
 
-	require.NoError(t, room.LocalParticipant.UnpublishTrack(trackID))
 	verify(t, filepath, p, res, true, conf.WithMuting)
 }
 
