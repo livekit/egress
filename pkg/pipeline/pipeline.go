@@ -313,6 +313,7 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 			p.startedAt[streamInfo.Url] = startedAt
 		}
 		p.mu.Unlock()
+
 	case params.EgressTypeFile:
 		p.startedAt[fileKey] = startedAt
 	}
@@ -397,22 +398,24 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 
 func (p *Pipeline) stop() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	if p.loop == nil {
+		p.mu.Unlock()
 		return
 	}
 
 	_ = p.pipeline.BlockSetState(gst.StateNull)
+	endedAt := time.Now().UnixNano()
 	p.Logger.Debugw("pipeline stopped")
-
-	switch p.in.Source.(type) {
-	case *source.WebSource:
-		p.updateEndTime(time.Now().UnixNano())
-	}
 
 	p.loop.Quit()
 	p.loop = nil
+	p.mu.Unlock()
+
+	switch p.in.Source.(type) {
+	case *source.WebSource:
+		p.updateEndTime(endedAt)
+	}
 }
 
 // handleError returns true if the error has been handled, false if the pipeline should quit
