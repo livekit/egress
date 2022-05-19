@@ -4,6 +4,7 @@ ARG TARGETPLATFORM
 
 WORKDIR /workspace
 
+# install go
 RUN apt-get update && apt-get install -y golang
 
 # download go modules
@@ -16,6 +17,7 @@ COPY cmd/ cmd/
 COPY pkg/ pkg/
 COPY version/ version/
 
+# build
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
     CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o egress ./cmd/server
 
@@ -84,10 +86,9 @@ RUN apt-get clean && \
 # set xdg_runtime_dir
 ENV XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr
 
-# start pulseaudio as system wide daemon; for debugging it helps to start in non-daemon mode
-RUN pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit
-
 # copy binary
 COPY --from=0 /workspace/egress /
 
-ENTRYPOINT ["./egress"]
+# run
+CMD pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit & \
+    ./egress

@@ -17,7 +17,7 @@ RUN apt-get update && \
     wget \
     xvfb
 
-
+# install rtsp server
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64v8; else ARCH=amd64; fi && \
     wget https://github.com/aler9/rtsp-simple-server/releases/download/v0.17.6/rtsp-simple-server_v0.17.6_linux_${ARCH}.tar.gz && \
     tar -zxvf rtsp-simple-server_v0.17.6_linux_${ARCH}.tar.gz && \
@@ -82,8 +82,7 @@ RUN go mod download
 COPY pkg/ pkg/
 COPY test/ test/
 
-# start pulseaudio as system wide daemon; for debugging it helps to start in non-daemon mode
-RUN pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit
-
 # run
-CMD RTSP_LOGDESTINATIONS=file ./rtsp-simple-server & go test -v --tags=integration ./test
+CMD pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit & \
+    RTSP_LOGDESTINATIONS=file ./rtsp-simple-server & \
+    go test -v --tags=integration ./test
