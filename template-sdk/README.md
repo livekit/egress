@@ -31,34 +31,60 @@ This template SDK takes care of communicating with Egress recorder, performing t
 ## Install
 
 ```sh
-yarn add livekit-egress-sdk
+yarn add @livekit/egress-sdk
 ```
 
 ## Usage
 
 ```typescript
-import EgressHelper from 'livekit-egress-sdk'
+import EgressHelper from '@livekit/egress-sdk'
 import { Room } from 'livekit-client'
 
 const room = new Room({
   adaptiveStream: true,
 })
 
+// as soon as room is connected, notify egress helper so it can listen to events
+// when autoEnd is set, recording will stop when all participants have left.
 EgressHelper.setRoom(room, {
   autoEnd: true,
 })
+
+// advanced feature, if you'd like your recording to switch between different
+// layouts programmatically using EgressService.UpdateLayout, those changes
+// can be handled here
 EgressHelper.onLayoutChanged((layout) => {
-  // handle layout changes
 })
 
+// connect to the room, and render your application UI as usual
+// EgressHelper provides URL and token that are passed in by Egress Service
 await room.connect(
   EgressHelper.getLiveKitURL(),
   EgressHelper.getAccessToken(),
 );
+
+// as soon as your application is set up and ready, call this API to start recording
 EgressHelper.startRecording();
 
 ```
 
 ## Example
 
-We provide a few default templates/layouts [here](../egress-composite/). It should serve as a good guide for creating your own templates.
+We provide a few default templates/layouts [here](../template-default/). It should serve as a good guide for creating your own templates.
+
+## Testing your templates
+
+In order to speed up the development cycle of your recording templates, we provide a convenient utility in [livekit-cli](https://github.com/livekit/livekit-cli). `test-egress-template` will spin up a few virtual publishers, and then simulate them joining your room. It'll also point a browser instance to your local template, with the correct URL parameters filled in.
+
+Here's an example:
+
+```shell
+livekit-cli test-egress-template
+  --base-url http://localhost:3000 \
+  --url <livekit-instance>
+  --api-key <key>
+  --api-secret <secret>
+  --room <your-room> --layout <your-layout> --publishers 3
+```
+
+This command will launch a browser pointed at `http://localhost:3000`, while simulating 3 publishers publishing to your livekit instance.

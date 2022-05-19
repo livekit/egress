@@ -1,8 +1,8 @@
+import EgressHelper from '@livekit/egress-sdk';
+import { AudioRenderer, useRoom } from '@livekit/react-components';
 import {
   AudioTrack, Participant, RemoteParticipant, Room,
 } from 'livekit-client';
-import EgressHelper from 'livekit-egress-sdk';
-import { AudioRenderer, useRoom } from 'livekit-react';
 import React, { ReactElement, useEffect, useState } from 'react';
 import GridLayout from './GridLayout';
 import SpeakerLayout from './SpeakerLayout';
@@ -15,13 +15,13 @@ interface RoomPageProps {
 
 export default function RoomPage({ url, token, layout: initialLayout }: RoomPageProps) {
   const [layout, setLayout] = useState(initialLayout);
-  const roomState = useRoom();
+  const roomState = useRoom({
+    adaptiveStream: true,
+  });
   const { room, participants, audioTracks } = roomState;
 
   useEffect(() => {
-    roomState.connect(url, token, {
-      adaptiveStream: true,
-    });
+    roomState.connect(url, token);
   }, [url]);
 
   useEffect(() => {
