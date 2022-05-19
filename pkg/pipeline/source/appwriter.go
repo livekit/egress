@@ -50,6 +50,7 @@ type appWriter struct {
 	conversion      float64
 	lastSN          uint16
 	lastTS          uint32
+	tsStep          uint32
 	maxLate         time.Duration
 	maxRTP          atomic.Int64
 	lastPictureId   uint16
@@ -227,7 +228,16 @@ func (w *appWriter) pushBlankFrames() error {
 	//   recreated it to work now, will remove this when bug fixed
 	w.sb = w.newSampleBuffer()
 
-	ticker := time.NewTicker(time.Microsecond * 41708)
+	// expected difference between packet timestamps
+	tsStep := w.tsStep
+	if tsStep == 0 {
+		w.logger.Debugw("no timestamp step, guessing")
+		tsStep = w.track.Codec().ClockRate / (24000 / 1001)
+	}
+
+	// expected packet duration in nanoseconds
+	frameDuration := time.Duration(float64(tsStep) * 1e9 / float64(w.track.Codec().ClockRate))
+	ticker := time.NewTicker(frameDuration)
 	defer ticker.Stop()
 
 	for {
@@ -236,15 +246,14 @@ func (w *appWriter) pushBlankFrames() error {
 			return nil
 		}
 
-		// TODO: update timestamp using actual track framerate
 		pkt := &rtp.Packet{
 			Header: rtp.Header{
 				Version:        2,
 				Padding:        false,
 				Marker:         true,
 				PayloadType:    uint8(w.track.PayloadType()),
-				SequenceNumber: w.lastSN + uint16(1),
-				Timestamp:      w.lastTS + (w.track.Codec().ClockRate / (24000 / 1001)),
+				SequenceNumber: w.lastSN + 1,
+				Timestamp:      w.lastTS + tsStep,
 				SSRC:           uint32(w.track.SSRC()),
 				CSRC:           []uint32{},
 			},
@@ -294,6 +303,11 @@ func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 	for _, pkt := range packets {
 		if w.isDraining() && int64(pkt.Timestamp) >= w.maxRTP.Load() {
 			return io.EOF
+		}
+
+		// record timestamp diff
+		if w.tsStep == 0 && w.lastTS != 0 && pkt.SequenceNumber == w.lastSN+1 {
+			w.tsStep = pkt.Timestamp - w.lastTS
 		}
 
 		// record SN and TS

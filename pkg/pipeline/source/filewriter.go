@@ -50,28 +50,24 @@ func newFileWriter(
 		finished: make(chan struct{}),
 	}
 
-	var err error
 	switch codec {
 	case params.MimeTypeVP8:
-		writer, err := ivfwriter.New(p.Filename)
+		ivf, err := ivfwriter.New(p.Filename)
 		if err != nil {
 			return nil, err
 		}
 
-		w.writer = writer
+		w.writer = ivf
 		w.sb = samplebuilder.New(
 			maxVideoLate, &codecs.VP8Packet{}, track.Codec().ClockRate,
 			samplebuilder.WithPacketDroppedHandler(func() {
-				writer.FrameDropped()
+				ivf.FrameDropped()
 				rp.WritePLI(track.SSRC())
 			}),
 		)
 
 	default:
-		err = errors.ErrNotSupported(track.Codec().MimeType)
-	}
-	if err != nil {
-		return nil, err
+		return nil, errors.ErrNotSupported(track.Codec().MimeType)
 	}
 
 	go w.start()
