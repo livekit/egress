@@ -44,7 +44,8 @@ const room = new Room({
   adaptiveStream: true,
 })
 
-// as soon as room is connected, notify egress helper so it can listen to events
+// as soon as room is created, register with egress helper so it can listen
+// to events.
 // when autoEnd is set, recording will stop when all participants have left.
 EgressHelper.setRoom(room, {
   autoEnd: true,

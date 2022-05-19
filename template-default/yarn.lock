@@ -1509,10 +1509,10 @@
     "@types/yargs" "^16.0.0"
     chalk "^4.0.0"
 
-"@livekit/egress-sdk@^0.1.0":
-  version "0.1.0"
-  resolved "https://registry.yarnpkg.com/@livekit/egress-sdk/-/egress-sdk-0.1.0.tgz#caa060961660d63125b71e76e720634140cd3064"
-  integrity sha512-hmRkbRgqilaQSuws1DOuDDAfwWpS3W/JBg3hlvG6ErXstICvo4E/U2GNvyNx2ejohwQakV7p51Ci3ynWxAxW7g==
+"@livekit/egress-sdk@^0.1.1":
+  version "0.1.1"
+  resolved "https://registry.yarnpkg.com/@livekit/egress-sdk/-/egress-sdk-0.1.1.tgz#6883aac6ff3dd3624afd40b620eaa611cfc92651"
+  integrity sha512-JfkjW+m0v1rjjYRaH1KCNMs040JUtQjXpl1kPzLV32p1cnDNoSWXBFp4gQnoXv7wCdHQ+uPm2jQY8cZ+/KJQTA==
 
 "@livekit/react-components@^1.0.0":
   version "1.0.0"
