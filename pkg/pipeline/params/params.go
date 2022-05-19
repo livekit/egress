@@ -23,7 +23,6 @@ type Params struct {
 	AudioParams
 	VideoParams
 
-	SkipPipeline bool
 	EgressType
 	OutputType
 

@@ -63,17 +63,6 @@ func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 		return nil, err
 	}
 
-	// skip pipeline used by video track egress
-	if p.SkipPipeline {
-		return &Pipeline{
-			Params:    p,
-			in:        in,
-			startedAt: make(map[string]int64),
-			removed:   make(map[string]bool),
-			closed:    make(chan struct{}),
-		}, nil
-	}
-
 	// create output bin
 	out, err := output.Build(p)
 	if err != nil {
@@ -150,38 +139,19 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 		p.SendEOS()
 	}()
 
-	if p.SkipPipeline {
-		// update startedAt
-		go func() {
-			for {
-				// race against the file writer - make sure it doesn't return 0
-				startTime := p.in.Source.(*source.SDKSource).GetStartTime()
-				if startTime != 0 {
-					p.updateStartTime(startTime)
-					return
-				}
-				time.Sleep(time.Millisecond * 100)
-			}
-		}()
+	// add watch
+	p.loop = glib.NewMainLoop(glib.MainContextDefault(), false)
+	p.pipeline.GetPipelineBus().AddWatch(p.messageWatch)
 
-		// wait until completion
-		<-p.closed
-
-	} else {
-		// add watch
-		p.loop = glib.NewMainLoop(glib.MainContextDefault(), false)
-		p.pipeline.GetPipelineBus().AddWatch(p.messageWatch)
-
-		// set state to playing (this does not start the pipeline)
-		if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
-			p.Logger.Errorw("failed to set pipeline state", err)
-			p.Info.Error = err.Error()
-			return p.Info
-		}
-
-		// run main loop
-		p.loop.Run()
+	// set state to playing (this does not start the pipeline)
+	if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
+		p.Logger.Errorw("failed to set pipeline state", err)
+		p.Info.Error = err.Error()
+		return p.Info
 	}
+
+	// run main loop
+	p.loop.Run()
 
 	// close input source
 	p.in.Close()
