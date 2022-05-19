@@ -70,8 +70,9 @@ RUN apt-get clean && \
     rm -rf /var/run/pulse /var/lib/pulse /root/.config/pulse && \
     mkdir -pv ~/.cache/xdgr
 
-# set xdg_runtime_dir
+# set env vars
 ENV XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr
+ENV RTSP_LOGDESTINATIONS=file
 
 # download go modules
 COPY go.mod .
@@ -83,6 +84,6 @@ COPY pkg/ pkg/
 COPY test/ test/
 
 # run
-CMD pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit & \
-    RTSP_LOGDESTINATIONS=file ./rtsp-simple-server & \
+CMD ./rtsp-simple-server & \
+    pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit & \
     go test -v --tags=integration ./test

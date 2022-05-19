@@ -126,5 +126,5 @@ func testTrackCompositeStream(t *testing.T, conf *testConfig, room *lksdk.Room) 
 		},
 	}
 
-	runStreamTest(t, conf, req)
+	runStreamTest(t, conf, req, "")
 }

@@ -188,17 +188,19 @@ func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.St
 	verify(t, filepath, p, res, false, conf.Muting)
 }
 
-func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) {
+func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, customUrl string) {
 	p, err := params.GetPipelineParams(conf.Config, req)
 	require.NoError(t, err)
+	if customUrl != "" {
+		p.CustomInputURL = customUrl
+	}
 
 	rec, err := pipeline.New(conf.Config, p)
 	require.NoError(t, err)
 
-	defer func() {
+	t.Cleanup(func() {
 		rec.SendEOS()
-		time.Sleep(time.Millisecond * 100)
-	}()
+	})
 
 	resChan := make(chan *livekit.EgressInfo, 1)
 	go func() {
@@ -206,7 +208,7 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 	}()
 
 	// wait for recorder to start
-	time.Sleep(time.Second * 30)
+	time.Sleep(time.Second * 15)
 
 	// check stream
 	verifyStreams(t, p, streamUrl1)

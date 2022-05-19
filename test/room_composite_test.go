@@ -149,23 +149,17 @@ func testRoomCompositeStream(t *testing.T, conf *testConfig) {
 		SentAt:    time.Now().Unix(),
 		Request: &livekit.StartEgressRequest_RoomComposite{
 			RoomComposite: &livekit.RoomCompositeEgressRequest{
-				RoomName:      conf.RoomName,
-				Layout:        "speaker-dark",
-				CustomBaseUrl: videoTestInput,
+				RoomName: conf.RoomName,
+				Layout:   "speaker-dark",
 				Output: &livekit.RoomCompositeEgressRequest_Stream{
 					Stream: &livekit.StreamOutput{
 						Protocol: livekit.StreamProtocol_RTMP,
 						Urls:     []string{streamUrl1},
 					},
 				},
-				Options: &livekit.RoomCompositeEgressRequest_Advanced{
-					Advanced: &livekit.EncodingOptions{
-						AudioCodec: livekit.AudioCodec_AAC,
-					},
-				},
 			},
 		},
 	}
 
-	runStreamTest(t, conf, req)
+	runStreamTest(t, conf, req, videoTestInput)
 }

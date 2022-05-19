@@ -12,21 +12,6 @@ import (
 	"github.com/livekit/egress/pkg/config"
 )
 
-var defaultConfig = `
-log_level: error
-api_key: fake_key
-api_secret: fake_secret
-ws_url: wss://fake-url.com
-room_name: egress-test
-room: true
-track_composite: true
-track: true
-file: true
-stream: true
-muting: false
-gst_debug: 1
-`
-
 type testConfig struct {
 	*config.Config
 
@@ -41,7 +26,7 @@ type testConfig struct {
 }
 
 func getTestConfig(t *testing.T) *testConfig {
-	confString := defaultConfig
+	var confString string
 	confFile := os.Getenv("EGRESS_CONFIG_FILE")
 	if confFile != "" {
 		b, err := ioutil.ReadFile(confFile)
@@ -50,18 +35,32 @@ func getTestConfig(t *testing.T) *testConfig {
 		}
 	}
 
+	tc := &testConfig{
+		RoomName:               "egress-test",
+		RunRoomTests:           true,
+		RunTrackCompositeTests: false,
+		RunTrackTests:          false,
+		RunFileTests:           true,
+		RunStreamTests:         true,
+		Muting:                 false,
+		GstDebug:               1,
+	}
+	err := yaml.Unmarshal([]byte(confString), tc)
+	require.NoError(t, err)
+
 	conf, err := config.NewConfig(confString)
 	require.NoError(t, err)
-
-	tc := &testConfig{}
-	err = yaml.Unmarshal([]byte(confString), tc)
-	require.NoError(t, err)
-
+	if conf.ApiKey == "" {
+		conf.ApiKey = "fake_key"
+	}
+	if conf.ApiSecret == "" {
+		conf.ApiSecret = "fake_secret"
+	}
+	if conf.WsUrl == "" {
+		conf.WsUrl = "wss://fake-url.com"
+	}
 	tc.Config = conf
 
-	if tc.GstDebug != 0 {
-		require.NoError(t, os.Setenv("GST_DEBUG", fmt.Sprint(tc.GstDebug)))
-	}
-
+	require.NoError(t, os.Setenv("GST_DEBUG", fmt.Sprint(tc.GstDebug)))
 	return tc
 }

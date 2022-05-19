@@ -371,6 +371,8 @@ func (p *Params) updateStreamParams(outputType OutputType, urls []string) error 
 	switch p.OutputType {
 	case OutputTypeRTMP:
 		p.EgressType = EgressTypeStream
+		p.AudioCodec = MimeTypeAAC
+		p.VideoCodec = MimeTypeH264
 		p.StreamUrls = urls
 
 	case OutputTypeRaw:
