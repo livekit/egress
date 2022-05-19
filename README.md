@@ -1,12 +1,19 @@
 # LiveKit Egress
 
-Record or stream your LiveKit rooms
+WebRTC is fantastic for last-mile media delivery, but interoperability with other services can be challenging. 
+An application may want to do things like store a session for future playback, relay a stream to a CDN, or process a track through a transcription service – workflows where media travels through a different system or protocol.
+LiveKit Egress is the solution to these interoperability challenges. It provides a consistent set of APIs that gives you 
+universal export of your LiveKit sessions and tracks. 
 
-## How it works
+## Capabilities
+
+1. **Room composite** for exporting an entire room.
+2. **Track composite** for exporting synchronized tracks of a single participant.
+3. **Track egress** for exporting individual tracks.
 
 Depending on your request type, the egress service will either launch a web template in Chrome and connect to the room 
-(room composite requests), or it will use the sdk directly (track and track composite requests). It uses GStreamer to
-encode, and can output to a file or to one or more streams.
+(room composite requests), or it will use the sdk directly (track and track composite requests).
+Irrespective of method used, when moving between protocols, containers or encodings, LiveKit's egress service will automatically transcode streams for you using GStreamer.
 
 ## Supported Output
 
@@ -17,6 +24,18 @@ encode, and can output to a file or to one or more streams.
 | Track           | ✅        | ✅        | ✅        |                | ✅                |
 
 Files can be uploaded to any S3 compatible storage, Azure, or GCP.
+
+## Architecture
+
+![Egress Architecture](.github/egress-architecture.png)
+
+The overriding design goal of the egress system was to keep load off the SFU. Under no circumstances could we impact real-time audio and video performance or quality.
+
+API interactions take place with your LiveKit Server, via `EgressService`.
+Each Egress instance is a worker that observes Redis for incoming requests.
+A worker may decide to fulfill a request based on its current load. For example, track egress doesn’t involve transcoding and is consequently lighter-weight, whereas room composite runs a full Chrome instance. Granting each worker agency over request fulfillment provides the cluster with flexibility over varying load and queue depth.
+
+
 
 ## API
 
@@ -31,7 +50,7 @@ See our [docs](https://docs.livekit.io/guides/egress) for code examples.
 
 ### StartRoomCompositeEgress
 
-Export an entire room's video and/or audio using a web layout rendered by chrome. Always transcoded.
+Export an entire room's video and/or audio using a web layout rendered by Chrome. Always transcoded.
 
 Example use case: recording a meeting for team members to watch later.
 
