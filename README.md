@@ -235,7 +235,6 @@ You can then use our [cli](https://github.com/livekit/livekit-cli) to submit egr
 
 * It's possible, but not recommended. To do so, you would need gstreamer and all the plugins installed, along with xvfb,
   and have a pulseaudio server running.
-* Since it records from system audio, each recorder needs to be run on its own machine or VM.
 
 ## Testing and Development
 
