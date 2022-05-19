@@ -5,9 +5,3 @@ type Source interface {
 	EndRecording() chan struct{}
 	Close()
 }
-
-type writer interface {
-	trackMuted()
-	trackUnmuted()
-	stop()
-}

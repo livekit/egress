@@ -35,11 +35,14 @@ var (
 )
 
 type appWriter struct {
-	logger logger.Logger
-	sb     *samplebuilder.SampleBuilder
-	track  *webrtc.TrackRemote
-	codec  params.MimeType
-	src    *app.Source
+	logger          logger.Logger
+	sb              *samplebuilder.SampleBuilder
+	track           *webrtc.TrackRemote
+	codec           params.MimeType
+	src             *app.Source
+	startTime       time.Time
+	writeBlanks     bool
+	newSampleBuffer func() *samplebuilder.SampleBuilder
 
 	// a/v sync
 	cs              *clockSync
@@ -63,11 +66,9 @@ type appWriter struct {
 	force    chan struct{}
 	finished chan struct{}
 
-	newSampleBuffer func() *samplebuilder.SampleBuilder
-
-	vp8Munger      *sfu.VP8Munger
+	// vp8
 	firstPktPushed bool
-	startTime      time.Time
+	vp8Munger      *sfu.VP8Munger
 }
 
 func newAppWriter(
@@ -78,19 +79,21 @@ func newAppWriter(
 	src *app.Source,
 	cs *clockSync,
 	playing chan struct{},
+	writeBlanks bool,
 ) (*appWriter, error) {
 
 	w := &appWriter{
-		logger:     logger.Logger(logr.Logger(l).WithValues("trackID", track.ID(), "kind", track.Kind().String())),
-		track:      track,
-		codec:      codec,
-		src:        src,
-		cs:         cs,
-		conversion: 1e9 / float64(track.Codec().ClockRate),
-		playing:    playing,
-		drain:      make(chan struct{}),
-		force:      make(chan struct{}),
-		finished:   make(chan struct{}),
+		logger:      logger.Logger(logr.Logger(l).WithValues("trackID", track.ID(), "kind", track.Kind().String())),
+		track:       track,
+		codec:       codec,
+		src:         src,
+		writeBlanks: writeBlanks,
+		cs:          cs,
+		conversion:  1e9 / float64(track.Codec().ClockRate),
+		playing:     playing,
+		drain:       make(chan struct{}),
+		force:       make(chan struct{}),
+		finished:    make(chan struct{}),
 	}
 
 	switch codec {
@@ -145,70 +148,64 @@ func (w *appWriter) start() {
 	w.startTime = time.Now()
 
 	for {
-		if w.isDraining() && !w.isPlaying() {
-			// quit if draining but not yet playing
-			return
-		}
-
 		select {
 		case <-w.force:
 			// force push remaining packets and quit
 			_ = w.pushPackets(true)
 			return
-		default:
-			// continue
-		}
 
-		// read next packet
-		_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
-		pkt, _, err := w.track.ReadRTP()
-		if err != nil {
-			if w.muted.Load() {
-				// switch to pushing blank frames until unmuted
-				err = w.pushBlankFrames()
-				if err == nil {
+		default:
+			// read next packet
+			_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
+			pkt, _, err := w.track.ReadRTP()
+			if err != nil {
+				if w.isDraining() {
+					return
+				}
+
+				if w.muted.Load() {
+					// switch to writing blank frames
+					err = w.pushBlankFrames()
+					if err == nil {
+						continue
+					}
+				}
+
+				// continue if read timeout
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					continue
 				}
-			}
 
-			if w.isDraining() {
+				// log non-EOF errors
+				if !errors.Is(err, io.EOF) {
+					w.logger.Errorw("could not read packet", err)
+				}
+
+				// force push remaining packets and quit
+				_ = w.pushPackets(true)
 				return
 			}
 
-			// continue if read timeout
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				continue
+			// sync offsets after first packet read
+			// see comment in writeRTP below
+			if !w.clockSynced {
+				now := time.Now().UnixNano()
+				startTime := w.cs.GetOrSetStartTime(now)
+				w.ptsOffset = now - startTime
+				w.rtpOffset = int64(pkt.Timestamp)
+				w.clockSynced = true
 			}
 
-			// log non-EOF errors
-			if !errors.Is(err, io.EOF) {
-				w.logger.Errorw("could not read packet", err)
+			// push packet to sample builder
+			w.sb.Push(pkt)
+
+			// push completed packets to appsrc
+			if err = w.pushPackets(false); err != nil {
+				if !errors.Is(err, io.EOF) {
+					w.logger.Errorw("could not push buffers", err)
+				}
+				return
 			}
-
-			// force push remaining packets and quit
-			_ = w.pushPackets(true)
-			return
-		}
-
-		// sync offsets after first packet read
-		// see comment in writeRTP below
-		if !w.clockSynced {
-			now := time.Now().UnixNano()
-			startTime := w.cs.GetOrSetStartTime(now)
-			w.ptsOffset = now - startTime
-			w.rtpOffset = int64(pkt.Timestamp)
-			w.clockSynced = true
-		}
-
-		// push packet to sample builder
-		w.sb.Push(pkt)
-
-		// push completed packets to appsrc
-		if err = w.pushPackets(false); err != nil {
-			if !errors.Is(err, io.EOF) {
-				w.logger.Errorw("could not push buffers", err)
-			}
-			return
 		}
 	}
 }
@@ -233,6 +230,19 @@ func (w *appWriter) pushBlankFrames() error {
 	//   recreated it to work now, will remove this when bug fixed
 	w.sb = w.newSampleBuffer()
 
+	if !w.writeBlanks {
+		// wait until unmuted or closed
+		ticker := time.NewTicker(time.Millisecond * 100)
+		defer ticker.Stop()
+
+		for {
+			<-ticker.C
+			if w.isDraining() || !w.muted.Load() {
+				return nil
+			}
+		}
+	}
+
 	// expected difference between packet timestamps
 	tsStep := w.tsStep
 	if tsStep == 0 {
@@ -246,7 +256,6 @@ func (w *appWriter) pushBlankFrames() error {
 	defer ticker.Stop()
 
 	for {
-		<-ticker.C
 		if w.isDraining() {
 			return nil
 		}
@@ -257,8 +266,8 @@ func (w *appWriter) pushBlankFrames() error {
 			_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
 			pkt, _, err := w.track.ReadRTP()
 			if err != nil {
+				// continue if read timeout
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					// continue if read timeout
 					continue
 				}
 
@@ -272,17 +281,18 @@ func (w *appWriter) pushBlankFrames() error {
 			for {
 				ts := w.lastTS + tsStep
 				if ts > maxTimestamp {
-					// push packet to sample builder
+					// push packet to sample builder and return
 					w.sb.Push(pkt)
 					return nil
 				}
 
-				if err := w.pushBlankFrame(ts); err != nil {
+				if err = w.pushBlankFrame(ts); err != nil {
 					return err
 				}
 			}
 		}
 
+		<-ticker.C
 		// push blank frame
 		if err := w.pushBlankFrame(w.lastTS + tsStep); err != nil {
 			return err
@@ -481,8 +491,8 @@ func (w *appWriter) trackUnmuted() {
 	w.muted.Store(false)
 }
 
-// stop blocks until finished
-func (w *appWriter) stop() {
+// sendEOS blocks until finished
+func (w *appWriter) sendEOS() {
 	select {
 	case <-w.drain:
 	default:

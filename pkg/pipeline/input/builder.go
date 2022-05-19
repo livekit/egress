@@ -48,10 +48,10 @@ func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 	var ghostPad *gst.GhostPad
 	if b.mux != nil {
 		ghostPad = gst.NewGhostPad("src", b.mux.GetStaticPad("src"))
-	} else if b.audioQueue != nil && !p.VideoEnabled {
+	} else if b.audioQueue != nil {
 		ghostPad = gst.NewGhostPad("src", b.audioQueue.GetStaticPad("src"))
-	} else {
-		return nil, errors.ErrNotSupported("raw video output")
+	} else if b.videoQueue != nil {
+		ghostPad = gst.NewGhostPad("src", b.videoQueue.GetStaticPad("src"))
 	}
 
 	if !b.bin.AddPad(ghostPad.Pad) {
@@ -75,11 +75,13 @@ func (b *Bin) buildMux(p *params.Params) error {
 	var err error
 	switch p.OutputType {
 	case params.OutputTypeRaw:
-		// when output is raw, don't build mux
 		return nil
 
 	case params.OutputTypeOGG:
 		b.mux, err = gst.NewElement("oggmux")
+
+	case params.OutputTypeIVF:
+		b.mux, err = gst.NewElement("avmux_ivf")
 
 	case params.OutputTypeMP4:
 		b.mux, err = gst.NewElement("mp4mux")

@@ -450,9 +450,8 @@ func (p *Params) updateCodecsFromOutputType() error {
 func (p *Params) UpdateOutputTypeFromCodecs(fileIdentifier string) error {
 	if p.OutputType == "" {
 		if !p.VideoEnabled {
+			// audio input is always opus
 			p.OutputType = OutputTypeOGG
-		} else if p.VideoCodec == MimeTypeVP8 && !p.AudioEnabled {
-			p.OutputType = OutputTypeIVF
 		} else {
 			p.OutputType = OutputTypeMP4
 		}

@@ -25,25 +25,26 @@ const (
 	EgressTypeFile      EgressType = "file"
 
 	// output types
-	OutputTypeOGG  OutputType = "audio/ogg"
 	OutputTypeRaw  OutputType = "audio/x-raw"
+	OutputTypeOGG  OutputType = "audio/ogg"
+	OutputTypeIVF  OutputType = "video/x-ivf"
 	OutputTypeMP4  OutputType = "video/mp4"
 	OutputTypeTS   OutputType = "video/mp2t"
-	OutputTypeIVF  OutputType = "video/x-ivf"
 	OutputTypeWebM OutputType = "video/webm"
 	OutputTypeRTMP OutputType = "rtmp"
 
 	// file extensions
+	FileExtensionRaw  = ".raw"
 	FileExtensionOGG  = ".ogg"
+	FileExtensionIVF  = ".ivf"
 	FileExtensionMP4  = ".mp4"
 	FileExtensionTS   = ".ts"
-	FileExtensionIVF  = ".ivf"
 	FileExtensionWebM = ".webm"
-	FileExtensionRaw  = ".raw"
 )
 
 var (
 	DefaultAudioCodecs = map[OutputType]MimeType{
+		OutputTypeRaw:  MimeTypeRaw,
 		OutputTypeOGG:  MimeTypeOpus,
 		OutputTypeMP4:  MimeTypeAAC,
 		OutputTypeTS:   MimeTypeAAC,
@@ -52,25 +53,31 @@ var (
 	}
 
 	DefaultVideoCodecs = map[OutputType]MimeType{
+		OutputTypeIVF:  MimeTypeVP8,
 		OutputTypeMP4:  MimeTypeH264,
 		OutputTypeTS:   MimeTypeH264,
-		OutputTypeIVF:  MimeTypeVP8,
 		OutputTypeWebM: MimeTypeVP8,
 		OutputTypeRTMP: MimeTypeH264,
 	}
 
 	FileExtensions = map[OutputType]FileExtension{
+		OutputTypeRaw:  FileExtensionRaw,
 		OutputTypeOGG:  FileExtensionOGG,
+		OutputTypeIVF:  FileExtensionIVF,
 		OutputTypeMP4:  FileExtensionMP4,
 		OutputTypeTS:   FileExtensionTS,
-		OutputTypeIVF:  FileExtensionIVF,
 		OutputTypeWebM: FileExtensionWebM,
-		OutputTypeRaw:  FileExtensionRaw,
 	}
 
 	codecCompatibility = map[OutputType]map[MimeType]bool{
+		OutputTypeRaw: {
+			MimeTypeRaw: true,
+		},
 		OutputTypeOGG: {
 			MimeTypeOpus: true,
+		},
+		OutputTypeIVF: {
+			MimeTypeVP8: true,
 		},
 		OutputTypeMP4: {
 			MimeTypeAAC:  true,
@@ -82,9 +89,6 @@ var (
 			MimeTypeOpus: true,
 			MimeTypeH264: true,
 		},
-		OutputTypeIVF: {
-			MimeTypeVP8: true,
-		},
 		OutputTypeWebM: {
 			MimeTypeOpus: true,
 			MimeTypeVP8:  true,
@@ -93,9 +97,6 @@ var (
 		OutputTypeRTMP: {
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,
-		},
-		OutputTypeRaw: {
-			MimeTypeRaw: true,
 		},
 	}
 )
