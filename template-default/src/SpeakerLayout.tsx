@@ -1,7 +1,7 @@
+import { ParticipantView, ScreenShareView } from '@livekit/react-components';
 import {
   Participant, RemoteParticipant, RemoteVideoTrack, Track,
 } from 'livekit-client';
-import { ParticipantView, ScreenShareView } from 'livekit-react';
 import React, { ReactElement } from 'react';
 import { LayoutProps } from './common';
 import styles from './SpeakerLayout.module.css';

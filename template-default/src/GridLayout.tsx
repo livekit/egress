@@ -1,5 +1,5 @@
+import { ParticipantView } from '@livekit/react-components';
 import { Participant } from 'livekit-client';
-import { ParticipantView } from 'livekit-react';
 import React, { useEffect } from 'react';
 import {
   LayoutProps,
