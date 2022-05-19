@@ -108,7 +108,8 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 		require.NoError(t, err)
 
 		delta := 1.5
-		if withMuting {
+		if !p.VideoEnabled && withMuting {
+			// opus only with muting (cuts the end short)
 			delta = 8
 		} else if !p.AudioEnabled {
 			delta = 3

@@ -171,11 +171,16 @@ func (w *appWriter) start() {
 				}
 			}
 
+			if w.isDraining() {
+				return
+			}
+
+			// continue if read timeout
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				// continue if read timeout
 				continue
 			}
 
+			// log non-EOF errors
 			if !errors.Is(err, io.EOF) {
 				w.logger.Errorw("could not read packet", err)
 			}
