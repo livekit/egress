@@ -99,17 +99,21 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 }
 
 func (b *Bin) buildAudioEncoder(p *params.Params) error {
+	audioRate, err := gst.NewElement("audiorate")
+	if err != nil {
+		return err
+	}
+
 	audioConvert, err := gst.NewElement("audioconvert")
 	if err != nil {
 		return err
 	}
 
-	// TODO: is audioresample needed?
+	// TODO: sinc-filter-mode=full will use more memory but much less CPU
 	audioResample, err := gst.NewElement("audioresample")
 	if err != nil {
 		return err
 	}
-	// TODO: sinc-filter-mode=full will use more memory but much less CPU
 
 	var capsStr string
 	var encoderName string
@@ -139,6 +143,6 @@ func (b *Bin) buildAudioEncoder(p *params.Params) error {
 		return err
 	}
 
-	b.audioElements = append(b.audioElements, audioConvert, audioResample, audioCapsFilter, encoder)
+	b.audioElements = append(b.audioElements, audioRate, audioConvert, audioResample, audioCapsFilter, encoder)
 	return nil
 }

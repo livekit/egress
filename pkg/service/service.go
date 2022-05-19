@@ -57,7 +57,6 @@ func NewService(conf *config.Config, bus utils.MessageBus) *Service {
 	return s
 }
 
-// TODO: Run each pipeline in a separate process for security reasons
 func (s *Service) Run() error {
 	logger.Debugw("starting service")
 
@@ -99,6 +98,7 @@ func (s *Service) Run() error {
 				time.Sleep(shutdownTimer)
 			}
 			return nil
+
 		case msg := <-requests.Channel():
 			logger.Debugw("request received")
 
@@ -108,68 +108,7 @@ func (s *Service) Run() error {
 				continue
 			}
 
-			// check request time
-			if time.Since(time.Unix(0, req.SentAt)) >= egress.LockDuration {
-				continue
-			}
-
-			// check cpu load
-			var isRoomComposite bool
-			switch req.Request.(type) {
-			case *livekit.StartEgressRequest_RoomComposite:
-				// limit to one web composite at a time for now
-				if !s.isIdle() {
-					logger.Debugw("rejecting web composite request, already recording")
-					continue
-				}
-				if !sysload.CanAcceptRequest(req) {
-					logger.Debugw("rejecting request, not enough cpu")
-					continue
-				}
-				isRoomComposite = true
-			default:
-				if !sysload.CanAcceptRequest(req) {
-					logger.Debugw("rejecting request, not enough cpu")
-					continue
-				}
-			}
-
-			// claim request
-			claimed, err := s.bus.Lock(s.ctx, egress.RequestChannel(req.EgressId), egress.LockDuration)
-			if err != nil {
-				logger.Errorw("could not claim request", err)
-				continue
-			} else if !claimed {
-				continue
-			}
-
-			sysload.AcceptRequest(req)
-			logger.Debugw("request claimed", "egressID", req.EgressId)
-
-			// build/verify params
-			pipelineParams, err := params.GetPipelineParams(s.conf, req)
-			if err != nil {
-				s.sendEgressResponse(req.RequestId, &livekit.EgressInfo{EgressId: req.EgressId}, err)
-				continue
-			}
-
-			s.sendEgressResponse(req.RequestId, pipelineParams.Info, nil)
-
-			// create the pipeline
-			p, err := pipeline.New(s.conf, pipelineParams)
-			info := pipelineParams.Info
-			if err != nil {
-				info.Error = err.Error()
-				s.sendEgressResult(info)
-			} else {
-				s.pipelines.Store(req.EgressId, info)
-				if isRoomComposite {
-					// isolate web composite for now
-					s.handleEgress(p)
-				} else {
-					go s.handleEgress(p)
-				}
-			}
+			s.handleRequest(req)
 		}
 	}
 }
@@ -203,15 +142,76 @@ func (s *Service) Stop(kill bool) {
 	}
 }
 
-func (s *Service) isIdle() bool {
-	idle := true
-	s.pipelines.Range(func(key, value interface{}) bool {
-		idle = false
-		return false
-	})
-	return idle
+func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
+	// check request time
+	if time.Since(time.Unix(0, req.SentAt)) >= egress.LockDuration {
+		return
+	}
+
+	// check cpu load
+	var isRoomComposite bool
+	switch req.Request.(type) {
+	case *livekit.StartEgressRequest_RoomComposite:
+		isRoomComposite = true
+
+		// limit to one web composite at a time for now
+		if !s.isIdle() {
+			logger.Debugw("rejecting web composite request, already recording")
+			return
+		}
+	}
+
+	if !sysload.CanAcceptRequest(req) {
+		logger.Debugw("rejecting request, not enough cpu")
+		return
+	}
+
+	// claim request
+	claimed, err := s.bus.Lock(s.ctx, egress.RequestChannel(req.EgressId), egress.LockDuration)
+	if err != nil {
+		logger.Errorw("could not claim request", err)
+		return
+	} else if !claimed {
+		return
+	}
+
+	sysload.AcceptRequest(req)
+	logger.Debugw("request claimed", "egressID", req.EgressId)
+
+	// build/verify params
+	pipelineParams, err := params.GetPipelineParams(s.conf, req)
+	info := pipelineParams.Info
+	if err != nil {
+		info.Error = err.Error()
+		info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+		s.sendRPCResponse(req.RequestId, pipelineParams.Info, err)
+		return
+	}
+
+	s.sendRPCResponse(req.RequestId, pipelineParams.Info, nil)
+
+	// create the pipeline
+	p, err := pipeline.New(s.conf, pipelineParams)
+	if err != nil {
+		info.Error = err.Error()
+		info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+		s.sendEgressUpdate(info)
+		return
+	}
+
+	p.OnStatusUpdate(s.sendEgressUpdate)
+
+	s.pipelines.Store(req.EgressId, p.GetInfo())
+	if isRoomComposite {
+		// isolate web composite for now
+		s.handleEgress(p)
+	} else {
+		// track composite and track can run multiple at once
+		go s.handleEgress(p)
+	}
 }
 
+// TODO: Run each pipeline in a separate process for security reasons
 func (s *Service) handleEgress(p *pipeline.Pipeline) {
 	defer s.pipelines.Delete(p.GetInfo().EgressId)
 
@@ -237,11 +237,13 @@ func (s *Service) handleEgress(p *pipeline.Pipeline) {
 		select {
 		case <-s.kill:
 			// kill signal received
-			p.Stop()
+			p.SendEOS()
+
 		case res := <-result:
 			// recording finished
-			s.sendEgressResult(res)
+			s.sendEgressUpdate(res)
 			return
+
 		case msg := <-requests.Channel():
 			// request received
 			request := &livekit.EgressRequest{}
@@ -256,25 +258,34 @@ func (s *Service) handleEgress(p *pipeline.Pipeline) {
 			case *livekit.EgressRequest_UpdateStream:
 				err = p.UpdateStream(req.UpdateStream)
 			case *livekit.EgressRequest_Stop:
-				p.Stop()
+				p.SendEOS()
 			default:
 				err = errors.ErrInvalidRPC
 			}
 
-			s.sendEgressResponse(request.RequestId, p.GetInfo(), err)
+			s.sendRPCResponse(request.RequestId, p.GetInfo(), err)
 		}
 	}
 }
 
-func (s *Service) sendEgressResponse(requestID string, info *livekit.EgressInfo, err error) {
-	res := &livekit.EgressResponse{}
+func (s *Service) isIdle() bool {
+	idle := true
+	s.pipelines.Range(func(key, value interface{}) bool {
+		idle = false
+		return false
+	})
+	return idle
+}
+
+func (s *Service) sendRPCResponse(requestID string, info *livekit.EgressInfo, err error) {
+	res := &livekit.EgressResponse{Info: info}
+	args := []interface{}{"egressID", info.EgressId, "requestId", requestID}
+
 	if err != nil {
-		logger.Errorw("error handling request", err,
-			"egressID", info.EgressId, "requestId", requestID)
+		logger.Errorw("error handling request", err, args...)
 		res.Error = err.Error()
 	} else {
-		logger.Debugw("request handled", "egressID", info.EgressId, "requestId", requestID)
-		res.Info = info
+		logger.Debugw("request handled", args...)
 	}
 
 	if err = s.bus.Publish(s.ctx, egress.ResponseChannel(requestID), res); err != nil {
@@ -282,14 +293,16 @@ func (s *Service) sendEgressResponse(requestID string, info *livekit.EgressInfo,
 	}
 }
 
-func (s *Service) sendEgressResult(res *livekit.EgressInfo) {
-	if res.Error != "" {
-		logger.Errorw("recording failed", errors.New(res.Error), "egressID", res.EgressId)
+func (s *Service) sendEgressUpdate(info *livekit.EgressInfo) {
+	if info.Error != "" {
+		logger.Errorw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
+	} else if info.Status == livekit.EgressStatus_EGRESS_COMPLETE {
+		logger.Infow("egress completed successfully", "egressID", info.EgressId)
 	} else {
-		logger.Infow("recording complete", "egressID", res.EgressId)
+		logger.Infow("egress updated", "egressID", info.EgressId, "status", info.Status)
 	}
 
-	if err := s.bus.Publish(s.ctx, egress.ResultsChannel, res); err != nil {
-		logger.Errorw("failed to write results", err)
+	if err := s.bus.Publish(s.ctx, egress.ResultsChannel, info); err != nil {
+		logger.Errorw("failed to send egress update", err)
 	}
 }

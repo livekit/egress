@@ -18,8 +18,7 @@ const (
 	gstImageName       = "livekit/gstreamer"
 	multiPlatformBuild = "docker buildx build --push --platform linux/amd64,linux/arm64"
 
-	config   = "EGRESS_CONFIG_FILE"
-	roomName = "LIVEKIT_ROOM_NAME"
+	config = "EGRESS_CONFIG_FILE"
 )
 
 func Test() error {
@@ -48,9 +47,9 @@ func integration(configFile string) error {
 
 	return run(
 		"docker pull livekit/gstreamer:1.18.5-dev",
-		"docker build -t livekit-egress-test -f build/test/Dockerfile .",
-		fmt.Sprintf("docker run --rm -e %s=%s -e %s=%s -v %s/test:/out livekit-egress-test",
-			config, configFile, roomName, os.Getenv(roomName), dir),
+		"docker build -t egress-test -f build/Dockerfile-test .",
+		fmt.Sprintf("docker run --rm -e %s=%s -v %s/test:/out egress-test",
+			config, configFile, dir),
 	)
 }
 

@@ -120,6 +120,11 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 			return err
 		}
 
+		if p.OutputType == params.OutputTypeIVF {
+			b.videoElements = append(b.videoElements, src.Element, rtpVP8Depay)
+			return nil
+		}
+
 		vp8Dec, err := gst.NewElement("vp8dec")
 		if err != nil {
 			return nil
@@ -175,10 +180,15 @@ func (b *Bin) buildVideoEncoder(p *params.Params) error {
 		x264Enc.SetArg("speed-preset", "veryfast")
 		x264Enc.SetArg("tune", "zerolatency")
 
+		if p.VideoProfile == "" {
+			p.VideoProfile = params.ProfileMain
+		}
+
 		encodedCaps, err := gst.NewElement("capsfilter")
 		if err != nil {
 			return err
 		}
+
 		if err = encodedCaps.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf("video/x-h264,profile=%s,framerate=%d/1", p.VideoProfile, p.Framerate),
 		)); err != nil {

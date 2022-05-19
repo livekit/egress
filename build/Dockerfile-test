@@ -17,7 +17,7 @@ RUN apt-get update && \
     wget \
     xvfb
 
-
+# install rtsp server
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64v8; else ARCH=amd64; fi && \
     wget https://github.com/aler9/rtsp-simple-server/releases/download/v0.17.6/rtsp-simple-server_v0.17.6_linux_${ARCH}.tar.gz && \
     tar -zxvf rtsp-simple-server_v0.17.6_linux_${ARCH}.tar.gz && \
@@ -61,15 +61,18 @@ RUN wget -N http://chromedriver.storage.googleapis.com/2.46/chromedriver_linux64
     mv -f chromedriver /usr/local/bin/chromedriver && \
     rm chromedriver_linux64.zip
 
-# clean up
-RUN apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
 # add root user to group for pulseaudio access
 RUN adduser root pulse-access
 
-# create xdg_runtime_dir
-RUN mkdir -pv ~/.cache/xdgr
+# clean up
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -rf /var/run/pulse /var/lib/pulse /root/.config/pulse && \
+    mkdir -pv ~/.cache/xdgr
+
+# set env vars
+ENV XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr
+ENV RTSP_LOGDESTINATIONS=file
 
 # download go modules
 COPY go.mod .
@@ -79,7 +82,8 @@ RUN go mod download
 # copy source
 COPY pkg/ pkg/
 COPY test/ test/
-COPY build/test/entrypoint.sh .
 
 # run
-ENTRYPOINT ["./entrypoint.sh"]
+CMD ./rtsp-simple-server & \
+    pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit & \
+    go test -v --tags=integration ./test

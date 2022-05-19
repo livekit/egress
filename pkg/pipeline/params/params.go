@@ -23,7 +23,6 @@ type Params struct {
 	AudioParams
 	VideoParams
 
-	SkipPipeline bool
 	EgressType
 	OutputType
 
@@ -83,9 +82,10 @@ type FileParams struct {
 	FileUpload interface{}
 }
 
-func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest) (*Params, error) {
+// GetPipelineParams must always return params, even on error
+func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest) (p *Params, err error) {
 	// start with defaults
-	p := &Params{
+	p = &Params{
 		Logger: logger.Logger(logger.GetLogger().WithValues("egressID", request.EgressId)),
 		Info: &livekit.EgressInfo{
 			EgressId: request.EgressId,
@@ -106,7 +106,6 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		},
 	}
 
-	var err error
 	switch req := request.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
 		p.Info.Request = &livekit.EgressInfo_RoomComposite{RoomComposite: req.RoomComposite}
@@ -115,7 +114,8 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		p.IsWebSource = true
 		p.RoomName = req.RoomComposite.RoomName
 		if p.RoomName == "" {
-			return nil, errors.ErrInvalidInput("RoomName")
+			err = errors.ErrInvalidInput("RoomName")
+			return
 		}
 
 		p.Layout = req.RoomComposite.Layout
@@ -141,11 +141,18 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		switch o := req.RoomComposite.Output.(type) {
 		case *livekit.RoomCompositeEgressRequest_File:
 			p.updateOutputType(o.File.FileType)
-			err = p.updateFileParams(conf, o.File.Filepath, o.File.Output)
+			if err = p.updateFileParams(conf, o.File.Filepath, o.File.Output); err != nil {
+				return
+			}
+
 		case *livekit.RoomCompositeEgressRequest_Stream:
-			err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls)
+			if err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls); err != nil {
+				return
+			}
+
 		default:
 			err = errors.ErrInvalidInput("output")
+			return
 		}
 
 	case *livekit.StartEgressRequest_TrackComposite:
@@ -163,7 +170,8 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		// input params
 		p.RoomName = req.TrackComposite.RoomName
 		if p.RoomName == "" {
-			return nil, errors.ErrInvalidInput("RoomName")
+			err = errors.ErrInvalidInput("RoomName")
+			return
 		}
 
 		p.AudioTrackID = req.TrackComposite.AudioTrackId
@@ -171,7 +179,8 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		p.AudioEnabled = p.AudioTrackID != ""
 		p.VideoEnabled = p.VideoTrackID != ""
 		if !p.AudioEnabled && !p.VideoEnabled {
-			return nil, errors.ErrInvalidInput("TrackIDs")
+			err = errors.ErrInvalidInput("TrackIDs")
+			return
 		}
 
 		// output params
@@ -180,11 +189,18 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			if o.File.FileType != livekit.EncodedFileType_DEFAULT_FILETYPE {
 				p.updateOutputType(o.File.FileType)
 			}
-			err = p.updateFileParams(conf, o.File.Filepath, o.File.Output)
+			if err = p.updateFileParams(conf, o.File.Filepath, o.File.Output); err != nil {
+				return
+			}
+
 		case *livekit.TrackCompositeEgressRequest_Stream:
-			err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls)
+			if err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls); err != nil {
+				return
+			}
+
 		default:
 			err = errors.ErrInvalidInput("output")
+			return
 		}
 
 	case *livekit.StartEgressRequest_Track:
@@ -193,43 +209,48 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		// input params
 		p.RoomName = req.Track.RoomName
 		if p.RoomName == "" {
-			return nil, errors.ErrInvalidInput("RoomName")
+			err = errors.ErrInvalidInput("RoomName")
+			return
 		}
 
 		p.TrackID = req.Track.TrackId
 		if p.TrackID == "" {
-			return nil, errors.ErrInvalidInput("TrackID")
+			err = errors.ErrInvalidInput("TrackID")
+			return
 		}
 
 		// output params
 		switch o := req.Track.Output.(type) {
 		case *livekit.TrackEgressRequest_File:
-			err = p.updateFileParams(conf, o.File.Filepath, o.File.Output)
+			if err = p.updateFileParams(conf, o.File.Filepath, o.File.Output); err != nil {
+				return
+			}
 		case *livekit.TrackEgressRequest_WebsocketUrl:
-			err = p.updateStreamParams(OutputTypeRaw, []string{o.WebsocketUrl})
+			if err = p.updateStreamParams(OutputTypeRaw, []string{o.WebsocketUrl}); err != nil {
+				return
+			}
+
 		default:
 			err = errors.ErrInvalidInput("output")
+			return
 		}
 
 	default:
 		err = errors.ErrInvalidInput("request")
-	}
-
-	if err != nil {
-		return nil, err
+		return
 	}
 
 	if err = p.updateConnectionInfo(conf, request); err != nil {
-		return nil, err
+		return
 	}
 
 	if p.OutputType != "" {
 		if err = p.updateCodecsFromOutputType(); err != nil {
-			return nil, err
+			return
 		}
 	}
 
-	return p, nil
+	return
 }
 
 func (p *Params) applyPreset(preset livekit.EncodingOptionsPreset) {
@@ -350,6 +371,8 @@ func (p *Params) updateStreamParams(outputType OutputType, urls []string) error 
 	switch p.OutputType {
 	case OutputTypeRTMP:
 		p.EgressType = EgressTypeStream
+		p.AudioCodec = MimeTypeAAC
+		p.VideoCodec = MimeTypeH264
 		p.StreamUrls = urls
 
 	case OutputTypeRaw:
@@ -428,9 +451,8 @@ func (p *Params) updateCodecsFromOutputType() error {
 func (p *Params) UpdateOutputTypeFromCodecs(fileIdentifier string) error {
 	if p.OutputType == "" {
 		if !p.VideoEnabled {
+			// audio input is always opus
 			p.OutputType = OutputTypeOGG
-		} else if p.VideoCodec == MimeTypeVP8 && !p.AudioEnabled {
-			p.OutputType = OutputTypeIVF
 		} else {
 			p.OutputType = OutputTypeMP4
 		}

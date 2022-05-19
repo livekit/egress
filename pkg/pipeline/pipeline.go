@@ -10,6 +10,8 @@ import (
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
 
+	"github.com/livekit/protocol/livekit"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/input"
@@ -17,7 +19,6 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
-	"github.com/livekit/protocol/livekit"
 )
 
 // gst.Init needs to be called before using gst but after gst package loads
@@ -26,6 +27,7 @@ var initialized = false
 const (
 	pipelineSource = "pipeline"
 	fileKey        = "file"
+	eosTimeout     = time.Second * 15
 )
 
 type Pipeline struct {
@@ -43,16 +45,10 @@ type Pipeline struct {
 	startedAt map[string]int64
 	removed   map[string]bool
 	closed    chan struct{}
-}
+	eosTimer  *time.Timer
 
-func FromRequest(conf *config.Config, request *livekit.StartEgressRequest) (*Pipeline, error) {
-	// get params
-	p, err := params.GetPipelineParams(conf, request)
-	if err != nil {
-		return nil, err
-	}
-
-	return New(conf, p)
+	// callbacks
+	onStatusUpdate func(*livekit.EgressInfo)
 }
 
 func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
@@ -65,17 +61,6 @@ func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 	in, err := input.Build(conf, p)
 	if err != nil {
 		return nil, err
-	}
-
-	// skip pipeline used by video track egress
-	if p.SkipPipeline {
-		return &Pipeline{
-			Params:    p,
-			in:        in,
-			startedAt: make(map[string]int64),
-			removed:   make(map[string]bool),
-			closed:    make(chan struct{}),
-		}, nil
 	}
 
 	// create output bin
@@ -125,10 +110,15 @@ func (p *Pipeline) GetInfo() *livekit.EgressInfo {
 	return p.Info
 }
 
+func (p *Pipeline) OnStatusUpdate(f func(info *livekit.EgressInfo)) {
+	p.onStatusUpdate = f
+}
+
 func (p *Pipeline) Run() *livekit.EgressInfo {
 	p.Info.StartedAt = time.Now().UnixNano()
 	defer func() {
 		p.Info.EndedAt = time.Now().UnixNano()
+		p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 	}()
 
 	// wait until room is ready
@@ -136,7 +126,6 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	if start != nil {
 		select {
 		case <-p.closed:
-			p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 			p.in.Close()
 			return p.Info
 		case <-start:
@@ -147,41 +136,22 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	// close when room ends
 	go func() {
 		<-p.in.EndRecording()
-		p.Stop()
+		p.SendEOS()
 	}()
 
-	if p.SkipPipeline {
-		// update startedAt
-		go func() {
-			for {
-				// race against the file writer - make sure it doesn't return 0
-				startTime := p.in.Source.(*source.SDKSource).GetStartTime()
-				if startTime != 0 {
-					p.updateStartTime(startTime)
-					return
-				}
-				time.Sleep(time.Millisecond * 100)
-			}
-		}()
+	// add watch
+	p.loop = glib.NewMainLoop(glib.MainContextDefault(), false)
+	p.pipeline.GetPipelineBus().AddWatch(p.messageWatch)
 
-		// wait until completion
-		<-p.closed
-
-	} else {
-		// add watch
-		p.loop = glib.NewMainLoop(glib.MainContextDefault(), false)
-		p.pipeline.GetPipelineBus().AddWatch(p.messageWatch)
-
-		// set state to playing (this does not start the pipeline)
-		if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
-			p.Logger.Errorw("failed to set pipeline state", err)
-			p.Info.Error = err.Error()
-			return p.Info
-		}
-
-		// run main loop
-		p.loop.Run()
+	// set state to playing (this does not start the pipeline)
+	if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
+		p.Logger.Errorw("failed to set pipeline state", err)
+		p.Info.Error = err.Error()
+		return p.Info
 	}
+
+	// run main loop
+	p.loop.Run()
 
 	// close input source
 	p.in.Close()
@@ -190,6 +160,11 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	switch s := p.in.Source.(type) {
 	case *source.SDKSource:
 		p.updateEndTime(s.GetEndTime())
+	}
+
+	// return if there was an error
+	if p.Info.Error != "" {
+		return p.Info
 	}
 
 	// upload file
@@ -202,6 +177,8 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 		}
 
 		var location string
+		deleteFile := true
+
 		switch u := p.FileUpload.(type) {
 		case *livekit.S3Upload:
 			location = "S3"
@@ -217,107 +194,20 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 			p.FileInfo.Location, err = sink.UploadAzure(u, p.Params)
 		default:
 			p.FileInfo.Location = p.Filepath
+			deleteFile = false
 		}
 
 		if err != nil {
 			p.Logger.Errorw("could not upload file", err, "location", location)
 			p.Info.Error = errors.ErrUploadFailed(location, err)
+		} else if deleteFile {
+			if err = os.Remove(p.Filename); err != nil {
+				p.Logger.Errorw("could not delete file", err)
+			}
 		}
 	}
 
-	// return result
-	p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 	return p.Info
-}
-
-func (p *Pipeline) messageWatch(msg *gst.Message) bool {
-	switch msg.Type() {
-	case gst.MessageEOS:
-		// EOS received - close and return
-		p.Logger.Debugw("EOS received, stopping pipeline")
-		_ = p.pipeline.BlockSetState(gst.StateNull)
-		p.Logger.Debugw("pipeline stopped")
-
-		switch p.in.Source.(type) {
-		case *source.WebSource:
-			p.updateEndTime(time.Now().UnixNano())
-		}
-
-		p.loop.Quit()
-		return false
-
-	case gst.MessageError:
-		// handle error if possible, otherwise close and return
-		err, handled := p.handleError(msg.ParseError())
-		if !handled {
-			p.Info.Error = err.Error()
-			p.loop.Quit()
-			return false
-		}
-
-	case gst.MessageStateChanged:
-		if p.playing {
-			return true
-		}
-
-		_, newState := msg.ParseStateChanged()
-		if newState != gst.StatePlaying {
-			return true
-		}
-
-		switch msg.Source() {
-		case source.AudioAppSource, source.VideoAppSource:
-			switch s := p.in.Source.(type) {
-			case *source.SDKSource:
-				s.Playing(msg.Source())
-			}
-
-		case pipelineSource:
-			p.playing = true
-			switch s := p.in.Source.(type) {
-			case *source.SDKSource:
-				p.updateStartTime(s.GetStartTime())
-			case *source.WebSource:
-				p.updateStartTime(time.Now().UnixNano())
-			}
-		}
-
-	default:
-		p.Logger.Debugw(msg.String())
-	}
-
-	return true
-}
-
-func (p *Pipeline) updateStartTime(startedAt int64) {
-	switch p.EgressType {
-	case params.EgressTypeStream, params.EgressTypeWebsocket:
-		p.mu.Lock()
-		for _, streamInfo := range p.StreamInfo {
-			p.startedAt[streamInfo.Url] = startedAt
-		}
-		p.mu.Unlock()
-	case params.EgressTypeFile:
-		p.startedAt[fileKey] = startedAt
-	}
-
-	p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
-}
-
-func (p *Pipeline) updateEndTime(endedAt int64) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	switch p.EgressType {
-	case params.EgressTypeStream, params.EgressTypeWebsocket:
-		for _, info := range p.StreamInfo {
-			startedAt := p.startedAt[info.Url]
-			info.Duration = endedAt - startedAt
-		}
-	case params.EgressTypeFile:
-		startedAt := p.startedAt[fileKey]
-		p.FileInfo.Duration = endedAt - startedAt
-	}
 }
 
 func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
@@ -365,15 +255,23 @@ func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
 	return nil
 }
 
-func (p *Pipeline) Stop() {
+func (p *Pipeline) SendEOS() {
 	select {
 	case <-p.closed:
 		return
 	default:
 		close(p.closed)
 		p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
+		if p.onStatusUpdate != nil {
+			p.onStatusUpdate(p.Info)
+		}
 
 		p.Logger.Debugw("sending EOS to pipeline")
+		p.eosTimer = time.AfterFunc(eosTimeout, func() {
+			p.Logger.Errorw("pipeline frozen", nil)
+			p.Info.Error = "pipeline frozen"
+			p.stop()
+		})
 
 		switch s := p.in.Source.(type) {
 		case *source.SDKSource:
@@ -381,6 +279,119 @@ func (p *Pipeline) Stop() {
 		case *source.WebSource:
 			p.pipeline.SendEvent(gst.NewEOSEvent())
 		}
+	}
+}
+
+func (p *Pipeline) updateStartTime(startedAt int64) {
+	switch p.EgressType {
+	case params.EgressTypeStream, params.EgressTypeWebsocket:
+		p.mu.Lock()
+		for _, streamInfo := range p.StreamInfo {
+			p.startedAt[streamInfo.Url] = startedAt
+		}
+		p.mu.Unlock()
+
+	case params.EgressTypeFile:
+		p.startedAt[fileKey] = startedAt
+	}
+
+	p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
+	if p.onStatusUpdate != nil {
+		p.onStatusUpdate(p.Info)
+	}
+}
+
+func (p *Pipeline) updateEndTime(endedAt int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	switch p.EgressType {
+	case params.EgressTypeStream, params.EgressTypeWebsocket:
+		for _, info := range p.StreamInfo {
+			startedAt := p.startedAt[info.Url]
+			info.Duration = endedAt - startedAt
+		}
+
+	case params.EgressTypeFile:
+		startedAt := p.startedAt[fileKey]
+		p.FileInfo.Duration = endedAt - startedAt
+	}
+}
+
+func (p *Pipeline) messageWatch(msg *gst.Message) bool {
+	switch msg.Type() {
+	case gst.MessageEOS:
+		// EOS received - close and return
+		if p.eosTimer != nil {
+			p.eosTimer.Stop()
+		}
+
+		p.Logger.Debugw("EOS received, stopping pipeline")
+		p.stop()
+		return false
+
+	case gst.MessageError:
+		// handle error if possible, otherwise close and return
+		err, handled := p.handleError(msg.ParseError())
+		if !handled {
+			p.Info.Error = err.Error()
+			p.loop.Quit()
+			return false
+		}
+
+	case gst.MessageStateChanged:
+		if p.playing {
+			return true
+		}
+
+		_, newState := msg.ParseStateChanged()
+		if newState != gst.StatePlaying {
+			return true
+		}
+
+		switch msg.Source() {
+		case source.AudioAppSource, source.VideoAppSource:
+			switch s := p.in.Source.(type) {
+			case *source.SDKSource:
+				s.Playing(msg.Source())
+			}
+
+		case pipelineSource:
+			p.playing = true
+			switch s := p.in.Source.(type) {
+			case *source.SDKSource:
+				p.updateStartTime(s.GetStartTime())
+			case *source.WebSource:
+				p.updateStartTime(time.Now().UnixNano())
+			}
+		}
+
+	default:
+		p.Logger.Debugw(msg.String())
+	}
+
+	return true
+}
+
+func (p *Pipeline) stop() {
+	p.mu.Lock()
+
+	if p.loop == nil {
+		p.mu.Unlock()
+		return
+	}
+
+	_ = p.pipeline.BlockSetState(gst.StateNull)
+	endedAt := time.Now().UnixNano()
+	p.Logger.Debugw("pipeline stopped")
+
+	p.loop.Quit()
+	p.loop = nil
+	p.mu.Unlock()
+
+	switch p.in.Source.(type) {
+	case *source.WebSource:
+		p.updateEndTime(endedAt)
 	}
 }
 

@@ -14,7 +14,6 @@ import (
 	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
@@ -22,6 +21,7 @@ import (
 	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 var (
@@ -35,11 +35,14 @@ var (
 )
 
 type appWriter struct {
-	logger logger.Logger
-	sb     *samplebuilder.SampleBuilder
-	track  *webrtc.TrackRemote
-	codec  params.MimeType
-	src    *app.Source
+	logger          logger.Logger
+	sb              *samplebuilder.SampleBuilder
+	track           *webrtc.TrackRemote
+	codec           params.MimeType
+	src             *app.Source
+	startTime       time.Time
+	writeBlanks     bool
+	newSampleBuffer func() *samplebuilder.SampleBuilder
 
 	// a/v sync
 	cs              *clockSync
@@ -50,6 +53,7 @@ type appWriter struct {
 	conversion      float64
 	lastSN          uint16
 	lastTS          uint32
+	tsStep          uint32
 	maxLate         time.Duration
 	maxRTP          atomic.Int64
 	lastPictureId   uint16
@@ -62,11 +66,9 @@ type appWriter struct {
 	force    chan struct{}
 	finished chan struct{}
 
-	newSampleBuffer func() *samplebuilder.SampleBuilder
-
-	vp8Munger      *sfu.VP8Munger
+	// vp8
 	firstPktPushed bool
-	startTime      time.Time
+	vp8Munger      *sfu.VP8Munger
 }
 
 func newAppWriter(
@@ -77,19 +79,21 @@ func newAppWriter(
 	src *app.Source,
 	cs *clockSync,
 	playing chan struct{},
+	writeBlanks bool,
 ) (*appWriter, error) {
 
 	w := &appWriter{
-		logger:     logger.Logger(logr.Logger(l).WithValues("trackID", track.ID(), "kind", track.Kind().String())),
-		track:      track,
-		codec:      codec,
-		src:        src,
-		cs:         cs,
-		conversion: 1e9 / float64(track.Codec().ClockRate),
-		playing:    playing,
-		drain:      make(chan struct{}),
-		force:      make(chan struct{}),
-		finished:   make(chan struct{}),
+		logger:      logger.Logger(logr.Logger(l).WithValues("trackID", track.ID(), "kind", track.Kind().String())),
+		track:       track,
+		codec:       codec,
+		src:         src,
+		writeBlanks: writeBlanks,
+		cs:          cs,
+		conversion:  1e9 / float64(track.Codec().ClockRate),
+		playing:     playing,
+		drain:       make(chan struct{}),
+		force:       make(chan struct{}),
+		finished:    make(chan struct{}),
 	}
 
 	switch codec {
@@ -144,65 +148,64 @@ func (w *appWriter) start() {
 	w.startTime = time.Now()
 
 	for {
-		if w.isDraining() && !w.isPlaying() {
-			// quit if draining but not yet playing
-			return
-		}
-
 		select {
 		case <-w.force:
 			// force push remaining packets and quit
 			_ = w.pushPackets(true)
 			return
-		default:
-			// continue
-		}
 
-		// read next packet
-		_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
-		pkt, _, err := w.track.ReadRTP()
-		if err != nil {
-			if w.muted.Load() {
-				// switch to pushing blank frames until unmuted
-				err = w.pushBlankFrames()
-				if err == nil {
+		default:
+			// read next packet
+			_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
+			pkt, _, err := w.track.ReadRTP()
+			if err != nil {
+				if w.isDraining() {
+					return
+				}
+
+				if w.muted.Load() {
+					// switch to writing blank frames
+					err = w.pushBlankFrames()
+					if err == nil {
+						continue
+					}
+				}
+
+				// continue if read timeout
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					continue
 				}
+
+				// log non-EOF errors
+				if !errors.Is(err, io.EOF) {
+					w.logger.Errorw("could not read packet", err)
+				}
+
+				// force push remaining packets and quit
+				_ = w.pushPackets(true)
+				return
 			}
 
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				// continue if read timeout
-				continue
+			// sync offsets after first packet read
+			// see comment in writeRTP below
+			if !w.clockSynced {
+				now := time.Now().UnixNano()
+				startTime := w.cs.GetOrSetStartTime(now)
+				w.ptsOffset = now - startTime
+				w.rtpOffset = int64(pkt.Timestamp)
+				w.clockSynced = true
 			}
 
-			if !errors.Is(err, io.EOF) {
-				w.logger.Errorw("could not read packet", err)
+			// push packet to sample builder
+			w.sb.Push(pkt)
+
+			// push completed packets to appsrc
+			if err = w.pushPackets(false); err != nil {
+				if !errors.Is(err, io.EOF) {
+					w.logger.Errorw("could not push buffers", err)
+				}
+				return
 			}
-
-			// force push remaining packets and quit
-			_ = w.pushPackets(true)
-			return
-		}
-
-		// sync offsets after first packet read
-		// see comment in writeRTP below
-		if !w.clockSynced {
-			now := time.Now().UnixNano()
-			startTime := w.cs.GetOrSetStartTime(now)
-			w.ptsOffset = now - startTime
-			w.rtpOffset = int64(pkt.Timestamp)
-			w.clockSynced = true
-		}
-
-		// push packet to sample builder
-		w.sb.Push(pkt)
-
-		// push completed packets to appsrc
-		if err = w.pushPackets(false); err != nil {
-			if !errors.Is(err, io.EOF) {
-				w.logger.Errorw("could not push buffers", err)
-			}
-			return
 		}
 	}
 }
@@ -227,41 +230,85 @@ func (w *appWriter) pushBlankFrames() error {
 	//   recreated it to work now, will remove this when bug fixed
 	w.sb = w.newSampleBuffer()
 
-	ticker := time.NewTicker(time.Microsecond * 41708)
+	if !w.writeBlanks {
+		// wait until unmuted or closed
+		ticker := time.NewTicker(time.Millisecond * 100)
+		defer ticker.Stop()
+
+		for {
+			<-ticker.C
+			if w.isDraining() || !w.muted.Load() {
+				return nil
+			}
+		}
+	}
+
+	// expected difference between packet timestamps
+	tsStep := w.tsStep
+	if tsStep == 0 {
+		w.logger.Debugw("no timestamp step, guessing")
+		tsStep = w.track.Codec().ClockRate / (24000 / 1001)
+	}
+
+	// expected packet duration in nanoseconds
+	frameDuration := time.Duration(float64(tsStep) * 1e9 / float64(w.track.Codec().ClockRate))
+	ticker := time.NewTicker(frameDuration)
 	defer ticker.Stop()
 
-	written := false
 	for {
-		<-ticker.C
-		if !w.muted.Load() || w.isDraining() {
+		if w.isDraining() {
 			return nil
 		}
 
-		if !written {
-			written = true
-			pkt, err := w.getBlankFrame()
+		if !w.muted.Load() {
+			// once unmuted, read next packet to determine stopping point
+			// the blank frames should be ~500ms behind and need to fill the gap
+			_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
+			pkt, _, err := w.track.ReadRTP()
 			if err != nil {
+				// continue if read timeout
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					continue
+				}
+
+				if !errors.Is(err, io.EOF) {
+					w.logger.Errorw("could not read packet", err)
+				}
 				return err
 			}
 
-			err = w.push([]*rtp.Packet{pkt}, true)
-			if err != nil {
-				return err
+			maxTimestamp := pkt.Timestamp - tsStep
+			for {
+				ts := w.lastTS + tsStep
+				if ts > maxTimestamp {
+					// push packet to sample builder and return
+					w.sb.Push(pkt)
+					return nil
+				}
+
+				if err = w.pushBlankFrame(ts); err != nil {
+					return err
+				}
 			}
+		}
+
+		<-ticker.C
+		// push blank frame
+		if err := w.pushBlankFrame(w.lastTS + tsStep); err != nil {
+			return err
 		}
 	}
 }
 
-func (w *appWriter) getBlankFrame() (*rtp.Packet, error) {
-	// TODO: update timestamp using actual track framerate
+func (w *appWriter) pushBlankFrame(timestamp uint32) error {
 	pkt := &rtp.Packet{
 		Header: rtp.Header{
 			Version:        2,
 			Padding:        false,
 			Marker:         true,
 			PayloadType:    uint8(w.track.PayloadType()),
-			SequenceNumber: w.lastSN + uint16(1),
-			Timestamp:      w.lastTS + (w.track.Codec().ClockRate / (24000 / 1001)),
+			SequenceNumber: w.lastSN + 1,
+			Timestamp:      timestamp,
 			SSRC:           uint32(w.track.SSRC()),
 			CSRC:           []uint32{},
 		},
@@ -280,7 +327,7 @@ func (w *appWriter) getBlankFrame() (*rtp.Packet, error) {
 		vp8Header := payload[:blankVP8.HeaderSize]
 		err := blankVP8.MarshalTo(vp8Header)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame8x8)
@@ -301,13 +348,22 @@ func (w *appWriter) getBlankFrame() (*rtp.Packet, error) {
 		pkt.Payload = buf[:offset]
 	}
 
-	return pkt, nil
+	if err := w.push([]*rtp.Packet{pkt}, true); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 	for _, pkt := range packets {
 		if w.isDraining() && int64(pkt.Timestamp) >= w.maxRTP.Load() {
 			return io.EOF
+		}
+
+		// record timestamp diff
+		if w.tsStep == 0 && !blankFrame && w.lastTS != 0 && pkt.SequenceNumber == w.lastSN+1 {
+			w.tsStep = pkt.Timestamp - w.lastTS
 		}
 
 		// record SN and TS
@@ -435,8 +491,8 @@ func (w *appWriter) trackUnmuted() {
 	w.muted.Store(false)
 }
 
-// stop blocks until finished
-func (w *appWriter) stop() {
+// sendEOS blocks until finished
+func (w *appWriter) sendEOS() {
 	select {
 	case <-w.drain:
 	default:

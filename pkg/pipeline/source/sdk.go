@@ -10,11 +10,12 @@ import (
 	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
+
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 const (
@@ -32,9 +33,7 @@ type SDKSource struct {
 	cs     *clockSync
 
 	// track
-	trackID    string
-	fileWriter *fileWriter
-	filePath   string
+	trackID string
 
 	// track composite audio
 	audioTrackID string
@@ -52,7 +51,6 @@ type SDKSource struct {
 
 	mutedChan    chan bool
 	endRecording chan struct{}
-	closed       chan struct{}
 }
 
 func NewSDKSource(p *params.Params) (*SDKSource, error) {
@@ -62,7 +60,6 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		cs:           &clockSync{},
 		mutedChan:    p.MutedChan,
 		endRecording: make(chan struct{}),
-		closed:       make(chan struct{}),
 	}
 
 	var fileIdentifier string
@@ -114,36 +111,25 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 			appSrcName = VideoAppSource
 			p.VideoEnabled = true
 
-			if p.TrackID != "" || !p.AudioEnabled {
-				// only one track, use ivf file writer
-				p.SkipPipeline = true
-				if p.VideoCodec == "" {
-					p.VideoCodec = codec
-				}
-
-				if onSubscribeErr = p.UpdateOutputTypeFromCodecs(fileIdentifier); onSubscribeErr != nil {
-					s.logger.Errorw("could not update file params", onSubscribeErr)
-					return
-				}
-
-				s.fileWriter, onSubscribeErr = newFileWriter(p, track, codec, rp, s.logger, s.cs)
-				if onSubscribeErr != nil {
-					s.logger.Errorw("could not create file writer", onSubscribeErr)
-				}
-				return
-			}
-
-			// composite request, use gstreamer
 			if p.VideoCodec == "" {
-				p.VideoCodec = params.MimeTypeH264
+				if p.AudioEnabled {
+					// transcode to h264 for composite requests
+					p.VideoCodec = params.MimeTypeH264
+				} else {
+					p.VideoCodec = params.MimeTypeVP8
+				}
+			}
+			if p.TrackID != "" {
+				p.OutputType = params.OutputTypeIVF
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeH264)):
 			codec = params.MimeTypeH264
 			appSrcName = VideoAppSource
 			p.VideoEnabled = true
+
 			if p.VideoCodec == "" {
-				p.VideoCodec = codec
+				p.VideoCodec = params.MimeTypeH264
 			}
 
 		default:
@@ -158,12 +144,15 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 			return
 		}
 
+		// write blank frames only when writing to mp4
+		writeBlanks := p.VideoCodec == params.MimeTypeH264
+
 		switch track.Kind() {
 		case webrtc.RTPCodecTypeAudio:
 			s.audioSrc = app.SrcFromElement(src)
 			s.audioPlaying = make(chan struct{})
 			s.audioCodec = track.Codec()
-			s.audioWriter, err = newAppWriter(track, codec, rp, s.logger, s.audioSrc, s.cs, s.audioPlaying)
+			s.audioWriter, err = newAppWriter(track, codec, rp, s.logger, s.audioSrc, s.cs, s.audioPlaying, writeBlanks)
 			if err != nil {
 				s.logger.Errorw("could not create app writer", err)
 				onSubscribeErr = err
@@ -174,7 +163,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 			s.videoSrc = app.SrcFromElement(src)
 			s.videoPlaying = make(chan struct{})
 			s.videoCodec = track.Codec()
-			s.videoWriter, err = newAppWriter(track, codec, rp, s.logger, s.videoSrc, s.cs, s.videoPlaying)
+			s.videoWriter, err = newAppWriter(track, codec, rp, s.logger, s.videoSrc, s.cs, s.videoPlaying, writeBlanks)
 			if err != nil {
 				s.logger.Errorw("could not create app writer", err)
 				onSubscribeErr = err
@@ -192,7 +181,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		return nil, onSubscribeErr
 	}
 
-	if s.fileWriter == nil && p.EgressType == params.EgressTypeFile {
+	if p.EgressType == params.EgressTypeFile {
 		if err := p.UpdateOutputTypeFromCodecs(fileIdentifier); err != nil {
 			s.logger.Errorw("could not update file params", err)
 			return nil, err
@@ -247,37 +236,40 @@ func (s *SDKSource) join(p *params.Params) error {
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	if w := s.getWriterForTrack(pub); w != nil {
+	track := pub.Track()
+	if track == nil {
+		return
+	}
+
+	if w := s.getWriterForTrack(track.ID()); w != nil {
 		w.trackMuted()
 	}
+
+	// TODO: clean this up
 	if s.mutedChan != nil {
 		s.mutedChan <- false
 	}
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	if w := s.getWriterForTrack(pub); w != nil {
+	track := pub.Track()
+	if track == nil {
+		return
+	}
+
+	if w := s.getWriterForTrack(track.ID()); w != nil {
 		w.trackUnmuted()
 	}
+
+	// TODO: clean this up
 	if s.mutedChan != nil {
 		s.mutedChan <- false
 	}
 }
 
 func (s *SDKSource) onTrackUnpublished(track *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
-	switch track.SID() {
-	case s.trackID:
-		if s.fileWriter != nil {
-			s.fileWriter.stop()
-		} else if s.audioWriter != nil {
-			s.audioWriter.stop()
-		} else if s.videoWriter != nil {
-			s.videoWriter.stop()
-		}
-	case s.audioTrackID:
-		s.audioWriter.stop()
-	case s.videoTrackID:
-		s.videoWriter.stop()
+	if w := s.getWriterForTrack(track.SID()); w != nil {
+		w.sendEOS()
 	}
 
 	if s.active.Dec() == 0 {
@@ -294,17 +286,10 @@ func (s *SDKSource) onComplete() {
 	}
 }
 
-func (s *SDKSource) getWriterForTrack(pub lksdk.TrackPublication) writer {
-	// track might be nil when first joining
-	if pub.Track() == nil {
-		return nil
-	}
-
-	switch pub.Track().ID() {
+func (s *SDKSource) getWriterForTrack(trackID string) *appWriter {
+	switch trackID {
 	case s.trackID:
-		if s.fileWriter != nil {
-			return s.fileWriter
-		} else if s.audioWriter != nil {
+		if s.audioWriter != nil {
 			return s.audioWriter
 		} else if s.videoWriter != nil {
 			return s.videoWriter
@@ -362,35 +347,24 @@ func (s *SDKSource) EndRecording() chan struct{} {
 }
 
 func (s *SDKSource) SendEOS() {
-	select {
-	case <-s.closed:
-		return
-	default:
-		close(s.closed)
+	s.cs.SetEndTime(time.Now().UnixNano())
 
-		s.cs.SetEndTime(time.Now().UnixNano())
-
-		if s.fileWriter != nil {
-			s.fileWriter.stop()
-		} else {
-			var wg sync.WaitGroup
-			if s.audioWriter != nil {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					s.audioWriter.stop()
-				}()
-			}
-			if s.videoWriter != nil {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					s.videoWriter.stop()
-				}()
-			}
-			wg.Wait()
-		}
+	var wg sync.WaitGroup
+	if s.audioWriter != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.audioWriter.sendEOS()
+		}()
 	}
+	if s.videoWriter != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.videoWriter.sendEOS()
+		}()
+	}
+	wg.Wait()
 }
 
 func (s *SDKSource) Close() {

@@ -15,62 +15,70 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/egress/pkg/pipeline"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
+
+	"github.com/livekit/egress/pkg/pipeline"
+	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 func testTrack(t *testing.T, conf *testConfig, room *lksdk.Room) {
-	for _, test := range []*testCase{
-		{
-			name:      "track-opus",
-			audioOnly: true,
-			codec:     params.MimeTypeOpus,
-			filename:  fmt.Sprintf("track-opus-%v.ogg", time.Now().Unix()),
-		},
-		{
-			name:      "track-vp8",
-			videoOnly: true,
-			codec:     params.MimeTypeVP8,
-			filename:  fmt.Sprintf("track-vp8-%v.ivf", time.Now().Unix()),
-		},
-		{
-			name:      "track-h264",
-			videoOnly: true,
-			codec:     params.MimeTypeH264,
-			filename:  fmt.Sprintf("track-h264-%v.mp4", time.Now().Unix()),
-		},
-	} {
-		if !t.Run(test.name, func(t *testing.T) {
-			runTrackFileTest(t, conf, room, test)
-		}) {
-			t.FailNow()
+	if conf.RunFileTests {
+		for _, test := range []*testCase{
+			{
+				name:      "track-opus",
+				audioOnly: true,
+				codec:     params.MimeTypeOpus,
+				filename:  fmt.Sprintf("track-opus-%v.ogg", time.Now().Unix()),
+			},
+			{
+				name:      "track-vp8",
+				videoOnly: true,
+				codec:     params.MimeTypeVP8,
+				filename:  fmt.Sprintf("track-vp8-%v.ivf", time.Now().Unix()),
+			},
+			{
+				name:      "track-h264",
+				videoOnly: true,
+				codec:     params.MimeTypeH264,
+				filename:  fmt.Sprintf("track-h264-%v.mp4", time.Now().Unix()),
+			},
+		} {
+			if !t.Run(test.name, func(t *testing.T) {
+				runTrackFileTest(t, conf, room, test)
+			}) {
+				t.FailNow()
+			}
 		}
 	}
 
-	for _, test := range []*testCase{
-		{
-			name:      "track-websocket",
-			audioOnly: true,
-			codec:     params.MimeTypeOpus,
-			output:    params.OutputTypeRaw,
-			filename:  fmt.Sprintf("track-ws-%v.raw", time.Now().Unix()),
-		},
-	} {
-		if !t.Run(test.name, func(t *testing.T) {
-			runTrackWebsocketTest(t, conf, room, test)
-		}) {
-			t.FailNow()
+	if conf.RunStreamTests {
+		for _, test := range []*testCase{
+			{
+				name:      "track-websocket",
+				audioOnly: true,
+				codec:     params.MimeTypeOpus,
+				output:    params.OutputTypeRaw,
+				filename:  fmt.Sprintf("track-ws-%v.raw", time.Now().Unix()),
+			},
+		} {
+			if !t.Run(test.name, func(t *testing.T) {
+				runTrackWebsocketTest(t, conf, room, test)
+			}) {
+				t.FailNow()
+			}
 		}
 	}
 }
 
 func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *testCase) {
-	trackID := publishSampleToRoom(t, room, test.codec, conf.WithMuting)
-	time.Sleep(time.Second)
+	trackID := publishSampleToRoom(t, room, test.codec, conf.Muting)
+	t.Cleanup(func() {
+		_ = room.LocalParticipant.UnpublishTrack(trackID)
+		time.Sleep(time.Second)
+	})
 
 	filepath := getFilePath(conf.Config, test.filename)
 	trackRequest := &livekit.TrackEgressRequest{
@@ -93,13 +101,15 @@ func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *te
 	}
 
 	runFileTest(t, conf, test, req, filepath)
-
-	require.NoError(t, room.LocalParticipant.UnpublishTrack(trackID))
-	time.Sleep(time.Second)
 }
 
 func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *testCase) {
 	trackID := publishSampleToRoom(t, room, test.codec, false)
+	t.Cleanup(func() {
+		_ = room.LocalParticipant.UnpublishTrack(trackID)
+		time.Sleep(time.Second)
+	})
+
 	time.Sleep(time.Second)
 
 	filepath := getFilePath(conf.Config, test.filename)
@@ -135,12 +145,11 @@ func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, tes
 
 	// record for ~30s. Takes about 5s to start
 	time.AfterFunc(time.Second*35, func() {
-		rec.Stop()
+		rec.SendEOS()
 	})
 	res := rec.Run()
 
-	require.NoError(t, room.LocalParticipant.UnpublishTrack(trackID))
-	verify(t, filepath, p, res, true, conf.WithMuting)
+	verify(t, filepath, p, res, true, conf.Muting)
 }
 
 type websocketTestServer struct {

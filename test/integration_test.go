@@ -6,7 +6,6 @@ package test
 import (
 	"fmt"
 	"math/rand"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +25,8 @@ const (
 	audioTestInput  = "https://www.youtube.com/watch?v=eAcFPtCyDYY&t=59s"
 	audioTestInput2 = "https://www.youtube.com/watch?v=BlPbAq1dW3I&t=45s"
 	staticTestInput = "https://www.livekit.io"
+	streamUrl1      = "rtmp://localhost:1935/live/stream1"
+	streamUrl2      = "rtmp://localhost:1935/live/stream2"
 	muteDuration    = time.Second * 10
 )
 
@@ -55,27 +56,16 @@ type testCase struct {
 	output           params.OutputType
 }
 
-type sdkParams struct {
-	audioTrackID string
-	videoTrackID string
-	roomName     string
-}
-
 func TestEgress(t *testing.T) {
 	conf := getTestConfig(t)
 
 	var room *lksdk.Room
 	if strings.HasPrefix(conf.ApiKey, "API") {
-		roomName := os.Getenv("LIVEKIT_ROOM_NAME")
-		if roomName == "" {
-			roomName = "egress-integration"
-		}
-
 		var err error
 		room, err = lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
 			APIKey:              conf.ApiKey,
 			APISecret:           conf.ApiSecret,
-			RoomName:            roomName,
+			RoomName:            conf.RoomName,
 			ParticipantName:     "sample",
 			ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
 		})
@@ -83,7 +73,7 @@ func TestEgress(t *testing.T) {
 		defer room.Disconnect()
 	}
 
-	if !conf.TrackCompositeOnly && !conf.TrackOnly {
+	if conf.RunRoomTests {
 		if !t.Run("RoomComposite", func(t *testing.T) {
 			testRoomComposite(t, conf, room)
 		}) {
@@ -95,7 +85,7 @@ func TestEgress(t *testing.T) {
 		return
 	}
 
-	if !conf.RoomOnly && !conf.TrackOnly {
+	if conf.RunTrackCompositeTests {
 		if !t.Run("TrackComposite", func(t *testing.T) {
 			testTrackComposite(t, conf, room)
 		}) {
@@ -103,7 +93,7 @@ func TestEgress(t *testing.T) {
 		}
 	}
 
-	if !conf.RoomOnly && !conf.TrackCompositeOnly {
+	if conf.RunTrackTests {
 		if !t.Run("Track", func(t *testing.T) {
 			testTrack(t, conf, room)
 		}) {
@@ -178,7 +168,7 @@ func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.St
 
 	// record for ~30s. Takes about 5s to start
 	time.AfterFunc(time.Second*35, func() {
-		rec.Stop()
+		rec.SendEOS()
 	})
 	res := rec.Run()
 
@@ -195,5 +185,61 @@ func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.St
 	require.NotEmpty(t, fileRes.Size)
 	require.NotEmpty(t, fileRes.Location)
 
-	verify(t, filepath, p, res, false, conf.WithMuting)
+	verify(t, filepath, p, res, false, conf.Muting)
+}
+
+func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, customUrl string) {
+	p, err := params.GetPipelineParams(conf.Config, req)
+	require.NoError(t, err)
+	if customUrl != "" {
+		p.CustomInputURL = customUrl
+	}
+
+	rec, err := pipeline.New(conf.Config, p)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		rec.SendEOS()
+	})
+
+	resChan := make(chan *livekit.EgressInfo, 1)
+	go func() {
+		resChan <- rec.Run()
+	}()
+
+	// wait for recorder to start
+	time.Sleep(time.Second * 15)
+
+	// check stream
+	verifyStreams(t, p, streamUrl1)
+
+	// add another, check both
+	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
+		EgressId:      req.EgressId,
+		AddOutputUrls: []string{streamUrl2},
+	}))
+	verifyStreams(t, p, streamUrl1, streamUrl2)
+
+	// remove first, check second
+	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
+		EgressId:         req.EgressId,
+		RemoveOutputUrls: []string{streamUrl1},
+	}))
+	verifyStreams(t, p, streamUrl2)
+
+	// stop
+	rec.SendEOS()
+	res := <-resChan
+
+	// egress info
+	require.Empty(t, res.Error)
+	require.NotZero(t, res.StartedAt)
+	require.NotZero(t, res.EndedAt)
+
+	// stream info
+	require.Len(t, res.GetStream().Info, 2)
+	for _, info := range res.GetStream().Info {
+		require.NotEmpty(t, info.Url)
+		require.NotZero(t, info.Duration)
+	}
 }

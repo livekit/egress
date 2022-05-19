@@ -109,9 +109,14 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 
 		delta := 1.5
 		if withMuting {
-			delta = 8
-		} else if !p.AudioEnabled {
-			delta = 3
+			if !p.VideoEnabled {
+				// opus only with muting (cuts the end short)
+				delta = 13
+			} else if !p.AudioEnabled {
+				delta = 10
+			} else {
+				delta = 3
+			}
 		}
 
 		// duration can be up to a couple seconds off because the beginning is missing a keyframe
