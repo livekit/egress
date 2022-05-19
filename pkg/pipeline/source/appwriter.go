@@ -242,61 +242,102 @@ func (w *appWriter) pushBlankFrames() error {
 
 	for {
 		<-ticker.C
-		if !w.muted.Load() || w.isDraining() {
+		if w.isDraining() {
 			return nil
 		}
 
-		pkt := &rtp.Packet{
-			Header: rtp.Header{
-				Version:        2,
-				Padding:        false,
-				Marker:         true,
-				PayloadType:    uint8(w.track.PayloadType()),
-				SequenceNumber: w.lastSN + 1,
-				Timestamp:      w.lastTS + tsStep,
-				SSRC:           uint32(w.track.SSRC()),
-				CSRC:           []uint32{},
-			},
-		}
-		w.snOffset++
-
-		switch w.codec {
-		case params.MimeTypeVP8:
-			blankVP8 := w.vp8Munger.UpdateAndGetPadding(true)
-
-			// 1x1 key frame
-			// Used even when closing out a previous frame. Looks like receivers
-			// do not care about content (it will probably end up being an undecodable
-			// frame, but that should be okay as there are key frames following)
-			payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame8x8))
-			vp8Header := payload[:blankVP8.HeaderSize]
-			err := blankVP8.MarshalTo(vp8Header)
+		if !w.muted.Load() {
+			// once unmuted, read next packet to determine stopping point
+			// the blank frames should be ~500ms behind and need to fill the gap
+			_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
+			pkt, _, err := w.track.ReadRTP()
 			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// continue if read timeout
+					continue
+				}
+
+				if !errors.Is(err, io.EOF) {
+					w.logger.Errorw("could not read packet", err)
+				}
 				return err
 			}
 
-			copy(payload[blankVP8.HeaderSize:], VP8KeyFrame8x8)
-			pkt.Payload = payload
+			maxTimestamp := pkt.Timestamp - tsStep
+			for {
+				ts := w.lastTS + tsStep
+				if ts > maxTimestamp {
+					// push packet to sample builder
+					w.sb.Push(pkt)
+					return nil
+				}
 
-		case params.MimeTypeH264:
-			buf := make([]byte, 1462)
-			offset := 0
-			buf[0] = 0x18 // STAP-A
-			offset++
-			for _, payload := range H264KeyFrame2x2 {
-				binary.BigEndian.PutUint16(buf[offset:], uint16(len(payload)))
-				offset += 2
-				copy(buf[offset:offset+len(payload)], payload)
-				offset += len(payload)
+				if err := w.pushBlankFrame(ts); err != nil {
+					return err
+				}
 			}
-
-			pkt.Payload = buf[:offset]
 		}
 
-		if err := w.push([]*rtp.Packet{pkt}, true); err != nil {
+		// push blank frame
+		if err := w.pushBlankFrame(w.lastTS + tsStep); err != nil {
 			return err
 		}
 	}
+}
+
+func (w *appWriter) pushBlankFrame(timestamp uint32) error {
+	pkt := &rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			Padding:        false,
+			Marker:         true,
+			PayloadType:    uint8(w.track.PayloadType()),
+			SequenceNumber: w.lastSN + 1,
+			Timestamp:      timestamp,
+			SSRC:           uint32(w.track.SSRC()),
+			CSRC:           []uint32{},
+		},
+	}
+	w.snOffset++
+
+	switch w.codec {
+	case params.MimeTypeVP8:
+		blankVP8 := w.vp8Munger.UpdateAndGetPadding(true)
+
+		// 1x1 key frame
+		// Used even when closing out a previous frame. Looks like receivers
+		// do not care about content (it will probably end up being an undecodable
+		// frame, but that should be okay as there are key frames following)
+		payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame8x8))
+		vp8Header := payload[:blankVP8.HeaderSize]
+		err := blankVP8.MarshalTo(vp8Header)
+		if err != nil {
+			return err
+		}
+
+		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame8x8)
+		pkt.Payload = payload
+
+	case params.MimeTypeH264:
+		buf := make([]byte, 1462)
+		offset := 0
+		buf[0] = 0x18 // STAP-A
+		offset++
+		for _, payload := range H264KeyFrame2x2 {
+			binary.BigEndian.PutUint16(buf[offset:], uint16(len(payload)))
+			offset += 2
+			copy(buf[offset:offset+len(payload)], payload)
+			offset += len(payload)
+		}
+
+		pkt.Payload = buf[:offset]
+	}
+
+	if err := w.push([]*rtp.Packet{pkt}, true); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
@@ -306,7 +347,7 @@ func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 		}
 
 		// record timestamp diff
-		if w.tsStep == 0 && w.lastTS != 0 && pkt.SequenceNumber == w.lastSN+1 {
+		if w.tsStep == 0 && !blankFrame && w.lastTS != 0 && pkt.SequenceNumber == w.lastSN+1 {
 			w.tsStep = pkt.Timestamp - w.lastTS
 		}
 
