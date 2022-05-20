@@ -58,7 +58,7 @@ The `File.Output` field can be left empty if one of `s3`, `azure`, or `gcp` is s
 The `File.Filepath` field can be left empty, and a unique filename will be generated based on the date and room name.
 
 Built-in layouts include `speaker-dark`, `speaker-light`, `grid-dark`, and `grid-light`.  
-To create your own web templates, see our [web README](https://github.com/livekit/egress/blob/main/web/README.md).
+To create your own web templates, see [Egress Template SDK](https://github.com/livekit/egress/tree/main/template-sdk).
 
 Egress will end when the room is closed or a StopEgress request is sent.
 
