@@ -82,8 +82,7 @@ RUN go mod download
 # copy source
 COPY pkg/ pkg/
 COPY test/ test/
+COPY build/test/entrypoint.sh .
 
 # run
-CMD ./rtsp-simple-server & \
-    pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit & \
-    go test -v --tags=integration ./test
+ENTRYPOINT ["./entrypoint.sh"]
