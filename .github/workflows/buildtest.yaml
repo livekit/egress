@@ -22,7 +22,7 @@ jobs:
           key: egress
 
       - name: Build docker images
-        run: docker build -t egress-test -f ./build/Dockerfile-test .
+        run: docker build -t egress-test -f ./build/test/Dockerfile .
 
       - name: Run tests
         run: docker run --rm egress-test

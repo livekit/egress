@@ -88,7 +88,7 @@ ENV XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr
 
 # copy binary
 COPY --from=0 /workspace/egress /
+COPY build/entrypoint.sh /
 
 # run
-CMD pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit & \
-    ./egress
+ENTRYPOINT ["/entrypoint.sh"]
