@@ -50,22 +50,20 @@ type appWriter struct {
 	startTime   time.Time
 	writeBlanks bool
 
-	newSampleBuffer func() *samplebuilder.SampleBuilder
-	writePLI        func()
+	newSampleBuilder func() *samplebuilder.SampleBuilder
+	writePLI         func()
 
 	// a/v sync
-	cs              *clockSync
-	clockSynced     bool
-	rtpOffset       int64
-	ptsOffset       int64
-	snOffset        uint16
-	conversion      float64
-	lastSN          uint16
-	lastTS          uint32
-	tsStep          uint32
-	maxRTP          atomic.Int64
-	lastPictureId   uint16
-	pictureIdOffset uint16
+	cs          *clockSync
+	clockSynced bool
+	rtpOffset   int64
+	ptsOffset   int64
+	snOffset    uint16
+	conversion  float64
+	lastSN      uint16
+	lastTS      uint32
+	tsStep      uint32
+	maxRTP      atomic.Int64
 
 	// state
 	muted        atomic.Bool
@@ -130,13 +128,13 @@ func newAppWriter(
 		return nil, errors.ErrNotSupported(track.Codec().MimeType)
 	}
 
-	w.newSampleBuffer = func() *samplebuilder.SampleBuilder {
+	w.newSampleBuilder = func() *samplebuilder.SampleBuilder {
 		return samplebuilder.New(
 			maxLate, depacketizer, track.Codec().ClockRate,
 			samplebuilder.WithPacketDroppedHandler(w.writePLI),
 		)
 	}
-	w.sb = w.newSampleBuffer()
+	w.sb = w.newSampleBuilder()
 
 	go w.start()
 	return w, nil
@@ -237,7 +235,7 @@ func (w *appWriter) pushBlankFrames() error {
 
 	// TODO: sample buffer has bug that it may pop old packet after pushPackets(true)
 	//   recreated it to work now, will remove this when bug fixed
-	w.sb = w.newSampleBuffer()
+	w.sb = w.newSampleBuilder()
 
 	if !w.writeBlanks {
 		// wait until unmuted or closed
@@ -413,24 +411,22 @@ func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 func (w *appWriter) translatePacket(pkt *rtp.Packet) {
 	switch w.codec {
 	case params.MimeTypeVP8:
-		ep := &buffer.ExtPacket{
-			Packet:  pkt,
-			Arrival: time.Now().UnixNano(),
-			VideoLayer: buffer.VideoLayer{
-				Spatial:  -1,
-				Temporal: -1,
-			},
-		}
-		ep.Temporal = 0
-
 		vp8Packet := buffer.VP8{}
 		if err := vp8Packet.Unmarshal(pkt.Payload); err != nil {
 			w.logger.Warnw("could not unmarshal VP8 packet", err)
 			return
 		}
-		ep.Payload = vp8Packet
-		ep.KeyFrame = vp8Packet.IsKeyFrame
-		ep.Temporal = int32(vp8Packet.TID)
+
+		ep := &buffer.ExtPacket{
+			Packet:   pkt,
+			Arrival:  time.Now().UnixNano(),
+			Payload:  vp8Packet,
+			KeyFrame: vp8Packet.IsKeyFrame,
+			VideoLayer: buffer.VideoLayer{
+				Spatial:  -1,
+				Temporal: int32(vp8Packet.TID),
+			},
+		}
 
 		if !w.firstPktPushed {
 			w.firstPktPushed = true
