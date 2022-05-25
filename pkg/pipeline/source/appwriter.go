@@ -24,6 +24,13 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
+const (
+	maxVideoLate = 1000 // nearly 2s for fhd video
+	videoTimeout = time.Second * 2
+	maxAudioLate = 200 // 4s for audio
+	audioTimeout = time.Second * 4
+)
+
 var (
 	VP8KeyFrame8x8 = []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a, 0x08, 0x00, 0x08, 0x00, 0x00, 0x47, 0x08, 0x85, 0x85, 0x88, 0x85, 0x84, 0x88, 0x02, 0x02, 0x00, 0x0c, 0x0d, 0x60, 0x00, 0xfe, 0xff, 0xab, 0x50, 0x80}
 
@@ -35,14 +42,16 @@ var (
 )
 
 type appWriter struct {
-	logger          logger.Logger
-	sb              *samplebuilder.SampleBuilder
-	track           *webrtc.TrackRemote
-	codec           params.MimeType
-	src             *app.Source
-	startTime       time.Time
-	writeBlanks     bool
+	logger      logger.Logger
+	sb          *samplebuilder.SampleBuilder
+	track       *webrtc.TrackRemote
+	codec       params.MimeType
+	src         *app.Source
+	startTime   time.Time
+	writeBlanks bool
+
 	newSampleBuffer func() *samplebuilder.SampleBuilder
+	writePLI        func()
 
 	// a/v sync
 	cs              *clockSync
@@ -54,17 +63,17 @@ type appWriter struct {
 	lastSN          uint16
 	lastTS          uint32
 	tsStep          uint32
-	maxLate         time.Duration
 	maxRTP          atomic.Int64
 	lastPictureId   uint16
 	pictureIdOffset uint16
 
 	// state
-	muted    atomic.Bool
-	playing  chan struct{}
-	drain    chan struct{}
-	force    chan struct{}
-	finished chan struct{}
+	muted        atomic.Bool
+	playing      chan struct{}
+	drain        chan struct{}
+	drainTimeout time.Duration
+	force        chan struct{}
+	finished     chan struct{}
 
 	// vp8
 	firstPktPushed bool
@@ -96,38 +105,38 @@ func newAppWriter(
 		finished:    make(chan struct{}),
 	}
 
+	var depacketizer rtp.Depacketizer
+	var maxLate uint16
 	switch codec {
 	case params.MimeTypeVP8:
-		w.newSampleBuffer = func() *samplebuilder.SampleBuilder {
-			return samplebuilder.New(
-				maxVideoLate, &codecs.VP8Packet{}, track.Codec().ClockRate,
-				samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
-			)
-		}
-		w.sb = w.newSampleBuffer()
-		w.maxLate = time.Second * 2
+		depacketizer = &codecs.VP8Packet{}
+		maxLate = maxVideoLate
+		w.drainTimeout = videoTimeout
+		w.writePLI = func() { rp.WritePLI(track.SSRC()) }
 		w.vp8Munger = sfu.NewVP8Munger(w.logger)
 
 	case params.MimeTypeH264:
-		w.newSampleBuffer = func() *samplebuilder.SampleBuilder {
-			return samplebuilder.New(
-				maxVideoLate, &codecs.H264Packet{}, track.Codec().ClockRate,
-				samplebuilder.WithPacketDroppedHandler(func() { rp.WritePLI(track.SSRC()) }),
-			)
-		}
-		w.sb = w.newSampleBuffer()
-		w.maxLate = time.Second * 2
+		depacketizer = &codecs.H264Packet{}
+		maxLate = maxVideoLate
+		w.drainTimeout = videoTimeout
+		w.writePLI = func() { rp.WritePLI(track.SSRC()) }
 
 	case params.MimeTypeOpus:
-		w.newSampleBuffer = func() *samplebuilder.SampleBuilder {
-			return samplebuilder.New(maxAudioLate, &codecs.OpusPacket{}, track.Codec().ClockRate)
-		}
-		w.sb = w.newSampleBuffer()
-		w.maxLate = time.Second * 4
+		depacketizer = &codecs.OpusPacket{}
+		maxLate = maxAudioLate
+		w.drainTimeout = audioTimeout
 
 	default:
 		return nil, errors.ErrNotSupported(track.Codec().MimeType)
 	}
+
+	w.newSampleBuffer = func() *samplebuilder.SampleBuilder {
+		return samplebuilder.New(
+			maxLate, depacketizer, track.Codec().ClockRate,
+			samplebuilder.WithPacketDroppedHandler(w.writePLI),
+		)
+	}
+	w.sb = w.newSampleBuffer()
 
 	go w.start()
 	return w, nil
@@ -489,6 +498,9 @@ func (w *appWriter) trackMuted() {
 func (w *appWriter) trackUnmuted() {
 	w.logger.Debugw("track unmuted", "timestamp", time.Since(w.startTime).Seconds())
 	w.muted.Store(false)
+	if w.writePLI != nil {
+		w.writePLI()
+	}
 }
 
 // sendEOS blocks until finished
@@ -511,9 +523,10 @@ func (w *appWriter) sendEOS() {
 		// start draining
 		close(w.drain)
 
-		// wait until maxLate before force popping
-		time.AfterFunc(w.maxLate, func() { close(w.force) })
+		// wait until drainTimeout before force popping
+		time.AfterFunc(w.drainTimeout, func() { close(w.force) })
 	}
 
+	// wait until finished
 	<-w.finished
 }

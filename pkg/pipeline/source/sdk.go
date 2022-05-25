@@ -21,9 +21,6 @@ import (
 const (
 	AudioAppSource = "audioAppSrc"
 	VideoAppSource = "videoAppSrc"
-
-	maxVideoLate = 1000 // nearly 2s for fhd video
-	maxAudioLate = 200  // 4s for audio
 )
 
 type SDKSource struct {
