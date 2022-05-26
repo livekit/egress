@@ -2,3 +2,4 @@
 bin/
 test/output/*
 test/*.yaml
+.DS_Store
