@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/egress"
@@ -33,9 +34,10 @@ type Service struct {
 
 	promServer *http.Server
 
-	pipelines sync.Map
-	shutdown  chan struct{}
-	kill      chan struct{}
+	handlingRoomComposite atomic.Bool
+	pipelines             sync.Map
+	shutdown              chan struct{}
+	kill                  chan struct{}
 }
 
 func NewService(conf *config.Config, bus utils.MessageBus) *Service {
@@ -148,6 +150,11 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 		return
 	}
 
+	if s.handlingRoomComposite.Load() {
+		logger.Debugw("rejecting request", "reason", "already handling room composite")
+		return
+	}
+
 	// check cpu load
 	var isRoomComposite bool
 	switch req.Request.(type) {
@@ -156,13 +163,13 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 
 		// limit to one web composite at a time for now
 		if !s.isIdle() {
-			logger.Debugw("rejecting web composite request, already recording")
+			logger.Debugw("rejecting request", "reason", "already recording")
 			return
 		}
 	}
 
 	if !sysload.CanAcceptRequest(req) {
-		logger.Debugw("rejecting request, not enough cpu")
+		logger.Debugw("rejecting request", "reason", "not enough cpu")
 		return
 	}
 
@@ -177,6 +184,10 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 
 	sysload.AcceptRequest(req)
 	logger.Debugw("request claimed", "egressID", req.EgressId)
+
+	if isRoomComposite {
+		s.handlingRoomComposite.Store(true)
+	}
 
 	// build/verify params
 	pipelineParams, err := params.GetPipelineParams(s.conf, req)
@@ -202,13 +213,7 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 	p.OnStatusUpdate(s.sendEgressUpdate)
 
 	s.pipelines.Store(req.EgressId, p.GetInfo())
-	if isRoomComposite {
-		// isolate web composite for now
-		s.handleEgress(p)
-	} else {
-		// track composite and track can run multiple at once
-		go s.handleEgress(p)
-	}
+	go s.handleEgress(p)
 }
 
 // TODO: Run each pipeline in a separate process for security reasons
@@ -242,6 +247,9 @@ func (s *Service) handleEgress(p *pipeline.Pipeline) {
 		case res := <-result:
 			// recording finished
 			s.sendEgressUpdate(res)
+			if s.handlingRoomComposite.Load() {
+				s.handlingRoomComposite.Store(false)
+			}
 			return
 
 		case msg := <-requests.Channel():
