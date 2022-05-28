@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	minIdleRoomComposite  = 3
-	minIdleTrackComposite = 2
-	minIdleTrack          = 1
+	minIdleRoomComposite  = 2
+	minIdleTrackComposite = 1
+	minIdleTrack          = 0.05
 )
 
 var (
@@ -107,5 +107,8 @@ func AcceptRequest(req *livekit.StartEgressRequest) {
 	}
 
 	pendingCPUs.Add(cpuHold)
-	time.AfterFunc(time.Second, func() { pendingCPUs.Sub(cpuHold) })
+	time.AfterFunc(time.Second, func() {
+		pendingCPUs.Sub(cpuHold)
+		logger.Debugw("pending CPU", pendingCPUs)
+	})
 }

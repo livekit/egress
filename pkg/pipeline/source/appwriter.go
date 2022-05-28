@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -183,6 +184,11 @@ func (w *appWriter) start() {
 					continue
 				}
 
+				if strings.EqualFold(err.Error(), "buffer too small") {
+					// Skip RTP buffer too small error as well
+					continue
+				}
+
 				// log non-EOF errors
 				if !errors.Is(err, io.EOF) {
 					w.logger.Errorw("could not read packet", err)
@@ -278,6 +284,11 @@ func (w *appWriter) pushBlankFrames() error {
 					continue
 				}
 
+				w.logger.Infow("RTP_ERR", err)
+				if strings.EqualFold(err.Error(), "buffer too small") {
+					// Skip RTP buffer too small error as well
+					continue
+				}
 				if !errors.Is(err, io.EOF) {
 					w.logger.Errorw("could not read packet", err)
 				}

@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	imageName          = "livekit/egress"
+	imageName          = "rrampage/livekit-egress"
 	gstImageName       = "livekit/gstreamer"
 	multiPlatformBuild = "docker buildx build --push --platform linux/amd64,linux/arm64"
 

@@ -108,7 +108,8 @@ func (s *Service) Run() error {
 				continue
 			}
 
-			s.handleRequest(req)
+			go s.handleRequest(req)
+			logger.Debugw("request handled!")
 		}
 	}
 }
@@ -149,10 +150,10 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 	}
 
 	// check cpu load
-	var isRoomComposite bool
+	//var isRoomComposite bool
 	switch req.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
-		isRoomComposite = true
+		//isRoomComposite = true
 
 		// limit to one web composite at a time for now
 		if !s.isIdle() {
@@ -161,6 +162,7 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 		}
 	}
 
+	logger.Infow("EGRESS_REQUEST: ", req)
 	if !sysload.CanAcceptRequest(req) {
 		logger.Debugw("rejecting request, not enough cpu")
 		return
@@ -177,7 +179,10 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 
 	sysload.AcceptRequest(req)
 	logger.Debugw("request claimed", "egressID", req.EgressId)
+	go s.configurePipeline(req)
+}
 
+func (s *Service) configurePipeline(req *livekit.StartEgressRequest) {
 	// build/verify params
 	pipelineParams, err := params.GetPipelineParams(s.conf, req)
 	info := pipelineParams.Info
@@ -202,13 +207,14 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 	p.OnStatusUpdate(s.sendEgressUpdate)
 
 	s.pipelines.Store(req.EgressId, p.GetInfo())
-	if isRoomComposite {
+	s.handleEgress(p)
+	/*if isRoomComposite {
 		// isolate web composite for now
 		s.handleEgress(p)
 	} else {
 		// track composite and track can run multiple at once
 		go s.handleEgress(p)
-	}
+	}*/
 }
 
 // TODO: Run each pipeline in a separate process for security reasons
