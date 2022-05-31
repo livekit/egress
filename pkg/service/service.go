@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/egress"
@@ -33,9 +34,10 @@ type Service struct {
 
 	promServer *http.Server
 
-	pipelines sync.Map
-	shutdown  chan struct{}
-	kill      chan struct{}
+	handlingRoomComposite atomic.Bool
+	pipelines             sync.Map
+	shutdown              chan struct{}
+	kill                  chan struct{}
 }
 
 func NewService(conf *config.Config, bus utils.MessageBus) *Service {
@@ -108,7 +110,9 @@ func (s *Service) Run() error {
 				continue
 			}
 
-			s.handleRequest(req)
+			if s.acceptRequest(req) {
+				s.handleRequest(req)
+			}
 		}
 	}
 }
@@ -142,10 +146,15 @@ func (s *Service) Stop(kill bool) {
 	}
 }
 
-func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
+func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	// check request time
 	if time.Since(time.Unix(0, req.SentAt)) >= egress.LockDuration {
-		return
+		return false
+	}
+
+	if s.handlingRoomComposite.Load() {
+		logger.Debugw("rejecting request", "reason", "already handling room composite")
+		return false
 	}
 
 	// check cpu load
@@ -156,28 +165,36 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 
 		// limit to one web composite at a time for now
 		if !s.isIdle() {
-			logger.Debugw("rejecting web composite request, already recording")
-			return
+			logger.Debugw("rejecting request", "reason", "already recording")
+			return false
 		}
 	}
 
 	if !sysload.CanAcceptRequest(req) {
-		logger.Debugw("rejecting request, not enough cpu")
-		return
+		logger.Debugw("rejecting request", "reason", "not enough cpu")
+		return false
 	}
 
 	// claim request
 	claimed, err := s.bus.Lock(s.ctx, egress.RequestChannel(req.EgressId), egress.LockDuration)
 	if err != nil {
 		logger.Errorw("could not claim request", err)
-		return
+		return false
 	} else if !claimed {
-		return
+		return false
 	}
 
 	sysload.AcceptRequest(req)
 	logger.Debugw("request claimed", "egressID", req.EgressId)
 
+	if isRoomComposite {
+		s.handlingRoomComposite.Store(true)
+	}
+
+	return true
+}
+
+func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 	// build/verify params
 	pipelineParams, err := params.GetPipelineParams(s.conf, req)
 	info := pipelineParams.Info
@@ -202,13 +219,7 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 	p.OnStatusUpdate(s.sendEgressUpdate)
 
 	s.pipelines.Store(req.EgressId, p.GetInfo())
-	if isRoomComposite {
-		// isolate web composite for now
-		s.handleEgress(p)
-	} else {
-		// track composite and track can run multiple at once
-		go s.handleEgress(p)
-	}
+	go s.handleEgress(p)
 }
 
 // TODO: Run each pipeline in a separate process for security reasons
@@ -242,6 +253,7 @@ func (s *Service) handleEgress(p *pipeline.Pipeline) {
 		case res := <-result:
 			// recording finished
 			s.sendEgressUpdate(res)
+			s.handlingRoomComposite.CAS(true, false)
 			return
 
 		case msg := <-requests.Channel():
