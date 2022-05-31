@@ -13,10 +13,10 @@ type clockSync struct {
 }
 
 func (c *clockSync) GetOrSetStartTime(t int64) int64 {
-	swapped := c.startTime.CAS(0, t)
-	if swapped {
+	if c.startTime.CAS(0, t) {
 		return t
 	}
+
 	startTime := c.startTime.Load()
 	c.delay.CAS(0, t-startTime)
 	return startTime

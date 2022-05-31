@@ -180,10 +180,10 @@ func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.St
 	// file info
 	fileRes := res.GetFile()
 	require.NotNil(t, fileRes)
-	require.NotZero(t, fileRes.Duration)
 	require.NotEmpty(t, fileRes.Filename)
-	require.NotEmpty(t, fileRes.Size)
 	require.NotEmpty(t, fileRes.Location)
+	require.Greater(t, fileRes.Size, int64(0))
+	require.Greater(t, fileRes.Duration, int64(0))
 
 	verify(t, filepath, p, res, false, conf.Muting)
 }
