@@ -110,7 +110,9 @@ func (s *Service) Run() error {
 				continue
 			}
 
-			s.handleRequest(req)
+			if s.acceptRequest(req) {
+				s.handleRequest(req)
+			}
 		}
 	}
 }
@@ -144,15 +146,15 @@ func (s *Service) Stop(kill bool) {
 	}
 }
 
-func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
+func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	// check request time
 	if time.Since(time.Unix(0, req.SentAt)) >= egress.LockDuration {
-		return
+		return false
 	}
 
 	if s.handlingRoomComposite.Load() {
 		logger.Debugw("rejecting request", "reason", "already handling room composite")
-		return
+		return false
 	}
 
 	// check cpu load
@@ -164,22 +166,22 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 		// limit to one web composite at a time for now
 		if !s.isIdle() {
 			logger.Debugw("rejecting request", "reason", "already recording")
-			return
+			return false
 		}
 	}
 
 	if !sysload.CanAcceptRequest(req) {
 		logger.Debugw("rejecting request", "reason", "not enough cpu")
-		return
+		return false
 	}
 
 	// claim request
 	claimed, err := s.bus.Lock(s.ctx, egress.RequestChannel(req.EgressId), egress.LockDuration)
 	if err != nil {
 		logger.Errorw("could not claim request", err)
-		return
+		return false
 	} else if !claimed {
-		return
+		return false
 	}
 
 	sysload.AcceptRequest(req)
@@ -189,6 +191,10 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 		s.handlingRoomComposite.Store(true)
 	}
 
+	return true
+}
+
+func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 	// build/verify params
 	pipelineParams, err := params.GetPipelineParams(s.conf, req)
 	info := pipelineParams.Info
