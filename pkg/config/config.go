@@ -65,7 +65,7 @@ type GCPConfig struct {
 func NewConfig(confString string) (*Config, error) {
 	conf := &Config{
 		LogLevel:     "info",
-		TemplateBase: "https://egress-composite.livekit.io/",
+		TemplateBase: "https://egress-composite.livekit.io",
 		ApiKey:       os.Getenv("LIVEKIT_API_KEY"),
 		ApiSecret:    os.Getenv("LIVEKIT_API_SECRET"),
 		WsUrl:        os.Getenv("LIVEKIT_WS_URL"),
