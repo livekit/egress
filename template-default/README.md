@@ -36,17 +36,17 @@ Once your template is deployed, update your recorder's `config.yaml` and add
 api_key: your-livekit-server-api-key
 api_secret: your-livekit-server-api-secret
 ws_url: wss://your-livekit-server-address.com
-template_base: https://your-template-address.com/#
+template_base: https://your-template-address.com
 ```
 * Note: the hash is necessary if using hash routing, which is what our templates use. For example, the default
-  `template_address` is `https://egress-composite.livekit.io/#`.
+  `template_address` is `https://egress-composite.livekit.io`.
 * If you want to use both your own templates and LiveKit templates, you can override the template address per
   request using the `RoomCompositeRequest.CustomBaseUrl` field.
 
 Send a request to your recorder using your layout name in the `RoomCompositeRequest.Layout` field.
 
 The recorder will generate a `token` to join the room, then build the url
-`{config.template_address}/{request.layout}?url={encoded config.ws_url}&token={token}`.
+`{config.template_address}?layout={request.layout}&url={encoded config.ws_url}&token={token}`.
 
 In this example, the generated address would look like
-`https://your-template-address.com/#/my-layout?url=wss%3A%2F%2Fyour-livekit-server-address.com&token=...`
+`https://your-template-address.com?layout=my-layout&url=wss%3A%2F%2Fyour-livekit-server-address.com&token=...`

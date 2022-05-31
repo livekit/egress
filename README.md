@@ -258,5 +258,5 @@ muting: false
 gst_debug: 1
 ```
 
-Join a room using https://example.livekit.io/#/ or your own client, then run `mage integration test/config.yaml`.  
+Join a room using https://example.livekit.io or your own client, then run `mage integration test/config.yaml`.  
 This will test recording different file types, output settings, and streams against your room.
