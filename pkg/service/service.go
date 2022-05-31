@@ -247,9 +247,7 @@ func (s *Service) handleEgress(p *pipeline.Pipeline) {
 		case res := <-result:
 			// recording finished
 			s.sendEgressUpdate(res)
-			if s.handlingRoomComposite.Load() {
-				s.handlingRoomComposite.Store(false)
-			}
+			s.handlingRoomComposite.CAS(true, false)
 			return
 
 		case msg := <-requests.Channel():
