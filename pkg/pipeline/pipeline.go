@@ -159,7 +159,7 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	// update endedAt from sdk source
 	switch s := p.in.Source.(type) {
 	case *source.SDKSource:
-		p.updateEndTime(s.GetEndTime())
+		p.updateDuration(s.GetEndTime())
 	}
 
 	// return if there was an error
@@ -301,7 +301,7 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 	}
 }
 
-func (p *Pipeline) updateEndTime(endedAt int64) {
+func (p *Pipeline) updateDuration(endedAt int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -309,12 +309,26 @@ func (p *Pipeline) updateEndTime(endedAt int64) {
 	case params.EgressTypeStream, params.EgressTypeWebsocket:
 		for _, info := range p.StreamInfo {
 			startedAt := p.startedAt[info.Url]
-			info.Duration = endedAt - startedAt
+			duration := endedAt - startedAt
+			if duration > 0 {
+				info.Duration = duration
+			} else {
+				p.Logger.Debugw("invalid duration",
+					"duration", duration, "startedAt", startedAt, "endedAt", endedAt,
+				)
+			}
 		}
 
 	case params.EgressTypeFile:
 		startedAt := p.startedAt[fileKey]
-		p.FileInfo.Duration = endedAt - startedAt
+		duration := endedAt - startedAt
+		if duration > 0 {
+			p.FileInfo.Duration = duration
+		} else {
+			p.Logger.Debugw("invalid duration",
+				"duration", duration, "startedAt", startedAt, "endedAt", endedAt,
+			)
+		}
 	}
 }
 
@@ -391,7 +405,7 @@ func (p *Pipeline) stop() {
 
 	switch p.in.Source.(type) {
 	case *source.WebSource:
-		p.updateEndTime(endedAt)
+		p.updateDuration(endedAt)
 	}
 }
 
