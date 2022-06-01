@@ -21,7 +21,7 @@ type HlsSink struct {
 
 func NewHlsSink(p *params.Params) (*HlsSink, error) {
 
-	s := HlsSink{
+	s := &HlsSink{
 		logger: p.Logger,
 	}
 
@@ -53,58 +53,48 @@ func (s *HlsSink) ProcessSample() gst.FlowReturn {
 		return gst.FlowOK
 	}
 
-	segment := sample.GetSegment()
-	if segment == nil {
-		s.logger.Errorw("No segment in sample", gst.FlowError)
-		return gst.FlowError
-	}
-
 	bufferList := sample.GetBufferList()
 	if bufferList == nil {
 		s.logger.Debugw("No buffer list in sample")
 		return gst.FlowOK
 	}
 
-	ret := bufferList.ForEach(func(buf *gst.Buffer, idx uint) {
+	bufferList.ForEach(func(buf *gst.Buffer, idx uint) bool {
 		if buf == nil {
 			s.logger.Debugw("No buffer")
 			return true
 		}
 
-		gstErr := s.ProcessBuffer(buf, segment)
-		if gstErr != gst.FlowOK {
+		err := s.ProcessBuffer(buf)
+		if err != nil {
 			logger.Errorw("Buffer processing failed", err)
 			return false
 		}
 		return true
 	})
-	if ret {
-		return gst.FlowOK
-	} else {
-		return gst.FlowError
-	}
+	return gst.FlowOK
 }
 
-func (s *HlsSink) ProcesBuffer(buffer *gst.Buffer, segment *gst.Segment) gst.FlowReturn {
+func (s *HlsSink) ProcessBuffer(buffer *gst.Buffer) error {
 	flags := buffer.GetFlags()
 
-	if (flags & gst.BufferFlagDiscont) || flags&gst.BufferFlagHeader {
+	if ((flags & gst.BufferFlagDiscont) != 0) || (flags&gst.BufferFlagHeader != 0) {
 		size := buffer.GetSize()
 
 		msg := fmt.Sprintf("Init buffer of size %d", size)
 		s.logger.Errorw(msg, nil)
 
-		return gst.FlowOK
+		return nil
 	}
 
 	duration := buffer.Duration()
-	if duration == ClockTimeNone {
+	if duration == gst.ClockTimeNone {
 		s.logger.Debugw("Invalid duration")
-		return gst.FlowOK
+		return nil
 	}
 
 	msg := fmt.Sprintf("buffer of duration %d", duration/time.Millisecond)
-	log.Errorw(msg, nil)
+	logger.Errorw(msg, nil)
 
-	return gst.FlowOk
+	return nil
 }
