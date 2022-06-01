@@ -243,3 +243,28 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 		require.NotZero(t, info.Duration)
 	}
 }
+
+func runSegmentsTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, fileprefix string) {
+	p, err := params.GetPipelineParams(conf.Config, req)
+	require.NoError(t, err)
+
+	if !strings.HasPrefix(conf.ApiKey, "API") || test.forceCustomInput {
+		p.CustomInputURL = test.inputUrl
+	}
+
+	rec, err := pipeline.New(conf.Config, p)
+	require.NoError(t, err)
+
+	// record for ~30s. Takes about 5s to start
+	time.AfterFunc(time.Second*35, func() {
+		rec.SendEOS()
+	})
+	res := rec.Run()
+
+	// egress info
+	require.Empty(t, res.Error)
+	require.NotZero(t, res.StartedAt)
+	require.NotZero(t, res.EndedAt)
+
+	// TODO Test output
+}
