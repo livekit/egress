@@ -29,6 +29,7 @@ type Params struct {
 	MutedChan chan bool
 	StreamParams
 	FileParams
+	SegmentedStreamParams
 }
 
 type SourceParams struct {
@@ -80,6 +81,12 @@ type FileParams struct {
 	Filename   string
 	Filepath   string
 	FileUpload interface{}
+}
+
+type SegmentedStreamParams struct {
+	// Some "Info" field?
+	FilePrefix       string
+	PlaylistFilename string
 }
 
 // GetPipelineParams must always return params, even on error
@@ -195,6 +202,12 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 
 		case *livekit.TrackCompositeEgressRequest_Stream:
 			if err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls); err != nil {
+				return
+			}
+
+		case *livekit.TrackCompositeEgressRequest_Segments:
+			p.updateOutputType(o.File.FileType)
+			if err = p.updateSegmentsParams(conf, o.Segments.FilePrefix, o.Segments.Output); err != nil {
 				return
 			}
 
@@ -333,6 +346,10 @@ func (p *Params) updateOutputType(fileType livekit.EncodedFileType) {
 		p.OutputType = OutputTypeMP4
 	case livekit.EncodedFileType_OGG:
 		p.OutputType = OutputTypeOGG
+	case livekit.SegmentedStreamType_DEFAULT_STREAMTYPE:
+		p.OutputType = OutputTypeHLS
+	case livekit.SegmentedStreamType_HLS_STREAMTYPE:
+		p.OutputType = OutputTypeHLS
 	}
 }
 
@@ -395,6 +412,33 @@ func (p *Params) updateStreamParams(outputType OutputType, urls []string) error 
 	}
 
 	p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
+	return nil
+}
+
+func (p *Params) updateSegmentsParams(conf *config.Config, fileprefix string, output interface{}) error {
+	p.EgressType = EgressTypeSegmentedStream
+	p.FilePrefix = fileprefix
+
+	// output location
+	switch o := output.(type) {
+	case *livekit.EncodedFileOutput_S3:
+		p.FileUpload = o.S3
+	case *livekit.EncodedFileOutput_Azure:
+		p.FileUpload = o.Azure
+	case *livekit.EncodedFileOutput_Gcp:
+		p.FileUpload = o.Gcp
+	default:
+		p.FileUpload = conf.FileUpload
+	}
+
+	// filename
+	if p.OutputType != "" {
+		err := p.updatePrefix(p.RoomName)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -496,6 +540,30 @@ func (p *Params) updateFilename(identifier string) error {
 	p.Logger.Debugw("writing to file", "filename", filename)
 	p.Filename = filename
 	p.FileInfo.Filename = filename
+	return nil
+}
+
+func (p *Params) updatePrefix(identifier string) error {
+	//TODO fix filename generation code
+	fileprefix := p.FilePrefix
+	if fileprefix == "" || strings.HasSuffix(fileprefix, "/") {
+		fileprefix = fmt.Sprintf("%s%s-%v", fileprefix, identifier, time.Now().String())
+	}
+
+	// get filename from path
+	idx := strings.LastIndex(fileprefix, "/")
+	if idx > 0 {
+		if p.FileUpload == nil {
+			if err := os.MkdirAll(fileprefix[:idx], os.ModeDir); err != nil {
+				return err
+			}
+		} else {
+			fileprefix = fileprefix[idx+1:]
+		}
+	}
+
+	p.Logger.Debugw("writing to path", "prefix", fileprefix)
+	p.FilePrefix = fileprefix
 	return nil
 }
 

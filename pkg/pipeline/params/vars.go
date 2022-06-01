@@ -20,9 +20,10 @@ const (
 	ProfileHigh     Profile = "high"
 
 	// egress types
-	EgressTypeStream    EgressType = "stream"
-	EgressTypeWebsocket EgressType = "websocket"
-	EgressTypeFile      EgressType = "file"
+	EgressTypeStream          EgressType = "stream"
+	EgressTypeWebsocket       EgressType = "websocket"
+	EgressTypeFile            EgressType = "file"
+	EgressTypeSegmentedStream EgressType = "segments"
 
 	// output types
 	OutputTypeRaw  OutputType = "audio/x-raw"
@@ -32,6 +33,7 @@ const (
 	OutputTypeTS   OutputType = "video/mp2t"
 	OutputTypeWebM OutputType = "video/webm"
 	OutputTypeRTMP OutputType = "rtmp"
+	OutputTypeHLS  OutputType = "hls"
 
 	// file extensions
 	FileExtensionRaw  = ".raw"
@@ -50,6 +52,7 @@ var (
 		OutputTypeTS:   MimeTypeAAC,
 		OutputTypeWebM: MimeTypeOpus,
 		OutputTypeRTMP: MimeTypeAAC,
+		OutputTypeHLS:  MimeTypeAAC,
 	}
 
 	DefaultVideoCodecs = map[OutputType]MimeType{
@@ -58,6 +61,7 @@ var (
 		OutputTypeTS:   MimeTypeH264,
 		OutputTypeWebM: MimeTypeVP8,
 		OutputTypeRTMP: MimeTypeH264,
+		OutputTypeHLS:  MimeTypeH264,
 	}
 
 	FileExtensions = map[OutputType]FileExtension{
@@ -67,6 +71,7 @@ var (
 		OutputTypeMP4:  FileExtensionMP4,
 		OutputTypeTS:   FileExtensionTS,
 		OutputTypeWebM: FileExtensionWebM,
+		OutputTypeHLS:  FileExtensionMP4,
 	}
 
 	codecCompatibility = map[OutputType]map[MimeType]bool{
@@ -95,6 +100,11 @@ var (
 		},
 
 		OutputTypeRTMP: {
+			MimeTypeAAC:  true,
+			MimeTypeH264: true,
+		},
+
+		OutputTypeHLS: {
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,
 		},
