@@ -206,8 +206,8 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			}
 
 		case *livekit.TrackCompositeEgressRequest_Segments:
-			p.updateOutputType(o.File.FileType)
-			if err = p.updateSegmentsParams(conf, o.Segments.FilePrefix, o.Segments.Output); err != nil {
+			p.updateOutputType(o.Segments.StreamType)
+			if err = p.updateSegmentsParams(conf, o.Segments.Fileprefix, o.Segments.Output); err != nil {
 				return
 			}
 
@@ -334,22 +334,29 @@ func (p *Params) applyAdvanced(advanced *livekit.EncodingOptions) {
 	}
 }
 
-func (p *Params) updateOutputType(fileType livekit.EncodedFileType) {
-	switch fileType {
-	case livekit.EncodedFileType_DEFAULT_FILETYPE:
-		if !p.VideoEnabled && p.AudioCodec != MimeTypeAAC {
-			p.OutputType = OutputTypeOGG
-		} else {
+func (p *Params) updateOutputType(fileType interface{}) {
+
+	switch f := fileType.(type) {
+	case livekit.EncodedFileType:
+		switch f {
+		case livekit.EncodedFileType_DEFAULT_FILETYPE:
+			if !p.VideoEnabled && p.AudioCodec != MimeTypeAAC {
+				p.OutputType = OutputTypeOGG
+			} else {
+				p.OutputType = OutputTypeMP4
+			}
+		case livekit.EncodedFileType_MP4:
 			p.OutputType = OutputTypeMP4
+		case livekit.EncodedFileType_OGG:
+			p.OutputType = OutputTypeOGG
 		}
-	case livekit.EncodedFileType_MP4:
-		p.OutputType = OutputTypeMP4
-	case livekit.EncodedFileType_OGG:
-		p.OutputType = OutputTypeOGG
-	case livekit.SegmentedStreamType_DEFAULT_STREAMTYPE:
-		p.OutputType = OutputTypeHLS
-	case livekit.SegmentedStreamType_HLS_STREAMTYPE:
-		p.OutputType = OutputTypeHLS
+	case livekit.SegmentedStreamType:
+		switch f {
+		case livekit.SegmentedStreamType_DEFAULT_STREAMTYPE:
+			p.OutputType = OutputTypeHLS
+		case livekit.SegmentedStreamType_HLS_STREAMTYPE:
+			p.OutputType = OutputTypeHLS
+		}
 	}
 }
 

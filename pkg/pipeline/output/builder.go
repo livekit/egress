@@ -10,6 +10,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/pipeline/sink"
 )
 
 func buildFileOutputBin(p *params.Params) (*Bin, error) {
@@ -83,6 +84,34 @@ func buildStreamOutputBin(p *params.Params) (*Bin, error) {
 	}
 
 	return b, nil
+}
+
+func buildSegmentedOutputBin(p *params.Params) (*Bin, error) {
+	// Create Sink
+	hlsSink, err := sink.NewHlsSink(p)
+	if err != nil {
+		return nil, err
+	}
+
+	// create elements
+	sink := hlsSink.GetAppSink().Element
+
+	// create bin
+	bin := gst.NewBin("output")
+	if err = bin.Add(sink); err != nil {
+		return nil, err
+	}
+
+	// add ghost pad
+	ghostPad := gst.NewGhostPad("sink", sink.GetStaticPad("sink"))
+	if !bin.AddPad(ghostPad.Pad) {
+		return nil, errors.ErrGhostPadFailed
+	}
+
+	return &Bin{
+		bin:    bin,
+		logger: p.Logger,
+	}, nil
 }
 
 func buildStreamSink(protocol params.OutputType, url string) (*streamSink, error) {

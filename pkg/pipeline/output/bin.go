@@ -34,6 +34,8 @@ func Build(p *params.Params) (*Bin, error) {
 		return buildStreamOutputBin(p)
 	case params.EgressTypeWebsocket:
 		return buildWebsocketOutputBin(p)
+	case params.EgressTypeSegmentedStream:
+		return buildSegmentedOutputBin(p)
 	default:
 		return nil, errors.ErrInvalidInput("egress type")
 	}
