@@ -38,7 +38,7 @@ func testTrackComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 		}
 	}
 
-	if conf.RunSegmentsTest {
+	if conf.RunSegmentedStreamTests {
 		testTrackCompositeSegments(t, conf, room, params.MimeTypeOpus, params.MimeTypeVP8, &testCase{
 			name:     "tc-vp8-hls",
 			fileType: livekit.EncodedFileType_MP4,
@@ -177,7 +177,7 @@ func runTrackCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCas
 		VideoTrackId: vID,
 		Output: &livekit.TrackCompositeEgressRequest_Segments{
 			Segments: &livekit.SegmentedStreamOutput{
-				FilePrefix: filepath,
+				Fileprefix: filepath,
 			},
 		},
 	}

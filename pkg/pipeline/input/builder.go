@@ -99,7 +99,15 @@ func (b *Bin) buildMux(p *params.Params) error {
 			return err
 		}
 		err = b.mux.Set("streamable", true)
-
+	case params.OutputTypeHLS:
+		b.mux, err = gst.NewElement("mp4mux")
+		if err != nil {
+			return err
+		}
+		err = b.mux.Set("fragment-duration", uint(2000))
+		if err != nil {
+			return err
+		}
 	default:
 		err = errors.ErrInvalidInput("output type")
 	}

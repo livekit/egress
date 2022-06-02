@@ -15,15 +15,15 @@ import (
 type testConfig struct {
 	*config.Config
 
-	RoomName               string `yaml:"room_name"`
-	RunRoomTests           bool   `yaml:"room"`
-	RunTrackCompositeTests bool   `yaml:"track_composite"`
-	RunTrackTests          bool   `yaml:"track"`
-	RunFileTests           bool   `yaml:"file"`
-	RunStreamTests         bool   `yaml:"stream"`
-	RunSegmentedStreamTest bool   `yaml:segments`
-	Muting                 bool   `yaml:"muting"`
-	GstDebug               int    `yaml:"gst_debug"`
+	RoomName                string `yaml:"room_name"`
+	RunRoomTests            bool   `yaml:"room"`
+	RunTrackCompositeTests  bool   `yaml:"track_composite"`
+	RunTrackTests           bool   `yaml:"track"`
+	RunFileTests            bool   `yaml:"file"`
+	RunStreamTests          bool   `yaml:"stream"`
+	RunSegmentedStreamTests bool   `yaml:"segments"`
+	Muting                  bool   `yaml:"muting"`
+	GstDebug                int    `yaml:"gst_debug"`
 }
 
 func getTestConfig(t *testing.T) *testConfig {
@@ -37,15 +37,15 @@ func getTestConfig(t *testing.T) *testConfig {
 	}
 
 	tc := &testConfig{
-		RoomName:               "egress-test",
-		RunRoomTests:           true,
-		RunTrackCompositeTests: false,
-		RunTrackTests:          false,
-		RunFileTests:           true,
-		RunStreamTests:         true,
-		RunSegmentedStreamTest: false,
-		Muting:                 false,
-		GstDebug:               1,
+		RoomName:                "egress-test",
+		RunRoomTests:            true,
+		RunTrackCompositeTests:  false,
+		RunTrackTests:           false,
+		RunFileTests:            true,
+		RunStreamTests:          true,
+		RunSegmentedStreamTests: false,
+		Muting:                  false,
+		GstDebug:                1,
 	}
 	err := yaml.Unmarshal([]byte(confString), tc)
 	require.NoError(t, err)
