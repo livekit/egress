@@ -1,6 +1,7 @@
 package sink
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -25,6 +26,9 @@ type HlsSink struct {
 	currentFile *os.File
 
 	sampleAddedToSegment bool
+	trackCount           int
+	initSegmentWritten   bool
+	tempBuffer           *bytes.Buffer
 }
 
 // TODO handle EOS
@@ -32,8 +36,9 @@ type HlsSink struct {
 func NewHlsSink(p *params.Params) (*HlsSink, error) {
 
 	s := &HlsSink{
-		logger: p.Logger,
-		prefix: p.FilePrefix,
+		logger:     p.Logger,
+		prefix:     p.FilePrefix,
+		tempBuffer: &bytes.Buffer{},
 	}
 
 	sink, err := gst.NewElementWithName("appsink", HlsAppSink)
@@ -50,6 +55,13 @@ func NewHlsSink(p *params.Params) (*HlsSink, error) {
 	})
 
 	s.appSink = appSink
+
+	if p.VideoTrackID != "" {
+		s.trackCount++
+	}
+	if p.AudioTrackID != "" {
+		s.trackCount++
+	}
 
 	err = s.CreateSegment()
 	if err != nil {
@@ -71,6 +83,8 @@ func (s *HlsSink) CreateSegment() error {
 
 	}
 
+	s.logger.Debugw("Started new segment", "filename", filename)
+
 	s.currentFile = file
 	s.nextIndex++
 
@@ -84,28 +98,6 @@ func (s *HlsSink) processSample() gst.FlowReturn {
 		return gst.FlowOK
 	}
 
-	/*	bufferList := sample.GetBufferList()
-		if bufferList == nil {
-			s.logger.Debugw("No buffer list in sample")
-			return gst.FlowOK
-		}
-
-		s.logger.Errorw("buffer list size", nil, "size", bufferList.Length())
-
-		bufferList.ForEach(func(buf *gst.Buffer, idx uint) bool {
-			if buf == nil {
-				s.logger.Debugw("No buffer")
-				return true
-			}
-
-			err := s.ProcessBuffer(buf)
-			if err != nil {
-				logger.Errorw("Buffer processing failed", err)
-				return false
-			}
-			return true
-		})*/
-
 	buf := sample.GetBuffer()
 	if buf == nil {
 		s.logger.Debugw("No buffer")
@@ -118,23 +110,13 @@ func (s *HlsSink) processSample() gst.FlowReturn {
 		return gst.FlowError
 	}
 	return gst.FlowOK
-
-	return gst.FlowOK
 }
 
 func (s *HlsSink) processBuffer(buffer *gst.Buffer) error {
-	flags := buffer.GetFlags()
+	var n int64
+	var err error
 
-	//logger.Errorw("buffer", nil, "flags", flags)
-
-	if /*((flags & gst.BufferFlagDiscont) != 0) ||*/ flags&gst.BufferFlagHeader != 0 {
-		size := buffer.GetSize()
-
-		msg := fmt.Sprintf("Init buffer of size %d", size)
-		s.logger.Errorw(msg, nil)
-
-		return nil
-	}
+	s.logger.Debugw("New buffer", "size", buffer.GetSize(), "flags", buffer.GetFlags())
 
 	duration := buffer.Duration()
 	if duration == gst.ClockTimeNone {
@@ -142,16 +124,40 @@ func (s *HlsSink) processBuffer(buffer *gst.Buffer) error {
 			s.startNewSegment()
 		}
 	} else {
+		if !s.initSegmentWritten {
+			// The init segment is done. The content of the temp buffer is the MOOF atom for the first data segment, so flush it there.
+			s.startNewSegment()
+			s.initSegmentWritten = true
+			n, err := io.Copy(s.currentFile, s.tempBuffer)
+			if err != nil {
+				return err
+			}
+			s.logger.Debugw("Finalized Init buffer")
+			s.logger.Debugw("Wrote buffer", "size", n)
+		}
+
 		s.sampleAddedToSegment = true
 	}
 
 	r := buffer.Reader()
-	n, err := io.Copy(s.currentFile, r)
-	if err != nil {
-		return err
+	if !s.initSegmentWritten {
+		// Flush the temp buffer to the init segment and store the new buffer
+		n, err = io.Copy(s.currentFile, s.tempBuffer)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(s.tempBuffer, r)
+		if err != nil {
+			return err
+		}
+	} else {
+		n, err = io.Copy(s.currentFile, r)
+		if err != nil {
+			return err
+		}
 	}
 
-	s.logger.Debugw("Copied buffer", "size", n)
+	s.logger.Debugw("Wrote buffer", "size", n)
 
 	//	msg := fmt.Sprintf("buffer of duration %d", duration/time.Millisecond)
 	//	logger.Errorw(msg, nil)
