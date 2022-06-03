@@ -14,6 +14,8 @@ import (
 
 const (
 	HlsAppSink = "hlsAppSink"
+
+	initSegmentBufferCount = 2
 )
 
 type HlsSink struct {
@@ -25,10 +27,9 @@ type HlsSink struct {
 	nextIndex   int
 	currentFile *os.File
 
-	sampleAddedToSegment bool
-	trackCount           int
-	initSegmentWritten   bool
-	tempBuffer           *bytes.Buffer
+	sampleAddedToSegment          bool
+	initSegmentBufferWrittenCount int
+	tempBuffer                    *bytes.Buffer
 }
 
 // TODO handle EOS
@@ -56,11 +57,8 @@ func NewHlsSink(p *params.Params) (*HlsSink, error) {
 
 	s.appSink = appSink
 
-	if p.VideoTrackID != "" {
-		s.trackCount++
-	}
-	if p.AudioTrackID != "" {
-		s.trackCount++
+	if p.VideoTrackID == "" || p.AudioTrackID == "" {
+		return nil, fmt.Errorf("HLS writer needs both an audio and a video track")
 	}
 
 	err = s.CreateSegment()
@@ -120,41 +118,25 @@ func (s *HlsSink) processBuffer(buffer *gst.Buffer) error {
 
 	duration := buffer.Duration()
 	if duration == gst.ClockTimeNone {
+		if s.initSegmentBufferWrittenCount < initSegmentBufferCount {
+			s.initSegmentBufferWrittenCount++
+			if s.initSegmentBufferWrittenCount == initSegmentBufferCount {
+				// We have a full init segment
+				s.logger.Debugw("Finalized Init buffer")
+				s.startNewSegment()
+			}
+		}
 		if s.sampleAddedToSegment {
 			s.startNewSegment()
 		}
 	} else {
-		if !s.initSegmentWritten {
-			// The init segment is done. The content of the temp buffer is the MOOF atom for the first data segment, so flush it there.
-			s.startNewSegment()
-			s.initSegmentWritten = true
-			n, err := io.Copy(s.currentFile, s.tempBuffer)
-			if err != nil {
-				return err
-			}
-			s.logger.Debugw("Finalized Init buffer")
-			s.logger.Debugw("Wrote buffer", "size", n)
-		}
-
 		s.sampleAddedToSegment = true
 	}
 
 	r := buffer.Reader()
-	if !s.initSegmentWritten {
-		// Flush the temp buffer to the init segment and store the new buffer
-		n, err = io.Copy(s.currentFile, s.tempBuffer)
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(s.tempBuffer, r)
-		if err != nil {
-			return err
-		}
-	} else {
-		n, err = io.Copy(s.currentFile, r)
-		if err != nil {
-			return err
-		}
+	n, err = io.Copy(s.currentFile, r)
+	if err != nil {
+		return err
 	}
 
 	s.logger.Debugw("Wrote buffer", "size", n)

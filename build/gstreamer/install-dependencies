@@ -114,7 +114,9 @@ apt-get install -y --no-install-recommends \
   python3-pip \
   ruby \
   wget \
-  xdg-dbus-proxy
+  xdg-dbus-proxy \
+  rustc \
+  cargo
 pip3 install meson ninja
 apt-get clean
 rm -rf /var/lib/apt/lists/*
