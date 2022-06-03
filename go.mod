@@ -1,5 +1,8 @@
 module github.com/livekit/egress
 
+//replace github.com/tinyzimmer/go-gst => /Users/bigben/go/src/github.com/go-gst
+replace github.com/tinyzimmer/go-gst v0.2.32 => github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427
+
 go 1.17
 
 require (
@@ -22,7 +25,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/stretchr/testify v1.7.1
-	github.com/tinyzimmer/go-glib v0.0.24
+	github.com/tinyzimmer/go-glib v0.0.25
 	github.com/tinyzimmer/go-gst v0.2.32
 	github.com/urfave/cli/v2 v2.3.0
 	go.uber.org/atomic v1.9.0

@@ -28,6 +28,11 @@ const (
 	pipelineSource = "pipeline"
 	fileKey        = "file"
 	eosTimeout     = time.Second * 15
+
+	FragmentOpenedMessage = "splitmuxsink-fragment-opened"
+	FragmentClosedMessage = "splitmuxsink-fragment-closed"
+	FragmentLocation      = "location"
+	FragmentRunningTime   = "running-time"
 )
 
 type Pipeline struct {
@@ -374,7 +379,16 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 	case gst.MessageElement:
 		s := msg.GetStructure()
 		if s != nil {
-			p.Logger.Debugw("Got Element message", "name", s.Name())
+			p.Logger.Debugw("Fragment event", "name", s.Name())
+			switch s.Name() {
+			case FragmentOpenedMessage:
+				fallthrough
+			case FragmentClosedMessage:
+				loc, _ := s.GetValue(FragmentLocation)
+				t, _ := s.GetValue(FragmentRunningTime)
+
+				p.Logger.Debugw("Fragment event", "name", s.Name(), "location", loc, "running time", t)
+			}
 		}
 
 	default:
