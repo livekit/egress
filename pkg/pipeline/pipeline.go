@@ -85,14 +85,15 @@ func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 		return nil, err
 	}
 
-	// link output elements
-	if err = out.Link(); err != nil {
-		return nil, err
-	}
-
-	// link bins
-	if err := in.Bin().Link(out.Element()); err != nil {
-		return nil, err
+	// link output elements. There is no "out" for HLS
+	if out != nil {
+		if err = out.Link(); err != nil {
+			return nil, err
+		}
+		// link bins
+		if err := in.Bin().Link(out.Element()); err != nil {
+			return nil, err
+		}
 	}
 
 	return &Pipeline{
@@ -365,6 +366,10 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 				p.updateStartTime(time.Now().UnixNano())
 			}
 		}
+
+	case gst.MessageElement:
+		s := msg.GetStructure()
+		p.Logger.Debugw("Got Element message", "name", s.Name())
 
 	default:
 		p.Logger.Debugw(msg.String())
