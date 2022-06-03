@@ -76,7 +76,7 @@ func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 	}
 
 	// add bins to pipeline
-	if err = pipeline.AddMany(in.Element(), out.Element()); err != nil {
+	if err = pipeline.Add(in.Element()); err != nil {
 		return nil, err
 	}
 
@@ -87,6 +87,10 @@ func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 
 	// link output elements. There is no "out" for HLS
 	if out != nil {
+		if err = pipeline.Add(out.Element()); err != nil {
+			return nil, err
+		}
+
 		if err = out.Link(); err != nil {
 			return nil, err
 		}
@@ -369,7 +373,9 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 
 	case gst.MessageElement:
 		s := msg.GetStructure()
-		p.Logger.Debugw("Got Element message", "name", s.Name())
+		if s != nil {
+			p.Logger.Debugw("Got Element message", "name", s.Name())
+		}
 
 	default:
 		p.Logger.Debugw(msg.String())

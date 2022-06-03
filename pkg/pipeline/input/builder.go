@@ -14,8 +14,7 @@ import (
 // TODO: save mp4 files as TS then remux to avoid losing everything on failure
 func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 	b := &Bin{
-		bin:      gst.NewBin("input"),
-		isStream: p.EgressType == params.EgressTypeStream,
+		bin: gst.NewBin("input"),
 	}
 
 	// source
@@ -108,7 +107,7 @@ func (b *Bin) buildMux(p *params.Params) error {
 		}
 		err = b.mux.Set("streamable", true)
 	case params.OutputTypeHLS:
-		b.mux, err = gst.NewElement("mpegtsmux")
+		b.mux, err = b.buildHlsMux(p)
 		if err != nil {
 			return err
 		}
@@ -140,11 +139,15 @@ func (b *Bin) buildHlsMux(p *params.Params) (*gst.Element, error) {
 		return nil, err
 	}
 
+	if err = sink.SetProperty("async-finalize", true); err != nil {
+		return nil, err
+	}
+
 	if err = sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
 		return nil, err
 	}
 
-	filenamePattern := fmt.Sprintf("%s%%03d.ts", p.FilePrefix)
+	filenamePattern := fmt.Sprintf("%s_%%03d.ts", p.FilePrefix)
 	if err = sink.SetProperty("location", filenamePattern); err != nil {
 		return nil, err
 	}
