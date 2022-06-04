@@ -45,12 +45,13 @@ type Pipeline struct {
 	loop     *glib.MainLoop
 
 	// internal
-	mu        sync.Mutex
-	playing   bool
-	startedAt map[string]int64
-	removed   map[string]bool
-	closed    chan struct{}
-	eosTimer  *time.Timer
+	mu             sync.Mutex
+	playing        bool
+	startedAt      map[string]int64
+	removed        map[string]bool
+	closed         chan struct{}
+	eosTimer       *time.Timer
+	playlistWriter *PlaylistWriter
 
 	// callbacks
 	onStatusUpdate func(*livekit.EgressInfo)

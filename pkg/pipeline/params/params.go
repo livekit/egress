@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -207,7 +208,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 
 		case *livekit.TrackCompositeEgressRequest_Segments:
 			p.updateOutputType(o.Segments.StreamType)
-			if err = p.updateSegmentsParams(conf, o.Segments.Fileprefix, o.Segments.Output); err != nil {
+			if err = p.updateSegmentsParams(conf, o.Segments.SegmentFilenamePrefix, o.Segments.PlaylistFilename, o.Segments.Output); err != nil {
 				return
 			}
 
@@ -422,9 +423,10 @@ func (p *Params) updateStreamParams(outputType OutputType, urls []string) error 
 	return nil
 }
 
-func (p *Params) updateSegmentsParams(conf *config.Config, fileprefix string, output interface{}) error {
+func (p *Params) updateSegmentsParams(conf *config.Config, fileprefix string, playlistFilename string, output interface{}) error {
 	p.EgressType = EgressTypeSegmentedStream
 	p.FilePrefix = fileprefix
+	p.PlaylistFilename = playlistFilename
 
 	// output location
 	switch o := output.(type) {
@@ -440,7 +442,7 @@ func (p *Params) updateSegmentsParams(conf *config.Config, fileprefix string, ou
 
 	// filename
 	if p.OutputType != "" {
-		err := p.updatePrefix(p.RoomName)
+		err := p.updatePrefixAndPlaylist(p.RoomName)
 		if err != nil {
 			return err
 		}
@@ -550,7 +552,7 @@ func (p *Params) updateFilename(identifier string) error {
 	return nil
 }
 
-func (p *Params) updatePrefix(identifier string) error {
+func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 	//TODO fix filename generation code
 	fileprefix := p.FilePrefix
 	if fileprefix == "" || strings.HasSuffix(fileprefix, "/") {
@@ -571,6 +573,13 @@ func (p *Params) updatePrefix(identifier string) error {
 
 	p.Logger.Debugw("writing to path", "prefix", fileprefix)
 	p.FilePrefix = fileprefix
+
+	// Playlist path is relative to file prefix. Only keep actual filename if a full path is given
+	_, p.PlaylistFilename = path.Split(p.PlaylistFilename)
+	if p.PlaylistFilename == "" {
+		p.PlaylistFilename = "playlist.m3u8"
+	}
+
 	return nil
 }
 
