@@ -52,7 +52,13 @@ func (w *PlaylistWriter) StartSegment(filepath string, startTime int64) error {
 }
 
 func (w *PlaylistWriter) EndSegment(endTime int64) error {
-	err := s.finalizeSegment(endTime)
+	if endTime <= w.currentItemStartTimestamp {
+		return fmt.Errorf("Segment end time before start time")
+	}
+
+	duration := float64(endTime-w.currentItemStartTimestamp) / float64(time.Nanosecond)
+
+	err := w.finalizeSegment(duration)
 	if err != nil {
 		return err
 	}
@@ -62,9 +68,10 @@ func (w *PlaylistWriter) EndSegment(endTime int64) error {
 	return nil
 }
 
-func (w *PlaylistWriter) EOS(endTime int64) error {
+func (w *PlaylistWriter) EOS() error {
 	if w.segmentPending() {
-		err := w.finalizeSegment(endTime)
+		// We do not have the segment end time. Use target duration instead
+		err := w.finalizeSegment(w.playlist.TargetDuration)
 		if err != nil {
 			return err
 		}
@@ -84,21 +91,17 @@ func (w *PlaylistWriter) segmentPending() bool {
 	return w.currentItemFilename == "" || w.currentItemStartTimestamp == 0
 }
 
-func (w *PlaylistWriter) finalizeSegment(endTime int64) error {
+func (w *PlaylistWriter) finalizeSegment(duration float64) error {
 	if !w.segmentPending() {
 		return fmt.Errorf("No pending Segment")
 	}
-
-	if endTime <= w.currentItemStartTimestamp {
-		return fmt.Errorf("Segment end time before start time")
-	}
-
-	duration := float64(endTime-w.currentItemStartTimestamp) / float64(time.Nanosecond)
 
 	w.playlist.Append(w.currentItemFilename, duration, "")
 
 	w.currentItemFilename = ""
 	w.currentItemStartTimestamp = 0
+
+	return nil
 }
 
 func (w *PlaylistWriter) writePlaylist() error {

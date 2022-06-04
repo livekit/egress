@@ -51,7 +51,7 @@ type Pipeline struct {
 	removed        map[string]bool
 	closed         chan struct{}
 	eosTimer       *time.Timer
-	playlistWriter *PlaylistWriter
+	playlistWriter *sink.PlaylistWriter
 
 	// callbacks
 	onStatusUpdate func(*livekit.EgressInfo)
@@ -106,14 +106,23 @@ func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 		}
 	}
 
+	var playlistWriter *sink.PlaylistWriter
+	if p.OutputType == params.OutputTypeHLS {
+		playlistWriter, err = sink.NewPlaylistWriter(p)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &Pipeline{
-		Params:    p,
-		pipeline:  pipeline,
-		in:        in,
-		out:       out,
-		startedAt: make(map[string]int64),
-		removed:   make(map[string]bool),
-		closed:    make(chan struct{}),
+		Params:         p,
+		pipeline:       pipeline,
+		in:             in,
+		out:            out,
+		playlistWriter: playlistWriter,
+		startedAt:      make(map[string]int64),
+		removed:        make(map[string]bool),
+		closed:         make(chan struct{}),
 	}, nil
 }
 
@@ -380,15 +389,41 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 	case gst.MessageElement:
 		s := msg.GetStructure()
 		if s != nil {
-			p.Logger.Debugw("Fragment event", "name", s.Name())
 			switch s.Name() {
 			case FragmentOpenedMessage:
-				fallthrough
-			case FragmentClosedMessage:
-				loc, _ := s.GetValue(FragmentLocation)
-				t, _ := s.GetValue(FragmentRunningTime)
+				path, t, err := getSegmentParamsFromGstStructure(s)
+				if err != nil {
+					p.Logger.Errorw("Failed retrieving parameters from fragment event structure", err)
+					return true
+				}
 
-				p.Logger.Debugw("Fragment event", "name", s.Name(), "location", loc, "running time", t)
+				p.Logger.Debugw("Fragment Opened event", "location", path, "running time", t)
+
+				if p.playlistWriter != nil {
+					err := p.playlistWriter.StartSegment(path, t)
+					if err != nil {
+						p.Logger.Errorw("Failed registering new segment with playlist writer", err, "location", path, "running time", t)
+						return true
+					}
+				}
+
+			case FragmentClosedMessage:
+				path, t, err := getSegmentParamsFromGstStructure(s)
+				if err != nil {
+					p.Logger.Errorw("Failed registering new segment with playlist writer", err, "location", path, "running time", t)
+					return true
+				}
+
+				p.Logger.Debugw("Fragment Closed event", "location", path, "running time", t)
+
+				if p.playlistWriter != nil {
+					err := p.playlistWriter.EndSegment(t)
+					if err != nil {
+						p.Logger.Errorw("Failed ending segment with playlist writer", err, "running time", t)
+						return true
+					}
+				}
+
 			}
 		}
 
@@ -397,6 +432,28 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 	}
 
 	return true
+}
+
+func getSegmentParamsFromGstStructure(s *gst.Structure) (path string, time int64, err error) {
+	loc, err := s.GetValue(FragmentLocation)
+	if err != nil {
+		return "", 0, err
+	}
+	path, ok := loc.(string)
+	if !ok {
+		return "", 0, fmt.Errorf("Invalid type for location")
+	}
+
+	t, err := s.GetValue(FragmentRunningTime)
+	if err != nil {
+		return "", 0, err
+	}
+	ti, ok := t.(uint64)
+	if !ok {
+		return "", 0, fmt.Errorf("Invalid type for time")
+	}
+
+	return path, int64(ti), nil
 }
 
 func (p *Pipeline) stop() {
@@ -414,6 +471,10 @@ func (p *Pipeline) stop() {
 	p.loop.Quit()
 	p.loop = nil
 	p.mu.Unlock()
+
+	if p.playlistWriter != nil {
+		p.playlistWriter.EOS()
+	}
 
 	switch p.in.Source.(type) {
 	case *source.WebSource:
