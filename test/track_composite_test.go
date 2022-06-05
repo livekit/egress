@@ -177,7 +177,7 @@ func runTrackCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCas
 		VideoTrackId: vID,
 		Output: &livekit.TrackCompositeEgressRequest_Segments{
 			Segments: &livekit.SegmentedStreamOutput{
-				Fileprefix: filepath,
+				SegmentFilenamePrefix: filepath,
 			},
 		},
 	}

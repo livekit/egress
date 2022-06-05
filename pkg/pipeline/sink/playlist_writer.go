@@ -31,17 +31,18 @@ func NewPlaylistWriter(p *params.Params) (*PlaylistWriter, error) {
 	playlist.MediaType = m3u8.EVENT
 
 	return &PlaylistWriter{
-		playlist:     playlist,
-		playlistPath: playlistPath,
+		playlist:                  playlist,
+		playlistPath:              playlistPath,
+		currentItemStartTimestamp: -1,
 	}, nil
 }
 
 func (w *PlaylistWriter) StartSegment(filepath string, startTime int64) error {
-	if w.currentItemStartTimestamp <= 0 {
+	if startTime < 0 {
 		return fmt.Errorf("Invalid Start Timestamp")
 	}
 
-	if w.currentItemFilename == "" {
+	if filepath == "" {
 		return fmt.Errorf("Invalid Filename")
 	}
 
@@ -56,7 +57,7 @@ func (w *PlaylistWriter) EndSegment(endTime int64) error {
 		return fmt.Errorf("Segment end time before start time")
 	}
 
-	duration := float64(endTime-w.currentItemStartTimestamp) / float64(time.Nanosecond)
+	duration := float64(endTime-w.currentItemStartTimestamp) / float64(time.Second)
 
 	err := w.finalizeSegment(duration)
 	if err != nil {
@@ -88,7 +89,7 @@ func (w *PlaylistWriter) EOS() error {
 }
 
 func (w *PlaylistWriter) segmentPending() bool {
-	return w.currentItemFilename == "" || w.currentItemStartTimestamp == 0
+	return w.currentItemFilename != "" && w.currentItemStartTimestamp >= 0
 }
 
 func (w *PlaylistWriter) finalizeSegment(duration float64) error {
@@ -99,7 +100,7 @@ func (w *PlaylistWriter) finalizeSegment(duration float64) error {
 	w.playlist.Append(w.currentItemFilename, duration, "")
 
 	w.currentItemFilename = ""
-	w.currentItemStartTimestamp = 0
+	w.currentItemStartTimestamp = -1
 
 	return nil
 }
