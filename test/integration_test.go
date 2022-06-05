@@ -52,6 +52,7 @@ type testCase struct {
 	fileType         livekit.EncodedFileType
 	options          *livekit.EncodingOptions
 	filename         string
+	playlist         string
 	codec            params.MimeType
 	output           params.OutputType
 }

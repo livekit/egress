@@ -128,11 +128,6 @@ func (b *Bin) buildHlsMux(p *params.Params) (*gst.Element, error) {
 		return nil, err
 	}
 
-	// Allow 500 ms leaway for segment duration
-	if err = sink.SetProperty("alignment-threshold", uint64(500000000)); err != nil {
-		return nil, err
-	}
-
 	// TODO make this a request parameter?
 	// 6s segments
 	if err = sink.SetProperty("max-size-time", uint64(6000000000)); err != nil {

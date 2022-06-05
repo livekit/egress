@@ -23,12 +23,16 @@ func NewPlaylistWriter(p *params.Params) (*PlaylistWriter, error) {
 	dir, _ := path.Split(p.FilePrefix)
 	playlistPath := path.Join(dir, p.PlaylistFilename)
 
+	// "github.com/grafov/m3u8" is fairly inefficient for frequent serializations of long playlists and
+	// doesn't implement recent additions to the HLS spec, but I'm not aware of anything better, short of
+	// writing one.
 	playlist, err := m3u8.NewMediaPlaylist(0, 15000) // 15,000 -> about 24h with 6s segments
 	if err != nil {
 		return nil, err
 	}
 
 	playlist.MediaType = m3u8.EVENT
+	playlist.SetVersion(4) // Needed because we have float segment durations
 
 	return &PlaylistWriter{
 		playlist:                  playlist,
@@ -64,6 +68,8 @@ func (w *PlaylistWriter) EndSegment(endTime int64) error {
 		return err
 	}
 
+	// Write playlist for every segment. This allows better crash recovery and to use
+	// it as an Event playlist, at the cost of extra I/O
 	w.writePlaylist()
 
 	return nil

@@ -179,6 +179,9 @@ func (b *Bin) buildVideoEncoder(p *params.Params) error {
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
 		x264Enc.SetArg("tune", "zerolatency")
+		if p.OutputType == params.OutputTypeHLS {
+			x264Enc.SetProperty("key-int-max", uint(6))
+		}
 
 		if p.VideoProfile == "" {
 			p.VideoProfile = params.ProfileMain

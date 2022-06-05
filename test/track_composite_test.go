@@ -39,16 +39,17 @@ func testTrackComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	}
 
 	if conf.RunSegmentedStreamTests {
+		now := time.Now().Unix()
 		testTrackCompositeSegments(t, conf, room, params.MimeTypeOpus, params.MimeTypeVP8, &testCase{
 			name:     "tc-vp8-hls",
-			fileType: livekit.EncodedFileType_MP4,
-			filename: fmt.Sprintf("tc-vp8-hls-%v", time.Now().Unix()),
+			filename: fmt.Sprintf("tc-vp8-hls-%v", now),
+			playlist: fmt.Sprintf("tc-vp8-hls-%v.m3u8", now),
 		})
 
 		testTrackCompositeSegments(t, conf, room, params.MimeTypeOpus, params.MimeTypeH264, &testCase{
 			name:     "tc-h264-hls",
-			fileType: livekit.EncodedFileType_MP4,
-			filename: fmt.Sprintf("tc-h264-hls-%v", time.Now().Unix()),
+			filename: fmt.Sprintf("tc-h264-hls-%v", now),
+			playlist: fmt.Sprintf("tc-h264-hls-%v.m3u8", now),
 		})
 	}
 }
@@ -178,6 +179,7 @@ func runTrackCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCas
 		Output: &livekit.TrackCompositeEgressRequest_Segments{
 			Segments: &livekit.SegmentedStreamOutput{
 				SegmentFilenamePrefix: filepath,
+				PlaylistFilename:      test.playlist,
 			},
 		},
 	}
