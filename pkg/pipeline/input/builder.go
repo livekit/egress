@@ -2,6 +2,7 @@ package input
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -130,7 +131,7 @@ func (b *Bin) buildHlsMux(p *params.Params) (*gst.Element, error) {
 
 	// TODO make this a request parameter?
 	// 6s segments
-	if err = sink.SetProperty("max-size-time", uint64(6000000000)); err != nil {
+	if err = sink.SetProperty("max-size-time", uint64(time.Duration(p.SegmentDuration)*time.Second)); err != nil {
 		return nil, err
 	}
 

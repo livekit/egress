@@ -88,6 +88,7 @@ type SegmentedStreamParams struct {
 	// Some "Info" field?
 	FilePrefix       string
 	PlaylistFilename string
+	SegmentDuration  int
 }
 
 // GetPipelineParams must always return params, even on error
@@ -208,7 +209,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 
 		case *livekit.TrackCompositeEgressRequest_Segments:
 			p.updateOutputType(o.Segments.StreamType)
-			if err = p.updateSegmentsParams(conf, o.Segments.SegmentFilenamePrefix, o.Segments.PlaylistFilename, o.Segments.Output); err != nil {
+			if err = p.updateSegmentsParams(conf, o.Segments.SegmentFilenamePrefix, o.Segments.PlaylistFilename, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
 				return
 			}
 
@@ -423,10 +424,14 @@ func (p *Params) updateStreamParams(outputType OutputType, urls []string) error 
 	return nil
 }
 
-func (p *Params) updateSegmentsParams(conf *config.Config, fileprefix string, playlistFilename string, output interface{}) error {
+func (p *Params) updateSegmentsParams(conf *config.Config, fileprefix string, playlistFilename string, segmentDuration uint32, output interface{}) error {
 	p.EgressType = EgressTypeSegmentedStream
 	p.FilePrefix = fileprefix
 	p.PlaylistFilename = playlistFilename
+	p.SegmentDuration = int(segmentDuration)
+	if p.SegmentDuration == 0 {
+		p.SegmentDuration = 6
+	}
 
 	// output location
 	switch o := output.(type) {
@@ -441,11 +446,9 @@ func (p *Params) updateSegmentsParams(conf *config.Config, fileprefix string, pl
 	}
 
 	// filename
-	if p.OutputType != "" {
-		err := p.updatePrefixAndPlaylist(p.RoomName)
-		if err != nil {
-			return err
-		}
+	err := p.updatePrefixAndPlaylist(p.RoomName)
+	if err != nil {
+		return err
 	}
 
 	return nil
