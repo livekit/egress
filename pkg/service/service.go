@@ -90,9 +90,9 @@ func (s *Service) Run() error {
 		}
 	}()
 
-	for {
-		logger.Debugw("waiting for requests")
+	logger.Debugw("service ready")
 
+	for {
 		select {
 		case <-s.shutdown:
 			logger.Infow("shutting down")
@@ -195,8 +195,8 @@ func (s *Service) launchHandler(req *livekit.StartEgressRequest) {
 
 	cmd := exec.Command("egress",
 		"run-handler",
-		"config-body", string(confString),
-		"request", string(reqString),
+		"--config-body", string(confString),
+		"--request", string(reqString),
 	)
 	cmd.Dir = "/"
 	cmd.Stdout = os.Stdout

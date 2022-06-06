@@ -34,6 +34,9 @@ func main() {
 					&cli.StringFlag{
 						Name: "request",
 					},
+					&cli.StringFlag{
+						Name: "config-body",
+					},
 				},
 				Action: runHandler,
 				Hidden: true,

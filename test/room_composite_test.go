@@ -17,7 +17,7 @@ import (
 
 func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	if room != nil {
-		audioTrackID := publishSampleToRoom(t, room, params.MimeTypeOpus, conf.Muting)
+		audioTrackID := publishSampleToRoom(t, room, params.MimeTypeOpus, false)
 		t.Cleanup(func() {
 			_ = room.LocalParticipant.UnpublishTrack(audioTrackID)
 		})
