@@ -40,7 +40,6 @@ func getTestConfig(t *testing.T) *testConfig {
 	}
 
 	tc := &testConfig{
-		HasConnectionInfo:      true,
 		RoomName:               "egress-test",
 		RunRoomTests:           true,
 		RunTrackCompositeTests: false,
