@@ -83,11 +83,10 @@ func (s *Service) Run() error {
 	if err != nil {
 		return err
 	}
+
 	defer func() {
-		err := requests.Close()
-		if err != nil {
-			logger.Errorw("failed to unsubscribe", err)
-		}
+		_ = requests.Close()
+		_ = s.bus.Close()
 	}()
 
 	logger.Debugw("service ready")
