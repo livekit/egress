@@ -417,7 +417,7 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 				p.Logger.Debugw("Fragment Closed event", "location", path, "running time", t)
 
 				if p.playlistWriter != nil {
-					err := p.playlistWriter.EndSegment(t)
+					err := p.playlistWriter.EndSegment(path, t)
 					if err != nil {
 						p.Logger.Errorw("Failed ending segment with playlist writer", err, "running time", t)
 						return true

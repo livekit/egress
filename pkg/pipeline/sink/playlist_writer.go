@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/grafov/m3u8"
@@ -16,6 +17,9 @@ type PlaylistWriter struct {
 	currentItemStartTimestamp int64
 	currentItemFilename       string
 	playlistPath              string
+
+	openSegmentsStartTime map[string]int64
+	openSegmentsLock      sync.Mutex
 }
 
 func NewPlaylistWriter(p *params.Params) (*PlaylistWriter, error) {
@@ -35,35 +39,58 @@ func NewPlaylistWriter(p *params.Params) (*PlaylistWriter, error) {
 	playlist.SetVersion(4) // Needed because we have float segment durations
 
 	return &PlaylistWriter{
-		playlist:                  playlist,
-		playlistPath:              playlistPath,
-		currentItemStartTimestamp: -1,
+		playlist:              playlist,
+		playlistPath:          playlistPath,
+		openSegmentsStartTime: make(map[string]int64),
 	}, nil
 }
 
 func (w *PlaylistWriter) StartSegment(filepath string, startTime int64) error {
-	if startTime < 0 {
-		return fmt.Errorf("Invalid Start Timestamp")
-	}
-
 	if filepath == "" {
 		return fmt.Errorf("Invalid Filename")
 	}
 
-	w.currentItemStartTimestamp = startTime
-	_, w.currentItemFilename = path.Split(filepath)
+	if startTime < 0 {
+		return fmt.Errorf("Invalid Start Timestamp")
+	}
+
+	k := getFilenameFromFilePath(filepath)
+
+	w.openSegmentsLock.Lock()
+	defer w.openSegmentsLock.Unlock()
+	if _, ok := w.openSegmentsStartTime[k]; ok {
+		return fmt.Errorf("Segment with this name already started")
+	}
+
+	w.openSegmentsStartTime[k] = startTime
 
 	return nil
 }
 
-func (w *PlaylistWriter) EndSegment(endTime int64) error {
+func (w *PlaylistWriter) EndSegment(filepath string, endTime int64) error {
+	if filepath == "" {
+		return fmt.Errorf("Invalid Filename")
+	}
+
 	if endTime <= w.currentItemStartTimestamp {
 		return fmt.Errorf("Segment end time before start time")
 	}
 
-	duration := float64(endTime-w.currentItemStartTimestamp) / float64(time.Second)
+	k := getFilenameFromFilePath(filepath)
 
-	err := w.finalizeSegment(duration)
+	w.openSegmentsLock.Lock()
+	defer w.openSegmentsLock.Unlock()
+
+	t, ok := w.openSegmentsStartTime[k]
+	if !ok {
+		return fmt.Errorf("No open segment with the name %s", k)
+	}
+	delete(w.openSegmentsStartTime, k)
+
+	duration := float64(endTime-t) / float64(time.Second)
+
+	// This assumes EndSegment will be called in the same order as StartSegment
+	err := w.playlist.Append(k, duration, "")
 	if err != nil {
 		return err
 	}
@@ -76,37 +103,12 @@ func (w *PlaylistWriter) EndSegment(endTime int64) error {
 }
 
 func (w *PlaylistWriter) EOS() error {
-	if w.segmentPending() {
-		// We do not have the segment end time. Use target duration instead
-		err := w.finalizeSegment(w.playlist.TargetDuration)
-		if err != nil {
-			return err
-		}
-	}
-
 	w.playlist.Close()
 
 	err := w.writePlaylist()
 	if err != nil {
 		return err
 	}
-
-	return nil
-}
-
-func (w *PlaylistWriter) segmentPending() bool {
-	return w.currentItemFilename != "" && w.currentItemStartTimestamp >= 0
-}
-
-func (w *PlaylistWriter) finalizeSegment(duration float64) error {
-	if !w.segmentPending() {
-		return fmt.Errorf("No pending Segment")
-	}
-
-	w.playlist.Append(w.currentItemFilename, duration, "")
-
-	w.currentItemFilename = ""
-	w.currentItemStartTimestamp = -1
 
 	return nil
 }
@@ -126,4 +128,10 @@ func (w *PlaylistWriter) writePlaylist() error {
 	}
 
 	return nil
+}
+
+func getFilenameFromFilePath(filepath string) string {
+	_, filename := path.Split(filepath)
+
+	return filename
 }
