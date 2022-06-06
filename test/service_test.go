@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/egress"
@@ -25,28 +26,30 @@ import (
 func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	if room != nil {
 		audioTrackID := publishSampleToRoom(t, room, params.MimeTypeOpus, false)
-		t.Cleanup(func() {
-			_ = room.LocalParticipant.UnpublishTrack(audioTrackID)
-		})
+		t.Cleanup(func() { _ = room.LocalParticipant.UnpublishTrack(audioTrackID) })
 
 		videoTrackID := publishSampleToRoom(t, room, params.MimeTypeVP8, conf.Muting)
-		t.Cleanup(func() {
-			_ = room.LocalParticipant.UnpublishTrack(videoTrackID)
-		})
+		t.Cleanup(func() { _ = room.LocalParticipant.UnpublishTrack(videoTrackID) })
 	}
 
 	bus, err := messaging.NewMessageBus(conf.Config)
 	require.NoError(t, err)
 
+	// start service
 	svc := service.NewService(conf.Config, bus)
 	go func() {
 		err := svc.Run()
 		require.NoError(t, err)
 	}()
+	t.Cleanup(func() { svc.Stop(true) })
+
+	// subscribe to result channel
+	sub, err := bus.Subscribe(context.Background(), egress.ResultsChannel)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sub.Close() })
 
 	// startup time
 	time.Sleep(time.Second * 2)
-	defer svc.Stop(true)
 
 	// check status
 	if conf.HealthPort != 0 {
@@ -61,6 +64,7 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	token, err := egress.BuildEgressToken(egressID, conf.ApiKey, conf.ApiSecret, room.Name)
 	require.NoError(t, err)
 
+	filepath := getFilePath(conf.Config, filename)
 	info, err := egress.SendRequest(context.Background(), bus, &livekit.StartEgressRequest{
 		EgressId: egressID,
 		RoomId:   room.SID,
@@ -72,14 +76,14 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 				Layout:   "speaker-dark",
 				Output: &livekit.RoomCompositeEgressRequest_File{
 					File: &livekit.EncodedFileOutput{
-						Filepath: getFilePath(conf.Config, filename),
+						Filepath: filepath,
 					},
 				},
 			},
 		},
 	})
 
-	// check egress info
+	// check returned egress info
 	require.NoError(t, err)
 	require.Empty(t, info.Error)
 	require.Equal(t, egressID, info.EgressId)
@@ -93,7 +97,14 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 		require.Contains(t, status, egressID)
 	}
 
-	time.Sleep(time.Second * 15)
+	// wait
+	time.Sleep(time.Second * 10)
+
+	// check active update
+	checkUpdate(t, sub, egressID, livekit.EgressStatus_EGRESS_ACTIVE)
+
+	// wait
+	time.Sleep(time.Second * 5)
 
 	// send stop request
 	info, err = egress.SendRequest(context.Background(), bus, &livekit.EgressRequest{
@@ -108,17 +119,42 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	// check egress info
 	require.NoError(t, err)
 	require.Empty(t, info.Error)
-	require.Equal(t, livekit.EgressStatus_EGRESS_ENDING, info.Status)
 	require.NotEmpty(t, info.StartedAt)
+	require.Equal(t, livekit.EgressStatus_EGRESS_ENDING, info.Status)
 
 	// wait
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 2)
+
+	// check ending update
+	checkUpdate(t, sub, egressID, livekit.EgressStatus_EGRESS_ENDING)
+
+	// wait
+	time.Sleep(time.Second * 2)
+
+	// check complete update
+	info = checkUpdate(t, sub, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
 
 	// check status
 	if conf.HealthPort != 0 {
 		status := getStatus(t, svc)
 		require.Len(t, status, 1)
 	}
+
+	// expected params
+	p := &params.Params{
+		AudioParams: params.AudioParams{
+			AudioEnabled: true,
+			AudioCodec:   params.MimeTypeAAC,
+		},
+		VideoParams: params.VideoParams{
+			VideoEnabled: true,
+			VideoCodec:   params.MimeTypeH264,
+			VideoProfile: params.ProfileMain,
+		},
+		OutputType: params.OutputTypeMP4,
+	}
+
+	verifyFile(t, filepath, p, info, conf.Muting)
 }
 
 func getStatus(t *testing.T, svc *service.Service) map[string]interface{} {
@@ -130,4 +166,21 @@ func getStatus(t *testing.T, svc *service.Service) map[string]interface{} {
 	require.NoError(t, err)
 
 	return status
+}
+
+func checkUpdate(t *testing.T, sub utils.PubSub, egressID string, status livekit.EgressStatus) *livekit.EgressInfo {
+	select {
+	case msg := <-sub.Channel():
+		b := sub.Payload(msg)
+		info := &livekit.EgressInfo{}
+		require.NoError(t, proto.Unmarshal(b, info))
+		require.Empty(t, info.Error)
+		require.Equal(t, egressID, info.EgressId)
+		require.Equal(t, status, info.Status)
+		return info
+
+	default:
+		t.Fatal("no update from results channel")
+		return nil
+	}
 }

@@ -188,20 +188,7 @@ func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.St
 	})
 	res := rec.Run()
 
-	// egress info
-	require.Empty(t, res.Error)
-	require.NotZero(t, res.StartedAt)
-	require.NotZero(t, res.EndedAt)
-
-	// file info
-	fileRes := res.GetFile()
-	require.NotNil(t, fileRes)
-	require.NotEmpty(t, fileRes.Filename)
-	require.NotEmpty(t, fileRes.Location)
-	require.Greater(t, fileRes.Size, int64(0))
-	require.Greater(t, fileRes.Duration, int64(0))
-
-	verify(t, filepath, p, res, false, conf.Muting)
+	verifyFile(t, filepath, p, res, conf.Muting)
 }
 
 func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, customUrl string) {
