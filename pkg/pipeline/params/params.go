@@ -556,7 +556,7 @@ func (p *Params) updateFilename(identifier string) error {
 }
 
 func (p *Params) updatePrefixAndPlaylist(identifier string) error {
-	//TODO fix filename generation code
+	// TODO fix filename generation code
 	fileprefix := p.FilePrefix
 	if fileprefix == "" || strings.HasSuffix(fileprefix, "/") {
 		fileprefix = fmt.Sprintf("%s%s-%v", fileprefix, identifier, time.Now().String())
