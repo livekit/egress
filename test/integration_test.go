@@ -270,5 +270,5 @@ func runSegmentsTest(t *testing.T, conf *testConfig, test *testCase, req *liveki
 	require.NotZero(t, res.StartedAt)
 	require.NotZero(t, res.EndedAt)
 
-	verify(t, playlistPath, p, res, ResultType_Segments, conf.Muting)
+	verify(t, playlistPath, p, res, ResultTypeSegments, conf.Muting)
 }

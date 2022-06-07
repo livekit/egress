@@ -21,9 +21,9 @@ import (
 type ResultType int
 
 const (
-	ResultType_File ResultType = iota
-	ResultType_Stream
-	ResultType_Segments
+	ResultTypeFile ResultType = iota
+	ResultTypeStream
+	ResultTypeSegments
 )
 
 type FFProbeInfo struct {
@@ -99,12 +99,12 @@ func verifyFile(t *testing.T, filepath string, p *params.Params, res *livekit.Eg
 	require.Greater(t, fileRes.Size, int64(0))
 	require.Greater(t, fileRes.Duration, int64(0))
 
-	verify(t, filepath, p, res, ResultType_File, withMuting)
+	verify(t, filepath, p, res, ResultTypeFile, withMuting)
 }
 
 func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	for _, url := range urls {
-		verify(t, url, p, nil, ResultType_Stream, false)
+		verify(t, url, p, nil, ResultTypeStream, false)
 	}
 }
 
@@ -125,7 +125,7 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 
 	switch resultType {
 	// TODO implement with Segments
-	case ResultType_File:
+	case ResultTypeFile:
 		// size
 		require.NotEqual(t, "0", info.Format.Size)
 

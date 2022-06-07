@@ -42,6 +42,7 @@ const (
 	FileExtensionMP4  = ".mp4"
 	FileExtensionTS   = ".ts"
 	FileExtensionWebM = ".webm"
+	FileExtensionM3U8 = ".m3u8"
 )
 
 var (
@@ -71,7 +72,7 @@ var (
 		OutputTypeMP4:  FileExtensionMP4,
 		OutputTypeTS:   FileExtensionTS,
 		OutputTypeWebM: FileExtensionWebM,
-		OutputTypeHLS:  FileExtensionMP4,
+		OutputTypeHLS:  FileExtensionM3U8,
 	}
 
 	codecCompatibility = map[OutputType]map[MimeType]bool{

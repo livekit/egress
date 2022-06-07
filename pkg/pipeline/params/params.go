@@ -564,6 +564,8 @@ func (p *Params) updateFilename(identifier string) error {
 func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 	// TODO fix filename generation code
 	fileprefix := p.FilePrefix
+	ext := FileExtensions[p.OutputType]
+
 	if fileprefix == "" || strings.HasSuffix(fileprefix, "/") {
 		fileprefix = fmt.Sprintf("%s%s-%v", fileprefix, identifier, time.Now().String())
 	}
@@ -586,7 +588,7 @@ func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 	// Playlist path is relative to file prefix. Only keep actual filename if a full path is given
 	_, p.PlaylistFilename = path.Split(p.PlaylistFilename)
 	if p.PlaylistFilename == "" {
-		p.PlaylistFilename = "playlist.m3u8"
+		p.PlaylistFilename = fmt.Sprintf("playlist%s", ext)
 	}
 	// Prepend the fileprefix directory to get the full playlist path
 	dir, _ := path.Split(p.FilePrefix)
