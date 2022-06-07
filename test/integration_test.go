@@ -245,7 +245,7 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 	}
 }
 
-func runSegmentsTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, fileprefix string) {
+func runSegmentsTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, playlistPath string) {
 	p, err := params.GetPipelineParams(conf.Config, req)
 	require.NoError(t, err)
 
@@ -267,5 +267,6 @@ func runSegmentsTest(t *testing.T, conf *testConfig, test *testCase, req *liveki
 	require.NotZero(t, res.StartedAt)
 	require.NotZero(t, res.EndedAt)
 
+	verify(t, playlistPath, p, res, false, conf.Muting)
 	// TODO Test output
 }

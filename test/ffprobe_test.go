@@ -183,6 +183,8 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 				require.Equal(t, "vp8", stream.CodecName)
 
 			case params.OutputTypeMP4:
+				fallthrough
+			case params.OutputTypeHLS:
 				// bitrate
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)

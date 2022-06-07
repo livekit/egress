@@ -177,9 +177,9 @@ func runTrackCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCas
 		AudioTrackId: aID,
 		VideoTrackId: vID,
 		Output: &livekit.TrackCompositeEgressRequest_Segments{
-			Segments: &livekit.SegmentedStreamOutput{
-				SegmentFilenamePrefix: filepath,
-				PlaylistFilename:      test.playlist,
+			Segments: &livekit.SegmentedFileOutput{
+				FilenamePrefix: filepath,
+				PlaylistName:   test.playlist,
 			},
 		},
 	}
@@ -199,5 +199,5 @@ func runTrackCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCas
 		},
 	}
 
-	runSegmentsTest(t, conf, test, req, filepath)
+	runSegmentsTest(t, conf, test, req, getFilePath(conf.Config, test.playlist))
 }
