@@ -87,6 +87,7 @@ func (s *WebSource) createAudioSink(egressID string) error {
 	)
 	var b bytes.Buffer
 	cmd.Stdout = &b
+	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 	if err != nil {
 		return err

@@ -87,7 +87,7 @@ RUN apt-get clean && \
 ENV XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr
 
 # copy binary
-COPY --from=0 /workspace/egress /
+COPY --from=0 /workspace/egress /bin/
 COPY build/entrypoint.sh /
 
 # run

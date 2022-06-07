@@ -300,10 +300,11 @@ github.com/lithammer/shortuuid/v3 v3.0.7/go.mod h1:vMk8ke37EmiewwolSO1NLW8vP4ZaK
 github.com/livekit/livekit-server v0.15.8-0.20220513092052-fa53da18e700 h1:2H0WdPZBXwD/mEjrO6ulQ5DqGQK6+D1d85P1Fczdu10=
 github.com/livekit/livekit-server v0.15.8-0.20220513092052-fa53da18e700/go.mod h1:v3iIheRGNzMjG+/XR2kDy3jxeoGC0JsqyRAdGaGSzHk=
 github.com/livekit/protocol v0.13.2/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
-github.com/livekit/protocol v0.13.3-0.20220510071353-084233d23a03 h1:UI0AeS8kCu0yEfwYUEmj3WUyMpS/VBSKojGenQ9WeUM=
 github.com/livekit/protocol v0.13.3-0.20220510071353-084233d23a03/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
-github.com/livekit/server-sdk-go v0.10.0 h1:YL+SXr/xZV8y0SB6Nh6Je3guH+7JURJS01kbX2P9qQA=
-github.com/livekit/server-sdk-go v0.10.0/go.mod h1:z09cpBfyYoqqrqtQASxzcB1/gOMFA2Guts/LhO6kjnI=
+github.com/livekit/protocol v0.13.3-0.20220606201110-7e4ab2da1439 h1:1mg5sHu8JQX7Va6GMGHsEsmqmnFoq+2/4Nn+PrEVjZM=
+github.com/livekit/protocol v0.13.3-0.20220606201110-7e4ab2da1439/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
+github.com/livekit/server-sdk-go v0.10.1 h1:0SX/z2nFi7VRz/VbUY7gXbT1ZfzyxDS4S7hh6RLjIfI=
+github.com/livekit/server-sdk-go v0.10.1/go.mod h1:z09cpBfyYoqqrqtQASxzcB1/gOMFA2Guts/LhO6kjnI=
 github.com/mackerelio/go-osstat v0.2.1 h1:5AeAcBEutEErAOlDz6WCkEvm6AKYgHTUQrfwm5RbeQc=
 github.com/mackerelio/go-osstat v0.2.1/go.mod h1:UzRL8dMCCTqG5WdRtsxbuljMpZt9PCAGXqxPst5QtaY=
 github.com/magefile/mage v1.11.0/go.mod h1:z5UZb/iS3GoOSn0JgWuiw7dxlurVYTu+/jHXqQg881A=

@@ -1,0 +1,15 @@
+log_level: debug
+redis:
+  address: 192.168.65.2:6379        # required for service test
+api_key: your-api-key               # required for service, track composite, and track tests
+api_secret: your-api-secret         # required for service, track composite, and track tests
+ws_url: wss://your-livekit-url.com  # required for service, track composite, and track tests
+room_name: egress-test              # room used by tests (only if connection info supplied)
+service: false                      # include service test
+room: true                          # include room composite tests
+track_composite: false              # include track composite tests
+track: false                        # include track tests
+file: true                          # include file tests
+stream: false                       # include stream tests
+muting: true                        # include source muting
+gst_debug: 1                        # GST_DEBUG (3 is recommended for debugging)

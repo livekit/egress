@@ -77,6 +77,23 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
+func verifyFile(t *testing.T, filepath string, p *params.Params, res *livekit.EgressInfo, withMuting bool) {
+	// egress info
+	require.Empty(t, res.Error)
+	require.NotZero(t, res.StartedAt)
+	require.NotZero(t, res.EndedAt)
+
+	// file info
+	fileRes := res.GetFile()
+	require.NotNil(t, fileRes)
+	require.NotEmpty(t, fileRes.Filename)
+	require.NotEmpty(t, fileRes.Location)
+	require.Greater(t, fileRes.Size, int64(0))
+	require.Greater(t, fileRes.Duration, int64(0))
+
+	verify(t, filepath, p, res, false, withMuting)
+}
+
 func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	for _, url := range urls {
 		verify(t, url, p, nil, true, false)

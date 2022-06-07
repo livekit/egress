@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"os/exec"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
+	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
@@ -19,9 +22,6 @@ import (
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/sysload"
 )
 
@@ -83,16 +83,15 @@ func (s *Service) Run() error {
 	if err != nil {
 		return err
 	}
+
 	defer func() {
-		err := requests.Close()
-		if err != nil {
-			logger.Errorw("failed to unsubscribe", err)
-		}
+		_ = requests.Close()
+		_ = s.bus.Close()
 	}()
 
-	for {
-		logger.Debugw("waiting for requests")
+	logger.Debugw("service ready")
 
+	for {
 		select {
 		case <-s.shutdown:
 			logger.Infow("shutting down")
@@ -111,37 +110,8 @@ func (s *Service) Run() error {
 			}
 
 			if s.acceptRequest(req) {
-				s.handleRequest(req)
+				go s.launchHandler(req)
 			}
-		}
-	}
-}
-
-func (s *Service) Status() ([]byte, error) {
-	info := map[string]interface{}{
-		"CpuLoad": sysload.GetCPULoad(),
-	}
-	s.pipelines.Range(func(key, value interface{}) bool {
-		egressInfo := value.(*livekit.EgressInfo)
-		info[key.(string)] = egressInfo
-		return true
-	})
-
-	return json.Marshal(info)
-}
-
-func (s *Service) Stop(kill bool) {
-	select {
-	case <-s.shutdown:
-	default:
-		close(s.shutdown)
-	}
-
-	if kill {
-		select {
-		case <-s.kill:
-		default:
-			close(s.kill)
 		}
 	}
 }
@@ -194,92 +164,6 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	return true
 }
 
-func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
-	// build/verify params
-	pipelineParams, err := params.GetPipelineParams(s.conf, req)
-	info := pipelineParams.Info
-	if err != nil {
-		info.Error = err.Error()
-		info.Status = livekit.EgressStatus_EGRESS_COMPLETE
-		s.sendRPCResponse(req.RequestId, pipelineParams.Info, err)
-		return
-	}
-
-	s.sendRPCResponse(req.RequestId, pipelineParams.Info, nil)
-
-	// create the pipeline
-	p, err := pipeline.New(s.conf, pipelineParams)
-	if err != nil {
-		info.Error = err.Error()
-		info.Status = livekit.EgressStatus_EGRESS_COMPLETE
-		s.sendEgressUpdate(info)
-		return
-	}
-
-	p.OnStatusUpdate(s.sendEgressUpdate)
-
-	s.pipelines.Store(req.EgressId, p.GetInfo())
-	go s.handleEgress(p)
-}
-
-// TODO: Run each pipeline in a separate process for security reasons
-func (s *Service) handleEgress(p *pipeline.Pipeline) {
-	defer s.pipelines.Delete(p.GetInfo().EgressId)
-
-	// subscribe to request channel
-	requests, err := s.bus.Subscribe(s.ctx, egress.RequestChannel(p.GetInfo().EgressId))
-	if err != nil {
-		return
-	}
-	defer func() {
-		err := requests.Close()
-		if err != nil {
-			logger.Errorw("failed to unsubscribe from request channel", err)
-		}
-	}()
-
-	// start egress
-	result := make(chan *livekit.EgressInfo, 1)
-	go func() {
-		result <- p.Run()
-	}()
-
-	for {
-		select {
-		case <-s.kill:
-			// kill signal received
-			p.SendEOS()
-
-		case res := <-result:
-			// recording finished
-			s.sendEgressUpdate(res)
-			s.handlingRoomComposite.CAS(true, false)
-			return
-
-		case msg := <-requests.Channel():
-			// request received
-			request := &livekit.EgressRequest{}
-			err = proto.Unmarshal(requests.Payload(msg), request)
-			if err != nil {
-				logger.Errorw("failed to read request", err, "egressID", p.GetInfo().EgressId)
-				continue
-			}
-			logger.Debugw("handling request", "egressID", p.GetInfo().EgressId, "requestID", request.RequestId)
-
-			switch req := request.Request.(type) {
-			case *livekit.EgressRequest_UpdateStream:
-				err = p.UpdateStream(req.UpdateStream)
-			case *livekit.EgressRequest_Stop:
-				p.SendEOS()
-			default:
-				err = errors.ErrInvalidRPC
-			}
-
-			s.sendRPCResponse(request.RequestId, p.GetInfo(), err)
-		}
-	}
-}
-
 func (s *Service) isIdle() bool {
 	idle := true
 	s.pipelines.Range(func(key, value interface{}) bool {
@@ -289,32 +173,66 @@ func (s *Service) isIdle() bool {
 	return idle
 }
 
-func (s *Service) sendRPCResponse(requestID string, info *livekit.EgressInfo, err error) {
-	res := &livekit.EgressResponse{Info: info}
-	args := []interface{}{"egressID", info.EgressId, "requestId", requestID}
+func (s *Service) launchHandler(req *livekit.StartEgressRequest) {
+	s.pipelines.Store(req.EgressId, req)
+	defer func() {
+		s.pipelines.Delete(req.EgressId)
+		s.handlingRoomComposite.CAS(true, false)
+	}()
 
+	confString, err := yaml.Marshal(s.conf)
 	if err != nil {
-		logger.Errorw("error handling request", err, args...)
-		res.Error = err.Error()
-	} else {
-		logger.Debugw("request handled", args...)
+		logger.Errorw("could not marshal config", err)
+		return
 	}
 
-	if err = s.bus.Publish(s.ctx, egress.ResponseChannel(requestID), res); err != nil {
-		logger.Errorw("could not send response", err)
+	reqString, err := proto.Marshal(req)
+	if err != nil {
+		logger.Errorw("could not marshal request", err)
+		return
+	}
+
+	cmd := exec.Command("egress",
+		"run-handler",
+		"--config-body", string(confString),
+		"--request", string(reqString),
+	)
+	cmd.Dir = "/"
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err = cmd.Run()
+	if err != nil {
+		logger.Errorw("could not launch handler", err)
 	}
 }
 
-func (s *Service) sendEgressUpdate(info *livekit.EgressInfo) {
-	if info.Error != "" {
-		logger.Errorw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
-	} else if info.Status == livekit.EgressStatus_EGRESS_COMPLETE {
-		logger.Infow("egress completed successfully", "egressID", info.EgressId)
-	} else {
-		logger.Infow("egress updated", "egressID", info.EgressId, "status", info.Status)
+func (s *Service) Status() ([]byte, error) {
+	info := map[string]interface{}{
+		"CpuLoad": sysload.GetCPULoad(),
+	}
+	s.pipelines.Range(func(key, value interface{}) bool {
+		egressInfo := value.(*livekit.StartEgressRequest)
+		info[key.(string)] = egressInfo.Request
+		return true
+	})
+
+	return json.Marshal(info)
+}
+
+func (s *Service) Stop(kill bool) {
+	select {
+	case <-s.shutdown:
+	default:
+		close(s.shutdown)
 	}
 
-	if err := s.bus.Publish(s.ctx, egress.ResultsChannel, info); err != nil {
-		logger.Errorw("failed to send egress update", err)
+	if kill {
+		select {
+		case <-s.kill:
+		default:
+			close(s.kill)
+			// TODO: forward signal to all handlers
+		}
 	}
 }
