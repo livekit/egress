@@ -77,7 +77,3 @@ func getTestConfig(t *testing.T) *testConfig {
 	require.NoError(t, os.Setenv("GST_DEBUG", fmt.Sprint(tc.GstDebug)))
 	return tc
 }
-
-func (t *testConfig) hasRedis() bool {
-	return t.Redis.Address != ""
-}
