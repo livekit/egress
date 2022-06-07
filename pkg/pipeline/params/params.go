@@ -591,7 +591,7 @@ func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 	// Prepend the fileprefix directory to get the full playlist path
 	dir, _ := path.Split(p.FilePrefix)
 	p.PlaylistFilename = path.Join(dir, p.PlaylistFilename)
-	p.SegmentsInfo.PlaylistFilename = p.PlaylistFilename
+	p.SegmentsInfo.PlaylistName = p.PlaylistFilename
 	return nil
 }
 
