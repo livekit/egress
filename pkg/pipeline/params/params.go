@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ type Params struct {
 	MutedChan chan bool
 	StreamParams
 	FileParams
+	SegmentedFileParams
 }
 
 type SourceParams struct {
@@ -80,6 +82,13 @@ type FileParams struct {
 	Filename   string
 	Filepath   string
 	FileUpload interface{}
+}
+
+type SegmentedFileParams struct {
+	SegmentsInfo     *livekit.SegmentsInfo
+	FilePrefix       string
+	PlaylistFilename string
+	SegmentDuration  int
 }
 
 // GetPipelineParams must always return params, even on error
@@ -150,6 +159,12 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 				return
 			}
 
+		case *livekit.RoomCompositeEgressRequest_Segments:
+			p.updateOutputType(o.Segments.Protocol)
+			if err = p.updateSegmentsParams(conf, o.Segments.FilenamePrefix, o.Segments.PlaylistName, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
+				return
+			}
+
 		default:
 			err = errors.ErrInvalidInput("output")
 			return
@@ -195,6 +210,12 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 
 		case *livekit.TrackCompositeEgressRequest_Stream:
 			if err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls); err != nil {
+				return
+			}
+
+		case *livekit.TrackCompositeEgressRequest_Segments:
+			p.updateOutputType(o.Segments.Protocol)
+			if err = p.updateSegmentsParams(conf, o.Segments.FilenamePrefix, o.Segments.PlaylistName, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
 				return
 			}
 
@@ -321,18 +342,27 @@ func (p *Params) applyAdvanced(advanced *livekit.EncodingOptions) {
 	}
 }
 
-func (p *Params) updateOutputType(fileType livekit.EncodedFileType) {
-	switch fileType {
-	case livekit.EncodedFileType_DEFAULT_FILETYPE:
-		if !p.VideoEnabled && p.AudioCodec != MimeTypeAAC {
-			p.OutputType = OutputTypeOGG
-		} else {
+func (p *Params) updateOutputType(fileType interface{}) {
+
+	switch f := fileType.(type) {
+	case livekit.EncodedFileType:
+		switch f {
+		case livekit.EncodedFileType_DEFAULT_FILETYPE:
+			if !p.VideoEnabled && p.AudioCodec != MimeTypeAAC {
+				p.OutputType = OutputTypeOGG
+			} else {
+				p.OutputType = OutputTypeMP4
+			}
+		case livekit.EncodedFileType_MP4:
 			p.OutputType = OutputTypeMP4
+		case livekit.EncodedFileType_OGG:
+			p.OutputType = OutputTypeOGG
 		}
-	case livekit.EncodedFileType_MP4:
-		p.OutputType = OutputTypeMP4
-	case livekit.EncodedFileType_OGG:
-		p.OutputType = OutputTypeOGG
+	case livekit.SegmentedFileProtocol:
+		switch f {
+		case livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL, livekit.SegmentedFileProtocol_HLS_PROTOCOL:
+			p.OutputType = OutputTypeHLS
+		}
 	}
 }
 
@@ -395,6 +425,38 @@ func (p *Params) updateStreamParams(outputType OutputType, urls []string) error 
 	}
 
 	p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
+	return nil
+}
+
+func (p *Params) updateSegmentsParams(conf *config.Config, fileprefix string, playlistFilename string, segmentDuration uint32, output interface{}) error {
+	p.EgressType = EgressTypeSegmentedFile
+	p.FilePrefix = fileprefix
+	p.PlaylistFilename = playlistFilename
+	p.SegmentDuration = int(segmentDuration)
+	if p.SegmentDuration == 0 {
+		p.SegmentDuration = 6
+	}
+	p.SegmentsInfo = &livekit.SegmentsInfo{}
+	p.Info.Result = &livekit.EgressInfo_Segments{Segments: p.SegmentsInfo}
+
+	// output location
+	switch o := output.(type) {
+	case *livekit.EncodedFileOutput_S3:
+		p.FileUpload = o.S3
+	case *livekit.EncodedFileOutput_Azure:
+		p.FileUpload = o.Azure
+	case *livekit.EncodedFileOutput_Gcp:
+		p.FileUpload = o.Gcp
+	default:
+		p.FileUpload = conf.FileUpload
+	}
+
+	// filename
+	err := p.updatePrefixAndPlaylist(p.RoomName)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -496,6 +558,42 @@ func (p *Params) updateFilename(identifier string) error {
 	p.Logger.Debugw("writing to file", "filename", filename)
 	p.Filename = filename
 	p.FileInfo.Filename = filename
+	return nil
+}
+
+func (p *Params) updatePrefixAndPlaylist(identifier string) error {
+	// TODO fix filename generation code
+	fileprefix := p.FilePrefix
+	ext := FileExtensions[p.OutputType]
+
+	if fileprefix == "" || strings.HasSuffix(fileprefix, "/") {
+		fileprefix = fmt.Sprintf("%s%s-%v", fileprefix, identifier, time.Now().String())
+	}
+
+	// get filename from path
+	idx := strings.LastIndex(fileprefix, "/")
+	if idx > 0 {
+		if p.FileUpload == nil {
+			if err := os.MkdirAll(fileprefix[:idx], os.ModeDir); err != nil {
+				return err
+			}
+		} else {
+			fileprefix = fileprefix[idx+1:]
+		}
+	}
+
+	p.Logger.Debugw("writing to path", "prefix", fileprefix)
+	p.FilePrefix = fileprefix
+
+	// Playlist path is relative to file prefix. Only keep actual filename if a full path is given
+	_, p.PlaylistFilename = path.Split(p.PlaylistFilename)
+	if p.PlaylistFilename == "" {
+		p.PlaylistFilename = fmt.Sprintf("playlist%s", ext)
+	}
+	// Prepend the fileprefix directory to get the full playlist path
+	dir, _ := path.Split(p.FilePrefix)
+	p.PlaylistFilename = path.Join(dir, p.PlaylistFilename)
+	p.SegmentsInfo.PlaylistName = p.PlaylistFilename
 	return nil
 }
 

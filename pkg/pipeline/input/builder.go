@@ -1,6 +1,9 @@
 package input
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/config"
@@ -12,8 +15,7 @@ import (
 // TODO: save mp4 files as TS then remux to avoid losing everything on failure
 func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 	b := &Bin{
-		bin:      gst.NewBin("input"),
-		isStream: p.EgressType == params.EgressTypeStream,
+		bin: gst.NewBin("input"),
 	}
 
 	// source
@@ -43,15 +45,21 @@ func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 	// create ghost pad
 	var ghostPad *gst.GhostPad
 	if b.mux != nil {
-		ghostPad = gst.NewGhostPad("src", b.mux.GetStaticPad("src"))
+		// For HLS, there will be no 'src' pad
+		pad := b.mux.GetStaticPad("src")
+		if pad != nil {
+			ghostPad = gst.NewGhostPad("src", pad)
+		}
 	} else if b.audioQueue != nil {
 		ghostPad = gst.NewGhostPad("src", b.audioQueue.GetStaticPad("src"))
 	} else if b.videoQueue != nil {
 		ghostPad = gst.NewGhostPad("src", b.videoQueue.GetStaticPad("src"))
 	}
 
-	if !b.bin.AddPad(ghostPad.Pad) {
-		return nil, errors.ErrGhostPadFailed
+	if ghostPad != nil {
+		if !b.bin.AddPad(ghostPad.Pad) {
+			return nil, errors.ErrGhostPadFailed
+		}
 	}
 
 	return b, nil
@@ -99,7 +107,11 @@ func (b *Bin) buildMux(p *params.Params) error {
 			return err
 		}
 		err = b.mux.Set("streamable", true)
-
+	case params.OutputTypeHLS:
+		b.mux, err = b.buildHlsMux(p)
+		if err != nil {
+			return err
+		}
 	default:
 		err = errors.ErrInvalidInput("output type")
 	}
@@ -108,4 +120,33 @@ func (b *Bin) buildMux(p *params.Params) error {
 	}
 
 	return b.bin.Add(b.mux)
+}
+
+func (b *Bin) buildHlsMux(p *params.Params) (*gst.Element, error) {
+	// Create Sink
+	sink, err := gst.NewElement("splitmuxsink")
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO make this a request parameter?
+	// 6s segments
+	if err = sink.SetProperty("max-size-time", uint64(time.Duration(p.SegmentDuration)*time.Second)); err != nil {
+		return nil, err
+	}
+
+	if err = sink.SetProperty("async-finalize", true); err != nil {
+		return nil, err
+	}
+
+	if err = sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
+		return nil, err
+	}
+
+	filenamePattern := fmt.Sprintf("%s_%%05d.ts", p.FilePrefix)
+	if err = sink.SetProperty("location", filenamePattern); err != nil {
+		return nil, err
+	}
+
+	return sink, err
 }

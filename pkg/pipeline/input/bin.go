@@ -1,6 +1,8 @@
 package input
 
 import (
+	"fmt"
+
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -19,8 +21,6 @@ type Bin struct {
 	videoQueue    *gst.Element
 
 	mux *gst.Element
-
-	isStream bool
 }
 
 func (b *Bin) Bin() *gst.Bin {
@@ -39,11 +39,13 @@ func (b *Bin) Link() error {
 		}
 
 		if b.mux != nil {
-			var muxAudioPad *gst.Pad
-			if b.isStream {
-				muxAudioPad = b.mux.GetRequestPad("audio")
-			} else {
+			// Different muxers use different pad naming
+			muxAudioPad := b.mux.GetRequestPad("audio")
+			if muxAudioPad == nil {
 				muxAudioPad = b.mux.GetRequestPad("audio_%u")
+			}
+			if muxAudioPad == nil {
+				return fmt.Errorf("No audio pad found")
 			}
 
 			if linkReturn := b.audioQueue.GetStaticPad("src").Link(muxAudioPad); linkReturn != gst.PadLinkOK {
@@ -59,13 +61,14 @@ func (b *Bin) Link() error {
 		}
 
 		if b.mux != nil {
-			var muxVideoPad *gst.Pad
-			if b.isStream {
-				muxVideoPad = b.mux.GetRequestPad("video")
-			} else {
+			// Different muxers use different pad naming
+			muxVideoPad := b.mux.GetRequestPad("video")
+			if muxVideoPad == nil {
 				muxVideoPad = b.mux.GetRequestPad("video_%u")
 			}
-
+			if muxVideoPad == nil {
+				return fmt.Errorf("No video pad found")
+			}
 			if linkReturn := b.videoQueue.GetStaticPad("src").Link(muxVideoPad); linkReturn != gst.PadLinkOK {
 				return errors.ErrPadLinkFailed("video mux", linkReturn.String())
 			}

@@ -22,6 +22,7 @@ type testConfig struct {
 	RunTrackTests          bool   `yaml:"track"`
 	RunFileTests           bool   `yaml:"file"`
 	RunStreamTests         bool   `yaml:"stream"`
+	RunSegmentedFileTests  bool   `yaml:"segments"`
 	Muting                 bool   `yaml:"muting"`
 	GstDebug               int    `yaml:"gst_debug"`
 
@@ -46,6 +47,7 @@ func getTestConfig(t *testing.T) *testConfig {
 		RunTrackTests:          false,
 		RunFileTests:           true,
 		RunStreamTests:         true,
+		RunSegmentedFileTests:  false,
 		Muting:                 false,
 		GstDebug:               1,
 	}

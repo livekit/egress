@@ -28,6 +28,11 @@ const (
 	pipelineSource = "pipeline"
 	fileKey        = "file"
 	eosTimeout     = time.Second * 15
+
+	FragmentOpenedMessage = "splitmuxsink-fragment-opened"
+	FragmentClosedMessage = "splitmuxsink-fragment-closed"
+	FragmentLocation      = "location"
+	FragmentRunningTime   = "running-time"
 )
 
 type Pipeline struct {
@@ -40,12 +45,13 @@ type Pipeline struct {
 	loop     *glib.MainLoop
 
 	// internal
-	mu        sync.Mutex
-	playing   bool
-	startedAt map[string]int64
-	removed   map[string]bool
-	closed    chan struct{}
-	eosTimer  *time.Timer
+	mu             sync.Mutex
+	playing        bool
+	startedAt      map[string]int64
+	removed        map[string]bool
+	closed         chan struct{}
+	eosTimer       *time.Timer
+	playlistWriter *sink.PlaylistWriter
 
 	// callbacks
 	onStatusUpdate func(*livekit.EgressInfo)
@@ -76,7 +82,7 @@ func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 	}
 
 	// add bins to pipeline
-	if err = pipeline.AddMany(in.Element(), out.Element()); err != nil {
+	if err = pipeline.Add(in.Element()); err != nil {
 		return nil, err
 	}
 
@@ -85,24 +91,38 @@ func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 		return nil, err
 	}
 
-	// link output elements
-	if err = out.Link(); err != nil {
-		return nil, err
+	// link output elements. There is no "out" for HLS
+	if out != nil {
+		if err = pipeline.Add(out.Element()); err != nil {
+			return nil, err
+		}
+
+		if err = out.Link(); err != nil {
+			return nil, err
+		}
+		// link bins
+		if err := in.Bin().Link(out.Element()); err != nil {
+			return nil, err
+		}
 	}
 
-	// link bins
-	if err := in.Bin().Link(out.Element()); err != nil {
-		return nil, err
+	var playlistWriter *sink.PlaylistWriter
+	if p.OutputType == params.OutputTypeHLS {
+		playlistWriter, err = sink.NewPlaylistWriter(p)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &Pipeline{
-		Params:    p,
-		pipeline:  pipeline,
-		in:        in,
-		out:       out,
-		startedAt: make(map[string]int64),
-		removed:   make(map[string]bool),
-		closed:    make(chan struct{}),
+		Params:         p,
+		pipeline:       pipeline,
+		in:             in,
+		out:            out,
+		playlistWriter: playlistWriter,
+		startedAt:      make(map[string]int64),
+		removed:        make(map[string]bool),
+		closed:         make(chan struct{}),
 	}, nil
 }
 
@@ -291,7 +311,7 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 		}
 		p.mu.Unlock()
 
-	case params.EgressTypeFile:
+	case params.EgressTypeFile, params.EgressTypeSegmentedFile:
 		p.startedAt[fileKey] = startedAt
 	}
 
@@ -308,28 +328,38 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 	switch p.EgressType {
 	case params.EgressTypeStream, params.EgressTypeWebsocket:
 		for _, info := range p.StreamInfo {
-			startedAt := p.startedAt[info.Url]
-			duration := endedAt - startedAt
+			duration := p.getDuration(info.Url, endedAt)
 			if duration > 0 {
 				info.Duration = duration
-			} else {
-				p.Logger.Debugw("invalid duration",
-					"duration", duration, "startedAt", startedAt, "endedAt", endedAt,
-				)
 			}
 		}
 
 	case params.EgressTypeFile:
-		startedAt := p.startedAt[fileKey]
-		duration := endedAt - startedAt
+		duration := p.getDuration(fileKey, endedAt)
 		if duration > 0 {
 			p.FileInfo.Duration = duration
-		} else {
-			p.Logger.Debugw("invalid duration",
-				"duration", duration, "startedAt", startedAt, "endedAt", endedAt,
-			)
 		}
+
+	case params.EgressTypeSegmentedFile:
+		duration := p.getDuration(fileKey, endedAt)
+		if duration > 0 {
+			p.SegmentsInfo.Duration = duration
+		}
+
 	}
+}
+
+func (p *Pipeline) getDuration(k string, endedAt int64) int64 {
+	startedAt := p.startedAt[k]
+	duration := endedAt - startedAt
+
+	if duration <= 0 {
+		p.Logger.Debugw("invalid duration",
+			"duration", duration, "startedAt", startedAt, "endedAt", endedAt,
+		)
+	}
+
+	return duration
 }
 
 func (p *Pipeline) messageWatch(msg *gst.Message) bool {
@@ -380,11 +410,74 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 			}
 		}
 
+	case gst.MessageElement:
+		s := msg.GetStructure()
+		if s != nil {
+			switch s.Name() {
+			case FragmentOpenedMessage:
+				path, t, err := getSegmentParamsFromGstStructure(s)
+				if err != nil {
+					p.Logger.Errorw("Failed retrieving parameters from fragment event structure", err)
+					return true
+				}
+
+				p.Logger.Debugw("Fragment Opened event", "location", path, "running time", t)
+
+				if p.playlistWriter != nil {
+					err := p.playlistWriter.StartSegment(path, t)
+					if err != nil {
+						p.Logger.Errorw("Failed registering new segment with playlist writer", err, "location", path, "running time", t)
+						return true
+					}
+				}
+
+			case FragmentClosedMessage:
+				path, t, err := getSegmentParamsFromGstStructure(s)
+				if err != nil {
+					p.Logger.Errorw("Failed registering new segment with playlist writer", err, "location", path, "running time", t)
+					return true
+				}
+
+				p.Logger.Debugw("Fragment Closed event", "location", path, "running time", t)
+
+				if p.playlistWriter != nil {
+					err := p.playlistWriter.EndSegment(path, t)
+					if err != nil {
+						p.Logger.Errorw("Failed ending segment with playlist writer", err, "running time", t)
+						return true
+					}
+				}
+
+			}
+		}
+
 	default:
 		p.Logger.Debugw(msg.String())
 	}
 
 	return true
+}
+
+func getSegmentParamsFromGstStructure(s *gst.Structure) (path string, time int64, err error) {
+	loc, err := s.GetValue(FragmentLocation)
+	if err != nil {
+		return "", 0, err
+	}
+	path, ok := loc.(string)
+	if !ok {
+		return "", 0, fmt.Errorf("Invalid type for location")
+	}
+
+	t, err := s.GetValue(FragmentRunningTime)
+	if err != nil {
+		return "", 0, err
+	}
+	ti, ok := t.(uint64)
+	if !ok {
+		return "", 0, fmt.Errorf("Invalid type for time")
+	}
+
+	return path, int64(ti), nil
 }
 
 func (p *Pipeline) stop() {
@@ -402,6 +495,10 @@ func (p *Pipeline) stop() {
 	p.loop.Quit()
 	p.loop = nil
 	p.mu.Unlock()
+
+	if p.playlistWriter != nil {
+		p.playlistWriter.EOS()
+	}
 
 	switch p.in.Source.(type) {
 	case *source.WebSource:

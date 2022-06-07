@@ -1,5 +1,8 @@
 module github.com/livekit/egress
 
+//replace github.com/tinyzimmer/go-gst => /Users/bigben/go/src/github.com/go-gst
+replace github.com/tinyzimmer/go-gst v0.2.32 => github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427
+
 go 1.17
 
 require (
@@ -14,7 +17,7 @@ require (
 	github.com/go-redis/redis/v8 v8.11.4
 	github.com/gorilla/websocket v1.4.2
 	github.com/livekit/livekit-server v0.15.8-0.20220513092052-fa53da18e700
-	github.com/livekit/protocol v0.13.3-0.20220606201110-7e4ab2da1439
+	github.com/livekit/protocol v0.13.3-0.20220607202602-b8779c1fd4fe
 	github.com/livekit/server-sdk-go v0.10.1
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.13
@@ -22,7 +25,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/stretchr/testify v1.7.1
-	github.com/tinyzimmer/go-glib v0.0.24
+	github.com/tinyzimmer/go-glib v0.0.25
 	github.com/tinyzimmer/go-gst v0.2.32
 	github.com/urfave/cli/v2 v2.3.0
 	go.uber.org/atomic v1.9.0
@@ -56,6 +59,7 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
+	github.com/grafov/m3u8 v0.11.1 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b // indirect

@@ -179,6 +179,11 @@ func (b *Bin) buildVideoEncoder(p *params.Params) error {
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
 		x264Enc.SetArg("tune", "zerolatency")
+		if p.OutputType == params.OutputTypeHLS {
+			x264Enc.SetProperty("key-int-max", uint(int32(p.SegmentDuration)*p.Framerate))
+			// Avoid key frames other than at segments boudaries as splitmuxsink can become inconsistent otherwise
+			x264Enc.SetProperty("option-string", "scenecut=0")
+		}
 
 		if p.VideoProfile == "" {
 			p.VideoProfile = params.ProfileMain
