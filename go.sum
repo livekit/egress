@@ -316,6 +316,8 @@ github.com/livekit/protocol v0.13.3-0.20220607041040-57d294a934be h1:Iti647VIXuj
 github.com/livekit/protocol v0.13.3-0.20220607041040-57d294a934be/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
 github.com/livekit/protocol v0.13.3-0.20220607043113-665c13f75941 h1:WHug57f3wvrGdmOmPNtEoVG15v/jRPXZpLlZuZHJQ60=
 github.com/livekit/protocol v0.13.3-0.20220607043113-665c13f75941/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
+github.com/livekit/protocol v0.13.3-0.20220607182311-8b8416906f1d h1:DO1b7kMviXSUxaM3xsJz1PH+5dAFrR6tLHmJ+VPBBzk=
+github.com/livekit/protocol v0.13.3-0.20220607182311-8b8416906f1d/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
 github.com/livekit/server-sdk-go v0.10.0 h1:YL+SXr/xZV8y0SB6Nh6Je3guH+7JURJS01kbX2P9qQA=
 github.com/livekit/server-sdk-go v0.10.0/go.mod h1:z09cpBfyYoqqrqtQASxzcB1/gOMFA2Guts/LhO6kjnI=
 github.com/mackerelio/go-osstat v0.2.1 h1:5AeAcBEutEErAOlDz6WCkEvm6AKYgHTUQrfwm5RbeQc=

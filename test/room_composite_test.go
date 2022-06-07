@@ -108,6 +108,45 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 			t.FailNow()
 		}
 	}
+
+	if conf.RunSegmentedFileTests {
+		now := time.Now().Unix()
+		for _, test := range []*testCase{
+			{
+				name:     "h264-high-mp4",
+				inputUrl: videoTestInput,
+				options: &livekit.EncodingOptions{
+					AudioCodec:   livekit.AudioCodec_AAC,
+					VideoCodec:   livekit.VideoCodec_H264_HIGH,
+					Height:       720,
+					Width:        1280,
+					VideoBitrate: 4500,
+				},
+				filename: fmt.Sprintf("room-h264-high-%v", now),
+				playlist: fmt.Sprintf("room-h264-high-%v.m3u8", now),
+			},
+			{
+				name:             "h264-baseline-mp4",
+				inputUrl:         staticTestInput,
+				forceCustomInput: true,
+				options: &livekit.EncodingOptions{
+					AudioCodec:   livekit.AudioCodec_AAC,
+					VideoCodec:   livekit.VideoCodec_H264_BASELINE,
+					Height:       720,
+					Width:        1280,
+					VideoBitrate: 1500,
+				},
+				filename: fmt.Sprintf("room-h264-baseline-%v", now),
+				playlist: fmt.Sprintf("room-h264-baseline-%v.m3u8", now),
+			},
+		} {
+			if !t.Run(test.name, func(t *testing.T) {
+				runRoomCompositeSegmentsTest(t, conf, test)
+			}) {
+				t.FailNow()
+			}
+		}
+	}
 }
 
 func runRoomCompositeFileTest(t *testing.T, conf *testConfig, test *testCase) {
@@ -162,4 +201,36 @@ func testRoomCompositeStream(t *testing.T, conf *testConfig) {
 	}
 
 	runStreamTest(t, conf, req, videoTestInput)
+}
+
+func runRoomCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCase) {
+	filepath := getFilePath(conf.Config, test.filename)
+	webRequest := &livekit.RoomCompositeEgressRequest{
+		RoomName:  conf.RoomName,
+		Layout:    "speaker-dark",
+		AudioOnly: test.audioOnly,
+		Output: &livekit.RoomCompositeEgressRequest_Segments{
+			Segments: &livekit.SegmentedFileOutput{
+				FilenamePrefix: filepath,
+				PlaylistName:   test.playlist,
+			},
+		},
+	}
+
+	if test.options != nil {
+		webRequest.Options = &livekit.RoomCompositeEgressRequest_Advanced{
+			Advanced: test.options,
+		}
+	}
+
+	req := &livekit.StartEgressRequest{
+		EgressId:  utils.NewGuid(utils.EgressPrefix),
+		RequestId: utils.NewGuid(utils.RPCPrefix),
+		SentAt:    time.Now().UnixNano(),
+		Request: &livekit.StartEgressRequest_RoomComposite{
+			RoomComposite: webRequest,
+		},
+	}
+
+	runSegmentsTest(t, conf, test, req, getFilePath(conf.Config, test.playlist))
 }

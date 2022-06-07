@@ -159,6 +159,12 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 				return
 			}
 
+		case *livekit.RoomCompositeEgressRequest_Segments:
+			p.updateOutputType(o.Segments.Protocol)
+			if err = p.updateSegmentsParams(conf, o.Segments.FilenamePrefix, o.Segments.PlaylistName, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
+				return
+			}
+
 		default:
 			err = errors.ErrInvalidInput("output")
 			return
