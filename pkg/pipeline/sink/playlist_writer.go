@@ -24,9 +24,6 @@ type PlaylistWriter struct {
 
 func NewPlaylistWriter(p *params.Params) (*PlaylistWriter, error) {
 
-	dir, _ := path.Split(p.FilePrefix)
-	playlistPath := path.Join(dir, p.PlaylistFilename)
-
 	// "github.com/grafov/m3u8" is fairly inefficient for frequent serializations of long playlists and
 	// doesn't implement recent additions to the HLS spec, but I'm not aware of anything better, short of
 	// writing one.
@@ -40,7 +37,7 @@ func NewPlaylistWriter(p *params.Params) (*PlaylistWriter, error) {
 
 	return &PlaylistWriter{
 		playlist:              playlist,
-		playlistPath:          playlistPath,
+		playlistPath:          p.PlaylistFilename,
 		openSegmentsStartTime: make(map[string]int64),
 	}, nil
 }

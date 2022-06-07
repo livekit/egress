@@ -85,7 +85,7 @@ type FileParams struct {
 }
 
 type SegmentedFileParams struct {
-	// TODO Some "Info" field?
+	SegmentsInfo     *livekit.SegmentsInfo
 	FilePrefix       string
 	PlaylistFilename string
 	SegmentDuration  int
@@ -432,6 +432,8 @@ func (p *Params) updateSegmentsParams(conf *config.Config, fileprefix string, pl
 	if p.SegmentDuration == 0 {
 		p.SegmentDuration = 6
 	}
+	p.SegmentsInfo = &livekit.SegmentsInfo{}
+	p.Info.Result = &livekit.EgressInfo_Segments{Segments: p.SegmentsInfo}
 
 	// output location
 	switch o := output.(type) {
@@ -582,7 +584,10 @@ func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 	if p.PlaylistFilename == "" {
 		p.PlaylistFilename = "playlist.m3u8"
 	}
-
+	// Prepend the fileprefix directory to get the full playlist path
+	dir, _ := path.Split(p.FilePrefix)
+	p.PlaylistFilename = path.Join(dir, p.PlaylistFilename)
+	p.SegmentsInfo.PlaylistFilename = p.PlaylistFilename
 	return nil
 }
 

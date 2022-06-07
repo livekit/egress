@@ -311,7 +311,7 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 		}
 		p.mu.Unlock()
 
-	case params.EgressTypeFile:
+	case params.EgressTypeFile, params.EgressTypeSegmentedFile:
 		p.startedAt[fileKey] = startedAt
 	}
 
@@ -328,28 +328,38 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 	switch p.EgressType {
 	case params.EgressTypeStream, params.EgressTypeWebsocket:
 		for _, info := range p.StreamInfo {
-			startedAt := p.startedAt[info.Url]
-			duration := endedAt - startedAt
+			duration := p.getDuration(info.Url, endedAt)
 			if duration > 0 {
 				info.Duration = duration
-			} else {
-				p.Logger.Debugw("invalid duration",
-					"duration", duration, "startedAt", startedAt, "endedAt", endedAt,
-				)
 			}
 		}
 
 	case params.EgressTypeFile:
-		startedAt := p.startedAt[fileKey]
-		duration := endedAt - startedAt
+		duration := p.getDuration(fileKey, endedAt)
 		if duration > 0 {
 			p.FileInfo.Duration = duration
-		} else {
-			p.Logger.Debugw("invalid duration",
-				"duration", duration, "startedAt", startedAt, "endedAt", endedAt,
-			)
 		}
+
+	case params.EgressTypeSegmentedFile:
+		duration := p.getDuration(fileKey, endedAt)
+		if duration > 0 {
+			p.SegmentsInfo.Duration = duration
+		}
+
 	}
+}
+
+func (p *Pipeline) getDuration(k string, endedAt int64) int64 {
+	startedAt := p.startedAt[k]
+	duration := endedAt - startedAt
+
+	if duration <= 0 {
+		p.Logger.Debugw("invalid duration",
+			"duration", duration, "startedAt", startedAt, "endedAt", endedAt,
+		)
+	}
+
+	return duration
 }
 
 func (p *Pipeline) messageWatch(msg *gst.Message) bool {
