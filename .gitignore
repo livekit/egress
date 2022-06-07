@@ -1,5 +1,6 @@
 .idea/
-bin/
+.DS_Store
+
 test/output/*
 test/*.yaml
-.DS_Store
+!test/config-sample.yaml

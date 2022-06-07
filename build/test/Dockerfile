@@ -80,9 +80,15 @@ COPY go.sum .
 RUN go mod download
 
 # copy source
+COPY cmd/ cmd/
 COPY pkg/ pkg/
 COPY test/ test/
-COPY build/test/entrypoint.sh .
+COPY version/ version/
+
+# build (service tests will need to launch the handler)
+RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
+    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o /bin/egress ./cmd/server
 
 # run
+COPY build/test/entrypoint.sh .
 ENTRYPOINT ["./entrypoint.sh"]

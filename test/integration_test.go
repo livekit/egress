@@ -61,7 +61,7 @@ func TestEgress(t *testing.T) {
 	conf := getTestConfig(t)
 
 	var room *lksdk.Room
-	if strings.HasPrefix(conf.ApiKey, "API") {
+	if conf.HasConnectionInfo {
 		var err error
 		room, err = lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
 			APIKey:              conf.ApiKey,
@@ -74,6 +74,18 @@ func TestEgress(t *testing.T) {
 		defer room.Disconnect()
 	}
 
+	if conf.RunServiceTest {
+		if !conf.HasRedis || !conf.HasConnectionInfo {
+			t.Fatal("redis and connection info required for service test")
+		}
+
+		if !t.Run("Service", func(t *testing.T) {
+			testService(t, conf, room)
+		}) {
+			t.FailNow()
+		}
+	}
+
 	if conf.RunRoomTests {
 		if !t.Run("RoomComposite", func(t *testing.T) {
 			testRoomComposite(t, conf, room)
@@ -82,11 +94,11 @@ func TestEgress(t *testing.T) {
 		}
 	}
 
-	if room == nil {
-		return
-	}
-
 	if conf.RunTrackCompositeTests {
+		if !conf.HasConnectionInfo {
+			t.Fatal("connection info required for track composite tests")
+		}
+
 		if !t.Run("TrackComposite", func(t *testing.T) {
 			testTrackComposite(t, conf, room)
 		}) {
@@ -95,6 +107,10 @@ func TestEgress(t *testing.T) {
 	}
 
 	if conf.RunTrackTests {
+		if !conf.HasConnectionInfo {
+			t.Fatal("connection info required for track tests")
+		}
+
 		if !t.Run("Track", func(t *testing.T) {
 			testTrack(t, conf, room)
 		}) {
@@ -109,8 +125,8 @@ func publishSampleToRoom(t *testing.T, room *lksdk.Room, codec params.MimeType, 
 
 	var pub *lksdk.LocalTrackPublication
 	done := make(chan struct{})
-	opts := []lksdk.FileSampleProviderOption{
-		lksdk.FileTrackWithOnWriteComplete(func() {
+	opts := []lksdk.ReaderSampleProviderOption{
+		lksdk.ReaderTrackWithOnWriteComplete(func() {
 			close(done)
 			if pub != nil {
 				_ = room.LocalParticipant.UnpublishTrack(pub.SID())
@@ -119,7 +135,7 @@ func publishSampleToRoom(t *testing.T, room *lksdk.Room, codec params.MimeType, 
 	}
 
 	if frameDuration != 0 {
-		opts = append(opts, lksdk.FileTrackWithFrameDuration(frameDuration))
+		opts = append(opts, lksdk.ReaderTrackWithFrameDuration(frameDuration))
 	}
 
 	track, err := lksdk.NewLocalFileTrack(filename, opts...)
@@ -173,20 +189,7 @@ func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.St
 	})
 	res := rec.Run()
 
-	// egress info
-	require.Empty(t, res.Error)
-	require.NotZero(t, res.StartedAt)
-	require.NotZero(t, res.EndedAt)
-
-	// file info
-	fileRes := res.GetFile()
-	require.NotNil(t, fileRes)
-	require.NotEmpty(t, fileRes.Filename)
-	require.NotEmpty(t, fileRes.Location)
-	require.Greater(t, fileRes.Size, int64(0))
-	require.Greater(t, fileRes.Duration, int64(0))
-
-	verify(t, filepath, p, res, ResultType_File, conf.Muting)
+	verifyFile(t, filepath, p, res, conf.Muting)
 }
 
 func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, customUrl string) {
