@@ -149,7 +149,7 @@ func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, tes
 	})
 	res := rec.Run()
 
-	verify(t, filepath, p, res, true, conf.Muting)
+	verify(t, filepath, p, res, ResultType_Stream, conf.Muting)
 }
 
 type websocketTestServer struct {

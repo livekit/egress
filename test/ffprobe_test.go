@@ -18,6 +18,14 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
+type ResultType int
+
+const (
+	ResultType_File ResultType = iota
+	ResultType_Stream
+	ResultType_Segments
+)
+
 type FFProbeInfo struct {
 	Streams []struct {
 		CodecName string `json:"codec_name"`
@@ -79,11 +87,11 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 
 func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	for _, url := range urls {
-		verify(t, url, p, nil, true, false)
+		verify(t, url, p, nil, ResultType_Stream, false)
 	}
 }
 
-func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, isStream, withMuting bool) {
+func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {
 	require.NotEmpty(t, p.OutputType)
 
 	info, err := ffprobe(input)
@@ -98,7 +106,9 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 		require.Equal(t, 100, info.Format.ProbeScore)
 	}
 
-	if !isStream {
+	switch resultType {
+	// TODO implement with Segments
+	case ResultType_File:
 		// size
 		require.NotEqual(t, "0", info.Format.Size)
 
@@ -183,14 +193,14 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 				require.Equal(t, "vp8", stream.CodecName)
 
 			case params.OutputTypeMP4:
-				fallthrough
-			case params.OutputTypeHLS:
-				// bitrate
+				// bitrate. Not available for HLS
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)
 				require.Less(t, int32(bitrate), p.VideoBitrate*1010)
+				fallthrough
 
+			case params.OutputTypeHLS:
 				// dimensions
 				require.Equal(t, p.Width, stream.Width)
 				require.Equal(t, p.Height, stream.Height)

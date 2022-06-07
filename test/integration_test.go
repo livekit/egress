@@ -186,7 +186,7 @@ func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.St
 	require.Greater(t, fileRes.Size, int64(0))
 	require.Greater(t, fileRes.Duration, int64(0))
 
-	verify(t, filepath, p, res, false, conf.Muting)
+	verify(t, filepath, p, res, ResultType_File, conf.Muting)
 }
 
 func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, customUrl string) {
@@ -267,6 +267,5 @@ func runSegmentsTest(t *testing.T, conf *testConfig, test *testCase, req *liveki
 	require.NotZero(t, res.StartedAt)
 	require.NotZero(t, res.EndedAt)
 
-	verify(t, playlistPath, p, res, false, conf.Muting)
-	// TODO Test output
+	verify(t, playlistPath, p, res, ResultType_Segments, conf.Muting)
 }
