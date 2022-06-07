@@ -17,7 +17,7 @@ require (
 	github.com/go-redis/redis/v8 v8.11.4
 	github.com/gorilla/websocket v1.4.2
 	github.com/livekit/livekit-server v0.15.8-0.20220513092052-fa53da18e700
-	github.com/livekit/protocol v0.13.3-0.20220605014411-5a9d55e0d712
+	github.com/livekit/protocol v0.13.3-0.20220607013220-5f4d70a9594b
 	github.com/livekit/server-sdk-go v0.10.0
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.13

@@ -38,7 +38,7 @@ func testTrackComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 		}
 	}
 
-	if conf.RunSegmentedStreamTests {
+	if conf.RunSegmentedFileTests {
 		now := time.Now().Unix()
 		testTrackCompositeSegments(t, conf, room, params.MimeTypeOpus, params.MimeTypeVP8, &testCase{
 			name:     "tc-vp8-hls",

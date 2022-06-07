@@ -20,10 +20,10 @@ const (
 	ProfileHigh     Profile = "high"
 
 	// egress types
-	EgressTypeStream          EgressType = "stream"
-	EgressTypeWebsocket       EgressType = "websocket"
-	EgressTypeFile            EgressType = "file"
-	EgressTypeSegmentedStream EgressType = "segments"
+	EgressTypeStream        EgressType = "stream"
+	EgressTypeWebsocket     EgressType = "websocket"
+	EgressTypeFile          EgressType = "file"
+	EgressTypeSegmentedFile EgressType = "segments"
 
 	// output types
 	OutputTypeRaw  OutputType = "audio/x-raw"

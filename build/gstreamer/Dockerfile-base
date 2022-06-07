@@ -35,8 +35,3 @@ RUN wget https://gstreamer.freedesktop.org/src/gst-libav/gst-libav-$GSTREAMER_VE
     tar -xf gst-libav-$GSTREAMER_VERSION.tar.xz && \
     rm gst-libav-$GSTREAMER_VERSION.tar.xz && \
     mv gst-libav-$GSTREAMER_VERSION gst-libav
-
-RUN git clone https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs.git && \
-    cd gst-plugins-rs && \
-    git checkout a5dd92f4
-

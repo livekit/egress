@@ -30,7 +30,7 @@ type Params struct {
 	MutedChan chan bool
 	StreamParams
 	FileParams
-	SegmentedStreamParams
+	SegmentedFileParams
 }
 
 type SourceParams struct {
@@ -84,8 +84,8 @@ type FileParams struct {
 	FileUpload interface{}
 }
 
-type SegmentedStreamParams struct {
-	// Some "Info" field?
+type SegmentedFileParams struct {
+	// TODO Some "Info" field?
 	FilePrefix       string
 	PlaylistFilename string
 	SegmentDuration  int
@@ -208,8 +208,8 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			}
 
 		case *livekit.TrackCompositeEgressRequest_Segments:
-			p.updateOutputType(o.Segments.StreamType)
-			if err = p.updateSegmentsParams(conf, o.Segments.SegmentFilenamePrefix, o.Segments.PlaylistFilename, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
+			p.updateOutputType(o.Segments.Protocol)
+			if err = p.updateSegmentsParams(conf, o.Segments.FilenamePrefix, o.Segments.PlaylistName, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
 				return
 			}
 
@@ -352,11 +352,11 @@ func (p *Params) updateOutputType(fileType interface{}) {
 		case livekit.EncodedFileType_OGG:
 			p.OutputType = OutputTypeOGG
 		}
-	case livekit.SegmentedStreamType:
+	case livekit.SegmentedFileProtocol:
 		switch f {
-		case livekit.SegmentedStreamType_DEFAULT_STREAMTYPE:
+		case livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL:
 			p.OutputType = OutputTypeHLS
-		case livekit.SegmentedStreamType_HLS_STREAMTYPE:
+		case livekit.SegmentedFileProtocol_HLS_PROTOCOL:
 			p.OutputType = OutputTypeHLS
 		}
 	}
@@ -425,7 +425,7 @@ func (p *Params) updateStreamParams(outputType OutputType, urls []string) error 
 }
 
 func (p *Params) updateSegmentsParams(conf *config.Config, fileprefix string, playlistFilename string, segmentDuration uint32, output interface{}) error {
-	p.EgressType = EgressTypeSegmentedStream
+	p.EgressType = EgressTypeSegmentedFile
 	p.FilePrefix = fileprefix
 	p.PlaylistFilename = playlistFilename
 	p.SegmentDuration = int(segmentDuration)

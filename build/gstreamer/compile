@@ -19,13 +19,4 @@ for repo in gstreamer gst-plugins-base gst-plugins-bad gst-plugins-good gst-plug
   popd
 done
 
-pushd gst-plugins-rs
-# patch build system for older rust toolchain
-echo -e "cargo-features = ["edition2021"]\n$(cat tutorial/Cargo.toml)" > tutorial/Cargo.toml
-for plugin in gst-plugin-fmp4; do
-  cargo build -p $plugin
-done
-popd
-cp target/debug/*.so /usr/lib
-
 gst-inspect-1.0
