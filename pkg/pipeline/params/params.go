@@ -360,9 +360,7 @@ func (p *Params) updateOutputType(fileType interface{}) {
 		}
 	case livekit.SegmentedFileProtocol:
 		switch f {
-		case livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL:
-			p.OutputType = OutputTypeHLS
-		case livekit.SegmentedFileProtocol_HLS_PROTOCOL:
+		case livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL, livekit.SegmentedFileProtocol_HLS_PROTOCOL:
 			p.OutputType = OutputTypeHLS
 		}
 	}

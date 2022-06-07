@@ -307,16 +307,6 @@ github.com/livekit/protocol v0.13.2/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9b
 github.com/livekit/protocol v0.13.3-0.20220510071353-084233d23a03/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
 github.com/livekit/protocol v0.13.3-0.20220606201110-7e4ab2da1439 h1:1mg5sHu8JQX7Va6GMGHsEsmqmnFoq+2/4Nn+PrEVjZM=
 github.com/livekit/protocol v0.13.3-0.20220606201110-7e4ab2da1439/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
-github.com/livekit/protocol v0.13.3-0.20220605014411-5a9d55e0d712 h1:0jSbEr8nMjVpVHQompsrYqdm2g6MFu87ZRQnd+ujH4M=
-github.com/livekit/protocol v0.13.3-0.20220605014411-5a9d55e0d712/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
-github.com/livekit/protocol v0.13.3-0.20220607001712-4b791d9dc124 h1:oDrEp3hnnboG2Y6cvC5D0Z/raHqHZpdTKLZ19pKPfr8=
-github.com/livekit/protocol v0.13.3-0.20220607001712-4b791d9dc124/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
-github.com/livekit/protocol v0.13.3-0.20220607013220-5f4d70a9594b h1:aL71ZMsYaI5raIjaB0G3cSz1zzH76JrilUyEO+H7Jqc=
-github.com/livekit/protocol v0.13.3-0.20220607013220-5f4d70a9594b/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
-github.com/livekit/protocol v0.13.3-0.20220607041040-57d294a934be h1:Iti647VIXujGTqwZCkqUTza+Lo5Uuu6n1A5e+mop47E=
-github.com/livekit/protocol v0.13.3-0.20220607041040-57d294a934be/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
-github.com/livekit/protocol v0.13.3-0.20220607043113-665c13f75941 h1:WHug57f3wvrGdmOmPNtEoVG15v/jRPXZpLlZuZHJQ60=
-github.com/livekit/protocol v0.13.3-0.20220607043113-665c13f75941/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
 github.com/livekit/protocol v0.13.3-0.20220607182311-8b8416906f1d h1:DO1b7kMviXSUxaM3xsJz1PH+5dAFrR6tLHmJ+VPBBzk=
 github.com/livekit/protocol v0.13.3-0.20220607182311-8b8416906f1d/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
 github.com/livekit/server-sdk-go v0.10.1 h1:0SX/z2nFi7VRz/VbUY7gXbT1ZfzyxDS4S7hh6RLjIfI=
