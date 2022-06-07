@@ -42,7 +42,7 @@ func (b *Bin) Link() error {
 			// Different muxers use different pad naming
 			muxAudioPad := b.mux.GetRequestPad("audio")
 			if muxAudioPad == nil {
-				muxAudioPad = b.mux.GetRequestPad("audio_0")
+				muxAudioPad = b.mux.GetRequestPad("audio_%u")
 			}
 			if muxAudioPad == nil {
 				return fmt.Errorf("No audio pad found")
@@ -64,7 +64,7 @@ func (b *Bin) Link() error {
 			// Different muxers use different pad naming
 			muxVideoPad := b.mux.GetRequestPad("video")
 			if muxVideoPad == nil {
-				muxVideoPad = b.mux.GetRequestPad("video_0")
+				muxVideoPad = b.mux.GetRequestPad("video_%u")
 			}
 			if muxVideoPad == nil {
 				return fmt.Errorf("No video pad found")
