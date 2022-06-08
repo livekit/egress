@@ -53,11 +53,16 @@ type Pipeline struct {
 	closed         chan struct{}
 	eosTimer       *time.Timer
 	playlistWriter *sink.PlaylistWriter
-	endedSegments  chan string
+	endedSegments  chan segmentUpdate
 	segmentsWg     sync.WaitGroup
 
 	// callbacks
 	onStatusUpdate func(*livekit.EgressInfo)
+}
+
+type segmentUpdate struct {
+	endTime   int64
+	localPath string
 }
 
 func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
@@ -252,49 +257,51 @@ func (p *Pipeline) storeFile(localFilePath, requestedPath string, mime params.Ou
 }
 
 func (p *Pipeline) onSegmentEnded(segmentPath string, endTime int64) error {
-	if p.playlistWriter != nil {
-		err := p.playlistWriter.EndSegment(segmentPath, endTime)
-		if err != nil {
-			return err
-		}
-	}
 
 	if p.EgressType == params.EgressTypeSegmentedFile {
 		// We need to dispatch to a queue to:
 		// 1. Avoid concurrent access to the SegmentsInfo structure
 		// 2. Ensure that playlists are uploaded in the same order they are enqueued to avoid an older playlist overwriting a newre one
 
-		p.enqueueSegmentUpload(segmentPath)
+		p.enqueueSegmentUpload(segmentPath, endTime)
 	}
 
 	return nil
 }
 
 func (p *Pipeline) startSegmentWorker() {
-	p.endedSegments = make(chan string, maxPendingUploads)
+	p.endedSegments = make(chan segmentUpdate, maxPendingUploads)
 
 	go func() {
-		for segmentPath := range p.endedSegments {
+		for segmentUpdate := range p.endedSegments {
+			func() {
+				defer p.segmentsWg.Done()
 
-			p.SegmentsInfo.SegmentCount++
+				p.SegmentsInfo.SegmentCount++
 
-			destinationSegmentPath := p.GetTargetPathForFilename(segmentPath)
-			// Ignore error. storeFile will log it.
-			_, size, _ := p.storeFile(segmentPath, destinationSegmentPath, p.Params.GetSegmentOutputType())
+				destinationSegmentPath := p.GetTargetPathForFilename(segmentUpdate.localPath)
+				// Ignore error. storeFile will log it.
+				_, size, _ := p.storeFile(segmentUpdate.localPath, destinationSegmentPath, p.Params.GetSegmentOutputType())
+				p.SegmentsInfo.Size += size
 
-			destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
-			p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
-			p.SegmentsInfo.Size += size
-
-			p.segmentsWg.Done()
+				if p.playlistWriter != nil {
+					err := p.playlistWriter.EndSegment(segmentUpdate.localPath, segmentUpdate.endTime)
+					if err != nil {
+						p.Logger.Errorw("Failed to end segment", err, "path", segmentUpdate.localPath)
+						return
+					}
+					destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
+					p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
+				}
+			}()
 		}
 	}()
 }
 
-func (p *Pipeline) enqueueSegmentUpload(segmentPath string) error {
+func (p *Pipeline) enqueueSegmentUpload(segmentPath string, endTime int64) error {
 	p.segmentsWg.Add(1)
 	select {
-	case p.endedSegments <- segmentPath:
+	case p.endedSegments <- segmentUpdate{localPath: segmentPath, endTime: endTime}:
 		return nil
 	default:
 		err := fmt.Errorf("Segment upload job queue is full")
