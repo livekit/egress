@@ -216,11 +216,12 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 			p.FileInfo.Location = p.Filepath
 			deleteFile = false
 		}
-
 		if err != nil {
 			p.Logger.Errorw("could not upload file", err, "location", location)
 			p.Info.Error = errors.ErrUploadFailed(location, err)
-		} else if deleteFile {
+		}
+
+		if deleteFile {
 			if err = os.Remove(p.Filename); err != nil {
 				p.Logger.Errorw("could not delete file", err)
 			}
