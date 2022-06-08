@@ -204,7 +204,9 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	if p.EgressType == params.EgressTypeFile {
 		var err error
 		p.FileInfo.Location, p.FileInfo.Size, err = p.storeFile(p.Filename, p.Params.Filepath, p.Params.OutputType)
-		p.Info.Error = err.Error()
+		if err != nil {
+			p.Info.Error = err.Error()
+		}
 	}
 	// Wait for all pending upload jobs to finish
 	if p.endedSegments != nil {
