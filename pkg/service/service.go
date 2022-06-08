@@ -113,7 +113,16 @@ func (s *Service) Run() error {
 			}
 
 			if s.acceptRequest(req) {
-				go s.launchHandler(req)
+				switch req.Request.(type) {
+				case *livekit.StartEgressRequest_RoomComposite:
+					s.handlingRoomComposite.Store(true)
+					go func() {
+						s.launchHandler(req)
+						s.handlingRoomComposite.Store(false)
+					}()
+				default:
+					go s.launchHandler(req)
+				}
 			}
 		}
 	}
@@ -131,11 +140,8 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	}
 
 	// check cpu load
-	var isRoomComposite bool
 	switch req.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
-		isRoomComposite = true
-
 		// limit to one web composite at a time for now
 		if !s.isIdle() {
 			logger.Debugw("rejecting request", "reason", "already recording")
@@ -160,10 +166,6 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	sysload.AcceptRequest(req)
 	logger.Debugw("request claimed", "egressID", req.EgressId)
 
-	if isRoomComposite {
-		s.handlingRoomComposite.Store(true)
-	}
-
 	return true
 }
 
@@ -177,13 +179,6 @@ func (s *Service) isIdle() bool {
 }
 
 func (s *Service) launchHandler(req *livekit.StartEgressRequest) {
-	defer func() {
-		switch req.Request.(type) {
-		case *livekit.StartEgressRequest_RoomComposite:
-			s.handlingRoomComposite.Store(false)
-		}
-	}()
-
 	confString, err := yaml.Marshal(s.conf)
 	if err != nil {
 		logger.Errorw("could not marshal config", err)
