@@ -35,9 +35,13 @@ type Service struct {
 	promServer *http.Server
 
 	handlingRoomComposite atomic.Bool
-	pipelines             sync.Map
+	processes             sync.Map
 	shutdown              chan struct{}
-	kill                  chan struct{}
+}
+
+type process struct {
+	req *livekit.StartEgressRequest
+	cmd *exec.Cmd
 }
 
 func NewService(conf *config.Config, bus utils.MessageBus) *Service {
@@ -46,7 +50,6 @@ func NewService(conf *config.Config, bus utils.MessageBus) *Service {
 		conf:     conf,
 		bus:      bus,
 		shutdown: make(chan struct{}),
-		kill:     make(chan struct{}),
 	}
 
 	if conf.PrometheusPort > 0 {
@@ -166,7 +169,7 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 
 func (s *Service) isIdle() bool {
 	idle := true
-	s.pipelines.Range(func(key, value interface{}) bool {
+	s.processes.Range(func(key, value interface{}) bool {
 		idle = false
 		return false
 	})
@@ -174,10 +177,11 @@ func (s *Service) isIdle() bool {
 }
 
 func (s *Service) launchHandler(req *livekit.StartEgressRequest) {
-	s.pipelines.Store(req.EgressId, req)
 	defer func() {
-		s.pipelines.Delete(req.EgressId)
-		s.handlingRoomComposite.CAS(true, false)
+		switch req.Request.(type) {
+		case *livekit.StartEgressRequest_RoomComposite:
+			s.handlingRoomComposite.Store(false)
+		}
 	}()
 
 	confString, err := yaml.Marshal(s.conf)
@@ -201,6 +205,12 @@ func (s *Service) launchHandler(req *livekit.StartEgressRequest) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	s.processes.Store(req.EgressId, &process{
+		req: req,
+		cmd: cmd,
+	})
+	defer s.processes.Delete(req.EgressId)
+
 	err = cmd.Run()
 	if err != nil {
 		logger.Errorw("could not launch handler", err)
@@ -211,9 +221,9 @@ func (s *Service) Status() ([]byte, error) {
 	info := map[string]interface{}{
 		"CpuLoad": sysload.GetCPULoad(),
 	}
-	s.pipelines.Range(func(key, value interface{}) bool {
-		egressInfo := value.(*livekit.StartEgressRequest)
-		info[key.(string)] = egressInfo.Request
+	s.processes.Range(func(key, value interface{}) bool {
+		p := value.(*process)
+		info[key.(string)] = p.req.Request
 		return true
 	})
 
@@ -228,11 +238,12 @@ func (s *Service) Stop(kill bool) {
 	}
 
 	if kill {
-		select {
-		case <-s.kill:
-		default:
-			close(s.kill)
-			// TODO: forward signal to all handlers
-		}
+		s.processes.Range(func(key, value interface{}) bool {
+			p := value.(*process)
+			if err := p.cmd.Process.Kill(); err != nil {
+				logger.Errorw("failed to kill process", err, "egressID", key.(string))
+			}
+			return true
+		})
 	}
 }
