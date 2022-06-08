@@ -35,9 +35,13 @@ type Service struct {
 	promServer *http.Server
 
 	handlingRoomComposite atomic.Bool
-	pipelines             sync.Map
+	processes             sync.Map
 	shutdown              chan struct{}
-	kill                  chan struct{}
+}
+
+type process struct {
+	req *livekit.StartEgressRequest
+	cmd *exec.Cmd
 }
 
 func NewService(conf *config.Config, bus utils.MessageBus) *Service {
@@ -46,7 +50,6 @@ func NewService(conf *config.Config, bus utils.MessageBus) *Service {
 		conf:     conf,
 		bus:      bus,
 		shutdown: make(chan struct{}),
-		kill:     make(chan struct{}),
 	}
 
 	if conf.PrometheusPort > 0 {
@@ -110,7 +113,16 @@ func (s *Service) Run() error {
 			}
 
 			if s.acceptRequest(req) {
-				go s.launchHandler(req)
+				switch req.Request.(type) {
+				case *livekit.StartEgressRequest_RoomComposite:
+					s.handlingRoomComposite.Store(true)
+					go func() {
+						s.launchHandler(req)
+						s.handlingRoomComposite.Store(false)
+					}()
+				default:
+					go s.launchHandler(req)
+				}
 			}
 		}
 	}
@@ -128,11 +140,8 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	}
 
 	// check cpu load
-	var isRoomComposite bool
 	switch req.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
-		isRoomComposite = true
-
 		// limit to one web composite at a time for now
 		if !s.isIdle() {
 			logger.Debugw("rejecting request", "reason", "already recording")
@@ -157,16 +166,12 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	sysload.AcceptRequest(req)
 	logger.Debugw("request claimed", "egressID", req.EgressId)
 
-	if isRoomComposite {
-		s.handlingRoomComposite.Store(true)
-	}
-
 	return true
 }
 
 func (s *Service) isIdle() bool {
 	idle := true
-	s.pipelines.Range(func(key, value interface{}) bool {
+	s.processes.Range(func(key, value interface{}) bool {
 		idle = false
 		return false
 	})
@@ -174,12 +179,6 @@ func (s *Service) isIdle() bool {
 }
 
 func (s *Service) launchHandler(req *livekit.StartEgressRequest) {
-	s.pipelines.Store(req.EgressId, req)
-	defer func() {
-		s.pipelines.Delete(req.EgressId)
-		s.handlingRoomComposite.CAS(true, false)
-	}()
-
 	confString, err := yaml.Marshal(s.conf)
 	if err != nil {
 		logger.Errorw("could not marshal config", err)
@@ -201,6 +200,12 @@ func (s *Service) launchHandler(req *livekit.StartEgressRequest) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	s.processes.Store(req.EgressId, &process{
+		req: req,
+		cmd: cmd,
+	})
+	defer s.processes.Delete(req.EgressId)
+
 	err = cmd.Run()
 	if err != nil {
 		logger.Errorw("could not launch handler", err)
@@ -211,9 +216,9 @@ func (s *Service) Status() ([]byte, error) {
 	info := map[string]interface{}{
 		"CpuLoad": sysload.GetCPULoad(),
 	}
-	s.pipelines.Range(func(key, value interface{}) bool {
-		egressInfo := value.(*livekit.StartEgressRequest)
-		info[key.(string)] = egressInfo.Request
+	s.processes.Range(func(key, value interface{}) bool {
+		p := value.(*process)
+		info[key.(string)] = p.req.Request
 		return true
 	})
 
@@ -228,11 +233,12 @@ func (s *Service) Stop(kill bool) {
 	}
 
 	if kill {
-		select {
-		case <-s.kill:
-		default:
-			close(s.kill)
-			// TODO: forward signal to all handlers
-		}
+		s.processes.Range(func(key, value interface{}) bool {
+			p := value.(*process)
+			if err := p.cmd.Process.Kill(); err != nil {
+				logger.Errorw("failed to kill process", err, "egressID", key.(string))
+			}
+			return true
+		})
 	}
 }
