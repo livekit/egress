@@ -143,13 +143,19 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	// expected params
 	p := &params.Params{
 		AudioParams: params.AudioParams{
-			AudioEnabled: true,
-			AudioCodec:   params.MimeTypeAAC,
+			AudioEnabled:   true,
+			AudioCodec:     params.MimeTypeAAC,
+			AudioBitrate:   128,
+			AudioFrequency: 44100,
 		},
 		VideoParams: params.VideoParams{
 			VideoEnabled: true,
 			VideoCodec:   params.MimeTypeH264,
 			VideoProfile: params.ProfileMain,
+			Width:        1920,
+			Height:       1080,
+			Framerate:    30,
+			VideoBitrate: 4500,
 		},
 		OutputType: params.OutputTypeMP4,
 	}

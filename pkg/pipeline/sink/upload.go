@@ -20,7 +20,19 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
-func UploadS3(conf *livekit.S3Upload, localFilePath, requestedPath string, mime params.OutputType) (string, error) {
+const maxRetries = 5
+
+func UploadS3(conf *livekit.S3Upload, localFilePath, requestedPath string, mime params.OutputType) (location string, err error) {
+	for i := 0; i < maxRetries; i++ {
+		location, err = uploadS3(conf, localFilePath, requestedPath, mime)
+		if err == nil {
+			return
+		}
+	}
+	return
+}
+
+func uploadS3(conf *livekit.S3Upload, localFilePath, requestedPath string, mime params.OutputType) (string, error) {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, ""),
 		Endpoint:    aws.String(conf.Endpoint),
@@ -55,7 +67,17 @@ func UploadS3(conf *livekit.S3Upload, localFilePath, requestedPath string, mime 
 	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", conf.Bucket, conf.Region, requestedPath), nil
 }
 
-func UploadAzure(conf *livekit.AzureBlobUpload, localFilePath, requestedPath string, mime params.OutputType) (string, error) {
+func UploadAzure(conf *livekit.AzureBlobUpload, localFilePath, requestedPath string, mime params.OutputType) (location string, err error) {
+	for i := 0; i < maxRetries; i++ {
+		location, err = uploadAzure(conf, localFilePath, requestedPath, mime)
+		if err == nil {
+			return
+		}
+	}
+	return
+}
+
+func uploadAzure(conf *livekit.AzureBlobUpload, localFilePath, requestedPath string, mime params.OutputType) (string, error) {
 	credential, err := azblob.NewSharedKeyCredential(
 		conf.AccountName,
 		conf.AccountKey,
@@ -94,7 +116,17 @@ func UploadAzure(conf *livekit.AzureBlobUpload, localFilePath, requestedPath str
 	return sUrl, nil
 }
 
-func UploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mime params.OutputType) (string, error) {
+func UploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mime params.OutputType) (location string, err error) {
+	for i := 0; i < maxRetries; i++ {
+		location, err = uploadGCP(conf, localFilePath, requestedPath, mime)
+		if err == nil {
+			return
+		}
+	}
+	return
+}
+
+func uploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mime params.OutputType) (string, error) {
 	ctx := context.Background()
 	var client *storage.Client
 	var err error
