@@ -31,6 +31,8 @@ type Params struct {
 	StreamParams
 	FileParams
 	SegmentedFileParams
+
+	UploadParams
 }
 
 type SourceParams struct {
@@ -78,17 +80,21 @@ type StreamParams struct {
 }
 
 type FileParams struct {
-	FileInfo   *livekit.FileInfo
-	Filename   string
-	Filepath   string
-	FileUpload interface{}
+	FileInfo *livekit.FileInfo
+	Filename string
+	Filepath string
 }
 
 type SegmentedFileParams struct {
 	SegmentsInfo     *livekit.SegmentsInfo
-	FilePrefix       string
+	LocalFilePrefix  string
+	TargetDirectory  string
 	PlaylistFilename string
 	SegmentDuration  int
+}
+
+type UploadParams struct {
+	FileUpload interface{}
 }
 
 // GetPipelineParams must always return params, even on error
@@ -430,7 +436,7 @@ func (p *Params) updateStreamParams(outputType OutputType, urls []string) error 
 
 func (p *Params) updateSegmentsParams(conf *config.Config, fileprefix string, playlistFilename string, segmentDuration uint32, output interface{}) error {
 	p.EgressType = EgressTypeSegmentedFile
-	p.FilePrefix = fileprefix
+	p.LocalFilePrefix = fileprefix
 	p.PlaylistFilename = playlistFilename
 	p.SegmentDuration = int(segmentDuration)
 	if p.SegmentDuration == 0 {
@@ -543,6 +549,9 @@ func (p *Params) updateFilename(identifier string) error {
 		filename = filename + string(ext)
 	}
 
+	// Update the file path to the generated filename if we changed it above
+	p.Filepath = filename
+
 	// get filename from path
 	idx := strings.LastIndex(filename, "/")
 	if idx > 0 {
@@ -563,12 +572,14 @@ func (p *Params) updateFilename(identifier string) error {
 
 func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 	// TODO fix filename generation code
-	fileprefix := p.FilePrefix
+	fileprefix := p.LocalFilePrefix
 	ext := FileExtensions[p.OutputType]
 
 	if fileprefix == "" || strings.HasSuffix(fileprefix, "/") {
 		fileprefix = fmt.Sprintf("%s%s-%v", fileprefix, identifier, time.Now().String())
 	}
+
+	p.TargetDirectory, _ = path.Split(fileprefix)
 
 	// get filename from path
 	idx := strings.LastIndex(fileprefix, "/")
@@ -582,8 +593,9 @@ func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 		}
 	}
 
+	p.LocalFilePrefix = fileprefix
+
 	p.Logger.Debugw("writing to path", "prefix", fileprefix)
-	p.FilePrefix = fileprefix
 
 	// Playlist path is relative to file prefix. Only keep actual filename if a full path is given
 	_, p.PlaylistFilename = path.Split(p.PlaylistFilename)
@@ -591,7 +603,7 @@ func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 		p.PlaylistFilename = fmt.Sprintf("playlist%s", ext)
 	}
 	// Prepend the fileprefix directory to get the full playlist path
-	dir, _ := path.Split(p.FilePrefix)
+	dir, _ := path.Split(fileprefix)
 	p.PlaylistFilename = path.Join(dir, p.PlaylistFilename)
 	p.SegmentsInfo.PlaylistName = p.PlaylistFilename
 	return nil
@@ -614,4 +626,21 @@ func (p *Params) VerifyUrl(url string) error {
 	}
 
 	return nil
+}
+
+func (p *Params) GetSegmentOutputType() OutputType {
+	switch p.OutputType {
+	case OutputTypeHLS:
+		// HLS is always mpeg ts for now. We may implement fmp4 in the future
+		return OutputTypeTS
+	default:
+		return p.OutputType
+	}
+}
+
+func (p *SegmentedFileParams) GetTargetPathForFilename(filename string) string {
+	// Remove any path prepended to the filename
+	_, filename = path.Split(filename)
+
+	return path.Join(p.TargetDirectory, filename)
 }

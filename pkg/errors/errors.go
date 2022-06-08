@@ -54,8 +54,8 @@ func ErrPadLinkFailed(pad, status string) error {
 	return fmt.Errorf("%s pad link failed: %s", pad, status)
 }
 
-func ErrUploadFailed(location string, err error) string {
-	return fmt.Sprintf("%s upload failed: %v", location, err)
+func ErrUploadFailed(location string, err error) error {
+	return fmt.Errorf("%s upload failed: %v", location, err)
 }
 
 func ErrWebSocketClosed(addr string) error {

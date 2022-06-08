@@ -20,7 +20,7 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
-func UploadS3(conf *livekit.S3Upload, p *params.Params) (string, error) {
+func UploadS3(conf *livekit.S3Upload, localFilePath, requestedPath string, mime params.OutputType) (string, error) {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, ""),
 		Endpoint:    aws.String(conf.Endpoint),
@@ -30,7 +30,7 @@ func UploadS3(conf *livekit.S3Upload, p *params.Params) (string, error) {
 		return "", err
 	}
 
-	file, err := os.Open(p.Filename)
+	file, err := os.Open(localFilePath)
 	if err != nil {
 		return "", err
 	}
@@ -43,19 +43,19 @@ func UploadS3(conf *livekit.S3Upload, p *params.Params) (string, error) {
 
 	_, err = s3.New(sess).PutObject(&s3.PutObjectInput{
 		Bucket:        aws.String(conf.Bucket),
-		Key:           aws.String(p.Filepath),
+		Key:           aws.String(requestedPath),
 		Body:          file,
 		ContentLength: aws.Int64(fileInfo.Size()),
-		ContentType:   aws.String(string(p.OutputType)),
+		ContentType:   aws.String(string(mime)),
 	})
 	if err != nil {
 		return "", err
 	}
 
-	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", conf.Bucket, conf.Region, p.Filepath), nil
+	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", conf.Bucket, conf.Region, requestedPath), nil
 }
 
-func UploadAzure(conf *livekit.AzureBlobUpload, p *params.Params) (string, error) {
+func UploadAzure(conf *livekit.AzureBlobUpload, localFilePath, requestedPath string, mime params.OutputType) (string, error) {
 	credential, err := azblob.NewSharedKeyCredential(
 		conf.AccountName,
 		conf.AccountKey,
@@ -72,9 +72,9 @@ func UploadAzure(conf *livekit.AzureBlobUpload, p *params.Params) (string, error
 	}
 
 	containerURL := azblob.NewContainerURL(*azUrl, pipeline)
-	blobURL := containerURL.NewBlockBlobURL(p.Filepath)
+	blobURL := containerURL.NewBlockBlobURL(requestedPath)
 
-	file, err := os.Open(p.Filename)
+	file, err := os.Open(localFilePath)
 	if err != nil {
 		return "", err
 	}
@@ -83,7 +83,7 @@ func UploadAzure(conf *livekit.AzureBlobUpload, p *params.Params) (string, error
 	// upload blocks in parallel for optimal performance
 	// it calls PutBlock/PutBlockList for files larger than 256 MBs and PutBlob for smaller files
 	_, err = azblob.UploadFileToBlockBlob(context.Background(), file, blobURL, azblob.UploadToBlockBlobOptions{
-		BlobHTTPHeaders: azblob.BlobHTTPHeaders{ContentType: string(p.OutputType)},
+		BlobHTTPHeaders: azblob.BlobHTTPHeaders{ContentType: string(mime)},
 		BlockSize:       4 * 1024 * 1024,
 		Parallelism:     16,
 	})
@@ -94,7 +94,7 @@ func UploadAzure(conf *livekit.AzureBlobUpload, p *params.Params) (string, error
 	return sUrl, nil
 }
 
-func UploadGCP(conf *livekit.GCPUpload, p *params.Params) (string, error) {
+func UploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mime params.OutputType) (string, error) {
 	ctx := context.Background()
 	var client *storage.Client
 	var err error
@@ -109,13 +109,13 @@ func UploadGCP(conf *livekit.GCPUpload, p *params.Params) (string, error) {
 	}
 	defer client.Close()
 
-	file, err := os.Open(p.Filename)
+	file, err := os.Open(localFilePath)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
 
-	wc := client.Bucket(conf.Bucket).Object(p.Filepath).NewWriter(ctx)
+	wc := client.Bucket(conf.Bucket).Object(requestedPath).NewWriter(ctx)
 	if _, err = io.Copy(wc, file); err != nil {
 		return "", err
 	}
@@ -124,5 +124,5 @@ func UploadGCP(conf *livekit.GCPUpload, p *params.Params) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", conf.Bucket, p.Filepath), nil
+	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", conf.Bucket, requestedPath), nil
 }
