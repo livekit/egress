@@ -212,6 +212,13 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	if p.endedSegments != nil {
 		p.segmentsWg.Wait()
 	}
+	if p.playlistWriter != nil {
+		p.playlistWriter.EOS()
+		// Upload the finalized playlist
+		destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
+		p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
+
+	}
 
 	return p.Info
 }
@@ -576,10 +583,6 @@ func (p *Pipeline) stop() {
 	p.loop.Quit()
 	p.loop = nil
 	p.mu.Unlock()
-
-	if p.playlistWriter != nil {
-		p.playlistWriter.EOS()
-	}
 
 	switch p.in.Source.(type) {
 	case *source.WebSource:
