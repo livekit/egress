@@ -58,7 +58,7 @@ type AzureConfig struct {
 }
 
 type GCPConfig struct {
-	CredentialsJSON []byte `yaml:"credentials_json"` // (env GOOGLE_APPLICATION_CREDENTIALS)
+	CredentialsJSON string `yaml:"credentials_json"` // (env GOOGLE_APPLICATION_CREDENTIALS)
 	Bucket          string `yaml:"bucket"`
 }
 
@@ -87,7 +87,7 @@ func NewConfig(confString string) (*Config, error) {
 		}
 	} else if conf.GCP != nil {
 		conf.FileUpload = &livekit.GCPUpload{
-			Credentials: conf.GCP.CredentialsJSON,
+			Credentials: []byte(conf.GCP.CredentialsJSON),
 			Bucket:      conf.GCP.Bucket,
 		}
 	} else if conf.Azure != nil {
