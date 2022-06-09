@@ -33,7 +33,7 @@ const (
 	OutputTypeTS   OutputType = "video/mp2t"
 	OutputTypeWebM OutputType = "video/webm"
 	OutputTypeRTMP OutputType = "rtmp"
-	OutputTypeHLS  OutputType = "hls"
+	OutputTypeHLS  OutputType = "application/x-mpegurl"
 
 	// file extensions
 	FileExtensionRaw  = ".raw"

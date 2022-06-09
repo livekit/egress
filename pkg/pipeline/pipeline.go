@@ -25,9 +25,10 @@ import (
 var initialized = false
 
 const (
-	pipelineSource = "pipeline"
-	fileKey        = "file"
-	eosTimeout     = time.Second * 15
+	pipelineSource    = "pipeline"
+	fileKey           = "file"
+	eosTimeout        = time.Second * 15
+	maxPendingUploads = 100
 
 	FragmentOpenedMessage = "splitmuxsink-fragment-opened"
 	FragmentClosedMessage = "splitmuxsink-fragment-closed"
@@ -52,9 +53,16 @@ type Pipeline struct {
 	closed         chan struct{}
 	eosTimer       *time.Timer
 	playlistWriter *sink.PlaylistWriter
+	endedSegments  chan segmentUpdate
+	segmentsWg     sync.WaitGroup
 
 	// callbacks
 	onStatusUpdate func(*livekit.EgressInfo)
+}
+
+type segmentUpdate struct {
+	endTime   int64
+	localPath string
 }
 
 func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
@@ -170,6 +178,11 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 		return p.Info
 	}
 
+	if p.EgressType == params.EgressTypeSegmentedFile {
+		p.startSegmentWorker()
+		defer close(p.endedSegments)
+	}
+
 	// run main loop
 	p.loop.Run()
 
@@ -189,46 +202,116 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 
 	// upload file
 	if p.EgressType == params.EgressTypeFile {
-		fileInfo, err := os.Stat(p.Filename)
-		if err == nil {
-			p.FileInfo.Size = fileInfo.Size()
-		} else {
-			p.Logger.Errorw("could not read file size", err)
-		}
-
-		var location string
-		deleteFile := true
-
-		switch u := p.FileUpload.(type) {
-		case *livekit.S3Upload:
-			location = "S3"
-			p.Logger.Debugw("uploading to s3")
-			p.FileInfo.Location, err = sink.UploadS3(u, p.Params)
-		case *livekit.GCPUpload:
-			location = "GCP"
-			p.Logger.Debugw("uploading to gcp")
-			p.FileInfo.Location, err = sink.UploadGCP(u, p.Params)
-		case *livekit.AzureBlobUpload:
-			location = "Azure"
-			p.Logger.Debugw("uploading to azure")
-			p.FileInfo.Location, err = sink.UploadAzure(u, p.Params)
-		default:
-			p.FileInfo.Location = p.Filepath
-			deleteFile = false
-		}
+		var err error
+		p.FileInfo.Location, p.FileInfo.Size, err = p.storeFile(p.Filename, p.Params.Filepath, p.Params.OutputType)
 		if err != nil {
-			p.Logger.Errorw("could not upload file", err, "location", location)
-			p.Info.Error = errors.ErrUploadFailed(location, err)
+			p.Info.Error = err.Error()
 		}
-
-		if deleteFile {
-			if err = os.Remove(p.Filename); err != nil {
-				p.Logger.Errorw("could not delete file", err)
-			}
-		}
+	}
+	// Wait for all pending upload jobs to finish
+	if p.endedSegments != nil {
+		p.segmentsWg.Wait()
 	}
 
 	return p.Info
+}
+
+func (p *Pipeline) storeFile(localFilePath, requestedPath string, mime params.OutputType) (destinationUrl string, size int64, err error) {
+	fileInfo, err := os.Stat(localFilePath)
+	if err == nil {
+		size = fileInfo.Size()
+	} else {
+		p.Logger.Errorw("could not read file size", err)
+	}
+
+	var location string
+	deleteFile := true
+
+	switch u := p.FileUpload.(type) {
+	case *livekit.S3Upload:
+		location = "S3"
+		p.Logger.Debugw("uploading to s3")
+		destinationUrl, err = sink.UploadS3(u, localFilePath, requestedPath, mime)
+	case *livekit.GCPUpload:
+		location = "GCP"
+		p.Logger.Debugw("uploading to gcp")
+		destinationUrl, err = sink.UploadGCP(u, localFilePath, requestedPath, mime)
+	case *livekit.AzureBlobUpload:
+		location = "Azure"
+		p.Logger.Debugw("uploading to azure")
+		destinationUrl, err = sink.UploadAzure(u, localFilePath, requestedPath, mime)
+	default:
+		destinationUrl = requestedPath
+		deleteFile = false
+	}
+
+	if err != nil {
+		p.Logger.Errorw("could not upload file. Deleting", err, "location", location)
+		err = errors.ErrUploadFailed(location, err)
+	}
+	if deleteFile {
+		if err = os.Remove(localFilePath); err != nil {
+			p.Logger.Errorw("could not delete file", err)
+		}
+	}
+
+	return destinationUrl, size, err
+}
+
+func (p *Pipeline) onSegmentEnded(segmentPath string, endTime int64) error {
+
+	if p.EgressType == params.EgressTypeSegmentedFile {
+		// We need to dispatch to a queue to:
+		// 1. Avoid concurrent access to the SegmentsInfo structure
+		// 2. Ensure that playlists are uploaded in the same order they are enqueued to avoid an older playlist overwriting a newre one
+
+		p.enqueueSegmentUpload(segmentPath, endTime)
+	}
+
+	return nil
+}
+
+func (p *Pipeline) startSegmentWorker() {
+	p.endedSegments = make(chan segmentUpdate, maxPendingUploads)
+
+	go func() {
+		for segmentUpdate := range p.endedSegments {
+			func() {
+				defer p.segmentsWg.Done()
+
+				p.SegmentsInfo.SegmentCount++
+
+				destinationSegmentPath := p.GetTargetPathForFilename(segmentUpdate.localPath)
+				// Ignore error. storeFile will log it.
+				_, size, _ := p.storeFile(segmentUpdate.localPath, destinationSegmentPath, p.Params.GetSegmentOutputType())
+				p.SegmentsInfo.Size += size
+
+				if p.playlistWriter != nil {
+					err := p.playlistWriter.EndSegment(segmentUpdate.localPath, segmentUpdate.endTime)
+					if err != nil {
+						p.Logger.Errorw("Failed to end segment", err, "path", segmentUpdate.localPath)
+						return
+					}
+					destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
+					p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
+				}
+			}()
+		}
+	}()
+}
+
+func (p *Pipeline) enqueueSegmentUpload(segmentPath string, endTime int64) error {
+	p.segmentsWg.Add(1)
+	select {
+	case p.endedSegments <- segmentUpdate{localPath: segmentPath, endTime: endTime}:
+		return nil
+	default:
+		err := fmt.Errorf("Segment upload job queue is full")
+
+		p.Logger.Errorw("Failed uploading segment", err)
+		p.segmentsWg.Done()
+		return errors.ErrUploadFailed(segmentPath, err)
+	}
 }
 
 func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
@@ -441,14 +524,11 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 
 				p.Logger.Debugw("Fragment Closed event", "location", path, "running time", t)
 
-				if p.playlistWriter != nil {
-					err := p.playlistWriter.EndSegment(path, t)
-					if err != nil {
-						p.Logger.Errorw("Failed ending segment with playlist writer", err, "running time", t)
-						return true
-					}
+				err = p.onSegmentEnded(path, t)
+				if err != nil {
+					p.Logger.Errorw("Failed ending segment with playlist writer", err, "running time", t)
+					return true
 				}
-
 			}
 		}
 

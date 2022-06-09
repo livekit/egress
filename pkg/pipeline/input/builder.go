@@ -143,7 +143,7 @@ func (b *Bin) buildHlsMux(p *params.Params) (*gst.Element, error) {
 		return nil, err
 	}
 
-	filenamePattern := fmt.Sprintf("%s_%%05d.ts", p.FilePrefix)
+	filenamePattern := fmt.Sprintf("%s_%%05d.ts", p.LocalFilePrefix)
 	if err = sink.SetProperty("location", filenamePattern); err != nil {
 		return nil, err
 	}
