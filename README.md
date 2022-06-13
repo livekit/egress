@@ -160,6 +160,12 @@ azure:
 gcp:
   credentials_json: GOOGLE_APPLICATION_CREDENTIALS env can be used instead
   bucket: bucket to upload files to
+
+# cpu costs for various egress types with their default values
+cpu_cost:
+  room_composite_cpu_cost: 3.0
+  track_composite_cpu_cost: 2.0
+  track_cpu_cost: 1.0
 ```
 
 The config file can be added to a mounted volume with its location passed in the EGRESS_CONFIG_FILE env var, or its body can be passed in the EGRESS_CONFIG_BODY env var.
