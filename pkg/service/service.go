@@ -73,7 +73,7 @@ func (s *Service) Run() error {
 		}()
 	}
 
-	sysload.Init(s.conf.NodeID, s.shutdown, func() float64 {
+	sysload.Init(s.conf, s.shutdown, func() float64 {
 		if s.isIdle() {
 			return 1
 		}
@@ -165,13 +165,13 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	}
 
 	logger.Infow("EGRESS_REQUEST: ", "egressRequest", req.String())
-	if !sysload.CanAcceptRequest(req, s.conf.CPUCost) {
+	if !sysload.CanAcceptRequest(req) {
 		logger.Debugw("rejecting request", "reason", "not enough cpu")
 		return false
 	}
 
 	// claim request
-	claimed, err := s.rpcServer.ClaimRequest(context.Background(), req.EgressId)
+	claimed, err := s.rpcServer.ClaimRequest(context.Background(), req)
 	if err != nil {
 		logger.Errorw("could not claim request", err)
 		return false
@@ -179,7 +179,7 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 		return false
 	}
 
-	sysload.AcceptRequest(req, s.conf.CPUCost)
+	sysload.AcceptRequest(req)
 	logger.Debugw("request claimed", "egressID", req.EgressId)
 
 	return true

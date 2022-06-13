@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	RoomCompositeCpuCost  = 3
-	TrackCompositeCpuCost = 2
-	TrackCpuCost          = 1
+	roomCompositeCpuCost  = 3
+	trackCompositeCpuCost = 2
+	trackCpuCost          = 1
 )
 
 type Config struct {
@@ -118,13 +118,13 @@ func NewConfig(confString string) (*Config, error) {
 	}
 	// Setting CPU costs from config. Ensure that CPU costs are positive
 	if conf.CPUCost.TrackCpuCost <= 0.0 {
-		conf.CPUCost.TrackCpuCost = TrackCpuCost
+		conf.CPUCost.TrackCpuCost = trackCpuCost
 	}
 	if conf.CPUCost.TrackCompositeCpuCost <= 0.0 {
-		conf.CPUCost.TrackCompositeCpuCost = TrackCompositeCpuCost
+		conf.CPUCost.TrackCompositeCpuCost = trackCompositeCpuCost
 	}
 	if conf.CPUCost.RoomCompositeCpuCost <= 0.0 {
-		conf.CPUCost.RoomCompositeCpuCost = RoomCompositeCpuCost
+		conf.CPUCost.RoomCompositeCpuCost = roomCompositeCpuCost
 	}
 
 	if err := conf.initLogger(); err != nil {
