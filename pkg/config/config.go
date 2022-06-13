@@ -15,6 +15,12 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 )
 
+const (
+	RoomCompositeCpuCost  = 3
+	TrackCompositeCpuCost = 2
+	TrackCpuCost          = 1
+)
+
 type Config struct {
 	Redis     RedisConfig `yaml:"redis"`      // required
 	ApiKey    string      `yaml:"api_key"`    // required (env LIVEKIT_API_KEY)
@@ -30,6 +36,9 @@ type Config struct {
 	S3    *S3Config    `yaml:"s3"`
 	Azure *AzureConfig `yaml:"azure"`
 	GCP   *GCPConfig   `yaml:"gcp"`
+
+	// CPU costs for various egress types
+	CPUCost CPUCostConfig `yaml:"cpu_cost"`
 
 	// internal
 	NodeID     string      `yaml:"-"`
@@ -62,6 +71,12 @@ type GCPConfig struct {
 	Bucket          string `yaml:"bucket"`
 }
 
+type CPUCostConfig struct {
+	RoomCompositeCpuCost  float64 `yaml:"room_composite_cpu_cost"`
+	TrackCompositeCpuCost float64 `yaml:"track_composite_cpu_cost"`
+	TrackCpuCost          float64 `yaml:"track_cpu_cost"`
+}
+
 func NewConfig(confString string) (*Config, error) {
 	conf := &Config{
 		LogLevel:     "info",
@@ -86,8 +101,12 @@ func NewConfig(confString string) (*Config, error) {
 			Bucket:    conf.S3.Bucket,
 		}
 	} else if conf.GCP != nil {
+		var credentials []byte
+		if conf.GCP.CredentialsJSON != "" {
+			credentials = []byte(conf.GCP.CredentialsJSON)
+		}
 		conf.FileUpload = &livekit.GCPUpload{
-			Credentials: []byte(conf.GCP.CredentialsJSON),
+			Credentials: credentials,
 			Bucket:      conf.GCP.Bucket,
 		}
 	} else if conf.Azure != nil {
@@ -96,6 +115,16 @@ func NewConfig(confString string) (*Config, error) {
 			AccountKey:    conf.Azure.AccountKey,
 			ContainerName: conf.Azure.ContainerName,
 		}
+	}
+	// Setting CPU costs from config. Ensure that CPU costs are positive
+	if conf.CPUCost.TrackCpuCost <= 0.0 {
+		conf.CPUCost.TrackCpuCost = TrackCpuCost
+	}
+	if conf.CPUCost.TrackCompositeCpuCost <= 0.0 {
+		conf.CPUCost.TrackCompositeCpuCost = TrackCompositeCpuCost
+	}
+	if conf.CPUCost.RoomCompositeCpuCost <= 0.0 {
+		conf.CPUCost.RoomCompositeCpuCost = RoomCompositeCpuCost
 	}
 
 	if err := conf.initLogger(); err != nil {

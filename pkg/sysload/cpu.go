@@ -1,6 +1,7 @@
 package sysload
 
 import (
+	"github.com/livekit/egress/pkg/config"
 	"runtime"
 	"time"
 
@@ -12,12 +13,6 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/protocol/livekit"
-)
-
-const (
-	minIdleRoomComposite  = 3
-	minIdleTrackComposite = 2
-	minIdleTrack          = 1
 )
 
 var (
@@ -78,32 +73,32 @@ func GetCPULoad() float64 {
 	return (numCPUs - idleCPUs.Load()) / numCPUs * 100
 }
 
-func CanAcceptRequest(req *livekit.StartEgressRequest) bool {
+func CanAcceptRequest(req *livekit.StartEgressRequest, cpuCostConfig config.CPUCostConfig) bool {
 	accept := false
 	available := idleCPUs.Load() - pendingCPUs.Load()
 
 	switch req.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
-		accept = available > minIdleRoomComposite
+		accept = available > cpuCostConfig.RoomCompositeCpuCost
 	case *livekit.StartEgressRequest_TrackComposite:
-		accept = available > minIdleTrackComposite
+		accept = available > cpuCostConfig.TrackCompositeCpuCost
 	case *livekit.StartEgressRequest_Track:
-		accept = available > minIdleTrack
+		accept = available > cpuCostConfig.TrackCpuCost
 	}
 
 	logger.Debugw("cpu request", "accepted", accept, "availableCPUs", available, "numCPUs", runtime.NumCPU())
 	return accept
 }
 
-func AcceptRequest(req *livekit.StartEgressRequest) {
+func AcceptRequest(req *livekit.StartEgressRequest, cpuCostConfig config.CPUCostConfig) {
 	var cpuHold float64
 	switch req.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
-		cpuHold = minIdleRoomComposite
+		cpuHold = cpuCostConfig.RoomCompositeCpuCost
 	case *livekit.StartEgressRequest_TrackComposite:
-		cpuHold = minIdleTrackComposite
+		cpuHold = cpuCostConfig.TrackCompositeCpuCost
 	case *livekit.StartEgressRequest_Track:
-		cpuHold = minIdleTrack
+		cpuHold = cpuCostConfig.TrackCpuCost
 	}
 
 	pendingCPUs.Add(cpuHold)
