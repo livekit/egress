@@ -4,16 +4,15 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/livekit/egress/pkg/config"
-
 	"github.com/frostbyte73/go-throttle"
 	"github.com/mackerelio/go-osstat/cpu"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
-	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/egress/pkg/config"
 )
 
 var (

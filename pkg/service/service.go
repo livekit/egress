@@ -101,8 +101,6 @@ func (s *Service) Run() error {
 			return nil
 
 		case msg := <-requests.Channel():
-			logger.Debugw("request received")
-
 			req := &livekit.StartEgressRequest{}
 			if err = proto.Unmarshal(requests.Payload(msg), req); err != nil {
 				logger.Errorw("malformed request", err)
@@ -142,13 +140,21 @@ func (s *Service) isIdle() bool {
 }
 
 func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
+	args := []interface{}{
+		"egressID", req.EgressId,
+		"requestID", req.RequestId,
+		"senderID", req.SenderId,
+	}
+	logger.Debugw("request received", args...)
+
 	// check request time
 	if time.Since(time.Unix(0, req.SentAt)) >= egress.RequestExpiration {
 		return false
 	}
 
 	if s.handlingRoomComposite.Load() {
-		logger.Debugw("rejecting request", "reason", "already handling room composite")
+		args = append(args, "reason", "already handling room composite")
+		logger.Debugw("rejecting request", args...)
 		return false
 	}
 
@@ -157,30 +163,31 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	case *livekit.StartEgressRequest_RoomComposite:
 		// limit to one web composite at a time for now
 		if !s.isIdle() {
-			logger.Debugw("rejecting request", "reason", "already recording")
+			args = append(args, "reason", "already recording")
+			logger.Debugw("rejecting request", args...)
 			return false
 		}
 	default:
 		// continue
 	}
 
-	logger.Infow("EGRESS_REQUEST: ", "egressRequest", req.String())
 	if !sysload.CanAcceptRequest(req) {
-		logger.Debugw("rejecting request", "reason", "not enough cpu")
+		args = append(args, "reason", "not enough cpu")
+		logger.Debugw("rejecting request", args...)
 		return false
 	}
 
 	// claim request
 	claimed, err := s.rpcServer.ClaimRequest(context.Background(), req)
 	if err != nil {
-		logger.Errorw("could not claim request", err)
+		logger.Errorw("could not claim request", err, args...)
 		return false
 	} else if !claimed {
 		return false
 	}
 
 	sysload.AcceptRequest(req)
-	logger.Debugw("request claimed", "egressID", req.EgressId)
+	logger.Infow("request claimed", args...)
 
 	return true
 }
