@@ -86,8 +86,12 @@ func NewConfig(confString string) (*Config, error) {
 			Bucket:    conf.S3.Bucket,
 		}
 	} else if conf.GCP != nil {
+		var credentials []byte
+		if conf.GCP.CredentialsJSON != "" {
+			credentials = []byte(conf.GCP.CredentialsJSON)
+		}
 		conf.FileUpload = &livekit.GCPUpload{
-			Credentials: []byte(conf.GCP.CredentialsJSON),
+			Credentials: credentials,
 			Bucket:      conf.GCP.Bucket,
 		}
 	} else if conf.Azure != nil {
