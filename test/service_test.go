@@ -60,17 +60,12 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	}
 
 	// send start request
-	egressID := utils.NewGuid(utils.EgressPrefix)
 	filename := fmt.Sprintf("service-%v.mp4", time.Now().Unix())
-	token, err := egress.BuildEgressToken(egressID, conf.ApiKey, conf.ApiSecret, room.Name)
-	require.NoError(t, err)
 
 	filepath := getFilePath(conf.Config, filename)
 	info, err := rpcClient.SendRequest(context.Background(), &livekit.StartEgressRequest{
-		EgressId: egressID,
-		RoomId:   room.SID,
-		Token:    token,
-		WsUrl:    conf.WsUrl,
+		RoomId: room.SID,
+		WsUrl:  conf.WsUrl,
 		Request: &livekit.StartEgressRequest_RoomComposite{
 			RoomComposite: &livekit.RoomCompositeEgressRequest{
 				RoomName: room.Name,
@@ -87,9 +82,11 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	// check returned egress info
 	require.NoError(t, err)
 	require.Empty(t, info.Error)
-	require.Equal(t, egressID, info.EgressId)
+	require.NotEmpty(t, info.EgressId)
 	require.Equal(t, room.SID, info.RoomId)
 	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
+
+	egressID := info.EgressId
 
 	// check status
 	if conf.HealthPort != 0 {
