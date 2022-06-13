@@ -1,7 +1,6 @@
 package sysload
 
 import (
-	"github.com/livekit/egress/pkg/config"
 	"runtime"
 	"time"
 
@@ -10,9 +9,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
-	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/egress/pkg/config"
 )
 
 var (
@@ -21,21 +21,24 @@ var (
 	numCPUs         = float64(runtime.NumCPU())
 	warningThrottle = throttle.New(time.Minute)
 
-	promCPULoad prometheus.Gauge
+	promCPULoad   prometheus.Gauge
+	cpuCostConfig config.CPUCostConfig
 )
 
-func Init(nodeID string, close chan struct{}, isAvailable func() float64) {
+func Init(conf *config.Config, close chan struct{}, isAvailable func() float64) {
+	cpuCostConfig = conf.CPUCost
+
 	promCPULoad = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   "livekit",
 		Subsystem:   "node",
 		Name:        "cpu_load",
-		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": "EGRESS"},
+		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "node_type": "EGRESS"},
 	})
 	promNodeAvailable := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace:   "livekit",
 		Subsystem:   "egress",
 		Name:        "available",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": conf.NodeID},
 	}, isAvailable)
 
 	prometheus.MustRegister(promCPULoad)
@@ -73,7 +76,7 @@ func GetCPULoad() float64 {
 	return (numCPUs - idleCPUs.Load()) / numCPUs * 100
 }
 
-func CanAcceptRequest(req *livekit.StartEgressRequest, cpuCostConfig config.CPUCostConfig) bool {
+func CanAcceptRequest(req *livekit.StartEgressRequest) bool {
 	accept := false
 	available := idleCPUs.Load() - pendingCPUs.Load()
 
@@ -90,7 +93,7 @@ func CanAcceptRequest(req *livekit.StartEgressRequest, cpuCostConfig config.CPUC
 	return accept
 }
 
-func AcceptRequest(req *livekit.StartEgressRequest, cpuCostConfig config.CPUCostConfig) {
+func AcceptRequest(req *livekit.StartEgressRequest) {
 	var cpuHold float64
 	switch req.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
