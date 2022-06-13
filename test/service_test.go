@@ -45,7 +45,7 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	t.Cleanup(func() { svc.Stop(true) })
 
 	// subscribe to result channel
-	sub, err := rpcClient.UpdateSubscription(context.Background())
+	sub, err := rpcClient.GetUpdateChannel(context.Background())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sub.Close() })
 
