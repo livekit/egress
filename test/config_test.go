@@ -1,13 +1,17 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"testing"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/egress/pkg/config"
 )
@@ -78,4 +82,16 @@ func getTestConfig(t *testing.T) *testConfig {
 
 	require.NoError(t, os.Setenv("GST_DEBUG", fmt.Sprint(tc.GstDebug)))
 	return tc
+}
+
+func getRedisClient(conf *config.Config) (*redis.Client, error) {
+	logger.Infow("connecting to redis", "addr", conf.Redis.Address)
+	rc := redis.NewClient(&redis.Options{
+		Addr:     conf.Redis.Address,
+		Username: conf.Redis.Username,
+		Password: conf.Redis.Password,
+		DB:       conf.Redis.DB,
+	})
+	err := rc.Ping(context.Background()).Err()
+	return rc, err
 }

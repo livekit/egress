@@ -13,13 +13,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
 
-	"github.com/livekit/egress/pkg/messaging"
+	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/service"
 )
 
@@ -32,11 +31,13 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 		t.Cleanup(func() { _ = room.LocalParticipant.UnpublishTrack(videoTrackID) })
 	}
 
-	bus, err := messaging.NewMessageBus(conf.Config)
+	rc, err := getRedisClient(conf.Config)
 	require.NoError(t, err)
+	rpcServer := egress.NewRedisRPCServer(rc)
+	rpcClient := egress.NewRedisRPCClient("egress_test", rc)
 
 	// start service
-	svc := service.NewService(conf.Config, bus)
+	svc := service.NewService(conf.Config, rpcServer)
 	go func() {
 		err := svc.Run()
 		require.NoError(t, err)
@@ -44,7 +45,7 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	t.Cleanup(func() { svc.Stop(true) })
 
 	// subscribe to result channel
-	sub, err := bus.Subscribe(context.Background(), egress.ResultsChannel)
+	sub, err := rpcClient.UpdateSubscription(context.Background())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sub.Close() })
 
@@ -65,7 +66,7 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	require.NoError(t, err)
 
 	filepath := getFilePath(conf.Config, filename)
-	info, err := egress.SendRequest(context.Background(), bus, &livekit.StartEgressRequest{
+	info, err := rpcClient.SendRequest(context.Background(), &livekit.StartEgressRequest{
 		EgressId: egressID,
 		RoomId:   room.SID,
 		Token:    token,
@@ -107,7 +108,7 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	time.Sleep(time.Second * 5)
 
 	// send stop request
-	info, err = egress.SendRequest(context.Background(), bus, &livekit.EgressRequest{
+	info, err = rpcClient.SendRequest(context.Background(), &livekit.EgressRequest{
 		EgressId: egressID,
 		Request: &livekit.EgressRequest_Stop{
 			Stop: &livekit.StopEgressRequest{

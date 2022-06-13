@@ -19,18 +19,17 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/sysload"
 )
 
 const shutdownTimer = time.Second * 30
 
 type Service struct {
-	ctx  context.Context
-	conf *config.Config
-	bus  utils.MessageBus
+	conf      *config.Config
+	rpcServer egress.RPCServer
 
 	promServer *http.Server
 
@@ -44,12 +43,11 @@ type process struct {
 	cmd *exec.Cmd
 }
 
-func NewService(conf *config.Config, bus utils.MessageBus) *Service {
+func NewService(conf *config.Config, rpcServer egress.RPCServer) *Service {
 	s := &Service{
-		ctx:      context.Background(),
-		conf:     conf,
-		bus:      bus,
-		shutdown: make(chan struct{}),
+		conf:      conf,
+		rpcServer: rpcServer,
+		shutdown:  make(chan struct{}),
 	}
 
 	if conf.PrometheusPort > 0 {
@@ -82,14 +80,13 @@ func (s *Service) Run() error {
 		return 0
 	})
 
-	requests, err := s.bus.Subscribe(s.ctx, egress.StartChannel)
+	requests, err := s.rpcServer.GetRequestChannel(context.Background())
 	if err != nil {
 		return err
 	}
 
 	defer func() {
 		_ = requests.Close()
-		_ = s.bus.Close()
 	}()
 
 	logger.Debugw("service ready")
@@ -113,6 +110,13 @@ func (s *Service) Run() error {
 			}
 
 			if s.acceptRequest(req) {
+				// validate before launching handler
+				pipelineParams, err := params.GetPipelineParams(s.conf, req)
+				s.sendResponse(req, pipelineParams.Info, err)
+				if err != nil {
+					continue
+				}
+
 				switch req.Request.(type) {
 				case *livekit.StartEgressRequest_RoomComposite:
 					s.handlingRoomComposite.Store(true)
@@ -128,9 +132,18 @@ func (s *Service) Run() error {
 	}
 }
 
+func (s *Service) isIdle() bool {
+	idle := true
+	s.processes.Range(func(key, value interface{}) bool {
+		idle = false
+		return false
+	})
+	return idle
+}
+
 func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	// check request time
-	if time.Since(time.Unix(0, req.SentAt)) >= egress.LockDuration {
+	if time.Since(time.Unix(0, req.SentAt)) >= egress.RequestExpiration {
 		return false
 	}
 
@@ -147,6 +160,8 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 			logger.Debugw("rejecting request", "reason", "already recording")
 			return false
 		}
+	default:
+		// continue
 	}
 
 	if !sysload.CanAcceptRequest(req) {
@@ -155,7 +170,7 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	}
 
 	// claim request
-	claimed, err := s.bus.Lock(s.ctx, egress.RequestChannel(req.EgressId), egress.LockDuration)
+	claimed, err := s.rpcServer.ClaimRequest(context.Background(), req.EgressId)
 	if err != nil {
 		logger.Errorw("could not claim request", err)
 		return false
@@ -169,13 +184,18 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	return true
 }
 
-func (s *Service) isIdle() bool {
-	idle := true
-	s.processes.Range(func(key, value interface{}) bool {
-		idle = false
-		return false
-	})
-	return idle
+func (s *Service) sendResponse(req *livekit.StartEgressRequest, info *livekit.EgressInfo, err error) {
+	if err != nil {
+		logger.Infow("bad request", err,
+			"egressID", info.EgressId,
+			"requestID", req.RequestId,
+			"senderID", req.SenderId,
+		)
+	}
+
+	if err = s.rpcServer.SendResponse(context.Background(), req, info, err); err != nil {
+		logger.Errorw("failed to send response", err)
+	}
 }
 
 func (s *Service) launchHandler(req *livekit.StartEgressRequest) {

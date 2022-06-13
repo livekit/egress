@@ -146,7 +146,13 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	p.Info.StartedAt = time.Now().UnixNano()
 	defer func() {
 		p.Info.EndedAt = time.Now().UnixNano()
-		p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+
+		// update status
+		if p.Info.Error != "" {
+			p.Info.Status = livekit.EgressStatus_EGRESS_FAILED
+		} else if p.Info.Status != livekit.EgressStatus_EGRESS_ABORTED {
+			p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+		}
 	}()
 
 	// wait until room is ready
@@ -155,6 +161,7 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 		select {
 		case <-p.closed:
 			p.in.Close()
+			p.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
 			return p.Info
 		case <-start:
 			// continue
@@ -208,16 +215,17 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 			p.Info.Error = err.Error()
 		}
 	}
-	// Wait for all pending upload jobs to finish
+
+	// wait for all pending upload jobs to finish
 	if p.endedSegments != nil {
 		p.segmentsWg.Wait()
 	}
+
 	if p.playlistWriter != nil {
 		p.playlistWriter.EOS()
-		// Upload the finalized playlist
+		// upload the finalized playlist
 		destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
 		p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
-
 	}
 
 	return p.Info
@@ -253,7 +261,7 @@ func (p *Pipeline) storeFile(localFilePath, requestedPath string, mime params.Ou
 	}
 
 	if err != nil {
-		p.Logger.Errorw("could not upload file. Deleting", err, "location", location)
+		p.Logger.Errorw("could not upload file", err, "location", location)
 		err = errors.ErrUploadFailed(location, err)
 	}
 	if deleteFile {
@@ -313,9 +321,9 @@ func (p *Pipeline) enqueueSegmentUpload(segmentPath string, endTime int64) error
 	case p.endedSegments <- segmentUpdate{localPath: segmentPath, endTime: endTime}:
 		return nil
 	default:
-		err := fmt.Errorf("Segment upload job queue is full")
+		err := errors.New("segment upload job queue is full")
 
-		p.Logger.Errorw("Failed uploading segment", err)
+		p.Logger.Errorw("Failed to upload segment", err)
 		p.segmentsWg.Done()
 		return errors.ErrUploadFailed(segmentPath, err)
 	}
@@ -553,7 +561,7 @@ func getSegmentParamsFromGstStructure(s *gst.Structure) (path string, time int64
 	}
 	path, ok := loc.(string)
 	if !ok {
-		return "", 0, fmt.Errorf("Invalid type for location")
+		return "", 0, errors.New("invalid type for location")
 	}
 
 	t, err := s.GetValue(FragmentRunningTime)
@@ -562,7 +570,7 @@ func getSegmentParamsFromGstStructure(s *gst.Structure) (path string, time int64
 	}
 	ti, ok := t.(uint64)
 	if !ok {
-		return "", 0, fmt.Errorf("Invalid type for time")
+		return "", 0, errors.New("invalid type for time")
 	}
 
 	return path, int64(ti), nil
@@ -609,6 +617,7 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 		}
 		p.removed[element] = true
 		return err, true
+
 	case errors.GErrFailedToStart:
 		// returned after an added rtmp sink failed to start
 		// should be preceded by a GErrNoURI on the same sink
@@ -617,6 +626,7 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 			p.Logger.Errorw("element failed to start", err)
 		}
 		return err, handled
+
 	case errors.GErrStreamingStopped:
 		// returned by queue after rtmp sink could not connect
 		// should be preceded by a GErrCouldNotConnect on associated sink
@@ -628,6 +638,7 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 			p.Logger.Errorw("streaming sink stopped", err)
 		}
 		return err, handled
+
 	default:
 		// input failure or file write failure. Fatal
 		p.Logger.Errorw("pipeline error", err, "debug", gErr.DebugString())

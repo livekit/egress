@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/grafov/m3u8"
+
 	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
@@ -44,11 +45,11 @@ func NewPlaylistWriter(p *params.Params) (*PlaylistWriter, error) {
 
 func (w *PlaylistWriter) StartSegment(filepath string, startTime int64) error {
 	if filepath == "" {
-		return fmt.Errorf("Invalid Filename")
+		return fmt.Errorf("invalid Filename")
 	}
 
 	if startTime < 0 {
-		return fmt.Errorf("Invalid Start Timestamp")
+		return fmt.Errorf("invalid Start Timestamp")
 	}
 
 	k := getFilenameFromFilePath(filepath)
@@ -56,7 +57,7 @@ func (w *PlaylistWriter) StartSegment(filepath string, startTime int64) error {
 	w.openSegmentsLock.Lock()
 	defer w.openSegmentsLock.Unlock()
 	if _, ok := w.openSegmentsStartTime[k]; ok {
-		return fmt.Errorf("Segment with this name already started")
+		return fmt.Errorf("segment with this name already started")
 	}
 
 	w.openSegmentsStartTime[k] = startTime
@@ -66,11 +67,11 @@ func (w *PlaylistWriter) StartSegment(filepath string, startTime int64) error {
 
 func (w *PlaylistWriter) EndSegment(filepath string, endTime int64) error {
 	if filepath == "" {
-		return fmt.Errorf("Invalid Filename")
+		return fmt.Errorf("invalid filepath")
 	}
 
 	if endTime <= w.currentItemStartTimestamp {
-		return fmt.Errorf("Segment end time before start time")
+		return fmt.Errorf("segment end time before start time")
 	}
 
 	k := getFilenameFromFilePath(filepath)
@@ -80,7 +81,7 @@ func (w *PlaylistWriter) EndSegment(filepath string, endTime int64) error {
 
 	t, ok := w.openSegmentsStartTime[k]
 	if !ok {
-		return fmt.Errorf("No open segment with the name %s", k)
+		return fmt.Errorf("no open segment with the name %s", k)
 	}
 	delete(w.openSegmentsStartTime, k)
 
