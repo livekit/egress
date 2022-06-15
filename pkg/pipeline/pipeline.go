@@ -1,8 +1,8 @@
 package pipeline
 
 import (
-	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -30,10 +30,12 @@ const (
 	eosTimeout        = time.Second * 15
 	maxPendingUploads = 100
 
-	FragmentOpenedMessage = "splitmuxsink-fragment-opened"
-	FragmentClosedMessage = "splitmuxsink-fragment-closed"
-	FragmentLocation      = "location"
-	FragmentRunningTime   = "running-time"
+	fragmentOpenedMessage = "splitmuxsink-fragment-opened"
+	fragmentClosedMessage = "splitmuxsink-fragment-closed"
+	fragmentLocation      = "location"
+	fragmentRunningTime   = "running-time"
+
+	elementGstRtmp2Sink = "GstRtmp2Sink"
 )
 
 type Pipeline struct {
@@ -49,7 +51,7 @@ type Pipeline struct {
 	mu             sync.Mutex
 	playing        bool
 	startedAt      map[string]int64
-	removed        map[string]bool
+	streamErrors   map[string]chan error
 	closed         chan struct{}
 	eosTimer       *time.Timer
 	playlistWriter *sink.PlaylistWriter
@@ -129,7 +131,7 @@ func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 		out:            out,
 		playlistWriter: playlistWriter,
 		startedAt:      make(map[string]int64),
-		removed:        make(map[string]bool),
+		streamErrors:   make(map[string]chan error),
 		closed:         make(chan struct{}),
 	}, nil
 }
@@ -247,23 +249,26 @@ func (p *Pipeline) storeFile(localFilePath, requestedPath string, mime params.Ou
 		location = "S3"
 		p.Logger.Debugw("uploading to s3")
 		destinationUrl, err = sink.UploadS3(u, localFilePath, requestedPath, mime)
+
 	case *livekit.GCPUpload:
 		location = "GCP"
 		p.Logger.Debugw("uploading to gcp")
 		destinationUrl, err = sink.UploadGCP(u, localFilePath, requestedPath, mime)
+
 	case *livekit.AzureBlobUpload:
 		location = "Azure"
 		p.Logger.Debugw("uploading to azure")
 		destinationUrl, err = sink.UploadAzure(u, localFilePath, requestedPath, mime)
+
 	default:
 		destinationUrl = requestedPath
 		deleteFile = false
 	}
-
 	if err != nil {
 		p.Logger.Errorw("could not upload file", err, "location", location)
 		err = errors.ErrUploadFailed(location, err)
 	}
+
 	if deleteFile {
 		if err = os.Remove(localFilePath); err != nil {
 			p.Logger.Errorw("could not delete file", err)
@@ -340,37 +345,78 @@ func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
 		}
 	}
 
+	var wg sync.WaitGroup
+	var errMu sync.Mutex
+	errs := make([]string, 0)
+
 	now := time.Now().UnixNano()
 	for _, url := range req.AddOutputUrls {
 		if err := p.out.AddSink(url); err != nil {
-			return err
+			errMu.Lock()
+			errs = append(errs, err.Error())
+			errMu.Unlock()
+			continue
 		}
 
-		streamInfo := &livekit.StreamInfo{Url: url}
-
+		errChan := make(chan error, 1)
 		p.mu.Lock()
-		p.startedAt[url] = now
-		p.StreamInfo[url] = streamInfo
+		p.streamErrors[url] = errChan
 		p.mu.Unlock()
 
-		stream := p.Info.GetStream()
-		stream.Info = append(stream.Info, streamInfo)
+		wg.Add(1)
+		go func(url string, errChan chan error) {
+			defer wg.Done()
+
+			select {
+			case err := <-errChan:
+				errMu.Lock()
+				errs = append(errs, err.Error())
+				errMu.Unlock()
+
+				p.mu.Lock()
+				delete(p.streamErrors, url)
+				p.mu.Unlock()
+
+			case <-time.After(time.Second):
+				p.mu.Lock()
+				delete(p.streamErrors, url)
+				streamInfo := &livekit.StreamInfo{Url: url}
+				p.startedAt[url] = now
+				p.StreamInfo[url] = streamInfo
+				p.Info.GetStream().Info = append(p.Info.GetStream().Info, streamInfo)
+				p.mu.Unlock()
+			}
+		}(url, errChan)
 	}
 
 	for _, url := range req.RemoveOutputUrls {
+		p.mu.Lock()
+		sendEOS := len(p.startedAt) == 1
+		p.mu.Unlock()
+		if sendEOS {
+			p.SendEOS()
+			continue
+		}
+
 		if err := p.out.RemoveSink(url); err != nil {
-			return err
+			errMu.Lock()
+			errs = append(errs, err.Error())
+			errMu.Unlock()
+			continue
 		}
 
 		p.mu.Lock()
 		startedAt := p.startedAt[url]
 		p.StreamInfo[url].Duration = now - startedAt
-
 		delete(p.startedAt, url)
 		delete(p.StreamInfo, url)
 		p.mu.Unlock()
 	}
 
+	wg.Wait()
+	if len(errs) > 0 {
+		return errors.New(strings.Join(errs, "\n"))
+	}
 	return nil
 }
 
@@ -513,7 +559,7 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 		s := msg.GetStructure()
 		if s != nil {
 			switch s.Name() {
-			case FragmentOpenedMessage:
+			case fragmentOpenedMessage:
 				path, t, err := getSegmentParamsFromGstStructure(s)
 				if err != nil {
 					p.Logger.Errorw("Failed retrieving parameters from fragment event structure", err)
@@ -530,7 +576,7 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 					}
 				}
 
-			case FragmentClosedMessage:
+			case fragmentClosedMessage:
 				path, t, err := getSegmentParamsFromGstStructure(s)
 				if err != nil {
 					p.Logger.Errorw("Failed registering new segment with playlist writer", err, "location", path, "running time", t)
@@ -555,7 +601,7 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 }
 
 func getSegmentParamsFromGstStructure(s *gst.Structure) (path string, time int64, err error) {
-	loc, err := s.GetValue(FragmentLocation)
+	loc, err := s.GetValue(fragmentLocation)
 	if err != nil {
 		return "", 0, err
 	}
@@ -564,7 +610,7 @@ func getSegmentParamsFromGstStructure(s *gst.Structure) (path string, time int64
 		return "", 0, errors.New("invalid type for location")
 	}
 
-	t, err := s.GetValue(FragmentRunningTime)
+	t, err := s.GetValue(fragmentRunningTime)
 	if err != nil {
 		return "", 0, err
 	}
@@ -600,68 +646,56 @@ func (p *Pipeline) stop() {
 
 // handleError returns true if the error has been handled, false if the pipeline should quit
 func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
-	err := errors.New(gErr.Error())
+	element, name, _ := parseDebugInfo(gErr)
 
-	element, reason, ok := parseDebugInfo(gErr.DebugString())
-	if !ok {
-		p.Logger.Errorw("failed to parse pipeline error", err, "debug", gErr.DebugString())
-		return err, false
-	}
-
-	switch reason {
-	case errors.GErrNoURI, errors.GErrCouldNotConnect:
+	switch {
+	case element == elementGstRtmp2Sink:
 		// bad URI or could not connect. Remove rtmp output
-		if err := p.out.RemoveSinkByName(element); err != nil {
+		url, err := p.out.RemoveSinkByName(name)
+		if err != nil {
 			p.Logger.Errorw("failed to remove sink", err)
 			return err, false
 		}
-		p.removed[element] = true
+
+		err = errors.New(gErr.Error())
+
+		p.mu.Lock()
+		if errChan := p.streamErrors[url]; errChan != nil {
+			errChan <- err
+			delete(p.streamErrors, url)
+		} else if len(p.StreamInfo) == 1 {
+			p.mu.Unlock()
+			return err, false
+		} else {
+			startedAt := p.startedAt[url]
+			p.StreamInfo[url].Duration = time.Now().UnixNano() - startedAt
+			delete(p.startedAt, url)
+			delete(p.StreamInfo, url)
+		}
+
+		p.mu.Unlock()
 		return err, true
-
-	case errors.GErrFailedToStart:
-		// returned after an added rtmp sink failed to start
-		// should be preceded by a GErrNoURI on the same sink
-		handled := p.removed[element]
-		if !handled {
-			p.Logger.Errorw("element failed to start", err)
-		}
-		return err, handled
-
-	case errors.GErrStreamingStopped:
-		// returned by queue after rtmp sink could not connect
-		// should be preceded by a GErrCouldNotConnect on associated sink
-		handled := false
-		if strings.HasPrefix(element, "queue_") {
-			handled = p.removed[fmt.Sprint("sink_", element[6:])]
-		}
-		if !handled {
-			p.Logger.Errorw("streaming sink stopped", err)
-		}
-		return err, handled
 
 	default:
 		// input failure or file write failure. Fatal
-		p.Logger.Errorw("pipeline error", err, "debug", gErr.DebugString())
+		err := errors.New(gErr.Error())
+		p.Logger.Errorw("pipeline error", err,
+			"debug", gErr.DebugString(),
+			"message", gErr.Message(),
+		)
 		return err, false
 	}
 }
 
 // Debug info comes in the following format:
 // file.c(line): method_name (): /GstPipeline:pipeline/GstBin:bin_name/GstElement:element_name:\nError message
-func parseDebugInfo(debug string) (element string, reason string, ok bool) {
-	end := strings.Index(debug, ":\n")
-	if end == -1 {
-		return
-	}
-	start := strings.LastIndex(debug[:end], ":")
-	if start == -1 {
-		return
-	}
-	element = debug[start+1 : end]
-	reason = debug[end+2:]
-	if strings.HasPrefix(reason, errors.GErrCouldNotConnect) {
-		reason = errors.GErrCouldNotConnect
-	}
-	ok = true
+var regExp = regexp.MustCompile("(?s)(.*?)GstPipeline:pipeline\\/GstBin:(.*?)\\/(.*?):([^:]*)(:\n)?(.*)")
+
+func parseDebugInfo(gErr *gst.GError) (element, name, message string) {
+	match := regExp.FindStringSubmatch(gErr.DebugString())
+
+	element = match[3]
+	name = match[4]
+	message = match[6]
 	return
 }
