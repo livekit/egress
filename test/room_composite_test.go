@@ -98,6 +98,7 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	}
 
 	if conf.RunStreamTests {
+		time.Sleep(time.Second * 5)
 		if !t.Run("rtmp-failure", func(t *testing.T) {
 			testStreamFailure(t, conf, videoTestInput)
 		}) {

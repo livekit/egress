@@ -69,6 +69,7 @@ func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 		s.Close()
 		return nil, err
 	}
+
 	if err := s.launchChrome(inputUrl, p.Info.EgressId, p.Display, p.Width, p.Height, conf.Insecure); err != nil {
 		s.logger.Errorw("failed to launch chrome", err, "display", p.Display)
 		s.Close()

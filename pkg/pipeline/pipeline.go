@@ -111,7 +111,7 @@ func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
 			return nil, err
 		}
 		// link bins
-		if err := in.Bin().Link(out.Element()); err != nil {
+		if err = in.Bin().Link(out.Element()); err != nil {
 			return nil, err
 		}
 	}
@@ -647,25 +647,26 @@ func (p *Pipeline) stop() {
 // handleError returns true if the error has been handled, false if the pipeline should quit
 func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 	element, name, _ := parseDebugInfo(gErr)
+	err := errors.New(gErr.Error())
 
 	switch {
 	case element == elementGstRtmp2Sink:
-		// bad URI or could not connect. Remove rtmp output
-		url, err := p.out.RemoveSinkByName(name)
-		if err != nil {
-			p.Logger.Errorw("failed to remove sink", err)
+		if !p.playing {
+			p.Logger.Errorw("could not connect to rtmp output", err)
 			return err, false
 		}
 
-		err = errors.New(gErr.Error())
+		// bad URI or could not connect. Remove rtmp output
+		url, removalErr := p.out.RemoveSinkByName(name)
+		if removalErr != nil {
+			p.Logger.Errorw("failed to remove sink", removalErr)
+			return removalErr, false
+		}
 
 		p.mu.Lock()
 		if errChan := p.streamErrors[url]; errChan != nil {
 			errChan <- err
 			delete(p.streamErrors, url)
-		} else if len(p.StreamInfo) == 1 {
-			p.mu.Unlock()
-			return err, false
 		} else {
 			startedAt := p.startedAt[url]
 			p.StreamInfo[url].Duration = time.Now().UnixNano() - startedAt
