@@ -103,7 +103,7 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 		}) {
 			t.FailNow()
 		}
-
+		time.Sleep(time.Second * 5)
 		if !t.Run("room-rtmp", func(t *testing.T) {
 			testRoomCompositeStream(t, conf)
 		}) {
