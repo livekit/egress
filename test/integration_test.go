@@ -215,7 +215,7 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 	}()
 
 	// wait for recorder to start
-	time.Sleep(time.Second * 15)
+	time.Sleep(time.Second * 10)
 
 	// check stream
 	verifyStreams(t, p, streamUrl1)
@@ -225,6 +225,7 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 		EgressId:      req.EgressId,
 		AddOutputUrls: []string{badStreamUrl1, streamUrl2, badStreamUrl2},
 	}))
+	time.Sleep(time.Second)
 	verifyStreams(t, p, streamUrl1, streamUrl2)
 
 	// remove first, check second
