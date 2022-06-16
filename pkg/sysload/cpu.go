@@ -2,6 +2,7 @@ package sysload
 
 import (
 	"runtime"
+	"sort"
 	"time"
 
 	"github.com/frostbyte73/go-throttle"
@@ -9,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -25,7 +27,11 @@ var (
 	cpuCostConfig config.CPUCostConfig
 )
 
-func Init(conf *config.Config, close chan struct{}, isAvailable func() float64) {
+func Init(conf *config.Config, close chan struct{}, isAvailable func() float64) error {
+	if err := checkCPUConfig(conf.CPUCost); err != nil {
+		return err
+	}
+
 	cpuCostConfig = conf.CPUCost
 
 	promCPULoad = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -45,6 +51,62 @@ func Init(conf *config.Config, close chan struct{}, isAvailable func() float64) 
 	prometheus.MustRegister(promNodeAvailable)
 
 	go monitorCPULoad(close)
+	return nil
+}
+
+func checkCPUConfig(costConfig config.CPUCostConfig) error {
+	if costConfig.RoomCompositeCpuCost < 2.5 {
+		logger.Warnw("room composite requirement too low", nil,
+			"config value", costConfig.RoomCompositeCpuCost,
+			"minimum value", 2.5,
+			"recommended value", 3,
+		)
+	}
+	if costConfig.TrackCompositeCpuCost < 1 {
+		logger.Warnw("track composite requirement too low", nil,
+			"config value", costConfig.TrackCompositeCpuCost,
+			"minimum value", 1,
+			"recommended value", 2,
+		)
+	}
+	if costConfig.TrackCpuCost < 0.5 {
+		logger.Warnw("track requirement too low", nil,
+			"config value", costConfig.RoomCompositeCpuCost,
+			"minimum value", 0.5,
+			"recommended value", 1,
+		)
+	}
+
+	requirements := []float64{
+		costConfig.TrackCpuCost,
+		costConfig.TrackCompositeCpuCost,
+		costConfig.RoomCompositeCpuCost,
+	}
+	sort.Float64s(requirements)
+
+	recommendedMinimum := requirements[2]
+	if recommendedMinimum < 3 {
+		recommendedMinimum = 3
+	}
+
+	if numCPUs < requirements[0] {
+		logger.Errorw("not enough cpu", nil,
+			"minimum cpu", requirements[0],
+			"recommended", recommendedMinimum,
+			"available", numCPUs,
+		)
+		return errors.New("not enough cpu")
+	}
+
+	if numCPUs < requirements[2] {
+		logger.Errorw("not enough cpu for some egress types", nil,
+			"minimum cpu", requirements[2],
+			"recommended", recommendedMinimum,
+			"available", numCPUs,
+		)
+	}
+
+	return nil
 }
 
 func monitorCPULoad(close chan struct{}) {

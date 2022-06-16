@@ -73,12 +73,14 @@ func (s *Service) Run() error {
 		}()
 	}
 
-	sysload.Init(s.conf, s.shutdown, func() float64 {
+	if err := sysload.Init(s.conf, s.shutdown, func() float64 {
 		if s.isIdle() {
 			return 1
 		}
 		return 0
-	})
+	}); err != nil {
+		return err
+	}
 
 	requests, err := s.rpcServer.GetRequestChannel(context.Background())
 	if err != nil {
@@ -187,7 +189,7 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	}
 
 	sysload.AcceptRequest(req)
-	logger.Infow("request claimed", args...)
+	logger.Infow("request accepted", args...)
 
 	return true
 }
