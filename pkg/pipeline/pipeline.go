@@ -210,24 +210,37 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	}
 
 	// upload file
-	if p.EgressType == params.EgressTypeFile {
+	switch p.EgressType {
+	case params.EgressTypeFile:
 		var err error
 		p.FileInfo.Location, p.FileInfo.Size, err = p.storeFile(p.Filename, p.Params.Filepath, p.Params.OutputType)
 		if err != nil {
 			p.Info.Error = err.Error()
 		}
-	}
 
-	// wait for all pending upload jobs to finish
-	if p.endedSegments != nil {
-		p.segmentsWg.Wait()
-	}
+		if p.FileUpload != nil {
+			if err = os.RemoveAll(p.Info.EgressId); err != nil {
+				p.Logger.Errorw("could not delete temp dir", err)
+			}
+		}
+	case params.EgressTypeSegmentedFile:
+		// wait for all pending upload jobs to finish
+		if p.endedSegments != nil {
+			p.segmentsWg.Wait()
+		}
 
-	if p.playlistWriter != nil {
-		p.playlistWriter.EOS()
-		// upload the finalized playlist
-		destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
-		p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
+		if p.playlistWriter != nil {
+			p.playlistWriter.EOS()
+			// upload the finalized playlist
+			destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
+			p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
+		}
+
+		if p.FileUpload != nil {
+			if err := os.RemoveAll(p.Info.EgressId); err != nil {
+				p.Logger.Errorw("could not delete temp dir", err)
+			}
+		}
 	}
 
 	return p.Info
@@ -242,8 +255,6 @@ func (p *Pipeline) storeFile(localFilePath, requestedPath string, mime params.Ou
 	}
 
 	var location string
-	deleteFile := true
-
 	switch u := p.FileUpload.(type) {
 	case *livekit.S3Upload:
 		location = "S3"
@@ -262,17 +273,11 @@ func (p *Pipeline) storeFile(localFilePath, requestedPath string, mime params.Ou
 
 	default:
 		destinationUrl = requestedPath
-		deleteFile = false
 	}
+
 	if err != nil {
 		p.Logger.Errorw("could not upload file", err, "location", location)
 		err = errors.ErrUploadFailed(location, err)
-	}
-
-	if deleteFile {
-		if err = os.Remove(localFilePath); err != nil {
-			p.Logger.Errorw("could not delete file", err)
-		}
 	}
 
 	return destinationUrl, size, err
