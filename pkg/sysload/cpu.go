@@ -99,7 +99,7 @@ func checkCPUConfig(costConfig config.CPUCostConfig) error {
 	}
 
 	if numCPUs < requirements[2] {
-		logger.Errorw("not enough cpu for all request types", nil,
+		logger.Errorw("not enough cpu for some egress types", nil,
 			"minimum cpu", requirements[2],
 			"recommended", recommendedMinimum,
 			"available", numCPUs,
