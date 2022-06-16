@@ -90,13 +90,9 @@ func checkCPUConfig(costConfig config.CPUCostConfig) error {
 	}
 
 	if numCPUs < requirements[0] {
-		recommended := requirements[2]
-		if recommended < 3 {
-			recommended = 3
-		}
 		logger.Errorw("not enough cpu", nil,
 			"minimum cpu", requirements[0],
-			"recommended", recommended,
+			"recommended", recommendedMinimum,
 			"available", numCPUs,
 		)
 		return errors.New("not enough cpu")
