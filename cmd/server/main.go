@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
-	"crypto/tls"
 	"net/http"
 	"os"
 	"os/signal"
