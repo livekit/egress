@@ -58,19 +58,22 @@ func checkCPUConfig(costConfig config.CPUCostConfig) error {
 	if costConfig.RoomCompositeCpuCost < 2.5 {
 		logger.Warnw("room composite requirement too low", nil,
 			"config value", costConfig.RoomCompositeCpuCost,
-			"recommended minimum value", 2.5,
+			"minimum value", 2.5,
+			"recommended value", 3,
 		)
 	}
 	if costConfig.TrackCompositeCpuCost < 1 {
 		logger.Warnw("track composite requirement too low", nil,
 			"config value", costConfig.TrackCompositeCpuCost,
-			"recommended minimum value", 1,
+			"minimum value", 1,
+			"recommended value", 2,
 		)
 	}
-	if costConfig.TrackCpuCost < 1 {
+	if costConfig.TrackCpuCost < 0.5 {
 		logger.Warnw("track requirement too low", nil,
 			"config value", costConfig.RoomCompositeCpuCost,
-			"recommended minimum value", 1,
+			"minimum value", 0.5,
+			"recommended value", 1,
 		)
 	}
 
