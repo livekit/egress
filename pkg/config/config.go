@@ -50,6 +50,7 @@ type RedisConfig struct {
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
 	DB       int    `yaml:"db"`
+	UseTLS   bool   `yaml:"use_tls"`
 }
 
 type S3Config struct {
