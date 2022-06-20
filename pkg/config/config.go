@@ -35,12 +35,11 @@ type Config struct {
 	LogLevel             string `yaml:"log_level"`
 	TemplateBase         string `yaml:"template_base"`
 	Insecure             bool   `yaml:"insecure"`
-	LocalOutputDirectory string `yaml:"local_directory"` // (env LOCAL_DIRECTORY), used both for temporary storage before uplaod and local output
+	LocalOutputDirectory string `yaml:"local_directory"` // used both for temporary storage before uplaod and local output
 
-	S3          *S3Config    `yaml:"s3"`
-	Azure       *AzureConfig `yaml:"azure"`
-	GCP         *GCPConfig   `yaml:"gcp"`
-	LocalOutput *LocalConfig `yaml:"local_output"`
+	S3    *S3Config    `yaml:"s3"`
+	Azure *AzureConfig `yaml:"azure"`
+	GCP   *GCPConfig   `yaml:"gcp"`
 
 	// CPU costs for various egress types
 	CPUCost CPUCostConfig `yaml:"cpu_cost"`
