@@ -542,68 +542,70 @@ func (p *Params) UpdateOutputTypeFromCodecs(fileIdentifier string) error {
 func (p *Params) updateFilename(identifier string) error {
 	ext := FileExtensions[p.OutputType]
 
-	filename := p.Filepath
-	if filename == "" || strings.HasSuffix(filename, "/") {
-		filename = fmt.Sprintf("%s%s-%v%v", filename, identifier, time.Now().String(), ext)
-	} else if !strings.HasSuffix(filename, string(ext)) {
-		filename = filename + string(ext)
+	if p.Filepath == "" || strings.HasSuffix(p.Filepath, "/") {
+		p.Filepath = fmt.Sprintf("%s%s-%v%v", p.Filepath, identifier, time.Now().String(), ext)
+	} else if !strings.HasSuffix(p.Filepath, string(ext)) {
+		p.Filepath = p.Filepath + string(ext)
 	}
-
-	// Update the file path to the generated filename if we changed it above
-	p.Filepath = filename
 
 	// get filename from path
-	idx := strings.LastIndex(filename, "/")
-	if idx > 0 {
-		if p.FileUpload == nil {
-			if err := os.MkdirAll(filename[:idx], os.ModeDir); err != nil {
+	idx := strings.LastIndex(p.Filepath, "/")
+	if p.FileUpload == nil {
+		if idx > 0 {
+			// create local directory
+			if err := os.MkdirAll(p.Filepath[:idx], os.ModeDir); err != nil {
 				return err
 			}
-		} else {
-			filename = filename[idx+1:]
 		}
+		p.Filename = p.Filepath
+	} else {
+		// create temporary directory
+		if err := os.MkdirAll(p.Info.EgressId, os.ModeDir); err != nil {
+			return err
+		}
+		p.Filename = fmt.Sprintf("%s/%s", p.Info.EgressId, p.Filepath[idx+1:])
 	}
 
-	p.Logger.Debugw("writing to file", "filename", filename)
-	p.Filename = filename
-	p.FileInfo.Filename = p.Filepath // FileInfo should contains the path after upload.
+	p.FileInfo.Filename = p.Filename
+	p.Logger.Debugw("writing to file", "filename", p.Filename)
 	return nil
 }
 
 // TODO validate path for escape attempts
+// TODO Fix deletion code
 func (p *Params) updatePrefixAndPlaylist(conf *config.Config, identifier string) error {
-	pathprefix := p.LocalFilePrefix
 	ext := FileExtensions[p.OutputType]
 
-	if pathprefix == "" || strings.HasSuffix(pathprefix, "/") {
-		pathprefix = fmt.Sprintf("%s%s-%v", pathprefix, identifier, time.Now().String())
+	if p.LocalFilePrefix == "" || strings.HasSuffix(p.LocalFilePrefix, "/") {
+		p.LocalFilePrefix = fmt.Sprintf("%s%s-%v", p.LocalFilePrefix, identifier, time.Now().String())
 	}
 
-	p.TargetDirectory, _ = path.Split(pathprefix)
+	p.TargetDirectory, _ = path.Split(p.LocalFilePrefix)
 
-	// Prepend the configuration base directory
-	p.LocalFilePrefix = path.Join(conf.LocalOutputDirectory, pathprefix)
-	p.Logger.Debugw("writing to path", "prefix", p.LocalFilePrefix)
-
-	// get filename from path
-	dir, fileprefix := path.Split(p.LocalFilePrefix)
-	if dir != "" {
-		if p.FileUpload == nil {
-			if err := os.MkdirAll(dir, os.ModeDir); err != nil {
+	dir, filePrefix := path.Split(p.LocalFilePrefix)
+	if p.FileUpload == nil {
+		if dir != nil {
+			if err := os.MkdirAll(filePrefix[dir], os.ModeDir); err != nil {
 				return err
 			}
-		} else {
-			p.LocalFilePrefix = path.Join(conf.LocalOutputDirectory, fileprefix)
 		}
+	} else {
+		// Prepend the configuration base directory and the egress Id
+		outDir := path.Join(conf.LocalOutputDirectory, p.Info.EgressId)
+		if err := os.MkdirAll(outDir, os.ModeDir); err != nil {
+			return err
+		}
+
+		p.LocalFilePrefix = path.Join(outDir, filePrefix)
 	}
+	p.Logger.Debugw("writing to path", "prefix", p.LocalFilePrefix)
 
 	// Playlist path is relative to file prefix. Only keep actual filename if a full path is given
 	_, p.PlaylistFilename = path.Split(p.PlaylistFilename)
 	if p.PlaylistFilename == "" {
 		p.PlaylistFilename = fmt.Sprintf("playlist%s", ext)
 	}
-	// Prepend the fileprefix directory to get the full playlist path
-	dir, _ := path.Split(pathprefix)
+
 	p.PlaylistFilename = path.Join(dir, p.PlaylistFilename)
 	p.SegmentsInfo.PlaylistName = p.GetTargetPathForFilename(p.PlaylistFilename)
 	return nil

@@ -8,7 +8,6 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -17,18 +16,16 @@ import (
 )
 
 type Handler struct {
-	ctx  context.Context
-	conf *config.Config
-	bus  utils.MessageBus
-	kill chan struct{}
+	conf      *config.Config
+	rpcServer egress.RPCServer
+	kill      chan struct{}
 }
 
-func NewHandler(conf *config.Config, bus utils.MessageBus) *Handler {
+func NewHandler(conf *config.Config, rpcServer egress.RPCServer) *Handler {
 	return &Handler{
-		ctx:  context.Background(),
-		conf: conf,
-		bus:  bus,
-		kill: make(chan struct{}),
+		conf:      conf,
+		rpcServer: rpcServer,
+		kill:      make(chan struct{}),
 	}
 }
 
@@ -38,26 +35,24 @@ func (h *Handler) HandleRequest(req *livekit.StartEgressRequest) {
 	info := pipelineParams.Info
 	if err != nil {
 		info.Error = err.Error()
-		info.Status = livekit.EgressStatus_EGRESS_COMPLETE
-		h.sendRPCResponse(req.RequestId, pipelineParams.Info, err)
+		info.Status = livekit.EgressStatus_EGRESS_FAILED
+		h.sendUpdate(info)
 		return
 	}
-
-	h.sendRPCResponse(req.RequestId, pipelineParams.Info, nil)
 
 	// create the pipeline
 	p, err := pipeline.New(h.conf, pipelineParams)
 	if err != nil {
 		info.Error = err.Error()
-		info.Status = livekit.EgressStatus_EGRESS_COMPLETE
-		h.sendEgressUpdate(info)
+		info.Status = livekit.EgressStatus_EGRESS_FAILED
+		h.sendUpdate(info)
 		return
 	}
 
-	p.OnStatusUpdate(h.sendEgressUpdate)
+	p.OnStatusUpdate(h.sendUpdate)
 
 	// subscribe to request channel
-	requests, err := h.bus.Subscribe(h.ctx, egress.RequestChannel(p.GetInfo().EgressId))
+	requests, err := h.rpcServer.EgressSubscription(context.Background(), p.GetInfo().EgressId)
 	if err != nil {
 		return
 	}
@@ -82,7 +77,7 @@ func (h *Handler) HandleRequest(req *livekit.StartEgressRequest) {
 
 		case res := <-result:
 			// recording finished
-			h.sendEgressUpdate(res)
+			h.sendUpdate(res)
 			return
 
 		case msg := <-requests.Channel():
@@ -104,38 +99,41 @@ func (h *Handler) HandleRequest(req *livekit.StartEgressRequest) {
 				err = errors.ErrInvalidRPC
 			}
 
-			h.sendRPCResponse(request.RequestId, p.GetInfo(), err)
+			h.sendResponse(request, p.GetInfo(), err)
 		}
 	}
 }
 
-func (h *Handler) sendRPCResponse(requestID string, info *livekit.EgressInfo, err error) {
-	res := &livekit.EgressResponse{Info: info}
-	args := []interface{}{"egressID", info.EgressId, "requestId", requestID}
+func (h *Handler) sendUpdate(info *livekit.EgressInfo) {
+	switch info.Status {
+	case livekit.EgressStatus_EGRESS_FAILED:
+		logger.Errorw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
+	case livekit.EgressStatus_EGRESS_COMPLETE:
+		logger.Infow("egress completed", "egressID", info.EgressId)
+	default:
+		logger.Infow("egress updated", "egressID", info.EgressId, "status", info.Status)
+	}
+
+	if err := h.rpcServer.SendUpdate(context.Background(), info); err != nil {
+		logger.Errorw("failed to send update", err)
+	}
+}
+
+func (h *Handler) sendResponse(req *livekit.EgressRequest, info *livekit.EgressInfo, err error) {
+	args := []interface{}{
+		"egressID", info.EgressId,
+		"requestID", req.RequestId,
+		"senderID", req.SenderId,
+	}
 
 	if err != nil {
-		logger.Errorw("error handling request", err, args...)
-		res.Error = err.Error()
+		logger.Errorw("request failed", err, args...)
 	} else {
 		logger.Debugw("request handled", args...)
 	}
 
-	if err = h.bus.Publish(h.ctx, egress.ResponseChannel(requestID), res); err != nil {
-		logger.Errorw("could not send response", err)
-	}
-}
-
-func (h *Handler) sendEgressUpdate(info *livekit.EgressInfo) {
-	if info.Error != "" {
-		logger.Errorw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
-	} else if info.Status == livekit.EgressStatus_EGRESS_COMPLETE {
-		logger.Infow("egress completed successfully", "egressID", info.EgressId)
-	} else {
-		logger.Infow("egress updated", "egressID", info.EgressId, "status", info.Status)
-	}
-
-	if err := h.bus.Publish(h.ctx, egress.ResultsChannel, info); err != nil {
-		logger.Errorw("failed to send egress update", err)
+	if err := h.rpcServer.SendResponse(context.Background(), req, info, err); err != nil {
+		logger.Errorw("failed to send response", err, args...)
 	}
 }
 

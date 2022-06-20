@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -8,16 +10,18 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/urfave/cli/v2"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/messaging"
-	"github.com/livekit/egress/pkg/service"
-	"github.com/livekit/egress/version"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/service"
+	"github.com/livekit/egress/version"
 )
 
 func main() {
@@ -68,11 +72,13 @@ func runService(c *cli.Context) error {
 		return err
 	}
 
-	bus, err := messaging.NewMessageBus(conf)
+	rc, err := getRedisClient(conf)
 	if err != nil {
 		return err
 	}
-	svc := service.NewService(conf, bus)
+
+	rpcServer := egress.NewRedisRPCServer(rc)
+	svc := service.NewService(conf, rpcServer)
 
 	if conf.HealthPort != 0 {
 		go func() {
@@ -106,7 +112,7 @@ func runHandler(c *cli.Context) error {
 		return err
 	}
 
-	bus, err := messaging.NewMessageBus(conf)
+	rc, err := getRedisClient(conf)
 	if err != nil {
 		return err
 	}
@@ -118,7 +124,8 @@ func runHandler(c *cli.Context) error {
 		return err
 	}
 
-	handler := service.NewHandler(conf, bus)
+	rpcHandler := egress.NewRedisRPCServer(rc)
+	handler := service.NewHandler(conf, rpcHandler)
 
 	killChan := make(chan os.Signal, 1)
 	signal.Notify(killChan, syscall.SIGINT)
@@ -148,4 +155,24 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 	}
 
 	return config.NewConfig(configBody)
+}
+
+func getRedisClient(conf *config.Config) (*redis.Client, error) {
+	logger.Infow("connecting to redis", "addr", conf.Redis.Address)
+
+	var tlsConfig *tls.Config
+	if conf.Redis.UseTLS {
+		tlsConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+	}
+	rc := redis.NewClient(&redis.Options{
+		Addr:      conf.Redis.Address,
+		Username:  conf.Redis.Username,
+		Password:  conf.Redis.Password,
+		DB:        conf.Redis.DB,
+		TLSConfig: tlsConfig,
+	})
+	err := rc.Ping(context.Background()).Err()
+	return rc, err
 }

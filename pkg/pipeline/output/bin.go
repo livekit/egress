@@ -145,12 +145,12 @@ func (b *Bin) RemoveSink(url string) error {
 	return nil
 }
 
-func (b *Bin) RemoveSinkByName(name string) error {
+func (b *Bin) RemoveSinkByName(name string) (string, error) {
 	for url, sink := range b.sinks {
 		if sink.queue.GetName() == name || sink.sink.GetName() == name {
-			return b.RemoveSink(url)
+			return url, b.RemoveSink(url)
 		}
 	}
 
-	return errors.ErrStreamNotFound
+	return "", errors.ErrStreamNotFound
 }

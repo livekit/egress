@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
 
 	"github.com/livekit/egress/pkg/config"
@@ -27,6 +28,8 @@ const (
 	staticTestInput = "https://www.livekit.io"
 	streamUrl1      = "rtmp://localhost:1935/live/stream1"
 	streamUrl2      = "rtmp://localhost:1935/live/stream2"
+	badStreamUrl1   = "rtmp://sfo.contribute.live-video.net/app/fake1"
+	badStreamUrl2   = "rtmp://localhost:1934/live/stream2"
 	muteDuration    = time.Second * 10
 )
 
@@ -212,16 +215,17 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 	}()
 
 	// wait for recorder to start
-	time.Sleep(time.Second * 15)
+	time.Sleep(time.Second * 10)
 
 	// check stream
 	verifyStreams(t, p, streamUrl1)
 
 	// add another, check both
-	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
+	require.Error(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
 		EgressId:      req.EgressId,
-		AddOutputUrls: []string{streamUrl2},
+		AddOutputUrls: []string{badStreamUrl1, streamUrl2, badStreamUrl2},
 	}))
+	time.Sleep(time.Second)
 	verifyStreams(t, p, streamUrl1, streamUrl2)
 
 	// remove first, check second
@@ -246,6 +250,39 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 		require.NotEmpty(t, info.Url)
 		require.NotZero(t, info.Duration)
 	}
+}
+
+func testStreamFailure(t *testing.T, conf *testConfig, customUrl string) {
+	req := &livekit.StartEgressRequest{
+		EgressId:  utils.NewGuid(utils.EgressPrefix),
+		RequestId: utils.NewGuid(utils.RPCPrefix),
+		SentAt:    time.Now().Unix(),
+		Request: &livekit.StartEgressRequest_RoomComposite{
+			RoomComposite: &livekit.RoomCompositeEgressRequest{
+				RoomName: conf.RoomName,
+				Layout:   "speaker-dark",
+				Output: &livekit.RoomCompositeEgressRequest_Stream{
+					Stream: &livekit.StreamOutput{
+						Protocol: livekit.StreamProtocol_RTMP,
+						Urls:     []string{badStreamUrl1},
+					},
+				},
+			},
+		},
+	}
+
+	p, err := params.GetPipelineParams(conf.Config, req)
+	require.NoError(t, err)
+	if customUrl != "" {
+		p.CustomInputURL = customUrl
+	}
+
+	rec, err := pipeline.New(conf.Config, p)
+	require.NoError(t, err)
+
+	info := rec.Run()
+	require.NotEmpty(t, info.Error)
+	require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
 }
 
 func runSegmentsTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, playlistPath string) {

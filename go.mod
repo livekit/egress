@@ -1,9 +1,8 @@
 module github.com/livekit/egress
 
-//replace github.com/tinyzimmer/go-gst => /Users/bigben/go/src/github.com/go-gst
-replace github.com/tinyzimmer/go-gst v0.2.32 => github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427
-
 go 1.17
+
+replace github.com/tinyzimmer/go-gst v0.2.32 => github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427
 
 require (
 	cloud.google.com/go/storage v1.10.0
@@ -16,13 +15,13 @@ require (
 	github.com/go-logr/zapr v1.2.3
 	github.com/go-redis/redis/v8 v8.11.4
 	github.com/gorilla/websocket v1.4.2
-	github.com/livekit/livekit-server v0.15.8-0.20220513092052-fa53da18e700
-	github.com/livekit/protocol v0.13.3-0.20220607202602-b8779c1fd4fe
+	github.com/grafov/m3u8 v0.11.1
+	github.com/livekit/livekit-server v1.0.2-0.20220613191817-4be096cf7405
+	github.com/livekit/protocol v0.13.3-0.20220613185908-e66f32ebb7f5
 	github.com/livekit/server-sdk-go v0.10.1
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.13
-	github.com/pion/webrtc/v3 v3.1.39
-	github.com/pkg/errors v0.9.1
+	github.com/pion/webrtc/v3 v3.1.40
 	github.com/prometheus/client_golang v1.11.0
 	github.com/stretchr/testify v1.7.1
 	github.com/tinyzimmer/go-glib v0.0.25
@@ -32,7 +31,7 @@ require (
 	go.uber.org/zap v1.21.0
 	google.golang.org/api v0.70.0
 	google.golang.org/protobuf v1.27.1
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+	gopkg.in/yaml.v3 v3.0.0
 )
 
 require (
@@ -59,18 +58,18 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
-	github.com/grafov/m3u8 v0.11.1 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b // indirect
 	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
+	github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/pion/datachannel v1.5.2 // indirect
-	github.com/pion/dtls/v2 v2.1.4 // indirect
+	github.com/pion/dtls/v2 v2.1.5 // indirect
 	github.com/pion/ice/v2 v2.2.6 // indirect
 	github.com/pion/interceptor v0.1.11 // indirect
 	github.com/pion/logging v0.2.2 // indirect
@@ -79,11 +78,12 @@ require (
 	github.com/pion/rtcp v1.2.9 // indirect
 	github.com/pion/sctp v1.8.2 // indirect
 	github.com/pion/sdp/v3 v3.0.5 // indirect
-	github.com/pion/srtp/v2 v2.0.7 // indirect
+	github.com/pion/srtp/v2 v2.0.9 // indirect
 	github.com/pion/stun v0.3.5 // indirect
 	github.com/pion/transport v0.13.0 // indirect
 	github.com/pion/turn/v2 v2.0.8 // indirect
 	github.com/pion/udp v0.1.1 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.26.0 // indirect
@@ -93,10 +93,10 @@ require (
 	github.com/twitchtv/twirp v8.1.1+incompatible // indirect
 	go.opencensus.io v0.23.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.0.0-20220511200225-c6db032c6c88 // indirect
-	golang.org/x/net v0.0.0-20220425223048-2871e0cb64e4 // indirect
+	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e // indirect
+	golang.org/x/net v0.0.0-20220526153639-5463443f8c37 // indirect
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8 // indirect
-	golang.org/x/sys v0.0.0-20220503163025-988cb79eb6c6 // indirect
+	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f // indirect
 	google.golang.org/appengine v1.6.7 // indirect

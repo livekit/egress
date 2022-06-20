@@ -11,11 +11,6 @@ var (
 	ErrGhostPadFailed      = errors.New("failed to add ghost pad to bin")
 	ErrStreamAlreadyExists = errors.New("stream already exists")
 	ErrStreamNotFound      = errors.New("stream not found")
-
-	GErrNoURI            = "No URI set before starting"
-	GErrFailedToStart    = "Failed to start"
-	GErrCouldNotConnect  = "Could not connect to RTMP stream"
-	GErrStreamingStopped = "streaming stopped, reason error (-5)"
 )
 
 func New(err string) error {
