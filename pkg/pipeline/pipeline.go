@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"os"
+	"path"
 	"regexp"
 	"strings"
 	"sync"
@@ -219,8 +220,11 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 		}
 
 		if p.FileUpload != nil {
-			if err = os.RemoveAll(p.Info.EgressId); err != nil {
-				p.Logger.Errorw("could not delete temp dir", err)
+			dir, _ := path.Split(p.Filename)
+			if dir != "" {
+				if err = os.RemoveAll(dir); err != nil {
+					p.Logger.Errorw("could not delete temp dir", err)
+				}
 			}
 		}
 	case params.EgressTypeSegmentedFile:
@@ -237,8 +241,11 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 		}
 
 		if p.FileUpload != nil {
-			if err := os.RemoveAll(p.Info.EgressId); err != nil {
-				p.Logger.Errorw("could not delete temp dir", err)
+			dir, _ := path.Split(p.PlaylistFilename)
+			if dir != "" {
+				if err := os.RemoveAll(dir); err != nil {
+					p.Logger.Errorw("could not delete temp dir", err)
+				}
 			}
 		}
 	}

@@ -569,7 +569,7 @@ func (p *Params) updateFilename(identifier string) error {
 		if err := os.MkdirAll(outDir, os.ModeDir); err != nil {
 			return err
 		}
-		p.Filename = fmt.Sprintf("%s/%s", outDir, filename)
+		p.Filename = path.Join(outDir, filename)
 	}
 
 	p.FileInfo.Filename = p.Filename
@@ -577,7 +577,6 @@ func (p *Params) updateFilename(identifier string) error {
 	return nil
 }
 
-// TODO Fix deletion code
 func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 	ext := FileExtensions[p.OutputType]
 
