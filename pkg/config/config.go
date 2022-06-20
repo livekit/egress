@@ -15,21 +15,28 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 )
 
+const (
+	// TODO agree on proper default location
+	DefaultLocalOutputDirectory string = ""
+)
+
 type Config struct {
 	Redis     RedisConfig `yaml:"redis"`      // required
 	ApiKey    string      `yaml:"api_key"`    // required (env LIVEKIT_API_KEY)
 	ApiSecret string      `yaml:"api_secret"` // required (env LIVEKIT_API_SECRET)
 	WsUrl     string      `yaml:"ws_url"`     // required (env LIVEKIT_WS_URL)
 
-	HealthPort     int    `yaml:"health_port"`
-	PrometheusPort int    `yaml:"prometheus_port"`
-	LogLevel       string `yaml:"log_level"`
-	TemplateBase   string `yaml:"template_base"`
-	Insecure       bool   `yaml:"insecure"`
+	HealthPort           int    `yaml:"health_port"`
+	PrometheusPort       int    `yaml:"prometheus_port"`
+	LogLevel             string `yaml:"log_level"`
+	TemplateBase         string `yaml:"template_base"`
+	Insecure             bool   `yaml:"insecure"`
+	LocalOutputDirectory string `yaml:"local_directory"` // (env LOCAL_DIRECTORY), used both for temporary storage before uplaod and local output
 
-	S3    *S3Config    `yaml:"s3"`
-	Azure *AzureConfig `yaml:"azure"`
-	GCP   *GCPConfig   `yaml:"gcp"`
+	S3          *S3Config    `yaml:"s3"`
+	Azure       *AzureConfig `yaml:"azure"`
+	GCP         *GCPConfig   `yaml:"gcp"`
+	LocalOutput *LocalConfig `yaml:"local_output"`
 
 	// internal
 	NodeID     string      `yaml:"-"`
@@ -55,6 +62,9 @@ type AzureConfig struct {
 	AccountName   string `yaml:"account_name"` // (env AZURE_STORAGE_ACCOUNT)
 	AccountKey    string `yaml:"account_key"`  // (env AZURE_STORAGE_KEY)
 	ContainerName string `yaml:"container_name"`
+}
+
+type LocalConfig struct {
 }
 
 type GCPConfig struct {
@@ -96,6 +106,10 @@ func NewConfig(confString string) (*Config, error) {
 			AccountKey:    conf.Azure.AccountKey,
 			ContainerName: conf.Azure.ContainerName,
 		}
+	}
+
+	if conf.LocalOutputDirectory == "" {
+		conf.LocalOutputDirectory = DefaultLocalOutputDirectory
 	}
 
 	if err := conf.initLogger(); err != nil {

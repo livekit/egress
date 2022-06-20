@@ -566,36 +566,36 @@ func (p *Params) updateFilename(identifier string) error {
 
 	p.Logger.Debugw("writing to file", "filename", filename)
 	p.Filename = filename
-	p.FileInfo.Filename = filename
+	p.FileInfo.Filename = p.Filepath // FileInfo should contains the path after upload.
 	return nil
 }
 
-func (p *Params) updatePrefixAndPlaylist(identifier string) error {
-	// TODO fix filename generation code
-	fileprefix := p.LocalFilePrefix
+// TODO validate path for escape attempts
+func (p *Params) updatePrefixAndPlaylist(conf *config.Config, identifier string) error {
+	pathprefix := p.LocalFilePrefix
 	ext := FileExtensions[p.OutputType]
 
-	if fileprefix == "" || strings.HasSuffix(fileprefix, "/") {
-		fileprefix = fmt.Sprintf("%s%s-%v", fileprefix, identifier, time.Now().String())
+	if pathprefix == "" || strings.HasSuffix(pathprefix, "/") {
+		pathprefix = fmt.Sprintf("%s%s-%v", pathprefix, identifier, time.Now().String())
 	}
 
-	p.TargetDirectory, _ = path.Split(fileprefix)
+	p.TargetDirectory, _ = path.Split(pathprefix)
+
+	// Prepend the configuration base directory
+	p.LocalFilePrefix = path.Join(conf.LocalOutputDirectory, pathprefix)
+	p.Logger.Debugw("writing to path", "prefix", p.LocalFilePrefix)
 
 	// get filename from path
-	idx := strings.LastIndex(fileprefix, "/")
-	if idx > 0 {
+	dir, fileprefix := path.Split(p.LocalFilePrefix)
+	if dir != "" {
 		if p.FileUpload == nil {
-			if err := os.MkdirAll(fileprefix[:idx], os.ModeDir); err != nil {
+			if err := os.MkdirAll(dir, os.ModeDir); err != nil {
 				return err
 			}
 		} else {
-			fileprefix = fileprefix[idx+1:]
+			p.LocalFilePrefix = path.Join(conf.LocalOutputDirectory, fileprefix)
 		}
 	}
-
-	p.LocalFilePrefix = fileprefix
-
-	p.Logger.Debugw("writing to path", "prefix", fileprefix)
 
 	// Playlist path is relative to file prefix. Only keep actual filename if a full path is given
 	_, p.PlaylistFilename = path.Split(p.PlaylistFilename)
@@ -603,9 +603,9 @@ func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 		p.PlaylistFilename = fmt.Sprintf("playlist%s", ext)
 	}
 	// Prepend the fileprefix directory to get the full playlist path
-	dir, _ := path.Split(fileprefix)
+	dir, _ := path.Split(pathprefix)
 	p.PlaylistFilename = path.Join(dir, p.PlaylistFilename)
-	p.SegmentsInfo.PlaylistName = p.PlaylistFilename
+	p.SegmentsInfo.PlaylistName = p.GetTargetPathForFilename(p.PlaylistFilename)
 	return nil
 }
 
