@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path"
 
 	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
@@ -135,8 +136,9 @@ func NewConfig(confString string) (*Config, error) {
 		conf.CPUCost.RoomCompositeCpuCost = roomCompositeCpuCost
 	}
 
-	if conf.LocalOutputDirectory == "" {
-		conf.LocalOutputDirectory = DefaultLocalOutputDirectory
+	conf.LocalOutputDirectory = path.Clean(conf.LocalOutputDirectory)
+	if conf.LocalOutputDirectory == "." {
+		conf.LocalOutputDirectory = defaultLocalOutputDirectory
 	}
 
 	if err := conf.initLogger(); err != nil {

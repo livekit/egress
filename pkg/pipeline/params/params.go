@@ -458,7 +458,7 @@ func (p *Params) updateSegmentsParams(conf *config.Config, fileprefix string, pl
 	}
 
 	// filename
-	err := p.updatePrefixAndPlaylist(p.RoomName)
+	err := p.updatePrefixAndPlaylist(conf, p.RoomName)
 	if err != nil {
 		return err
 	}
@@ -584,8 +584,8 @@ func (p *Params) updatePrefixAndPlaylist(conf *config.Config, identifier string)
 
 	dir, filePrefix := path.Split(p.LocalFilePrefix)
 	if p.FileUpload == nil {
-		if dir != nil {
-			if err := os.MkdirAll(filePrefix[dir], os.ModeDir); err != nil {
+		if dir != "" {
+			if err := os.MkdirAll(dir, os.ModeDir); err != nil {
 				return err
 			}
 		}
