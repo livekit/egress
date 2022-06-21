@@ -56,7 +56,7 @@ func NewWebSource(ctx context.Context, conf *config.Config, p *params.Params) (*
 	if p.CustomInputURL != "" {
 		inputUrl = p.CustomInputURL
 	} else {
-		// s.startRecording = make(chan struct{})
+		s.startRecording = make(chan struct{})
 		inputUrl = fmt.Sprintf(
 			"%s?layout=%s&url=%s&token=%s",
 			p.TemplateBase, p.Layout, url.QueryEscape(p.LKUrl), p.Token,

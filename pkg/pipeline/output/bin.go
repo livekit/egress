@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/tinyzimmer/go-gst/gst"
+	"go.opencensus.io/trace"
 
 	"github.com/livekit/protocol/logger"
 
@@ -29,6 +30,9 @@ type streamSink struct {
 }
 
 func Build(ctx context.Context, p *params.Params) (*Bin, error) {
+	ctx, span := trace.StartSpan(ctx, "Output.Build")
+	defer span.End()
+
 	switch p.EgressType {
 	case params.EgressTypeFile:
 		return buildFileOutputBin(p)
