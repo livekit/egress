@@ -1,10 +1,12 @@
 package input
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/tinyzimmer/go-gst/gst"
+	"go.opencensus.io/trace"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -13,13 +15,16 @@ import (
 )
 
 // TODO: save mp4 files as TS then remux to avoid losing everything on failure
-func Build(conf *config.Config, p *params.Params) (*Bin, error) {
+func Build(ctx context.Context, conf *config.Config, p *params.Params) (*Bin, error) {
+	ctx, span := trace.StartSpan(ctx, "Input.Build")
+	defer span.End()
+
 	b := &Bin{
 		bin: gst.NewBin("input"),
 	}
 
 	// source
-	err := b.buildSource(conf, p)
+	err := b.buildSource(ctx, conf, p)
 	if err != nil {
 		return nil, err
 	}
@@ -65,12 +70,12 @@ func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 	return b, nil
 }
 
-func (b *Bin) buildSource(conf *config.Config, p *params.Params) error {
+func (b *Bin) buildSource(ctx context.Context, conf *config.Config, p *params.Params) error {
 	var err error
 	if p.IsWebSource {
-		b.Source, err = source.NewWebSource(conf, p)
+		b.Source, err = source.NewWebSource(ctx, conf, p)
 	} else {
-		b.Source, err = source.NewSDKSource(p)
+		b.Source, err = source.NewSDKSource(ctx, p)
 	}
 	return err
 }

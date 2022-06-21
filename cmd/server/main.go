@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/urfave/cli/v2"
+	"go.opencensus.io/trace"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/egress"
@@ -71,6 +72,8 @@ func runService(c *cli.Context) error {
 		return err
 	}
 
+	defer conf.Launcher.Shutdown()
+
 	rc, err := getRedisClient(conf)
 	if err != nil {
 		return err
@@ -111,6 +114,13 @@ func runHandler(c *cli.Context) error {
 		return err
 	}
 
+	defer conf.Launcher.Shutdown()
+
+	ctx, span := trace.StartSpan(context.Background(), "Handler.New")
+	defer span.End()
+
+	logger.Debugw("handler launched")
+
 	rc, err := getRedisClient(conf)
 	if err != nil {
 		return err
@@ -135,7 +145,7 @@ func runHandler(c *cli.Context) error {
 		handler.Kill()
 	}()
 
-	handler.HandleRequest(req)
+	handler.HandleRequest(ctx, req)
 	return nil
 }
 

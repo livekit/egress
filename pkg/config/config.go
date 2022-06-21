@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/go-logr/zapr"
+	"github.com/lightstep/otel-launcher-go/launcher"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
@@ -29,6 +30,7 @@ type Config struct {
 
 	HealthPort     int    `yaml:"health_port"`
 	PrometheusPort int    `yaml:"prometheus_port"`
+	LightstepToken string `yaml:"lightstep_token"`
 	LogLevel       string `yaml:"log_level"`
 	TemplateBase   string `yaml:"template_base"`
 	Insecure       bool   `yaml:"insecure"`
@@ -41,8 +43,9 @@ type Config struct {
 	CPUCost CPUCostConfig `yaml:"cpu_cost"`
 
 	// internal
-	NodeID     string      `yaml:"-"`
-	FileUpload interface{} `yaml:"-"` // one of S3, Azure, or GCP
+	NodeID     string            `yaml:"-"`
+	FileUpload interface{}       `yaml:"-"` // one of S3, Azure, or GCP
+	Launcher   launcher.Launcher `yaml:"-"`
 }
 
 type RedisConfig struct {
@@ -129,6 +132,16 @@ func NewConfig(confString string) (*Config, error) {
 
 	if err := conf.initLogger(); err != nil {
 		return nil, err
+	}
+
+	if conf.LightstepToken != "" {
+		conf.Launcher = launcher.ConfigureOpentelemetry(
+			launcher.WithServiceName("egress"),
+			launcher.WithAccessToken(conf.LightstepToken),
+			launcher.WithResourceAttributes(map[string]string{
+				"nodeID": conf.NodeID,
+			}),
+		)
 	}
 
 	return conf, nil

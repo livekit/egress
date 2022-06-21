@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 
+	"go.opencensus.io/trace"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/egress"
@@ -29,23 +30,26 @@ func NewHandler(conf *config.Config, rpcServer egress.RPCServer) *Handler {
 	}
 }
 
-func (h *Handler) HandleRequest(req *livekit.StartEgressRequest) {
+func (h *Handler) HandleRequest(ctx context.Context, req *livekit.StartEgressRequest) {
+	ctx, span := trace.StartSpan(ctx, "Handler.HandleRequest")
+	defer span.End()
+
 	// build/verify params
-	pipelineParams, err := params.GetPipelineParams(h.conf, req)
+	pipelineParams, err := params.GetPipelineParams(ctx, h.conf, req)
 	info := pipelineParams.Info
 	if err != nil {
 		info.Error = err.Error()
 		info.Status = livekit.EgressStatus_EGRESS_FAILED
-		h.sendUpdate(info)
+		h.sendUpdate(ctx, info)
 		return
 	}
 
 	// create the pipeline
-	p, err := pipeline.New(h.conf, pipelineParams)
+	p, err := pipeline.New(ctx, h.conf, pipelineParams)
 	if err != nil {
 		info.Error = err.Error()
 		info.Status = livekit.EgressStatus_EGRESS_FAILED
-		h.sendUpdate(info)
+		h.sendUpdate(ctx, info)
 		return
 	}
 
@@ -66,18 +70,18 @@ func (h *Handler) HandleRequest(req *livekit.StartEgressRequest) {
 	// start egress
 	result := make(chan *livekit.EgressInfo, 1)
 	go func() {
-		result <- p.Run()
+		result <- p.Run(ctx)
 	}()
 
 	for {
 		select {
 		case <-h.kill:
 			// kill signal received
-			p.SendEOS()
+			p.SendEOS(ctx)
 
 		case res := <-result:
 			// recording finished
-			h.sendUpdate(res)
+			h.sendUpdate(ctx, res)
 			return
 
 		case msg := <-requests.Channel():
@@ -92,19 +96,22 @@ func (h *Handler) HandleRequest(req *livekit.StartEgressRequest) {
 
 			switch req := request.Request.(type) {
 			case *livekit.EgressRequest_UpdateStream:
-				err = p.UpdateStream(req.UpdateStream)
+				err = p.UpdateStream(ctx, req.UpdateStream)
 			case *livekit.EgressRequest_Stop:
-				p.SendEOS()
+				p.SendEOS(ctx)
 			default:
 				err = errors.ErrInvalidRPC
 			}
 
-			h.sendResponse(request, p.GetInfo(), err)
+			h.sendResponse(ctx, request, p.GetInfo(), err)
 		}
 	}
 }
 
-func (h *Handler) sendUpdate(info *livekit.EgressInfo) {
+func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
+	ctx, span := trace.StartSpan(ctx, "Handler.sendUpdate")
+	defer span.End()
+
 	switch info.Status {
 	case livekit.EgressStatus_EGRESS_FAILED:
 		logger.Errorw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
@@ -114,12 +121,15 @@ func (h *Handler) sendUpdate(info *livekit.EgressInfo) {
 		logger.Infow("egress updated", "egressID", info.EgressId, "status", info.Status)
 	}
 
-	if err := h.rpcServer.SendUpdate(context.Background(), info); err != nil {
+	if err := h.rpcServer.SendUpdate(ctx, info); err != nil {
 		logger.Errorw("failed to send update", err)
 	}
 }
 
-func (h *Handler) sendResponse(req *livekit.EgressRequest, info *livekit.EgressInfo, err error) {
+func (h *Handler) sendResponse(ctx context.Context, req *livekit.EgressRequest, info *livekit.EgressInfo, err error) {
+	ctx, span := trace.StartSpan(ctx, "Handler.sendResponse")
+	defer span.End()
+
 	args := []interface{}{
 		"egressID", info.EgressId,
 		"requestID", req.RequestId,
@@ -132,7 +142,7 @@ func (h *Handler) sendResponse(req *livekit.EgressRequest, info *livekit.EgressI
 		logger.Debugw("request handled", args...)
 	}
 
-	if err := h.rpcServer.SendResponse(context.Background(), req, info, err); err != nil {
+	if err := h.rpcServer.SendResponse(ctx, req, info, err); err != nil {
 		logger.Errorw("failed to send response", err, args...)
 	}
 }

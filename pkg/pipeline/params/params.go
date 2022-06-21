@@ -1,6 +1,7 @@
 package params
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"os"
@@ -98,7 +99,7 @@ type UploadParams struct {
 }
 
 // GetPipelineParams must always return params, even on error
-func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest) (p *Params, err error) {
+func GetPipelineParams(ctx context.Context, conf *config.Config, request *livekit.StartEgressRequest) (p *Params, err error) {
 	// start with defaults
 	p = &Params{
 		Logger: logger.Logger(logger.GetLogger().WithValues("egressID", request.EgressId)),

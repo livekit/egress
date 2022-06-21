@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opencensus.io/trace"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
@@ -103,17 +104,21 @@ func (s *Service) Run() error {
 			return nil
 
 		case msg := <-requests.Channel():
+			ctx, span := trace.StartSpan(context.Background(), "Service.HandleRequest")
+
 			req := &livekit.StartEgressRequest{}
 			if err = proto.Unmarshal(requests.Payload(msg), req); err != nil {
 				logger.Errorw("malformed request", err)
+				span.End()
 				continue
 			}
 
-			if s.acceptRequest(req) {
+			if s.acceptRequest(ctx, req) {
 				// validate before launching handler
-				pipelineParams, err := params.GetPipelineParams(s.conf, req)
-				s.sendResponse(req, pipelineParams.Info, err)
+				pipelineParams, err := params.GetPipelineParams(ctx, s.conf, req)
+				s.sendResponse(ctx, req, pipelineParams.Info, err)
 				if err != nil {
+					span.End()
 					continue
 				}
 
@@ -121,13 +126,15 @@ func (s *Service) Run() error {
 				case *livekit.StartEgressRequest_RoomComposite:
 					s.handlingRoomComposite.Store(true)
 					go func() {
-						s.launchHandler(req)
+						s.launchHandler(ctx, req)
 						s.handlingRoomComposite.Store(false)
 					}()
 				default:
-					go s.launchHandler(req)
+					go s.launchHandler(ctx, req)
 				}
 			}
+
+			span.End()
 		}
 	}
 }
@@ -141,7 +148,10 @@ func (s *Service) isIdle() bool {
 	return idle
 }
 
-func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
+func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressRequest) bool {
+	ctx, span := trace.StartSpan(ctx, "Service.acceptRequest")
+	defer span.End()
+
 	args := []interface{}{
 		"egressID", req.EgressId,
 		"requestID", req.RequestId,
@@ -194,7 +204,10 @@ func (s *Service) acceptRequest(req *livekit.StartEgressRequest) bool {
 	return true
 }
 
-func (s *Service) sendResponse(req *livekit.StartEgressRequest, info *livekit.EgressInfo, err error) {
+func (s *Service) sendResponse(ctx context.Context, req *livekit.StartEgressRequest, info *livekit.EgressInfo, err error) {
+	ctx, span := trace.StartSpan(ctx, "Service.sendResponse")
+	defer span.End()
+
 	if err != nil {
 		logger.Infow("bad request", err,
 			"egressID", info.EgressId,
@@ -203,12 +216,15 @@ func (s *Service) sendResponse(req *livekit.StartEgressRequest, info *livekit.Eg
 		)
 	}
 
-	if err = s.rpcServer.SendResponse(context.Background(), req, info, err); err != nil {
+	if err = s.rpcServer.SendResponse(ctx, req, info, err); err != nil {
 		logger.Errorw("failed to send response", err)
 	}
 }
 
-func (s *Service) launchHandler(req *livekit.StartEgressRequest) {
+func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressRequest) {
+	ctx, span := trace.StartSpan(ctx, "Service.launchHandler")
+	defer span.End()
+
 	confString, err := yaml.Marshal(s.conf)
 	if err != nil {
 		logger.Errorw("could not marshal config", err)

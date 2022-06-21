@@ -1,6 +1,8 @@
 package output
 
 import (
+	"context"
+
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/protocol/logger"
@@ -26,7 +28,7 @@ type streamSink struct {
 	sink  *gst.Element
 }
 
-func Build(p *params.Params) (*Bin, error) {
+func Build(ctx context.Context, p *params.Params) (*Bin, error) {
 	switch p.EgressType {
 	case params.EgressTypeFile:
 		return buildFileOutputBin(p)

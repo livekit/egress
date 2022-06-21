@@ -1,6 +1,7 @@
 package source
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
+	"go.opencensus.io/trace"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
@@ -50,7 +52,10 @@ type SDKSource struct {
 	endRecording chan struct{}
 }
 
-func NewSDKSource(p *params.Params) (*SDKSource, error) {
+func NewSDKSource(ctx context.Context, p *params.Params) (*SDKSource, error) {
+	ctx, span := trace.StartSpan(ctx, "SDKSource.New")
+	defer span.End()
+
 	s := &SDKSource{
 		room:         lksdk.CreateRoom(),
 		logger:       p.Logger,
@@ -169,7 +174,7 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 		}
 	}
 
-	if err := s.join(p); err != nil {
+	if err := s.join(ctx, p); err != nil {
 		return nil, err
 	}
 
@@ -188,7 +193,10 @@ func NewSDKSource(p *params.Params) (*SDKSource, error) {
 	return s, nil
 }
 
-func (s *SDKSource) join(p *params.Params) error {
+func (s *SDKSource) join(ctx context.Context, p *params.Params) error {
+	ctx, span := trace.StartSpan(ctx, "SDKSource.join")
+	defer span.End()
+
 	s.logger.Debugw("connecting to room")
 	if err := s.room.JoinWithToken(p.LKUrl, p.Token, lksdk.WithAutoSubscribe(false)); err != nil {
 		return err

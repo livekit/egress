@@ -68,8 +68,9 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 		WsUrl:  conf.WsUrl,
 		Request: &livekit.StartEgressRequest_RoomComposite{
 			RoomComposite: &livekit.RoomCompositeEgressRequest{
-				RoomName: room.Name,
-				Layout:   "speaker-dark",
+				RoomName:      room.Name,
+				Layout:        "speaker-dark",
+				CustomBaseUrl: "https://www.timeanddate.com/worldclock/timezone/utc",
 				Output: &livekit.RoomCompositeEgressRequest_File{
 					File: &livekit.EncodedFileOutput{
 						Filepath: filepath,
@@ -131,6 +132,8 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 
 	// check complete update
 	info = checkUpdate(t, sub, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
+
+	fmt.Printf("%+v\n", info)
 
 	// check status
 	if conf.HealthPort != 0 {
