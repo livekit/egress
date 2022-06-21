@@ -9,14 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"go.opencensus.io/trace"
-
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/tracer"
 )
 
 type Params struct {
@@ -102,7 +101,7 @@ type UploadParams struct {
 
 // GetPipelineParams must always return params, even on error
 func GetPipelineParams(ctx context.Context, conf *config.Config, request *livekit.StartEgressRequest) (p *Params, err error) {
-	ctx, span := trace.StartSpan(ctx, "Params.GetPipelineParams")
+	ctx, span := tracer.Start(ctx, "Params.GetPipelineParams")
 	defer span.End()
 
 	// start with defaults

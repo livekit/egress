@@ -10,7 +10,6 @@ import (
 
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
-	"go.opencensus.io/trace"
 
 	"github.com/livekit/protocol/livekit"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
+	"github.com/livekit/egress/pkg/tracer"
 )
 
 // gst.Init needs to be called before using gst but after gst package loads
@@ -70,11 +70,11 @@ type segmentUpdate struct {
 }
 
 func New(ctx context.Context, conf *config.Config, p *params.Params) (*Pipeline, error) {
-	ctx, span := trace.StartSpan(ctx, "Pipeline.New")
+	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
 	if !initialized {
-		_, span := trace.StartSpan(ctx, "gst.Init")
+		_, span := tracer.Start(ctx, "gst.Init")
 		gst.Init(nil)
 		initialized = true
 		span.End()
@@ -152,7 +152,7 @@ func (p *Pipeline) OnStatusUpdate(f func(ctx context.Context, info *livekit.Egre
 }
 
 func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
-	ctx, span := trace.StartSpan(ctx, "Pipeline.Run")
+	ctx, span := tracer.Start(ctx, "Pipeline.Run")
 	defer span.End()
 
 	p.Info.StartedAt = time.Now().UnixNano()
@@ -257,7 +257,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 }
 
 func (p *Pipeline) storeFile(ctx context.Context, localFilePath, requestedPath string, mime params.OutputType) (destinationUrl string, size int64, err error) {
-	ctx, span := trace.StartSpan(ctx, "Pipeline.storeFile")
+	ctx, span := tracer.Start(ctx, "Pipeline.storeFile")
 	defer span.End()
 
 	fileInfo, err := os.Stat(localFilePath)
@@ -353,7 +353,7 @@ func (p *Pipeline) enqueueSegmentUpload(segmentPath string, endTime int64) error
 }
 
 func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) error {
-	ctx, span := trace.StartSpan(ctx, "Pipeline.UpdateStream")
+	ctx, span := tracer.Start(ctx, "Pipeline.UpdateStream")
 	defer span.End()
 
 	if p.EgressType != params.EgressTypeStream {
@@ -442,7 +442,7 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 }
 
 func (p *Pipeline) SendEOS(ctx context.Context) {
-	ctx, span := trace.StartSpan(ctx, "Pipeline.SendEOS")
+	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
 	select {

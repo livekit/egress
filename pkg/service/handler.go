@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 
-	"go.opencensus.io/trace"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/egress"
@@ -14,6 +13,7 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/tracer"
 )
 
 type Handler struct {
@@ -31,7 +31,7 @@ func NewHandler(conf *config.Config, rpcServer egress.RPCServer) *Handler {
 }
 
 func (h *Handler) HandleRequest(ctx context.Context, req *livekit.StartEgressRequest) {
-	ctx, span := trace.StartSpan(ctx, "Handler.HandleRequest")
+	ctx, span := tracer.Start(ctx, "Handler.HandleRequest")
 	defer span.End()
 
 	// build/verify params
@@ -109,7 +109,7 @@ func (h *Handler) HandleRequest(ctx context.Context, req *livekit.StartEgressReq
 }
 
 func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
-	ctx, span := trace.StartSpan(ctx, "Handler.sendUpdate")
+	ctx, span := tracer.Start(ctx, "Handler.sendUpdate")
 	defer span.End()
 
 	switch info.Status {
@@ -127,7 +127,7 @@ func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
 }
 
 func (h *Handler) sendResponse(ctx context.Context, req *livekit.EgressRequest, info *livekit.EgressInfo, err error) {
-	ctx, span := trace.StartSpan(ctx, "Handler.sendResponse")
+	ctx, span := tracer.Start(ctx, "Handler.sendResponse")
 	defer span.End()
 
 	args := []interface{}{

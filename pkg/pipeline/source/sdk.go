@@ -9,7 +9,6 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
-	"go.opencensus.io/trace"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/tracer"
 )
 
 const (
@@ -53,7 +53,7 @@ type SDKSource struct {
 }
 
 func NewSDKSource(ctx context.Context, p *params.Params) (*SDKSource, error) {
-	ctx, span := trace.StartSpan(ctx, "SDKSource.New")
+	ctx, span := tracer.Start(ctx, "SDKSource.New")
 	defer span.End()
 
 	s := &SDKSource{
@@ -194,7 +194,7 @@ func NewSDKSource(ctx context.Context, p *params.Params) (*SDKSource, error) {
 }
 
 func (s *SDKSource) join(ctx context.Context, p *params.Params) error {
-	ctx, span := trace.StartSpan(ctx, "SDKSource.join")
+	ctx, span := tracer.Start(ctx, "SDKSource.join")
 	defer span.End()
 
 	s.logger.Debugw("connecting to room")

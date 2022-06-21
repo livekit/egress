@@ -4,12 +4,12 @@ import (
 	"context"
 
 	"github.com/tinyzimmer/go-gst/gst"
-	"go.opencensus.io/trace"
 
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/tracer"
 )
 
 type Bin struct {
@@ -30,7 +30,7 @@ type streamSink struct {
 }
 
 func Build(ctx context.Context, p *params.Params) (*Bin, error) {
-	ctx, span := trace.StartSpan(ctx, "Output.Build")
+	ctx, span := tracer.Start(ctx, "Output.Build")
 	defer span.End()
 
 	switch p.EgressType {

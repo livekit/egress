@@ -6,17 +6,17 @@ import (
 	"time"
 
 	"github.com/tinyzimmer/go-gst/gst"
-	"go.opencensus.io/trace"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/pipeline/source"
+	"github.com/livekit/egress/pkg/tracer"
 )
 
 // TODO: save mp4 files as TS then remux to avoid losing everything on failure
 func Build(ctx context.Context, conf *config.Config, p *params.Params) (*Bin, error) {
-	ctx, span := trace.StartSpan(ctx, "Input.Build")
+	ctx, span := tracer.Start(ctx, "Input.Build")
 	defer span.End()
 
 	b := &Bin{

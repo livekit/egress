@@ -14,13 +14,13 @@ import (
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
-	"go.opencensus.io/trace"
 
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/tracer"
 )
 
 const (
@@ -44,7 +44,7 @@ func init() {
 }
 
 func NewWebSource(ctx context.Context, conf *config.Config, p *params.Params) (*WebSource, error) {
-	ctx, span := trace.StartSpan(ctx, "WebSource.New")
+	ctx, span := tracer.Start(ctx, "WebSource.New")
 	defer span.End()
 
 	s := &WebSource{
@@ -85,7 +85,7 @@ func NewWebSource(ctx context.Context, conf *config.Config, p *params.Params) (*
 
 // creates a new pulse audio sink
 func (s *WebSource) createAudioSink(ctx context.Context, egressID string) error {
-	ctx, span := trace.StartSpan(ctx, "WebSource.createAudioSink")
+	ctx, span := tracer.Start(ctx, "WebSource.createAudioSink")
 	defer span.End()
 
 	cmd := exec.Command("pactl",
@@ -107,7 +107,7 @@ func (s *WebSource) createAudioSink(ctx context.Context, egressID string) error 
 
 // creates a new xvfb display
 func (s *WebSource) launchXvfb(ctx context.Context, display string, width, height, depth int32) error {
-	ctx, span := trace.StartSpan(ctx, "WebSource.launchXvfb")
+	ctx, span := tracer.Start(ctx, "WebSource.launchXvfb")
 	defer span.End()
 
 	dims := fmt.Sprintf("%dx%dx%d", width, height, depth)
@@ -122,7 +122,7 @@ func (s *WebSource) launchXvfb(ctx context.Context, display string, width, heigh
 
 // launches chrome and navigates to the url
 func (s *WebSource) launchChrome(ctx context.Context, url, egressID, display string, width, height int32, insecure bool) error {
-	ctx, span := trace.StartSpan(ctx, "WebSource.launchChrome")
+	ctx, span := tracer.Start(ctx, "WebSource.launchChrome")
 	defer span.End()
 
 	s.logger.Debugw("launching chrome", "url", url)

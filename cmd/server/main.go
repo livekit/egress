@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/urfave/cli/v2"
-	"go.opencensus.io/trace"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/egress"
@@ -21,6 +20,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/service"
+	"github.com/livekit/egress/pkg/tracer"
 	"github.com/livekit/egress/version"
 )
 
@@ -116,7 +116,7 @@ func runHandler(c *cli.Context) error {
 
 	defer conf.Launcher.Shutdown()
 
-	ctx, span := trace.StartSpan(context.Background(), "Handler.New")
+	ctx, span := tracer.Start(context.Background(), "Handler.New")
 	defer span.End()
 
 	logger.Debugw("handler launched")

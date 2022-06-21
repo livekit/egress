@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.opencensus.io/trace"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
@@ -24,6 +23,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/sysload"
+	"github.com/livekit/egress/pkg/tracer"
 )
 
 const shutdownTimer = time.Second * 30
@@ -104,7 +104,7 @@ func (s *Service) Run() error {
 			return nil
 
 		case msg := <-requests.Channel():
-			ctx, span := trace.StartSpan(context.Background(), "Service.HandleRequest")
+			ctx, span := tracer.Start(context.Background(), "Service.HandleRequest")
 
 			req := &livekit.StartEgressRequest{}
 			if err = proto.Unmarshal(requests.Payload(msg), req); err != nil {
@@ -149,7 +149,7 @@ func (s *Service) isIdle() bool {
 }
 
 func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressRequest) bool {
-	ctx, span := trace.StartSpan(ctx, "Service.acceptRequest")
+	ctx, span := tracer.Start(ctx, "Service.acceptRequest")
 	defer span.End()
 
 	args := []interface{}{
@@ -205,7 +205,7 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 }
 
 func (s *Service) sendResponse(ctx context.Context, req *livekit.StartEgressRequest, info *livekit.EgressInfo, err error) {
-	ctx, span := trace.StartSpan(ctx, "Service.sendResponse")
+	ctx, span := tracer.Start(ctx, "Service.sendResponse")
 	defer span.End()
 
 	if err != nil {
@@ -222,7 +222,7 @@ func (s *Service) sendResponse(ctx context.Context, req *livekit.StartEgressRequ
 }
 
 func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressRequest) {
-	ctx, span := trace.StartSpan(ctx, "Service.launchHandler")
+	ctx, span := tracer.Start(ctx, "Service.launchHandler")
 	defer span.End()
 
 	confString, err := yaml.Marshal(s.conf)
