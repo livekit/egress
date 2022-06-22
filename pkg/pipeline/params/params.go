@@ -566,7 +566,8 @@ func (p *Params) updateFilename(identifier string) error {
 		outDir := path.Join(p.conf.LocalOutputDirectory, p.Info.EgressId)
 
 		// create temporary directory
-		if err := os.MkdirAll(outDir, os.ModeDir); err != nil {
+		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
+		if err := os.MkdirAll(outDir, os.ModePerm&0o700); err != nil {
 			return err
 		}
 		p.Filename = path.Join(outDir, filename)
@@ -584,33 +585,34 @@ func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 		p.LocalFilePrefix = fmt.Sprintf("%s%s-%v", p.LocalFilePrefix, identifier, time.Now().String())
 	}
 
-	p.TargetDirectory, _ = path.Split(p.LocalFilePrefix)
-
-	dir, filePrefix := path.Split(p.LocalFilePrefix)
-	if p.FileUpload == nil {
-		if dir != "" {
-			if err := os.MkdirAll(dir, os.ModeDir); err != nil {
-				return err
-			}
-		}
-	} else {
-		// Prepend the configuration base directory and the egress Id
-		outDir := path.Join(p.conf.LocalOutputDirectory, p.Info.EgressId)
-		if err := os.MkdirAll(outDir, os.ModeDir); err != nil {
-			return err
-		}
-
-		p.LocalFilePrefix = path.Join(outDir, filePrefix)
-	}
-	p.Logger.Debugw("writing to path", "prefix", p.LocalFilePrefix)
-
 	// Playlist path is relative to file prefix. Only keep actual filename if a full path is given
 	_, p.PlaylistFilename = path.Split(p.PlaylistFilename)
 	if p.PlaylistFilename == "" {
 		p.PlaylistFilename = fmt.Sprintf("playlist%s", ext)
 	}
 
-	p.PlaylistFilename = path.Join(dir, p.PlaylistFilename)
+	var filePrefix string
+	p.TargetDirectory, filePrefix = path.Split(p.LocalFilePrefix)
+	if p.FileUpload == nil {
+		if p.TargetDirectory != "" {
+			if err := os.MkdirAll(p.TargetDirectory, os.ModeDir); err != nil {
+				return err
+			}
+		}
+		p.PlaylistFilename = path.Join(p.TargetDirectory, p.PlaylistFilename)
+	} else {
+		// Prepend the configuration base directory and the egress Id
+		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
+		outDir := path.Join(p.conf.LocalOutputDirectory, p.Info.EgressId)
+		if err := os.MkdirAll(outDir, os.ModePerm&0o700); err != nil {
+			return err
+		}
+
+		p.PlaylistFilename = path.Join(outDir, p.PlaylistFilename)
+		p.LocalFilePrefix = path.Join(outDir, filePrefix)
+	}
+	p.Logger.Debugw("writing to path", "prefix", p.LocalFilePrefix)
+
 	p.SegmentsInfo.PlaylistName = p.GetTargetPathForFilename(p.PlaylistFilename)
 	return nil
 }
