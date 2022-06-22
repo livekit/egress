@@ -31,18 +31,14 @@ func NewHandler(conf *config.Config, rpcServer egress.RPCServer) *Handler {
 
 func (h *Handler) HandleRequest(req *livekit.StartEgressRequest) {
 	// build/verify params
+	var p *pipeline.Pipeline
 	pipelineParams, err := params.GetPipelineParams(h.conf, req)
-	info := pipelineParams.Info
-	if err != nil {
-		info.Error = err.Error()
-		info.Status = livekit.EgressStatus_EGRESS_FAILED
-		h.sendUpdate(info)
-		return
+	if err == nil {
+		// create the pipeline
+		p, err = pipeline.New(h.conf, pipelineParams)
 	}
-
-	// create the pipeline
-	p, err := pipeline.New(h.conf, pipelineParams)
 	if err != nil {
+		info := pipelineParams.Info
 		info.Error = err.Error()
 		info.Status = livekit.EgressStatus_EGRESS_FAILED
 		h.sendUpdate(info)
