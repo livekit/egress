@@ -156,6 +156,9 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 		} else if p.Info.Status != livekit.EgressStatus_EGRESS_ABORTED {
 			p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 		}
+
+		// Cleanup temporary files even if we fail
+		p.deleteTempDirectory()
 	}()
 
 	// wait until room is ready
@@ -219,14 +222,6 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 			p.Info.Error = err.Error()
 		}
 
-		if p.FileUpload != nil {
-			dir, _ := path.Split(p.Filename)
-			if dir != "" {
-				if err = os.RemoveAll(dir); err != nil {
-					p.Logger.Errorw("could not delete temp dir", err)
-				}
-			}
-		}
 	case params.EgressTypeSegmentedFile:
 		// wait for all pending upload jobs to finish
 		if p.endedSegments != nil {
@@ -239,18 +234,33 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 			destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
 			p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
 		}
+	}
 
-		if p.FileUpload != nil {
+	return p.Info
+}
+
+func (p *Pipeline) deleteTempDirectory() {
+	if p.FileUpload != nil {
+		switch p.EgressType {
+		case params.EgressTypeFile:
+			dir, _ := path.Split(p.Filename)
+			if dir != "" {
+				p.Logger.Debugw("removing temporary directory", "path", dir)
+				if err := os.RemoveAll(dir); err != nil {
+					p.Logger.Errorw("could not delete temp dir", err)
+				}
+			}
+
+		case params.EgressTypeSegmentedFile:
 			dir, _ := path.Split(p.PlaylistFilename)
 			if dir != "" {
+				p.Logger.Debugw("removing temporary directory", "path", dir)
 				if err := os.RemoveAll(dir); err != nil {
 					p.Logger.Errorw("could not delete temp dir", err)
 				}
 			}
 		}
 	}
-
-	return p.Info
 }
 
 func (p *Pipeline) storeFile(localFilePath, requestedPath string, mime params.OutputType) (destinationUrl string, size int64, err error) {
