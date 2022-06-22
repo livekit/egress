@@ -4,6 +4,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -176,42 +177,46 @@ func getFilePath(conf *config.Config, filename string) string {
 }
 
 func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, filepath string) {
-	p, err := params.GetPipelineParams(conf.Config, req)
+	ctx := context.Background()
+
+	p, err := params.GetPipelineParams(ctx, conf.Config, req)
 	require.NoError(t, err)
 
 	if !strings.HasPrefix(conf.ApiKey, "API") || test.forceCustomInput {
 		p.CustomInputURL = test.inputUrl
 	}
 
-	rec, err := pipeline.New(conf.Config, p)
+	rec, err := pipeline.New(ctx, conf.Config, p)
 	require.NoError(t, err)
 
 	// record for ~30s. Takes about 5s to start
 	time.AfterFunc(time.Second*35, func() {
-		rec.SendEOS()
+		rec.SendEOS(ctx)
 	})
-	res := rec.Run()
+	res := rec.Run(ctx)
 
 	verifyFile(t, filepath, p, res, conf.Muting)
 }
 
 func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, customUrl string) {
-	p, err := params.GetPipelineParams(conf.Config, req)
+	ctx := context.Background()
+
+	p, err := params.GetPipelineParams(ctx, conf.Config, req)
 	require.NoError(t, err)
 	if customUrl != "" {
 		p.CustomInputURL = customUrl
 	}
 
-	rec, err := pipeline.New(conf.Config, p)
+	rec, err := pipeline.New(ctx, conf.Config, p)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		rec.SendEOS()
+		rec.SendEOS(ctx)
 	})
 
 	resChan := make(chan *livekit.EgressInfo, 1)
 	go func() {
-		resChan <- rec.Run()
+		resChan <- rec.Run(ctx)
 	}()
 
 	// wait for recorder to start
@@ -221,7 +226,7 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 	verifyStreams(t, p, streamUrl1)
 
 	// add another, check both
-	require.Error(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
+	require.Error(t, rec.UpdateStream(ctx, &livekit.UpdateStreamRequest{
 		EgressId:      req.EgressId,
 		AddOutputUrls: []string{badStreamUrl1, streamUrl2, badStreamUrl2},
 	}))
@@ -229,14 +234,14 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 	verifyStreams(t, p, streamUrl1, streamUrl2)
 
 	// remove first, check second
-	require.NoError(t, rec.UpdateStream(&livekit.UpdateStreamRequest{
+	require.NoError(t, rec.UpdateStream(ctx, &livekit.UpdateStreamRequest{
 		EgressId:         req.EgressId,
 		RemoveOutputUrls: []string{streamUrl1},
 	}))
 	verifyStreams(t, p, streamUrl2)
 
 	// stop
-	rec.SendEOS()
+	rec.SendEOS(ctx)
 	res := <-resChan
 
 	// egress info
@@ -253,6 +258,8 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 }
 
 func testStreamFailure(t *testing.T, conf *testConfig, customUrl string) {
+	ctx := context.Background()
+
 	req := &livekit.StartEgressRequest{
 		EgressId:  utils.NewGuid(utils.EgressPrefix),
 		RequestId: utils.NewGuid(utils.RPCPrefix),
@@ -271,36 +278,38 @@ func testStreamFailure(t *testing.T, conf *testConfig, customUrl string) {
 		},
 	}
 
-	p, err := params.GetPipelineParams(conf.Config, req)
+	p, err := params.GetPipelineParams(ctx, conf.Config, req)
 	require.NoError(t, err)
 	if customUrl != "" {
 		p.CustomInputURL = customUrl
 	}
 
-	rec, err := pipeline.New(conf.Config, p)
+	rec, err := pipeline.New(ctx, conf.Config, p)
 	require.NoError(t, err)
 
-	info := rec.Run()
+	info := rec.Run(ctx)
 	require.NotEmpty(t, info.Error)
 	require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
 }
 
 func runSegmentsTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, playlistPath string) {
-	p, err := params.GetPipelineParams(conf.Config, req)
+	ctx := context.Background()
+
+	p, err := params.GetPipelineParams(ctx, conf.Config, req)
 	require.NoError(t, err)
 
 	if !strings.HasPrefix(conf.ApiKey, "API") || test.forceCustomInput {
 		p.CustomInputURL = test.inputUrl
 	}
 
-	rec, err := pipeline.New(conf.Config, p)
+	rec, err := pipeline.New(ctx, conf.Config, p)
 	require.NoError(t, err)
 
 	// record for ~30s. Takes about 5s to start
 	time.AfterFunc(time.Second*35, func() {
-		rec.SendEOS()
+		rec.SendEOS(ctx)
 	})
-	res := rec.Run()
+	res := rec.Run(ctx)
 
 	// egress info
 	require.Empty(t, res.Error)

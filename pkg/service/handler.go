@@ -34,26 +34,7 @@ func (h *Handler) HandleRequest(ctx context.Context, req *livekit.StartEgressReq
 	ctx, span := tracer.Start(ctx, "Handler.HandleRequest")
 	defer span.End()
 
-	// build/verify params
-	pipelineParams, err := params.GetPipelineParams(ctx, h.conf, req)
-	info := pipelineParams.Info
-	if err != nil {
-		info.Error = err.Error()
-		info.Status = livekit.EgressStatus_EGRESS_FAILED
-		h.sendUpdate(ctx, info)
-		return
-	}
-
-	// create the pipeline
-	p, err := pipeline.New(ctx, h.conf, pipelineParams)
-	if err != nil {
-		info.Error = err.Error()
-		info.Status = livekit.EgressStatus_EGRESS_FAILED
-		h.sendUpdate(ctx, info)
-		return
-	}
-
-	p.OnStatusUpdate(h.sendUpdate)
+	p, err := h.buildPipeline(ctx, req)
 
 	// subscribe to request channel
 	requests, err := h.rpcServer.EgressSubscription(context.Background(), p.GetInfo().EgressId)
@@ -108,10 +89,32 @@ func (h *Handler) HandleRequest(ctx context.Context, req *livekit.StartEgressReq
 	}
 }
 
-func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
-	ctx, span := tracer.Start(ctx, "Handler.sendUpdate")
+func (h *Handler) buildPipeline(ctx context.Context, req *livekit.StartEgressRequest) (*pipeline.Pipeline, error) {
+	ctx, span := tracer.Start(ctx, "Handler.buildPipeline")
 	defer span.End()
 
+	// build/verify params
+	pipelineParams, err := params.GetPipelineParams(ctx, h.conf, req)
+	var p *pipeline.Pipeline
+
+	if err == nil {
+		// create the pipeline
+		p, err = pipeline.New(ctx, h.conf, pipelineParams)
+	}
+
+	if err != nil {
+		info := pipelineParams.Info
+		info.Error = err.Error()
+		info.Status = livekit.EgressStatus_EGRESS_FAILED
+		h.sendUpdate(ctx, info)
+		return nil, err
+	}
+
+	p.OnStatusUpdate(h.sendUpdate)
+	return p, nil
+}
+
+func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
 	switch info.Status {
 	case livekit.EgressStatus_EGRESS_FAILED:
 		logger.Errorw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
@@ -127,9 +130,6 @@ func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
 }
 
 func (h *Handler) sendResponse(ctx context.Context, req *livekit.EgressRequest, info *livekit.EgressInfo, err error) {
-	ctx, span := tracer.Start(ctx, "Handler.sendResponse")
-	defer span.End()
-
 	args := []interface{}{
 		"egressID", info.EgressId,
 		"requestID", req.RequestId,

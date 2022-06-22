@@ -115,8 +115,8 @@ func (s *Service) Run() error {
 
 			if s.acceptRequest(ctx, req) {
 				// validate before launching handler
-				pipelineParams, err := params.GetPipelineParams(ctx, s.conf, req)
-				s.sendResponse(ctx, req, pipelineParams.Info, err)
+				info, err := params.ValidateRequest(ctx, s.conf, req)
+				s.sendResponse(ctx, req, info, err)
 				if err != nil {
 					span.End()
 					continue
@@ -205,9 +205,6 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 }
 
 func (s *Service) sendResponse(ctx context.Context, req *livekit.StartEgressRequest, info *livekit.EgressInfo, err error) {
-	ctx, span := tracer.Start(ctx, "Service.sendResponse")
-	defer span.End()
-
 	if err != nil {
 		logger.Infow("bad request", err,
 			"egressID", info.EgressId,

@@ -24,7 +24,7 @@ import (
 )
 
 // gst.Init needs to be called before using gst but after gst package loads
-var initialized = false
+// var initialized = false
 
 const (
 	pipelineSource    = "pipeline"
@@ -72,13 +72,6 @@ type segmentUpdate struct {
 func New(ctx context.Context, conf *config.Config, p *params.Params) (*Pipeline, error) {
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
-
-	if !initialized {
-		_, span := tracer.Start(ctx, "gst.Init")
-		gst.Init(nil)
-		initialized = true
-		span.End()
-	}
 
 	// create input bin
 	in, err := input.Build(ctx, conf, p)
@@ -147,7 +140,7 @@ func (p *Pipeline) GetInfo() *livekit.EgressInfo {
 	return p.Info
 }
 
-func (p *Pipeline) OnStatusUpdate(f func(ctx context.Context, info *livekit.EgressInfo)) {
+func (p *Pipeline) OnStatusUpdate(f func(context.Context, *livekit.EgressInfo)) {
 	p.onStatusUpdate = f
 }
 

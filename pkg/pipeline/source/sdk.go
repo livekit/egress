@@ -149,6 +149,7 @@ func NewSDKSource(ctx context.Context, p *params.Params) (*SDKSource, error) {
 		// write blank frames only when writing to mp4
 		writeBlanks := p.VideoCodec == params.MimeTypeH264
 
+		<-p.GstReady
 		switch track.Kind() {
 		case webrtc.RTPCodecTypeAudio:
 			s.audioSrc = app.SrcFromElement(src)

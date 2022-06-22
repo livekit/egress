@@ -19,14 +19,22 @@ func Build(ctx context.Context, conf *config.Config, p *params.Params) (*Bin, er
 	ctx, span := tracer.Start(ctx, "Input.Build")
 	defer span.End()
 
-	b := &Bin{
-		bin: gst.NewBin("input"),
-	}
-
 	// source
-	err := b.buildSource(ctx, conf, p)
+	var src source.Source
+	var err error
+	if p.IsWebSource {
+		src, err = source.NewWebSource(ctx, conf, p)
+		<-p.GstReady
+	} else {
+		src, err = source.NewSDKSource(ctx, p)
+	}
 	if err != nil {
 		return nil, err
+	}
+
+	b := &Bin{
+		bin:    gst.NewBin("input"),
+		Source: src,
 	}
 
 	// audio elements
@@ -68,16 +76,6 @@ func Build(ctx context.Context, conf *config.Config, p *params.Params) (*Bin, er
 	}
 
 	return b, nil
-}
-
-func (b *Bin) buildSource(ctx context.Context, conf *config.Config, p *params.Params) error {
-	var err error
-	if p.IsWebSource {
-		b.Source, err = source.NewWebSource(ctx, conf, p)
-	} else {
-		b.Source, err = source.NewSDKSource(ctx, p)
-	}
-	return err
 }
 
 func (b *Bin) buildMux(p *params.Params) error {
