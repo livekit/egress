@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path"
 
 	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
@@ -19,6 +20,8 @@ const (
 	roomCompositeCpuCost  = 3
 	trackCompositeCpuCost = 2
 	trackCpuCost          = 1
+
+	defaultLocalOutputDirectory = "/"
 )
 
 type Config struct {
@@ -27,11 +30,12 @@ type Config struct {
 	ApiSecret string      `yaml:"api_secret"` // required (env LIVEKIT_API_SECRET)
 	WsUrl     string      `yaml:"ws_url"`     // required (env LIVEKIT_WS_URL)
 
-	HealthPort     int    `yaml:"health_port"`
-	PrometheusPort int    `yaml:"prometheus_port"`
-	LogLevel       string `yaml:"log_level"`
-	TemplateBase   string `yaml:"template_base"`
-	Insecure       bool   `yaml:"insecure"`
+	HealthPort           int    `yaml:"health_port"`
+	PrometheusPort       int    `yaml:"prometheus_port"`
+	LogLevel             string `yaml:"log_level"`
+	TemplateBase         string `yaml:"template_base"`
+	Insecure             bool   `yaml:"insecure"`
+	LocalOutputDirectory string `yaml:"local_directory"` // used both for temporary storage before uplaod and local output
 
 	S3    *S3Config    `yaml:"s3"`
 	Azure *AzureConfig `yaml:"azure"`
@@ -65,6 +69,9 @@ type AzureConfig struct {
 	AccountName   string `yaml:"account_name"` // (env AZURE_STORAGE_ACCOUNT)
 	AccountKey    string `yaml:"account_key"`  // (env AZURE_STORAGE_KEY)
 	ContainerName string `yaml:"container_name"`
+}
+
+type LocalConfig struct {
 }
 
 type GCPConfig struct {
@@ -126,6 +133,11 @@ func NewConfig(confString string) (*Config, error) {
 	}
 	if conf.CPUCost.RoomCompositeCpuCost <= 0.0 {
 		conf.CPUCost.RoomCompositeCpuCost = roomCompositeCpuCost
+	}
+
+	conf.LocalOutputDirectory = path.Clean(conf.LocalOutputDirectory)
+	if conf.LocalOutputDirectory == "." {
+		conf.LocalOutputDirectory = defaultLocalOutputDirectory
 	}
 
 	if err := conf.initLogger(); err != nil {
