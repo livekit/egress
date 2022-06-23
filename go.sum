@@ -318,8 +318,9 @@ github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427/go.mod h1:0hI+orMYV
 github.com/livekit/livekit-server v1.0.2-0.20220613191817-4be096cf7405 h1:Hk/cqsdUwF/CahVST8xa7QWBX2Ld2gUk8EIpcN3rAZ0=
 github.com/livekit/livekit-server v1.0.2-0.20220613191817-4be096cf7405/go.mod h1:TVrtfUF22DBML9yLrOuFqatMI17peCeKMSut2AqnZnk=
 github.com/livekit/protocol v0.13.2/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
-github.com/livekit/protocol v0.13.3-0.20220613185908-e66f32ebb7f5 h1:uSOLns5ijvm2z19ppei9iJOYs+1Qf1V6Qrp3M4GcQOc=
 github.com/livekit/protocol v0.13.3-0.20220613185908-e66f32ebb7f5/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
+github.com/livekit/protocol v0.13.4-0.20220623212407-4a8409f8f24d h1:yNx1VR7K7JjzevmiaH7aWtHpKwEgnvogqVf8UZnVW6M=
+github.com/livekit/protocol v0.13.4-0.20220623212407-4a8409f8f24d/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
 github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a h1:cENjhGfslLSDV07gt8ASy47Wd12Q0kBS7hsdunyQ62I=
 github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a/go.mod h1:116ych8UaEs9vfIE8n6iZCZ30iagUFTls0vRmC+Ix5U=
 github.com/livekit/server-sdk-go v0.10.1 h1:0SX/z2nFi7VRz/VbUY7gXbT1ZfzyxDS4S7hh6RLjIfI=

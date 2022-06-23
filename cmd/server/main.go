@@ -21,7 +21,6 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/service"
-	"github.com/livekit/egress/pkg/tracer"
 	"github.com/livekit/egress/version"
 )
 

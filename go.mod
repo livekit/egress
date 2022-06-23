@@ -18,7 +18,7 @@ require (
 	github.com/gorilla/websocket v1.4.2
 	github.com/grafov/m3u8 v0.11.1
 	github.com/livekit/livekit-server v1.0.2-0.20220613191817-4be096cf7405
-	github.com/livekit/protocol v0.13.3-0.20220613185908-e66f32ebb7f5
+	github.com/livekit/protocol v0.13.4-0.20220623212407-4a8409f8f24d
 	github.com/livekit/server-sdk-go v0.10.1
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.13

@@ -13,11 +13,11 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/tracer"
 	lksdk "github.com/livekit/server-sdk-go"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
-	"github.com/livekit/egress/pkg/tracer"
 )
 
 const (
