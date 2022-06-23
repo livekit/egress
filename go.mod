@@ -19,7 +19,7 @@ require (
 	github.com/grafov/m3u8 v0.11.1
 	github.com/livekit/livekit-server v1.0.2-0.20220613191817-4be096cf7405
 	github.com/livekit/protocol v0.13.4-0.20220623220447-eb06e1619afa
-	github.com/livekit/server-sdk-go v0.10.1
+	github.com/livekit/server-sdk-go v0.10.2
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.13
 	github.com/pion/webrtc/v3 v3.1.40
@@ -67,6 +67,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
 	github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a // indirect
+	github.com/magefile/mage v1.13.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
