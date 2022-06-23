@@ -206,7 +206,8 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 
 func (s *Service) sendResponse(ctx context.Context, req *livekit.StartEgressRequest, info *livekit.EgressInfo, err error) {
 	if err != nil {
-		logger.Infow("bad request", err,
+		logger.Infow("bad request",
+			"error", err,
 			"egressID", info.EgressId,
 			"requestID", req.RequestId,
 			"senderID", req.SenderId,
