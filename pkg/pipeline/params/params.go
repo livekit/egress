@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tinyzimmer/go-gst/gst"
-
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -98,24 +96,12 @@ type SegmentedFileParams struct {
 }
 
 func ValidateRequest(conf *config.Config, request *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
-	p, err := getPipelineParams(conf, request)
+	p, err := GetPipelineParams(conf, request)
 	return p.Info, err
 }
 
-func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest) (*Params, error) {
-	gstReady := make(chan struct{})
-	go func() {
-		gst.Init(nil)
-		close(gstReady)
-	}()
-
-	p, err := getPipelineParams(conf, request)
-	p.GstReady = gstReady
-	return p, err
-}
-
-// getPipelineParams must always return params, even on error
-func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest) (p *Params, err error) {
+// GetPipelineParams must always return params, even on error
+func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest) (p *Params, err error) {
 	// start with defaults
 	p = &Params{
 		Logger: logger.Logger(logger.GetLogger().WithValues("egressID", request.EgressId)),

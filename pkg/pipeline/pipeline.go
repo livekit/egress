@@ -66,6 +66,12 @@ type segmentUpdate struct {
 }
 
 func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
+	// initialize gst
+	go func() {
+		gst.Init(nil)
+		close(p.GstReady)
+	}()
+
 	// create input bin
 	in, err := input.Build(conf, p)
 	if err != nil {
