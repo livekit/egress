@@ -167,5 +167,4 @@ func UploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mim
 	}
 
 	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", conf.Bucket, requestedPath), nil
-
 }
