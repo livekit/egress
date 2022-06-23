@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path"
 
 	"github.com/go-logr/zapr"
 	"github.com/lightstep/otel-launcher-go/launcher"
@@ -20,6 +21,8 @@ const (
 	roomCompositeCpuCost  = 3
 	trackCompositeCpuCost = 2
 	trackCpuCost          = 1
+
+	defaultLocalOutputDirectory = "/"
 )
 
 type Config struct {
@@ -28,12 +31,13 @@ type Config struct {
 	ApiSecret string      `yaml:"api_secret"` // required (env LIVEKIT_API_SECRET)
 	WsUrl     string      `yaml:"ws_url"`     // required (env LIVEKIT_WS_URL)
 
-	HealthPort     int    `yaml:"health_port"`
-	PrometheusPort int    `yaml:"prometheus_port"`
-	LightstepToken string `yaml:"lightstep_token"`
-	LogLevel       string `yaml:"log_level"`
-	TemplateBase   string `yaml:"template_base"`
-	Insecure       bool   `yaml:"insecure"`
+	HealthPort           int    `yaml:"health_port"`
+	PrometheusPort       int    `yaml:"prometheus_port"`
+	LightstepToken       string `yaml:"lightstep_token"`
+	LogLevel             string `yaml:"log_level"`
+	TemplateBase         string `yaml:"template_base"`
+	Insecure             bool   `yaml:"insecure"`
+	LocalOutputDirectory string `yaml:"local_directory"` // used both for temporary storage before upload and local output
 
 	S3    *S3Config    `yaml:"s3"`
 	Azure *AzureConfig `yaml:"azure"`
@@ -53,6 +57,7 @@ type RedisConfig struct {
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
 	DB       int    `yaml:"db"`
+	UseTLS   bool   `yaml:"use_tls"`
 }
 
 type S3Config struct {
@@ -128,6 +133,11 @@ func NewConfig(confString string) (*Config, error) {
 	}
 	if conf.CPUCost.RoomCompositeCpuCost <= 0.0 {
 		conf.CPUCost.RoomCompositeCpuCost = roomCompositeCpuCost
+	}
+
+	conf.LocalOutputDirectory = path.Clean(conf.LocalOutputDirectory)
+	if conf.LocalOutputDirectory == "." {
+		conf.LocalOutputDirectory = defaultLocalOutputDirectory
 	}
 
 	if err := conf.initLogger(); err != nil {

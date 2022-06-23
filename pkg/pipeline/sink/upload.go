@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -13,6 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/googleapis/gax-go/v2"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 
 	"github.com/livekit/protocol/livekit"
@@ -20,23 +23,20 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
-const maxRetries = 5
+const (
+	maxRetries = 5
+	minDelay   = 100 * time.Millisecond
+	maxDelay   = 5 * time.Second
+)
+
+// FIXME Should we use a Context to allow for an overall operation timeout?
 
 func UploadS3(conf *livekit.S3Upload, localFilePath, requestedPath string, mime params.OutputType) (location string, err error) {
-	for i := 0; i < maxRetries; i++ {
-		location, err = uploadS3(conf, localFilePath, requestedPath, mime)
-		if err == nil {
-			return
-		}
-	}
-	return
-}
-
-func uploadS3(conf *livekit.S3Upload, localFilePath, requestedPath string, mime params.OutputType) (string, error) {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, ""),
 		Endpoint:    aws.String(conf.Endpoint),
 		Region:      aws.String(conf.Region),
+		MaxRetries:  aws.Int(maxRetries), // Switching to v2 of the aws Go SDK would allow to set a maxDelay as well.
 	})
 	if err != nil {
 		return "", err
@@ -68,16 +68,6 @@ func uploadS3(conf *livekit.S3Upload, localFilePath, requestedPath string, mime 
 }
 
 func UploadAzure(conf *livekit.AzureBlobUpload, localFilePath, requestedPath string, mime params.OutputType) (location string, err error) {
-	for i := 0; i < maxRetries; i++ {
-		location, err = uploadAzure(conf, localFilePath, requestedPath, mime)
-		if err == nil {
-			return
-		}
-	}
-	return
-}
-
-func uploadAzure(conf *livekit.AzureBlobUpload, localFilePath, requestedPath string, mime params.OutputType) (string, error) {
 	credential, err := azblob.NewSharedKeyCredential(
 		conf.AccountName,
 		conf.AccountKey,
@@ -86,7 +76,14 @@ func uploadAzure(conf *livekit.AzureBlobUpload, localFilePath, requestedPath str
 		return "", err
 	}
 
-	pipeline := azblob.NewPipeline(credential, azblob.PipelineOptions{})
+	pipeline := azblob.NewPipeline(credential, azblob.PipelineOptions{
+		Retry: azblob.RetryOptions{
+			Policy:        azblob.RetryPolicyExponential,
+			MaxTries:      maxRetries,
+			RetryDelay:    minDelay,
+			MaxRetryDelay: maxDelay,
+		},
+	})
 	sUrl := fmt.Sprintf("https://%s.blob.core.windows.net/%s", conf.AccountName, conf.ContainerName)
 	azUrl, err := url.Parse(sUrl)
 	if err != nil {
@@ -117,19 +114,8 @@ func uploadAzure(conf *livekit.AzureBlobUpload, localFilePath, requestedPath str
 }
 
 func UploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mime params.OutputType) (location string, err error) {
-	for i := 0; i < maxRetries; i++ {
-		location, err = uploadGCP(conf, localFilePath, requestedPath, mime)
-		if err == nil {
-			return
-		}
-	}
-	return
-}
-
-func uploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mime params.OutputType) (string, error) {
 	ctx := context.Background()
 	var client *storage.Client
-	var err error
 
 	if conf.Credentials != nil {
 		client, err = storage.NewClient(ctx, option.WithCredentialsJSON(conf.Credentials))
@@ -147,7 +133,31 @@ func uploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mim
 	}
 	defer file.Close()
 
-	wc := client.Bucket(conf.Bucket).Object(requestedPath).NewWriter(ctx)
+	// In case where the total amount of data to upload is larger than googleapi.DefaultUploadChunkSize, each upload request will have a timeout of
+	// ChunkRetryDeadline, which is 32s by default. If the request payload is smaller than googleapi.DefaultUploadChunkSize, use a context deadline
+	// to apply the same timeouit
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+
+	var wctx context.Context
+	if fileInfo.Size() <= googleapi.DefaultUploadChunkSize {
+		var cancel context.CancelFunc
+		wctx, cancel = context.WithTimeout(ctx, 32*time.Second)
+		defer cancel()
+	} else {
+		wctx = ctx
+	}
+
+	wc := client.Bucket(conf.Bucket).Object(requestedPath).Retryer(storage.WithBackoff(gax.Backoff{
+		Initial:    minDelay,
+		Max:        maxDelay,
+		Multiplier: 2,
+	}),
+		storage.WithPolicy(storage.RetryAlways),
+	).NewWriter(wctx)
+
 	if _, err = io.Copy(wc, file); err != nil {
 		return "", err
 	}
