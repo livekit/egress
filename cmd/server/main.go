@@ -73,8 +73,6 @@ func runService(c *cli.Context) error {
 		return err
 	}
 
-	defer conf.Launcher.Shutdown()
-
 	rc, err := getRedisClient(conf)
 	if err != nil {
 		return err
@@ -114,8 +112,6 @@ func runHandler(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-
-	defer conf.Launcher.Shutdown()
 
 	ctx, span := tracer.Start(context.Background(), "Handler.New")
 	defer span.End()
