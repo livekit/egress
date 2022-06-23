@@ -35,7 +35,7 @@ type Config struct {
 	LogLevel             string `yaml:"log_level"`
 	TemplateBase         string `yaml:"template_base"`
 	Insecure             bool   `yaml:"insecure"`
-	LocalOutputDirectory string `yaml:"local_directory"` // used both for temporary storage before uplaod and local output
+	LocalOutputDirectory string `yaml:"local_directory"` // used both for temporary storage before upload and local output
 
 	S3    *S3Config    `yaml:"s3"`
 	Azure *AzureConfig `yaml:"azure"`
@@ -69,9 +69,6 @@ type AzureConfig struct {
 	AccountName   string `yaml:"account_name"` // (env AZURE_STORAGE_ACCOUNT)
 	AccountKey    string `yaml:"account_key"`  // (env AZURE_STORAGE_KEY)
 	ContainerName string `yaml:"container_name"`
-}
-
-type LocalConfig struct {
 }
 
 type GCPConfig struct {

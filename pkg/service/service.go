@@ -111,8 +111,8 @@ func (s *Service) Run() error {
 
 			if s.acceptRequest(req) {
 				// validate before launching handler
-				pipelineParams, err := params.GetPipelineParams(s.conf, req)
-				s.sendResponse(req, pipelineParams.Info, err)
+				info, err := params.ValidateRequest(s.conf, req)
+				s.sendResponse(req, info, err)
 				if err != nil {
 					continue
 				}

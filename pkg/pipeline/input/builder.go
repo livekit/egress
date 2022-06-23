@@ -14,14 +14,22 @@ import (
 
 // TODO: save mp4 files as TS then remux to avoid losing everything on failure
 func Build(conf *config.Config, p *params.Params) (*Bin, error) {
-	b := &Bin{
-		bin: gst.NewBin("input"),
-	}
-
 	// source
-	err := b.buildSource(conf, p)
+	var src source.Source
+	var err error
+	if p.IsWebSource {
+		src, err = source.NewWebSource(conf, p)
+		<-p.GstReady
+	} else {
+		src, err = source.NewSDKSource(p)
+	}
 	if err != nil {
 		return nil, err
+	}
+
+	b := &Bin{
+		bin:    gst.NewBin("input"),
+		Source: src,
 	}
 
 	// audio elements
@@ -63,16 +71,6 @@ func Build(conf *config.Config, p *params.Params) (*Bin, error) {
 	}
 
 	return b, nil
-}
-
-func (b *Bin) buildSource(conf *config.Config, p *params.Params) error {
-	var err error
-	if p.IsWebSource {
-		b.Source, err = source.NewWebSource(conf, p)
-	} else {
-		b.Source, err = source.NewSDKSource(p)
-	}
-	return err
 }
 
 func (b *Bin) buildMux(p *params.Params) error {

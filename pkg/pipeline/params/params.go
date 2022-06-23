@@ -17,8 +17,10 @@ import (
 )
 
 type Params struct {
-	Logger logger.Logger
-	Info   *livekit.EgressInfo
+	conf     *config.Config
+	Logger   logger.Logger
+	Info     *livekit.EgressInfo
+	GstReady chan struct{}
 
 	SourceParams
 	AudioParams
@@ -32,9 +34,7 @@ type Params struct {
 	FileParams
 	SegmentedFileParams
 
-	UploadParams
-
-	conf *config.Config
+	FileUpload interface{}
 }
 
 type SourceParams struct {
@@ -95,8 +95,9 @@ type SegmentedFileParams struct {
 	SegmentDuration  int
 }
 
-type UploadParams struct {
-	FileUpload interface{}
+func ValidateRequest(conf *config.Config, request *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+	p, err := GetPipelineParams(conf, request)
+	return p.Info, err
 }
 
 // GetPipelineParams must always return params, even on error
@@ -109,6 +110,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			RoomId:   request.RoomId,
 			Status:   livekit.EgressStatus_EGRESS_STARTING,
 		},
+		GstReady: make(chan struct{}),
 		AudioParams: AudioParams{
 			AudioBitrate:   128,
 			AudioFrequency: 44100,

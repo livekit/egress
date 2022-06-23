@@ -22,9 +22,6 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/source"
 )
 
-// gst.Init needs to be called before using gst but after gst package loads
-var initialized = false
-
 const (
 	pipelineSource    = "pipeline"
 	fileKey           = "file"
@@ -69,10 +66,11 @@ type segmentUpdate struct {
 }
 
 func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
-	if !initialized {
+	// initialize gst
+	go func() {
 		gst.Init(nil)
-		initialized = true
-	}
+		close(p.GstReady)
+	}()
 
 	// create input bin
 	in, err := input.Build(conf, p)
