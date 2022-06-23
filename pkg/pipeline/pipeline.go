@@ -195,6 +195,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 
 	// set state to playing (this does not start the pipeline)
 	if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
+		span.RecordError(err)
 		p.Logger.Errorw("failed to set pipeline state", err)
 		p.Info.Error = err.Error()
 		return p.Info
@@ -307,6 +308,7 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilePath, requestedPath s
 	if err != nil {
 		p.Logger.Errorw("could not upload file", err, "location", location)
 		err = errors.ErrUploadFailed(location, err)
+		span.RecordError(err)
 	}
 
 	return destinationUrl, size, err

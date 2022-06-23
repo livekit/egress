@@ -36,12 +36,14 @@ func (h *Handler) HandleRequest(ctx context.Context, req *livekit.StartEgressReq
 
 	p, err := h.buildPipeline(ctx, req)
 	if err != nil {
+		span.RecordError(err)
 		return
 	}
 
 	// subscribe to request channel
 	requests, err := h.rpcServer.EgressSubscription(context.Background(), p.GetInfo().EgressId)
 	if err != nil {
+		span.RecordError(err)
 		return
 	}
 	defer func() {

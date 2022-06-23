@@ -120,6 +120,7 @@ func runHandler(c *cli.Context) error {
 
 	rc, err := getRedisClient(conf)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 
@@ -127,6 +128,7 @@ func runHandler(c *cli.Context) error {
 	reqString := c.String("request")
 	err = proto.Unmarshal([]byte(reqString), req)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 

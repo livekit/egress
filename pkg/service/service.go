@@ -118,6 +118,7 @@ func (s *Service) Run() error {
 				info, err := params.ValidateRequest(ctx, s.conf, req)
 				s.sendResponse(ctx, req, info, err)
 				if err != nil {
+					span.RecordError(err)
 					span.End()
 					continue
 				}
@@ -192,6 +193,7 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 	// claim request
 	claimed, err := s.rpcServer.ClaimRequest(context.Background(), req)
 	if err != nil {
+		span.RecordError(err)
 		logger.Errorw("could not claim request", err, args...)
 		return false
 	} else if !claimed {
@@ -225,12 +227,14 @@ func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressReq
 
 	confString, err := yaml.Marshal(s.conf)
 	if err != nil {
+		span.RecordError(err)
 		logger.Errorw("could not marshal config", err)
 		return
 	}
 
 	reqString, err := proto.Marshal(req)
 	if err != nil {
+		span.RecordError(err)
 		logger.Errorw("could not marshal request", err)
 		return
 	}
