@@ -73,6 +73,9 @@ func New(ctx context.Context, conf *config.Config, p *params.Params) (*Pipeline,
 
 	// initialize gst
 	go func() {
+		_, span := tracer.Start(ctx, "gst.Init")
+		defer span.End()
+
 		gst.Init(nil)
 		close(p.GstReady)
 	}()

@@ -5,7 +5,7 @@ import (
 )
 
 type Tracer interface {
-	Start(ctx context.Context, spanName string, opts ...interface{}) (context.Context, Span)
+	Start(ctx context.Context, spanName string) (context.Context, Span)
 }
 
 type Span interface {
@@ -14,7 +14,7 @@ type Span interface {
 
 type NoOpTracer struct{}
 
-func (t *NoOpTracer) Start(ctx context.Context, _ string, _ ...interface{}) (context.Context, Span) {
+func (t *NoOpTracer) Start(ctx context.Context, _ string) (context.Context, Span) {
 	return ctx, &NoOpSpan{}
 }
 
@@ -29,6 +29,6 @@ func SetTracer(t Tracer) {
 	tracer = t
 }
 
-func Start(ctx context.Context, spanName string, opts ...interface{}) (context.Context, Span) {
-	return tracer.Start(ctx, spanName, opts...)
+func Start(ctx context.Context, spanName string) (context.Context, Span) {
+	return tracer.Start(ctx, spanName)
 }
