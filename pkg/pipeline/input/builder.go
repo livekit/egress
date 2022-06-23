@@ -1,10 +1,13 @@
 package input
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/tinyzimmer/go-gst/gst"
+
+	"github.com/livekit/protocol/tracer"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -13,15 +16,18 @@ import (
 )
 
 // TODO: save mp4 files as TS then remux to avoid losing everything on failure
-func Build(conf *config.Config, p *params.Params) (*Bin, error) {
+func Build(ctx context.Context, conf *config.Config, p *params.Params) (*Bin, error) {
+	ctx, span := tracer.Start(ctx, "Input.Build")
+	defer span.End()
+
 	// source
 	var src source.Source
 	var err error
 	if p.IsWebSource {
-		src, err = source.NewWebSource(conf, p)
+		src, err = source.NewWebSource(ctx, conf, p)
 		<-p.GstReady
 	} else {
-		src, err = source.NewSDKSource(p)
+		src, err = source.NewSDKSource(ctx, p)
 	}
 	if err != nil {
 		return nil, err

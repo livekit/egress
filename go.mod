@@ -11,14 +11,14 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20220208224320-6efb837e6bc2
 	github.com/chromedp/chromedp v0.7.7
 	github.com/frostbyte73/go-throttle v0.0.0-20210621200530-8018c891361d
-	github.com/go-logr/logr v1.2.2
+	github.com/go-logr/logr v1.2.3
 	github.com/go-logr/zapr v1.2.3
 	github.com/go-redis/redis/v8 v8.11.4
 	github.com/googleapis/gax-go/v2 v2.3.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/grafov/m3u8 v0.11.1
 	github.com/livekit/livekit-server v1.0.2-0.20220613191817-4be096cf7405
-	github.com/livekit/protocol v0.13.3-0.20220613185908-e66f32ebb7f5
+	github.com/livekit/protocol v0.13.4-0.20220623212407-4a8409f8f24d
 	github.com/livekit/server-sdk-go v0.10.1
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.13
@@ -40,6 +40,7 @@ require (
 	cloud.google.com/go/compute v1.6.0 // indirect
 	cloud.google.com/go/iam v0.3.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
+	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bep/debounce v1.2.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
@@ -51,7 +52,7 @@ require (
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/elliotchance/orderedmap v1.4.0 // indirect
 	github.com/gammazero/deque v0.1.0 // indirect
-	github.com/go-logr/stdr v1.0.0 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.1.0 // indirect
@@ -63,6 +64,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
 	github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -94,6 +96,7 @@ require (
 	github.com/thoas/go-funk v0.9.0 // indirect
 	github.com/twitchtv/twirp v8.1.1+incompatible // indirect
 	go.opencensus.io v0.23.0 // indirect
+	go.uber.org/goleak v1.1.12 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e // indirect
 	golang.org/x/net v0.0.0-20220526153639-5463443f8c37 // indirect

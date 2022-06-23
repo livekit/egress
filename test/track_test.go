@@ -4,6 +4,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -137,17 +138,19 @@ func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, tes
 		},
 	}
 
-	p, err := params.GetPipelineParams(conf.Config, req)
+	ctx := context.Background()
+
+	p, err := params.GetPipelineParams(ctx, conf.Config, req)
 	require.NoError(t, err)
 
-	rec, err := pipeline.New(conf.Config, p)
+	rec, err := pipeline.New(ctx, conf.Config, p)
 	require.NoError(t, err)
 
 	// record for ~30s. Takes about 5s to start
 	time.AfterFunc(time.Second*35, func() {
-		rec.SendEOS()
+		rec.SendEOS(ctx)
 	})
-	res := rec.Run()
+	res := rec.Run(ctx)
 
 	verify(t, filepath, p, res, ResultTypeStream, conf.Muting)
 }

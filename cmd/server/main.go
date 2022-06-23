@@ -17,6 +17,7 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/tracer"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -112,6 +113,11 @@ func runHandler(c *cli.Context) error {
 		return err
 	}
 
+	ctx, span := tracer.Start(context.Background(), "Handler.New")
+	defer span.End()
+
+	logger.Debugw("handler launched")
+
 	rc, err := getRedisClient(conf)
 	if err != nil {
 		return err
@@ -136,7 +142,7 @@ func runHandler(c *cli.Context) error {
 		handler.Kill()
 	}()
 
-	handler.HandleRequest(req)
+	handler.HandleRequest(ctx, req)
 	return nil
 }
 
