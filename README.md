@@ -68,7 +68,7 @@ As an alternative to generating a single media file, it is possible to have the 
 
 Currently, only [HTTP Live Streaming](https://datatracker.ietf.org/doc/html/rfc8216) compatible segments (using the MPEG TS file format) and manifests are supported.
 
-If one of `s3`, `azure`, or `gcp` is supplied with the config, each segment will be uploaded with an updated manifest as soon as it is generated. This allows playback of the exported media while the export is still ongoing. 
+If one of `s3`, `azure`, or `gcp` is supplied with the config or request, each segment will be uploaded with an updated manifest as soon as it is generated. This allows playback of the exported media while the export is still ongoing. 
 
 ### StartTrackCompositeEgress
 
@@ -153,7 +153,7 @@ prometheus_port: port used to collect prometheus metrics. Used for autoscaling
 log_level: debug, info, warn, or error (default info)
 template_base: can be used to host custom templates (default https://egress-composite.livekit.io)
 insecure: can be used to connect to an insecure websocket (default false)
-local_directory: base path where to store media files before they get uploaded to blob storage
+local_directory: base path where to store media files before they get uploaded to blob storage. This does not affect the storage path if no upload location is given.
 
 # file upload config - only one of the following. Can be overridden 
 s3:
