@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"os"
 	"path"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/tracer"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -21,9 +23,6 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
 )
-
-// gst.Init needs to be called before using gst but after gst package loads
-var initialized = false
 
 const (
 	pipelineSource    = "pipeline"
@@ -60,7 +59,7 @@ type Pipeline struct {
 	segmentsWg     sync.WaitGroup
 
 	// callbacks
-	onStatusUpdate func(*livekit.EgressInfo)
+	onStatusUpdate func(context.Context, *livekit.EgressInfo)
 }
 
 type segmentUpdate struct {
@@ -68,20 +67,27 @@ type segmentUpdate struct {
 	localPath string
 }
 
-func New(conf *config.Config, p *params.Params) (*Pipeline, error) {
-	if !initialized {
+func New(ctx context.Context, conf *config.Config, p *params.Params) (*Pipeline, error) {
+	ctx, span := tracer.Start(ctx, "Pipeline.New")
+	defer span.End()
+
+	// initialize gst
+	go func() {
+		_, span := tracer.Start(ctx, "gst.Init")
+		defer span.End()
+
 		gst.Init(nil)
-		initialized = true
-	}
+		close(p.GstReady)
+	}()
 
 	// create input bin
-	in, err := input.Build(conf, p)
+	in, err := input.Build(ctx, conf, p)
 	if err != nil {
 		return nil, err
 	}
 
 	// create output bin
-	out, err := output.Build(p)
+	out, err := output.Build(ctx, p)
 	if err != nil {
 		return nil, err
 	}
@@ -141,11 +147,14 @@ func (p *Pipeline) GetInfo() *livekit.EgressInfo {
 	return p.Info
 }
 
-func (p *Pipeline) OnStatusUpdate(f func(info *livekit.EgressInfo)) {
+func (p *Pipeline) OnStatusUpdate(f func(context.Context, *livekit.EgressInfo)) {
 	p.onStatusUpdate = f
 }
 
-func (p *Pipeline) Run() *livekit.EgressInfo {
+func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
+	ctx, span := tracer.Start(ctx, "Pipeline.Run")
+	defer span.End()
+
 	p.Info.StartedAt = time.Now().UnixNano()
 	defer func() {
 		p.Info.EndedAt = time.Now().UnixNano()
@@ -177,7 +186,7 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	// close when room ends
 	go func() {
 		<-p.in.EndRecording()
-		p.SendEOS()
+		p.SendEOS(ctx)
 	}()
 
 	// add watch
@@ -186,6 +195,7 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 
 	// set state to playing (this does not start the pipeline)
 	if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
+		span.RecordError(err)
 		p.Logger.Errorw("failed to set pipeline state", err)
 		p.Info.Error = err.Error()
 		return p.Info
@@ -217,7 +227,7 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 	switch p.EgressType {
 	case params.EgressTypeFile:
 		var err error
-		p.FileInfo.Location, p.FileInfo.Size, err = p.storeFile(p.Filename, p.Params.Filepath, p.Params.OutputType)
+		p.FileInfo.Location, p.FileInfo.Size, err = p.storeFile(ctx, p.Filename, p.Params.Filepath, p.Params.OutputType)
 		if err != nil {
 			p.Info.Error = err.Error()
 		}
@@ -232,7 +242,7 @@ func (p *Pipeline) Run() *livekit.EgressInfo {
 			p.playlistWriter.EOS()
 			// upload the finalized playlist
 			destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
-			p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
+			p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(ctx, p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
 		}
 	}
 
@@ -263,7 +273,10 @@ func (p *Pipeline) deleteTempDirectory() {
 	}
 }
 
-func (p *Pipeline) storeFile(localFilePath, requestedPath string, mime params.OutputType) (destinationUrl string, size int64, err error) {
+func (p *Pipeline) storeFile(ctx context.Context, localFilePath, requestedPath string, mime params.OutputType) (destinationUrl string, size int64, err error) {
+	ctx, span := tracer.Start(ctx, "Pipeline.storeFile")
+	defer span.End()
+
 	fileInfo, err := os.Stat(localFilePath)
 	if err == nil {
 		size = fileInfo.Size()
@@ -295,6 +308,7 @@ func (p *Pipeline) storeFile(localFilePath, requestedPath string, mime params.Ou
 	if err != nil {
 		p.Logger.Errorw("could not upload file", err, "location", location)
 		err = errors.ErrUploadFailed(location, err)
+		span.RecordError(err)
 	}
 
 	return destinationUrl, size, err
@@ -325,7 +339,7 @@ func (p *Pipeline) startSegmentWorker() {
 
 				destinationSegmentPath := p.GetTargetPathForFilename(segmentUpdate.localPath)
 				// Ignore error. storeFile will log it.
-				_, size, _ := p.storeFile(segmentUpdate.localPath, destinationSegmentPath, p.Params.GetSegmentOutputType())
+				_, size, _ := p.storeFile(context.Background(), segmentUpdate.localPath, destinationSegmentPath, p.Params.GetSegmentOutputType())
 				p.SegmentsInfo.Size += size
 
 				if p.playlistWriter != nil {
@@ -335,7 +349,7 @@ func (p *Pipeline) startSegmentWorker() {
 						return
 					}
 					destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
-					p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
+					p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(context.Background(), p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
 				}
 			}()
 		}
@@ -356,7 +370,10 @@ func (p *Pipeline) enqueueSegmentUpload(segmentPath string, endTime int64) error
 	}
 }
 
-func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
+func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) error {
+	ctx, span := tracer.Start(ctx, "Pipeline.UpdateStream")
+	defer span.End()
+
 	if p.EgressType != params.EgressTypeStream {
 		return errors.ErrInvalidRPC
 	}
@@ -416,7 +433,7 @@ func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
 		sendEOS := len(p.startedAt) == 1
 		p.mu.Unlock()
 		if sendEOS {
-			p.SendEOS()
+			p.SendEOS(ctx)
 			continue
 		}
 
@@ -442,7 +459,10 @@ func (p *Pipeline) UpdateStream(req *livekit.UpdateStreamRequest) error {
 	return nil
 }
 
-func (p *Pipeline) SendEOS() {
+func (p *Pipeline) SendEOS(ctx context.Context) {
+	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
+	defer span.End()
+
 	select {
 	case <-p.closed:
 		return
@@ -450,7 +470,7 @@ func (p *Pipeline) SendEOS() {
 		close(p.closed)
 		p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 		if p.onStatusUpdate != nil {
-			p.onStatusUpdate(p.Info)
+			p.onStatusUpdate(ctx, p.Info)
 		}
 
 		p.Logger.Debugw("sending EOS to pipeline")
@@ -484,7 +504,7 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 
 	p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
 	if p.onStatusUpdate != nil {
-		p.onStatusUpdate(p.Info)
+		p.onStatusUpdate(context.Background(), p.Info)
 	}
 }
 

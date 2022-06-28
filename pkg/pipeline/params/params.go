@@ -1,6 +1,7 @@
 package params
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"os"
@@ -11,14 +12,17 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/tracer"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 )
 
 type Params struct {
-	Logger logger.Logger
-	Info   *livekit.EgressInfo
+	conf     *config.Config
+	Logger   logger.Logger
+	Info     *livekit.EgressInfo
+	GstReady chan struct{}
 
 	SourceParams
 	AudioParams
@@ -32,9 +36,7 @@ type Params struct {
 	FileParams
 	SegmentedFileParams
 
-	UploadParams
-
-	conf *config.Config
+	FileUpload interface{}
 }
 
 type SourceParams struct {
@@ -95,12 +97,23 @@ type SegmentedFileParams struct {
 	SegmentDuration  int
 }
 
-type UploadParams struct {
-	FileUpload interface{}
+func ValidateRequest(ctx context.Context, conf *config.Config, request *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+	ctx, span := tracer.Start(ctx, "Params.ValidateRequest")
+	defer span.End()
+
+	p, err := getPipelineParams(conf, request)
+	return p.Info, err
 }
 
-// GetPipelineParams must always return params, even on error
-func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest) (p *Params, err error) {
+func GetPipelineParams(ctx context.Context, conf *config.Config, request *livekit.StartEgressRequest) (*Params, error) {
+	ctx, span := tracer.Start(ctx, "Params.GetPipelineParams")
+	defer span.End()
+
+	return getPipelineParams(conf, request)
+}
+
+// getPipelineParams must always return params with valid info, even on error
+func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest) (p *Params, err error) {
 	// start with defaults
 	p = &Params{
 		Logger: logger.Logger(logger.GetLogger().WithValues("egressID", request.EgressId)),
@@ -109,6 +122,7 @@ func GetPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			RoomId:   request.RoomId,
 			Status:   livekit.EgressStatus_EGRESS_STARTING,
 		},
+		GstReady: make(chan struct{}),
 		AudioParams: AudioParams{
 			AudioBitrate:   128,
 			AudioFrequency: 44100,

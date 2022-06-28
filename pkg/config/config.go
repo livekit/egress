@@ -71,9 +71,6 @@ type AzureConfig struct {
 	ContainerName string `yaml:"container_name"`
 }
 
-type LocalConfig struct {
-}
-
 type GCPConfig struct {
 	CredentialsJSON string `yaml:"credentials_json"` // (env GOOGLE_APPLICATION_CREDENTIALS)
 	Bucket          string `yaml:"bucket"`

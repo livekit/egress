@@ -16,6 +16,7 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/tracer"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -42,7 +43,10 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
+func NewWebSource(ctx context.Context, conf *config.Config, p *params.Params) (*WebSource, error) {
+	ctx, span := tracer.Start(ctx, "WebSource.New")
+	defer span.End()
+
 	s := &WebSource{
 		endRecording: make(chan struct{}),
 		logger:       p.Logger,
@@ -59,18 +63,18 @@ func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 		)
 	}
 
-	if err := s.createAudioSink(p.Info.EgressId); err != nil {
+	if err := s.createAudioSink(ctx, p.Info.EgressId); err != nil {
 		s.logger.Errorw("failed to load pulse sink", err)
 		return nil, err
 	}
 
-	if err := s.launchXvfb(p.Display, p.Width, p.Height, p.Depth); err != nil {
+	if err := s.launchXvfb(ctx, p.Display, p.Width, p.Height, p.Depth); err != nil {
 		s.logger.Errorw("failed to launch xvfb", err)
 		s.Close()
 		return nil, err
 	}
 
-	if err := s.launchChrome(inputUrl, p.Info.EgressId, p.Display, p.Width, p.Height, conf.Insecure); err != nil {
+	if err := s.launchChrome(ctx, inputUrl, p.Info.EgressId, p.Display, p.Width, p.Height, conf.Insecure); err != nil {
 		s.logger.Errorw("failed to launch chrome", err, "display", p.Display)
 		s.Close()
 		return nil, err
@@ -80,7 +84,10 @@ func NewWebSource(conf *config.Config, p *params.Params) (*WebSource, error) {
 }
 
 // creates a new pulse audio sink
-func (s *WebSource) createAudioSink(egressID string) error {
+func (s *WebSource) createAudioSink(ctx context.Context, egressID string) error {
+	ctx, span := tracer.Start(ctx, "WebSource.createAudioSink")
+	defer span.End()
+
 	cmd := exec.Command("pactl",
 		"load-module", "module-null-sink",
 		fmt.Sprintf("sink_name=\"%s\"", egressID),
@@ -99,7 +106,10 @@ func (s *WebSource) createAudioSink(egressID string) error {
 }
 
 // creates a new xvfb display
-func (s *WebSource) launchXvfb(display string, width, height, depth int32) error {
+func (s *WebSource) launchXvfb(ctx context.Context, display string, width, height, depth int32) error {
+	ctx, span := tracer.Start(ctx, "WebSource.launchXvfb")
+	defer span.End()
+
 	dims := fmt.Sprintf("%dx%dx%d", width, height, depth)
 	s.logger.Debugw("launching xvfb", "display", display, "dims", dims)
 	xvfb := exec.Command("Xvfb", display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
@@ -111,7 +121,10 @@ func (s *WebSource) launchXvfb(display string, width, height, depth int32) error
 }
 
 // launches chrome and navigates to the url
-func (s *WebSource) launchChrome(url, egressID, display string, width, height int32, insecure bool) error {
+func (s *WebSource) launchChrome(ctx context.Context, url, egressID, display string, width, height int32, insecure bool) error {
+	ctx, span := tracer.Start(ctx, "WebSource.launchChrome")
+	defer span.End()
+
 	s.logger.Debugw("launching chrome", "url", url)
 
 	opts := []chromedp.ExecAllocatorOption{
@@ -165,10 +178,10 @@ func (s *WebSource) launchChrome(url, egressID, display string, width, height in
 	}
 
 	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
-	ctx, cancel := chromedp.NewContext(allocCtx)
+	chromeCtx, cancel := chromedp.NewContext(allocCtx)
 	s.chromeCancel = cancel
 
-	chromedp.ListenTarget(ctx, func(ev interface{}) {
+	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *runtime.EventConsoleAPICalled:
 			args := make([]string, 0, len(ev.Args))
@@ -201,7 +214,7 @@ func (s *WebSource) launchChrome(url, egressID, display string, width, height in
 	})
 
 	var errString string
-	err := chromedp.Run(ctx,
+	err := chromedp.Run(chromeCtx,
 		chromedp.Navigate(url),
 		chromedp.Evaluate(`
 			if (document.querySelector('div.error')) {
