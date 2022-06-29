@@ -459,6 +459,15 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	return nil
 }
 
+func (p *Pipeline) UpdateLayout(ctx context.Context, req *livekit.UpdateLayoutRequest) error {
+	switch s := p.in.Source.(type) {
+	case *source.WebSource:
+		return s.UpdateLayout(ctx, req.Layout)
+	default:
+		return errors.New("layout update not supported for this input")
+	}
+}
+
 func (p *Pipeline) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()

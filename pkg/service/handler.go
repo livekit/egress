@@ -83,6 +83,8 @@ func (h *Handler) HandleRequest(ctx context.Context, req *livekit.StartEgressReq
 			switch req := request.Request.(type) {
 			case *livekit.EgressRequest_UpdateStream:
 				err = p.UpdateStream(ctx, req.UpdateStream)
+			case *livekit.EgressRequest_UpdateLayout:
+				err = p.UpdateLayout(ctx, req.UpdateLayout)
 			case *livekit.EgressRequest_Stop:
 				p.SendEOS(ctx)
 			default:

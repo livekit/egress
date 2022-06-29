@@ -64,7 +64,7 @@ Egress will end when the room is closed or a StopEgress request is sent.
 
 #### Segmented File
 
-As an alternative to generating a single media file, it is possible to have the Egress service generate segments by using the `SegmentedFileOutput` output. The Egress service will the split the output in media segments of equal duration (6s by default), and generate a manifest listing all the generated segments. 
+As an alternative to generating a single media file, it is possible to have the Egress service generate segments by using the `SegmentedFileOutput` output. The Egress service will split the output in media segments of equal duration (6s by default), and generate a manifest listing all the generated segments. 
 
 Currently, only [HTTP Live Streaming](https://datatracker.ietf.org/doc/html/rfc8216) compatible segments (using the MPEG TS file format) and manifests are supported.
 

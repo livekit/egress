@@ -15,12 +15,15 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+
+	lksdk "github.com/livekit/server-sdk-go"
 )
 
 const (
@@ -28,10 +31,16 @@ const (
 	endRecordingLog   = "END_RECORDING"
 )
 
+type layoutUpdate struct {
+	layout string `json:"layout"`
+}
+
 type WebSource struct {
 	pulseSink    string
 	xvfb         *exec.Cmd
 	chromeCancel context.CancelFunc
+	roomService  *lksdk.RoomServiceClient
+	roomId       string
 
 	startRecording chan struct{}
 	endRecording   chan struct{}
@@ -49,6 +58,7 @@ func NewWebSource(ctx context.Context, conf *config.Config, p *params.Params) (*
 
 	s := &WebSource{
 		endRecording: make(chan struct{}),
+		roomId:       p.Info.RoomId,
 		logger:       p.Logger,
 	}
 
@@ -79,6 +89,8 @@ func NewWebSource(ctx context.Context, conf *config.Config, p *params.Params) (*
 		s.Close()
 		return nil, err
 	}
+
+	s.roomService = lksdk.NewRoomServiceClient(p.LKUrl, conf.ApiKey, conf.ApiSecret)
 
 	return s, nil
 }
@@ -228,6 +240,29 @@ func (s *WebSource) launchChrome(ctx context.Context, url, egressID, display str
 		err = errors.New(errString)
 	}
 	return err
+}
+
+func (s *WebSource) UpdateLayout(ctx context.Context, layout string) error {
+	update := layoutUpdate{
+		layout: layout,
+	}
+
+	msg, err := json.Marshal(update)
+	if err != nil {
+		return err
+	}
+
+	req := &livekit.SendDataRequest{
+		Room: s.roomId,
+		Data: msg,
+		Kind: livekit.DataPacket_RELIABLE,
+	}
+
+	if _, err := s.roomService.SendData(ctx, req); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *WebSource) StartRecording() chan struct{} {
