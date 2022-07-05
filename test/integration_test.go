@@ -23,15 +23,16 @@ import (
 )
 
 const (
-	videoTestInput  = "https://www.youtube.com/watch?v=4cJpiOPKH14&t=25s"
-	audioTestInput  = "https://www.youtube.com/watch?v=eAcFPtCyDYY&t=59s"
-	audioTestInput2 = "https://www.youtube.com/watch?v=BlPbAq1dW3I&t=45s"
-	staticTestInput = "https://www.livekit.io"
-	streamUrl1      = "rtmp://localhost:1935/live/stream1"
-	streamUrl2      = "rtmp://localhost:1935/live/stream2"
-	badStreamUrl1   = "rtmp://sfo.contribute.live-video.net/app/fake1"
-	badStreamUrl2   = "rtmp://localhost:1934/live/stream2"
-	muteDuration    = time.Second * 10
+	videoTestInput     = "https://www.youtube.com/watch?v=4cJpiOPKH14&t=25s"
+	audioTestInput     = "https://www.youtube.com/watch?v=eAcFPtCyDYY&t=59s"
+	audioTestInput2    = "https://www.youtube.com/watch?v=BlPbAq1dW3I&t=45s"
+	staticTestInput    = "https://www.livekit.io"
+	streamUrl1         = "rtmp://localhost:1935/live/stream1"
+	streamUrl2         = "rtmp://localhost:1935/live/stream2"
+	badStreamUrl1      = "rtmp://sfo.contribute.live-video.net/app/fake1"
+	badStreamUrl2      = "rtmp://localhost:1934/live/stream2"
+	muteDuration       = time.Second * 10
+	updateLayoutOffset = time.Second * 5
 )
 
 var (
@@ -176,7 +177,7 @@ func getFilePath(conf *config.Config, filename string) string {
 	return fmt.Sprintf("/out/output/%s", filename)
 }
 
-func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, filepath string) {
+func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, filepath string, f func(p *pipeline.Pipeline)) {
 	ctx := context.Background()
 
 	p, err := params.GetPipelineParams(ctx, conf.Config, req)
@@ -189,6 +190,10 @@ func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.St
 	rec, err := pipeline.New(ctx, conf.Config, p)
 	require.NoError(t, err)
 
+	if f != nil {
+		f(rec)
+	}
+
 	// record for ~30s. Takes about 5s to start
 	time.AfterFunc(time.Second*35, func() {
 		rec.SendEOS(ctx)
@@ -198,7 +203,7 @@ func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.St
 	verifyFile(t, filepath, p, res, conf.Muting)
 }
 
-func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, customUrl string) {
+func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, customUrl string, f func(p *pipeline.Pipeline)) {
 	ctx := context.Background()
 
 	p, err := params.GetPipelineParams(ctx, conf.Config, req)
@@ -209,6 +214,10 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 
 	rec, err := pipeline.New(ctx, conf.Config, p)
 	require.NoError(t, err)
+
+	if f != nil {
+		f(rec)
+	}
 
 	t.Cleanup(func() {
 		rec.SendEOS(ctx)
@@ -292,7 +301,7 @@ func testStreamFailure(t *testing.T, conf *testConfig, customUrl string) {
 	require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
 }
 
-func runSegmentsTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, playlistPath string) {
+func runSegmentsTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, playlistPath string, f func(p *pipeline.Pipeline)) {
 	ctx := context.Background()
 
 	p, err := params.GetPipelineParams(ctx, conf.Config, req)
@@ -304,6 +313,10 @@ func runSegmentsTest(t *testing.T, conf *testConfig, test *testCase, req *liveki
 
 	rec, err := pipeline.New(ctx, conf.Config, p)
 	require.NoError(t, err)
+
+	if f != nil {
+		f(rec)
+	}
 
 	// record for ~30s. Takes about 5s to start
 	time.AfterFunc(time.Second*35, func() {

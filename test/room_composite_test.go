@@ -4,6 +4,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
 
+	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
@@ -22,6 +24,18 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 
 		videoTrackID := publishSampleToRoom(t, room, params.MimeTypeVP8, conf.Muting)
 		t.Cleanup(func() { _ = room.LocalParticipant.UnpublishTrack(videoTrackID) })
+	}
+
+	var f func(p *pipeline.Pipeline)
+	if conf.UpdateLayout {
+		f = func(p *pipeline.Pipeline) {
+			time.AfterFunc(updateLayoutOffset, func() {
+				p.UpdateLayout(context.Background, &livekit.UpdateLayoutRequest{
+					EgressId: utils.NewGuid(utils.EgressPrefix),
+					Layout:   "speaker-light",
+				})
+			})
+		}
 	}
 
 	if conf.RunFileTests {
@@ -55,7 +69,7 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 			},
 		} {
 			if !t.Run(test.name, func(t *testing.T) {
-				runRoomCompositeFileTest(t, conf, test)
+				runRoomCompositeFileTest(t, conf, test, f)
 			}) {
 				t.FailNow()
 			}
@@ -76,7 +90,7 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 						AudioCodec: livekit.AudioCodec_OPUS,
 					},
 					filename: fmt.Sprintf("room-opus-1-%v.ogg", time.Now().Unix()),
-				})
+				}, f)
 				close(finished)
 			}()
 
@@ -89,7 +103,7 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 					AudioCodec: livekit.AudioCodec_OPUS,
 				},
 				filename: fmt.Sprintf("room-opus-2-%v.ogg", time.Now().Unix()),
-			})
+			}, f)
 
 			<-finished
 		}) {
@@ -106,7 +120,7 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 		// }
 		// time.Sleep(time.Second * 5)
 		if !t.Run("room-rtmp", func(t *testing.T) {
-			testRoomCompositeStream(t, conf)
+			testRoomCompositeStream(t, conf, f)
 		}) {
 			t.FailNow()
 		}
@@ -144,7 +158,7 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 			},
 		} {
 			if !t.Run(test.name, func(t *testing.T) {
-				runRoomCompositeSegmentsTest(t, conf, test)
+				runRoomCompositeSegmentsTest(t, conf, test, f)
 			}) {
 				t.FailNow()
 			}
@@ -152,7 +166,7 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	}
 }
 
-func runRoomCompositeFileTest(t *testing.T, conf *testConfig, test *testCase) {
+func runRoomCompositeFileTest(t *testing.T, conf *testConfig, test *testCase, f func(p *pipeline.Pipeline)) {
 	filepath := getFilePath(conf.Config, test.filename)
 	webRequest := &livekit.RoomCompositeEgressRequest{
 		RoomName:  conf.RoomName,
@@ -181,10 +195,10 @@ func runRoomCompositeFileTest(t *testing.T, conf *testConfig, test *testCase) {
 		},
 	}
 
-	runFileTest(t, conf, test, req, filepath)
+	runFileTest(t, conf, test, req, filepath, f)
 }
 
-func testRoomCompositeStream(t *testing.T, conf *testConfig) {
+func testRoomCompositeStream(t *testing.T, conf *testConfig, f func(p *pipeline.Pipeline)) {
 	req := &livekit.StartEgressRequest{
 		EgressId:  utils.NewGuid(utils.EgressPrefix),
 		RequestId: utils.NewGuid(utils.RPCPrefix),
@@ -203,10 +217,10 @@ func testRoomCompositeStream(t *testing.T, conf *testConfig) {
 		},
 	}
 
-	runStreamTest(t, conf, req, videoTestInput)
+	runStreamTest(t, conf, req, videoTestInput, f)
 }
 
-func runRoomCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCase) {
+func runRoomCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCase, f func(p *pipeline.Pipeline)) {
 	filepath := getFilePath(conf.Config, test.filename)
 	webRequest := &livekit.RoomCompositeEgressRequest{
 		RoomName:  conf.RoomName,
@@ -235,5 +249,5 @@ func runRoomCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCase
 		},
 	}
 
-	runSegmentsTest(t, conf, test, req, getFilePath(conf.Config, test.playlist))
+	runSegmentsTest(t, conf, test, req, getFilePath(conf.Config, test.playlist), f)
 }

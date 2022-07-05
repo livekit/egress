@@ -321,6 +321,8 @@ github.com/livekit/protocol v0.13.3-0.20220613185908-e66f32ebb7f5/go.mod h1:BLtS
 github.com/livekit/protocol v0.13.3/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
 github.com/livekit/protocol v0.13.4-0.20220623220447-eb06e1619afa h1:6L886R5nXD5ht4yl5ZrtF4XwFH1Dv8SO+kP7+X+myDQ=
 github.com/livekit/protocol v0.13.4-0.20220623220447-eb06e1619afa/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
+github.com/livekit/protocol v0.13.4-0.20220629115509-8194c38f4e11 h1:lIhpo6JpMSbzEoGzjFli3ZUMB3MPbuMYzCgAR0yg/Do=
+github.com/livekit/protocol v0.13.4-0.20220629115509-8194c38f4e11/go.mod h1:BLtSeVmn2rLP37xjzw7gHgaAmkWl3L/L9bPvgSbaOfo=
 github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a h1:cENjhGfslLSDV07gt8ASy47Wd12Q0kBS7hsdunyQ62I=
 github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a/go.mod h1:116ych8UaEs9vfIE8n6iZCZ30iagUFTls0vRmC+Ix5U=
 github.com/livekit/server-sdk-go v0.10.2 h1:Wrlbv1k5EZ2L7eA4L9AEzvBIv3jDUTePlIB+0flihCI=

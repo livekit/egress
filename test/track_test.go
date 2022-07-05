@@ -101,7 +101,7 @@ func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *te
 		},
 	}
 
-	runFileTest(t, conf, test, req, filepath)
+	runFileTest(t, conf, test, req, filepath, nil)
 }
 
 func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *testCase) {

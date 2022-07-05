@@ -109,7 +109,7 @@ func runTrackCompositeFileTest(t *testing.T, conf *testConfig, test *testCase, a
 		},
 	}
 
-	runFileTest(t, conf, test, req, filepath)
+	runFileTest(t, conf, test, req, filepath, nil)
 }
 
 func testTrackCompositeStream(t *testing.T, conf *testConfig, room *lksdk.Room) {
@@ -141,7 +141,7 @@ func testTrackCompositeStream(t *testing.T, conf *testConfig, room *lksdk.Room) 
 		},
 	}
 
-	runStreamTest(t, conf, req, "")
+	runStreamTest(t, conf, req, "", nil)
 }
 
 func testTrackCompositeSegments(t *testing.T, conf *testConfig, room *lksdk.Room, audioCodec, videoCodec params.MimeType, test *testCase) {
@@ -199,5 +199,5 @@ func runTrackCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCas
 		},
 	}
 
-	runSegmentsTest(t, conf, test, req, getFilePath(conf.Config, test.playlist))
+	runSegmentsTest(t, conf, test, req, getFilePath(conf.Config, test.playlist), nil)
 }

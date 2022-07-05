@@ -28,6 +28,7 @@ type testConfig struct {
 	RunStreamTests         bool   `yaml:"stream"`
 	RunSegmentedFileTests  bool   `yaml:"segments"`
 	Muting                 bool   `yaml:"muting"`
+	UpdateLayout           bool   `yaml:"update_layout"`
 	GstDebug               int    `yaml:"gst_debug"`
 
 	HasConnectionInfo bool `yaml:"-"`
@@ -53,6 +54,7 @@ func getTestConfig(t *testing.T) *testConfig {
 		RunStreamTests:         true,
 		RunSegmentedFileTests:  false,
 		Muting:                 false,
+		UpdateLayout:           false,
 		GstDebug:               1,
 	}
 	err := yaml.Unmarshal([]byte(confString), tc)
