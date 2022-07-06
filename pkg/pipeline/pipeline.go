@@ -462,6 +462,7 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 func (p *Pipeline) UpdateLayout(ctx context.Context, req *livekit.UpdateLayoutRequest) error {
 	switch s := p.in.Source.(type) {
 	case *source.WebSource:
+		p.Logger.Debugw("updating layout", "new layout", req.Layout)
 		return s.UpdateLayout(ctx, req.Layout)
 	default:
 		return errors.New("layout update not supported for this input")

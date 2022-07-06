@@ -30,7 +30,7 @@ func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	if conf.UpdateLayout {
 		f = func(p *pipeline.Pipeline) {
 			time.AfterFunc(updateLayoutOffset, func() {
-				p.UpdateLayout(context.Background, &livekit.UpdateLayoutRequest{
+				p.UpdateLayout(context.Background(), &livekit.UpdateLayoutRequest{
 					EgressId: utils.NewGuid(utils.EgressPrefix),
 					Layout:   "speaker-light",
 				})

@@ -32,7 +32,7 @@ const (
 	badStreamUrl1      = "rtmp://sfo.contribute.live-video.net/app/fake1"
 	badStreamUrl2      = "rtmp://localhost:1934/live/stream2"
 	muteDuration       = time.Second * 10
-	updateLayoutOffset = time.Second * 5
+	updateLayoutOffset = time.Second * 15
 )
 
 var (

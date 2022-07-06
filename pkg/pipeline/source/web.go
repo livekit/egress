@@ -32,7 +32,7 @@ const (
 )
 
 type layoutUpdate struct {
-	layout string `json:"layout"`
+	Layout string `json:"layout"`
 }
 
 type WebSource struct {
@@ -244,7 +244,7 @@ func (s *WebSource) launchChrome(ctx context.Context, url, egressID, display str
 
 func (s *WebSource) UpdateLayout(ctx context.Context, layout string) error {
 	update := layoutUpdate{
-		layout: layout,
+		Layout: layout,
 	}
 
 	msg, err := json.Marshal(update)
