@@ -3,6 +3,7 @@ package sink
 import (
 	"context"
 	"fmt"
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"io"
 	"net/url"
 	"os"
@@ -167,4 +168,20 @@ func UploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mim
 	}
 
 	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", conf.Bucket, requestedPath), nil
+}
+
+func UploadAliOSS(conf *livekit.AliOSSUpload, localFilePath, requestedPath string, mime params.OutputType) (location string, err error) {
+	client, err := oss.New(conf.Endpoint, conf.AccessKey, conf.Secret)
+	if err != nil {
+		return "", err
+	}
+	bucket, err := client.Bucket(conf.Bucket)
+	if err != nil {
+		return "", err
+	}
+	err = bucket.PutObjectFromFile(requestedPath, localFilePath)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("https://%s.%s/%s", conf.Bucket, conf.Endpoint, requestedPath), nil
 }
