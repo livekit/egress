@@ -57,41 +57,21 @@ func NewSDKSource(ctx context.Context, p *params.Params) (*SDKSource, error) {
 	defer span.End()
 
 	s := &SDKSource{
-		room:         lksdk.CreateRoom(),
 		logger:       p.Logger,
 		cs:           &clockSync{},
 		mutedChan:    p.MutedChan,
 		endRecording: make(chan struct{}),
 	}
 
-	var fileIdentifier string
-	var wg sync.WaitGroup
-
-	switch p.Info.Request.(type) {
-	case *livekit.EgressInfo_TrackComposite:
-		fileIdentifier = p.RoomName
-		if p.AudioEnabled {
-			s.audioTrackID = p.AudioTrackID
-			wg.Add(1)
-		}
-		if p.VideoEnabled {
-			s.videoTrackID = p.VideoTrackID
-			wg.Add(1)
-		}
-
-	case *livekit.EgressInfo_Track:
-		fileIdentifier = p.TrackID
-		s.trackID = p.TrackID
-		wg.Add(1)
-	}
-
-	s.room.Callback.OnTrackMuted = s.onTrackMuted
-	s.room.Callback.OnTrackUnmuted = s.onTrackUnmuted
-	s.room.Callback.OnTrackUnpublished = s.onTrackUnpublished
-	s.room.Callback.OnDisconnected = s.onComplete
+	cb := lksdk.NewRoomCallback()
+	cb.OnTrackMuted = s.onTrackMuted
+	cb.OnTrackUnmuted = s.onTrackUnmuted
+	cb.OnTrackUnpublished = s.onTrackUnpublished
+	cb.OnDisconnected = s.onComplete
 
 	var onSubscribeErr error
-	s.room.Callback.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+	var wg sync.WaitGroup
+	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer wg.Done()
 		s.logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
 
@@ -173,6 +153,28 @@ func NewSDKSource(ctx context.Context, p *params.Params) (*SDKSource, error) {
 				return
 			}
 		}
+	}
+
+	s.room = lksdk.CreateRoom(cb)
+
+	var fileIdentifier string
+
+	switch p.Info.Request.(type) {
+	case *livekit.EgressInfo_TrackComposite:
+		fileIdentifier = p.RoomName
+		if p.AudioEnabled {
+			s.audioTrackID = p.AudioTrackID
+			wg.Add(1)
+		}
+		if p.VideoEnabled {
+			s.videoTrackID = p.VideoTrackID
+			wg.Add(1)
+		}
+
+	case *livekit.EgressInfo_Track:
+		fileIdentifier = p.TrackID
+		s.trackID = p.TrackID
+		wg.Add(1)
 	}
 
 	if err := s.join(ctx, p); err != nil {
