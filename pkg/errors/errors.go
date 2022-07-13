@@ -11,6 +11,7 @@ var (
 	ErrGhostPadFailed      = errors.New("failed to add ghost pad to bin")
 	ErrStreamAlreadyExists = errors.New("stream already exists")
 	ErrStreamNotFound      = errors.New("stream not found")
+	ErrEgressTimedOut      = errors.New("egress timed out")
 )
 
 func New(err string) error {
