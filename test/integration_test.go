@@ -73,7 +73,7 @@ func TestEgress(t *testing.T) {
 			RoomName:            conf.RoomName,
 			ParticipantName:     "sample",
 			ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
-		}, lsdk.NewRoomCallback())
+		}, lksdk.NewRoomCallback())
 		require.NoError(t, err)
 		defer room.Disconnect()
 	}
