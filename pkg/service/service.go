@@ -239,12 +239,12 @@ func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressReq
 		return
 	}
 
-	cmd := exec.Command("/Users/bigben/go/src/github.com/livekit/cloud-egress/egress",
+	cmd := exec.Command("egress",
 		"run-handler",
 		"--config-body", string(confString),
 		"--request", string(reqString),
 	)
-	cmd.Dir = "/Users/bigben/go/src/github.com/livekit/cloud-egress"
+	cmd.Dir = "/"
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -299,5 +299,5 @@ func (s *Service) ListEgress() []string {
 		return true
 	})
 
-	return []string{"EG_1242"}
+	return res
 }

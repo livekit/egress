@@ -4,8 +4,6 @@ go 1.17
 
 replace github.com/tinyzimmer/go-gst v0.2.32 => github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427
 
-replace github.com/livekit/egress => ../egress
-
 require (
 	cloud.google.com/go/storage v1.22.1
 	github.com/Azure/azure-storage-blob-go v0.14.0
