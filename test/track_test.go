@@ -83,7 +83,7 @@ func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *te
 
 	filepath := getFilePath(conf.Config, test.filename)
 	trackRequest := &livekit.TrackEgressRequest{
-		RoomName: room.Name,
+		RoomName: room.Name(),
 		TrackId:  trackID,
 		Output: &livekit.TrackEgressRequest_File{
 			File: &livekit.DirectFileOutput{
@@ -122,7 +122,7 @@ func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, tes
 	}()
 
 	trackRequest := &livekit.TrackEgressRequest{
-		RoomName: room.Name,
+		RoomName: room.Name(),
 		TrackId:  trackID,
 		Output: &livekit.TrackEgressRequest_WebsocketUrl{
 			WebsocketUrl: "ws" + strings.TrimPrefix(s.URL, "http"),
