@@ -64,11 +64,11 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 
 	filepath := getFilePath(conf.Config, filename)
 	info, err := rpcClient.SendRequest(context.Background(), &livekit.StartEgressRequest{
-		RoomId: room.SID,
+		RoomId: room.SID(),
 		WsUrl:  conf.WsUrl,
 		Request: &livekit.StartEgressRequest_RoomComposite{
 			RoomComposite: &livekit.RoomCompositeEgressRequest{
-				RoomName: room.Name,
+				RoomName: room.Name(),
 				Layout:   "speaker-dark",
 				Output: &livekit.RoomCompositeEgressRequest_File{
 					File: &livekit.EncodedFileOutput{

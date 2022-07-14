@@ -290,3 +290,14 @@ func (s *Service) Stop(kill bool) {
 		})
 	}
 }
+
+func (s *Service) ListEgress() []string {
+	res := make([]string, 0)
+
+	s.processes.Range(func(key, value interface{}) bool {
+		res = append(res, key.(string))
+		return true
+	})
+
+	return res
+}
