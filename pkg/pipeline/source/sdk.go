@@ -161,7 +161,7 @@ func NewSDKSource(ctx context.Context, p *params.Params) (*SDKSource, error) {
 
 	switch p.Info.Request.(type) {
 	case *livekit.EgressInfo_TrackComposite:
-		fileIdentifier = p.RoomName
+		fileIdentifier = p.Info.RoomName
 		if p.AudioEnabled {
 			s.audioTrackID = p.AudioTrackID
 			wg.Add(1)
