@@ -41,7 +41,6 @@ type Params struct {
 
 type SourceParams struct {
 	// source
-	RoomName     string
 	Token        string
 	LKUrl        string
 	TemplateBase string
@@ -141,15 +140,14 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 	switch req := request.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
 		p.Info.Request = &livekit.EgressInfo_RoomComposite{RoomComposite: req.RoomComposite}
-
-		// input params
-		p.IsWebSource = true
-		p.RoomName = req.RoomComposite.RoomName
-		if p.RoomName == "" {
+		p.Info.RoomName = req.RoomComposite.RoomName
+		if p.Info.RoomName == "" {
 			err = errors.ErrInvalidInput("RoomName")
 			return
 		}
 
+		// input params
+		p.IsWebSource = true
 		p.Layout = req.RoomComposite.Layout
 		p.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
 		if req.RoomComposite.CustomBaseUrl != "" {
@@ -195,6 +193,11 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 
 	case *livekit.StartEgressRequest_TrackComposite:
 		p.Info.Request = &livekit.EgressInfo_TrackComposite{TrackComposite: req.TrackComposite}
+		p.Info.RoomName = req.TrackComposite.RoomName
+		if p.Info.RoomName == "" {
+			err = errors.ErrInvalidInput("RoomName")
+			return
+		}
 
 		// encoding options
 		switch opts := req.TrackComposite.Options.(type) {
@@ -206,12 +209,6 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		}
 
 		// input params
-		p.RoomName = req.TrackComposite.RoomName
-		if p.RoomName == "" {
-			err = errors.ErrInvalidInput("RoomName")
-			return
-		}
-
 		p.AudioTrackID = req.TrackComposite.AudioTrackId
 		p.VideoTrackID = req.TrackComposite.VideoTrackId
 		p.AudioEnabled = p.AudioTrackID != ""
@@ -249,10 +246,8 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 
 	case *livekit.StartEgressRequest_Track:
 		p.Info.Request = &livekit.EgressInfo_Track{Track: req.Track}
-
-		// input params
-		p.RoomName = req.Track.RoomName
-		if p.RoomName == "" {
+		p.Info.RoomName = req.Track.RoomName
+		if p.Info.RoomName == "" {
 			err = errors.ErrInvalidInput("RoomName")
 			return
 		}
@@ -366,7 +361,6 @@ func (p *Params) applyAdvanced(advanced *livekit.EncodingOptions) {
 }
 
 func (p *Params) updateOutputType(fileType interface{}) {
-
 	switch f := fileType.(type) {
 	case livekit.EncodedFileType:
 		switch f {
@@ -409,7 +403,7 @@ func (p *Params) updateFileParams(filepath string, output interface{}) error {
 
 	// filename
 	if p.OutputType != "" {
-		err := p.updateFilename(p.RoomName)
+		err := p.updateFilename(p.Info.RoomName)
 		if err != nil {
 			return err
 		}
@@ -475,7 +469,7 @@ func (p *Params) updateSegmentsParams(fileprefix string, playlistFilename string
 	}
 
 	// filename
-	err := p.updatePrefixAndPlaylist(p.RoomName)
+	err := p.updatePrefixAndPlaylist(p.Info.RoomName)
 	if err != nil {
 		return err
 	}
@@ -488,7 +482,7 @@ func (p *Params) updateConnectionInfo(request *livekit.StartEgressRequest) error
 	if request.Token != "" {
 		p.Token = request.Token
 	} else if p.conf.ApiKey != "" && p.conf.ApiSecret != "" {
-		token, err := egress.BuildEgressToken(p.Info.EgressId, p.conf.ApiKey, p.conf.ApiSecret, p.RoomName)
+		token, err := egress.BuildEgressToken(p.Info.EgressId, p.conf.ApiKey, p.conf.ApiSecret, p.Info.RoomName)
 		if err != nil {
 			return err
 		}
