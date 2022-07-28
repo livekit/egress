@@ -19,7 +19,7 @@ require (
 	github.com/grafov/m3u8 v0.11.1
 	github.com/livekit/livekit-server v1.0.2-0.20220613191817-4be096cf7405
 	github.com/livekit/protocol v0.13.5-0.20220728214908-67539ebcab2a
-	github.com/livekit/server-sdk-go v0.10.3
+	github.com/livekit/server-sdk-go v0.10.4
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/pion/rtp v1.7.13
 	github.com/pion/webrtc/v3 v3.1.42

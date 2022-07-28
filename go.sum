@@ -327,8 +327,8 @@ github.com/livekit/protocol v0.13.5-0.20220728214908-67539ebcab2a h1:tRioM9WNDjx
 github.com/livekit/protocol v0.13.5-0.20220728214908-67539ebcab2a/go.mod h1:vGQzKUaSYC92o5y7EbnhosgpoLWK9a3PneyYkGOGL0o=
 github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a h1:cENjhGfslLSDV07gt8ASy47Wd12Q0kBS7hsdunyQ62I=
 github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a/go.mod h1:116ych8UaEs9vfIE8n6iZCZ30iagUFTls0vRmC+Ix5U=
-github.com/livekit/server-sdk-go v0.10.3 h1:fsf8Kd4qKqAUwfd+fTBo8FrBf9hoVBUNMH9zKsJM9gA=
-github.com/livekit/server-sdk-go v0.10.3/go.mod h1:hcM4YgHm96fNGSkFQRjfbExDmbBGYPGDr7bj/zC837g=
+github.com/livekit/server-sdk-go v0.10.4 h1:g2zKEVvn1XsVdmUw4+mCAv3Frf9H9dPdZY+NSWWrL5w=
+github.com/livekit/server-sdk-go v0.10.4/go.mod h1:hcM4YgHm96fNGSkFQRjfbExDmbBGYPGDr7bj/zC837g=
 github.com/mackerelio/go-osstat v0.2.1 h1:5AeAcBEutEErAOlDz6WCkEvm6AKYgHTUQrfwm5RbeQc=
 github.com/mackerelio/go-osstat v0.2.1/go.mod h1:UzRL8dMCCTqG5WdRtsxbuljMpZt9PCAGXqxPst5QtaY=
 github.com/magefile/mage v1.13.0 h1:XtLJl8bcCM7EFoO8FyH8XK3t7G5hQAeK+i4tq+veT9M=
