@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 package test
 
@@ -121,6 +120,21 @@ func TestEgress(t *testing.T) {
 			t.FailNow()
 		}
 	}
+}
+
+func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec params.MimeType, withMuting bool) (audioTrackID, videoTrackID string) {
+	audioTrackID = publishSampleToRoom(t, room, audioCodec, false)
+	t.Cleanup(func() {
+		_ = room.LocalParticipant.UnpublishTrack(audioTrackID)
+	})
+
+	videoTrackID = publishSampleToRoom(t, room, videoCodec, withMuting)
+	t.Cleanup(func() {
+		_ = room.LocalParticipant.UnpublishTrack(videoTrackID)
+	})
+
+	time.Sleep(time.Second)
+	return
 }
 
 func publishSampleToRoom(t *testing.T, room *lksdk.Room, codec params.MimeType, withMuting bool) string {

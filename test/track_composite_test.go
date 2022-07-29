@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 package test
 
@@ -55,17 +54,8 @@ func testTrackComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 }
 
 func testTrackCompositeFile(t *testing.T, conf *testConfig, room *lksdk.Room, audioCodec, videoCodec params.MimeType, test *testCase) {
-	audioTrackID := publishSampleToRoom(t, room, audioCodec, false)
-	t.Cleanup(func() {
-		_ = room.LocalParticipant.UnpublishTrack(audioTrackID)
-	})
-
-	videoTrackID := publishSampleToRoom(t, room, videoCodec, conf.Muting)
-	t.Cleanup(func() {
-		_ = room.LocalParticipant.UnpublishTrack(videoTrackID)
-	})
-
 	if !t.Run(test.name, func(t *testing.T) {
+		audioTrackID, videoTrackID := publishSamplesToRoom(t, room, audioCodec, videoCodec, conf.Muting)
 		runTrackCompositeFileTest(t, conf, test, audioTrackID, videoTrackID)
 	}) {
 		t.FailNow()
@@ -113,15 +103,7 @@ func runTrackCompositeFileTest(t *testing.T, conf *testConfig, test *testCase, a
 }
 
 func testTrackCompositeStream(t *testing.T, conf *testConfig, room *lksdk.Room) {
-	audioTrackID := publishSampleToRoom(t, room, params.MimeTypeOpus, false)
-	t.Cleanup(func() {
-		_ = room.LocalParticipant.UnpublishTrack(audioTrackID)
-	})
-
-	videoTrackID := publishSampleToRoom(t, room, params.MimeTypeVP8, conf.Muting)
-	t.Cleanup(func() {
-		_ = room.LocalParticipant.UnpublishTrack(videoTrackID)
-	})
+	audioTrackID, videoTrackID := publishSamplesToRoom(t, room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
 
 	req := &livekit.StartEgressRequest{
 		EgressId:  utils.NewGuid(utils.EgressPrefix),
@@ -145,17 +127,8 @@ func testTrackCompositeStream(t *testing.T, conf *testConfig, room *lksdk.Room) 
 }
 
 func testTrackCompositeSegments(t *testing.T, conf *testConfig, room *lksdk.Room, audioCodec, videoCodec params.MimeType, test *testCase) {
-	audioTrackID := publishSampleToRoom(t, room, audioCodec, false)
-	t.Cleanup(func() {
-		_ = room.LocalParticipant.UnpublishTrack(audioTrackID)
-	})
-
-	videoTrackID := publishSampleToRoom(t, room, videoCodec, conf.Muting)
-	t.Cleanup(func() {
-		_ = room.LocalParticipant.UnpublishTrack(videoTrackID)
-	})
-
 	if !t.Run(test.name, func(t *testing.T) {
+		audioTrackID, videoTrackID := publishSamplesToRoom(t, room, audioCodec, videoCodec, conf.Muting)
 		runTrackCompositeSegmentsTest(t, conf, test, audioTrackID, videoTrackID)
 	}) {
 		t.FailNow()
