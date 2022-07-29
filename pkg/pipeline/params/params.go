@@ -551,13 +551,25 @@ func (p *Params) UpdateOutputTypeFromCodecs(fileIdentifier string) error {
 }
 
 func (p *Params) updateFilename(identifier string) error {
-	// update filename
-	ext := FileExtensions[p.OutputType]
+	// get file extension
+	ext := FileExtensionForOutputType[p.OutputType]
 	if p.Filepath == "" || strings.HasSuffix(p.Filepath, "/") {
+		// generate filepath
 		p.Filepath = fmt.Sprintf("%s%s-%v%v", p.Filepath, identifier, time.Now().String(), ext)
 	} else if !strings.HasSuffix(p.Filepath, string(ext)) {
+		// check for existing (incorrect) extension
+		extIdx := strings.LastIndex(p.Filepath, ".")
+		if extIdx > 0 {
+			existingExt := FileExtension(p.Filepath[extIdx:])
+			if _, ok := FileExtensions[existingExt]; ok {
+				p.Filepath = p.Filepath[:extIdx]
+			}
+		}
+		// add file extension
 		p.Filepath = p.Filepath + string(ext)
 	}
+
+	// update filename
 	p.FileInfo.Filename = p.Filepath
 
 	// get local filepath
@@ -587,7 +599,7 @@ func (p *Params) updateFilename(identifier string) error {
 }
 
 func (p *Params) updatePrefixAndPlaylist(identifier string) error {
-	ext := FileExtensions[p.OutputType]
+	ext := FileExtensionForOutputType[p.OutputType]
 
 	if p.LocalFilePrefix == "" || strings.HasSuffix(p.LocalFilePrefix, "/") {
 		p.LocalFilePrefix = fmt.Sprintf("%s%s-%v", p.LocalFilePrefix, identifier, time.Now().String())
