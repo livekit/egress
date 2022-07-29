@@ -9,7 +9,7 @@ COPY compile /
 
 RUN ["/compile"]
 
-FROM ubuntu:21.04
+FROM ubuntu:22.04
 
 RUN apt-get update && \
     apt-get dist-upgrade -y && \
@@ -20,7 +20,7 @@ RUN apt-get update && \
         ladspa-sdk \
         liba52-0.7.4 \
         libaa1 \
-        libaom0 \
+        libaom3 \
         libass9 \
         libavcodec58 \
         libavfilter7 \
@@ -44,7 +44,6 @@ RUN apt-get update && \
         libfaad2 \
         libfdk-aac2 \
         libflite1 \
-        libfluidsynth2 \
         libgbm1 \
         libgcrypt20 \
         libgl1 \
@@ -53,7 +52,7 @@ RUN apt-get update && \
         libglib2.0-0 \
         libgme0 \
         libgmp10 \
-        libgsl25 \
+        libgsl27 \
         libgsm1 \
         libgudev-1.0-0 \
         libharfbuzz-icu0 \
@@ -89,7 +88,7 @@ RUN apt-get update && \
         libspeex1 \
         libsrt1.4-openssl \
         libsrtp2-1 \
-        libssl1.1 \
+        libssl3 \
         libtag1v5 \
         libtheora0 \
         libtwolame0 \
@@ -98,17 +97,17 @@ RUN apt-get update && \
         libvo-aacenc0 \
         libvo-amrwbenc0 \
         libvorbis0a \
-        libvpx6 \
+        libvpx7 \
         libvulkan1 \
         libwavpack1 \
-        libwebp6 \
+        libwebp7 \
         libwebpdemux2 \
         libwebpmux3 \
         libwebrtc-audio-processing1 \
         libwildmidi2 \
         libwoff1 \
-        libx264-160 \
-        libx265-192 \
+        libx264-163 \
+        libx265-199 \
         libxkbcommon0 \
         libxslt1.1 \
         libzbar0 \
