@@ -83,9 +83,9 @@ type StreamParams struct {
 }
 
 type FileParams struct {
-	FileInfo *livekit.FileInfo
-	Filename string
-	Filepath string
+	FileInfo      *livekit.FileInfo
+	LocalFilepath string
+	Filepath      string
 }
 
 type SegmentedFileParams struct {
@@ -551,38 +551,38 @@ func (p *Params) UpdateOutputTypeFromCodecs(fileIdentifier string) error {
 }
 
 func (p *Params) updateFilename(identifier string) error {
+	// update filename
 	ext := FileExtensions[p.OutputType]
-
 	if p.Filepath == "" || strings.HasSuffix(p.Filepath, "/") {
 		p.Filepath = fmt.Sprintf("%s%s-%v%v", p.Filepath, identifier, time.Now().String(), ext)
 	} else if !strings.HasSuffix(p.Filepath, string(ext)) {
 		p.Filepath = p.Filepath + string(ext)
 	}
+	p.FileInfo.Filename = p.Filepath
 
-	// get filename from path
+	// get local filepath
 	dir, filename := path.Split(p.Filepath)
 	if p.FileUpload == nil {
 		if dir != "" {
 			// create local directory
-			if err := os.MkdirAll(dir, os.ModeDir); err != nil {
+			if err := os.MkdirAll(dir, 0755); err != nil {
 				return err
 			}
 		}
-		p.Filename = p.Filepath
+		p.LocalFilepath = p.Filepath
 	} else {
 		// Prepend the configuration base directory and the egress Id
 		outDir := path.Join(p.conf.LocalOutputDirectory, p.Info.EgressId)
 
 		// create temporary directory
 		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
-		if err := os.MkdirAll(outDir, os.ModePerm&0o700); err != nil {
+		if err := os.MkdirAll(outDir, 0755); err != nil {
 			return err
 		}
-		p.Filename = path.Join(outDir, filename)
+		p.LocalFilepath = path.Join(outDir, filename)
 	}
 
-	p.FileInfo.Filename = p.Filename
-	p.Logger.Debugw("writing to file", "filename", p.Filename)
+	p.Logger.Debugw("writing to file", "filename", p.LocalFilepath)
 	return nil
 }
 
@@ -603,7 +603,7 @@ func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 	p.TargetDirectory, filePrefix = path.Split(p.LocalFilePrefix)
 	if p.FileUpload == nil {
 		if p.TargetDirectory != "" {
-			if err := os.MkdirAll(p.TargetDirectory, os.ModeDir); err != nil {
+			if err := os.MkdirAll(p.TargetDirectory, 0755); err != nil {
 				return err
 			}
 		}
@@ -612,7 +612,7 @@ func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 		// Prepend the configuration base directory and the egress Id
 		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
 		outDir := path.Join(p.conf.LocalOutputDirectory, p.Info.EgressId)
-		if err := os.MkdirAll(outDir, os.ModePerm&0o700); err != nil {
+		if err := os.MkdirAll(outDir, 0755); err != nil {
 			return err
 		}
 
