@@ -45,7 +45,7 @@ func NewPlaylistWriter(p *params.Params) (*PlaylistWriter, error) {
 
 func (w *PlaylistWriter) StartSegment(filepath string, startTime int64) error {
 	if filepath == "" {
-		return fmt.Errorf("invalid Filename")
+		return fmt.Errorf("invalid Filepath")
 	}
 
 	if startTime < 0 {
