@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 package test
 
@@ -24,11 +23,7 @@ import (
 
 func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	if room != nil {
-		audioTrackID := publishSampleToRoom(t, room, params.MimeTypeOpus, false)
-		t.Cleanup(func() { _ = room.LocalParticipant.UnpublishTrack(audioTrackID) })
-
-		videoTrackID := publishSampleToRoom(t, room, params.MimeTypeVP8, conf.Muting)
-		t.Cleanup(func() { _ = room.LocalParticipant.UnpublishTrack(videoTrackID) })
+		publishSamplesToRoom(t, room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
 	}
 
 	rc, err := getRedisClient(conf.Config)
@@ -83,7 +78,7 @@ func testService(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	require.NoError(t, err)
 	require.Empty(t, info.Error)
 	require.NotEmpty(t, info.EgressId)
-	require.Equal(t, room.SID, info.RoomId)
+	require.Equal(t, room.SID(), info.RoomId)
 	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
 
 	egressID := info.EgressId

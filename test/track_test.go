@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 package test
 
@@ -78,8 +77,8 @@ func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *te
 	trackID := publishSampleToRoom(t, room, test.codec, conf.Muting)
 	t.Cleanup(func() {
 		_ = room.LocalParticipant.UnpublishTrack(trackID)
-		time.Sleep(time.Second)
 	})
+	time.Sleep(time.Second)
 
 	filepath := getFilePath(conf.Config, test.filename)
 	trackRequest := &livekit.TrackEgressRequest{
@@ -108,9 +107,7 @@ func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, tes
 	trackID := publishSampleToRoom(t, room, test.codec, false)
 	t.Cleanup(func() {
 		_ = room.LocalParticipant.UnpublishTrack(trackID)
-		time.Sleep(time.Second)
 	})
-
 	time.Sleep(time.Second)
 
 	filepath := getFilePath(conf.Config, test.filename)

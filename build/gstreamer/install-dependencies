@@ -43,7 +43,6 @@ apt-get install -y --no-install-recommends \
   libfaac-dev \
   libfaad-dev \
   libfdk-aac-dev \
-  libfluidsynth-dev \
   libgbm-dev \
   libgcrypt20-dev \
   libgirepository1.0-dev \

@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 package test
 
@@ -17,11 +16,7 @@ import (
 
 func testRoomComposite(t *testing.T, conf *testConfig, room *lksdk.Room) {
 	if room != nil {
-		audioTrackID := publishSampleToRoom(t, room, params.MimeTypeOpus, false)
-		t.Cleanup(func() { _ = room.LocalParticipant.UnpublishTrack(audioTrackID) })
-
-		videoTrackID := publishSampleToRoom(t, room, params.MimeTypeVP8, conf.Muting)
-		t.Cleanup(func() { _ = room.LocalParticipant.UnpublishTrack(videoTrackID) })
+		publishSamplesToRoom(t, room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
 	}
 
 	if conf.RunFileTests {
