@@ -18,7 +18,7 @@ func buildFileOutputBin(p *params.Params) (*Bin, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = sink.SetProperty("location", p.FileInfo.Filename); err != nil {
+	if err = sink.SetProperty("location", p.LocalFilepath); err != nil {
 		return nil, err
 	}
 	if err = sink.SetProperty("sync", false); err != nil {
