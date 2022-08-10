@@ -137,6 +137,8 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		conf: conf,
 	}
 
+	fmt.Println("params", request)
+
 	switch req := request.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
 		p.Info.Request = &livekit.EgressInfo_RoomComposite{RoomComposite: req.RoomComposite}
