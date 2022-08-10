@@ -397,6 +397,13 @@ func (p *Params) updateFileParams(filepath string, output interface{}) error {
 		p.FileUpload = o.Azure
 	case *livekit.EncodedFileOutput_Gcp:
 		p.FileUpload = o.Gcp
+	case *livekit.DirectFileOutput_S3:
+		p.FileUpload = o.S3
+	case *livekit.DirectFileOutput_Azure:
+		p.FileUpload = o.Azure
+	case *livekit.DirectFileOutput_Gcp:
+		p.FileUpload = o.Gcp
+
 	default:
 		p.FileUpload = p.conf.FileUpload
 	}
@@ -458,11 +465,11 @@ func (p *Params) updateSegmentsParams(fileprefix string, playlistFilename string
 
 	// output location
 	switch o := output.(type) {
-	case *livekit.EncodedFileOutput_S3:
+	case *livekit.SegmentedFileOutput_S3:
 		p.FileUpload = o.S3
-	case *livekit.EncodedFileOutput_Azure:
+	case *livekit.SegmentedFileOutput_Azure:
 		p.FileUpload = o.Azure
-	case *livekit.EncodedFileOutput_Gcp:
+	case *livekit.SegmentedFileOutput_Gcp:
 		p.FileUpload = o.Gcp
 	default:
 		p.FileUpload = p.conf.FileUpload
