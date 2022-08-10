@@ -456,9 +456,12 @@ func (p *Params) updateSegmentsParams(fileprefix string, playlistFilename string
 	p.SegmentsInfo = &livekit.SegmentsInfo{}
 	p.Info.Result = &livekit.EgressInfo_Segments{Segments: p.SegmentsInfo}
 
+	fmt.Println("OUTPIUT", output)
+
 	// output location
 	switch o := output.(type) {
 	case *livekit.EncodedFileOutput_S3:
+		fmt.Println("S3", o.S3)
 		p.FileUpload = o.S3
 	case *livekit.EncodedFileOutput_Azure:
 		p.FileUpload = o.Azure
@@ -614,6 +617,7 @@ func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 	var filePrefix string
 	p.TargetDirectory, filePrefix = path.Split(p.LocalFilePrefix)
 	if p.FileUpload == nil {
+		fmt.Println("Fileupload nil")
 		if p.TargetDirectory != "" {
 			if err := os.MkdirAll(p.TargetDirectory, 0755); err != nil {
 				return err
