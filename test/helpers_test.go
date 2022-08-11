@@ -104,26 +104,20 @@ func getFilePath(conf *config.Config, filename string) string {
 	if conf.FileUpload != nil {
 		return filename
 	}
-
-	return fmt.Sprintf("/out/output/%s", filename)
+	return fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, filename)
 }
 
-func download(t *testing.T, uploadParams interface{}, localPath, storagePath string) string {
+func download(t *testing.T, uploadParams interface{}, localPath, storagePath string) {
 	switch u := uploadParams.(type) {
 	case *livekit.S3Upload:
-		localPath = "/out/output/" + localPath
 		downloadS3(t, u, localPath, storagePath)
 
 	case *livekit.GCPUpload:
-		localPath = "/out/output/" + localPath
 		downloadGCP(t, u, localPath, storagePath)
 
 	case *livekit.AzureBlobUpload:
-		localPath = "/out/output/" + localPath
 		downloadAzure(t, u, localPath, storagePath)
 	}
-
-	return localPath
 }
 
 func downloadS3(t *testing.T, conf *livekit.S3Upload, localPath, requestedPath string) {

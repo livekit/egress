@@ -89,7 +89,7 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
-func verifyFile(t *testing.T, filepath string, p *params.Params, res *livekit.EgressInfo, withMuting bool) {
+func verifyFile(t *testing.T, conf *testConfig, p *params.Params, res *livekit.EgressInfo, filepath string) {
 	// egress info
 	require.Empty(t, res.Error)
 	require.NotZero(t, res.StartedAt)
@@ -105,11 +105,12 @@ func verifyFile(t *testing.T, filepath string, p *params.Params, res *livekit.Eg
 
 	// download from cloud storage
 	if p.FileUpload != nil {
-		filepath = download(t, p.FileUpload, filepath, p.Filepath)
+		filepath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, filepath)
+		download(t, p.FileUpload, filepath, p.Filepath)
 	}
 
 	// verify
-	verify(t, filepath, p, res, ResultTypeFile, withMuting)
+	verify(t, filepath, p, res, ResultTypeFile, conf.Muting)
 }
 
 func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
@@ -118,7 +119,7 @@ func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	}
 }
 
-func verifySegments(t *testing.T, playlistPath string, p *params.Params, res *livekit.EgressInfo, withMuting bool) {
+func verifySegments(t *testing.T, conf *testConfig, p *params.Params, res *livekit.EgressInfo, playlistPath string) {
 	// egress info
 	require.Empty(t, res.Error)
 	require.NotZero(t, res.StartedAt)
@@ -135,15 +136,17 @@ func verifySegments(t *testing.T, playlistPath string, p *params.Params, res *li
 	// download from cloud storage
 	if p.FileUpload != nil {
 		base := playlistPath[:len(playlistPath)-5]
-		playlistPath = download(t, p.FileUpload, playlistPath, playlistPath)
+		playlistPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, playlistPath)
+		download(t, p.FileUpload, playlistPath, playlistPath)
 		for i := 0; i < int(segments.SegmentCount); i++ {
-			filename := fmt.Sprintf("%s_%05d.ts", base, i)
-			download(t, p.FileUpload, filename, filename)
+			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
+			localPath := fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, cloudPath)
+			download(t, p.FileUpload, localPath, cloudPath)
 		}
 	}
 
 	// verify
-	verify(t, playlistPath, p, res, ResultTypeSegments, withMuting)
+	verify(t, playlistPath, p, res, ResultTypeSegments, conf.Muting)
 }
 
 func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {

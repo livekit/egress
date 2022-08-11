@@ -36,7 +36,7 @@ type Config struct {
 	LogLevel             string `yaml:"log_level"`
 	TemplateBase         string `yaml:"template_base"`
 	Insecure             bool   `yaml:"insecure"`
-	LocalOutputDirectory string `yaml:"local_directory"` // used for temporary storage before uplaod
+	LocalOutputDirectory string `yaml:"local_directory"` // used for temporary storage before upload
 
 	S3    *S3Config    `yaml:"s3"`
 	Azure *AzureConfig `yaml:"azure"`

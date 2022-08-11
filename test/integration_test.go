@@ -137,7 +137,7 @@ func runFileTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest
 	}
 
 	// verify
-	verifyFile(t, filepath, p, res, conf.Muting)
+	verifyFile(t, conf, p, res, filepath)
 }
 
 func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) {
@@ -223,7 +223,7 @@ func runSegmentsTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReq
 	p, err := params.GetPipelineParams(context.Background(), conf.Config, req)
 	require.NoError(t, err)
 
-	verifySegments(t, playlistPath, p, res, conf.Muting)
+	verifySegments(t, conf, p, res, playlistPath)
 }
 
 func startEgress(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) string {
