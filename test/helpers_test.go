@@ -32,9 +32,9 @@ const muteDuration = time.Second * 10
 
 var (
 	samples = map[params.MimeType]string{
-		params.MimeTypeOpus: "/out/sample/matrix-trailer.ogg",
-		params.MimeTypeH264: "/out/sample/matrix-trailer.h264",
-		params.MimeTypeVP8:  "/out/sample/matrix-trailer.ivf",
+		params.MimeTypeOpus: "/workspace/test/sample/matrix-trailer.ogg",
+		params.MimeTypeH264: "/workspace/test/sample/matrix-trailer.h264",
+		params.MimeTypeVP8:  "/workspace/test/sample/matrix-trailer.ivf",
 	}
 
 	frameDurations = map[params.MimeType]time.Duration{
