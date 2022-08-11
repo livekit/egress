@@ -21,7 +21,6 @@ import (
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
 
-	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
@@ -213,34 +212,18 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 }
 
 func runSegmentsTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, playlistPath string) {
-	ctx := context.Background()
+	egressID := startEgress(t, conf, req)
 
-	p, err := params.GetPipelineParams(ctx, conf.Config, req)
+	time.Sleep(time.Second * 25)
+
+	// stop
+	res := stopEgress(t, conf, egressID)
+
+	// get params
+	p, err := params.GetPipelineParams(context.Background(), conf.Config, req)
 	require.NoError(t, err)
 
-	rec, err := pipeline.New(ctx, conf.Config, p)
-	require.NoError(t, err)
-
-	// record for ~30s. Takes about 5s to start
-	time.AfterFunc(time.Second*35, func() {
-		rec.SendEOS(ctx)
-	})
-	res := rec.Run(ctx)
-
-	// egress info
-	require.Empty(t, res.Error)
-	require.NotZero(t, res.StartedAt)
-	require.NotZero(t, res.EndedAt)
-
-	base := playlistPath[:len(playlistPath)-5]
-	playlistPath = download(t, p.FileUpload, playlistPath, playlistPath)
-	segments := int(res.GetSegments().SegmentCount)
-	for i := 0; i < segments; i++ {
-		filename := fmt.Sprintf("%s_%05d.ts", base, i)
-		download(t, p.FileUpload, filename, filename)
-	}
-
-	verify(t, playlistPath, p, res, ResultTypeSegments, conf.Muting)
+	verifySegments(t, playlistPath, p, res, conf.Muting)
 }
 
 func startEgress(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) string {

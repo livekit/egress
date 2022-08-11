@@ -103,7 +103,12 @@ func verifyFile(t *testing.T, filepath string, p *params.Params, res *livekit.Eg
 	require.Greater(t, fileRes.Size, int64(0))
 	require.Greater(t, fileRes.Duration, int64(0))
 
-	filepath = download(t, p.FileUpload, filepath, p.Filepath)
+	// download from cloud storage
+	if p.FileUpload != nil {
+		filepath = download(t, p.FileUpload, filepath, p.Filepath)
+	}
+
+	// verify
 	verify(t, filepath, p, res, ResultTypeFile, withMuting)
 }
 
@@ -111,6 +116,34 @@ func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	for _, url := range urls {
 		verify(t, url, p, nil, ResultTypeStream, false)
 	}
+}
+
+func verifySegments(t *testing.T, playlistPath string, p *params.Params, res *livekit.EgressInfo, withMuting bool) {
+	// egress info
+	require.Empty(t, res.Error)
+	require.NotZero(t, res.StartedAt)
+	require.NotZero(t, res.EndedAt)
+
+	// segments info
+	segments := res.GetSegments()
+	require.NotEmpty(t, segments.PlaylistName)
+	require.NotEmpty(t, segments.PlaylistLocation)
+	require.Greater(t, segments.Size, int64(0))
+	require.Greater(t, segments.Duration, int64(0))
+	require.Greater(t, segments.SegmentCount, int64(0))
+
+	// download from cloud storage
+	if p.FileUpload != nil {
+		base := playlistPath[:len(playlistPath)-5]
+		playlistPath = download(t, p.FileUpload, playlistPath, playlistPath)
+		for i := 0; i < int(segments.SegmentCount); i++ {
+			filename := fmt.Sprintf("%s_%05d.ts", base, i)
+			download(t, p.FileUpload, filename, filename)
+		}
+	}
+
+	// verify
+	verify(t, playlistPath, p, res, ResultTypeSegments, withMuting)
 }
 
 func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {
@@ -127,7 +160,6 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 	}
 
 	switch resultType {
-	// TODO: implement with Segments
 	case ResultTypeFile:
 		// size
 		require.NotEqual(t, "0", info.Format.Size)
@@ -156,6 +188,9 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 				require.InDelta(t, expected, actual, delta)
 			}
 		}
+
+	case ResultTypeSegments:
+		// TODO: implement with Segments
 	}
 
 	// check stream info
