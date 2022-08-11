@@ -39,20 +39,24 @@ type testConfig struct {
 }
 
 func getTestConfig(t *testing.T) *testConfig {
-	confFile := os.Getenv("EGRESS_CONFIG_FILE")
-	require.NotEmpty(t, confFile)
-	b, err := ioutil.ReadFile(confFile)
-	require.NoError(t, err)
+	confString := os.Getenv("EGRESS_CONFIG_STRING")
+	if confString == "" {
+		confFile := os.Getenv("EGRESS_CONFIG_FILE")
+		require.NotEmpty(t, confFile)
+		b, err := ioutil.ReadFile(confFile)
+		require.NoError(t, err)
+		confString = string(b)
+	}
 
 	tc := &testConfig{
 		RoomName: "egress-test",
 		Muting:   false,
 		GstDebug: 1,
 	}
-	err = yaml.Unmarshal(b, tc)
+	err := yaml.Unmarshal([]byte(confString), tc)
 	require.NoError(t, err)
 
-	conf, err := config.NewConfig(string(b))
+	conf, err := config.NewConfig(confString)
 	require.NoError(t, err)
 	tc.Config = conf
 
