@@ -2,7 +2,6 @@ package source
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -245,9 +244,7 @@ func (s *SDKSource) subscribeToExpectedTracks(expecting map[string]bool) error {
 
 	for _, p := range participants {
 		for _, track := range p.Tracks() {
-			fmt.Println("TRACK", track.SID())
 			if expecting[track.SID()] {
-				fmt.Println("expected")
 				if rt, ok := track.(*lksdk.RemoteTrackPublication); ok {
 					err := rt.SetSubscribed(true)
 					if err != nil {
