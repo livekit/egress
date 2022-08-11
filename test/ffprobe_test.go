@@ -3,14 +3,28 @@
 package test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/url"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"cloud.google.com/go/storage"
+	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/googleapis/gax-go/v2"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/option"
 
 	"github.com/livekit/protocol/livekit"
 
@@ -23,6 +37,10 @@ const (
 	ResultTypeFile ResultType = iota
 	ResultTypeStream
 	ResultTypeSegments
+
+	maxRetries = 5
+	minDelay   = 100 * time.Millisecond
+	maxDelay   = 5 * time.Second
 )
 
 type FFProbeInfo struct {
@@ -98,7 +116,128 @@ func verifyFile(t *testing.T, filepath string, p *params.Params, res *livekit.Eg
 	require.Greater(t, fileRes.Size, int64(0))
 	require.Greater(t, fileRes.Duration, int64(0))
 
+	filepath = download(t, p.FileUpload, filepath, p.Filepath)
 	verify(t, filepath, p, res, ResultTypeFile, withMuting)
+}
+
+func download(t *testing.T, uploadParams interface{}, localPath, storagePath string) string {
+	switch u := uploadParams.(type) {
+	case *livekit.S3Upload:
+		localPath = "/out/output/" + localPath
+		downloadS3(t, u, localPath, storagePath)
+
+	case *livekit.GCPUpload:
+		localPath = "/out/output/" + localPath
+		downloadGCP(t, u, localPath, storagePath)
+
+	case *livekit.AzureBlobUpload:
+		localPath = "/out/output/" + localPath
+		downloadAzure(t, u, localPath, storagePath)
+	}
+
+	return localPath
+}
+
+func downloadS3(t *testing.T, conf *livekit.S3Upload, localPath, requestedPath string) {
+	sess, err := session.NewSession(&aws.Config{
+		Credentials: credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, ""),
+		Endpoint:    aws.String(conf.Endpoint),
+		Region:      aws.String(conf.Region),
+		MaxRetries:  aws.Int(maxRetries),
+	})
+	require.NoError(t, err)
+
+	file, err := os.Create(localPath)
+	require.NoError(t, err)
+	defer file.Close()
+
+	_, err = s3manager.NewDownloader(sess).Download(file,
+		&s3.GetObjectInput{
+			Bucket: aws.String(conf.Bucket),
+			Key:    aws.String(requestedPath),
+		},
+	)
+	require.NoError(t, err)
+
+	_, err = s3.New(sess).DeleteObject(&s3.DeleteObjectInput{
+		Bucket: aws.String(conf.Bucket),
+		Key:    aws.String(requestedPath),
+	})
+	require.NoError(t, err)
+}
+
+func downloadAzure(t *testing.T, conf *livekit.AzureBlobUpload, localPath, requestedPath string) {
+	credential, err := azblob.NewSharedKeyCredential(
+		conf.AccountName,
+		conf.AccountKey,
+	)
+	require.NoError(t, err)
+
+	pipeline := azblob.NewPipeline(credential, azblob.PipelineOptions{
+		Retry: azblob.RetryOptions{
+			Policy:        azblob.RetryPolicyExponential,
+			MaxTries:      maxRetries,
+			MaxRetryDelay: maxDelay,
+		},
+	})
+	sUrl := fmt.Sprintf("https://%s.blob.core.windows.net/%s", conf.AccountName, conf.ContainerName)
+	azUrl, err := url.Parse(sUrl)
+	require.NoError(t, err)
+
+	containerURL := azblob.NewContainerURL(*azUrl, pipeline)
+	blobURL := containerURL.NewBlobURL(requestedPath)
+
+	file, err := os.Create(localPath)
+	require.NoError(t, err)
+	defer file.Close()
+
+	err = azblob.DownloadBlobToFile(context.Background(), blobURL, 0, 0, file, azblob.DownloadFromBlobOptions{
+		BlockSize:   4 * 1024 * 1024,
+		Parallelism: 16,
+		RetryReaderOptionsPerBlock: azblob.RetryReaderOptions{
+			MaxRetryRequests: 3,
+		},
+	})
+	require.NoError(t, err)
+
+	_, err = blobURL.Delete(context.Background(), azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
+	require.NoError(t, err)
+}
+
+func downloadGCP(t *testing.T, conf *livekit.GCPUpload, localPath, requestedPath string) {
+	ctx := context.Background()
+	var client *storage.Client
+
+	var err error
+	if conf.Credentials != nil {
+		client, err = storage.NewClient(ctx, option.WithCredentialsJSON(conf.Credentials))
+	} else {
+		client, err = storage.NewClient(ctx)
+	}
+	require.NoError(t, err)
+	defer client.Close()
+
+	file, err := os.Create(localPath)
+	require.NoError(t, err)
+	defer file.Close()
+
+	rc, err := client.Bucket(conf.Bucket).Object(requestedPath).Retryer(
+		storage.WithBackoff(
+			gax.Backoff{
+				Initial:    minDelay,
+				Max:        maxDelay,
+				Multiplier: 2,
+			}),
+		storage.WithPolicy(storage.RetryAlways),
+	).NewReader(ctx)
+	require.NoError(t, err)
+
+	_, err = io.Copy(file, rc)
+	_ = rc.Close()
+	require.NoError(t, err)
+
+	err = client.Bucket(conf.Bucket).Object(requestedPath).Delete(context.Background())
+	require.NoError(t, err)
 }
 
 func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
@@ -108,8 +247,6 @@ func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 }
 
 func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {
-	require.NotEmpty(t, p.OutputType)
-
 	info, err := ffprobe(input)
 	require.NoError(t, err, "ffprobe error")
 
@@ -123,7 +260,7 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 	}
 
 	switch resultType {
-	// TODO implement with Segments
+	// TODO: implement with Segments
 	case ResultTypeFile:
 		// size
 		require.NotEqual(t, "0", info.Format.Size)
@@ -133,20 +270,25 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
 
-		delta := 1.5
-		if withMuting {
-			if !p.VideoEnabled {
-				// opus only with muting (cuts the end short)
-				delta = 13
-			} else if !p.AudioEnabled {
-				delta = 10
-			} else {
-				delta = 3
+		// file duration can be different from egress duration based on keyframes or muting
+		switch p.Info.Request.(type) {
+		case *livekit.EgressInfo_RoomComposite:
+			require.InDelta(t, expected, actual, 1.5)
+
+		case *livekit.EgressInfo_TrackComposite:
+			if p.AudioEnabled && p.VideoEnabled {
+				require.InDelta(t, expected, actual, 3.0)
+			}
+
+		case *livekit.EgressInfo_Track:
+			if p.AudioEnabled {
+				delta := 3.0
+				if withMuting {
+					delta = 6
+				}
+				require.InDelta(t, expected, actual, delta)
 			}
 		}
-
-		// duration can be up to a couple seconds off because the beginning is missing a keyframe
-		require.InDelta(t, expected, actual, delta)
 	}
 
 	// check stream info

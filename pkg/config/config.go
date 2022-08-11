@@ -11,6 +11,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -25,10 +26,10 @@ const (
 )
 
 type Config struct {
-	Redis     RedisConfig `yaml:"redis"`      // required
-	ApiKey    string      `yaml:"api_key"`    // required (env LIVEKIT_API_KEY)
-	ApiSecret string      `yaml:"api_secret"` // required (env LIVEKIT_API_SECRET)
-	WsUrl     string      `yaml:"ws_url"`     // required (env LIVEKIT_WS_URL)
+	Redis     *redis.RedisConfig `yaml:"redis"`      // required
+	ApiKey    string             `yaml:"api_key"`    // required (env LIVEKIT_API_KEY)
+	ApiSecret string             `yaml:"api_secret"` // required (env LIVEKIT_API_SECRET)
+	WsUrl     string             `yaml:"ws_url"`     // required (env LIVEKIT_WS_URL)
 
 	HealthPort           int    `yaml:"health_port"`
 	PrometheusPort       int    `yaml:"prometheus_port"`
@@ -47,14 +48,6 @@ type Config struct {
 	// internal
 	NodeID     string      `yaml:"-"`
 	FileUpload interface{} `yaml:"-"` // one of S3, Azure, or GCP
-}
-
-type RedisConfig struct {
-	Address  string `yaml:"address"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-	DB       int    `yaml:"db"`
-	UseTLS   bool   `yaml:"use_tls"`
 }
 
 type S3Config struct {

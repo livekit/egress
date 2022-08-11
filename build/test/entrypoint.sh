@@ -5,7 +5,7 @@ set -euxo pipefail
 pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit
 
 # Run RTSP server
-./rtsp-simple-server &
+./rtsp-simple-server &>/dev/null &
 
 # Run tests
 exec go test -v --tags=integration ./test

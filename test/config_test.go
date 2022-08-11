@@ -1,17 +1,20 @@
+//go:build integration
+
 package test
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"testing"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/livekit/protocol/logger"
+	"github.com/livekit/egress/pkg/service"
+	"github.com/livekit/protocol/egress"
+	"github.com/livekit/protocol/utils"
+	lksdk "github.com/livekit/server-sdk-go"
 
 	"github.com/livekit/egress/pkg/config"
 )
@@ -19,79 +22,49 @@ import (
 type testConfig struct {
 	*config.Config
 
-	RoomName               string `yaml:"room_name"`
-	RunServiceTest         bool   `yaml:"service"`
-	RunRoomTests           bool   `yaml:"room"`
-	RunTrackCompositeTests bool   `yaml:"track_composite"`
-	RunTrackTests          bool   `yaml:"track"`
-	RunFileTests           bool   `yaml:"file"`
-	RunStreamTests         bool   `yaml:"stream"`
-	RunSegmentedFileTests  bool   `yaml:"segments"`
-	Muting                 bool   `yaml:"muting"`
-	GstDebug               int    `yaml:"gst_debug"`
+	RoomName                string `yaml:"room_name"`
+	RoomTestsOnly           bool   `yaml:"room_only"`
+	TrackCompositeTestsOnly bool   `yaml:"track_composite_only"`
+	TrackTestsOnly          bool   `yaml:"track_only"`
+	FileTestsOnly           bool   `yaml:"file_only"`
+	StreamTestsOnly         bool   `yaml:"stream_only"`
+	SegmentedFileTestsOnly  bool   `yaml:"segments_only"`
+	Muting                  bool   `yaml:"muting"`
+	GstDebug                int    `yaml:"gst_debug"`
 
-	HasConnectionInfo bool `yaml:"-"`
-	HasRedis          bool `yaml:"-"`
+	svc       *service.Service `yaml:"-"`
+	rpcClient egress.RPCClient `yaml:"-"`
+	room      *lksdk.Room      `yaml:"-"`
+	updates   utils.PubSub     `yaml:"-"`
 }
 
 func getTestConfig(t *testing.T) *testConfig {
-	var confString string
 	confFile := os.Getenv("EGRESS_CONFIG_FILE")
-	if confFile != "" {
-		b, err := ioutil.ReadFile(confFile)
-		if err == nil {
-			confString = string(b)
-		}
-	}
+	require.NotEmpty(t, confFile)
+	b, err := ioutil.ReadFile(confFile)
+	require.NoError(t, err)
 
 	tc := &testConfig{
-		RoomName:               "egress-test",
-		RunRoomTests:           true,
-		RunTrackCompositeTests: false,
-		RunTrackTests:          false,
-		RunFileTests:           true,
-		RunStreamTests:         true,
-		RunSegmentedFileTests:  false,
-		Muting:                 false,
-		GstDebug:               1,
+		RoomName: "egress-test",
+		Muting:   false,
+		GstDebug: 1,
 	}
-	err := yaml.Unmarshal([]byte(confString), tc)
+	err = yaml.Unmarshal(b, tc)
 	require.NoError(t, err)
 
-	conf, err := config.NewConfig(confString)
+	conf, err := config.NewConfig(string(b))
 	require.NoError(t, err)
-
 	tc.Config = conf
-	if conf.ApiKey != "" && conf.ApiSecret != "" && conf.WsUrl != "" {
-		tc.HasConnectionInfo = true
-	} else {
-		if conf.ApiKey == "" {
-			conf.ApiKey = "fake_key"
-		}
-		if conf.ApiSecret == "" {
-			conf.ApiSecret = "fake_secret"
-		}
-		if conf.WsUrl == "" {
-			conf.WsUrl = "wss://fake-url.com"
-		}
+
+	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
+		t.Fatal("api key, secret, and ws url required")
+	}
+	if conf.Redis == nil {
+		t.Fatal("redis required")
 	}
 
-	if conf.Redis.Address != "" {
-		tc.HasRedis = true
-	}
+	err = os.Setenv("GST_DEBUG", fmt.Sprint(tc.GstDebug))
+	require.NoError(t, err)
 
-	require.NoError(t, os.Setenv("GST_DEBUG", fmt.Sprint(tc.GstDebug)))
 	return tc
-}
-
-func getRedisClient(conf *config.Config) (*redis.Client, error) {
-	logger.Infow("connecting to redis", "addr", conf.Redis.Address)
-	rc := redis.NewClient(&redis.Options{
-		Addr:     conf.Redis.Address,
-		Username: conf.Redis.Username,
-		Password: conf.Redis.Password,
-		DB:       conf.Redis.DB,
-	})
-	err := rc.Ping(context.Background()).Err()
-	return rc, err
 }

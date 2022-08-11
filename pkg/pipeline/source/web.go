@@ -48,19 +48,9 @@ func NewWebSource(ctx context.Context, conf *config.Config, p *params.Params) (*
 	defer span.End()
 
 	s := &WebSource{
-		endRecording: make(chan struct{}),
-		logger:       p.Logger,
-	}
-
-	var inputUrl string
-	if p.CustomInputURL != "" {
-		inputUrl = p.CustomInputURL
-	} else {
-		s.startRecording = make(chan struct{})
-		inputUrl = fmt.Sprintf(
-			"%s?layout=%s&url=%s&token=%s",
-			p.TemplateBase, p.Layout, url.QueryEscape(p.LKUrl), p.Token,
-		)
+		startRecording: make(chan struct{}),
+		endRecording:   make(chan struct{}),
+		logger:         p.Logger,
 	}
 
 	if err := s.createAudioSink(ctx, p.Info.EgressId); err != nil {
@@ -74,6 +64,10 @@ func NewWebSource(ctx context.Context, conf *config.Config, p *params.Params) (*
 		return nil, err
 	}
 
+	inputUrl := fmt.Sprintf(
+		"%s?layout=%s&url=%s&token=%s",
+		p.TemplateBase, p.Layout, url.QueryEscape(p.LKUrl), p.Token,
+	)
 	if err := s.launchChrome(ctx, inputUrl, p.Info.EgressId, p.Display, p.Width, p.Height, conf.Insecure); err != nil {
 		s.logger.Errorw("failed to launch chrome", err, "display", p.Display)
 		s.Close()

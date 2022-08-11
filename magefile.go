@@ -20,10 +20,6 @@ const (
 	config = "EGRESS_CONFIG_FILE"
 )
 
-func Test() error {
-	return integration("")
-}
-
 func Integration(configFile string) error {
 	return integration(configFile)
 }
@@ -38,7 +34,14 @@ func integration(configFile string) error {
 		if strings.HasPrefix(configFile, "test/") {
 			configFile = configFile[5:]
 		} else {
-			return errors.New("please move config file to universal-io/test/")
+			oldLocation := configFile
+			idx := strings.LastIndex(configFile, "/")
+			if idx != -1 {
+				configFile = configFile[idx+1:]
+			}
+			if err = os.Rename(oldLocation, "test/"+configFile); err != nil {
+				return err
+			}
 		}
 
 		configFile = "/out/" + configFile
