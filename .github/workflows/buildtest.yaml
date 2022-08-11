@@ -10,10 +10,9 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v2
         with:
-          lfs: 'true'
-      - run: git lfs pull
+          lfs: true
 
       - uses: actions/cache@v2
         with:
