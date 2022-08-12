@@ -48,15 +48,17 @@ type Pipeline struct {
 	loop     *glib.MainLoop
 
 	// internal
-	mu             sync.Mutex
-	playing        bool
-	startedAt      map[string]int64
-	streamErrors   map[string]chan error
-	closed         chan struct{}
-	eosTimer       *time.Timer
-	playlistWriter *sink.PlaylistWriter
-	endedSegments  chan segmentUpdate
-	segmentsWg     sync.WaitGroup
+	mu                  sync.Mutex
+	playing             bool
+	startedAt           map[string]int64
+	streamErrors        map[string]chan error
+	closed              chan struct{}
+	closedOnce          sync.Once
+	eosTimer            *time.Timer
+	sessionTimeoutTimer *time.Timer
+	playlistWriter      *sink.PlaylistWriter
+	endedSegments       chan segmentUpdate
+	segmentsWg          sync.WaitGroup
 
 	// callbacks
 	onStatusUpdate func(context.Context, *livekit.EgressInfo)
@@ -189,6 +191,8 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		p.SendEOS(ctx)
 	}()
 
+	p.startSessionTimeoutTimer(ctx)
+
 	// add watch
 	p.loop = glib.NewMainLoop(glib.MainContextDefault(), false)
 	p.pipeline.GetPipelineBus().AddWatch(p.messageWatch)
@@ -211,6 +215,8 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 
 	// close input source
 	p.in.Close()
+
+	p.stopSessionTimeoutTimer()
 
 	// update endedAt from sdk source
 	switch s := p.in.Source.(type) {
@@ -270,6 +276,25 @@ func (p *Pipeline) deleteTempDirectory() {
 				}
 			}
 		}
+	}
+}
+
+func (p *Pipeline) startSessionTimeoutTimer(ctx context.Context) {
+	timeout := p.GetSessionTimeout()
+
+	if timeout > 0 {
+		p.sessionTimeoutTimer = time.AfterFunc(timeout, func() {
+			p.SendEOS(ctx)
+
+			p.Info.Error = "max Egress duration reached"
+
+		})
+	}
+}
+
+func (p *Pipeline) stopSessionTimeoutTimer() {
+	if p.sessionTimeoutTimer != nil {
+		p.sessionTimeoutTimer.Stop()
 	}
 }
 
@@ -463,10 +488,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
-	select {
-	case <-p.closed:
-		return
-	default:
+	p.closedOnce.Do(func() {
 		close(p.closed)
 		p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 		if p.onStatusUpdate != nil {
@@ -486,7 +508,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 		case *source.WebSource:
 			p.pipeline.SendEvent(gst.NewEOSEvent())
 		}
-	}
+	})
 }
 
 func (p *Pipeline) updateStartTime(startedAt int64) {

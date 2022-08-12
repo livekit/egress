@@ -679,3 +679,16 @@ func (p *SegmentedFileParams) GetTargetPathForFilename(filename string) string {
 
 	return path.Join(p.TargetDirectory, filename)
 }
+
+func (p *Params) GetSessionTimeout() time.Duration {
+	switch p.EgressType {
+	case EgressTypeFile:
+		return p.conf.FileOutputMaxDuration
+	case EgressTypeStream, EgressTypeWebsocket:
+		return p.conf.StreamOutputMaxDuration
+	case EgressTypeSegmentedFile:
+		return p.conf.SegmentOutputMaxDuration
+	}
+
+	return 0
+}

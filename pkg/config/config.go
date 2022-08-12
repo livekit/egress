@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path"
+	"time"
 
 	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
@@ -44,6 +45,8 @@ type Config struct {
 	// CPU costs for various egress types
 	CPUCost CPUCostConfig `yaml:"cpu_cost"`
 
+	SessionLimits `yaml:"session_limits"`
+
 	// internal
 	NodeID     string      `yaml:"-"`
 	FileUpload interface{} `yaml:"-"` // one of S3, Azure, or GCP
@@ -74,6 +77,12 @@ type AzureConfig struct {
 type GCPConfig struct {
 	CredentialsJSON string `yaml:"credentials_json"` // (env GOOGLE_APPLICATION_CREDENTIALS)
 	Bucket          string `yaml:"bucket"`
+}
+
+type SessionLimits struct {
+	FileOutputMaxDuration    time.Duration `yaml:"file_output_max_duration"`
+	StreamOutputMaxDuration  time.Duration `yaml:"stream_output_max_duration"`
+	SegmentOutputMaxDuration time.Duration `yaml:"segment_output_max_duration"`
 }
 
 type CPUCostConfig struct {
