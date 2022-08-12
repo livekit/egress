@@ -23,6 +23,8 @@ import (
 const (
 	AudioAppSource = "audioAppSrc"
 	VideoAppSource = "videoAppSrc"
+
+	subscriptionTimeout = 5 * time.Second
 )
 
 type SDKSource struct {
@@ -217,7 +219,30 @@ func (s *SDKSource) join(ctx context.Context, p *params.Params) error {
 		}
 	}
 
-	for _, p := range s.room.GetParticipants() {
+	deadline := time.Now().Add(subscriptionTimeout)
+	for time.Now().Before(deadline) {
+		err := s.subscribeToExpectedTracks(expecting)
+		if err != nil {
+			return err
+		}
+		if len(expecting) == 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	for trackID := range expecting {
+		return errors.ErrTrackNotFound(trackID)
+	}
+
+	return nil
+}
+
+func (s *SDKSource) subscribeToExpectedTracks(expecting map[string]bool) error {
+	// copy the array as the participants list may change as we walk it
+	participants := s.room.GetParticipants()
+
+	for _, p := range participants {
 		for _, track := range p.Tracks() {
 			if expecting[track.SID()] {
 				if rt, ok := track.(*lksdk.RemoteTrackPublication); ok {
@@ -234,10 +259,6 @@ func (s *SDKSource) join(ctx context.Context, p *params.Params) error {
 				}
 			}
 		}
-	}
-
-	for trackID := range expecting {
-		return errors.ErrTrackNotFound(trackID)
 	}
 
 	return nil
