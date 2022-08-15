@@ -1,4 +1,4 @@
-name: Go Test
+name: Build
 on:
   workflow_dispatch:
   push:
@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+        with:
+          lfs: true
 
       - uses: actions/cache@v2
         with:
@@ -21,8 +23,5 @@ jobs:
             ~/.cache
           key: egress
 
-      - name: Build docker images
-        run: docker build -t egress-test -f ./build/test/Dockerfile .
-
-      - name: Run tests
-        run: docker run --rm egress-test
+      - name: Build docker image
+        run: docker build -t egress -f ./build/Dockerfile .

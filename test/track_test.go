@@ -15,74 +15,72 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/egress/pkg/pipeline"
+	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
-	lksdk "github.com/livekit/server-sdk-go"
-
-	"github.com/livekit/egress/pkg/pipeline"
-	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
-func testTrack(t *testing.T, conf *testConfig, room *lksdk.Room) {
-	if conf.RunFileTests {
+func testTrack(t *testing.T, conf *testConfig) {
+	now := time.Now().Unix()
+	if !conf.StreamTestsOnly && !conf.SegmentedFileTestsOnly {
 		for _, test := range []*testCase{
 			{
-				name:      "track-opus",
-				audioOnly: true,
-				codec:     params.MimeTypeOpus,
-				filename:  fmt.Sprintf("track-opus-%v.ogg", time.Now().Unix()),
+				name:       "track-opus",
+				audioOnly:  true,
+				audioCodec: params.MimeTypeOpus,
+				outputType: params.OutputTypeOGG,
+				filename:   fmt.Sprintf("track-opus-%v.ogg", now),
 			},
 			{
-				name:      "track-vp8",
-				videoOnly: true,
-				codec:     params.MimeTypeVP8,
-				filename:  fmt.Sprintf("track-vp8-%v.ivf", time.Now().Unix()),
+				name:       "track-vp8",
+				videoOnly:  true,
+				videoCodec: params.MimeTypeVP8,
+				outputType: params.OutputTypeIVF,
+				filename:   fmt.Sprintf("track-vp8-%v.ivf", now),
 			},
 			{
-				name:      "track-h264",
-				videoOnly: true,
-				codec:     params.MimeTypeH264,
-				filename:  fmt.Sprintf("track-h264-%v.mp4", time.Now().Unix()),
+				name:       "track-h264",
+				videoOnly:  true,
+				videoCodec: params.MimeTypeH264,
+				outputType: params.OutputTypeMP4,
+				filename:   fmt.Sprintf("track-h264-%v.mp4", now),
 			},
 		} {
-			if !t.Run(test.name, func(t *testing.T) {
-				runTrackFileTest(t, conf, room, test)
-			}) {
-				t.FailNow()
-			}
+			t.Run(test.name, func(t *testing.T) {
+				runTrackFileTest(t, conf, test)
+			})
 		}
 	}
 
-	if conf.RunStreamTests {
+	if !conf.FileTestsOnly && !conf.SegmentedFileTestsOnly {
 		for _, test := range []*testCase{
 			{
-				name:      "track-websocket",
-				audioOnly: true,
-				codec:     params.MimeTypeOpus,
-				output:    params.OutputTypeRaw,
-				filename:  fmt.Sprintf("track-ws-%v.raw", time.Now().Unix()),
+				name:       "track-websocket",
+				audioOnly:  true,
+				audioCodec: params.MimeTypeOpus,
+				filename:   fmt.Sprintf("track-ws-%v.raw", now),
 			},
 		} {
-			if !t.Run(test.name, func(t *testing.T) {
-				runTrackWebsocketTest(t, conf, room, test)
-			}) {
-				t.FailNow()
-			}
+			t.Run(test.name, func(t *testing.T) {
+				runTrackWebsocketTest(t, conf, test)
+			})
 		}
 	}
 }
 
-func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *testCase) {
-	trackID := publishSampleToRoom(t, room, test.codec, conf.Muting)
-	t.Cleanup(func() {
-		_ = room.LocalParticipant.UnpublishTrack(trackID)
-	})
+func runTrackFileTest(t *testing.T, conf *testConfig, test *testCase) {
+	codec := test.videoCodec
+	if test.audioOnly {
+		codec = test.audioCodec
+	}
+	trackID := publishSampleToRoom(t, conf.room, codec, conf.Muting)
 	time.Sleep(time.Second)
 
 	filepath := getFilePath(conf.Config, test.filename)
 	trackRequest := &livekit.TrackEgressRequest{
-		RoomName: room.Name(),
+		RoomName: conf.room.Name(),
 		TrackId:  trackID,
 		Output: &livekit.TrackEgressRequest_File{
 			File: &livekit.DirectFileOutput{
@@ -100,38 +98,35 @@ func runTrackFileTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *te
 		},
 	}
 
-	runFileTest(t, conf, test, req, filepath)
+	runFileTest(t, conf, req, test, filepath)
 }
 
-func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, test *testCase) {
-	trackID := publishSampleToRoom(t, room, test.codec, false)
-	t.Cleanup(func() {
-		_ = room.LocalParticipant.UnpublishTrack(trackID)
-	})
+func runTrackWebsocketTest(t *testing.T, conf *testConfig, test *testCase) {
+	codec := test.videoCodec
+	if test.audioCodec != "" {
+		codec = test.audioCodec
+	}
+	trackID := publishSampleToRoom(t, conf.room, codec, false)
 	time.Sleep(time.Second)
 
 	filepath := getFilePath(conf.Config, test.filename)
-	wss := newTestWebsocketServer(filepath, test.output)
+	wss := newTestWebsocketServer(filepath)
 	s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
 	defer func() {
 		wss.close()
 		s.Close()
 	}()
 
-	trackRequest := &livekit.TrackEgressRequest{
-		RoomName: room.Name(),
-		TrackId:  trackID,
-		Output: &livekit.TrackEgressRequest_WebsocketUrl{
-			WebsocketUrl: "ws" + strings.TrimPrefix(s.URL, "http"),
-		},
-	}
-
 	req := &livekit.StartEgressRequest{
-		EgressId:  utils.NewGuid(utils.EgressPrefix),
-		RequestId: utils.NewGuid(utils.RPCPrefix),
-		SentAt:    time.Now().UnixNano(),
+		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &livekit.StartEgressRequest_Track{
-			Track: trackRequest,
+			Track: &livekit.TrackEgressRequest{
+				RoomName: conf.room.Name(),
+				TrackId:  trackID,
+				Output: &livekit.TrackEgressRequest_WebsocketUrl{
+					WebsocketUrl: "ws" + strings.TrimPrefix(s.URL, "http"),
+				},
+			},
 		},
 	}
 
@@ -153,18 +148,16 @@ func runTrackWebsocketTest(t *testing.T, conf *testConfig, room *lksdk.Room, tes
 }
 
 type websocketTestServer struct {
-	path   string
-	file   *os.File
-	conn   *websocket.Conn
-	done   chan struct{}
-	output params.OutputType
+	path string
+	file *os.File
+	conn *websocket.Conn
+	done chan struct{}
 }
 
-func newTestWebsocketServer(filepath string, output params.OutputType) *websocketTestServer {
+func newTestWebsocketServer(filepath string) *websocketTestServer {
 	return &websocketTestServer{
-		path:   filepath,
-		done:   make(chan struct{}),
-		output: output,
+		path: filepath,
+		done: make(chan struct{}),
 	}
 }
 

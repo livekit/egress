@@ -239,7 +239,10 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		}
 
 		if p.playlistWriter != nil {
-			p.playlistWriter.EOS()
+			if err := p.playlistWriter.EOS(); err != nil {
+				p.Logger.Errorw("failed to send EOS to playlist writer", err)
+			}
+
 			// upload the finalized playlist
 			destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
 			p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(ctx, p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
@@ -321,7 +324,9 @@ func (p *Pipeline) onSegmentEnded(segmentPath string, endTime int64) error {
 		// 1. Avoid concurrent access to the SegmentsInfo structure
 		// 2. Ensure that playlists are uploaded in the same order they are enqueued to avoid an older playlist overwriting a newre one
 
-		p.enqueueSegmentUpload(segmentPath, endTime)
+		if err := p.enqueueSegmentUpload(segmentPath, endTime); err != nil {
+			p.Logger.Errorw("failed to queue segment upload", err)
+		}
 	}
 
 	return nil
@@ -331,21 +336,21 @@ func (p *Pipeline) startSegmentWorker() {
 	p.endedSegments = make(chan segmentUpdate, maxPendingUploads)
 
 	go func() {
-		for segmentUpdate := range p.endedSegments {
+		for update := range p.endedSegments {
 			func() {
 				defer p.segmentsWg.Done()
 
 				p.SegmentsInfo.SegmentCount++
 
-				destinationSegmentPath := p.GetTargetPathForFilename(segmentUpdate.localPath)
+				destinationSegmentPath := p.GetTargetPathForFilename(update.localPath)
 				// Ignore error. storeFile will log it.
-				_, size, _ := p.storeFile(context.Background(), segmentUpdate.localPath, destinationSegmentPath, p.Params.GetSegmentOutputType())
+				_, size, _ := p.storeFile(context.Background(), update.localPath, destinationSegmentPath, p.Params.GetSegmentOutputType())
 				p.SegmentsInfo.Size += size
 
 				if p.playlistWriter != nil {
-					err := p.playlistWriter.EndSegment(segmentUpdate.localPath, segmentUpdate.endTime)
+					err := p.playlistWriter.EndSegment(update.localPath, update.endTime)
 					if err != nil {
-						p.Logger.Errorw("Failed to end segment", err, "path", segmentUpdate.localPath)
+						p.Logger.Errorw("failed to end segment", err, "path", update.localPath)
 						return
 					}
 					destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
@@ -364,7 +369,7 @@ func (p *Pipeline) enqueueSegmentUpload(segmentPath string, endTime int64) error
 	default:
 		err := errors.New("segment upload job queue is full")
 
-		p.Logger.Errorw("Failed to upload segment", err)
+		p.Logger.Errorw("failed to upload segment", err)
 		p.segmentsWg.Done()
 		return errors.ErrUploadFailed(segmentPath, err)
 	}
@@ -473,19 +478,21 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 			p.onStatusUpdate(ctx, p.Info)
 		}
 
-		p.Logger.Debugw("sending EOS to pipeline")
-		p.eosTimer = time.AfterFunc(eosTimeout, func() {
-			p.Logger.Errorw("pipeline frozen", nil)
-			p.Info.Error = "pipeline frozen"
-			p.stop()
-		})
+		go func() {
+			p.Logger.Debugw("sending EOS to pipeline")
+			p.eosTimer = time.AfterFunc(eosTimeout, func() {
+				p.Logger.Errorw("pipeline frozen", nil)
+				p.Info.Error = "pipeline frozen"
+				p.stop()
+			})
 
-		switch s := p.in.Source.(type) {
-		case *source.SDKSource:
-			s.SendEOS()
-		case *source.WebSource:
-			p.pipeline.SendEvent(gst.NewEOSEvent())
-		}
+			switch s := p.in.Source.(type) {
+			case *source.SDKSource:
+				s.SendEOS()
+			case *source.WebSource:
+				p.pipeline.SendEvent(gst.NewEOSEvent())
+			}
+		}()
 	}
 }
 
@@ -541,7 +548,7 @@ func (p *Pipeline) getDuration(k string, endedAt int64) int64 {
 	duration := endedAt - startedAt
 
 	if duration <= 0 {
-		p.Logger.Debugw("invalid duration",
+		p.Logger.Errorw("invalid duration", nil,
 			"duration", duration, "startedAt", startedAt, "endedAt", endedAt,
 		)
 	}
@@ -602,34 +609,33 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 		if s != nil {
 			switch s.Name() {
 			case fragmentOpenedMessage:
-				path, t, err := getSegmentParamsFromGstStructure(s)
+				filepath, t, err := getSegmentParamsFromGstStructure(s)
 				if err != nil {
-					p.Logger.Errorw("Failed retrieving parameters from fragment event structure", err)
+					p.Logger.Errorw("failed retrieving parameters from fragment event structure", err)
 					return true
 				}
 
-				p.Logger.Debugw("Fragment Opened event", "location", path, "running time", t)
+				p.Logger.Debugw("fragment opened event", "location", filepath, "running time", t)
 
 				if p.playlistWriter != nil {
-					err := p.playlistWriter.StartSegment(path, t)
-					if err != nil {
-						p.Logger.Errorw("Failed registering new segment with playlist writer", err, "location", path, "running time", t)
+					if err = p.playlistWriter.StartSegment(filepath, t); err != nil {
+						p.Logger.Errorw("failed registering new segment with playlist writer", err, "location", filepath, "running time", t)
 						return true
 					}
 				}
 
 			case fragmentClosedMessage:
-				path, t, err := getSegmentParamsFromGstStructure(s)
+				filepath, t, err := getSegmentParamsFromGstStructure(s)
 				if err != nil {
-					p.Logger.Errorw("Failed registering new segment with playlist writer", err, "location", path, "running time", t)
+					p.Logger.Errorw("failed registering new segment with playlist writer", err, "location", filepath, "running time", t)
 					return true
 				}
 
-				p.Logger.Debugw("Fragment Closed event", "location", path, "running time", t)
+				p.Logger.Debugw("fragment closed event", "location", filepath, "running time", t)
 
-				err = p.onSegmentEnded(path, t)
+				err = p.onSegmentEnded(filepath, t)
 				if err != nil {
-					p.Logger.Errorw("Failed ending segment with playlist writer", err, "running time", t)
+					p.Logger.Errorw("failed ending segment with playlist writer", err, "running time", t)
 					return true
 				}
 			}
@@ -642,12 +648,12 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 	return true
 }
 
-func getSegmentParamsFromGstStructure(s *gst.Structure) (path string, time int64, err error) {
+func getSegmentParamsFromGstStructure(s *gst.Structure) (filepath string, time int64, err error) {
 	loc, err := s.GetValue(fragmentLocation)
 	if err != nil {
 		return "", 0, err
 	}
-	path, ok := loc.(string)
+	filepath, ok := loc.(string)
 	if !ok {
 		return "", 0, errors.New("invalid type for location")
 	}
@@ -661,7 +667,7 @@ func getSegmentParamsFromGstStructure(s *gst.Structure) (path string, time int64
 		return "", 0, errors.New("invalid type for time")
 	}
 
-	return path, int64(ti), nil
+	return filepath, int64(ti), nil
 }
 
 func (p *Pipeline) stop() {
@@ -721,7 +727,6 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 
 	default:
 		// input failure or file write failure. Fatal
-		err := errors.New(gErr.Error())
 		p.Logger.Errorw("pipeline error", err,
 			"debug", gErr.DebugString(),
 			"message", gErr.Message(),
