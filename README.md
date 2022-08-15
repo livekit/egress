@@ -260,17 +260,21 @@ First, create `egress/test/config.yaml`:
 
 ```yaml
 log_level: debug
+gst_debug: 1
 api_key: your-api-key
 api_secret: your-api-secret
 ws_url: wss://your-livekit-url.com
+redis:
+  address: 192.168.65.2:6379
+local_directory: /out/output
 room_name: your-room
-room: true
-track_composite: true
-track: true
-file: true
-stream: true
+room_only: false
+track_composite_only: false
+track_only: false
+file_only: false
+stream_only: false
+segments_only: false
 muting: false
-gst_debug: 1
 ```
 
 Join a room using https://example.livekit.io or your own client, then run `mage integration test/config.yaml`.  
