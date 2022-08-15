@@ -253,9 +253,7 @@ You can then use our [cli](https://github.com/livekit/livekit-cli) to submit egr
 
 ## Testing and Development
 
-Running `mage test` will run the Room Composite tests on your machine, and will dump the resulting files into egress/test/output.
-
-To run these tests against your own LiveKit rooms, a deployed LiveKit server with a secure websocket url is required.
+To run the test against your own LiveKit rooms, a deployed LiveKit server with a secure websocket url is required.
 First, create `egress/test/config.yaml`:
 
 ```yaml
