@@ -18,7 +18,7 @@ Irrespective of method used, when moving between protocols, containers or encodi
 ## Supported Output
 
 | Egress Type     | MP4 File | OGG File | IVF File | Segmented File | Rtmp(s) Stream | Websocket Stream |
-|-----------------|----------|----------|----------|----------------| ----------------|------------------|
+|-----------------|----------|----------|----------|----------------|----------------|------------------|
 | Room Composite  | ✅        | ✅        |          | ✅              | ✅              |                  |
 | Track Composite | ✅        | ✅        |          | ✅              | ✅              |                  |
 | Track           | ✅        | ✅        | ✅        |                |                | ✅                |
