@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+        with:
+          lfs: true
 
       - uses: actions/cache@v2
         with:
@@ -21,8 +23,14 @@ jobs:
             ~/.cache
           key: egress
 
+      - uses: shogo82148/actions-setup-redis@v1
+        with:
+          redis-version: '6.x'
+          auto-start: true
+      - run: redis-cli ping
+
       - name: Build docker images
         run: docker build -t egress-test -f ./build/test/Dockerfile .
 
       - name: Run tests
-        run: docker run --rm egress-test
+        run: docker run --rm --network=host -e EGRESS_CONFIG_STRING="${{ secrets.EGRESS_CONFIG_STRING }}" egress-test

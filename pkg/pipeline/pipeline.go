@@ -495,20 +495,22 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 			p.onStatusUpdate(ctx, p.Info)
 		}
 
-		p.Logger.Debugw("sending EOS to pipeline")
-		p.eosTimer = time.AfterFunc(eosTimeout, func() {
-			p.Logger.Errorw("pipeline frozen", nil)
-			p.Info.Error = "pipeline frozen"
-			p.stop()
-		})
+		go func() {
+			p.Logger.Debugw("sending EOS to pipeline")
+			p.eosTimer = time.AfterFunc(eosTimeout, func() {
+				p.Logger.Errorw("pipeline frozen", nil)
+				p.Info.Error = "pipeline frozen"
+				p.stop()
+			})
 
-		switch s := p.in.Source.(type) {
-		case *source.SDKSource:
-			s.SendEOS()
-		case *source.WebSource:
-			p.pipeline.SendEvent(gst.NewEOSEvent())
-		}
-	})
+			switch s := p.in.Source.(type) {
+			case *source.SDKSource:
+				s.SendEOS()
+			case *source.WebSource:
+				p.pipeline.SendEvent(gst.NewEOSEvent())
+			}
+		}()
+	}
 }
 
 func (p *Pipeline) updateStartTime(startedAt int64) {
@@ -563,7 +565,7 @@ func (p *Pipeline) getDuration(k string, endedAt int64) int64 {
 	duration := endedAt - startedAt
 
 	if duration <= 0 {
-		p.Logger.Debugw("invalid duration",
+		p.Logger.Errorw("invalid duration", nil,
 			"duration", duration, "startedAt", startedAt, "endedAt", endedAt,
 		)
 	}
@@ -743,7 +745,6 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 
 	default:
 		// input failure or file write failure. Fatal
-		err := errors.New(gErr.Error())
 		p.Logger.Errorw("pipeline error", err,
 			"debug", gErr.DebugString(),
 			"message", gErr.Message(),

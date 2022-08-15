@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -23,6 +24,10 @@ const (
 	ResultTypeFile ResultType = iota
 	ResultTypeStream
 	ResultTypeSegments
+
+	maxRetries = 5
+	minDelay   = 100 * time.Millisecond
+	maxDelay   = 5 * time.Second
 )
 
 type FFProbeInfo struct {
@@ -84,7 +89,7 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
-func verifyFile(t *testing.T, filepath string, p *params.Params, res *livekit.EgressInfo, withMuting bool) {
+func verifyFile(t *testing.T, conf *testConfig, p *params.Params, res *livekit.EgressInfo, filepath string) {
 	// egress info
 	require.Empty(t, res.Error)
 	require.NotZero(t, res.StartedAt)
@@ -98,7 +103,14 @@ func verifyFile(t *testing.T, filepath string, p *params.Params, res *livekit.Eg
 	require.Greater(t, fileRes.Size, int64(0))
 	require.Greater(t, fileRes.Duration, int64(0))
 
-	verify(t, filepath, p, res, ResultTypeFile, withMuting)
+	// download from cloud storage
+	if p.FileUpload != nil {
+		filepath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, filepath)
+		download(t, p.FileUpload, filepath, p.Filepath)
+	}
+
+	// verify
+	verify(t, filepath, p, res, ResultTypeFile, conf.Muting)
 }
 
 func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
@@ -107,9 +119,37 @@ func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	}
 }
 
-func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {
-	require.NotEmpty(t, p.OutputType)
+func verifySegments(t *testing.T, conf *testConfig, p *params.Params, res *livekit.EgressInfo, playlistPath string) {
+	// egress info
+	require.Empty(t, res.Error)
+	require.NotZero(t, res.StartedAt)
+	require.NotZero(t, res.EndedAt)
 
+	// segments info
+	segments := res.GetSegments()
+	require.NotEmpty(t, segments.PlaylistName)
+	require.NotEmpty(t, segments.PlaylistLocation)
+	require.Greater(t, segments.Size, int64(0))
+	require.Greater(t, segments.Duration, int64(0))
+	require.Greater(t, segments.SegmentCount, int64(0))
+
+	// download from cloud storage
+	if p.FileUpload != nil {
+		base := playlistPath[:len(playlistPath)-5]
+		playlistPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, playlistPath)
+		download(t, p.FileUpload, playlistPath, playlistPath)
+		for i := 0; i < int(segments.SegmentCount); i++ {
+			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
+			localPath := fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, cloudPath)
+			download(t, p.FileUpload, localPath, cloudPath)
+		}
+	}
+
+	// verify
+	verify(t, playlistPath, p, res, ResultTypeSegments, conf.Muting)
+}
+
+func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {
 	info, err := ffprobe(input)
 	require.NoError(t, err, "ffprobe error")
 
@@ -123,7 +163,6 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 	}
 
 	switch resultType {
-	// TODO implement with Segments
 	case ResultTypeFile:
 		// size
 		require.NotEqual(t, "0", info.Format.Size)
@@ -133,20 +172,28 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
 
-		delta := 1.5
-		if withMuting {
-			if !p.VideoEnabled {
-				// opus only with muting (cuts the end short)
-				delta = 13
-			} else if !p.AudioEnabled {
-				delta = 10
-			} else {
-				delta = 3
+		// file duration can be different from egress duration based on keyframes or muting
+		switch p.Info.Request.(type) {
+		case *livekit.EgressInfo_RoomComposite:
+			require.InDelta(t, expected, actual, 1.5)
+
+		case *livekit.EgressInfo_TrackComposite:
+			if p.AudioEnabled && p.VideoEnabled {
+				require.InDelta(t, expected, actual, 3.0)
+			}
+
+		case *livekit.EgressInfo_Track:
+			if p.AudioEnabled {
+				delta := 3.0
+				if withMuting {
+					delta = 6
+				}
+				require.InDelta(t, expected, actual, delta)
 			}
 		}
 
-		// duration can be up to a couple seconds off because the beginning is missing a keyframe
-		require.InDelta(t, expected, actual, delta)
+	case ResultTypeSegments:
+		// TODO: implement with Segments
 	}
 
 	// check stream info

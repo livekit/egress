@@ -47,10 +47,9 @@ type SourceParams struct {
 	IsWebSource  bool
 
 	// web source
-	Display        string
-	Layout         string
-	CustomBase     string
-	CustomInputURL string
+	Display    string
+	Layout     string
+	CustomBase string
 
 	// sdk source
 	TrackID      string
@@ -403,7 +402,6 @@ func (p *Params) updateFileParams(filepath string, output interface{}) error {
 		p.FileUpload = o.Azure
 	case *livekit.DirectFileOutput_Gcp:
 		p.FileUpload = o.Gcp
-
 	default:
 		p.FileUpload = p.conf.FileUpload
 	}
@@ -452,9 +450,9 @@ func (p *Params) updateStreamParams(outputType OutputType, urls []string) error 
 	return nil
 }
 
-func (p *Params) updateSegmentsParams(fileprefix string, playlistFilename string, segmentDuration uint32, output interface{}) error {
+func (p *Params) updateSegmentsParams(filePrefix string, playlistFilename string, segmentDuration uint32, output interface{}) error {
 	p.EgressType = EgressTypeSegmentedFile
-	p.LocalFilePrefix = fileprefix
+	p.LocalFilePrefix = filePrefix
 	p.PlaylistFilename = playlistFilename
 	p.SegmentDuration = int(segmentDuration)
 	if p.SegmentDuration == 0 {

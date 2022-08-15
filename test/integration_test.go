@@ -4,331 +4,317 @@ package test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/egress/pkg/service"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 const (
-	videoTestInput  = "https://www.youtube.com/watch?v=4cJpiOPKH14&t=25s"
-	audioTestInput  = "https://www.youtube.com/watch?v=eAcFPtCyDYY&t=59s"
-	audioTestInput2 = "https://www.youtube.com/watch?v=BlPbAq1dW3I&t=45s"
-	staticTestInput = "https://www.livekit.io"
-	streamUrl1      = "rtmp://localhost:1935/live/stream1"
-	streamUrl2      = "rtmp://localhost:1935/live/stream2"
-	badStreamUrl1   = "rtmp://sfo.contribute.live-video.net/app/fake1"
-	badStreamUrl2   = "rtmp://localhost:1934/live/stream2"
-	muteDuration    = time.Second * 10
-)
-
-var (
-	samples = map[params.MimeType]string{
-		params.MimeTypeOpus: "/out/sample/matrix-trailer.ogg",
-		params.MimeTypeH264: "/out/sample/matrix-trailer.h264",
-		params.MimeTypeVP8:  "/out/sample/matrix-trailer.ivf",
-	}
-
-	frameDurations = map[params.MimeType]time.Duration{
-		params.MimeTypeH264: time.Microsecond * 41708,
-		params.MimeTypeVP8:  time.Microsecond * 41708,
-	}
+	streamUrl1    = "rtmp://localhost:1935/live/stream1"
+	streamUrl2    = "rtmp://localhost:1935/live/stream2"
+	badStreamUrl1 = "rtmp://sfo.contribute.live-video.net/app/fake1"
+	badStreamUrl2 = "rtmp://localhost:1934/live/stream2"
 )
 
 type testCase struct {
-	name             string
-	inputUrl         string
-	forceCustomInput bool
-	audioOnly        bool
-	videoOnly        bool
-	fileType         livekit.EncodedFileType
-	options          *livekit.EncodingOptions
-	filename         string
-	playlist         string
-	codec            params.MimeType
-	output           params.OutputType
+	name      string
+	audioOnly bool
+	videoOnly bool
+	filename  string
+
+	// used by room and track composite tests
+	fileType livekit.EncodedFileType
+	options  *livekit.EncodingOptions
+
+	// used by segmented file tests
+	playlist string
+
+	// used by track and track composite tests
+	audioCodec params.MimeType
+	videoCodec params.MimeType
+
+	// used by track tests
+	outputType params.OutputType
 }
 
 func TestEgress(t *testing.T) {
 	conf := getTestConfig(t)
 
-	var room *lksdk.Room
-	if conf.HasConnectionInfo {
-		var err error
-		room, err = lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
-			APIKey:              conf.ApiKey,
-			APISecret:           conf.ApiSecret,
-			RoomName:            conf.RoomName,
-			ParticipantName:     "sample",
-			ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
-		}, lksdk.NewRoomCallback())
-		require.NoError(t, err)
-		defer room.Disconnect()
-	}
-
-	if conf.RunServiceTest {
-		if !conf.HasRedis || !conf.HasConnectionInfo {
-			t.Fatal("redis and connection info required for service test")
-		}
-
-		if !t.Run("Service", func(t *testing.T) {
-			testService(t, conf, room)
-		}) {
-			t.FailNow()
-		}
-	}
-
-	if conf.RunRoomTests {
-		if !t.Run("RoomComposite", func(t *testing.T) {
-			testRoomComposite(t, conf, room)
-		}) {
-			t.FailNow()
-		}
-	}
-
-	if conf.RunTrackCompositeTests {
-		if !conf.HasConnectionInfo {
-			t.Fatal("connection info required for track composite tests")
-		}
-
-		if !t.Run("TrackComposite", func(t *testing.T) {
-			testTrackComposite(t, conf, room)
-		}) {
-			t.FailNow()
-		}
-	}
-
-	if conf.RunTrackTests {
-		if !conf.HasConnectionInfo {
-			t.Fatal("connection info required for track tests")
-		}
-
-		if !t.Run("Track", func(t *testing.T) {
-			testTrack(t, conf, room)
-		}) {
-			t.FailNow()
-		}
-	}
-}
-
-func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec params.MimeType, withMuting bool) (audioTrackID, videoTrackID string) {
-	audioTrackID = publishSampleToRoom(t, room, audioCodec, false)
-	t.Cleanup(func() {
-		_ = room.LocalParticipant.UnpublishTrack(audioTrackID)
-	})
-
-	videoTrackID = publishSampleToRoom(t, room, videoCodec, withMuting)
-	t.Cleanup(func() {
-		_ = room.LocalParticipant.UnpublishTrack(videoTrackID)
-	})
-
-	time.Sleep(time.Second)
-	return
-}
-
-func publishSampleToRoom(t *testing.T, room *lksdk.Room, codec params.MimeType, withMuting bool) string {
-	filename := samples[codec]
-	frameDuration := frameDurations[codec]
-
-	var pub *lksdk.LocalTrackPublication
-	done := make(chan struct{})
-	opts := []lksdk.ReaderSampleProviderOption{
-		lksdk.ReaderTrackWithOnWriteComplete(func() {
-			close(done)
-			if pub != nil {
-				_ = room.LocalParticipant.UnpublishTrack(pub.SID())
-			}
-		}),
-	}
-
-	if frameDuration != 0 {
-		opts = append(opts, lksdk.ReaderTrackWithFrameDuration(frameDuration))
-	}
-
-	track, err := lksdk.NewLocalFileTrack(filename, opts...)
+	// connect to room
+	lksdk.SetLogger(logr.Discard())
+	room, err := lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
+		APIKey:              conf.ApiKey,
+		APISecret:           conf.ApiSecret,
+		RoomName:            conf.RoomName,
+		ParticipantName:     "egress-sample",
+		ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
+	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
+	defer room.Disconnect()
 
-	pub, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
+	// rpc client and server
+	rc, err := redis.GetRedisClient(conf.Config.Redis)
 	require.NoError(t, err)
+	rpcServer := egress.NewRedisRPCServer(rc)
+	rpcClient := egress.NewRedisRPCClient("egress_test", rc)
 
-	if withMuting {
-		go func() {
-			muted := false
-			time.Sleep(muteDuration)
-			for {
-				select {
-				case <-done:
-					return
-				default:
-					pub.SetMuted(!muted)
-					muted = !muted
-					time.Sleep(muteDuration)
-				}
-			}
-		}()
-	}
-
-	return pub.SID()
-}
-
-func getFilePath(conf *config.Config, filename string) string {
-	if conf.FileUpload != nil {
-		return filename
-	}
-
-	return fmt.Sprintf("/out/output/%s", filename)
-}
-
-func runFileTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, filepath string) {
-	ctx := context.Background()
-
-	p, err := params.GetPipelineParams(ctx, conf.Config, req)
-	require.NoError(t, err)
-
-	if !strings.HasPrefix(conf.ApiKey, "API") || test.forceCustomInput {
-		p.CustomInputURL = test.inputUrl
-	}
-
-	rec, err := pipeline.New(ctx, conf.Config, p)
-	require.NoError(t, err)
-
-	// record for ~30s. Takes about 5s to start
-	time.AfterFunc(time.Second*35, func() {
-		rec.SendEOS(ctx)
-	})
-	res := rec.Run(ctx)
-
-	verifyFile(t, filepath, p, res, conf.Muting)
-}
-
-func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, customUrl string) {
-	ctx := context.Background()
-
-	p, err := params.GetPipelineParams(ctx, conf.Config, req)
-	require.NoError(t, err)
-	if customUrl != "" {
-		p.CustomInputURL = customUrl
-	}
-
-	rec, err := pipeline.New(ctx, conf.Config, p)
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		rec.SendEOS(ctx)
-	})
-
-	resChan := make(chan *livekit.EgressInfo, 1)
+	// start service
+	svc := service.NewService(conf.Config, rpcServer)
 	go func() {
-		resChan <- rec.Run(ctx)
+		err := svc.Run()
+		require.NoError(t, err)
 	}()
+	t.Cleanup(func() { svc.Stop(true) })
+	time.Sleep(time.Second * 3)
 
-	// wait for recorder to start
-	time.Sleep(time.Second * 10)
+	// subscribe to update channel
+	updates, err := rpcClient.GetUpdateChannel(context.Background())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = updates.Close() })
 
-	// check stream
+	// update test config
+	conf.svc = svc
+	conf.rpcClient = rpcClient
+	conf.updates = updates
+	conf.room = room
+
+	// check status
+	if conf.HealthPort != 0 {
+		status := getStatus(t, svc)
+		require.Len(t, status, 1)
+		require.Contains(t, status, "CpuLoad")
+	}
+
+	// run tests
+	if !conf.TrackCompositeTestsOnly && !conf.TrackTestsOnly {
+		t.Run("RoomComposite", func(t *testing.T) {
+			testRoomComposite(t, conf)
+		})
+	}
+
+	if !conf.RoomTestsOnly && !conf.TrackTestsOnly {
+		t.Run("TrackComposite", func(t *testing.T) {
+			testTrackComposite(t, conf)
+		})
+	}
+
+	if !conf.RoomTestsOnly && !conf.TrackCompositeTestsOnly {
+		t.Run("Track", func(t *testing.T) {
+			testTrack(t, conf)
+		})
+	}
+}
+
+func runFileTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, test *testCase, filepath string) {
+	// start
+	egressID := startEgress(t, conf, req)
+
+	time.Sleep(time.Second * 25)
+
+	// stop
+	res := stopEgress(t, conf, egressID)
+
+	// get params
+	p, err := params.GetPipelineParams(context.Background(), conf.Config, req)
+	require.NoError(t, err)
+	if p.OutputType == "" {
+		p.OutputType = test.outputType
+	}
+
+	// verify
+	verifyFile(t, conf, p, res, filepath)
+}
+
+func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) {
+	ctx := context.Background()
+	egressID := startEgress(t, conf, req)
+
+	time.Sleep(time.Second * 5)
+
+	// get params
+	p, err := params.GetPipelineParams(ctx, conf.Config, req)
+	require.NoError(t, err)
+
+	// verify stream
 	verifyStreams(t, p, streamUrl1)
 
-	// add another, check both
-	require.Error(t, rec.UpdateStream(ctx, &livekit.UpdateStreamRequest{
-		EgressId:      req.EgressId,
-		AddOutputUrls: []string{badStreamUrl1, streamUrl2, badStreamUrl2},
-	}))
-	time.Sleep(time.Second)
+	// add one good stream url and a couple bad ones
+	_, err = conf.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
+		EgressId: egressID,
+		Request: &livekit.EgressRequest_UpdateStream{
+			UpdateStream: &livekit.UpdateStreamRequest{
+				EgressId:      req.EgressId,
+				AddOutputUrls: []string{badStreamUrl1, streamUrl2, badStreamUrl2},
+			},
+		},
+	})
+
+	// should return an error
+	require.Error(t, err)
+
+	time.Sleep(time.Second * 5)
+
+	// verify the good stream urls
 	verifyStreams(t, p, streamUrl1, streamUrl2)
 
-	// remove first, check second
-	require.NoError(t, rec.UpdateStream(ctx, &livekit.UpdateStreamRequest{
-		EgressId:         req.EgressId,
-		RemoveOutputUrls: []string{streamUrl1},
-	}))
+	// remove one of the stream urls
+	_, err = conf.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
+		EgressId: egressID,
+		Request: &livekit.EgressRequest_UpdateStream{
+			UpdateStream: &livekit.UpdateStreamRequest{
+				EgressId:         req.EgressId,
+				RemoveOutputUrls: []string{streamUrl1},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	time.Sleep(time.Second * 5)
+
+	// verify the remaining stream
 	verifyStreams(t, p, streamUrl2)
 
 	// stop
-	rec.SendEOS(ctx)
-	res := <-resChan
+	res := stopEgress(t, conf, egressID)
 
-	// egress info
+	// verify egress info
 	require.Empty(t, res.Error)
 	require.NotZero(t, res.StartedAt)
 	require.NotZero(t, res.EndedAt)
 
-	// stream info
+	// check that durations are reasonable
 	require.Len(t, res.GetStream().Info, 2)
 	for _, info := range res.GetStream().Info {
-		require.NotEmpty(t, info.Url)
-		require.NotZero(t, info.Duration)
+		switch info.Url {
+		case streamUrl1:
+			require.Greater(t, float64(info.Duration)/1e9, 15.0)
+		case streamUrl2:
+			require.Greater(t, float64(info.Duration)/1e9, 10.0)
+		default:
+			t.Fatal("invalid stream url in result")
+		}
 	}
 }
 
-func testStreamFailure(t *testing.T, conf *testConfig, customUrl string) {
-	ctx := context.Background()
+func runSegmentsTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, playlistPath string) {
+	egressID := startEgress(t, conf, req)
 
-	req := &livekit.StartEgressRequest{
-		EgressId:  utils.NewGuid(utils.EgressPrefix),
-		RequestId: utils.NewGuid(utils.RPCPrefix),
-		SentAt:    time.Now().Unix(),
-		Request: &livekit.StartEgressRequest_RoomComposite{
-			RoomComposite: &livekit.RoomCompositeEgressRequest{
-				RoomName: conf.RoomName,
-				Layout:   "speaker-dark",
-				Output: &livekit.RoomCompositeEgressRequest_Stream{
-					Stream: &livekit.StreamOutput{
-						Protocol: livekit.StreamProtocol_RTMP,
-						Urls:     []string{badStreamUrl1},
-					},
-				},
+	time.Sleep(time.Second * 25)
+
+	// stop
+	res := stopEgress(t, conf, egressID)
+
+	// get params
+	p, err := params.GetPipelineParams(context.Background(), conf.Config, req)
+	require.NoError(t, err)
+
+	verifySegments(t, conf, p, res, playlistPath)
+}
+
+func startEgress(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) string {
+	// send start request
+	info, err := conf.rpcClient.SendRequest(context.Background(), req)
+
+	// check returned egress info
+	require.NoError(t, err)
+	require.Empty(t, info.Error)
+	require.NotEmpty(t, info.EgressId)
+	require.Equal(t, conf.RoomName, info.RoomName)
+	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
+
+	// check status
+	if conf.HealthPort != 0 {
+		status := getStatus(t, conf.svc)
+		require.Contains(t, status, info.EgressId)
+	}
+
+	// wait
+	time.Sleep(time.Second * 5)
+
+	// check active update
+	checkUpdate(t, conf.updates, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
+
+	return info.EgressId
+}
+
+func stopEgress(t *testing.T, conf *testConfig, egressID string) *livekit.EgressInfo {
+	// send stop request
+	info, err := conf.rpcClient.SendRequest(context.Background(), &livekit.EgressRequest{
+		EgressId: egressID,
+		Request: &livekit.EgressRequest_Stop{
+			Stop: &livekit.StopEgressRequest{
+				EgressId: egressID,
 			},
 		},
+	})
+
+	// check returned egress info
+	require.NoError(t, err)
+	require.Empty(t, info.Error)
+	require.NotEmpty(t, info.StartedAt)
+	require.Equal(t, livekit.EgressStatus_EGRESS_ENDING, info.Status)
+
+	// check ending update
+	checkUpdate(t, conf.updates, egressID, livekit.EgressStatus_EGRESS_ENDING)
+
+	// check complete update
+	info = checkUpdate(t, conf.updates, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
+
+	// check status
+	if conf.HealthPort != 0 {
+		status := getStatus(t, conf.svc)
+		require.Len(t, status, 1)
 	}
 
-	p, err := params.GetPipelineParams(ctx, conf.Config, req)
-	require.NoError(t, err)
-	if customUrl != "" {
-		p.CustomInputURL = customUrl
-	}
-
-	rec, err := pipeline.New(ctx, conf.Config, p)
-	require.NoError(t, err)
-
-	info := rec.Run(ctx)
-	require.NotEmpty(t, info.Error)
-	require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
+	return info
 }
 
-func runSegmentsTest(t *testing.T, conf *testConfig, test *testCase, req *livekit.StartEgressRequest, playlistPath string) {
-	ctx := context.Background()
-
-	p, err := params.GetPipelineParams(ctx, conf.Config, req)
+func getStatus(t *testing.T, svc *service.Service) map[string]interface{} {
+	b, err := svc.Status()
 	require.NoError(t, err)
 
-	if !strings.HasPrefix(conf.ApiKey, "API") || test.forceCustomInput {
-		p.CustomInputURL = test.inputUrl
+	status := make(map[string]interface{})
+	err = json.Unmarshal(b, &status)
+	require.NoError(t, err)
+
+	return status
+}
+
+func checkUpdate(t *testing.T, sub utils.PubSub, egressID string, status livekit.EgressStatus) *livekit.EgressInfo {
+	for {
+		select {
+		case msg := <-sub.Channel():
+			b := sub.Payload(msg)
+			info := &livekit.EgressInfo{}
+			require.NoError(t, proto.Unmarshal(b, info))
+
+			if info.EgressId != egressID {
+				continue
+			}
+
+			require.Empty(t, info.Error)
+			require.Equal(t, egressID, info.EgressId)
+			require.Equal(t, status, info.Status)
+			return info
+
+		case <-time.After(time.Second * 30):
+			t.Fatal("no update from results channel")
+			return nil
+		}
 	}
-
-	rec, err := pipeline.New(ctx, conf.Config, p)
-	require.NoError(t, err)
-
-	// record for ~30s. Takes about 5s to start
-	time.AfterFunc(time.Second*35, func() {
-		rec.SendEOS(ctx)
-	})
-	res := rec.Run(ctx)
-
-	// egress info
-	require.Empty(t, res.Error)
-	require.NotZero(t, res.StartedAt)
-	require.NotZero(t, res.EndedAt)
-
-	verify(t, playlistPath, p, res, ResultTypeSegments, conf.Muting)
 }
