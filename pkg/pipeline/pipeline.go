@@ -510,7 +510,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 				p.pipeline.SendEvent(gst.NewEOSEvent())
 			}
 		}()
-	}
+	})
 }
 
 func (p *Pipeline) updateStartTime(startedAt int64) {
