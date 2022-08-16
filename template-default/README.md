@@ -3,7 +3,7 @@
 ## Using our templates
 
 We currently have 4 templates available - `speaker-light`, `speaker-dark`, `grid-light`, and `grid-dark`.
-The `speaker` templates will show the current active speaker taking up most of the screen, with other participants in the side bar.
+The `speaker` templates will show the current active speaker taking up most of the screen, with other participants in the sidebar.
 The `grid` templates will show a 1x1, 2x2, or 3x3 grid for up to 1, 4, or 9 participants respectively.
 
 Our templates are deployed at https://egress-composite.livekit.io.

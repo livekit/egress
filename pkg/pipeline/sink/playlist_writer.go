@@ -95,20 +95,13 @@ func (w *PlaylistWriter) EndSegment(filepath string, endTime int64) error {
 
 	// Write playlist for every segment. This allows better crash recovery and to use
 	// it as an Event playlist, at the cost of extra I/O
-	w.writePlaylist()
-
-	return nil
+	return w.writePlaylist()
 }
 
 func (w *PlaylistWriter) EOS() error {
 	w.playlist.Close()
 
-	err := w.writePlaylist()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return w.writePlaylist()
 }
 
 func (w *PlaylistWriter) writePlaylist() error {

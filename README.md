@@ -18,7 +18,7 @@ Irrespective of method used, when moving between protocols, containers or encodi
 ## Supported Output
 
 | Egress Type     | MP4 File | OGG File | IVF File | Segmented File | Rtmp(s) Stream | Websocket Stream |
-|-----------------|----------|----------|----------|----------------| ----------------|------------------|
+|-----------------|----------|----------|----------|----------------|----------------|------------------|
 | Room Composite  | ✅        | ✅        |          | ✅              | ✅              |                  |
 | Track Composite | ✅        | ✅        |          | ✅              | ✅              |                  |
 | Track           | ✅        | ✅        | ✅        |                |                | ✅                |
@@ -253,24 +253,26 @@ You can then use our [cli](https://github.com/livekit/livekit-cli) to submit egr
 
 ## Testing and Development
 
-Running `mage test` will run the Room Composite tests on your machine, and will dump the resulting files into egress/test/output.
-
-To run these tests against your own LiveKit rooms, a deployed LiveKit server with a secure websocket url is required.
+To run the test against your own LiveKit rooms, a deployed LiveKit server with a secure websocket url is required.
 First, create `egress/test/config.yaml`:
 
 ```yaml
 log_level: debug
+gst_debug: 1
 api_key: your-api-key
 api_secret: your-api-secret
 ws_url: wss://your-livekit-url.com
+redis:
+  address: 192.168.65.2:6379
+local_directory: /out/output
 room_name: your-room
-room: true
-track_composite: true
-track: true
-file: true
-stream: true
+room_only: false
+track_composite_only: false
+track_only: false
+file_only: false
+stream_only: false
+segments_only: false
 muting: false
-gst_debug: 1
 ```
 
 Join a room using https://example.livekit.io or your own client, then run `mage integration test/config.yaml`.  

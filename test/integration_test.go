@@ -118,7 +118,6 @@ func TestEgress(t *testing.T) {
 			testTrack(t, conf)
 		})
 	}
-}
 
 func runFileTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, test *testCase, filepath string) {
 	// start
@@ -198,6 +197,7 @@ func runMultipleStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgr
 			},
 		},
 	})
+	require.NoError(t, err)
 
 	// should return an error
 	require.Error(t, err)
