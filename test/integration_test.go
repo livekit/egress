@@ -151,6 +151,31 @@ func runFileTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest
 }
 
 func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) {
+	if conf.SessionLimits.StreamOutputMaxDuration > 0 {
+		runTimingOutStreamTest(t, conf, req)
+	} else {
+		runMultipleStreamTest(t, conf, req)
+	}
+}
+
+func runTimingOutStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) {
+	ctx := context.Background()
+	egressID := startEgress(t, conf, req)
+
+	time.Sleep(5 * time.Second)
+
+	// get params
+	p, err := params.GetPipelineParams(ctx, conf.Config, req)
+	require.NoError(t, err)
+
+	verifyStreams(t, p, streamUrl1)
+
+	time.Sleep(conf.SessionLimits.StreamOutputMaxDuration - 5*time.Second + 1*time.Second)
+
+	checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_FAILED)
+}
+
+func runMultipleStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) {
 	ctx := context.Background()
 	egressID := startEgress(t, conf, req)
 
