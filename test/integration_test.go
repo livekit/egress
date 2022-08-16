@@ -124,10 +124,17 @@ func runFileTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest
 	// start
 	egressID := startEgress(t, conf, req)
 
-	time.Sleep(time.Second * 25)
+	var res *livekit.EgressInfo
+	if conf.SessionLimits.FileOutputMaxDuration > 0 {
+		time.Sleep(conf.SessionLimits.FileOutputMaxDuration + 1*time.Second)
 
-	// stop
-	res := stopEgress(t, conf, egressID)
+		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_FAILED)
+	} else {
+		time.Sleep(time.Second * 25)
+
+		// stop
+		res = stopEgress(t, conf, egressID)
+	}
 
 	// get params
 	p, err := params.GetPipelineParams(context.Background(), conf.Config, req)
@@ -273,7 +280,11 @@ func stopEgress(t *testing.T, conf *testConfig, egressID string) *livekit.Egress
 	checkUpdate(t, conf.updates, egressID, livekit.EgressStatus_EGRESS_ENDING)
 
 	// check complete update
-	info = checkUpdate(t, conf.updates, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
+	return checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
+}
+
+func checkStoppedEgress(t *testing.T, conf *testConfig, egressID string, expectedStatus livekit.EgressStatus) *livekit.EgressInfo {
+	info := checkUpdate(t, conf.updates, egressID, expectedStatus)
 
 	// check status
 	if conf.HealthPort != 0 {
@@ -307,7 +318,11 @@ func checkUpdate(t *testing.T, sub utils.PubSub, egressID string, status livekit
 				continue
 			}
 
-			require.Empty(t, info.Error)
+			if status == livekit.EgressStatus_EGRESS_FAILED {
+				require.NotEmpty(t, info.Error)
+			} else {
+				require.Empty(t, info.Error)
+			}
 			require.Equal(t, egressID, info.EgressId)
 			require.Equal(t, status, info.Status)
 			return info
