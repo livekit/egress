@@ -11,6 +11,7 @@ import (
 
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/tracer"
@@ -56,6 +57,7 @@ type Pipeline struct {
 	closedOnce          sync.Once
 	eosTimer            *time.Timer
 	sessionTimeoutTimer *time.Timer
+	timedOut            atomic.Bool
 	playlistWriter      *sink.PlaylistWriter
 	endedSegments       chan segmentUpdate
 	segmentsWg          sync.WaitGroup
@@ -216,7 +218,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	// close input source
 	p.in.Close()
 
-	p.stopSessionTimeoutTimer()
+	timedOut := p.stopSessionTimeoutTimer()
 
 	// update endedAt from sdk source
 	switch s := p.in.Source.(type) {
@@ -225,7 +227,8 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	}
 
 	// return if there was an error
-	if p.Info.Error != "" {
+	if p.Info.Error != "" && !timedOut {
+		// We want to upload the file if the egress timed out
 		return p.Info
 	}
 
@@ -284,6 +287,7 @@ func (p *Pipeline) startSessionTimeoutTimer(ctx context.Context) {
 
 	if timeout > 0 {
 		p.sessionTimeoutTimer = time.AfterFunc(timeout, func() {
+			p.timedOut.Store(true)
 			p.SendEOS(ctx)
 
 			p.Info.Error = "max Egress duration reached"
@@ -292,10 +296,14 @@ func (p *Pipeline) startSessionTimeoutTimer(ctx context.Context) {
 	}
 }
 
-func (p *Pipeline) stopSessionTimeoutTimer() {
+func (p *Pipeline) stopSessionTimeoutTimer() (timedOut bool) {
 	if p.sessionTimeoutTimer != nil {
 		p.sessionTimeoutTimer.Stop()
+
+		return p.timedOut.Load()
 	}
+
+	return false
 }
 
 func (p *Pipeline) storeFile(ctx context.Context, localFilePath, requestedPath string, mime params.OutputType) (destinationUrl string, size int64, err error) {

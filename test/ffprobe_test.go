@@ -89,9 +89,14 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
-func verifyFile(t *testing.T, conf *testConfig, p *params.Params, res *livekit.EgressInfo, filepath string) {
+func verifyFile(t *testing.T, conf *testConfig, p *params.Params, res *livekit.EgressInfo, filepath string, expectedStatus livekit.EgressStatus) {
 	// egress info
-	require.Empty(t, res.Error)
+	require.Equal(t, res.Status, expectedStatus)
+	if res.Status == livekit.EgressStatus_EGRESS_COMPLETE {
+		require.Empty(t, res.Error)
+	} else {
+		require.NotEmpty(t, res.Error)
+	}
 	require.NotZero(t, res.StartedAt)
 	require.NotZero(t, res.EndedAt)
 
