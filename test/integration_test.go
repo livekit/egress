@@ -224,16 +224,28 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 func runSegmentsTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, playlistPath string) {
 	egressID := startEgress(t, conf, req)
 
-	time.Sleep(time.Second * 25)
+	var res *livekit.EgressInfo
+	var expectedStatus livekit.EgressStatus
 
-	// stop
-	res := stopEgress(t, conf, egressID)
+	if conf.SessionLimits.SegmentOutputMaxDuration > 0 {
+		time.Sleep(conf.SessionLimits.SegmentOutputMaxDuration + 1*time.Second)
+
+		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_FAILED)
+		expectedStatus = livekit.EgressStatus_EGRESS_FAILED
+	} else {
+
+		time.Sleep(time.Second * 25)
+
+		// stop
+		res = stopEgress(t, conf, egressID)
+		expectedStatus = livekit.EgressStatus_EGRESS_COMPLETE
+	}
 
 	// get params
 	p, err := params.GetPipelineParams(context.Background(), conf.Config, req)
 	require.NoError(t, err)
 
-	verifySegments(t, conf, p, res, playlistPath)
+	verifySegments(t, conf, p, res, playlistPath, expectedStatus)
 }
 
 func startEgress(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) string {
