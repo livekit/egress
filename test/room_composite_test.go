@@ -58,6 +58,8 @@ func testRoomComposite(t *testing.T, conf *testConfig) {
 		t.Run("room-rtmp", func(t *testing.T) {
 			testRoomCompositeStream(t, conf)
 		})
+		// Give some time for the previous handler to finish and release the room handling lock
+		time.Sleep(1 * time.Second)
 	}
 
 	if !conf.FileTestsOnly && !conf.StreamTestsOnly {
