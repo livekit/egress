@@ -65,7 +65,7 @@ func (s *websocketSink) Close() error {
 
 	// write close message for graceful disconnection
 	err := s.conn.WriteMessage(websocket.CloseMessage, nil)
-	if err != nil {
+	if err != nil && !errors.Is(err, io.EOF) {
 		s.logger.Errorw("cannot write WS close message", err)
 	}
 
@@ -109,7 +109,7 @@ func (s *websocketSink) listenToMutedChan() {
 		select {
 		case val := <-s.muted:
 			err = s.writeMutedMessage(val)
-			if err != nil {
+			if err != nil && !errors.Is(err, io.EOF) {
 				s.logger.Errorw("error writing muted message: ", err)
 			}
 		case <-s.closed:
