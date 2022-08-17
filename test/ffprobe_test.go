@@ -89,9 +89,14 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
-func verifyFile(t *testing.T, conf *testConfig, p *params.Params, res *livekit.EgressInfo, filepath string) {
+func verifyFile(t *testing.T, conf *testConfig, p *params.Params, res *livekit.EgressInfo, filepath string, expectedStatus livekit.EgressStatus) {
 	// egress info
-	require.Empty(t, res.Error)
+	require.Equal(t, res.Status, expectedStatus)
+	if res.Status == livekit.EgressStatus_EGRESS_COMPLETE {
+		require.Empty(t, res.Error)
+	} else {
+		require.NotEmpty(t, res.Error)
+	}
 	require.NotZero(t, res.StartedAt)
 	require.NotZero(t, res.EndedAt)
 
@@ -119,9 +124,14 @@ func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	}
 }
 
-func verifySegments(t *testing.T, conf *testConfig, p *params.Params, res *livekit.EgressInfo, playlistPath string) {
+func verifySegments(t *testing.T, conf *testConfig, p *params.Params, res *livekit.EgressInfo, playlistPath string, expectedStatus livekit.EgressStatus) {
 	// egress info
-	require.Empty(t, res.Error)
+	require.Equal(t, res.Status, expectedStatus)
+	if res.Status == livekit.EgressStatus_EGRESS_COMPLETE {
+		require.Empty(t, res.Error)
+	} else {
+		require.NotEmpty(t, res.Error)
+	}
 	require.NotZero(t, res.StartedAt)
 	require.NotZero(t, res.EndedAt)
 
@@ -136,8 +146,8 @@ func verifySegments(t *testing.T, conf *testConfig, p *params.Params, res *livek
 	// download from cloud storage
 	if p.FileUpload != nil {
 		base := playlistPath[:len(playlistPath)-5]
-		playlistPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, playlistPath)
-		download(t, p.FileUpload, playlistPath, playlistPath)
+		localPlaylistPath := fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, playlistPath)
+		download(t, p.FileUpload, localPlaylistPath, playlistPath)
 		for i := 0; i < int(segments.SegmentCount); i++ {
 			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
 			localPath := fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, cloudPath)

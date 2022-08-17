@@ -124,10 +124,20 @@ func runFileTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest
 	// start
 	egressID := startEgress(t, conf, req)
 
-	time.Sleep(time.Second * 25)
+	var res *livekit.EgressInfo
+	var expectedStatus livekit.EgressStatus
+	if conf.SessionLimits.FileOutputMaxDuration > 0 {
+		time.Sleep(conf.SessionLimits.FileOutputMaxDuration + 1*time.Second)
 
-	// stop
-	res := stopEgress(t, conf, egressID)
+		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_FAILED)
+		expectedStatus = livekit.EgressStatus_EGRESS_FAILED
+	} else {
+		time.Sleep(time.Second * 25)
+
+		// stop
+		res = stopEgress(t, conf, egressID)
+		expectedStatus = livekit.EgressStatus_EGRESS_COMPLETE
+	}
 
 	// get params
 	p, err := params.GetPipelineParams(context.Background(), conf.Config, req)
@@ -137,10 +147,35 @@ func runFileTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest
 	}
 
 	// verify
-	verifyFile(t, conf, p, res, filepath)
+	verifyFile(t, conf, p, res, filepath, expectedStatus)
 }
 
 func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) {
+	if conf.SessionLimits.StreamOutputMaxDuration > 0 {
+		runTimingOutStreamTest(t, conf, req)
+	} else {
+		runMultipleStreamTest(t, conf, req)
+	}
+}
+
+func runTimingOutStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) {
+	ctx := context.Background()
+	egressID := startEgress(t, conf, req)
+
+	time.Sleep(5 * time.Second)
+
+	// get params
+	p, err := params.GetPipelineParams(ctx, conf.Config, req)
+	require.NoError(t, err)
+
+	verifyStreams(t, p, streamUrl1)
+
+	time.Sleep(conf.SessionLimits.StreamOutputMaxDuration - 5*time.Second + 1*time.Second)
+
+	checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_FAILED)
+}
+
+func runMultipleStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) {
 	ctx := context.Background()
 	egressID := startEgress(t, conf, req)
 
@@ -214,16 +249,28 @@ func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressReque
 func runSegmentsTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, playlistPath string) {
 	egressID := startEgress(t, conf, req)
 
-	time.Sleep(time.Second * 25)
+	var res *livekit.EgressInfo
+	var expectedStatus livekit.EgressStatus
 
-	// stop
-	res := stopEgress(t, conf, egressID)
+	if conf.SessionLimits.SegmentOutputMaxDuration > 0 {
+		time.Sleep(conf.SessionLimits.SegmentOutputMaxDuration + 1*time.Second)
+
+		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_FAILED)
+		expectedStatus = livekit.EgressStatus_EGRESS_FAILED
+	} else {
+
+		time.Sleep(time.Second * 25)
+
+		// stop
+		res = stopEgress(t, conf, egressID)
+		expectedStatus = livekit.EgressStatus_EGRESS_COMPLETE
+	}
 
 	// get params
 	p, err := params.GetPipelineParams(context.Background(), conf.Config, req)
 	require.NoError(t, err)
 
-	verifySegments(t, conf, p, res, playlistPath)
+	verifySegments(t, conf, p, res, playlistPath, expectedStatus)
 }
 
 func startEgress(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) string {
@@ -269,11 +316,15 @@ func stopEgress(t *testing.T, conf *testConfig, egressID string) *livekit.Egress
 	require.NotEmpty(t, info.StartedAt)
 	require.Equal(t, livekit.EgressStatus_EGRESS_ENDING, info.Status)
 
+	// check complete update
+	return checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
+}
+
+func checkStoppedEgress(t *testing.T, conf *testConfig, egressID string, expectedStatus livekit.EgressStatus) *livekit.EgressInfo {
 	// check ending update
 	checkUpdate(t, conf.updates, egressID, livekit.EgressStatus_EGRESS_ENDING)
 
-	// check complete update
-	info = checkUpdate(t, conf.updates, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
+	info := checkUpdate(t, conf.updates, egressID, expectedStatus)
 
 	// check status
 	if conf.HealthPort != 0 {
@@ -307,7 +358,11 @@ func checkUpdate(t *testing.T, sub utils.PubSub, egressID string, status livekit
 				continue
 			}
 
-			require.Empty(t, info.Error)
+			if status == livekit.EgressStatus_EGRESS_FAILED {
+				require.NotEmpty(t, info.Error)
+			} else {
+				require.Empty(t, info.Error)
+			}
 			require.Equal(t, egressID, info.EgressId)
 			require.Equal(t, status, info.Status)
 			return info

@@ -11,6 +11,7 @@ import (
 
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/tracer"
@@ -48,15 +49,18 @@ type Pipeline struct {
 	loop     *glib.MainLoop
 
 	// internal
-	mu             sync.Mutex
-	playing        bool
-	startedAt      map[string]int64
-	streamErrors   map[string]chan error
-	closed         chan struct{}
-	eosTimer       *time.Timer
-	playlistWriter *sink.PlaylistWriter
-	endedSegments  chan segmentUpdate
-	segmentsWg     sync.WaitGroup
+	mu                  sync.Mutex
+	playing             bool
+	startedAt           map[string]int64
+	streamErrors        map[string]chan error
+	closed              chan struct{}
+	closedOnce          sync.Once
+	eosTimer            *time.Timer
+	sessionTimeoutTimer *time.Timer
+	timedOut            atomic.Bool
+	playlistWriter      *sink.PlaylistWriter
+	endedSegments       chan segmentUpdate
+	segmentsWg          sync.WaitGroup
 
 	// callbacks
 	onStatusUpdate func(context.Context, *livekit.EgressInfo)
@@ -189,6 +193,8 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		p.SendEOS(ctx)
 	}()
 
+	p.startSessionTimeoutTimer(ctx)
+
 	// add watch
 	p.loop = glib.NewMainLoop(glib.MainContextDefault(), false)
 	p.pipeline.GetPipelineBus().AddWatch(p.messageWatch)
@@ -212,6 +218,8 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	// close input source
 	p.in.Close()
 
+	timedOut := p.stopSessionTimeoutTimer()
+
 	// update endedAt from sdk source
 	switch s := p.in.Source.(type) {
 	case *source.SDKSource:
@@ -219,7 +227,8 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	}
 
 	// return if there was an error
-	if p.Info.Error != "" {
+	if p.Info.Error != "" && !timedOut {
+		// We want to upload the file if the egress timed out
 		return p.Info
 	}
 
@@ -274,6 +283,30 @@ func (p *Pipeline) deleteTempDirectory() {
 			}
 		}
 	}
+}
+
+func (p *Pipeline) startSessionTimeoutTimer(ctx context.Context) {
+	timeout := p.GetSessionTimeout()
+
+	if timeout > 0 {
+		p.sessionTimeoutTimer = time.AfterFunc(timeout, func() {
+			p.timedOut.Store(true)
+			p.SendEOS(ctx)
+
+			p.Info.Error = "max Egress duration reached"
+
+		})
+	}
+}
+
+func (p *Pipeline) stopSessionTimeoutTimer() (timedOut bool) {
+	if p.sessionTimeoutTimer != nil {
+		p.sessionTimeoutTimer.Stop()
+
+		return p.timedOut.Load()
+	}
+
+	return false
 }
 
 func (p *Pipeline) storeFile(ctx context.Context, localFilePath, requestedPath string, mime params.OutputType) (destinationUrl string, size int64, err error) {
@@ -468,10 +501,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
-	select {
-	case <-p.closed:
-		return
-	default:
+	p.closedOnce.Do(func() {
 		close(p.closed)
 		p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 		if p.onStatusUpdate != nil {
@@ -493,7 +523,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 				p.pipeline.SendEvent(gst.NewEOSEvent())
 			}
 		}()
-	}
+	})
 }
 
 func (p *Pipeline) updateStartTime(startedAt int64) {
