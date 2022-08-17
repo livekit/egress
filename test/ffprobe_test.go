@@ -143,10 +143,12 @@ func verifySegments(t *testing.T, conf *testConfig, p *params.Params, res *livek
 	require.Greater(t, segments.Duration, int64(0))
 	require.Greater(t, segments.SegmentCount, int64(0))
 
+	localPlaylistPath := playlistPath
+
 	// download from cloud storage
 	if p.FileUpload != nil {
 		base := playlistPath[:len(playlistPath)-5]
-		localPlaylistPath := fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, playlistPath)
+		localPlaylistPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, playlistPath)
 		download(t, p.FileUpload, localPlaylistPath, playlistPath)
 		for i := 0; i < int(segments.SegmentCount); i++ {
 			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
@@ -156,7 +158,7 @@ func verifySegments(t *testing.T, conf *testConfig, p *params.Params, res *livek
 	}
 
 	// verify
-	verify(t, playlistPath, p, res, ResultTypeSegments, conf.Muting)
+	verify(t, localPlaylistPath, p, res, ResultTypeSegments, conf.Muting)
 }
 
 func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {
