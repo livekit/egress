@@ -8,7 +8,6 @@ pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit
 
 # cleanup old temporary files
 if ! [ -z $TMPDIR ]; then
-	rm -rf $TMPDIR
 	mkdir -p $TMPDIR
 fi
 
