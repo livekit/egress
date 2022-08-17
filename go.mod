@@ -13,7 +13,6 @@ require (
 	github.com/frostbyte73/go-throttle v0.0.0-20210621200530-8018c891361d
 	github.com/go-logr/logr v1.2.3
 	github.com/go-logr/zapr v1.2.3
-	github.com/go-redis/redis/v8 v8.11.5
 	github.com/googleapis/gax-go/v2 v2.3.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/grafov/m3u8 v0.11.1
@@ -53,6 +52,7 @@ require (
 	github.com/elliotchance/orderedmap v1.4.0 // indirect
 	github.com/gammazero/deque v0.1.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/go-redis/redis/v8 v8.11.5 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.1.0 // indirect
