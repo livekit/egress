@@ -193,8 +193,7 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 	// claim request
 	claimed, err := s.rpcServer.ClaimRequest(context.Background(), req)
 	if err != nil {
-		span.RecordError(err)
-		logger.Errorw("could not claim request", err, args...)
+		logger.Warnw("could not claim request", err, args...)
 		return false
 	} else if !claimed {
 		return false

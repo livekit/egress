@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
@@ -129,7 +130,7 @@ func buildWebsocketOutputBin(p *params.Params) (*Bin, error) {
 	sink.SetCallbacks(&app.SinkCallbacks{
 		EOSFunc: func(appSink *app.Sink) {
 			// Close writer on EOS
-			if err = writer.Close(); err != nil {
+			if err = writer.Close(); err != nil && !errors.Is(err, io.EOF) {
 				p.Logger.Errorw("cannot close WS sink", err)
 			}
 		},
@@ -151,7 +152,7 @@ func buildWebsocketOutputBin(p *params.Params) (*Bin, error) {
 
 			// From the extracted bytes, send to writer
 			_, err = writer.Write(samples)
-			if err != nil {
+			if err != nil && !errors.Is(err, io.EOF) {
 				p.Logger.Errorw("cannot read AppSink samples", err)
 				return gst.FlowError
 			}
