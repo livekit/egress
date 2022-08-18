@@ -262,15 +262,12 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 }
 
 func (p *Pipeline) deleteTempDir() {
-	p.Logger.Errorw("deleting temp dir", nil)
-
 	if p.FileUpload != nil {
 		switch p.EgressType {
 		case params.EgressTypeFile:
 			dir, _ := path.Split(p.LocalFilepath)
-			p.Logger.Errorw("split localFilepath", nil, "dir", dir)
 			if dir != "" {
-				p.Logger.Errorw("removing temporary directory", nil, "path", dir)
+				p.Logger.Debugw("removing temporary directory", "path", dir)
 				if err := os.RemoveAll(dir); err != nil {
 					p.Logger.Errorw("could not delete temp dir", err)
 				}

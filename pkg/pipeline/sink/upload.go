@@ -31,7 +31,7 @@ const (
 
 // FIXME Should we use a Context to allow for an overall operation timeout?
 
-func UploadS3(conf *livekit.S3Upload, localFilePath, requestedPath string, mime params.OutputType) (location string, err error) {
+func UploadS3(conf *livekit.S3Upload, localFilepath, storageFilepath string, mime params.OutputType) (location string, err error) {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, ""),
 		Endpoint:    aws.String(conf.Endpoint),
@@ -42,7 +42,7 @@ func UploadS3(conf *livekit.S3Upload, localFilePath, requestedPath string, mime 
 		return "", err
 	}
 
-	file, err := os.Open(localFilePath)
+	file, err := os.Open(localFilepath)
 	if err != nil {
 		return "", err
 	}
@@ -55,7 +55,7 @@ func UploadS3(conf *livekit.S3Upload, localFilePath, requestedPath string, mime 
 
 	_, err = s3.New(sess).PutObject(&s3.PutObjectInput{
 		Bucket:        aws.String(conf.Bucket),
-		Key:           aws.String(requestedPath),
+		Key:           aws.String(storageFilepath),
 		Body:          file,
 		ContentLength: aws.Int64(fileInfo.Size()),
 		ContentType:   aws.String(string(mime)),
@@ -64,10 +64,10 @@ func UploadS3(conf *livekit.S3Upload, localFilePath, requestedPath string, mime 
 		return "", err
 	}
 
-	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", conf.Bucket, conf.Region, requestedPath), nil
+	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", conf.Bucket, conf.Region, storageFilepath), nil
 }
 
-func UploadAzure(conf *livekit.AzureBlobUpload, localFilePath, requestedPath string, mime params.OutputType) (location string, err error) {
+func UploadAzure(conf *livekit.AzureBlobUpload, localFilepath, storageFilepath string, mime params.OutputType) (location string, err error) {
 	credential, err := azblob.NewSharedKeyCredential(
 		conf.AccountName,
 		conf.AccountKey,
@@ -91,9 +91,9 @@ func UploadAzure(conf *livekit.AzureBlobUpload, localFilePath, requestedPath str
 	}
 
 	containerURL := azblob.NewContainerURL(*azUrl, pipeline)
-	blobURL := containerURL.NewBlockBlobURL(requestedPath)
+	blobURL := containerURL.NewBlockBlobURL(storageFilepath)
 
-	file, err := os.Open(localFilePath)
+	file, err := os.Open(localFilepath)
 	if err != nil {
 		return "", err
 	}
@@ -113,7 +113,7 @@ func UploadAzure(conf *livekit.AzureBlobUpload, localFilePath, requestedPath str
 	return sUrl, nil
 }
 
-func UploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mime params.OutputType) (location string, err error) {
+func UploadGCP(conf *livekit.GCPUpload, localFilepath, storageFilepath string, mime params.OutputType) (location string, err error) {
 	ctx := context.Background()
 	var client *storage.Client
 
@@ -127,7 +127,7 @@ func UploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mim
 	}
 	defer client.Close()
 
-	file, err := os.Open(localFilePath)
+	file, err := os.Open(localFilepath)
 	if err != nil {
 		return "", err
 	}
@@ -150,7 +150,7 @@ func UploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mim
 		wctx = ctx
 	}
 
-	wc := client.Bucket(conf.Bucket).Object(requestedPath).Retryer(storage.WithBackoff(gax.Backoff{
+	wc := client.Bucket(conf.Bucket).Object(storageFilepath).Retryer(storage.WithBackoff(gax.Backoff{
 		Initial:    minDelay,
 		Max:        maxDelay,
 		Multiplier: 2,
@@ -166,5 +166,5 @@ func UploadGCP(conf *livekit.GCPUpload, localFilePath, requestedPath string, mim
 		return "", err
 	}
 
-	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", conf.Bucket, requestedPath), nil
+	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", conf.Bucket, storageFilepath), nil
 }
