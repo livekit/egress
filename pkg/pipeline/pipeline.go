@@ -171,7 +171,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		}
 
 		// Cleanup temporary files even if we fail
-		p.deleteTempDirectory()
+		p.deleteTempDir()
 	}()
 
 	// wait until room is ready
@@ -236,7 +236,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	switch p.EgressType {
 	case params.EgressTypeFile:
 		var err error
-		p.FileInfo.Location, p.FileInfo.Size, err = p.storeFile(ctx, p.LocalFilepath, p.Params.Filepath, p.Params.OutputType)
+		p.FileInfo.Location, p.FileInfo.Size, err = p.storeFile(ctx, p.LocalFilepath, p.StorageFilepath, p.OutputType)
 		if err != nil {
 			p.Info.Error = err.Error()
 		}
@@ -253,15 +253,15 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 			}
 
 			// upload the finalized playlist
-			destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
-			p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(ctx, p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
+			playlistStoragePath := p.GetStorageFilepath(p.PlaylistFilename)
+			p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(ctx, p.PlaylistFilename, playlistStoragePath, p.OutputType)
 		}
 	}
 
 	return p.Info
 }
 
-func (p *Pipeline) deleteTempDirectory() {
+func (p *Pipeline) deleteTempDir() {
 	if p.FileUpload != nil {
 		switch p.EgressType {
 		case params.EgressTypeFile:
@@ -293,8 +293,7 @@ func (p *Pipeline) startSessionTimeoutTimer(ctx context.Context) {
 			p.timedOut.Store(true)
 			p.SendEOS(ctx)
 
-			p.Info.Error = "max Egress duration reached"
-
+			p.Info.Error = "max egress duration reached"
 		})
 	}
 }
@@ -309,11 +308,11 @@ func (p *Pipeline) stopSessionTimeoutTimer() (timedOut bool) {
 	return false
 }
 
-func (p *Pipeline) storeFile(ctx context.Context, localFilePath, requestedPath string, mime params.OutputType) (destinationUrl string, size int64, err error) {
+func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath string, mime params.OutputType) (destinationUrl string, size int64, err error) {
 	ctx, span := tracer.Start(ctx, "Pipeline.storeFile")
 	defer span.End()
 
-	fileInfo, err := os.Stat(localFilePath)
+	fileInfo, err := os.Stat(localFilepath)
 	if err == nil {
 		size = fileInfo.Size()
 	} else {
@@ -325,20 +324,20 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilePath, requestedPath s
 	case *livekit.S3Upload:
 		location = "S3"
 		p.Logger.Debugw("uploading to s3")
-		destinationUrl, err = sink.UploadS3(u, localFilePath, requestedPath, mime)
+		destinationUrl, err = sink.UploadS3(u, localFilepath, storageFilepath, mime)
 
 	case *livekit.GCPUpload:
 		location = "GCP"
 		p.Logger.Debugw("uploading to gcp")
-		destinationUrl, err = sink.UploadGCP(u, localFilePath, requestedPath, mime)
+		destinationUrl, err = sink.UploadGCP(u, localFilepath, storageFilepath, mime)
 
 	case *livekit.AzureBlobUpload:
 		location = "Azure"
 		p.Logger.Debugw("uploading to azure")
-		destinationUrl, err = sink.UploadAzure(u, localFilePath, requestedPath, mime)
+		destinationUrl, err = sink.UploadAzure(u, localFilepath, storageFilepath, mime)
 
 	default:
-		destinationUrl = requestedPath
+		destinationUrl = storageFilepath
 	}
 
 	if err != nil {
@@ -351,7 +350,6 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilePath, requestedPath s
 }
 
 func (p *Pipeline) onSegmentEnded(segmentPath string, endTime int64) error {
-
 	if p.EgressType == params.EgressTypeSegmentedFile {
 		// We need to dispatch to a queue to:
 		// 1. Avoid concurrent access to the SegmentsInfo structure
@@ -375,9 +373,9 @@ func (p *Pipeline) startSegmentWorker() {
 
 				p.SegmentsInfo.SegmentCount++
 
-				destinationSegmentPath := p.GetTargetPathForFilename(update.localPath)
+				segmentStoragePath := p.GetStorageFilepath(update.localPath)
 				// Ignore error. storeFile will log it.
-				_, size, _ := p.storeFile(context.Background(), update.localPath, destinationSegmentPath, p.Params.GetSegmentOutputType())
+				_, size, _ := p.storeFile(context.Background(), update.localPath, segmentStoragePath, p.GetSegmentOutputType())
 				p.SegmentsInfo.Size += size
 
 				if p.playlistWriter != nil {
@@ -386,8 +384,8 @@ func (p *Pipeline) startSegmentWorker() {
 						p.Logger.Errorw("failed to end segment", err, "path", update.localPath)
 						return
 					}
-					destinationPlaylistPath := p.GetTargetPathForFilename(p.PlaylistFilename)
-					p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(context.Background(), p.PlaylistFilename, destinationPlaylistPath, p.Params.OutputType)
+					playlistStoragePath := p.GetStorageFilepath(p.PlaylistFilename)
+					p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(context.Background(), p.PlaylistFilename, playlistStoragePath, p.OutputType)
 				}
 			}()
 		}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/livekit/egress/version"
@@ -46,6 +47,14 @@ func integration(configFile string) error {
 
 		configFile = "/out/" + configFile
 	}
+
+	defer func() {
+		// for some reason, these can't be deleted from within the docker container
+		dirs, _ := filepath.Glob("test/output/EG_*")
+		for _, dir := range dirs {
+			_ = os.Remove(dir)
+		}
+	}()
 
 	return run(
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),

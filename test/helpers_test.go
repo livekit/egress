@@ -107,20 +107,20 @@ func getFilePath(conf *config.Config, filename string) string {
 	return fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, filename)
 }
 
-func download(t *testing.T, uploadParams interface{}, localPath, storagePath string) {
+func download(t *testing.T, uploadParams interface{}, localFilepath, storageFilepath string) {
 	switch u := uploadParams.(type) {
 	case *livekit.S3Upload:
-		downloadS3(t, u, localPath, storagePath)
+		downloadS3(t, u, localFilepath, storageFilepath)
 
 	case *livekit.GCPUpload:
-		downloadGCP(t, u, localPath, storagePath)
+		downloadGCP(t, u, localFilepath, storageFilepath)
 
 	case *livekit.AzureBlobUpload:
-		downloadAzure(t, u, localPath, storagePath)
+		downloadAzure(t, u, localFilepath, storageFilepath)
 	}
 }
 
-func downloadS3(t *testing.T, conf *livekit.S3Upload, localPath, requestedPath string) {
+func downloadS3(t *testing.T, conf *livekit.S3Upload, localFilepath, storageFilepath string) {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, ""),
 		Endpoint:    aws.String(conf.Endpoint),
@@ -129,26 +129,26 @@ func downloadS3(t *testing.T, conf *livekit.S3Upload, localPath, requestedPath s
 	})
 	require.NoError(t, err)
 
-	file, err := os.Create(localPath)
+	file, err := os.Create(localFilepath)
 	require.NoError(t, err)
 	defer file.Close()
 
 	_, err = s3manager.NewDownloader(sess).Download(file,
 		&s3.GetObjectInput{
 			Bucket: aws.String(conf.Bucket),
-			Key:    aws.String(requestedPath),
+			Key:    aws.String(storageFilepath),
 		},
 	)
 	require.NoError(t, err)
 
 	_, err = s3.New(sess).DeleteObject(&s3.DeleteObjectInput{
 		Bucket: aws.String(conf.Bucket),
-		Key:    aws.String(requestedPath),
+		Key:    aws.String(storageFilepath),
 	})
 	require.NoError(t, err)
 }
 
-func downloadAzure(t *testing.T, conf *livekit.AzureBlobUpload, localPath, requestedPath string) {
+func downloadAzure(t *testing.T, conf *livekit.AzureBlobUpload, localFilepath, storageFilepath string) {
 	credential, err := azblob.NewSharedKeyCredential(
 		conf.AccountName,
 		conf.AccountKey,
@@ -167,9 +167,9 @@ func downloadAzure(t *testing.T, conf *livekit.AzureBlobUpload, localPath, reque
 	require.NoError(t, err)
 
 	containerURL := azblob.NewContainerURL(*azUrl, pipeline)
-	blobURL := containerURL.NewBlobURL(requestedPath)
+	blobURL := containerURL.NewBlobURL(storageFilepath)
 
-	file, err := os.Create(localPath)
+	file, err := os.Create(localFilepath)
 	require.NoError(t, err)
 	defer file.Close()
 
@@ -186,7 +186,7 @@ func downloadAzure(t *testing.T, conf *livekit.AzureBlobUpload, localPath, reque
 	require.NoError(t, err)
 }
 
-func downloadGCP(t *testing.T, conf *livekit.GCPUpload, localPath, requestedPath string) {
+func downloadGCP(t *testing.T, conf *livekit.GCPUpload, localFilepath, storageFilepath string) {
 	ctx := context.Background()
 	var client *storage.Client
 
@@ -199,11 +199,11 @@ func downloadGCP(t *testing.T, conf *livekit.GCPUpload, localPath, requestedPath
 	require.NoError(t, err)
 	defer client.Close()
 
-	file, err := os.Create(localPath)
+	file, err := os.Create(localFilepath)
 	require.NoError(t, err)
 	defer file.Close()
 
-	rc, err := client.Bucket(conf.Bucket).Object(requestedPath).Retryer(
+	rc, err := client.Bucket(conf.Bucket).Object(storageFilepath).Retryer(
 		storage.WithBackoff(
 			gax.Backoff{
 				Initial:    minDelay,
@@ -218,6 +218,6 @@ func downloadGCP(t *testing.T, conf *livekit.GCPUpload, localPath, requestedPath
 	_ = rc.Close()
 	require.NoError(t, err)
 
-	err = client.Bucket(conf.Bucket).Object(requestedPath).Delete(context.Background())
+	err = client.Bucket(conf.Bucket).Object(storageFilepath).Delete(context.Background())
 	require.NoError(t, err)
 }
