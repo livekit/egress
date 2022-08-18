@@ -82,17 +82,17 @@ type StreamParams struct {
 }
 
 type FileParams struct {
-	FileInfo      *livekit.FileInfo
-	LocalFilepath string
-	Filepath      string
+	FileInfo        *livekit.FileInfo
+	LocalFilepath   string
+	StorageFilepath string
 }
 
 type SegmentedFileParams struct {
-	SegmentsInfo     *livekit.SegmentsInfo
-	LocalFilePrefix  string
-	TargetDirectory  string
-	PlaylistFilename string
-	SegmentDuration  int
+	SegmentsInfo      *livekit.SegmentsInfo
+	LocalFilePrefix   string
+	StoragePathPrefix string
+	PlaylistFilename  string
+	SegmentDuration   int
 }
 
 func ValidateRequest(ctx context.Context, conf *config.Config, request *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
@@ -382,9 +382,9 @@ func (p *Params) updateOutputType(fileType interface{}) {
 	}
 }
 
-func (p *Params) updateFileParams(filepath string, output interface{}) error {
+func (p *Params) updateFileParams(storageFilepath string, output interface{}) error {
 	p.EgressType = EgressTypeFile
-	p.Filepath = filepath
+	p.StorageFilepath = storageFilepath
 	p.FileInfo = &livekit.FileInfo{}
 	p.Info.Result = &livekit.EgressInfo_File{File: p.FileInfo}
 
@@ -408,7 +408,7 @@ func (p *Params) updateFileParams(filepath string, output interface{}) error {
 
 	// filename
 	if p.OutputType != "" {
-		err := p.updateFilename(p.Info.RoomName)
+		err := p.updateFilepath(p.Info.RoomName)
 		if err != nil {
 			return err
 		}
@@ -552,33 +552,34 @@ func (p *Params) UpdateOutputTypeFromCodecs(fileIdentifier string) error {
 		return errors.ErrIncompatible(p.OutputType, p.VideoCodec)
 	}
 
-	return p.updateFilename(fileIdentifier)
+	return p.updateFilepath(fileIdentifier)
 }
 
-func (p *Params) updateFilename(identifier string) error {
+func (p *Params) updateFilepath(identifier string) error {
 	// get file extension
 	ext := FileExtensionForOutputType[p.OutputType]
-	if p.Filepath == "" || strings.HasSuffix(p.Filepath, "/") {
+
+	if p.StorageFilepath == "" || strings.HasSuffix(p.StorageFilepath, "/") {
 		// generate filepath
-		p.Filepath = fmt.Sprintf("%s%s-%v%v", p.Filepath, identifier, time.Now().String(), ext)
-	} else if !strings.HasSuffix(p.Filepath, string(ext)) {
+		p.StorageFilepath = fmt.Sprintf("%s%s-%s%s", p.StorageFilepath, identifier, time.Now().String(), ext)
+	} else if !strings.HasSuffix(p.StorageFilepath, string(ext)) {
 		// check for existing (incorrect) extension
-		extIdx := strings.LastIndex(p.Filepath, ".")
+		extIdx := strings.LastIndex(p.StorageFilepath, ".")
 		if extIdx > 0 {
-			existingExt := FileExtension(p.Filepath[extIdx:])
+			existingExt := FileExtension(p.StorageFilepath[extIdx:])
 			if _, ok := FileExtensions[existingExt]; ok {
-				p.Filepath = p.Filepath[:extIdx]
+				p.StorageFilepath = p.StorageFilepath[:extIdx]
 			}
 		}
 		// add file extension
-		p.Filepath = p.Filepath + string(ext)
+		p.StorageFilepath = p.StorageFilepath + string(ext)
 	}
 
 	// update filename
-	p.FileInfo.Filename = p.Filepath
+	p.FileInfo.Filename = p.StorageFilepath
 
 	// get local filepath
-	dir, filename := path.Split(p.Filepath)
+	dir, filename := path.Split(p.StorageFilepath)
 	if p.FileUpload == nil {
 		if dir != "" {
 			// create local directory
@@ -586,17 +587,19 @@ func (p *Params) updateFilename(identifier string) error {
 				return err
 			}
 		}
-		p.LocalFilepath = p.Filepath
+		// write directly to requested location
+		p.LocalFilepath = p.StorageFilepath
 	} else {
-		// Prepend the configuration base directory and the egress Id
-		outDir := path.Join(p.conf.LocalOutputDirectory, p.Info.EgressId)
+		// prepend the configuration base directory and the egress Id
+		tempDir := path.Join(p.conf.LocalOutputDirectory, p.Info.EgressId)
 
 		// create temporary directory
-		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
-		if err := os.MkdirAll(outDir, 0755); err != nil {
+		if err := os.MkdirAll(tempDir, 0755); err != nil {
 			return err
 		}
-		p.LocalFilepath = path.Join(outDir, filename)
+
+		// write to tmp dir
+		p.LocalFilepath = path.Join(tempDir, filename)
 	}
 
 	p.Logger.Debugw("writing to file", "filename", p.LocalFilepath)
@@ -607,38 +610,38 @@ func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 	ext := FileExtensionForOutputType[p.OutputType]
 
 	if p.LocalFilePrefix == "" || strings.HasSuffix(p.LocalFilePrefix, "/") {
-		p.LocalFilePrefix = fmt.Sprintf("%s%s-%v", p.LocalFilePrefix, identifier, time.Now().String())
+		p.LocalFilePrefix = fmt.Sprintf("%s%s-%s", p.LocalFilePrefix, identifier, time.Now().String())
 	}
 
 	// Playlist path is relative to file prefix. Only keep actual filename if a full path is given
 	_, p.PlaylistFilename = path.Split(p.PlaylistFilename)
 	if p.PlaylistFilename == "" {
-		p.PlaylistFilename = fmt.Sprintf("playlist%s", ext)
+		p.PlaylistFilename = fmt.Sprintf("playlist-%s%s", identifier, ext)
 	}
 
 	var filePrefix string
-	p.TargetDirectory, filePrefix = path.Split(p.LocalFilePrefix)
+	p.StoragePathPrefix, filePrefix = path.Split(p.LocalFilePrefix)
 	if p.FileUpload == nil {
-		if p.TargetDirectory != "" {
-			if err := os.MkdirAll(p.TargetDirectory, 0755); err != nil {
+		if p.StoragePathPrefix != "" {
+			if err := os.MkdirAll(p.StoragePathPrefix, 0755); err != nil {
 				return err
 			}
 		}
-		p.PlaylistFilename = path.Join(p.TargetDirectory, p.PlaylistFilename)
+		p.PlaylistFilename = path.Join(p.StoragePathPrefix, p.PlaylistFilename)
 	} else {
 		// Prepend the configuration base directory and the egress Id
 		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
-		outDir := path.Join(p.conf.LocalOutputDirectory, p.Info.EgressId)
-		if err := os.MkdirAll(outDir, 0755); err != nil {
+		tmpDir := path.Join(p.conf.LocalOutputDirectory, p.Info.EgressId)
+		if err := os.MkdirAll(tmpDir, 0755); err != nil {
 			return err
 		}
 
-		p.PlaylistFilename = path.Join(outDir, p.PlaylistFilename)
-		p.LocalFilePrefix = path.Join(outDir, filePrefix)
+		p.PlaylistFilename = path.Join(tmpDir, p.PlaylistFilename)
+		p.LocalFilePrefix = path.Join(tmpDir, filePrefix)
 	}
 	p.Logger.Debugw("writing to path", "prefix", p.LocalFilePrefix)
 
-	p.SegmentsInfo.PlaylistName = p.GetTargetPathForFilename(p.PlaylistFilename)
+	p.SegmentsInfo.PlaylistName = p.GetStorageFilepath(p.PlaylistFilename)
 	return nil
 }
 
@@ -671,11 +674,11 @@ func (p *Params) GetSegmentOutputType() OutputType {
 	}
 }
 
-func (p *SegmentedFileParams) GetTargetPathForFilename(filename string) string {
+func (p *SegmentedFileParams) GetStorageFilepath(filename string) string {
 	// Remove any path prepended to the filename
 	_, filename = path.Split(filename)
 
-	return path.Join(p.TargetDirectory, filename)
+	return path.Join(p.StoragePathPrefix, filename)
 }
 
 func (p *Params) GetSessionTimeout() time.Duration {

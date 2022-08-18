@@ -111,7 +111,7 @@ func verifyFile(t *testing.T, conf *testConfig, p *params.Params, res *livekit.E
 	// download from cloud storage
 	if p.FileUpload != nil {
 		filepath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, filepath)
-		download(t, p.FileUpload, filepath, p.Filepath)
+		download(t, p.FileUpload, filepath, p.StorageFilepath)
 	}
 
 	// verify
