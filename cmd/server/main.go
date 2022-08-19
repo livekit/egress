@@ -41,6 +41,9 @@ func main() {
 					&cli.StringFlag{
 						Name: "config-body",
 					},
+					&cli.StringFlag{
+						Name: "temp-path",
+					},
 				},
 				Action: runHandler,
 				Hidden: true,
@@ -116,6 +119,17 @@ func runHandler(c *cli.Context) error {
 	defer span.End()
 
 	logger.Debugw("handler launched")
+
+	tmpPath := c.String("temp-path")
+	if tmpPath != "" {
+		logger.Infow("setting TMPDIR environment and creating path", "path", tmpPath)
+		err := os.MkdirAll(tmpPath, 0755)
+		if err != nil {
+			span.RecordError(err)
+			return err
+		}
+		os.Setenv("TMPDIR", tmpPath)
+	}
 
 	rc, err := redis.GetRedisClient(conf.Redis)
 	if err != nil {
