@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"sync"
 	"time"
 
@@ -238,10 +239,13 @@ func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressReq
 		return
 	}
 
+	tempPath := getHandlerTempPath(req.EgressId)
+
 	cmd := exec.Command("egress",
 		"run-handler",
 		"--config-body", string(confString),
 		"--request", string(reqString),
+		"--temp-path", tempPath,
 	)
 	cmd.Dir = "/"
 	cmd.Stdout = os.Stdout
@@ -251,7 +255,11 @@ func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressReq
 		req: req,
 		cmd: cmd,
 	})
-	defer s.processes.Delete(req.EgressId)
+	defer func() {
+		s.processes.Delete(req.EgressId)
+		logger.Infow("deleting handler temporary directory", "path", tempPath)
+		os.RemoveAll(tempPath)
+	}()
 
 	err = cmd.Run()
 	if err != nil {
@@ -299,4 +307,8 @@ func (s *Service) ListEgress() []string {
 	})
 
 	return res
+}
+
+func getHandlerTempPath(egressID string) string {
+	return path.Join(os.TempDir(), egressID)
 }
