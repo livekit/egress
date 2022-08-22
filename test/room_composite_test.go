@@ -10,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
@@ -52,9 +51,13 @@ func testRoomComposite(t *testing.T, conf *testConfig) {
 
 	if !conf.FileTestsOnly && !conf.SegmentedFileTestsOnly {
 		// TODO: this kills the X server
-		// t.Run("rtmp-failure", func(t *testing.T) {
-		// 	testStreamFailure(t, conf)
-		// })
+		t.Run("rtmp-failure", func(t *testing.T) {
+			testStreamFailure(t, conf)
+		})
+
+		// Give some time for the previous handler to finish and release the room handling lock
+		time.Sleep(1 * time.Second)
+
 		t.Run("room-rtmp", func(t *testing.T) {
 			testRoomCompositeStream(t, conf)
 		})
@@ -135,8 +138,6 @@ func testRoomCompositeStream(t *testing.T, conf *testConfig) {
 }
 
 func testStreamFailure(t *testing.T, conf *testConfig) {
-	ctx := context.Background()
-
 	req := &livekit.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &livekit.StartEgressRequest_RoomComposite{
@@ -153,15 +154,17 @@ func testStreamFailure(t *testing.T, conf *testConfig) {
 		},
 	}
 
-	p, err := params.GetPipelineParams(ctx, conf.Config, req)
+	info, err := conf.rpcClient.SendRequest(context.Background(), req)
 	require.NoError(t, err)
+	require.Empty(t, info.Error)
+	require.NotEmpty(t, info.EgressId)
+	require.Equal(t, conf.RoomName, info.RoomName)
+	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
 
-	rec, err := pipeline.New(ctx, conf.Config, p)
-	require.NoError(t, err)
+	// wait
+	time.Sleep(time.Second * 5)
 
-	info := rec.Run(ctx)
-	require.NotEmpty(t, info.Error)
-	require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
+	checkUpdate(t, conf.updates, info.EgressId, livekit.EgressStatus_EGRESS_FAILED)
 }
 
 func runRoomCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCase) {
