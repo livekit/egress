@@ -56,9 +56,10 @@ func (m *Monitor) Start(conf *config.Config, close chan struct{}, isAvailable fu
 	})
 
 	m.requestGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "livekit",
-		Subsystem: "egress",
-		Name:      "requests",
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "requests",
+		ConstLabels: prometheus.Labels{"node_id": conf.NodeID},
 	}, []string{"type"})
 
 	prometheus.MustRegister(promNodeAvailable, m.promCPULoad, m.requestGauge)
