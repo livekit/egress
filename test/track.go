@@ -22,7 +22,7 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func testTrack(t *testing.T, conf *testConfig) {
+func testTrack(t *testing.T, conf *Config) {
 	now := time.Now().Unix()
 	if !conf.StreamTestsOnly && !conf.SegmentedFileTestsOnly {
 		for _, test := range []*testCase{
@@ -70,7 +70,7 @@ func testTrack(t *testing.T, conf *testConfig) {
 	}
 }
 
-func runTrackFileTest(t *testing.T, conf *testConfig, test *testCase) {
+func runTrackFileTest(t *testing.T, conf *Config, test *testCase) {
 	codec := test.videoCodec
 	if test.audioOnly {
 		codec = test.audioCodec
@@ -101,7 +101,7 @@ func runTrackFileTest(t *testing.T, conf *testConfig, test *testCase) {
 	runFileTest(t, conf, req, test, filepath)
 }
 
-func runTrackWebsocketTest(t *testing.T, conf *testConfig, test *testCase) {
+func runTrackWebsocketTest(t *testing.T, conf *Config, test *testCase) {
 	codec := test.videoCodec
 	if test.audioCodec != "" {
 		codec = test.audioCodec

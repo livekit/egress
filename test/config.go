@@ -19,7 +19,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 )
 
-type testConfig struct {
+type Config struct {
 	*config.Config
 
 	RoomName                string `yaml:"room_name"`
@@ -38,7 +38,7 @@ type testConfig struct {
 	updates   utils.PubSub     `yaml:"-"`
 }
 
-func getTestConfig(t *testing.T) *testConfig {
+func NewTestConfig(t *testing.T) *Config {
 	confString := os.Getenv("EGRESS_CONFIG_STRING")
 	if confString == "" {
 		confFile := os.Getenv("EGRESS_CONFIG_FILE")
@@ -48,7 +48,7 @@ func getTestConfig(t *testing.T) *testConfig {
 		confString = string(b)
 	}
 
-	tc := &testConfig{
+	tc := &Config{
 		RoomName: "egress-test",
 		Muting:   false,
 		GstDebug: 1,

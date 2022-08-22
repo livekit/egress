@@ -12,7 +12,7 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func testTrackComposite(t *testing.T, conf *testConfig) {
+func testTrackComposite(t *testing.T, conf *Config) {
 	now := time.Now().Unix()
 	if !conf.StreamTestsOnly && !conf.SegmentedFileTestsOnly {
 		for _, test := range []*testCase{
@@ -69,7 +69,7 @@ func testTrackComposite(t *testing.T, conf *testConfig) {
 	}
 }
 
-func runTrackCompositeFileTest(t *testing.T, conf *testConfig, test *testCase, audioTrackID, videoTrackID string) {
+func runTrackCompositeFileTest(t *testing.T, conf *Config, test *testCase, audioTrackID, videoTrackID string) {
 	filepath := getFilePath(conf.Config, test.filename)
 	trackRequest := &livekit.TrackCompositeEgressRequest{
 		RoomName: conf.room.Name(),
@@ -103,7 +103,7 @@ func runTrackCompositeFileTest(t *testing.T, conf *testConfig, test *testCase, a
 	runFileTest(t, conf, req, test, filepath)
 }
 
-func testTrackCompositeStream(t *testing.T, conf *testConfig) {
+func testTrackCompositeStream(t *testing.T, conf *Config) {
 	audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
 
 	req := &livekit.StartEgressRequest{
@@ -125,7 +125,7 @@ func testTrackCompositeStream(t *testing.T, conf *testConfig) {
 	runStreamTest(t, conf, req)
 }
 
-func runTrackCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCase, audioTrackID, videoTrackID string) {
+func runTrackCompositeSegmentsTest(t *testing.T, conf *Config, test *testCase, audioTrackID, videoTrackID string) {
 	var aID, vID string
 	if !test.audioOnly {
 		vID = videoTrackID

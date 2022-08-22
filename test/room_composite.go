@@ -16,7 +16,7 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func testRoomComposite(t *testing.T, conf *testConfig) {
+func testRoomComposite(t *testing.T, conf *Config) {
 	publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
 
 	now := time.Now().Unix()
@@ -84,7 +84,7 @@ func testRoomComposite(t *testing.T, conf *testConfig) {
 	}
 }
 
-func runRoomCompositeFileTest(t *testing.T, conf *testConfig, test *testCase) {
+func runRoomCompositeFileTest(t *testing.T, conf *Config, test *testCase) {
 	filepath := getFilePath(conf.Config, test.filename)
 	roomRequest := &livekit.RoomCompositeEgressRequest{
 		RoomName:  conf.room.Name(),
@@ -114,7 +114,7 @@ func runRoomCompositeFileTest(t *testing.T, conf *testConfig, test *testCase) {
 	runFileTest(t, conf, req, test, filepath)
 }
 
-func testRoomCompositeStream(t *testing.T, conf *testConfig) {
+func testRoomCompositeStream(t *testing.T, conf *Config) {
 	req := &livekit.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &livekit.StartEgressRequest_RoomComposite{
@@ -134,7 +134,7 @@ func testRoomCompositeStream(t *testing.T, conf *testConfig) {
 	runStreamTest(t, conf, req)
 }
 
-func testStreamFailure(t *testing.T, conf *testConfig) {
+func testStreamFailure(t *testing.T, conf *Config) {
 	ctx := context.Background()
 
 	req := &livekit.StartEgressRequest{
@@ -164,7 +164,7 @@ func testStreamFailure(t *testing.T, conf *testConfig) {
 	require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
 }
 
-func runRoomCompositeSegmentsTest(t *testing.T, conf *testConfig, test *testCase) {
+func runRoomCompositeSegmentsTest(t *testing.T, conf *Config, test *testCase) {
 	webRequest := &livekit.RoomCompositeEgressRequest{
 		RoomName:  conf.RoomName,
 		Layout:    "grid-dark",
