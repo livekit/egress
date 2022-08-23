@@ -28,7 +28,7 @@ import (
 const (
 	pipelineSource    = "pipeline"
 	fileKey           = "file"
-	eosTimeout        = time.Second * 15
+	eosTimeout        = time.Second * 30
 	maxPendingUploads = 100
 
 	fragmentOpenedMessage = "splitmuxsink-fragment-opened"
