@@ -10,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
@@ -43,6 +42,19 @@ func testRoomComposite(t *testing.T, conf *Config) {
 				},
 				filename: fmt.Sprintf("room-opus-%v.ogg", now),
 			},
+			{
+				name:     "h264-high-mp4-timedout",
+				fileType: livekit.EncodedFileType_MP4,
+				options: &livekit.EncodingOptions{
+					AudioCodec:   livekit.AudioCodec_AAC,
+					VideoCodec:   livekit.VideoCodec_H264_HIGH,
+					Height:       720,
+					Width:        1280,
+					VideoBitrate: 4500,
+				},
+				filename:       fmt.Sprintf("room-h264-high-timedout-%v.mp4", now),
+				sessionTimeout: 20 * time.Second,
+			},
 		} {
 			t.Run(test.name, func(t *testing.T) {
 				runRoomCompositeFileTest(t, conf, test)
@@ -52,14 +64,25 @@ func testRoomComposite(t *testing.T, conf *Config) {
 
 	if !conf.FileTestsOnly && !conf.SegmentedFileTestsOnly {
 		// TODO: this kills the X server
-		// t.Run("rtmp-failure", func(t *testing.T) {
-		// 	testStreamFailure(t, conf)
-		// })
+		t.Run("rtmp-failure", func(t *testing.T) {
+			testStreamFailure(t, conf)
+		})
+
+		// Give some time for the previous handler to finish and release the room handling lock
+		time.Sleep(1 * time.Second)
+
 		t.Run("room-rtmp", func(t *testing.T) {
-			testRoomCompositeStream(t, conf)
+			testRoomCompositeStream(t, conf, 0)
 		})
 		// Give some time for the previous handler to finish and release the room handling lock
 		time.Sleep(1 * time.Second)
+
+		t.Run("room-rtmp-timedout", func(t *testing.T) {
+			testRoomCompositeStream(t, conf, 20*time.Second)
+		})
+		// Give some time for the previous handler to finish and release the room handling lock
+		time.Sleep(1 * time.Second)
+
 	}
 
 	if !conf.FileTestsOnly && !conf.StreamTestsOnly {
@@ -75,6 +98,19 @@ func testRoomComposite(t *testing.T, conf *Config) {
 				},
 				filename: fmt.Sprintf("room-h264-baseline-%v", now),
 				playlist: fmt.Sprintf("room-h264-baseline-%v.m3u8", now),
+			},
+			{
+				name: "h264-segmented-mp4-timedout",
+				options: &livekit.EncodingOptions{
+					AudioCodec:   livekit.AudioCodec_AAC,
+					VideoCodec:   livekit.VideoCodec_H264_BASELINE,
+					Height:       1080,
+					Width:        1920,
+					VideoBitrate: 4500,
+				},
+				filename:       fmt.Sprintf("room-h264-baseline-timedout-%v", now),
+				playlist:       fmt.Sprintf("room-h264-baseline-timedout-%v.m3u8", now),
+				sessionTimeout: 20 * time.Second,
 			},
 		} {
 			t.Run(test.name, func(t *testing.T) {
@@ -114,7 +150,7 @@ func runRoomCompositeFileTest(t *testing.T, conf *Config, test *testCase) {
 	runFileTest(t, conf, req, test, filepath)
 }
 
-func testRoomCompositeStream(t *testing.T, conf *Config) {
+func testRoomCompositeStream(t *testing.T, conf *Config, sessionTimeout time.Duration) {
 	req := &livekit.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &livekit.StartEgressRequest_RoomComposite{
@@ -131,12 +167,10 @@ func testRoomCompositeStream(t *testing.T, conf *Config) {
 		},
 	}
 
-	runStreamTest(t, conf, req)
+	runStreamTest(t, conf, req, sessionTimeout)
 }
 
 func testStreamFailure(t *testing.T, conf *Config) {
-	ctx := context.Background()
-
 	req := &livekit.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &livekit.StartEgressRequest_RoomComposite{
@@ -153,15 +187,17 @@ func testStreamFailure(t *testing.T, conf *Config) {
 		},
 	}
 
-	p, err := params.GetPipelineParams(ctx, conf.Config, req)
+	info, err := conf.rpcClient.SendRequest(context.Background(), req)
 	require.NoError(t, err)
+	require.Empty(t, info.Error)
+	require.NotEmpty(t, info.EgressId)
+	require.Equal(t, conf.RoomName, info.RoomName)
+	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
 
-	rec, err := pipeline.New(ctx, conf.Config, p)
-	require.NoError(t, err)
+	// wait
+	time.Sleep(time.Second * 5)
 
-	info := rec.Run(ctx)
-	require.NotEmpty(t, info.Error)
-	require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
+	checkUpdate(t, conf.updates, info.EgressId, livekit.EgressStatus_EGRESS_FAILED)
 }
 
 func runRoomCompositeSegmentsTest(t *testing.T, conf *Config, test *testCase) {
@@ -190,5 +226,5 @@ func runRoomCompositeSegmentsTest(t *testing.T, conf *Config, test *testCase) {
 		},
 	}
 
-	runSegmentsTest(t, conf, req, getFilePath(conf.Config, test.playlist))
+	runSegmentsTest(t, conf, req, getFilePath(conf.Config, test.playlist), test.sessionTimeout)
 }

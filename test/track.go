@@ -47,6 +47,14 @@ func testTrack(t *testing.T, conf *Config) {
 				outputType: params.OutputTypeMP4,
 				filename:   fmt.Sprintf("track-h264-%v.mp4", now),
 			},
+			{
+				name:           "track-h264-timedout",
+				videoOnly:      true,
+				videoCodec:     params.MimeTypeH264,
+				outputType:     params.OutputTypeMP4,
+				filename:       fmt.Sprintf("track-h264-timedout-%v.mp4", now),
+				sessionTimeout: 20 * time.Second,
+			},
 		} {
 			t.Run(test.name, func(t *testing.T) {
 				runTrackFileTest(t, conf, test)
@@ -61,6 +69,12 @@ func testTrack(t *testing.T, conf *Config) {
 				audioOnly:  true,
 				audioCodec: params.MimeTypeOpus,
 				filename:   fmt.Sprintf("track-ws-%v.raw", now),
+			},
+			{
+				name:       "track-websocket-timedout",
+				audioOnly:  true,
+				audioCodec: params.MimeTypeOpus,
+				filename:   fmt.Sprintf("track-ws-timedout-%v.raw", now),
 			},
 		} {
 			t.Run(test.name, func(t *testing.T) {
@@ -102,6 +116,8 @@ func runTrackFileTest(t *testing.T, conf *Config, test *testCase) {
 }
 
 func runTrackWebsocketTest(t *testing.T, conf *Config, test *testCase) {
+	conf.SessionLimits.StreamOutputMaxDuration = test.sessionTimeout
+
 	codec := test.videoCodec
 	if test.audioCodec != "" {
 		codec = test.audioCodec
@@ -138,10 +154,12 @@ func runTrackWebsocketTest(t *testing.T, conf *Config, test *testCase) {
 	rec, err := pipeline.New(ctx, conf.Config, p)
 	require.NoError(t, err)
 
-	// record for ~30s. Takes about 5s to start
-	time.AfterFunc(time.Second*35, func() {
-		rec.SendEOS(ctx)
-	})
+	if conf.SessionLimits.StreamOutputMaxDuration >= 0 {
+		// record for ~30s. Takes about 5s to start
+		time.AfterFunc(time.Second*35, func() {
+			rec.SendEOS(ctx)
+		})
+	}
 	res := rec.Run(ctx)
 
 	verify(t, filepath, p, res, ResultTypeStream, conf.Muting)

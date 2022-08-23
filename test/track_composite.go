@@ -30,6 +30,14 @@ func testTrackComposite(t *testing.T, conf *Config) {
 				videoCodec: params.MimeTypeH264,
 				filename:   fmt.Sprintf("tc-h264-%v.mp4", now),
 			},
+			{
+				name:           "tc-h264-mp4-timedout",
+				fileType:       livekit.EncodedFileType_MP4,
+				audioCodec:     params.MimeTypeOpus,
+				videoCodec:     params.MimeTypeH264,
+				filename:       fmt.Sprintf("tc-h264-%v.mp4", now),
+				sessionTimeout: 20 * time.Second,
+			},
 		} {
 			t.Run(test.name, func(t *testing.T) {
 				audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, test.audioCodec, test.videoCodec, conf.Muting)
@@ -40,8 +48,13 @@ func testTrackComposite(t *testing.T, conf *Config) {
 
 	if !conf.FileTestsOnly && !conf.SegmentedFileTestsOnly {
 		t.Run("tc-rtmp", func(t *testing.T) {
-			testTrackCompositeStream(t, conf)
+			testTrackCompositeStream(t, conf, 0)
 		})
+
+		t.Run("tc-rtmp-timedout", func(t *testing.T) {
+			testTrackCompositeStream(t, conf, 20*time.Second)
+		})
+
 	}
 
 	if !conf.FileTestsOnly && !conf.StreamTestsOnly {
@@ -59,6 +72,12 @@ func testTrackComposite(t *testing.T, conf *Config) {
 				videoCodec: params.MimeTypeH264,
 				filename:   fmt.Sprintf("tc-h264-hls-%v", now),
 				playlist:   fmt.Sprintf("tc-h264-hls-%v.m3u8", now),
+			}, {
+				name:       "tc-h264-hls-timedout",
+				audioCodec: params.MimeTypeOpus,
+				videoCodec: params.MimeTypeH264,
+				filename:   fmt.Sprintf("tc-h264-hls-timedout-%v", now),
+				playlist:   fmt.Sprintf("tc-h264-hls-timedout-%v.m3u8", now),
 			},
 		} {
 			t.Run(test.name, func(t *testing.T) {
@@ -103,7 +122,7 @@ func runTrackCompositeFileTest(t *testing.T, conf *Config, test *testCase, audio
 	runFileTest(t, conf, req, test, filepath)
 }
 
-func testTrackCompositeStream(t *testing.T, conf *Config) {
+func testTrackCompositeStream(t *testing.T, conf *Config, sessionTimeout time.Duration) {
 	audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
 
 	req := &livekit.StartEgressRequest{
@@ -122,7 +141,7 @@ func testTrackCompositeStream(t *testing.T, conf *Config) {
 		},
 	}
 
-	runStreamTest(t, conf, req)
+	runStreamTest(t, conf, req, sessionTimeout)
 }
 
 func runTrackCompositeSegmentsTest(t *testing.T, conf *Config, test *testCase, audioTrackID, videoTrackID string) {
@@ -160,5 +179,5 @@ func runTrackCompositeSegmentsTest(t *testing.T, conf *Config, test *testCase, a
 		},
 	}
 
-	runSegmentsTest(t, conf, req, getFilePath(conf.Config, test.playlist))
+	runSegmentsTest(t, conf, req, getFilePath(conf.Config, test.playlist), test.sessionTimeout)
 }
