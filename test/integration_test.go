@@ -32,10 +32,11 @@ const (
 )
 
 type testCase struct {
-	name      string
-	audioOnly bool
-	videoOnly bool
-	filename  string
+	name           string
+	audioOnly      bool
+	videoOnly      bool
+	filename       string
+	sessionTimeout time.Duration
 
 	// used by room and track composite tests
 	fileType livekit.EncodedFileType
@@ -121,6 +122,9 @@ func TestEgress(t *testing.T) {
 }
 
 func runFileTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, test *testCase, filepath string) {
+	// Override session max duration
+	conf.SessionLimits.FileOutputMaxDuration = test.sessionTimeout
+
 	// start
 	egressID := startEgress(t, conf, req)
 
@@ -150,7 +154,9 @@ func runFileTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest
 	verifyFile(t, conf, p, res, filepath, expectedStatus)
 }
 
-func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest) {
+func runStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, sessionTimeout time.Duration) {
+	conf.SessionLimits.StreamOutputMaxDuration = sessionTimeout
+
 	if conf.SessionLimits.StreamOutputMaxDuration > 0 {
 		runTimingOutStreamTest(t, conf, req)
 	} else {
@@ -246,7 +252,10 @@ func runMultipleStreamTest(t *testing.T, conf *testConfig, req *livekit.StartEgr
 	}
 }
 
-func runSegmentsTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, playlistPath string) {
+func runSegmentsTest(t *testing.T, conf *testConfig, req *livekit.StartEgressRequest, playlistPath string, sessionTimeout time.Duration) {
+	// Override session max duration
+	conf.SessionLimits.SegmentOutputMaxDuration = sessionTimeout
+
 	egressID := startEgress(t, conf, req)
 
 	var res *livekit.EgressInfo
