@@ -112,6 +112,8 @@ func RunTestSuite(t *testing.T, conf *Config, rpcClient egress.RPCClient, rpcSer
 }
 
 func runFileTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest, test *testCase, filepath string) {
+	conf.SessionLimits.FileOutputMaxDuration = test.sessionTimeout
+
 	// start
 	egressID := startEgress(t, conf, req)
 
@@ -141,7 +143,9 @@ func runFileTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest, te
 	verifyFile(t, conf, p, res, filepath, expectedStatus)
 }
 
-func runStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest) {
+func runStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest, sessionTimeout time.Duration) {
+	conf.SessionLimits.StreamOutputMaxDuration = sessionTimeout
+
 	if conf.SessionLimits.StreamOutputMaxDuration > 0 {
 		runTimingOutStreamTest(t, conf, req)
 	} else {
@@ -237,7 +241,9 @@ func runMultipleStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressR
 	}
 }
 
-func runSegmentsTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest, playlistPath string) {
+func runSegmentsTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest, playlistPath string, sessionTimeout time.Duration) {
+	conf.SessionLimits.SegmentOutputMaxDuration = sessionTimeout
+
 	egressID := startEgress(t, conf, req)
 
 	var res *livekit.EgressInfo
@@ -249,7 +255,6 @@ func runSegmentsTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest
 		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_FAILED)
 		expectedStatus = livekit.EgressStatus_EGRESS_FAILED
 	} else {
-
 		time.Sleep(time.Second * 25)
 
 		// stop
