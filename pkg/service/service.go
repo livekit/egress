@@ -24,16 +24,16 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/params"
-	"github.com/livekit/egress/pkg/sysload"
+	"github.com/livekit/egress/pkg/stats"
 )
 
 const shutdownTimer = time.Second * 30
 
 type Service struct {
-	conf      *config.Config
-	rpcServer egress.RPCServer
-
+	conf       *config.Config
+	rpcServer  egress.RPCServer
 	promServer *http.Server
+	monitor    *stats.Monitor
 
 	handlingRoomComposite atomic.Bool
 	processes             sync.Map
@@ -49,6 +49,7 @@ func NewService(conf *config.Config, rpcServer egress.RPCServer) *Service {
 	s := &Service{
 		conf:      conf,
 		rpcServer: rpcServer,
+		monitor:   stats.NewMonitor(),
 		shutdown:  make(chan struct{}),
 	}
 
@@ -75,12 +76,7 @@ func (s *Service) Run() error {
 		}()
 	}
 
-	if err := sysload.Init(s.conf, s.shutdown, func() float64 {
-		if s.isIdle() {
-			return 1
-		}
-		return 0
-	}); err != nil {
+	if err := s.monitor.Start(s.conf, s.shutdown, s.isAvailable); err != nil {
 		return err
 	}
 
@@ -150,6 +146,13 @@ func (s *Service) isIdle() bool {
 	return idle
 }
 
+func (s *Service) isAvailable() float64 {
+	if s.isIdle() {
+		return 1
+	}
+	return 0
+}
+
 func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressRequest) bool {
 	ctx, span := tracer.Start(ctx, "Service.acceptRequest")
 	defer span.End()
@@ -185,7 +188,7 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 		// continue
 	}
 
-	if !sysload.CanAcceptRequest(req) {
+	if !s.monitor.CanAcceptRequest(req) {
 		args = append(args, "reason", "not enough cpu")
 		logger.Debugw("rejecting request", args...)
 		return false
@@ -200,7 +203,7 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 		return false
 	}
 
-	sysload.AcceptRequest(req)
+	s.monitor.AcceptRequest(req)
 	logger.Infow("request accepted", args...)
 
 	return true
@@ -251,14 +254,16 @@ func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressReq
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	s.monitor.EgressStarted(req)
 	s.processes.Store(req.EgressId, &process{
 		req: req,
 		cmd: cmd,
 	})
 	defer func() {
+		s.monitor.EgressEnded(req)
 		s.processes.Delete(req.EgressId)
 		logger.Infow("deleting handler temporary directory", "path", tempPath)
-		os.RemoveAll(tempPath)
+		_ = os.RemoveAll(tempPath)
 	}()
 
 	err = cmd.Run()
@@ -269,7 +274,7 @@ func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressReq
 
 func (s *Service) Status() ([]byte, error) {
 	info := map[string]interface{}{
-		"CpuLoad": sysload.GetCPULoad(),
+		"CpuLoad": s.monitor.GetCPULoad(),
 	}
 	s.processes.Range(func(key, value interface{}) bool {
 		p := value.(*process)
