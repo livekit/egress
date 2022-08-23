@@ -28,7 +28,7 @@ import (
 const (
 	pipelineSource    = "pipeline"
 	fileKey           = "file"
-	eosTimeout        = time.Second * 15
+	eosTimeout        = time.Second * 30
 	maxPendingUploads = 100
 
 	fragmentOpenedMessage = "splitmuxsink-fragment-opened"
@@ -79,7 +79,6 @@ func New(ctx context.Context, conf *config.Config, p *params.Params) (*Pipeline,
 	go func() {
 		_, span := tracer.Start(ctx, "gst.Init")
 		defer span.End()
-
 		gst.Init(nil)
 		close(p.GstReady)
 	}()
