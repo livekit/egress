@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
@@ -53,7 +52,6 @@ type testCase struct {
 
 func RunTestSuite(t *testing.T, conf *Config, rpcClient egress.RPCClient, rpcServer egress.RPCServer) {
 	// connect to room
-	lksdk.SetLogger(logr.Discard())
 	room, err := lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
 		APIKey:              conf.ApiKey,
 		APISecret:           conf.ApiSecret,

@@ -14,6 +14,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/utils"
+	lksdk "github.com/livekit/server-sdk-go"
 
 	"github.com/livekit/egress/pkg/errors"
 )
@@ -156,6 +157,8 @@ func (c *Config) initLogger() error {
 	}
 
 	l, _ := conf.Build()
+
 	logger.SetLogger(zapr.NewLogger(l).WithValues("nodeID", c.NodeID), "egress")
+	lksdk.SetLogger(logger.GetLogger())
 	return nil
 }
