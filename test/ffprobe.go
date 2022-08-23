@@ -89,7 +89,7 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
-func verifyFile(t *testing.T, conf *testConfig, p *params.Params, res *livekit.EgressInfo, filepath string, expectedStatus livekit.EgressStatus) {
+func verifyFile(t *testing.T, conf *Config, p *params.Params, res *livekit.EgressInfo, filepath string, expectedStatus livekit.EgressStatus) {
 	// egress info
 	require.Equal(t, res.Status, expectedStatus)
 	if res.Status == livekit.EgressStatus_EGRESS_COMPLETE {
@@ -124,7 +124,7 @@ func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	}
 }
 
-func verifySegments(t *testing.T, conf *testConfig, p *params.Params, res *livekit.EgressInfo, playlistPath string, expectedStatus livekit.EgressStatus) {
+func verifySegments(t *testing.T, conf *Config, p *params.Params, res *livekit.EgressInfo, playlistPath string, expectedStatus livekit.EgressStatus) {
 	// egress info
 	require.Equal(t, res.Status, expectedStatus)
 	if res.Status == livekit.EgressStatus_EGRESS_COMPLETE {
