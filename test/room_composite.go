@@ -58,31 +58,26 @@ func testRoomComposite(t *testing.T, conf *Config) {
 		} {
 			t.Run(test.name, func(t *testing.T) {
 				runRoomCompositeFileTest(t, conf, test)
+				time.Sleep(time.Second)
 			})
 		}
 	}
 
 	if !conf.FileTestsOnly && !conf.SegmentedFileTestsOnly {
-		// TODO: this kills the X server
 		t.Run("rtmp-failure", func(t *testing.T) {
 			testStreamFailure(t, conf)
+			time.Sleep(time.Second)
 		})
-
-		// Give some time for the previous handler to finish and release the room handling lock
-		time.Sleep(1 * time.Second)
 
 		t.Run("room-rtmp", func(t *testing.T) {
 			testRoomCompositeStream(t, conf, 0)
+			time.Sleep(time.Second)
 		})
-		// Give some time for the previous handler to finish and release the room handling lock
-		time.Sleep(1 * time.Second)
 
 		t.Run("room-rtmp-timedout", func(t *testing.T) {
 			testRoomCompositeStream(t, conf, 20*time.Second)
+			time.Sleep(time.Second)
 		})
-		// Give some time for the previous handler to finish and release the room handling lock
-		time.Sleep(1 * time.Second)
-
 	}
 
 	if !conf.FileTestsOnly && !conf.StreamTestsOnly {
@@ -115,6 +110,7 @@ func testRoomComposite(t *testing.T, conf *Config) {
 		} {
 			t.Run(test.name, func(t *testing.T) {
 				runRoomCompositeSegmentsTest(t, conf, test)
+				time.Sleep(time.Second)
 			})
 		}
 	}

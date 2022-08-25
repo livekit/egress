@@ -242,7 +242,7 @@ func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressReq
 		return
 	}
 
-	tempPath := getHandlerTempPath(req.EgressId)
+	tempPath := path.Join(os.TempDir(), req.EgressId)
 
 	cmd := exec.Command("egress",
 		"run-handler",
@@ -312,8 +312,4 @@ func (s *Service) ListEgress() []string {
 	})
 
 	return res
-}
-
-func getHandlerTempPath(egressID string) string {
-	return path.Join(os.TempDir(), egressID)
 }

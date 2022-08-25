@@ -128,7 +128,7 @@ func runHandler(c *cli.Context) error {
 			span.RecordError(err)
 			return err
 		}
-		os.Setenv("TMPDIR", tmpPath)
+		_ = os.Setenv("TMPDIR", tmpPath)
 	}
 
 	rc, err := redis.GetRedisClient(conf.Redis)
