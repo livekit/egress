@@ -238,6 +238,22 @@ func runMultipleStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressR
 
 	time.Sleep(time.Second * 5)
 
+	update := getUpdate(t, conf.updates, egressID)
+	require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE, update.Status)
+	require.Len(t, update.GetStream().Info, 3)
+	for _, info := range update.GetStream().Info {
+		switch info.Url {
+		case streamUrl1, streamUrl2:
+			require.Equal(t, info.Status, livekit.StreamInfo_ACTIVE)
+
+		case badStreamUrl:
+			require.Equal(t, info.Status, livekit.StreamInfo_FAILED)
+			
+		default:
+			t.Fatal("invalid stream url in result")
+		}
+	}
+
 	// verify the good stream urls
 	verifyStreams(t, p, streamUrl1, streamUrl2)
 
@@ -285,7 +301,7 @@ func runMultipleStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressR
 
 		case badStreamUrl:
 			require.Equal(t, info.Status, livekit.StreamInfo_FAILED)
-			require.Less(t, float64(info.Duration)/1e9, 10.0)
+			require.Less(t, float64(info.Duration)/1e9, 5.0)
 
 		default:
 			t.Fatal("invalid stream url in result")

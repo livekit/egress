@@ -414,14 +414,18 @@ func (p *Pipeline) removeSink(url string, status livekit.StreamInfo_Status) erro
 
 	p.Logger.Debugw("removing stream sink", "url", url, "status", status, "duration", streamInfo.Duration)
 
-	if done {
-		switch status {
-		case livekit.StreamInfo_FINISHED:
+	switch status {
+	case livekit.StreamInfo_FINISHED:
+		if done {
 			p.SendEOS(context.Background())
-		case livekit.StreamInfo_FAILED:
-			return errors.New("could not connect")
+			return nil
 		}
-		return nil
+	case livekit.StreamInfo_FAILED:
+		if done {
+			return errors.New("could not connect")
+		} else if p.onStatusUpdate != nil {
+			p.onStatusUpdate(context.Background(), p.Info)
+		}
 	}
 
 	return p.out.RemoveSink(url)
@@ -687,7 +691,6 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 		if e = p.removeSink(url, livekit.StreamInfo_FAILED); e != nil {
 			return err, false
 		}
-
 		return err, true
 
 	default:
