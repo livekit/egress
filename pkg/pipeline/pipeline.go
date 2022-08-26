@@ -26,7 +26,6 @@ import (
 
 const (
 	pipelineSource    = "pipeline"
-	fileKey           = "file"
 	eosTimeout        = time.Second * 30
 	maxPendingUploads = 100
 
@@ -50,8 +49,7 @@ type Pipeline struct {
 	// internal
 	mu             sync.Mutex
 	playing        bool
-	startedAt      map[string]int64
-	streamErrors   map[string]chan error
+	fileStartedAt  int64
 	closed         chan struct{}
 	closedOnce     sync.Once
 	eosTimer       *time.Timer
@@ -138,8 +136,6 @@ func New(ctx context.Context, conf *config.Config, p *params.Params) (*Pipeline,
 		in:             in,
 		out:            out,
 		playlistWriter: playlistWriter,
-		startedAt:      make(map[string]int64),
-		streamErrors:   make(map[string]chan error),
 		closed:         make(chan struct{}),
 	}, nil
 }
@@ -157,7 +153,23 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	defer span.End()
 
 	p.Info.StartedAt = time.Now().UnixNano()
-	defer p.cleanup()
+	defer func() {
+		p.Info.EndedAt = time.Now().UnixNano()
+
+		// update status
+		if p.Info.Error != "" {
+			p.Info.Status = livekit.EgressStatus_EGRESS_FAILED
+		}
+
+		switch p.Info.Status {
+		case livekit.EgressStatus_EGRESS_STARTING:
+		case livekit.EgressStatus_EGRESS_ACTIVE:
+		case livekit.EgressStatus_EGRESS_ENDING:
+			p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+		}
+
+		p.cleanup()
+	}()
 
 	// wait until room is ready
 	start := p.in.StartRecording()
@@ -261,7 +273,7 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 		err, handled := p.handleError(msg.ParseError())
 		if !handled {
 			p.Info.Error = err.Error()
-			p.loop.Quit()
+			p.stop()
 			return false
 		}
 
@@ -299,15 +311,15 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 			case fragmentOpenedMessage:
 				filepath, t, err := getSegmentParamsFromGstStructure(s)
 				if err != nil {
-					p.Logger.Errorw("failed retrieving parameters from fragment event structure", err)
+					p.Logger.Errorw("failed to retrieve segment parameters from event", err)
 					return true
 				}
 
-				p.Logger.Debugw("fragment opened event", "location", filepath, "running time", t)
+				p.Logger.Debugw("fragment opened", "location", filepath, "running time", t)
 
 				if p.playlistWriter != nil {
 					if err = p.playlistWriter.StartSegment(filepath, t); err != nil {
-						p.Logger.Errorw("failed registering new segment with playlist writer", err, "location", filepath, "running time", t)
+						p.Logger.Errorw("failed to register new segment with playlist writer", err, "location", filepath, "running time", t)
 						return true
 					}
 				}
@@ -315,16 +327,15 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 			case fragmentClosedMessage:
 				filepath, t, err := getSegmentParamsFromGstStructure(s)
 				if err != nil {
-					p.Logger.Errorw("failed registering new segment with playlist writer", err, "location", filepath, "running time", t)
+					p.Logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "running time", t)
 					return true
 				}
 
-				p.Logger.Debugw("fragment closed event", "location", filepath, "running time", t)
+				p.Logger.Debugw("fragment closed", "location", filepath, "running time", t)
 
 				// We need to dispatch to a queue to:
 				// 1. Avoid concurrent access to the SegmentsInfo structure
-				// 2. Ensure that playlists are uploaded in the same order they are enqueued to avoid an older playlist overwriting a newre one
-
+				// 2. Ensure that playlists are uploaded in the same order they are enqueued to avoid an older playlist overwriting a newer one
 				if err = p.enqueueSegmentUpload(filepath, t); err != nil {
 					p.Logger.Errorw("failed to end segment with playlist writer", err, "running time", t)
 					return true
@@ -353,79 +364,67 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 		}
 	}
 
-	var wg sync.WaitGroup
-	var errMu sync.Mutex
 	errs := make([]string, 0)
 
 	now := time.Now().UnixNano()
 	for _, url := range req.AddOutputUrls {
 		if err := p.out.AddSink(url); err != nil {
-			errMu.Lock()
 			errs = append(errs, err.Error())
-			errMu.Unlock()
 			continue
 		}
 
-		errChan := make(chan error, 1)
 		p.mu.Lock()
-		p.streamErrors[url] = errChan
+		streamInfo := &livekit.StreamInfo{
+			Url:       url,
+			StartedAt: now,
+			Status:    livekit.StreamInfo_ACTIVE,
+		}
+		p.StreamInfo[url] = streamInfo
+		p.Info.GetStream().Info = append(p.Info.GetStream().Info, streamInfo)
 		p.mu.Unlock()
-
-		wg.Add(1)
-		go func(url string, errChan chan error) {
-			defer wg.Done()
-
-			select {
-			case err := <-errChan:
-				errMu.Lock()
-				errs = append(errs, err.Error())
-				errMu.Unlock()
-
-				p.mu.Lock()
-				delete(p.streamErrors, url)
-				p.mu.Unlock()
-
-			case <-time.After(time.Second):
-				p.mu.Lock()
-				delete(p.streamErrors, url)
-				streamInfo := &livekit.StreamInfo{Url: url}
-				p.startedAt[url] = now
-				p.StreamInfo[url] = streamInfo
-				p.Info.GetStream().Info = append(p.Info.GetStream().Info, streamInfo)
-				p.mu.Unlock()
-			}
-		}(url, errChan)
 	}
 
 	for _, url := range req.RemoveOutputUrls {
-		p.mu.Lock()
-		sendEOS := len(p.startedAt) == 1
-		p.mu.Unlock()
-		if sendEOS {
-			p.SendEOS(ctx)
-			continue
-		}
-
-		if err := p.out.RemoveSink(url); err != nil {
-			errMu.Lock()
+		if err := p.removeSink(url, livekit.StreamInfo_FINISHED); err != nil {
 			errs = append(errs, err.Error())
-			errMu.Unlock()
-			continue
 		}
-
-		p.mu.Lock()
-		startedAt := p.startedAt[url]
-		p.StreamInfo[url].Duration = now - startedAt
-		delete(p.startedAt, url)
-		delete(p.StreamInfo, url)
-		p.mu.Unlock()
 	}
 
-	wg.Wait()
 	if len(errs) > 0 {
 		return errors.New(strings.Join(errs, "\n"))
 	}
 	return nil
+}
+
+func (p *Pipeline) removeSink(url string, status livekit.StreamInfo_Status) error {
+	now := time.Now().UnixNano()
+
+	p.mu.Lock()
+	streamInfo := p.StreamInfo[url]
+	streamInfo.Status = status
+	streamInfo.EndedAt = now
+	if streamInfo.StartedAt == 0 {
+		streamInfo.StartedAt = now
+	} else {
+		streamInfo.Duration = now - streamInfo.StartedAt
+	}
+	delete(p.StreamInfo, url)
+	done := len(p.StreamInfo) == 0
+	p.mu.Unlock()
+
+	p.Logger.Debugw("removing stream sink", "url", url, "status", status, "duration", streamInfo.Duration)
+
+	if done {
+		switch status {
+		case livekit.StreamInfo_FINISHED:
+			p.SendEOS(context.Background())
+		case livekit.StreamInfo_FAILED:
+			return errors.New("could not connect")
+		}
+		return nil
+	}
+
+	return p.out.RemoveSink(url)
 }
 
 func (p *Pipeline) SendEOS(ctx context.Context) {
@@ -475,12 +474,13 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 	case params.EgressTypeStream, params.EgressTypeWebsocket:
 		p.mu.Lock()
 		for _, streamInfo := range p.StreamInfo {
-			p.startedAt[streamInfo.Url] = startedAt
+			streamInfo.Status = livekit.StreamInfo_ACTIVE
+			streamInfo.StartedAt = startedAt
 		}
 		p.mu.Unlock()
 
 	case params.EgressTypeFile, params.EgressTypeSegmentedFile:
-		p.startedAt[fileKey] = startedAt
+		p.fileStartedAt = startedAt
 	}
 
 	p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
@@ -539,38 +539,26 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 	switch p.EgressType {
 	case params.EgressTypeStream, params.EgressTypeWebsocket:
 		for _, info := range p.StreamInfo {
-			duration := p.getDuration(info.Url, endedAt)
-			if duration > 0 {
-				info.Duration = duration
+			info.Status = livekit.StreamInfo_FINISHED
+			if info.StartedAt == 0 {
+				info.StartedAt = endedAt
 			}
+			info.EndedAt = endedAt
+			info.Duration = endedAt - info.StartedAt
 		}
 
 	case params.EgressTypeFile:
-		duration := p.getDuration(fileKey, endedAt)
-		if duration > 0 {
-			p.FileInfo.Duration = duration
+		if p.fileStartedAt == 0 {
+			p.fileStartedAt = endedAt
 		}
+		p.FileInfo.Duration = endedAt - p.fileStartedAt
 
 	case params.EgressTypeSegmentedFile:
-		duration := p.getDuration(fileKey, endedAt)
-		if duration > 0 {
-			p.SegmentsInfo.Duration = duration
+		if p.fileStartedAt == 0 {
+			p.fileStartedAt = endedAt
 		}
-
+		p.SegmentsInfo.Duration = endedAt - p.fileStartedAt
 	}
-}
-
-func (p *Pipeline) getDuration(k string, endedAt int64) int64 {
-	startedAt := p.startedAt[k]
-	duration := endedAt - startedAt
-
-	if duration <= 0 {
-		p.Logger.Errorw("invalid duration", nil,
-			"duration", duration, "startedAt", startedAt, "endedAt", endedAt,
-		)
-	}
-
-	return duration
 }
 
 func (p *Pipeline) stop() {
@@ -637,20 +625,6 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 }
 
 func (p *Pipeline) cleanup() {
-	p.Info.EndedAt = time.Now().UnixNano()
-
-	// update status
-	if p.Info.Error != "" {
-		p.Info.Status = livekit.EgressStatus_EGRESS_FAILED
-	}
-
-	switch p.Info.Status {
-	case livekit.EgressStatus_EGRESS_STARTING:
-	case livekit.EgressStatus_EGRESS_ACTIVE:
-	case livekit.EgressStatus_EGRESS_ENDING:
-		p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
-	}
-
 	// clean up temp dir
 	if p.FileUpload != nil {
 		switch p.EgressType {
@@ -704,30 +678,16 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 
 	switch {
 	case element == elementGstRtmp2Sink:
-		if !p.playing {
-			p.Logger.Errorw("could not connect to rtmp output", err)
+		// bad URI or could not connect. Remove rtmp output
+		url, e := p.out.GetUrlFromName(name)
+		if e != nil {
+			p.Logger.Warnw("rtmp output not found", e, "url", url)
+			return e, false
+		}
+		if e = p.removeSink(url, livekit.StreamInfo_FAILED); e != nil {
 			return err, false
 		}
 
-		// bad URI or could not connect. Remove rtmp output
-		url, removalErr := p.out.RemoveSinkByName(name)
-		if removalErr != nil {
-			p.Logger.Errorw("failed to remove sink", removalErr)
-			return removalErr, false
-		}
-
-		p.mu.Lock()
-		if errChan := p.streamErrors[url]; errChan != nil {
-			errChan <- err
-			delete(p.streamErrors, url)
-		} else {
-			startedAt := p.startedAt[url]
-			p.StreamInfo[url].Duration = time.Now().UnixNano() - startedAt
-			delete(p.startedAt, url)
-			delete(p.StreamInfo, url)
-		}
-
-		p.mu.Unlock()
 		return err, true
 
 	default:

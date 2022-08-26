@@ -13,9 +13,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/protocol/livekit"
-
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/protocol/livekit"
 )
 
 type ResultType int
@@ -26,8 +25,8 @@ const (
 	ResultTypeSegments
 
 	maxRetries = 5
-	minDelay   = 100 * time.Millisecond
-	maxDelay   = 5 * time.Second
+	minDelay   = time.Millisecond * 100
+	maxDelay   = time.Second * 5
 )
 
 type FFProbeInfo struct {
@@ -153,7 +152,7 @@ func verifySegments(t *testing.T, conf *Config, p *params.Params, res *livekit.E
 
 func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {
 	info, err := ffprobe(input)
-	require.NoError(t, err, "ffprobe error")
+	require.NoError(t, err, "ffprobe error - input does not exist")
 
 	switch p.OutputType {
 	case params.OutputTypeRaw:
