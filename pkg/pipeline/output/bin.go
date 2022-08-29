@@ -83,11 +83,9 @@ func (b *Bin) linkSink(sink *streamSink) error {
 	// intercept FlowFlushing returns
 	proxy := gst.NewGhostPad("proxy", sinkPad)
 	proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
-		logger.Debugw("intercepted")
 		internal, _ := self.GetInternalLinks()
 		flow := internal[0].Push(buffer)
 		if flow == gst.FlowFlushing {
-			logger.Errorw("intercepting flush", nil)
 			return gst.FlowOK
 		}
 		return flow
