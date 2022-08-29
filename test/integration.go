@@ -22,10 +22,9 @@ import (
 )
 
 const (
-	streamUrl1    = "rtmp://localhost:1935/live/stream1"
-	streamUrl2    = "rtmp://localhost:1935/live/stream2"
-	badStreamUrl1 = "rtmp://sfo.contribute.live-video.net/app/fake1"
-	badStreamUrl2 = "rtmp://localhost:1934/live/stream2"
+	streamUrl1   = "rtmp://localhost:1935/live/stream1"
+	streamUrl2   = "rtmp://localhost:1935/live/stream2"
+	badStreamUrl = "rtmp://sfo.contribute.live-video.net/app/fake1"
 )
 
 type testCase struct {
@@ -91,22 +90,69 @@ func RunTestSuite(t *testing.T, conf *Config, rpcClient egress.RPCClient, rpcSer
 
 	// run tests
 	if !conf.TrackCompositeTestsOnly && !conf.TrackTestsOnly {
-		t.Run("RoomComposite", func(t *testing.T) {
-			testRoomComposite(t, conf)
-		})
+		if !conf.StreamTestsOnly && !conf.SegmentedFileTestsOnly {
+			t.Run("RoomComposite/File", func(t *testing.T) {
+				testRoomCompositeFile(t, conf)
+			})
+		}
+
+		if !conf.FileTestsOnly && !conf.SegmentedFileTestsOnly {
+			t.Run("RoomComposite/Stream", func(t *testing.T) {
+				testRoomCompositeStream(t, conf)
+			})
+		}
+
+		if !conf.FileTestsOnly && !conf.StreamTestsOnly {
+			t.Run("RoomComposite/Segments", func(t *testing.T) {
+				testRoomCompositeSegments(t, conf)
+			})
+		}
 	}
 
 	if !conf.RoomTestsOnly && !conf.TrackTestsOnly {
-		t.Run("TrackComposite", func(t *testing.T) {
-			testTrackComposite(t, conf)
-		})
+		if !conf.StreamTestsOnly && !conf.SegmentedFileTestsOnly {
+			t.Run("TrackComposite/File", func(t *testing.T) {
+				testTrackCompositeFile(t, conf)
+			})
+		}
+
+		if !conf.FileTestsOnly && !conf.SegmentedFileTestsOnly {
+			t.Run("TrackComposite/Stream", func(t *testing.T) {
+				testTrackCompositeStream(t, conf)
+			})
+		}
+
+		if !conf.FileTestsOnly && !conf.StreamTestsOnly {
+			t.Run("TrackComposite/Segments", func(t *testing.T) {
+				testTrackCompositeSegments(t, conf)
+			})
+		}
 	}
 
 	if !conf.RoomTestsOnly && !conf.TrackCompositeTestsOnly {
-		t.Run("Track", func(t *testing.T) {
-			testTrack(t, conf)
-		})
+		if !conf.StreamTestsOnly && !conf.SegmentedFileTestsOnly {
+			t.Run("Track/File", func(t *testing.T) {
+				testTrackFile(t, conf)
+			})
+		}
+
+		if !conf.FileTestsOnly && !conf.SegmentedFileTestsOnly {
+			t.Run("Track/Stream", func(t *testing.T) {
+				testTrackStream(t, conf)
+			})
+		}
 	}
+}
+
+func awaitIdle(t *testing.T, svc *service.Service) {
+	for i := 0; i < 30; i++ {
+		status := getStatus(t, svc)
+		if len(status) == 1 {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	t.Fatal("service not idle after 30s")
 }
 
 func runFileTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest, test *testCase, filepath string) {
@@ -116,18 +162,15 @@ func runFileTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest, te
 	egressID := startEgress(t, conf, req)
 
 	var res *livekit.EgressInfo
-	var expectedStatus livekit.EgressStatus
 	if conf.SessionLimits.FileOutputMaxDuration > 0 {
 		time.Sleep(conf.SessionLimits.FileOutputMaxDuration + 1*time.Second)
 
-		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_FAILED)
-		expectedStatus = livekit.EgressStatus_EGRESS_FAILED
+		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_LIMIT_REACHED)
 	} else {
 		time.Sleep(time.Second * 25)
 
 		// stop
 		res = stopEgress(t, conf, egressID)
-		expectedStatus = livekit.EgressStatus_EGRESS_COMPLETE
 	}
 
 	// get params
@@ -138,24 +181,24 @@ func runFileTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest, te
 	}
 
 	// verify
-	verifyFile(t, conf, p, res, filepath, expectedStatus)
+	verifyFile(t, conf, p, res, filepath)
 }
 
 func runStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest, sessionTimeout time.Duration) {
 	conf.SessionLimits.StreamOutputMaxDuration = sessionTimeout
 
 	if conf.SessionLimits.StreamOutputMaxDuration > 0 {
-		runTimingOutStreamTest(t, conf, req)
+		runTimeLimitStreamTest(t, conf, req)
 	} else {
 		runMultipleStreamTest(t, conf, req)
 	}
 }
 
-func runTimingOutStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest) {
+func runTimeLimitStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest) {
 	ctx := context.Background()
 	egressID := startEgress(t, conf, req)
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(time.Second * 5)
 
 	// get params
 	p, err := params.GetPipelineParams(ctx, conf.Config, req)
@@ -163,9 +206,9 @@ func runTimingOutStreamTest(t *testing.T, conf *Config, req *livekit.StartEgress
 
 	verifyStreams(t, p, streamUrl1)
 
-	time.Sleep(conf.SessionLimits.StreamOutputMaxDuration - 5*time.Second + 1*time.Second)
+	time.Sleep(conf.SessionLimits.StreamOutputMaxDuration - time.Second*4)
 
-	checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_FAILED)
+	checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_LIMIT_REACHED)
 }
 
 func runMultipleStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest) {
@@ -187,15 +230,29 @@ func runMultipleStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressR
 		Request: &livekit.EgressRequest_UpdateStream{
 			UpdateStream: &livekit.UpdateStreamRequest{
 				EgressId:      req.EgressId,
-				AddOutputUrls: []string{badStreamUrl1, streamUrl2, badStreamUrl2},
+				AddOutputUrls: []string{badStreamUrl, streamUrl2},
 			},
 		},
 	})
-
-	// should return an error
-	require.Error(t, err)
+	require.NoError(t, err)
 
 	time.Sleep(time.Second * 5)
+
+	update := getUpdate(t, conf.updates, egressID)
+	require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE, update.Status)
+	require.Len(t, update.GetStream().Info, 3)
+	for _, info := range update.GetStream().Info {
+		switch info.Url {
+		case streamUrl1, streamUrl2:
+			require.Equal(t, info.Status, livekit.StreamInfo_ACTIVE)
+
+		case badStreamUrl:
+			require.Equal(t, info.Status, livekit.StreamInfo_FAILED)
+			
+		default:
+			t.Fatal("invalid stream url in result")
+		}
+	}
 
 	// verify the good stream urls
 	verifyStreams(t, p, streamUrl1, streamUrl2)
@@ -217,6 +274,8 @@ func runMultipleStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressR
 	// verify the remaining stream
 	verifyStreams(t, p, streamUrl2)
 
+	time.Sleep(time.Second * 10)
+
 	// stop
 	res := stopEgress(t, conf, egressID)
 
@@ -225,14 +284,25 @@ func runMultipleStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressR
 	require.NotZero(t, res.StartedAt)
 	require.NotZero(t, res.EndedAt)
 
-	// check that durations are reasonable
-	require.Len(t, res.GetStream().Info, 2)
+	// check stream info
+	require.Len(t, res.GetStream().Info, 3)
 	for _, info := range res.GetStream().Info {
+		require.NotZero(t, info.StartedAt)
+		require.NotZero(t, info.EndedAt)
+
 		switch info.Url {
 		case streamUrl1:
+			require.Equal(t, info.Status, livekit.StreamInfo_FINISHED)
 			require.Greater(t, float64(info.Duration)/1e9, 15.0)
+
 		case streamUrl2:
+			require.Equal(t, info.Status, livekit.StreamInfo_FINISHED)
 			require.Greater(t, float64(info.Duration)/1e9, 10.0)
+
+		case badStreamUrl:
+			require.Equal(t, info.Status, livekit.StreamInfo_FAILED)
+			require.Less(t, float64(info.Duration)/1e9, 5.0)
+
 		default:
 			t.Fatal("invalid stream url in result")
 		}
@@ -245,26 +315,22 @@ func runSegmentsTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest
 	egressID := startEgress(t, conf, req)
 
 	var res *livekit.EgressInfo
-	var expectedStatus livekit.EgressStatus
-
 	if conf.SessionLimits.SegmentOutputMaxDuration > 0 {
 		time.Sleep(conf.SessionLimits.SegmentOutputMaxDuration + 1*time.Second)
 
 		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_FAILED)
-		expectedStatus = livekit.EgressStatus_EGRESS_FAILED
 	} else {
 		time.Sleep(time.Second * 25)
 
 		// stop
 		res = stopEgress(t, conf, egressID)
-		expectedStatus = livekit.EgressStatus_EGRESS_COMPLETE
 	}
 
 	// get params
 	p, err := params.GetPipelineParams(context.Background(), conf.Config, req)
 	require.NoError(t, err)
 
-	verifySegments(t, conf, p, res, playlistPath, expectedStatus)
+	verifySegments(t, conf, p, res, playlistPath)
 }
 
 func startEgress(t *testing.T, conf *Config, req *livekit.StartEgressRequest) string {
@@ -293,6 +359,48 @@ func startEgress(t *testing.T, conf *Config, req *livekit.StartEgressRequest) st
 	return info.EgressId
 }
 
+func getStatus(t *testing.T, svc *service.Service) map[string]interface{} {
+	b, err := svc.Status()
+	require.NoError(t, err)
+
+	status := make(map[string]interface{})
+	err = json.Unmarshal(b, &status)
+	require.NoError(t, err)
+
+	return status
+}
+
+func checkUpdate(t *testing.T, sub utils.PubSub, egressID string, status livekit.EgressStatus) *livekit.EgressInfo {
+	info := getUpdate(t, sub, egressID)
+
+	require.Equal(t, status, info.Status)
+	if info.Status == livekit.EgressStatus_EGRESS_FAILED {
+		require.NotEmpty(t, info.Error, "failed egress missing error")
+	} else {
+		require.Empty(t, info.Error, "status %s with error %s", info.Status.String(), info.Error)
+	}
+
+	return info
+}
+
+func getUpdate(t *testing.T, sub utils.PubSub, egressID string) *livekit.EgressInfo {
+	for {
+		select {
+		case msg := <-sub.Channel():
+			b := sub.Payload(msg)
+			info := &livekit.EgressInfo{}
+			require.NoError(t, proto.Unmarshal(b, info))
+			if info.EgressId == egressID {
+				return info
+			}
+
+		case <-time.After(time.Second * 45):
+			t.Fatal("no update from results channel")
+			return nil
+		}
+	}
+}
+
 func stopEgress(t *testing.T, conf *Config, egressID string) *livekit.EgressInfo {
 	// send stop request
 	info, err := conf.rpcClient.SendRequest(context.Background(), &livekit.EgressRequest{
@@ -318,6 +426,7 @@ func checkStoppedEgress(t *testing.T, conf *Config, egressID string, expectedSta
 	// check ending update
 	checkUpdate(t, conf.updates, egressID, livekit.EgressStatus_EGRESS_ENDING)
 
+	// get final info
 	info := checkUpdate(t, conf.updates, egressID, expectedStatus)
 
 	// check status
@@ -327,43 +436,4 @@ func checkStoppedEgress(t *testing.T, conf *Config, egressID string, expectedSta
 	}
 
 	return info
-}
-
-func getStatus(t *testing.T, svc *service.Service) map[string]interface{} {
-	b, err := svc.Status()
-	require.NoError(t, err)
-
-	status := make(map[string]interface{})
-	err = json.Unmarshal(b, &status)
-	require.NoError(t, err)
-
-	return status
-}
-
-func checkUpdate(t *testing.T, sub utils.PubSub, egressID string, status livekit.EgressStatus) *livekit.EgressInfo {
-	for {
-		select {
-		case msg := <-sub.Channel():
-			b := sub.Payload(msg)
-			info := &livekit.EgressInfo{}
-			require.NoError(t, proto.Unmarshal(b, info))
-
-			if info.EgressId != egressID {
-				continue
-			}
-
-			if status == livekit.EgressStatus_EGRESS_FAILED {
-				require.NotEmpty(t, info.Error)
-			} else {
-				require.Empty(t, info.Error)
-			}
-			require.Equal(t, egressID, info.EgressId)
-			require.Equal(t, status, info.Status)
-			return info
-
-		case <-time.After(time.Second * 30):
-			t.Fatal("no update from results channel")
-			return nil
-		}
-	}
 }

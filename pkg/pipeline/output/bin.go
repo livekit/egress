@@ -2,6 +2,7 @@ package output
 
 import (
 	"context"
+	"sync"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -19,6 +20,7 @@ type Bin struct {
 	protocol params.OutputType
 	tee      *gst.Element
 	sinks    map[string]*streamSink
+	lock     sync.Mutex
 
 	logger logger.Logger
 }
@@ -53,6 +55,9 @@ func (b *Bin) Element() *gst.Element {
 }
 
 func (b *Bin) Link() error {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
 	// stream tee and sinks
 	for _, sink := range b.sinks {
 		// link queue to rtmp sink
@@ -73,6 +78,9 @@ func (b *Bin) Link() error {
 }
 
 func (b *Bin) AddSink(url string) error {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
 	if _, ok := b.sinks[url]; ok {
 		return errors.ErrStreamAlreadyExists
 	}
@@ -114,6 +122,9 @@ func (b *Bin) AddSink(url string) error {
 }
 
 func (b *Bin) RemoveSink(url string) error {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
 	sink, ok := b.sinks[url]
 	if !ok {
 		return errors.ErrStreamNotFound
@@ -151,10 +162,10 @@ func (b *Bin) RemoveSink(url string) error {
 	return nil
 }
 
-func (b *Bin) RemoveSinkByName(name string) (string, error) {
+func (b *Bin) GetUrlFromName(name string) (string, error) {
 	for url, sink := range b.sinks {
 		if sink.queue.GetName() == name || sink.sink.GetName() == name {
-			return url, b.RemoveSink(url)
+			return url, nil
 		}
 	}
 

@@ -24,7 +24,7 @@ const (
 	AudioAppSource = "audioAppSrc"
 	VideoAppSource = "videoAppSrc"
 
-	subscriptionTimeout = 5 * time.Second
+	subscriptionTimeout = time.Second * 5
 )
 
 type SDKSource struct {
@@ -160,7 +160,6 @@ func NewSDKSource(ctx context.Context, p *params.Params) (*SDKSource, error) {
 	s.room = lksdk.CreateRoom(cb)
 
 	var fileIdentifier string
-
 	switch p.Info.Request.(type) {
 	case *livekit.EgressInfo_TrackComposite:
 		fileIdentifier = p.Info.RoomName

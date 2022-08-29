@@ -25,8 +25,8 @@ import (
 
 const (
 	maxRetries = 5
-	minDelay   = 100 * time.Millisecond
-	maxDelay   = 5 * time.Second
+	minDelay   = time.Millisecond * 100
+	maxDelay   = time.Second * 5
 )
 
 // FIXME Should we use a Context to allow for an overall operation timeout?
