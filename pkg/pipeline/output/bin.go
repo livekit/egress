@@ -84,6 +84,11 @@ func (b *Bin) linkSink(sink *streamSink) error {
 	proxy := gst.NewGhostPad("proxy", sinkPad)
 	proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
 		internal, _ := self.GetInternalLinks()
+		if len(internal) == 0 {
+			// there should always be exactly one
+			return gst.FlowNotLinked
+		}
+
 		flow := internal[0].Push(buffer)
 		if flow == gst.FlowFlushing {
 			return gst.FlowOK
