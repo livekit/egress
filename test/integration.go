@@ -163,7 +163,7 @@ func runFileTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest, te
 
 	var res *livekit.EgressInfo
 	if conf.SessionLimits.FileOutputMaxDuration > 0 {
-		time.Sleep(conf.SessionLimits.FileOutputMaxDuration + 1*time.Second)
+		time.Sleep(conf.SessionLimits.FileOutputMaxDuration + time.Second)
 
 		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_LIMIT_REACHED)
 	} else {
@@ -315,7 +315,7 @@ func runSegmentsTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest
 
 	var res *livekit.EgressInfo
 	if conf.SessionLimits.SegmentOutputMaxDuration > 0 {
-		time.Sleep(conf.SessionLimits.SegmentOutputMaxDuration + 1*time.Second)
+		time.Sleep(conf.SessionLimits.SegmentOutputMaxDuration + time.Second)
 
 		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_LIMIT_REACHED)
 	} else {
