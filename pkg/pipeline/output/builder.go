@@ -57,11 +57,11 @@ func buildStreamOutputBin(p *params.Params) (*Bin, error) {
 	}
 
 	b := &Bin{
-		isWebSource: p.IsWebSource,
 		bin:         bin,
 		protocol:    p.OutputType,
 		tee:         tee,
 		sinks:       make(map[string]*streamSink),
+		isSDKSource: !p.IsWebSource,
 		logger:      p.Logger,
 	}
 

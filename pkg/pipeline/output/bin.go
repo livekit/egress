@@ -14,15 +14,14 @@ import (
 )
 
 type Bin struct {
-	isWebSource bool
-
 	bin *gst.Bin
 
 	// stream
-	protocol params.OutputType
-	tee      *gst.Element
-	sinks    map[string]*streamSink
-	lock     sync.Mutex
+	protocol    params.OutputType
+	tee         *gst.Element
+	sinks       map[string]*streamSink
+	lock        sync.Mutex
+	isSDKSource bool
 
 	logger logger.Logger
 }
@@ -80,32 +79,40 @@ func (b *Bin) Link() error {
 }
 
 func (b *Bin) linkSink(sink *streamSink) error {
-	if b.isWebSource {
-		sinkPad := sink.sink.GetStaticPad("sink")
+	sinkPad := sink.sink.GetStaticPad("sink")
 
-		// intercept FlowFlushing
-		proxy := gst.NewGhostPad("proxy", sinkPad)
-		proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
-			internal, _ := self.GetInternalLinks()
-			if len(internal) == 0 {
-				// there should always be exactly one
-				return gst.FlowNotLinked
-			}
+	proxy := gst.NewGhostPad("proxy", sinkPad)
+	// proxy isn't saved/stored anywhere, so we need to call ref
+	proxy.Ref()
 
-			flow := internal[0].Push(buffer)
-			if flow == gst.FlowFlushing {
-				return gst.FlowOK
-			}
-			return flow
-		})
-		proxy.ActivateMode(gst.PadModePush, true)
-
-		// link
-		if linkReturn := sink.queue.GetStaticPad("src").Link(proxy.Pad); linkReturn != gst.PadLinkOK {
-			return errors.ErrPadLinkFailed("rtmp sink", linkReturn.String())
+	// intercept FlowFlushing from rtmp2sink
+	proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
+		if b.isSDKSource {
+			// appsrc doesn't ref the underlying C object like the native sources would,
+			// so we need to make sure it isn't freed during this chain function
+			buffer.Ref()
 		}
-	} else {
-		return sink.queue.Link(sink.sink)
+
+		internal, _ := self.GetInternalLinks()
+		if len(internal) != 1 {
+			// there should always be exactly one
+			b.logger.Errorw("unexpected internal links", nil, "links", len(internal))
+			return gst.FlowNotLinked
+		}
+
+		// push buffer to rtmp2sink sink pad
+		flow := internal[0].Push(buffer)
+		if flow == gst.FlowFlushing {
+			// replace with ok - pipeline should continue and this sink will be removed
+			return gst.FlowOK
+		}
+		return flow
+	})
+	proxy.ActivateMode(gst.PadModePush, true)
+
+	// link
+	if linkReturn := sink.queue.GetStaticPad("src").Link(proxy.Pad); linkReturn != gst.PadLinkOK {
+		return errors.ErrPadLinkFailed("rtmp sink", linkReturn.String())
 	}
 
 	return nil
