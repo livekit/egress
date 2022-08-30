@@ -17,11 +17,10 @@ type Bin struct {
 	bin *gst.Bin
 
 	// stream
-	protocol    params.OutputType
-	tee         *gst.Element
-	sinks       map[string]*streamSink
-	lock        sync.Mutex
-	isSDKSource bool
+	protocol params.OutputType
+	tee      *gst.Element
+	sinks    map[string]*streamSink
+	lock     sync.Mutex
 
 	logger logger.Logger
 }
@@ -87,11 +86,7 @@ func (b *Bin) linkSink(sink *streamSink) error {
 
 	// intercept FlowFlushing from rtmp2sink
 	proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
-		if b.isSDKSource {
-			// appsrc doesn't ref the underlying C object like the native sources would,
-			// so we need to make sure it isn't freed during this chain function
-			buffer.Ref()
-		}
+		buffer.Ref()
 
 		internal, _ := self.GetInternalLinks()
 		if len(internal) != 1 {
