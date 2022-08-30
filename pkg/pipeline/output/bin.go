@@ -17,10 +17,11 @@ type Bin struct {
 	bin *gst.Bin
 
 	// stream
-	protocol params.OutputType
-	tee      *gst.Element
-	sinks    map[string]*streamSink
-	lock     sync.Mutex
+	protocol    params.OutputType
+	tee         *gst.Element
+	sinks       map[string]*streamSink
+	lock        sync.Mutex
+	isSDKSource bool
 
 	logger logger.Logger
 }
@@ -80,12 +81,17 @@ func (b *Bin) Link() error {
 func (b *Bin) linkSink(sink *streamSink) error {
 	sinkPad := sink.sink.GetStaticPad("sink")
 
-	// intercept FlowFlushing
 	proxy := gst.NewGhostPad("proxy", sinkPad)
+	// proxy isn't saved/stored anywhere, so we need to call ref
 	proxy.Ref()
 
+	// intercept FlowFlushing from rtmp2sink
 	proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
-		buffer.Ref()
+		if b.isSDKSource {
+			// appsrc doesn't ref the underlying C object like the native sources would,
+			// so we need to make sure it isn't freed during this chain function
+			buffer.Ref()
+		}
 
 		internal, _ := self.GetInternalLinks()
 		if len(internal) != 1 {
@@ -94,8 +100,10 @@ func (b *Bin) linkSink(sink *streamSink) error {
 			return gst.FlowNotLinked
 		}
 
+		// push buffer to rtmp2sink sink pad
 		flow := internal[0].Push(buffer)
 		if flow == gst.FlowFlushing {
+			// replace with ok - pipeline should continue and this sink will be removed
 			return gst.FlowOK
 		}
 		return flow
