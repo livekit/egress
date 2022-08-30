@@ -14,8 +14,6 @@ import (
 )
 
 type Bin struct {
-	isWebSource bool
-
 	bin *gst.Bin
 
 	// stream
@@ -80,32 +78,33 @@ func (b *Bin) Link() error {
 }
 
 func (b *Bin) linkSink(sink *streamSink) error {
-	if b.isWebSource {
-		sinkPad := sink.sink.GetStaticPad("sink")
+	sinkPad := sink.sink.GetStaticPad("sink")
 
-		// intercept FlowFlushing
-		proxy := gst.NewGhostPad("proxy", sinkPad)
-		proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
-			internal, _ := self.GetInternalLinks()
-			if len(internal) == 0 {
-				// there should always be exactly one
-				return gst.FlowNotLinked
-			}
+	// intercept FlowFlushing
+	proxy := gst.NewGhostPad("proxy", sinkPad)
+	proxy.Ref()
 
-			flow := internal[0].Push(buffer)
-			if flow == gst.FlowFlushing {
-				return gst.FlowOK
-			}
-			return flow
-		})
-		proxy.ActivateMode(gst.PadModePush, true)
+	proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
+		buffer.Ref()
 
-		// link
-		if linkReturn := sink.queue.GetStaticPad("src").Link(proxy.Pad); linkReturn != gst.PadLinkOK {
-			return errors.ErrPadLinkFailed("rtmp sink", linkReturn.String())
+		internal, _ := self.GetInternalLinks()
+		if len(internal) != 1 {
+			// there should always be exactly one
+			b.logger.Errorw("unexpected internal links", nil, "links", len(internal))
+			return gst.FlowNotLinked
 		}
-	} else {
-		return sink.queue.Link(sink.sink)
+
+		flow := internal[0].Push(buffer)
+		if flow == gst.FlowFlushing {
+			return gst.FlowOK
+		}
+		return flow
+	})
+	proxy.ActivateMode(gst.PadModePush, true)
+
+	// link
+	if linkReturn := sink.queue.GetStaticPad("src").Link(proxy.Pad); linkReturn != gst.PadLinkOK {
+		return errors.ErrPadLinkFailed("rtmp sink", linkReturn.String())
 	}
 
 	return nil

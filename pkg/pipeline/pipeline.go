@@ -116,6 +116,7 @@ func New(ctx context.Context, conf *config.Config, p *params.Params) (*Pipeline,
 		if err = out.Link(); err != nil {
 			return nil, err
 		}
+
 		// link bins
 		if err = in.Bin().Link(out.Element()); err != nil {
 			return nil, err
@@ -279,7 +280,6 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 
 	case gst.MessageStateChanged:
 		if p.playing {
-			p.Logger.Debugw(msg.String())
 			return true
 		}
 
