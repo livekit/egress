@@ -317,7 +317,7 @@ func runSegmentsTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest
 	if conf.SessionLimits.SegmentOutputMaxDuration > 0 {
 		time.Sleep(conf.SessionLimits.SegmentOutputMaxDuration + 1*time.Second)
 
-		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_FAILED)
+		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_LIMIT_REACHED)
 	} else {
 		time.Sleep(time.Second * 25)
 
