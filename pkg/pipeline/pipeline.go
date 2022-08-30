@@ -279,6 +279,7 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 
 	case gst.MessageStateChanged:
 		if p.playing {
+			p.Logger.Debugw(msg.String())
 			return true
 		}
 

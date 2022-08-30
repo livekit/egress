@@ -163,7 +163,7 @@ func runFileTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest, te
 
 	var res *livekit.EgressInfo
 	if conf.SessionLimits.FileOutputMaxDuration > 0 {
-		time.Sleep(conf.SessionLimits.FileOutputMaxDuration + 1*time.Second)
+		time.Sleep(conf.SessionLimits.FileOutputMaxDuration + time.Second)
 
 		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_LIMIT_REACHED)
 	} else {
@@ -239,16 +239,16 @@ func runMultipleStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressR
 	time.Sleep(time.Second * 5)
 
 	update := getUpdate(t, conf.updates, egressID)
-	require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE, update.Status)
+	require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE.String(), update.Status.String())
 	require.Len(t, update.GetStream().Info, 3)
 	for _, info := range update.GetStream().Info {
 		switch info.Url {
 		case streamUrl1, streamUrl2:
-			require.Equal(t, info.Status, livekit.StreamInfo_ACTIVE)
+			require.Equal(t, livekit.StreamInfo_ACTIVE.String(), info.Status.String())
 
 		case badStreamUrl:
-			require.Equal(t, info.Status, livekit.StreamInfo_FAILED)
-			
+			require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
+
 		default:
 			t.Fatal("invalid stream url in result")
 		}
@@ -292,16 +292,15 @@ func runMultipleStreamTest(t *testing.T, conf *Config, req *livekit.StartEgressR
 
 		switch info.Url {
 		case streamUrl1:
-			require.Equal(t, info.Status, livekit.StreamInfo_FINISHED)
+			require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
 			require.Greater(t, float64(info.Duration)/1e9, 15.0)
 
 		case streamUrl2:
-			require.Equal(t, info.Status, livekit.StreamInfo_FINISHED)
+			require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
 			require.Greater(t, float64(info.Duration)/1e9, 10.0)
 
 		case badStreamUrl:
-			require.Equal(t, info.Status, livekit.StreamInfo_FAILED)
-			require.Less(t, float64(info.Duration)/1e9, 5.0)
+			require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
 
 		default:
 			t.Fatal("invalid stream url in result")
@@ -316,9 +315,9 @@ func runSegmentsTest(t *testing.T, conf *Config, req *livekit.StartEgressRequest
 
 	var res *livekit.EgressInfo
 	if conf.SessionLimits.SegmentOutputMaxDuration > 0 {
-		time.Sleep(conf.SessionLimits.SegmentOutputMaxDuration + 1*time.Second)
+		time.Sleep(conf.SessionLimits.SegmentOutputMaxDuration + time.Second)
 
-		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_FAILED)
+		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_LIMIT_REACHED)
 	} else {
 		time.Sleep(time.Second * 25)
 
@@ -342,7 +341,7 @@ func startEgress(t *testing.T, conf *Config, req *livekit.StartEgressRequest) st
 	require.Empty(t, info.Error)
 	require.NotEmpty(t, info.EgressId)
 	require.Equal(t, conf.RoomName, info.RoomName)
-	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
+	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING.String(), info.Status.String())
 
 	// check status
 	if conf.HealthPort != 0 {
@@ -373,7 +372,7 @@ func getStatus(t *testing.T, svc *service.Service) map[string]interface{} {
 func checkUpdate(t *testing.T, sub utils.PubSub, egressID string, status livekit.EgressStatus) *livekit.EgressInfo {
 	info := getUpdate(t, sub, egressID)
 
-	require.Equal(t, status, info.Status)
+	require.Equal(t, status.String(), info.Status.String())
 	if info.Status == livekit.EgressStatus_EGRESS_FAILED {
 		require.NotEmpty(t, info.Error, "failed egress missing error")
 	} else {
@@ -416,7 +415,7 @@ func stopEgress(t *testing.T, conf *Config, egressID string) *livekit.EgressInfo
 	require.NoError(t, err)
 	require.Empty(t, info.Error)
 	require.NotEmpty(t, info.StartedAt)
-	require.Equal(t, livekit.EgressStatus_EGRESS_ENDING, info.Status)
+	require.Equal(t, livekit.EgressStatus_EGRESS_ENDING.String(), info.Status.String())
 
 	// check complete update
 	return checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_COMPLETE)

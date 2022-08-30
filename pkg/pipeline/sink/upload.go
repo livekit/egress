@@ -144,7 +144,7 @@ func UploadGCP(conf *livekit.GCPUpload, localFilepath, storageFilepath string, m
 	var wctx context.Context
 	if fileInfo.Size() <= googleapi.DefaultUploadChunkSize {
 		var cancel context.CancelFunc
-		wctx, cancel = context.WithTimeout(ctx, 32*time.Second)
+		wctx, cancel = context.WithTimeout(ctx, time.Second*32)
 		defer cancel()
 	} else {
 		wctx = ctx

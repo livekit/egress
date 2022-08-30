@@ -60,8 +60,8 @@ func (b *Bin) Link() error {
 
 	// stream tee and sinks
 	for _, sink := range b.sinks {
-		// link queue to rtmp sink
-		if err := sink.queue.Link(sink.sink); err != nil {
+		// link queue to sink
+		if err := b.linkSink(sink); err != nil {
 			return err
 		}
 
@@ -72,6 +72,34 @@ func (b *Bin) Link() error {
 		if linkReturn := pad.Link(sink.queue.GetStaticPad("sink")); linkReturn != gst.PadLinkOK {
 			return errors.ErrPadLinkFailed("tee", linkReturn.String())
 		}
+	}
+
+	return nil
+}
+
+func (b *Bin) linkSink(sink *streamSink) error {
+	sinkPad := sink.sink.GetStaticPad("sink")
+
+	// intercept FlowFlushing returns
+	proxy := gst.NewGhostPad("proxy", sinkPad)
+	proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
+		internal, _ := self.GetInternalLinks()
+		if len(internal) == 0 {
+			// there should always be exactly one
+			return gst.FlowNotLinked
+		}
+
+		flow := internal[0].Push(buffer)
+		if flow == gst.FlowFlushing {
+			return gst.FlowOK
+		}
+		return flow
+	})
+	proxy.ActivateMode(gst.PadModePush, true)
+
+	// link
+	if linkReturn := sink.queue.GetStaticPad("src").Link(proxy.Pad); linkReturn != gst.PadLinkOK {
+		return errors.ErrPadLinkFailed("rtmp sink", linkReturn.String())
 	}
 
 	return nil
@@ -96,8 +124,7 @@ func (b *Bin) AddSink(url string) error {
 	}
 
 	// link queue to sink
-	if err = sink.queue.Link(sink.sink); err != nil {
-		_ = b.bin.RemoveMany(sink.queue, sink.sink)
+	if err = b.linkSink(sink); err != nil {
 		return err
 	}
 
@@ -143,7 +170,7 @@ func (b *Bin) RemoveSink(url string) error {
 
 		// remove from bin
 		if err := b.bin.RemoveMany(sink.queue, sink.sink); err != nil {
-			b.logger.Errorw("failed to remove rtmp queue", err)
+			b.logger.Errorw("failed to remove rtmp sink", err)
 		}
 		if err := sink.queue.SetState(gst.StateNull); err != nil {
 			b.logger.Errorw("failed stop rtmp queue", err)

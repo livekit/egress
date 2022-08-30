@@ -30,7 +30,7 @@ func testTrackCompositeFile(t *testing.T, conf *Config) {
 			filename:   fmt.Sprintf("tc-h264-%v.mp4", now),
 		},
 		{
-			name:           "tc-h264-mp4-timedout",
+			name:           "tc-h264-mp4-limit",
 			fileType:       livekit.EncodedFileType_MP4,
 			audioCodec:     params.MimeTypeOpus,
 			videoCodec:     params.MimeTypeH264,
@@ -129,11 +129,11 @@ func testTrackCompositeSegments(t *testing.T, conf *Config) {
 			filename:   fmt.Sprintf("tc-h264-hls-%v", now),
 			playlist:   fmt.Sprintf("tc-h264-hls-%v.m3u8", now),
 		}, {
-			name:       "tc-h264-hls-timedout",
+			name:       "tc-h264-hls-limit",
 			audioCodec: params.MimeTypeOpus,
 			videoCodec: params.MimeTypeH264,
-			filename:   fmt.Sprintf("tc-h264-hls-timedout-%v", now),
-			playlist:   fmt.Sprintf("tc-h264-hls-timedout-%v.m3u8", now),
+			filename:   fmt.Sprintf("tc-h264-hls-limit-%v", now),
+			playlist:   fmt.Sprintf("tc-h264-hls-limit-%v.m3u8", now),
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
