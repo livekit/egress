@@ -120,7 +120,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 			return err
 		}
 
-		if p.OutputType == params.OutputTypeIVF {
+		if p.OutputType == params.OutputTypeIVF || p.OutputType == params.OutputTypeWebM {
 			b.videoElements = append(b.videoElements, src.Element, rtpVP8Depay)
 			return nil
 		}

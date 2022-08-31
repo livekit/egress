@@ -109,12 +109,10 @@ var (
 			MimeTypeOpus: true,
 			MimeTypeVP8:  true,
 		},
-
 		OutputTypeRTMP: {
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,
 		},
-
 		OutputTypeHLS: {
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,
