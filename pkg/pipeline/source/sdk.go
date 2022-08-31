@@ -104,7 +104,7 @@ func NewSDKSource(ctx context.Context, p *params.Params) (*SDKSource, error) {
 				}
 			}
 			if p.TrackID != "" {
-				p.OutputType = params.OutputTypeIVF
+				p.OutputType = params.OutputTypeWebM
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeH264)):

@@ -256,7 +256,7 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 			case params.OutputTypeIVF:
 				require.Equal(t, "vp8", stream.CodecName)
 
-			case params.OutputTypeMP4:
+			case params.OutputTypeMP4, params.OutputTypeWebM:
 				// bitrate. Not available for HLS
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)

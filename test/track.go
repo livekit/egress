@@ -36,8 +36,8 @@ func testTrackFile(t *testing.T, conf *Config) {
 			name:       "track-vp8",
 			videoOnly:  true,
 			videoCodec: params.MimeTypeVP8,
-			outputType: params.OutputTypeIVF,
-			filename:   fmt.Sprintf("track-vp8-%v.ivf", now),
+			outputType: params.OutputTypeWebM,
+			filename:   fmt.Sprintf("track-vp8-%v.webm", now),
 		},
 		{
 			name:       "track-h264",
