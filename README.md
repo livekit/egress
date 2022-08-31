@@ -17,11 +17,11 @@ Irrespective of method used, when moving between protocols, containers or encodi
 
 ## Supported Output
 
-| Egress Type     | MP4 File | OGG File | IVF File | Segmented File | Rtmp(s) Stream | Websocket Stream |
-|-----------------|----------|----------|----------|----------------|----------------|------------------|
-| Room Composite  | ✅        | ✅        |          | ✅              | ✅              |                  |
-| Track Composite | ✅        | ✅        |          | ✅              | ✅              |                  |
-| Track           | ✅        | ✅        | ✅        |                |                | ✅                |
+| Egress Type     | MP4 File | OGG File | WebM File | Segmented File | Rtmp(s) Stream | Websocket Stream |
+|-----------------|----------|----------|-----------|----------------|----------------|------------------|
+| Room Composite  | ✅        | ✅        |           | ✅              | ✅              |                  |
+| Track Composite | ✅        | ✅        |           | ✅              | ✅              |                  |
+| Track           | ✅        | ✅        | ✅         |                |                | ✅                |
 
 Files can be uploaded to any S3 compatible storage, Azure, or GCP.
 
