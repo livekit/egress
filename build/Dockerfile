@@ -29,6 +29,7 @@ ARG TARGETPLATFORM
 RUN apt-get update && \
     apt-get install -y \
     curl \
+    fonts-noto \
     gnupg \
     gstreamer1.0-pulseaudio \
     pulseaudio \
