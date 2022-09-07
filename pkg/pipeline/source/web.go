@@ -72,9 +72,9 @@ func NewWebSource(ctx context.Context, conf *config.Config, p *params.Params) (*
 		return nil, err
 	}
 	values := inputUrl.Query()
-	values.Add("layout", p.Layout)
-	values.Add("url", p.LKUrl)
-	values.Add("token", p.Token)
+	values.Set("layout", p.Layout)
+	values.Set("url", p.LKUrl)
+	values.Set("token", p.Token)
 	inputUrl.RawQuery = values.Encode()
 
 	if err = s.launchChrome(ctx, inputUrl.String(), p.Info.EgressId, p.Display, p.Width, p.Height, conf.Insecure); err != nil {
