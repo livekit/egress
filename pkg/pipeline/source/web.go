@@ -64,11 +64,20 @@ func NewWebSource(ctx context.Context, conf *config.Config, p *params.Params) (*
 		return nil, err
 	}
 
-	inputUrl := fmt.Sprintf(
-		"%s?layout=%s&url=%s&token=%s",
-		p.TemplateBase, p.Layout, url.QueryEscape(p.LKUrl), p.Token,
-	)
-	if err := s.launchChrome(ctx, inputUrl, p.Info.EgressId, p.Display, p.Width, p.Height, conf.Insecure); err != nil {
+	// build input url
+	inputUrl, err := url.Parse(p.TemplateBase)
+	if err != nil {
+		s.logger.Errorw("failed to parse template base", err)
+		s.Close()
+		return nil, err
+	}
+	values := inputUrl.Query()
+	values.Set("layout", p.Layout)
+	values.Set("url", p.LKUrl)
+	values.Set("token", p.Token)
+	inputUrl.RawQuery = values.Encode()
+
+	if err = s.launchChrome(ctx, inputUrl.String(), p.Info.EgressId, p.Display, p.Width, p.Height, conf.Insecure); err != nil {
 		s.logger.Errorw("failed to launch chrome", err, "display", p.Display)
 		s.Close()
 		return nil, err
