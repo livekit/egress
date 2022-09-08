@@ -3,8 +3,9 @@ import { AudioRenderer, useRoom } from '@livekit/react-components';
 import {
   AudioTrack, Participant, RemoteParticipant, Room,
 } from 'livekit-client';
-import React, { ReactElement, useEffect, useState } from 'react';
+import { ReactElement, useEffect, useState } from 'react';
 import GridLayout from './GridLayout';
+import SingleSpeakerLayout from './SingleSpeakerLayout';
 import SpeakerLayout from './SpeakerLayout';
 
 interface RoomPageProps {
@@ -84,9 +85,9 @@ function Stage({
     setHasScreenShare(found);
   }, [participants]);
 
-  let interfaceStyle = 'light';
-  if (layout === 'speaker-dark' || layout === 'grid-dark') {
-    interfaceStyle = 'dark';
+  let interfaceStyle = 'dark';
+  if (layout.endsWith('-light')) {
+    interfaceStyle = 'light';
   }
 
   let containerClass = 'roomContainer';
@@ -95,15 +96,25 @@ function Stage({
   }
 
   // determine layout to use
-  let main: ReactElement;
-  if (layout.startsWith('speaker') || hasScreenShare) {
+  let main: ReactElement = <></>;
+  if (hasScreenShare && layout.startsWith('grid')) {
+    layout.replace('grid', 'speaker');
+  }
+  if (layout.startsWith('speaker')) {
     main = (
       <SpeakerLayout
         room={room}
         participants={participants}
       />
     );
-  } else {
+  } else if (layout.startsWith('single-speaker')) {
+    main = (
+      <SingleSpeakerLayout
+        room={room}
+        participants={participants}
+      />
+    );
+  } else if (layout.startsWith('grid')) {
     main = (
       <GridLayout
         room={room}
