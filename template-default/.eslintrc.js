@@ -14,6 +14,7 @@ module.exports = {
     'react/jsx-props-no-spreading': 'off',
     'no-restricted-syntax': 'off',
     'no-continue': 'off',
+    'react/react-in-jsx-scope': 'off',
     '@typescript-eslint/no-use-before-define': 'off',
   },
 };
