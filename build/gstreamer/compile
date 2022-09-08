@@ -1,17 +1,35 @@
 #!/bin/bash
 set -e
 
-for repo in gstreamer gst-plugins-base gst-plugins-bad gst-plugins-good gst-plugins-ugly gst-libav; do
+for repo in gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav; do
   pushd $repo
+
+  opts="-D prefix=/usr -D tests=disabled -D doc=disabled"
+
+  if [[ $repo == "gstreamer" ]]; then
+    opts="$opts -D examples=disabled -D introspection=disabled"
+  elif [[ $repo == "gst-plugins-base" ]]; then
+    opts="$opts -D examples=disabled -D introspection=disabled -D qt5=disabled"
+  elif [[ $repo == "gst-plugins-good" ]]; then
+    opts="$opts -D examples=disabled -D qt5=disabled"
+  elif [[ $repo == "gst-plugins-bad" ]]; then
+    opts="$opts -D gpl=enabled -D examples=disabled -D introspection=disabled"
+  elif [[ $repo == "gst-plugins-ugly" ]]; then
+    opts="$opts -D gpl=enabled"
+  fi
+
   if [[ $DEBUG == 'true' ]]; then
     if [[ $OPTIMIZATIONS == 'true' ]]; then
-      meson build -D prefix=/usr -D debug=true -D optimization=2
+      opts="$opts -D buildtype=debugoptimized"
     else
-      meson build -D prefix=/usr -D debug=true
+      opts="$opts -D buildtype=debug"
     fi
   else
-      meson build -D prefix=/usr -D debug=false -D optimization=3 -D b_lto=true
+    opts="$opts -D buildtype=release -D b_lto=true"
   fi
+
+  meson build $opts
+
   # This is needed for other plugins to be built properly
   ninja $NINJA_OPTS -C build install
   # This is where we'll grab build artifacts from

@@ -1,4 +1,4 @@
-FROM livekit/gstreamer:1.18.5-dev
+FROM livekit/gstreamer:1.20.3-dev
 
 WORKDIR /workspace
 
