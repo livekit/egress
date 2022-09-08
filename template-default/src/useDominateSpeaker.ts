@@ -10,7 +10,7 @@ export default function useDominateSpeaker(participants: Participant[]): Partici
         // no changes as long as current speaker is still speaking
         return;
       } if (dominantSpeaker.lastSpokeAt
-        && Date.now() - dominantSpeaker.lastSpokeAt.getTime() > 5000) {
+        && Date.now() - dominantSpeaker.lastSpokeAt.getTime() < 5000) {
         return;
       }
     }
