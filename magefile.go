@@ -16,7 +16,7 @@ import (
 const (
 	imageName    = "livekit/egress"
 	gstImageName = "livekit/gstreamer"
-	gstVersion   = "1.18.5"
+	gstVersion   = "1.20.3"
 
 	config = "EGRESS_CONFIG_FILE"
 )
