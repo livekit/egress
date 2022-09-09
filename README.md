@@ -124,9 +124,8 @@ You can then use our [cli](https://github.com/livekit/livekit-cli) to submit egr
 
 ### I get a `"no response from egress service"` error when sending a request
 
-- Your livekit server cannot an egress instance through redis. Make sure they are both able to reach the same redis db.
-- Each instance currently only accepts one RoomCompositeRequest at a time - if it's already in use,
-- you'll need to deploy more instances or set up autoscaling.
+- Your livekit server cannot connect to an egress instance through redis. Make sure they are both able to reach the same redis db.
+- Each instance currently only accepts one RoomCompositeRequest at a time - if it's already in use, you'll need to deploy more instances or set up autoscaling.
 
 ### I get a different error when sending a request
 
