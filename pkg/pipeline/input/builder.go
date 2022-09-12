@@ -15,7 +15,6 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/source"
 )
 
-// TODO: save mp4 files as TS then remux to avoid losing everything on failure
 func Build(ctx context.Context, conf *config.Config, p *params.Params) (*Bin, error) {
 	ctx, span := tracer.Start(ctx, "Input.Build")
 	defer span.End()
@@ -65,26 +64,25 @@ func Build(ctx context.Context, conf *config.Config, p *params.Params) (*Bin, er
 		return nil, err
 	}
 
+	// HLS has no output bin
+	if p.OutputType == params.OutputTypeHLS {
+		return b, nil
+	}
+
 	// create ghost pad
 	var ghostPad *gst.GhostPad
 	if b.mux != nil {
-		// For HLS, there will be no 'src' pad
-		pad := b.mux.GetStaticPad("src")
-		if pad != nil {
-			ghostPad = gst.NewGhostPad("src", pad)
-		}
+		ghostPad = gst.NewGhostPad("src", b.mux.GetStaticPad("src"))
 	} else if len(b.audioElements) != 0 {
-		srcElement := b.audioElements[len(b.audioElements)-1]
-		ghostPad = gst.NewGhostPad("src", srcElement.GetStaticPad("src"))
+		b.audioPad = b.multiQueue.GetRequestPad("sink_%u")
+		ghostPad = gst.NewGhostPad("src", b.multiQueue.GetStaticPad("src_0"))
 	} else if len(b.videoElements) != 0 {
-		srcElement := b.videoElements[len(b.videoElements)-1]
-		ghostPad = gst.NewGhostPad("src", srcElement.GetStaticPad("src"))
+		b.videoPad = b.multiQueue.GetRequestPad("sink_%u")
+		ghostPad = gst.NewGhostPad("src", b.multiQueue.GetStaticPad("src_0"))
 	}
 
-	if ghostPad != nil {
-		if !b.bin.AddPad(ghostPad.Pad) {
-			return nil, errors.ErrGhostPadFailed
-		}
+	if !b.bin.AddPad(ghostPad.Pad) {
+		return nil, errors.ErrGhostPadFailed
 	}
 
 	return b, nil
@@ -136,7 +134,6 @@ func (b *Bin) buildMux(p *params.Params) error {
 	return b.bin.Add(b.mux)
 }
 
-// TODO: move this to output?
 func (b *Bin) buildHLSMux(p *params.Params) (*gst.Element, error) {
 	// Create Sink
 	sink, err := gst.NewElement("splitmuxsink")
@@ -153,7 +150,6 @@ func (b *Bin) buildHLSMux(p *params.Params) (*gst.Element, error) {
 	if err = sink.SetProperty("async-finalize", true); err != nil {
 		return nil, err
 	}
-
 	if err = sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
 		return nil, err
 	}

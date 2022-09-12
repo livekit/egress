@@ -12,11 +12,13 @@ import (
 type Bin struct {
 	source.Source
 
-	bin *gst.Bin
-
+	bin           *gst.Bin
 	audioElements []*gst.Element
 	videoElements []*gst.Element
-	multiQueue    *gst.Element
+
+	multiQueue *gst.Element
+	audioPad   *gst.Pad
+	videoPad   *gst.Pad
 
 	mux *gst.Element
 }
@@ -38,7 +40,11 @@ func (b *Bin) Link() error {
 			return err
 		}
 
-		queuePad := b.multiQueue.GetRequestPad("sink_%u")
+		queuePad := b.audioPad
+		if queuePad == nil {
+			queuePad = b.multiQueue.GetRequestPad("sink_%u")
+		}
+
 		last := b.audioElements[len(b.audioElements)-1]
 		if linkReturn := last.GetStaticPad("src").Link(queuePad); linkReturn != gst.PadLinkOK {
 			return errors.ErrPadLinkFailed("audio queue", linkReturn.String())
@@ -68,7 +74,11 @@ func (b *Bin) Link() error {
 			return err
 		}
 
-		queuePad := b.multiQueue.GetRequestPad("sink_%u")
+		queuePad := b.videoPad
+		if queuePad == nil {
+			queuePad = b.multiQueue.GetRequestPad("sink_%u")
+		}
+
 		last := b.videoElements[len(b.videoElements)-1]
 		if linkReturn := last.GetStaticPad("src").Link(queuePad); linkReturn != gst.PadLinkOK {
 			return errors.ErrPadLinkFailed("video queue", linkReturn.String())
