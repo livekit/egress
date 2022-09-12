@@ -35,6 +35,9 @@ const (
 	fragmentRunningTime   = "running-time"
 
 	elementGstRtmp2Sink = "GstRtmp2Sink"
+	elementGstGstAppSrc = "GstAppSrc"
+
+	messageStreamingStop = "streaming stopped"
 )
 
 type Pipeline struct {
@@ -693,10 +696,18 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 			return err, false
 		}
 		return err, true
-
+	case element == elementGstGstAppSrc:
+		// keep publish segment file if the source stream terminate by network issue or participant leave the room before egress stop
+		if strings.Contains(gErr.DebugString(), messageStreamingStop) {
+			p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
+			p.Logger.Warnw("Source stream stopped", err)
+			return err, true
+		}
+		return err, false
 	default:
 		// input failure or file write failure. Fatal
 		p.Logger.Errorw("pipeline error", err,
+			"element", element,
 			"debug", gErr.DebugString(),
 			"message", gErr.Message(),
 		)
