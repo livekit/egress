@@ -15,7 +15,6 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/source"
 )
 
-// TODO: save mp4 files as TS then remux to avoid losing everything on failure
 func Build(ctx context.Context, conf *config.Config, p *params.Params) (*Bin, error) {
 	ctx, span := tracer.Start(ctx, "Input.Build")
 	defer span.End()
@@ -50,30 +49,40 @@ func Build(ctx context.Context, conf *config.Config, p *params.Params) (*Bin, er
 		return nil, err
 	}
 
+	// queue
+	b.multiQueue, err = gst.NewElement("multiqueue")
+	if err != nil {
+		return nil, err
+	}
+	if err = b.bin.Add(b.multiQueue); err != nil {
+		return nil, err
+	}
+
 	// mux
 	err = b.buildMux(p)
 	if err != nil {
 		return nil, err
 	}
 
+	// HLS has no output bin
+	if p.OutputType == params.OutputTypeHLS {
+		return b, nil
+	}
+
 	// create ghost pad
 	var ghostPad *gst.GhostPad
 	if b.mux != nil {
-		// For HLS, there will be no 'src' pad
-		pad := b.mux.GetStaticPad("src")
-		if pad != nil {
-			ghostPad = gst.NewGhostPad("src", pad)
-		}
-	} else if b.audioQueue != nil {
-		ghostPad = gst.NewGhostPad("src", b.audioQueue.GetStaticPad("src"))
-	} else if b.videoQueue != nil {
-		ghostPad = gst.NewGhostPad("src", b.videoQueue.GetStaticPad("src"))
+		ghostPad = gst.NewGhostPad("src", b.mux.GetStaticPad("src"))
+	} else if len(b.audioElements) != 0 {
+		b.audioPad = b.multiQueue.GetRequestPad("sink_%u")
+		ghostPad = gst.NewGhostPad("src", b.multiQueue.GetStaticPad("src_0"))
+	} else if len(b.videoElements) != 0 {
+		b.videoPad = b.multiQueue.GetRequestPad("sink_%u")
+		ghostPad = gst.NewGhostPad("src", b.multiQueue.GetStaticPad("src_0"))
 	}
 
-	if ghostPad != nil {
-		if !b.bin.AddPad(ghostPad.Pad) {
-			return nil, errors.ErrGhostPadFailed
-		}
+	if !b.bin.AddPad(ghostPad.Pad) {
+		return nil, errors.ErrGhostPadFailed
 	}
 
 	return b, nil
@@ -110,12 +119,11 @@ func (b *Bin) buildMux(p *params.Params) error {
 		if err != nil {
 			return err
 		}
-		err = b.mux.Set("streamable", true)
+		err = b.mux.SetProperty("streamable", true)
+
 	case params.OutputTypeHLS:
-		b.mux, err = b.buildHlsMux(p)
-		if err != nil {
-			return err
-		}
+		b.mux, err = b.buildHLSMux(p)
+
 	default:
 		err = errors.ErrInvalidInput("output type")
 	}
@@ -126,7 +134,7 @@ func (b *Bin) buildMux(p *params.Params) error {
 	return b.bin.Add(b.mux)
 }
 
-func (b *Bin) buildHlsMux(p *params.Params) (*gst.Element, error) {
+func (b *Bin) buildHLSMux(p *params.Params) (*gst.Element, error) {
 	// Create Sink
 	sink, err := gst.NewElement("splitmuxsink")
 	if err != nil {
@@ -142,7 +150,6 @@ func (b *Bin) buildHlsMux(p *params.Params) (*gst.Element, error) {
 	if err = sink.SetProperty("async-finalize", true); err != nil {
 		return nil, err
 	}
-
 	if err = sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
 		return nil, err
 	}

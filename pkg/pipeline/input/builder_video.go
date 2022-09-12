@@ -26,15 +26,6 @@ func (b *Bin) buildVideoElements(p *params.Params) error {
 		return err
 	}
 
-	b.videoQueue, err = gst.NewElement("queue")
-	if err != nil {
-		return err
-	}
-	if err = b.videoQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
-		return err
-	}
-
-	b.videoElements = append(b.videoElements, b.videoQueue)
 	return b.bin.AddMany(b.videoElements...)
 }
 
@@ -53,6 +44,14 @@ func (b *Bin) buildWebVideoInput(p *params.Params) error {
 		return err
 	}
 
+	videoQueue, err := gst.NewElement("queue")
+	if err != nil {
+		return err
+	}
+	if err = videoQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
+		return err
+	}
+
 	videoConvert, err := gst.NewElement("videoconvert")
 	if err != nil {
 		return err
@@ -68,12 +67,11 @@ func (b *Bin) buildWebVideoInput(p *params.Params) error {
 		return err
 	}
 
-	b.videoElements = append(b.videoElements, xImageSrc, videoConvert, videoFramerateCaps)
+	b.videoElements = append(b.videoElements, xImageSrc, videoQueue, videoConvert, videoFramerateCaps)
 
 	return b.buildVideoEncoder(p)
 }
 
-// TODO: skip decoding when possible
 func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 	src, codec := b.Source.(*source.SDKSource).GetVideoSource()
 
@@ -136,6 +134,14 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 		return errors.ErrNotSupported(codec.MimeType)
 	}
 
+	videoQueue, err := gst.NewElement("queue")
+	if err != nil {
+		return err
+	}
+	if err = videoQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
+		return err
+	}
+
 	videoConvert, err := gst.NewElement("videoconvert")
 	if err != nil {
 		return err
@@ -161,7 +167,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 		return err
 	}
 
-	b.videoElements = append(b.videoElements, videoConvert, videoScale, videoRate, decodedCaps)
+	b.videoElements = append(b.videoElements, videoQueue, videoConvert, videoScale, videoRate, decodedCaps)
 
 	return b.buildVideoEncoder(p)
 }

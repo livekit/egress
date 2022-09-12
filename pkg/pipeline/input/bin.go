@@ -1,6 +1,8 @@
 package input
 
 import (
+	"fmt"
+
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -10,13 +12,13 @@ import (
 type Bin struct {
 	source.Source
 
-	bin *gst.Bin
-
+	bin           *gst.Bin
 	audioElements []*gst.Element
-	audioQueue    *gst.Element
-
 	videoElements []*gst.Element
-	videoQueue    *gst.Element
+
+	multiQueue *gst.Element
+	audioPad   *gst.Pad
+	videoPad   *gst.Pad
 
 	mux *gst.Element
 }
@@ -30,10 +32,22 @@ func (b *Bin) Element() *gst.Element {
 }
 
 func (b *Bin) Link() error {
+	mqPad := 0
+
 	// link audio elements
-	if b.audioQueue != nil {
+	if len(b.audioElements) != 0 {
 		if err := gst.ElementLinkMany(b.audioElements...); err != nil {
 			return err
+		}
+
+		queuePad := b.audioPad
+		if queuePad == nil {
+			queuePad = b.multiQueue.GetRequestPad("sink_%u")
+		}
+
+		last := b.audioElements[len(b.audioElements)-1]
+		if linkReturn := last.GetStaticPad("src").Link(queuePad); linkReturn != gst.PadLinkOK {
+			return errors.ErrPadLinkFailed("audio queue", linkReturn.String())
 		}
 
 		if b.mux != nil {
@@ -46,16 +60,28 @@ func (b *Bin) Link() error {
 				return errors.New("no audio pad found")
 			}
 
-			if linkReturn := b.audioQueue.GetStaticPad("src").Link(muxAudioPad); linkReturn != gst.PadLinkOK {
+			if linkReturn := b.multiQueue.GetStaticPad(fmt.Sprintf("src_%d", mqPad)).Link(muxAudioPad); linkReturn != gst.PadLinkOK {
 				return errors.ErrPadLinkFailed("audio mux", linkReturn.String())
 			}
 		}
+
+		mqPad++
 	}
 
 	// link video elements
-	if b.videoQueue != nil {
+	if len(b.videoElements) != 0 {
 		if err := gst.ElementLinkMany(b.videoElements...); err != nil {
 			return err
+		}
+
+		queuePad := b.videoPad
+		if queuePad == nil {
+			queuePad = b.multiQueue.GetRequestPad("sink_%u")
+		}
+
+		last := b.videoElements[len(b.videoElements)-1]
+		if linkReturn := last.GetStaticPad("src").Link(queuePad); linkReturn != gst.PadLinkOK {
+			return errors.ErrPadLinkFailed("video queue", linkReturn.String())
 		}
 
 		if b.mux != nil {
@@ -67,7 +93,7 @@ func (b *Bin) Link() error {
 			if muxVideoPad == nil {
 				return errors.New("no video pad found")
 			}
-			if linkReturn := b.videoQueue.GetStaticPad("src").Link(muxVideoPad); linkReturn != gst.PadLinkOK {
+			if linkReturn := b.multiQueue.GetStaticPad(fmt.Sprintf("src_%d", mqPad)).Link(muxVideoPad); linkReturn != gst.PadLinkOK {
 				return errors.ErrPadLinkFailed("video mux", linkReturn.String())
 			}
 		}
