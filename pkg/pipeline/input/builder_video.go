@@ -81,14 +81,6 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 		return err
 	}
 
-	videoQueue, err := gst.NewElement("queue")
-	if err != nil {
-		return err
-	}
-	if err = videoQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
-		return err
-	}
-
 	switch {
 	case strings.EqualFold(codec.MimeType, string(params.MimeTypeH264)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
@@ -110,7 +102,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 			return err
 		}
 
-		b.videoElements = append(b.videoElements, src.Element, videoQueue, rtpH264Depay, avDecH264)
+		b.videoElements = append(b.videoElements, src.Element, rtpH264Depay, avDecH264)
 
 	case strings.EqualFold(codec.MimeType, string(params.MimeTypeVP8)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
@@ -137,10 +129,18 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 			return nil
 		}
 
-		b.videoElements = append(b.videoElements, src.Element, videoQueue, rtpVP8Depay, vp8Dec)
+		b.videoElements = append(b.videoElements, src.Element, rtpVP8Depay, vp8Dec)
 
 	default:
 		return errors.ErrNotSupported(codec.MimeType)
+	}
+
+	videoQueue, err := gst.NewElement("queue")
+	if err != nil {
+		return err
+	}
+	if err = videoQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
+		return err
 	}
 
 	videoConvert, err := gst.NewElement("videoconvert")
@@ -168,7 +168,7 @@ func (b *Bin) buildSDKVideoInput(p *params.Params) error {
 		return err
 	}
 
-	b.videoElements = append(b.videoElements, videoConvert, videoScale, videoRate, decodedCaps)
+	b.videoElements = append(b.videoElements, videoQueue, videoConvert, videoScale, videoRate, decodedCaps)
 
 	return b.buildVideoEncoder(p)
 }
