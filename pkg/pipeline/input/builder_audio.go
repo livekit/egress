@@ -42,6 +42,9 @@ func (b *Bin) buildWebAudioInput(p *params.Params) error {
 	if err != nil {
 		return err
 	}
+	if err = audioQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
+		return err
+	}
 
 	b.audioElements = append(b.audioElements, pulseSrc, audioQueue)
 
@@ -54,6 +57,14 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 
 	src.Element.SetArg("format", "time")
 	if err := src.Element.SetProperty("is-live", true); err != nil {
+		return err
+	}
+
+	audioQueue, err := gst.NewElement("queue")
+	if err != nil {
+		return err
+	}
+	if err = audioQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
 		return err
 	}
 
@@ -73,14 +84,12 @@ func (b *Bin) buildSDKAudioInput(p *params.Params) error {
 			return err
 		}
 
-		b.audioElements = append(b.audioElements, src.Element, rtpOpusDepay)
-
 		opusDec, err := gst.NewElement("opusdec")
 		if err != nil {
 			return err
 		}
 
-		b.audioElements = append(b.audioElements, opusDec)
+		b.audioElements = append(b.audioElements, src.Element, audioQueue, rtpOpusDepay, opusDec)
 
 		// skip encoding for raw output
 		if p.OutputType == params.OutputTypeRaw {
