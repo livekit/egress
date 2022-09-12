@@ -50,6 +50,15 @@ func Build(ctx context.Context, conf *config.Config, p *params.Params) (*Bin, er
 		return nil, err
 	}
 
+	// queue
+	b.multiQueue, err = gst.NewElement("multiqueue")
+	if err != nil {
+		return nil, err
+	}
+	if err = b.bin.Add(b.multiQueue); err != nil {
+		return nil, err
+	}
+
 	// mux
 	err = b.buildMux(p)
 	if err != nil {
@@ -64,10 +73,12 @@ func Build(ctx context.Context, conf *config.Config, p *params.Params) (*Bin, er
 		if pad != nil {
 			ghostPad = gst.NewGhostPad("src", pad)
 		}
-	} else if b.audioQueue != nil {
-		ghostPad = gst.NewGhostPad("src", b.audioQueue.GetStaticPad("src"))
-	} else if b.videoQueue != nil {
-		ghostPad = gst.NewGhostPad("src", b.videoQueue.GetStaticPad("src"))
+	} else if len(b.audioElements) != 0 {
+		srcElement := b.audioElements[len(b.audioElements)-1]
+		ghostPad = gst.NewGhostPad("src", srcElement.GetStaticPad("src"))
+	} else if len(b.videoElements) != 0 {
+		srcElement := b.videoElements[len(b.videoElements)-1]
+		ghostPad = gst.NewGhostPad("src", srcElement.GetStaticPad("src"))
 	}
 
 	if ghostPad != nil {
@@ -110,12 +121,11 @@ func (b *Bin) buildMux(p *params.Params) error {
 		if err != nil {
 			return err
 		}
-		err = b.mux.Set("streamable", true)
+		err = b.mux.SetProperty("streamable", true)
+
 	case params.OutputTypeHLS:
-		b.mux, err = b.buildHlsMux(p)
-		if err != nil {
-			return err
-		}
+		b.mux, err = b.buildHLSMux(p)
+
 	default:
 		err = errors.ErrInvalidInput("output type")
 	}
@@ -126,7 +136,8 @@ func (b *Bin) buildMux(p *params.Params) error {
 	return b.bin.Add(b.mux)
 }
 
-func (b *Bin) buildHlsMux(p *params.Params) (*gst.Element, error) {
+// TODO: move this to output?
+func (b *Bin) buildHLSMux(p *params.Params) (*gst.Element, error) {
 	// Create Sink
 	sink, err := gst.NewElement("splitmuxsink")
 	if err != nil {
