@@ -71,6 +71,7 @@ func GStreamer() error {
 	for _, build := range []string{"base", "dev", "prod"} {
 		commands = append(commands, fmt.Sprintf(
 			"docker build"+
+				" --no-cache"+
 				" -t %s:%s-%s"+
 				" --build-arg GSTREAMER_VERSION=%s"+
 				" -f build/gstreamer/Dockerfile-%s"+
@@ -87,6 +88,7 @@ func PublishGStreamer() error {
 	for _, build := range []string{"base", "dev", "prod"} {
 		commands = append(commands, fmt.Sprintf(
 			"docker buildx build --push"+
+				" --no-cache"+
 				" --platform linux/amd64,linux/arm64"+
 				" -t %s:%s-%s"+
 				" --build-arg GSTREAMER_VERSION=%s"+
