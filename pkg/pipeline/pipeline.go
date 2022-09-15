@@ -36,7 +36,9 @@ const (
 
 	elementGstRtmp2Sink = "GstRtmp2Sink"
 	elementGstGstAppSrc = "GstAppSrc"
+	elementGstWebMMux   = "GstWebMMux"
 
+	messageCapsChanges   = "Caps changes are not supported"
 	messageStreamingStop = "streaming stopped"
 )
 
@@ -454,7 +456,8 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 			p.Logger.Debugw("sending EOS to pipeline")
 			p.eosTimer = time.AfterFunc(eosTimeout, func() {
 				p.Logger.Errorw("pipeline frozen", nil)
-				p.Info.Error = "pipeline frozen"
+				// Remove Error to ensure the file can be publish and finish after source dropped
+				// p.Info.Error = "pipeline frozen"
 				p.stop()
 			})
 
@@ -699,8 +702,16 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 	case element == elementGstGstAppSrc:
 		// keep publish segment file if the source stream terminate by network issue or participant leave the room before egress stop
 		if strings.Contains(gErr.DebugString(), messageStreamingStop) {
-			p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 			p.Logger.Warnw("Source stream stopped", err)
+			p.SendEOS(context.Background())
+			return err, true
+		}
+		return err, false
+	case element == elementGstWebMMux:
+		// keep publish segment file if the source stream terminate by network issue or participant leave the room before egress stop
+		if strings.Contains(gErr.DebugString(), messageCapsChanges) {
+			p.Logger.Warnw("Video ES properties change", err)
+			p.SendEOS(context.Background())
 			return err, true
 		}
 		return err, false
