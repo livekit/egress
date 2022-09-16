@@ -102,10 +102,6 @@ func (b *Bin) buildMux(p *params.Params) error {
 
 	case params.OutputTypeMP4:
 		b.mux, err = gst.NewElement("mp4mux")
-		if err != nil {
-			return err
-		}
-		err = b.mux.SetProperty("faststart", true)
 
 	case params.OutputTypeTS:
 		b.mux, err = gst.NewElement("mpegtsmux")
