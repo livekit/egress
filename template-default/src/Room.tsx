@@ -1,9 +1,11 @@
 import EgressHelper from '@livekit/egress-sdk';
 import { AudioRenderer, useRoom } from '@livekit/react-components';
 import {
-  AudioTrack, Participant, RemoteParticipant, Room,
+  AudioTrack, Participant, RemoteParticipant, Room, RoomEvent,
 } from 'livekit-client';
-import { ReactElement, useEffect, useState } from 'react';
+import {
+  ReactElement, useCallback, useEffect, useState,
+} from 'react';
 import GridLayout from './GridLayout';
 import SingleSpeakerLayout from './SingleSpeakerLayout';
 import SpeakerLayout from './SpeakerLayout';
@@ -75,15 +77,29 @@ function Stage({
 }: StageProps) {
   const [hasScreenShare, setHasScreenShare] = useState(false);
 
-  useEffect(() => {
-    let found = false;
-    for (const p of participants) {
+  const onTrackChanged = useCallback(() => {
+    let foundScreenshare = false;
+    room.participants.forEach((p) => {
       if (p.isScreenShareEnabled) {
-        found = true;
+        foundScreenshare = true;
       }
+    });
+    setHasScreenShare(foundScreenshare);
+  }, [room]);
+
+  useEffect(() => {
+    if (!room) {
+      return;
     }
-    setHasScreenShare(found);
-  }, [participants]);
+    room.on(RoomEvent.TrackPublished, onTrackChanged);
+    room.on(RoomEvent.TrackUnpublished, onTrackChanged);
+    room.on(RoomEvent.ConnectionStateChanged, onTrackChanged);
+    return () => {
+      room.off(RoomEvent.TrackPublished, onTrackChanged);
+      room.off(RoomEvent.TrackUnpublished, onTrackChanged);
+      room.off(RoomEvent.ConnectionStateChanged, onTrackChanged);
+    };
+  }, [room]);
 
   let interfaceStyle = 'dark';
   if (layout.endsWith('-light')) {
@@ -98,7 +114,7 @@ function Stage({
   // determine layout to use
   let main: ReactElement = <></>;
   if (hasScreenShare && layout.startsWith('grid')) {
-    layout.replace('grid', 'speaker');
+    layout = layout.replace('grid', 'speaker');
   }
   if (layout.startsWith('speaker')) {
     main = (
