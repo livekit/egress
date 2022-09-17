@@ -561,7 +561,7 @@ func (p *Params) updateFilepath(identifier string) error {
 
 	if p.StorageFilepath == "" || strings.HasSuffix(p.StorageFilepath, "/") {
 		// generate filepath
-		p.StorageFilepath = fmt.Sprintf("%s%s-%s%s", p.StorageFilepath, identifier, time.Now().String(), ext)
+		p.StorageFilepath = fmt.Sprintf("%s%s-%s%s", p.StorageFilepath, identifier, time.Now().Format("2006-01-02T150405"), ext)
 	} else if !strings.HasSuffix(p.StorageFilepath, string(ext)) {
 		// check for existing (incorrect) extension
 		extIdx := strings.LastIndex(p.StorageFilepath, ".")
