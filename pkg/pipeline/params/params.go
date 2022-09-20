@@ -9,13 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
-
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
 )
 
 type Params struct {
@@ -52,9 +51,10 @@ type SourceParams struct {
 	CustomBase string
 
 	// sdk source
-	TrackID      string
-	AudioTrackID string
-	VideoTrackID string
+	TrackID             string
+	AudioTrackID        string
+	VideoTrackID        string
+	ParticipantIdentity string
 }
 
 type AudioParams struct {
@@ -156,6 +156,10 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		}
 		p.AudioEnabled = !req.RoomComposite.VideoOnly
 		p.VideoEnabled = !req.RoomComposite.AudioOnly
+		if !p.AudioEnabled && !p.VideoEnabled {
+			err = errors.ErrInvalidInput("AudioOnly and VideoOnly")
+			return
+		}
 
 		// encoding options
 		switch opts := req.RoomComposite.Options.(type) {
@@ -180,6 +184,58 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			}
 
 		case *livekit.RoomCompositeEgressRequest_Segments:
+			p.updateOutputType(o.Segments.Protocol)
+			if err = p.updateSegmentsParams(o.Segments.FilenamePrefix, o.Segments.PlaylistName, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
+				return
+			}
+
+		default:
+			err = errors.ErrInvalidInput("output")
+			return
+		}
+
+	case *livekit.StartEgressRequest_ParticipantComposite:
+		p.Info.Request = &livekit.EgressInfo_ParticipantComposite{ParticipantComposite: req.ParticipantComposite}
+		p.Info.RoomName = req.ParticipantComposite.RoomName
+		if p.Info.RoomName == "" {
+			err = errors.ErrInvalidInput("RoomName")
+			return
+		}
+
+		// input params
+		p.ParticipantIdentity = req.ParticipantComposite.ParticipantIdentity
+		p.AudioEnabled = !req.ParticipantComposite.VideoOnly
+		p.VideoEnabled = !req.ParticipantComposite.AudioOnly
+		if !p.AudioEnabled && !p.VideoEnabled {
+			err = errors.ErrInvalidInput("AudioOnly and VideoOnly")
+			return
+		}
+
+		// encoding options
+		switch opts := req.ParticipantComposite.Options.(type) {
+		case *livekit.ParticipantCompositeEgressRequest_Preset:
+			p.applyPreset(opts.Preset)
+
+		case *livekit.ParticipantCompositeEgressRequest_Advanced:
+			p.applyAdvanced(opts.Advanced)
+		}
+
+		// output params
+		switch o := req.ParticipantComposite.Output.(type) {
+		case *livekit.ParticipantCompositeEgressRequest_File:
+			if o.File.FileType != livekit.EncodedFileType_DEFAULT_FILETYPE {
+				p.updateOutputType(o.File.FileType)
+			}
+			if err = p.updateFileParams(o.File.Filepath, o.File.Output); err != nil {
+				return
+			}
+
+		case *livekit.ParticipantCompositeEgressRequest_Stream:
+			if err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls); err != nil {
+				return
+			}
+
+		case *livekit.ParticipantCompositeEgressRequest_Segments:
 			p.updateOutputType(o.Segments.Protocol)
 			if err = p.updateSegmentsParams(o.Segments.FilenamePrefix, o.Segments.PlaylistName, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
 				return
@@ -307,6 +363,26 @@ func (p *Params) applyPreset(preset livekit.EncodingOptionsPreset) {
 		// default
 
 	case livekit.EncodingOptionsPreset_H264_1080P_60:
+		p.Framerate = 60
+		p.VideoBitrate = 6000
+
+	case livekit.EncodingOptionsPreset_PORTRAIT_H264_720P_30:
+		p.Width = 720
+		p.Height = 1280
+		p.VideoBitrate = 3000
+
+	case livekit.EncodingOptionsPreset_PORTRAIT_H264_720P_60:
+		p.Width = 720
+		p.Height = 1280
+		p.Framerate = 60
+
+	case livekit.EncodingOptionsPreset_PORTRAIT_H264_1080P_30:
+		p.Width = 1080
+		p.Height = 1920
+
+	case livekit.EncodingOptionsPreset_PORTRAIT_H264_1080P_60:
+		p.Width = 1080
+		p.Height = 1920
 		p.Framerate = 60
 		p.VideoBitrate = 6000
 	}

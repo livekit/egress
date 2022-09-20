@@ -7,12 +7,11 @@ import (
 
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/protocol/tracer"
-
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/pipeline/source"
+	"github.com/livekit/protocol/tracer"
 )
 
 func Build(ctx context.Context, conf *config.Config, p *params.Params) (*Bin, error) {

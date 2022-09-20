@@ -22,7 +22,7 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func testTrackFile(t *testing.T, conf *Config) {
+func testTrackFile(t *testing.T, conf *Context) {
 	now := time.Now().Unix()
 	for _, test := range []*testCase{
 		{
@@ -90,7 +90,7 @@ func testTrackFile(t *testing.T, conf *Config) {
 	}
 }
 
-func testTrackStream(t *testing.T, conf *Config) {
+func testTrackStream(t *testing.T, conf *Context) {
 	now := time.Now().Unix()
 	for _, test := range []*testCase{
 		{

@@ -12,7 +12,7 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func testTrackCompositeFile(t *testing.T, conf *Config) {
+func testTrackCompositeFile(t *testing.T, conf *Context) {
 	now := time.Now().Unix()
 	for _, test := range []*testCase{
 		{
@@ -77,7 +77,7 @@ func testTrackCompositeFile(t *testing.T, conf *Config) {
 	}
 }
 
-func testTrackCompositeStream(t *testing.T, conf *Config) {
+func testTrackCompositeStream(t *testing.T, conf *Context) {
 	for _, test := range []*testCase{
 		{
 			name: "tc-rtmp",
@@ -112,7 +112,7 @@ func testTrackCompositeStream(t *testing.T, conf *Config) {
 	}
 }
 
-func testTrackCompositeSegments(t *testing.T, conf *Config) {
+func testTrackCompositeSegments(t *testing.T, conf *Context) {
 	now := time.Now().Unix()
 	for _, test := range []*testCase{
 		{

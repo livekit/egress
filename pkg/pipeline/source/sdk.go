@@ -11,13 +11,12 @@ import (
 	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 	lksdk "github.com/livekit/server-sdk-go"
-
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 const (
@@ -36,15 +35,20 @@ type SDKSource struct {
 	// track
 	trackID string
 
-	// track composite audio
+	// track composite
 	audioTrackID string
+	videoTrackID string
+
+	// participant
+	participantIdentity string
+
+	// composite audio source
 	audioSrc     *app.Source
 	audioCodec   webrtc.RTPCodecParameters
 	audioWriter  *appWriter
 	audioPlaying chan struct{}
 
-	// track composite video
-	videoTrackID string
+	// composite video source
 	videoSrc     *app.Source
 	videoCodec   webrtc.RTPCodecParameters
 	videoWriter  *appWriter

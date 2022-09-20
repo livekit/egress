@@ -10,11 +10,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-
-	"github.com/livekit/egress/pkg/config"
 )
 
 type Monitor struct {
@@ -76,6 +75,13 @@ func (m *Monitor) checkCPUConfig(costConfig config.CPUCostConfig) error {
 			"recommended value", 3,
 		)
 	}
+	if costConfig.ParticipantCompositeCpuCost < 1 {
+		logger.Warnw("participant composite requirement too low", nil,
+			"config value", costConfig.ParticipantCompositeCpuCost,
+			"minimum value", 1,
+			"recommended value", 2,
+		)
+	}
 	if costConfig.TrackCompositeCpuCost < 1 {
 		logger.Warnw("track composite requirement too low", nil,
 			"config value", costConfig.TrackCompositeCpuCost,
@@ -92,9 +98,10 @@ func (m *Monitor) checkCPUConfig(costConfig config.CPUCostConfig) error {
 	}
 
 	requirements := []float64{
-		costConfig.TrackCpuCost,
-		costConfig.TrackCompositeCpuCost,
 		costConfig.RoomCompositeCpuCost,
+		costConfig.ParticipantCompositeCpuCost,
+		costConfig.TrackCompositeCpuCost,
+		costConfig.TrackCpuCost,
 	}
 	sort.Float64s(requirements)
 
@@ -159,6 +166,8 @@ func (m *Monitor) CanAcceptRequest(req *livekit.StartEgressRequest) bool {
 	switch req.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
 		accept = available > m.cpuCostConfig.RoomCompositeCpuCost
+	case *livekit.StartEgressRequest_ParticipantComposite:
+		accept = available > m.cpuCostConfig.ParticipantCompositeCpuCost
 	case *livekit.StartEgressRequest_TrackComposite:
 		accept = available > m.cpuCostConfig.TrackCompositeCpuCost
 	case *livekit.StartEgressRequest_Track:
@@ -174,6 +183,8 @@ func (m *Monitor) AcceptRequest(req *livekit.StartEgressRequest) {
 	switch req.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
 		cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
+	case *livekit.StartEgressRequest_ParticipantComposite:
+		cpuHold = m.cpuCostConfig.ParticipantCompositeCpuCost
 	case *livekit.StartEgressRequest_TrackComposite:
 		cpuHold = m.cpuCostConfig.TrackCompositeCpuCost
 	case *livekit.StartEgressRequest_Track:
@@ -188,6 +199,8 @@ func (m *Monitor) EgressStarted(req *livekit.StartEgressRequest) {
 	switch req.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
 		m.requestGauge.With(prometheus.Labels{"type": "room_composite"}).Add(1)
+	case *livekit.StartEgressRequest_ParticipantComposite:
+		m.requestGauge.With(prometheus.Labels{"type": "participant_composite"}).Add(1)
 	case *livekit.StartEgressRequest_TrackComposite:
 		m.requestGauge.With(prometheus.Labels{"type": "track_composite"}).Add(1)
 	case *livekit.StartEgressRequest_Track:
@@ -199,6 +212,8 @@ func (m *Monitor) EgressEnded(req *livekit.StartEgressRequest) {
 	switch req.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
 		m.requestGauge.With(prometheus.Labels{"type": "room_composite"}).Sub(1)
+	case *livekit.StartEgressRequest_ParticipantComposite:
+		m.requestGauge.With(prometheus.Labels{"type": "participant_composite"}).Sub(1)
 	case *livekit.StartEgressRequest_TrackComposite:
 		m.requestGauge.With(prometheus.Labels{"type": "track_composite"}).Sub(1)
 	case *livekit.StartEgressRequest_Track:

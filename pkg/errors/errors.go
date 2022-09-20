@@ -34,7 +34,7 @@ func ErrIncompatible(format, codec interface{}) error {
 }
 
 func ErrInvalidInput(field string) error {
-	return fmt.Errorf("request missing required field: %s", field)
+	return fmt.Errorf("request has missing or invalid field: %s", field)
 }
 
 func ErrInvalidUrl(url, protocol string) error {

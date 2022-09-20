@@ -12,9 +12,6 @@ import (
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/tracer"
-
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/input"
@@ -22,6 +19,8 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/tracer"
 )
 
 const (
