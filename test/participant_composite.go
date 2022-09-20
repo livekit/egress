@@ -20,21 +20,21 @@ func testParticipantCompositeFile(t *testing.T, conf *Context) {
 			videoCodec: params.MimeTypeVP8,
 			filename:   fmt.Sprintf("pc-vp8-%v.mp4", now),
 		},
-		{
-			name:       "pc-h264-mp4",
-			fileType:   livekit.EncodedFileType_MP4,
-			audioCodec: params.MimeTypeOpus,
-			videoCodec: params.MimeTypeH264,
-			filename:   fmt.Sprintf("pc-h264-%v.mp4", now),
-		},
-		{
-			name:           "pc-h264-mp4-limit",
-			fileType:       livekit.EncodedFileType_MP4,
-			audioCodec:     params.MimeTypeOpus,
-			videoCodec:     params.MimeTypeH264,
-			filename:       fmt.Sprintf("pc-h264-%v.mp4", now),
-			sessionTimeout: time.Second * 20,
-		},
+		// {
+		// 	name:       "pc-h264-mp4",
+		// 	fileType:   livekit.EncodedFileType_MP4,
+		// 	audioCodec: params.MimeTypeOpus,
+		// 	videoCodec: params.MimeTypeH264,
+		// 	filename:   fmt.Sprintf("pc-h264-%v.mp4", now),
+		// },
+		// {
+		// 	name:           "pc-h264-mp4-limit",
+		// 	fileType:       livekit.EncodedFileType_MP4,
+		// 	audioCodec:     params.MimeTypeOpus,
+		// 	videoCodec:     params.MimeTypeH264,
+		// 	filename:       fmt.Sprintf("pc-h264-%v.mp4", now),
+		// 	sessionTimeout: time.Second * 20,
+		// },
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			awaitIdle(t, conf.svc)

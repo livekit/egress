@@ -43,7 +43,6 @@ type SourceParams struct {
 	Token        string
 	LKUrl        string
 	TemplateBase string
-	IsWebSource  bool
 
 	// web source
 	Display    string
@@ -146,7 +145,6 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		}
 
 		// input params
-		p.IsWebSource = true
 		p.Layout = req.RoomComposite.Layout
 		p.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
 		if req.RoomComposite.CustomBaseUrl != "" {
@@ -450,9 +448,11 @@ func (p *Params) updateOutputType(fileType interface{}) {
 		case livekit.EncodedFileType_OGG:
 			p.OutputType = OutputTypeOGG
 		}
+
 	case livekit.SegmentedFileProtocol:
 		switch f {
-		case livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL, livekit.SegmentedFileProtocol_HLS_PROTOCOL:
+		case livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL,
+			livekit.SegmentedFileProtocol_HLS_PROTOCOL:
 			p.OutputType = OutputTypeHLS
 		}
 	}

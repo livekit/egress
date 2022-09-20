@@ -1,4 +1,4 @@
-package source
+package sdk
 
 import (
 	"encoding/binary"
@@ -53,7 +53,7 @@ type appWriter struct {
 	writePLI         func()
 
 	// a/v sync
-	cs          *clockSync
+	cs          *synchronizer
 	clockSynced bool
 	rtpOffset   int64
 	ptsOffset   int64
@@ -83,7 +83,7 @@ func newAppWriter(
 	rp *lksdk.RemoteParticipant,
 	l logger.Logger,
 	src *app.Source,
-	cs *clockSync,
+	cs *synchronizer,
 	playing chan struct{},
 	writeBlanks bool,
 ) (*appWriter, error) {

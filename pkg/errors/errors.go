@@ -45,6 +45,10 @@ func ErrTrackNotFound(trackID string) error {
 	return fmt.Errorf("track %s not found", trackID)
 }
 
+func ErrParticipantNotFound(identity string) error {
+	return fmt.Errorf("participant %s not found", identity)
+}
+
 func ErrPadLinkFailed(pad, status string) error {
 	return fmt.Errorf("%s pad link failed: %s", pad, status)
 }

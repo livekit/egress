@@ -12,7 +12,7 @@ import (
 	"github.com/livekit/protocol/tracer"
 )
 
-type Bin struct {
+type OutputBin struct {
 	bin *gst.Bin
 
 	// stream
@@ -30,8 +30,8 @@ type streamSink struct {
 	sink  *gst.Element
 }
 
-func Build(ctx context.Context, p *params.Params) (*Bin, error) {
-	ctx, span := tracer.Start(ctx, "Output.Build")
+func New(ctx context.Context, p *params.Params) (*OutputBin, error) {
+	ctx, span := tracer.Start(ctx, "OutputBin.New")
 	defer span.End()
 
 	switch p.EgressType {
@@ -49,22 +49,22 @@ func Build(ctx context.Context, p *params.Params) (*Bin, error) {
 	}
 }
 
-func (b *Bin) Element() *gst.Element {
-	return b.bin.Element
+func (o *OutputBin) Element() *gst.Element {
+	return o.bin.Element
 }
 
-func (b *Bin) Link() error {
-	b.lock.Lock()
-	defer b.lock.Unlock()
+func (o *OutputBin) Link() error {
+	o.lock.Lock()
+	defer o.lock.Unlock()
 
 	// stream tee and sinks
-	for _, sink := range b.sinks {
+	for _, sink := range o.sinks {
 		// link queue to sink
-		if err := b.linkSink(sink); err != nil {
+		if err := o.linkSink(sink); err != nil {
 			return err
 		}
 
-		pad := b.tee.GetRequestPad("src_%u")
+		pad := o.tee.GetRequestPad("src_%u")
 		sink.pad = pad.GetName()
 
 		// link tee to queue
@@ -76,7 +76,7 @@ func (b *Bin) Link() error {
 	return nil
 }
 
-func (b *Bin) linkSink(sink *streamSink) error {
+func (o *OutputBin) linkSink(sink *streamSink) error {
 	sinkPad := sink.sink.GetStaticPad("sink")
 
 	proxy := gst.NewGhostPad("proxy", sinkPad)
@@ -90,7 +90,7 @@ func (b *Bin) linkSink(sink *streamSink) error {
 		internal, _ := self.GetInternalLinks()
 		if len(internal) != 1 {
 			// there should always be exactly one
-			b.logger.Errorw("unexpected internal links", nil, "links", len(internal))
+			o.logger.Errorw("unexpected internal links", nil, "links", len(internal))
 			return gst.FlowNotLinked
 		}
 
@@ -112,36 +112,36 @@ func (b *Bin) linkSink(sink *streamSink) error {
 	return nil
 }
 
-func (b *Bin) AddSink(url string) error {
-	b.lock.Lock()
-	defer b.lock.Unlock()
+func (o *OutputBin) AddSink(url string) error {
+	o.lock.Lock()
+	defer o.lock.Unlock()
 
-	if _, ok := b.sinks[url]; ok {
+	if _, ok := o.sinks[url]; ok {
 		return errors.ErrStreamAlreadyExists
 	}
 
-	sink, err := buildStreamSink(b.protocol, url)
+	sink, err := buildStreamSink(o.protocol, url)
 	if err != nil {
 		return err
 	}
 
 	// add to bin
-	if err = b.bin.AddMany(sink.queue, sink.sink); err != nil {
+	if err = o.bin.AddMany(sink.queue, sink.sink); err != nil {
 		return err
 	}
 
 	// link queue to sink
-	if err = b.linkSink(sink); err != nil {
+	if err = o.linkSink(sink); err != nil {
 		return err
 	}
 
-	teeSrcPad := b.tee.GetRequestPad("src_%u")
+	teeSrcPad := o.tee.GetRequestPad("src_%u")
 	sink.pad = teeSrcPad.GetName()
 
 	teeSrcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		// link tee to queue
 		if linkReturn := pad.Link(sink.queue.GetStaticPad("sink")); linkReturn != gst.PadLinkOK {
-			b.logger.Errorw("failed to link tee to queue", err)
+			o.logger.Errorw("failed to link tee to queue", err)
 		}
 
 		// sync state
@@ -151,20 +151,20 @@ func (b *Bin) AddSink(url string) error {
 		return gst.PadProbeRemove
 	})
 
-	b.sinks[url] = sink
+	o.sinks[url] = sink
 	return nil
 }
 
-func (b *Bin) RemoveSink(url string) error {
-	b.lock.Lock()
-	defer b.lock.Unlock()
+func (o *OutputBin) RemoveSink(url string) error {
+	o.lock.Lock()
+	defer o.lock.Unlock()
 
-	sink, ok := b.sinks[url]
+	sink, ok := o.sinks[url]
 	if !ok {
 		return errors.ErrStreamNotFound
 	}
 
-	srcPad := b.tee.GetStaticPad(sink.pad)
+	srcPad := o.tee.GetStaticPad(sink.pad)
 	srcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		// remove probe
 		pad.RemoveProbe(uint64(info.ID()))
@@ -176,28 +176,28 @@ func (b *Bin) RemoveSink(url string) error {
 		sink.queue.GetStaticPad("sink").SendEvent(gst.NewEOSEvent())
 
 		// remove from bin
-		if err := b.bin.RemoveMany(sink.queue, sink.sink); err != nil {
-			b.logger.Errorw("failed to remove rtmp sink", err)
+		if err := o.bin.RemoveMany(sink.queue, sink.sink); err != nil {
+			o.logger.Errorw("failed to remove rtmp sink", err)
 		}
 		if err := sink.queue.SetState(gst.StateNull); err != nil {
-			b.logger.Errorw("failed stop rtmp queue", err)
+			o.logger.Errorw("failed stop rtmp queue", err)
 		}
 		if err := sink.sink.SetState(gst.StateNull); err != nil {
-			b.logger.Errorw("failed to stop rtmp sink", err)
+			o.logger.Errorw("failed to stop rtmp sink", err)
 		}
 
 		// release tee src pad
-		b.tee.ReleaseRequestPad(pad)
+		o.tee.ReleaseRequestPad(pad)
 
 		return gst.PadProbeOK
 	})
 
-	delete(b.sinks, url)
+	delete(o.sinks, url)
 	return nil
 }
 
-func (b *Bin) GetUrlFromName(name string) (string, error) {
-	for url, sink := range b.sinks {
+func (o *OutputBin) GetUrlFromName(name string) (string, error) {
+	for url, sink := range o.sinks {
 		if sink.queue.GetName() == name || sink.sink.GetName() == name {
 			return url, nil
 		}
