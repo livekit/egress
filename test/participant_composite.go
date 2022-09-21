@@ -1,6 +1,6 @@
 package test
 
-// func testParticipantCompositeFile(t *testing.T, conf *Context) {
+// func testParticipantCompositeFile(t *testing.T, conf *TestConfig) {
 // 	now := time.Now().Unix()
 // 	for _, test := range []*testCase{
 // 		{
@@ -60,7 +60,7 @@ package test
 // 	}
 // }
 //
-// func testParticipantCompositeStream(t *testing.T, conf *Context) {
+// func testParticipantCompositeStream(t *testing.T, conf *TestConfig) {
 // 	for _, test := range []*testCase{
 // 		{
 // 			name: "pc-rtmp",
@@ -94,7 +94,7 @@ package test
 // 	}
 // }
 //
-// func testParticipantCompositeSegments(t *testing.T, conf *Context) {
+// func testParticipantCompositeSegments(t *testing.T, conf *TestConfig) {
 // 	now := time.Now().Unix()
 // 	for _, test := range []*testCase{
 // 		{

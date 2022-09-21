@@ -49,7 +49,7 @@ type testCase struct {
 	outputType params.OutputType
 }
 
-func RunTestSuite(t *testing.T, conf *Context, rpcClient egress.RPCClient, rpcServer egress.RPCServer) {
+func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rpcServer egress.RPCServer) {
 	// connect to room
 	room, err := lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
 		APIKey:              conf.ApiKey,
@@ -175,7 +175,7 @@ func awaitIdle(t *testing.T, svc *service.Service) {
 	t.Fatal("service not idle after 30s")
 }
 
-func runFileTest(t *testing.T, conf *Context, req *livekit.StartEgressRequest, test *testCase, filepath string) {
+func runFileTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, test *testCase, filepath string) {
 	conf.SessionLimits.FileOutputMaxDuration = test.sessionTimeout
 
 	// start
@@ -204,7 +204,7 @@ func runFileTest(t *testing.T, conf *Context, req *livekit.StartEgressRequest, t
 	verifyFile(t, conf, p, res, filepath)
 }
 
-func runStreamTest(t *testing.T, conf *Context, req *livekit.StartEgressRequest, sessionTimeout time.Duration) {
+func runStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, sessionTimeout time.Duration) {
 	conf.SessionLimits.StreamOutputMaxDuration = sessionTimeout
 
 	if conf.SessionLimits.StreamOutputMaxDuration > 0 {
@@ -214,7 +214,7 @@ func runStreamTest(t *testing.T, conf *Context, req *livekit.StartEgressRequest,
 	}
 }
 
-func runTimeLimitStreamTest(t *testing.T, conf *Context, req *livekit.StartEgressRequest) {
+func runTimeLimitStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest) {
 	ctx := context.Background()
 	egressID := startEgress(t, conf, req)
 
@@ -231,7 +231,7 @@ func runTimeLimitStreamTest(t *testing.T, conf *Context, req *livekit.StartEgres
 	checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_LIMIT_REACHED)
 }
 
-func runMultipleStreamTest(t *testing.T, conf *Context, req *livekit.StartEgressRequest) {
+func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest) {
 	ctx := context.Background()
 	egressID := startEgress(t, conf, req)
 
@@ -328,7 +328,7 @@ func runMultipleStreamTest(t *testing.T, conf *Context, req *livekit.StartEgress
 	}
 }
 
-func runSegmentsTest(t *testing.T, conf *Context, req *livekit.StartEgressRequest, playlistPath string, sessionTimeout time.Duration) {
+func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, playlistPath string, sessionTimeout time.Duration) {
 	conf.SessionLimits.SegmentOutputMaxDuration = sessionTimeout
 
 	egressID := startEgress(t, conf, req)
@@ -352,7 +352,7 @@ func runSegmentsTest(t *testing.T, conf *Context, req *livekit.StartEgressReques
 	verifySegments(t, conf, p, res, playlistPath)
 }
 
-func startEgress(t *testing.T, conf *Context, req *livekit.StartEgressRequest) string {
+func startEgress(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest) string {
 	// send start request
 	info, err := conf.rpcClient.SendRequest(context.Background(), req)
 
@@ -420,7 +420,7 @@ func getUpdate(t *testing.T, sub utils.PubSub, egressID string) *livekit.EgressI
 	}
 }
 
-func stopEgress(t *testing.T, conf *Context, egressID string) *livekit.EgressInfo {
+func stopEgress(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressInfo {
 	// send stop request
 	info, err := conf.rpcClient.SendRequest(context.Background(), &livekit.EgressRequest{
 		EgressId: egressID,
@@ -441,7 +441,7 @@ func stopEgress(t *testing.T, conf *Context, egressID string) *livekit.EgressInf
 	return checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
 }
 
-func checkStoppedEgress(t *testing.T, conf *Context, egressID string, expectedStatus livekit.EgressStatus) *livekit.EgressInfo {
+func checkStoppedEgress(t *testing.T, conf *TestConfig, egressID string, expectedStatus livekit.EgressStatus) *livekit.EgressInfo {
 	// check ending update
 	checkUpdate(t, conf.updates, egressID, livekit.EgressStatus_EGRESS_ENDING)
 

@@ -18,7 +18,7 @@ import (
 	lksdk "github.com/livekit/server-sdk-go"
 )
 
-type Context struct {
+type TestConfig struct {
 	*config.Config
 
 	// test config
@@ -49,7 +49,7 @@ type Context struct {
 	runSegmentTests        bool `yaml:"-"`
 }
 
-func NewTestContext(t *testing.T) *Context {
+func NewTestContext(t *testing.T) *TestConfig {
 	confString := os.Getenv("EGRESS_CONFIG_STRING")
 	if confString == "" {
 		confFile := os.Getenv("EGRESS_CONFIG_FILE")
@@ -59,7 +59,7 @@ func NewTestContext(t *testing.T) *Context {
 		confString = string(b)
 	}
 
-	tc := &Context{
+	tc := &TestConfig{
 		RoomName: "egress-test",
 		Muting:   false,
 		GstDebug: 1,
