@@ -109,25 +109,25 @@ func RunTestSuite(t *testing.T, conf *Context, rpcClient egress.RPCClient, rpcSe
 		}
 	}
 
-	if conf.runParticipantTests {
-		if conf.runFileTests {
-			t.Run("ParticipantComposite/File", func(t *testing.T) {
-				testParticipantCompositeFile(t, conf)
-			})
-		}
-
-		if conf.runStreamTests {
-			t.Run("ParticipantComposite/Stream", func(t *testing.T) {
-				testParticipantCompositeStream(t, conf)
-			})
-		}
-
-		if conf.runSegmentTests {
-			t.Run("ParticipantComposite/Segments", func(t *testing.T) {
-				testParticipantCompositeSegments(t, conf)
-			})
-		}
-	}
+	// if conf.runParticipantTests {
+	// 	if conf.runFileTests {
+	// 		t.Run("ParticipantComposite/File", func(t *testing.T) {
+	// 			testParticipantCompositeFile(t, conf)
+	// 		})
+	// 	}
+	//
+	// 	if conf.runStreamTests {
+	// 		t.Run("ParticipantComposite/Stream", func(t *testing.T) {
+	// 			testParticipantCompositeStream(t, conf)
+	// 		})
+	// 	}
+	//
+	// 	if conf.runSegmentTests {
+	// 		t.Run("ParticipantComposite/Segments", func(t *testing.T) {
+	// 			testParticipantCompositeSegments(t, conf)
+	// 		})
+	// 	}
+	// }
 
 	if conf.runTrackCompositeTests {
 		if conf.runFileTests {

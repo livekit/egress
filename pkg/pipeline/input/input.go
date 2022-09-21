@@ -27,8 +27,7 @@ func New(ctx context.Context, conf *config.Config, p *params.Params) (Input, err
 	case *livekit.EgressInfo_RoomComposite:
 		return web.NewWebInput(ctx, conf, p)
 
-	case *livekit.EgressInfo_ParticipantComposite,
-		*livekit.EgressInfo_TrackComposite,
+	case *livekit.EgressInfo_TrackComposite,
 		*livekit.EgressInfo_Track:
 		return sdk.NewSDKInput(ctx, p)
 

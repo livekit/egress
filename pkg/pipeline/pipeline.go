@@ -47,16 +47,18 @@ type Pipeline struct {
 	loop     *glib.MainLoop
 
 	// internal
-	mu             sync.Mutex
-	playing        bool
-	fileStartedAt  int64
-	closed         chan struct{}
-	closedOnce     sync.Once
-	eosTimer       *time.Timer
-	limitTimer     *time.Timer
+	mu            sync.Mutex
+	playing       bool
+	fileStartedAt int64
+	limitTimer    *time.Timer
+	closed        chan struct{}
+	closeOnce     sync.Once
+	eosTimer      *time.Timer
+
+	// segments
 	playlistWriter *sink.PlaylistWriter
-	endedSegments  chan segmentUpdate
 	segmentsWg     sync.WaitGroup
+	endedSegments  chan segmentUpdate
 
 	// callbacks
 	onStatusUpdate func(context.Context, *livekit.EgressInfo)
@@ -436,7 +438,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
-	p.closedOnce.Do(func() {
+	p.closeOnce.Do(func() {
 		close(p.closed)
 		if p.limitTimer != nil {
 			p.limitTimer.Stop()
