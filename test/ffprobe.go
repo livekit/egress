@@ -88,7 +88,7 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
-func verifyFile(t *testing.T, conf *Config, p *params.Params, res *livekit.EgressInfo, filepath string) {
+func verifyFile(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.EgressInfo, filepath string) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
@@ -118,7 +118,7 @@ func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	}
 }
 
-func verifySegments(t *testing.T, conf *Config, p *params.Params, res *livekit.EgressInfo, playlistPath string) {
+func verifySegments(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.EgressInfo, playlistPath string) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
@@ -177,11 +177,6 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 		switch p.Info.Request.(type) {
 		case *livekit.EgressInfo_RoomComposite:
 			require.InDelta(t, expected, actual, 1.5)
-
-		case *livekit.EgressInfo_TrackComposite:
-			if p.AudioEnabled && p.VideoEnabled {
-				require.InDelta(t, expected, actual, 3.0)
-			}
 
 		case *livekit.EgressInfo_Track:
 			if p.AudioEnabled {

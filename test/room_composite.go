@@ -15,7 +15,7 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func testRoomCompositeFile(t *testing.T, conf *Config) {
+func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 	publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
 
 	now := time.Now().Unix()
@@ -89,7 +89,7 @@ func testRoomCompositeFile(t *testing.T, conf *Config) {
 	}
 }
 
-func testRoomCompositeStream(t *testing.T, conf *Config) {
+func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 	publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
 
 	t.Run("rtmp-failure", func(t *testing.T) {
@@ -162,7 +162,7 @@ func testRoomCompositeStream(t *testing.T, conf *Config) {
 	}
 }
 
-func testRoomCompositeSegments(t *testing.T, conf *Config) {
+func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 	publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
 
 	now := time.Now().Unix()

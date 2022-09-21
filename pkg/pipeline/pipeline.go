@@ -12,16 +12,16 @@ import (
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/tracer"
-
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/input"
+	"github.com/livekit/egress/pkg/pipeline/input/sdk"
+	"github.com/livekit/egress/pkg/pipeline/input/web"
 	"github.com/livekit/egress/pkg/pipeline/output"
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/pipeline/sink"
-	"github.com/livekit/egress/pkg/pipeline/source"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/tracer"
 )
 
 const (
@@ -42,21 +42,23 @@ type Pipeline struct {
 
 	// gstreamer
 	pipeline *gst.Pipeline
-	in       *input.Bin
-	out      *output.Bin
+	in       input.Input
+	out      *output.OutputBin
 	loop     *glib.MainLoop
 
 	// internal
-	mu             sync.Mutex
-	playing        bool
-	fileStartedAt  int64
-	closed         chan struct{}
-	closedOnce     sync.Once
-	eosTimer       *time.Timer
-	limitTimer     *time.Timer
+	mu            sync.Mutex
+	playing       bool
+	fileStartedAt int64
+	limitTimer    *time.Timer
+	closed        chan struct{}
+	closeOnce     sync.Once
+	eosTimer      *time.Timer
+
+	// segments
 	playlistWriter *sink.PlaylistWriter
-	endedSegments  chan segmentUpdate
 	segmentsWg     sync.WaitGroup
+	endedSegments  chan segmentUpdate
 
 	// callbacks
 	onStatusUpdate func(context.Context, *livekit.EgressInfo)
@@ -80,13 +82,13 @@ func New(ctx context.Context, conf *config.Config, p *params.Params) (*Pipeline,
 	}()
 
 	// create input bin
-	in, err := input.Build(ctx, conf, p)
+	in, err := input.New(ctx, conf, p)
 	if err != nil {
 		return nil, err
 	}
 
 	// create output bin
-	out, err := output.Build(ctx, p)
+	out, err := output.New(ctx, p)
 	if err != nil {
 		return nil, err
 	}
@@ -218,8 +220,8 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	p.in.Close()
 
 	// update endedAt from sdk source
-	switch s := p.in.Source.(type) {
-	case *source.SDKSource:
+	switch s := p.in.(type) {
+	case *sdk.SDKInput:
 		p.updateDuration(s.GetEndTime())
 	}
 
@@ -289,18 +291,18 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 		}
 
 		switch msg.Source() {
-		case source.AudioAppSource, source.VideoAppSource:
-			switch s := p.in.Source.(type) {
-			case *source.SDKSource:
+		case sdk.AudioAppSource, sdk.VideoAppSource:
+			switch s := p.in.(type) {
+			case *sdk.SDKInput:
 				s.Playing(msg.Source())
 			}
 
 		case pipelineSource:
 			p.playing = true
-			switch s := p.in.Source.(type) {
-			case *source.SDKSource:
+			switch s := p.in.(type) {
+			case *sdk.SDKInput:
 				p.updateStartTime(s.GetStartTime())
-			case *source.WebSource:
+			case *web.WebInput:
 				p.updateStartTime(time.Now().UnixNano())
 			}
 		}
@@ -436,7 +438,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
-	p.closedOnce.Do(func() {
+	p.closeOnce.Do(func() {
 		close(p.closed)
 		if p.limitTimer != nil {
 			p.limitTimer.Stop()
@@ -455,10 +457,10 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 				p.stop()
 			})
 
-			switch s := p.in.Source.(type) {
-			case *source.SDKSource:
+			switch s := p.in.(type) {
+			case *sdk.SDKInput:
 				s.SendEOS()
-			case *source.WebSource:
+			case *web.WebInput:
 				p.pipeline.SendEvent(gst.NewEOSEvent())
 			}
 		}()
@@ -582,8 +584,8 @@ func (p *Pipeline) stop() {
 	p.loop = nil
 	p.mu.Unlock()
 
-	switch p.in.Source.(type) {
-	case *source.WebSource:
+	switch p.in.(type) {
+	case *web.WebInput:
 		p.updateDuration(endedAt)
 	}
 }
