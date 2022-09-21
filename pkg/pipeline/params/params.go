@@ -192,58 +192,6 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			return
 		}
 
-	// case *livekit.StartEgressRequest_ParticipantComposite:
-	// 	p.Info.Request = &livekit.EgressInfo_ParticipantComposite{ParticipantComposite: req.ParticipantComposite}
-	// 	p.Info.RoomName = req.ParticipantComposite.RoomName
-	// 	if p.Info.RoomName == "" {
-	// 		err = errors.ErrInvalidInput("RoomName")
-	// 		return
-	// 	}
-	//
-	// 	// input params
-	// 	p.ParticipantIdentity = req.ParticipantComposite.ParticipantIdentity
-	// 	p.AudioEnabled = !req.ParticipantComposite.VideoOnly
-	// 	p.VideoEnabled = !req.ParticipantComposite.AudioOnly
-	// 	if !p.AudioEnabled && !p.VideoEnabled {
-	// 		err = errors.ErrInvalidInput("AudioOnly and VideoOnly")
-	// 		return
-	// 	}
-	//
-	// 	// encoding options
-	// 	switch opts := req.ParticipantComposite.Options.(type) {
-	// 	case *livekit.ParticipantCompositeEgressRequest_Preset:
-	// 		p.applyPreset(opts.Preset)
-	//
-	// 	case *livekit.ParticipantCompositeEgressRequest_Advanced:
-	// 		p.applyAdvanced(opts.Advanced)
-	// 	}
-	//
-	// 	// output params
-	// 	switch o := req.ParticipantComposite.Output.(type) {
-	// 	case *livekit.ParticipantCompositeEgressRequest_File:
-	// 		if o.File.FileType != livekit.EncodedFileType_DEFAULT_FILETYPE {
-	// 			p.updateOutputType(o.File.FileType)
-	// 		}
-	// 		if err = p.updateFileParams(o.File.Filepath, o.File.Output); err != nil {
-	// 			return
-	// 		}
-	//
-	// 	case *livekit.ParticipantCompositeEgressRequest_Stream:
-	// 		if err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls); err != nil {
-	// 			return
-	// 		}
-	//
-	// 	case *livekit.ParticipantCompositeEgressRequest_Segments:
-	// 		p.updateOutputType(o.Segments.Protocol)
-	// 		if err = p.updateSegmentsParams(o.Segments.FilenamePrefix, o.Segments.PlaylistName, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
-	// 			return
-	// 		}
-	//
-	// 	default:
-	// 		err = errors.ErrInvalidInput("output")
-	// 		return
-	// 	}
-
 	case *livekit.StartEgressRequest_TrackComposite:
 		p.Info.Request = &livekit.EgressInfo_TrackComposite{TrackComposite: req.TrackComposite}
 		p.Info.RoomName = req.TrackComposite.RoomName

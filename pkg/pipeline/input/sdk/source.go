@@ -117,13 +117,6 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 
 	var fileIdentifier string
 	switch p.Info.Request.(type) {
-	// case *livekit.EgressInfo_ParticipantComposite:
-	// 	fileIdentifier = p.ParticipantIdentity
-	// 	s.participantIdentity = p.ParticipantIdentity
-	// 	if err := s.subscribeToParticipant(&wg); err != nil {
-	// 		return err
-	// 	}
-
 	case *livekit.EgressInfo_TrackComposite:
 		fileIdentifier = p.Info.RoomName
 		tracks := make(map[string]struct{})

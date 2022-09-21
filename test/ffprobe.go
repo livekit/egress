@@ -178,12 +178,6 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 		case *livekit.EgressInfo_RoomComposite:
 			require.InDelta(t, expected, actual, 1.5)
 
-		// case *livekit.EgressInfo_ParticipantComposite,
-		// 	*livekit.EgressInfo_TrackComposite:
-		// 	if p.AudioEnabled && p.VideoEnabled {
-		// 		require.InDelta(t, expected, actual, 3.0)
-		// 	}
-
 		case *livekit.EgressInfo_Track:
 			if p.AudioEnabled {
 				delta := 3.0
