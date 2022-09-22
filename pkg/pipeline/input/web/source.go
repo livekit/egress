@@ -1,100 +1,32 @@
-package source
+package web
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net/url"
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/tracer"
-
-	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/protocol/tracer"
 )
-
-const (
-	startRecordingLog = "START_RECORDING"
-	endRecordingLog   = "END_RECORDING"
-)
-
-type WebSource struct {
-	pulseSink    string
-	xvfb         *exec.Cmd
-	chromeCancel context.CancelFunc
-
-	startRecording chan struct{}
-	endRecording   chan struct{}
-
-	logger logger.Logger
-}
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
-func NewWebSource(ctx context.Context, conf *config.Config, p *params.Params) (*WebSource, error) {
-	ctx, span := tracer.Start(ctx, "WebSource.New")
-	defer span.End()
-
-	s := &WebSource{
-		startRecording: make(chan struct{}),
-		endRecording:   make(chan struct{}),
-		logger:         p.Logger,
-	}
-
-	if err := s.createAudioSink(ctx, p.Info.EgressId); err != nil {
-		s.logger.Errorw("failed to load pulse sink", err)
-		return nil, err
-	}
-
-	if err := s.launchXvfb(ctx, p.Display, p.Width, p.Height, p.Depth); err != nil {
-		s.logger.Errorw("failed to launch xvfb", err)
-		s.Close()
-		return nil, err
-	}
-
-	// build input url
-	inputUrl, err := url.Parse(p.TemplateBase)
-	if err != nil {
-		s.logger.Errorw("failed to parse template base", err)
-		s.Close()
-		return nil, err
-	}
-	values := inputUrl.Query()
-	values.Set("layout", p.Layout)
-	values.Set("url", p.LKUrl)
-	values.Set("token", p.Token)
-	inputUrl.RawQuery = values.Encode()
-
-	if err = s.launchChrome(ctx, inputUrl.String(), p.Info.EgressId, p.Display, p.Width, p.Height, conf.Insecure); err != nil {
-		s.logger.Errorw("failed to launch chrome", err, "display", p.Display)
-		s.Close()
-		return nil, err
-	}
-
-	return s, nil
-}
 
 // creates a new pulse audio sink
-func (s *WebSource) createAudioSink(ctx context.Context, egressID string) error {
-	ctx, span := tracer.Start(ctx, "WebSource.createAudioSink")
+func (s *WebInput) createPulseSink(ctx context.Context, p *params.Params) error {
+	ctx, span := tracer.Start(ctx, "WebInput.createPulseSink")
 	defer span.End()
 
 	cmd := exec.Command("pactl",
 		"load-module", "module-null-sink",
-		fmt.Sprintf("sink_name=\"%s\"", egressID),
-		fmt.Sprintf("sink_properties=device.description=\"%s\"", egressID),
+		fmt.Sprintf("sink_name=\"%s\"", p.Info.EgressId),
+		fmt.Sprintf("sink_properties=device.description=\"%s\"", p.Info.EgressId),
 	)
 	var b bytes.Buffer
 	cmd.Stdout = &b
@@ -109,26 +41,38 @@ func (s *WebSource) createAudioSink(ctx context.Context, egressID string) error 
 }
 
 // creates a new xvfb display
-func (s *WebSource) launchXvfb(ctx context.Context, display string, width, height, depth int32) error {
-	ctx, span := tracer.Start(ctx, "WebSource.launchXvfb")
+func (s *WebInput) launchXvfb(ctx context.Context, p *params.Params) error {
+	ctx, span := tracer.Start(ctx, "WebInput.launchXvfb")
 	defer span.End()
 
-	dims := fmt.Sprintf("%dx%dx%d", width, height, depth)
-	s.logger.Debugw("launching xvfb", "display", display, "dims", dims)
-	xvfb := exec.Command("Xvfb", display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
+	dims := fmt.Sprintf("%dx%dx%d", p.Width, p.Height, p.Depth)
+	s.logger.Debugw("launching xvfb", "display", p.Display, "dims", dims)
+	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
 	if err := xvfb.Start(); err != nil {
 		return err
 	}
+
 	s.xvfb = xvfb
 	return nil
 }
 
 // launches chrome and navigates to the url
-func (s *WebSource) launchChrome(ctx context.Context, url, egressID, display string, width, height int32, insecure bool) error {
-	ctx, span := tracer.Start(ctx, "WebSource.launchChrome")
+func (s *WebInput) launchChrome(ctx context.Context, p *params.Params, insecure bool) error {
+	ctx, span := tracer.Start(ctx, "WebInput.launchChrome")
 	defer span.End()
 
-	s.logger.Debugw("launching chrome", "url", url)
+	// build input url
+	inputUrl, err := url.Parse(p.TemplateBase)
+	if err != nil {
+		return err
+	}
+	values := inputUrl.Query()
+	values.Set("layout", p.Layout)
+	values.Set("url", p.LKUrl)
+	values.Set("token", p.Token)
+	inputUrl.RawQuery = values.Encode()
+
+	s.logger.Debugw("launching chrome", "url", inputUrl.String())
 
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.NoFirstRun,
@@ -166,11 +110,11 @@ func (s *WebSource) launchChrome(ctx context.Context, url, egressID, display str
 		chromedp.Flag("enable-automation", false),
 		chromedp.Flag("autoplay-policy", "no-user-gesture-required"),
 		chromedp.Flag("window-position", "0,0"),
-		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", width, height)),
+		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", p.Width, p.Height)),
 
 		// output
-		chromedp.Env(fmt.Sprintf("PULSE_SINK=%s", egressID)),
-		chromedp.Flag("display", display),
+		chromedp.Env(fmt.Sprintf("PULSE_SINK=%s", p.Info.EgressId)),
+		chromedp.Flag("display", p.Display),
 	}
 
 	if insecure {
@@ -196,14 +140,15 @@ func (s *WebSource) launchChrome(ctx context.Context, url, egressID, display str
 				}
 				msg := fmt.Sprint(val)
 				args = append(args, msg)
-				if msg == startRecordingLog {
+				switch msg {
+				case startRecordingLog:
 					select {
 					case <-s.startRecording:
 						continue
 					default:
 						close(s.startRecording)
 					}
-				} else if msg == endRecordingLog {
+				case endRecordingLog:
 					select {
 					case <-s.endRecording:
 						continue
@@ -217,8 +162,8 @@ func (s *WebSource) launchChrome(ctx context.Context, url, egressID, display str
 	})
 
 	var errString string
-	err := chromedp.Run(chromeCtx,
-		chromedp.Navigate(url),
+	err = chromedp.Run(chromeCtx,
+		chromedp.Navigate(inputUrl.String()),
 		chromedp.Evaluate(`
 			if (document.querySelector('div.error')) {
 				document.querySelector('div.error').innerText;
@@ -231,34 +176,4 @@ func (s *WebSource) launchChrome(ctx context.Context, url, egressID, display str
 		err = errors.New(errString)
 	}
 	return err
-}
-
-func (s *WebSource) StartRecording() chan struct{} {
-	return s.startRecording
-}
-
-func (s *WebSource) EndRecording() chan struct{} {
-	return s.endRecording
-}
-
-func (s *WebSource) Close() {
-	if s.chromeCancel != nil {
-		s.chromeCancel()
-		s.chromeCancel = nil
-	}
-
-	if s.xvfb != nil {
-		err := s.xvfb.Process.Signal(os.Interrupt)
-		if err != nil {
-			s.logger.Errorw("failed to kill xvfb", err)
-		}
-		s.xvfb = nil
-	}
-
-	if s.pulseSink != "" {
-		err := exec.Command("pactl", "unload-module", s.pulseSink).Run()
-		if err != nil {
-			s.logger.Errorw("failed to unload pulse sink", err)
-		}
-	}
 }

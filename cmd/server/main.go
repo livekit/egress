@@ -12,16 +12,15 @@ import (
 	"github.com/urfave/cli/v2"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/service"
+	"github.com/livekit/egress/version"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/tracer"
-
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/service"
-	"github.com/livekit/egress/version"
 )
 
 func main() {

@@ -12,7 +12,7 @@ import (
 )
 
 func TestEgress(t *testing.T) {
-	conf := NewTestConfig(t)
+	conf := NewTestContext(t)
 
 	// rpc client and server
 	rc, err := redis.GetRedisClient(conf.Config.Redis)
