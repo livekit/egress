@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -258,15 +259,15 @@ func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressReq
 		req: req,
 		cmd: cmd,
 	})
+
 	defer func() {
 		s.monitor.EgressEnded(req)
 		s.processes.Delete(req.EgressId)
-		logger.Infow("deleting handler temporary directory", "path", tempPath)
+		logger.Debugw("deleting handler temporary directory", "path", tempPath)
 		_ = os.RemoveAll(tempPath)
 	}()
 
-	err = cmd.Run()
-	if err != nil {
+	if err = cmd.Run(); err != nil {
 		logger.Errorw("could not launch handler", err)
 	}
 }
@@ -293,8 +294,7 @@ func (s *Service) Stop(kill bool) {
 
 	if kill {
 		s.processes.Range(func(key, value interface{}) bool {
-			p := value.(*process)
-			if err := p.cmd.Process.Kill(); err != nil {
+			if err := value.(*process).cmd.Process.Signal(syscall.SIGINT); err != nil {
 				logger.Errorw("failed to kill process", err, "egressID", key.(string))
 			}
 			return true

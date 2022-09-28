@@ -337,6 +337,8 @@ github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427 h1:gHV/CCSlkURRIkjL
 github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427/go.mod h1:0hI+orMYVT61TEh429LvmoV9UmyqjeTqdJ3DW2TX114=
 github.com/livekit/livekit-server v1.2.1 h1:eyhjpQe9HBrEH2iVhMsOlrzorgW+T0XG71CKrYBNqWw=
 github.com/livekit/livekit-server v1.2.1/go.mod h1:DzyJyStwd1+F/5x95DacrVCtsgTh2FlXaSyDr+3js5Q=
+github.com/livekit/mageutil v0.0.0-20220927214055-ff37ecf1f093 h1:a5Pzvr9EC+qLVDOVxM/008CCBogusc9pNIfCrXCTQtw=
+github.com/livekit/mageutil v0.0.0-20220927214055-ff37ecf1f093/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/protocol v1.0.2-0.20220909090645-6ec04e9ca47e/go.mod h1:ykRtMmaq4blqGyLWWPtYkB/74JYsyK7N2DAXLGnfSa4=
 github.com/livekit/protocol v1.1.2 h1:LDEFKK16T57pwDwxlJkkWMpbgvR0DJ3PozjOnvq29CI=
 github.com/livekit/protocol v1.1.2/go.mod h1:eburCdz6ZtbgKSKYkAeCdWP1z33DB9clTphz7uNaxp0=
@@ -685,6 +687,8 @@ golang.org/x/sync v0.0.0-20201207232520-09787c993a3a/go.mod h1:RxMgew5VJxzue5/jJ
 golang.org/x/sync v0.0.0-20210220032951-036812b2e83c/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.0.0-20220819030929-7fc1605a5dde/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+golang.org/x/sync v0.0.0-20220923202941-7f9b1623fab7 h1:ZrnxWX62AgTKOSagEqxvb3ffipvEDX2pl7E1TdqLqIc=
+golang.org/x/sync v0.0.0-20220923202941-7f9b1623fab7/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sys v0.0.0-20180830151530-49385e6e1522/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/sys v0.0.0-20180905080454-ebe1bf3edb33/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/sys v0.0.0-20180909124046-d0be0721c37e/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
