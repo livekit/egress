@@ -10,11 +10,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-
-	"github.com/livekit/egress/pkg/config"
 )
 
 type Monitor struct {
@@ -92,9 +91,9 @@ func (m *Monitor) checkCPUConfig(costConfig config.CPUCostConfig) error {
 	}
 
 	requirements := []float64{
-		costConfig.TrackCpuCost,
-		costConfig.TrackCompositeCpuCost,
 		costConfig.RoomCompositeCpuCost,
+		costConfig.TrackCompositeCpuCost,
+		costConfig.TrackCpuCost,
 	}
 	sort.Float64s(requirements)
 

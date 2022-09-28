@@ -10,13 +10,12 @@ import (
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
-
-	"github.com/livekit/egress/pkg/errors"
 )
 
 const (
@@ -124,15 +123,16 @@ func NewConfig(confString string) (*Config, error) {
 			ContainerName: conf.Azure.ContainerName,
 		}
 	}
+
 	// Setting CPU costs from config. Ensure that CPU costs are positive
-	if conf.CPUCost.TrackCpuCost <= 0.0 {
-		conf.CPUCost.TrackCpuCost = trackCpuCost
+	if conf.CPUCost.RoomCompositeCpuCost <= 0 {
+		conf.CPUCost.RoomCompositeCpuCost = roomCompositeCpuCost
 	}
-	if conf.CPUCost.TrackCompositeCpuCost <= 0.0 {
+	if conf.CPUCost.TrackCompositeCpuCost <= 0 {
 		conf.CPUCost.TrackCompositeCpuCost = trackCompositeCpuCost
 	}
-	if conf.CPUCost.RoomCompositeCpuCost <= 0.0 {
-		conf.CPUCost.RoomCompositeCpuCost = roomCompositeCpuCost
+	if conf.CPUCost.TrackCpuCost <= 0 {
+		conf.CPUCost.TrackCpuCost = trackCpuCost
 	}
 
 	conf.LocalOutputDirectory = path.Clean(conf.LocalOutputDirectory)

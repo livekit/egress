@@ -1,4 +1,4 @@
-package source
+package sdk
 
 import (
 	"encoding/binary"
@@ -14,14 +14,13 @@ import (
 	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
 	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
-
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 const (
@@ -54,7 +53,7 @@ type appWriter struct {
 	writePLI         func()
 
 	// a/v sync
-	cs          *clockSync
+	cs          *synchronizer
 	clockSynced bool
 	rtpOffset   int64
 	ptsOffset   int64
@@ -84,7 +83,7 @@ func newAppWriter(
 	rp *lksdk.RemoteParticipant,
 	l logger.Logger,
 	src *app.Source,
-	cs *clockSync,
+	cs *synchronizer,
 	playing chan struct{},
 	writeBlanks bool,
 ) (*appWriter, error) {
