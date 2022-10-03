@@ -15,6 +15,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
@@ -235,7 +236,7 @@ func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressReq
 		return
 	}
 
-	reqString, err := proto.Marshal(req)
+	reqString, err := protojson.Marshal(req)
 	if err != nil {
 		span.RecordError(err)
 		logger.Errorw("could not marshal request", err)
