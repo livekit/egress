@@ -285,7 +285,7 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 	}
 
 	if p.OutputType != "" {
-		if err = p.updateCodecsFromOutputType(); err != nil {
+		if err = p.updateCodecs(); err != nil {
 			return
 		}
 	}
@@ -431,11 +431,18 @@ func (p *Params) updateFileParams(storageFilepath string, output interface{}) er
 	}
 
 	// filename
+	replacements := map[string]string{
+		"{room_name}": p.Info.RoomName,
+		"{room_id}":   p.Info.RoomId,
+		"{time}":      time.Now().Format("2006-01-02T150405"),
+	}
 	if p.OutputType != "" {
-		err := p.updateFilepath(p.Info.RoomName)
+		err := p.updateFilepath(p.Info.RoomName, replacements)
 		if err != nil {
 			return err
 		}
+	} else {
+		p.StorageFilepath = stringReplace(p.StorageFilepath, replacements)
 	}
 
 	return nil
@@ -498,7 +505,11 @@ func (p *Params) updateSegmentsParams(filePrefix string, playlistFilename string
 	}
 
 	// filename
-	err := p.updatePrefixAndPlaylist(p.Info.RoomName)
+	err := p.UpdatePrefixAndPlaylist(p.Info.RoomName, map[string]string{
+		"{room_name}": p.Info.RoomName,
+		"{room_id}":   p.Info.RoomId,
+		"{time}":      time.Now().Format("2006-01-02T150405"),
+	})
 	if err != nil {
 		return err
 	}
@@ -533,7 +544,7 @@ func (p *Params) updateConnectionInfo(request *livekit.StartEgressRequest) error
 }
 
 // used for web input source
-func (p *Params) updateCodecsFromOutputType() error {
+func (p *Params) updateCodecs() error {
 	// check audio codec
 	if p.AudioEnabled {
 		if p.AudioCodec == "" {
@@ -556,7 +567,7 @@ func (p *Params) updateCodecsFromOutputType() error {
 }
 
 // used for sdk input source
-func (p *Params) UpdateOutputTypeFromCodecs(fileIdentifier string) error {
+func (p *Params) UpdateFileInfoFromSDK(fileIdentifier string, replacements map[string]string) error {
 	if p.OutputType == "" {
 		if !p.VideoEnabled {
 			// audio input is always opus
@@ -576,10 +587,12 @@ func (p *Params) UpdateOutputTypeFromCodecs(fileIdentifier string) error {
 		return errors.ErrIncompatible(p.OutputType, p.VideoCodec)
 	}
 
-	return p.updateFilepath(fileIdentifier)
+	return p.updateFilepath(fileIdentifier, replacements)
 }
 
-func (p *Params) updateFilepath(identifier string) error {
+func (p *Params) updateFilepath(identifier string, replacements map[string]string) error {
+	p.StorageFilepath = stringReplace(p.StorageFilepath, replacements)
+
 	// get file extension
 	ext := FileExtensionForOutputType[p.OutputType]
 
@@ -630,7 +643,10 @@ func (p *Params) updateFilepath(identifier string) error {
 	return nil
 }
 
-func (p *Params) updatePrefixAndPlaylist(identifier string) error {
+func (p *Params) UpdatePrefixAndPlaylist(identifier string, replacements map[string]string) error {
+	p.LocalFilePrefix = stringReplace(p.LocalFilePrefix, replacements)
+	p.PlaylistFilename = stringReplace(p.PlaylistFilename, replacements)
+
 	ext := FileExtensionForOutputType[p.OutputType]
 
 	if p.LocalFilePrefix == "" || strings.HasSuffix(p.LocalFilePrefix, "/") {
@@ -667,6 +683,13 @@ func (p *Params) updatePrefixAndPlaylist(identifier string) error {
 
 	p.SegmentsInfo.PlaylistName = p.GetStorageFilepath(p.PlaylistFilename)
 	return nil
+}
+
+func (p *Params) UpdatePlaylistNamesFromSDK(replacements map[string]string) {
+	p.LocalFilePrefix = stringReplace(p.LocalFilePrefix, replacements)
+	p.PlaylistFilename = stringReplace(p.PlaylistFilename, replacements)
+	p.StoragePathPrefix = stringReplace(p.StoragePathPrefix, replacements)
+	p.SegmentsInfo.PlaylistName = stringReplace(p.SegmentsInfo.PlaylistName, replacements)
 }
 
 func (p *Params) VerifyUrl(url string) error {
@@ -716,4 +739,11 @@ func (p *Params) GetSessionTimeout() time.Duration {
 	}
 
 	return 0
+}
+
+func stringReplace(s string, replacements map[string]string) string {
+	for template, value := range replacements {
+		s = strings.Replace(s, template, value, -1)
+	}
+	return s
 }

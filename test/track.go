@@ -23,35 +23,34 @@ import (
 )
 
 func testTrackFile(t *testing.T, conf *TestConfig) {
-	now := time.Now().Unix()
 	for _, test := range []*testCase{
 		{
 			name:       "track-opus",
 			audioOnly:  true,
 			audioCodec: params.MimeTypeOpus,
 			outputType: params.OutputTypeOGG,
-			filename:   fmt.Sprintf("track-opus-%v.ogg", now),
+			filename:   "t_{track_source}_{time}.ogg",
 		},
 		{
 			name:       "track-vp8",
 			videoOnly:  true,
 			videoCodec: params.MimeTypeVP8,
 			outputType: params.OutputTypeWebM,
-			filename:   fmt.Sprintf("track-vp8-%v.webm", now),
+			filename:   "t_{track_type}_{time}.webm",
 		},
 		{
 			name:       "track-h264",
 			videoOnly:  true,
 			videoCodec: params.MimeTypeH264,
 			outputType: params.OutputTypeMP4,
-			filename:   fmt.Sprintf("track-h264-%v.mp4", now),
+			filename:   "t_{track_id}_{time}.mp4",
 		},
 		{
-			name:           "track-h264-timedout",
+			name:           "track-limit",
 			videoOnly:      true,
 			videoCodec:     params.MimeTypeH264,
 			outputType:     params.OutputTypeMP4,
-			filename:       fmt.Sprintf("track-h264-timedout-%v.mp4", now),
+			filename:       "t_{room_name}_limit_{time}.mp4",
 			sessionTimeout: time.Second * 20,
 		},
 	} {
@@ -65,13 +64,12 @@ func testTrackFile(t *testing.T, conf *TestConfig) {
 			trackID := publishSampleToRoom(t, conf.room, codec, conf.Muting)
 			time.Sleep(time.Second)
 
-			filepath := getFilePath(conf.Config, test.filename)
 			trackRequest := &livekit.TrackEgressRequest{
 				RoomName: conf.room.Name(),
 				TrackId:  trackID,
 				Output: &livekit.TrackEgressRequest_File{
 					File: &livekit.DirectFileOutput{
-						Filepath: filepath,
+						Filepath: getFilePath(conf.Config, test.filename),
 					},
 				},
 			}
@@ -85,7 +83,7 @@ func testTrackFile(t *testing.T, conf *TestConfig) {
 				},
 			}
 
-			runFileTest(t, conf, req, test, filepath)
+			runFileTest(t, conf, req, test)
 		})
 	}
 }
@@ -100,7 +98,7 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 			filename:   fmt.Sprintf("track-ws-%v.raw", now),
 		},
 		{
-			name:       "track-websocket-timedout",
+			name:       "track-websocket-limit",
 			audioOnly:  true,
 			audioCodec: params.MimeTypeOpus,
 			filename:   fmt.Sprintf("track-ws-timedout-%v.raw", now),

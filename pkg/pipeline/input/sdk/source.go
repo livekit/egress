@@ -23,15 +23,24 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 	cb.OnTrackUnpublished = s.onTrackUnpublished
 	cb.OnDisconnected = s.onDisconnected
 
+	filenameReplacements := make(map[string]string)
+
 	var onSubscribeErr error
 	var wg sync.WaitGroup
-	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer wg.Done()
 		s.logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
 
 		var codec params.MimeType
 		var appSrcName string
 		var err error
+
+		if p.TrackID != "" {
+			filenameReplacements["{track_id}"] = p.TrackID
+			filenameReplacements["{track_type}"] = "audio"
+			filenameReplacements["{track_source}"] = strings.ToLower(pub.Source().String())
+		}
+		filenameReplacements["{publisher_identity}"] = rp.Identity()
 
 		switch {
 		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeOpus)):
@@ -147,11 +156,14 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 		return onSubscribeErr
 	}
 
-	if p.EgressType == params.EgressTypeFile {
-		if err := p.UpdateOutputTypeFromCodecs(fileIdentifier); err != nil {
+	switch p.EgressType {
+	case params.EgressTypeFile:
+		if err := p.UpdateFileInfoFromSDK(fileIdentifier, filenameReplacements); err != nil {
 			s.logger.Errorw("could not update file params", err)
 			return err
 		}
+	case params.EgressTypeSegmentedFile:
+		p.UpdatePlaylistNamesFromSDK(filenameReplacements)
 	}
 
 	return nil
@@ -246,6 +258,9 @@ func (s *SDKInput) subscribeToTracks(expecting map[string]struct{}) error {
 		for _, p := range s.room.GetParticipants() {
 			for _, track := range p.Tracks() {
 				if _, ok := expecting[track.SID()]; ok {
+					if s.participantIdentity == "" {
+						s.participantIdentity = p.Identity()
+					}
 					if rt, ok := track.(*lksdk.RemoteTrackPublication); ok {
 						err := rt.SetSubscribed(true)
 						if err != nil {
