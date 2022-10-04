@@ -155,7 +155,7 @@ func awaitIdle(t *testing.T, svc *service.Service) {
 	t.Fatal("service not idle after 30s")
 }
 
-func runFileTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, test *testCase, filepath string) {
+func runFileTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, test *testCase) {
 	conf.SessionLimits.FileOutputMaxDuration = test.sessionTimeout
 
 	// start
@@ -181,7 +181,7 @@ func runFileTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest
 	}
 
 	// verify
-	verifyFile(t, conf, p, res, filepath)
+	verifyFile(t, conf, p, res)
 }
 
 func runStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, sessionTimeout time.Duration) {
@@ -308,7 +308,7 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	}
 }
 
-func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, playlistPath string, sessionTimeout time.Duration) {
+func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, sessionTimeout time.Duration) {
 	conf.SessionLimits.SegmentOutputMaxDuration = sessionTimeout
 
 	egressID := startEgress(t, conf, req)
@@ -329,7 +329,7 @@ func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 	p, err := params.GetPipelineParams(context.Background(), conf.Config, req)
 	require.NoError(t, err)
 
-	verifySegments(t, conf, p, res, playlistPath)
+	verifySegments(t, conf, p, res)
 }
 
 func startEgress(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest) string {

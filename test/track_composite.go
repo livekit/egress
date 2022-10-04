@@ -3,7 +3,6 @@
 package test
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -13,28 +12,27 @@ import (
 )
 
 func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
-	now := time.Now().Unix()
 	for _, test := range []*testCase{
 		{
 			name:       "tc-vp8-mp4",
 			fileType:   livekit.EncodedFileType_MP4,
 			audioCodec: params.MimeTypeOpus,
 			videoCodec: params.MimeTypeVP8,
-			filename:   fmt.Sprintf("tc-vp8-%v.mp4", now),
+			filename:   "tc_{publisher_identity}_vp8_{time}.mp4",
 		},
 		{
 			name:       "tc-h264-mp4",
 			fileType:   livekit.EncodedFileType_MP4,
 			audioCodec: params.MimeTypeOpus,
 			videoCodec: params.MimeTypeH264,
-			filename:   fmt.Sprintf("tc-h264-%v.mp4", now),
+			filename:   "tc_{room_name}_h264_{time}.mp4",
 		},
 		{
-			name:           "tc-h264-mp4-limit",
+			name:           "tc-limit",
 			fileType:       livekit.EncodedFileType_MP4,
 			audioCodec:     params.MimeTypeOpus,
 			videoCodec:     params.MimeTypeH264,
-			filename:       fmt.Sprintf("tc-h264-%v.mp4", now),
+			filename:       "tc_limit_{time}.mp4",
 			sessionTimeout: time.Second * 20,
 		},
 	} {
@@ -42,13 +40,12 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 			awaitIdle(t, conf.svc)
 			audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, test.audioCodec, test.videoCodec, conf.Muting)
 
-			filepath := getFilePath(conf.Config, test.filename)
 			trackRequest := &livekit.TrackCompositeEgressRequest{
 				RoomName: conf.room.Name(),
 				Output: &livekit.TrackCompositeEgressRequest_File{
 					File: &livekit.EncodedFileOutput{
 						FileType: test.fileType,
-						Filepath: filepath,
+						Filepath: getFilePath(conf.Config, test.filename),
 					},
 				},
 			}
@@ -72,7 +69,7 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 				},
 			}
 
-			runFileTest(t, conf, req, test, filepath)
+			runFileTest(t, conf, req, test)
 		})
 	}
 }
@@ -113,27 +110,26 @@ func testTrackCompositeStream(t *testing.T, conf *TestConfig) {
 }
 
 func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
-	now := time.Now().Unix()
 	for _, test := range []*testCase{
 		{
-			name:       "tc-vp8-hls",
+			name:       "tcs-vp8",
 			audioCodec: params.MimeTypeOpus,
 			videoCodec: params.MimeTypeVP8,
-			filename:   fmt.Sprintf("tc-vp8-hls-%v", now),
-			playlist:   fmt.Sprintf("tc-vp8-hls-%v.m3u8", now),
+			filename:   "tcs_{publisher_identity}_vp8_{time}",
+			playlist:   "tcs_{publisher_identity}_vp8_{time}.m3u8",
 		},
 		{
-			name:       "tc-h264-hls",
+			name:       "tcs-h264",
 			audioCodec: params.MimeTypeOpus,
 			videoCodec: params.MimeTypeH264,
-			filename:   fmt.Sprintf("tc-h264-hls-%v", now),
-			playlist:   fmt.Sprintf("tc-h264-hls-%v.m3u8", now),
+			filename:   "tcs_{room_name}_h264_{time}",
+			playlist:   "tcs_{room_name}_h264_{time}.m3u8",
 		}, {
-			name:       "tc-h264-hls-limit",
+			name:       "tcs-limit",
 			audioCodec: params.MimeTypeOpus,
 			videoCodec: params.MimeTypeH264,
-			filename:   fmt.Sprintf("tc-h264-hls-limit-%v", now),
-			playlist:   fmt.Sprintf("tc-h264-hls-limit-%v.m3u8", now),
+			filename:   "tcs-limit-{time}",
+			playlist:   "tcs-limit-{time}.m3u8",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -174,7 +170,7 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 				},
 			}
 
-			runSegmentsTest(t, conf, req, getFilePath(conf.Config, test.playlist), test.sessionTimeout)
+			runSegmentsTest(t, conf, req, test.sessionTimeout)
 		})
 	}
 }
