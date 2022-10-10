@@ -154,6 +154,8 @@ func (w *appWriter) start() {
 	w.startTime = time.Now()
 
 	for {
+		var pkt *rtp.Packet
+
 		select {
 		case <-w.force:
 			// force push remaining packets and quit
@@ -163,7 +165,7 @@ func (w *appWriter) start() {
 		default:
 			// read next packet
 			_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
-			pkt, _, err := w.track.ReadRTP()
+			next, _, err := w.track.ReadRTP()
 			if err != nil {
 				if w.isDraining() {
 					return
@@ -177,7 +179,6 @@ func (w *appWriter) start() {
 					}
 				}
 
-				// continue if read timeout
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					continue
 				}
@@ -192,26 +193,30 @@ func (w *appWriter) start() {
 				return
 			}
 
-			// sync offsets after first packet read
-			// see comment in writeRTP below
-			if !w.clockSynced {
-				now := time.Now().UnixNano()
-				startTime := w.cs.GetOrSetStartTime(now)
-				w.ptsOffset = now - startTime
-				w.rtpOffset = int64(pkt.Timestamp)
-				w.clockSynced = true
-			}
-
-			// push packet to sample builder
-			w.sb.Push(pkt)
-
-			// push completed packets to appsrc
-			if err = w.pushPackets(false); err != nil {
-				if !errors.Is(err, io.EOF) {
-					w.logger.Errorw("could not push buffers", err)
+			// when a track is killed, one 8x8 frame is sent by the SFU and needs to be ignored
+			if pkt != nil {
+				// sync offsets after first packet read
+				// see comment in writeRTP below
+				if !w.clockSynced {
+					now := time.Now().UnixNano()
+					startTime := w.cs.GetOrSetStartTime(now)
+					w.ptsOffset = now - startTime
+					w.rtpOffset = int64(pkt.Timestamp)
+					w.clockSynced = true
 				}
-				return
+
+				// push packet to sample builder
+				w.logger.Debugw("pushing packet")
+				w.sb.Push(pkt)
+
+				// push completed packets to appsrc
+				if err = w.pushPackets(false); err != nil {
+					w.logger.Errorw("could not push buffers", err)
+					return
+				}
 			}
+
+			pkt = next
 		}
 	}
 }

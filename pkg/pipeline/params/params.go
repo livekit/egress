@@ -54,7 +54,7 @@ type SourceParams struct {
 	// sdk source
 	TrackID             string
 	TrackSource         string
-	TrackType           string
+	TrackKind           string
 	AudioTrackID        string
 	VideoTrackID        string
 	ParticipantIdentity string
@@ -763,7 +763,7 @@ type Manifest struct {
 	EndedAt           int64  `json:"ended_at,omitempty"`
 	PublisherIdentity string `json:"publisher_identity,omitempty"`
 	TrackID           string `json:"track_id,omitempty"`
-	TrackKind         string `json:"track_name,omitempty"`
+	TrackKind         string `json:"track_kind,omitempty"`
 	TrackSource       string `json:"track_source,omitempty"`
 	AudioTrackID      string `json:"audio_track_id,omitempty"`
 	VideoTrackID      string `json:"video_track_id,omitempty"`
@@ -779,7 +779,7 @@ func (p *Params) GetManifest() ([]byte, error) {
 		EndedAt:           p.Info.EndedAt,
 		PublisherIdentity: p.ParticipantIdentity,
 		TrackID:           p.TrackID,
-		TrackKind:         p.TrackType,
+		TrackKind:         p.TrackKind,
 		TrackSource:       p.TrackSource,
 		AudioTrackID:      p.AudioTrackID,
 		VideoTrackID:      p.VideoTrackID,

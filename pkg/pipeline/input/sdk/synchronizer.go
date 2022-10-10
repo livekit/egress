@@ -13,12 +13,12 @@ type synchronizer struct {
 }
 
 func (c *synchronizer) GetOrSetStartTime(t int64) int64 {
-	if c.startTime.CAS(0, t) {
+	if c.startTime.CompareAndSwap(0, t) {
 		return t
 	}
 
 	startTime := c.startTime.Load()
-	c.delay.CAS(0, t-startTime)
+	c.delay.CompareAndSwap(0, t-startTime)
 	return startTime
 }
 
