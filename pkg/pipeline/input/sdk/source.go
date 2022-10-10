@@ -35,12 +35,19 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 		var appSrcName string
 		var err error
 
-		if p.TrackID != "" {
-			filenameReplacements["{track_id}"] = p.TrackID
-			filenameReplacements["{track_type}"] = "audio"
-			filenameReplacements["{track_source}"] = strings.ToLower(pub.Source().String())
+		if p.ParticipantIdentity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
+			p.ParticipantIdentity = rp.Identity()
+			filenameReplacements["{publisher_identity}"] = p.ParticipantIdentity
 		}
-		filenameReplacements["{publisher_identity}"] = rp.Identity()
+
+		if p.TrackID != "" {
+			p.TrackType = "audio"
+			p.TrackSource = strings.ToLower(pub.Source().String())
+
+			filenameReplacements["{track_id}"] = p.TrackID
+			filenameReplacements["{track_type}"] = p.TrackType
+			filenameReplacements["{track_source}"] = p.TrackSource
+		}
 
 		switch {
 		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeOpus)):

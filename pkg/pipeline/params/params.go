@@ -2,6 +2,7 @@ package params
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -18,7 +19,8 @@ import (
 )
 
 type Params struct {
-	conf     *config.Config
+	conf *config.Config
+
 	Logger   logger.Logger
 	Info     *livekit.EgressInfo
 	GstReady chan struct{}
@@ -35,7 +37,7 @@ type Params struct {
 	FileParams
 	SegmentedFileParams
 
-	FileUpload interface{}
+	UploadParams
 }
 
 type SourceParams struct {
@@ -51,6 +53,8 @@ type SourceParams struct {
 
 	// sdk source
 	TrackID             string
+	TrackSource         string
+	TrackType           string
 	AudioTrackID        string
 	VideoTrackID        string
 	ParticipantIdentity string
@@ -94,6 +98,11 @@ type SegmentedFileParams struct {
 	SegmentDuration   int
 }
 
+type UploadParams struct {
+	UploadConfig    interface{}
+	DisableManifest bool
+}
+
 func ValidateRequest(ctx context.Context, conf *config.Config, request *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
 	ctx, span := tracer.Start(ctx, "Params.ValidateRequest")
 	defer span.End()
@@ -113,6 +122,7 @@ func GetPipelineParams(ctx context.Context, conf *config.Config, request *liveki
 func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest) (p *Params, err error) {
 	// start with defaults
 	p = &Params{
+		conf:   conf,
 		Logger: logger.Logger(logger.GetLogger().WithValues("egressID", request.EgressId)),
 		Info: &livekit.EgressInfo{
 			EgressId: request.EgressId,
@@ -132,7 +142,6 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			Framerate:    30,
 			VideoBitrate: 4500,
 		},
-		conf: conf,
 	}
 
 	switch req := request.Request.(type) {
@@ -171,6 +180,7 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		// output params
 		switch o := req.RoomComposite.Output.(type) {
 		case *livekit.RoomCompositeEgressRequest_File:
+			p.DisableManifest = o.File.DisableManifest
 			p.updateOutputType(o.File.FileType)
 			if err = p.updateFileParams(o.File.Filepath, o.File.Output); err != nil {
 				return
@@ -182,6 +192,7 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			}
 
 		case *livekit.RoomCompositeEgressRequest_Segments:
+			p.DisableManifest = o.Segments.DisableManifest
 			p.updateOutputType(o.Segments.Protocol)
 			if err = p.updateSegmentsParams(o.Segments.FilenamePrefix, o.Segments.PlaylistName, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
 				return
@@ -222,6 +233,7 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		// output params
 		switch o := req.TrackComposite.Output.(type) {
 		case *livekit.TrackCompositeEgressRequest_File:
+			p.DisableManifest = o.File.DisableManifest
 			if o.File.FileType != livekit.EncodedFileType_DEFAULT_FILETYPE {
 				p.updateOutputType(o.File.FileType)
 			}
@@ -235,6 +247,7 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			}
 
 		case *livekit.TrackCompositeEgressRequest_Segments:
+			p.DisableManifest = o.Segments.DisableManifest
 			p.updateOutputType(o.Segments.Protocol)
 			if err = p.updateSegmentsParams(o.Segments.FilenamePrefix, o.Segments.PlaylistName, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
 				return
@@ -262,6 +275,7 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		// output params
 		switch o := req.Track.Output.(type) {
 		case *livekit.TrackEgressRequest_File:
+			p.DisableManifest = o.File.DisableManifest
 			if err = p.updateFileParams(o.File.Filepath, o.File.Output); err != nil {
 				return
 			}
@@ -415,19 +429,19 @@ func (p *Params) updateFileParams(storageFilepath string, output interface{}) er
 	// output location
 	switch o := output.(type) {
 	case *livekit.EncodedFileOutput_S3:
-		p.FileUpload = o.S3
+		p.UploadConfig = o.S3
 	case *livekit.EncodedFileOutput_Azure:
-		p.FileUpload = o.Azure
+		p.UploadConfig = o.Azure
 	case *livekit.EncodedFileOutput_Gcp:
-		p.FileUpload = o.Gcp
+		p.UploadConfig = o.Gcp
 	case *livekit.DirectFileOutput_S3:
-		p.FileUpload = o.S3
+		p.UploadConfig = o.S3
 	case *livekit.DirectFileOutput_Azure:
-		p.FileUpload = o.Azure
+		p.UploadConfig = o.Azure
 	case *livekit.DirectFileOutput_Gcp:
-		p.FileUpload = o.Gcp
+		p.UploadConfig = o.Gcp
 	default:
-		p.FileUpload = p.conf.FileUpload
+		p.UploadConfig = p.conf.FileUpload
 	}
 
 	// filename
@@ -495,13 +509,13 @@ func (p *Params) updateSegmentsParams(filePrefix string, playlistFilename string
 	// output location
 	switch o := output.(type) {
 	case *livekit.SegmentedFileOutput_S3:
-		p.FileUpload = o.S3
+		p.UploadConfig = o.S3
 	case *livekit.SegmentedFileOutput_Azure:
-		p.FileUpload = o.Azure
+		p.UploadConfig = o.Azure
 	case *livekit.SegmentedFileOutput_Gcp:
-		p.FileUpload = o.Gcp
+		p.UploadConfig = o.Gcp
 	default:
-		p.FileUpload = p.conf.FileUpload
+		p.UploadConfig = p.conf.FileUpload
 	}
 
 	// filename
@@ -617,7 +631,7 @@ func (p *Params) updateFilepath(identifier string, replacements map[string]strin
 
 	// get local filepath
 	dir, filename := path.Split(p.StorageFilepath)
-	if p.FileUpload == nil {
+	if p.UploadConfig == nil {
 		if dir != "" {
 			// create local directory
 			if err := os.MkdirAll(dir, 0755); err != nil {
@@ -661,7 +675,7 @@ func (p *Params) UpdatePrefixAndPlaylist(identifier string, replacements map[str
 
 	var filePrefix string
 	p.StoragePathPrefix, filePrefix = path.Split(p.LocalFilePrefix)
-	if p.FileUpload == nil {
+	if p.UploadConfig == nil {
 		if p.StoragePathPrefix != "" {
 			if err := os.MkdirAll(p.StoragePathPrefix, 0755); err != nil {
 				return err
@@ -739,6 +753,40 @@ func (p *Params) GetSessionTimeout() time.Duration {
 	}
 
 	return 0
+}
+
+type Manifest struct {
+	EgressID          string `json:"egress_id,omitempty"`
+	RoomID            string `json:"room_id,omitempty"`
+	RoomName          string `json:"room_name,omitempty"`
+	StartedAt         int64  `json:"started_at,omitempty"`
+	EndedAt           int64  `json:"ended_at,omitempty"`
+	PublisherIdentity string `json:"publisher_identity,omitempty"`
+	TrackID           string `json:"track_id,omitempty"`
+	TrackKind         string `json:"track_name,omitempty"`
+	TrackSource       string `json:"track_source,omitempty"`
+	AudioTrackID      string `json:"audio_track_id,omitempty"`
+	VideoTrackID      string `json:"video_track_id,omitempty"`
+	PlaylistName      string `json:"playlist_name,omitempty"`
+	SegmentCount      int64  `json:"segment_count"`
+}
+
+func (p *Params) GetManifest() ([]byte, error) {
+	return json.Marshal(Manifest{
+		EgressID:          p.Info.EgressId,
+		RoomID:            p.Info.RoomId,
+		RoomName:          p.Info.RoomName,
+		StartedAt:         p.Info.StartedAt,
+		EndedAt:           p.Info.EndedAt,
+		PublisherIdentity: p.ParticipantIdentity,
+		TrackID:           p.TrackID,
+		TrackKind:         p.TrackType,
+		TrackSource:       p.TrackSource,
+		AudioTrackID:      p.AudioTrackID,
+		VideoTrackID:      p.VideoTrackID,
+		PlaylistName:      p.SegmentsInfo.PlaylistName,
+		SegmentCount:      p.SegmentsInfo.SegmentCount,
+	})
 }
 
 func stringReplace(s string, replacements map[string]string) string {
