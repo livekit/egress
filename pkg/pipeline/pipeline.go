@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path"
 	"regexp"
@@ -239,6 +240,12 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 			p.Info.Error = err.Error()
 		}
 
+		manifestLocalPath := fmt.Sprintf("%s.json", p.LocalFilepath)
+		manifestStoragePath := fmt.Sprintf("%s.json", p.StorageFilepath)
+		if err := p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
+			p.Logger.Errorw("could not store manifest", err)
+		}
+
 	case params.EgressTypeSegmentedFile:
 		// wait for all pending upload jobs to finish
 		if p.endedSegments != nil {
@@ -253,6 +260,12 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 			// upload the finalized playlist
 			playlistStoragePath := p.GetStorageFilepath(p.PlaylistFilename)
 			p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(ctx, p.PlaylistFilename, playlistStoragePath, p.OutputType)
+
+			manifestLocalPath := fmt.Sprintf("%s.json", p.PlaylistFilename)
+			manifestStoragePath := fmt.Sprintf("%s.json", playlistStoragePath)
+			if err := p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
+				p.Logger.Errorw("could not store manifest", err)
+			}
 		}
 	}
 
@@ -602,7 +615,7 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 	}
 
 	var location string
-	switch u := p.FileUpload.(type) {
+	switch u := p.UploadConfig.(type) {
 	case *livekit.S3Upload:
 		location = "S3"
 		p.Logger.Debugw("uploading to s3")
@@ -631,9 +644,29 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 	return destinationUrl, size, err
 }
 
+func (p *Pipeline) storeManifest(ctx context.Context, localFilepath, storageFilepath string) error {
+	manifest, err := os.Create(localFilepath)
+	if err != nil {
+		return err
+	}
+
+	b, err := p.GetManifest()
+	if err != nil {
+		return err
+	}
+
+	_, err = manifest.Write(b)
+	if err != nil {
+		return err
+	}
+
+	_, _, err = p.storeFile(ctx, localFilepath, storageFilepath, "application/json")
+	return err
+}
+
 func (p *Pipeline) cleanup() {
 	// clean up temp dir
-	if p.FileUpload != nil {
+	if p.UploadConfig != nil {
 		switch p.EgressType {
 		case params.EgressTypeFile:
 			dir, _ := path.Split(p.LocalFilepath)

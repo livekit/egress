@@ -108,9 +108,10 @@ func verifyFile(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.E
 	require.False(t, strings.Contains(storagePath, "{"))
 
 	// download from cloud storage
-	if p.FileUpload != nil {
+	if p.UploadConfig != nil {
 		localPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, storagePath)
-		download(t, p.FileUpload, localPath, storagePath)
+		download(t, p.UploadConfig, localPath, storagePath)
+		download(t, p.UploadConfig, localPath+".json", storagePath+".json")
 	}
 
 	// verify
@@ -141,14 +142,15 @@ func verifySegments(t *testing.T, conf *TestConfig, p *params.Params, res *livek
 	localPlaylistPath := segments.PlaylistName
 
 	// download from cloud storage
-	if p.FileUpload != nil {
+	if p.UploadConfig != nil {
 		base := storedPlaylistPath[:len(storedPlaylistPath)-5]
 		localPlaylistPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, storedPlaylistPath)
-		download(t, p.FileUpload, localPlaylistPath, storedPlaylistPath)
+		download(t, p.UploadConfig, localPlaylistPath, storedPlaylistPath)
+		download(t, p.UploadConfig, localPlaylistPath+".json", storedPlaylistPath+".json")
 		for i := 0; i < int(segments.SegmentCount); i++ {
 			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
 			localPath := fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, cloudPath)
-			download(t, p.FileUpload, localPath, cloudPath)
+			download(t, p.UploadConfig, localPath, cloudPath)
 		}
 	}
 
