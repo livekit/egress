@@ -767,12 +767,11 @@ type Manifest struct {
 	TrackSource       string `json:"track_source,omitempty"`
 	AudioTrackID      string `json:"audio_track_id,omitempty"`
 	VideoTrackID      string `json:"video_track_id,omitempty"`
-	PlaylistName      string `json:"playlist_name,omitempty"`
-	SegmentCount      int64  `json:"segment_count"`
+	SegmentCount      int64  `json:"segment_count,omitempty"`
 }
 
 func (p *Params) GetManifest() ([]byte, error) {
-	return json.Marshal(Manifest{
+	manifest := Manifest{
 		EgressID:          p.Info.EgressId,
 		RoomID:            p.Info.RoomId,
 		RoomName:          p.Info.RoomName,
@@ -784,9 +783,11 @@ func (p *Params) GetManifest() ([]byte, error) {
 		TrackSource:       p.TrackSource,
 		AudioTrackID:      p.AudioTrackID,
 		VideoTrackID:      p.VideoTrackID,
-		PlaylistName:      p.SegmentsInfo.PlaylistName,
-		SegmentCount:      p.SegmentsInfo.SegmentCount,
-	})
+	}
+	if p.SegmentsInfo != nil {
+		manifest.SegmentCount = p.SegmentsInfo.SegmentCount
+	}
+	return json.Marshal(manifest)
 }
 
 func stringReplace(s string, replacements map[string]string) string {
