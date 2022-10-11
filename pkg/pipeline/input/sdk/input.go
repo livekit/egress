@@ -42,16 +42,18 @@ type SDKInput struct {
 	participantIdentity string
 
 	// composite audio source
-	audioSrc     *app.Source
-	audioCodec   webrtc.RTPCodecParameters
-	audioWriter  *appWriter
-	audioPlaying chan struct{}
+	audioSrc         *app.Source
+	audioCodec       webrtc.RTPCodecParameters
+	audioWriter      *appWriter
+	audioPlaying     chan struct{}
+	audioParticipant string
 
 	// composite video source
-	videoSrc     *app.Source
-	videoCodec   webrtc.RTPCodecParameters
-	videoWriter  *appWriter
-	videoPlaying chan struct{}
+	videoSrc         *app.Source
+	videoCodec       webrtc.RTPCodecParameters
+	videoWriter      *appWriter
+	videoPlaying     chan struct{}
+	videoParticipant string
 
 	mutedChan    chan bool
 	endRecording chan struct{}
