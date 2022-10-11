@@ -18,10 +18,10 @@ Irrespective of method used, when moving between protocols, containers or encodi
 ## Supported Output
 
 | Egress Type     | MP4 File | OGG File | WebM File | HLS (TS SEGMENTS) | RTMP(s) Stream | WebSocket Stream |
-| --------------- | -------- | -------- | --------- | ----------------- | -------------- | ---------------- |
-| Room Composite  | ✅       | ✅       |           | ✅                | ✅             |                  |
-| Track Composite | ✅       | ✅       |           | ✅                | ✅             |                  |
-| Track           | ✅       | ✅       | ✅        |                   |                | ✅               |
+|-----------------|----------|----------|-----------|-------------------|----------------|------------------|
+| Room Composite  | ✅        | ✅        |           | ✅                 | ✅              |                  |
+| Track Composite | ✅        | ✅        |           | ✅                 | ✅              |                  |
+| Track           | ✅        | ✅        | ✅         |                   |                | ✅                |
 
 Files can be uploaded to any S3 compatible storage, Azure, or GCP.
 
@@ -75,6 +75,29 @@ cpu_cost:
 ```
 
 The config file can be added to a mounted volume with its location passed in the EGRESS_CONFIG_FILE env var, or its body can be passed in the EGRESS_CONFIG_BODY env var.
+
+### Filenames
+
+The below templates can also be used in filename/filepath parameters:
+
+| Egress Type     | {room_id} | {room_name} | {time} | {publisher_identity} | {track_id} | {track_type} | {track_source} |
+|-----------------|-----------|-------------|--------|----------------------|------------|--------------|----------------|
+| Room Composite  | ✅         | ✅           | ✅      |                      |            |              |                |
+| Track Composite | ✅         | ✅           | ✅      | ✅                    |            |              |                |
+| Track           | ✅         | ✅           | ✅      | ✅                    | ✅          | ✅            | ✅              |
+
+* If no filename is provided with a request, one will be generated in the form of `"{room_name}-{time}"`.
+* If your filename ends with a `/`, a file will be generated in that directory.
+
+Examples:
+
+| Request filename                         | Resulting filename                                |
+|------------------------------------------|---------------------------------------------------|
+| ""                                       | testroom-2022-10-04T011306.mp4                    |
+| "livekit-recordings/"                    | livekit-recordings/testroom-2022-10-04T011306.mp4 |
+| "{room_name}/{time}"                     | testroom/2022-10-04T011306.mp4                    |
+| "{room_id}-{publisher_identity}.mp4"     | 10719607-f7b0-4d82-afe1-06b77e91fe12-david.mp4    |
+| "{track_type}-{track_source}-{track_id}" | audio-microphone-TR_SKasdXCVgHsei.ogg             |
 
 ### Running locally
 

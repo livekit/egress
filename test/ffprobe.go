@@ -88,7 +88,7 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
-func verifyFile(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.EgressInfo, filepath string) {
+func verifyFile(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.EgressInfo) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
@@ -97,19 +97,25 @@ func verifyFile(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.E
 	// file info
 	fileRes := res.GetFile()
 	require.NotNil(t, fileRes)
-	require.NotEmpty(t, fileRes.Filename)
+
 	require.NotEmpty(t, fileRes.Location)
 	require.Greater(t, fileRes.Size, int64(0))
 	require.Greater(t, fileRes.Duration, int64(0))
 
+	storagePath := fileRes.Filename
+	localPath := fileRes.Filename
+	require.NotEmpty(t, storagePath)
+	require.False(t, strings.Contains(storagePath, "{"))
+
 	// download from cloud storage
-	if p.FileUpload != nil {
-		filepath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, filepath)
-		download(t, p.FileUpload, filepath, p.StorageFilepath)
+	if p.UploadConfig != nil {
+		localPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, storagePath)
+		download(t, p.UploadConfig, localPath, storagePath)
+		download(t, p.UploadConfig, localPath+".json", storagePath+".json")
 	}
 
 	// verify
-	verify(t, filepath, p, res, ResultTypeFile, conf.Muting)
+	verify(t, localPath, p, res, ResultTypeFile, conf.Muting)
 }
 
 func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
@@ -118,7 +124,7 @@ func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	}
 }
 
-func verifySegments(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.EgressInfo, playlistPath string) {
+func verifySegments(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.EgressInfo) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
@@ -132,17 +138,19 @@ func verifySegments(t *testing.T, conf *TestConfig, p *params.Params, res *livek
 	require.Greater(t, segments.Duration, int64(0))
 	require.Greater(t, segments.SegmentCount, int64(0))
 
-	localPlaylistPath := playlistPath
+	storedPlaylistPath := segments.PlaylistName
+	localPlaylistPath := segments.PlaylistName
 
 	// download from cloud storage
-	if p.FileUpload != nil {
-		base := playlistPath[:len(playlistPath)-5]
-		localPlaylistPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, playlistPath)
-		download(t, p.FileUpload, localPlaylistPath, playlistPath)
+	if p.UploadConfig != nil {
+		base := storedPlaylistPath[:len(storedPlaylistPath)-5]
+		localPlaylistPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, storedPlaylistPath)
+		download(t, p.UploadConfig, localPlaylistPath, storedPlaylistPath)
+		download(t, p.UploadConfig, localPlaylistPath+".json", storedPlaylistPath+".json")
 		for i := 0; i < int(segments.SegmentCount); i++ {
 			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
 			localPath := fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, cloudPath)
-			download(t, p.FileUpload, localPath, cloudPath)
+			download(t, p.UploadConfig, localPath, cloudPath)
 		}
 	}
 

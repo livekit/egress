@@ -16,22 +16,49 @@ import (
 )
 
 func (s *SDKInput) joinRoom(p *params.Params) error {
-	cb := lksdk.NewRoomCallback()
-	cb.OnTrackPublished = s.onTrackPublished
-	cb.OnTrackMuted = s.onTrackMuted
-	cb.OnTrackUnmuted = s.onTrackUnmuted
-	cb.OnTrackUnpublished = s.onTrackUnpublished
-	cb.OnDisconnected = s.onDisconnected
+	cb := &lksdk.RoomCallback{
+		OnDisconnected:            s.onDisconnected,
+		OnParticipantDisconnected: s.onParticipantDisconnected,
+		ParticipantCallback: lksdk.ParticipantCallback{
+			OnTrackMuted:       s.onTrackMuted,
+			OnTrackUnmuted:     s.onTrackUnmuted,
+			OnTrackPublished:   s.onTrackPublished,
+			OnTrackUnpublished: s.onTrackUnpublished,
+		},
+	}
+
+	var mu sync.Mutex
+	filenameReplacements := make(map[string]string)
 
 	var onSubscribeErr error
 	var wg sync.WaitGroup
-	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, _ *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer wg.Done()
 		s.logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
 
 		var codec params.MimeType
 		var appSrcName string
 		var err error
+
+		mu.Lock()
+		if p.ParticipantIdentity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
+			p.ParticipantIdentity = rp.Identity()
+			filenameReplacements["{publisher_identity}"] = p.ParticipantIdentity
+		}
+
+		if p.TrackID != "" {
+			if track.Kind() == webrtc.RTPCodecTypeAudio {
+				p.TrackKind = "audio"
+			} else {
+				p.TrackKind = "video"
+			}
+			p.TrackSource = strings.ToLower(pub.Source().String())
+
+			filenameReplacements["{track_id}"] = p.TrackID
+			filenameReplacements["{track_type}"] = p.TrackKind
+			filenameReplacements["{track_source}"] = p.TrackSource
+		}
+		mu.Unlock()
 
 		switch {
 		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeOpus)):
@@ -90,6 +117,7 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 			s.audioPlaying = make(chan struct{})
 			s.audioCodec = track.Codec()
 			s.audioWriter, err = newAppWriter(track, codec, rp, s.logger, s.audioSrc, s.cs, s.audioPlaying, writeBlanks)
+			s.audioParticipant = rp.Identity()
 			if err != nil {
 				s.logger.Errorw("could not create app writer", err)
 				onSubscribeErr = err
@@ -101,6 +129,7 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 			s.videoPlaying = make(chan struct{})
 			s.videoCodec = track.Codec()
 			s.videoWriter, err = newAppWriter(track, codec, rp, s.logger, s.videoSrc, s.cs, s.videoPlaying, writeBlanks)
+			s.videoParticipant = rp.Identity()
 			if err != nil {
 				s.logger.Errorw("could not create app writer", err)
 				onSubscribeErr = err
@@ -147,14 +176,33 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 		return onSubscribeErr
 	}
 
-	if p.EgressType == params.EgressTypeFile {
-		if err := p.UpdateOutputTypeFromCodecs(fileIdentifier); err != nil {
+	switch p.EgressType {
+	case params.EgressTypeFile:
+		if err := p.UpdateFileInfoFromSDK(fileIdentifier, filenameReplacements); err != nil {
 			s.logger.Errorw("could not update file params", err)
 			return err
 		}
+	case params.EgressTypeSegmentedFile:
+		p.UpdatePlaylistNamesFromSDK(filenameReplacements)
 	}
 
 	return nil
+}
+
+func (s *SDKInput) onParticipantDisconnected(p *lksdk.RemoteParticipant) {
+	identity := p.Identity()
+	if identity == s.audioParticipant {
+		s.audioWriter.sendEOS()
+		if s.active.Dec() == 0 {
+			s.onDisconnected()
+		}
+	}
+	if identity == s.videoParticipant {
+		s.videoWriter.sendEOS()
+		if s.active.Dec() == 0 {
+			s.onDisconnected()
+		}
+	}
 }
 
 func (s *SDKInput) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
@@ -162,7 +210,7 @@ func (s *SDKInput) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk
 		return
 	}
 
-	s.logger.Errorw("participant published new track", nil, "identity", s.participantIdentity)
+	s.logger.Errorw("participant published new track", nil, "identity", s.participantIdentity, "trackID", pub.SID())
 }
 
 func (s *SDKInput) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {

@@ -114,12 +114,7 @@ func BuildMux(p *params.Params) (*gst.Element, error) {
 		return gst.NewElement("avmux_ivf")
 
 	case params.OutputTypeMP4:
-		mux, err := gst.NewElement("mp4mux")
-		if err != nil {
-			return nil, err
-		}
-		err = mux.SetProperty("faststart", true)
-		return mux, err
+		return gst.NewElement("mp4mux")
 
 	case params.OutputTypeTS:
 		return gst.NewElement("mpegtsmux")

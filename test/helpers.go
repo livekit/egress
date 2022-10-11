@@ -25,6 +25,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
 )
 
@@ -108,6 +109,7 @@ func getFilePath(conf *config.Config, filename string) string {
 }
 
 func download(t *testing.T, uploadParams interface{}, localFilepath, storageFilepath string) {
+	logger.Debugw("download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
 	switch u := uploadParams.(type) {
 	case *livekit.S3Upload:
 		downloadS3(t, u, localFilepath, storageFilepath)

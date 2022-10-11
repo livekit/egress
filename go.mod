@@ -1,6 +1,6 @@
 module github.com/livekit/egress
 
-go 1.17
+go 1.18
 
 replace github.com/tinyzimmer/go-gst v0.2.32 => github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427
 
@@ -17,7 +17,8 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/grafov/m3u8 v0.11.1
 	github.com/livekit/livekit-server v1.2.1
-	github.com/livekit/protocol v1.1.2
+	github.com/livekit/mageutil v0.0.0-20220927214055-ff37ecf1f093
+	github.com/livekit/protocol v1.1.3-0.20221007212651-d9bc6cd9cb77
 	github.com/livekit/server-sdk-go v1.0.0
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/pion/rtp v1.7.13
@@ -104,11 +105,12 @@ require (
 	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d // indirect
 	golang.org/x/net v0.0.0-20220728211354-c7608f3a8462 // indirect
 	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5 // indirect
+	golang.org/x/sync v0.0.0-20220923202941-7f9b1623fab7 // indirect
 	golang.org/x/sys v0.0.0-20220728004956-3c1f35247d10 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220518221133-4f43b3371335 // indirect
-	google.golang.org/grpc v1.49.0 // indirect
+	google.golang.org/grpc v1.50.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 )

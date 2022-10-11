@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	"github.com/urfave/cli/v2"
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -138,7 +138,7 @@ func runHandler(c *cli.Context) error {
 
 	req := &livekit.StartEgressRequest{}
 	reqString := c.String("request")
-	err = proto.Unmarshal([]byte(reqString), req)
+	err = protojson.Unmarshal([]byte(reqString), req)
 	if err != nil {
 		span.RecordError(err)
 		return err

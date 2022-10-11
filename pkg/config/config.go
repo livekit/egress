@@ -22,8 +22,6 @@ const (
 	roomCompositeCpuCost  = 3
 	trackCompositeCpuCost = 2
 	trackCpuCost          = 1
-
-	defaultLocalOutputDirectory = "/"
 )
 
 type Config struct {
@@ -137,7 +135,7 @@ func NewConfig(confString string) (*Config, error) {
 
 	conf.LocalOutputDirectory = path.Clean(conf.LocalOutputDirectory)
 	if conf.LocalOutputDirectory == "." {
-		conf.LocalOutputDirectory = defaultLocalOutputDirectory
+		conf.LocalOutputDirectory = os.TempDir()
 	}
 
 	if err := conf.initLogger(); err != nil {

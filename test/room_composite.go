@@ -4,7 +4,6 @@ package test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -18,7 +17,6 @@ import (
 func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 	publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
 
-	now := time.Now().Unix()
 	for _, test := range []*testCase{
 		{
 			name:     "h264-high-mp4",
@@ -30,7 +28,7 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				Width:        1280,
 				VideoBitrate: 4500,
 			},
-			filename: fmt.Sprintf("room-h264-high-%v.mp4", now),
+			filename: "r_{room_name}_high_{time}.mp4",
 		},
 		{
 			name:      "opus-ogg",
@@ -39,7 +37,7 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 			options: &livekit.EncodingOptions{
 				AudioCodec: livekit.AudioCodec_OPUS,
 			},
-			filename: fmt.Sprintf("room-opus-%v.ogg", now),
+			filename: "r_{room_name}_opus_{time}",
 		},
 		{
 			name:     "h264-high-mp4-limit",
@@ -51,14 +49,13 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				Width:        1280,
 				VideoBitrate: 4500,
 			},
-			filename:       fmt.Sprintf("room-h264-high-limit-%v.mp4", now),
+			filename:       "r_limit_{time}.mp4",
 			sessionTimeout: time.Second * 20,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			awaitIdle(t, conf.svc)
 
-			filepath := getFilePath(conf.Config, test.filename)
 			roomRequest := &livekit.RoomCompositeEgressRequest{
 				RoomName:  conf.room.Name(),
 				Layout:    "speaker-dark",
@@ -66,7 +63,7 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				Output: &livekit.RoomCompositeEgressRequest_File{
 					File: &livekit.EncodedFileOutput{
 						FileType: test.fileType,
-						Filepath: filepath,
+						Filepath: getFilePath(conf.Config, test.filename),
 					},
 				},
 			}
@@ -84,7 +81,7 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				},
 			}
 
-			runFileTest(t, conf, req, test, filepath)
+			runFileTest(t, conf, req, test)
 		})
 	}
 }
@@ -165,10 +162,9 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 	publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
 
-	now := time.Now().Unix()
 	for _, test := range []*testCase{
 		{
-			name: "h264-segmented-mp4",
+			name: "rs-baseline",
 			options: &livekit.EncodingOptions{
 				AudioCodec:   livekit.AudioCodec_AAC,
 				VideoCodec:   livekit.VideoCodec_H264_BASELINE,
@@ -176,11 +172,11 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				Width:        1920,
 				VideoBitrate: 4500,
 			},
-			filename: fmt.Sprintf("room-h264-baseline-%v", now),
-			playlist: fmt.Sprintf("room-h264-baseline-%v.m3u8", now),
+			filename: "rs_{room_name}_{time}",
+			playlist: "rs_{room_name}_{time}.m3u8",
 		},
 		{
-			name: "h264-segmented-mp4-limit",
+			name: "rs-limit",
 			options: &livekit.EncodingOptions{
 				AudioCodec:   livekit.AudioCodec_AAC,
 				VideoCodec:   livekit.VideoCodec_H264_BASELINE,
@@ -188,8 +184,8 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				Width:        1920,
 				VideoBitrate: 4500,
 			},
-			filename:       fmt.Sprintf("room-h264-baseline-limit-%v", now),
-			playlist:       fmt.Sprintf("room-h264-baseline-limit-%v.m3u8", now),
+			filename:       "rs_limit_{time}",
+			playlist:       "rs_limit_{time}.m3u8",
 			sessionTimeout: time.Second * 20,
 		},
 	} {
@@ -221,7 +217,8 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				},
 			}
 
-			runSegmentsTest(t, conf, req, getFilePath(conf.Config, test.playlist), test.sessionTimeout)
+			runSegmentsTest(t, conf, req, test.sessionTimeout)
 		})
+		return
 	}
 }

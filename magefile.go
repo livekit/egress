@@ -3,14 +3,13 @@
 package main
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/livekit/egress/version"
+	"github.com/livekit/mageutil"
 )
 
 const (
@@ -22,10 +21,6 @@ const (
 )
 
 func Integration(configFile string) error {
-	return integration(configFile)
-}
-
-func integration(configFile string) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		return err
@@ -56,8 +51,8 @@ func integration(configFile string) error {
 		}
 	}()
 
-	return run(
-		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
+	return mageutil.Run(context.Background(),
+		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev-fork", gstVersion),
 		"docker build -t egress-test -f build/test/Dockerfile .",
 		fmt.Sprintf(
 			"docker run --rm -e %s=%s -v %s/test:/out egress-test",
@@ -66,70 +61,33 @@ func integration(configFile string) error {
 	)
 }
 
-func GStreamer() error {
-	commands := []string{"docker pull ubuntu:22.04"}
-	for _, build := range []string{"base", "dev", "prod"} {
-		commands = append(commands, fmt.Sprintf(
-			"docker build"+
-				" --no-cache"+
-				" -t %s:%s-%s"+
-				" --build-arg GSTREAMER_VERSION=%s"+
-				" -f build/gstreamer/Dockerfile-%s"+
-				" ./build/gstreamer",
-			gstImageName, gstVersion, build, gstVersion, build,
-		))
-	}
-
-	return run(commands...)
-}
-
-func PublishGStreamer() error {
-	commands := []string{"docker pull ubuntu:22.04"}
-	for _, build := range []string{"base", "dev", "prod"} {
-		commands = append(commands, fmt.Sprintf(
-			"docker buildx build --push"+
-				" --no-cache"+
-				" --platform linux/amd64,linux/arm64"+
-				" -t %s:%s-%s"+
-				" --build-arg GSTREAMER_VERSION=%s"+
-				" -f build/gstreamer/Dockerfile-%s"+
-				" ./build/gstreamer",
-			gstImageName, gstVersion, build, gstVersion, build,
-		))
-	}
-
-	return run(commands...)
-}
-
-func Docker() error {
-	return run(
-		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
-		fmt.Sprintf("docker pull livekit/gstreamer:%s-prod", gstVersion),
-		fmt.Sprintf("docker build -t %s:v%s -f build/Dockerfile .", imageName, version.Version),
+func Build() error {
+	return mageutil.Run(context.Background(),
+		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev-fork", gstVersion),
+		fmt.Sprintf("docker pull livekit/gstreamer:%s-prod-fork", gstVersion),
+		fmt.Sprintf("docker build -t %s:latest -f build/Dockerfile .", imageName),
 	)
 }
 
-func PublishDocker() error {
-	if !strings.Contains(version.Version, "SNAPSHOT") {
-		return errors.New("cannot publish non-snapshot version")
-	}
-
-	return run(fmt.Sprintf(
-		"docker buildx build --push"+
-			" --platform linux/amd64,linux/arm64"+
-			" -t %s:v%s -f build/Dockerfile .",
-		imageName, version.Version))
+func BuildGStreamer() error {
+	return buildGstreamer("docker build --no-cache")
 }
 
-func run(commands ...string) error {
-	for _, command := range commands {
-		args := strings.Split(command, " ")
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return err
-		}
+func PublishGStreamer() error {
+	return buildGstreamer("docker buildx build --no-cache --push --platform linux/amd64,linux/arm64")
+}
+
+func buildGstreamer(cmd string) error {
+	commands := []string{"docker pull ubuntu:22.04"}
+	for _, build := range []string{"base", "dev", "prod"} {
+		commands = append(commands, fmt.Sprintf("%s"+
+			" --build-arg GSTREAMER_VERSION=%s"+
+			" -t %s:%s-%s-fork"+
+			" -f build/gstreamer/Dockerfile-%s"+
+			" ./build/gstreamer",
+			cmd, gstVersion, gstImageName, build, gstVersion, build,
+		))
 	}
-	return nil
+
+	return mageutil.Run(context.Background(), commands...)
 }
