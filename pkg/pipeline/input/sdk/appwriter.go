@@ -153,9 +153,8 @@ func (w *appWriter) start() {
 
 	w.startTime = time.Now()
 
+	var pkt *rtp.Packet
 	for {
-		var pkt *rtp.Packet
-
 		select {
 		case <-w.force:
 			// force push remaining packets and quit
@@ -206,7 +205,6 @@ func (w *appWriter) start() {
 				}
 
 				// push packet to sample builder
-				w.logger.Debugw("pushing packet")
 				w.sb.Push(pkt)
 
 				// push completed packets to appsrc
