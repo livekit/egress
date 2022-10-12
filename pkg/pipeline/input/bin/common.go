@@ -69,12 +69,11 @@ func BuildVideoEncoder(p *params.Params) ([]*gst.Element, error) {
 			return nil, err
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
-		x264Enc.SetArg("tune", "zerolatency")
 		if p.OutputType == params.OutputTypeHLS {
 			if err = x264Enc.SetProperty("key-int-max", uint(int32(p.SegmentDuration)*p.Framerate)); err != nil {
 				return nil, err
 			}
-			// Avoid key frames other than at segments boudaries as splitmuxsink can become inconsistent otherwise
+			// Avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
 			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
 				return nil, err
 			}
