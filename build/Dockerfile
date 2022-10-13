@@ -81,7 +81,6 @@ RUN adduser root pulse-access
 # clean up
 RUN apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    rm -rf /var/run/pulse /var/lib/pulse /root/.config/pulse && \
     mkdir -pv ~/.cache/xdgr
 
 # set xdg_runtime_dir
