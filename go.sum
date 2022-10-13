@@ -312,6 +312,8 @@ github.com/livekit/mageutil v0.0.0-20220927214055-ff37ecf1f093 h1:a5Pzvr9EC+qLVD
 github.com/livekit/mageutil v0.0.0-20220927214055-ff37ecf1f093/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/protocol v1.1.3-0.20221007212651-d9bc6cd9cb77 h1:vHVvfoKWUT1eZahFn2CVjg9dHatp4XIRLVczy6uVnGI=
 github.com/livekit/protocol v1.1.3-0.20221007212651-d9bc6cd9cb77/go.mod h1:jshI3nWbZkF1y1TUr2WIqzhN9HnyMqM9v/e/31L78z0=
+github.com/livekit/protocol v1.1.3-0.20221013203258-19dd0a128e43 h1:SVY6UZPy4YYEzGHmM0GFD6gbhjOqwUgwf0w+iCKCjYQ=
+github.com/livekit/protocol v1.1.3-0.20221013203258-19dd0a128e43/go.mod h1:jshI3nWbZkF1y1TUr2WIqzhN9HnyMqM9v/e/31L78z0=
 github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995 h1:vOaY2qvfLihDyeZtnGGN1Law9wRrw8BMGCr1TygTvMw=
 github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995/go.mod h1:116ych8UaEs9vfIE8n6iZCZ30iagUFTls0vRmC+Ix5U=
 github.com/livekit/server-sdk-go v1.0.0 h1:bcWTcvbAc4QgA1d8a9iyJVFeN8uIh5y23IeJIK+nvI0=
