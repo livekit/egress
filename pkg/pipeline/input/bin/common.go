@@ -54,6 +54,11 @@ func BuildAudioEncoder(p *params.Params) ([]*gst.Element, error) {
 		return nil, err
 	}
 
+	// audioQueue, err := BuildQueue()
+	// if err != nil {
+	// 	return nil, err
+	// }
+
 	return []*gst.Element{audioConvert, audioResample, audioCapsFilter, encoder}, nil
 }
 
@@ -94,11 +99,33 @@ func BuildVideoEncoder(p *params.Params) ([]*gst.Element, error) {
 			return nil, err
 		}
 
+		// videoQueue, err := BuildQueue()
+		// if err != nil {
+		// 	return nil, err
+		// }
+
 		return []*gst.Element{x264Enc, encodedCaps}, nil
 
 	default:
 		return nil, errors.ErrNotSupported(fmt.Sprintf("%s encoding", p.VideoCodec))
 	}
+}
+
+func BuildQueue() (*gst.Element, error) {
+	queue, err := gst.NewElement("queue")
+	if err != nil {
+		return nil, err
+	}
+	if err = queue.SetProperty("max-size-time", uint64(3e9)); err != nil {
+		return nil, err
+	}
+	if err = queue.SetProperty("max-size-bytes", uint(0)); err != nil {
+		return nil, err
+	}
+	if err = queue.SetProperty("max-size-buffers", uint(0)); err != nil {
+		return nil, err
+	}
+	return queue, nil
 }
 
 func BuildMux(p *params.Params) (*gst.Element, error) {
@@ -129,6 +156,9 @@ func BuildMux(p *params.Params) (*gst.Element, error) {
 		if err = mux.SetProperty("streamable", true); err != nil {
 			return nil, err
 		}
+		// if err = mux.SetProperty("latency", uint64(200000000)); err != nil {
+		// 	return nil, err
+		// }
 		return mux, nil
 
 	case params.OutputTypeHLS:

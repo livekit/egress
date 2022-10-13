@@ -36,6 +36,7 @@ const (
 	fragmentRunningTime   = "running-time"
 
 	elementGstRtmp2Sink = "GstRtmp2Sink"
+	elementGstAppSrc    = "GstAppSrc"
 )
 
 type Pipeline struct {
@@ -713,7 +714,7 @@ func getSegmentParamsFromGstStructure(s *gst.Structure) (filepath string, time i
 
 // handleError returns true if the error has been handled, false if the pipeline should quit
 func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
-	element, name, _ := parseDebugInfo(gErr)
+	element, name, message := parseDebugInfo(gErr)
 	err := errors.New(gErr.Error())
 
 	switch {
@@ -729,14 +730,21 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 		}
 		return err, true
 
-	default:
-		// input failure or file write failure. Fatal
-		p.Logger.Errorw("pipeline error", err,
-			"debug", gErr.DebugString(),
-			"message", gErr.Message(),
-		)
-		return err, false
+	case element == elementGstAppSrc:
+		if message == "streaming stopped, reason not-negotiated (-4)" {
+			// send eos to app src
+			p.in.(*sdk.SDKInput).SendAppSrcEOS(name)
+			return err, true
+		}
 	}
+
+	// input failure or file write failure. Fatal
+	p.Logger.Errorw("pipeline error", err,
+		"element", element,
+		"message", message,
+	)
+
+	return err, false
 }
 
 // Debug info comes in the following format:
