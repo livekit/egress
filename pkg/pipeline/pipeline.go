@@ -499,8 +499,11 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 		}
 		p.mu.Unlock()
 
-	case params.EgressTypeFile, params.EgressTypeSegmentedFile:
+	case params.EgressTypeFile:
 		p.FileInfo.StartedAt = startedAt
+
+	case params.EgressTypeSegmentedFile:
+		p.SegmentsInfo.StartedAt = startedAt
 	}
 
 	p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
