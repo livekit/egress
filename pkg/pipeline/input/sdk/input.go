@@ -125,6 +125,7 @@ func (s *SDKInput) SendEOS() {
 		go func() {
 			defer wg.Done()
 			s.audioWriter.sendEOS()
+			s.logger.Debugw("audio writer finished")
 		}()
 	}
 	if s.videoWriter != nil {
@@ -132,6 +133,7 @@ func (s *SDKInput) SendEOS() {
 		go func() {
 			defer wg.Done()
 			s.videoWriter.sendEOS()
+			s.logger.Debugw("video writer finished")
 		}()
 	}
 	wg.Wait()

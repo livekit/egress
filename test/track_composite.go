@@ -124,7 +124,8 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 			videoCodec: params.MimeTypeH264,
 			filename:   "tcs_{room_name}_h264_{time}",
 			playlist:   "tcs_{room_name}_h264_{time}.m3u8",
-		}, {
+		},
+		{
 			name:       "tcs-limit",
 			audioCodec: params.MimeTypeOpus,
 			videoCodec: params.MimeTypeH264,
