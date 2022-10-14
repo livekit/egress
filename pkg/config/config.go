@@ -52,11 +52,12 @@ type Config struct {
 }
 
 type S3Config struct {
-	AccessKey string `yaml:"access_key"` // (env AWS_ACCESS_KEY_ID)
-	Secret    string `yaml:"secret"`     // (env AWS_SECRET_ACCESS_KEY)
-	Region    string `yaml:"region"`     // (env AWS_DEFAULT_REGION)
-	Endpoint  string `yaml:"endpoint"`
-	Bucket    string `yaml:"bucket"`
+	AccessKey      string `yaml:"access_key"` // (env AWS_ACCESS_KEY_ID)
+	Secret         string `yaml:"secret"`     // (env AWS_SECRET_ACCESS_KEY)
+	Region         string `yaml:"region"`     // (env AWS_DEFAULT_REGION)
+	Endpoint       string `yaml:"endpoint"`
+	Bucket         string `yaml:"bucket"`
+	ForcePathStyle bool   `yaml:"force_path_style"`
 }
 
 type AzureConfig struct {
@@ -99,11 +100,12 @@ func NewConfig(confString string) (*Config, error) {
 
 	if conf.S3 != nil {
 		conf.FileUpload = &livekit.S3Upload{
-			AccessKey: conf.S3.AccessKey,
-			Secret:    conf.S3.Secret,
-			Region:    conf.S3.Region,
-			Endpoint:  conf.S3.Endpoint,
-			Bucket:    conf.S3.Bucket,
+			AccessKey:      conf.S3.AccessKey,
+			Secret:         conf.S3.Secret,
+			Region:         conf.S3.Region,
+			Endpoint:       conf.S3.Endpoint,
+			Bucket:         conf.S3.Bucket,
+			ForcePathStyle: conf.S3.ForcePathStyle,
 		}
 	} else if conf.GCP != nil {
 		var credentials []byte
