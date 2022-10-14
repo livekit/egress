@@ -39,11 +39,8 @@ func buildAudioElements(p *params.Params) ([]*gst.Element, error) {
 		return nil, err
 	}
 
-	audioQueue, err := gst.NewElement("queue")
+	audioQueue, err := bin.BuildQueue()
 	if err != nil {
-		return nil, err
-	}
-	if err = audioQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
 		return nil, err
 	}
 
@@ -74,11 +71,8 @@ func buildVideoElements(p *params.Params) ([]*gst.Element, error) {
 		return nil, err
 	}
 
-	videoQueue, err := gst.NewElement("queue")
+	videoQueue, err := bin.BuildQueue()
 	if err != nil {
-		return nil, err
-	}
-	if err = videoQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
 		return nil, err
 	}
 

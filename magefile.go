@@ -65,7 +65,7 @@ func Build() error {
 	return mageutil.Run(context.Background(),
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev-fork", gstVersion),
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-prod-fork", gstVersion),
-		fmt.Sprintf("docker build -t %s:latest -f build/Dockerfile .", imageName),
+		fmt.Sprintf("docker build --no-cache -t %s:latest -f build/Dockerfile .", imageName),
 	)
 }
 

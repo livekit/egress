@@ -137,6 +137,20 @@ func (s *SDKInput) SendEOS() {
 	wg.Wait()
 }
 
+func (s *SDKInput) SendAppSrcEOS(name string) {
+	if name == AudioAppSource {
+		s.audioWriter.sendEOS()
+		if s.active.Dec() == 0 {
+			s.onDisconnected()
+		}
+	} else if name == VideoAppSource {
+		s.videoWriter.sendEOS()
+		if s.active.Dec() == 0 {
+			s.onDisconnected()
+		}
+	}
+}
+
 func (s *SDKInput) Close() {
 	s.room.Disconnect()
 }

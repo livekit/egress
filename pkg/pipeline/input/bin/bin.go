@@ -79,7 +79,21 @@ func (b *InputBin) Build(ctx context.Context, p *params.Params) error {
 		ghostPad = gst.NewGhostPad("src", b.multiQueue.GetStaticPad("src_0"))
 	}
 
-	if !b.bin.AddPad(ghostPad.Pad) {
+	// if b.mux != nil {
+	// 	// For HLS, there will be no 'src' pad
+	// 	pad := b.mux.GetStaticPad("src")
+	// 	if pad != nil {
+	// 		ghostPad = gst.NewGhostPad("src", pad)
+	// 	}
+	// } else if len(b.audioElements) > 0 {
+	// 	last := b.audioElements[len(b.audioElements)-1]
+	// 	ghostPad = gst.NewGhostPad("src", last.GetStaticPad("src"))
+	// } else if len(b.videoElements) > 0 {
+	// 	last := b.audioElements[len(b.videoElements)-1]
+	// 	ghostPad = gst.NewGhostPad("src", last.GetStaticPad("src"))
+	// }
+
+	if ghostPad != nil && !b.bin.AddPad(ghostPad.Pad) {
 		return errors.ErrGhostPadFailed
 	}
 
@@ -123,6 +137,7 @@ func (b *InputBin) Link() error {
 				return errors.New("no audio pad found")
 			}
 
+			// if linkReturn := last.GetStaticPad("src").Link(muxAudioPad); linkReturn != gst.PadLinkOK {
 			if linkReturn := b.multiQueue.GetStaticPad(fmt.Sprintf("src_%d", mqPad)).Link(muxAudioPad); linkReturn != gst.PadLinkOK {
 				return errors.ErrPadLinkFailed("audio mux", linkReturn.String())
 			}
@@ -156,6 +171,7 @@ func (b *InputBin) Link() error {
 			if muxVideoPad == nil {
 				return errors.New("no video pad found")
 			}
+			// if linkReturn := last.GetStaticPad("src").Link(muxVideoPad); linkReturn != gst.PadLinkOK {
 			if linkReturn := b.multiQueue.GetStaticPad(fmt.Sprintf("src_%d", mqPad)).Link(muxVideoPad); linkReturn != gst.PadLinkOK {
 				return errors.ErrPadLinkFailed("video mux", linkReturn.String())
 			}

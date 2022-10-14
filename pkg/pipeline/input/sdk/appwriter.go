@@ -143,7 +143,8 @@ func (w *appWriter) start() {
 	// always post EOS if the writer started playing
 	defer func() {
 		if w.isPlaying() {
-			if flow := w.src.EndStream(); flow != gst.FlowOK {
+			flow := w.src.EndStream()
+			if flow != gst.FlowOK && flow != gst.FlowFlushing {
 				w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
 			}
 		}
@@ -153,7 +154,6 @@ func (w *appWriter) start() {
 
 	w.startTime = time.Now()
 
-	var pkt *rtp.Packet
 	for {
 		select {
 		case <-w.force:
@@ -164,7 +164,7 @@ func (w *appWriter) start() {
 		default:
 			// read next packet
 			_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
-			next, _, err := w.track.ReadRTP()
+			pkt, _, err := w.track.ReadRTP()
 			if err != nil {
 				if w.isDraining() {
 					return
@@ -192,29 +192,26 @@ func (w *appWriter) start() {
 				return
 			}
 
-			// when a track is killed, one 8x8 frame is sent by the SFU and needs to be ignored
-			if pkt != nil {
-				// sync offsets after first packet read
-				// see comment in writeRTP below
-				if !w.clockSynced {
-					now := time.Now().UnixNano()
-					startTime := w.cs.GetOrSetStartTime(now)
-					w.ptsOffset = now - startTime
-					w.rtpOffset = int64(pkt.Timestamp)
-					w.clockSynced = true
-				}
-
-				// push packet to sample builder
-				w.sb.Push(pkt)
-
-				// push completed packets to appsrc
-				if err = w.pushPackets(false); err != nil {
-					w.logger.Errorw("could not push buffers", err)
-					return
-				}
+			// sync offsets after first packet read
+			// see comment in writeRTP below
+			if !w.clockSynced {
+				now := time.Now().UnixNano()
+				startTime := w.cs.GetOrSetStartTime(now)
+				w.ptsOffset = now - startTime
+				w.rtpOffset = int64(pkt.Timestamp)
+				w.clockSynced = true
 			}
 
-			pkt = next
+			// push packet to sample builder
+			w.sb.Push(pkt)
+
+			// push completed packets to appsrc
+			if err = w.pushPackets(false); err != nil {
+				if !errors.Is(err, io.EOF) {
+					w.logger.Errorw("could not push buffers", err)
+				}
+				return
+			}
 		}
 	}
 }

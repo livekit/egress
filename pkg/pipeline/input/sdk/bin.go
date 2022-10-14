@@ -38,11 +38,8 @@ func buildAudioElements(src *app.Source, codec webrtc.RTPCodecParameters, p *par
 		return nil, err
 	}
 
-	audioQueue, err := gst.NewElement("queue")
+	audioQueue, err := bin.BuildQueue()
 	if err != nil {
-		return nil, err
-	}
-	if err = audioQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
 		return nil, err
 	}
 
@@ -76,6 +73,7 @@ func buildAudioElements(src *app.Source, codec webrtc.RTPCodecParameters, p *par
 
 		encoder, err := bin.BuildAudioEncoder(p)
 		audioElements = append(audioElements, encoder...)
+
 		return audioElements, nil
 
 	default:
@@ -147,11 +145,8 @@ func buildVideoElements(src *app.Source, codec webrtc.RTPCodecParameters, p *par
 		return nil, errors.ErrNotSupported(codec.MimeType)
 	}
 
-	videoQueue, err := gst.NewElement("queue")
+	videoQueue, err := bin.BuildQueue()
 	if err != nil {
-		return nil, err
-	}
-	if err = videoQueue.SetProperty("max-size-time", uint64(3e9)); err != nil {
 		return nil, err
 	}
 
