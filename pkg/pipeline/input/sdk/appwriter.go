@@ -143,8 +143,7 @@ func (w *appWriter) start() {
 	// always post EOS if the writer started playing
 	defer func() {
 		if w.isPlaying() {
-			flow := w.src.EndStream()
-			if flow != gst.FlowOK && flow != gst.FlowFlushing {
+			if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
 				w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
 			}
 		}

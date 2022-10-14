@@ -49,13 +49,12 @@ type Pipeline struct {
 	loop     *glib.MainLoop
 
 	// internal
-	mu            sync.Mutex
-	playing       bool
-	fileStartedAt int64
-	limitTimer    *time.Timer
-	closed        chan struct{}
-	closeOnce     sync.Once
-	eosTimer      *time.Timer
+	mu         sync.Mutex
+	playing    bool
+	limitTimer *time.Timer
+	closed     chan struct{}
+	closeOnce  sync.Once
+	eosTimer   *time.Timer
 
 	// segments
 	playlistWriter *sink.PlaylistWriter
@@ -501,7 +500,7 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 		p.mu.Unlock()
 
 	case params.EgressTypeFile, params.EgressTypeSegmentedFile:
-		p.fileStartedAt = startedAt
+		p.FileInfo.StartedAt = startedAt
 	}
 
 	p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
@@ -569,16 +568,18 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 		}
 
 	case params.EgressTypeFile:
-		if p.fileStartedAt == 0 {
-			p.fileStartedAt = endedAt
+		if p.FileInfo.StartedAt == 0 {
+			p.FileInfo.StartedAt = endedAt
 		}
-		p.FileInfo.Duration = endedAt - p.fileStartedAt
+		p.FileInfo.EndedAt = endedAt
+		p.FileInfo.Duration = endedAt - p.FileInfo.StartedAt
 
 	case params.EgressTypeSegmentedFile:
-		if p.fileStartedAt == 0 {
-			p.fileStartedAt = endedAt
+		if p.SegmentsInfo.StartedAt == 0 {
+			p.SegmentsInfo.StartedAt = endedAt
 		}
-		p.SegmentsInfo.Duration = endedAt - p.fileStartedAt
+		p.SegmentsInfo.EndedAt = endedAt
+		p.SegmentsInfo.Duration = endedAt - p.SegmentsInfo.StartedAt
 	}
 }
 
@@ -733,6 +734,7 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 	case element == elementGstAppSrc:
 		if message == "streaming stopped, reason not-negotiated (-4)" {
 			// send eos to app src
+			p.Logger.Debugw("streaming stopped", "name", name)
 			p.in.(*sdk.SDKInput).SendAppSrcEOS(name)
 			return err, true
 		}
