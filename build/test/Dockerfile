@@ -1,4 +1,4 @@
-FROM livekit/gstreamer:1.20.3-dev-fork
+FROM livekit/gstreamer:1.20.4-dev
 
 WORKDIR /workspace
 

@@ -142,14 +142,8 @@ func (s *SDKInput) SendEOS() {
 func (s *SDKInput) SendAppSrcEOS(name string) {
 	if name == AudioAppSource {
 		s.audioWriter.sendEOS()
-		if s.active.Dec() == 0 {
-			s.onDisconnected()
-		}
 	} else if name == VideoAppSource {
 		s.videoWriter.sendEOS()
-		if s.active.Dec() == 0 {
-			s.onDisconnected()
-		}
 	}
 }
 
