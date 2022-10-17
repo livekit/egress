@@ -15,7 +15,7 @@ import (
 const (
 	imageName    = "livekit/egress"
 	gstImageName = "livekit/gstreamer"
-	gstVersion   = "1.20.3"
+	gstVersion   = "1.20.4"
 
 	config = "EGRESS_CONFIG_FILE"
 )
@@ -52,7 +52,7 @@ func Integration(configFile string) error {
 	}()
 
 	return mageutil.Run(context.Background(),
-		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev-fork", gstVersion),
+		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
 		"docker build -t egress-test -f build/test/Dockerfile .",
 		fmt.Sprintf(
 			"docker run --rm -e %s=%s -v %s/test:/out egress-test",
@@ -63,8 +63,8 @@ func Integration(configFile string) error {
 
 func Build() error {
 	return mageutil.Run(context.Background(),
-		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev-fork", gstVersion),
-		fmt.Sprintf("docker pull livekit/gstreamer:%s-prod-fork", gstVersion),
+		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
+		fmt.Sprintf("docker pull livekit/gstreamer:%s-prod", gstVersion),
 		fmt.Sprintf("docker build --no-cache -t %s:latest -f build/Dockerfile .", imageName),
 	)
 }
@@ -82,10 +82,10 @@ func buildGstreamer(cmd string) error {
 	for _, build := range []string{"base", "dev", "prod"} {
 		commands = append(commands, fmt.Sprintf("%s"+
 			" --build-arg GSTREAMER_VERSION=%s"+
-			" -t %s:%s-%s-fork"+
+			" -t %s:%s-%s"+
 			" -f build/gstreamer/Dockerfile-%s"+
 			" ./build/gstreamer",
-			cmd, gstVersion, gstImageName, build, gstVersion, build,
+			cmd, gstVersion, gstImageName, gstVersion, build, build,
 		))
 	}
 

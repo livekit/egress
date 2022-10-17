@@ -22,6 +22,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/stats"
+	"github.com/livekit/egress/version"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -65,7 +66,7 @@ func NewService(conf *config.Config, rpcServer egress.RPCServer) *Service {
 }
 
 func (s *Service) Run() error {
-	logger.Debugw("starting service")
+	logger.Debugw("starting service", "version", version.Version)
 
 	if s.promServer != nil {
 		promListener, err := net.Listen("tcp", s.promServer.Addr)

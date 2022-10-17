@@ -1,4 +1,4 @@
-FROM livekit/gstreamer:1.20.3-dev-fork
+FROM livekit/gstreamer:1.20.4-dev
 
 ARG TARGETPLATFORM
 
@@ -21,7 +21,7 @@ COPY version/ version/
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
     CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o egress ./cmd/server
 
-FROM livekit/gstreamer:1.20.3-prod-fork
+FROM livekit/gstreamer:1.20.4-prod
 
 ARG TARGETPLATFORM
 

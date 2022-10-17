@@ -6,16 +6,10 @@ COPY install-dependencies /
 
 RUN ["/install-dependencies"]
 
-RUN for lib in gstreamer gst-plugins-base gst-plugins-bad gst-plugins-ugly gst-libav; \
+RUN for lib in gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav; \
         do \
             wget https://gstreamer.freedesktop.org/src/$lib/$lib-$GSTREAMER_VERSION.tar.xz && \
             tar -xf $lib-$GSTREAMER_VERSION.tar.xz && \
             rm $lib-$GSTREAMER_VERSION.tar.xz && \
             mv $lib-$GSTREAMER_VERSION $lib; \
         done
-
-RUN wget https://github.com/livekit/gstreamer/archive/refs/tags/v1.20.3.tar.gz && \
-    tar -xf v1.20.3.tar.gz && \
-    rm v1.20.3.tar.gz && \
-    mv gstreamer-1.20.3/subprojects/gst-plugins-good gst-plugins-good && \
-    rm -rf gstreamer-1.20.3
