@@ -281,9 +281,19 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 		}
 
 		p.Logger.Debugw("EOS received, stopping pipeline")
-		if p.Info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
-			p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
-		}
+		p.closeOnce.Do(func() {
+			close(p.closed)
+			if p.limitTimer != nil {
+				p.limitTimer.Stop()
+			}
+
+			if p.Info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
+				p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
+				if p.onStatusUpdate != nil {
+					p.onStatusUpdate(context.Background(), p.Info)
+				}
+			}
+		})
 
 		p.stop()
 		return false
