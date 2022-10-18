@@ -193,15 +193,9 @@ func (s *SDKInput) onParticipantDisconnected(p *lksdk.RemoteParticipant) {
 	identity := p.Identity()
 	if identity == s.audioParticipant {
 		s.audioWriter.sendEOS()
-		if s.active.Dec() == 0 {
-			s.onDisconnected()
-		}
 	}
 	if identity == s.videoParticipant {
 		s.videoWriter.sendEOS()
-		if s.active.Dec() == 0 {
-			s.onDisconnected()
-		}
 	}
 }
 
@@ -248,10 +242,6 @@ func (s *SDKInput) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participan
 func (s *SDKInput) onTrackUnpublished(track *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
 	if w := s.getWriterForTrack(track.SID()); w != nil {
 		w.sendEOS()
-	}
-
-	if s.active.Dec() == 0 {
-		s.onDisconnected()
 	}
 }
 
@@ -301,7 +291,6 @@ func (s *SDKInput) subscribeToTracks(expecting map[string]struct{}) error {
 						}
 
 						delete(expecting, track.SID())
-						s.active.Inc()
 						if len(expecting) == 0 {
 							return nil
 						}

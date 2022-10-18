@@ -7,7 +7,6 @@ import (
 
 	"github.com/pion/webrtc/v3"
 	"github.com/tinyzimmer/go-gst/gst/app"
-	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/pipeline/input/bin"
 	"github.com/livekit/egress/pkg/pipeline/params"
@@ -28,7 +27,6 @@ type SDKInput struct {
 
 	room   *lksdk.Room
 	logger logger.Logger
-	active atomic.Int32
 	cs     *synchronizer
 
 	// track
