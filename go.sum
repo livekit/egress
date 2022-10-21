@@ -310,8 +310,6 @@ github.com/livekit/livekit-server v1.2.1 h1:eyhjpQe9HBrEH2iVhMsOlrzorgW+T0XG71CK
 github.com/livekit/livekit-server v1.2.1/go.mod h1:DzyJyStwd1+F/5x95DacrVCtsgTh2FlXaSyDr+3js5Q=
 github.com/livekit/mageutil v0.0.0-20220927214055-ff37ecf1f093 h1:a5Pzvr9EC+qLVDOVxM/008CCBogusc9pNIfCrXCTQtw=
 github.com/livekit/mageutil v0.0.0-20220927214055-ff37ecf1f093/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
-github.com/livekit/protocol v1.1.3-0.20221014231313-85bf30570f0f h1:pGJ6SFZzL77Fj70RmnMdTn7bSmCsJiBb4S1gEsClHo4=
-github.com/livekit/protocol v1.1.3-0.20221014231313-85bf30570f0f/go.mod h1:jshI3nWbZkF1y1TUr2WIqzhN9HnyMqM9v/e/31L78z0=
 github.com/livekit/protocol v1.1.3-0.20221017221212-9b09be77efec h1:hlFRD++CoQkBsuxqMWkgG/uy+W1/ScQAGiFkr97LxQ0=
 github.com/livekit/protocol v1.1.3-0.20221017221212-9b09be77efec/go.mod h1:2xNj9tUehjGYkptvCF7r0vgx3+D7kawK+a8rTsaLelY=
 github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995 h1:vOaY2qvfLihDyeZtnGGN1Law9wRrw8BMGCr1TygTvMw=

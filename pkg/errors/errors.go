@@ -49,8 +49,8 @@ func ErrParticipantNotFound(identity string) error {
 	return fmt.Errorf("participant %s not found", identity)
 }
 
-func ErrPadLinkFailed(pad, status string) error {
-	return fmt.Errorf("%s pad link failed: %s", pad, status)
+func ErrPadLinkFailed(src, sink, status string) error {
+	return fmt.Errorf("failed to link %s to %s: %s", src, sink, status)
 }
 
 func ErrUploadFailed(location string, err error) error {

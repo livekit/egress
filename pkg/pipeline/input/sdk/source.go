@@ -35,6 +35,7 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer wg.Done()
 		s.logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
+		s.active.Inc()
 
 		var codec params.MimeType
 		var appSrcName string
@@ -192,10 +193,10 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 func (s *SDKInput) onParticipantDisconnected(p *lksdk.RemoteParticipant) {
 	identity := p.Identity()
 	if identity == s.audioParticipant {
-		s.audioWriter.sendEOS()
+		go s.SendAppSrcEOS(AudioAppSource)
 	}
 	if identity == s.videoParticipant {
-		s.videoWriter.sendEOS()
+		go s.SendAppSrcEOS(VideoAppSource)
 	}
 }
 

@@ -469,9 +469,9 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 			switch s := p.in.(type) {
 			case *sdk.SDKInput:
 				s.SendEOS()
-			case *web.WebInput:
-				p.pipeline.SendEvent(gst.NewEOSEvent())
 			}
+
+			p.pipeline.SendEvent(gst.NewEOSEvent())
 		}()
 	})
 }
