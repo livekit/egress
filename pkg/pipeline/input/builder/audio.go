@@ -16,8 +16,8 @@ import (
 type AudioInput struct {
 	decoder []*gst.Element
 	testSrc []*gst.Element
-	mixer   []*gst.Element
-	encoder *gst.Element
+	mixer   *gst.Element
+	encoder []*gst.Element
 }
 
 func NewWebAudioInput(p *params.Params) (*AudioInput, error) {
@@ -64,12 +64,12 @@ func (a *AudioInput) AddToBin(bin *gst.Bin) error {
 		}
 	}
 	if a.mixer != nil {
-		if err := bin.AddMany(a.mixer...); err != nil {
+		if err := bin.Add(a.mixer); err != nil {
 			return err
 		}
 	}
 	if a.encoder != nil {
-		if err := bin.Add(a.encoder); err != nil {
+		if err := bin.AddMany(a.encoder...); err != nil {
 			return err
 		}
 	}
@@ -88,27 +88,26 @@ func (a *AudioInput) Link() error {
 		}
 	}
 	if a.mixer != nil {
-		if link := getSrcPad(a.decoder).Link(a.mixer[0].GetRequestPad("sink_%u")); link != gst.PadLinkOK {
+		if link := getSrcPad(a.decoder).Link(a.mixer.GetRequestPad("sink_%u")); link != gst.PadLinkOK {
 			return errors.ErrPadLinkFailed("audio decoder", "audio mixer", link.String())
 		}
 
-		if link := getSrcPad(a.testSrc).Link(a.mixer[0].GetRequestPad("sink_%u")); link != gst.PadLinkOK {
+		if link := getSrcPad(a.testSrc).Link(a.mixer.GetRequestPad("sink_%u")); link != gst.PadLinkOK {
 			return errors.ErrPadLinkFailed("audio test src", "audio mixer", link.String())
-		}
-
-		if err := gst.ElementLinkMany(a.mixer...); err != nil {
-			return err
 		}
 	}
 	if a.encoder != nil {
 		if a.mixer != nil {
-			if link := getSrcPad(a.mixer).Link(a.encoder.GetStaticPad("sink")); link != gst.PadLinkOK {
+			if link := a.mixer.GetStaticPad("src").Link(a.encoder[0].GetStaticPad("sink")); link != gst.PadLinkOK {
 				return errors.ErrPadLinkFailed("audio mixer", "audio encoder", link.String())
 			}
 		} else {
-			if link := getSrcPad(a.decoder).Link(a.encoder.GetStaticPad("sink")); link != gst.PadLinkOK {
+			if link := getSrcPad(a.decoder).Link(a.encoder[0].GetStaticPad("sink")); link != gst.PadLinkOK {
 				return errors.ErrPadLinkFailed("audio decoder", "audio encoder", link.String())
 			}
+		}
+		if err := gst.ElementLinkMany(a.encoder...); err != nil {
+			return err
 		}
 	}
 
@@ -117,10 +116,10 @@ func (a *AudioInput) Link() error {
 
 func (a *AudioInput) GetSrcPad() *gst.Pad {
 	if a.encoder != nil {
-		return a.encoder.GetStaticPad("src")
+		return getSrcPad(a.encoder)
 	}
 	if a.mixer != nil {
-		return getSrcPad(a.mixer)
+		return a.mixer.GetStaticPad("src")
 	}
 	return getSrcPad(a.decoder)
 }
@@ -134,13 +133,8 @@ func (a *AudioInput) buildWebDecoder(p *params.Params) error {
 		return err
 	}
 
-	audioQueue, err := buildQueue()
-	if err != nil {
-		return err
-	}
-
-	a.decoder = []*gst.Element{pulseSrc, audioQueue}
-	return nil
+	a.decoder = []*gst.Element{pulseSrc}
+	return a.addConverter(p)
 }
 
 func (a *AudioInput) buildSDKDecoder(p *params.Params, src *app.Source, codec webrtc.RTPCodecParameters) error {
@@ -180,6 +174,10 @@ func (a *AudioInput) buildSDKDecoder(p *params.Params, src *app.Source, codec we
 		return errors.ErrNotSupported(codec.MimeType)
 	}
 
+	return a.addConverter(p)
+}
+
+func (a *AudioInput) addConverter(p *params.Params) error {
 	audioQueue, err := buildQueue()
 	if err != nil {
 		return err
@@ -234,16 +232,17 @@ func (a *AudioInput) buildMixer(p *params.Params) error {
 		logger.Errorw("latency", err)
 		return err
 	}
-	capsFilter, err := getCapsFilter(p)
-	if err != nil {
-		return err
-	}
-	a.mixer = []*gst.Element{audioMixer, capsFilter}
+	a.mixer = audioMixer
 
 	return nil
 }
 
 func (a *AudioInput) buildEncoder(p *params.Params) error {
+	capsFilter, err := getCapsFilter(p)
+	if err != nil {
+		return err
+	}
+
 	switch p.AudioCodec {
 	case params.MimeTypeOpus:
 		encoder, err := gst.NewElement("opusenc")
@@ -253,7 +252,7 @@ func (a *AudioInput) buildEncoder(p *params.Params) error {
 		if err = encoder.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
 			return err
 		}
-		a.encoder = encoder
+		a.encoder = []*gst.Element{capsFilter, encoder}
 
 	case params.MimeTypeAAC:
 		encoder, err := gst.NewElement("faac")
@@ -263,7 +262,7 @@ func (a *AudioInput) buildEncoder(p *params.Params) error {
 		if err = encoder.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
 			return err
 		}
-		a.encoder = encoder
+		a.encoder = []*gst.Element{capsFilter, encoder}
 
 	default:
 		return errors.ErrNotSupported(string(p.AudioCodec))
@@ -275,7 +274,7 @@ func (a *AudioInput) buildEncoder(p *params.Params) error {
 func getCapsFilter(p *params.Params) (*gst.Element, error) {
 	var caps *gst.Caps
 	switch p.AudioCodec {
-	case params.MimeTypeOpus:
+	case params.MimeTypeOpus, params.MimeTypeRaw:
 		caps = gst.NewCapsFromString(
 			"audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2",
 		)
