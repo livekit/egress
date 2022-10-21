@@ -69,7 +69,7 @@ func (o *OutputBin) Link() error {
 
 		// link tee to queue
 		if linkReturn := pad.Link(sink.queue.GetStaticPad("sink")); linkReturn != gst.PadLinkOK {
-			return errors.ErrPadLinkFailed("tee", linkReturn.String())
+			return errors.ErrPadLinkFailed("sink", "tee", linkReturn.String())
 		}
 	}
 
@@ -106,7 +106,7 @@ func (o *OutputBin) linkSink(sink *streamSink) error {
 
 	// link
 	if linkReturn := sink.queue.GetStaticPad("src").Link(proxy.Pad); linkReturn != gst.PadLinkOK {
-		return errors.ErrPadLinkFailed("rtmp sink", linkReturn.String())
+		return errors.ErrPadLinkFailed("queue", "proxy", linkReturn.String())
 	}
 
 	return nil

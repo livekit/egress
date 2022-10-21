@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/pipeline/input/bin"
+	"github.com/livekit/egress/pkg/pipeline/input/builder"
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
@@ -20,7 +20,7 @@ const (
 )
 
 type WebInput struct {
-	*bin.InputBin
+	*builder.InputBin
 
 	pulseSink    string
 	xvfb         *exec.Cmd
@@ -64,11 +64,14 @@ func NewWebInput(ctx context.Context, conf *config.Config, p *params.Params) (*W
 		return nil, err
 	}
 
-	if err := s.build(ctx, p); err != nil {
+	<-p.GstReady
+	input, err := builder.NewWebInput(ctx, p)
+	if err != nil {
 		s.logger.Errorw("failed to build input bin", err)
 		s.Close()
 		return nil, err
 	}
+	s.InputBin = input
 
 	return s, nil
 }

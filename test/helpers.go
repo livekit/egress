@@ -45,8 +45,8 @@ var (
 )
 
 func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec params.MimeType, withMuting bool) (audioTrackID, videoTrackID string) {
-	audioTrackID = publishSampleToRoom(t, room, audioCodec, false)
-	videoTrackID = publishSampleToRoom(t, room, videoCodec, withMuting)
+	audioTrackID = publishSampleToRoom(t, room, audioCodec, withMuting)
+	videoTrackID = publishSampleToRoom(t, room, videoCodec, false)
 	time.Sleep(time.Second)
 	return
 }

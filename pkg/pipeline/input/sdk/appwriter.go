@@ -324,7 +324,7 @@ func (w *appWriter) pushBlankFrame(timestamp uint32) error {
 	case params.MimeTypeVP8:
 		blankVP8 := w.vp8Munger.UpdateAndGetPadding(true)
 
-		// 1x1 key frame
+		// 16x16 key frame
 		// Used even when closing out a previous frame. Looks like receivers
 		// do not care about content (it will probably end up being an undecodable
 		// frame, but that should be okay as there are key frames following)
