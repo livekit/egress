@@ -228,7 +228,7 @@ func (a *AudioInput) buildMixer(p *params.Params) error {
 		return err
 	}
 	// set latency slightly higher than max audio appsrc latency
-	if err = audioMixer.SetProperty("latency", uint64(41e8)); err != nil {
+	if err = audioMixer.SetProperty("latency", latency); err != nil {
 		logger.Errorw("latency", err)
 		return err
 	}

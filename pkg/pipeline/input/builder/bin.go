@@ -14,6 +14,8 @@ import (
 	"github.com/livekit/protocol/tracer"
 )
 
+const latency = uint64(41e8) // slightly larger than max audio latency
+
 type InputBin struct {
 	bin *gst.Bin
 
@@ -228,7 +230,7 @@ func buildQueue() (*gst.Element, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = queue.SetProperty("max-size-time", uint64(41e8)); err != nil {
+	if err = queue.SetProperty("max-size-time", latency); err != nil {
 		return nil, err
 	}
 	if err = queue.SetProperty("max-size-bytes", uint(0)); err != nil {
