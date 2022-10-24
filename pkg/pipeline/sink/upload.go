@@ -19,15 +19,14 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 
-	"github.com/livekit/protocol/livekit"
-
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/protocol/livekit"
 )
 
 const (
 	maxRetries = 5
-	minDelay   = 100 * time.Millisecond
-	maxDelay   = 5 * time.Second
+	minDelay   = time.Millisecond * 100
+	maxDelay   = time.Second * 5
 )
 
 // FIXME Should we use a Context to allow for an overall operation timeout?
