@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/frostbyte73/go-throttle"
+	"github.com/mackerelio/go-osstat/cpu"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 )
 
 type Monitor struct {
@@ -22,8 +22,7 @@ type Monitor struct {
 	promCPULoad  prometheus.Gauge
 	requestGauge *prometheus.GaugeVec
 
-	cpuStats *utils.CPUStats
-
+	idleCPUs        atomic.Float64
 	pendingCPUs     atomic.Float64
 	numCPUs         float64
 	warningThrottle func(func())
@@ -64,15 +63,7 @@ func (m *Monitor) Start(conf *config.Config, close chan struct{}, isAvailable fu
 
 	prometheus.MustRegister(promNodeAvailable, m.promCPULoad, m.requestGauge)
 
-	cpuStats, err := utils.NewCPUStats(func(idle float64) {
-		m.promCPULoad.Set(1 - idle/m.numCPUs)
-	})
-	if err != nil {
-		return err
-	}
-
-	m.cpuStats = cpuStats
-
+	go m.monitorCPULoad(close)
 	return nil
 }
 
@@ -131,13 +122,38 @@ func (m *Monitor) checkCPUConfig(costConfig config.CPUCostConfig) error {
 	return nil
 }
 
+func (m *Monitor) monitorCPULoad(close chan struct{}) {
+	prev, _ := cpu.Get()
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-close:
+			return
+		case <-ticker.C:
+			next, _ := cpu.Get()
+			idlePercent := float64(next.Idle-prev.Idle) / float64(next.Total-prev.Total)
+			m.idleCPUs.Store(m.numCPUs * idlePercent)
+			m.promCPULoad.Set(1 - idlePercent)
+
+			if idlePercent < 0.1 {
+				m.warningThrottle(func() { logger.Infow("high cpu load", "load", 100-idlePercent) })
+			}
+
+			prev = next
+		}
+	}
+}
+
 func (m *Monitor) GetCPULoad() float64 {
-	return (m.numCPUs - m.cpuStats.GetCPUIdle()) / m.numCPUs * 100
+	return (m.numCPUs - m.idleCPUs.Load()) / m.numCPUs * 100
 }
 
 func (m *Monitor) CanAcceptRequest(req *livekit.StartEgressRequest) bool {
 	accept := false
-	available := m.cpuStats.GetCPUIdle() - m.pendingCPUs.Load()
+	available := m.idleCPUs.Load() - m.pendingCPUs.Load()
 
 	switch req.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
