@@ -59,12 +59,22 @@ func UploadS3(conf *livekit.S3Upload, localFilepath, storageFilepath string, mim
 		Body:          file,
 		ContentLength: aws.Int64(fileInfo.Size()),
 		ContentType:   aws.String(string(mime)),
+		Metadata:      convertS3Metadata(conf.Metadata),
+		Tagging:       aws.String(conf.Tagging),
 	})
 	if err != nil {
 		return "", err
 	}
 
 	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", conf.Bucket, conf.Region, storageFilepath), nil
+}
+
+func convertS3Metadata(metadata map[string]string) map[string]*string {
+	var result = map[string]*string{}
+	for k, v := range metadata {
+		result[k] = &v
+	}
+	return result
 }
 
 func UploadAzure(conf *livekit.AzureBlobUpload, localFilepath, storageFilepath string, mime params.OutputType) (location string, err error) {
