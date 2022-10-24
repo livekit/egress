@@ -1,35 +1,38 @@
 import { ParticipantView, ScreenShareView } from '@livekit/react-components';
 import {
-  Participant, RemoteParticipant, RemoteVideoTrack, Track,
+  Participant, RemoteVideoTrack, Track,
 } from 'livekit-client';
-import React, { ReactElement } from 'react';
+import { ReactElement } from 'react';
 import { LayoutProps } from './common';
 import styles from './SpeakerLayout.module.css';
+import useDominateSpeaker from './useDominateSpeaker';
 
 const SpeakerLayout = ({ participants }: LayoutProps) => {
+  const dominantSpeaker = useDominateSpeaker(participants);
+
   // find first participant with screen shared
   let screenTrack: RemoteVideoTrack | undefined;
-  const remoteParticipants = participants.filter((p) => (p instanceof RemoteParticipant));
-  remoteParticipants.forEach((p) => {
+  participants.forEach((p) => {
     const pub = p.getTrack(Track.Source.ScreenShare);
     if (pub && pub.isSubscribed) {
       screenTrack = pub.videoTrack as RemoteVideoTrack;
     }
   });
 
-  if (remoteParticipants.length === 0) {
+  if (participants.length === 0) {
     return <div />;
   }
 
   // full screen a single participant
-  if (remoteParticipants.length === 1 && !screenTrack) {
+  if (participants.length === 1 && !screenTrack) {
     return (
       <>
         <ParticipantView
-          participant={remoteParticipants[0]}
+          participant={participants[0]}
           width="100%"
           height="100%"
           orientation="landscape"
+          speakerClassName=""
         />
       </>
     );
@@ -38,19 +41,21 @@ const SpeakerLayout = ({ participants }: LayoutProps) => {
   let otherParticipants: Participant[];
   let mainView: ReactElement;
   if (screenTrack) {
-    otherParticipants = remoteParticipants;
+    otherParticipants = participants;
     mainView = (
       <ScreenShareView track={screenTrack} height="100%" width="100%" />
     );
   } else {
-    otherParticipants = remoteParticipants.slice(1);
+    const mainParticipant = dominantSpeaker ?? participants[0];
+    otherParticipants = participants.filter((p) => p !== mainParticipant);
     mainView = (
       <ParticipantView
-        key={remoteParticipants[0].identity}
-        participant={remoteParticipants[0]}
+        key={mainParticipant.identity}
+        participant={mainParticipant}
         width="100%"
         height="100%"
         orientation="landscape"
+        speakerClassName=""
       />
     );
   }
@@ -65,7 +70,10 @@ const SpeakerLayout = ({ participants }: LayoutProps) => {
             participant={participant}
             width="100%"
             height="100%"
+            aspectWidth={16}
+            aspectHeight={9}
             orientation="landscape"
+            speakerClassName=""
           />
         ))}
       </div>

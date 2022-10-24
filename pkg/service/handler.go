@@ -5,15 +5,14 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/protocol/egress"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/tracer"
-
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/protocol/egress"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/tracer"
 )
 
 type Handler struct {
@@ -122,7 +121,7 @@ func (h *Handler) buildPipeline(ctx context.Context, req *livekit.StartEgressReq
 func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
 	switch info.Status {
 	case livekit.EgressStatus_EGRESS_FAILED:
-		logger.Errorw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
+		logger.Warnw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
 	case livekit.EgressStatus_EGRESS_COMPLETE:
 		logger.Infow("egress completed", "egressID", info.EgressId)
 	default:
@@ -142,7 +141,7 @@ func (h *Handler) sendResponse(ctx context.Context, req *livekit.EgressRequest, 
 	}
 
 	if err != nil {
-		logger.Errorw("request failed", err, args...)
+		logger.Warnw("request failed", err, args...)
 	} else {
 		logger.Debugw("request handled", args...)
 	}

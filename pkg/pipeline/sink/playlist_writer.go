@@ -24,7 +24,6 @@ type PlaylistWriter struct {
 }
 
 func NewPlaylistWriter(p *params.Params) (*PlaylistWriter, error) {
-
 	// "github.com/grafov/m3u8" is fairly inefficient for frequent serializations of long playlists and
 	// doesn't implement recent additions to the HLS spec, but I'm not aware of anything better, short of
 	// writing one.
@@ -45,11 +44,11 @@ func NewPlaylistWriter(p *params.Params) (*PlaylistWriter, error) {
 
 func (w *PlaylistWriter) StartSegment(filepath string, startTime int64) error {
 	if filepath == "" {
-		return fmt.Errorf("invalid Filename")
+		return fmt.Errorf("invalid filepath")
 	}
 
 	if startTime < 0 {
-		return fmt.Errorf("invalid Start Timestamp")
+		return fmt.Errorf("invalid start timestamp")
 	}
 
 	k := getFilenameFromFilePath(filepath)
@@ -95,20 +94,13 @@ func (w *PlaylistWriter) EndSegment(filepath string, endTime int64) error {
 
 	// Write playlist for every segment. This allows better crash recovery and to use
 	// it as an Event playlist, at the cost of extra I/O
-	w.writePlaylist()
-
-	return nil
+	return w.writePlaylist()
 }
 
 func (w *PlaylistWriter) EOS() error {
 	w.playlist.Close()
 
-	err := w.writePlaylist()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return w.writePlaylist()
 }
 
 func (w *PlaylistWriter) writePlaylist() error {

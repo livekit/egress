@@ -3,67 +3,62 @@ package config
 import (
 	"os"
 	"path"
+	"time"
 
 	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/utils"
-
-	"github.com/livekit/egress/pkg/errors"
+	lksdk "github.com/livekit/server-sdk-go"
 )
 
 const (
 	roomCompositeCpuCost  = 3
 	trackCompositeCpuCost = 2
 	trackCpuCost          = 1
-
-	defaultLocalOutputDirectory = "/"
 )
 
 type Config struct {
-	Redis     RedisConfig `yaml:"redis"`      // required
-	ApiKey    string      `yaml:"api_key"`    // required (env LIVEKIT_API_KEY)
-	ApiSecret string      `yaml:"api_secret"` // required (env LIVEKIT_API_SECRET)
-	WsUrl     string      `yaml:"ws_url"`     // required (env LIVEKIT_WS_URL)
+	Redis     *redis.RedisConfig `yaml:"redis"`      // required
+	ApiKey    string             `yaml:"api_key"`    // required (env LIVEKIT_API_KEY)
+	ApiSecret string             `yaml:"api_secret"` // required (env LIVEKIT_API_SECRET)
+	WsUrl     string             `yaml:"ws_url"`     // required (env LIVEKIT_WS_URL)
 
 	HealthPort           int    `yaml:"health_port"`
 	PrometheusPort       int    `yaml:"prometheus_port"`
 	LogLevel             string `yaml:"log_level"`
 	TemplateBase         string `yaml:"template_base"`
 	Insecure             bool   `yaml:"insecure"`
-	LocalOutputDirectory string `yaml:"local_directory"` // used for temporary storage before uplaod
+	LocalOutputDirectory string `yaml:"local_directory"` // used for temporary storage before upload
 
 	S3     *S3Config    `yaml:"s3"`
 	Azure  *AzureConfig `yaml:"azure"`
 	GCP    *GCPConfig   `yaml:"gcp"`
-	AliOSS *S3Config    `yaml:"aliOSS"`
+	AliOSS *S3Config    `yaml:"alioss"`
 
 	// CPU costs for various egress types
 	CPUCost CPUCostConfig `yaml:"cpu_cost"`
+
+	SessionLimits `yaml:"session_limits"`
 
 	// internal
 	NodeID     string      `yaml:"-"`
 	FileUpload interface{} `yaml:"-"` // one of S3, Azure, or GCP
 }
 
-type RedisConfig struct {
-	Address  string `yaml:"address"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-	DB       int    `yaml:"db"`
-	UseTLS   bool   `yaml:"use_tls"`
-}
-
 type S3Config struct {
-	AccessKey string `yaml:"access_key"` // (env AWS_ACCESS_KEY_ID)
-	Secret    string `yaml:"secret"`     // (env AWS_SECRET_ACCESS_KEY)
-	Region    string `yaml:"region"`     // (env AWS_DEFAULT_REGION)
-	Endpoint  string `yaml:"endpoint"`
-	Bucket    string `yaml:"bucket"`
+	AccessKey      string `yaml:"access_key"` // (env AWS_ACCESS_KEY_ID)
+	Secret         string `yaml:"secret"`     // (env AWS_SECRET_ACCESS_KEY)
+	Region         string `yaml:"region"`     // (env AWS_DEFAULT_REGION)
+	Endpoint       string `yaml:"endpoint"`
+	Bucket         string `yaml:"bucket"`
+	ForcePathStyle bool   `yaml:"force_path_style"`
 }
 
 type AzureConfig struct {
@@ -75,6 +70,12 @@ type AzureConfig struct {
 type GCPConfig struct {
 	CredentialsJSON string `yaml:"credentials_json"` // (env GOOGLE_APPLICATION_CREDENTIALS)
 	Bucket          string `yaml:"bucket"`
+}
+
+type SessionLimits struct {
+	FileOutputMaxDuration    time.Duration `yaml:"file_output_max_duration"`
+	StreamOutputMaxDuration  time.Duration `yaml:"stream_output_max_duration"`
+	SegmentOutputMaxDuration time.Duration `yaml:"segment_output_max_duration"`
 }
 
 type CPUCostConfig struct {
@@ -100,11 +101,12 @@ func NewConfig(confString string) (*Config, error) {
 
 	if conf.S3 != nil {
 		conf.FileUpload = &livekit.S3Upload{
-			AccessKey: conf.S3.AccessKey,
-			Secret:    conf.S3.Secret,
-			Region:    conf.S3.Region,
-			Endpoint:  conf.S3.Endpoint,
-			Bucket:    conf.S3.Bucket,
+			AccessKey:      conf.S3.AccessKey,
+			Secret:         conf.S3.Secret,
+			Region:         conf.S3.Region,
+			Endpoint:       conf.S3.Endpoint,
+			Bucket:         conf.S3.Bucket,
+			ForcePathStyle: conf.S3.ForcePathStyle,
 		}
 	} else if conf.GCP != nil {
 		var credentials []byte
@@ -130,20 +132,21 @@ func NewConfig(confString string) (*Config, error) {
 			Bucket:    conf.AliOSS.Bucket,
 		}
 	}
+
 	// Setting CPU costs from config. Ensure that CPU costs are positive
-	if conf.CPUCost.TrackCpuCost <= 0.0 {
-		conf.CPUCost.TrackCpuCost = trackCpuCost
+	if conf.CPUCost.RoomCompositeCpuCost <= 0 {
+		conf.CPUCost.RoomCompositeCpuCost = roomCompositeCpuCost
 	}
-	if conf.CPUCost.TrackCompositeCpuCost <= 0.0 {
+	if conf.CPUCost.TrackCompositeCpuCost <= 0 {
 		conf.CPUCost.TrackCompositeCpuCost = trackCompositeCpuCost
 	}
-	if conf.CPUCost.RoomCompositeCpuCost <= 0.0 {
-		conf.CPUCost.RoomCompositeCpuCost = roomCompositeCpuCost
+	if conf.CPUCost.TrackCpuCost <= 0 {
+		conf.CPUCost.TrackCpuCost = trackCpuCost
 	}
 
 	conf.LocalOutputDirectory = path.Clean(conf.LocalOutputDirectory)
 	if conf.LocalOutputDirectory == "." {
-		conf.LocalOutputDirectory = defaultLocalOutputDirectory
+		conf.LocalOutputDirectory = os.TempDir()
 	}
 
 	if err := conf.initLogger(); err != nil {
@@ -163,6 +166,8 @@ func (c *Config) initLogger() error {
 	}
 
 	l, _ := conf.Build()
+
 	logger.SetLogger(zapr.NewLogger(l).WithValues("nodeID", c.NodeID), "egress")
+	lksdk.SetLogger(logger.GetLogger())
 	return nil
 }

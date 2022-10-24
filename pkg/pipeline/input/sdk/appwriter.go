@@ -1,4 +1,4 @@
-package source
+package sdk
 
 import (
 	"encoding/binary"
@@ -14,14 +14,13 @@ import (
 	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
 	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
-
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
 const (
@@ -54,7 +53,7 @@ type appWriter struct {
 	writePLI         func()
 
 	// a/v sync
-	cs          *clockSync
+	cs          *synchronizer
 	clockSynced bool
 	rtpOffset   int64
 	ptsOffset   int64
@@ -84,7 +83,7 @@ func newAppWriter(
 	rp *lksdk.RemoteParticipant,
 	l logger.Logger,
 	src *app.Source,
-	cs *clockSync,
+	cs *synchronizer,
 	playing chan struct{},
 	writeBlanks bool,
 ) (*appWriter, error) {
@@ -144,7 +143,7 @@ func (w *appWriter) start() {
 	// always post EOS if the writer started playing
 	defer func() {
 		if w.isPlaying() {
-			if flow := w.src.EndStream(); flow != gst.FlowOK {
+			if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
 				w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
 			}
 		}
@@ -178,7 +177,6 @@ func (w *appWriter) start() {
 					}
 				}
 
-				// continue if read timeout
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					continue
 				}
@@ -326,7 +324,7 @@ func (w *appWriter) pushBlankFrame(timestamp uint32) error {
 	case params.MimeTypeVP8:
 		blankVP8 := w.vp8Munger.UpdateAndGetPadding(true)
 
-		// 1x1 key frame
+		// 16x16 key frame
 		// Used even when closing out a previous frame. Looks like receivers
 		// do not care about content (it will probably end up being an undecodable
 		// frame, but that should be okay as there are key frames following)

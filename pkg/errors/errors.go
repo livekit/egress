@@ -34,7 +34,7 @@ func ErrIncompatible(format, codec interface{}) error {
 }
 
 func ErrInvalidInput(field string) error {
-	return fmt.Errorf("request missing required field: %s", field)
+	return fmt.Errorf("request has missing or invalid field: %s", field)
 }
 
 func ErrInvalidUrl(url, protocol string) error {
@@ -45,8 +45,12 @@ func ErrTrackNotFound(trackID string) error {
 	return fmt.Errorf("track %s not found", trackID)
 }
 
-func ErrPadLinkFailed(pad, status string) error {
-	return fmt.Errorf("%s pad link failed: %s", pad, status)
+func ErrParticipantNotFound(identity string) error {
+	return fmt.Errorf("participant %s not found", identity)
+}
+
+func ErrPadLinkFailed(src, sink, status string) error {
+	return fmt.Errorf("failed to link %s to %s: %s", src, sink, status)
 }
 
 func ErrUploadFailed(location string, err error) error {
