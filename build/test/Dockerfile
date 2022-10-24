@@ -1,4 +1,4 @@
-FROM livekit/gstreamer:1.18.5-dev
+FROM livekit/gstreamer:1.20.4-dev
 
 WORKDIR /workspace
 
@@ -9,6 +9,7 @@ RUN apt-get update && \
     apt-get install -y \
     curl \
     ffmpeg \
+    fonts-noto \
     gnupg \
     golang \
     gstreamer1.0-pulseaudio \
@@ -82,12 +83,14 @@ RUN go mod download
 # copy source
 COPY cmd/ cmd/
 COPY pkg/ pkg/
-COPY test/ test/
 COPY version/ version/
 
 # build (service tests will need to launch the handler)
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
     CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o /bin/egress ./cmd/server
+
+# copy test after building to allow for cached server
+COPY test/ test/
 
 # run
 COPY build/test/entrypoint.sh .

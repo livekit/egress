@@ -1,4 +1,4 @@
-FROM livekit/gstreamer:1.18.5-dev
+FROM livekit/gstreamer:1.20.4-dev
 
 ARG TARGETPLATFORM
 
@@ -21,7 +21,7 @@ COPY version/ version/
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
     CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o egress ./cmd/server
 
-FROM livekit/gstreamer:1.18.5-prod
+FROM livekit/gstreamer:1.20.4-prod
 
 ARG TARGETPLATFORM
 
@@ -29,6 +29,7 @@ ARG TARGETPLATFORM
 RUN apt-get update && \
     apt-get install -y \
     curl \
+    fonts-noto \
     gnupg \
     gstreamer1.0-pulseaudio \
     pulseaudio \
@@ -80,7 +81,6 @@ RUN adduser root pulse-access
 # clean up
 RUN apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    rm -rf /var/run/pulse /var/lib/pulse /root/.config/pulse && \
     mkdir -pv ~/.cache/xdgr
 
 # set xdg_runtime_dir

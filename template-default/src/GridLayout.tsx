@@ -87,6 +87,7 @@ const GridLayout = ({ participants, room }: LayoutProps) => {
           orientation="landscape"
           width="100%"
           height="100%"
+          speakerClassName=""
         />
       ))}
     </div>

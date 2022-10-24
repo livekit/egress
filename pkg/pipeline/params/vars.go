@@ -65,7 +65,17 @@ var (
 		OutputTypeHLS:  MimeTypeH264,
 	}
 
-	FileExtensions = map[OutputType]FileExtension{
+	FileExtensions = map[FileExtension]struct{}{
+		FileExtensionRaw:  {},
+		FileExtensionOGG:  {},
+		FileExtensionIVF:  {},
+		FileExtensionMP4:  {},
+		FileExtensionTS:   {},
+		FileExtensionWebM: {},
+		FileExtensionM3U8: {},
+	}
+
+	FileExtensionForOutputType = map[OutputType]FileExtension{
 		OutputTypeRaw:  FileExtensionRaw,
 		OutputTypeOGG:  FileExtensionOGG,
 		OutputTypeIVF:  FileExtensionIVF,
@@ -99,12 +109,10 @@ var (
 			MimeTypeOpus: true,
 			MimeTypeVP8:  true,
 		},
-
 		OutputTypeRTMP: {
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,
 		},
-
 		OutputTypeHLS: {
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,

@@ -1,10 +1,13 @@
 import EgressHelper from '@livekit/egress-sdk';
 import { AudioRenderer, useRoom } from '@livekit/react-components';
 import {
-  AudioTrack, Participant, RemoteParticipant, Room,
+  AudioTrack, Participant, RemoteParticipant, Room, RoomEvent,
 } from 'livekit-client';
-import React, { ReactElement, useEffect, useState } from 'react';
+import {
+  ReactElement, useCallback, useEffect, useState,
+} from 'react';
 import GridLayout from './GridLayout';
+import SingleSpeakerLayout from './SingleSpeakerLayout';
 import SpeakerLayout from './SpeakerLayout';
 
 interface RoomPageProps {
@@ -74,19 +77,33 @@ function Stage({
 }: StageProps) {
   const [hasScreenShare, setHasScreenShare] = useState(false);
 
-  useEffect(() => {
-    let found = false;
-    for (const p of participants) {
+  const onTrackChanged = useCallback(() => {
+    let foundScreenshare = false;
+    room.participants.forEach((p) => {
       if (p.isScreenShareEnabled) {
-        found = true;
+        foundScreenshare = true;
       }
-    }
-    setHasScreenShare(found);
-  }, [participants]);
+    });
+    setHasScreenShare(foundScreenshare);
+  }, [room]);
 
-  let interfaceStyle = 'light';
-  if (layout === 'speaker-dark' || layout === 'grid-dark') {
-    interfaceStyle = 'dark';
+  useEffect(() => {
+    if (!room) {
+      return;
+    }
+    room.on(RoomEvent.TrackPublished, onTrackChanged);
+    room.on(RoomEvent.TrackUnpublished, onTrackChanged);
+    room.on(RoomEvent.ConnectionStateChanged, onTrackChanged);
+    return () => {
+      room.off(RoomEvent.TrackPublished, onTrackChanged);
+      room.off(RoomEvent.TrackUnpublished, onTrackChanged);
+      room.off(RoomEvent.ConnectionStateChanged, onTrackChanged);
+    };
+  }, [room]);
+
+  let interfaceStyle = 'dark';
+  if (layout.endsWith('-light')) {
+    interfaceStyle = 'light';
   }
 
   let containerClass = 'roomContainer';
@@ -95,15 +112,25 @@ function Stage({
   }
 
   // determine layout to use
-  let main: ReactElement;
-  if (layout.startsWith('speaker') || hasScreenShare) {
+  let main: ReactElement = <></>;
+  if (hasScreenShare && layout.startsWith('grid')) {
+    layout = layout.replace('grid', 'speaker');
+  }
+  if (layout.startsWith('speaker')) {
     main = (
       <SpeakerLayout
         room={room}
         participants={participants}
       />
     );
-  } else {
+  } else if (layout.startsWith('single-speaker')) {
+    main = (
+      <SingleSpeakerLayout
+        room={room}
+        participants={participants}
+      />
+    );
+  } else if (layout.startsWith('grid')) {
     main = (
       <GridLayout
         room={room}

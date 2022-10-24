@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 package test
 
@@ -10,12 +9,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/protocol/livekit"
-
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/protocol/livekit"
 )
 
 type ResultType int
@@ -24,6 +23,10 @@ const (
 	ResultTypeFile ResultType = iota
 	ResultTypeStream
 	ResultTypeSegments
+
+	maxRetries = 5
+	minDelay   = time.Millisecond * 100
+	maxDelay   = time.Second * 5
 )
 
 type FFProbeInfo struct {
@@ -85,21 +88,34 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
-func verifyFile(t *testing.T, filepath string, p *params.Params, res *livekit.EgressInfo, withMuting bool) {
+func verifyFile(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.EgressInfo) {
 	// egress info
-	require.Empty(t, res.Error)
+	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
 	require.NotZero(t, res.EndedAt)
 
 	// file info
 	fileRes := res.GetFile()
 	require.NotNil(t, fileRes)
-	require.NotEmpty(t, fileRes.Filename)
+
 	require.NotEmpty(t, fileRes.Location)
 	require.Greater(t, fileRes.Size, int64(0))
 	require.Greater(t, fileRes.Duration, int64(0))
 
-	verify(t, filepath, p, res, ResultTypeFile, withMuting)
+	storagePath := fileRes.Filename
+	localPath := fileRes.Filename
+	require.NotEmpty(t, storagePath)
+	require.False(t, strings.Contains(storagePath, "{"))
+
+	// download from cloud storage
+	if p.UploadConfig != nil {
+		localPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, storagePath)
+		download(t, p.UploadConfig, localPath, storagePath)
+		download(t, p.UploadConfig, localPath+".json", storagePath+".json")
+	}
+
+	// verify
+	verify(t, localPath, p, res, ResultTypeFile, conf.Muting)
 }
 
 func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
@@ -108,11 +124,43 @@ func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
 	}
 }
 
-func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {
-	require.NotEmpty(t, p.OutputType)
+func verifySegments(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.EgressInfo) {
+	// egress info
+	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
+	require.NotZero(t, res.StartedAt)
+	require.NotZero(t, res.EndedAt)
 
+	// segments info
+	segments := res.GetSegments()
+	require.NotEmpty(t, segments.PlaylistName)
+	require.NotEmpty(t, segments.PlaylistLocation)
+	require.Greater(t, segments.Size, int64(0))
+	require.Greater(t, segments.Duration, int64(0))
+	require.Greater(t, segments.SegmentCount, int64(0))
+
+	storedPlaylistPath := segments.PlaylistName
+	localPlaylistPath := segments.PlaylistName
+
+	// download from cloud storage
+	if p.UploadConfig != nil {
+		base := storedPlaylistPath[:len(storedPlaylistPath)-5]
+		localPlaylistPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, storedPlaylistPath)
+		download(t, p.UploadConfig, localPlaylistPath, storedPlaylistPath)
+		download(t, p.UploadConfig, localPlaylistPath+".json", storedPlaylistPath+".json")
+		for i := 0; i < int(segments.SegmentCount); i++ {
+			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
+			localPath := fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, cloudPath)
+			download(t, p.UploadConfig, localPath, cloudPath)
+		}
+	}
+
+	// verify
+	verify(t, localPlaylistPath, p, res, ResultTypeSegments, conf.Muting)
+}
+
+func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {
 	info, err := ffprobe(input)
-	require.NoError(t, err, "ffprobe error")
+	require.NoError(t, err, "ffprobe error - input does not exist")
 
 	switch p.OutputType {
 	case params.OutputTypeRaw:
@@ -124,7 +172,6 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 	}
 
 	switch resultType {
-	// TODO implement with Segments
 	case ResultTypeFile:
 		// size
 		require.NotEqual(t, "0", info.Format.Size)
@@ -134,20 +181,23 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
 
-		delta := 1.5
-		if withMuting {
-			if !p.VideoEnabled {
-				// opus only with muting (cuts the end short)
-				delta = 13
-			} else if !p.AudioEnabled {
-				delta = 10
-			} else {
-				delta = 3
+		// file duration can be different from egress duration based on keyframes or muting
+		switch p.Info.Request.(type) {
+		case *livekit.EgressInfo_RoomComposite:
+			require.InDelta(t, expected, actual, 1.5)
+
+		case *livekit.EgressInfo_Track:
+			if p.AudioEnabled {
+				delta := 3.0
+				if withMuting {
+					delta = 6
+				}
+				require.InDelta(t, expected, actual, delta)
 			}
 		}
 
-		// duration can be up to a couple seconds off because the beginning is missing a keyframe
-		require.InDelta(t, expected, actual, delta)
+	case ResultTypeSegments:
+		// TODO: implement with Segments
 	}
 
 	// check stream info
@@ -210,7 +260,7 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 				require.Equal(t, "vp8", stream.CodecName)
 
 			case params.OutputTypeMP4:
-				// bitrate. Not available for HLS
+				// bitrate, not available for HLS or WebM
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)

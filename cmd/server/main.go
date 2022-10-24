@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -10,19 +9,18 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/urfave/cli/v2"
-	"google.golang.org/protobuf/proto"
-
-	"github.com/livekit/protocol/egress"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/tracer"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/version"
+	"github.com/livekit/protocol/egress"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/redis"
+	"github.com/livekit/protocol/tracer"
 )
 
 func main() {
@@ -41,6 +39,9 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name: "config-body",
+					},
+					&cli.StringFlag{
+						Name: "temp-path",
 					},
 				},
 				Action: runHandler,
@@ -73,7 +74,7 @@ func runService(c *cli.Context) error {
 		return err
 	}
 
-	rc, err := getRedisClient(conf)
+	rc, err := redis.GetRedisClient(conf.Redis)
 	if err != nil {
 		return err
 	}
@@ -118,7 +119,18 @@ func runHandler(c *cli.Context) error {
 
 	logger.Debugw("handler launched")
 
-	rc, err := getRedisClient(conf)
+	tmpPath := c.String("temp-path")
+	if tmpPath != "" {
+		logger.Infow("setting TMPDIR environment and creating path", "path", tmpPath)
+		err := os.MkdirAll(tmpPath, 0755)
+		if err != nil {
+			span.RecordError(err)
+			return err
+		}
+		_ = os.Setenv("TMPDIR", tmpPath)
+	}
+
+	rc, err := redis.GetRedisClient(conf.Redis)
 	if err != nil {
 		span.RecordError(err)
 		return err
@@ -126,7 +138,7 @@ func runHandler(c *cli.Context) error {
 
 	req := &livekit.StartEgressRequest{}
 	reqString := c.String("request")
-	err = proto.Unmarshal([]byte(reqString), req)
+	err = protojson.Unmarshal([]byte(reqString), req)
 	if err != nil {
 		span.RecordError(err)
 		return err
@@ -163,24 +175,4 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 	}
 
 	return config.NewConfig(configBody)
-}
-
-func getRedisClient(conf *config.Config) (*redis.Client, error) {
-	logger.Infow("connecting to redis", "addr", conf.Redis.Address)
-
-	var tlsConfig *tls.Config
-	if conf.Redis.UseTLS {
-		tlsConfig = &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		}
-	}
-	rc := redis.NewClient(&redis.Options{
-		Addr:      conf.Redis.Address,
-		Username:  conf.Redis.Username,
-		Password:  conf.Redis.Password,
-		DB:        conf.Redis.DB,
-		TLSConfig: tlsConfig,
-	})
-	err := rc.Ping(context.Background()).Err()
-	return rc, err
 }
