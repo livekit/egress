@@ -314,8 +314,8 @@ github.com/livekit/livekit-server v1.2.1 h1:eyhjpQe9HBrEH2iVhMsOlrzorgW+T0XG71CK
 github.com/livekit/livekit-server v1.2.1/go.mod h1:DzyJyStwd1+F/5x95DacrVCtsgTh2FlXaSyDr+3js5Q=
 github.com/livekit/mageutil v0.0.0-20220927214055-ff37ecf1f093 h1:a5Pzvr9EC+qLVDOVxM/008CCBogusc9pNIfCrXCTQtw=
 github.com/livekit/mageutil v0.0.0-20220927214055-ff37ecf1f093/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
-github.com/livekit/protocol v1.1.3-0.20221017221212-9b09be77efec h1:hlFRD++CoQkBsuxqMWkgG/uy+W1/ScQAGiFkr97LxQ0=
-github.com/livekit/protocol v1.1.3-0.20221017221212-9b09be77efec/go.mod h1:2xNj9tUehjGYkptvCF7r0vgx3+D7kawK+a8rTsaLelY=
+github.com/livekit/protocol v1.1.3-0.20221024183818-41f5b55c9507 h1:GiLtS8tXgdzm67ceFTkpzcvyQetyk23udNVNVbV+Wjk=
+github.com/livekit/protocol v1.1.3-0.20221024183818-41f5b55c9507/go.mod h1:ue2AMoIScDwxvIJZDJm7L18gvKHZ1LvVckCGNn6rvFA=
 github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995 h1:vOaY2qvfLihDyeZtnGGN1Law9wRrw8BMGCr1TygTvMw=
 github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995/go.mod h1:116ych8UaEs9vfIE8n6iZCZ30iagUFTls0vRmC+Ix5U=
 github.com/livekit/server-sdk-go v1.0.0 h1:bcWTcvbAc4QgA1d8a9iyJVFeN8uIh5y23IeJIK+nvI0=
@@ -445,6 +445,7 @@ github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72/go.mod h1:JwIasO
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
+github.com/stretchr/objx v0.5.0/go.mod h1:Yh+to48EsGEfYuaHDzXPcE3xhTkx73EhmCGUpEOglKo=
 github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
@@ -452,8 +453,9 @@ github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5
 github.com/stretchr/testify v1.6.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.7.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
-github.com/stretchr/testify v1.8.0 h1:pSgiaMZlXftHpm5L7V1+rVB+AZJydKsMxsQBIJw4PKk=
 github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO+kdMU+MU=
+github.com/stretchr/testify v1.8.1 h1:w7B6lhMri9wdJUVmEZPGGhZzrYTPvgJArz7wNPgYKsk=
+github.com/stretchr/testify v1.8.1/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
 github.com/thoas/go-funk v0.9.2 h1:oKlNYv0AY5nyf9g+/GhMgS/UO2ces0QRdPKwkhY3VCk=
 github.com/thoas/go-funk v0.9.2/go.mod h1:+IWnUfUmFO1+WVYQWQtIJHeRRdaIyyYglZN7xzUPe4Q=
 github.com/tinyzimmer/go-glib v0.0.25 h1:2GpumtkxA0wpXhCXP6D3ksb5pGMfo9WbhgLvEw8njK4=
