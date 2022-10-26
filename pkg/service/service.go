@@ -37,9 +37,9 @@ type Service struct {
 	promServer *http.Server
 	monitor    *stats.Monitor
 
-	handlingRoomComposite atomic.Bool
-	processes             sync.Map
-	shutdown              chan struct{}
+	handlingWeb atomic.Bool
+	processes   sync.Map
+	shutdown    chan struct{}
 }
 
 type process struct {
@@ -78,7 +78,7 @@ func (s *Service) Run() error {
 		}()
 	}
 
-	if err := s.monitor.Start(s.conf, s.shutdown, s.isAvailable); err != nil {
+	if err := s.monitor.Start(s.conf, s.isAvailable); err != nil {
 		return err
 	}
 
@@ -123,11 +123,12 @@ func (s *Service) Run() error {
 				}
 
 				switch req.Request.(type) {
-				case *livekit.StartEgressRequest_RoomComposite:
-					s.handlingRoomComposite.Store(true)
+				case *livekit.StartEgressRequest_RoomComposite,
+					*livekit.StartEgressRequest_Web:
+					s.handlingWeb.Store(true)
 					go func() {
 						s.launchHandler(ctx, req)
-						s.handlingRoomComposite.Store(false)
+						s.handlingWeb.Store(false)
 					}()
 				default:
 					go s.launchHandler(ctx, req)
@@ -171,7 +172,7 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 		return false
 	}
 
-	if s.handlingRoomComposite.Load() {
+	if s.handlingWeb.Load() {
 		args = append(args, "reason", "already handling room composite")
 		logger.Debugw("rejecting request", args...)
 		return false
@@ -179,7 +180,8 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 
 	// check cpu load
 	switch req.Request.(type) {
-	case *livekit.StartEgressRequest_RoomComposite:
+	case *livekit.StartEgressRequest_RoomComposite,
+		*livekit.StartEgressRequest_Web:
 		// limit to one web composite at a time for now
 		if !s.isIdle() {
 			args = append(args, "reason", "already recording")

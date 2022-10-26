@@ -25,6 +25,7 @@ const (
 	streamUrl1   = "rtmp://localhost:1935/live/stream1"
 	streamUrl2   = "rtmp://localhost:1935/live/stream2"
 	badStreamUrl = "rtmp://sfo.contribute.live-video.net/app/fake1"
+	webUrl       = "https://www.youtube.com/watch?v=wjQq0nSGS28&t=5205s"
 )
 
 type testCase struct {
@@ -139,6 +140,26 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 		if conf.runStreamTests {
 			t.Run("Track/Stream", func(t *testing.T) {
 				testTrackStream(t, conf)
+			})
+		}
+	}
+
+	if conf.runWebTests {
+		if conf.runFileTests {
+			t.Run("Web/File", func(t *testing.T) {
+				testWebFile(t, conf)
+			})
+		}
+
+		if conf.runStreamTests {
+			t.Run("Web/Stream", func(t *testing.T) {
+				testWebStream(t, conf)
+			})
+		}
+
+		if conf.runSegmentTests {
+			t.Run("Web/Segments", func(t *testing.T) {
+				testWebSegments(t, conf)
 			})
 		}
 	}
@@ -340,7 +361,13 @@ func startEgress(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest
 	require.NoError(t, err)
 	require.Empty(t, info.Error)
 	require.NotEmpty(t, info.EgressId)
-	require.Equal(t, conf.RoomName, info.RoomName)
+	switch req.Request.(type) {
+	case *livekit.StartEgressRequest_Web:
+		require.Empty(t, info.RoomName)
+	default:
+		require.Equal(t, conf.RoomName, info.RoomName)
+	}
+
 	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING.String(), info.Status.String())
 
 	// check status
