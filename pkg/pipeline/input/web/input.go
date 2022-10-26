@@ -41,9 +41,7 @@ func NewWebInput(ctx context.Context, conf *config.Config, p *params.Params) (*W
 	defer span.End()
 
 	s := &WebInput{
-		startRecording: make(chan struct{}),
-		endRecording:   make(chan struct{}),
-		logger:         p.Logger,
+		logger: p.Logger,
 	}
 
 	if err := s.createPulseSink(ctx, p); err != nil {

@@ -20,6 +20,7 @@ import (
 
 const (
 	roomCompositeCpuCost  = 3
+	webCpuCost            = 3
 	trackCompositeCpuCost = 2
 	trackCpuCost          = 1
 )
@@ -81,6 +82,7 @@ type CPUCostConfig struct {
 	RoomCompositeCpuCost  float64 `yaml:"room_composite_cpu_cost"`
 	TrackCompositeCpuCost float64 `yaml:"track_composite_cpu_cost"`
 	TrackCpuCost          float64 `yaml:"track_cpu_cost"`
+	WebCpuCost            float64 `yaml:"web_cpu_cost"`
 }
 
 func NewConfig(confString string) (*Config, error) {
@@ -127,6 +129,9 @@ func NewConfig(confString string) (*Config, error) {
 	// Setting CPU costs from config. Ensure that CPU costs are positive
 	if conf.CPUCost.RoomCompositeCpuCost <= 0 {
 		conf.CPUCost.RoomCompositeCpuCost = roomCompositeCpuCost
+	}
+	if conf.CPUCost.WebCpuCost <= 0 {
+		conf.CPUCost.WebCpuCost = webCpuCost
 	}
 	if conf.CPUCost.TrackCompositeCpuCost <= 0 {
 		conf.CPUCost.TrackCompositeCpuCost = trackCompositeCpuCost

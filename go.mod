@@ -18,7 +18,7 @@ require (
 	github.com/grafov/m3u8 v0.11.1
 	github.com/livekit/livekit-server v1.2.1
 	github.com/livekit/mageutil v0.0.0-20220927214055-ff37ecf1f093
-	github.com/livekit/protocol v1.1.3-0.20221024182952-8810b9cc84c9
+	github.com/livekit/protocol v1.1.3-0.20221026203734-d3635b12268c
 	github.com/livekit/server-sdk-go v1.0.0
 	github.com/pion/rtp v1.7.13
 	github.com/pion/webrtc/v3 v3.1.44
