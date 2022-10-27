@@ -500,22 +500,7 @@ func (p *Params) updateFileParams(storageFilepath string, output interface{}) er
 	}
 
 	// filename
-	var identifier string
-	var replacements map[string]string
-	if p.Info.RoomName != "" {
-		identifier = p.Info.RoomName
-		replacements = map[string]string{
-			"{room_name}": p.Info.RoomName,
-			"{room_id}":   p.Info.RoomId,
-			"{time}":      time.Now().Format("2006-01-02T150405"),
-		}
-	} else {
-		identifier = "web"
-		replacements = map[string]string{
-			"{time}": time.Now().Format("2006-01-02T150405"),
-		}
-	}
-
+	identifier, replacements := p.getFilenameInfo()
 	if p.OutputType != "" {
 		err := p.updateFilepath(identifier, replacements)
 		if err != nil {
@@ -585,28 +570,27 @@ func (p *Params) updateSegmentsParams(filePrefix string, playlistFilename string
 	}
 
 	// filename
-	var identifier string
-	var replacements map[string]string
-	if p.Info.RoomName != "" {
-		identifier = p.Info.RoomName
-		replacements = map[string]string{
-			"{room_name}": p.Info.RoomName,
-			"{room_id}":   p.Info.RoomId,
-			"{time}":      time.Now().Format("2006-01-02T150405"),
-		}
-	} else {
-		identifier = "web"
-		replacements = map[string]string{
-			"{time}": time.Now().Format("2006-01-02T150405"),
-		}
-	}
-
+	identifier, replacements := p.getFilenameInfo()
 	err := p.UpdatePrefixAndPlaylist(identifier, replacements)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (p *Params) getFilenameInfo() (string, map[string]string) {
+	if p.Info.RoomName != "" {
+		return p.Info.RoomName, map[string]string{
+			"{room_name}": p.Info.RoomName,
+			"{room_id}":   p.Info.RoomId,
+			"{time}":      time.Now().Format("2006-01-02T150405"),
+		}
+	}
+
+	return "web", map[string]string{
+		"{time}": time.Now().Format("2006-01-02T150405"),
+	}
 }
 
 func (p *Params) updateConnectionInfo(request *livekit.StartEgressRequest) error {
