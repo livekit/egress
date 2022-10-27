@@ -72,8 +72,8 @@ func UploadS3(conf *livekit.S3Upload, localFilepath, storageFilepath string, mim
 func convertS3Metadata(metadata map[string]string) map[string]*string {
 	var result = map[string]*string{}
 	for k, v := range metadata {
-		allocatedVal := v
-		result[k] = &allocatedVal
+		val := v
+		result[k] = &val
 	}
 	return result
 }
