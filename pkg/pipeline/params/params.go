@@ -587,7 +587,6 @@ func (p *Params) updateSegmentsParams(filePrefix string, playlistFilename string
 	// filename
 	var identifier string
 	var replacements map[string]string
-
 	if p.Info.RoomName != "" {
 		identifier = p.Info.RoomName
 		replacements = map[string]string{
