@@ -660,6 +660,10 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 }
 
 func (p *Pipeline) storeManifest(ctx context.Context, localFilepath, storageFilepath string) error {
+	if p.DisableManifest {
+		p.Logger.Debugw("Storing manifest is disabled")
+		return nil
+	}
 	manifest, err := os.Create(localFilepath)
 	if err != nil {
 		return err
