@@ -79,9 +79,9 @@ func (h *Handler) HandleRequest(ctx context.Context, req *livekit.StartEgressReq
 			}
 			logger.Debugw("handling request", "egressID", p.GetInfo().EgressId, "requestID", request.RequestId)
 
-			switch req := request.Request.(type) {
+			switch r := request.Request.(type) {
 			case *livekit.EgressRequest_UpdateStream:
-				err = p.UpdateStream(ctx, req.UpdateStream)
+				err = p.UpdateStream(ctx, r.UpdateStream)
 			case *livekit.EgressRequest_Stop:
 				p.SendEOS(ctx)
 			default:

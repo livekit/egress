@@ -61,18 +61,26 @@ func (s *WebInput) launchChrome(ctx context.Context, p *params.Params, insecure 
 	ctx, span := tracer.Start(ctx, "WebInput.launchChrome")
 	defer span.End()
 
-	// build input url
-	inputUrl, err := url.Parse(p.TemplateBase)
-	if err != nil {
-		return err
-	}
-	values := inputUrl.Query()
-	values.Set("layout", p.Layout)
-	values.Set("url", p.LKUrl)
-	values.Set("token", p.Token)
-	inputUrl.RawQuery = values.Encode()
+	webUrl := p.WebUrl
+	if webUrl == "" {
+		// create start and end channels
+		s.startRecording = make(chan struct{})
+		s.endRecording = make(chan struct{})
 
-	s.logger.Debugw("launching chrome", "url", inputUrl.String())
+		// build input url
+		inputUrl, err := url.Parse(p.TemplateBase)
+		if err != nil {
+			return err
+		}
+		values := inputUrl.Query()
+		values.Set("layout", p.Layout)
+		values.Set("url", p.LKUrl)
+		values.Set("token", p.Token)
+		inputUrl.RawQuery = values.Encode()
+		webUrl = inputUrl.String()
+	}
+
+	s.logger.Debugw("launching chrome", "url", webUrl)
 
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.NoFirstRun,
@@ -162,8 +170,8 @@ func (s *WebInput) launchChrome(ctx context.Context, p *params.Params, insecure 
 	})
 
 	var errString string
-	err = chromedp.Run(chromeCtx,
-		chromedp.Navigate(inputUrl.String()),
+	err := chromedp.Run(chromeCtx,
+		chromedp.Navigate(webUrl),
 		chromedp.Evaluate(`
 			if (document.querySelector('div.error')) {
 				document.querySelector('div.error').innerText;

@@ -50,6 +50,7 @@ type SourceParams struct {
 	Display    string
 	Layout     string
 	CustomBase string
+	WebUrl     string
 
 	// sdk source
 	TrackID             string
@@ -192,6 +193,58 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			}
 
 		case *livekit.RoomCompositeEgressRequest_Segments:
+			p.DisableManifest = o.Segments.DisableManifest
+			p.updateOutputType(o.Segments.Protocol)
+			if err = p.updateSegmentsParams(o.Segments.FilenamePrefix, o.Segments.PlaylistName, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
+				return
+			}
+
+		default:
+			err = errors.ErrInvalidInput("output")
+			return
+		}
+
+	case *livekit.StartEgressRequest_Web:
+		p.Info.Request = &livekit.EgressInfo_Web{Web: req.Web}
+
+		// input params
+		p.WebUrl = req.Web.Url
+		if p.WebUrl == "" {
+			err = errors.ErrInvalidInput("url")
+			return
+		}
+		p.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
+		p.AudioEnabled = !req.Web.VideoOnly
+		p.VideoEnabled = !req.Web.AudioOnly
+		if !p.AudioEnabled && !p.VideoEnabled {
+			err = errors.ErrInvalidInput("AudioOnly and VideoOnly")
+			return
+		}
+
+		// encoding options
+		switch opts := req.Web.Options.(type) {
+		case *livekit.WebEgressRequest_Preset:
+			p.applyPreset(opts.Preset)
+
+		case *livekit.WebEgressRequest_Advanced:
+			p.applyAdvanced(opts.Advanced)
+		}
+
+		// output params
+		switch o := req.Web.Output.(type) {
+		case *livekit.WebEgressRequest_File:
+			p.DisableManifest = o.File.DisableManifest
+			p.updateOutputType(o.File.FileType)
+			if err = p.updateFileParams(o.File.Filepath, o.File.Output); err != nil {
+				return
+			}
+
+		case *livekit.WebEgressRequest_Stream:
+			if err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls); err != nil {
+				return
+			}
+
+		case *livekit.WebEgressRequest_Segments:
 			p.DisableManifest = o.Segments.DisableManifest
 			p.updateOutputType(o.Segments.Protocol)
 			if err = p.updateSegmentsParams(o.Segments.FilenamePrefix, o.Segments.PlaylistName, o.Segments.SegmentDuration, o.Segments.Output); err != nil {
