@@ -8,18 +8,20 @@ universal export of your LiveKit sessions and tracks.
 ## Capabilities
 
 1. **Room composite** for exporting an entire room.
-2. **Track composite** for exporting synchronized tracks of a single participant.
-3. **Track egress** for exporting individual tracks.
+2. **Web egress** for recordings that aren't attached to a single LiveKit room.
+3. **Track composite** for exporting synchronized tracks of a single participant.
+4. **Track egress** for exporting individual tracks.
 
-Depending on your request type, the egress service will either launch a web template in Chrome and connect to the room
-(room composite requests), or it will use the Go SDK directly (track and track composite requests).
+Depending on your request type, the egress service will either launch Chrome using a web template
+(room composite requests) or a supplied url (web requests), or it will use the Go SDK directly (track and track composite requests).
 Irrespective of method used, when moving between protocols, containers or encodings, LiveKit's egress service will automatically transcode streams for you using GStreamer.
 
 ## Supported Output
 
-| Egress Type     | MP4 File | OGG File | WebM File | HLS (TS SEGMENTS) | RTMP(s) Stream | WebSocket Stream |
+| Egress Type     | MP4 File | OGG File | WebM File | HLS (TS Segments) | RTMP(s) Stream | WebSocket Stream |
 |-----------------|----------|----------|-----------|-------------------|----------------|------------------|
 | Room Composite  | ✅        | ✅        |           | ✅                 | ✅              |                  |
+| Web             | ✅        | ✅        |           | ✅                 | ✅              |                  |
 | Track Composite | ✅        | ✅        |           | ✅                 | ✅              |                  |
 | Track           | ✅        | ✅        | ✅         |                   |                | ✅                |
 
@@ -70,6 +72,7 @@ gcp:
 # cpu costs for various egress types with their default values
 cpu_cost:
   room_composite_cpu_cost: 3.0
+  web_cpu_cost: 3.0
   track_composite_cpu_cost: 2.0
   track_cpu_cost: 1.0
 ```
@@ -83,6 +86,7 @@ The below templates can also be used in filename/filepath parameters:
 | Egress Type     | {room_id} | {room_name} | {time} | {publisher_identity} | {track_id} | {track_type} | {track_source} |
 |-----------------|-----------|-------------|--------|----------------------|------------|--------------|----------------|
 | Room Composite  | ✅         | ✅           | ✅      |                      |            |              |                |
+| Web             |           |             | ✅      |                      |            |              |                |
 | Track Composite | ✅         | ✅           | ✅      | ✅                    |            |              |                |
 | Track           | ✅         | ✅           | ✅      | ✅                    | ✅          | ✅            | ✅              |
 
@@ -152,7 +156,7 @@ You can then use our [cli](https://github.com/livekit/livekit-cli) to submit egr
 
 ### I get a different error when sending a request
 
-- Make sure your egress, livekit, server-sdk-go, server-sdk-js, and livekit-cli repos and deployments are all up to date.
+- Make sure your egress, livekit, server sdk, and livekit-cli are all up to date.
 
 ### I'm getting a broken (0 byte) mp4 file
 
@@ -188,6 +192,7 @@ redis:
 local_directory: /out/output
 room_name: your-room
 room_only: false
+web_only: false
 track_composite_only: false
 track_only: false
 file_only: false

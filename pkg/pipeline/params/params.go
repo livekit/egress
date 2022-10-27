@@ -347,8 +347,10 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 		return
 	}
 
-	if err = p.updateConnectionInfo(request); err != nil {
-		return
+	if p.Info.RoomName != "" {
+		if err = p.updateConnectionInfo(request); err != nil {
+			return
+		}
 	}
 
 	if p.OutputType != "" {
@@ -498,13 +500,9 @@ func (p *Params) updateFileParams(storageFilepath string, output interface{}) er
 	}
 
 	// filename
-	replacements := map[string]string{
-		"{room_name}": p.Info.RoomName,
-		"{room_id}":   p.Info.RoomId,
-		"{time}":      time.Now().Format("2006-01-02T150405"),
-	}
+	identifier, replacements := p.getFilenameInfo()
 	if p.OutputType != "" {
-		err := p.updateFilepath(p.Info.RoomName, replacements)
+		err := p.updateFilepath(identifier, replacements)
 		if err != nil {
 			return err
 		}
@@ -572,16 +570,27 @@ func (p *Params) updateSegmentsParams(filePrefix string, playlistFilename string
 	}
 
 	// filename
-	err := p.UpdatePrefixAndPlaylist(p.Info.RoomName, map[string]string{
-		"{room_name}": p.Info.RoomName,
-		"{room_id}":   p.Info.RoomId,
-		"{time}":      time.Now().Format("2006-01-02T150405"),
-	})
+	identifier, replacements := p.getFilenameInfo()
+	err := p.UpdatePrefixAndPlaylist(identifier, replacements)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (p *Params) getFilenameInfo() (string, map[string]string) {
+	if p.Info.RoomName != "" {
+		return p.Info.RoomName, map[string]string{
+			"{room_name}": p.Info.RoomName,
+			"{room_id}":   p.Info.RoomId,
+			"{time}":      time.Now().Format("2006-01-02T150405"),
+		}
+	}
+
+	return "web", map[string]string{
+		"{time}": time.Now().Format("2006-01-02T150405"),
+	}
 }
 
 func (p *Params) updateConnectionInfo(request *livekit.StartEgressRequest) error {
@@ -812,6 +821,7 @@ type Manifest struct {
 	EgressID          string `json:"egress_id,omitempty"`
 	RoomID            string `json:"room_id,omitempty"`
 	RoomName          string `json:"room_name,omitempty"`
+	Url               string `json:"url,omitempty"`
 	StartedAt         int64  `json:"started_at,omitempty"`
 	EndedAt           int64  `json:"ended_at,omitempty"`
 	PublisherIdentity string `json:"publisher_identity,omitempty"`
@@ -828,6 +838,7 @@ func (p *Params) GetManifest() ([]byte, error) {
 		EgressID:          p.Info.EgressId,
 		RoomID:            p.Info.RoomId,
 		RoomName:          p.Info.RoomName,
+		Url:               p.WebUrl,
 		StartedAt:         p.Info.StartedAt,
 		EndedAt:           p.Info.EndedAt,
 		PublisherIdentity: p.ParticipantIdentity,
