@@ -646,6 +646,10 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 		p.Logger.Debugw("uploading to azure")
 		destinationUrl, err = sink.UploadAzure(u, localFilepath, storageFilepath, mime)
 
+	case *livekit.AliOSSUpload:
+		location = "AliOSS"
+		p.Logger.Debugw("uploading to alioss")
+		destinationUrl, err = sink.UploadAliOSS(u, localFilepath, storageFilepath, mime)
 	default:
 		destinationUrl = storageFilepath
 	}

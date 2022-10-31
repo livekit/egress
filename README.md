@@ -68,7 +68,12 @@ azure:
 gcp:
   credentials_json: GOOGLE_APPLICATION_CREDENTIALS env can be used instead
   bucket: bucket to upload files to
-
+alioss:
+  access_key: Ali OSS AccessKeyId
+  secret: Ali OSS AccessKeySecret
+  region: Ali OSS region
+  endpoint: optional custom endpoint (example https://oss-cn-hangzhou.aliyuncs.com)
+  bucket: bucket to upload files to
 # cpu costs for various egress types with their default values
 cpu_cost:
   room_composite_cpu_cost: 3.0

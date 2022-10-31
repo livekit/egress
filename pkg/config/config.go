@@ -38,9 +38,10 @@ type Config struct {
 	Insecure             bool   `yaml:"insecure"`
 	LocalOutputDirectory string `yaml:"local_directory"` // used for temporary storage before upload
 
-	S3    *S3Config    `yaml:"s3"`
-	Azure *AzureConfig `yaml:"azure"`
-	GCP   *GCPConfig   `yaml:"gcp"`
+	S3     *S3Config    `yaml:"s3"`
+	Azure  *AzureConfig `yaml:"azure"`
+	GCP    *GCPConfig   `yaml:"gcp"`
+	AliOSS *S3Config    `yaml:"alioss"`
 
 	// CPU costs for various egress types
 	CPUCost CPUCostConfig `yaml:"cpu_cost"`
@@ -123,6 +124,14 @@ func NewConfig(confString string) (*Config, error) {
 			AccountName:   conf.Azure.AccountName,
 			AccountKey:    conf.Azure.AccountKey,
 			ContainerName: conf.Azure.ContainerName,
+		}
+	} else if conf.AliOSS != nil {
+		conf.FileUpload = &livekit.AliOSSUpload{
+			AccessKey: conf.AliOSS.AccessKey,
+			Secret:    conf.AliOSS.Secret,
+			Region:    conf.AliOSS.Region,
+			Endpoint:  conf.AliOSS.Endpoint,
+			Bucket:    conf.AliOSS.Bucket,
 		}
 	}
 
