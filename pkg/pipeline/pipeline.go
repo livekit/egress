@@ -639,7 +639,7 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 	case *livekit.GCPUpload:
 		location = "GCP"
 		p.Logger.Debugw("uploading to gcp")
-		destinationUrl, err = sink.UploadGCP(u, localFilepath, storageFilepath, mime)
+		destinationUrl, err = sink.UploadGCP(u, localFilepath, storageFilepath)
 
 	case *livekit.AzureBlobUpload:
 		location = "Azure"
@@ -649,7 +649,8 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 	case *livekit.AliOSSUpload:
 		location = "AliOSS"
 		p.Logger.Debugw("uploading to alioss")
-		destinationUrl, err = sink.UploadAliOSS(u, localFilepath, storageFilepath, mime)
+		destinationUrl, err = sink.UploadAliOSS(u, localFilepath, storageFilepath)
+
 	default:
 		destinationUrl = storageFilepath
 	}
@@ -665,9 +666,10 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 
 func (p *Pipeline) storeManifest(ctx context.Context, localFilepath, storageFilepath string) error {
 	if p.DisableManifest {
-		p.Logger.Debugw("Storing manifest is disabled")
+		p.Logger.Debugw("manifest storage disabled")
 		return nil
 	}
+
 	manifest, err := os.Create(localFilepath)
 	if err != nil {
 		return err

@@ -3,7 +3,6 @@ package sink
 import (
 	"context"
 	"fmt"
-	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"io"
 	"net/url"
 	"os"
@@ -11,6 +10,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -133,7 +133,7 @@ func UploadAzure(conf *livekit.AzureBlobUpload, localFilepath, storageFilepath s
 	return sUrl, nil
 }
 
-func UploadGCP(conf *livekit.GCPUpload, localFilepath, storageFilepath string, mime params.OutputType) (location string, err error) {
+func UploadGCP(conf *livekit.GCPUpload, localFilepath, storageFilepath string) (location string, err error) {
 	ctx := context.Background()
 	var client *storage.Client
 
@@ -189,7 +189,7 @@ func UploadGCP(conf *livekit.GCPUpload, localFilepath, storageFilepath string, m
 	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", conf.Bucket, storageFilepath), nil
 }
 
-func UploadAliOSS(conf *livekit.AliOSSUpload, localFilePath, requestedPath string, mime params.OutputType) (location string, err error) {
+func UploadAliOSS(conf *livekit.AliOSSUpload, localFilePath, requestedPath string) (location string, err error) {
 	client, err := oss.New(conf.Endpoint, conf.AccessKey, conf.Secret)
 	if err != nil {
 		return "", err
