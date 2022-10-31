@@ -53,15 +53,23 @@ func UploadS3(conf *livekit.S3Upload, localFilepath, storageFilepath string, mim
 		return "", err
 	}
 
-	_, err = s3.New(sess).PutObject(&s3.PutObjectInput{
+	putObject := s3.PutObjectInput{
 		Bucket:        aws.String(conf.Bucket),
 		Key:           aws.String(storageFilepath),
 		Body:          file,
 		ContentLength: aws.Int64(fileInfo.Size()),
 		ContentType:   aws.String(string(mime)),
-		Metadata:      convertS3Metadata(conf.Metadata),
-		Tagging:       aws.String(conf.Tagging),
-	})
+	}
+
+	if len(conf.Metadata) > 0 {
+		putObject.Metadata = convertS3Metadata(conf.Metadata)
+	}
+
+	if len(conf.Tagging) > 0 {
+		putObject.Tagging = aws.String(conf.Tagging)
+	}
+
+	_, err = s3.New(sess).PutObject(&putObject)
 	if err != nil {
 		return "", err
 	}
