@@ -4,7 +4,7 @@ ARG GSTREAMER_VERSION
 
 COPY install-dependencies /
 
-RUN ["/install-dependencies"]
+RUN /install-dependencies
 
 RUN for lib in gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav; \
         do \

@@ -7,7 +7,7 @@ ENV OPTIMIZATIONS=true
 
 COPY compile /
 
-RUN ["/compile"]
+RUN /compile
 
 FROM ubuntu:22.04
 
