@@ -119,13 +119,27 @@ func (h *Handler) buildPipeline(ctx context.Context, req *livekit.StartEgressReq
 }
 
 func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
+	requestType, outputType := getTypes(info)
 	switch info.Status {
 	case livekit.EgressStatus_EGRESS_FAILED:
-		logger.Warnw("egress failed", errors.New(info.Error), "egressID", info.EgressId)
+		logger.Warnw("egress failed", errors.New(info.Error),
+			"egressID", info.EgressId,
+			"request_type", requestType,
+			"output_type", outputType,
+		)
 	case livekit.EgressStatus_EGRESS_COMPLETE:
-		logger.Infow("egress completed", "egressID", info.EgressId)
+		logger.Infow("egress completed",
+			"egressID", info.EgressId,
+			"request_type", requestType,
+			"output_type", outputType,
+		)
 	default:
-		logger.Infow("egress updated", "egressID", info.EgressId, "status", info.Status)
+		logger.Infow("egress updated",
+			"egressID", info.EgressId,
+			"request_type", requestType,
+			"output_type", outputType,
+			"status", info.Status,
+		)
 	}
 
 	if err := h.rpcServer.SendUpdate(ctx, info); err != nil {
@@ -158,4 +172,49 @@ func (h *Handler) Kill() {
 	default:
 		close(h.kill)
 	}
+}
+
+func getTypes(info *livekit.EgressInfo) (requestType string, outputType string) {
+	switch req := info.Request.(type) {
+	case *livekit.EgressInfo_RoomComposite:
+		requestType = "room_composite"
+		switch req.RoomComposite.Output.(type) {
+		case *livekit.RoomCompositeEgressRequest_File:
+			outputType = "file"
+		case *livekit.RoomCompositeEgressRequest_Stream:
+			outputType = "stream"
+		case *livekit.RoomCompositeEgressRequest_Segments:
+			outputType = "segments"
+		}
+	case *livekit.EgressInfo_Web:
+		requestType = "web"
+		switch req.Web.Output.(type) {
+		case *livekit.WebEgressRequest_File:
+			outputType = "file"
+		case *livekit.WebEgressRequest_Stream:
+			outputType = "stream"
+		case *livekit.WebEgressRequest_Segments:
+			outputType = "segments"
+		}
+	case *livekit.EgressInfo_TrackComposite:
+		requestType = "track_composite"
+		switch req.TrackComposite.Output.(type) {
+		case *livekit.TrackCompositeEgressRequest_File:
+			outputType = "file"
+		case *livekit.TrackCompositeEgressRequest_Stream:
+			outputType = "stream"
+		case *livekit.TrackCompositeEgressRequest_Segments:
+			outputType = "segments"
+		}
+	case *livekit.EgressInfo_Track:
+		requestType = "track"
+		switch req.Track.Output.(type) {
+		case *livekit.TrackEgressRequest_File:
+			outputType = "file"
+		case *livekit.TrackEgressRequest_WebsocketUrl:
+			outputType = "websocket"
+		}
+	}
+
+	return
 }

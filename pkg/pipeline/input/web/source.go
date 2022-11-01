@@ -150,18 +150,22 @@ func (s *WebInput) launchChrome(ctx context.Context, p *params.Params, insecure 
 				args = append(args, msg)
 				switch msg {
 				case startRecordingLog:
-					select {
-					case <-s.startRecording:
-						continue
-					default:
-						close(s.startRecording)
+					if s.startRecording != nil {
+						select {
+						case <-s.startRecording:
+							continue
+						default:
+							close(s.startRecording)
+						}
 					}
 				case endRecordingLog:
-					select {
-					case <-s.endRecording:
-						continue
-					default:
-						close(s.endRecording)
+					if s.endRecording != nil {
+						select {
+						case <-s.endRecording:
+							continue
+						default:
+							close(s.endRecording)
+						}
 					}
 				}
 			}
