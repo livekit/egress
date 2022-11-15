@@ -1,0 +1,25 @@
+#!/bin/bash
+set -euxo pipefail
+
+# deps
+apt-get update
+apt-get install -y \
+  apt-utils \
+  build-essential \
+  curl \
+  git \
+  python3 \
+  sudo
+sudo apt-get install -y lsb-release
+
+# build
+git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+export PATH="$PATH:/depot_tools"
+mkdir chromium && cd chromium
+fetch --nohooks --no-history chromium
+cd src
+./build/install-build-deps.sh
+./build/linux/sysroot_scripts/install-sysroot.py --arch=arm
+gclient runhooks
+gn gen out/default --args='target_cpu="arm" proprietary_codecs=true ffmpeg_branding="Chrome" is_debug=false dcheck_always_on=false is_official_build=true chrome_pgo_phase=0'
+autoninja -C out/default chrome

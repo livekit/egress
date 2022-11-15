@@ -1,4 +1,4 @@
-FROM livekit/chromium:1.20.4-dev
+FROM livekit/gstreamer:1.20.4-dev
 
 WORKDIR /workspace
 
@@ -21,6 +21,21 @@ RUN rm -rf /var/lib/apt/lists/* && \
 # set env vars
 ENV XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr
 ENV RTSP_LOGDESTINATIONS=file
+
+# install chrome
+RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
+      COPY build/chrome/chrome . \
+    ; else \
+      wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
+      apt-get install -y ./google-chrome-stable_current_amd64.deb && \
+      rm google-chrome-stable_current_amd64.deb \
+    ; fi \
+
+RUN wget -N http://chromedriver.storage.googleapis.com/2.46/chromedriver_linux64.zip && \
+    unzip chromedriver_linux64.zip && \
+    chmod +x chromedriver && \
+    mv -f chromedriver /usr/local/bin/chromedriver && \
+    rm chromedriver_linux64.zip
 
 # download go modules
 COPY go.mod .

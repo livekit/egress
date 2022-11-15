@@ -15,7 +15,7 @@ import (
 )
 
 func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
-	publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
+	publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeH264, conf.Muting)
 
 	for _, test := range []*testCase{
 		{
