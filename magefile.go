@@ -87,15 +87,5 @@ func buildGstreamer(cmd string) error {
 		))
 	}
 
-	for _, build := range []string{"dev", "prod"} {
-		commands = append(commands, fmt.Sprintf("%s"+
-			" --build-arg GSTREAMER_VERSION=%s"+
-			" -t livekit-chromium:%s-%s"+
-			" -f build/chromium/Dockerfile-%s"+
-			" ./build/chromium",
-			cmd, gstVersion, gstVersion, build, build,
-		))
-	}
-
 	return mageutil.Run(context.Background(), commands...)
 }
