@@ -1,11 +1,10 @@
 package stats
 
 import (
-	"runtime"
+	"fmt"
 	"sort"
 	"time"
 
-	"github.com/frostbyte73/go-throttle"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -24,19 +23,23 @@ type Monitor struct {
 
 	cpuStats *utils.CPUStats
 
-	pendingCPUs     atomic.Float64
-	numCPUs         float64
-	warningThrottle func(func())
+	pendingCPUs atomic.Float64
 }
 
 func NewMonitor() *Monitor {
-	return &Monitor{
-		numCPUs:         float64(runtime.NumCPU()),
-		warningThrottle: throttle.New(time.Minute),
-	}
+	return &Monitor{}
 }
 
 func (m *Monitor) Start(conf *config.Config, isAvailable func() float64) error {
+	cpuStats, err := utils.NewCPUStats(func(idle float64) {
+		m.promCPULoad.Set(1 - idle/float64(m.cpuStats.NumCPU()))
+	})
+	if err != nil {
+		return err
+	}
+
+	m.cpuStats = cpuStats
+
 	if err := m.checkCPUConfig(conf.CPUCost); err != nil {
 		return err
 	}
@@ -63,15 +66,6 @@ func (m *Monitor) Start(conf *config.Config, isAvailable func() float64) error {
 	}, []string{"type"})
 
 	prometheus.MustRegister(promNodeAvailable, m.promCPULoad, m.requestGauge)
-
-	cpuStats, err := utils.NewCPUStats(func(idle float64) {
-		m.promCPULoad.Set(1 - idle/m.numCPUs)
-	})
-	if err != nil {
-		return err
-	}
-
-	m.cpuStats = cpuStats
 
 	return nil
 }
@@ -114,33 +108,35 @@ func (m *Monitor) checkCPUConfig(costConfig config.CPUCostConfig) error {
 	}
 	sort.Float64s(requirements)
 
-	recommendedMinimum := requirements[2]
+	recommendedMinimum := requirements[len(requirements)-1]
 	if recommendedMinimum < 3 {
 		recommendedMinimum = 3
 	}
 
-	if m.numCPUs < requirements[0] {
+	if float64(m.cpuStats.NumCPU()) < requirements[0] {
 		logger.Errorw("not enough cpu", nil,
 			"minimum cpu", requirements[0],
 			"recommended", recommendedMinimum,
-			"available", m.numCPUs,
+			"available", m.cpuStats.NumCPU(),
 		)
 		return errors.New("not enough cpu")
 	}
 
-	if m.numCPUs < requirements[3] {
+	if float64(m.cpuStats.NumCPU()) < requirements[len(requirements)-1] {
 		logger.Errorw("not enough cpu for some egress types", nil,
-			"minimum cpu", requirements[3],
+			"minimum cpu", requirements[len(requirements)-1],
 			"recommended", recommendedMinimum,
-			"available", m.numCPUs,
+			"available", m.cpuStats.NumCPU(),
 		)
 	}
+
+	logger.Infow(fmt.Sprintf("available CPU cores: %d max cost: %f", m.cpuStats.NumCPU(), requirements[len(requirements)-1]))
 
 	return nil
 }
 
 func (m *Monitor) GetCPULoad() float64 {
-	return (m.numCPUs - m.cpuStats.GetCPUIdle()) / m.numCPUs * 100
+	return (float64(m.cpuStats.NumCPU()) - m.cpuStats.GetCPUIdle()) / float64(m.cpuStats.NumCPU()) * 100
 }
 
 func (m *Monitor) CanAcceptRequest(req *livekit.StartEgressRequest) bool {
@@ -158,7 +154,7 @@ func (m *Monitor) CanAcceptRequest(req *livekit.StartEgressRequest) bool {
 		accept = available > m.cpuCostConfig.TrackCpuCost
 	}
 
-	logger.Debugw("cpu request", "accepted", accept, "availableCPUs", available, "numCPUs", runtime.NumCPU())
+	logger.Debugw("cpu request", "accepted", accept, "availableCPUs", available, "numCPUs", m.cpuStats.NumCPU())
 	return accept
 }
 
