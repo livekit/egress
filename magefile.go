@@ -58,15 +58,6 @@ func Build() error {
 	)
 }
 
-func UpdateChrome() error {
-	return mageutil.Run(context.Background(),
-		"docker build --no-cache -t livekit:chrome-builder ./build/chrome",
-		"docker create --name chrome-builder livekit:chrome-builder",
-		"docker cp chrome-builder:/chromium/src/out/default/chrome ./build/chrome/chrome",
-		"docker rm -f chrome-builder",
-	)
-}
-
 func BuildGStreamer() error {
 	return buildGstreamer("docker build --no-cache")
 }
