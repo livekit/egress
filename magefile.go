@@ -46,15 +46,30 @@ func Integration(configFile string) error {
 	}()
 
 	return mageutil.Run(context.Background(),
-		"docker build -t egress-test -f build/test/Dockerfile .",
+		"docker build --no-cache -t egress-test -f build/test/Dockerfile .",
 		fmt.Sprintf("docker run --rm -e EGRESS_CONFIG_FILE=%s -v %s/test:/out egress-test", configFile, dir),
 	)
 }
 
 func Build() error {
 	return mageutil.Run(context.Background(),
+		"docker pull livekit/chrome-installer",
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
 		"docker build --no-cache -t livekit/egress:latest -f build/egress/Dockerfile .",
+	)
+}
+
+func BuildChrome() error {
+	return mageutil.Run(context.Background(),
+		"docker pull ubuntu:22.04",
+		"docker build --no-cache -t livekit/chrome-installer ./build/chrome",
+	)
+}
+
+func PublishChrome() error {
+	return mageutil.Run(context.Background(),
+		"docker pull ubuntu:22.04",
+		"docker buildx build --no-cache --push --platform linux/amd64,linux/arm64 -t livekit/chrome-installer ./build/chrome",
 	)
 }
 
