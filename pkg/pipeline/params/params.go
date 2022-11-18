@@ -732,7 +732,7 @@ func (p *Params) UpdatePrefixAndPlaylist(identifier string, replacements map[str
 	ext := FileExtensionForOutputType[p.OutputType]
 
 	if p.LocalFilePrefix == "" || strings.HasSuffix(p.LocalFilePrefix, "/") {
-		p.LocalFilePrefix = fmt.Sprintf("%s%s-%s", p.LocalFilePrefix, identifier, time.Now().String())
+		p.LocalFilePrefix = fmt.Sprintf("%s%s-%s", p.LocalFilePrefix, identifier, time.Now().Format("2006-01-02T150405"))
 	}
 
 	// Playlist path is relative to file prefix. Only keep actual filename if a full path is given
