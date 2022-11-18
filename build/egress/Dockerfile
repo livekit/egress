@@ -31,8 +31,9 @@ RUN adduser root pulse-access && \
 # install chrome
 COPY --from=livekit:chrome-installer /chrome-installer /chrome-installer
 RUN /chrome-installer/install-chrome $TARGETPLATFORM && \
-    rm -rf /chrome-installer \
+    rm -rf /chrome-installer
 
+# update env
 ENV PATH=${PATH}:/chrome
 ENV XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr
 

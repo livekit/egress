@@ -37,7 +37,7 @@ RUN rm -rf /var/lib/apt/lists/* && \
     rm -rf /var/run/pulse /var/lib/pulse /root/.config/pulse && \
     mkdir -pv ~/.cache/xdgr
 
-# set env vars
+# update env
 ENV PATH=${PATH}:/chrome
 ENV XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr
 ENV RTSP_LOGDESTINATIONS=file
