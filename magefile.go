@@ -12,13 +12,7 @@ import (
 	"github.com/livekit/mageutil"
 )
 
-const (
-	imageName    = "livekit/egress"
-	gstImageName = "livekit/gstreamer"
-	gstVersion   = "1.20.4"
-
-	config = "EGRESS_CONFIG_FILE"
-)
+const gstVersion = "1.20.4"
 
 func Integration(configFile string) error {
 	dir, err := os.Getwd()
@@ -52,20 +46,30 @@ func Integration(configFile string) error {
 	}()
 
 	return mageutil.Run(context.Background(),
-		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
 		"docker build -t egress-test -f build/test/Dockerfile .",
-		fmt.Sprintf(
-			"docker run --rm -e %s=%s -v %s/test:/out egress-test",
-			config, configFile, dir,
-		),
+		fmt.Sprintf("docker run --rm -e EGRESS_CONFIG_FILE=%s -v %s/test:/out egress-test", configFile, dir),
 	)
 }
 
 func Build() error {
 	return mageutil.Run(context.Background(),
+		"docker pull livekit/chrome-installer",
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
-		fmt.Sprintf("docker pull livekit/gstreamer:%s-prod", gstVersion),
-		fmt.Sprintf("docker build --no-cache -t %s:latest -f build/Dockerfile .", imageName),
+		"docker build --no-cache -t livekit/egress:latest -f build/egress/Dockerfile .",
+	)
+}
+
+func BuildChrome() error {
+	return mageutil.Run(context.Background(),
+		"docker pull ubuntu:22.04",
+		"docker build --no-cache -t livekit/chrome-installer ./build/chrome",
+	)
+}
+
+func PublishChrome() error {
+	return mageutil.Run(context.Background(),
+		"docker pull ubuntu:22.04",
+		"docker buildx build --no-cache --push --platform linux/amd64,linux/arm64 -t livekit/chrome-installer ./build/chrome",
 	)
 }
 
@@ -82,10 +86,10 @@ func buildGstreamer(cmd string) error {
 	for _, build := range []string{"base", "dev", "prod"} {
 		commands = append(commands, fmt.Sprintf("%s"+
 			" --build-arg GSTREAMER_VERSION=%s"+
-			" -t %s:%s-%s"+
+			" -t livekit/gstreamer:%s-%s"+
 			" -f build/gstreamer/Dockerfile-%s"+
 			" ./build/gstreamer",
-			cmd, gstVersion, gstImageName, gstVersion, build, build,
+			cmd, gstVersion, gstVersion, build, build,
 		))
 	}
 

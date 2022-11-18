@@ -24,4 +24,4 @@ jobs:
           key: egress
 
       - name: Build docker image
-        run: docker build -t egress -f ./build/Dockerfile .
+        run: docker build -t egress -f ./build/egress/Dockerfile .

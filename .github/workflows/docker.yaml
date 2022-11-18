@@ -18,7 +18,6 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/go/bin
-            ~/bin/protoc
             ~/.cache
           key: ${{ runner.os }}-egress-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-egress
@@ -28,7 +27,6 @@ jobs:
         uses: docker/metadata-action@v3
         with:
           images: livekit/egress
-          # generate Docker tags based on the following events/attributes
           tags: |
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
@@ -57,7 +55,7 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           context: .
-          file: ./build/Dockerfile
+          file: ./build/egress/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker-md.outputs.tags }}

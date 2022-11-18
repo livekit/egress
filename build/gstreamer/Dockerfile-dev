@@ -7,12 +7,12 @@ ENV OPTIMIZATIONS=false
 
 COPY compile /
 
-RUN ["/compile"]
+RUN /compile
 
 FROM ubuntu:22.04
 
 COPY install-dependencies /
 
-RUN ["/install-dependencies"]
+RUN /install-dependencies
 
 COPY --from=0 /compiled-binaries /
