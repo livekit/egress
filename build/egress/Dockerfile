@@ -23,15 +23,30 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd
 
 FROM livekit/gstreamer:1.20.4-prod
 
-# setup
-RUN adduser root pulse-access && \
-    rm -rf /var/lib/apt/lists/* && \
-    mkdir -pv ~/.cache/xdgr
+ARG TARGETPLATFORM
+
+# install deps
+RUN apt-get update && \
+    apt-get install -y \
+    curl \
+    fonts-noto \
+    gnupg \
+    gstreamer1.0-pulseaudio \
+    pulseaudio \
+    unzip \
+    wget \
+    xvfb
 
 # install chrome
-COPY --from=livekit:chrome-installer /chrome-installer /chrome-installer
-RUN /chrome-installer/install-chrome $TARGETPLATFORM && \
+COPY --from=livekit/chrome-installer:latest /chrome-installer /chrome-installer
+RUN /chrome-installer/install-chrome "$TARGETPLATFORM" && \
     rm -rf /chrome-installer
+
+# setup
+RUN adduser root pulse-access && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -pv ~/.cache/xdgr
 
 # update env
 ENV PATH=${PATH}:/chrome

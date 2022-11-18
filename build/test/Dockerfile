@@ -19,8 +19,8 @@ RUN apt-get update && \
         xvfb
 
 # install chrome
-COPY --from=livekit:chrome-installer /chrome-installer /chrome-installer
-RUN /chrome-installer/install-chrome $TARGETPLATFORM && \
+COPY --from=livekit/chrome-installer:latest /chrome-installer /chrome-installer
+RUN /chrome-installer/install-chrome "$TARGETPLATFORM" && \
     rm -rf /chrome-installer
 
 # install rtsp server

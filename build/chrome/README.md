@@ -11,7 +11,7 @@ To install chrome, add the following to your dockerfile:
 ```dockerfile
 ARG TARGETPLATFORM
 COPY --from=livekit:chrome-installer /chrome-installer /chrome-installer
-RUN /chrome-installer/install-chrome $TARGETPLATFORM && \
+RUN /chrome-installer/install-chrome "$TARGETPLATFORM" && \
     rm -rf /chrome-installer \
 ENV PATH=${PATH}:/chrome
 ```
