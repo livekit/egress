@@ -8,6 +8,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 )
@@ -16,7 +17,7 @@ type OutputBin struct {
 	bin *gst.Bin
 
 	// stream
-	protocol params.OutputType
+	protocol types.OutputType
 	tee      *gst.Element
 	sinks    map[string]*streamSink
 	lock     sync.Mutex
@@ -35,13 +36,13 @@ func New(ctx context.Context, p *params.Params) (*OutputBin, error) {
 	defer span.End()
 
 	switch p.EgressType {
-	case params.EgressTypeFile:
+	case types.EgressTypeFile:
 		return buildFileOutputBin(p)
-	case params.EgressTypeStream:
+	case types.EgressTypeStream:
 		return buildStreamOutputBin(p)
-	case params.EgressTypeWebsocket:
+	case types.EgressTypeWebsocket:
 		return buildWebsocketOutputBin(p)
-	case params.EgressTypeSegmentedFile:
+	case types.EgressTypeSegmentedFile:
 		// In the case of segmented output, the muxer and the sink are embedded in the same object
 		return nil, nil
 	default:

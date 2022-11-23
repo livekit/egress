@@ -11,11 +11,12 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 )
 
 func buildWebsocketOutputBin(p *params.Params) (*OutputBin, error) {
-	writer, err := newWebSocketSink(p.WebsocketUrl, params.MimeTypeRaw, p.Logger, p.MutedChan)
+	writer, err := newWebSocketSink(p.WebsocketUrl, types.MimeTypeRaw, p.Logger, p.MutedChan)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +90,7 @@ type websocketSink struct {
 	state  websocketState
 }
 
-func newWebSocketSink(url string, mimeType params.MimeType, logger logger.Logger, muted chan bool) (io.WriteCloser, error) {
+func newWebSocketSink(url string, mimeType types.MimeType, logger logger.Logger, muted chan bool) (io.WriteCloser, error) {
 	// set Content-Type header
 	header := http.Header{}
 	header.Set("Content-Type", string(mimeType))

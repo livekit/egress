@@ -11,6 +11,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go"
 )
@@ -37,7 +38,7 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 		s.logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
 		s.active.Inc()
 
-		var codec params.MimeType
+		var codec types.MimeType
 		var appSrcName string
 		var err error
 
@@ -62,38 +63,38 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 		mu.Unlock()
 
 		switch {
-		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeOpus)):
-			codec = params.MimeTypeOpus
+		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeOpus)):
+			codec = types.MimeTypeOpus
 			appSrcName = AudioAppSource
 			p.AudioEnabled = true
 			if p.AudioCodec == "" {
 				p.AudioCodec = codec
 			}
 
-		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeVP8)):
-			codec = params.MimeTypeVP8
+		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeVP8)):
+			codec = types.MimeTypeVP8
 			appSrcName = VideoAppSource
 			p.VideoEnabled = true
 
 			if p.VideoCodec == "" {
 				if p.AudioEnabled {
 					// transcode to h264 for composite requests
-					p.VideoCodec = params.MimeTypeH264
+					p.VideoCodec = types.MimeTypeH264
 				} else {
-					p.VideoCodec = params.MimeTypeVP8
+					p.VideoCodec = types.MimeTypeVP8
 				}
 			}
 			if p.TrackID != "" {
-				p.OutputType = params.OutputTypeWebM
+				p.OutputType = types.OutputTypeWebM
 			}
 
-		case strings.EqualFold(track.Codec().MimeType, string(params.MimeTypeH264)):
-			codec = params.MimeTypeH264
+		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeH264)):
+			codec = types.MimeTypeH264
 			appSrcName = VideoAppSource
 			p.VideoEnabled = true
 
 			if p.VideoCodec == "" {
-				p.VideoCodec = params.MimeTypeH264
+				p.VideoCodec = types.MimeTypeH264
 			}
 
 		default:
@@ -110,7 +111,7 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 		}
 
 		// write blank frames only when writing to mp4
-		writeBlanks := p.VideoCodec == params.MimeTypeH264
+		writeBlanks := p.VideoCodec == types.MimeTypeH264
 
 		switch track.Kind() {
 		case webrtc.RTPCodecTypeAudio:
@@ -178,12 +179,12 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 	}
 
 	switch p.EgressType {
-	case params.EgressTypeFile:
+	case types.EgressTypeFile:
 		if err := p.UpdateFileInfoFromSDK(fileIdentifier, filenameReplacements); err != nil {
 			s.logger.Errorw("could not update file params", err)
 			return err
 		}
-	case params.EgressTypeSegmentedFile:
+	case types.EgressTypeSegmentedFile:
 		p.UpdatePlaylistNamesFromSDK(filenameReplacements)
 	}
 

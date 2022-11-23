@@ -10,6 +10,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -42,7 +43,7 @@ func NewSDKAudioInput(p *params.Params, src *app.Source, codec webrtc.RTPCodecPa
 	if err := a.buildMixer(p); err != nil {
 		return nil, err
 	}
-	if p.OutputType == params.OutputTypeRaw {
+	if p.OutputType == types.OutputTypeRaw {
 		return a, nil
 	}
 	if err := a.buildEncoder(p); err != nil {
@@ -145,7 +146,7 @@ func (a *AudioInput) buildSDKDecoder(p *params.Params, src *app.Source, codec we
 	a.decoder = []*gst.Element{src.Element}
 
 	switch {
-	case strings.EqualFold(codec.MimeType, string(params.MimeTypeOpus)):
+	case strings.EqualFold(codec.MimeType, string(types.MimeTypeOpus)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
@@ -188,7 +189,6 @@ func (a *AudioInput) addConverter(p *params.Params) error {
 		return err
 	}
 
-	// TODO: sinc-filter-mode=full will use more memory but much less CPU
 	audioResample, err := gst.NewElement("audioresample")
 	if err != nil {
 		return err
@@ -243,7 +243,7 @@ func (a *AudioInput) buildMixer(p *params.Params) error {
 
 func (a *AudioInput) buildEncoder(p *params.Params) error {
 	switch p.AudioCodec {
-	case params.MimeTypeOpus:
+	case types.MimeTypeOpus:
 		encoder, err := gst.NewElement("opusenc")
 		if err != nil {
 			return err
@@ -253,7 +253,7 @@ func (a *AudioInput) buildEncoder(p *params.Params) error {
 		}
 		a.encoder = encoder
 
-	case params.MimeTypeAAC:
+	case types.MimeTypeAAC:
 		encoder, err := gst.NewElement("faac")
 		if err != nil {
 			return err
@@ -273,11 +273,11 @@ func (a *AudioInput) buildEncoder(p *params.Params) error {
 func getCapsFilter(p *params.Params) (*gst.Element, error) {
 	var caps *gst.Caps
 	switch p.AudioCodec {
-	case params.MimeTypeOpus, params.MimeTypeRaw:
+	case types.MimeTypeOpus, types.MimeTypeRaw:
 		caps = gst.NewCapsFromString(
 			"audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2",
 		)
-	case params.MimeTypeAAC:
+	case types.MimeTypeAAC:
 		caps = gst.NewCapsFromString(
 			fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", p.AudioFrequency),
 		)

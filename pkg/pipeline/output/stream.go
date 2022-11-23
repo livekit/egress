@@ -7,6 +7,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -52,7 +53,7 @@ func buildStreamOutputBin(p *params.Params) (*OutputBin, error) {
 	return b, nil
 }
 
-func buildStreamSink(protocol params.OutputType, url string) (*streamSink, error) {
+func buildStreamSink(protocol types.OutputType, url string) (*streamSink, error) {
 	id := utils.NewGuid("")
 
 	queue, err := gst.NewElementWithName("queue", fmt.Sprintf("queue_%s", id))
@@ -63,7 +64,7 @@ func buildStreamSink(protocol params.OutputType, url string) (*streamSink, error
 
 	var sink *gst.Element
 	switch protocol {
-	case params.OutputTypeRTMP:
+	case types.OutputTypeRTMP:
 		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("sink_%s", id))
 		if err != nil {
 			return nil, err

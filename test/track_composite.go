@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
@@ -16,22 +16,22 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 		{
 			name:       "tc-vp8-mp4",
 			fileType:   livekit.EncodedFileType_MP4,
-			audioCodec: params.MimeTypeOpus,
-			videoCodec: params.MimeTypeVP8,
+			audioCodec: types.MimeTypeOpus,
+			videoCodec: types.MimeTypeVP8,
 			filename:   "tc_{publisher_identity}_vp8_{time}.mp4",
 		},
 		{
 			name:       "tc-h264-mp4",
 			fileType:   livekit.EncodedFileType_MP4,
-			audioCodec: params.MimeTypeOpus,
-			videoCodec: params.MimeTypeH264,
+			audioCodec: types.MimeTypeOpus,
+			videoCodec: types.MimeTypeH264,
 			filename:   "tc_{room_name}_h264_{time}.mp4",
 		},
 		{
 			name:           "tc-limit",
 			fileType:       livekit.EncodedFileType_MP4,
-			audioCodec:     params.MimeTypeOpus,
-			videoCodec:     params.MimeTypeH264,
+			audioCodec:     types.MimeTypeOpus,
+			videoCodec:     types.MimeTypeH264,
 			filename:       "tc_limit_{time}.mp4",
 			sessionTimeout: time.Second * 20,
 		},
@@ -86,7 +86,7 @@ func testTrackCompositeStream(t *testing.T, conf *TestConfig) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			awaitIdle(t, conf.svc)
-			audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
+			audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
 
 			req := &livekit.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
@@ -113,22 +113,22 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 	for _, test := range []*testCase{
 		{
 			name:       "tcs-vp8",
-			audioCodec: params.MimeTypeOpus,
-			videoCodec: params.MimeTypeVP8,
+			audioCodec: types.MimeTypeOpus,
+			videoCodec: types.MimeTypeVP8,
 			filename:   "tcs_{publisher_identity}_vp8_{time}",
 			playlist:   "tcs_{publisher_identity}_vp8_{time}.m3u8",
 		},
 		{
 			name:       "tcs-h264",
-			audioCodec: params.MimeTypeOpus,
-			videoCodec: params.MimeTypeH264,
+			audioCodec: types.MimeTypeOpus,
+			videoCodec: types.MimeTypeH264,
 			filename:   "tcs_{room_name}_h264_{time}",
 			playlist:   "tcs_{room_name}_h264_{time}.m3u8",
 		},
 		{
 			name:       "tcs-limit",
-			audioCodec: params.MimeTypeOpus,
-			videoCodec: params.MimeTypeH264,
+			audioCodec: types.MimeTypeOpus,
+			videoCodec: types.MimeTypeH264,
 			filename:   "tcs-limit-{time}",
 			playlist:   "tcs-limit-{time}.m3u8",
 		},

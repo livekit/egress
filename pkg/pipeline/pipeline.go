@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/output"
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/pipeline/sink"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/tracer"
 )
@@ -127,7 +128,7 @@ func New(ctx context.Context, conf *config.Config, p *params.Params) (*Pipeline,
 	}
 
 	var playlistWriter *sink.PlaylistWriter
-	if p.OutputType == params.OutputTypeHLS {
+	if p.OutputType == types.OutputTypeHLS {
 		playlistWriter, err = sink.NewPlaylistWriter(p)
 		if err != nil {
 			return nil, err
@@ -209,7 +210,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		return p.Info
 	}
 
-	if p.EgressType == params.EgressTypeSegmentedFile {
+	if p.EgressType == types.EgressTypeSegmentedFile {
 		p.startSegmentWorker()
 		defer close(p.endedSegments)
 	}
@@ -233,7 +234,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 
 	// upload file
 	switch p.EgressType {
-	case params.EgressTypeFile:
+	case types.EgressTypeFile:
 		var err error
 		p.FileInfo.Location, p.FileInfo.Size, err = p.storeFile(ctx, p.LocalFilepath, p.StorageFilepath, p.OutputType)
 		if err != nil {
@@ -246,7 +247,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 			p.Logger.Errorw("could not store manifest", err)
 		}
 
-	case params.EgressTypeSegmentedFile:
+	case types.EgressTypeSegmentedFile:
 		// wait for all pending upload jobs to finish
 		if p.endedSegments != nil {
 			p.segmentsWg.Wait()
@@ -374,7 +375,7 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	ctx, span := tracer.Start(ctx, "Pipeline.UpdateStream")
 	defer span.End()
 
-	if p.EgressType != params.EgressTypeStream {
+	if p.EgressType != types.EgressTypeStream {
 		return errors.ErrInvalidRPC
 	}
 
@@ -501,7 +502,7 @@ func (p *Pipeline) startSessionLimitTimer(ctx context.Context) {
 
 func (p *Pipeline) updateStartTime(startedAt int64) {
 	switch p.EgressType {
-	case params.EgressTypeStream, params.EgressTypeWebsocket:
+	case types.EgressTypeStream, types.EgressTypeWebsocket:
 		p.mu.Lock()
 		for _, streamInfo := range p.StreamInfo {
 			streamInfo.Status = livekit.StreamInfo_ACTIVE
@@ -509,10 +510,10 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 		}
 		p.mu.Unlock()
 
-	case params.EgressTypeFile:
+	case types.EgressTypeFile:
 		p.FileInfo.StartedAt = startedAt
 
-	case params.EgressTypeSegmentedFile:
+	case types.EgressTypeSegmentedFile:
 		p.SegmentsInfo.StartedAt = startedAt
 	}
 
@@ -570,7 +571,7 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 	defer p.mu.Unlock()
 
 	switch p.EgressType {
-	case params.EgressTypeStream, params.EgressTypeWebsocket:
+	case types.EgressTypeStream, types.EgressTypeWebsocket:
 		for _, info := range p.StreamInfo {
 			info.Status = livekit.StreamInfo_FINISHED
 			if info.StartedAt == 0 {
@@ -580,14 +581,14 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 			info.Duration = endedAt - info.StartedAt
 		}
 
-	case params.EgressTypeFile:
+	case types.EgressTypeFile:
 		if p.FileInfo.StartedAt == 0 {
 			p.FileInfo.StartedAt = endedAt
 		}
 		p.FileInfo.EndedAt = endedAt
 		p.FileInfo.Duration = endedAt - p.FileInfo.StartedAt
 
-	case params.EgressTypeSegmentedFile:
+	case types.EgressTypeSegmentedFile:
 		if p.SegmentsInfo.StartedAt == 0 {
 			p.SegmentsInfo.StartedAt = endedAt
 		}
@@ -618,7 +619,7 @@ func (p *Pipeline) stop() {
 	}
 }
 
-func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath string, mime params.OutputType) (destinationUrl string, size int64, err error) {
+func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath string, mime types.OutputType) (destinationUrl string, size int64, err error) {
 	ctx, span := tracer.Start(ctx, "Pipeline.storeFile")
 	defer span.End()
 
@@ -693,7 +694,7 @@ func (p *Pipeline) cleanup() {
 	// clean up temp dir
 	if p.UploadConfig != nil {
 		switch p.EgressType {
-		case params.EgressTypeFile:
+		case types.EgressTypeFile:
 			dir, _ := path.Split(p.LocalFilepath)
 			if dir != "" {
 				p.Logger.Debugw("removing temporary directory", "path", dir)
@@ -702,7 +703,7 @@ func (p *Pipeline) cleanup() {
 				}
 			}
 
-		case params.EgressTypeSegmentedFile:
+		case types.EgressTypeSegmentedFile:
 			dir, _ := path.Split(p.PlaylistFilename)
 			if dir != "" {
 				p.Logger.Debugw("removing temporary directory", "path", dir)

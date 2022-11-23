@@ -15,6 +15,7 @@ import (
 
 	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/service"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
@@ -43,11 +44,11 @@ type testCase struct {
 	playlist string
 
 	// used by track and track composite tests
-	audioCodec params.MimeType
-	videoCodec params.MimeType
+	audioCodec types.MimeType
+	videoCodec types.MimeType
 
 	// used by track tests
-	outputType params.OutputType
+	outputType types.OutputType
 }
 
 func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rpcServer egress.RPCServer) {
