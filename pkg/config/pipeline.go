@@ -108,6 +108,7 @@ func NewPipelineConfig(confString, egressID string) (*PipelineConfig, error) {
 	if err := yaml.Unmarshal([]byte(confString), p); err != nil {
 		return nil, errors.ErrCouldNotParseConfig(err)
 	}
+
 	if err := p.initLogger(
 		"nodeID", p.NodeID,
 		"handlerID", p.HandlerID,
@@ -120,13 +121,14 @@ func NewPipelineConfig(confString, egressID string) (*PipelineConfig, error) {
 	return p, nil
 }
 
-func PipelineConfigFromService(conf *ServiceConfig) *PipelineConfig {
+func GetValidatedPipelineConfig(conf *ServiceConfig, req *livekit.StartEgressRequest) (*PipelineConfig, error) {
 	p := &PipelineConfig{
 		BaseConfig: conf.BaseConfig,
 	}
 
 	p.updateUploadConfig()
-	return p
+	err := p.Update(req)
+	return p, err
 }
 
 func (p *PipelineConfig) updateUploadConfig() {
@@ -139,12 +141,6 @@ func (p *PipelineConfig) updateUploadConfig() {
 	} else if p.AliOSS != nil {
 		p.UploadConfig = p.AliOSS.ToAliOSSUpload()
 	}
-}
-
-func ValidateRequest(conf *ServiceConfig, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
-	p := PipelineConfigFromService(conf)
-	err := p.Update(req)
-	return p.Info, err
 }
 
 func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {

@@ -20,7 +20,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/redis"
-	"github.com/livekit/protocol/tracer"
 )
 
 func main() {
@@ -119,13 +118,9 @@ func runService(c *cli.Context) error {
 }
 
 func runHandler(c *cli.Context) error {
-	ctx, span := tracer.Start(context.Background(), "Handler.New")
-	defer span.End()
-
 	configBody := c.String("config")
 	if configBody == "" {
 		err := errors.ErrNoConfig
-		span.RecordError(err)
 		return err
 	}
 
@@ -133,7 +128,6 @@ func runHandler(c *cli.Context) error {
 	reqString := c.String("request")
 	err := protojson.Unmarshal([]byte(reqString), req)
 	if err != nil {
-		span.RecordError(err)
 		return err
 	}
 
@@ -152,7 +146,6 @@ func runHandler(c *cli.Context) error {
 
 	rc, err := redis.GetRedisClient(conf.Redis)
 	if err != nil {
-		span.RecordError(err)
 		return err
 	}
 
@@ -168,6 +161,6 @@ func runHandler(c *cli.Context) error {
 		handler.Kill()
 	}()
 
-	handler.HandleRequest(ctx, req)
+	handler.HandleRequest(context.Background(), req)
 	return nil
 }

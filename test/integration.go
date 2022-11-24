@@ -196,8 +196,7 @@ func runFileTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest
 	}
 
 	// get params
-	p := config.PipelineConfigFromService(conf.ServiceConfig)
-	err := p.Update(req)
+	p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 	require.NoError(t, err)
 	if p.OutputType == "" {
 		p.OutputType = test.outputType
@@ -223,8 +222,7 @@ func runTimeLimitStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEg
 	time.Sleep(time.Second * 5)
 
 	// get params
-	p := config.PipelineConfigFromService(conf.ServiceConfig)
-	err := p.Update(req)
+	p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 	require.NoError(t, err)
 
 	verifyStreams(t, p, streamUrl1)
@@ -241,8 +239,7 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	time.Sleep(time.Second * 5)
 
 	// get params
-	p := config.PipelineConfigFromService(conf.ServiceConfig)
-	err := p.Update(req)
+	p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 	require.NoError(t, err)
 
 	// verify stream
@@ -350,8 +347,7 @@ func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 	}
 
 	// get params
-	p := config.PipelineConfigFromService(conf.ServiceConfig)
-	err := p.Update(req)
+	p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 	require.NoError(t, err)
 
 	verifySegments(t, conf, p, res)
