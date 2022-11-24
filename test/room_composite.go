@@ -9,13 +9,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
 
 func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
-	publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeH264, conf.Muting)
+	publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeH264, conf.Muting)
 
 	for _, test := range []*testCase{
 		{
@@ -87,7 +87,7 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 }
 
 func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
-	publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
+	publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
 
 	t.Run("rtmp-failure", func(t *testing.T) {
 		awaitIdle(t, conf.svc)
@@ -160,7 +160,7 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 }
 
 func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
-	publishSamplesToRoom(t, conf.room, params.MimeTypeOpus, params.MimeTypeVP8, conf.Muting)
+	publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
 
 	for _, test := range []*testCase{
 		{

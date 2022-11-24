@@ -15,7 +15,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
@@ -44,7 +44,7 @@ type appWriter struct {
 	logger      logger.Logger
 	sb          *samplebuilder.SampleBuilder
 	track       *webrtc.TrackRemote
-	codec       params.MimeType
+	codec       types.MimeType
 	src         *app.Source
 	startTime   time.Time
 	writeBlanks bool
@@ -79,7 +79,7 @@ type appWriter struct {
 
 func newAppWriter(
 	track *webrtc.TrackRemote,
-	codec params.MimeType,
+	codec types.MimeType,
 	rp *lksdk.RemoteParticipant,
 	l logger.Logger,
 	src *app.Source,
@@ -105,20 +105,20 @@ func newAppWriter(
 	var depacketizer rtp.Depacketizer
 	var maxLate uint16
 	switch codec {
-	case params.MimeTypeVP8:
+	case types.MimeTypeVP8:
 		depacketizer = &codecs.VP8Packet{}
 		maxLate = maxVideoLate
 		w.drainTimeout = videoTimeout
 		w.writePLI = func() { rp.WritePLI(track.SSRC()) }
 		w.vp8Munger = sfu.NewVP8Munger(w.logger)
 
-	case params.MimeTypeH264:
+	case types.MimeTypeH264:
 		depacketizer = &codecs.H264Packet{}
 		maxLate = maxVideoLate
 		w.drainTimeout = videoTimeout
 		w.writePLI = func() { rp.WritePLI(track.SSRC()) }
 
-	case params.MimeTypeOpus:
+	case types.MimeTypeOpus:
 		depacketizer = &codecs.OpusPacket{}
 		maxLate = maxAudioLate
 		w.drainTimeout = audioTimeout
@@ -321,7 +321,7 @@ func (w *appWriter) pushBlankFrame(timestamp uint32) error {
 	w.snOffset++
 
 	switch w.codec {
-	case params.MimeTypeVP8:
+	case types.MimeTypeVP8:
 		blankVP8 := w.vp8Munger.UpdateAndGetPadding(true)
 
 		// 16x16 key frame
@@ -338,7 +338,7 @@ func (w *appWriter) pushBlankFrame(timestamp uint32) error {
 		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame16x16)
 		pkt.Payload = payload
 
-	case params.MimeTypeH264:
+	case types.MimeTypeH264:
 		buf := make([]byte, 1462)
 		offset := 0
 		buf[0] = 0x18 // STAP-A
@@ -408,7 +408,7 @@ func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 
 func (w *appWriter) translatePacket(pkt *rtp.Packet) {
 	switch w.codec {
-	case params.MimeTypeVP8:
+	case types.MimeTypeVP8:
 		vp8Packet := buffer.VP8{}
 		if err := vp8Packet.Unmarshal(pkt.Payload); err != nil {
 			w.logger.Warnw("could not unmarshal VP8 packet", err)

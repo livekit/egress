@@ -1,4 +1,4 @@
-package params
+package types
 
 type MimeType string
 type Profile string
@@ -85,7 +85,7 @@ var (
 		OutputTypeHLS:  FileExtensionM3U8,
 	}
 
-	codecCompatibility = map[OutputType]map[MimeType]bool{
+	CodecCompatibility = map[OutputType]map[MimeType]bool{
 		OutputTypeRaw: {
 			MimeTypeRaw: true,
 		},

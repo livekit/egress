@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -163,9 +164,9 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 	require.NoError(t, err, "ffprobe error - input does not exist")
 
 	switch p.OutputType {
-	case params.OutputTypeRaw:
+	case types.OutputTypeRaw:
 		require.Equal(t, 0, info.Format.ProbeScore)
-	case params.OutputTypeIVF:
+	case types.OutputTypeIVF:
 		require.Equal(t, 98, info.Format.ProbeScore)
 	default:
 		require.Equal(t, 100, info.Format.ProbeScore)
@@ -209,17 +210,17 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 
 			// codec
 			switch p.AudioCodec {
-			case params.MimeTypeAAC:
+			case types.MimeTypeAAC:
 				require.Equal(t, "aac", stream.CodecName)
 				require.Equal(t, fmt.Sprint(p.AudioFrequency), stream.SampleRate)
 				require.Equal(t, "stereo", stream.ChannelLayout)
 
-			case params.MimeTypeOpus:
+			case types.MimeTypeOpus:
 				require.Equal(t, "opus", stream.CodecName)
 				require.Equal(t, "48000", stream.SampleRate)
 				require.Equal(t, "stereo", stream.ChannelLayout)
 
-			case params.MimeTypeRaw:
+			case types.MimeTypeRaw:
 				require.Equal(t, "pcm_s16le", stream.CodecName)
 				require.Equal(t, "48000", stream.SampleRate)
 			}
@@ -228,7 +229,7 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 			require.Equal(t, 2, stream.Channels)
 
 			// audio bitrate
-			if p.OutputType == params.OutputTypeMP4 {
+			if p.OutputType == types.OutputTypeMP4 {
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)
@@ -240,26 +241,26 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 
 			// codec and profile
 			switch p.VideoCodec {
-			case params.MimeTypeH264:
+			case types.MimeTypeH264:
 				require.Equal(t, "h264", stream.CodecName)
 
 				switch p.VideoProfile {
-				case params.ProfileBaseline:
+				case types.ProfileBaseline:
 					require.Equal(t, "Constrained Baseline", stream.Profile)
-				case params.ProfileMain:
+				case types.ProfileMain:
 					require.Equal(t, "Main", stream.Profile)
-				case params.ProfileHigh:
+				case types.ProfileHigh:
 					require.Equal(t, "High", stream.Profile)
 				}
-			case params.MimeTypeVP8:
+			case types.MimeTypeVP8:
 				require.Equal(t, "vp8", stream.CodecName)
 			}
 
 			switch p.OutputType {
-			case params.OutputTypeIVF:
+			case types.OutputTypeIVF:
 				require.Equal(t, "vp8", stream.CodecName)
 
-			case params.OutputTypeMP4:
+			case types.OutputTypeMP4:
 				// bitrate, not available for HLS or WebM
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
@@ -267,7 +268,7 @@ func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInf
 				require.Less(t, int32(bitrate), p.VideoBitrate*1010)
 				fallthrough
 
-			case params.OutputTypeHLS:
+			case types.OutputTypeHLS:
 				// dimensions
 				require.Equal(t, p.Width, stream.Width)
 				require.Equal(t, p.Height, stream.Height)

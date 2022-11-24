@@ -10,6 +10,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 )
 
 type VideoInput struct {
@@ -34,7 +35,7 @@ func NewSDKVideoInput(p *params.Params, src *app.Source, codec webrtc.RTPCodecPa
 	if err := v.buildSDKDecoder(p, src, codec); err != nil {
 		return nil, err
 	}
-	if p.OutputType == params.OutputTypeIVF || p.OutputType == params.OutputTypeWebM {
+	if p.OutputType == types.OutputTypeIVF || p.OutputType == types.OutputTypeWebM {
 		return v, nil
 	}
 	if err := v.buildEncoder(p); err != nil {
@@ -108,7 +109,7 @@ func (v *VideoInput) buildSDKDecoder(p *params.Params, src *app.Source, codec we
 
 	v.elements = append(v.elements, src.Element)
 	switch {
-	case strings.EqualFold(codec.MimeType, string(params.MimeTypeH264)):
+	case strings.EqualFold(codec.MimeType, string(types.MimeTypeH264)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
@@ -130,7 +131,7 @@ func (v *VideoInput) buildSDKDecoder(p *params.Params, src *app.Source, codec we
 
 		v.elements = append(v.elements, rtpH264Depay, avDecH264)
 
-	case strings.EqualFold(codec.MimeType, string(params.MimeTypeVP8)):
+	case strings.EqualFold(codec.MimeType, string(types.MimeTypeVP8)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
@@ -145,7 +146,7 @@ func (v *VideoInput) buildSDKDecoder(p *params.Params, src *app.Source, codec we
 			return err
 		}
 
-		if p.OutputType == params.OutputTypeIVF || p.OutputType == params.OutputTypeWebM {
+		if p.OutputType == types.OutputTypeIVF || p.OutputType == types.OutputTypeWebM {
 			v.elements = append(v.elements, rtpVP8Depay)
 			return nil
 		}
@@ -198,7 +199,7 @@ func (v *VideoInput) buildSDKDecoder(p *params.Params, src *app.Source, codec we
 func (v *VideoInput) buildEncoder(p *params.Params) error {
 	switch p.VideoCodec {
 	// we only encode h264, the rest are too slow
-	case params.MimeTypeH264:
+	case types.MimeTypeH264:
 		x264Enc, err := gst.NewElement("x264enc")
 		if err != nil {
 			return err
@@ -207,7 +208,7 @@ func (v *VideoInput) buildEncoder(p *params.Params) error {
 			return err
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
-		if p.OutputType == params.OutputTypeHLS {
+		if p.OutputType == types.OutputTypeHLS {
 			if err = x264Enc.SetProperty("key-int-max", uint(int32(p.SegmentDuration)*p.Framerate)); err != nil {
 				return err
 			}
@@ -215,10 +216,6 @@ func (v *VideoInput) buildEncoder(p *params.Params) error {
 			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
 				return err
 			}
-		}
-
-		if p.VideoProfile == "" {
-			p.VideoProfile = params.ProfileMain
 		}
 
 		caps, err := gst.NewElement("capsfilter")

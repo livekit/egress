@@ -17,6 +17,7 @@ import (
 
 	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -27,29 +28,29 @@ func testTrackFile(t *testing.T, conf *TestConfig) {
 		{
 			name:       "track-opus",
 			audioOnly:  true,
-			audioCodec: params.MimeTypeOpus,
-			outputType: params.OutputTypeOGG,
+			audioCodec: types.MimeTypeOpus,
+			outputType: types.OutputTypeOGG,
 			filename:   "t_{track_source}_{time}.ogg",
 		},
 		{
 			name:       "track-vp8",
 			videoOnly:  true,
-			videoCodec: params.MimeTypeVP8,
-			outputType: params.OutputTypeWebM,
+			videoCodec: types.MimeTypeVP8,
+			outputType: types.OutputTypeWebM,
 			filename:   "t_{track_type}_{time}.webm",
 		},
 		{
 			name:       "track-h264",
 			videoOnly:  true,
-			videoCodec: params.MimeTypeH264,
-			outputType: params.OutputTypeMP4,
+			videoCodec: types.MimeTypeH264,
+			outputType: types.OutputTypeMP4,
 			filename:   "t_{track_id}_{time}.mp4",
 		},
 		{
 			name:           "track-limit",
 			videoOnly:      true,
-			videoCodec:     params.MimeTypeH264,
-			outputType:     params.OutputTypeMP4,
+			videoCodec:     types.MimeTypeH264,
+			outputType:     types.OutputTypeMP4,
 			filename:       "t_{room_name}_limit_{time}.mp4",
 			sessionTimeout: time.Second * 20,
 		},
@@ -94,13 +95,13 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 		{
 			name:       "track-websocket",
 			audioOnly:  true,
-			audioCodec: params.MimeTypeOpus,
+			audioCodec: types.MimeTypeOpus,
 			filename:   fmt.Sprintf("track-ws-%v.raw", now),
 		},
 		{
 			name:       "track-websocket-limit",
 			audioOnly:  true,
-			audioCodec: params.MimeTypeOpus,
+			audioCodec: types.MimeTypeOpus,
 			filename:   fmt.Sprintf("track-ws-timedout-%v.raw", now),
 		},
 	} {

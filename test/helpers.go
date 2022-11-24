@@ -23,7 +23,7 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
@@ -32,26 +32,26 @@ import (
 const muteDuration = time.Second * 10
 
 var (
-	samples = map[params.MimeType]string{
-		params.MimeTypeOpus: "/workspace/test/sample/matrix-trailer.ogg",
-		params.MimeTypeH264: "/workspace/test/sample/matrix-trailer.h264",
-		params.MimeTypeVP8:  "/workspace/test/sample/matrix-trailer.ivf",
+	samples = map[types.MimeType]string{
+		types.MimeTypeOpus: "/workspace/test/sample/matrix-trailer.ogg",
+		types.MimeTypeH264: "/workspace/test/sample/matrix-trailer.h264",
+		types.MimeTypeVP8:  "/workspace/test/sample/matrix-trailer.ivf",
 	}
 
-	frameDurations = map[params.MimeType]time.Duration{
-		params.MimeTypeH264: time.Microsecond * 41708,
-		params.MimeTypeVP8:  time.Microsecond * 41708,
+	frameDurations = map[types.MimeType]time.Duration{
+		types.MimeTypeH264: time.Microsecond * 41708,
+		types.MimeTypeVP8:  time.Microsecond * 41708,
 	}
 )
 
-func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec params.MimeType, withMuting bool) (audioTrackID, videoTrackID string) {
+func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec types.MimeType, withMuting bool) (audioTrackID, videoTrackID string) {
 	audioTrackID = publishSampleToRoom(t, room, audioCodec, withMuting)
 	videoTrackID = publishSampleToRoom(t, room, videoCodec, false)
 	time.Sleep(time.Second)
 	return
 }
 
-func publishSampleToRoom(t *testing.T, room *lksdk.Room, codec params.MimeType, withMuting bool) string {
+func publishSampleToRoom(t *testing.T, room *lksdk.Room, codec types.MimeType, withMuting bool) string {
 	filename := samples[codec]
 	frameDuration := frameDurations[codec]
 

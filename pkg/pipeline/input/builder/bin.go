@@ -11,6 +11,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/tracer"
 )
 
@@ -125,7 +126,7 @@ func (b *InputBin) build(ctx context.Context, p *params.Params) error {
 	}
 
 	// HLS has no output bin
-	if p.OutputType == params.OutputTypeHLS {
+	if p.OutputType == types.OutputTypeHLS {
 		return nil
 	}
 
@@ -244,25 +245,25 @@ func buildQueue() (*gst.Element, error) {
 
 func buildMux(p *params.Params) (*gst.Element, error) {
 	switch p.OutputType {
-	case params.OutputTypeRaw:
+	case types.OutputTypeRaw:
 		return nil, nil
 
-	case params.OutputTypeOGG:
+	case types.OutputTypeOGG:
 		return gst.NewElement("oggmux")
 
-	case params.OutputTypeIVF:
+	case types.OutputTypeIVF:
 		return gst.NewElement("avmux_ivf")
 
-	case params.OutputTypeMP4:
+	case types.OutputTypeMP4:
 		return gst.NewElement("mp4mux")
 
-	case params.OutputTypeTS:
+	case types.OutputTypeTS:
 		return gst.NewElement("mpegtsmux")
 
-	case params.OutputTypeWebM:
+	case types.OutputTypeWebM:
 		return gst.NewElement("webmmux")
 
-	case params.OutputTypeRTMP:
+	case types.OutputTypeRTMP:
 		mux, err := gst.NewElement("flvmux")
 		if err != nil {
 			return nil, err
@@ -272,7 +273,7 @@ func buildMux(p *params.Params) (*gst.Element, error) {
 		}
 		return mux, nil
 
-	case params.OutputTypeHLS:
+	case types.OutputTypeHLS:
 		mux, err := gst.NewElement("splitmuxsink")
 		if err != nil {
 			return nil, err

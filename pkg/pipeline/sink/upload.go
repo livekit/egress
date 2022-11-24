@@ -19,7 +19,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 
-	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -31,7 +31,7 @@ const (
 
 // FIXME Should we use a Context to allow for an overall operation timeout?
 
-func UploadS3(conf *livekit.S3Upload, localFilepath, storageFilepath string, mime params.OutputType) (location string, err error) {
+func UploadS3(conf *livekit.S3Upload, localFilepath, storageFilepath string, mime types.OutputType) (location string, err error) {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials:      credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, ""),
 		Endpoint:         aws.String(conf.Endpoint),
@@ -87,7 +87,7 @@ func convertS3Metadata(metadata map[string]string) map[string]*string {
 	return result
 }
 
-func UploadAzure(conf *livekit.AzureBlobUpload, localFilepath, storageFilepath string, mime params.OutputType) (location string, err error) {
+func UploadAzure(conf *livekit.AzureBlobUpload, localFilepath, storageFilepath string, mime types.OutputType) (location string, err error) {
 	credential, err := azblob.NewSharedKeyCredential(
 		conf.AccountName,
 		conf.AccountKey,

@@ -12,6 +12,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -29,8 +30,8 @@ type Params struct {
 	AudioParams
 	VideoParams
 
-	EgressType
-	OutputType
+	types.EgressType
+	types.OutputType
 
 	MutedChan chan bool
 	StreamParams
@@ -63,15 +64,15 @@ type SourceParams struct {
 
 type AudioParams struct {
 	AudioEnabled   bool
-	AudioCodec     MimeType
+	AudioCodec     types.MimeType
 	AudioBitrate   int32
 	AudioFrequency int32
 }
 
 type VideoParams struct {
 	VideoEnabled bool
-	VideoCodec   MimeType
-	VideoProfile Profile
+	VideoCodec   types.MimeType
+	VideoProfile types.Profile
 	Width        int32
 	Height       int32
 	Depth        int32
@@ -136,7 +137,7 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			AudioFrequency: 44100,
 		},
 		VideoParams: VideoParams{
-			VideoProfile: ProfileMain,
+			VideoProfile: types.ProfileMain,
 			Width:        1920,
 			Height:       1080,
 			Depth:        24,
@@ -188,7 +189,7 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			}
 
 		case *livekit.RoomCompositeEgressRequest_Stream:
-			if err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls); err != nil {
+			if err = p.updateStreamParams(types.OutputTypeRTMP, o.Stream.Urls); err != nil {
 				return
 			}
 
@@ -240,7 +241,7 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			}
 
 		case *livekit.WebEgressRequest_Stream:
-			if err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls); err != nil {
+			if err = p.updateStreamParams(types.OutputTypeRTMP, o.Stream.Urls); err != nil {
 				return
 			}
 
@@ -295,7 +296,7 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 			}
 
 		case *livekit.TrackCompositeEgressRequest_Stream:
-			if err = p.updateStreamParams(OutputTypeRTMP, o.Stream.Urls); err != nil {
+			if err = p.updateStreamParams(types.OutputTypeRTMP, o.Stream.Urls); err != nil {
 				return
 			}
 
@@ -333,7 +334,7 @@ func getPipelineParams(conf *config.Config, request *livekit.StartEgressRequest)
 				return
 			}
 		case *livekit.TrackEgressRequest_WebsocketUrl:
-			if err = p.updateStreamParams(OutputTypeRaw, []string{o.WebsocketUrl}); err != nil {
+			if err = p.updateStreamParams(types.OutputTypeRaw, []string{o.WebsocketUrl}); err != nil {
 				return
 			}
 
@@ -407,9 +408,9 @@ func (p *Params) applyAdvanced(advanced *livekit.EncodingOptions) {
 	// audio
 	switch advanced.AudioCodec {
 	case livekit.AudioCodec_OPUS:
-		p.AudioCodec = MimeTypeOpus
+		p.AudioCodec = types.MimeTypeOpus
 	case livekit.AudioCodec_AAC:
-		p.AudioCodec = MimeTypeAAC
+		p.AudioCodec = types.MimeTypeAAC
 	}
 
 	if advanced.AudioBitrate != 0 {
@@ -422,15 +423,15 @@ func (p *Params) applyAdvanced(advanced *livekit.EncodingOptions) {
 	// video
 	switch advanced.VideoCodec {
 	case livekit.VideoCodec_H264_BASELINE:
-		p.VideoCodec = MimeTypeH264
-		p.VideoProfile = ProfileBaseline
+		p.VideoCodec = types.MimeTypeH264
+		p.VideoProfile = types.ProfileBaseline
 
 	case livekit.VideoCodec_H264_MAIN:
-		p.VideoCodec = MimeTypeH264
+		p.VideoCodec = types.MimeTypeH264
 
 	case livekit.VideoCodec_H264_HIGH:
-		p.VideoCodec = MimeTypeH264
-		p.VideoProfile = ProfileHigh
+		p.VideoCodec = types.MimeTypeH264
+		p.VideoProfile = types.ProfileHigh
 	}
 
 	if advanced.Width != 0 {
@@ -455,28 +456,28 @@ func (p *Params) updateOutputType(fileType interface{}) {
 	case livekit.EncodedFileType:
 		switch f {
 		case livekit.EncodedFileType_DEFAULT_FILETYPE:
-			if !p.VideoEnabled && p.AudioCodec != MimeTypeAAC {
-				p.OutputType = OutputTypeOGG
+			if !p.VideoEnabled && p.AudioCodec != types.MimeTypeAAC {
+				p.OutputType = types.OutputTypeOGG
 			} else {
-				p.OutputType = OutputTypeMP4
+				p.OutputType = types.OutputTypeMP4
 			}
 		case livekit.EncodedFileType_MP4:
-			p.OutputType = OutputTypeMP4
+			p.OutputType = types.OutputTypeMP4
 		case livekit.EncodedFileType_OGG:
-			p.OutputType = OutputTypeOGG
+			p.OutputType = types.OutputTypeOGG
 		}
 
 	case livekit.SegmentedFileProtocol:
 		switch f {
 		case livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL,
 			livekit.SegmentedFileProtocol_HLS_PROTOCOL:
-			p.OutputType = OutputTypeHLS
+			p.OutputType = types.OutputTypeHLS
 		}
 	}
 }
 
 func (p *Params) updateFileParams(storageFilepath string, output interface{}) error {
-	p.EgressType = EgressTypeFile
+	p.EgressType = types.EgressTypeFile
 	p.StorageFilepath = storageFilepath
 	p.FileInfo = &livekit.FileInfo{}
 	p.Info.Result = &livekit.EgressInfo_File{File: p.FileInfo}
@@ -517,19 +518,19 @@ func (p *Params) updateFileParams(storageFilepath string, output interface{}) er
 	return nil
 }
 
-func (p *Params) updateStreamParams(outputType OutputType, urls []string) error {
+func (p *Params) updateStreamParams(outputType types.OutputType, urls []string) error {
 	p.OutputType = outputType
 
 	switch p.OutputType {
-	case OutputTypeRTMP:
-		p.EgressType = EgressTypeStream
-		p.AudioCodec = MimeTypeAAC
-		p.VideoCodec = MimeTypeH264
+	case types.OutputTypeRTMP:
+		p.EgressType = types.EgressTypeStream
+		p.AudioCodec = types.MimeTypeAAC
+		p.VideoCodec = types.MimeTypeH264
 		p.StreamUrls = urls
 
-	case OutputTypeRaw:
-		p.EgressType = EgressTypeWebsocket
-		p.AudioCodec = MimeTypeRaw
+	case types.OutputTypeRaw:
+		p.EgressType = types.EgressTypeWebsocket
+		p.AudioCodec = types.MimeTypeRaw
 		p.WebsocketUrl = urls[0]
 		p.MutedChan = make(chan bool, 1)
 	}
@@ -551,7 +552,7 @@ func (p *Params) updateStreamParams(outputType OutputType, urls []string) error 
 }
 
 func (p *Params) updateSegmentsParams(filePrefix string, playlistFilename string, segmentDuration uint32, output interface{}) error {
-	p.EgressType = EgressTypeSegmentedFile
+	p.EgressType = types.EgressTypeSegmentedFile
 	p.LocalFilePrefix = filePrefix
 	p.PlaylistFilename = playlistFilename
 	p.SegmentDuration = int(segmentDuration)
@@ -630,8 +631,8 @@ func (p *Params) updateCodecs() error {
 	// check audio codec
 	if p.AudioEnabled {
 		if p.AudioCodec == "" {
-			p.AudioCodec = DefaultAudioCodecs[p.OutputType]
-		} else if !codecCompatibility[p.OutputType][p.AudioCodec] {
+			p.AudioCodec = types.DefaultAudioCodecs[p.OutputType]
+		} else if !types.CodecCompatibility[p.OutputType][p.AudioCodec] {
 			return errors.ErrIncompatible(p.OutputType, p.AudioCodec)
 		}
 	}
@@ -639,8 +640,8 @@ func (p *Params) updateCodecs() error {
 	// check video codec
 	if p.VideoEnabled {
 		if p.VideoCodec == "" {
-			p.VideoCodec = DefaultVideoCodecs[p.OutputType]
-		} else if !codecCompatibility[p.OutputType][p.VideoCodec] {
+			p.VideoCodec = types.DefaultVideoCodecs[p.OutputType]
+		} else if !types.CodecCompatibility[p.OutputType][p.VideoCodec] {
 			return errors.ErrIncompatible(p.OutputType, p.VideoCodec)
 		}
 	}
@@ -653,19 +654,19 @@ func (p *Params) UpdateFileInfoFromSDK(fileIdentifier string, replacements map[s
 	if p.OutputType == "" {
 		if !p.VideoEnabled {
 			// audio input is always opus
-			p.OutputType = OutputTypeOGG
+			p.OutputType = types.OutputTypeOGG
 		} else {
-			p.OutputType = OutputTypeMP4
+			p.OutputType = types.OutputTypeMP4
 		}
 	}
 
 	// check audio codec
-	if p.AudioEnabled && !codecCompatibility[p.OutputType][p.AudioCodec] {
+	if p.AudioEnabled && !types.CodecCompatibility[p.OutputType][p.AudioCodec] {
 		return errors.ErrIncompatible(p.OutputType, p.AudioCodec)
 	}
 
 	// check video codec
-	if p.VideoEnabled && !codecCompatibility[p.OutputType][p.VideoCodec] {
+	if p.VideoEnabled && !types.CodecCompatibility[p.OutputType][p.VideoCodec] {
 		return errors.ErrIncompatible(p.OutputType, p.VideoCodec)
 	}
 
@@ -676,7 +677,7 @@ func (p *Params) updateFilepath(identifier string, replacements map[string]strin
 	p.StorageFilepath = stringReplace(p.StorageFilepath, replacements)
 
 	// get file extension
-	ext := FileExtensionForOutputType[p.OutputType]
+	ext := types.FileExtensionForOutputType[p.OutputType]
 
 	if p.StorageFilepath == "" || strings.HasSuffix(p.StorageFilepath, "/") {
 		// generate filepath
@@ -685,8 +686,8 @@ func (p *Params) updateFilepath(identifier string, replacements map[string]strin
 		// check for existing (incorrect) extension
 		extIdx := strings.LastIndex(p.StorageFilepath, ".")
 		if extIdx > 0 {
-			existingExt := FileExtension(p.StorageFilepath[extIdx:])
-			if _, ok := FileExtensions[existingExt]; ok {
+			existingExt := types.FileExtension(p.StorageFilepath[extIdx:])
+			if _, ok := types.FileExtensions[existingExt]; ok {
 				p.StorageFilepath = p.StorageFilepath[:extIdx]
 			}
 		}
@@ -729,7 +730,7 @@ func (p *Params) UpdatePrefixAndPlaylist(identifier string, replacements map[str
 	p.LocalFilePrefix = stringReplace(p.LocalFilePrefix, replacements)
 	p.PlaylistFilename = stringReplace(p.PlaylistFilename, replacements)
 
-	ext := FileExtensionForOutputType[p.OutputType]
+	ext := types.FileExtensionForOutputType[p.OutputType]
 
 	if p.LocalFilePrefix == "" || strings.HasSuffix(p.LocalFilePrefix, "/") {
 		p.LocalFilePrefix = fmt.Sprintf("%s%s-%s", p.LocalFilePrefix, identifier, time.Now().Format("2006-01-02T150405"))
@@ -778,10 +779,10 @@ func (p *Params) VerifyUrl(url string) error {
 	var protocol, prefix string
 
 	switch p.OutputType {
-	case OutputTypeRTMP:
+	case types.OutputTypeRTMP:
 		protocol = "rtmp"
 		prefix = "rtmp"
-	case OutputTypeRaw:
+	case types.OutputTypeRaw:
 		protocol = "websocket"
 		prefix = "ws"
 	}
@@ -793,11 +794,11 @@ func (p *Params) VerifyUrl(url string) error {
 	return nil
 }
 
-func (p *Params) GetSegmentOutputType() OutputType {
+func (p *Params) GetSegmentOutputType() types.OutputType {
 	switch p.OutputType {
-	case OutputTypeHLS:
+	case types.OutputTypeHLS:
 		// HLS is always mpeg ts for now. We may implement fmp4 in the future
-		return OutputTypeTS
+		return types.OutputTypeTS
 	default:
 		return p.OutputType
 	}
@@ -812,11 +813,11 @@ func (p *SegmentedFileParams) GetStorageFilepath(filename string) string {
 
 func (p *Params) GetSessionTimeout() time.Duration {
 	switch p.EgressType {
-	case EgressTypeFile:
+	case types.EgressTypeFile:
 		return p.conf.FileOutputMaxDuration
-	case EgressTypeStream, EgressTypeWebsocket:
+	case types.EgressTypeStream, types.EgressTypeWebsocket:
 		return p.conf.StreamOutputMaxDuration
-	case EgressTypeSegmentedFile:
+	case types.EgressTypeSegmentedFile:
 		return p.conf.SegmentOutputMaxDuration
 	}
 
