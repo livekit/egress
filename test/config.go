@@ -19,7 +19,7 @@ import (
 )
 
 type TestConfig struct {
-	*config.Config
+	*config.ServiceConfig
 
 	// test config
 	RoomName                string `yaml:"room_name"`
@@ -69,9 +69,9 @@ func NewTestContext(t *testing.T) *TestConfig {
 	err := yaml.Unmarshal([]byte(confString), tc)
 	require.NoError(t, err)
 
-	conf, err := config.NewConfig(confString)
+	conf, err := config.NewServiceConfig(confString)
 	require.NoError(t, err)
-	tc.Config = conf
+	tc.ServiceConfig = conf
 
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
 		t.Fatal("api key, secret, and ws url required")

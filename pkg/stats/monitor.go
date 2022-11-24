@@ -30,7 +30,7 @@ func NewMonitor() *Monitor {
 	return &Monitor{}
 }
 
-func (m *Monitor) Start(conf *config.Config, isAvailable func() float64) error {
+func (m *Monitor) Start(conf *config.ServiceConfig, isAvailable func() float64) error {
 	cpuStats, err := utils.NewCPUStats(func(idle float64) {
 		m.promCPULoad.Set(1 - idle/float64(m.cpuStats.NumCPU()))
 	})
@@ -40,7 +40,7 @@ func (m *Monitor) Start(conf *config.Config, isAvailable func() float64) error {
 
 	m.cpuStats = cpuStats
 
-	if err := m.checkCPUConfig(conf.CPUCost); err != nil {
+	if err := m.checkCPUConfig(conf.CPUCostConfig); err != nil {
 		return err
 	}
 

@@ -6,8 +6,8 @@ import (
 
 	"github.com/tinyzimmer/go-gst/gst"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
@@ -21,8 +21,6 @@ type OutputBin struct {
 	tee      *gst.Element
 	sinks    map[string]*streamSink
 	lock     sync.Mutex
-
-	logger logger.Logger
 }
 
 type streamSink struct {
@@ -31,7 +29,7 @@ type streamSink struct {
 	sink  *gst.Element
 }
 
-func New(ctx context.Context, p *params.Params) (*OutputBin, error) {
+func New(ctx context.Context, p *config.PipelineConfig) (*OutputBin, error) {
 	ctx, span := tracer.Start(ctx, "OutputBin.New")
 	defer span.End()
 
@@ -91,7 +89,7 @@ func (o *OutputBin) linkSink(sink *streamSink) error {
 		internal, _ := self.GetInternalLinks()
 		if len(internal) != 1 {
 			// there should always be exactly one
-			o.logger.Errorw("unexpected internal links", nil, "links", len(internal))
+			logger.Errorw("unexpected internal links", nil, "links", len(internal))
 			return gst.FlowNotLinked
 		}
 
@@ -142,7 +140,7 @@ func (o *OutputBin) AddSink(url string) error {
 	teeSrcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		// link tee to queue
 		if linkReturn := pad.Link(sink.queue.GetStaticPad("sink")); linkReturn != gst.PadLinkOK {
-			o.logger.Errorw("failed to link tee to queue", err)
+			logger.Errorw("failed to link tee to queue", err)
 		}
 
 		// sync state
@@ -178,13 +176,13 @@ func (o *OutputBin) RemoveSink(url string) error {
 
 		// remove from bin
 		if err := o.bin.RemoveMany(sink.queue, sink.sink); err != nil {
-			o.logger.Errorw("failed to remove rtmp sink", err)
+			logger.Errorw("failed to remove rtmp sink", err)
 		}
 		if err := sink.queue.SetState(gst.StateNull); err != nil {
-			o.logger.Errorw("failed stop rtmp queue", err)
+			logger.Errorw("failed stop rtmp queue", err)
 		}
 		if err := sink.sink.SetState(gst.StateNull); err != nil {
-			o.logger.Errorw("failed to stop rtmp sink", err)
+			logger.Errorw("failed to stop rtmp sink", err)
 		}
 
 		// release tee src pad

@@ -63,7 +63,7 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				Output: &livekit.RoomCompositeEgressRequest_File{
 					File: &livekit.EncodedFileOutput{
 						FileType: test.fileType,
-						Filepath: getFilePath(conf.Config, test.filename),
+						Filepath: getFilePath(conf.ServiceConfig, test.filename),
 					},
 				},
 			}
@@ -198,7 +198,7 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				AudioOnly: test.audioOnly,
 				Output: &livekit.RoomCompositeEgressRequest_Segments{
 					Segments: &livekit.SegmentedFileOutput{
-						FilenamePrefix: getFilePath(conf.Config, test.filename),
+						FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
 						PlaylistName:   test.playlist,
 					},
 				},

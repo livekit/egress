@@ -10,7 +10,7 @@ import (
 
 	"github.com/grafov/m3u8"
 
-	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/config"
 )
 
 type PlaylistWriter struct {
@@ -23,7 +23,7 @@ type PlaylistWriter struct {
 	openSegmentsLock      sync.Mutex
 }
 
-func NewPlaylistWriter(p *params.Params) (*PlaylistWriter, error) {
+func NewPlaylistWriter(p *config.PipelineConfig) (*PlaylistWriter, error) {
 	// "github.com/grafov/m3u8" is fairly inefficient for frequent serializations of long playlists and
 	// doesn't implement recent additions to the HLS spec, but I'm not aware of anything better, short of
 	// writing one.

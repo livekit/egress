@@ -16,7 +16,7 @@ func testWebFile(t *testing.T, conf *TestConfig) {
 		Url: webUrl,
 		Output: &livekit.WebEgressRequest_File{
 			File: &livekit.EncodedFileOutput{
-				Filepath: getFilePath(conf.Config, "web_{time}"),
+				Filepath: getFilePath(conf.ServiceConfig, "web_{time}"),
 			},
 		},
 	}
@@ -59,7 +59,7 @@ func testWebSegments(t *testing.T, conf *TestConfig) {
 		Url: webUrl,
 		Output: &livekit.WebEgressRequest_Segments{
 			Segments: &livekit.SegmentedFileOutput{
-				FilenamePrefix: getFilePath(conf.Config, "web_{time}"),
+				FilenamePrefix: getFilePath(conf.ServiceConfig, "web_{time}"),
 				PlaylistName:   "web_{time}.m3u8",
 			},
 		},

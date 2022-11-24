@@ -15,7 +15,7 @@ func TestEgress(t *testing.T) {
 	conf := NewTestContext(t)
 
 	// rpc client and server
-	rc, err := redis.GetRedisClient(conf.Config.Redis)
+	rc, err := redis.GetRedisClient(conf.Redis)
 	require.NoError(t, err)
 	rpcServer := egress.NewRedisRPCServer(rc)
 	rpcClient := egress.NewRedisRPCClient("egress_test", rc)

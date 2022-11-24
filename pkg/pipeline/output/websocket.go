@@ -9,14 +9,14 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 )
 
-func buildWebsocketOutputBin(p *params.Params) (*OutputBin, error) {
-	writer, err := newWebSocketSink(p.WebsocketUrl, types.MimeTypeRaw, p.Logger, p.MutedChan)
+func buildWebsocketOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
+	writer, err := newWebSocketSink(p.WebsocketUrl, types.MimeTypeRaw, p.MutedChan)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +30,7 @@ func buildWebsocketOutputBin(p *params.Params) (*OutputBin, error) {
 		EOSFunc: func(appSink *app.Sink) {
 			// Close writer on EOS
 			if err = writer.Close(); err != nil && !errors.Is(err, io.EOF) {
-				p.Logger.Errorw("cannot close WS sink", err)
+				logger.Errorw("cannot close WS sink", err)
 			}
 		},
 		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
@@ -52,7 +52,7 @@ func buildWebsocketOutputBin(p *params.Params) (*OutputBin, error) {
 			// From the extracted bytes, send to writer
 			_, err = writer.Write(samples)
 			if err != nil && !errors.Is(err, io.EOF) {
-				p.Logger.Errorw("cannot read AppSink samples", err)
+				logger.Errorw("cannot read AppSink samples", err)
 				return gst.FlowError
 			}
 			return gst.FlowOK
@@ -70,8 +70,7 @@ func buildWebsocketOutputBin(p *params.Params) (*OutputBin, error) {
 	}
 
 	return &OutputBin{
-		bin:    bin,
-		logger: p.Logger,
+		bin: bin,
 	}, nil
 }
 
@@ -84,13 +83,12 @@ const (
 
 type websocketSink struct {
 	conn   *websocket.Conn
-	logger logger.Logger
 	muted  chan bool
 	closed chan struct{}
 	state  websocketState
 }
 
-func newWebSocketSink(url string, mimeType types.MimeType, logger logger.Logger, muted chan bool) (io.WriteCloser, error) {
+func newWebSocketSink(url string, mimeType types.MimeType, muted chan bool) (io.WriteCloser, error) {
 	// set Content-Type header
 	header := http.Header{}
 	header.Set("Content-Type", string(mimeType))
@@ -102,7 +100,6 @@ func newWebSocketSink(url string, mimeType types.MimeType, logger logger.Logger,
 
 	s := &websocketSink{
 		conn:   conn,
-		logger: logger,
 		muted:  muted,
 		closed: make(chan struct{}),
 		state:  WebSocketActive,
@@ -128,7 +125,7 @@ func (s *websocketSink) Close() error {
 	// write close message for graceful disconnection
 	err := s.conn.WriteMessage(websocket.CloseMessage, nil)
 	if err != nil && !errors.Is(err, io.EOF) {
-		s.logger.Errorw("cannot write WS close message", err)
+		logger.Errorw("cannot write WS close message", err)
 	}
 
 	// terminate connection and close the `closed` channel
@@ -172,7 +169,7 @@ func (s *websocketSink) listenToMutedChan() {
 		case val := <-s.muted:
 			err = s.writeMutedMessage(val)
 			if err != nil && !errors.Is(err, io.EOF) {
-				s.logger.Errorw("error writing muted message: ", err)
+				logger.Errorw("error writing muted message: ", err)
 			}
 		case <-s.closed:
 			return

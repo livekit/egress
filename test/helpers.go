@@ -101,8 +101,8 @@ func publishSampleToRoom(t *testing.T, room *lksdk.Room, codec types.MimeType, w
 	return trackID
 }
 
-func getFilePath(conf *config.Config, filename string) string {
-	if conf.FileUpload != nil {
+func getFilePath(conf *config.ServiceConfig, filename string) string {
+	if conf.S3 != nil || conf.Azure != nil || conf.GCP != nil || conf.AliOSS != nil {
 		return filename
 	}
 	return fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, filename)

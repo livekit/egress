@@ -5,13 +5,13 @@ import (
 
 	"github.com/tinyzimmer/go-gst/gst"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/utils"
 )
 
-func buildStreamOutputBin(p *params.Params) (*OutputBin, error) {
+func buildStreamOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
 	// create elements
 	tee, err := gst.NewElement("tee")
 	if err != nil {
@@ -28,7 +28,6 @@ func buildStreamOutputBin(p *params.Params) (*OutputBin, error) {
 		protocol: p.OutputType,
 		tee:      tee,
 		sinks:    make(map[string]*streamSink),
-		logger:   p.Logger,
 	}
 
 	for _, url := range p.StreamUrls {

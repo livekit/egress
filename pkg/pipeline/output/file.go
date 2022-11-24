@@ -3,11 +3,11 @@ package output
 import (
 	"github.com/tinyzimmer/go-gst/gst"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
 )
 
-func buildFileOutputBin(p *params.Params) (*OutputBin, error) {
+func buildFileOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
 	// create elements
 	sink, err := gst.NewElement("filesink")
 	if err != nil {
@@ -33,7 +33,6 @@ func buildFileOutputBin(p *params.Params) (*OutputBin, error) {
 	}
 
 	return &OutputBin{
-		bin:    bin,
-		logger: p.Logger,
+		bin: bin,
 	}, nil
 }

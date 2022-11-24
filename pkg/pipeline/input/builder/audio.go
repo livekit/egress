@@ -8,8 +8,8 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 )
@@ -21,7 +21,7 @@ type AudioInput struct {
 	encoder *gst.Element
 }
 
-func NewWebAudioInput(p *params.Params) (*AudioInput, error) {
+func NewWebAudioInput(p *config.PipelineConfig) (*AudioInput, error) {
 	a := &AudioInput{}
 
 	if err := a.buildWebDecoder(p); err != nil {
@@ -34,7 +34,7 @@ func NewWebAudioInput(p *params.Params) (*AudioInput, error) {
 	return a, nil
 }
 
-func NewSDKAudioInput(p *params.Params, src *app.Source, codec webrtc.RTPCodecParameters) (*AudioInput, error) {
+func NewSDKAudioInput(p *config.PipelineConfig, src *app.Source, codec webrtc.RTPCodecParameters) (*AudioInput, error) {
 	a := &AudioInput{}
 
 	if err := a.buildSDKDecoder(p, src, codec); err != nil {
@@ -125,7 +125,7 @@ func (a *AudioInput) GetSrcPad() *gst.Pad {
 	return getSrcPad(a.decoder)
 }
 
-func (a *AudioInput) buildWebDecoder(p *params.Params) error {
+func (a *AudioInput) buildWebDecoder(p *config.PipelineConfig) error {
 	pulseSrc, err := gst.NewElement("pulsesrc")
 	if err != nil {
 		return err
@@ -138,7 +138,7 @@ func (a *AudioInput) buildWebDecoder(p *params.Params) error {
 	return a.addConverter(p)
 }
 
-func (a *AudioInput) buildSDKDecoder(p *params.Params, src *app.Source, codec webrtc.RTPCodecParameters) error {
+func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, codec webrtc.RTPCodecParameters) error {
 	src.Element.SetArg("format", "time")
 	if err := src.Element.SetProperty("is-live", true); err != nil {
 		return err
@@ -178,7 +178,7 @@ func (a *AudioInput) buildSDKDecoder(p *params.Params, src *app.Source, codec we
 	return a.addConverter(p)
 }
 
-func (a *AudioInput) addConverter(p *params.Params) error {
+func (a *AudioInput) addConverter(p *config.PipelineConfig) error {
 	audioQueue, err := buildQueue()
 	if err != nil {
 		return err
@@ -203,7 +203,7 @@ func (a *AudioInput) addConverter(p *params.Params) error {
 	return nil
 }
 
-func (a *AudioInput) buildMixer(p *params.Params) error {
+func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 	audioTestSrc, err := gst.NewElement("audiotestsrc")
 	if err != nil {
 		return err
@@ -241,7 +241,7 @@ func (a *AudioInput) buildMixer(p *params.Params) error {
 	return nil
 }
 
-func (a *AudioInput) buildEncoder(p *params.Params) error {
+func (a *AudioInput) buildEncoder(p *config.PipelineConfig) error {
 	switch p.AudioCodec {
 	case types.MimeTypeOpus:
 		encoder, err := gst.NewElement("opusenc")
@@ -270,7 +270,7 @@ func (a *AudioInput) buildEncoder(p *params.Params) error {
 	return nil
 }
 
-func getCapsFilter(p *params.Params) (*gst.Element, error) {
+func getCapsFilter(p *config.PipelineConfig) (*gst.Element, error) {
 	var caps *gst.Caps
 	switch p.AudioCodec {
 	case types.MimeTypeOpus, types.MimeTypeRaw:

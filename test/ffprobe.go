@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
@@ -89,7 +89,7 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
-func verifyFile(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.EgressInfo) {
+func verifyFile(t *testing.T, conf *TestConfig, p *config.PipelineConfig, res *livekit.EgressInfo) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
@@ -119,13 +119,13 @@ func verifyFile(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.E
 	verify(t, localPath, p, res, ResultTypeFile, conf.Muting)
 }
 
-func verifyStreams(t *testing.T, p *params.Params, urls ...string) {
+func verifyStreams(t *testing.T, p *config.PipelineConfig, urls ...string) {
 	for _, url := range urls {
 		verify(t, url, p, nil, ResultTypeStream, false)
 	}
 }
 
-func verifySegments(t *testing.T, conf *TestConfig, p *params.Params, res *livekit.EgressInfo) {
+func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, res *livekit.EgressInfo) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
@@ -159,7 +159,7 @@ func verifySegments(t *testing.T, conf *TestConfig, p *params.Params, res *livek
 	verify(t, localPlaylistPath, p, res, ResultTypeSegments, conf.Muting)
 }
 
-func verify(t *testing.T, input string, p *params.Params, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {
+func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {
 	info, err := ffprobe(input)
 	require.NoError(t, err, "ffprobe error - input does not exist")
 

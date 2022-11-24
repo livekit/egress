@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
@@ -64,7 +64,7 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	defer room.Disconnect()
 
 	// start service
-	svc := service.NewService(conf.Config, rpcServer)
+	svc := service.NewService(conf.ServiceConfig, rpcServer)
 	go func() {
 		err := svc.Run()
 		require.NoError(t, err)
@@ -196,7 +196,8 @@ func runFileTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest
 	}
 
 	// get params
-	p, err := params.GetPipelineParams(context.Background(), conf.Config, req)
+	p := config.PipelineConfigFromService(conf.ServiceConfig)
+	err := p.Update(req)
 	require.NoError(t, err)
 	if p.OutputType == "" {
 		p.OutputType = test.outputType
@@ -217,13 +218,13 @@ func runStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReque
 }
 
 func runTimeLimitStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest) {
-	ctx := context.Background()
 	egressID := startEgress(t, conf, req)
 
 	time.Sleep(time.Second * 5)
 
 	// get params
-	p, err := params.GetPipelineParams(ctx, conf.Config, req)
+	p := config.PipelineConfigFromService(conf.ServiceConfig)
+	err := p.Update(req)
 	require.NoError(t, err)
 
 	verifyStreams(t, p, streamUrl1)
@@ -240,7 +241,8 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	time.Sleep(time.Second * 5)
 
 	// get params
-	p, err := params.GetPipelineParams(ctx, conf.Config, req)
+	p := config.PipelineConfigFromService(conf.ServiceConfig)
+	err := p.Update(req)
 	require.NoError(t, err)
 
 	// verify stream
@@ -348,7 +350,8 @@ func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 	}
 
 	// get params
-	p, err := params.GetPipelineParams(context.Background(), conf.Config, req)
+	p := config.PipelineConfigFromService(conf.ServiceConfig)
+	err := p.Update(req)
 	require.NoError(t, err)
 
 	verifySegments(t, conf, p, res)

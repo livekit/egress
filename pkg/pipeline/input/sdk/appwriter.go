@@ -6,7 +6,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v3"
@@ -81,7 +80,6 @@ func newAppWriter(
 	track *webrtc.TrackRemote,
 	codec types.MimeType,
 	rp *lksdk.RemoteParticipant,
-	l logger.Logger,
 	src *app.Source,
 	cs *synchronizer,
 	playing chan struct{},
@@ -89,7 +87,7 @@ func newAppWriter(
 ) (*appWriter, error) {
 
 	w := &appWriter{
-		logger:      logger.Logger(logr.Logger(l).WithValues("trackID", track.ID(), "kind", track.Kind().String())),
+		logger:      logger.Logger(logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String())),
 		track:       track,
 		codec:       codec,
 		src:         src,

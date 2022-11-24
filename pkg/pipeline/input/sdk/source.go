@@ -9,14 +9,15 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
 )
 
-func (s *SDKInput) joinRoom(p *params.Params) error {
+func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 	cb := &lksdk.RoomCallback{
 		OnDisconnected:            s.onDisconnected,
 		OnParticipantDisconnected: s.onParticipantDisconnected,
@@ -35,7 +36,7 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 	var wg sync.WaitGroup
 	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer wg.Done()
-		s.logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
+		logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
 		s.active.Inc()
 
 		var codec types.MimeType
@@ -105,7 +106,7 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 		<-p.GstReady
 		src, err := gst.NewElementWithName("appsrc", appSrcName)
 		if err != nil {
-			s.logger.Errorw("could not create appsrc", err)
+			logger.Errorw("could not create appsrc", err)
 			onSubscribeErr = err
 			return
 		}
@@ -118,10 +119,10 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 			s.audioSrc = app.SrcFromElement(src)
 			s.audioPlaying = make(chan struct{})
 			s.audioCodec = track.Codec()
-			s.audioWriter, err = newAppWriter(track, codec, rp, s.logger, s.audioSrc, s.cs, s.audioPlaying, writeBlanks)
+			s.audioWriter, err = newAppWriter(track, codec, rp, s.audioSrc, s.cs, s.audioPlaying, writeBlanks)
 			s.audioParticipant = rp.Identity()
 			if err != nil {
-				s.logger.Errorw("could not create app writer", err)
+				logger.Errorw("could not create app writer", err)
 				onSubscribeErr = err
 				return
 			}
@@ -130,10 +131,10 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 			s.videoSrc = app.SrcFromElement(src)
 			s.videoPlaying = make(chan struct{})
 			s.videoCodec = track.Codec()
-			s.videoWriter, err = newAppWriter(track, codec, rp, s.logger, s.videoSrc, s.cs, s.videoPlaying, writeBlanks)
+			s.videoWriter, err = newAppWriter(track, codec, rp, s.videoSrc, s.cs, s.videoPlaying, writeBlanks)
 			s.videoParticipant = rp.Identity()
 			if err != nil {
-				s.logger.Errorw("could not create app writer", err)
+				logger.Errorw("could not create app writer", err)
 				onSubscribeErr = err
 				return
 			}
@@ -141,8 +142,8 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 	}
 
 	s.room = lksdk.CreateRoom(cb)
-	s.logger.Debugw("connecting to room")
-	if err := s.room.JoinWithToken(p.LKUrl, p.Token, lksdk.WithAutoSubscribe(false)); err != nil {
+	logger.Debugw("connecting to room")
+	if err := s.room.JoinWithToken(p.WsUrl, p.Token, lksdk.WithAutoSubscribe(false)); err != nil {
 		return err
 	}
 
@@ -181,7 +182,7 @@ func (s *SDKInput) joinRoom(p *params.Params) error {
 	switch p.EgressType {
 	case types.EgressTypeFile:
 		if err := p.UpdateFileInfoFromSDK(fileIdentifier, filenameReplacements); err != nil {
-			s.logger.Errorw("could not update file params", err)
+			logger.Errorw("could not update file params", err)
 			return err
 		}
 	case types.EgressTypeSegmentedFile:
@@ -206,7 +207,7 @@ func (s *SDKInput) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk
 		return
 	}
 
-	s.logger.Errorw("participant published new track", nil, "identity", s.participantIdentity, "trackID", pub.SID())
+	logger.Errorw("participant published new track", nil, "identity", s.participantIdentity, "trackID", pub.SID())
 }
 
 func (s *SDKInput) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {

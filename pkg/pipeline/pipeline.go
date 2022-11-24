@@ -19,10 +19,10 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/input/sdk"
 	"github.com/livekit/egress/pkg/pipeline/input/web"
 	"github.com/livekit/egress/pkg/pipeline/output"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 )
 
@@ -41,7 +41,7 @@ const (
 )
 
 type Pipeline struct {
-	*params.Params
+	*config.PipelineConfig
 
 	// gstreamer
 	pipeline *gst.Pipeline
@@ -71,7 +71,7 @@ type segmentUpdate struct {
 	localPath string
 }
 
-func New(ctx context.Context, conf *config.Config, p *params.Params) (*Pipeline, error) {
+func New(ctx context.Context, p *config.PipelineConfig) (*Pipeline, error) {
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
@@ -84,7 +84,7 @@ func New(ctx context.Context, conf *config.Config, p *params.Params) (*Pipeline,
 	}()
 
 	// create input bin
-	in, err := input.New(ctx, conf, p)
+	in, err := input.New(ctx, p)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func New(ctx context.Context, conf *config.Config, p *params.Params) (*Pipeline,
 	}
 
 	return &Pipeline{
-		Params:         p,
+		PipelineConfig: p,
 		pipeline:       pipeline,
 		in:             in,
 		out:            out,
@@ -205,7 +205,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	// set state to playing (this does not start the pipeline)
 	if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
 		span.RecordError(err)
-		p.Logger.Errorw("failed to set pipeline state", err)
+		logger.Errorw("failed to set pipeline state", err)
 		p.Info.Error = err.Error()
 		return p.Info
 	}
@@ -243,8 +243,8 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 
 		manifestLocalPath := fmt.Sprintf("%s.json", p.LocalFilepath)
 		manifestStoragePath := fmt.Sprintf("%s.json", p.StorageFilepath)
-		if err := p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
-			p.Logger.Errorw("could not store manifest", err)
+		if err = p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
+			logger.Errorw("could not store manifest", err)
 		}
 
 	case types.EgressTypeSegmentedFile:
@@ -255,7 +255,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 
 		if p.playlistWriter != nil {
 			if err := p.playlistWriter.EOS(); err != nil {
-				p.Logger.Errorw("failed to send EOS to playlist writer", err)
+				logger.Errorw("failed to send EOS to playlist writer", err)
 			}
 
 			// upload the finalized playlist
@@ -265,7 +265,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 			manifestLocalPath := fmt.Sprintf("%s.json", p.PlaylistFilename)
 			manifestStoragePath := fmt.Sprintf("%s.json", playlistStoragePath)
 			if err := p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
-				p.Logger.Errorw("could not store manifest", err)
+				logger.Errorw("could not store manifest", err)
 			}
 		}
 	}
@@ -281,7 +281,7 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 			p.eosTimer.Stop()
 		}
 
-		p.Logger.Debugw("EOS received, stopping pipeline")
+		logger.Debugw("EOS received, stopping pipeline")
 		p.closeOnce.Do(func() {
 			p.close(context.Background())
 		})
@@ -332,15 +332,15 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 			case fragmentOpenedMessage:
 				filepath, t, err := getSegmentParamsFromGstStructure(s)
 				if err != nil {
-					p.Logger.Errorw("failed to retrieve segment parameters from event", err)
+					logger.Errorw("failed to retrieve segment parameters from event", err)
 					return true
 				}
 
-				p.Logger.Debugw("fragment opened", "location", filepath, "running time", t)
+				logger.Debugw("fragment opened", "location", filepath, "running time", t)
 
 				if p.playlistWriter != nil {
 					if err = p.playlistWriter.StartSegment(filepath, t); err != nil {
-						p.Logger.Errorw("failed to register new segment with playlist writer", err, "location", filepath, "running time", t)
+						logger.Errorw("failed to register new segment with playlist writer", err, "location", filepath, "running time", t)
 						return true
 					}
 				}
@@ -348,24 +348,24 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 			case fragmentClosedMessage:
 				filepath, t, err := getSegmentParamsFromGstStructure(s)
 				if err != nil {
-					p.Logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "running time", t)
+					logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "running time", t)
 					return true
 				}
 
-				p.Logger.Debugw("fragment closed", "location", filepath, "running time", t)
+				logger.Debugw("fragment closed", "location", filepath, "running time", t)
 
 				// We need to dispatch to a queue to:
 				// 1. Avoid concurrent access to the SegmentsInfo structure
 				// 2. Ensure that playlists are uploaded in the same order they are enqueued to avoid an older playlist overwriting a newer one
 				if err = p.enqueueSegmentUpload(filepath, t); err != nil {
-					p.Logger.Errorw("failed to end segment with playlist writer", err, "running time", t)
+					logger.Errorw("failed to end segment with playlist writer", err, "running time", t)
 					return true
 				}
 			}
 		}
 
 	default:
-		p.Logger.Debugw(msg.String())
+		logger.Debugw(msg.String())
 	}
 
 	return true
@@ -433,7 +433,7 @@ func (p *Pipeline) removeSink(url string, status livekit.StreamInfo_Status) erro
 	done := len(p.StreamInfo) == 0
 	p.mu.Unlock()
 
-	p.Logger.Debugw("removing stream sink", "url", url, "status", status, "duration", streamInfo.Duration)
+	logger.Debugw("removing stream sink", "url", url, "status", status, "duration", streamInfo.Duration)
 
 	switch status {
 	case livekit.StreamInfo_FINISHED:
@@ -460,9 +460,9 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 		p.close(ctx)
 
 		go func() {
-			p.Logger.Debugw("sending EOS to pipeline")
+			logger.Debugw("sending EOS to pipeline")
 			p.eosTimer = time.AfterFunc(eosTimeout, func() {
-				p.Logger.Errorw("pipeline frozen", nil)
+				logger.Errorw("pipeline frozen", nil)
 				p.Info.Error = "pipeline frozen"
 				p.stop()
 			})
@@ -541,7 +541,7 @@ func (p *Pipeline) startSegmentWorker() {
 				if p.playlistWriter != nil {
 					err := p.playlistWriter.EndSegment(update.localPath, update.endTime)
 					if err != nil {
-						p.Logger.Errorw("failed to end segment", err, "path", update.localPath)
+						logger.Errorw("failed to end segment", err, "path", update.localPath)
 						return
 					}
 					playlistStoragePath := p.GetStorageFilepath(p.PlaylistFilename)
@@ -560,7 +560,7 @@ func (p *Pipeline) enqueueSegmentUpload(segmentPath string, endTime int64) error
 
 	default:
 		err := errors.New("segment upload job queue is full")
-		p.Logger.Errorw("failed to upload segment", err)
+		logger.Errorw("failed to upload segment", err)
 		p.segmentsWg.Done()
 		return errors.ErrUploadFailed(segmentPath, err)
 	}
@@ -607,7 +607,7 @@ func (p *Pipeline) stop() {
 
 	_ = p.pipeline.BlockSetState(gst.StateNull)
 	endedAt := time.Now().UnixNano()
-	p.Logger.Debugw("pipeline stopped")
+	logger.Debugw("pipeline stopped")
 
 	p.loop.Quit()
 	p.loop = nil
@@ -627,29 +627,29 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 	if err == nil {
 		size = fileInfo.Size()
 	} else {
-		p.Logger.Errorw("could not read file size", err)
+		logger.Errorw("could not read file size", err)
 	}
 
 	var location string
 	switch u := p.UploadConfig.(type) {
 	case *livekit.S3Upload:
 		location = "S3"
-		p.Logger.Debugw("uploading to s3")
+		logger.Debugw("uploading to s3")
 		destinationUrl, err = sink.UploadS3(u, localFilepath, storageFilepath, mime)
 
 	case *livekit.GCPUpload:
 		location = "GCP"
-		p.Logger.Debugw("uploading to gcp")
+		logger.Debugw("uploading to gcp")
 		destinationUrl, err = sink.UploadGCP(u, localFilepath, storageFilepath)
 
 	case *livekit.AzureBlobUpload:
 		location = "Azure"
-		p.Logger.Debugw("uploading to azure")
+		logger.Debugw("uploading to azure")
 		destinationUrl, err = sink.UploadAzure(u, localFilepath, storageFilepath, mime)
 
 	case *livekit.AliOSSUpload:
 		location = "AliOSS"
-		p.Logger.Debugw("uploading to alioss")
+		logger.Debugw("uploading to alioss")
 		destinationUrl, err = sink.UploadAliOSS(u, localFilepath, storageFilepath)
 
 	default:
@@ -657,7 +657,7 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 	}
 
 	if err != nil {
-		p.Logger.Errorw("could not upload file", err, "location", location)
+		logger.Errorw("could not upload file", err, "location", location)
 		err = errors.ErrUploadFailed(location, err)
 		span.RecordError(err)
 	}
@@ -667,7 +667,7 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 
 func (p *Pipeline) storeManifest(ctx context.Context, localFilepath, storageFilepath string) error {
 	if p.DisableManifest {
-		p.Logger.Debugw("manifest storage disabled")
+		logger.Debugw("manifest storage disabled")
 		return nil
 	}
 
@@ -697,18 +697,18 @@ func (p *Pipeline) cleanup() {
 		case types.EgressTypeFile:
 			dir, _ := path.Split(p.LocalFilepath)
 			if dir != "" {
-				p.Logger.Debugw("removing temporary directory", "path", dir)
+				logger.Debugw("removing temporary directory", "path", dir)
 				if err := os.RemoveAll(dir); err != nil {
-					p.Logger.Errorw("could not delete temp dir", err)
+					logger.Errorw("could not delete temp dir", err)
 				}
 			}
 
 		case types.EgressTypeSegmentedFile:
 			dir, _ := path.Split(p.PlaylistFilename)
 			if dir != "" {
-				p.Logger.Debugw("removing temporary directory", "path", dir)
+				logger.Debugw("removing temporary directory", "path", dir)
 				if err := os.RemoveAll(dir); err != nil {
-					p.Logger.Errorw("could not delete temp dir", err)
+					logger.Errorw("could not delete temp dir", err)
 				}
 			}
 		}
@@ -747,7 +747,7 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 		// bad URI or could not connect. Remove rtmp output
 		url, e := p.out.GetUrlFromName(name)
 		if e != nil {
-			p.Logger.Warnw("rtmp output not found", e, "url", url)
+			logger.Warnw("rtmp output not found", e, "url", url)
 			return e, false
 		}
 		if e = p.removeSink(url, livekit.StreamInfo_FAILED); e != nil {
@@ -758,14 +758,14 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 	case element == elementGstAppSrc:
 		if message == "streaming stopped, reason not-negotiated (-4)" {
 			// send eos to app src
-			p.Logger.Debugw("streaming stopped", "name", name)
+			logger.Debugw("streaming stopped", "name", name)
 			p.in.(*sdk.SDKInput).SendAppSrcEOS(name)
 			return err, true
 		}
 	}
 
 	// input failure or file write failure. Fatal
-	p.Logger.Errorw("pipeline error", err,
+	logger.Errorw("pipeline error", err,
 		"element", element,
 		"message", message,
 	)
