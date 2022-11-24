@@ -153,6 +153,8 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		VideoBitrate: 4500,
 	}
 
+	p.updateUploadConfig()
+
 	switch req := request.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
 		p.Info.Request = &livekit.EgressInfo_RoomComposite{RoomComposite: req.RoomComposite}
@@ -348,7 +350,6 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 			return err
 		}
 	}
-	p.updateUploadConfig()
 
 	return nil
 }
