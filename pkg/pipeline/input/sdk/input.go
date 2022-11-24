@@ -9,8 +9,8 @@ import (
 	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/input/builder"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 	lksdk "github.com/livekit/server-sdk-go"
@@ -26,9 +26,8 @@ const (
 type SDKInput struct {
 	*builder.InputBin
 
-	room   *lksdk.Room
-	logger logger.Logger
-	cs     *synchronizer
+	room *lksdk.Room
+	cs   *synchronizer
 
 	// track
 	trackID string
@@ -59,12 +58,11 @@ type SDKInput struct {
 	endRecording chan struct{}
 }
 
-func NewSDKInput(ctx context.Context, p *params.Params) (*SDKInput, error) {
+func NewSDKInput(ctx context.Context, p *config.PipelineConfig) (*SDKInput, error) {
 	ctx, span := tracer.Start(ctx, "SDKInput.New")
 	defer span.End()
 
 	s := &SDKInput{
-		logger:       p.Logger,
 		cs:           &synchronizer{},
 		mutedChan:    p.MutedChan,
 		endRecording: make(chan struct{}),
@@ -127,7 +125,7 @@ func (s *SDKInput) SendEOS() {
 		go func() {
 			defer wg.Done()
 			s.audioWriter.sendEOS()
-			s.logger.Debugw("audio writer finished")
+			logger.Debugw("audio writer finished")
 		}()
 	}
 	if s.videoWriter != nil {
@@ -135,7 +133,7 @@ func (s *SDKInput) SendEOS() {
 		go func() {
 			defer wg.Done()
 			s.videoWriter.sendEOS()
-			s.logger.Debugw("video writer finished")
+			logger.Debugw("video writer finished")
 		}()
 	}
 	wg.Wait()

@@ -9,8 +9,8 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/tracer"
 )
@@ -30,7 +30,7 @@ type InputBin struct {
 	mux        *gst.Element
 }
 
-func NewWebInput(ctx context.Context, p *params.Params) (*InputBin, error) {
+func NewWebInput(ctx context.Context, p *config.PipelineConfig) (*InputBin, error) {
 	input := &InputBin{
 		bin: gst.NewBin("input"),
 	}
@@ -58,7 +58,7 @@ func NewWebInput(ctx context.Context, p *params.Params) (*InputBin, error) {
 	return input, nil
 }
 
-func NewSDKInput(ctx context.Context, p *params.Params, audioSrc, videoSrc *app.Source, audioCodec, videoCodec webrtc.RTPCodecParameters) (*InputBin, error) {
+func NewSDKInput(ctx context.Context, p *config.PipelineConfig, audioSrc, videoSrc *app.Source, audioCodec, videoCodec webrtc.RTPCodecParameters) (*InputBin, error) {
 	input := &InputBin{
 		bin: gst.NewBin("input"),
 	}
@@ -86,7 +86,7 @@ func NewSDKInput(ctx context.Context, p *params.Params, audioSrc, videoSrc *app.
 	return input, nil
 }
 
-func (b *InputBin) build(ctx context.Context, p *params.Params) error {
+func (b *InputBin) build(ctx context.Context, p *config.PipelineConfig) error {
 	ctx, span := tracer.Start(ctx, "Input.build")
 	defer span.End()
 
@@ -243,7 +243,7 @@ func buildQueue() (*gst.Element, error) {
 	return queue, nil
 }
 
-func buildMux(p *params.Params) (*gst.Element, error) {
+func buildMux(p *config.PipelineConfig) (*gst.Element, error) {
 	switch p.OutputType {
 	case types.OutputTypeRaw:
 		return nil, nil

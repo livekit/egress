@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/input/builder"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 )
@@ -28,36 +28,33 @@ type WebInput struct {
 
 	startRecording chan struct{}
 	endRecording   chan struct{}
-
-	logger logger.Logger
 }
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func NewWebInput(ctx context.Context, conf *config.Config, p *params.Params) (*WebInput, error) {
+func NewWebInput(ctx context.Context, p *config.PipelineConfig) (*WebInput, error) {
 	ctx, span := tracer.Start(ctx, "WebInput.New")
 	defer span.End()
 
-	s := &WebInput{
-		logger: p.Logger,
-	}
+	p.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
 
+	s := &WebInput{}
 	if err := s.createPulseSink(ctx, p); err != nil {
-		s.logger.Errorw("failed to load pulse sink", err)
+		logger.Errorw("failed to load pulse sink", err)
 		s.Close()
 		return nil, err
 	}
 
 	if err := s.launchXvfb(ctx, p); err != nil {
-		s.logger.Errorw("failed to launch xvfb", err)
+		logger.Errorw("failed to launch xvfb", err)
 		s.Close()
 		return nil, err
 	}
 
-	if err := s.launchChrome(ctx, p, conf.Insecure); err != nil {
-		s.logger.Errorw("failed to launch chrome", err, "display", p.Display)
+	if err := s.launchChrome(ctx, p, p.Insecure); err != nil {
+		logger.Errorw("failed to launch chrome", err, "display", p.Display)
 		s.Close()
 		return nil, err
 	}
@@ -65,7 +62,7 @@ func NewWebInput(ctx context.Context, conf *config.Config, p *params.Params) (*W
 	<-p.GstReady
 	input, err := builder.NewWebInput(ctx, p)
 	if err != nil {
-		s.logger.Errorw("failed to build input bin", err)
+		logger.Errorw("failed to build input bin", err)
 		s.Close()
 		return nil, err
 	}
@@ -91,7 +88,7 @@ func (s *WebInput) Close() {
 	if s.xvfb != nil {
 		err := s.xvfb.Process.Signal(os.Interrupt)
 		if err != nil {
-			s.logger.Errorw("failed to kill xvfb", err)
+			logger.Errorw("failed to kill xvfb", err)
 		}
 		s.xvfb = nil
 	}
@@ -99,7 +96,7 @@ func (s *WebInput) Close() {
 	if s.pulseSink != "" {
 		err := exec.Command("pactl", "unload-module", s.pulseSink).Run()
 		if err != nil {
-			s.logger.Errorw("failed to unload pulse sink", err)
+			logger.Errorw("failed to unload pulse sink", err)
 		}
 	}
 }

@@ -45,7 +45,7 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 				Output: &livekit.TrackCompositeEgressRequest_File{
 					File: &livekit.EncodedFileOutput{
 						FileType: test.fileType,
-						Filepath: getFilePath(conf.Config, test.filename),
+						Filepath: getFilePath(conf.ServiceConfig, test.filename),
 					},
 				},
 			}
@@ -145,7 +145,7 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 				aID = audioTrackID
 			}
 
-			filepath := getFilePath(conf.Config, test.filename)
+			filepath := getFilePath(conf.ServiceConfig, test.filename)
 			trackRequest := &livekit.TrackCompositeEgressRequest{
 				RoomName:     conf.room.Name(),
 				AudioTrackId: aID,

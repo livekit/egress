@@ -8,7 +8,6 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -16,12 +15,12 @@ import (
 )
 
 type Handler struct {
-	conf      *config.Config
+	conf      *config.PipelineConfig
 	rpcServer egress.RPCServer
 	kill      chan struct{}
 }
 
-func NewHandler(conf *config.Config, rpcServer egress.RPCServer) *Handler {
+func NewHandler(conf *config.PipelineConfig, rpcServer egress.RPCServer) *Handler {
 	return &Handler{
 		conf:      conf,
 		rpcServer: rpcServer,
@@ -98,19 +97,16 @@ func (h *Handler) buildPipeline(ctx context.Context, req *livekit.StartEgressReq
 	defer span.End()
 
 	// build/verify params
-	pipelineParams, err := params.GetPipelineParams(ctx, h.conf, req)
+	err := h.conf.Update(req)
 	var p *pipeline.Pipeline
-
 	if err == nil {
-		// create the pipeline
-		p, err = pipeline.New(ctx, h.conf, pipelineParams)
+		p, err = pipeline.New(ctx, h.conf)
 	}
-
 	if err != nil {
-		info := pipelineParams.Info
-		info.Error = err.Error()
-		info.Status = livekit.EgressStatus_EGRESS_FAILED
-		h.sendUpdate(ctx, info)
+		h.conf.Info.Error = err.Error()
+		h.conf.Info.Status = livekit.EgressStatus_EGRESS_FAILED
+		h.sendUpdate(ctx, h.conf.Info)
+		span.RecordError(err)
 		return nil, err
 	}
 

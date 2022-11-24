@@ -38,10 +38,7 @@ func main() {
 						Name: "request",
 					},
 					&cli.StringFlag{
-						Name: "config-body",
-					},
-					&cli.StringFlag{
-						Name: "temp-path",
+						Name: "config",
 					},
 				},
 				Action: runHandler,
@@ -69,7 +66,20 @@ func main() {
 }
 
 func runService(c *cli.Context) error {
-	conf, err := getConfig(c)
+	configFile := c.String("config")
+	configBody := c.String("config-body")
+	if configBody == "" {
+		if configFile == "" {
+			return errors.ErrNoConfig
+		}
+		content, err := ioutil.ReadFile(configFile)
+		if err != nil {
+			return err
+		}
+		configBody = string(content)
+	}
+
+	conf, err := config.NewServiceConfig(configBody)
 	if err != nil {
 		return err
 	}
@@ -109,36 +119,38 @@ func runService(c *cli.Context) error {
 }
 
 func runHandler(c *cli.Context) error {
-	conf, err := getConfig(c)
-	if err != nil {
-		return err
-	}
-
 	ctx, span := tracer.Start(context.Background(), "Handler.New")
 	defer span.End()
 
-	logger.Debugw("handler launched")
-
-	tmpPath := c.String("temp-path")
-	if tmpPath != "" {
-		logger.Infow("setting TMPDIR environment and creating path", "path", tmpPath)
-		err := os.MkdirAll(tmpPath, 0755)
-		if err != nil {
-			span.RecordError(err)
-			return err
-		}
-		_ = os.Setenv("TMPDIR", tmpPath)
-	}
-
-	rc, err := redis.GetRedisClient(conf.Redis)
-	if err != nil {
+	configBody := c.String("config")
+	if configBody == "" {
+		err := errors.ErrNoConfig
 		span.RecordError(err)
 		return err
 	}
 
 	req := &livekit.StartEgressRequest{}
 	reqString := c.String("request")
-	err = protojson.Unmarshal([]byte(reqString), req)
+	err := protojson.Unmarshal([]byte(reqString), req)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	conf, err := config.NewPipelineConfig(configBody, req.EgressId)
+	if err != nil {
+		return err
+	}
+
+	logger.Debugw("handler launched")
+
+	err = os.MkdirAll(conf.TmpDir, 0755)
+	if err != nil {
+		return err
+	}
+	_ = os.Setenv("TMPDIR", conf.TmpDir)
+
+	rc, err := redis.GetRedisClient(conf.Redis)
 	if err != nil {
 		span.RecordError(err)
 		return err
@@ -158,21 +170,4 @@ func runHandler(c *cli.Context) error {
 
 	handler.HandleRequest(ctx, req)
 	return nil
-}
-
-func getConfig(c *cli.Context) (*config.Config, error) {
-	configFile := c.String("config")
-	configBody := c.String("config-body")
-	if configBody == "" {
-		if configFile == "" {
-			return nil, errors.ErrNoConfig
-		}
-		content, err := ioutil.ReadFile(configFile)
-		if err != nil {
-			return nil, err
-		}
-		configBody = string(content)
-	}
-
-	return config.NewConfig(configBody)
 }

@@ -13,13 +13,14 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 )
 
 // creates a new pulse audio sink
-func (s *WebInput) createPulseSink(ctx context.Context, p *params.Params) error {
+func (s *WebInput) createPulseSink(ctx context.Context, p *config.PipelineConfig) error {
 	ctx, span := tracer.Start(ctx, "WebInput.createPulseSink")
 	defer span.End()
 
@@ -41,12 +42,12 @@ func (s *WebInput) createPulseSink(ctx context.Context, p *params.Params) error 
 }
 
 // creates a new xvfb display
-func (s *WebInput) launchXvfb(ctx context.Context, p *params.Params) error {
+func (s *WebInput) launchXvfb(ctx context.Context, p *config.PipelineConfig) error {
 	ctx, span := tracer.Start(ctx, "WebInput.launchXvfb")
 	defer span.End()
 
 	dims := fmt.Sprintf("%dx%dx%d", p.Width, p.Height, p.Depth)
-	s.logger.Debugw("launching xvfb", "display", p.Display, "dims", dims)
+	logger.Debugw("launching xvfb", "display", p.Display, "dims", dims)
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
 	if err := xvfb.Start(); err != nil {
 		return err
@@ -57,7 +58,7 @@ func (s *WebInput) launchXvfb(ctx context.Context, p *params.Params) error {
 }
 
 // launches chrome and navigates to the url
-func (s *WebInput) launchChrome(ctx context.Context, p *params.Params, insecure bool) error {
+func (s *WebInput) launchChrome(ctx context.Context, p *config.PipelineConfig, insecure bool) error {
 	ctx, span := tracer.Start(ctx, "WebInput.launchChrome")
 	defer span.End()
 
@@ -74,13 +75,13 @@ func (s *WebInput) launchChrome(ctx context.Context, p *params.Params, insecure 
 		}
 		values := inputUrl.Query()
 		values.Set("layout", p.Layout)
-		values.Set("url", p.LKUrl)
+		values.Set("url", p.WsUrl)
 		values.Set("token", p.Token)
 		inputUrl.RawQuery = values.Encode()
 		webUrl = inputUrl.String()
 	}
 
-	s.logger.Debugw("launching chrome", "url", webUrl)
+	logger.Debugw("launching chrome", "url", webUrl)
 
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.NoFirstRun,
@@ -169,7 +170,7 @@ func (s *WebInput) launchChrome(ctx context.Context, p *params.Params, insecure 
 					}
 				}
 			}
-			s.logger.Debugw(fmt.Sprintf("chrome %s: %s", ev.Type.String(), strings.Join(args, " ")))
+			logger.Debugw(fmt.Sprintf("chrome %s: %s", ev.Type.String(), strings.Join(args, " ")))
 		}
 	})
 

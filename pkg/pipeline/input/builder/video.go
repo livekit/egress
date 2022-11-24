@@ -8,8 +8,8 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/types"
 )
 
@@ -17,7 +17,7 @@ type VideoInput struct {
 	elements []*gst.Element
 }
 
-func NewWebVideoInput(p *params.Params) (*VideoInput, error) {
+func NewWebVideoInput(p *config.PipelineConfig) (*VideoInput, error) {
 	v := &VideoInput{}
 
 	if err := v.buildWebDecoder(p); err != nil {
@@ -29,7 +29,7 @@ func NewWebVideoInput(p *params.Params) (*VideoInput, error) {
 	return v, nil
 }
 
-func NewSDKVideoInput(p *params.Params, src *app.Source, codec webrtc.RTPCodecParameters) (*VideoInput, error) {
+func NewSDKVideoInput(p *config.PipelineConfig, src *app.Source, codec webrtc.RTPCodecParameters) (*VideoInput, error) {
 	v := &VideoInput{}
 
 	if err := v.buildSDKDecoder(p, src, codec); err != nil {
@@ -57,7 +57,7 @@ func (v *VideoInput) GetSrcPad() *gst.Pad {
 	return getSrcPad(v.elements)
 }
 
-func (v *VideoInput) buildWebDecoder(p *params.Params) error {
+func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 	xImageSrc, err := gst.NewElement("ximagesrc")
 	if err != nil {
 		return err
@@ -101,7 +101,7 @@ func (v *VideoInput) buildWebDecoder(p *params.Params) error {
 	return nil
 }
 
-func (v *VideoInput) buildSDKDecoder(p *params.Params, src *app.Source, codec webrtc.RTPCodecParameters) error {
+func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, codec webrtc.RTPCodecParameters) error {
 	src.Element.SetArg("format", "time")
 	if err := src.Element.SetProperty("is-live", true); err != nil {
 		return err
@@ -196,7 +196,7 @@ func (v *VideoInput) buildSDKDecoder(p *params.Params, src *app.Source, codec we
 	return nil
 }
 
-func (v *VideoInput) buildEncoder(p *params.Params) error {
+func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 	switch p.VideoCodec {
 	// we only encode h264, the rest are too slow
 	case types.MimeTypeH264:

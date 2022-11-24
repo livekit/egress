@@ -20,19 +20,19 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/version"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
+	"github.com/livekit/protocol/utils"
 )
 
 const shutdownTimer = time.Second * 30
 
 type Service struct {
-	conf       *config.Config
+	conf       *config.ServiceConfig
 	rpcServer  egress.RPCServer
 	promServer *http.Server
 	monitor    *stats.Monitor
@@ -47,7 +47,7 @@ type process struct {
 	cmd *exec.Cmd
 }
 
-func NewService(conf *config.Config, rpcServer egress.RPCServer) *Service {
+func NewService(conf *config.ServiceConfig, rpcServer egress.RPCServer) *Service {
 	s := &Service{
 		conf:      conf,
 		rpcServer: rpcServer,
@@ -114,7 +114,7 @@ func (s *Service) Run() error {
 
 			if s.acceptRequest(ctx, req) {
 				// validate before launching handler
-				info, err := params.ValidateRequest(ctx, s.conf, req)
+				info, err := config.ValidateRequest(s.conf, req)
 				s.sendResponse(ctx, req, info, err)
 				if err != nil {
 					span.RecordError(err)
@@ -232,7 +232,14 @@ func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressReq
 	ctx, span := tracer.Start(ctx, "Service.launchHandler")
 	defer span.End()
 
-	confString, err := yaml.Marshal(s.conf)
+	handlerID := utils.NewGuid("EGH_")
+	p := &config.PipelineConfig{
+		BaseConfig: s.conf.BaseConfig,
+		HandlerID:  handlerID,
+		TmpDir:     path.Join(os.TempDir(), handlerID),
+	}
+
+	confString, err := yaml.Marshal(p)
 	if err != nil {
 		span.RecordError(err)
 		logger.Errorw("could not marshal config", err)
@@ -246,13 +253,10 @@ func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressReq
 		return
 	}
 
-	tempPath := path.Join(os.TempDir(), req.EgressId)
-
 	cmd := exec.Command("egress",
 		"run-handler",
-		"--config-body", string(confString),
+		"--config", string(confString),
 		"--request", string(reqString),
-		"--temp-path", tempPath,
 	)
 	cmd.Dir = "/"
 	cmd.Stdout = os.Stdout
@@ -267,8 +271,8 @@ func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressReq
 	defer func() {
 		s.monitor.EgressEnded(req)
 		s.processes.Delete(req.EgressId)
-		logger.Debugw("deleting handler temporary directory", "path", tempPath)
-		_ = os.RemoveAll(tempPath)
+		logger.Debugw("deleting handler temporary directory", "path", p.TmpDir)
+		_ = os.RemoveAll(p.TmpDir)
 	}()
 
 	if err = cmd.Run(); err != nil {

@@ -15,8 +15,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline"
-	"github.com/livekit/egress/pkg/pipeline/params"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -70,7 +70,7 @@ func testTrackFile(t *testing.T, conf *TestConfig) {
 				TrackId:  trackID,
 				Output: &livekit.TrackEgressRequest_File{
 					File: &livekit.DirectFileOutput{
-						Filepath: getFilePath(conf.Config, test.filename),
+						Filepath: getFilePath(conf.ServiceConfig, test.filename),
 					},
 				},
 			}
@@ -117,7 +117,7 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 			trackID := publishSampleToRoom(t, conf.room, codec, false)
 			time.Sleep(time.Second)
 
-			filepath := getFilePath(conf.Config, test.filename)
+			filepath := getFilePath(conf.ServiceConfig, test.filename)
 			wss := newTestWebsocketServer(filepath)
 			s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
 			defer func() {
@@ -140,10 +140,11 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 
 			ctx := context.Background()
 
-			p, err := params.GetPipelineParams(ctx, conf.Config, req)
+			p := config.PipelineConfigFromService(conf.ServiceConfig)
+			err := p.Update(req)
 			require.NoError(t, err)
 
-			rec, err := pipeline.New(ctx, conf.Config, p)
+			rec, err := pipeline.New(ctx, p)
 			require.NoError(t, err)
 
 			if conf.SessionLimits.StreamOutputMaxDuration >= 0 {
