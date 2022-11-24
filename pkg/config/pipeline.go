@@ -438,7 +438,6 @@ func (c *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) {
 	}
 
 	if advanced.Width != 0 {
-
 		c.Width = advanced.Width
 	}
 	if advanced.Height != 0 {
