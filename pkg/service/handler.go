@@ -28,25 +28,24 @@ func NewHandler(conf *config.PipelineConfig, rpcServer egress.RPCServer) *Handle
 	}
 }
 
-func (h *Handler) HandleRequest(ctx context.Context, req *livekit.StartEgressRequest) {
-	ctx, span := tracer.Start(ctx, "Handler.HandleRequest")
+func (h *Handler) Run() error {
+	ctx, span := tracer.Start(context.Background(), "Handler.Run")
 	defer span.End()
 
-	p, err := h.buildPipeline(ctx, req)
+	p, err := h.buildPipeline(ctx)
 	if err != nil {
 		span.RecordError(err)
-		return
+		return err
 	}
 
 	// subscribe to request channel
 	requests, err := h.rpcServer.EgressSubscription(context.Background(), p.GetInfo().EgressId)
 	if err != nil {
 		span.RecordError(err)
-		return
+		return err
 	}
 	defer func() {
-		err := requests.Close()
-		if err != nil {
+		if err := requests.Close(); err != nil {
 			logger.Errorw("failed to unsubscribe from request channel", err)
 		}
 	}()
@@ -66,7 +65,7 @@ func (h *Handler) HandleRequest(ctx context.Context, req *livekit.StartEgressReq
 		case res := <-result:
 			// recording finished
 			h.sendUpdate(ctx, res)
-			return
+			return nil
 
 		case msg := <-requests.Channel():
 			// request received
@@ -92,16 +91,12 @@ func (h *Handler) HandleRequest(ctx context.Context, req *livekit.StartEgressReq
 	}
 }
 
-func (h *Handler) buildPipeline(ctx context.Context, req *livekit.StartEgressRequest) (*pipeline.Pipeline, error) {
+func (h *Handler) buildPipeline(ctx context.Context) (*pipeline.Pipeline, error) {
 	ctx, span := tracer.Start(ctx, "Handler.buildPipeline")
 	defer span.End()
 
 	// build/verify params
-	err := h.conf.Update(req)
-	var p *pipeline.Pipeline
-	if err == nil {
-		p, err = pipeline.New(ctx, h.conf)
-	}
+	p, err := pipeline.New(ctx, h.conf)
 	if err != nil {
 		h.conf.Info.Error = err.Error()
 		h.conf.Info.Status = livekit.EgressStatus_EGRESS_FAILED

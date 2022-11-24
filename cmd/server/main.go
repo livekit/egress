@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -131,7 +130,7 @@ func runHandler(c *cli.Context) error {
 		return err
 	}
 
-	conf, err := config.NewPipelineConfig(configBody, req.EgressId)
+	conf, err := config.NewPipelineConfig(configBody, req)
 	if err != nil {
 		return err
 	}
@@ -161,6 +160,5 @@ func runHandler(c *cli.Context) error {
 		handler.Kill()
 	}()
 
-	handler.HandleRequest(context.Background(), req)
-	return nil
+	return handler.Run()
 }

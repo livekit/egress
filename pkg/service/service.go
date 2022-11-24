@@ -108,12 +108,12 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 
 	if s.acceptRequest(ctx, req) {
 		// validate before passing to handler
-		info, err := config.ValidateRequest(ctx, s.conf, req)
+		p, err := config.GetValidatedPipelineConfig(s.conf, req)
 		if err == nil {
 			err = s.manager.launchHandler(req)
 		}
 
-		s.sendResponse(ctx, req, info, err)
+		s.sendResponse(ctx, req, p.Info, err)
 		if err != nil {
 			span.RecordError(err)
 		}

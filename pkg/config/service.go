@@ -1,15 +1,12 @@
 package config
 
 import (
-	"context"
 	"os"
 	"path"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -79,12 +76,4 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	}
 
 	return conf, nil
-}
-
-func (c *ServiceConfig) ValidateRequest(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
-	ctx, span := tracer.Start(ctx, "Service.ValidateRequest")
-	defer span.End()
-
-	p, err := GetValidatedPipelineConfig(c, req)
-	return p.Info, err
 }
