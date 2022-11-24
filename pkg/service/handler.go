@@ -39,7 +39,7 @@ func (h *Handler) Run() error {
 	}
 
 	// subscribe to request channel
-	requests, err := h.rpcServer.EgressSubscription(context.Background(), p.GetInfo().EgressId)
+	requests, err := h.rpcServer.EgressSubscription(context.Background(), p.Info.EgressId)
 	if err != nil {
 		span.RecordError(err)
 		return err
@@ -72,10 +72,10 @@ func (h *Handler) Run() error {
 			request := &livekit.EgressRequest{}
 			err = proto.Unmarshal(requests.Payload(msg), request)
 			if err != nil {
-				logger.Errorw("failed to read request", err, "egressID", p.GetInfo().EgressId)
+				logger.Errorw("failed to read request", err, "egressID", p.Info.EgressId)
 				continue
 			}
-			logger.Debugw("handling request", "egressID", p.GetInfo().EgressId, "requestID", request.RequestId)
+			logger.Debugw("handling request", "egressID", p.Info.EgressId, "requestID", request.RequestId)
 
 			switch r := request.Request.(type) {
 			case *livekit.EgressRequest_UpdateStream:
@@ -86,7 +86,7 @@ func (h *Handler) Run() error {
 				err = errors.ErrInvalidRPC
 			}
 
-			h.sendResponse(ctx, request, p.GetInfo(), err)
+			h.sendResponse(ctx, request, p.Info, err)
 		}
 	}
 }

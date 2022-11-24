@@ -145,10 +145,6 @@ func New(ctx context.Context, p *config.PipelineConfig) (*Pipeline, error) {
 	}, nil
 }
 
-func (p *Pipeline) GetInfo() *livekit.EgressInfo {
-	return p.Info
-}
-
 func (p *Pipeline) OnStatusUpdate(f func(context.Context, *livekit.EgressInfo)) {
 	p.onStatusUpdate = f
 }
