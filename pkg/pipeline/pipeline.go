@@ -243,7 +243,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 
 		manifestLocalPath := fmt.Sprintf("%s.json", p.LocalFilepath)
 		manifestStoragePath := fmt.Sprintf("%s.json", p.StorageFilepath)
-		if err := p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
+		if err = p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
 			logger.Errorw("could not store manifest", err)
 		}
 

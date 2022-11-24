@@ -156,7 +156,7 @@ func (h *Handler) sendResponse(ctx context.Context, req *livekit.EgressRequest, 
 		logger.Debugw("request handled", args...)
 	}
 
-	if err := h.rpcServer.SendResponse(ctx, req, info, err); err != nil {
+	if err = h.rpcServer.SendResponse(ctx, req, info, err); err != nil {
 		logger.Errorw("failed to send response", err, args...)
 	}
 }
