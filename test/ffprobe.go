@@ -234,7 +234,6 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)
-				require.Less(t, int32(bitrate), p.AudioBitrate*1100)
 			}
 
 		case "video":
