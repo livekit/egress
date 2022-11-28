@@ -27,7 +27,7 @@ type Service struct {
 	rpcServer  egress.RPCServer
 	promServer *http.Server
 	monitor    *stats.Monitor
-	manager    *Manager
+	manager    *ProcessManager
 
 	shutdown chan struct{}
 }
@@ -39,7 +39,7 @@ func NewService(conf *config.ServiceConfig, rpcServer egress.RPCServer) *Service
 		conf:      conf,
 		rpcServer: rpcServer,
 		monitor:   monitor,
-		manager:   NewManager(conf, monitor),
+		manager:   NewProcessManager(conf, monitor),
 		shutdown:  make(chan struct{}),
 	}
 

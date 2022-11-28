@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/pipeline/input/builder"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
@@ -182,14 +183,14 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
 
-		// file duration can be different from egress duration based on keyframes or muting
+		// file duration can be different from egress duration based on keyframes, muting, and latency
+		delta := float64(builder.Latency) / 1e9
 		switch p.Info.Request.(type) {
 		case *livekit.EgressInfo_RoomComposite:
-			require.InDelta(t, expected, actual, 1.5)
+			require.InDelta(t, expected, actual, delta)
 
 		case *livekit.EgressInfo_Track:
 			if p.AudioEnabled {
-				delta := 3.0
 				if withMuting {
 					delta = 6
 				}

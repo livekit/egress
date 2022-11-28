@@ -19,35 +19,35 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-type Manager struct {
+type ProcessManager struct {
 	conf    *config.ServiceConfig
 	monitor *stats.Monitor
 
 	mu             sync.RWMutex
 	handlingWeb    bool
-	activeHandlers map[string]*handler
+	activeHandlers map[string]*process
 }
 
-type handler struct {
+type process struct {
 	handlerID string
 	req       *livekit.StartEgressRequest
 	cmd       *exec.Cmd
 	closed    chan struct{}
 }
 
-func NewManager(conf *config.ServiceConfig, monitor *stats.Monitor) *Manager {
-	return &Manager{
+func NewProcessManager(conf *config.ServiceConfig, monitor *stats.Monitor) *ProcessManager {
+	return &ProcessManager{
 		conf:           conf,
 		monitor:        monitor,
-		activeHandlers: make(map[string]*handler),
+		activeHandlers: make(map[string]*process),
 	}
 }
 
-func (s *Manager) canAccept(req *livekit.StartEgressRequest) bool {
+func (s *ProcessManager) canAccept(req *livekit.StartEgressRequest) bool {
 	return !s.handlingWeb && (!isWeb(req) || s.isIdle())
 }
 
-func (s *Manager) launchHandler(req *livekit.StartEgressRequest) error {
+func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest) error {
 	_, span := tracer.Start(context.Background(), "Service.launchHandler")
 	defer span.End()
 
@@ -83,12 +83,12 @@ func (s *Manager) launchHandler(req *livekit.StartEgressRequest) error {
 
 	if err = cmd.Start(); err != nil {
 		span.RecordError(err)
-		logger.Errorw("could not launch handler", err)
+		logger.Errorw("could not launch process", err)
 		return err
 	}
 
 	s.monitor.EgressStarted(req)
-	h := &handler{
+	h := &process{
 		handlerID: handlerID,
 		req:       req,
 		cmd:       cmd,
@@ -104,9 +104,9 @@ func (s *Manager) launchHandler(req *livekit.StartEgressRequest) error {
 	return nil
 }
 
-func (s *Manager) awaitCleanup(h *handler) {
+func (s *ProcessManager) awaitCleanup(h *process) {
 	if err := h.cmd.Wait(); err != nil {
-		logger.Errorw("handler failed", err)
+		logger.Errorw("process failed", err)
 	}
 
 	close(h.closed)
@@ -121,14 +121,14 @@ func (s *Manager) awaitCleanup(h *handler) {
 	delete(s.activeHandlers, h.req.EgressId)
 }
 
-func (s *Manager) isIdle() bool {
+func (s *ProcessManager) isIdle() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	return len(s.activeHandlers) == 0
 }
 
-func (s *Manager) status() map[string]interface{} {
+func (s *ProcessManager) status() map[string]interface{} {
 	info := map[string]interface{}{
 		"CpuLoad": s.monitor.GetCPULoad(),
 	}
@@ -142,7 +142,7 @@ func (s *Manager) status() map[string]interface{} {
 	return info
 }
 
-func (s *Manager) shutdown() {
+func (s *ProcessManager) shutdown() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
