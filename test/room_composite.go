@@ -22,13 +22,22 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 			name:     "h264-high-mp4",
 			fileType: livekit.EncodedFileType_MP4,
 			options: &livekit.EncodingOptions{
-				AudioCodec:   livekit.AudioCodec_AAC,
-				VideoCodec:   livekit.VideoCodec_H264_HIGH,
-				Height:       720,
-				Width:        1280,
-				VideoBitrate: 4500,
+				AudioCodec: livekit.AudioCodec_AAC,
+				VideoCodec: livekit.VideoCodec_H264_HIGH,
 			},
 			filename: "r_{room_name}_high_{time}.mp4",
+		},
+		{
+			name:     "h264-high-mp4-limit",
+			fileType: livekit.EncodedFileType_MP4,
+			options: &livekit.EncodingOptions{
+				AudioCodec:   livekit.AudioCodec_AAC,
+				Width:        1280,
+				Height:       720,
+				VideoBitrate: 4500,
+			},
+			filename:       "r_limit_{time}.mp4",
+			sessionTimeout: time.Second * 20,
 		},
 		{
 			name:      "opus-ogg",
@@ -38,19 +47,6 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				AudioCodec: livekit.AudioCodec_OPUS,
 			},
 			filename: "r_{room_name}_opus_{time}",
-		},
-		{
-			name:     "h264-high-mp4-limit",
-			fileType: livekit.EncodedFileType_MP4,
-			options: &livekit.EncodingOptions{
-				AudioCodec:   livekit.AudioCodec_AAC,
-				VideoCodec:   livekit.VideoCodec_H264_HIGH,
-				Height:       720,
-				Width:        1280,
-				VideoBitrate: 4500,
-			},
-			filename:       "r_limit_{time}.mp4",
-			sessionTimeout: time.Second * 20,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -168,8 +164,8 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 			options: &livekit.EncodingOptions{
 				AudioCodec:   livekit.AudioCodec_AAC,
 				VideoCodec:   livekit.VideoCodec_H264_BASELINE,
-				Height:       1080,
 				Width:        1920,
+				Height:       1080,
 				VideoBitrate: 4500,
 			},
 			filename: "rs_{room_name}_{time}",
@@ -180,8 +176,8 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 			options: &livekit.EncodingOptions{
 				AudioCodec:   livekit.AudioCodec_AAC,
 				VideoCodec:   livekit.VideoCodec_H264_BASELINE,
-				Height:       1080,
 				Width:        1920,
+				Height:       1080,
 				VideoBitrate: 4500,
 			},
 			filename:       "rs_limit_{time}",

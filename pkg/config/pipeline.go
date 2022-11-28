@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/tracer"
 )
 
 type PipelineConfig struct {
@@ -99,7 +101,7 @@ type UploadParams struct {
 	DisableManifest bool
 }
 
-func NewPipelineConfig(confString, egressID string) (*PipelineConfig, error) {
+func NewPipelineConfig(confString string, req *livekit.StartEgressRequest) (*PipelineConfig, error) {
 	p := &PipelineConfig{
 		BaseConfig: &BaseConfig{},
 		GstReady:   make(chan struct{}),
@@ -108,43 +110,27 @@ func NewPipelineConfig(confString, egressID string) (*PipelineConfig, error) {
 	if err := yaml.Unmarshal([]byte(confString), p); err != nil {
 		return nil, errors.ErrCouldNotParseConfig(err)
 	}
+
 	if err := p.initLogger(
 		"nodeID", p.NodeID,
 		"handlerID", p.HandlerID,
-		"egressID", egressID,
+		"egressID", req.EgressId,
 	); err != nil {
 		return nil, err
 	}
 
-	p.updateUploadConfig()
-	return p, nil
+	return p, p.Update(req)
 }
 
-func PipelineConfigFromService(conf *ServiceConfig) *PipelineConfig {
+func GetValidatedPipelineConfig(conf *ServiceConfig, req *livekit.StartEgressRequest) (*PipelineConfig, error) {
+	_, span := tracer.Start(context.Background(), "config.GetValidatedPipelineConfig")
+	defer span.End()
+
 	p := &PipelineConfig{
 		BaseConfig: conf.BaseConfig,
 	}
 
-	p.updateUploadConfig()
-	return p
-}
-
-func (p *PipelineConfig) updateUploadConfig() {
-	if p.S3 != nil {
-		p.UploadConfig = p.S3.ToS3Upload()
-	} else if p.Azure != nil {
-		p.UploadConfig = p.Azure.ToAzureUpload()
-	} else if p.GCP != nil {
-		p.UploadConfig = p.GCP.ToGCPUpload()
-	} else if p.AliOSS != nil {
-		p.UploadConfig = p.AliOSS.ToAliOSSUpload()
-	}
-}
-
-func ValidateRequest(conf *ServiceConfig, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
-	p := PipelineConfigFromService(conf)
-	err := p.Update(req)
-	return p.Info, err
+	return p, p.Update(req)
 }
 
 func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
@@ -166,6 +152,8 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		Framerate:    30,
 		VideoBitrate: 4500,
 	}
+
+	p.updateUploadConfig()
 
 	switch req := request.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
@@ -357,7 +345,6 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 			return err
 		}
 	}
-
 	if p.OutputType != "" {
 		if err := p.updateCodecs(); err != nil {
 			return err
@@ -646,6 +633,18 @@ func (p *PipelineConfig) updateCodecs() error {
 	}
 
 	return nil
+}
+
+func (p *PipelineConfig) updateUploadConfig() {
+	if p.S3 != nil {
+		p.UploadConfig = p.S3.ToS3Upload()
+	} else if p.Azure != nil {
+		p.UploadConfig = p.Azure.ToAzureUpload()
+	} else if p.GCP != nil {
+		p.UploadConfig = p.GCP.ToGCPUpload()
+	} else if p.AliOSS != nil {
+		p.UploadConfig = p.AliOSS.ToAliOSSUpload()
+	}
 }
 
 // used for sdk input source

@@ -11,7 +11,6 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/logger"
 )
 
 type AudioInput struct {
@@ -228,8 +227,7 @@ func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 		return err
 	}
 	// set latency slightly higher than max audio appsrc latency
-	if err = audioMixer.SetProperty("latency", latency); err != nil {
-		logger.Errorw("latency", err)
+	if err = audioMixer.SetProperty("latency", Latency); err != nil {
 		return err
 	}
 	mixedCaps, err := getCapsFilter(p)

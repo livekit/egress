@@ -6,18 +6,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"os/exec"
-	"path"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.uber.org/atomic"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/stats"
@@ -26,7 +18,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
-	"github.com/livekit/protocol/utils"
 )
 
 const shutdownTimer = time.Second * 30
@@ -36,22 +27,19 @@ type Service struct {
 	rpcServer  egress.RPCServer
 	promServer *http.Server
 	monitor    *stats.Monitor
+	manager    *ProcessManager
 
-	handlingWeb atomic.Bool
-	processes   sync.Map
-	shutdown    chan struct{}
-}
-
-type process struct {
-	req *livekit.StartEgressRequest
-	cmd *exec.Cmd
+	shutdown chan struct{}
 }
 
 func NewService(conf *config.ServiceConfig, rpcServer egress.RPCServer) *Service {
+	monitor := stats.NewMonitor()
+
 	s := &Service{
 		conf:      conf,
 		rpcServer: rpcServer,
-		monitor:   stats.NewMonitor(),
+		monitor:   monitor,
+		manager:   NewProcessManager(conf, monitor),
 		shutdown:  make(chan struct{}),
 	}
 
@@ -97,63 +85,39 @@ func (s *Service) Run() error {
 		select {
 		case <-s.shutdown:
 			logger.Infow("shutting down")
-			for !s.isIdle() {
+			for !s.manager.isIdle() {
 				time.Sleep(shutdownTimer)
 			}
 			return nil
 
 		case msg := <-requests.Channel():
-			ctx, span := tracer.Start(context.Background(), "Service.HandleRequest")
-
 			req := &livekit.StartEgressRequest{}
 			if err = proto.Unmarshal(requests.Payload(msg), req); err != nil {
 				logger.Errorw("malformed request", err)
-				span.End()
 				continue
 			}
 
-			if s.acceptRequest(ctx, req) {
-				// validate before launching handler
-				info, err := config.ValidateRequest(s.conf, req)
-				s.sendResponse(ctx, req, info, err)
-				if err != nil {
-					span.RecordError(err)
-					span.End()
-					continue
-				}
-
-				switch req.Request.(type) {
-				case *livekit.StartEgressRequest_RoomComposite,
-					*livekit.StartEgressRequest_Web:
-					s.handlingWeb.Store(true)
-					go func() {
-						s.launchHandler(ctx, req)
-						s.handlingWeb.Store(false)
-					}()
-				default:
-					go s.launchHandler(ctx, req)
-				}
-			}
-
-			span.End()
+			s.handleRequest(req)
 		}
 	}
 }
 
-func (s *Service) isIdle() bool {
-	idle := true
-	s.processes.Range(func(key, value interface{}) bool {
-		idle = false
-		return false
-	})
-	return idle
-}
+func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
+	ctx, span := tracer.Start(context.Background(), "Service.handleRequest")
+	defer span.End()
 
-func (s *Service) isAvailable() float64 {
-	if s.isIdle() {
-		return 1
+	if s.acceptRequest(ctx, req) {
+		// validate before passing to handler
+		p, err := config.GetValidatedPipelineConfig(s.conf, req)
+		if err == nil {
+			err = s.manager.launchHandler(req)
+		}
+
+		s.sendResponse(ctx, req, p.Info, err)
+		if err != nil {
+			span.RecordError(err)
+		}
 	}
-	return 0
 }
 
 func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressRequest) bool {
@@ -172,26 +136,14 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 		return false
 	}
 
-	if s.handlingWeb.Load() {
-		args = append(args, "reason", "already handling room composite")
+	// check if already handling web
+	if !s.manager.canAccept(req) {
+		args = append(args, "reason", "only one web egress allowed")
 		logger.Debugw("rejecting request", args...)
 		return false
 	}
 
 	// check cpu load
-	switch req.Request.(type) {
-	case *livekit.StartEgressRequest_RoomComposite,
-		*livekit.StartEgressRequest_Web:
-		// limit to one web composite at a time for now
-		if !s.isIdle() {
-			args = append(args, "reason", "already recording")
-			logger.Debugw("rejecting request", args...)
-			return false
-		}
-	default:
-		// continue
-	}
-
 	if !s.monitor.CanAcceptRequest(req) {
 		args = append(args, "reason", "not enough cpu")
 		logger.Debugw("rejecting request", args...)
@@ -207,9 +159,9 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 		return false
 	}
 
+	// accept request
 	s.monitor.AcceptRequest(req)
 	logger.Infow("request accepted", args...)
-
 	return true
 }
 
@@ -228,69 +180,15 @@ func (s *Service) sendResponse(ctx context.Context, req *livekit.StartEgressRequ
 	}
 }
 
-func (s *Service) launchHandler(ctx context.Context, req *livekit.StartEgressRequest) {
-	ctx, span := tracer.Start(ctx, "Service.launchHandler")
-	defer span.End()
-
-	handlerID := utils.NewGuid("EGH_")
-	p := &config.PipelineConfig{
-		BaseConfig: s.conf.BaseConfig,
-		HandlerID:  handlerID,
-		TmpDir:     path.Join(os.TempDir(), handlerID),
-	}
-
-	confString, err := yaml.Marshal(p)
-	if err != nil {
-		span.RecordError(err)
-		logger.Errorw("could not marshal config", err)
-		return
-	}
-
-	reqString, err := protojson.Marshal(req)
-	if err != nil {
-		span.RecordError(err)
-		logger.Errorw("could not marshal request", err)
-		return
-	}
-
-	cmd := exec.Command("egress",
-		"run-handler",
-		"--config", string(confString),
-		"--request", string(reqString),
-	)
-	cmd.Dir = "/"
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	s.monitor.EgressStarted(req)
-	s.processes.Store(req.EgressId, &process{
-		req: req,
-		cmd: cmd,
-	})
-
-	defer func() {
-		s.monitor.EgressEnded(req)
-		s.processes.Delete(req.EgressId)
-		logger.Debugw("deleting handler temporary directory", "path", p.TmpDir)
-		_ = os.RemoveAll(p.TmpDir)
-	}()
-
-	if err = cmd.Run(); err != nil {
-		logger.Errorw("could not launch handler", err)
-	}
+func (s *Service) Status() ([]byte, error) {
+	return json.Marshal(s.manager.status())
 }
 
-func (s *Service) Status() ([]byte, error) {
-	info := map[string]interface{}{
-		"CpuLoad": s.monitor.GetCPULoad(),
+func (s *Service) isAvailable() float64 {
+	if s.manager.isIdle() {
+		return 1
 	}
-	s.processes.Range(func(key, value interface{}) bool {
-		p := value.(*process)
-		info[key.(string)] = p.req.Request
-		return true
-	})
-
-	return json.Marshal(info)
+	return 0
 }
 
 func (s *Service) Stop(kill bool) {
@@ -301,22 +199,6 @@ func (s *Service) Stop(kill bool) {
 	}
 
 	if kill {
-		s.processes.Range(func(key, value interface{}) bool {
-			if err := value.(*process).cmd.Process.Signal(syscall.SIGINT); err != nil {
-				logger.Errorw("failed to kill process", err, "egressID", key.(string))
-			}
-			return true
-		})
+		s.manager.shutdown()
 	}
-}
-
-func (s *Service) ListEgress() []string {
-	res := make([]string, 0)
-
-	s.processes.Range(func(key, value interface{}) bool {
-		res = append(res, key.(string))
-		return true
-	})
-
-	return res
 }

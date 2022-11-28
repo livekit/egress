@@ -140,8 +140,7 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 
 			ctx := context.Background()
 
-			p := config.PipelineConfigFromService(conf.ServiceConfig)
-			err := p.Update(req)
+			p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 			require.NoError(t, err)
 
 			rec, err := pipeline.New(ctx, p)
