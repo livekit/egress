@@ -32,13 +32,22 @@ const (
 // FIXME Should we use a Context to allow for an overall operation timeout?
 
 func UploadS3(conf *livekit.S3Upload, localFilepath, storageFilepath string, mime types.OutputType) (location string, err error) {
-	sess, err := session.NewSession(&aws.Config{
-		Credentials:      credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, ""),
-		Endpoint:         aws.String(conf.Endpoint),
-		Region:           aws.String(conf.Region),
+	awsConfig := &aws.Config{
 		MaxRetries:       aws.Int(maxRetries), // Switching to v2 of the aws Go SDK would allow to set a maxDelay as well.
 		S3ForcePathStyle: aws.Bool(conf.ForcePathStyle),
-	})
+	}
+
+	if conf.AccessKey != "" && conf.Secret != "" {
+		awsConfig.Credentials = credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, "")
+	}
+	if conf.Endpoint != "" {
+		awsConfig.Endpoint = aws.String(conf.Endpoint)
+	}
+	if conf.Region != "" {
+		awsConfig.Region = aws.String(conf.Region)
+	}
+
+	sess, err := session.NewSession(awsConfig)
 	if err != nil {
 		return "", err
 	}
@@ -75,7 +84,7 @@ func UploadS3(conf *livekit.S3Upload, localFilepath, storageFilepath string, mim
 		return "", err
 	}
 
-	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", conf.Bucket, conf.Region, storageFilepath), nil
+	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", conf.Bucket, storageFilepath), nil
 }
 
 func convertS3Metadata(metadata map[string]string) map[string]*string {
