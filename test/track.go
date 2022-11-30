@@ -142,6 +142,7 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 
 			p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 			require.NoError(t, err)
+			p.GstReady = make(chan struct{})
 
 			rec, err := pipeline.New(ctx, p)
 			require.NoError(t, err)
