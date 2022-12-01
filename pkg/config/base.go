@@ -14,15 +14,15 @@ import (
 )
 
 type BaseConfig struct {
-	NodeID string // will be overwritten
+	NodeID string // do not supply - will be overwritten
 
-	Redis                *redis.RedisConfig `yaml:"redis"`      // required
-	ApiKey               string             `yaml:"api_key"`    // required (env LIVEKIT_API_KEY)
-	ApiSecret            string             `yaml:"api_secret"` // required (env LIVEKIT_API_SECRET)
-	WsUrl                string             `yaml:"ws_url"`     // required (env LIVEKIT_WS_URL)
-	LogLevel             string             `yaml:"log_level"`
-	TemplateBase         string             `yaml:"template_base"`
-	Insecure             bool               `yaml:"insecure"`
+	Redis                *redis.RedisConfig `yaml:"redis"`           // required
+	ApiKey               string             `yaml:"api_key"`         // required (env LIVEKIT_API_KEY)
+	ApiSecret            string             `yaml:"api_secret"`      // required (env LIVEKIT_API_SECRET)
+	WsUrl                string             `yaml:"ws_url"`          // required (env LIVEKIT_WS_URL)
+	LogLevel             string             `yaml:"log_level"`       // debug, info, warn, or error
+	TemplateBase         string             `yaml:"template_base"`   // custom template base url
+	Insecure             bool               `yaml:"insecure"`        // allow chrome to connect to an insecure websocket
 	LocalOutputDirectory string             `yaml:"local_directory"` // used for temporary storage before upload
 
 	S3     *S3Config    `yaml:"s3"`
