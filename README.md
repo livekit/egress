@@ -53,13 +53,22 @@ log_level: debug, info, warn, or error (default info)
 template_base: can be used to host custom templates (default https://egress-composite.livekit.io)
 insecure: can be used to connect to an insecure websocket (default false)
 local_directory: base path where to store media files before they get uploaded to blob storage. This does not affect the storage path if no upload location is given.
+cpu_cost: # optionally override cpu cost estimation, used when accepting or denying requests
+  room_composite_cpu_cost: 3.0
+  web_cpu_cost: 3.0
+  track_composite_cpu_cost: 2.0
+  track_cpu_cost: 1.0
+session_limits: # optional egress duration limits - once hit, egress will end with status EGRESS_LIMIT_REACHED
+  file_output_max_duration: 1h
+  stream_output_max_duration: 90m
+  segment_output_max_duration: 3h
 
-# file upload config - only one of the following. Can be overridden
+# file upload config - only one of the following. Can be overridden per request
 s3:
-  access_key: AWS_ACCESS_KEY_ID env can be used instead
-  secret: AWS_SECRET_ACCESS_KEY env can be used instead
-  region: AWS_DEFAULT_REGION env can be used instead
-  endpoint: optional custom endpoint
+  access_key: AWS_ACCESS_KEY_ID env or IAM role can be used instead
+  secret: AWS_SECRET_ACCESS_KEY env or IAM role can be used instead
+  region: AWS_DEFAULT_REGION env or IAM role can be used instead
+  endpoint: (optional) custom endpoint
   bucket: bucket to upload files to
 azure:
   account_name: AZURE_STORAGE_ACCOUNT env can be used instead
@@ -72,14 +81,8 @@ alioss:
   access_key: Ali OSS AccessKeyId
   secret: Ali OSS AccessKeySecret
   region: Ali OSS region
-  endpoint: optional custom endpoint (example https://oss-cn-hangzhou.aliyuncs.com)
+  endpoint: (optional) custom endpoint
   bucket: bucket to upload files to
-# cpu costs for various egress types with their default values
-cpu_cost:
-  room_composite_cpu_cost: 3.0
-  web_cpu_cost: 3.0
-  track_composite_cpu_cost: 2.0
-  track_cpu_cost: 1.0
 ```
 
 The config file can be added to a mounted volume with its location passed in the EGRESS_CONFIG_FILE env var, or its body can be passed in the EGRESS_CONFIG_BODY env var.
@@ -153,6 +156,9 @@ docker run --rm \
 You can then use our [cli](https://github.com/livekit/livekit-cli) to submit egress requests to your server.
 
 ## FAQ
+
+### Can I store the files locally instead of uploading to cloud storage?
+- Yes, you can mount a volume with your `docker run` command (e.g. `-v ~/livekit-egress:/out/`), and use the mounted directory in your filenames (e.g. `/out/my-recording.mp4`) 
 
 ### I get a `"no response from egress service"` error when sending a request
 
