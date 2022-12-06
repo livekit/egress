@@ -547,12 +547,13 @@ func (p *Pipeline) startSegmentWorker() {
 		var err error
 		defer func() {
 			if err != nil {
-				p.SendEOS()
+				p.SendEOS(context.Background())
 			}
 			p.segmentUploadDoneChan <- err
 		}()
 
 		for update := range p.endedSegments {
+			var size int64
 			p.SegmentsInfo.SegmentCount++
 
 			segmentStoragePath := p.GetStorageFilepath(update.localPath)
@@ -579,7 +580,6 @@ func (p *Pipeline) startSegmentWorker() {
 }
 
 func (p *Pipeline) enqueueSegmentUpload(segmentPath string, endTime int64) error {
-	p.segmentsWg.Add(1)
 	select {
 	case p.endedSegments <- segmentUpdate{localPath: segmentPath, endTime: endTime}:
 		return nil
@@ -587,7 +587,6 @@ func (p *Pipeline) enqueueSegmentUpload(segmentPath string, endTime int64) error
 	default:
 		err := errors.New("segment upload job queue is full")
 		logger.Infow("failed to upload segment", "error", err)
-		p.segmentsWg.Done()
 		return errors.ErrUploadFailed(segmentPath, err)
 	}
 }
