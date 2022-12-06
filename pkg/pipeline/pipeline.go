@@ -479,7 +479,10 @@ func (p *Pipeline) close(ctx context.Context) {
 		p.limitTimer.Stop()
 	}
 
-	if p.Info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
+	switch p.Info.Status {
+	case livekit.EgressStatus_EGRESS_STARTING,
+		livekit.EgressStatus_EGRESS_ACTIVE:
+
 		p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 		if p.onStatusUpdate != nil {
 			p.onStatusUpdate(ctx, p.Info)
