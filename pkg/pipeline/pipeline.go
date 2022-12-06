@@ -163,9 +163,9 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		}
 
 		switch p.Info.Status {
-		case livekit.EgressStatus_EGRESS_STARTING:
-		case livekit.EgressStatus_EGRESS_ACTIVE:
-		case livekit.EgressStatus_EGRESS_ENDING:
+		case livekit.EgressStatus_EGRESS_STARTING,
+			livekit.EgressStatus_EGRESS_ACTIVE,
+			livekit.EgressStatus_EGRESS_ENDING:
 			p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 		}
 
@@ -479,7 +479,10 @@ func (p *Pipeline) close(ctx context.Context) {
 		p.limitTimer.Stop()
 	}
 
-	if p.Info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
+	switch p.Info.Status {
+	case livekit.EgressStatus_EGRESS_STARTING,
+		livekit.EgressStatus_EGRESS_ACTIVE:
+
 		p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 		if p.onStatusUpdate != nil {
 			p.onStatusUpdate(ctx, p.Info)
@@ -513,9 +516,11 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 		p.SegmentsInfo.StartedAt = startedAt
 	}
 
-	p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
-	if p.onStatusUpdate != nil {
-		p.onStatusUpdate(context.Background(), p.Info)
+	if p.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
+		p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
+		if p.onStatusUpdate != nil {
+			p.onStatusUpdate(context.Background(), p.Info)
+		}
 	}
 }
 
