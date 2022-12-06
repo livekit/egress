@@ -145,6 +145,15 @@ func (s *WebInput) launchChrome(ctx context.Context, p *config.PipelineConfig, i
 	chromeCtx, cancel := chromedp.NewContext(allocCtx)
 	s.chromeCancel = cancel
 
+	logEvent := func(eventType string, ev interface{ MarshalJSON() ([]byte, error) }) {
+		values := make([]interface{}, 0)
+		j, err := ev.MarshalJSON()
+		if err != nil {
+			values = []interface{}{"event", j}
+		}
+		logger.Debugw(fmt.Sprintf("chrome %s", eventType), values...)
+	}
+
 	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *runtime.EventConsoleAPICalled:
@@ -177,12 +186,9 @@ func (s *WebInput) launchChrome(ctx context.Context, p *config.PipelineConfig, i
 				}
 			}
 
-			values := make([]interface{}, 0)
-			j, err := ev.MarshalJSON()
-			if err != nil {
-				values = []interface{}{"event", j}
-			}
-			logger.Debugw(fmt.Sprintf("chrome %s", ev.Type.String()), values...)
+			logEvent(ev.Type.String(), ev)
+		case *runtime.EventExceptionThrown:
+			logEvent("exception", ev)
 		}
 	})
 
