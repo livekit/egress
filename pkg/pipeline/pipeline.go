@@ -516,9 +516,11 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 		p.SegmentsInfo.StartedAt = startedAt
 	}
 
-	p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
-	if p.onStatusUpdate != nil {
-		p.onStatusUpdate(context.Background(), p.Info)
+	if p.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
+		p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
+		if p.onStatusUpdate != nil {
+			p.onStatusUpdate(context.Background(), p.Info)
+		}
 	}
 }
 
