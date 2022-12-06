@@ -42,6 +42,7 @@ func NewService(conf *config.ServiceConfig, rpcServer egress.RPCServer) *Service
 		manager:   NewProcessManager(conf, monitor),
 		shutdown:  make(chan struct{}),
 	}
+	s.manager.onFatalError(func() { s.Stop(false) })
 
 	if conf.PrometheusPort > 0 {
 		s.promServer = &http.Server{

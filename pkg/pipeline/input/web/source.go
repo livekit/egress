@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -18,6 +17,15 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 )
+
+type errorLogger struct {
+	cmd string
+}
+
+func (l *errorLogger) Write(p []byte) (int, error) {
+	logger.Errorw(fmt.Sprintf("%s failed", l.cmd), errors.New(string(p)))
+	return len(p), nil
+}
 
 // creates a new pulse audio sink
 func (s *WebInput) createPulseSink(ctx context.Context, p *config.PipelineConfig) error {
@@ -31,10 +39,10 @@ func (s *WebInput) createPulseSink(ctx context.Context, p *config.PipelineConfig
 	)
 	var b bytes.Buffer
 	cmd.Stdout = &b
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = &errorLogger{cmd: "pactl"}
 	err := cmd.Run()
 	if err != nil {
-		return err
+		return errors.Fatal(err)
 	}
 
 	s.pulseSink = b.String()
@@ -49,8 +57,9 @@ func (s *WebInput) launchXvfb(ctx context.Context, p *config.PipelineConfig) err
 	dims := fmt.Sprintf("%dx%dx%d", p.Width, p.Height, p.Depth)
 	logger.Debugw("launching xvfb", "display", p.Display, "dims", dims)
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
+	xvfb.Stderr = &errorLogger{cmd: "xvfb"}
 	if err := xvfb.Start(); err != nil {
-		return err
+		return errors.Fatal(err)
 	}
 
 	s.xvfb = xvfb

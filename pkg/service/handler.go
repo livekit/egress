@@ -35,14 +35,19 @@ func (h *Handler) Run() error {
 	p, err := h.buildPipeline(ctx)
 	if err != nil {
 		span.RecordError(err)
-		return err
+		if errors.IsFatal(err) {
+			return err
+		} else {
+			return nil
+		}
 	}
 
 	// subscribe to request channel
 	requests, err := h.rpcServer.EgressSubscription(context.Background(), p.Info.EgressId)
 	if err != nil {
 		span.RecordError(err)
-		return err
+		logger.Errorw("failed to subscribe to egress", err)
+		return nil
 	}
 	defer func() {
 		if err := requests.Close(); err != nil {

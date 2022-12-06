@@ -21,6 +21,27 @@ func Is(err, target error) bool {
 	return errors.Is(err, target)
 }
 
+type FatalError struct {
+	msg string
+}
+
+func (e *FatalError) Error() string {
+	return e.msg
+}
+
+func Fatal(err error) error {
+	return &FatalError{err.Error()}
+}
+
+func IsFatal(err error) bool {
+	switch err.(type) {
+	case *FatalError:
+		return true
+	default:
+		return false
+	}
+}
+
 func ErrCouldNotParseConfig(err error) error {
 	return fmt.Errorf("could not parse config: %v", err)
 }
