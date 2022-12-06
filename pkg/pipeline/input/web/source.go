@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
-	"strings"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
@@ -179,7 +178,13 @@ func (s *WebInput) launchChrome(ctx context.Context, p *config.PipelineConfig, i
 					}
 				}
 			}
-			logger.Debugw(fmt.Sprintf("chrome %s: %s", ev.Type.String(), strings.Join(args, " ")))
+
+			values := make([]interface{}, 0)
+			j, err := ev.MarshalJSON()
+			if err != nil {
+				values = []interface{}{"event", j}
+			}
+			logger.Debugw(fmt.Sprintf("chrome %s", ev.Type.String()), values...)
 		}
 	})
 
