@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
-	"strings"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
@@ -146,19 +145,26 @@ func (s *WebInput) launchChrome(ctx context.Context, p *config.PipelineConfig, i
 	chromeCtx, cancel := chromedp.NewContext(allocCtx)
 	s.chromeCancel = cancel
 
+	logEvent := func(eventType string, ev interface{ MarshalJSON() ([]byte, error) }) {
+		values := make([]interface{}, 0)
+		j, err := ev.MarshalJSON()
+		if err != nil {
+			values = []interface{}{"event", j}
+		}
+		logger.Debugw(fmt.Sprintf("chrome %s", eventType), values...)
+	}
+
 	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *runtime.EventConsoleAPICalled:
-			args := make([]string, 0, len(ev.Args))
 			for _, arg := range ev.Args {
 				var val interface{}
 				err := json.Unmarshal(arg.Value, &val)
 				if err != nil {
 					continue
 				}
-				msg := fmt.Sprint(val)
-				args = append(args, msg)
-				switch msg {
+
+				switch fmt.Sprint(val) {
 				case startRecordingLog:
 					if s.startRecording != nil {
 						select {
@@ -179,7 +185,10 @@ func (s *WebInput) launchChrome(ctx context.Context, p *config.PipelineConfig, i
 					}
 				}
 			}
-			logger.Debugw(fmt.Sprintf("chrome %s: %s", ev.Type.String(), strings.Join(args, " ")))
+
+			logEvent(ev.Type.String(), ev)
+		case *runtime.EventExceptionThrown:
+			logEvent("exception", ev)
 		}
 	})
 
