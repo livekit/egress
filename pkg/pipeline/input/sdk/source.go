@@ -207,7 +207,7 @@ func (s *SDKInput) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk
 		return
 	}
 
-	logger.Errorw("participant published new track", nil, "identity", s.participantIdentity, "trackID", pub.SID())
+	logger.Infow("participant published new track", "identity", s.participantIdentity, "trackID", pub.SID())
 }
 
 func (s *SDKInput) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
