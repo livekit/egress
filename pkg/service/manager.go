@@ -26,6 +26,7 @@ type ProcessManager struct {
 	mu             sync.RWMutex
 	handlingWeb    bool
 	activeHandlers map[string]*process
+	onFatal        func()
 }
 
 type process struct {
@@ -41,6 +42,10 @@ func NewProcessManager(conf *config.ServiceConfig, monitor *stats.Monitor) *Proc
 		monitor:        monitor,
 		activeHandlers: make(map[string]*process),
 	}
+}
+
+func (s *ProcessManager) onFatalError(f func()) {
+	s.onFatal = f
 }
 
 func (s *ProcessManager) canAccept(req *livekit.StartEgressRequest) bool {
@@ -107,6 +112,9 @@ func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest) error {
 func (s *ProcessManager) awaitCleanup(h *process) {
 	if err := h.cmd.Wait(); err != nil {
 		logger.Errorw("process failed", err)
+		if s.onFatal != nil {
+			s.onFatal()
+		}
 	}
 
 	close(h.closed)
