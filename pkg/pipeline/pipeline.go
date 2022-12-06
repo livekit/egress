@@ -163,9 +163,9 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		}
 
 		switch p.Info.Status {
-		case livekit.EgressStatus_EGRESS_STARTING:
-		case livekit.EgressStatus_EGRESS_ACTIVE:
-		case livekit.EgressStatus_EGRESS_ENDING:
+		case livekit.EgressStatus_EGRESS_STARTING,
+			livekit.EgressStatus_EGRESS_ACTIVE,
+			livekit.EgressStatus_EGRESS_ENDING:
 			p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 		}
 
