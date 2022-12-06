@@ -12,6 +12,7 @@ then
     libatk1.0-0 \
     libc6 \
     libcairo2 \
+    libcups2 \
     libdbus-1-3 \
     libexpat1 \
     libfontconfig1 \
@@ -26,6 +27,7 @@ then
     libx11-6 \
     libx11-xcb1 \
     libxcb1 \
+    libxcomposite1 \
     libxcursor1 \
     libxdamage1 \
     libxext6 \
@@ -34,27 +36,7 @@ then
     libxrandr2 \
     libxrender1 \
     libxss1 \
-    libxtst6 \
-    wget
-  echo "deb http://deb.debian.org/debian buster main
-        deb http://deb.debian.org/debian buster-updates main
-        deb http://deb.debian.org/debian-security buster/updates main" >> /etc/apt/sources.list.d/debian.list
-  apt-key adv --keyserver keyserver.ubuntu.com --recv-keys DCC9EFBF77E11517
-  apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 648ACFD622F3D138
-  apt-key adv --keyserver keyserver.ubuntu.com --recv-keys AA8E81B4331F7F50
-  apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 112695A0E562B32A
-  echo 'Package: *
-        Pin: release a=eoan
-        Pin-Priority: 499
-
-
-        Package: *
-        Pin: origin "deb.debian.org"
-        Pin-Priority: 300' >> /etc/apt/preferences.d/chromium.pref
-  apt update && \
-  apt install -y \
-    libcups2 \
-    libxcomposite1
+    libxtst6
 else
   wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
   apt-get install -y ./google-chrome-stable_current_amd64.deb
