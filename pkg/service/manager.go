@@ -142,6 +142,17 @@ func (s *ProcessManager) status() map[string]interface{} {
 	return info
 }
 
+func (s *ProcessManager) listEgress() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	egressIDs := make([]string, 0, len(s.activeHandlers))
+	for egressID := range s.activeHandlers {
+		egressIDs = append(egressIDs, egressID)
+	}
+	return egressIDs
+}
+
 func (s *ProcessManager) shutdown() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

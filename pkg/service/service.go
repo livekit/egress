@@ -184,6 +184,10 @@ func (s *Service) Status() ([]byte, error) {
 	return json.Marshal(s.manager.status())
 }
 
+func (s *Service) ListEgress() []string {
+	return s.manager.listEgress()
+}
+
 func (s *Service) isAvailable() float64 {
 	if s.manager.isIdle() {
 		return 1
