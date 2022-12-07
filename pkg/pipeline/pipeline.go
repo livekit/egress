@@ -243,7 +243,6 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		manifestLocalPath := fmt.Sprintf("%s.json", p.LocalFilepath)
 		manifestStoragePath := fmt.Sprintf("%s.json", p.StorageFilepath)
 		if err = p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
-			logger.Infow("could not store manifest", "error", err)
 			if p.Info.Error == "" {
 				p.Info.Error = err.Error()
 			}
@@ -270,7 +269,6 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 			manifestLocalPath := fmt.Sprintf("%s.json", p.PlaylistFilename)
 			manifestStoragePath := fmt.Sprintf("%s.json", playlistStoragePath)
 			if err := p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
-				logger.Infow("could not store manifest", "error", err)
 				if p.Info.Error == "" {
 					p.Info.Error = err.Error()
 				}
@@ -679,7 +677,7 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 	}
 
 	if err != nil {
-		logger.Infow("could not upload file", "error", err, "location", location)
+		logger.Infow("could not upload file", "error", err, "location", location, "filepath", storageFilepath)
 		err = errors.ErrUploadFailed(location, err)
 		span.RecordError(err)
 	}
