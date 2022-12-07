@@ -260,10 +260,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 
 		if p.playlistWriter != nil {
 			if err := p.playlistWriter.EOS(); err != nil {
-				logger.Infow("failed to send EOS to playlist writer", "error", err)
-				if p.Info.Error == "" {
-					p.Info.Error = err.Error()
-				}
+				logger.Errorw("failed to send EOS to playlist writer", err)
 			}
 
 			// upload the finalized playlist
