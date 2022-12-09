@@ -213,7 +213,7 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 				return err
 			}
 			// Avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
-			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
+			if err = x264Enc.SetProperty("option-string", "scenecut=0:rc-lookahead=10"); err != nil {
 				return err
 			}
 		}

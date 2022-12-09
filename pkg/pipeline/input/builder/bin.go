@@ -240,6 +240,8 @@ func buildQueue() (*gst.Element, error) {
 	if err = queue.SetProperty("max-size-buffers", uint(0)); err != nil {
 		return nil, err
 	}
+	queue.SetArg("leaky", "downstream")
+
 	return queue, nil
 }
 
