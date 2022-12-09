@@ -58,9 +58,9 @@ type Pipeline struct {
 	eosTimer   *time.Timer
 
 	// segments
-	playlistWriter *sink.PlaylistWriter
-	segmentsWg     sync.WaitGroup
-	endedSegments  chan segmentUpdate
+	playlistWriter        *sink.PlaylistWriter
+	endedSegments         chan segmentUpdate
+	segmentUploadDoneChan chan error
 
 	// callbacks
 	onStatusUpdate func(context.Context, *livekit.EgressInfo)
@@ -208,7 +208,6 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 
 	if p.EgressType == types.EgressTypeSegmentedFile {
 		p.startSegmentWorker()
-		defer close(p.endedSegments)
 	}
 
 	// run main loop
@@ -216,6 +215,10 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 
 	// close input source
 	p.in.Close()
+
+	if p.endedSegments != nil {
+		close(p.endedSegments)
+	}
 
 	// update endedAt from sdk source
 	switch s := p.in.(type) {
@@ -240,13 +243,18 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		manifestLocalPath := fmt.Sprintf("%s.json", p.LocalFilepath)
 		manifestStoragePath := fmt.Sprintf("%s.json", p.StorageFilepath)
 		if err = p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
-			logger.Errorw("could not store manifest", err)
+			if p.Info.Error == "" {
+				p.Info.Error = err.Error()
+			}
 		}
 
 	case types.EgressTypeSegmentedFile:
 		// wait for all pending upload jobs to finish
-		if p.endedSegments != nil {
-			p.segmentsWg.Wait()
+		if p.segmentUploadDoneChan != nil {
+			err := <-p.segmentUploadDoneChan
+			if err != nil && p.Info.Error == "" {
+				p.Info.Error = err.Error()
+			}
 		}
 
 		if p.playlistWriter != nil {
@@ -261,7 +269,9 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 			manifestLocalPath := fmt.Sprintf("%s.json", p.PlaylistFilename)
 			manifestStoragePath := fmt.Sprintf("%s.json", playlistStoragePath)
 			if err := p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
-				logger.Errorw("could not store manifest", err)
+				if p.Info.Error == "" {
+					p.Info.Error = err.Error()
+				}
 			}
 		}
 	}
@@ -526,43 +536,52 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 
 func (p *Pipeline) startSegmentWorker() {
 	p.endedSegments = make(chan segmentUpdate, maxPendingUploads)
+	p.segmentUploadDoneChan = make(chan error, 1)
 
 	go func() {
+		var err error
+		defer func() {
+			if err != nil {
+				p.SendEOS(context.Background())
+			}
+			p.segmentUploadDoneChan <- err
+		}()
+
 		for update := range p.endedSegments {
-			func() {
-				defer p.segmentsWg.Done()
+			var size int64
+			p.SegmentsInfo.SegmentCount++
 
-				p.SegmentsInfo.SegmentCount++
+			segmentStoragePath := p.GetStorageFilepath(update.localPath)
+			_, size, err = p.storeFile(context.Background(), update.localPath, segmentStoragePath, p.GetSegmentOutputType())
+			if err != nil {
+				return
+			}
+			p.SegmentsInfo.Size += size
 
-				segmentStoragePath := p.GetStorageFilepath(update.localPath)
-				// Ignore error. storeFile will log it.
-				_, size, _ := p.storeFile(context.Background(), update.localPath, segmentStoragePath, p.GetSegmentOutputType())
-				p.SegmentsInfo.Size += size
-
-				if p.playlistWriter != nil {
-					err := p.playlistWriter.EndSegment(update.localPath, update.endTime)
-					if err != nil {
-						logger.Errorw("failed to end segment", err, "path", update.localPath)
-						return
-					}
-					playlistStoragePath := p.GetStorageFilepath(p.PlaylistFilename)
-					p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(context.Background(), p.PlaylistFilename, playlistStoragePath, p.OutputType)
+			if p.playlistWriter != nil {
+				err = p.playlistWriter.EndSegment(update.localPath, update.endTime)
+				if err != nil {
+					logger.Errorw("failed to end segment", err, "path", update.localPath)
+					return
 				}
-			}()
+				playlistStoragePath := p.GetStorageFilepath(p.PlaylistFilename)
+				p.SegmentsInfo.PlaylistLocation, _, err = p.storeFile(context.Background(), p.PlaylistFilename, playlistStoragePath, p.OutputType)
+				if err != nil {
+					return
+				}
+			}
 		}
 	}()
 }
 
 func (p *Pipeline) enqueueSegmentUpload(segmentPath string, endTime int64) error {
-	p.segmentsWg.Add(1)
 	select {
 	case p.endedSegments <- segmentUpdate{localPath: segmentPath, endTime: endTime}:
 		return nil
 
 	default:
 		err := errors.New("segment upload job queue is full")
-		logger.Errorw("failed to upload segment", err)
-		p.segmentsWg.Done()
+		logger.Infow("failed to upload segment", "error", err)
 		return errors.ErrUploadFailed(segmentPath, err)
 	}
 }
@@ -658,7 +677,7 @@ func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath
 	}
 
 	if err != nil {
-		logger.Errorw("could not upload file", err, "location", location)
+		logger.Infow("could not upload file", "error", err, "location", location, "filepath", storageFilepath)
 		err = errors.ErrUploadFailed(location, err)
 		span.RecordError(err)
 	}
