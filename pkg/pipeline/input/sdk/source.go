@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -110,6 +111,14 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 			onSubscribeErr = err
 			return
 		}
+
+		go func() {
+			for {
+				b, _ := src.GetProperty("current-level-buffers")
+				fmt.Println("APPSRC", b)
+				time.Sleep(time.Second)
+			}
+		}()
 
 		// write blank frames only when writing to mp4
 		writeBlanks := p.VideoCodec == types.MimeTypeH264

@@ -97,7 +97,17 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return err
 	}
 
-	v.elements = []*gst.Element{xImageSrc, videoQueue, videoConvert, videoRate, caps}
+	framerateCaps, err := gst.NewElement("capsfilter")
+	if err != nil {
+		return err
+	}
+	if err = caps.SetProperty("caps", gst.NewCapsFromString(
+		fmt.Sprintf("video/x-raw,framerate=[1/1,%d/1]", p.Framerate),
+	)); err != nil {
+		return err
+	}
+
+	v.elements = []*gst.Element{xImageSrc, caps, videoQueue, videoConvert, videoRate, framerateCaps}
 	return nil
 }
 
@@ -187,7 +197,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 		return err
 	}
 	if err = caps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=%d/1,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1", p.Width, p.Height, p.Framerate)),
+		fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=[1/1,%d/1],colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1", p.Width, p.Height, p.Framerate)),
 	); err != nil {
 		return err
 	}
@@ -209,7 +219,7 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
 		if p.OutputType == types.OutputTypeHLS {
-			if err = x264Enc.SetProperty("key-int-max", uint(int32(p.SegmentDuration)*p.Framerate)); err != nil {
+			if err = x264Enc.SetProperty("key-int-max", uint(int32(p.SegmentDuration)*p.Framerate*2)); err != nil {
 				return err
 			}
 			// Avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
@@ -224,7 +234,7 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 		}
 
 		if err = caps.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf("video/x-h264,profile=%s,framerate=%d/1", p.VideoProfile, p.Framerate),
+			fmt.Sprintf("video/x-h264,profile=%s", p.VideoProfile),
 		)); err != nil {
 			return err
 		}

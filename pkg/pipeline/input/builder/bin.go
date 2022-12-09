@@ -114,6 +114,15 @@ func (b *InputBin) build(ctx context.Context, p *config.PipelineConfig) error {
 		return err
 	}
 
+	go func() {
+		for {
+			s, err := b.multiQueue.GetProperty("stats")
+			st := s.(*gst.Structure)
+			fmt.Println("MQ", st.String(), err)
+			time.Sleep(time.Second)
+		}
+	}()
+
 	// mux
 	b.mux, err = buildMux(p)
 	if err != nil {
@@ -242,6 +251,14 @@ func buildQueue() (*gst.Element, error) {
 	}
 	queue.SetArg("leaky", "downstream")
 
+	go func() {
+		for {
+			l, err := queue.GetProperty("current-level-buffers")
+			fmt.Println("QUEUE", l, err)
+			time.Sleep(time.Second)
+		}
+	}()
+
 	return queue, nil
 }
 
@@ -281,6 +298,9 @@ func buildMux(p *config.PipelineConfig) (*gst.Element, error) {
 			return nil, err
 		}
 		if err = mux.SetProperty("max-size-time", uint64(time.Duration(p.SegmentDuration)*time.Second)); err != nil {
+			return nil, err
+		}
+		if err = mux.SetProperty("send-keyframe-requests", true); err != nil {
 			return nil, err
 		}
 		if err = mux.SetProperty("async-finalize", true); err != nil {
