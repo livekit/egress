@@ -60,6 +60,7 @@ func main() {
 
 	if err := app.Run(os.Args); err != nil {
 		fmt.Println(err)
+		os.Exit(1)
 	}
 }
 
@@ -160,9 +161,5 @@ func runHandler(c *cli.Context) error {
 		handler.Kill()
 	}()
 
-	err = handler.Run()
-	if err != nil {
-		os.Exit(1)
-	}
-	return nil
+	return handler.Run()
 }
