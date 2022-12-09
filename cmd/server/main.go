@@ -160,5 +160,9 @@ func runHandler(c *cli.Context) error {
 		handler.Kill()
 	}()
 
-	return handler.Run()
+	err = handler.Run()
+	if err != nil {
+		os.Exit(1)
+	}
+	return nil
 }
