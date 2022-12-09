@@ -348,7 +348,7 @@ func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 
 		res = checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_LIMIT_REACHED)
 	} else {
-		time.Sleep(time.Second * 50)
+		time.Sleep(time.Second * 25)
 
 		// stop
 		res = stopEgress(t, conf, egressID)
@@ -428,7 +428,7 @@ func getUpdate(t *testing.T, sub utils.PubSub, egressID string) *livekit.EgressI
 				return info
 			}
 
-		case <-time.After(time.Second * 270):
+		case <-time.After(time.Second * 45):
 			t.Fatal("no update from results channel")
 			return nil
 		}

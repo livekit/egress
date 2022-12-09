@@ -138,7 +138,7 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, re
 	require.NotEmpty(t, segments.PlaylistLocation)
 	require.Greater(t, segments.Size, int64(0))
 	require.Greater(t, segments.Duration, int64(0))
-	require.Equal(t, segments.SegmentCount, segments.Duration*time.Second/int64(p.SegmentDuration)+1)
+	require.Equal(t, segments.SegmentCount, segments.Duration/(int64(time.Second)*int64(p.SegmentDuration))+1)
 
 	storedPlaylistPath := segments.PlaylistName
 	localPlaylistPath := segments.PlaylistName

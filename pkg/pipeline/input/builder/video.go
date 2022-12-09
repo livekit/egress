@@ -101,7 +101,7 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 	if err != nil {
 		return err
 	}
-	if err = caps.SetProperty("caps", gst.NewCapsFromString(
+	if err = framerateCaps.SetProperty("caps", gst.NewCapsFromString(
 		fmt.Sprintf("video/x-raw,framerate=[1/1,%d/1]", p.Framerate),
 	)); err != nil {
 		return err
