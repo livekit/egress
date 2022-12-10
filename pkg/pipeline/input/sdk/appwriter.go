@@ -2,7 +2,6 @@ package sdk
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 	"net"
 	"time"
@@ -147,7 +146,6 @@ func (w *appWriter) start() {
 			}
 		}
 
-		fmt.Println("FINISHED")
 		close(w.finished)
 	}()
 
@@ -157,9 +155,7 @@ func (w *appWriter) start() {
 		select {
 		case <-w.force:
 			// force push remaining packets and quit
-			fmt.Println("START FORCE")
 			_ = w.pushPackets(true)
-			fmt.Println("END FORCE")
 			return
 
 		default:
@@ -365,7 +361,6 @@ func (w *appWriter) pushBlankFrame(timestamp uint32) error {
 func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 	for _, pkt := range packets {
 		if w.isDraining() && int64(pkt.Timestamp) >= w.maxRTP.Load() {
-			fmt.Println("MAXRTP reached")
 			return io.EOF
 		}
 
@@ -517,7 +512,6 @@ func (w *appWriter) sendEOS() {
 		cyclesElapsed := int64(float64(nanoSecondsElapsed) / w.conversion)
 		w.maxRTP.Store(cyclesElapsed + w.rtpOffset)
 
-		fmt.Println("DRAINING")
 		// start draining
 		close(w.drain)
 

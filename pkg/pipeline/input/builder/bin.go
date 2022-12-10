@@ -114,15 +114,6 @@ func (b *InputBin) build(ctx context.Context, p *config.PipelineConfig) error {
 		return err
 	}
 
-	go func() {
-		for {
-			s, err := b.multiQueue.GetProperty("stats")
-			st := s.(*gst.Structure)
-			fmt.Println("MQ", st.String(), err)
-			time.Sleep(time.Second)
-		}
-	}()
-
 	// mux
 	b.mux, err = buildMux(p)
 	if err != nil {
@@ -250,14 +241,6 @@ func buildQueue() (*gst.Element, error) {
 		return nil, err
 	}
 	queue.SetArg("leaky", "downstream")
-
-	go func() {
-		for {
-			l, err := queue.GetProperty("current-level-buffers")
-			fmt.Println("QUEUE", l, err)
-			time.Sleep(time.Second)
-		}
-	}()
 
 	return queue, nil
 }
