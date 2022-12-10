@@ -191,13 +191,16 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 	if err != nil {
 		return err
 	}
+	if err = videoRate.SetProperty("max-rate", int(p.Framerate)); err != nil {
+		return err
+	}
 
 	caps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return err
 	}
 	if err = caps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=[1/1,%d/1],colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1", p.Width, p.Height, p.Framerate)),
+		fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1", p.Width, p.Height)),
 	); err != nil {
 		return err
 	}
