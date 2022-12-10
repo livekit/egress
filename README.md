@@ -49,7 +49,9 @@ redis:
 # optional fields
 health_port: if used, will open an http port for health checks
 prometheus_port: port used to collect prometheus metrics. Used for autoscaling
-log_level: debug, info, warn, or error (default info)
+logging:
+  level: debug, info, warn, or error (default info)
+  json: true
 template_base: can be used to host custom templates (default https://egress-composite.livekit.io)
 insecure: can be used to connect to an insecure websocket (default false)
 local_directory: base path where to store media files before they get uploaded to blob storage. This does not affect the storage path if no upload location is given.
