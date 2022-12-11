@@ -138,7 +138,6 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, re
 	require.NotEmpty(t, segments.PlaylistLocation)
 	require.Greater(t, segments.Size, int64(0))
 	require.Greater(t, segments.Duration, int64(0))
-	require.Equal(t, segments.Duration/(int64(time.Second)*int64(p.SegmentDuration))+1, segments.SegmentCount)
 
 	storedPlaylistPath := segments.PlaylistName
 	localPlaylistPath := segments.PlaylistName
@@ -199,7 +198,10 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 		}
 
 	case ResultTypeSegments:
-		// TODO: implement with Segments
+		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
+		require.NoError(t, err)
+		require.Equal(t, int64(actual/float64(p.SegmentDuration))+1, res.GetSegments().SegmentCount)
+
 	}
 
 	// check stream info

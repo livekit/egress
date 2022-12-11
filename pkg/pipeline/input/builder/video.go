@@ -82,11 +82,6 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return err
 	}
 
-	videoRate, err := gst.NewElement("videorate")
-	if err != nil {
-		return err
-	}
-
 	caps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return err
@@ -97,17 +92,7 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return err
 	}
 
-	framerateCaps, err := gst.NewElement("capsfilter")
-	if err != nil {
-		return err
-	}
-	if err = framerateCaps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,framerate=[1/1,%d/1]", p.Framerate),
-	)); err != nil {
-		return err
-	}
-
-	v.elements = []*gst.Element{xImageSrc, caps, videoQueue, videoConvert, videoRate, framerateCaps}
+	v.elements = []*gst.Element{xImageSrc, videoQueue, videoConvert, caps}
 	return nil
 }
 
