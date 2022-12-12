@@ -501,7 +501,18 @@ func (p *Pipeline) close(ctx context.Context) {
 }
 
 func (p *Pipeline) startSessionLimitTimer(ctx context.Context) {
-	if timeout := p.GetSessionTimeout(); timeout > 0 {
+	var timeout time.Duration
+
+	switch p.EgressType {
+	case types.EgressTypeFile:
+		timeout = p.FileOutputMaxDuration
+	case types.EgressTypeStream, types.EgressTypeWebsocket:
+		timeout = p.StreamOutputMaxDuration
+	case types.EgressTypeSegmentedFile:
+		timeout = p.SegmentOutputMaxDuration
+	}
+
+	if timeout > 0 {
 		p.limitTimer = time.AfterFunc(timeout, func() {
 			p.SendEOS(ctx)
 			p.Info.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
