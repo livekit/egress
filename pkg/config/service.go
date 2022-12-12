@@ -18,7 +18,7 @@ const (
 )
 
 type ServiceConfig struct {
-	*BaseConfig `yaml:",inline"`
+	BaseConfig `yaml:",inline"`
 
 	HealthPort     int `yaml:"health_port"`
 	PrometheusPort int `yaml:"prometheus_port"`
@@ -35,7 +35,7 @@ type CPUCostConfig struct {
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	conf := &ServiceConfig{
-		BaseConfig: &BaseConfig{
+		BaseConfig: BaseConfig{
 			ApiKey:       os.Getenv("LIVEKIT_API_KEY"),
 			ApiSecret:    os.Getenv("LIVEKIT_API_SECRET"),
 			WsUrl:        os.Getenv("LIVEKIT_WS_URL"),
