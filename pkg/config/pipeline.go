@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -19,7 +20,7 @@ import (
 )
 
 type PipelineConfig struct {
-	*BaseConfig `yaml:",inline"`
+	BaseConfig `yaml:",inline"`
 
 	HandlerID string    `yaml:"handler_id"`
 	TmpDir    string    `yaml:"tmp_dir"`
@@ -103,7 +104,7 @@ type UploadParams struct {
 
 func NewPipelineConfig(confString string, req *livekit.StartEgressRequest) (*PipelineConfig, error) {
 	p := &PipelineConfig{
-		BaseConfig: &BaseConfig{},
+		BaseConfig: BaseConfig{},
 		GstReady:   make(chan struct{}),
 	}
 
@@ -477,21 +478,38 @@ func (p *PipelineConfig) updateFileParams(storageFilepath string, output interfa
 	// output location
 	switch o := output.(type) {
 	case *livekit.EncodedFileOutput_S3:
-		p.UploadConfig = o.S3
-	case *livekit.EncodedFileOutput_Azure:
-		p.UploadConfig = o.Azure
-	case *livekit.EncodedFileOutput_Gcp:
-		p.UploadConfig = o.Gcp
-	case *livekit.EncodedFileOutput_AliOSS:
-		p.UploadConfig = o.AliOSS
+		p.UploadConfig = proto.Clone(o.S3)
+		o.S3.AccessKey = redact(o.S3.AccessKey)
+		o.S3.Secret = redact(o.S3.Secret)
 	case *livekit.DirectFileOutput_S3:
-		p.UploadConfig = o.S3
+		p.UploadConfig = proto.Clone(o.S3)
+		o.S3.AccessKey = redact(o.S3.AccessKey)
+		o.S3.Secret = redact(o.S3.Secret)
+
+	case *livekit.EncodedFileOutput_Azure:
+		p.UploadConfig = proto.Clone(o.Azure)
+		o.Azure.AccountName = redact(o.Azure.AccountName)
+		o.Azure.AccountKey = redact(o.Azure.AccountKey)
 	case *livekit.DirectFileOutput_Azure:
-		p.UploadConfig = o.Azure
+		p.UploadConfig = proto.Clone(o.Azure)
+		o.Azure.AccountName = redact(o.Azure.AccountName)
+		o.Azure.AccountKey = redact(o.Azure.AccountKey)
+
+	case *livekit.EncodedFileOutput_Gcp:
+		p.UploadConfig = proto.Clone(o.Gcp)
+		o.Gcp.Credentials = []byte(redact(string(o.Gcp.Credentials)))
 	case *livekit.DirectFileOutput_Gcp:
-		p.UploadConfig = o.Gcp
+		p.UploadConfig = proto.Clone(o.Gcp)
+		o.Gcp.Credentials = []byte(redact(string(o.Gcp.Credentials)))
+
+	case *livekit.EncodedFileOutput_AliOSS:
+		p.UploadConfig = proto.Clone(o.AliOSS)
+		o.AliOSS.AccessKey = redact(o.AliOSS.AccessKey)
+		o.AliOSS.Secret = redact(o.AliOSS.Secret)
 	case *livekit.DirectFileOutput_AliOSS:
-		p.UploadConfig = o.AliOSS
+		p.UploadConfig = proto.Clone(o.AliOSS)
+		o.AliOSS.AccessKey = redact(o.AliOSS.AccessKey)
+		o.AliOSS.Secret = redact(o.AliOSS.Secret)
 	}
 
 	// filename
@@ -555,13 +573,23 @@ func (p *PipelineConfig) updateSegmentsParams(filePrefix string, playlistFilenam
 	// output location
 	switch o := output.(type) {
 	case *livekit.SegmentedFileOutput_S3:
-		p.UploadConfig = o.S3
+		p.UploadConfig = proto.Clone(o.S3)
+		o.S3.AccessKey = redact(o.S3.AccessKey)
+		o.S3.Secret = redact(o.S3.Secret)
+
 	case *livekit.SegmentedFileOutput_Azure:
-		p.UploadConfig = o.Azure
+		p.UploadConfig = proto.Clone(o.Azure)
+		o.Azure.AccountName = redact(o.Azure.AccountName)
+		o.Azure.AccountKey = redact(o.Azure.AccountKey)
+
 	case *livekit.SegmentedFileOutput_Gcp:
-		p.UploadConfig = o.Gcp
+		p.UploadConfig = proto.Clone(o.Gcp)
+		o.Gcp.Credentials = []byte(redact(string(o.Gcp.Credentials)))
+
 	case *livekit.SegmentedFileOutput_AliOSS:
-		p.UploadConfig = o.AliOSS
+		p.UploadConfig = proto.Clone(o.AliOSS)
+		o.AliOSS.AccessKey = redact(o.AliOSS.AccessKey)
+		o.AliOSS.Secret = redact(o.AliOSS.Secret)
 	}
 
 	// filename
@@ -862,4 +890,8 @@ func stringReplace(s string, replacements map[string]string) string {
 		s = strings.Replace(s, template, value, -1)
 	}
 	return s
+}
+
+func redact(s string) string {
+	return strings.Repeat("*", len(s))
 }
