@@ -153,9 +153,10 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		VideoBitrate: 4500,
 	}
 
+	// update and redact upload config before adding request to info
 	p.updateUploadConfig(request)
-	connectionInfoRequired := true
 
+	connectionInfoRequired := true
 	switch req := request.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
 		p.Info.Request = &livekit.EgressInfo_RoomComposite{RoomComposite: req.RoomComposite}
