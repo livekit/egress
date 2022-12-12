@@ -82,17 +82,25 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return err
 	}
 
+	// videorate should not be needed here as we control the source framerate, but we've seen cases where ximagesrc creates buffers
+	// at a faster rate than requested in the caps
+	videoRate, err := gst.NewElement("videorate")
+	if err != nil {
+		return err
+	}
+	if err = videoRate.SetProperty("max-rate", int(p.Framerate)); err != nil {
+		return err
+	}
+
 	caps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return err
 	}
-	if err = caps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,framerate=%d/1", p.Framerate),
-	)); err != nil {
+	if err = caps.SetProperty("caps", gst.NewCapsFromString("video/x-raw")); err != nil {
 		return err
 	}
 
-	v.elements = []*gst.Element{xImageSrc, videoQueue, videoConvert, caps}
+	v.elements = []*gst.Element{xImageSrc, videoQueue, videoConvert, videoRate, caps}
 	return nil
 }
 
@@ -211,7 +219,7 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 				return err
 			}
 			// Avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
-			if err = x264Enc.SetProperty("option-string", "scenecut=0:rc-lookahead=10"); err != nil {
+			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
 				return err
 			}
 		}
