@@ -55,30 +55,30 @@ func Build() error {
 	return mageutil.Run(context.Background(),
 		"docker pull livekit/chrome-installer",
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
-		"docker build --no-cache -t livekit/egress:latest -f build/egress/Dockerfile .",
+		"docker build -t livekit/egress:latest -f build/egress/Dockerfile .",
 	)
 }
 
 func BuildChrome() error {
 	return mageutil.Run(context.Background(),
 		"docker pull ubuntu:22.04",
-		"docker build --no-cache -t livekit/chrome-installer ./build/chrome",
+		"docker build -t livekit/chrome-installer ./build/chrome",
 	)
 }
 
 func PublishChrome() error {
 	return mageutil.Run(context.Background(),
 		"docker pull ubuntu:22.04",
-		"docker buildx build --no-cache --push --platform linux/amd64,linux/arm64 -t livekit/chrome-installer ./build/chrome",
+		"docker buildx build --push --platform linux/amd64,linux/arm64 -t livekit/chrome-installer ./build/chrome",
 	)
 }
 
 func BuildGStreamer() error {
-	return buildGstreamer("docker build --no-cache")
+	return buildGstreamer("docker build")
 }
 
 func PublishGStreamer() error {
-	return buildGstreamer("docker buildx build --no-cache --push --platform linux/amd64,linux/arm64")
+	return buildGstreamer("docker buildx build --push --platform linux/amd64,linux/arm64")
 }
 
 func buildGstreamer(cmd string) error {
