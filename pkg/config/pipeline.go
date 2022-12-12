@@ -323,9 +323,15 @@ func (p *PipelineConfig) updateEncodedOutput(req interface {
 }) error {
 	if file := req.GetFile(); file != nil {
 		p.DisableManifest = file.DisableManifest
-		if file.FileType != livekit.EncodedFileType_DEFAULT_FILETYPE {
+		switch req.(type) {
+		case *livekit.TrackCompositeEgressRequest:
+			if file.FileType != livekit.EncodedFileType_DEFAULT_FILETYPE {
+				p.updateOutputType(file.FileType)
+			}
+		default:
 			p.updateOutputType(file.FileType)
 		}
+
 		return p.updateFileParams(file.Filepath)
 	}
 
