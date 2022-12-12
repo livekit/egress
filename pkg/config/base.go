@@ -3,7 +3,6 @@ package config
 import (
 	"time"
 
-	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -20,10 +19,11 @@ type BaseConfig struct {
 	ApiKey               string             `yaml:"api_key"`         // required (env LIVEKIT_API_KEY)
 	ApiSecret            string             `yaml:"api_secret"`      // required (env LIVEKIT_API_SECRET)
 	WsUrl                string             `yaml:"ws_url"`          // required (env LIVEKIT_WS_URL)
-	LogLevel             string             `yaml:"log_level"`       // debug, info, warn, or error
 	TemplateBase         string             `yaml:"template_base"`   // custom template base url
 	Insecure             bool               `yaml:"insecure"`        // allow chrome to connect to an insecure websocket
 	LocalOutputDirectory string             `yaml:"local_directory"` // used for temporary storage before upload
+	Logging              logger.Config      `yaml:"logging"`
+	LogLevel             string             `yaml:"log_level"` // TODO: deprecate, debug, info, warn, or error
 
 	S3     *S3Config    `yaml:"s3"`
 	Azure  *AzureConfig `yaml:"azure"`
@@ -96,6 +96,14 @@ type SessionLimits struct {
 }
 
 func (c *BaseConfig) initLogger(values ...interface{}) error {
+	// TODO-DEPRECATE: here for backwards compatibility, to deprecate in the future
+	if c.LogLevel != "" {
+		c.Logging.Level = c.LogLevel
+	}
+	zl, err := logger.NewZapLogger(&c.Logging)
+	if err != nil {
+		return err
+	}
 	conf := zap.NewProductionConfig()
 	if c.LogLevel != "" {
 		lvl := zapcore.Level(0)
@@ -104,9 +112,9 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 		}
 	}
 
-	l, _ := conf.Build()
+	l := zl.WithValues(values...)
 
-	logger.SetLogger(zapr.NewLogger(l).WithValues(values...), "egress")
-	lksdk.SetLogger(logger.GetLogger())
+	logger.SetLogger(l, "egress")
+	lksdk.SetLogger(l)
 	return nil
 }

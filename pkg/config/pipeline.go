@@ -167,7 +167,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		p.AudioEnabled = !req.RoomComposite.VideoOnly
 		p.VideoEnabled = !req.RoomComposite.AudioOnly
 		if !p.AudioEnabled && !p.VideoEnabled {
-			return errors.ErrInvalidInput("AudioOnly and VideoOnly")
+			return errors.ErrInvalidInput("audio_only and video_only")
 		}
 
 		// encoding options
@@ -194,7 +194,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		p.AudioEnabled = !req.Web.VideoOnly
 		p.VideoEnabled = !req.Web.AudioOnly
 		if !p.AudioEnabled && !p.VideoEnabled {
-			return errors.ErrInvalidInput("AudioOnly and VideoOnly")
+			return errors.ErrInvalidInput("audio_only and video_only")
 		}
 
 		// encoding options
@@ -219,7 +219,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		p.AudioEnabled = p.AudioTrackID != ""
 		p.VideoEnabled = p.VideoTrackID != ""
 		if !p.AudioEnabled && !p.VideoEnabled {
-			return errors.ErrInvalidInput("TrackIDs")
+			return errors.ErrInvalidInput("audio_track_id or video_track_id")
 		}
 
 		// encoding options
@@ -241,7 +241,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		p.Info.RoomName = req.Track.RoomName
 		p.TrackID = req.Track.TrackId
 		if p.TrackID == "" {
-			return errors.ErrInvalidInput("TrackID")
+			return errors.ErrInvalidInput("track_id")
 		}
 
 		// output params
@@ -267,7 +267,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 	// connection info
 	if connectionInfoRequired {
 		if p.Info.RoomName == "" {
-			return errors.ErrInvalidInput("RoomName")
+			return errors.ErrInvalidInput("room_name")
 		}
 
 		// token
