@@ -17,8 +17,6 @@ import (
 func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 	publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeH264, conf.Muting)
 
-	conf.sourceFramerate = 30
-
 	for _, test := range []*testCase{
 		{
 			name:     "h264-high-mp4",

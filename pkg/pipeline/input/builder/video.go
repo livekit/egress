@@ -215,6 +215,7 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
 		if p.OutputType == types.OutputTypeHLS {
+			// The muxer should request key frames to match the segment duration. Set a 2 x segment duration on the encoder as a safeguard.
 			if err = x264Enc.SetProperty("key-int-max", uint(int32(p.SegmentDuration)*p.Framerate*2)); err != nil {
 				return err
 			}
