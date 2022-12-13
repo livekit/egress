@@ -12,19 +12,26 @@ import (
 func testWebFile(t *testing.T, conf *TestConfig) {
 	awaitIdle(t, conf.svc)
 
-	webRequest := &livekit.WebEgressRequest{
-		Url: webUrl,
-		Output: &livekit.WebEgressRequest_File{
-			File: &livekit.EncodedFileOutput{
-				Filepath: getFilePath(conf.ServiceConfig, "web_{time}"),
-			},
-		},
+	fileOutput := &livekit.EncodedFileOutput{
+		Filepath: getFilePath(conf.ServiceConfig, "web_{time}"),
+	}
+
+	if conf.GCPUpload != nil {
+		fileOutput.Filepath = "web_{time}"
+		fileOutput.Output = &livekit.EncodedFileOutput_Gcp{
+			Gcp: conf.GCPUpload,
+		}
 	}
 
 	req := &livekit.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &livekit.StartEgressRequest_Web{
-			Web: webRequest,
+			Web: &livekit.WebEgressRequest{
+				Url: webUrl,
+				Output: &livekit.WebEgressRequest_File{
+					File: fileOutput,
+				},
+			},
 		},
 	}
 

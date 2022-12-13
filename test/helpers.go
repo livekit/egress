@@ -105,6 +105,7 @@ func getFilePath(conf *config.ServiceConfig, filename string) string {
 	if conf.S3 != nil || conf.Azure != nil || conf.GCP != nil || conf.AliOSS != nil {
 		return filename
 	}
+
 	return fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, filename)
 }
 

@@ -180,27 +180,6 @@ func awaitIdle(t *testing.T, svc *service.Service) {
 func runFileTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, test *testCase) {
 	conf.SessionLimits.FileOutputMaxDuration = test.sessionTimeout
 
-	switch r := req.Request.(type) {
-	case *livekit.StartEgressRequest_RoomComposite:
-		if conf.S3Upload != nil {
-			r.RoomComposite.GetFile().Output = &livekit.EncodedFileOutput_S3{
-				S3: conf.S3Upload,
-			}
-		}
-	case *livekit.StartEgressRequest_Web:
-		if conf.AzureUpload != nil {
-			r.Web.GetFile().Output = &livekit.EncodedFileOutput_Azure{
-				Azure: conf.AzureUpload,
-			}
-		}
-	case *livekit.StartEgressRequest_TrackComposite:
-		if conf.GCPUpload != nil {
-			r.TrackComposite.GetFile().Output = &livekit.EncodedFileOutput_Gcp{
-				Gcp: conf.GCPUpload,
-			}
-		}
-	}
-
 	// start
 	egressID := startEgress(t, conf, req)
 
