@@ -40,22 +40,31 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 			awaitIdle(t, conf.svc)
 			audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, test.audioCodec, test.videoCodec, conf.Muting)
 
+			fileOutput := &livekit.EncodedFileOutput{
+				FileType: test.fileType,
+				Filepath: getFilePath(conf.ServiceConfig, test.filename),
+			}
+
+			if conf.AzureUpload != nil {
+				fileOutput.Filepath = test.filename
+				fileOutput.Output = &livekit.EncodedFileOutput_Azure{
+					Azure: conf.AzureUpload,
+				}
+			}
+
 			trackRequest := &livekit.TrackCompositeEgressRequest{
 				RoomName: conf.room.Name(),
 				Output: &livekit.TrackCompositeEgressRequest_File{
-					File: &livekit.EncodedFileOutput{
-						FileType: test.fileType,
-						Filepath: getFilePath(conf.ServiceConfig, test.filename),
-					},
+					File: fileOutput,
 				},
 			}
+
 			if !test.audioOnly {
 				trackRequest.VideoTrackId = videoTrackID
 			}
 			if !test.videoOnly {
 				trackRequest.AudioTrackId = audioTrackID
 			}
-
 			if test.options != nil {
 				trackRequest.Options = &livekit.TrackCompositeEgressRequest_Advanced{
 					Advanced: test.options,

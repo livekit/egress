@@ -52,15 +52,24 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 		t.Run(test.name, func(t *testing.T) {
 			awaitIdle(t, conf.svc)
 
+			fileOutput := &livekit.EncodedFileOutput{
+				FileType: test.fileType,
+				Filepath: getFilePath(conf.ServiceConfig, test.filename),
+			}
+
+			if conf.S3Upload != nil {
+				fileOutput.Filepath = test.filename
+				fileOutput.Output = &livekit.EncodedFileOutput_S3{
+					S3: conf.S3Upload,
+				}
+			}
+
 			roomRequest := &livekit.RoomCompositeEgressRequest{
 				RoomName:  conf.room.Name(),
 				Layout:    "speaker-dark",
 				AudioOnly: test.audioOnly,
 				Output: &livekit.RoomCompositeEgressRequest_File{
-					File: &livekit.EncodedFileOutput{
-						FileType: test.fileType,
-						Filepath: getFilePath(conf.ServiceConfig, test.filename),
-					},
+					File: fileOutput,
 				},
 			}
 
