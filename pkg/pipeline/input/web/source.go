@@ -148,7 +148,11 @@ func (s *WebInput) launchChrome(ctx context.Context, p *config.PipelineConfig, i
 	logEvent := func(eventType string, ev interface{ MarshalJSON() ([]byte, error) }) {
 		values := make([]interface{}, 0)
 		if j, err := ev.MarshalJSON(); err == nil {
-			values = []interface{}{"event", string(j)}
+			m := make(map[string]interface{})
+			_ = json.Unmarshal(j, &m)
+			for k, v := range m {
+				values = append(values, k, v)
+			}
 		}
 		logger.Debugw(fmt.Sprintf("chrome %s", eventType), values...)
 	}
