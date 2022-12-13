@@ -8,7 +8,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func (p *PipelineConfig) updateUploadConfig(request *livekit.StartEgressRequest) {
+func (p *PipelineConfig) cloneAndRedactRequest(request *livekit.StartEgressRequest) {
 	switch req := request.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
 		clone := proto.Clone(req.RoomComposite).(*livekit.RoomCompositeEgressRequest)
