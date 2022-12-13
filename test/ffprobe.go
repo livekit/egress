@@ -43,10 +43,11 @@ type FFProbeInfo struct {
 		ChannelLayout string `json:"channel_layout"`
 
 		// video
-		Width      int32  `json:"width"`
-		Height     int32  `json:"height"`
-		RFrameRate string `json:"r_frame_rate"`
-		BitRate    string `json:"bit_rate"`
+		Width        int32  `json:"width"`
+		Height       int32  `json:"height"`
+		RFrameRate   string `json:"r_frame_rate"`
+		AvgFrameRate string `json:"avg_frame_rate"`
+		BitRate      string `json:"bit_rate"`
 	} `json:"streams"`
 	Format struct {
 		Filename   string `json:"filename"`
@@ -276,7 +277,7 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 				require.Equal(t, p.Height, stream.Height)
 
 				// framerate
-				frac := strings.Split(stream.RFrameRate, "/")
+				frac := strings.Split(stream.AvgFrameRate, "/")
 				require.Len(t, frac, 2)
 				n, err := strconv.ParseFloat(frac[0], 64)
 				require.NoError(t, err)
