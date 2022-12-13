@@ -71,6 +71,9 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 
 			runFileTest(t, conf, req, test)
 		})
+		if conf.Short {
+			return
+		}
 	}
 }
 
@@ -106,6 +109,9 @@ func testTrackCompositeStream(t *testing.T, conf *TestConfig) {
 
 			runStreamTest(t, conf, req, test.sessionTimeout)
 		})
+		if conf.Short {
+			return
+		}
 	}
 }
 
@@ -173,5 +179,8 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 
 			runSegmentsTest(t, conf, req, test.sessionTimeout)
 		})
+		if conf.Short {
+			return
+		}
 	}
 }

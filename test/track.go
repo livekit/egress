@@ -86,6 +86,9 @@ func testTrackFile(t *testing.T, conf *TestConfig) {
 
 			runFileTest(t, conf, req, test)
 		})
+		if conf.Short {
+			return
+		}
 	}
 }
 
@@ -157,6 +160,9 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 
 			verify(t, filepath, p, res, ResultTypeStream, conf.Muting, conf.sourceFramerate)
 		})
+		if conf.Short {
+			return
+		}
 	}
 }
 

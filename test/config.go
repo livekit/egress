@@ -33,6 +33,7 @@ type TestConfig struct {
 	SegmentTestsOnly        bool   `yaml:"segments_only"`
 	Muting                  bool   `yaml:"muting"`
 	GstDebug                int    `yaml:"gst_debug"`
+	Short                   bool   `yaml:"short"`
 
 	// test context
 	svc       *service.Service `yaml:"-"`

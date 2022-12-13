@@ -79,11 +79,49 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 
 			runFileTest(t, conf, req, test)
 		})
+		if conf.Short {
+			return
+		}
 	}
 }
 
 func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 	publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
+
+	for _, test := range []*testCase{
+		{
+			name: "room-rtmp",
+		},
+		{
+			name:           "room-rtmp-limit",
+			sessionTimeout: time.Second * 20,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			awaitIdle(t, conf.svc)
+
+			req := &livekit.StartEgressRequest{
+				EgressId: utils.NewGuid(utils.EgressPrefix),
+				Request: &livekit.StartEgressRequest_RoomComposite{
+					RoomComposite: &livekit.RoomCompositeEgressRequest{
+						RoomName: conf.room.Name(),
+						Layout:   "grid-light",
+						Output: &livekit.RoomCompositeEgressRequest_Stream{
+							Stream: &livekit.StreamOutput{
+								Protocol: livekit.StreamProtocol_RTMP,
+								Urls:     []string{streamUrl1},
+							},
+						},
+					},
+				},
+			}
+
+			runStreamTest(t, conf, req, test.sessionTimeout)
+		})
+		if conf.Short {
+			return
+		}
+	}
 
 	t.Run("rtmp-failure", func(t *testing.T) {
 		awaitIdle(t, conf.svc)
@@ -121,38 +159,6 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 			require.Equal(t, info.Status, livekit.EgressStatus_EGRESS_FAILED)
 		}
 	})
-
-	for _, test := range []*testCase{
-		{
-			name: "room-rtmp",
-		},
-		{
-			name:           "room-rtmp-limit",
-			sessionTimeout: time.Second * 20,
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			awaitIdle(t, conf.svc)
-
-			req := &livekit.StartEgressRequest{
-				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &livekit.StartEgressRequest_RoomComposite{
-					RoomComposite: &livekit.RoomCompositeEgressRequest{
-						RoomName: conf.room.Name(),
-						Layout:   "grid-light",
-						Output: &livekit.RoomCompositeEgressRequest_Stream{
-							Stream: &livekit.StreamOutput{
-								Protocol: livekit.StreamProtocol_RTMP,
-								Urls:     []string{streamUrl1},
-							},
-						},
-					},
-				},
-			}
-
-			runStreamTest(t, conf, req, test.sessionTimeout)
-		})
-	}
 }
 
 func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
@@ -215,6 +221,8 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 
 			runSegmentsTest(t, conf, req, test.sessionTimeout)
 		})
-		return
+		if conf.Short {
+			return
+		}
 	}
 }
