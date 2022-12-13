@@ -86,17 +86,20 @@ func (p *PipelineConfig) cloneAndRedact(req iUpload) {
 		p.UploadConfig = proto.Clone(azure)
 		azure.AccountName = redact(azure.AccountName)
 		azure.AccountKey = redact(azure.AccountKey)
+		return
 	}
 
 	if gcp := req.GetGcp(); gcp != nil {
 		p.UploadConfig = proto.Clone(gcp)
 		gcp.Credentials = []byte(redact(string(gcp.Credentials)))
+		return
 	}
 
 	if aliOSS := req.GetAliOSS(); aliOSS != nil {
 		p.UploadConfig = proto.Clone(aliOSS)
 		aliOSS.AccessKey = redact(aliOSS.AccessKey)
 		aliOSS.Secret = redact(aliOSS.Secret)
+		return
 	}
 }
 
