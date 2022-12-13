@@ -125,13 +125,6 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 	ctx, span := tracer.Start(ctx, "Service.acceptRequest")
 	defer span.End()
 
-	args := []interface{}{
-		"egressID", req.EgressId,
-		"requestID", req.RequestId,
-		"senderID", req.SenderId,
-	}
-	logger.Debugw("request received", args...)
-
 	// check request time
 	if time.Since(time.Unix(0, req.SentAt)) >= egress.RequestExpiration {
 		return false
@@ -139,22 +132,17 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 
 	// check if already handling web
 	if !s.manager.canAccept(req) {
-		args = append(args, "reason", "only one web egress allowed")
-		logger.Debugw("rejecting request", args...)
 		return false
 	}
 
 	// check cpu load
 	if !s.monitor.CanAcceptRequest(req) {
-		args = append(args, "reason", "not enough cpu")
-		logger.Debugw("rejecting request", args...)
 		return false
 	}
 
 	// claim request
 	claimed, err := s.rpcServer.ClaimRequest(context.Background(), req)
 	if err != nil {
-		logger.Warnw("could not claim request", err, args...)
 		return false
 	} else if !claimed {
 		return false
@@ -162,7 +150,12 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 
 	// accept request
 	s.monitor.AcceptRequest(req)
-	logger.Infow("request accepted", args...)
+	logger.Infow("request accepted",
+		"egressID", req.EgressId,
+		"requestID", req.RequestId,
+		"senderID", req.SenderId,
+	)
+
 	return true
 }
 

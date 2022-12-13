@@ -42,13 +42,11 @@ func NewWebInput(ctx context.Context, p *config.PipelineConfig) (*WebInput, erro
 
 	s := &WebInput{}
 	if err := s.createPulseSink(ctx, p); err != nil {
-		logger.Errorw("failed to load pulse sink", err)
 		s.Close()
 		return nil, err
 	}
 
 	if err := s.launchXvfb(ctx, p); err != nil {
-		logger.Errorw("failed to launch xvfb", err)
 		s.Close()
 		return nil, err
 	}

@@ -154,12 +154,11 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 	}
 
 	// update and redact upload config before adding request to info
-	p.updateUploadConfig(request)
+	p.cloneAndRedactRequest(request)
 
 	connectionInfoRequired := true
 	switch req := request.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
-		p.Info.Request = &livekit.EgressInfo_RoomComposite{RoomComposite: req.RoomComposite}
 		p.Info.RoomName = req.RoomComposite.RoomName
 		p.Layout = req.RoomComposite.Layout
 		if req.RoomComposite.CustomBaseUrl != "" {
@@ -186,7 +185,6 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		}
 
 	case *livekit.StartEgressRequest_Web:
-		p.Info.Request = &livekit.EgressInfo_Web{Web: req.Web}
 		connectionInfoRequired = false
 		p.WebUrl = req.Web.Url
 		if p.WebUrl == "" {
@@ -213,7 +211,6 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		}
 
 	case *livekit.StartEgressRequest_TrackComposite:
-		p.Info.Request = &livekit.EgressInfo_TrackComposite{TrackComposite: req.TrackComposite}
 		p.Info.RoomName = req.TrackComposite.RoomName
 		p.AudioTrackID = req.TrackComposite.AudioTrackId
 		p.VideoTrackID = req.TrackComposite.VideoTrackId
@@ -238,7 +235,6 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		}
 
 	case *livekit.StartEgressRequest_Track:
-		p.Info.Request = &livekit.EgressInfo_Track{Track: req.Track}
 		p.Info.RoomName = req.Track.RoomName
 		p.TrackID = req.Track.TrackId
 		if p.TrackID == "" {

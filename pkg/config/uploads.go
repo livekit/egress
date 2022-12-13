@@ -8,28 +8,48 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func (p *PipelineConfig) updateUploadConfig(request *livekit.StartEgressRequest) {
+func (p *PipelineConfig) cloneAndRedactRequest(request *livekit.StartEgressRequest) {
 	switch req := request.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
-		if f := req.RoomComposite.GetFile(); f != nil {
+		clone := proto.Clone(req.RoomComposite).(*livekit.RoomCompositeEgressRequest)
+		p.Info.Request = &livekit.EgressInfo_RoomComposite{
+			RoomComposite: clone,
+		}
+
+		if f := clone.GetFile(); f != nil {
 			p.cloneAndRedact(f)
-		} else if s := req.RoomComposite.GetSegments(); s != nil {
+		} else if s := clone.GetSegments(); s != nil {
 			p.cloneAndRedact(s)
 		}
+
 	case *livekit.StartEgressRequest_Web:
-		if f := req.Web.GetFile(); f != nil {
+		clone := proto.Clone(req.Web).(*livekit.WebEgressRequest)
+		p.Info.Request = &livekit.EgressInfo_Web{
+			Web: clone,
+		}
+		if f := clone.GetFile(); f != nil {
 			p.cloneAndRedact(f)
-		} else if s := req.Web.GetSegments(); s != nil {
+		} else if s := clone.GetSegments(); s != nil {
 			p.cloneAndRedact(s)
 		}
+
 	case *livekit.StartEgressRequest_TrackComposite:
-		if f := req.TrackComposite.GetFile(); f != nil {
+		clone := proto.Clone(req.TrackComposite).(*livekit.TrackCompositeEgressRequest)
+		p.Info.Request = &livekit.EgressInfo_TrackComposite{
+			TrackComposite: clone,
+		}
+		if f := clone.GetFile(); f != nil {
 			p.cloneAndRedact(f)
-		} else if s := req.TrackComposite.GetSegments(); s != nil {
+		} else if s := clone.GetSegments(); s != nil {
 			p.cloneAndRedact(s)
 		}
+
 	case *livekit.StartEgressRequest_Track:
-		if f := req.Track.GetFile(); f != nil {
+		clone := proto.Clone(req.Track).(*livekit.TrackEgressRequest)
+		p.Info.Request = &livekit.EgressInfo_Track{
+			Track: clone,
+		}
+		if f := clone.GetFile(); f != nil {
 			p.cloneAndRedact(f)
 		}
 	}
@@ -66,17 +86,20 @@ func (p *PipelineConfig) cloneAndRedact(req iUpload) {
 		p.UploadConfig = proto.Clone(azure)
 		azure.AccountName = redact(azure.AccountName)
 		azure.AccountKey = redact(azure.AccountKey)
+		return
 	}
 
 	if gcp := req.GetGcp(); gcp != nil {
 		p.UploadConfig = proto.Clone(gcp)
 		gcp.Credentials = []byte(redact(string(gcp.Credentials)))
+		return
 	}
 
 	if aliOSS := req.GetAliOSS(); aliOSS != nil {
 		p.UploadConfig = proto.Clone(aliOSS)
 		aliOSS.AccessKey = redact(aliOSS.AccessKey)
 		aliOSS.Secret = redact(aliOSS.Secret)
+		return
 	}
 }
 

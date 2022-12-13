@@ -22,7 +22,7 @@ type errorLogger struct {
 }
 
 func (l *errorLogger) Write(p []byte) (int, error) {
-	logger.Errorw(fmt.Sprintf("%s failed", l.cmd), errors.New(string(p)))
+	logger.Errorw(fmt.Sprintf("%s: %s", l.cmd, string(p)), nil)
 	return len(p), nil
 }
 
@@ -147,8 +147,7 @@ func (s *WebInput) launchChrome(ctx context.Context, p *config.PipelineConfig, i
 
 	logEvent := func(eventType string, ev interface{ MarshalJSON() ([]byte, error) }) {
 		values := make([]interface{}, 0)
-		j, err := ev.MarshalJSON()
-		if err != nil {
+		if j, err := ev.MarshalJSON(); err == nil {
 			values = []interface{}{"event", j}
 		}
 		logger.Debugw(fmt.Sprintf("chrome %s", eventType), values...)

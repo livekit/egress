@@ -14,6 +14,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/protocol/egress"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
 )
@@ -36,10 +37,13 @@ type TestConfig struct {
 	Short                   bool   `yaml:"short"`
 
 	// test context
-	svc       *service.Service `yaml:"-"`
-	rpcClient egress.RPCClient `yaml:"-"`
-	room      *lksdk.Room      `yaml:"-"`
-	updates   utils.PubSub     `yaml:"-"`
+	svc         *service.Service         `yaml:"-"`
+	rpcClient   egress.RPCClient         `yaml:"-"`
+	room        *lksdk.Room              `yaml:"-"`
+	updates     utils.PubSub             `yaml:"-"`
+	S3Upload    *livekit.S3Upload        `yaml:"-"`
+	GCPUpload   *livekit.GCPUpload       `yaml:"-"`
+	AzureUpload *livekit.AzureBlobUpload `yaml:"-"`
 
 	// helpers
 	runRoomTests           bool `yaml:"-"`

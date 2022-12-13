@@ -154,7 +154,6 @@ func (m *Monitor) CanAcceptRequest(req *livekit.StartEgressRequest) bool {
 		accept = available > m.cpuCostConfig.TrackCpuCost
 	}
 
-	logger.Debugw("cpu request", "accepted", accept, "availableCPUs", available, "numCPUs", m.cpuStats.NumCPU())
 	return accept
 }
 
