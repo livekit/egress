@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/urfave/cli/v2"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -160,6 +161,12 @@ func runHandler(c *cli.Context) error {
 		logger.Infow("exit requested, stopping recording and shutting down", "signal", sig)
 		handler.Kill()
 	}()
+
+	time.AfterFunc(5*time.Second, func() {
+		b, err := handler.GetPipelineDebugInfo()
+
+		fmt.Println("DOT", b, err)
+	})
 
 	return handler.Run()
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -15,16 +16,23 @@ import (
 )
 
 type Handler struct {
-	conf      *config.PipelineConfig
-	rpcServer egress.RPCServer
-	kill      chan struct{}
+	conf          *config.PipelineConfig
+	rpcServer     egress.RPCServer
+	kill          chan struct{}
+	debugRequests chan chan pipelineDebugResponse
+}
+
+type pipelineDebugResponse struct {
+	dot []byte
+	err error
 }
 
 func NewHandler(conf *config.PipelineConfig, rpcServer egress.RPCServer) *Handler {
 	return &Handler{
-		conf:      conf,
-		rpcServer: rpcServer,
-		kill:      make(chan struct{}),
+		conf:          conf,
+		rpcServer:     rpcServer,
+		kill:          make(chan struct{}),
+		debugRequests: make(chan chan pipelineDebugResponse),
 	}
 }
 
@@ -92,7 +100,27 @@ func (h *Handler) Run() error {
 			}
 
 			h.sendResponse(ctx, request, p.Info, err)
+		case debugRequestChan := <-h.debugRequests:
+			dot, err := p.GetGstPipelineDebugDot()
+			select {
+			case debugRequestChan <- pipelineDebugResponse{dot: dot, err: err}:
+			default:
+				logger.Debugw("unable to return gstreamer debug dot file to caller")
+			}
 		}
+	}
+}
+
+func (h *Handler) GetPipelineDebugInfo() ([]byte, error) {
+	req := make(chan pipelineDebugResponse, 1)
+
+	h.debugRequests <- req
+
+	select {
+	case resp := <-req:
+		return resp.dot, resp.err
+	case <-time.After(2 * time.Second):
+		return nil, errors.New("timed out requesting pipeline debug info")
 	}
 }
 
