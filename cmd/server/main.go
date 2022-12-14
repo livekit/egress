@@ -117,6 +117,8 @@ func runService(c *cli.Context) error {
 		}
 	}()
 
+	svc.StartDebugHandler()
+
 	return svc.Run()
 }
 
@@ -170,12 +172,7 @@ func runHandler(c *cli.Context) error {
 		handler.Kill()
 	}()
 
-	if debugPort != 0 {
-		go func() {
-			logger.Infow(fmt.Sprintf("starting egress handler debug handler on port %d", debugPort))
-			_ = http.ListenAndServe(fmt.Sprintf(":%d", debugPort), &handlerDebugHandler{h: handler})
-		}()
-	}
+	handler.StartDebugHandler(uint16(debugPort))
 
 	return handler.Run()
 }

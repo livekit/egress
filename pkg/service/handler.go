@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -109,6 +111,22 @@ func (h *Handler) Run() error {
 			}
 		}
 	}
+}
+
+func (h *Handler) StartDebugHandler(debugPort uint16) {
+	if debugPort == 0 {
+		logger.Debugw("debug handler disabled")
+	}
+
+	d := &handlerDebugHandler{h: h}
+
+	mux := http.NewServeMux()
+	mux.Handle(gstPipelineDotFile, d)
+
+	go func() {
+		logger.Debugw(fmt.Sprintf("starting handler debug handler on port %d", debugPort))
+		_ = http.ListenAndServe(fmt.Sprintf("::1:%s", debugPort), mux)
+	}()
 }
 
 func (h *Handler) GetPipelineDebugInfo() ([]byte, error) {

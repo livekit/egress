@@ -36,7 +36,7 @@ type CPUCostConfig struct {
 }
 
 type DebugConfig struct {
-	HandlerDebugBasePort int `yaml:"handler_debug_base_port"` // Lowest port used to launch the egress handler debug service. 1000 TCP ports starting from this value will be assigned the the egress handlers as they are started. 0 means handler debug server disabled
+	DebugHandlerPort int `yaml:"debug_handler_port"` // Port used to launch the egress debug handler. 1000 TCP ports starting from this value will be assigned the the egress handlers as they are started. 0 means debug handler disabled.
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {

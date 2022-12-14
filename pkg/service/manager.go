@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -32,10 +33,11 @@ type ProcessManager struct {
 }
 
 type process struct {
-	handlerID string
-	req       *livekit.StartEgressRequest
-	cmd       *exec.Cmd
-	closed    chan struct{}
+	handlerID        string
+	req              *livekit.StartEgressRequest
+	cmd              *exec.Cmd
+	debugHandlerPort uint16
+	closed           chan struct{}
 }
 
 func NewProcessManager(conf *config.ServiceConfig, monitor *stats.Monitor) *ProcessManager {
@@ -84,8 +86,12 @@ func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest) error {
 		"--config", string(confString),
 		"--request", string(reqString),
 	}
-	if s.conf.DebugConfig.HandlerDebugBasePort > 0 {
-		options = append(options, "--debug-port", fmt.Sprintf("%d", s.conf.DebugConfig.HandlerDebugBasePort+s.currentHandlerDebugPortOffset))
+
+	var debugHandlerPort int
+	if s.conf.DebugConfig.DebugHandlerPort > 0 && s.conf.DebugConfig.DebugHandlerPort < 65535-1000 {
+		debugHandlerPort = s.conf.DebugConfig.DebugHandlerPort + 1 + s.currentHandlerDebugPortOffset
+
+		options = append(options, "--debug-port", fmt.Sprintf("%d", debugHandlerPort))
 		s.currentHandlerDebugPortOffset = (s.currentHandlerDebugPortOffset + 1) % 1000
 	}
 
@@ -104,10 +110,11 @@ func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest) error {
 
 	s.monitor.EgressStarted(req)
 	h := &process{
-		handlerID: handlerID,
-		req:       req,
-		cmd:       cmd,
-		closed:    make(chan struct{}),
+		handlerID:        handlerID,
+		req:              req,
+		cmd:              cmd,
+		debugHandlerPort: uint16(debugHandlerPort),
+		closed:           make(chan struct{}),
 	}
 
 	s.mu.Lock()
@@ -169,6 +176,18 @@ func (s *ProcessManager) listEgress() []string {
 		egressIDs = append(egressIDs, egressID)
 	}
 	return egressIDs
+}
+
+func (s *ProcessManager) getHandlerDebugPort(egressId string) (uint16, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	process, ok := s.activeHandlers[egressId]
+	if !ok {
+		return 0, errors.ErrEgressNotFound
+	}
+
+	return process.debugHandlerPort, nil
 }
 
 func (s *ProcessManager) shutdown() {
