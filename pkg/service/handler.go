@@ -100,10 +100,10 @@ func (h *Handler) Run() error {
 			}
 
 			h.sendResponse(ctx, request, p.Info, err)
-		case debugRequestChan := <-h.debugRequests:
+		case debugResponseChan := <-h.debugRequests:
 			dot, err := p.GetGstPipelineDebugDot()
 			select {
-			case debugRequestChan <- pipelineDebugResponse{dot: dot, err: err}:
+			case debugResponseChan <- pipelineDebugResponse{dot: dot, err: err}:
 			default:
 				logger.Debugw("unable to return gstreamer debug dot file to caller")
 			}

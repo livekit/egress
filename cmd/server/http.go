@@ -29,6 +29,7 @@ func (d *handlerDebugHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) 
 	dot, err := d.h.GetPipelineDebugInfo()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "text/plain")
