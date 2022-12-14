@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/urfave/cli/v2"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -38,6 +37,9 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name: "config",
+					},
+					&cli.Uint64Flag{
+						Name: "debug-port",
 					},
 				},
 				Action: runHandler,
@@ -132,6 +134,12 @@ func runHandler(c *cli.Context) error {
 		return err
 	}
 
+	debugPort := c.Uint64("debug-port")
+	if debugPort > 65535 {
+		logger.Debugw("debug port invalid")
+		debugPort = 0
+	}
+
 	conf, err := config.NewPipelineConfig(configBody, req)
 	if err != nil {
 		return err
@@ -162,11 +170,12 @@ func runHandler(c *cli.Context) error {
 		handler.Kill()
 	}()
 
-	time.AfterFunc(5*time.Second, func() {
-		b, err := handler.GetPipelineDebugInfo()
-
-		fmt.Println("DOT", b, err)
-	})
+	if debugPort != 0 {
+		go func() {
+			logger.Infow(fmt.Sprintf("starting egress handler debug handler on port %d", debugPort))
+			_ = http.ListenAndServe(fmt.Sprintf(":%d", debugPort), &handlerDebugHandler{h: handler})
+		}()
+	}
 
 	return handler.Run()
 }

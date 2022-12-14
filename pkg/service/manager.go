@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path"
@@ -23,10 +24,11 @@ type ProcessManager struct {
 	conf    *config.ServiceConfig
 	monitor *stats.Monitor
 
-	mu             sync.RWMutex
-	handlingWeb    bool
-	activeHandlers map[string]*process
-	onFatal        func()
+	mu                            sync.RWMutex
+	handlingWeb                   bool
+	activeHandlers                map[string]*process
+	onFatal                       func()
+	currentHandlerDebugPortOffset int
 }
 
 type process struct {
@@ -77,10 +79,18 @@ func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest) error {
 		return err
 	}
 
-	cmd := exec.Command("egress",
+	options := []string{
 		"run-handler",
 		"--config", string(confString),
 		"--request", string(reqString),
+	}
+	if s.conf.DebugConfig.HandlerDebugPortBase > 0 {
+		options = append(options, "--debug-port", fmt.Sprintf("%d", s.conf.DebugConfig.HandlerDebugPortBase+s.currentHandlerDebugPortOffset))
+		s.currentHandlerDebugPortOffset = (s.currentHandlerDebugPortOffset + 1) % 1000
+	}
+
+	cmd := exec.Command("egress",
+		options...,
 	)
 	cmd.Dir = "/"
 	cmd.Stdout = os.Stdout

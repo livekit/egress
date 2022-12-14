@@ -24,6 +24,8 @@ type ServiceConfig struct {
 	PrometheusPort int `yaml:"prometheus_port"`
 
 	CPUCostConfig `yaml:"cpu_cost"` // CPU costs for various egress types
+
+	DebugConfig `yaml:"debug"`
 }
 
 type CPUCostConfig struct {
@@ -31,6 +33,10 @@ type CPUCostConfig struct {
 	TrackCompositeCpuCost float64 `yaml:"track_composite_cpu_cost"`
 	TrackCpuCost          float64 `yaml:"track_cpu_cost"`
 	WebCpuCost            float64 `yaml:"web_cpu_cost"`
+}
+
+type DebugConfig struct {
+	HandlerDebugPortBase int `yaml:"handler_debug_base_port"` // Lowest port used to launch the egress handler debug service. 1000 TCP ports starting from this value will be assigned the the egress handlers as they are started. 0 means handler debug server disabled
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
