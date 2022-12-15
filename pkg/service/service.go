@@ -114,8 +114,11 @@ func (s *Service) StartDebugHandler() {
 	mux.Handle(gstPipelineDotFile, h)
 
 	go func() {
-		logger.Debugw(fmt.Sprintf("starting debug handler on port %d", s.conf.DebugConfig.DebugHandlerPort))
-		_ = http.ListenAndServe(fmt.Sprintf(":%s", s.conf.DebugConfig.DebugHandlerPort), mux)
+		addr := fmt.Sprintf(":%d", s.conf.DebugConfig.DebugHandlerPort)
+
+		logger.Debugw(fmt.Sprintf("starting debug handler on address %s", addr))
+		err := http.ListenAndServe(addr, mux)
+		logger.Infow("debug server failed", "error", err)
 	}()
 }
 

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	gstPipelineDotFile = "gst_pipeline"
+	gstPipelineDotFile = "/gst_pipeline/"
 )
 
 type handerProxyHandler struct {
@@ -19,10 +19,10 @@ type handerProxyHandler struct {
 
 // URL path format is "/<application>/<egress_id>/<optional_other_params>"
 func (p *handerProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
 	pathElements := strings.Split(r.URL.Path, "/")
 	if len(pathElements) < 3 {
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("malformed url"))
+		http.Error(w, "malformed url", http.StatusNotFound)
 		return
 	}
 
@@ -51,7 +51,7 @@ func (p *handerProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	url := *r.URL
 	url.Path = path
 
-	urlString := fmt.Sprintf("http://::1:%d/%s", port, url.EscapedPath())
+	urlString := fmt.Sprintf("http://localhost:%d/%s", port, url.EscapedPath())
 	if url.RawQuery != "" {
 		urlString = fmt.Sprintf("%s?%s", urlString, url)
 	}

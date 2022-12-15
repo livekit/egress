@@ -65,6 +65,10 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 
 	// start service
 	svc := service.NewService(conf.ServiceConfig, rpcServer)
+
+	// start debug handler
+	svc.StartDebugHandler()
+
 	go func() {
 		err := svc.Run()
 		require.NoError(t, err)
