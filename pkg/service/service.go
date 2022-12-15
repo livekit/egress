@@ -29,6 +29,8 @@ type Service struct {
 	monitor    *stats.Monitor
 	manager    *ProcessManager
 
+	egressStartedCb func(req *livekit.StartEgressRequest)
+
 	shutdown chan struct{}
 }
 
@@ -54,7 +56,7 @@ func NewService(conf *config.ServiceConfig, rpcServer egress.RPCServer) *Service
 	return s
 }
 
-func (s *Service) Run() error {
+func (s *Service) Run(egressStartedCb func(req *livekit.StartEgressRequest)) error {
 	logger.Debugw("starting service", "version", version.Version)
 
 	if s.promServer != nil {
@@ -112,6 +114,12 @@ func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 		p, err := config.GetValidatedPipelineConfig(s.conf, req)
 		if err == nil {
 			err = s.manager.launchHandler(req)
+		}
+
+		if s.egressStartedCb != nil {
+			go func() {
+				s.egressStartedCb(req)
+			}()
 		}
 
 		s.sendResponse(ctx, req, p.Info, err)

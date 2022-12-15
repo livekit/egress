@@ -114,7 +114,7 @@ func runService(c *cli.Context) error {
 		}
 	}()
 
-	return svc.Run()
+	return svc.Run(nil)
 }
 
 func runHandler(c *cli.Context) error {
