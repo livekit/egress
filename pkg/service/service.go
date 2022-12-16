@@ -59,6 +59,8 @@ func NewService(conf *config.ServiceConfig, rpcServer egress.RPCServer) *Service
 func (s *Service) Run(egressStartedCb func(req *livekit.StartEgressRequest)) error {
 	logger.Debugw("starting service", "version", version.Version)
 
+	s.egressStartedCb = egressStartedCb
+
 	if s.promServer != nil {
 		promListener, err := net.Listen("tcp", s.promServer.Addr)
 		if err != nil {
