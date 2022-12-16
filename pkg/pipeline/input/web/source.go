@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
+	"strings"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
@@ -44,7 +45,7 @@ func (s *WebInput) createPulseSink(ctx context.Context, p *config.PipelineConfig
 		return errors.Fatal(err)
 	}
 
-	s.pulseSink = b.String()
+	s.pulseSink = strings.TrimRight(b.String(), "\n")
 	return nil
 }
 
