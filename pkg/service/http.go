@@ -13,12 +13,12 @@ const (
 	gstPipelineDotFile = "/gst_pipeline/"
 )
 
-type handerProxyHandler struct {
+type handlerProxyHandler struct {
 	processManager *ProcessManager
 }
 
 // URL path format is "/<application>/<egress_id>/<optional_other_params>"
-func (p *handerProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (p *handlerProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	pathElements := strings.Split(r.URL.Path, "/")
 	if len(pathElements) < 3 {

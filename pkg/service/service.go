@@ -104,17 +104,17 @@ func (s *Service) Run() error {
 }
 
 func (s *Service) StartDebugHandler() {
-	if s.conf.DebugConfig.DebugHandlerPort == 0 {
+	if s.conf.DebugHandlerPort == 0 {
 		logger.Debugw("debug handler disabled")
 	}
 
-	h := &handerProxyHandler{processManager: s.manager}
+	h := &handlerProxyHandler{processManager: s.manager}
 
 	mux := http.NewServeMux()
 	mux.Handle(gstPipelineDotFile, h)
 
 	go func() {
-		addr := fmt.Sprintf(":%d", s.conf.DebugConfig.DebugHandlerPort)
+		addr := fmt.Sprintf(":%d", s.conf.DebugHandlerPort)
 
 		logger.Debugw(fmt.Sprintf("starting debug handler on address %s", addr))
 		err := http.ListenAndServe(addr, mux)

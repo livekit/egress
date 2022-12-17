@@ -20,12 +20,11 @@ const (
 type ServiceConfig struct {
 	BaseConfig `yaml:",inline"`
 
-	HealthPort     int `yaml:"health_port"`
-	PrometheusPort int `yaml:"prometheus_port"`
+	HealthPort       int `yaml:"health_port"`
+	PrometheusPort   int `yaml:"prometheus_port"`
+	DebugHandlerPort int `yaml:"debug_handler_port"` // Port used to launch the egress debug handler. 1000 TCP ports starting from this value will be assigned the the egress handlers as they are started. 0 means debug handler disabled.
 
 	CPUCostConfig `yaml:"cpu_cost"` // CPU costs for various egress types
-
-	DebugConfig `yaml:"debug"`
 }
 
 type CPUCostConfig struct {
@@ -36,7 +35,6 @@ type CPUCostConfig struct {
 }
 
 type DebugConfig struct {
-	DebugHandlerPort int `yaml:"debug_handler_port"` // Port used to launch the egress debug handler. 1000 TCP ports starting from this value will be assigned the the egress handlers as they are started. 0 means debug handler disabled.
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {

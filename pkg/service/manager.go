@@ -88,8 +88,8 @@ func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest) error {
 	}
 
 	var debugHandlerPort int
-	if s.conf.DebugConfig.DebugHandlerPort > 0 && s.conf.DebugConfig.DebugHandlerPort < 65535-1000 {
-		debugHandlerPort = s.conf.DebugConfig.DebugHandlerPort + 1 + s.currentHandlerDebugPortOffset
+	if s.conf.DebugHandlerPort > 0 && s.conf.DebugHandlerPort < 65535-1000 {
+		debugHandlerPort = s.conf.DebugHandlerPort + 1 + s.currentHandlerDebugPortOffset
 
 		options = append(options, "--debug-port", fmt.Sprintf("%d", debugHandlerPort))
 		s.currentHandlerDebugPortOffset = (s.currentHandlerDebugPortOffset + 1) % 1000
