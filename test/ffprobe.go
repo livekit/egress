@@ -43,10 +43,11 @@ type FFProbeInfo struct {
 		ChannelLayout string `json:"channel_layout"`
 
 		// video
-		Width      int32  `json:"width"`
-		Height     int32  `json:"height"`
-		RFrameRate string `json:"r_frame_rate"`
-		BitRate    string `json:"bit_rate"`
+		Width        int32  `json:"width"`
+		Height       int32  `json:"height"`
+		RFrameRate   string `json:"r_frame_rate"`
+		AvgFrameRate string `json:"avg_frame_rate"`
+		BitRate      string `json:"bit_rate"`
 	} `json:"streams"`
 	Format struct {
 		Filename   string `json:"filename"`
@@ -117,12 +118,12 @@ func verifyFile(t *testing.T, conf *TestConfig, p *config.PipelineConfig, res *l
 	}
 
 	// verify
-	verify(t, localPath, p, res, ResultTypeFile, conf.Muting)
+	verify(t, localPath, p, res, ResultTypeFile, conf.Muting, conf.sourceFramerate)
 }
 
-func verifyStreams(t *testing.T, p *config.PipelineConfig, urls ...string) {
+func verifyStreams(t *testing.T, p *config.PipelineConfig, conf *TestConfig, urls ...string) {
 	for _, url := range urls {
-		verify(t, url, p, nil, ResultTypeStream, false)
+		verify(t, url, p, nil, ResultTypeStream, false, conf.sourceFramerate)
 	}
 }
 
@@ -138,7 +139,6 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, re
 	require.NotEmpty(t, segments.PlaylistLocation)
 	require.Greater(t, segments.Size, int64(0))
 	require.Greater(t, segments.Duration, int64(0))
-	require.Greater(t, segments.SegmentCount, int64(0))
 
 	storedPlaylistPath := segments.PlaylistName
 	localPlaylistPath := segments.PlaylistName
@@ -157,10 +157,10 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, re
 	}
 
 	// verify
-	verify(t, localPlaylistPath, p, res, ResultTypeSegments, conf.Muting)
+	verify(t, localPlaylistPath, p, res, ResultTypeSegments, conf.Muting, conf.sourceFramerate)
 }
 
-func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.EgressInfo, resultType ResultType, withMuting bool) {
+func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.EgressInfo, resultType ResultType, withMuting bool, sourceFramerate float64) {
 	info, err := ffprobe(input)
 	require.NoError(t, err, "ffprobe error - input does not exist")
 
@@ -199,7 +199,10 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 		}
 
 	case ResultTypeSegments:
-		// TODO: implement with Segments
+		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
+		require.NoError(t, err)
+		require.Equal(t, int64(actual/float64(p.SegmentDuration))+1, res.GetSegments().SegmentCount)
+
 	}
 
 	// check stream info
@@ -274,13 +277,14 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 				require.Equal(t, p.Height, stream.Height)
 
 				// framerate
-				frac := strings.Split(stream.RFrameRate, "/")
+				frac := strings.Split(stream.AvgFrameRate, "/")
 				require.Len(t, frac, 2)
 				n, err := strconv.ParseFloat(frac[0], 64)
 				require.NoError(t, err)
 				d, err := strconv.ParseFloat(frac[1], 64)
 				require.NoError(t, err)
-				require.Greater(t, n/d, float64(p.Framerate)*0.95)
+				require.Less(t, n/d, float64(p.Framerate)*1.05)
+				require.Greater(t, n/d, float64(sourceFramerate)*0.95)
 			}
 
 		default:
