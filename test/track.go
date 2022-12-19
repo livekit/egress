@@ -158,7 +158,7 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 			}
 			res := rec.Run(ctx)
 
-			verify(t, filepath, p, res, ResultTypeStream, conf.Muting)
+			verify(t, filepath, p, res, ResultTypeStream, conf.Muting, conf.sourceFramerate)
 		})
 		if conf.Short {
 			return

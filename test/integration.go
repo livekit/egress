@@ -96,6 +96,8 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 
 	// run tests
 	if conf.runRoomTests {
+		conf.sourceFramerate = 30
+
 		if conf.runFileTests {
 			t.Run("RoomComposite/File", func(t *testing.T) {
 				testRoomCompositeFile(t, conf)
@@ -116,6 +118,8 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	}
 
 	if conf.runTrackCompositeTests {
+		conf.sourceFramerate = 23.97
+
 		if conf.runFileTests {
 			t.Run("TrackComposite/File", func(t *testing.T) {
 				testTrackCompositeFile(t, conf)
@@ -136,6 +140,8 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	}
 
 	if conf.runTrackTests {
+		conf.sourceFramerate = 23.97
+
 		if conf.runFileTests {
 			t.Run("Track/File", func(t *testing.T) {
 				testTrackFile(t, conf)
@@ -150,6 +156,8 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	}
 
 	if conf.runWebTests {
+		conf.sourceFramerate = 30
+
 		if conf.runFileTests {
 			t.Run("Web/File", func(t *testing.T) {
 				testWebFile(t, conf)
@@ -229,7 +237,7 @@ func runTimeLimitStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEg
 	p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 	require.NoError(t, err)
 
-	verifyStreams(t, p, streamUrl1)
+	verifyStreams(t, p, conf, streamUrl1)
 
 	time.Sleep(conf.SessionLimits.StreamOutputMaxDuration - time.Second*4)
 
@@ -247,7 +255,7 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	require.NoError(t, err)
 
 	// verify stream
-	verifyStreams(t, p, streamUrl1)
+	verifyStreams(t, p, conf, streamUrl1)
 
 	// add one good stream url and a couple bad ones
 	_, err = conf.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
@@ -280,7 +288,7 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	}
 
 	// verify the good stream urls
-	verifyStreams(t, p, streamUrl1, streamUrl2)
+	verifyStreams(t, p, conf, streamUrl1, streamUrl2)
 
 	// remove one of the stream urls
 	_, err = conf.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
@@ -297,7 +305,7 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	time.Sleep(time.Second * 5)
 
 	// verify the remaining stream
-	verifyStreams(t, p, streamUrl2)
+	verifyStreams(t, p, conf, streamUrl2)
 
 	time.Sleep(time.Second * 10)
 

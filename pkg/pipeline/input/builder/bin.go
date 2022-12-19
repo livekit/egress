@@ -240,6 +240,8 @@ func buildQueue() (*gst.Element, error) {
 	if err = queue.SetProperty("max-size-buffers", uint(0)); err != nil {
 		return nil, err
 	}
+	queue.SetArg("leaky", "downstream")
+
 	return queue, nil
 }
 
@@ -279,6 +281,9 @@ func buildMux(p *config.PipelineConfig) (*gst.Element, error) {
 			return nil, err
 		}
 		if err = mux.SetProperty("max-size-time", uint64(time.Duration(p.SegmentDuration)*time.Second)); err != nil {
+			return nil, err
+		}
+		if err = mux.SetProperty("send-keyframe-requests", true); err != nil {
 			return nil, err
 		}
 		if err = mux.SetProperty("async-finalize", true); err != nil {

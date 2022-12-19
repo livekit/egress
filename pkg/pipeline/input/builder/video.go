@@ -82,11 +82,6 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return err
 	}
 
-	videoRate, err := gst.NewElement("videorate")
-	if err != nil {
-		return err
-	}
-
 	caps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return err
@@ -97,7 +92,7 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return err
 	}
 
-	v.elements = []*gst.Element{xImageSrc, videoQueue, videoConvert, videoRate, caps}
+	v.elements = []*gst.Element{xImageSrc, videoQueue, videoConvert, caps}
 	return nil
 }
 
@@ -181,13 +176,16 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 	if err != nil {
 		return err
 	}
+	if err = videoRate.SetProperty("max-rate", int(p.Framerate)); err != nil {
+		return err
+	}
 
 	caps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return err
 	}
 	if err = caps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,framerate=%d/1,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1", p.Width, p.Height, p.Framerate)),
+		fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1", p.Width, p.Height)),
 	); err != nil {
 		return err
 	}
@@ -209,7 +207,8 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
 		if p.OutputType == types.OutputTypeHLS {
-			if err = x264Enc.SetProperty("key-int-max", uint(int32(p.SegmentDuration)*p.Framerate)); err != nil {
+			// The muxer should request key frames to match the segment duration. Set a 2 x segment duration on the encoder as a safeguard.
+			if err = x264Enc.SetProperty("key-int-max", uint(int32(p.SegmentDuration)*p.Framerate*2)); err != nil {
 				return err
 			}
 			// Avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
@@ -224,7 +223,7 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 		}
 
 		if err = caps.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf("video/x-h264,profile=%s,framerate=%d/1", p.VideoProfile, p.Framerate),
+			fmt.Sprintf("video/x-h264,profile=%s", p.VideoProfile),
 		)); err != nil {
 			return err
 		}
