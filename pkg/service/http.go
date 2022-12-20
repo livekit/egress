@@ -1,16 +1,15 @@
 package service
 
 import (
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/ipc"
 )
 
 const (
-	gstPipelineDotFile = "/gst_pipeline/"
+	gstPipelineDotFile = "gst_pipeline"
 )
 
 type handlerProxyHandler struct {
@@ -26,9 +25,21 @@ func (p *handlerProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	app := pathElements[1]
 	egressId := pathElements[2]
 
-	port, err := p.processManager.getHandlerDebugPort(egressId)
+	grpcReq := &ipc.GetDebugInfoRequest{}
+	switch app {
+	case gstPipelineDotFile:
+		grpcReq.Request = &ipc.GetDebugInfoRequest_GstPipelineDot{
+			GstPipelineDot: &ipc.GstPipelineDebugDotRequest{},
+		}
+	default:
+		http.Error(w, "unkown application", http.StatusNotFound)
+		return
+	}
+
+	grpcResp, err := p.processManager.sendGrpcDebugRequest(egressId, grpcReq)
 	switch {
 	case errors.Is(err, errors.ErrEgressNotFound):
 		http.Error(w, "unkown egress", http.StatusNotFound)
@@ -40,47 +51,17 @@ func (p *handlerProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if port == 0 {
-		http.Error(w, "debug disabled for egress", http.StatusNotFound)
-		return
+	switch app {
+	case gstPipelineDotFile:
+		dotResp, ok := grpcResp.Response.(*ipc.GetDebugInfoResponse_GstPipelineDot)
+		if !ok {
+			http.Error(w, "wrong response type", http.StatusInternalServerError)
+			return
+		}
+		dotStr := dotResp.GstPipelineDot.DotFile
+		_, err := w.Write([]byte(dotStr))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}
-
-	// Remove the egressId from the URL
-	pathElements = append(pathElements[:2], pathElements[3:]...)
-	path := strings.Join(pathElements, "/")
-	url := *r.URL
-	url.Path = path
-
-	urlString := fmt.Sprintf("http://localhost:%d/%s", port, url.EscapedPath())
-	if url.RawQuery != "" {
-		urlString = fmt.Sprintf("%s?%s", urlString, url)
-	}
-	proxyResp, err := http.Get(urlString)
-	if err != nil {
-		// StatusInternalServerError may not always be the appropriate error code
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer proxyResp.Body.Close()
-
-	_, err = io.Copy(w, proxyResp.Body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-type handlerDebugHandler struct {
-	h *Handler
-}
-
-func (d *handlerDebugHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
-	dot, err := d.h.GetPipelineDebugInfo()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/plain")
-
-	w.Write(dot)
 }

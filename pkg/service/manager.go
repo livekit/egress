@@ -3,17 +3,21 @@ package service
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path"
 	"sync"
 	"syscall"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -33,11 +37,11 @@ type ProcessManager struct {
 }
 
 type process struct {
-	handlerID        string
-	req              *livekit.StartEgressRequest
-	cmd              *exec.Cmd
-	debugHandlerPort uint16
-	closed           chan struct{}
+	handlerID  string
+	req        *livekit.StartEgressRequest
+	cmd        *exec.Cmd
+	grpcClient ipc.EgressHandlerClient
+	closed     chan struct{}
 }
 
 func NewProcessManager(conf *config.ServiceConfig, monitor *stats.Monitor) *ProcessManager {
@@ -110,12 +114,25 @@ func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest) error {
 
 	s.monitor.EgressStarted(req)
 	h := &process{
-		handlerID:        handlerID,
-		req:              req,
-		cmd:              cmd,
-		debugHandlerPort: uint16(debugHandlerPort),
-		closed:           make(chan struct{}),
+		handlerID: handlerID,
+		req:       req,
+		cmd:       cmd,
+		closed:    make(chan struct{}),
 	}
+
+	socketAddr := getSocketAddress(handlerID)
+	conn, err := grpc.Dial(socketAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(_ context.Context, addr string) (net.Conn, error) {
+			return net.Dial(network, addr)
+		}),
+	)
+	if err != nil {
+		span.RecordError(err)
+		logger.Errorw("could not dial grpc handler", err)
+		return err
+	}
+	h.grpcClient = ipc.NewEgressHandlerClient(conn)
 
 	s.mu.Lock()
 	s.activeHandlers[req.EgressId] = h
@@ -178,16 +195,18 @@ func (s *ProcessManager) listEgress() []string {
 	return egressIDs
 }
 
-func (s *ProcessManager) getHandlerDebugPort(egressId string) (uint16, error) {
+func (s *ProcessManager) sendGrpcDebugRequest(egressId string, req *ipc.GetDebugInfoRequest) (*ipc.GetDebugInfoResponse, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	process, ok := s.activeHandlers[egressId]
+	h, ok := s.activeHandlers[egressId]
 	if !ok {
-		return 0, errors.ErrEgressNotFound
+		s.mu.Unlock()
+		return nil, errors.ErrEgressNotFound
 	}
+	c := h.grpcClient
+	s.mu.Unlock()
 
-	return process.debugHandlerPort, nil
+	return c.GetDebugInfo(context.Background(), req)
 }
 
 func (s *ProcessManager) shutdown() {
@@ -213,4 +232,8 @@ func isWeb(req *livekit.StartEgressRequest) bool {
 	default:
 		return false
 	}
+}
+
+func getSocketAddress(handlerID string) string {
+	return fmt.Sprintf("/tmp/%s.sock", handlerID)
 }

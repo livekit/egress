@@ -2,14 +2,15 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"net/http"
+	"net"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
@@ -17,25 +18,47 @@ import (
 	"github.com/livekit/protocol/tracer"
 )
 
+const network = "unix"
+
 type Handler struct {
+	ipc.UnimplementedEgressHandlerServer
+
 	conf          *config.PipelineConfig
 	rpcServer     egress.RPCServer
+	grpcServer    *grpc.Server
 	kill          chan struct{}
 	debugRequests chan chan pipelineDebugResponse
 }
 
 type pipelineDebugResponse struct {
-	dot []byte
+	dot string
 	err error
 }
 
-func NewHandler(conf *config.PipelineConfig, rpcServer egress.RPCServer) *Handler {
-	return &Handler{
+func NewHandler(conf *config.PipelineConfig, rpcServer egress.RPCServer) (*Handler, error) {
+	h := &Handler{
 		conf:          conf,
 		rpcServer:     rpcServer,
+		grpcServer:    grpc.NewServer(),
 		kill:          make(chan struct{}),
 		debugRequests: make(chan chan pipelineDebugResponse),
 	}
+
+	listener, err := net.Listen(network, getSocketAddress(conf.HandlerID))
+	if err != nil {
+		return nil, err
+	}
+
+	ipc.RegisterEgressHandlerServer(h.grpcServer, h)
+
+	go func() {
+		err := h.grpcServer.Serve(listener)
+		if err != nil {
+			logger.Errorw("failed to start grpc handler", err)
+		}
+	}()
+
+	return h, nil
 }
 
 func (h *Handler) Run() error {
@@ -113,33 +136,33 @@ func (h *Handler) Run() error {
 	}
 }
 
-func (h *Handler) StartDebugHandler(debugPort uint16) {
-	if debugPort == 0 {
-		logger.Debugw("debug handler disabled")
-	}
+func (h *Handler) GetDebugInfo(ctx context.Context, req *ipc.GetDebugInfoRequest) (*ipc.GetDebugInfoResponse, error) {
+	switch req.Request.(type) {
+	case *ipc.GetDebugInfoRequest_GstPipelineDot:
+		pReq := make(chan pipelineDebugResponse, 1)
 
-	d := &handlerDebugHandler{h: h}
+		h.debugRequests <- pReq
 
-	mux := http.NewServeMux()
-	mux.Handle(gstPipelineDotFile, d)
+		select {
+		case pResp := <-pReq:
+			if pResp.err != nil {
+				return nil, pResp.err
+			}
+			resp := &ipc.GetDebugInfoResponse{
+				Response: &ipc.GetDebugInfoResponse_GstPipelineDot{
+					GstPipelineDot: &ipc.GstPipelineDebugDotResponse{
+						DotFile: pResp.dot,
+					},
+				},
+			}
+			return resp, nil
 
-	go func() {
-		logger.Debugw(fmt.Sprintf("starting egress handler debug handler on port %d", debugPort))
-		err := http.ListenAndServe(fmt.Sprintf("localhost:%d", debugPort), mux)
-		logger.Infow("debug server failed", "error", err)
-	}()
-}
+		case <-time.After(2 * time.Second):
+			return nil, errors.New("timed out requesting pipeline debug info")
+		}
 
-func (h *Handler) GetPipelineDebugInfo() ([]byte, error) {
-	req := make(chan pipelineDebugResponse, 1)
-
-	h.debugRequests <- req
-
-	select {
-	case resp := <-req:
-		return resp.dot, resp.err
-	case <-time.After(2 * time.Second):
-		return nil, errors.New("timed out requesting pipeline debug info")
+	default:
+		return nil, errors.New("unsupported debug info request type")
 	}
 }
 

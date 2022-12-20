@@ -161,7 +161,10 @@ func runHandler(c *cli.Context) error {
 	}
 
 	rpcHandler := egress.NewRedisRPCServer(rc)
-	handler := service.NewHandler(conf, rpcHandler)
+	handler, err := service.NewHandler(conf, rpcHandler)
+	if err != nil {
+		return err
+	}
 
 	killChan := make(chan os.Signal, 1)
 	signal.Notify(killChan, syscall.SIGINT)
@@ -171,8 +174,6 @@ func runHandler(c *cli.Context) error {
 		logger.Infow("exit requested, stopping recording and shutting down", "signal", sig)
 		handler.Kill()
 	}()
-
-	handler.StartDebugHandler(uint16(debugPort))
 
 	return handler.Run()
 }
