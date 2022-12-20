@@ -22,7 +22,7 @@ type ServiceConfig struct {
 
 	HealthPort       int `yaml:"health_port"`
 	PrometheusPort   int `yaml:"prometheus_port"`
-	DebugHandlerPort int `yaml:"debug_handler_port"` // Port used to launch the egress debug handler. 1000 TCP ports starting from this value will be assigned the the egress handlers as they are started. 0 means debug handler disabled.
+	DebugHandlerPort int `yaml:"debug_handler_port"` // Port used to launch the egress debug handler. 0 means debug handler disabled.
 
 	CPUCostConfig `yaml:"cpu_cost"` // CPU costs for various egress types
 }
@@ -32,9 +32,6 @@ type CPUCostConfig struct {
 	TrackCompositeCpuCost float64 `yaml:"track_composite_cpu_cost"`
 	TrackCpuCost          float64 `yaml:"track_cpu_cost"`
 	WebCpuCost            float64 `yaml:"web_cpu_cost"`
-}
-
-type DebugConfig struct {
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {

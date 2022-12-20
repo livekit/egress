@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -29,11 +28,10 @@ type ProcessManager struct {
 	conf    *config.ServiceConfig
 	monitor *stats.Monitor
 
-	mu                            sync.RWMutex
-	handlingWeb                   bool
-	activeHandlers                map[string]*process
-	onFatal                       func()
-	currentHandlerDebugPortOffset int
+	mu             sync.RWMutex
+	handlingWeb    bool
+	activeHandlers map[string]*process
+	onFatal        func()
 }
 
 type process struct {
@@ -85,22 +83,10 @@ func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest) error {
 		return err
 	}
 
-	options := []string{
+	cmd := exec.Command("egress",
 		"run-handler",
 		"--config", string(confString),
 		"--request", string(reqString),
-	}
-
-	var debugHandlerPort int
-	if s.conf.DebugHandlerPort > 0 && s.conf.DebugHandlerPort < 65535-1000 {
-		debugHandlerPort = s.conf.DebugHandlerPort + 1 + s.currentHandlerDebugPortOffset
-
-		options = append(options, "--debug-port", fmt.Sprintf("%d", debugHandlerPort))
-		s.currentHandlerDebugPortOffset = (s.currentHandlerDebugPortOffset + 1) % 1000
-	}
-
-	cmd := exec.Command("egress",
-		options...,
 	)
 	cmd.Dir = "/"
 	cmd.Stdout = os.Stdout
@@ -120,7 +106,7 @@ func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest) error {
 		closed:    make(chan struct{}),
 	}
 
-	socketAddr := getSocketAddress(handlerID)
+	socketAddr := getSocketAddress(p.TmpDir)
 	conn, err := grpc.Dial(socketAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(_ context.Context, addr string) (net.Conn, error) {
@@ -234,6 +220,6 @@ func isWeb(req *livekit.StartEgressRequest) bool {
 	}
 }
 
-func getSocketAddress(handlerID string) string {
-	return fmt.Sprintf("/tmp/%s.sock", handlerID)
+func getSocketAddress(tmpDir string) string {
+	return path.Join(tmpDir, "service_rpc.sock")
 }

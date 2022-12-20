@@ -38,9 +38,6 @@ func main() {
 					&cli.StringFlag{
 						Name: "config",
 					},
-					&cli.Uint64Flag{
-						Name: "debug-port",
-					},
 				},
 				Action: runHandler,
 				Hidden: true,
@@ -134,12 +131,6 @@ func runHandler(c *cli.Context) error {
 	err := protojson.Unmarshal([]byte(reqString), req)
 	if err != nil {
 		return err
-	}
-
-	debugPort := c.Uint64("debug-port")
-	if debugPort > 65535 {
-		logger.Debugw("debug port invalid")
-		debugPort = 0
 	}
 
 	conf, err := config.NewPipelineConfig(configBody, req)

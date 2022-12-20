@@ -44,7 +44,7 @@ func NewHandler(conf *config.PipelineConfig, rpcServer egress.RPCServer) (*Handl
 		debugRequests: make(chan chan pipelineDebugResponse),
 	}
 
-	listener, err := net.Listen(network, getSocketAddress(conf.HandlerID))
+	listener, err := net.Listen(network, getSocketAddress(conf.TmpDir))
 	if err != nil {
 		return nil, err
 	}
