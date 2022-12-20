@@ -66,14 +66,15 @@ type AudioParams struct {
 }
 
 type VideoParams struct {
-	VideoEnabled bool
-	VideoCodec   types.MimeType
-	VideoProfile types.Profile
-	Width        int32
-	Height       int32
-	Depth        int32
-	Framerate    int32
-	VideoBitrate int32
+	VideoEnabled     bool
+	VideoTranscoding bool
+	VideoCodec       types.MimeType
+	VideoProfile     types.Profile
+	Width            int32
+	Height           int32
+	Depth            int32
+	Framerate        int32
+	VideoBitrate     int32
 }
 
 type StreamParams struct {
@@ -219,6 +220,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_track_id or video_track_id")
 		}
+		p.VideoTranscoding = p.VideoEnabled
 
 		// encoding options
 		switch opts := req.TrackComposite.Options.(type) {

@@ -35,7 +35,7 @@ func NewSDKVideoInput(p *config.PipelineConfig, src *app.Source, codec webrtc.RT
 	if err := v.buildSDKDecoder(p, src, codec); err != nil {
 		return nil, err
 	}
-	if p.OutputType == types.OutputTypeIVF || p.OutputType == types.OutputTypeWebM {
+	if !p.VideoTranscoding {
 		return v, nil
 	}
 	if err := v.buildEncoder(p); err != nil {
@@ -118,13 +118,18 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 		if err != nil {
 			return err
 		}
+		v.elements = append(v.elements, rtpH264Depay)
+
+		if !p.VideoTranscoding {
+			return nil
+		}
 
 		avDecH264, err := gst.NewElement("avdec_h264")
 		if err != nil {
 			return err
 		}
 
-		v.elements = append(v.elements, rtpH264Depay, avDecH264)
+		v.elements = append(v.elements, avDecH264)
 
 	case strings.EqualFold(codec.MimeType, string(types.MimeTypeVP8)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
@@ -140,9 +145,9 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 		if err != nil {
 			return err
 		}
+		v.elements = append(v.elements, rtpVP8Depay)
 
-		if p.OutputType == types.OutputTypeIVF || p.OutputType == types.OutputTypeWebM {
-			v.elements = append(v.elements, rtpVP8Depay)
+		if !p.VideoTranscoding {
 			return nil
 		}
 
@@ -151,7 +156,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 			return err
 		}
 
-		v.elements = append(v.elements, rtpVP8Depay, vp8Dec)
+		v.elements = append(v.elements, vp8Dec)
 
 	default:
 		return errors.ErrNotSupported(codec.MimeType)
