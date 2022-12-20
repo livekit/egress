@@ -4,8 +4,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -13,6 +15,63 @@ import (
 )
 
 const gstVersion = "1.20.4"
+
+type packageInfo struct {
+	Dir string
+}
+
+func Proto() error {
+	sources := []string{"ipc.proto"}
+	fmt.Println("generating protobuf")
+
+	// parse go mod output
+	cmd := exec.Command("go", "list", "-json", "-m", "github.com/livekit/protocol")
+	pkgOut, err := cmd.Output()
+	if err != nil {
+		return err
+	}
+	pi := packageInfo{}
+	if err = json.Unmarshal(pkgOut, &pi); err != nil {
+		return err
+	}
+
+	out := "pkg/ipc"
+	if err := os.MkdirAll(out, 0755); err != nil {
+		return err
+	}
+
+	protoc, err := mageutil.GetToolPath("protoc")
+	if err != nil {
+		return err
+	}
+	protocGoPath, err := mageutil.GetToolPath("protoc-gen-go")
+	if err != nil {
+		return err
+	}
+	protocGrpcGoPath, err := mageutil.GetToolPath("protoc-gen-go-grpc")
+	if err != nil {
+		return err
+	}
+
+	args := append([]string{
+		"--go_out", out,
+		"--go-grpc_out", out,
+		"--go_opt=paths=source_relative",
+		"--go-grpc_opt=paths=source_relative",
+		"--plugin=go=" + protocGoPath,
+		"--plugin=go-grpc=" + protocGrpcGoPath,
+		"-I" + pi.Dir,
+		"-I=.",
+	}, sources...)
+
+	// generate grpc-related protos
+	cmd = exec.Command(protoc, args...)
+	mageutil.ConnectStd(cmd)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return nil
+}
 
 func Integration(configFile string) error {
 	dir, err := os.Getwd()
@@ -47,7 +106,7 @@ func Integration(configFile string) error {
 
 	return mageutil.Run(context.Background(),
 		"docker build -t egress-test -f build/test/Dockerfile .",
-		fmt.Sprintf("docker run --rm -e EGRESS_CONFIG_FILE=%s -v %s/test:/out egress-test", configFile, dir),
+		fmt.Sprintf("docker run --rm -e EGRESS_CONFIG_FILE=%s -p 9000:9000 -v %s/test:/out egress-test", configFile, dir),
 	)
 }
 

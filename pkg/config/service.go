@@ -20,8 +20,9 @@ const (
 type ServiceConfig struct {
 	BaseConfig `yaml:",inline"`
 
-	HealthPort     int `yaml:"health_port"`
-	PrometheusPort int `yaml:"prometheus_port"`
+	HealthPort       int `yaml:"health_port"`
+	PrometheusPort   int `yaml:"prometheus_port"`
+	DebugHandlerPort int `yaml:"debug_handler_port"` // Port used to launch the egress debug handler. 0 means debug handler disabled.
 
 	CPUCostConfig `yaml:"cpu_cost"` // CPU costs for various egress types
 }

@@ -103,6 +103,25 @@ func (s *Service) Run() error {
 	}
 }
 
+func (s *Service) StartDebugHandler() {
+	if s.conf.DebugHandlerPort == 0 {
+		logger.Debugw("debug handler disabled")
+	}
+
+	h := &handlerProxyHandler{processManager: s.manager}
+
+	mux := http.NewServeMux()
+	mux.Handle(fmt.Sprintf("/%s/", gstPipelineDotFile), h)
+
+	go func() {
+		addr := fmt.Sprintf(":%d", s.conf.DebugHandlerPort)
+
+		logger.Debugw(fmt.Sprintf("starting debug handler on address %s", addr))
+		err := http.ListenAndServe(addr, mux)
+		logger.Infow("debug server failed", "error", err)
+	}()
+}
+
 func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
 	ctx, span := tracer.Start(context.Background(), "Service.handleRequest")
 	defer span.End()

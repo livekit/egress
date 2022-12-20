@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package ipc;
+option go_package = "github.com/livekit/egress/pkg/ipc";
+
+service EgressHandler {
+  rpc GetDebugInfo(GetDebugInfoRequest) returns (GetDebugInfoResponse) {};
+}
+
+message GetDebugInfoRequest {
+  oneof request {
+    GstPipelineDebugDotRequest gst_pipeline_dot = 1;
+  }
+}
+
+message GetDebugInfoResponse {
+  oneof response {
+    GstPipelineDebugDotResponse gst_pipeline_dot = 1;
+  }
+}
+
+message GstPipelineDebugDotRequest {}
+
+message GstPipelineDebugDotResponse {
+  string dot_file = 1;
+}

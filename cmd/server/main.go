@@ -114,6 +114,8 @@ func runService(c *cli.Context) error {
 		}
 	}()
 
+	svc.StartDebugHandler()
+
 	return svc.Run()
 }
 
@@ -150,7 +152,10 @@ func runHandler(c *cli.Context) error {
 	}
 
 	rpcHandler := egress.NewRedisRPCServer(rc)
-	handler := service.NewHandler(conf, rpcHandler)
+	handler, err := service.NewHandler(conf, rpcHandler)
+	if err != nil {
+		return err
+	}
 
 	killChan := make(chan os.Signal, 1)
 	signal.Notify(killChan, syscall.SIGINT)

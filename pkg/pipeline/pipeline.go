@@ -423,6 +423,11 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	return nil
 }
 
+func (p *Pipeline) GetGstPipelineDebugDot() (string, error) {
+	s := p.pipeline.DebugBinToDotData(gst.DebugGraphShowAll)
+	return s, nil
+}
+
 func (p *Pipeline) removeSink(url string, status livekit.StreamInfo_Status) error {
 	now := time.Now().UnixNano()
 

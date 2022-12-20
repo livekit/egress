@@ -2,16 +2,21 @@ package service
 
 import (
 	"context"
+	"net"
 	"os"
 	"os/exec"
 	"path"
 	"sync"
 	"syscall"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -30,10 +35,11 @@ type ProcessManager struct {
 }
 
 type process struct {
-	handlerID string
-	req       *livekit.StartEgressRequest
-	cmd       *exec.Cmd
-	closed    chan struct{}
+	handlerID  string
+	req        *livekit.StartEgressRequest
+	cmd        *exec.Cmd
+	grpcClient ipc.EgressHandlerClient
+	closed     chan struct{}
 }
 
 func NewProcessManager(conf *config.ServiceConfig, monitor *stats.Monitor) *ProcessManager {
@@ -100,6 +106,20 @@ func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest) error {
 		closed:    make(chan struct{}),
 	}
 
+	socketAddr := getSocketAddress(p.TmpDir)
+	conn, err := grpc.Dial(socketAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(_ context.Context, addr string) (net.Conn, error) {
+			return net.Dial(network, addr)
+		}),
+	)
+	if err != nil {
+		span.RecordError(err)
+		logger.Errorw("could not dial grpc handler", err)
+		return err
+	}
+	h.grpcClient = ipc.NewEgressHandlerClient(conn)
+
 	s.mu.Lock()
 	s.activeHandlers[req.EgressId] = h
 	s.mu.Unlock()
@@ -161,6 +181,20 @@ func (s *ProcessManager) listEgress() []string {
 	return egressIDs
 }
 
+func (s *ProcessManager) sendGrpcDebugRequest(egressId string, req *ipc.GetDebugInfoRequest) (*ipc.GetDebugInfoResponse, error) {
+	s.mu.Lock()
+
+	h, ok := s.activeHandlers[egressId]
+	if !ok {
+		s.mu.Unlock()
+		return nil, errors.ErrEgressNotFound
+	}
+	c := h.grpcClient
+	s.mu.Unlock()
+
+	return c.GetDebugInfo(context.Background(), req)
+}
+
 func (s *ProcessManager) shutdown() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -184,4 +218,8 @@ func isWeb(req *livekit.StartEgressRequest) bool {
 	default:
 		return false
 	}
+}
+
+func getSocketAddress(handlerTmpDir string) string {
+	return path.Join(handlerTmpDir, "service_rpc.sock")
 }
