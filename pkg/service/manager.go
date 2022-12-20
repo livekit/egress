@@ -220,6 +220,6 @@ func isWeb(req *livekit.StartEgressRequest) bool {
 	}
 }
 
-func getSocketAddress(tmpDir string) string {
-	return path.Join(tmpDir, "service_rpc.sock")
+func getSocketAddress(handlerTmpDir string) string {
+	return path.Join(handlerTmpDir, "service_rpc.sock")
 }

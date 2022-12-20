@@ -35,14 +35,14 @@ func (p *handlerProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			GstPipelineDot: &ipc.GstPipelineDebugDotRequest{},
 		}
 	default:
-		http.Error(w, "unkown application", http.StatusNotFound)
+		http.Error(w, "unknown application", http.StatusNotFound)
 		return
 	}
 
 	grpcResp, err := p.processManager.sendGrpcDebugRequest(egressId, grpcReq)
 	switch {
 	case errors.Is(err, errors.ErrEgressNotFound):
-		http.Error(w, "unkown egress", http.StatusNotFound)
+		http.Error(w, "unknown egress", http.StatusNotFound)
 		return
 	case err == nil:
 		// break
