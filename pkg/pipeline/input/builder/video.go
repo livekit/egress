@@ -107,7 +107,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 	case strings.EqualFold(codec.MimeType, string(types.MimeTypeH264)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
-				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
+				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d,width=1980,height=1080",
 				codec.PayloadType, codec.ClockRate,
 			),
 		)); err != nil {
@@ -120,16 +120,23 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 		}
 		v.elements = append(v.elements, rtpH264Depay)
 
-		if !p.VideoTranscoding {
+		if p.VideoTranscoding {
+			avDecH264, err := gst.NewElement("avdec_h264")
+			if err != nil {
+				return err
+			}
+
+			v.elements = append(v.elements, avDecH264)
+		} else {
+			h264parse, err := gst.NewElement("h264parse")
+			if err != nil {
+				return err
+			}
+
+			v.elements = append(v.elements, h264parse)
+
 			return nil
 		}
-
-		avDecH264, err := gst.NewElement("avdec_h264")
-		if err != nil {
-			return err
-		}
-
-		v.elements = append(v.elements, avDecH264)
 
 	case strings.EqualFold(codec.MimeType, string(types.MimeTypeVP8)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
