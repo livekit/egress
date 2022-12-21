@@ -49,6 +49,8 @@ type testCase struct {
 
 	// used by track tests
 	outputType types.OutputType
+
+	expectVideoTranscoding bool
 }
 
 func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rpcServer egress.RPCServer) {
@@ -214,21 +216,23 @@ func runFileTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest
 		p.OutputType = test.outputType
 	}
 
+	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
+
 	// verify
 	verifyFile(t, conf, p, res)
 }
 
-func runStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, sessionTimeout time.Duration) {
-	conf.SessionLimits.StreamOutputMaxDuration = sessionTimeout
+func runStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, test *testCase) {
+	conf.SessionLimits.StreamOutputMaxDuration = test.sessionTimeout
 
 	if conf.SessionLimits.StreamOutputMaxDuration > 0 {
-		runTimeLimitStreamTest(t, conf, req)
+		runTimeLimitStreamTest(t, conf, req, test)
 	} else {
-		runMultipleStreamTest(t, conf, req)
+		runMultipleStreamTest(t, conf, req, test)
 	}
 }
 
-func runTimeLimitStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest) {
+func runTimeLimitStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, test *testCase) {
 	egressID := startEgress(t, conf, req)
 
 	time.Sleep(time.Second * 5)
@@ -237,6 +241,8 @@ func runTimeLimitStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEg
 	p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 	require.NoError(t, err)
 
+	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
+
 	verifyStreams(t, p, conf, streamUrl1)
 
 	time.Sleep(conf.SessionLimits.StreamOutputMaxDuration - time.Second*4)
@@ -244,7 +250,7 @@ func runTimeLimitStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEg
 	checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_LIMIT_REACHED)
 }
 
-func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest) {
+func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, test *testCase) {
 	ctx := context.Background()
 	egressID := startEgress(t, conf, req)
 
@@ -255,6 +261,7 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	require.NoError(t, err)
 
 	// verify stream
+	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
 	verifyStreams(t, p, conf, streamUrl1)
 
 	// add one good stream url and a couple bad ones
@@ -286,6 +293,8 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 			t.Fatal("invalid stream url in result")
 		}
 	}
+
+	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
 
 	// verify the good stream urls
 	verifyStreams(t, p, conf, streamUrl1, streamUrl2)
@@ -341,8 +350,8 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	}
 }
 
-func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, sessionTimeout time.Duration) {
-	conf.SessionLimits.SegmentOutputMaxDuration = sessionTimeout
+func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, test *testCase) {
+	conf.SessionLimits.SegmentOutputMaxDuration = test.sessionTimeout
 
 	egressID := startEgress(t, conf, req)
 
@@ -362,6 +371,7 @@ func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 	p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 	require.NoError(t, err)
 
+	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
 	verifySegments(t, conf, p, res)
 }
 

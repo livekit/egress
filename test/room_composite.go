@@ -85,7 +85,7 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 					RoomComposite: roomRequest,
 				},
 			}
-
+			test.expectVideoTranscoding = true
 			runFileTest(t, conf, req, test)
 		})
 		if conf.Short {
@@ -125,7 +125,8 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 				},
 			}
 
-			runStreamTest(t, conf, req, test.sessionTimeout)
+			test.expectVideoTranscoding = true
+			runStreamTest(t, conf, req, test)
 		})
 		if conf.Short {
 			return
@@ -227,8 +228,8 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 					RoomComposite: roomRequest,
 				},
 			}
-
-			runSegmentsTest(t, conf, req, test.sessionTimeout)
+			test.expectVideoTranscoding = true
+			runSegmentsTest(t, conf, req, test)
 		})
 		if conf.Short {
 			return

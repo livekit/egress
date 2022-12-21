@@ -180,6 +180,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 			p.applyAdvanced(opts.Advanced)
 		}
 
+		p.VideoTranscoding = true
 		// output params
 		if err := p.updateEncodedOutput(req.RoomComposite); err != nil {
 			return err
@@ -206,6 +207,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 			p.applyAdvanced(opts.Advanced)
 		}
 
+		p.VideoTranscoding = true
 		// output params
 		if err := p.updateEncodedOutput(req.Web); err != nil {
 			return err

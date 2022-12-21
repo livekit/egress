@@ -78,6 +78,7 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 				},
 			}
 
+			test.expectVideoTranscoding = true
 			runFileTest(t, conf, req, test)
 		})
 		if conf.Short {
@@ -115,8 +116,8 @@ func testTrackCompositeStream(t *testing.T, conf *TestConfig) {
 					},
 				},
 			}
-
-			runStreamTest(t, conf, req, test.sessionTimeout)
+			test.expectVideoTranscoding = true
+			runStreamTest(t, conf, req, test)
 		})
 		if conf.Short {
 			return
@@ -185,8 +186,8 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 					TrackComposite: trackRequest,
 				},
 			}
-
-			runSegmentsTest(t, conf, req, test.sessionTimeout)
+			test.expectVideoTranscoding = true
+			runSegmentsTest(t, conf, req, test)
 		})
 		if conf.Short {
 			return
