@@ -162,7 +162,12 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 		return err
 	}
 
-	videoConvertScale, err := gst.NewElement("videoconvertscale")
+	videoConvert, err := gst.NewElement("videoconvert")
+	if err != nil {
+		return err
+	}
+
+	videoScale, err := gst.NewElement("videoscale")
 	if err != nil {
 		return err
 	}
@@ -185,7 +190,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 		return err
 	}
 
-	v.elements = append(v.elements, videoQueue, videoConvertScale, videoRate, caps)
+	v.elements = append(v.elements, videoQueue, videoConvert, videoScale, videoRate, caps)
 	return nil
 }
 
