@@ -8,4 +8,4 @@ pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit
 ./rtsp-simple-server &
 
 # Run tests
-exec go test -v --tags=integration -timeout 20m ./test
+exec ./test.test -test.v -test.timeout 20m
