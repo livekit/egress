@@ -116,6 +116,7 @@ func (b *InputBin) build(ctx context.Context, p *config.PipelineConfig) error {
 		if err = b.bin.Add(b.audioQueue); err != nil {
 			return err
 		}
+		b.audioPad = b.audioQueue.GetStaticPad("sink")
 	}
 
 	if b.video != nil {
@@ -127,6 +128,7 @@ func (b *InputBin) build(ctx context.Context, p *config.PipelineConfig) error {
 		if err = b.bin.Add(b.videoQueue); err != nil {
 			return err
 		}
+		b.videoPad = b.videoQueue.GetStaticPad("sink")
 	}
 
 	// mux
@@ -150,10 +152,8 @@ func (b *InputBin) build(ctx context.Context, p *config.PipelineConfig) error {
 	if b.mux != nil {
 		ghostPad = gst.NewGhostPad("src", b.mux.GetStaticPad("src"))
 	} else if b.audio != nil {
-		b.audioPad = b.audioQueue.GetStaticPad("sink")
 		ghostPad = gst.NewGhostPad("src", b.audioQueue.GetStaticPad("src"))
 	} else if b.video != nil {
-		b.videoPad = b.videoQueue.GetStaticPad("sink")
 		ghostPad = gst.NewGhostPad("src", b.videoQueue.GetStaticPad("src"))
 	}
 	if ghostPad == nil || !b.bin.AddPad(ghostPad.Pad) {
@@ -178,12 +178,7 @@ func (b *InputBin) Link() error {
 			return err
 		}
 
-		queuePad := b.audioPad
-		if queuePad == nil {
-			queuePad = b.audioQueue.GetStaticPad("sink")
-		}
-
-		if linkReturn := b.audio.GetSrcPad().Link(queuePad); linkReturn != gst.PadLinkOK {
+		if linkReturn := b.audio.GetSrcPad().Link(b.audioPad); linkReturn != gst.PadLinkOK {
 			return errors.ErrPadLinkFailed("audio", "queue", linkReturn.String())
 		}
 
@@ -209,12 +204,7 @@ func (b *InputBin) Link() error {
 			return err
 		}
 
-		queuePad := b.videoPad
-		if queuePad == nil {
-			queuePad = b.videoQueue.GetStaticPad("sink")
-		}
-
-		if linkReturn := b.video.GetSrcPad().Link(queuePad); linkReturn != gst.PadLinkOK {
+		if linkReturn := b.video.GetSrcPad().Link(b.videoPad); linkReturn != gst.PadLinkOK {
 			return errors.ErrPadLinkFailed("video", "queue", linkReturn.String())
 		}
 
