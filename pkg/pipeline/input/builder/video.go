@@ -72,12 +72,17 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return err
 	}
 
-	videoQueue, err := buildQueue(Latency/10, true)
+	videoQueueSrc, err := buildQueue(Latency/10, true)
 	if err != nil {
 		return err
 	}
 
 	videoConvert, err := gst.NewElement("videoconvert")
+	if err != nil {
+		return err
+	}
+
+	videoQueueEnc, err := buildQueue(Latency/10, false)
 	if err != nil {
 		return err
 	}
@@ -92,7 +97,7 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return err
 	}
 
-	v.elements = []*gst.Element{xImageSrc, videoQueue, videoConvert, caps}
+	v.elements = []*gst.Element{xImageSrc, videoQueueSrc, videoConvert, videoQueueEnc, caps}
 	return nil
 }
 
@@ -162,12 +167,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 		return err
 	}
 
-	videoConvert, err := gst.NewElement("videoconvert")
-	if err != nil {
-		return err
-	}
-
-	videoScale, err := gst.NewElement("videoscale")
+	videoConvertScale, err := gst.NewElement("videoconvertscale")
 	if err != nil {
 		return err
 	}
@@ -190,7 +190,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 		return err
 	}
 
-	v.elements = append(v.elements, videoQueue, videoConvert, videoScale, videoRate, caps)
+	v.elements = append(v.elements, videoQueue, videoConvertScale, videoRate, caps)
 	return nil
 }
 
