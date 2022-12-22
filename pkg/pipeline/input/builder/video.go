@@ -107,7 +107,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 	case strings.EqualFold(codec.MimeType, string(types.MimeTypeH264)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
-				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d,width=1980,height=1080",
+				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
 				codec.PayloadType, codec.ClockRate,
 			),
 		)); err != nil {
