@@ -81,6 +81,7 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 				if p.AudioEnabled {
 					// transcode to h264 for composite requests
 					p.VideoCodec = types.MimeTypeH264
+					p.VideoTranscoding = true
 				} else {
 					p.VideoCodec = types.MimeTypeVP8
 				}

@@ -247,13 +247,15 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 			case types.MimeTypeH264:
 				require.Equal(t, "h264", stream.CodecName)
 
-				switch p.VideoProfile {
-				case types.ProfileBaseline:
-					require.Equal(t, "Constrained Baseline", stream.Profile)
-				case types.ProfileMain:
-					require.Equal(t, "Main", stream.Profile)
-				case types.ProfileHigh:
-					require.Equal(t, "High", stream.Profile)
+				if p.VideoTranscoding {
+					switch p.VideoProfile {
+					case types.ProfileBaseline:
+						require.Equal(t, "Constrained Baseline", stream.Profile)
+					case types.ProfileMain:
+						require.Equal(t, "Main", stream.Profile)
+					case types.ProfileHigh:
+						require.Equal(t, "High", stream.Profile)
+					}
 				}
 			case types.MimeTypeVP8:
 				require.Equal(t, "vp8", stream.CodecName)
@@ -264,27 +266,33 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 				require.Equal(t, "vp8", stream.CodecName)
 
 			case types.OutputTypeMP4:
-				// bitrate, not available for HLS or WebM
-				bitrate, err := strconv.Atoi(stream.BitRate)
-				require.NoError(t, err)
-				require.NotZero(t, bitrate)
-				require.Less(t, int32(bitrate), p.VideoBitrate*1010)
+				require.Equal(t, "h264", stream.CodecName)
+
+				if p.VideoTranscoding {
+					// bitrate, not available for HLS or WebM
+					bitrate, err := strconv.Atoi(stream.BitRate)
+					require.NoError(t, err)
+					require.NotZero(t, bitrate)
+					require.Less(t, int32(bitrate), p.VideoBitrate*1010)
+				}
 				fallthrough
 
 			case types.OutputTypeHLS:
-				// dimensions
-				require.Equal(t, p.Width, stream.Width)
-				require.Equal(t, p.Height, stream.Height)
+				if p.VideoTranscoding {
+					// dimensions
+					require.Equal(t, p.Width, stream.Width)
+					require.Equal(t, p.Height, stream.Height)
 
-				// framerate
-				frac := strings.Split(stream.AvgFrameRate, "/")
-				require.Len(t, frac, 2)
-				n, err := strconv.ParseFloat(frac[0], 64)
-				require.NoError(t, err)
-				d, err := strconv.ParseFloat(frac[1], 64)
-				require.NoError(t, err)
-				require.Less(t, n/d, float64(p.Framerate)*1.05)
-				require.Greater(t, n/d, float64(sourceFramerate)*0.95)
+					// framerate
+					frac := strings.Split(stream.AvgFrameRate, "/")
+					require.Len(t, frac, 2)
+					n, err := strconv.ParseFloat(frac[0], 64)
+					require.NoError(t, err)
+					d, err := strconv.ParseFloat(frac[1], 64)
+					require.NoError(t, err)
+					require.Less(t, n/d, float64(p.Framerate)*1.05)
+					require.Greater(t, n/d, float64(sourceFramerate)*0.95)
+				}
 			}
 
 		default:

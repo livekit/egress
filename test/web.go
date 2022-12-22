@@ -35,7 +35,9 @@ func testWebFile(t *testing.T, conf *TestConfig) {
 		},
 	}
 
-	runFileTest(t, conf, req, &testCase{})
+	runFileTest(t, conf, req, &testCase{
+		expectVideoTranscoding: true,
+	})
 }
 
 func testWebStream(t *testing.T, conf *TestConfig) {
@@ -56,7 +58,9 @@ func testWebStream(t *testing.T, conf *TestConfig) {
 		},
 	}
 
-	runStreamTest(t, conf, req, 0)
+	runStreamTest(t, conf, req, &testCase{
+		expectVideoTranscoding: true,
+	})
 }
 
 func testWebSegments(t *testing.T, conf *TestConfig) {
@@ -79,5 +83,7 @@ func testWebSegments(t *testing.T, conf *TestConfig) {
 		},
 	}
 
-	runSegmentsTest(t, conf, req, 0)
+	runSegmentsTest(t, conf, req, &testCase{
+		expectVideoTranscoding: true,
+	})
 }
