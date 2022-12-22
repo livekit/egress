@@ -72,7 +72,7 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return err
 	}
 
-	videoQueue, err := buildQueue()
+	videoQueue, err := buildQueue(Latency/10, true)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 		return errors.ErrNotSupported(codec.MimeType)
 	}
 
-	videoQueue, err := buildQueue()
+	videoQueue, err := buildQueue(Latency/10, true)
 	if err != nil {
 		return err
 	}
