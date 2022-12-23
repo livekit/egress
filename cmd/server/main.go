@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/urfave/cli/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -15,10 +17,11 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/version"
+	ev "github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/redis"
+	lkredis "github.com/livekit/protocol/redis"
 	"github.com/livekit/psrpc"
 )
 
@@ -87,9 +90,20 @@ func runService(c *cli.Context) error {
 		return err
 	}
 
-	rc, err := redis.GetRedisClient(conf.Redis)
+	rc, err := lkredis.GetRedisClient(conf.Redis)
 	if err != nil {
 		return err
+	}
+
+	ctx := context.Background()
+	previous, err := rc.Get(ctx, ev.EgressVersionKey).Result()
+	if err != nil && err != redis.Nil {
+		return err
+	}
+	if previous != version.Version {
+		if err = rc.Set(ctx, ev.EgressVersionKey, version.Version, 0).Err(); err != nil {
+			return err
+		}
 	}
 
 	bus := psrpc.NewRedisMessageBus(rc)
@@ -154,7 +168,7 @@ func runHandler(c *cli.Context) error {
 	}
 	_ = os.Setenv("TMPDIR", conf.TmpDir)
 
-	rc, err := redis.GetRedisClient(conf.Redis)
+	rc, err := lkredis.GetRedisClient(conf.Redis)
 	if err != nil {
 		return err
 	}
