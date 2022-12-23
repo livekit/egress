@@ -340,8 +340,8 @@ github.com/lithammer/shortuuid/v3 v3.0.7 h1:trX0KTHy4Pbwo/6ia8fscyHoGA+mf1jWbPJV
 github.com/lithammer/shortuuid/v3 v3.0.7/go.mod h1:vMk8ke37EmiewwolSO1NLW8vP4ZaKlRuDIi8tWWmAts=
 github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427 h1:gHV/CCSlkURRIkjLmLjuXimvGGi7wedhXxk/zvUPLV0=
 github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427/go.mod h1:0hI+orMYVT61TEh429LvmoV9UmyqjeTqdJ3DW2TX114=
-github.com/livekit/livekit-server v1.3.3-0.20221223014342-cabf41d58129 h1:ODQZGLaIIeJfLbD9HOLTNyXF+F/zxuSW6EgTJSb1IMU=
-github.com/livekit/livekit-server v1.3.3-0.20221223014342-cabf41d58129/go.mod h1:gPLjJ0+leJY6Tjz0HHJsDFtaspwqe9aG4fZes/XRyWo=
+github.com/livekit/livekit-server v1.3.3-0.20221223050327-6719a3c71435 h1:hVA+t+OwGltOMjpOgXhvrLTPWSk2W+AmPH2hnDsNfqQ=
+github.com/livekit/livekit-server v1.3.3-0.20221223050327-6719a3c71435/go.mod h1:gPLjJ0+leJY6Tjz0HHJsDFtaspwqe9aG4fZes/XRyWo=
 github.com/livekit/mageutil v0.0.0-20221221221243-f361fbe40290 h1:ZVsQUuUOM9G7O3qfDSSUd1d+KlE5EVzHKylMkMkRhYg=
 github.com/livekit/mageutil v0.0.0-20221221221243-f361fbe40290/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/mediatransportutil v0.0.0-20221007030528-7440725c362b h1:RBNV8TckETSkIkKxcD12d8nZKVkB9GSY/sQlMoaruP4=
