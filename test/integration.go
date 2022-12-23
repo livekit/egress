@@ -16,6 +16,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
@@ -70,6 +71,9 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	svc, err := service.NewService(conf.ServiceConfig, bus, rpcServer)
 	require.NoError(t, err)
 
+	psrpcClient, err := rpc.NewEgressClient(livekit.NodeID(utils.NewGuid("TEST_")), bus)
+	require.NoError(t, err)
+
 	// start debug handler
 	svc.StartDebugHandler()
 
@@ -85,10 +89,16 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = updates.Close() })
 
+	psrpcUpdates, err := psrpcClient.SubscribeInfoUpdate(context.Background())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = psrpcUpdates.Close() })
+
 	// update test config
 	conf.svc = svc
 	conf.rpcClient = rpcClient
+	conf.psrpcClient = psrpcClient
 	conf.updates = updates
+	conf.psrpcUpdates = psrpcUpdates
 	conf.room = room
 
 	// check status
@@ -267,20 +277,28 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	verifyStreams(t, p, conf, streamUrl1)
 
 	// add one good stream url and a couple bad ones
-	_, err = conf.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
-		EgressId: egressID,
-		Request: &livekit.EgressRequest_UpdateStream{
-			UpdateStream: &livekit.UpdateStreamRequest{
-				EgressId:      req.EgressId,
-				AddOutputUrls: []string{badStreamUrl, streamUrl2},
+	if conf.PSRPC {
+		_, err = conf.psrpcClient.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
+			EgressId:      egressID,
+			AddOutputUrls: []string{badStreamUrl, streamUrl2},
+		})
+	} else {
+		_, err = conf.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
+			EgressId: egressID,
+			Request: &livekit.EgressRequest_UpdateStream{
+				UpdateStream: &livekit.UpdateStreamRequest{
+					EgressId:      req.EgressId,
+					AddOutputUrls: []string{badStreamUrl, streamUrl2},
+				},
 			},
-		},
-	})
+		})
+	}
+
 	require.NoError(t, err)
 
 	time.Sleep(time.Second * 5)
 
-	update := getUpdate(t, conf.updates, egressID)
+	update := getUpdate(t, conf, egressID)
 	require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE.String(), update.Status.String())
 	require.Len(t, update.GetStream().Info, 3)
 	for _, info := range update.GetStream().Info {
@@ -302,15 +320,22 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	verifyStreams(t, p, conf, streamUrl1, streamUrl2)
 
 	// remove one of the stream urls
-	_, err = conf.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
-		EgressId: egressID,
-		Request: &livekit.EgressRequest_UpdateStream{
-			UpdateStream: &livekit.UpdateStreamRequest{
-				EgressId:         req.EgressId,
-				RemoveOutputUrls: []string{streamUrl1},
+	if conf.PSRPC {
+		_, err = conf.psrpcClient.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
+			EgressId:         egressID,
+			RemoveOutputUrls: []string{streamUrl1},
+		})
+	} else {
+		_, err = conf.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
+			EgressId: egressID,
+			Request: &livekit.EgressRequest_UpdateStream{
+				UpdateStream: &livekit.UpdateStreamRequest{
+					EgressId:         req.EgressId,
+					RemoveOutputUrls: []string{streamUrl1},
+				},
 			},
-		},
-	})
+		})
+	}
 	require.NoError(t, err)
 
 	time.Sleep(time.Second * 5)
@@ -379,7 +404,13 @@ func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 
 func startEgress(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest) string {
 	// send start request
-	info, err := conf.rpcClient.SendRequest(context.Background(), req)
+	var info *livekit.EgressInfo
+	var err error
+	if conf.PSRPC {
+		info, err = conf.psrpcClient.StartEgress(context.Background(), req)
+	} else {
+		info, err = conf.rpcClient.SendRequest(context.Background(), req)
+	}
 
 	// check returned egress info
 	require.NoError(t, err)
@@ -404,7 +435,7 @@ func startEgress(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest
 	time.Sleep(time.Second * 5)
 
 	// check active update
-	checkUpdate(t, conf.updates, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
+	checkUpdate(t, conf, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
 
 	return info.EgressId
 }
@@ -420,8 +451,8 @@ func getStatus(t *testing.T, svc *service.Service) map[string]interface{} {
 	return status
 }
 
-func checkUpdate(t *testing.T, sub utils.PubSub, egressID string, status livekit.EgressStatus) *livekit.EgressInfo {
-	info := getUpdate(t, sub, egressID)
+func checkUpdate(t *testing.T, conf *TestConfig, egressID string, status livekit.EgressStatus) *livekit.EgressInfo {
+	info := getUpdate(t, conf, egressID)
 
 	require.Equal(t, status.String(), info.Status.String())
 	if info.Status == livekit.EgressStatus_EGRESS_FAILED {
@@ -433,13 +464,18 @@ func checkUpdate(t *testing.T, sub utils.PubSub, egressID string, status livekit
 	return info
 }
 
-func getUpdate(t *testing.T, sub utils.PubSub, egressID string) *livekit.EgressInfo {
+func getUpdate(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressInfo {
 	for {
 		select {
-		case msg := <-sub.Channel():
-			b := sub.Payload(msg)
+		case msg := <-conf.updates.Channel():
+			b := conf.updates.Payload(msg)
 			info := &livekit.EgressInfo{}
 			require.NoError(t, proto.Unmarshal(b, info))
+			if info.EgressId == egressID {
+				return info
+			}
+
+		case info := <-conf.psrpcUpdates.Channel():
 			if info.EgressId == egressID {
 				return info
 			}
@@ -453,14 +489,22 @@ func getUpdate(t *testing.T, sub utils.PubSub, egressID string) *livekit.EgressI
 
 func stopEgress(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressInfo {
 	// send stop request
-	info, err := conf.rpcClient.SendRequest(context.Background(), &livekit.EgressRequest{
-		EgressId: egressID,
-		Request: &livekit.EgressRequest_Stop{
-			Stop: &livekit.StopEgressRequest{
-				EgressId: egressID,
+	var info *livekit.EgressInfo
+	var err error
+	if conf.PSRPC {
+		info, err = conf.psrpcClient.StopEgress(context.Background(), egressID, &livekit.StopEgressRequest{
+			EgressId: egressID,
+		})
+	} else {
+		info, err = conf.rpcClient.SendRequest(context.Background(), &livekit.EgressRequest{
+			EgressId: egressID,
+			Request: &livekit.EgressRequest_Stop{
+				Stop: &livekit.StopEgressRequest{
+					EgressId: egressID,
+				},
 			},
-		},
-	})
+		})
+	}
 
 	// check returned egress info
 	require.NoError(t, err)
@@ -474,10 +518,10 @@ func stopEgress(t *testing.T, conf *TestConfig, egressID string) *livekit.Egress
 
 func checkStoppedEgress(t *testing.T, conf *TestConfig, egressID string, expectedStatus livekit.EgressStatus) *livekit.EgressInfo {
 	// check ending update
-	checkUpdate(t, conf.updates, egressID, livekit.EgressStatus_EGRESS_ENDING)
+	checkUpdate(t, conf, egressID, livekit.EgressStatus_EGRESS_ENDING)
 
 	// get final info
-	info := checkUpdate(t, conf.updates, egressID, expectedStatus)
+	info := checkUpdate(t, conf, egressID, expectedStatus)
 
 	// check status
 	if conf.HealthPort != 0 {

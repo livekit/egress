@@ -152,7 +152,13 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 			},
 		}
 
-		info, err := conf.rpcClient.SendRequest(context.Background(), req)
+		var info *livekit.EgressInfo
+		var err error
+		if conf.PSRPC {
+			info, err = conf.psrpcClient.StartEgress(context.Background(), req)
+		} else {
+			info, err = conf.rpcClient.SendRequest(context.Background(), req)
+		}
 		require.NoError(t, err)
 		require.Empty(t, info.Error)
 		require.NotEmpty(t, info.EgressId)
@@ -162,9 +168,9 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 		// wait
 		time.Sleep(time.Second * 5)
 
-		info = getUpdate(t, conf.updates, info.EgressId)
+		info = getUpdate(t, conf, info.EgressId)
 		if info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
-			checkUpdate(t, conf.updates, info.EgressId, livekit.EgressStatus_EGRESS_FAILED)
+			checkUpdate(t, conf, info.EgressId, livekit.EgressStatus_EGRESS_FAILED)
 		} else {
 			require.Equal(t, info.Status, livekit.EgressStatus_EGRESS_FAILED)
 		}
