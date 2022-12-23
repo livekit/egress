@@ -33,7 +33,7 @@ type TestConfig struct {
 	StreamTestsOnly         bool   `yaml:"stream_only"`
 	SegmentTestsOnly        bool   `yaml:"segments_only"`
 	Muting                  bool   `yaml:"muting"`
-	GstDebug                int    `yaml:"gst_debug"`
+	GstDebug                string `yaml:"gst_debug"`
 	Short                   bool   `yaml:"short"`
 
 	// test context
@@ -71,7 +71,7 @@ func NewTestContext(t *testing.T) *TestConfig {
 	tc := &TestConfig{
 		RoomName: "egress-test",
 		Muting:   false,
-		GstDebug: 1,
+		GstDebug: "1",
 	}
 	err := yaml.Unmarshal([]byte(confString), tc)
 	require.NoError(t, err)

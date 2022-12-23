@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -58,7 +59,7 @@ func (s *ProcessManager) canAccept(req *livekit.StartEgressRequest) bool {
 	return !s.handlingWeb && (!isWeb(req) || s.isIdle())
 }
 
-func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest) error {
+func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest, version int) error {
 	_, span := tracer.Start(context.Background(), "Service.launchHandler")
 	defer span.End()
 
@@ -87,6 +88,7 @@ func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest) error {
 		"run-handler",
 		"--config", string(confString),
 		"--request", string(reqString),
+		"--version", fmt.Sprint(version),
 	)
 	cmd.Dir = "/"
 	cmd.Stdout = os.Stdout

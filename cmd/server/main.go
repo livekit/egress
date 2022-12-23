@@ -19,6 +19,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/redis"
+	"github.com/livekit/psrpc"
 )
 
 func main() {
@@ -37,6 +38,9 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name: "config",
+					},
+					&cli.IntFlag{
+						Name: "version",
 					},
 				},
 				Action: runHandler,
@@ -88,8 +92,12 @@ func runService(c *cli.Context) error {
 		return err
 	}
 
-	rpcServer := egress.NewRedisRPCServer(rc)
-	svc := service.NewService(conf, rpcServer)
+	bus := psrpc.NewRedisMessageBus(rc)
+	rpcServerV0 := egress.NewRedisRPCServer(rc)
+	svc, err := service.NewService(conf, bus, rpcServerV0)
+	if err != nil {
+		return err
+	}
 
 	if conf.HealthPort != 0 {
 		go func() {
@@ -151,14 +159,28 @@ func runHandler(c *cli.Context) error {
 		return err
 	}
 
-	rpcHandler := egress.NewRedisRPCServer(rc)
-	handler, err := service.NewHandler(conf, rpcHandler)
-	if err != nil {
-		return err
-	}
-
 	killChan := make(chan os.Signal, 1)
 	signal.Notify(killChan, syscall.SIGINT)
+
+	var handler interface {
+		Kill()
+		Run() error
+	}
+
+	v := c.Int("version")
+	if v == 0 {
+		rpcHandler := egress.NewRedisRPCServer(rc)
+		handler, err = service.NewHandlerV0(conf, rpcHandler)
+		if err != nil {
+			return err
+		}
+	} else {
+		bus := psrpc.NewRedisMessageBus(rc)
+		handler, err = service.NewHandler(conf, bus)
+		if err != nil {
+			return err
+		}
+	}
 
 	go func() {
 		sig := <-killChan

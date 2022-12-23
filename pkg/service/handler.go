@@ -6,16 +6,16 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
-	"github.com/livekit/protocol/egress"
+	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
+	"github.com/livekit/psrpc"
 )
 
 const network = "unix"
@@ -23,26 +23,31 @@ const network = "unix"
 type Handler struct {
 	ipc.UnimplementedEgressHandlerServer
 
-	conf          *config.PipelineConfig
-	rpcServer     egress.RPCServer
-	grpcServer    *grpc.Server
-	kill          chan struct{}
-	debugRequests chan chan pipelineDebugResponse
+	conf       *config.PipelineConfig
+	pipeline   *pipeline.Pipeline
+	rpcServer  rpc.EgressHandlerServer
+	grpcServer *grpc.Server
+	kill       chan struct{}
 }
 
-type pipelineDebugResponse struct {
-	dot string
-	err error
-}
-
-func NewHandler(conf *config.PipelineConfig, rpcServer egress.RPCServer) (*Handler, error) {
+func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
 	h := &Handler{
-		conf:          conf,
-		rpcServer:     rpcServer,
-		grpcServer:    grpc.NewServer(),
-		kill:          make(chan struct{}),
-		debugRequests: make(chan chan pipelineDebugResponse),
+		conf:       conf,
+		grpcServer: grpc.NewServer(),
+		kill:       make(chan struct{}),
 	}
+
+	rpcServer, err := rpc.NewEgressHandlerServer(conf.HandlerID, h, bus)
+	if err != nil {
+		return nil, err
+	}
+	if err = rpcServer.RegisterUpdateStreamTopic(conf.Info.EgressId); err != nil {
+		return nil, err
+	}
+	if err = rpcServer.RegisterStopEgressTopic(conf.Info.EgressId); err != nil {
+		return nil, err
+	}
+	h.rpcServer = rpcServer
 
 	listener, err := net.Listen(network, getSocketAddress(conf.TmpDir))
 	if err != nil {
@@ -74,19 +79,7 @@ func (h *Handler) Run() error {
 			return nil
 		}
 	}
-
-	// subscribe to request channel
-	requests, err := h.rpcServer.EgressSubscription(context.Background(), p.Info.EgressId)
-	if err != nil {
-		span.RecordError(err)
-		logger.Errorw("failed to subscribe to egress", err)
-		return nil
-	}
-	defer func() {
-		if err := requests.Close(); err != nil {
-			logger.Errorw("failed to unsubscribe from request channel", err)
-		}
-	}()
+	h.pipeline = p
 
 	// start egress
 	result := make(chan *livekit.EgressInfo, 1)
@@ -104,65 +97,7 @@ func (h *Handler) Run() error {
 			// recording finished
 			h.sendUpdate(ctx, res)
 			return nil
-
-		case msg := <-requests.Channel():
-			// request received
-			request := &livekit.EgressRequest{}
-			err = proto.Unmarshal(requests.Payload(msg), request)
-			if err != nil {
-				logger.Errorw("failed to read request", err, "egressID", p.Info.EgressId)
-				continue
-			}
-			logger.Debugw("handling request", "egressID", p.Info.EgressId, "requestID", request.RequestId)
-
-			switch r := request.Request.(type) {
-			case *livekit.EgressRequest_UpdateStream:
-				err = p.UpdateStream(ctx, r.UpdateStream)
-			case *livekit.EgressRequest_Stop:
-				p.SendEOS(ctx)
-			default:
-				err = errors.ErrInvalidRPC
-			}
-
-			h.sendResponse(ctx, request, p.Info, err)
-		case debugResponseChan := <-h.debugRequests:
-			dot, err := p.GetGstPipelineDebugDot()
-			select {
-			case debugResponseChan <- pipelineDebugResponse{dot: dot, err: err}:
-			default:
-				logger.Debugw("unable to return gstreamer debug dot file to caller")
-			}
 		}
-	}
-}
-
-func (h *Handler) GetDebugInfo(ctx context.Context, req *ipc.GetDebugInfoRequest) (*ipc.GetDebugInfoResponse, error) {
-	switch req.Request.(type) {
-	case *ipc.GetDebugInfoRequest_GstPipelineDot:
-		pReq := make(chan pipelineDebugResponse, 1)
-
-		h.debugRequests <- pReq
-
-		select {
-		case pResp := <-pReq:
-			if pResp.err != nil {
-				return nil, pResp.err
-			}
-			resp := &ipc.GetDebugInfoResponse{
-				Response: &ipc.GetDebugInfoResponse_GstPipelineDot{
-					GstPipelineDot: &ipc.GstPipelineDebugDotResponse{
-						DotFile: pResp.dot,
-					},
-				},
-			}
-			return resp, nil
-
-		case <-time.After(2 * time.Second):
-			return nil, errors.New("timed out requesting pipeline debug info")
-		}
-
-	default:
-		return nil, errors.New("unsupported debug info request type")
 	}
 }
 
@@ -182,6 +117,76 @@ func (h *Handler) buildPipeline(ctx context.Context) (*pipeline.Pipeline, error)
 
 	p.OnStatusUpdate(h.sendUpdate)
 	return p, nil
+}
+
+func (h *Handler) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) (*livekit.EgressInfo, error) {
+	ctx, span := tracer.Start(ctx, "Handler.UpdateStream")
+	defer span.End()
+
+	err := h.pipeline.UpdateStream(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return h.pipeline.Info, nil
+}
+
+func (h *Handler) StopEgress(ctx context.Context, _ *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
+	ctx, span := tracer.Start(ctx, "Handler.StopEgress")
+	defer span.End()
+
+	h.pipeline.SendEOS(ctx)
+	return h.pipeline.Info, nil
+}
+
+type pipelineDebugResponse struct {
+	dot string
+	err error
+}
+
+func (h *Handler) GetDebugInfo(ctx context.Context, req *ipc.GetDebugInfoRequest) (*ipc.GetDebugInfoResponse, error) {
+	ctx, span := tracer.Start(ctx, "Handler.GetDebugInfo")
+	defer span.End()
+
+	switch req.Request.(type) {
+	case *ipc.GetDebugInfoRequest_GstPipelineDot:
+		res := make(chan *pipelineDebugResponse, 1)
+		go func() {
+			dot, err := h.pipeline.GetGstPipelineDebugDot()
+			res <- &pipelineDebugResponse{
+				dot: dot,
+				err: err,
+			}
+		}()
+
+		select {
+		case r := <-res:
+			if r.err != nil {
+				return nil, r.err
+			}
+			return &ipc.GetDebugInfoResponse{
+				Response: &ipc.GetDebugInfoResponse_GstPipelineDot{
+					GstPipelineDot: &ipc.GstPipelineDebugDotResponse{
+						DotFile: r.dot,
+					},
+				},
+			}, nil
+
+		case <-time.After(2 * time.Second):
+			return nil, errors.New("timed out requesting pipeline debug info")
+		}
+
+	default:
+		return nil, errors.New("unsupported debug info request type")
+	}
+}
+
+func (h *Handler) Kill() {
+	select {
+	case <-h.kill:
+		return
+	default:
+		close(h.kill)
+	}
 }
 
 func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
@@ -208,35 +213,8 @@ func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
 		)
 	}
 
-	if err := h.rpcServer.SendUpdate(ctx, info); err != nil {
+	if err := h.rpcServer.PublishInfoUpdate(ctx, info); err != nil {
 		logger.Errorw("failed to send update", err)
-	}
-}
-
-func (h *Handler) sendResponse(ctx context.Context, req *livekit.EgressRequest, info *livekit.EgressInfo, err error) {
-	args := []interface{}{
-		"egressID", info.EgressId,
-		"requestID", req.RequestId,
-		"senderID", req.SenderId,
-	}
-
-	if err != nil {
-		logger.Warnw("request failed", err, args...)
-	} else {
-		logger.Debugw("request handled", args...)
-	}
-
-	if err = h.rpcServer.SendResponse(ctx, req, info, err); err != nil {
-		logger.Errorw("failed to send response", err, args...)
-	}
-}
-
-func (h *Handler) Kill() {
-	select {
-	case <-h.kill:
-		return
-	default:
-		close(h.kill)
 	}
 }
 

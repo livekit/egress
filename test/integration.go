@@ -19,6 +19,7 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/psrpc"
 	lksdk "github.com/livekit/server-sdk-go"
 )
 
@@ -53,7 +54,7 @@ type testCase struct {
 	expectVideoTranscoding bool
 }
 
-func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rpcServer egress.RPCServer) {
+func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rpcServer egress.RPCServer, bus psrpc.MessageBus) {
 	// connect to room
 	room, err := lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
 		APIKey:              conf.ApiKey,
@@ -66,7 +67,8 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	defer room.Disconnect()
 
 	// start service
-	svc := service.NewService(conf.ServiceConfig, rpcServer)
+	svc, err := service.NewService(conf.ServiceConfig, bus, rpcServer)
+	require.NoError(t, err)
 
 	// start debug handler
 	svc.StartDebugHandler()

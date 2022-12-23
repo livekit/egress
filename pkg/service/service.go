@@ -14,34 +14,44 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/version"
+	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
+	"github.com/livekit/psrpc"
 )
 
 const shutdownTimer = time.Second * 30
 
 type Service struct {
-	conf       *config.ServiceConfig
-	rpcServer  egress.RPCServer
-	promServer *http.Server
-	monitor    *stats.Monitor
-	manager    *ProcessManager
+	conf        *config.ServiceConfig
+	rpcServerV0 egress.RPCServer
+	psrpcServer rpc.EgressInternalServer
+	promServer  *http.Server
+	monitor     *stats.Monitor
+	manager     *ProcessManager
 
 	shutdown chan struct{}
 }
 
-func NewService(conf *config.ServiceConfig, rpcServer egress.RPCServer) *Service {
+func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 egress.RPCServer) (*Service, error) {
 	monitor := stats.NewMonitor()
 
 	s := &Service{
-		conf:      conf,
-		rpcServer: rpcServer,
-		monitor:   monitor,
-		manager:   NewProcessManager(conf, monitor),
-		shutdown:  make(chan struct{}),
+		conf:        conf,
+		rpcServerV0: rpcServerV0,
+		monitor:     monitor,
+		manager:     NewProcessManager(conf, monitor),
+		shutdown:    make(chan struct{}),
 	}
+
+	psrpcServer, err := rpc.NewEgressInternalServer(conf.NodeID, s, bus)
+	if err != nil {
+		return nil, err
+	}
+	s.psrpcServer = psrpcServer
+
 	s.manager.onFatalError(func() { s.Stop(false) })
 
 	if conf.PrometheusPort > 0 {
@@ -51,7 +61,7 @@ func NewService(conf *config.ServiceConfig, rpcServer egress.RPCServer) *Service
 		}
 	}
 
-	return s
+	return s, nil
 }
 
 func (s *Service) Run() error {
@@ -71,7 +81,7 @@ func (s *Service) Run() error {
 		return err
 	}
 
-	requests, err := s.rpcServer.GetRequestChannel(context.Background())
+	requests, err := s.rpcServerV0.GetRequestChannel(context.Background())
 	if err != nil {
 		return err
 	}
@@ -103,6 +113,48 @@ func (s *Service) Run() error {
 	}
 }
 
+func (s *Service) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+	ctx, span := tracer.Start(ctx, "Service.StartEgress")
+	defer span.End()
+
+	s.monitor.AcceptRequest(req)
+	logger.Infow("request received", "egressID", req.EgressId)
+
+	p, err := config.GetValidatedPipelineConfig(s.conf, req)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.manager.launchHandler(req, 1)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.Info, nil
+}
+
+func (s *Service) StartEgressAffinity(req *livekit.StartEgressRequest) float32 {
+	if !s.manager.canAccept(req) || !s.monitor.CanAcceptRequest(req) {
+		return 0
+	}
+
+	if s.manager.isIdle() {
+		return 0.5
+	} else {
+		return 1
+	}
+}
+
+func (s *Service) ListActiveEgress(ctx context.Context, _ *rpc.ListActiveEgressRequest) (*rpc.ListActiveEgressResponse, error) {
+	ctx, span := tracer.Start(ctx, "Service.ListActiveEgress")
+	defer span.End()
+
+	egressIDs := s.manager.listEgress()
+	return &rpc.ListActiveEgressResponse{
+		EgressIds: egressIDs,
+	}, nil
+}
+
 func (s *Service) StartDebugHandler() {
 	if s.conf.DebugHandlerPort == 0 {
 		logger.Debugw("debug handler disabled")
@@ -122,83 +174,8 @@ func (s *Service) StartDebugHandler() {
 	}()
 }
 
-func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
-	ctx, span := tracer.Start(context.Background(), "Service.handleRequest")
-	defer span.End()
-
-	if s.acceptRequest(ctx, req) {
-		// validate before passing to handler
-		p, err := config.GetValidatedPipelineConfig(s.conf, req)
-		if err == nil {
-			err = s.manager.launchHandler(req)
-		}
-
-		s.sendResponse(ctx, req, p.Info, err)
-		if err != nil {
-			span.RecordError(err)
-		}
-	}
-}
-
-func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressRequest) bool {
-	ctx, span := tracer.Start(ctx, "Service.acceptRequest")
-	defer span.End()
-
-	// check request time
-	if time.Since(time.Unix(0, req.SentAt)) >= egress.RequestExpiration {
-		return false
-	}
-
-	// check if already handling web
-	if !s.manager.canAccept(req) {
-		return false
-	}
-
-	// check cpu load
-	if !s.monitor.CanAcceptRequest(req) {
-		return false
-	}
-
-	// claim request
-	claimed, err := s.rpcServer.ClaimRequest(context.Background(), req)
-	if err != nil {
-		return false
-	} else if !claimed {
-		return false
-	}
-
-	// accept request
-	s.monitor.AcceptRequest(req)
-	logger.Infow("request accepted",
-		"egressID", req.EgressId,
-		"requestID", req.RequestId,
-		"senderID", req.SenderId,
-	)
-
-	return true
-}
-
-func (s *Service) sendResponse(ctx context.Context, req *livekit.StartEgressRequest, info *livekit.EgressInfo, err error) {
-	if err != nil {
-		logger.Infow("bad request",
-			"error", err,
-			"egressID", info.EgressId,
-			"requestID", req.RequestId,
-			"senderID", req.SenderId,
-		)
-	}
-
-	if err = s.rpcServer.SendResponse(ctx, req, info, err); err != nil {
-		logger.Errorw("failed to send response", err)
-	}
-}
-
 func (s *Service) Status() ([]byte, error) {
 	return json.Marshal(s.manager.status())
-}
-
-func (s *Service) ListEgress() []string {
-	return s.manager.listEgress()
 }
 
 func (s *Service) isAvailable() float64 {
