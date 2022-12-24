@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/urfave/cli/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -15,10 +17,12 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/version"
+	ev "github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/redis"
+	lkredis "github.com/livekit/protocol/redis"
+	"github.com/livekit/psrpc"
 )
 
 func main() {
@@ -37,6 +41,9 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name: "config",
+					},
+					&cli.IntFlag{
+						Name: "version",
 					},
 				},
 				Action: runHandler,
@@ -83,13 +90,26 @@ func runService(c *cli.Context) error {
 		return err
 	}
 
-	rc, err := redis.GetRedisClient(conf.Redis)
+	rc, err := lkredis.GetRedisClient(conf.Redis)
 	if err != nil {
 		return err
 	}
 
-	rpcServer := egress.NewRedisRPCServer(rc)
-	svc := service.NewService(conf, rpcServer)
+	ctx := context.Background()
+	previous, err := rc.Get(ctx, ev.EgressVersionKey).Result()
+	if err != nil && err != redis.Nil {
+		return err
+	}
+	if previous != version.Version {
+		_ = rc.Set(ctx, ev.EgressVersionKey, version.Version, 0).Err()
+	}
+
+	bus := psrpc.NewRedisMessageBus(rc)
+	rpcServerV0 := egress.NewRedisRPCServer(rc)
+	svc, err := service.NewService(conf, bus, rpcServerV0)
+	if err != nil {
+		return err
+	}
 
 	if conf.HealthPort != 0 {
 		go func() {
@@ -146,19 +166,33 @@ func runHandler(c *cli.Context) error {
 	}
 	_ = os.Setenv("TMPDIR", conf.TmpDir)
 
-	rc, err := redis.GetRedisClient(conf.Redis)
-	if err != nil {
-		return err
-	}
-
-	rpcHandler := egress.NewRedisRPCServer(rc)
-	handler, err := service.NewHandler(conf, rpcHandler)
+	rc, err := lkredis.GetRedisClient(conf.Redis)
 	if err != nil {
 		return err
 	}
 
 	killChan := make(chan os.Signal, 1)
 	signal.Notify(killChan, syscall.SIGINT)
+
+	var handler interface {
+		Kill()
+		Run() error
+	}
+
+	v := c.Int("version")
+	if v == 0 {
+		rpcHandler := egress.NewRedisRPCServer(rc)
+		handler, err = service.NewHandlerV0(conf, rpcHandler)
+		if err != nil {
+			return err
+		}
+	} else {
+		bus := psrpc.NewRedisMessageBus(rc)
+		handler, err = service.NewHandler(conf, bus)
+		if err != nil {
+			return err
+		}
+	}
 
 	go func() {
 		sig := <-killChan

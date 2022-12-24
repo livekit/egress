@@ -278,18 +278,21 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 				fallthrough
 
 			case types.OutputTypeHLS:
+				require.Equal(t, "h264", stream.CodecName)
+
 				if p.VideoTranscoding {
 					// dimensions
 					require.Equal(t, p.Width, stream.Width)
 					require.Equal(t, p.Height, stream.Height)
 
 					// framerate
-					frac := strings.Split(stream.AvgFrameRate, "/")
+					frac := strings.Split(stream.RFrameRate, "/")
 					require.Len(t, frac, 2)
 					n, err := strconv.ParseFloat(frac[0], 64)
 					require.NoError(t, err)
 					d, err := strconv.ParseFloat(frac[1], 64)
 					require.NoError(t, err)
+					require.NotZero(t, d)
 					require.Less(t, n/d, float64(p.Framerate)*1.05)
 					require.Greater(t, n/d, float64(sourceFramerate)*0.95)
 				}

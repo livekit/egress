@@ -13,9 +13,11 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/service"
+	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/psrpc"
 	lksdk "github.com/livekit/server-sdk-go"
 )
 
@@ -33,17 +35,20 @@ type TestConfig struct {
 	StreamTestsOnly         bool   `yaml:"stream_only"`
 	SegmentTestsOnly        bool   `yaml:"segments_only"`
 	Muting                  bool   `yaml:"muting"`
-	GstDebug                int    `yaml:"gst_debug"`
+	GstDebug                string `yaml:"gst_debug"`
 	Short                   bool   `yaml:"short"`
+	PSRPC                   bool   `yaml:"psrpc"`
 
 	// test context
-	svc         *service.Service         `yaml:"-"`
-	rpcClient   egress.RPCClient         `yaml:"-"`
-	room        *lksdk.Room              `yaml:"-"`
-	updates     utils.PubSub             `yaml:"-"`
-	S3Upload    *livekit.S3Upload        `yaml:"-"`
-	GCPUpload   *livekit.GCPUpload       `yaml:"-"`
-	AzureUpload *livekit.AzureBlobUpload `yaml:"-"`
+	svc          *service.Service                        `yaml:"-"`
+	rpcClient    egress.RPCClient                        `yaml:"-"`
+	psrpcClient  rpc.EgressClient                        `yaml:"-"`
+	room         *lksdk.Room                             `yaml:"-"`
+	updates      utils.PubSub                            `yaml:"-"`
+	psrpcUpdates psrpc.Subscription[*livekit.EgressInfo] `yaml:"-"`
+	S3Upload     *livekit.S3Upload                       `yaml:"-"`
+	GCPUpload    *livekit.GCPUpload                      `yaml:"-"`
+	AzureUpload  *livekit.AzureBlobUpload                `yaml:"-"`
 
 	// helpers
 	runRoomTests           bool `yaml:"-"`
@@ -71,7 +76,7 @@ func NewTestContext(t *testing.T) *TestConfig {
 	tc := &TestConfig{
 		RoomName: "egress-test",
 		Muting:   false,
-		GstDebug: 1,
+		GstDebug: "1",
 	}
 	err := yaml.Unmarshal([]byte(confString), tc)
 	require.NoError(t, err)
