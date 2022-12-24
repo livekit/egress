@@ -101,9 +101,7 @@ func runService(c *cli.Context) error {
 		return err
 	}
 	if previous != version.Version {
-		if err = rc.Set(ctx, ev.EgressVersionKey, version.Version, 0).Err(); err != nil {
-			return err
-		}
+		_ = rc.Set(ctx, ev.EgressVersionKey, version.Version, 0).Err()
 	}
 
 	bus := psrpc.NewRedisMessageBus(rc)

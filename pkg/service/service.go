@@ -96,6 +96,7 @@ func (s *Service) Run() error {
 		select {
 		case <-s.shutdown:
 			logger.Infow("shutting down")
+			s.psrpcServer.Shutdown()
 			for !s.manager.isIdle() {
 				time.Sleep(shutdownTimer)
 			}
@@ -135,12 +136,17 @@ func (s *Service) StartEgress(ctx context.Context, req *livekit.StartEgressReque
 
 func (s *Service) StartEgressAffinity(req *livekit.StartEgressRequest) float32 {
 	if !s.manager.canAccept(req) || !s.monitor.CanAcceptRequest(req) {
+		// cannot accept
 		return 0
 	}
 
 	if s.manager.isIdle() {
+		// group multiple track and track composite requests.
+		// if this instance is idle and another is already handling some, the request will go to that server.
+		// this avoids having many instances with one track request each, taking availability from room composite.
 		return 0.5
 	} else {
+		// already handling track/track composite and has available cpu
 		return 1
 	}
 }
@@ -193,6 +199,6 @@ func (s *Service) Stop(kill bool) {
 	}
 
 	if kill {
-		s.manager.shutdown()
+		s.manager.killAll()
 	}
 }

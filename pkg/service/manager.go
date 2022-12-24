@@ -197,7 +197,7 @@ func (s *ProcessManager) sendGrpcDebugRequest(egressId string, req *ipc.GetDebug
 	return c.GetDebugInfo(context.Background(), req)
 }
 
-func (s *ProcessManager) shutdown() {
+func (s *ProcessManager) killAll() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
