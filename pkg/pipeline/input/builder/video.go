@@ -72,7 +72,7 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return err
 	}
 
-	videoQueue, err := buildQueue()
+	videoQueue, err := buildQueue(Latency/10, true)
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 		return errors.ErrNotSupported(codec.MimeType)
 	}
 
-	videoQueue, err := buildQueue()
+	videoQueue, err := buildQueue(Latency/10, true)
 	if err != nil {
 		return err
 	}
@@ -207,6 +207,13 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 }
 
 func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
+	// Put a queue in front of the encoder for pipelineing with the stage before
+	videoQueue, err := buildQueue(Latency/10, false)
+	if err != nil {
+		return err
+	}
+	v.elements = append(v.elements, videoQueue)
+
 	switch p.VideoCodec {
 	// we only encode h264, the rest are too slow
 	case types.MimeTypeH264:

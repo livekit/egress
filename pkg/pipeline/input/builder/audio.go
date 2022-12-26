@@ -178,7 +178,7 @@ func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 }
 
 func (a *AudioInput) addConverter(p *config.PipelineConfig) error {
-	audioQueue, err := buildQueue()
+	audioQueue, err := buildQueue(Latency/10, true)
 	if err != nil {
 		return err
 	}

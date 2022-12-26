@@ -20,14 +20,15 @@ const Latency = uint64(41e8) // slightly larger than max audio latency
 type InputBin struct {
 	bin *gst.Bin
 
-	audio    *AudioInput
-	audioPad *gst.Pad
+	audio      *AudioInput
+	audioPad   *gst.Pad
+	audioQueue *gst.Element
 
-	video    *VideoInput
-	videoPad *gst.Pad
+	video      *VideoInput
+	videoPad   *gst.Pad
+	videoQueue *gst.Element
 
-	multiQueue *gst.Element
-	mux        *gst.Element
+	mux *gst.Element
 }
 
 func NewWebInput(ctx context.Context, p *config.PipelineConfig) (*InputBin, error) {
@@ -105,13 +106,29 @@ func (b *InputBin) build(ctx context.Context, p *config.PipelineConfig) error {
 		}
 	}
 
-	// queue
-	b.multiQueue, err = gst.NewElement("multiqueue")
-	if err != nil {
-		return err
+	// queues
+	if b.audio != nil {
+		b.audioQueue, err = buildQueue(Latency, false)
+		if err != nil {
+			return err
+		}
+
+		if err = b.bin.Add(b.audioQueue); err != nil {
+			return err
+		}
+		b.audioPad = b.audioQueue.GetStaticPad("sink")
 	}
-	if err = b.bin.Add(b.multiQueue); err != nil {
-		return err
+
+	if b.video != nil {
+		b.videoQueue, err = buildQueue(Latency, false)
+		if err != nil {
+			return err
+		}
+
+		if err = b.bin.Add(b.videoQueue); err != nil {
+			return err
+		}
+		b.videoPad = b.videoQueue.GetStaticPad("sink")
 	}
 
 	// mux
@@ -135,11 +152,9 @@ func (b *InputBin) build(ctx context.Context, p *config.PipelineConfig) error {
 	if b.mux != nil {
 		ghostPad = gst.NewGhostPad("src", b.mux.GetStaticPad("src"))
 	} else if b.audio != nil {
-		b.audioPad = b.multiQueue.GetRequestPad("sink_%u")
-		ghostPad = gst.NewGhostPad("src", b.multiQueue.GetStaticPad("src_0"))
+		ghostPad = gst.NewGhostPad("src", b.audioQueue.GetStaticPad("src"))
 	} else if b.video != nil {
-		b.videoPad = b.multiQueue.GetRequestPad("sink_%u")
-		ghostPad = gst.NewGhostPad("src", b.multiQueue.GetStaticPad("src_0"))
+		ghostPad = gst.NewGhostPad("src", b.videoQueue.GetStaticPad("src"))
 	}
 	if ghostPad == nil || !b.bin.AddPad(ghostPad.Pad) {
 		return errors.ErrGhostPadFailed
@@ -157,21 +172,14 @@ func (b *InputBin) Element() *gst.Element {
 }
 
 func (b *InputBin) Link() error {
-	mqPad := 0
-
 	// link audio elements
 	if b.audio != nil {
 		if err := b.audio.Link(); err != nil {
 			return err
 		}
 
-		queuePad := b.audioPad
-		if queuePad == nil {
-			queuePad = b.multiQueue.GetRequestPad("sink_%u")
-		}
-
-		if linkReturn := b.audio.GetSrcPad().Link(queuePad); linkReturn != gst.PadLinkOK {
-			return errors.ErrPadLinkFailed("audio", "multiQueue", linkReturn.String())
+		if linkReturn := b.audio.GetSrcPad().Link(b.audioPad); linkReturn != gst.PadLinkOK {
+			return errors.ErrPadLinkFailed("audio", "queue", linkReturn.String())
 		}
 
 		if b.mux != nil {
@@ -184,12 +192,10 @@ func (b *InputBin) Link() error {
 				return errors.New("no audio pad found")
 			}
 
-			if linkReturn := b.multiQueue.GetStaticPad(fmt.Sprintf("src_%d", mqPad)).Link(muxAudioPad); linkReturn != gst.PadLinkOK {
+			if linkReturn := b.audioQueue.GetStaticPad("src").Link(muxAudioPad); linkReturn != gst.PadLinkOK {
 				return errors.ErrPadLinkFailed("audio", "mux", linkReturn.String())
 			}
 		}
-
-		mqPad++
 	}
 
 	// link video elements
@@ -198,13 +204,8 @@ func (b *InputBin) Link() error {
 			return err
 		}
 
-		queuePad := b.videoPad
-		if queuePad == nil {
-			queuePad = b.multiQueue.GetRequestPad("sink_%u")
-		}
-
-		if linkReturn := b.video.GetSrcPad().Link(queuePad); linkReturn != gst.PadLinkOK {
-			return errors.ErrPadLinkFailed("video", "multiQueue", linkReturn.String())
+		if linkReturn := b.video.GetSrcPad().Link(b.videoPad); linkReturn != gst.PadLinkOK {
+			return errors.ErrPadLinkFailed("video", "queue", linkReturn.String())
 		}
 
 		if b.mux != nil {
@@ -217,7 +218,7 @@ func (b *InputBin) Link() error {
 				return errors.New("no video pad found")
 			}
 
-			if linkReturn := b.multiQueue.GetStaticPad(fmt.Sprintf("src_%d", mqPad)).Link(muxVideoPad); linkReturn != gst.PadLinkOK {
+			if linkReturn := b.videoQueue.GetStaticPad("src").Link(muxVideoPad); linkReturn != gst.PadLinkOK {
 				return errors.ErrPadLinkFailed("video", "mux", linkReturn.String())
 			}
 		}
@@ -226,12 +227,12 @@ func (b *InputBin) Link() error {
 	return nil
 }
 
-func buildQueue() (*gst.Element, error) {
+func buildQueue(latency uint64, leaky bool) (*gst.Element, error) {
 	queue, err := gst.NewElement("queue")
 	if err != nil {
 		return nil, err
 	}
-	if err = queue.SetProperty("max-size-time", Latency); err != nil {
+	if err = queue.SetProperty("max-size-time", latency); err != nil {
 		return nil, err
 	}
 	if err = queue.SetProperty("max-size-bytes", uint(0)); err != nil {
@@ -240,7 +241,9 @@ func buildQueue() (*gst.Element, error) {
 	if err = queue.SetProperty("max-size-buffers", uint(0)); err != nil {
 		return nil, err
 	}
-	queue.SetArg("leaky", "downstream")
+	if leaky {
+		queue.SetArg("leaky", "downstream")
+	}
 
 	return queue, nil
 }
