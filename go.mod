@@ -15,10 +15,10 @@ require (
 	github.com/googleapis/gax-go/v2 v2.3.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/grafov/m3u8 v0.11.1
-	github.com/livekit/livekit-server v1.3.3-0.20221224084931-976d4ea9db7d
+	github.com/livekit/livekit-server v1.3.3-0.20221227214332-5d3f64466700
 	github.com/livekit/mageutil v0.0.0-20221221221243-f361fbe40290
-	github.com/livekit/protocol v1.3.1-0.20221219041553-fc943512b0fb
-	github.com/livekit/psrpc v0.2.0
+	github.com/livekit/protocol v1.3.1
+	github.com/livekit/psrpc v0.2.1
 	github.com/livekit/server-sdk-go v1.0.6
 	github.com/pion/rtp v1.7.13
 	github.com/pion/webrtc/v3 v3.1.50
@@ -52,8 +52,8 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/eapache/channels v1.1.0 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
-	github.com/elliotchance/orderedmap v1.5.0 // indirect
-	github.com/florianl/go-tc v0.4.1 // indirect
+	github.com/elliotchance/orderedmap/v2 v2.2.0 // indirect
+	github.com/florianl/go-tc v0.4.2 // indirect
 	github.com/frostbyte73/go-throttle v0.0.0-20210621200530-8018c891361d // indirect
 	github.com/gammazero/deque v0.1.0 // indirect
 	github.com/gammazero/workerpool v1.1.2 // indirect
@@ -64,17 +64,18 @@ require (
 	github.com/gobwas/ws v1.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/google/go-cmp v0.5.8 // indirect
+	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/google/wire v0.5.0 // indirect
 	github.com/googleapis/go-type-adapters v1.0.0 // indirect
 	github.com/hashicorp/go-version v1.6.0 // indirect
-	github.com/hashicorp/golang-lru v0.6.0 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.1 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
-	github.com/josharian/native v1.0.0 // indirect
+	github.com/josharian/native v1.1.0 // indirect
 	github.com/jxskiss/base62 v1.1.0 // indirect
 	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
+	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
 	github.com/livekit/mediatransportutil v0.0.0-20221007030528-7440725c362b // indirect
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995 // indirect
 	github.com/mackerelio/go-osstat v0.2.3 // indirect
@@ -114,10 +115,10 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/sebest/xff v0.0.0-20210106013422-671bd2870b3a // indirect
-	github.com/thoas/go-funk v0.9.2 // indirect
+	github.com/thoas/go-funk v0.9.3 // indirect
 	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
 	github.com/ua-parser/uap-go v0.0.0-20211112212520-00c877edfe0f // indirect
-	github.com/urfave/negroni v1.0.0 // indirect
+	github.com/urfave/negroni/v3 v3.0.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.opencensus.io v0.23.0 // indirect
 	go.uber.org/goleak v1.1.12 // indirect
