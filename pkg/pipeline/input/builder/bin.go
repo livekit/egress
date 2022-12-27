@@ -276,6 +276,11 @@ func buildMux(p *config.PipelineConfig) (*gst.Element, error) {
 		if err = mux.SetProperty("streamable", true); err != nil {
 			return nil, err
 		}
+		// Increase the flv latency as video input is sometines late
+		if err = mux.SetProperty("latency", uint64(1e8)); err != nil {
+			return nil, err
+		}
+
 		return mux, nil
 
 	case types.OutputTypeHLS:
