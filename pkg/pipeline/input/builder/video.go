@@ -225,11 +225,14 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 			return err
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
-		if p.OutputType == types.OutputTypeHLS {
-			// The muxer should request key frames to match the segment duration. Set a 2 x segment duration on the encoder as a safeguard.
-			if err = x264Enc.SetProperty("key-int-max", uint(int32(p.SegmentDuration)*p.Framerate*2)); err != nil {
+
+		if p.KeyFrameInterval != 0 {
+			if err = x264Enc.SetProperty("key-int-max", uint(p.KeyFrameInterval*float64(p.Framerate))); err != nil {
 				return err
 			}
+		}
+
+		if p.OutputType == types.OutputTypeHLS {
 			// Avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
 			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
 				return err
