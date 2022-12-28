@@ -75,6 +75,7 @@ type VideoParams struct {
 	Depth            int32
 	Framerate        int32
 	VideoBitrate     int32
+	KeyFrameInterval float64
 }
 
 type StreamParams struct {
@@ -462,6 +463,11 @@ func (p *PipelineConfig) updateStreamParams(outputType types.OutputType, urls []
 		p.MutedChan = make(chan bool, 1)
 	}
 
+	// Use a 4s default key frame interval for streaming
+	if p.KeyFrameInterval == 0 {
+		p.KeyFrameInterval = 4
+	}
+
 	p.StreamInfo = make(map[string]*livekit.StreamInfo)
 	var streamInfoList []*livekit.StreamInfo
 	for _, url := range urls {
@@ -485,6 +491,10 @@ func (p *PipelineConfig) updateSegmentsParams(filePrefix string, playlistFilenam
 	p.SegmentDuration = int(segmentDuration)
 	if p.SegmentDuration == 0 {
 		p.SegmentDuration = 6
+	}
+	if p.KeyFrameInterval == 0 {
+		// The segmenter should request key frames from the encoder at expected frame boundaries. Set the key frame interval to twice the segmennt duration as a failsafe
+		p.KeyFrameInterval = 2 * float64(p.SegmentDuration)
 	}
 	p.SegmentsInfo = &livekit.SegmentsInfo{}
 	p.Info.Result = &livekit.EgressInfo_Segments{Segments: p.SegmentsInfo}

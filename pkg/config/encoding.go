@@ -92,4 +92,7 @@ func (p *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) {
 	if advanced.VideoBitrate != 0 {
 		p.VideoBitrate = advanced.VideoBitrate
 	}
+	if advanced.KeyFrameInterval != 0 {
+		p.KeyFrameInterval = advanced.KeyFrameInterval
+	}
 }
