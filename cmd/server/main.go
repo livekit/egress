@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -9,7 +8,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/urfave/cli/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -17,7 +15,6 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/version"
-	ev "github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -93,15 +90,6 @@ func runService(c *cli.Context) error {
 	rc, err := lkredis.GetRedisClient(conf.Redis)
 	if err != nil {
 		return err
-	}
-
-	ctx := context.Background()
-	previous, err := rc.Get(ctx, ev.EgressVersionKey).Result()
-	if err != nil && err != redis.Nil {
-		return err
-	}
-	if previous != version.Version {
-		_ = rc.Set(ctx, ev.EgressVersionKey, version.Version, 0).Err()
 	}
 
 	bus := psrpc.NewRedisMessageBus(rc)
