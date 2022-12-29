@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	gstPipelineDotFile = "gst_pipeline"
-	pprof              = "pprof"
+	gstPipelineDotFileApp = "gst_pipeline"
+	pprofApp              = "pprof"
 )
 
 type handlerProxyHandler struct {
@@ -34,22 +34,24 @@ func (p *handlerProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 	grpcReq := &ipc.GetDebugInfoRequest{}
 	switch app {
-	case gstPipelineDotFile:
+	case gstPipelineDotFileApp:
 		grpcReq.Request = &ipc.GetDebugInfoRequest_GstPipelineDot{
 			GstPipelineDot: &ipc.GstPipelineDebugDotRequest{},
 		}
-	case pprof:
+	case pprofApp:
 		if len(pathElements) < 4 {
 			http.Error(w, "missing profine name", http.StatusNotFound)
 			return
 		}
 
 		timeout, _ := strconv.Atoi(r.URL.Query().Get("timeout"))
+		debug, _ := strconv.Atoi(r.URL.Query().Get("timeout"))
 
 		grpcReq.Request = &ipc.GetDebugInfoRequest_Pprof{
 			Pprof: &ipc.PprofRequest{
 				ProfileName: pathElements[3],
 				Timeout:     int32(timeout),
+				Debug:       int32(debug),
 			},
 		}
 	default:
@@ -82,7 +84,7 @@ func (p *handlerProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 
 	switch app {
-	case gstPipelineDotFile:
+	case gstPipelineDotFileApp:
 		dotResp, ok := grpcResp.Response.(*ipc.GetDebugInfoResponse_GstPipelineDot)
 		if !ok {
 			http.Error(w, "wrong response type", http.StatusInternalServerError)
@@ -94,7 +96,7 @@ func (p *handlerProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-	case pprof:
+	case pprofApp:
 		pprofResp, ok := grpcResp.Response.(*ipc.GetDebugInfoResponse_Pprof)
 		if !ok {
 			http.Error(w, "wrong response type", http.StatusInternalServerError)

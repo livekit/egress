@@ -30,6 +30,7 @@ message GstPipelineDebugDotResponse {
 message PprofRequest {
   string profile_name = 1;
   int32 timeout = 2;
+  int32 debug = 3;
 }
 
 message PprofResponse {

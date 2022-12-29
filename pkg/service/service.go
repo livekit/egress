@@ -169,7 +169,7 @@ func (s *Service) StartDebugHandler() {
 	h := &handlerProxyHandler{processManager: s.manager}
 
 	mux := http.NewServeMux()
-	mux.Handle(fmt.Sprintf("/%s/", gstPipelineDotFile), h)
+	mux.Handle(fmt.Sprintf("/%s/", gstPipelineDotFileApp), h)
 
 	go func() {
 		addr := fmt.Sprintf(":%d", s.conf.DebugHandlerPort)
