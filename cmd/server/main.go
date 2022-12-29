@@ -134,7 +134,7 @@ func runService(c *cli.Context) error {
 		}
 	}()
 
-	svc.StartDebugHandler()
+	svc.StartDebugHandlers()
 
 	return svc.Run()
 }
