@@ -2,14 +2,18 @@ package service
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
 	gstPipelineDotFile = "gst_pipeline"
+	pprof              = "pprof"
 )
 
 type handlerProxyHandler struct {
@@ -34,12 +38,38 @@ func (p *handlerProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		grpcReq.Request = &ipc.GetDebugInfoRequest_GstPipelineDot{
 			GstPipelineDot: &ipc.GstPipelineDebugDotRequest{},
 		}
+	case pprof:
+		if len(pathElements) < 4 {
+			http.Error(w, "missing profine name", http.StatusNotFound)
+			return
+		}
+
+		timeout, _ := strconv.Atoi(r.URL.Query().Get("timeout"))
+
+		grpcReq.Request = &ipc.GetDebugInfoRequest_Pprof{
+			Pprof: &ipc.PprofRequest{
+				ProfileName: pathElements[3],
+				Timeout:     int32(timeout),
+			},
+		}
 	default:
 		http.Error(w, "unknown application", http.StatusNotFound)
 		return
 	}
 
 	grpcResp, err := p.processManager.sendGrpcDebugRequest(egressId, grpcReq)
+	statusErr, statusOk := err.(interface {
+		GRPCStatus() *status.Status
+	})
+
+	if statusOk {
+		switch statusErr.GRPCStatus().Code() {
+		case codes.NotFound:
+			http.Error(w, statusErr.GRPCStatus().Message(), http.StatusNotFound)
+			return
+		}
+	}
+
 	switch {
 	case errors.Is(err, errors.ErrEgressNotFound):
 		http.Error(w, "unknown egress", http.StatusNotFound)
@@ -62,6 +92,22 @@ func (p *handlerProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		_, err := w.Write([]byte(dotStr))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	case pprof:
+		pprofResp, ok := grpcResp.Response.(*ipc.GetDebugInfoResponse_Pprof)
+		if !ok {
+			http.Error(w, "wrong response type", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Add("Content-Type", "application/octet-stream")
+
+		b := pprofResp.Pprof.PprofFile
+		_, err := w.Write(b)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 }

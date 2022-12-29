@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -172,11 +174,11 @@ func (h *Handler) GetDebugInfo(ctx context.Context, req *ipc.GetDebugInfoRequest
 			}, nil
 
 		case <-time.After(2 * time.Second):
-			return nil, errors.New("timed out requesting pipeline debug info")
+			return nil, status.New(codes.DeadlineExceeded, "timed out requesting pipeline debug info").Err()
 		}
 
 	default:
-		return nil, errors.New("unsupported debug info request type")
+		return nil, status.New(codes.NotFound, "unsupported debug info request type").Err()
 	}
 }
 
