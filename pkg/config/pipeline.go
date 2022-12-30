@@ -136,6 +136,10 @@ func GetValidatedPipelineConfig(conf *ServiceConfig, req *livekit.StartEgressReq
 }
 
 func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
+	if request.EgressId == "" {
+		return errors.ErrInvalidInput("No Egress Id")
+	}
+
 	// start with defaults
 	p.Info = &livekit.EgressInfo{
 		EgressId: request.EgressId,
