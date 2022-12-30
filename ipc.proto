@@ -10,12 +10,14 @@ service EgressHandler {
 message GetDebugInfoRequest {
   oneof request {
     GstPipelineDebugDotRequest gst_pipeline_dot = 1;
+    PprofRequest pprof = 2;
   }
 }
 
 message GetDebugInfoResponse {
   oneof response {
     GstPipelineDebugDotResponse gst_pipeline_dot = 1;
+    PprofResponse pprof = 2;
   }
 }
 
@@ -23,4 +25,14 @@ message GstPipelineDebugDotRequest {}
 
 message GstPipelineDebugDotResponse {
   string dot_file = 1;
+}
+
+message PprofRequest {
+  string profile_name = 1;
+  int32 timeout = 2;
+  int32 debug = 3;
+}
+
+message PprofResponse {
+  bytes pprof_file = 1;
 }

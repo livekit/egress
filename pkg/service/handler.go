@@ -6,11 +6,14 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
+	"github.com/livekit/egress/pkg/pprof"
 	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -147,7 +150,7 @@ func (h *Handler) GetDebugInfo(ctx context.Context, req *ipc.GetDebugInfoRequest
 	ctx, span := tracer.Start(ctx, "Handler.GetDebugInfo")
 	defer span.End()
 
-	switch req.Request.(type) {
+	switch r := req.Request.(type) {
 	case *ipc.GetDebugInfoRequest_GstPipelineDot:
 		res := make(chan *pipelineDebugResponse, 1)
 		go func() {
@@ -172,11 +175,30 @@ func (h *Handler) GetDebugInfo(ctx context.Context, req *ipc.GetDebugInfoRequest
 			}, nil
 
 		case <-time.After(2 * time.Second):
-			return nil, errors.New("timed out requesting pipeline debug info")
+			return nil, status.New(codes.DeadlineExceeded, "timed out requesting pipeline debug info").Err()
 		}
 
+	case *ipc.GetDebugInfoRequest_Pprof:
+		b, err := pprof.GetProfileData(ctx, r.Pprof.ProfileName, int(r.Pprof.Timeout), int(r.Pprof.Debug))
+		switch err {
+		case nil:
+			// break
+		case pprof.ErrProfileNotFound:
+			return nil, status.New(codes.NotFound, err.Error()).Err()
+		default:
+			return nil, err
+		}
+
+		return &ipc.GetDebugInfoResponse{
+			Response: &ipc.GetDebugInfoResponse_Pprof{
+				Pprof: &ipc.PprofResponse{
+					PprofFile: b,
+				},
+			},
+		}, nil
+
 	default:
-		return nil, errors.New("unsupported debug info request type")
+		return nil, status.New(codes.NotFound, "unsupported debug info request type").Err()
 	}
 }
 
