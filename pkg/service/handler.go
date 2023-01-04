@@ -99,6 +99,8 @@ func (h *Handler) Run() error {
 		case res := <-result:
 			// recording finished
 			h.sendUpdate(ctx, res)
+			h.rpcServer.Shutdown()
+			h.grpcServer.Stop()
 			return nil
 		}
 	}

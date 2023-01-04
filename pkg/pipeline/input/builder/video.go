@@ -207,7 +207,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 }
 
 func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
-	// Put a queue in front of the encoder for pipelineing with the stage before
+	// Put a queue in front of the encoder for pipelining with the stage before
 	videoQueue, err := buildQueue(Latency/10, false)
 	if err != nil {
 		return err
