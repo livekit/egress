@@ -258,30 +258,6 @@ func (s *SDKInput) onDisconnected() {
 	}
 }
 
-func (s *SDKInput) subscribeToParticipant(wg *sync.WaitGroup) error {
-	deadline := time.Now().Add(subscriptionTimeout)
-	for time.Now().Before(deadline) {
-		for _, p := range s.room.GetParticipants() {
-			if p.Identity() == s.participantIdentity {
-				for _, track := range p.Tracks() {
-					wg.Add(1)
-					if rt, ok := track.(*lksdk.RemoteTrackPublication); ok {
-						err := rt.SetSubscribed(true)
-						if err != nil {
-							return err
-						}
-					}
-				}
-
-				return nil
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	return errors.ErrParticipantNotFound(s.participantIdentity)
-}
-
 func (s *SDKInput) subscribeToTracks(expecting map[string]struct{}) error {
 	deadline := time.Now().Add(subscriptionTimeout)
 	for time.Now().Before(deadline) {

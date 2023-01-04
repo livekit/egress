@@ -3,9 +3,6 @@ package config
 import (
 	"time"
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/redis"
@@ -103,13 +100,6 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 	zl, err := logger.NewZapLogger(&c.Logging)
 	if err != nil {
 		return err
-	}
-	conf := zap.NewProductionConfig()
-	if c.LogLevel != "" {
-		lvl := zapcore.Level(0)
-		if err := lvl.UnmarshalText([]byte(c.LogLevel)); err == nil {
-			conf.Level = zap.NewAtomicLevelAt(lvl)
-		}
 	}
 
 	l := zl.WithValues(values...)
