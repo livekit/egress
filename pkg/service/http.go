@@ -7,9 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pprof"
@@ -32,10 +29,8 @@ func (s *Service) StartDebugHandlers() {
 
 	go func() {
 		addr := fmt.Sprintf(":%d", s.conf.DebugHandlerPort)
-
 		logger.Debugw(fmt.Sprintf("starting debug handler on address %s", addr))
-		err := http.ListenAndServe(addr, mux)
-		logger.Infow("debug server failed", "error", err)
+		_ = http.ListenAndServe(addr, mux)
 	}()
 }
 
@@ -94,6 +89,7 @@ func (s *Service) handlePProf(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			b = res.PprofFile
 		}
+
 	default:
 		http.Error(w, "malformed url", http.StatusNotFound)
 		return
@@ -110,17 +106,6 @@ func (s *Service) handlePProf(w http.ResponseWriter, r *http.Request) {
 }
 
 func getErrorCode(err error) int {
-	statusErr, statusOk := err.(interface {
-		GRPCStatus() *status.Status
-	})
-
-	if statusOk {
-		switch statusErr.GRPCStatus().Code() {
-		case codes.NotFound:
-			return http.StatusNotFound
-		}
-	}
-
 	switch {
 	case errors.Is(err, pprof.ErrProfileNotFound), errors.Is(err, errors.ErrEgressNotFound):
 		return http.StatusNotFound

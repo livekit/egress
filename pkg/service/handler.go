@@ -178,12 +178,7 @@ func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PPr
 	defer span.End()
 
 	b, err := pprof.GetProfileData(ctx, req.ProfileName, int(req.Timeout), int(req.Debug))
-	switch err {
-	case nil:
-		// break
-	case pprof.ErrProfileNotFound:
-		return nil, status.New(codes.NotFound, err.Error()).Err()
-	default:
+	if err != nil {
 		return nil, err
 	}
 
