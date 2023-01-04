@@ -183,18 +183,15 @@ func (s *ProcessManager) listEgress() []string {
 	return egressIDs
 }
 
-func (s *ProcessManager) sendGrpcDebugRequest(egressId string, req *ipc.GetDebugInfoRequest) (*ipc.GetDebugInfoResponse, error) {
-	s.mu.Lock()
+func (s *ProcessManager) getGRPCClient(egressID string) (ipc.EgressHandlerClient, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	h, ok := s.activeHandlers[egressId]
+	h, ok := s.activeHandlers[egressID]
 	if !ok {
-		s.mu.Unlock()
 		return nil, errors.ErrEgressNotFound
 	}
-	c := h.grpcClient
-	s.mu.Unlock()
-
-	return c.GetDebugInfo(context.Background(), req)
+	return h.grpcClient, nil
 }
 
 func (s *ProcessManager) killAll() {

@@ -20,20 +20,18 @@ import (
 type HandlerV0 struct {
 	ipc.UnimplementedEgressHandlerServer
 
-	conf          *config.PipelineConfig
-	rpcServer     egress.RPCServer
-	grpcServer    *grpc.Server
-	kill          chan struct{}
-	debugRequests chan chan pipelineDebugResponse
+	conf       *config.PipelineConfig
+	rpcServer  egress.RPCServer
+	grpcServer *grpc.Server
+	kill       chan struct{}
 }
 
 func NewHandlerV0(conf *config.PipelineConfig, rpcServer egress.RPCServer) (*HandlerV0, error) {
 	h := &HandlerV0{
-		conf:          conf,
-		rpcServer:     rpcServer,
-		grpcServer:    grpc.NewServer(),
-		kill:          make(chan struct{}),
-		debugRequests: make(chan chan pipelineDebugResponse),
+		conf:       conf,
+		rpcServer:  rpcServer,
+		grpcServer: grpc.NewServer(),
+		kill:       make(chan struct{}),
 	}
 
 	listener, err := net.Listen(network, getSocketAddress(conf.TmpDir))
@@ -117,13 +115,6 @@ func (h *HandlerV0) Run() error {
 			}
 
 			h.sendResponse(ctx, request, p.Info, err)
-		case debugResponseChan := <-h.debugRequests:
-			dot, err := p.GetGstPipelineDebugDot()
-			select {
-			case debugResponseChan <- pipelineDebugResponse{dot: dot, err: err}:
-			default:
-				logger.Debugw("unable to return gstreamer debug dot file to caller")
-			}
 		}
 	}
 }

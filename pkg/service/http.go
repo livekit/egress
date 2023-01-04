@@ -47,29 +47,19 @@ func (s *Service) handleGstPipelineDotFile(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	egressId := pathElements[2]
-
-	grpcReq := &ipc.GetDebugInfoRequest{
-		Request: &ipc.GetDebugInfoRequest_GstPipelineDot{
-			GstPipelineDot: &ipc.GstPipelineDebugDotRequest{},
-		},
-	}
-
-	grpcResp, err, code := s.sendHandlerRpcRequest(egressId, grpcReq)
+	egressID := pathElements[2]
+	c, err := s.manager.getGRPCClient(egressID)
 	if err != nil {
-		http.Error(w, err.Error(), code)
+		http.Error(w, "handler not found", http.StatusNotFound)
 		return
 	}
 
-	dotResp, ok := grpcResp.Response.(*ipc.GetDebugInfoResponse_GstPipelineDot)
-	if !ok {
-		http.Error(w, "wrong response type", http.StatusInternalServerError)
-		return
+	res, err := c.GetPipelineDot(context.Background(), &ipc.GstPipelineDebugDotRequest{})
+	if err == nil {
+		_, err = w.Write([]byte(res.DotFile))
 	}
-	dotStr := dotResp.GstPipelineDot.DotFile
-	_, err = w.Write([]byte(dotStr))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), getErrorCode(err))
 		return
 	}
 }
@@ -87,57 +77,39 @@ func (s *Service) handlePProf(w http.ResponseWriter, r *http.Request) {
 	case 3:
 		// profile main service
 		b, err = pprof.GetProfileData(context.Background(), pathElements[2], timeout, debug)
-		switch err {
-		case nil:
-			// break
-		case pprof.ErrProfileNotFound:
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		default:
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+
 	case 4:
-		egressId := pathElements[2]
-		grpcReq := &ipc.GetDebugInfoRequest{
-			Request: &ipc.GetDebugInfoRequest_Pprof{
-				Pprof: &ipc.PprofRequest{
-					ProfileName: pathElements[3],
-					Timeout:     int32(timeout),
-					Debug:       int32(debug),
-				},
-			},
-		}
-
-		grpcResp, err, code := s.sendHandlerRpcRequest(egressId, grpcReq)
+		egressID := pathElements[2]
+		c, err := s.manager.getGRPCClient(egressID)
 		if err != nil {
-			http.Error(w, err.Error(), code)
+			http.Error(w, "handler not found", http.StatusNotFound)
 			return
 		}
 
-		pprofResp, ok := grpcResp.Response.(*ipc.GetDebugInfoResponse_Pprof)
-		if !ok {
-			http.Error(w, "wrong response type", http.StatusInternalServerError)
-			return
+		res, err := c.GetPProf(context.Background(), &ipc.PProfRequest{
+			ProfileName: pathElements[3],
+			Timeout:     int32(timeout),
+			Debug:       int32(debug),
+		})
+		if err == nil {
+			b = res.PprofFile
 		}
-
-		b = pprofResp.Pprof.PprofFile
 	default:
 		http.Error(w, "malformed url", http.StatusNotFound)
 		return
 	}
 
-	w.Header().Add("Content-Type", "application/octet-stream")
-
-	_, err = w.Write(b)
+	if err == nil {
+		w.Header().Add("Content-Type", "application/octet-stream")
+		_, err = w.Write(b)
+	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), getErrorCode(err))
 		return
 	}
 }
 
-func (s *Service) sendHandlerRpcRequest(egressId string, req *ipc.GetDebugInfoRequest) (resp *ipc.GetDebugInfoResponse, err error, statusCode int) {
-	grpcResp, err := s.manager.sendGrpcDebugRequest(egressId, req)
+func getErrorCode(err error) int {
 	statusErr, statusOk := err.(interface {
 		GRPCStatus() *status.Status
 	})
@@ -145,18 +117,16 @@ func (s *Service) sendHandlerRpcRequest(egressId string, req *ipc.GetDebugInfoRe
 	if statusOk {
 		switch statusErr.GRPCStatus().Code() {
 		case codes.NotFound:
-			return nil, err, http.StatusNotFound
+			return http.StatusNotFound
 		}
 	}
 
 	switch {
-	case errors.Is(err, errors.ErrEgressNotFound):
-		return nil, errors.ErrEgressNotFound, http.StatusNotFound
+	case errors.Is(err, pprof.ErrProfileNotFound), errors.Is(err, errors.ErrEgressNotFound):
+		return http.StatusNotFound
 	case err == nil:
-		// break
+		return http.StatusOK
 	default:
-		return nil, err, http.StatusInternalServerError
+		return http.StatusInternalServerError
 	}
-
-	return grpcResp, nil, http.StatusOK
 }
