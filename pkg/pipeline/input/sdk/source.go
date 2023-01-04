@@ -94,6 +94,7 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 			codec = types.MimeTypeH264
 			appSrcName = VideoAppSource
 			p.VideoEnabled = true
+			p.VideoTranscoding = true
 
 			if p.VideoCodec == "" {
 				p.VideoCodec = types.MimeTypeH264
