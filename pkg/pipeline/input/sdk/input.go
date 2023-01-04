@@ -27,7 +27,7 @@ type SDKInput struct {
 	*builder.InputBin
 
 	room *lksdk.Room
-	cs   *synchronizer
+	sync *synchronizer
 
 	// track
 	trackID string
@@ -63,7 +63,7 @@ func NewSDKInput(ctx context.Context, p *config.PipelineConfig) (*SDKInput, erro
 	defer span.End()
 
 	s := &SDKInput{
-		cs:           &synchronizer{},
+		sync:         newSynchronizer(),
 		mutedChan:    p.MutedChan,
 		endRecording: make(chan struct{}),
 	}
@@ -86,7 +86,7 @@ func (s *SDKInput) StartRecording() chan struct{} {
 }
 
 func (s *SDKInput) GetStartTime() int64 {
-	return s.cs.startTime.Load()
+	return s.sync.getStartedAt()
 }
 
 func (s *SDKInput) Playing(name string) {
@@ -113,11 +113,11 @@ func (s *SDKInput) EndRecording() chan struct{} {
 }
 
 func (s *SDKInput) GetEndTime() int64 {
-	return s.cs.endTime.Load() + s.cs.delay.Load()
+	return s.sync.getEndedAt()
 }
 
 func (s *SDKInput) SendEOS() {
-	s.cs.SetEndTime(time.Now().UnixNano())
+	s.sync.eos()
 
 	var wg sync.WaitGroup
 	if s.audioWriter != nil {
