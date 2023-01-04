@@ -2,15 +2,18 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pprof"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -18,13 +21,26 @@ const (
 	pprofApp              = "pprof"
 )
 
-type gstDotFileDebugHandler struct {
-	pm *ProcessManager
+func (s *Service) StartDebugHandlers() {
+	if s.conf.DebugHandlerPort == 0 {
+		logger.Debugw("debug handler disabled")
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(fmt.Sprintf("/%s/", gstPipelineDotFileApp), s.handleGstPipelineDotFile)
+	mux.HandleFunc(fmt.Sprintf("/%s/", pprofApp), s.handlePProf)
+
+	go func() {
+		addr := fmt.Sprintf(":%d", s.conf.DebugHandlerPort)
+
+		logger.Debugw(fmt.Sprintf("starting debug handler on address %s", addr))
+		err := http.ListenAndServe(addr, mux)
+		logger.Infow("debug server failed", "error", err)
+	}()
 }
 
 // URL path format is "/<application>/<egress_id>/<optional_other_params>"
-func (p *gstDotFileDebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
+func (s *Service) handleGstPipelineDotFile(w http.ResponseWriter, r *http.Request) {
 	pathElements := strings.Split(r.URL.Path, "/")
 	if len(pathElements) < 3 {
 		http.Error(w, "malformed url", http.StatusNotFound)
@@ -39,7 +55,7 @@ func (p *gstDotFileDebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		},
 	}
 
-	grpcResp, err, code := sendHandlerRpcRequest(p.pm, egressId, grpcReq)
+	grpcResp, err, code := s.sendHandlerRpcRequest(egressId, grpcReq)
 	if err != nil {
 		http.Error(w, err.Error(), code)
 		return
@@ -58,12 +74,8 @@ func (p *gstDotFileDebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-type pprofDebugHandler struct {
-	pm *ProcessManager
-}
-
 // URL path format is "/<application>/<egress_id>/<profile_name>" or "/<application>/<profile_name>" to profile the service
-func (p *pprofDebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Service) handlePProf(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var b []byte
 
@@ -97,7 +109,7 @@ func (p *pprofDebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 
-		grpcResp, err, code := sendHandlerRpcRequest(p.pm, egressId, grpcReq)
+		grpcResp, err, code := s.sendHandlerRpcRequest(egressId, grpcReq)
 		if err != nil {
 			http.Error(w, err.Error(), code)
 			return
@@ -124,8 +136,8 @@ func (p *pprofDebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func sendHandlerRpcRequest(pm *ProcessManager, egressId string, req *ipc.GetDebugInfoRequest) (resp *ipc.GetDebugInfoResponse, err error, statusCode int) {
-	grpcResp, err := pm.sendGrpcDebugRequest(egressId, req)
+func (s *Service) sendHandlerRpcRequest(egressId string, req *ipc.GetDebugInfoRequest) (resp *ipc.GetDebugInfoResponse, err error, statusCode int) {
+	grpcResp, err := s.manager.sendGrpcDebugRequest(egressId, req)
 	statusErr, statusOk := err.(interface {
 		GRPCStatus() *status.Status
 	})

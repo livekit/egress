@@ -141,65 +141,55 @@ func (h *Handler) StopEgress(ctx context.Context, _ *livekit.StopEgressRequest) 
 	return h.pipeline.Info, nil
 }
 
-type pipelineDebugResponse struct {
+type dotResponse struct {
 	dot string
 	err error
 }
 
-func (h *Handler) GetDebugInfo(ctx context.Context, req *ipc.GetDebugInfoRequest) (*ipc.GetDebugInfoResponse, error) {
-	ctx, span := tracer.Start(ctx, "Handler.GetDebugInfo")
+func (h *Handler) GetPipelineDot(ctx context.Context, _ *ipc.GstPipelineDebugDotRequest) (*ipc.GstPipelineDebugDotResponse, error) {
+	ctx, span := tracer.Start(ctx, "Handler.GetPipelineDot")
 	defer span.End()
 
-	switch r := req.Request.(type) {
-	case *ipc.GetDebugInfoRequest_GstPipelineDot:
-		res := make(chan *pipelineDebugResponse, 1)
-		go func() {
-			dot, err := h.pipeline.GetGstPipelineDebugDot()
-			res <- &pipelineDebugResponse{
-				dot: dot,
-				err: err,
-			}
-		}()
-
-		select {
-		case r := <-res:
-			if r.err != nil {
-				return nil, r.err
-			}
-			return &ipc.GetDebugInfoResponse{
-				Response: &ipc.GetDebugInfoResponse_GstPipelineDot{
-					GstPipelineDot: &ipc.GstPipelineDebugDotResponse{
-						DotFile: r.dot,
-					},
-				},
-			}, nil
-
-		case <-time.After(2 * time.Second):
-			return nil, status.New(codes.DeadlineExceeded, "timed out requesting pipeline debug info").Err()
+	res := make(chan *dotResponse, 1)
+	go func() {
+		dot, err := h.pipeline.GetGstPipelineDebugDot()
+		res <- &dotResponse{
+			dot: dot,
+			err: err,
 		}
+	}()
 
-	case *ipc.GetDebugInfoRequest_Pprof:
-		b, err := pprof.GetProfileData(ctx, r.Pprof.ProfileName, int(r.Pprof.Timeout), int(r.Pprof.Debug))
-		switch err {
-		case nil:
-			// break
-		case pprof.ErrProfileNotFound:
-			return nil, status.New(codes.NotFound, err.Error()).Err()
-		default:
-			return nil, err
+	select {
+	case r := <-res:
+		if r.err != nil {
+			return nil, r.err
 		}
-
-		return &ipc.GetDebugInfoResponse{
-			Response: &ipc.GetDebugInfoResponse_Pprof{
-				Pprof: &ipc.PprofResponse{
-					PprofFile: b,
-				},
-			},
+		return &ipc.GstPipelineDebugDotResponse{
+			DotFile: r.dot,
 		}, nil
 
-	default:
-		return nil, status.New(codes.NotFound, "unsupported debug info request type").Err()
+	case <-time.After(2 * time.Second):
+		return nil, status.New(codes.DeadlineExceeded, "timed out requesting pipeline debug info").Err()
 	}
+}
+
+func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PProfResponse, error) {
+	ctx, span := tracer.Start(ctx, "Handler.GetPProf")
+	defer span.End()
+
+	b, err := pprof.GetProfileData(ctx, req.ProfileName, int(req.Timeout), int(req.Debug))
+	switch err {
+	case nil:
+		// break
+	case pprof.ErrProfileNotFound:
+		return nil, status.New(codes.NotFound, err.Error()).Err()
+	default:
+		return nil, err
+	}
+
+	return &ipc.PProfResponse{
+		PprofFile: b,
+	}, nil
 }
 
 func (h *Handler) Kill() {

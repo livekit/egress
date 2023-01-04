@@ -161,28 +161,6 @@ func (s *Service) ListActiveEgress(ctx context.Context, _ *rpc.ListActiveEgressR
 	}, nil
 }
 
-func (s *Service) StartDebugHandlers() {
-	if s.conf.DebugHandlerPort == 0 {
-		logger.Debugw("debug handler disabled")
-	}
-
-	mux := http.NewServeMux()
-
-	gstH := &gstDotFileDebugHandler{pm: s.manager}
-	mux.Handle(fmt.Sprintf("/%s/", gstPipelineDotFileApp), gstH)
-
-	pprofH := &pprofDebugHandler{pm: s.manager}
-	mux.Handle(fmt.Sprintf("/%s/", pprofApp), pprofH)
-
-	go func() {
-		addr := fmt.Sprintf(":%d", s.conf.DebugHandlerPort)
-
-		logger.Debugw(fmt.Sprintf("starting debug handler on address %s", addr))
-		err := http.ListenAndServe(addr, mux)
-		logger.Infow("debug server failed", "error", err)
-	}()
-}
-
 func (s *Service) Status() ([]byte, error) {
 	return json.Marshal(s.manager.status())
 }

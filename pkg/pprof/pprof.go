@@ -10,12 +10,11 @@ import (
 
 const (
 	cpuProfileName = "cpu"
-
 	defaultTimeout = 30
 )
 
 var (
-	ErrProfileNotFound = errors.New("Profile not found")
+	ErrProfileNotFound = errors.New("profile not found")
 )
 
 func GetProfileData(ctx context.Context, profileName string, timeout int, debug int) (b []byte, err error) {
