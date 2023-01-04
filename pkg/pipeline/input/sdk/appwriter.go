@@ -87,7 +87,7 @@ func newAppWriter(
 ) (*appWriter, error) {
 
 	w := &appWriter{
-		logger:      logger.Logger(logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String())),
+		logger:      logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
 		track:       track,
 		codec:       codec,
 		src:         src,
