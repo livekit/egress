@@ -27,6 +27,7 @@ type synchronizer struct {
 type trackInfo struct {
 	sync.Mutex
 
+	trackID    string
 	firstRtpTS int64
 	ptsDelay   int64
 	clockRate  int64
@@ -44,6 +45,7 @@ func newSynchronizer() *synchronizer {
 func (c *synchronizer) addTrack(track *webrtc.TrackRemote) {
 	c.Lock()
 	c.syncInfo[uint32(track.SSRC())] = &trackInfo{
+		trackID:   track.ID(),
 		clockRate: int64(track.Codec().ClockRate),
 	}
 	c.Unlock()
@@ -103,16 +105,15 @@ func (c *synchronizer) onRTCP(packet rtcp.Packet) {
 				ntpStarts[report.SSRC] = ntpStart
 			}
 			c.ntpStart = minNTPStart
-			logger.Infow("ntp start", "time", c.ntpStart.UnixNano())
 
 			// update pts delay so all ntp start times match
 			for ssrc, ntpStart := range ntpStarts {
 				t := c.syncInfo[ssrc]
 				if diff := ntpStart.Sub(minNTPStart); diff != 0 {
-					logger.Infow("updating initial track pts delay", "ssrc", pkt.SSRC, "ntpStart", ntpStart.UnixNano(), "before", t.ptsDelay, "diff", int64(diff), "after", t.ptsDelay+int64(diff))
-					// t.Lock()
-					// t.ptsDelay += int64(diff)
-					// t.Unlock()
+					logger.Debugw("adjusting pts", "trackID", t.trackID, "diff", diff)
+					t.Lock()
+					t.ptsDelay += int64(diff)
+					t.Unlock()
 				}
 			}
 		} else {
@@ -120,10 +121,15 @@ func (c *synchronizer) onRTCP(packet rtcp.Packet) {
 			pts, _ := t.getPTS(int64(pkt.RTPTime))
 			expected := mediatransportutil.NtpTime(pkt.NTPTime).Time().Sub(c.ntpStart)
 			if pts != expected {
-				// t.Lock()
-				logger.Infow("updating", "ssrc", pkt.SSRC, "pts", pts, "expected", expected, "ptsDelay", t.ptsDelay, "diff", expected-pts)
-				// t.ptsDelay += int64(expected - pts)
-				// t.Unlock()
+				diff := expected - pts
+				if diff > time.Millisecond*20 {
+					logger.Warnw("large pts diff", nil, "trackID", t.trackID, "pts", pts, "diff", diff)
+				} else {
+					logger.Debugw("adjusting pts", "trackID", t.trackID, "pts", pts, "diff", expected-pts)
+				}
+				t.Lock()
+				t.ptsDelay += int64(expected - pts)
+				t.Unlock()
 			}
 		}
 	}
