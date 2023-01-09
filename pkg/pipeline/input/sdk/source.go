@@ -65,6 +65,7 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 		}
 		mu.Unlock()
 
+		writeBlanks := false
 		switch {
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeOpus)):
 			codec = types.MimeTypeOpus
@@ -72,6 +73,9 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 			p.AudioEnabled = true
 			if p.AudioCodec == "" {
 				p.AudioCodec = codec
+			}
+			if p.VideoEnabled {
+				writeBlanks = true
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeVP8)):
@@ -84,6 +88,7 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 					// transcode to h264 for composite requests
 					p.VideoCodec = types.MimeTypeH264
 					p.VideoTranscoding = true
+					writeBlanks = true
 				} else {
 					p.VideoCodec = types.MimeTypeVP8
 				}
@@ -115,8 +120,6 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 		}
 
 		// write blank frames only when writing to mp4
-		writeBlanks := p.VideoCodec == types.MimeTypeH264
-
 		switch track.Kind() {
 		case webrtc.RTPCodecTypeAudio:
 			s.audioSrc = app.SrcFromElement(src)

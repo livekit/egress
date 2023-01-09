@@ -84,7 +84,7 @@ func publishSampleToRoom(t *testing.T, room *lksdk.Room, codec types.MimeType, w
 	if withMuting {
 		go func() {
 			muted := false
-			time.Sleep(muteDuration)
+			time.Sleep(time.Second * 15)
 			for {
 				select {
 				case <-done:
