@@ -110,7 +110,6 @@ func (c *synchronizer) onRTCP(packet rtcp.Packet) {
 			for ssrc, ntpStart := range ntpStarts {
 				t := c.syncInfo[ssrc]
 				if diff := ntpStart.Sub(minNTPStart); diff != 0 {
-					logger.Debugw("adjusting pts", "trackID", t.trackID, "diff", diff)
 					t.Lock()
 					t.ptsDelay += int64(diff)
 					t.Unlock()
@@ -124,8 +123,6 @@ func (c *synchronizer) onRTCP(packet rtcp.Packet) {
 				diff := expected - pts
 				if diff > time.Millisecond*20 {
 					logger.Warnw("large pts diff", nil, "trackID", t.trackID, "pts", pts, "diff", diff)
-				} else {
-					logger.Debugw("adjusting pts", "trackID", t.trackID, "pts", pts, "diff", expected-pts)
 				}
 				t.Lock()
 				t.ptsDelay += int64(expected - pts)
