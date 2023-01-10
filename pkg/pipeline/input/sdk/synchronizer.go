@@ -13,6 +13,8 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+const largePTSDiff = time.Millisecond * 20
+
 // a single synchronizer is shared between audio and video writers
 type synchronizer struct {
 	sync.RWMutex
@@ -121,8 +123,8 @@ func (c *synchronizer) onRTCP(packet rtcp.Packet) {
 			expected := mediatransportutil.NtpTime(pkt.NTPTime).Time().Sub(c.ntpStart)
 			if pts != expected {
 				diff := expected - pts
-				if diff > time.Millisecond*20 {
-					logger.Warnw("large pts diff", nil, "trackID", t.trackID, "pts", pts, "diff", diff)
+				if diff > largePTSDiff || diff < -largePTSDiff {
+					logger.Warnw("high pts drift", nil, "trackID", t.trackID, "pts", pts, "diff", diff)
 				}
 				t.Lock()
 				t.ptsDelay += int64(expected - pts)
