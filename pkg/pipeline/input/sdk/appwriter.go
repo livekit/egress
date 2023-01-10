@@ -52,16 +52,11 @@ type appWriter struct {
 	writePLI         func()
 
 	// a/v sync
-	cs          *synchronizer
-	clockSynced bool
-	rtpOffset   int64
-	ptsOffset   int64
-	snOffset    uint16
-	conversion  float64
-	lastSN      uint16
-	lastTS      uint32
-	tsStep      uint32
-	maxRTP      atomic.Int64
+	sync     *synchronizer
+	snOffset uint16
+	lastSN   uint16
+	lastTS   uint32
+	tsStep   uint32
 
 	// state
 	muted        atomic.Bool
@@ -85,15 +80,13 @@ func newAppWriter(
 	playing chan struct{},
 	writeBlanks bool,
 ) (*appWriter, error) {
-
 	w := &appWriter{
 		logger:      logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
 		track:       track,
 		codec:       codec,
 		src:         src,
 		writeBlanks: writeBlanks,
-		cs:          cs,
-		conversion:  1e9 / float64(track.Codec().ClockRate),
+		sync:        cs,
 		playing:     playing,
 		drain:       make(chan struct{}),
 		force:       make(chan struct{}),
@@ -150,6 +143,7 @@ func (w *appWriter) start() {
 	}()
 
 	w.startTime = time.Now()
+	first := true
 
 	for {
 		select {
@@ -191,12 +185,9 @@ func (w *appWriter) start() {
 
 			// sync offsets after first packet read
 			// see comment in writeRTP below
-			if !w.clockSynced {
-				now := time.Now().UnixNano()
-				startTime := w.cs.GetOrSetStartTime(now)
-				w.ptsOffset = now - startTime
-				w.rtpOffset = int64(pkt.Timestamp)
-				w.clockSynced = true
+			if first {
+				w.sync.firstPacketForTrack(pkt)
+				first = false
 			}
 
 			// push packet to sample builder
@@ -360,10 +351,6 @@ func (w *appWriter) pushBlankFrame(timestamp uint32) error {
 
 func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 	for _, pkt := range packets {
-		if w.isDraining() && int64(pkt.Timestamp) >= w.maxRTP.Load() {
-			return io.EOF
-		}
-
 		// record timestamp diff
 		if w.tsStep == 0 && !blankFrame && w.lastTS != 0 && pkt.SequenceNumber == w.lastSN+1 {
 			w.tsStep = pkt.Timestamp - w.lastTS
@@ -379,25 +366,19 @@ func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 			w.translatePacket(pkt)
 		}
 
+		// will return io.EOF if EOS has been sent
+		pts, err := w.sync.getPTS(pkt)
+		if err != nil {
+			return err
+		}
+
 		p, err := pkt.Marshal()
 		if err != nil {
 			return err
 		}
 
 		b := gst.NewBufferFromBytes(p)
-
-		// RTP packet timestamps start at a random number, and increase according to clock rate (for example, with a
-		// clock rate of 90kHz, the timestamp will increase by 90000 every second).
-		// The GStreamer clock time also starts at a random number, and increases in nanoseconds.
-		// The conversion is done by subtracting the initial RTP timestamp (w.rtpOffset) from the current RTP timestamp
-		// and multiplying by a conversion rate of (1e9 ns/s / clock rate).
-		// Since the audio and video track might start pushing to their buffers at different times, we then add a
-		// synced clock offset (w.ptsOffset), which is always 0 for the first track, and fixes the video starting to play too
-		// early if it's waiting for a key frame
-		cyclesElapsed := int64(pkt.Timestamp) - w.rtpOffset
-		nanoSecondsElapsed := int64(float64(cyclesElapsed) * w.conversion)
-		b.SetPresentationTimestamp(time.Duration(nanoSecondsElapsed + w.ptsOffset))
-
+		b.SetPresentationTimestamp(pts)
 		w.src.PushBuffer(b)
 	}
 
@@ -500,19 +481,8 @@ func (w *appWriter) sendEOS() {
 	select {
 	case <-w.drain:
 	default:
-		w.logger.Debugw("draining")
-
-		// get sync info
-		startTime := w.cs.GetStartTime()
-		endTime := w.cs.GetEndTime()
-		delay := w.cs.GetDelay()
-
-		// get the expected timestamp of the last packet
-		nanoSecondsElapsed := endTime - startTime + delay - w.ptsOffset
-		cyclesElapsed := int64(float64(nanoSecondsElapsed) / w.conversion)
-		w.maxRTP.Store(cyclesElapsed + w.rtpOffset)
-
 		// start draining
+		w.logger.Debugw("draining")
 		close(w.drain)
 
 		// wait until drainTimeout before force popping

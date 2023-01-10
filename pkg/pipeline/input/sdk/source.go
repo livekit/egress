@@ -37,7 +37,9 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer wg.Done()
 		logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
+
 		s.active.Inc()
+		s.sync.addTrack(track)
 
 		var codec types.MimeType
 		var appSrcName string
@@ -123,7 +125,7 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 			s.audioSrc = app.SrcFromElement(src)
 			s.audioPlaying = make(chan struct{})
 			s.audioCodec = track.Codec()
-			s.audioWriter, err = newAppWriter(track, codec, rp, s.audioSrc, s.cs, s.audioPlaying, writeBlanks)
+			s.audioWriter, err = newAppWriter(track, codec, rp, s.audioSrc, s.sync, s.audioPlaying, writeBlanks)
 			s.audioParticipant = rp.Identity()
 			if err != nil {
 				logger.Errorw("could not create app writer", err)
@@ -135,7 +137,7 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 			s.videoSrc = app.SrcFromElement(src)
 			s.videoPlaying = make(chan struct{})
 			s.videoCodec = track.Codec()
-			s.videoWriter, err = newAppWriter(track, codec, rp, s.videoSrc, s.cs, s.videoPlaying, writeBlanks)
+			s.videoWriter, err = newAppWriter(track, codec, rp, s.videoSrc, s.sync, s.videoPlaying, writeBlanks)
 			s.videoParticipant = rp.Identity()
 			if err != nil {
 				logger.Errorw("could not create app writer", err)
@@ -266,8 +268,10 @@ func (s *SDKInput) subscribeToTracks(expecting map[string]struct{}) error {
 	for time.Now().Before(deadline) {
 		for _, p := range s.room.GetParticipants() {
 			for _, track := range p.Tracks() {
-				if _, ok := expecting[track.SID()]; ok {
+				trackID := track.SID()
+				if _, ok := expecting[trackID]; ok {
 					if pub, ok := track.(*lksdk.RemoteTrackPublication); ok {
+						pub.OnRTCP(s.sync.onRTCP)
 						err := pub.SetSubscribed(true)
 						if err != nil {
 							return err
