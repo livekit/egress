@@ -42,7 +42,7 @@ func (s *WebInput) createPulseSink(ctx context.Context, p *config.PipelineConfig
 	cmd.Stderr = &errorLogger{cmd: "pactl"}
 	err := cmd.Run()
 	if err != nil {
-		return errors.Fatal(err)
+		return errors.Fatal(errors.ErrProcessStartFailed(err))
 	}
 
 	s.pulseSink = strings.TrimRight(b.String(), "\n")
@@ -59,7 +59,7 @@ func (s *WebInput) launchXvfb(ctx context.Context, p *config.PipelineConfig) err
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
 	xvfb.Stderr = &errorLogger{cmd: "xvfb"}
 	if err := xvfb.Start(); err != nil {
-		return errors.Fatal(err)
+		return errors.Fatal(errors.ErrProcessStartFailed(err))
 	}
 
 	s.xvfb = xvfb
