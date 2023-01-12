@@ -181,6 +181,11 @@ func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PPr
 
 	b, err := pprof.GetProfileData(ctx, req.ProfileName, int(req.Timeout), int(req.Debug))
 	if err != nil {
+		var e psrpc.Error
+		if errors.As(err, &e) {
+			err = e.ToGrpc()
+		}
+
 		return nil, err
 	}
 

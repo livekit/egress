@@ -11,6 +11,7 @@ import (
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pprof"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/psrpc"
 )
 
 const (
@@ -106,9 +107,11 @@ func (s *Service) handlePProf(w http.ResponseWriter, r *http.Request) {
 }
 
 func getErrorCode(err error) int {
+	var e psrpc.Error
+
 	switch {
-	case errors.Is(err, pprof.ErrProfileNotFound), errors.Is(err, errors.ErrEgressNotFound):
-		return http.StatusNotFound
+	case errors.As(err, &e):
+		return e.ToHttp()
 	case err == nil:
 		return http.StatusOK
 	default:

@@ -14,6 +14,7 @@ var (
 	ErrStreamAlreadyExists = psrpc.NewError(psrpc.AlreadyExists, errors.New("stream already exists"))
 	ErrStreamNotFound      = psrpc.NewError(psrpc.NotFound, errors.New("stream not found"))
 	ErrEgressNotFound      = psrpc.NewError(psrpc.NotFound, errors.New("egress not found"))
+	ErrProfileNotFound     = psrpc.NewError(psrpc.NotFound, errors.New("profile not found"))
 )
 
 func New(err string) error {
@@ -77,7 +78,7 @@ func ErrPadLinkFailed(src, sink, status string) error {
 // This can have many reasons, some related to invalid paramemters, other because of system failure.
 // Do not provide an error code until we have code to analyze the error from the underlying upload library further.
 func ErrUploadFailed(location string, err error) error {
-	return errors.New("%s upload failed: %v", location, err)
+	return errors.New(fmt.Sprintf("%s upload failed: %v", location, err))
 }
 
 func ErrWebSocketClosed(addr string) error {
