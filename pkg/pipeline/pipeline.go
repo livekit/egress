@@ -23,7 +23,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
-	"github.com/livekit/psrpc"
 )
 
 const (
@@ -451,7 +450,7 @@ func (p *Pipeline) removeSink(url string, status livekit.StreamInfo_Status) erro
 		}
 	case livekit.StreamInfo_FAILED:
 		if done {
-			return psrpc.NewError("could not connect")
+			return errors.ErrFailedToConnect
 		} else if p.onStatusUpdate != nil {
 			p.onStatusUpdate(context.Background(), p.Info)
 		}

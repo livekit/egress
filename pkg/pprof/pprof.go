@@ -3,9 +3,10 @@ package pprof
 import (
 	"bytes"
 	"context"
-	"errors"
 	"runtime/pprof"
 	"time"
+
+	"github.com/livekit/egress/pkg/errors"
 )
 
 const (

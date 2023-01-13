@@ -16,6 +16,7 @@ var (
 	ErrStreamNotFound      = psrpc.NewErrorf(psrpc.NotFound, "stream not found")
 	ErrEgressNotFound      = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
 	ErrProfileNotFound     = psrpc.NewErrorf(psrpc.NotFound, "profile not found")
+	ErrFailedToConnect     = psrpc.NewErrorf(psrpc.NotFound, "could not connect")
 )
 
 func New(err string) error {
@@ -24,6 +25,10 @@ func New(err string) error {
 
 func Is(err, target error) bool {
 	return errors.Is(err, target)
+}
+
+func As(err error, target any) bool {
+	return errors.As(err, target)
 }
 
 type FatalError struct {
@@ -83,7 +88,7 @@ func ErrGstPipelineError(err error) error {
 // This can have many reasons, some related to invalid paramemters, other because of system failure.
 // Do not provide an error code until we have code to analyze the error from the underlying upload library further.
 func ErrUploadFailed(location string, err error) error {
-	return prscp.NewErrorf(psrcp.Unknown, "%s upload failed: %v", location, err)
+	return psrpc.NewErrorf(psrpc.Unknown, "%s upload failed: %v", location, err)
 }
 
 func ErrWebSocketClosed(addr string) error {
