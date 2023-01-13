@@ -3,18 +3,19 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/livekit/psrpc"
 )
 
 var (
-	ErrNoConfig            = psrpc.NewError(psrpc.Internal, errors.New("missing config"))
-	ErrInvalidRPC          = psrpc.NewError(psrpc.MalformedRequest, errors.New("invalid request"))
-	ErrGhostPadFailed      = psrpc.NewError(psrpc.Internal, errors.New("failed to add ghost pad to bin"))
-	ErrStreamAlreadyExists = psrpc.NewError(psrpc.AlreadyExists, errors.New("stream already exists"))
-	ErrStreamNotFound      = psrpc.NewError(psrpc.NotFound, errors.New("stream not found"))
-	ErrEgressNotFound      = psrpc.NewError(psrpc.NotFound, errors.New("egress not found"))
-	ErrProfileNotFound     = psrpc.NewError(psrpc.NotFound, errors.New("profile not found"))
+	ErrNoConfig            = psrpc.NewErrorf(psrpc.Internal, "missing config")
+	ErrInvalidRPC          = psrpc.NewErrorf(psrpc.MalformedRequest, "invalid request")
+	ErrGhostPadFailed      = psrpc.NewErrorf(psrpc.Internal, "failed to add ghost pad to bin")
+	ErrStreamAlreadyExists = psrpc.NewErrorf(psrpc.AlreadyExists, "stream already exists")
+	ErrStreamNotFound      = psrpc.NewErrorf(psrpc.NotFound, "stream not found")
+	ErrEgressNotFound      = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
+	ErrProfileNotFound     = psrpc.NewErrorf(psrpc.NotFound, "profile not found")
 )
 
 func New(err string) error {
@@ -75,10 +76,14 @@ func ErrPadLinkFailed(src, sink, status string) error {
 	return psrpc.NewErrorf(psrpc.Internal, "failed to link %s to %s: %s", src, sink, status)
 }
 
+func ErrGstPipelineError(status string) error {
+	return psrpc.NewErrorf(psrpc.Internal, "%s", status)
+}
+
 // This can have many reasons, some related to invalid paramemters, other because of system failure.
 // Do not provide an error code until we have code to analyze the error from the underlying upload library further.
 func ErrUploadFailed(location string, err error) error {
-	return errors.New(fmt.Sprintf("%s upload failed: %v", location, err))
+	return prscp.NewErrorf(psrcp.Unknown, "%s upload failed: %v", location, err)
 }
 
 func ErrWebSocketClosed(addr string) error {
@@ -87,4 +92,34 @@ func ErrWebSocketClosed(addr string) error {
 
 func ErrProcessStartFailed(err error) error {
 	return psrpc.NewError(psrpc.Internal, err)
+}
+
+type ErrArray struct {
+	errs []error
+}
+
+func (e *ErrArray) AppendErr(err error) {
+	e.errs = append(e.errs, err)
+}
+
+func (e *ErrArray) ToError() psrpc.Error {
+	if len(e.errs) == 0 {
+		return nil
+	}
+
+	var code psrpc.ErrorCode = psrpc.Unknown
+	var errStr []string
+
+	// Return the code for the first error of type psrpc.Error
+	for _, err := range e.errs {
+		var psrpcErr psrpc.Error
+
+		if code == psrpc.Unknown && errors.As(err, &psrpcErr) {
+			code = psrpcErr.Code()
+		}
+
+		errStr = append(errStr, err.Error())
+	}
+
+	return psrpc.NewErrorf(code, "%s", strings.Join(errStr, "\n"))
 }

@@ -189,7 +189,7 @@ func (b *InputBin) Link() error {
 				muxAudioPad = b.mux.GetRequestPad("audio_%u")
 			}
 			if muxAudioPad == nil {
-				return errors.New("no audio pad found")
+				return errors.ErrGstPipelineError("no audio pad found")
 			}
 
 			if linkReturn := b.audioQueue.GetStaticPad("src").Link(muxAudioPad); linkReturn != gst.PadLinkOK {
@@ -215,7 +215,7 @@ func (b *InputBin) Link() error {
 				muxVideoPad = b.mux.GetRequestPad("video_%u")
 			}
 			if muxVideoPad == nil {
-				return errors.New("no video pad found")
+				return errors.ErrGstPipelineError("no video pad found")
 			}
 
 			if linkReturn := b.videoQueue.GetStaticPad("src").Link(muxVideoPad); linkReturn != gst.PadLinkOK {
