@@ -76,8 +76,8 @@ func ErrPadLinkFailed(src, sink, status string) error {
 	return psrpc.NewErrorf(psrpc.Internal, "failed to link %s to %s: %s", src, sink, status)
 }
 
-func ErrGstPipelineError(status string) error {
-	return psrpc.NewErrorf(psrpc.Internal, "%s", status)
+func ErrGstPipelineError(err error) error {
+	return psrpc.NewError(psrpc.Internal, err)
 }
 
 // This can have many reasons, some related to invalid paramemters, other because of system failure.

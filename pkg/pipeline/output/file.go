@@ -11,19 +11,19 @@ func buildFileOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
 	// create elements
 	sink, err := gst.NewElement("filesink")
 	if err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err = sink.SetProperty("location", p.LocalFilepath); err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err = sink.SetProperty("sync", false); err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	// create bin
 	bin := gst.NewBin("output")
 	if err = bin.Add(sink); err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	// add ghost pad

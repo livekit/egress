@@ -114,7 +114,7 @@ func (b *InputBin) build(ctx context.Context, p *config.PipelineConfig) error {
 		}
 
 		if err = b.bin.Add(b.audioQueue); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 		b.audioPad = b.audioQueue.GetStaticPad("sink")
 	}
@@ -126,7 +126,7 @@ func (b *InputBin) build(ctx context.Context, p *config.PipelineConfig) error {
 		}
 
 		if err = b.bin.Add(b.videoQueue); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 		b.videoPad = b.videoQueue.GetStaticPad("sink")
 	}
@@ -138,7 +138,7 @@ func (b *InputBin) build(ctx context.Context, p *config.PipelineConfig) error {
 	}
 	if b.mux != nil {
 		if err = b.bin.Add(b.mux); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 	}
 
@@ -189,7 +189,7 @@ func (b *InputBin) Link() error {
 				muxAudioPad = b.mux.GetRequestPad("audio_%u")
 			}
 			if muxAudioPad == nil {
-				return errors.ErrGstPipelineError("no audio pad found")
+				return errors.ErrGstPipelineError(errors.New("no audio pad found"))
 			}
 
 			if linkReturn := b.audioQueue.GetStaticPad("src").Link(muxAudioPad); linkReturn != gst.PadLinkOK {
@@ -215,7 +215,7 @@ func (b *InputBin) Link() error {
 				muxVideoPad = b.mux.GetRequestPad("video_%u")
 			}
 			if muxVideoPad == nil {
-				return errors.ErrGstPipelineError("no video pad found")
+				return errors.ErrGstPipelineError(errors.New("no video pad found"))
 			}
 
 			if linkReturn := b.videoQueue.GetStaticPad("src").Link(muxVideoPad); linkReturn != gst.PadLinkOK {
@@ -230,16 +230,16 @@ func (b *InputBin) Link() error {
 func buildQueue(latency uint64, leaky bool) (*gst.Element, error) {
 	queue, err := gst.NewElement("queue")
 	if err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err = queue.SetProperty("max-size-time", latency); err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err = queue.SetProperty("max-size-bytes", uint(0)); err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err = queue.SetProperty("max-size-buffers", uint(0)); err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	if leaky {
 		queue.SetArg("leaky", "downstream")
@@ -271,14 +271,14 @@ func buildMux(p *config.PipelineConfig) (*gst.Element, error) {
 	case types.OutputTypeRTMP:
 		mux, err := gst.NewElement("flvmux")
 		if err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = mux.SetProperty("streamable", true); err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		// Increase the flv latency as video input is sometines late
 		if err = mux.SetProperty("latency", uint64(1e8)); err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 
 		return mux, nil
@@ -286,22 +286,22 @@ func buildMux(p *config.PipelineConfig) (*gst.Element, error) {
 	case types.OutputTypeHLS:
 		mux, err := gst.NewElement("splitmuxsink")
 		if err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = mux.SetProperty("max-size-time", uint64(time.Duration(p.SegmentDuration)*time.Second)); err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = mux.SetProperty("send-keyframe-requests", true); err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = mux.SetProperty("async-finalize", true); err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = mux.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = mux.SetProperty("location", fmt.Sprintf("%s_%%05d.ts", p.LocalFilePrefix)); err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		return mux, nil
 

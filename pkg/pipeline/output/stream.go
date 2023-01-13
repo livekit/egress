@@ -15,12 +15,12 @@ func buildStreamOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
 	// create elements
 	tee, err := gst.NewElement("tee")
 	if err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	bin := gst.NewBin("output")
 	if err = bin.Add(tee); err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	b := &OutputBin{
@@ -37,7 +37,7 @@ func buildStreamOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
 		}
 
 		if err = bin.AddMany(sink.queue, sink.sink); err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 
 		b.sinks[url] = sink
@@ -57,7 +57,7 @@ func buildStreamSink(protocol types.OutputType, url string) (*streamSink, error)
 
 	queue, err := gst.NewElementWithName("queue", fmt.Sprintf("queue_%s", id))
 	if err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	queue.SetArg("leaky", "downstream")
 
@@ -66,13 +66,13 @@ func buildStreamSink(protocol types.OutputType, url string) (*streamSink, error)
 	case types.OutputTypeRTMP:
 		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("sink_%s", id))
 		if err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = sink.SetProperty("sync", false); err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = sink.Set("location", url); err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 	}
 

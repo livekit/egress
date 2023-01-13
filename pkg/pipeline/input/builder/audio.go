@@ -55,22 +55,22 @@ func NewSDKAudioInput(p *config.PipelineConfig, src *app.Source, codec webrtc.RT
 func (a *AudioInput) AddToBin(bin *gst.Bin) error {
 	if a.decoder != nil {
 		if err := bin.AddMany(a.decoder...); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.testSrc != nil {
 		if err := bin.AddMany(a.testSrc...); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.mixer != nil {
 		if err := bin.AddMany(a.mixer...); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.encoder != nil {
 		if err := bin.Add(a.encoder); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 	}
 	return nil
@@ -79,12 +79,12 @@ func (a *AudioInput) AddToBin(bin *gst.Bin) error {
 func (a *AudioInput) Link() error {
 	if a.decoder != nil {
 		if err := gst.ElementLinkMany(a.decoder...); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.testSrc != nil {
 		if err := gst.ElementLinkMany(a.testSrc...); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.mixer != nil {
@@ -96,7 +96,7 @@ func (a *AudioInput) Link() error {
 			return errors.ErrPadLinkFailed("audio test src", "audio mixer", link.String())
 		}
 		if err := gst.ElementLinkMany(a.mixer...); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.encoder != nil {
@@ -127,10 +127,10 @@ func (a *AudioInput) GetSrcPad() *gst.Pad {
 func (a *AudioInput) buildWebDecoder(p *config.PipelineConfig) error {
 	pulseSrc, err := gst.NewElement("pulsesrc")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = pulseSrc.SetProperty("device", fmt.Sprintf("%s.monitor", p.Info.EgressId)); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	a.decoder = []*gst.Element{pulseSrc}
@@ -152,20 +152,20 @@ func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 				codec.PayloadType, codec.ClockRate,
 			),
 		)); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 
 		rtpOpusDepay, err := gst.NewElement("rtpopusdepay")
 		if err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 
 		opusDec, err := gst.NewElement("opusdec")
 		if err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 		if err = opusDec.SetProperty("use-inband-fec", true); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 
 		a.decoder = append(a.decoder, rtpOpusDepay, opusDec)
@@ -185,12 +185,12 @@ func (a *AudioInput) addConverter(p *config.PipelineConfig) error {
 
 	audioConvert, err := gst.NewElement("audioconvert")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	audioResample, err := gst.NewElement("audioresample")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	capsFilter, err := getCapsFilter(p)
@@ -205,16 +205,16 @@ func (a *AudioInput) addConverter(p *config.PipelineConfig) error {
 func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 	audioTestSrc, err := gst.NewElement("audiotestsrc")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = audioTestSrc.SetProperty("volume", 0.0); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = audioTestSrc.SetProperty("do-timestamp", true); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = audioTestSrc.SetProperty("is-live", true); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	audioCaps, err := getCapsFilter(p)
 	if err != nil {
@@ -224,11 +224,11 @@ func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 
 	audioMixer, err := gst.NewElement("audiomixer")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	// set latency slightly higher than max audio appsrc latency
 	if err = audioMixer.SetProperty("latency", Latency); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	mixedCaps, err := getCapsFilter(p)
 	if err != nil {
@@ -244,20 +244,20 @@ func (a *AudioInput) buildEncoder(p *config.PipelineConfig) error {
 	case types.MimeTypeOpus:
 		encoder, err := gst.NewElement("opusenc")
 		if err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 		if err = encoder.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 		a.encoder = encoder
 
 	case types.MimeTypeAAC:
 		encoder, err := gst.NewElement("faac")
 		if err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 		if err = encoder.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 		a.encoder = encoder
 
@@ -285,10 +285,10 @@ func getCapsFilter(p *config.PipelineConfig) (*gst.Element, error) {
 
 	capsFilter, err := gst.NewElement("capsfilter")
 	if err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err = capsFilter.SetProperty("caps", caps); err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	return capsFilter, nil
