@@ -29,13 +29,15 @@ type Handler struct {
 	conf       *config.PipelineConfig
 	pipeline   *pipeline.Pipeline
 	rpcServer  rpc.EgressHandlerServer
+	ioClient   rpc.IOInfoClient
 	grpcServer *grpc.Server
 	kill       chan struct{}
 }
 
-func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
+func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.IOInfoClient) (*Handler, error) {
 	h := &Handler{
 		conf:       conf,
+		ioClient:   ioClient,
 		grpcServer: grpc.NewServer(),
 		kill:       make(chan struct{}),
 	}
@@ -222,7 +224,7 @@ func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
 		)
 	}
 
-	if err := h.rpcServer.PublishInfoUpdate(ctx, info); err != nil {
+	if _, err := h.ioClient.UpdateEgressInfo(ctx, info); err != nil {
 		logger.Errorw("failed to send update", err)
 	}
 }

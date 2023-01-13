@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/version"
+	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -176,7 +177,11 @@ func runHandler(c *cli.Context) error {
 		}
 	} else {
 		bus := psrpc.NewRedisMessageBus(rc)
-		handler, err = service.NewHandler(conf, bus)
+		ioClient, err := rpc.NewIOInfoClient(conf.NodeID, bus)
+		if err != nil {
+			return err
+		}
+		handler, err = service.NewHandler(conf, bus, ioClient)
 		if err != nil {
 			return err
 		}
