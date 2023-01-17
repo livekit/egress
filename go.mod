@@ -14,10 +14,10 @@ require (
 	github.com/googleapis/gax-go/v2 v2.6.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/grafov/m3u8 v0.11.1
-	github.com/livekit/livekit-server v1.3.4-0.20230113054203-1717aa85ec1c
+	github.com/livekit/livekit-server v1.3.4-0.20230117002603-a87107a0f3bb
 	github.com/livekit/mageutil v0.0.0-20221221221243-f361fbe40290
 	github.com/livekit/mediatransportutil v0.0.0-20230111071722-904079e94a7c
-	github.com/livekit/protocol v1.3.2-0.20230111195642-abfad31c5f93
+	github.com/livekit/protocol v1.3.2
 	github.com/livekit/psrpc v0.2.3
 	github.com/livekit/server-sdk-go v1.0.7-0.20230112195259-5bc292cbbdf2
 	github.com/pion/rtcp v1.2.10
