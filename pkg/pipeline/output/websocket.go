@@ -23,7 +23,7 @@ func buildWebsocketOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
 
 	sink, err := app.NewAppSink()
 	if err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	sink.SetCallbacks(&app.SinkCallbacks{
@@ -61,7 +61,7 @@ func buildWebsocketOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
 
 	bin := gst.NewBin("output")
 	if err = bin.Add(sink.Element); err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	ghostPad := gst.NewGhostPad("sink", sink.GetStaticPad("sink"))

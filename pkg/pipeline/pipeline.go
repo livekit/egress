@@ -6,7 +6,6 @@ import (
 	"os"
 	"path"
 	"regexp"
-	"strings"
 	"sync"
 	"time"
 
@@ -98,12 +97,12 @@ func New(ctx context.Context, p *config.PipelineConfig) (*Pipeline, error) {
 	// create pipeline
 	pipeline, err := gst.NewPipeline("pipeline")
 	if err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	// add bins to pipeline
 	if err = pipeline.Add(in.Element()); err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	// link input elements
@@ -114,7 +113,7 @@ func New(ctx context.Context, p *config.PipelineConfig) (*Pipeline, error) {
 	// link output elements. There is no "out" for HLS
 	if out != nil {
 		if err = pipeline.Add(out.Element()); err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 
 		if err = out.Link(); err != nil {
@@ -123,7 +122,7 @@ func New(ctx context.Context, p *config.PipelineConfig) (*Pipeline, error) {
 
 		// link bins
 		if err = in.Bin().Link(out.Element()); err != nil {
-			return nil, err
+			return nil, errors.ErrGstPipelineError(err)
 		}
 	}
 
@@ -391,12 +390,12 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 		}
 	}
 
-	errs := make([]string, 0)
+	errs := errors.ErrArray{}
 
 	now := time.Now().UnixNano()
 	for _, url := range req.AddOutputUrls {
 		if err := p.out.AddSink(url); err != nil {
-			errs = append(errs, err.Error())
+			errs.AppendErr(err)
 			continue
 		}
 
@@ -413,14 +412,11 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 
 	for _, url := range req.RemoveOutputUrls {
 		if err := p.removeSink(url, livekit.StreamInfo_FINISHED); err != nil {
-			errs = append(errs, err.Error())
+			errs.AppendErr(err)
 		}
 	}
 
-	if len(errs) > 0 {
-		return errors.New(strings.Join(errs, "\n"))
-	}
-	return nil
+	return errs.ToError()
 }
 
 func (p *Pipeline) GetGstPipelineDebugDot() (string, error) {
@@ -454,7 +450,7 @@ func (p *Pipeline) removeSink(url string, status livekit.StreamInfo_Status) erro
 		}
 	case livekit.StreamInfo_FAILED:
 		if done {
-			return errors.New("could not connect")
+			return errors.ErrFailedToConnect
 		} else if p.onStatusUpdate != nil {
 			p.onStatusUpdate(context.Background(), p.Info)
 		}
@@ -758,7 +754,7 @@ func getSegmentParamsFromGstStructure(s *gst.Structure) (filepath string, time i
 	}
 	filepath, ok := loc.(string)
 	if !ok {
-		return "", 0, errors.New("invalid type for location")
+		return "", 0, errors.ErrGstPipelineError(errors.New("invalid type for location"))
 	}
 
 	t, err := s.GetValue(fragmentRunningTime)
@@ -767,7 +763,7 @@ func getSegmentParamsFromGstStructure(s *gst.Structure) (filepath string, time i
 	}
 	ti, ok := t.(uint64)
 	if !ok {
-		return "", 0, errors.New("invalid type for time")
+		return "", 0, errors.ErrGstPipelineError(errors.New("invalid type for time"))
 	}
 
 	return filepath, int64(ti), nil
@@ -776,7 +772,7 @@ func getSegmentParamsFromGstStructure(s *gst.Structure) (filepath string, time i
 // handleError returns true if the error has been handled, false if the pipeline should quit
 func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 	element, name, message := parseDebugInfo(gErr)
-	err := errors.New(gErr.Error())
+	err := errors.ErrGstPipelineError(errors.New(gErr.Error()))
 
 	switch {
 	case element == elementGstRtmp2Sink:

@@ -3,18 +3,15 @@ package pprof
 import (
 	"bytes"
 	"context"
-	"errors"
 	"runtime/pprof"
 	"time"
+
+	"github.com/livekit/egress/pkg/errors"
 )
 
 const (
 	cpuProfileName = "cpu"
 	defaultTimeout = 30
-)
-
-var (
-	ErrProfileNotFound = errors.New("profile not found")
 )
 
 func GetProfileData(ctx context.Context, profileName string, timeout int, debug int) (b []byte, err error) {
@@ -54,7 +51,7 @@ func GetCpuProfileData(ctx context.Context, timeout int) (b []byte, err error) {
 func GetGenericProfileData(profileName string, debug int) (b []byte, err error) {
 	pp := pprof.Lookup(profileName)
 	if pp == nil {
-		return nil, ErrProfileNotFound
+		return nil, errors.ErrProfileNotFound
 	}
 
 	buf := &bytes.Buffer{}

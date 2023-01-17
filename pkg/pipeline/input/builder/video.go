@@ -46,11 +46,21 @@ func NewSDKVideoInput(p *config.PipelineConfig, src *app.Source, codec webrtc.RT
 }
 
 func (v *VideoInput) AddToBin(bin *gst.Bin) error {
-	return bin.AddMany(v.elements...)
+	err := bin.AddMany(v.elements...)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	return nil
 }
 
 func (v *VideoInput) Link() error {
-	return gst.ElementLinkMany(v.elements...)
+	err := gst.ElementLinkMany(v.elements...)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	return nil
 }
 
 func (v *VideoInput) GetSrcPad() *gst.Pad {
@@ -60,16 +70,16 @@ func (v *VideoInput) GetSrcPad() *gst.Pad {
 func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 	xImageSrc, err := gst.NewElement("ximagesrc")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = xImageSrc.SetProperty("display-name", p.Display); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = xImageSrc.SetProperty("use-damage", false); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = xImageSrc.SetProperty("show-pointer", false); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	videoQueue, err := buildQueue(Latency/10, true)
@@ -79,17 +89,17 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 
 	videoConvert, err := gst.NewElement("videoconvert")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	caps, err := gst.NewElement("capsfilter")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = caps.SetProperty("caps", gst.NewCapsFromString(
 		fmt.Sprintf("video/x-raw,framerate=%d/1", p.Framerate),
 	)); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	v.elements = []*gst.Element{xImageSrc, videoQueue, videoConvert, caps}
@@ -99,7 +109,7 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, codec webrtc.RTPCodecParameters) error {
 	src.Element.SetArg("format", "time")
 	if err := src.Element.SetProperty("is-live", true); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	v.elements = append(v.elements, src.Element)
@@ -111,26 +121,26 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 				codec.PayloadType, codec.ClockRate,
 			),
 		)); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 
 		rtpH264Depay, err := gst.NewElement("rtph264depay")
 		if err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 		v.elements = append(v.elements, rtpH264Depay)
 
 		if p.VideoTranscoding {
 			avDecH264, err := gst.NewElement("avdec_h264")
 			if err != nil {
-				return err
+				return errors.ErrGstPipelineError(err)
 			}
 
 			v.elements = append(v.elements, avDecH264)
 		} else {
 			h264parse, err := gst.NewElement("h264parse")
 			if err != nil {
-				return err
+				return errors.ErrGstPipelineError(err)
 			}
 
 			v.elements = append(v.elements, h264parse)
@@ -145,12 +155,12 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 				codec.PayloadType, codec.ClockRate,
 			),
 		)); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 
 		rtpVP8Depay, err := gst.NewElement("rtpvp8depay")
 		if err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 		v.elements = append(v.elements, rtpVP8Depay)
 
@@ -160,7 +170,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 
 		vp8Dec, err := gst.NewElement("vp8dec")
 		if err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 
 		v.elements = append(v.elements, vp8Dec)
@@ -176,30 +186,30 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 
 	videoConvert, err := gst.NewElement("videoconvert")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	videoScale, err := gst.NewElement("videoscale")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	videoRate, err := gst.NewElement("videorate")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = videoRate.SetProperty("max-rate", int(p.Framerate)); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	caps, err := gst.NewElement("capsfilter")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = caps.SetProperty("caps", gst.NewCapsFromString(
 		fmt.Sprintf("video/x-raw,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1", p.Width, p.Height)),
 	); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	v.elements = append(v.elements, videoQueue, videoConvert, videoScale, videoRate, caps)
@@ -219,35 +229,35 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 	case types.MimeTypeH264:
 		x264Enc, err := gst.NewElement("x264enc")
 		if err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 		if err = x264Enc.SetProperty("bitrate", uint(p.VideoBitrate)); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
 
 		if p.KeyFrameInterval != 0 {
 			if err = x264Enc.SetProperty("key-int-max", uint(p.KeyFrameInterval*float64(p.Framerate))); err != nil {
-				return err
+				return errors.ErrGstPipelineError(err)
 			}
 		}
 
 		if p.OutputType == types.OutputTypeHLS {
 			// Avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
 			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
-				return err
+				return errors.ErrGstPipelineError(err)
 			}
 		}
 
 		caps, err := gst.NewElement("capsfilter")
 		if err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 
 		if err = caps.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf("video/x-h264,profile=%s", p.VideoProfile),
 		)); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 
 		v.elements = append(v.elements, x264Enc, caps)

@@ -126,7 +126,7 @@ func (o *OutputBin) AddSink(url string) error {
 
 	// add to bin
 	if err = o.bin.AddMany(sink.queue, sink.sink); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	// link queue to sink
