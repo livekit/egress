@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/service"
@@ -89,9 +88,9 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = updates.Close() })
 
-	psrpcUpdates, err := psrpcClient.SubscribeInfoUpdate(context.Background())
+	psrpcUpdates := make(chan *livekit.EgressInfo, 100)
+	_, err = newIOTestServer(bus, psrpcUpdates)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = psrpcUpdates.Close() })
 
 	// update test config
 	conf.svc = svc
@@ -449,42 +448,6 @@ func getStatus(t *testing.T, svc *service.Service) map[string]interface{} {
 	require.NoError(t, err)
 
 	return status
-}
-
-func checkUpdate(t *testing.T, conf *TestConfig, egressID string, status livekit.EgressStatus) *livekit.EgressInfo {
-	info := getUpdate(t, conf, egressID)
-
-	require.Equal(t, status.String(), info.Status.String())
-	if info.Status == livekit.EgressStatus_EGRESS_FAILED {
-		require.NotEmpty(t, info.Error, "failed egress missing error")
-	} else {
-		require.Empty(t, info.Error, "status %s with error %s", info.Status.String(), info.Error)
-	}
-
-	return info
-}
-
-func getUpdate(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressInfo {
-	for {
-		select {
-		case msg := <-conf.updates.Channel():
-			b := conf.updates.Payload(msg)
-			info := &livekit.EgressInfo{}
-			require.NoError(t, proto.Unmarshal(b, info))
-			if info.EgressId == egressID {
-				return info
-			}
-
-		case info := <-conf.psrpcUpdates.Channel():
-			if info.EgressId == egressID {
-				return info
-			}
-
-		case <-time.After(time.Second * 45):
-			t.Fatal("no update from results channel")
-			return nil
-		}
-	}
 }
 
 func stopEgress(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressInfo {

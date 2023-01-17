@@ -14,12 +14,12 @@ require (
 	github.com/googleapis/gax-go/v2 v2.6.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/grafov/m3u8 v0.11.1
-	github.com/livekit/livekit-server v1.3.3-0.20221227214332-5d3f64466700
+	github.com/livekit/livekit-server v1.3.4-0.20230117002603-a87107a0f3bb
 	github.com/livekit/mageutil v0.0.0-20221221221243-f361fbe40290
-	github.com/livekit/mediatransportutil v0.0.0-20221007030528-7440725c362b
-	github.com/livekit/protocol v1.3.2-0.20221228042140-d4406dd27954
+	github.com/livekit/mediatransportutil v0.0.0-20230111071722-904079e94a7c
+	github.com/livekit/protocol v1.3.2
 	github.com/livekit/psrpc v0.2.3
-	github.com/livekit/server-sdk-go v1.0.6
+	github.com/livekit/server-sdk-go v1.0.7-0.20230112195259-5bc292cbbdf2
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.7.13
 	github.com/pion/webrtc/v3 v3.1.50
@@ -85,7 +85,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.5 // indirect
 	github.com/pion/dtls/v2 v2.1.5 // indirect
-	github.com/pion/ice/v2 v2.2.12 // indirect
+	github.com/pion/ice/v2 v2.2.13 // indirect
 	github.com/pion/interceptor v0.1.12 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.5 // indirect
@@ -112,7 +112,7 @@ require (
 	go.uber.org/goleak v1.1.12 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/crypto v0.2.0 // indirect
+	golang.org/x/crypto v0.4.0 // indirect
 	golang.org/x/net v0.4.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20221014153046-6fdb5e3db783 // indirect
 	golang.org/x/sync v0.1.0 // indirect
