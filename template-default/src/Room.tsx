@@ -39,7 +39,9 @@ export default function RoomPage({ url, token, layout: initialLayout }: RoomPage
       });
 
       // start recording immediately after connection
-      EgressHelper.startRecording();
+      if (room.participants.size > 1) {
+        EgressHelper.startRecording();
+      }
     }
   }, [room]);
 

@@ -48,6 +48,7 @@ const EgressHelper = {
    */
   setRoom(room: Room, opts?: EgressOptions) {
     if (currentRoom) {
+      currentRoom.off(RoomEvent.ParticipantConnected, onParticipantConnected);
       currentRoom.off(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
       currentRoom.off(RoomEvent.Disconnected, EgressHelper.endRecording);
     }
@@ -57,6 +58,7 @@ const EgressHelper = {
       ParticipantEvent.ParticipantMetadataChanged, onMetadataChanged,
     );
     if (opts?.autoEnd) {
+      currentRoom.on(RoomEvent.ParticipantConnected, onParticipantConnected);
       currentRoom.on(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
     }
     currentRoom.on(RoomEvent.Disconnected, EgressHelper.endRecording);
@@ -67,6 +69,7 @@ const EgressHelper = {
    * Starts recording the room that's passed in
    */
   startRecording() {
+    egressStarted = true;
     console.log('START_RECORDING');
   },
 
@@ -80,6 +83,24 @@ const EgressHelper = {
   },
 
   /**
+   * Sets a one-second timeout to end the recording when all participants have left the room.
+   * Can be cancelled by cancelEndRecording if a participant joins or reconnects.
+   */
+  endRecordingTimeout() {
+    endRecordingTimer = setTimeout(this.endRecording, 1000);
+  },
+
+  /**
+   * Cancels the endRecording timeout.
+   */
+  cancelEndRecordingTimeout() {
+    if (endRecordingTimer) {
+      clearTimeout(endRecordingTimer);
+      endRecordingTimer = undefined;
+    }
+  },
+
+  /**
    * Registers a callback to listen to layout changes.
    * @param f
    */
@@ -89,6 +110,8 @@ const EgressHelper = {
 }
 
 let currentRoom: Room | undefined;
+let egressStarted = false;
+let endRecordingTimer: number | undefined;
 let layoutChangedCallback: (layout: string) => void | undefined;
 let state: TemplateState = {
   layout: ''
@@ -110,10 +133,20 @@ function onMetadataChanged() {
   }
 }
 
+function onParticipantConnected() {
+  if (currentRoom) {
+    if (!egressStarted) {
+      EgressHelper.startRecording()
+    } else {
+      EgressHelper.cancelEndRecordingTimeout()
+    }
+  }
+}
+
 function onParticipantDisconnected() {
   if (currentRoom) {
     if (currentRoom.participants.size === 0) {
-      EgressHelper.endRecording();
+      EgressHelper.endRecordingTimeout();
     }
   }
 }
