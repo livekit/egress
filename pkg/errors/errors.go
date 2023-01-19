@@ -112,7 +112,7 @@ func (e *ErrArray) ToError() psrpc.Error {
 		return nil
 	}
 
-	var code psrpc.ErrorCode = psrpc.Unknown
+	code := psrpc.Unknown
 	var errStr []string
 
 	// Return the code for the first error of type psrpc.Error
