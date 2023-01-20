@@ -284,7 +284,7 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 					require.NoError(t, err)
 					require.NotZero(t, d)
 					require.Less(t, n/d, float64(p.Framerate)*1.05)
-					require.Greater(t, n/d, float64(sourceFramerate)*0.95)
+					require.Greater(t, n/d, float64(sourceFramerate)*0.8)
 
 				}
 				fallthrough

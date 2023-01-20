@@ -37,6 +37,7 @@ const (
 
 	elementGstRtmp2Sink = "GstRtmp2Sink"
 	elementGstAppSrc    = "GstAppSrc"
+	elementSplitMuxSink = "GstSplitMuxSink"
 )
 
 type Pipeline struct {
@@ -793,6 +794,16 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 			logger.Debugw("streaming stopped", "name", name)
 			p.in.(*sdk.SDKInput).SendAppSrcEOS(name)
 			return err, true
+		}
+	case element == elementSplitMuxSink:
+		// We sometimes get GstSplitMuxSink errors if send EOS before the first media was sent to the mux
+		if message == ":muxer" {
+			select {
+			case <-p.closed:
+				logger.Debugw("GstSplitMuxSink failure after sending EOS")
+				return err, true
+			default:
+			}
 		}
 	}
 
