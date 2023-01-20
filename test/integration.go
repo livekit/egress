@@ -76,6 +76,9 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	// start debug handler
 	svc.StartDebugHandlers()
 
+	err = svc.StartTemplatesServer()
+	require.NoError(t, err)
+
 	go func() {
 		err := svc.Run()
 		require.NoError(t, err)
