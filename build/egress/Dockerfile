@@ -18,7 +18,9 @@ COPY pkg/ pkg/
 COPY version/ version/
 
 # copy templates
-COPY template-default/build/ pkg/service/templates/
+COPY --from=livekit/egress-templates workspace/build/ pkg/service/templates/
+# delete .map files
+RUN find pkg/service/templates/ -name *.map | xargs rm
 
 # build
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \

@@ -20,20 +20,6 @@ type packageInfo struct {
 	Dir string
 }
 
-func Bootstrap() error {
-	err := Proto()
-	if err != nil {
-		return err
-	}
-
-	err = Template()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func Proto() error {
 	sources := []string{"ipc.proto"}
 	fmt.Println("generating protobuf")
@@ -85,10 +71,6 @@ func Proto() error {
 		return err
 	}
 	return nil
-}
-
-func Template() error {
-	return mageutil.Run(context.Background(), `yarn --cwd template-default install`, `yarn --cwd template-default build`)
 }
 
 func Integration(configFile string) error {
