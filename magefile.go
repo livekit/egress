@@ -88,7 +88,7 @@ func Proto() error {
 }
 
 func Template() error {
-	return mageutil.Run(context.Background(), `yarn --cwd template-default build`)
+	return mageutil.Run(context.Background(), `yarn --cwd template-default install`, `yarn --cwd template-default build`)
 }
 
 func Integration(configFile string) error {
