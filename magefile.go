@@ -73,6 +73,10 @@ func Proto() error {
 	return nil
 }
 
+func Template() error {
+	return mageutil.Run(context.Background(), `yarn --cwd template-default build`)
+}
+
 func Integration(configFile string) error {
 	dir, err := os.Getwd()
 	if err != nil {

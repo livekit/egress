@@ -21,6 +21,7 @@ type ServiceConfig struct {
 	BaseConfig `yaml:",inline"`
 
 	HealthPort       int `yaml:"health_port"`
+	TemplatesPort    int `yaml:"templates_port"`
 	PrometheusPort   int `yaml:"prometheus_port"`
 	DebugHandlerPort int `yaml:"debug_handler_port"` // Port used to launch the egress debug handler. 0 means debug handler disabled.
 
