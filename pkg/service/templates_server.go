@@ -11,7 +11,7 @@ import (
 
 var (
 	//go:embed templates
-	templatedEmbedFs embed.FS
+	templateEmbedFs embed.FS
 )
 
 func (s *Service) StartTemplatesServer() error {
@@ -20,7 +20,7 @@ func (s *Service) StartTemplatesServer() error {
 		return nil
 	}
 
-	rfs, err := fs.Sub(templatedEmbedFs, "templates")
+	rfs, err := fs.Sub(templateEmbedFs, "templates")
 	if err != nil {
 		return err
 	}
