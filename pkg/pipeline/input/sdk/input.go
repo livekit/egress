@@ -53,9 +53,10 @@ type SDKInput struct {
 	videoPlaying     chan struct{}
 	videoParticipant string
 
-	active       atomic.Int32
-	mutedChan    chan bool
-	endRecording chan struct{}
+	active         atomic.Int32
+	mutedChan      chan bool
+	startRecording chan struct{}
+	endRecording   chan struct{}
 }
 
 func NewSDKInput(ctx context.Context, p *config.PipelineConfig) (*SDKInput, error) {
@@ -63,10 +64,13 @@ func NewSDKInput(ctx context.Context, p *config.PipelineConfig) (*SDKInput, erro
 	defer span.End()
 
 	s := &SDKInput{
-		sync:         newSynchronizer(),
-		mutedChan:    p.MutedChan,
-		endRecording: make(chan struct{}),
+		mutedChan:      p.MutedChan,
+		startRecording: make(chan struct{}),
+		endRecording:   make(chan struct{}),
 	}
+	s.sync = newSynchronizer(func() {
+		close(s.startRecording)
+	})
 
 	if err := s.joinRoom(p); err != nil {
 		return nil, err
@@ -82,7 +86,7 @@ func NewSDKInput(ctx context.Context, p *config.PipelineConfig) (*SDKInput, erro
 }
 
 func (s *SDKInput) StartRecording() chan struct{} {
-	return nil
+	return s.startRecording
 }
 
 func (s *SDKInput) GetStartTime() int64 {

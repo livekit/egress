@@ -20,6 +20,7 @@ type synchronizer struct {
 	sync.RWMutex
 
 	firstPacket   int64
+	onFirstPacket func()
 	ntpStart      time.Time
 	endedAt       int64
 	syncInfo      map[uint32]*trackInfo
@@ -36,8 +37,9 @@ type trackInfo struct {
 	maxRTP     int64
 }
 
-func newSynchronizer() *synchronizer {
+func newSynchronizer(onFirstPacket func()) *synchronizer {
 	return &synchronizer{
+		onFirstPacket: onFirstPacket,
 		syncInfo:      make(map[uint32]*trackInfo),
 		senderReports: make(map[uint32]*rtcp.SenderReport),
 	}
@@ -60,6 +62,7 @@ func (c *synchronizer) firstPacketForTrack(pkt *rtp.Packet) {
 	c.Lock()
 	if c.firstPacket == 0 {
 		c.firstPacket = now
+		c.onFirstPacket()
 	}
 	t := c.syncInfo[pkt.SSRC]
 	c.Unlock()
