@@ -52,11 +52,8 @@ type appWriter struct {
 	writePLI         func()
 
 	// a/v sync
-	sync     *synchronizer
-	snOffset uint16
-	lastSN   uint16
-	lastTS   uint32
-	tsStep   uint32
+	sync *synchronizer
+	*syncInfo
 
 	// state
 	muted        atomic.Bool
@@ -76,7 +73,8 @@ func newAppWriter(
 	codec types.MimeType,
 	rp *lksdk.RemoteParticipant,
 	src *app.Source,
-	cs *synchronizer,
+	sync *synchronizer,
+	syncInfo *syncInfo,
 	playing chan struct{},
 	writeBlanks bool,
 ) (*appWriter, error) {
@@ -86,7 +84,8 @@ func newAppWriter(
 		codec:       codec,
 		src:         src,
 		writeBlanks: writeBlanks,
-		sync:        cs,
+		sync:        sync,
+		syncInfo:    syncInfo,
 		playing:     playing,
 		drain:       make(chan struct{}),
 		force:       make(chan struct{}),
@@ -238,7 +237,7 @@ func (w *appWriter) pushBlankFrames() error {
 	}
 
 	// expected difference between packet timestamps
-	tsStep := w.tsStep
+	tsStep := w.rtpStep
 	if tsStep == 0 {
 		w.logger.Debugw("no timestamp step, guessing")
 		tsStep = w.track.Codec().ClockRate / (24000 / 1001)
@@ -273,7 +272,7 @@ func (w *appWriter) pushBlankFrames() error {
 
 			maxTimestamp := pkt.Timestamp - tsStep
 			for {
-				ts := w.lastTS + tsStep
+				ts := w.lastRTP + tsStep
 				if ts > maxTimestamp {
 					// push packet to sample builder and return
 					w.sb.Push(pkt)
@@ -288,7 +287,7 @@ func (w *appWriter) pushBlankFrames() error {
 
 		<-ticker.C
 		// push blank frame
-		if err := w.pushBlankFrame(w.lastTS + tsStep); err != nil {
+		if err := w.pushBlankFrame(w.lastRTP + tsStep); err != nil {
 			return err
 		}
 	}
@@ -352,13 +351,13 @@ func (w *appWriter) pushBlankFrame(timestamp uint32) error {
 func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 	for _, pkt := range packets {
 		// record timestamp diff
-		if w.tsStep == 0 && !blankFrame && w.lastTS != 0 && pkt.SequenceNumber == w.lastSN+1 {
-			w.tsStep = pkt.Timestamp - w.lastTS
+		if w.rtpStep == 0 && !blankFrame && w.lastRTP != 0 && pkt.SequenceNumber == w.lastSN+1 {
+			w.rtpStep = pkt.Timestamp - w.lastRTP
 		}
 
 		// record SN and TS
 		w.lastSN = pkt.SequenceNumber
-		w.lastTS = pkt.Timestamp
+		w.lastRTP = pkt.Timestamp
 
 		if !blankFrame {
 			// update sequence number
@@ -367,7 +366,7 @@ func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 		}
 
 		// will return io.EOF if EOS has been sent
-		pts, err := w.sync.getPTS(pkt)
+		pts, err := w.getPTS(int64(pkt.Timestamp))
 		if err != nil {
 			return err
 		}
