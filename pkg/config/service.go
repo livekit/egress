@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path"
 
@@ -15,13 +16,16 @@ const (
 	webCpuCost            = 4.5
 	trackCompositeCpuCost = 2
 	trackCpuCost          = 1
+
+	defaultTemplatePort         = 7980
+	defaultTemplateBaseTemplate = "http://localhost:%d/"
 )
 
 type ServiceConfig struct {
 	BaseConfig `yaml:",inline"`
 
 	HealthPort       int `yaml:"health_port"`
-	TemplatesPort    int `yaml:"templates_port"`
+	TemplatePort     int `yaml:"template_port"`
 	PrometheusPort   int `yaml:"prometheus_port"`
 	DebugHandlerPort int `yaml:"debug_handler_port"` // Port used to launch the egress debug handler. 0 means debug handler disabled.
 
@@ -38,12 +42,12 @@ type CPUCostConfig struct {
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	conf := &ServiceConfig{
 		BaseConfig: BaseConfig{
-			ApiKey:       os.Getenv("LIVEKIT_API_KEY"),
-			ApiSecret:    os.Getenv("LIVEKIT_API_SECRET"),
-			WsUrl:        os.Getenv("LIVEKIT_WS_URL"),
-			LogLevel:     "info",
-			TemplateBase: "https://egress-composite.livekit.io",
+			ApiKey:    os.Getenv("LIVEKIT_API_KEY"),
+			ApiSecret: os.Getenv("LIVEKIT_API_SECRET"),
+			WsUrl:     os.Getenv("LIVEKIT_WS_URL"),
+			LogLevel:  "info",
 		},
+		TemplatePort: defaultTemplatePort,
 	}
 	if confString != "" {
 		if err := yaml.Unmarshal([]byte(confString), conf); err != nil {
@@ -66,6 +70,10 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	}
 	if conf.TrackCpuCost <= 0 {
 		conf.TrackCpuCost = trackCpuCost
+	}
+
+	if conf.TemplateBase == "" {
+		conf.TemplateBase = fmt.Sprintf(defaultTemplateBaseTemplate, conf.TemplatePort)
 	}
 
 	conf.LocalOutputDirectory = path.Clean(conf.LocalOutputDirectory)

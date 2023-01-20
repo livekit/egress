@@ -15,7 +15,7 @@ var (
 )
 
 func (s *Service) StartTemplatesServer() error {
-	if s.conf.TemplatesPort == 0 {
+	if s.conf.TemplatePort == 0 {
 		logger.Debugw("templates server disabled")
 		return nil
 	}
@@ -31,7 +31,7 @@ func (s *Service) StartTemplatesServer() error {
 	mux.Handle("/", h)
 
 	go func() {
-		addr := fmt.Sprintf("localhost:%d", s.conf.TemplatesPort)
+		addr := fmt.Sprintf("localhost:%d", s.conf.TemplatePort)
 		logger.Debugw(fmt.Sprintf("starting template server on address %s", addr))
 		_ = http.ListenAndServe(addr, mux)
 	}()
