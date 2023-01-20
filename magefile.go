@@ -20,6 +20,20 @@ type packageInfo struct {
 	Dir string
 }
 
+func Bootstrap() error {
+	err := Proto()
+	if err != nil {
+		return err
+	}
+
+	err = Template()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func Proto() error {
 	sources := []string{"ipc.proto"}
 	fmt.Println("generating protobuf")
