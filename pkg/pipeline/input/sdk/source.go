@@ -39,7 +39,7 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 		logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
 
 		s.active.Inc()
-		s.sync.addTrack(track)
+		si := s.sync.addTrack(track)
 
 		var codec types.MimeType
 		var appSrcName string
@@ -125,7 +125,7 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 			s.audioSrc = app.SrcFromElement(src)
 			s.audioPlaying = make(chan struct{})
 			s.audioCodec = track.Codec()
-			s.audioWriter, err = newAppWriter(track, codec, rp, s.audioSrc, s.sync, s.audioPlaying, writeBlanks)
+			s.audioWriter, err = newAppWriter(track, codec, rp, s.audioSrc, s.sync, si, s.audioPlaying, writeBlanks)
 			s.audioParticipant = rp.Identity()
 			if err != nil {
 				logger.Errorw("could not create app writer", err)
@@ -137,7 +137,7 @@ func (s *SDKInput) joinRoom(p *config.PipelineConfig) error {
 			s.videoSrc = app.SrcFromElement(src)
 			s.videoPlaying = make(chan struct{})
 			s.videoCodec = track.Codec()
-			s.videoWriter, err = newAppWriter(track, codec, rp, s.videoSrc, s.sync, s.videoPlaying, writeBlanks)
+			s.videoWriter, err = newAppWriter(track, codec, rp, s.videoSrc, s.sync, si, s.videoPlaying, writeBlanks)
 			s.videoParticipant = rp.Identity()
 			if err != nil {
 				logger.Errorw("could not create app writer", err)

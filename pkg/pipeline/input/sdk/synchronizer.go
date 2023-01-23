@@ -13,7 +13,10 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-const largePTSDiff = time.Millisecond * 20
+const (
+	largePTSDrift   = time.Millisecond * 20
+	massivePTSDrift = time.Second
+)
 
 // a single synchronizer is shared between audio and video writers
 type synchronizer struct {
@@ -23,39 +26,50 @@ type synchronizer struct {
 	onFirstPacket func()
 	ntpStart      time.Time
 	endedAt       int64
-	syncInfo      map[uint32]*trackInfo
+	syncInfo      map[uint32]*syncInfo
 	senderReports map[uint32]*rtcp.SenderReport
 }
 
-type trackInfo struct {
+// TODO: handle (rare) RTP timestamp wrap
+type syncInfo struct {
 	sync.Mutex
 
-	trackID    string
-	firstRtpTS int64
-	ptsDelay   int64
-	clockRate  int64
-	maxRTP     int64
+	trackID   string
+	clockRate int64
+
+	firstRTP  int64  // first RTP timestamp received
+	lastRTP   uint32 // most recent RTP timestamp received
+	rtpStep   uint32 // difference between RTP timestamps for sequential packets (used for blank frame insertion)
+	ptsOffset int64  // presentation timestamp offset (used for a/v sync)
+	maxRTP    int64  // maximum accepted RTP timestamp after EOS
+
+	lastSN   uint16 // previous sequence number
+	snOffset uint16 // sequence number offset (increases with each blank frame inserted)
+
+	largeDrift time.Duration // track massive PTS drift, in case it's correct
 }
 
 func newSynchronizer(onFirstPacket func()) *synchronizer {
 	return &synchronizer{
 		onFirstPacket: onFirstPacket,
-		syncInfo:      make(map[uint32]*trackInfo),
+		syncInfo:      make(map[uint32]*syncInfo),
 		senderReports: make(map[uint32]*rtcp.SenderReport),
 	}
 }
 
-// initialize track sync info
-func (c *synchronizer) addTrack(track *webrtc.TrackRemote) {
-	c.Lock()
-	c.syncInfo[uint32(track.SSRC())] = &trackInfo{
+// addTrack creates track sync info
+func (c *synchronizer) addTrack(track *webrtc.TrackRemote) *syncInfo {
+	t := &syncInfo{
 		trackID:   track.ID(),
 		clockRate: int64(track.Codec().ClockRate),
 	}
+	c.Lock()
+	c.syncInfo[uint32(track.SSRC())] = t
 	c.Unlock()
+	return t
 }
 
-// initialize offsets once the first rtp packet is received
+// firstPacketForTrack initializes offsets
 func (c *synchronizer) firstPacketForTrack(pkt *rtp.Packet) {
 	now := time.Now().UnixNano()
 
@@ -68,8 +82,8 @@ func (c *synchronizer) firstPacketForTrack(pkt *rtp.Packet) {
 	c.Unlock()
 
 	t.Lock()
-	t.firstRtpTS = int64(pkt.Timestamp)
-	t.ptsDelay = now - c.firstPacket
+	t.firstRTP = int64(pkt.Timestamp)
+	t.ptsOffset = now - c.firstPacket
 	t.Unlock()
 }
 
@@ -80,6 +94,7 @@ func (c *synchronizer) getStartedAt() int64 {
 	return c.firstPacket
 }
 
+// onRTCP syncs a/v using sender reports
 func (c *synchronizer) onRTCP(packet rtcp.Packet) {
 	switch pkt := packet.(type) {
 	case *rtcp.SenderReport:
@@ -116,37 +131,47 @@ func (c *synchronizer) onRTCP(packet rtcp.Packet) {
 				t := c.syncInfo[ssrc]
 				if diff := ntpStart.Sub(minNTPStart); diff != 0 {
 					t.Lock()
-					t.ptsDelay += int64(diff)
+					t.ptsOffset += int64(diff)
 					t.Unlock()
 				}
 			}
 		} else {
-			t := c.syncInfo[pkt.SSRC]
-			pts, _ := t.getPTS(int64(pkt.RTPTime))
-			expected := mediatransportutil.NtpTime(pkt.NTPTime).Time().Sub(c.ntpStart)
-			if pts != expected {
-				diff := expected - pts
-				if diff > largePTSDiff || diff < -largePTSDiff {
-					logger.Warnw("high pts drift", nil, "trackID", t.trackID, "pts", pts, "diff", diff)
-				}
-				t.Lock()
-				t.ptsDelay += int64(expected - pts)
-				t.Unlock()
-			}
+			c.syncInfo[pkt.SSRC].onSenderReport(pkt, c.ntpStart)
 		}
 	}
 }
 
-// get pts for gstreamer buffer
-func (c *synchronizer) getPTS(pkt *rtp.Packet) (time.Duration, error) {
-	c.RLock()
-	t := c.syncInfo[pkt.SSRC]
-	c.RUnlock()
-
-	return t.getPTS(int64(pkt.Timestamp))
+// onSenderReport handles pts adjustments for a track
+func (t *syncInfo) onSenderReport(pkt *rtcp.SenderReport, ntpStart time.Time) {
+	pts, _ := t.getPTS(int64(pkt.RTPTime))
+	expected := mediatransportutil.NtpTime(pkt.NTPTime).Time().Sub(ntpStart)
+	if pts != expected {
+		diff := expected - pts
+		apply := true
+		t.Lock()
+		if absGreater(diff, largePTSDrift) {
+			logger.Warnw("high pts drift", nil, "trackID", t.trackID, "pts", pts, "diff", diff)
+			if absGreater(diff, massivePTSDrift) {
+				// if it's the first time seeing a massive drift, ignore it
+				if t.largeDrift == 0 || absGreater(diff-t.largeDrift, largePTSDrift) {
+					t.largeDrift = diff
+					apply = false
+				}
+			}
+		}
+		if apply {
+			t.ptsOffset += int64(diff)
+		}
+		t.Unlock()
+	}
 }
 
-func (t *trackInfo) getPTS(rtpTS int64) (time.Duration, error) {
+func absGreater(value, max time.Duration) bool {
+	return value > max || value < -max
+}
+
+// getPTS calculates presentation timestamp from RTP timestamp
+func (t *syncInfo) getPTS(rtpTS int64) (time.Duration, error) {
 	t.Lock()
 	defer t.Unlock()
 
@@ -160,13 +185,13 @@ func (t *trackInfo) getPTS(rtpTS int64) (time.Duration, error) {
 	// The conversion is done by subtracting the initial RTP timestamp (tt.firstTS) from the current RTP timestamp
 	// and multiplying by a conversion rate of (1e9 ns/s / clock rate).
 	// Since the audio and video track might start pushing to their buffers at different times, we then add a
-	// synced clock offset (tt.ptsDelay), which is always 0 for the first track, and fixes the video starting to play too
+	// synced clock offset (tt.ptsOffset), which is always 0 for the first track, and fixes the video starting to play too
 	// early if it's waiting for a key frame
-	nanoSecondsElapsed := (rtpTS - t.firstRtpTS) * 1e9 / t.clockRate
-	return time.Duration(nanoSecondsElapsed + t.ptsDelay), nil
+	nanoSecondsElapsed := (rtpTS - t.firstRTP) * 1e9 / t.clockRate
+	return time.Duration(nanoSecondsElapsed + t.ptsOffset), nil
 }
 
-// update maxRTP for each track
+// eos updates maxRTP for each track
 func (c *synchronizer) eos() {
 	endTime := time.Now().UnixNano()
 
@@ -176,8 +201,8 @@ func (c *synchronizer) eos() {
 	var maxDelay int64
 	for _, t := range c.syncInfo {
 		t.Lock()
-		if t.ptsDelay > maxDelay {
-			maxDelay = t.ptsDelay
+		if t.ptsOffset > maxDelay {
+			maxDelay = t.ptsOffset
 		}
 		t.Unlock()
 	}
@@ -187,9 +212,9 @@ func (c *synchronizer) eos() {
 	maxPTS := endTime - c.firstPacket + maxDelay
 	for _, t := range c.syncInfo {
 		t.Lock()
-		maxNS := maxPTS - t.ptsDelay
+		maxNS := maxPTS - t.ptsOffset
 		maxCycles := maxNS * 1e9 / t.clockRate
-		t.maxRTP = maxCycles + t.firstRtpTS
+		t.maxRTP = maxCycles + t.firstRTP
 		t.Unlock()
 	}
 }
