@@ -43,6 +43,7 @@ type appWriter struct {
 	logger      logger.Logger
 	sb          *samplebuilder.SampleBuilder
 	track       *webrtc.TrackRemote
+	identity    string
 	codec       types.MimeType
 	src         *app.Source
 	startTime   time.Time
@@ -53,12 +54,12 @@ type appWriter struct {
 
 	// a/v sync
 	sync *synchronizer
-	*syncInfo
+	*trackSynchronizer
 
 	// state
 	muted        atomic.Bool
 	playing      chan struct{}
-	drain        chan struct{}
+	draining     chan struct{}
 	drainTimeout time.Duration
 	force        chan struct{}
 	finished     chan struct{}
@@ -70,26 +71,32 @@ type appWriter struct {
 
 func newAppWriter(
 	track *webrtc.TrackRemote,
-	codec types.MimeType,
 	rp *lksdk.RemoteParticipant,
-	src *app.Source,
+	codec types.MimeType,
+	appSrcName string,
 	sync *synchronizer,
-	syncInfo *syncInfo,
-	playing chan struct{},
+	syncInfo *trackSynchronizer,
 	writeBlanks bool,
 ) (*appWriter, error) {
+	src, err := gst.NewElementWithName("appsrc", appSrcName)
+	if err != nil {
+		logger.Errorw("could not create appsrc", err)
+		return nil, err
+	}
+
 	w := &appWriter{
-		logger:      logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
-		track:       track,
-		codec:       codec,
-		src:         src,
-		writeBlanks: writeBlanks,
-		sync:        sync,
-		syncInfo:    syncInfo,
-		playing:     playing,
-		drain:       make(chan struct{}),
-		force:       make(chan struct{}),
-		finished:    make(chan struct{}),
+		logger:            logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
+		track:             track,
+		identity:          rp.Identity(),
+		codec:             codec,
+		src:               app.SrcFromElement(src),
+		writeBlanks:       writeBlanks,
+		sync:              sync,
+		trackSynchronizer: syncInfo,
+		playing:           make(chan struct{}),
+		draining:          make(chan struct{}),
+		force:             make(chan struct{}),
+		finished:          make(chan struct{}),
 	}
 
 	var depacketizer rtp.Depacketizer
@@ -444,18 +451,18 @@ func (w *appWriter) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8,
 	return buf, err
 }
 
-func (w *appWriter) isPlaying() bool {
+func (w *appWriter) play() {
 	select {
 	case <-w.playing:
-		return true
+		return
 	default:
-		return false
+		close(w.playing)
 	}
 }
 
-func (w *appWriter) isDraining() bool {
+func (w *appWriter) isPlaying() bool {
 	select {
-	case <-w.drain:
+	case <-w.playing:
 		return true
 	default:
 		return false
@@ -475,19 +482,32 @@ func (w *appWriter) trackUnmuted() {
 	}
 }
 
-// sendEOS blocks until finished
-func (w *appWriter) sendEOS() {
+// drain blocks until finished
+func (w *appWriter) drain(force bool) {
 	select {
-	case <-w.drain:
+	case <-w.draining:
 	default:
-		// start draining
 		w.logger.Debugw("draining")
-		close(w.drain)
 
-		// wait until drainTimeout before force popping
-		time.AfterFunc(w.drainTimeout, func() { close(w.force) })
+		if force {
+			close(w.force)
+		} else {
+			// wait until drainTimeout before force popping
+			time.AfterFunc(w.drainTimeout, func() { close(w.force) })
+		}
+
+		close(w.draining)
 	}
 
 	// wait until finished
 	<-w.finished
+}
+
+func (w *appWriter) isDraining() bool {
+	select {
+	case <-w.draining:
+		return true
+	default:
+		return false
+	}
 }

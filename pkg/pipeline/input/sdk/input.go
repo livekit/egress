@@ -39,19 +39,8 @@ type SDKInput struct {
 	// participant
 	participantIdentity string
 
-	// composite audio source
-	audioSrc         *app.Source
-	audioCodec       webrtc.RTPCodecParameters
-	audioWriter      *appWriter
-	audioPlaying     chan struct{}
-	audioParticipant string
-
-	// composite video source
-	videoSrc         *app.Source
-	videoCodec       webrtc.RTPCodecParameters
-	videoWriter      *appWriter
-	videoPlaying     chan struct{}
-	videoParticipant string
+	audioWriter *appWriter
+	videoWriter *appWriter
 
 	active         atomic.Int32
 	mutedChan      chan bool
@@ -63,20 +52,31 @@ func NewSDKInput(ctx context.Context, p *config.PipelineConfig) (*SDKInput, erro
 	ctx, span := tracer.Start(ctx, "SDKInput.New")
 	defer span.End()
 
+	startRecording := make(chan struct{})
 	s := &SDKInput{
+		sync: newSynchronizer(func() {
+			close(startRecording)
+		}),
 		mutedChan:      p.MutedChan,
-		startRecording: make(chan struct{}),
+		startRecording: startRecording,
 		endRecording:   make(chan struct{}),
 	}
-	s.sync = newSynchronizer(func() {
-		close(s.startRecording)
-	})
 
 	if err := s.joinRoom(p); err != nil {
 		return nil, err
 	}
 
-	input, err := builder.NewSDKInput(ctx, p, s.audioSrc, s.videoSrc, s.audioCodec, s.videoCodec)
+	var audioSrc, videoSrc *app.Source
+	var audioCodec, videoCodec webrtc.RTPCodecParameters
+	if s.audioWriter != nil {
+		audioSrc = s.audioWriter.src
+		audioCodec = s.audioWriter.track.Codec()
+	}
+	if s.videoWriter != nil {
+		videoSrc = s.videoWriter.src
+		videoCodec = s.videoWriter.track.Codec()
+	}
+	input, err := builder.NewSDKInput(ctx, p, audioSrc, videoSrc, audioCodec, videoCodec)
 	if err != nil {
 		return nil, err
 	}
@@ -94,21 +94,11 @@ func (s *SDKInput) GetStartTime() int64 {
 }
 
 func (s *SDKInput) Playing(name string) {
-	var playing chan struct{}
-
-	if name == AudioAppSource {
-		playing = s.audioPlaying
-	} else if name == VideoAppSource {
-		playing = s.videoPlaying
-	} else {
-		return
-	}
-
-	select {
-	case <-playing:
-		return
-	default:
-		close(playing)
+	switch name {
+	case AudioAppSource:
+		s.audioWriter.play()
+	case VideoAppSource:
+		s.videoWriter.play()
 	}
 }
 
@@ -120,15 +110,15 @@ func (s *SDKInput) GetEndTime() int64 {
 	return s.sync.getEndedAt()
 }
 
-func (s *SDKInput) SendEOS() {
-	s.sync.eos()
+func (s *SDKInput) CloseWriters() {
+	s.sync.end()
 
 	var wg sync.WaitGroup
 	if s.audioWriter != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.audioWriter.sendEOS()
+			s.audioWriter.drain(false)
 			logger.Debugw("audio writer finished")
 		}()
 	}
@@ -136,21 +126,22 @@ func (s *SDKInput) SendEOS() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.videoWriter.sendEOS()
+			s.videoWriter.drain(false)
 			logger.Debugw("video writer finished")
 		}()
 	}
 	wg.Wait()
 }
 
-func (s *SDKInput) SendAppSrcEOS(name string) {
-	if name == AudioAppSource {
-		s.audioWriter.sendEOS()
+func (s *SDKInput) StreamStopped(name string) {
+	switch name {
+	case AudioAppSource:
+		s.audioWriter.drain(true)
 		if s.active.Dec() == 0 {
 			s.onDisconnected()
 		}
-	} else if name == VideoAppSource {
-		s.videoWriter.sendEOS()
+	case VideoAppSource:
+		s.videoWriter.drain(true)
 		if s.active.Dec() == 0 {
 			s.onDisconnected()
 		}

@@ -477,7 +477,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 
 			switch s := p.in.(type) {
 			case *sdk.SDKInput:
-				s.SendEOS()
+				s.CloseWriters()
 			}
 
 			p.pipeline.SendEvent(gst.NewEOSEvent())
@@ -792,7 +792,7 @@ func (p *Pipeline) handleError(gErr *gst.GError) (error, bool) {
 		if message == "streaming stopped, reason not-negotiated (-4)" {
 			// send eos to app src
 			logger.Debugw("streaming stopped", "name", name)
-			p.in.(*sdk.SDKInput).SendAppSrcEOS(name)
+			p.in.(*sdk.SDKInput).StreamStopped(name)
 			return err, true
 		}
 	case element == elementSplitMuxSink:
