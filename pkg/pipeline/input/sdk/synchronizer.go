@@ -14,8 +14,10 @@ import (
 )
 
 const (
-	largePTSDrift   = time.Millisecond * 20
-	massivePTSDrift = time.Second
+	largePTSDrift          = time.Millisecond * 20
+	massivePTSDrift        = time.Second
+	wrapCheck       uint32 = 2147483648
+	maxUInt32       int64  = 4294967296
 )
 
 // a single synchronizer is shared between audio and video writers
@@ -47,9 +49,10 @@ type trackSynchronizer struct {
 
 	firstRTP  int64  // first RTP timestamp received
 	lastRTP   uint32 // most recent RTP timestamp received
+	rtpWrap   int64  // number of times RTP timestamp has wrapped
 	rtpStep   uint32 // difference between RTP timestamps for sequential packets (used for blank frame insertion)
+	maxRTP    uint32 // maximum accepted RTP timestamp after EOS
 	ptsOffset int64  // presentation timestamp offset (used for a/v sync)
-	maxRTP    int64  // maximum accepted RTP timestamp after EOS
 
 	lastSN   uint16 // previous sequence number
 	snOffset uint16 // sequence number offset (increases with each blank frame inserted)
@@ -148,7 +151,7 @@ func (s *synchronizer) onRTCP(packet rtcp.Packet) {
 			ntpStarts := make(map[uint32]time.Time)
 			for _, report := range p.senderReports {
 				t := p.syncInfo[report.SSRC]
-				pts, _ := t.getPTS(int64(report.RTPTime))
+				pts, _ := t.getPTS(report.RTPTime)
 				ntpStart := mediatransportutil.NtpTime(report.NTPTime).Time().Add(-pts)
 				if minNTPStart.IsZero() || ntpStart.Before(minNTPStart) {
 					minNTPStart = ntpStart
@@ -174,7 +177,7 @@ func (s *synchronizer) onRTCP(packet rtcp.Packet) {
 
 // onSenderReport handles pts adjustments for a track
 func (t *trackSynchronizer) onSenderReport(pkt *rtcp.SenderReport, ntpStart time.Time) {
-	pts, _ := t.getPTS(int64(pkt.RTPTime))
+	pts, _ := t.getPTS(pkt.RTPTime)
 	expected := mediatransportutil.NtpTime(pkt.NTPTime).Time().Sub(ntpStart)
 	if pts != expected {
 		diff := expected - pts
@@ -202,11 +205,11 @@ func absGreater(value, max time.Duration) bool {
 }
 
 // getPTS calculates presentation timestamp from RTP timestamp
-func (t *trackSynchronizer) getPTS(rtpTS int64) (time.Duration, error) {
+func (t *trackSynchronizer) getPTS(ts uint32) (time.Duration, error) {
 	t.Lock()
 	defer t.Unlock()
 
-	if t.maxRTP != 0 && rtpTS > t.maxRTP {
+	if t.maxRTP != 0 && ts > t.maxRTP {
 		return 0, io.EOF
 	}
 
@@ -218,6 +221,11 @@ func (t *trackSynchronizer) getPTS(rtpTS int64) (time.Duration, error) {
 	// Since the audio and video track might start pushing to their buffers at different times, we then add a
 	// synced clock offset (tt.ptsOffset), which is always 0 for the first track, and fixes the video starting to play too
 	// early if it's waiting for a key frame
+	rtpWrap := t.rtpWrap
+	if ts < wrapCheck && t.lastRTP > wrapCheck {
+		rtpWrap++
+	}
+	rtpTS := int64(ts) + (rtpWrap * maxUInt32)
 	nanoSecondsElapsed := (rtpTS - t.firstRTP) * 1e9 / t.clockRate
 	return time.Duration(nanoSecondsElapsed + t.ptsOffset), nil
 }
@@ -251,7 +259,11 @@ func (s *synchronizer) end() {
 			t.Lock()
 			maxNS := maxPTS - t.ptsOffset
 			maxCycles := maxNS * 1e9 / t.clockRate
-			t.maxRTP = maxCycles + t.firstRTP
+			maxRTP := maxCycles + t.firstRTP
+			for maxRTP >= maxUInt32 {
+				maxRTP -= maxUInt32
+			}
+			t.maxRTP = uint32(maxRTP)
 			t.Unlock()
 		}
 		p.Unlock()

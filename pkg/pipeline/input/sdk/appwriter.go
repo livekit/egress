@@ -364,6 +364,9 @@ func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 
 		// record SN and TS
 		w.lastSN = pkt.SequenceNumber
+		if w.lastRTP > wrapCheck && pkt.Timestamp < wrapCheck {
+			w.rtpWrap++
+		}
 		w.lastRTP = pkt.Timestamp
 
 		if !blankFrame {
@@ -373,7 +376,7 @@ func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 		}
 
 		// will return io.EOF if EOS has been sent
-		pts, err := w.getPTS(int64(pkt.Timestamp))
+		pts, err := w.getPTS(pkt.Timestamp)
 		if err != nil {
 			return err
 		}
