@@ -1,7 +1,6 @@
 name: Deploy Template
 on:
   push:
-    branches: [main]
     paths:
       - template-default/**
       - template-sdk/**
