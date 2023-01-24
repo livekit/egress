@@ -1,9 +1,5 @@
 name: Deploy Template
-on:
-  push:
-    paths:
-      - template-default/**
-      - template-sdk/**
+on: push
 
 jobs:
   docker:
