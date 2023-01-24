@@ -11,7 +11,7 @@ jobs:
         id: docker-md
         uses: docker/metadata-action@v4
         with:
-          images: livekit/egress-template
+          images: livekit/egress-templates
           tags: |
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
