@@ -4,9 +4,6 @@ on: push
 jobs:
   docker:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./template-default
     steps:
       - uses: actions/checkout@v2
 
