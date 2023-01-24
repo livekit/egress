@@ -139,13 +139,6 @@ func BuildTemplate() error {
 	)
 }
 
-func PublishTemplate() error {
-	return mageutil.Run(context.Background(),
-		"docker pull ubuntu:22.04",
-		"docker build --push livekit/egress-template -f ./build/template/Dockerfile .",
-	)
-}
-
 func BuildGStreamer() error {
 	return buildGstreamer("docker build")
 }
