@@ -260,8 +260,8 @@ github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427 h1:gHV/CCSlkURRIkjL
 github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427/go.mod h1:0hI+orMYVT61TEh429LvmoV9UmyqjeTqdJ3DW2TX114=
 github.com/livekit/livekit-server v1.3.4-0.20230118215203-e31b25300d79 h1:pARUbeUvM2hRumjcfp5SPiUVdVWBIExHe/19UwZOBbc=
 github.com/livekit/livekit-server v1.3.4-0.20230118215203-e31b25300d79/go.mod h1:pNmtXzGzlhHq3d1G2BOZ9L7QCizah9sor/emDDT2CMs=
-github.com/livekit/mageutil v0.0.0-20221221221243-f361fbe40290 h1:ZVsQUuUOM9G7O3qfDSSUd1d+KlE5EVzHKylMkMkRhYg=
-github.com/livekit/mageutil v0.0.0-20221221221243-f361fbe40290/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
+github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1 h1:jm09419p0lqTkDaKb5iXdynYrzB84ErPPO4LbRASk58=
+github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/mediatransportutil v0.0.0-20230111071722-904079e94a7c h1:wdzwTJjCpzy2FDmwdyVVGVa4+U9iv3E4Jy9qUDe/ubw=
 github.com/livekit/mediatransportutil v0.0.0-20230111071722-904079e94a7c/go.mod h1:1Dlx20JPoIKGP45eo+yuj0HjeE25zmyeX/EWHiPCjFw=
 github.com/livekit/protocol v1.3.2 h1:3goGWbB5HFRb3tMjog8KP0nvZL1Fy6zut3W1psBzqE4=

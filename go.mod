@@ -15,7 +15,7 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/grafov/m3u8 v0.11.1
 	github.com/livekit/livekit-server v1.3.4-0.20230118215203-e31b25300d79
-	github.com/livekit/mageutil v0.0.0-20221221221243-f361fbe40290
+	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230111071722-904079e94a7c
 	github.com/livekit/protocol v1.3.2
 	github.com/livekit/psrpc v0.2.4
