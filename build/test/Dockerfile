@@ -17,6 +17,9 @@ COPY cmd/ cmd/
 COPY pkg/ pkg/
 COPY version/ version/
 
+# copy templates
+COPY --from=livekit/egress-templates workspace/build/ pkg/service/templates/
+
 COPY test/ test/
 
 # build (service tests will need to launch the handler)

@@ -123,6 +123,11 @@ func runService(c *cli.Context) error {
 		}
 	}()
 
+	err = svc.StartTemplatesServer()
+	if err != nil {
+		return err
+	}
+
 	svc.StartDebugHandlers()
 
 	return svc.Run()

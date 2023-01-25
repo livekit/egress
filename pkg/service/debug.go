@@ -22,6 +22,7 @@ const (
 func (s *Service) StartDebugHandlers() {
 	if s.conf.DebugHandlerPort == 0 {
 		logger.Debugw("debug handler disabled")
+		return
 	}
 
 	mux := http.NewServeMux()

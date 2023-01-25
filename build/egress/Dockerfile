@@ -17,6 +17,11 @@ COPY cmd/ cmd/
 COPY pkg/ pkg/
 COPY version/ version/
 
+# copy templates
+COPY --from=livekit/egress-templates workspace/build/ pkg/service/templates/
+# delete .map files
+RUN find pkg/service/templates/ -name *.map | xargs rm
+
 # build
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
     CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o egress ./cmd/server

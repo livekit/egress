@@ -114,6 +114,7 @@ func Build() error {
 	return mageutil.Run(context.Background(),
 		"docker pull livekit/chrome-installer",
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
+		"docker pull livekit/egress-templates",
 		"docker build -t livekit/egress:latest -f build/egress/Dockerfile .",
 	)
 }
@@ -129,6 +130,13 @@ func PublishChrome() error {
 	return mageutil.Run(context.Background(),
 		"docker pull ubuntu:22.04",
 		"docker buildx build --push --platform linux/amd64,linux/arm64 -t livekit/chrome-installer ./build/chrome",
+	)
+}
+
+func BuildTemplate() error {
+	return mageutil.Run(context.Background(),
+		"docker pull ubuntu:22.04",
+		"docker build -t livekit/egress-templates -f ./build/template/Dockerfile .",
 	)
 }
 
