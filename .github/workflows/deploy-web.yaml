@@ -1,5 +1,10 @@
 name: Deploy Template
-on: push
+on:
+  push:
+    branches: [main]
+    paths:
+      - template-default/**
+      - template-sdk/**
 
 jobs:
   docker:
@@ -31,6 +36,6 @@ jobs:
           context: .
           file: ./build/template/Dockerfile
           push: true
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker-md.outputs.tags }}
           labels: ${{ steps.docker-md.outputs.labels }}
