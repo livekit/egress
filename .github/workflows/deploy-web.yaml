@@ -5,6 +5,8 @@ on:
     paths:
       - template-default/**
       - template-sdk/**
+      - .github/workflows/deploy-web.yaml
+      - build/template/Dockerfile
 
 jobs:
   docker:
