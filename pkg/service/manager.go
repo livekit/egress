@@ -55,10 +55,6 @@ func (s *ProcessManager) onFatalError(f func()) {
 	s.onFatal = f
 }
 
-func (s *ProcessManager) canAccept(req *livekit.StartEgressRequest) bool {
-	return !s.handlingWeb && (!isWeb(req) || s.isIdle())
-}
-
 func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest, version int) error {
 	_, span := tracer.Start(context.Background(), "Service.launchHandler")
 	defer span.End()
