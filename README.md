@@ -93,15 +93,16 @@ The config file can be added to a mounted volume with its location passed in the
 
 The below templates can also be used in filename/filepath parameters:
 
-| Egress Type     | {room_id} | {room_name} | {time} | {publisher_identity} | {track_id} | {track_type} | {track_source} |
-|-----------------|-----------|-------------|--------|----------------------|------------|--------------|----------------|
-| Room Composite  | ✅         | ✅           | ✅      |                      |            |              |                |
-| Web             |           |             | ✅      |                      |            |              |                |
-| Track Composite | ✅         | ✅           | ✅      | ✅                    |            |              |                |
-| Track           | ✅         | ✅           | ✅      | ✅                    | ✅          | ✅            | ✅              |
+| Egress Type     | {room_id} | {room_name} | {time} | {utc} | {publisher_identity} | {track_id} | {track_type} | {track_source} |
+|-----------------|-----------|-------------|--------|-------|----------------------|------------|--------------|----------------|
+| Room Composite  | ✅         | ✅           | ✅      | ✅     |                      |            |              |                |
+| Web             |           |             | ✅      | ✅     |                      |            |              |                |
+| Track Composite | ✅         | ✅           | ✅      | ✅     | ✅                    |            |              |                |
+| Track           | ✅         | ✅           | ✅      | ✅     | ✅                    | ✅          | ✅            | ✅              |
 
 * If no filename is provided with a request, one will be generated in the form of `"{room_name}-{time}"`.
 * If your filename ends with a `/`, a file will be generated in that directory.
+* For 1/2/2006, 3:04:05.789 PM, {time} format would display "2006-01-02T150405", and {utc} format "20060102150405789"
 
 Examples:
 
