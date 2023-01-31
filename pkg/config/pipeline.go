@@ -515,19 +515,20 @@ func (p *PipelineConfig) updateSegmentsParams(filePrefix string, playlistFilenam
 
 func (p *PipelineConfig) getFilenameInfo() (string, map[string]string) {
 	now := time.Now()
+	utc := fmt.Sprintf("%s%d", now.Format("20060102150405"), now.UnixMilli()%1000)
 
 	if p.Info.RoomName != "" {
 		return p.Info.RoomName, map[string]string{
 			"{room_name}": p.Info.RoomName,
 			"{room_id}":   p.Info.RoomId,
 			"{time}":      now.Format("2006-01-02T150405"),
-			"{utc}":       fmt.Sprint(now.UnixNano() / 1e6),
+			"{utc}":       utc,
 		}
 	}
 
 	return "web", map[string]string{
 		"{time}": time.Now().Format("2006-01-02T150405"),
-		"{utc}":  fmt.Sprint(now.UnixNano() / 1e6),
+		"{utc}":  utc,
 	}
 }
 
