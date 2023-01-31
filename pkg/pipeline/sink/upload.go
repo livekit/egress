@@ -14,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -29,14 +29,11 @@ const (
 	maxDelay   = time.Second * 5
 )
 
-// FIXME Should we use a Context to allow for an overall operation timeout?
-
 func UploadS3(conf *livekit.S3Upload, localFilepath, storageFilepath string, mime types.OutputType) (location string, err error) {
 	awsConfig := &aws.Config{
 		MaxRetries:       aws.Int(maxRetries), // Switching to v2 of the aws Go SDK would allow to set a maxDelay as well.
 		S3ForcePathStyle: aws.Bool(conf.ForcePathStyle),
 	}
-
 	if conf.AccessKey != "" && conf.Secret != "" {
 		awsConfig.Credentials = credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, "")
 	}
@@ -58,28 +55,14 @@ func UploadS3(conf *livekit.S3Upload, localFilepath, storageFilepath string, mim
 	}
 	defer file.Close()
 
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return "", err
-	}
-
-	putObject := s3.PutObjectInput{
-		Bucket:        aws.String(conf.Bucket),
-		Key:           aws.String(storageFilepath),
-		Body:          file,
-		ContentLength: aws.Int64(fileInfo.Size()),
-		ContentType:   aws.String(string(mime)),
-	}
-
-	if len(conf.Metadata) > 0 {
-		putObject.Metadata = convertS3Metadata(conf.Metadata)
-	}
-
-	if len(conf.Tagging) > 0 {
-		putObject.Tagging = aws.String(conf.Tagging)
-	}
-
-	_, err = s3.New(sess).PutObject(&putObject)
+	_, err = s3manager.NewUploader(sess).Upload(&s3manager.UploadInput{
+		Body:        file,
+		Bucket:      aws.String(conf.Bucket),
+		ContentType: aws.String(string(mime)),
+		Key:         aws.String(storageFilepath),
+		Metadata:    getS3Metadata(conf.Metadata),
+		Tagging:     getS3Tagging(conf.Tagging),
+	})
 	if err != nil {
 		return "", err
 	}
@@ -87,13 +70,24 @@ func UploadS3(conf *livekit.S3Upload, localFilepath, storageFilepath string, mim
 	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", conf.Bucket, storageFilepath), nil
 }
 
-func convertS3Metadata(metadata map[string]string) map[string]*string {
-	var result = map[string]*string{}
+func getS3Metadata(metadata map[string]string) map[string]*string {
+	if len(metadata) == 0 {
+		return nil
+	}
+
+	result := make(map[string]*string)
 	for k, v := range metadata {
 		val := v
 		result[k] = &val
 	}
 	return result
+}
+
+func getS3Tagging(tagging string) *string {
+	if tagging != "" {
+		return aws.String(tagging)
+	}
+	return nil
 }
 
 func UploadAzure(conf *livekit.AzureBlobUpload, localFilepath, storageFilepath string, mime types.OutputType) (location string, err error) {
