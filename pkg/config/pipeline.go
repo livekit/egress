@@ -527,7 +527,7 @@ func (p *PipelineConfig) getFilenameInfo() (string, map[string]string) {
 	}
 
 	return "web", map[string]string{
-		"{time}": time.Now().Format("2006-01-02T150405"),
+		"{time}": now.Format("2006-01-02T150405"),
 		"{utc}":  utc,
 	}
 }
