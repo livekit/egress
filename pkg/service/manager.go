@@ -30,7 +30,6 @@ type ProcessManager struct {
 	monitor *stats.Monitor
 
 	mu             sync.RWMutex
-	handlingWeb    bool
 	activeHandlers map[string]*process
 	onFatal        func()
 }
@@ -53,10 +52,6 @@ func NewProcessManager(conf *config.ServiceConfig, monitor *stats.Monitor) *Proc
 
 func (s *ProcessManager) onFatalError(f func()) {
 	s.onFatal = f
-}
-
-func (s *ProcessManager) canAccept(req *livekit.StartEgressRequest) bool {
-	return !s.handlingWeb && (!isWeb(req) || s.isIdle())
 }
 
 func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest, version int) error {
@@ -145,9 +140,6 @@ func (s *ProcessManager) awaitCleanup(h *process) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if isWeb(h.req) {
-		s.handlingWeb = false
-	}
 	delete(s.activeHandlers, h.req.EgressId)
 }
 
@@ -206,16 +198,6 @@ func (s *ProcessManager) killAll() {
 				logger.Errorw("failed to kill process", err, "egressID", h.req.EgressId)
 			}
 		}
-	}
-}
-
-func isWeb(req *livekit.StartEgressRequest) bool {
-	switch req.Request.(type) {
-	case *livekit.StartEgressRequest_RoomComposite,
-		*livekit.StartEgressRequest_Web:
-		return true
-	default:
-		return false
 	}
 }
 

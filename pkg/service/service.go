@@ -135,7 +135,7 @@ func (s *Service) StartEgress(ctx context.Context, req *livekit.StartEgressReque
 }
 
 func (s *Service) StartEgressAffinity(req *livekit.StartEgressRequest) float32 {
-	if !s.manager.canAccept(req) || !s.monitor.CanAcceptRequest(req) {
+	if !s.monitor.CanAcceptRequest(req) {
 		// cannot accept
 		return 0
 	}

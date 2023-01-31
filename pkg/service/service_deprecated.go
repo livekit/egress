@@ -42,11 +42,6 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 		return false
 	}
 
-	// check if already handling web
-	if !s.manager.canAccept(req) {
-		return false
-	}
-
 	// check cpu load
 	if !s.monitor.CanAcceptRequest(req) {
 		return false

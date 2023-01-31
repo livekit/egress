@@ -3,6 +3,7 @@
 
 .github/workflows/config.yaml
 build/gstcefsrc/*.tar.bz2
+pkg/service/templates
 test/output/*
 test/*.yaml
 !test/config-sample.yaml
