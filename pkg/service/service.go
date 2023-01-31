@@ -52,7 +52,7 @@ func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 eg
 	}
 	s.psrpcServer = psrpcServer
 
-	err := s.psrpcServer.RegisterStartEgressTopic(conf.ClusterId)
+	err = s.psrpcServer.RegisterStartEgressTopic(conf.ClusterId)
 	if err != nil {
 		return nil, err
 	}
