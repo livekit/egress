@@ -52,6 +52,11 @@ func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 eg
 	}
 	s.psrpcServer = psrpcServer
 
+	err = s.psrpcServer.RegisterStartEgressTopic(conf.ClusterId)
+	if err != nil {
+		return nil, err
+	}
+
 	s.manager.onFatalError(func() { s.Stop(false) })
 
 	if conf.PrometheusPort > 0 {
@@ -146,7 +151,7 @@ func (s *Service) StartEgressAffinity(req *livekit.StartEgressRequest) float32 {
 		// this avoids having many instances with one track request each, taking availability from room composite.
 		return 0.5
 	} else {
-		// already handling track/track composite and has available cpu
+		// already handling a request and has available cpu
 		return 1
 	}
 }

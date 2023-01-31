@@ -14,10 +14,10 @@ require (
 	github.com/googleapis/gax-go/v2 v2.6.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/grafov/m3u8 v0.11.1
-	github.com/livekit/livekit-server v1.3.4-0.20230118215203-e31b25300d79
+	github.com/livekit/livekit-server v1.3.4-0.20230131010426-c6e8887ab8e3
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20230111071722-904079e94a7c
-	github.com/livekit/protocol v1.3.2
+	github.com/livekit/mediatransportutil v0.0.0-20230130133657-96cfb115473a
+	github.com/livekit/protocol v1.3.3-0.20230127213545-10b378e3bc1e
 	github.com/livekit/psrpc v0.2.4
 	github.com/livekit/server-sdk-go v1.0.7-0.20230112195259-5bc292cbbdf2
 	github.com/pion/rtcp v1.2.10
@@ -27,7 +27,7 @@ require (
 	github.com/stretchr/testify v1.8.1
 	github.com/tinyzimmer/go-glib v0.0.25
 	github.com/tinyzimmer/go-gst v0.2.32
-	github.com/urfave/cli/v2 v2.23.7
+	github.com/urfave/cli/v2 v2.24.2
 	go.uber.org/atomic v1.10.0
 	google.golang.org/api v0.102.0
 	google.golang.org/grpc v1.52.0
