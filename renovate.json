@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "assignees": ["frostbyte73","biglittlebigben","davidzhao"],
+  "reviewers": ["frostbyte73","biglittlebigben","davidzhao"],
   "extends": [
     "config:base"
   ],
