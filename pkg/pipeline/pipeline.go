@@ -86,25 +86,27 @@ func New(ctx context.Context, p *config.PipelineConfig) (*Pipeline, error) {
 	}
 
 	// link input bin
-	audioSrc, videoSrc, err := in.Link()
+	audioSrcPad, videoSrcPad, err := in.Link()
 	if err != nil {
 		return nil, err
 	}
 
 	// link output bin
-	if err = out.Link(audioSrc, videoSrc); err != nil {
+	if err = out.Link(audioSrcPad, videoSrcPad); err != nil {
 		return nil, err
 	}
 
+	// create sinks
 	sinks, err := sink.CreateSinks(p)
 	if err != nil {
 		return nil, err
 	}
 
+	// set websocketSink callback with SDK source
 	if s, ok := sinks[types.EgressTypeWebsocket]; ok {
-		webSocketSink := s.(*sink.WebsocketSink)
-		src.(*source.SDKSource).SetOnTrackMute(webSocketSink.TrackMuted)
-		if err = out.SetWebsocketSink(webSocketSink); err != nil {
+		websocketSink := s.(*sink.WebsocketSink)
+		src.(*source.SDKSource).OnTrackMuted(websocketSink.OnTrackMuted)
+		if err = out.SetWebsocketSink(websocketSink); err != nil {
 			return nil, err
 		}
 	}
@@ -240,7 +242,10 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 			Status:    livekit.StreamInfo_ACTIVE,
 		}
 		p.Outputs[types.EgressTypeStream].StreamInfo[url] = streamInfo
-		p.Info.GetStream().Info = append(p.Info.GetStream().Info, streamInfo)
+		p.Info.StreamResults = append(p.Info.StreamResults, streamInfo)
+		if streamInfoDeprecated := p.Info.GetStream(); streamInfoDeprecated != nil {
+			streamInfoDeprecated.Info = append(streamInfoDeprecated.Info, streamInfo)
+		}
 		p.mu.Unlock()
 	}
 

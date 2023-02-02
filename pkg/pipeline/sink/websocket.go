@@ -15,8 +15,8 @@ import (
 type websocketState string
 
 const (
-	WebSocketActive websocketState = "active"
-	WebSocketClosed websocketState = "closed"
+	WebsocketActive websocketState = "active"
+	WebsocketClosed websocketState = "closed"
 )
 
 type WebsocketSink struct {
@@ -25,7 +25,7 @@ type WebsocketSink struct {
 	state  websocketState
 }
 
-func newWebSocketSink(url string, mimeType types.MimeType) (*WebsocketSink, error) {
+func newWebsocketSink(url string, mimeType types.MimeType) (*WebsocketSink, error) {
 	// set Content-Type header
 	header := http.Header{}
 	header.Set("Content-Type", string(mimeType))
@@ -38,7 +38,7 @@ func newWebSocketSink(url string, mimeType types.MimeType) (*WebsocketSink, erro
 	s := &WebsocketSink{
 		conn:   conn,
 		closed: make(chan struct{}),
-		state:  WebSocketActive,
+		state:  WebsocketActive,
 	}
 
 	return s, nil
@@ -49,14 +49,14 @@ func (s *WebsocketSink) Start() error {
 }
 
 func (s *WebsocketSink) Write(p []byte) (n int, err error) {
-	if s.state == WebSocketClosed {
-		return 0, errors.ErrWebSocketClosed(s.conn.RemoteAddr().String())
+	if s.state == WebsocketClosed {
+		return 0, errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
 	}
 
 	return len(p), s.conn.WriteMessage(websocket.BinaryMessage, p)
 }
 
-func (s *WebsocketSink) TrackMuted(muted bool) {
+func (s *WebsocketSink) OnTrackMuted(muted bool) {
 	err := s.writeMutedMessage(muted)
 	if err != nil {
 		logger.Errorw("failed to write muted message", err)
@@ -69,8 +69,8 @@ type textMessagePayload struct {
 
 func (s *WebsocketSink) writeMutedMessage(muted bool) error {
 	// If the socket is closed, return error
-	if s.state == WebSocketClosed {
-		return errors.ErrWebSocketClosed(s.conn.RemoteAddr().String())
+	if s.state == WebsocketClosed {
+		return errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
 	}
 
 	// Marshal `muted` payload
@@ -86,7 +86,7 @@ func (s *WebsocketSink) writeMutedMessage(muted bool) error {
 }
 
 func (s *WebsocketSink) Close() error {
-	if s.state == WebSocketClosed {
+	if s.state == WebsocketClosed {
 		return nil
 	}
 
@@ -99,7 +99,7 @@ func (s *WebsocketSink) Close() error {
 	// terminate connection and close the `closed` channel
 	err = s.conn.Close()
 	close(s.closed)
-	s.state = WebSocketClosed
+	s.state = WebsocketClosed
 	return err
 }
 

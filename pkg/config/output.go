@@ -56,20 +56,92 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 	GetStreamOutput() *livekit.StreamOutput
 	GetSegmentOutput() *livekit.SegmentedFileOutput
 }) error {
-	if file := req.GetFile(); file != nil {
+	var deprecated bool
+
+	// file output
+	deprecated = false
+	file := req.GetFileOutput()
+	if file == nil {
+		deprecated = true
+		file = req.GetFile()
+	}
+	if file != nil {
 		conf, err := p.getEncodedFileConfig(req, file)
 		if err != nil {
 			return err
 		}
 
+		p.Outputs[types.EgressTypeFile] = conf
+		p.Info.FileResult = conf.FileInfo
+		if deprecated {
+			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
+			return nil
+		}
+	}
+
+	// stream output
+	deprecated = false
+	stream := req.GetStreamOutput()
+	if stream == nil {
+		deprecated = true
+		stream = req.GetStream()
+	}
+	if stream != nil {
+		conf, err := p.getStreamConfig(types.OutputTypeRTMP, stream.Urls)
+		if err != nil {
+			return err
+		}
+
+		p.Outputs[types.EgressTypeStream] = conf
+		streamInfoList := make([]*livekit.StreamInfo, 0, len(conf.StreamInfo))
+		for _, info := range conf.StreamInfo {
+			streamInfoList = append(streamInfoList, info)
+		}
+		p.Info.StreamResults = streamInfoList
+		if deprecated {
+			p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
+			return nil
+		}
+	}
+
+	// segment output
+	deprecated = false
+	segments := req.GetSegmentOutput()
+	if segments == nil {
+		deprecated = true
+		segments = req.GetSegments()
+	}
+	if segments != nil {
+		conf, err := p.getSegmentConfig(segments)
+		if err != nil {
+			return err
+		}
+
+		p.Outputs[types.EgressTypeSegments] = conf
+		p.Info.SegmentResult = conf.SegmentsInfo
+		if deprecated {
+			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
+			return nil
+		}
+	}
+
+	return nil
+}
+
+func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) error {
+	switch o := req.Output.(type) {
+	case *livekit.TrackEgressRequest_File:
+		conf, err := p.getDirectFileConfig(o.File)
+		if err != nil {
+			return err
+		}
+
+		p.Info.FileResult = conf.FileInfo
 		p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
 		p.Outputs[types.EgressTypeFile] = conf
 
-		return nil
-	}
-
-	if stream := req.GetStream(); stream != nil {
-		conf, err := p.getStreamConfig(types.OutputTypeRTMP, stream.Urls)
+	case *livekit.TrackEgressRequest_WebsocketUrl:
+		conf, err := p.getStreamConfig(types.OutputTypeRaw, []string{o.WebsocketUrl})
 		if err != nil {
 			return err
 		}
@@ -78,44 +150,8 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		for _, info := range conf.StreamInfo {
 			streamInfoList = append(streamInfoList, info)
 		}
+		p.Info.StreamResults = streamInfoList
 		p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
-		p.Outputs[types.EgressTypeStream] = conf
-
-		return nil
-	}
-
-	if segments := req.GetSegments(); segments != nil {
-		conf, err := p.getSegmentConfig(segments)
-		if err != nil {
-			return err
-		}
-
-		p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
-		p.Outputs[types.EgressTypeSegments] = conf
-
-		return nil
-	}
-
-	// TODO: multiple
-
-	return nil
-}
-
-func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) error {
-	// output params
-	switch o := req.Output.(type) {
-	case *livekit.TrackEgressRequest_File:
-		conf, err := p.getDirectFileConfig(o.File)
-		if err != nil {
-			return err
-		}
-		p.Outputs[types.EgressTypeFile] = conf
-
-	case *livekit.TrackEgressRequest_WebsocketUrl:
-		conf, err := p.getStreamConfig(types.OutputTypeRaw, []string{o.WebsocketUrl})
-		if err != nil {
-			return err
-		}
 		p.Outputs[types.EgressTypeWebsocket] = conf
 
 	default:

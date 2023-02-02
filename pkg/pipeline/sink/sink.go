@@ -32,7 +32,7 @@ func CreateSinks(p *config.PipelineConfig) (map[types.EgressType]Sink, error) {
 			// nothing
 
 		case types.EgressTypeWebsocket:
-			s, err := newWebSocketSink(out.WebsocketUrl, types.MimeTypeRaw)
+			s, err := newWebsocketSink(out.WebsocketUrl, types.MimeTypeRaw)
 			if err != nil {
 				return nil, err
 			}

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v3"
+	"github.com/tinyzimmer/go-gst/gst"
+	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
@@ -138,12 +140,16 @@ func (s *SDKSource) Close() {
 
 func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 	cb := &lksdk.RoomCallback{
-		OnDisconnected: s.onDisconnected,
 		ParticipantCallback: lksdk.ParticipantCallback{
-			OnTrackMuted:       s.onTrackMuted,
-			OnTrackUnmuted:     s.onTrackUnmuted,
+			OnTrackMuted: func(pub lksdk.TrackPublication, _ lksdk.Participant) {
+				s.onTrackMuteChanged(pub, true)
+			},
+			OnTrackUnmuted: func(pub lksdk.TrackPublication, _ lksdk.Participant) {
+				s.onTrackMuteChanged(pub, false)
+			},
 			OnTrackUnpublished: s.onTrackUnpublished,
 		},
+		OnDisconnected: s.onDisconnected,
 	}
 
 	var mu sync.Mutex
@@ -188,6 +194,9 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			codec = types.MimeTypeOpus
 			appSrcName = AudioAppSource
 			p.AudioEnabled = true
+			if p.AudioCodec != types.MimeTypeRaw {
+				p.AudioTranscoding = true
+			}
 			if p.AudioCodec == "" {
 				p.AudioCodec = codec
 			}
@@ -231,7 +240,14 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		}
 
 		<-p.GstReady
-		writer, err := sdk.NewAppWriter(track, rp, codec, appSrcName, s.sync, t, writeBlanks)
+		src, err := gst.NewElementWithName("appsrc", appSrcName)
+		if err != nil {
+			onSubscribeErr = errors.ErrGstPipelineError(err)
+			return
+		}
+		appSrc := app.SrcFromElement(src)
+
+		writer, err := sdk.NewAppWriter(track, rp, codec, appSrc, s.sync, t, writeBlanks)
 		if err != nil {
 			logger.Errorw("could not create app writer", err)
 			onSubscribeErr = err
@@ -242,8 +258,12 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		switch track.Kind() {
 		case webrtc.RTPCodecTypeAudio:
 			s.audioWriter = writer
+			p.AudioSrc = appSrc
+			p.AudioCodecParams = track.Codec()
 		case webrtc.RTPCodecTypeVideo:
 			s.videoWriter = writer
+			p.VideoSrc = appSrc
+			p.VideoCodecParams = track.Codec()
 		}
 	}
 
@@ -323,42 +343,27 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}) error {
 	return nil
 }
 
-func (s *SDKSource) SetOnTrackMute(onTrackMuted func(bool)) {
+func (s *SDKSource) OnTrackMuted(onTrackMuted func(bool)) {
 	s.onTrackMute = onTrackMuted
 }
 
-func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
+func (s *SDKSource) onTrackMuteChanged(pub lksdk.TrackPublication, muted bool) {
 	track := pub.Track()
 	if track == nil {
 		return
 	}
 
 	if w := s.getWriterForTrack(track.ID()); w != nil {
-		w.SetTrackMuted(true)
+		w.SetTrackMuted(muted)
 	}
 
 	if s.onTrackMute != nil {
-		s.onTrackMute(true)
+		s.onTrackMute(muted)
 	}
 }
 
-func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	track := pub.Track()
-	if track == nil {
-		return
-	}
-
-	if w := s.getWriterForTrack(track.ID()); w != nil {
-		w.SetTrackMuted(false)
-	}
-
-	if s.onTrackMute != nil {
-		s.onTrackMute(false)
-	}
-}
-
-func (s *SDKSource) onTrackUnpublished(track *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
-	if w := s.getWriterForTrack(track.SID()); w != nil {
+func (s *SDKSource) onTrackUnpublished(pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
+	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.Drain(true)
 		if s.active.Dec() == 0 {
 			s.onDisconnected()

@@ -73,23 +73,17 @@ func NewAppWriter(
 	track *webrtc.TrackRemote,
 	rp *lksdk.RemoteParticipant,
 	codec types.MimeType,
-	appSrcName string,
+	src *app.Source,
 	sync *Synchronizer,
 	syncInfo *TrackSynchronizer,
 	writeBlanks bool,
 ) (*AppWriter, error) {
-	src, err := gst.NewElementWithName("appsrc", appSrcName)
-	if err != nil {
-		logger.Errorw("could not create appsrc", err)
-		return nil, err
-	}
-
 	w := &AppWriter{
 		logger:            logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
 		track:             track,
 		identity:          rp.Identity(),
 		codec:             codec,
-		src:               app.SrcFromElement(src),
+		src:               src,
 		writeBlanks:       writeBlanks,
 		sync:              sync,
 		TrackSynchronizer: syncInfo,

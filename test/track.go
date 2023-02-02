@@ -158,7 +158,7 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 			}
 			res := rec.Run(ctx)
 
-			verify(t, filepath, p, res, types.EgressTypeStream, conf.Muting, conf.sourceFramerate)
+			verify(t, filepath, p, res, types.EgressTypeWebsocket, conf.Muting, conf.sourceFramerate)
 		})
 		if conf.Short {
 			return
