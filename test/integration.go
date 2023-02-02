@@ -28,7 +28,7 @@ const (
 	streamUrl2   = "rtmp://localhost:1935/live/stream2"
 	badStreamUrl = "rtmp://sfo.contribute.live-video.net/app/fake1"
 	webUrl       = "https://www.youtube.com/watch?v=wjQq0nSGS28&t=5205s"
-	v2           = false
+	v2           = true
 )
 
 type testCase struct {
