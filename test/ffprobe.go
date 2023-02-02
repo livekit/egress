@@ -92,8 +92,12 @@ func verifyFile(t *testing.T, conf *TestConfig, p *config.PipelineConfig, res *l
 	require.NotZero(t, res.EndedAt)
 
 	// file info
-	// fileRes := res.GetFile()
-	fileRes := res.FileResult
+	var fileRes *livekit.FileInfo
+	if v2 {
+		fileRes = res.FileResult
+	} else {
+		fileRes = res.GetFile()
+	}
 	require.NotNil(t, fileRes)
 
 	require.NotEmpty(t, fileRes.Location)
@@ -129,8 +133,12 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, re
 	require.NotZero(t, res.EndedAt)
 
 	// segments info
-	// segments := res.GetSegments()
-	segments := res.GetSegmentResult()
+	var segments *livekit.SegmentsInfo
+	if v2 {
+		segments = res.GetSegmentResult()
+	} else {
+		segments = res.GetSegments()
+	}
 	require.NotEmpty(t, segments.PlaylistName)
 	require.NotEmpty(t, segments.PlaylistLocation)
 	require.Greater(t, segments.Size, int64(0))
@@ -175,8 +183,13 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		require.NotEqual(t, "0", info.Format.Size)
 
 		// duration
-		// expected := float64(res.GetFile().Duration) / 1e9
-		expected := float64(res.GetFileResult().Duration) / 1e9
+		var fileRes *livekit.FileInfo
+		if v2 {
+			fileRes = res.FileResult
+		} else {
+			fileRes = res.GetFile()
+		}
+		expected := float64(fileRes.Duration) / 1e9
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
 
@@ -198,8 +211,13 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 	case types.EgressTypeSegments:
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
-		// require.Equal(t, int64(actual/float64(p.Outputs[egressType].SegmentDuration))+1, res.GetSegments().SegmentCount)
-		require.Equal(t, int64(actual/float64(p.Outputs[egressType].SegmentDuration))+1, res.GetSegmentResult().SegmentCount)
+		var segments *livekit.SegmentsInfo
+		if v2 {
+			segments = res.GetSegmentResult()
+		} else {
+			segments = res.GetSegments()
+		}
+		require.Equal(t, int64(actual/float64(p.Outputs[egressType].SegmentDuration))+1, segments.SegmentCount)
 	}
 
 	// check stream info
