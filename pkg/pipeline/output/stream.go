@@ -117,6 +117,7 @@ func (o *StreamOutput) Link(audioTee, videoTee *gst.Element) error {
 	o.RLock()
 	defer o.RUnlock()
 
+	// link audio to mux
 	if audioTee != nil {
 		teePad := audioTee.GetRequestPad("src_%u")
 		muxPad := o.mux.GetRequestPad("audio")
@@ -125,6 +126,7 @@ func (o *StreamOutput) Link(audioTee, videoTee *gst.Element) error {
 		}
 	}
 
+	// link video to mux
 	if videoTee != nil {
 		teePad := videoTee.GetRequestPad("src_%u")
 		muxPad := o.mux.GetRequestPad("video")
@@ -133,7 +135,12 @@ func (o *StreamOutput) Link(audioTee, videoTee *gst.Element) error {
 		}
 	}
 
-	// link sinks to tee
+	// link mux to tee
+	if err := o.mux.Link(o.tee); err != nil {
+		return errors.ErrPadLinkFailed("mux", "tee", err.Error())
+	}
+
+	// link tee to sinks
 	for _, sink := range o.sinks {
 		if err := sink.link(o.tee, false); err != nil {
 			return err

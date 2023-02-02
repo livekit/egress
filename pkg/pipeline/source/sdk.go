@@ -44,9 +44,10 @@ type SDKSource struct {
 	videoWriter *sdk.AppWriter
 
 	active         atomic.Int32
-	mutedChan      chan bool
 	startRecording chan struct{}
 	endRecording   chan struct{}
+
+	onTrackMute func(bool)
 }
 
 func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, error) {
@@ -58,7 +59,6 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, er
 		sync: sdk.NewSynchronizer(func() {
 			close(startRecording)
 		}),
-		mutedChan:      p.MutedChan,
 		startRecording: startRecording,
 		endRecording:   make(chan struct{}),
 	}
@@ -323,6 +323,10 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}) error {
 	return nil
 }
 
+func (s *SDKSource) SetOnTrackMute(onTrackMuted func(bool)) {
+	s.onTrackMute = onTrackMuted
+}
+
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	track := pub.Track()
 	if track == nil {
@@ -330,12 +334,11 @@ func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant
 	}
 
 	if w := s.getWriterForTrack(track.ID()); w != nil {
-		w.TrackMuted()
+		w.SetTrackMuted(true)
 	}
 
-	// TODO: clean this up
-	if s.mutedChan != nil {
-		s.mutedChan <- false
+	if s.onTrackMute != nil {
+		s.onTrackMute(true)
 	}
 }
 
@@ -346,12 +349,11 @@ func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participa
 	}
 
 	if w := s.getWriterForTrack(track.ID()); w != nil {
-		w.TrackUnmuted()
+		w.SetTrackMuted(false)
 	}
 
-	// TODO: clean this up
-	if s.mutedChan != nil {
-		s.mutedChan <- false
+	if s.onTrackMute != nil {
+		s.onTrackMute(false)
 	}
 }
 

@@ -32,7 +32,6 @@ type SegmentSink struct {
 	openSegmentsStartTime map[string]int64
 	openSegmentsLock      sync.Mutex
 
-	// segments
 	endedSegments         chan SegmentUpdate
 	segmentUploadDoneChan chan error
 }
@@ -80,10 +79,16 @@ func (s *SegmentSink) Start() error {
 
 			segmentStoragePath := s.GetStorageFilepath(update.localPath)
 			if s.Uploader != nil {
-				_, size, err = s.Upload(update.localPath, segmentStoragePath, s.GetSegmentOutputType())
+				_, size, err = s.Upload(update.localPath, segmentStoragePath, s.getSegmentOutputType())
 				if err != nil {
 					return
 				}
+			} else {
+				stat, err := os.Stat(update.localPath)
+				if err != nil {
+					return
+				}
+				size = stat.Size()
 			}
 
 			s.SegmentsInfo.Size += size
@@ -94,7 +99,12 @@ func (s *SegmentSink) Start() error {
 				return
 			}
 			playlistStoragePath := s.GetStorageFilepath(s.PlaylistFilename)
-			s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(s.PlaylistFilename, playlistStoragePath, s.OutputType)
+			if s.Uploader != nil {
+				s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(s.PlaylistFilename, playlistStoragePath, s.OutputType)
+			} else {
+				s.SegmentsInfo.PlaylistLocation = s.PlaylistFilename
+			}
+
 			if err != nil {
 				return
 			}
@@ -104,7 +114,7 @@ func (s *SegmentSink) Start() error {
 	return nil
 }
 
-func (s *SegmentSink) GetSegmentOutputType() types.OutputType {
+func (s *SegmentSink) getSegmentOutputType() types.OutputType {
 	switch s.OutputType {
 	case types.OutputTypeHLS:
 		// HLS is always mpeg ts for now. We may implement fmp4 in the future
@@ -114,8 +124,101 @@ func (s *SegmentSink) GetSegmentOutputType() types.OutputType {
 	}
 }
 
+func (s *SegmentSink) StartSegment(filepath string, startTime int64) error {
+	if filepath == "" {
+		return fmt.Errorf("invalid filepath")
+	}
+
+	if startTime < 0 {
+		return fmt.Errorf("invalid start timestamp")
+	}
+
+	k := getFilenameFromFilePath(filepath)
+
+	s.openSegmentsLock.Lock()
+	defer s.openSegmentsLock.Unlock()
+	if _, ok := s.openSegmentsStartTime[k]; ok {
+		return fmt.Errorf("segment with this name already started")
+	}
+
+	s.openSegmentsStartTime[k] = startTime
+
+	return nil
+}
+
+func (s *SegmentSink) EnqueueSegmentUpload(segmentPath string, endTime int64) error {
+	select {
+	case s.endedSegments <- SegmentUpdate{localPath: segmentPath, endTime: endTime}:
+		return nil
+
+	default:
+		err := errors.New("segment upload job queue is full")
+		logger.Infow("failed to upload segment", "error", err)
+		return errors.ErrUploadFailed(segmentPath, err)
+	}
+}
+
+func (s *SegmentSink) endSegment(filepath string, endTime int64) error {
+	if filepath == "" {
+		return fmt.Errorf("invalid filepath")
+	}
+
+	if endTime <= s.currentItemStartTimestamp {
+		return fmt.Errorf("segment end time before start time")
+	}
+
+	k := getFilenameFromFilePath(filepath)
+
+	s.openSegmentsLock.Lock()
+	defer s.openSegmentsLock.Unlock()
+
+	t, ok := s.openSegmentsStartTime[k]
+	if !ok {
+		return fmt.Errorf("no open segment with the name %s", k)
+	}
+	delete(s.openSegmentsStartTime, k)
+
+	duration := float64(endTime-t) / float64(time.Second)
+
+	// This assumes EndSegment will be called in the same order as StartSegment
+	err := s.playlist.Append(k, duration, "")
+	if err != nil {
+		return err
+	}
+
+	// Write playlist for every segment. This allows better crash recovery and to use
+	// it as an Event playlist, at the cost of extra I/O
+	return s.writePlaylist()
+}
+
+func getFilenameFromFilePath(filepath string) string {
+	_, filename := path.Split(filepath)
+
+	return filename
+}
+
+func (s *SegmentSink) writePlaylist() error {
+	buf := s.playlist.Encode()
+
+	file, err := os.Create(s.playlistPath)
+	if err != nil {
+		return nil
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+
+	_, err = io.Copy(file, buf)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *SegmentSink) Close() error {
 	// wait for all pending upload jobs to finish
+	close(s.endedSegments)
 	if s.segmentUploadDoneChan != nil {
 		if err := <-s.segmentUploadDoneChan; err != nil {
 			return err
@@ -154,94 +257,4 @@ func (s *SegmentSink) Cleanup() {
 			logger.Errorw("could not delete temp dir", err)
 		}
 	}
-}
-
-func (s *SegmentSink) StartSegment(filepath string, startTime int64) error {
-	if filepath == "" {
-		return fmt.Errorf("invalid filepath")
-	}
-
-	if startTime < 0 {
-		return fmt.Errorf("invalid start timestamp")
-	}
-
-	k := getFilenameFromFilePath(filepath)
-
-	s.openSegmentsLock.Lock()
-	defer s.openSegmentsLock.Unlock()
-	if _, ok := s.openSegmentsStartTime[k]; ok {
-		return fmt.Errorf("segment with this name already started")
-	}
-
-	s.openSegmentsStartTime[k] = startTime
-
-	return nil
-}
-
-func (s *SegmentSink) endSegment(filepath string, endTime int64) error {
-	if filepath == "" {
-		return fmt.Errorf("invalid filepath")
-	}
-
-	if endTime <= s.currentItemStartTimestamp {
-		return fmt.Errorf("segment end time before start time")
-	}
-
-	k := getFilenameFromFilePath(filepath)
-
-	s.openSegmentsLock.Lock()
-	defer s.openSegmentsLock.Unlock()
-
-	t, ok := s.openSegmentsStartTime[k]
-	if !ok {
-		return fmt.Errorf("no open segment with the name %s", k)
-	}
-	delete(s.openSegmentsStartTime, k)
-
-	duration := float64(endTime-t) / float64(time.Second)
-
-	// This assumes EndSegment will be called in the same order as StartSegment
-	err := s.playlist.Append(k, duration, "")
-	if err != nil {
-		return err
-	}
-
-	// Write playlist for every segment. This allows better crash recovery and to use
-	// it as an Event playlist, at the cost of extra I/O
-	return s.writePlaylist()
-}
-
-func (s *SegmentSink) EnqueueSegmentUpload(segmentPath string, endTime int64) error {
-	select {
-	case s.endedSegments <- SegmentUpdate{localPath: segmentPath, endTime: endTime}:
-		return nil
-
-	default:
-		err := errors.New("segment upload job queue is full")
-		logger.Infow("failed to upload segment", "error", err)
-		return errors.ErrUploadFailed(segmentPath, err)
-	}
-}
-
-func (s *SegmentSink) writePlaylist() error {
-	buf := s.playlist.Encode()
-
-	f, err := os.Create(s.playlistPath)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-
-	_, err = io.Copy(f, buf)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func getFilenameFromFilePath(filepath string) string {
-	_, filename := path.Split(filepath)
-
-	return filename
 }

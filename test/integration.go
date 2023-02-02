@@ -481,19 +481,3 @@ func stopEgress(t *testing.T, conf *TestConfig, egressID string) *livekit.Egress
 	// check complete update
 	return checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
 }
-
-func checkStoppedEgress(t *testing.T, conf *TestConfig, egressID string, expectedStatus livekit.EgressStatus) *livekit.EgressInfo {
-	// check ending update
-	checkUpdate(t, conf, egressID, livekit.EgressStatus_EGRESS_ENDING)
-
-	// get final info
-	info := checkUpdate(t, conf, egressID, expectedStatus)
-
-	// check status
-	if conf.HealthPort != 0 {
-		status := getStatus(t, conf.svc)
-		require.Len(t, status, 1)
-	}
-
-	return info
-}

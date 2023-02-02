@@ -20,9 +20,8 @@ import (
 type PipelineConfig struct {
 	BaseConfig `yaml:",inline"`
 
-	HandlerID string    `yaml:"handler_id"`
-	TmpDir    string    `yaml:"tmp_dir"`
-	MutedChan chan bool `yaml:"-"`
+	HandlerID string `yaml:"handler_id"`
+	TmpDir    string `yaml:"tmp_dir"`
 
 	SourceConfig `yaml:"-"`
 	AudioConfig  `yaml:"-"`

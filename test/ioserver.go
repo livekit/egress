@@ -50,6 +50,22 @@ func checkUpdate(t *testing.T, conf *TestConfig, egressID string, status livekit
 	return info
 }
 
+func checkStoppedEgress(t *testing.T, conf *TestConfig, egressID string, expectedStatus livekit.EgressStatus) *livekit.EgressInfo {
+	// check ending update
+	checkUpdate(t, conf, egressID, livekit.EgressStatus_EGRESS_ENDING)
+
+	// get final info
+	info := checkUpdate(t, conf, egressID, expectedStatus)
+
+	// check status
+	if conf.HealthPort != 0 {
+		status := getStatus(t, conf.svc)
+		require.Len(t, status, 1)
+	}
+
+	return info
+}
+
 func getUpdate(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressInfo {
 	for {
 		select {
@@ -66,7 +82,7 @@ func getUpdate(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressI
 				return info
 			}
 
-		case <-time.After(time.Second * 45):
+		case <-time.After(time.Minute):
 			t.Fatal("no update from results channel")
 			return nil
 		}

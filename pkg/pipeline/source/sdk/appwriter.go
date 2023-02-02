@@ -472,16 +472,16 @@ func (w *AppWriter) isPlaying() bool {
 	}
 }
 
-func (w *AppWriter) TrackMuted() {
-	w.logger.Debugw("track muted", "timestamp", time.Since(w.startTime).Seconds())
-	w.muted.Store(true)
-}
-
-func (w *AppWriter) TrackUnmuted() {
-	w.logger.Debugw("track unmuted", "timestamp", time.Since(w.startTime).Seconds())
-	w.muted.Store(false)
-	if w.writePLI != nil {
-		w.writePLI()
+func (w *AppWriter) SetTrackMuted(muted bool) {
+	if muted {
+		w.logger.Debugw("track muted", "timestamp", time.Since(w.startTime).Seconds())
+		w.muted.Store(true)
+	} else {
+		w.logger.Debugw("track unmuted", "timestamp", time.Since(w.startTime).Seconds())
+		w.muted.Store(false)
+		if w.writePLI != nil {
+			w.writePLI()
+		}
 	}
 }
 

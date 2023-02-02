@@ -62,6 +62,7 @@ func buildFileMux(p *config.OutputConfig) (*gst.Element, error) {
 }
 
 func (o *FileOutput) Link(audioTee, videoTee *gst.Element) error {
+	// link audio to mux
 	if audioTee != nil {
 		teePad := audioTee.GetRequestPad("src_%u")
 		muxPad := o.mux.GetRequestPad("audio_%u")
@@ -70,6 +71,7 @@ func (o *FileOutput) Link(audioTee, videoTee *gst.Element) error {
 		}
 	}
 
+	// link video to mux
 	if videoTee != nil {
 		teePad := videoTee.GetRequestPad("src_%u")
 		muxPad := o.mux.GetRequestPad("video_%u")
@@ -78,6 +80,7 @@ func (o *FileOutput) Link(audioTee, videoTee *gst.Element) error {
 		}
 	}
 
+	// link mux to sink
 	if err := o.mux.Link(o.sink); err != nil {
 		return errors.ErrPadLinkFailed("mux", "sink", err.Error())
 	}

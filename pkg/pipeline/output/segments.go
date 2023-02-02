@@ -46,18 +46,20 @@ func buildSegmentOutput(bin *gst.Bin, p *config.OutputConfig) (*SegmentOutput, e
 }
 
 func (o *SegmentOutput) Link(audioTee, videoTee *gst.Element) error {
+	// link audio to sink
 	if audioTee != nil {
 		teePad := audioTee.GetRequestPad("src_%u")
-		muxPad := o.sink.GetRequestPad("audio")
-		if err := builder.LinkPads("audio tee", teePad, "file mux", muxPad); err != nil {
+		sinkPad := o.sink.GetRequestPad("audio_%u")
+		if err := builder.LinkPads("audio tee", teePad, "file mux", sinkPad); err != nil {
 			return err
 		}
 	}
 
+	// link video to sink
 	if videoTee != nil {
 		teePad := videoTee.GetRequestPad("src_%u")
-		muxPad := o.sink.GetRequestPad("video")
-		if err := builder.LinkPads("video tee", teePad, "file mux", muxPad); err != nil {
+		sinkPad := o.sink.GetRequestPad("video")
+		if err := builder.LinkPads("video tee", teePad, "file mux", sinkPad); err != nil {
 			return err
 		}
 	}

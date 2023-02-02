@@ -46,7 +46,6 @@ type StreamParams struct {
 
 type WebsocketParams struct {
 	WebsocketUrl string
-	MutedChan    chan bool
 }
 
 func (p *PipelineConfig) updateEncodedOutputs(req interface {
@@ -62,8 +61,10 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		if err != nil {
 			return err
 		}
+
 		p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
 		p.Outputs[types.EgressTypeFile] = conf
+
 		return nil
 	}
 
@@ -72,8 +73,14 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		if err != nil {
 			return err
 		}
-		p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: make([]*livekit.StreamInfo, 0)}}
+
+		streamInfoList := make([]*livekit.StreamInfo, 0, len(conf.StreamInfo))
+		for _, info := range conf.StreamInfo {
+			streamInfoList = append(streamInfoList, info)
+		}
+		p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
 		p.Outputs[types.EgressTypeStream] = conf
+
 		return nil
 	}
 
@@ -82,8 +89,10 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		if err != nil {
 			return err
 		}
+
 		p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
 		p.Outputs[types.EgressTypeSegments] = conf
+
 		return nil
 	}
 
@@ -202,7 +211,6 @@ func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []str
 		conf.EgressType = types.EgressTypeWebsocket
 		p.AudioCodec = types.MimeTypeRaw
 		conf.WebsocketUrl = urls[0]
-		conf.MutedChan = make(chan bool, 1)
 	}
 
 	// Use a 4s default key frame interval for streaming

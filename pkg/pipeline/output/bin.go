@@ -9,6 +9,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/builder"
+	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
@@ -61,7 +62,7 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 			b.outputs[conf.EgressType] = o
 
 		case types.EgressTypeWebsocket:
-			o, err := buildWebsocketOutput(b.bin, conf)
+			o, err := buildWebsocketOutput(b.bin)
 			if err != nil {
 				return nil, err
 			}
@@ -74,6 +75,7 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 
 	var err error
 	if p.AudioEnabled {
+		// create audio ghost pad
 		b.audioTee, err = gst.NewElement("tee")
 		if err != nil {
 			return nil, errors.ErrGstPipelineError(err)
@@ -88,6 +90,7 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 	}
 
 	if p.VideoEnabled {
+		// create video ghost pad
 		b.videoTee, err = gst.NewElement("tee")
 		if err != nil {
 			return nil, errors.ErrGstPipelineError(err)
@@ -109,20 +112,23 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 }
 
 func (b *Bin) Link(audioSrc, videoSrc *gst.GhostPad) error {
-	for _, out := range b.outputs {
-		if err := out.Link(b.audioTee, b.videoTee); err != nil {
-			return err
-		}
-	}
-
+	// link audio to audio tee
 	if b.audioTee != nil {
 		if err := builder.LinkPads("audio input", audioSrc, "audio output", b.bin.GetStaticPad("audio")); err != nil {
 			return err
 		}
 	}
 
+	// link video to video tee
 	if b.videoTee != nil {
 		if err := builder.LinkPads("video input", videoSrc, "video output", b.bin.GetStaticPad("video")); err != nil {
+			return err
+		}
+	}
+
+	// link tees to outputs
+	for _, out := range b.outputs {
+		if err := out.Link(b.audioTee, b.videoTee); err != nil {
 			return err
 		}
 	}
@@ -156,4 +162,14 @@ func (b *Bin) RemoveStream(url string) error {
 	}
 
 	return o.(*StreamOutput).RemoveSink(b.bin, url)
+}
+
+func (b *Bin) SetWebsocketSink(writer *sink.WebsocketSink) error {
+	o := b.outputs[types.EgressTypeWebsocket]
+	if o == nil {
+		return errors.ErrGstPipelineError(errors.New("missing websocket output"))
+	}
+
+	o.(*WebsocketOutput).SetSink(writer)
+	return nil
 }

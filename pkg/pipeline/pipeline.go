@@ -101,6 +101,14 @@ func New(ctx context.Context, p *config.PipelineConfig) (*Pipeline, error) {
 		return nil, err
 	}
 
+	if s, ok := sinks[types.EgressTypeWebsocket]; ok {
+		webSocketSink := s.(*sink.WebsocketSink)
+		src.(*source.SDKSource).SetOnTrackMute(webSocketSink.TrackMuted)
+		if err = out.SetWebsocketSink(webSocketSink); err != nil {
+			return nil, err
+		}
+	}
+
 	return &Pipeline{
 		PipelineConfig: p,
 		src:            src,
@@ -195,13 +203,11 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	}
 
 	// skip upload if there was an error
-	if p.Info.Error != "" {
-		return p.Info
-	}
-
-	for _, s := range p.sinks {
-		if err := s.Close(); err != nil {
-			p.Info.Error = err.Error()
+	if p.Info.Error == "" {
+		for _, s := range p.sinks {
+			if err := s.Close(); err != nil {
+				p.Info.Error = err.Error()
+			}
 		}
 	}
 
