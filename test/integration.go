@@ -409,7 +409,7 @@ func startEgress(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest
 	var info *livekit.EgressInfo
 	var err error
 	if conf.PSRPC {
-		info, err = conf.psrpcClient.StartEgress(context.Background(), req)
+		info, err = conf.psrpcClient.StartEgress(context.Background(), "", req)
 	} else {
 		info, err = conf.rpcClient.SendRequest(context.Background(), req)
 	}
