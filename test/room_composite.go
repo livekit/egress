@@ -25,7 +25,8 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				AudioCodec: livekit.AudioCodec_AAC,
 				VideoCodec: livekit.VideoCodec_H264_HIGH,
 			},
-			filename: "r_{room_name}_high_{time}.mp4",
+			filename:               "r_{room_name}_high_{time}.mp4",
+			expectVideoTranscoding: true,
 		},
 		{
 			name:     "h264-high-mp4-limit",
@@ -36,8 +37,9 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				Height:       720,
 				VideoBitrate: 4500,
 			},
-			filename:       "r_limit_{time}.mp4",
-			sessionTimeout: time.Second * 20,
+			filename:               "r_limit_{time}.mp4",
+			sessionTimeout:         time.Second * 20,
+			expectVideoTranscoding: true,
 		},
 		{
 			name:      "opus-ogg",
@@ -46,7 +48,8 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 			options: &livekit.EncodingOptions{
 				AudioCodec: livekit.AudioCodec_OPUS,
 			},
-			filename: "r_{room_name}_opus_{time}",
+			filename:               "r_{room_name}_opus_{time}",
+			expectVideoTranscoding: false,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -86,7 +89,7 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 					RoomComposite: roomRequest,
 				},
 			}
-			test.expectVideoTranscoding = true
+
 			runFileTest(t, conf, req, test)
 		})
 		if conf.Short {
@@ -199,8 +202,9 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				Height:       1080,
 				VideoBitrate: 4500,
 			},
-			filename: "rs_{room_name}_{time}",
-			playlist: "rs_{room_name}_{time}.m3u8",
+			filename:               "rs_{room_name}_{time}",
+			playlist:               "rs_{room_name}_{time}.m3u8",
+			expectVideoTranscoding: true,
 		},
 		{
 			name: "rs-limit",
@@ -211,9 +215,10 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				Height:       1080,
 				VideoBitrate: 4500,
 			},
-			filename:       "rs_limit_{time}",
-			playlist:       "rs_limit_{time}.m3u8",
-			sessionTimeout: time.Second * 20,
+			filename:               "rs_limit_{time}",
+			playlist:               "rs_limit_{time}.m3u8",
+			sessionTimeout:         time.Second * 20,
+			expectVideoTranscoding: true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -247,7 +252,7 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 					RoomComposite: roomRequest,
 				},
 			}
-			test.expectVideoTranscoding = true
+
 			runSegmentsTest(t, conf, req, test)
 		})
 		if conf.Short {

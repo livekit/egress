@@ -324,16 +324,20 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 
 func (p *Pipeline) startSessionLimitTimer(ctx context.Context) {
 	var timeout time.Duration
-
-	// TODO
-	// switch p.EgressType {
-	// case types.EgressTypeFile:
-	// 	timeout = p.FileOutputMaxDuration
-	// case types.EgressTypeStream, types.EgressTypeWebsocket:
-	// 	timeout = p.StreamOutputMaxDuration
-	// case types.EgressTypeSegments:
-	// 	timeout = p.SegmentOutputMaxDuration
-	// }
+	for egressType := range p.Outputs {
+		var t time.Duration
+		switch egressType {
+		case types.EgressTypeFile:
+			t = p.FileOutputMaxDuration
+		case types.EgressTypeStream, types.EgressTypeWebsocket:
+			t = p.StreamOutputMaxDuration
+		case types.EgressTypeSegments:
+			t = p.SegmentOutputMaxDuration
+		}
+		if t > 0 && (timeout == 0 || t < timeout) {
+			timeout = t
+		}
+	}
 
 	if timeout > 0 {
 		p.limitTimer = time.AfterFunc(timeout, func() {

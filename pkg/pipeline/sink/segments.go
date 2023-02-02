@@ -78,17 +78,9 @@ func (s *SegmentSink) Start() error {
 			s.SegmentsInfo.SegmentCount++
 
 			segmentStoragePath := s.GetStorageFilepath(update.localPath)
-			if s.Uploader != nil {
-				_, size, err = s.Upload(update.localPath, segmentStoragePath, s.getSegmentOutputType())
-				if err != nil {
-					return
-				}
-			} else {
-				stat, err := os.Stat(update.localPath)
-				if err != nil {
-					return
-				}
-				size = stat.Size()
+			_, size, err = s.Upload(update.localPath, segmentStoragePath, s.getSegmentOutputType())
+			if err != nil {
+				return
 			}
 
 			s.SegmentsInfo.Size += size
@@ -99,11 +91,7 @@ func (s *SegmentSink) Start() error {
 				return
 			}
 			playlistStoragePath := s.GetStorageFilepath(s.PlaylistFilename)
-			if s.Uploader != nil {
-				s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(s.PlaylistFilename, playlistStoragePath, s.OutputType)
-			} else {
-				s.SegmentsInfo.PlaylistLocation = s.PlaylistFilename
-			}
+			s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(s.PlaylistFilename, playlistStoragePath, s.OutputType)
 
 			if err != nil {
 				return

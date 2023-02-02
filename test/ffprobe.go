@@ -158,7 +158,7 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, re
 
 func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.EgressInfo, egressType types.EgressType, withMuting bool, sourceFramerate float64) {
 	info, err := ffprobe(in)
-	require.NoError(t, err, "ffprobe error - input does not exist")
+	require.NoError(t, err, "input %s does not exist", in)
 
 	switch p.Outputs[egressType].OutputType {
 	case types.OutputTypeRaw:

@@ -1,6 +1,7 @@
 package uploader
 
 import (
+	"os"
 	"time"
 
 	"github.com/livekit/egress/pkg/types"
@@ -28,6 +29,17 @@ func New(conf interface{}) Uploader {
 	case *livekit.AliOSSUpload:
 		return newAliOSSUploader(c)
 	default:
-		return nil
+		return &noOpUploader{}
 	}
+}
+
+type noOpUploader struct{}
+
+func (u *noOpUploader) Upload(localFilepath, _ string, _ types.OutputType) (string, int64, error) {
+	stat, err := os.Stat(localFilepath)
+	if err != nil {
+		return "", 0, err
+	}
+
+	return localFilepath, stat.Size(), nil
 }
