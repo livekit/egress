@@ -219,10 +219,6 @@ func (s *SegmentSink) Close() error {
 	}
 
 	// upload the finalized playlist
-	if s.Uploader == nil {
-		return nil
-	}
-
 	playlistStoragePath := s.GetStorageFilepath(s.PlaylistFilename)
 	s.SegmentsInfo.PlaylistLocation, _, _ = s.Upload(s.PlaylistFilename, playlistStoragePath, s.OutputType)
 
@@ -238,6 +234,10 @@ func (s *SegmentSink) Close() error {
 }
 
 func (s *SegmentSink) Cleanup() {
+	if s.LocalFilepath == s.StorageFilepath {
+		return
+	}
+
 	dir, _ := path.Split(s.PlaylistFilename)
 	if dir != "" {
 		logger.Debugw("removing temporary directory", "path", dir)

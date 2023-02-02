@@ -13,15 +13,15 @@ import (
 
 type FileSink struct {
 	uploader.Uploader
+	*config.OutputConfig
 	conf *config.PipelineConfig
-	out  *config.OutputConfig
 }
 
 func newFileSink(u uploader.Uploader, conf *config.PipelineConfig, out *config.OutputConfig) *FileSink {
 	return &FileSink{
-		Uploader: u,
-		conf:     conf,
-		out:      out,
+		Uploader:     u,
+		OutputConfig: out,
+		conf:         conf,
 	}
 }
 
@@ -30,20 +30,16 @@ func (s *FileSink) Start() error {
 }
 
 func (s *FileSink) Close() error {
-	if s.Uploader == nil {
-		return nil
-	}
-
-	location, size, err := s.Upload(s.out.LocalFilepath, s.out.StorageFilepath, s.out.OutputType)
+	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType)
 	if err != nil {
 		return err
 	}
-	s.out.FileInfo.Location = location
-	s.out.FileInfo.Size = size
+	s.FileInfo.Location = location
+	s.FileInfo.Size = size
 
-	if !s.out.DisableManifest {
-		manifestLocalPath := fmt.Sprintf("%s.json", s.out.LocalFilepath)
-		manifestStoragePath := fmt.Sprintf("%s.json", s.out.StorageFilepath)
+	if !s.DisableManifest {
+		manifestLocalPath := fmt.Sprintf("%s.json", s.LocalFilepath)
+		manifestStoragePath := fmt.Sprintf("%s.json", s.StorageFilepath)
 		if err = uploadManifest(s.conf, s, manifestLocalPath, manifestStoragePath); err != nil {
 			return err
 		}
@@ -53,11 +49,11 @@ func (s *FileSink) Close() error {
 }
 
 func (s *FileSink) Cleanup() {
-	if s.Uploader == nil {
+	if s.LocalFilepath == s.StorageFilepath {
 		return
 	}
 
-	dir, _ := path.Split(s.out.LocalFilepath)
+	dir, _ := path.Split(s.LocalFilepath)
 	if dir != "" {
 		logger.Debugw("removing temporary directory", "path", dir)
 		if err := os.RemoveAll(dir); err != nil {
