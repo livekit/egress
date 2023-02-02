@@ -1,35 +1,28 @@
-package input
+package source
 
 import (
 	"context"
 
-	"github.com/tinyzimmer/go-gst/gst"
-
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/input/sdk"
-	"github.com/livekit/egress/pkg/pipeline/input/web"
 	"github.com/livekit/protocol/livekit"
 )
 
-type Input interface {
-	Bin() *gst.Bin
-	Element() *gst.Element
-	Link() error
+type Source interface {
 	StartRecording() chan struct{}
 	EndRecording() chan struct{}
 	Close()
 }
 
-func New(ctx context.Context, p *config.PipelineConfig) (Input, error) {
+func New(ctx context.Context, p *config.PipelineConfig) (Source, error) {
 	switch p.Info.Request.(type) {
 	case *livekit.EgressInfo_RoomComposite,
 		*livekit.EgressInfo_Web:
-		return web.NewWebInput(ctx, p)
+		return NewWebSource(ctx, p)
 
 	case *livekit.EgressInfo_TrackComposite,
 		*livekit.EgressInfo_Track:
-		return sdk.NewSDKInput(ctx, p)
+		return NewSDKSource(ctx, p)
 
 	default:
 		return nil, errors.ErrInvalidInput("request")

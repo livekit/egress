@@ -2,36 +2,46 @@ package output
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 )
 
-func buildStreamOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
+type StreamOutput struct {
+	sync.RWMutex
+	protocol types.OutputType
+
+	mux   *gst.Element
+	tee   *gst.Element
+	sinks map[string]*streamSink
+}
+
+func buildStreamOutput(bin *gst.Bin, p *config.OutputConfig) (*StreamOutput, error) {
+	mux, err := buildStreamMux(p)
+	if err != nil {
+		return nil, err
+	}
+
 	// create elements
 	tee, err := gst.NewElement("tee")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	bin := gst.NewBin("output")
-	if err = bin.Add(tee); err != nil {
+	if err := bin.AddMany(mux, tee); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	b := &OutputBin{
-		bin:      bin,
-		protocol: p.OutputType,
-		tee:      tee,
-		sinks:    make(map[string]*streamSink),
-	}
-
+	sinks := make(map[string]*streamSink)
 	for _, url := range p.StreamUrls {
-		sink, err := buildStreamSink(b.protocol, url)
+		sink, err := buildStreamSink(p.OutputType, url)
 		if err != nil {
 			return nil, err
 		}
@@ -40,16 +50,37 @@ func buildStreamOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 
-		b.sinks[url] = sink
+		sinks[url] = sink
 	}
 
-	// add ghost pad
-	ghostPad := gst.NewGhostPad("sink", tee.GetStaticPad("sink"))
-	if !bin.AddPad(ghostPad.Pad) {
-		return nil, errors.ErrGhostPadFailed
-	}
+	return &StreamOutput{
+		protocol: p.OutputType,
+		mux:      mux,
+		tee:      tee,
+		sinks:    sinks,
+	}, nil
+}
 
-	return b, nil
+func buildStreamMux(p *config.OutputConfig) (*gst.Element, error) {
+	switch p.OutputType {
+	case types.OutputTypeRTMP:
+		mux, err := gst.NewElement("flvmux")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = mux.SetProperty("streamable", true); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		// Increase the flv latency as video input is sometines late
+		if err = mux.SetProperty("latency", uint64(1e8)); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+
+		return mux, nil
+
+	default:
+		return nil, errors.ErrInvalidInput("output type")
+	}
 }
 
 func buildStreamSink(protocol types.OutputType, url string) (*streamSink, error) {
@@ -80,4 +111,186 @@ func buildStreamSink(protocol types.OutputType, url string) (*streamSink, error)
 		queue: queue,
 		sink:  sink,
 	}, nil
+}
+
+func (o *StreamOutput) Link(audioTee, videoTee *gst.Element) error {
+	o.RLock()
+	defer o.RUnlock()
+
+	if audioTee != nil {
+		teePad := audioTee.GetRequestPad("src_%u")
+		muxPad := o.mux.GetRequestPad("audio")
+		if err := builder.LinkPads("audio tee", teePad, "file mux", muxPad); err != nil {
+			return err
+		}
+	}
+
+	if videoTee != nil {
+		teePad := videoTee.GetRequestPad("src_%u")
+		muxPad := o.mux.GetRequestPad("video")
+		if err := builder.LinkPads("video tee", teePad, "file mux", muxPad); err != nil {
+			return err
+		}
+	}
+
+	// link sinks to tee
+	for _, sink := range o.sinks {
+		if err := sink.link(o.tee, false); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (o *StreamOutput) GetUrl(name string) (string, error) {
+	o.RLock()
+	defer o.RUnlock()
+
+	for url, sink := range o.sinks {
+		if sink.queue.GetName() == name || sink.sink.GetName() == name {
+			return url, nil
+		}
+	}
+
+	return "", errors.ErrStreamNotFound
+}
+
+func (o *StreamOutput) AddSink(bin *gst.Bin, url string) error {
+	o.Lock()
+	defer o.Unlock()
+
+	if _, ok := o.sinks[url]; ok {
+		return errors.ErrStreamAlreadyExists
+	}
+
+	sink, err := buildStreamSink(o.protocol, url)
+	if err != nil {
+		return err
+	}
+
+	// add to bin
+	if err = bin.AddMany(sink.queue, sink.sink); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	// link queue to sink
+	if err = sink.link(o.tee, true); err != nil {
+		return err
+	}
+
+	o.sinks[url] = sink
+	return nil
+}
+
+func (o *StreamOutput) RemoveSink(bin *gst.Bin, url string) error {
+	o.Lock()
+	defer o.Unlock()
+
+	sink, ok := o.sinks[url]
+	if !ok {
+		return errors.ErrStreamNotFound
+	}
+
+	srcPad := o.tee.GetStaticPad(sink.pad)
+	srcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		// remove probe
+		pad.RemoveProbe(uint64(info.ID()))
+
+		// unlink queue
+		pad.Unlink(sink.queue.GetStaticPad("sink"))
+
+		// send EOS to queue
+		sink.queue.GetStaticPad("sink").SendEvent(gst.NewEOSEvent())
+
+		// remove from bin
+		if err := bin.RemoveMany(sink.queue, sink.sink); err != nil {
+			logger.Errorw("failed to remove rtmp sink", err)
+		}
+		if err := sink.queue.SetState(gst.StateNull); err != nil {
+			logger.Errorw("failed stop rtmp queue", err)
+		}
+		if err := sink.sink.SetState(gst.StateNull); err != nil {
+			logger.Errorw("failed to stop rtmp sink", err)
+		}
+
+		// release tee src pad
+		o.tee.ReleaseRequestPad(pad)
+
+		return gst.PadProbeOK
+	})
+
+	delete(o.sinks, url)
+	return nil
+}
+
+type streamSink struct {
+	pad   string
+	queue *gst.Element
+	sink  *gst.Element
+}
+
+func (o *streamSink) link(tee *gst.Element, live bool) error {
+	sinkPad := o.sink.GetStaticPad("sink")
+
+	proxy := gst.NewGhostPad("proxy", sinkPad)
+
+	// proxy isn't saved/stored anywhere, so we need to call ref
+	proxy.Ref()
+
+	// intercept FlowFlushing from rtmp2sink
+	proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
+		buffer.Ref()
+
+		internal, _ := self.GetInternalLinks()
+		if len(internal) != 1 {
+			// there should always be exactly one
+			logger.Errorw("unexpected internal links", nil, "links", len(internal))
+			return gst.FlowNotLinked
+		}
+
+		// push buffer to rtmp2sink sink pad
+		flow := internal[0].Push(buffer)
+		if flow == gst.FlowFlushing {
+			// replace with ok - pipeline should continue and this sink will be removed
+			return gst.FlowOK
+		}
+
+		return flow
+	})
+
+	proxy.ActivateMode(gst.PadModePush, true)
+
+	// link
+	if err := builder.LinkPads("queue", o.queue.GetStaticPad("src"), "proxy", proxy.Pad); err != nil {
+		return err
+	}
+
+	// get tee pad
+	pad := tee.GetRequestPad("src_%u")
+	o.pad = pad.GetName()
+
+	if live {
+		// use probe
+		pad.AddProbe(gst.PadProbeTypeBlockDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			// link tee to queue
+			if err := builder.LinkPads("tee", pad, "queue", o.queue.GetStaticPad("sink")); err != nil {
+				logger.Errorw("failed to link tee to queue", err)
+				return gst.PadProbeUnhandled
+			}
+
+			// sync state
+			o.queue.SyncStateWithParent()
+			o.sink.SyncStateWithParent()
+
+			return gst.PadProbeRemove
+		})
+	} else {
+		// link tee to queue
+		if err := builder.LinkPads("tee", pad, "queue", o.queue.GetStaticPad("sink")); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

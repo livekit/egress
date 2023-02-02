@@ -2,205 +2,158 @@ package output
 
 import (
 	"context"
-	"sync"
+	"fmt"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 )
 
-type OutputBin struct {
+type Bin struct {
 	bin *gst.Bin
 
-	// stream
-	protocol types.OutputType
-	tee      *gst.Element
-	sinks    map[string]*streamSink
-	lock     sync.Mutex
+	audioTee *gst.Element
+	videoTee *gst.Element
+
+	outputs map[types.EgressType]output
 }
 
-type streamSink struct {
-	pad   string
-	queue *gst.Element
-	sink  *gst.Element
+type output interface {
+	Link(audioTee, videoTee *gst.Element) error
 }
 
-func New(ctx context.Context, p *config.PipelineConfig) (*OutputBin, error) {
-	ctx, span := tracer.Start(ctx, "OutputBin.New")
+func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) (*Bin, error) {
+	ctx, span := tracer.Start(ctx, "Output.New")
 	defer span.End()
 
-	switch p.EgressType {
-	case types.EgressTypeFile:
-		return buildFileOutputBin(p)
-	case types.EgressTypeStream:
-		return buildStreamOutputBin(p)
-	case types.EgressTypeWebsocket:
-		return buildWebsocketOutputBin(p)
-	case types.EgressTypeSegmentedFile:
-		// In the case of segmented output, the muxer and the sink are embedded in the same object
-		return nil, nil
-	default:
-		return nil, errors.ErrInvalidInput("egress type")
+	b := &Bin{
+		bin:     gst.NewBin("output"),
+		outputs: make(map[types.EgressType]output),
 	}
+
+	for egressType, conf := range p.Outputs {
+		logger.Infow("output config", "conf", fmt.Sprintf("%+v", conf))
+		switch egressType {
+		case types.EgressTypeFile:
+			o, err := buildFileOutput(b.bin, conf)
+			if err != nil {
+				return nil, err
+			}
+			b.outputs[conf.EgressType] = o
+
+		case types.EgressTypeSegments:
+			o, err := buildSegmentOutput(b.bin, conf)
+			if err != nil {
+				return nil, err
+			}
+			b.outputs[conf.EgressType] = o
+
+		case types.EgressTypeStream:
+			o, err := buildStreamOutput(b.bin, conf)
+			if err != nil {
+				return nil, err
+			}
+			b.outputs[conf.EgressType] = o
+
+		case types.EgressTypeWebsocket:
+			o, err := buildWebsocketOutput(b.bin, conf)
+			if err != nil {
+				return nil, err
+			}
+			b.outputs[conf.EgressType] = o
+
+		default:
+			return nil, errors.ErrInvalidInput("egress type")
+		}
+	}
+
+	var err error
+	if p.AudioEnabled {
+		b.audioTee, err = gst.NewElement("tee")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = b.bin.Add(b.audioTee); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		audioPad := gst.NewGhostPad("audio", b.audioTee.GetStaticPad("sink"))
+		if !b.bin.AddPad(audioPad.Pad) {
+			return nil, errors.ErrGhostPadFailed
+		}
+	}
+
+	if p.VideoEnabled {
+		b.videoTee, err = gst.NewElement("tee")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = b.bin.Add(b.videoTee); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		videoPad := gst.NewGhostPad("video", b.videoTee.GetStaticPad("sink"))
+		if !b.bin.AddPad(videoPad.Pad) {
+			return nil, errors.ErrGhostPadFailed
+		}
+	}
+
+	if err = pipeline.Add(b.bin.Element); err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
+	return b, nil
 }
 
-func (o *OutputBin) Element() *gst.Element {
-	return o.bin.Element
-}
-
-func (o *OutputBin) Link() error {
-	o.lock.Lock()
-	defer o.lock.Unlock()
-
-	// stream tee and sinks
-	for _, sink := range o.sinks {
-		// link queue to sink
-		if err := o.linkSink(sink); err != nil {
+func (b *Bin) Link(audioSrc, videoSrc *gst.GhostPad) error {
+	for _, out := range b.outputs {
+		if err := out.Link(b.audioTee, b.videoTee); err != nil {
 			return err
 		}
+	}
 
-		pad := o.tee.GetRequestPad("src_%u")
-		sink.pad = pad.GetName()
+	if b.audioTee != nil {
+		if err := builder.LinkPads("audio input", audioSrc, "audio output", b.bin.GetStaticPad("audio")); err != nil {
+			return err
+		}
+	}
 
-		// link tee to queue
-		if linkReturn := pad.Link(sink.queue.GetStaticPad("sink")); linkReturn != gst.PadLinkOK {
-			return errors.ErrPadLinkFailed("sink", "tee", linkReturn.String())
+	if b.videoTee != nil {
+		if err := builder.LinkPads("video input", videoSrc, "video output", b.bin.GetStaticPad("video")); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-func (o *OutputBin) linkSink(sink *streamSink) error {
-	sinkPad := sink.sink.GetStaticPad("sink")
-
-	proxy := gst.NewGhostPad("proxy", sinkPad)
-	// proxy isn't saved/stored anywhere, so we need to call ref
-	proxy.Ref()
-
-	// intercept FlowFlushing from rtmp2sink
-	proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
-		buffer.Ref()
-
-		internal, _ := self.GetInternalLinks()
-		if len(internal) != 1 {
-			// there should always be exactly one
-			logger.Errorw("unexpected internal links", nil, "links", len(internal))
-			return gst.FlowNotLinked
-		}
-
-		// push buffer to rtmp2sink sink pad
-		flow := internal[0].Push(buffer)
-		if flow == gst.FlowFlushing {
-			// replace with ok - pipeline should continue and this sink will be removed
-			return gst.FlowOK
-		}
-		return flow
-	})
-	proxy.ActivateMode(gst.PadModePush, true)
-
-	// link
-	if linkReturn := sink.queue.GetStaticPad("src").Link(proxy.Pad); linkReturn != gst.PadLinkOK {
-		return errors.ErrPadLinkFailed("queue", "proxy", linkReturn.String())
+func (b *Bin) AddStream(url string) error {
+	o := b.outputs[types.EgressTypeStream]
+	if o == nil {
+		// TODO: add StreamOutput to running pipeline
+		return errors.ErrNotSupported("add stream")
 	}
 
-	return nil
+	return o.(*StreamOutput).AddSink(b.bin, url)
 }
 
-func (o *OutputBin) AddSink(url string) error {
-	o.lock.Lock()
-	defer o.lock.Unlock()
-
-	if _, ok := o.sinks[url]; ok {
-		return errors.ErrStreamAlreadyExists
+func (b *Bin) GetStreamUrl(name string) (string, error) {
+	o := b.outputs[types.EgressTypeStream]
+	if o == nil {
+		return "", errors.ErrStreamNotFound
 	}
 
-	sink, err := buildStreamSink(o.protocol, url)
-	if err != nil {
-		return err
-	}
-
-	// add to bin
-	if err = o.bin.AddMany(sink.queue, sink.sink); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-
-	// link queue to sink
-	if err = o.linkSink(sink); err != nil {
-		return err
-	}
-
-	teeSrcPad := o.tee.GetRequestPad("src_%u")
-	sink.pad = teeSrcPad.GetName()
-
-	teeSrcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		// link tee to queue
-		if linkReturn := pad.Link(sink.queue.GetStaticPad("sink")); linkReturn != gst.PadLinkOK {
-			logger.Errorw("failed to link tee to queue", err)
-		}
-
-		// sync state
-		sink.queue.SyncStateWithParent()
-		sink.sink.SyncStateWithParent()
-
-		return gst.PadProbeRemove
-	})
-
-	o.sinks[url] = sink
-	return nil
+	return o.(*StreamOutput).GetUrl(name)
 }
 
-func (o *OutputBin) RemoveSink(url string) error {
-	o.lock.Lock()
-	defer o.lock.Unlock()
-
-	sink, ok := o.sinks[url]
-	if !ok {
+func (b *Bin) RemoveStream(url string) error {
+	o := b.outputs[types.EgressTypeStream]
+	if o == nil {
 		return errors.ErrStreamNotFound
 	}
 
-	srcPad := o.tee.GetStaticPad(sink.pad)
-	srcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		// remove probe
-		pad.RemoveProbe(uint64(info.ID()))
-
-		// unlink queue
-		pad.Unlink(sink.queue.GetStaticPad("sink"))
-
-		// send EOS to queue
-		sink.queue.GetStaticPad("sink").SendEvent(gst.NewEOSEvent())
-
-		// remove from bin
-		if err := o.bin.RemoveMany(sink.queue, sink.sink); err != nil {
-			logger.Errorw("failed to remove rtmp sink", err)
-		}
-		if err := sink.queue.SetState(gst.StateNull); err != nil {
-			logger.Errorw("failed stop rtmp queue", err)
-		}
-		if err := sink.sink.SetState(gst.StateNull); err != nil {
-			logger.Errorw("failed to stop rtmp sink", err)
-		}
-
-		// release tee src pad
-		o.tee.ReleaseRequestPad(pad)
-
-		return gst.PadProbeOK
-	})
-
-	delete(o.sinks, url)
-	return nil
-}
-
-func (o *OutputBin) GetUrlFromName(name string) (string, error) {
-	for url, sink := range o.sinks {
-		if sink.queue.GetName() == name || sink.sink.GetName() == name {
-			return url, nil
-		}
-	}
-
-	return "", errors.ErrStreamNotFound
+	return o.(*StreamOutput).RemoveSink(b.bin, url)
 }

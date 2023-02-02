@@ -20,8 +20,8 @@ const (
 	maxUInt32       int64  = 4294967296
 )
 
-// a single synchronizer is shared between audio and video writers
-type synchronizer struct {
+// a single Synchronizer is shared between audio and video writers
+type Synchronizer struct {
 	sync.RWMutex
 
 	firstPacket   int64
@@ -36,12 +36,11 @@ type participantSynchronizer struct {
 	sync.Mutex
 
 	ntpStart      time.Time
-	syncInfo      map[uint32]*trackSynchronizer
+	syncInfo      map[uint32]*TrackSynchronizer
 	senderReports map[uint32]*rtcp.SenderReport
 }
 
-// TODO: handle (rare) RTP timestamp wrap
-type trackSynchronizer struct {
+type TrackSynchronizer struct {
 	sync.Mutex
 
 	trackID   string
@@ -60,8 +59,8 @@ type trackSynchronizer struct {
 	largeDrift time.Duration // track massive PTS drift, in case it's correct
 }
 
-func newSynchronizer(onFirstPacket func()) *synchronizer {
-	return &synchronizer{
+func NewSynchronizer(onFirstPacket func()) *Synchronizer {
+	return &Synchronizer{
 		onFirstPacket: onFirstPacket,
 		psByIdentity:  make(map[string]*participantSynchronizer),
 		psByTrack:     make(map[uint32]*participantSynchronizer),
@@ -69,8 +68,8 @@ func newSynchronizer(onFirstPacket func()) *synchronizer {
 }
 
 // addTrack creates track sync info
-func (s *synchronizer) addTrack(track *webrtc.TrackRemote, identity string) *trackSynchronizer {
-	t := &trackSynchronizer{
+func (s *Synchronizer) AddTrack(track *webrtc.TrackRemote, identity string) *TrackSynchronizer {
+	t := &TrackSynchronizer{
 		trackID:   track.ID(),
 		clockRate: int64(track.Codec().ClockRate),
 	}
@@ -78,7 +77,7 @@ func (s *synchronizer) addTrack(track *webrtc.TrackRemote, identity string) *tra
 	p := s.psByIdentity[identity]
 	if p == nil {
 		p = &participantSynchronizer{
-			syncInfo:      make(map[uint32]*trackSynchronizer),
+			syncInfo:      make(map[uint32]*TrackSynchronizer),
 			senderReports: make(map[uint32]*rtcp.SenderReport),
 		}
 		s.psByIdentity[identity] = p
@@ -95,7 +94,7 @@ func (s *synchronizer) addTrack(track *webrtc.TrackRemote, identity string) *tra
 }
 
 // firstPacketForTrack initializes offsets
-func (s *synchronizer) firstPacketForTrack(pkt *rtp.Packet) {
+func (s *Synchronizer) firstPacketForTrack(pkt *rtp.Packet) {
 	now := time.Now().UnixNano()
 
 	s.Lock()
@@ -116,15 +115,15 @@ func (s *synchronizer) firstPacketForTrack(pkt *rtp.Packet) {
 	t.Unlock()
 }
 
-func (s *synchronizer) getStartedAt() int64 {
+func (s *Synchronizer) GetStartedAt() int64 {
 	s.RLock()
 	defer s.RUnlock()
 
 	return s.firstPacket
 }
 
-// onRTCP syncs a/v using sender reports
-func (s *synchronizer) onRTCP(packet rtcp.Packet) {
+// OnRTCP syncs a/v using sender reports
+func (s *Synchronizer) OnRTCP(packet rtcp.Packet) {
 	switch pkt := packet.(type) {
 	case *rtcp.SenderReport:
 		s.Lock()
@@ -176,7 +175,7 @@ func (s *synchronizer) onRTCP(packet rtcp.Packet) {
 }
 
 // onSenderReport handles pts adjustments for a track
-func (t *trackSynchronizer) onSenderReport(pkt *rtcp.SenderReport, ntpStart time.Time) {
+func (t *TrackSynchronizer) onSenderReport(pkt *rtcp.SenderReport, ntpStart time.Time) {
 	pts, _ := t.getPTS(pkt.RTPTime)
 	expected := mediatransportutil.NtpTime(pkt.NTPTime).Time().Sub(ntpStart)
 	if pts != expected {
@@ -205,7 +204,7 @@ func absGreater(value, max time.Duration) bool {
 }
 
 // getPTS calculates presentation timestamp from RTP timestamp
-func (t *trackSynchronizer) getPTS(ts uint32) (time.Duration, error) {
+func (t *TrackSynchronizer) getPTS(ts uint32) (time.Duration, error) {
 	t.Lock()
 	defer t.Unlock()
 
@@ -219,7 +218,7 @@ func (t *trackSynchronizer) getPTS(ts uint32) (time.Duration, error) {
 	// The conversion is done by subtracting the initial RTP timestamp (tt.firstTS) from the current RTP timestamp
 	// and multiplying by a conversion rate of (1e9 ns/s / clock rate).
 	// Since the audio and video track might start pushing to their buffers at different times, we then add a
-	// synced clock offset (tt.ptsOffset), which is always 0 for the first track, and fixes the video starting to play too
+	// synced clock offset (tt.ptsOffset), which is always 0 for the first track, and fixes the video starting to Play too
 	// early if it's waiting for a key frame
 	rtpWrap := t.rtpWrap
 	if ts < wrapCheck && t.lastRTP > wrapCheck {
@@ -231,7 +230,7 @@ func (t *trackSynchronizer) getPTS(ts uint32) (time.Duration, error) {
 }
 
 // end updates maxRTP for each track
-func (s *synchronizer) end() {
+func (s *Synchronizer) End() {
 	endTime := time.Now().UnixNano()
 
 	s.Lock()
@@ -270,7 +269,7 @@ func (s *synchronizer) end() {
 	}
 }
 
-func (s *synchronizer) getEndedAt() int64 {
+func (s *Synchronizer) GetEndedAt() int64 {
 	s.RLock()
 	defer s.RUnlock()
 

@@ -226,8 +226,8 @@ func runFileTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest
 	// get params
 	p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 	require.NoError(t, err)
-	if p.OutputType == "" {
-		p.OutputType = test.outputType
+	if p.Outputs[types.EgressTypeFile].OutputType == types.OutputTypeUnknown {
+		p.Outputs[types.EgressTypeFile].OutputType = test.outputType
 	}
 
 	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
@@ -409,7 +409,7 @@ func startEgress(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest
 	var info *livekit.EgressInfo
 	var err error
 	if conf.PSRPC {
-		info, err = conf.psrpcClient.StartEgress(context.Background(), req)
+		info, err = conf.psrpcClient.StartEgress(context.Background(), "", req)
 	} else {
 		info, err = conf.rpcClient.SendRequest(context.Background(), req)
 	}

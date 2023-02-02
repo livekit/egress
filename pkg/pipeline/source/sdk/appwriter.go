@@ -39,7 +39,7 @@ var (
 	H264KeyFrame2x2 = [][]byte{H264KeyFrame2x2SPS, H264KeyFrame2x2PPS, H264KeyFrame2x2IDR}
 )
 
-type appWriter struct {
+type AppWriter struct {
 	logger      logger.Logger
 	sb          *samplebuilder.SampleBuilder
 	track       *webrtc.TrackRemote
@@ -53,8 +53,8 @@ type appWriter struct {
 	writePLI         func()
 
 	// a/v sync
-	sync *synchronizer
-	*trackSynchronizer
+	sync *Synchronizer
+	*TrackSynchronizer
 
 	// state
 	muted        atomic.Bool
@@ -69,22 +69,22 @@ type appWriter struct {
 	vp8Munger      *sfu.VP8Munger
 }
 
-func newAppWriter(
+func NewAppWriter(
 	track *webrtc.TrackRemote,
 	rp *lksdk.RemoteParticipant,
 	codec types.MimeType,
 	appSrcName string,
-	sync *synchronizer,
-	syncInfo *trackSynchronizer,
+	sync *Synchronizer,
+	syncInfo *TrackSynchronizer,
 	writeBlanks bool,
-) (*appWriter, error) {
+) (*AppWriter, error) {
 	src, err := gst.NewElementWithName("appsrc", appSrcName)
 	if err != nil {
 		logger.Errorw("could not create appsrc", err)
 		return nil, err
 	}
 
-	w := &appWriter{
+	w := &AppWriter{
 		logger:            logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
 		track:             track,
 		identity:          rp.Identity(),
@@ -92,7 +92,7 @@ func newAppWriter(
 		src:               app.SrcFromElement(src),
 		writeBlanks:       writeBlanks,
 		sync:              sync,
-		trackSynchronizer: syncInfo,
+		TrackSynchronizer: syncInfo,
 		playing:           make(chan struct{}),
 		draining:          make(chan struct{}),
 		force:             make(chan struct{}),
@@ -136,7 +136,7 @@ func newAppWriter(
 	return w, nil
 }
 
-func (w *appWriter) start() {
+func (w *AppWriter) start() {
 	// always post EOS if the writer started playing
 	defer func() {
 		if w.isPlaying() {
@@ -210,7 +210,7 @@ func (w *appWriter) start() {
 	}
 }
 
-func (w *appWriter) pushPackets(force bool) error {
+func (w *AppWriter) pushPackets(force bool) error {
 	// buffers can only be pushed to the appsrc while in the playing state
 	if !w.isPlaying() {
 		return nil
@@ -223,7 +223,7 @@ func (w *appWriter) pushPackets(force bool) error {
 	}
 }
 
-func (w *appWriter) pushBlankFrames() error {
+func (w *AppWriter) pushBlankFrames() error {
 	_ = w.pushPackets(true)
 
 	// TODO: sample buffer has bug that it may pop old packet after pushPackets(true)
@@ -300,7 +300,7 @@ func (w *appWriter) pushBlankFrames() error {
 	}
 }
 
-func (w *appWriter) pushBlankFrame(timestamp uint32) error {
+func (w *AppWriter) pushBlankFrame(timestamp uint32) error {
 	pkt := &rtp.Packet{
 		Header: rtp.Header{
 			Version:        2,
@@ -355,7 +355,7 @@ func (w *appWriter) pushBlankFrame(timestamp uint32) error {
 	return nil
 }
 
-func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
+func (w *AppWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 	for _, pkt := range packets {
 		// record timestamp diff
 		if w.rtpStep == 0 && !blankFrame && w.lastRTP != 0 && pkt.SequenceNumber == w.lastSN+1 {
@@ -394,7 +394,7 @@ func (w *appWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 	return nil
 }
 
-func (w *appWriter) translatePacket(pkt *rtp.Packet) {
+func (w *AppWriter) translatePacket(pkt *rtp.Packet) {
 	switch w.codec {
 	case types.MimeTypeVP8:
 		vp8Packet := buffer.VP8{}
@@ -438,7 +438,7 @@ func (w *appWriter) translatePacket(pkt *rtp.Packet) {
 	}
 }
 
-func (w *appWriter) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8, outbuf *[]byte) ([]byte, error) {
+func (w *AppWriter) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8, outbuf *[]byte) ([]byte, error) {
 	var buf []byte
 	if outbuf == &pkt.Payload {
 		buf = pkt.Payload
@@ -454,7 +454,7 @@ func (w *appWriter) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8,
 	return buf, err
 }
 
-func (w *appWriter) play() {
+func (w *AppWriter) Play() {
 	select {
 	case <-w.playing:
 		return
@@ -463,7 +463,7 @@ func (w *appWriter) play() {
 	}
 }
 
-func (w *appWriter) isPlaying() bool {
+func (w *AppWriter) isPlaying() bool {
 	select {
 	case <-w.playing:
 		return true
@@ -472,12 +472,12 @@ func (w *appWriter) isPlaying() bool {
 	}
 }
 
-func (w *appWriter) trackMuted() {
+func (w *AppWriter) TrackMuted() {
 	w.logger.Debugw("track muted", "timestamp", time.Since(w.startTime).Seconds())
 	w.muted.Store(true)
 }
 
-func (w *appWriter) trackUnmuted() {
+func (w *AppWriter) TrackUnmuted() {
 	w.logger.Debugw("track unmuted", "timestamp", time.Since(w.startTime).Seconds())
 	w.muted.Store(false)
 	if w.writePLI != nil {
@@ -485,8 +485,8 @@ func (w *appWriter) trackUnmuted() {
 	}
 }
 
-// drain blocks until finished
-func (w *appWriter) drain(force bool) {
+// Drain blocks until finished
+func (w *AppWriter) Drain(force bool) {
 	select {
 	case <-w.draining:
 	default:
@@ -506,7 +506,7 @@ func (w *appWriter) drain(force bool) {
 	<-w.finished
 }
 
-func (w *appWriter) isDraining() bool {
+func (w *AppWriter) isDraining() bool {
 	select {
 	case <-w.draining:
 		return true

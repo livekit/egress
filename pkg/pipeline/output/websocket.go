@@ -11,11 +11,16 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 )
 
-func buildWebsocketOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
+type WebsocketOutput struct {
+	sink *app.Sink
+}
+
+func buildWebsocketOutput(bin *gst.Bin, p *config.OutputConfig) (*WebsocketOutput, error) {
 	writer, err := newWebSocketSink(p.WebsocketUrl, types.MimeTypeRaw, p.MutedChan)
 	if err != nil {
 		return nil, err
@@ -59,19 +64,25 @@ func buildWebsocketOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
 		},
 	})
 
-	bin := gst.NewBin("output")
 	if err = bin.Add(sink.Element); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	ghostPad := gst.NewGhostPad("sink", sink.GetStaticPad("sink"))
-	if !bin.AddPad(ghostPad.Pad) {
-		return nil, errors.ErrGhostPadFailed
+	return &WebsocketOutput{
+		sink: sink,
+	}, nil
+}
+
+func (o *WebsocketOutput) Link(audioTee, _ *gst.Element) error {
+	if audioTee != nil {
+		teePad := audioTee.GetRequestPad("src_%u")
+		sinkPad := o.sink.GetStaticPad("sink")
+		if err := builder.LinkPads("audio tee", teePad, "appsink", sinkPad); err != nil {
+			return err
+		}
 	}
 
-	return &OutputBin{
-		bin: bin,
-	}, nil
+	return nil
 }
 
 type websocketState string

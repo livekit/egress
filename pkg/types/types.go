@@ -2,11 +2,16 @@ package types
 
 type MimeType string
 type Profile string
+type SourceType string
 type EgressType string
 type OutputType string
 type FileExtension string
 
 const (
+	// source types
+	SourceTypeWeb SourceType = "web"
+	SourceTypeSDK SourceType = "sdk"
+
 	// input types
 	MimeTypeAAC  MimeType = "audio/aac"
 	MimeTypeOpus MimeType = "audio/opus"
@@ -20,20 +25,22 @@ const (
 	ProfileHigh     Profile = "high"
 
 	// egress types
-	EgressTypeStream        EgressType = "stream"
-	EgressTypeWebsocket     EgressType = "websocket"
-	EgressTypeFile          EgressType = "file"
-	EgressTypeSegmentedFile EgressType = "segments"
+	EgressTypeStream    EgressType = "stream"
+	EgressTypeWebsocket EgressType = "websocket"
+	EgressTypeFile      EgressType = "file"
+	EgressTypeSegments  EgressType = "segments"
 
 	// output types
-	OutputTypeRaw  OutputType = "audio/x-raw"
-	OutputTypeOGG  OutputType = "audio/ogg"
-	OutputTypeIVF  OutputType = "video/x-ivf"
-	OutputTypeMP4  OutputType = "video/mp4"
-	OutputTypeTS   OutputType = "video/mp2t"
-	OutputTypeWebM OutputType = "video/webm"
-	OutputTypeRTMP OutputType = "rtmp"
-	OutputTypeHLS  OutputType = "application/x-mpegurl"
+	OutputTypeUnknown OutputType = ""
+	OutputTypeRaw     OutputType = "audio/x-raw"
+	OutputTypeOGG     OutputType = "audio/ogg"
+	OutputTypeIVF     OutputType = "video/x-ivf"
+	OutputTypeMP4     OutputType = "video/mp4"
+	OutputTypeTS      OutputType = "video/mp2t"
+	OutputTypeWebM    OutputType = "video/webm"
+	OutputTypeRTMP    OutputType = "rtmp"
+	OutputTypeHLS     OutputType = "application/x-mpegurl"
+	OutputTypeJSON    OutputType = "application/json"
 
 	// file extensions
 	FileExtensionRaw  = ".raw"

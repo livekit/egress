@@ -8,8 +8,9 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/input/sdk"
-	"github.com/livekit/egress/pkg/pipeline/input/web"
+	"github.com/livekit/egress/pkg/pipeline/sink"
+	"github.com/livekit/egress/pkg/pipeline/source"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -78,7 +79,7 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 	switch {
 	case element == elementGstRtmp2Sink:
 		// bad URI or could not connect. Remove rtmp output
-		url, err := p.out.GetUrlFromName(name)
+		url, err := p.out.GetStreamUrl(name)
 		if err != nil {
 			logger.Warnw("rtmp output not found", err, "url", url)
 			return err
@@ -89,7 +90,7 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 		if message == "streaming stopped, reason not-negotiated (-4)" {
 			// send eos to app src
 			logger.Debugw("streaming stopped", "name", name)
-			p.in.(*sdk.SDKInput).StreamStopped(name)
+			p.src.(*source.SDKSource).StreamStopped(name)
 			return nil
 		}
 
@@ -133,19 +134,16 @@ func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
 		return
 	}
 
-	switch msg.Source() {
-	case sdk.AudioAppSource, sdk.VideoAppSource:
-		switch s := p.in.(type) {
-		case *sdk.SDKInput:
-			s.Playing(msg.Source())
-		}
+	switch s := msg.Source(); s {
+	case source.AudioAppSource, source.VideoAppSource:
+		p.src.(*source.SDKSource).Playing(s)
 
 	case pipelineSource:
 		p.playing = true
-		switch s := p.in.(type) {
-		case *sdk.SDKInput:
-			p.updateStartTime(s.GetStartTime())
-		case *web.WebInput:
+		switch p.SourceType {
+		case types.SourceTypeSDK:
+			p.updateStartTime(p.src.(*source.SDKSource).GetStartTime())
+		case types.SourceTypeWeb:
 			p.updateStartTime(time.Now().UnixNano())
 		}
 	}
@@ -165,12 +163,9 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 			}
 
 			logger.Debugw("fragment opened", "location", filepath, "running time", t)
-
-			if p.playlistWriter != nil {
-				if err = p.playlistWriter.StartSegment(filepath, t); err != nil {
-					logger.Errorw("failed to register new segment with playlist writer", err, "location", filepath, "running time", t)
-					return err
-				}
+			if err = p.getSegmentSink().StartSegment(filepath, t); err != nil {
+				logger.Errorw("failed to register new segment with playlist writer", err, "location", filepath, "running time", t)
+				return err
 			}
 
 		case fragmentClosedMessage:
@@ -185,7 +180,7 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 			// We need to dispatch to a queue to:
 			// 1. Avoid concurrent access to the SegmentsInfo structure
 			// 2. Ensure that playlists are uploaded in the same order they are enqueued to avoid an older playlist overwriting a newer one
-			if err = p.enqueueSegmentUpload(filepath, t); err != nil {
+			if err = p.getSegmentSink().EnqueueSegmentUpload(filepath, t); err != nil {
 				logger.Errorw("failed to end segment with playlist writer", err, "running time", t)
 				return err
 			}
@@ -215,4 +210,8 @@ func getSegmentParamsFromGstStructure(s *gst.Structure) (filepath string, time i
 	}
 
 	return filepath, int64(ti), nil
+}
+
+func (p *Pipeline) getSegmentSink() *sink.SegmentSink {
+	return p.sinks[types.EgressTypeSegments].(*sink.SegmentSink)
 }

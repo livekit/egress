@@ -1,15 +1,14 @@
-package builder
+package input
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/pion/webrtc/v3"
 	"github.com/tinyzimmer/go-gst/gst"
-	"github.com/tinyzimmer/go-gst/gst/app"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/types"
 )
 
@@ -17,54 +16,52 @@ type VideoInput struct {
 	elements []*gst.Element
 }
 
-func NewWebVideoInput(p *config.PipelineConfig) (*VideoInput, error) {
+func newVideoInput(bin *gst.Bin, p *config.PipelineConfig) (*VideoInput, error) {
 	v := &VideoInput{}
 
-	if err := v.buildWebDecoder(p); err != nil {
-		return nil, err
-	}
-	if err := v.buildEncoder(p); err != nil {
-		return nil, err
-	}
-	return v, nil
-}
+	switch p.SourceType {
+	case types.SourceTypeSDK:
+		if err := v.buildSDKDecoder(p); err != nil {
+			return nil, err
+		}
 
-func NewSDKVideoInput(p *config.PipelineConfig, src *app.Source, codec webrtc.RTPCodecParameters) (*VideoInput, error) {
-	v := &VideoInput{}
-
-	if err := v.buildSDKDecoder(p, src, codec); err != nil {
-		return nil, err
-	}
-	if !p.VideoTranscoding {
-		return v, nil
-	}
-	if err := v.buildEncoder(p); err != nil {
-		return nil, err
+	case types.SourceTypeWeb:
+		if err := v.buildWebDecoder(p); err != nil {
+			return nil, err
+		}
 	}
 
-	return v, nil
-}
+	if p.VideoTranscoding {
+		if err := v.buildEncoder(p); err != nil {
+			return nil, err
+		}
+	}
 
-func (v *VideoInput) AddToBin(bin *gst.Bin) error {
-	err := bin.AddMany(v.elements...)
+	queue, err := builder.BuildQueue(Latency, false)
 	if err != nil {
-		return errors.ErrGstPipelineError(err)
+		return nil, err
+	}
+	v.elements = append(v.elements, queue)
+
+	// Add elements to bin
+	if err = bin.AddMany(v.elements...); err != nil {
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	return nil
+	return v, nil
 }
 
-func (v *VideoInput) Link() error {
+func (v *VideoInput) Link() (*gst.GhostPad, error) {
 	err := gst.ElementLinkMany(v.elements...)
 	if err != nil {
-		return errors.ErrGstPipelineError(err)
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	return nil
+	return gst.NewGhostPad("video_src", v.elements[len(v.elements)-1].GetStaticPad("src")), nil
 }
 
 func (v *VideoInput) GetSrcPad() *gst.Pad {
-	return getSrcPad(v.elements)
+	return builder.GetSrcPad(v.elements)
 }
 
 func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
@@ -82,7 +79,7 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	videoQueue, err := buildQueue(Latency/10, true)
+	videoQueue, err := builder.BuildQueue(Latency/10, true)
 	if err != nil {
 		return err
 	}
@@ -106,7 +103,8 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, codec webrtc.RTPCodecParameters) error {
+func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
+	src := p.VideoSrc
 	src.Element.SetArg("format", "time")
 	if err := src.Element.SetProperty("is-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -114,11 +112,11 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 
 	v.elements = append(v.elements, src.Element)
 	switch {
-	case strings.EqualFold(codec.MimeType, string(types.MimeTypeH264)):
+	case strings.EqualFold(p.VideoCodecParams.MimeType, string(types.MimeTypeH264)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
-				codec.PayloadType, codec.ClockRate,
+				p.VideoCodecParams.PayloadType, p.VideoCodecParams.ClockRate,
 			),
 		)); err != nil {
 			return errors.ErrGstPipelineError(err)
@@ -148,11 +146,11 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 			return nil
 		}
 
-	case strings.EqualFold(codec.MimeType, string(types.MimeTypeVP8)):
+	case strings.EqualFold(p.VideoCodecParams.MimeType, string(types.MimeTypeVP8)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
-				codec.PayloadType, codec.ClockRate,
+				p.VideoCodecParams.PayloadType, p.VideoCodecParams.ClockRate,
 			),
 		)); err != nil {
 			return errors.ErrGstPipelineError(err)
@@ -176,10 +174,10 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 		v.elements = append(v.elements, vp8Dec)
 
 	default:
-		return errors.ErrNotSupported(codec.MimeType)
+		return errors.ErrNotSupported(p.VideoCodecParams.MimeType)
 	}
 
-	videoQueue, err := buildQueue(Latency/10, true)
+	videoQueue, err := builder.BuildQueue(Latency/10, true)
 	if err != nil {
 		return err
 	}
@@ -218,7 +216,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 
 func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 	// Put a queue in front of the encoder for pipelining with the stage before
-	videoQueue, err := buildQueue(Latency/10, false)
+	videoQueue, err := builder.BuildQueue(Latency/10, false)
 	if err != nil {
 		return err
 	}
@@ -242,10 +240,12 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 			}
 		}
 
-		if p.OutputType == types.OutputTypeHLS {
-			// Avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
-			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
-				return errors.ErrGstPipelineError(err)
+		if conf, ok := p.Outputs[types.EgressTypeSegments]; ok {
+			if conf.OutputType == types.OutputTypeHLS {
+				// Avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
+				if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
+					return errors.ErrGstPipelineError(err)
+				}
 			}
 		}
 

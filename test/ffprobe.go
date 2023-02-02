@@ -14,18 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/pipeline/input/builder"
+	"github.com/livekit/egress/pkg/pipeline/input"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
 
-type ResultType int
-
 const (
-	ResultTypeFile ResultType = iota
-	ResultTypeStream
-	ResultTypeSegments
-
 	maxRetries = 5
 	minDelay   = time.Millisecond * 100
 	maxDelay   = time.Second * 5
@@ -111,19 +105,19 @@ func verifyFile(t *testing.T, conf *TestConfig, p *config.PipelineConfig, res *l
 	require.False(t, strings.Contains(storagePath, "{"))
 
 	// download from cloud storage
-	if p.UploadConfig != nil {
+	if uploadConfig := p.Outputs[types.EgressTypeFile].UploadConfig; uploadConfig != nil {
 		localPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, storagePath)
-		download(t, p.UploadConfig, localPath, storagePath)
-		download(t, p.UploadConfig, localPath+".json", storagePath+".json")
+		download(t, uploadConfig, localPath, storagePath)
+		download(t, uploadConfig, localPath+".json", storagePath+".json")
 	}
 
 	// verify
-	verify(t, localPath, p, res, ResultTypeFile, conf.Muting, conf.sourceFramerate)
+	verify(t, localPath, p, res, types.EgressTypeFile, conf.Muting, conf.sourceFramerate)
 }
 
 func verifyStreams(t *testing.T, p *config.PipelineConfig, conf *TestConfig, urls ...string) {
 	for _, url := range urls {
-		verify(t, url, p, nil, ResultTypeStream, false, conf.sourceFramerate)
+		verify(t, url, p, nil, types.EgressTypeStream, false, conf.sourceFramerate)
 	}
 }
 
@@ -144,27 +138,27 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, re
 	localPlaylistPath := segments.PlaylistName
 
 	// download from cloud storage
-	if p.UploadConfig != nil {
+	if uploadConfig := p.Outputs[types.EgressTypeSegments].UploadConfig; uploadConfig != nil {
 		base := storedPlaylistPath[:len(storedPlaylistPath)-5]
 		localPlaylistPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, storedPlaylistPath)
-		download(t, p.UploadConfig, localPlaylistPath, storedPlaylistPath)
-		download(t, p.UploadConfig, localPlaylistPath+".json", storedPlaylistPath+".json")
+		download(t, uploadConfig, localPlaylistPath, storedPlaylistPath)
+		download(t, uploadConfig, localPlaylistPath+".json", storedPlaylistPath+".json")
 		for i := 0; i < int(segments.SegmentCount); i++ {
 			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
 			localPath := fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, cloudPath)
-			download(t, p.UploadConfig, localPath, cloudPath)
+			download(t, uploadConfig, localPath, cloudPath)
 		}
 	}
 
 	// verify
-	verify(t, localPlaylistPath, p, res, ResultTypeSegments, conf.Muting, conf.sourceFramerate)
+	verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, conf.Muting, conf.sourceFramerate)
 }
 
-func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.EgressInfo, resultType ResultType, withMuting bool, sourceFramerate float64) {
-	info, err := ffprobe(input)
+func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.EgressInfo, egressType types.EgressType, withMuting bool, sourceFramerate float64) {
+	info, err := ffprobe(in)
 	require.NoError(t, err, "ffprobe error - input does not exist")
 
-	switch p.OutputType {
+	switch p.Outputs[egressType].OutputType {
 	case types.OutputTypeRaw:
 		require.Equal(t, 0, info.Format.ProbeScore)
 	case types.OutputTypeIVF:
@@ -173,8 +167,8 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 		require.Equal(t, 100, info.Format.ProbeScore)
 	}
 
-	switch resultType {
-	case ResultTypeFile:
+	switch egressType {
+	case types.EgressTypeFile:
 		// size
 		require.NotEqual(t, "0", info.Format.Size)
 
@@ -184,7 +178,7 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 		require.NoError(t, err)
 
 		// file duration can be different from egress duration based on keyframes, muting, and latency
-		delta := float64(builder.Latency) / 1e9
+		delta := float64(input.Latency) / 1e9
 		switch p.Info.Request.(type) {
 		case *livekit.EgressInfo_RoomComposite:
 			require.InDelta(t, expected, actual, delta)
@@ -198,10 +192,10 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 			}
 		}
 
-	case ResultTypeSegments:
+	case types.EgressTypeSegments:
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
-		require.Equal(t, int64(actual/float64(p.SegmentDuration))+1, res.GetSegments().SegmentCount)
+		require.Equal(t, int64(actual/float64(p.Outputs[egressType].SegmentDuration))+1, res.GetSegments().SegmentCount)
 
 	}
 
@@ -233,7 +227,7 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 			require.Equal(t, 2, stream.Channels)
 
 			// audio bitrate
-			if p.OutputType == types.OutputTypeMP4 {
+			if p.Outputs[egressType].OutputType == types.OutputTypeMP4 {
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)
@@ -261,7 +255,7 @@ func verify(t *testing.T, input string, p *config.PipelineConfig, res *livekit.E
 				require.Equal(t, "vp8", stream.CodecName)
 			}
 
-			switch p.OutputType {
+			switch p.Outputs[egressType].OutputType {
 			case types.OutputTypeIVF:
 				require.Equal(t, "vp8", stream.CodecName)
 
