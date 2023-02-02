@@ -146,11 +146,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_RoomComposite{
 			RoomComposite: clone,
 		}
-		if f := clone.GetFile(); f != nil {
-			redactOutputs(f)
-		} else if s := clone.GetSegments(); s != nil {
-			redactOutputs(s)
-		}
+		redactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeWeb
 		p.Info.RoomName = req.RoomComposite.RoomName
@@ -185,11 +181,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_Web{
 			Web: clone,
 		}
-		if f := clone.GetFile(); f != nil {
-			redactOutputs(f)
-		} else if s := clone.GetSegments(); s != nil {
-			redactOutputs(s)
-		}
+		redactEncodedOutputs(clone)
 
 		connectionInfoRequired = false
 		p.SourceType = types.SourceTypeWeb
@@ -224,11 +216,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_TrackComposite{
 			TrackComposite: clone,
 		}
-		if f := clone.GetFile(); f != nil {
-			redactOutputs(f)
-		} else if s := clone.GetSegments(); s != nil {
-			redactOutputs(s)
-		}
+		redactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
 		p.Info.RoomName = req.TrackComposite.RoomName
@@ -262,7 +250,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 			Track: clone,
 		}
 		if f := clone.GetFile(); f != nil {
-			redactOutputs(f)
+			redactUpload(f)
 		}
 
 		p.SourceType = types.SourceTypeSDK

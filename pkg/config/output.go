@@ -461,7 +461,32 @@ func (p *PipelineConfig) getUploadConfig(upload uploadConf) interface{} {
 	return nil
 }
 
-func redactOutputs(upload uploadConf) {
+// TODO
+func redactStreamKey(url string) {
+
+}
+
+func redactEncodedOutputs(out interface {
+	GetFile() *livekit.EncodedFileOutput
+	GetSegments() *livekit.SegmentedFileOutput
+	GetFileOutput() *livekit.EncodedFileOutput
+	GetSegmentOutput() *livekit.SegmentedFileOutput
+}) {
+	if f := out.GetFile(); f != nil {
+		redactUpload(f)
+	} else if s := out.GetSegments(); s != nil {
+		redactUpload(s)
+	} else {
+		if f = out.GetFileOutput(); f != nil {
+			redactUpload(f)
+		}
+		if s = out.GetSegmentOutput(); s != nil {
+			redactUpload(s)
+		}
+	}
+}
+
+func redactUpload(upload uploadConf) {
 	if s3 := upload.GetS3(); s3 != nil {
 		s3.AccessKey = redact(s3.AccessKey)
 		s3.Secret = redact(s3.Secret)

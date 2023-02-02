@@ -195,6 +195,7 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 }
 
 func awaitIdle(t *testing.T, svc *service.Service) {
+	svc.KillAll()
 	for i := 0; i < 30; i++ {
 		status := getStatus(t, svc)
 		if len(status) == 1 {

@@ -188,3 +188,7 @@ func (s *Service) Stop(kill bool) {
 		s.manager.killAll()
 	}
 }
+
+func (s *Service) KillAll() {
+	s.manager.killAll()
+}
