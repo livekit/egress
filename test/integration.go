@@ -4,7 +4,6 @@ package test
 
 import (
 	"context"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -32,11 +31,6 @@ const (
 	webUrl       = "https://www.youtube.com/watch?v=wjQq0nSGS28&t=5205s"
 )
 
-var (
-	//go:embed templates
-	templateEmbedFs embed.FS
-)
-
 type testCase struct {
 	name           string
 	audioOnly      bool
@@ -61,7 +55,7 @@ type testCase struct {
 	expectVideoTranscoding bool
 }
 
-func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rpcServer egress.RPCServer, bus psrpc.MessageBus) {
+func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rpcServer egress.RPCServer, bus psrpc.MessageBus, templateFs fs.FS) {
 	// connect to room
 	room, err := lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
 		APIKey:              conf.ApiKey,
@@ -83,10 +77,8 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	// start debug handler
 	svc.StartDebugHandlers()
 
-	rfs, err := fs.Sub(templateEmbedFs, "templates")
-	require.NoError(t, err)
-
-	err = svc.StartTemplatesServer(rfs)
+	// start templates handler
+	err = svc.StartTemplatesServer(templateFs)
 	require.NoError(t, err)
 
 	go func() {
