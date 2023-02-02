@@ -1,7 +1,6 @@
 package service
 
 import (
-	"embed"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -9,23 +8,13 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-var (
-	//go:embed templates
-	templateEmbedFs embed.FS
-)
-
-func (s *Service) StartTemplatesServer() error {
+func (s *Service) StartTemplatesServer(fs fs.FS) error {
 	if s.conf.TemplatePort == 0 {
 		logger.Debugw("templates server disabled")
 		return nil
 	}
 
-	rfs, err := fs.Sub(templateEmbedFs, "templates")
-	if err != nil {
-		return err
-	}
-
-	h := http.FileServer(http.FS(rfs))
+	h := http.FileServer(http.FS(fs))
 
 	mux := http.NewServeMux()
 	mux.Handle("/", h)
