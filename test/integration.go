@@ -302,8 +302,10 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 
 	update := getUpdate(t, conf, egressID)
 	require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE.String(), update.Status.String())
-	require.Len(t, update.GetStream().Info, 3)
-	for _, info := range update.GetStream().Info {
+	// require.Len(t, update.GetStream().Info, 3)
+	require.Len(t, update.GetStreamResults(), 3)
+	// for _, info := range update.GetStream().Info {
+	for _, info := range update.GetStreamResults() {
 		switch info.Url {
 		case streamUrl1, streamUrl2:
 			require.Equal(t, livekit.StreamInfo_ACTIVE.String(), info.Status.String())
@@ -356,8 +358,10 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	require.NotZero(t, res.EndedAt)
 
 	// check stream info
-	require.Len(t, res.GetStream().Info, 3)
-	for _, info := range res.GetStream().Info {
+	// require.Len(t, res.GetStream().Info, 3)
+	require.Len(t, res.GetStreamResults(), 3)
+	// for _, info := range res.GetStream().Info {
+	for _, info := range res.GetStreamResults() {
 		require.NotZero(t, info.StartedAt)
 		require.NotZero(t, info.EndedAt)
 

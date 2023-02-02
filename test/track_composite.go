@@ -54,9 +54,10 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 
 			trackRequest := &livekit.TrackCompositeEgressRequest{
 				RoomName: conf.room.Name(),
-				Output: &livekit.TrackCompositeEgressRequest_File{
-					File: fileOutput,
-				},
+				// Output: &livekit.TrackCompositeEgressRequest_File{
+				// 	File: fileOutput,
+				// },
+				FileOutput: fileOutput,
 			}
 
 			if !test.audioOnly {
@@ -108,10 +109,13 @@ func testTrackCompositeStream(t *testing.T, conf *TestConfig) {
 						RoomName:     conf.room.Name(),
 						AudioTrackId: audioTrackID,
 						VideoTrackId: videoTrackID,
-						Output: &livekit.TrackCompositeEgressRequest_Stream{
-							Stream: &livekit.StreamOutput{
-								Urls: []string{streamUrl1},
-							},
+						// Output: &livekit.TrackCompositeEgressRequest_Stream{
+						// 	Stream: &livekit.StreamOutput{
+						// 		Urls: []string{streamUrl1},
+						// 	},
+						// },
+						StreamOutput: &livekit.StreamOutput{
+							Urls: []string{streamUrl1},
 						},
 					},
 				},
@@ -166,11 +170,15 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 				RoomName:     conf.room.Name(),
 				AudioTrackId: aID,
 				VideoTrackId: vID,
-				Output: &livekit.TrackCompositeEgressRequest_Segments{
-					Segments: &livekit.SegmentedFileOutput{
-						FilenamePrefix: filepath,
-						PlaylistName:   test.playlist,
-					},
+				// Output: &livekit.TrackCompositeEgressRequest_Segments{
+				// 	Segments: &livekit.SegmentedFileOutput{
+				// 		FilenamePrefix: filepath,
+				// 		PlaylistName:   test.playlist,
+				// 	},
+				// },
+				SegmentOutput: &livekit.SegmentedFileOutput{
+					FilenamePrefix: filepath,
+					PlaylistName:   test.playlist,
 				},
 			}
 

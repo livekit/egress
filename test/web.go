@@ -28,9 +28,10 @@ func testWebFile(t *testing.T, conf *TestConfig) {
 		Request: &livekit.StartEgressRequest_Web{
 			Web: &livekit.WebEgressRequest{
 				Url: webUrl,
-				Output: &livekit.WebEgressRequest_File{
-					File: fileOutput,
-				},
+				// Output: &livekit.WebEgressRequest_File{
+				// 	File: fileOutput,
+				// },
+				FileOutput: fileOutput,
 			},
 		},
 	}
@@ -48,11 +49,15 @@ func testWebStream(t *testing.T, conf *TestConfig) {
 		Request: &livekit.StartEgressRequest_Web{
 			Web: &livekit.WebEgressRequest{
 				Url: webUrl,
-				Output: &livekit.WebEgressRequest_Stream{
-					Stream: &livekit.StreamOutput{
-						Protocol: livekit.StreamProtocol_RTMP,
-						Urls:     []string{streamUrl1},
-					},
+				// Output: &livekit.WebEgressRequest_Stream{
+				// 	Stream: &livekit.StreamOutput{
+				// 		Protocol: livekit.StreamProtocol_RTMP,
+				// 		Urls:     []string{streamUrl1},
+				// 	},
+				// },
+				StreamOutput: &livekit.StreamOutput{
+					Protocol: livekit.StreamProtocol_RTMP,
+					Urls:     []string{streamUrl1},
 				},
 			},
 		},
@@ -68,11 +73,15 @@ func testWebSegments(t *testing.T, conf *TestConfig) {
 
 	webRequest := &livekit.WebEgressRequest{
 		Url: webUrl,
-		Output: &livekit.WebEgressRequest_Segments{
-			Segments: &livekit.SegmentedFileOutput{
-				FilenamePrefix: getFilePath(conf.ServiceConfig, "web_{time}"),
-				PlaylistName:   "web_{time}.m3u8",
-			},
+		// Output: &livekit.WebEgressRequest_Segments{
+		// 	Segments: &livekit.SegmentedFileOutput{
+		// 		FilenamePrefix: getFilePath(conf.ServiceConfig, "web_{time}"),
+		// 		PlaylistName:   "web_{time}.m3u8",
+		// 	},
+		// },
+		SegmentOutput: &livekit.SegmentedFileOutput{
+			FilenamePrefix: getFilePath(conf.ServiceConfig, "web_{time}"),
+			PlaylistName:   "web_{time}.m3u8",
 		},
 	}
 

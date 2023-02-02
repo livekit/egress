@@ -68,9 +68,10 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				RoomName:  conf.room.Name(),
 				Layout:    "speaker-dark",
 				AudioOnly: test.audioOnly,
-				Output: &livekit.RoomCompositeEgressRequest_File{
-					File: fileOutput,
-				},
+				// Output: &livekit.RoomCompositeEgressRequest_File{
+				// 	File: fileOutput,
+				// },
+				FileOutput: fileOutput,
 			}
 
 			if test.options != nil {
@@ -115,11 +116,15 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 					RoomComposite: &livekit.RoomCompositeEgressRequest{
 						RoomName: conf.room.Name(),
 						Layout:   "grid-light",
-						Output: &livekit.RoomCompositeEgressRequest_Stream{
-							Stream: &livekit.StreamOutput{
-								Protocol: livekit.StreamProtocol_RTMP,
-								Urls:     []string{streamUrl1},
-							},
+						// Output: &livekit.RoomCompositeEgressRequest_Stream{
+						// 	Stream: &livekit.StreamOutput{
+						// 		Protocol: livekit.StreamProtocol_RTMP,
+						// 		Urls:     []string{streamUrl1},
+						// 	},
+						// },
+						StreamOutput: &livekit.StreamOutput{
+							Protocol: livekit.StreamProtocol_RTMP,
+							Urls:     []string{streamUrl1},
 						},
 					},
 				},
@@ -142,11 +147,15 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 				RoomComposite: &livekit.RoomCompositeEgressRequest{
 					RoomName: conf.RoomName,
 					Layout:   "speaker-light",
-					Output: &livekit.RoomCompositeEgressRequest_Stream{
-						Stream: &livekit.StreamOutput{
-							Protocol: livekit.StreamProtocol_RTMP,
-							Urls:     []string{badStreamUrl},
-						},
+					// Output: &livekit.RoomCompositeEgressRequest_Stream{
+					// 	Stream: &livekit.StreamOutput{
+					// 		Protocol: livekit.StreamProtocol_RTMP,
+					// 		Urls:     []string{badStreamUrl},
+					// 	},
+					// },
+					StreamOutput: &livekit.StreamOutput{
+						Protocol: livekit.StreamProtocol_RTMP,
+						Urls:     []string{badStreamUrl},
 					},
 				},
 			},
@@ -214,11 +223,15 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				RoomName:  conf.RoomName,
 				Layout:    "grid-dark",
 				AudioOnly: test.audioOnly,
-				Output: &livekit.RoomCompositeEgressRequest_Segments{
-					Segments: &livekit.SegmentedFileOutput{
-						FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
-						PlaylistName:   test.playlist,
-					},
+				// Output: &livekit.RoomCompositeEgressRequest_Segments{
+				// 	Segments: &livekit.SegmentedFileOutput{
+				// 		FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
+				// 		PlaylistName:   test.playlist,
+				// 	},
+				// },
+				SegmentOutput: &livekit.SegmentedFileOutput{
+					FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
+					PlaylistName:   test.playlist,
 				},
 			}
 
