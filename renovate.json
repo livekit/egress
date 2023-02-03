@@ -12,6 +12,14 @@
     {
       "matchPackagePrefixes": ["github.com/livekit/"],
       "groupName": "livekit deps"
+    },
+    {
+      "matchPaths": [".github/workflows/*"],
+      "groupName": "github workflows"
+    },
+    {
+      "matchDatasources": ["docker"],
+      "groupName": "docker"
     }
   ]
 }
