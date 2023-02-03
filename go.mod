@@ -22,6 +22,7 @@ require (
 	github.com/livekit/server-sdk-go v1.0.7-0.20230112195259-5bc292cbbdf2
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.7.13
+	github.com/pion/rtp/v2 v2.0.0
 	github.com/pion/webrtc/v3 v3.1.52
 	github.com/prometheus/client_golang v1.14.0
 	github.com/stretchr/testify v1.8.1
