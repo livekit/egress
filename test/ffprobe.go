@@ -93,11 +93,11 @@ func verifyFile(t *testing.T, conf *TestConfig, p *config.PipelineConfig, res *l
 
 	// file info
 	var fileRes *livekit.FileInfo
-	if v2 {
-		fileRes = res.FileResult
-	} else {
-		fileRes = res.GetFile()
-	}
+	// if v2 {
+	// 	fileRes = res.FileResult
+	// } else {
+	fileRes = res.GetFile()
+	// }
 	require.NotNil(t, fileRes)
 
 	require.NotEmpty(t, fileRes.Location)
@@ -134,11 +134,11 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, re
 
 	// segments info
 	var segments *livekit.SegmentsInfo
-	if v2 {
-		segments = res.GetSegmentResult()
-	} else {
-		segments = res.GetSegments()
-	}
+	// if v2 {
+	// 	segments = res.GetSegmentResult()
+	// } else {
+	segments = res.GetSegments()
+	// }
 	require.NotEmpty(t, segments.PlaylistName)
 	require.NotEmpty(t, segments.PlaylistLocation)
 	require.Greater(t, segments.Size, int64(0))
@@ -184,11 +184,11 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 
 		// duration
 		var fileRes *livekit.FileInfo
-		if v2 {
-			fileRes = res.FileResult
-		} else {
-			fileRes = res.GetFile()
-		}
+		// if v2 {
+		// 	fileRes = res.FileResult
+		// } else {
+		fileRes = res.GetFile()
+		// }
 		expected := float64(fileRes.Duration) / 1e9
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
@@ -212,11 +212,11 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
 		var segments *livekit.SegmentsInfo
-		if v2 {
-			segments = res.GetSegmentResult()
-		} else {
-			segments = res.GetSegments()
-		}
+		// if v2 {
+		// 	segments = res.GetSegmentResult()
+		// } else {
+		segments = res.GetSegments()
+		// }
 		require.Equal(t, int64(actual/float64(p.Outputs[egressType].SegmentDuration))+1, segments.SegmentCount)
 	}
 
