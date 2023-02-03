@@ -131,6 +131,8 @@ func (s *Service) StartEgress(ctx context.Context, req *livekit.StartEgressReque
 		return nil, err
 	}
 
+	logger.Infow("pipeline config validated successfully", "egressID", req.EgressId, "info", p.Info)
+
 	err = s.manager.launchHandler(req, 1)
 	if err != nil {
 		return nil, err
