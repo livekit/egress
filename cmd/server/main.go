@@ -1,7 +1,9 @@
 package main
 
 import (
+	"embed"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -21,6 +23,11 @@ import (
 	"github.com/livekit/protocol/logger"
 	lkredis "github.com/livekit/protocol/redis"
 	"github.com/livekit/psrpc"
+)
+
+var (
+	//go:embed templates
+	templateEmbedFs embed.FS
 )
 
 func main() {
@@ -123,7 +130,12 @@ func runService(c *cli.Context) error {
 		}
 	}()
 
-	err = svc.StartTemplatesServer()
+	rfs, err := fs.Sub(templateEmbedFs, "templates")
+	if err != nil {
+		return err
+	}
+
+	err = svc.StartTemplatesServer(rfs)
 	if err != nil {
 		return err
 	}

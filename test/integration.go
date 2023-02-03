@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"math/rand"
 	"testing"
 	"time"
@@ -54,7 +55,7 @@ type testCase struct {
 	expectVideoTranscoding bool
 }
 
-func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rpcServer egress.RPCServer, bus psrpc.MessageBus) {
+func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rpcServer egress.RPCServer, bus psrpc.MessageBus, templateFs fs.FS) {
 	// connect to room
 	room, err := lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
 		APIKey:              conf.ApiKey,
@@ -76,7 +77,8 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	// start debug handler
 	svc.StartDebugHandlers()
 
-	err = svc.StartTemplatesServer()
+	// start templates handler
+	err = svc.StartTemplatesServer(templateFs)
 	require.NoError(t, err)
 
 	go func() {
