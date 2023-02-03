@@ -10,8 +10,6 @@ import (
 	"github.com/livekit/protocol/tracer"
 )
 
-const Latency = uint64(41e8) // slightly larger than max audio latency
-
 type Bin struct {
 	bin *gst.Bin
 

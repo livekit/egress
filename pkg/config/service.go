@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path"
 
@@ -72,7 +73,7 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	}
 
 	if conf.TemplateBase == "" {
-		conf.TemplateBase = "https://egress-composite.livekit.io" // fmt.Sprintf(defaultTemplateBaseTemplate, conf.TemplatePort)
+		conf.TemplateBase = fmt.Sprintf(defaultTemplateBaseTemplate, conf.TemplatePort)
 	}
 
 	conf.LocalOutputDirectory = path.Clean(conf.LocalOutputDirectory)

@@ -2,7 +2,6 @@ package output
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 )
 
@@ -37,36 +35,40 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 		outputs: make(map[types.EgressType]output),
 	}
 
-	for egressType, conf := range p.Outputs {
-		logger.Infow("output config", "conf", fmt.Sprintf("%+v", conf))
+	for egressType, out := range p.Outputs {
+		audioQueue, videoQueue, err := buildQueues(p, b.bin)
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+
 		switch egressType {
 		case types.EgressTypeFile:
-			o, err := buildFileOutput(b.bin, conf)
+			o, err := buildFileOutput(out, b.bin, audioQueue, videoQueue)
 			if err != nil {
 				return nil, err
 			}
-			b.outputs[conf.EgressType] = o
+			b.outputs[out.EgressType] = o
 
 		case types.EgressTypeSegments:
-			o, err := buildSegmentOutput(b.bin, conf)
+			o, err := buildSegmentOutput(out, b.bin, audioQueue, videoQueue)
 			if err != nil {
 				return nil, err
 			}
-			b.outputs[conf.EgressType] = o
+			b.outputs[out.EgressType] = o
 
 		case types.EgressTypeStream:
-			o, err := buildStreamOutput(b.bin, conf)
+			o, err := buildStreamOutput(out, b.bin, audioQueue, videoQueue)
 			if err != nil {
 				return nil, err
 			}
-			b.outputs[conf.EgressType] = o
+			b.outputs[out.EgressType] = o
 
 		case types.EgressTypeWebsocket:
-			o, err := buildWebsocketOutput(b.bin)
+			o, err := buildWebsocketOutput(b.bin, audioQueue, videoQueue)
 			if err != nil {
 				return nil, err
 			}
-			b.outputs[conf.EgressType] = o
+			b.outputs[out.EgressType] = o
 
 		default:
 			return nil, errors.ErrInvalidInput("egress type")
@@ -109,6 +111,30 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 	}
 
 	return b, nil
+}
+
+func buildQueues(p *config.PipelineConfig, bin *gst.Bin) (audioQueue, videoQueue *gst.Element, err error) {
+	if p.AudioEnabled {
+		audioQueue, err = builder.BuildQueue(builder.Latency/10, true)
+		if err != nil {
+			return
+		}
+		if err = bin.Add(audioQueue); err != nil {
+			return
+		}
+	}
+
+	if p.VideoEnabled {
+		videoQueue, err = builder.BuildQueue(builder.Latency/10, true)
+		if err != nil {
+			return
+		}
+		if err = bin.Add(videoQueue); err != nil {
+			return
+		}
+	}
+
+	return
 }
 
 func (b *Bin) Link(audioSrc, videoSrc *gst.GhostPad) error {

@@ -17,7 +17,6 @@ type AudioInput struct {
 	testSrc []*gst.Element
 	mixer   []*gst.Element
 	encoder *gst.Element
-	queue   *gst.Element
 }
 
 func newAudioInput(bin *gst.Bin, p *config.PipelineConfig) (*AudioInput, error) {
@@ -41,33 +40,24 @@ func newAudioInput(bin *gst.Bin, p *config.PipelineConfig) (*AudioInput, error) 
 		}
 	}
 
-	queue, err := builder.BuildQueue(Latency, false)
-	if err != nil {
-		return nil, err
-	}
-	a.queue = queue
-
 	// Add elements to bin
-	if err = bin.AddMany(a.decoder...); err != nil {
+	if err := bin.AddMany(a.decoder...); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 	if a.testSrc != nil {
-		if err = bin.AddMany(a.testSrc...); err != nil {
+		if err := bin.AddMany(a.testSrc...); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.mixer != nil {
-		if err = bin.AddMany(a.mixer...); err != nil {
+		if err := bin.AddMany(a.mixer...); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.encoder != nil {
-		if err = bin.Add(a.encoder); err != nil {
+		if err := bin.Add(a.encoder); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
-	}
-	if err = bin.Add(a.queue); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	return a, nil
@@ -94,6 +84,7 @@ func (a *AudioInput) Link() (*gst.GhostPad, error) {
 		}
 	}
 
+	var srcPad *gst.Pad
 	if a.encoder != nil {
 		if a.mixer != nil {
 			if err := builder.LinkPads("audio mixer", builder.GetSrcPad(a.mixer), "audio encoder", a.encoder.GetStaticPad("sink")); err != nil {
@@ -104,20 +95,14 @@ func (a *AudioInput) Link() (*gst.GhostPad, error) {
 				return nil, err
 			}
 		}
-		if err := a.encoder.Link(a.queue); err != nil {
-			return nil, errors.ErrPadLinkFailed("audio encoder", "audio queue", err.Error())
-		}
+		srcPad = a.encoder.GetStaticPad("src")
 	} else if a.mixer != nil {
-		if err := a.mixer[len(a.mixer)-1].Link(a.queue); err != nil {
-			return nil, errors.ErrPadLinkFailed("audio mixer", "audio queue", err.Error())
-		}
+		srcPad = builder.GetSrcPad(a.mixer)
 	} else {
-		if err := a.decoder[len(a.decoder)-1].Link(a.queue); err != nil {
-			return nil, errors.ErrPadLinkFailed("audio decoder", "audio queue", err.Error())
-		}
+		srcPad = builder.GetSrcPad(a.decoder)
 	}
 
-	return gst.NewGhostPad("audio_src", a.queue.GetStaticPad("src")), nil
+	return gst.NewGhostPad("audio_src", srcPad), nil
 }
 
 func (a *AudioInput) buildWebDecoder(p *config.PipelineConfig) error {
@@ -179,7 +164,7 @@ func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig) error {
 }
 
 func (a *AudioInput) addConverter(p *config.PipelineConfig) error {
-	audioQueue, err := builder.BuildQueue(Latency/10, true)
+	audioQueue, err := builder.BuildQueue(builder.Latency/10, true)
 	if err != nil {
 		return err
 	}
@@ -228,7 +213,7 @@ func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 	// set latency slightly higher than max audio appsrc latency
-	if err = audioMixer.SetProperty("latency", Latency); err != nil {
+	if err = audioMixer.SetProperty("latency", builder.Latency); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 	mixedCaps, err := getCapsFilter(p)

@@ -8,6 +8,8 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 )
 
+const Latency = uint64(41e8) // slightly larger than max audio latency
+
 type pad interface {
 	Link(*gst.Pad) gst.PadLinkReturn
 }

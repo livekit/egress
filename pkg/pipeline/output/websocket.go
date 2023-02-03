@@ -13,10 +13,12 @@ import (
 )
 
 type WebsocketOutput struct {
-	sink *app.Sink
+	audioQueue *gst.Element
+	videoQueue *gst.Element
+	sink       *app.Sink
 }
 
-func buildWebsocketOutput(bin *gst.Bin) (*WebsocketOutput, error) {
+func buildWebsocketOutput(bin *gst.Bin, audioQueue, videoQueue *gst.Element) (*WebsocketOutput, error) {
 	appSink, err := app.NewAppSink()
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
@@ -27,7 +29,9 @@ func buildWebsocketOutput(bin *gst.Bin) (*WebsocketOutput, error) {
 	}
 
 	return &WebsocketOutput{
-		sink: appSink,
+		audioQueue: audioQueue,
+		videoQueue: videoQueue,
+		sink:       appSink,
 	}, nil
 }
 
@@ -69,10 +73,15 @@ func (o *WebsocketOutput) SetSink(writer *sink.WebsocketSink) {
 func (o *WebsocketOutput) Link(audioTee, _ *gst.Element) error {
 	// link audio to sink
 	if audioTee != nil {
-		teePad := audioTee.GetRequestPad("src_%u")
-		sinkPad := o.sink.GetStaticPad("sink")
-		if err := builder.LinkPads("audio tee", teePad, "appsink", sinkPad); err != nil {
+		if err := builder.LinkPads(
+			"audio tee", audioTee.GetRequestPad("src_%u"),
+			"audio queue", o.audioQueue.GetStaticPad("sink"),
+		); err != nil {
 			return err
+		}
+
+		if err := o.audioQueue.Link(o.sink.Element); err != nil {
+			return errors.ErrPadLinkFailed("audio queue", "app sink", err.Error())
 		}
 	}
 

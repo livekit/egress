@@ -18,13 +18,15 @@ type StreamOutput struct {
 	sync.RWMutex
 	protocol types.OutputType
 
-	mux   *gst.Element
-	tee   *gst.Element
-	sinks map[string]*streamSink
+	audioQueue *gst.Element
+	videoQueue *gst.Element
+	mux        *gst.Element
+	tee        *gst.Element
+	sinks      map[string]*streamSink
 }
 
-func buildStreamOutput(bin *gst.Bin, p *config.OutputConfig) (*StreamOutput, error) {
-	mux, err := buildStreamMux(p)
+func buildStreamOutput(out *config.OutputConfig, bin *gst.Bin, audioQueue, videoQueue *gst.Element) (*StreamOutput, error) {
+	mux, err := buildStreamMux(out)
 	if err != nil {
 		return nil, err
 	}
@@ -40,8 +42,8 @@ func buildStreamOutput(bin *gst.Bin, p *config.OutputConfig) (*StreamOutput, err
 	}
 
 	sinks := make(map[string]*streamSink)
-	for _, url := range p.StreamUrls {
-		sink, err := buildStreamSink(p.OutputType, url)
+	for _, url := range out.StreamUrls {
+		sink, err := buildStreamSink(out.OutputType, url)
 		if err != nil {
 			return nil, err
 		}
@@ -54,15 +56,17 @@ func buildStreamOutput(bin *gst.Bin, p *config.OutputConfig) (*StreamOutput, err
 	}
 
 	return &StreamOutput{
-		protocol: p.OutputType,
-		mux:      mux,
-		tee:      tee,
-		sinks:    sinks,
+		protocol:   out.OutputType,
+		audioQueue: audioQueue,
+		videoQueue: videoQueue,
+		mux:        mux,
+		tee:        tee,
+		sinks:      sinks,
 	}, nil
 }
 
-func buildStreamMux(p *config.OutputConfig) (*gst.Element, error) {
-	switch p.OutputType {
+func buildStreamMux(out *config.OutputConfig) (*gst.Element, error) {
+	switch out.OutputType {
 	case types.OutputTypeRTMP:
 		mux, err := gst.NewElement("flvmux")
 		if err != nil {
@@ -119,18 +123,34 @@ func (o *StreamOutput) Link(audioTee, videoTee *gst.Element) error {
 
 	// link audio to mux
 	if audioTee != nil {
-		teePad := audioTee.GetRequestPad("src_%u")
-		muxPad := o.mux.GetRequestPad("audio")
-		if err := builder.LinkPads("audio tee", teePad, "file mux", muxPad); err != nil {
+		if err := builder.LinkPads(
+			"audio tee", audioTee.GetRequestPad("src_%u"),
+			"audio queue", o.audioQueue.GetStaticPad("sink"),
+		); err != nil {
+			return err
+		}
+
+		if err := builder.LinkPads(
+			"audio queue", o.audioQueue.GetStaticPad("src"),
+			"stream mux", o.mux.GetRequestPad("audio"),
+		); err != nil {
 			return err
 		}
 	}
 
 	// link video to mux
 	if videoTee != nil {
-		teePad := videoTee.GetRequestPad("src_%u")
-		muxPad := o.mux.GetRequestPad("video")
-		if err := builder.LinkPads("video tee", teePad, "file mux", muxPad); err != nil {
+		if err := builder.LinkPads(
+			"video tee", videoTee.GetRequestPad("src_%u"),
+			"video queue", o.videoQueue.GetStaticPad("sink"),
+		); err != nil {
+			return err
+		}
+
+		if err := builder.LinkPads(
+			"video queue", o.videoQueue.GetStaticPad("src"),
+			"stream mux", o.mux.GetRequestPad("video"),
+		); err != nil {
 			return err
 		}
 	}
