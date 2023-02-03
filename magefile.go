@@ -35,11 +35,6 @@ func Proto() error {
 		return err
 	}
 
-	out := "pkg/ipc"
-	if err := os.MkdirAll(out, 0755); err != nil {
-		return err
-	}
-
 	protoc, err := mageutil.GetToolPath("protoc")
 	if err != nil {
 		return err
@@ -54,8 +49,8 @@ func Proto() error {
 	}
 
 	args := append([]string{
-		"--go_out", out,
-		"--go-grpc_out", out,
+		"--go_out", ".",
+		"--go-grpc_out", ".",
 		"--go_opt=paths=source_relative",
 		"--go-grpc_opt=paths=source_relative",
 		"--plugin=go=" + protocGoPath,
@@ -66,6 +61,7 @@ func Proto() error {
 
 	// generate grpc-related protos
 	cmd = exec.Command(protoc, args...)
+	cmd.Dir = "pkg/ipc"
 	mageutil.ConnectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
