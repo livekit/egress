@@ -29,8 +29,6 @@ type ServiceConfig struct {
 	PrometheusPort   int `yaml:"prometheus_port"`
 	DebugHandlerPort int `yaml:"debug_handler_port"` // Port used to launch the egress debug handler. 0 means debug handler disabled.
 
-	ClusterId string `yaml:"cluster_id"` // Which cluster this egress belongs to
-
 	CPUCostConfig `yaml:"cpu_cost"` // CPU costs for various egress types
 }
 
@@ -83,7 +81,7 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 		conf.LocalOutputDirectory = os.TempDir()
 	}
 
-	if err := conf.initLogger("nodeID", conf.NodeID); err != nil {
+	if err := conf.initLogger("nodeID", conf.NodeID, "clusterID", conf.ClusterId); err != nil {
 		return nil, err
 	}
 
