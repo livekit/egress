@@ -11,19 +11,19 @@
       "groupName": "livekit deps"
     },
     {
-      "matchDatasources": ["gomod"],
+      "matchManagers": ["gomod"],
       "groupName": "go"
     },
     {
-      "matchDatasources": ["github-actions"],
+      "matchManagers": ["github-actions"],
       "groupName": "github workflows"
     },
     {
-      "matchDatasources": ["docker"],
+      "matchManagers": ["dockerfile"],
       "groupName": "docker"
     },
     {
-      "matchDatasources": ["npm"],
+      "matchManagers": ["npm"],
       "groupName": "npm"
     }
   ],
