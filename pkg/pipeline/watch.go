@@ -52,7 +52,7 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 		}
 
 	default:
-		logger.Debugw(msg.String())
+		logger.Debugw(msg.String(), "messageType", msg.Type().String())
 	}
 
 	return true

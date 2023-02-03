@@ -8,7 +8,7 @@ import (
 
 type Sink interface {
 	Start() error
-	Close() error
+	Finalize() error
 	Cleanup()
 }
 

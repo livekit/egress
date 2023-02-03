@@ -85,6 +85,10 @@ func (s *WebsocketSink) writeMutedMessage(muted bool) error {
 	return s.conn.WriteMessage(websocket.TextMessage, data)
 }
 
+func (s *WebsocketSink) Finalize() error {
+	return s.Close()
+}
+
 func (s *WebsocketSink) Close() error {
 	if s.state == WebsocketClosed {
 		return nil

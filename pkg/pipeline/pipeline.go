@@ -207,7 +207,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	// skip upload if there was an error
 	if p.Info.Error == "" {
 		for _, s := range p.sinks {
-			if err := s.Close(); err != nil {
+			if err := s.Finalize(); err != nil {
 				p.Info.Error = err.Error()
 			}
 		}

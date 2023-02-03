@@ -92,7 +92,6 @@ func (s *SegmentSink) Start() error {
 			}
 			playlistStoragePath := s.GetStorageFilepath(s.PlaylistFilename)
 			s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(s.PlaylistFilename, playlistStoragePath, s.OutputType)
-
 			if err != nil {
 				return
 			}
@@ -204,7 +203,7 @@ func (s *SegmentSink) writePlaylist() error {
 	return nil
 }
 
-func (s *SegmentSink) Close() error {
+func (s *SegmentSink) Finalize() error {
 	// wait for all pending upload jobs to finish
 	close(s.endedSegments)
 	if s.segmentUploadDoneChan != nil {
