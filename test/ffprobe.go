@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/pipeline/input"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
@@ -194,7 +194,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		require.NoError(t, err)
 
 		// file duration can be different from egress duration based on keyframes, muting, and latency
-		delta := float64(input.Latency) / 1e9
+		delta := float64(builder.Latency) / 1e9
 		switch p.Info.Request.(type) {
 		case *livekit.EgressInfo_RoomComposite:
 			require.InDelta(t, expected, actual, delta)
