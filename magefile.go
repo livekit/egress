@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -21,12 +20,11 @@ type packageInfo struct {
 }
 
 func Proto() error {
-	sources := []string{"ipc.proto"}
+	ctx := context.Background()
 	fmt.Println("generating protobuf")
 
 	// parse go mod output
-	cmd := exec.Command("go", "list", "-json", "-m", "github.com/livekit/protocol")
-	pkgOut, err := cmd.Output()
+	pkgOut, err := mageutil.Out(ctx, "go list -json -m github.com/livekit/protocol")
 	if err != nil {
 		return err
 	}
@@ -35,7 +33,7 @@ func Proto() error {
 		return err
 	}
 
-	protoc, err := mageutil.GetToolPath("protoc")
+	_, err = mageutil.GetToolPath("protoc")
 	if err != nil {
 		return err
 	}
@@ -48,25 +46,18 @@ func Proto() error {
 		return err
 	}
 
-	args := append([]string{
-		"--go_out", ".",
-		"--go-grpc_out", ".",
-		"--go_opt=paths=source_relative",
-		"--go-grpc_opt=paths=source_relative",
-		"--plugin=go=" + protocGoPath,
-		"--plugin=go-grpc=" + protocGrpcGoPath,
-		"-I" + pi.Dir,
-		"-I=.",
-	}, sources...)
-
 	// generate grpc-related protos
-	cmd = exec.Command(protoc, args...)
-	cmd.Dir = "pkg/ipc"
-	mageutil.ConnectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	return nil
+	return mageutil.RunDir(ctx, "pkg/ipc", fmt.Sprintf(
+		"protoc"+
+			" --go_out ."+
+			" --go-grpc_out ."+
+			" --go_opt=paths=source_relative"+
+			" --go-grpc_opt=paths=source_relative"+
+			" --plugin=go=%s"+
+			" --plugin=go-grpc=%s"+
+			" -I%s -I=. ipc.proto",
+		protocGoPath, protocGrpcGoPath, pi.Dir,
+	))
 }
 
 func Integration(configFile string) error {
