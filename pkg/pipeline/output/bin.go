@@ -115,7 +115,7 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 
 func buildQueues(p *config.PipelineConfig, bin *gst.Bin) (audioQueue, videoQueue *gst.Element, err error) {
 	if p.AudioEnabled {
-		audioQueue, err = builder.BuildQueue(builder.Latency/10, true)
+		audioQueue, err = builder.BuildQueueWithLatency(p.Latency, true)
 		if err != nil {
 			return
 		}
@@ -125,7 +125,7 @@ func buildQueues(p *config.PipelineConfig, bin *gst.Bin) (audioQueue, videoQueue
 	}
 
 	if p.VideoEnabled {
-		videoQueue, err = builder.BuildQueue(builder.Latency/10, true)
+		videoQueue, err = builder.BuildQueueWithLatency(p.Latency, true)
 		if err != nil {
 			return
 		}

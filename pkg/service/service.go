@@ -28,6 +28,7 @@ type Service struct {
 	conf        *config.ServiceConfig
 	rpcServerV0 egress.RPCServer
 	psrpcServer rpc.EgressInternalServer
+	ioClient    rpc.IOInfoClient
 	promServer  *http.Server
 	monitor     *stats.Monitor
 	manager     *ProcessManager
@@ -35,16 +36,17 @@ type Service struct {
 	shutdown chan struct{}
 }
 
-func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 egress.RPCServer) (*Service, error) {
+func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 egress.RPCServer, ioClient rpc.IOInfoClient) (*Service, error) {
 	monitor := stats.NewMonitor()
 
 	s := &Service{
 		conf:        conf,
 		rpcServerV0: rpcServerV0,
+		ioClient:    ioClient,
 		monitor:     monitor,
-		manager:     NewProcessManager(conf, monitor),
 		shutdown:    make(chan struct{}),
 	}
+	s.manager = NewProcessManager(conf, monitor, s.onFatalError)
 
 	psrpcServer, err := rpc.NewEgressInternalServer(conf.NodeID, s, bus)
 	if err != nil {
@@ -56,8 +58,6 @@ func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 eg
 	if err != nil {
 		return nil, err
 	}
-
-	s.manager.onFatalError(func() { s.Stop(false) })
 
 	if conf.PrometheusPort > 0 {
 		s.promServer = &http.Server{
@@ -114,7 +114,7 @@ func (s *Service) Run() error {
 				continue
 			}
 
-			s.handleRequest(req)
+			s.handleRequestV0(req)
 		}
 	}
 }
@@ -133,7 +133,7 @@ func (s *Service) StartEgress(ctx context.Context, req *livekit.StartEgressReque
 
 	logger.Infow("pipeline config validated successfully", "egressID", req.EgressId, "info", p.Info)
 
-	err = s.manager.launchHandler(req, 1)
+	err = s.manager.launchHandler(req, p.Info, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +177,11 @@ func (s *Service) isAvailable() float64 {
 		return 1
 	}
 	return 0
+}
+
+func (s *Service) onFatalError(info *livekit.EgressInfo) {
+	sendUpdate(context.Background(), s.ioClient, info)
+	s.Stop(false)
 }
 
 func (s *Service) Stop(kill bool) {

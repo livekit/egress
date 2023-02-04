@@ -17,6 +17,11 @@ import (
 	"github.com/livekit/protocol/tracer"
 )
 
+const (
+	webLatency = uint64(5e8)
+	sdkLatency = uint64(43e8)
+)
+
 type PipelineConfig struct {
 	BaseConfig `yaml:",inline"`
 
@@ -35,6 +40,7 @@ type PipelineConfig struct {
 
 type SourceConfig struct {
 	SourceType types.SourceType
+	Latency    uint64
 	WebSourceParams
 	SDKSourceParams
 }
@@ -150,6 +156,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		redactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeWeb
+		p.Latency = webLatency
 		p.Info.RoomName = req.RoomComposite.RoomName
 		p.Layout = req.RoomComposite.Layout
 		if req.RoomComposite.CustomBaseUrl != "" {
@@ -186,6 +193,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 
 		connectionInfoRequired = false
 		p.SourceType = types.SourceTypeWeb
+		p.Latency = webLatency
 		p.WebUrl = req.Web.Url
 		if p.WebUrl == "" {
 			return errors.ErrInvalidInput("url")
@@ -220,6 +228,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		redactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
+		p.Latency = sdkLatency
 		p.Info.RoomName = req.TrackComposite.RoomName
 		p.AudioTrackID = req.TrackComposite.AudioTrackId
 		p.VideoTrackID = req.TrackComposite.VideoTrackId
@@ -255,6 +264,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		}
 
 		p.SourceType = types.SourceTypeSDK
+		p.Latency = sdkLatency
 		p.Info.RoomName = req.Track.RoomName
 		p.TrackID = req.Track.TrackId
 		if p.TrackID == "" {

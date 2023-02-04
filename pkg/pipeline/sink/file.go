@@ -13,15 +13,16 @@ import (
 
 type FileSink struct {
 	uploader.Uploader
-	*config.OutputConfig
+
 	conf *config.PipelineConfig
+	*config.OutputConfig
 }
 
 func newFileSink(u uploader.Uploader, conf *config.PipelineConfig, out *config.OutputConfig) *FileSink {
 	return &FileSink{
 		Uploader:     u,
-		OutputConfig: out,
 		conf:         conf,
+		OutputConfig: out,
 	}
 }
 

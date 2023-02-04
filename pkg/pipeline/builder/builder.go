@@ -8,7 +8,7 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 )
 
-const Latency = uint64(41e8) // slightly larger than max audio latency
+const defaultLatency = uint64(5e8) // slightly larger than max audio latency
 
 type pad interface {
 	Link(*gst.Pad) gst.PadLinkReturn
@@ -27,7 +27,11 @@ func LinkPads(src string, srcPad pad, sink string, sinkPad *gst.Pad) error {
 	return nil
 }
 
-func BuildQueue(latency uint64, leaky bool) (*gst.Element, error) {
+func BuildQueue(leaky bool) (*gst.Element, error) {
+	return BuildQueueWithLatency(defaultLatency, leaky)
+}
+
+func BuildQueueWithLatency(latency uint64, leaky bool) (*gst.Element, error) {
 	queue, err := gst.NewElement("queue")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)

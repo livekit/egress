@@ -69,7 +69,9 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	defer room.Disconnect()
 
 	// start service
-	svc, err := service.NewService(conf.ServiceConfig, bus, rpcServer)
+	ioClient, err := rpc.NewIOInfoClient("test_io_client", bus)
+	require.NoError(t, err)
+	svc, err := service.NewService(conf.ServiceConfig, bus, rpcServer, ioClient)
 	require.NoError(t, err)
 
 	psrpcClient, err := rpc.NewEgressClient(livekit.NodeID(utils.NewGuid("TEST_")), bus)

@@ -21,9 +21,10 @@ const maxPendingUploads = 100
 
 type SegmentSink struct {
 	uploader.Uploader
+
+	conf *config.PipelineConfig
 	*config.OutputConfig
 
-	conf                      *config.PipelineConfig
 	playlist                  *m3u8.MediaPlaylist
 	currentItemStartTimestamp int64
 	currentItemFilename       string

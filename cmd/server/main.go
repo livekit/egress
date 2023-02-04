@@ -102,7 +102,11 @@ func runService(c *cli.Context) error {
 
 	bus := psrpc.NewRedisMessageBus(rc)
 	rpcServerV0 := egress.NewRedisRPCServer(rc)
-	svc, err := service.NewService(conf, bus, rpcServerV0)
+	ioClient, err := rpc.NewIOInfoClient(conf.NodeID, bus)
+	if err != nil {
+		return err
+	}
+	svc, err := service.NewService(conf, bus, rpcServerV0, ioClient)
 	if err != nil {
 		return err
 	}

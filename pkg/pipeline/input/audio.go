@@ -12,6 +12,8 @@ import (
 	"github.com/livekit/egress/pkg/types"
 )
 
+const audioMixerLatency = uint64(41e8)
+
 type AudioInput struct {
 	decoder []*gst.Element
 	testSrc []*gst.Element
@@ -164,7 +166,7 @@ func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig) error {
 }
 
 func (a *AudioInput) addConverter(p *config.PipelineConfig) error {
-	audioQueue, err := builder.BuildQueue(builder.Latency/10, true)
+	audioQueue, err := builder.BuildQueue(true)
 	if err != nil {
 		return err
 	}
@@ -212,8 +214,7 @@ func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	// set latency slightly higher than max audio appsrc latency
-	if err = audioMixer.SetProperty("latency", builder.Latency); err != nil {
+	if err = audioMixer.SetProperty("latency", audioMixerLatency); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 	mixedCaps, err := getCapsFilter(p)

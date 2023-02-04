@@ -44,7 +44,7 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 
 	rpcServer, err := rpc.NewEgressHandlerServer(conf.HandlerID, h, bus)
 	if err != nil {
-		return nil, err
+		return nil, errors.Fatal(err)
 	}
 	if err = rpcServer.RegisterUpdateStreamTopic(conf.Info.EgressId); err != nil {
 		return nil, err
@@ -56,7 +56,7 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 
 	listener, err := net.Listen(network, getSocketAddress(conf.TmpDir))
 	if err != nil {
-		return nil, err
+		return nil, errors.Fatal(err)
 	}
 
 	ipc.RegisterEgressHandlerServer(h.grpcServer, h)
@@ -68,6 +68,12 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		}
 	}()
 
+	// build/verify params
+	h.pipeline, err = pipeline.New(context.Background(), h.conf, h.sendUpdate)
+	if err != nil {
+		return nil, err
+	}
+
 	return h, nil
 }
 
@@ -75,28 +81,17 @@ func (h *Handler) Run() error {
 	ctx, span := tracer.Start(context.Background(), "Handler.Run")
 	defer span.End()
 
-	p, err := h.buildPipeline(ctx)
-	if err != nil {
-		span.RecordError(err)
-		if errors.IsFatal(err) {
-			return err
-		} else {
-			return nil
-		}
-	}
-	h.pipeline = p
-
 	// start egress
 	result := make(chan *livekit.EgressInfo, 1)
 	go func() {
-		result <- p.Run(ctx)
+		result <- h.pipeline.Run(ctx)
 	}()
 
 	for {
 		select {
 		case <-h.kill:
 			// kill signal received
-			p.SendEOS(ctx)
+			h.pipeline.SendEOS(ctx)
 
 		case res := <-result:
 			// recording finished
@@ -106,24 +101,6 @@ func (h *Handler) Run() error {
 			return nil
 		}
 	}
-}
-
-func (h *Handler) buildPipeline(ctx context.Context) (*pipeline.Pipeline, error) {
-	ctx, span := tracer.Start(ctx, "Handler.buildPipeline")
-	defer span.End()
-
-	// build/verify params
-	p, err := pipeline.New(ctx, h.conf)
-	if err != nil {
-		h.conf.Info.Error = err.Error()
-		h.conf.Info.Status = livekit.EgressStatus_EGRESS_FAILED
-		h.sendUpdate(ctx, h.conf.Info)
-		span.RecordError(err)
-		return nil, err
-	}
-
-	p.OnStatusUpdate(h.sendUpdate)
-	return p, nil
 }
 
 func (h *Handler) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) (*livekit.EgressInfo, error) {
@@ -206,6 +183,10 @@ func (h *Handler) Kill() {
 }
 
 func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
+	sendUpdate(ctx, h.ioClient, info)
+}
+
+func sendUpdate(ctx context.Context, c rpc.IOInfoClient, info *livekit.EgressInfo) {
 	requestType, outputType := getTypes(info)
 	switch info.Status {
 	case livekit.EgressStatus_EGRESS_FAILED:
@@ -229,7 +210,7 @@ func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
 		)
 	}
 
-	if _, err := h.ioClient.UpdateEgressInfo(ctx, info); err != nil {
+	if _, err := c.UpdateEgressInfo(ctx, info); err != nil {
 		logger.Errorw("failed to send update", err)
 	}
 }

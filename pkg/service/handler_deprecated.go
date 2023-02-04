@@ -124,7 +124,7 @@ func (h *HandlerV0) buildPipeline(ctx context.Context) (*pipeline.Pipeline, erro
 	defer span.End()
 
 	// build/verify params
-	p, err := pipeline.New(ctx, h.conf)
+	p, err := pipeline.New(ctx, h.conf, h.sendUpdate)
 	if err != nil {
 		h.conf.Info.Error = err.Error()
 		h.conf.Info.Status = livekit.EgressStatus_EGRESS_FAILED
@@ -133,7 +133,6 @@ func (h *HandlerV0) buildPipeline(ctx context.Context) (*pipeline.Pipeline, erro
 		return nil, err
 	}
 
-	p.OnStatusUpdate(h.sendUpdate)
 	return p, nil
 }
 

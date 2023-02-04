@@ -31,30 +31,28 @@ type ProcessManager struct {
 
 	mu             sync.RWMutex
 	activeHandlers map[string]*process
-	onFatal        func()
+	onFatalError   func(*livekit.EgressInfo)
 }
 
 type process struct {
 	handlerID  string
 	req        *livekit.StartEgressRequest
+	info       *livekit.EgressInfo
 	cmd        *exec.Cmd
 	grpcClient ipc.EgressHandlerClient
 	closed     chan struct{}
 }
 
-func NewProcessManager(conf *config.ServiceConfig, monitor *stats.Monitor) *ProcessManager {
+func NewProcessManager(conf *config.ServiceConfig, monitor *stats.Monitor, onFatalError func(*livekit.EgressInfo)) *ProcessManager {
 	return &ProcessManager{
 		conf:           conf,
 		monitor:        monitor,
 		activeHandlers: make(map[string]*process),
+		onFatalError:   onFatalError,
 	}
 }
 
-func (s *ProcessManager) onFatalError(f func()) {
-	s.onFatal = f
-}
-
-func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest, version int) error {
+func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest, info *livekit.EgressInfo, version int) error {
 	_, span := tracer.Start(context.Background(), "Service.launchHandler")
 	defer span.End()
 
@@ -99,6 +97,7 @@ func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest, version 
 	h := &process{
 		handlerID: handlerID,
 		req:       req,
+		info:      info,
 		cmd:       cmd,
 		closed:    make(chan struct{}),
 	}
@@ -129,9 +128,9 @@ func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest, version 
 func (s *ProcessManager) awaitCleanup(h *process) {
 	if err := h.cmd.Wait(); err != nil {
 		logger.Errorw("process failed", err)
-		if s.onFatal != nil {
-			s.onFatal()
-		}
+		h.info.Status = livekit.EgressStatus_EGRESS_FAILED
+		h.info.Error = err.Error()
+		s.onFatalError(h.info)
 	}
 
 	close(h.closed)

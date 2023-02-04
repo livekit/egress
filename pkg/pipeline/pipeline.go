@@ -25,6 +25,8 @@ const (
 	eosTimeout     = time.Second * 30
 )
 
+type UpdateFunc func(context.Context, *livekit.EgressInfo)
+
 type Pipeline struct {
 	*config.PipelineConfig
 
@@ -45,10 +47,10 @@ type Pipeline struct {
 	eosTimer   *time.Timer
 
 	// callbacks
-	onStatusUpdate func(context.Context, *livekit.EgressInfo)
+	onStatusUpdate UpdateFunc
 }
 
-func New(ctx context.Context, p *config.PipelineConfig) (*Pipeline, error) {
+func New(ctx context.Context, p *config.PipelineConfig, onStatusUpdate UpdateFunc) (*Pipeline, error) {
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
@@ -119,11 +121,8 @@ func New(ctx context.Context, p *config.PipelineConfig) (*Pipeline, error) {
 		out:            out,
 		sinks:          sinks,
 		closed:         make(chan struct{}),
+		onStatusUpdate: onStatusUpdate,
 	}, nil
-}
-
-func (p *Pipeline) OnStatusUpdate(f func(context.Context, *livekit.EgressInfo)) {
-	p.onStatusUpdate = f
 }
 
 func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {

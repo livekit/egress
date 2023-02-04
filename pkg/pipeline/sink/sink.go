@@ -29,7 +29,7 @@ func CreateSinks(p *config.PipelineConfig) (map[types.EgressType]Sink, error) {
 			sinks[egressType] = s
 
 		case types.EgressTypeStream:
-			// nothing
+			// no sink needed
 
 		case types.EgressTypeWebsocket:
 			s, err := newWebsocketSink(out.WebsocketUrl, types.MimeTypeRaw)
