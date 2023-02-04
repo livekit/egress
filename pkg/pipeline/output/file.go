@@ -10,14 +10,14 @@ import (
 )
 
 type FileOutput struct {
-	audioQueue *gst.Element
-	videoQueue *gst.Element
-	mux        *gst.Element
-	sink       *gst.Element
+	*outputBase
+
+	mux  *gst.Element
+	sink *gst.Element
 }
 
 func (b *Bin) buildFileOutput(p *config.PipelineConfig, out *config.OutputConfig) (*FileOutput, error) {
-	audioQueue, videoQueue, err := b.buildQueues(p)
+	base, err := b.buildOutputBase(p)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
@@ -44,8 +44,7 @@ func (b *Bin) buildFileOutput(p *config.PipelineConfig, out *config.OutputConfig
 	}
 
 	return &FileOutput{
-		audioQueue: audioQueue,
-		videoQueue: videoQueue,
+		outputBase: base,
 		mux:        mux,
 		sink:       sink,
 	}, nil
@@ -70,16 +69,9 @@ func buildFileMux(out *config.OutputConfig) (*gst.Element, error) {
 	}
 }
 
-func (o *FileOutput) Link(audioTee, videoTee *gst.Element) error {
+func (o *FileOutput) Link() error {
 	// link audio to mux
-	if audioTee != nil {
-		if err := builder.LinkPads(
-			"audio tee", audioTee.GetRequestPad("src_%u"),
-			"audio queue", o.audioQueue.GetStaticPad("sink"),
-		); err != nil {
-			return err
-		}
-
+	if o.audioQueue != nil {
 		if err := builder.LinkPads(
 			"audio queue", o.audioQueue.GetStaticPad("src"),
 			"file mux", o.mux.GetRequestPad("audio_%u"),
@@ -89,14 +81,7 @@ func (o *FileOutput) Link(audioTee, videoTee *gst.Element) error {
 	}
 
 	// link video to mux
-	if videoTee != nil {
-		if err := builder.LinkPads(
-			"video tee", videoTee.GetRequestPad("src_%u"),
-			"video queue", o.videoQueue.GetStaticPad("sink"),
-		); err != nil {
-			return err
-		}
-
+	if o.videoQueue != nil {
 		if err := builder.LinkPads(
 			"video queue", o.videoQueue.GetStaticPad("src"),
 			"file mux", o.mux.GetRequestPad("video_%u"),

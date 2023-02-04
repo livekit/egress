@@ -23,7 +23,9 @@ type Bin struct {
 }
 
 type output interface {
-	Link(audioTee, videoTee *gst.Element) error
+	CreateGhostPads() (audioPad, videoPad *gst.GhostPad)
+	LinkTees(audioTee, videoTee *gst.Element) error
+	Link() error
 }
 
 func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) (*Bin, error) {
@@ -41,38 +43,48 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 		}
 	}
 
-	var err error
-	if p.AudioEnabled {
-		// create audio ghost pad
-		b.audioTee, err = gst.NewElement("tee")
-		if err != nil {
-			return nil, errors.ErrGstPipelineError(err)
+	var audioPad, videoPad *gst.GhostPad
+	if len(b.outputs) == 1 {
+		for _, out := range b.outputs {
+			audioPad, videoPad = out.CreateGhostPads()
 		}
-		if err = b.bin.Add(b.audioTee); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
+	} else {
+		var err error
+		if p.AudioEnabled {
+			// create audio ghost pad
+			b.audioTee, err = gst.NewElement("tee")
+			if err != nil {
+				return nil, errors.ErrGstPipelineError(err)
+			}
+			if err = b.bin.Add(b.audioTee); err != nil {
+				return nil, errors.ErrGstPipelineError(err)
+			}
+			audioPad = gst.NewGhostPad("audio", b.audioTee.GetStaticPad("sink"))
 		}
-		audioPad := gst.NewGhostPad("audio", b.audioTee.GetStaticPad("sink"))
-		if !b.bin.AddPad(audioPad.Pad) {
-			return nil, errors.ErrGhostPadFailed
+
+		if p.VideoEnabled {
+			// create video ghost pad
+			b.videoTee, err = gst.NewElement("tee")
+			if err != nil {
+				return nil, errors.ErrGstPipelineError(err)
+			}
+			if err = b.bin.Add(b.videoTee); err != nil {
+				return nil, errors.ErrGstPipelineError(err)
+			}
+			videoPad = gst.NewGhostPad("video", b.videoTee.GetStaticPad("sink"))
+			if !b.bin.AddPad(videoPad.Pad) {
+				return nil, errors.ErrGhostPadFailed
+			}
 		}
 	}
-
-	if p.VideoEnabled {
-		// create video ghost pad
-		b.videoTee, err = gst.NewElement("tee")
-		if err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
-		if err = b.bin.Add(b.videoTee); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
-		videoPad := gst.NewGhostPad("video", b.videoTee.GetStaticPad("sink"))
-		if !b.bin.AddPad(videoPad.Pad) {
-			return nil, errors.ErrGhostPadFailed
-		}
+	if audioPad != nil && !b.bin.AddPad(audioPad.Pad) {
+		return nil, errors.ErrGhostPadFailed
+	}
+	if videoPad != nil && !b.bin.AddPad(videoPad.Pad) {
+		return nil, errors.ErrGhostPadFailed
 	}
 
-	if err = pipeline.Add(b.bin.Element); err != nil {
+	if err := pipeline.Add(b.bin.Element); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
@@ -116,49 +128,39 @@ func (b *Bin) buildOutput(p *config.PipelineConfig, out *config.OutputConfig) er
 	return nil
 }
 
-func (b *Bin) buildQueues(p *config.PipelineConfig) (audioQueue, videoQueue *gst.Element, err error) {
-	if p.AudioEnabled {
-		audioQueue, err = builder.BuildQueueWithLatency(p.Latency, true)
-		if err != nil {
-			return
-		}
-		if err = b.bin.Add(audioQueue); err != nil {
-			return
-		}
-	}
-
-	if p.VideoEnabled {
-		videoQueue, err = builder.BuildQueueWithLatency(p.Latency, true)
-		if err != nil {
-			return
-		}
-		if err = b.bin.Add(videoQueue); err != nil {
-			return
-		}
-	}
-
-	return
-}
-
 func (b *Bin) Link(audioSrc, videoSrc *gst.GhostPad) error {
-	// link audio to audio tee
-	if b.audioTee != nil {
-		if err := builder.LinkPads("audio input", audioSrc, "audio output", b.bin.GetStaticPad("audio")); err != nil {
+	if audioSrc != nil {
+		if err := builder.LinkPads(
+			"audio src", audioSrc,
+			"audio output", b.bin.GetStaticPad("audio"),
+		); err != nil {
+			return err
+		}
+	}
+	if videoSrc != nil {
+		if err := builder.LinkPads(
+			"video src", videoSrc,
+			"video output", b.bin.GetStaticPad("video"),
+		); err != nil {
 			return err
 		}
 	}
 
-	// link video to video tee
-	if b.videoTee != nil {
-		if err := builder.LinkPads("video input", videoSrc, "video output", b.bin.GetStaticPad("video")); err != nil {
-			return err
+	if len(b.outputs) == 1 {
+		for _, out := range b.outputs {
+			if err := out.Link(); err != nil {
+				return err
+			}
 		}
-	}
-
-	// link tees to outputs
-	for _, out := range b.outputs {
-		if err := out.Link(b.audioTee, b.videoTee); err != nil {
-			return err
+	} else {
+		// link tees to outputs
+		for _, out := range b.outputs {
+			if err := out.LinkTees(b.audioTee, b.videoTee); err != nil {
+				return err
+			}
+			if err := out.Link(); err != nil {
+				return err
+			}
 		}
 	}
 

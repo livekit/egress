@@ -12,13 +12,13 @@ import (
 )
 
 type SegmentOutput struct {
-	audioQueue *gst.Element
-	videoQueue *gst.Element
-	sink       *gst.Element
+	*outputBase
+
+	sink *gst.Element
 }
 
 func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputConfig) (*SegmentOutput, error) {
-	audioQueue, videoQueue, err := b.buildQueues(p)
+	base, err := b.buildOutputBase(p)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
@@ -48,22 +48,14 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 	}
 
 	return &SegmentOutput{
-		audioQueue: audioQueue,
-		videoQueue: videoQueue,
+		outputBase: base,
 		sink:       sink,
 	}, nil
 }
 
-func (o *SegmentOutput) Link(audioTee, videoTee *gst.Element) error {
+func (o *SegmentOutput) Link() error {
 	// link audio to sink
-	if audioTee != nil {
-		if err := builder.LinkPads(
-			"audio tee", audioTee.GetRequestPad("src_%u"),
-			"audio queue", o.audioQueue.GetStaticPad("sink"),
-		); err != nil {
-			return err
-		}
-
+	if o.audioQueue != nil {
 		if err := builder.LinkPads(
 			"audio queue", o.audioQueue.GetStaticPad("src"),
 			"split mux", o.sink.GetRequestPad("audio_%u"),
@@ -73,14 +65,7 @@ func (o *SegmentOutput) Link(audioTee, videoTee *gst.Element) error {
 	}
 
 	// link video to sink
-	if videoTee != nil {
-		if err := builder.LinkPads(
-			"video tee", videoTee.GetRequestPad("src_%u"),
-			"video queue", o.videoQueue.GetStaticPad("sink"),
-		); err != nil {
-			return err
-		}
-
+	if o.videoQueue != nil {
 		if err := builder.LinkPads(
 			"video queue", o.videoQueue.GetStaticPad("src"),
 			"split mux", o.sink.GetRequestPad("video"),

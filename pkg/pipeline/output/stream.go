@@ -15,18 +15,18 @@ import (
 )
 
 type StreamOutput struct {
+	*outputBase
+
 	sync.RWMutex
 	protocol types.OutputType
 
-	audioQueue *gst.Element
-	videoQueue *gst.Element
-	mux        *gst.Element
-	tee        *gst.Element
-	sinks      map[string]*streamSink
+	mux   *gst.Element
+	tee   *gst.Element
+	sinks map[string]*streamSink
 }
 
 func (b *Bin) buildStreamOutput(p *config.PipelineConfig, out *config.OutputConfig) (*StreamOutput, error) {
-	audioQueue, videoQueue, err := b.buildQueues(p)
+	base, err := b.buildOutputBase(p)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
@@ -61,9 +61,8 @@ func (b *Bin) buildStreamOutput(p *config.PipelineConfig, out *config.OutputConf
 	}
 
 	return &StreamOutput{
+		outputBase: base,
 		protocol:   out.OutputType,
-		audioQueue: audioQueue,
-		videoQueue: videoQueue,
 		mux:        mux,
 		tee:        tee,
 		sinks:      sinks,
@@ -121,19 +120,12 @@ func buildStreamSink(protocol types.OutputType, url string) (*streamSink, error)
 	}, nil
 }
 
-func (o *StreamOutput) Link(audioTee, videoTee *gst.Element) error {
+func (o *StreamOutput) Link() error {
 	o.RLock()
 	defer o.RUnlock()
 
 	// link audio to mux
-	if audioTee != nil {
-		if err := builder.LinkPads(
-			"audio tee", audioTee.GetRequestPad("src_%u"),
-			"audio queue", o.audioQueue.GetStaticPad("sink"),
-		); err != nil {
-			return err
-		}
-
+	if o.audioQueue != nil {
 		if err := builder.LinkPads(
 			"audio queue", o.audioQueue.GetStaticPad("src"),
 			"stream mux", o.mux.GetRequestPad("audio"),
@@ -143,14 +135,7 @@ func (o *StreamOutput) Link(audioTee, videoTee *gst.Element) error {
 	}
 
 	// link video to mux
-	if videoTee != nil {
-		if err := builder.LinkPads(
-			"video tee", videoTee.GetRequestPad("src_%u"),
-			"video queue", o.videoQueue.GetStaticPad("sink"),
-		); err != nil {
-			return err
-		}
-
+	if o.videoQueue != nil {
 		if err := builder.LinkPads(
 			"video queue", o.videoQueue.GetStaticPad("src"),
 			"stream mux", o.mux.GetRequestPad("video"),
