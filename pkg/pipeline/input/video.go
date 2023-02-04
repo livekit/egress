@@ -16,33 +16,33 @@ type VideoInput struct {
 	elements []*gst.Element
 }
 
-func newVideoInput(bin *gst.Bin, p *config.PipelineConfig) (*VideoInput, error) {
+func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
 	v := &VideoInput{}
 
 	switch p.SourceType {
 	case types.SourceTypeSDK:
 		if err := v.buildSDKDecoder(p); err != nil {
-			return nil, err
+			return err
 		}
 
 	case types.SourceTypeWeb:
 		if err := v.buildWebDecoder(p); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	if p.VideoTranscoding {
 		if err := v.buildEncoder(p); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	// Add elements to bin
-	if err := bin.AddMany(v.elements...); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
+	if err := b.bin.AddMany(v.elements...); err != nil {
+		return errors.ErrGstPipelineError(err)
 	}
-
-	return v, nil
+	b.video = v
+	return nil
 }
 
 func (v *VideoInput) Link() (*gst.GhostPad, error) {

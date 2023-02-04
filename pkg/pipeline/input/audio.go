@@ -21,48 +21,49 @@ type AudioInput struct {
 	encoder *gst.Element
 }
 
-func newAudioInput(bin *gst.Bin, p *config.PipelineConfig) (*AudioInput, error) {
+func (b *Bin) buildAudioInput(p *config.PipelineConfig) error {
 	a := &AudioInput{}
 
 	switch p.SourceType {
 	case types.SourceTypeSDK:
 		if err := a.buildSDKDecoder(p); err != nil {
-			return nil, err
+			return err
 		}
 
 	case types.SourceTypeWeb:
 		if err := a.buildWebDecoder(p); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	if p.AudioTranscoding {
 		if err := a.buildEncoder(p); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	// Add elements to bin
-	if err := bin.AddMany(a.decoder...); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
+	if err := b.bin.AddMany(a.decoder...); err != nil {
+		return errors.ErrGstPipelineError(err)
 	}
 	if a.testSrc != nil {
-		if err := bin.AddMany(a.testSrc...); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
+		if err := b.bin.AddMany(a.testSrc...); err != nil {
+			return errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.mixer != nil {
-		if err := bin.AddMany(a.mixer...); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
+		if err := b.bin.AddMany(a.mixer...); err != nil {
+			return errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.encoder != nil {
-		if err := bin.Add(a.encoder); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
+		if err := b.bin.Add(a.encoder); err != nil {
+			return errors.ErrGstPipelineError(err)
 		}
 	}
 
-	return a, nil
+	b.audio = a
+	return nil
 }
 
 func (a *AudioInput) Link() (*gst.GhostPad, error) {

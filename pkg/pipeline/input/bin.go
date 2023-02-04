@@ -21,21 +21,18 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 	ctx, span := tracer.Start(ctx, "Input.New")
 	defer span.End()
 
-	var err error
 	b := &Bin{
 		bin: gst.NewBin("bin"),
 	}
 
 	if p.AudioEnabled {
-		b.audio, err = newAudioInput(b.bin, p)
-		if err != nil {
+		if err := b.buildAudioInput(p); err != nil {
 			return nil, err
 		}
 	}
 
 	if p.VideoEnabled {
-		b.video, err = newVideoInput(b.bin, p)
-		if err != nil {
+		if err := b.buildVideoInput(p); err != nil {
 			return nil, err
 		}
 	}
