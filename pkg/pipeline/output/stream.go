@@ -25,7 +25,12 @@ type StreamOutput struct {
 	sinks      map[string]*streamSink
 }
 
-func buildStreamOutput(out *config.OutputConfig, bin *gst.Bin, audioQueue, videoQueue *gst.Element) (*StreamOutput, error) {
+func (b *Bin) buildStreamOutput(p *config.PipelineConfig, out *config.OutputConfig) (*StreamOutput, error) {
+	audioQueue, videoQueue, err := b.buildQueues(p)
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
 	mux, err := buildStreamMux(out)
 	if err != nil {
 		return nil, err
@@ -37,7 +42,7 @@ func buildStreamOutput(out *config.OutputConfig, bin *gst.Bin, audioQueue, video
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	if err := bin.AddMany(mux, tee); err != nil {
+	if err := b.bin.AddMany(mux, tee); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
@@ -48,7 +53,7 @@ func buildStreamOutput(out *config.OutputConfig, bin *gst.Bin, audioQueue, video
 			return nil, err
 		}
 
-		if err = bin.AddMany(sink.queue, sink.sink); err != nil {
+		if err = b.bin.AddMany(sink.queue, sink.sink); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 

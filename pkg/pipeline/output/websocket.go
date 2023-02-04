@@ -6,6 +6,7 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink"
@@ -18,13 +19,18 @@ type WebsocketOutput struct {
 	sink       *app.Sink
 }
 
-func buildWebsocketOutput(bin *gst.Bin, audioQueue, videoQueue *gst.Element) (*WebsocketOutput, error) {
+func (b *Bin) buildWebsocketOutput(p *config.PipelineConfig) (*WebsocketOutput, error) {
+	audioQueue, videoQueue, err := b.buildQueues(p)
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
 	appSink, err := app.NewAppSink()
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	if err = bin.Add(appSink.Element); err != nil {
+	if err = b.bin.Add(appSink.Element); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 

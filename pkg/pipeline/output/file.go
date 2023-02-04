@@ -16,7 +16,12 @@ type FileOutput struct {
 	sink       *gst.Element
 }
 
-func buildFileOutput(out *config.OutputConfig, bin *gst.Bin, audioQueue, videoQueue *gst.Element) (*FileOutput, error) {
+func (b *Bin) buildFileOutput(p *config.PipelineConfig, out *config.OutputConfig) (*FileOutput, error) {
+	audioQueue, videoQueue, err := b.buildQueues(p)
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
 	mux, err := buildFileMux(out)
 	if err != nil {
 		return nil, err
@@ -34,7 +39,7 @@ func buildFileOutput(out *config.OutputConfig, bin *gst.Bin, audioQueue, videoQu
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	if err = bin.AddMany(mux, sink); err != nil {
+	if err = b.bin.AddMany(mux, sink); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 

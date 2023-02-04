@@ -35,43 +35,9 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 		outputs: make(map[types.EgressType]output),
 	}
 
-	for egressType, out := range p.Outputs {
-		audioQueue, videoQueue, err := buildQueues(p, b.bin)
-		if err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
-
-		switch egressType {
-		case types.EgressTypeFile:
-			o, err := buildFileOutput(out, b.bin, audioQueue, videoQueue)
-			if err != nil {
-				return nil, err
-			}
-			b.outputs[out.EgressType] = o
-
-		case types.EgressTypeSegments:
-			o, err := buildSegmentOutput(out, b.bin, audioQueue, videoQueue)
-			if err != nil {
-				return nil, err
-			}
-			b.outputs[out.EgressType] = o
-
-		case types.EgressTypeStream:
-			o, err := buildStreamOutput(out, b.bin, audioQueue, videoQueue)
-			if err != nil {
-				return nil, err
-			}
-			b.outputs[out.EgressType] = o
-
-		case types.EgressTypeWebsocket:
-			o, err := buildWebsocketOutput(b.bin, audioQueue, videoQueue)
-			if err != nil {
-				return nil, err
-			}
-			b.outputs[out.EgressType] = o
-
-		default:
-			return nil, errors.ErrInvalidInput("egress type")
+	for _, out := range p.Outputs {
+		if err := b.buildOutput(p, out); err != nil {
+			return nil, err
 		}
 	}
 
@@ -113,13 +79,50 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 	return b, nil
 }
 
-func buildQueues(p *config.PipelineConfig, bin *gst.Bin) (audioQueue, videoQueue *gst.Element, err error) {
+func (b *Bin) buildOutput(p *config.PipelineConfig, out *config.OutputConfig) error {
+	switch out.EgressType {
+	case types.EgressTypeFile:
+		o, err := b.buildFileOutput(p, out)
+		if err != nil {
+			return err
+		}
+		b.outputs[out.EgressType] = o
+
+	case types.EgressTypeSegments:
+		o, err := b.buildSegmentOutput(p, out)
+		if err != nil {
+			return err
+		}
+		b.outputs[out.EgressType] = o
+
+	case types.EgressTypeStream:
+		o, err := b.buildStreamOutput(p, out)
+		if err != nil {
+			return err
+		}
+		b.outputs[out.EgressType] = o
+
+	case types.EgressTypeWebsocket:
+		o, err := b.buildWebsocketOutput(p)
+		if err != nil {
+			return err
+		}
+		b.outputs[out.EgressType] = o
+
+	default:
+		return errors.ErrInvalidInput("egress type")
+	}
+
+	return nil
+}
+
+func (b *Bin) buildQueues(p *config.PipelineConfig) (audioQueue, videoQueue *gst.Element, err error) {
 	if p.AudioEnabled {
 		audioQueue, err = builder.BuildQueueWithLatency(p.Latency, true)
 		if err != nil {
 			return
 		}
-		if err = bin.Add(audioQueue); err != nil {
+		if err = b.bin.Add(audioQueue); err != nil {
 			return
 		}
 	}
@@ -129,7 +132,7 @@ func buildQueues(p *config.PipelineConfig, bin *gst.Bin) (audioQueue, videoQueue
 		if err != nil {
 			return
 		}
-		if err = bin.Add(videoQueue); err != nil {
+		if err = b.bin.Add(videoQueue); err != nil {
 			return
 		}
 	}

@@ -17,7 +17,12 @@ type SegmentOutput struct {
 	sink       *gst.Element
 }
 
-func buildSegmentOutput(out *config.OutputConfig, bin *gst.Bin, audioQueue, videoQueue *gst.Element) (*SegmentOutput, error) {
+func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputConfig) (*SegmentOutput, error) {
+	audioQueue, videoQueue, err := b.buildQueues(p)
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
 	sink, err := gst.NewElement("splitmuxsink")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
@@ -38,7 +43,7 @@ func buildSegmentOutput(out *config.OutputConfig, bin *gst.Bin, audioQueue, vide
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	if err = bin.Add(sink); err != nil {
+	if err = b.bin.Add(sink); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
