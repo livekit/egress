@@ -1,35 +1,49 @@
 package output
 
 import (
-	"encoding/json"
 	"io"
-	"net/http"
 
-	"github.com/gorilla/websocket"
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/protocol/logger"
 )
 
-func buildWebsocketOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
-	writer, err := newWebSocketSink(p.WebsocketUrl, types.MimeTypeRaw, p.MutedChan)
-	if err != nil {
-		return nil, err
-	}
+type WebsocketOutput struct {
+	*outputBase
 
-	sink, err := app.NewAppSink()
+	sink *app.Sink
+}
+
+func (b *Bin) buildWebsocketOutput(p *config.PipelineConfig) (*WebsocketOutput, error) {
+	base, err := b.buildOutputBase(p)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	sink.SetCallbacks(&app.SinkCallbacks{
+	appSink, err := app.NewAppSink()
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
+	if err = b.bin.Add(appSink.Element); err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
+	return &WebsocketOutput{
+		outputBase: base,
+		sink:       appSink,
+	}, nil
+}
+
+func (o *WebsocketOutput) SetSink(writer *sink.WebsocketSink) {
+	o.sink.SetCallbacks(&app.SinkCallbacks{
 		EOSFunc: func(appSink *app.Sink) {
 			// Close writer on EOS
-			if err = writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+			if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
 				logger.Errorw("cannot close WS sink", err)
 			}
 		},
@@ -50,7 +64,7 @@ func buildWebsocketOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
 			samples := buffer.Map(gst.MapRead).Bytes()
 
 			// From the extracted bytes, send to writer
-			_, err = writer.Write(samples)
+			_, err := writer.Write(samples)
 			if err != nil && !errors.Is(err, io.EOF) {
 				logger.Errorw("cannot read AppSink samples", err)
 				return gst.FlowError
@@ -58,121 +72,15 @@ func buildWebsocketOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
 			return gst.FlowOK
 		},
 	})
-
-	bin := gst.NewBin("output")
-	if err = bin.Add(sink.Element); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
-	}
-
-	ghostPad := gst.NewGhostPad("sink", sink.GetStaticPad("sink"))
-	if !bin.AddPad(ghostPad.Pad) {
-		return nil, errors.ErrGhostPadFailed
-	}
-
-	return &OutputBin{
-		bin: bin,
-	}, nil
 }
 
-type websocketState string
-
-const (
-	WebSocketActive websocketState = "active"
-	WebSocketClosed websocketState = "closed"
-)
-
-type websocketSink struct {
-	conn   *websocket.Conn
-	muted  chan bool
-	closed chan struct{}
-	state  websocketState
-}
-
-func newWebSocketSink(url string, mimeType types.MimeType, muted chan bool) (io.WriteCloser, error) {
-	// set Content-Type header
-	header := http.Header{}
-	header.Set("Content-Type", string(mimeType))
-
-	conn, _, err := websocket.DefaultDialer.Dial(url, header)
-	if err != nil {
-		return nil, err
-	}
-
-	s := &websocketSink{
-		conn:   conn,
-		muted:  muted,
-		closed: make(chan struct{}),
-		state:  WebSocketActive,
-	}
-	go s.listenToMutedChan()
-
-	return s, nil
-}
-
-func (s *websocketSink) Write(p []byte) (n int, err error) {
-	if s.state == WebSocketClosed {
-		return 0, errors.ErrWebSocketClosed(s.conn.RemoteAddr().String())
-	}
-
-	return len(p), s.conn.WriteMessage(websocket.BinaryMessage, p)
-}
-
-func (s *websocketSink) Close() error {
-	if s.state == WebSocketClosed {
-		return nil
-	}
-
-	// write close message for graceful disconnection
-	err := s.conn.WriteMessage(websocket.CloseMessage, nil)
-	if err != nil && !errors.Is(err, io.EOF) {
-		logger.Errorw("cannot write WS close message", err)
-	}
-
-	// terminate connection and close the `closed` channel
-	err = s.conn.Close()
-	close(s.closed)
-	s.state = WebSocketClosed
-	return err
-}
-
-type textMessagePayload struct {
-	Muted bool `json:"muted"`
-}
-
-func (s *websocketSink) writeMutedMessage(muted bool) error {
-	// If the socket is closed, return error
-	if s.state == WebSocketClosed {
-		return errors.ErrWebSocketClosed(s.conn.RemoteAddr().String())
-	}
-
-	// Marshal `muted` payload
-	data, err := json.Marshal(&textMessagePayload{
-		Muted: muted,
-	})
-	if err != nil {
-		return err
-	}
-
-	// Write message
-	return s.conn.WriteMessage(websocket.TextMessage, data)
-}
-
-func (s *websocketSink) listenToMutedChan() {
-	// If the `muted` channel is nil or socket is closed,
-	// cannot send message. Just return
-	if s.muted == nil || s.state == WebSocketClosed {
-		return
-	}
-	var err error
-	for {
-		select {
-		case val := <-s.muted:
-			err = s.writeMutedMessage(val)
-			if err != nil && !errors.Is(err, io.EOF) {
-				logger.Errorw("error writing muted message: ", err)
-			}
-		case <-s.closed:
-			return
+func (o *WebsocketOutput) Link() error {
+	// link audio to sink
+	if o.audioQueue != nil {
+		if err := o.audioQueue.Link(o.sink.Element); err != nil {
+			return errors.ErrPadLinkFailed("audio queue", "app sink", err.Error())
 		}
 	}
+
+	return nil
 }

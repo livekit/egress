@@ -15,25 +15,25 @@ func (s *Service) ListEgress() []string {
 	return s.manager.listEgress()
 }
 
-func (s *Service) handleRequest(req *livekit.StartEgressRequest) {
+func (s *Service) handleRequestV0(req *livekit.StartEgressRequest) {
 	ctx, span := tracer.Start(context.Background(), "Service.handleRequest")
 	defer span.End()
 
-	if s.acceptRequest(ctx, req) {
+	if s.acceptRequestV0(ctx, req) {
 		// validate before passing to handler
 		p, err := config.GetValidatedPipelineConfig(s.conf, req)
 		if err == nil {
-			err = s.manager.launchHandler(req, 0)
+			err = s.manager.launchHandler(req, p.Info, 0)
 		}
 
-		s.sendResponse(ctx, req, p.Info, err)
+		s.sendResponseV0(ctx, req, p.Info, err)
 		if err != nil {
 			span.RecordError(err)
 		}
 	}
 }
 
-func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressRequest) bool {
+func (s *Service) acceptRequestV0(ctx context.Context, req *livekit.StartEgressRequest) bool {
 	ctx, span := tracer.Start(ctx, "Service.acceptRequest")
 	defer span.End()
 
@@ -66,7 +66,7 @@ func (s *Service) acceptRequest(ctx context.Context, req *livekit.StartEgressReq
 	return true
 }
 
-func (s *Service) sendResponse(ctx context.Context, req *livekit.StartEgressRequest, info *livekit.EgressInfo, err error) {
+func (s *Service) sendResponseV0(ctx context.Context, req *livekit.StartEgressRequest, info *livekit.EgressInfo, err error) {
 	if err != nil {
 		logger.Infow("bad request",
 			"error", err,

@@ -5,34 +5,95 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/builder"
+	"github.com/livekit/egress/pkg/types"
 )
 
-func buildFileOutputBin(p *config.PipelineConfig) (*OutputBin, error) {
+type FileOutput struct {
+	*outputBase
+
+	mux  *gst.Element
+	sink *gst.Element
+}
+
+func (b *Bin) buildFileOutput(p *config.PipelineConfig, out *config.OutputConfig) (*FileOutput, error) {
+	base, err := b.buildOutputBase(p)
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
+	mux, err := buildFileMux(out)
+	if err != nil {
+		return nil, err
+	}
+
 	// create elements
 	sink, err := gst.NewElement("filesink")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if err = sink.SetProperty("location", p.LocalFilepath); err != nil {
+	if err = sink.SetProperty("location", out.LocalFilepath); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err = sink.SetProperty("sync", false); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	// create bin
-	bin := gst.NewBin("output")
-	if err = bin.Add(sink); err != nil {
+	if err = b.bin.AddMany(mux, sink); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	// add ghost pad
-	ghostPad := gst.NewGhostPad("sink", sink.GetStaticPad("sink"))
-	if !bin.AddPad(ghostPad.Pad) {
-		return nil, errors.ErrGhostPadFailed
+	return &FileOutput{
+		outputBase: base,
+		mux:        mux,
+		sink:       sink,
+	}, nil
+}
+
+func buildFileMux(out *config.OutputConfig) (*gst.Element, error) {
+	switch out.OutputType {
+	case types.OutputTypeOGG:
+		return gst.NewElement("oggmux")
+
+	case types.OutputTypeIVF:
+		return gst.NewElement("avmux_ivf")
+
+	case types.OutputTypeMP4:
+		return gst.NewElement("mp4mux")
+
+	case types.OutputTypeWebM:
+		return gst.NewElement("webmmux")
+
+	default:
+		return nil, errors.ErrInvalidInput("output type")
+	}
+}
+
+func (o *FileOutput) Link() error {
+	// link audio to mux
+	if o.audioQueue != nil {
+		if err := builder.LinkPads(
+			"audio queue", o.audioQueue.GetStaticPad("src"),
+			"file mux", o.mux.GetRequestPad("audio_%u"),
+		); err != nil {
+			return err
+		}
 	}
 
-	return &OutputBin{
-		bin: bin,
-	}, nil
+	// link video to mux
+	if o.videoQueue != nil {
+		if err := builder.LinkPads(
+			"video queue", o.videoQueue.GetStaticPad("src"),
+			"file mux", o.mux.GetRequestPad("video_%u"),
+		); err != nil {
+			return err
+		}
+	}
+
+	// link mux to sink
+	if err := o.mux.Link(o.sink); err != nil {
+		return errors.ErrPadLinkFailed("mux", "sink", err.Error())
+	}
+
+	return nil
 }

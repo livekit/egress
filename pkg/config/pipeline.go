@@ -3,12 +3,11 @@ package config
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"os"
-	"path"
 	"strings"
-	"time"
 
+	"github.com/pion/webrtc/v3"
+	"github.com/tinyzimmer/go-gst/gst/app"
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -18,54 +17,64 @@ import (
 	"github.com/livekit/protocol/tracer"
 )
 
+const (
+	webLatency = uint64(5e8)
+	sdkLatency = uint64(43e8)
+)
+
 type PipelineConfig struct {
 	BaseConfig `yaml:",inline"`
 
-	HandlerID string    `yaml:"handler_id"`
-	TmpDir    string    `yaml:"tmp_dir"`
-	MutedChan chan bool `yaml:"-"`
+	HandlerID string `yaml:"handler_id"`
+	TmpDir    string `yaml:"tmp_dir"`
 
-	SourceParams        `yaml:"-"`
-	AudioParams         `yaml:"-"`
-	VideoParams         `yaml:"-"`
-	StreamParams        `yaml:"-"`
-	FileParams          `yaml:"-"`
-	SegmentedFileParams `yaml:"-"`
-	UploadParams        `yaml:"-"`
-	types.EgressType    `yaml:"-"`
-	types.OutputType    `yaml:"-"`
+	SourceConfig `yaml:"-"`
+	AudioConfig  `yaml:"-"`
+	VideoConfig  `yaml:"-"`
+
+	Outputs map[types.EgressType]*OutputConfig `yaml:"-"`
 
 	GstReady chan struct{}       `yaml:"-"`
 	Info     *livekit.EgressInfo `yaml:"-"`
 }
 
-type SourceParams struct {
-	// source
-	Token string
+type SourceConfig struct {
+	SourceType types.SourceType
+	Latency    uint64
+	WebSourceParams
+	SDKSourceParams
+}
 
-	// web source
+type WebSourceParams struct {
 	Display    string
 	Layout     string
 	CustomBase string
+	Token      string
 	WebUrl     string
+}
 
-	// sdk source
+type SDKSourceParams struct {
 	TrackID             string
 	TrackSource         string
 	TrackKind           string
 	AudioTrackID        string
 	VideoTrackID        string
 	ParticipantIdentity string
+	AudioSrc            *app.Source
+	VideoSrc            *app.Source
+	AudioCodecParams    webrtc.RTPCodecParameters
+	VideoCodecParams    webrtc.RTPCodecParameters
 }
 
-type AudioParams struct {
-	AudioEnabled   bool
-	AudioCodec     types.MimeType
-	AudioBitrate   int32
-	AudioFrequency int32
+type AudioConfig struct {
+	AudioEnabled     bool
+	AudioTranscoding bool
+	AudioCodec       types.MimeType
+	AudioBitrate     int32
+	AudioFrequency   int32
 }
 
-type VideoParams struct {
+type VideoConfig struct {
 	VideoEnabled     bool
 	VideoTranscoding bool
 	VideoCodec       types.MimeType
@@ -78,34 +87,10 @@ type VideoParams struct {
 	KeyFrameInterval float64
 }
 
-type StreamParams struct {
-	WebsocketUrl string
-	StreamUrls   []string
-	StreamInfo   map[string]*livekit.StreamInfo
-}
-
-type FileParams struct {
-	FileInfo        *livekit.FileInfo
-	LocalFilepath   string
-	StorageFilepath string
-}
-
-type SegmentedFileParams struct {
-	SegmentsInfo      *livekit.SegmentsInfo
-	LocalFilePrefix   string
-	StoragePathPrefix string
-	PlaylistFilename  string
-	SegmentDuration   int
-}
-
-type UploadParams struct {
-	UploadConfig    interface{}
-	DisableManifest bool
-}
-
 func NewPipelineConfig(confString string, req *livekit.StartEgressRequest) (*PipelineConfig, error) {
 	p := &PipelineConfig{
 		BaseConfig: BaseConfig{},
+		Outputs:    make(map[types.EgressType]*OutputConfig),
 		GstReady:   make(chan struct{}),
 	}
 
@@ -131,6 +116,7 @@ func GetValidatedPipelineConfig(conf *ServiceConfig, req *livekit.StartEgressReq
 
 	p := &PipelineConfig{
 		BaseConfig: conf.BaseConfig,
+		Outputs:    make(map[types.EgressType]*OutputConfig),
 	}
 
 	return p, p.Update(req)
@@ -147,11 +133,11 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		RoomId:   request.RoomId,
 		Status:   livekit.EgressStatus_EGRESS_STARTING,
 	}
-	p.AudioParams = AudioParams{
+	p.AudioConfig = AudioConfig{
 		AudioBitrate:   128,
 		AudioFrequency: 44100,
 	}
-	p.VideoParams = VideoParams{
+	p.VideoConfig = VideoConfig{
 		VideoProfile: types.ProfileMain,
 		Width:        1920,
 		Height:       1080,
@@ -160,12 +146,17 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		VideoBitrate: 4500,
 	}
 
-	// update and redact upload config before adding request to info
-	p.cloneAndRedactRequest(request)
-
 	connectionInfoRequired := true
 	switch req := request.Request.(type) {
 	case *livekit.StartEgressRequest_RoomComposite:
+		clone := proto.Clone(req.RoomComposite).(*livekit.RoomCompositeEgressRequest)
+		p.Info.Request = &livekit.EgressInfo_RoomComposite{
+			RoomComposite: clone,
+		}
+		redactEncodedOutputs(clone)
+
+		p.SourceType = types.SourceTypeWeb
+		p.Latency = webLatency
 		p.Info.RoomName = req.RoomComposite.RoomName
 		p.Layout = req.RoomComposite.Layout
 		if req.RoomComposite.CustomBaseUrl != "" {
@@ -176,6 +167,8 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_only and video_only")
 		}
+		p.AudioTranscoding = p.AudioEnabled
+		p.VideoTranscoding = p.VideoEnabled
 
 		// encoding options
 		switch opts := req.RoomComposite.Options.(type) {
@@ -186,14 +179,21 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 			p.applyAdvanced(opts.Advanced)
 		}
 
-		p.VideoTranscoding = true
 		// output params
-		if err := p.updateEncodedOutput(req.RoomComposite); err != nil {
+		if err := p.updateEncodedOutputs(req.RoomComposite); err != nil {
 			return err
 		}
 
 	case *livekit.StartEgressRequest_Web:
+		clone := proto.Clone(req.Web).(*livekit.WebEgressRequest)
+		p.Info.Request = &livekit.EgressInfo_Web{
+			Web: clone,
+		}
+		redactEncodedOutputs(clone)
+
 		connectionInfoRequired = false
+		p.SourceType = types.SourceTypeWeb
+		p.Latency = webLatency
 		p.WebUrl = req.Web.Url
 		if p.WebUrl == "" {
 			return errors.ErrInvalidInput("url")
@@ -203,6 +203,8 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_only and video_only")
 		}
+		p.AudioTranscoding = p.AudioEnabled
+		p.VideoTranscoding = p.VideoEnabled
 
 		// encoding options
 		switch opts := req.Web.Options.(type) {
@@ -213,13 +215,20 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 			p.applyAdvanced(opts.Advanced)
 		}
 
-		p.VideoTranscoding = true
 		// output params
-		if err := p.updateEncodedOutput(req.Web); err != nil {
+		if err := p.updateEncodedOutputs(req.Web); err != nil {
 			return err
 		}
 
 	case *livekit.StartEgressRequest_TrackComposite:
+		clone := proto.Clone(req.TrackComposite).(*livekit.TrackCompositeEgressRequest)
+		p.Info.Request = &livekit.EgressInfo_TrackComposite{
+			TrackComposite: clone,
+		}
+		redactEncodedOutputs(clone)
+
+		p.SourceType = types.SourceTypeSDK
+		p.Latency = sdkLatency
 		p.Info.RoomName = req.TrackComposite.RoomName
 		p.AudioTrackID = req.TrackComposite.AudioTrackId
 		p.VideoTrackID = req.TrackComposite.VideoTrackId
@@ -228,6 +237,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_track_id or video_track_id")
 		}
+		p.AudioTranscoding = p.AudioEnabled
 		p.VideoTranscoding = p.VideoEnabled
 
 		// encoding options
@@ -240,31 +250,29 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 		}
 
 		// output params
-		if err := p.updateEncodedOutput(req.TrackComposite); err != nil {
+		if err := p.updateEncodedOutputs(req.TrackComposite); err != nil {
 			return err
 		}
 
 	case *livekit.StartEgressRequest_Track:
+		clone := proto.Clone(req.Track).(*livekit.TrackEgressRequest)
+		p.Info.Request = &livekit.EgressInfo_Track{
+			Track: clone,
+		}
+		if f := clone.GetFile(); f != nil {
+			redactUpload(f)
+		}
+
+		p.SourceType = types.SourceTypeSDK
+		p.Latency = sdkLatency
 		p.Info.RoomName = req.Track.RoomName
 		p.TrackID = req.Track.TrackId
 		if p.TrackID == "" {
 			return errors.ErrInvalidInput("track_id")
 		}
 
-		// output params
-		switch o := req.Track.Output.(type) {
-		case *livekit.TrackEgressRequest_File:
-			p.DisableManifest = o.File.DisableManifest
-			if err := p.updateFileParams(o.File.Filepath); err != nil {
-				return err
-			}
-		case *livekit.TrackEgressRequest_WebsocketUrl:
-			if err := p.updateStreamParams(types.OutputTypeRaw, []string{o.WebsocketUrl}); err != nil {
-				return err
-			}
-
-		default:
-			return errors.ErrInvalidInput("output")
+		if err := p.updateDirectOutput(req.Track); err != nil {
+			return nil
 		}
 
 	default:
@@ -299,306 +307,61 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 	}
 
 	// codec compatibilities
-	if p.OutputType != "" {
-		// check audio codec
-		if p.AudioEnabled {
-			if p.AudioCodec == "" {
-				p.AudioCodec = types.DefaultAudioCodecs[p.OutputType]
-			} else if !types.CodecCompatibility[p.OutputType][p.AudioCodec] {
-				return errors.ErrIncompatible(p.OutputType, p.AudioCodec)
+	for _, o := range p.Outputs {
+		if o.OutputType != types.OutputTypeUnknown {
+			// check audio codec
+			if p.AudioEnabled {
+				if p.AudioCodec == "" {
+					p.AudioCodec = types.DefaultAudioCodecs[o.OutputType]
+				} else if !types.CodecCompatibility[o.OutputType][p.AudioCodec] {
+					return errors.ErrIncompatible(o.OutputType, p.AudioCodec)
+				}
+			}
+
+			// check video codec
+			if p.VideoEnabled {
+				if p.VideoCodec == "" {
+					p.VideoCodec = types.DefaultVideoCodecs[o.OutputType]
+				} else if !types.CodecCompatibility[o.OutputType][p.VideoCodec] {
+					return errors.ErrIncompatible(o.OutputType, p.VideoCodec)
+				}
 			}
 		}
-
-		// check video codec
-		if p.VideoEnabled {
-			if p.VideoCodec == "" {
-				p.VideoCodec = types.DefaultVideoCodecs[p.OutputType]
-			} else if !types.CodecCompatibility[p.OutputType][p.VideoCodec] {
-				return errors.ErrIncompatible(p.OutputType, p.VideoCodec)
-			}
-		}
 	}
 
-	return nil
-}
-
-func (p *PipelineConfig) updateEncodedOutput(req interface {
-	GetFile() *livekit.EncodedFileOutput
-	GetStream() *livekit.StreamOutput
-	GetSegments() *livekit.SegmentedFileOutput
-}) error {
-	if file := req.GetFile(); file != nil {
-		p.DisableManifest = file.DisableManifest
-		switch req.(type) {
-		case *livekit.TrackCompositeEgressRequest:
-			if file.FileType != livekit.EncodedFileType_DEFAULT_FILETYPE {
-				p.updateOutputType(file.FileType)
-			}
-		default:
-			p.updateOutputType(file.FileType)
-		}
-
-		return p.updateFileParams(file.Filepath)
-	}
-
-	if stream := req.GetStream(); stream != nil {
-		return p.updateStreamParams(types.OutputTypeRTMP, stream.Urls)
-	}
-
-	if segments := req.GetSegments(); segments != nil {
-		p.DisableManifest = segments.DisableManifest
-		p.updateOutputType(segments.Protocol)
-		return p.updateSegmentsParams(segments.FilenamePrefix, segments.PlaylistName, segments.SegmentDuration)
-	}
-
-	return errors.ErrInvalidInput("output")
-}
-
-func (p *PipelineConfig) updateOutputType(fileType interface{}) {
-	switch f := fileType.(type) {
-	case livekit.EncodedFileType:
-		switch f {
-		case livekit.EncodedFileType_DEFAULT_FILETYPE:
-			if !p.VideoEnabled && p.AudioCodec != types.MimeTypeAAC {
-				p.OutputType = types.OutputTypeOGG
-			} else {
-				p.OutputType = types.OutputTypeMP4
-			}
-		case livekit.EncodedFileType_MP4:
-			p.OutputType = types.OutputTypeMP4
-		case livekit.EncodedFileType_OGG:
-			p.OutputType = types.OutputTypeOGG
-		}
-
-	case livekit.SegmentedFileProtocol:
-		switch f {
-		case livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL,
-			livekit.SegmentedFileProtocol_HLS_PROTOCOL:
-			p.OutputType = types.OutputTypeHLS
-		}
-	}
-}
-
-func (p *PipelineConfig) updateFileParams(storageFilepath string) error {
-	p.EgressType = types.EgressTypeFile
-	p.StorageFilepath = storageFilepath
-	p.FileInfo = &livekit.FileInfo{}
-	p.Info.Result = &livekit.EgressInfo_File{File: p.FileInfo}
-
-	// filename
-	identifier, replacements := p.getFilenameInfo()
-	if p.OutputType != "" {
-		err := p.updateFilepath(identifier, replacements)
-		if err != nil {
-			return err
-		}
-	} else {
-		p.StorageFilepath = stringReplace(p.StorageFilepath, replacements)
-	}
-
-	return nil
-}
-
-func (p *PipelineConfig) updateFilepath(identifier string, replacements map[string]string) error {
-	p.StorageFilepath = stringReplace(p.StorageFilepath, replacements)
-
-	// get file extension
-	ext := types.FileExtensionForOutputType[p.OutputType]
-
-	if p.StorageFilepath == "" || strings.HasSuffix(p.StorageFilepath, "/") {
-		// generate filepath
-		p.StorageFilepath = fmt.Sprintf("%s%s-%s%s", p.StorageFilepath, identifier, time.Now().Format("2006-01-02T150405"), ext)
-	} else if !strings.HasSuffix(p.StorageFilepath, string(ext)) {
-		// check for existing (incorrect) extension
-		extIdx := strings.LastIndex(p.StorageFilepath, ".")
-		if extIdx > 0 {
-			existingExt := types.FileExtension(p.StorageFilepath[extIdx:])
-			if _, ok := types.FileExtensions[existingExt]; ok {
-				p.StorageFilepath = p.StorageFilepath[:extIdx]
-			}
-		}
-		// add file extension
-		p.StorageFilepath = p.StorageFilepath + string(ext)
-	}
-
-	// update filename
-	p.FileInfo.Filename = p.StorageFilepath
-
-	// get local filepath
-	dir, filename := path.Split(p.StorageFilepath)
-	if p.UploadConfig == nil {
-		if dir != "" {
-			// create local directory
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				return err
-			}
-		}
-		// write directly to requested location
-		p.LocalFilepath = p.StorageFilepath
-	} else {
-		// prepend the configuration base directory and the egress Id
-		tempDir := path.Join(p.LocalOutputDirectory, p.Info.EgressId)
-
-		// create temporary directory
-		if err := os.MkdirAll(tempDir, 0755); err != nil {
-			return err
-		}
-
-		// write to tmp dir
-		p.LocalFilepath = path.Join(tempDir, filename)
-	}
-
-	return nil
-}
-
-func (p *PipelineConfig) updateStreamParams(outputType types.OutputType, urls []string) error {
-	p.OutputType = outputType
-
-	switch p.OutputType {
-	case types.OutputTypeRTMP:
-		p.EgressType = types.EgressTypeStream
-		p.AudioCodec = types.MimeTypeAAC
-		p.VideoCodec = types.MimeTypeH264
-		p.StreamUrls = urls
-
-	case types.OutputTypeRaw:
-		p.EgressType = types.EgressTypeWebsocket
-		p.AudioCodec = types.MimeTypeRaw
-		p.WebsocketUrl = urls[0]
-		p.MutedChan = make(chan bool, 1)
-	}
-
-	// Use a 4s default key frame interval for streaming
-	if p.KeyFrameInterval == 0 {
-		p.KeyFrameInterval = 4
-	}
-
-	p.StreamInfo = make(map[string]*livekit.StreamInfo)
-	var streamInfoList []*livekit.StreamInfo
-	for _, url := range urls {
-		if err := p.VerifyUrl(url); err != nil {
-			return err
-		}
-
-		info := &livekit.StreamInfo{Url: url}
-		p.StreamInfo[url] = info
-		streamInfoList = append(streamInfoList, info)
-	}
-
-	p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
-	return nil
-}
-
-func (p *PipelineConfig) updateSegmentsParams(filePrefix string, playlistFilename string, segmentDuration uint32) error {
-	p.EgressType = types.EgressTypeSegmentedFile
-	p.LocalFilePrefix = filePrefix
-	p.PlaylistFilename = playlistFilename
-	p.SegmentDuration = int(segmentDuration)
-	if p.SegmentDuration == 0 {
-		p.SegmentDuration = 6
-	}
-	if p.KeyFrameInterval == 0 {
-		// The segmenter should request key frames from the encoder at expected frame boundaries. Set the key frame interval to twice the segmennt duration as a failsafe
-		p.KeyFrameInterval = 2 * float64(p.SegmentDuration)
-	}
-	p.SegmentsInfo = &livekit.SegmentsInfo{}
-	p.Info.Result = &livekit.EgressInfo_Segments{Segments: p.SegmentsInfo}
-
-	// filename
-	identifier, replacements := p.getFilenameInfo()
-	err := p.updatePrefixAndPlaylist(identifier, replacements)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (p *PipelineConfig) getFilenameInfo() (string, map[string]string) {
-	now := time.Now()
-	utc := fmt.Sprintf("%s%d", now.Format("20060102150405"), now.UnixMilli()%1000)
-
-	if p.Info.RoomName != "" {
-		return p.Info.RoomName, map[string]string{
-			"{room_name}": p.Info.RoomName,
-			"{room_id}":   p.Info.RoomId,
-			"{time}":      now.Format("2006-01-02T150405"),
-			"{utc}":       utc,
-		}
-	}
-
-	return "web", map[string]string{
-		"{time}": now.Format("2006-01-02T150405"),
-		"{utc}":  utc,
-	}
-}
-
-func (p *PipelineConfig) updatePrefixAndPlaylist(identifier string, replacements map[string]string) error {
-	p.LocalFilePrefix = stringReplace(p.LocalFilePrefix, replacements)
-	p.PlaylistFilename = stringReplace(p.PlaylistFilename, replacements)
-
-	ext := types.FileExtensionForOutputType[p.OutputType]
-
-	if p.LocalFilePrefix == "" || strings.HasSuffix(p.LocalFilePrefix, "/") {
-		p.LocalFilePrefix = fmt.Sprintf("%s%s-%s", p.LocalFilePrefix, identifier, time.Now().Format("2006-01-02T150405"))
-	}
-
-	// Playlist path is relative to file prefix. Only keep actual filename if a full path is given
-	_, p.PlaylistFilename = path.Split(p.PlaylistFilename)
-	if p.PlaylistFilename == "" {
-		p.PlaylistFilename = fmt.Sprintf("playlist-%s%s", identifier, ext)
-	}
-
-	var filePrefix string
-	p.StoragePathPrefix, filePrefix = path.Split(p.LocalFilePrefix)
-	if p.UploadConfig == nil {
-		if p.StoragePathPrefix != "" {
-			if err := os.MkdirAll(p.StoragePathPrefix, 0755); err != nil {
-				return err
-			}
-		}
-		p.PlaylistFilename = path.Join(p.StoragePathPrefix, p.PlaylistFilename)
-	} else {
-		// Prepend the configuration base directory and the egress Id
-		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
-		tmpDir := path.Join(p.LocalOutputDirectory, p.Info.EgressId)
-		if err := os.MkdirAll(tmpDir, 0755); err != nil {
-			return err
-		}
-
-		p.PlaylistFilename = path.Join(tmpDir, p.PlaylistFilename)
-		p.LocalFilePrefix = path.Join(tmpDir, filePrefix)
-	}
-
-	p.SegmentsInfo.PlaylistName = p.GetStorageFilepath(p.PlaylistFilename)
 	return nil
 }
 
 // used for sdk input source
-func (p *PipelineConfig) UpdateFileInfoFromSDK(fileIdentifier string, replacements map[string]string) error {
-	if p.OutputType == "" {
-		if !p.VideoEnabled {
-			// audio input is always opus
-			p.OutputType = types.OutputTypeOGG
-		} else {
-			p.OutputType = types.OutputTypeMP4
+func (p *PipelineConfig) UpdateInfoFromSDK(fileIdentifier string, replacements map[string]string) error {
+	for egressType, outputConfig := range p.Outputs {
+		switch egressType {
+		case types.EgressTypeFile:
+			if outputConfig.OutputType == types.OutputTypeUnknown {
+				if !p.VideoEnabled {
+					// audio input is always opus
+					outputConfig.OutputType = types.OutputTypeOGG
+				} else {
+					outputConfig.OutputType = types.OutputTypeMP4
+				}
+			}
+			return outputConfig.updateFilepath(p, fileIdentifier, replacements)
+
+		case types.EgressTypeSegments:
+			outputConfig.LocalFilePrefix = stringReplace(outputConfig.LocalFilePrefix, replacements)
+			outputConfig.PlaylistFilename = stringReplace(outputConfig.PlaylistFilename, replacements)
+			outputConfig.StoragePathPrefix = stringReplace(outputConfig.StoragePathPrefix, replacements)
+			outputConfig.SegmentsInfo.PlaylistName = stringReplace(outputConfig.SegmentsInfo.PlaylistName, replacements)
 		}
 	}
 
-	return p.updateFilepath(fileIdentifier, replacements)
+	return nil
 }
 
-func (p *PipelineConfig) UpdatePlaylistNamesFromSDK(replacements map[string]string) {
-	p.LocalFilePrefix = stringReplace(p.LocalFilePrefix, replacements)
-	p.PlaylistFilename = stringReplace(p.PlaylistFilename, replacements)
-	p.StoragePathPrefix = stringReplace(p.StoragePathPrefix, replacements)
-	p.SegmentsInfo.PlaylistName = stringReplace(p.SegmentsInfo.PlaylistName, replacements)
-}
-
-func (p *PipelineConfig) VerifyUrl(url string) error {
+func (p *PipelineConfig) VerifyUrl(url string, outputType types.OutputType) error {
 	var protocol, prefix string
 
-	switch p.OutputType {
+	switch outputType {
 	case types.OutputTypeRTMP:
 		protocol = "rtmp"
 		prefix = "rtmp"
@@ -612,23 +375,6 @@ func (p *PipelineConfig) VerifyUrl(url string) error {
 	}
 
 	return nil
-}
-
-func (p *PipelineConfig) GetSegmentOutputType() types.OutputType {
-	switch p.OutputType {
-	case types.OutputTypeHLS:
-		// HLS is always mpeg ts for now. We may implement fmp4 in the future
-		return types.OutputTypeTS
-	default:
-		return p.OutputType
-	}
-}
-
-func (p *SegmentedFileParams) GetStorageFilepath(filename string) string {
-	// Remove any path prepended to the filename
-	_, filename = path.Split(filename)
-
-	return path.Join(p.StoragePathPrefix, filename)
 }
 
 type Manifest struct {
@@ -647,7 +393,7 @@ type Manifest struct {
 	SegmentCount      int64  `json:"segment_count,omitempty"`
 }
 
-func (p *PipelineConfig) GetManifest() ([]byte, error) {
+func (p *PipelineConfig) GetManifest(egressType types.EgressType) ([]byte, error) {
 	manifest := Manifest{
 		EgressID:          p.Info.EgressId,
 		RoomID:            p.Info.RoomId,
@@ -662,9 +408,12 @@ func (p *PipelineConfig) GetManifest() ([]byte, error) {
 		AudioTrackID:      p.AudioTrackID,
 		VideoTrackID:      p.VideoTrackID,
 	}
-	if p.SegmentsInfo != nil {
-		manifest.SegmentCount = p.SegmentsInfo.SegmentCount
+
+	if egressType == types.EgressTypeSegments {
+		o := p.Outputs[egressType]
+		manifest.SegmentCount = o.SegmentsInfo.SegmentCount
 	}
+
 	return json.Marshal(manifest)
 }
 

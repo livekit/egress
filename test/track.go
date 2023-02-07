@@ -147,7 +147,7 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 			require.NoError(t, err)
 			p.GstReady = make(chan struct{})
 
-			rec, err := pipeline.New(ctx, p)
+			rec, err := pipeline.New(ctx, p, nil)
 			require.NoError(t, err)
 
 			if conf.SessionLimits.StreamOutputMaxDuration >= 0 {
@@ -158,7 +158,7 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 			}
 			res := rec.Run(ctx)
 
-			verify(t, filepath, p, res, ResultTypeStream, conf.Muting, conf.sourceFramerate)
+			verify(t, filepath, p, res, types.EgressTypeWebsocket, conf.Muting, conf.sourceFramerate)
 		})
 		if conf.Short {
 			return

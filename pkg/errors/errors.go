@@ -91,7 +91,7 @@ func ErrUploadFailed(location string, err error) error {
 	return psrpc.NewErrorf(psrpc.Unknown, "%s upload failed: %v", location, err)
 }
 
-func ErrWebSocketClosed(addr string) error {
+func ErrWebsocketClosed(addr string) error {
 	return psrpc.NewErrorf(psrpc.Internal, "websocket already closed: %s", addr)
 }
 

@@ -25,7 +25,8 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				AudioCodec: livekit.AudioCodec_AAC,
 				VideoCodec: livekit.VideoCodec_H264_HIGH,
 			},
-			filename: "r_{room_name}_high_{time}.mp4",
+			filename:               "r_{room_name}_high_{time}.mp4",
+			expectVideoTranscoding: true,
 		},
 		{
 			name:     "h264-high-mp4-limit",
@@ -36,8 +37,9 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				Height:       720,
 				VideoBitrate: 4500,
 			},
-			filename:       "r_limit_{time}.mp4",
-			sessionTimeout: time.Second * 20,
+			filename:               "r_limit_{time}.mp4",
+			sessionTimeout:         time.Second * 20,
+			expectVideoTranscoding: true,
 		},
 		{
 			name:      "opus-ogg",
@@ -46,7 +48,8 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 			options: &livekit.EncodingOptions{
 				AudioCodec: livekit.AudioCodec_OPUS,
 			},
-			filename: "r_{room_name}_opus_{time}",
+			filename:               "r_{room_name}_opus_{time}",
+			expectVideoTranscoding: false,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -68,10 +71,15 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				RoomName:  conf.room.Name(),
 				Layout:    "speaker-dark",
 				AudioOnly: test.audioOnly,
-				Output: &livekit.RoomCompositeEgressRequest_File{
-					File: fileOutput,
-				},
 			}
+
+			// if v2 {
+			// 	roomRequest.FileOutput = fileOutput
+			// } else {
+			roomRequest.Output = &livekit.RoomCompositeEgressRequest_File{
+				File: fileOutput,
+			}
+			// }
 
 			if test.options != nil {
 				roomRequest.Options = &livekit.RoomCompositeEgressRequest_Advanced{
@@ -85,7 +93,7 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 					RoomComposite: roomRequest,
 				},
 			}
-			test.expectVideoTranscoding = true
+
 			runFileTest(t, conf, req, test)
 		})
 		if conf.Short {
@@ -99,33 +107,44 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 
 	for _, test := range []*testCase{
 		{
-			name: "room-rtmp",
+			name:                   "room-rtmp",
+			expectVideoTranscoding: true,
 		},
 		{
-			name:           "room-rtmp-limit",
-			sessionTimeout: time.Second * 20,
+			name:                   "room-rtmp-limit",
+			sessionTimeout:         time.Second * 20,
+			expectVideoTranscoding: true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			awaitIdle(t, conf.svc)
 
+			room := &livekit.RoomCompositeEgressRequest{
+				RoomName: conf.room.Name(),
+				Layout:   "grid-light",
+			}
+
+			// if v2 {
+			// 	room.StreamOutput = &livekit.StreamOutput{
+			// 		Protocol: livekit.StreamProtocol_RTMP,
+			// 		Urls:     []string{streamUrl1},
+			// 	}
+			// } else {
+			room.Output = &livekit.RoomCompositeEgressRequest_Stream{
+				Stream: &livekit.StreamOutput{
+					Protocol: livekit.StreamProtocol_RTMP,
+					Urls:     []string{streamUrl1},
+				},
+			}
+			// }
+
 			req := &livekit.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
 				Request: &livekit.StartEgressRequest_RoomComposite{
-					RoomComposite: &livekit.RoomCompositeEgressRequest{
-						RoomName: conf.room.Name(),
-						Layout:   "grid-light",
-						Output: &livekit.RoomCompositeEgressRequest_Stream{
-							Stream: &livekit.StreamOutput{
-								Protocol: livekit.StreamProtocol_RTMP,
-								Urls:     []string{streamUrl1},
-							},
-						},
-					},
+					RoomComposite: room,
 				},
 			}
 
-			test.expectVideoTranscoding = true
 			runStreamTest(t, conf, req, test)
 		})
 		if conf.Short {
@@ -136,19 +155,29 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 	t.Run("rtmp-failure", func(t *testing.T) {
 		awaitIdle(t, conf.svc)
 
+		room := &livekit.RoomCompositeEgressRequest{
+			RoomName: conf.RoomName,
+			Layout:   "speaker-light",
+		}
+
+		// if v2 {
+		// 	room.StreamOutput = &livekit.StreamOutput{
+		// 		Protocol: livekit.StreamProtocol_RTMP,
+		// 		Urls:     []string{badStreamUrl},
+		// 	}
+		// } else {
+		room.Output = &livekit.RoomCompositeEgressRequest_Stream{
+			Stream: &livekit.StreamOutput{
+				Protocol: livekit.StreamProtocol_RTMP,
+				Urls:     []string{badStreamUrl},
+			},
+		}
+		// }
+
 		req := &livekit.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &livekit.StartEgressRequest_RoomComposite{
-				RoomComposite: &livekit.RoomCompositeEgressRequest{
-					RoomName: conf.RoomName,
-					Layout:   "speaker-light",
-					Output: &livekit.RoomCompositeEgressRequest_Stream{
-						Stream: &livekit.StreamOutput{
-							Protocol: livekit.StreamProtocol_RTMP,
-							Urls:     []string{badStreamUrl},
-						},
-					},
-				},
+				RoomComposite: room,
 			},
 		}
 
@@ -190,8 +219,9 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				Height:       1080,
 				VideoBitrate: 4500,
 			},
-			filename: "rs_{room_name}_{time}",
-			playlist: "rs_{room_name}_{time}.m3u8",
+			filename:               "rs_{room_name}_{time}",
+			playlist:               "rs_{room_name}_{time}.m3u8",
+			expectVideoTranscoding: true,
 		},
 		{
 			name: "rs-limit",
@@ -202,28 +232,37 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				Height:       1080,
 				VideoBitrate: 4500,
 			},
-			filename:       "rs_limit_{time}",
-			playlist:       "rs_limit_{time}.m3u8",
-			sessionTimeout: time.Second * 20,
+			filename:               "rs_limit_{time}",
+			playlist:               "rs_limit_{time}.m3u8",
+			sessionTimeout:         time.Second * 20,
+			expectVideoTranscoding: true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			awaitIdle(t, conf.svc)
 
-			roomRequest := &livekit.RoomCompositeEgressRequest{
+			room := &livekit.RoomCompositeEgressRequest{
 				RoomName:  conf.RoomName,
 				Layout:    "grid-dark",
 				AudioOnly: test.audioOnly,
-				Output: &livekit.RoomCompositeEgressRequest_Segments{
-					Segments: &livekit.SegmentedFileOutput{
-						FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
-						PlaylistName:   test.playlist,
-					},
-				},
 			}
 
+			// if v2 {
+			// 	room.SegmentOutput = &livekit.SegmentedFileOutput{
+			// 		FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
+			// 		PlaylistName:   test.playlist,
+			// 	}
+			// } else {
+			room.Output = &livekit.RoomCompositeEgressRequest_Segments{
+				Segments: &livekit.SegmentedFileOutput{
+					FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
+					PlaylistName:   test.playlist,
+				},
+			}
+			// }
+
 			if test.options != nil {
-				roomRequest.Options = &livekit.RoomCompositeEgressRequest_Advanced{
+				room.Options = &livekit.RoomCompositeEgressRequest_Advanced{
 					Advanced: test.options,
 				}
 			}
@@ -231,10 +270,10 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 			req := &livekit.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
 				Request: &livekit.StartEgressRequest_RoomComposite{
-					RoomComposite: roomRequest,
+					RoomComposite: room,
 				},
 			}
-			test.expectVideoTranscoding = true
+
 			runSegmentsTest(t, conf, req, test)
 		})
 		if conf.Short {

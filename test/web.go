@@ -23,15 +23,20 @@ func testWebFile(t *testing.T, conf *TestConfig) {
 		}
 	}
 
+	web := &livekit.WebEgressRequest{
+		Url: webUrl,
+	}
+	// if v2 {
+	// 	web.FileOutput = fileOutput
+	// } else {
+	web.Output = &livekit.WebEgressRequest_File{
+		File: fileOutput,
+	}
+	// }
 	req := &livekit.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &livekit.StartEgressRequest_Web{
-			Web: &livekit.WebEgressRequest{
-				Url: webUrl,
-				Output: &livekit.WebEgressRequest_File{
-					File: fileOutput,
-				},
-			},
+			Web: web,
 		},
 	}
 
@@ -43,18 +48,27 @@ func testWebFile(t *testing.T, conf *TestConfig) {
 func testWebStream(t *testing.T, conf *TestConfig) {
 	awaitIdle(t, conf.svc)
 
+	web := &livekit.WebEgressRequest{
+		Url: webUrl,
+	}
+	// if v2 {
+	// 	web.StreamOutput = &livekit.StreamOutput{
+	// 		Protocol: livekit.StreamProtocol_RTMP,
+	// 		Urls:     []string{streamUrl1},
+	// 	}
+	// } else {
+	web.Output = &livekit.WebEgressRequest_Stream{
+		Stream: &livekit.StreamOutput{
+			Protocol: livekit.StreamProtocol_RTMP,
+			Urls:     []string{streamUrl1},
+		},
+	}
+	// }
+
 	req := &livekit.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &livekit.StartEgressRequest_Web{
-			Web: &livekit.WebEgressRequest{
-				Url: webUrl,
-				Output: &livekit.WebEgressRequest_Stream{
-					Stream: &livekit.StreamOutput{
-						Protocol: livekit.StreamProtocol_RTMP,
-						Urls:     []string{streamUrl1},
-					},
-				},
-			},
+			Web: web,
 		},
 	}
 
@@ -66,20 +80,27 @@ func testWebStream(t *testing.T, conf *TestConfig) {
 func testWebSegments(t *testing.T, conf *TestConfig) {
 	awaitIdle(t, conf.svc)
 
-	webRequest := &livekit.WebEgressRequest{
+	web := &livekit.WebEgressRequest{
 		Url: webUrl,
-		Output: &livekit.WebEgressRequest_Segments{
-			Segments: &livekit.SegmentedFileOutput{
-				FilenamePrefix: getFilePath(conf.ServiceConfig, "web_{time}"),
-				PlaylistName:   "web_{time}.m3u8",
-			},
+	}
+	// if v2 {
+	// 	web.SegmentOutput = &livekit.SegmentedFileOutput{
+	// 		FilenamePrefix: getFilePath(conf.ServiceConfig, "web_{time}"),
+	// 		PlaylistName:   "web_{time}.m3u8",
+	// 	}
+	// } else {
+	web.Output = &livekit.WebEgressRequest_Segments{
+		Segments: &livekit.SegmentedFileOutput{
+			FilenamePrefix: getFilePath(conf.ServiceConfig, "web_{time}"),
+			PlaylistName:   "web_{time}.m3u8",
 		},
 	}
+	// }
 
 	req := &livekit.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &livekit.StartEgressRequest_Web{
-			Web: webRequest,
+			Web: web,
 		},
 	}
 

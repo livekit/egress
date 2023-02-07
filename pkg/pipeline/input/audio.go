@@ -1,17 +1,18 @@
-package builder
+package input
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/pion/webrtc/v3"
 	"github.com/tinyzimmer/go-gst/gst"
-	"github.com/tinyzimmer/go-gst/gst/app"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/types"
 )
+
+const audioMixerLatency = uint64(41e8)
 
 type AudioInput struct {
 	decoder []*gst.Element
@@ -20,108 +21,91 @@ type AudioInput struct {
 	encoder *gst.Element
 }
 
-func NewWebAudioInput(p *config.PipelineConfig) (*AudioInput, error) {
+func (b *Bin) buildAudioInput(p *config.PipelineConfig) error {
 	a := &AudioInput{}
 
-	if err := a.buildWebDecoder(p); err != nil {
-		return nil, err
-	}
-	if err := a.buildEncoder(p); err != nil {
-		return nil, err
-	}
+	switch p.SourceType {
+	case types.SourceTypeSDK:
+		if err := a.buildSDKDecoder(p); err != nil {
+			return err
+		}
 
-	return a, nil
-}
-
-func NewSDKAudioInput(p *config.PipelineConfig, src *app.Source, codec webrtc.RTPCodecParameters) (*AudioInput, error) {
-	a := &AudioInput{}
-
-	if err := a.buildSDKDecoder(p, src, codec); err != nil {
-		return nil, err
-	}
-	if err := a.buildMixer(p); err != nil {
-		return nil, err
-	}
-	if p.OutputType == types.OutputTypeRaw {
-		return a, nil
-	}
-	if err := a.buildEncoder(p); err != nil {
-		return nil, err
-	}
-
-	return a, nil
-}
-
-func (a *AudioInput) AddToBin(bin *gst.Bin) error {
-	if a.decoder != nil {
-		if err := bin.AddMany(a.decoder...); err != nil {
-			return errors.ErrGstPipelineError(err)
+	case types.SourceTypeWeb:
+		if err := a.buildWebDecoder(p); err != nil {
+			return err
 		}
 	}
+
+	if p.AudioTranscoding {
+		if err := a.buildEncoder(p); err != nil {
+			return err
+		}
+	}
+
+	// Add elements to bin
+	if err := b.bin.AddMany(a.decoder...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
 	if a.testSrc != nil {
-		if err := bin.AddMany(a.testSrc...); err != nil {
+		if err := b.bin.AddMany(a.testSrc...); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.mixer != nil {
-		if err := bin.AddMany(a.mixer...); err != nil {
+		if err := b.bin.AddMany(a.mixer...); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.encoder != nil {
-		if err := bin.Add(a.encoder); err != nil {
+		if err := b.bin.Add(a.encoder); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 	}
+
+	b.audio = a
 	return nil
 }
 
-func (a *AudioInput) Link() error {
+func (a *AudioInput) Link() (*gst.GhostPad, error) {
 	if a.decoder != nil {
 		if err := gst.ElementLinkMany(a.decoder...); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-	}
-	if a.testSrc != nil {
-		if err := gst.ElementLinkMany(a.testSrc...); err != nil {
-			return errors.ErrGstPipelineError(err)
+			return nil, errors.ErrGstPipelineError(err)
 		}
 	}
 	if a.mixer != nil {
-		if link := getSrcPad(a.decoder).Link(a.mixer[0].GetRequestPad("sink_%u")); link != gst.PadLinkOK {
-			return errors.ErrPadLinkFailed("audio decoder", "audio mixer", link.String())
+		if err := builder.LinkPads("audio decoder", builder.GetSrcPad(a.decoder), "audio mixer", a.mixer[0].GetRequestPad("sink_%u")); err != nil {
+			return nil, err
 		}
-
-		if link := getSrcPad(a.testSrc).Link(a.mixer[0].GetRequestPad("sink_%u")); link != gst.PadLinkOK {
-			return errors.ErrPadLinkFailed("audio test src", "audio mixer", link.String())
+		if err := gst.ElementLinkMany(a.testSrc...); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err := builder.LinkPads("audio test src", builder.GetSrcPad(a.testSrc), "audio mixer", a.mixer[0].GetRequestPad("sink_%u")); err != nil {
+			return nil, err
 		}
 		if err := gst.ElementLinkMany(a.mixer...); err != nil {
-			return errors.ErrGstPipelineError(err)
+			return nil, errors.ErrGstPipelineError(err)
 		}
 	}
+
+	var srcPad *gst.Pad
 	if a.encoder != nil {
 		if a.mixer != nil {
-			if link := getSrcPad(a.mixer).Link(a.encoder.GetStaticPad("sink")); link != gst.PadLinkOK {
-				return errors.ErrPadLinkFailed("audio mixer", "audio encoder", link.String())
+			if err := builder.LinkPads("audio mixer", builder.GetSrcPad(a.mixer), "audio encoder", a.encoder.GetStaticPad("sink")); err != nil {
+				return nil, err
 			}
 		} else {
-			if link := getSrcPad(a.decoder).Link(a.encoder.GetStaticPad("sink")); link != gst.PadLinkOK {
-				return errors.ErrPadLinkFailed("audio decoder", "audio encoder", link.String())
+			if err := builder.LinkPads("audio decoder", builder.GetSrcPad(a.decoder), "audio encoder", a.encoder.GetStaticPad("sink")); err != nil {
+				return nil, err
 			}
 		}
+		srcPad = a.encoder.GetStaticPad("src")
+	} else if a.mixer != nil {
+		srcPad = builder.GetSrcPad(a.mixer)
+	} else {
+		srcPad = builder.GetSrcPad(a.decoder)
 	}
 
-	return nil
-}
-
-func (a *AudioInput) GetSrcPad() *gst.Pad {
-	if a.encoder != nil {
-		return a.encoder.GetStaticPad("src")
-	}
-	if a.mixer != nil {
-		return getSrcPad(a.mixer)
-	}
-	return getSrcPad(a.decoder)
+	return gst.NewGhostPad("audio_src", srcPad), nil
 }
 
 func (a *AudioInput) buildWebDecoder(p *config.PipelineConfig) error {
@@ -137,7 +121,8 @@ func (a *AudioInput) buildWebDecoder(p *config.PipelineConfig) error {
 	return a.addConverter(p)
 }
 
-func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, codec webrtc.RTPCodecParameters) error {
+func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig) error {
+	src := p.AudioSrc
 	src.Element.SetArg("format", "time")
 	if err := src.Element.SetProperty("is-live", true); err != nil {
 		return err
@@ -145,11 +130,11 @@ func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 	a.decoder = []*gst.Element{src.Element}
 
 	switch {
-	case strings.EqualFold(codec.MimeType, string(types.MimeTypeOpus)):
+	case strings.EqualFold(p.AudioCodecParams.MimeType, string(types.MimeTypeOpus)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
-				codec.PayloadType, codec.ClockRate,
+				p.AudioCodecParams.PayloadType, p.AudioCodecParams.ClockRate,
 			),
 		)); err != nil {
 			return errors.ErrGstPipelineError(err)
@@ -171,14 +156,18 @@ func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig, src *app.Source, 
 		a.decoder = append(a.decoder, rtpOpusDepay, opusDec)
 
 	default:
-		return errors.ErrNotSupported(codec.MimeType)
+		return errors.ErrNotSupported(p.AudioCodecParams.MimeType)
 	}
 
-	return a.addConverter(p)
+	if err := a.addConverter(p); err != nil {
+		return err
+	}
+
+	return a.buildMixer(p)
 }
 
 func (a *AudioInput) addConverter(p *config.PipelineConfig) error {
-	audioQueue, err := buildQueue(Latency/10, true)
+	audioQueue, err := builder.BuildQueue(true)
 	if err != nil {
 		return err
 	}
@@ -226,8 +215,7 @@ func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	// set latency slightly higher than max audio appsrc latency
-	if err = audioMixer.SetProperty("latency", Latency); err != nil {
+	if err = audioMixer.SetProperty("latency", audioMixerLatency); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 	mixedCaps, err := getCapsFilter(p)

@@ -2,9 +2,6 @@ package pipeline
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"path"
 	"sync"
 	"time"
 
@@ -14,10 +11,9 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/input"
-	"github.com/livekit/egress/pkg/pipeline/input/sdk"
-	"github.com/livekit/egress/pkg/pipeline/input/web"
 	"github.com/livekit/egress/pkg/pipeline/output"
 	"github.com/livekit/egress/pkg/pipeline/sink"
+	"github.com/livekit/egress/pkg/pipeline/source"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -25,19 +21,22 @@ import (
 )
 
 const (
-	pipelineSource    = "pipeline"
-	eosTimeout        = time.Second * 30
-	maxPendingUploads = 100
+	pipelineSource = "pipeline"
+	eosTimeout     = time.Second * 30
 )
+
+type UpdateFunc func(context.Context, *livekit.EgressInfo)
 
 type Pipeline struct {
 	*config.PipelineConfig
 
 	// gstreamer
-	pipeline *gst.Pipeline
-	in       input.Input
-	out      *output.OutputBin
+	src      source.Source
 	loop     *glib.MainLoop
+	pipeline *gst.Pipeline
+	in       *input.Bin
+	out      *output.Bin
+	sinks    map[types.EgressType]sink.Sink
 
 	// internal
 	mu         sync.Mutex
@@ -47,21 +46,11 @@ type Pipeline struct {
 	closeOnce  sync.Once
 	eosTimer   *time.Timer
 
-	// segments
-	playlistWriter        *sink.PlaylistWriter
-	endedSegments         chan segmentUpdate
-	segmentUploadDoneChan chan error
-
 	// callbacks
-	onStatusUpdate func(context.Context, *livekit.EgressInfo)
+	onStatusUpdate UpdateFunc
 }
 
-type segmentUpdate struct {
-	endTime   int64
-	localPath string
-}
-
-func New(ctx context.Context, p *config.PipelineConfig) (*Pipeline, error) {
+func New(ctx context.Context, p *config.PipelineConfig, onStatusUpdate UpdateFunc) (*Pipeline, error) {
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
@@ -73,70 +62,67 @@ func New(ctx context.Context, p *config.PipelineConfig) (*Pipeline, error) {
 		close(p.GstReady)
 	}()
 
-	// create input bin
-	in, err := input.New(ctx, p)
-	if err != nil {
-		return nil, err
-	}
-
-	// create output bin
-	out, err := output.New(ctx, p)
+	// create source
+	src, err := source.New(ctx, p)
 	if err != nil {
 		return nil, err
 	}
 
 	// create pipeline
+	<-p.GstReady
 	pipeline, err := gst.NewPipeline("pipeline")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	// add bins to pipeline
-	if err = pipeline.Add(in.Element()); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
-	}
-
-	// link input elements
-	if err = in.Link(); err != nil {
+	// create input bin
+	in, err := input.New(ctx, pipeline, p)
+	if err != nil {
 		return nil, err
 	}
 
-	// link output elements. There is no "out" for HLS
-	if out != nil {
-		if err = pipeline.Add(out.Element()); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
-
-		if err = out.Link(); err != nil {
-			return nil, err
-		}
-
-		// link bins
-		if err = in.Bin().Link(out.Element()); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
+	// create output bin
+	out, err := output.New(ctx, pipeline, p)
+	if err != nil {
+		return nil, err
 	}
 
-	var playlistWriter *sink.PlaylistWriter
-	if p.OutputType == types.OutputTypeHLS {
-		playlistWriter, err = sink.NewPlaylistWriter(p)
-		if err != nil {
+	// link input bin
+	audioSrcPad, videoSrcPad, err := in.Link()
+	if err != nil {
+		return nil, err
+	}
+
+	// link output bin
+	if err = out.Link(audioSrcPad, videoSrcPad); err != nil {
+		return nil, err
+	}
+
+	// create sinks
+	sinks, err := sink.CreateSinks(p)
+	if err != nil {
+		return nil, err
+	}
+
+	// set websocketSink callback with SDK source
+	if s, ok := sinks[types.EgressTypeWebsocket]; ok {
+		websocketSink := s.(*sink.WebsocketSink)
+		src.(*source.SDKSource).OnTrackMuted(websocketSink.OnTrackMuted)
+		if err = out.SetWebsocketSink(websocketSink); err != nil {
 			return nil, err
 		}
 	}
 
 	return &Pipeline{
 		PipelineConfig: p,
+		src:            src,
 		pipeline:       pipeline,
 		in:             in,
 		out:            out,
-		playlistWriter: playlistWriter,
+		sinks:          sinks,
 		closed:         make(chan struct{}),
+		onStatusUpdate: onStatusUpdate,
 	}, nil
-}
-
-func (p *Pipeline) OnStatusUpdate(f func(context.Context, *livekit.EgressInfo)) {
-	p.onStatusUpdate = f
 }
 
 func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
@@ -159,15 +145,17 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 			p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 		}
 
-		p.cleanup()
+		for _, s := range p.sinks {
+			s.Cleanup()
+		}
 	}()
 
 	// wait until room is ready
-	start := p.in.StartRecording()
+	start := p.src.StartRecording()
 	if start != nil {
 		select {
 		case <-p.closed:
-			p.in.Close()
+			p.src.Close()
 			p.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
 			return p.Info
 		case <-start:
@@ -177,12 +165,20 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 
 	// close when room ends
 	go func() {
-		<-p.in.EndRecording()
+		<-p.src.EndRecording()
 		p.SendEOS(ctx)
 	}()
 
 	// session limit timer
 	p.startSessionLimitTimer(ctx)
+
+	for _, s := range p.sinks {
+		if err := s.Start(); err != nil {
+			p.src.Close()
+			p.Info.Error = err.Error()
+			return p.Info
+		}
+	}
 
 	// add watch
 	p.loop = glib.NewMainLoop(glib.MainContextDefault(), false)
@@ -196,72 +192,23 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		return p.Info
 	}
 
-	if p.EgressType == types.EgressTypeSegmentedFile {
-		p.startSegmentWorker()
-	}
-
 	// run main loop
 	p.loop.Run()
 
 	// close input source
-	p.in.Close()
-
-	if p.endedSegments != nil {
-		close(p.endedSegments)
-	}
+	p.src.Close()
 
 	// update endedAt from sdk source
-	switch s := p.in.(type) {
-	case *sdk.SDKInput:
-		p.updateDuration(s.GetEndTime())
+	if p.SourceType == types.SourceTypeSDK {
+		p.updateDuration(p.src.(*source.SDKSource).GetEndTime())
 	}
 
 	// skip upload if there was an error
-	if p.Info.Error != "" {
-		return p.Info
-	}
-
-	// upload file
-	switch p.EgressType {
-	case types.EgressTypeFile:
-		var err error
-		p.FileInfo.Location, p.FileInfo.Size, err = p.storeFile(ctx, p.LocalFilepath, p.StorageFilepath, p.OutputType)
-		if err != nil {
-			p.Info.Error = err.Error()
-		}
-
-		manifestLocalPath := fmt.Sprintf("%s.json", p.LocalFilepath)
-		manifestStoragePath := fmt.Sprintf("%s.json", p.StorageFilepath)
-		if err = p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
-			if p.Info.Error == "" {
+	if p.Info.Error == "" {
+		for _, s := range p.sinks {
+			if err := s.Finalize(); err != nil {
+				// TODO: handle multiple errors
 				p.Info.Error = err.Error()
-			}
-		}
-
-	case types.EgressTypeSegmentedFile:
-		// wait for all pending upload jobs to finish
-		if p.segmentUploadDoneChan != nil {
-			err := <-p.segmentUploadDoneChan
-			if err != nil && p.Info.Error == "" {
-				p.Info.Error = err.Error()
-			}
-		}
-
-		if p.playlistWriter != nil {
-			if err := p.playlistWriter.EOS(); err != nil {
-				logger.Errorw("failed to send EOS to playlist writer", err)
-			}
-
-			// upload the finalized playlist
-			playlistStoragePath := p.GetStorageFilepath(p.PlaylistFilename)
-			p.SegmentsInfo.PlaylistLocation, _, _ = p.storeFile(ctx, p.PlaylistFilename, playlistStoragePath, p.OutputType)
-
-			manifestLocalPath := fmt.Sprintf("%s.json", p.PlaylistFilename)
-			manifestStoragePath := fmt.Sprintf("%s.json", playlistStoragePath)
-			if err := p.storeManifest(ctx, manifestLocalPath, manifestStoragePath); err != nil {
-				if p.Info.Error == "" {
-					p.Info.Error = err.Error()
-				}
 			}
 		}
 	}
@@ -273,12 +220,8 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	ctx, span := tracer.Start(ctx, "Pipeline.UpdateStream")
 	defer span.End()
 
-	if p.EgressType != types.EgressTypeStream {
-		return errors.ErrInvalidRPC
-	}
-
 	for _, url := range req.AddOutputUrls {
-		if err := p.VerifyUrl(url); err != nil {
+		if err := p.VerifyUrl(url, types.OutputTypeRTMP); err != nil {
 			return err
 		}
 	}
@@ -287,7 +230,7 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 
 	now := time.Now().UnixNano()
 	for _, url := range req.AddOutputUrls {
-		if err := p.out.AddSink(url); err != nil {
+		if err := p.out.AddStream(url); err != nil {
 			errs.AppendErr(err)
 			continue
 		}
@@ -298,8 +241,10 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 			StartedAt: now,
 			Status:    livekit.StreamInfo_ACTIVE,
 		}
-		p.StreamInfo[url] = streamInfo
-		p.Info.GetStream().Info = append(p.Info.GetStream().Info, streamInfo)
+		p.Outputs[types.EgressTypeStream].StreamInfo[url] = streamInfo
+		// p.Info.StreamResults = append(p.Info.StreamResults, streamInfo)
+		list := p.Info.GetStream()
+		list.Info = append(list.Info, streamInfo)
 		p.mu.Unlock()
 	}
 
@@ -316,7 +261,7 @@ func (p *Pipeline) removeSink(url string, status livekit.StreamInfo_Status) erro
 	now := time.Now().UnixNano()
 
 	p.mu.Lock()
-	streamInfo := p.StreamInfo[url]
+	streamInfo := p.Outputs[types.EgressTypeStream].StreamInfo[url]
 	streamInfo.Status = status
 	streamInfo.EndedAt = now
 	if streamInfo.StartedAt == 0 {
@@ -324,8 +269,8 @@ func (p *Pipeline) removeSink(url string, status livekit.StreamInfo_Status) erro
 	} else {
 		streamInfo.Duration = now - streamInfo.StartedAt
 	}
-	delete(p.StreamInfo, url)
-	done := len(p.StreamInfo) == 0
+	delete(p.Outputs[types.EgressTypeStream].StreamInfo, url)
+	done := len(p.Outputs[types.EgressTypeStream].StreamInfo) == 0
 	p.mu.Unlock()
 
 	logger.Debugw("removing stream sink", "url", url, "status", status, "duration", streamInfo.Duration)
@@ -344,7 +289,7 @@ func (p *Pipeline) removeSink(url string, status livekit.StreamInfo_Status) erro
 		}
 	}
 
-	return p.out.RemoveSink(url)
+	return p.out.RemoveStream(url)
 }
 
 func (p *Pipeline) GetGstPipelineDebugDot() (string, error) {
@@ -367,9 +312,8 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 				p.stop()
 			})
 
-			switch s := p.in.(type) {
-			case *sdk.SDKInput:
-				s.CloseWriters()
+			if p.SourceType == types.SourceTypeSDK {
+				p.src.(*source.SDKSource).CloseWriters()
 			}
 
 			p.pipeline.SendEvent(gst.NewEOSEvent())
@@ -379,14 +323,19 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 
 func (p *Pipeline) startSessionLimitTimer(ctx context.Context) {
 	var timeout time.Duration
-
-	switch p.EgressType {
-	case types.EgressTypeFile:
-		timeout = p.FileOutputMaxDuration
-	case types.EgressTypeStream, types.EgressTypeWebsocket:
-		timeout = p.StreamOutputMaxDuration
-	case types.EgressTypeSegmentedFile:
-		timeout = p.SegmentOutputMaxDuration
+	for egressType := range p.Outputs {
+		var t time.Duration
+		switch egressType {
+		case types.EgressTypeFile:
+			t = p.FileOutputMaxDuration
+		case types.EgressTypeStream, types.EgressTypeWebsocket:
+			t = p.StreamOutputMaxDuration
+		case types.EgressTypeSegments:
+			t = p.SegmentOutputMaxDuration
+		}
+		if t > 0 && (timeout == 0 || t < timeout) {
+			timeout = t
+		}
 	}
 
 	if timeout > 0 {
@@ -397,73 +346,23 @@ func (p *Pipeline) startSessionLimitTimer(ctx context.Context) {
 	}
 }
 
-func (p *Pipeline) startSegmentWorker() {
-	p.endedSegments = make(chan segmentUpdate, maxPendingUploads)
-	p.segmentUploadDoneChan = make(chan error, 1)
-
-	go func() {
-		var err error
-		defer func() {
-			if err != nil {
-				p.SendEOS(context.Background())
-			}
-			p.segmentUploadDoneChan <- err
-		}()
-
-		for update := range p.endedSegments {
-			var size int64
-			p.SegmentsInfo.SegmentCount++
-
-			segmentStoragePath := p.GetStorageFilepath(update.localPath)
-			_, size, err = p.storeFile(context.Background(), update.localPath, segmentStoragePath, p.GetSegmentOutputType())
-			if err != nil {
-				return
-			}
-			p.SegmentsInfo.Size += size
-
-			if p.playlistWriter != nil {
-				err = p.playlistWriter.EndSegment(update.localPath, update.endTime)
-				if err != nil {
-					logger.Errorw("failed to end segment", err, "path", update.localPath)
-					return
-				}
-				playlistStoragePath := p.GetStorageFilepath(p.PlaylistFilename)
-				p.SegmentsInfo.PlaylistLocation, _, err = p.storeFile(context.Background(), p.PlaylistFilename, playlistStoragePath, p.OutputType)
-				if err != nil {
-					return
-				}
-			}
-		}
-	}()
-}
-
-func (p *Pipeline) enqueueSegmentUpload(segmentPath string, endTime int64) error {
-	select {
-	case p.endedSegments <- segmentUpdate{localPath: segmentPath, endTime: endTime}:
-		return nil
-
-	default:
-		err := errors.New("segment upload job queue is full")
-		logger.Infow("failed to upload segment", "error", err)
-		return errors.ErrUploadFailed(segmentPath, err)
-	}
-}
-
 func (p *Pipeline) updateStartTime(startedAt int64) {
-	switch p.EgressType {
-	case types.EgressTypeStream, types.EgressTypeWebsocket:
-		p.mu.Lock()
-		for _, streamInfo := range p.StreamInfo {
-			streamInfo.Status = livekit.StreamInfo_ACTIVE
-			streamInfo.StartedAt = startedAt
+	for egressType, conf := range p.Outputs {
+		switch egressType {
+		case types.EgressTypeStream, types.EgressTypeWebsocket:
+			p.mu.Lock()
+			for _, streamInfo := range conf.StreamInfo {
+				streamInfo.Status = livekit.StreamInfo_ACTIVE
+				streamInfo.StartedAt = startedAt
+			}
+			p.mu.Unlock()
+
+		case types.EgressTypeFile:
+			conf.FileInfo.StartedAt = startedAt
+
+		case types.EgressTypeSegments:
+			conf.SegmentsInfo.StartedAt = startedAt
 		}
-		p.mu.Unlock()
-
-	case types.EgressTypeFile:
-		p.FileInfo.StartedAt = startedAt
-
-	case types.EgressTypeSegmentedFile:
-		p.SegmentsInfo.StartedAt = startedAt
 	}
 
 	if p.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
@@ -478,30 +377,32 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	switch p.EgressType {
-	case types.EgressTypeStream, types.EgressTypeWebsocket:
-		for _, info := range p.StreamInfo {
-			info.Status = livekit.StreamInfo_FINISHED
-			if info.StartedAt == 0 {
-				info.StartedAt = endedAt
+	for egressType, conf := range p.Outputs {
+		switch egressType {
+		case types.EgressTypeStream, types.EgressTypeWebsocket:
+			for _, info := range conf.StreamInfo {
+				info.Status = livekit.StreamInfo_FINISHED
+				if info.StartedAt == 0 {
+					info.StartedAt = endedAt
+				}
+				info.EndedAt = endedAt
+				info.Duration = endedAt - info.StartedAt
 			}
-			info.EndedAt = endedAt
-			info.Duration = endedAt - info.StartedAt
-		}
 
-	case types.EgressTypeFile:
-		if p.FileInfo.StartedAt == 0 {
-			p.FileInfo.StartedAt = endedAt
-		}
-		p.FileInfo.EndedAt = endedAt
-		p.FileInfo.Duration = endedAt - p.FileInfo.StartedAt
+		case types.EgressTypeFile:
+			if conf.FileInfo.StartedAt == 0 {
+				conf.FileInfo.StartedAt = endedAt
+			}
+			conf.FileInfo.EndedAt = endedAt
+			conf.FileInfo.Duration = endedAt - conf.FileInfo.StartedAt
 
-	case types.EgressTypeSegmentedFile:
-		if p.SegmentsInfo.StartedAt == 0 {
-			p.SegmentsInfo.StartedAt = endedAt
+		case types.EgressTypeSegments:
+			if conf.SegmentsInfo.StartedAt == 0 {
+				conf.SegmentsInfo.StartedAt = endedAt
+			}
+			conf.SegmentsInfo.EndedAt = endedAt
+			conf.SegmentsInfo.Duration = endedAt - conf.SegmentsInfo.StartedAt
 		}
-		p.SegmentsInfo.EndedAt = endedAt
-		p.SegmentsInfo.Duration = endedAt - p.SegmentsInfo.StartedAt
 	}
 }
 
@@ -538,104 +439,7 @@ func (p *Pipeline) stop() {
 	p.loop = nil
 	p.mu.Unlock()
 
-	switch p.in.(type) {
-	case *web.WebInput:
+	if p.SourceType == types.SourceTypeWeb {
 		p.updateDuration(endedAt)
-	}
-}
-
-func (p *Pipeline) storeFile(ctx context.Context, localFilepath, storageFilepath string, mime types.OutputType) (destinationUrl string, size int64, err error) {
-	ctx, span := tracer.Start(ctx, "Pipeline.storeFile")
-	defer span.End()
-
-	fileInfo, err := os.Stat(localFilepath)
-	if err == nil {
-		size = fileInfo.Size()
-	} else {
-		logger.Errorw("could not read file size", err)
-	}
-
-	var location string
-	switch u := p.UploadConfig.(type) {
-	case *livekit.S3Upload:
-		location = "S3"
-		logger.Debugw("uploading to s3")
-		destinationUrl, err = sink.UploadS3(u, localFilepath, storageFilepath, mime)
-
-	case *livekit.GCPUpload:
-		location = "GCP"
-		logger.Debugw("uploading to gcp")
-		destinationUrl, err = sink.UploadGCP(u, localFilepath, storageFilepath)
-
-	case *livekit.AzureBlobUpload:
-		location = "Azure"
-		logger.Debugw("uploading to azure")
-		destinationUrl, err = sink.UploadAzure(u, localFilepath, storageFilepath, mime)
-
-	case *livekit.AliOSSUpload:
-		location = "AliOSS"
-		logger.Debugw("uploading to alioss")
-		destinationUrl, err = sink.UploadAliOSS(u, localFilepath, storageFilepath)
-
-	default:
-		destinationUrl = storageFilepath
-	}
-
-	if err != nil {
-		logger.Infow("could not upload file", "error", err, "location", location, "filepath", storageFilepath)
-		err = errors.ErrUploadFailed(location, err)
-		span.RecordError(err)
-	}
-
-	return destinationUrl, size, err
-}
-
-func (p *Pipeline) storeManifest(ctx context.Context, localFilepath, storageFilepath string) error {
-	if p.DisableManifest {
-		logger.Debugw("manifest storage disabled")
-		return nil
-	}
-
-	manifest, err := os.Create(localFilepath)
-	if err != nil {
-		return err
-	}
-
-	b, err := p.GetManifest()
-	if err != nil {
-		return err
-	}
-
-	_, err = manifest.Write(b)
-	if err != nil {
-		return err
-	}
-
-	_, _, err = p.storeFile(ctx, localFilepath, storageFilepath, "application/json")
-	return err
-}
-
-func (p *Pipeline) cleanup() {
-	// clean up temp dir
-	if p.UploadConfig != nil {
-		switch p.EgressType {
-		case types.EgressTypeFile:
-			dir, _ := path.Split(p.LocalFilepath)
-			if dir != "" {
-				logger.Debugw("removing temporary directory", "path", dir)
-				if err := os.RemoveAll(dir); err != nil {
-					logger.Errorw("could not delete temp dir", err)
-				}
-			}
-
-		case types.EgressTypeSegmentedFile:
-			dir, _ := path.Split(p.PlaylistFilename)
-			if dir != "" {
-				logger.Debugw("removing temporary directory", "path", dir)
-				if err := os.RemoveAll(dir); err != nil {
-					logger.Errorw("could not delete temp dir", err)
-				}
-			}
-		}
 	}
 }

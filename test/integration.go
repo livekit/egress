@@ -29,6 +29,7 @@ const (
 	streamUrl2   = "rtmp://localhost:1935/live/stream2"
 	badStreamUrl = "rtmp://sfo.contribute.live-video.net/app/fake1"
 	webUrl       = "https://www.youtube.com/watch?v=wjQq0nSGS28&t=5205s"
+	// v2           = true
 )
 
 type testCase struct {
@@ -68,7 +69,9 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	defer room.Disconnect()
 
 	// start service
-	svc, err := service.NewService(conf.ServiceConfig, bus, rpcServer)
+	ioClient, err := rpc.NewIOInfoClient("test_io_client", bus)
+	require.NoError(t, err)
+	svc, err := service.NewService(conf.ServiceConfig, bus, rpcServer, ioClient)
 	require.NoError(t, err)
 
 	psrpcClient, err := rpc.NewEgressClient(livekit.NodeID(utils.NewGuid("TEST_")), bus)
@@ -197,6 +200,7 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 }
 
 func awaitIdle(t *testing.T, svc *service.Service) {
+	svc.KillAll()
 	for i := 0; i < 30; i++ {
 		status := getStatus(t, svc)
 		if len(status) == 1 {
@@ -228,8 +232,8 @@ func runFileTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest
 	// get params
 	p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 	require.NoError(t, err)
-	if p.OutputType == "" {
-		p.OutputType = test.outputType
+	if p.Outputs[types.EgressTypeFile].OutputType == types.OutputTypeUnknown {
+		p.Outputs[types.EgressTypeFile].OutputType = test.outputType
 	}
 
 	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
@@ -304,8 +308,14 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 
 	update := getUpdate(t, conf, egressID)
 	require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE.String(), update.Status.String())
-	require.Len(t, update.GetStream().Info, 3)
-	for _, info := range update.GetStream().Info {
+	var streams []*livekit.StreamInfo
+	// if v2 {
+	// 	streams = update.StreamResults
+	// } else {
+	streams = update.GetStream().Info
+	// }
+	require.Len(t, streams, 3)
+	for _, info := range streams {
 		switch info.Url {
 		case streamUrl1, streamUrl2:
 			require.Equal(t, livekit.StreamInfo_ACTIVE.String(), info.Status.String())
@@ -358,8 +368,13 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	require.NotZero(t, res.EndedAt)
 
 	// check stream info
-	require.Len(t, res.GetStream().Info, 3)
-	for _, info := range res.GetStream().Info {
+	// if v2 {
+	// 	streams = res.StreamResults
+	// } else {
+	streams = res.GetStream().Info
+	// }
+	require.Len(t, streams, 3)
+	for _, info := range streams {
 		require.NotZero(t, info.StartedAt)
 		require.NotZero(t, info.EndedAt)
 
@@ -482,20 +497,4 @@ func stopEgress(t *testing.T, conf *TestConfig, egressID string) *livekit.Egress
 
 	// check complete update
 	return checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
-}
-
-func checkStoppedEgress(t *testing.T, conf *TestConfig, egressID string, expectedStatus livekit.EgressStatus) *livekit.EgressInfo {
-	// check ending update
-	checkUpdate(t, conf, egressID, livekit.EgressStatus_EGRESS_ENDING)
-
-	// get final info
-	info := checkUpdate(t, conf, egressID, expectedStatus)
-
-	// check status
-	if conf.HealthPort != 0 {
-		status := getStatus(t, conf.svc)
-		require.Len(t, status, 1)
-	}
-
-	return info
 }
