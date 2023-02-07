@@ -252,10 +252,13 @@ func (o *streamSink) link(tee *gst.Element, live bool) error {
 	proxy := gst.NewGhostPad("proxy", sinkPad)
 
 	// proxy isn't saved/stored anywhere, so we need to call ref
+	// pad gets released in RemoveSink
 	proxy.Ref()
 
 	// intercept FlowFlushing from rtmp2sink
 	proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
+		// buffer gets automatically unreferenced by go-gst
+		// without referencing it here, it will sometimes be garbage collected before being written
 		buffer.Ref()
 
 		internal, _ := self.GetInternalLinks()

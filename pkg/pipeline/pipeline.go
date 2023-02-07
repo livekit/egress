@@ -207,6 +207,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	if p.Info.Error == "" {
 		for _, s := range p.sinks {
 			if err := s.Finalize(); err != nil {
+				// TODO: handle multiple errors
 				p.Info.Error = err.Error()
 			}
 		}
