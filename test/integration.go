@@ -29,7 +29,7 @@ const (
 	streamUrl2   = "rtmp://localhost:1935/live/stream2"
 	badStreamUrl = "rtmp://sfo.contribute.live-video.net/app/fake1"
 	webUrl       = "https://www.youtube.com/watch?v=wjQq0nSGS28&t=5205s"
-	// v2           = true
+	v2           = true
 )
 
 type testCase struct {
@@ -309,11 +309,11 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	update := getUpdate(t, conf, egressID)
 	require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE.String(), update.Status.String())
 	var streams []*livekit.StreamInfo
-	// if v2 {
-	// 	streams = update.StreamResults
-	// } else {
-	streams = update.GetStream().Info
-	// }
+	if v2 {
+		streams = update.StreamResults
+	} else {
+		streams = update.GetStream().Info
+	}
 	require.Len(t, streams, 3)
 	for _, info := range streams {
 		switch info.Url {
@@ -368,11 +368,11 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	require.NotZero(t, res.EndedAt)
 
 	// check stream info
-	// if v2 {
-	// 	streams = res.StreamResults
-	// } else {
-	streams = res.GetStream().Info
-	// }
+	if v2 {
+		streams = res.StreamResults
+	} else {
+		streams = res.GetStream().Info
+	}
 	require.Len(t, streams, 3)
 	for _, info := range streams {
 		require.NotZero(t, info.StartedAt)

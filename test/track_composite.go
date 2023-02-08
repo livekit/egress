@@ -55,13 +55,13 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 			trackRequest := &livekit.TrackCompositeEgressRequest{
 				RoomName: conf.room.Name(),
 			}
-			// if v2 {
-			// 	trackRequest.FileOutput = fileOutput
-			// } else {
-			trackRequest.Output = &livekit.TrackCompositeEgressRequest_File{
-				File: fileOutput,
+			if v2 {
+				trackRequest.FileOutputs = []*livekit.EncodedFileOutput{fileOutput}
+			} else {
+				trackRequest.Output = &livekit.TrackCompositeEgressRequest_File{
+					File: fileOutput,
+				}
 			}
-			// }
 
 			if !test.audioOnly {
 				trackRequest.VideoTrackId = videoTrackID
@@ -112,17 +112,17 @@ func testTrackCompositeStream(t *testing.T, conf *TestConfig) {
 				AudioTrackId: audioTrackID,
 				VideoTrackId: videoTrackID,
 			}
-			// if v2 {
-			// 	trackRequest.StreamOutput = &livekit.StreamOutput{
-			// 		Urls: []string{streamUrl1},
-			// 	}
-			// } else {
-			trackRequest.Output = &livekit.TrackCompositeEgressRequest_Stream{
-				Stream: &livekit.StreamOutput{
+			if v2 {
+				trackRequest.StreamOutputs = []*livekit.StreamOutput{{
 					Urls: []string{streamUrl1},
-				},
+				}}
+			} else {
+				trackRequest.Output = &livekit.TrackCompositeEgressRequest_Stream{
+					Stream: &livekit.StreamOutput{
+						Urls: []string{streamUrl1},
+					},
+				}
 			}
-			// }
 
 			req := &livekit.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
@@ -180,19 +180,19 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 				AudioTrackId: aID,
 				VideoTrackId: vID,
 			}
-			// if v2 {
-			// 	trackRequest.SegmentOutput = &livekit.SegmentedFileOutput{
-			// 		FilenamePrefix: filepath,
-			// 		PlaylistName:   test.playlist,
-			// 	}
-			// } else {
-			trackRequest.Output = &livekit.TrackCompositeEgressRequest_Segments{
-				Segments: &livekit.SegmentedFileOutput{
+			if v2 {
+				trackRequest.SegmentOutputs = []*livekit.SegmentedFileOutput{{
 					FilenamePrefix: filepath,
 					PlaylistName:   test.playlist,
-				},
+				}}
+			} else {
+				trackRequest.Output = &livekit.TrackCompositeEgressRequest_Segments{
+					Segments: &livekit.SegmentedFileOutput{
+						FilenamePrefix: filepath,
+						PlaylistName:   test.playlist,
+					},
+				}
 			}
-			// }
 			if test.options != nil {
 				trackRequest.Options = &livekit.TrackCompositeEgressRequest_Advanced{
 					Advanced: test.options,
