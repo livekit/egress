@@ -1,6 +1,5 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "reviewers": ["frostbyte73","biglittlebigben","davidzhao"],
   "extends": [
     "config:base"
   ],
@@ -12,11 +11,11 @@
     },
     {
       "matchManagers": ["dockerfile"],
-      "groupName": "docker"
+      "groupName": "docker deps"
     },
     {
       "matchManagers": ["npm"],
-      "groupName": "npm"
+      "groupName": "npm deps"
     },
     {
       "matchManagers": ["gomod"],

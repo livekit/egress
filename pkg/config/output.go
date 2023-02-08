@@ -487,16 +487,14 @@ func redactEncodedOutputs(out interface {
 
 func redactStreamKeys(stream *livekit.StreamOutput) {
 	for i, url := range stream.Urls {
-		redacted, ok := redactStreamKey(url)
-		if ok {
+		if redacted, ok := redactStreamKey(url); ok {
 			stream.Urls[i] = redacted
 		}
 	}
 }
 
-var (
-	rtmpRegexp = regexp.MustCompile("^(rtmps?:\\/\\/)(.*\\/)(.*\\/)(\\S*)( live=1)?$")
-)
+// rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)
+var rtmpRegexp = regexp.MustCompile("^(rtmps?:\\/\\/)(.*\\/)(.*\\/)(\\S*)( live=1)?$")
 
 func redactStreamKey(url string) (string, bool) {
 	match := rtmpRegexp.FindStringSubmatch(url)

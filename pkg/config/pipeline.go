@@ -369,7 +369,7 @@ func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType)
 	case types.OutputTypeRTMP:
 		redacted, ok := redactStreamKey(rawUrl)
 		if !ok {
-			return "", errors.ErrInvalidUrl(rawUrl, "invalid format")
+			return "", errors.ErrInvalidUrl(rawUrl, "rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)")
 		}
 		return redacted, nil
 
