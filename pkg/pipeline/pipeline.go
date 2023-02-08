@@ -220,16 +220,16 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	ctx, span := tracer.Start(ctx, "Pipeline.UpdateStream")
 	defer span.End()
 
-	for _, url := range req.AddOutputUrls {
-		if err := p.VerifyUrl(url, types.OutputTypeRTMP); err != nil {
-			return err
-		}
-	}
-
 	errs := errors.ErrArray{}
 
 	now := time.Now().UnixNano()
 	for _, url := range req.AddOutputUrls {
+		redacted, err := p.ValidateUrl(url, types.OutputTypeRTMP)
+		if err != nil {
+			errs.AppendErr(err)
+			continue
+		}
+
 		if err := p.out.AddStream(url); err != nil {
 			errs.AppendErr(err)
 			continue
@@ -237,7 +237,7 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 
 		p.mu.Lock()
 		streamInfo := &livekit.StreamInfo{
-			Url:       url,
+			Url:       redacted,
 			StartedAt: now,
 			Status:    livekit.StreamInfo_ACTIVE,
 		}

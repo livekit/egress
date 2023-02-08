@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 	"strings"
 
 	"github.com/pion/webrtc/v3"
@@ -358,23 +359,29 @@ func (p *PipelineConfig) UpdateInfoFromSDK(fileIdentifier string, replacements m
 	return nil
 }
 
-func (p *PipelineConfig) VerifyUrl(url string, outputType types.OutputType) error {
-	var protocol, prefix string
+func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (string, error) {
+	parsed, err := url.Parse(rawUrl)
+	if err != nil {
+		return "", errors.ErrInvalidUrl(rawUrl, err.Error())
+	}
 
 	switch outputType {
 	case types.OutputTypeRTMP:
-		protocol = "rtmp"
-		prefix = "rtmp"
+		redacted, ok := redactStreamKey(rawUrl)
+		if !ok {
+			return "", errors.ErrInvalidUrl(rawUrl, "invalid format")
+		}
+		return redacted, nil
+
 	case types.OutputTypeRaw:
-		protocol = "websocket"
-		prefix = "ws"
-	}
+		if parsed.Scheme != "ws" && parsed.Scheme != "wss" {
+			return "", errors.ErrInvalidUrl(rawUrl, "invalid scheme")
+		}
+		return rawUrl, nil
 
-	if !strings.HasPrefix(url, prefix+"://") && !strings.HasPrefix(url, prefix+"s://") {
-		return errors.ErrInvalidUrl(url, protocol)
+	default:
+		return "", errors.ErrInvalidInput("stream output type")
 	}
-
-	return nil
 }
 
 type Manifest struct {
