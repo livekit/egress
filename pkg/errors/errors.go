@@ -69,8 +69,8 @@ func ErrInvalidInput(field string) error {
 	return psrpc.NewErrorf(psrpc.InvalidArgument, "request has missing or invalid field: %s", field)
 }
 
-func ErrInvalidUrl(url, protocol string) error {
-	return psrpc.NewErrorf(psrpc.InvalidArgument, "invalid %s url: %s", protocol, url)
+func ErrInvalidUrl(url string, reason string) error {
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "invalid url %s: %s", url, reason)
 }
 
 func ErrTrackNotFound(trackID string) error {

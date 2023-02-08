@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -256,13 +257,14 @@ func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []str
 
 	conf.StreamInfo = make(map[string]*livekit.StreamInfo)
 	var streamInfoList []*livekit.StreamInfo
-	for _, url := range urls {
-		if err := p.VerifyUrl(url, outputType); err != nil {
+	for _, rawUrl := range urls {
+		redacted, err := p.ValidateUrl(rawUrl, outputType)
+		if err != nil {
 			return nil, err
 		}
 
-		info := &livekit.StreamInfo{Url: url}
-		conf.StreamInfo[url] = info
+		info := &livekit.StreamInfo{Url: redacted}
+		conf.StreamInfo[rawUrl] = info
 		streamInfoList = append(streamInfoList, info)
 	}
 
@@ -422,7 +424,6 @@ func (o *OutputConfig) updatePrefixAndPlaylist(p *PipelineConfig, identifier str
 func (o *OutputConfig) GetStorageFilepath(filename string) string {
 	// Remove any path prepended to the filename
 	_, filename = path.Split(filename)
-
 	return path.Join(o.StoragePathPrefix, filename)
 }
 
@@ -461,21 +462,19 @@ func (p *PipelineConfig) getUploadConfig(upload uploadConf) interface{} {
 	return nil
 }
 
-// TODO
-func redactStreamKey(url string) {
-
-}
-
 func redactEncodedOutputs(out interface {
 	GetFile() *livekit.EncodedFileOutput
+	GetStream() *livekit.StreamOutput
 	GetSegments() *livekit.SegmentedFileOutput
 	// GetFileOutput() *livekit.EncodedFileOutput
 	// GetSegmentOutput() *livekit.SegmentedFileOutput
 }) {
-	if f := out.GetFile(); f != nil {
-		redactUpload(f)
-	} else if s := out.GetSegments(); s != nil {
-		redactUpload(s)
+	if file := out.GetFile(); file != nil {
+		redactUpload(file)
+	} else if stream := out.GetStream(); stream != nil {
+		redactStreamKeys(stream)
+	} else if segment := out.GetSegments(); segment != nil {
+		redactUpload(segment)
 		// } else {
 		// 	if f = out.GetFileOutput(); f != nil {
 		// 		redactUpload(f)
@@ -484,6 +483,27 @@ func redactEncodedOutputs(out interface {
 		// 		redactUpload(s)
 		// 	}
 	}
+}
+
+func redactStreamKeys(stream *livekit.StreamOutput) {
+	for i, url := range stream.Urls {
+		if redacted, ok := redactStreamKey(url); ok {
+			stream.Urls[i] = redacted
+		}
+	}
+}
+
+// rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)
+var rtmpRegexp = regexp.MustCompile("^(rtmps?:\\/\\/)(.*\\/)(.*\\/)(\\S*)( live=1)?$")
+
+func redactStreamKey(url string) (string, bool) {
+	match := rtmpRegexp.FindStringSubmatch(url)
+	if len(match) != 6 {
+		return url, false
+	}
+
+	match[4] = redact(match[4])
+	return strings.Join(match[1:], ""), true
 }
 
 func redactUpload(upload uploadConf) {
