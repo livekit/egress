@@ -150,6 +150,9 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		}
 	}()
 
+	// session limit timer
+	p.startSessionLimitTimer(ctx)
+
 	// wait until room is ready
 	start := p.src.StartRecording()
 	if start != nil {
@@ -168,9 +171,6 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		<-p.src.EndRecording()
 		p.SendEOS(ctx)
 	}()
-
-	// session limit timer
-	p.startSessionLimitTimer(ctx)
 
 	for _, s := range p.sinks {
 		if err := s.Start(); err != nil {
