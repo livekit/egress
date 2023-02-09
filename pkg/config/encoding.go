@@ -26,22 +26,22 @@ func (p *PipelineConfig) applyPreset(preset livekit.EncodingOptionsPreset) {
 		p.VideoBitrate = 6000
 
 	case livekit.EncodingOptionsPreset_PORTRAIT_H264_720P_30:
-		p.Width = 603
-		p.Height = 1072
+		p.Width = 720
+		p.Height = 1280
 		p.VideoBitrate = 3000
 
 	case livekit.EncodingOptionsPreset_PORTRAIT_H264_720P_60:
-		p.Width = 603
-		p.Height = 1072
+		p.Width = 720
+		p.Height = 1280
 		p.Framerate = 60
 
 	case livekit.EncodingOptionsPreset_PORTRAIT_H264_1080P_30:
-		p.Width = 603
-		p.Height = 1072
+		p.Width = 1080
+		p.Height = 1920
 
 	case livekit.EncodingOptionsPreset_PORTRAIT_H264_1080P_60:
-		p.Width = 603
-		p.Height = 1072
+		p.Width = 1080
+		p.Height = 1920
 		p.Framerate = 60
 		p.VideoBitrate = 6000
 	}

@@ -25,11 +25,14 @@ import (
 )
 
 const (
-	streamUrl1   = "rtmp://localhost:1935/live/stream1"
-	streamUrl2   = "rtmp://localhost:1935/live/stream2"
-	badStreamUrl = "rtmp://sfo.contribute.live-video.net/app/fake1"
-	webUrl       = "https://www.youtube.com/watch?v=wjQq0nSGS28&t=5205s"
-	v2           = true
+	streamUrl1     = "rtmp://localhost:1935/live/stream1"
+	redactedUrl1   = "rtmp://localhost:1935/live/*******"
+	streamUrl2     = "rtmp://localhost:1935/live/stream10"
+	redactedUrl2   = "rtmp://localhost:1935/live/********"
+	badStreamUrl   = "rtmp://sfo.contribute.live-video.net/app/fake1"
+	redactedBadUrl = "rtmp://sfo.contribute.live-video.net/app/*****"
+	webUrl         = "https://www.youtube.com/watch?v=wjQq0nSGS28&t=5205s"
+	v2             = true
 )
 
 type testCase struct {
@@ -317,10 +320,10 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	require.Len(t, streams, 3)
 	for _, info := range streams {
 		switch info.Url {
-		case streamUrl1, streamUrl2:
+		case redactedUrl1, redactedUrl2:
 			require.Equal(t, livekit.StreamInfo_ACTIVE.String(), info.Status.String())
 
-		case badStreamUrl:
+		case redactedBadUrl:
 			require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
 
 		default:
@@ -379,15 +382,15 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 		require.NotZero(t, info.EndedAt)
 
 		switch info.Url {
-		case streamUrl1:
+		case redactedUrl1:
 			require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
 			require.Greater(t, float64(info.Duration)/1e9, 15.0)
 
-		case streamUrl2:
+		case redactedUrl2:
 			require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
 			require.Greater(t, float64(info.Duration)/1e9, 10.0)
 
-		case badStreamUrl:
+		case redactedBadUrl:
 			require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
 
 		default:
