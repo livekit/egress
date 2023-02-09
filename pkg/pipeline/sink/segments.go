@@ -29,6 +29,7 @@ type SegmentSink struct {
 	currentItemStartTimestamp int64
 	currentItemFilename       string
 	playlistPath              string
+	startDate                 time.Time
 
 	openSegmentsStartTime map[string]int64
 	openSegmentsLock      sync.Mutex
@@ -105,7 +106,7 @@ func (s *SegmentSink) Start() error {
 func (s *SegmentSink) getSegmentOutputType() types.OutputType {
 	switch s.OutputType {
 	case types.OutputTypeHLS:
-		// HLS is always mpeg ts for now. We may implement fmp4 in the future
+		// HLS is always mpeg t for now. We may implement fmp4 in the future
 		return types.OutputTypeTS
 	default:
 		return s.OutputType
@@ -119,6 +120,10 @@ func (s *SegmentSink) StartSegment(filepath string, startTime int64) error {
 
 	if startTime < 0 {
 		return fmt.Errorf("invalid start timestamp")
+	}
+
+	if s.startDate.IsZero() {
+		s.startDate = time.Now().Add(-time.Duration(startTime))
 	}
 
 	k := getFilenameFromFilePath(filepath)
@@ -170,6 +175,12 @@ func (s *SegmentSink) endSegment(filepath string, endTime int64) error {
 
 	// This assumes EndSegment will be called in the same order as StartSegment
 	err := s.playlist.Append(k, duration, "")
+	if err != nil {
+		return err
+	}
+
+	segmentStartDate := s.startDate.Add(time.Duration(t))
+	err = s.playlist.SetProgramDateTime(segmentStartDate)
 	if err != nil {
 		return err
 	}
