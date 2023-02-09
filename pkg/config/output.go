@@ -208,34 +208,28 @@ func (p *PipelineConfig) getEncodedFileConfig(req interface{}, file *livekit.Enc
 		}
 	}
 
-	conf, err := p.getFileConfig(outputType, file.Filepath, file.DisableManifest)
-	if err != nil {
-		return nil, err
-	}
-
-	conf.UploadConfig = p.getUploadConfig(file)
-	return conf, nil
+	return p.getFileConfig(outputType, file)
 }
 
 func (p *PipelineConfig) getDirectFileConfig(file *livekit.DirectFileOutput) (*OutputConfig, error) {
-	conf, err := p.getFileConfig(types.OutputTypeUnknown, file.Filepath, file.DisableManifest)
-	if err != nil {
-		return nil, err
-	}
-
-	conf.UploadConfig = p.getUploadConfig(file)
-	return conf, err
+	return p.getFileConfig(types.OutputTypeUnknown, file)
 }
 
-func (p *PipelineConfig) getFileConfig(outputType types.OutputType, storageFilepath string, disableManifest bool) (*OutputConfig, error) {
+type fileConf interface {
+	GetFilepath() string
+	GetDisableManifest() bool
+	uploadConf
+}
+
+func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileConf) (*OutputConfig, error) {
 	conf := &OutputConfig{
 		EgressType: types.EgressTypeFile,
 		OutputType: outputType,
 		FileParams: FileParams{
 			FileInfo:        &livekit.FileInfo{},
-			StorageFilepath: storageFilepath,
+			StorageFilepath: file.GetFilepath(),
 		},
-		DisableManifest: disableManifest,
+		DisableManifest: file.GetDisableManifest(),
 	}
 
 	// filename
@@ -249,6 +243,7 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, storageFilep
 		conf.StorageFilepath = stringReplace(conf.StorageFilepath, replacements)
 	}
 
+	conf.UploadConfig = p.getUploadConfig(file)
 	return conf, nil
 }
 
