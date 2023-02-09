@@ -16,10 +16,14 @@ import (
 )
 
 const (
-	fragmentOpenedMessage = "splitmuxsink-fragment-opened"
-	fragmentClosedMessage = "splitmuxsink-fragment-closed"
-	fragmentLocation      = "location"
-	fragmentRunningTime   = "running-time"
+	msgClockProblem     = "GStreamer error: clock problem."
+	msgStreamingStopped = "streaming stopped, reason not-negotiated (-4)"
+	msgMuxer            = ":muxer"
+	msgFragmentOpened   = "splitmuxsink-fragment-opened"
+	msgFragmentClosed   = "splitmuxsink-fragment-closed"
+
+	fragmentLocation    = "location"
+	fragmentRunningTime = "running-time"
 
 	elementGstRtmp2Sink = "GstRtmp2Sink"
 	elementGstAppSrc    = "GstAppSrc"
@@ -27,32 +31,32 @@ const (
 )
 
 func (p *Pipeline) messageWatch(msg *gst.Message) bool {
+	var err error
 	switch msg.Type() {
 	case gst.MessageEOS:
-		// EOS received - close and return
 		p.handleMessageEOS()
 		return false
 
+	case gst.MessageWarning:
+		err = p.handleMessageWarning(msg.ParseWarning())
+
 	case gst.MessageError:
-		// handle error if possible, otherwise close and return
-		if err := p.handleMessageError(msg.ParseError()); err != nil {
-			p.Info.Error = err.Error()
-			p.stop()
-			return false
-		}
+		err = p.handleMessageError(msg.ParseError())
 
 	case gst.MessageStateChanged:
 		p.handleMessageStateChanged(msg)
 
 	case gst.MessageElement:
-		if err := p.handleMessageElement(msg); err != nil {
-			p.Info.Error = err.Error()
-			p.stop()
-			return false
-		}
+		err = p.handleMessageElement(msg)
 
 	default:
 		logger.Debugw(msg.String(), "messageType", msg.Type().String())
+	}
+
+	if err != nil {
+		p.Info.Error = err.Error()
+		p.stop()
+		return false
 	}
 
 	return true
@@ -71,10 +75,21 @@ func (p *Pipeline) handleMessageEOS() {
 	p.stop()
 }
 
+func (p *Pipeline) handleMessageWarning(gErr *gst.GError) error {
+	if gErr.Message() == msgClockProblem {
+		err := errors.ErrGstPipelineError(gErr)
+		logger.Errorw("pipeline error", err)
+		return err
+	}
+
+	_, _, message := parseDebugInfo(gErr)
+	logger.Warnw(gErr.Message(), errors.New(message))
+	return nil
+}
+
 // handleMessageError returns true if the error has been handled, false if the pipeline should quit
 func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 	element, name, message := parseDebugInfo(gErr)
-	err := errors.ErrGstPipelineError(errors.New(gErr.Error()))
 
 	switch {
 	case element == elementGstRtmp2Sink:
@@ -87,7 +102,7 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 		return p.removeSink(url, livekit.StreamInfo_FAILED)
 
 	case element == elementGstAppSrc:
-		if message == "streaming stopped, reason not-negotiated (-4)" {
+		if message == msgStreamingStopped {
 			// send eos to app src
 			logger.Debugw("streaming stopped", "name", name)
 			p.src.(*source.SDKSource).StreamStopped(name)
@@ -96,7 +111,7 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 
 	case element == elementSplitMuxSink:
 		// We sometimes get GstSplitMuxSink errors if send EOS before the first media was sent to the mux
-		if message == ":muxer" {
+		if message == msgMuxer {
 			select {
 			case <-p.closed:
 				logger.Debugw("GstSplitMuxSink failure after sending EOS")
@@ -107,6 +122,7 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 	}
 
 	// input failure or file write failure. Fatal
+	err := errors.ErrGstPipelineError(gErr)
 	logger.Errorw("pipeline error", err, "element", element, "message", message)
 	return err
 }
@@ -155,7 +171,7 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 	s := msg.GetStructure()
 	if s != nil {
 		switch s.Name() {
-		case fragmentOpenedMessage:
+		case msgFragmentOpened:
 			filepath, t, err := getSegmentParamsFromGstStructure(s)
 			if err != nil {
 				logger.Errorw("failed to retrieve segment parameters from event", err)
@@ -168,7 +184,7 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 				return err
 			}
 
-		case fragmentClosedMessage:
+		case msgFragmentClosed:
 			filepath, t, err := getSegmentParamsFromGstStructure(s)
 			if err != nil {
 				logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "running time", t)

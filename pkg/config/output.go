@@ -306,6 +306,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 		conf.OutputType = types.OutputTypeHLS
 	}
 
+	conf.UploadConfig = p.getUploadConfig(segments)
 	return conf, nil
 }
 
