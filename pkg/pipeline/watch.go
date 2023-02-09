@@ -31,40 +31,32 @@ const (
 )
 
 func (p *Pipeline) messageWatch(msg *gst.Message) bool {
+	var err error
 	switch msg.Type() {
 	case gst.MessageEOS:
-		// EOS received - close and return
 		p.handleMessageEOS()
 		return false
 
 	case gst.MessageWarning:
-		// handle warning if possible, otherwise close and return
-		if err := p.handleMessageWarning(msg.ParseWarning()); err != nil {
-			p.Info.Error = err.Error()
-			p.stop()
-			return false
-		}
+		err = p.handleMessageWarning(msg.ParseWarning())
 
 	case gst.MessageError:
-		// handle error if possible, otherwise close and return
-		if err := p.handleMessageError(msg.ParseError()); err != nil {
-			p.Info.Error = err.Error()
-			p.stop()
-			return false
-		}
+		err = p.handleMessageError(msg.ParseError())
 
 	case gst.MessageStateChanged:
 		p.handleMessageStateChanged(msg)
 
 	case gst.MessageElement:
-		if err := p.handleMessageElement(msg); err != nil {
-			p.Info.Error = err.Error()
-			p.stop()
-			return false
-		}
+		err = p.handleMessageElement(msg)
 
 	default:
 		logger.Debugw(msg.String(), "messageType", msg.Type().String())
+	}
+
+	if err != nil {
+		p.Info.Error = err.Error()
+		p.stop()
+		return false
 	}
 
 	return true
