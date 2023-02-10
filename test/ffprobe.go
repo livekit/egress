@@ -176,8 +176,13 @@ func verifyPlaylistProgramDateTime(t *testing.T, localPlaylistPath string) {
 	require.NoError(t, err)
 	require.Equal(t, m3u8.MEDIA, tp)
 
+	now := time.Now()
+
 	for i, s := range pl.(*m3u8.MediaPlaylist).Segments[:pl.(*m3u8.MediaPlaylist).Count()-1] {
 		const leeway = 50 * time.Millisecond
+
+		// Make sure the program date time is current, ie not more than 2 min in the past
+		require.InDelta(t, now.Unix(), s.ProgramDateTime.Unix(), 120)
 
 		nextSegmentStartDate := pl.(*m3u8.MediaPlaylist).Segments[i+1].ProgramDateTime
 
