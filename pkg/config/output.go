@@ -254,6 +254,10 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileCon
 }
 
 func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []string) (*OutputConfig, error) {
+	if len(urls) < 1 {
+		return nil, errors.ErrInvalidInput("stream url")
+	}
+
 	conf := &OutputConfig{
 		OutputType: outputType,
 	}
