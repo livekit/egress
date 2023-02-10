@@ -328,8 +328,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 
 func (p *PipelineConfig) getFilenameInfo() (string, map[string]string) {
 	now := time.Now()
-	utc := fmt.Sprintf("%s%d", now.Format("20060102150405"), now.UnixMilli()%1000)
-
+	utc := fmt.Sprintf("%s%03d", now.Format("20060102150405"), now.UnixMilli()%1000)
 	if p.Info.RoomName != "" {
 		return p.Info.RoomName, map[string]string{
 			"{room_name}": p.Info.RoomName,

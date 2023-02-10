@@ -5,12 +5,14 @@ package test
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/grafov/m3u8"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
@@ -148,6 +150,8 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, re
 	storedPlaylistPath := segments.PlaylistName
 	localPlaylistPath := segments.PlaylistName
 
+	verifyPlaylistProgramDateTime(t, localPlaylistPath)
+
 	// download from cloud storage
 	if uploadConfig := p.Outputs[types.EgressTypeSegments].UploadConfig; uploadConfig != nil {
 		base := storedPlaylistPath[:len(storedPlaylistPath)-5]
@@ -163,6 +167,30 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, re
 
 	// verify
 	verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, conf.Muting, conf.sourceFramerate)
+}
+
+func verifyPlaylistProgramDateTime(t *testing.T, localPlaylistPath string) {
+	file, err := os.Open(localPlaylistPath)
+	require.NoError(t, err)
+	defer file.Close()
+
+	pl, tp, err := m3u8.DecodeFrom(file, false)
+	require.NoError(t, err)
+	require.Equal(t, m3u8.MEDIA, tp)
+
+	now := time.Now()
+
+	for i, s := range pl.(*m3u8.MediaPlaylist).Segments[:pl.(*m3u8.MediaPlaylist).Count()-1] {
+		const leeway = 50 * time.Millisecond
+
+		// Make sure the program date time is current, ie not more than 2 min in the past
+		require.InDelta(t, now.Unix(), s.ProgramDateTime.Unix(), 120)
+
+		nextSegmentStartDate := pl.(*m3u8.MediaPlaylist).Segments[i+1].ProgramDateTime
+
+		dateDuration := nextSegmentStartDate.Sub(s.ProgramDateTime)
+		require.InDelta(t, time.Duration(s.Duration*float64(time.Second)), dateDuration, float64(leeway))
+	}
 }
 
 func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.EgressInfo, egressType types.EgressType, withMuting bool, sourceFramerate float64) {
