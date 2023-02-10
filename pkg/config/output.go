@@ -83,8 +83,8 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
 		if deprecated {
 			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
-			return nil
 		}
+		return nil
 	}
 
 	// stream output
@@ -115,8 +115,8 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		p.Info.StreamResults = streamInfoList
 		if deprecated {
 			p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
-			return nil
 		}
+		return nil
 	}
 
 	// segment output
@@ -143,8 +143,8 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		p.Info.SegmentResults = []*livekit.SegmentsInfo{conf.SegmentsInfo}
 		if deprecated {
 			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
-			return nil
 		}
+		return nil
 	}
 
 	return nil

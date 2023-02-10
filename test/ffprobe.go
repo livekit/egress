@@ -94,7 +94,7 @@ func verifyFile(t *testing.T, conf *TestConfig, p *config.PipelineConfig, res *l
 
 	// file info
 	var fileRes *livekit.FileInfo
-	if v2 {
+	if conf.V2 {
 		require.Len(t, res.FileResults, 1)
 		fileRes = res.FileResults[0]
 	} else {
@@ -136,7 +136,7 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, re
 
 	// segments info
 	var segments *livekit.SegmentsInfo
-	if v2 {
+	if conf.V2 {
 		require.Len(t, res.GetSegmentResults(), 1)
 		segments = res.GetSegmentResults()[0]
 	} else {
@@ -212,11 +212,9 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		require.NotEqual(t, "0", info.Format.Size)
 
 		// duration
-		var fileRes *livekit.FileInfo
-		if v2 {
+		fileRes := res.GetFile()
+		if fileRes == nil {
 			fileRes = res.FileResults[0]
-		} else {
-			fileRes = res.GetFile()
 		}
 		expected := float64(fileRes.Duration) / 1e9
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
@@ -240,11 +238,9 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 	case types.EgressTypeSegments:
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
-		var segments *livekit.SegmentsInfo
-		if v2 {
+		segments := res.GetSegments()
+		if segments == nil {
 			segments = res.GetSegmentResults()[0]
-		} else {
-			segments = res.GetSegments()
 		}
 		require.Equal(t, int64(actual/float64(p.Outputs[egressType].SegmentDuration))+1, segments.SegmentCount)
 	}
@@ -340,7 +336,6 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 					// dimensions
 					require.Equal(t, p.Width, stream.Width)
 					require.Equal(t, p.Height, stream.Height)
-
 				}
 			}
 

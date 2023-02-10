@@ -55,7 +55,7 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 			trackRequest := &livekit.TrackCompositeEgressRequest{
 				RoomName: conf.room.Name(),
 			}
-			if v2 {
+			if conf.V2 {
 				trackRequest.FileOutputs = []*livekit.EncodedFileOutput{fileOutput}
 			} else {
 				trackRequest.Output = &livekit.TrackCompositeEgressRequest_File{
@@ -112,7 +112,7 @@ func testTrackCompositeStream(t *testing.T, conf *TestConfig) {
 				AudioTrackId: audioTrackID,
 				VideoTrackId: videoTrackID,
 			}
-			if v2 {
+			if conf.V2 {
 				trackRequest.StreamOutputs = []*livekit.StreamOutput{{
 					Urls: []string{streamUrl1},
 				}}
@@ -180,7 +180,7 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 				AudioTrackId: aID,
 				VideoTrackId: vID,
 			}
-			if v2 {
+			if conf.V2 {
 				trackRequest.SegmentOutputs = []*livekit.SegmentedFileOutput{{
 					FilenamePrefix: filepath,
 					PlaylistName:   test.playlist,

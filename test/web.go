@@ -26,7 +26,7 @@ func testWebFile(t *testing.T, conf *TestConfig) {
 	web := &livekit.WebEgressRequest{
 		Url: webUrl,
 	}
-	if v2 {
+	if conf.V2 {
 		web.FileOutputs = []*livekit.EncodedFileOutput{fileOutput}
 	} else {
 		web.Output = &livekit.WebEgressRequest_File{
@@ -51,7 +51,7 @@ func testWebStream(t *testing.T, conf *TestConfig) {
 	web := &livekit.WebEgressRequest{
 		Url: webUrl,
 	}
-	if v2 {
+	if conf.V2 {
 		web.StreamOutputs = []*livekit.StreamOutput{{
 			Protocol: livekit.StreamProtocol_RTMP,
 			Urls:     []string{streamUrl1},
@@ -83,7 +83,7 @@ func testWebSegments(t *testing.T, conf *TestConfig) {
 	web := &livekit.WebEgressRequest{
 		Url: webUrl,
 	}
-	if v2 {
+	if conf.V2 {
 		web.SegmentOutputs = []*livekit.SegmentedFileOutput{{
 			FilenamePrefix: getFilePath(conf.ServiceConfig, "web_{time}"),
 			PlaylistName:   "web_{time}.m3u8",
