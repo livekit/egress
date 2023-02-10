@@ -58,6 +58,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 	GetSegmentOutputs() []*livekit.SegmentedFileOutput
 }) error {
 	var deprecated bool
+	outputs := 0
 
 	// file output
 	file := req.GetFile()
@@ -84,7 +85,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		if deprecated {
 			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
 		}
-		return nil
+		outputs++
 	}
 
 	// stream output
@@ -116,7 +117,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		if deprecated {
 			p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
 		}
-		return nil
+		outputs++
 	}
 
 	// segment output
@@ -144,7 +145,11 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		if deprecated {
 			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
 		}
-		return nil
+		outputs++
+	}
+
+	if outputs != 1 {
+		return errors.ErrInvalidInput("multiple outputs")
 	}
 
 	return nil
@@ -499,7 +504,7 @@ func redactEncodedOutputs(out interface {
 		if streams := out.GetStreamOutputs(); len(streams) == 1 {
 			redactStreamKeys(streams[0])
 		}
-		if segments := out.GetSegmentOutputs(); segments != nil {
+		if segments := out.GetSegmentOutputs(); len(segments) == 1 {
 			redactUpload(segments[0])
 		}
 	}
