@@ -106,7 +106,7 @@ func (s *SegmentSink) Start() error {
 func (s *SegmentSink) getSegmentOutputType() types.OutputType {
 	switch s.OutputType {
 	case types.OutputTypeHLS:
-		// HLS is always mpeg t for now. We may implement fmp4 in the future
+		// HLS is always mpeg ts for now. We may implement fmp4 in the future
 		return types.OutputTypeTS
 	default:
 		return s.OutputType
