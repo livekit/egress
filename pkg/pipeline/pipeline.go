@@ -242,7 +242,7 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 			Status:    livekit.StreamInfo_ACTIVE,
 		}
 		p.Outputs[types.EgressTypeStream].StreamInfo[url] = streamInfo
-		// p.Info.StreamResults = append(p.Info.StreamResults, streamInfo)
+		p.Info.StreamResults = append(p.Info.StreamResults, streamInfo)
 		list := p.Info.GetStream()
 		list.Info = append(list.Info, streamInfo)
 		p.mu.Unlock()

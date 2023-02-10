@@ -37,6 +37,7 @@ type TestConfig struct {
 	GstDebug                string `yaml:"gst_debug"`
 	Short                   bool   `yaml:"short"`
 	PSRPC                   bool   `yaml:"psrpc"`
+	V2                      bool   `yaml:"v2"`
 
 	// test context
 	svc          *service.Service         `yaml:"-"`
