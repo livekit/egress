@@ -43,6 +43,14 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
+	_, err = sink.Connect("format-location-full", func(self *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
+		fmt.Println("FORMAT-LOCATION", fragmentId, firstSample.GetBuffer().PresentationTimestamp())
+		return fmt.Sprintf("seg_%d", fragmentId)
+	})
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
 	if err = b.bin.Add(sink); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}

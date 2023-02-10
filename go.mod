@@ -2,7 +2,7 @@ module github.com/livekit/egress
 
 go 1.18
 
-replace github.com/tinyzimmer/go-gst v0.2.33 => github.com/livekit/go-gst v0.0.0-20220603230042-cef031256427
+replace github.com/tinyzimmer/go-gst v0.2.33 => github.com/livekit/go-gst v0.2.34-0.20230210054157-14ef53aa76d6
 
 require (
 	cloud.google.com/go/storage v1.29.0
