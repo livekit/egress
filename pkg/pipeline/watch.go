@@ -49,6 +49,9 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 	case gst.MessageElement:
 		err = p.handleMessageElement(msg)
 
+	case gst.MessageStreamStatus, gst.MessageNewClock:
+		// ignore
+
 	default:
 		logger.Debugw(msg.String(), "messageType", msg.Type().String())
 	}
@@ -76,14 +79,15 @@ func (p *Pipeline) handleMessageEOS() {
 }
 
 func (p *Pipeline) handleMessageWarning(gErr *gst.GError) error {
+	element, _, message := parseDebugInfo(gErr)
+
 	if gErr.Message() == msgClockProblem {
 		err := errors.ErrGstPipelineError(gErr)
-		logger.Errorw("pipeline error", err)
+		logger.Errorw(gErr.Error(), errors.New(message), "element", element)
 		return err
 	}
 
-	_, _, message := parseDebugInfo(gErr)
-	logger.Warnw(gErr.Message(), errors.New(message))
+	logger.Warnw(gErr.Message(), errors.New(message), "element", element)
 	return nil
 }
 
@@ -123,7 +127,7 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 
 	// input failure or file write failure. Fatal
 	err := errors.ErrGstPipelineError(gErr)
-	logger.Errorw("pipeline error", err, "element", element, "message", message)
+	logger.Errorw(gErr.Error(), errors.New(message), "element", element)
 	return err
 }
 

@@ -43,6 +43,7 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 		}
 	}
 
+	// create ghost pads
 	var audioPad, videoPad *gst.GhostPad
 	if len(b.outputs) == 1 {
 		for _, out := range b.outputs {
@@ -51,7 +52,7 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 	} else {
 		var err error
 		if p.AudioEnabled {
-			// create audio ghost pad
+			// create audio tee
 			b.audioTee, err = gst.NewElement("tee")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
@@ -63,7 +64,7 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 		}
 
 		if p.VideoEnabled {
-			// create video ghost pad
+			// create video tee
 			b.videoTee, err = gst.NewElement("tee")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
@@ -72,11 +73,10 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 				return nil, errors.ErrGstPipelineError(err)
 			}
 			videoPad = gst.NewGhostPad("video", b.videoTee.GetStaticPad("sink"))
-			if !b.bin.AddPad(videoPad.Pad) {
-				return nil, errors.ErrGhostPadFailed
-			}
 		}
 	}
+
+	// add ghost pads
 	if audioPad != nil && !b.bin.AddPad(audioPad.Pad) {
 		return nil, errors.ErrGhostPadFailed
 	}

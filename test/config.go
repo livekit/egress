@@ -33,6 +33,7 @@ type TestConfig struct {
 	FileTestsOnly           bool   `yaml:"file_only"`
 	StreamTestsOnly         bool   `yaml:"stream_only"`
 	SegmentTestsOnly        bool   `yaml:"segments_only"`
+	MultiTestsOnly          bool   `yaml:"multi_only"`
 	Muting                  bool   `yaml:"muting"`
 	GstDebug                string `yaml:"gst_debug"`
 	Short                   bool   `yaml:"short"`
@@ -59,6 +60,7 @@ type TestConfig struct {
 	runFileTests           bool `yaml:"-"`
 	runStreamTests         bool `yaml:"-"`
 	runSegmentTests        bool `yaml:"-"`
+	runMultiTests          bool `yaml:"-"`
 
 	sourceFramerate float64 `yaml:"-"`
 }
@@ -97,9 +99,10 @@ func NewTestContext(t *testing.T) *TestConfig {
 	tc.runTrackCompositeTests = !tc.RoomTestsOnly && !tc.ParticipantTestsOnly && !tc.TrackTestsOnly && !tc.WebTestsOnly
 	tc.runTrackTests = !tc.RoomTestsOnly && !tc.ParticipantTestsOnly && !tc.TrackCompositeTestsOnly && !tc.WebTestsOnly
 	tc.runWebTests = !tc.RoomTestsOnly && !tc.ParticipantTestsOnly && !tc.TrackCompositeTestsOnly && !tc.TrackTestsOnly
-	tc.runFileTests = !tc.StreamTestsOnly && !tc.SegmentTestsOnly
-	tc.runStreamTests = !tc.FileTestsOnly && !tc.SegmentTestsOnly
-	tc.runSegmentTests = !tc.FileTestsOnly && !tc.StreamTestsOnly
+	tc.runFileTests = !tc.StreamTestsOnly && !tc.SegmentTestsOnly && !tc.MultiTestsOnly
+	tc.runStreamTests = !tc.FileTestsOnly && !tc.SegmentTestsOnly && !tc.MultiTestsOnly
+	tc.runSegmentTests = !tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.MultiTestsOnly
+	tc.runMultiTests = !tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.SegmentTestsOnly
 
 	err = os.Setenv("GST_DEBUG", fmt.Sprint(tc.GstDebug))
 	require.NoError(t, err)

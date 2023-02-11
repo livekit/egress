@@ -108,3 +108,27 @@ func testWebSegments(t *testing.T, conf *TestConfig) {
 		expectVideoTranscoding: true,
 	})
 }
+
+func testWebMulti(t *testing.T, conf *TestConfig) {
+	awaitIdle(t, conf.svc)
+
+	req := &livekit.StartEgressRequest{
+		EgressId: utils.NewGuid(utils.EgressPrefix),
+
+		Request: &livekit.StartEgressRequest_Web{
+			Web: &livekit.WebEgressRequest{
+				Url: webUrl,
+				FileOutputs: []*livekit.EncodedFileOutput{{
+					FileType: livekit.EncodedFileType_MP4,
+					Filepath: getFilePath(conf.ServiceConfig, "web-multiple"),
+				}},
+				SegmentOutputs: []*livekit.SegmentedFileOutput{{
+					FilenamePrefix: getFilePath(conf.ServiceConfig, "web_multiple_{time}"),
+					PlaylistName:   "web_multiple_{time}",
+				}},
+			},
+		},
+	}
+
+	runMultipleTest(t, conf, req, true, false, true)
+}

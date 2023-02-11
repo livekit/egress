@@ -138,42 +138,10 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 				testRoomCompositeSegments(t, conf)
 			})
 		}
-	}
 
-	if conf.runTrackCompositeTests {
-		conf.sourceFramerate = 23.97
-
-		if conf.runFileTests {
-			t.Run("TrackComposite/File", func(t *testing.T) {
-				testTrackCompositeFile(t, conf)
-			})
-		}
-
-		if conf.runStreamTests {
-			t.Run("TrackComposite/Stream", func(t *testing.T) {
-				testTrackCompositeStream(t, conf)
-			})
-		}
-
-		if conf.runSegmentTests {
-			t.Run("TrackComposite/Segments", func(t *testing.T) {
-				testTrackCompositeSegments(t, conf)
-			})
-		}
-	}
-
-	if conf.runTrackTests {
-		conf.sourceFramerate = 23.97
-
-		if conf.runFileTests {
-			t.Run("Track/File", func(t *testing.T) {
-				testTrackFile(t, conf)
-			})
-		}
-
-		if conf.runStreamTests {
-			t.Run("Track/Stream", func(t *testing.T) {
-				testTrackStream(t, conf)
+		if conf.runMultiTests {
+			t.Run("RoomComposite/Multi", func(t *testing.T) {
+				testRoomCompositeMulti(t, conf)
 			})
 		}
 	}
@@ -196,6 +164,56 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 		if conf.runSegmentTests {
 			t.Run("Web/Segments", func(t *testing.T) {
 				testWebSegments(t, conf)
+			})
+		}
+
+		if conf.runMultiTests {
+			t.Run("Web/Multi", func(t *testing.T) {
+				testWebMulti(t, conf)
+			})
+		}
+	}
+
+	if conf.runTrackCompositeTests {
+		conf.sourceFramerate = 23.97
+
+		if conf.runFileTests {
+			t.Run("TrackComposite/File", func(t *testing.T) {
+				testTrackCompositeFile(t, conf)
+			})
+		}
+
+		if conf.runStreamTests {
+			t.Run("TrackComposite/Stream", func(t *testing.T) {
+				testTrackCompositeStream(t, conf)
+			})
+		}
+
+		if conf.runSegmentTests {
+			t.Run("TrackComposite/Segments", func(t *testing.T) {
+				testTrackCompositeSegments(t, conf)
+			})
+		}
+
+		if conf.runMultiTests {
+			t.Run("TrackComposite/Multi", func(t *testing.T) {
+				testTrackCompositeMulti(t, conf)
+			})
+		}
+	}
+
+	if conf.runTrackTests {
+		conf.sourceFramerate = 23.97
+
+		if conf.runFileTests {
+			t.Run("Track/File", func(t *testing.T) {
+				testTrackFile(t, conf)
+			})
+		}
+
+		if conf.runStreamTests {
+			t.Run("Track/Stream", func(t *testing.T) {
+				testTrackStream(t, conf)
 			})
 		}
 	}
@@ -421,6 +439,30 @@ func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 
 	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
 	verifySegments(t, conf, p, res)
+}
+
+func runMultipleTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, file, stream, segments bool) {
+	egressID := startEgress(t, conf, req)
+
+	time.Sleep(time.Second * 10)
+
+	// get params
+	p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
+	require.NoError(t, err)
+
+	if stream {
+		verifyStreams(t, p, conf, streamUrl1)
+	}
+
+	time.Sleep(time.Second * 20)
+	res := stopEgress(t, conf, egressID)
+
+	if file {
+		verifyFile(t, conf, p, res)
+	}
+	if segments {
+		verifySegments(t, conf, p, res)
+	}
 }
 
 func startEgress(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest) string {
