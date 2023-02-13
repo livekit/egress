@@ -49,7 +49,7 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 	case gst.MessageElement:
 		err = p.handleMessageElement(msg)
 
-	case gst.MessageStreamStatus, gst.MessageNewClock:
+	case gst.MessageStreamStatus, gst.MessageNewClock, gst.MessageLatency:
 		// ignore
 
 	default:

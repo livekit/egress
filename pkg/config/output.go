@@ -306,7 +306,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 	}
 
 	if conf.SegmentDuration == 0 {
-		conf.SegmentDuration = 6
+		conf.SegmentDuration = 8
 	}
 
 	if p.KeyFrameInterval == 0 {
