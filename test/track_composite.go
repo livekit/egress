@@ -184,12 +184,14 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 			// 	trackRequest.SegmentOutput = &livekit.SegmentedFileOutput{
 			// 		FilenamePrefix: filepath,
 			// 		PlaylistName:   test.playlist,
+			//      FilenameSuffix: test.filenameSuffix,
 			// 	}
 			// } else {
 			trackRequest.Output = &livekit.TrackCompositeEgressRequest_Segments{
 				Segments: &livekit.SegmentedFileOutput{
 					FilenamePrefix: filepath,
 					PlaylistName:   test.playlist,
+					FilenameSuffix: test.filenameSuffix,
 				},
 			}
 			// }

@@ -221,6 +221,7 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 			},
 			filename:               "rs_{room_name}_{time}",
 			playlist:               "rs_{room_name}_{time}.m3u8",
+			filenameSuffix:         2,
 			expectVideoTranscoding: true,
 		},
 		{
@@ -251,12 +252,14 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 			// 	room.SegmentOutput = &livekit.SegmentedFileOutput{
 			// 		FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
 			// 		PlaylistName:   test.playlist,
+			//      FilenameSuffix: test.filenameSuffix,
 			// 	}
 			// } else {
 			room.Output = &livekit.RoomCompositeEgressRequest_Segments{
 				Segments: &livekit.SegmentedFileOutput{
 					FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
 					PlaylistName:   test.playlist,
+					FilenameSuffix: test.filenameSuffix,
 				},
 			}
 			// }

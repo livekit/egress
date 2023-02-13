@@ -47,7 +47,8 @@ type testCase struct {
 	options  *livekit.EncodingOptions
 
 	// used by segmented file tests
-	playlist string
+	playlist       string
+	filenameSuffix livekit.SegmentedFileSuffix
 
 	// used by track and track composite tests
 	audioCodec types.MimeType

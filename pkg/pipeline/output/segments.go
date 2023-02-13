@@ -9,6 +9,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/builder"
+	"github.com/livekit/protocol/livekit"
 )
 
 type SegmentOutput struct {
@@ -46,9 +47,6 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 	if err = sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if err = sink.SetProperty("location", fmt.Sprintf("%s_%%05d.ts", out.LocalFilePrefix)); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
-	}
 
 	_, err = sink.Connect("format-location-full", func(self *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
 		if s.startDate.IsZero() {
@@ -64,7 +62,14 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 			sink.GetBus().Post(msg)
 		}
 
-		return fmt.Sprintf("seg_%d", fragmentId)
+		switch out.SegmentParams.SegmentSuffix {
+		case livekit.SegmentedFileSuffix_TIMESTAMP:
+			ts := s.startDate.Add(firstSample.GetBuffer().PresentationTimestamp())
+
+			return fmt.Sprintf("%s_%s%03d.ts", out.LocalFilePrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000)
+		default:
+			return fmt.Sprintf("%s_%05d.ts", out.LocalFilePrefix, fragmentId)
+		}
 	})
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
