@@ -192,6 +192,8 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		return p.Info
 	}
 
+	now := time.Now()
+	p.out.UpdateStartTime(now)
 	// run main loop
 	p.loop.Run()
 
@@ -362,6 +364,7 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 
 		case types.EgressTypeSegments:
 			conf.SegmentsInfo.StartedAt = startedAt
+
 		}
 	}
 
@@ -371,6 +374,7 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 			p.onStatusUpdate(context.Background(), p.Info)
 		}
 	}
+	logger.Infow("UPDATE START TIME", startedAt, time.Now().UnixNano())
 }
 
 func (p *Pipeline) updateDuration(endedAt int64) {

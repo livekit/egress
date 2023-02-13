@@ -2,6 +2,7 @@ package output
 
 import (
 	"context"
+	"time"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -202,5 +203,15 @@ func (b *Bin) SetWebsocketSink(writer *sink.WebsocketSink) error {
 	}
 
 	o.(*WebsocketOutput).SetSink(writer)
+	return nil
+}
+
+func (b *Bin) UpdateStartTime(t time.Time) error {
+	o := b.outputs[types.EgressTypeSegments]
+	if o == nil {
+		return nil
+	}
+
+	o.(*SegmentOutput).UpdateStartTime(t)
 	return nil
 }
