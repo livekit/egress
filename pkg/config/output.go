@@ -306,7 +306,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 	}
 
 	if conf.SegmentDuration == 0 {
-		conf.SegmentDuration = 8
+		conf.SegmentDuration = 4
 	}
 
 	if p.KeyFrameInterval == 0 {
@@ -416,6 +416,8 @@ func (o *OutputConfig) updatePrefixAndPlaylist(p *PipelineConfig, identifier str
 	_, o.PlaylistFilename = path.Split(o.PlaylistFilename)
 	if o.PlaylistFilename == "" {
 		o.PlaylistFilename = fmt.Sprintf("playlist-%s%s", identifier, ext)
+	} else if !strings.HasSuffix(o.PlaylistFilename, string(ext)) {
+		o.PlaylistFilename = fmt.Sprintf("%s%s", o.PlaylistFilename, ext)
 	}
 
 	var filePrefix string

@@ -217,29 +217,6 @@ func sendUpdate(ctx context.Context, c rpc.IOInfoClient, info *livekit.EgressInf
 }
 
 func getTypes(info *livekit.EgressInfo) (requestType string, outputType string) {
-	getOutputType := func(r config.EncodedOutput) string {
-		if r.GetFile() != nil {
-			return "file"
-		}
-		if r.GetStream() != nil {
-			return "stream"
-		}
-		if r.GetSegments() != nil {
-			return "segments"
-		}
-		outputs := make([]string, 0)
-		if len(r.GetFileOutputs()) > 1 {
-			outputs = append(outputs, "file")
-		}
-		if len(r.GetStreamOutputs()) > 1 {
-			outputs = append(outputs, "stream")
-		}
-		if len(r.GetSegmentOutputs()) > 1 {
-			outputs = append(outputs, "segments")
-		}
-		return strings.Join(outputs, ", ")
-	}
-
 	switch req := info.Request.(type) {
 	case *livekit.EgressInfo_RoomComposite:
 		requestType = "room_composite"
@@ -261,4 +238,27 @@ func getTypes(info *livekit.EgressInfo) (requestType string, outputType string) 
 	}
 
 	return
+}
+
+func getOutputType(r config.EncodedOutput) string {
+	if r.GetFile() != nil {
+		return "file"
+	}
+	if r.GetStream() != nil {
+		return "stream"
+	}
+	if r.GetSegments() != nil {
+		return "segments"
+	}
+	outputs := make([]string, 0)
+	if len(r.GetFileOutputs()) > 1 {
+		outputs = append(outputs, "file")
+	}
+	if len(r.GetStreamOutputs()) > 1 {
+		outputs = append(outputs, "stream")
+	}
+	if len(r.GetSegmentOutputs()) > 1 {
+		outputs = append(outputs, "segments")
+	}
+	return strings.Join(outputs, ", ")
 }
