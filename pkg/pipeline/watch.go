@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"time"
 
@@ -200,6 +201,8 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 				logger.Errorw("failed to end segment with playlist writer", err, "running time", t)
 				return err
 			}
+		default:
+			fmt.Println("NAME", s.Name())
 		}
 	}
 

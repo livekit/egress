@@ -192,8 +192,6 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		return p.Info
 	}
 
-	now := time.Now()
-	p.out.UpdateStartTime(now)
 	// run main loop
 	p.loop.Run()
 

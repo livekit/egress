@@ -2,7 +2,6 @@ package output
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/tinyzimmer/go-gst/gst"
@@ -15,11 +14,12 @@ import (
 type SegmentOutput struct {
 	*outputBase
 
-	sink *gst.Element
+	sink      *gst.Element
+	startDate time.Time
+}
 
-	startedAtLock sync.Mutex
-	startedAt     time.Time
-	startedAtTs   time.Duration // timestamp of the 1st sample
+type FirstSampleMetadata struct {
+	StartDate time.Time // Real time date of the 0 PTS
 }
 
 func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputConfig) (*SegmentOutput, error) {
@@ -51,15 +51,16 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 	}
 
 	_, err = sink.Connect("format-location-full", func(self *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
-		s.startedAtLock.Lock()
-		defer s.startedAtLock.Unlock()
+		if s.startDate.IsZero() {
+			s.startDate = time.Now().Add(-firstSample.GetBuffer().PresentationTimestamp())
 
-		if s.startedAtTs == 0 {
-			s.startedAtTs = firstSample.GetBuffer().PresentationTimestamp()
+			mdata := FirstSampleMetadata{
+				StartDate: s.startDate,
+			}
+			str := gst.MarshalStructure(mdata)
+			msg := gst.NewElementMessage(sink, str)
+			sink.GetBus().Post(msg)
 		}
-
-		fragmentStart := s.startedAt.Add(-s.startedAtTs).Add(firstSample.GetBuffer().PresentationTimestamp())
-		fmt.Println("FORMAT-LOCATION", fragmentId, firstSample.GetBuffer().PresentationTimestamp(), s.startedAt, fragmentStart, len(firstSample.GetBuffer().Bytes()), firstSample.GetCaps())
 
 		return fmt.Sprintf("seg_%d", fragmentId)
 	})
@@ -99,13 +100,4 @@ func (o *SegmentOutput) Link() error {
 	}
 
 	return nil
-}
-
-func (o *SegmentOutput) UpdateStartTime(t time.Time) {
-	o.startedAtLock.Lock()
-	defer o.startedAtLock.Unlock()
-
-	fmt.Println("UPDATESTARTTIME")
-
-	o.startedAt = t
 }
