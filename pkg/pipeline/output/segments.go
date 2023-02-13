@@ -19,7 +19,7 @@ type SegmentOutput struct {
 }
 
 type FirstSampleMetadata struct {
-	StartDate time.Time // Real time date of the 0 PTS
+	StartDate int64 // Real time date of the 0 PTS
 }
 
 func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputConfig) (*SegmentOutput, error) {
@@ -52,10 +52,12 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 
 	_, err = sink.Connect("format-location-full", func(self *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
 		if s.startDate.IsZero() {
-			s.startDate = time.Now().Add(-firstSample.GetBuffer().PresentationTimestamp())
+			now := time.Now()
+
+			s.startDate = now.Add(-firstSample.GetBuffer().PresentationTimestamp())
 
 			mdata := FirstSampleMetadata{
-				StartDate: s.startDate,
+				StartDate: now.UnixNano(),
 			}
 			str := gst.MarshalStructure(mdata)
 			msg := gst.NewElementMessage(sink, str)
