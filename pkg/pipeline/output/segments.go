@@ -20,7 +20,7 @@ type SegmentOutput struct {
 }
 
 type FirstSampleMetadata struct {
-	StartDate int64 // Real time date of the 0 PTS
+	StartDate int64 // Real time date of the first media sample
 }
 
 func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputConfig) (*SegmentOutput, error) {

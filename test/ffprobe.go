@@ -28,7 +28,7 @@ const (
 )
 
 var (
-	segmentTimeRegexp = regexp.MustCompile(`.*_(\d{14})(\d{3})\.ts`)
+	segmentTimeRegexp = regexp.MustCompile(`_(\d{14})(\d{3})\.ts`)
 )
 
 type FFProbeInfo struct {
