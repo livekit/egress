@@ -422,7 +422,7 @@ func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 	require.NoError(t, err)
 
 	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
-	verifySegments(t, conf, p, res)
+	verifySegments(t, conf, p, test.filenameSuffix, res)
 }
 
 func startEgress(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest) string {
