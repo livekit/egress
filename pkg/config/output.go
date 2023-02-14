@@ -46,6 +46,7 @@ type SegmentParams struct {
 	LocalFilePrefix   string
 	StoragePathPrefix string
 	PlaylistFilename  string
+	SegmentSuffix     livekit.SegmentedFileSuffix
 	SegmentDuration   int
 }
 
@@ -299,6 +300,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 		SegmentParams: SegmentParams{
 			SegmentsInfo:     &livekit.SegmentsInfo{},
 			LocalFilePrefix:  segments.FilenamePrefix,
+			SegmentSuffix:    segments.FilenameSuffix,
 			PlaylistFilename: segments.PlaylistName,
 			SegmentDuration:  int(segments.SegmentDuration),
 		},

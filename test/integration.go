@@ -46,7 +46,8 @@ type testCase struct {
 	options  *livekit.EncodingOptions
 
 	// used by segmented file tests
-	playlist string
+	playlist       string
+	filenameSuffix livekit.SegmentedFileSuffix
 
 	// used by track and track composite tests
 	audioCodec types.MimeType
@@ -438,10 +439,10 @@ func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 	require.NoError(t, err)
 
 	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
-	verifySegments(t, conf, p, res)
+	verifySegments(t, conf, p, test.filenameSuffix, res)
 }
 
-func runMultipleTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, file, stream, segments bool) {
+func runMultipleTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, file, stream, segments bool, filenameSuffix livekit.SegmentedFileSuffix) {
 	egressID := startEgress(t, conf, req)
 
 	time.Sleep(time.Second * 10)
@@ -461,7 +462,7 @@ func runMultipleTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 		verifyFile(t, conf, p, res)
 	}
 	if segments {
-		verifySegments(t, conf, p, res)
+		verifySegments(t, conf, p, filenameSuffix, res)
 	}
 }
 
