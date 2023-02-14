@@ -221,7 +221,7 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 			},
 			filename:               "rs_{room_name}_{time}",
 			playlist:               "rs_{room_name}_{time}.m3u8",
-			filenameSuffix:         2,
+			filenameSuffix:         1,
 			expectVideoTranscoding: true,
 		},
 		{
