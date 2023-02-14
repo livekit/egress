@@ -13,6 +13,15 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+type EncodedOutput interface {
+	GetFile() *livekit.EncodedFileOutput
+	GetStream() *livekit.StreamOutput
+	GetSegments() *livekit.SegmentedFileOutput
+	GetFileOutputs() []*livekit.EncodedFileOutput
+	GetStreamOutputs() []*livekit.StreamOutput
+	GetSegmentOutputs() []*livekit.SegmentedFileOutput
+}
+
 type OutputConfig struct {
 	types.EgressType
 	types.OutputType
@@ -50,16 +59,8 @@ type WebsocketParams struct {
 	WebsocketUrl string
 }
 
-func (p *PipelineConfig) updateEncodedOutputs(req interface {
-	GetFile() *livekit.EncodedFileOutput
-	GetStream() *livekit.StreamOutput
-	GetSegments() *livekit.SegmentedFileOutput
-	GetFileOutputs() []*livekit.EncodedFileOutput
-	GetStreamOutputs() []*livekit.StreamOutput
-	GetSegmentOutputs() []*livekit.SegmentedFileOutput
-}) error {
+func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 	var deprecated bool
-	outputs := 0
 
 	// file output
 	file := req.GetFile()
@@ -85,8 +86,8 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
 		if deprecated {
 			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
+			return nil
 		}
-		outputs++
 	}
 
 	// stream output
@@ -117,8 +118,8 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		p.Info.StreamResults = streamInfoList
 		if deprecated {
 			p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
+			return nil
 		}
-		outputs++
 	}
 
 	// segment output
@@ -145,12 +146,8 @@ func (p *PipelineConfig) updateEncodedOutputs(req interface {
 		p.Info.SegmentResults = []*livekit.SegmentsInfo{conf.SegmentsInfo}
 		if deprecated {
 			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
+			return nil
 		}
-		outputs++
-	}
-
-	if outputs != 1 {
-		return errors.ErrInvalidInput("multiple outputs")
 	}
 
 	return nil
@@ -311,7 +308,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 	}
 
 	if conf.SegmentDuration == 0 {
-		conf.SegmentDuration = 6
+		conf.SegmentDuration = 4
 	}
 
 	if p.KeyFrameInterval == 0 {
@@ -421,6 +418,8 @@ func (o *OutputConfig) updatePrefixAndPlaylist(p *PipelineConfig, identifier str
 	_, o.PlaylistFilename = path.Split(o.PlaylistFilename)
 	if o.PlaylistFilename == "" {
 		o.PlaylistFilename = fmt.Sprintf("playlist-%s%s", identifier, ext)
+	} else if !strings.HasSuffix(o.PlaylistFilename, string(ext)) {
+		o.PlaylistFilename = fmt.Sprintf("%s%s", o.PlaylistFilename, ext)
 	}
 
 	var filePrefix string
@@ -489,14 +488,7 @@ func (p *PipelineConfig) getUploadConfig(upload uploadConf) interface{} {
 	return nil
 }
 
-func redactEncodedOutputs(out interface {
-	GetFile() *livekit.EncodedFileOutput
-	GetStream() *livekit.StreamOutput
-	GetSegments() *livekit.SegmentedFileOutput
-	GetFileOutputs() []*livekit.EncodedFileOutput
-	GetStreamOutputs() []*livekit.StreamOutput
-	GetSegmentOutputs() []*livekit.SegmentedFileOutput
-}) {
+func redactEncodedOutputs(out EncodedOutput) {
 	if file := out.GetFile(); file != nil {
 		redactUpload(file)
 	} else if stream := out.GetStream(); stream != nil {

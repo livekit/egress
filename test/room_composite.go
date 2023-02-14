@@ -284,3 +284,27 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 		}
 	}
 }
+
+func testRoomCompositeMulti(t *testing.T, conf *TestConfig) {
+	awaitIdle(t, conf.svc)
+
+	req := &livekit.StartEgressRequest{
+		EgressId: utils.NewGuid(utils.EgressPrefix),
+		Request: &livekit.StartEgressRequest_RoomComposite{
+			RoomComposite: &livekit.RoomCompositeEgressRequest{
+				RoomName: conf.room.Name(),
+				Layout:   "grid-light",
+				FileOutputs: []*livekit.EncodedFileOutput{{
+					FileType: livekit.EncodedFileType_MP4,
+					Filepath: getFilePath(conf.ServiceConfig, "rc_multiple_{time}"),
+				}},
+				StreamOutputs: []*livekit.StreamOutput{{
+					Protocol: livekit.StreamProtocol_RTMP,
+					Urls:     []string{streamUrl1},
+				}},
+			},
+		},
+	}
+
+	runMultipleTest(t, conf, req, true, true, false)
+}

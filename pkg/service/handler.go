@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"net"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -219,34 +220,13 @@ func getTypes(info *livekit.EgressInfo) (requestType string, outputType string) 
 	switch req := info.Request.(type) {
 	case *livekit.EgressInfo_RoomComposite:
 		requestType = "room_composite"
-		switch req.RoomComposite.Output.(type) {
-		case *livekit.RoomCompositeEgressRequest_File:
-			outputType = "file"
-		case *livekit.RoomCompositeEgressRequest_Stream:
-			outputType = "stream"
-		case *livekit.RoomCompositeEgressRequest_Segments:
-			outputType = "segments"
-		}
+		outputType = getOutputType(req.RoomComposite)
 	case *livekit.EgressInfo_Web:
 		requestType = "web"
-		switch req.Web.Output.(type) {
-		case *livekit.WebEgressRequest_File:
-			outputType = "file"
-		case *livekit.WebEgressRequest_Stream:
-			outputType = "stream"
-		case *livekit.WebEgressRequest_Segments:
-			outputType = "segments"
-		}
+		outputType = getOutputType(req.Web)
 	case *livekit.EgressInfo_TrackComposite:
 		requestType = "track_composite"
-		switch req.TrackComposite.Output.(type) {
-		case *livekit.TrackCompositeEgressRequest_File:
-			outputType = "file"
-		case *livekit.TrackCompositeEgressRequest_Stream:
-			outputType = "stream"
-		case *livekit.TrackCompositeEgressRequest_Segments:
-			outputType = "segments"
-		}
+		outputType = getOutputType(req.TrackComposite)
 	case *livekit.EgressInfo_Track:
 		requestType = "track"
 		switch req.Track.Output.(type) {
@@ -258,4 +238,27 @@ func getTypes(info *livekit.EgressInfo) (requestType string, outputType string) 
 	}
 
 	return
+}
+
+func getOutputType(r config.EncodedOutput) string {
+	if r.GetFile() != nil {
+		return "file"
+	}
+	if r.GetStream() != nil {
+		return "stream"
+	}
+	if r.GetSegments() != nil {
+		return "segments"
+	}
+	outputs := make([]string, 0)
+	if len(r.GetFileOutputs()) > 1 {
+		outputs = append(outputs, "file")
+	}
+	if len(r.GetStreamOutputs()) > 1 {
+		outputs = append(outputs, "stream")
+	}
+	if len(r.GetSegmentOutputs()) > 1 {
+		outputs = append(outputs, "segments")
+	}
+	return strings.Join(outputs, ", ")
 }

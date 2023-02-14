@@ -16,6 +16,8 @@ type SegmentOutput struct {
 	*outputBase
 
 	sink      *gst.Element
+	h264parse *gst.Element
+
 	startDate time.Time
 }
 
@@ -29,6 +31,11 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 	base, err := b.buildOutputBase(p)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
+	}
+
+	h264parse, err := gst.NewElement("h264parse")
+	if err != nil {
+		return nil, err
 	}
 
 	sink, err := gst.NewElement("splitmuxsink")
@@ -75,11 +82,12 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	if err = b.bin.Add(sink); err != nil {
+	if err = b.bin.AddMany(h264parse, sink); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	s.outputBase = base
+	s.h264parse = h264parse
 	s.sink = sink
 
 	return s, nil
@@ -98,8 +106,11 @@ func (o *SegmentOutput) Link() error {
 
 	// link video to sink
 	if o.videoQueue != nil {
+		if err := o.videoQueue.Link(o.h264parse); err != nil {
+			return errors.ErrPadLinkFailed("video queue", "h264parse", err.Error())
+		}
 		if err := builder.LinkPads(
-			"video queue", o.videoQueue.GetStaticPad("src"),
+			"h264parse", o.h264parse.GetStaticPad("src"),
 			"split mux", o.sink.GetRequestPad("video"),
 		); err != nil {
 			return err

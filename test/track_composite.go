@@ -158,8 +158,8 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 			name:           "tcs-limit",
 			audioCodec:     types.MimeTypeOpus,
 			videoCodec:     types.MimeTypeH264,
-			filename:       "tcs-limit-{time}",
-			playlist:       "tcs-limit-{time}.m3u8",
+			filename:       "tcs_limit_{time}",
+			playlist:       "tcs_limit_{time}.m3u8",
 			filenameSuffix: 1,
 		},
 	} {
@@ -215,4 +215,31 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 			return
 		}
 	}
+}
+
+func testTrackCompositeMulti(t *testing.T, conf *TestConfig) {
+	awaitIdle(t, conf.svc)
+
+	audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
+
+	req := &livekit.StartEgressRequest{
+		EgressId: utils.NewGuid(utils.EgressPrefix),
+		Request: &livekit.StartEgressRequest_TrackComposite{
+			TrackComposite: &livekit.TrackCompositeEgressRequest{
+				RoomName:     conf.room.Name(),
+				AudioTrackId: audioTrackID,
+				VideoTrackId: videoTrackID,
+				StreamOutputs: []*livekit.StreamOutput{{
+					Protocol: livekit.StreamProtocol_RTMP,
+					Urls:     []string{streamUrl1},
+				}},
+				SegmentOutputs: []*livekit.SegmentedFileOutput{{
+					FilenamePrefix: getFilePath(conf.ServiceConfig, "tc_multiple_{time}"),
+					PlaylistName:   "tc_multiple_{time}",
+				}},
+			},
+		},
+	}
+
+	runMultipleTest(t, conf, req, false, true, true)
 }
