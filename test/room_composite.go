@@ -221,7 +221,7 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 			},
 			filename:               "rs_{room_name}_{time}",
 			playlist:               "rs_{room_name}_{time}.m3u8",
-			filenameSuffix:         1,
+			filenameSuffix:         livekit.SegmentedFileSuffix_TIMESTAMP,
 			expectVideoTranscoding: true,
 		},
 		{
@@ -306,5 +306,5 @@ func testRoomCompositeMulti(t *testing.T, conf *TestConfig) {
 		},
 	}
 
-	runMultipleTest(t, conf, req, true, true, false)
+	runMultipleTest(t, conf, req, true, true, false, livekit.SegmentedFileSuffix_TIMESTAMP)
 }

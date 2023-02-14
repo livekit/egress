@@ -160,7 +160,7 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 			videoCodec:     types.MimeTypeH264,
 			filename:       "tcs_limit_{time}",
 			playlist:       "tcs_limit_{time}.m3u8",
-			filenameSuffix: 1,
+			filenameSuffix: livekit.SegmentedFileSuffix_TIMESTAMP,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -241,5 +241,5 @@ func testTrackCompositeMulti(t *testing.T, conf *TestConfig) {
 		},
 	}
 
-	runMultipleTest(t, conf, req, false, true, true)
+	runMultipleTest(t, conf, req, false, true, true, livekit.SegmentedFileSuffix_INDEX)
 }
