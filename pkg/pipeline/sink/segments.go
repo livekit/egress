@@ -47,7 +47,7 @@ func newSegmentSink(u uploader.Uploader, conf *config.PipelineConfig, p *config.
 	// "github.com/grafov/m3u8" is fairly inefficient for frequent serializations of long playlists and
 	// doesn't implement recent additions to the HLS spec, but I'm not aware of anything better, short of
 	// writing one.
-	playlist, err := m3u8.NewMediaPlaylist(0, 15000) // 15,000 -> about 24h with 6s segments
+	playlist, err := m3u8.NewMediaPlaylist(0, 15000) // 15,000 -> about 32h with 8s segments
 	if err != nil {
 		return nil, err
 	}
