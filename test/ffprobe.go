@@ -183,16 +183,11 @@ func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.Segmente
 
 	now := time.Now()
 
-	for i, s := range pl.(*m3u8.MediaPlaylist).Segments[:pl.(*m3u8.MediaPlaylist).Count()-1] {
+	for i, s := range pl.(*m3u8.MediaPlaylist).Segments[:pl.(*m3u8.MediaPlaylist).Count()] {
 		const leeway = 50 * time.Millisecond
 
 		// Make sure the program date time is current, ie not more than 2 min in the past
 		require.InDelta(t, now.Unix(), s.ProgramDateTime.Unix(), 120)
-
-		nextSegmentStartDate := pl.(*m3u8.MediaPlaylist).Segments[i+1].ProgramDateTime
-
-		dateDuration := nextSegmentStartDate.Sub(s.ProgramDateTime)
-		require.InDelta(t, time.Duration(s.Duration*float64(time.Second)), dateDuration, float64(leeway))
 
 		if filenameSuffix == livekit.SegmentedFileSuffix_TIMESTAMP {
 			m := segmentTimeRegexp.FindStringSubmatch(s.URI)
@@ -207,6 +202,13 @@ func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.Segmente
 			tm = tm.Add(time.Duration(ms) * time.Millisecond)
 
 			require.InDelta(t, s.ProgramDateTime.UnixNano(), tm.UnixNano(), float64(time.Millisecond))
+		}
+
+		if uint(i) < pl.(*m3u8.MediaPlaylist).Count()-1 {
+			nextSegmentStartDate := pl.(*m3u8.MediaPlaylist).Segments[i+1].ProgramDateTime
+
+			dateDuration := nextSegmentStartDate.Sub(s.ProgramDateTime)
+			require.InDelta(t, time.Duration(s.Duration*float64(time.Second)), dateDuration, float64(leeway))
 		}
 	}
 }
