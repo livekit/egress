@@ -14,9 +14,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/livekit-server/pkg/service/rpc"
-	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go"
 )
 
@@ -37,15 +35,12 @@ type TestConfig struct {
 	Muting                  bool   `yaml:"muting"`
 	GstDebug                string `yaml:"gst_debug"`
 	Short                   bool   `yaml:"short"`
-	PSRPC                   bool   `yaml:"psrpc"`
 	V2                      bool   `yaml:"v2"`
 
 	// test context
 	svc          *service.Service         `yaml:"-"`
-	rpcClient    egress.RPCClient         `yaml:"-"`
 	psrpcClient  rpc.EgressClient         `yaml:"-"`
 	room         *lksdk.Room              `yaml:"-"`
-	updates      utils.PubSub             `yaml:"-"`
 	psrpcUpdates chan *livekit.EgressInfo `yaml:"-"`
 	S3Upload     *livekit.S3Upload        `yaml:"-"`
 	GCPUpload    *livekit.GCPUpload       `yaml:"-"`
@@ -102,7 +97,7 @@ func NewTestContext(t *testing.T) *TestConfig {
 	tc.runFileTests = !tc.StreamTestsOnly && !tc.SegmentTestsOnly && !tc.MultiTestsOnly
 	tc.runStreamTests = !tc.FileTestsOnly && !tc.SegmentTestsOnly && !tc.MultiTestsOnly
 	tc.runSegmentTests = !tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.MultiTestsOnly
-	tc.runMultiTests = !tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.SegmentTestsOnly
+	tc.runMultiTests = tc.V2 && (!tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.SegmentTestsOnly)
 
 	err = os.Setenv("GST_DEBUG", fmt.Sprint(tc.GstDebug))
 	require.NoError(t, err)

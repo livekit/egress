@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/stats"
@@ -86,37 +85,20 @@ func (s *Service) Run() error {
 		return err
 	}
 
-	requests, err := s.rpcServerV0.GetRequestChannel(context.Background())
-	if err != nil {
-		return err
+	if s.rpcServerV0 != nil {
+		return s.runV0()
 	}
-
-	defer func() {
-		_ = requests.Close()
-	}()
 
 	logger.Debugw("service ready")
 
-	for {
-		select {
-		case <-s.shutdown:
-			logger.Infow("shutting down")
-			s.psrpcServer.Shutdown()
-			for !s.manager.isIdle() {
-				time.Sleep(shutdownTimer)
-			}
-			return nil
-
-		case msg := <-requests.Channel():
-			req := &livekit.StartEgressRequest{}
-			if err = proto.Unmarshal(requests.Payload(msg), req); err != nil {
-				logger.Errorw("malformed request", err)
-				continue
-			}
-
-			s.handleRequestV0(req)
-		}
+	<-s.shutdown
+	logger.Infow("shutting down")
+	s.psrpcServer.Shutdown()
+	for !s.manager.isIdle() {
+		time.Sleep(shutdownTimer)
 	}
+
+	return nil
 }
 
 func (s *Service) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {

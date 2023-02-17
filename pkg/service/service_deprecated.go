@@ -4,12 +4,48 @@ import (
 	"context"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 )
+
+func (s *Service) runV0() error {
+	requests, err := s.rpcServerV0.GetRequestChannel(context.Background())
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = requests.Close()
+	}()
+
+	logger.Debugw("service ready")
+
+	for {
+		select {
+		case <-s.shutdown:
+			logger.Infow("shutting down")
+			s.psrpcServer.Shutdown()
+			for !s.manager.isIdle() {
+				time.Sleep(shutdownTimer)
+			}
+			return nil
+
+		case msg := <-requests.Channel():
+			req := &livekit.StartEgressRequest{}
+			if err = proto.Unmarshal(requests.Payload(msg), req); err != nil {
+				logger.Errorw("malformed request", err)
+				continue
+			}
+
+			s.handleRequestV0(req)
+		}
+	}
+}
 
 func (s *Service) ListEgress() []string {
 	return s.manager.listEgress()

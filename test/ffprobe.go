@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -25,10 +24,6 @@ const (
 	maxRetries = 5
 	minDelay   = time.Millisecond * 100
 	maxDelay   = time.Second * 5
-)
-
-var (
-	segmentTimeRegexp = regexp.MustCompile(`_(\d{14})(\d{3})\.ts`)
 )
 
 type FFProbeInfo struct {
@@ -98,14 +93,11 @@ func verifyFile(t *testing.T, conf *TestConfig, p *config.PipelineConfig, res *l
 	require.NotZero(t, res.EndedAt)
 
 	// file info
-	var fileRes *livekit.FileInfo
-	if conf.V2 {
+	fileRes := res.GetFile()
+	if fileRes == nil {
 		require.Len(t, res.FileResults, 1)
 		fileRes = res.FileResults[0]
-	} else {
-		fileRes = res.GetFile()
 	}
-	require.NotNil(t, fileRes)
 
 	require.NotEmpty(t, fileRes.Location)
 	require.Greater(t, fileRes.Size, int64(0))
@@ -133,19 +125,17 @@ func verifyStreams(t *testing.T, p *config.PipelineConfig, conf *TestConfig, url
 	}
 }
 
-func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, res *livekit.EgressInfo) {
+func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, res *livekit.EgressInfo) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
 	require.NotZero(t, res.EndedAt)
 
 	// segments info
-	var segments *livekit.SegmentsInfo
-	if conf.V2 {
+	segments := res.GetSegments()
+	if segments == nil {
 		require.Len(t, res.GetSegmentResults(), 1)
 		segments = res.GetSegmentResults()[0]
-	} else {
-		segments = res.GetSegments()
 	}
 	require.NotEmpty(t, segments.PlaylistName)
 	require.NotEmpty(t, segments.PlaylistLocation)
@@ -155,7 +145,7 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, fi
 	storedPlaylistPath := segments.PlaylistName
 	localPlaylistPath := segments.PlaylistName
 
-	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath)
+	verifyPlaylistProgramDateTime(t, localPlaylistPath)
 
 	// download from cloud storage
 	if uploadConfig := p.Outputs[types.EgressTypeSegments].UploadConfig; uploadConfig != nil {
@@ -174,7 +164,7 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, fi
 	verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, conf.Muting, conf.sourceFramerate)
 }
 
-func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.SegmentedFileSuffix, localPlaylistPath string) {
+func verifyPlaylistProgramDateTime(t *testing.T, localPlaylistPath string) {
 	file, err := os.Open(localPlaylistPath)
 	require.NoError(t, err)
 	defer file.Close()
@@ -185,33 +175,16 @@ func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.Segmente
 
 	now := time.Now()
 
-	for i, s := range pl.(*m3u8.MediaPlaylist).Segments[:pl.(*m3u8.MediaPlaylist).Count()] {
+	for i, s := range pl.(*m3u8.MediaPlaylist).Segments[:pl.(*m3u8.MediaPlaylist).Count()-1] {
 		const leeway = 50 * time.Millisecond
 
 		// Make sure the program date time is current, ie not more than 2 min in the past
 		require.InDelta(t, now.Unix(), s.ProgramDateTime.Unix(), 120)
 
-		if filenameSuffix == livekit.SegmentedFileSuffix_TIMESTAMP {
-			m := segmentTimeRegexp.FindStringSubmatch(s.URI)
-			require.Equal(t, 3, len(m))
+		nextSegmentStartDate := pl.(*m3u8.MediaPlaylist).Segments[i+1].ProgramDateTime
 
-			tm, err := time.Parse("20060102150405", m[1])
-			require.NoError(t, err)
-
-			ms, err := strconv.Atoi(m[2])
-			require.NoError(t, err)
-
-			tm = tm.Add(time.Duration(ms) * time.Millisecond)
-
-			require.InDelta(t, s.ProgramDateTime.UnixNano(), tm.UnixNano(), float64(time.Millisecond))
-		}
-
-		if uint(i) < pl.(*m3u8.MediaPlaylist).Count()-1 {
-			nextSegmentStartDate := pl.(*m3u8.MediaPlaylist).Segments[i+1].ProgramDateTime
-
-			dateDuration := nextSegmentStartDate.Sub(s.ProgramDateTime)
-			require.InDelta(t, time.Duration(s.Duration*float64(time.Second)), dateDuration, float64(leeway))
-		}
+		dateDuration := nextSegmentStartDate.Sub(s.ProgramDateTime)
+		require.InDelta(t, time.Duration(s.Duration*float64(time.Second)), dateDuration, float64(leeway))
 	}
 }
 

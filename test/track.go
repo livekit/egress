@@ -105,7 +105,7 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 			name:       "track-websocket-limit",
 			audioOnly:  true,
 			audioCodec: types.MimeTypeOpus,
-			filename:   fmt.Sprintf("track-ws-timedout-%v.raw", now),
+			filename:   fmt.Sprintf("track-ws-limit-%v.raw", now),
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

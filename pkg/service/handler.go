@@ -251,13 +251,13 @@ func getOutputType(r config.EncodedOutput) string {
 		return "segments"
 	}
 	outputs := make([]string, 0)
-	if len(r.GetFileOutputs()) > 1 {
+	if len(r.GetFileOutputs()) > 0 {
 		outputs = append(outputs, "file")
 	}
-	if len(r.GetStreamOutputs()) > 1 {
+	if len(r.GetStreamOutputs()) > 0 {
 		outputs = append(outputs, "stream")
 	}
-	if len(r.GetSegmentOutputs()) > 1 {
+	if len(r.GetSegmentOutputs()) > 0 {
 		outputs = append(outputs, "segments")
 	}
 	return strings.Join(outputs, ", ")

@@ -17,7 +17,6 @@ import (
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/livekit-server/pkg/service/rpc"
-	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
@@ -46,8 +45,7 @@ type testCase struct {
 	options  *livekit.EncodingOptions
 
 	// used by segmented file tests
-	playlist       string
-	filenameSuffix livekit.SegmentedFileSuffix
+	playlist string
 
 	// used by track and track composite tests
 	audioCodec types.MimeType
@@ -59,7 +57,7 @@ type testCase struct {
 	expectVideoTranscoding bool
 }
 
-func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rpcServer egress.RPCServer, bus psrpc.MessageBus, templateFs fs.FS) {
+func RunTestSuite(t *testing.T, conf *TestConfig, bus psrpc.MessageBus, templateFs fs.FS) {
 	// connect to room
 	room, err := lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
 		APIKey:              conf.ApiKey,
@@ -74,7 +72,7 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	// start service
 	ioClient, err := rpc.NewIOInfoClient("test_io_client", bus)
 	require.NoError(t, err)
-	svc, err := service.NewService(conf.ServiceConfig, bus, rpcServer, ioClient)
+	svc, err := service.NewService(conf.ServiceConfig, bus, nil, ioClient)
 	require.NoError(t, err)
 
 	psrpcClient, err := rpc.NewEgressClient(livekit.NodeID(utils.NewGuid("TEST_")), bus)
@@ -95,19 +93,13 @@ func RunTestSuite(t *testing.T, conf *TestConfig, rpcClient egress.RPCClient, rp
 	time.Sleep(time.Second * 3)
 
 	// subscribe to update channel
-	updates, err := rpcClient.GetUpdateChannel(context.Background())
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = updates.Close() })
-
 	psrpcUpdates := make(chan *livekit.EgressInfo, 100)
 	_, err = newIOTestServer(bus, psrpcUpdates)
 	require.NoError(t, err)
 
 	// update test config
 	conf.svc = svc
-	conf.rpcClient = rpcClient
 	conf.psrpcClient = psrpcClient
-	conf.updates = updates
 	conf.psrpcUpdates = psrpcUpdates
 	conf.room = room
 
@@ -306,23 +298,10 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	verifyStreams(t, p, conf, streamUrl1)
 
 	// add one good stream url and a couple bad ones
-	if conf.PSRPC {
-		_, err = conf.psrpcClient.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
-			EgressId:      egressID,
-			AddOutputUrls: []string{badStreamUrl, streamUrl2},
-		})
-	} else {
-		_, err = conf.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
-			EgressId: egressID,
-			Request: &livekit.EgressRequest_UpdateStream{
-				UpdateStream: &livekit.UpdateStreamRequest{
-					EgressId:      req.EgressId,
-					AddOutputUrls: []string{badStreamUrl, streamUrl2},
-				},
-			},
-		})
-	}
-
+	_, err = conf.psrpcClient.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
+		EgressId:      egressID,
+		AddOutputUrls: []string{badStreamUrl, streamUrl2},
+	})
 	require.NoError(t, err)
 
 	time.Sleep(time.Second * 5)
@@ -355,22 +334,10 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *livekit.StartEgr
 	verifyStreams(t, p, conf, streamUrl1, streamUrl2)
 
 	// remove one of the stream urls
-	if conf.PSRPC {
-		_, err = conf.psrpcClient.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
-			EgressId:         egressID,
-			RemoveOutputUrls: []string{streamUrl1},
-		})
-	} else {
-		_, err = conf.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
-			EgressId: egressID,
-			Request: &livekit.EgressRequest_UpdateStream{
-				UpdateStream: &livekit.UpdateStreamRequest{
-					EgressId:         req.EgressId,
-					RemoveOutputUrls: []string{streamUrl1},
-				},
-			},
-		})
-	}
+	_, err = conf.psrpcClient.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
+		EgressId:         egressID,
+		RemoveOutputUrls: []string{streamUrl1},
+	})
 	require.NoError(t, err)
 
 	time.Sleep(time.Second * 5)
@@ -439,10 +406,10 @@ func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 	require.NoError(t, err)
 
 	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
-	verifySegments(t, conf, p, test.filenameSuffix, res)
+	verifySegments(t, conf, p, res)
 }
 
-func runMultipleTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, file, stream, segments bool, filenameSuffix livekit.SegmentedFileSuffix) {
+func runMultipleTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, file, stream, segments bool) {
 	egressID := startEgress(t, conf, req)
 
 	time.Sleep(time.Second * 10)
@@ -462,19 +429,13 @@ func runMultipleTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 		verifyFile(t, conf, p, res)
 	}
 	if segments {
-		verifySegments(t, conf, p, filenameSuffix, res)
+		verifySegments(t, conf, p, res)
 	}
 }
 
 func startEgress(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest) string {
 	// send start request
-	var info *livekit.EgressInfo
-	var err error
-	if conf.PSRPC {
-		info, err = conf.psrpcClient.StartEgress(context.Background(), "", req)
-	} else {
-		info, err = conf.rpcClient.SendRequest(context.Background(), req)
-	}
+	info, err := conf.psrpcClient.StartEgress(context.Background(), "", req)
 
 	// check returned egress info
 	require.NoError(t, err)
@@ -517,22 +478,9 @@ func getStatus(t *testing.T, svc *service.Service) map[string]interface{} {
 
 func stopEgress(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressInfo {
 	// send stop request
-	var info *livekit.EgressInfo
-	var err error
-	if conf.PSRPC {
-		info, err = conf.psrpcClient.StopEgress(context.Background(), egressID, &livekit.StopEgressRequest{
-			EgressId: egressID,
-		})
-	} else {
-		info, err = conf.rpcClient.SendRequest(context.Background(), &livekit.EgressRequest{
-			EgressId: egressID,
-			Request: &livekit.EgressRequest_Stop{
-				Stop: &livekit.StopEgressRequest{
-					EgressId: egressID,
-				},
-			},
-		})
-	}
+	info, err := conf.psrpcClient.StopEgress(context.Background(), egressID, &livekit.StopEgressRequest{
+		EgressId: egressID,
+	})
 
 	// check returned egress info
 	require.NoError(t, err)
