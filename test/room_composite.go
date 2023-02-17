@@ -215,7 +215,6 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 			},
 			filename:               "rs_{room_name}_{time}",
 			playlist:               "rs_{room_name}_{time}.m3u8",
-			filenameSuffix:         livekit.SegmentedFileSuffix_TIMESTAMP,
 			expectVideoTranscoding: true,
 		},
 		{
@@ -246,14 +245,12 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				room.SegmentOutputs = []*livekit.SegmentedFileOutput{{
 					FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
 					PlaylistName:   test.playlist,
-					FilenameSuffix: test.filenameSuffix,
 				}}
 			} else {
 				room.Output = &livekit.RoomCompositeEgressRequest_Segments{
 					Segments: &livekit.SegmentedFileOutput{
 						FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
 						PlaylistName:   test.playlist,
-						FilenameSuffix: test.filenameSuffix,
 					},
 				}
 			}
@@ -300,5 +297,5 @@ func testRoomCompositeMulti(t *testing.T, conf *TestConfig) {
 		},
 	}
 
-	runMultipleTest(t, conf, req, true, true, false, livekit.SegmentedFileSuffix_TIMESTAMP)
+	runMultipleTest(t, conf, req, true, true, false)
 }

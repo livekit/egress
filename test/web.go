@@ -130,5 +130,5 @@ func testWebMulti(t *testing.T, conf *TestConfig) {
 		},
 	}
 
-	runMultipleTest(t, conf, req, true, false, true, livekit.SegmentedFileSuffix_INDEX)
+	runMultipleTest(t, conf, req, true, false, true)
 }

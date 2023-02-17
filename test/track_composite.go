@@ -155,12 +155,11 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 			playlist:   "tcs_{room_name}_h264_{time}.m3u8",
 		},
 		{
-			name:           "tcs-limit",
-			audioCodec:     types.MimeTypeOpus,
-			videoCodec:     types.MimeTypeH264,
-			filename:       "tcs_limit_{time}",
-			playlist:       "tcs_limit_{time}.m3u8",
-			filenameSuffix: livekit.SegmentedFileSuffix_TIMESTAMP,
+			name:       "tcs-limit",
+			audioCodec: types.MimeTypeOpus,
+			videoCodec: types.MimeTypeH264,
+			filename:   "tcs_limit_{time}",
+			playlist:   "tcs_limit_{time}.m3u8",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -185,14 +184,12 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 				trackRequest.SegmentOutputs = []*livekit.SegmentedFileOutput{{
 					FilenamePrefix: filepath,
 					PlaylistName:   test.playlist,
-					FilenameSuffix: test.filenameSuffix,
 				}}
 			} else {
 				trackRequest.Output = &livekit.TrackCompositeEgressRequest_Segments{
 					Segments: &livekit.SegmentedFileOutput{
 						FilenamePrefix: filepath,
 						PlaylistName:   test.playlist,
-						FilenameSuffix: test.filenameSuffix,
 					},
 				}
 			}
@@ -241,5 +238,5 @@ func testTrackCompositeMulti(t *testing.T, conf *TestConfig) {
 		},
 	}
 
-	runMultipleTest(t, conf, req, false, true, true, livekit.SegmentedFileSuffix_INDEX)
+	runMultipleTest(t, conf, req, false, true, true)
 }
