@@ -94,9 +94,9 @@ require (
 	github.com/pion/srtp/v2 v2.0.11 // indirect
 	github.com/pion/stun v0.4.0 // indirect
 	github.com/pion/transport v0.14.1 // indirect
-	github.com/pion/transport/v2 v2.0.1 // indirect
-	github.com/pion/turn/v2 v2.1.0 // indirect
-	github.com/pion/udp v0.1.4 // indirect
+	github.com/pion/transport/v2 v2.0.0 // indirect
+	github.com/pion/turn/v2 v2.0.9 // indirect
+	github.com/pion/udp v0.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
