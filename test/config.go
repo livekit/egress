@@ -97,7 +97,7 @@ func NewTestContext(t *testing.T) *TestConfig {
 	tc.runFileTests = !tc.StreamTestsOnly && !tc.SegmentTestsOnly && !tc.MultiTestsOnly
 	tc.runStreamTests = !tc.FileTestsOnly && !tc.SegmentTestsOnly && !tc.MultiTestsOnly
 	tc.runSegmentTests = !tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.MultiTestsOnly
-	tc.runMultiTests = !tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.SegmentTestsOnly
+	tc.runMultiTests = tc.V2 && (!tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.SegmentTestsOnly)
 
 	err = os.Setenv("GST_DEBUG", fmt.Sprint(tc.GstDebug))
 	require.NoError(t, err)
