@@ -98,14 +98,11 @@ func verifyFile(t *testing.T, conf *TestConfig, p *config.PipelineConfig, res *l
 	require.NotZero(t, res.EndedAt)
 
 	// file info
-	var fileRes *livekit.FileInfo
-	if conf.V2 {
+	fileRes := res.GetFile()
+	if fileRes == nil {
 		require.Len(t, res.FileResults, 1)
 		fileRes = res.FileResults[0]
-	} else {
-		fileRes = res.GetFile()
 	}
-	require.NotNil(t, fileRes)
 
 	require.NotEmpty(t, fileRes.Location)
 	require.Greater(t, fileRes.Size, int64(0))
@@ -140,12 +137,10 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, fi
 	require.NotZero(t, res.EndedAt)
 
 	// segments info
-	var segments *livekit.SegmentsInfo
-	if conf.V2 {
+	segments := res.GetSegments()
+	if segments == nil {
 		require.Len(t, res.GetSegmentResults(), 1)
 		segments = res.GetSegmentResults()[0]
-	} else {
-		segments = res.GetSegments()
 	}
 	require.NotEmpty(t, segments.PlaylistName)
 	require.NotEmpty(t, segments.PlaylistLocation)
