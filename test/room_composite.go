@@ -181,13 +181,7 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 			},
 		}
 
-		var info *livekit.EgressInfo
-		var err error
-		if conf.PSRPC {
-			info, err = conf.psrpcClient.StartEgress(context.Background(), "", req)
-		} else {
-			info, err = conf.rpcClient.SendRequest(context.Background(), req)
-		}
+		info, err := conf.psrpcClient.StartEgress(context.Background(), "", req)
 		require.NoError(t, err)
 		require.Empty(t, info.Error)
 		require.NotEmpty(t, info.EgressId)

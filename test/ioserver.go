@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/service/rpc"
@@ -69,14 +68,6 @@ func checkStoppedEgress(t *testing.T, conf *TestConfig, egressID string, expecte
 func getUpdate(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressInfo {
 	for {
 		select {
-		case msg := <-conf.updates.Channel():
-			b := conf.updates.Payload(msg)
-			info := &livekit.EgressInfo{}
-			require.NoError(t, proto.Unmarshal(b, info))
-			if info.EgressId == egressID {
-				return info
-			}
-
 		case info := <-conf.psrpcUpdates:
 			if info.EgressId == egressID {
 				return info
