@@ -411,6 +411,8 @@ func runSegmentsTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressReq
 }
 
 func runMultipleTest(t *testing.T, conf *TestConfig, req *livekit.StartEgressRequest, file, stream, segments bool, filenameSuffix livekit.SegmentedFileSuffix) {
+	conf.SessionLimits = config.SessionLimits{}
+
 	egressID := startEgress(t, conf, req)
 
 	time.Sleep(time.Second * 10)
