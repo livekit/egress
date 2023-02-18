@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 )
 

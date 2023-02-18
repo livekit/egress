@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
 )
@@ -36,7 +37,7 @@ type ProcessManager struct {
 
 type process struct {
 	handlerID  string
-	req        *livekit.StartEgressRequest
+	req        *rpc.StartEgressRequest
 	info       *livekit.EgressInfo
 	cmd        *exec.Cmd
 	grpcClient ipc.EgressHandlerClient
@@ -52,7 +53,7 @@ func NewProcessManager(conf *config.ServiceConfig, monitor *stats.Monitor, onFat
 	}
 }
 
-func (s *ProcessManager) launchHandler(req *livekit.StartEgressRequest, info *livekit.EgressInfo, version int) error {
+func (s *ProcessManager) launchHandler(req *rpc.StartEgressRequest, info *livekit.EgressInfo, version int) error {
 	_, span := tracer.Start(context.Background(), "Service.launchHandler")
 	defer span.End()
 

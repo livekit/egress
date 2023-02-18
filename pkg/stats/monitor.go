@@ -10,8 +10,8 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -139,34 +139,34 @@ func (m *Monitor) GetCPULoad() float64 {
 	return (float64(m.cpuStats.NumCPU()) - m.cpuStats.GetCPUIdle()) / float64(m.cpuStats.NumCPU()) * 100
 }
 
-func (m *Monitor) CanAcceptRequest(req *livekit.StartEgressRequest) bool {
+func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 	accept := false
 	available := m.cpuStats.GetCPUIdle() - m.pendingCPUs.Load()
 
 	switch req.Request.(type) {
-	case *livekit.StartEgressRequest_RoomComposite:
+	case *rpc.StartEgressRequest_RoomComposite:
 		accept = available > m.cpuCostConfig.RoomCompositeCpuCost
-	case *livekit.StartEgressRequest_Web:
+	case *rpc.StartEgressRequest_Web:
 		accept = available > m.cpuCostConfig.WebCpuCost
-	case *livekit.StartEgressRequest_TrackComposite:
+	case *rpc.StartEgressRequest_TrackComposite:
 		accept = available > m.cpuCostConfig.TrackCompositeCpuCost
-	case *livekit.StartEgressRequest_Track:
+	case *rpc.StartEgressRequest_Track:
 		accept = available > m.cpuCostConfig.TrackCpuCost
 	}
 
 	return accept
 }
 
-func (m *Monitor) AcceptRequest(req *livekit.StartEgressRequest) {
+func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) {
 	var cpuHold float64
 	switch req.Request.(type) {
-	case *livekit.StartEgressRequest_RoomComposite:
+	case *rpc.StartEgressRequest_RoomComposite:
 		cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
-	case *livekit.StartEgressRequest_Web:
+	case *rpc.StartEgressRequest_Web:
 		cpuHold = m.cpuCostConfig.WebCpuCost
-	case *livekit.StartEgressRequest_TrackComposite:
+	case *rpc.StartEgressRequest_TrackComposite:
 		cpuHold = m.cpuCostConfig.TrackCompositeCpuCost
-	case *livekit.StartEgressRequest_Track:
+	case *rpc.StartEgressRequest_Track:
 		cpuHold = m.cpuCostConfig.TrackCpuCost
 	}
 
@@ -174,28 +174,28 @@ func (m *Monitor) AcceptRequest(req *livekit.StartEgressRequest) {
 	time.AfterFunc(time.Second, func() { m.pendingCPUs.Sub(cpuHold) })
 }
 
-func (m *Monitor) EgressStarted(req *livekit.StartEgressRequest) {
+func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 	switch req.Request.(type) {
-	case *livekit.StartEgressRequest_RoomComposite:
+	case *rpc.StartEgressRequest_RoomComposite:
 		m.requestGauge.With(prometheus.Labels{"type": "room_composite"}).Add(1)
-	case *livekit.StartEgressRequest_Web:
+	case *rpc.StartEgressRequest_Web:
 		m.requestGauge.With(prometheus.Labels{"type": "web"}).Add(1)
-	case *livekit.StartEgressRequest_TrackComposite:
+	case *rpc.StartEgressRequest_TrackComposite:
 		m.requestGauge.With(prometheus.Labels{"type": "track_composite"}).Add(1)
-	case *livekit.StartEgressRequest_Track:
+	case *rpc.StartEgressRequest_Track:
 		m.requestGauge.With(prometheus.Labels{"type": "track"}).Add(1)
 	}
 }
 
-func (m *Monitor) EgressEnded(req *livekit.StartEgressRequest) {
+func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) {
 	switch req.Request.(type) {
-	case *livekit.StartEgressRequest_RoomComposite:
+	case *rpc.StartEgressRequest_RoomComposite:
 		m.requestGauge.With(prometheus.Labels{"type": "room_composite"}).Sub(1)
-	case *livekit.StartEgressRequest_Web:
+	case *rpc.StartEgressRequest_Web:
 		m.requestGauge.With(prometheus.Labels{"type": "web"}).Sub(1)
-	case *livekit.StartEgressRequest_TrackComposite:
+	case *rpc.StartEgressRequest_TrackComposite:
 		m.requestGauge.With(prometheus.Labels{"type": "track_composite"}).Sub(1)
-	case *livekit.StartEgressRequest_Track:
+	case *rpc.StartEgressRequest_Track:
 		m.requestGauge.With(prometheus.Labels{"type": "track"}).Sub(1)
 	}
 }

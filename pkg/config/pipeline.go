@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 )
 
@@ -88,7 +89,7 @@ type VideoConfig struct {
 	KeyFrameInterval float64
 }
 
-func NewPipelineConfig(confString string, req *livekit.StartEgressRequest) (*PipelineConfig, error) {
+func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*PipelineConfig, error) {
 	p := &PipelineConfig{
 		BaseConfig: BaseConfig{},
 		Outputs:    make(map[types.EgressType]*OutputConfig),
@@ -111,7 +112,7 @@ func NewPipelineConfig(confString string, req *livekit.StartEgressRequest) (*Pip
 	return p, p.Update(req)
 }
 
-func GetValidatedPipelineConfig(conf *ServiceConfig, req *livekit.StartEgressRequest) (*PipelineConfig, error) {
+func GetValidatedPipelineConfig(conf *ServiceConfig, req *rpc.StartEgressRequest) (*PipelineConfig, error) {
 	_, span := tracer.Start(context.Background(), "config.GetValidatedPipelineConfig")
 	defer span.End()
 
@@ -123,7 +124,7 @@ func GetValidatedPipelineConfig(conf *ServiceConfig, req *livekit.StartEgressReq
 	return p, p.Update(req)
 }
 
-func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
+func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	if request.EgressId == "" {
 		return errors.ErrInvalidInput("No Egress Id")
 	}
@@ -149,7 +150,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 
 	connectionInfoRequired := true
 	switch req := request.Request.(type) {
-	case *livekit.StartEgressRequest_RoomComposite:
+	case *rpc.StartEgressRequest_RoomComposite:
 		clone := proto.Clone(req.RoomComposite).(*livekit.RoomCompositeEgressRequest)
 		p.Info.Request = &livekit.EgressInfo_RoomComposite{
 			RoomComposite: clone,
@@ -185,7 +186,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 			return err
 		}
 
-	case *livekit.StartEgressRequest_Web:
+	case *rpc.StartEgressRequest_Web:
 		clone := proto.Clone(req.Web).(*livekit.WebEgressRequest)
 		p.Info.Request = &livekit.EgressInfo_Web{
 			Web: clone,
@@ -221,7 +222,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 			return err
 		}
 
-	case *livekit.StartEgressRequest_TrackComposite:
+	case *rpc.StartEgressRequest_TrackComposite:
 		clone := proto.Clone(req.TrackComposite).(*livekit.TrackCompositeEgressRequest)
 		p.Info.Request = &livekit.EgressInfo_TrackComposite{
 			TrackComposite: clone,
@@ -255,7 +256,7 @@ func (p *PipelineConfig) Update(request *livekit.StartEgressRequest) error {
 			return err
 		}
 
-	case *livekit.StartEgressRequest_Track:
+	case *rpc.StartEgressRequest_Track:
 		clone := proto.Clone(req.Track).(*livekit.TrackEgressRequest)
 		p.Info.Request = &livekit.EgressInfo_Track{
 			Track: clone,
