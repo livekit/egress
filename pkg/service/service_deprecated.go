@@ -10,6 +10,7 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 )
 
@@ -36,13 +37,30 @@ func (s *Service) runV0() error {
 			return nil
 
 		case msg := <-requests.Channel():
-			req := &livekit.StartEgressRequest{}
-			if err = proto.Unmarshal(requests.Payload(msg), req); err != nil {
+			deprecated := &livekit.StartEgressRequest{}
+			if err = proto.Unmarshal(requests.Payload(msg), deprecated); err != nil {
 				logger.Errorw("malformed request", err)
 				continue
 			}
 
-			s.handleRequestV0(req)
+			req := &rpc.StartEgressRequest{
+				EgressId: deprecated.EgressId,
+				RoomId:   deprecated.RoomId,
+				Token:    deprecated.Token,
+				WsUrl:    deprecated.WsUrl,
+			}
+			switch r := deprecated.Request.(type) {
+			case *livekit.StartEgressRequest_RoomComposite:
+				req.Request = &rpc.StartEgressRequest_RoomComposite{RoomComposite: r.RoomComposite}
+			case *livekit.StartEgressRequest_Web:
+				req.Request = &rpc.StartEgressRequest_Web{Web: r.Web}
+			case *livekit.StartEgressRequest_TrackComposite:
+				req.Request = &rpc.StartEgressRequest_TrackComposite{TrackComposite: r.TrackComposite}
+			case *livekit.StartEgressRequest_Track:
+				req.Request = &rpc.StartEgressRequest_Track{Track: r.Track}
+			}
+
+			s.handleRequestV0(req, deprecated)
 		}
 	}
 }
@@ -51,30 +69,30 @@ func (s *Service) ListEgress() []string {
 	return s.manager.listEgress()
 }
 
-func (s *Service) handleRequestV0(req *livekit.StartEgressRequest) {
+func (s *Service) handleRequestV0(req *rpc.StartEgressRequest, deprecated *livekit.StartEgressRequest) {
 	ctx, span := tracer.Start(context.Background(), "Service.handleRequest")
 	defer span.End()
 
-	if s.acceptRequestV0(ctx, req) {
+	if s.acceptRequestV0(ctx, req, deprecated) {
 		// validate before passing to handler
 		p, err := config.GetValidatedPipelineConfig(s.conf, req)
 		if err == nil {
 			err = s.manager.launchHandler(req, p.Info, 0)
 		}
 
-		s.sendResponseV0(ctx, req, p.Info, err)
+		s.sendResponseV0(ctx, deprecated, p.Info, err)
 		if err != nil {
 			span.RecordError(err)
 		}
 	}
 }
 
-func (s *Service) acceptRequestV0(ctx context.Context, req *livekit.StartEgressRequest) bool {
+func (s *Service) acceptRequestV0(ctx context.Context, req *rpc.StartEgressRequest, deprecated *livekit.StartEgressRequest) bool {
 	ctx, span := tracer.Start(ctx, "Service.acceptRequest")
 	defer span.End()
 
 	// check request time
-	if time.Since(time.Unix(0, req.SentAt)) >= egress.RequestExpiration {
+	if time.Since(time.Unix(0, deprecated.SentAt)) >= egress.RequestExpiration {
 		return false
 	}
 
@@ -84,7 +102,7 @@ func (s *Service) acceptRequestV0(ctx context.Context, req *livekit.StartEgressR
 	}
 
 	// claim request
-	claimed, err := s.rpcServerV0.ClaimRequest(context.Background(), req)
+	claimed, err := s.rpcServerV0.ClaimRequest(context.Background(), deprecated)
 	if err != nil {
 		return false
 	} else if !claimed {
@@ -95,24 +113,24 @@ func (s *Service) acceptRequestV0(ctx context.Context, req *livekit.StartEgressR
 	s.monitor.AcceptRequest(req)
 	logger.Infow("request accepted",
 		"egressID", req.EgressId,
-		"requestID", req.RequestId,
-		"senderID", req.SenderId,
+		"requestID", deprecated.RequestId,
+		"senderID", deprecated.SenderId,
 	)
 
 	return true
 }
 
-func (s *Service) sendResponseV0(ctx context.Context, req *livekit.StartEgressRequest, info *livekit.EgressInfo, err error) {
+func (s *Service) sendResponseV0(ctx context.Context, deprecated *livekit.StartEgressRequest, info *livekit.EgressInfo, err error) {
 	if err != nil {
 		logger.Infow("bad request",
 			"error", err,
 			"egressID", info.EgressId,
-			"requestID", req.RequestId,
-			"senderID", req.SenderId,
+			"requestID", deprecated.RequestId,
+			"senderID", deprecated.SenderId,
 		)
 	}
 
-	if err = s.rpcServerV0.SendResponse(ctx, req, info, err); err != nil {
+	if err = s.rpcServerV0.SendResponse(ctx, deprecated, info, err); err != nil {
 		logger.Errorw("failed to send response", err)
 	}
 }

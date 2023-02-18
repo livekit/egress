@@ -17,11 +17,10 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/version"
-	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/egress"
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	lkredis "github.com/livekit/protocol/redis"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 )
 
@@ -156,7 +155,7 @@ func runHandler(c *cli.Context) error {
 		return err
 	}
 
-	req := &livekit.StartEgressRequest{}
+	req := &rpc.StartEgressRequest{}
 	reqString := c.String("request")
 	err := protojson.Unmarshal([]byte(reqString), req)
 	if err != nil {

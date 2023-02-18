@@ -13,10 +13,10 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/version"
-	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/psrpc"
 )
@@ -101,7 +101,7 @@ func (s *Service) Run() error {
 	return nil
 }
 
-func (s *Service) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
 	ctx, span := tracer.Start(ctx, "Service.StartEgress")
 	defer span.End()
 
@@ -123,7 +123,7 @@ func (s *Service) StartEgress(ctx context.Context, req *livekit.StartEgressReque
 	return p.Info, nil
 }
 
-func (s *Service) StartEgressAffinity(req *livekit.StartEgressRequest) float32 {
+func (s *Service) StartEgressAffinity(req *rpc.StartEgressRequest) float32 {
 	if !s.monitor.CanAcceptRequest(req) {
 		// cannot accept
 		return 0

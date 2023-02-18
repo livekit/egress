@@ -13,8 +13,8 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/service"
-	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 	lksdk "github.com/livekit/server-sdk-go"
 )
 
