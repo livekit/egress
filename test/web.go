@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -33,9 +34,9 @@ func testWebFile(t *testing.T, conf *TestConfig) {
 			File: fileOutput,
 		}
 	}
-	req := &livekit.StartEgressRequest{
+	req := &rpc.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
-		Request: &livekit.StartEgressRequest_Web{
+		Request: &rpc.StartEgressRequest_Web{
 			Web: web,
 		},
 	}
@@ -65,9 +66,9 @@ func testWebStream(t *testing.T, conf *TestConfig) {
 		}
 	}
 
-	req := &livekit.StartEgressRequest{
+	req := &rpc.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
-		Request: &livekit.StartEgressRequest_Web{
+		Request: &rpc.StartEgressRequest_Web{
 			Web: web,
 		},
 	}
@@ -97,9 +98,9 @@ func testWebSegments(t *testing.T, conf *TestConfig) {
 		}
 	}
 
-	req := &livekit.StartEgressRequest{
+	req := &rpc.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
-		Request: &livekit.StartEgressRequest_Web{
+		Request: &rpc.StartEgressRequest_Web{
 			Web: web,
 		},
 	}
@@ -112,10 +113,10 @@ func testWebSegments(t *testing.T, conf *TestConfig) {
 func testWebMulti(t *testing.T, conf *TestConfig) {
 	awaitIdle(t, conf.svc)
 
-	req := &livekit.StartEgressRequest{
+	req := &rpc.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 
-		Request: &livekit.StartEgressRequest_Web{
+		Request: &rpc.StartEgressRequest_Web{
 			Web: &livekit.WebEgressRequest{
 				Url: webUrl,
 				FileOutputs: []*livekit.EncodedFileOutput{{

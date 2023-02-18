@@ -11,6 +11,7 @@ import (
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -87,9 +88,9 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				}
 			}
 
-			req := &livekit.StartEgressRequest{
+			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &livekit.StartEgressRequest_RoomComposite{
+				Request: &rpc.StartEgressRequest_RoomComposite{
 					RoomComposite: roomRequest,
 				},
 			}
@@ -138,9 +139,9 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 				}
 			}
 
-			req := &livekit.StartEgressRequest{
+			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &livekit.StartEgressRequest_RoomComposite{
+				Request: &rpc.StartEgressRequest_RoomComposite{
 					RoomComposite: room,
 				},
 			}
@@ -174,9 +175,9 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 			}
 		}
 
-		req := &livekit.StartEgressRequest{
+		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
-			Request: &livekit.StartEgressRequest_RoomComposite{
+			Request: &rpc.StartEgressRequest_RoomComposite{
 				RoomComposite: room,
 			},
 		}
@@ -261,9 +262,9 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				}
 			}
 
-			req := &livekit.StartEgressRequest{
+			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &livekit.StartEgressRequest_RoomComposite{
+				Request: &rpc.StartEgressRequest_RoomComposite{
 					RoomComposite: room,
 				},
 			}
@@ -279,9 +280,9 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 func testRoomCompositeMulti(t *testing.T, conf *TestConfig) {
 	awaitIdle(t, conf.svc)
 
-	req := &livekit.StartEgressRequest{
+	req := &rpc.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
-		Request: &livekit.StartEgressRequest_RoomComposite{
+		Request: &rpc.StartEgressRequest_RoomComposite{
 			RoomComposite: &livekit.RoomCompositeEgressRequest{
 				RoomName: conf.room.Name(),
 				Layout:   "grid-light",

@@ -20,6 +20,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -75,11 +76,9 @@ func testTrackFile(t *testing.T, conf *TestConfig) {
 				},
 			}
 
-			req := &livekit.StartEgressRequest{
-				EgressId:  utils.NewGuid(utils.EgressPrefix),
-				RequestId: utils.NewGuid(utils.RPCPrefix),
-				SentAt:    time.Now().UnixNano(),
-				Request: &livekit.StartEgressRequest_Track{
+			req := &rpc.StartEgressRequest{
+				EgressId: utils.NewGuid(utils.EgressPrefix),
+				Request: &rpc.StartEgressRequest_Track{
 					Track: trackRequest,
 				},
 			}
@@ -128,9 +127,9 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 				s.Close()
 			}()
 
-			req := &livekit.StartEgressRequest{
+			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &livekit.StartEgressRequest_Track{
+				Request: &rpc.StartEgressRequest_Track{
 					Track: &livekit.TrackEgressRequest{
 						RoomName: conf.room.Name(),
 						TrackId:  trackID,

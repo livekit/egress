@@ -8,6 +8,7 @@ import (
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -75,9 +76,9 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 				}
 			}
 
-			req := &livekit.StartEgressRequest{
+			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &livekit.StartEgressRequest_TrackComposite{
+				Request: &rpc.StartEgressRequest_TrackComposite{
 					TrackComposite: trackRequest,
 				},
 			}
@@ -124,9 +125,9 @@ func testTrackCompositeStream(t *testing.T, conf *TestConfig) {
 				}
 			}
 
-			req := &livekit.StartEgressRequest{
+			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &livekit.StartEgressRequest_TrackComposite{
+				Request: &rpc.StartEgressRequest_TrackComposite{
 					TrackComposite: trackRequest,
 				},
 			}
@@ -199,9 +200,9 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 				}
 			}
 
-			req := &livekit.StartEgressRequest{
+			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &livekit.StartEgressRequest_TrackComposite{
+				Request: &rpc.StartEgressRequest_TrackComposite{
 					TrackComposite: trackRequest,
 				},
 			}
@@ -219,9 +220,9 @@ func testTrackCompositeMulti(t *testing.T, conf *TestConfig) {
 
 	audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
 
-	req := &livekit.StartEgressRequest{
+	req := &rpc.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
-		Request: &livekit.StartEgressRequest_TrackComposite{
+		Request: &rpc.StartEgressRequest_TrackComposite{
 			TrackComposite: &livekit.TrackCompositeEgressRequest{
 				RoomName:     conf.room.Name(),
 				AudioTrackId: audioTrackID,

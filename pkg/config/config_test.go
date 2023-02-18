@@ -7,6 +7,7 @@ import (
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 )
 
 func TestRedactUpload(t *testing.T) {
@@ -16,9 +17,9 @@ func TestRedactUpload(t *testing.T) {
 		},
 	}
 
-	fileReq := &livekit.StartEgressRequest{
+	fileReq := &rpc.StartEgressRequest{
 		EgressId: "egressID",
-		Request: &livekit.StartEgressRequest_RoomComposite{
+		Request: &rpc.StartEgressRequest_RoomComposite{
 			RoomComposite: &livekit.RoomCompositeEgressRequest{
 				RoomName: "room",
 				Layout:   "layout",
@@ -65,9 +66,9 @@ func TestRedactStreamKeys(t *testing.T) {
 		},
 	}
 
-	streamReq := &livekit.StartEgressRequest{
+	streamReq := &rpc.StartEgressRequest{
 		EgressId: "egressID",
-		Request: &livekit.StartEgressRequest_RoomComposite{
+		Request: &rpc.StartEgressRequest_RoomComposite{
 			RoomComposite: &livekit.RoomCompositeEgressRequest{
 				RoomName: "room",
 				Layout:   "layout",
