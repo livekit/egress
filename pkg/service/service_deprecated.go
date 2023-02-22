@@ -26,9 +26,10 @@ func (s *Service) runV0() error {
 
 	logger.Debugw("service ready")
 
+	shutdown := s.shutdown.Wire()
 	for {
 		select {
-		case <-s.shutdown:
+		case <-shutdown:
 			logger.Infow("shutting down")
 			s.psrpcServer.Shutdown()
 			for !s.manager.isIdle() {

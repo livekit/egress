@@ -71,7 +71,7 @@ func (p *Pipeline) handleMessageEOS() {
 	}
 
 	logger.Debugw("EOS received, stopping pipeline")
-	p.closeOnce.Do(func() {
+	p.closed.Once(func() {
 		p.close(context.Background())
 	})
 
@@ -116,11 +116,9 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 	case element == elementSplitMuxSink:
 		// We sometimes get GstSplitMuxSink errors if send EOS before the first media was sent to the mux
 		if message == msgMuxer {
-			select {
-			case <-p.closed:
+			if p.closed.IsClosed() {
 				logger.Debugw("GstSplitMuxSink failure after sending EOS")
 				return nil
-			default:
 			}
 		}
 	}
@@ -182,6 +180,10 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 				return err
 			}
 
+			if timer := p.eosTimer; timer != nil {
+				timer.Reset(eosTimeout)
+			}
+
 			logger.Debugw("fragment opened", "location", filepath, "running time", t)
 			if err = p.getSegmentSink().StartSegment(filepath, t); err != nil {
 				logger.Errorw("failed to register new segment with playlist writer", err, "location", filepath, "running time", t)
@@ -193,6 +195,10 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 			if err != nil {
 				logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "running time", t)
 				return err
+			}
+
+			if timer := p.eosTimer; timer != nil {
+				timer.Reset(eosTimeout)
 			}
 
 			logger.Debugw("fragment closed", "location", filepath, "running time", t)

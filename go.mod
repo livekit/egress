@@ -11,6 +11,7 @@ require (
 	github.com/aws/aws-sdk-go v1.44.193
 	github.com/chromedp/cdproto v0.0.0-20230201081901-5f7573a87050
 	github.com/chromedp/chromedp v0.8.7
+	github.com/frostbyte73/core v0.0.3
 	github.com/googleapis/gax-go/v2 v2.7.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/grafov/m3u8 v0.11.1

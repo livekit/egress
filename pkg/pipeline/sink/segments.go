@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/frostbyte73/core"
 	"github.com/grafov/m3u8"
 
 	"github.com/livekit/egress/pkg/config"
@@ -34,8 +35,10 @@ type SegmentSink struct {
 	openSegmentsStartTime map[string]int64
 	openSegmentsLock      sync.Mutex
 
-	endedSegments         chan SegmentUpdate
-	segmentUploadDoneChan chan error
+	endedSegments chan SegmentUpdate
+	done          core.Fuse
+
+	onFailure func(error)
 }
 
 type SegmentUpdate struct {
@@ -62,17 +65,23 @@ func newSegmentSink(u uploader.Uploader, conf *config.PipelineConfig, p *config.
 		playlist:              playlist,
 		playlistPath:          p.PlaylistFilename,
 		openSegmentsStartTime: make(map[string]int64),
+		endedSegments:         make(chan SegmentUpdate, maxPendingUploads),
+		done:                  core.NewFuse(),
 	}, nil
 }
 
-func (s *SegmentSink) Start() error {
-	s.endedSegments = make(chan SegmentUpdate, maxPendingUploads)
-	s.segmentUploadDoneChan = make(chan error, 1)
+func (s *SegmentSink) SetOnFailure(f func(error)) {
+	s.onFailure = f
+}
 
+func (s *SegmentSink) Start() error {
 	go func() {
 		var err error
 		defer func() {
-			s.segmentUploadDoneChan <- err
+			if err != nil && s.onFailure != nil {
+				s.onFailure(err)
+			}
+			s.done.Close()
 		}()
 
 		for update := range s.endedSegments {
@@ -218,11 +227,7 @@ func (s *SegmentSink) writePlaylist() error {
 func (s *SegmentSink) Finalize() error {
 	// wait for all pending upload jobs to finish
 	close(s.endedSegments)
-	if s.segmentUploadDoneChan != nil {
-		if err := <-s.segmentUploadDoneChan; err != nil {
-			return err
-		}
-	}
+	<-s.done.Wire()
 
 	s.playlist.Close()
 	if err := s.writePlaylist(); err != nil {
