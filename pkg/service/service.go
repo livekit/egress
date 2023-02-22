@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/frostbyte73/core"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/livekit/egress/pkg/config"
@@ -32,7 +33,7 @@ type Service struct {
 	monitor     *stats.Monitor
 	manager     *ProcessManager
 
-	shutdown chan struct{}
+	shutdown core.Fuse
 }
 
 func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 egress.RPCServer, ioClient rpc.IOInfoClient) (*Service, error) {
@@ -43,7 +44,7 @@ func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 eg
 		rpcServerV0: rpcServerV0,
 		ioClient:    ioClient,
 		monitor:     monitor,
-		shutdown:    make(chan struct{}),
+		shutdown:    core.NewFuse(),
 	}
 	s.manager = NewProcessManager(conf, monitor, s.onFatalError)
 
@@ -91,7 +92,7 @@ func (s *Service) Run() error {
 
 	logger.Debugw("service ready")
 
-	<-s.shutdown
+	<-s.shutdown.Wire()
 	logger.Infow("shutting down")
 	s.psrpcServer.Shutdown()
 	for !s.manager.isIdle() {
@@ -167,12 +168,7 @@ func (s *Service) onFatalError(info *livekit.EgressInfo) {
 }
 
 func (s *Service) Stop(kill bool) {
-	select {
-	case <-s.shutdown:
-	default:
-		close(s.shutdown)
-	}
-
+	s.shutdown.Close()
 	if kill {
 		s.manager.killAll()
 	}

@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/frostbyte73/core"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v3"
@@ -58,11 +59,11 @@ type AppWriter struct {
 
 	// state
 	muted        atomic.Bool
-	playing      chan struct{}
-	draining     chan struct{}
+	playing      core.Fuse
+	draining     core.Fuse
 	drainTimeout time.Duration
-	force        chan struct{}
-	finished     chan struct{}
+	force        core.Fuse
+	finished     core.Fuse
 
 	// vp8
 	firstPktPushed bool
@@ -87,10 +88,10 @@ func NewAppWriter(
 		writeBlanks:       writeBlanks,
 		sync:              sync,
 		TrackSynchronizer: syncInfo,
-		playing:           make(chan struct{}),
-		draining:          make(chan struct{}),
-		force:             make(chan struct{}),
-		finished:          make(chan struct{}),
+		playing:           core.NewFuse(),
+		draining:          core.NewFuse(),
+		force:             core.NewFuse(),
+		finished:          core.NewFuse(),
 	}
 
 	var depacketizer rtp.Depacketizer
@@ -133,21 +134,23 @@ func NewAppWriter(
 func (w *AppWriter) start() {
 	// always post EOS if the writer started playing
 	defer func() {
-		if w.isPlaying() {
+		if w.playing.IsClosed() {
 			if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
 				w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
 			}
 		}
 
-		close(w.finished)
+		w.finished.Close()
 	}()
 
 	w.startTime = time.Now()
+
 	first := true
+	force := w.force.Wire()
 
 	for {
 		select {
-		case <-w.force:
+		case <-force:
 			// force push remaining packets and quit
 			_ = w.pushPackets(true)
 			return
@@ -157,7 +160,7 @@ func (w *AppWriter) start() {
 			_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
 			pkt, _, err := w.track.ReadRTP()
 			if err != nil {
-				if w.isDraining() {
+				if w.draining.IsClosed() {
 					return
 				}
 
@@ -206,7 +209,7 @@ func (w *AppWriter) start() {
 
 func (w *AppWriter) pushPackets(force bool) error {
 	// buffers can only be pushed to the appsrc while in the playing state
-	if !w.isPlaying() {
+	if w.playing.IsOpen() {
 		return nil
 	}
 
@@ -231,7 +234,7 @@ func (w *AppWriter) pushBlankFrames() error {
 
 		for {
 			<-ticker.C
-			if w.isDraining() || !w.muted.Load() {
+			if w.draining.IsClosed() || !w.muted.Load() {
 				return nil
 			}
 		}
@@ -250,7 +253,7 @@ func (w *AppWriter) pushBlankFrames() error {
 	defer ticker.Stop()
 
 	for {
-		if w.isDraining() {
+		if w.draining.IsClosed() {
 			return nil
 		}
 
@@ -449,21 +452,7 @@ func (w *AppWriter) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8,
 }
 
 func (w *AppWriter) Play() {
-	select {
-	case <-w.playing:
-		return
-	default:
-		close(w.playing)
-	}
-}
-
-func (w *AppWriter) isPlaying() bool {
-	select {
-	case <-w.playing:
-		return true
-	default:
-		return false
-	}
+	w.playing.Close()
 }
 
 func (w *AppWriter) SetTrackMuted(muted bool) {
@@ -481,30 +470,17 @@ func (w *AppWriter) SetTrackMuted(muted bool) {
 
 // Drain blocks until finished
 func (w *AppWriter) Drain(force bool) {
-	select {
-	case <-w.draining:
-	default:
+	w.draining.Once(func() {
 		w.logger.Debugw("draining")
 
 		if force {
-			close(w.force)
+			w.force.Close()
 		} else {
 			// wait until drainTimeout before force popping
-			time.AfterFunc(w.drainTimeout, func() { close(w.force) })
+			time.AfterFunc(w.drainTimeout, w.force.Close)
 		}
-
-		close(w.draining)
-	}
+	})
 
 	// wait until finished
-	<-w.finished
-}
-
-func (w *AppWriter) isDraining() bool {
-	select {
-	case <-w.draining:
-		return true
-	default:
-		return false
-	}
+	<-w.finished.Wire()
 }

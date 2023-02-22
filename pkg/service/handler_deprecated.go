@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 
+	"github.com/frostbyte73/core"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
@@ -23,7 +24,7 @@ type HandlerV0 struct {
 	conf       *config.PipelineConfig
 	rpcServer  egress.RPCServer
 	grpcServer *grpc.Server
-	kill       chan struct{}
+	kill       core.Fuse
 }
 
 func NewHandlerV0(conf *config.PipelineConfig, rpcServer egress.RPCServer) (*HandlerV0, error) {
@@ -31,7 +32,7 @@ func NewHandlerV0(conf *config.PipelineConfig, rpcServer egress.RPCServer) (*Han
 		conf:       conf,
 		rpcServer:  rpcServer,
 		grpcServer: grpc.NewServer(),
-		kill:       make(chan struct{}),
+		kill:       core.NewFuse(),
 	}
 
 	listener, err := net.Listen(network, getSocketAddress(conf.TmpDir))
@@ -84,9 +85,10 @@ func (h *HandlerV0) Run() error {
 		result <- p.Run(ctx)
 	}()
 
+	kill := h.kill.Wire()
 	for {
 		select {
-		case <-h.kill:
+		case <-kill:
 			// kill signal received
 			p.SendEOS(ctx)
 
@@ -184,10 +186,5 @@ func (h *HandlerV0) sendResponse(ctx context.Context, req *livekit.EgressRequest
 }
 
 func (h *HandlerV0) Kill() {
-	select {
-	case <-h.kill:
-		return
-	default:
-		close(h.kill)
-	}
+	h.kill.Close()
 }

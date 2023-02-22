@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/frostbyte73/core"
 	"github.com/gorilla/websocket"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -21,7 +22,7 @@ const (
 
 type WebsocketSink struct {
 	conn   *websocket.Conn
-	closed chan struct{}
+	closed core.Fuse
 	state  websocketState
 }
 
@@ -37,7 +38,7 @@ func newWebsocketSink(url string, mimeType types.MimeType) (*WebsocketSink, erro
 
 	s := &WebsocketSink{
 		conn:   conn,
-		closed: make(chan struct{}),
+		closed: core.NewFuse(),
 		state:  WebsocketActive,
 	}
 
@@ -102,7 +103,7 @@ func (s *WebsocketSink) Close() error {
 
 	// terminate connection and close the `closed` channel
 	err = s.conn.Close()
-	close(s.closed)
+	s.closed.Close()
 	s.state = WebsocketClosed
 	return err
 }

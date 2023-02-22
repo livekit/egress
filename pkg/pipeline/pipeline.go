@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/frostbyte73/core"
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -42,8 +43,7 @@ type Pipeline struct {
 	mu         sync.Mutex
 	playing    bool
 	limitTimer *time.Timer
-	closed     chan struct{}
-	closeOnce  sync.Once
+	closed     core.Fuse
 	eosTimer   *time.Timer
 
 	// callbacks
@@ -70,19 +70,19 @@ func New(ctx context.Context, p *config.PipelineConfig, onStatusUpdate UpdateFun
 
 	// create pipeline
 	<-p.GstReady
-	pipeline, err := gst.NewPipeline("pipeline")
+	gp, err := gst.NewPipeline("pipeline")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	// create input bin
-	in, err := input.New(ctx, pipeline, p)
+	in, err := input.New(ctx, gp, p)
 	if err != nil {
 		return nil, err
 	}
 
 	// create output bin
-	out, err := output.New(ctx, pipeline, p)
+	out, err := output.New(ctx, gp, p)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,25 @@ func New(ctx context.Context, p *config.PipelineConfig, onStatusUpdate UpdateFun
 		return nil, err
 	}
 
+	pipeline := &Pipeline{
+		PipelineConfig: p,
+		src:            src,
+		pipeline:       gp,
+		in:             in,
+		out:            out,
+		sinks:          sinks,
+		closed:         core.NewFuse(),
+		onStatusUpdate: onStatusUpdate,
+	}
+
 	// set websocketSink callback with SDK source
+	if s, ok := sinks[types.EgressTypeSegments]; ok {
+		segmentSink := s.(*sink.SegmentSink)
+		segmentSink.SetOnFailure(func(err error) {
+			pipeline.Info.Error = err.Error()
+			pipeline.stop()
+		})
+	}
 	if s, ok := sinks[types.EgressTypeWebsocket]; ok {
 		websocketSink := s.(*sink.WebsocketSink)
 		src.(*source.SDKSource).OnTrackMuted(websocketSink.OnTrackMuted)
@@ -113,16 +131,7 @@ func New(ctx context.Context, p *config.PipelineConfig, onStatusUpdate UpdateFun
 		}
 	}
 
-	return &Pipeline{
-		PipelineConfig: p,
-		src:            src,
-		pipeline:       pipeline,
-		in:             in,
-		out:            out,
-		sinks:          sinks,
-		closed:         make(chan struct{}),
-		onStatusUpdate: onStatusUpdate,
-	}, nil
+	return pipeline, nil
 }
 
 func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
@@ -157,7 +166,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	start := p.src.StartRecording()
 	if start != nil {
 		select {
-		case <-p.closed:
+		case <-p.closed.Wire():
 			p.src.Close()
 			p.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
 			return p.Info
@@ -301,7 +310,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
-	p.closeOnce.Do(func() {
+	p.closed.Once(func() {
 		p.close(ctx)
 
 		go func() {
@@ -407,7 +416,6 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 }
 
 func (p *Pipeline) close(ctx context.Context) {
-	close(p.closed)
 	if p.limitTimer != nil {
 		p.limitTimer.Stop()
 	}

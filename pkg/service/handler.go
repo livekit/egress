@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/frostbyte73/core"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,7 +33,7 @@ type Handler struct {
 	rpcServer  rpc.EgressHandlerServer
 	ioClient   rpc.IOInfoClient
 	grpcServer *grpc.Server
-	kill       chan struct{}
+	kill       core.Fuse
 }
 
 func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.IOInfoClient) (*Handler, error) {
@@ -40,7 +41,7 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		conf:       conf,
 		ioClient:   ioClient,
 		grpcServer: grpc.NewServer(),
-		kill:       make(chan struct{}),
+		kill:       core.NewFuse(),
 	}
 
 	rpcServer, err := rpc.NewEgressHandlerServer(conf.HandlerID, h, bus)
@@ -88,9 +89,10 @@ func (h *Handler) Run() error {
 		result <- h.pipeline.Run(ctx)
 	}()
 
+	kill := h.kill.Wire()
 	for {
 		select {
-		case <-h.kill:
+		case <-kill:
 			// kill signal received
 			h.pipeline.SendEOS(ctx)
 
@@ -175,12 +177,7 @@ func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PPr
 }
 
 func (h *Handler) Kill() {
-	select {
-	case <-h.kill:
-		return
-	default:
-		close(h.kill)
-	}
+	h.kill.Close()
 }
 
 func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
