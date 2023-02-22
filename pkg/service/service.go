@@ -126,7 +126,7 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 func (s *Service) StartEgressAffinity(req *rpc.StartEgressRequest) float32 {
 	if !s.monitor.CanAcceptRequest(req) {
 		// cannot accept
-		return 0
+		return -1
 	}
 
 	if s.manager.isIdle() {
