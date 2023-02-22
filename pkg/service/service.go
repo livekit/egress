@@ -92,7 +92,7 @@ func (s *Service) Run() error {
 
 	logger.Debugw("service ready")
 
-	<-s.shutdown.Wire()
+	<-s.shutdown.Watch()
 	logger.Infow("shutting down")
 	s.psrpcServer.Shutdown()
 	for !s.manager.isIdle() {
@@ -168,7 +168,7 @@ func (s *Service) onFatalError(info *livekit.EgressInfo) {
 }
 
 func (s *Service) Stop(kill bool) {
-	s.shutdown.Close()
+	s.shutdown.Break()
 	if kill {
 		s.manager.killAll()
 	}

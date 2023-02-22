@@ -140,13 +140,13 @@ func (w *AppWriter) start() {
 			}
 		}
 
-		w.finished.Close()
+		w.finished.Break()
 	}()
 
 	w.startTime = time.Now()
 
 	first := true
-	force := w.force.Wire()
+	force := w.force.Watch()
 
 	for {
 		select {
@@ -452,7 +452,7 @@ func (w *AppWriter) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8,
 }
 
 func (w *AppWriter) Play() {
-	w.playing.Close()
+	w.playing.Break()
 }
 
 func (w *AppWriter) SetTrackMuted(muted bool) {
@@ -474,13 +474,13 @@ func (w *AppWriter) Drain(force bool) {
 		w.logger.Debugw("draining")
 
 		if force {
-			w.force.Close()
+			w.force.Break()
 		} else {
 			// wait until drainTimeout before force popping
-			time.AfterFunc(w.drainTimeout, w.force.Close)
+			time.AfterFunc(w.drainTimeout, w.force.Break)
 		}
 	})
 
 	// wait until finished
-	<-w.finished.Wire()
+	<-w.finished.Watch()
 }

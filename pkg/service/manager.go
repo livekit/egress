@@ -135,7 +135,7 @@ func (s *ProcessManager) awaitCleanup(h *process) {
 		s.onFatalError(h.info)
 	}
 
-	h.closed.Close()
+	h.closed.Break()
 	s.monitor.EgressEnded(h.req)
 
 	s.mu.Lock()

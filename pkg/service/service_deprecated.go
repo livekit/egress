@@ -26,7 +26,7 @@ func (s *Service) runV0() error {
 
 	logger.Debugw("service ready")
 
-	shutdown := s.shutdown.Wire()
+	shutdown := s.shutdown.Watch()
 	for {
 		select {
 		case <-shutdown:

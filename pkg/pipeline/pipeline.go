@@ -166,7 +166,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	start := p.src.StartRecording()
 	if start != nil {
 		select {
-		case <-p.closed.Wire():
+		case <-p.closed.Watch():
 			p.src.Close()
 			p.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
 			return p.Info

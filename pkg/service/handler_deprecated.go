@@ -85,7 +85,7 @@ func (h *HandlerV0) Run() error {
 		result <- p.Run(ctx)
 	}()
 
-	kill := h.kill.Wire()
+	kill := h.kill.Watch()
 	for {
 		select {
 		case <-kill:
@@ -186,5 +186,5 @@ func (h *HandlerV0) sendResponse(ctx context.Context, req *livekit.EgressRequest
 }
 
 func (h *HandlerV0) Kill() {
-	h.kill.Close()
+	h.kill.Break()
 }

@@ -103,7 +103,7 @@ func (s *WebsocketSink) Close() error {
 
 	// terminate connection and close the `closed` channel
 	err = s.conn.Close()
-	s.closed.Close()
+	s.closed.Break()
 	s.state = WebsocketClosed
 	return err
 }

@@ -81,7 +81,7 @@ func (s *SegmentSink) Start() error {
 			if err != nil && s.onFailure != nil {
 				s.onFailure(err)
 			}
-			s.done.Close()
+			s.done.Break()
 		}()
 
 		for update := range s.endedSegments {
@@ -227,7 +227,7 @@ func (s *SegmentSink) writePlaylist() error {
 func (s *SegmentSink) Finalize() error {
 	// wait for all pending upload jobs to finish
 	close(s.endedSegments)
-	<-s.done.Wire()
+	<-s.done.Watch()
 
 	s.playlist.Close()
 	if err := s.writePlaylist(); err != nil {

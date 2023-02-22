@@ -89,7 +89,7 @@ func (h *Handler) Run() error {
 		result <- h.pipeline.Run(ctx)
 	}()
 
-	kill := h.kill.Wire()
+	kill := h.kill.Watch()
 	for {
 		select {
 		case <-kill:
@@ -177,7 +177,7 @@ func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PPr
 }
 
 func (h *Handler) Kill() {
-	h.kill.Close()
+	h.kill.Break()
 }
 
 func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
