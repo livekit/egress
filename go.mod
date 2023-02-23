@@ -2,7 +2,7 @@ module github.com/livekit/egress
 
 go 1.18
 
-replace github.com/tinyzimmer/go-glib v0.0.25 => github.com/livekit/go-glib v0.0.0-20230222202039-9989900995bc
+replace github.com/tinyzimmer/go-glib v0.0.25 => github.com/livekit/go-glib v0.0.0-20230223001336-834490045522
 
 replace github.com/tinyzimmer/go-gst v0.2.33 => github.com/livekit/go-gst v0.2.34-0.20230210170313-8fc9f59623d4
 
