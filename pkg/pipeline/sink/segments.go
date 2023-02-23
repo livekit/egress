@@ -31,6 +31,7 @@ type SegmentSink struct {
 	currentItemFilename       string
 	playlistPath              string
 	startDate                 time.Time
+	startDateTimestamp        time.Duration
 
 	openSegmentsStartTime map[string]int64
 	openSegmentsLock      sync.Mutex
@@ -131,14 +132,15 @@ func (s *SegmentSink) StartSegment(filepath string, startTime int64) error {
 		return fmt.Errorf("invalid start timestamp")
 	}
 
-	if s.startDate.IsZero() {
-		s.startDate = time.Now().Add(-time.Duration(startTime))
-	}
-
 	k := getFilenameFromFilePath(filepath)
 
 	s.openSegmentsLock.Lock()
 	defer s.openSegmentsLock.Unlock()
+
+	if s.startDateTimestamp == 0 {
+		s.startDateTimestamp = time.Duration(startTime)
+	}
+
 	if _, ok := s.openSegmentsStartTime[k]; ok {
 		return fmt.Errorf("segment with this name already started")
 	}
@@ -146,6 +148,13 @@ func (s *SegmentSink) StartSegment(filepath string, startTime int64) error {
 	s.openSegmentsStartTime[k] = startTime
 
 	return nil
+}
+
+func (s *SegmentSink) UpdateStartDate(t time.Time) {
+	s.openSegmentsLock.Lock()
+	defer s.openSegmentsLock.Unlock()
+
+	s.startDate = t
 }
 
 func (s *SegmentSink) EnqueueSegmentUpload(segmentPath string, endTime int64) error {
@@ -188,7 +197,7 @@ func (s *SegmentSink) endSegment(filepath string, endTime int64) error {
 		return err
 	}
 
-	segmentStartDate := s.startDate.Add(time.Duration(t))
+	segmentStartDate := s.startDate.Add(-s.startDateTimestamp).Add(time.Duration(t))
 	err = s.playlist.SetProgramDateTime(segmentStartDate)
 	if err != nil {
 		return err

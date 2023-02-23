@@ -8,6 +8,7 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/output"
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
 	"github.com/livekit/egress/pkg/types"
@@ -16,11 +17,12 @@ import (
 )
 
 const (
-	msgClockProblem     = "GStreamer error: clock problem."
-	msgStreamingStopped = "streaming stopped, reason not-negotiated (-4)"
-	msgMuxer            = ":muxer"
-	msgFragmentOpened   = "splitmuxsink-fragment-opened"
-	msgFragmentClosed   = "splitmuxsink-fragment-closed"
+	msgClockProblem        = "GStreamer error: clock problem."
+	msgStreamingStopped    = "streaming stopped, reason not-negotiated (-4)"
+	msgMuxer               = ":muxer"
+	msgFragmentOpened      = "splitmuxsink-fragment-opened"
+	msgFragmentClosed      = "splitmuxsink-fragment-closed"
+	msgFirstSampleMetadata = "FirstSampleMetadata"
 
 	fragmentLocation    = "location"
 	fragmentRunningTime = "running-time"
@@ -210,6 +212,14 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 				logger.Errorw("failed to end segment with playlist writer", err, "running time", t)
 				return err
 			}
+		case msgFirstSampleMetadata:
+			startDate, err := getFirstSampleMetadataFromGstStructure(s)
+			if err != nil {
+				return err
+			}
+			logger.Debugw("reveived FirstSampleMetadata message", "startDate", startDate)
+
+			p.getSegmentSink().UpdateStartDate(startDate)
 		}
 	}
 
@@ -236,6 +246,16 @@ func getSegmentParamsFromGstStructure(s *gst.Structure) (filepath string, time i
 	}
 
 	return filepath, int64(ti), nil
+}
+
+func getFirstSampleMetadataFromGstStructure(s *gst.Structure) (startDate time.Time, err error) {
+	firstSampleMetadata := output.FirstSampleMetadata{}
+	err = s.UnmarshalInto(&firstSampleMetadata)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return time.Unix(0, firstSampleMetadata.StartDate), nil
 }
 
 func (p *Pipeline) getSegmentSink() *sink.SegmentSink {

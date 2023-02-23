@@ -9,16 +9,25 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/builder"
+	"github.com/livekit/protocol/livekit"
 )
 
 type SegmentOutput struct {
 	*outputBase
 
-	h264parse *gst.Element
 	sink      *gst.Element
+	h264parse *gst.Element
+
+	startDate time.Time
+}
+
+type FirstSampleMetadata struct {
+	StartDate int64 // Real time date of the first media sample
 }
 
 func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputConfig) (*SegmentOutput, error) {
+	s := &SegmentOutput{}
+
 	base, err := b.buildOutputBase(p)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
@@ -45,7 +54,31 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 	if err = sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if err = sink.SetProperty("location", fmt.Sprintf("%s_%%05d.ts", out.LocalFilePrefix)); err != nil {
+
+	_, err = sink.Connect("format-location-full", func(self *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
+		if s.startDate.IsZero() {
+			now := time.Now()
+
+			s.startDate = now.Add(-firstSample.GetBuffer().PresentationTimestamp())
+
+			mdata := FirstSampleMetadata{
+				StartDate: now.UnixNano(),
+			}
+			str := gst.MarshalStructure(mdata)
+			msg := gst.NewElementMessage(sink, str)
+			sink.GetBus().Post(msg)
+		}
+
+		switch out.SegmentParams.SegmentSuffix {
+		case livekit.SegmentedFileSuffix_TIMESTAMP:
+			ts := s.startDate.Add(firstSample.GetBuffer().PresentationTimestamp())
+
+			return fmt.Sprintf("%s_%s%03d.ts", out.LocalFilePrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000)
+		default:
+			return fmt.Sprintf("%s_%05d.ts", out.LocalFilePrefix, fragmentId)
+		}
+	})
+	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
@@ -53,11 +86,11 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	return &SegmentOutput{
-		outputBase: base,
-		h264parse:  h264parse,
-		sink:       sink,
-	}, nil
+	s.outputBase = base
+	s.h264parse = h264parse
+	s.sink = sink
+
+	return s, nil
 }
 
 func (o *SegmentOutput) Link() error {
