@@ -1,4 +1,4 @@
-FROM livekit/gstreamer:1.20.4-dev
+FROM livekit/gstreamer:1.22.0-dev
 
 WORKDIR /workspace
 
@@ -30,7 +30,7 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd
     CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go test -c -v --tags=integration ./test
 
 
-FROM livekit/gstreamer:1.20.4-prod
+FROM livekit/gstreamer:1.22.0-prod
 
 ARG TARGETPLATFORM
 
@@ -41,11 +41,11 @@ RUN apt-get update && \
         ffmpeg \
         fonts-noto \
         gnupg \
-        gstreamer1.0-pulseaudio \
         pulseaudio \
         unzip \
         wget \
-        xvfb
+        xvfb \
+        gstreamer1.0-plugins-base-
 
 # install chrome
 COPY --from=livekit/chrome-installer:latest /chrome-installer /chrome-installer

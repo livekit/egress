@@ -1,4 +1,4 @@
-FROM livekit/gstreamer:1.20.4-dev
+FROM livekit/gstreamer:1.22.0-dev
 
 ARG TARGETPLATFORM
 
@@ -26,7 +26,7 @@ RUN find cmd/server/templates/ -name *.map | xargs rm
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
     CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o egress ./cmd/server
 
-FROM livekit/gstreamer:1.20.4-prod
+FROM livekit/gstreamer:1.22.0-prod
 
 ARG TARGETPLATFORM
 
@@ -36,11 +36,11 @@ RUN apt-get update && \
     curl \
     fonts-noto \
     gnupg \
-    gstreamer1.0-pulseaudio \
     pulseaudio \
     unzip \
     wget \
-    xvfb
+    xvfb \
+    gstreamer1.0-plugins-base-
 
 # install chrome
 COPY --from=livekit/chrome-installer:latest /chrome-installer /chrome-installer
