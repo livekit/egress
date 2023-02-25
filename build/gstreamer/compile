@@ -11,7 +11,7 @@ for repo in gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plug
   elif [[ $repo == "gst-plugins-base" ]]; then
     opts="$opts -D examples=disabled -D introspection=disabled -D qt5=disabled"
   elif [[ $repo == "gst-plugins-good" ]]; then
-    opts="$opts -D examples=disabled -D qt5=disabled"
+    opts="$opts -D examples=disabled -D pulse=enabled -D qt5=disabled"
   elif [[ $repo == "gst-plugins-bad" ]]; then
     opts="$opts -D gpl=enabled -D examples=disabled -D introspection=disabled"
   elif [[ $repo == "gst-plugins-ugly" ]]; then
@@ -31,9 +31,9 @@ for repo in gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plug
   meson build $opts
 
   # This is needed for other plugins to be built properly
-  ninja $NINJA_OPTS -C build install
+  ninja -C build install
   # This is where we'll grab build artifacts from
-  DESTDIR=/compiled-binaries ninja $NINJA_OPTS -C build install
+  DESTDIR=/compiled-binaries ninja -C build install
   popd
 done
 
