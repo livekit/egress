@@ -110,6 +110,10 @@ func (h *Handler) UpdateStream(ctx context.Context, req *livekit.UpdateStreamReq
 	ctx, span := tracer.Start(ctx, "Handler.UpdateStream")
 	defer span.End()
 
+	if h.pipeline == nil {
+		return nil, errors.ErrEgressNotFound
+	}
+
 	err := h.pipeline.UpdateStream(ctx, req)
 	if err != nil {
 		return nil, err
@@ -120,6 +124,10 @@ func (h *Handler) UpdateStream(ctx context.Context, req *livekit.UpdateStreamReq
 func (h *Handler) StopEgress(ctx context.Context, _ *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
 	ctx, span := tracer.Start(ctx, "Handler.StopEgress")
 	defer span.End()
+
+	if h.pipeline == nil {
+		return nil, errors.ErrEgressNotFound
+	}
 
 	h.pipeline.SendEOS(ctx)
 	return h.pipeline.Info, nil
@@ -133,6 +141,10 @@ type dotResponse struct {
 func (h *Handler) GetPipelineDot(ctx context.Context, _ *ipc.GstPipelineDebugDotRequest) (*ipc.GstPipelineDebugDotResponse, error) {
 	ctx, span := tracer.Start(ctx, "Handler.GetPipelineDot")
 	defer span.End()
+
+	if h.pipeline == nil {
+		return nil, errors.ErrEgressNotFound
+	}
 
 	res := make(chan *dotResponse, 1)
 	go func() {
@@ -160,6 +172,10 @@ func (h *Handler) GetPipelineDot(ctx context.Context, _ *ipc.GstPipelineDebugDot
 func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PProfResponse, error) {
 	ctx, span := tracer.Start(ctx, "Handler.GetPProf")
 	defer span.End()
+
+	if h.pipeline == nil {
+		return nil, errors.ErrEgressNotFound
+	}
 
 	b, err := pprof.GetProfileData(ctx, req.ProfileName, int(req.Timeout), int(req.Debug))
 	if err != nil {
