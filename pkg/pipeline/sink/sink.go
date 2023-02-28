@@ -15,7 +15,10 @@ type Sink interface {
 func CreateSinks(p *config.PipelineConfig) (map[types.EgressType]Sink, error) {
 	sinks := make(map[types.EgressType]Sink)
 	for egressType, out := range p.Outputs {
-		u := uploader.New(out.UploadConfig)
+		u, err := uploader.New(out.UploadConfig)
+		if err != nil {
+			return nil, err
+		}
 
 		switch egressType {
 		case types.EgressTypeFile:

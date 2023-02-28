@@ -18,7 +18,7 @@ type Uploader interface {
 	Upload(string, string, types.OutputType) (string, int64, error)
 }
 
-func New(conf interface{}) Uploader {
+func New(conf interface{}) (Uploader, error) {
 	switch c := conf.(type) {
 	case *livekit.S3Upload:
 		return newS3Uploader(c)
@@ -29,7 +29,7 @@ func New(conf interface{}) Uploader {
 	case *livekit.AliOSSUpload:
 		return newAliOSSUploader(c)
 	default:
-		return &noOpUploader{}
+		return &noOpUploader{}, nil
 	}
 }
 
