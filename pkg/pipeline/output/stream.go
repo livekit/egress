@@ -93,7 +93,7 @@ func buildStreamMux(out *config.OutputConfig) (*gst.Element, error) {
 func buildStreamSink(protocol types.OutputType, url string) (*streamSink, error) {
 	id := utils.NewGuid("")
 
-	queue, err := gst.NewElementWithName("queue", fmt.Sprintf("queue_%s", id))
+	queue, err := gst.NewElementWithName("queue", fmt.Sprintf("stream_queue_%s", id))
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
@@ -102,7 +102,7 @@ func buildStreamSink(protocol types.OutputType, url string) (*streamSink, error)
 	var sink *gst.Element
 	switch protocol {
 	case types.OutputTypeRTMP:
-		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("sink_%s", id))
+		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("rtmp2sink_%s", id))
 		if err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}

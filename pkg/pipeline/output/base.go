@@ -16,7 +16,7 @@ func (b *Bin) buildOutputBase(p *config.PipelineConfig) (*outputBase, error) {
 	base := &outputBase{}
 
 	if p.AudioEnabled {
-		audioQueue, err := builder.BuildQueueWithLatency(p.Latency, true)
+		audioQueue, err := builder.BuildQueueWithLatency("audio_out_queue", p.Latency, true)
 		if err != nil {
 			return nil, err
 		}
@@ -27,7 +27,7 @@ func (b *Bin) buildOutputBase(p *config.PipelineConfig) (*outputBase, error) {
 	}
 
 	if p.VideoEnabled {
-		videoQueue, err := builder.BuildQueueWithLatency(p.Latency, true)
+		videoQueue, err := builder.BuildQueueWithLatency("video_out_queue", p.Latency, true)
 		if err != nil {
 			return nil, err
 		}

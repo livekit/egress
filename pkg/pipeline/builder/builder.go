@@ -27,12 +27,12 @@ func LinkPads(src string, srcPad pad, sink string, sinkPad *gst.Pad) error {
 	return nil
 }
 
-func BuildQueue(leaky bool) (*gst.Element, error) {
-	return BuildQueueWithLatency(defaultLatency, leaky)
+func BuildQueue(name string, leaky bool) (*gst.Element, error) {
+	return BuildQueueWithLatency(name, defaultLatency, leaky)
 }
 
-func BuildQueueWithLatency(latency uint64, leaky bool) (*gst.Element, error) {
-	queue, err := gst.NewElement("queue")
+func BuildQueueWithLatency(name string, latency uint64, leaky bool) (*gst.Element, error) {
+	queue, err := gst.NewElementWithName("queue", name)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
