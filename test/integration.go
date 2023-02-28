@@ -11,12 +11,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
@@ -59,6 +61,8 @@ type testCase struct {
 }
 
 func RunTestSuite(t *testing.T, conf *TestConfig, bus psrpc.MessageBus, templateFs fs.FS) {
+	lksdk.SetLogger(logger.LogRLogger(logr.Discard()))
+
 	// connect to room
 	room, err := lksdk.ConnectToRoom(conf.WsUrl, lksdk.ConnectInfo{
 		APIKey:              conf.ApiKey,
