@@ -17,12 +17,13 @@ import (
 )
 
 const (
-	msgClockProblem        = "GStreamer error: clock problem."
-	msgStreamingStopped    = "streaming stopped, reason not-negotiated (-4)"
-	msgMuxer               = ":muxer"
-	msgFragmentOpened      = "splitmuxsink-fragment-opened"
-	msgFragmentClosed      = "splitmuxsink-fragment-closed"
-	msgFirstSampleMetadata = "FirstSampleMetadata"
+	msgClockProblem           = "GStreamer error: clock problem."
+	msgStreamingNotNegotiated = "streaming stopped, reason not-negotiated (-4)"
+	msgStreamingError         = "streaming stopped, reason error (-5)"
+	msgMuxer                  = ":muxer"
+	msgFragmentOpened         = "splitmuxsink-fragment-opened"
+	msgFragmentClosed         = "splitmuxsink-fragment-closed"
+	msgFirstSampleMetadata    = "FirstSampleMetadata"
 
 	fragmentLocation    = "location"
 	fragmentRunningTime = "running-time"
@@ -30,6 +31,7 @@ const (
 	elementGstRtmp2Sink = "GstRtmp2Sink"
 	elementGstAppSrc    = "GstAppSrc"
 	elementSplitMuxSink = "GstSplitMuxSink"
+	elementGstQueue     = "GstQueue"
 )
 
 func (p *Pipeline) messageWatch(msg *gst.Message) bool {
@@ -108,10 +110,16 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 		return p.removeSink(url, livekit.StreamInfo_FAILED)
 
 	case element == elementGstAppSrc:
-		if message == msgStreamingStopped {
+		if message == msgStreamingNotNegotiated {
 			// send eos to app src
 			logger.Debugw("streaming stopped", "name", name)
 			p.src.(*source.SDKSource).StreamStopped(name)
+			return nil
+		}
+
+	case element == elementGstQueue:
+		if message == msgStreamingError {
+			// happens when removing stream output - ignore
 			return nil
 		}
 
@@ -127,7 +135,7 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 
 	// input failure or file write failure. Fatal
 	err := errors.ErrGstPipelineError(gErr)
-	logger.Errorw(gErr.Error(), errors.New(message), "element", element)
+	logger.Errorw(gErr.Error(), errors.New(message), "element", name)
 	return err
 }
 
