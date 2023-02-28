@@ -14,10 +14,10 @@ type AliOSSUploader struct {
 	conf *livekit.AliOSSUpload
 }
 
-func newAliOSSUploader(conf *livekit.AliOSSUpload) Uploader {
+func newAliOSSUploader(conf *livekit.AliOSSUpload) (Uploader, error) {
 	return &AliOSSUploader{
 		conf: conf,
-	}
+	}, nil
 }
 
 func (u *AliOSSUploader) Upload(localFilePath, requestedPath string, _ types.OutputType) (string, int64, error) {
