@@ -68,6 +68,7 @@ func newSegmentSink(u uploader.Uploader, conf *config.PipelineConfig, p *config.
 		openSegmentsStartTime: make(map[string]int64),
 		endedSegments:         make(chan SegmentUpdate, maxPendingUploads),
 		done:                  core.NewFuse(),
+		startDateTimestamp:    -1,
 	}, nil
 }
 
@@ -137,7 +138,7 @@ func (s *SegmentSink) StartSegment(filepath string, startTime int64) error {
 	s.openSegmentsLock.Lock()
 	defer s.openSegmentsLock.Unlock()
 
-	if s.startDateTimestamp == 0 {
+	if s.startDateTimestamp < 0 {
 		s.startDateTimestamp = time.Duration(startTime)
 	}
 
