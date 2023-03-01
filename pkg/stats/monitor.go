@@ -48,21 +48,21 @@ func (m *Monitor) Start(conf *config.ServiceConfig, isAvailable func() float64) 
 		Namespace:   "livekit",
 		Subsystem:   "egress",
 		Name:        "available",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID},
+		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterId},
 	}, isAvailable)
 
 	m.promCPULoad = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   "livekit",
 		Subsystem:   "node",
 		Name:        "cpu_load",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "node_type": "EGRESS"},
+		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "node_type": "EGRESS", "cluster_id": conf.ClusterId},
 	})
 
 	m.requestGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   "livekit",
 		Subsystem:   "egress",
 		Name:        "requests",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID},
+		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterId},
 	}, []string{"type"})
 
 	prometheus.MustRegister(promNodeAvailable, m.promCPULoad, m.requestGauge)
