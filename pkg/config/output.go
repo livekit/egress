@@ -154,6 +154,10 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 		}
 	}
 
+	if len(p.Outputs) == 0 {
+		return errors.ErrInvalidInput("output")
+	}
+
 	return nil
 }
 
