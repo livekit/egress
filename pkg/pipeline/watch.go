@@ -96,8 +96,6 @@ func (p *Pipeline) handleMessageWarning(gErr *gst.GError) error {
 func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 	element, name, message := parseDebugInfo(gErr)
 
-	logger.Infow("gstreamer error", "error", gErr.Error(), "element", element, "name", name, "message", message)
-
 	switch {
 	case element == elementGstRtmp2Sink:
 		// bad URI or could not connect. Remove rtmp output
