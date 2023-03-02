@@ -225,18 +225,6 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 	chromeCtx, cancel := chromedp.NewContext(allocCtx)
 	s.chromeCancel = cancel
 
-	logEvent := func(eventType string, ev interface{ MarshalJSON() ([]byte, error) }) {
-		values := make([]interface{}, 0)
-		if j, err := ev.MarshalJSON(); err == nil {
-			m := make(map[string]interface{})
-			_ = json.Unmarshal(j, &m)
-			for k, v := range m {
-				values = append(values, k, v)
-			}
-		}
-		logger.Debugw(fmt.Sprintf("chrome %s", eventType), values...)
-	}
-
 	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *runtime.EventConsoleAPICalled:
@@ -269,9 +257,9 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 				}
 			}
 
-			logEvent(ev.Type.String(), ev)
+			logChrome(ev.Type.String(), ev)
 		case *runtime.EventExceptionThrown:
-			logEvent("exception", ev)
+			logChrome("exception", ev)
 		}
 	})
 
@@ -290,4 +278,16 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		err = errors.New(errString)
 	}
 	return err
+}
+
+func logChrome(eventType string, ev interface{ MarshalJSON() ([]byte, error) }) {
+	values := make([]interface{}, 0)
+	if j, err := ev.MarshalJSON(); err == nil {
+		m := make(map[string]interface{})
+		_ = json.Unmarshal(j, &m)
+		for k, v := range m {
+			values = append(values, k, v)
+		}
+	}
+	logger.Debugw(fmt.Sprintf("chrome %s", eventType), values...)
 }
