@@ -16,6 +16,7 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/egress/pkg/util"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
@@ -258,7 +259,7 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	}
 
 	for _, url := range req.RemoveOutputUrls {
-		if err := p.removeSink(url, livekit.StreamInfo_FINISHED); err != nil {
+		if err := p.removeSink(url, nil); err != nil {
 			errs.AppendErr(err)
 		}
 	}
@@ -266,36 +267,50 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	return errs.ToError()
 }
 
-func (p *Pipeline) removeSink(url string, status livekit.StreamInfo_Status) error {
+func (p *Pipeline) removeSink(url string, streamErr error) error {
 	now := time.Now().UnixNano()
 
 	p.mu.Lock()
+
 	streamInfo := p.Outputs[types.EgressTypeStream].StreamInfo[url]
-	streamInfo.Status = status
+
+	if streamErr != nil {
+		streamInfo.Status = livekit.StreamInfo_FAILED
+		streamInfo.Error = streamErr.Error()
+	} else {
+		streamInfo.Status = livekit.StreamInfo_FINISHED
+	}
+
 	streamInfo.EndedAt = now
 	if streamInfo.StartedAt == 0 {
 		streamInfo.StartedAt = now
 	} else {
 		streamInfo.Duration = now - streamInfo.StartedAt
 	}
+
 	delete(p.Outputs[types.EgressTypeStream].StreamInfo, url)
 	done := len(p.Outputs[types.EgressTypeStream].StreamInfo) == 0
+
 	p.mu.Unlock()
 
-	logger.Debugw("removing stream sink", "url", url, "status", status, "duration", streamInfo.Duration)
+	redacted, _ := util.RedactStreamKey(url)
+	logger.Debugw("removing stream sink",
+		"url", redacted,
+		"status", streamInfo.Status,
+		"duration", streamInfo.Duration)
 
-	switch status {
-	case livekit.StreamInfo_FINISHED:
-		if done {
+	if done {
+		if streamErr != nil {
+			return streamErr
+		} else {
 			p.SendEOS(context.Background())
 			return nil
 		}
-	case livekit.StreamInfo_FAILED:
-		if done {
-			return errors.ErrFailedToConnect
-		} else if p.onStatusUpdate != nil {
-			p.onStatusUpdate(context.Background(), p.Info)
-		}
+	}
+
+	// only send updates for gstreamer errors, otherwise it's handled by UpdateStream RPC
+	if streamErr != nil && p.onStatusUpdate != nil {
+		p.onStatusUpdate(context.Background(), p.Info)
 	}
 
 	return p.out.RemoveStream(url)

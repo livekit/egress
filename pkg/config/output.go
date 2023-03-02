@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/egress/pkg/util"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -515,52 +515,35 @@ func redactEncodedOutputs(out EncodedOutput) {
 	}
 }
 
-func redactStreamKeys(stream *livekit.StreamOutput) {
-	for i, url := range stream.Urls {
-		if redacted, ok := redactStreamKey(url); ok {
-			stream.Urls[i] = redacted
-		}
-	}
-}
-
-// rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)
-var rtmpRegexp = regexp.MustCompile("^(rtmps?:\\/\\/)(.*\\/)(.*\\/)(\\S*)( live=1)?$")
-
-func redactStreamKey(url string) (string, bool) {
-	match := rtmpRegexp.FindStringSubmatch(url)
-	if len(match) != 6 {
-		return url, false
-	}
-
-	match[4] = redact(match[4])
-	return strings.Join(match[1:], ""), true
-}
-
 func redactUpload(upload uploadConf) {
 	if s3 := upload.GetS3(); s3 != nil {
-		s3.AccessKey = redact(s3.AccessKey)
-		s3.Secret = redact(s3.Secret)
+		s3.AccessKey = util.Redact(s3.AccessKey)
+		s3.Secret = util.Redact(s3.Secret)
 		return
 	}
 
 	if gcp := upload.GetGcp(); gcp != nil {
-		gcp.Credentials = []byte(redact(string(gcp.Credentials)))
+		gcp.Credentials = []byte(util.Redact(string(gcp.Credentials)))
 		return
 	}
 
 	if azure := upload.GetAzure(); azure != nil {
-		azure.AccountName = redact(azure.AccountName)
-		azure.AccountKey = redact(azure.AccountKey)
+		azure.AccountName = util.Redact(azure.AccountName)
+		azure.AccountKey = util.Redact(azure.AccountKey)
 		return
 	}
 
 	if aliOSS := upload.GetAliOSS(); aliOSS != nil {
-		aliOSS.AccessKey = redact(aliOSS.AccessKey)
-		aliOSS.Secret = redact(aliOSS.Secret)
+		aliOSS.AccessKey = util.Redact(aliOSS.AccessKey)
+		aliOSS.Secret = util.Redact(aliOSS.Secret)
 		return
 	}
 }
 
-func redact(s string) string {
-	return strings.Repeat("*", len(s))
+func redactStreamKeys(stream *livekit.StreamOutput) {
+	for i, url := range stream.Urls {
+		if redacted, ok := util.RedactStreamKey(url); ok {
+			stream.Urls[i] = redacted
+		}
+	}
 }

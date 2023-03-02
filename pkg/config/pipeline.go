@@ -13,6 +13,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/egress/pkg/util"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
@@ -368,7 +369,7 @@ func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType)
 
 	switch outputType {
 	case types.OutputTypeRTMP:
-		redacted, ok := redactStreamKey(rawUrl)
+		redacted, ok := util.RedactStreamKey(rawUrl)
 		if !ok {
 			return "", errors.ErrInvalidUrl(rawUrl, "rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)")
 		}
