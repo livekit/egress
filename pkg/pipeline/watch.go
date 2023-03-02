@@ -12,14 +12,12 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
 const (
 	msgClockProblem           = "GStreamer error: clock problem."
 	msgStreamingNotNegotiated = "streaming stopped, reason not-negotiated (-4)"
-	msgStreamingError         = "streaming stopped, reason error (-5)"
 	msgMuxer                  = ":muxer"
 	msgFragmentOpened         = "splitmuxsink-fragment-opened"
 	msgFragmentClosed         = "splitmuxsink-fragment-closed"
@@ -31,7 +29,6 @@ const (
 	elementGstRtmp2Sink = "GstRtmp2Sink"
 	elementGstAppSrc    = "GstAppSrc"
 	elementSplitMuxSink = "GstSplitMuxSink"
-	elementGstQueue     = "GstQueue"
 )
 
 func (p *Pipeline) messageWatch(msg *gst.Message) bool {
@@ -99,6 +96,8 @@ func (p *Pipeline) handleMessageWarning(gErr *gst.GError) error {
 func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 	element, name, message := parseDebugInfo(gErr)
 
+	logger.Infow("gstreamer error", "error", gErr.Error(), "element", element, "name", name, "message", message)
+
 	switch {
 	case element == elementGstRtmp2Sink:
 		// bad URI or could not connect. Remove rtmp output
@@ -107,19 +106,13 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 			logger.Warnw("rtmp output not found", err, "url", url)
 			return err
 		}
-		return p.removeSink(url, livekit.StreamInfo_FAILED)
+		return p.removeSink(url, gErr)
 
 	case element == elementGstAppSrc:
 		if message == msgStreamingNotNegotiated {
 			// send eos to app src
 			logger.Debugw("streaming stopped", "name", name)
 			p.src.(*source.SDKSource).StreamStopped(name)
-			return nil
-		}
-
-	case element == elementGstQueue:
-		if message == msgStreamingError {
-			// happens when removing stream output - ignore
 			return nil
 		}
 
@@ -220,12 +213,13 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 				logger.Errorw("failed to end segment with playlist writer", err, "running time", t)
 				return err
 			}
+
 		case msgFirstSampleMetadata:
 			startDate, err := getFirstSampleMetadataFromGstStructure(s)
 			if err != nil {
 				return err
 			}
-			logger.Debugw("reveived FirstSampleMetadata message", "startDate", startDate)
+			logger.Debugw("received FirstSampleMetadata message", "startDate", startDate)
 
 			p.getSegmentSink().UpdateStartDate(startDate)
 		}

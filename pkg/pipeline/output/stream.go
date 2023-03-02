@@ -251,14 +251,14 @@ func (o *streamSink) link(tee *gst.Element, live bool) error {
 
 	proxy := gst.NewGhostPad("proxy", sinkPad)
 
-	// proxy isn't saved/stored anywhere, so we need to call ref
-	// pad gets released in RemoveSink
+	// Proxy isn't saved/stored anywhere, so we need to call ref.
+	// It is later released in RemoveSink
 	proxy.Ref()
 
-	// intercept FlowFlushing from rtmp2sink
+	// Intercept flows from rtmp2sink. Anything besides EOS will be ignored
 	proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
-		// buffer gets automatically unreferenced by go-gst
-		// without referencing it here, it will sometimes be garbage collected before being written
+		// Buffer gets automatically unreferenced by go-gst.
+		// Without referencing it here, it will sometimes be garbage collected before being written
 		buffer.Ref()
 
 		internal, _ := self.GetInternalLinks()
@@ -269,13 +269,11 @@ func (o *streamSink) link(tee *gst.Element, live bool) error {
 		}
 
 		// push buffer to rtmp2sink sink pad
-		flow := internal[0].Push(buffer)
-		if flow == gst.FlowFlushing {
-			// replace with ok - pipeline should continue and this sink will be removed
-			return gst.FlowOK
+		if internal[0].Push(buffer) == gst.FlowEOS {
+			return gst.FlowEOS
 		}
 
-		return flow
+		return gst.FlowOK
 	})
 
 	proxy.ActivateMode(gst.PadModePush, true)
@@ -290,7 +288,7 @@ func (o *streamSink) link(tee *gst.Element, live bool) error {
 	o.pad = pad.GetName()
 
 	if live {
-		// use probe
+		// probe required to add a sink to an active pipeline
 		pad.AddProbe(gst.PadProbeTypeBlockDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			// link tee to queue
 			if err := builder.LinkPads("tee", pad, "queue", o.queue.GetStaticPad("sink")); err != nil {
