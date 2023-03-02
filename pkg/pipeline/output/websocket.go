@@ -9,6 +9,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/sink"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -19,7 +20,7 @@ type WebsocketOutput struct {
 }
 
 func (b *Bin) buildWebsocketOutput(p *config.PipelineConfig) (*WebsocketOutput, error) {
-	base, err := b.buildOutputBase(p)
+	base, err := b.buildOutputBase(p, types.EgressTypeWebsocket)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}

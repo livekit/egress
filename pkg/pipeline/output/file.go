@@ -17,7 +17,7 @@ type FileOutput struct {
 }
 
 func (b *Bin) buildFileOutput(p *config.PipelineConfig, out *config.OutputConfig) (*FileOutput, error) {
-	base, err := b.buildOutputBase(p)
+	base, err := b.buildOutputBase(p, out.EgressType)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}

@@ -1,10 +1,13 @@
 package output
 
 import (
+	"fmt"
+
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/builder"
+	"github.com/livekit/egress/pkg/types"
 )
 
 type outputBase struct {
@@ -12,11 +15,11 @@ type outputBase struct {
 	videoQueue *gst.Element
 }
 
-func (b *Bin) buildOutputBase(p *config.PipelineConfig) (*outputBase, error) {
+func (b *Bin) buildOutputBase(p *config.PipelineConfig, egressType types.EgressType) (*outputBase, error) {
 	base := &outputBase{}
 
 	if p.AudioEnabled {
-		audioQueue, err := builder.BuildQueueWithLatency("audio_out_queue", p.Latency, true)
+		audioQueue, err := builder.BuildQueueWithLatency(fmt.Sprintf("audio_%s_queue", egressType), p.Latency, true)
 		if err != nil {
 			return nil, err
 		}
@@ -27,7 +30,7 @@ func (b *Bin) buildOutputBase(p *config.PipelineConfig) (*outputBase, error) {
 	}
 
 	if p.VideoEnabled {
-		videoQueue, err := builder.BuildQueueWithLatency("video_out_queue", p.Latency, true)
+		videoQueue, err := builder.BuildQueueWithLatency(fmt.Sprintf("video_%s_queue", egressType), p.Latency, true)
 		if err != nil {
 			return nil, err
 		}

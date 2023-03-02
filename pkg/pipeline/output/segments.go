@@ -28,7 +28,7 @@ type FirstSampleMetadata struct {
 func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputConfig) (*SegmentOutput, error) {
 	s := &SegmentOutput{}
 
-	base, err := b.buildOutputBase(p)
+	base, err := b.buildOutputBase(p, out.EgressType)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}

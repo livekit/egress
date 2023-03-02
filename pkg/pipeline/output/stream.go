@@ -26,7 +26,7 @@ type StreamOutput struct {
 }
 
 func (b *Bin) buildStreamOutput(p *config.PipelineConfig, out *config.OutputConfig) (*StreamOutput, error) {
-	base, err := b.buildOutputBase(p)
+	base, err := b.buildOutputBase(p, out.EgressType)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
