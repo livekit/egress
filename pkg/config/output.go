@@ -22,6 +22,19 @@ type EncodedOutput interface {
 	GetSegmentOutputs() []*livekit.SegmentedFileOutput
 }
 
+type fileOutput interface {
+	GetFilepath() string
+	GetDisableManifest() bool
+	uploader
+}
+
+type uploader interface {
+	GetS3() *livekit.S3Upload
+	GetGcp() *livekit.GCPUpload
+	GetAzure() *livekit.AzureBlobUpload
+	GetAliOSS() *livekit.AliOSSUpload
+}
+
 type OutputConfig struct {
 	types.EgressType
 	types.OutputType
@@ -60,21 +73,18 @@ type WebsocketParams struct {
 }
 
 func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
-	var deprecated bool
+	multiple := len(req.GetFileOutputs())+len(req.GetStreamOutputs())+len(req.GetSegmentOutputs()) > 1
 
 	// file output
-	file := req.GetFile()
-	if file != nil {
-		deprecated = true
-	} else {
-		files := req.GetFileOutputs()
-		if len(files) > 1 {
-			return errors.ErrInvalidInput("multiple file outputs")
-		}
-		if len(files) == 1 {
-			file = files[0]
-			deprecated = false
-		}
+	var file *livekit.EncodedFileOutput
+	files := req.GetFileOutputs()
+	switch len(files) {
+	case 0:
+		file = req.GetFile()
+	case 1:
+		file = files[0]
+	default:
+		return errors.ErrInvalidInput("multiple file outputs")
 	}
 	if file != nil {
 		conf, err := p.getEncodedFileConfig(req, file)
@@ -84,25 +94,22 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 
 		p.Outputs[types.EgressTypeFile] = conf
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
-		if deprecated {
+		if !multiple {
 			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
 			return nil
 		}
 	}
 
 	// stream output
-	stream := req.GetStream()
-	if stream != nil {
-		deprecated = true
-	} else {
-		streams := req.GetStreamOutputs()
-		if len(streams) > 1 {
-			return errors.ErrInvalidInput("multiple stream outputs")
-		}
-		if len(streams) == 1 {
-			stream = streams[0]
-			deprecated = false
-		}
+	var stream *livekit.StreamOutput
+	streams := req.GetStreamOutputs()
+	switch len(streams) {
+	case 0:
+		stream = req.GetStream()
+	case 1:
+		stream = streams[0]
+	default:
+		return errors.ErrInvalidInput("multiple stream outputs")
 	}
 	if stream != nil {
 		conf, err := p.getStreamConfig(types.OutputTypeRTMP, stream.Urls)
@@ -116,25 +123,22 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 			streamInfoList = append(streamInfoList, info)
 		}
 		p.Info.StreamResults = streamInfoList
-		if deprecated {
+		if !multiple {
 			p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
 			return nil
 		}
 	}
 
 	// segment output
-	segment := req.GetSegments()
-	if segment != nil {
-		deprecated = true
-	} else {
-		segments := req.GetSegmentOutputs()
-		if len(segments) > 1 {
-			return errors.ErrInvalidInput("multiple segment outputs")
-		}
-		if len(segments) == 1 {
-			segment = segments[0]
-			deprecated = false
-		}
+	var segment *livekit.SegmentedFileOutput
+	segments := req.GetSegmentOutputs()
+	switch len(segments) {
+	case 0:
+		segment = req.GetSegments()
+	case 1:
+		segment = segments[0]
+	default:
+		return errors.ErrInvalidInput("multiple segmented file outputs")
 	}
 	if segment != nil {
 		conf, err := p.getSegmentConfig(segment)
@@ -144,10 +148,14 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 
 		p.Outputs[types.EgressTypeSegments] = conf
 		p.Info.SegmentResults = []*livekit.SegmentsInfo{conf.SegmentsInfo}
-		if deprecated {
+		if !multiple {
 			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
 			return nil
 		}
+	}
+
+	if len(p.Outputs) == 0 {
+		return errors.ErrInvalidInput("output")
 	}
 
 	return nil
@@ -219,13 +227,7 @@ func (p *PipelineConfig) getDirectFileConfig(file *livekit.DirectFileOutput) (*O
 	return p.getFileConfig(types.OutputTypeUnknown, file)
 }
 
-type fileConf interface {
-	GetFilepath() string
-	GetDisableManifest() bool
-	uploadConf
-}
-
-func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileConf) (*OutputConfig, error) {
+func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileOutput) (*OutputConfig, error) {
 	conf := &OutputConfig{
 		EgressType: types.EgressTypeFile,
 		OutputType: outputType,
@@ -460,14 +462,7 @@ func (o *OutputConfig) GetStorageFilepath(filename string) string {
 	return path.Join(o.StoragePathPrefix, filename)
 }
 
-type uploadConf interface {
-	GetS3() *livekit.S3Upload
-	GetGcp() *livekit.GCPUpload
-	GetAzure() *livekit.AzureBlobUpload
-	GetAliOSS() *livekit.AliOSSUpload
-}
-
-func (p *PipelineConfig) getUploadConfig(upload uploadConf) interface{} {
+func (p *PipelineConfig) getUploadConfig(upload uploader) interface{} {
 	if s3 := upload.GetS3(); s3 != nil {
 		return s3
 	}
@@ -515,7 +510,7 @@ func redactEncodedOutputs(out EncodedOutput) {
 	}
 }
 
-func redactUpload(upload uploadConf) {
+func redactUpload(upload uploader) {
 	if s3 := upload.GetS3(); s3 != nil {
 		s3.AccessKey = util.Redact(s3.AccessKey)
 		s3.Secret = util.Redact(s3.Secret)
