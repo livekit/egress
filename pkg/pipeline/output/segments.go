@@ -48,9 +48,6 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 	if err = sink.SetProperty("send-keyframe-requests", true); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if err = sink.SetProperty("async-finalize", true); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
-	}
 	if err = sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
