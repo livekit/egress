@@ -10,14 +10,14 @@ require (
 	cloud.google.com/go/storage v1.29.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/aliyun/aliyun-oss-go-sdk v2.2.6+incompatible
-	github.com/aws/aws-sdk-go v1.44.193
-	github.com/chromedp/cdproto v0.0.0-20230201081901-5f7573a87050
-	github.com/chromedp/chromedp v0.8.7
+	github.com/aws/aws-sdk-go v1.44.214
+	github.com/chromedp/cdproto v0.0.0-20230220211738-2b1ec77315c9
+	github.com/chromedp/chromedp v0.8.8
 	github.com/frostbyte73/core v0.0.4
 	github.com/go-logr/logr v1.2.3
 	github.com/googleapis/gax-go/v2 v2.7.0
 	github.com/gorilla/websocket v1.5.0
-	github.com/grafov/m3u8 v0.11.1
+	github.com/grafov/m3u8 v0.11.2
 	github.com/livekit/livekit-server v1.3.5-0.20230218061519-7a2d9b3d615e
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230130133657-96cfb115473a
@@ -26,14 +26,14 @@ require (
 	github.com/livekit/server-sdk-go v1.0.7-0.20230112195259-5bc292cbbdf2
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.7.13
-	github.com/pion/webrtc/v3 v3.1.56
+	github.com/pion/webrtc/v3 v3.1.57
 	github.com/prometheus/client_golang v1.14.0
 	github.com/stretchr/testify v1.8.2
 	github.com/tinyzimmer/go-glib v0.0.25
 	github.com/tinyzimmer/go-gst v0.2.33
-	github.com/urfave/cli/v2 v2.24.3
+	github.com/urfave/cli/v2 v2.25.0
 	go.uber.org/atomic v1.10.0
-	google.golang.org/api v0.110.0
+	google.golang.org/api v0.111.0
 	google.golang.org/grpc v1.53.0
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -113,11 +113,11 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.6.0 // indirect
-	golang.org/x/exp v0.0.0-20230224173230-c95f2b4c22f2 // indirect
+	golang.org/x/exp v0.0.0-20230304125523-9ff063c70017 // indirect
 	golang.org/x/net v0.7.0 // indirect
 	golang.org/x/oauth2 v0.5.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
-	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/sys v0.6.0 // indirect
 	golang.org/x/text v0.7.0 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
