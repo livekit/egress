@@ -237,6 +237,7 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileOut
 			StorageFilepath: file.GetFilepath(),
 		},
 		DisableManifest: file.GetDisableManifest(),
+		UploadConfig:    p.getUploadConfig(file),
 	}
 
 	// filename
@@ -250,7 +251,6 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileOut
 		conf.StorageFilepath = stringReplace(conf.StorageFilepath, replacements)
 	}
 
-	conf.UploadConfig = p.getUploadConfig(file)
 	return conf, nil
 }
 
@@ -309,6 +309,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 			SegmentDuration:  int(segments.SegmentDuration),
 		},
 		DisableManifest: segments.DisableManifest,
+		UploadConfig:    p.getUploadConfig(segments),
 	}
 
 	if conf.SegmentDuration == 0 {
@@ -339,7 +340,6 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 		return nil, err
 	}
 
-	conf.UploadConfig = p.getUploadConfig(segments)
 	return conf, nil
 }
 

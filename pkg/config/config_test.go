@@ -105,3 +105,66 @@ func TestRedactStreamKeys(t *testing.T) {
 	require.Equal(t, streamUrl1, output.StreamUrls[0])
 	require.Equal(t, streamUrl2, output.StreamUrls[1])
 }
+
+func TestSegmentNaming(t *testing.T) {
+	for _, test := range []struct {
+		filenamePrefix           string
+		playlistName             string
+		expectedStorageDir       string
+		expectedPlaylistFilename string
+		expectedSegmentPrefix    string
+	}{
+		{
+			filenamePrefix: "", playlistName: "playlist",
+			expectedStorageDir: "", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "playlist",
+		},
+		{
+			filenamePrefix: "", playlistName: "test/playlist",
+			expectedStorageDir: "test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "playlist",
+		},
+		{
+			filenamePrefix: "filename", playlistName: "",
+			expectedStorageDir: "", expectedPlaylistFilename: "filename.m3u8", expectedSegmentPrefix: "filename",
+		},
+		{
+			filenamePrefix: "filename", playlistName: "playlist",
+			expectedStorageDir: "", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "filename",
+		},
+		{
+			filenamePrefix: "filename", playlistName: "test/",
+			expectedStorageDir: "test/", expectedPlaylistFilename: "filename.m3u8", expectedSegmentPrefix: "filename",
+		},
+		{
+			filenamePrefix: "filename", playlistName: "test/playlist",
+			expectedStorageDir: "test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "filename",
+		},
+		{
+			filenamePrefix: "test/", playlistName: "playlist",
+			expectedStorageDir: "test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "playlist",
+		},
+		{
+			filenamePrefix: "test/filename", playlistName: "playlist",
+			expectedStorageDir: "test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "filename",
+		},
+		{
+			filenamePrefix: "test/filename", playlistName: "test/playlist",
+			expectedStorageDir: "test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "filename",
+		},
+		{
+			filenamePrefix: "test2/filename", playlistName: "test/playlist",
+			expectedStorageDir: "test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "test2/filename",
+		},
+	} {
+		p := &PipelineConfig{Info: &livekit.EgressInfo{}}
+		o, err := p.getSegmentConfig(&livekit.SegmentedFileOutput{
+			FilenamePrefix: test.filenamePrefix,
+			PlaylistName:   test.playlistName,
+			Output:         &livekit.SegmentedFileOutput_S3{S3: &livekit.S3Upload{}},
+		})
+		require.NoError(t, err)
+
+		require.Equal(t, test.expectedStorageDir, o.StorageDir)
+		require.Equal(t, test.expectedPlaylistFilename, o.PlaylistFilename)
+		require.Equal(t, test.expectedSegmentPrefix, o.SegmentPrefix)
+	}
+}
