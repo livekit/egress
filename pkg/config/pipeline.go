@@ -336,25 +336,26 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 }
 
 // used for sdk input source
-func (p *PipelineConfig) UpdateInfoFromSDK(fileIdentifier string, replacements map[string]string) error {
-	for egressType, outputConfig := range p.Outputs {
+func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string) error {
+	for egressType, o := range p.Outputs {
 		switch egressType {
 		case types.EgressTypeFile:
-			if outputConfig.OutputType == types.OutputTypeUnknown {
+			if o.OutputType == types.OutputTypeUnknown {
 				if !p.VideoEnabled {
 					// audio input is always opus
-					outputConfig.OutputType = types.OutputTypeOGG
+					o.OutputType = types.OutputTypeOGG
 				} else {
-					outputConfig.OutputType = types.OutputTypeMP4
+					o.OutputType = types.OutputTypeMP4
 				}
 			}
-			return outputConfig.updateFilepath(p, fileIdentifier, replacements)
+			return o.updateFilepath(p, identifier, replacements)
 
 		case types.EgressTypeSegments:
-			outputConfig.LocalFilePrefix = stringReplace(outputConfig.LocalFilePrefix, replacements)
-			outputConfig.PlaylistFilename = stringReplace(outputConfig.PlaylistFilename, replacements)
-			outputConfig.StoragePathPrefix = stringReplace(outputConfig.StoragePathPrefix, replacements)
-			outputConfig.SegmentsInfo.PlaylistName = stringReplace(outputConfig.SegmentsInfo.PlaylistName, replacements)
+			o.LocalDir = stringReplace(o.LocalDir, replacements)
+			o.StorageDir = stringReplace(o.StorageDir, replacements)
+			o.PlaylistFilename = stringReplace(o.PlaylistFilename, replacements)
+			o.SegmentPrefix = stringReplace(o.SegmentPrefix, replacements)
+			o.SegmentsInfo.PlaylistName = stringReplace(o.SegmentsInfo.PlaylistName, replacements)
 		}
 	}
 

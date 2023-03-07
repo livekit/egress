@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,6 +12,10 @@ import (
 )
 
 func TestRedactUpload(t *testing.T) {
+	t.Cleanup(func() {
+		_ = os.Remove("test_upload/")
+	})
+
 	conf := &ServiceConfig{
 		BaseConfig: BaseConfig{
 			NodeID: "server",
@@ -18,7 +23,7 @@ func TestRedactUpload(t *testing.T) {
 	}
 
 	fileReq := &rpc.StartEgressRequest{
-		EgressId: "egressID",
+		EgressId: "test_upload",
 		Request: &rpc.StartEgressRequest_RoomComposite{
 			RoomComposite: &livekit.RoomCompositeEgressRequest{
 				RoomName: "room",
@@ -53,6 +58,10 @@ func TestRedactUpload(t *testing.T) {
 }
 
 func TestRedactStreamKeys(t *testing.T) {
+	t.Cleanup(func() {
+		_ = os.Remove("test_stream/")
+	})
+
 	var (
 		streamUrl1   = "rtmp://sfo.contribute.live-video.net/app/stream_key"
 		redactedUrl1 = "rtmp://sfo.contribute.live-video.net/app/**********"
@@ -67,7 +76,7 @@ func TestRedactStreamKeys(t *testing.T) {
 	}
 
 	streamReq := &rpc.StartEgressRequest{
-		EgressId: "egressID",
+		EgressId: "test_stream",
 		Request: &rpc.StartEgressRequest_RoomComposite{
 			RoomComposite: &livekit.RoomCompositeEgressRequest{
 				RoomName: "room",
@@ -104,4 +113,70 @@ func TestRedactStreamKeys(t *testing.T) {
 	require.Len(t, output.StreamUrls, 2)
 	require.Equal(t, streamUrl1, output.StreamUrls[0])
 	require.Equal(t, streamUrl2, output.StreamUrls[1])
+}
+
+func TestSegmentNaming(t *testing.T) {
+	t.Cleanup(func() {
+		_ = os.RemoveAll("conf_test/")
+	})
+
+	for _, test := range []struct {
+		filenamePrefix           string
+		playlistName             string
+		expectedStorageDir       string
+		expectedPlaylistFilename string
+		expectedSegmentPrefix    string
+	}{
+		{
+			filenamePrefix: "", playlistName: "playlist",
+			expectedStorageDir: "", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "playlist",
+		},
+		{
+			filenamePrefix: "", playlistName: "conf_test/playlist",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "playlist",
+		},
+		{
+			filenamePrefix: "filename", playlistName: "",
+			expectedStorageDir: "", expectedPlaylistFilename: "filename.m3u8", expectedSegmentPrefix: "filename",
+		},
+		{
+			filenamePrefix: "filename", playlistName: "playlist",
+			expectedStorageDir: "", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "filename",
+		},
+		{
+			filenamePrefix: "filename", playlistName: "conf_test/",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "filename.m3u8", expectedSegmentPrefix: "filename",
+		},
+		{
+			filenamePrefix: "filename", playlistName: "conf_test/playlist",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "filename",
+		},
+		{
+			filenamePrefix: "conf_test/", playlistName: "playlist",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "playlist",
+		},
+		{
+			filenamePrefix: "conf_test/filename", playlistName: "playlist",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "filename",
+		},
+		{
+			filenamePrefix: "conf_test/filename", playlistName: "conf_test/playlist",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "filename",
+		},
+		{
+			filenamePrefix: "conf_test_2/filename", playlistName: "conf_test/playlist",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "conf_test_2/filename",
+		},
+	} {
+		p := &PipelineConfig{Info: &livekit.EgressInfo{EgressId: "egress_ID"}}
+		o, err := p.getSegmentConfig(&livekit.SegmentedFileOutput{
+			FilenamePrefix: test.filenamePrefix,
+			PlaylistName:   test.playlistName,
+		})
+		require.NoError(t, err)
+
+		require.Equal(t, test.expectedStorageDir, o.StorageDir)
+		require.Equal(t, test.expectedPlaylistFilename, o.PlaylistFilename)
+		require.Equal(t, test.expectedSegmentPrefix, o.SegmentPrefix)
+	}
 }

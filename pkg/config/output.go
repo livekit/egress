@@ -55,12 +55,13 @@ type FileParams struct {
 }
 
 type SegmentParams struct {
-	SegmentsInfo      *livekit.SegmentsInfo
-	LocalFilePrefix   string
-	StoragePathPrefix string
-	PlaylistFilename  string
-	SegmentSuffix     livekit.SegmentedFileSuffix
-	SegmentDuration   int
+	SegmentsInfo     *livekit.SegmentsInfo
+	LocalDir         string
+	StorageDir       string
+	PlaylistFilename string
+	SegmentPrefix    string
+	SegmentSuffix    livekit.SegmentedFileSuffix
+	SegmentDuration  int
 }
 
 type StreamParams struct {
@@ -236,6 +237,7 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileOut
 			StorageFilepath: file.GetFilepath(),
 		},
 		DisableManifest: file.GetDisableManifest(),
+		UploadConfig:    p.getUploadConfig(file),
 	}
 
 	// filename
@@ -249,7 +251,6 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileOut
 		conf.StorageFilepath = stringReplace(conf.StorageFilepath, replacements)
 	}
 
-	conf.UploadConfig = p.getUploadConfig(file)
 	return conf, nil
 }
 
@@ -302,12 +303,13 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 		EgressType: types.EgressTypeSegments,
 		SegmentParams: SegmentParams{
 			SegmentsInfo:     &livekit.SegmentsInfo{},
-			LocalFilePrefix:  segments.FilenamePrefix,
+			SegmentPrefix:    segments.FilenamePrefix,
 			SegmentSuffix:    segments.FilenameSuffix,
 			PlaylistFilename: segments.PlaylistName,
 			SegmentDuration:  int(segments.SegmentDuration),
 		},
 		DisableManifest: segments.DisableManifest,
+		UploadConfig:    p.getUploadConfig(segments),
 	}
 
 	if conf.SegmentDuration == 0 {
@@ -326,20 +328,18 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 		conf.SegmentDuration = int(p.KeyFrameInterval)
 	}
 
-	// filename
-	identifier, replacements := p.getFilenameInfo()
-	err := conf.updatePrefixAndPlaylist(p, identifier, replacements)
-	if err != nil {
-		return nil, err
-	}
-
 	switch segments.Protocol {
 	case livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL,
 		livekit.SegmentedFileProtocol_HLS_PROTOCOL:
 		conf.OutputType = types.OutputTypeHLS
 	}
 
-	conf.UploadConfig = p.getUploadConfig(segments)
+	// filename
+	err := conf.updatePrefixAndPlaylist(p)
+	if err != nil {
+		return nil, err
+	}
+
 	return conf, nil
 }
 
@@ -372,13 +372,13 @@ func (o *OutputConfig) updateFilepath(p *PipelineConfig, identifier string, repl
 		o.StorageFilepath = fmt.Sprintf("%s%s-%s%s", o.StorageFilepath, identifier, time.Now().Format("2006-01-02T150405"), ext)
 	} else if !strings.HasSuffix(o.StorageFilepath, string(ext)) {
 		// check for existing (incorrect) extension
-		extIdx := strings.LastIndex(o.StorageFilepath, ".")
-		if extIdx > 0 {
+		if extIdx := strings.LastIndex(o.StorageFilepath, "."); extIdx > -1 {
 			existingExt := types.FileExtension(o.StorageFilepath[extIdx:])
 			if _, ok := types.FileExtensions[existingExt]; ok {
 				o.StorageFilepath = o.StorageFilepath[:extIdx]
 			}
 		}
+
 		// add file extension
 		o.StorageFilepath = o.StorageFilepath + string(ext)
 	}
@@ -413,53 +413,77 @@ func (o *OutputConfig) updateFilepath(p *PipelineConfig, identifier string, repl
 	return nil
 }
 
-func (o *OutputConfig) updatePrefixAndPlaylist(p *PipelineConfig, identifier string, replacements map[string]string) error {
-	o.LocalFilePrefix = stringReplace(o.LocalFilePrefix, replacements)
+func (o *OutputConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
+	identifier, replacements := p.getFilenameInfo()
+
+	o.SegmentPrefix = stringReplace(o.SegmentPrefix, replacements)
 	o.PlaylistFilename = stringReplace(o.PlaylistFilename, replacements)
 
 	ext := types.FileExtensionForOutputType[o.OutputType]
 
-	if o.LocalFilePrefix == "" || strings.HasSuffix(o.LocalFilePrefix, "/") {
-		o.LocalFilePrefix = fmt.Sprintf("%s%s-%s", o.LocalFilePrefix, identifier, time.Now().Format("2006-01-02T150405"))
-	}
+	playlistDir, playlistName := path.Split(o.PlaylistFilename)
+	fileDir, filePrefix := path.Split(o.SegmentPrefix)
 
-	// Playlist path is relative to file prefix. Only keep actual filename if a full path is given
-	_, o.PlaylistFilename = path.Split(o.PlaylistFilename)
-	if o.PlaylistFilename == "" {
-		o.PlaylistFilename = fmt.Sprintf("playlist-%s%s", identifier, ext)
-	} else if !strings.HasSuffix(o.PlaylistFilename, string(ext)) {
-		o.PlaylistFilename = fmt.Sprintf("%s%s", o.PlaylistFilename, ext)
-	}
-
-	var filePrefix string
-	o.StoragePathPrefix, filePrefix = path.Split(o.LocalFilePrefix)
-	if o.UploadConfig == nil {
-		if o.StoragePathPrefix != "" {
-			if err := os.MkdirAll(o.StoragePathPrefix, 0755); err != nil {
-				return err
-			}
+	// remove extension from playlist name
+	if extIdx := strings.LastIndex(playlistName, "."); extIdx > -1 {
+		existingExt := types.FileExtension(playlistName[extIdx:])
+		if _, ok := types.FileExtensions[existingExt]; ok {
+			playlistName = playlistName[:extIdx]
 		}
-		o.PlaylistFilename = path.Join(o.StoragePathPrefix, o.PlaylistFilename)
+		playlistName = playlistName[:extIdx]
+	}
+
+	// only keep fileDir if it is a subdirectory of playlistDir
+	if fileDir != "" {
+		if playlistDir == fileDir {
+			fileDir = ""
+		} else if playlistDir == "" {
+			playlistDir = fileDir
+			fileDir = ""
+		}
+	}
+	o.StorageDir = playlistDir
+
+	// ensure playlistName
+	if playlistName == "" {
+		if filePrefix != "" {
+			playlistName = filePrefix
+		} else {
+			playlistName = fmt.Sprintf("%s-%s", identifier, time.Now().Format("2006-01-02T150405"))
+		}
+	}
+
+	// ensure filePrefix
+	if filePrefix == "" {
+		filePrefix = playlistName
+	}
+
+	// update config
+	o.StorageDir = playlistDir
+	o.PlaylistFilename = fmt.Sprintf("%s%s", playlistName, ext)
+	o.SegmentPrefix = fmt.Sprintf("%s%s", fileDir, filePrefix)
+
+	if o.UploadConfig == nil {
+		o.LocalDir = playlistDir
 	} else {
 		// Prepend the configuration base directory and the egress Id
 		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
-		tmpDir := path.Join(p.LocalOutputDirectory, p.Info.EgressId)
-		if err := os.MkdirAll(tmpDir, 0755); err != nil {
-			return err
-		}
-
-		o.PlaylistFilename = path.Join(tmpDir, o.PlaylistFilename)
-		o.LocalFilePrefix = path.Join(tmpDir, filePrefix)
+		o.LocalDir = path.Join(p.LocalOutputDirectory, p.Info.EgressId)
 	}
 
-	o.SegmentsInfo.PlaylistName = o.GetStorageFilepath(o.PlaylistFilename)
-	return nil
-}
+	// create local directories
+	if fileDir != "" {
+		if err := os.MkdirAll(path.Join(o.LocalDir, fileDir), 0755); err != nil {
+			return err
+		}
+	} else if o.LocalDir != "" {
+		if err := os.MkdirAll(o.LocalDir, 0755); err != nil {
+			return err
+		}
+	}
 
-func (o *OutputConfig) GetStorageFilepath(filename string) string {
-	// Remove any path prepended to the filename
-	_, filename = path.Split(filename)
-	return path.Join(o.StoragePathPrefix, filename)
+	o.SegmentsInfo.PlaylistName = path.Join(o.StorageDir, o.PlaylistFilename)
+	return nil
 }
 
 func (p *PipelineConfig) getUploadConfig(upload uploader) interface{} {

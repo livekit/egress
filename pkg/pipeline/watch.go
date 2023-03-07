@@ -175,14 +175,14 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 	if s != nil {
 		switch s.Name() {
 		case msgFragmentOpened:
+			if timer := p.eosTimer; timer != nil {
+				timer.Reset(eosTimeout)
+			}
+
 			filepath, t, err := getSegmentParamsFromGstStructure(s)
 			if err != nil {
 				logger.Errorw("failed to retrieve segment parameters from event", err)
 				return err
-			}
-
-			if timer := p.eosTimer; timer != nil {
-				timer.Reset(eosTimeout)
 			}
 
 			logger.Debugw("fragment opened", "location", filepath, "running time", t)
@@ -192,14 +192,14 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 			}
 
 		case msgFragmentClosed:
+			if timer := p.eosTimer; timer != nil {
+				timer.Reset(eosTimeout)
+			}
+
 			filepath, t, err := getSegmentParamsFromGstStructure(s)
 			if err != nil {
 				logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "running time", t)
 				return err
-			}
-
-			if timer := p.eosTimer; timer != nil {
-				timer.Reset(eosTimeout)
 			}
 
 			logger.Debugw("fragment closed", "location", filepath, "running time", t)
