@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,7 +30,6 @@ type SegmentSink struct {
 	playlist                  *m3u8.MediaPlaylist
 	currentItemStartTimestamp int64
 	currentItemFilename       string
-	playlistPath              string
 	startDate                 time.Time
 	startDateTimestamp        time.Duration
 
@@ -43,8 +43,8 @@ type SegmentSink struct {
 }
 
 type SegmentUpdate struct {
-	endTime   int64
-	localPath string
+	endTime  int64
+	filename string
 }
 
 func newSegmentSink(u uploader.Uploader, conf *config.PipelineConfig, p *config.OutputConfig) (*SegmentSink, error) {
@@ -64,7 +64,6 @@ func newSegmentSink(u uploader.Uploader, conf *config.PipelineConfig, p *config.
 		OutputConfig:          p,
 		conf:                  conf,
 		playlist:              playlist,
-		playlistPath:          p.PlaylistFilename,
 		openSegmentsStartTime: make(map[string]int64),
 		endedSegments:         make(chan SegmentUpdate, maxPendingUploads),
 		done:                  core.NewFuse(),
@@ -90,21 +89,24 @@ func (s *SegmentSink) Start() error {
 			var size int64
 			s.SegmentsInfo.SegmentCount++
 
-			segmentStoragePath := s.GetStorageFilepath(update.localPath)
-			_, size, err = s.Upload(update.localPath, segmentStoragePath, s.getSegmentOutputType())
+			segmentLocalPath := path.Join(s.LocalDir, update.filename)
+			segmentStoragePath := path.Join(s.StorageDir, update.filename)
+			_, size, err = s.Upload(segmentLocalPath, segmentStoragePath, s.getSegmentOutputType())
 			if err != nil {
 				return
 			}
 
 			s.SegmentsInfo.Size += size
 
-			err = s.endSegment(update.localPath, update.endTime)
+			err = s.endSegment(update.filename, update.endTime)
 			if err != nil {
-				logger.Errorw("failed to end segment", err, "path", update.localPath)
+				logger.Errorw("failed to end segment", err, "path", segmentLocalPath)
 				return
 			}
-			playlistStoragePath := s.GetStorageFilepath(s.PlaylistFilename)
-			s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(s.PlaylistFilename, playlistStoragePath, s.OutputType)
+
+			playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
+			playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
+			s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType)
 			if err != nil {
 				return
 			}
@@ -125,15 +127,15 @@ func (s *SegmentSink) getSegmentOutputType() types.OutputType {
 }
 
 func (s *SegmentSink) StartSegment(filepath string, startTime int64) error {
-	if filepath == "" {
+	if !strings.HasPrefix(filepath, s.LocalDir) {
 		return fmt.Errorf("invalid filepath")
 	}
+
+	filename := filepath[len(s.LocalDir):]
 
 	if startTime < 0 {
 		return fmt.Errorf("invalid start timestamp")
 	}
-
-	k := getFilenameFromFilePath(filepath)
 
 	s.openSegmentsLock.Lock()
 	defer s.openSegmentsLock.Unlock()
@@ -142,11 +144,11 @@ func (s *SegmentSink) StartSegment(filepath string, startTime int64) error {
 		s.startDateTimestamp = time.Duration(startTime)
 	}
 
-	if _, ok := s.openSegmentsStartTime[k]; ok {
+	if _, ok := s.openSegmentsStartTime[filename]; ok {
 		return fmt.Errorf("segment with this name already started")
 	}
 
-	s.openSegmentsStartTime[k] = startTime
+	s.openSegmentsStartTime[filename] = startTime
 
 	return nil
 }
@@ -158,42 +160,38 @@ func (s *SegmentSink) UpdateStartDate(t time.Time) {
 	s.startDate = t
 }
 
-func (s *SegmentSink) EnqueueSegmentUpload(segmentPath string, endTime int64) error {
+func (s *SegmentSink) EnqueueSegmentUpload(filepath string, endTime int64) error {
+	filename := filepath[len(s.LocalDir):]
+
 	select {
-	case s.endedSegments <- SegmentUpdate{localPath: segmentPath, endTime: endTime}:
+	case s.endedSegments <- SegmentUpdate{filename: filename, endTime: endTime}:
 		return nil
 
 	default:
 		err := errors.New("segment upload job queue is full")
 		logger.Infow("failed to upload segment", "error", err)
-		return errors.ErrUploadFailed(segmentPath, err)
+		return errors.ErrUploadFailed(filename, err)
 	}
 }
 
-func (s *SegmentSink) endSegment(filepath string, endTime int64) error {
-	if filepath == "" {
-		return fmt.Errorf("invalid filepath")
-	}
-
+func (s *SegmentSink) endSegment(filename string, endTime int64) error {
 	if endTime <= s.currentItemStartTimestamp {
 		return fmt.Errorf("segment end time before start time")
 	}
 
-	k := getFilenameFromFilePath(filepath)
-
 	s.openSegmentsLock.Lock()
 	defer s.openSegmentsLock.Unlock()
 
-	t, ok := s.openSegmentsStartTime[k]
+	t, ok := s.openSegmentsStartTime[filename]
 	if !ok {
-		return fmt.Errorf("no open segment with the name %s", k)
+		return fmt.Errorf("no open segment with the name %s", filename)
 	}
-	delete(s.openSegmentsStartTime, k)
+	delete(s.openSegmentsStartTime, filename)
 
 	duration := float64(endTime-t) / float64(time.Second)
 
 	// This assumes EndSegment will be called in the same order as StartSegment
-	err := s.playlist.Append(k, duration, "")
+	err := s.playlist.Append(filename, duration, "")
 	if err != nil {
 		return err
 	}
@@ -209,16 +207,10 @@ func (s *SegmentSink) endSegment(filepath string, endTime int64) error {
 	return s.writePlaylist()
 }
 
-func getFilenameFromFilePath(filepath string) string {
-	_, filename := path.Split(filepath)
-
-	return filename
-}
-
 func (s *SegmentSink) writePlaylist() error {
 	buf := s.playlist.Encode()
 
-	file, err := os.Create(s.playlistPath)
+	file, err := os.Create(path.Join(s.LocalDir, s.PlaylistFilename))
 	if err != nil {
 		return nil
 	}
@@ -245,11 +237,12 @@ func (s *SegmentSink) Finalize() error {
 	}
 
 	// upload the finalized playlist
-	playlistStoragePath := s.GetStorageFilepath(s.PlaylistFilename)
-	s.SegmentsInfo.PlaylistLocation, _, _ = s.Upload(s.PlaylistFilename, playlistStoragePath, s.OutputType)
+	playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
+	playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
+	s.SegmentsInfo.PlaylistLocation, _, _ = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType)
 
 	if !s.DisableManifest {
-		manifestLocalPath := fmt.Sprintf("%s.json", s.PlaylistFilename)
+		manifestLocalPath := fmt.Sprintf("%s.json", playlistLocalPath)
 		manifestStoragePath := fmt.Sprintf("%s.json", playlistStoragePath)
 		if err := uploadManifest(s.conf, s, manifestLocalPath, manifestStoragePath); err != nil {
 			return err
@@ -260,14 +253,13 @@ func (s *SegmentSink) Finalize() error {
 }
 
 func (s *SegmentSink) Cleanup() {
-	if s.LocalFilepath == s.StorageFilepath {
+	if s.LocalDir == s.StorageDir {
 		return
 	}
 
-	dir, _ := path.Split(s.PlaylistFilename)
-	if dir != "" {
-		logger.Debugw("removing temporary directory", "path", dir)
-		if err := os.RemoveAll(dir); err != nil {
+	if s.LocalDir != "" {
+		logger.Debugw("removing temporary directory", "path", s.LocalDir)
+		if err := os.RemoveAll(s.LocalDir); err != nil {
 			logger.Errorw("could not delete temp dir", err)
 		}
 	}

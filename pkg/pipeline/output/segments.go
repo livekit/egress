@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"path"
 	"time"
 
 	"github.com/tinyzimmer/go-gst/gst"
@@ -69,14 +70,15 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 			sink.GetBus().Post(msg)
 		}
 
+		var segmentName string
 		switch out.SegmentParams.SegmentSuffix {
 		case livekit.SegmentedFileSuffix_TIMESTAMP:
 			ts := s.startDate.Add(firstSample.GetBuffer().PresentationTimestamp())
-
-			return fmt.Sprintf("%s_%s%03d.ts", out.LocalFilePrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000)
+			segmentName = fmt.Sprintf("%s_%s%03d.ts", out.SegmentPrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000)
 		default:
-			return fmt.Sprintf("%s_%05d.ts", out.LocalFilePrefix, fragmentId)
+			segmentName = fmt.Sprintf("%s_%05d.ts", out.SegmentPrefix, fragmentId)
 		}
+		return path.Join(out.LocalDir, segmentName)
 	})
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
