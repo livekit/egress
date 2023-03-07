@@ -161,6 +161,10 @@ func (s *SegmentSink) UpdateStartDate(t time.Time) {
 }
 
 func (s *SegmentSink) EnqueueSegmentUpload(filepath string, endTime int64) error {
+	if !strings.HasPrefix(filepath, s.LocalDir) {
+		return fmt.Errorf("invalid filepath")
+	}
+
 	filename := filepath[len(s.LocalDir):]
 
 	select {
