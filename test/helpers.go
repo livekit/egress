@@ -194,8 +194,8 @@ func downloadGCP(t *testing.T, conf *livekit.GCPUpload, localFilepath, storageFi
 	var client *storage.Client
 
 	var err error
-	if conf.Credentials != nil {
-		client, err = storage.NewClient(ctx, option.WithCredentialsJSON(conf.Credentials))
+	if conf.Credentials != "" {
+		client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(conf.Credentials)))
 	} else {
 		client, err = storage.NewClient(ctx)
 	}

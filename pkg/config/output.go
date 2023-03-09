@@ -542,7 +542,7 @@ func redactUpload(upload uploader) {
 	}
 
 	if gcp := upload.GetGcp(); gcp != nil {
-		gcp.Credentials = []byte(util.Redact(string(gcp.Credentials)))
+		gcp.Credentials = util.Redact(gcp.Credentials)
 		return
 	}
 

@@ -43,8 +43,8 @@ func (u *GCPUploader) Upload(localFilepath, storageFilepath string, _ types.Outp
 	}
 
 	var client *storage.Client
-	if u.conf.Credentials != nil {
-		client, err = storage.NewClient(ctx, option.WithCredentialsJSON(u.conf.Credentials))
+	if u.conf.Credentials != "" {
+		client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(u.conf.Credentials)))
 	} else {
 		client, err = storage.NewClient(ctx)
 	}

@@ -4,7 +4,6 @@ package test
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -65,7 +64,7 @@ func NewTestContext(t *testing.T) *TestConfig {
 	if confString == "" {
 		confFile := os.Getenv("EGRESS_CONFIG_FILE")
 		require.NotEmpty(t, confFile)
-		b, err := ioutil.ReadFile(confFile)
+		b, err := os.ReadFile(confFile)
 		require.NoError(t, err)
 		confString = string(b)
 	}
