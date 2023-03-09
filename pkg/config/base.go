@@ -82,7 +82,7 @@ type GCPConfig struct {
 
 func (c *GCPConfig) ToGCPUpload() *livekit.GCPUpload {
 	return &livekit.GCPUpload{
-		Credentials: []byte(c.CredentialsJSON),
+		Credentials: c.CredentialsJSON,
 		Bucket:      c.Bucket,
 	}
 }

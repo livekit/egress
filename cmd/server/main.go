@@ -4,7 +4,6 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
@@ -82,7 +81,7 @@ func runService(c *cli.Context) error {
 		if configFile == "" {
 			return errors.ErrNoConfig
 		}
-		content, err := ioutil.ReadFile(configFile)
+		content, err := os.ReadFile(configFile)
 		if err != nil {
 			return err
 		}
