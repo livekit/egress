@@ -41,6 +41,9 @@ func (b *Bin) buildStreamOutput(p *config.PipelineConfig, out *config.OutputConf
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
+	if err = tee.SetProperty("allow-not-linked", true); err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
 
 	if err := b.bin.AddMany(mux, tee); err != nil {
 		return nil, errors.ErrGstPipelineError(err)

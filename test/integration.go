@@ -431,12 +431,20 @@ func runMultipleTest(
 	require.NoError(t, err)
 
 	if stream {
+		_, err := conf.psrpcClient.UpdateStream(context.Background(), egressID, &livekit.UpdateStreamRequest{
+			EgressId:      egressID,
+			AddOutputUrls: []string{streamUrl1},
+		})
+		require.NoError(t, err)
+
+		time.Sleep(time.Second * 10)
 		verifyStreams(t, p, conf, streamUrl1)
+		time.Sleep(time.Second * 10)
+	} else {
+		time.Sleep(time.Second * 20)
 	}
 
-	time.Sleep(time.Second * 20)
 	res := stopEgress(t, conf, egressID)
-
 	if file {
 		verifyFile(t, conf, p, res)
 	}

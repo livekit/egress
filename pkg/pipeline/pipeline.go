@@ -231,20 +231,27 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	defer span.End()
 
 	errs := errors.ErrArray{}
-
 	now := time.Now().UnixNano()
+
+	// add stream outputs first
 	for _, url := range req.AddOutputUrls {
+		// validate and redact url
 		redacted, err := p.ValidateUrl(url, types.OutputTypeRTMP)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
 		}
 
+		// add stream
 		if err := p.out.AddStream(url); err != nil {
 			errs.AppendErr(err)
 			continue
 		}
 
+		// add to output count
+		p.OutputCount++
+
+		// add stream info to results
 		p.mu.Lock()
 		streamInfo := &livekit.StreamInfo{
 			Url:       redacted,
@@ -259,6 +266,7 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 		p.mu.Unlock()
 	}
 
+	// remove stream outputs
 	for _, url := range req.RemoveOutputUrls {
 		if err := p.removeSink(url, nil); err != nil {
 			errs.AppendErr(err)
@@ -272,9 +280,9 @@ func (p *Pipeline) removeSink(url string, streamErr error) error {
 	now := time.Now().UnixNano()
 
 	p.mu.Lock()
-
 	streamInfo := p.Outputs[types.EgressTypeStream].StreamInfo[url]
 
+	// set error if exists
 	if streamErr != nil {
 		streamInfo.Status = livekit.StreamInfo_FAILED
 		streamInfo.Error = streamErr.Error()
@@ -282,6 +290,7 @@ func (p *Pipeline) removeSink(url string, streamErr error) error {
 		streamInfo.Status = livekit.StreamInfo_FINISHED
 	}
 
+	// update end time and duration
 	streamInfo.EndedAt = now
 	if streamInfo.StartedAt == 0 {
 		streamInfo.StartedAt = now
@@ -289,18 +298,21 @@ func (p *Pipeline) removeSink(url string, streamErr error) error {
 		streamInfo.Duration = now - streamInfo.StartedAt
 	}
 
+	// remove output
 	delete(p.Outputs[types.EgressTypeStream].StreamInfo, url)
-	done := len(p.Outputs[types.EgressTypeStream].StreamInfo) == 0
-
+	p.OutputCount--
 	p.mu.Unlock()
 
+	// log removal
 	redacted, _ := util.RedactStreamKey(url)
 	logger.Debugw("removing stream sink",
 		"url", redacted,
 		"status", streamInfo.Status,
-		"duration", streamInfo.Duration)
+		"duration", streamInfo.Duration,
+		"error", streamErr)
 
-	if done {
+	// shut down if no outputs remaining
+	if p.OutputCount == 0 {
 		if streamErr != nil {
 			return streamErr
 		} else {
@@ -309,7 +321,7 @@ func (p *Pipeline) removeSink(url string, streamErr error) error {
 		}
 	}
 
-	// only send updates for gstreamer errors, otherwise it's handled by UpdateStream RPC
+	// only send updates if the egress will continue, otherwise it's handled by UpdateStream RPC
 	if streamErr != nil && p.onStatusUpdate != nil {
 		p.onStatusUpdate(context.Background(), p.Info)
 	}

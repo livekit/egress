@@ -232,7 +232,6 @@ func testTrackCompositeMulti(t *testing.T, conf *TestConfig) {
 				VideoTrackId: videoTrackID,
 				StreamOutputs: []*livekit.StreamOutput{{
 					Protocol: livekit.StreamProtocol_RTMP,
-					Urls:     []string{streamUrl1},
 				}},
 				SegmentOutputs: []*livekit.SegmentedFileOutput{{
 					FilenamePrefix: getFilePath(conf.ServiceConfig, "tc_multiple_{time}"),
