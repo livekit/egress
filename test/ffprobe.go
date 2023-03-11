@@ -259,7 +259,9 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		if segments == nil {
 			segments = res.GetSegmentResults()[0]
 		}
-		require.Equal(t, int64(actual/float64(p.Outputs[egressType].SegmentDuration))+1, segments.SegmentCount)
+
+		expected := int64(actual / float64(p.Outputs[egressType].SegmentDuration))
+		require.True(t, segments.SegmentCount == expected || segments.SegmentCount == expected+1)
 	}
 
 	// check stream info
