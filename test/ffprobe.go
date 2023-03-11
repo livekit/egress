@@ -5,6 +5,7 @@ package test
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"regexp"
@@ -260,8 +261,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 			segments = res.GetSegmentResults()[0]
 		}
 
-		expected := int64(actual / float64(p.Outputs[egressType].SegmentDuration))
-		require.True(t, segments.SegmentCount == expected || segments.SegmentCount == expected+1)
+		require.Equal(t, int64(math.Ceil(actual/float64(p.Outputs[egressType].SegmentDuration))), segments.SegmentCount)
 	}
 
 	// check stream info
