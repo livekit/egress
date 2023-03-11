@@ -295,7 +295,6 @@ func testRoomCompositeMulti(t *testing.T, conf *TestConfig) {
 				}},
 				StreamOutputs: []*livekit.StreamOutput{{
 					Protocol: livekit.StreamProtocol_RTMP,
-					Urls:     []string{streamUrl1},
 				}},
 			},
 		},

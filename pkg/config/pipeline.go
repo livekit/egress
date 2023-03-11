@@ -35,7 +35,8 @@ type PipelineConfig struct {
 	AudioConfig  `yaml:"-"`
 	VideoConfig  `yaml:"-"`
 
-	Outputs map[types.EgressType]*OutputConfig `yaml:"-"`
+	Outputs     map[types.EgressType]*OutputConfig `yaml:"-"`
+	OutputCount int
 
 	GstReady chan struct{}       `yaml:"-"`
 	Info     *livekit.EgressInfo `yaml:"-"`

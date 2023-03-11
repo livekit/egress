@@ -74,11 +74,12 @@ type WebsocketParams struct {
 }
 
 func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
-	multiple := len(req.GetFileOutputs())+len(req.GetStreamOutputs())+len(req.GetSegmentOutputs()) > 1
+	files := req.GetFileOutputs()
+	streams := req.GetStreamOutputs()
+	segments := req.GetSegmentOutputs()
 
 	// file output
 	var file *livekit.EncodedFileOutput
-	files := req.GetFileOutputs()
 	switch len(files) {
 	case 0:
 		file = req.GetFile()
@@ -94,8 +95,10 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 		}
 
 		p.Outputs[types.EgressTypeFile] = conf
+		p.OutputCount++
+
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
-		if !multiple {
+		if len(streams)+len(segments) == 0 {
 			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
 			return nil
 		}
@@ -103,7 +106,6 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 
 	// stream output
 	var stream *livekit.StreamOutput
-	streams := req.GetStreamOutputs()
 	switch len(streams) {
 	case 0:
 		stream = req.GetStream()
@@ -119,12 +121,19 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 		}
 
 		p.Outputs[types.EgressTypeStream] = conf
+		p.OutputCount += len(stream.Urls)
+
 		streamInfoList := make([]*livekit.StreamInfo, 0, len(conf.StreamInfo))
 		for _, info := range conf.StreamInfo {
 			streamInfoList = append(streamInfoList, info)
 		}
 		p.Info.StreamResults = streamInfoList
-		if !multiple {
+		if len(files)+len(segments) == 0 {
+			// empty stream output only valid in combination with other outputs
+			if len(stream.Urls) == 0 {
+				return errors.ErrInvalidInput("stream url")
+			}
+
 			p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
 			return nil
 		}
@@ -132,7 +141,6 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 
 	// segment output
 	var segment *livekit.SegmentedFileOutput
-	segments := req.GetSegmentOutputs()
 	switch len(segments) {
 	case 0:
 		segment = req.GetSegments()
@@ -148,14 +156,16 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 		}
 
 		p.Outputs[types.EgressTypeSegments] = conf
+		p.OutputCount++
+
 		p.Info.SegmentResults = []*livekit.SegmentsInfo{conf.SegmentsInfo}
-		if !multiple {
+		if len(streams)+len(segments) == 0 {
 			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
 			return nil
 		}
 	}
 
-	if len(p.Outputs) == 0 {
+	if p.OutputCount == 0 {
 		return errors.ErrInvalidInput("output")
 	}
 
@@ -172,7 +182,9 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
 		p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
+
 		p.Outputs[types.EgressTypeFile] = conf
+		p.OutputCount = 1
 
 	case *livekit.TrackEgressRequest_WebsocketUrl:
 		conf, err := p.getStreamConfig(types.OutputTypeRaw, []string{o.WebsocketUrl})
@@ -186,7 +198,9 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 		}
 		p.Info.StreamResults = streamInfoList
 		p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
+
 		p.Outputs[types.EgressTypeWebsocket] = conf
+		p.OutputCount = 1
 
 	default:
 		return errors.ErrInvalidInput("output")
@@ -255,10 +269,6 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileOut
 }
 
 func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []string) (*OutputConfig, error) {
-	if len(urls) < 1 {
-		return nil, errors.ErrInvalidInput("stream url")
-	}
-
 	conf := &OutputConfig{
 		OutputType: outputType,
 	}
