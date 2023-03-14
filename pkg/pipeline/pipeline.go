@@ -148,9 +148,12 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 			p.Info.Status = livekit.EgressStatus_EGRESS_FAILED
 		}
 
+		// ensure egress ends with a final state
 		switch p.Info.Status {
-		case livekit.EgressStatus_EGRESS_STARTING,
-			livekit.EgressStatus_EGRESS_ACTIVE,
+		case livekit.EgressStatus_EGRESS_STARTING:
+			p.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
+
+		case livekit.EgressStatus_EGRESS_ACTIVE,
 			livekit.EgressStatus_EGRESS_ENDING:
 			p.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 		}
@@ -339,22 +342,43 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 	defer span.End()
 
 	p.closed.Once(func() {
-		p.close(ctx)
+		if p.limitTimer != nil {
+			p.limitTimer.Stop()
+		}
 
-		go func() {
-			logger.Debugw("sending EOS to pipeline")
-			p.eosTimer = time.AfterFunc(eosTimeout, func() {
-				logger.Errorw("pipeline frozen", nil)
-				p.Info.Error = "pipeline frozen"
-				p.stop()
-			})
+		switch p.Info.Status {
+		case livekit.EgressStatus_EGRESS_STARTING:
+			p.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
+			fallthrough
 
-			if p.SourceType == types.SourceTypeSDK {
-				p.src.(*source.SDKSource).CloseWriters()
+		case livekit.EgressStatus_EGRESS_ABORTED,
+			livekit.EgressStatus_EGRESS_FAILED:
+			p.stop()
+
+		case livekit.EgressStatus_EGRESS_ACTIVE:
+			p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
+			if p.onStatusUpdate != nil {
+				p.onStatusUpdate(ctx, p.Info)
 			}
+			fallthrough
 
-			p.pipeline.SendEvent(gst.NewEOSEvent())
-		}()
+		case livekit.EgressStatus_EGRESS_ENDING,
+			livekit.EgressStatus_EGRESS_LIMIT_REACHED:
+			go func() {
+				logger.Debugw("sending EOS to pipeline")
+				p.eosTimer = time.AfterFunc(eosTimeout, func() {
+					logger.Errorw("pipeline frozen", nil)
+					p.Info.Error = "pipeline frozen"
+					p.stop()
+				})
+
+				if p.SourceType == types.SourceTypeSDK {
+					p.src.(*source.SDKSource).CloseWriters()
+				}
+
+				p.pipeline.SendEvent(gst.NewEOSEvent())
+			}()
+		}
 	})
 }
 
@@ -377,8 +401,8 @@ func (p *Pipeline) startSessionLimitTimer(ctx context.Context) {
 
 	if timeout > 0 {
 		p.limitTimer = time.AfterFunc(timeout, func() {
-			p.SendEOS(ctx)
 			p.Info.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
+			p.SendEOS(ctx)
 		})
 	}
 }
@@ -439,22 +463,6 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 			}
 			conf.SegmentsInfo.EndedAt = endedAt
 			conf.SegmentsInfo.Duration = endedAt - conf.SegmentsInfo.StartedAt
-		}
-	}
-}
-
-func (p *Pipeline) close(ctx context.Context) {
-	if p.limitTimer != nil {
-		p.limitTimer.Stop()
-	}
-
-	switch p.Info.Status {
-	case livekit.EgressStatus_EGRESS_STARTING,
-		livekit.EgressStatus_EGRESS_ACTIVE:
-
-		p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
-		if p.onStatusUpdate != nil {
-			p.onStatusUpdate(ctx, p.Info)
 		}
 	}
 }
