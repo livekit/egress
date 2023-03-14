@@ -216,13 +216,16 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		p.updateDuration(p.src.(*source.SDKSource).GetEndTime())
 	}
 
-	// skip upload if there was an error
-	if p.Info.Error == "" {
-		for _, s := range p.sinks {
-			if err := s.Finalize(); err != nil {
-				// TODO: handle multiple errors
-				p.Info.Error = err.Error()
-			}
+	// return if error or aborted
+	if p.Info.Error != "" || p.Info.Status == livekit.EgressStatus_EGRESS_ABORTED {
+		return p.Info
+	}
+
+	// finalize
+	for _, s := range p.sinks {
+		if err := s.Finalize(); err != nil {
+			// TODO: handle multiple errors
+			p.Info.Error = err.Error()
 		}
 	}
 
