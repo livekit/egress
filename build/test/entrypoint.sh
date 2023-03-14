@@ -8,4 +8,9 @@ pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit
 ./rtsp-simple-server &
 
 # Run tests
-exec ./test.test -test.v -test.timeout 20m
+if [[ -z "${GITHUB_WORKFLOW}" ]]; then
+  exec ./test.test -test.v -test.timeout 20m
+else
+  go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest
+  exec go tool test2json -p egress ./test.test -test.v -test.timeout 20m 2>&1 | "$HOME"/go/bin/gotestfmt
+fi

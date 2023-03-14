@@ -3,6 +3,7 @@
 package test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	lksdk "github.com/livekit/server-sdk-go"
 )
@@ -86,6 +88,30 @@ func NewTestContext(t *testing.T) *TestConfig {
 	}
 	if conf.Redis == nil {
 		t.Fatal("redis required")
+	}
+
+	if s3 := os.Getenv("S3_UPLOAD"); s3 != "" {
+		logger.Infow("using s3 uploads")
+		tc.S3Upload = &livekit.S3Upload{}
+		require.NoError(t, json.Unmarshal([]byte(s3), tc.S3Upload))
+	} else {
+		logger.Infow("no s3 config supplied")
+	}
+
+	if gcp := os.Getenv("GCP_UPLOAD"); gcp != "" {
+		logger.Infow("using gcp uploads")
+		tc.GCPUpload = &livekit.GCPUpload{}
+		require.NoError(t, json.Unmarshal([]byte(gcp), tc.GCPUpload))
+	} else {
+		logger.Infow("no gcp config supplied")
+	}
+
+	if azure := os.Getenv("AZURE_UPLOAD"); azure != "" {
+		logger.Infow("using azure uploads")
+		tc.AzureUpload = &livekit.AzureBlobUpload{}
+		require.NoError(t, json.Unmarshal([]byte(azure), tc.AzureUpload))
+	} else {
+		logger.Infow("no azure config supplied")
 	}
 
 	tc.runRoomTests = !tc.ParticipantTestsOnly && !tc.TrackCompositeTestsOnly && !tc.TrackTestsOnly && !tc.WebTestsOnly

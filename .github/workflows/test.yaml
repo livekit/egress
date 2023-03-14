@@ -1,0 +1,43 @@
+name: Test
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  integration:
+    runs-on: buildjet-8vcpu-ubuntu-2204
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          lfs: true
+
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/go/bin
+            ~/bin/protoc
+            ~/.cache
+          key: egress
+
+      - uses: shogo82148/actions-setup-redis@v1
+        with:
+          redis-version: '6.x'
+          auto-start: true
+      - run: redis-cli ping
+
+      - name: Build docker image
+        run: docker build -t egress-test -f ./build/test/Dockerfile .
+
+      - name: Run tests
+        run: |
+          docker run --rm \
+            --network host \
+            --security-opt seccomp=unconfined \
+            -e GITHUB_WORKFLOW=1 \
+            -e EGRESS_CONFIG_STRING="$(echo ${{ secrets.EGRESS_CONFIG_STRING }} | base64 -d)" \
+            -v /workspace/test:/out \
+            egress-test

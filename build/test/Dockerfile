@@ -41,6 +41,7 @@ RUN apt-get update && \
         ffmpeg \
         fonts-noto \
         gnupg \
+        golang \
         pulseaudio \
         unzip \
         wget \
