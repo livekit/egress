@@ -58,7 +58,7 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 
 	if err != nil {
 		p.Info.Error = err.Error()
-		p.closed.Once(p.stop)
+		p.stop()
 		return false
 	}
 
@@ -71,7 +71,7 @@ func (p *Pipeline) handleMessageEOS() {
 	}
 
 	logger.Debugw("EOS received, stopping pipeline")
-	p.closed.Once(p.stop)
+	p.stop()
 }
 
 func (p *Pipeline) handleMessageWarning(gErr *gst.GError) error {

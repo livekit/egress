@@ -121,7 +121,7 @@ func New(ctx context.Context, p *config.PipelineConfig, onStatusUpdate UpdateFun
 		segmentSink := s.(*sink.SegmentSink)
 		segmentSink.SetOnFailure(func(err error) {
 			pipeline.Info.Error = err.Error()
-			pipeline.closed.Once(pipeline.stop)
+			pipeline.stop()
 		})
 	}
 	if s, ok := sinks[types.EgressTypeWebsocket]; ok {
