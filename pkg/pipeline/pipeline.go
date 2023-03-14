@@ -121,7 +121,7 @@ func New(ctx context.Context, p *config.PipelineConfig, onStatusUpdate UpdateFun
 		segmentSink := s.(*sink.SegmentSink)
 		segmentSink.SetOnFailure(func(err error) {
 			pipeline.Info.Error = err.Error()
-			pipeline.stop()
+			pipeline.closed.Once(pipeline.stop)
 		})
 	}
 	if s, ok := sinks[types.EgressTypeWebsocket]; ok {
@@ -404,7 +404,11 @@ func (p *Pipeline) startSessionLimitTimer(ctx context.Context) {
 
 	if timeout > 0 {
 		p.limitTimer = time.AfterFunc(timeout, func() {
-			p.Info.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
+			switch p.Info.Status {
+			case livekit.EgressStatus_EGRESS_STARTING,
+				livekit.EgressStatus_EGRESS_ACTIVE:
+				p.Info.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
+			}
 			p.SendEOS(ctx)
 		})
 	}
