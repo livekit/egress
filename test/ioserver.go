@@ -50,8 +50,10 @@ func checkUpdate(t *testing.T, conf *TestConfig, egressID string, status livekit
 }
 
 func checkStoppedEgress(t *testing.T, conf *TestConfig, egressID string, expectedStatus livekit.EgressStatus) *livekit.EgressInfo {
-	// check ending update
-	checkUpdate(t, conf, egressID, livekit.EgressStatus_EGRESS_ENDING)
+	if expectedStatus == livekit.EgressStatus_EGRESS_COMPLETE {
+		// check ending update
+		checkUpdate(t, conf, egressID, livekit.EgressStatus_EGRESS_ENDING)
+	}
 
 	// get final info
 	info := checkUpdate(t, conf, egressID, expectedStatus)

@@ -1,7 +1,6 @@
 package pipeline
 
 import (
-	"context"
 	"regexp"
 	"time"
 
@@ -72,10 +71,6 @@ func (p *Pipeline) handleMessageEOS() {
 	}
 
 	logger.Debugw("EOS received, stopping pipeline")
-	p.closed.Once(func() {
-		p.close(context.Background())
-	})
-
 	p.stop()
 }
 
