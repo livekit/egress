@@ -11,6 +11,7 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 type SegmentOutput struct {
@@ -54,10 +55,17 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 	}
 
 	_, err = sink.Connect("format-location-full", func(self *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
+		var pts time.Duration
+		if firstSample != nil && firstSample.GetBuffer() != nil {
+			pts = firstSample.GetBuffer().PresentationTimestamp()
+		} else {
+			logger.Infow("nil sample passed into 'format-location-full' event handler, assuming 0 pts")
+		}
+
 		if s.startDate.IsZero() {
 			now := time.Now()
 
-			s.startDate = now.Add(-firstSample.GetBuffer().PresentationTimestamp())
+			s.startDate = now.Add(-pts)
 
 			mdata := FirstSampleMetadata{
 				StartDate: now.UnixNano(),
@@ -70,7 +78,7 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 		var segmentName string
 		switch out.SegmentParams.SegmentSuffix {
 		case livekit.SegmentedFileSuffix_TIMESTAMP:
-			ts := s.startDate.Add(firstSample.GetBuffer().PresentationTimestamp())
+			ts := s.startDate.Add(pts)
 			segmentName = fmt.Sprintf("%s_%s%03d.ts", out.SegmentPrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000)
 		default:
 			segmentName = fmt.Sprintf("%s_%05d.ts", out.SegmentPrefix, fragmentId)
