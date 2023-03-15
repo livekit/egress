@@ -50,11 +50,11 @@ type SourceConfig struct {
 }
 
 type WebSourceParams struct {
-	Display    string
-	Layout     string
-	CustomBase string
-	Token      string
-	WebUrl     string
+	Display string
+	Layout  string
+	Token   string
+	BaseUrl string
+	WebUrl  string
 }
 
 type SDKSourceParams struct {
@@ -161,10 +161,17 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		p.SourceType = types.SourceTypeWeb
 		p.Latency = webLatency
+
 		p.Info.RoomName = req.RoomComposite.RoomName
 		p.Layout = req.RoomComposite.Layout
 		if req.RoomComposite.CustomBaseUrl != "" {
-			p.TemplateBase = req.RoomComposite.CustomBaseUrl
+			p.BaseUrl = req.RoomComposite.CustomBaseUrl
+		} else {
+			p.BaseUrl = p.TemplateBase
+		}
+		baseUrl, err := url.Parse(p.BaseUrl)
+		if err != nil || (baseUrl.Scheme != "http" && baseUrl.Scheme != "https") {
+			return errors.ErrInvalidInput("template base url")
 		}
 		p.AudioEnabled = !req.RoomComposite.VideoOnly
 		p.VideoEnabled = !req.RoomComposite.AudioOnly
@@ -198,9 +205,11 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		connectionInfoRequired = false
 		p.SourceType = types.SourceTypeWeb
 		p.Latency = webLatency
+
 		p.WebUrl = req.Web.Url
-		if p.WebUrl == "" {
-			return errors.ErrInvalidInput("url")
+		webUrl, err := url.Parse(p.WebUrl)
+		if err != nil || (webUrl.Scheme != "http" && webUrl.Scheme != "https") {
+			return errors.ErrInvalidInput("web url")
 		}
 		p.AudioEnabled = !req.Web.VideoOnly
 		p.VideoEnabled = !req.Web.AudioOnly
@@ -233,6 +242,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		p.SourceType = types.SourceTypeSDK
 		p.Latency = sdkLatency
+
 		p.Info.RoomName = req.TrackComposite.RoomName
 		p.AudioTrackID = req.TrackComposite.AudioTrackId
 		p.VideoTrackID = req.TrackComposite.VideoTrackId
@@ -269,6 +279,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		p.SourceType = types.SourceTypeSDK
 		p.Latency = sdkLatency
+
 		p.Info.RoomName = req.Track.RoomName
 		p.TrackID = req.Track.TrackId
 		if p.TrackID == "" {

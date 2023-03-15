@@ -157,7 +157,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		s.endRecording = make(chan struct{})
 
 		// build input url
-		inputUrl, err := url.Parse(p.TemplateBase)
+		inputUrl, err := url.Parse(p.BaseUrl)
 		if err != nil {
 			return err
 		}
@@ -202,6 +202,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		chromedp.Flag("use-mock-keychain", true),
 
 		// custom args
+		// TODO: chromedp.Flag("no-sandbox", false),
 		chromedp.Flag("kiosk", true),
 		chromedp.Flag("enable-automation", false),
 		chromedp.Flag("autoplay-policy", "no-user-gesture-required"),
