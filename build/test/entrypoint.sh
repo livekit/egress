@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euxo pipefail
+set -exo pipefail
 
 # Start pulseaudio as system wide daemon; for debugging it helps to start in non-daemon mode
 pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit
@@ -8,7 +8,7 @@ pulseaudio -D --verbose --exit-idle-time=-1 --system --disallow-exit
 ./rtsp-simple-server &
 
 # Run tests
-if [[ -z "${GITHUB_WORKFLOW}" ]]; then
+if [[ -z ${GITHUB_WORKFLOW+x} ]]; then
   exec ./test.test -test.v -test.timeout 20m
 else
   go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest

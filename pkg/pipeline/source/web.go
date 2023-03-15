@@ -175,7 +175,6 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		chromedp.NoFirstRun,
 		chromedp.NoDefaultBrowserCheck,
 		chromedp.DisableGPU,
-		chromedp.NoSandbox,
 
 		// puppeteer default behavior
 		chromedp.Flag("disable-infobars", true),
