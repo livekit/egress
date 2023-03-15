@@ -70,7 +70,7 @@ func checkStoppedEgress(t *testing.T, conf *TestConfig, egressID string, expecte
 func getUpdate(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressInfo {
 	for {
 		select {
-		case info := <-conf.psrpcUpdates:
+		case info := <-conf.updates:
 			if info.EgressId == egressID {
 				return info
 			}
