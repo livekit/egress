@@ -60,7 +60,6 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 				FileType: test.fileType,
 				Filepath: getFilePath(conf.ServiceConfig, test.filename),
 			}
-
 			if conf.S3Upload != nil {
 				fileOutput.Filepath = test.filename
 				fileOutput.Output = &livekit.EncodedFileOutput_S3{
@@ -69,19 +68,11 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 			}
 
 			roomRequest := &livekit.RoomCompositeEgressRequest{
-				RoomName:  conf.room.Name(),
-				Layout:    "speaker-dark",
-				AudioOnly: test.audioOnly,
+				RoomName:    conf.room.Name(),
+				Layout:      "speaker-dark",
+				AudioOnly:   test.audioOnly,
+				FileOutputs: []*livekit.EncodedFileOutput{fileOutput},
 			}
-
-			if conf.V2 {
-				roomRequest.FileOutputs = []*livekit.EncodedFileOutput{fileOutput}
-			} else {
-				roomRequest.Output = &livekit.RoomCompositeEgressRequest_File{
-					File: fileOutput,
-				}
-			}
-
 			if test.options != nil {
 				roomRequest.Options = &livekit.RoomCompositeEgressRequest_Advanced{
 					Advanced: test.options,
@@ -120,29 +111,17 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 		t.Run(test.name, func(t *testing.T) {
 			awaitIdle(t, conf.svc)
 
-			room := &livekit.RoomCompositeEgressRequest{
-				RoomName: conf.room.Name(),
-				Layout:   "grid-light",
-			}
-
-			if conf.V2 {
-				room.StreamOutputs = []*livekit.StreamOutput{{
-					Protocol: livekit.StreamProtocol_RTMP,
-					Urls:     []string{streamUrl1},
-				}}
-			} else {
-				room.Output = &livekit.RoomCompositeEgressRequest_Stream{
-					Stream: &livekit.StreamOutput{
-						Protocol: livekit.StreamProtocol_RTMP,
-						Urls:     []string{streamUrl1},
-					},
-				}
-			}
-
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
 				Request: &rpc.StartEgressRequest_RoomComposite{
-					RoomComposite: room,
+					RoomComposite: &livekit.RoomCompositeEgressRequest{
+						RoomName: conf.room.Name(),
+						Layout:   "grid-light",
+						StreamOutputs: []*livekit.StreamOutput{{
+							Protocol: livekit.StreamProtocol_RTMP,
+							Urls:     []string{streamUrl1},
+						}},
+					},
 				},
 			}
 
@@ -156,33 +135,21 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 	t.Run("rtmp-failure", func(t *testing.T) {
 		awaitIdle(t, conf.svc)
 
-		room := &livekit.RoomCompositeEgressRequest{
-			RoomName: conf.RoomName,
-			Layout:   "speaker-light",
-		}
-
-		if conf.V2 {
-			room.StreamOutputs = []*livekit.StreamOutput{{
-				Protocol: livekit.StreamProtocol_RTMP,
-				Urls:     []string{badStreamUrl},
-			}}
-		} else {
-			room.Output = &livekit.RoomCompositeEgressRequest_Stream{
-				Stream: &livekit.StreamOutput{
-					Protocol: livekit.StreamProtocol_RTMP,
-					Urls:     []string{badStreamUrl},
-				},
-			}
-		}
-
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_RoomComposite{
-				RoomComposite: room,
+				RoomComposite: &livekit.RoomCompositeEgressRequest{
+					RoomName: conf.RoomName,
+					Layout:   "speaker-light",
+					StreamOutputs: []*livekit.StreamOutput{{
+						Protocol: livekit.StreamProtocol_RTMP,
+						Urls:     []string{badStreamUrl},
+					}},
+				},
 			},
 		}
 
-		info, err := conf.psrpcClient.StartEgress(context.Background(), "", req)
+		info, err := conf.client.StartEgress(context.Background(), "", req)
 		require.NoError(t, err)
 		require.Empty(t, info.Error)
 		require.NotEmpty(t, info.EgressId)
@@ -241,22 +208,11 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				RoomName:  conf.RoomName,
 				Layout:    "grid-dark",
 				AudioOnly: test.audioOnly,
-			}
-
-			if conf.V2 {
-				room.SegmentOutputs = []*livekit.SegmentedFileOutput{{
+				SegmentOutputs: []*livekit.SegmentedFileOutput{{
 					FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
 					PlaylistName:   test.playlist,
 					FilenameSuffix: test.filenameSuffix,
-				}}
-			} else {
-				room.Output = &livekit.RoomCompositeEgressRequest_Segments{
-					Segments: &livekit.SegmentedFileOutput{
-						FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
-						PlaylistName:   test.playlist,
-						FilenameSuffix: test.filenameSuffix,
-					},
-				}
+				}},
 			}
 
 			if test.options != nil {

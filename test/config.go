@@ -36,16 +36,15 @@ type TestConfig struct {
 	Muting                  bool   `yaml:"muting"`
 	GstDebug                string `yaml:"gst_debug"`
 	Short                   bool   `yaml:"short"`
-	V2                      bool   `yaml:"v2"`
 
 	// test context
-	svc          *service.Service         `yaml:"-"`
-	psrpcClient  rpc.EgressClient         `yaml:"-"`
-	room         *lksdk.Room              `yaml:"-"`
-	psrpcUpdates chan *livekit.EgressInfo `yaml:"-"`
-	S3Upload     *livekit.S3Upload        `yaml:"-"`
-	GCPUpload    *livekit.GCPUpload       `yaml:"-"`
-	AzureUpload  *livekit.AzureBlobUpload `yaml:"-"`
+	svc         *service.Service         `yaml:"-"`
+	client      rpc.EgressClient         `yaml:"-"`
+	room        *lksdk.Room              `yaml:"-"`
+	updates     chan *livekit.EgressInfo `yaml:"-"`
+	S3Upload    *livekit.S3Upload        `yaml:"-"`
+	GCPUpload   *livekit.GCPUpload       `yaml:"-"`
+	AzureUpload *livekit.AzureBlobUpload `yaml:"-"`
 
 	// helpers
 	runRoomTests           bool `yaml:"-"`
@@ -122,7 +121,7 @@ func NewTestContext(t *testing.T) *TestConfig {
 	tc.runFileTests = !tc.StreamTestsOnly && !tc.SegmentTestsOnly && !tc.MultiTestsOnly
 	tc.runStreamTests = !tc.FileTestsOnly && !tc.SegmentTestsOnly && !tc.MultiTestsOnly
 	tc.runSegmentTests = !tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.MultiTestsOnly
-	tc.runMultiTests = tc.V2 && (!tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.SegmentTestsOnly)
+	tc.runMultiTests = !tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.SegmentTestsOnly
 
 	err = os.Setenv("GST_DEBUG", fmt.Sprint(tc.GstDebug))
 	require.NoError(t, err)

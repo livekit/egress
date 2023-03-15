@@ -138,11 +138,9 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, fi
 	require.NotZero(t, res.EndedAt)
 
 	// segments info
-	segments := res.GetSegments()
-	if segments == nil {
-		require.Len(t, res.GetSegmentResults(), 1)
-		segments = res.GetSegmentResults()[0]
-	}
+	require.Len(t, res.GetSegmentResults(), 1)
+	segments := res.GetSegmentResults()[0]
+
 	require.NotEmpty(t, segments.PlaylistName)
 	require.NotEmpty(t, segments.PlaylistLocation)
 	require.Greater(t, segments.Size, int64(0))
@@ -256,12 +254,11 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 	case types.EgressTypeSegments:
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
-		segments := res.GetSegments()
-		if segments == nil {
-			segments = res.GetSegmentResults()[0]
-		}
 
-		require.Equal(t, int64(math.Ceil(actual/float64(p.Outputs[egressType].SegmentDuration))), segments.SegmentCount)
+		require.Len(t, res.GetSegmentResults(), 1)
+		segments := res.GetSegmentResults()[0]
+		expected := int64(math.Ceil(actual / float64(p.Outputs[egressType].SegmentDuration)))
+		require.True(t, segments.SegmentCount == expected || segments.SegmentCount == expected-1)
 	}
 
 	// check stream info

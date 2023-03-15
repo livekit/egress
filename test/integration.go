@@ -104,8 +104,8 @@ func RunTestSuite(t *testing.T, conf *TestConfig, bus psrpc.MessageBus, template
 
 	// update test config
 	conf.svc = svc
-	conf.psrpcClient = psrpcClient
-	conf.psrpcUpdates = psrpcUpdates
+	conf.client = psrpcClient
+	conf.updates = psrpcUpdates
 	conf.room = room
 
 	// check status
@@ -303,7 +303,7 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *rpc.StartEgressR
 	verifyStreams(t, p, conf, streamUrl1)
 
 	// add one good stream url and a couple bad ones
-	_, err = conf.psrpcClient.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
+	_, err = conf.client.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
 		EgressId:      egressID,
 		AddOutputUrls: []string{badStreamUrl, streamUrl2},
 	})
@@ -313,14 +313,8 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *rpc.StartEgressR
 
 	update := getUpdate(t, conf, egressID)
 	require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE.String(), update.Status.String())
-	var streams []*livekit.StreamInfo
-	if conf.V2 {
-		streams = update.StreamResults
-	} else {
-		streams = update.GetStream().Info
-	}
-	require.Len(t, streams, 3)
-	for _, info := range streams {
+	require.Len(t, update.StreamResults, 3)
+	for _, info := range update.StreamResults {
 		switch info.Url {
 		case redactedUrl1, redactedUrl2:
 			require.Equal(t, livekit.StreamInfo_ACTIVE.String(), info.Status.String())
@@ -339,7 +333,7 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *rpc.StartEgressR
 	verifyStreams(t, p, conf, streamUrl1, streamUrl2)
 
 	// remove one of the stream urls
-	_, err = conf.psrpcClient.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
+	_, err = conf.client.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
 		EgressId:         egressID,
 		RemoveOutputUrls: []string{streamUrl1},
 	})
@@ -361,13 +355,8 @@ func runMultipleStreamTest(t *testing.T, conf *TestConfig, req *rpc.StartEgressR
 	require.NotZero(t, res.EndedAt)
 
 	// check stream info
-	if conf.V2 {
-		streams = res.StreamResults
-	} else {
-		streams = res.GetStream().Info
-	}
-	require.Len(t, streams, 3)
-	for _, info := range streams {
+	require.Len(t, res.StreamResults, 3)
+	for _, info := range res.StreamResults {
 		require.NotZero(t, info.StartedAt)
 		require.NotZero(t, info.EndedAt)
 
@@ -431,7 +420,7 @@ func runMultipleTest(
 	require.NoError(t, err)
 
 	if stream {
-		_, err := conf.psrpcClient.UpdateStream(context.Background(), egressID, &livekit.UpdateStreamRequest{
+		_, err := conf.client.UpdateStream(context.Background(), egressID, &livekit.UpdateStreamRequest{
 			EgressId:      egressID,
 			AddOutputUrls: []string{streamUrl1},
 		})
@@ -455,7 +444,7 @@ func runMultipleTest(
 
 func startEgress(t *testing.T, conf *TestConfig, req *rpc.StartEgressRequest) string {
 	// send start request
-	info, err := conf.psrpcClient.StartEgress(context.Background(), "", req)
+	info, err := conf.client.StartEgress(context.Background(), "", req)
 
 	// check returned egress info
 	require.NoError(t, err)
@@ -498,7 +487,7 @@ func getStatus(t *testing.T, svc *service.Service) map[string]interface{} {
 
 func stopEgress(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressInfo {
 	// send stop request
-	info, err := conf.psrpcClient.StopEgress(context.Background(), egressID, &livekit.StopEgressRequest{
+	info, err := conf.client.StopEgress(context.Background(), egressID, &livekit.StopEgressRequest{
 		EgressId: egressID,
 	})
 

@@ -39,13 +39,20 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			awaitIdle(t, conf.svc)
+
 			audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, test.audioCodec, test.videoCodec, conf.Muting)
+			var aID, vID string
+			if !test.audioOnly {
+				vID = videoTrackID
+			}
+			if !test.videoOnly {
+				aID = audioTrackID
+			}
 
 			fileOutput := &livekit.EncodedFileOutput{
 				FileType: test.fileType,
 				Filepath: getFilePath(conf.ServiceConfig, test.filename),
 			}
-
 			if conf.AzureUpload != nil {
 				fileOutput.Filepath = test.filename
 				fileOutput.Output = &livekit.EncodedFileOutput_Azure{
@@ -54,21 +61,10 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 			}
 
 			trackRequest := &livekit.TrackCompositeEgressRequest{
-				RoomName: conf.room.Name(),
-			}
-			if conf.V2 {
-				trackRequest.FileOutputs = []*livekit.EncodedFileOutput{fileOutput}
-			} else {
-				trackRequest.Output = &livekit.TrackCompositeEgressRequest_File{
-					File: fileOutput,
-				}
-			}
-
-			if !test.audioOnly {
-				trackRequest.VideoTrackId = videoTrackID
-			}
-			if !test.videoOnly {
-				trackRequest.AudioTrackId = audioTrackID
+				RoomName:     conf.room.Name(),
+				AudioTrackId: aID,
+				VideoTrackId: vID,
+				FileOutputs:  []*livekit.EncodedFileOutput{fileOutput},
 			}
 			if test.options != nil {
 				trackRequest.Options = &livekit.TrackCompositeEgressRequest_Advanced{
@@ -106,31 +102,23 @@ func testTrackCompositeStream(t *testing.T, conf *TestConfig) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			awaitIdle(t, conf.svc)
-			audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
 
-			trackRequest := &livekit.TrackCompositeEgressRequest{
-				RoomName:     conf.room.Name(),
-				AudioTrackId: audioTrackID,
-				VideoTrackId: videoTrackID,
-			}
-			if conf.V2 {
-				trackRequest.StreamOutputs = []*livekit.StreamOutput{{
-					Urls: []string{streamUrl1},
-				}}
-			} else {
-				trackRequest.Output = &livekit.TrackCompositeEgressRequest_Stream{
-					Stream: &livekit.StreamOutput{
-						Urls: []string{streamUrl1},
-					},
-				}
-			}
+			audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
 
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
 				Request: &rpc.StartEgressRequest_TrackComposite{
-					TrackComposite: trackRequest,
+					TrackComposite: &livekit.TrackCompositeEgressRequest{
+						RoomName:     conf.room.Name(),
+						AudioTrackId: audioTrackID,
+						VideoTrackId: videoTrackID,
+						StreamOutputs: []*livekit.StreamOutput{{
+							Urls: []string{streamUrl1},
+						}},
+					},
 				},
 			}
+
 			runStreamTest(t, conf, req, test)
 		})
 		if conf.Short {
@@ -166,8 +154,8 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			awaitIdle(t, conf.svc)
-			audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, test.audioCodec, test.videoCodec, conf.Muting)
 
+			audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, test.audioCodec, test.videoCodec, conf.Muting)
 			var aID, vID string
 			if !test.audioOnly {
 				vID = videoTrackID
@@ -181,21 +169,11 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 				RoomName:     conf.room.Name(),
 				AudioTrackId: aID,
 				VideoTrackId: vID,
-			}
-			if conf.V2 {
-				trackRequest.SegmentOutputs = []*livekit.SegmentedFileOutput{{
+				SegmentOutputs: []*livekit.SegmentedFileOutput{{
 					FilenamePrefix: filepath,
 					PlaylistName:   test.playlist,
 					FilenameSuffix: test.filenameSuffix,
-				}}
-			} else {
-				trackRequest.Output = &livekit.TrackCompositeEgressRequest_Segments{
-					Segments: &livekit.SegmentedFileOutput{
-						FilenamePrefix: filepath,
-						PlaylistName:   test.playlist,
-						FilenameSuffix: test.filenameSuffix,
-					},
-				}
+				}},
 			}
 			if test.options != nil {
 				trackRequest.Options = &livekit.TrackCompositeEgressRequest_Advanced{
@@ -210,6 +188,7 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 				},
 			}
 			test.expectVideoTranscoding = true
+
 			runSegmentsTest(t, conf, req, test)
 		})
 		if conf.Short {
