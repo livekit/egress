@@ -54,7 +54,7 @@ func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 eg
 	}
 	s.psrpcServer = psrpcServer
 
-	err = s.psrpcServer.RegisterStartEgressTopic(conf.ClusterId)
+	err = s.psrpcServer.RegisterStartEgressTopic(conf.ClusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,10 +94,11 @@ func (s *Service) Run() error {
 
 	<-s.shutdown.Watch()
 	logger.Infow("shutting down")
-	s.psrpcServer.Shutdown()
+	s.psrpcServer.DeregisterStartEgressTopic(s.conf.ClusterID)
 	for !s.manager.isIdle() {
 		time.Sleep(shutdownTimer)
 	}
+	s.psrpcServer.Shutdown()
 
 	return nil
 }

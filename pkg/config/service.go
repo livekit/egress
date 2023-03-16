@@ -81,7 +81,7 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 		conf.LocalOutputDirectory = os.TempDir()
 	}
 
-	if err := conf.initLogger("nodeID", conf.NodeID, "clusterID", conf.ClusterId); err != nil {
+	if err := conf.initLogger("nodeID", conf.NodeID, "clusterID", conf.ClusterID); err != nil {
 		return nil, err
 	}
 
