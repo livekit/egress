@@ -311,7 +311,7 @@ func (p *Pipeline) removeSink(url string, streamErr error) error {
 
 	// log removal
 	redacted, _ := util.RedactStreamKey(url)
-	logger.Debugw("removing stream sink",
+	logger.Infow("removing stream sink",
 		"url", redacted,
 		"status", streamInfo.Status,
 		"duration", streamInfo.Duration,
@@ -368,7 +368,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 		case livekit.EgressStatus_EGRESS_ENDING,
 			livekit.EgressStatus_EGRESS_LIMIT_REACHED:
 			go func() {
-				logger.Debugw("sending EOS to pipeline")
+				logger.Infow("sending EOS to pipeline")
 				p.eosTimer = time.AfterFunc(eosTimeout, func() {
 					logger.Errorw("pipeline frozen", nil)
 					p.Info.Error = "pipeline frozen"
@@ -484,7 +484,7 @@ func (p *Pipeline) stop() {
 
 	_ = p.pipeline.BlockSetState(gst.StateNull)
 	endedAt := time.Now().UnixNano()
-	logger.Debugw("pipeline stopped")
+	logger.Infow("pipeline stopped")
 
 	p.loop.Quit()
 	p.loop = nil

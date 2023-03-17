@@ -65,7 +65,7 @@ func (p *Pipeline) handleMessageEOS() {
 		p.eosTimer.Stop()
 	}
 
-	logger.Debugw("EOS received, stopping pipeline")
+	logger.Infow("EOS received, stopping pipeline")
 	p.stop()
 }
 
@@ -145,11 +145,11 @@ func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
 
 	switch s := msg.Source(); s {
 	case source.AudioAppSource, source.VideoAppSource:
-		logger.Debugw(fmt.Sprintf("%s playing", s))
+		logger.Infow(fmt.Sprintf("%s playing", s))
 		p.src.(*source.SDKSource).Playing(s)
 
 	case pipelineSource:
-		logger.Debugw("pipeline playing")
+		logger.Infow("pipeline playing")
 		p.playing = true
 		switch p.SourceType {
 		case types.SourceTypeSDK:
@@ -192,6 +192,8 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 				logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "running time", t)
 				return err
 			}
+
+			logger.Debugw("fragment closed", "location", filepath, "running time", t)
 
 			// We need to dispatch to a queue to:
 			// 1. Avoid concurrent access to the SegmentsInfo structure

@@ -90,7 +90,7 @@ func (s *Service) Run() error {
 		return s.runV0()
 	}
 
-	logger.Debugw("service ready")
+	logger.Infow("service ready")
 
 	<-s.shutdown.Watch()
 	logger.Infow("shutting down")
