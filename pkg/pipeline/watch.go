@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"fmt"
 	"regexp"
 	"time"
 
@@ -48,12 +49,6 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 
 	case gst.MessageElement:
 		err = p.handleMessageElement(msg)
-
-	case gst.MessageStreamStatus, gst.MessageNewClock, gst.MessageLatency:
-		// ignore
-
-	default:
-		logger.Debugw(msg.String(), "messageType", msg.Type().String())
 	}
 
 	if err != nil {
@@ -150,9 +145,11 @@ func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
 
 	switch s := msg.Source(); s {
 	case source.AudioAppSource, source.VideoAppSource:
+		logger.Debugw(fmt.Sprintf("%s playing", s))
 		p.src.(*source.SDKSource).Playing(s)
 
 	case pipelineSource:
+		logger.Debugw("pipeline playing")
 		p.playing = true
 		switch p.SourceType {
 		case types.SourceTypeSDK:
@@ -180,7 +177,6 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 				return err
 			}
 
-			logger.Debugw("fragment opened", "location", filepath, "running time", t)
 			if err = p.getSegmentSink().StartSegment(filepath, t); err != nil {
 				logger.Errorw("failed to register new segment with playlist writer", err, "location", filepath, "running time", t)
 				return err
@@ -196,8 +192,6 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 				logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "running time", t)
 				return err
 			}
-
-			logger.Debugw("fragment closed", "location", filepath, "running time", t)
 
 			// We need to dispatch to a queue to:
 			// 1. Avoid concurrent access to the SegmentsInfo structure

@@ -115,7 +115,14 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 		return nil, err
 	}
 
-	logger.Infow("request validated", "egressID", req.EgressId, "request", p.Info.Request)
+	requestType, outputType := getTypes(p.Info)
+	logger.Infow("request validated",
+		"egressID", req.EgressId,
+		"request_type", requestType,
+		"output_type", outputType,
+		"room", p.Info.RoomName,
+		"request", p.Info.Request,
+	)
 
 	err = s.manager.launchHandler(req, p.Info, 1)
 	if err != nil {
