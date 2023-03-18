@@ -237,6 +237,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 
 				switch fmt.Sprint(val) {
 				case startRecordingLog:
+					logger.Infow("chrome: START_RECORDING")
 					if s.startRecording != nil {
 						select {
 						case <-s.startRecording:
@@ -246,6 +247,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 						}
 					}
 				case endRecordingLog:
+					logger.Infow("chrome: END_RECORDING")
 					if s.endRecording != nil {
 						select {
 						case <-s.endRecording:
@@ -257,7 +259,6 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 				}
 			}
 
-			logChrome(ev.Type.String(), ev)
 		case *runtime.EventExceptionThrown:
 			logChrome("exception", ev)
 		}
