@@ -170,7 +170,7 @@ func (b *Bin) Link(audioSrc, videoSrc *gst.GhostPad) error {
 func (b *Bin) AddStream(url string) error {
 	o := b.outputs[types.EgressTypeStream]
 	if o == nil {
-		return errors.ErrNotSupported("to add streams, stream output must be supplied with original request")
+		return errors.ErrNonStreamingPipeline
 	}
 
 	return o.(*StreamOutput).AddSink(b.bin, url)

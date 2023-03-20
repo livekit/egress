@@ -9,13 +9,13 @@ import (
 )
 
 var (
-	ErrNoConfig            = psrpc.NewErrorf(psrpc.Internal, "missing config")
-	ErrInvalidRPC          = psrpc.NewErrorf(psrpc.MalformedRequest, "invalid request")
-	ErrGhostPadFailed      = psrpc.NewErrorf(psrpc.Internal, "failed to add ghost pad to bin")
-	ErrStreamAlreadyExists = psrpc.NewErrorf(psrpc.AlreadyExists, "stream already exists")
-	ErrEgressNotFound      = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
-	ErrProfileNotFound     = psrpc.NewErrorf(psrpc.NotFound, "profile not found")
-	ErrFailedToConnect     = psrpc.NewErrorf(psrpc.NotFound, "could not connect")
+	ErrNoConfig             = psrpc.NewErrorf(psrpc.Internal, "missing config")
+	ErrInvalidRPC           = psrpc.NewErrorf(psrpc.MalformedRequest, "invalid request")
+	ErrGhostPadFailed       = psrpc.NewErrorf(psrpc.Internal, "failed to add ghost pad to bin")
+	ErrStreamAlreadyExists  = psrpc.NewErrorf(psrpc.AlreadyExists, "stream already exists")
+	ErrNonStreamingPipeline = psrpc.NewErrorf(psrpc.InvalidArgument, "UpdateStream called on non-streaming egress")
+	ErrEgressNotFound       = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
+	ErrProfileNotFound      = psrpc.NewErrorf(psrpc.NotFound, "profile not found")
 )
 
 func New(err string) error {

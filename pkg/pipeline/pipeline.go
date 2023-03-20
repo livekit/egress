@@ -240,7 +240,7 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	defer span.End()
 
 	if p.Outputs[types.EgressTypeStream] == nil {
-		return errors.ErrNotSupported("UpdateStream called on non-streaming egress")
+		return errors.ErrNonStreamingPipeline
 	}
 
 	errs := errors.ErrArray{}
