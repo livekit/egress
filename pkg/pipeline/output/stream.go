@@ -172,7 +172,7 @@ func (o *StreamOutput) GetUrl(name string) (string, error) {
 		}
 	}
 
-	return "", errors.ErrStreamNotFound
+	return "", errors.ErrStreamNotFound(name)
 }
 
 func (o *StreamOutput) AddSink(bin *gst.Bin, url string) error {
@@ -208,7 +208,7 @@ func (o *StreamOutput) RemoveSink(bin *gst.Bin, url string) error {
 
 	sink, ok := o.sinks[url]
 	if !ok {
-		return errors.ErrStreamNotFound
+		return errors.ErrStreamNotFound(url)
 	}
 
 	srcPad := o.tee.GetStaticPad(sink.pad)
