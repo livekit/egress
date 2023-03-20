@@ -13,7 +13,6 @@ var (
 	ErrInvalidRPC          = psrpc.NewErrorf(psrpc.MalformedRequest, "invalid request")
 	ErrGhostPadFailed      = psrpc.NewErrorf(psrpc.Internal, "failed to add ghost pad to bin")
 	ErrStreamAlreadyExists = psrpc.NewErrorf(psrpc.AlreadyExists, "stream already exists")
-	ErrStreamNotFound      = psrpc.NewErrorf(psrpc.NotFound, "stream not found")
 	ErrEgressNotFound      = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
 	ErrProfileNotFound     = psrpc.NewErrorf(psrpc.NotFound, "profile not found")
 	ErrFailedToConnect     = psrpc.NewErrorf(psrpc.NotFound, "could not connect")
@@ -71,6 +70,10 @@ func ErrInvalidInput(field string) error {
 
 func ErrInvalidUrl(url string, reason string) error {
 	return psrpc.NewErrorf(psrpc.InvalidArgument, "invalid url %s: %s", url, reason)
+}
+
+func ErrStreamNotFound(url string) error {
+	return psrpc.NewErrorf(psrpc.NotFound, "stream %s not found", url)
 }
 
 func ErrTrackNotFound(trackID string) error {

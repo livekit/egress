@@ -222,11 +222,14 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	}
 
 	// finalize
+	errs := errors.ErrArray{}
 	for _, s := range p.sinks {
 		if err := s.Finalize(); err != nil {
-			// TODO: handle multiple errors
-			p.Info.Error = err.Error()
+			errs.AppendErr(err)
 		}
+	}
+	if err := errs.ToError(); err != nil {
+		p.Info.Error = err.Error()
 	}
 
 	return p.Info
@@ -235,6 +238,10 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) error {
 	ctx, span := tracer.Start(ctx, "Pipeline.UpdateStream")
 	defer span.End()
+
+	if p.Outputs[types.EgressTypeStream] == nil {
+		return errors.ErrNotSupported("UpdateStream called on non-streaming egress")
+	}
 
 	errs := errors.ErrArray{}
 	now := time.Now().UnixNano()
@@ -287,6 +294,10 @@ func (p *Pipeline) removeSink(url string, streamErr error) error {
 
 	p.mu.Lock()
 	streamInfo := p.Outputs[types.EgressTypeStream].StreamInfo[url]
+	if streamInfo == nil {
+		p.mu.Unlock()
+		return errors.ErrStreamNotFound(url)
+	}
 
 	// set error if exists
 	if streamErr != nil {
