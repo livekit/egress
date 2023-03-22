@@ -269,7 +269,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 			hasAudio = true
 
 			// codec
-			switch p.AudioCodec {
+			switch p.AudioOutCodec {
 			case types.MimeTypeAAC:
 				require.Equal(t, "aac", stream.CodecName)
 				require.Equal(t, fmt.Sprint(p.AudioFrequency), stream.SampleRate)
@@ -280,7 +280,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 				require.Equal(t, "48000", stream.SampleRate)
 				require.Equal(t, "stereo", stream.ChannelLayout)
 
-			case types.MimeTypeRaw:
+			case types.MimeTypeRawAudio:
 				require.Equal(t, "pcm_s16le", stream.CodecName)
 				require.Equal(t, "48000", stream.SampleRate)
 			}
@@ -299,7 +299,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 			hasVideo = true
 
 			// codec and profile
-			switch p.VideoCodec {
+			switch p.VideoOutCodec {
 			case types.MimeTypeH264:
 				require.Equal(t, "h264", stream.CodecName)
 
@@ -362,11 +362,11 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 
 	if p.AudioEnabled {
 		require.True(t, hasAudio)
-		require.NotEmpty(t, p.AudioCodec)
+		require.NotEmpty(t, p.AudioOutCodec)
 	}
 
 	if p.VideoEnabled {
 		require.True(t, hasVideo)
-		require.NotEmpty(t, p.VideoCodec)
+		require.NotEmpty(t, p.VideoOutCodec)
 	}
 }

@@ -66,6 +66,8 @@ type SDKSourceParams struct {
 	ParticipantIdentity string
 	AudioSrc            *app.Source
 	VideoSrc            *app.Source
+	AudioInCodec        types.MimeType
+	VideoInCodec        types.MimeType
 	AudioCodecParams    webrtc.RTPCodecParameters
 	VideoCodecParams    webrtc.RTPCodecParameters
 }
@@ -73,7 +75,7 @@ type SDKSourceParams struct {
 type AudioConfig struct {
 	AudioEnabled     bool
 	AudioTranscoding bool
-	AudioCodec       types.MimeType
+	AudioOutCodec    types.MimeType
 	AudioBitrate     int32
 	AudioFrequency   int32
 }
@@ -81,7 +83,7 @@ type AudioConfig struct {
 type VideoConfig struct {
 	VideoEnabled     bool
 	VideoTranscoding bool
-	VideoCodec       types.MimeType
+	VideoOutCodec    types.MimeType
 	VideoProfile     types.Profile
 	Width            int32
 	Height           int32
@@ -173,13 +175,20 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		if err != nil || (baseUrl.Scheme != "http" && baseUrl.Scheme != "https") {
 			return errors.ErrInvalidInput("template base url")
 		}
-		p.AudioEnabled = !req.RoomComposite.VideoOnly
-		p.VideoEnabled = !req.RoomComposite.AudioOnly
+
+		if !req.RoomComposite.VideoOnly {
+			p.AudioEnabled = true
+			p.AudioInCodec = types.MimeTypeRawAudio
+			p.AudioTranscoding = true
+		}
+		if !req.RoomComposite.AudioOnly {
+			p.VideoEnabled = true
+			p.VideoInCodec = types.MimeTypeRawVideo
+			p.VideoTranscoding = true
+		}
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_only and video_only")
 		}
-		p.AudioTranscoding = p.AudioEnabled
-		p.VideoTranscoding = p.VideoEnabled
 
 		// encoding options
 		switch opts := req.RoomComposite.Options.(type) {
@@ -211,13 +220,20 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		if err != nil || (webUrl.Scheme != "http" && webUrl.Scheme != "https") {
 			return errors.ErrInvalidInput("web url")
 		}
-		p.AudioEnabled = !req.Web.VideoOnly
-		p.VideoEnabled = !req.Web.AudioOnly
+
+		if !req.Web.VideoOnly {
+			p.AudioEnabled = true
+			p.AudioInCodec = types.MimeTypeRawAudio
+			p.AudioTranscoding = true
+		}
+		if !req.Web.AudioOnly {
+			p.VideoEnabled = true
+			p.VideoInCodec = types.MimeTypeRawVideo
+			p.VideoTranscoding = true
+		}
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_only and video_only")
 		}
-		p.AudioTranscoding = p.AudioEnabled
-		p.VideoTranscoding = p.VideoEnabled
 
 		// encoding options
 		switch opts := req.Web.Options.(type) {
@@ -244,15 +260,19 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Latency = sdkLatency
 
 		p.Info.RoomName = req.TrackComposite.RoomName
-		p.AudioTrackID = req.TrackComposite.AudioTrackId
-		p.VideoTrackID = req.TrackComposite.VideoTrackId
-		p.AudioEnabled = p.AudioTrackID != ""
-		p.VideoEnabled = p.VideoTrackID != ""
+		if audioTrackID := req.TrackComposite.AudioTrackId; audioTrackID != "" {
+			p.AudioEnabled = true
+			p.AudioTrackID = audioTrackID
+			p.AudioTranscoding = true
+		}
+		if videoTrackID := req.TrackComposite.VideoTrackId; videoTrackID != "" {
+			p.VideoEnabled = true
+			p.VideoTrackID = videoTrackID
+			p.VideoTranscoding = true
+		}
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_track_id or video_track_id")
 		}
-		p.AudioTranscoding = p.AudioEnabled
-		p.VideoTranscoding = p.VideoEnabled
 
 		// encoding options
 		switch opts := req.TrackComposite.Options.(type) {
@@ -326,19 +346,19 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		if o.OutputType != types.OutputTypeUnknown {
 			// check audio codec
 			if p.AudioEnabled {
-				if p.AudioCodec == "" {
-					p.AudioCodec = types.DefaultAudioCodecs[o.OutputType]
-				} else if !types.CodecCompatibility[o.OutputType][p.AudioCodec] {
-					return errors.ErrIncompatible(o.OutputType, p.AudioCodec)
+				if p.AudioOutCodec == "" {
+					p.AudioOutCodec = types.DefaultAudioCodecs[o.OutputType]
+				} else if !types.CodecCompatibility[o.OutputType][p.AudioOutCodec] {
+					return errors.ErrIncompatible(o.OutputType, p.AudioOutCodec)
 				}
 			}
 
 			// check video codec
 			if p.VideoEnabled {
-				if p.VideoCodec == "" {
-					p.VideoCodec = types.DefaultVideoCodecs[o.OutputType]
-				} else if !types.CodecCompatibility[o.OutputType][p.VideoCodec] {
-					return errors.ErrIncompatible(o.OutputType, p.VideoCodec)
+				if p.VideoOutCodec == "" {
+					p.VideoOutCodec = types.DefaultVideoCodecs[o.OutputType]
+				} else if !types.CodecCompatibility[o.OutputType][p.VideoOutCodec] {
+					return errors.ErrIncompatible(o.OutputType, p.VideoOutCodec)
 				}
 			}
 		}

@@ -5,7 +5,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-// TODO: check performance of 1920x1920 display for portrait modes
 func (p *PipelineConfig) applyPreset(preset livekit.EncodingOptionsPreset) {
 	switch preset {
 	case livekit.EncodingOptionsPreset_H264_720P_30:
@@ -51,9 +50,9 @@ func (p *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) {
 	// audio
 	switch advanced.AudioCodec {
 	case livekit.AudioCodec_OPUS:
-		p.AudioCodec = types.MimeTypeOpus
+		p.AudioOutCodec = types.MimeTypeOpus
 	case livekit.AudioCodec_AAC:
-		p.AudioCodec = types.MimeTypeAAC
+		p.AudioOutCodec = types.MimeTypeAAC
 	}
 
 	if advanced.AudioBitrate != 0 {
@@ -66,14 +65,14 @@ func (p *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) {
 	// video
 	switch advanced.VideoCodec {
 	case livekit.VideoCodec_H264_BASELINE:
-		p.VideoCodec = types.MimeTypeH264
+		p.VideoOutCodec = types.MimeTypeH264
 		p.VideoProfile = types.ProfileBaseline
 
 	case livekit.VideoCodec_H264_MAIN:
-		p.VideoCodec = types.MimeTypeH264
+		p.VideoOutCodec = types.MimeTypeH264
 
 	case livekit.VideoCodec_H264_HIGH:
-		p.VideoCodec = types.MimeTypeH264
+		p.VideoOutCodec = types.MimeTypeH264
 		p.VideoProfile = types.ProfileHigh
 	}
 

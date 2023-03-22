@@ -13,11 +13,12 @@ const (
 	SourceTypeSDK SourceType = "sdk"
 
 	// input types
-	MimeTypeAAC  MimeType = "audio/aac"
-	MimeTypeOpus MimeType = "audio/opus"
-	MimeTypeRaw  MimeType = "audio/x-raw"
-	MimeTypeH264 MimeType = "video/h264"
-	MimeTypeVP8  MimeType = "video/vp8"
+	MimeTypeAAC      MimeType = "audio/aac"
+	MimeTypeOpus     MimeType = "audio/opus"
+	MimeTypeRawAudio MimeType = "audio/x-raw"
+	MimeTypeH264     MimeType = "video/h264"
+	MimeTypeVP8      MimeType = "video/vp8"
+	MimeTypeRawVideo MimeType = "video/x-raw"
 
 	// video profiles
 	ProfileBaseline Profile = "baseline"
@@ -54,7 +55,7 @@ const (
 
 var (
 	DefaultAudioCodecs = map[OutputType]MimeType{
-		OutputTypeRaw:  MimeTypeRaw,
+		OutputTypeRaw:  MimeTypeRawAudio,
 		OutputTypeOGG:  MimeTypeOpus,
 		OutputTypeMP4:  MimeTypeAAC,
 		OutputTypeTS:   MimeTypeAAC,
@@ -94,7 +95,7 @@ var (
 
 	CodecCompatibility = map[OutputType]map[MimeType]bool{
 		OutputTypeRaw: {
-			MimeTypeRaw: true,
+			MimeTypeRawAudio: true,
 		},
 		OutputTypeOGG: {
 			MimeTypeOpus: true,

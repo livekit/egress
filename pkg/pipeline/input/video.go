@@ -216,7 +216,7 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 	}
 	v.elements = append(v.elements, videoQueue)
 
-	switch p.VideoCodec {
+	switch p.VideoOutCodec {
 	// we only encode h264, the rest are too slow
 	case types.MimeTypeH264:
 		x264Enc, err := gst.NewElement("x264enc")
@@ -256,6 +256,6 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 		return nil
 
 	default:
-		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", p.VideoCodec))
+		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", p.VideoOutCodec))
 	}
 }
