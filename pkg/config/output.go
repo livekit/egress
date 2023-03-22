@@ -223,7 +223,7 @@ func (p *PipelineConfig) getEncodedFileConfig(req interface{}, file *livekit.Enc
 	if updateOutputType {
 		switch file.FileType {
 		case livekit.EncodedFileType_DEFAULT_FILETYPE:
-			if !p.VideoEnabled && p.AudioCodec != types.MimeTypeAAC {
+			if !p.VideoEnabled && p.AudioOutCodec != types.MimeTypeAAC {
 				outputType = types.OutputTypeOGG
 			} else {
 				outputType = types.OutputTypeMP4
@@ -276,13 +276,13 @@ func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []str
 	switch outputType {
 	case types.OutputTypeRTMP:
 		conf.EgressType = types.EgressTypeStream
-		p.AudioCodec = types.MimeTypeAAC
-		p.VideoCodec = types.MimeTypeH264
+		p.AudioOutCodec = types.MimeTypeAAC
+		p.VideoOutCodec = types.MimeTypeH264
 		conf.StreamUrls = urls
 
 	case types.OutputTypeRaw:
 		conf.EgressType = types.EgressTypeWebsocket
-		p.AudioCodec = types.MimeTypeRaw
+		p.AudioOutCodec = types.MimeTypeRawAudio
 		conf.WebsocketUrl = urls[0]
 	}
 

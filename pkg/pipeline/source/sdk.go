@@ -191,34 +191,38 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 
 		switch {
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeOpus)):
-			codec = types.MimeTypeOpus
 			appSrcName = AudioAppSource
+			codec = types.MimeTypeOpus
+
 			p.AudioEnabled = true
-			if p.AudioCodec != types.MimeTypeRaw {
-				p.AudioTranscoding = true
+			p.AudioInCodec = codec
+			if p.AudioOutCodec == "" {
+				p.AudioOutCodec = codec
 			}
-			if p.AudioCodec == "" {
-				p.AudioCodec = codec
-			}
+			p.AudioTranscoding = true
 			if p.VideoEnabled {
 				writeBlanks = true
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeVP8)):
-			codec = types.MimeTypeVP8
 			appSrcName = VideoAppSource
-			p.VideoEnabled = true
+			codec = types.MimeTypeVP8
 
-			if p.VideoCodec == "" {
+			p.VideoEnabled = true
+			p.VideoInCodec = codec
+			if p.VideoOutCodec == "" {
 				if p.AudioEnabled {
 					// transcode to h264 for composite requests
-					p.VideoCodec = types.MimeTypeH264
-					p.VideoTranscoding = true
-					writeBlanks = true
+					p.VideoOutCodec = types.MimeTypeH264
 				} else {
-					p.VideoCodec = types.MimeTypeVP8
+					p.VideoOutCodec = codec
 				}
 			}
+			if p.VideoOutCodec != codec {
+				p.VideoTranscoding = true
+				writeBlanks = true
+			}
+
 			if p.TrackID != "" {
 				if conf, ok := p.Outputs[types.EgressTypeFile]; ok {
 					conf.OutputType = types.OutputTypeWebM
@@ -226,12 +230,13 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeH264)):
-			codec = types.MimeTypeH264
 			appSrcName = VideoAppSource
-			p.VideoEnabled = true
+			codec = types.MimeTypeH264
 
-			if p.VideoCodec == "" {
-				p.VideoCodec = types.MimeTypeH264
+			p.VideoEnabled = true
+			p.VideoInCodec = codec
+			if p.VideoOutCodec == "" {
+				p.VideoOutCodec = types.MimeTypeH264
 			}
 
 		default:
