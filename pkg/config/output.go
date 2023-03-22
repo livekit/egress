@@ -478,7 +478,8 @@ func (o *OutputConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 	} else {
 		// Prepend the configuration base directory and the egress Id
 		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
-		o.LocalDir = path.Join(p.LocalOutputDirectory, p.Info.EgressId)
+		// Append a "/" to the path for consistency with the "UploadConfig == nil" case
+		o.LocalDir = path.Join(p.LocalOutputDirectory, p.Info.EgressId) + "/"
 	}
 
 	// create local directories
