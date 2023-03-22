@@ -53,7 +53,7 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 				FileType: test.fileType,
 				Filepath: getFilePath(conf.ServiceConfig, test.filename),
 			}
-			if conf.AzureUpload != nil {
+			if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && conf.AzureUpload != nil {
 				fileOutput.Filepath = test.filename
 				fileOutput.Output = &livekit.EncodedFileOutput_Azure{
 					Azure: conf.AzureUpload,
