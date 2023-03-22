@@ -30,14 +30,9 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 			expectVideoTranscoding: true,
 		},
 		{
-			name:     "h264-high-mp4-limit",
-			fileType: livekit.EncodedFileType_MP4,
-			options: &livekit.EncodingOptions{
-				AudioCodec:   livekit.AudioCodec_AAC,
-				Width:        1280,
-				Height:       720,
-				VideoBitrate: 4500,
-			},
+			name:                   "h264-high-mp4-limit",
+			fileType:               livekit.EncodedFileType_MP4,
+			preset:                 livekit.EncodingOptionsPreset_PORTRAIT_H264_720P_30,
 			filename:               "r_limit_{time}.mp4",
 			sessionTimeout:         time.Second * 20,
 			expectVideoTranscoding: true,
@@ -76,6 +71,10 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 			if test.options != nil {
 				roomRequest.Options = &livekit.RoomCompositeEgressRequest_Advanced{
 					Advanced: test.options,
+				}
+			} else if test.preset != 0 {
+				roomRequest.Options = &livekit.RoomCompositeEgressRequest_Preset{
+					Preset: test.preset,
 				}
 			}
 
@@ -204,17 +203,23 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 		t.Run(test.name, func(t *testing.T) {
 			awaitIdle(t, conf.svc)
 
-			room := &livekit.RoomCompositeEgressRequest{
-				RoomName:  conf.RoomName,
-				Layout:    "grid-dark",
-				AudioOnly: test.audioOnly,
-				SegmentOutputs: []*livekit.SegmentedFileOutput{{
-					FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
-					PlaylistName:   test.playlist,
-					FilenameSuffix: test.filenameSuffix,
-				}},
+			segmentOutput := &livekit.SegmentedFileOutput{
+				FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
+				PlaylistName:   test.playlist,
+				FilenameSuffix: test.filenameSuffix,
+			}
+			if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && conf.GCPUpload != nil {
+				segmentOutput.Output = &livekit.SegmentedFileOutput_Gcp{
+					Gcp: conf.GCPUpload,
+				}
 			}
 
+			room := &livekit.RoomCompositeEgressRequest{
+				RoomName:       conf.RoomName,
+				Layout:         "grid-dark",
+				AudioOnly:      test.audioOnly,
+				SegmentOutputs: []*livekit.SegmentedFileOutput{segmentOutput},
+			}
 			if test.options != nil {
 				room.Options = &livekit.RoomCompositeEgressRequest_Advanced{
 					Advanced: test.options,
