@@ -165,15 +165,22 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 			}
 
 			filepath := getFilePath(conf.ServiceConfig, test.filename)
+			segmentOutput := &livekit.SegmentedFileOutput{
+				FilenamePrefix: filepath,
+				PlaylistName:   test.playlist,
+				FilenameSuffix: test.filenameSuffix,
+			}
+			if conf.S3Upload != nil {
+				segmentOutput.Output = &livekit.SegmentedFileOutput_S3{
+					S3: conf.S3Upload,
+				}
+			}
+
 			trackRequest := &livekit.TrackCompositeEgressRequest{
-				RoomName:     conf.room.Name(),
-				AudioTrackId: aID,
-				VideoTrackId: vID,
-				SegmentOutputs: []*livekit.SegmentedFileOutput{{
-					FilenamePrefix: filepath,
-					PlaylistName:   test.playlist,
-					FilenameSuffix: test.filenameSuffix,
-				}},
+				RoomName:       conf.room.Name(),
+				AudioTrackId:   aID,
+				VideoTrackId:   vID,
+				SegmentOutputs: []*livekit.SegmentedFileOutput{segmentOutput},
 			}
 			if test.options != nil {
 				trackRequest.Options = &livekit.TrackCompositeEgressRequest_Advanced{

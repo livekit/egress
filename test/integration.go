@@ -45,6 +45,7 @@ type testCase struct {
 	// used by room and track composite tests
 	fileType livekit.EncodedFileType
 	options  *livekit.EncodingOptions
+	preset   livekit.EncodingOptionsPreset
 
 	// used by segmented file tests
 	playlist       string

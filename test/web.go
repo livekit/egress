@@ -62,15 +62,22 @@ func testWebStream(t *testing.T, conf *TestConfig) {
 func testWebSegments(t *testing.T, conf *TestConfig) {
 	awaitIdle(t, conf.svc)
 
+	segmentOutput := &livekit.SegmentedFileOutput{
+		FilenamePrefix: getFilePath(conf.ServiceConfig, "web_{time}"),
+		PlaylistName:   "web_{time}.m3u8",
+	}
+	if conf.AzureUpload != nil {
+		segmentOutput.Output = &livekit.SegmentedFileOutput_Azure{
+			Azure: conf.AzureUpload,
+		}
+	}
+
 	req := &rpc.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &rpc.StartEgressRequest_Web{
 			Web: &livekit.WebEgressRequest{
-				Url: webUrl,
-				SegmentOutputs: []*livekit.SegmentedFileOutput{{
-					FilenamePrefix: getFilePath(conf.ServiceConfig, "web_{time}"),
-					PlaylistName:   "web_{time}.m3u8",
-				}},
+				Url:            webUrl,
+				SegmentOutputs: []*livekit.SegmentedFileOutput{segmentOutput},
 			},
 		},
 	}
