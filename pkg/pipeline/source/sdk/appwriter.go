@@ -28,6 +28,7 @@ const (
 	videoTimeout = time.Second * 2
 	maxAudioLate = 200 // 4s for audio
 	audioTimeout = time.Second * 4
+	maxDropout   = 3000 // max sequence number skip
 )
 
 var (
@@ -127,11 +128,45 @@ func NewAppWriter(
 	}
 	w.sb = w.newSampleBuilder()
 
-	go w.start()
+	go w.run()
 	return w, nil
 }
 
-func (w *AppWriter) start() {
+func (w *AppWriter) Play() {
+	w.playing.Break()
+}
+
+func (w *AppWriter) SetTrackMuted(muted bool) {
+	if muted {
+		w.logger.Debugw("track muted", "timestamp", time.Since(w.startTime).Seconds())
+		w.muted.Store(true)
+	} else {
+		w.logger.Debugw("track unmuted", "timestamp", time.Since(w.startTime).Seconds())
+		w.muted.Store(false)
+		if w.writePLI != nil {
+			w.writePLI()
+		}
+	}
+}
+
+// Drain blocks until finished
+func (w *AppWriter) Drain(force bool) {
+	w.draining.Once(func() {
+		w.logger.Debugw("draining")
+
+		if force {
+			w.force.Break()
+		} else {
+			// wait until drainTimeout before force popping
+			time.AfterFunc(w.drainTimeout, w.force.Break)
+		}
+	})
+
+	// wait until finished
+	<-w.finished.Watch()
+}
+
+func (w *AppWriter) run() {
 	// always post EOS if the writer started playing
 	defer func() {
 		if w.playing.IsClosed() {
@@ -241,14 +276,10 @@ func (w *AppWriter) pushBlankFrames() error {
 	}
 
 	// expected difference between packet timestamps
-	tsStep := w.rtpStep
-	if tsStep == 0 {
-		w.logger.Debugw("no timestamp step, guessing")
-		tsStep = w.track.Codec().ClockRate / (24000 / 1001)
-	}
+	frameDurationRTP := w.getFrameDurationRTP()
 
 	// expected packet duration in nanoseconds
-	frameDuration := time.Duration(float64(tsStep) * 1e9 / float64(w.track.Codec().ClockRate))
+	frameDuration := time.Duration(float64(frameDurationRTP) * 1e9 / float64(w.track.Codec().ClockRate))
 	ticker := time.NewTicker(frameDuration)
 	defer ticker.Stop()
 
@@ -274,9 +305,9 @@ func (w *AppWriter) pushBlankFrames() error {
 				return err
 			}
 
-			maxTimestamp := pkt.Timestamp - tsStep
+			maxTimestamp := pkt.Timestamp - frameDurationRTP
 			for {
-				ts := w.lastRTP + tsStep
+				ts := w.lastTS + frameDurationRTP
 				if ts > maxTimestamp {
 					// push packet to sample builder and return
 					w.sb.Push(pkt)
@@ -291,7 +322,7 @@ func (w *AppWriter) pushBlankFrames() error {
 
 		<-ticker.C
 		// push blank frame
-		if err := w.pushBlankFrame(w.lastRTP + tsStep); err != nil {
+		if err := w.pushBlankFrame(w.lastTS + frameDurationRTP); err != nil {
 			return err
 		}
 	}
@@ -354,29 +385,35 @@ func (w *AppWriter) pushBlankFrame(timestamp uint32) error {
 
 func (w *AppWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 	for _, pkt := range packets {
-		// record timestamp diff
-		if w.rtpStep == 0 && !blankFrame && w.lastRTP != 0 && pkt.SequenceNumber == w.lastSN+1 {
-			w.rtpStep = pkt.Timestamp - w.lastRTP
-		}
-
-		// record SN and TS
-		w.lastSN = pkt.SequenceNumber
-		if w.lastRTP > wrapCheck && pkt.Timestamp < wrapCheck {
-			w.rtpWrap++
-		}
-		w.lastRTP = pkt.Timestamp
-
 		if !blankFrame {
 			// update sequence number
 			pkt.SequenceNumber += w.snOffset
+
+			// record max frame duration
+			if w.lastTS != 0 && pkt.SequenceNumber == w.lastSN+1 {
+				if frameDurationRTP := pkt.Timestamp - w.lastTS; frameDurationRTP > w.frameDurationRTP && frameDurationRTP < w.clockRate/60 {
+					w.frameDurationRTP = frameDurationRTP
+				}
+			}
+
 			w.translatePacket(pkt)
 		}
 
-		// will return io.EOF if EOS has been sent
+		// reset offsets if needed
+		if w.lastTS != 0 && pkt.SequenceNumber-w.lastSN > maxDropout && w.lastSN-pkt.SequenceNumber > maxDropout {
+			w.logger.Debugw("large SN gap", "previous", w.lastSN, "current", pkt.SequenceNumber)
+			w.resetOffsets(pkt)
+		}
+
+		// get PTS
 		pts, err := w.getPTS(pkt.Timestamp)
 		if err != nil {
 			return err
 		}
+
+		// record timing info
+		w.lastSN = pkt.SequenceNumber
+		w.lastTS = pkt.Timestamp
 
 		p, err := pkt.Marshal()
 		if err != nil {
@@ -385,7 +422,9 @@ func (w *AppWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 
 		b := gst.NewBufferFromBytes(p)
 		b.SetPresentationTimestamp(pts)
-		w.src.PushBuffer(b)
+		if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
+			w.logger.Infow("unexpected flow return", "flow", flow)
+		}
 	}
 
 	return nil
@@ -449,38 +488,4 @@ func (w *AppWriter) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8,
 
 	err := translatedVP8.MarshalTo(buf[:translatedVP8.HeaderSize])
 	return buf, err
-}
-
-func (w *AppWriter) Play() {
-	w.playing.Break()
-}
-
-func (w *AppWriter) SetTrackMuted(muted bool) {
-	if muted {
-		w.logger.Debugw("track muted", "timestamp", time.Since(w.startTime).Seconds())
-		w.muted.Store(true)
-	} else {
-		w.logger.Debugw("track unmuted", "timestamp", time.Since(w.startTime).Seconds())
-		w.muted.Store(false)
-		if w.writePLI != nil {
-			w.writePLI()
-		}
-	}
-}
-
-// Drain blocks until finished
-func (w *AppWriter) Drain(force bool) {
-	w.draining.Once(func() {
-		w.logger.Debugw("draining")
-
-		if force {
-			w.force.Break()
-		} else {
-			// wait until drainTimeout before force popping
-			time.AfterFunc(w.drainTimeout, w.force.Break)
-		}
-	})
-
-	// wait until finished
-	<-w.finished.Watch()
 }
