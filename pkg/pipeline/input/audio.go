@@ -149,9 +149,6 @@ func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig) error {
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		if err = opusDec.SetProperty("use-inband-fec", true); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
 
 		a.decoder = append(a.decoder, rtpOpusDepay, opusDec)
 
