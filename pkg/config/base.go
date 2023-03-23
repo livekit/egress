@@ -20,7 +20,7 @@ type BaseConfig struct {
 	Insecure             bool               `yaml:"insecure"`        // allow chrome to connect to an insecure websocket
 	LocalOutputDirectory string             `yaml:"local_directory"` // used for temporary storage before upload
 	Logging              logger.Config      `yaml:"logging"`
-	LogLevel             string             `yaml:"log_level"`  // TODO: deprecate, debug, info, warn, or error
+	LogLevel             string             `yaml:"log_level"`  // TODO: deprecate
 	ClusterID            string             `yaml:"cluster_id"` // Which cluster this egress belongs to
 
 	S3     *S3Config    `yaml:"s3"`
@@ -94,10 +94,11 @@ type SessionLimits struct {
 }
 
 func (c *BaseConfig) initLogger(values ...interface{}) error {
-	// TODO-DEPRECATE: here for backwards compatibility, to deprecate in the future
 	if c.LogLevel != "" {
+		logger.Warnw("log_level deprecated. use logging instead", nil)
 		c.Logging.Level = c.LogLevel
 	}
+
 	zl, err := logger.NewZapLogger(&c.Logging)
 	if err != nil {
 		return err
