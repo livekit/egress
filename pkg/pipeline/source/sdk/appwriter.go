@@ -391,7 +391,8 @@ func (w *AppWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 
 			// record max frame duration
 			if w.lastTS != 0 && pkt.SequenceNumber == w.lastSN+1 {
-				if frameDurationRTP := pkt.Timestamp - w.lastTS; frameDurationRTP > w.frameDurationRTP && frameDurationRTP < w.clockRate/60 {
+				// make sure the frame duration is < 1 second
+				if frameDurationRTP := pkt.Timestamp - w.lastTS; frameDurationRTP > w.frameDurationRTP && frameDurationRTP < w.clockRate {
 					w.frameDurationRTP = frameDurationRTP
 				}
 			}
