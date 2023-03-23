@@ -400,7 +400,7 @@ func (w *AppWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 			w.translatePacket(pkt)
 		}
 
-		// reset offsets if needed
+		// reset offsets if absolute difference in sequence numbers > maxDropout
 		if w.lastTS != 0 && pkt.SequenceNumber-w.lastSN > maxDropout && w.lastSN-pkt.SequenceNumber > maxDropout {
 			w.logger.Debugw("large SN gap", "previous", w.lastSN, "current", pkt.SequenceNumber)
 			w.resetOffsets(pkt)
