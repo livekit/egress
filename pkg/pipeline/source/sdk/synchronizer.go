@@ -47,10 +47,10 @@ type TrackSynchronizer struct {
 	clockRate uint32
 	nsPerRTP  float64 // nanoseconds per unit increase in RTP timestamp
 
-	firstTS        int64  // first RTP timestamp received
-	lastTS         uint32 // most recent RTP timestamp received
-	lastTSAdjusted int64  // most recent RTP timestamp, adjusted for uint32 overflow
-	frameSize      uint32 // RTP timestamp difference between frames (used for blank frame insertion)
+	firstTS          int64  // first RTP timestamp received
+	lastTS           uint32 // most recent RTP timestamp received
+	lastTSAdjusted   int64  // most recent RTP timestamp, adjusted for uint32 overflow
+	frameDurationRTP uint32 // RTP timestamp difference between frames (used for blank frame insertion)
 
 	maxPTS    int64 // maximum valid PTS (set after EOS)
 	ptsOffset int64 // presentation timestamp offset (used for a/v sync)
@@ -221,11 +221,13 @@ func (t *TrackSynchronizer) onSenderReport(pkt *rtcp.SenderReport, ntpStart time
 	}
 }
 
-func (t *TrackSynchronizer) getFrameSize() uint32 {
-	if frameSize := t.frameSize; frameSize != 0 {
-		return frameSize
+func (t *TrackSynchronizer) getFrameDurationRTP() uint32 {
+	if frameDurationRTP := t.frameDurationRTP; frameDurationRTP != 0 {
+		return frameDurationRTP
 	}
-	return uint32(float64(t.clockRate) / 2.4)
+
+	// no value recorded, assume 24 fps
+	return uint32(float64(t.clockRate) / 24)
 }
 
 // resetOffsets resets this packet to <frameDuration> after the last packet
@@ -235,7 +237,7 @@ func (t *TrackSynchronizer) resetOffsets(pkt *rtp.Packet) {
 
 	ts := int64(pkt.Timestamp)
 	t.snOffset = t.lastSN + 1 - pkt.SequenceNumber
-	t.firstTS = ts - t.lastTSAdjusted + t.firstTS - int64(t.getFrameSize())
+	t.firstTS = ts - t.lastTSAdjusted + t.firstTS - int64(t.getFrameDurationRTP())
 	t.lastTSAdjusted = ts
 	pkt.SequenceNumber = t.lastSN + 1
 }

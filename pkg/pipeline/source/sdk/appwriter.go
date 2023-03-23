@@ -276,10 +276,10 @@ func (w *AppWriter) pushBlankFrames() error {
 	}
 
 	// expected difference between packet timestamps
-	frameSize := w.getFrameSize()
+	frameDurationRTP := w.getFrameDurationRTP()
 
 	// expected packet duration in nanoseconds
-	frameDuration := time.Duration(float64(frameSize) * 1e9 / float64(w.track.Codec().ClockRate))
+	frameDuration := time.Duration(float64(frameDurationRTP) * 1e9 / float64(w.track.Codec().ClockRate))
 	ticker := time.NewTicker(frameDuration)
 	defer ticker.Stop()
 
@@ -305,9 +305,9 @@ func (w *AppWriter) pushBlankFrames() error {
 				return err
 			}
 
-			maxTimestamp := pkt.Timestamp - frameSize
+			maxTimestamp := pkt.Timestamp - frameDurationRTP
 			for {
-				ts := w.lastTS + frameSize
+				ts := w.lastTS + frameDurationRTP
 				if ts > maxTimestamp {
 					// push packet to sample builder and return
 					w.sb.Push(pkt)
@@ -322,7 +322,7 @@ func (w *AppWriter) pushBlankFrames() error {
 
 		<-ticker.C
 		// push blank frame
-		if err := w.pushBlankFrame(w.lastTS + frameSize); err != nil {
+		if err := w.pushBlankFrame(w.lastTS + frameDurationRTP); err != nil {
 			return err
 		}
 	}
@@ -389,10 +389,10 @@ func (w *AppWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 			// update sequence number
 			pkt.SequenceNumber += w.snOffset
 
-			// record max frame size
+			// record max frame duration
 			if w.lastTS != 0 && pkt.SequenceNumber == w.lastSN+1 {
-				if frameSize := pkt.Timestamp - w.lastTS; frameSize > w.frameSize && frameSize < w.clockRate/60 {
-					w.frameSize = frameSize
+				if frameDurationRTP := pkt.Timestamp - w.lastTS; frameDurationRTP > w.frameDurationRTP && frameDurationRTP < w.clockRate/60 {
+					w.frameDurationRTP = frameDurationRTP
 				}
 			}
 
