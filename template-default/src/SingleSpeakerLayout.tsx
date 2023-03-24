@@ -1,38 +1,20 @@
-import { ParticipantView, ScreenShareView } from '@livekit/react-components';
-import { RemoteVideoTrack, Track } from 'livekit-client';
+import { TrackReferenceSubscribed } from '@livekit/components-core';
+import { useVisualStableUpdate, VideoTrack } from '@livekit/components-react';
 import { LayoutProps } from './common';
-import useDominateSpeaker from './useDominateSpeaker';
 
-const SingleSpeakerLayout = ({ participants }: LayoutProps) => {
-  const dominantSpeaker = useDominateSpeaker(participants);
-
-  // find first participant with screen shared
-  let screenTrack: RemoteVideoTrack | undefined;
-  participants.forEach((p) => {
-    const pub = p.getTrack(Track.Source.ScreenShare);
-    if (pub && pub.isSubscribed) {
-      screenTrack = pub.videoTrack as RemoteVideoTrack;
+const SingleSpeakerLayout = ({ references }: LayoutProps) => {
+  const sortedReferences = useVisualStableUpdate(references, 1);
+  let firstTR: TrackReferenceSubscribed | undefined;
+  for (const tr of sortedReferences) {
+    if ('publication' in tr) {
+      firstTR = tr as TrackReferenceSubscribed;
     }
-  });
-
-  if (participants.length === 0) {
+  }
+  if (firstTR === undefined) {
     return <div />;
   }
 
-  if (screenTrack) {
-    return <ScreenShareView track={screenTrack} height="100%" width="100%" />;
-  }
-  const mainParticipant = dominantSpeaker ?? participants[0];
-  return (
-    <ParticipantView
-      key={mainParticipant.identity}
-      participant={mainParticipant}
-      width="100%"
-      height="100%"
-      orientation="landscape"
-      speakerClassName=""
-    />
-  );
+  return <VideoTrack trackReference={firstTR} />;
 };
 
 export default SingleSpeakerLayout;

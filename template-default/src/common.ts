@@ -1,6 +1,5 @@
-import { Participant, Room } from 'livekit-client';
+import { TrackReference } from '@livekit/components-core';
 
 export interface LayoutProps {
-  participants: Participant[];
-  room: Room;
+  references: TrackReference[];
 }

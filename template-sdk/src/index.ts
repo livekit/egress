@@ -1,8 +1,8 @@
-import { ParticipantEvent, Room, RoomEvent } from "livekit-client"
+import { ParticipantEvent, Room, RoomEvent } from "livekit-client";
 
 export interface EgressOptions {
   // automatically finish recording when the last participant leaves
-  autoEnd?: boolean
+  autoEnd?: boolean;
 }
 
 const EgressHelper = {
@@ -11,9 +11,9 @@ const EgressHelper = {
    * @returns
    */
   getLiveKitURL(): string {
-    const url = getURLParam('url');
+    const url = getURLParam("url");
     if (!url) {
-      throw new Error('url is not found in query string');
+      throw new Error("url is not found in query string");
     }
     return url;
   },
@@ -23,9 +23,9 @@ const EgressHelper = {
    * @returns access token to pass to `Room.connect`
    */
   getAccessToken(): string {
-    const token = getURLParam('token');
+    const token = getURLParam("token");
     if (!token) {
-      throw new Error('token is not found in query string');
+      throw new Error("token is not found in query string");
     }
     return token;
   },
@@ -38,8 +38,8 @@ const EgressHelper = {
     if (state.layout) {
       return state.layout;
     }
-    const layout = getURLParam('layout');
-    return layout ?? '';
+    const layout = getURLParam("layout");
+    return layout ?? "";
   },
 
   /**
@@ -48,16 +48,23 @@ const EgressHelper = {
    */
   setRoom(room: Room, opts?: EgressOptions) {
     if (currentRoom) {
-      currentRoom.off(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
+      currentRoom.off(
+        RoomEvent.ParticipantDisconnected,
+        onParticipantDisconnected
+      );
       currentRoom.off(RoomEvent.Disconnected, EgressHelper.endRecording);
     }
 
     currentRoom = room;
     currentRoom.localParticipant.on(
-      ParticipantEvent.ParticipantMetadataChanged, onMetadataChanged,
+      ParticipantEvent.ParticipantMetadataChanged,
+      onMetadataChanged
     );
     if (opts?.autoEnd) {
-      currentRoom.on(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
+      currentRoom.on(
+        RoomEvent.ParticipantDisconnected,
+        onParticipantDisconnected
+      );
     }
     currentRoom.on(RoomEvent.Disconnected, EgressHelper.endRecording);
     onMetadataChanged();
@@ -67,7 +74,7 @@ const EgressHelper = {
    * Starts recording the room that's passed in
    */
   startRecording() {
-    console.log('START_RECORDING');
+    console.log("START_RECORDING");
   },
 
   /**
@@ -76,7 +83,7 @@ const EgressHelper = {
    */
   endRecording() {
     currentRoom = undefined;
-    console.log('END_RECORDING');
+    console.log("END_RECORDING");
   },
 
   /**
@@ -86,12 +93,12 @@ const EgressHelper = {
   onLayoutChanged(f: (layout: string) => void) {
     layoutChangedCallback = f;
   },
-}
+};
 
 let currentRoom: Room | undefined;
 let layoutChangedCallback: (layout: string) => void | undefined;
 let state: TemplateState = {
-  layout: ''
+  layout: "",
 };
 
 interface TemplateState {
@@ -102,8 +109,8 @@ function onMetadataChanged() {
   // for recorder, metadata is a JSON object containing layout
   const metadata = currentRoom?.localParticipant.metadata;
   if (metadata) {
-    const newState: TemplateState = JSON.parse(metadata)
-    if (newState.layout !== state.layout) {
+    const newState: TemplateState = JSON.parse(metadata);
+    if (newState && newState.layout !== state.layout) {
       state = newState;
       layoutChangedCallback(state.layout);
     }
@@ -123,4 +130,4 @@ function getURLParam(name: string): string | null {
   return query.get(name);
 }
 
-export default EgressHelper
+export default EgressHelper;

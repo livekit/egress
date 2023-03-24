@@ -1,7 +1,6 @@
+import '@livekit/components-styles';
+import '@livekit/components-styles/prefabs';
 import EgressHelper from '@livekit/egress-sdk';
-import '@livekit/react-components/dist/index.css';
-import React from 'react';
-import 'react-aspect-ratio/aspect-ratio.css';
 import './App.css';
 import RoomPage from './Room';
 

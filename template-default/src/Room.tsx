@@ -1,12 +1,14 @@
+import {
+  GridLayout,
+  LiveKitRoom,
+  RoomAudioRenderer,
+  useRoomContext,
+  useScreenShare,
+  useTracks,
+} from '@livekit/components-react';
 import EgressHelper from '@livekit/egress-sdk';
-import { AudioRenderer, useRoom } from '@livekit/react-components';
-import {
-  AudioTrack, Participant, RemoteParticipant, Room, RoomEvent,
-} from 'livekit-client';
-import {
-  ReactElement, useCallback, useEffect, useState,
-} from 'react';
-import GridLayout from './GridLayout';
+import { ConnectionState, RoomEvent, Track } from 'livekit-client';
+import { ReactElement, useEffect, useState } from 'react';
 import SingleSpeakerLayout from './SingleSpeakerLayout';
 import SpeakerLayout from './SpeakerLayout';
 
@@ -16,90 +18,74 @@ interface RoomPageProps {
   layout: string;
 }
 
-export default function RoomPage({ url, token, layout: initialLayout }: RoomPageProps) {
-  const [layout, setLayout] = useState(initialLayout);
-  const roomState = useRoom({
-    adaptiveStream: true,
-  });
-  const { room, participants, audioTracks } = roomState;
+export default function RoomPage({ url, token, layout }: RoomPageProps) {
+  const [error, setError] = useState<Error>();
+  if (!url || !token) {
+    return <div className="error">missing required params url and token</div>;
+  }
 
-  useEffect(() => {
-    roomState.connect(url, token);
-  }, [url]);
+  return (
+    <LiveKitRoom serverUrl={url} token={token} onError={setError}>
+      {error ? <div className="error">{error.message}</div> : <CompositeTemplate layout={layout} />}
+    </LiveKitRoom>
+  );
+}
+
+interface CompositeTemplateProps {
+  layout: string;
+}
+
+function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
+  const room = useRoomContext();
+  const [layout, setLayout] = useState(initialLayout);
+  const [hasScreenShare, setHasScreenShare] = useState(false);
+  const screenShareRef = useScreenShare({ room });
 
   useEffect(() => {
     if (room) {
-      EgressHelper.setRoom(room, {
-        autoEnd: true,
-      });
+      EgressHelper.setRoom(room);
+
       // Egress layout can change on the fly, we can react to the new layout
       // here.
       EgressHelper.onLayoutChanged((newLayout) => {
         setLayout(newLayout);
       });
 
-      // start recording immediately after connection
-      EgressHelper.startRecording();
-    }
-  }, [room]);
-
-  if (!url || !token) {
-    return <div className="error">missing required params url and token</div>;
-  }
-
-  // not ready yet, don't render anything
-  if (!room) {
-    return <div />;
-  }
-
-  // filter out local participant
-  const remoteParticipants = participants.filter((p) => p instanceof RemoteParticipant);
-
-  return (
-    <Stage
-      layout={layout}
-      room={room}
-      participants={remoteParticipants}
-      audioTracks={audioTracks}
-    />
-  );
-}
-
-interface StageProps {
-  layout: string;
-  room: Room;
-  participants: Participant[];
-  audioTracks: AudioTrack[];
-}
-
-function Stage({
-  layout, room, participants, audioTracks,
-}: StageProps) {
-  const [hasScreenShare, setHasScreenShare] = useState(false);
-
-  const onTrackChanged = useCallback(() => {
-    let foundScreenshare = false;
-    room.participants.forEach((p) => {
-      if (p.isScreenShareEnabled) {
-        foundScreenshare = true;
+      // start recording when there's already a track published
+      let hasTrack = false;
+      for (const p of Array.from(room.participants.values())) {
+        if (p.tracks.size > 0) {
+          hasTrack = true;
+          break;
+        }
       }
-    });
-    setHasScreenShare(foundScreenshare);
+      if (hasTrack) {
+        EgressHelper.startRecording();
+      } else {
+        room.once(RoomEvent.TrackSubscribed, () => EgressHelper.startRecording());
+      }
+    }
   }, [room]);
 
   useEffect(() => {
-    if (!room) {
-      return;
+    if (screenShareRef.screenShareTrack && screenShareRef.screenShareParticipant) {
+      setHasScreenShare(true);
+    } else {
+      setHasScreenShare(false);
     }
-    room.on(RoomEvent.TrackPublished, onTrackChanged);
-    room.on(RoomEvent.TrackUnpublished, onTrackChanged);
-    room.on(RoomEvent.ConnectionStateChanged, onTrackChanged);
-    return () => {
-      room.off(RoomEvent.TrackPublished, onTrackChanged);
-      room.off(RoomEvent.TrackUnpublished, onTrackChanged);
-      room.off(RoomEvent.ConnectionStateChanged, onTrackChanged);
-    };
-  }, [room]);
+  }, [screenShareRef.screenShareTrack, screenShareRef.screenShareParticipant]);
+
+  const allReferences = useTracks(
+    [Track.Source.Camera, Track.Source.ScreenShare, Track.Source.Unknown],
+    {
+      onlySubscribed: true,
+    },
+  );
+  const filteredReferences = allReferences.filter(
+    (tr) =>
+      tr.publication.kind === Track.Kind.Video &&
+      tr.participant.identity !== room.localParticipant.identity,
+  );
 
   let interfaceStyle = 'dark';
   if (layout.endsWith('-light')) {
@@ -113,38 +99,24 @@ function Stage({
 
   // determine layout to use
   let main: ReactElement = <></>;
+  let effectiveLayout = layout;
   if (hasScreenShare && layout.startsWith('grid')) {
-    layout = layout.replace('grid', 'speaker');
+    effectiveLayout = layout.replace('grid', 'speaker');
   }
-  if (layout.startsWith('speaker')) {
-    main = (
-      <SpeakerLayout
-        room={room}
-        participants={participants}
-      />
-    );
-  } else if (layout.startsWith('single-speaker')) {
-    main = (
-      <SingleSpeakerLayout
-        room={room}
-        participants={participants}
-      />
-    );
-  } else if (layout.startsWith('grid')) {
-    main = (
-      <GridLayout
-        room={room}
-        participants={participants}
-      />
-    );
+  if (room.state !== ConnectionState.Disconnected) {
+    if (effectiveLayout.startsWith('speaker')) {
+      main = <SpeakerLayout references={filteredReferences} />;
+    } else if (effectiveLayout.startsWith('single-speaker')) {
+      main = <SingleSpeakerLayout references={filteredReferences} />;
+    } else if (effectiveLayout.startsWith('grid')) {
+      main = <GridLayout />;
+    }
   }
 
   return (
     <div className={containerClass}>
       {main}
-      {audioTracks.map((track) => (
-        <AudioRenderer key={track.sid} track={track} isLocal={false} />
-      ))}
+      <RoomAudioRenderer />
     </div>
   );
 }
