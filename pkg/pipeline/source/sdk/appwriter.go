@@ -391,7 +391,8 @@ func (w *AppWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 
 			// record max frame duration
 			if w.lastTS != 0 && pkt.SequenceNumber == w.lastSN+1 {
-				if frameDurationRTP := pkt.Timestamp - w.lastTS; frameDurationRTP > w.frameDurationRTP && frameDurationRTP < w.clockRate/60 {
+				// make sure the frame duration is < 1 second
+				if frameDurationRTP := pkt.Timestamp - w.lastTS; frameDurationRTP > w.frameDurationRTP && frameDurationRTP < w.clockRate {
 					w.frameDurationRTP = frameDurationRTP
 				}
 			}
@@ -399,7 +400,7 @@ func (w *AppWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 			w.translatePacket(pkt)
 		}
 
-		// reset offsets if needed
+		// reset offsets if absolute difference in sequence numbers > maxDropout
 		if w.lastTS != 0 && pkt.SequenceNumber-w.lastSN > maxDropout && w.lastSN-pkt.SequenceNumber > maxDropout {
 			w.logger.Debugw("large SN gap", "previous", w.lastSN, "current", pkt.SequenceNumber)
 			w.resetOffsets(pkt)
