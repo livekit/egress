@@ -190,14 +190,17 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+	if err = videoRate.SetProperty("max-rate", int(p.Framerate)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
 
 	caps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 	if err = caps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
-			p.Framerate, p.Width, p.Height,
+		fmt.Sprintf("video/x-raw,framerate=[24000/1001, 60/1],format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+			p.Width, p.Height,
 		)),
 	); err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -246,7 +249,7 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 		}
 
 		if err = caps.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf("video/x-h264,profile=%s,framerate=%d/1", p.VideoProfile, p.Framerate),
+			fmt.Sprintf("video/x-h264,profile=%s", p.VideoProfile),
 		)); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
