@@ -133,11 +133,6 @@ func (h *Handler) StopEgress(ctx context.Context, _ *livekit.StopEgressRequest) 
 	return h.pipeline.Info, nil
 }
 
-type dotResponse struct {
-	dot string
-	err error
-}
-
 func (h *Handler) GetPipelineDot(ctx context.Context, _ *ipc.GstPipelineDebugDotRequest) (*ipc.GstPipelineDebugDotResponse, error) {
 	ctx, span := tracer.Start(ctx, "Handler.GetPipelineDot")
 	defer span.End()
@@ -146,22 +141,15 @@ func (h *Handler) GetPipelineDot(ctx context.Context, _ *ipc.GstPipelineDebugDot
 		return nil, errors.ErrEgressNotFound
 	}
 
-	res := make(chan *dotResponse, 1)
+	res := make(chan string, 1)
 	go func() {
-		dot, err := h.pipeline.GetGstPipelineDebugDot()
-		res <- &dotResponse{
-			dot: dot,
-			err: err,
-		}
+		res <- h.pipeline.GetGstPipelineDebugDot()
 	}()
 
 	select {
 	case r := <-res:
-		if r.err != nil {
-			return nil, r.err
-		}
 		return &ipc.GstPipelineDebugDotResponse{
-			DotFile: r.dot,
+			DotFile: r,
 		}, nil
 
 	case <-time.After(2 * time.Second):

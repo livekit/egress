@@ -247,7 +247,7 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 		}
 
 		if err = caps.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf("video/x-h264,profile=%s", p.VideoProfile),
+			fmt.Sprintf("video/x-h264,profile=%s,framerate=%d/1", p.VideoProfile, p.Framerate),
 		)); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}

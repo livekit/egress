@@ -9,14 +9,15 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/psrpc"
 )
 
 const (
 	largePTSDrift         = time.Millisecond * 20
 	massivePTSDrift       = time.Second
+	maxPTSDrift           = int64(time.Second * 10)
 	maxUInt32       int64 = 4294967296
 )
 
@@ -47,6 +48,7 @@ type TrackSynchronizer struct {
 	clockRate uint32
 	nsPerRTP  float64 // nanoseconds per unit increase in RTP timestamp
 
+	startedAt        int64  // starting time in unix nanoseconds
 	firstTS          int64  // first RTP timestamp received
 	lastTS           uint32 // most recent RTP timestamp received
 	lastTSAdjusted   int64  // most recent RTP timestamp, adjusted for uint32 overflow
@@ -114,6 +116,7 @@ func (s *Synchronizer) firstPacketForTrack(pkt *rtp.Packet) {
 	p.Unlock()
 
 	t.Lock()
+	t.startedAt = now
 	t.firstTS = int64(pkt.Timestamp)
 	t.ptsOffset = now - s.firstPacket
 	t.Unlock()
@@ -130,11 +133,8 @@ func (s *Synchronizer) GetStartedAt() int64 {
 func (s *Synchronizer) OnRTCP(packet rtcp.Packet) {
 	switch pkt := packet.(type) {
 	case *rtcp.SenderReport:
-		now := time.Now().UnixNano()
-
 		s.Lock()
 		p := s.psByTrack[pkt.SSRC]
-		startedAt := s.firstPacket
 		endedAt := s.endedAt
 		s.Unlock()
 
@@ -148,12 +148,7 @@ func (s *Synchronizer) OnRTCP(packet rtcp.Packet) {
 		t := p.syncInfo[pkt.SSRC]
 		pts, err := t.getPTS(pkt.RTPTime)
 		if err != nil {
-			return
-		}
-
-		estimated := now - startedAt
-		if absGreater(pts-time.Duration(estimated), time.Second*30) {
-			logger.Debugw("discarding sender report", "pts", pts, "estimated", time.Duration(estimated))
+			logger.Debugw("discarding sender report")
 			return
 		}
 
@@ -191,14 +186,13 @@ func (s *Synchronizer) OnRTCP(packet rtcp.Packet) {
 				}
 			}
 		} else {
-			p.syncInfo[pkt.SSRC].onSenderReport(pkt, p.ntpStart)
+			p.syncInfo[pkt.SSRC].onSenderReport(pkt, pts, p.ntpStart)
 		}
 	}
 }
 
 // onSenderReport handles pts adjustments for a track
-func (t *TrackSynchronizer) onSenderReport(pkt *rtcp.SenderReport, ntpStart time.Time) {
-	pts, _ := t.getPTS(pkt.RTPTime)
+func (t *TrackSynchronizer) onSenderReport(pkt *rtcp.SenderReport, pts time.Duration, ntpStart time.Time) {
 	expected := mediatransportutil.NtpTime(pkt.NTPTime).Time().Sub(ntpStart)
 	if pts != expected {
 		diff := expected - pts
@@ -268,19 +262,20 @@ func (t *TrackSynchronizer) getPTS(rtpTS uint32) (time.Duration, error) {
 			diff += maxUInt32
 		}
 	}
-	t.lastTSAdjusted = tsAdjusted
 
 	// get ns elapsed since the first packet
 	nanoSecondsElapsed := int64(float64(tsAdjusted-t.firstTS) * t.nsPerRTP)
 
+	// sanity check
+	expected := time.Now().UnixNano() - t.startedAt
+	if absGreater(nanoSecondsElapsed-expected, maxPTSDrift) {
+		return 0, errors.ErrInvalidTimestamp
+	}
+
+	t.lastTSAdjusted = tsAdjusted
+
 	// add offset
 	pts := nanoSecondsElapsed + t.ptsOffset
-
-	// if less than 0, return error
-	if pts < 0 {
-		err := psrpc.NewErrorf(psrpc.Internal, "timestamping issue")
-		return 0, err
-	}
 
 	// if past end time, return EOF
 	if t.maxPTS != 0 && pts > t.maxPTS {
@@ -331,6 +326,6 @@ func (s *Synchronizer) GetEndedAt() int64 {
 	return s.endedAt
 }
 
-func absGreater(value, max time.Duration) bool {
+func absGreater[T int64 | time.Duration](value, max T) bool {
 	return value > max || value < -max
 }
