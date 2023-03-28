@@ -190,9 +190,6 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = videoRate.SetProperty("drop-only", true); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
 
 	caps, err := gst.NewElement("capsfilter")
 	if err != nil {
