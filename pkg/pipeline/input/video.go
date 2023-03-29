@@ -196,7 +196,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 	if err = caps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,framerate=[24000/1001, %d/1],format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+		fmt.Sprintf("video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
 			p.Framerate, p.Width, p.Height,
 		)),
 	); err != nil {
