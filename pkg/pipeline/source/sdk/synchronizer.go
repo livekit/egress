@@ -269,7 +269,16 @@ func (t *TrackSynchronizer) getPTS(rtpTS uint32) (time.Duration, error) {
 	// sanity check
 	expected := time.Now().UnixNano() - t.startedAt
 	if absGreater(nanoSecondsElapsed-expected, maxPTSDrift) {
-		return 0, errors.ErrInvalidTimestamp
+		logger.Warnw("timestamping issue", nil,
+			"expected", time.Duration(expected),
+			"calculated", time.Duration(nanoSecondsElapsed),
+		)
+		if t.maxPTS != 0 {
+			// EOS already sent, return EOF
+			return 0, io.EOF
+		} else {
+			return 0, errors.ErrInvalidTimestamp
+		}
 	}
 
 	t.lastTSAdjusted = tsAdjusted
