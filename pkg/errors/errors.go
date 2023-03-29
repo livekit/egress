@@ -16,6 +16,7 @@ var (
 	ErrNonStreamingPipeline = psrpc.NewErrorf(psrpc.InvalidArgument, "UpdateStream called on non-streaming egress")
 	ErrEgressNotFound       = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
 	ErrProfileNotFound      = psrpc.NewErrorf(psrpc.NotFound, "profile not found")
+	ErrInvalidTimestamp     = psrpc.NewErrorf(psrpc.Internal, "timestamping issue")
 )
 
 func New(err string) error {

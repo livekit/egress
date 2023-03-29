@@ -4,7 +4,6 @@ package test
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"testing"
 
@@ -123,7 +122,7 @@ func NewTestContext(t *testing.T) *TestConfig {
 	tc.runSegmentTests = !tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.MultiTestsOnly
 	tc.runMultiTests = !tc.FileTestsOnly && !tc.StreamTestsOnly && !tc.SegmentTestsOnly
 
-	err = os.Setenv("GST_DEBUG", fmt.Sprint(tc.GstDebug))
+	err = os.Setenv("GST_DEBUG", tc.GstDebug)
 	require.NoError(t, err)
 
 	return tc
