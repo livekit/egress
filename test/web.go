@@ -67,6 +67,7 @@ func testWebSegments(t *testing.T, conf *TestConfig) {
 		PlaylistName:   "web_{time}.m3u8",
 	}
 	if conf.AzureUpload != nil {
+		segmentOutput.FilenamePrefix = "web_{time}"
 		segmentOutput.Output = &livekit.SegmentedFileOutput_Azure{
 			Azure: conf.AzureUpload,
 		}

@@ -149,8 +149,6 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, fi
 	storedPlaylistPath := segments.PlaylistName
 	localPlaylistPath := segments.PlaylistName
 
-	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath)
-
 	// download from cloud storage
 	if uploadConfig := p.Outputs[types.EgressTypeSegments].UploadConfig; uploadConfig != nil {
 		base := storedPlaylistPath[:len(storedPlaylistPath)-5]
@@ -163,6 +161,8 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, fi
 			download(t, uploadConfig, localPath, cloudPath)
 		}
 	}
+
+	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath)
 
 	// verify
 	verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, conf.Muting, conf.sourceFramerate)

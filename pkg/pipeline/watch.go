@@ -150,6 +150,7 @@ func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
 
 	case pipelineSource:
 		logger.Infow("pipeline playing")
+
 		p.playing = true
 		switch p.SourceType {
 		case types.SourceTypeSDK:

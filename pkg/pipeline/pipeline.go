@@ -346,9 +346,8 @@ func (p *Pipeline) removeSink(url string, streamErr error) error {
 	return p.out.RemoveStream(url)
 }
 
-func (p *Pipeline) GetGstPipelineDebugDot() (string, error) {
-	s := p.pipeline.DebugBinToDotData(gst.DebugGraphShowAll)
-	return s, nil
+func (p *Pipeline) GetGstPipelineDebugDot() string {
+	return p.pipeline.DebugBinToDotData(gst.DebugGraphShowAll)
 }
 
 func (p *Pipeline) SendEOS(ctx context.Context) {
@@ -380,6 +379,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 			livekit.EgressStatus_EGRESS_LIMIT_REACHED:
 			go func() {
 				logger.Infow("sending EOS to pipeline")
+
 				p.eosTimer = time.AfterFunc(eosTimeout, func() {
 					logger.Errorw("pipeline frozen", nil)
 					p.Info.Error = "pipeline frozen"
