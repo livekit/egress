@@ -1,8 +1,8 @@
-import { ParticipantEvent, Room, RoomEvent } from "livekit-client"
+import { ParticipantEvent, Room, RoomEvent } from 'livekit-client';
 
 export interface EgressOptions {
   // automatically finish recording when the last participant leaves
-  autoEnd?: boolean
+  autoEnd?: boolean;
 }
 
 const EgressHelper = {
@@ -53,9 +53,7 @@ const EgressHelper = {
     }
 
     currentRoom = room;
-    currentRoom.localParticipant.on(
-      ParticipantEvent.ParticipantMetadataChanged, onMetadataChanged,
-    );
+    currentRoom.localParticipant.on(ParticipantEvent.ParticipantMetadataChanged, onMetadataChanged);
     if (opts?.autoEnd) {
       currentRoom.on(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
     }
@@ -86,12 +84,12 @@ const EgressHelper = {
   onLayoutChanged(f: (layout: string) => void) {
     layoutChangedCallback = f;
   },
-}
+};
 
 let currentRoom: Room | undefined;
 let layoutChangedCallback: (layout: string) => void | undefined;
 let state: TemplateState = {
-  layout: ''
+  layout: '',
 };
 
 interface TemplateState {
@@ -102,8 +100,8 @@ function onMetadataChanged() {
   // for recorder, metadata is a JSON object containing layout
   const metadata = currentRoom?.localParticipant.metadata;
   if (metadata) {
-    const newState: TemplateState = JSON.parse(metadata)
-    if (newState.layout !== state.layout) {
+    const newState: TemplateState = JSON.parse(metadata);
+    if (newState && newState.layout !== state.layout) {
       state = newState;
       layoutChangedCallback(state.layout);
     }
@@ -123,4 +121,4 @@ function getURLParam(name: string): string | null {
   return query.get(name);
 }
 
-export default EgressHelper
+export default EgressHelper;

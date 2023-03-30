@@ -1,6 +1,6 @@
 {
   "name": "@livekit/egress-sdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A lightweight SDK for developing RoomComposite templates",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,11 +12,11 @@
     "build": "yarn exec tsc"
   },
   "devDependencies": {
-    "livekit-client": "^1.0.0",
-    "prettier": "^2.6.2",
-    "typescript": "^4.6.3"
+    "livekit-client": "^1.7.0",
+    "prettier": "^2.8.4",
+    "typescript": "^4.9.5"
   },
   "peerDependencies": {
-    "livekit-client": "^1.0.0"
+    "livekit-client": "^1.7.0"
   }
 }
