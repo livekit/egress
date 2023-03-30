@@ -2,7 +2,7 @@ import { TrackReference } from '@livekit/components-core';
 import { CarouselView, FocusLayout, useVisualStableUpdate } from '@livekit/components-react';
 import { LayoutProps } from './common';
 
-const SpeakerLayout = ({ references }: LayoutProps) => {
+const SpeakerLayout = ({ tracks: references }: LayoutProps) => {
   const sortedTracks = useVisualStableUpdate(references, 1);
   const mainTrack = sortedTracks.shift();
   const remainingTracks = useVisualStableUpdate(sortedTracks, 3);

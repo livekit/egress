@@ -75,13 +75,13 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
     }
   }, [screenShareRef.screenShareTrack, screenShareRef.screenShareParticipant]);
 
-  const allReferences = useTracks(
+  const allTracks = useTracks(
     [Track.Source.Camera, Track.Source.ScreenShare, Track.Source.Unknown],
     {
       onlySubscribed: true,
     },
   );
-  const filteredReferences = allReferences.filter(
+  const filteredTracks = allTracks.filter(
     (tr) =>
       tr.publication.kind === Track.Kind.Video &&
       tr.participant.identity !== room.localParticipant.identity,
@@ -105,11 +105,11 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
   }
   if (room.state !== ConnectionState.Disconnected) {
     if (effectiveLayout.startsWith('speaker')) {
-      main = <SpeakerLayout references={filteredReferences} />;
+      main = <SpeakerLayout tracks={filteredTracks} />;
     } else if (effectiveLayout.startsWith('single-speaker')) {
-      main = <SingleSpeakerLayout references={filteredReferences} />;
+      main = <SingleSpeakerLayout tracks={filteredTracks} />;
     } else if (effectiveLayout.startsWith('grid')) {
-      main = <GridLayout tracks={filteredReferences} />;
+      main = <GridLayout tracks={filteredTracks} />;
     }
   }
 

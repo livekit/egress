@@ -1,7 +1,7 @@
 import { useVisualStableUpdate, VideoTrack } from '@livekit/components-react';
 import { LayoutProps } from './common';
 
-const SingleSpeakerLayout = ({ references }: LayoutProps) => {
+const SingleSpeakerLayout = ({ tracks: references }: LayoutProps) => {
   const sortedReferences = useVisualStableUpdate(references, 1);
   if (sortedReferences.length === 0) {
     return null;
