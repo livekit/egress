@@ -109,7 +109,7 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
     } else if (effectiveLayout.startsWith('single-speaker')) {
       main = <SingleSpeakerLayout references={filteredReferences} />;
     } else if (effectiveLayout.startsWith('grid')) {
-      main = <GridLayout />;
+      main = <GridLayout tracks={filteredReferences} />;
     }
   }
 

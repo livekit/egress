@@ -3,15 +3,15 @@ import { CarouselView, FocusLayout, useVisualStableUpdate } from '@livekit/compo
 import { LayoutProps } from './common';
 
 const SpeakerLayout = ({ references }: LayoutProps) => {
-  const sortedReferences = useVisualStableUpdate(references, 1);
+  const sortedTracks = useVisualStableUpdate(references, 1);
+  const mainTrack = sortedTracks.shift();
+  const remainingTracks = useVisualStableUpdate(sortedTracks, 3);
 
   return (
     <div className="lk-focus-layout">
       {/* TODO: remove selected reference from CarouselView */}
-      <CarouselView />
-      {sortedReferences.length > 0 && (
-        <FocusLayout trackReference={sortedReferences[0] as TrackReference} />
-      )}
+      <CarouselView tracks={remainingTracks} />
+      {sortedTracks.length > 0 && <FocusLayout track={mainTrack as TrackReference} />}
     </div>
   );
 };

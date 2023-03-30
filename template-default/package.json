@@ -5,8 +5,8 @@
   "version": "0.2.0",
   "private": true,
   "dependencies": {
-    "@livekit/components-core": "^0.5.1",
-    "@livekit/components-react": "^0.6.2",
+    "@livekit/components-core": "^0.6.0",
+    "@livekit/components-react": "^0.7.0",
     "@livekit/components-styles": "^0.2.1",
     "@livekit/egress-sdk": "^0.1.1",
     "livekit-client": "^1.7.0",
