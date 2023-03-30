@@ -209,6 +209,7 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 				FilenameSuffix: test.filenameSuffix,
 			}
 			if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && conf.GCPUpload != nil {
+				segmentOutput.FilenamePrefix = test.filename
 				segmentOutput.Output = &livekit.SegmentedFileOutput_Gcp{
 					Gcp: conf.GCPUpload,
 				}
