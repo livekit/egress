@@ -131,6 +131,51 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 		}
 	}
 
+	t.Run("rtmp-bad-url", func(t *testing.T) {
+		awaitIdle(t, conf.svc)
+
+		req := &rpc.StartEgressRequest{
+			EgressId: utils.NewGuid(utils.EgressPrefix),
+			Request: &rpc.StartEgressRequest_RoomComposite{
+				RoomComposite: &livekit.RoomCompositeEgressRequest{
+					RoomName: conf.RoomName,
+					Layout:   "speaker-light",
+					StreamOutputs: []*livekit.StreamOutput{{
+						Protocol: livekit.StreamProtocol_RTMP,
+						Urls:     []string{badStreamUrl, streamUrl1},
+					}},
+				},
+			},
+		}
+
+		info, err := conf.client.StartEgress(context.Background(), "", req)
+		require.NoError(t, err)
+		require.Empty(t, info.Error)
+		require.NotEmpty(t, info.EgressId)
+		require.Equal(t, conf.RoomName, info.RoomName)
+		require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
+
+		info = getUpdate(t, conf, info.EgressId)
+		if info.Status == livekit.EgressStatus_EGRESS_STARTING {
+			checkUpdate(t, conf, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
+		} else {
+			require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE, info.Status)
+			checkUpdate(t, conf, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
+		}
+
+		info = stopEgress(t, conf, info.EgressId)
+		require.Len(t, info.StreamResults, 2)
+		for _, res := range info.StreamResults {
+			if res.Url == redactedUrl1 {
+				require.Equal(t, livekit.StreamInfo_FINISHED, res.Status)
+				require.Empty(t, res.Error)
+			} else {
+				require.Equal(t, livekit.StreamInfo_FAILED, res.Status)
+				require.NotEmpty(t, res.Error)
+			}
+		}
+	})
+
 	t.Run("rtmp-failure", func(t *testing.T) {
 		awaitIdle(t, conf.svc)
 
@@ -162,7 +207,7 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 		if info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
 			checkUpdate(t, conf, info.EgressId, livekit.EgressStatus_EGRESS_FAILED)
 		} else {
-			require.Equal(t, info.Status, livekit.EgressStatus_EGRESS_FAILED)
+			require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
 		}
 	})
 }

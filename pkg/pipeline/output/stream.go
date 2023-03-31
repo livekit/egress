@@ -112,6 +112,9 @@ func buildStreamSink(protocol types.OutputType, url string) (*streamSink, error)
 		if err = sink.SetProperty("sync", false); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
+		if err = sink.SetProperty("async-connect", false); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
 		if err = sink.Set("location", url); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
