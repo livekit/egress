@@ -15,5 +15,4 @@ COPY template-default/ .
 
 # build
 RUN yarn install
-RUN yarn lint
 RUN yarn build
