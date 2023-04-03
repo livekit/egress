@@ -289,6 +289,7 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 
 func testRoomCompositeMulti(t *testing.T, conf *TestConfig) {
 	awaitIdle(t, conf.svc)
+	publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
 
 	req := &rpc.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
