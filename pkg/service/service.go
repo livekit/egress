@@ -66,6 +66,10 @@ func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 eg
 		}
 	}
 
+	if err := s.monitor.Start(s.conf, s.isAvailable); err != nil {
+		return err, nil
+	}
+
 	return s, nil
 }
 
@@ -80,10 +84,6 @@ func (s *Service) Run() error {
 		go func() {
 			_ = s.promServer.Serve(promListener)
 		}()
-	}
-
-	if err := s.monitor.Start(s.conf, s.isAvailable); err != nil {
-		return err
 	}
 
 	if s.rpcServerV0 != nil {
