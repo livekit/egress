@@ -169,6 +169,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	// wait until room is ready
 	start := p.src.StartRecording()
 	if start != nil {
+		logger.Debugw("waiting for start signal")
 		select {
 		case <-p.closed.Watch():
 			p.src.Close()
