@@ -1,9 +1,13 @@
+<!--BEGIN_BANNER_IMAGE--><!--END_BANNER_IMAGE-->
+
 # LiveKit Egress
 
+<!--BEGIN_DESCRIPTION-->
 WebRTC is fantastic for last-mile media delivery, but interoperability with other services can be challenging.
 An application may want to do things like store a session for future playback, relay a stream to a CDN, or process a track through a transcription service – workflows where media travels through a different system or protocol.
 LiveKit Egress is the solution to these interoperability challenges. It provides a consistent set of APIs that gives you
 universal export of your LiveKit sessions and tracks.
+<!--END_DESCRIPTION-->
 
 ## Capabilities
 
@@ -217,3 +221,5 @@ muting: false
 
 Join a room using https://example.livekit.io or your own client, then run `mage integration test/config.yaml`.
 This will test recording different file types, output settings, and streams against your room.
+
+<!--BEGIN_REPO_NAV--><!--END_REPO_NAV-->
