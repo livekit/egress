@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
@@ -46,7 +47,7 @@ func (p *PipelineConfig) applyPreset(preset livekit.EncodingOptionsPreset) {
 	}
 }
 
-func (p *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) {
+func (p *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) error {
 	// audio
 	switch advanced.AudioCodec {
 	case livekit.AudioCodec_OPUS:
@@ -78,9 +79,15 @@ func (p *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) {
 
 	if advanced.Width != 0 {
 		p.Width = advanced.Width
+		if p.Width%2 == 1 {
+			return errors.ErrOddNumber
+		}
 	}
 	if advanced.Height != 0 {
 		p.Height = advanced.Height
+		if p.Height%2 == 1 {
+			return errors.ErrOddNumber
+		}
 	}
 	if advanced.Depth != 0 {
 		p.Depth = advanced.Depth
@@ -94,4 +101,6 @@ func (p *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) {
 	if advanced.KeyFrameInterval != 0 {
 		p.KeyFrameInterval = advanced.KeyFrameInterval
 	}
+
+	return nil
 }

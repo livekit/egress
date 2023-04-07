@@ -11,6 +11,7 @@ import (
 var (
 	ErrNoConfig             = psrpc.NewErrorf(psrpc.Internal, "missing config")
 	ErrInvalidRPC           = psrpc.NewErrorf(psrpc.MalformedRequest, "invalid request")
+	ErrOddNumber            = psrpc.NewErrorf(psrpc.InvalidArgument, "height and width must be even numbers")
 	ErrGhostPadFailed       = psrpc.NewErrorf(psrpc.Internal, "failed to add ghost pad to bin")
 	ErrStreamAlreadyExists  = psrpc.NewErrorf(psrpc.AlreadyExists, "stream already exists")
 	ErrNonStreamingPipeline = psrpc.NewErrorf(psrpc.InvalidArgument, "UpdateStream called on non-streaming egress")
