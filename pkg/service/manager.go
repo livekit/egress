@@ -192,7 +192,7 @@ func (s *ProcessManager) killAll() {
 	defer s.mu.RUnlock()
 
 	for _, h := range s.activeHandlers {
-		if h.closed.IsOpen() {
+		if !h.closed.IsBroken() {
 			if err := h.cmd.Process.Signal(syscall.SIGINT); err != nil {
 				logger.Errorw("failed to kill process", err, "egressID", h.req.EgressId)
 			}
