@@ -196,7 +196,9 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			p.applyPreset(opts.Preset)
 
 		case *livekit.RoomCompositeEgressRequest_Advanced:
-			p.applyAdvanced(opts.Advanced)
+			if err = p.applyAdvanced(opts.Advanced); err != nil {
+				return err
+			}
 		}
 
 		// output params
@@ -241,7 +243,9 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			p.applyPreset(opts.Preset)
 
 		case *livekit.WebEgressRequest_Advanced:
-			p.applyAdvanced(opts.Advanced)
+			if err = p.applyAdvanced(opts.Advanced); err != nil {
+				return err
+			}
 		}
 
 		// output params
@@ -280,7 +284,9 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			p.applyPreset(opts.Preset)
 
 		case *livekit.TrackCompositeEgressRequest_Advanced:
-			p.applyAdvanced(opts.Advanced)
+			if err := p.applyAdvanced(opts.Advanced); err != nil {
+				return err
+			}
 		}
 
 		// output params
