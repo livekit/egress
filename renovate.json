@@ -30,5 +30,6 @@
   "postUpdateOptions": [
     "gomodTidy"
   ],
-  "schedule": ["every weekend"]
+  "rebaseWhen": "never",
+  "draftPR": true
 }
