@@ -6,9 +6,9 @@
   "private": true,
   "dependencies": {
     "@babel/runtime": "^7.21.0",
-    "@livekit/components-core": "^0.6.0",
-    "@livekit/components-react": "^0.7.0",
-    "@livekit/components-styles": "^0.2.1",
+    "@livekit/components-core": "^0.6.1",
+    "@livekit/components-react": "^0.7.1",
+    "@livekit/components-styles": "^0.3.0",
     "@livekit/egress-sdk": "^0.1.2",
     "livekit-client": "^1.7.0",
     "react": ">=18",

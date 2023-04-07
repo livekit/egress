@@ -3,7 +3,6 @@ import {
   LiveKitRoom,
   RoomAudioRenderer,
   useRoomContext,
-  useScreenShare,
   useTracks,
 } from '@livekit/components-react';
 import EgressHelper from '@livekit/egress-sdk';
@@ -39,7 +38,9 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
   const room = useRoomContext();
   const [layout, setLayout] = useState(initialLayout);
   const [hasScreenShare, setHasScreenShare] = useState(false);
-  const screenShareRef = useScreenShare({ room });
+  const screenshareTracks = useTracks([Track.Source.ScreenShare], {
+    onlySubscribed: true,
+  });
 
   useEffect(() => {
     if (room) {
@@ -59,6 +60,7 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
           break;
         }
       }
+
       if (hasTrack) {
         EgressHelper.startRecording();
       } else {
@@ -68,12 +70,12 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
   }, [room]);
 
   useEffect(() => {
-    if (screenShareRef.screenShareTrack && screenShareRef.screenShareParticipant) {
+    if (screenshareTracks.length > 0 && screenshareTracks[0].publication) {
       setHasScreenShare(true);
     } else {
       setHasScreenShare(false);
     }
-  }, [screenShareRef.screenShareTrack, screenShareRef.screenShareParticipant]);
+  }, [screenshareTracks]);
 
   const allTracks = useTracks(
     [Track.Source.Camera, Track.Source.ScreenShare, Track.Source.Unknown],

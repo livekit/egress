@@ -1,5 +1,10 @@
 import { TrackReference } from '@livekit/components-core';
-import { CarouselView, FocusLayout, useVisualStableUpdate } from '@livekit/components-react';
+import {
+  CarouselView,
+  FocusLayout,
+  VideoTrack,
+  useVisualStableUpdate,
+} from '@livekit/components-react';
 import { LayoutProps } from './common';
 
 const SpeakerLayout = ({ tracks: references }: LayoutProps) => {
@@ -7,11 +12,17 @@ const SpeakerLayout = ({ tracks: references }: LayoutProps) => {
   const mainTrack = sortedTracks.shift();
   const remainingTracks = useVisualStableUpdate(sortedTracks, 3);
 
+  if (!mainTrack) {
+    return <></>;
+  } else if (remainingTracks.length === 0) {
+    const trackRef = mainTrack as TrackReference;
+    return <VideoTrack {...trackRef} />;
+  }
+
   return (
     <div className="lk-focus-layout">
-      {/* TODO: remove selected reference from CarouselView */}
       <CarouselView tracks={remainingTracks} />
-      {sortedTracks.length > 0 && <FocusLayout track={mainTrack as TrackReference} />}
+      <FocusLayout track={mainTrack as TrackReference} />
     </div>
   );
 };
