@@ -7,15 +7,15 @@ replace github.com/tinyzimmer/go-glib v0.0.25 => github.com/livekit/go-glib v0.0
 replace github.com/tinyzimmer/go-gst v0.2.33 => github.com/livekit/go-gst v0.2.34-0.20230210170313-8fc9f59623d4
 
 require (
-	cloud.google.com/go/storage v1.29.0
+	cloud.google.com/go/storage v1.30.1
 	github.com/Azure/azure-storage-blob-go v0.15.0
-	github.com/aliyun/aliyun-oss-go-sdk v2.2.6+incompatible
-	github.com/aws/aws-sdk-go v1.44.214
-	github.com/chromedp/cdproto v0.0.0-20230220211738-2b1ec77315c9
-	github.com/chromedp/chromedp v0.8.8
+	github.com/aliyun/aliyun-oss-go-sdk v2.2.7+incompatible
+	github.com/aws/aws-sdk-go v1.44.239
+	github.com/chromedp/cdproto v0.0.0-20230329100754-6125fc8d7142
+	github.com/chromedp/chromedp v0.9.1
 	github.com/frostbyte73/core v0.0.5
 	github.com/go-logr/logr v1.2.4
-	github.com/googleapis/gax-go/v2 v2.7.1
+	github.com/googleapis/gax-go/v2 v2.8.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/grafov/m3u8 v0.11.1 // v0.11.2 is busted
 	github.com/livekit/livekit-server v1.4.2-0.20230406135133-fb301e6e759a
@@ -33,7 +33,7 @@ require (
 	github.com/tinyzimmer/go-gst v0.2.33
 	github.com/urfave/cli/v2 v2.25.1
 	go.uber.org/atomic v1.10.0
-	google.golang.org/api v0.114.0
+	google.golang.org/api v0.116.0
 	google.golang.org/grpc v1.54.0
 	google.golang.org/protobuf v1.30.0
 	gopkg.in/yaml.v3 v3.0.1
