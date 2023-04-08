@@ -169,7 +169,7 @@ func (w *AppWriter) Drain(force bool) {
 func (w *AppWriter) run() {
 	// always post EOS if the writer started playing
 	defer func() {
-		if w.playing.IsClosed() {
+		if w.playing.IsBroken() {
 			if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
 				w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
 			}
@@ -195,7 +195,7 @@ func (w *AppWriter) run() {
 			_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
 			pkt, _, err := w.track.ReadRTP()
 			if err != nil {
-				if w.draining.IsClosed() {
+				if w.draining.IsBroken() {
 					return
 				}
 
@@ -244,7 +244,7 @@ func (w *AppWriter) run() {
 
 func (w *AppWriter) pushPackets(force bool) error {
 	// buffers can only be pushed to the appsrc while in the playing state
-	if w.playing.IsOpen() {
+	if !w.playing.IsBroken() {
 		return nil
 	}
 
@@ -269,7 +269,7 @@ func (w *AppWriter) pushBlankFrames() error {
 
 		for {
 			<-ticker.C
-			if w.draining.IsClosed() || !w.muted.Load() {
+			if w.draining.IsBroken() || !w.muted.Load() {
 				return nil
 			}
 		}
@@ -284,7 +284,7 @@ func (w *AppWriter) pushBlankFrames() error {
 	defer ticker.Stop()
 
 	for {
-		if w.draining.IsClosed() {
+		if w.draining.IsBroken() {
 			return nil
 		}
 
