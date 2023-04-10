@@ -579,14 +579,16 @@ func redactStreamKeys(stream *livekit.StreamOutput) {
 }
 
 func clean(filepath string) string {
-	if filepath == "" {
-		return filepath
+	hasEndingSlash := strings.HasSuffix(filepath, "/")
+	filepath = path.Clean(filepath)
+	if filepath == "" || filepath == "." || filepath == ".." {
+		return ""
 	}
 	for strings.HasPrefix(filepath, "../") {
 		filepath = filepath[3:]
 	}
-	if strings.HasSuffix(filepath, "/") {
-		return path.Clean(filepath) + "/"
+	if hasEndingSlash {
+		return filepath + "/"
 	}
-	return path.Clean(filepath)
+	return filepath
 }
