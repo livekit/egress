@@ -248,7 +248,7 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileOut
 		OutputType: outputType,
 		FileParams: FileParams{
 			FileInfo:        &livekit.FileInfo{},
-			StorageFilepath: file.GetFilepath(),
+			StorageFilepath: clean(file.GetFilepath()),
 		},
 		DisableManifest: file.GetDisableManifest(),
 		UploadConfig:    p.getUploadConfig(file),
@@ -313,9 +313,9 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 		EgressType: types.EgressTypeSegments,
 		SegmentParams: SegmentParams{
 			SegmentsInfo:     &livekit.SegmentsInfo{},
-			SegmentPrefix:    segments.FilenamePrefix,
+			SegmentPrefix:    clean(segments.FilenamePrefix),
 			SegmentSuffix:    segments.FilenameSuffix,
-			PlaylistFilename: segments.PlaylistName,
+			PlaylistFilename: clean(segments.PlaylistName),
 			SegmentDuration:  int(segments.SegmentDuration),
 		},
 		DisableManifest: segments.DisableManifest,
@@ -576,4 +576,19 @@ func redactStreamKeys(stream *livekit.StreamOutput) {
 			stream.Urls[i] = redacted
 		}
 	}
+}
+
+func clean(filepath string) string {
+	hasEndingSlash := strings.HasSuffix(filepath, "/")
+	filepath = path.Clean(filepath)
+	for strings.HasPrefix(filepath, "../") {
+		filepath = filepath[3:]
+	}
+	if filepath == "" || filepath == "." || filepath == ".." {
+		return ""
+	}
+	if hasEndingSlash {
+		return filepath + "/"
+	}
+	return filepath
 }
