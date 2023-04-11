@@ -211,28 +211,18 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 
 func (p *PipelineConfig) getEncodedFileConfig(req interface{}, file *livekit.EncodedFileOutput) (*OutputConfig, error) {
 	outputType := types.OutputTypeUnknown
-	updateOutputType := true
 
-	switch req.(type) {
-	case *livekit.TrackCompositeEgressRequest:
-		if file.FileType == livekit.EncodedFileType_DEFAULT_FILETYPE {
-			updateOutputType = false
-		}
-	}
-
-	if updateOutputType {
-		switch file.FileType {
-		case livekit.EncodedFileType_DEFAULT_FILETYPE:
-			if !p.VideoEnabled && p.AudioOutCodec != types.MimeTypeAAC {
-				outputType = types.OutputTypeOGG
-			} else {
-				outputType = types.OutputTypeMP4
-			}
-		case livekit.EncodedFileType_MP4:
-			outputType = types.OutputTypeMP4
-		case livekit.EncodedFileType_OGG:
+	switch file.FileType {
+	case livekit.EncodedFileType_DEFAULT_FILETYPE:
+		if !p.VideoEnabled && p.AudioOutCodec != types.MimeTypeAAC {
 			outputType = types.OutputTypeOGG
+		} else {
+			outputType = types.OutputTypeMP4
 		}
+	case livekit.EncodedFileType_MP4:
+		outputType = types.OutputTypeMP4
+	case livekit.EncodedFileType_OGG:
+		outputType = types.OutputTypeOGG
 	}
 
 	return p.getFileConfig(outputType, file)
