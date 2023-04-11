@@ -18,6 +18,7 @@ var (
 	ErrEgressNotFound       = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
 	ErrProfileNotFound      = psrpc.NewErrorf(psrpc.NotFound, "profile not found")
 	ErrInvalidTimestamp     = psrpc.NewErrorf(psrpc.Internal, "timestamping issue")
+	ErrNoCompatibleCodec    = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")
 )
 
 func New(err string) error {

@@ -126,4 +126,28 @@ var (
 			MimeTypeH264: true,
 		},
 	}
+
+	AllAudioCodecs = map[MimeType]bool{
+		MimeTypeAAC:      true,
+		MimeTypeOpus:     true,
+		MimeTypeRawAudio: true,
+	}
+
+	AllVideoCodecs = map[MimeType]bool{
+		MimeTypeH264:     true,
+		MimeTypeVP8:      true,
+		MimeTypeRawVideo: true,
+	}
 )
+
+func FilterSupportedCodecsInList(codecList map[MimeType]bool, codecCompatibility map[MimeType]bool) map[MimeType]bool {
+	res := make(map[MimeType]bool)
+
+	for k, _ := range codecList {
+		if codecCompatibility[k] {
+			res[k] = true
+		}
+	}
+
+	return res
+}

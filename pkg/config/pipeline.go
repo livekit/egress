@@ -347,23 +347,80 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 	}
 
-	// codec compatibilities
-	for _, o := range p.Outputs {
-		if o.OutputType != types.OutputTypeUnknown {
-			// check audio codec
-			if p.AudioEnabled {
-				if p.AudioOutCodec == "" {
-					p.AudioOutCodec = types.DefaultAudioCodecs[o.OutputType]
-				} else if !types.CodecCompatibility[o.OutputType][p.AudioOutCodec] {
-					return errors.ErrIncompatible(o.OutputType, p.AudioOutCodec)
+	compatibleAudioCodecs := types.AllAudioCodecs
+	compatibleVideoCodecs := types.AllVideoCodecs
+
+	if p.AudioEnabled {
+		if p.AudioOutCodec == "" {
+			// No provided codec. First pass: find the list of codecs supported by all outputs, if any
+			for _, o := range p.Outputs {
+				if o.OutputType != types.OutputTypeUnknown {
+					compatibleAudioCodecs = types.FilterSupportedCodecsInList(compatibleAudioCodecs, types.CodecCompatibility[o.OutputType])
 				}
 			}
 
-			// check video codec
-			if p.VideoEnabled {
-				if p.VideoOutCodec == "" {
-					p.VideoOutCodec = types.DefaultVideoCodecs[o.OutputType]
-				} else if !types.CodecCompatibility[o.OutputType][p.VideoOutCodec] {
+			if len(compatibleAudioCodecs) == 0 {
+				return errors.ErrNoCompatibleCodec
+			}
+
+			// 2nd pass: try to find a prefered codec
+			for _, o := range p.Outputs {
+				if o.OutputType != types.OutputTypeUnknown {
+					c := types.DefaultAudioCodecs[o.OutputType]
+					if compatibleAudioCodecs[c] {
+						p.AudioOutCodec = c
+						break
+					}
+				}
+			}
+
+			// No preferred codec found. Pick one from the list
+			for k, _ := range compatibleAudioCodecs {
+				p.AudioOutCodec = k
+				break
+			}
+		} else {
+			for _, o := range p.Outputs {
+				if !types.CodecCompatibility[o.OutputType][p.AudioOutCodec] {
+					return errors.ErrIncompatible(o.OutputType, p.AudioOutCodec)
+				}
+			}
+		}
+
+	}
+
+	if p.VideoEnabled {
+		if p.VideoOutCodec == "" {
+			// No provided codec. First pass: find the list of codecs supported by all outputs, if any
+			for _, o := range p.Outputs {
+				if o.OutputType != types.OutputTypeUnknown {
+					compatibleVideoCodecs = types.FilterSupportedCodecsInList(compatibleVideoCodecs, types.CodecCompatibility[o.OutputType])
+				}
+			}
+
+			if len(compatibleVideoCodecs) == 0 {
+				return errors.ErrNoCompatibleCodec
+			}
+
+			// 2nd pass: try to find a prefered codec
+			for _, o := range p.Outputs {
+				if o.OutputType != types.OutputTypeUnknown {
+					c := types.DefaultVideoCodecs[o.OutputType]
+					if compatibleVideoCodecs[c] {
+						p.VideoOutCodec = c
+						break
+					}
+				}
+			}
+
+			// No preferred codec found. Pick one from the list
+			for k, _ := range compatibleVideoCodecs {
+				p.VideoOutCodec = k
+				break
+			}
+		} else {
+			for _, o := range p.Outputs {
+				if !types.CodecCompatibility[o.OutputType][p.VideoOutCodec] {
 					return errors.ErrIncompatible(o.OutputType, p.VideoOutCodec)
 				}
 			}
