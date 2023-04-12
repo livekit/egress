@@ -12,6 +12,40 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
+func runTrackCompositeTests(t *testing.T, conf *TestConfig) {
+	if !conf.runTrackCompositeTests {
+		return
+	}
+
+	conf.sourceFramerate = 23.97
+
+	if conf.runFileTests {
+		t.Run("TrackComposite/File", func(t *testing.T) {
+			testTrackCompositeFile(t, conf)
+		})
+	}
+
+	if conf.runStreamTests {
+		t.Run("TrackComposite/Stream", func(t *testing.T) {
+			testTrackCompositeStream(t, conf)
+		})
+	}
+
+	if conf.runSegmentTests {
+		t.Run("TrackComposite/Segments", func(t *testing.T) {
+			testTrackCompositeSegments(t, conf)
+		})
+	}
+
+	if conf.runMultiTests {
+		runSDKTest(t, conf, "TrackComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8,
+			func(t *testing.T, audioTrackID, videoTrackID string) {
+				testTrackCompositeMulti(t, conf, audioTrackID, videoTrackID)
+			},
+		)
+	}
+}
+
 func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 	for _, test := range []*testCase{
 		{
@@ -37,10 +71,7 @@ func testTrackCompositeFile(t *testing.T, conf *TestConfig) {
 			sessionTimeout: time.Second * 20,
 		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			awaitIdle(t, conf.svc)
-
-			audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, test.audioCodec, test.videoCodec, conf.Muting)
+		runSDKTest(t, conf, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
 			var aID, vID string
 			if !test.audioOnly {
 				vID = videoTrackID
@@ -100,11 +131,7 @@ func testTrackCompositeStream(t *testing.T, conf *TestConfig) {
 			expectVideoTranscoding: true,
 		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			awaitIdle(t, conf.svc)
-
-			audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
-
+		runSDKTest(t, conf, test.name, types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T, audioTrackID, videoTrackID string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
 				Request: &rpc.StartEgressRequest_TrackComposite{
@@ -152,10 +179,7 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 			filenameSuffix: livekit.SegmentedFileSuffix_TIMESTAMP,
 		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			awaitIdle(t, conf.svc)
-
-			audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, test.audioCodec, test.videoCodec, conf.Muting)
+		runSDKTest(t, conf, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
 			var aID, vID string
 			if !test.audioOnly {
 				vID = videoTrackID
@@ -204,11 +228,7 @@ func testTrackCompositeSegments(t *testing.T, conf *TestConfig) {
 	}
 }
 
-func testTrackCompositeMulti(t *testing.T, conf *TestConfig) {
-	awaitIdle(t, conf.svc)
-
-	audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
-
+func testTrackCompositeMulti(t *testing.T, conf *TestConfig, audioTrackID, videoTrackID string) {
 	req := &rpc.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &rpc.StartEgressRequest_TrackComposite{

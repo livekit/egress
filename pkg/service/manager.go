@@ -129,9 +129,8 @@ func (s *ProcessManager) launchHandler(req *rpc.StartEgressRequest, info *liveki
 
 func (s *ProcessManager) awaitCleanup(h *process) {
 	if err := h.cmd.Wait(); err != nil {
-		logger.Errorw("process failed", err)
 		h.info.Status = livekit.EgressStatus_EGRESS_FAILED
-		h.info.Error = err.Error()
+		h.info.Error = "internal error"
 		s.onFatalError(h.info)
 	}
 

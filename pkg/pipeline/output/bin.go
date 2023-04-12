@@ -11,6 +11,7 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/tracer"
+	"github.com/livekit/psrpc"
 )
 
 type Bin struct {
@@ -197,7 +198,7 @@ func (b *Bin) RemoveStream(url string) error {
 func (b *Bin) SetWebsocketSink(writer *sink.WebsocketSink) error {
 	o := b.outputs[types.EgressTypeWebsocket]
 	if o == nil {
-		return errors.ErrGstPipelineError(errors.New("missing websocket output"))
+		return psrpc.NewErrorf(psrpc.Internal, "missing websocket output")
 	}
 
 	o.(*WebsocketOutput).SetSink(writer)
