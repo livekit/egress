@@ -210,15 +210,17 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 }
 
 func (p *PipelineConfig) getEncodedFileConfig(req interface{}, file *livekit.EncodedFileOutput) (*OutputConfig, error) {
-	outputType := types.OutputTypeUnknown
+	var outputType types.OutputType
 
 	switch file.FileType {
 	case livekit.EncodedFileType_DEFAULT_FILETYPE:
-		if !p.VideoEnabled && p.AudioOutCodec != types.MimeTypeAAC {
-			outputType = types.OutputTypeOGG
-		} else {
-			outputType = types.OutputTypeMP4
-		}
+		outputType = types.OutputTypeUnknownFile
+		//	case livekit.EncodedFileType_DEFAULT_FILETYPE:
+		//		if !p.VideoEnabled && p.AudioOutCodec != types.MimeTypeAAC {
+		//			outputType = types.OutputTypeOGG
+		//		} else {
+		//			outputType = types.OutputTypeMP4
+		//		}
 	case livekit.EncodedFileType_MP4:
 		outputType = types.OutputTypeMP4
 	case livekit.EncodedFileType_OGG:
@@ -229,7 +231,7 @@ func (p *PipelineConfig) getEncodedFileConfig(req interface{}, file *livekit.Enc
 }
 
 func (p *PipelineConfig) getDirectFileConfig(file *livekit.DirectFileOutput) (*OutputConfig, error) {
-	return p.getFileConfig(types.OutputTypeUnknown, file)
+	return p.getFileConfig(types.OutputTypeUnknownFile, file)
 }
 
 func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileOutput) (*OutputConfig, error) {
@@ -246,7 +248,7 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileOut
 
 	// filename
 	identifier, replacements := p.getFilenameInfo()
-	if conf.OutputType != types.OutputTypeUnknown {
+	if conf.OutputType != types.OutputTypeUnknownFile {
 		err := conf.updateFilepath(p, identifier, replacements)
 		if err != nil {
 			return nil, err

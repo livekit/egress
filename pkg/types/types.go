@@ -32,16 +32,16 @@ const (
 	EgressTypeSegments  EgressType = "segments"
 
 	// output types
-	OutputTypeUnknown OutputType = ""
-	OutputTypeRaw     OutputType = "audio/x-raw"
-	OutputTypeOGG     OutputType = "audio/ogg"
-	OutputTypeIVF     OutputType = "video/x-ivf"
-	OutputTypeMP4     OutputType = "video/mp4"
-	OutputTypeTS      OutputType = "video/mp2t"
-	OutputTypeWebM    OutputType = "video/webm"
-	OutputTypeRTMP    OutputType = "rtmp"
-	OutputTypeHLS     OutputType = "application/x-mpegurl"
-	OutputTypeJSON    OutputType = "application/json"
+	OutputTypeUnknownFile OutputType = ""
+	OutputTypeRaw         OutputType = "audio/x-raw"
+	OutputTypeOGG         OutputType = "audio/ogg"
+	OutputTypeIVF         OutputType = "video/x-ivf"
+	OutputTypeMP4         OutputType = "video/mp4"
+	OutputTypeTS          OutputType = "video/mp2t"
+	OutputTypeWebM        OutputType = "video/webm"
+	OutputTypeRTMP        OutputType = "rtmp"
+	OutputTypeHLS         OutputType = "application/x-mpegurl"
+	OutputTypeJSON        OutputType = "application/json"
 
 	// file extensions
 	FileExtensionRaw  = ".raw"
@@ -124,6 +124,12 @@ var (
 		OutputTypeHLS: {
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,
+		},
+		OutputTypeUnknownFile: {
+			MimeTypeAAC:  true,
+			MimeTypeOpus: true,
+			MimeTypeH264: true,
+			MimeTypeVP8:  true,
 		},
 	}
 
