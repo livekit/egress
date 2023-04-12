@@ -49,10 +49,10 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		return nil, errors.Fatal(err)
 	}
 	if err = rpcServer.RegisterUpdateStreamTopic(conf.Info.EgressId); err != nil {
-		return nil, err
+		return nil, errors.Fatal(err)
 	}
 	if err = rpcServer.RegisterStopEgressTopic(conf.Info.EgressId); err != nil {
-		return nil, err
+		return nil, errors.Fatal(err)
 	}
 	h.rpcServer = rpcServer
 
@@ -70,9 +70,14 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		}
 	}()
 
-	// build/verify params
 	h.pipeline, err = pipeline.New(context.Background(), h.conf, h.sendUpdate)
 	if err != nil {
+		if !errors.IsFatal(err) {
+			// user error, send update
+			conf.Info.Status = livekit.EgressStatus_EGRESS_FAILED
+			conf.Info.Error = err.Error()
+			h.sendUpdate(context.Background(), conf.Info)
+		}
 		return nil, err
 	}
 

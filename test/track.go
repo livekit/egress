@@ -130,7 +130,7 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 			}
 
 			conf.SessionLimits.StreamOutputMaxDuration = test.sessionTimeout
-			
+
 			filepath := getFilePath(conf.ServiceConfig, test.filename)
 			wss := newTestWebsocketServer(filepath)
 			s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
