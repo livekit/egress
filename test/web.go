@@ -5,14 +5,45 @@ package test
 import (
 	"testing"
 
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 )
 
-func testWebFile(t *testing.T, conf *TestConfig) {
-	awaitIdle(t, conf.svc)
+func runWebTests(t *testing.T, conf *TestConfig) {
+	if !conf.runWebTests {
+		return
+	}
 
+	conf.sourceFramerate = 30
+
+	if conf.runFileTests {
+		runWebTest(t, conf, "Web/File", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+			testWebFile(t, conf)
+		})
+	}
+
+	if conf.runStreamTests {
+		runWebTest(t, conf, "Web/Stream", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+			testWebStream(t, conf)
+		})
+	}
+
+	if conf.runSegmentTests {
+		runWebTest(t, conf, "Web/Segments", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+			testWebSegments(t, conf)
+		})
+	}
+
+	if conf.runMultiTests {
+		runWebTest(t, conf, "Web/Multi", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+			testWebMulti(t, conf)
+		})
+	}
+}
+
+func testWebFile(t *testing.T, conf *TestConfig) {
 	fileOutput := &livekit.EncodedFileOutput{
 		Filepath: getFilePath(conf.ServiceConfig, "web_{time}"),
 	}
@@ -39,8 +70,6 @@ func testWebFile(t *testing.T, conf *TestConfig) {
 }
 
 func testWebStream(t *testing.T, conf *TestConfig) {
-	awaitIdle(t, conf.svc)
-
 	req := &rpc.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &rpc.StartEgressRequest_Web{
@@ -60,8 +89,6 @@ func testWebStream(t *testing.T, conf *TestConfig) {
 }
 
 func testWebSegments(t *testing.T, conf *TestConfig) {
-	awaitIdle(t, conf.svc)
-
 	segmentOutput := &livekit.SegmentedFileOutput{
 		FilenamePrefix: getFilePath(conf.ServiceConfig, "web_{time}"),
 		PlaylistName:   "web_{time}.m3u8",
@@ -89,8 +116,6 @@ func testWebSegments(t *testing.T, conf *TestConfig) {
 }
 
 func testWebMulti(t *testing.T, conf *TestConfig) {
-	awaitIdle(t, conf.svc)
-
 	req := &rpc.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 

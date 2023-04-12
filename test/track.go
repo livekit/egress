@@ -24,6 +24,26 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
+func runTrackTests(t *testing.T, conf *TestConfig) {
+	if !conf.runTrackTests {
+		return
+	}
+
+	conf.sourceFramerate = 23.97
+
+	if conf.runFileTests {
+		t.Run("Track/File", func(t *testing.T) {
+			testTrackFile(t, conf)
+		})
+	}
+
+	if conf.runStreamTests {
+		t.Run("Track/Stream", func(t *testing.T) {
+			testTrackStream(t, conf)
+		})
+	}
+}
+
 func testTrackFile(t *testing.T, conf *TestConfig) {
 	for _, test := range []*testCase{
 		{
@@ -56,15 +76,11 @@ func testTrackFile(t *testing.T, conf *TestConfig) {
 			sessionTimeout: time.Second * 20,
 		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			awaitIdle(t, conf.svc)
-
-			codec := test.videoCodec
-			if test.audioOnly {
-				codec = test.audioCodec
+		runSDKTest(t, conf, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
+			trackID := audioTrackID
+			if trackID == "" {
+				trackID = videoTrackID
 			}
-			trackID := publishSampleToRoom(t, conf.room, codec, conf.Muting)
-			time.Sleep(time.Second)
 
 			trackRequest := &livekit.TrackEgressRequest{
 				RoomName: conf.room.Name(),
@@ -107,18 +123,14 @@ func testTrackStream(t *testing.T, conf *TestConfig) {
 			filename:   fmt.Sprintf("track-ws-limit-%v.raw", now),
 		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			awaitIdle(t, conf.svc)
+		runSDKTest(t, conf, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
+			trackID := audioTrackID
+			if trackID == "" {
+				trackID = videoTrackID
+			}
 
 			conf.SessionLimits.StreamOutputMaxDuration = test.sessionTimeout
-
-			codec := test.videoCodec
-			if test.audioCodec != "" {
-				codec = test.audioCodec
-			}
-			trackID := publishSampleToRoom(t, conf.room, codec, false)
-			time.Sleep(time.Second)
-
+			
 			filepath := getFilePath(conf.ServiceConfig, test.filename)
 			wss := newTestWebsocketServer(filepath)
 			s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
