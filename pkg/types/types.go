@@ -144,13 +144,32 @@ var (
 		MimeTypeVP8:      true,
 		MimeTypeRawVideo: true,
 	}
+	AllFileOutputTypes = []OutputType{
+		OutputTypeOGG,
+		OutputTypeIVF,
+		OutputTypeMP4,
+		OutputTypeWebM,
+	}
 )
 
-func FilterSupportedCodecsInList(codecList map[MimeType]bool, codecCompatibility map[MimeType]bool) map[MimeType]bool {
-	res := make(map[MimeType]bool)
+func GetMapIntersection[K comparable](mapA map[K]bool, mapB map[K]bool) map[K]bool {
+	res := make(map[K]bool)
 
-	for k, _ := range codecList {
-		if codecCompatibility[k] {
+	for k, _ := range mapA {
+		if mapB[k] {
+			res[k] = true
+		}
+	}
+
+	return res
+}
+
+func GetOutputTypesForCodec(codec MimeType) map[OutputType]bool {
+	res := make(map[OutputType]bool)
+
+	for _, k := range AllFileOutputTypes {
+
+		if CodecCompatibility[k][codec] {
 			res[k] = true
 		}
 	}

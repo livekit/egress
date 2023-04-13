@@ -347,16 +347,17 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 	}
 
-	err = p.validateAndUpdateCodecs()
+	err := p.validateAndUpdateCodecs()
 	if err != nil {
 		return err
 	}
 
-	err = validateAndUpdateFileOutputType()
+	err = p.ensureFileOutputType()
 	if err != nil {
 		return err
 	}
 
+	return nil
 }
 
 func (p *PipelineConfig) validateAndUpdateCodecs() error {
@@ -367,7 +368,7 @@ func (p *PipelineConfig) validateAndUpdateCodecs() error {
 		if p.AudioOutCodec == "" {
 			// No provided codec. First pass: find the list of codecs supported by all outputs, if any
 			for _, o := range p.Outputs {
-				compatibleAudioCodecs = types.FilterSupportedCodecsInList(compatibleAudioCodecs, types.CodecCompatibility[o.OutputType])
+				compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[o.OutputType])
 			}
 
 			if len(compatibleAudioCodecs) == 0 {
@@ -402,7 +403,7 @@ func (p *PipelineConfig) validateAndUpdateCodecs() error {
 		if p.VideoOutCodec == "" {
 			// No provided codec. First pass: find the list of codecs supported by all outputs, if any
 			for _, o := range p.Outputs {
-				compatibleVideoCodecs = types.FilterSupportedCodecsInList(compatibleVideoCodecs, types.CodecCompatibility[o.OutputType])
+				compatibleVideoCodecs = types.GetMapIntersection(compatibleVideoCodecs, types.CodecCompatibility[o.OutputType])
 			}
 
 			if len(compatibleVideoCodecs) == 0 {
@@ -428,6 +429,32 @@ func (p *PipelineConfig) validateAndUpdateCodecs() error {
 				if !types.CodecCompatibility[o.OutputType][p.VideoOutCodec] {
 					return errors.ErrIncompatible(o.OutputType, p.VideoOutCodec)
 				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (p *PipelineConfig) ensureFileOutputType() error {
+	for _, o := range p.Outputs {
+		if o.OutputType == types.OutputTypeUnknownFile {
+			videoCompatibleOutputTypes := types.GetOutputTypesForCodec(p.VideoOutCodec)
+			audioCompatibleOutputTypes := types.GetOutputTypesForCodec(p.AudioOutCodec)
+
+			outputTypes := types.GetMapIntersection(videoCompatibleOutputTypes, audioCompatibleOutputTypes)
+			if len(outputTypes) == 0 {
+				return errors.ErrNoCompatibleFileOutputType
+			}
+			for k, _ := range outputTypes {
+				o.OutputType = k
+				break
+			}
+
+			identifier, replacements := p.getFilenameInfo()
+			err := o.updateFilepath(p, identifier, replacements)
+			if err != nil {
+				return err
 			}
 		}
 	}
