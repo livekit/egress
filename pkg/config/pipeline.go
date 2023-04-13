@@ -439,10 +439,19 @@ func (p *PipelineConfig) validateAndUpdateCodecs() error {
 func (p *PipelineConfig) ensureFileOutputType() error {
 	for _, o := range p.Outputs {
 		if o.OutputType == types.OutputTypeUnknownFile {
-			videoCompatibleOutputTypes := types.GetOutputTypesForCodec(p.VideoOutCodec)
-			audioCompatibleOutputTypes := types.GetOutputTypesForCodec(p.AudioOutCodec)
+			var outputTypes map[types.OutputType]bool
 
-			outputTypes := types.GetMapIntersection(videoCompatibleOutputTypes, audioCompatibleOutputTypes)
+			switch {
+			case p.VideoEnabled && p.AudioEnabled:
+				videoCompatibleOutputTypes := types.GetOutputTypesForCodec(p.VideoOutCodec)
+				audioCompatibleOutputTypes := types.GetOutputTypesForCodec(p.AudioOutCodec)
+
+				outputTypes = types.GetMapIntersection(videoCompatibleOutputTypes, audioCompatibleOutputTypes)
+			case p.VideoEnabled:
+				outputTypes = types.GetOutputTypesForCodec(p.VideoOutCodec)
+			case p.AudioEnabled:
+				outputTypes = types.GetOutputTypesForCodec(p.AudioOutCodec)
+			}
 			if len(outputTypes) == 0 {
 				return errors.ErrNoCompatibleFileOutputType
 			}
