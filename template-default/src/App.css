@@ -10,6 +10,7 @@ body {
   margin: 0;
   height: 100vh;
   font-size: 12px;
+  overflow: hidden;
 }
 
 .light {
