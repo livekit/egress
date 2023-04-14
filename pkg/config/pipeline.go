@@ -347,117 +347,129 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 	}
 
-	err := p.validateAndUpdateCodecs()
-	if err != nil {
-		return err
-	}
-
-	err = p.ensureFileOutputType()
-	if err != nil {
-		return err
+	// TODO not for track egress
+	// TODO types unit test
+	if p.TrackID != "" {
+		err := p.validateAndUpdateOutputParams()
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (p *PipelineConfig) validateAndUpdateCodecs() error {
-	compatibleAudioCodecs := types.AllAudioCodecs
-	compatibleVideoCodecs := types.AllVideoCodecs
+func (p *PipelineConfig) validateAndUpdateOutputParams() error {
+	compatibleAudioCodecs, compatibleVideoCodecs, err := p.validateAndUpdateOutputCodecs()
+	if err != nil {
+		return err
+	}
 
+	// Find a compatible file format if not set
+	err = p.updateOutputType(compatibleAudioCodecs, compatibleVideoCodecs)
+	if err != nil {
+		return err
+	}
+
+	// Select a codec compatible with all outputs
 	if p.AudioEnabled {
-		if p.AudioOutCodec == "" {
-			// No provided codec. First pass: find the list of codecs supported by all outputs, if any
-			for _, o := range p.Outputs {
-				compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[o.OutputType])
-			}
-
-			if len(compatibleAudioCodecs) == 0 {
-				return errors.ErrNoCompatibleCodec
-			}
-
-			// 2nd pass: try to find a prefered codec
-			for _, o := range p.Outputs {
-				c := types.DefaultAudioCodecs[o.OutputType]
-				if compatibleAudioCodecs[c] {
-					p.AudioOutCodec = c
-					break
-				}
-			}
-
-			// No preferred codec found. Pick one from the list
-			for k, _ := range compatibleAudioCodecs {
-				p.AudioOutCodec = k
+		for _, o := range p.Outputs {
+			if compatibleAudioCodecs[types.DefaultAudioCodecs[o.OutputType]] {
+				p.AudioOutCodec = types.DefaultAudioCodecs[o.OutputType]
 				break
 			}
+		}
+		if p.AudioOutCodec == "" {
+			// No default codec found. Pick a random compatible one
+			for k, _ := range compatibleAudioCodecs {
+				p.AudioOutCodec = k
+			}
+		}
+	}
+
+	if p.VideoEnabled {
+		for _, o := range p.Outputs {
+			if compatibleVideoCodecs[types.DefaultVideoCodecs[o.OutputType]] {
+				p.VideoOutCodec = types.DefaultVideoCodecs[o.OutputType]
+				break
+			}
+		}
+		if p.VideoOutCodec == "" {
+			// No default codec found. Pick a random compatible one
+			for k, _ := range compatibleVideoCodecs {
+				p.VideoOutCodec = k
+			}
+		}
+	}
+
+	return nil
+}
+
+func (p *PipelineConfig) validateAndUpdateOutputCodecs() (compatibleAudioCodecs map[types.MimeType]bool, compatibleVideoCodecs map[types.MimeType]bool, err error) {
+	compatibleAudioCodecs = make(map[types.MimeType]bool)
+	compatibleVideoCodecs = make(map[types.MimeType]bool)
+
+	// Find video and audio codecs compatible with all outputs
+	if p.AudioEnabled {
+		if p.AudioOutCodec == "" {
+			compatibleAudioCodecs = types.AllOutputAudioCodecs
 		} else {
-			for _, o := range p.Outputs {
-				if !types.CodecCompatibility[o.OutputType][p.AudioOutCodec] {
-					return errors.ErrIncompatible(o.OutputType, p.AudioOutCodec)
+			compatibleAudioCodecs[p.AudioOutCodec] = true
+		}
+
+		for _, o := range p.Outputs {
+			compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[o.OutputType])
+			if len(compatibleAudioCodecs) == 0 {
+				if p.AudioOutCodec == "" {
+					return nil, nil, errors.ErrNoCompatibleCodec
+				} else {
+					// Return a more specific error if a codec was provided
+					return nil, nil, errors.ErrIncompatible(o.OutputType, p.AudioOutCodec)
 				}
 			}
 		}
-
 	}
 
 	if p.VideoEnabled {
 		if p.VideoOutCodec == "" {
-			// No provided codec. First pass: find the list of codecs supported by all outputs, if any
-			for _, o := range p.Outputs {
-				compatibleVideoCodecs = types.GetMapIntersection(compatibleVideoCodecs, types.CodecCompatibility[o.OutputType])
-			}
-
-			if len(compatibleVideoCodecs) == 0 {
-				return errors.ErrNoCompatibleCodec
-			}
-
-			// 2nd pass: try to find a prefered codec
-			for _, o := range p.Outputs {
-				c := types.DefaultVideoCodecs[o.OutputType]
-				if compatibleVideoCodecs[c] {
-					p.VideoOutCodec = c
-					break
-				}
-			}
-
-			// No preferred codec found. Pick one from the list
-			for k, _ := range compatibleVideoCodecs {
-				p.VideoOutCodec = k
-				break
-			}
+			compatibleVideoCodecs = types.AllOutputVideoCodecs
 		} else {
-			for _, o := range p.Outputs {
-				if !types.CodecCompatibility[o.OutputType][p.VideoOutCodec] {
-					return errors.ErrIncompatible(o.OutputType, p.VideoOutCodec)
+			compatibleVideoCodecs[p.VideoOutCodec] = true
+		}
+
+		for _, o := range p.Outputs {
+			compatibleVideoCodecs = types.GetMapIntersection(compatibleVideoCodecs, types.CodecCompatibility[o.OutputType])
+			if len(compatibleVideoCodecs) == 0 {
+				if p.AudioOutCodec == "" {
+					return nil, nil, errors.ErrNoCompatibleCodec
+				} else {
+					// Return a more specific error if a codec was provided
+					return nil, nil, errors.ErrIncompatible(o.OutputType, p.VideoOutCodec)
 				}
 			}
 		}
 	}
-
-	return nil
+	return compatibleAudioCodecs, compatibleVideoCodecs, nil
 }
 
-func (p *PipelineConfig) ensureFileOutputType() error {
+func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeType]bool, compatibleVideoCodecs map[types.MimeType]bool) error {
 	for _, o := range p.Outputs {
 		if o.OutputType == types.OutputTypeUnknownFile {
-			var outputTypes map[types.OutputType]bool
-
-			switch {
-			case p.VideoEnabled && p.AudioEnabled:
-				videoCompatibleOutputTypes := types.GetOutputTypesForCodec(p.VideoOutCodec)
-				audioCompatibleOutputTypes := types.GetOutputTypesForCodec(p.AudioOutCodec)
-
-				outputTypes = types.GetMapIntersection(videoCompatibleOutputTypes, audioCompatibleOutputTypes)
-			case p.VideoEnabled:
-				outputTypes = types.GetOutputTypesForCodec(p.VideoOutCodec)
-			case p.AudioEnabled:
-				outputTypes = types.GetOutputTypesForCodec(p.AudioOutCodec)
-			}
-			if len(outputTypes) == 0 {
-				return errors.ErrNoCompatibleFileOutputType
-			}
-			for k, _ := range outputTypes {
-				o.OutputType = k
-				break
+			if p.AudioEnabled && !p.VideoEnabled {
+				ot := types.GetOutputTypeCompatibleWithCodecs(types.AudioOnlyFileOutputTypes, compatibleAudioCodecs, nil)
+				if ot == types.OutputTypeUnknownFile {
+					return errors.ErrNoCompatibleFileOutputType
+				}
+				o.OutputType = ot
+				compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[ot])
+			} else {
+				ot := types.GetOutputTypeCompatibleWithCodecs(types.AudioVideoFileOutputTypes, compatibleAudioCodecs, compatibleVideoCodecs)
+				if ot == types.OutputTypeUnknownFile {
+					return errors.ErrNoCompatibleFileOutputType
+				}
+				o.OutputType = ot
+				compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[ot])
+				compatibleVideoCodecs = types.GetMapIntersection(compatibleVideoCodecs, types.CodecCompatibility[ot])
 			}
 
 			identifier, replacements := p.getFilenameInfo()
@@ -467,15 +479,16 @@ func (p *PipelineConfig) ensureFileOutputType() error {
 			}
 		}
 	}
-
 	return nil
 }
 
 // used for sdk input source
 func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string) error {
+	// TODO move code here?
 	for egressType, o := range p.Outputs {
 		switch egressType {
 		case types.EgressTypeFile:
+
 			//			if o.OutputType == types.OutputTypeUnknownFile {
 			//				if !p.VideoEnabled {
 			// audio input is always opus

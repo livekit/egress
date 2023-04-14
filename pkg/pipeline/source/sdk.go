@@ -197,11 +197,15 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			p.AudioEnabled = true
 			p.AudioInCodec = codec
 			if p.AudioOutCodec == "" {
+				// This should only happen for track egress
 				p.AudioOutCodec = codec
 			}
 			p.AudioTranscoding = true
-			if p.VideoEnabled {
-				writeBlanks = true
+
+			if p.TrackID != "" {
+				if conf, ok := p.Outputs[types.EgressTypeFile]; ok {
+					conf.OutputType = types.OutputTypeOGG
+				}
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeVP8)):
@@ -211,12 +215,8 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			p.VideoEnabled = true
 			p.VideoInCodec = codec
 			if p.VideoOutCodec == "" {
-				if p.AudioEnabled {
-					// transcode to h264 for composite requests
-					p.VideoOutCodec = types.MimeTypeH264
-				} else {
-					p.VideoOutCodec = codec
-				}
+				// This should only happen for track egress
+				p.VideoOutCodec = codec
 			}
 			if p.VideoOutCodec != codec {
 				p.VideoTranscoding = true
@@ -236,7 +236,14 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			p.VideoEnabled = true
 			p.VideoInCodec = codec
 			if p.VideoOutCodec == "" {
+				// This should only happen for track egress
 				p.VideoOutCodec = types.MimeTypeH264
+			}
+
+			if p.TrackID != "" {
+				if conf, ok := p.Outputs[types.EgressTypeFile]; ok {
+					conf.OutputType = types.OutputTypeMP4
+				}
 			}
 
 		default:

@@ -55,22 +55,24 @@ const (
 
 var (
 	DefaultAudioCodecs = map[OutputType]MimeType{
-		OutputTypeRaw:  MimeTypeRawAudio,
-		OutputTypeOGG:  MimeTypeOpus,
-		OutputTypeMP4:  MimeTypeAAC,
-		OutputTypeTS:   MimeTypeAAC,
-		OutputTypeWebM: MimeTypeOpus,
-		OutputTypeRTMP: MimeTypeAAC,
-		OutputTypeHLS:  MimeTypeAAC,
+		OutputTypeRaw:         MimeTypeRawAudio,
+		OutputTypeOGG:         MimeTypeOpus,
+		OutputTypeMP4:         MimeTypeAAC,
+		OutputTypeTS:          MimeTypeAAC,
+		OutputTypeWebM:        MimeTypeOpus,
+		OutputTypeRTMP:        MimeTypeAAC,
+		OutputTypeHLS:         MimeTypeAAC,
+		OutputTypeUnknownFile: MimeTypeOpus,
 	}
 
 	DefaultVideoCodecs = map[OutputType]MimeType{
-		OutputTypeIVF:  MimeTypeVP8,
-		OutputTypeMP4:  MimeTypeH264,
-		OutputTypeTS:   MimeTypeH264,
-		OutputTypeWebM: MimeTypeVP8,
-		OutputTypeRTMP: MimeTypeH264,
-		OutputTypeHLS:  MimeTypeH264,
+		OutputTypeIVF:         MimeTypeVP8,
+		OutputTypeMP4:         MimeTypeH264,
+		OutputTypeTS:          MimeTypeH264,
+		OutputTypeWebM:        MimeTypeVP8,
+		OutputTypeRTMP:        MimeTypeH264,
+		OutputTypeHLS:         MimeTypeH264,
+		OutputTypeUnknownFile: MimeTypeH264,
 	}
 
 	FileExtensions = map[FileExtension]struct{}{
@@ -133,24 +135,50 @@ var (
 		},
 	}
 
-	AllAudioCodecs = map[MimeType]bool{
+	AllOutputAudioCodecs = map[MimeType]bool{
 		MimeTypeAAC:      true,
 		MimeTypeOpus:     true,
 		MimeTypeRawAudio: true,
 	}
 
-	AllVideoCodecs = map[MimeType]bool{
-		MimeTypeH264:     true,
-		MimeTypeVP8:      true,
-		MimeTypeRawVideo: true,
+	AllOutputVideoCodecs = map[MimeType]bool{
+		MimeTypeH264: true,
 	}
-	AllFileOutputTypes = []OutputType{
+
+	AudioOnlyFileOutputTypes = []OutputType{
 		OutputTypeOGG,
-		OutputTypeIVF,
 		OutputTypeMP4,
-		OutputTypeWebM,
+	}
+
+	AudioVideoFileOutputTypes = []OutputType{
+		OutputTypeMP4,
 	}
 )
+
+func GetOutputTypeCompatibleWithCodecs(types []OutputType, audioCodecs map[MimeType]bool, videoCodecs map[MimeType]bool) OutputType {
+	for _, t := range types {
+		if audioCodecs != nil && !IsOutputTypeCompatibleWithCodecs(t, audioCodecs) {
+			continue
+		}
+
+		if videoCodecs != nil && !IsOutputTypeCompatibleWithCodecs(t, videoCodecs) {
+			continue
+		}
+
+		return t
+	}
+
+	return OutputTypeUnknownFile
+}
+
+func IsOutputTypeCompatibleWithCodecs(ot OutputType, codecs map[MimeType]bool) bool {
+	for k, _ := range codecs {
+		if CodecCompatibility[ot][k] {
+			return true
+		}
+	}
+	return false
+}
 
 func GetMapIntersection[K comparable](mapA map[K]bool, mapB map[K]bool) map[K]bool {
 	res := make(map[K]bool)
@@ -164,15 +192,9 @@ func GetMapIntersection[K comparable](mapA map[K]bool, mapB map[K]bool) map[K]bo
 	return res
 }
 
-func GetOutputTypesForCodec(codec MimeType) map[OutputType]bool {
-	res := make(map[OutputType]bool)
-
-	for _, k := range AllFileOutputTypes {
-
-		if CodecCompatibility[k][codec] {
-			res[k] = true
-		}
+func MergeMaps[K comparable](mapA map[K]bool, mapB map[K]bool) map[K]bool {
+	for k, _ := range mapB {
+		mapA[k] = true
 	}
-
-	return res
+	return mapA
 }
