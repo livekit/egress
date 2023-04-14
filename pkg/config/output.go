@@ -215,12 +215,6 @@ func (p *PipelineConfig) getEncodedFileConfig(req interface{}, file *livekit.Enc
 	switch file.FileType {
 	case livekit.EncodedFileType_DEFAULT_FILETYPE:
 		outputType = types.OutputTypeUnknownFile
-		//	case livekit.EncodedFileType_DEFAULT_FILETYPE:
-		//		if !p.VideoEnabled && p.AudioOutCodec != types.MimeTypeAAC {
-		//			outputType = types.OutputTypeOGG
-		//		} else {
-		//			outputType = types.OutputTypeMP4
-		//		}
 	case livekit.EncodedFileType_MP4:
 		outputType = types.OutputTypeMP4
 	case livekit.EncodedFileType_OGG:

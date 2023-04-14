@@ -347,9 +347,8 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 	}
 
-	// TODO not for track egress
-	// TODO types unit test
 	if p.TrackID != "" {
+		// Track egress output format decision happens after join
 		err := p.validateAndUpdateOutputParams()
 		if err != nil {
 			return err
@@ -453,50 +452,42 @@ func (p *PipelineConfig) validateAndUpdateOutputCodecs() (compatibleAudioCodecs 
 }
 
 func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeType]bool, compatibleVideoCodecs map[types.MimeType]bool) error {
-	for _, o := range p.Outputs {
-		if o.OutputType == types.OutputTypeUnknownFile {
-			if p.AudioEnabled && !p.VideoEnabled {
-				ot := types.GetOutputTypeCompatibleWithCodecs(types.AudioOnlyFileOutputTypes, compatibleAudioCodecs, nil)
-				if ot == types.OutputTypeUnknownFile {
-					return errors.ErrNoCompatibleFileOutputType
-				}
-				o.OutputType = ot
-				compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[ot])
-			} else {
-				ot := types.GetOutputTypeCompatibleWithCodecs(types.AudioVideoFileOutputTypes, compatibleAudioCodecs, compatibleVideoCodecs)
-				if ot == types.OutputTypeUnknownFile {
-					return errors.ErrNoCompatibleFileOutputType
-				}
-				o.OutputType = ot
-				compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[ot])
-				compatibleVideoCodecs = types.GetMapIntersection(compatibleVideoCodecs, types.CodecCompatibility[ot])
-			}
-
-			identifier, replacements := p.getFilenameInfo()
-			err := o.updateFilepath(p, identifier, replacements)
-			if err != nil {
-				return err
-			}
-		}
+	o := p.Outputs[types.EgressTypeFile]
+	if o == nil || o.OutputType != types.OutputTypeUnknownFile {
+		return nil
 	}
+
+	if p.AudioEnabled && !p.VideoEnabled {
+		ot := types.GetOutputTypeCompatibleWithCodecs(types.AudioOnlyFileOutputTypes, compatibleAudioCodecs, nil)
+		if ot == types.OutputTypeUnknownFile {
+			return errors.ErrNoCompatibleFileOutputType
+		}
+		o.OutputType = ot
+		compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[ot])
+	} else {
+		ot := types.GetOutputTypeCompatibleWithCodecs(types.AudioVideoFileOutputTypes, compatibleAudioCodecs, compatibleVideoCodecs)
+		if ot == types.OutputTypeUnknownFile {
+			return errors.ErrNoCompatibleFileOutputType
+		}
+		o.OutputType = ot
+		compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[ot])
+		compatibleVideoCodecs = types.GetMapIntersection(compatibleVideoCodecs, types.CodecCompatibility[ot])
+	}
+
+	identifier, replacements := p.getFilenameInfo()
+	err := o.updateFilepath(p, identifier, replacements)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // used for sdk input source
 func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string) error {
-	// TODO move code here?
 	for egressType, o := range p.Outputs {
 		switch egressType {
 		case types.EgressTypeFile:
-
-			//			if o.OutputType == types.OutputTypeUnknownFile {
-			//				if !p.VideoEnabled {
-			// audio input is always opus
-			//					o.OutputType = types.OutputTypeOGG
-			//				} else {
-			//					o.OutputType = types.OutputTypeMP4
-			//				}
-			//			}
 			return o.updateFilepath(p, identifier, replacements)
 
 		case types.EgressTypeSegments:
