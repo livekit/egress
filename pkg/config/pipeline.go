@@ -347,7 +347,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 	}
 
-	if p.TrackID != "" {
+	if p.TrackID == "" {
 		// Track egress output format decision happens after join
 		err := p.validateAndUpdateOutputParams()
 		if err != nil {
