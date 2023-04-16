@@ -15,9 +15,39 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
-	publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeH264, conf.Muting)
+func runRoomCompositeTests(t *testing.T, conf *TestConfig) {
+	if !conf.runRoomTests {
+		return
+	}
 
+	conf.sourceFramerate = 30
+
+	if conf.runFileTests {
+		t.Run("RoomComposite/File", func(t *testing.T) {
+			testRoomCompositeFile(t, conf)
+		})
+	}
+
+	if conf.runStreamTests {
+		t.Run("RoomComposite/Stream", func(t *testing.T) {
+			testRoomCompositeStream(t, conf)
+		})
+	}
+
+	if conf.runSegmentTests {
+		t.Run("RoomComposite/Segments", func(t *testing.T) {
+			testRoomCompositeSegments(t, conf)
+		})
+	}
+
+	if conf.runMultiTests {
+		runWebTest(t, conf, "RoomComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+			testRoomCompositeMulti(t, conf)
+		})
+	}
+}
+
+func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 	for _, test := range []*testCase{
 		{
 			name:     "h264-high-mp4",
@@ -48,9 +78,7 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 			expectVideoTranscoding: false,
 		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			awaitIdle(t, conf.svc)
-
+		runWebTest(t, conf, test.name, types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
 			fileOutput := &livekit.EncodedFileOutput{
 				FileType: test.fileType,
 				Filepath: getFilePath(conf.ServiceConfig, test.filename),
@@ -94,8 +122,6 @@ func testRoomCompositeFile(t *testing.T, conf *TestConfig) {
 }
 
 func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
-	publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
-
 	for _, test := range []*testCase{
 		{
 			name:                   "room-rtmp",
@@ -107,9 +133,7 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 			expectVideoTranscoding: true,
 		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			awaitIdle(t, conf.svc)
-
+		runWebTest(t, conf, test.name, types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
 				Request: &rpc.StartEgressRequest_RoomComposite{
@@ -131,9 +155,7 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 		}
 	}
 
-	t.Run("rtmp-bad-url", func(t *testing.T) {
-		awaitIdle(t, conf.svc)
-
+	runWebTest(t, conf, "rtmp-bad-url", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_RoomComposite{
@@ -176,9 +198,7 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 		}
 	})
 
-	t.Run("rtmp-failure", func(t *testing.T) {
-		awaitIdle(t, conf.svc)
-
+	runWebTest(t, conf, "rtmp-failure", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_RoomComposite{
@@ -213,8 +233,6 @@ func testRoomCompositeStream(t *testing.T, conf *TestConfig) {
 }
 
 func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
-	publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
-
 	for _, test := range []*testCase{
 		{
 			name: "rs-baseline",
@@ -245,9 +263,7 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 			expectVideoTranscoding: true,
 		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			awaitIdle(t, conf.svc)
-
+		runWebTest(t, conf, test.name, types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 			segmentOutput := &livekit.SegmentedFileOutput{
 				FilenamePrefix: getFilePath(conf.ServiceConfig, test.filename),
 				PlaylistName:   test.playlist,
@@ -288,9 +304,6 @@ func testRoomCompositeSegments(t *testing.T, conf *TestConfig) {
 }
 
 func testRoomCompositeMulti(t *testing.T, conf *TestConfig) {
-	awaitIdle(t, conf.svc)
-	publishSamplesToRoom(t, conf.room, types.MimeTypeOpus, types.MimeTypeVP8, conf.Muting)
-
 	req := &rpc.StartEgressRequest{
 		EgressId: utils.NewGuid(utils.EgressPrefix),
 		Request: &rpc.StartEgressRequest_RoomComposite{

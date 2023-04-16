@@ -202,7 +202,14 @@ func runHandler(c *cli.Context) error {
 		}
 		handler, err = service.NewHandler(conf, bus, ioClient)
 		if err != nil {
-			return err
+			if errors.IsFatal(err) {
+				// service will send info update and shut down
+				logger.Errorw("fatal error", err)
+				return err
+			} else {
+				// update sent by handler
+				return nil
+			}
 		}
 	}
 

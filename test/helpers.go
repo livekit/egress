@@ -4,6 +4,7 @@ package test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -23,9 +24,11 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	lksdk "github.com/livekit/server-sdk-go"
 )
 
@@ -45,8 +48,17 @@ var (
 )
 
 func publishSamplesToRoom(t *testing.T, room *lksdk.Room, audioCodec, videoCodec types.MimeType, withMuting bool) (audioTrackID, videoTrackID string) {
-	videoTrackID = publishSampleToRoom(t, room, videoCodec, false)
-	audioTrackID = publishSampleToRoom(t, room, audioCodec, withMuting)
+	withVideoMuting := false
+	if audioCodec == "" {
+		withVideoMuting = withMuting
+	}
+	if videoCodec != "" {
+		videoTrackID = publishSampleToRoom(t, room, videoCodec, withVideoMuting)
+	}
+	if audioCodec != "" {
+		audioTrackID = publishSampleToRoom(t, room, audioCodec, withMuting)
+	}
+
 	time.Sleep(time.Second)
 	return
 }
@@ -107,6 +119,65 @@ func getFilePath(conf *config.ServiceConfig, filename string) string {
 	}
 
 	return fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, filename)
+}
+
+func startEgress(t *testing.T, conf *TestConfig, req *rpc.StartEgressRequest) string {
+	// send start request
+	info, err := conf.client.StartEgress(context.Background(), "", req)
+
+	// check returned egress info
+	require.NoError(t, err)
+	require.Empty(t, info.Error)
+	require.NotEmpty(t, info.EgressId)
+	switch req.Request.(type) {
+	case *rpc.StartEgressRequest_Web:
+		require.Empty(t, info.RoomName)
+	default:
+		require.Equal(t, conf.RoomName, info.RoomName)
+	}
+
+	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING.String(), info.Status.String())
+
+	// check status
+	if conf.HealthPort != 0 {
+		status := getStatus(t, conf.svc)
+		require.Contains(t, status, info.EgressId)
+	}
+
+	// wait
+	time.Sleep(time.Second * 5)
+
+	// check active update
+	checkUpdate(t, conf, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
+
+	return info.EgressId
+}
+
+func getStatus(t *testing.T, svc *service.Service) map[string]interface{} {
+	b, err := svc.Status()
+	require.NoError(t, err)
+
+	status := make(map[string]interface{})
+	err = json.Unmarshal(b, &status)
+	require.NoError(t, err)
+
+	return status
+}
+
+func stopEgress(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressInfo {
+	// send stop request
+	info, err := conf.client.StopEgress(context.Background(), egressID, &livekit.StopEgressRequest{
+		EgressId: egressID,
+	})
+
+	// check returned egress info
+	require.NoError(t, err)
+	require.Empty(t, info.Error)
+	require.NotEmpty(t, info.StartedAt)
+	require.Equal(t, livekit.EgressStatus_EGRESS_ENDING.String(), info.Status.String())
+
+	// check complete update
+	return checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
 }
 
 func download(t *testing.T, uploadParams interface{}, localFilepath, storageFilepath string) {

@@ -4,7 +4,6 @@ package test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"math/rand"
@@ -117,105 +116,28 @@ func RunTestSuite(t *testing.T, conf *TestConfig, bus psrpc.MessageBus, template
 	}
 
 	// run tests
-	if conf.runRoomTests {
-		conf.sourceFramerate = 30
+	runRoomCompositeTests(t, conf)
+	runWebTests(t, conf)
+	runTrackCompositeTests(t, conf)
+	runTrackTests(t, conf)
+}
 
-		if conf.runFileTests {
-			t.Run("RoomComposite/File", func(t *testing.T) {
-				testRoomCompositeFile(t, conf)
-			})
-		}
+func runWebTest(t *testing.T, conf *TestConfig, name string, audioCodec, videoCodec types.MimeType, f func(t *testing.T)) {
+	t.Run(name, func(t *testing.T) {
+		awaitIdle(t, conf.svc)
+		publishSamplesToRoom(t, conf.room, audioCodec, videoCodec, conf.Muting)
+		f(t)
+	})
+}
 
-		if conf.runStreamTests {
-			t.Run("RoomComposite/Stream", func(t *testing.T) {
-				testRoomCompositeStream(t, conf)
-			})
-		}
-
-		if conf.runSegmentTests {
-			t.Run("RoomComposite/Segments", func(t *testing.T) {
-				testRoomCompositeSegments(t, conf)
-			})
-		}
-
-		if conf.runMultiTests {
-			t.Run("RoomComposite/Multi", func(t *testing.T) {
-				testRoomCompositeMulti(t, conf)
-			})
-		}
-	}
-
-	if conf.runWebTests {
-		conf.sourceFramerate = 30
-
-		if conf.runFileTests {
-			t.Run("Web/File", func(t *testing.T) {
-				testWebFile(t, conf)
-			})
-		}
-
-		if conf.runStreamTests {
-			t.Run("Web/Stream", func(t *testing.T) {
-				testWebStream(t, conf)
-			})
-		}
-
-		if conf.runSegmentTests {
-			t.Run("Web/Segments", func(t *testing.T) {
-				testWebSegments(t, conf)
-			})
-		}
-
-		if conf.runMultiTests {
-			t.Run("Web/Multi", func(t *testing.T) {
-				testWebMulti(t, conf)
-			})
-		}
-	}
-
-	if conf.runTrackCompositeTests {
-		conf.sourceFramerate = 23.97
-
-		if conf.runFileTests {
-			t.Run("TrackComposite/File", func(t *testing.T) {
-				testTrackCompositeFile(t, conf)
-			})
-		}
-
-		if conf.runStreamTests {
-			t.Run("TrackComposite/Stream", func(t *testing.T) {
-				testTrackCompositeStream(t, conf)
-			})
-		}
-
-		if conf.runSegmentTests {
-			t.Run("TrackComposite/Segments", func(t *testing.T) {
-				testTrackCompositeSegments(t, conf)
-			})
-		}
-
-		if conf.runMultiTests {
-			t.Run("TrackComposite/Multi", func(t *testing.T) {
-				testTrackCompositeMulti(t, conf)
-			})
-		}
-	}
-
-	if conf.runTrackTests {
-		conf.sourceFramerate = 23.97
-
-		if conf.runFileTests {
-			t.Run("Track/File", func(t *testing.T) {
-				testTrackFile(t, conf)
-			})
-		}
-
-		if conf.runStreamTests {
-			t.Run("Track/Stream", func(t *testing.T) {
-				testTrackStream(t, conf)
-			})
-		}
-	}
+func runSDKTest(t *testing.T, conf *TestConfig, name string, audioCodec, videoCodec types.MimeType,
+	f func(t *testing.T, audioTrackID, videoTrackID string),
+) {
+	t.Run(name, func(t *testing.T) {
+		awaitIdle(t, conf.svc)
+		audioTrackID, videoTrackID := publishSamplesToRoom(t, conf.room, audioCodec, videoCodec, conf.Muting)
+		f(t, audioTrackID, videoTrackID)
+	})
 }
 
 func awaitIdle(t *testing.T, svc *service.Service) {
@@ -441,63 +363,4 @@ func runMultipleTest(
 	if segments {
 		verifySegments(t, conf, p, filenameSuffix, res)
 	}
-}
-
-func startEgress(t *testing.T, conf *TestConfig, req *rpc.StartEgressRequest) string {
-	// send start request
-	info, err := conf.client.StartEgress(context.Background(), "", req)
-
-	// check returned egress info
-	require.NoError(t, err)
-	require.Empty(t, info.Error)
-	require.NotEmpty(t, info.EgressId)
-	switch req.Request.(type) {
-	case *rpc.StartEgressRequest_Web:
-		require.Empty(t, info.RoomName)
-	default:
-		require.Equal(t, conf.RoomName, info.RoomName)
-	}
-
-	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING.String(), info.Status.String())
-
-	// check status
-	if conf.HealthPort != 0 {
-		status := getStatus(t, conf.svc)
-		require.Contains(t, status, info.EgressId)
-	}
-
-	// wait
-	time.Sleep(time.Second * 5)
-
-	// check active update
-	checkUpdate(t, conf, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
-
-	return info.EgressId
-}
-
-func getStatus(t *testing.T, svc *service.Service) map[string]interface{} {
-	b, err := svc.Status()
-	require.NoError(t, err)
-
-	status := make(map[string]interface{})
-	err = json.Unmarshal(b, &status)
-	require.NoError(t, err)
-
-	return status
-}
-
-func stopEgress(t *testing.T, conf *TestConfig, egressID string) *livekit.EgressInfo {
-	// send stop request
-	info, err := conf.client.StopEgress(context.Background(), egressID, &livekit.StopEgressRequest{
-		EgressId: egressID,
-	})
-
-	// check returned egress info
-	require.NoError(t, err)
-	require.Empty(t, info.Error)
-	require.NotEmpty(t, info.StartedAt)
-	require.Equal(t, livekit.EgressStatus_EGRESS_ENDING.String(), info.Status.String())
-
-	// check complete update
-	return checkStoppedEgress(t, conf, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
 }
