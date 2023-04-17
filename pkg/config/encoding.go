@@ -77,21 +77,28 @@ func (p *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) error 
 		p.VideoProfile = types.ProfileHigh
 	}
 
-	if advanced.Width != 0 {
+	if advanced.Width > 0 {
+		if advanced.Width%2 == 1 {
+			return errors.ErrInvalidInput("width")
+		}
 		p.Width = advanced.Width
-		if p.Width%2 == 1 {
-			return errors.ErrOddNumber
-		}
 	}
-	if advanced.Height != 0 {
+
+	if advanced.Height > 0 {
+		if advanced.Height%2 == 1 {
+			return errors.ErrInvalidInput("height")
+		}
 		p.Height = advanced.Height
-		if p.Height%2 == 1 {
-			return errors.ErrOddNumber
-		}
 	}
-	if advanced.Depth != 0 {
+
+	switch advanced.Depth {
+	case 0:
+	case 8, 16, 24:
 		p.Depth = advanced.Depth
+	default:
+		return errors.ErrInvalidInput("depth")
 	}
+
 	if advanced.Framerate != 0 {
 		p.Framerate = advanced.Framerate
 	}
