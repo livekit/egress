@@ -55,24 +55,22 @@ const (
 
 var (
 	DefaultAudioCodecs = map[OutputType]MimeType{
-		OutputTypeRaw:         MimeTypeRawAudio,
-		OutputTypeOGG:         MimeTypeOpus,
-		OutputTypeMP4:         MimeTypeAAC,
-		OutputTypeTS:          MimeTypeAAC,
-		OutputTypeWebM:        MimeTypeOpus,
-		OutputTypeRTMP:        MimeTypeAAC,
-		OutputTypeHLS:         MimeTypeAAC,
-		OutputTypeUnknownFile: MimeTypeOpus,
+		OutputTypeRaw:  MimeTypeRawAudio,
+		OutputTypeOGG:  MimeTypeOpus,
+		OutputTypeMP4:  MimeTypeAAC,
+		OutputTypeTS:   MimeTypeAAC,
+		OutputTypeWebM: MimeTypeOpus,
+		OutputTypeRTMP: MimeTypeAAC,
+		OutputTypeHLS:  MimeTypeAAC,
 	}
 
 	DefaultVideoCodecs = map[OutputType]MimeType{
-		OutputTypeIVF:         MimeTypeVP8,
-		OutputTypeMP4:         MimeTypeH264,
-		OutputTypeTS:          MimeTypeH264,
-		OutputTypeWebM:        MimeTypeVP8,
-		OutputTypeRTMP:        MimeTypeH264,
-		OutputTypeHLS:         MimeTypeH264,
-		OutputTypeUnknownFile: MimeTypeH264,
+		OutputTypeIVF:  MimeTypeVP8,
+		OutputTypeMP4:  MimeTypeH264,
+		OutputTypeTS:   MimeTypeH264,
+		OutputTypeWebM: MimeTypeVP8,
+		OutputTypeRTMP: MimeTypeH264,
+		OutputTypeHLS:  MimeTypeH264,
 	}
 
 	FileExtensions = map[FileExtension]struct{}{
@@ -190,11 +188,4 @@ func GetMapIntersection[K comparable](mapA map[K]bool, mapB map[K]bool) map[K]bo
 	}
 
 	return res
-}
-
-func MergeMaps[K comparable](mapA map[K]bool, mapB map[K]bool) map[K]bool {
-	for k, _ := range mapB {
-		mapA[k] = true
-	}
-	return mapA
 }
