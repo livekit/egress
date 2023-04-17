@@ -91,7 +91,7 @@ func (u *S3Uploader) getBucketLocation() (string, error) {
 	}
 
 	if resp.LocationConstraint == nil {
-		return "", psrpc.NewErrorf(psrpc.MalformedResponse, "bucket location was nil")
+		return "", psrpc.NewErrorf(psrpc.MalformedResponse, "invalid upload bucket region returned by provider. Try specifying the region manually in the request")
 	}
 
 	return *resp.LocationConstraint, nil
