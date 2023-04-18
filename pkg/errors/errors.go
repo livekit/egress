@@ -9,14 +9,16 @@ import (
 )
 
 var (
-	ErrNoConfig             = psrpc.NewErrorf(psrpc.Internal, "missing config")
-	ErrInvalidRPC           = psrpc.NewErrorf(psrpc.MalformedRequest, "invalid request")
-	ErrGhostPadFailed       = psrpc.NewErrorf(psrpc.Internal, "failed to add ghost pad to bin")
-	ErrStreamAlreadyExists  = psrpc.NewErrorf(psrpc.AlreadyExists, "stream already exists")
-	ErrNonStreamingPipeline = psrpc.NewErrorf(psrpc.InvalidArgument, "UpdateStream called on non-streaming egress")
-	ErrEgressNotFound       = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
-	ErrProfileNotFound      = psrpc.NewErrorf(psrpc.NotFound, "profile not found")
-	ErrInvalidTimestamp     = psrpc.NewErrorf(psrpc.Internal, "timestamping issue")
+	ErrNoConfig                   = psrpc.NewErrorf(psrpc.Internal, "missing config")
+	ErrInvalidRPC                 = psrpc.NewErrorf(psrpc.MalformedRequest, "invalid request")
+	ErrGhostPadFailed             = psrpc.NewErrorf(psrpc.Internal, "failed to add ghost pad to bin")
+	ErrStreamAlreadyExists        = psrpc.NewErrorf(psrpc.AlreadyExists, "stream already exists")
+	ErrNonStreamingPipeline       = psrpc.NewErrorf(psrpc.InvalidArgument, "UpdateStream called on non-streaming egress")
+	ErrEgressNotFound             = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
+	ErrProfileNotFound            = psrpc.NewErrorf(psrpc.NotFound, "profile not found")
+	ErrInvalidTimestamp           = psrpc.NewErrorf(psrpc.Internal, "timestamping issue")
+	ErrNoCompatibleCodec          = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")
+	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
 )
 
 func New(err string) error {

@@ -173,7 +173,7 @@ func runFileTest(t *testing.T, conf *TestConfig, req *rpc.StartEgressRequest, te
 	// get params
 	p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 	require.NoError(t, err)
-	if p.Outputs[types.EgressTypeFile].OutputType == types.OutputTypeUnknown {
+	if p.Outputs[types.EgressTypeFile].OutputType == types.OutputTypeUnknownFile {
 		p.Outputs[types.EgressTypeFile].OutputType = test.outputType
 	}
 

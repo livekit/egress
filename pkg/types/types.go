@@ -32,16 +32,16 @@ const (
 	EgressTypeSegments  EgressType = "segments"
 
 	// output types
-	OutputTypeUnknown OutputType = ""
-	OutputTypeRaw     OutputType = "audio/x-raw"
-	OutputTypeOGG     OutputType = "audio/ogg"
-	OutputTypeIVF     OutputType = "video/x-ivf"
-	OutputTypeMP4     OutputType = "video/mp4"
-	OutputTypeTS      OutputType = "video/mp2t"
-	OutputTypeWebM    OutputType = "video/webm"
-	OutputTypeRTMP    OutputType = "rtmp"
-	OutputTypeHLS     OutputType = "application/x-mpegurl"
-	OutputTypeJSON    OutputType = "application/json"
+	OutputTypeUnknownFile OutputType = ""
+	OutputTypeRaw         OutputType = "audio/x-raw"
+	OutputTypeOGG         OutputType = "audio/ogg"
+	OutputTypeIVF         OutputType = "video/x-ivf"
+	OutputTypeMP4         OutputType = "video/mp4"
+	OutputTypeTS          OutputType = "video/mp2t"
+	OutputTypeWebM        OutputType = "video/webm"
+	OutputTypeRTMP        OutputType = "rtmp"
+	OutputTypeHLS         OutputType = "application/x-mpegurl"
+	OutputTypeJSON        OutputType = "application/json"
 
 	// file extensions
 	FileExtensionRaw  = ".raw"
@@ -125,5 +125,67 @@ var (
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,
 		},
+		OutputTypeUnknownFile: {
+			MimeTypeAAC:  true,
+			MimeTypeOpus: true,
+			MimeTypeH264: true,
+			MimeTypeVP8:  true,
+		},
+	}
+
+	AllOutputAudioCodecs = map[MimeType]bool{
+		MimeTypeAAC:      true,
+		MimeTypeOpus:     true,
+		MimeTypeRawAudio: true,
+	}
+
+	AllOutputVideoCodecs = map[MimeType]bool{
+		MimeTypeH264: true,
+	}
+
+	AudioOnlyFileOutputTypes = []OutputType{
+		OutputTypeOGG,
+		OutputTypeMP4,
+	}
+
+	AudioVideoFileOutputTypes = []OutputType{
+		OutputTypeMP4,
 	}
 )
+
+func GetOutputTypeCompatibleWithCodecs(types []OutputType, audioCodecs map[MimeType]bool, videoCodecs map[MimeType]bool) OutputType {
+	for _, t := range types {
+		if audioCodecs != nil && !IsOutputTypeCompatibleWithCodecs(t, audioCodecs) {
+			continue
+		}
+
+		if videoCodecs != nil && !IsOutputTypeCompatibleWithCodecs(t, videoCodecs) {
+			continue
+		}
+
+		return t
+	}
+
+	return OutputTypeUnknownFile
+}
+
+func IsOutputTypeCompatibleWithCodecs(ot OutputType, codecs map[MimeType]bool) bool {
+	for k, _ := range codecs {
+		if CodecCompatibility[ot][k] {
+			return true
+		}
+	}
+	return false
+}
+
+func GetMapIntersection[K comparable](mapA map[K]bool, mapB map[K]bool) map[K]bool {
+	res := make(map[K]bool)
+
+	for k, _ := range mapA {
+		if mapB[k] {
+			res[k] = true
+		}
+	}
+
+	return res
+}
