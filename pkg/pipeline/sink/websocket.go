@@ -96,6 +96,7 @@ func (s *WebsocketSink) Close() error {
 	if s.closed.IsBroken() {
 		return nil
 	}
+	s.closed.Break()
 
 	// write close message for graceful disconnection
 	err := s.conn.WriteMessage(websocket.CloseMessage, nil)
@@ -105,7 +106,6 @@ func (s *WebsocketSink) Close() error {
 
 	// terminate connection and close the `closed` channel
 	err = s.conn.Close()
-	s.closed.Break()
 	return err
 }
 
