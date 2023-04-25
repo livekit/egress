@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sync"
 
 	"github.com/frostbyte73/core"
 	"github.com/gorilla/websocket"
@@ -23,6 +24,7 @@ const (
 type WebsocketSink struct {
 	conn   *websocket.Conn
 	closed core.Fuse
+	mu     sync.Mutex
 	state  websocketState
 }
 
@@ -50,6 +52,9 @@ func (s *WebsocketSink) Start() error {
 }
 
 func (s *WebsocketSink) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.state == WebsocketClosed {
 		return 0, errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
 	}
@@ -69,6 +74,9 @@ type textMessagePayload struct {
 }
 
 func (s *WebsocketSink) writeMutedMessage(muted bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// If the socket is closed, return error
 	if s.state == WebsocketClosed {
 		return errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
@@ -87,10 +95,16 @@ func (s *WebsocketSink) writeMutedMessage(muted bool) error {
 }
 
 func (s *WebsocketSink) Finalize() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	return s.Close()
 }
 
 func (s *WebsocketSink) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.state == WebsocketClosed {
 		return nil
 	}
