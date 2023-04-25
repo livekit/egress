@@ -55,10 +55,6 @@ func newSegmentSink(u uploader.Uploader, conf *config.PipelineConfig, p *config.
 	if maxDuration == 0 {
 		maxDuration = time.Hour * 48
 	}
-	segmentDuration := p.SegmentDuration
-	if segmentDuration == 0 {
-		segmentDuration = 4
-	}
 	capacity := 1 + (int(maxDuration/time.Second) / p.SegmentDuration)
 
 	playlist, err := m3u8.NewMediaPlaylist(0, uint(capacity))
