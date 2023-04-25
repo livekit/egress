@@ -26,8 +26,10 @@ type Monitor struct {
 	pendingCPUs atomic.Float64
 }
 
-func NewMonitor() *Monitor {
-	return &Monitor{}
+func NewMonitor(conf *config.ServiceConfig) *Monitor {
+	return &Monitor{
+		cpuCostConfig: conf.CPUCostConfig,
+	}
 }
 
 func (m *Monitor) Start(conf *config.ServiceConfig, isAvailable func() float64) error {
@@ -40,7 +42,7 @@ func (m *Monitor) Start(conf *config.ServiceConfig, isAvailable func() float64) 
 
 	m.cpuStats = cpuStats
 
-	if err := m.checkCPUConfig(conf.CPUCostConfig); err != nil {
+	if err := m.checkCPUConfig(); err != nil {
 		return err
 	}
 
@@ -70,41 +72,41 @@ func (m *Monitor) Start(conf *config.ServiceConfig, isAvailable func() float64) 
 	return nil
 }
 
-func (m *Monitor) checkCPUConfig(costConfig config.CPUCostConfig) error {
-	if costConfig.RoomCompositeCpuCost < 2.5 {
+func (m *Monitor) checkCPUConfig() error {
+	if m.cpuCostConfig.RoomCompositeCpuCost < 2.5 {
 		logger.Warnw("room composite requirement too low", nil,
-			"config value", costConfig.RoomCompositeCpuCost,
+			"config value", m.cpuCostConfig.RoomCompositeCpuCost,
 			"minimum value", 2.5,
 			"recommended value", 3,
 		)
 	}
-	if costConfig.WebCpuCost < 2.5 {
+	if m.cpuCostConfig.WebCpuCost < 2.5 {
 		logger.Warnw("web requirement too low", nil,
-			"config value", costConfig.WebCpuCost,
+			"config value", m.cpuCostConfig.WebCpuCost,
 			"minimum value", 2.5,
 			"recommended value", 3,
 		)
 	}
-	if costConfig.TrackCompositeCpuCost < 1 {
+	if m.cpuCostConfig.TrackCompositeCpuCost < 1 {
 		logger.Warnw("track composite requirement too low", nil,
-			"config value", costConfig.TrackCompositeCpuCost,
+			"config value", m.cpuCostConfig.TrackCompositeCpuCost,
 			"minimum value", 1,
 			"recommended value", 2,
 		)
 	}
-	if costConfig.TrackCpuCost < 0.5 {
+	if m.cpuCostConfig.TrackCpuCost < 0.5 {
 		logger.Warnw("track requirement too low", nil,
-			"config value", costConfig.RoomCompositeCpuCost,
+			"config value", m.cpuCostConfig.RoomCompositeCpuCost,
 			"minimum value", 0.5,
 			"recommended value", 1,
 		)
 	}
 
 	requirements := []float64{
-		costConfig.RoomCompositeCpuCost,
-		costConfig.WebCpuCost,
-		costConfig.TrackCompositeCpuCost,
-		costConfig.TrackCpuCost,
+		m.cpuCostConfig.RoomCompositeCpuCost,
+		m.cpuCostConfig.WebCpuCost,
+		m.cpuCostConfig.TrackCompositeCpuCost,
+		m.cpuCostConfig.TrackCpuCost,
 	}
 	sort.Float64s(requirements)
 
