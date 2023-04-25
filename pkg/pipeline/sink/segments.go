@@ -57,7 +57,7 @@ func newSegmentSink(u uploader.Uploader, conf *config.PipelineConfig, p *config.
 	}
 	segmentDuration := p.SegmentDuration
 	if segmentDuration == 0 {
-		segmentDuration = 10
+		segmentDuration = 4
 	}
 	capacity := 1 + (int(maxDuration/time.Second) / p.SegmentDuration)
 

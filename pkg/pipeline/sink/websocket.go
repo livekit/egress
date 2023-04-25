@@ -14,18 +14,10 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-type websocketState string
-
-const (
-	WebsocketActive websocketState = "active"
-	WebsocketClosed websocketState = "closed"
-)
-
 type WebsocketSink struct {
 	conn   *websocket.Conn
 	closed core.Fuse
 	mu     sync.Mutex
-	state  websocketState
 }
 
 func newWebsocketSink(url string, mimeType types.MimeType) (*WebsocketSink, error) {
@@ -41,7 +33,6 @@ func newWebsocketSink(url string, mimeType types.MimeType) (*WebsocketSink, erro
 	s := &WebsocketSink{
 		conn:   conn,
 		closed: core.NewFuse(),
-		state:  WebsocketActive,
 	}
 
 	return s, nil
@@ -55,7 +46,7 @@ func (s *WebsocketSink) Write(p []byte) (n int, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.state == WebsocketClosed {
+	if s.closed.IsBroken() {
 		return 0, errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
 	}
 
@@ -78,7 +69,7 @@ func (s *WebsocketSink) writeMutedMessage(muted bool) error {
 	defer s.mu.Unlock()
 
 	// If the socket is closed, return error
-	if s.state == WebsocketClosed {
+	if s.closed.IsBroken() {
 		return errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
 	}
 
@@ -102,7 +93,7 @@ func (s *WebsocketSink) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.state == WebsocketClosed {
+	if s.closed.IsBroken() {
 		return nil
 	}
 
@@ -115,7 +106,6 @@ func (s *WebsocketSink) Close() error {
 	// terminate connection and close the `closed` channel
 	err = s.conn.Close()
 	s.closed.Break()
-	s.state = WebsocketClosed
 	return err
 }
 
