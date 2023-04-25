@@ -309,7 +309,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 	}
 
 	if conf.SegmentDuration == 0 {
-		if p.KeyFrameInterval != 0 {
+		if p.KeyFrameInterval >= 1 {
 			conf.SegmentDuration = int(p.KeyFrameInterval)
 		} else {
 			conf.SegmentDuration = 4
