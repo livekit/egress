@@ -90,22 +90,22 @@ func (s *WebsocketSink) Finalize() error {
 }
 
 func (s *WebsocketSink) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	var err error
 
-	if s.closed.IsBroken() {
-		return nil
-	}
-	s.closed.Break()
+	s.closed.Once(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
 
-	// write close message for graceful disconnection
-	err := s.conn.WriteMessage(websocket.CloseMessage, nil)
-	if err != nil && !errors.Is(err, io.EOF) {
-		logger.Errorw("cannot write WS close message", err)
-	}
+		// write close message for graceful disconnection
+		err = s.conn.WriteMessage(websocket.CloseMessage, nil)
+		if err != nil && !errors.Is(err, io.EOF) {
+			logger.Errorw("cannot write WS close message", err)
+		}
 
-	// terminate connection and close the `closed` channel
-	err = s.conn.Close()
+		// terminate connection and close the `closed` channel
+		err = s.conn.Close()
+	})
+
 	return err
 }
 
