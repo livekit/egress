@@ -37,7 +37,7 @@ type Service struct {
 }
 
 func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 egress.RPCServer, ioClient rpc.IOInfoClient) (*Service, error) {
-	monitor := stats.NewMonitor()
+	monitor := stats.NewMonitor(conf)
 
 	s := &Service{
 		conf:        conf,
