@@ -95,9 +95,6 @@ func (s *WebsocketSink) writeMutedMessage(muted bool) error {
 }
 
 func (s *WebsocketSink) Finalize() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	return s.Close()
 }
 
