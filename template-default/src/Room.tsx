@@ -1,6 +1,7 @@
 import {
   GridLayout,
   LiveKitRoom,
+  ParticipantTile,
   RoomAudioRenderer,
   useRoomContext,
   useTracks,
@@ -111,7 +112,11 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
     } else if (effectiveLayout.startsWith('single-speaker')) {
       main = <SingleSpeakerLayout tracks={filteredTracks} />;
     } else {
-      main = <GridLayout tracks={filteredTracks} />;
+      main = (
+        <GridLayout tracks={filteredTracks}>
+          <ParticipantTile />
+        </GridLayout>
+      );
     }
   }
 

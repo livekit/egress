@@ -2,6 +2,7 @@ import { TrackReference } from '@livekit/components-core';
 import {
   CarouselView,
   FocusLayout,
+  ParticipantTile,
   VideoTrack,
   useVisualStableUpdate,
 } from '@livekit/components-react';
@@ -21,7 +22,9 @@ const SpeakerLayout = ({ tracks: references }: LayoutProps) => {
 
   return (
     <div className="lk-focus-layout">
-      <CarouselView tracks={remainingTracks} />
+      <CarouselView tracks={remainingTracks}>
+        <ParticipantTile />
+      </CarouselView>
       <FocusLayout track={mainTrack as TrackReference} />
     </div>
   );
