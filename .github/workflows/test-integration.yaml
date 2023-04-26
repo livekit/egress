@@ -1,10 +1,26 @@
-name: Test
+name: Integration Test
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
+    paths:
+      - build/chrome/**
+      - build/egress/**
+      - build/gstreamer/**
+      - build/test/**
+      - cmd/**
+      - pkg/**
+      - test/**
   pull_request:
     branches: [ main ]
+    paths:
+      - build/chrome/**
+      - build/egress/**
+      - build/gstreamer/**
+      - build/test/**
+      - cmd/**
+      - pkg/**
+      - test/**
 
 jobs:
   integration:

@@ -1,0 +1,17 @@
+name: Template Test
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - template-default/**
+      - template-sdk/**
+      - build/template/Dockerfile
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: yarn install
+      - run: yarn build

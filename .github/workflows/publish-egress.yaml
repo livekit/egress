@@ -1,4 +1,4 @@
-name: Release to Docker
+name: Publish Egress
 
 # Controls when the action will run.
 on:
