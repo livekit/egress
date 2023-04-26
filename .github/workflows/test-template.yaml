@@ -8,6 +8,10 @@ on:
       - template-default/**
       - template-sdk/**
 
+defaults:
+  run:
+    working-directory: template-default
+
 jobs:
   test:
     runs-on: ubuntu-latest
