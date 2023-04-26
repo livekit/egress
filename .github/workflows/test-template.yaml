@@ -4,9 +4,9 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - build/template/Dockerfile
       - template-default/**
       - template-sdk/**
-      - build/template/Dockerfile
 
 jobs:
   test:
