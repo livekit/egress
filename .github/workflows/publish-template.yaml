@@ -1,12 +1,11 @@
-name: Deploy Template
+name: Publish Templates
 on:
   push:
     branches: [main]
     paths:
+      - build/template/Dockerfile
       - template-default/**
       - template-sdk/**
-      - .github/workflows/deploy-web.yaml
-      - build/template/Dockerfile
 
 jobs:
   docker:
