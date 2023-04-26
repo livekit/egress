@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
 	"github.com/livekit/server-sdk-go/pkg/samplebuilder"
+	"github.com/livekit/server-sdk-go/pkg/synchronizer"
 )
 
 const (
@@ -55,7 +56,7 @@ type AppWriter struct {
 	writePLI         func()
 
 	// a/v sync
-	sync *Synchronizer
+	sync *synchronizer.Synchronizer
 	*TrackSynchronizer
 
 	// state
@@ -76,8 +77,8 @@ func NewAppWriter(
 	rp *lksdk.RemoteParticipant,
 	codec types.MimeType,
 	src *app.Source,
-	sync *Synchronizer,
-	syncInfo *TrackSynchronizer,
+	sync *synchronizer.Synchronizer,
+	syncInfo *synchronizer.TrackSynchronizer,
 	writeBlanks bool,
 ) (*AppWriter, error) {
 	w := &AppWriter{
@@ -88,7 +89,7 @@ func NewAppWriter(
 		src:               src,
 		writeBlanks:       writeBlanks,
 		sync:              sync,
-		TrackSynchronizer: syncInfo,
+		TrackSynchronizer: newTrackSynchronizer(syncInfo, track),
 		playing:           core.NewFuse(),
 		draining:          core.NewFuse(),
 		force:             core.NewFuse(),
@@ -224,7 +225,7 @@ func (w *AppWriter) run() {
 			// sync offsets after first packet read
 			// see comment in writeRTP below
 			if first {
-				w.sync.firstPacketForTrack(pkt)
+				w.FirstPacketForTrack(pkt)
 				first = false
 			}
 
@@ -407,7 +408,7 @@ func (w *AppWriter) push(packets []*rtp.Packet, blankFrame bool) error {
 		}
 
 		// get PTS
-		pts, err := w.getPTS(pkt.Timestamp)
+		pts, err := w.GetPTS(pkt.Timestamp)
 		if err != nil {
 			return err
 		}
