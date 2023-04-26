@@ -22,11 +22,6 @@
       "groupName": "go deps"
     },
     {
-      "matchManagers": ["gomod"],
-      "matchPackagePrefixes": ["github.com/livekit"],
-      "groupName": "livekit deps"
-    },
-    {
       "matchPackagePrefixes": ["github.com/grafov/m3u8"],
       "enabled": false
     }
@@ -34,6 +29,6 @@
   "postUpdateOptions": [
     "gomodTidy"
   ],
-  "rebaseWhen": "never",
-  "draftPR": true
+  "schedule": ["on sunday"],
+  "updateNotScheduled": false
 }
