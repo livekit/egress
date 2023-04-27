@@ -143,17 +143,23 @@ func (m *Monitor) GetCPULoad() float64 {
 
 func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 	accept := false
+
 	available := m.cpuStats.GetCPUIdle() - m.pendingCPUs.Load()
+
+	// if idle, add room for when cost == numCPUs
+	if float64(m.cpuStats.NumCPU())-available <= 0.01 {
+		available += 0.01
+	}
 
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		accept = available > m.cpuCostConfig.RoomCompositeCpuCost
+		accept = available >= m.cpuCostConfig.RoomCompositeCpuCost
 	case *rpc.StartEgressRequest_Web:
-		accept = available > m.cpuCostConfig.WebCpuCost
+		accept = available >= m.cpuCostConfig.WebCpuCost
 	case *rpc.StartEgressRequest_TrackComposite:
-		accept = available > m.cpuCostConfig.TrackCompositeCpuCost
+		accept = available >= m.cpuCostConfig.TrackCompositeCpuCost
 	case *rpc.StartEgressRequest_Track:
-		accept = available > m.cpuCostConfig.TrackCpuCost
+		accept = available >= m.cpuCostConfig.TrackCpuCost
 	}
 
 	return accept
