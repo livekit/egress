@@ -1,7 +1,5 @@
 module github.com/livekit/egress
 
-replace github.com/livekit/server-sdk-go => ../server-sdk-go
-
 go 1.18
 
 replace github.com/tinyzimmer/go-glib v0.0.25 => github.com/livekit/go-glib v0.0.0-20230223001336-834490045522
@@ -22,11 +20,11 @@ require (
 	github.com/grafov/m3u8 v0.11.1 // v0.11.2 is busted
 	github.com/livekit/livekit-server v1.4.2-0.20230406135133-fb301e6e759a
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26
+	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26 // indirect
 	github.com/livekit/protocol v1.5.5
 	github.com/livekit/psrpc v0.3.0
-	github.com/livekit/server-sdk-go v1.0.9
-	github.com/pion/rtcp v1.2.10
+	github.com/livekit/server-sdk-go v1.0.11-0.20230428163439-17d5bea0992f
+	github.com/pion/rtcp v1.2.10 // indirect
 	github.com/pion/rtp v1.7.13
 	github.com/pion/webrtc/v3 v3.1.60
 	github.com/prometheus/client_golang v1.15.0
