@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	roomCompositeCpuCost  = 4.5
-	webCpuCost            = 4.5
+	roomCompositeCpuCost  = 4
+	webCpuCost            = 4
 	trackCompositeCpuCost = 2
 	trackCpuCost          = 1
 

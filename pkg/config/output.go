@@ -309,7 +309,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 	}
 
 	if conf.SegmentDuration == 0 {
-		if p.KeyFrameInterval != 0 {
+		if p.KeyFrameInterval >= 1 {
 			conf.SegmentDuration = int(p.KeyFrameInterval)
 		} else {
 			conf.SegmentDuration = 4
@@ -320,7 +320,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 		// The splitMuxSink should request key frames from the encoder at expected frame boundaries.
 		// Set the key frame interval to twice the segment duration as a failsafe
 		p.KeyFrameInterval = 2 * float64(conf.SegmentDuration)
-	} else if p.KeyFrameInterval < float64(conf.SegmentDuration) {
+	} else if p.KeyFrameInterval < float64(conf.SegmentDuration) && p.KeyFrameInterval >= 1 {
 		conf.SegmentDuration = int(p.KeyFrameInterval)
 	}
 

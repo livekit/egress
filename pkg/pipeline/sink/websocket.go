@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sync"
 
 	"github.com/frostbyte73/core"
 	"github.com/gorilla/websocket"
@@ -13,17 +14,10 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-type websocketState string
-
-const (
-	WebsocketActive websocketState = "active"
-	WebsocketClosed websocketState = "closed"
-)
-
 type WebsocketSink struct {
 	conn   *websocket.Conn
 	closed core.Fuse
-	state  websocketState
+	mu     sync.Mutex
 }
 
 func newWebsocketSink(url string, mimeType types.MimeType) (*WebsocketSink, error) {
@@ -39,7 +33,6 @@ func newWebsocketSink(url string, mimeType types.MimeType) (*WebsocketSink, erro
 	s := &WebsocketSink{
 		conn:   conn,
 		closed: core.NewFuse(),
-		state:  WebsocketActive,
 	}
 
 	return s, nil
@@ -50,7 +43,10 @@ func (s *WebsocketSink) Start() error {
 }
 
 func (s *WebsocketSink) Write(p []byte) (n int, err error) {
-	if s.state == WebsocketClosed {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed.IsBroken() {
 		return 0, errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
 	}
 
@@ -69,8 +65,11 @@ type textMessagePayload struct {
 }
 
 func (s *WebsocketSink) writeMutedMessage(muted bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// If the socket is closed, return error
-	if s.state == WebsocketClosed {
+	if s.closed.IsBroken() {
 		return errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
 	}
 
@@ -91,20 +90,22 @@ func (s *WebsocketSink) Finalize() error {
 }
 
 func (s *WebsocketSink) Close() error {
-	if s.state == WebsocketClosed {
-		return nil
-	}
+	var err error
 
-	// write close message for graceful disconnection
-	err := s.conn.WriteMessage(websocket.CloseMessage, nil)
-	if err != nil && !errors.Is(err, io.EOF) {
-		logger.Errorw("cannot write WS close message", err)
-	}
+	s.closed.Once(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
 
-	// terminate connection and close the `closed` channel
-	err = s.conn.Close()
-	s.closed.Break()
-	s.state = WebsocketClosed
+		// write close message for graceful disconnection
+		err = s.conn.WriteMessage(websocket.CloseMessage, nil)
+		if err != nil && !errors.Is(err, io.EOF) {
+			logger.Errorw("cannot write WS close message", err)
+		}
+
+		// terminate connection and close the `closed` channel
+		err = s.conn.Close()
+	})
+
 	return err
 }
 
