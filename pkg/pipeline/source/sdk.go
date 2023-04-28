@@ -19,6 +19,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 	lksdk "github.com/livekit/server-sdk-go"
+	"github.com/livekit/server-sdk-go/pkg/synchronizer"
 )
 
 const (
@@ -30,7 +31,7 @@ const (
 
 type SDKSource struct {
 	room *lksdk.Room
-	sync *sdk.Synchronizer
+	sync *synchronizer.Synchronizer
 
 	// track
 	trackID string
@@ -58,7 +59,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, er
 
 	startRecording := make(chan struct{})
 	s := &SDKSource{
-		sync: sdk.NewSynchronizer(func() {
+		sync: synchronizer.NewSynchronizer(func() {
 			close(startRecording)
 		}),
 		startRecording: startRecording,
