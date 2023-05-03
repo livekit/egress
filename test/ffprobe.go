@@ -168,9 +168,10 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, fi
 }
 
 func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.SegmentedFileSuffix, localPlaylistPath string) {
-	p, err := m3u8.OpenPlaylist(localPlaylistPath)
+	p, err := m3u8.ReadPlaylist(localPlaylistPath)
 	require.NoError(t, err)
 	require.Equal(t, "EVENT", p.MediaType)
+	require.True(t, p.Closed)
 
 	now := time.Now()
 

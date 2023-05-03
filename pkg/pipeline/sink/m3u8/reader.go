@@ -12,6 +12,7 @@ type Playlist struct {
 	MediaType      string
 	TargetDuration int
 	Segments       []*Segment
+	Closed         bool
 }
 
 type Segment struct {
@@ -20,7 +21,7 @@ type Segment struct {
 	Filename        string
 }
 
-func OpenPlaylist(filename string) (*Playlist, error) {
+func ReadPlaylist(filename string) (*Playlist, error) {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -47,6 +48,10 @@ func OpenPlaylist(filename string) (*Playlist, error) {
 			Duration:        duration,
 			Filename:        lines[i+2],
 		})
+	}
+
+	if lines[len(lines)-2] == "#EXT-X-ENDLIST" {
+		p.Closed = true
 	}
 
 	return p, nil

@@ -33,7 +33,7 @@ func TestMediaPlaylist(t *testing.T) {
 	expected := "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-ALLOW-CACHE:NO\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:6\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:04.814142Z\n#EXTINF:5.994\nplaylist_00000.ts\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:10.808142Z\n#EXTINF:5.994\nplaylist_00001.ts\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:16.802142Z\n#EXTINF:5.994\nplaylist_00002.ts\n#EXT-X-ENDLIST\n"
 	require.Equal(t, expected, string(b))
 
-	p, err := OpenPlaylist(playlistName)
+	p, err := ReadPlaylist(playlistName)
 	require.NoError(t, err)
 
 	require.Equal(t, 4, p.Version)
@@ -45,4 +45,5 @@ func TestMediaPlaylist(t *testing.T) {
 		require.Equal(t, 5.994, segment.Duration)
 		require.NotEmpty(t, segment.Filename)
 	}
+	require.True(t, p.Closed)
 }
