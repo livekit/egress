@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -14,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafov/m3u8"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/pipeline/sink/m3u8"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
@@ -169,24 +168,20 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, fi
 }
 
 func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.SegmentedFileSuffix, localPlaylistPath string) {
-	file, err := os.Open(localPlaylistPath)
+	p, err := m3u8.OpenPlaylist(localPlaylistPath)
 	require.NoError(t, err)
-	defer file.Close()
-
-	pl, tp, err := m3u8.DecodeFrom(file, false)
-	require.NoError(t, err)
-	require.Equal(t, m3u8.MEDIA, tp)
+	require.Equal(t, "EVENT", p.MediaType)
 
 	now := time.Now()
 
-	for i, s := range pl.(*m3u8.MediaPlaylist).Segments[:pl.(*m3u8.MediaPlaylist).Count()] {
+	for i, s := range p.Segments {
 		const leeway = 50 * time.Millisecond
 
 		// Make sure the program date time is current, ie not more than 2 min in the past
 		require.InDelta(t, now.Unix(), s.ProgramDateTime.Unix(), 120)
 
 		if filenameSuffix == livekit.SegmentedFileSuffix_TIMESTAMP {
-			m := segmentTimeRegexp.FindStringSubmatch(s.URI)
+			m := segmentTimeRegexp.FindStringSubmatch(s.Filename)
 			require.Equal(t, 3, len(m))
 
 			tm, err := time.Parse("20060102150405", m[1])
@@ -200,8 +195,8 @@ func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.Segmente
 			require.InDelta(t, s.ProgramDateTime.UnixNano(), tm.UnixNano(), float64(time.Millisecond))
 		}
 
-		if uint(i) < pl.(*m3u8.MediaPlaylist).Count()-1 {
-			nextSegmentStartDate := pl.(*m3u8.MediaPlaylist).Segments[i+1].ProgramDateTime
+		if i < p.Count()-1 {
+			nextSegmentStartDate := p.Segments[i+1].ProgramDateTime
 
 			dateDuration := nextSegmentStartDate.Sub(s.ProgramDateTime)
 			require.InDelta(t, time.Duration(s.Duration*float64(time.Second)), dateDuration, float64(leeway))
