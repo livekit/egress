@@ -74,6 +74,9 @@ func (p *PlaylistWriter) Close() error {
 }
 
 func formatFloat(f float64) string {
-	s := fmt.Sprintf("%.3f", f)
-	return strings.TrimRight(s, "0")
+	s := fmt.Sprint(f)
+	if len(s) > 20 {
+		s = s[:20]
+	}
+	return s
 }
