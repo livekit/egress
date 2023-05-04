@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -52,7 +53,7 @@ func (p *PlaylistWriter) Append(dateTime time.Time, duration float64, filename s
 	sb.WriteString("#EXT-X-PROGRAM-DATE-TIME:")
 	sb.WriteString(dateTime.UTC().Format(time.RFC3339Nano))
 	sb.WriteString("\n#EXTINF:")
-	sb.WriteString(formatFloat(duration))
+	sb.WriteString(strconv.FormatFloat(duration, 'f', 3, 32))
 	sb.WriteString("\n")
 	sb.WriteString(filename)
 	sb.WriteString("\n")
@@ -71,12 +72,4 @@ func (p *PlaylistWriter) Close() error {
 
 	_, err = f.WriteString("#EXT-X-ENDLIST\n")
 	return err
-}
-
-func formatFloat(f float64) string {
-	s := fmt.Sprint(f)
-	if len(s) > 20 {
-		s = s[:20]
-	}
-	return s
 }
