@@ -17,7 +17,6 @@ require (
 	github.com/go-logr/logr v1.2.4
 	github.com/googleapis/gax-go/v2 v2.8.0
 	github.com/gorilla/websocket v1.5.0
-	github.com/grafov/m3u8 v0.11.1 // v0.11.2 is busted
 	github.com/livekit/livekit-server v1.4.2-0.20230406135133-fb301e6e759a
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26 // indirect

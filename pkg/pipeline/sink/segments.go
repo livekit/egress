@@ -2,7 +2,6 @@ package sink
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"strings"
@@ -10,10 +9,10 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
-	"github.com/grafov/m3u8"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/sink/m3u8"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
@@ -27,7 +26,7 @@ type SegmentSink struct {
 	conf *config.PipelineConfig
 	*config.OutputConfig
 
-	playlist                  *m3u8.MediaPlaylist
+	playlist                  *m3u8.PlaylistWriter
 	currentItemStartTimestamp int64
 	currentItemFilename       string
 	startDate                 time.Time
@@ -48,22 +47,11 @@ type SegmentUpdate struct {
 }
 
 func newSegmentSink(u uploader.Uploader, conf *config.PipelineConfig, p *config.OutputConfig) (*SegmentSink, error) {
-	// "github.com/grafov/m3u8" is fairly inefficient for frequent serializations of long playlists and
-	// doesn't implement recent additions to the HLS spec, but I'm not aware of anything better, short of
-	// writing one.
-	maxDuration := conf.SessionLimits.SegmentOutputMaxDuration
-	if maxDuration == 0 {
-		maxDuration = time.Hour * 48
-	}
-	capacity := 1 + (int(maxDuration/time.Second) / p.SegmentDuration)
-
-	playlist, err := m3u8.NewMediaPlaylist(0, uint(capacity))
+	playlistName := path.Join(p.LocalDir, p.PlaylistFilename)
+	playlist, err := m3u8.NewPlaylistWriter(playlistName, p.SegmentDuration)
 	if err != nil {
 		return nil, err
 	}
-
-	playlist.MediaType = m3u8.EVENT
-	playlist.SetVersion(4) // Needed because we have float segment durations
 
 	return &SegmentSink{
 		Uploader:              u,
@@ -200,36 +188,8 @@ func (s *SegmentSink) endSegment(filename string, endTime int64) error {
 
 	duration := float64(endTime-t) / float64(time.Second)
 
-	// This assumes EndSegment will be called in the same order as StartSegment
-	err := s.playlist.Append(filename, duration, "")
-	if err != nil {
-		return err
-	}
-
 	segmentStartDate := s.startDate.Add(-s.startDateTimestamp).Add(time.Duration(t))
-	err = s.playlist.SetProgramDateTime(segmentStartDate)
-	if err != nil {
-		return err
-	}
-
-	// Write playlist for every segment. This allows better crash recovery and to use
-	// it as an Event playlist, at the cost of extra I/O
-	return s.writePlaylist()
-}
-
-func (s *SegmentSink) writePlaylist() error {
-	buf := s.playlist.Encode()
-
-	file, err := os.Create(path.Join(s.LocalDir, s.PlaylistFilename))
-	if err != nil {
-		return nil
-	}
-	defer func() {
-		_ = file.Close()
-	}()
-
-	_, err = io.Copy(file, buf)
-	if err != nil {
+	if err := s.playlist.Append(segmentStartDate, duration, filename); err != nil {
 		return err
 	}
 
@@ -241,8 +201,7 @@ func (s *SegmentSink) Finalize() error {
 	close(s.endedSegments)
 	<-s.done.Watch()
 
-	s.playlist.Close()
-	if err := s.writePlaylist(); err != nil {
+	if err := s.playlist.Close(); err != nil {
 		logger.Errorw("failed to send EOS to playlist writer", err)
 	}
 

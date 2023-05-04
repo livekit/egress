@@ -130,7 +130,7 @@ func GetValidatedPipelineConfig(conf *ServiceConfig, req *rpc.StartEgressRequest
 
 func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	if request.EgressId == "" {
-		return errors.ErrInvalidInput("No Egress Id")
+		return errors.ErrInvalidInput("egressID")
 	}
 
 	// start with defaults
