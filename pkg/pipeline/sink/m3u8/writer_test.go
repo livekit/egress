@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMediaPlaylist(t *testing.T) {
+func TestPlaylistWriter(t *testing.T) {
 	playlistName := "playlist.m3u8"
 
 	w, err := NewPlaylistWriter(playlistName, 6)
