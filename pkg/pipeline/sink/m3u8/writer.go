@@ -51,7 +51,7 @@ func (p *PlaylistWriter) Append(dateTime time.Time, duration float64, filename s
 
 	var sb strings.Builder
 	sb.WriteString("#EXT-X-PROGRAM-DATE-TIME:")
-	sb.WriteString(dateTime.UTC().Format(time.RFC3339Nano))
+	sb.WriteString(dateTime.UTC().Format("2006-01-02T15:04:05.999Z07:00"))
 	sb.WriteString("\n#EXTINF:")
 	sb.WriteString(strconv.FormatFloat(duration, 'f', 3, 32))
 	sb.WriteString("\n")

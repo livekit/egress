@@ -1,4 +1,6 @@
-package m3u8
+//go:build integration
+
+package test
 
 import (
 	"os"
@@ -21,7 +23,7 @@ type Segment struct {
 	Filename        string
 }
 
-func ReadPlaylist(filename string) (*Playlist, error) {
+func readPlaylist(filename string) (*Playlist, error) {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -40,7 +42,7 @@ func ReadPlaylist(filename string) (*Playlist, error) {
 	}
 
 	for i := 6; i < len(lines)-3; i += 3 {
-		startTime, _ := time.Parse(time.RFC3339Nano, strings.SplitN(lines[i], ":", 2)[1])
+		startTime, _ := time.Parse("2006-01-02T15:04:05.999Z07:00", strings.SplitN(lines[i], ":", 2)[1])
 		duration, _ := strconv.ParseFloat(strings.Split(lines[i+1], ":")[1], 64)
 
 		p.Segments = append(p.Segments, &Segment{

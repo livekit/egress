@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/pipeline/sink/m3u8"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
@@ -168,7 +167,7 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, fi
 }
 
 func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.SegmentedFileSuffix, localPlaylistPath string) {
-	p, err := m3u8.ReadPlaylist(localPlaylistPath)
+	p, err := readPlaylist(localPlaylistPath)
 	require.NoError(t, err)
 	require.Equal(t, "EVENT", p.MediaType)
 	require.True(t, p.Closed)
