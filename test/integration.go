@@ -173,8 +173,8 @@ func runFileTest(t *testing.T, conf *TestConfig, req *rpc.StartEgressRequest, te
 	// get params
 	p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
 	require.NoError(t, err)
-	if p.Outputs[types.EgressTypeFile].OutputType == types.OutputTypeUnknownFile {
-		p.Outputs[types.EgressTypeFile].OutputType = test.outputType
+	if p.GetFileConfig().OutputType == types.OutputTypeUnknownFile {
+		p.GetFileConfig().OutputType = test.outputType
 	}
 
 	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
