@@ -19,7 +19,7 @@ func CreateSinks(p *config.PipelineConfig) (map[types.EgressType]Sink, error) {
 		case types.EgressTypeFile:
 			o := c.(*config.FileConfig)
 
-			u, err := uploader.New(o.UploadConfig)
+			u, err := uploader.New(o.UploadConfig, p.BackupStorage)
 			if err != nil {
 				return nil, err
 			}
@@ -29,7 +29,7 @@ func CreateSinks(p *config.PipelineConfig) (map[types.EgressType]Sink, error) {
 		case types.EgressTypeSegments:
 			o := c.(*config.SegmentConfig)
 
-			u, err := uploader.New(o.UploadConfig)
+			u, err := uploader.New(o.UploadConfig, p.BackupStorage)
 			if err != nil {
 				return nil, err
 			}

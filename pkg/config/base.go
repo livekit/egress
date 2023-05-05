@@ -20,9 +20,9 @@ type BaseConfig struct {
 	Insecure             bool               `yaml:"insecure"`        // allow chrome to connect to an insecure websocket
 	LocalOutputDirectory string             `yaml:"local_directory"` // used for temporary storage before upload
 	Logging              logger.Config      `yaml:"logging"`
-	LogLevel             string             `yaml:"log_level"`  // TODO: deprecate
-	ClusterID            string             `yaml:"cluster_id"` // Which cluster this egress belongs to
-	// BackupStorage        string             `yaml:"backup_storage"` // TODO: Files will be moved here if the upload fails
+	LogLevel             string             `yaml:"log_level"`      // TODO: deprecate
+	ClusterID            string             `yaml:"cluster_id"`     // Which cluster this egress belongs to
+	BackupStorage        string             `yaml:"backup_storage"` // Files will be moved here if the upload fails
 
 	S3     *S3Config    `yaml:"s3"`
 	Azure  *AzureConfig `yaml:"azure"`

@@ -16,13 +16,15 @@ type FileOutput struct {
 	sink *gst.Element
 }
 
-func (b *Bin) buildFileOutput(p *config.PipelineConfig, out *config.FileConfig) (*FileOutput, error) {
+func (b *Bin) buildFileOutput(p *config.PipelineConfig) (*FileOutput, error) {
+	o := p.GetFileConfig()
+
 	base, err := b.buildOutputBase(p, types.EgressTypeFile)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	mux, err := buildFileMux(out)
+	mux, err := buildFileMux(o)
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +34,7 @@ func (b *Bin) buildFileOutput(p *config.PipelineConfig, out *config.FileConfig) 
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if err = sink.SetProperty("location", out.LocalFilepath); err != nil {
+	if err = sink.SetProperty("location", o.LocalFilepath); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err = sink.SetProperty("sync", false); err != nil {
@@ -50,8 +52,8 @@ func (b *Bin) buildFileOutput(p *config.PipelineConfig, out *config.FileConfig) 
 	}, nil
 }
 
-func buildFileMux(out *config.FileConfig) (*gst.Element, error) {
-	switch out.OutputType {
+func buildFileMux(o *config.FileConfig) (*gst.Element, error) {
+	switch o.OutputType {
 	case types.OutputTypeOGG:
 		return gst.NewElement("oggmux")
 

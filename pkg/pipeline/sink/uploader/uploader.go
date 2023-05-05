@@ -2,6 +2,7 @@ package uploader
 
 import (
 	"os"
+	"path"
 	"time"
 
 	"github.com/livekit/egress/pkg/types"
@@ -16,14 +17,17 @@ const (
 
 type Uploader struct {
 	uploader
+	backup string
 }
 
 type uploader interface {
 	upload(string, string, types.OutputType) (string, int64, error)
 }
 
-func New(conf interface{}) (*Uploader, error) {
-	u := &Uploader{}
+func New(conf interface{}, backup string) (*Uploader, error) {
+	u := &Uploader{
+		backup: backup,
+	}
 
 	var i uploader
 	var err error
@@ -49,12 +53,25 @@ func New(conf interface{}) (*Uploader, error) {
 
 func (u *Uploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
 	location, size, err := u.upload(localFilepath, storageFilepath, outputType)
-	if err != nil {
-		// TODO: config option for backup location
-		return "", 0, nil
+	if err == nil {
+		return location, size, nil
 	}
 
-	return location, size, nil
+	if u.backup != "" {
+		stat, err := os.Stat(localFilepath)
+		if err != nil {
+			return "", 0, err
+		}
+
+		backupFilepath := path.Join(u.backup, storageFilepath)
+		if err = os.Rename(localFilepath, backupFilepath); err != nil {
+			return "", 0, err
+		}
+
+		return backupFilepath, stat.Size(), nil
+	}
+
+	return "", 0, err
 }
 
 type noOpUploader struct{}
