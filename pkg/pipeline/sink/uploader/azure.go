@@ -17,14 +17,14 @@ type AzureUploader struct {
 	container string
 }
 
-func newAzureUploader(conf *livekit.AzureBlobUpload) (Uploader, error) {
+func newAzureUploader(conf *livekit.AzureBlobUpload) (uploader, error) {
 	return &AzureUploader{
 		conf:      conf,
 		container: fmt.Sprintf("https://%s.blob.core.windows.net/%s", conf.AccountName, conf.ContainerName),
 	}, nil
 }
 
-func (u *AzureUploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
+func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
 	credential, err := azblob.NewSharedKeyCredential(
 		u.conf.AccountName,
 		u.conf.AccountKey,

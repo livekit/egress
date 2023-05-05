@@ -10,6 +10,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/builder"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -27,10 +28,10 @@ type FirstSampleMetadata struct {
 	StartDate int64 // Real time date of the first media sample
 }
 
-func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputConfig) (*SegmentOutput, error) {
+func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.SegmentConfig) (*SegmentOutput, error) {
 	s := &SegmentOutput{}
 
-	base, err := b.buildOutputBase(p, out.EgressType)
+	base, err := b.buildOutputBase(p, types.EgressTypeSegments)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
@@ -76,7 +77,7 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig, out *config.OutputCon
 		}
 
 		var segmentName string
-		switch out.SegmentParams.SegmentSuffix {
+		switch out.SegmentSuffix {
 		case livekit.SegmentedFileSuffix_TIMESTAMP:
 			ts := s.startDate.Add(pts)
 			segmentName = fmt.Sprintf("%s_%s%03d.ts", out.SegmentPrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000)

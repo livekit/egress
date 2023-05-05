@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 )
@@ -52,7 +51,7 @@ func TestRedactUpload(t *testing.T) {
 	require.Equal(t, "******", p.Info.GetRoomComposite().GetFile().GetS3().AccessKey)
 
 	require.Len(t, p.Outputs, 1)
-	output := p.Outputs[types.EgressTypeFile]
+	output := p.GetFileConfig()
 	require.NotNil(t, output.UploadConfig)
 	require.Equal(t, "access", output.UploadConfig.(*livekit.S3Upload).AccessKey)
 }
@@ -109,10 +108,10 @@ func TestRedactStreamKeys(t *testing.T) {
 	require.Equal(t, redactedUrl2, streamInfo.Info[1].Url)
 
 	require.Len(t, p.Outputs, 1)
-	output := p.Outputs[types.EgressTypeStream]
-	require.Len(t, output.StreamUrls, 2)
-	require.Equal(t, streamUrl1, output.StreamUrls[0])
-	require.Equal(t, streamUrl2, output.StreamUrls[1])
+	output := p.GetStreamConfig()
+	require.Len(t, output.Urls, 2)
+	require.Equal(t, streamUrl1, output.Urls[0])
+	require.Equal(t, streamUrl2, output.Urls[1])
 }
 
 func TestSegmentNaming(t *testing.T) {

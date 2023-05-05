@@ -2,7 +2,6 @@ package config
 
 import (
 	"context"
-	"encoding/json"
 	"net/url"
 	"strings"
 
@@ -35,7 +34,7 @@ type PipelineConfig struct {
 	AudioConfig  `yaml:"-"`
 	VideoConfig  `yaml:"-"`
 
-	Outputs     map[types.EgressType]*OutputConfig `yaml:"-"`
+	Outputs     map[types.EgressType]OutputConfig `yaml:"-"`
 	OutputCount int
 
 	GstReady chan struct{}       `yaml:"-"`
@@ -96,7 +95,7 @@ type VideoConfig struct {
 func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*PipelineConfig, error) {
 	p := &PipelineConfig{
 		BaseConfig: BaseConfig{},
-		Outputs:    make(map[types.EgressType]*OutputConfig),
+		Outputs:    make(map[types.EgressType]OutputConfig),
 		GstReady:   make(chan struct{}),
 	}
 
@@ -122,7 +121,7 @@ func GetValidatedPipelineConfig(conf *ServiceConfig, req *rpc.StartEgressRequest
 
 	p := &PipelineConfig{
 		BaseConfig: conf.BaseConfig,
-		Outputs:    make(map[types.EgressType]*OutputConfig),
+		Outputs:    make(map[types.EgressType]OutputConfig),
 	}
 
 	return p, p.Update(req)
@@ -373,8 +372,8 @@ func (p *PipelineConfig) validateAndUpdateOutputParams() error {
 	// Select a codec compatible with all outputs
 	if p.AudioEnabled {
 		for _, o := range p.Outputs {
-			if compatibleAudioCodecs[types.DefaultAudioCodecs[o.OutputType]] {
-				p.AudioOutCodec = types.DefaultAudioCodecs[o.OutputType]
+			if compatibleAudioCodecs[types.DefaultAudioCodecs[o.GetOutputType()]] {
+				p.AudioOutCodec = types.DefaultAudioCodecs[o.GetOutputType()]
 				break
 			}
 		}
@@ -388,8 +387,8 @@ func (p *PipelineConfig) validateAndUpdateOutputParams() error {
 
 	if p.VideoEnabled {
 		for _, o := range p.Outputs {
-			if compatibleVideoCodecs[types.DefaultVideoCodecs[o.OutputType]] {
-				p.VideoOutCodec = types.DefaultVideoCodecs[o.OutputType]
+			if compatibleVideoCodecs[types.DefaultVideoCodecs[o.GetOutputType()]] {
+				p.VideoOutCodec = types.DefaultVideoCodecs[o.GetOutputType()]
 				break
 			}
 		}
@@ -417,13 +416,13 @@ func (p *PipelineConfig) validateAndUpdateOutputCodecs() (compatibleAudioCodecs 
 		}
 
 		for _, o := range p.Outputs {
-			compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[o.OutputType])
+			compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[o.GetOutputType()])
 			if len(compatibleAudioCodecs) == 0 {
 				if p.AudioOutCodec == "" {
 					return nil, nil, errors.ErrNoCompatibleCodec
 				} else {
 					// Return a more specific error if a codec was provided
-					return nil, nil, errors.ErrIncompatible(o.OutputType, p.AudioOutCodec)
+					return nil, nil, errors.ErrIncompatible(o.GetOutputType(), p.AudioOutCodec)
 				}
 			}
 		}
@@ -437,13 +436,13 @@ func (p *PipelineConfig) validateAndUpdateOutputCodecs() (compatibleAudioCodecs 
 		}
 
 		for _, o := range p.Outputs {
-			compatibleVideoCodecs = types.GetMapIntersection(compatibleVideoCodecs, types.CodecCompatibility[o.OutputType])
+			compatibleVideoCodecs = types.GetMapIntersection(compatibleVideoCodecs, types.CodecCompatibility[o.GetOutputType()])
 			if len(compatibleVideoCodecs) == 0 {
 				if p.AudioOutCodec == "" {
 					return nil, nil, errors.ErrNoCompatibleCodec
 				} else {
 					// Return a more specific error if a codec was provided
-					return nil, nil, errors.ErrIncompatible(o.OutputType, p.VideoOutCodec)
+					return nil, nil, errors.ErrIncompatible(o.GetOutputType(), p.VideoOutCodec)
 				}
 			}
 		}
@@ -452,8 +451,8 @@ func (p *PipelineConfig) validateAndUpdateOutputCodecs() (compatibleAudioCodecs 
 }
 
 func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeType]bool, compatibleVideoCodecs map[types.MimeType]bool) error {
-	o := p.Outputs[types.EgressTypeFile]
-	if o == nil || o.OutputType != types.OutputTypeUnknownFile {
+	o := p.GetFileConfig()
+	if o == nil || o.GetOutputType() != types.OutputTypeUnknownFile {
 		return nil
 	}
 
@@ -485,12 +484,13 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 
 // used for sdk input source
 func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string) error {
-	for egressType, o := range p.Outputs {
+	for egressType, c := range p.Outputs {
 		switch egressType {
 		case types.EgressTypeFile:
-			return o.updateFilepath(p, identifier, replacements)
+			return c.(*FileConfig).updateFilepath(p, identifier, replacements)
 
 		case types.EgressTypeSegments:
+			o := c.(*SegmentConfig)
 			o.LocalDir = stringReplace(o.LocalDir, replacements)
 			o.StorageDir = stringReplace(o.StorageDir, replacements)
 			o.PlaylistFilename = stringReplace(o.PlaylistFilename, replacements)
@@ -525,46 +525,6 @@ func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType)
 	default:
 		return "", errors.ErrInvalidInput("stream output type")
 	}
-}
-
-type Manifest struct {
-	EgressID          string `json:"egress_id,omitempty"`
-	RoomID            string `json:"room_id,omitempty"`
-	RoomName          string `json:"room_name,omitempty"`
-	Url               string `json:"url,omitempty"`
-	StartedAt         int64  `json:"started_at,omitempty"`
-	EndedAt           int64  `json:"ended_at,omitempty"`
-	PublisherIdentity string `json:"publisher_identity,omitempty"`
-	TrackID           string `json:"track_id,omitempty"`
-	TrackKind         string `json:"track_kind,omitempty"`
-	TrackSource       string `json:"track_source,omitempty"`
-	AudioTrackID      string `json:"audio_track_id,omitempty"`
-	VideoTrackID      string `json:"video_track_id,omitempty"`
-	SegmentCount      int64  `json:"segment_count,omitempty"`
-}
-
-func (p *PipelineConfig) GetManifest(egressType types.EgressType) ([]byte, error) {
-	manifest := Manifest{
-		EgressID:          p.Info.EgressId,
-		RoomID:            p.Info.RoomId,
-		RoomName:          p.Info.RoomName,
-		Url:               p.WebUrl,
-		StartedAt:         p.Info.StartedAt,
-		EndedAt:           p.Info.EndedAt,
-		PublisherIdentity: p.ParticipantIdentity,
-		TrackID:           p.TrackID,
-		TrackKind:         p.TrackKind,
-		TrackSource:       p.TrackSource,
-		AudioTrackID:      p.AudioTrackID,
-		VideoTrackID:      p.VideoTrackID,
-	}
-
-	if egressType == types.EgressTypeSegments {
-		o := p.Outputs[egressType]
-		manifest.SegmentCount = o.SegmentsInfo.SegmentCount
-	}
-
-	return json.Marshal(manifest)
 }
 
 func stringReplace(s string, replacements map[string]string) string {

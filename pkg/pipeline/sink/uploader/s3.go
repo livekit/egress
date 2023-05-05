@@ -27,7 +27,7 @@ type S3Uploader struct {
 	tagging   *string
 }
 
-func newS3Uploader(conf *livekit.S3Upload) (Uploader, error) {
+func newS3Uploader(conf *livekit.S3Upload) (uploader, error) {
 	awsConfig := &aws.Config{
 		MaxRetries:       aws.Int(maxRetries), // Switching to v2 of the aws Go SDK would allow to set a maxDelay as well.
 		S3ForcePathStyle: aws.Bool(conf.ForcePathStyle),
@@ -97,7 +97,7 @@ func (u *S3Uploader) getBucketLocation() (string, error) {
 	return *resp.LocationConstraint, nil
 }
 
-func (u *S3Uploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
+func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
 	sess, err := session.NewSession(u.awsConfig)
 	if err != nil {
 		return "", 0, err

@@ -25,8 +25,8 @@ type StreamOutput struct {
 	sinks map[string]*streamSink
 }
 
-func (b *Bin) buildStreamOutput(p *config.PipelineConfig, out *config.OutputConfig) (*StreamOutput, error) {
-	base, err := b.buildOutputBase(p, out.EgressType)
+func (b *Bin) buildStreamOutput(p *config.PipelineConfig, out *config.StreamConfig) (*StreamOutput, error) {
+	base, err := b.buildOutputBase(p, types.EgressTypeStream)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
@@ -50,7 +50,7 @@ func (b *Bin) buildStreamOutput(p *config.PipelineConfig, out *config.OutputConf
 	}
 
 	sinks := make(map[string]*streamSink)
-	for _, url := range out.StreamUrls {
+	for _, url := range out.Urls {
 		sink, err := buildStreamSink(out.OutputType, url)
 		if err != nil {
 			return nil, err
@@ -72,7 +72,7 @@ func (b *Bin) buildStreamOutput(p *config.PipelineConfig, out *config.OutputConf
 	}, nil
 }
 
-func buildStreamMux(out *config.OutputConfig) (*gst.Element, error) {
+func buildStreamMux(out *config.StreamConfig) (*gst.Element, error) {
 	switch out.OutputType {
 	case types.OutputTypeRTMP:
 		mux, err := gst.NewElement("flvmux")

@@ -21,10 +21,10 @@ import (
 const maxPendingUploads = 100
 
 type SegmentSink struct {
-	uploader.Uploader
+	*uploader.Uploader
 
 	conf *config.PipelineConfig
-	*config.OutputConfig
+	*config.SegmentConfig
 
 	playlist                  *m3u8.PlaylistWriter
 	currentItemStartTimestamp int64
@@ -46,16 +46,16 @@ type SegmentUpdate struct {
 	filename string
 }
 
-func newSegmentSink(u uploader.Uploader, conf *config.PipelineConfig, p *config.OutputConfig) (*SegmentSink, error) {
-	playlistName := path.Join(p.LocalDir, p.PlaylistFilename)
-	playlist, err := m3u8.NewPlaylistWriter(playlistName, p.SegmentDuration)
+func newSegmentSink(u *uploader.Uploader, conf *config.PipelineConfig, o *config.SegmentConfig) (*SegmentSink, error) {
+	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
+	playlist, err := m3u8.NewPlaylistWriter(playlistName, o.SegmentDuration)
 	if err != nil {
 		return nil, err
 	}
 
 	return &SegmentSink{
 		Uploader:              u,
-		OutputConfig:          p,
+		SegmentConfig:         o,
 		conf:                  conf,
 		playlist:              playlist,
 		openSegmentsStartTime: make(map[string]int64),
@@ -213,7 +213,7 @@ func (s *SegmentSink) Finalize() error {
 	if !s.DisableManifest {
 		manifestLocalPath := fmt.Sprintf("%s.json", playlistLocalPath)
 		manifestStoragePath := fmt.Sprintf("%s.json", playlistStoragePath)
-		if err := uploadManifest(s.conf, s, manifestLocalPath, manifestStoragePath); err != nil {
+		if err := uploadManifest(s.conf, s.Uploader, manifestLocalPath, manifestStoragePath); err != nil {
 			return err
 		}
 	}

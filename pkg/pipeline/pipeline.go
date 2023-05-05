@@ -240,7 +240,8 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	ctx, span := tracer.Start(ctx, "Pipeline.UpdateStream")
 	defer span.End()
 
-	if p.Outputs[types.EgressTypeStream] == nil {
+	o := p.GetStreamConfig()
+	if o == nil {
 		return errors.ErrNonStreamingPipeline
 	}
 
@@ -272,7 +273,7 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 			StartedAt: now,
 			Status:    livekit.StreamInfo_ACTIVE,
 		}
-		p.Outputs[types.EgressTypeStream].StreamInfo[url] = streamInfo
+		o.StreamInfo[url] = streamInfo
 		p.Info.StreamResults = append(p.Info.StreamResults, streamInfo)
 		if list := p.Info.GetStream(); list != nil {
 			list.Info = append(list.Info, streamInfo)
@@ -294,7 +295,9 @@ func (p *Pipeline) removeSink(url string, streamErr error) error {
 	now := time.Now().UnixNano()
 
 	p.mu.Lock()
-	streamInfo := p.Outputs[types.EgressTypeStream].StreamInfo[url]
+	o := p.GetStreamConfig()
+
+	streamInfo := o.StreamInfo[url]
 	if streamInfo == nil {
 		p.mu.Unlock()
 		return errors.ErrStreamNotFound(url)
@@ -317,7 +320,7 @@ func (p *Pipeline) removeSink(url string, streamErr error) error {
 	}
 
 	// remove output
-	delete(p.Outputs[types.EgressTypeStream].StreamInfo, url)
+	delete(o.StreamInfo, url)
 	p.OutputCount--
 	p.mu.Unlock()
 
@@ -427,21 +430,21 @@ func (p *Pipeline) startSessionLimitTimer(ctx context.Context) {
 }
 
 func (p *Pipeline) updateStartTime(startedAt int64) {
-	for egressType, conf := range p.Outputs {
+	for egressType, c := range p.Outputs {
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
 			p.mu.Lock()
-			for _, streamInfo := range conf.StreamInfo {
+			for _, streamInfo := range c.(*config.StreamConfig).StreamInfo {
 				streamInfo.Status = livekit.StreamInfo_ACTIVE
 				streamInfo.StartedAt = startedAt
 			}
 			p.mu.Unlock()
 
 		case types.EgressTypeFile:
-			conf.FileInfo.StartedAt = startedAt
+			c.(*config.FileConfig).FileInfo.StartedAt = startedAt
 
 		case types.EgressTypeSegments:
-			conf.SegmentsInfo.StartedAt = startedAt
+			c.(*config.SegmentConfig).SegmentsInfo.StartedAt = startedAt
 		}
 	}
 
@@ -457,10 +460,10 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	for egressType, conf := range p.Outputs {
+	for egressType, c := range p.Outputs {
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
-			for _, info := range conf.StreamInfo {
+			for _, info := range c.(*config.StreamConfig).StreamInfo {
 				info.Status = livekit.StreamInfo_FINISHED
 				if info.StartedAt == 0 {
 					info.StartedAt = endedAt
@@ -470,18 +473,20 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 			}
 
 		case types.EgressTypeFile:
-			if conf.FileInfo.StartedAt == 0 {
-				conf.FileInfo.StartedAt = endedAt
+			fileInfo := c.(*config.FileConfig).FileInfo
+			if fileInfo.StartedAt == 0 {
+				fileInfo.StartedAt = endedAt
 			}
-			conf.FileInfo.EndedAt = endedAt
-			conf.FileInfo.Duration = endedAt - conf.FileInfo.StartedAt
+			fileInfo.EndedAt = endedAt
+			fileInfo.Duration = endedAt - fileInfo.StartedAt
 
 		case types.EgressTypeSegments:
-			if conf.SegmentsInfo.StartedAt == 0 {
-				conf.SegmentsInfo.StartedAt = endedAt
+			segmentsInfo := c.(*config.SegmentConfig).SegmentsInfo
+			if segmentsInfo.StartedAt == 0 {
+				segmentsInfo.StartedAt = endedAt
 			}
-			conf.SegmentsInfo.EndedAt = endedAt
-			conf.SegmentsInfo.Duration = endedAt - conf.SegmentsInfo.StartedAt
+			segmentsInfo.EndedAt = endedAt
+			segmentsInfo.Duration = endedAt - segmentsInfo.StartedAt
 		}
 	}
 }

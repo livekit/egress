@@ -233,7 +233,7 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 			}
 		}
 
-		if _, ok := p.Outputs[types.EgressTypeSegments]; ok {
+		if p.GetSegmentConfig() != nil {
 			// Avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
 			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
 				return errors.ErrGstPipelineError(err)
