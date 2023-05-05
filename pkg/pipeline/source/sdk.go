@@ -204,8 +204,8 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			p.AudioTranscoding = true
 
 			if p.TrackID != "" {
-				if conf, ok := p.Outputs[types.EgressTypeFile]; ok {
-					conf.OutputType = types.OutputTypeOGG
+				if o := p.GetFileConfig(); o != nil {
+					o.OutputType = types.OutputTypeOGG
 				}
 			}
 
@@ -225,8 +225,8 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			}
 
 			if p.TrackID != "" {
-				if conf, ok := p.Outputs[types.EgressTypeFile]; ok {
-					conf.OutputType = types.OutputTypeWebM
+				if o := p.GetFileConfig(); o != nil {
+					o.OutputType = types.OutputTypeWebM
 				}
 			}
 
@@ -242,8 +242,8 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			}
 
 			if p.TrackID != "" {
-				if conf, ok := p.Outputs[types.EgressTypeFile]; ok {
-					conf.OutputType = types.OutputTypeMP4
+				if o := p.GetFileConfig(); o != nil {
+					o.OutputType = types.OutputTypeMP4
 				}
 			}
 

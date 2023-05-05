@@ -38,8 +38,8 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 		outputs: make(map[types.EgressType]output),
 	}
 
-	for _, out := range p.Outputs {
-		if err := b.buildOutput(p, out); err != nil {
+	for egressType := range p.Outputs {
+		if err := b.buildOutput(p, egressType); err != nil {
 			return nil, err
 		}
 	}
@@ -92,35 +92,35 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 	return b, nil
 }
 
-func (b *Bin) buildOutput(p *config.PipelineConfig, out *config.OutputConfig) error {
-	switch out.EgressType {
+func (b *Bin) buildOutput(p *config.PipelineConfig, egressType types.EgressType) error {
+	switch egressType {
 	case types.EgressTypeFile:
-		o, err := b.buildFileOutput(p, out)
+		o, err := b.buildFileOutput(p)
 		if err != nil {
 			return err
 		}
-		b.outputs[out.EgressType] = o
+		b.outputs[egressType] = o
 
 	case types.EgressTypeSegments:
-		o, err := b.buildSegmentOutput(p, out)
+		o, err := b.buildSegmentOutput(p)
 		if err != nil {
 			return err
 		}
-		b.outputs[out.EgressType] = o
+		b.outputs[egressType] = o
 
 	case types.EgressTypeStream:
-		o, err := b.buildStreamOutput(p, out)
+		o, err := b.buildStreamOutput(p)
 		if err != nil {
 			return err
 		}
-		b.outputs[out.EgressType] = o
+		b.outputs[egressType] = o
 
 	case types.EgressTypeWebsocket:
 		o, err := b.buildWebsocketOutput(p)
 		if err != nil {
 			return err
 		}
-		b.outputs[out.EgressType] = o
+		b.outputs[egressType] = o
 
 	default:
 		return errors.ErrInvalidInput("egress type")

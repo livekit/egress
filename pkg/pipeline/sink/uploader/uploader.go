@@ -2,6 +2,7 @@ package uploader
 
 import (
 	"os"
+	"path"
 	"time"
 
 	"github.com/livekit/egress/pkg/types"
@@ -14,28 +15,68 @@ const (
 	maxDelay   = time.Second * 5
 )
 
-type Uploader interface {
-	Upload(string, string, types.OutputType) (string, int64, error)
+type Uploader struct {
+	uploader
+	backup string
 }
 
-func New(conf interface{}) (Uploader, error) {
+type uploader interface {
+	upload(string, string, types.OutputType) (string, int64, error)
+}
+
+func New(conf interface{}, backup string) (*Uploader, error) {
+	u := &Uploader{
+		backup: backup,
+	}
+
+	var i uploader
+	var err error
 	switch c := conf.(type) {
 	case *livekit.S3Upload:
-		return newS3Uploader(c)
+		i, err = newS3Uploader(c)
 	case *livekit.GCPUpload:
-		return newGCPUploader(c)
+		i, err = newGCPUploader(c)
 	case *livekit.AzureBlobUpload:
-		return newAzureUploader(c)
+		i, err = newAzureUploader(c)
 	case *livekit.AliOSSUpload:
-		return newAliOSSUploader(c)
+		i, err = newAliOSSUploader(c)
 	default:
-		return &noOpUploader{}, nil
+		i = &noOpUploader{}
 	}
+	if err != nil {
+		return nil, err
+	}
+
+	u.uploader = i
+	return u, nil
+}
+
+func (u *Uploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
+	location, size, err := u.upload(localFilepath, storageFilepath, outputType)
+	if err == nil {
+		return location, size, nil
+	}
+
+	if u.backup != "" {
+		stat, err := os.Stat(localFilepath)
+		if err != nil {
+			return "", 0, err
+		}
+
+		backupFilepath := path.Join(u.backup, storageFilepath)
+		if err = os.Rename(localFilepath, backupFilepath); err != nil {
+			return "", 0, err
+		}
+
+		return backupFilepath, stat.Size(), nil
+	}
+
+	return "", 0, err
 }
 
 type noOpUploader struct{}
 
-func (u *noOpUploader) Upload(localFilepath, _ string, _ types.OutputType) (string, int64, error) {
+func (u *noOpUploader) upload(localFilepath, _ string, _ types.OutputType) (string, int64, error) {
 	stat, err := os.Stat(localFilepath)
 	if err != nil {
 		return "", 0, err

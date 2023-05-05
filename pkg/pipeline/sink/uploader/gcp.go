@@ -20,13 +20,13 @@ type GCPUploader struct {
 	conf *livekit.GCPUpload
 }
 
-func newGCPUploader(conf *livekit.GCPUpload) (Uploader, error) {
+func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 	return &GCPUploader{
 		conf: conf,
 	}, nil
 }
 
-func (u *GCPUploader) Upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {
+func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {
 	ctx := context.Background()
 
 	file, err := os.Open(localFilepath)

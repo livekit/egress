@@ -113,7 +113,7 @@ func verifyFile(t *testing.T, conf *TestConfig, p *config.PipelineConfig, res *l
 	require.False(t, strings.Contains(storagePath, "{"))
 
 	// download from cloud storage
-	if uploadConfig := p.Outputs[types.EgressTypeFile].UploadConfig; uploadConfig != nil {
+	if uploadConfig := p.GetFileConfig().UploadConfig; uploadConfig != nil {
 		localPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, storagePath)
 		download(t, uploadConfig, localPath, storagePath)
 		download(t, uploadConfig, localPath+".json", storagePath+".json")
@@ -148,7 +148,7 @@ func verifySegments(t *testing.T, conf *TestConfig, p *config.PipelineConfig, fi
 	localPlaylistPath := segments.PlaylistName
 
 	// download from cloud storage
-	if uploadConfig := p.Outputs[types.EgressTypeSegments].UploadConfig; uploadConfig != nil {
+	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
 		base := storedPlaylistPath[:len(storedPlaylistPath)-5]
 		localPlaylistPath = fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, storedPlaylistPath)
 		download(t, uploadConfig, localPlaylistPath, storedPlaylistPath)
@@ -208,7 +208,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 	info, err := ffprobe(in)
 	require.NoError(t, err, "input %s does not exist", in)
 
-	switch p.Outputs[egressType].OutputType {
+	switch p.Outputs[egressType].GetOutputType() {
 	case types.OutputTypeRaw:
 		require.Equal(t, 0, info.Format.ProbeScore)
 	case types.OutputTypeIVF:
@@ -252,7 +252,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 
 		require.Len(t, res.GetSegmentResults(), 1)
 		segments := res.GetSegmentResults()[0]
-		expected := int64(math.Ceil(actual / float64(p.Outputs[egressType].SegmentDuration)))
+		expected := int64(math.Ceil(actual / float64(p.GetSegmentConfig().SegmentDuration)))
 		require.True(t, segments.SegmentCount == expected || segments.SegmentCount == expected-1)
 	}
 
@@ -284,7 +284,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 			require.Equal(t, 2, stream.Channels)
 
 			// audio bitrate
-			if p.Outputs[egressType].OutputType == types.OutputTypeMP4 {
+			if p.Outputs[egressType].GetOutputType() == types.OutputTypeMP4 {
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)
@@ -312,7 +312,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 				require.Equal(t, "vp8", stream.CodecName)
 			}
 
-			switch p.Outputs[egressType].OutputType {
+			switch p.Outputs[egressType].GetOutputType() {
 			case types.OutputTypeIVF:
 				require.Equal(t, "vp8", stream.CodecName)
 

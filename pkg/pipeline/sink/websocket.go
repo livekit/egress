@@ -9,6 +9,7 @@ import (
 	"github.com/frostbyte73/core"
 	"github.com/gorilla/websocket"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
@@ -20,12 +21,12 @@ type WebsocketSink struct {
 	mu     sync.Mutex
 }
 
-func newWebsocketSink(url string, mimeType types.MimeType) (*WebsocketSink, error) {
+func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*WebsocketSink, error) {
 	// set Content-Type header
 	header := http.Header{}
 	header.Set("Content-Type", string(mimeType))
 
-	conn, _, err := websocket.DefaultDialer.Dial(url, header)
+	conn, _, err := websocket.DefaultDialer.Dial(o.Urls[0], header)
 	if err != nil {
 		return nil, err
 	}
