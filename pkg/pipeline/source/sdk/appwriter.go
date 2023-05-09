@@ -29,7 +29,6 @@ const (
 	videoTimeout = time.Second * 2
 	maxAudioLate = 200 // 4s for audio
 	audioTimeout = time.Second * 4
-	maxDropout   = 3000 // max sequence number skip
 )
 
 var (
@@ -57,7 +56,7 @@ type AppWriter struct {
 
 	// a/v sync
 	sync *synchronizer.Synchronizer
-	*TrackSynchronizer
+	*synchronizer.TrackSynchronizer
 
 	// state
 	muted        atomic.Bool
@@ -89,7 +88,7 @@ func NewAppWriter(
 		src:               src,
 		writeBlanks:       writeBlanks,
 		sync:              sync,
-		TrackSynchronizer: newTrackSynchronizer(syncInfo, track),
+		TrackSynchronizer: syncInfo,
 		playing:           core.NewFuse(),
 		draining:          core.NewFuse(),
 		force:             core.NewFuse(),
@@ -181,14 +180,14 @@ func (w *AppWriter) run() {
 
 	w.startTime = time.Now()
 
-	first := true
+	initialized := false
 	force := w.force.Watch()
 
 	for {
 		select {
 		case <-force:
 			// force push remaining packets and quit
-			_ = w.pushPackets(true)
+			_ = w.pushSamples(true)
 			return
 
 		default:
@@ -202,7 +201,7 @@ func (w *AppWriter) run() {
 
 				if w.muted.Load() {
 					// switch to writing blank frames
-					err = w.pushBlankFrames()
+					err = w.runMuted()
 					if err == nil {
 						continue
 					}
@@ -218,22 +217,21 @@ func (w *AppWriter) run() {
 				}
 
 				// force push remaining packets and quit
-				_ = w.pushPackets(true)
+				_ = w.pushSamples(true)
 				return
 			}
 
-			// sync offsets after first packet read
-			// see comment in writeRTP below
-			if first {
-				w.FirstPacketForTrack(pkt)
-				first = false
+			// initialize track synchronizer
+			if !initialized {
+				w.Initialize(pkt)
+				initialized = true
 			}
 
 			// push packet to sample builder
 			w.sb.Push(pkt)
 
 			// push completed packets to appsrc
-			if err = w.pushPackets(false); err != nil {
+			if err = w.pushSamples(false); err != nil {
 				if !errors.Is(err, io.EOF) {
 					w.logger.Errorw("could not push buffers", err)
 				}
@@ -243,21 +241,8 @@ func (w *AppWriter) run() {
 	}
 }
 
-func (w *AppWriter) pushPackets(force bool) error {
-	// buffers can only be pushed to the appsrc while in the playing state
-	if !w.playing.IsBroken() {
-		return nil
-	}
-
-	if force {
-		return w.push(w.sb.ForcePopPackets(), false)
-	} else {
-		return w.push(w.sb.PopPackets(), false)
-	}
-}
-
-func (w *AppWriter) pushBlankFrames() error {
-	_ = w.pushPackets(true)
+func (w *AppWriter) runMuted() error {
+	_ = w.pushSamples(true)
 
 	// TODO: sample buffer has bug that it may pop old packet after pushPackets(true)
 	//   recreated it to work now, will remove this when bug fixed
@@ -276,11 +261,8 @@ func (w *AppWriter) pushBlankFrames() error {
 		}
 	}
 
-	// expected difference between packet timestamps
-	frameDurationRTP := w.getFrameDurationRTP()
+	frameDuration := w.GetFrameDuration()
 
-	// expected packet duration in nanoseconds
-	frameDuration := time.Duration(float64(frameDurationRTP) * 1e9 / float64(w.track.Codec().ClockRate))
 	ticker := time.NewTicker(frameDuration)
 	defer ticker.Stop()
 
@@ -306,43 +288,50 @@ func (w *AppWriter) pushBlankFrames() error {
 				return err
 			}
 
-			maxTimestamp := pkt.Timestamp - frameDurationRTP
 			for {
-				ts := w.lastTS + frameDurationRTP
-				if ts > maxTimestamp {
+				ok, err := w.insertBlankFrame(pkt)
+				if err != nil {
+					return err
+				}
+
+				if !ok {
 					// push packet to sample builder and return
 					w.sb.Push(pkt)
 					return nil
-				}
-
-				if err = w.pushBlankFrame(ts); err != nil {
-					return err
 				}
 			}
 		}
 
 		<-ticker.C
 		// push blank frame
-		if err := w.pushBlankFrame(w.lastTS + frameDurationRTP); err != nil {
+		if _, err := w.insertBlankFrame(nil); err != nil {
 			return err
 		}
 	}
 }
 
-func (w *AppWriter) pushBlankFrame(timestamp uint32) error {
+func (w *AppWriter) insertBlankFrame(next *rtp.Packet) (bool, error) {
 	pkt := &rtp.Packet{
 		Header: rtp.Header{
-			Version:        2,
-			Padding:        false,
-			Marker:         true,
-			PayloadType:    uint8(w.track.PayloadType()),
-			SequenceNumber: w.lastSN + 1,
-			Timestamp:      timestamp,
-			SSRC:           uint32(w.track.SSRC()),
-			CSRC:           []uint32{},
+			Version:     2,
+			Padding:     false,
+			Marker:      true,
+			PayloadType: uint8(w.track.PayloadType()),
+			SSRC:        uint32(w.track.SSRC()),
+			CSRC:        []uint32{},
 		},
 	}
-	w.snOffset++
+
+	var pts time.Duration
+	if next != nil {
+		var ok bool
+		pts, ok = w.InsertFrameBefore(pkt, next)
+		if !ok {
+			return false, nil
+		}
+	} else {
+		pts = w.InsertFrame(pkt)
+	}
 
 	switch w.codec {
 	case types.MimeTypeVP8:
@@ -356,7 +345,7 @@ func (w *AppWriter) pushBlankFrame(timestamp uint32) error {
 		vp8Header := payload[:blankVP8.HeaderSize]
 		err := blankVP8.MarshalTo(vp8Header)
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame16x16)
@@ -377,56 +366,53 @@ func (w *AppWriter) pushBlankFrame(timestamp uint32) error {
 		pkt.Payload = buf[:offset]
 	}
 
-	if err := w.push([]*rtp.Packet{pkt}, true); err != nil {
-		return err
+	if err := w.pushPacket(pkt, pts); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (w *AppWriter) pushSamples(force bool) error {
+	// buffers can only be pushed to the appsrc while in the playing state
+	if !w.playing.IsBroken() {
+		return nil
+	}
+
+	var pkts []*rtp.Packet
+	if force {
+		pkts = w.sb.ForcePopPackets()
+	} else {
+		pkts = w.sb.PopPackets()
+	}
+
+	for _, pkt := range pkts {
+		w.translatePacket(pkt)
+
+		// get PTS
+		pts, err := w.GetPTS(pkt)
+		if err != nil {
+			return err
+		}
+
+		if err = w.pushPacket(pkt, pts); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (w *AppWriter) push(packets []*rtp.Packet, blankFrame bool) error {
-	for _, pkt := range packets {
-		if !blankFrame {
-			// update sequence number
-			pkt.SequenceNumber += w.snOffset
+func (w *AppWriter) pushPacket(pkt *rtp.Packet, pts time.Duration) error {
+	p, err := pkt.Marshal()
+	if err != nil {
+		return err
+	}
 
-			// record max frame duration
-			if w.lastTS != 0 && pkt.SequenceNumber == w.lastSN+1 {
-				// make sure the frame duration is < 1 second
-				if frameDurationRTP := pkt.Timestamp - w.lastTS; frameDurationRTP > w.frameDurationRTP && frameDurationRTP < w.clockRate {
-					w.frameDurationRTP = frameDurationRTP
-				}
-			}
-
-			w.translatePacket(pkt)
-		}
-
-		// reset offsets if absolute difference in sequence numbers > maxDropout
-		if w.lastTS != 0 && pkt.SequenceNumber-w.lastSN > maxDropout && w.lastSN-pkt.SequenceNumber > maxDropout {
-			w.logger.Debugw("large SN gap", "previous", w.lastSN, "current", pkt.SequenceNumber)
-			w.resetOffsets(pkt)
-		}
-
-		// get PTS
-		pts, err := w.GetPTS(pkt.Timestamp)
-		if err != nil {
-			return err
-		}
-
-		// record timing info
-		w.lastSN = pkt.SequenceNumber
-		w.lastTS = pkt.Timestamp
-
-		p, err := pkt.Marshal()
-		if err != nil {
-			return err
-		}
-
-		b := gst.NewBufferFromBytes(p)
-		b.SetPresentationTimestamp(pts)
-		if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
-			w.logger.Infow("unexpected flow return", "flow", flow)
-		}
+	b := gst.NewBufferFromBytes(p)
+	b.SetPresentationTimestamp(pts)
+	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
+		w.logger.Infow("unexpected flow return", "flow", flow)
 	}
 
 	return nil
