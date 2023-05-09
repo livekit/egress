@@ -179,8 +179,8 @@ github.com/livekit/protocol v1.5.6 h1:2kwduElaTcYc4JKxs3aGp+jbMDC9g1z8L+ywlLBwMv
 github.com/livekit/protocol v1.5.6/go.mod h1:CtvrXHdVzapR+avHHBr3RnCwwM4wjCJv9LQ4UCA14TU=
 github.com/livekit/psrpc v0.3.0 h1:giBZsfM3CWA0oIYXofsMITbVQtyW7u/ES9sQmVspHPM=
 github.com/livekit/psrpc v0.3.0/go.mod h1:n6JntEg+zT6Ji8InoyTpV7wusPNwGqqtxmHlkNhDN0U=
-github.com/livekit/server-sdk-go v1.0.11-0.20230509102442-adc7722f6bc3 h1:+N85/1rH+HCZBnPAqcB6XKFq9NEtUEm3fov+ICOqhLQ=
-github.com/livekit/server-sdk-go v1.0.11-0.20230509102442-adc7722f6bc3/go.mod h1:sjJGSPRenQuUi3HC051s+QARHW3n5159M924iHp87bY=
+github.com/livekit/server-sdk-go v1.0.11-0.20230509182419-c7dfbbd172bb h1:Bm0v/i+qq3TUCgBjmdYb5l6mEVhJpg8b9ci9wLuEyqU=
+github.com/livekit/server-sdk-go v1.0.11-0.20230509182419-c7dfbbd172bb/go.mod h1:sjJGSPRenQuUi3HC051s+QARHW3n5159M924iHp87bY=
 github.com/mackerelio/go-osstat v0.2.4 h1:qxGbdPkFo65PXOb/F/nhDKpF2nGmGaCFDLXoZjJTtUs=
 github.com/mackerelio/go-osstat v0.2.4/go.mod h1:Zy+qzGdZs3A9cuIqmgbJvwbmLQH9dJvtio5ZjJTbdlQ=
 github.com/magefile/mage v1.14.0 h1:6QDX3g6z1YvJ4olPhT1wksUcSa/V0a1B+pJb73fBjyo=
