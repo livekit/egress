@@ -2047,9 +2047,9 @@
   integrity sha512-EvYTiXet5XqweYGClEmpu3BoxmsQ4hkj3QaYA6qEnigCWffTP3vNRwBReTdrwDwo7OoJ3wM8Uoe9Uk4n+d4hfg==
 
 "@floating-ui/dom@^1.1.0":
-  version "1.2.7"
-  resolved "https://registry.yarnpkg.com/@floating-ui/dom/-/dom-1.2.7.tgz#c123e4db014b07b97e996cd459245fa217049c6b"
-  integrity sha512-DyqylONj1ZaBnzj+uBnVfzdjjCkFCL2aA9ESHLyUOGSqb03RpbLMImP1ekIQXYs4KLk9jAjJfZAU8hXfWSahEg==
+  version "1.2.8"
+  resolved "https://registry.yarnpkg.com/@floating-ui/dom/-/dom-1.2.8.tgz#aee0f6ccc0787ab8fe741487a6e5e95b7b125375"
+  integrity sha512-XLwhYV90MxiHDq6S0rzFZj00fnDM+A1R9jhSioZoMsa7G0Q0i+Q4x40ajR8FHSdYDE1bgjG45mIWe6jtv9UPmg==
   dependencies:
     "@floating-ui/core" "^1.2.6"
 
@@ -2389,9 +2389,9 @@
     rxjs "^7.8.0"
 
 "@livekit/components-react@^1.0.0":
-  version "1.0.0"
-  resolved "https://registry.yarnpkg.com/@livekit/components-react/-/components-react-1.0.0.tgz#f28d52eaf8202c7e8be16a1d49a307ce8de0c141"
-  integrity sha512-jg09NCebv/QWN6UeFQFZJzTvXg++In/fOZLNUK4ejLOsmMP3/ZZUEMxLBwgiD2bNhkgzTeWtgx+5uNBRal8bCQ==
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/@livekit/components-react/-/components-react-1.0.1.tgz#ede37beefe22f0df7a4590c20e2c5ecdc694cef0"
+  integrity sha512-b5WG+s3dyusHvD7jVRZBHiX1021hrz32QYIwo342GIA7kKbdhvdaYf+9JEvjTN+C1QL3Knx9Wiw+YQKZCW2j9Q==
   dependencies:
     "@livekit/components-core" "0.6.5"
     "@react-hook/latest" "^1.0.3"
@@ -2945,15 +2945,20 @@
   resolved "https://registry.yarnpkg.com/@types/mime/-/mime-3.0.1.tgz#5f8f2bca0a5863cb69bc0b0acd88c96cb1d4ae10"
   integrity sha512-Y4XFY5VJAuw0FgAqPNd6NNoV44jbq9Bz2L7Rh/J6jLTiHBSBJa9fxqQIvkIld4GsoDOcCbvzOUAbLPsSKKg+uA==
 
-"@types/node@*", "@types/node@>=13.7.0":
+"@types/node@*":
   version "20.1.0"
   resolved "https://registry.yarnpkg.com/@types/node/-/node-20.1.0.tgz#258805edc37c327cf706e64c6957f241ca4c4c20"
   integrity sha512-O+z53uwx64xY7D6roOi4+jApDGFg0qn6WHcxe5QeqjMaTezBO/mxdfFXIVAVVyNWKx84OmPB3L8kbVYOTeN34A==
 
+"@types/node@>=13.7.0":
+  version "20.1.4"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-20.1.4.tgz#83f148d2d1f5fe6add4c53358ba00d97fc4cdb71"
+  integrity sha512-At4pvmIOki8yuwLtd7BNHl3CiWNbtclUbNtScGx4OHfBd4/oWoJC8KRCIxXwkdndzhxOsPXihrsOoydxBjlE9Q==
+
 "@types/node@^18.0.0":
-  version "18.16.5"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-18.16.5.tgz#bf64e42719dc2e74da24709a2e1c0b50a966120a"
-  integrity sha512-seOA34WMo9KB+UA78qaJoCO20RJzZGVXQ5Sh6FWu0g/hfT44nKXnej3/tCQl7FL97idFpBhisLYCTB50S0EirA==
+  version "18.16.9"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-18.16.9.tgz#e79416d778a8714597342bb87efb5a6e914f7a73"
+  integrity sha512-IeB32oIV4oGArLrd7znD2rkHQ6EDCM+2Sr76dJnrHwv9OHBTTM6nuDLK9bmikXzPa0ZlWMWtRGo/Uw4mrzQedA==
 
 "@types/parse-json@^4.0.0":
   version "4.0.0"
@@ -3629,11 +3634,6 @@ ast-types-flow@^0.0.7:
   version "0.0.7"
   resolved "https://registry.yarnpkg.com/ast-types-flow/-/ast-types-flow-0.0.7.tgz#f70b735c6bca1a5c9c22d982c3e39e7feba3bdad"
   integrity sha1-9wtzXGvKGlycItmCw+Oef+ujva0=
-
-async-await-queue@^1.2.1:
-  version "1.2.1"
-  resolved "https://registry.yarnpkg.com/async-await-queue/-/async-await-queue-1.2.1.tgz#baf459f5fbac902b060a88fee4da853fd86f2128"
-  integrity sha512-v2j+/EMzAnuJZ8I4570KJMFhi6G9g3WZyFh6cPnmQSJh3nLao77XpRt01kyFegQazPSKvue1yaIYDp/NfV/b0g==
 
 async@^3.2.3, async@^3.2.4:
   version "3.2.4"
@@ -7324,11 +7324,10 @@ lines-and-columns@^1.1.6:
   integrity sha1-HADHQ7QzzQpOgHWPe2SldEDZ/wA=
 
 livekit-client@^1.9.0:
-  version "1.9.2"
-  resolved "https://registry.yarnpkg.com/livekit-client/-/livekit-client-1.9.2.tgz#7a11aaa8fee46d6196add725fda9571eb6de4ff4"
-  integrity sha512-YX6lZ7YGFfeG02mWVjPnHfymHfnO/lNhTKT+OcJTD4pLTwAXhmboZ3ESULMulivuLIFQTRVSohWq8F7fbJXqUw==
+  version "1.9.4"
+  resolved "https://registry.yarnpkg.com/livekit-client/-/livekit-client-1.9.4.tgz#1da512d9daa9249af71cfd93a9dec510e5ad0627"
+  integrity sha512-QaIEbkVKQl9/+fWCWzNgZ7jA7f5PoqvQQErwQborkqHQZX8O9v5u6DXbnHXtJkQmdvgE+83Og8Ct9sBeMN9zuQ==
   dependencies:
-    async-await-queue "^1.2.1"
     events "^3.3.0"
     loglevel "^1.8.0"
     protobufjs "^7.0.0"
@@ -9254,17 +9253,10 @@ run-parallel@^1.1.9:
   dependencies:
     queue-microtask "^1.2.2"
 
-rxjs@^7.5.2:
+rxjs@^7.5.2, rxjs@^7.8.0:
   version "7.8.1"
   resolved "https://registry.yarnpkg.com/rxjs/-/rxjs-7.8.1.tgz#6f6f3d99ea8044291efd92e7c7fcf562c4057543"
   integrity sha512-AA3TVj+0A2iuIoQkWEK/tqFjBq2j+6PO6Y0zJcvzLAFhEFIO3HL0vls9hWLncZbAAbK0mar7oZ4V079I/qPMxg==
-  dependencies:
-    tslib "^2.1.0"
-
-rxjs@^7.8.0:
-  version "7.8.0"
-  resolved "https://registry.yarnpkg.com/rxjs/-/rxjs-7.8.0.tgz#90a938862a82888ff4c7359811a595e14e1e09a4"
-  integrity sha512-F2+gxDshqmIub1KdvZkaEfGDwLNpPvk9Fs6LD/MyQxNgMds/WH9OdDDXOmxUZpME+iSK3rQCctkL0DYyytUqMg==
   dependencies:
     tslib "^2.1.0"
 
