@@ -33,6 +33,10 @@ body {
   height: 100%;
 }
 
+.lk-track-muted-indicator-microphone {
+  display: none;
+}
+
 .lk-participant-metadata {
   display: none;
 }
