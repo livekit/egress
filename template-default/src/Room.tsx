@@ -81,7 +81,7 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
   const allTracks = useTracks(
     [Track.Source.Camera, Track.Source.ScreenShare, Track.Source.Unknown],
     {
-      onlySubscribed: true,
+      onlySubscribed: false,
     },
   );
   const filteredTracks = allTracks.filter(

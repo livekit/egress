@@ -33,7 +33,39 @@ body {
   height: 100%;
 }
 
-/* things like name, connection quality, etc make less sense in a recording, hide for now */
 .lk-participant-metadata {
+  display: none;
+}
+
+.lk-participant-tile[data-lk-video-muted="true"] .lk-participant-metadata {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+}
+
+.lk-participant-tile[data-lk-video-muted="true"] .lk-connection-quality {
+  display: none;
+}
+
+.lk-participant-metadata-item {
+  background: #494949;
+  border-radius: 50%;
+  height: 15rem;
+  margin: 0 auto;
+  width: 15rem;
+}
+
+.lk-participant-name {
+  font-size: 0;
+  margin: 0 auto;
+}
+
+.lk-participant-name::first-letter {
+  font-size: 5rem;
+  text-transform: capitalize;
+}
+
+.lk-participant-placeholder svg {
   display: none;
 }
