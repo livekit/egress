@@ -5,7 +5,6 @@ package test
 import (
 	"testing"
 
-	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -23,12 +22,19 @@ func (r *Runner) testWeb(t *testing.T) {
 	r.testWebMulti(t)
 }
 
+func (r *Runner) runWebTest(t *testing.T, name string, f func(t *testing.T)) {
+	t.Run(name, func(t *testing.T) {
+		r.awaitIdle(t)
+		f(t)
+	})
+}
+
 func (r *Runner) testWebFile(t *testing.T) {
 	if !r.runFileTests() {
 		return
 	}
 
-	r.runWebTest(t, "Web/File", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+	r.runWebTest(t, "Web/File", func(t *testing.T) {
 		fileOutput := &livekit.EncodedFileOutput{
 			Filepath: getFilePath(r.ServiceConfig, "web_{time}"),
 		}
@@ -61,7 +67,7 @@ func (r *Runner) testWebStream(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "Web/Stream", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+	r.runWebTest(t, "Web/Stream", func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_Web{
@@ -86,7 +92,7 @@ func (r *Runner) testWebSegments(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "Web/Segments", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+	r.runWebTest(t, "Web/Segments", func(t *testing.T) {
 		segmentOutput := &livekit.SegmentedFileOutput{
 			FilenamePrefix: getFilePath(r.ServiceConfig, "web_{time}"),
 			PlaylistName:   "web_{time}.m3u8",
@@ -119,7 +125,7 @@ func (r *Runner) testWebMulti(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "Web/Multi", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+	r.runWebTest(t, "Web/Multi", func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 

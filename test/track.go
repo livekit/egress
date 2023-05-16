@@ -146,8 +146,12 @@ func (r *Runner) testTrackStream(t *testing.T) {
 				rec, err := pipeline.New(ctx, p, nil)
 				require.NoError(t, err)
 
-				res := rec.Run(ctx)
+				go func() {
+					time.Sleep(time.Second * 35)
+					rec.SendEOS(ctx)
+				}()
 
+				res := rec.Run(ctx)
 				verify(t, filepath, p, res, types.EgressTypeWebsocket, r.Muting, r.sourceFramerate)
 			})
 			if r.Short {

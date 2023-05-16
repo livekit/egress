@@ -46,11 +46,10 @@ var (
 )
 
 type testCase struct {
-	name           string
-	audioOnly      bool
-	videoOnly      bool
-	filename       string
-	sessionTimeout time.Duration
+	name      string
+	audioOnly bool
+	videoOnly bool
+	filename  string
 
 	// used by room and track composite tests
 	fileType livekit.EncodedFileType
@@ -69,24 +68,6 @@ type testCase struct {
 	outputType types.OutputType
 
 	expectVideoTranscoding bool
-}
-
-func (r *Runner) runWebTest(t *testing.T, name string, audioCodec, videoCodec types.MimeType, f func(t *testing.T)) {
-	t.Run(name, func(t *testing.T) {
-		r.awaitIdle(t)
-		r.publishSamplesToRoom(t, audioCodec, videoCodec)
-		f(t)
-	})
-}
-
-func (r *Runner) runSDKTest(t *testing.T, name string, audioCodec, videoCodec types.MimeType,
-	f func(t *testing.T, audioTrackID, videoTrackID string),
-) {
-	t.Run(name, func(t *testing.T) {
-		r.awaitIdle(t)
-		audioTrackID, videoTrackID := r.publishSamplesToRoom(t, audioCodec, videoCodec)
-		f(t, audioTrackID, videoTrackID)
-	})
 }
 
 func (r *Runner) awaitIdle(t *testing.T) {
@@ -165,42 +146,6 @@ func (r *Runner) publishSampleToRoom(t *testing.T, codec types.MimeType, withMut
 	}
 
 	return trackID
-}
-
-func (r *Runner) runMultipleTest(
-	t *testing.T,
-	req *rpc.StartEgressRequest,
-	file, stream, segments bool,
-	filenameSuffix livekit.SegmentedFileSuffix,
-) {
-	egressID := r.startEgress(t, req)
-	time.Sleep(time.Second * 10)
-
-	// get params
-	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
-	require.NoError(t, err)
-
-	if stream {
-		_, err := r.client.UpdateStream(context.Background(), egressID, &livekit.UpdateStreamRequest{
-			EgressId:      egressID,
-			AddOutputUrls: []string{streamUrl1},
-		})
-		require.NoError(t, err)
-
-		time.Sleep(time.Second * 10)
-		r.verifyStreams(t, p, streamUrl1)
-		time.Sleep(time.Second * 10)
-	} else {
-		time.Sleep(time.Second * 20)
-	}
-
-	res := r.stopEgress(t, egressID)
-	if file {
-		r.verifyFile(t, p, res)
-	}
-	if segments {
-		r.verifySegments(t, p, filenameSuffix, res)
-	}
 }
 
 func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {

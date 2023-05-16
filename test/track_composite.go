@@ -23,6 +23,16 @@ func (r *Runner) testTrackComposite(t *testing.T) {
 	r.testTrackCompositeMulti(t)
 }
 
+func (r *Runner) runSDKTest(t *testing.T, name string, audioCodec, videoCodec types.MimeType,
+	f func(t *testing.T, audioTrackID, videoTrackID string),
+) {
+	t.Run(name, func(t *testing.T) {
+		r.awaitIdle(t)
+		audioTrackID, videoTrackID := r.publishSamplesToRoom(t, audioCodec, videoCodec)
+		f(t, audioTrackID, videoTrackID)
+	})
+}
+
 func (r *Runner) testTrackCompositeFile(t *testing.T) {
 	if !r.runFileTests() {
 		return
@@ -109,7 +119,7 @@ func (r *Runner) testTrackCompositeStream(t *testing.T) {
 						AudioTrackId: audioTrackID,
 						VideoTrackId: videoTrackID,
 						StreamOutputs: []*livekit.StreamOutput{{
-							Urls: []string{streamUrl1},
+							Urls: []string{streamUrl1, badStreamUrl1},
 						}},
 					},
 				},

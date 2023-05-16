@@ -27,6 +27,14 @@ func (r *Runner) testRoomComposite(t *testing.T) {
 	r.testRoomCompositeMulti(t)
 }
 
+func (r *Runner) runRoomTest(t *testing.T, name string, audioCodec, videoCodec types.MimeType, f func(t *testing.T)) {
+	t.Run(name, func(t *testing.T) {
+		r.awaitIdle(t)
+		r.publishSamplesToRoom(t, audioCodec, videoCodec)
+		f(t)
+	})
+}
+
 func (r *Runner) testRoomCompositeFile(t *testing.T) {
 	if !r.runFileTests() {
 		return
@@ -34,11 +42,11 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 
 	t.Run("RoomComposite/File", func(t *testing.T) {
 		for _, test := range []*testCase{
-			// {
-			// 	name:                   "Base",
-			// 	filename:               "r_{room_name}_{time}.mp4",
-			// 	expectVideoTranscoding: true,
-			// },
+			{
+				name:                   "Base",
+				filename:               "r_{room_name}_{time}.mp4",
+				expectVideoTranscoding: true,
+			},
 			{
 				name:      "Video-Only",
 				videoOnly: true,
@@ -59,7 +67,7 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 				expectVideoTranscoding: false,
 			},
 		} {
-			r.runWebTest(t, test.name, types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
+			r.runRoomTest(t, test.name, types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
 				fileOutput := &livekit.EncodedFileOutput{
 					FileType: test.fileType,
 					Filepath: getFilePath(r.ServiceConfig, test.filename),
@@ -110,7 +118,7 @@ func (r *Runner) testRoomCompositeStream(t *testing.T) {
 	}
 
 	t.Run("RoomComposite/Stream", func(t *testing.T) {
-		r.runWebTest(t, "Rtmp", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+		r.runRoomTest(t, "Rtmp", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
 				Request: &rpc.StartEgressRequest_RoomComposite{
@@ -131,7 +139,7 @@ func (r *Runner) testRoomCompositeStream(t *testing.T) {
 			return
 		}
 
-		r.runWebTest(t, "Rtmp-Failure", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+		r.runRoomTest(t, "Rtmp-Failure", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
 				Request: &rpc.StartEgressRequest_RoomComposite{
@@ -171,7 +179,7 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "RoomComposite/Segments", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+	r.runRoomTest(t, "RoomComposite/Segments", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 		test := &testCase{
 			options: &livekit.EncodingOptions{
 				AudioCodec:   livekit.AudioCodec_AAC,
@@ -226,7 +234,7 @@ func (r *Runner) testRoomCompositeMulti(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "RoomComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+	r.runRoomTest(t, "RoomComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_RoomComposite{
