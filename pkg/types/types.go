@@ -147,7 +147,9 @@ var (
 		OutputTypeOGG,
 		OutputTypeMP4,
 	}
-
+	VideoOnlyFileOutputTypes = []OutputType{
+		OutputTypeMP4,
+	}
 	AudioVideoFileOutputTypes = []OutputType{
 		OutputTypeMP4,
 	}

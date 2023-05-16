@@ -5,134 +5,145 @@ package test
 import (
 	"testing"
 
-	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 )
 
-func runWebTests(t *testing.T, conf *TestConfig) {
-	if !conf.runWebTests {
+func (r *Runner) testWeb(t *testing.T) {
+	if !r.runWebTests() {
 		return
 	}
 
-	conf.sourceFramerate = 30
-
-	if conf.runFileTests {
-		runWebTest(t, conf, "Web/File", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
-			testWebFile(t, conf)
-		})
-	}
-
-	if conf.runStreamTests {
-		runWebTest(t, conf, "Web/Stream", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
-			testWebStream(t, conf)
-		})
-	}
-
-	if conf.runSegmentTests {
-		runWebTest(t, conf, "Web/Segments", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
-			testWebSegments(t, conf)
-		})
-	}
-
-	if conf.runMultiTests {
-		runWebTest(t, conf, "Web/Multi", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
-			testWebMulti(t, conf)
-		})
-	}
+	r.sourceFramerate = 30
+	r.testWebFile(t)
+	r.testWebStream(t)
+	r.testWebSegments(t)
+	r.testWebMulti(t)
 }
 
-func testWebFile(t *testing.T, conf *TestConfig) {
-	fileOutput := &livekit.EncodedFileOutput{
-		Filepath: getFilePath(conf.ServiceConfig, "web_{time}"),
+func (r *Runner) runWebTest(t *testing.T, name string, f func(t *testing.T)) {
+	t.Run(name, func(t *testing.T) {
+		r.awaitIdle(t)
+		f(t)
+	})
+}
+
+func (r *Runner) testWebFile(t *testing.T) {
+	if !r.runFileTests() {
+		return
 	}
-	if conf.GCPUpload != nil {
-		fileOutput.Filepath = "web_{time}"
-		fileOutput.Output = &livekit.EncodedFileOutput_Gcp{
-			Gcp: conf.GCPUpload,
+
+	r.runWebTest(t, "Web/File", func(t *testing.T) {
+		fileOutput := &livekit.EncodedFileOutput{
+			Filepath: getFilePath(r.ServiceConfig, "web_{time}"),
 		}
-	}
-
-	req := &rpc.StartEgressRequest{
-		EgressId: utils.NewGuid(utils.EgressPrefix),
-		Request: &rpc.StartEgressRequest_Web{
-			Web: &livekit.WebEgressRequest{
-				Url:         webUrl,
-				FileOutputs: []*livekit.EncodedFileOutput{fileOutput},
-			},
-		},
-	}
-
-	runFileTest(t, conf, req, &testCase{
-		expectVideoTranscoding: true,
-	})
-}
-
-func testWebStream(t *testing.T, conf *TestConfig) {
-	req := &rpc.StartEgressRequest{
-		EgressId: utils.NewGuid(utils.EgressPrefix),
-		Request: &rpc.StartEgressRequest_Web{
-			Web: &livekit.WebEgressRequest{
-				Url: webUrl,
-				StreamOutputs: []*livekit.StreamOutput{{
-					Protocol: livekit.StreamProtocol_RTMP,
-					Urls:     []string{streamUrl1},
-				}},
-			},
-		},
-	}
-
-	runStreamTest(t, conf, req, &testCase{
-		expectVideoTranscoding: true,
-	})
-}
-
-func testWebSegments(t *testing.T, conf *TestConfig) {
-	segmentOutput := &livekit.SegmentedFileOutput{
-		FilenamePrefix: getFilePath(conf.ServiceConfig, "web_{time}"),
-		PlaylistName:   "web_{time}.m3u8",
-	}
-	if conf.AzureUpload != nil {
-		segmentOutput.FilenamePrefix = "web_{time}"
-		segmentOutput.Output = &livekit.SegmentedFileOutput_Azure{
-			Azure: conf.AzureUpload,
+		if r.GCPUpload != nil {
+			fileOutput.Filepath = "web_{time}"
+			fileOutput.Output = &livekit.EncodedFileOutput_Gcp{
+				Gcp: r.GCPUpload,
+			}
 		}
-	}
 
-	req := &rpc.StartEgressRequest{
-		EgressId: utils.NewGuid(utils.EgressPrefix),
-		Request: &rpc.StartEgressRequest_Web{
-			Web: &livekit.WebEgressRequest{
-				Url:            webUrl,
-				SegmentOutputs: []*livekit.SegmentedFileOutput{segmentOutput},
+		req := &rpc.StartEgressRequest{
+			EgressId: utils.NewGuid(utils.EgressPrefix),
+			Request: &rpc.StartEgressRequest_Web{
+				Web: &livekit.WebEgressRequest{
+					Url:         webUrl,
+					VideoOnly:   true,
+					FileOutputs: []*livekit.EncodedFileOutput{fileOutput},
+				},
 			},
-		},
-	}
+		}
 
-	runSegmentsTest(t, conf, req, &testCase{
-		expectVideoTranscoding: true,
+		r.runFileTest(t, req, &testCase{
+			expectVideoTranscoding: true,
+		})
 	})
 }
 
-func testWebMulti(t *testing.T, conf *TestConfig) {
-	req := &rpc.StartEgressRequest{
-		EgressId: utils.NewGuid(utils.EgressPrefix),
-
-		Request: &rpc.StartEgressRequest_Web{
-			Web: &livekit.WebEgressRequest{
-				Url: webUrl,
-				FileOutputs: []*livekit.EncodedFileOutput{{
-					FileType: livekit.EncodedFileType_MP4,
-					Filepath: getFilePath(conf.ServiceConfig, "web-multiple"),
-				}},
-				SegmentOutputs: []*livekit.SegmentedFileOutput{{
-					FilenamePrefix: getFilePath(conf.ServiceConfig, "web_multiple_{time}"),
-					PlaylistName:   "web_multiple_{time}",
-				}},
-			},
-		},
+func (r *Runner) testWebStream(t *testing.T) {
+	if !r.runStreamTests() {
+		return
 	}
 
-	runMultipleTest(t, conf, req, true, false, true, livekit.SegmentedFileSuffix_INDEX)
+	r.runWebTest(t, "Web/Stream", func(t *testing.T) {
+		req := &rpc.StartEgressRequest{
+			EgressId: utils.NewGuid(utils.EgressPrefix),
+			Request: &rpc.StartEgressRequest_Web{
+				Web: &livekit.WebEgressRequest{
+					Url: webUrl,
+					StreamOutputs: []*livekit.StreamOutput{{
+						Protocol: livekit.StreamProtocol_RTMP,
+						Urls:     []string{badStreamUrl1, streamUrl1},
+					}},
+				},
+			},
+		}
+
+		r.runStreamTest(t, req, &testCase{
+			expectVideoTranscoding: true,
+		})
+	})
+}
+
+func (r *Runner) testWebSegments(t *testing.T) {
+	if !r.runSegmentTests() {
+		return
+	}
+
+	r.runWebTest(t, "Web/Segments", func(t *testing.T) {
+		segmentOutput := &livekit.SegmentedFileOutput{
+			FilenamePrefix: getFilePath(r.ServiceConfig, "web_{time}"),
+			PlaylistName:   "web_{time}.m3u8",
+		}
+		if r.AzureUpload != nil {
+			segmentOutput.FilenamePrefix = "web_{time}"
+			segmentOutput.Output = &livekit.SegmentedFileOutput_Azure{
+				Azure: r.AzureUpload,
+			}
+		}
+
+		req := &rpc.StartEgressRequest{
+			EgressId: utils.NewGuid(utils.EgressPrefix),
+			Request: &rpc.StartEgressRequest_Web{
+				Web: &livekit.WebEgressRequest{
+					Url:            webUrl,
+					SegmentOutputs: []*livekit.SegmentedFileOutput{segmentOutput},
+				},
+			},
+		}
+
+		r.runSegmentsTest(t, req, &testCase{
+			expectVideoTranscoding: true,
+		})
+	})
+}
+
+func (r *Runner) testWebMulti(t *testing.T) {
+	if !r.runMultiTests() {
+		return
+	}
+
+	r.runWebTest(t, "Web/Multi", func(t *testing.T) {
+		req := &rpc.StartEgressRequest{
+			EgressId: utils.NewGuid(utils.EgressPrefix),
+
+			Request: &rpc.StartEgressRequest_Web{
+				Web: &livekit.WebEgressRequest{
+					Url: webUrl,
+					FileOutputs: []*livekit.EncodedFileOutput{{
+						FileType: livekit.EncodedFileType_MP4,
+						Filepath: getFilePath(r.ServiceConfig, "web-multiple"),
+					}},
+					SegmentOutputs: []*livekit.SegmentedFileOutput{{
+						FilenamePrefix: getFilePath(r.ServiceConfig, "web_multiple_{time}"),
+						PlaylistName:   "web_multiple_{time}",
+					}},
+				},
+			},
+		}
+
+		r.runMultipleTest(t, req, true, false, true, livekit.SegmentedFileSuffix_INDEX)
+	})
 }

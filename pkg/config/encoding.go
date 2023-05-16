@@ -78,14 +78,14 @@ func (p *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) error 
 	}
 
 	if advanced.Width > 0 {
-		if advanced.Width%2 == 1 {
+		if advanced.Width < 16 || advanced.Width%2 == 1 {
 			return errors.ErrInvalidInput("width")
 		}
 		p.Width = advanced.Width
 	}
 
 	if advanced.Height > 0 {
-		if advanced.Height%2 == 1 {
+		if advanced.Height < 16 || advanced.Height%2 == 1 {
 			return errors.ErrInvalidInput("height")
 		}
 		p.Height = advanced.Height

@@ -19,15 +19,15 @@ var (
 )
 
 func TestEgress(t *testing.T) {
-	conf := NewTestContext(t)
+	r := NewRunner(t)
 
 	// rpc client and server
-	rc, err := redis.GetRedisClient(conf.Redis)
+	rc, err := redis.GetRedisClient(r.Redis)
 	require.NoError(t, err)
 	bus := psrpc.NewRedisMessageBus(rc)
 
 	rfs, err := fs.Sub(templateEmbedFs, "templates")
 	require.NoError(t, err)
 
-	RunTestSuite(t, conf, bus, rfs)
+	r.Run(t, bus, rfs)
 }
