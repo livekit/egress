@@ -193,6 +193,15 @@ func (r *Runner) checkUpdate(t *testing.T, egressID string, status livekit.Egres
 	return info
 }
 
+func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[string]livekit.StreamInfo_Status) {
+	info := r.getUpdate(t, egressID)
+
+	require.Equal(t, len(expected), len(info.StreamResults))
+	for _, s := range info.StreamResults {
+		require.Equal(t, expected[s.Url], s.Status)
+	}
+}
+
 func (r *Runner) getUpdate(t *testing.T, egressID string) *livekit.EgressInfo {
 	for {
 		select {
