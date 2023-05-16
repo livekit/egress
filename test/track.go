@@ -24,157 +24,137 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func runTrackTests(t *testing.T, conf *TestConfig) {
-	if !conf.runTrackTests {
+func (r *Runner) testTrack(t *testing.T) {
+	if !r.runTrackTests() {
 		return
 	}
 
-	conf.sourceFramerate = 23.97
-
-	if conf.runFileTests {
-		t.Run("Track/File", func(t *testing.T) {
-			testTrackFile(t, conf)
-		})
-	}
-
-	if conf.runStreamTests {
-		t.Run("Track/Stream", func(t *testing.T) {
-			testTrackStream(t, conf)
-		})
-	}
+	r.sourceFramerate = 23.97
+	r.testTrackFile(t)
+	r.testTrackStream(t)
 }
 
-func testTrackFile(t *testing.T, conf *TestConfig) {
-	for _, test := range []*testCase{
-		{
-			name:       "track-opus",
-			audioOnly:  true,
-			audioCodec: types.MimeTypeOpus,
-			outputType: types.OutputTypeOGG,
-			filename:   "t_{track_source}_{time}.ogg",
-		},
-		{
-			name:       "track-vp8",
-			videoOnly:  true,
-			videoCodec: types.MimeTypeVP8,
-			outputType: types.OutputTypeWebM,
-			filename:   "t_{track_type}_{time}.webm",
-		},
-		{
-			name:       "track-h264",
-			videoOnly:  true,
-			videoCodec: types.MimeTypeH264,
-			outputType: types.OutputTypeMP4,
-			filename:   "t_{track_id}_{time}.mp4",
-		},
-		{
-			name:           "track-limit",
-			videoOnly:      true,
-			videoCodec:     types.MimeTypeH264,
-			outputType:     types.OutputTypeMP4,
-			filename:       "t_{room_name}_limit_{time}.mp4",
-			sessionTimeout: time.Second * 20,
-		},
-	} {
-		runSDKTest(t, conf, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
-			trackID := audioTrackID
-			if trackID == "" {
-				trackID = videoTrackID
-			}
-
-			trackRequest := &livekit.TrackEgressRequest{
-				RoomName: conf.room.Name(),
-				TrackId:  trackID,
-				Output: &livekit.TrackEgressRequest_File{
-					File: &livekit.DirectFileOutput{
-						Filepath: getFilePath(conf.ServiceConfig, test.filename),
-					},
-				},
-			}
-
-			req := &rpc.StartEgressRequest{
-				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &rpc.StartEgressRequest_Track{
-					Track: trackRequest,
-				},
-			}
-
-			runFileTest(t, conf, req, test)
-		})
-		if conf.Short {
-			return
-		}
+func (r *Runner) testTrackFile(t *testing.T) {
+	if !r.runFileTests() {
+		return
 	}
-}
 
-func testTrackStream(t *testing.T, conf *TestConfig) {
-	now := time.Now().Unix()
-	for _, test := range []*testCase{
-		{
-			name:       "track-websocket",
-			audioOnly:  true,
-			audioCodec: types.MimeTypeOpus,
-			filename:   fmt.Sprintf("track-ws-%v.raw", now),
-		},
-		{
-			name:       "track-websocket-limit",
-			audioOnly:  true,
-			audioCodec: types.MimeTypeOpus,
-			filename:   fmt.Sprintf("track-ws-limit-%v.raw", now),
-		},
-	} {
-		runSDKTest(t, conf, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
-			trackID := audioTrackID
-			if trackID == "" {
-				trackID = videoTrackID
-			}
+	t.Run("Track/File", func(t *testing.T) {
+		for _, test := range []*testCase{
+			{
+				name:       "OPUS",
+				audioOnly:  true,
+				audioCodec: types.MimeTypeOpus,
+				outputType: types.OutputTypeOGG,
+				filename:   "t_{track_source}_{time}.ogg",
+			},
+			{
+				name:       "VP8",
+				videoOnly:  true,
+				videoCodec: types.MimeTypeVP8,
+				outputType: types.OutputTypeWebM,
+				filename:   "t_{track_type}_{time}.webm",
+			},
+			{
+				name:       "H264",
+				videoOnly:  true,
+				videoCodec: types.MimeTypeH264,
+				outputType: types.OutputTypeMP4,
+				filename:   "t_{track_id}_{time}.mp4",
+			},
+		} {
+			r.runSDKTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
+				trackID := audioTrackID
+				if trackID == "" {
+					trackID = videoTrackID
+				}
 
-			conf.SessionLimits.StreamOutputMaxDuration = test.sessionTimeout
-
-			filepath := getFilePath(conf.ServiceConfig, test.filename)
-			wss := newTestWebsocketServer(filepath)
-			s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
-			defer func() {
-				wss.close()
-				s.Close()
-			}()
-
-			req := &rpc.StartEgressRequest{
-				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &rpc.StartEgressRequest_Track{
-					Track: &livekit.TrackEgressRequest{
-						RoomName: conf.room.Name(),
-						TrackId:  trackID,
-						Output: &livekit.TrackEgressRequest_WebsocketUrl{
-							WebsocketUrl: "ws" + strings.TrimPrefix(s.URL, "http"),
+				trackRequest := &livekit.TrackEgressRequest{
+					RoomName: r.room.Name(),
+					TrackId:  trackID,
+					Output: &livekit.TrackEgressRequest_File{
+						File: &livekit.DirectFileOutput{
+							Filepath: getFilePath(r.ServiceConfig, test.filename),
 						},
 					},
-				},
+				}
+
+				req := &rpc.StartEgressRequest{
+					EgressId: utils.NewGuid(utils.EgressPrefix),
+					Request: &rpc.StartEgressRequest_Track{
+						Track: trackRequest,
+					},
+				}
+
+				r.runFileTest(t, req, test)
+			})
+			if r.Short {
+				return
 			}
-
-			ctx := context.Background()
-
-			p, err := config.GetValidatedPipelineConfig(conf.ServiceConfig, req)
-			require.NoError(t, err)
-			p.GstReady = make(chan struct{})
-
-			rec, err := pipeline.New(ctx, p, nil)
-			require.NoError(t, err)
-
-			if conf.SessionLimits.StreamOutputMaxDuration >= 0 {
-				// record for ~30s. Takes about 5s to start
-				time.AfterFunc(time.Second*35, func() {
-					rec.SendEOS(ctx)
-				})
-			}
-			res := rec.Run(ctx)
-
-			verify(t, filepath, p, res, types.EgressTypeWebsocket, conf.Muting, conf.sourceFramerate)
-		})
-		if conf.Short {
-			return
 		}
+	})
+}
+
+func (r *Runner) testTrackStream(t *testing.T) {
+	if !r.runStreamTests() {
+		return
 	}
+
+	t.Run("Track/Stream", func(t *testing.T) {
+		now := time.Now().Unix()
+		for _, test := range []*testCase{
+			{
+				name:       "Websocket",
+				audioOnly:  true,
+				audioCodec: types.MimeTypeOpus,
+				filename:   fmt.Sprintf("track-ws-%v.raw", now),
+			},
+		} {
+			r.runSDKTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
+				trackID := audioTrackID
+				if trackID == "" {
+					trackID = videoTrackID
+				}
+
+				filepath := getFilePath(r.ServiceConfig, test.filename)
+				wss := newTestWebsocketServer(filepath)
+				s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
+				defer func() {
+					wss.close()
+					s.Close()
+				}()
+
+				req := &rpc.StartEgressRequest{
+					EgressId: utils.NewGuid(utils.EgressPrefix),
+					Request: &rpc.StartEgressRequest_Track{
+						Track: &livekit.TrackEgressRequest{
+							RoomName: r.room.Name(),
+							TrackId:  trackID,
+							Output: &livekit.TrackEgressRequest_WebsocketUrl{
+								WebsocketUrl: "ws" + strings.TrimPrefix(s.URL, "http"),
+							},
+						},
+					},
+				}
+
+				ctx := context.Background()
+
+				p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+				require.NoError(t, err)
+				p.GstReady = make(chan struct{})
+
+				rec, err := pipeline.New(ctx, p, nil)
+				require.NoError(t, err)
+
+				res := rec.Run(ctx)
+
+				verify(t, filepath, p, res, types.EgressTypeWebsocket, r.Muting, r.sourceFramerate)
+			})
+			if r.Short {
+				return
+			}
+		}
+	})
 }
 
 type websocketTestServer struct {

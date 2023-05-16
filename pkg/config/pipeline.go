@@ -456,21 +456,24 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 		return nil
 	}
 
-	if p.AudioEnabled && !p.VideoEnabled {
+	if !p.VideoEnabled {
 		ot := types.GetOutputTypeCompatibleWithCodecs(types.AudioOnlyFileOutputTypes, compatibleAudioCodecs, nil)
 		if ot == types.OutputTypeUnknownFile {
 			return errors.ErrNoCompatibleFileOutputType
 		}
 		o.OutputType = ot
-		compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[ot])
+	} else if !p.AudioEnabled {
+		ot := types.GetOutputTypeCompatibleWithCodecs(types.VideoOnlyFileOutputTypes, nil, compatibleVideoCodecs)
+		if ot == types.OutputTypeUnknownFile {
+			return errors.ErrNoCompatibleFileOutputType
+		}
+		o.OutputType = ot
 	} else {
 		ot := types.GetOutputTypeCompatibleWithCodecs(types.AudioVideoFileOutputTypes, compatibleAudioCodecs, compatibleVideoCodecs)
 		if ot == types.OutputTypeUnknownFile {
 			return errors.ErrNoCompatibleFileOutputType
 		}
 		o.OutputType = ot
-		compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[ot])
-		compatibleVideoCodecs = types.GetMapIntersection(compatibleVideoCodecs, types.CodecCompatibility[ot])
 	}
 
 	identifier, replacements := p.getFilenameInfo()
