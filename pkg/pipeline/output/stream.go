@@ -84,7 +84,7 @@ func buildStreamMux(o *config.StreamConfig) (*gst.Element, error) {
 		if err = mux.SetProperty("streamable", true); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
-		if err = mux.SetProperty("latency", uint64(1e8)); err != nil {
+		if err = mux.SetProperty("latency", uint64(2e8)); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 
