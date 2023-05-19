@@ -84,7 +84,8 @@ func buildStreamMux(o *config.StreamConfig) (*gst.Element, error) {
 		if err = mux.SetProperty("streamable", true); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
-		if err = mux.SetProperty("latency", uint64(1e8)); err != nil {
+		// add latency to give time for flvmux to receive and order packets from both streams
+		if err = mux.SetProperty("latency", uint64(2e8)); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 
