@@ -262,7 +262,6 @@ func (w *AppWriter) runMuted() error {
 	}
 
 	frameDuration := w.GetFrameDuration()
-
 	ticker := time.NewTicker(frameDuration)
 	defer ticker.Stop()
 
