@@ -13,21 +13,21 @@ require (
 	github.com/aws/aws-sdk-go v1.44.251
 	github.com/chromedp/cdproto v0.0.0-20230419194459-b5ff65bc57a3
 	github.com/chromedp/chromedp v0.9.1
-	github.com/frostbyte73/core v0.0.5
+	github.com/frostbyte73/core v0.0.9
 	github.com/go-logr/logr v1.2.4
 	github.com/googleapis/gax-go/v2 v2.8.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/livekit/livekit-server v1.4.2-0.20230406135133-fb301e6e759a
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26 // indirect
-	github.com/livekit/protocol v1.5.6
+	github.com/livekit/mediatransportutil v0.0.0-20230518201646-90e22cdc7407 // indirect
+	github.com/livekit/protocol v1.5.7
 	github.com/livekit/psrpc v0.3.0
-	github.com/livekit/server-sdk-go v1.0.11-0.20230509182419-c7dfbbd172bb
+	github.com/livekit/server-sdk-go v1.0.11-0.20230523211955-40be32584d1c
 	github.com/pion/rtcp v1.2.10 // indirect
 	github.com/pion/rtp v1.7.13
-	github.com/pion/webrtc/v3 v3.2.1
+	github.com/pion/webrtc/v3 v3.2.4
 	github.com/prometheus/client_golang v1.15.1
-	github.com/stretchr/testify v1.8.2
+	github.com/stretchr/testify v1.8.3
 	github.com/tinyzimmer/go-glib v0.0.25
 	github.com/tinyzimmer/go-gst v0.2.33
 	github.com/urfave/cli/v2 v2.25.1
@@ -72,7 +72,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
 	github.com/mackerelio/go-osstat v0.2.4 // indirect
-	github.com/magefile/mage v1.14.0 // indirect
+	github.com/magefile/mage v1.15.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
@@ -83,15 +83,15 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.5 // indirect
 	github.com/pion/dtls/v2 v2.2.6 // indirect
-	github.com/pion/ice/v2 v2.3.2 // indirect
+	github.com/pion/ice/v2 v2.3.4 // indirect
 	github.com/pion/interceptor v0.1.16 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.7 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/sctp v1.8.7 // indirect
 	github.com/pion/sdp/v3 v3.0.6 // indirect
-	github.com/pion/srtp/v2 v2.0.12 // indirect
-	github.com/pion/stun v0.4.0 // indirect
+	github.com/pion/srtp/v2 v2.0.14 // indirect
+	github.com/pion/stun v0.5.2 // indirect
 	github.com/pion/transport/v2 v2.2.0 // indirect
 	github.com/pion/turn/v2 v2.1.0 // indirect
 	github.com/pion/udp/v2 v2.0.1 // indirect
@@ -109,12 +109,12 @@ require (
 	go.uber.org/goleak v1.1.12 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/crypto v0.8.0 // indirect
-	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53 // indirect
-	golang.org/x/net v0.9.0 // indirect
+	golang.org/x/crypto v0.9.0 // indirect
+	golang.org/x/exp v0.0.0-20230515195305-f3d0a9c9a5cc // indirect
+	golang.org/x/net v0.10.0 // indirect
 	golang.org/x/oauth2 v0.7.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
-	golang.org/x/sys v0.7.0 // indirect
+	golang.org/x/sys v0.8.0 // indirect
 	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect

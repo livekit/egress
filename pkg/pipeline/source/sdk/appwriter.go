@@ -57,6 +57,7 @@ type AppWriter struct {
 	// a/v sync
 	sync *synchronizer.Synchronizer
 	*synchronizer.TrackSynchronizer
+	lastPTS time.Duration
 
 	// state
 	muted        atomic.Bool
@@ -262,7 +263,6 @@ func (w *AppWriter) runMuted() error {
 	}
 
 	frameDuration := w.GetFrameDuration()
-
 	ticker := time.NewTicker(frameDuration)
 	defer ticker.Stop()
 
@@ -404,6 +404,12 @@ func (w *AppWriter) pushSamples(force bool) error {
 }
 
 func (w *AppWriter) pushPacket(pkt *rtp.Packet, pts time.Duration) error {
+	if pts < w.lastPTS {
+		// don't push backwards pts
+		logger.Warnw("backwards pts", nil, "pts", pts, "lastPTS", w.lastPTS)
+		return nil
+	}
+
 	p, err := pkt.Marshal()
 	if err != nil {
 		return err
@@ -411,6 +417,8 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet, pts time.Duration) error {
 
 	b := gst.NewBufferFromBytes(p)
 	b.SetPresentationTimestamp(pts)
+	w.lastPTS = pts
+
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.logger.Infow("unexpected flow return", "flow", flow)
 	}

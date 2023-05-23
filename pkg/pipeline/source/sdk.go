@@ -332,7 +332,8 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}) error {
 				trackID := track.SID()
 				if _, ok := expecting[trackID]; ok {
 					if pub, ok := track.(*lksdk.RemoteTrackPublication); ok {
-						pub.OnRTCP(s.sync.OnRTCP)
+						// TODO: sender reports too inconsistent
+						// pub.OnRTCP(s.sync.OnRTCP)
 						err := pub.SetSubscribed(true)
 						if err != nil {
 							return err
