@@ -404,7 +404,7 @@ func (w *AppWriter) pushSamples(force bool) error {
 }
 
 func (w *AppWriter) pushPacket(pkt *rtp.Packet, pts time.Duration) error {
-	if pts > w.lastPTS {
+	if pts < w.lastPTS {
 		// don't push backwards pts
 		logger.Warnw("backwards pts", nil, "pts", pts, "lastPTS", w.lastPTS)
 		return nil
