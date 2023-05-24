@@ -27,9 +27,8 @@ import (
 type state int
 
 const (
-	stateRunning state = iota
-	stateMutedInserting
-	stateMutedWaiting
+	statePlaying state = iota
+	stateMuted
 	stateUnmuting
 )
 
@@ -71,13 +70,14 @@ type AppWriter struct {
 
 	// state
 	state
-	initialized  bool
-	muted        atomic.Bool
-	playing      core.Fuse
-	draining     core.Fuse
-	drainTimeout time.Duration
-	endStream    core.Fuse
-	finished     core.Fuse
+	initialized    bool
+	tickerDuration time.Duration
+	muted          atomic.Bool
+	playing        core.Fuse
+	draining       core.Fuse
+	drainTimeout   time.Duration
+	endStream      core.Fuse
+	finished       core.Fuse
 
 	// vp8
 	firstPktPushed bool
@@ -183,27 +183,24 @@ func (w *AppWriter) run() {
 
 	for !w.endStream.IsBroken() {
 		switch w.state {
-		case stateRunning:
+		case statePlaying:
 			w.handleNextPacket()
 
-		case stateMutedWaiting:
+		case stateMuted:
 			// wait until unmuted or closed
-			<-time.After(time.Millisecond * 100)
+			<-time.After(w.tickerDuration)
 			if w.draining.IsBroken() {
 				w.endStream.Break()
 			} else if !w.muted.Load() {
-				w.state = stateRunning
-			}
-
-		case stateMutedInserting:
-			// insert blank frame unless draining or unmuted
-			<-time.After(w.GetFrameDuration())
-			if w.draining.IsBroken() {
-				w.endStream.Break()
-			} else if !w.muted.Load() {
-				w.state = stateUnmuting
-			} else if _, err := w.insertBlankFrame(nil); err != nil {
-				w.endStream.Break()
+				if w.writeBlanks {
+					w.state = stateUnmuting
+				} else {
+					w.state = statePlaying
+				}
+			} else if w.writeBlanks {
+				if _, err := w.insertBlankFrame(nil); err != nil {
+					w.endStream.Break()
+				}
 			}
 
 		case stateUnmuting:
@@ -263,13 +260,8 @@ func (w *AppWriter) handleReadError(err error) {
 		// TODO: sample buffer has bug that it may pop old packet after pushPackets(true)
 		//   recreated it to work now, will remove this when bug fixed
 		w.sb = w.newSampleBuilder()
-
-		if w.writeBlanks {
-			w.state = stateMutedInserting
-		} else {
-			w.state = stateMutedWaiting
-		}
-
+		w.tickerDuration = w.GetFrameDuration()
+		w.state = stateMuted
 		return
 	}
 
@@ -304,7 +296,7 @@ func (w *AppWriter) handleUnmute() {
 		} else if !ok {
 			// push packet to sample builder and return
 			w.sb.Push(pkt)
-			w.state = stateRunning
+			w.state = statePlaying
 			return
 		}
 	}
