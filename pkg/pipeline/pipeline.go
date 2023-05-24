@@ -116,7 +116,6 @@ func New(ctx context.Context, p *config.PipelineConfig, onStatusUpdate UpdateFun
 		onStatusUpdate: onStatusUpdate,
 	}
 
-	// set websocketSink callback with SDK source
 	if s, ok := sinks[types.EgressTypeSegments]; ok {
 		segmentSink := s.(*sink.SegmentSink)
 		segmentSink.SetOnFailure(func(err error) {
