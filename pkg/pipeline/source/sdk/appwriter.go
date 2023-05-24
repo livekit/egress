@@ -252,6 +252,7 @@ func (w *AppWriter) handleReadError(err error) {
 
 	// continue on buffer too small error
 	if err.Error() == errBufferTooSmall {
+		w.logger.Warnw("read error", err)
 		return
 	}
 
@@ -405,7 +406,7 @@ func (w *AppWriter) pushSamples(force bool) error {
 func (w *AppWriter) pushPacket(pkt *rtp.Packet, pts time.Duration) error {
 	if pts < w.lastPTS {
 		// don't push backwards pts
-		logger.Warnw("backwards pts", nil, "pts", pts, "lastPTS", w.lastPTS)
+		w.logger.Warnw("backwards pts", nil, "pts", pts, "lastPTS", w.lastPTS)
 		return nil
 	}
 
