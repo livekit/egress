@@ -69,7 +69,7 @@ type AppWriter struct {
 	lastPTS time.Duration
 
 	// state
-	state
+	state          state
 	initialized    bool
 	tickerDuration time.Duration
 	muted          atomic.Bool
