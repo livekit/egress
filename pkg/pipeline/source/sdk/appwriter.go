@@ -69,15 +69,15 @@ type AppWriter struct {
 	lastPTS time.Duration
 
 	// state
-	state          state
-	initialized    bool
-	tickerDuration time.Duration
-	muted          atomic.Bool
-	playing        core.Fuse
-	draining       core.Fuse
-	drainTimeout   time.Duration
-	endStream      core.Fuse
-	finished       core.Fuse
+	state        state
+	initialized  bool
+	ticker       *time.Ticker
+	muted        atomic.Bool
+	playing      core.Fuse
+	draining     core.Fuse
+	drainTimeout time.Duration
+	endStream    core.Fuse
+	finished     core.Fuse
 
 	// vp8
 	firstPktPushed bool
@@ -184,30 +184,15 @@ func (w *AppWriter) run() {
 	for !w.endStream.IsBroken() {
 		switch w.state {
 		case statePlaying:
-			w.handleNextPacket()
-
+			w.handlePlaying()
 		case stateMuted:
-			// wait until unmuted or closed
-			<-time.After(w.tickerDuration)
-			if w.draining.IsBroken() {
-				w.endStream.Break()
-			} else if !w.muted.Load() {
-				if w.writeBlanks {
-					w.state = stateUnmuting
-				} else {
-					w.state = statePlaying
-				}
-			} else if w.writeBlanks {
-				if _, err := w.insertBlankFrame(nil); err != nil {
-					w.endStream.Break()
-				}
-			}
-
+			w.handleMuted()
 		case stateUnmuting:
 			w.handleUnmute()
 		}
 	}
 
+	// clean up
 	_ = w.pushSamples(true)
 	if w.playing.IsBroken() {
 		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
@@ -217,7 +202,7 @@ func (w *AppWriter) run() {
 	w.finished.Break()
 }
 
-func (w *AppWriter) handleNextPacket() {
+func (w *AppWriter) handlePlaying() {
 	// read next packet
 	_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
 	pkt, _, err := w.track.ReadRTP()
@@ -241,42 +226,30 @@ func (w *AppWriter) handleNextPacket() {
 	}
 }
 
-func (w *AppWriter) handleReadError(err error) {
-	if w.draining.IsBroken() {
+func (w *AppWriter) handleMuted() {
+	switch {
+	case w.draining.IsBroken():
+		w.ticker.Stop()
 		w.endStream.Break()
-		return
+
+	case !w.muted.Load():
+		w.ticker.Stop()
+		if w.writeBlanks {
+			w.state = stateUnmuting
+		} else {
+			w.state = statePlaying
+		}
+
+	default:
+		<-w.ticker.C
+		if w.writeBlanks {
+			_, err := w.insertBlankFrame(nil)
+			if err != nil {
+				w.ticker.Stop()
+				w.endStream.Break()
+			}
+		}
 	}
-
-	// continue on buffer too small error
-	if err.Error() == errBufferTooSmall {
-		w.logger.Warnw("read error", err)
-		return
-	}
-
-	// check if muted
-	if w.muted.Load() {
-		_ = w.pushSamples(true)
-
-		// TODO: sample buffer has bug that it may pop old packet after pushPackets(true)
-		//   recreated it to work now, will remove this when bug fixed
-		w.sb = w.newSampleBuilder()
-		w.tickerDuration = w.GetFrameDuration()
-		w.state = stateMuted
-		return
-	}
-
-	// continue on timeout
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-		return
-	}
-
-	// log non-EOF errors
-	if !errors.Is(err, io.EOF) {
-		w.logger.Errorw("could not read packet", err)
-	}
-
-	// end stream
-	w.endStream.Break()
 }
 
 func (w *AppWriter) handleUnmute() {
@@ -300,6 +273,44 @@ func (w *AppWriter) handleUnmute() {
 			return
 		}
 	}
+}
+
+func (w *AppWriter) handleReadError(err error) {
+	if w.draining.IsBroken() {
+		w.endStream.Break()
+		return
+	}
+
+	// continue on buffer too small error
+	if err.Error() == errBufferTooSmall {
+		w.logger.Warnw("read error", err)
+		return
+	}
+
+	// check if muted
+	if w.muted.Load() {
+		_ = w.pushSamples(true)
+
+		// TODO: sample buffer has bug that it may pop old packet after pushPackets(true)
+		//   recreated it to work now, will remove this when bug fixed
+		w.sb = w.newSampleBuilder()
+		w.ticker = time.NewTicker(w.GetFrameDuration())
+		w.state = stateMuted
+		return
+	}
+
+	// continue on timeout
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return
+	}
+
+	// log non-EOF errors
+	if !errors.Is(err, io.EOF) {
+		w.logger.Errorw("could not read packet", err)
+	}
+
+	// end stream
+	w.endStream.Break()
 }
 
 func (w *AppWriter) insertBlankFrame(next *rtp.Packet) (bool, error) {
