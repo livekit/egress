@@ -19,11 +19,9 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/livekit/livekit-server v1.4.2-0.20230406135133-fb301e6e759a
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20230518201646-90e22cdc7407 // indirect
 	github.com/livekit/protocol v1.5.7
 	github.com/livekit/psrpc v0.3.0
-	github.com/livekit/server-sdk-go v1.0.11-0.20230523211955-40be32584d1c
-	github.com/pion/rtcp v1.2.10 // indirect
+	github.com/livekit/server-sdk-go v1.0.11-0.20230601050845-9fb741dd6836
 	github.com/pion/rtp v1.7.13
 	github.com/pion/webrtc/v3 v3.2.4
 	github.com/prometheus/client_golang v1.15.1
@@ -71,6 +69,7 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jxskiss/base62 v1.1.0 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
+	github.com/livekit/mediatransportutil v0.0.0-20230518201646-90e22cdc7407 // indirect
 	github.com/mackerelio/go-osstat v0.2.4 // indirect
 	github.com/magefile/mage v1.15.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -88,6 +87,7 @@ require (
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.7 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
+	github.com/pion/rtcp v1.2.10 // indirect
 	github.com/pion/sctp v1.8.7 // indirect
 	github.com/pion/sdp/v3 v3.0.6 // indirect
 	github.com/pion/srtp/v2 v2.0.14 // indirect
