@@ -52,8 +52,7 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 	}
 
 	if err != nil {
-		p.Info.Error = err.Error()
-		p.stop()
+		p.Failure <- err
 		return false
 	}
 

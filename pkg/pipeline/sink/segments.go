@@ -37,8 +37,6 @@ type SegmentSink struct {
 
 	endedSegments chan SegmentUpdate
 	done          core.Fuse
-
-	onFailure func(error)
 }
 
 type SegmentUpdate struct {
@@ -46,7 +44,7 @@ type SegmentUpdate struct {
 	filename string
 }
 
-func newSegmentSink(u *uploader.Uploader, conf *config.PipelineConfig, o *config.SegmentConfig) (*SegmentSink, error) {
+func newSegmentSink(u *uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig) (*SegmentSink, error) {
 	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
 	playlist, err := m3u8.NewPlaylistWriter(playlistName, o.SegmentDuration)
 	if err != nil {
@@ -56,7 +54,7 @@ func newSegmentSink(u *uploader.Uploader, conf *config.PipelineConfig, o *config
 	return &SegmentSink{
 		Uploader:              u,
 		SegmentConfig:         o,
-		conf:                  conf,
+		conf:                  p,
 		playlist:              playlist,
 		openSegmentsStartTime: make(map[string]int64),
 		endedSegments:         make(chan SegmentUpdate, maxPendingUploads),
@@ -65,16 +63,12 @@ func newSegmentSink(u *uploader.Uploader, conf *config.PipelineConfig, o *config
 	}, nil
 }
 
-func (s *SegmentSink) SetOnFailure(f func(error)) {
-	s.onFailure = f
-}
-
 func (s *SegmentSink) Start() error {
 	go func() {
 		var err error
 		defer func() {
-			if err != nil && s.onFailure != nil {
-				s.onFailure(err)
+			if err != nil {
+				s.conf.Failure <- err
 			}
 			s.done.Break()
 		}()

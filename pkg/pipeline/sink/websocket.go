@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/gorilla/websocket"
@@ -35,6 +36,7 @@ func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*Websock
 		conn:   conn,
 		closed: core.NewFuse(),
 	}
+	go s.keepAlive()
 
 	return s, nil
 }
@@ -43,7 +45,16 @@ func (s *WebsocketSink) Start() error {
 	return nil
 }
 
-func (s *WebsocketSink) Write(p []byte) (n int, err error) {
+func (s *WebsocketSink) keepAlive() {
+	ticker := time.NewTicker(time.Second * 10)
+	for !s.closed.IsBroken() {
+		<-ticker.C
+		_ = s.conn.WriteMessage(websocket.PingMessage, []byte("ping"))
+	}
+	ticker.Stop()
+}
+
+func (s *WebsocketSink) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
