@@ -1,6 +1,7 @@
 package util
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -14,10 +15,26 @@ func RedactStreamKey(url string) (string, bool) {
 		return url, false
 	}
 
-	match[4] = Redact(match[4])
+	match[4] = redactStreamKey(match[4])
 	return strings.Join(match[1:], ""), true
 }
 
-func Redact(s string) string {
-	return strings.Repeat("*", len(s))
+func redactStreamKey(key string) string {
+	var prefix, suffix string
+	for i := 3; i > 0; i-- {
+		if len(key) >= i*3 {
+			prefix = key[:i]
+			suffix = key[len(key)-i:]
+			break
+		}
+	}
+
+	return fmt.Sprintf("{%s...%s}", prefix, suffix)
+}
+
+func Redact(s, name string) string {
+	if s != "" {
+		return name
+	}
+	return ""
 }

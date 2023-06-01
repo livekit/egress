@@ -219,35 +219,35 @@ func redactEncodedOutputs(out EncodedOutput) {
 	}
 }
 
-func redactUpload(upload uploader) {
-	if s3 := upload.GetS3(); s3 != nil {
-		s3.AccessKey = util.Redact(s3.AccessKey)
-		s3.Secret = util.Redact(s3.Secret)
-		return
-	}
-
-	if gcp := upload.GetGcp(); gcp != nil {
-		gcp.Credentials = util.Redact(gcp.Credentials)
-		return
-	}
-
-	if azure := upload.GetAzure(); azure != nil {
-		azure.AccountName = util.Redact(azure.AccountName)
-		azure.AccountKey = util.Redact(azure.AccountKey)
-		return
-	}
-
-	if aliOSS := upload.GetAliOSS(); aliOSS != nil {
-		aliOSS.AccessKey = util.Redact(aliOSS.AccessKey)
-		aliOSS.Secret = util.Redact(aliOSS.Secret)
-		return
-	}
-}
-
 func redactStreamKeys(stream *livekit.StreamOutput) {
 	for i, url := range stream.Urls {
 		if redacted, ok := util.RedactStreamKey(url); ok {
 			stream.Urls[i] = redacted
 		}
+	}
+}
+
+func redactUpload(upload uploader) {
+	if s3 := upload.GetS3(); s3 != nil {
+		s3.AccessKey = util.Redact(s3.AccessKey, "{access_key}")
+		s3.Secret = util.Redact(s3.Secret, "{secret}")
+		return
+	}
+
+	if gcp := upload.GetGcp(); gcp != nil {
+		gcp.Credentials = util.Redact(gcp.Credentials, "{credentials}")
+		return
+	}
+
+	if azure := upload.GetAzure(); azure != nil {
+		azure.AccountName = util.Redact(azure.AccountName, "{account_name}")
+		azure.AccountKey = util.Redact(azure.AccountKey, "{account_key}")
+		return
+	}
+
+	if aliOSS := upload.GetAliOSS(); aliOSS != nil {
+		aliOSS.AccessKey = util.Redact(aliOSS.AccessKey, "{access_key}")
+		aliOSS.Secret = util.Redact(aliOSS.Secret, "{secret}")
+		return
 	}
 }
