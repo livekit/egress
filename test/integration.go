@@ -21,14 +21,14 @@ import (
 const (
 	muteDuration = time.Second * 10
 
-	streamUrl1      = "rtmp://localhost:1935/live/stream1"
-	redactedUrl1    = "rtmp://localhost:1935/live/*******"
-	streamUrl2      = "rtmp://localhost:1935/live/stream10"
-	redactedUrl2    = "rtmp://localhost:1935/live/********"
+	streamUrl1      = "rtmp://localhost:1935/live/stream"
+	redactedUrl1    = "rtmp://localhost:1935/live/{st...am}"
+	streamUrl2      = "rtmp://localhost:1935/live/stream_key"
+	redactedUrl2    = "rtmp://localhost:1935/live/{str...key}"
 	badStreamUrl1   = "rtmp://sfo.contribute.live-video.net/app/fake1"
-	redactedBadUrl1 = "rtmp://sfo.contribute.live-video.net/app/*****"
+	redactedBadUrl1 = "rtmp://sfo.contribute.live-video.net/app/{f...1}"
 	badStreamUrl2   = "rtmp://localhost:1936/live/stream"
-	redactedBadUrl2 = "rtmp://localhost:1936/live/******"
+	redactedBadUrl2 = "rtmp://localhost:1936/live/{st...am}"
 	webUrl          = "https://www.youtube.com/watch?v=wjQq0nSGS28&t=5205s"
 )
 
