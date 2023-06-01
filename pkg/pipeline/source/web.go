@@ -45,7 +45,13 @@ func NewWebSource(ctx context.Context, p *config.PipelineConfig) (*WebSource, er
 
 	p.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
 
-	s := &WebSource{}
+	s := &WebSource{
+		endRecording: make(chan struct{}),
+	}
+	if p.AwaitStartSignal {
+		s.startRecording = make(chan struct{})
+	}
+
 	if err := s.createPulseSink(ctx, p); err != nil {
 		logger.Errorw("failed to create pulse sink", err)
 		s.Close()
@@ -152,10 +158,6 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 
 	webUrl := p.WebUrl
 	if webUrl == "" {
-		// create start and end channels
-		s.startRecording = make(chan struct{})
-		s.endRecording = make(chan struct{})
-
 		// build input url
 		inputUrl, err := url.Parse(p.BaseUrl)
 		if err != nil {

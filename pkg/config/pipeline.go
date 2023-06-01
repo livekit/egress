@@ -49,11 +49,12 @@ type SourceConfig struct {
 }
 
 type WebSourceParams struct {
-	Display string
-	Layout  string
-	Token   string
-	BaseUrl string
-	WebUrl  string
+	AwaitStartSignal bool
+	Display          string
+	Layout           string
+	Token            string
+	BaseUrl          string
+	WebUrl           string
 }
 
 type SDKSourceParams struct {
@@ -161,6 +162,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		redactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeWeb
+		p.AwaitStartSignal = true
 		p.Latency = webLatency
 
 		p.Info.RoomName = req.RoomComposite.RoomName
@@ -214,6 +216,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		connectionInfoRequired = false
 		p.SourceType = types.SourceTypeWeb
+		p.AwaitStartSignal = req.Web.AwaitStartSignal
 		p.Latency = webLatency
 
 		p.WebUrl = req.Web.Url

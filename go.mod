@@ -20,7 +20,7 @@ require (
 	github.com/livekit/livekit-server v1.4.2-0.20230406135133-fb301e6e759a
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20230518201646-90e22cdc7407 // indirect
-	github.com/livekit/protocol v1.5.7
+	github.com/livekit/protocol v1.5.8-0.20230601212100-a186ecb11a98
 	github.com/livekit/psrpc v0.3.0
 	github.com/livekit/server-sdk-go v1.0.11-0.20230523211955-40be32584d1c
 	github.com/pion/rtcp v1.2.10 // indirect
