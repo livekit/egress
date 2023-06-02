@@ -116,13 +116,6 @@ func New(ctx context.Context, p *config.PipelineConfig, onStatusUpdate UpdateFun
 		onStatusUpdate: onStatusUpdate,
 	}
 
-	if s, ok := sinks[types.EgressTypeSegments]; ok {
-		segmentSink := s.(*sink.SegmentSink)
-		segmentSink.SetOnFailure(func(err error) {
-			pipeline.Info.Error = err.Error()
-			pipeline.stop()
-		})
-	}
 	if s, ok := sinks[types.EgressTypeWebsocket]; ok {
 		websocketSink := s.(*sink.WebsocketSink)
 		src.(*source.SDKSource).OnTrackMuted(websocketSink.OnTrackMuted)
@@ -204,6 +197,15 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		p.Info.Error = err.Error()
 		return p.Info
 	}
+
+	// stop if one of the sources or sinks fails
+	go func() {
+		err := <-p.Failure
+		if p.Info.Error == "" {
+			p.Info.Error = err.Error()
+		}
+		p.stop()
+	}()
 
 	// run main loop
 	p.loop.Run()
@@ -385,8 +387,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 
 				p.eosTimer = time.AfterFunc(eosTimeout, func() {
 					logger.Errorw("pipeline frozen", nil)
-					p.Info.Error = "pipeline frozen"
-					p.stop()
+					p.Failure <- errors.New("pipeline frozen")
 				})
 
 				if p.SourceType == types.SourceTypeSDK {

@@ -38,6 +38,7 @@ type PipelineConfig struct {
 	OutputCount int
 
 	GstReady chan struct{}       `yaml:"-"`
+	Failure  chan error          `yaml:"-"`
 	Info     *livekit.EgressInfo `yaml:"-"`
 }
 
@@ -98,6 +99,7 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 		BaseConfig: BaseConfig{},
 		Outputs:    make(map[types.EgressType]OutputConfig),
 		GstReady:   make(chan struct{}),
+		Failure:    make(chan error, 10),
 	}
 
 	if err := yaml.Unmarshal([]byte(confString), p); err != nil {

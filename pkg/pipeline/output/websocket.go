@@ -16,6 +16,7 @@ import (
 type WebsocketOutput struct {
 	*outputBase
 
+	conf *config.PipelineConfig
 	sink *app.Sink
 }
 
@@ -66,8 +67,11 @@ func (o *WebsocketOutput) SetSink(writer *sink.WebsocketSink) {
 
 			// From the extracted bytes, send to writer
 			_, err := writer.Write(samples)
-			if err != nil && !errors.Is(err, io.EOF) {
-				logger.Errorw("cannot read AppSink samples", err)
+			if err != nil {
+				if err == io.EOF {
+					return gst.FlowEOS
+				}
+				o.conf.Failure <- err
 				return gst.FlowError
 			}
 			return gst.FlowOK
