@@ -19,7 +19,7 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/livekit/livekit-server v1.4.2-0.20230406135133-fb301e6e759a
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.5.7
+	github.com/livekit/protocol v1.5.8-0.20230601212100-a186ecb11a98
 	github.com/livekit/psrpc v0.3.0
 	github.com/livekit/server-sdk-go v1.0.11-0.20230601141132-d050553cfc5e
 	github.com/pion/rtp v1.7.13
