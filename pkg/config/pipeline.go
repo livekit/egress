@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	webLatency = uint64(15e8)
-	sdkLatency = uint64(43e8)
+	webLatency = uint64(2e9)
+	sdkLatency = uint64(3e9)
 )
 
 type PipelineConfig struct {

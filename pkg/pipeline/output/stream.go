@@ -33,7 +33,7 @@ func (b *Bin) buildStreamOutput(p *config.PipelineConfig) (*StreamOutput, error)
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	mux, err := buildStreamMux(o)
+	mux, err := buildStreamMux(p, o)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (b *Bin) buildStreamOutput(p *config.PipelineConfig) (*StreamOutput, error)
 	}, nil
 }
 
-func buildStreamMux(o *config.StreamConfig) (*gst.Element, error) {
+func buildStreamMux(p *config.PipelineConfig, o *config.StreamConfig) (*gst.Element, error) {
 	switch o.OutputType {
 	case types.OutputTypeRTMP:
 		mux, err := gst.NewElement("flvmux")
@@ -85,7 +85,7 @@ func buildStreamMux(o *config.StreamConfig) (*gst.Element, error) {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 		// add latency to give time for flvmux to receive and order packets from both streams
-		if err = mux.SetProperty("latency", uint64(2e8)); err != nil {
+		if err = mux.SetProperty("latency", p.Latency); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 

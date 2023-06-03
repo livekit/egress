@@ -106,7 +106,6 @@ func (s *SDKSource) CloseWriters() {
 		go func() {
 			defer wg.Done()
 			s.audioWriter.Drain(false)
-			logger.Debugw("audio writer finished")
 		}()
 	}
 	if s.videoWriter != nil {
@@ -114,7 +113,6 @@ func (s *SDKSource) CloseWriters() {
 		go func() {
 			defer wg.Done()
 			s.videoWriter.Drain(false)
-			logger.Debugw("video writer finished")
 		}()
 	}
 	wg.Wait()
