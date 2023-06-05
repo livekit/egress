@@ -12,7 +12,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 )
 
-const audioMixerLatency = uint64(41e8)
+const audioMixerLatency = uint64(2e9)
 
 type AudioInput struct {
 	decoder []*gst.Element

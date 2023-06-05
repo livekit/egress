@@ -174,6 +174,12 @@ func (w *AppWriter) run() {
 			w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
 		}
 	}
+	stats := w.TrackSynchronizer.GetTrackStats()
+	w.logger.Infow("writer finished",
+		"avg sample duration", stats.AvgSampleDuration,
+		"avg drift", stats.AvgDrift,
+		"max drift", stats.MaxDrift,
+	)
 	w.finished.Break()
 }
 
