@@ -40,10 +40,18 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	})
 	require.NoError(t, err)
 
-	time.Sleep(time.Second * 5)
+	// check that update was sent
+	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
+		redactedUrl1:    livekit.StreamInfo_ACTIVE,
+		redactedUrl2:    livekit.StreamInfo_ACTIVE,
+		redactedBadUrl1: livekit.StreamInfo_FAILED,
+		redactedBadUrl2: livekit.StreamInfo_ACTIVE,
+	})
 
-	// verify the good stream urls
+	time.Sleep(time.Second * 5)
 	r.verifyStreams(t, p, streamUrl1, streamUrl2)
+
+	// check for failure update
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		redactedUrl1:    livekit.StreamInfo_ACTIVE,
 		redactedUrl2:    livekit.StreamInfo_ACTIVE,
