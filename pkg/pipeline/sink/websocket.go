@@ -2,13 +2,12 @@ package sink
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/frostbyte73/core"
 	"github.com/gorilla/websocket"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -17,9 +16,9 @@ import (
 )
 
 type WebsocketSink struct {
-	conn   *websocket.Conn
-	closed core.Fuse
 	mu     sync.Mutex
+	conn   *websocket.Conn
+	closed atomic.Bool
 }
 
 func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*WebsocketSink, error) {
@@ -33,8 +32,7 @@ func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*Websock
 	}
 
 	s := &WebsocketSink{
-		conn:   conn,
-		closed: core.NewFuse(),
+		conn: conn,
 	}
 	go s.keepAlive()
 
@@ -47,18 +45,24 @@ func (s *WebsocketSink) Start() error {
 
 func (s *WebsocketSink) keepAlive() {
 	ticker := time.NewTicker(time.Second * 10)
-	for !s.closed.IsBroken() {
+	defer ticker.Stop()
+
+	for {
 		<-ticker.C
+		s.mu.Lock()
+		if s.closed.Load() {
+			s.mu.Unlock()
+			return
+		}
 		_ = s.conn.WriteMessage(websocket.PingMessage, []byte("ping"))
+		s.mu.Unlock()
 	}
-	ticker.Stop()
 }
 
 func (s *WebsocketSink) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	if s.closed.IsBroken() {
+	if s.closed.Load() {
 		return 0, errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
 	}
 
@@ -77,15 +81,6 @@ type textMessagePayload struct {
 }
 
 func (s *WebsocketSink) writeMutedMessage(muted bool) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// If the socket is closed, return error
-	if s.closed.IsBroken() {
-		return errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
-	}
-
-	// Marshal `muted` payload
 	data, err := json.Marshal(&textMessagePayload{
 		Muted: muted,
 	})
@@ -93,7 +88,12 @@ func (s *WebsocketSink) writeMutedMessage(muted bool) error {
 		return err
 	}
 
-	// Write message
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed.Load() {
+		return errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
+	}
+
 	return s.conn.WriteMessage(websocket.TextMessage, data)
 }
 
@@ -102,25 +102,17 @@ func (s *WebsocketSink) Finalize() error {
 }
 
 func (s *WebsocketSink) Close() error {
-	var err error
-
-	s.closed.Once(func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.closed.Swap(true) {
 		// write close message for graceful disconnection
-		err = s.conn.WriteMessage(websocket.CloseMessage, nil)
-		if err != nil && !errors.Is(err, io.EOF) {
-			logger.Errorw("cannot write WS close message", err)
-		}
+		_ = s.conn.WriteMessage(websocket.CloseMessage, nil)
 
 		// terminate connection and close the `closed` channel
-		err = s.conn.Close()
-	})
+		return s.conn.Close()
+	}
 
-	return err
+	return nil
 }
 
-func (s *WebsocketSink) Cleanup() {
-	return
-}
+func (s *WebsocketSink) Cleanup() {}
