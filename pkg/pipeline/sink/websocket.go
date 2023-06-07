@@ -2,7 +2,6 @@ package sink
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -111,10 +110,7 @@ func (s *WebsocketSink) Close() error {
 		defer s.mu.Unlock()
 
 		// write close message for graceful disconnection
-		err = s.conn.WriteMessage(websocket.CloseMessage, nil)
-		if err != nil && !errors.Is(err, io.EOF) {
-			logger.Errorw("cannot write WS close message", err)
-		}
+		_ = s.conn.WriteMessage(websocket.CloseMessage, nil)
 
 		// terminate connection and close the `closed` channel
 		err = s.conn.Close()
