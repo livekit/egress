@@ -15,9 +15,6 @@ import (
 	"github.com/livekit/protocol/rpc"
 )
 
-// 2023-06-07T17:48:47.841Z	INFO	egress	pipeline/pipeline.go:389	status update SendEOS	{"nodeID": "NE_HjjKk94cNDcQ", "handlerID": "EGH_jo2dJ934SrcN", "clusterID": "", "egressID": "EG_gVa6aWTEj9w5"}
-// 2023-06-07T17:48:47.844Z	INFO	egress	service/handler.go:209	egress updated	{"nodeID": "NE_HjjKk94cNDcQ", "handlerID": "EGH_jo2dJ934SrcN", "clusterID": "", "egressID": "EG_gVa6aWTEj9w5", "egressID": "EG_gVa6aWTEj9w5", "request_type": "room_composite", "output_type": "stream", "status": "EGRESS_ENDING"}
-
 func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *testCase) {
 	ctx := context.Background()
 
@@ -70,8 +67,8 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	time.Sleep(time.Second * 5)
 	r.verifyStreams(t, p, streamUrl2)
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		redactedUrl1:    livekit.StreamInfo_ACTIVE,
-		redactedUrl2:    livekit.StreamInfo_FINISHED,
+		redactedUrl1:    livekit.StreamInfo_FINISHED,
+		redactedUrl2:    livekit.StreamInfo_ACTIVE,
 		redactedBadUrl1: livekit.StreamInfo_FAILED,
 		redactedBadUrl2: livekit.StreamInfo_FAILED,
 	})
