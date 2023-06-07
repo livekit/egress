@@ -143,7 +143,7 @@ func (r *Runner) testTrackStream(t *testing.T) {
 				require.NoError(t, err)
 				p.GstReady = make(chan struct{})
 
-				rec, err := pipeline.New(ctx, p, nil)
+				rec, err := pipeline.New(ctx, p, func(_ context.Context, _ *livekit.EgressInfo) {})
 				require.NoError(t, err)
 
 				go func() {

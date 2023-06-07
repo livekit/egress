@@ -161,9 +161,8 @@ func (r *Runner) testRoomCompositeStream(t *testing.T) {
 			require.Equal(t, r.RoomName, info.RoomName)
 			require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
 
-			// wait
+			// check update
 			time.Sleep(time.Second * 5)
-
 			info = r.getUpdate(t, info.EgressId)
 			if info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
 				r.checkUpdate(t, info.EgressId, livekit.EgressStatus_EGRESS_FAILED)

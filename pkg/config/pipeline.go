@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/pion/webrtc/v3"
 	"github.com/tinyzimmer/go-gst/gst/app"
@@ -137,9 +138,10 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 	// start with defaults
 	p.Info = &livekit.EgressInfo{
-		EgressId: request.EgressId,
-		RoomId:   request.RoomId,
-		Status:   livekit.EgressStatus_EGRESS_STARTING,
+		EgressId:  request.EgressId,
+		RoomId:    request.RoomId,
+		Status:    livekit.EgressStatus_EGRESS_STARTING,
+		UpdatedAt: time.Now().UnixNano(),
 	}
 	p.AudioConfig = AudioConfig{
 		AudioBitrate:   128,

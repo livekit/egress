@@ -9,6 +9,7 @@ import (
 	"path"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/frostbyte73/core"
 	"google.golang.org/grpc"
@@ -129,6 +130,9 @@ func (s *ProcessManager) launchHandler(req *rpc.StartEgressRequest, info *liveki
 
 func (s *ProcessManager) awaitCleanup(h *process) {
 	if err := h.cmd.Wait(); err != nil {
+		now := time.Now().UnixNano()
+		h.info.UpdatedAt = now
+		h.info.EndedAt = now
 		h.info.Status = livekit.EgressStatus_EGRESS_FAILED
 		h.info.Error = "internal error"
 		s.onFatalError(h.info)

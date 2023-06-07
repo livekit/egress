@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"time"
@@ -93,7 +94,7 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 			logger.Warnw("rtmp output not found", err, "url", url)
 			return err
 		}
-		return p.removeSink(url, gErr)
+		return p.removeSink(context.Background(), url, gErr)
 
 	case element == elementGstAppSrc:
 		if message == msgStreamingNotNegotiated {

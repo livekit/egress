@@ -17,16 +17,16 @@ import (
 
 func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *testCase) {
 	ctx := context.Background()
-	egressID := r.startEgress(t, req)
 
-	time.Sleep(time.Second * 5)
+	egressID := r.startEgress(t, req)
 
 	// get params
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
 
-	// verify stream
+	// verify and check update
+	time.Sleep(time.Second * 5)
 	r.verifyStreams(t, p, streamUrl1)
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		redactedUrl1:    livekit.StreamInfo_ACTIVE,
@@ -40,10 +40,15 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	})
 	require.NoError(t, err)
 
+	// verify and check updates
 	time.Sleep(time.Second * 5)
-
-	// verify the good stream urls
 	r.verifyStreams(t, p, streamUrl1, streamUrl2)
+	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
+		redactedUrl1:    livekit.StreamInfo_ACTIVE,
+		redactedUrl2:    livekit.StreamInfo_ACTIVE,
+		redactedBadUrl1: livekit.StreamInfo_FAILED,
+		redactedBadUrl2: livekit.StreamInfo_ACTIVE,
+	})
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		redactedUrl1:    livekit.StreamInfo_ACTIVE,
 		redactedUrl2:    livekit.StreamInfo_ACTIVE,
@@ -58,13 +63,18 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	})
 	require.NoError(t, err)
 
-	time.Sleep(time.Second * 5)
-
 	// verify the remaining stream
+	time.Sleep(time.Second * 5)
 	r.verifyStreams(t, p, streamUrl2)
-	time.Sleep(time.Second * 10)
+	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
+		redactedUrl1:    livekit.StreamInfo_FINISHED,
+		redactedUrl2:    livekit.StreamInfo_ACTIVE,
+		redactedBadUrl1: livekit.StreamInfo_FAILED,
+		redactedBadUrl2: livekit.StreamInfo_FAILED,
+	})
 
 	// stop
+	time.Sleep(time.Second * 5)
 	res := r.stopEgress(t, egressID)
 
 	// verify egress info

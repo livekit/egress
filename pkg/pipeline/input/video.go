@@ -73,7 +73,7 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	videoQueue, err := builder.BuildQueue("video_input_queue", true)
+	videoQueue, err := builder.BuildQueue("video_input_queue", p.Latency, true)
 	if err != nil {
 		return err
 	}
@@ -171,7 +171,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 		return errors.ErrNotSupported(p.VideoCodecParams.MimeType)
 	}
 
-	videoQueue, err := builder.BuildQueue("video_input_queue", true)
+	videoQueue, err := builder.BuildQueue("video_input_queue", p.Latency, true)
 	if err != nil {
 		return err
 	}
@@ -209,7 +209,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 
 func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 	// Put a queue in front of the encoder for pipelining with the stage before
-	videoQueue, err := builder.BuildQueue("video_encoder_queue", false)
+	videoQueue, err := builder.BuildQueue("video_encoder_queue", p.Latency, false)
 	if err != nil {
 		return err
 	}

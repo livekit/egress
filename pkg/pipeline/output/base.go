@@ -19,7 +19,7 @@ func (b *Bin) buildOutputBase(p *config.PipelineConfig, egressType types.EgressT
 	base := &outputBase{}
 
 	if p.AudioEnabled {
-		audioQueue, err := builder.BuildQueueWithLatency(fmt.Sprintf("audio_%s_queue", egressType), p.Latency, true)
+		audioQueue, err := builder.BuildQueue(fmt.Sprintf("audio_%s_queue", egressType), p.Latency, true)
 		if err != nil {
 			return nil, err
 		}
@@ -30,7 +30,7 @@ func (b *Bin) buildOutputBase(p *config.PipelineConfig, egressType types.EgressT
 	}
 
 	if p.VideoEnabled {
-		videoQueue, err := builder.BuildQueueWithLatency(fmt.Sprintf("video_%s_queue", egressType), p.Latency, true)
+		videoQueue, err := builder.BuildQueue(fmt.Sprintf("video_%s_queue", egressType), p.Latency, true)
 		if err != nil {
 			return nil, err
 		}
