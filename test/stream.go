@@ -15,18 +15,21 @@ import (
 	"github.com/livekit/protocol/rpc"
 )
 
+// 2023-06-07T17:48:47.841Z	INFO	egress	pipeline/pipeline.go:389	status update SendEOS	{"nodeID": "NE_HjjKk94cNDcQ", "handlerID": "EGH_jo2dJ934SrcN", "clusterID": "", "egressID": "EG_gVa6aWTEj9w5"}
+// 2023-06-07T17:48:47.844Z	INFO	egress	service/handler.go:209	egress updated	{"nodeID": "NE_HjjKk94cNDcQ", "handlerID": "EGH_jo2dJ934SrcN", "clusterID": "", "egressID": "EG_gVa6aWTEj9w5", "egressID": "EG_gVa6aWTEj9w5", "request_type": "room_composite", "output_type": "stream", "status": "EGRESS_ENDING"}
+
 func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *testCase) {
 	ctx := context.Background()
-	egressID := r.startEgress(t, req)
 
-	time.Sleep(time.Second * 5)
+	egressID := r.startEgress(t, req)
 
 	// get params
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
 
-	// verify stream
+	// verify and check update
+	time.Sleep(time.Second * 5)
 	r.verifyStreams(t, p, streamUrl1)
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		redactedUrl1:    livekit.StreamInfo_ACTIVE,
@@ -40,18 +43,15 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	})
 	require.NoError(t, err)
 
-	// check that update was sent
+	// verify and check updates
+	time.Sleep(time.Second * 5)
+	r.verifyStreams(t, p, streamUrl1, streamUrl2)
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		redactedUrl1:    livekit.StreamInfo_ACTIVE,
 		redactedUrl2:    livekit.StreamInfo_ACTIVE,
 		redactedBadUrl1: livekit.StreamInfo_FAILED,
 		redactedBadUrl2: livekit.StreamInfo_ACTIVE,
 	})
-
-	time.Sleep(time.Second * 5)
-	r.verifyStreams(t, p, streamUrl1, streamUrl2)
-
-	// check for failure update
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		redactedUrl1:    livekit.StreamInfo_ACTIVE,
 		redactedUrl2:    livekit.StreamInfo_ACTIVE,
@@ -66,13 +66,18 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	})
 	require.NoError(t, err)
 
-	time.Sleep(time.Second * 5)
-
 	// verify the remaining stream
+	time.Sleep(time.Second * 5)
 	r.verifyStreams(t, p, streamUrl2)
-	time.Sleep(time.Second * 10)
+	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
+		redactedUrl1:    livekit.StreamInfo_ACTIVE,
+		redactedUrl2:    livekit.StreamInfo_FINISHED,
+		redactedBadUrl1: livekit.StreamInfo_FAILED,
+		redactedBadUrl2: livekit.StreamInfo_FAILED,
+	})
 
 	// stop
+	time.Sleep(time.Second * 5)
 	res := r.stopEgress(t, egressID)
 
 	// verify egress info

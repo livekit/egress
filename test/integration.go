@@ -184,11 +184,7 @@ func (r *Runner) checkUpdate(t *testing.T, egressID string, status livekit.Egres
 	info := r.getUpdate(t, egressID)
 
 	require.Equal(t, status.String(), info.Status.String())
-	if info.Status == livekit.EgressStatus_EGRESS_FAILED {
-		require.NotEmpty(t, info.Error, "failed egress missing error")
-	} else {
-		require.Empty(t, info.Error, "status %s with error %s", info.Status.String(), info.Error)
-	}
+	require.Equal(t, info.Status == livekit.EgressStatus_EGRESS_FAILED, info.Error != "")
 
 	return info
 }
@@ -199,6 +195,7 @@ func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[s
 	require.Equal(t, len(expected), len(info.StreamResults))
 	for _, s := range info.StreamResults {
 		require.Equal(t, expected[s.Url], s.Status)
+		require.Equal(t, s.Status == livekit.StreamInfo_FAILED, s.Error != "")
 	}
 }
 

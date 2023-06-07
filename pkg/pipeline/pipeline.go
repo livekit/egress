@@ -48,7 +48,7 @@ type Pipeline struct {
 	eosTimer   *time.Timer
 
 	// callbacks
-	onStatusUpdate UpdateFunc
+	sendUpdate UpdateFunc
 }
 
 func New(ctx context.Context, p *config.PipelineConfig, onStatusUpdate UpdateFunc) (*Pipeline, error) {
@@ -113,7 +113,7 @@ func New(ctx context.Context, p *config.PipelineConfig, onStatusUpdate UpdateFun
 		out:            out,
 		sinks:          sinks,
 		closed:         core.NewFuse(),
-		onStatusUpdate: onStatusUpdate,
+		sendUpdate:     onStatusUpdate,
 	}
 
 	if s, ok := sinks[types.EgressTypeWebsocket]; ok {
@@ -133,7 +133,9 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 
 	p.Info.StartedAt = time.Now().UnixNano()
 	defer func() {
-		p.Info.EndedAt = time.Now().UnixNano()
+		now := time.Now().UnixNano()
+		p.Info.UpdatedAt = now
+		p.Info.EndedAt = now
 
 		// update status
 		if p.Info.Error != "" {
@@ -293,8 +295,9 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 		}
 	}
 
-	if sendUpdate && p.onStatusUpdate != nil {
-		p.onStatusUpdate(ctx, p.Info)
+	if sendUpdate {
+		p.Info.UpdatedAt = time.Now().UnixNano()
+		p.sendUpdate(ctx, p.Info)
 	}
 
 	return errs.ToError()
@@ -352,8 +355,9 @@ func (p *Pipeline) removeSink(ctx context.Context, url string, streamErr error) 
 	}
 
 	// only send updates if the egress will continue, otherwise it's handled by UpdateStream RPC
-	if streamErr != nil && p.onStatusUpdate != nil {
-		p.onStatusUpdate(ctx, p.Info)
+	if streamErr != nil {
+		p.Info.UpdatedAt = time.Now().UnixNano()
+		p.sendUpdate(ctx, p.Info)
 	}
 
 	return p.out.RemoveStream(url)
@@ -383,9 +387,8 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
-			if p.onStatusUpdate != nil {
-				p.onStatusUpdate(ctx, p.Info)
-			}
+			p.Info.UpdatedAt = time.Now().UnixNano()
+			p.sendUpdate(ctx, p.Info)
 			fallthrough
 
 		case livekit.EgressStatus_EGRESS_ENDING,
@@ -458,9 +461,8 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 
 	if p.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
 		p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
-		if p.onStatusUpdate != nil {
-			p.onStatusUpdate(context.Background(), p.Info)
-		}
+		p.Info.UpdatedAt = time.Now().UnixNano()
+		p.sendUpdate(context.Background(), p.Info)
 	}
 }
 
