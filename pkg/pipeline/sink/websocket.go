@@ -17,9 +17,9 @@ import (
 )
 
 type WebsocketSink struct {
+	mu     sync.Mutex
 	conn   *websocket.Conn
 	closed core.Fuse
-	mu     sync.Mutex
 }
 
 func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*WebsocketSink, error) {
@@ -49,7 +49,9 @@ func (s *WebsocketSink) keepAlive() {
 	ticker := time.NewTicker(time.Second * 10)
 	for !s.closed.IsBroken() {
 		<-ticker.C
+		s.mu.Lock()
 		_ = s.conn.WriteMessage(websocket.PingMessage, []byte("ping"))
+		s.mu.Unlock()
 	}
 	ticker.Stop()
 }
