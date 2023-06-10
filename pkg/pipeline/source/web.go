@@ -65,7 +65,7 @@ func NewWebSource(ctx context.Context, p *config.PipelineConfig) (*WebSource, er
 	}
 
 	if err := s.launchChrome(ctx, p, p.Insecure); err != nil {
-		logger.Errorw("failed to launch chrome", err, "display", p.Display)
+		logger.Warnw("failed to launch chrome", err, "display", p.Display)
 		s.Close()
 		return nil, err
 	}

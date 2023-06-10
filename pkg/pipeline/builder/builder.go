@@ -30,7 +30,9 @@ func BuildQueue(name string, latency uint64, leaky bool) (*gst.Element, error) {
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if err = queue.SetProperty("max-size-time", latency); err != nil {
+
+	// max-size-time sets the maximum latency for the pipeline - set to 1s higher than source latency
+	if err = queue.SetProperty("max-size-time", latency+1e9); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err = queue.SetProperty("max-size-bytes", uint(0)); err != nil {

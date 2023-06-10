@@ -12,8 +12,6 @@ import (
 	"github.com/livekit/egress/pkg/types"
 )
 
-const audioMixerLatency = uint64(2e9)
-
 type AudioInput struct {
 	decoder []*gst.Element
 	testSrc []*gst.Element
@@ -202,19 +200,23 @@ func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 	if err = audioTestSrc.SetProperty("is-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+
+	audioQueue, err := builder.BuildQueue("audio_testsrc_queue", p.Latency, true)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
 	audioCaps, err := getCapsFilter(p)
 	if err != nil {
 		return err
 	}
-	a.testSrc = []*gst.Element{audioTestSrc, audioCaps}
+	a.testSrc = []*gst.Element{audioTestSrc, audioCaps, audioQueue}
 
 	audioMixer, err := gst.NewElement("audiomixer")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = audioMixer.SetProperty("latency", audioMixerLatency); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
+
 	mixedCaps, err := getCapsFilter(p)
 	if err != nil {
 		return err

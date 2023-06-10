@@ -103,6 +103,9 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 	if err := src.Element.SetProperty("is-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+	if err := src.Element.SetProperty("min-latency", int64(p.Latency)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
 
 	v.elements = append(v.elements, src.Element)
 	switch {
