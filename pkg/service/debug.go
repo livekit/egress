@@ -36,6 +36,19 @@ func (s *Service) StartDebugHandlers() {
 	}()
 }
 
+func (s *Service) GetGstPipelineDotFile(egressID string) (string, error) {
+	c, err := s.manager.getGRPCClient(egressID)
+	if err != nil {
+		return "", err
+	}
+
+	res, err := c.GetPipelineDot(context.Background(), &ipc.GstPipelineDebugDotRequest{})
+	if err != nil {
+		return "", err
+	}
+	return res.DotFile, nil
+}
+
 // URL path format is "/<application>/<egress_id>/<optional_other_params>"
 func (s *Service) handleGstPipelineDotFile(w http.ResponseWriter, r *http.Request) {
 	pathElements := strings.Split(r.URL.Path, "/")
@@ -45,20 +58,12 @@ func (s *Service) handleGstPipelineDotFile(w http.ResponseWriter, r *http.Reques
 	}
 
 	egressID := pathElements[2]
-	c, err := s.manager.getGRPCClient(egressID)
-	if err != nil {
-		http.Error(w, "handler not found", http.StatusNotFound)
-		return
-	}
-
-	res, err := c.GetPipelineDot(context.Background(), &ipc.GstPipelineDebugDotRequest{})
-	if err == nil {
-		_, err = w.Write([]byte(res.DotFile))
-	}
+	dotFile, err := s.GetGstPipelineDotFile(egressID)
 	if err != nil {
 		http.Error(w, err.Error(), getErrorCode(err))
 		return
 	}
+	_, _ = w.Write([]byte(dotFile))
 }
 
 // URL path format is "/<application>/<egress_id>/<profile_name>" or "/<application>/<profile_name>" to profile the service
