@@ -43,6 +43,10 @@ func NewVP8Translator(logger logger.Logger) *VP8Translator {
 }
 
 func (t *VP8Translator) Translate(pkt *rtp.Packet) {
+	if len(pkt.Payload) == 0 {
+		return
+	}
+
 	vp8Packet := buffer.VP8{}
 	if err := vp8Packet.Unmarshal(pkt.Payload); err != nil {
 		t.logger.Warnw("could not unmarshal VP8 packet", err)

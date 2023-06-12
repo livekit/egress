@@ -73,7 +73,7 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	videoQueue, err := builder.BuildQueue("video_input_queue", p.Latency, true)
+	videoQueue, err := builder.BuildQueue("video_input_queue", true)
 	if err != nil {
 		return err
 	}
@@ -99,12 +99,11 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 
 func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 	src := p.VideoSrc
-	src.Element.SetArg("format", "time")
-	if err := src.Element.SetProperty("is-live", true); err != nil {
-		return errors.ErrGstPipelineError(err)
+	if err := builder.UpdateAppSrc(src); err != nil {
+		return err
 	}
-
 	v.elements = append(v.elements, src.Element)
+
 	switch {
 	case strings.EqualFold(p.VideoCodecParams.MimeType, string(types.MimeTypeH264)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
@@ -171,7 +170,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 		return errors.ErrNotSupported(p.VideoCodecParams.MimeType)
 	}
 
-	videoQueue, err := builder.BuildQueue("video_input_queue", p.Latency, true)
+	videoQueue, err := builder.BuildQueue("video_input_queue", true)
 	if err != nil {
 		return err
 	}
@@ -209,7 +208,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 
 func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 	// Put a queue in front of the encoder for pipelining with the stage before
-	videoQueue, err := builder.BuildQueue("video_encoder_queue", p.Latency, false)
+	videoQueue, err := builder.BuildQueue("video_encoder_queue", false)
 	if err != nil {
 		return err
 	}

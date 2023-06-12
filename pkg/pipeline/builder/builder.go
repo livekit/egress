@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"github.com/tinyzimmer/go-gst/gst"
+	"github.com/tinyzimmer/go-gst/gst/app"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 )
 
@@ -25,12 +27,14 @@ func LinkPads(src string, srcPad pad, sink string, sinkPad *gst.Pad) error {
 	return nil
 }
 
-func BuildQueue(name string, latency uint64, leaky bool) (*gst.Element, error) {
+func BuildQueue(name string, leaky bool) (*gst.Element, error) {
 	queue, err := gst.NewElementWithName("queue", name)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if err = queue.SetProperty("max-size-time", latency); err != nil {
+
+	// max-size-time sets the maximum latency for the pipeline - set to 1s higher than source latency
+	if err = queue.SetProperty("max-size-time", config.MaxPipelineLatency); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err = queue.SetProperty("max-size-bytes", uint(0)); err != nil {
@@ -48,4 +52,18 @@ func BuildQueue(name string, latency uint64, leaky bool) (*gst.Element, error) {
 
 func GetSrcPad(elements []*gst.Element) *gst.Pad {
 	return elements[len(elements)-1].GetStaticPad("src")
+}
+
+func UpdateAppSrc(src *app.Source) error {
+	src.Element.SetArg("format", "time")
+	if err := src.Element.SetProperty("is-live", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err := src.Element.SetProperty("min-latency", int64(config.MinSDKLatency)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err := src.Element.SetProperty("emit-signals", false); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	return nil
 }

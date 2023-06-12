@@ -21,8 +21,10 @@ import (
 )
 
 const (
-	webLatency = uint64(2e9)
-	sdkLatency = uint64(3e9)
+	MaxJitterLatency   = time.Second * 2 //        maximum latency of jitter buffer
+	MinSDKLatency      = uint64(25e8)    // (2.5s) minimum latency for pipeline with sdk source
+	StreamLatency      = uint64(3e9)     // (3s)   minimum latency for flvmux with sdk source
+	MaxPipelineLatency = uint64(35e8)    // (3.5s) maximum pipeline latency
 )
 
 type PipelineConfig struct {
@@ -45,7 +47,6 @@ type PipelineConfig struct {
 
 type SourceConfig struct {
 	SourceType types.SourceType
-	Latency    uint64
 	WebSourceParams
 	SDKSourceParams
 }
@@ -167,8 +168,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		p.SourceType = types.SourceTypeWeb
 		p.AwaitStartSignal = true
-		p.Latency = webLatency
-
 		p.Info.RoomName = req.RoomComposite.RoomName
 		p.Layout = req.RoomComposite.Layout
 		if req.RoomComposite.CustomBaseUrl != "" {
@@ -221,8 +220,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		connectionInfoRequired = false
 		p.SourceType = types.SourceTypeWeb
 		p.AwaitStartSignal = req.Web.AwaitStartSignal
-		p.Latency = webLatency
-
 		p.WebUrl = req.Web.Url
 		webUrl, err := url.Parse(p.WebUrl)
 		if err != nil || (webUrl.Scheme != "http" && webUrl.Scheme != "https") {
@@ -267,8 +264,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		redactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
-		p.Latency = sdkLatency
-
 		p.Info.RoomName = req.TrackComposite.RoomName
 		if audioTrackID := req.TrackComposite.AudioTrackId; audioTrackID != "" {
 			p.AudioEnabled = true
@@ -310,8 +305,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 		p.SourceType = types.SourceTypeSDK
-		p.Latency = sdkLatency
-
 		p.Info.RoomName = req.Track.RoomName
 		p.TrackID = req.Track.TrackId
 		if p.TrackID == "" {
