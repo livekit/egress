@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -223,6 +225,20 @@ func (r *Runner) getStatus(t *testing.T) map[string]interface{} {
 	require.NoError(t, err)
 
 	return status
+}
+
+func (r *Runner) createDotFile(t *testing.T, egressID string) {
+	dot, err := r.svc.GetGstPipelineDotFile(egressID)
+	require.NoError(t, err)
+
+	filename := strings.ReplaceAll(t.Name()[11:], "/", "_")
+	filepath := fmt.Sprintf("%s/%s.dot", r.LocalOutputDirectory, filename)
+	f, err := os.Create(filepath)
+	require.NoError(t, err)
+	defer f.Close()
+
+	_, err = f.WriteString(dot)
+	require.NoError(t, err)
 }
 
 func (r *Runner) stopEgress(t *testing.T, egressID string) *livekit.EgressInfo {

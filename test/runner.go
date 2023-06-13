@@ -51,6 +51,7 @@ type Runner struct {
 	MultiTestsOnly          bool   `yaml:"multi_only"`
 	Muting                  bool   `yaml:"muting"`
 	GstDebug                string `yaml:"gst_debug"`
+	Dotfiles                bool   `yaml:"dot_files"`
 	Short                   bool   `yaml:"short"`
 }
 

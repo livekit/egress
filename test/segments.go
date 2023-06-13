@@ -21,9 +21,13 @@ import (
 func (r *Runner) runSegmentsTest(t *testing.T, req *rpc.StartEgressRequest, test *testCase) {
 	egressID := r.startEgress(t, req)
 
-	time.Sleep(time.Second * 25)
+	time.Sleep(time.Second * 10)
+	if r.Dotfiles {
+		r.createDotFile(t, egressID)
+	}
 
 	// stop
+	time.Sleep(time.Second * 15)
 	res := r.stopEgress(t, egressID)
 
 	// get params
