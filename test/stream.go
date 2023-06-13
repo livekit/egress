@@ -63,8 +63,12 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	})
 	require.NoError(t, err)
 
-	// verify the remaining stream
 	time.Sleep(time.Second * 5)
+	if r.Dotfiles {
+		r.createDotFile(t, egressID)
+	}
+
+	// verify the remaining stream
 	r.verifyStreams(t, p, streamUrl2)
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		redactedUrl1:    livekit.StreamInfo_FINISHED,

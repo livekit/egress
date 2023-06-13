@@ -149,3 +149,34 @@ func buildGstreamer(cmd string) error {
 
 	return mageutil.Run(context.Background(), commands...)
 }
+
+func Dotfiles() error {
+	files, err := os.ReadDir("test/output")
+	if err != nil {
+		return err
+	}
+
+	dots := make(map[string]bool)
+	pngs := make(map[string]bool)
+	for _, file := range files {
+		name := file.Name()
+		if strings.HasSuffix(name, ".dot") {
+			dots[name[:len(name)-4]] = true
+		} else if strings.HasSuffix(file.Name(), ".png") {
+			pngs[name[:len(name)-4]] = true
+		}
+	}
+
+	for name := range dots {
+		if !pngs[name] {
+			if err := mageutil.Run(context.Background(), fmt.Sprintf(
+				"dot -Tpng test/output/%s.dot -o test/output/%s.png",
+				name, name,
+			)); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
