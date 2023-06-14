@@ -17,18 +17,18 @@ require (
 	github.com/go-logr/logr v1.2.4
 	github.com/googleapis/gax-go/v2 v2.8.0
 	github.com/gorilla/websocket v1.5.0
-	github.com/livekit/livekit-server v1.4.2-0.20230406135133-fb301e6e759a
+	github.com/livekit/livekit-server v1.4.4-0.20230612120056-afa773374840
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.5.8-0.20230607183807-0aad9fb9e7c1
+	github.com/livekit/protocol v1.5.8-0.20230611030650-7d128913f3bd
 	github.com/livekit/psrpc v0.3.1
-	github.com/livekit/server-sdk-go v1.0.11-0.20230603013535-cd2ade940f03
+	github.com/livekit/server-sdk-go v1.0.12-0.20230614054731-c5a303c78119
 	github.com/pion/rtp v1.7.13
 	github.com/pion/webrtc/v3 v3.2.9
 	github.com/prometheus/client_golang v1.15.1
 	github.com/stretchr/testify v1.8.4
 	github.com/tinyzimmer/go-glib v0.0.25
 	github.com/tinyzimmer/go-gst v0.2.33
-	github.com/urfave/cli/v2 v2.25.1
+	github.com/urfave/cli/v2 v2.25.5
 	go.uber.org/atomic v1.11.0
 	google.golang.org/api v0.120.0
 	google.golang.org/grpc v1.55.0
@@ -70,14 +70,13 @@ require (
 	github.com/jxskiss/base62 v1.1.0 // indirect
 	github.com/klauspost/compress v1.16.5 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
-	github.com/livekit/mediatransportutil v0.0.0-20230523035537-27577c4e1646 // indirect
+	github.com/livekit/mediatransportutil v0.0.0-20230612070454-d5299b956135 // indirect
 	github.com/mackerelio/go-osstat v0.2.4 // indirect
 	github.com/magefile/mage v1.15.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
-	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/nats-io/nats.go v1.26.0 // indirect
 	github.com/nats-io/nkeys v0.4.4 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect

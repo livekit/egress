@@ -36,8 +36,8 @@ func (b *Bin) buildWebsocketOutput(p *config.PipelineConfig) (*WebsocketOutput, 
 	}
 
 	return &WebsocketOutput{
-		conf:       p,
 		outputBase: base,
+		conf:       p,
 		sink:       appSink,
 	}, nil
 }
