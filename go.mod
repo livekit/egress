@@ -21,7 +21,7 @@ require (
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/protocol v1.5.8-0.20230611030650-7d128913f3bd
 	github.com/livekit/psrpc v0.3.1
-	github.com/livekit/server-sdk-go v1.0.12-0.20230614045305-79379386df11
+	github.com/livekit/server-sdk-go v1.0.12-0.20230614054731-c5a303c78119
 	github.com/pion/rtp v1.7.13
 	github.com/pion/webrtc/v3 v3.2.9
 	github.com/prometheus/client_golang v1.15.1
@@ -77,7 +77,6 @@ require (
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
-	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/nats-io/nats.go v1.26.0 // indirect
 	github.com/nats-io/nkeys v0.4.4 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
