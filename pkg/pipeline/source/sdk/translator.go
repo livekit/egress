@@ -6,8 +6,8 @@ import (
 
 	"github.com/pion/rtp"
 
-	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -32,17 +32,22 @@ type VP8Translator struct {
 	logger logger.Logger
 
 	firstPktPushed bool
-	vp8Munger      *sfu.VP8Munger
+	lastSN         uint16
+	vp8Munger      *codecmunger.VP8
 }
 
 func NewVP8Translator(logger logger.Logger) *VP8Translator {
 	return &VP8Translator{
 		logger:    logger,
-		vp8Munger: sfu.NewVP8Munger(logger),
+		vp8Munger: codecmunger.NewVP8(logger),
 	}
 }
 
 func (t *VP8Translator) Translate(pkt *rtp.Packet) {
+	defer func() {
+		t.lastSN = pkt.SequenceNumber
+	}()
+
 	if len(pkt.Payload) == 0 {
 		return
 	}
@@ -55,7 +60,7 @@ func (t *VP8Translator) Translate(pkt *rtp.Packet) {
 
 	ep := &buffer.ExtPacket{
 		Packet:   pkt,
-		Arrival:  time.Now().UnixNano(),
+		Arrival:  time.Now(),
 		Payload:  vp8Packet,
 		KeyFrame: vp8Packet.IsKeyFrame,
 		VideoLayer: buffer.VideoLayer{
@@ -68,53 +73,38 @@ func (t *VP8Translator) Translate(pkt *rtp.Packet) {
 		t.firstPktPushed = true
 		t.vp8Munger.SetLast(ep)
 	} else {
-		tpVP8, err := t.vp8Munger.UpdateAndGet(ep, sfu.SequenceNumberOrderingContiguous, ep.Temporal)
+		tpVP8, err := t.vp8Munger.UpdateAndGet(ep, false, pkt.SequenceNumber != t.lastSN+1, ep.Temporal)
 		if err != nil {
 			t.logger.Warnw("could not update VP8 packet", err)
 			return
 		}
-
-		payload := pkt.Payload
-		payload, err = translateVP8Packet(ep.Packet, &vp8Packet, tpVP8.Header, &payload)
-		if err != nil {
-			t.logger.Warnw("could not translate VP8 packet", err)
-			return
-		}
-		pkt.Payload = payload
+		pkt.Payload = translateVP8Packet(ep.Packet, &vp8Packet, tpVP8, &pkt.Payload)
 	}
 }
 
-func translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8, outbuf *[]byte) ([]byte, error) {
-	var buf []byte
-	if outbuf == &pkt.Payload {
-		buf = pkt.Payload
-	} else {
-		buf = (*outbuf)[:len(pkt.Payload)+translatedVP8.HeaderSize-incomingVP8.HeaderSize]
+func translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 []byte, outbuf *[]byte) []byte {
+	buf := (*outbuf)[:len(pkt.Payload)+len(translatedVP8)-incomingVP8.HeaderSize]
+	srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
+	dstPayload := buf[len(translatedVP8):]
+	copy(dstPayload, srcPayload)
 
-		srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
-		dstPayload := buf[translatedVP8.HeaderSize:]
-		copy(dstPayload, srcPayload)
-	}
-
-	err := translatedVP8.MarshalTo(buf[:translatedVP8.HeaderSize])
-	return buf, err
+	copy(buf[:len(translatedVP8)], translatedVP8)
+	return buf
 }
 
 func (t *VP8Translator) UpdateBlankFrame(pkt *rtp.Packet) error {
-	blankVP8 := t.vp8Munger.UpdateAndGetPadding(true)
+	blankVP8, err := t.vp8Munger.UpdateAndGetPadding(true)
+	if err != nil {
+		return err
+	}
 
 	// 16x16 key frame
 	// Used even when closing out a previous frame. Looks like receivers
 	// do not care about content (it will probably end up being an undecodable
 	// frame, but that should be okay as there are key frames following)
-	payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame16x16))
-	vp8Header := payload[:blankVP8.HeaderSize]
-	err := blankVP8.MarshalTo(vp8Header)
-	if err != nil {
-		return err
-	}
-
-	copy(payload[blankVP8.HeaderSize:], VP8KeyFrame16x16)
+	payload := make([]byte, len(blankVP8)+len(VP8KeyFrame16x16))
+	copy(payload[:len(blankVP8)], blankVP8)
+	copy(payload[len(blankVP8):], VP8KeyFrame16x16)
 	pkt.Payload = payload
 	return nil
 }

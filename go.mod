@@ -17,9 +17,9 @@ require (
 	github.com/go-logr/logr v1.2.4
 	github.com/googleapis/gax-go/v2 v2.8.0
 	github.com/gorilla/websocket v1.5.0
-	github.com/livekit/livekit-server v1.4.2-0.20230406135133-fb301e6e759a
+	github.com/livekit/livekit-server v1.4.4-0.20230612120056-afa773374840
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.5.8-0.20230607183807-0aad9fb9e7c1
+	github.com/livekit/protocol v1.5.8-0.20230611030650-7d128913f3bd
 	github.com/livekit/psrpc v0.3.1
 	github.com/livekit/server-sdk-go v1.0.12-0.20230614045305-79379386df11
 	github.com/pion/rtp v1.7.13
@@ -28,7 +28,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/tinyzimmer/go-glib v0.0.25
 	github.com/tinyzimmer/go-gst v0.2.33
-	github.com/urfave/cli/v2 v2.25.1
+	github.com/urfave/cli/v2 v2.25.5
 	go.uber.org/atomic v1.11.0
 	google.golang.org/api v0.120.0
 	google.golang.org/grpc v1.55.0
