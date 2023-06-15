@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"io"
+	"math"
 	"net"
 	"time"
 
@@ -51,7 +52,6 @@ type AppWriter struct {
 	// a/v sync
 	sync *synchronizer.Synchronizer
 	*synchronizer.TrackSynchronizer
-	lastPTS time.Duration
 
 	// state
 	state       state
@@ -174,12 +174,15 @@ func (w *AppWriter) run() {
 			w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
 		}
 	}
-	stats := w.TrackSynchronizer.GetTrackStats()
+
+	stats := w.GetTrackStats()
 	w.logger.Infow("writer finished",
-		"avg sample duration", stats.AvgSampleDuration,
-		"avg drift", stats.AvgDrift,
+		"sample duration rtp", math.Round(stats.AvgSampleDuration),
+		"sample duration ns", w.GetFrameDuration(),
+		"avg drift", time.Duration(stats.AvgDrift),
 		"max drift", stats.MaxDrift,
 	)
+
 	w.finished.Break()
 }
 
@@ -337,6 +340,10 @@ func (w *AppWriter) pushSamples(force bool) error {
 		// get PTS
 		pts, err := w.GetPTS(pkt)
 		if err != nil {
+			if errors.Is(err, synchronizer.ErrBackwardsPTS) {
+				w.logger.Warnw("dropping packet", err)
+				return nil
+			}
 			return err
 		}
 
@@ -349,12 +356,6 @@ func (w *AppWriter) pushSamples(force bool) error {
 }
 
 func (w *AppWriter) pushPacket(pkt *rtp.Packet, pts time.Duration) error {
-	if pts < w.lastPTS {
-		// don't push backwards pts
-		w.logger.Warnw("backwards pts", nil, "pts", pts, "lastPTS", w.lastPTS)
-		return nil
-	}
-
 	p, err := pkt.Marshal()
 	if err != nil {
 		w.logger.Errorw("could not marshal packet", err)
@@ -363,8 +364,6 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet, pts time.Duration) error {
 
 	b := gst.NewBufferFromBytes(p)
 	b.SetPresentationTimestamp(pts)
-	w.lastPTS = pts
-
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.logger.Infow("unexpected flow return", "flow", flow)
 	}
