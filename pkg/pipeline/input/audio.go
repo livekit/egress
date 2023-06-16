@@ -12,6 +12,8 @@ import (
 	"github.com/livekit/egress/pkg/types"
 )
 
+const audioMixerLatency = uint64(2e9)
+
 type AudioInput struct {
 	decoder []*gst.Element
 	testSrc []*gst.Element
@@ -121,7 +123,8 @@ func (a *AudioInput) buildWebDecoder(p *config.PipelineConfig) error {
 
 func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig) error {
 	src := p.AudioSrc
-	if err := builder.UpdateAppSrc(src); err != nil {
+	src.Element.SetArg("format", "time")
+	if err := src.Element.SetProperty("is-live", true); err != nil {
 		return err
 	}
 	a.decoder = []*gst.Element{src.Element}
@@ -161,7 +164,7 @@ func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig) error {
 }
 
 func (a *AudioInput) addConverter(p *config.PipelineConfig) error {
-	audioQueue, err := builder.BuildQueue("audio_input_queue", true)
+	audioQueue, err := builder.BuildQueue("audio_input_queue", p.Latency, true)
 	if err != nil {
 		return err
 	}
@@ -199,7 +202,6 @@ func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 	if err = audioTestSrc.SetProperty("is-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-
 	audioCaps, err := getCapsFilter(p)
 	if err != nil {
 		return err
@@ -210,10 +212,9 @@ func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = audioMixer.SetProperty("latency", config.MinSDKLatency); err != nil {
+	if err = audioMixer.SetProperty("latency", audioMixerLatency); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-
 	mixedCaps, err := getCapsFilter(p)
 	if err != nil {
 		return err

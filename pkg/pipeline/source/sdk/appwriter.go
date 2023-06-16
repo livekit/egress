@@ -14,7 +14,6 @@ import (
 	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
@@ -32,7 +31,8 @@ const (
 )
 
 const (
-	drainTimeout      = time.Millisecond * 3500
+	latency           = time.Second * 2
+	drainTimeout      = time.Second * 4
 	errBufferTooSmall = "buffer too small"
 )
 
@@ -111,7 +111,7 @@ func NewAppWriter(
 	w.buffer = jitter.NewBuffer(
 		depacketizer,
 		track.Codec().ClockRate,
-		config.MaxJitterLatency,
+		latency,
 		jitter.WithPacketDroppedHandler(w.sendPLI),
 		jitter.WithLogger(w.logger),
 	)
