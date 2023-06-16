@@ -87,9 +87,8 @@ func buildStreamMux(p *config.PipelineConfig, o *config.StreamConfig) (*gst.Elem
 		if err = mux.SetProperty("skip-backwards-streams", true); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
-
 		// add latency to give time for flvmux to receive and order packets from both streams
-		if err = mux.SetProperty("latency", config.StreamLatency); err != nil {
+		if err = mux.SetProperty("latency", p.Latency); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 

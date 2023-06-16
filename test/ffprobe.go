@@ -140,6 +140,17 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		segments := res.GetSegmentResults()[0]
 		expected := int64(math.Ceil(actual / float64(p.GetSegmentConfig().SegmentDuration)))
 		require.True(t, segments.SegmentCount == expected || segments.SegmentCount == expected-1)
+
+	case types.EgressTypeWebsocket:
+		size, err := strconv.Atoi(info.Format.Size)
+		require.NoError(t, err)
+		require.Greater(t, size, 6500000)
+
+		expected := float64(res.StreamResults[0].Duration) / 1e9
+		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
+		require.NoError(t, err)
+
+		require.InDelta(t, expected, actual, 1)
 	}
 
 	// check stream info
