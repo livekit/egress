@@ -26,6 +26,8 @@ type Monitor struct {
 	pendingCPUs atomic.Float64
 }
 
+const cpuHoldDuration = time.Second * 5
+
 func NewMonitor(conf *config.ServiceConfig) *Monitor {
 	return &Monitor{
 		cpuCostConfig: conf.CPUCostConfig,
@@ -173,17 +175,17 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) {
 	var cpuHold float64
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
+		cpuHold = m.cpuCostConfig.RoomCompositeCpuCost * 1.2
 	case *rpc.StartEgressRequest_Web:
-		cpuHold = m.cpuCostConfig.WebCpuCost
+		cpuHold = m.cpuCostConfig.WebCpuCost * 1.2
 	case *rpc.StartEgressRequest_TrackComposite:
-		cpuHold = m.cpuCostConfig.TrackCompositeCpuCost
+		cpuHold = m.cpuCostConfig.TrackCompositeCpuCost * 1.2
 	case *rpc.StartEgressRequest_Track:
-		cpuHold = m.cpuCostConfig.TrackCpuCost
+		cpuHold = m.cpuCostConfig.TrackCpuCost * 1.2
 	}
 
 	m.pendingCPUs.Add(cpuHold)
-	time.AfterFunc(time.Second, func() { m.pendingCPUs.Sub(cpuHold) })
+	time.AfterFunc(cpuHoldDuration, func() { m.pendingCPUs.Sub(cpuHold) })
 }
 
 func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
