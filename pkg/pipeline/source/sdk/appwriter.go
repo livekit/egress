@@ -183,7 +183,7 @@ func (w *AppWriter) run() {
 		"sample duration ns", w.GetFrameDuration(),
 		"avg drift", time.Duration(stats.AvgDrift),
 		"max drift", stats.MaxDrift,
-		"packet loss", fmt.Sprintf("%.2f%", loss),
+		"packet loss", fmt.Sprintf("%.2f%%", loss),
 	)
 
 	w.finished.Break()

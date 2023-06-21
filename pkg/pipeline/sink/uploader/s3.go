@@ -100,12 +100,12 @@ func (u *S3Uploader) getBucketLocation() (string, error) {
 func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
 	sess, err := session.NewSession(u.awsConfig)
 	if err != nil {
-		return "", 0, err
+		return "", 0, wrap("S3", err)
 	}
 
 	file, err := os.Open(localFilepath)
 	if err != nil {
-		return "", 0, err
+		return "", 0, wrap("S3", err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -113,7 +113,7 @@ func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType ty
 
 	stat, err := file.Stat()
 	if err != nil {
-		return "", 0, err
+		return "", 0, wrap("S3", err)
 	}
 
 	_, err = s3manager.NewUploader(sess).Upload(&s3manager.UploadInput{
@@ -125,7 +125,7 @@ func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType ty
 		Tagging:     u.tagging,
 	})
 	if err != nil {
-		return "", 0, err
+		return "", 0, wrap("S3", err)
 	}
 
 	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", *u.bucket, storageFilepath), stat.Size(), nil

@@ -30,12 +30,12 @@ func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType
 		u.conf.AccountKey,
 	)
 	if err != nil {
-		return "", 0, err
+		return "", 0, wrap("Azure", err)
 	}
 
 	azUrl, err := url.Parse(u.container)
 	if err != nil {
-		return "", 0, err
+		return "", 0, wrap("Azure", err)
 	}
 
 	pipeline := azblob.NewPipeline(credential, azblob.PipelineOptions{
@@ -51,7 +51,7 @@ func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType
 
 	file, err := os.Open(localFilepath)
 	if err != nil {
-		return "", 0, err
+		return "", 0, wrap("Azure", err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -59,7 +59,7 @@ func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType
 
 	stat, err := file.Stat()
 	if err != nil {
-		return "", 0, err
+		return "", 0, wrap("Azure", err)
 	}
 
 	// upload blocks in parallel for optimal performance
@@ -70,7 +70,7 @@ func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType
 		Parallelism:     16,
 	})
 	if err != nil {
-		return "", 0, err
+		return "", 0, wrap("Azure", err)
 	}
 
 	return fmt.Sprintf("%s/%s", u.container, storageFilepath), stat.Size(), nil
