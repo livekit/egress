@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"fmt"
 	"io"
 	"math"
 	"net"
@@ -176,11 +177,13 @@ func (w *AppWriter) run() {
 	}
 
 	stats := w.GetTrackStats()
+	loss := w.buffer.PacketLoss()
 	w.logger.Infow("writer finished",
 		"sample duration rtp", math.Round(stats.AvgSampleDuration),
 		"sample duration ns", w.GetFrameDuration(),
 		"avg drift", time.Duration(stats.AvgDrift),
 		"max drift", stats.MaxDrift,
+		"packet loss", fmt.Sprintf("%.2f%", loss),
 	)
 
 	w.finished.Break()
@@ -341,7 +344,6 @@ func (w *AppWriter) pushSamples(force bool) error {
 		pts, err := w.GetPTS(pkt)
 		if err != nil {
 			if errors.Is(err, synchronizer.ErrBackwardsPTS) {
-				w.logger.Warnw("dropping packet", err)
 				return nil
 			}
 			return err
