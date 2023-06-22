@@ -31,7 +31,7 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 
 	file, err := os.Open(localFilepath)
 	if err != nil {
-		return "", 0, err
+		return "", 0, wrap("GCP", err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -39,7 +39,7 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 
 	stat, err := file.Stat()
 	if err != nil {
-		return "", 0, err
+		return "", 0, wrap("GCP", err)
 	}
 
 	var client *storage.Client
@@ -49,7 +49,7 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 		client, err = storage.NewClient(ctx)
 	}
 	if err != nil {
-		return "", 0, err
+		return "", 0, wrap("GCP", err)
 	}
 	defer func() {
 		_ = client.Close()
@@ -77,11 +77,11 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 	).NewWriter(wctx)
 
 	if _, err = io.Copy(wc, file); err != nil {
-		return "", 0, err
+		return "", 0, wrap("GCP", err)
 	}
 
 	if err = wc.Close(); err != nil {
-		return "", 0, err
+		return "", 0, wrap("GCP", err)
 	}
 
 	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", u.conf.Bucket, storageFilepath), stat.Size(), nil

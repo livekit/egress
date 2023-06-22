@@ -1,9 +1,12 @@
 package uploader
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
@@ -83,4 +86,8 @@ func (u *noOpUploader) upload(localFilepath, _ string, _ types.OutputType) (stri
 	}
 
 	return localFilepath, stat.Size(), nil
+}
+
+func wrap(name string, err error) error {
+	return errors.Wrap(err, fmt.Sprintf("%s upload failed", name))
 }
