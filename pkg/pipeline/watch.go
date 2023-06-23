@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -32,6 +33,23 @@ const (
 	elementSplitMuxSink = "GstSplitMuxSink"
 )
 
+func (p *Pipeline) gstLog(level gst.DebugLevel, file, function string, line int, obj *glib.Object, message string) {
+	msg := fmt.Sprintf("%s: %s", function, message)
+	args := []interface{}{"caller", fmt.Sprintf("%s:%d", file, line)}
+	if obj != nil {
+		name, err := obj.GetProperty("name")
+		if err == nil {
+			args = append(args, "object", name.(string))
+		}
+	}
+	switch level {
+	case gst.LevelError:
+		p.gstLogger.Errorw(msg, args...)
+	case gst.LevelWarning, gst.LevelFixMe, gst.LevelInfo, gst.LevelDebug:
+		p.gstLogger.Debugw(msg, args...)
+	}
+}
+
 func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 	var err error
 	switch msg.Type() {
@@ -53,6 +71,9 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 	}
 
 	if err != nil {
+		if p.Debug.EnableProfiling {
+			p.uploadDebugFiles()
+		}
 		p.Failure <- err
 		return false
 	}

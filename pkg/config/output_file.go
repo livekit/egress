@@ -19,7 +19,7 @@ type FileConfig struct {
 	StorageFilepath string
 
 	DisableManifest bool
-	UploadConfig    interface{}
+	UploadConfig    UploadConfig
 }
 
 func (p *PipelineConfig) GetFileConfig() *FileConfig {
@@ -49,19 +49,19 @@ func (p *PipelineConfig) getDirectFileConfig(file *livekit.DirectFileOutput) (*F
 	return p.getFileConfig(types.OutputTypeUnknownFile, file)
 }
 
-type fileOutput interface {
+type fileRequest interface {
 	GetFilepath() string
 	GetDisableManifest() bool
-	uploader
+	uploadRequest
 }
 
-func (p *PipelineConfig) getFileConfig(outputType types.OutputType, file fileOutput) (*FileConfig, error) {
+func (p *PipelineConfig) getFileConfig(outputType types.OutputType, req fileRequest) (*FileConfig, error) {
 	conf := &FileConfig{
 		outputConfig:    outputConfig{OutputType: outputType},
 		FileInfo:        &livekit.FileInfo{},
-		StorageFilepath: clean(file.GetFilepath()),
-		DisableManifest: file.GetDisableManifest(),
-		UploadConfig:    p.getUploadConfig(file),
+		StorageFilepath: clean(req.GetFilepath()),
+		DisableManifest: req.GetDisableManifest(),
+		UploadConfig:    p.getUploadConfig(req),
 	}
 
 	// filename

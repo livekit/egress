@@ -4,7 +4,7 @@ go 1.18
 
 replace github.com/tinyzimmer/go-glib v0.0.25 => github.com/livekit/go-glib v0.0.0-20230223001336-834490045522
 
-replace github.com/tinyzimmer/go-gst v0.2.33 => github.com/livekit/go-gst v0.2.34-0.20230210170313-8fc9f59623d4
+replace github.com/tinyzimmer/go-gst v0.2.33 => github.com/livekit/go-gst v0.2.34-0.20230623013326-3ca8cb8f62e5
 
 require (
 	cloud.google.com/go/storage v1.30.1
@@ -24,12 +24,14 @@ require (
 	github.com/livekit/server-sdk-go v1.0.13-0.20230621071100-56015fffb015
 	github.com/pion/rtp v1.7.13
 	github.com/pion/webrtc/v3 v3.2.9
+	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.15.1
 	github.com/stretchr/testify v1.8.4
 	github.com/tinyzimmer/go-glib v0.0.25
 	github.com/tinyzimmer/go-gst v0.2.33
 	github.com/urfave/cli/v2 v2.25.5
 	go.uber.org/atomic v1.11.0
+	go.uber.org/zap v1.24.0
 	google.golang.org/api v0.120.0
 	google.golang.org/grpc v1.55.0
 	google.golang.org/protobuf v1.30.0
@@ -94,7 +96,6 @@ require (
 	github.com/pion/stun v0.6.0 // indirect
 	github.com/pion/transport/v2 v2.2.1 // indirect
 	github.com/pion/turn/v2 v2.1.0 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.42.0 // indirect
@@ -107,7 +108,6 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/goleak v1.1.12 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.9.0 // indirect
 	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1 // indirect
 	golang.org/x/net v0.10.0 // indirect

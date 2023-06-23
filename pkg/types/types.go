@@ -42,6 +42,7 @@ const (
 	OutputTypeRTMP        OutputType = "rtmp"
 	OutputTypeHLS         OutputType = "application/x-mpegurl"
 	OutputTypeJSON        OutputType = "application/json"
+	OutputTypeBlob        OutputType = "application/octet-stream"
 
 	// file extensions
 	FileExtensionRaw  = ".raw"
