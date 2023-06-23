@@ -1,5 +1,6 @@
 package pipeline
 
+import "C"
 import (
 	"context"
 	"sync"
@@ -8,6 +9,7 @@ import (
 	"github.com/frostbyte73/core"
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
+	"go.uber.org/zap"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -42,6 +44,7 @@ type Pipeline struct {
 
 	// internal
 	mu         sync.Mutex
+	gstLogger  *zap.SugaredLogger
 	playing    bool
 	limitTimer *time.Timer
 	closed     core.Fuse
@@ -51,80 +54,78 @@ type Pipeline struct {
 	sendUpdate UpdateFunc
 }
 
-func New(ctx context.Context, p *config.PipelineConfig, onStatusUpdate UpdateFunc) (*Pipeline, error) {
+func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate UpdateFunc) (*Pipeline, error) {
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
+
+	var err error
+	p := &Pipeline{
+		PipelineConfig: conf,
+		gstLogger:      logger.GetLogger().(*logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
+		closed:         core.NewFuse(),
+		sendUpdate:     onStatusUpdate,
+	}
 
 	// initialize gst
 	go func() {
 		_, span := tracer.Start(ctx, "gst.Init")
 		defer span.End()
 		gst.Init(nil)
-		close(p.GstReady)
+		gst.SetLogFunction(p.gstLog)
+		close(conf.GstReady)
 	}()
 
 	// create source
-	src, err := source.New(ctx, p)
+	p.src, err = source.New(ctx, conf)
 	if err != nil {
 		return nil, err
 	}
 
 	// create pipeline
-	<-p.GstReady
-	gp, err := gst.NewPipeline("pipeline")
+	<-conf.GstReady
+	p.pipeline, err = gst.NewPipeline("pipeline")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	// create input bin
-	in, err := input.New(ctx, gp, p)
+	p.in, err = input.New(ctx, p.pipeline, conf)
 	if err != nil {
 		return nil, err
 	}
 
 	// create output bin
-	out, err := output.New(ctx, gp, p)
+	p.out, err = output.New(ctx, p.pipeline, conf)
 	if err != nil {
 		return nil, err
 	}
 
 	// link input bin
-	audioSrcPad, videoSrcPad, err := in.Link()
+	audioSrcPad, videoSrcPad, err := p.in.Link()
 	if err != nil {
 		return nil, err
 	}
 
 	// link output bin
-	if err = out.Link(audioSrcPad, videoSrcPad); err != nil {
+	if err = p.out.Link(audioSrcPad, videoSrcPad); err != nil {
 		return nil, err
 	}
 
 	// create sinks
-	sinks, err := sink.CreateSinks(p)
+	p.sinks, err = sink.CreateSinks(conf)
 	if err != nil {
 		return nil, err
 	}
 
-	pipeline := &Pipeline{
-		PipelineConfig: p,
-		src:            src,
-		pipeline:       gp,
-		in:             in,
-		out:            out,
-		sinks:          sinks,
-		closed:         core.NewFuse(),
-		sendUpdate:     onStatusUpdate,
-	}
-
-	if s, ok := sinks[types.EgressTypeWebsocket]; ok {
+	if s, ok := p.sinks[types.EgressTypeWebsocket]; ok {
 		websocketSink := s.(*sink.WebsocketSink)
-		src.(*source.SDKSource).OnTrackMuted(websocketSink.OnTrackMuted)
-		if err = out.SetWebsocketSink(websocketSink); err != nil {
+		p.src.(*source.SDKSource).OnTrackMuted(websocketSink.OnTrackMuted)
+		if err = p.out.SetWebsocketSink(websocketSink); err != nil {
 			return nil, err
 		}
 	}
 
-	return pipeline, nil
+	return p, nil
 }
 
 func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
@@ -363,10 +364,6 @@ func (p *Pipeline) removeSink(ctx context.Context, url string, streamErr error) 
 	return p.out.RemoveStream(url)
 }
 
-func (p *Pipeline) GetGstPipelineDebugDot() string {
-	return p.pipeline.DebugBinToDotData(gst.DebugGraphShowAll)
-}
-
 func (p *Pipeline) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
@@ -398,6 +395,9 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 
 				p.eosTimer = time.AfterFunc(eosTimeout, func() {
 					logger.Errorw("pipeline frozen", nil)
+					if p.Debug.EnableProfiling {
+						p.uploadDebugFiles()
+					}
 					p.Failure <- errors.New("pipeline frozen")
 				})
 

@@ -24,12 +24,12 @@ const (
 type ServiceConfig struct {
 	BaseConfig `yaml:",inline"`
 
-	HealthPort       int `yaml:"health_port"`
-	TemplatePort     int `yaml:"template_port"`
-	PrometheusPort   int `yaml:"prometheus_port"`
-	DebugHandlerPort int `yaml:"debug_handler_port"` // Port used to launch the egress debug handler. 0 means debug handler disabled.
+	HealthPort       int `yaml:"health_port"`        // health check port
+	TemplatePort     int `yaml:"template_port"`      // room composite template server port
+	PrometheusPort   int `yaml:"prometheus_port"`    // prometheus handler port
+	DebugHandlerPort int `yaml:"debug_handler_port"` // egress debug handler port
 
-	CPUCostConfig `yaml:"cpu_cost"` // CPU costs for various egress types
+	CPUCostConfig `yaml:"cpu_cost"` // CPU costs for the different egress types
 }
 
 type CPUCostConfig struct {

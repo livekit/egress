@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
@@ -27,7 +28,7 @@ type uploader interface {
 	upload(string, string, types.OutputType) (string, int64, error)
 }
 
-func New(conf interface{}, backup string) (*Uploader, error) {
+func New(conf config.UploadConfig, backup string) (*Uploader, error) {
 	u := &Uploader{
 		backup: backup,
 	}

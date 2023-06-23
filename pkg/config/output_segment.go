@@ -23,7 +23,7 @@ type SegmentConfig struct {
 	SegmentDuration  int
 
 	DisableManifest bool
-	UploadConfig    interface{}
+	UploadConfig    UploadConfig
 }
 
 func (p *PipelineConfig) GetSegmentConfig() *SegmentConfig {

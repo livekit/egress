@@ -164,41 +164,6 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 	return nil
 }
 
-type uploader interface {
-	GetS3() *livekit.S3Upload
-	GetGcp() *livekit.GCPUpload
-	GetAzure() *livekit.AzureBlobUpload
-	GetAliOSS() *livekit.AliOSSUpload
-}
-
-func (p *PipelineConfig) getUploadConfig(upload uploader) interface{} {
-	if s3 := upload.GetS3(); s3 != nil {
-		return s3
-	}
-	if gcp := upload.GetGcp(); gcp != nil {
-		return gcp
-	}
-	if azure := upload.GetAzure(); azure != nil {
-		return azure
-	}
-	if ali := upload.GetAliOSS(); ali != nil {
-		return ali
-	}
-	if p.S3 != nil {
-		return p.S3.ToS3Upload()
-	}
-	if p.GCP != nil {
-		return p.GCP.ToGCPUpload()
-	}
-	if p.Azure != nil {
-		return p.Azure.ToAzureUpload()
-	}
-	if p.AliOSS != nil {
-		return p.AliOSS.ToAliOSSUpload()
-	}
-	return nil
-}
-
 func redactEncodedOutputs(out EncodedOutput) {
 	if file := out.GetFile(); file != nil {
 		redactUpload(file)
@@ -224,30 +189,5 @@ func redactStreamKeys(stream *livekit.StreamOutput) {
 		if redacted, ok := util.RedactStreamKey(url); ok {
 			stream.Urls[i] = redacted
 		}
-	}
-}
-
-func redactUpload(upload uploader) {
-	if s3 := upload.GetS3(); s3 != nil {
-		s3.AccessKey = util.Redact(s3.AccessKey, "{access_key}")
-		s3.Secret = util.Redact(s3.Secret, "{secret}")
-		return
-	}
-
-	if gcp := upload.GetGcp(); gcp != nil {
-		gcp.Credentials = util.Redact(gcp.Credentials, "{credentials}")
-		return
-	}
-
-	if azure := upload.GetAzure(); azure != nil {
-		azure.AccountName = util.Redact(azure.AccountName, "{account_name}")
-		azure.AccountKey = util.Redact(azure.AccountKey, "{account_key}")
-		return
-	}
-
-	if aliOSS := upload.GetAliOSS(); aliOSS != nil {
-		aliOSS.AccessKey = util.Redact(aliOSS.AccessKey, "{access_key}")
-		aliOSS.Secret = util.Redact(aliOSS.Secret, "{secret}")
-		return
 	}
 }
