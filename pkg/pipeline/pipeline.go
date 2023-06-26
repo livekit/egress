@@ -400,11 +400,16 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 				logger.Infow("sending EOS to pipeline")
 
 				p.eosTimer = time.AfterFunc(eosTimeout, func() {
-					logger.Errorw("pipeline frozen", nil)
+					logger.Errorw("pipeline frozen", nil, "stream", p.StreamOnly)
 					if p.Debug.EnableProfiling {
 						p.uploadDebugFiles()
 					}
-					p.Failure <- errors.New("pipeline frozen")
+
+					if p.StreamOnly {
+						p.stop()
+					} else {
+						p.Failure <- errors.New("pipeline frozen")
+					}
 				})
 
 				if p.SourceType == types.SourceTypeSDK {
