@@ -141,6 +141,12 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		// update status
 		if p.Info.Error != "" {
 			p.Info.Status = livekit.EgressStatus_EGRESS_FAILED
+
+			if o := p.GetStreamConfig(); o != nil {
+				for _, streamInfo := range o.StreamInfo {
+					streamInfo.Status = livekit.StreamInfo_FAILED
+				}
+			}
 		}
 
 		// ensure egress ends with a final state
