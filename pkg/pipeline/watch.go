@@ -1,5 +1,6 @@
 package pipeline
 
+import "C"
 import (
 	"context"
 	"fmt"
@@ -34,7 +35,34 @@ const (
 )
 
 func (p *Pipeline) gstLog(level gst.DebugLevel, file, function string, line int, obj *glib.Object, message string) {
-	msg := fmt.Sprintf("%s: %s", function, message)
+	var lvl string
+	var debug bool
+	switch level {
+	case gst.LevelNone:
+		lvl = "none"
+	case gst.LevelError:
+		lvl = "error"
+	case gst.LevelWarning:
+		lvl = "warning"
+	case gst.LevelFixMe:
+		lvl = "fixme"
+	case gst.LevelInfo:
+		lvl = "info"
+		debug = true
+	case gst.LevelDebug:
+		lvl = "debug"
+		debug = true
+	default:
+		lvl = "log"
+		debug = true
+	}
+
+	var msg string
+	if function != "" {
+		msg = fmt.Sprintf("[gst %s] %s: %s", lvl, function, message)
+	} else {
+		msg = fmt.Sprintf("[gst %s] %s", lvl, message)
+	}
 	args := []interface{}{"caller", fmt.Sprintf("%s:%d", file, line)}
 	if obj != nil {
 		name, err := obj.GetProperty("name")
@@ -42,11 +70,10 @@ func (p *Pipeline) gstLog(level gst.DebugLevel, file, function string, line int,
 			args = append(args, "object", name.(string))
 		}
 	}
-	switch level {
-	case gst.LevelError:
-		p.gstLogger.Errorw(msg, args...)
-	case gst.LevelWarning, gst.LevelFixMe, gst.LevelInfo, gst.LevelDebug:
+	if debug {
 		p.gstLogger.Debugw(msg, args...)
+	} else {
+		p.gstLogger.Infow(msg, args...)
 	}
 }
 
