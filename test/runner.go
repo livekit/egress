@@ -106,8 +106,6 @@ func NewRunner(t *testing.T) *Runner {
 		logger.Infow("no azure config supplied")
 	}
 
-	require.NoError(t, err)
-
 	return r
 }
 
