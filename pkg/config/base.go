@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"time"
 
 	"github.com/livekit/protocol/logger"
@@ -76,6 +77,19 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 	if c.LogLevel != "" {
 		logger.Warnw("log_level deprecated. use logging instead", nil)
 		c.Logging.Level = c.LogLevel
+	}
+
+	var gstDebug string
+	switch c.Logging.Level {
+	case "debug":
+		gstDebug = "3"
+	case "info", "warn":
+		gstDebug = "2"
+	case "error":
+		gstDebug = "1"
+	}
+	if err := os.Setenv("GST_DEBUG", gstDebug); err != nil {
+		return err
 	}
 
 	zl, err := logger.NewZapLogger(&c.Logging)

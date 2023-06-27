@@ -50,7 +50,6 @@ type Runner struct {
 	SegmentTestsOnly        bool   `yaml:"segments_only"`
 	MultiTestsOnly          bool   `yaml:"multi_only"`
 	Muting                  bool   `yaml:"muting"`
-	GstDebug                string `yaml:"gst_debug"`
 	Dotfiles                bool   `yaml:"dot_files"`
 	Short                   bool   `yaml:"short"`
 }
@@ -68,7 +67,6 @@ func NewRunner(t *testing.T) *Runner {
 	r := &Runner{
 		RoomName: fmt.Sprintf("egress-integration-%d", rand.Intn(100)),
 		Muting:   false,
-		GstDebug: "1",
 	}
 	err := yaml.Unmarshal([]byte(confString), r)
 	require.NoError(t, err)
@@ -107,9 +105,6 @@ func NewRunner(t *testing.T) *Runner {
 	} else {
 		logger.Infow("no azure config supplied")
 	}
-
-	err = os.Setenv("GST_DEBUG", r.GstDebug)
-	require.NoError(t, err)
 
 	return r
 }

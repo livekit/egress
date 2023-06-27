@@ -207,7 +207,6 @@ First, create `egress/test/config.yaml`:
 
 ```yaml
 log_level: debug
-gst_debug: 1
 api_key: your-api-key
 api_secret: your-api-secret
 ws_url: wss://your-livekit-url.com
