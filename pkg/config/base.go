@@ -83,7 +83,7 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 	switch c.Logging.Level {
 	case "debug":
 		gstDebug = "3"
-	case "warn":
+	case "info", "warn":
 		gstDebug = "2"
 	case "error":
 		gstDebug = "1"
