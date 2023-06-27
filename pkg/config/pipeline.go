@@ -37,6 +37,7 @@ type PipelineConfig struct {
 
 	Outputs     map[types.EgressType]OutputConfig `yaml:"-"`
 	OutputCount int
+	StreamOnly  bool
 
 	GstReady chan struct{}       `yaml:"-"`
 	Failure  chan error          `yaml:"-"`

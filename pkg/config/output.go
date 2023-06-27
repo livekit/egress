@@ -124,6 +124,10 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 		return errors.ErrInvalidInput("output")
 	}
 
+	if p.OutputCount == 1 && stream != nil {
+		p.StreamOnly = true
+	}
+
 	return nil
 }
 
@@ -156,6 +160,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 
 		p.Outputs[types.EgressTypeWebsocket] = conf
 		p.OutputCount = 1
+		p.StreamOnly = true
 
 	default:
 		return errors.ErrInvalidInput("output")
