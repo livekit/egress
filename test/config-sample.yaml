@@ -1,5 +1,4 @@
 log_level: error
-gst_debug: 1
 redis:
   address: 192.168.65.2:6379
 api_key: '****'
