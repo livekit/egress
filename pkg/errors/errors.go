@@ -18,6 +18,7 @@ var (
 	ErrProfileNotFound            = psrpc.NewErrorf(psrpc.NotFound, "profile not found")
 	ErrNoCompatibleCodec          = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")
 	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
+	ErrResourceExhausted          = psrpc.NewErrorf(psrpc.ResourceExhausted, "not enough CPU")
 )
 
 func New(err string) error {

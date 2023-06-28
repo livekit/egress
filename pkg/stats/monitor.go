@@ -2,6 +2,7 @@ package stats
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -24,9 +25,13 @@ type Monitor struct {
 	cpuStats *utils.CPUStats
 
 	pendingCPUs atomic.Float64
+	egressCount atomic.Int64
 }
 
-const cpuHoldDuration = time.Second * 5
+const (
+	cpuHoldDuration = time.Second * 5
+	breathingRoom   = 1.2
+)
 
 func NewMonitor(conf *config.ServiceConfig) *Monitor {
 	return &Monitor{
@@ -146,17 +151,15 @@ func (m *Monitor) GetCPULoad() float64 {
 func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 	accept := false
 
-	total := float64(m.cpuStats.NumCPU())
-	available := m.cpuStats.GetCPUIdle() - m.pendingCPUs.Load()
+	numCPU := float64(m.cpuStats.NumCPU())
 
-	if total-available <= 0.01 {
-		// if idle, add room for when cost == numCPUs
-		available += 0.01
-	} else {
-		// if not idle, leave 20% CPU
-		available -= total * 0.2
+	count := m.egressCount.Load()
+	reserved := m.pendingCPUs.Load()
+	if count > 0 {
+		reserved += (numCPU - m.cpuStats.GetCPUIdle()) * math.Pow(breathingRoom, float64(count))
 	}
 
+	available := numCPU - reserved
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
 		accept = available >= m.cpuCostConfig.RoomCompositeCpuCost
@@ -172,16 +175,18 @@ func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 }
 
 func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) {
+	m.egressCount.Inc()
+
 	var cpuHold float64
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		cpuHold = m.cpuCostConfig.RoomCompositeCpuCost * 1.2
+		cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
 	case *rpc.StartEgressRequest_Web:
-		cpuHold = m.cpuCostConfig.WebCpuCost * 1.2
+		cpuHold = m.cpuCostConfig.WebCpuCost
 	case *rpc.StartEgressRequest_TrackComposite:
-		cpuHold = m.cpuCostConfig.TrackCompositeCpuCost * 1.2
+		cpuHold = m.cpuCostConfig.TrackCompositeCpuCost
 	case *rpc.StartEgressRequest_Track:
-		cpuHold = m.cpuCostConfig.TrackCpuCost * 1.2
+		cpuHold = m.cpuCostConfig.TrackCpuCost
 	}
 
 	m.pendingCPUs.Add(cpuHold)
@@ -202,6 +207,8 @@ func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 }
 
 func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) {
+	m.egressCount.Dec()
+
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
 		m.requestGauge.With(prometheus.Labels{"type": "room_composite"}).Sub(1)
@@ -212,4 +219,8 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) {
 	case *rpc.StartEgressRequest_Track:
 		m.requestGauge.With(prometheus.Labels{"type": "track"}).Sub(1)
 	}
+}
+
+func (m *Monitor) EgressAborted() {
+	m.egressCount.Dec()
 }

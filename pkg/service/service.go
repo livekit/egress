@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/version"
 	"github.com/livekit/protocol/egress"
@@ -25,6 +27,8 @@ import (
 const shutdownTimer = time.Second * 30
 
 type Service struct {
+	mu sync.Mutex
+
 	conf        *config.ServiceConfig
 	rpcServerV0 egress.RPCServer
 	psrpcServer rpc.EgressInternalServer
@@ -107,11 +111,20 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 	ctx, span := tracer.Start(ctx, "Service.StartEgress")
 	defer span.End()
 
+	s.mu.Lock()
+	if !s.monitor.CanAcceptRequest(req) {
+		s.mu.Unlock()
+		return nil, errors.ErrResourceExhausted
+	}
+
 	s.monitor.AcceptRequest(req)
+	s.mu.Unlock()
+
 	logger.Infow("request received", "egressID", req.EgressId)
 
 	p, err := config.GetValidatedPipelineConfig(s.conf, req)
 	if err != nil {
+		s.monitor.EgressAborted()
 		return nil, err
 	}
 
@@ -126,6 +139,7 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 
 	err = s.manager.launchHandler(req, p.Info, 1)
 	if err != nil {
+		s.monitor.EgressAborted()
 		return nil, err
 	}
 
@@ -133,6 +147,9 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 }
 
 func (s *Service) StartEgressAffinity(req *rpc.StartEgressRequest) float32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if !s.monitor.CanAcceptRequest(req) {
 		// cannot accept
 		return -1
