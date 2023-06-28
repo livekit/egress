@@ -192,7 +192,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if !m.CanAcceptRequest(req) {
+	if !m.canAcceptRequest(req) {
 		return errors.ErrResourceExhausted
 	}
 
