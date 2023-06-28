@@ -107,11 +107,15 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 	ctx, span := tracer.Start(ctx, "Service.StartEgress")
 	defer span.End()
 
-	s.monitor.AcceptRequest(req)
+	if err := s.monitor.AcceptRequest(req); err != nil {
+		return nil, err
+	}
+
 	logger.Infow("request received", "egressID", req.EgressId)
 
 	p, err := config.GetValidatedPipelineConfig(s.conf, req)
 	if err != nil {
+		s.monitor.EgressAborted(req)
 		return nil, err
 	}
 
@@ -126,6 +130,7 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 
 	err = s.manager.launchHandler(req, p.Info, 1)
 	if err != nil {
+		s.monitor.EgressAborted(req)
 		return nil, err
 	}
 

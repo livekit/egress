@@ -97,6 +97,7 @@ func (s *ProcessManager) launchHandler(req *rpc.StartEgressRequest, info *liveki
 	}
 
 	s.monitor.EgressStarted(req)
+
 	h := &process{
 		handlerID: handlerID,
 		req:       req,
@@ -138,13 +139,12 @@ func (s *ProcessManager) awaitCleanup(h *process) {
 		s.onFatalError(h.info)
 	}
 
-	h.closed.Break()
 	s.monitor.EgressEnded(h.req)
+	h.closed.Break()
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	delete(s.activeHandlers, h.req.EgressId)
+	s.mu.Unlock()
 }
 
 func (s *ProcessManager) isIdle() bool {
