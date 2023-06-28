@@ -2,7 +2,6 @@ package stats
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"time"
 
@@ -151,15 +150,16 @@ func (m *Monitor) GetCPULoad() float64 {
 func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 	accept := false
 
-	numCPU := float64(m.cpuStats.NumCPU())
-
-	count := m.egressCount.Load()
-	reserved := m.pendingCPUs.Load()
-	if count > 0 {
-		reserved += (numCPU - m.cpuStats.GetCPUIdle()) * math.Pow(breathingRoom, float64(count))
+	total := float64(m.cpuStats.NumCPU())
+	available := m.cpuStats.GetCPUIdle() - m.pendingCPUs.Load()
+	if m.egressCount.Load() == 0 {
+		// if idle, add room for when cost == numCPUs
+		available = total
+	} else {
+		// if not idle, leave 20% CPU
+		available -= total * 0.2
 	}
 
-	available := numCPU - reserved
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
 		accept = available >= m.cpuCostConfig.RoomCompositeCpuCost
