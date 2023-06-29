@@ -19,7 +19,7 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/livekit/livekit-server v1.4.4-0.20230612120056-afa773374840
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.5.8-0.20230611030650-7d128913f3bd
+	github.com/livekit/protocol v1.5.8-0.20230629230710-0644d9a9796d
 	github.com/livekit/psrpc v0.3.1
 	github.com/livekit/server-sdk-go v1.0.13-0.20230627195802-c0bf772610ad
 	github.com/pion/rtp v1.7.13
@@ -71,6 +71,7 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jxskiss/base62 v1.1.0 // indirect
 	github.com/klauspost/compress v1.16.5 // indirect
+	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
 	github.com/livekit/mediatransportutil v0.0.0-20230612070454-d5299b956135 // indirect
 	github.com/mackerelio/go-osstat v0.2.4 // indirect
@@ -105,6 +106,7 @@ require (
 	github.com/thoas/go-funk v0.9.3 // indirect
 	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
+	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/goleak v1.1.12 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
