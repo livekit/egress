@@ -168,6 +168,12 @@ func (m *Monitor) canAcceptRequest(req *rpc.StartEgressRequest) bool {
 	total := float64(m.cpuStats.NumCPU())
 	available := m.cpuStats.GetCPUIdle() - m.pendingCPUs.Load()
 
+	logger.Debugw("cpu check",
+		"total", total,
+		"available", available,
+		"reserved", m.reserved,
+	)
+
 	if m.reserved == 0 {
 		available = total
 	} else if total-m.reserved < available {

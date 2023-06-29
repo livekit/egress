@@ -36,7 +36,6 @@ const (
 
 func (p *Pipeline) gstLog(level gst.DebugLevel, file, function string, line int, obj *glib.Object, message string) {
 	var lvl string
-	var debug bool
 	switch level {
 	case gst.LevelNone:
 		lvl = "none"
@@ -48,13 +47,10 @@ func (p *Pipeline) gstLog(level gst.DebugLevel, file, function string, line int,
 		lvl = "fixme"
 	case gst.LevelInfo:
 		lvl = "info"
-		debug = true
 	case gst.LevelDebug:
 		lvl = "debug"
-		debug = true
 	default:
 		lvl = "log"
-		debug = true
 	}
 
 	var msg string
@@ -70,11 +66,7 @@ func (p *Pipeline) gstLog(level gst.DebugLevel, file, function string, line int,
 			args = append(args, "object", name.(string))
 		}
 	}
-	if debug {
-		p.gstLogger.Debugw(msg, args...)
-	} else {
-		p.gstLogger.Infow(msg, args...)
-	}
+	p.gstLogger.Debugw(msg, args...)
 }
 
 func (p *Pipeline) messageWatch(msg *gst.Message) bool {
