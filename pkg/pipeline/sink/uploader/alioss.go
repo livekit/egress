@@ -11,6 +11,8 @@ import (
 )
 
 type AliOSSUploader struct {
+	baseUploader
+
 	conf *livekit.AliOSSUpload
 }
 

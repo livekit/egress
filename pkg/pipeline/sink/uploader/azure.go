@@ -13,6 +13,8 @@ import (
 )
 
 type AzureUploader struct {
+	baseUploader
+
 	conf      *livekit.AzureBlobUpload
 	container string
 }

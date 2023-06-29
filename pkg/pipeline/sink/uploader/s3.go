@@ -21,6 +21,8 @@ const (
 )
 
 type S3Uploader struct {
+	baseUploader
+
 	awsConfig *aws.Config
 	bucket    *string
 	metadata  map[string]*string

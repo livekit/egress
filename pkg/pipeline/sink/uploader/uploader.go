@@ -26,6 +26,7 @@ type Uploader struct {
 
 type uploader interface {
 	upload(string, string, types.OutputType) (string, int64, error)
+	cleanupFile(localFilepath string) error
 }
 
 func New(conf config.UploadConfig, backup string) (*Uploader, error) {
@@ -78,6 +79,14 @@ func (u *Uploader) Upload(localFilepath, storageFilepath string, outputType type
 	return "", 0, err
 }
 
+func (u *Uploader) CleanupFile(localFilepath string) error {
+	if u.backup != "" {
+		return nil
+	}
+
+	return u.cleanupFile(localFilepath)
+}
+
 type noOpUploader struct{}
 
 func (u *noOpUploader) upload(localFilepath, _ string, _ types.OutputType) (string, int64, error) {
@@ -89,6 +98,17 @@ func (u *noOpUploader) upload(localFilepath, _ string, _ types.OutputType) (stri
 	return localFilepath, stat.Size(), nil
 }
 
+func (u *noOpUploader) cleanupFile(localFilepath string) error {
+	return nil
+}
+
 func wrap(name string, err error) error {
 	return errors.Wrap(err, fmt.Sprintf("%s upload failed", name))
+}
+
+type baseUploader struct {
+}
+
+func (u *baseUploader) cleanupFile(localFilepath string) error {
+	return os.Remove(localFilepath)
 }

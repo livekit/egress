@@ -92,6 +92,8 @@ func (s *SegmentSink) Start() error {
 				return
 			}
 
+			s.CleanupFile(segmentLocalPath)
+
 			playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
 			playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
 			s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType)

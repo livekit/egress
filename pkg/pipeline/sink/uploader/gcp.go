@@ -17,6 +17,8 @@ import (
 )
 
 type GCPUploader struct {
+	baseUploader
+
 	conf *livekit.GCPUpload
 }
 
