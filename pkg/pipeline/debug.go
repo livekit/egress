@@ -84,7 +84,7 @@ func (p *Pipeline) uploadDebugFile(u *uploader.Uploader, data []byte, fileExtens
 		return
 	}
 
-	_, _, err = u.Upload(filepath, filename, types.OutputTypeBlob)
+	_, _, err = u.Upload(filepath, filename, types.OutputTypeBlob, false)
 	if err != nil {
 		logger.Errorw("failed to upload dotfile", err)
 		return

@@ -79,7 +79,7 @@ func (s *SegmentSink) Start() error {
 
 			segmentLocalPath := path.Join(s.LocalDir, update.filename)
 			segmentStoragePath := path.Join(s.StorageDir, update.filename)
-			_, size, err = s.Upload(segmentLocalPath, segmentStoragePath, s.getSegmentOutputType())
+			_, size, err = s.Upload(segmentLocalPath, segmentStoragePath, s.getSegmentOutputType(), true)
 			if err != nil {
 				return
 			}
@@ -92,11 +92,9 @@ func (s *SegmentSink) Start() error {
 				return
 			}
 
-			s.CleanupFile(segmentLocalPath)
-
 			playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
 			playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
-			s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType)
+			s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
 			if err != nil {
 				return
 			}
@@ -204,7 +202,7 @@ func (s *SegmentSink) Finalize() error {
 	// upload the finalized playlist
 	playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
 	playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
-	s.SegmentsInfo.PlaylistLocation, _, _ = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType)
+	s.SegmentsInfo.PlaylistLocation, _, _ = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
 
 	if !s.DisableManifest {
 		manifestLocalPath := fmt.Sprintf("%s.json", playlistLocalPath)

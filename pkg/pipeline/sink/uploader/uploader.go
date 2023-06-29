@@ -56,9 +56,13 @@ func New(conf config.UploadConfig, backup string) (*Uploader, error) {
 	return u, nil
 }
 
-func (u *Uploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
+func (u *Uploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool) (string, int64, error) {
 	location, size, err := u.upload(localFilepath, storageFilepath, outputType)
 	if err == nil {
+		if deleteAfterUpload {
+			u.cleanupFile(localFilepath)
+		}
+
 		return location, size, nil
 	}
 
@@ -79,14 +83,6 @@ func (u *Uploader) Upload(localFilepath, storageFilepath string, outputType type
 	return "", 0, err
 }
 
-func (u *Uploader) CleanupFile(localFilepath string) error {
-	if u.backup != "" {
-		return nil
-	}
-
-	return u.cleanupFile(localFilepath)
-}
-
 type noOpUploader struct{}
 
 func (u *noOpUploader) upload(localFilepath, _ string, _ types.OutputType) (string, int64, error) {
@@ -102,13 +98,13 @@ func (u *noOpUploader) cleanupFile(localFilepath string) error {
 	return nil
 }
 
-func wrap(name string, err error) error {
-	return errors.Wrap(err, fmt.Sprintf("%s upload failed", name))
-}
-
 type baseUploader struct {
 }
 
 func (u *baseUploader) cleanupFile(localFilepath string) error {
 	return os.Remove(localFilepath)
+}
+
+func wrap(name string, err error) error {
+	return errors.Wrap(err, fmt.Sprintf("%s upload failed", name))
 }

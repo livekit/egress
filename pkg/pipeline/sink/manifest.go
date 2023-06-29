@@ -41,7 +41,7 @@ func uploadManifest(p *config.PipelineConfig, u *uploader.Uploader, localFilepat
 		return err
 	}
 
-	_, _, err = u.Upload(localFilepath, storageFilepath, types.OutputTypeJSON)
+	_, _, err = u.Upload(localFilepath, storageFilepath, types.OutputTypeJSON, false)
 	return err
 }
 
