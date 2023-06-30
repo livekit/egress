@@ -520,7 +520,20 @@ func (p *Pipeline) stop() {
 		return
 	}
 
-	_ = p.pipeline.BlockSetState(gst.StateNull)
+	stateChange := make(chan error, 1)
+	go func() {
+		stateChange <- p.pipeline.BlockSetState(gst.StateNull)
+	}()
+
+	select {
+	case err := <-stateChange:
+		if err != nil {
+			logger.Errorw("SetStateNull failed", err)
+		}
+	case <-time.After(eosTimeout):
+		logger.Errorw("SetStateNull timed out", nil)
+	}
+
 	endedAt := time.Now().UnixNano()
 	logger.Infow("pipeline stopped")
 
