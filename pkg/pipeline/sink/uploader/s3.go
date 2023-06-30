@@ -21,7 +21,7 @@ const (
 )
 
 type S3Uploader struct {
-	baseUploader
+	*baseUploader
 
 	awsConfig *aws.Config
 	bucket    *string
@@ -29,7 +29,7 @@ type S3Uploader struct {
 	tagging   *string
 }
 
-func newS3Uploader(conf *livekit.S3Upload) (uploader, error) {
+func newS3Uploader(conf *livekit.S3Upload, backup string) (Uploader, error) {
 	awsConfig := &aws.Config{
 		MaxRetries:       aws.Int(maxRetries), // Switching to v2 of the aws Go SDK would allow to set a maxDelay as well.
 		S3ForcePathStyle: aws.Bool(conf.ForcePathStyle),
@@ -48,6 +48,8 @@ func newS3Uploader(conf *livekit.S3Upload) (uploader, error) {
 		awsConfig: awsConfig,
 		bucket:    aws.String(conf.Bucket),
 	}
+
+	u.baseUploader = newBaseUploader(backup, u.upload)
 
 	if u.awsConfig.Region == nil {
 		region, err := u.getBucketLocation()

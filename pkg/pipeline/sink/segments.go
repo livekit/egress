@@ -21,7 +21,7 @@ import (
 const maxPendingUploads = 100
 
 type SegmentSink struct {
-	*uploader.Uploader
+	uploader.Uploader
 
 	conf *config.PipelineConfig
 	*config.SegmentConfig
@@ -44,7 +44,7 @@ type SegmentUpdate struct {
 	filename string
 }
 
-func newSegmentSink(u *uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig) (*SegmentSink, error) {
+func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig) (*SegmentSink, error) {
 	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
 	playlist, err := m3u8.NewPlaylistWriter(playlistName, o.SegmentDuration)
 	if err != nil {

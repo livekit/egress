@@ -11,13 +11,13 @@ import (
 )
 
 type FileSink struct {
-	*uploader.Uploader
+	uploader.Uploader
 
 	conf *config.PipelineConfig
 	*config.FileConfig
 }
 
-func newFileSink(u *uploader.Uploader, conf *config.PipelineConfig, o *config.FileConfig) *FileSink {
+func newFileSink(u uploader.Uploader, conf *config.PipelineConfig, o *config.FileConfig) *FileSink {
 	return &FileSink{
 		Uploader:   u,
 		conf:       conf,
