@@ -13,15 +13,21 @@ import (
 )
 
 type AzureUploader struct {
+	*baseUploader
+
 	conf      *livekit.AzureBlobUpload
 	container string
 }
 
-func newAzureUploader(conf *livekit.AzureBlobUpload) (uploader, error) {
-	return &AzureUploader{
+func newAzureUploader(conf *livekit.AzureBlobUpload, backup string) (Uploader, error) {
+	u := &AzureUploader{
 		conf:      conf,
 		container: fmt.Sprintf("https://%s.blob.core.windows.net/%s", conf.AccountName, conf.ContainerName),
-	}, nil
+	}
+
+	u.baseUploader = newBaseUploader(backup, u.upload)
+
+	return u, nil
 }
 
 func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {

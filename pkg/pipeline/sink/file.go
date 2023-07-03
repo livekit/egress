@@ -11,13 +11,13 @@ import (
 )
 
 type FileSink struct {
-	*uploader.Uploader
+	uploader.Uploader
 
 	conf *config.PipelineConfig
 	*config.FileConfig
 }
 
-func newFileSink(u *uploader.Uploader, conf *config.PipelineConfig, o *config.FileConfig) *FileSink {
+func newFileSink(u uploader.Uploader, conf *config.PipelineConfig, o *config.FileConfig) *FileSink {
 	return &FileSink{
 		Uploader:   u,
 		conf:       conf,
@@ -30,7 +30,7 @@ func (s *FileSink) Start() error {
 }
 
 func (s *FileSink) Finalize() error {
-	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType)
+	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
 	if err != nil {
 		return err
 	}

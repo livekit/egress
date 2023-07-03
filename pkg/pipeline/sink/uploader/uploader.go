@@ -19,45 +19,52 @@ const (
 	maxDelay   = time.Second * 5
 )
 
-type Uploader struct {
-	uploader
-	backup string
+type Uploader interface {
+	Upload(string, string, types.OutputType, bool) (string, int64, error)
 }
 
-type uploader interface {
-	upload(string, string, types.OutputType) (string, int64, error)
-}
+func New(conf config.UploadConfig, backup string) (Uploader, error) {
+	var u Uploader
 
-func New(conf config.UploadConfig, backup string) (*Uploader, error) {
-	u := &Uploader{
-		backup: backup,
-	}
-
-	var i uploader
 	var err error
 	switch c := conf.(type) {
 	case *livekit.S3Upload:
-		i, err = newS3Uploader(c)
+		u, err = newS3Uploader(c, backup)
 	case *livekit.GCPUpload:
-		i, err = newGCPUploader(c)
+		u, err = newGCPUploader(c, backup)
 	case *livekit.AzureBlobUpload:
-		i, err = newAzureUploader(c)
+		u, err = newAzureUploader(c, backup)
 	case *livekit.AliOSSUpload:
-		i, err = newAliOSSUploader(c)
+		u, err = newAliOSSUploader(c, backup)
 	default:
-		i = &noOpUploader{}
+		u = &noOpUploader{}
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	u.uploader = i
 	return u, nil
 }
 
-func (u *Uploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
+type baseUploader struct {
+	backup string
+	upload func(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error)
+}
+
+func newBaseUploader(backup string, upload func(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error)) *baseUploader {
+	return &baseUploader{
+		backup: backup,
+		upload: upload,
+	}
+}
+
+func (u *baseUploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool) (string, int64, error) {
 	location, size, err := u.upload(localFilepath, storageFilepath, outputType)
 	if err == nil {
+		if deleteAfterUpload {
+			os.Remove(localFilepath)
+		}
+
 		return location, size, nil
 	}
 
@@ -80,13 +87,17 @@ func (u *Uploader) Upload(localFilepath, storageFilepath string, outputType type
 
 type noOpUploader struct{}
 
-func (u *noOpUploader) upload(localFilepath, _ string, _ types.OutputType) (string, int64, error) {
+func (u *noOpUploader) Upload(localFilepath, _ string, _ types.OutputType, deleteAfterUpload bool) (string, int64, error) {
 	stat, err := os.Stat(localFilepath)
 	if err != nil {
 		return "", 0, err
 	}
 
 	return localFilepath, stat.Size(), nil
+}
+
+func (u *noOpUploader) cleanupFile(localFilepath string) error {
+	return nil
 }
 
 func wrap(name string, err error) error {
