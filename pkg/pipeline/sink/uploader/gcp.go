@@ -17,19 +17,13 @@ import (
 )
 
 type GCPUploader struct {
-	*baseUploader
-
 	conf *livekit.GCPUpload
 }
 
-func newGCPUploader(conf *livekit.GCPUpload, backup string) (Uploader, error) {
-	u := &GCPUploader{
+func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
+	return &GCPUploader{
 		conf: conf,
-	}
-
-	u.baseUploader = newBaseUploader(backup, u.upload)
-
-	return u, nil
+	}, nil
 }
 
 func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {

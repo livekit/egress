@@ -11,19 +11,13 @@ import (
 )
 
 type AliOSSUploader struct {
-	*baseUploader
-
 	conf *livekit.AliOSSUpload
 }
 
-func newAliOSSUploader(conf *livekit.AliOSSUpload, backup string) (Uploader, error) {
-	u := &AliOSSUploader{
+func newAliOSSUploader(conf *livekit.AliOSSUpload) (uploader, error) {
+	return &AliOSSUploader{
 		conf: conf,
-	}
-
-	u.baseUploader = newBaseUploader(backup, u.upload)
-
-	return u, nil
+	}, nil
 }
 
 func (u *AliOSSUploader) upload(localFilePath, requestedPath string, _ types.OutputType) (string, int64, error) {
