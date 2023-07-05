@@ -19,19 +19,36 @@ import (
 )
 
 const (
+	// watch errors
 	msgClockProblem           = "GStreamer error: clock problem."
 	msgStreamingNotNegotiated = "streaming stopped, reason not-negotiated (-4)"
 	msgMuxer                  = ":muxer"
-	msgFragmentOpened         = "splitmuxsink-fragment-opened"
-	msgFragmentClosed         = "splitmuxsink-fragment-closed"
-	msgFirstSampleMetadata    = "FirstSampleMetadata"
-
-	fragmentLocation    = "location"
-	fragmentRunningTime = "running-time"
 
 	elementGstRtmp2Sink = "GstRtmp2Sink"
 	elementGstAppSrc    = "GstAppSrc"
 	elementSplitMuxSink = "GstSplitMuxSink"
+
+	// watch elements
+	msgFirstSampleMetadata = "FirstSampleMetadata"
+	msgFragmentOpened      = "splitmuxsink-fragment-opened"
+	msgFragmentClosed      = "splitmuxsink-fragment-closed"
+
+	fragmentLocation    = "location"
+	fragmentRunningTime = "running-time"
+
+	// common gst errors
+	msgWrongThread = "Called from wrong thread"
+
+	// common gst warnings
+	msgKeyframe         = "Could not request a keyframe. Files may not split at the exact location they should"
+	msgLatencyQuery     = "Latency query failed"
+	msgTaps             = "can't find exact taps"
+	msgInputDisappeared = "Can't copy metadata because input buffer disappeared"
+
+	// common gst fixmes
+	msgStreamStart       = "stream-start event without group-id. Consider implementing group-id handling in the upstream elements"
+	msgCreatingStream    = "Creating random stream-id, consider implementing a deterministic way of creating a stream-id"
+	msgAggregateSubclass = "Subclass should call gst_aggregator_selected_samples() from its aggregate implementation."
 )
 
 func (p *Pipeline) gstLog(level gst.DebugLevel, file, function string, line int, obj *glib.Object, message string) {
@@ -40,11 +57,29 @@ func (p *Pipeline) gstLog(level gst.DebugLevel, file, function string, line int,
 	case gst.LevelNone:
 		lvl = "none"
 	case gst.LevelError:
-		lvl = "error"
+		switch message {
+		case msgWrongThread:
+			// ignore
+			return
+		default:
+			lvl = "error"
+		}
 	case gst.LevelWarning:
-		lvl = "warning"
+		switch message {
+		case msgKeyframe, msgLatencyQuery, msgTaps, msgInputDisappeared:
+			// ignore
+			return
+		default:
+			lvl = "warning"
+		}
 	case gst.LevelFixMe:
-		lvl = "fixme"
+		switch message {
+		case msgStreamStart, msgCreatingStream, msgAggregateSubclass:
+			// ignore
+			return
+		default:
+			lvl = "fixme"
+		}
 	case gst.LevelInfo:
 		lvl = "info"
 	case gst.LevelDebug:
