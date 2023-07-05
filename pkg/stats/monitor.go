@@ -48,7 +48,7 @@ func NewMonitor(conf *config.ServiceConfig) *Monitor {
 
 func (m *Monitor) Start(conf *config.ServiceConfig, isAvailable func() float64) error {
 	cpuStats, err := utils.NewCPUStats(func(idle float64) {
-		m.promCPULoad.Set(1 - idle/float64(m.cpuStats.NumCPU()))
+		m.promCPULoad.Set(1 - idle/m.cpuStats.NumCPU())
 	})
 	if err != nil {
 		return err
@@ -129,7 +129,7 @@ func (m *Monitor) checkCPUConfig() error {
 		recommendedMinimum = 3
 	}
 
-	if float64(m.cpuStats.NumCPU()) < requirements[0] {
+	if m.cpuStats.NumCPU() < requirements[0] {
 		logger.Errorw("not enough cpu", nil,
 			"minimum cpu", requirements[0],
 			"recommended", recommendedMinimum,
@@ -138,7 +138,7 @@ func (m *Monitor) checkCPUConfig() error {
 		return errors.New("not enough cpu")
 	}
 
-	if float64(m.cpuStats.NumCPU()) < requirements[len(requirements)-1] {
+	if m.cpuStats.NumCPU() < requirements[len(requirements)-1] {
 		logger.Errorw("not enough cpu for some egress types", nil,
 			"minimum cpu", requirements[len(requirements)-1],
 			"recommended", recommendedMinimum,
@@ -152,7 +152,7 @@ func (m *Monitor) checkCPUConfig() error {
 }
 
 func (m *Monitor) GetCPULoad() float64 {
-	return (float64(m.cpuStats.NumCPU()) - m.cpuStats.GetCPUIdle()) / float64(m.cpuStats.NumCPU()) * 100
+	return (m.cpuStats.NumCPU() - m.cpuStats.GetCPUIdle()) / m.cpuStats.NumCPU() * 100
 }
 
 func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
@@ -165,7 +165,7 @@ func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 func (m *Monitor) canAcceptRequest(req *rpc.StartEgressRequest) bool {
 	accept := false
 
-	total := float64(m.cpuStats.NumCPU())
+	total := m.cpuStats.NumCPU()
 	available := m.cpuStats.GetCPUIdle() - m.pendingCPUs.Load()
 
 	logger.Debugw("cpu check",
