@@ -13,7 +13,7 @@ import (
 	"github.com/livekit/mageutil"
 )
 
-const gstVersion = "1.22.0"
+const gstVersion = "1.22.4"
 
 type packageInfo struct {
 	Dir string
