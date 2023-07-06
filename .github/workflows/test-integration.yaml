@@ -58,5 +58,4 @@ jobs:
             -e EGRESS_CONFIG_STRING="$(echo ${{ secrets.EGRESS_CONFIG_STRING }} | base64 -d)" \
             -e S3_UPLOAD="$(echo ${{ secrets.S3_UPLOAD }} | base64 -d)" \
             -e GCP_UPLOAD="$(echo ${{ secrets.GCP_UPLOAD }} | base64 -d)" \
-            -v /workspace/test:/out \
             egress-test

@@ -130,9 +130,7 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 		return errors.Fatal(errors.ErrProcessStartFailed(err))
 	}
 
-	out := b.String()
-	logger.Infow("pulse", "output", out)
-	s.pulseSink = strings.TrimRight(out, "\n")
+	s.pulseSink = strings.TrimRight(b.String(), "\n")
 	return nil
 }
 
