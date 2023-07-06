@@ -73,7 +73,7 @@ COPY --from=0 /workspace/test.test .
 COPY build/test/entrypoint.sh .
 
 # create output directory
-RUN mkdir /workspace/test/output && chmod 4777 /workspace/test/output
+RUN mkdir -p /workspace/test/output && chmod 777 /workspace/test/output
 
 # run tests
 USER egress

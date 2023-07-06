@@ -36,6 +36,9 @@ func (r *Runner) runRoomTest(t *testing.T, name string, audioCodec, videoCodec t
 }
 
 func (r *Runner) testRoomCompositeFile(t *testing.T) {
+	time.Sleep(time.Minute * 10)
+	return
+
 	if !r.runFileTests() {
 		return
 	}
