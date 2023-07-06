@@ -137,7 +137,7 @@ func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replac
 		tempDir := path.Join(p.LocalOutputDirectory, p.Info.EgressId)
 
 		// create temporary directory
-		if err := os.Mkdir(tempDir, 0755); err != nil {
+		if err := os.MkdirAll(tempDir, 0755); err != nil {
 			return err
 		}
 

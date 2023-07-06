@@ -8,9 +8,6 @@ pulseaudio -D --verbose --exit-idle-time=-1 --disallow-exit
 # Run RTSP server
 ./rtsp-simple-server > /dev/null 2>&1 &
 
-ls -la /out
-ls -la /out/output
-
 # Run tests
 if [[ -z ${GITHUB_WORKFLOW+x} ]]; then
   exec ./test.test -test.v -test.timeout 20m
