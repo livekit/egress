@@ -9,7 +9,6 @@ import (
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 )
 
 type FileConfig struct {
@@ -127,7 +126,6 @@ func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replac
 	if o.UploadConfig == nil {
 		if dir != "" {
 			// create local directory
-			logger.Debugw(fmt.Sprintf("creating dir %s", dir))
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				return err
 			}
@@ -139,8 +137,7 @@ func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replac
 		tempDir := path.Join(p.LocalOutputDirectory, p.Info.EgressId)
 
 		// create temporary directory
-		logger.Debugw(fmt.Sprintf("creating tempDir %s", tempDir))
-		if err := os.MkdirAll(tempDir, 0755); err != nil {
+		if err := os.Mkdir(tempDir, 0755); err != nil {
 			return err
 		}
 
