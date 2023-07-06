@@ -74,10 +74,12 @@ cd src
 ./build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
 gclient runhooks
 gn gen out/default --args='target_cpu="arm64" proprietary_codecs=true ffmpeg_branding="Chrome" enable_nacl=false is_debug=false symbol_level=0 v8_symbol_level=0 dcheck_always_on=false is_official_build=true'
-autoninja -C out/default chrome
+autoninja -C out/default chrome chrome_sandbox
+cd out/default
 zip arm64.zip \
   chrome \
   chrome-wrapper \
+  chrome_sandbox \
   chrome_100_percent.pak \
   chrome_200_percent.pak \
   chrome_crashpad_handler \
@@ -97,5 +99,6 @@ exit
 ```
 ```shell
 scp root@$CHROME_BUILDER:/home/chrome/chromium/src/out/default/arm64.zip ~/livekit/egress/build/chrome/arm64.zip
-unzip ~/livekit/egress/build/chrome/arm64.zip && rm ~/livekit/egress/build/chrome/arm64.zip
+cd ~/livekit/egress/build/chrome
+mkdir arm64 && unzip arm64.zip -d arm64 && rm arm64.zip
 ```

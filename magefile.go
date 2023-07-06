@@ -13,7 +13,12 @@ import (
 	"github.com/livekit/mageutil"
 )
 
-const gstVersion = "1.22.4"
+const (
+	gstVersion      = "1.22.4"
+	chromiumVersion = "117.0.5874.0"
+	dockerBuild     = "docker build"
+	dockerBuildX    = "docker buildx build --push --platform linux/amd64,linux/arm64"
+)
 
 type packageInfo struct {
 	Dir string
@@ -116,7 +121,10 @@ func BuildChrome() error {
 func PublishChrome() error {
 	return mageutil.Run(context.Background(),
 		"docker pull ubuntu:22.04",
-		"docker buildx build --push --platform linux/amd64,linux/arm64 -t livekit/chrome-installer ./build/chrome",
+		fmt.Sprintf(
+			"%s -t livekit/chrome-installer:%s ./build/chrome",
+			dockerBuildX, chromiumVersion,
+		),
 	)
 }
 
@@ -128,11 +136,11 @@ func BuildTemplate() error {
 }
 
 func BuildGStreamer() error {
-	return buildGstreamer("docker build")
+	return buildGstreamer(dockerBuild)
 }
 
 func PublishGStreamer() error {
-	return buildGstreamer("docker buildx build --push --platform linux/amd64,linux/arm64")
+	return buildGstreamer(dockerBuildX)
 }
 
 func buildGstreamer(cmd string) error {
