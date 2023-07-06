@@ -44,22 +44,24 @@ RUN apt-get update && \
 
 # install chrome
 COPY --from=livekit/chrome-installer:latest /chrome-installer /chrome-installer
-RUN /chrome-installer/install-chrome "$TARGETPLATFORM" && \
-    rm -rf /chrome-installer
+RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 
-# setup
-RUN adduser root pulse-access && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    mkdir -pv ~/.cache/xdgr
+# clean up
+RUN rm -rf /var/lib/apt/lists/*
 
-# update env
-ENV PATH=${PATH}:/chrome
-ENV XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr
+# create egress user
+RUN useradd -ms /bin/bash -g root -G sudo,pulse,pulse-access egress
+RUN mkdir -pv home/egress/.cache/xdgr && \
+    chown -R egress /home/egress && \
+    chmod 777 /home/egress
 
-# egress
+# copy files
 COPY --from=0 /workspace/egress /bin/
+COPY build/egress/entrypoint.sh /
 
 # run
-COPY build/egress/entrypoint.sh /
+USER egress
+ENV PATH=${PATH}:/chrome
+ENV XDG_RUNTIME_DIR=/home/egress/.cache/xdgr
+ENV CHROME_DEVEL_SANDBOX=/usr/local/sbin/chrome-devel-sandbox
 ENTRYPOINT ["/entrypoint.sh"]

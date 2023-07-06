@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -exo pipefail
 
-# Start pulseaudio as system wide daemon; for debugging it helps to start in non-daemon mode
+# Start pulseaudio
 rm -rf /var/run/pulse /var/lib/pulse /home/egress/.config/pulse
 pulseaudio -D --verbose --exit-idle-time=-1 --disallow-exit
 
 # Run RTSP server
-#./rtsp-simple-server &
+./rtsp-simple-server > /dev/null 2>&1 &
 
 # Run tests
 if [[ -z ${GITHUB_WORKFLOW+x} ]]; then

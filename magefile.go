@@ -104,7 +104,7 @@ func Integration(configFile string) error {
 
 func Build() error {
 	return mageutil.Run(context.Background(),
-		"docker pull livekit/chrome-installer",
+		fmt.Sprintf("docker pull livekit/chrome-installer:%s", chromiumVersion),
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
 		"docker pull livekit/egress-templates",
 		"docker build -t livekit/egress:latest -f build/egress/Dockerfile .",
