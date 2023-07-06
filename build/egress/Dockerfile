@@ -52,8 +52,7 @@ RUN rm -rf /var/lib/apt/lists/*
 # create egress user
 RUN useradd -ms /bin/bash -g root -G sudo,pulse,pulse-access egress
 RUN mkdir -pv home/egress/.cache/xdgr && \
-    chown -R egress /home/egress && \
-    chmod 777 /home/egress
+    chown -R egress /home/egress
 
 # copy files
 COPY --from=0 /workspace/egress /bin/
