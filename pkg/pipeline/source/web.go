@@ -130,7 +130,9 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 		return errors.Fatal(errors.ErrProcessStartFailed(err))
 	}
 
-	s.pulseSink = strings.TrimRight(b.String(), "\n")
+	out := b.String()
+	logger.Infow("pulse", "output", out)
+	s.pulseSink = strings.TrimRight(out, "\n")
 	return nil
 }
 
@@ -141,7 +143,7 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 
 	dims := fmt.Sprintf("%dx%dx%d", p.Width, p.Height, p.Depth)
 	logger.Debugw("launching xvfb", "display", p.Display, "dims", dims)
-	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp")
+	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
 	xvfb.Stderr = &errorLogger{cmd: "xvfb"}
 	if err := xvfb.Start(); err != nil {
 		return errors.Fatal(errors.ErrProcessStartFailed(err))
@@ -190,7 +192,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		chromedp.Flag("disable-default-apps", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.Flag("disable-extensions", true),
-		chromedp.Flag("disable-features", "site-per-process,TranslateUI,BlinkGenPropertyTrees"),
+		chromedp.Flag("disable-features", "AudioServiceOutOfProcess,site-per-process,TranslateUI,BlinkGenPropertyTrees"),
 		chromedp.Flag("disable-hang-monitor", true),
 		chromedp.Flag("disable-ipc-flooding-protection", true),
 		chromedp.Flag("disable-popup-blocking", true),
@@ -204,7 +206,6 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		chromedp.Flag("use-mock-keychain", true),
 
 		// custom args
-		// TODO: chromedp.Flag("no-sandbox", false),
 		chromedp.Flag("kiosk", true),
 		chromedp.Flag("enable-automation", false),
 		chromedp.Flag("autoplay-policy", "no-user-gesture-required"),

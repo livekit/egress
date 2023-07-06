@@ -49,8 +49,8 @@ func (r *Runner) testWebFile(t *testing.T) {
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_Web{
 				Web: &livekit.WebEgressRequest{
-					Url:         webUrl,
-					VideoOnly:   true,
+					Url: webUrl,
+					// VideoOnly:   true,
 					FileOutputs: []*livekit.EncodedFileOutput{fileOutput},
 				},
 			},

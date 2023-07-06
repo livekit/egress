@@ -31,7 +31,7 @@ const (
 	redactedBadUrl1 = "rtmp://sfo.contribute.live-video.net/app/{f...1}"
 	badStreamUrl2   = "rtmp://localhost:1936/live/stream"
 	redactedBadUrl2 = "rtmp://localhost:1936/live/{st...am}"
-	webUrl          = "https://www.youtube.com/watch?v=wjQq0nSGS28&t=5205s"
+	webUrl          = "https://videoplayer-2k23.vercel.app/videos/eminem"
 )
 
 var (
