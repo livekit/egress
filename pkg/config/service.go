@@ -80,6 +80,9 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	if conf.LocalOutputDirectory == "." {
 		conf.LocalOutputDirectory = os.TempDir()
 	}
+	if err := os.MkdirAll(conf.LocalOutputDirectory, 0755); err != nil {
+		return nil, err
+	}
 
 	if err := conf.initLogger("nodeID", conf.NodeID, "clusterID", conf.ClusterID); err != nil {
 		return nil, err

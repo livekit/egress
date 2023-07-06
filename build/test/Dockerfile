@@ -49,9 +49,11 @@ RUN apt-get update && \
         gstreamer1.0-plugins-base-
 
 # install chrome
-COPY --from=livekit/chrome-installer:latest /chrome-installer /chrome-installer
-RUN /chrome-installer/install-chrome "$TARGETPLATFORM" && \
-    rm -rf /chrome-installer
+COPY --from=livekit/chrome-installer:117.0.5874.0 /chrome-installer /chrome-installer
+RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
+
+# clean up
+RUN rm -rf /var/lib/apt/lists/*
 
 # install rtsp server
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64v8; else ARCH=amd64; fi && \
@@ -59,27 +61,23 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64v8; else ARCH=amd64
     tar -zxvf rtsp-simple-server_v0.17.6_linux_${ARCH}.tar.gz && \
     rm rtsp-simple-server_v0.17.6_linux_${ARCH}.tar.gz
 
-# add root user to group for pulseaudio access
-RUN adduser root pulse-access
+# create egress user
+RUN useradd -ms /bin/bash -g root -G sudo,pulse,pulse-access egress
+RUN mkdir -pv home/egress/.cache/xdgr && \
+    chown -R egress /home/egress
 
-# clean up
-RUN rm -rf /var/lib/apt/lists/* && \
-    rm -rf /var/run/pulse /var/lib/pulse /root/.config/pulse && \
-    mkdir -pv ~/.cache/xdgr
-
-# update env
-ENV PATH=${PATH}:/chrome
-ENV XDG_RUNTIME_DIR=$PATH:~/.cache/xdgr
-ENV RTSP_LOGDESTINATIONS=file
-
+# copy files
 COPY test/ /workspace/test/
-
-# egress
 COPY --from=0 /workspace/egress /bin/
-
-# test
 COPY --from=0 /workspace/test.test .
-
-# run
 COPY build/test/entrypoint.sh .
+
+# create output directory
+RUN mkdir -p /out/output && chown egress /out/output
+
+# run tests
+USER egress
+ENV PATH=${PATH}:/chrome
+ENV XDG_RUNTIME_DIR=/home/egress/.cache/xdgr
+ENV CHROME_DEVEL_SANDBOX=/usr/local/sbin/chrome-devel-sandbox
 ENTRYPOINT ["./entrypoint.sh"]

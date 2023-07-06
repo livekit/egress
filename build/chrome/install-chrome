@@ -3,7 +3,6 @@ set -euxo pipefail
 
 if [ "$1" = "linux/arm64" ]
 then
-  mv /chrome-installer/arm64/ /chrome
   apt-get update
   apt-get install -y \
     ca-certificates \
@@ -37,6 +36,10 @@ then
     libxrender1 \
     libxss1 \
     libxtst6
+  mv /chrome-installer/arm64/ /chrome
+  cp /chrome/chrome_sandbox /usr/local/sbin/chrome-devel-sandbox
+  chown root:root /usr/local/sbin/chrome-devel-sandbox
+  chmod 4755 /usr/local/sbin/chrome-devel-sandbox
 else
   wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
   apt-get install -y ./google-chrome-stable_current_amd64.deb
@@ -48,3 +51,5 @@ unzip chromedriver_linux64.zip
 chmod +x chromedriver
 mv -f chromedriver /usr/local/bin/chromedriver
 rm chromedriver_linux64.zip
+
+rm -rf /chrome-installer
