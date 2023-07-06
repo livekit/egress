@@ -15,6 +15,11 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+const (
+	pingPeriod  = time.Second * 30
+	readTimeout = time.Minute
+)
+
 type WebsocketSink struct {
 	mu     sync.Mutex
 	conn   *websocket.Conn
@@ -30,33 +35,50 @@ func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*Websock
 	if err != nil {
 		return nil, err
 	}
-
-	s := &WebsocketSink{
+	return &WebsocketSink{
 		conn: conn,
-	}
-	go s.keepAlive()
-
-	return s, nil
+	}, nil
 }
 
 func (s *WebsocketSink) Start() error {
-	return nil
-}
-
-func (s *WebsocketSink) keepAlive() {
-	ticker := time.NewTicker(time.Second * 10)
-	defer ticker.Stop()
-
-	for {
-		<-ticker.C
+	// override default ping handler to include locking
+	s.conn.SetPingHandler(func(_ string) error {
 		s.mu.Lock()
-		if s.closed.Load() {
-			s.mu.Unlock()
-			return
+		defer s.mu.Unlock()
+
+		_ = s.conn.WriteMessage(websocket.PongMessage, []byte("pong"))
+		return nil
+	})
+
+	// read loop is required for the ping handler to receive pings
+	go func() {
+		for {
+			_ = s.conn.SetReadDeadline(time.Now().Add(readTimeout))
+			_, _, _ = s.conn.ReadMessage()
+			if s.closed.Load() {
+				return
+			}
 		}
-		_ = s.conn.WriteMessage(websocket.PingMessage, []byte("ping"))
-		s.mu.Unlock()
-	}
+	}()
+
+	// write loop for sending pings
+	go func() {
+		ticker := time.NewTicker(pingPeriod)
+		defer ticker.Stop()
+
+		for {
+			<-ticker.C
+			s.mu.Lock()
+			if s.closed.Load() {
+				s.mu.Unlock()
+				return
+			}
+			_ = s.conn.WriteMessage(websocket.PingMessage, []byte("ping"))
+			s.mu.Unlock()
+		}
+	}()
+
+	return nil
 }
 
 func (s *WebsocketSink) Write(p []byte) (int, error) {
