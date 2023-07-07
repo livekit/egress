@@ -146,7 +146,7 @@ func (m *Monitor) checkCPUConfig() error {
 		)
 	}
 
-	logger.Infow(fmt.Sprintf("available CPU cores: %d max cost: %f", m.cpuStats.NumCPU(), requirements[len(requirements)-1]))
+	logger.Infow(fmt.Sprintf("cpu available: %f max cost: %f", m.cpuStats.NumCPU(), requirements[len(requirements)-1]))
 
 	return nil
 }
