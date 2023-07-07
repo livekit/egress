@@ -63,7 +63,7 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64v8; else ARCH=amd64
 
 # create egress user
 RUN useradd -ms /bin/bash -g root -G sudo,pulse,pulse-access egress
-RUN mkdir -pv home/egress/.cache/xdgr && \
+RUN mkdir -p home/egress/tmp home/egress/.cache/xdgr && \
     chown -R egress /home/egress
 
 # copy files
@@ -71,9 +71,6 @@ COPY test/ /workspace/test/
 COPY --from=0 /workspace/egress /bin/
 COPY --from=0 /workspace/test.test .
 COPY build/test/entrypoint.sh .
-
-# create output directory
-RUN mkdir -p /out/output && chown egress /out/output
 
 # run tests
 USER egress

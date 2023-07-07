@@ -66,7 +66,7 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 
 				fileOutput := &livekit.EncodedFileOutput{
 					FileType: test.fileType,
-					Filepath: getFilePath(r.ServiceConfig, test.filename),
+					Filepath: r.getFilePath(test.filename),
 				}
 				if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.AzureUpload != nil {
 					fileOutput.Filepath = test.filename
@@ -163,7 +163,7 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 					}
 
 					segmentOutput := &livekit.SegmentedFileOutput{
-						FilenamePrefix: getFilePath(r.ServiceConfig, test.filename),
+						FilenamePrefix: r.getFilePath(test.filename),
 						PlaylistName:   test.playlist,
 						FilenameSuffix: test.filenameSuffix,
 					}
@@ -222,7 +222,7 @@ func (r *Runner) testTrackCompositeMulti(t *testing.T) {
 							Protocol: livekit.StreamProtocol_RTMP,
 						}},
 						SegmentOutputs: []*livekit.SegmentedFileOutput{{
-							FilenamePrefix: getFilePath(r.ServiceConfig, "tc_multiple_{time}"),
+							FilenamePrefix: r.getFilePath("tc_multiple_{time}"),
 							PlaylistName:   "tc_multiple_{time}",
 						}},
 					},

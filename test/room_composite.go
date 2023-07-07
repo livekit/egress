@@ -70,7 +70,7 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 			r.runRoomTest(t, test.name, types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
 				fileOutput := &livekit.EncodedFileOutput{
 					FileType: test.fileType,
-					Filepath: getFilePath(r.ServiceConfig, test.filename),
+					Filepath: r.getFilePath(test.filename),
 				}
 				if r.S3Upload != nil {
 					fileOutput.Filepath = test.filename
@@ -194,7 +194,7 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 		}
 
 		segmentOutput := &livekit.SegmentedFileOutput{
-			FilenamePrefix: getFilePath(r.ServiceConfig, test.filename),
+			FilenamePrefix: r.getFilePath(test.filename),
 			PlaylistName:   test.playlist,
 			FilenameSuffix: test.filenameSuffix,
 		}
@@ -242,7 +242,7 @@ func (r *Runner) testRoomCompositeMulti(t *testing.T) {
 					Layout:   "grid-light",
 					FileOutputs: []*livekit.EncodedFileOutput{{
 						FileType: livekit.EncodedFileType_MP4,
-						Filepath: getFilePath(r.ServiceConfig, "rc_multiple_{time}"),
+						Filepath: r.getFilePath("rc_multiple_{time}"),
 					}},
 					StreamOutputs: []*livekit.StreamOutput{{
 						Protocol: livekit.StreamProtocol_RTMP,

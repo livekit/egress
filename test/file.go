@@ -66,7 +66,7 @@ func (r *Runner) verifyFile(t *testing.T, p *config.PipelineConfig, res *livekit
 
 	// download from cloud storage
 	if uploadConfig := p.GetFileConfig().UploadConfig; uploadConfig != nil {
-		localPath = fmt.Sprintf("%s/%s", r.LocalOutputDirectory, storagePath)
+		localPath = fmt.Sprintf("%s/%s", r.FilePrefix, storagePath)
 		download(t, uploadConfig, localPath, storagePath)
 		download(t, uploadConfig, localPath+".json", storagePath+".json")
 	}

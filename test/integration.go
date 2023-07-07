@@ -13,7 +13,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
@@ -232,7 +231,7 @@ func (r *Runner) createDotFile(t *testing.T, egressID string) {
 	require.NoError(t, err)
 
 	filename := strings.ReplaceAll(t.Name()[11:], "/", "_")
-	filepath := fmt.Sprintf("%s/%s.dot", r.LocalOutputDirectory, filename)
+	filepath := fmt.Sprintf("%s/%s.dot", r.FilePrefix, filename)
 	f, err := os.Create(filepath)
 	require.NoError(t, err)
 	defer f.Close()
@@ -268,10 +267,10 @@ func (r *Runner) stopEgress(t *testing.T, egressID string) *livekit.EgressInfo {
 	return res
 }
 
-func getFilePath(conf *config.ServiceConfig, filename string) string {
-	if conf.S3 != nil || conf.Azure != nil || conf.GCP != nil || conf.AliOSS != nil {
+func (r *Runner) getFilePath(filename string) string {
+	if r.S3 != nil || r.Azure != nil || r.GCP != nil || r.AliOSS != nil {
 		return filename
 	}
 
-	return fmt.Sprintf("%s/%s", conf.LocalOutputDirectory, filename)
+	return fmt.Sprintf("%s/%s", r.FilePrefix, filename)
 }

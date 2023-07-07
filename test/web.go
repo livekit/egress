@@ -36,7 +36,7 @@ func (r *Runner) testWebFile(t *testing.T) {
 
 	r.runWebTest(t, "Web/File", func(t *testing.T) {
 		fileOutput := &livekit.EncodedFileOutput{
-			Filepath: getFilePath(r.ServiceConfig, "web_{time}"),
+			Filepath: r.getFilePath("web_{time}"),
 		}
 		if r.GCPUpload != nil {
 			fileOutput.Filepath = "web_{time}"
@@ -94,7 +94,7 @@ func (r *Runner) testWebSegments(t *testing.T) {
 
 	r.runWebTest(t, "Web/Segments", func(t *testing.T) {
 		segmentOutput := &livekit.SegmentedFileOutput{
-			FilenamePrefix: getFilePath(r.ServiceConfig, "web_{time}"),
+			FilenamePrefix: r.getFilePath("web_{time}"),
 			PlaylistName:   "web_{time}.m3u8",
 		}
 		if r.AzureUpload != nil {
@@ -134,10 +134,10 @@ func (r *Runner) testWebMulti(t *testing.T) {
 					Url: webUrl,
 					FileOutputs: []*livekit.EncodedFileOutput{{
 						FileType: livekit.EncodedFileType_MP4,
-						Filepath: getFilePath(r.ServiceConfig, "web-multiple"),
+						Filepath: r.getFilePath("web-multiple"),
 					}},
 					SegmentOutputs: []*livekit.SegmentedFileOutput{{
-						FilenamePrefix: getFilePath(r.ServiceConfig, "web_multiple_{time}"),
+						FilenamePrefix: r.getFilePath("web_multiple_{time}"),
 						PlaylistName:   "web_multiple_{time}",
 					}},
 				},

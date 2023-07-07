@@ -19,13 +19,12 @@ type BaseConfig struct {
 	WsUrl     string             `yaml:"ws_url"`     // (env LIVEKIT_WS_URL)
 
 	// optional
-	Logging              logger.Config           `yaml:"logging"`         // logging config
-	TemplateBase         string                  `yaml:"template_base"`   // custom template base url
-	LocalOutputDirectory string                  `yaml:"local_directory"` // used for temporary storage before upload
-	BackupStorage        string                  `yaml:"backup_storage"`  // backup file location for failed uploads
-	ClusterID            string                  `yaml:"cluster_id"`      // cluster this instance belongs to
-	StorageConfig        `yaml:",inline"`        // upload config (S3, Azure, GCP, or AliOSS)
-	SessionLimits        `yaml:"session_limits"` // session duration limits
+	Logging       logger.Config           `yaml:"logging"`        // logging config
+	TemplateBase  string                  `yaml:"template_base"`  // custom template base url
+	BackupStorage string                  `yaml:"backup_storage"` // backup file location for failed uploads
+	ClusterID     string                  `yaml:"cluster_id"`     // cluster this instance belongs to
+	StorageConfig `yaml:",inline"`        // upload config (S3, Azure, GCP, or AliOSS)
+	SessionLimits `yaml:"session_limits"` // session duration limits
 
 	// dev/debugging
 	Insecure bool        `yaml:"insecure"` // allow chrome to connect to an insecure websocket

@@ -10,6 +10,7 @@ import (
 
 	"github.com/tinyzimmer/go-gst/gst"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/pprof"
@@ -69,7 +70,7 @@ func (p *Pipeline) uploadPProf(u uploader.Uploader) {
 
 func (p *Pipeline) uploadDebugFile(u uploader.Uploader, data []byte, fileExtension string) {
 	filename := fmt.Sprintf("%s%s", p.Info.EgressId, fileExtension)
-	filepath := path.Join(p.LocalOutputDirectory, filename)
+	filepath := path.Join(config.TmpDir, filename)
 
 	f, err := os.Create(filepath)
 	if err != nil {
