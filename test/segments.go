@@ -59,12 +59,12 @@ func (r *Runner) verifySegments(t *testing.T, p *config.PipelineConfig, filename
 	// download from cloud storage
 	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
 		base := storedPlaylistPath[:len(storedPlaylistPath)-5]
-		localPlaylistPath = fmt.Sprintf("%s/%s", r.LocalOutputDirectory, storedPlaylistPath)
+		localPlaylistPath = fmt.Sprintf("%s/%s", r.FilePrefix, storedPlaylistPath)
 		download(t, uploadConfig, localPlaylistPath, storedPlaylistPath)
 		download(t, uploadConfig, localPlaylistPath+".json", storedPlaylistPath+".json")
 		for i := 0; i < int(segments.SegmentCount); i++ {
 			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
-			localPath := fmt.Sprintf("%s/%s", r.LocalOutputDirectory, cloudPath)
+			localPath := fmt.Sprintf("%s/%s", r.FilePrefix, cloudPath)
 			download(t, uploadConfig, localPath, cloudPath)
 		}
 	}

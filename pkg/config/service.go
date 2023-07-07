@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"path"
 
 	"gopkg.in/yaml.v3"
 
@@ -12,6 +11,8 @@ import (
 )
 
 const (
+	TmpDir = "/home/egress/tmp"
+
 	roomCompositeCpuCost  = 4
 	webCpuCost            = 4
 	trackCompositeCpuCost = 2
@@ -74,14 +75,6 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 
 	if conf.TemplateBase == "" {
 		conf.TemplateBase = fmt.Sprintf(defaultTemplateBaseTemplate, conf.TemplatePort)
-	}
-
-	conf.LocalOutputDirectory = path.Clean(conf.LocalOutputDirectory)
-	if conf.LocalOutputDirectory == "." {
-		conf.LocalOutputDirectory = os.TempDir()
-	}
-	if err := os.MkdirAll(conf.LocalOutputDirectory, 0755); err != nil {
-		return nil, err
 	}
 
 	if err := conf.initLogger("nodeID", conf.NodeID, "clusterID", conf.ClusterID); err != nil {

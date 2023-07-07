@@ -134,7 +134,7 @@ func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replac
 		o.LocalFilepath = o.StorageFilepath
 	} else {
 		// prepend the configuration base directory and the egress Id
-		tempDir := path.Join(p.LocalOutputDirectory, p.Info.EgressId)
+		tempDir := path.Join(TmpDir, p.Info.EgressId)
 
 		// create temporary directory
 		if err := os.MkdirAll(tempDir, 0755); err != nil {

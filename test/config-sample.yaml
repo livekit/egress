@@ -4,7 +4,7 @@ redis:
 api_key: '****'
 api_secret: '****'
 ws_url: 'wss://your.livekit.url'
-local_directory: /out/output
+file_prefix: /out/output
 s3:
   access_key: '****'
   secret: '****'

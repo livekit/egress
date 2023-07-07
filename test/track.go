@@ -74,7 +74,7 @@ func (r *Runner) testTrackFile(t *testing.T) {
 					TrackId:  trackID,
 					Output: &livekit.TrackEgressRequest_File{
 						File: &livekit.DirectFileOutput{
-							Filepath: getFilePath(r.ServiceConfig, test.filename),
+							Filepath: r.getFilePath(test.filename),
 						},
 					},
 				}
@@ -116,7 +116,7 @@ func (r *Runner) testTrackStream(t *testing.T) {
 					trackID = videoTrackID
 				}
 
-				filepath := getFilePath(r.ServiceConfig, test.filename)
+				filepath := r.getFilePath(test.filename)
 				wss := newTestWebsocketServer(filepath)
 				s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
 				defer func() {

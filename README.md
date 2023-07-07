@@ -64,7 +64,6 @@ logging:
   json: true
 template_base: can be used to host custom templates (default https://egress-composite.livekit.io)
 insecure: can be used to connect to an insecure websocket (default false)
-local_directory: base path where to store media files before they get uploaded to blob storage. This does not affect the storage path if no upload location is given.
 cpu_cost: # optionally override cpu cost estimation, used when accepting or denying requests
   room_composite_cpu_cost: 3.0
   web_cpu_cost: 3.0
@@ -212,7 +211,6 @@ api_secret: your-api-secret
 ws_url: wss://your-livekit-url.com
 redis:
   address: 192.168.65.2:6379
-local_directory: /out/output
 room_name: your-room
 room_only: false
 web_only: false

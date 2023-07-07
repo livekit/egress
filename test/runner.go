@@ -39,6 +39,7 @@ type Runner struct {
 	AzureUpload           *livekit.AzureBlobUpload `yaml:"-"`
 
 	// testing config
+	FilePrefix              string `yaml:"file_prefix"`
 	RoomName                string `yaml:"room_name"`
 	RoomTestsOnly           bool   `yaml:"room_only"`
 	ParticipantTestsOnly    bool   `yaml:"participant_only"`
