@@ -260,9 +260,9 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	now := time.Now().UnixNano()
 
 	// add stream outputs first
-	for _, url := range req.AddOutputUrls {
+	for _, rawUrl := range req.AddOutputUrls {
 		// validate and redact url
-		redacted, err := p.ValidateUrl(url, types.OutputTypeRTMP)
+		url, redacted, err := p.ValidateUrl(rawUrl, types.OutputTypeRTMP)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
@@ -294,8 +294,9 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	}
 
 	// remove stream outputs
-	for _, url := range req.RemoveOutputUrls {
-		if err := p.removeSink(ctx, url, nil); err != nil {
+	for _, rawUrl := range req.RemoveOutputUrls {
+		url, _, err := p.ValidateUrl(rawUrl, types.OutputTypeRTMP)
+		if err = p.removeSink(ctx, url, nil); err != nil {
 			errs.AppendErr(err)
 		} else {
 			sendUpdate = true
