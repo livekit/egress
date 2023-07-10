@@ -265,7 +265,7 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 
 			filepath, t, err := getSegmentParamsFromGstStructure(s)
 			if err != nil {
-				logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "runningTime", t)
+				logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "running_time", t)
 				return err
 			}
 
