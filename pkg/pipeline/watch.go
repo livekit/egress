@@ -254,7 +254,7 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 			}
 
 			if err = p.getSegmentSink().StartSegment(filepath, t); err != nil {
-				logger.Errorw("failed to register new segment with playlist writer", err, "location", filepath, "running time", t)
+				logger.Errorw("failed to register new segment with playlist writer", err, "location", filepath, "running_time", t)
 				return err
 			}
 
@@ -265,17 +265,17 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 
 			filepath, t, err := getSegmentParamsFromGstStructure(s)
 			if err != nil {
-				logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "running time", t)
+				logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "runningTime", t)
 				return err
 			}
 
-			logger.Debugw("fragment closed", "location", filepath, "running time", t)
+			logger.Debugw("fragment closed", "location", filepath, "running_time", t)
 
 			// We need to dispatch to a queue to:
 			// 1. Avoid concurrent access to the SegmentsInfo structure
 			// 2. Ensure that playlists are uploaded in the same order they are enqueued to avoid an older playlist overwriting a newer one
 			if err = p.getSegmentSink().EnqueueSegmentUpload(filepath, t); err != nil {
-				logger.Errorw("failed to end segment with playlist writer", err, "running time", t)
+				logger.Errorw("failed to end segment with playlist writer", err, "running_time", t)
 				return err
 			}
 
@@ -284,7 +284,7 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 			if err != nil {
 				return err
 			}
-			logger.Debugw("received FirstSampleMetadata message", "startDate", startDate)
+			logger.Debugw("received FirstSampleMetadata message", "start_date", startDate)
 
 			p.getSegmentSink().UpdateStartDate(startDate)
 		}

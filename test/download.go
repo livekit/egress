@@ -26,7 +26,7 @@ import (
 )
 
 func download(t *testing.T, uploadParams interface{}, localFilepath, storageFilepath string) {
-	logger.Debugw("download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
+	logger.Debugw("download", "local_filepath", localFilepath, "storage_filepath", storageFilepath)
 	switch u := uploadParams.(type) {
 	case *livekit.S3Upload:
 		downloadS3(t, u, localFilepath, storageFilepath)

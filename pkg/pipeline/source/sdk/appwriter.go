@@ -3,7 +3,6 @@ package sdk
 import (
 	"fmt"
 	"io"
-	"math"
 	"net"
 	"time"
 
@@ -179,11 +178,10 @@ func (w *AppWriter) run() {
 	stats := w.GetTrackStats()
 	loss := w.buffer.PacketLoss()
 	w.logger.Infow("writer finished",
-		"sample duration rtp", math.Round(stats.AvgSampleDuration),
-		"sample duration ns", w.GetFrameDuration(),
-		"avg drift", time.Duration(stats.AvgDrift),
-		"max drift", stats.MaxDrift,
-		"packet loss", fmt.Sprintf("%.2f%%", loss),
+		"sample_duration", w.GetFrameDuration(),
+		"avg_drift", time.Duration(stats.AvgDrift),
+		"max_drift", stats.MaxDrift,
+		"packet_loss", fmt.Sprintf("%.2f%%", loss*100),
 	)
 
 	w.finished.Break()
