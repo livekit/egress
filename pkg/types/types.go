@@ -173,7 +173,7 @@ func GetOutputTypeCompatibleWithCodecs(types []OutputType, audioCodecs map[MimeT
 }
 
 func IsOutputTypeCompatibleWithCodecs(ot OutputType, codecs map[MimeType]bool) bool {
-	for k, _ := range codecs {
+	for k := range codecs {
 		if CodecCompatibility[ot][k] {
 			return true
 		}
@@ -184,7 +184,7 @@ func IsOutputTypeCompatibleWithCodecs(ot OutputType, codecs map[MimeType]bool) b
 func GetMapIntersection[K comparable](mapA map[K]bool, mapB map[K]bool) map[K]bool {
 	res := make(map[K]bool)
 
-	for k, _ := range mapA {
+	for k := range mapA {
 		if mapB[k] {
 			res[k] = true
 		}

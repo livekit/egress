@@ -197,20 +197,20 @@ func sendUpdate(ctx context.Context, c rpc.IOInfoClient, info *livekit.EgressInf
 	case livekit.EgressStatus_EGRESS_FAILED:
 		logger.Warnw("egress failed", errors.New(info.Error),
 			"egressID", info.EgressId,
-			"request_type", requestType,
-			"output_type", outputType,
+			"requestType", requestType,
+			"outputType", outputType,
 		)
 	case livekit.EgressStatus_EGRESS_COMPLETE:
 		logger.Infow("egress completed",
 			"egressID", info.EgressId,
-			"request_type", requestType,
-			"output_type", outputType,
+			"requestType", requestType,
+			"outputType", outputType,
 		)
 	default:
 		logger.Infow("egress updated",
 			"egressID", info.EgressId,
-			"request_type", requestType,
-			"output_type", outputType,
+			"requestType", requestType,
+			"outputType", outputType,
 			"status", info.Status,
 		)
 	}

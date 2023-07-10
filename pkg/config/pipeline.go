@@ -387,7 +387,7 @@ func (p *PipelineConfig) validateAndUpdateOutputParams() error {
 		}
 		if p.AudioOutCodec == "" {
 			// No default codec found. Pick a random compatible one
-			for k, _ := range compatibleAudioCodecs {
+			for k := range compatibleAudioCodecs {
 				p.AudioOutCodec = k
 			}
 		}
@@ -402,7 +402,7 @@ func (p *PipelineConfig) validateAndUpdateOutputParams() error {
 		}
 		if p.VideoOutCodec == "" {
 			// No default codec found. Pick a random compatible one
-			for k, _ := range compatibleVideoCodecs {
+			for k := range compatibleVideoCodecs {
 				p.VideoOutCodec = k
 			}
 		}

@@ -144,20 +144,20 @@ func (h *HandlerV0) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
 	case livekit.EgressStatus_EGRESS_FAILED:
 		logger.Warnw("egress failed", errors.New(info.Error),
 			"egressID", info.EgressId,
-			"request_type", requestType,
-			"output_type", outputType,
+			"requestType", requestType,
+			"outputType", outputType,
 		)
 	case livekit.EgressStatus_EGRESS_COMPLETE:
 		logger.Infow("egress completed",
 			"egressID", info.EgressId,
-			"request_type", requestType,
-			"output_type", outputType,
+			"requestType", requestType,
+			"outputType", outputType,
 		)
 	default:
 		logger.Infow("egress updated",
 			"egressID", info.EgressId,
-			"request_type", requestType,
-			"output_type", outputType,
+			"requestType", requestType,
+			"outputType", outputType,
 			"status", info.Status,
 		)
 	}

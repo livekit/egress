@@ -122,8 +122,8 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 	requestType, outputType := getTypes(p.Info)
 	logger.Infow("request validated",
 		"egressID", req.EgressId,
-		"request_type", requestType,
-		"output_type", outputType,
+		"requestType", requestType,
+		"outputType", outputType,
 		"room", p.Info.RoomName,
 		"request", p.Info.Request,
 	)
