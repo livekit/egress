@@ -296,6 +296,11 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 	// remove stream outputs
 	for _, rawUrl := range req.RemoveOutputUrls {
 		url, _, err := p.ValidateUrl(rawUrl, types.OutputTypeRTMP)
+		if err != nil {
+			errs.AppendErr(err)
+			continue
+		}
+
 		if err = p.removeSink(ctx, url, nil); err != nil {
 			errs.AppendErr(err)
 		} else {
