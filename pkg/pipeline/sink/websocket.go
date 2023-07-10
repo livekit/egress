@@ -15,10 +15,7 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-const (
-	pingPeriod  = time.Second * 30
-	readTimeout = time.Minute
-)
+const pingPeriod = time.Second * 30
 
 type WebsocketSink struct {
 	mu     sync.Mutex
@@ -52,9 +49,16 @@ func (s *WebsocketSink) Start() error {
 
 	// read loop is required for the ping handler to receive pings
 	go func() {
+		errCount := 0
 		for {
-			_ = s.conn.SetReadDeadline(time.Now().Add(readTimeout))
-			_, _, _ = s.conn.ReadMessage()
+			_, _, err := s.conn.ReadMessage()
+			if err != nil {
+				errCount++
+			}
+			if errCount > 100 {
+				logger.Errorw("closing websocket reader", err)
+				return
+			}
 			if s.closed.Load() {
 				return
 			}
