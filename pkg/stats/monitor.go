@@ -89,30 +89,30 @@ func (m *Monitor) Start(conf *config.ServiceConfig, isAvailable func() float64) 
 func (m *Monitor) checkCPUConfig() error {
 	if m.cpuCostConfig.RoomCompositeCpuCost < 2.5 {
 		logger.Warnw("room composite requirement too low", nil,
-			"config_value", m.cpuCostConfig.RoomCompositeCpuCost,
-			"minimum_value", 2.5,
-			"recommended_value", 3,
+			"configValue", m.cpuCostConfig.RoomCompositeCpuCost,
+			"minimumValue", 2.5,
+			"recommendedValue", 3,
 		)
 	}
 	if m.cpuCostConfig.WebCpuCost < 2.5 {
 		logger.Warnw("web requirement too low", nil,
-			"config_value", m.cpuCostConfig.WebCpuCost,
-			"minimum_value", 2.5,
-			"recommended_value", 3,
+			"configValue", m.cpuCostConfig.WebCpuCost,
+			"minimumValue", 2.5,
+			"recommendedValue", 3,
 		)
 	}
 	if m.cpuCostConfig.TrackCompositeCpuCost < 1 {
 		logger.Warnw("track composite requirement too low", nil,
-			"config_value", m.cpuCostConfig.TrackCompositeCpuCost,
-			"minimum_value", 1,
-			"recommended_value", 2,
+			"configValue", m.cpuCostConfig.TrackCompositeCpuCost,
+			"minimumValue", 1,
+			"recommendedValue", 2,
 		)
 	}
 	if m.cpuCostConfig.TrackCpuCost < 0.5 {
 		logger.Warnw("track requirement too low", nil,
-			"config_value", m.cpuCostConfig.RoomCompositeCpuCost,
-			"minimum_value", 0.5,
-			"recommended_value", 1,
+			"configValue", m.cpuCostConfig.RoomCompositeCpuCost,
+			"minimumValue", 0.5,
+			"recommendedValue", 1,
 		)
 	}
 
@@ -131,7 +131,7 @@ func (m *Monitor) checkCPUConfig() error {
 
 	if m.cpuStats.NumCPU() < requirements[0] {
 		logger.Errorw("not enough cpu", nil,
-			"minimum_cpu", requirements[0],
+			"minimumCpu", requirements[0],
 			"recommended", recommendedMinimum,
 			"available", m.cpuStats.NumCPU(),
 		)
@@ -140,7 +140,7 @@ func (m *Monitor) checkCPUConfig() error {
 
 	if m.cpuStats.NumCPU() < requirements[len(requirements)-1] {
 		logger.Errorw("not enough cpu for some egress types", nil,
-			"minimum_cpu", requirements[len(requirements)-1],
+			"minimumCpu", requirements[len(requirements)-1],
 			"recommended", recommendedMinimum,
 			"available", m.cpuStats.NumCPU(),
 		)

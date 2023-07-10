@@ -178,10 +178,10 @@ func (w *AppWriter) run() {
 	stats := w.GetTrackStats()
 	loss := w.buffer.PacketLoss()
 	w.logger.Infow("writer finished",
-		"sample_duration", fmt.Sprint(w.GetFrameDuration()),
-		"avg_drift", fmt.Sprint(time.Duration(stats.AvgDrift)),
-		"max_drift", fmt.Sprint(stats.MaxDrift),
-		"packet_loss", fmt.Sprintf("%.2f%%", loss*100),
+		"sampleDuration", fmt.Sprint(w.GetFrameDuration()),
+		"avgDrift", fmt.Sprint(time.Duration(stats.AvgDrift)),
+		"maxDrift", fmt.Sprint(stats.MaxDrift),
+		"packetLoss", fmt.Sprintf("%.2f%%", loss*100),
 	)
 
 	w.finished.Break()
