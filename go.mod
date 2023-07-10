@@ -19,9 +19,9 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/livekit/livekit-server v1.4.4-0.20230612120056-afa773374840
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.5.8
+	github.com/livekit/protocol v1.5.9
 	github.com/livekit/psrpc v0.3.1
-	github.com/livekit/server-sdk-go v1.0.14-0.20230703221333-f852f2619683
+	github.com/livekit/server-sdk-go v1.0.14-0.20230710162205-84a425768a90
 	github.com/pion/rtp v1.7.13
 	github.com/pion/webrtc/v3 v3.2.11
 	github.com/pkg/errors v0.9.1
@@ -111,7 +111,7 @@ require (
 	go.uber.org/goleak v1.1.12 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/crypto v0.11.0 // indirect
-	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1 // indirect
+	golang.org/x/exp v0.0.0-20230626212559-97b1e661b5df // indirect
 	golang.org/x/net v0.12.0 // indirect
 	golang.org/x/oauth2 v0.9.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
