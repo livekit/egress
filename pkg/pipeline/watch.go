@@ -284,7 +284,7 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 			if err != nil {
 				return err
 			}
-			logger.Debugw("received FirstSampleMetadata message", "start_date", startDate)
+			logger.Debugw("received FirstSampleMetadata message", "startDate", startDate)
 
 			p.getSegmentSink().UpdateStartDate(startDate)
 		}
