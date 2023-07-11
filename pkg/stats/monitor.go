@@ -56,7 +56,7 @@ func (m *Monitor) Start(conf *config.ServiceConfig, isAvailable func() float64) 
 
 	m.cpuStats = cpuStats
 
-	if err := m.checkCPUConfig(); err != nil {
+	if err = m.checkCPUConfig(); err != nil {
 		return err
 	}
 

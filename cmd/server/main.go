@@ -144,14 +144,15 @@ func runService(c *cli.Context) error {
 
 	svc.StartDebugHandlers()
 
-	return svc.Run()
+	err = svc.Run()
+	svc.Close()
+	return err
 }
 
 func runHandler(c *cli.Context) error {
 	configBody := c.String("config")
 	if configBody == "" {
-		err := errors.ErrNoConfig
-		return err
+		return errors.ErrNoConfig
 	}
 
 	req := &rpc.StartEgressRequest{}

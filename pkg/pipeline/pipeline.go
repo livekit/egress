@@ -269,7 +269,7 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 		}
 
 		// add stream
-		if err := p.out.AddStream(url); err != nil {
+		if err = p.out.AddStream(url); err != nil {
 			errs.AppendErr(err)
 			continue
 		}
