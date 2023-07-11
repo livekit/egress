@@ -2,7 +2,9 @@ package sink
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,9 +20,10 @@ import (
 const pingPeriod = time.Second * 30
 
 type WebsocketSink struct {
-	mu     sync.Mutex
-	conn   *websocket.Conn
-	closed atomic.Bool
+	mu      sync.Mutex
+	conn    *websocket.Conn
+	closed  atomic.Bool
+	errChan chan error
 }
 
 func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*WebsocketSink, error) {
@@ -33,7 +36,8 @@ func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*Websock
 		return nil, err
 	}
 	return &WebsocketSink{
-		conn: conn,
+		conn:    conn,
+		errChan: make(chan error, 1),
 	}, nil
 }
 
@@ -52,14 +56,21 @@ func (s *WebsocketSink) Start() error {
 		errCount := 0
 		for {
 			_, _, err := s.conn.ReadMessage()
-			if err != nil {
-				errCount++
-			}
-			if errCount > 100 {
-				logger.Errorw("closing websocket reader", err)
+			if s.closed.Load() {
 				return
 			}
-			if s.closed.Load() {
+			if err != nil {
+				_, isCloseError := err.(*websocket.CloseError)
+				if isCloseError || errors.Is(err, io.EOF) || strings.HasSuffix(err.Error(), "use of closed network connection") {
+					s.errChan <- err
+					s.closed.Store(true)
+					return
+				}
+				errCount++
+			}
+			// reads will panic after 1000 errors, break loop before that happens
+			if errCount > 100 {
+				logger.Errorw("closing websocket reader", err)
 				return
 			}
 		}
@@ -89,7 +100,12 @@ func (s *WebsocketSink) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed.Load() {
-		return 0, errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
+		select {
+		case err := <-s.errChan:
+			return 0, err
+		default:
+			return 0, errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
+		}
 	}
 
 	return len(p), s.conn.WriteMessage(websocket.BinaryMessage, p)
