@@ -13,9 +13,9 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
-	"github.com/livekit/egress/pkg/pprof"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/pprof"
 )
 
 func (p *Pipeline) GetGstPipelineDebugDot() string {

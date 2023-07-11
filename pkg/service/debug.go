@@ -9,8 +9,8 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
-	"github.com/livekit/egress/pkg/pprof"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/pprof"
 	"github.com/livekit/psrpc"
 )
 
