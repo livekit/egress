@@ -31,10 +31,11 @@ func (s *Service) runV0() error {
 		select {
 		case <-shutdown:
 			logger.Infow("shutting down")
-			s.psrpcServer.Shutdown()
+			s.psrpcServer.DeregisterStartEgressTopic(s.conf.ClusterID)
 			for !s.manager.isIdle() {
 				time.Sleep(shutdownTimer)
 			}
+			s.psrpcServer.Shutdown()
 			return nil
 
 		case msg := <-requests.Channel():

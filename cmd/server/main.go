@@ -144,7 +144,9 @@ func runService(c *cli.Context) error {
 
 	svc.StartDebugHandlers()
 
-	return svc.Run()
+	err = svc.Run()
+	svc.Close()
+	return err
 }
 
 func runHandler(c *cli.Context) error {

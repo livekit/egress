@@ -30,6 +30,10 @@ func (r *Runner) runSDKTest(t *testing.T, name string, audioCodec, videoCodec ty
 		r.awaitIdle(t)
 		audioTrackID, videoTrackID := r.publishSamplesToRoom(t, audioCodec, videoCodec)
 		f(t, audioTrackID, videoTrackID)
+		if t.Failed() {
+			r.svc.Reset()
+			go r.svc.Run()
+		}
 	})
 }
 

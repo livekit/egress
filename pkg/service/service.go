@@ -54,11 +54,6 @@ func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 eg
 	}
 	s.psrpcServer = psrpcServer
 
-	err = s.psrpcServer.RegisterStartEgressTopic(conf.ClusterID)
-	if err != nil {
-		return nil, err
-	}
-
 	if conf.PrometheusPort > 0 {
 		s.promServer = &http.Server{
 			Addr:    fmt.Sprintf(":%d", conf.PrometheusPort),
@@ -70,20 +65,24 @@ func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 eg
 		return nil, err
 	}
 
+	if s.promServer != nil {
+		promListener, err := net.Listen("tcp", s.promServer.Addr)
+		if err != nil {
+			return nil, err
+		}
+		go func() {
+			_ = s.promServer.Serve(promListener)
+		}()
+	}
+
 	return s, nil
 }
 
 func (s *Service) Run() error {
 	logger.Debugw("starting service", "version", version.Version)
 
-	if s.promServer != nil {
-		promListener, err := net.Listen("tcp", s.promServer.Addr)
-		if err != nil {
-			return err
-		}
-		go func() {
-			_ = s.promServer.Serve(promListener)
-		}()
+	if err := s.psrpcServer.RegisterStartEgressTopic(s.conf.ClusterID); err != nil {
+		return err
 	}
 
 	if s.rpcServerV0 != nil {
@@ -91,16 +90,18 @@ func (s *Service) Run() error {
 	}
 
 	logger.Infow("service ready")
-
 	<-s.shutdown.Watch()
 	logger.Infow("shutting down")
-	s.psrpcServer.DeregisterStartEgressTopic(s.conf.ClusterID)
-	for !s.manager.isIdle() {
-		time.Sleep(shutdownTimer)
-	}
-	s.psrpcServer.Shutdown()
 
 	return nil
+}
+
+func (s *Service) Reset() {
+	if !s.shutdown.IsBroken() {
+		s.Stop(false)
+	}
+
+	s.shutdown = core.NewFuse()
 }
 
 func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
@@ -181,7 +182,9 @@ func (s *Service) onFatalError(info *livekit.EgressInfo) {
 }
 
 func (s *Service) Stop(kill bool) {
-	s.shutdown.Break()
+	s.shutdown.Once(func() {
+		s.psrpcServer.DeregisterStartEgressTopic(s.conf.ClusterID)
+	})
 	if kill {
 		s.manager.killAll()
 	}
@@ -189,4 +192,12 @@ func (s *Service) Stop(kill bool) {
 
 func (s *Service) KillAll() {
 	s.manager.killAll()
+}
+
+func (s *Service) Close() {
+	for !s.manager.isIdle() {
+		time.Sleep(shutdownTimer)
+	}
+	logger.Infow("closing server")
+	s.psrpcServer.Shutdown()
 }

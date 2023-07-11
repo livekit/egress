@@ -140,11 +140,11 @@ func (r *Runner) Run(t *testing.T, bus psrpc.MessageBus, templateFs fs.FS) {
 	err = svc.StartTemplatesServer(templateFs)
 	require.NoError(t, err)
 
-	go func() {
-		err := svc.Run()
-		require.NoError(t, err)
-	}()
-	t.Cleanup(func() { svc.Stop(true) })
+	go svc.Run()
+	t.Cleanup(func() {
+		svc.Stop(true)
+		svc.Close()
+	})
 	time.Sleep(time.Second * 3)
 
 	// subscribe to update channel

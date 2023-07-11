@@ -26,6 +26,10 @@ func (r *Runner) runWebTest(t *testing.T, name string, f func(t *testing.T)) {
 	t.Run(name, func(t *testing.T) {
 		r.awaitIdle(t)
 		f(t)
+		if t.Failed() {
+			r.svc.Reset()
+			go r.svc.Run()
+		}
 	})
 }
 
