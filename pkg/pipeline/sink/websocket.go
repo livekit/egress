@@ -18,9 +18,10 @@ import (
 const pingPeriod = time.Second * 30
 
 type WebsocketSink struct {
-	mu     sync.Mutex
-	conn   *websocket.Conn
-	closed atomic.Bool
+	mu      sync.Mutex
+	conn    *websocket.Conn
+	closed  atomic.Bool
+	errChan chan error
 }
 
 func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*WebsocketSink, error) {
@@ -33,7 +34,8 @@ func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*Websock
 		return nil, err
 	}
 	return &WebsocketSink{
-		conn: conn,
+		conn:    conn,
+		errChan: make(chan error, 1),
 	}, nil
 }
 
@@ -53,6 +55,11 @@ func (s *WebsocketSink) Start() error {
 		for {
 			_, _, err := s.conn.ReadMessage()
 			if err != nil {
+				if _, ok := err.(*websocket.CloseError); ok {
+					s.errChan <- err
+					s.closed.Store(true)
+					return
+				}
 				errCount++
 			}
 			if errCount > 100 {
@@ -89,7 +96,12 @@ func (s *WebsocketSink) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed.Load() {
-		return 0, errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
+		select {
+		case err := <-s.errChan:
+			return 0, err
+		default:
+			return 0, errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
+		}
 	}
 
 	return len(p), s.conn.WriteMessage(websocket.BinaryMessage, p)
