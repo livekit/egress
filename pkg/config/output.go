@@ -3,8 +3,8 @@ package config
 import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/egress/pkg/util"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils"
 )
 
 type OutputConfig interface {
@@ -191,7 +191,7 @@ func redactEncodedOutputs(out EncodedOutput) {
 
 func redactStreamKeys(stream *livekit.StreamOutput) {
 	for i, url := range stream.Urls {
-		if redacted, ok := util.RedactStreamKey(url); ok {
+		if redacted, ok := utils.RedactStreamKey(url); ok {
 			stream.Urls[i] = redacted
 		}
 	}

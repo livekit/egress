@@ -18,10 +18,10 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/egress/pkg/util"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
+	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -350,7 +350,7 @@ func (p *Pipeline) removeSink(ctx context.Context, url string, streamErr error) 
 	p.mu.Unlock()
 
 	// log removal
-	redacted, _ := util.RedactStreamKey(url)
+	redacted, _ := utils.RedactStreamKey(url)
 	logger.Infow("removing stream sink",
 		"url", redacted,
 		"status", streamInfo.Status,
