@@ -57,13 +57,15 @@ redis:
   db: redis db
 
 # optional fields
-health_port: if used, will open an http port for health checks
-prometheus_port: port used to collect prometheus metrics. Used for autoscaling
+health_port: port used for http health checks (default 0)
+template_port: port used to host default templates (default 7980)
+prometheus_port: port used to collect prometheus metrics (default 0)
+debug_handler_port: port used to host http debug handlers (default 0)
 logging:
   level: debug, info, warn, or error (default info)
   json: true
 template_base: can be used to host custom templates (default https://egress-composite.livekit.io)
-insecure: can be used to connect to an insecure websocket (default false)
+backup_storage: files will be moved here when uploads fail. location must have write access granted for all users
 cpu_cost: # optionally override cpu cost estimation, used when accepting or denying requests
   room_composite_cpu_cost: 3.0
   web_cpu_cost: 3.0
@@ -94,6 +96,15 @@ alioss:
   region: Ali OSS region
   endpoint: (optional) custom endpoint
   bucket: bucket to upload files to
+
+# dev/debugging fields
+insecure: can be used to connect to an insecure websocket (default false)
+debug:
+  enable_profiling: create and upload pipeline dot file and pprof file on pipeline failure
+  s3: upload config for dotfiles (see above)
+  azure: upload config for dotfiles (see above)
+  gcp: upload config for dotfiles (see above)
+  alioss: upload config for dotfiles (see above)
 ```
 
 The config file can be added to a mounted volume with its location passed in the EGRESS_CONFIG_FILE env var, or its body can be passed in the EGRESS_CONFIG_BODY env var.
@@ -170,33 +181,22 @@ You can then use our [cli](https://github.com/livekit/livekit-cli) to submit egr
 ## FAQ
 
 ### Can I store the files locally instead of uploading to cloud storage?
-- Yes, you can mount a volume with your `docker run` command (e.g. `-v ~/livekit-egress:/out/`), and use the mounted directory in your filenames (e.g. `/out/my-recording.mp4`) 
+- Yes, you can mount a volume with your `docker run` command (e.g. `-v ~/livekit-egress:/out/`), and use the mounted 
+directory in your filenames (e.g. `/out/my-recording.mp4`). Since egress is not run as the root user, write permissions 
+will need to be enabled for all users.
 
 ### I get a `"no response from egress service"` error when sending a request
 
 - Your livekit server cannot connect to an egress instance through redis. Make sure they are both able to reach the same redis db.
-- Each instance currently only accepts one RoomCompositeRequest at a time - if it's already in use, you'll need to deploy more instances or set up autoscaling.
+- If all of your egress instances are full, you'll need to deploy more instances or set up autoscaling.
 
 ### I get a different error when sending a request
 
 - Make sure your egress, livekit, server sdk, and livekit-cli are all up to date.
 
-### I'm getting a broken (0 byte) mp4 file
-
-- This is caused by the process being killed - GStreamer needs to be properly shut down to close the file.
-- Make sure your instance has enough CPU and memory, and is being stopped correctly.
-
-### I'm seeing GStreamer warnings/errors. Is this normal?
-
-- `GStreamer-CRITICAL **: 20:22:13.875: gst_mini_object_unref: assertion 'GST_MINI_OBJECT_REFCOUNT_VALUE (mini_object) > 0' failed`
-  - Occurs during audio-only egress - this is a gst bug, and is safe to ignore.
-- `WARN flvmux ... Got backwards dts! (0:01:10.379000000 < 0:01:10.457000000)`
-  - Occurs when streaming to rtmp - safe to ignore. These warnings occur due to live sources being used for the flvmux.
-    The dts difference should be small (under 150ms).
-
 ### Can I run this without docker?
 
-- It's possible, but not recommended. To do so, you would need gstreamer and all the plugins installed, along with xvfb,
+- It's possible, but not recommended. To do so, you would need to install gstreamer along with its plugins, chrome, xvfb,
   and have a pulseaudio server running.
 
 ## Testing and Development
@@ -211,7 +211,6 @@ api_secret: your-api-secret
 ws_url: wss://your-livekit-url.com
 redis:
   address: 192.168.65.2:6379
-room_name: your-room
 room_only: false
 web_only: false
 track_composite_only: false
@@ -220,6 +219,8 @@ file_only: false
 stream_only: false
 segments_only: false
 muting: false
+dot_files: false
+short: false
 ```
 
 Join a room using https://example.livekit.io or your own client, then run `mage integration test/config.yaml`.

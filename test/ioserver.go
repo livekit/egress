@@ -30,7 +30,7 @@ func newIOTestServer(bus psrpc.MessageBus, updates chan *livekit.EgressInfo) (*i
 	return s, nil
 }
 
-func (s *ioTestServer) UpdateEgressInfo(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
+func (s *ioTestServer) UpdateEgressInfo(_ context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
 	s.updates <- info
 	return &emptypb.Empty{}, nil
 }

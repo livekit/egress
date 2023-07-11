@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -387,7 +388,7 @@ func (p *PipelineConfig) validateAndUpdateOutputParams() error {
 		}
 		if p.AudioOutCodec == "" {
 			// No default codec found. Pick a random compatible one
-			for k, _ := range compatibleAudioCodecs {
+			for k := range compatibleAudioCodecs {
 				p.AudioOutCodec = k
 			}
 		}
@@ -402,7 +403,7 @@ func (p *PipelineConfig) validateAndUpdateOutputParams() error {
 		}
 		if p.VideoOutCodec == "" {
 			// No default codec found. Pick a random compatible one
-			for k, _ := range compatibleVideoCodecs {
+			for k := range compatibleVideoCodecs {
 				p.VideoOutCodec = k
 			}
 		}
@@ -513,28 +514,32 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 	return nil
 }
 
-func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (string, error) {
+func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, error) {
 	parsed, err := url.Parse(rawUrl)
 	if err != nil {
-		return "", errors.ErrInvalidUrl(rawUrl, err.Error())
+		return "", "", errors.ErrInvalidUrl(rawUrl, err.Error())
 	}
 
 	switch outputType {
 	case types.OutputTypeRTMP:
+		if parsed.Scheme == "mux" {
+			rawUrl = fmt.Sprintf("rtmps://global-live.mux.com:443/app/%s", parsed.Host)
+		}
+
 		redacted, ok := utils.RedactStreamKey(rawUrl)
 		if !ok {
-			return "", errors.ErrInvalidUrl(rawUrl, "rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)")
+			return "", "", errors.ErrInvalidUrl(rawUrl, "rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)")
 		}
-		return redacted, nil
+		return rawUrl, redacted, nil
 
 	case types.OutputTypeRaw:
 		if parsed.Scheme != "ws" && parsed.Scheme != "wss" {
-			return "", errors.ErrInvalidUrl(rawUrl, "invalid scheme")
+			return "", "", errors.ErrInvalidUrl(rawUrl, "invalid scheme")
 		}
-		return rawUrl, nil
+		return rawUrl, rawUrl, nil
 
 	default:
-		return "", errors.ErrInvalidInput("stream output type")
+		return "", "", errors.ErrInvalidInput("stream output type")
 	}
 }
 

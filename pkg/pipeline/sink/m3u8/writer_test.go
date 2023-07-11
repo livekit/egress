@@ -15,7 +15,7 @@ func TestPlaylistWriter(t *testing.T) {
 	w, err := NewPlaylistWriter(playlistName, 6)
 	require.NoError(t, err)
 
-	t.Cleanup(func() { os.Remove(playlistName) })
+	t.Cleanup(func() { _ = os.Remove(playlistName) })
 
 	now := time.Unix(0, 1683154504814142000)
 	duration := 5.994
