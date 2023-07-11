@@ -152,8 +152,7 @@ func runService(c *cli.Context) error {
 func runHandler(c *cli.Context) error {
 	configBody := c.String("config")
 	if configBody == "" {
-		err := errors.ErrNoConfig
-		return err
+		return errors.ErrNoConfig
 	}
 
 	req := &rpc.StartEgressRequest{}

@@ -61,7 +61,7 @@ func NewService(conf *config.ServiceConfig, bus psrpc.MessageBus, rpcServerV0 eg
 		}
 	}
 
-	if err := s.monitor.Start(s.conf, s.isAvailable); err != nil {
+	if err = s.monitor.Start(s.conf, s.isAvailable); err != nil {
 		return nil, err
 	}
 

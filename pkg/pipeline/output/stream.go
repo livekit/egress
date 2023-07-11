@@ -47,7 +47,7 @@ func (b *Bin) buildStreamOutput(p *config.PipelineConfig) (*StreamOutput, error)
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	if err := b.bin.AddMany(mux, tee); err != nil {
+	if err = b.bin.AddMany(mux, tee); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
