@@ -1,8 +1,8 @@
 package config
 
 import (
-	"github.com/livekit/egress/pkg/util"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils"
 )
 
 type UploadConfig interface{}
@@ -69,25 +69,25 @@ func (c StorageConfig) ToUploadConfig() UploadConfig {
 
 func redactUpload(req uploadRequest) {
 	if s3 := req.GetS3(); s3 != nil {
-		s3.AccessKey = util.Redact(s3.AccessKey, "{access_key}")
-		s3.Secret = util.Redact(s3.Secret, "{secret}")
+		s3.AccessKey = utils.Redact(s3.AccessKey, "{access_key}")
+		s3.Secret = utils.Redact(s3.Secret, "{secret}")
 		return
 	}
 
 	if gcp := req.GetGcp(); gcp != nil {
-		gcp.Credentials = util.Redact(gcp.Credentials, "{credentials}")
+		gcp.Credentials = utils.Redact(gcp.Credentials, "{credentials}")
 		return
 	}
 
 	if azure := req.GetAzure(); azure != nil {
-		azure.AccountName = util.Redact(azure.AccountName, "{account_name}")
-		azure.AccountKey = util.Redact(azure.AccountKey, "{account_key}")
+		azure.AccountName = utils.Redact(azure.AccountName, "{account_name}")
+		azure.AccountKey = utils.Redact(azure.AccountKey, "{account_key}")
 		return
 	}
 
 	if aliOSS := req.GetAliOSS(); aliOSS != nil {
-		aliOSS.AccessKey = util.Redact(aliOSS.AccessKey, "{access_key}")
-		aliOSS.Secret = util.Redact(aliOSS.Secret, "{secret}")
+		aliOSS.AccessKey = utils.Redact(aliOSS.AccessKey, "{access_key}")
+		aliOSS.Secret = utils.Redact(aliOSS.Secret, "{secret}")
 		return
 	}
 }
