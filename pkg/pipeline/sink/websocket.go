@@ -2,7 +2,9 @@ package sink
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,19 +56,21 @@ func (s *WebsocketSink) Start() error {
 		errCount := 0
 		for {
 			_, _, err := s.conn.ReadMessage()
+			if s.closed.Load() {
+				return
+			}
 			if err != nil {
-				if _, ok := err.(*websocket.CloseError); ok {
+				_, isCloseError := err.(*websocket.CloseError)
+				if isCloseError || errors.Is(err, io.EOF) || strings.HasSuffix(err.Error(), "use of closed network connection") {
 					s.errChan <- err
 					s.closed.Store(true)
 					return
 				}
 				errCount++
 			}
+			// reads will panic after 1000 errors, break loop before that happens
 			if errCount > 100 {
 				logger.Errorw("closing websocket reader", err)
-				return
-			}
-			if s.closed.Load() {
 				return
 			}
 		}
