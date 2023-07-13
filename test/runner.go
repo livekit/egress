@@ -110,23 +110,9 @@ func NewRunner(t *testing.T) *Runner {
 	return r
 }
 
-func (r *Runner) createSvc(t *testing.T, bus psrpc.MessageBus) {
-	// start service
-	ioClient, err := rpc.NewIOInfoClient("test_io_client", bus)
-	require.NoError(t, err)
-
-	svc, err := service.NewService(r.ServiceConfig, nil, ioClient)
-	require.NoError(t, err)
-
-	psrpcServer, err := rpc.NewEgressInternalServer(r.NodeID, svc, bus)
-	require.NoError(t, err)
-	svc.Register(psrpcServer)
-
-	r.svc = svc
-}
-
-func (r *Runner) Run(t *testing.T, bus psrpc.MessageBus, templateFs fs.FS) {
+func (r *Runner) Run(t *testing.T, svc *service.Service, bus psrpc.MessageBus, templateFs fs.FS) {
 	lksdk.SetLogger(logger.LogRLogger(logr.Discard()))
+	r.svc = svc
 
 	// connect to room
 	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{

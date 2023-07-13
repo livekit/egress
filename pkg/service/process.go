@@ -164,7 +164,7 @@ func (s *Service) getGRPCClient(egressID string) (ipc.EgressHandlerClient, error
 	return h.grpcClient, nil
 }
 
-func (s *Service) killAll() {
+func (s *Service) KillAll() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

@@ -198,7 +198,7 @@ func (s *Service) Stop(kill bool) {
 		s.psrpcServer.DeregisterStartEgressTopic(s.conf.ClusterID)
 	})
 	if kill {
-		s.killAll()
+		s.KillAll()
 	}
 }
 
