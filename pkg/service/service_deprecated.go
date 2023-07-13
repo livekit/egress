@@ -32,7 +32,7 @@ func (s *Service) runV0() error {
 		case <-shutdown:
 			logger.Infow("shutting down")
 			s.psrpcServer.DeregisterStartEgressTopic(s.conf.ClusterID)
-			for !s.manager.isIdle() {
+			for !s.IsIdle() {
 				time.Sleep(shutdownTimer)
 			}
 			s.psrpcServer.Shutdown()
@@ -69,10 +69,6 @@ func (s *Service) runV0() error {
 	}
 }
 
-func (s *Service) ListEgress() []string {
-	return s.manager.listEgress()
-}
-
 func (s *Service) handleRequestV0(req *rpc.StartEgressRequest, deprecated *livekit.StartEgressRequest) {
 	ctx, span := tracer.Start(context.Background(), "Service.handleRequest")
 	defer span.End()
@@ -81,7 +77,7 @@ func (s *Service) handleRequestV0(req *rpc.StartEgressRequest, deprecated *livek
 		// validate before passing to handler
 		p, err := config.GetValidatedPipelineConfig(s.conf, req)
 		if err == nil {
-			err = s.manager.launchHandler(req, p.Info, 0)
+			err = s.launchHandler(req, p.Info, 0)
 		}
 
 		s.sendResponseV0(ctx, deprecated, p.Info, err)
@@ -101,7 +97,7 @@ func (s *Service) acceptRequestV0(ctx context.Context, req *rpc.StartEgressReque
 	}
 
 	// check cpu load
-	if !s.monitor.CanAcceptRequest(req) {
+	if !s.CanAcceptRequest(req) {
 		return false
 	}
 
@@ -114,7 +110,7 @@ func (s *Service) acceptRequestV0(ctx context.Context, req *rpc.StartEgressReque
 	}
 
 	// accept request
-	s.monitor.AcceptRequest(req)
+	_ = s.AcceptRequest(req)
 	logger.Infow("request accepted",
 		"egressID", req.EgressId,
 		"requestID", deprecated.RequestId,
