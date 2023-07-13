@@ -15,7 +15,6 @@ var (
 	ErrStreamAlreadyExists        = psrpc.NewErrorf(psrpc.AlreadyExists, "stream already exists")
 	ErrNonStreamingPipeline       = psrpc.NewErrorf(psrpc.InvalidArgument, "UpdateStream called on non-streaming egress")
 	ErrEgressNotFound             = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
-	ErrProfileNotFound            = psrpc.NewErrorf(psrpc.NotFound, "profile not found")
 	ErrNoCompatibleCodec          = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")
 	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
 	ErrResourceExhausted          = psrpc.NewErrorf(psrpc.ResourceExhausted, "not enough CPU")
