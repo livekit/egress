@@ -192,7 +192,7 @@ func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
 }
 
 func sendUpdate(ctx context.Context, c rpc.IOInfoClient, info *livekit.EgressInfo) {
-	requestType, outputType := getTypes(info)
+	requestType, outputType := GetTypes(info)
 	switch info.Status {
 	case livekit.EgressStatus_EGRESS_FAILED:
 		logger.Warnw("egress failed", errors.New(info.Error),
@@ -220,7 +220,7 @@ func sendUpdate(ctx context.Context, c rpc.IOInfoClient, info *livekit.EgressInf
 	}
 }
 
-func getTypes(info *livekit.EgressInfo) (requestType string, outputType string) {
+func GetTypes(info *livekit.EgressInfo) (requestType string, outputType string) {
 	switch req := info.Request.(type) {
 	case *livekit.EgressInfo_RoomComposite:
 		requestType = "room_composite"
