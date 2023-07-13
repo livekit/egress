@@ -139,7 +139,7 @@ func (h *HandlerV0) buildPipeline(ctx context.Context) (*pipeline.Pipeline, erro
 }
 
 func (h *HandlerV0) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
-	requestType, outputType := getTypes(info)
+	requestType, outputType := GetTypes(info)
 	switch info.Status {
 	case livekit.EgressStatus_EGRESS_FAILED:
 		logger.Warnw("egress failed", errors.New(info.Error),

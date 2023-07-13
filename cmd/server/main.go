@@ -104,10 +104,15 @@ func runService(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	svc, err := service.NewService(conf, bus, rpcServerV0, ioClient)
+	svc, err := service.NewService(conf, rpcServerV0, ioClient)
 	if err != nil {
 		return err
 	}
+	psrpcServer, err := rpc.NewEgressInternalServer(conf.NodeID, svc, bus)
+	if err != nil {
+		return err
+	}
+	svc.Register(psrpcServer)
 
 	if conf.HealthPort != 0 {
 		go func() {

@@ -127,8 +127,12 @@ func (r *Runner) Run(t *testing.T, bus psrpc.MessageBus, templateFs fs.FS) {
 	// start service
 	ioClient, err := rpc.NewIOInfoClient("test_io_client", bus)
 	require.NoError(t, err)
-	svc, err := service.NewService(r.ServiceConfig, bus, nil, ioClient)
+	svc, err := service.NewService(r.ServiceConfig, nil, ioClient)
 	require.NoError(t, err)
+
+	psrpcServer, err := rpc.NewEgressInternalServer(r.NodeID, svc, bus)
+	require.NoError(t, err)
+	svc.Register(psrpcServer)
 
 	psrpcClient, err := rpc.NewEgressClient(livekit.NodeID(utils.NewGuid("TEST_")), bus)
 	require.NoError(t, err)
