@@ -97,7 +97,7 @@ func ErrUploadFailed(location string, err error) error {
 }
 
 func ErrWebsocketClosed(addr string) error {
-	return psrpc.NewErrorf(psrpc.Internal, "websocket already closed: %s", addr)
+	return psrpc.NewErrorf(psrpc.Internal, "websocket closed: %s", addr)
 }
 
 func ErrProcessStartFailed(err error) error {

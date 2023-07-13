@@ -169,6 +169,14 @@ func (s *Service) Status() ([]byte, error) {
 	return json.Marshal(s.manager.status())
 }
 
+func (s *Service) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
+	return s.monitor.CanAcceptRequest(req)
+}
+
+func (s *Service) IsIdle() bool {
+	return s.manager.isIdle()
+}
+
 func (s *Service) isAvailable() float64 {
 	if s.manager.isIdle() {
 		return 1
