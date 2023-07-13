@@ -37,7 +37,7 @@ func (s *Service) StartDebugHandlers() {
 }
 
 func (s *Service) GetGstPipelineDotFile(egressID string) (string, error) {
-	c, err := s.manager.getGRPCClient(egressID)
+	c, err := s.getGRPCClient(egressID)
 	if err != nil {
 		return "", err
 	}
@@ -82,7 +82,7 @@ func (s *Service) handlePProf(w http.ResponseWriter, r *http.Request) {
 
 	case 4:
 		egressID := pathElements[2]
-		c, err := s.manager.getGRPCClient(egressID)
+		c, err := s.getGRPCClient(egressID)
 		if err != nil {
 			http.Error(w, "handler not found", http.StatusNotFound)
 			return

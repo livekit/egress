@@ -110,6 +110,21 @@ func NewRunner(t *testing.T) *Runner {
 	return r
 }
 
+func (r *Runner) createSvc(t *testing.T, bus psrpc.MessageBus) {
+	// start service
+	ioClient, err := rpc.NewIOInfoClient("test_io_client", bus)
+	require.NoError(t, err)
+
+	svc, err := service.NewService(r.ServiceConfig, nil, ioClient)
+	require.NoError(t, err)
+
+	psrpcServer, err := rpc.NewEgressInternalServer(r.NodeID, svc, bus)
+	require.NoError(t, err)
+	svc.Register(psrpcServer)
+
+	r.svc = svc
+}
+
 func (r *Runner) Run(t *testing.T, bus psrpc.MessageBus, templateFs fs.FS) {
 	lksdk.SetLogger(logger.LogRLogger(logr.Discard()))
 
@@ -124,30 +139,20 @@ func (r *Runner) Run(t *testing.T, bus psrpc.MessageBus, templateFs fs.FS) {
 	require.NoError(t, err)
 	defer room.Disconnect()
 
-	// start service
-	ioClient, err := rpc.NewIOInfoClient("test_io_client", bus)
-	require.NoError(t, err)
-	svc, err := service.NewService(r.ServiceConfig, nil, ioClient)
-	require.NoError(t, err)
-
-	psrpcServer, err := rpc.NewEgressInternalServer(r.NodeID, svc, bus)
-	require.NoError(t, err)
-	svc.Register(psrpcServer)
-
 	psrpcClient, err := rpc.NewEgressClient(livekit.NodeID(utils.NewGuid("TEST_")), bus)
 	require.NoError(t, err)
 
 	// start debug handler
-	svc.StartDebugHandlers()
+	r.svc.StartDebugHandlers()
 
 	// start templates handler
-	err = svc.StartTemplatesServer(templateFs)
+	err = r.svc.StartTemplatesServer(templateFs)
 	require.NoError(t, err)
 
-	go svc.Run()
+	go r.svc.Run()
 	t.Cleanup(func() {
-		svc.Stop(true)
-		svc.Close()
+		r.svc.Stop(true)
+		r.svc.Close()
 	})
 	time.Sleep(time.Second * 3)
 
@@ -157,7 +162,6 @@ func (r *Runner) Run(t *testing.T, bus psrpc.MessageBus, templateFs fs.FS) {
 	require.NoError(t, err)
 
 	// update test config
-	r.svc = svc
 	r.client = psrpcClient
 	r.updates = psrpcUpdates
 	r.room = room

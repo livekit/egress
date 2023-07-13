@@ -29,5 +29,6 @@ func TestEgress(t *testing.T) {
 	rfs, err := fs.Sub(templateEmbedFs, "templates")
 	require.NoError(t, err)
 
+	r.createSvc(t, bus)
 	r.Run(t, bus, rfs)
 }
