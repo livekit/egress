@@ -174,6 +174,11 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 				p.TrackKind = "audio"
 			} else {
 				p.TrackKind = "video"
+				// check for video over websocket
+				if p.Outputs[types.EgressTypeWebsocket] != nil {
+					onSubscribeErr = errors.ErrVideoWebsocket
+					return
+				}
 			}
 			p.TrackSource = strings.ToLower(pub.Source().String())
 
