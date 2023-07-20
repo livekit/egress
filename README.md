@@ -172,6 +172,7 @@ Then to run the service:
 ```shell
 docker run --rm \
     -e EGRESS_CONFIG_FILE=/out/config.yaml \
+    --cap-add=SYS_ADMIN \
     -v ~/egress-test:/out \
     livekit/egress
 ```
