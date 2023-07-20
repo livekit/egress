@@ -9,6 +9,7 @@ import (
 	"github.com/frostbyte73/core"
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
+	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/zap"
 
 	"github.com/livekit/egress/pkg/config"
@@ -120,7 +121,10 @@ func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate Update
 	if s, ok := p.sinks[types.EgressTypeWebsocket]; ok {
 		websocketSink := s.(*sink.WebsocketSink)
 		p.src.(*source.SDKSource).OnTrackMuted(websocketSink.OnTrackMuted)
-		if err = p.out.SetWebsocketSink(websocketSink); err != nil {
+		if err = p.out.SetWebsocketSink(websocketSink, func(appSink *app.Sink) {
+			_ = websocketSink.Close()
+			p.pipeline.GetPipelineBus().Post(gst.NewEOSMessage(appSink))
+		}); err != nil {
 			return nil, err
 		}
 	}

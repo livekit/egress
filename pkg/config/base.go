@@ -36,6 +36,7 @@ type BaseConfig struct {
 
 type DebugConfig struct {
 	EnableProfiling bool             `yaml:"enable_profiling"` // create dot file and pprof on internal error
+	PathPrefix      string           `yaml:"path_prefix"`      // filepath prefix for uploads
 	StorageConfig   `yaml:",inline"` // upload config (S3, Azure, GCP, or AliOSS)
 }
 

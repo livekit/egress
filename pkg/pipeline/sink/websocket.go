@@ -144,6 +144,8 @@ func (s *WebsocketSink) Finalize() error {
 }
 
 func (s *WebsocketSink) Close() error {
+	logger.Debugw("closing websocket sink")
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.closed.Swap(true) {

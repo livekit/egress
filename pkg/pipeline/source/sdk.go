@@ -158,7 +158,6 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 	var wg sync.WaitGroup
 	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer wg.Done()
-		logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
 
 		s.active.Inc()
 		t := s.sync.AddTrack(track, rp.Identity())
