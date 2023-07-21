@@ -60,7 +60,7 @@ func (p *Pipeline) uploadDotFile(u uploader.Uploader) {
 }
 
 func (p *Pipeline) uploadPProf(u uploader.Uploader) {
-	b, err := pprof.GetProfileData(context.Background(), "heap", 0, 0)
+	b, err := pprof.GetProfileData(context.Background(), "goroutine", 0, 0)
 	if err != nil {
 		logger.Errorw("failed to get profile data", err)
 		return
@@ -70,9 +70,10 @@ func (p *Pipeline) uploadPProf(u uploader.Uploader) {
 
 func (p *Pipeline) uploadDebugFile(u uploader.Uploader, data []byte, fileExtension string) {
 	filename := fmt.Sprintf("%s%s", p.Info.EgressId, fileExtension)
-	filepath := path.Join(config.TmpDir, filename)
+	local := path.Join(config.TmpDir, filename)
+	storage := path.Join(p.Debug.PathPrefix, filename)
 
-	f, err := os.Create(filepath)
+	f, err := os.Create(local)
 	if err != nil {
 		logger.Errorw("failed to create dotfile", err)
 		return
@@ -85,7 +86,7 @@ func (p *Pipeline) uploadDebugFile(u uploader.Uploader, data []byte, fileExtensi
 		return
 	}
 
-	_, _, err = u.Upload(filepath, filename, types.OutputTypeBlob, false)
+	_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
 	if err != nil {
 		logger.Errorw("failed to upload dotfile", err)
 		return

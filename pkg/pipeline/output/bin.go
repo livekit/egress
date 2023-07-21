@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/tinyzimmer/go-gst/gst"
+	"github.com/tinyzimmer/go-gst/gst/app"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -195,12 +196,12 @@ func (b *Bin) RemoveStream(url string) error {
 	return o.(*StreamOutput).RemoveSink(b.bin, url)
 }
 
-func (b *Bin) SetWebsocketSink(writer *sink.WebsocketSink) error {
+func (b *Bin) SetWebsocketSink(writer *sink.WebsocketSink, eosFunc func(*app.Sink)) error {
 	o := b.outputs[types.EgressTypeWebsocket]
 	if o == nil {
 		return psrpc.NewErrorf(psrpc.Internal, "missing websocket output")
 	}
 
-	o.(*WebsocketOutput).SetSink(writer)
+	o.(*WebsocketOutput).SetSink(writer, eosFunc)
 	return nil
 }
