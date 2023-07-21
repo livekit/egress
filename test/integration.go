@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -272,5 +273,5 @@ func (r *Runner) getFilePath(filename string) string {
 		return filename
 	}
 
-	return fmt.Sprintf("%s/%s", r.FilePrefix, filename)
+	return path.Join(r.FilePrefix, filename)
 }
