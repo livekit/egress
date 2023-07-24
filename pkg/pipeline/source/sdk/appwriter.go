@@ -141,7 +141,7 @@ func (w *AppWriter) Drain(force bool) {
 	w.draining.Once(func() {
 		w.logger.Debugw("draining")
 
-		if force {
+		if force || w.muted.Load() {
 			w.endStream.Break()
 		} else {
 			// wait until drainTimeout before force popping
@@ -177,6 +177,8 @@ func (w *AppWriter) run() {
 
 	stats := w.GetTrackStats()
 	loss := w.buffer.PacketLoss()
+
+	w.draining.Break()
 	w.logger.Infow("writer finished",
 		"sampleDuration", fmt.Sprint(w.GetFrameDuration()),
 		"avgDrift", fmt.Sprint(time.Duration(stats.AvgDrift)),
@@ -207,7 +209,7 @@ func (w *AppWriter) handlePlaying() {
 
 	// push completed packets to appsrc
 	if err = w.pushSamples(); err != nil {
-		w.endStream.Break()
+		w.draining.Once(w.endStream.Break)
 	}
 }
 
@@ -231,7 +233,7 @@ func (w *AppWriter) handleMuted() {
 			_, err := w.insertBlankFrame(nil)
 			if err != nil {
 				w.ticker.Stop()
-				w.endStream.Break()
+				w.draining.Once(w.endStream.Break)
 			}
 		}
 	}
