@@ -168,7 +168,7 @@ func (w *AppWriter) run() {
 	}
 
 	// clean up
-	_ = w.pushSamples(true)
+	_ = w.pushSamples()
 	if w.playing.IsBroken() {
 		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
 			w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
@@ -206,7 +206,7 @@ func (w *AppWriter) handlePlaying() {
 	w.buffer.Push(pkt)
 
 	// push completed packets to appsrc
-	if err = w.pushSamples(false); err != nil {
+	if err = w.pushSamples(); err != nil {
 		w.endStream.Break()
 	}
 }
@@ -274,7 +274,7 @@ func (w *AppWriter) handleReadError(err error) {
 
 	// check if muted
 	if w.muted.Load() {
-		_ = w.pushSamples(true)
+		_ = w.pushSamples()
 		w.ticker = time.NewTicker(w.GetFrameDuration())
 		w.state = stateMuted
 		return
@@ -328,13 +328,13 @@ func (w *AppWriter) insertBlankFrame(next *rtp.Packet) (bool, error) {
 	return true, nil
 }
 
-func (w *AppWriter) pushSamples(force bool) error {
+func (w *AppWriter) pushSamples() error {
 	// buffers can only be pushed to the appsrc while in the playing state
 	if !w.playing.IsBroken() {
 		return nil
 	}
 
-	pkts := w.buffer.Pop(force)
+	pkts := w.buffer.Pop(false)
 	for _, pkt := range pkts {
 		w.translator.Translate(pkt)
 
