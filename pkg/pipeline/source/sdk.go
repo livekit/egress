@@ -26,7 +26,7 @@ const (
 	AudioAppSource = "audioAppSrc"
 	VideoAppSource = "videoAppSrc"
 
-	subscriptionTimeout = time.Second * 5
+	subscriptionTimeout = time.Second * 30
 )
 
 type SDKSource struct {
