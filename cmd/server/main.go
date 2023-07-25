@@ -16,7 +16,6 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/version"
-	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/logger"
 	lkredis "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
@@ -44,9 +43,6 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name: "config",
-					},
-					&cli.IntFlag{
-						Name: "version",
 					},
 				},
 				Action: runHandler,
@@ -99,12 +95,11 @@ func runService(c *cli.Context) error {
 	}
 
 	bus := psrpc.NewRedisMessageBus(rc)
-	rpcServerV0 := egress.NewRedisRPCServer(rc)
 	ioClient, err := rpc.NewIOInfoClient(conf.NodeID, bus)
 	if err != nil {
 		return err
 	}
-	svc, err := service.NewService(conf, rpcServerV0, ioClient)
+	svc, err := service.NewService(conf, ioClient)
 	if err != nil {
 		return err
 	}
@@ -188,34 +183,20 @@ func runHandler(c *cli.Context) error {
 	killChan := make(chan os.Signal, 1)
 	signal.Notify(killChan, syscall.SIGINT)
 
-	var handler interface {
-		Kill()
-		Run() error
+	bus := psrpc.NewRedisMessageBus(rc)
+	ioClient, err := rpc.NewIOInfoClient(conf.NodeID, bus)
+	if err != nil {
+		return err
 	}
-
-	v := c.Int("version")
-	if v == 0 {
-		rpcHandler := egress.NewRedisRPCServer(rc)
-		handler, err = service.NewHandlerV0(conf, rpcHandler)
-		if err != nil {
+	handler, err := service.NewHandler(conf, bus, ioClient)
+	if err != nil {
+		if errors.IsFatal(err) {
+			// service will send info update and shut down
+			logger.Errorw("fatal error", err)
 			return err
-		}
-	} else {
-		bus := psrpc.NewRedisMessageBus(rc)
-		ioClient, err := rpc.NewIOInfoClient(conf.NodeID, bus)
-		if err != nil {
-			return err
-		}
-		handler, err = service.NewHandler(conf, bus, ioClient)
-		if err != nil {
-			if errors.IsFatal(err) {
-				// service will send info update and shut down
-				logger.Errorw("fatal error", err)
-				return err
-			} else {
-				// update sent by handler
-				return nil
-			}
+		} else {
+			// update sent by handler
+			return nil
 		}
 	}
 
