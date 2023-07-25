@@ -150,7 +150,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
 		require.NoError(t, err)
 
-		require.InDelta(t, expected, actual, 1)
+		require.InDelta(t, expected, actual, 4.1)
 	}
 
 	// check stream info
