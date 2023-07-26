@@ -34,7 +34,7 @@ func TestEgress(t *testing.T) {
 	ioClient, err := rpc.NewIOInfoClient("test_io_client", bus)
 	require.NoError(t, err)
 
-	svc, err := service.NewService(r.ServiceConfig, nil, ioClient)
+	svc, err := service.NewService(r.ServiceConfig, ioClient)
 	require.NoError(t, err)
 
 	psrpcServer, err := rpc.NewEgressInternalServer(r.NodeID, svc, bus)

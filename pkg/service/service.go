@@ -15,7 +15,6 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/version"
-	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -26,7 +25,6 @@ const shutdownTimer = time.Second * 30
 
 type Service struct {
 	conf        *config.ServiceConfig
-	rpcServerV0 egress.RPCServer
 	psrpcServer rpc.EgressInternalServer
 	ioClient    rpc.IOInfoClient
 	promServer  *http.Server
@@ -38,12 +36,11 @@ type Service struct {
 	shutdown core.Fuse
 }
 
-func NewService(conf *config.ServiceConfig, rpcServerV0 egress.RPCServer, ioClient rpc.IOInfoClient) (*Service, error) {
+func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service, error) {
 	monitor := stats.NewMonitor(conf)
 
 	s := &Service{
 		conf:           conf,
-		rpcServerV0:    rpcServerV0,
 		ioClient:       ioClient,
 		Monitor:        monitor,
 		shutdown:       core.NewFuse(),
@@ -83,10 +80,6 @@ func (s *Service) Run() error {
 
 	if err := s.psrpcServer.RegisterStartEgressTopic(s.conf.ClusterID); err != nil {
 		return err
-	}
-
-	if s.rpcServerV0 != nil {
-		return s.runV0()
 	}
 
 	logger.Infow("service ready")
@@ -129,7 +122,7 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 		"request", p.Info.Request,
 	)
 
-	err = s.launchHandler(req, p.Info, 1)
+	err = s.launchHandler(req, p.Info)
 	if err != nil {
 		s.EgressAborted(req)
 		return nil, err
