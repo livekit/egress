@@ -162,6 +162,7 @@ func (r *Runner) Run(t *testing.T, svc *service.Service, bus psrpc.MessageBus, t
 	// run tests
 	r.testRoomComposite(t)
 	r.testWeb(t)
+	r.testParticipant(t)
 	r.testTrackComposite(t)
 	r.testTrack(t)
 }

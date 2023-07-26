@@ -11,26 +11,26 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func (r *Runner) testTrackComposite(t *testing.T) {
-	if !r.runTrackCompositeTests() {
+func (r *Runner) testParticipant(t *testing.T) {
+	if !r.runParticipantTests() {
 		return
 	}
 
 	r.sourceFramerate = 23.97
-	r.testTrackCompositeFile(t)
-	r.testTrackCompositeStream(t)
-	r.testTrackCompositeSegments(t)
-	r.testTrackCompositeMulti(t)
+	r.testParticipantFile(t)
+	r.testParticipantStream(t)
+	r.testParticipantSegments(t)
+	r.testParticipantMulti(t)
 }
 
-func (r *Runner) runTrackTest(
+func (r *Runner) runParticipantTest(
 	t *testing.T, name string, audioCodec, videoCodec types.MimeType,
-	f func(t *testing.T, audioTrackID, videoTrackID string),
+	f func(t *testing.T, identity string),
 ) {
 	t.Run(name, func(t *testing.T) {
 		r.awaitIdle(t)
-		audioTrackID, videoTrackID := r.publishSamplesToRoom(t, audioCodec, videoCodec)
-		f(t, audioTrackID, videoTrackID)
+		r.publishSamplesToRoom(t, audioCodec, videoCodec)
+		f(t, r.room.LocalParticipant.Identity())
 		if t.Failed() {
 			r.svc.Reset()
 			go r.svc.Run()
@@ -38,12 +38,12 @@ func (r *Runner) runTrackTest(
 	})
 }
 
-func (r *Runner) testTrackCompositeFile(t *testing.T) {
+func (r *Runner) testParticipantFile(t *testing.T) {
 	if !r.runFileTests() {
 		return
 	}
 
-	t.Run("TrackComposite/File", func(t *testing.T) {
+	t.Run("Participant/File", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				name:       "VP8",
@@ -60,15 +60,7 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 				filename:   "tc_{room_name}_h264_{time}.mp4",
 			},
 		} {
-			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
-				var aID, vID string
-				if !test.audioOnly {
-					vID = videoTrackID
-				}
-				if !test.videoOnly {
-					aID = audioTrackID
-				}
-
+			r.runParticipantTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, identity string) {
 				fileOutput := &livekit.EncodedFileOutput{
 					FileType: test.fileType,
 					Filepath: r.getFilePath(test.filename),
@@ -80,22 +72,21 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 					}
 				}
 
-				trackRequest := &livekit.TrackCompositeEgressRequest{
-					RoomName:     r.room.Name(),
-					AudioTrackId: aID,
-					VideoTrackId: vID,
-					FileOutputs:  []*livekit.EncodedFileOutput{fileOutput},
+				participantRequest := &livekit.ParticipantEgressRequest{
+					RoomName:    r.room.Name(),
+					Identity:    identity,
+					FileOutputs: []*livekit.EncodedFileOutput{fileOutput},
 				}
 				if test.options != nil {
-					trackRequest.Options = &livekit.TrackCompositeEgressRequest_Advanced{
+					participantRequest.Options = &livekit.ParticipantEgressRequest_Advanced{
 						Advanced: test.options,
 					}
 				}
 
 				req := &rpc.StartEgressRequest{
 					EgressId: utils.NewGuid(utils.EgressPrefix),
-					Request: &rpc.StartEgressRequest_TrackComposite{
-						TrackComposite: trackRequest,
+					Request: &rpc.StartEgressRequest_Participant{
+						Participant: participantRequest,
 					},
 				}
 
@@ -109,20 +100,19 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 	})
 }
 
-func (r *Runner) testTrackCompositeStream(t *testing.T) {
+func (r *Runner) testParticipantStream(t *testing.T) {
 	if !r.runStreamTests() {
 		return
 	}
 
-	r.runTrackTest(t, "TrackComposite/Stream", types.MimeTypeOpus, types.MimeTypeVP8,
-		func(t *testing.T, audioTrackID, videoTrackID string) {
+	r.runParticipantTest(t, "Participant/Stream", types.MimeTypeOpus, types.MimeTypeVP8,
+		func(t *testing.T, identity string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &rpc.StartEgressRequest_TrackComposite{
-					TrackComposite: &livekit.TrackCompositeEgressRequest{
-						RoomName:     r.room.Name(),
-						AudioTrackId: audioTrackID,
-						VideoTrackId: videoTrackID,
+				Request: &rpc.StartEgressRequest_Participant{
+					Participant: &livekit.ParticipantEgressRequest{
+						RoomName: r.room.Name(),
+						Identity: identity,
 						StreamOutputs: []*livekit.StreamOutput{{
 							Urls: []string{streamUrl1, badStreamUrl1},
 						}},
@@ -135,12 +125,12 @@ func (r *Runner) testTrackCompositeStream(t *testing.T) {
 	)
 }
 
-func (r *Runner) testTrackCompositeSegments(t *testing.T) {
+func (r *Runner) testParticipantSegments(t *testing.T) {
 	if !r.runSegmentTests() {
 		return
 	}
 
-	t.Run("TrackComposite/Segments", func(t *testing.T) {
+	t.Run("Participant/Segments", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				name:       "VP8",
@@ -157,16 +147,8 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 				playlist:   "tcs_{room_name}_h264_{time}.m3u8",
 			},
 		} {
-			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec,
-				func(t *testing.T, audioTrackID, videoTrackID string) {
-					var aID, vID string
-					if !test.audioOnly {
-						vID = videoTrackID
-					}
-					if !test.videoOnly {
-						aID = audioTrackID
-					}
-
+			r.runParticipantTest(t, test.name, test.audioCodec, test.videoCodec,
+				func(t *testing.T, identity string) {
 					segmentOutput := &livekit.SegmentedFileOutput{
 						FilenamePrefix: r.getFilePath(test.filename),
 						PlaylistName:   test.playlist,
@@ -179,22 +161,21 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 						}
 					}
 
-					trackRequest := &livekit.TrackCompositeEgressRequest{
+					trackRequest := &livekit.ParticipantEgressRequest{
 						RoomName:       r.room.Name(),
-						AudioTrackId:   aID,
-						VideoTrackId:   vID,
+						Identity:       identity,
 						SegmentOutputs: []*livekit.SegmentedFileOutput{segmentOutput},
 					}
 					if test.options != nil {
-						trackRequest.Options = &livekit.TrackCompositeEgressRequest_Advanced{
+						trackRequest.Options = &livekit.ParticipantEgressRequest_Advanced{
 							Advanced: test.options,
 						}
 					}
 
 					req := &rpc.StartEgressRequest{
 						EgressId: utils.NewGuid(utils.EgressPrefix),
-						Request: &rpc.StartEgressRequest_TrackComposite{
-							TrackComposite: trackRequest,
+						Request: &rpc.StartEgressRequest_Participant{
+							Participant: trackRequest,
 						},
 					}
 					test.expectVideoTranscoding = true
@@ -209,26 +190,25 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 	})
 }
 
-func (r *Runner) testTrackCompositeMulti(t *testing.T) {
+func (r *Runner) testParticipantMulti(t *testing.T) {
 	if !r.runMultiTests() {
 		return
 	}
 
-	r.runTrackTest(t, "TrackComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8,
-		func(t *testing.T, audioTrackID, videoTrackID string) {
+	r.runParticipantTest(t, "Participant/Multi", types.MimeTypeOpus, types.MimeTypeVP8,
+		func(t *testing.T, identity string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &rpc.StartEgressRequest_TrackComposite{
-					TrackComposite: &livekit.TrackCompositeEgressRequest{
-						RoomName:     r.room.Name(),
-						AudioTrackId: audioTrackID,
-						VideoTrackId: videoTrackID,
+				Request: &rpc.StartEgressRequest_Participant{
+					Participant: &livekit.ParticipantEgressRequest{
+						RoomName: r.room.Name(),
+						Identity: identity,
+						FileOutputs: []*livekit.EncodedFileOutput{{
+							FileType: livekit.EncodedFileType_MP4,
+							Filepath: r.getFilePath("participant_multiple_{time}"),
+						}},
 						StreamOutputs: []*livekit.StreamOutput{{
 							Protocol: livekit.StreamProtocol_RTMP,
-						}},
-						SegmentOutputs: []*livekit.SegmentedFileOutput{{
-							FilenamePrefix: r.getFilePath("tc_multiple_{time}"),
-							PlaylistName:   "tc_multiple_{time}",
 						}},
 					},
 				},
