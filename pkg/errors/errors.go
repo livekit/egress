@@ -82,6 +82,10 @@ func ErrTrackNotFound(trackID string) error {
 	return psrpc.NewErrorf(psrpc.NotFound, "track %s not found", trackID)
 }
 
+func ErrParticipantNotFound(identity string) error {
+	return psrpc.NewErrorf(psrpc.NotFound, "participant %s not found", identity)
+}
+
 func ErrPadLinkFailed(src, sink, status string) error {
 	return psrpc.NewErrorf(psrpc.Internal, "failed to link %s to %s: %s", src, sink, status)
 }

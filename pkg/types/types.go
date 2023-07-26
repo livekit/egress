@@ -12,6 +12,7 @@ const (
 	// request types
 	RequestTypeRoomComposite  = "room_composite"
 	RequestTypeWeb            = "web"
+	RequestTypeParticipant    = "participant"
 	RequestTypeTrackComposite = "track_composite"
 	RequestTypeTrack          = "track"
 

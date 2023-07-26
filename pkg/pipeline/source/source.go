@@ -20,7 +20,8 @@ func New(ctx context.Context, p *config.PipelineConfig) (Source, error) {
 		types.RequestTypeWeb:
 		return NewWebSource(ctx, p)
 
-	case types.RequestTypeTrackComposite,
+	case types.RequestTypeParticipant,
+		types.RequestTypeTrackComposite,
 		types.RequestTypeTrack:
 		return NewSDKSource(ctx, p)
 

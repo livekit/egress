@@ -85,6 +85,7 @@ func (m *Monitor) checkCPUConfig() error {
 	requirements := []float64{
 		m.cpuCostConfig.RoomCompositeCpuCost,
 		m.cpuCostConfig.WebCpuCost,
+		m.cpuCostConfig.ParticipantCpuCost,
 		m.cpuCostConfig.TrackCompositeCpuCost,
 		m.cpuCostConfig.TrackCpuCost,
 	}
@@ -151,6 +152,8 @@ func (m *Monitor) canAcceptRequest(req *rpc.StartEgressRequest) bool {
 		accept = available >= m.cpuCostConfig.RoomCompositeCpuCost
 	case *rpc.StartEgressRequest_Web:
 		accept = available >= m.cpuCostConfig.WebCpuCost
+	case *rpc.StartEgressRequest_Participant:
+		accept = available >= m.cpuCostConfig.ParticipantCpuCost
 	case *rpc.StartEgressRequest_TrackComposite:
 		accept = available >= m.cpuCostConfig.TrackCompositeCpuCost
 	case *rpc.StartEgressRequest_Track:
@@ -174,6 +177,8 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
 	case *rpc.StartEgressRequest_Web:
 		cpuHold = m.cpuCostConfig.WebCpuCost
+	case *rpc.StartEgressRequest_Participant:
+		cpuHold = m.cpuCostConfig.ParticipantCpuCost
 	case *rpc.StartEgressRequest_TrackComposite:
 		cpuHold = m.cpuCostConfig.TrackCompositeCpuCost
 	case *rpc.StartEgressRequest_Track:
@@ -192,6 +197,8 @@ func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Add(1)
 	case *rpc.StartEgressRequest_Web:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Add(1)
+	case *rpc.StartEgressRequest_Participant:
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeParticipant}).Add(1)
 	case *rpc.StartEgressRequest_TrackComposite:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Add(1)
 	case *rpc.StartEgressRequest_Track:
@@ -210,6 +217,9 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) {
 	case *rpc.StartEgressRequest_Web:
 		m.reserved -= m.cpuCostConfig.WebCpuCost
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
+	case *rpc.StartEgressRequest_Participant:
+		m.reserved -= m.cpuCostConfig.ParticipantCpuCost
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeParticipant}).Sub(1)
 	case *rpc.StartEgressRequest_TrackComposite:
 		m.reserved -= m.cpuCostConfig.TrackCompositeCpuCost
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Sub(1)
@@ -228,6 +238,8 @@ func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
 		m.reserved -= m.cpuCostConfig.RoomCompositeCpuCost
 	case *rpc.StartEgressRequest_Web:
 		m.reserved -= m.cpuCostConfig.WebCpuCost
+	case *rpc.StartEgressRequest_Participant:
+		m.reserved -= m.cpuCostConfig.ParticipantCpuCost
 	case *rpc.StartEgressRequest_TrackComposite:
 		m.reserved -= m.cpuCostConfig.TrackCompositeCpuCost
 	case *rpc.StartEgressRequest_Track:

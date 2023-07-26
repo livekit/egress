@@ -7,6 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -15,6 +16,7 @@ const (
 
 	roomCompositeCpuCost  = 4
 	webCpuCost            = 4
+	participantCpuCost    = 1
 	trackCompositeCpuCost = 1
 	trackCpuCost          = 0.5
 
@@ -36,6 +38,7 @@ type ServiceConfig struct {
 type CPUCostConfig struct {
 	RoomCompositeCpuCost  float64 `yaml:"room_composite_cpu_cost"`
 	WebCpuCost            float64 `yaml:"web_cpu_cost"`
+	ParticipantCpuCost    float64 `yaml:"participant_cpu_cost"`
 	TrackCompositeCpuCost float64 `yaml:"track_composite_cpu_cost"`
 	TrackCpuCost          float64 `yaml:"track_cpu_cost"`
 }
@@ -43,10 +46,12 @@ type CPUCostConfig struct {
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	conf := &ServiceConfig{
 		BaseConfig: BaseConfig{
+			Logging: logger.Config{
+				Level: "info",
+			},
 			ApiKey:    os.Getenv("LIVEKIT_API_KEY"),
 			ApiSecret: os.Getenv("LIVEKIT_API_SECRET"),
 			WsUrl:     os.Getenv("LIVEKIT_WS_URL"),
-			LogLevel:  "info",
 		},
 		TemplatePort: defaultTemplatePort,
 	}
@@ -65,6 +70,9 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	}
 	if conf.WebCpuCost <= 0 {
 		conf.WebCpuCost = webCpuCost
+	}
+	if conf.ParticipantCpuCost <= 0 {
+		conf.ParticipantCpuCost = participantCpuCost
 	}
 	if conf.TrackCompositeCpuCost <= 0 {
 		conf.TrackCompositeCpuCost = trackCompositeCpuCost
