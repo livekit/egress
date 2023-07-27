@@ -50,14 +50,14 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 				fileType:   livekit.EncodedFileType_MP4,
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeVP8,
-				filename:   "tc_{publisher_identity}_vp8_{time}.mp4",
+				filename:   "participant_{publisher_identity}_vp8_{time}.mp4",
 			},
 			{
 				name:       "H264",
 				fileType:   livekit.EncodedFileType_MP4,
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeH264,
-				filename:   "tc_{room_name}_h264_{time}.mp4",
+				filename:   "participant_{room_name}_h264_{time}.mp4",
 			},
 		} {
 			r.runParticipantTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, identity string) {
@@ -136,15 +136,15 @@ func (r *Runner) testParticipantSegments(t *testing.T) {
 				name:       "VP8",
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeVP8,
-				filename:   "tcs_{publisher_identity}_vp8_{time}",
-				playlist:   "tcs_{publisher_identity}_vp8_{time}.m3u8",
+				filename:   "participant_{publisher_identity}_vp8_{time}",
+				playlist:   "participant_{publisher_identity}_vp8_{time}.m3u8",
 			},
 			{
 				name:       "H264",
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeH264,
-				filename:   "tcs_{room_name}_h264_{time}",
-				playlist:   "tcs_{room_name}_h264_{time}.m3u8",
+				filename:   "participant_{room_name}_h264_{time}",
+				playlist:   "participant_{room_name}_h264_{time}.m3u8",
 			},
 		} {
 			r.runParticipantTest(t, test.name, test.audioCodec, test.videoCodec,

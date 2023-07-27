@@ -2,10 +2,12 @@ package source
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/frostbyte73/core"
 	"github.com/pion/webrtc/v3"
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
@@ -15,6 +17,7 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 	lksdk "github.com/livekit/server-sdk-go"
@@ -47,6 +50,7 @@ type SDKSource struct {
 	audioWriter *sdk.AppWriter
 	videoWriter *sdk.AppWriter
 
+	initialized    core.Fuse
 	subscriptions  sync.WaitGroup
 	active         atomic.Int32
 	startRecording chan struct{}
@@ -63,11 +67,14 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, er
 		sync: synchronizer.NewSynchronizer(func() {
 			close(startRecording)
 		}),
+		initialized:    core.NewFuse(),
 		startRecording: startRecording,
 		endRecording:   make(chan struct{}),
 	}
 
 	switch p.RequestType {
+	case types.RequestTypeParticipant:
+		s.identity = p.Identity
 	case types.RequestTypeTrackComposite:
 		s.audioTrackID = p.AudioTrackID
 		s.videoTrackID = p.VideoTrackID
@@ -160,10 +167,14 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		OnDisconnected: s.onDisconnected,
 	}
 
+	if p.RequestType == types.RequestTypeParticipant {
+		cb.ParticipantCallback.OnTrackPublished = s.onTrackPublished
+	}
+
 	var mu sync.Mutex
+	var onSubscribeErr error
 	filenameReplacements := make(map[string]string)
 
-	var onSubscribeErr error
 	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer s.subscriptions.Done()
 
@@ -171,12 +182,14 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		t := s.sync.AddTrack(track, rp.Identity())
 
 		mu.Lock()
-		if p.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
+		switch p.RequestType {
+		case types.RequestTypeTrackComposite:
+			if p.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
+				p.Identity = rp.Identity()
+				filenameReplacements["{publisher_identity}"] = p.Identity
+			}
+		case types.RequestTypeTrack:
 			p.Identity = rp.Identity()
-			filenameReplacements["{publisher_identity}"] = p.Identity
-		}
-
-		if p.TrackID != "" {
 			if track.Kind() == webrtc.RTPCodecTypeAudio {
 				p.TrackKind = "audio"
 			} else {
@@ -192,6 +205,7 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			filenameReplacements["{track_id}"] = p.TrackID
 			filenameReplacements["{track_type}"] = p.TrackKind
 			filenameReplacements["{track_source}"] = p.TrackSource
+			filenameReplacements["{publisher_identity}"] = p.Identity
 		}
 		mu.Unlock()
 
@@ -213,7 +227,7 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			}
 			p.AudioTranscoding = true
 
-			if p.TrackID != "" {
+			if p.RequestType == types.RequestTypeTrack {
 				if o := p.GetFileConfig(); o != nil {
 					o.OutputType = types.OutputTypeOGG
 				}
@@ -234,7 +248,7 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 				writeBlanks = true
 			}
 
-			if p.TrackID != "" {
+			if p.RequestType == types.RequestTypeTrack {
 				if o := p.GetFileConfig(); o != nil {
 					o.OutputType = types.OutputTypeWebM
 				}
@@ -251,7 +265,7 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 				p.VideoOutCodec = types.MimeTypeH264
 			}
 
-			if p.TrackID != "" {
+			if p.RequestType == types.RequestTypeTrack {
 				if o := p.GetFileConfig(); o != nil {
 					o.OutputType = types.OutputTypeMP4
 				}
@@ -277,7 +291,6 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			return
 		}
 
-		// write blank frames only when writing to mp4
 		switch track.Kind() {
 		case webrtc.RTPCodecTypeAudio:
 			s.audioWriter = writer
@@ -299,7 +312,15 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 	var fileIdentifier string
 	tracks := make(map[string]struct{})
 
+	var err error
 	switch p.RequestType {
+	case types.RequestTypeParticipant:
+		fileIdentifier = s.identity
+		filenameReplacements["{publisher_identity}"] = s.identity
+
+		s.subscriptions.Add(2) // TODO: remove
+		err = s.subscribeToParticipant(s.identity)
+
 	case types.RequestTypeTrackComposite:
 		fileIdentifier = p.Info.RoomName
 		if p.AudioEnabled {
@@ -311,22 +332,28 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			tracks[s.videoTrackID] = struct{}{}
 		}
 
+		s.subscriptions.Add(len(tracks))
+		err = s.subscribeToTracks(tracks)
+
 	case types.RequestTypeTrack:
 		fileIdentifier = p.TrackID
 		s.trackID = p.TrackID
 		tracks[s.trackID] = struct{}{}
-	}
 
-	s.subscriptions.Add(len(tracks))
-	if err := s.subscribeToTracks(tracks); err != nil {
+		s.subscriptions.Add(1)
+		err = s.subscribeToTracks(tracks)
+	}
+	if err != nil {
 		return err
 	}
+
 	s.subscriptions.Wait()
+	s.initialized.Break()
 	if onSubscribeErr != nil {
 		return onSubscribeErr
 	}
 
-	if err := p.UpdateInfoFromSDK(fileIdentifier, filenameReplacements); err != nil {
+	if err = p.UpdateInfoFromSDK(fileIdentifier, filenameReplacements); err != nil {
 		logger.Errorw("could not update file params", err)
 		return err
 	}
@@ -341,18 +368,13 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}) error {
 			for _, track := range p.Tracks() {
 				trackID := track.SID()
 				if _, ok := expecting[trackID]; ok {
-					if pub, ok := track.(*lksdk.RemoteTrackPublication); ok {
-						pub.OnRTCP(s.sync.OnRTCP)
+					if err := s.subscribe(track); err != nil {
+						return err
+					}
 
-						err := pub.SetSubscribed(true)
-						if err != nil {
-							return err
-						}
-
-						delete(expecting, track.SID())
-						if len(expecting) == 0 {
-							return nil
-						}
+					delete(expecting, track.SID())
+					if len(expecting) == 0 {
+						return nil
 					}
 				}
 			}
@@ -367,6 +389,45 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}) error {
 	return nil
 }
 
+func (s *SDKSource) subscribeToParticipant(identity string) error {
+	deadline := time.Now().Add(subscriptionTimeout)
+	for time.Now().Before(deadline) {
+		for _, p := range s.room.GetParticipants() {
+			if p.Identity() != identity || len(p.Tracks()) < 2 {
+				continue
+			}
+
+			for _, track := range p.Tracks() {
+				switch track.Source() {
+				case livekit.TrackSource_CAMERA, livekit.TrackSource_MICROPHONE:
+					// TODO: s.subscriptions.Add(1)
+					if err := s.subscribe(track); err != nil {
+						return err
+					}
+				default:
+					logger.Debugw(fmt.Sprintf("ignoring track with source %s", track.Source()))
+				}
+			}
+
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	return errors.ErrParticipantNotFound(identity)
+}
+
+func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
+	logger.Infow("subscribing to track", "trackID", track.SID())
+	if pub, ok := track.(*lksdk.RemoteTrackPublication); ok {
+		pub.OnRTCP(s.sync.OnRTCP)
+
+		return pub.SetSubscribed(true)
+	}
+
+	return errors.ErrInvalidTrack
+}
+
 func (s *SDKSource) onTrackMuteChanged(pub lksdk.TrackPublication, muted bool) {
 	track := pub.Track()
 	if track == nil {
@@ -379,6 +440,36 @@ func (s *SDKSource) onTrackMuteChanged(pub lksdk.TrackPublication, muted bool) {
 
 	for _, onMute := range s.OnTrackMuted {
 		onMute(muted)
+	}
+}
+
+func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+	if !s.initialized.IsBroken() || rp.Identity() != s.identity {
+		return
+	}
+
+	switch pub.Source() {
+	case livekit.TrackSource_CAMERA:
+		if s.videoWriter != nil {
+			logger.Infow("ignoring participant track",
+				"reason", "already recording video")
+			return
+		}
+	case livekit.TrackSource_MICROPHONE:
+		if s.audioWriter != nil {
+			logger.Infow("ignoring participant track",
+				"reason", "already recording video")
+			return
+		}
+	default:
+		logger.Infow("ignoring participant track",
+			"reason", fmt.Sprintf("source %s", pub.Source()))
+		return
+	}
+
+	s.subscriptions.Add(1)
+	if err := s.subscribe(pub); err != nil {
+		logger.Errorw("failed to subscribe to track", err, "trackID", pub.SID())
 	}
 }
 
