@@ -217,7 +217,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 		// output params
-		if err := p.updateEncodedOutputs(req.RoomComposite); err != nil {
+		if err = p.updateEncodedOutputs(req.RoomComposite); err != nil {
 			return err
 		}
 
