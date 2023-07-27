@@ -35,42 +35,44 @@ func (a *audioInput) buildWebSource(p *config.PipelineConfig) error {
 }
 
 func (a *audioInput) buildAppSource(p *config.PipelineConfig) error {
-	src := p.AudioSrc
-	src.Element.SetArg("format", "time")
-	if err := src.Element.SetProperty("is-live", true); err != nil {
-		return err
-	}
-	a.src = []*gst.Element{src.Element}
+	if p.AudioSrc != nil {
+		src := p.AudioSrc
+		src.Element.SetArg("format", "time")
+		if err := src.Element.SetProperty("is-live", true); err != nil {
+			return err
+		}
+		a.src = []*gst.Element{src.Element}
 
-	switch {
-	case strings.EqualFold(p.AudioCodecParams.MimeType, string(types.MimeTypeOpus)):
-		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf(
-				"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
-				p.AudioCodecParams.PayloadType, p.AudioCodecParams.ClockRate,
-			),
-		)); err != nil {
-			return errors.ErrGstPipelineError(err)
+		switch {
+		case strings.EqualFold(p.AudioCodecParams.MimeType, string(types.MimeTypeOpus)):
+			if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
+				fmt.Sprintf(
+					"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
+					p.AudioCodecParams.PayloadType, p.AudioCodecParams.ClockRate,
+				),
+			)); err != nil {
+				return errors.ErrGstPipelineError(err)
+			}
+
+			rtpOpusDepay, err := gst.NewElement("rtpopusdepay")
+			if err != nil {
+				return errors.ErrGstPipelineError(err)
+			}
+
+			opusDec, err := gst.NewElement("opusdec")
+			if err != nil {
+				return errors.ErrGstPipelineError(err)
+			}
+
+			a.src = append(a.src, rtpOpusDepay, opusDec)
+
+		default:
+			return errors.ErrNotSupported(p.AudioCodecParams.MimeType)
 		}
 
-		rtpOpusDepay, err := gst.NewElement("rtpopusdepay")
-		if err != nil {
-			return errors.ErrGstPipelineError(err)
+		if err := a.buildConverter(p); err != nil {
+			return err
 		}
-
-		opusDec, err := gst.NewElement("opusdec")
-		if err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-
-		a.src = append(a.src, rtpOpusDepay, opusDec)
-
-	default:
-		return errors.ErrNotSupported(p.AudioCodecParams.MimeType)
-	}
-
-	if err := a.buildConverter(p); err != nil {
-		return err
 	}
 
 	return a.buildMixer(p)

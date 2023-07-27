@@ -3,7 +3,9 @@ package input
 import (
 	"fmt"
 	"strings"
+	"unsafe"
 
+	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/config"
@@ -13,8 +15,10 @@ import (
 )
 
 type videoInput struct {
-	src     []*gst.Element
-	encoder []*gst.Element
+	src      []*gst.Element
+	testSrc  *gst.Element
+	selector *gst.Element
+	encoder  []*gst.Element
 }
 
 func (v *videoInput) buildWebSource(p *config.PipelineConfig) error {
@@ -53,6 +57,37 @@ func (v *videoInput) buildWebSource(p *config.PipelineConfig) error {
 	}
 
 	v.src = []*gst.Element{xImageSrc, videoQueue, videoConvert, caps}
+	return nil
+}
+
+func (v *videoInput) buildSDKSource(p *config.PipelineConfig) error {
+	if p.VideoSrc != nil {
+		if err := v.buildAppSource(p); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	videoTestSrc, err := gst.NewElement("videotestsrc")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = videoTestSrc.SetProperty("is-live", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	videoTestSrc.SetArg("pattern", "black")
+	v.testSrc = videoTestSrc
+
+	inputSelector, err := gst.NewElement("input-selector")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = inputSelector.SetProperty("drop-backwards", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	v.selector = inputSelector
+
 	return nil
 }
 
@@ -227,4 +262,23 @@ func (v *videoInput) link() (*gst.GhostPad, error) {
 	}
 
 	return gst.NewGhostPad("video_src", builder.GetSrcPad(elements)), nil
+}
+
+func (v *videoInput) setSelectorPad(pad *gst.Pad) error {
+	pt, err := v.selector.GetPropertyType("active-pad")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	val, err := glib.ValueInit(pt)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	val.SetInstance(uintptr(unsafe.Pointer(pad.Instance())))
+
+	if err = v.selector.SetPropertyValue("active-pad", val); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	return nil
 }
