@@ -11,6 +11,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -31,13 +32,7 @@ type Monitor struct {
 	reserved float64
 }
 
-const (
-	roomComposite   = "room_composite"
-	web             = "web"
-	trackComposite  = "track_composite"
-	track           = "track"
-	cpuHoldDuration = time.Second * 5
-)
+const cpuHoldDuration = time.Second * 5
 
 func NewMonitor(conf *config.ServiceConfig) *Monitor {
 	return &Monitor{
@@ -87,35 +82,6 @@ func (m *Monitor) Start(conf *config.ServiceConfig, isAvailable func() float64) 
 }
 
 func (m *Monitor) checkCPUConfig() error {
-	if m.cpuCostConfig.RoomCompositeCpuCost < 2.5 {
-		logger.Warnw("room composite requirement too low", nil,
-			"configValue", m.cpuCostConfig.RoomCompositeCpuCost,
-			"minimumValue", 2.5,
-			"recommendedValue", 3,
-		)
-	}
-	if m.cpuCostConfig.WebCpuCost < 2.5 {
-		logger.Warnw("web requirement too low", nil,
-			"configValue", m.cpuCostConfig.WebCpuCost,
-			"minimumValue", 2.5,
-			"recommendedValue", 3,
-		)
-	}
-	if m.cpuCostConfig.TrackCompositeCpuCost < 1 {
-		logger.Warnw("track composite requirement too low", nil,
-			"configValue", m.cpuCostConfig.TrackCompositeCpuCost,
-			"minimumValue", 1,
-			"recommendedValue", 2,
-		)
-	}
-	if m.cpuCostConfig.TrackCpuCost < 0.5 {
-		logger.Warnw("track requirement too low", nil,
-			"configValue", m.cpuCostConfig.RoomCompositeCpuCost,
-			"minimumValue", 0.5,
-			"recommendedValue", 1,
-		)
-	}
-
 	requirements := []float64{
 		m.cpuCostConfig.RoomCompositeCpuCost,
 		m.cpuCostConfig.WebCpuCost,
@@ -205,19 +171,16 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	var cpuHold float64
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		m.reserved += m.cpuCostConfig.RoomCompositeCpuCost
 		cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
 	case *rpc.StartEgressRequest_Web:
-		m.reserved += m.cpuCostConfig.WebCpuCost
 		cpuHold = m.cpuCostConfig.WebCpuCost
 	case *rpc.StartEgressRequest_TrackComposite:
-		m.reserved += m.cpuCostConfig.TrackCompositeCpuCost
 		cpuHold = m.cpuCostConfig.TrackCompositeCpuCost
 	case *rpc.StartEgressRequest_Track:
-		m.reserved += m.cpuCostConfig.TrackCpuCost
 		cpuHold = m.cpuCostConfig.TrackCpuCost
 	}
 
+	m.reserved += cpuHold
 	m.pendingCPUs.Add(cpuHold)
 	time.AfterFunc(cpuHoldDuration, func() { m.pendingCPUs.Sub(cpuHold) })
 	return nil
@@ -226,13 +189,13 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		m.requestGauge.With(prometheus.Labels{"type": roomComposite}).Add(1)
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Add(1)
 	case *rpc.StartEgressRequest_Web:
-		m.requestGauge.With(prometheus.Labels{"type": web}).Add(1)
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Add(1)
 	case *rpc.StartEgressRequest_TrackComposite:
-		m.requestGauge.With(prometheus.Labels{"type": trackComposite}).Add(1)
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Add(1)
 	case *rpc.StartEgressRequest_Track:
-		m.requestGauge.With(prometheus.Labels{"type": track}).Add(1)
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrack}).Add(1)
 	}
 }
 
@@ -243,16 +206,16 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) {
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
 		m.reserved -= m.cpuCostConfig.RoomCompositeCpuCost
-		m.requestGauge.With(prometheus.Labels{"type": roomComposite}).Sub(1)
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Sub(1)
 	case *rpc.StartEgressRequest_Web:
 		m.reserved -= m.cpuCostConfig.WebCpuCost
-		m.requestGauge.With(prometheus.Labels{"type": web}).Sub(1)
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
 	case *rpc.StartEgressRequest_TrackComposite:
 		m.reserved -= m.cpuCostConfig.TrackCompositeCpuCost
-		m.requestGauge.With(prometheus.Labels{"type": trackComposite}).Sub(1)
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Sub(1)
 	case *rpc.StartEgressRequest_Track:
 		m.reserved -= m.cpuCostConfig.TrackCpuCost
-		m.requestGauge.With(prometheus.Labels{"type": track}).Sub(1)
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrack}).Sub(1)
 	}
 }
 

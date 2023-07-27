@@ -119,11 +119,11 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 
 		// file duration can be different from egress duration based on keyframes, muting, and latency
 		delta := 4.5
-		switch p.Info.Request.(type) {
-		case *livekit.EgressInfo_RoomComposite:
+		switch p.RequestType {
+		case types.RequestTypeRoomComposite:
 			require.InDelta(t, expected, actual, delta)
 
-		case *livekit.EgressInfo_Track:
+		case types.RequestTypeTrack:
 			if p.AudioEnabled {
 				if withMuting {
 					delta = 6

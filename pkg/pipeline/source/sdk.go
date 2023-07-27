@@ -15,7 +15,6 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 	lksdk "github.com/livekit/server-sdk-go"
@@ -30,6 +29,8 @@ const (
 )
 
 type SDKSource struct {
+	*config.Callbacks
+
 	room *lksdk.Room
 	sync *synchronizer.Synchronizer
 
@@ -41,16 +42,15 @@ type SDKSource struct {
 	videoTrackID string
 
 	// participant
-	participantIdentity string
+	identity string
 
 	audioWriter *sdk.AppWriter
 	videoWriter *sdk.AppWriter
 
+	subscriptions  sync.WaitGroup
 	active         atomic.Int32
 	startRecording chan struct{}
 	endRecording   chan struct{}
-
-	onTrackMute func(bool)
 }
 
 func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, error) {
@@ -59,11 +59,20 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, er
 
 	startRecording := make(chan struct{})
 	s := &SDKSource{
+		Callbacks: p.Callbacks,
 		sync: synchronizer.NewSynchronizer(func() {
 			close(startRecording)
 		}),
 		startRecording: startRecording,
 		endRecording:   make(chan struct{}),
+	}
+
+	switch p.RequestType {
+	case types.RequestTypeTrackComposite:
+		s.audioTrackID = p.AudioTrackID
+		s.videoTrackID = p.VideoTrackID
+	case types.RequestTypeTrack:
+		s.trackID = p.TrackID
 	}
 
 	if err := s.joinRoom(p); err != nil {
@@ -155,17 +164,16 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 	filenameReplacements := make(map[string]string)
 
 	var onSubscribeErr error
-	var wg sync.WaitGroup
 	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-		defer wg.Done()
+		defer s.subscriptions.Done()
 
 		s.active.Inc()
 		t := s.sync.AddTrack(track, rp.Identity())
 
 		mu.Lock()
-		if p.ParticipantIdentity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
-			p.ParticipantIdentity = rp.Identity()
-			filenameReplacements["{publisher_identity}"] = p.ParticipantIdentity
+		if p.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
+			p.Identity = rp.Identity()
+			filenameReplacements["{publisher_identity}"] = p.Identity
 		}
 
 		if p.TrackID != "" {
@@ -291,8 +299,8 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 	var fileIdentifier string
 	tracks := make(map[string]struct{})
 
-	switch p.Info.Request.(type) {
-	case *livekit.EgressInfo_TrackComposite:
+	switch p.RequestType {
+	case types.RequestTypeTrackComposite:
 		fileIdentifier = p.Info.RoomName
 		if p.AudioEnabled {
 			s.audioTrackID = p.AudioTrackID
@@ -303,17 +311,17 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			tracks[s.videoTrackID] = struct{}{}
 		}
 
-	case *livekit.EgressInfo_Track:
+	case types.RequestTypeTrack:
 		fileIdentifier = p.TrackID
 		s.trackID = p.TrackID
 		tracks[s.trackID] = struct{}{}
 	}
 
-	wg.Add(len(tracks))
+	s.subscriptions.Add(len(tracks))
 	if err := s.subscribeToTracks(tracks); err != nil {
 		return err
 	}
-	wg.Wait()
+	s.subscriptions.Wait()
 	if onSubscribeErr != nil {
 		return onSubscribeErr
 	}
@@ -359,10 +367,6 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}) error {
 	return nil
 }
 
-func (s *SDKSource) OnTrackMuted(onTrackMuted func(bool)) {
-	s.onTrackMute = onTrackMuted
-}
-
 func (s *SDKSource) onTrackMuteChanged(pub lksdk.TrackPublication, muted bool) {
 	track := pub.Track()
 	if track == nil {
@@ -373,8 +377,8 @@ func (s *SDKSource) onTrackMuteChanged(pub lksdk.TrackPublication, muted bool) {
 		w.SetTrackMuted(muted)
 	}
 
-	if s.onTrackMute != nil {
-		s.onTrackMute(muted)
+	for _, onMute := range s.OnTrackMuted {
+		onMute(muted)
 	}
 }
 

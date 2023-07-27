@@ -53,7 +53,7 @@ func getManifest(p *config.PipelineConfig) ([]byte, error) {
 		Url:               p.WebUrl,
 		StartedAt:         p.Info.StartedAt,
 		EndedAt:           p.Info.EndedAt,
-		PublisherIdentity: p.ParticipantIdentity,
+		PublisherIdentity: p.Identity,
 		TrackID:           p.TrackID,
 		TrackKind:         p.TrackKind,
 		TrackSource:       p.TrackSource,

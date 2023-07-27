@@ -42,10 +42,10 @@ type Runner struct {
 	FilePrefix              string `yaml:"file_prefix"`
 	RoomName                string `yaml:"room_name"`
 	RoomTestsOnly           bool   `yaml:"room_only"`
+	WebTestsOnly            bool   `yaml:"web_only"`
 	ParticipantTestsOnly    bool   `yaml:"participant_only"`
 	TrackCompositeTestsOnly bool   `yaml:"track_composite_only"`
 	TrackTestsOnly          bool   `yaml:"track_only"`
-	WebTestsOnly            bool   `yaml:"web_only"`
 	FileTestsOnly           bool   `yaml:"file_only"`
 	StreamTestsOnly         bool   `yaml:"stream_only"`
 	SegmentTestsOnly        bool   `yaml:"segments_only"`

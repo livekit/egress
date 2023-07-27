@@ -128,7 +128,7 @@ func (p *Pipeline) messageWatch(msg *gst.Message) bool {
 		if p.Debug.EnableProfiling {
 			p.uploadDebugFiles()
 		}
-		p.Failure <- err
+		p.OnFailure(err)
 		return false
 	}
 

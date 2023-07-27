@@ -15,8 +15,8 @@ const (
 
 	roomCompositeCpuCost  = 4
 	webCpuCost            = 4
-	trackCompositeCpuCost = 2
-	trackCpuCost          = 1
+	trackCompositeCpuCost = 1
+	trackCpuCost          = 0.5
 
 	defaultTemplatePort         = 7980
 	defaultTemplateBaseTemplate = "http://localhost:%d/"
@@ -35,9 +35,9 @@ type ServiceConfig struct {
 
 type CPUCostConfig struct {
 	RoomCompositeCpuCost  float64 `yaml:"room_composite_cpu_cost"`
+	WebCpuCost            float64 `yaml:"web_cpu_cost"`
 	TrackCompositeCpuCost float64 `yaml:"track_composite_cpu_cost"`
 	TrackCpuCost          float64 `yaml:"track_cpu_cost"`
-	WebCpuCost            float64 `yaml:"web_cpu_cost"`
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {

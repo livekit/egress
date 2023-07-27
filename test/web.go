@@ -138,7 +138,7 @@ func (r *Runner) testWebMulti(t *testing.T) {
 					Url: webUrl,
 					FileOutputs: []*livekit.EncodedFileOutput{{
 						FileType: livekit.EncodedFileType_MP4,
-						Filepath: r.getFilePath("web-multiple"),
+						Filepath: r.getFilePath("web_multiple_{time}"),
 					}},
 					SegmentOutputs: []*livekit.SegmentedFileOutput{{
 						FilenamePrefix: r.getFilePath("web_multiple_{time}"),
