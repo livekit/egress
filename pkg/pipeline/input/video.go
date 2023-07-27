@@ -12,53 +12,12 @@ import (
 	"github.com/livekit/egress/pkg/types"
 )
 
-type VideoInput struct {
-	elements []*gst.Element
+type videoInput struct {
+	src     []*gst.Element
+	encoder []*gst.Element
 }
 
-func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
-	v := &VideoInput{}
-
-	switch p.SourceType {
-	case types.SourceTypeSDK:
-		if err := v.buildSDKDecoder(p); err != nil {
-			return err
-		}
-
-	case types.SourceTypeWeb:
-		if err := v.buildWebDecoder(p); err != nil {
-			return err
-		}
-	}
-
-	if p.VideoTranscoding {
-		if err := v.buildEncoder(p); err != nil {
-			return err
-		}
-	}
-
-	// Add elements to bin
-	if err := b.bin.AddMany(v.elements...); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	b.video = v
-	return nil
-}
-
-func (v *VideoInput) Link() (*gst.GhostPad, error) {
-	err := gst.ElementLinkMany(v.elements...)
-	if err != nil {
-		return nil, errors.ErrGstPipelineError(err)
-	}
-
-	return gst.NewGhostPad("video_src", v.elements[len(v.elements)-1].GetStaticPad("src")), nil
-}
-
-func (v *VideoInput) GetSrcPad() *gst.Pad {
-	return builder.GetSrcPad(v.elements)
-}
-
-func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
+func (v *videoInput) buildWebSource(p *config.PipelineConfig) error {
 	xImageSrc, err := gst.NewElement("ximagesrc")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -93,18 +52,18 @@ func (v *VideoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	v.elements = []*gst.Element{xImageSrc, videoQueue, videoConvert, caps}
+	v.src = []*gst.Element{xImageSrc, videoQueue, videoConvert, caps}
 	return nil
 }
 
-func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
+func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
 	src := p.VideoSrc
 	src.Element.SetArg("format", "time")
 	if err := src.Element.SetProperty("is-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	v.elements = append(v.elements, src.Element)
+	v.src = append(v.src, src.Element)
 	switch {
 	case strings.EqualFold(p.VideoCodecParams.MimeType, string(types.MimeTypeH264)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
@@ -120,7 +79,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		v.elements = append(v.elements, rtpH264Depay)
+		v.src = append(v.src, rtpH264Depay)
 
 		if p.VideoTranscoding {
 			avDecH264, err := gst.NewElement("avdec_h264")
@@ -128,14 +87,14 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 				return errors.ErrGstPipelineError(err)
 			}
 
-			v.elements = append(v.elements, avDecH264)
+			v.src = append(v.src, avDecH264)
 		} else {
 			h264parse, err := gst.NewElement("h264parse")
 			if err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
 
-			v.elements = append(v.elements, h264parse)
+			v.src = append(v.src, h264parse)
 
 			return nil
 		}
@@ -154,7 +113,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		v.elements = append(v.elements, rtpVP8Depay)
+		v.src = append(v.src, rtpVP8Depay)
 
 		if !p.VideoTranscoding {
 			return nil
@@ -165,7 +124,7 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 			return errors.ErrGstPipelineError(err)
 		}
 
-		v.elements = append(v.elements, vp8Dec)
+		v.src = append(v.src, vp8Dec)
 
 	default:
 		return errors.ErrNotSupported(p.VideoCodecParams.MimeType)
@@ -203,17 +162,17 @@ func (v *VideoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	v.elements = append(v.elements, videoQueue, videoConvert, videoScale, videoRate, caps)
+	v.src = append(v.src, videoQueue, videoConvert, videoScale, videoRate, caps)
 	return nil
 }
 
-func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
+func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 	// Put a queue in front of the encoder for pipelining with the stage before
 	videoQueue, err := builder.BuildQueue("video_encoder_queue", p.Latency, false)
 	if err != nil {
 		return err
 	}
-	v.elements = append(v.elements, videoQueue)
+	v.encoder = append(v.encoder, videoQueue)
 
 	switch p.VideoOutCodec {
 	// we only encode h264, the rest are too slow
@@ -251,10 +210,21 @@ func (v *VideoInput) buildEncoder(p *config.PipelineConfig) error {
 			return errors.ErrGstPipelineError(err)
 		}
 
-		v.elements = append(v.elements, x264Enc, caps)
+		v.encoder = append(v.encoder, x264Enc, caps)
 		return nil
 
 	default:
 		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", p.VideoOutCodec))
 	}
+}
+
+func (v *videoInput) link() (*gst.GhostPad, error) {
+	elements := append(v.src, v.encoder...)
+
+	err := gst.ElementLinkMany(elements...)
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
+	return gst.NewGhostPad("video_src", builder.GetSrcPad(elements)), nil
 }

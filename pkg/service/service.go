@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/version"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -113,7 +114,7 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 		return nil, err
 	}
 
-	requestType, outputType := GetTypes(p.Info)
+	requestType, outputType := egress.GetTypes(p.Info)
 	logger.Infow("request validated",
 		"egressID", req.EgressId,
 		"requestType", requestType,

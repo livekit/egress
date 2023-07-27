@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -15,6 +14,7 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/pprof"
@@ -192,7 +192,7 @@ func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
 }
 
 func sendUpdate(ctx context.Context, c rpc.IOInfoClient, info *livekit.EgressInfo) {
-	requestType, outputType := GetTypes(info)
+	requestType, outputType := egress.GetTypes(info)
 	switch info.Status {
 	case livekit.EgressStatus_EGRESS_FAILED:
 		logger.Warnw("egress failed", errors.New(info.Error),
@@ -218,51 +218,4 @@ func sendUpdate(ctx context.Context, c rpc.IOInfoClient, info *livekit.EgressInf
 	if _, err := c.UpdateEgressInfo(ctx, info); err != nil {
 		logger.Errorw("failed to send update", err)
 	}
-}
-
-func GetTypes(info *livekit.EgressInfo) (requestType string, outputType string) {
-	switch req := info.Request.(type) {
-	case *livekit.EgressInfo_RoomComposite:
-		requestType = "room_composite"
-		outputType = getOutputType(req.RoomComposite)
-	case *livekit.EgressInfo_Web:
-		requestType = "web"
-		outputType = getOutputType(req.Web)
-	case *livekit.EgressInfo_TrackComposite:
-		requestType = "track_composite"
-		outputType = getOutputType(req.TrackComposite)
-	case *livekit.EgressInfo_Track:
-		requestType = "track"
-		switch req.Track.Output.(type) {
-		case *livekit.TrackEgressRequest_File:
-			outputType = "file"
-		case *livekit.TrackEgressRequest_WebsocketUrl:
-			outputType = "websocket"
-		}
-	}
-
-	return
-}
-
-func getOutputType(r config.EncodedOutput) string {
-	if r.GetFile() != nil {
-		return "file"
-	}
-	if r.GetStream() != nil {
-		return "stream"
-	}
-	if r.GetSegments() != nil {
-		return "segments"
-	}
-	outputs := make([]string, 0)
-	if len(r.GetFileOutputs()) > 0 {
-		outputs = append(outputs, "file")
-	}
-	if len(r.GetStreamOutputs()) > 0 {
-		outputs = append(outputs, "stream")
-	}
-	if len(r.GetSegmentOutputs()) > 0 {
-		outputs = append(outputs, "segments")
-	}
-	return strings.Join(outputs, ", ")
 }

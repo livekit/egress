@@ -5,7 +5,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/egress/pkg/types"
 )
 
 type Source interface {
@@ -15,13 +15,13 @@ type Source interface {
 }
 
 func New(ctx context.Context, p *config.PipelineConfig) (Source, error) {
-	switch p.Info.Request.(type) {
-	case *livekit.EgressInfo_RoomComposite,
-		*livekit.EgressInfo_Web:
+	switch p.RequestType {
+	case types.RequestTypeRoomComposite,
+		types.RequestTypeWeb:
 		return NewWebSource(ctx, p)
 
-	case *livekit.EgressInfo_TrackComposite,
-		*livekit.EgressInfo_Track:
+	case types.RequestTypeTrackComposite,
+		types.RequestTypeTrack:
 		return NewSDKSource(ctx, p)
 
 	default:

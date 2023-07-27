@@ -14,101 +14,14 @@ import (
 
 const audioMixerLatency = uint64(2e9)
 
-type AudioInput struct {
-	decoder []*gst.Element
+type audioInput struct {
+	src     []*gst.Element
 	testSrc []*gst.Element
 	mixer   []*gst.Element
 	encoder *gst.Element
 }
 
-func (b *Bin) buildAudioInput(p *config.PipelineConfig) error {
-	a := &AudioInput{}
-
-	switch p.SourceType {
-	case types.SourceTypeSDK:
-		if err := a.buildSDKDecoder(p); err != nil {
-			return err
-		}
-
-	case types.SourceTypeWeb:
-		if err := a.buildWebDecoder(p); err != nil {
-			return err
-		}
-	}
-
-	if p.AudioTranscoding {
-		if err := a.buildEncoder(p); err != nil {
-			return err
-		}
-	}
-
-	// Add elements to bin
-	if err := b.bin.AddMany(a.decoder...); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if a.testSrc != nil {
-		if err := b.bin.AddMany(a.testSrc...); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-	}
-	if a.mixer != nil {
-		if err := b.bin.AddMany(a.mixer...); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-	}
-	if a.encoder != nil {
-		if err := b.bin.Add(a.encoder); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-	}
-
-	b.audio = a
-	return nil
-}
-
-func (a *AudioInput) Link() (*gst.GhostPad, error) {
-	if a.decoder != nil {
-		if err := gst.ElementLinkMany(a.decoder...); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
-	}
-	if a.mixer != nil {
-		if err := builder.LinkPads("audio decoder", builder.GetSrcPad(a.decoder), "audio mixer", a.mixer[0].GetRequestPad("sink_%u")); err != nil {
-			return nil, err
-		}
-		if err := gst.ElementLinkMany(a.testSrc...); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
-		if err := builder.LinkPads("audio test src", builder.GetSrcPad(a.testSrc), "audio mixer", a.mixer[0].GetRequestPad("sink_%u")); err != nil {
-			return nil, err
-		}
-		if err := gst.ElementLinkMany(a.mixer...); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
-	}
-
-	var srcPad *gst.Pad
-	if a.encoder != nil {
-		if a.mixer != nil {
-			if err := builder.LinkPads("audio mixer", builder.GetSrcPad(a.mixer), "audio encoder", a.encoder.GetStaticPad("sink")); err != nil {
-				return nil, err
-			}
-		} else {
-			if err := builder.LinkPads("audio decoder", builder.GetSrcPad(a.decoder), "audio encoder", a.encoder.GetStaticPad("sink")); err != nil {
-				return nil, err
-			}
-		}
-		srcPad = a.encoder.GetStaticPad("src")
-	} else if a.mixer != nil {
-		srcPad = builder.GetSrcPad(a.mixer)
-	} else {
-		srcPad = builder.GetSrcPad(a.decoder)
-	}
-
-	return gst.NewGhostPad("audio_src", srcPad), nil
-}
-
-func (a *AudioInput) buildWebDecoder(p *config.PipelineConfig) error {
+func (a *audioInput) buildWebSource(p *config.PipelineConfig) error {
 	pulseSrc, err := gst.NewElement("pulsesrc")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -117,17 +30,17 @@ func (a *AudioInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	a.decoder = []*gst.Element{pulseSrc}
-	return a.addConverter(p)
+	a.src = []*gst.Element{pulseSrc}
+	return a.buildConverter(p)
 }
 
-func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig) error {
+func (a *audioInput) buildAppSource(p *config.PipelineConfig) error {
 	src := p.AudioSrc
 	src.Element.SetArg("format", "time")
 	if err := src.Element.SetProperty("is-live", true); err != nil {
 		return err
 	}
-	a.decoder = []*gst.Element{src.Element}
+	a.src = []*gst.Element{src.Element}
 
 	switch {
 	case strings.EqualFold(p.AudioCodecParams.MimeType, string(types.MimeTypeOpus)):
@@ -150,20 +63,20 @@ func (a *AudioInput) buildSDKDecoder(p *config.PipelineConfig) error {
 			return errors.ErrGstPipelineError(err)
 		}
 
-		a.decoder = append(a.decoder, rtpOpusDepay, opusDec)
+		a.src = append(a.src, rtpOpusDepay, opusDec)
 
 	default:
 		return errors.ErrNotSupported(p.AudioCodecParams.MimeType)
 	}
 
-	if err := a.addConverter(p); err != nil {
+	if err := a.buildConverter(p); err != nil {
 		return err
 	}
 
 	return a.buildMixer(p)
 }
 
-func (a *AudioInput) addConverter(p *config.PipelineConfig) error {
+func (a *audioInput) buildConverter(p *config.PipelineConfig) error {
 	audioQueue, err := builder.BuildQueue("audio_input_queue", p.Latency, true)
 	if err != nil {
 		return err
@@ -179,16 +92,16 @@ func (a *AudioInput) addConverter(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	capsFilter, err := getCapsFilter(p)
+	capsFilter, err := newAudioCapsFilter(p)
 	if err != nil {
 		return err
 	}
 
-	a.decoder = append(a.decoder, audioQueue, audioConvert, audioResample, capsFilter)
+	a.src = append(a.src, audioQueue, audioConvert, audioResample, capsFilter)
 	return nil
 }
 
-func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
+func (a *audioInput) buildMixer(p *config.PipelineConfig) error {
 	audioTestSrc, err := gst.NewElement("audiotestsrc")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -202,7 +115,7 @@ func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 	if err = audioTestSrc.SetProperty("is-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	audioCaps, err := getCapsFilter(p)
+	audioCaps, err := newAudioCapsFilter(p)
 	if err != nil {
 		return err
 	}
@@ -215,7 +128,7 @@ func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 	if err = audioMixer.SetProperty("latency", audioMixerLatency); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	mixedCaps, err := getCapsFilter(p)
+	mixedCaps, err := newAudioCapsFilter(p)
 	if err != nil {
 		return err
 	}
@@ -224,7 +137,7 @@ func (a *AudioInput) buildMixer(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (a *AudioInput) buildEncoder(p *config.PipelineConfig) error {
+func (a *audioInput) buildEncoder(p *config.PipelineConfig) error {
 	switch p.AudioOutCodec {
 	case types.MimeTypeOpus:
 		encoder, err := gst.NewElement("opusenc")
@@ -256,7 +169,7 @@ func (a *AudioInput) buildEncoder(p *config.PipelineConfig) error {
 	return nil
 }
 
-func getCapsFilter(p *config.PipelineConfig) (*gst.Element, error) {
+func newAudioCapsFilter(p *config.PipelineConfig) (*gst.Element, error) {
 	var caps *gst.Caps
 	switch p.AudioOutCodec {
 	case types.MimeTypeOpus, types.MimeTypeRawAudio:
@@ -280,4 +193,46 @@ func getCapsFilter(p *config.PipelineConfig) (*gst.Element, error) {
 	}
 
 	return capsFilter, nil
+}
+
+func (a *audioInput) link() (*gst.GhostPad, error) {
+	if a.src != nil {
+		if err := gst.ElementLinkMany(a.src...); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+	}
+	if a.mixer != nil {
+		if err := builder.LinkPads("audio decoder", builder.GetSrcPad(a.src), "audio mixer", a.mixer[0].GetRequestPad("sink_%u")); err != nil {
+			return nil, err
+		}
+		if err := gst.ElementLinkMany(a.testSrc...); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err := builder.LinkPads("audio test src", builder.GetSrcPad(a.testSrc), "audio mixer", a.mixer[0].GetRequestPad("sink_%u")); err != nil {
+			return nil, err
+		}
+		if err := gst.ElementLinkMany(a.mixer...); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+	}
+
+	var srcPad *gst.Pad
+	if a.encoder != nil {
+		if a.mixer != nil {
+			if err := builder.LinkPads("audio mixer", builder.GetSrcPad(a.mixer), "audio encoder", a.encoder.GetStaticPad("sink")); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := builder.LinkPads("audio decoder", builder.GetSrcPad(a.src), "audio encoder", a.encoder.GetStaticPad("sink")); err != nil {
+				return nil, err
+			}
+		}
+		srcPad = a.encoder.GetStaticPad("src")
+	} else if a.mixer != nil {
+		srcPad = builder.GetSrcPad(a.mixer)
+	} else {
+		srcPad = builder.GetSrcPad(a.src)
+	}
+
+	return gst.NewGhostPad("audio_src", srcPad), nil
 }

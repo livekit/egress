@@ -79,7 +79,7 @@ func (o *WebsocketOutput) SetSink(writer *sink.WebsocketSink, eosFunc func(*app.
 					)
 					return gst.FlowEOS
 				}
-				o.conf.Failure <- err
+				o.conf.OnFailure(err)
 				logger.Debugw("unexpected flow return",
 					"flow", "Error",
 					"reason", err.Error(),

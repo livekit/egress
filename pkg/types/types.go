@@ -1,16 +1,29 @@
 package types
 
-type MimeType string
-type Profile string
+type RequestType string
 type SourceType string
 type EgressType string
+type MimeType string
+type Profile string
 type OutputType string
 type FileExtension string
 
 const (
+	// request types
+	RequestTypeRoomComposite  = "room_composite"
+	RequestTypeWeb            = "web"
+	RequestTypeTrackComposite = "track_composite"
+	RequestTypeTrack          = "track"
+
 	// source types
 	SourceTypeWeb SourceType = "web"
 	SourceTypeSDK SourceType = "sdk"
+
+	// egress types
+	EgressTypeStream    EgressType = "stream"
+	EgressTypeWebsocket EgressType = "websocket"
+	EgressTypeFile      EgressType = "file"
+	EgressTypeSegments  EgressType = "segments"
 
 	// input types
 	MimeTypeAAC      MimeType = "audio/aac"
@@ -24,12 +37,6 @@ const (
 	ProfileBaseline Profile = "baseline"
 	ProfileMain     Profile = "main"
 	ProfileHigh     Profile = "high"
-
-	// egress types
-	EgressTypeStream    EgressType = "stream"
-	EgressTypeWebsocket EgressType = "websocket"
-	EgressTypeFile      EgressType = "file"
-	EgressTypeSegments  EgressType = "segments"
 
 	// output types
 	OutputTypeUnknownFile OutputType = ""

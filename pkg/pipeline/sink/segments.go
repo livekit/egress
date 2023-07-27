@@ -68,7 +68,7 @@ func (s *SegmentSink) Start() error {
 		var err error
 		defer func() {
 			if err != nil {
-				s.conf.Failure <- err
+				s.conf.OnFailure(err)
 			}
 			s.done.Break()
 		}()

@@ -66,6 +66,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate Update
 		closed:         core.NewFuse(),
 		sendUpdate:     onStatusUpdate,
 	}
+	p.OnFailure = p.onFailure
 
 	// initialize gst
 	go func() {
@@ -78,6 +79,12 @@ func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate Update
 
 	// create source
 	p.src, err = source.New(ctx, conf)
+	if err != nil {
+		return nil, err
+	}
+
+	// create sinks
+	p.sinks, err = sink.CreateSinks(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -112,15 +119,8 @@ func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate Update
 		return nil, err
 	}
 
-	// create sinks
-	p.sinks, err = sink.CreateSinks(conf)
-	if err != nil {
-		return nil, err
-	}
-
 	if s, ok := p.sinks[types.EgressTypeWebsocket]; ok {
 		websocketSink := s.(*sink.WebsocketSink)
-		p.src.(*source.SDKSource).OnTrackMuted(websocketSink.OnTrackMuted)
 		if err = p.out.SetWebsocketSink(websocketSink, func(appSink *app.Sink) {
 			_ = websocketSink.Close()
 			p.pipeline.GetPipelineBus().Post(gst.NewEOSMessage(appSink))
@@ -210,15 +210,6 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		p.Info.Error = err.Error()
 		return p.Info
 	}
-
-	// stop if one of the sources or sinks fails
-	go func() {
-		err := <-p.Failure
-		if p.Info.Error == "" {
-			p.Info.Error = err.Error()
-		}
-		p.stop()
-	}()
 
 	// run main loop
 	p.loop.Run()
@@ -418,7 +409,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 					if p.StreamOnly {
 						p.stop()
 					} else {
-						p.Failure <- errors.New("pipeline frozen")
+						p.OnFailure(errors.New("pipeline frozen"))
 					}
 				})
 
@@ -520,6 +511,13 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 			segmentsInfo.Duration = endedAt - segmentsInfo.StartedAt
 		}
 	}
+}
+
+func (p *Pipeline) onFailure(err error) {
+	if p.Info.Error == "" {
+		p.Info.Error = err.Error()
+	}
+	go p.stop()
 }
 
 func (p *Pipeline) stop() {

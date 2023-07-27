@@ -20,6 +20,12 @@ func (o outputConfig) GetOutputType() types.OutputType {
 }
 
 type EncodedOutput interface {
+	GetFileOutputs() []*livekit.EncodedFileOutput
+	GetStreamOutputs() []*livekit.StreamOutput
+	GetSegmentOutputs() []*livekit.SegmentedFileOutput
+}
+
+type EncodedOutputDeprecated interface {
 	GetFile() *livekit.EncodedFileOutput
 	GetStream() *livekit.StreamOutput
 	GetSegments() *livekit.SegmentedFileOutput
@@ -37,7 +43,9 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 	var file *livekit.EncodedFileOutput
 	switch len(files) {
 	case 0:
-		file = req.GetFile()
+		if r, ok := req.(EncodedOutputDeprecated); ok {
+			file = r.GetFile()
+		}
 	case 1:
 		file = files[0]
 	default:
@@ -63,7 +71,9 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 	var stream *livekit.StreamOutput
 	switch len(streams) {
 	case 0:
-		stream = req.GetStream()
+		if r, ok := req.(EncodedOutputDeprecated); ok {
+			stream = r.GetStream()
+		}
 	case 1:
 		stream = streams[0]
 	default:
@@ -98,7 +108,9 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 	var segment *livekit.SegmentedFileOutput
 	switch len(segments) {
 	case 0:
-		segment = req.GetSegments()
+		if r, ok := req.(EncodedOutputDeprecated); ok {
+			segment = r.GetSegments()
+		}
 	case 1:
 		segment = segments[0]
 	default:
@@ -170,21 +182,22 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 }
 
 func redactEncodedOutputs(out EncodedOutput) {
-	if file := out.GetFile(); file != nil {
-		redactUpload(file)
-	} else if stream := out.GetStream(); stream != nil {
-		redactStreamKeys(stream)
-	} else if segment := out.GetSegments(); segment != nil {
-		redactUpload(segment)
-	} else {
-		if files := out.GetFileOutputs(); len(files) == 1 {
-			redactUpload(files[0])
-		}
-		if streams := out.GetStreamOutputs(); len(streams) == 1 {
-			redactStreamKeys(streams[0])
-		}
-		if segments := out.GetSegmentOutputs(); len(segments) == 1 {
-			redactUpload(segments[0])
+	if files := out.GetFileOutputs(); len(files) == 1 {
+		redactUpload(files[0])
+	}
+	if streams := out.GetStreamOutputs(); len(streams) == 1 {
+		redactStreamKeys(streams[0])
+	}
+	if segments := out.GetSegmentOutputs(); len(segments) == 1 {
+		redactUpload(segments[0])
+	}
+	if o, ok := out.(EncodedOutputDeprecated); ok {
+		if file := o.GetFile(); file != nil {
+			redactUpload(file)
+		} else if stream := o.GetStream(); stream != nil {
+			redactStreamKeys(stream)
+		} else if segment := o.GetSegments(); segment != nil {
+			redactUpload(segment)
 		}
 	}
 }
