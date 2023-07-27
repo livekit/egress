@@ -517,7 +517,7 @@ func (p *Pipeline) onFailure(err error) {
 	if p.Info.Error == "" {
 		p.Info.Error = err.Error()
 	}
-	p.stop()
+	go p.stop()
 }
 
 func (p *Pipeline) stop() {
