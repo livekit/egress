@@ -92,7 +92,7 @@ func (a *audioInput) buildConverter(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	capsFilter, err := buildCapsFilter(p)
+	capsFilter, err := newAudioCapsFilter(p)
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func (a *audioInput) buildMixer(p *config.PipelineConfig) error {
 	if err = audioTestSrc.SetProperty("is-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	audioCaps, err := buildCapsFilter(p)
+	audioCaps, err := newAudioCapsFilter(p)
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func (a *audioInput) buildMixer(p *config.PipelineConfig) error {
 	if err = audioMixer.SetProperty("latency", audioMixerLatency); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	mixedCaps, err := buildCapsFilter(p)
+	mixedCaps, err := newAudioCapsFilter(p)
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func (a *audioInput) buildEncoder(p *config.PipelineConfig) error {
 	return nil
 }
 
-func buildCapsFilter(p *config.PipelineConfig) (*gst.Element, error) {
+func newAudioCapsFilter(p *config.PipelineConfig) (*gst.Element, error) {
 	var caps *gst.Caps
 	switch p.AudioOutCodec {
 	case types.MimeTypeOpus, types.MimeTypeRawAudio:

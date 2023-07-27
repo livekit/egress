@@ -88,12 +88,12 @@ func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
 
 	switch p.SourceType {
 	case types.SourceTypeSDK:
-		if err := v.buildSDKDecoder(p); err != nil {
+		if err := v.buildAppSource(p); err != nil {
 			return err
 		}
 
 	case types.SourceTypeWeb:
-		if err := v.buildWebDecoder(p); err != nil {
+		if err := v.buildWebSource(p); err != nil {
 			return err
 		}
 	}
@@ -105,9 +105,13 @@ func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
 	}
 
 	// Add elements to bin
-	if err := b.bin.AddMany(v.elements...); err != nil {
+	if err := b.bin.AddMany(v.src...); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+	if err := b.bin.AddMany(v.encoder...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
 	b.video = v
 	return nil
 }

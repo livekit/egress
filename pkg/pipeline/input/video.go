@@ -13,10 +13,11 @@ import (
 )
 
 type videoInput struct {
-	elements []*gst.Element
+	src     []*gst.Element
+	encoder []*gst.Element
 }
 
-func (v *videoInput) buildWebDecoder(p *config.PipelineConfig) error {
+func (v *videoInput) buildWebSource(p *config.PipelineConfig) error {
 	xImageSrc, err := gst.NewElement("ximagesrc")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -51,18 +52,18 @@ func (v *videoInput) buildWebDecoder(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	v.elements = []*gst.Element{xImageSrc, videoQueue, videoConvert, caps}
+	v.src = []*gst.Element{xImageSrc, videoQueue, videoConvert, caps}
 	return nil
 }
 
-func (v *videoInput) buildSDKDecoder(p *config.PipelineConfig) error {
+func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
 	src := p.VideoSrc
 	src.Element.SetArg("format", "time")
 	if err := src.Element.SetProperty("is-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	v.elements = append(v.elements, src.Element)
+	v.src = append(v.src, src.Element)
 	switch {
 	case strings.EqualFold(p.VideoCodecParams.MimeType, string(types.MimeTypeH264)):
 		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
@@ -78,7 +79,7 @@ func (v *videoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		v.elements = append(v.elements, rtpH264Depay)
+		v.src = append(v.src, rtpH264Depay)
 
 		if p.VideoTranscoding {
 			avDecH264, err := gst.NewElement("avdec_h264")
@@ -86,14 +87,14 @@ func (v *videoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 				return errors.ErrGstPipelineError(err)
 			}
 
-			v.elements = append(v.elements, avDecH264)
+			v.src = append(v.src, avDecH264)
 		} else {
 			h264parse, err := gst.NewElement("h264parse")
 			if err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
 
-			v.elements = append(v.elements, h264parse)
+			v.src = append(v.src, h264parse)
 
 			return nil
 		}
@@ -112,7 +113,7 @@ func (v *videoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		v.elements = append(v.elements, rtpVP8Depay)
+		v.src = append(v.src, rtpVP8Depay)
 
 		if !p.VideoTranscoding {
 			return nil
@@ -123,7 +124,7 @@ func (v *videoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 			return errors.ErrGstPipelineError(err)
 		}
 
-		v.elements = append(v.elements, vp8Dec)
+		v.src = append(v.src, vp8Dec)
 
 	default:
 		return errors.ErrNotSupported(p.VideoCodecParams.MimeType)
@@ -161,7 +162,7 @@ func (v *videoInput) buildSDKDecoder(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	v.elements = append(v.elements, videoQueue, videoConvert, videoScale, videoRate, caps)
+	v.src = append(v.src, videoQueue, videoConvert, videoScale, videoRate, caps)
 	return nil
 }
 
@@ -171,7 +172,7 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 	if err != nil {
 		return err
 	}
-	v.elements = append(v.elements, videoQueue)
+	v.encoder = append(v.encoder, videoQueue)
 
 	switch p.VideoOutCodec {
 	// we only encode h264, the rest are too slow
@@ -209,7 +210,7 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 			return errors.ErrGstPipelineError(err)
 		}
 
-		v.elements = append(v.elements, x264Enc, caps)
+		v.encoder = append(v.encoder, x264Enc, caps)
 		return nil
 
 	default:
@@ -218,10 +219,12 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 }
 
 func (v *videoInput) link() (*gst.GhostPad, error) {
-	err := gst.ElementLinkMany(v.elements...)
+	elements := append(v.src, v.encoder...)
+
+	err := gst.ElementLinkMany(elements...)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	return gst.NewGhostPad("video_src", v.elements[len(v.elements)-1].GetStaticPad("src")), nil
+	return gst.NewGhostPad("video_src", builder.GetSrcPad(elements)), nil
 }
