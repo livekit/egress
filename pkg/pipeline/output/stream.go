@@ -211,6 +211,36 @@ func (o *StreamOutput) AddSink(bin *gst.Bin, url string) error {
 	return nil
 }
 
+func (o *StreamOutput) Reset(name string) (bool, error) {
+	o.RLock()
+	defer o.RUnlock()
+
+	var sink *streamSink
+	for _, s := range o.sinks {
+		if s.sink.GetName() == name {
+			sink = s
+			break
+		}
+	}
+	if sink == nil {
+		return false, errors.ErrStreamNotFound(name)
+	}
+
+	sink.reconnections++
+	if sink.reconnections > 3 {
+		return false, nil
+	}
+
+	if err := sink.sink.BlockSetState(gst.StateNull); err != nil {
+		return false, err
+	}
+	if err := sink.sink.BlockSetState(gst.StatePlaying); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 func (o *StreamOutput) RemoveSink(bin *gst.Bin, url string) error {
 	o.Lock()
 	defer o.Unlock()
@@ -253,9 +283,10 @@ func (o *StreamOutput) RemoveSink(bin *gst.Bin, url string) error {
 }
 
 type streamSink struct {
-	pad   string
-	queue *gst.Element
-	sink  *gst.Element
+	pad           string
+	queue         *gst.Element
+	sink          *gst.Element
+	reconnections int
 }
 
 func (o *streamSink) link(tee *gst.Element, live bool) error {
