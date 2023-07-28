@@ -211,13 +211,15 @@ func (o *StreamOutput) AddSink(bin *gst.Bin, url string) error {
 	return nil
 }
 
-func (o *StreamOutput) Reset(name string) (bool, error) {
+func (o *StreamOutput) Reset(name string, streamErr error) (bool, error) {
 	o.RLock()
 	defer o.RUnlock()
 
+	var url string
 	var sink *streamSink
-	for _, s := range o.sinks {
+	for u, s := range o.sinks {
 		if s.sink.GetName() == name {
+			url = u
 			sink = s
 			break
 		}
@@ -230,6 +232,9 @@ func (o *StreamOutput) Reset(name string) (bool, error) {
 	if sink.reconnections > 3 {
 		return false, nil
 	}
+
+	redacted, _ := utils.RedactStreamKey(url)
+	logger.Warnw("resetting stream", streamErr, "url", redacted)
 
 	if err := sink.sink.BlockSetState(gst.StateNull); err != nil {
 		return false, err

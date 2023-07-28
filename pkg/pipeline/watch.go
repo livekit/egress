@@ -166,7 +166,7 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 	case element == elementGstRtmp2Sink:
 		if strings.HasPrefix(gErr.Error(), "Connection error") {
 			// try reconnecting
-			ok, err := p.out.ResetStream(name)
+			ok, err := p.out.ResetStream(name, gErr)
 			if ok || err != nil {
 				return err
 			}
