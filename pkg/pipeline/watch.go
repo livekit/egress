@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/tinyzimmer/go-glib/glib"
@@ -177,7 +178,15 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 
 	switch {
 	case element == elementGstRtmp2Sink:
-		// bad URI or could not connect. Remove rtmp output
+		if strings.HasPrefix(gErr.Error(), "Connection error") {
+			// try reconnecting
+			ok, err := p.out.ResetStream(name, gErr)
+			if ok || err != nil {
+				return err
+			}
+		}
+
+		// remove sink
 		url, err := p.out.GetStreamUrl(name)
 		if err != nil {
 			logger.Warnw("rtmp output not found", err, "url", url)

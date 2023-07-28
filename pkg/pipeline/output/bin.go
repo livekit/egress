@@ -192,6 +192,15 @@ func (b *Bin) AddStream(url string) error {
 	return o.(*StreamOutput).AddSink(b.bin, url)
 }
 
+func (b *Bin) ResetStream(name string, streamErr error) (bool, error) {
+	o := b.outputs[types.EgressTypeStream]
+	if o == nil {
+		return false, errors.ErrStreamNotFound(name)
+	}
+
+	return o.(*StreamOutput).Reset(name, streamErr)
+}
+
 func (b *Bin) GetStreamUrl(name string) (string, error) {
 	o := b.outputs[types.EgressTypeStream]
 	if o == nil {
