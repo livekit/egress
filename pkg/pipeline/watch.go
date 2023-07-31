@@ -14,7 +14,6 @@
 
 package pipeline
 
-import "C"
 import (
 	"context"
 	"fmt"
@@ -181,8 +180,10 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 		if strings.HasPrefix(gErr.Error(), "Connection error") {
 			// try reconnecting
 			ok, err := p.out.ResetStream(name, gErr)
-			if ok || err != nil {
-				return err
+			if err != nil {
+				logger.Errorw("failed to reset stream", err)
+			} else if ok {
+				return nil
 			}
 		}
 
@@ -192,6 +193,7 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 			logger.Warnw("rtmp output not found", err, "url", url)
 			return err
 		}
+
 		return p.removeSink(context.Background(), url, gErr)
 
 	case element == elementGstAppSrc:
