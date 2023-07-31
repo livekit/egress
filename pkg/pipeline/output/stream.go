@@ -232,7 +232,7 @@ func (o *StreamOutput) Reset(name string, streamErr error) (bool, error) {
 	var url string
 	var sink *streamSink
 	for u, s := range o.sinks {
-		if s.sink.GetName() == name {
+		if sink.queue.GetName() == name || s.sink.GetName() == name {
 			url = u
 			sink = s
 			break
