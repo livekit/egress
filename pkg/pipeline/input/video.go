@@ -12,6 +12,7 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/logger"
 )
 
 type videoInput struct {
@@ -352,6 +353,56 @@ func (v *videoInput) link() (*gst.GhostPad, error) {
 	}
 
 	return gst.NewGhostPad("video_src", ghostPad), nil
+}
+
+func (v *videoInput) linkAppSrc() error {
+	v.srcPad = v.selector.GetRequestPad("sink_%u")
+
+	if err := gst.ElementLinkMany(v.src...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	if err := builder.LinkPads(
+		"video src", builder.GetSrcPad(v.src),
+		"video selector", v.srcPad,
+	); err != nil {
+		return err
+	}
+
+	return v.setSelectorPad(v.srcPad)
+}
+
+func (v *videoInput) unlinkAppSrc(bin *gst.Bin) error {
+	if err := v.setSelectorPad(v.testSrcPad); err != nil {
+		return err
+	}
+
+	builder.GetSrcPad(v.src).AddProbe(gst.PadProbeTypeBlockUpstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		// unlink from mixer
+		pad.Unlink(v.srcPad)
+
+		// remove elements
+		if err := bin.RemoveMany(v.src...); err != nil {
+			logger.Errorw("failed to remove audio src", err)
+		}
+
+		// reset element states
+		for _, e := range v.src {
+			if err := e.SetState(gst.StateNull); err != nil {
+				logger.Errorw("failed to stop audio src", err)
+			}
+		}
+
+		// release elements and pads
+		v.selector.ReleaseRequestPad(v.srcPad)
+		v.src = nil
+		v.srcPad = nil
+
+		// remove probe
+		return gst.PadProbeRemove
+	})
+
+	return nil
 }
 
 func (v *videoInput) setSelectorPad(pad *gst.Pad) error {

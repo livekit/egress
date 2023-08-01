@@ -41,10 +41,14 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 			}
 		}
 		p.OnTrackRemoved = func(track lksdk.TrackPublication) {
+			var err error
 			if track.Kind() == lksdk.TrackKindAudio {
-				b.removeAudioInput()
+				err = b.removeAudioInput()
 			} else {
-				b.removeVideoInput()
+				err = b.removeVideoInput()
+			}
+			if err != nil {
+				p.OnFailure(err)
 			}
 		}
 	}
@@ -180,15 +184,31 @@ func (b *Bin) addAudioInput(p *config.PipelineConfig) error {
 }
 
 func (b *Bin) addVideoInput(p *config.PipelineConfig) error {
-	return errors.New("unimplemented")
+	// build appsrc
+	if err := b.video.buildAppSource(p); err != nil {
+		return err
+	}
+
+	// add appsrc to bin
+	if err := b.bin.AddMany(b.video.src...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	// link appsrc
+	if err := b.video.linkAppSrc(); err != nil {
+		return err
+	}
+
+	b.bin.SyncStateWithParent()
+	return nil
 }
 
-func (b *Bin) removeAudioInput() {
-	b.audio.unlinkAppSrc(b.bin)
+func (b *Bin) removeAudioInput() error {
+	return b.audio.unlinkAppSrc(b.bin)
 }
 
-func (b *Bin) removeVideoInput() {
-	return
+func (b *Bin) removeVideoInput() error {
+	return b.video.unlinkAppSrc(b.bin)
 }
 
 func (b *Bin) Link() (audioPad, videoPad *gst.GhostPad, err error) {

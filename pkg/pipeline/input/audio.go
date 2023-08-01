@@ -285,29 +285,7 @@ func (a *audioInput) link() (*gst.GhostPad, error) {
 }
 
 func (a *audioInput) linkAppSrc() error {
-	logger.Infow("linking app src")
 	a.srcPad = a.mixer[0].GetRequestPad("sink_%u")
-
-	// builder.GetSrcPad(a.src).AddProbe(gst.PadProbeTypeBlockUpstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-	// 	logger.Infow("probe started")
-	// 	// link tee to queue
-	// 	if err := builder.LinkPads(
-	// 		"audio src", pad,
-	// 		"audio mixer", a.srcPad,
-	// 	); err != nil {
-	// 		logger.Errorw("failed to link audio src to mixer", err)
-	// 		return gst.PadProbeUnhandled
-	// 	}
-	//
-	// 	// sync state
-	// 	for _, e := range a.src {
-	// 		e.SyncStateWithParent()
-	// 	}
-	//
-	// 	// remove probe
-	// 	logger.Infow("probe finished")
-	// 	return gst.PadProbeRemove
-	// })
 
 	if err := gst.ElementLinkMany(a.src...); err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -323,7 +301,7 @@ func (a *audioInput) linkAppSrc() error {
 	return nil
 }
 
-func (a *audioInput) unlinkAppSrc(bin *gst.Bin) {
+func (a *audioInput) unlinkAppSrc(bin *gst.Bin) error {
 	builder.GetSrcPad(a.src).AddProbe(gst.PadProbeTypeBlockUpstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		// unlink from mixer
 		pad.Unlink(a.srcPad)
@@ -348,4 +326,6 @@ func (a *audioInput) unlinkAppSrc(bin *gst.Bin) {
 		// remove probe
 		return gst.PadProbeRemove
 	})
+
+	return nil
 }
