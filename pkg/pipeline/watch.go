@@ -209,10 +209,6 @@ func parseDebugInfo(gErr *gst.GError) (element, name, message string) {
 }
 
 func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
-	if p.playing {
-		return
-	}
-
 	_, newState := msg.ParseStateChanged()
 	if newState != gst.StatePlaying {
 		return

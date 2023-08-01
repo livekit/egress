@@ -10,18 +10,20 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/logger"
 )
 
 const audioMixerLatency = uint64(2e9)
 
 type audioInput struct {
 	src     []*gst.Element
+	srcPad  *gst.Pad
 	testSrc []*gst.Element
 	mixer   []*gst.Element
 	encoder *gst.Element
 }
 
-func (a *audioInput) buildWebSource(p *config.PipelineConfig) error {
+func (a *audioInput) buildWebInput(p *config.PipelineConfig) error {
 	pulseSrc, err := gst.NewElement("pulsesrc")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -29,53 +31,61 @@ func (a *audioInput) buildWebSource(p *config.PipelineConfig) error {
 	if err = pulseSrc.SetProperty("device", fmt.Sprintf("%s.monitor", p.Info.EgressId)); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-
 	a.src = []*gst.Element{pulseSrc}
+
 	return a.buildConverter(p)
 }
 
-func (a *audioInput) buildAppSource(p *config.PipelineConfig) error {
+func (a *audioInput) buildSDKInput(p *config.PipelineConfig) error {
 	if p.AudioSrc != nil {
-		src := p.AudioSrc
-		src.Element.SetArg("format", "time")
-		if err := src.Element.SetProperty("is-live", true); err != nil {
-			return err
-		}
-		a.src = []*gst.Element{src.Element}
-
-		switch {
-		case strings.EqualFold(p.AudioCodecParams.MimeType, string(types.MimeTypeOpus)):
-			if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
-				fmt.Sprintf(
-					"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
-					p.AudioCodecParams.PayloadType, p.AudioCodecParams.ClockRate,
-				),
-			)); err != nil {
-				return errors.ErrGstPipelineError(err)
-			}
-
-			rtpOpusDepay, err := gst.NewElement("rtpopusdepay")
-			if err != nil {
-				return errors.ErrGstPipelineError(err)
-			}
-
-			opusDec, err := gst.NewElement("opusdec")
-			if err != nil {
-				return errors.ErrGstPipelineError(err)
-			}
-
-			a.src = append(a.src, rtpOpusDepay, opusDec)
-
-		default:
-			return errors.ErrNotSupported(p.AudioCodecParams.MimeType)
-		}
-
-		if err := a.buildConverter(p); err != nil {
+		if err := a.buildAppSource(p); err != nil {
 			return err
 		}
 	}
 
+	if err := a.buildTestSrc(p); err != nil {
+		return err
+	}
+
 	return a.buildMixer(p)
+}
+
+func (a *audioInput) buildAppSource(p *config.PipelineConfig) error {
+	src := p.AudioSrc
+	src.Element.SetArg("format", "time")
+	if err := src.Element.SetProperty("is-live", true); err != nil {
+		return err
+	}
+	a.src = []*gst.Element{src.Element}
+
+	switch {
+	case strings.EqualFold(p.AudioCodecParams.MimeType, string(types.MimeTypeOpus)):
+		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
+			fmt.Sprintf(
+				"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
+				p.AudioCodecParams.PayloadType, p.AudioCodecParams.ClockRate,
+			),
+		)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		rtpOpusDepay, err := gst.NewElement("rtpopusdepay")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		opusDec, err := gst.NewElement("opusdec")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		a.src = append(a.src, rtpOpusDepay, opusDec)
+
+	default:
+		return errors.ErrNotSupported(p.AudioCodecParams.MimeType)
+	}
+
+	return a.buildConverter(p)
 }
 
 func (a *audioInput) buildConverter(p *config.PipelineConfig) error {
@@ -103,7 +113,7 @@ func (a *audioInput) buildConverter(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (a *audioInput) buildMixer(p *config.PipelineConfig) error {
+func (a *audioInput) buildTestSrc(p *config.PipelineConfig) error {
 	audioTestSrc, err := gst.NewElement("audiotestsrc")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -117,12 +127,17 @@ func (a *audioInput) buildMixer(p *config.PipelineConfig) error {
 	if err = audioTestSrc.SetProperty("is-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+
 	audioCaps, err := newAudioCapsFilter(p)
 	if err != nil {
 		return err
 	}
-	a.testSrc = []*gst.Element{audioTestSrc, audioCaps}
 
+	a.testSrc = []*gst.Element{audioTestSrc, audioCaps}
+	return nil
+}
+
+func (a *audioInput) buildMixer(p *config.PipelineConfig) error {
 	audioMixer, err := gst.NewElement("audiomixer")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -130,12 +145,13 @@ func (a *audioInput) buildMixer(p *config.PipelineConfig) error {
 	if err = audioMixer.SetProperty("latency", audioMixerLatency); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+
 	mixedCaps, err := newAudioCapsFilter(p)
 	if err != nil {
 		return err
 	}
-	a.mixer = []*gst.Element{audioMixer, mixedCaps}
 
+	a.mixer = []*gst.Element{audioMixer, mixedCaps}
 	return nil
 }
 
@@ -199,42 +215,137 @@ func newAudioCapsFilter(p *config.PipelineConfig) (*gst.Element, error) {
 
 func (a *audioInput) link() (*gst.GhostPad, error) {
 	if a.src != nil {
+		// link src elements
 		if err := gst.ElementLinkMany(a.src...); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 	}
-	if a.mixer != nil {
-		if err := builder.LinkPads("audio decoder", builder.GetSrcPad(a.src), "audio mixer", a.mixer[0].GetRequestPad("sink_%u")); err != nil {
-			return nil, err
-		}
+
+	if a.testSrc != nil {
+		// link test src elements
 		if err := gst.ElementLinkMany(a.testSrc...); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
-		if err := builder.LinkPads("audio test src", builder.GetSrcPad(a.testSrc), "audio mixer", a.mixer[0].GetRequestPad("sink_%u")); err != nil {
-			return nil, err
+	}
+
+	if a.mixer != nil {
+		if a.src != nil {
+			// link src to mixer
+			a.srcPad = a.mixer[0].GetRequestPad("sink_%u")
+			if err := builder.LinkPads(
+				"audio src", builder.GetSrcPad(a.src),
+				"audio mixer", a.srcPad,
+			); err != nil {
+				return nil, err
+			}
 		}
+
+		if a.testSrc != nil {
+			// link test src to mixer
+			if err := builder.LinkPads(
+				"audio test src", builder.GetSrcPad(a.testSrc),
+				"audio mixer", a.mixer[0].GetRequestPad("sink_%u"),
+			); err != nil {
+				return nil, err
+			}
+		}
+
 		if err := gst.ElementLinkMany(a.mixer...); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 	}
 
-	var srcPad *gst.Pad
+	var ghostPad *gst.Pad
 	if a.encoder != nil {
 		if a.mixer != nil {
-			if err := builder.LinkPads("audio mixer", builder.GetSrcPad(a.mixer), "audio encoder", a.encoder.GetStaticPad("sink")); err != nil {
+			// link mixer to encoder
+			if err := builder.LinkPads(
+				"audio mixer", builder.GetSrcPad(a.mixer),
+				"audio encoder", a.encoder.GetStaticPad("sink"),
+			); err != nil {
 				return nil, err
 			}
 		} else {
-			if err := builder.LinkPads("audio decoder", builder.GetSrcPad(a.src), "audio encoder", a.encoder.GetStaticPad("sink")); err != nil {
+			// link src to encoder
+			if err := builder.LinkPads(
+				"audio src", builder.GetSrcPad(a.src),
+				"audio encoder", a.encoder.GetStaticPad("sink"),
+			); err != nil {
 				return nil, err
 			}
 		}
-		srcPad = a.encoder.GetStaticPad("src")
+		ghostPad = a.encoder.GetStaticPad("src")
 	} else if a.mixer != nil {
-		srcPad = builder.GetSrcPad(a.mixer)
+		ghostPad = builder.GetSrcPad(a.mixer)
 	} else {
-		srcPad = builder.GetSrcPad(a.src)
+		ghostPad = builder.GetSrcPad(a.src)
 	}
 
-	return gst.NewGhostPad("audio_src", srcPad), nil
+	return gst.NewGhostPad("audio_src", ghostPad), nil
+}
+
+func (a *audioInput) linkAppSrc() error {
+	logger.Infow("linking app src")
+	a.srcPad = a.mixer[0].GetRequestPad("sink_%u")
+
+	// builder.GetSrcPad(a.src).AddProbe(gst.PadProbeTypeBlockUpstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	// 	logger.Infow("probe started")
+	// 	// link tee to queue
+	// 	if err := builder.LinkPads(
+	// 		"audio src", pad,
+	// 		"audio mixer", a.srcPad,
+	// 	); err != nil {
+	// 		logger.Errorw("failed to link audio src to mixer", err)
+	// 		return gst.PadProbeUnhandled
+	// 	}
+	//
+	// 	// sync state
+	// 	for _, e := range a.src {
+	// 		e.SyncStateWithParent()
+	// 	}
+	//
+	// 	// remove probe
+	// 	logger.Infow("probe finished")
+	// 	return gst.PadProbeRemove
+	// })
+
+	if err := gst.ElementLinkMany(a.src...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	if err := builder.LinkPads(
+		"audio src", builder.GetSrcPad(a.src),
+		"audio mixer", a.srcPad,
+	); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (a *audioInput) unlinkAppSrc(bin *gst.Bin) {
+	builder.GetSrcPad(a.src).AddProbe(gst.PadProbeTypeBlockUpstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		// unlink from mixer
+		pad.Unlink(a.srcPad)
+
+		// remove elements
+		if err := bin.RemoveMany(a.src...); err != nil {
+			logger.Errorw("failed to remove audio src", err)
+		}
+
+		// reset element states
+		for _, e := range a.src {
+			if err := e.SetState(gst.StateNull); err != nil {
+				logger.Errorw("failed to stop audio src", err)
+			}
+		}
+
+		// release elements and pads
+		a.mixer[0].ReleaseRequestPad(a.srcPad)
+		a.src = nil
+		a.srcPad = nil
+
+		// remove probe
+		return gst.PadProbeRemove
+	})
 }

@@ -21,7 +21,7 @@ type videoInput struct {
 	encoder  []*gst.Element
 }
 
-func (v *videoInput) buildWebSource(p *config.PipelineConfig) error {
+func (v *videoInput) buildWebInput(p *config.PipelineConfig) error {
 	xImageSrc, err := gst.NewElement("ximagesrc")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -60,33 +60,21 @@ func (v *videoInput) buildWebSource(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (v *videoInput) buildSDKSource(p *config.PipelineConfig) error {
+func (v *videoInput) buildSDKInput(p *config.PipelineConfig) error {
 	if p.VideoSrc != nil {
 		if err := v.buildAppSource(p); err != nil {
 			return err
 		}
-
 		return nil
 	}
 
-	videoTestSrc, err := gst.NewElement("videotestsrc")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
+	if err := v.buildTestSrc(); err != nil {
+		return err
 	}
-	if err = videoTestSrc.SetProperty("is-live", true); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	videoTestSrc.SetArg("pattern", "black")
-	v.testSrc = videoTestSrc
 
-	inputSelector, err := gst.NewElement("input-selector")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
+	if err := v.buildInputSelector(); err != nil {
+		return err
 	}
-	if err = inputSelector.SetProperty("drop-backwards", true); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	v.selector = inputSelector
 
 	return nil
 }
@@ -201,6 +189,33 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
 	return nil
 }
 
+func (v *videoInput) buildTestSrc() error {
+	videoTestSrc, err := gst.NewElement("videotestsrc")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = videoTestSrc.SetProperty("is-live", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	videoTestSrc.SetArg("pattern", "black")
+
+	v.testSrc = videoTestSrc
+	return nil
+}
+
+func (v *videoInput) buildInputSelector() error {
+	inputSelector, err := gst.NewElement("input-selector")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = inputSelector.SetProperty("drop-backwards", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	v.selector = inputSelector
+	return nil
+}
+
 func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 	// Put a queue in front of the encoder for pipelining with the stage before
 	videoQueue, err := builder.BuildQueue("video_encoder_queue", p.Latency, false)
@@ -253,6 +268,7 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 	}
 }
 
+// TODO: ignores selector for now
 func (v *videoInput) link() (*gst.GhostPad, error) {
 	elements := append(v.src, v.encoder...)
 

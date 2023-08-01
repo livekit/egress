@@ -29,6 +29,8 @@ const (
 	VideoAppSource = "videoAppSrc"
 
 	subscriptionTimeout = time.Second * 30
+
+	numTracks = 1
 )
 
 type SDKSource struct {
@@ -176,7 +178,16 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 	filenameReplacements := make(map[string]string)
 
 	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-		defer s.subscriptions.Done()
+		defer func() {
+			s.subscriptions.Done()
+			if s.initialized.IsBroken() {
+				if onSubscribeErr != nil {
+					s.OnFailure(onSubscribeErr)
+				} else {
+					s.OnTrackAdded(pub)
+				}
+			}
+		}()
 
 		s.active.Inc()
 		t := s.sync.AddTrack(track, rp.Identity())
@@ -294,12 +305,12 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		switch track.Kind() {
 		case webrtc.RTPCodecTypeAudio:
 			s.audioWriter = writer
-			p.AudioSrc = appSrc
 			p.AudioCodecParams = track.Codec()
+			p.AudioSrc = appSrc
 		case webrtc.RTPCodecTypeVideo:
 			s.videoWriter = writer
-			p.VideoSrc = appSrc
 			p.VideoCodecParams = track.Codec()
+			p.VideoSrc = appSrc
 		}
 	}
 
@@ -318,7 +329,7 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		fileIdentifier = s.identity
 		filenameReplacements["{publisher_identity}"] = s.identity
 
-		s.subscriptions.Add(2) // TODO: remove
+		s.subscriptions.Add(numTracks) // TODO: remove
 		err = s.subscribeToParticipant(s.identity)
 
 	case types.RequestTypeTrackComposite:
@@ -348,7 +359,6 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 	}
 
 	s.subscriptions.Wait()
-	s.initialized.Break()
 	if onSubscribeErr != nil {
 		return onSubscribeErr
 	}
@@ -358,6 +368,9 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		return err
 	}
 
+	s.initialized.Once(func() {
+		logger.Infow("sdk source initialized")
+	})
 	return nil
 }
 
@@ -393,7 +406,7 @@ func (s *SDKSource) subscribeToParticipant(identity string) error {
 	deadline := time.Now().Add(subscriptionTimeout)
 	for time.Now().Before(deadline) {
 		for _, p := range s.room.GetParticipants() {
-			if p.Identity() != identity || len(p.Tracks()) < 2 {
+			if p.Identity() != identity || len(p.Tracks()) < numTracks {
 				continue
 			}
 
@@ -473,6 +486,7 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 	}
 }
 
+// TODO: p.OnTrackRemoved
 func (s *SDKSource) onTrackUnpublished(pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
 	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.Drain(true)

@@ -20,6 +20,7 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
+	lksdk "github.com/livekit/server-sdk-go"
 )
 
 const (
@@ -99,9 +100,11 @@ type VideoConfig struct {
 }
 
 type Callbacks struct {
-	GstReady     chan struct{} `yaml:"-"`
-	OnTrackMuted []func(bool)  `yaml:"-"`
-	OnFailure    func(error)   `yaml:"-"`
+	GstReady       chan struct{}                `yaml:"-"`
+	OnTrackMuted   []func(bool)                 `yaml:"-"`
+	OnTrackAdded   func(lksdk.TrackPublication) `yaml:"-"`
+	OnTrackRemoved func(lksdk.TrackPublication) `yaml:"-"`
+	OnFailure      func(error)                  `yaml:"-"`
 }
 
 func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*PipelineConfig, error) {
