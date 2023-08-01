@@ -8,7 +8,6 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 	lksdk "github.com/livekit/server-sdk-go"
 )
@@ -144,6 +143,14 @@ func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
 	if err := b.bin.AddMany(v.src...); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+	if err := b.bin.AddMany(v.testSrc...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if v.selector != nil {
+		if err := b.bin.Add(v.selector); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+	}
 	if err := b.bin.AddMany(v.encoder...); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
@@ -168,9 +175,7 @@ func (b *Bin) addAudioInput(p *config.PipelineConfig) error {
 		return err
 	}
 
-	logger.Infow("sync audio state")
 	b.bin.SyncStateWithParent()
-	logger.Infow("sync state done")
 	return nil
 }
 

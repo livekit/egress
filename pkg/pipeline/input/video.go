@@ -15,10 +15,12 @@ import (
 )
 
 type videoInput struct {
-	src      []*gst.Element
-	testSrc  *gst.Element
-	selector *gst.Element
-	encoder  []*gst.Element
+	src        []*gst.Element
+	srcPad     *gst.Pad
+	testSrc    []*gst.Element
+	testSrcPad *gst.Pad
+	selector   *gst.Element
+	encoder    []*gst.Element
 }
 
 func (v *videoInput) buildWebInput(p *config.PipelineConfig) error {
@@ -65,18 +67,13 @@ func (v *videoInput) buildSDKInput(p *config.PipelineConfig) error {
 		if err := v.buildAppSource(p); err != nil {
 			return err
 		}
-		return nil
 	}
 
-	if err := v.buildTestSrc(); err != nil {
+	if err := v.buildTestSrc(p); err != nil {
 		return err
 	}
 
-	if err := v.buildInputSelector(); err != nil {
-		return err
-	}
-
-	return nil
+	return v.buildInputSelector()
 }
 
 func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
@@ -189,7 +186,7 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (v *videoInput) buildTestSrc() error {
+func (v *videoInput) buildTestSrc(p *config.PipelineConfig) error {
 	videoTestSrc, err := gst.NewElement("videotestsrc")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -199,16 +196,25 @@ func (v *videoInput) buildTestSrc() error {
 	}
 	videoTestSrc.SetArg("pattern", "black")
 
-	v.testSrc = videoTestSrc
+	caps, err := gst.NewElement("capsfilter")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = caps.SetProperty("caps", gst.NewCapsFromString(
+		fmt.Sprintf("video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+			p.Framerate, p.Width, p.Height,
+		)),
+	); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	v.testSrc = []*gst.Element{videoTestSrc, caps}
 	return nil
 }
 
 func (v *videoInput) buildInputSelector() error {
 	inputSelector, err := gst.NewElement("input-selector")
 	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = inputSelector.SetProperty("drop-backwards", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
@@ -270,14 +276,82 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 
 // TODO: ignores selector for now
 func (v *videoInput) link() (*gst.GhostPad, error) {
-	elements := append(v.src, v.encoder...)
-
-	err := gst.ElementLinkMany(elements...)
-	if err != nil {
-		return nil, errors.ErrGstPipelineError(err)
+	if v.src != nil {
+		// link src elements
+		if err := gst.ElementLinkMany(v.src...); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
 	}
 
-	return gst.NewGhostPad("video_src", builder.GetSrcPad(elements)), nil
+	if v.testSrc != nil {
+		// link test src elements
+		if err := gst.ElementLinkMany(v.testSrc...); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+	}
+
+	if v.selector != nil {
+		if v.src != nil {
+			v.srcPad = v.selector.GetRequestPad("sink_%u")
+			if err := builder.LinkPads(
+				"video src", builder.GetSrcPad(v.src),
+				"video selector", v.srcPad,
+			); err != nil {
+				return nil, err
+			}
+		}
+
+		if v.testSrc != nil {
+			v.testSrcPad = v.selector.GetRequestPad("sink_%u")
+			if err := builder.LinkPads(
+				"video test src", builder.GetSrcPad(v.testSrc),
+				"video selector", v.testSrcPad,
+			); err != nil {
+				return nil, err
+			}
+		}
+
+		if v.src != nil {
+			if err := v.setSelectorPad(v.srcPad); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := v.setSelectorPad(v.testSrcPad); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	var ghostPad *gst.Pad
+	if v.encoder != nil {
+		if err := gst.ElementLinkMany(v.encoder...); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+
+		if v.selector != nil {
+			if err := builder.LinkPads(
+				"video selector", v.selector.GetStaticPad("src"),
+				"video encoder", v.encoder[0].GetStaticPad("sink"),
+			); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := builder.LinkPads(
+				"video src", builder.GetSrcPad(v.src),
+				"video encoder", v.encoder[0].GetStaticPad("sink"),
+			); err != nil {
+				return nil, err
+			}
+		}
+
+		ghostPad = builder.GetSrcPad(v.encoder)
+	} else if v.selector != nil {
+		ghostPad = v.selector.GetStaticPad("src")
+	} else {
+		ghostPad = builder.GetSrcPad(v.src)
+	}
+
+	return gst.NewGhostPad("video_src", ghostPad), nil
 }
 
 func (v *videoInput) setSelectorPad(pad *gst.Pad) error {

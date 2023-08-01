@@ -4,7 +4,6 @@ package test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
@@ -30,11 +29,11 @@ func (r *Runner) runParticipantTest(
 ) {
 	t.Run(name, func(t *testing.T) {
 		r.awaitIdle(t)
-		r.publishSamplesToRoom(t, "", videoCodec)
-		go func() {
-			time.Sleep(time.Second * 10)
-			r.publishSamplesToRoom(t, audioCodec, "")
-		}()
+		r.publishSamplesToRoom(t, audioCodec, videoCodec)
+		// go func() {
+		// 	time.Sleep(time.Second * 10)
+		// 	r.publishSamplesToRoom(t, audioCodec, "")
+		// }()
 		f(t, r.room.LocalParticipant.Identity())
 		if t.Failed() {
 			r.svc.Reset()

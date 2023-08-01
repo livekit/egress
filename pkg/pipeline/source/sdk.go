@@ -30,7 +30,7 @@ const (
 
 	subscriptionTimeout = time.Second * 30
 
-	numTracks = 1
+	numTracks = 2
 )
 
 type SDKSource struct {
