@@ -29,22 +29,22 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 
 	// set up callbacks
 	if p.RequestType == types.RequestTypeParticipant {
-		p.OnTrackAdded = func(track lksdk.TrackPublication) {
+		p.OnTrackAdded = func(track *config.TrackSource) {
 			var err error
-			if track.Kind() == lksdk.TrackKindAudio {
-				err = b.addAudioInput(p)
+			if track.Kind == lksdk.TrackKindAudio {
+				err = b.addAudioInput(p, track)
 			} else {
-				err = b.addVideoInput(p)
+				err = b.addVideoInput(p, track)
 			}
 			if err != nil {
 				p.OnFailure(err)
 			}
 		}
-		p.OnTrackRemoved = func(track lksdk.TrackPublication) {
+		p.OnTrackRemoved = func(trackID string) {
 			var err error
-			if track.Kind() == lksdk.TrackKindAudio {
+			if b.audio.trackID == trackID {
 				err = b.removeAudioInput()
-			} else {
+			} else if b.video.trackID == trackID {
 				err = b.removeVideoInput()
 			}
 			if err != nil {
@@ -77,6 +77,8 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 
 func (b *Bin) buildAudioInput(p *config.PipelineConfig) error {
 	a := &audioInput{}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	switch p.SourceType {
 	case types.SourceTypeSDK:
@@ -121,6 +123,8 @@ func (b *Bin) buildAudioInput(p *config.PipelineConfig) error {
 
 func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
 	v := &videoInput{}
+	v.mu.Lock()
+	defer v.mu.Unlock()
 
 	switch p.SourceType {
 	case types.SourceTypeSDK:
@@ -163,9 +167,15 @@ func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (b *Bin) addAudioInput(p *config.PipelineConfig) error {
+func (b *Bin) addAudioInput(p *config.PipelineConfig, track *config.TrackSource) error {
+	b.audio.mu.Lock()
+	defer b.audio.mu.Unlock()
+
 	// build appsrc
-	if err := b.audio.buildAppSource(p); err != nil {
+	if err := b.audio.buildAppSource(track); err != nil {
+		return err
+	}
+	if err := b.audio.buildConverter(p); err != nil {
 		return err
 	}
 
@@ -183,9 +193,12 @@ func (b *Bin) addAudioInput(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (b *Bin) addVideoInput(p *config.PipelineConfig) error {
+func (b *Bin) addVideoInput(p *config.PipelineConfig, track *config.TrackSource) error {
+	b.video.mu.Lock()
+	defer b.video.mu.Unlock()
+
 	// build appsrc
-	if err := b.video.buildAppSource(p); err != nil {
+	if err := b.video.buildAppSource(p, track); err != nil {
 		return err
 	}
 
@@ -204,11 +217,17 @@ func (b *Bin) addVideoInput(p *config.PipelineConfig) error {
 }
 
 func (b *Bin) removeAudioInput() error {
-	return b.audio.unlinkAppSrc(b.bin)
+	b.audio.mu.Lock()
+	defer b.audio.mu.Unlock()
+
+	return b.audio.removeAppSrc(b.bin)
 }
 
 func (b *Bin) removeVideoInput() error {
-	return b.video.unlinkAppSrc(b.bin)
+	b.video.mu.Lock()
+	defer b.video.mu.Unlock()
+
+	return b.video.removeAppSrc(b.bin)
 }
 
 func (b *Bin) Link() (audioPad, videoPad *gst.GhostPad, err error) {

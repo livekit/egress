@@ -1,6 +1,5 @@
 package pipeline
 
-import "C"
 import (
 	"context"
 	"sync"
@@ -74,7 +73,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate Update
 		defer span.End()
 		gst.Init(nil)
 		gst.SetLogFunction(p.gstLog)
-		close(conf.GstReady)
+		close(p.GstReady)
 	}()
 
 	// create source
@@ -90,7 +89,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate Update
 	}
 
 	// create pipeline
-	<-conf.GstReady
+	<-p.GstReady
 	p.pipeline, err = gst.NewPipeline("pipeline")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)

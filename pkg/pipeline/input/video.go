@@ -3,6 +3,7 @@ package input
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"unsafe"
 
 	"github.com/tinyzimmer/go-glib/glib"
@@ -16,6 +17,9 @@ import (
 )
 
 type videoInput struct {
+	mu      sync.Mutex
+	trackID string
+
 	src        []*gst.Element
 	srcPad     *gst.Pad
 	testSrc    []*gst.Element
@@ -64,8 +68,8 @@ func (v *videoInput) buildWebInput(p *config.PipelineConfig) error {
 }
 
 func (v *videoInput) buildSDKInput(p *config.PipelineConfig) error {
-	if p.VideoSrc != nil {
-		if err := v.buildAppSource(p); err != nil {
+	if p.VideoTrack != nil {
+		if err := v.buildAppSource(p, p.VideoTrack); err != nil {
 			return err
 		}
 	}
@@ -77,20 +81,21 @@ func (v *videoInput) buildSDKInput(p *config.PipelineConfig) error {
 	return v.buildInputSelector()
 }
 
-func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
-	src := p.VideoSrc
-	src.Element.SetArg("format", "time")
-	if err := src.Element.SetProperty("is-live", true); err != nil {
+func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.TrackSource) error {
+	v.trackID = track.TrackID
+
+	track.AppSrc.Element.SetArg("format", "time")
+	if err := track.AppSrc.Element.SetProperty("is-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	v.src = append(v.src, src.Element)
+	v.src = append(v.src, track.AppSrc.Element)
 	switch {
-	case strings.EqualFold(p.VideoCodecParams.MimeType, string(types.MimeTypeH264)):
-		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
+	case strings.EqualFold(track.Codec.MimeType, string(types.MimeTypeH264)):
+		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
-				p.VideoCodecParams.PayloadType, p.VideoCodecParams.ClockRate,
+				track.Codec.PayloadType, track.Codec.ClockRate,
 			),
 		)); err != nil {
 			return errors.ErrGstPipelineError(err)
@@ -120,11 +125,11 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
 			return nil
 		}
 
-	case strings.EqualFold(p.VideoCodecParams.MimeType, string(types.MimeTypeVP8)):
-		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
+	case strings.EqualFold(track.Codec.MimeType, string(types.MimeTypeVP8)):
+		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
-				p.VideoCodecParams.PayloadType, p.VideoCodecParams.ClockRate,
+				track.Codec.PayloadType, track.Codec.ClockRate,
 			),
 		)); err != nil {
 			return errors.ErrGstPipelineError(err)
@@ -148,7 +153,7 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
 		v.src = append(v.src, vp8Dec)
 
 	default:
-		return errors.ErrNotSupported(p.VideoCodecParams.MimeType)
+		return errors.ErrNotSupported(track.Codec.MimeType)
 	}
 
 	videoQueue, err := builder.BuildQueue("video_input_queue", p.Latency, true)
@@ -275,7 +280,6 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 	}
 }
 
-// TODO: ignores selector for now
 func (v *videoInput) link() (*gst.GhostPad, error) {
 	if v.src != nil {
 		// link src elements
@@ -372,40 +376,38 @@ func (v *videoInput) linkAppSrc() error {
 	return v.setSelectorPad(v.srcPad)
 }
 
-func (v *videoInput) unlinkAppSrc(bin *gst.Bin) error {
+func (v *videoInput) removeAppSrc(bin *gst.Bin) error {
+	// swap selector
 	if err := v.setSelectorPad(v.testSrcPad); err != nil {
 		return err
 	}
 
-	builder.GetSrcPad(v.src).AddProbe(gst.PadProbeTypeBlockUpstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		// unlink from mixer
-		pad.Unlink(v.srcPad)
-
-		// remove elements
-		if err := bin.RemoveMany(v.src...); err != nil {
-			logger.Errorw("failed to remove audio src", err)
+	// change state
+	for _, e := range v.src {
+		if err := e.BlockSetState(gst.StateNull); err != nil {
+			logger.Errorw("failed to stop audio src", err)
 		}
+	}
 
-		// reset element states
-		for _, e := range v.src {
-			if err := e.SetState(gst.StateNull); err != nil {
-				logger.Errorw("failed to stop audio src", err)
-			}
-		}
+	// unlink
+	builder.GetSrcPad(v.src).Unlink(v.srcPad)
 
-		// release elements and pads
-		v.selector.ReleaseRequestPad(v.srcPad)
-		v.src = nil
-		v.srcPad = nil
+	// remove elements
+	if err := bin.RemoveMany(v.src...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
 
-		// remove probe
-		return gst.PadProbeRemove
-	})
+	// release elements and pads
+	v.selector.ReleaseRequestPad(v.srcPad)
+	v.src = nil
+	v.srcPad = nil
+	v.trackID = ""
 
 	return nil
 }
 
 func (v *videoInput) setSelectorPad(pad *gst.Pad) error {
+	// TODO: go-gst should accept objects directly and handle conversion to C
 	pt, err := v.selector.GetPropertyType("active-pad")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)

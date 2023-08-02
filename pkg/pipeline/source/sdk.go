@@ -25,16 +25,11 @@ import (
 )
 
 const (
-	AudioAppSource = "audioAppSrc"
-	VideoAppSource = "videoAppSrc"
-
 	subscriptionTimeout = time.Second * 30
-
-	numTracks = 1
 )
 
 type SDKSource struct {
-	*config.Callbacks
+	*config.PipelineConfig
 
 	room *lksdk.Room
 	sync *synchronizer.Synchronizer
@@ -52,11 +47,12 @@ type SDKSource struct {
 	audioWriter *sdk.AppWriter
 	videoWriter *sdk.AppWriter
 
-	initialized    core.Fuse
-	subscriptions  sync.WaitGroup
-	active         atomic.Int32
-	startRecording chan struct{}
-	endRecording   chan struct{}
+	initialized      core.Fuse
+	participantReady core.Fuse
+	pending          sync.WaitGroup
+	active           atomic.Int32
+	startRecording   chan struct{}
+	endRecording     chan struct{}
 }
 
 func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, error) {
@@ -65,13 +61,14 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, er
 
 	startRecording := make(chan struct{})
 	s := &SDKSource{
-		Callbacks: p.Callbacks,
+		PipelineConfig: p,
 		sync: synchronizer.NewSynchronizer(func() {
 			close(startRecording)
 		}),
-		initialized:    core.NewFuse(),
-		startRecording: startRecording,
-		endRecording:   make(chan struct{}),
+		initialized:      core.NewFuse(),
+		participantReady: core.NewFuse(),
+		startRecording:   startRecording,
+		endRecording:     make(chan struct{}),
 	}
 
 	switch p.RequestType {
@@ -98,12 +95,9 @@ func (s *SDKSource) GetStartTime() int64 {
 	return s.sync.GetStartedAt()
 }
 
-func (s *SDKSource) Playing(name string) {
-	switch name {
-	case AudioAppSource:
-		s.audioWriter.Play()
-	case VideoAppSource:
-		s.videoWriter.Play()
+func (s *SDKSource) Playing(trackID string) {
+	if w := s.getWriterForTrack(trackID); w != nil {
+		w.Play()
 	}
 }
 
@@ -136,19 +130,8 @@ func (s *SDKSource) CloseWriters() {
 	wg.Wait()
 }
 
-func (s *SDKSource) StreamStopped(name string) {
-	switch name {
-	case AudioAppSource:
-		s.audioWriter.Drain(true)
-		if s.active.Dec() == 0 {
-			s.onDisconnected()
-		}
-	case VideoAppSource:
-		s.videoWriter.Drain(true)
-		if s.active.Dec() == 0 {
-			s.onDisconnected()
-		}
-	}
+func (s *SDKSource) StreamStopped(trackID string) {
+	s.onTrackFinished(trackID)
 }
 
 func (s *SDKSource) Close() {
@@ -180,17 +163,12 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 
 	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer func() {
-			s.subscriptions.Done()
-			if s.initialized.IsBroken() {
-				if onSubscribeErr != nil {
-					s.OnFailure(onSubscribeErr)
-				} else {
-					s.OnTrackAdded(pub)
-				}
+			s.pending.Done()
+			if s.initialized.IsBroken() && onSubscribeErr != nil {
+				s.OnFailure(onSubscribeErr)
 			}
 		}()
 
-		s.active.Inc()
 		t := s.sync.AddTrack(track, rp.Identity())
 
 		mu.Lock()
@@ -222,13 +200,11 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		mu.Unlock()
 
 		var codec types.MimeType
-		var appSrcName string
 		var err error
-		writeBlanks := false
+		var writeBlanks bool
 
 		switch {
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeOpus)):
-			appSrcName = AudioAppSource
 			codec = types.MimeTypeOpus
 
 			p.AudioEnabled = true
@@ -246,7 +222,6 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeVP8)):
-			appSrcName = VideoAppSource
 			codec = types.MimeTypeVP8
 
 			p.VideoEnabled = true
@@ -267,7 +242,6 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeH264)):
-			appSrcName = VideoAppSource
 			codec = types.MimeTypeH264
 
 			p.VideoEnabled = true
@@ -289,13 +263,13 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		}
 
 		<-p.GstReady
-		src, err := gst.NewElementWithName("appsrc", appSrcName)
+		src, err := gst.NewElementWithName("appsrc", track.ID())
 		if err != nil {
 			onSubscribeErr = errors.ErrGstPipelineError(err)
 			return
 		}
-		appSrc := app.SrcFromElement(src)
 
+		appSrc := app.SrcFromElement(src)
 		writer, err := sdk.NewAppWriter(track, rp, codec, appSrc, s.sync, t, writeBlanks)
 		if err != nil {
 			logger.Errorw("could not create app writer", err)
@@ -303,15 +277,35 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			return
 		}
 
-		switch track.Kind() {
-		case webrtc.RTPCodecTypeAudio:
+		ts := &config.TrackSource{
+			TrackID: pub.SID(),
+			Kind:    pub.Kind(),
+			AppSrc:  appSrc,
+			Codec:   track.Codec(),
+		}
+
+		switch pub.Kind() {
+		case lksdk.TrackKindAudio:
+			if s.audioWriter != nil {
+				s.onTrackFinished(s.audioWriter.TrackID())
+			}
 			s.audioWriter = writer
-			p.AudioCodecParams = track.Codec()
-			p.AudioSrc = appSrc
-		case webrtc.RTPCodecTypeVideo:
+			if s.initialized.IsBroken() {
+				s.OnTrackAdded(ts)
+			} else {
+				p.AudioTrack = ts
+			}
+
+		case lksdk.TrackKindVideo:
+			if s.videoWriter != nil {
+				s.onTrackFinished(s.videoWriter.TrackID())
+			}
 			s.videoWriter = writer
-			p.VideoCodecParams = track.Codec()
-			p.VideoSrc = appSrc
+			if s.initialized.IsBroken() {
+				s.OnTrackAdded(ts)
+			} else {
+				p.VideoTrack = ts
+			}
 		}
 	}
 
@@ -330,8 +324,9 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		fileIdentifier = s.identity
 		filenameReplacements["{publisher_identity}"] = s.identity
 
-		s.subscriptions.Add(numTracks) // TODO: remove
 		err = s.subscribeToParticipant(s.identity)
+		<-s.participantReady.Watch()
+		logger.Infow("participant ready")
 
 	case types.RequestTypeTrackComposite:
 		fileIdentifier = p.Info.RoomName
@@ -344,7 +339,7 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			tracks[s.videoTrackID] = struct{}{}
 		}
 
-		s.subscriptions.Add(len(tracks))
+		s.pending.Add(len(tracks))
 		err = s.subscribeToTracks(tracks)
 
 	case types.RequestTypeTrack:
@@ -352,14 +347,14 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		s.trackID = p.TrackID
 		tracks[s.trackID] = struct{}{}
 
-		s.subscriptions.Add(1)
+		s.pending.Add(1)
 		err = s.subscribeToTracks(tracks)
 	}
 	if err != nil {
 		return err
 	}
 
-	s.subscriptions.Wait()
+	s.pending.Wait()
 	if onSubscribeErr != nil {
 		return onSubscribeErr
 	}
@@ -407,23 +402,10 @@ func (s *SDKSource) subscribeToParticipant(identity string) error {
 	deadline := time.Now().Add(subscriptionTimeout)
 	for time.Now().Before(deadline) {
 		for _, p := range s.room.GetParticipants() {
-			if p.Identity() != identity || len(p.Tracks()) < numTracks {
-				continue
+			if p.Identity() == identity {
+				// OnTrackPublished will handle subscriptions
+				return nil
 			}
-
-			for _, track := range p.Tracks() {
-				switch track.Source() {
-				case livekit.TrackSource_CAMERA, livekit.TrackSource_MICROPHONE:
-					// TODO: s.subscriptions.Add(1)
-					if err := s.subscribe(track); err != nil {
-						return err
-					}
-				default:
-					logger.Debugw(fmt.Sprintf("ignoring track with source %s", track.Source()))
-				}
-			}
-
-			return nil
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -432,10 +414,16 @@ func (s *SDKSource) subscribeToParticipant(identity string) error {
 }
 
 func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
-	logger.Infow("subscribing to track", "trackID", track.SID())
 	if pub, ok := track.(*lksdk.RemoteTrackPublication); ok {
-		pub.OnRTCP(s.sync.OnRTCP)
+		if pub.IsSubscribed() {
+			s.pending.Done()
+			return nil
+		}
 
+		s.active.Inc()
+		logger.Infow("subscribing to track", "trackID", track.SID())
+
+		pub.OnRTCP(s.sync.OnRTCP)
 		return pub.SetSubscribed(true)
 	}
 
@@ -452,44 +440,51 @@ func (s *SDKSource) onTrackMuteChanged(pub lksdk.TrackPublication, muted bool) {
 }
 
 func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-	if !s.initialized.IsBroken() || rp.Identity() != s.identity {
+	if rp.Identity() != s.identity {
 		return
 	}
 
 	switch pub.Source() {
-	case livekit.TrackSource_CAMERA:
-		if s.videoWriter != nil {
-			logger.Infow("ignoring participant track",
-				"reason", "already recording video")
-			return
-		}
-	case livekit.TrackSource_MICROPHONE:
-		if s.audioWriter != nil {
-			logger.Infow("ignoring participant track",
-				"reason", "already recording video")
-			return
+	case livekit.TrackSource_CAMERA, livekit.TrackSource_MICROPHONE:
+		s.pending.Add(1)
+		logger.Infow("pending++")
+		s.participantReady.Break()
+		if err := s.subscribe(pub); err != nil {
+			logger.Errorw("failed to subscribe to track", err, "trackID", pub.SID())
 		}
 	default:
 		logger.Infow("ignoring participant track",
 			"reason", fmt.Sprintf("source %s", pub.Source()))
 		return
 	}
-
-	s.subscriptions.Add(1)
-	if err := s.subscribe(pub); err != nil {
-		logger.Errorw("failed to subscribe to track", err, "trackID", pub.SID())
-	}
 }
 
 func (s *SDKSource) onTrackUnpublished(pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
-	if w := s.getWriterForTrack(pub.SID()); w != nil {
-		w.Drain(true)
-		active := s.active.Dec()
-		if s.OnTrackRemoved != nil {
-			s.OnTrackRemoved(pub)
-		} else if active == 0 {
-			s.onDisconnected()
-		}
+	s.onTrackFinished(pub.SID())
+}
+
+func (s *SDKSource) onTrackFinished(trackID string) {
+	var w *sdk.AppWriter
+
+	if s.audioWriter != nil && s.audioWriter.TrackID() == trackID {
+		logger.Infow("removing audio writer")
+		w = s.audioWriter
+		s.audioWriter = nil
+	} else if s.videoWriter != nil && s.videoWriter.TrackID() == trackID {
+		logger.Infow("removing video writer")
+		w = s.videoWriter
+		s.videoWriter = nil
+	} else {
+		return
+	}
+
+	w.Drain(true)
+	active := s.active.Dec()
+
+	if s.OnTrackRemoved != nil {
+		s.OnTrackRemoved(trackID)
+	} else if active == 0 {
+		s.onDisconnected()
 	}
 }
 
@@ -500,6 +495,7 @@ func (s *SDKSource) getWriterForTrack(trackID string) *sdk.AppWriter {
 	if s.videoWriter != nil && s.videoWriter.TrackID() == trackID {
 		return s.videoWriter
 	}
+
 	return nil
 }
 

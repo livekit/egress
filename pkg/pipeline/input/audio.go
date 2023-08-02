@@ -3,6 +3,7 @@ package input
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -16,6 +17,9 @@ import (
 const audioMixerLatency = uint64(2e9)
 
 type audioInput struct {
+	mu      sync.Mutex
+	trackID string
+
 	src     []*gst.Element
 	srcPad  *gst.Pad
 	testSrc []*gst.Element
@@ -37,8 +41,11 @@ func (a *audioInput) buildWebInput(p *config.PipelineConfig) error {
 }
 
 func (a *audioInput) buildSDKInput(p *config.PipelineConfig) error {
-	if p.AudioSrc != nil {
-		if err := a.buildAppSource(p); err != nil {
+	if p.AudioTrack != nil {
+		if err := a.buildAppSource(p.AudioTrack); err != nil {
+			return err
+		}
+		if err := a.buildConverter(p); err != nil {
 			return err
 		}
 	}
@@ -50,20 +57,21 @@ func (a *audioInput) buildSDKInput(p *config.PipelineConfig) error {
 	return a.buildMixer(p)
 }
 
-func (a *audioInput) buildAppSource(p *config.PipelineConfig) error {
-	src := p.AudioSrc
-	src.Element.SetArg("format", "time")
-	if err := src.Element.SetProperty("is-live", true); err != nil {
+func (a *audioInput) buildAppSource(track *config.TrackSource) error {
+	a.trackID = track.TrackID
+
+	track.AppSrc.Element.SetArg("format", "time")
+	if err := track.AppSrc.Element.SetProperty("is-live", true); err != nil {
 		return err
 	}
-	a.src = []*gst.Element{src.Element}
+	a.src = []*gst.Element{track.AppSrc.Element}
 
 	switch {
-	case strings.EqualFold(p.AudioCodecParams.MimeType, string(types.MimeTypeOpus)):
-		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
+	case strings.EqualFold(track.Codec.MimeType, string(types.MimeTypeOpus)):
+		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
-				p.AudioCodecParams.PayloadType, p.AudioCodecParams.ClockRate,
+				track.Codec.PayloadType, track.Codec.ClockRate,
 			),
 		)); err != nil {
 			return errors.ErrGstPipelineError(err)
@@ -82,10 +90,10 @@ func (a *audioInput) buildAppSource(p *config.PipelineConfig) error {
 		a.src = append(a.src, rtpOpusDepay, opusDec)
 
 	default:
-		return errors.ErrNotSupported(p.AudioCodecParams.MimeType)
+		return errors.ErrNotSupported(track.Codec.MimeType)
 	}
 
-	return a.buildConverter(p)
+	return nil
 }
 
 func (a *audioInput) buildConverter(p *config.PipelineConfig) error {
@@ -301,31 +309,27 @@ func (a *audioInput) linkAppSrc() error {
 	return nil
 }
 
-func (a *audioInput) unlinkAppSrc(bin *gst.Bin) error {
-	builder.GetSrcPad(a.src).AddProbe(gst.PadProbeTypeBlockUpstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		// unlink from mixer
-		pad.Unlink(a.srcPad)
-
-		// remove elements
-		if err := bin.RemoveMany(a.src...); err != nil {
-			logger.Errorw("failed to remove audio src", err)
+func (a *audioInput) removeAppSrc(bin *gst.Bin) error {
+	// change state
+	for _, e := range a.src {
+		if err := e.SetState(gst.StateNull); err != nil {
+			logger.Errorw("failed to stop audio src", err)
 		}
+	}
 
-		// reset element states
-		for _, e := range a.src {
-			if err := e.SetState(gst.StateNull); err != nil {
-				logger.Errorw("failed to stop audio src", err)
-			}
-		}
+	// unlink
+	builder.GetSrcPad(a.src).Unlink(a.srcPad)
 
-		// release elements and pads
-		a.mixer[0].ReleaseRequestPad(a.srcPad)
-		a.src = nil
-		a.srcPad = nil
+	// remove elements
+	if err := bin.RemoveMany(a.src...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
 
-		// remove probe
-		return gst.PadProbeRemove
-	})
+	// release elements and pads
+	a.mixer[0].ReleaseRequestPad(a.srcPad)
+	a.src = nil
+	a.srcPad = nil
+	a.trackID = ""
 
 	return nil
 }

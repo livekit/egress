@@ -1,10 +1,10 @@
 package pipeline
 
-import "C"
 import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/tinyzimmer/go-glib/glib"
@@ -214,12 +214,8 @@ func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
 		return
 	}
 
-	switch s := msg.Source(); s {
-	case source.AudioAppSource, source.VideoAppSource:
-		logger.Infow(fmt.Sprintf("%s playing", s))
-		p.src.(*source.SDKSource).Playing(s)
-
-	case pipelineSource:
+	s := msg.Source()
+	if s == pipelineSource {
 		logger.Infow("pipeline playing")
 
 		p.playing = true
@@ -229,6 +225,9 @@ func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
 		case types.SourceTypeWeb:
 			p.updateStartTime(time.Now().UnixNano())
 		}
+	} else if strings.HasPrefix(s, "TR_") {
+		logger.Infow(fmt.Sprintf("%s playing", s))
+		p.src.(*source.SDKSource).Playing(s)
 	}
 
 	return
