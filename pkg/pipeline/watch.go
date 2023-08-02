@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package pipeline
 
 import (
@@ -163,12 +177,23 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 
 	switch {
 	case element == elementGstRtmp2Sink:
-		// bad URI or could not connect. Remove rtmp output
+		if strings.HasPrefix(gErr.Error(), "Connection error") {
+			// try reconnecting
+			ok, err := p.out.ResetStream(name, gErr)
+			if err != nil {
+				logger.Errorw("failed to reset stream", err)
+			} else if ok {
+				return nil
+			}
+		}
+
+		// remove sink
 		url, err := p.out.GetStreamUrl(name)
 		if err != nil {
 			logger.Warnw("rtmp output not found", err, "url", url)
 			return err
 		}
+
 		return p.removeSink(context.Background(), url, gErr)
 
 	case element == elementGstAppSrc:
