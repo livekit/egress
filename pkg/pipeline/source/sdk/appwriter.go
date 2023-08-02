@@ -124,6 +124,10 @@ func (w *AppWriter) Play() {
 	w.playing.Break()
 }
 
+func (w *AppWriter) TrackID() string {
+	return w.track.ID()
+}
+
 func (w *AppWriter) SetTrackMuted(muted bool) {
 	w.muted.Store(muted)
 	if muted {

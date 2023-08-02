@@ -171,6 +171,7 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 
 	if p.RequestType == types.RequestTypeParticipant {
 		cb.ParticipantCallback.OnTrackPublished = s.onTrackPublished
+		cb.OnParticipantDisconnected = s.onParticipantDisconnected
 	}
 
 	var mu sync.Mutex
@@ -442,17 +443,11 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 }
 
 func (s *SDKSource) onTrackMuteChanged(pub lksdk.TrackPublication, muted bool) {
-	track := pub.Track()
-	if track == nil {
-		return
-	}
-
-	if w := s.getWriterForTrack(track.ID()); w != nil {
+	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.SetTrackMuted(muted)
-	}
-
-	for _, onMute := range s.OnTrackMuted {
-		onMute(muted)
+		for _, onMute := range s.OnTrackMuted {
+			onMute(muted)
+		}
 	}
 }
 
@@ -486,13 +481,31 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 	}
 }
 
-// TODO: p.OnTrackRemoved
 func (s *SDKSource) onTrackUnpublished(pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
 	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.Drain(true)
-		if s.active.Dec() == 0 {
+		active := s.active.Dec()
+		if s.OnTrackRemoved != nil {
+			s.OnTrackRemoved(pub)
+		} else if active == 0 {
 			s.onDisconnected()
 		}
+	}
+}
+
+func (s *SDKSource) getWriterForTrack(trackID string) *sdk.AppWriter {
+	if s.audioWriter != nil && s.audioWriter.TrackID() == trackID {
+		return s.audioWriter
+	}
+	if s.videoWriter != nil && s.videoWriter.TrackID() == trackID {
+		return s.videoWriter
+	}
+	return nil
+}
+
+func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
+	if rp.Identity() == s.identity {
+		s.onDisconnected()
 	}
 }
 
@@ -503,21 +516,4 @@ func (s *SDKSource) onDisconnected() {
 	default:
 		close(s.endRecording)
 	}
-}
-
-func (s *SDKSource) getWriterForTrack(trackID string) *sdk.AppWriter {
-	switch trackID {
-	case s.trackID:
-		if s.audioWriter != nil {
-			return s.audioWriter
-		} else if s.videoWriter != nil {
-			return s.videoWriter
-		}
-	case s.audioTrackID:
-		return s.audioWriter
-	case s.videoTrackID:
-		return s.videoWriter
-	}
-
-	return nil
 }
