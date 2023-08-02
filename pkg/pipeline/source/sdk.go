@@ -48,14 +48,6 @@ type SDKSource struct {
 	room *lksdk.Room
 	sync *synchronizer.Synchronizer
 
-	// track
-	trackID string
-
-	// track composite
-	audioTrackID string
-	videoTrackID string
-
-	// participant
 	identity string
 
 	audioWriter *sdk.AppWriter
@@ -88,19 +80,6 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, er
 	switch p.RequestType {
 	case types.RequestTypeParticipant:
 		s.identity = p.Identity
-	case types.RequestTypeTrackComposite:
-		s.audioTrackID = p.AudioTrackID
-		s.videoTrackID = p.VideoTrackID
-	case types.RequestTypeTrack:
-		s.trackID = p.TrackID
-	}
-
-	switch p.RequestType {
-	case types.RequestTypeTrackComposite:
-		s.audioTrackID = p.AudioTrackID
-		s.videoTrackID = p.VideoTrackID
-	case types.RequestTypeTrack:
-		s.trackID = p.TrackID
 	}
 
 	if err := s.joinRoom(p); err != nil {
@@ -353,12 +332,10 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 	case types.RequestTypeTrackComposite:
 		fileIdentifier = p.Info.RoomName
 		if p.AudioEnabled {
-			s.audioTrackID = p.AudioTrackID
-			tracks[s.audioTrackID] = struct{}{}
+			tracks[p.AudioTrackID] = struct{}{}
 		}
 		if p.VideoEnabled {
-			s.videoTrackID = p.VideoTrackID
-			tracks[s.videoTrackID] = struct{}{}
+			tracks[p.VideoTrackID] = struct{}{}
 		}
 
 		s.pending.Add(len(tracks))
@@ -366,8 +343,7 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 
 	case types.RequestTypeTrack:
 		fileIdentifier = p.TrackID
-		s.trackID = p.TrackID
-		tracks[s.trackID] = struct{}{}
+		tracks[p.TrackID] = struct{}{}
 
 		s.pending.Add(1)
 		err = s.subscribeToTracks(tracks)

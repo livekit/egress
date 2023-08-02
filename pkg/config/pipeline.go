@@ -30,7 +30,6 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
@@ -396,7 +395,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 	default:
-		logger.Errorw("?", nil)
 		return errors.ErrInvalidInput("request")
 	}
 
