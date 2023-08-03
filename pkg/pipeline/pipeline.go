@@ -404,9 +404,14 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 			p.stop()
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
-			p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 			p.Info.UpdatedAt = time.Now().UnixNano()
-			p.sendUpdate(ctx, p.Info)
+			if p.Info.Error != "" {
+				p.Info.Status = livekit.EgressStatus_EGRESS_FAILED
+				p.stop()
+			} else {
+				p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
+				p.sendUpdate(ctx, p.Info)
+			}
 			fallthrough
 
 		case livekit.EgressStatus_EGRESS_ENDING,
@@ -415,15 +420,15 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 				logger.Infow("sending EOS to pipeline")
 
 				p.eosTimer = time.AfterFunc(eosTimeout, func() {
-					logger.Errorw("pipeline frozen", nil, "stream", p.StreamOnly)
+					logger.Errorw("pipeline frozen", nil, "stream", !p.FinalizationRequired)
 					if p.Debug.EnableProfiling {
 						p.uploadDebugFiles()
 					}
 
-					if p.StreamOnly {
-						p.stop()
-					} else {
+					if p.FinalizationRequired {
 						p.OnFailure(errors.New("pipeline frozen"))
+					} else {
+						p.stop()
 					}
 				})
 
@@ -528,9 +533,10 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 }
 
 func (p *Pipeline) onFailure(err error) {
-	if p.Info.Error == "" {
+	if p.Info.Error == "" && (!p.closed.IsBroken() || p.FinalizationRequired) {
 		p.Info.Error = err.Error()
 	}
+	p.closed.Break()
 	go p.stop()
 }
 
