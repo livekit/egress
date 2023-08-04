@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package pipeline
 
 import (
@@ -60,7 +74,7 @@ func (p *Pipeline) uploadDotFile(u uploader.Uploader) {
 }
 
 func (p *Pipeline) uploadPProf(u uploader.Uploader) {
-	b, err := pprof.GetProfileData(context.Background(), "heap", 0, 0)
+	b, err := pprof.GetProfileData(context.Background(), "goroutine", 0, 0)
 	if err != nil {
 		logger.Errorw("failed to get profile data", err)
 		return
@@ -70,9 +84,10 @@ func (p *Pipeline) uploadPProf(u uploader.Uploader) {
 
 func (p *Pipeline) uploadDebugFile(u uploader.Uploader, data []byte, fileExtension string) {
 	filename := fmt.Sprintf("%s%s", p.Info.EgressId, fileExtension)
-	filepath := path.Join(config.TmpDir, filename)
+	local := path.Join(config.TmpDir, filename)
+	storage := path.Join(p.Debug.PathPrefix, filename)
 
-	f, err := os.Create(filepath)
+	f, err := os.Create(local)
 	if err != nil {
 		logger.Errorw("failed to create dotfile", err)
 		return
@@ -85,7 +100,7 @@ func (p *Pipeline) uploadDebugFile(u uploader.Uploader, data []byte, fileExtensi
 		return
 	}
 
-	_, _, err = u.Upload(filepath, filename, types.OutputTypeBlob, false)
+	_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
 	if err != nil {
 		logger.Errorw("failed to upload dotfile", err)
 		return

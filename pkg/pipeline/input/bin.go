@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package input
 
 import (
@@ -7,14 +21,15 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/tracer"
 )
 
 type Bin struct {
 	bin *gst.Bin
 
-	audio *AudioInput
-	video *VideoInput
+	audio *audioInput
+	video *videoInput
 }
 
 func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) (*Bin, error) {
@@ -22,21 +37,18 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 	defer span.End()
 
 	b := &Bin{
-		bin: gst.NewBin("bin"),
+		bin: gst.NewBin("input"),
 	}
-
 	if p.AudioEnabled {
 		if err := b.buildAudioInput(p); err != nil {
 			return nil, err
 		}
 	}
-
 	if p.VideoEnabled {
 		if err := b.buildVideoInput(p); err != nil {
 			return nil, err
 		}
 	}
-
 	if err := pipeline.Add(b.bin.Element); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
@@ -44,10 +56,84 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 	return b, nil
 }
 
+func (b *Bin) buildAudioInput(p *config.PipelineConfig) error {
+	a := &audioInput{}
+
+	switch p.SourceType {
+	case types.SourceTypeSDK:
+		if err := a.buildAppSource(p); err != nil {
+			return err
+		}
+
+	case types.SourceTypeWeb:
+		if err := a.buildWebSource(p); err != nil {
+			return err
+		}
+	}
+
+	if p.AudioTranscoding {
+		if err := a.buildEncoder(p); err != nil {
+			return err
+		}
+	}
+
+	// Add elements to bin
+	if err := b.bin.AddMany(a.src...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err := b.bin.AddMany(a.testSrc...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err := b.bin.AddMany(a.mixer...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if a.encoder != nil {
+		if err := b.bin.Add(a.encoder); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+	}
+
+	b.audio = a
+	return nil
+}
+
+func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
+	v := &videoInput{}
+
+	switch p.SourceType {
+	case types.SourceTypeSDK:
+		if err := v.buildAppSource(p); err != nil {
+			return err
+		}
+
+	case types.SourceTypeWeb:
+		if err := v.buildWebSource(p); err != nil {
+			return err
+		}
+	}
+
+	if p.VideoTranscoding {
+		if err := v.buildEncoder(p); err != nil {
+			return err
+		}
+	}
+
+	// Add elements to bin
+	if err := b.bin.AddMany(v.src...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err := b.bin.AddMany(v.encoder...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	b.video = v
+	return nil
+}
+
 func (b *Bin) Link() (audioPad, videoPad *gst.GhostPad, err error) {
 	// link audio elements
 	if b.audio != nil {
-		audioPad, err = b.audio.Link()
+		audioPad, err = b.audio.link()
 		if err != nil {
 			return
 		}
@@ -59,7 +145,7 @@ func (b *Bin) Link() (audioPad, videoPad *gst.GhostPad, err error) {
 
 	// link video elements
 	if b.video != nil {
-		videoPad, err = b.video.Link()
+		videoPad, err = b.video.link()
 		if err != nil {
 			return
 		}

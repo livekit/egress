@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //go:build integration
 
 package test
@@ -42,10 +56,10 @@ type Runner struct {
 	FilePrefix              string `yaml:"file_prefix"`
 	RoomName                string `yaml:"room_name"`
 	RoomTestsOnly           bool   `yaml:"room_only"`
+	WebTestsOnly            bool   `yaml:"web_only"`
 	ParticipantTestsOnly    bool   `yaml:"participant_only"`
 	TrackCompositeTestsOnly bool   `yaml:"track_composite_only"`
 	TrackTestsOnly          bool   `yaml:"track_only"`
-	WebTestsOnly            bool   `yaml:"web_only"`
 	FileTestsOnly           bool   `yaml:"file_only"`
 	StreamTestsOnly         bool   `yaml:"stream_only"`
 	SegmentTestsOnly        bool   `yaml:"segments_only"`

@@ -1,13 +1,27 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //go:build integration
 
 package test
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +30,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -116,7 +129,7 @@ func (r *Runner) testTrackStream(t *testing.T) {
 					trackID = videoTrackID
 				}
 
-				filepath := r.getFilePath(test.filename)
+				filepath := path.Join(r.FilePrefix, test.filename)
 				wss := newTestWebsocketServer(filepath)
 				s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
 				defer func() {
@@ -137,21 +150,14 @@ func (r *Runner) testTrackStream(t *testing.T) {
 					},
 				}
 
-				ctx := context.Background()
+				egressID := r.startEgress(t, req)
 
 				p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 				require.NoError(t, err)
-				p.GstReady = make(chan struct{})
 
-				rec, err := pipeline.New(ctx, p, func(_ context.Context, _ *livekit.EgressInfo) {})
-				require.NoError(t, err)
+				time.Sleep(time.Second * 30)
 
-				go func() {
-					time.Sleep(time.Second * 35)
-					rec.SendEOS(ctx)
-				}()
-
-				res := rec.Run(ctx)
+				res := r.stopEgress(t, egressID)
 				verify(t, filepath, p, res, types.EgressTypeWebsocket, r.Muting, r.sourceFramerate)
 			})
 			if r.Short {

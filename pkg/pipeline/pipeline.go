@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package pipeline
 
 import "C"
@@ -9,6 +23,7 @@ import (
 	"github.com/frostbyte73/core"
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
+	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/zap"
 
 	"github.com/livekit/egress/pkg/config"
@@ -47,7 +62,8 @@ type Pipeline struct {
 	gstLogger  *zap.SugaredLogger
 	playing    bool
 	limitTimer *time.Timer
-	closed     core.Fuse
+	eosSent    core.Fuse
+	stopped    core.Fuse
 	eosTimer   *time.Timer
 
 	// callbacks
@@ -62,9 +78,11 @@ func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate Update
 	p := &Pipeline{
 		PipelineConfig: conf,
 		gstLogger:      logger.GetLogger().(*logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
-		closed:         core.NewFuse(),
+		eosSent:        core.NewFuse(),
+		stopped:        core.NewFuse(),
 		sendUpdate:     onStatusUpdate,
 	}
+	p.OnFailure = p.onFailure
 
 	// initialize gst
 	go func() {
@@ -77,6 +95,12 @@ func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate Update
 
 	// create source
 	p.src, err = source.New(ctx, conf)
+	if err != nil {
+		return nil, err
+	}
+
+	// create sinks
+	p.sinks, err = sink.CreateSinks(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -111,16 +135,12 @@ func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate Update
 		return nil, err
 	}
 
-	// create sinks
-	p.sinks, err = sink.CreateSinks(conf)
-	if err != nil {
-		return nil, err
-	}
-
 	if s, ok := p.sinks[types.EgressTypeWebsocket]; ok {
 		websocketSink := s.(*sink.WebsocketSink)
-		p.src.(*source.SDKSource).OnTrackMuted(websocketSink.OnTrackMuted)
-		if err = p.out.SetWebsocketSink(websocketSink); err != nil {
+		if err = p.out.SetWebsocketSink(websocketSink, func(appSink *app.Sink) {
+			_ = websocketSink.Close()
+			p.pipeline.GetPipelineBus().Post(gst.NewEOSMessage(appSink))
+		}); err != nil {
 			return nil, err
 		}
 	}
@@ -178,7 +198,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	if start != nil {
 		logger.Debugw("waiting for start signal")
 		select {
-		case <-p.closed.Watch():
+		case <-p.stopped.Watch():
 			p.src.Close()
 			p.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
 			return p.Info
@@ -199,6 +219,11 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	p.loop = glib.NewMainLoop(glib.MainContextDefault(), false)
 	p.pipeline.GetPipelineBus().AddWatch(p.messageWatch)
 
+	// return if failed before loop was added
+	if p.Info.Error != "" || p.Info.Status == livekit.EgressStatus_EGRESS_ABORTED {
+		return p.Info
+	}
+
 	// set state to playing (this does not start the pipeline)
 	if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
 		span.RecordError(err)
@@ -206,15 +231,6 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 		p.Info.Error = err.Error()
 		return p.Info
 	}
-
-	// stop if one of the sources or sinks fails
-	go func() {
-		err := <-p.Failure
-		if p.Info.Error == "" {
-			p.Info.Error = err.Error()
-		}
-		p.stop()
-	}()
 
 	// run main loop
 	p.loop.Run()
@@ -380,7 +396,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
-	p.closed.Once(func() {
+	p.eosSent.Once(func() {
 		if p.limitTimer != nil {
 			p.limitTimer.Stop()
 		}
@@ -395,9 +411,14 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 			p.stop()
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
-			p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 			p.Info.UpdatedAt = time.Now().UnixNano()
-			p.sendUpdate(ctx, p.Info)
+			if p.Info.Error != "" {
+				p.Info.Status = livekit.EgressStatus_EGRESS_FAILED
+				p.stop()
+			} else {
+				p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
+				p.sendUpdate(ctx, p.Info)
+			}
 			fallthrough
 
 		case livekit.EgressStatus_EGRESS_ENDING,
@@ -406,15 +427,15 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 				logger.Infow("sending EOS to pipeline")
 
 				p.eosTimer = time.AfterFunc(eosTimeout, func() {
-					logger.Errorw("pipeline frozen", nil, "stream", p.StreamOnly)
+					logger.Errorw("pipeline frozen", nil, "stream", !p.FinalizationRequired)
 					if p.Debug.EnableProfiling {
 						p.uploadDebugFiles()
 					}
 
-					if p.StreamOnly {
-						p.stop()
+					if p.FinalizationRequired {
+						p.OnFailure(errors.New("pipeline frozen"))
 					} else {
-						p.Failure <- errors.New("pipeline frozen")
+						p.stop()
 					}
 				})
 
@@ -518,36 +539,43 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 	}
 }
 
+func (p *Pipeline) onFailure(err error) {
+	if p.Info.Error == "" && (!p.eosSent.IsBroken() || p.FinalizationRequired) {
+		p.Info.Error = err.Error()
+	}
+	go p.stop()
+}
+
 func (p *Pipeline) stop() {
-	p.mu.Lock()
-
-	if p.loop == nil {
-		p.mu.Unlock()
-		return
-	}
-
-	stateChange := make(chan error, 1)
-	go func() {
-		stateChange <- p.pipeline.BlockSetState(gst.StateNull)
-	}()
-
-	select {
-	case err := <-stateChange:
-		if err != nil {
-			logger.Errorw("SetStateNull failed", err)
+	p.stopped.Once(func() {
+		p.mu.Lock()
+		if p.loop == nil {
+			p.mu.Unlock()
+			return
 		}
-	case <-time.After(eosTimeout):
-		logger.Errorw("SetStateNull timed out", nil)
-	}
 
-	endedAt := time.Now().UnixNano()
-	logger.Infow("pipeline stopped")
+		stateChange := make(chan error, 1)
+		go func() {
+			stateChange <- p.pipeline.BlockSetState(gst.StateNull)
+		}()
 
-	p.loop.Quit()
-	p.loop = nil
-	p.mu.Unlock()
+		select {
+		case err := <-stateChange:
+			if err != nil {
+				logger.Errorw("SetStateNull failed", err)
+			}
+		case <-time.After(eosTimeout):
+			logger.Errorw("SetStateNull timed out", nil)
+		}
 
-	if p.SourceType == types.SourceTypeWeb {
-		p.updateDuration(endedAt)
-	}
+		endedAt := time.Now().UnixNano()
+		logger.Infow("pipeline stopped")
+
+		p.loop.Quit()
+		p.mu.Unlock()
+
+		if p.SourceType == types.SourceTypeWeb {
+			p.updateDuration(endedAt)
+		}
+	})
 }

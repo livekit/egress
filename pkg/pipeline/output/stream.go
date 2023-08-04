@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package output
 
 import (
@@ -211,6 +225,41 @@ func (o *StreamOutput) AddSink(bin *gst.Bin, url string) error {
 	return nil
 }
 
+func (o *StreamOutput) Reset(name string, streamErr error) (bool, error) {
+	o.RLock()
+	defer o.RUnlock()
+
+	var url string
+	var sink *streamSink
+	for u, s := range o.sinks {
+		if s.queue.GetName() == name || s.sink.GetName() == name {
+			url = u
+			sink = s
+			break
+		}
+	}
+	if sink == nil {
+		return false, errors.ErrStreamNotFound(name)
+	}
+
+	sink.reconnections++
+	if sink.reconnections > 3 {
+		return false, nil
+	}
+
+	redacted, _ := utils.RedactStreamKey(url)
+	logger.Warnw("resetting stream", streamErr, "url", redacted)
+
+	if err := sink.sink.BlockSetState(gst.StateNull); err != nil {
+		return false, err
+	}
+	if err := sink.sink.BlockSetState(gst.StatePlaying); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 func (o *StreamOutput) RemoveSink(bin *gst.Bin, url string) error {
 	o.Lock()
 	defer o.Unlock()
@@ -253,9 +302,10 @@ func (o *StreamOutput) RemoveSink(bin *gst.Bin, url string) error {
 }
 
 type streamSink struct {
-	pad   string
-	queue *gst.Element
-	sink  *gst.Element
+	pad           string
+	queue         *gst.Element
+	sink          *gst.Element
+	reconnections int
 }
 
 func (o *streamSink) link(tee *gst.Element, live bool) error {

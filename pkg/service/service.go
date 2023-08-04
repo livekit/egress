@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package service
 
 import (
@@ -26,7 +40,6 @@ const shutdownTimer = time.Second * 30
 
 type Service struct {
 	conf        *config.ServiceConfig
-	rpcServerV0 egress.RPCServer
 	psrpcServer rpc.EgressInternalServer
 	ioClient    rpc.IOInfoClient
 	promServer  *http.Server
@@ -38,12 +51,11 @@ type Service struct {
 	shutdown core.Fuse
 }
 
-func NewService(conf *config.ServiceConfig, rpcServerV0 egress.RPCServer, ioClient rpc.IOInfoClient) (*Service, error) {
+func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service, error) {
 	monitor := stats.NewMonitor(conf)
 
 	s := &Service{
 		conf:           conf,
-		rpcServerV0:    rpcServerV0,
 		ioClient:       ioClient,
 		Monitor:        monitor,
 		shutdown:       core.NewFuse(),
@@ -85,10 +97,6 @@ func (s *Service) Run() error {
 		return err
 	}
 
-	if s.rpcServerV0 != nil {
-		return s.runV0()
-	}
-
 	logger.Infow("service ready")
 	<-s.shutdown.Watch()
 	logger.Infow("shutting down")
@@ -120,7 +128,7 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 		return nil, err
 	}
 
-	requestType, outputType := GetTypes(p.Info)
+	requestType, outputType := egress.GetTypes(p.Info)
 	logger.Infow("request validated",
 		"egressID", req.EgressId,
 		"requestType", requestType,
@@ -129,7 +137,7 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 		"request", p.Info.Request,
 	)
 
-	err = s.launchHandler(req, p.Info, 1)
+	err = s.launchHandler(req, p.Info)
 	if err != nil {
 		s.EgressAborted(req)
 		return nil, err

@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package output
 
 import (
@@ -42,24 +56,27 @@ func (b *Bin) buildWebsocketOutput(p *config.PipelineConfig) (*WebsocketOutput, 
 	}, nil
 }
 
-func (o *WebsocketOutput) SetSink(writer *sink.WebsocketSink) {
+func (o *WebsocketOutput) SetSink(writer *sink.WebsocketSink, eosFunc func(*app.Sink)) {
 	o.sink.SetCallbacks(&app.SinkCallbacks{
-		EOSFunc: func(appSink *app.Sink) {
-			// Close writer on EOS
-			if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
-				logger.Errorw("cannot close WS sink", err)
-			}
-		},
+		EOSFunc: eosFunc,
 		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
 			// Pull the sample that triggered this callback
 			sample := appSink.PullSample()
 			if sample == nil {
+				logger.Debugw("unexpected flow return",
+					"flow", "EOS",
+					"reason", "nil sample",
+				)
 				return gst.FlowEOS
 			}
 
 			// Retrieve the buffer from the sample
 			buffer := sample.GetBuffer()
 			if buffer == nil {
+				logger.Debugw("unexpected flow return",
+					"flow", "Error",
+					"reason", "nil buffer",
+				)
 				return gst.FlowError
 			}
 
@@ -70,11 +87,20 @@ func (o *WebsocketOutput) SetSink(writer *sink.WebsocketSink) {
 			_, err := writer.Write(samples)
 			if err != nil {
 				if err == io.EOF {
+					logger.Debugw("unexpected flow return",
+						"flow", "EOS",
+						"reason", "Write returned EOF",
+					)
 					return gst.FlowEOS
 				}
-				o.conf.Failure <- err
+				o.conf.OnFailure(err)
+				logger.Debugw("unexpected flow return",
+					"flow", "Error",
+					"reason", err.Error(),
+				)
 				return gst.FlowError
 			}
+
 			return gst.FlowOK
 		},
 	})

@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package config
 
 import (
@@ -32,17 +46,17 @@ type PipelineConfig struct {
 	HandlerID string `yaml:"handler_id"`
 	TmpDir    string `yaml:"tmp_dir"`
 
-	SourceConfig `yaml:"-"`
-	AudioConfig  `yaml:"-"`
-	VideoConfig  `yaml:"-"`
+	types.RequestType `yaml:"-"`
+	SourceConfig      `yaml:"-"`
+	AudioConfig       `yaml:"-"`
+	VideoConfig       `yaml:"-"`
+	*Callbacks        `yaml:"-"`
 
-	Outputs     map[types.EgressType]OutputConfig `yaml:"-"`
-	OutputCount int
-	StreamOnly  bool
+	Outputs              map[types.EgressType]OutputConfig `yaml:"-"`
+	OutputCount          int                               `yaml:"-"`
+	FinalizationRequired bool                              `yaml:"-"`
 
-	GstReady chan struct{}       `yaml:"-"`
-	Failure  chan error          `yaml:"-"`
-	Info     *livekit.EgressInfo `yaml:"-"`
+	Info *livekit.EgressInfo `yaml:"-"`
 }
 
 type SourceConfig struct {
@@ -62,18 +76,18 @@ type WebSourceParams struct {
 }
 
 type SDKSourceParams struct {
-	TrackID             string
-	TrackSource         string
-	TrackKind           string
-	AudioTrackID        string
-	VideoTrackID        string
-	ParticipantIdentity string
-	AudioSrc            *app.Source
-	VideoSrc            *app.Source
-	AudioInCodec        types.MimeType
-	VideoInCodec        types.MimeType
-	AudioCodecParams    webrtc.RTPCodecParameters
-	VideoCodecParams    webrtc.RTPCodecParameters
+	TrackID          string
+	TrackSource      string
+	TrackKind        string
+	AudioTrackID     string
+	VideoTrackID     string
+	Identity         string
+	AudioSrc         *app.Source
+	VideoSrc         *app.Source
+	AudioInCodec     types.MimeType
+	VideoInCodec     types.MimeType
+	AudioCodecParams webrtc.RTPCodecParameters
+	VideoCodecParams webrtc.RTPCodecParameters
 }
 
 type AudioConfig struct {
@@ -97,12 +111,19 @@ type VideoConfig struct {
 	KeyFrameInterval float64
 }
 
+type Callbacks struct {
+	GstReady     chan struct{} `yaml:"-"`
+	OnTrackMuted []func(bool)  `yaml:"-"`
+	OnFailure    func(error)   `yaml:"-"`
+}
+
 func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*PipelineConfig, error) {
 	p := &PipelineConfig{
 		BaseConfig: BaseConfig{},
 		Outputs:    make(map[types.EgressType]OutputConfig),
-		GstReady:   make(chan struct{}),
-		Failure:    make(chan error, 10),
+		Callbacks: &Callbacks{
+			GstReady: make(chan struct{}),
+		},
 	}
 
 	if err := yaml.Unmarshal([]byte(confString), p); err != nil {
@@ -161,6 +182,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	connectionInfoRequired := true
 	switch req := request.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
+		p.RequestType = types.RequestTypeRoomComposite
 		clone := proto.Clone(req.RoomComposite).(*livekit.RoomCompositeEgressRequest)
 		p.Info.Request = &livekit.EgressInfo_RoomComposite{
 			RoomComposite: clone,
@@ -209,11 +231,12 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 		// output params
-		if err := p.updateEncodedOutputs(req.RoomComposite); err != nil {
+		if err = p.updateEncodedOutputs(req.RoomComposite); err != nil {
 			return err
 		}
 
 	case *rpc.StartEgressRequest_Web:
+		p.RequestType = types.RequestTypeWeb
 		clone := proto.Clone(req.Web).(*livekit.WebEgressRequest)
 		p.Info.Request = &livekit.EgressInfo_Web{
 			Web: clone,
@@ -257,11 +280,12 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 		// output params
-		if err := p.updateEncodedOutputs(req.Web); err != nil {
+		if err = p.updateEncodedOutputs(req.Web); err != nil {
 			return err
 		}
 
 	case *rpc.StartEgressRequest_TrackComposite:
+		p.RequestType = types.RequestTypeTrackComposite
 		clone := proto.Clone(req.TrackComposite).(*livekit.TrackCompositeEgressRequest)
 		p.Info.Request = &livekit.EgressInfo_TrackComposite{
 			TrackComposite: clone,
@@ -303,6 +327,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 	case *rpc.StartEgressRequest_Track:
+		p.RequestType = types.RequestTypeTrack
 		clone := proto.Clone(req.Track).(*livekit.TrackEgressRequest)
 		p.Info.Request = &livekit.EgressInfo_Track{
 			Track: clone,

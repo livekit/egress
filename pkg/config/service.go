@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package config
 
 import (
@@ -15,8 +29,8 @@ const (
 
 	roomCompositeCpuCost  = 4
 	webCpuCost            = 4
-	trackCompositeCpuCost = 2
-	trackCpuCost          = 1
+	trackCompositeCpuCost = 1
+	trackCpuCost          = 0.5
 
 	defaultTemplatePort         = 7980
 	defaultTemplateBaseTemplate = "http://localhost:%d/"
@@ -35,9 +49,9 @@ type ServiceConfig struct {
 
 type CPUCostConfig struct {
 	RoomCompositeCpuCost  float64 `yaml:"room_composite_cpu_cost"`
+	WebCpuCost            float64 `yaml:"web_cpu_cost"`
 	TrackCompositeCpuCost float64 `yaml:"track_composite_cpu_cost"`
 	TrackCpuCost          float64 `yaml:"track_cpu_cost"`
-	WebCpuCost            float64 `yaml:"web_cpu_cost"`
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {

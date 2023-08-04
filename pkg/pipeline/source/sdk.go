@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package source
 
 import (
@@ -15,7 +29,6 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 	lksdk "github.com/livekit/server-sdk-go"
@@ -26,10 +39,12 @@ const (
 	AudioAppSource = "audioAppSrc"
 	VideoAppSource = "videoAppSrc"
 
-	subscriptionTimeout = time.Second * 5
+	subscriptionTimeout = time.Second * 30
 )
 
 type SDKSource struct {
+	*config.Callbacks
+
 	room *lksdk.Room
 	sync *synchronizer.Synchronizer
 
@@ -41,16 +56,15 @@ type SDKSource struct {
 	videoTrackID string
 
 	// participant
-	participantIdentity string
+	identity string
 
 	audioWriter *sdk.AppWriter
 	videoWriter *sdk.AppWriter
 
+	subscriptions  sync.WaitGroup
 	active         atomic.Int32
 	startRecording chan struct{}
 	endRecording   chan struct{}
-
-	onTrackMute func(bool)
 }
 
 func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, error) {
@@ -59,11 +73,20 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, er
 
 	startRecording := make(chan struct{})
 	s := &SDKSource{
+		Callbacks: p.Callbacks,
 		sync: synchronizer.NewSynchronizer(func() {
 			close(startRecording)
 		}),
 		startRecording: startRecording,
 		endRecording:   make(chan struct{}),
+	}
+
+	switch p.RequestType {
+	case types.RequestTypeTrackComposite:
+		s.audioTrackID = p.AudioTrackID
+		s.videoTrackID = p.VideoTrackID
+	case types.RequestTypeTrack:
+		s.trackID = p.TrackID
 	}
 
 	if err := s.joinRoom(p); err != nil {
@@ -155,18 +178,16 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 	filenameReplacements := make(map[string]string)
 
 	var onSubscribeErr error
-	var wg sync.WaitGroup
 	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-		defer wg.Done()
-		logger.Debugw("track subscribed", "trackID", track.ID(), "mime", track.Codec().MimeType)
+		defer s.subscriptions.Done()
 
 		s.active.Inc()
 		t := s.sync.AddTrack(track, rp.Identity())
 
 		mu.Lock()
-		if p.ParticipantIdentity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
-			p.ParticipantIdentity = rp.Identity()
-			filenameReplacements["{publisher_identity}"] = p.ParticipantIdentity
+		if p.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
+			p.Identity = rp.Identity()
+			filenameReplacements["{publisher_identity}"] = p.Identity
 		}
 
 		if p.TrackID != "" {
@@ -174,6 +195,11 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 				p.TrackKind = "audio"
 			} else {
 				p.TrackKind = "video"
+				// check for video over websocket
+				if p.Outputs[types.EgressTypeWebsocket] != nil {
+					onSubscribeErr = errors.ErrVideoWebsocket
+					return
+				}
 			}
 			p.TrackSource = strings.ToLower(pub.Source().String())
 
@@ -287,8 +313,8 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 	var fileIdentifier string
 	tracks := make(map[string]struct{})
 
-	switch p.Info.Request.(type) {
-	case *livekit.EgressInfo_TrackComposite:
+	switch p.RequestType {
+	case types.RequestTypeTrackComposite:
 		fileIdentifier = p.Info.RoomName
 		if p.AudioEnabled {
 			s.audioTrackID = p.AudioTrackID
@@ -299,17 +325,17 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			tracks[s.videoTrackID] = struct{}{}
 		}
 
-	case *livekit.EgressInfo_Track:
+	case types.RequestTypeTrack:
 		fileIdentifier = p.TrackID
 		s.trackID = p.TrackID
 		tracks[s.trackID] = struct{}{}
 	}
 
-	wg.Add(len(tracks))
+	s.subscriptions.Add(len(tracks))
 	if err := s.subscribeToTracks(tracks); err != nil {
 		return err
 	}
-	wg.Wait()
+	s.subscriptions.Wait()
 	if onSubscribeErr != nil {
 		return onSubscribeErr
 	}
@@ -355,10 +381,6 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}) error {
 	return nil
 }
 
-func (s *SDKSource) OnTrackMuted(onTrackMuted func(bool)) {
-	s.onTrackMute = onTrackMuted
-}
-
 func (s *SDKSource) onTrackMuteChanged(pub lksdk.TrackPublication, muted bool) {
 	track := pub.Track()
 	if track == nil {
@@ -369,8 +391,8 @@ func (s *SDKSource) onTrackMuteChanged(pub lksdk.TrackPublication, muted bool) {
 		w.SetTrackMuted(muted)
 	}
 
-	if s.onTrackMute != nil {
-		s.onTrackMute(muted)
+	for _, onMute := range s.OnTrackMuted {
+		onMute(muted)
 	}
 }
 
