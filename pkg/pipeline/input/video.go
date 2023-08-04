@@ -95,6 +95,16 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
 		}
 		v.src = append(v.src, rtpH264Depay)
 
+		caps, err := gst.NewElement("capsfilter")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = caps.SetProperty("caps", gst.NewCapsFromString(
+			`video/x-h264,stream-format="byte-stream"`)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		v.elements = append(v.elements, caps)
+
 		if p.VideoTranscoding {
 			avDecH264, err := gst.NewElement("avdec_h264")
 			if err != nil {
