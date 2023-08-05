@@ -73,6 +73,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 
 		p.Outputs[types.EgressTypeFile] = conf
 		p.OutputCount++
+		p.FinalizationRequired = true
 
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
 		if len(streams)+len(segments) == 0 {
@@ -138,6 +139,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 
 		p.Outputs[types.EgressTypeSegments] = conf
 		p.OutputCount++
+		p.FinalizationRequired = true
 
 		p.Info.SegmentResults = []*livekit.SegmentsInfo{conf.SegmentsInfo}
 		if len(streams)+len(segments) == 0 {
@@ -148,10 +150,6 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 
 	if p.OutputCount == 0 {
 		return errors.ErrInvalidInput("output")
-	}
-
-	if p.OutputCount == 1 && stream != nil {
-		p.StreamOnly = true
 	}
 
 	return nil
@@ -170,6 +168,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 
 		p.Outputs[types.EgressTypeFile] = conf
 		p.OutputCount = 1
+		p.FinalizationRequired = true
 
 	case *livekit.TrackEgressRequest_WebsocketUrl:
 		conf, err := p.getStreamConfig(types.OutputTypeRaw, []string{o.WebsocketUrl})
@@ -186,7 +185,6 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 
 		p.Outputs[types.EgressTypeWebsocket] = conf
 		p.OutputCount = 1
-		p.StreamOnly = true
 
 	default:
 		return errors.ErrInvalidInput("output")

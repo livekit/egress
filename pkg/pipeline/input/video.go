@@ -80,12 +80,10 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
 	v.src = append(v.src, src.Element)
 	switch {
 	case strings.EqualFold(p.VideoCodecParams.MimeType, string(types.MimeTypeH264)):
-		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf(
-				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
-				p.VideoCodecParams.PayloadType, p.VideoCodecParams.ClockRate,
-			),
-		)); err != nil {
+		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+			"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
+			p.VideoCodecParams.PayloadType, p.VideoCodecParams.ClockRate,
+		))); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 
@@ -94,6 +92,17 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
 			return errors.ErrGstPipelineError(err)
 		}
 		v.src = append(v.src, rtpH264Depay)
+
+		caps, err := gst.NewElement("capsfilter")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = caps.SetProperty("caps", gst.NewCapsFromString(
+			`video/x-h264,stream-format="byte-stream"`,
+		)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		v.src = append(v.src, caps)
 
 		if p.VideoTranscoding {
 			avDecH264, err := gst.NewElement("avdec_h264")

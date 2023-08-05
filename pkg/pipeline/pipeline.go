@@ -62,7 +62,8 @@ type Pipeline struct {
 	gstLogger  *zap.SugaredLogger
 	playing    bool
 	limitTimer *time.Timer
-	closed     core.Fuse
+	eosSent    core.Fuse
+	stopped    core.Fuse
 	eosTimer   *time.Timer
 
 	// callbacks
@@ -77,7 +78,8 @@ func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate Update
 	p := &Pipeline{
 		PipelineConfig: conf,
 		gstLogger:      logger.GetLogger().(*logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
-		closed:         core.NewFuse(),
+		eosSent:        core.NewFuse(),
+		stopped:        core.NewFuse(),
 		sendUpdate:     onStatusUpdate,
 	}
 	p.OnFailure = p.onFailure
@@ -196,7 +198,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	if start != nil {
 		logger.Debugw("waiting for start signal")
 		select {
-		case <-p.closed.Watch():
+		case <-p.stopped.Watch():
 			p.src.Close()
 			p.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
 			return p.Info
@@ -216,6 +218,11 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	// add watch
 	p.loop = glib.NewMainLoop(glib.MainContextDefault(), false)
 	p.pipeline.GetPipelineBus().AddWatch(p.messageWatch)
+
+	// return if failed before loop was added
+	if p.Info.Error != "" || p.Info.Status == livekit.EgressStatus_EGRESS_ABORTED {
+		return p.Info
+	}
 
 	// set state to playing (this does not start the pipeline)
 	if err := p.pipeline.SetState(gst.StatePlaying); err != nil {
@@ -389,7 +396,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
-	p.closed.Once(func() {
+	p.eosSent.Once(func() {
 		if p.limitTimer != nil {
 			p.limitTimer.Stop()
 		}
@@ -404,9 +411,14 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 			p.stop()
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
-			p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 			p.Info.UpdatedAt = time.Now().UnixNano()
-			p.sendUpdate(ctx, p.Info)
+			if p.Info.Error != "" {
+				p.Info.Status = livekit.EgressStatus_EGRESS_FAILED
+				p.stop()
+			} else {
+				p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
+				p.sendUpdate(ctx, p.Info)
+			}
 			fallthrough
 
 		case livekit.EgressStatus_EGRESS_ENDING,
@@ -415,15 +427,15 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 				logger.Infow("sending EOS to pipeline")
 
 				p.eosTimer = time.AfterFunc(eosTimeout, func() {
-					logger.Errorw("pipeline frozen", nil, "stream", p.StreamOnly)
+					logger.Errorw("pipeline frozen", nil, "stream", !p.FinalizationRequired)
 					if p.Debug.EnableProfiling {
 						p.uploadDebugFiles()
 					}
 
-					if p.StreamOnly {
-						p.stop()
-					} else {
+					if p.FinalizationRequired {
 						p.OnFailure(errors.New("pipeline frozen"))
+					} else {
+						p.stop()
 					}
 				})
 
@@ -528,42 +540,42 @@ func (p *Pipeline) updateDuration(endedAt int64) {
 }
 
 func (p *Pipeline) onFailure(err error) {
-	if p.Info.Error == "" {
+	if p.Info.Error == "" && (!p.eosSent.IsBroken() || p.FinalizationRequired) {
 		p.Info.Error = err.Error()
 	}
 	go p.stop()
 }
 
 func (p *Pipeline) stop() {
-	p.mu.Lock()
-
-	if p.loop == nil {
-		p.mu.Unlock()
-		return
-	}
-
-	stateChange := make(chan error, 1)
-	go func() {
-		stateChange <- p.pipeline.BlockSetState(gst.StateNull)
-	}()
-
-	select {
-	case err := <-stateChange:
-		if err != nil {
-			logger.Errorw("SetStateNull failed", err)
+	p.stopped.Once(func() {
+		p.mu.Lock()
+		if p.loop == nil {
+			p.mu.Unlock()
+			return
 		}
-	case <-time.After(eosTimeout):
-		logger.Errorw("SetStateNull timed out", nil)
-	}
 
-	endedAt := time.Now().UnixNano()
-	logger.Infow("pipeline stopped")
+		stateChange := make(chan error, 1)
+		go func() {
+			stateChange <- p.pipeline.BlockSetState(gst.StateNull)
+		}()
 
-	p.loop.Quit()
-	p.loop = nil
-	p.mu.Unlock()
+		select {
+		case err := <-stateChange:
+			if err != nil {
+				logger.Errorw("SetStateNull failed", err)
+			}
+		case <-time.After(eosTimeout):
+			logger.Errorw("SetStateNull timed out", nil)
+		}
 
-	if p.SourceType == types.SourceTypeWeb {
-		p.updateDuration(endedAt)
-	}
+		endedAt := time.Now().UnixNano()
+		logger.Infow("pipeline stopped")
+
+		p.loop.Quit()
+		p.mu.Unlock()
+
+		if p.SourceType == types.SourceTypeWeb {
+			p.updateDuration(endedAt)
+		}
+	})
 }
