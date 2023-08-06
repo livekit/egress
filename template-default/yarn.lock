@@ -2051,25 +2051,25 @@
   resolved "https://registry.yarnpkg.com/@eslint/js/-/js-8.36.0.tgz#9837f768c03a1e4a30bd304a64fb8844f0e72efe"
   integrity sha512-lxJ9R5ygVm8ZWgYdUweoq5ownDlJ4upvoWmO4eLxBYHdMo+vZ/Rx0EN6MbKWDJOSUGrqJy2Gt+Dyv/VKml0fjg==
 
-"@floating-ui/core@^1.4.0":
-  version "1.4.0"
-  resolved "https://registry.yarnpkg.com/@floating-ui/core/-/core-1.4.0.tgz#bc918b49145115c49cc15882c8f29af03435ff50"
-  integrity sha512-x5Ly1Eiyqt9aR38XzhraoWxgtQtvy3mVChWMZIr49XFyvIhNuqUxZKXBRoI5WiMRaaAZezCauJaEISu3z5y8sg==
+"@floating-ui/core@^1.4.1":
+  version "1.4.1"
+  resolved "https://registry.yarnpkg.com/@floating-ui/core/-/core-1.4.1.tgz#0d633f4b76052668afb932492ac452f7ebe97f17"
+  integrity sha512-jk3WqquEJRlcyu7997NtR5PibI+y5bi+LS3hPmguVClypenMsCY3CBa3LAQnozRCtCrYWSEtAdiskpamuJRFOQ==
   dependencies:
-    "@floating-ui/utils" "^0.1.0"
+    "@floating-ui/utils" "^0.1.1"
 
 "@floating-ui/dom@^1.1.0":
-  version "1.5.0"
-  resolved "https://registry.yarnpkg.com/@floating-ui/dom/-/dom-1.5.0.tgz#a9d7784c1567be8eb3097c61b09b9af8043b24c9"
-  integrity sha512-9jPin5dTlcEN+nXzBRhdreCzlJBIYWeMXpJJ5VnO1l9dLcP7uQNPbmwmIoHpHpH6GPYMYtQA7GfkvsSj/CQPwg==
+  version "1.5.1"
+  resolved "https://registry.yarnpkg.com/@floating-ui/dom/-/dom-1.5.1.tgz#88b70defd002fe851f17b4a25efb2d3c04d7a8d7"
+  integrity sha512-KwvVcPSXg6mQygvA1TjbN/gh///36kKtllIF8SUm0qpFj8+rvYrpvlYdL1JoA71SHpDqgSSdGOSoQ0Mp3uY5aw==
   dependencies:
-    "@floating-ui/core" "^1.4.0"
-    "@floating-ui/utils" "^0.1.0"
+    "@floating-ui/core" "^1.4.1"
+    "@floating-ui/utils" "^0.1.1"
 
-"@floating-ui/utils@^0.1.0":
-  version "0.1.0"
-  resolved "https://registry.yarnpkg.com/@floating-ui/utils/-/utils-0.1.0.tgz#3acc29138c694d017dc09f1f312c5ffc36e492da"
-  integrity sha512-ZSlli/beGZdvoqT3/Y9oOW79XSEpBfxt8UY6vjyWJW0B8d/M+MKlkQ3kBzLKDXaSsB84IVj6QntQfHLzesB4mA==
+"@floating-ui/utils@^0.1.1":
+  version "0.1.1"
+  resolved "https://registry.yarnpkg.com/@floating-ui/utils/-/utils-0.1.1.tgz#1a5b1959a528e374e8037c4396c3e825d6cf4a83"
+  integrity sha512-m0G6wlnhm/AX0H12IOWtK8gASEMffnX08RtKkCgTdHb9JpHKGloI7icFfLg9ZmQeavcvR0PKmzxClyuFPSjKWw==
 
 "@humanwhocodes/config-array@^0.11.8":
   version "0.11.8"
@@ -2395,10 +2395,10 @@
   resolved "https://registry.yarnpkg.com/@leichtgewicht/ip-codec/-/ip-codec-2.0.4.tgz#b2ac626d6cb9c8718ab459166d4bb405b8ffa78b"
   integrity sha512-Hcv+nVC0kZnQ3tD9GVu5xSMR4VVYOteQIr/hwFPVEvPdlXqgGEuRjiheChHgdM+JyqdgNcmzZOX/tnl0JOiI7A==
 
-"@livekit/components-core@0.6.11", "@livekit/components-core@^0.6.5":
-  version "0.6.11"
-  resolved "https://registry.yarnpkg.com/@livekit/components-core/-/components-core-0.6.11.tgz#40e91b0a1c669eb740c0520d3efd48a4a037e17b"
-  integrity sha512-FufCqJ/G0rznKR4hCY1EM+9GtwGK+easNgOPw4WPvhFEOO4L00KuEYWpzbWBzVFBHYqBuypkZS4enOsSHwPAJQ==
+"@livekit/components-core@0.6.12", "@livekit/components-core@^0.6.5":
+  version "0.6.12"
+  resolved "https://registry.yarnpkg.com/@livekit/components-core/-/components-core-0.6.12.tgz#60d5433f8b37b633ba51e9635e63efa6f22d3e7b"
+  integrity sha512-aLKYO2R0Dk+0ouBpYhhZ7y8HB8SYmmSgrLAdVOwCgM/1yU5jpeOAXjSyE9v5JFO5i2Q1ue2YDyp2L24gbdf2BQ==
   dependencies:
     "@floating-ui/dom" "^1.1.0"
     email-regex "^5.0.0"
@@ -2407,18 +2407,18 @@
     rxjs "^7.8.0"
 
 "@livekit/components-react@^1.0.0":
-  version "1.0.8"
-  resolved "https://registry.yarnpkg.com/@livekit/components-react/-/components-react-1.0.8.tgz#38729f65661d4cc4763608040025d8e7cc3d40ef"
-  integrity sha512-JOGcoLwOXI2vQW0U7Zwh+DXIoC/Nm9/yOg7U6tAv6+Sps/BlAjyY09XVnI6GBLeJpiaqzlY2ualmfMKiWDgDhw==
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/@livekit/components-react/-/components-react-1.1.0.tgz#fd0f219ebceea77c9c497b287d9d5774f1fd96f1"
+  integrity sha512-O2bGuq6Jek1/lQDjbcrzNi/5AcIM/Nq8iEVSlm7dNG5bBP/89HnjMWF5rvyS9Lnbzp15hDO18L6h+UQCFZGZLw==
   dependencies:
-    "@livekit/components-core" "0.6.11"
+    "@livekit/components-core" "0.6.12"
     "@react-hook/latest" "^1.0.3"
     clsx "^1.2.1"
 
 "@livekit/components-styles@^1.0.0":
-  version "1.0.4"
-  resolved "https://registry.yarnpkg.com/@livekit/components-styles/-/components-styles-1.0.4.tgz#5aa5194609b40ec475f9eb3b2e652355cd8062b6"
-  integrity sha512-bLCj+asyZLKtviKK+wU2WJ/pe0K/QSkzolXAOKkVedojs2Yc4e6i1tjOr0rTRSJxl4opYrZK9Ye89HLq6J04fA==
+  version "1.0.5"
+  resolved "https://registry.yarnpkg.com/@livekit/components-styles/-/components-styles-1.0.5.tgz#0ed4b78280762c805cd6c1a112e78a0be86858cf"
+  integrity sha512-YnuojJIWaOY8iPQtB6DPinn4BJncHHp3DGgg3Chhxpi/HclHKUz8w6Pr9G5X/YWhqaaLOFpbRWWsdYNVAT+wdA==
 
 "@livekit/egress-sdk@^0.1.2":
   version "0.1.2"
@@ -2916,9 +2916,9 @@
   integrity sha512-rt40Nk13II9JwQBdeYqmbn2Q6IVTA5uPhvSO+JVqdXw/6/4glI6oR9ezty/A9Hg5u7JH4OmYmuQ+XvjKm0Datg==
 
 "@types/node@^18.0.0":
-  version "18.17.1"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-18.17.1.tgz#84c32903bf3a09f7878c391d31ff08f6fe7d8335"
-  integrity sha512-xlR1jahfizdplZYRU59JlUx9uzF1ARa8jbhM11ccpCJya8kvos5jwdm2ZAgxSCwOl0fq21svP18EVwPBXMQudw==
+  version "18.17.3"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-18.17.3.tgz#409febdc84478b452306a8112c692e800ad9f6fe"
+  integrity sha512-2x8HWtFk0S99zqVQABU9wTpr8wPoaDHZUcAkoTKH+nL7kPv3WUI9cRi/Kk5Mz4xdqXSqTkKP7IWNoQQYCnDsTA==
 
 "@types/parse-json@^4.0.0":
   version "4.0.0"
@@ -2975,9 +2975,9 @@
     "@types/react" "*"
 
 "@types/react@*", "@types/react@^18.0.25":
-  version "18.2.17"
-  resolved "https://registry.yarnpkg.com/@types/react/-/react-18.2.17.tgz#baa565b17ddb649c2dac85b5eaf9e9a1fe0f3b4e"
-  integrity sha512-u+e7OlgPPh+aryjOm5UJMX32OvB2E3QASOAqVMY6Ahs90djagxwv2ya0IctglNbNTexC12qCSMZG47KPfy1hAA==
+  version "18.2.18"
+  resolved "https://registry.yarnpkg.com/@types/react/-/react-18.2.18.tgz#c8b233919eef1bdc294f6f34b37f9727ad677516"
+  integrity sha512-da4NTSeBv/P34xoZPhtcLkmZuJ+oYaCxHmyHzwaDQo9RQPBeXV+06gEk2FpqEcsX9XrnNLvRpVh6bdavDSjtiQ==
   dependencies:
     "@types/prop-types" "*"
     "@types/scheduler" "*"
@@ -7306,9 +7306,9 @@ lines-and-columns@^1.1.6:
   integrity sha1-HADHQ7QzzQpOgHWPe2SldEDZ/wA=
 
 livekit-client@^1.9.0:
-  version "1.12.2"
-  resolved "https://registry.yarnpkg.com/livekit-client/-/livekit-client-1.12.2.tgz#b9974a307a1d1a6ef44d0b70e5fdcd0602e01393"
-  integrity sha512-kBjCvAmnv6j5Sf6MquxT9Pz8bBv2WthITXAw5ObCwb0xBLVrMQsvmmOfuvj+qkk222WB3NdvY0p6PeIxWoqVFg==
+  version "1.12.3"
+  resolved "https://registry.yarnpkg.com/livekit-client/-/livekit-client-1.12.3.tgz#1ae8156332abc512c24f99254594bfdf764e1ff5"
+  integrity sha512-dl7Xnz5EyxYr1Zd+f8ZtHsga3KUSuCtWGoHcDE7ELHLOHvkwvDk0v70GVCUTfVR34/+M8Ei2DSgjIuhGMYhkvQ==
   dependencies:
     "@bufbuild/protobuf" "^1.3.0"
     events "^3.3.0"
