@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,9 +45,9 @@ func (p *Pipeline) uploadDebugFiles() {
 	}
 
 	done := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(2)
 
+	var wg sync.WaitGroup
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		p.uploadDotFile(u)
@@ -54,6 +55,10 @@ func (p *Pipeline) uploadDebugFiles() {
 	go func() {
 		defer wg.Done()
 		p.uploadPProf(u)
+	}()
+	go func() {
+		defer wg.Done()
+		p.uploadTrackFiles(u)
 	}()
 	go func() {
 		wg.Wait()
@@ -65,6 +70,32 @@ func (p *Pipeline) uploadDebugFiles() {
 		return
 	case <-time.After(time.Second * 3):
 		logger.Errorw("failed to upload debug files", errors.New("timed out"))
+	}
+}
+
+func (p *Pipeline) uploadTrackFiles(u uploader.Uploader) {
+	var dir string
+	if p.Debug.ToUploadConfig() == nil {
+		dir = p.Debug.PathPrefix
+	} else {
+		dir = p.TmpDir
+	}
+
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	for _, f := range files {
+		if strings.HasSuffix(f.Name(), ".csv") {
+			local := path.Join(dir, f.Name())
+			storage := path.Join(p.Debug.PathPrefix, f.Name())
+			_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
+			if err != nil {
+				logger.Errorw("failed to upload debug file", err)
+				return
+			}
+		}
 	}
 }
 
@@ -89,20 +120,20 @@ func (p *Pipeline) uploadDebugFile(u uploader.Uploader, data []byte, fileExtensi
 
 	f, err := os.Create(local)
 	if err != nil {
-		logger.Errorw("failed to create dotfile", err)
+		logger.Errorw("failed to create debug file", err)
 		return
 	}
 	defer f.Close()
 
 	_, err = f.Write(data)
 	if err != nil {
-		logger.Errorw("failed to write dotfile", err)
+		logger.Errorw("failed to write debug file", err)
 		return
 	}
 
 	_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
 	if err != nil {
-		logger.Errorw("failed to upload dotfile", err)
+		logger.Errorw("failed to upload debug file", err)
 		return
 	}
 }
