@@ -67,14 +67,13 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 		}
 	}
 
-	// build audio input
+	// build input
 	if p.AudioEnabled {
 		if err := b.buildAudioInput(p); err != nil {
 			return nil, err
 		}
 	}
 
-	// build video input
 	if p.VideoEnabled {
 		if err := b.buildVideoInput(p); err != nil {
 			return nil, err
@@ -94,6 +93,7 @@ func (b *Bin) buildAudioInput(p *config.PipelineConfig) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// build input
 	switch p.SourceType {
 	case types.SourceTypeSDK:
 		if err := a.buildSDKInput(p); err != nil {
@@ -151,7 +151,6 @@ func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
 	}
 
 	if p.VideoTranscoding {
-		// build encoder
 		if err := v.buildEncoder(p); err != nil {
 			return err
 		}

@@ -455,7 +455,6 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 	switch pub.Source() {
 	case livekit.TrackSource_CAMERA, livekit.TrackSource_MICROPHONE:
 		s.pending.Add(1)
-		logger.Infow("pending++")
 		s.participantReady.Break()
 		if err := s.subscribe(pub); err != nil {
 			logger.Errorw("failed to subscribe to track", err, "trackID", pub.SID())

@@ -88,11 +88,15 @@ func (v *videoInput) buildSDKInput(p *config.PipelineConfig) error {
 		}
 	}
 
-	if err := v.buildTestSrc(p); err != nil {
-		return err
+	if p.RequestType == types.RequestTypeParticipant {
+		if err := v.buildTestSrc(p); err != nil {
+			return err
+		}
+
+		return v.buildInputSelector()
 	}
 
-	return v.buildInputSelector()
+	return nil
 }
 
 func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.TrackSource) error {
@@ -149,12 +153,10 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.Trac
 		}
 
 	case strings.EqualFold(track.Codec.MimeType, string(types.MimeTypeVP8)):
-		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf(
-				"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
-				track.Codec.PayloadType, track.Codec.ClockRate,
-			),
-		)); err != nil {
+		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+			"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
+			track.Codec.PayloadType, track.Codec.ClockRate,
+		))); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 
@@ -203,11 +205,10 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.Trac
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = caps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
-			p.Framerate, p.Width, p.Height,
-		)),
-	); err != nil {
+	if err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+		p.Framerate, p.Width, p.Height,
+	))); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
@@ -229,11 +230,10 @@ func (v *videoInput) buildTestSrc(p *config.PipelineConfig) error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = caps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
-			p.Framerate, p.Width, p.Height,
-		)),
-	); err != nil {
+	if err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+		p.Framerate, p.Width, p.Height,
+	))); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
