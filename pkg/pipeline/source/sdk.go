@@ -17,6 +17,7 @@ package source
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -270,8 +271,17 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			return
 		}
 
+		var logFilename string
+		if p.Debug.EnableProfiling {
+			if p.Debug.ToUploadConfig() == nil {
+				logFilename = path.Join(p.Debug.PathPrefix, fmt.Sprintf("%s.csv", track.ID()))
+			} else {
+				logFilename = path.Join(p.TmpDir, fmt.Sprintf("%s.csv", track.ID()))
+			}
+		}
+
 		appSrc := app.SrcFromElement(src)
-		writer, err := sdk.NewAppWriter(track, rp, codec, appSrc, s.sync, t, writeBlanks)
+		writer, err := sdk.NewAppWriter(track, rp, codec, appSrc, s.sync, t, writeBlanks, logFilename)
 		if err != nil {
 			logger.Errorw("could not create app writer", err)
 			onSubscribeErr = err

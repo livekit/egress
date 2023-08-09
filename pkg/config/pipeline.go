@@ -53,9 +53,9 @@ type PipelineConfig struct {
 	VideoConfig       `yaml:"-"`
 	*Callbacks        `yaml:"-"`
 
-	Outputs     map[types.EgressType]OutputConfig `yaml:"-"`
-	OutputCount int                               `yaml:"-"`
-	StreamOnly  bool                              `yaml:"-"`
+	Outputs              map[types.EgressType]OutputConfig `yaml:"-"`
+	OutputCount          int                               `yaml:"-"`
+	FinalizationRequired bool                              `yaml:"-"`
 
 	Info *livekit.EgressInfo `yaml:"-"`
 }

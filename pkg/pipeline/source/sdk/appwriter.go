@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -52,6 +53,7 @@ const (
 
 type AppWriter struct {
 	logger      logger.Logger
+	logFile     *os.File
 	track       *webrtc.TrackRemote
 	identity    string
 	codec       types.MimeType
@@ -86,6 +88,7 @@ func NewAppWriter(
 	sync *synchronizer.Synchronizer,
 	syncInfo *synchronizer.TrackSynchronizer,
 	writeBlanks bool,
+	logFilename string,
 ) (*AppWriter, error) {
 	w := &AppWriter{
 		logger:            logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
@@ -100,6 +103,15 @@ func NewAppWriter(
 		draining:          core.NewFuse(),
 		endStream:         core.NewFuse(),
 		finished:          core.NewFuse(),
+	}
+
+	if logFilename != "" {
+		f, err := os.Create(logFilename)
+		if err != nil {
+			return nil, err
+		}
+		_, _ = f.WriteString("pts,sn,ts\n")
+		w.logFile = f
 	}
 
 	var depacketizer rtp.Depacketizer
@@ -203,6 +215,10 @@ func (w *AppWriter) run() {
 		"maxDrift", fmt.Sprint(stats.MaxDrift),
 		"packetLoss", fmt.Sprintf("%.2f%%", loss*100),
 	)
+
+	if w.logFile != nil {
+		_ = w.logFile.Close()
+	}
 
 	w.finished.Break()
 }
@@ -386,6 +402,10 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet, pts time.Duration) error {
 	b.SetPresentationTimestamp(pts)
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.logger.Infow("unexpected flow return", "flow", flow)
+	}
+
+	if w.logFile != nil {
+		_, _ = w.logFile.WriteString(fmt.Sprintf("%s,%d,%d\n", pts.String(), pkt.SequenceNumber, pkt.Timestamp))
 	}
 
 	return nil

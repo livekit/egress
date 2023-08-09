@@ -207,7 +207,7 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 	case element == elementSplitMuxSink:
 		// We sometimes get GstSplitMuxSink errors if send EOS before the first media was sent to the mux
 		if message == msgMuxer {
-			if p.closed.IsBroken() {
+			if p.eosSent.IsBroken() {
 				logger.Debugw("GstSplitMuxSink failure after sending EOS")
 				return nil
 			}
@@ -234,6 +234,10 @@ func parseDebugInfo(gErr *gst.GError) (element, name, message string) {
 }
 
 func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
+	if p.playing.IsBroken() {
+		return
+	}
+
 	_, newState := msg.ParseStateChanged()
 	if newState != gst.StatePlaying {
 		return
@@ -243,7 +247,7 @@ func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
 	if s == pipelineSource {
 		logger.Infow("pipeline playing")
 
-		p.playing = true
+		p.playing.Break()
 		switch p.SourceType {
 		case types.SourceTypeSDK:
 			p.updateStartTime(p.src.(*source.SDKSource).GetStartTime())
