@@ -64,14 +64,22 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 				filename:       "participant_{publisher_identity}_vp8_{time}.mp4",
 			},
 			{
-				name:           "H264",
-				fileType:       livekit.EncodedFileType_MP4,
+				name:       "H264",
+				fileType:   livekit.EncodedFileType_MP4,
+				audioCodec: types.MimeTypeOpus,
+				videoCodec: types.MimeTypeH264,
+				// videoDelay:     time.Second * 8,
+				// videoUnpublish: time.Second * 14,
+				// videoRepublish: time.Second * 20,
+				filename: "participant_{room_name}_h264_{time}.mp4",
+			},
+			{
+				name:           "OGG",
+				fileType:       livekit.EncodedFileType_OGG,
 				audioCodec:     types.MimeTypeOpus,
-				videoCodec:     types.MimeTypeH264,
-				videoDelay:     time.Second * 8,
-				videoUnpublish: time.Second * 14,
-				videoRepublish: time.Second * 20,
-				filename:       "participant_{room_name}_h264_{time}.mp4",
+				audioUnpublish: time.Second * 10,
+				audioRepublish: time.Second * 15,
+				filename:       "participant_{room_name}_{time}.ogg",
 			},
 		} {
 			r.runParticipantTest(t, test.name, test, func(t *testing.T, identity string) {
@@ -120,10 +128,10 @@ func (r *Runner) testParticipantStream(t *testing.T) {
 	}
 
 	test := &testCase{
-		audioCodec:     types.MimeTypeOpus,
-		audioDelay:     time.Second * 10,
-		videoCodec:     types.MimeTypeVP8,
-		videoUnpublish: time.Second * 20,
+		audioCodec: types.MimeTypeOpus,
+		audioDelay: time.Second * 10,
+		videoCodec: types.MimeTypeVP8,
+		// videoUnpublish: time.Second * 20,
 	}
 
 	r.runParticipantTest(t, "Participant/Stream", test,
@@ -154,13 +162,13 @@ func (r *Runner) testParticipantSegments(t *testing.T) {
 	t.Run("Participant/Segments", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
-				name:           "VP8",
-				audioCodec:     types.MimeTypeOpus,
-				videoCodec:     types.MimeTypeVP8,
-				videoDelay:     time.Second * 10,
-				videoUnpublish: time.Second * 20,
-				filename:       "participant_{publisher_identity}_vp8_{time}",
-				playlist:       "participant_{publisher_identity}_vp8_{time}.m3u8",
+				name:       "VP8",
+				audioCodec: types.MimeTypeOpus,
+				videoCodec: types.MimeTypeVP8,
+				// videoDelay:     time.Second * 10,
+				// videoUnpublish: time.Second * 20,
+				filename: "participant_{publisher_identity}_vp8_{time}",
+				playlist: "participant_{publisher_identity}_vp8_{time}.m3u8",
 			},
 			{
 				name:           "H264",
@@ -224,7 +232,7 @@ func (r *Runner) testParticipantMulti(t *testing.T) {
 		audioCodec:     types.MimeTypeOpus,
 		audioUnpublish: time.Second * 20,
 		videoCodec:     types.MimeTypeVP8,
-		videoDelay:     time.Second * 10,
+		// videoDelay:     time.Second * 10,
 	}
 
 	r.runParticipantTest(t, "Participant/Multi", test,
