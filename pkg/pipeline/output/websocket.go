@@ -15,8 +15,6 @@
 package output
 
 import (
-	"io"
-
 	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
@@ -24,7 +22,6 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/logger"
 )
 
 type WebsocketOutput struct {
@@ -63,20 +60,12 @@ func (o *WebsocketOutput) SetSink(writer *sink.WebsocketSink, eosFunc func(*app.
 			// Pull the sample that triggered this callback
 			sample := appSink.PullSample()
 			if sample == nil {
-				logger.Debugw("unexpected flow return",
-					"flow", "EOS",
-					"reason", "nil sample",
-				)
 				return gst.FlowEOS
 			}
 
 			// Retrieve the buffer from the sample
 			buffer := sample.GetBuffer()
 			if buffer == nil {
-				logger.Debugw("unexpected flow return",
-					"flow", "Error",
-					"reason", "nil buffer",
-				)
 				return gst.FlowError
 			}
 
@@ -86,19 +75,7 @@ func (o *WebsocketOutput) SetSink(writer *sink.WebsocketSink, eosFunc func(*app.
 			// From the extracted bytes, send to writer
 			_, err := writer.Write(samples)
 			if err != nil {
-				if err == io.EOF {
-					logger.Debugw("unexpected flow return",
-						"flow", "EOS",
-						"reason", "Write returned EOF",
-					)
-					return gst.FlowEOS
-				}
 				o.conf.OnFailure(err)
-				logger.Debugw("unexpected flow return",
-					"flow", "Error",
-					"reason", err.Error(),
-				)
-				return gst.FlowError
 			}
 
 			return gst.FlowOK

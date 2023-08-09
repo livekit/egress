@@ -76,8 +76,6 @@ func (s *WebsocketSink) Start() error {
 			if err != nil {
 				_, isCloseError := err.(*websocket.CloseError)
 				if isCloseError || errors.Is(err, io.EOF) || strings.HasSuffix(err.Error(), "use of closed network connection") {
-					s.errChan <- err
-					s.closed.Store(true)
 					return
 				}
 				errCount++
@@ -114,20 +112,14 @@ func (s *WebsocketSink) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed.Load() {
-		select {
-		case err := <-s.errChan:
-			return 0, err
-		default:
-			return 0, errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
-		}
+		return 0, nil
 	}
 
 	return len(p), s.conn.WriteMessage(websocket.BinaryMessage, p)
 }
 
 func (s *WebsocketSink) OnTrackMuted(muted bool) {
-	err := s.writeMutedMessage(muted)
-	if err != nil {
+	if err := s.writeMutedMessage(muted); err != nil {
 		logger.Errorw("failed to write muted message", err)
 	}
 }
@@ -147,7 +139,7 @@ func (s *WebsocketSink) writeMutedMessage(muted bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed.Load() {
-		return errors.ErrWebsocketClosed(s.conn.RemoteAddr().String())
+		return nil
 	}
 
 	return s.conn.WriteMessage(websocket.TextMessage, data)
