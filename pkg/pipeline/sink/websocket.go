@@ -34,10 +34,9 @@ import (
 const pingPeriod = time.Second * 30
 
 type WebsocketSink struct {
-	mu      sync.Mutex
-	conn    *websocket.Conn
-	closed  atomic.Bool
-	errChan chan error
+	mu     sync.Mutex
+	conn   *websocket.Conn
+	closed atomic.Bool
 }
 
 func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*WebsocketSink, error) {
@@ -50,8 +49,7 @@ func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*Websock
 		return nil, err
 	}
 	return &WebsocketSink{
-		conn:    conn,
-		errChan: make(chan error, 1),
+		conn: conn,
 	}, nil
 }
 
