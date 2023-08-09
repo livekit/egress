@@ -106,12 +106,10 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.Trac
 	v.src = append(v.src, track.AppSrc.Element)
 	switch {
 	case strings.EqualFold(track.Codec.MimeType, string(types.MimeTypeH264)):
-		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf(
-				"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
-				track.Codec.PayloadType, track.Codec.ClockRate,
-			),
-		)); err != nil {
+		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+			"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
+			track.Codec.PayloadType, track.Codec.ClockRate,
+		))); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 

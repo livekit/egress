@@ -77,13 +77,12 @@ type testCase struct {
 	filenameSuffix livekit.SegmentedFileSuffix
 
 	// used by sdk tests
-	audioCodec types.MimeType
-	videoCodec types.MimeType
-
-	// used by participant tests
+	audioCodec     types.MimeType
 	audioDelay     time.Duration
 	audioUnpublish time.Duration
 	audioRepublish time.Duration
+
+	videoCodec     types.MimeType
 	videoDelay     time.Duration
 	videoUnpublish time.Duration
 	videoRepublish time.Duration
@@ -146,7 +145,6 @@ func (r *Runner) publishSampleOffset(t *testing.T, codec types.MimeType, publish
 
 func (r *Runner) publishSampleToRoom(t *testing.T, codec types.MimeType, withMuting bool) string {
 	done := make(chan struct{})
-
 	pub := r.publish(t, codec, done)
 	trackID := pub.SID()
 

@@ -202,8 +202,8 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		mu.Unlock()
 
 		var codec types.MimeType
-		var err error
 		var writeBlanks bool
+		var err error
 
 		switch {
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeOpus)):
@@ -264,13 +264,6 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			return
 		}
 
-		<-p.GstReady
-		src, err := gst.NewElementWithName("appsrc", track.ID())
-		if err != nil {
-			onSubscribeErr = errors.ErrGstPipelineError(err)
-			return
-		}
-
 		var logFilename string
 		if p.Debug.EnableProfiling {
 			if p.Debug.ToUploadConfig() == nil {
@@ -278,6 +271,13 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			} else {
 				logFilename = path.Join(p.TmpDir, fmt.Sprintf("%s.csv", track.ID()))
 			}
+		}
+
+		<-p.GstReady
+		src, err := gst.NewElementWithName("appsrc", track.ID())
+		if err != nil {
+			onSubscribeErr = errors.ErrGstPipelineError(err)
+			return
 		}
 
 		appSrc := app.SrcFromElement(src)
@@ -496,17 +496,6 @@ func (s *SDKSource) onTrackFinished(trackID string) {
 	}
 }
 
-func (s *SDKSource) getWriterForTrack(trackID string) *sdk.AppWriter {
-	if s.audioWriter != nil && s.audioWriter.TrackID() == trackID {
-		return s.audioWriter
-	}
-	if s.videoWriter != nil && s.videoWriter.TrackID() == trackID {
-		return s.videoWriter
-	}
-
-	return nil
-}
-
 func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
 	if rp.Identity() == s.identity {
 		s.onDisconnected()
@@ -520,4 +509,14 @@ func (s *SDKSource) onDisconnected() {
 	default:
 		close(s.endRecording)
 	}
+}
+
+func (s *SDKSource) getWriterForTrack(trackID string) *sdk.AppWriter {
+	if s.audioWriter != nil && s.audioWriter.TrackID() == trackID {
+		return s.audioWriter
+	}
+	if s.videoWriter != nil && s.videoWriter.TrackID() == trackID {
+		return s.videoWriter
+	}
+	return nil
 }

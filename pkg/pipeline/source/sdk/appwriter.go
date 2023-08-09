@@ -146,6 +146,10 @@ func NewAppWriter(
 	return w, nil
 }
 
+func (w *AppWriter) TrackID() string {
+	return w.track.ID()
+}
+
 func (w *AppWriter) Play() {
 	w.playing.Break()
 }

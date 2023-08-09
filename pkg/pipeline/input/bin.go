@@ -96,13 +96,11 @@ func (b *Bin) buildAudioInput(p *config.PipelineConfig) error {
 
 	switch p.SourceType {
 	case types.SourceTypeSDK:
-		// build sdk input
 		if err := a.buildSDKInput(p); err != nil {
 			return err
 		}
 
 	case types.SourceTypeWeb:
-		// build web input
 		if err := a.buildWebInput(p); err != nil {
 			return err
 		}
@@ -142,13 +140,11 @@ func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
 
 	switch p.SourceType {
 	case types.SourceTypeSDK:
-		// build sdk input
 		if err := v.buildSDKInput(p); err != nil {
 			return err
 		}
 
 	case types.SourceTypeWeb:
-		// build web input
 		if err := v.buildWebInput(p); err != nil {
 			return err
 		}
