@@ -38,14 +38,11 @@ import (
 )
 
 const (
-	AudioAppSource = "audioAppSrc"
-	VideoAppSource = "videoAppSrc"
-
 	subscriptionTimeout = time.Second * 30
 )
 
 type SDKSource struct {
-	*config.Callbacks
+	*config.PipelineConfig
 
 	room *lksdk.Room
 	sync *synchronizer.Synchronizer
@@ -75,7 +72,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, er
 
 	startRecording := make(chan struct{})
 	s := &SDKSource{
-		Callbacks: p.Callbacks,
+		PipelineConfig: p,
 		sync: synchronizer.NewSynchronizer(func() {
 			close(startRecording)
 		}),
@@ -105,12 +102,9 @@ func (s *SDKSource) GetStartTime() int64 {
 	return s.sync.GetStartedAt()
 }
 
-func (s *SDKSource) Playing(name string) {
-	switch name {
-	case AudioAppSource:
-		s.audioWriter.Play()
-	case VideoAppSource:
-		s.videoWriter.Play()
+func (s *SDKSource) Playing(trackID string) {
+	if w := s.getWriterForTrack(trackID); w != nil {
+		w.Play()
 	}
 }
 
@@ -143,19 +137,8 @@ func (s *SDKSource) CloseWriters() {
 	wg.Wait()
 }
 
-func (s *SDKSource) StreamStopped(name string) {
-	switch name {
-	case AudioAppSource:
-		s.audioWriter.Drain(true)
-		if s.active.Dec() == 0 {
-			s.onDisconnected()
-		}
-	case VideoAppSource:
-		s.videoWriter.Drain(true)
-		if s.active.Dec() == 0 {
-			s.onDisconnected()
-		}
-	}
+func (s *SDKSource) StreamStopped(trackID string) {
+	s.onTrackFinished(trackID)
 }
 
 func (s *SDKSource) Close() {
@@ -177,9 +160,9 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 	}
 
 	var mu sync.Mutex
+	var onSubscribeErr error
 	filenameReplacements := make(map[string]string)
 
-	var onSubscribeErr error
 	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		defer s.subscriptions.Done()
 
@@ -187,12 +170,13 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 		t := s.sync.AddTrack(track, rp.Identity())
 
 		mu.Lock()
-		if p.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
-			p.Identity = rp.Identity()
-			filenameReplacements["{publisher_identity}"] = p.Identity
-		}
-
-		if p.TrackID != "" {
+		switch p.RequestType {
+		case types.RequestTypeTrackComposite:
+			if p.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
+				p.Identity = rp.Identity()
+				filenameReplacements["{publisher_identity}"] = p.Identity
+			}
+		case types.RequestTypeTrack:
 			if track.Kind() == webrtc.RTPCodecTypeAudio {
 				p.TrackKind = "audio"
 			} else {
@@ -208,17 +192,16 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			filenameReplacements["{track_id}"] = p.TrackID
 			filenameReplacements["{track_type}"] = p.TrackKind
 			filenameReplacements["{track_source}"] = p.TrackSource
+			filenameReplacements["{publisher_identity}"] = p.Identity
 		}
 		mu.Unlock()
 
 		var codec types.MimeType
-		var appSrcName string
+		var writeBlanks bool
 		var err error
-		writeBlanks := false
 
 		switch {
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeOpus)):
-			appSrcName = AudioAppSource
 			codec = types.MimeTypeOpus
 
 			p.AudioEnabled = true
@@ -229,14 +212,13 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			}
 			p.AudioTranscoding = true
 
-			if p.TrackID != "" {
+			if p.RequestType == types.RequestTypeTrack {
 				if o := p.GetFileConfig(); o != nil {
 					o.OutputType = types.OutputTypeOGG
 				}
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeVP8)):
-			appSrcName = VideoAppSource
 			codec = types.MimeTypeVP8
 
 			p.VideoEnabled = true
@@ -250,14 +232,13 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 				writeBlanks = true
 			}
 
-			if p.TrackID != "" {
+			if p.RequestType == types.RequestTypeTrack {
 				if o := p.GetFileConfig(); o != nil {
 					o.OutputType = types.OutputTypeWebM
 				}
 			}
 
 		case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeH264)):
-			appSrcName = VideoAppSource
 			codec = types.MimeTypeH264
 
 			p.VideoEnabled = true
@@ -267,7 +248,7 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 				p.VideoOutCodec = types.MimeTypeH264
 			}
 
-			if p.TrackID != "" {
+			if p.RequestType == types.RequestTypeTrack {
 				if o := p.GetFileConfig(); o != nil {
 					o.OutputType = types.OutputTypeMP4
 				}
@@ -278,14 +259,6 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			return
 		}
 
-		<-p.GstReady
-		src, err := gst.NewElementWithName("appsrc", appSrcName)
-		if err != nil {
-			onSubscribeErr = errors.ErrGstPipelineError(err)
-			return
-		}
-		appSrc := app.SrcFromElement(src)
-
 		var logFilename string
 		if p.Debug.EnableProfiling {
 			if p.Debug.ToUploadConfig() == nil {
@@ -295,6 +268,14 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			}
 		}
 
+		<-p.GstReady
+		src, err := gst.NewElementWithName("appsrc", track.ID())
+		if err != nil {
+			onSubscribeErr = errors.ErrGstPipelineError(err)
+			return
+		}
+
+		appSrc := app.SrcFromElement(src)
 		writer, err := sdk.NewAppWriter(track, rp, codec, appSrc, s.sync, t, writeBlanks, logFilename)
 		if err != nil {
 			logger.Errorw("could not create app writer", err)
@@ -302,16 +283,20 @@ func (s *SDKSource) joinRoom(p *config.PipelineConfig) error {
 			return
 		}
 
-		// write blank frames only when writing to mp4
+		ts := &config.TrackSource{
+			TrackID: pub.SID(),
+			Kind:    pub.Kind(),
+			AppSrc:  appSrc,
+			Codec:   track.Codec(),
+		}
+
 		switch track.Kind() {
 		case webrtc.RTPCodecTypeAudio:
 			s.audioWriter = writer
-			p.AudioSrc = appSrc
-			p.AudioCodecParams = track.Codec()
+			p.AudioTrack = ts
 		case webrtc.RTPCodecTypeVideo:
 			s.videoWriter = writer
-			p.VideoSrc = appSrc
-			p.VideoCodecParams = track.Codec()
+			p.VideoTrack = ts
 		}
 	}
 
@@ -366,18 +351,13 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}) error {
 			for _, track := range p.Tracks() {
 				trackID := track.SID()
 				if _, ok := expecting[trackID]; ok {
-					if pub, ok := track.(*lksdk.RemoteTrackPublication); ok {
-						pub.OnRTCP(s.sync.OnRTCP)
+					if err := s.subscribe(track); err != nil {
+						return err
+					}
 
-						err := pub.SetSubscribed(true)
-						if err != nil {
-							return err
-						}
-
-						delete(expecting, track.SID())
-						if len(expecting) == 0 {
-							return nil
-						}
+					delete(expecting, track.SID())
+					if len(expecting) == 0 {
+						return nil
 					}
 				}
 			}
@@ -392,18 +372,29 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}) error {
 	return nil
 }
 
+func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
+	if pub, ok := track.(*lksdk.RemoteTrackPublication); ok {
+		if pub.IsSubscribed() {
+			s.subscriptions.Done()
+			return nil
+		}
+
+		s.active.Inc()
+		logger.Infow("subscribing to track", "trackID", track.SID())
+
+		pub.OnRTCP(s.sync.OnRTCP)
+		return pub.SetSubscribed(true)
+	}
+
+	return errors.ErrInvalidTrack
+}
+
 func (s *SDKSource) onTrackMuteChanged(pub lksdk.TrackPublication, muted bool) {
-	track := pub.Track()
-	if track == nil {
-		return
-	}
-
-	if w := s.getWriterForTrack(track.ID()); w != nil {
+	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.SetTrackMuted(muted)
-	}
-
-	for _, onMute := range s.OnTrackMuted {
-		onMute(muted)
+		for _, onMute := range s.OnTrackMuted {
+			onMute(muted)
+		}
 	}
 }
 
@@ -413,6 +404,27 @@ func (s *SDKSource) onTrackUnpublished(pub *lksdk.RemoteTrackPublication, _ *lks
 		if s.active.Dec() == 0 {
 			s.onDisconnected()
 		}
+	}
+}
+
+func (s *SDKSource) onTrackFinished(trackID string) {
+	var w *sdk.AppWriter
+
+	if s.audioWriter != nil && s.audioWriter.TrackID() == trackID {
+		logger.Infow("removing audio writer")
+		w = s.audioWriter
+		s.audioWriter = nil
+	} else if s.videoWriter != nil && s.videoWriter.TrackID() == trackID {
+		logger.Infow("removing video writer")
+		w = s.videoWriter
+		s.videoWriter = nil
+	} else {
+		return
+	}
+
+	w.Drain(true)
+	if s.active.Dec() == 0 {
+		s.onDisconnected()
 	}
 }
 
@@ -426,18 +438,11 @@ func (s *SDKSource) onDisconnected() {
 }
 
 func (s *SDKSource) getWriterForTrack(trackID string) *sdk.AppWriter {
-	switch trackID {
-	case s.trackID:
-		if s.audioWriter != nil {
-			return s.audioWriter
-		} else if s.videoWriter != nil {
-			return s.videoWriter
-		}
-	case s.audioTrackID:
+	if s.audioWriter != nil && s.audioWriter.TrackID() == trackID {
 		return s.audioWriter
-	case s.videoTrackID:
+	}
+	if s.videoWriter != nil && s.videoWriter.TrackID() == trackID {
 		return s.videoWriter
 	}
-
 	return nil
 }

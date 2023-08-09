@@ -271,9 +271,6 @@ func (o *StreamOutput) RemoveSink(bin *gst.Bin, url string) error {
 
 	srcPad := o.tee.GetStaticPad(sink.pad)
 	srcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		// remove probe
-		pad.RemoveProbe(uint64(info.ID()))
-
 		// unlink queue
 		pad.Unlink(sink.queue.GetStaticPad("sink"))
 
@@ -294,7 +291,7 @@ func (o *StreamOutput) RemoveSink(bin *gst.Bin, url string) error {
 		// release tee src pad
 		o.tee.ReleaseRequestPad(pad)
 
-		return gst.PadProbeOK
+		return gst.PadProbeRemove
 	})
 
 	delete(o.sinks, url)

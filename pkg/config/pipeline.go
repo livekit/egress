@@ -33,6 +33,7 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
+	lksdk "github.com/livekit/server-sdk-go"
 )
 
 const (
@@ -76,18 +77,23 @@ type WebSourceParams struct {
 }
 
 type SDKSourceParams struct {
-	TrackID          string
-	TrackSource      string
-	TrackKind        string
-	AudioTrackID     string
-	VideoTrackID     string
-	Identity         string
-	AudioSrc         *app.Source
-	VideoSrc         *app.Source
-	AudioInCodec     types.MimeType
-	VideoInCodec     types.MimeType
-	AudioCodecParams webrtc.RTPCodecParameters
-	VideoCodecParams webrtc.RTPCodecParameters
+	TrackID      string
+	AudioTrackID string
+	VideoTrackID string
+	Identity     string
+	TrackSource  string
+	TrackKind    string
+	AudioInCodec types.MimeType
+	VideoInCodec types.MimeType
+	AudioTrack   *TrackSource
+	VideoTrack   *TrackSource
+}
+
+type TrackSource struct {
+	TrackID string
+	Kind    lksdk.TrackKind
+	AppSrc  *app.Source
+	Codec   webrtc.RTPCodecParameters
 }
 
 type AudioConfig struct {
@@ -112,9 +118,11 @@ type VideoConfig struct {
 }
 
 type Callbacks struct {
-	GstReady     chan struct{} `yaml:"-"`
-	OnTrackMuted []func(bool)  `yaml:"-"`
-	OnFailure    func(error)   `yaml:"-"`
+	GstReady       chan struct{}        `yaml:"-"`
+	OnTrackMuted   []func(bool)         `yaml:"-"`
+	OnTrackAdded   func(*TrackSource)   `yaml:"-"`
+	OnTrackRemoved func(trackID string) `yaml:"-"`
+	OnFailure      func(error)          `yaml:"-"`
 }
 
 func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*PipelineConfig, error) {
