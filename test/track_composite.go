@@ -37,7 +37,7 @@ func (r *Runner) testTrackComposite(t *testing.T) {
 	r.testTrackCompositeMulti(t)
 }
 
-func (r *Runner) runSDKTest(t *testing.T, name string, audioCodec, videoCodec types.MimeType,
+func (r *Runner) runTrackTest(t *testing.T, name string, audioCodec, videoCodec types.MimeType,
 	f func(t *testing.T, audioTrackID, videoTrackID string),
 ) {
 	t.Run(name, func(t *testing.T) {
@@ -73,7 +73,7 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 				filename:   "tc_{room_name}_h264_{time}.mp4",
 			},
 		} {
-			r.runSDKTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
+			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
 				var aID, vID string
 				if !test.audioOnly {
 					vID = videoTrackID
@@ -127,7 +127,7 @@ func (r *Runner) testTrackCompositeStream(t *testing.T) {
 		return
 	}
 
-	r.runSDKTest(t, "TrackComposite/Stream", types.MimeTypeOpus, types.MimeTypeVP8,
+	r.runTrackTest(t, "TrackComposite/Stream", types.MimeTypeOpus, types.MimeTypeVP8,
 		func(t *testing.T, audioTrackID, videoTrackID string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
@@ -170,7 +170,7 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 				playlist:   "tcs_{room_name}_h264_{time}.m3u8",
 			},
 		} {
-			r.runSDKTest(t, test.name, test.audioCodec, test.videoCodec,
+			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec,
 				func(t *testing.T, audioTrackID, videoTrackID string) {
 					var aID, vID string
 					if !test.audioOnly {
@@ -227,7 +227,7 @@ func (r *Runner) testTrackCompositeMulti(t *testing.T) {
 		return
 	}
 
-	r.runSDKTest(t, "TrackComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8,
+	r.runTrackTest(t, "TrackComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8,
 		func(t *testing.T, audioTrackID, videoTrackID string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),

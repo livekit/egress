@@ -76,9 +76,16 @@ type testCase struct {
 	playlist       string
 	filenameSuffix livekit.SegmentedFileSuffix
 
-	// used by track and track composite tests
-	audioCodec types.MimeType
-	videoCodec types.MimeType
+	// used by sdk tests
+	audioCodec     types.MimeType
+	audioDelay     time.Duration
+	audioUnpublish time.Duration
+	audioRepublish time.Duration
+
+	videoCodec     types.MimeType
+	videoDelay     time.Duration
+	videoUnpublish time.Duration
+	videoRepublish time.Duration
 
 	// used by track tests
 	outputType types.OutputType
@@ -114,32 +121,33 @@ func (r *Runner) publishSamplesToRoom(t *testing.T, audioCodec, videoCodec types
 	return
 }
 
-func (r *Runner) publishSampleToRoom(t *testing.T, codec types.MimeType, withMuting bool) string {
-	filename := samples[codec]
-	frameDuration := frameDurations[codec]
-
-	var pub *lksdk.LocalTrackPublication
-	done := make(chan struct{})
-	opts := []lksdk.ReaderSampleProviderOption{
-		lksdk.ReaderTrackWithOnWriteComplete(func() {
-			close(done)
-			if pub != nil {
+func (r *Runner) publishSampleOffset(t *testing.T, codec types.MimeType, publishAfter, unpublishAfter time.Duration) {
+	go func() {
+		time.Sleep(publishAfter)
+		done := make(chan struct{})
+		pub := r.publish(t, codec, done)
+		if unpublishAfter != 0 {
+			time.AfterFunc(unpublishAfter, func() {
+				select {
+				case <-done:
+					return
+				default:
+					_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
+				}
+			})
+		} else {
+			t.Cleanup(func() {
 				_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
-			}
-		}),
-	}
+			})
+		}
+	}()
+}
 
-	if frameDuration != 0 {
-		opts = append(opts, lksdk.ReaderTrackWithFrameDuration(frameDuration))
-	}
-
-	track, err := lksdk.NewLocalFileTrack(filename, opts...)
-	require.NoError(t, err)
-
-	pub, err = r.room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
-	require.NoError(t, err)
-
+func (r *Runner) publishSampleToRoom(t *testing.T, codec types.MimeType, withMuting bool) string {
+	done := make(chan struct{})
+	pub := r.publish(t, codec, done)
 	trackID := pub.SID()
+
 	t.Cleanup(func() {
 		_ = r.room.LocalParticipant.UnpublishTrack(trackID)
 	})
@@ -162,6 +170,33 @@ func (r *Runner) publishSampleToRoom(t *testing.T, codec types.MimeType, withMut
 	}
 
 	return trackID
+}
+
+func (r *Runner) publish(t *testing.T, codec types.MimeType, done chan struct{}) *lksdk.LocalTrackPublication {
+	filename := samples[codec]
+	frameDuration := frameDurations[codec]
+
+	var pub *lksdk.LocalTrackPublication
+	opts := []lksdk.ReaderSampleProviderOption{
+		lksdk.ReaderTrackWithOnWriteComplete(func() {
+			close(done)
+			if pub != nil {
+				_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
+			}
+		}),
+	}
+
+	if frameDuration != 0 {
+		opts = append(opts, lksdk.ReaderTrackWithFrameDuration(frameDuration))
+	}
+
+	track, err := lksdk.NewLocalFileTrack(filename, opts...)
+	require.NoError(t, err)
+
+	pub, err = r.room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
+	require.NoError(t, err)
+
+	return pub
 }
 
 func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {

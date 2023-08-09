@@ -32,6 +32,7 @@ var (
 	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
 	ErrResourceExhausted          = psrpc.NewErrorf(psrpc.ResourceExhausted, "not enough CPU")
 	ErrVideoWebsocket             = psrpc.NewErrorf(psrpc.InvalidArgument, "cannot send video over websocket")
+	ErrInvalidTrack               = psrpc.NewErrorf(psrpc.Internal, "unexpected track type")
 )
 
 func New(err string) error {

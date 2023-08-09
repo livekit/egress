@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	gstVersion      = "1.22.4"
+	gstVersion      = "1.22.5"
 	chromiumVersion = "117.0.5874.0"
 	dockerBuild     = "docker build"
 	dockerBuildX    = "docker buildx build --push --platform linux/amd64,linux/arm64"

@@ -31,7 +31,7 @@ type videoInput struct {
 	encoder []*gst.Element
 }
 
-func (v *videoInput) buildWebSource(p *config.PipelineConfig) error {
+func (v *videoInput) buildWebInput(p *config.PipelineConfig) error {
 	xImageSrc, err := gst.NewElement("ximagesrc")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -70,19 +70,28 @@ func (v *videoInput) buildWebSource(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
-	src := p.VideoSrc
-	src.Element.SetArg("format", "time")
-	if err := src.Element.SetProperty("is-live", true); err != nil {
+func (v *videoInput) buildSDKInput(p *config.PipelineConfig) error {
+	if p.VideoTrack != nil {
+		if err := v.buildAppSource(p, p.VideoTrack); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.TrackSource) error {
+	track.AppSrc.Element.SetArg("format", "time")
+	if err := track.AppSrc.Element.SetProperty("is-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	v.src = append(v.src, src.Element)
+	v.src = append(v.src, track.AppSrc.Element)
 	switch {
-	case strings.EqualFold(p.VideoCodecParams.MimeType, string(types.MimeTypeH264)):
-		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+	case strings.EqualFold(track.Codec.MimeType, string(types.MimeTypeH264)):
+		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
-			p.VideoCodecParams.PayloadType, p.VideoCodecParams.ClockRate,
+			track.Codec.PayloadType, track.Codec.ClockRate,
 		))); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -122,11 +131,11 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
 			return nil
 		}
 
-	case strings.EqualFold(p.VideoCodecParams.MimeType, string(types.MimeTypeVP8)):
-		if err := src.Element.SetProperty("caps", gst.NewCapsFromString(
+	case strings.EqualFold(track.Codec.MimeType, string(types.MimeTypeVP8)):
+		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(
 			fmt.Sprintf(
 				"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
-				p.VideoCodecParams.PayloadType, p.VideoCodecParams.ClockRate,
+				track.Codec.PayloadType, track.Codec.ClockRate,
 			),
 		)); err != nil {
 			return errors.ErrGstPipelineError(err)
@@ -150,7 +159,7 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig) error {
 		v.src = append(v.src, vp8Dec)
 
 	default:
-		return errors.ErrNotSupported(p.VideoCodecParams.MimeType)
+		return errors.ErrNotSupported(track.Codec.MimeType)
 	}
 
 	videoQueue, err := builder.BuildQueue("video_input_queue", p.Latency, true)

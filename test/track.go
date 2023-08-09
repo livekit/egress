@@ -76,7 +76,7 @@ func (r *Runner) testTrackFile(t *testing.T) {
 				filename:   "t_{track_id}_{time}.mp4",
 			},
 		} {
-			r.runSDKTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
+			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
 				trackID := audioTrackID
 				if trackID == "" {
 					trackID = videoTrackID
@@ -123,7 +123,7 @@ func (r *Runner) testTrackStream(t *testing.T) {
 				filename:   fmt.Sprintf("track-ws-%v.raw", now),
 			},
 		} {
-			r.runSDKTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
+			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
 				trackID := audioTrackID
 				if trackID == "" {
 					trackID = videoTrackID
