@@ -60,8 +60,8 @@ type Pipeline struct {
 	// internal
 	mu         sync.Mutex
 	gstLogger  *zap.SugaredLogger
-	playing    bool
 	limitTimer *time.Timer
+	playing    core.Fuse
 	eosSent    core.Fuse
 	stopped    core.Fuse
 	eosTimer   *time.Timer
@@ -78,6 +78,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate Update
 	p := &Pipeline{
 		PipelineConfig: conf,
 		gstLogger:      logger.GetLogger().(*logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
+		playing:        core.NewFuse(),
 		eosSent:        core.NewFuse(),
 		stopped:        core.NewFuse(),
 		sendUpdate:     onStatusUpdate,
@@ -220,7 +221,7 @@ func (p *Pipeline) Run(ctx context.Context) *livekit.EgressInfo {
 	p.pipeline.GetPipelineBus().AddWatch(p.messageWatch)
 
 	// return if failed before loop was added
-	if p.Info.Error != "" || p.Info.Status == livekit.EgressStatus_EGRESS_ABORTED {
+	if p.stopped.IsBroken() {
 		return p.Info
 	}
 
@@ -473,7 +474,11 @@ func (p *Pipeline) startSessionLimitTimer(ctx context.Context) {
 				livekit.EgressStatus_EGRESS_ACTIVE:
 				p.Info.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
 			}
-			p.SendEOS(ctx)
+			if p.playing.IsBroken() {
+				p.SendEOS(ctx)
+			} else {
+				p.stop()
+			}
 		})
 	}
 }

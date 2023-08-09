@@ -234,7 +234,7 @@ func parseDebugInfo(gErr *gst.GError) (element, name, message string) {
 }
 
 func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
-	if p.playing {
+	if p.playing.IsBroken() {
 		return
 	}
 
@@ -251,7 +251,7 @@ func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
 	case pipelineSource:
 		logger.Infow("pipeline playing")
 
-		p.playing = true
+		p.playing.Break()
 		switch p.SourceType {
 		case types.SourceTypeSDK:
 			p.updateStartTime(p.src.(*source.SDKSource).GetStartTime())
