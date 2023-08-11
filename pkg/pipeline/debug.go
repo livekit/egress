@@ -25,7 +25,6 @@ import (
 
 	"github.com/tinyzimmer/go-gst/gst"
 
-	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/types"
@@ -114,8 +113,15 @@ func (p *Pipeline) uploadPProf(u uploader.Uploader) {
 }
 
 func (p *Pipeline) uploadDebugFile(u uploader.Uploader, data []byte, fileExtension string) {
+	var dir string
+	if p.Debug.ToUploadConfig() == nil {
+		dir = p.Debug.PathPrefix
+	} else {
+		dir = p.TmpDir
+	}
+
 	filename := fmt.Sprintf("%s%s", p.Info.EgressId, fileExtension)
-	local := path.Join(config.TmpDir, filename)
+	local := path.Join(dir, filename)
 	storage := path.Join(p.Debug.PathPrefix, filename)
 
 	f, err := os.Create(local)
