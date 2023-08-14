@@ -317,7 +317,8 @@ func (w *AppWriter) handleReadError(err error) {
 	}
 
 	// continue on timeout
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
 		return
 	}
 
