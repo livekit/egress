@@ -119,7 +119,8 @@ type VideoConfig struct {
 
 type Callbacks struct {
 	GstReady       chan struct{}        `yaml:"-"`
-	OnTrackMuted   []func(bool)         `yaml:"-"`
+	OnTrackMuted   func(string)         `yaml:"-"`
+	OnTrackUnmuted func(string)         `yaml:"-"`
 	OnTrackAdded   func(*TrackSource)   `yaml:"-"`
 	OnTrackRemoved func(trackID string) `yaml:"-"`
 	OnFailure      func(error)          `yaml:"-"`

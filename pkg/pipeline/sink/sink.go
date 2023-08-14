@@ -64,8 +64,8 @@ func CreateSinks(p *config.PipelineConfig) (map[types.EgressType]Sink, error) {
 			if err != nil {
 				return nil, err
 			}
-			p.OnTrackMuted = append(p.OnTrackMuted, s.OnTrackMuted)
-
+			p.OnTrackMuted = s.OnTrackMuted
+			p.OnTrackUnmuted = s.OnTrackUnmuted
 			sinks[egressType] = s
 		}
 	}
