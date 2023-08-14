@@ -72,8 +72,10 @@ func (s *WebsocketSink) Start() error {
 				return
 			}
 			if err != nil {
-				_, isCloseError := err.(*websocket.CloseError)
-				if isCloseError || errors.Is(err, io.EOF) || strings.HasSuffix(err.Error(), "use of closed network connection") {
+				var closeError *websocket.CloseError
+				if errors.As(err, &closeError) ||
+					errors.Is(err, io.EOF) ||
+					strings.HasSuffix(err.Error(), "use of closed network connection") {
 					return
 				}
 				errCount++
@@ -116,9 +118,15 @@ func (s *WebsocketSink) Write(p []byte) (int, error) {
 	return len(p), s.conn.WriteMessage(websocket.BinaryMessage, p)
 }
 
-func (s *WebsocketSink) OnTrackMuted(muted bool) {
-	if err := s.writeMutedMessage(muted); err != nil {
-		logger.Errorw("failed to write muted message", err)
+func (s *WebsocketSink) OnTrackMuted(_ string) {
+	if err := s.writeMutedMessage(true); err != nil {
+		logger.Errorw("failed to write mute message", err)
+	}
+}
+
+func (s *WebsocketSink) OnTrackUnmuted(_ string) {
+	if err := s.writeMutedMessage(false); err != nil {
+		logger.Errorw("failed to write unmute message", err)
 	}
 }
 

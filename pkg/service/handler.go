@@ -58,6 +58,8 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		kill:       core.NewFuse(),
 	}
 
+	conf.OnUpdate = h.sendUpdate
+
 	rpcServer, err := rpc.NewEgressHandlerServer(conf.HandlerID, h, bus)
 	if err != nil {
 		return nil, errors.Fatal(err)
@@ -84,7 +86,7 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		}
 	}()
 
-	h.pipeline, err = pipeline.New(context.Background(), h.conf, h.sendUpdate)
+	h.pipeline, err = pipeline.New(context.Background(), conf)
 	if err != nil {
 		if !errors.IsFatal(err) {
 			// user error, send update

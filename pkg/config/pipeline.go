@@ -118,11 +118,13 @@ type VideoConfig struct {
 }
 
 type Callbacks struct {
-	GstReady       chan struct{}        `yaml:"-"`
-	OnTrackMuted   []func(bool)         `yaml:"-"`
-	OnTrackAdded   func(*TrackSource)   `yaml:"-"`
-	OnTrackRemoved func(trackID string) `yaml:"-"`
-	OnFailure      func(error)          `yaml:"-"`
+	GstReady       chan struct{}                              `yaml:"-"`
+	OnTrackMuted   func(string)                               `yaml:"-"`
+	OnTrackUnmuted func(string)                               `yaml:"-"`
+	OnTrackAdded   func(*TrackSource)                         `yaml:"-"`
+	OnTrackRemoved func(trackID string)                       `yaml:"-"`
+	OnUpdate       func(context.Context, *livekit.EgressInfo) `yaml:"-"`
+	OnFailure      func(error)                                `yaml:"-"`
 }
 
 func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*PipelineConfig, error) {
