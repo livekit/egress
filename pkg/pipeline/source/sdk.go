@@ -313,15 +313,10 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 				s.filenameReplacements["{publisher_identity}"] = s.Identity
 			}
 		case types.RequestTypeTrack:
-			if track.Kind() == webrtc.RTPCodecTypeAudio {
-				s.TrackKind = "audio"
-			} else {
-				s.TrackKind = "video"
-				// check for video over websocket
-				if s.Outputs[types.EgressTypeWebsocket] != nil {
-					onSubscribeErr = errors.ErrIncompatible("websocket", ts.MimeType)
-					return
-				}
+			s.TrackKind = pub.Kind().String()
+			if pub.Kind() == lksdk.TrackKindVideo && s.Outputs[types.EgressTypeWebsocket] != nil {
+				onSubscribeErr = errors.ErrIncompatible("websocket", ts.MimeType)
+				return
 			}
 			s.TrackSource = strings.ToLower(pub.Source().String())
 			if o := s.GetFileConfig(); o != nil {

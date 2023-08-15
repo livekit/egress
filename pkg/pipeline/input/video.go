@@ -271,7 +271,6 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-
 		if err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"video/x-h264,profile=%s",
 			p.VideoProfile,
@@ -282,39 +281,35 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 		v.encoder = append(v.encoder, x264Enc, caps)
 		return nil
 
-	// TODO
-	// case types.MimeTypeVP9:
-	//
-	// 	vp9Enc, err := gst.NewElement("vp9enc")
-	// 	if err != nil {
-	// 		return errors.ErrGstPipelineError(err)
-	// 	}
-	// 	if err = vp9Enc.SetProperty("deadline", int64(1)); err != nil {
-	// 		return errors.ErrGstPipelineError(err)
-	// 	}
-	// 	if err = vp9Enc.SetProperty("speed", 7); err != nil {
-	// 		return errors.ErrGstPipelineError(err)
-	// 	}
-	// 	if err = vp9Enc.SetProperty("row-mt", true); err != nil {
-	// 		return errors.ErrGstPipelineError(err)
-	// 	}
-	// 	if err = vp9Enc.SetProperty("tile-columns", 3); err != nil {
-	// 		return errors.ErrGstPipelineError(err)
-	// 	}
-	// 	if err = vp9Enc.SetProperty("tile-rows", 1); err != nil {
-	// 		return errors.ErrGstPipelineError(err)
-	// 	}
-	// 	if err = vp9Enc.SetProperty("frame-parallel", true); err != nil {
-	// 		return errors.ErrGstPipelineError(err)
-	// 	}
-	// 	if err = vp9Enc.SetProperty("max-quantizer", 52); err != nil {
-	// 		return errors.ErrGstPipelineError(err)
-	// 	}
-	// 	if err = vp9Enc.SetProperty("min-quantizer", 2); err != nil {
-	// 		return errors.ErrGstPipelineError(err)
-	// 	}
-	//
-	// 	v.encoder = append(v.encoder, vp9Enc)
+	case types.MimeTypeVP9:
+		vp9Enc, err := gst.NewElement("vp9enc")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = vp9Enc.SetProperty("deadline", int64(1)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = vp9Enc.SetProperty("row-mt", true); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = vp9Enc.SetProperty("tile-columns", 3); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = vp9Enc.SetProperty("tile-rows", 1); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = vp9Enc.SetProperty("frame-parallel", true); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = vp9Enc.SetProperty("max-quantizer", 52); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = vp9Enc.SetProperty("min-quantizer", 2); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		v.encoder = append(v.encoder, vp9Enc)
+		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", p.VideoOutCodec))
 
 	default:
 		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", p.VideoOutCodec))

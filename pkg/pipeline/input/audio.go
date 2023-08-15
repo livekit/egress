@@ -206,7 +206,8 @@ func newAudioCapsFilter(p *config.PipelineConfig) (*gst.Element, error) {
 			"audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2",
 		)
 	case types.MimeTypeAAC:
-		caps = gst.NewCapsFromString(fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2",
+		caps = gst.NewCapsFromString(fmt.Sprintf(
+			"audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2",
 			p.AudioFrequency,
 		))
 	default:
