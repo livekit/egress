@@ -53,6 +53,7 @@ var (
 		types.MimeTypeOpus: "/workspace/test/sample/matrix-trailer.ogg",
 		types.MimeTypeH264: "/workspace/test/sample/matrix-trailer.h264",
 		types.MimeTypeVP8:  "/workspace/test/sample/matrix-trailer-vp8.ivf",
+		types.MimeTypeVP9:  "/workspace/test/sample/matrix-trailer-vp9.ivf",
 	}
 
 	frameDurations = map[types.MimeType]time.Duration{

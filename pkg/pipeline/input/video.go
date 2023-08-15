@@ -16,7 +16,6 @@ package input
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -60,8 +59,10 @@ func (v *videoInput) buildWebInput(p *config.PipelineConfig) error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = caps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,framerate=%d/1", p.Framerate),
+	if err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		"video/x-raw,framerate=%d/1",
+		p.Framerate,
+	),
 	)); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
@@ -87,11 +88,11 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.Trac
 	}
 
 	v.src = append(v.src, track.AppSrc.Element)
-	switch {
-	case strings.EqualFold(track.Codec.MimeType, string(types.MimeTypeH264)):
+	switch track.MimeType {
+	case types.MimeTypeH264:
 		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
-			track.Codec.PayloadType, track.Codec.ClockRate,
+			track.PayloadType, track.ClockRate,
 		))); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -131,13 +132,11 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.Trac
 			return nil
 		}
 
-	case strings.EqualFold(track.Codec.MimeType, string(types.MimeTypeVP8)):
-		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf(
-				"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
-				track.Codec.PayloadType, track.Codec.ClockRate,
-			),
-		)); err != nil {
+	case types.MimeTypeVP8:
+		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+			"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
+			track.PayloadType, track.ClockRate,
+		))); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 
@@ -158,8 +157,33 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.Trac
 
 		v.src = append(v.src, vp8Dec)
 
+	case types.MimeTypeVP9:
+		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+			"application/x-rtp,media=video,payload=%d,encoding-name=VP9,clock-rate=%d",
+			track.PayloadType, track.ClockRate,
+		))); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		rtpVP9Depay, err := gst.NewElement("rtpvp9depay")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		v.src = append(v.src, rtpVP9Depay)
+
+		if !p.VideoTranscoding {
+			return nil
+		}
+
+		vp9Dec, err := gst.NewElement("vp9dec")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		v.src = append(v.src, vp9Dec)
+
 	default:
-		return errors.ErrNotSupported(track.Codec.MimeType)
+		return errors.ErrNotSupported(string(track.MimeType))
 	}
 
 	videoQueue, err := builder.BuildQueue("video_input_queue", p.Latency, true)
@@ -186,11 +210,10 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.Trac
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = caps.SetProperty("caps", gst.NewCapsFromString(
-		fmt.Sprintf("video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
-			p.Framerate, p.Width, p.Height,
-		)),
-	); err != nil {
+	if err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+		p.Framerate, p.Width, p.Height,
+	))); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
@@ -236,9 +259,10 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 			return errors.ErrGstPipelineError(err)
 		}
 
-		if err = caps.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf("video/x-h264,profile=%s", p.VideoProfile),
-		)); err != nil {
+		if err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+			"video/x-h264,profile=%s",
+			p.VideoProfile,
+		))); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 
