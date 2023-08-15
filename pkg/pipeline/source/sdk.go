@@ -269,7 +269,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 	case types.MimeTypeOpus:
 		s.AudioEnabled = true
 		s.AudioInCodec = ts.MimeType
-		if s.RequestType == types.RequestTypeTrack {
+		if s.AudioOutCodec == "" {
 			s.AudioOutCodec = ts.MimeType
 		}
 		s.AudioTranscoding = true
@@ -279,13 +279,14 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			onSubscribeErr = err
 			return
 		}
+
 		s.audioWriter = writer
 		s.AudioTrack = ts
 
 	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9:
 		s.VideoEnabled = true
 		s.VideoInCodec = ts.MimeType
-		if s.RequestType == types.RequestTypeTrack {
+		if s.VideoOutCodec == "" {
 			s.VideoOutCodec = ts.MimeType
 		}
 		if s.VideoInCodec != s.VideoOutCodec {
@@ -298,6 +299,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			onSubscribeErr = err
 			return
 		}
+
 		s.videoWriter = writer
 		s.VideoTrack = ts
 
