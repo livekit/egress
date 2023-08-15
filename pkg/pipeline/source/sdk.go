@@ -288,7 +288,9 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		if s.RequestType == types.RequestTypeTrack {
 			s.VideoOutCodec = ts.MimeType
 		}
-		s.VideoTranscoding = s.VideoOutCodec != ts.MimeType
+		if s.VideoInCodec != s.VideoOutCodec {
+			s.VideoTranscoding = true
+		}
 
 		writeBlanks := s.VideoTranscoding && ts.MimeType != types.MimeTypeVP9
 		writer, err := s.createWriter(track, rp, ts, writeBlanks)
