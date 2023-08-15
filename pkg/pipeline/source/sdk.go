@@ -260,7 +260,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 	ts := &config.TrackSource{
 		TrackID:     pub.SID(),
 		Kind:        pub.Kind(),
-		MimeType:    types.ConvertMimeType(track.Codec().MimeType),
+		MimeType:    types.MimeType(strings.ToLower(track.Codec().MimeType)),
 		PayloadType: track.Codec().PayloadType,
 		ClockRate:   track.Codec().ClockRate,
 	}
@@ -290,7 +290,8 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		}
 		s.VideoTranscoding = s.VideoOutCodec != ts.MimeType
 
-		writer, err := s.createWriter(track, rp, ts, s.VideoTranscoding)
+		writeBlanks := s.VideoTranscoding && ts.MimeType != types.MimeTypeVP9
+		writer, err := s.createWriter(track, rp, ts, writeBlanks)
 		if err != nil {
 			onSubscribeErr = err
 			return
@@ -384,15 +385,6 @@ func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participa
 	}
 }
 
-func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
-	if w := s.getWriterForTrack(pub.SID()); w != nil {
-		w.Drain(true)
-		if s.active.Dec() == 0 {
-			s.onDisconnected()
-		}
-	}
-}
-
 func (s *SDKSource) getWriterForTrack(trackID string) *sdk.AppWriter {
 	if s.audioWriter != nil && s.audioWriter.TrackID() == trackID {
 		return s.audioWriter
@@ -401,6 +393,10 @@ func (s *SDKSource) getWriterForTrack(trackID string) *sdk.AppWriter {
 		return s.videoWriter
 	}
 	return nil
+}
+
+func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
+	s.onTrackFinished(pub.SID())
 }
 
 func (s *SDKSource) onTrackFinished(trackID string) {

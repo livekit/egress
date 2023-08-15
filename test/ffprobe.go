@@ -221,6 +221,8 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 				}
 			case types.MimeTypeVP8:
 				require.Equal(t, "vp8", stream.CodecName)
+			case types.MimeTypeVP9:
+				require.Equal(t, "vp9", stream.CodecName)
 			}
 
 			switch p.Outputs[egressType].GetOutputType() {

@@ -113,27 +113,32 @@ func NewAppWriter(
 
 	var depacketizer rtp.Depacketizer
 	switch ts.MimeType {
-	case types.MimeTypeVP8:
-		depacketizer = &codecs.VP8Packet{}
-		w.translator = NewVP8Translator(w.logger)
-		w.sendPLI = func() { rp.WritePLI(track.SSRC()) }
+	case types.MimeTypeOpus:
+		depacketizer = &codecs.OpusPacket{}
+		w.translator = NewNullTranslator()
 
 	case types.MimeTypeH264:
 		depacketizer = &codecs.H264Packet{}
 		w.translator = NewH264Translator()
 		w.sendPLI = func() { rp.WritePLI(track.SSRC()) }
 
-	case types.MimeTypeOpus:
-		depacketizer = &codecs.OpusPacket{}
-		w.translator = NewOpusTranslator()
+	case types.MimeTypeVP8:
+		depacketizer = &codecs.VP8Packet{}
+		w.translator = NewVP8Translator(w.logger)
+		w.sendPLI = func() { rp.WritePLI(track.SSRC()) }
+
+	case types.MimeTypeVP9:
+		depacketizer = &codecs.VP9Packet{}
+		w.translator = NewNullTranslator()
+		w.sendPLI = func() { rp.WritePLI(track.SSRC()) }
 
 	default:
-		return nil, errors.ErrNotSupported(track.Codec().MimeType)
+		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
 
 	w.buffer = jitter.NewBuffer(
 		depacketizer,
-		track.Codec().ClockRate,
+		ts.ClockRate,
 		latency,
 		jitter.WithPacketDroppedHandler(w.sendPLI),
 		jitter.WithLogger(w.logger),

@@ -59,11 +59,11 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 	t.Run("TrackComposite/File", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
-				name:       "VP8",
+				name:       "VP9",
 				fileType:   livekit.EncodedFileType_MP4,
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeVP9,
-				filename:   "tc_{publisher_identity}_vp8_{time}.mp4",
+				filename:   "tc_{publisher_identity}_vp9_{time}.mp4",
 			},
 			{
 				name:       "H264",

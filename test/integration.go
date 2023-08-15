@@ -59,6 +59,7 @@ var (
 	frameDurations = map[types.MimeType]time.Duration{
 		types.MimeTypeH264: time.Microsecond * 41708,
 		types.MimeTypeVP8:  time.Microsecond * 41708,
+		types.MimeTypeVP9:  time.Microsecond * 41708,
 	}
 )
 

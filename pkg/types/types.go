@@ -14,8 +14,6 @@
 
 package types
 
-import "strings"
-
 type RequestType string
 type SourceType string
 type EgressType string
@@ -157,6 +155,7 @@ var (
 			MimeTypeOpus: true,
 			MimeTypeH264: true,
 			MimeTypeVP8:  true,
+			MimeTypeVP9:  true,
 		},
 	}
 
@@ -188,10 +187,6 @@ var (
 		MimeTypeVP9:  OutputTypeWebM,
 	}
 )
-
-func ConvertMimeType(mimeType string) MimeType {
-	return MimeType(strings.ToLower(mimeType))
-}
 
 func GetOutputTypeCompatibleWithCodecs(types []OutputType, audioCodecs map[MimeType]bool, videoCodecs map[MimeType]bool) OutputType {
 	for _, t := range types {

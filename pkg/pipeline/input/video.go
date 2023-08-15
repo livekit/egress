@@ -122,13 +122,12 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.Trac
 
 			v.src = append(v.src, avDecH264)
 		} else {
-			h264parse, err := gst.NewElement("h264parse")
+			h264Parse, err := gst.NewElement("h264parse")
 			if err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
 
-			v.src = append(v.src, h264parse)
-
+			v.src = append(v.src, h264Parse)
 			return nil
 		}
 
@@ -171,16 +170,32 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.Trac
 		}
 		v.src = append(v.src, rtpVP9Depay)
 
-		if !p.VideoTranscoding {
+		if p.VideoTranscoding {
+			vp9Dec, err := gst.NewElement("vp9dec")
+			if err != nil {
+				return errors.ErrGstPipelineError(err)
+			}
+
+			v.src = append(v.src, vp9Dec)
+		} else {
+			vp9Parse, err := gst.NewElement("vp9parse")
+			if err != nil {
+				return errors.ErrGstPipelineError(err)
+			}
+
+			vp9Caps, err := gst.NewElement("capsfilter")
+			if err != nil {
+				return errors.ErrGstPipelineError(err)
+			}
+			if err = vp9Caps.SetProperty("caps", gst.NewCapsFromString(
+				"video/x-vp9,width=[16,2147483647],height=[16,2147483647]",
+			)); err != nil {
+				return errors.ErrGstPipelineError(err)
+			}
+
+			v.src = append(v.src, vp9Parse, vp9Caps)
 			return nil
 		}
-
-		vp9Dec, err := gst.NewElement("vp9dec")
-		if err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-
-		v.src = append(v.src, vp9Dec)
 
 	default:
 		return errors.ErrNotSupported(string(track.MimeType))
@@ -240,13 +255,11 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 			return errors.ErrGstPipelineError(err)
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
-
 		if p.KeyFrameInterval != 0 {
 			if err = x264Enc.SetProperty("key-int-max", uint(p.KeyFrameInterval*float64(p.Framerate))); err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
 		}
-
 		if p.GetSegmentConfig() != nil {
 			// Avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
 			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
@@ -268,6 +281,40 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 
 		v.encoder = append(v.encoder, x264Enc, caps)
 		return nil
+
+	// TODO
+	// case types.MimeTypeVP9:
+	//
+	// 	vp9Enc, err := gst.NewElement("vp9enc")
+	// 	if err != nil {
+	// 		return errors.ErrGstPipelineError(err)
+	// 	}
+	// 	if err = vp9Enc.SetProperty("deadline", int64(1)); err != nil {
+	// 		return errors.ErrGstPipelineError(err)
+	// 	}
+	// 	if err = vp9Enc.SetProperty("speed", 7); err != nil {
+	// 		return errors.ErrGstPipelineError(err)
+	// 	}
+	// 	if err = vp9Enc.SetProperty("row-mt", true); err != nil {
+	// 		return errors.ErrGstPipelineError(err)
+	// 	}
+	// 	if err = vp9Enc.SetProperty("tile-columns", 3); err != nil {
+	// 		return errors.ErrGstPipelineError(err)
+	// 	}
+	// 	if err = vp9Enc.SetProperty("tile-rows", 1); err != nil {
+	// 		return errors.ErrGstPipelineError(err)
+	// 	}
+	// 	if err = vp9Enc.SetProperty("frame-parallel", true); err != nil {
+	// 		return errors.ErrGstPipelineError(err)
+	// 	}
+	// 	if err = vp9Enc.SetProperty("max-quantizer", 52); err != nil {
+	// 		return errors.ErrGstPipelineError(err)
+	// 	}
+	// 	if err = vp9Enc.SetProperty("min-quantizer", 2); err != nil {
+	// 		return errors.ErrGstPipelineError(err)
+	// 	}
+	//
+	// 	v.encoder = append(v.encoder, vp9Enc)
 
 	default:
 		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", p.VideoOutCodec))
