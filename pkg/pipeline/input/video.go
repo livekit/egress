@@ -365,7 +365,7 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 		}
 
 		v.encoder = append(v.encoder, vp9Enc)
-		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", p.VideoOutCodec))
+		fallthrough
 
 	default:
 		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", p.VideoOutCodec))

@@ -106,6 +106,7 @@ func (b *Bin) buildAudioInput(p *config.PipelineConfig) error {
 		}
 	}
 
+	// build encoder
 	if p.AudioTranscoding {
 		// build encoder
 		if err := a.buildEncoder(p); err != nil {
@@ -138,6 +139,7 @@ func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
+	// build input
 	switch p.SourceType {
 	case types.SourceTypeSDK:
 		if err := v.buildSDKInput(p); err != nil {
@@ -150,6 +152,7 @@ func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
 		}
 	}
 
+	// build encoder
 	if p.VideoTranscoding {
 		if err := v.buildEncoder(p); err != nil {
 			return err
