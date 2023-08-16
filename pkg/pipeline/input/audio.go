@@ -16,7 +16,6 @@ package input
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -72,14 +71,12 @@ func (a *audioInput) buildAppSource(track *config.TrackSource) error {
 	}
 	a.src = []*gst.Element{track.AppSrc.Element}
 
-	switch {
-	case strings.EqualFold(track.Codec.MimeType, string(types.MimeTypeOpus)):
-		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(
-			fmt.Sprintf(
-				"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
-				track.Codec.PayloadType, track.Codec.ClockRate,
-			),
-		)); err != nil {
+	switch track.MimeType {
+	case types.MimeTypeOpus:
+		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+			"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
+			track.PayloadType, track.ClockRate,
+		))); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 
@@ -96,7 +93,7 @@ func (a *audioInput) buildAppSource(track *config.TrackSource) error {
 		a.src = append(a.src, rtpOpusDepay, opusDec)
 
 	default:
-		return errors.ErrNotSupported(track.Codec.MimeType)
+		return errors.ErrNotSupported(string(track.MimeType))
 	}
 
 	return nil
@@ -209,9 +206,10 @@ func newAudioCapsFilter(p *config.PipelineConfig) (*gst.Element, error) {
 			"audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2",
 		)
 	case types.MimeTypeAAC:
-		caps = gst.NewCapsFromString(
-			fmt.Sprintf("audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2", p.AudioFrequency),
-		)
+		caps = gst.NewCapsFromString(fmt.Sprintf(
+			"audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2",
+			p.AudioFrequency,
+		))
 	default:
 		return nil, errors.ErrNotSupported(string(p.AudioOutCodec))
 	}

@@ -256,7 +256,57 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 	}()
 
 	s.active.Inc()
-	t := s.sync.AddTrack(track, rp.Identity())
+
+	ts := &config.TrackSource{
+		TrackID:     pub.SID(),
+		Kind:        pub.Kind(),
+		MimeType:    types.MimeType(strings.ToLower(track.Codec().MimeType)),
+		PayloadType: track.Codec().PayloadType,
+		ClockRate:   track.Codec().ClockRate,
+	}
+
+	switch ts.MimeType {
+	case types.MimeTypeOpus:
+		s.AudioEnabled = true
+		s.AudioInCodec = ts.MimeType
+		if s.AudioOutCodec == "" {
+			s.AudioOutCodec = ts.MimeType
+		}
+		s.AudioTranscoding = true
+
+		writer, err := s.createWriter(track, rp, ts, false)
+		if err != nil {
+			onSubscribeErr = err
+			return
+		}
+
+		s.audioWriter = writer
+		s.AudioTrack = ts
+
+	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9:
+		s.VideoEnabled = true
+		s.VideoInCodec = ts.MimeType
+		if s.VideoOutCodec == "" {
+			s.VideoOutCodec = ts.MimeType
+		}
+		if s.VideoInCodec != s.VideoOutCodec {
+			s.VideoTranscoding = true
+		}
+
+		writeBlanks := s.VideoTranscoding && ts.MimeType != types.MimeTypeVP9
+		writer, err := s.createWriter(track, rp, ts, writeBlanks)
+		if err != nil {
+			onSubscribeErr = err
+			return
+		}
+
+		s.videoWriter = writer
+		s.VideoTrack = ts
+
+	default:
+		onSubscribeErr = errors.ErrNotSupported(string(ts.MimeType))
+		return
+	}
 
 	if !s.initialized.IsBroken() {
 		s.mu.Lock()
@@ -267,17 +317,15 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 				s.filenameReplacements["{publisher_identity}"] = s.Identity
 			}
 		case types.RequestTypeTrack:
-			if track.Kind() == webrtc.RTPCodecTypeAudio {
-				s.TrackKind = "audio"
-			} else {
-				s.TrackKind = "video"
-				// check for video over websocket
-				if s.Outputs[types.EgressTypeWebsocket] != nil {
-					onSubscribeErr = errors.ErrVideoWebsocket
-					return
-				}
+			s.TrackKind = pub.Kind().String()
+			if pub.Kind() == lksdk.TrackKindVideo && s.Outputs[types.EgressTypeWebsocket] != nil {
+				onSubscribeErr = errors.ErrIncompatible("websocket", ts.MimeType)
+				return
 			}
 			s.TrackSource = strings.ToLower(pub.Source().String())
+			if o := s.GetFileConfig(); o != nil {
+				o.OutputType = types.TrackOutputTypes[ts.MimeType]
+			}
 
 			s.filenameReplacements["{track_id}"] = s.TrackID
 			s.filenameReplacements["{track_type}"] = s.TrackKind
@@ -286,69 +334,14 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		}
 		s.mu.Unlock()
 	}
+}
 
-	var codec types.MimeType
-	var writeBlanks bool
-
-	switch {
-	case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeOpus)):
-		codec = types.MimeTypeOpus
-
-		s.AudioEnabled = true
-		s.AudioInCodec = codec
-		if s.AudioOutCodec == "" {
-			// This should only happen for track egress
-			s.AudioOutCodec = codec
-		}
-		s.AudioTranscoding = true
-
-		if s.RequestType == types.RequestTypeTrack {
-			if o := s.GetFileConfig(); o != nil {
-				o.OutputType = types.OutputTypeOGG
-			}
-		}
-
-	case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeVP8)):
-		codec = types.MimeTypeVP8
-
-		s.VideoEnabled = true
-		s.VideoInCodec = codec
-		if s.VideoOutCodec == "" {
-			// This should only happen for track egress
-			s.VideoOutCodec = codec
-		}
-		if s.VideoOutCodec != codec {
-			s.VideoTranscoding = true
-			writeBlanks = true
-		}
-
-		if s.RequestType == types.RequestTypeTrack {
-			if o := s.GetFileConfig(); o != nil {
-				o.OutputType = types.OutputTypeWebM
-			}
-		}
-
-	case strings.EqualFold(track.Codec().MimeType, string(types.MimeTypeH264)):
-		codec = types.MimeTypeH264
-
-		s.VideoEnabled = true
-		s.VideoInCodec = codec
-		if s.VideoOutCodec == "" {
-			// This should only happen for track egress
-			s.VideoOutCodec = types.MimeTypeH264
-		}
-
-		if s.RequestType == types.RequestTypeTrack {
-			if o := s.GetFileConfig(); o != nil {
-				o.OutputType = types.OutputTypeMP4
-			}
-		}
-
-	default:
-		onSubscribeErr = errors.ErrNotSupported(track.Codec().MimeType)
-		return
-	}
-
+func (s *SDKSource) createWriter(
+	track *webrtc.TrackRemote,
+	rp *lksdk.RemoteParticipant,
+	ts *config.TrackSource,
+	writeBlanks bool,
+) (*sdk.AppWriter, error) {
 	var logFilename string
 	if s.Debug.EnableProfiling {
 		if s.Debug.ToUploadConfig() == nil {
@@ -361,33 +354,16 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 	<-s.GstReady
 	src, err := gst.NewElementWithName("appsrc", track.ID())
 	if err != nil {
-		onSubscribeErr = errors.ErrGstPipelineError(err)
-		return
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	appSrc := app.SrcFromElement(src)
-	writer, err := sdk.NewAppWriter(track, rp, codec, appSrc, s.sync, t, writeBlanks, logFilename)
+	ts.AppSrc = app.SrcFromElement(src)
+	writer, err := sdk.NewAppWriter(track, rp, ts, s.sync, writeBlanks, logFilename)
 	if err != nil {
-		logger.Errorw("could not create app writer", err)
-		onSubscribeErr = err
-		return
+		return nil, err
 	}
 
-	ts := &config.TrackSource{
-		TrackID: pub.SID(),
-		Kind:    pub.Kind(),
-		AppSrc:  appSrc,
-		Codec:   track.Codec(),
-	}
-
-	switch track.Kind() {
-	case webrtc.RTPCodecTypeAudio:
-		s.audioWriter = writer
-		s.AudioTrack = ts
-	case webrtc.RTPCodecTypeVideo:
-		s.videoWriter = writer
-		s.VideoTrack = ts
-	}
+	return writer, nil
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
@@ -408,15 +384,6 @@ func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participa
 	}
 }
 
-func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
-	if w := s.getWriterForTrack(pub.SID()); w != nil {
-		w.Drain(true)
-		if s.active.Dec() == 0 {
-			s.onDisconnected()
-		}
-	}
-}
-
 func (s *SDKSource) getWriterForTrack(trackID string) *sdk.AppWriter {
 	if s.audioWriter != nil && s.audioWriter.TrackID() == trackID {
 		return s.audioWriter
@@ -425,6 +392,10 @@ func (s *SDKSource) getWriterForTrack(trackID string) *sdk.AppWriter {
 		return s.videoWriter
 	}
 	return nil
+}
+
+func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
+	s.onTrackFinished(pub.SID())
 }
 
 func (s *SDKSource) onTrackFinished(trackID string) {

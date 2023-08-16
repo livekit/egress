@@ -90,10 +90,12 @@ type SDKSourceParams struct {
 }
 
 type TrackSource struct {
-	TrackID string
-	Kind    lksdk.TrackKind
-	AppSrc  *app.Source
-	Codec   webrtc.RTPCodecParameters
+	TrackID     string
+	Kind        lksdk.TrackKind
+	AppSrc      *app.Source
+	MimeType    types.MimeType
+	PayloadType webrtc.PayloadType
+	ClockRate   uint32
 }
 
 type AudioConfig struct {
@@ -390,8 +392,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 	}
 
-	if p.TrackID == "" {
-		// Track egress output format decision happens after join
+	if p.RequestType != types.RequestTypeTrack {
 		err := p.validateAndUpdateOutputParams()
 		if err != nil {
 			return err

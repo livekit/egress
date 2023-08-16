@@ -149,16 +149,16 @@ func (t *H264Translator) UpdateBlankFrame(pkt *rtp.Packet) error {
 	return nil
 }
 
-// Opus
+// Null
 
-type OpusTranslator struct{}
+type NullTranslator struct{}
 
-func NewOpusTranslator() Translator {
-	return &OpusTranslator{}
+func NewNullTranslator() Translator {
+	return &NullTranslator{}
 }
 
-func (t *OpusTranslator) Translate(_ *rtp.Packet) {}
+func (t *NullTranslator) Translate(_ *rtp.Packet) {}
 
-func (t *OpusTranslator) UpdateBlankFrame(_ *rtp.Packet) error {
+func (t *NullTranslator) UpdateBlankFrame(_ *rtp.Packet) error {
 	return nil
 }
