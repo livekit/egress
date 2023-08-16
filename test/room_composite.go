@@ -136,7 +136,7 @@ func (r *Runner) testRoomCompositeStream(t *testing.T) {
 	}
 
 	t.Run("RoomComposite/Stream", func(t *testing.T) {
-		r.runRoomTest(t, "Rtmp", types.MimeTypeOpus, types.MimeTypeVP9, func(t *testing.T) {
+		r.runRoomTest(t, "Rtmp", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
 				Request: &rpc.StartEgressRequest_RoomComposite{

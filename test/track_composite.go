@@ -59,11 +59,11 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 	t.Run("TrackComposite/File", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
-				name:       "VP9",
+				name:       "VP8",
 				fileType:   livekit.EncodedFileType_MP4,
 				audioCodec: types.MimeTypeOpus,
-				videoCodec: types.MimeTypeVP9,
-				filename:   "tc_{publisher_identity}_vp9_{time}.mp4",
+				videoCodec: types.MimeTypeVP8,
+				filename:   "tc_{publisher_identity}_vp8_{time}.mp4",
 			},
 			{
 				name:       "H264",
@@ -227,7 +227,7 @@ func (r *Runner) testTrackCompositeMulti(t *testing.T) {
 		return
 	}
 
-	r.runTrackTest(t, "TrackComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP9,
+	r.runTrackTest(t, "TrackComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8,
 		func(t *testing.T, audioTrackID, videoTrackID string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),

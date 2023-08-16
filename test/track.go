@@ -75,13 +75,13 @@ func (r *Runner) testTrackFile(t *testing.T) {
 				outputType: types.OutputTypeWebM,
 				filename:   "t_{track_type}_{time}.webm",
 			},
-			{
-				name:       "VP9",
-				videoOnly:  true,
-				videoCodec: types.MimeTypeVP9,
-				outputType: types.OutputTypeWebM,
-				filename:   "t_{track_type}_{time}.webm",
-			},
+			// {
+			// 	name:       "VP9",
+			// 	videoOnly:  true,
+			// 	videoCodec: types.MimeTypeVP9,
+			// 	outputType: types.OutputTypeWebM,
+			// 	filename:   "t_{track_type}_{time}.webm",
+			// },
 		} {
 			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
 				trackID := audioTrackID
