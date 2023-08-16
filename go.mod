@@ -1,6 +1,6 @@
 module github.com/livekit/egress
 
-go 1.18
+go 1.20
 
 replace github.com/tinyzimmer/go-glib v0.0.25 => github.com/livekit/go-glib v0.0.0-20230223001336-834490045522
 
