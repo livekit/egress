@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+	"path"
 	"strings"
 
 	"github.com/livekit/mageutil"
@@ -104,9 +104,11 @@ func Integration(configFile string) error {
 
 	defer func() {
 		// for some reason, these can't be deleted from within the docker container
-		dirs, _ := filepath.Glob("test/output/EG_*")
-		for _, dir := range dirs {
-			_ = os.Remove(dir)
+		files, _ := os.ReadDir("test/output")
+		for _, file := range files {
+			if file.IsDir() {
+				_ = os.RemoveAll(path.Join("test/output", file.Name()))
+			}
 		}
 	}()
 

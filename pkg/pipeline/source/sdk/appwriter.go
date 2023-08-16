@@ -29,6 +29,7 @@ import (
 	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
@@ -55,7 +56,6 @@ type AppWriter struct {
 	logger      logger.Logger
 	logFile     *os.File
 	track       *webrtc.TrackRemote
-	identity    string
 	codec       types.MimeType
 	src         *app.Source
 	startTime   time.Time
@@ -83,22 +83,19 @@ type AppWriter struct {
 func NewAppWriter(
 	track *webrtc.TrackRemote,
 	rp *lksdk.RemoteParticipant,
-	codec types.MimeType,
-	src *app.Source,
+	ts *config.TrackSource,
 	sync *synchronizer.Synchronizer,
-	syncInfo *synchronizer.TrackSynchronizer,
 	writeBlanks bool,
 	logFilename string,
 ) (*AppWriter, error) {
 	w := &AppWriter{
 		logger:            logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
 		track:             track,
-		identity:          rp.Identity(),
-		codec:             codec,
-		src:               src,
+		codec:             ts.MimeType,
+		src:               ts.AppSrc,
 		writeBlanks:       writeBlanks,
 		sync:              sync,
-		TrackSynchronizer: syncInfo,
+		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
 		playing:           core.NewFuse(),
 		draining:          core.NewFuse(),
 		endStream:         core.NewFuse(),
@@ -115,28 +112,33 @@ func NewAppWriter(
 	}
 
 	var depacketizer rtp.Depacketizer
-	switch codec {
-	case types.MimeTypeVP8:
-		depacketizer = &codecs.VP8Packet{}
-		w.translator = NewVP8Translator(w.logger)
-		w.sendPLI = func() { rp.WritePLI(track.SSRC()) }
+	switch ts.MimeType {
+	case types.MimeTypeOpus:
+		depacketizer = &codecs.OpusPacket{}
+		w.translator = NewNullTranslator()
 
 	case types.MimeTypeH264:
 		depacketizer = &codecs.H264Packet{}
 		w.translator = NewH264Translator()
 		w.sendPLI = func() { rp.WritePLI(track.SSRC()) }
 
-	case types.MimeTypeOpus:
-		depacketizer = &codecs.OpusPacket{}
-		w.translator = NewOpusTranslator()
+	case types.MimeTypeVP8:
+		depacketizer = &codecs.VP8Packet{}
+		w.translator = NewVP8Translator(w.logger)
+		w.sendPLI = func() { rp.WritePLI(track.SSRC()) }
+
+	case types.MimeTypeVP9:
+		depacketizer = &codecs.VP9Packet{}
+		w.translator = NewNullTranslator()
+		w.sendPLI = func() { rp.WritePLI(track.SSRC()) }
 
 	default:
-		return nil, errors.ErrNotSupported(track.Codec().MimeType)
+		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
 
 	w.buffer = jitter.NewBuffer(
 		depacketizer,
-		track.Codec().ClockRate,
+		ts.ClockRate,
 		latency,
 		jitter.WithPacketDroppedHandler(w.sendPLI),
 		jitter.WithLogger(w.logger),
@@ -317,7 +319,8 @@ func (w *AppWriter) handleReadError(err error) {
 	}
 
 	// continue on timeout
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
 		return
 	}
 

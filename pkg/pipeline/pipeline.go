@@ -43,8 +43,6 @@ const (
 	eosTimeout     = time.Second * 30
 )
 
-type UpdateFunc func(context.Context, *livekit.EgressInfo)
-
 type Pipeline struct {
 	*config.PipelineConfig
 
@@ -64,12 +62,9 @@ type Pipeline struct {
 	eosSent    core.Fuse
 	stopped    core.Fuse
 	eosTimer   *time.Timer
-
-	// callbacks
-	sendUpdate UpdateFunc
 }
 
-func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate UpdateFunc) (*Pipeline, error) {
+func New(ctx context.Context, conf *config.PipelineConfig) (*Pipeline, error) {
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
@@ -80,7 +75,6 @@ func New(ctx context.Context, conf *config.PipelineConfig, onStatusUpdate Update
 		playing:        core.NewFuse(),
 		eosSent:        core.NewFuse(),
 		stopped:        core.NewFuse(),
-		sendUpdate:     onStatusUpdate,
 	}
 	p.OnFailure = p.onFailure
 
@@ -326,7 +320,7 @@ func (p *Pipeline) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRe
 
 	if sendUpdate {
 		p.Info.UpdatedAt = time.Now().UnixNano()
-		p.sendUpdate(ctx, p.Info)
+		p.OnUpdate(ctx, p.Info)
 	}
 
 	return errs.ToError()
@@ -386,7 +380,7 @@ func (p *Pipeline) removeSink(ctx context.Context, url string, streamErr error) 
 	// only send updates if the egress will continue, otherwise it's handled by UpdateStream RPC
 	if streamErr != nil {
 		p.Info.UpdatedAt = time.Now().UnixNano()
-		p.sendUpdate(ctx, p.Info)
+		p.OnUpdate(ctx, p.Info)
 	}
 
 	return p.out.RemoveStream(url)
@@ -417,7 +411,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 				p.stop()
 			} else {
 				p.Info.Status = livekit.EgressStatus_EGRESS_ENDING
-				p.sendUpdate(ctx, p.Info)
+				p.OnUpdate(ctx, p.Info)
 			}
 			fallthrough
 
@@ -504,7 +498,7 @@ func (p *Pipeline) updateStartTime(startedAt int64) {
 	if p.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
 		p.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
 		p.Info.UpdatedAt = time.Now().UnixNano()
-		p.sendUpdate(context.Background(), p.Info)
+		p.OnUpdate(context.Background(), p.Info)
 	}
 }
 

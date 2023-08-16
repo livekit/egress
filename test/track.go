@@ -62,19 +62,26 @@ func (r *Runner) testTrackFile(t *testing.T) {
 				filename:   "t_{track_source}_{time}.ogg",
 			},
 			{
-				name:       "VP8",
-				videoOnly:  true,
-				videoCodec: types.MimeTypeVP8,
-				outputType: types.OutputTypeWebM,
-				filename:   "t_{track_type}_{time}.webm",
-			},
-			{
 				name:       "H264",
 				videoOnly:  true,
 				videoCodec: types.MimeTypeH264,
 				outputType: types.OutputTypeMP4,
 				filename:   "t_{track_id}_{time}.mp4",
 			},
+			{
+				name:       "VP8",
+				videoOnly:  true,
+				videoCodec: types.MimeTypeVP8,
+				outputType: types.OutputTypeWebM,
+				filename:   "t_{track_type}_{time}.webm",
+			},
+			// {
+			// 	name:       "VP9",
+			// 	videoOnly:  true,
+			// 	videoCodec: types.MimeTypeVP9,
+			// 	outputType: types.OutputTypeWebM,
+			// 	filename:   "t_{track_type}_{time}.webm",
+			// },
 		} {
 			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
 				trackID := audioTrackID

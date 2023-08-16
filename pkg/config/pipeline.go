@@ -90,10 +90,12 @@ type SDKSourceParams struct {
 }
 
 type TrackSource struct {
-	TrackID string
-	Kind    lksdk.TrackKind
-	AppSrc  *app.Source
-	Codec   webrtc.RTPCodecParameters
+	TrackID     string
+	Kind        lksdk.TrackKind
+	AppSrc      *app.Source
+	MimeType    types.MimeType
+	PayloadType webrtc.PayloadType
+	ClockRate   uint32
 }
 
 type AudioConfig struct {
@@ -118,11 +120,13 @@ type VideoConfig struct {
 }
 
 type Callbacks struct {
-	GstReady       chan struct{}        `yaml:"-"`
-	OnTrackMuted   []func(bool)         `yaml:"-"`
-	OnTrackAdded   func(*TrackSource)   `yaml:"-"`
-	OnTrackRemoved func(trackID string) `yaml:"-"`
-	OnFailure      func(error)          `yaml:"-"`
+	GstReady       chan struct{}                              `yaml:"-"`
+	OnTrackMuted   func(string)                               `yaml:"-"`
+	OnTrackUnmuted func(string)                               `yaml:"-"`
+	OnTrackAdded   func(*TrackSource)                         `yaml:"-"`
+	OnTrackRemoved func(trackID string)                       `yaml:"-"`
+	OnUpdate       func(context.Context, *livekit.EgressInfo) `yaml:"-"`
+	OnFailure      func(error)                                `yaml:"-"`
 }
 
 func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*PipelineConfig, error) {
@@ -425,8 +429,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 	}
 
-	if p.TrackID == "" {
-		// Track egress output format decision happens after join
+	if p.RequestType != types.RequestTypeTrack {
 		err := p.validateAndUpdateOutputParams()
 		if err != nil {
 			return err

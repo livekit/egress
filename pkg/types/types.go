@@ -46,6 +46,7 @@ const (
 	MimeTypeRawAudio MimeType = "audio/x-raw"
 	MimeTypeH264     MimeType = "video/h264"
 	MimeTypeVP8      MimeType = "video/vp8"
+	MimeTypeVP9      MimeType = "video/vp9"
 	MimeTypeRawVideo MimeType = "video/x-raw"
 
 	// video profiles
@@ -125,6 +126,7 @@ var (
 		},
 		OutputTypeIVF: {
 			MimeTypeVP8: true,
+			MimeTypeVP9: true,
 		},
 		OutputTypeMP4: {
 			MimeTypeAAC:  true,
@@ -139,6 +141,7 @@ var (
 		OutputTypeWebM: {
 			MimeTypeOpus: true,
 			MimeTypeVP8:  true,
+			MimeTypeVP9:  true,
 		},
 		OutputTypeRTMP: {
 			MimeTypeAAC:  true,
@@ -153,6 +156,7 @@ var (
 			MimeTypeOpus: true,
 			MimeTypeH264: true,
 			MimeTypeVP8:  true,
+			MimeTypeVP9:  true,
 		},
 	}
 
@@ -175,6 +179,13 @@ var (
 	}
 	AudioVideoFileOutputTypes = []OutputType{
 		OutputTypeMP4,
+	}
+
+	TrackOutputTypes = map[MimeType]OutputType{
+		MimeTypeOpus: OutputTypeOGG,
+		MimeTypeH264: OutputTypeMP4,
+		MimeTypeVP8:  OutputTypeWebM,
+		MimeTypeVP9:  OutputTypeWebM,
 	}
 )
 

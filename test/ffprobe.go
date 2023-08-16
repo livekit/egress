@@ -153,7 +153,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		require.Len(t, res.GetSegmentResults(), 1)
 		segments := res.GetSegmentResults()[0]
 		expected := int64(math.Ceil(actual / float64(p.GetSegmentConfig().SegmentDuration)))
-		require.True(t, segments.SegmentCount == expected || segments.SegmentCount == expected-1)
+		require.InDelta(t, expected, segments.SegmentCount, 1)
 
 	case types.EgressTypeWebsocket:
 		size, err := strconv.Atoi(info.Format.Size)
@@ -221,6 +221,8 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 				}
 			case types.MimeTypeVP8:
 				require.Equal(t, "vp8", stream.CodecName)
+			case types.MimeTypeVP9:
+				require.Equal(t, "vp9", stream.CodecName)
 			}
 
 			switch p.Outputs[egressType].GetOutputType() {

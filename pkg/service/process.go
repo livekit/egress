@@ -139,22 +139,22 @@ func (s *Service) AddHandler(egressID string, h *Process) {
 	go s.awaitCleanup(h)
 }
 
-func (s *Service) awaitCleanup(h *Process) {
-	if err := h.cmd.Wait(); err != nil {
+func (s *Service) awaitCleanup(p *Process) {
+	if err := p.cmd.Wait(); err != nil {
 		now := time.Now().UnixNano()
-		h.info.UpdatedAt = now
-		h.info.EndedAt = now
-		h.info.Status = livekit.EgressStatus_EGRESS_FAILED
-		h.info.Error = "internal error"
-		sendUpdate(context.Background(), s.ioClient, h.info)
+		p.info.UpdatedAt = now
+		p.info.EndedAt = now
+		p.info.Status = livekit.EgressStatus_EGRESS_FAILED
+		p.info.Error = "internal error"
+		sendUpdate(context.Background(), s.ioClient, p.info)
 		s.Stop(false)
 	}
 
-	s.EgressEnded(h.req)
-	h.closed.Break()
+	s.EgressEnded(p.req)
+	p.closed.Break()
 
 	s.mu.Lock()
-	delete(s.activeHandlers, h.req.EgressId)
+	delete(s.activeHandlers, p.req.EgressId)
 	s.mu.Unlock()
 }
 
