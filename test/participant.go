@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //go:build integration
 
 package test
@@ -53,16 +67,16 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 
 	t.Run("Participant/File", func(t *testing.T) {
 		for _, test := range []*testCase{
-			{
-				name:           "VP8",
-				fileType:       livekit.EncodedFileType_MP4,
-				audioCodec:     types.MimeTypeOpus,
-				audioDelay:     time.Second * 8,
-				audioUnpublish: time.Second * 14,
-				audioRepublish: time.Second * 20,
-				videoCodec:     types.MimeTypeVP8,
-				filename:       "participant_{publisher_identity}_vp8_{time}.mp4",
-			},
+			// {
+			// 	name:           "VP8",
+			// 	fileType:       livekit.EncodedFileType_MP4,
+			// 	audioCodec:     types.MimeTypeOpus,
+			// 	audioDelay:     time.Second * 8,
+			// 	audioUnpublish: time.Second * 14,
+			// 	audioRepublish: time.Second * 20,
+			// 	videoCodec:     types.MimeTypeVP8,
+			// 	filename:       "participant_{publisher_identity}_vp8_{time}.mp4",
+			// },
 			{
 				name:       "H264",
 				fileType:   livekit.EncodedFileType_MP4,

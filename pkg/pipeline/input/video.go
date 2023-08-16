@@ -21,6 +21,7 @@ import (
 
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -32,6 +33,8 @@ import (
 type videoInput struct {
 	mu      sync.Mutex
 	trackID string
+	lastPTS atomic.Duration
+	nextPTS atomic.Duration
 
 	src        []*gst.Element
 	srcPad     *gst.Pad
@@ -389,7 +392,7 @@ func (v *videoInput) link() (*gst.GhostPad, error) {
 
 	if v.selector != nil {
 		if v.src != nil {
-			v.srcPad = v.selector.GetRequestPad("sink_%u")
+			v.createSrcPad()
 			if err := builder.LinkPads(
 				"video src", builder.GetSrcPad(v.src),
 				"video selector", v.srcPad,
@@ -399,7 +402,7 @@ func (v *videoInput) link() (*gst.GhostPad, error) {
 		}
 
 		if v.testSrc != nil {
-			v.testSrcPad = v.selector.GetRequestPad("sink_%u")
+			v.createTestSrcPad()
 			if err := builder.LinkPads(
 				"video test src", builder.GetSrcPad(v.testSrc),
 				"video selector", v.testSrcPad,
@@ -452,7 +455,7 @@ func (v *videoInput) link() (*gst.GhostPad, error) {
 }
 
 func (v *videoInput) linkAppSrc() error {
-	v.srcPad = v.selector.GetRequestPad("sink_%u")
+	v.createSrcPad()
 
 	if err := gst.ElementLinkMany(v.src...); err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -496,6 +499,44 @@ func (v *videoInput) removeAppSrc(bin *gst.Bin) error {
 	v.trackID = ""
 
 	return nil
+}
+
+func (v *videoInput) createSrcPad() {
+	v.srcPad = v.selector.GetRequestPad("sink_%u")
+	v.srcPad.SetChainFunction(func(self *gst.Pad, parent *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
+		// Buffer gets automatically unreferenced by go-gst.
+		// Without referencing it here, it will sometimes be garbage collected before being written
+		buffer.Ref()
+
+		logger.Debugw("srcpad")
+		v.lastPTS.Store(buffer.PresentationTimestamp())
+
+		internal, _ := self.GetInternalLinks()
+		if len(internal) != 1 {
+			return gst.FlowNotLinked
+		}
+		return internal[0].Push(buffer)
+	})
+}
+
+func (v *videoInput) createTestSrcPad() {
+	v.testSrcPad = v.selector.GetRequestPad("sink_%u")
+	v.testSrcPad.SetChainFunction(func(self *gst.Pad, parent *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
+		// Buffer gets automatically unreferenced by go-gst.
+		// Without referencing it here, it will sometimes be garbage collected before being written
+		buffer.Ref()
+
+		logger.Debugw("testsrcpad")
+		if buffer.PresentationTimestamp() > v.lastPTS.Load() {
+			return gst.FlowOK
+		}
+
+		internal, _ := self.GetInternalLinks()
+		if len(internal) != 1 {
+			return gst.FlowNotLinked
+		}
+		return internal[0].Push(buffer)
+	})
 }
 
 func (v *videoInput) setSelectorPad(pad *gst.Pad) error {
