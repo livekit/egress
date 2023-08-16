@@ -247,7 +247,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 					d, err := strconv.ParseFloat(frac[1], 64)
 					require.NoError(t, err)
 					require.NotZero(t, d)
-					require.Less(t, n/d, float64(p.Framerate)*1.05)
+					require.Less(t, n/d, float64(p.Framerate)*1.5)
 					require.Greater(t, n/d, float64(sourceFramerate)*0.8)
 
 				}

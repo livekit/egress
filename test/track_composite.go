@@ -37,7 +37,8 @@ func (r *Runner) testTrackComposite(t *testing.T) {
 	r.testTrackCompositeMulti(t)
 }
 
-func (r *Runner) runTrackTest(t *testing.T, name string, audioCodec, videoCodec types.MimeType,
+func (r *Runner) runTrackTest(
+	t *testing.T, name string, audioCodec, videoCodec types.MimeType,
 	f func(t *testing.T, audioTrackID, videoTrackID string),
 ) {
 	t.Run(name, func(t *testing.T) {

@@ -234,7 +234,7 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 		return pub.SetSubscribed(true)
 	}
 
-	return errors.ErrInvalidTrack
+	return errors.ErrSubscriptionFailed
 }
 
 // ----- Callbacks -----

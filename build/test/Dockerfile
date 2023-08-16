@@ -19,7 +19,11 @@ WORKDIR /workspace
 ARG TARGETPLATFORM
 
 # install go
-RUN apt-get update && apt-get install -y golang
+RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
+    wget https://go.dev/dl/go1.20.7.linux-${GOARCH}.tar.gz && \
+    rm -rf /usr/local/go && \
+    tar -C /usr/local -xzf go1.20.7.linux-${GOARCH}.tar.gz
+ENV PATH="/usr/local/go/bin:${PATH}"
 
 # download go modules
 COPY go.mod .
@@ -55,12 +59,18 @@ RUN apt-get update && \
         ffmpeg \
         fonts-noto \
         gnupg \
-        golang \
         pulseaudio \
         unzip \
         wget \
         xvfb \
         gstreamer1.0-plugins-base-
+
+# install go
+RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
+    wget https://go.dev/dl/go1.20.7.linux-${GOARCH}.tar.gz && \
+    rm -rf /usr/local/go && \
+    tar -C /usr/local -xzf go1.20.7.linux-${GOARCH}.tar.gz
+ENV PATH="/usr/local/go/bin:${PATH}"
 
 # install chrome
 COPY --from=livekit/chrome-installer:117.0.5874.0 /chrome-installer /chrome-installer
