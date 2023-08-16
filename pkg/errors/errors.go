@@ -31,7 +31,7 @@ var (
 	ErrNoCompatibleCodec          = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")
 	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
 	ErrResourceExhausted          = psrpc.NewErrorf(psrpc.ResourceExhausted, "not enough CPU")
-	ErrInvalidTrack               = psrpc.NewErrorf(psrpc.Internal, "unexpected track type")
+	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Internal, "failed to subscribe to track")
 )
 
 func New(err string) error {
@@ -94,6 +94,10 @@ func ErrStreamNotFound(url string) error {
 
 func ErrTrackNotFound(trackID string) error {
 	return psrpc.NewErrorf(psrpc.NotFound, "track %s not found", trackID)
+}
+
+func ErrParticipantNotFound(identity string) error {
+	return psrpc.NewErrorf(psrpc.NotFound, "participant %s not found", identity)
 }
 
 func ErrPadLinkFailed(src, sink, status string) error {

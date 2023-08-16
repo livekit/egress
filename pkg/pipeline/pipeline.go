@@ -14,7 +14,6 @@
 
 package pipeline
 
-import "C"
 import (
 	"context"
 	"sync"

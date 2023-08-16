@@ -21,6 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -57,10 +58,12 @@ type CPUCostConfig struct {
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	conf := &ServiceConfig{
 		BaseConfig: BaseConfig{
+			Logging: logger.Config{
+				Level: "info",
+			},
 			ApiKey:    os.Getenv("LIVEKIT_API_KEY"),
 			ApiSecret: os.Getenv("LIVEKIT_API_SECRET"),
 			WsUrl:     os.Getenv("LIVEKIT_WS_URL"),
-			LogLevel:  "info",
 		},
 		TemplatePort: defaultTemplatePort,
 	}
