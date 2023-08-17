@@ -462,7 +462,13 @@ func (v *videoInput) createSrcPad() {
 	v.srcPad = v.selector.GetRequestPad("sink_%u")
 	v.srcPad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		buffer := info.GetBuffer()
+
+		for v.nextPTS.Load() != 0 {
+			time.Sleep(time.Millisecond * 100)
+		}
+
 		v.lastPTS.Store(buffer.PresentationTimestamp())
+
 		logger.Debugw("pushing src buffer", "pts", buffer.PresentationTimestamp())
 		return gst.PadProbeOK
 	})
@@ -474,11 +480,11 @@ func (v *videoInput) createTestSrcPad() {
 		buffer := info.GetBuffer()
 
 		if nextPTS := v.nextPTS.Load(); nextPTS != 0 && buffer.PresentationTimestamp() >= nextPTS {
-			v.nextPTS.Store(0)
 			if err := v.setSelectorPad(v.srcPad); err != nil {
 				logger.Errorw("failed to unmute", err)
 				return gst.PadProbeDrop
 			}
+			v.nextPTS.Store(0)
 		} else if buffer.PresentationTimestamp() < v.lastPTS.Load() {
 			return gst.PadProbeDrop
 		}

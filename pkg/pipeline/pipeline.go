@@ -422,10 +422,6 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 
 				p.eosTimer = time.AfterFunc(eosTimeout, func() {
 					logger.Errorw("pipeline frozen", nil, "stream", !p.FinalizationRequired)
-					if p.Debug.EnableProfiling {
-						p.uploadDebugFiles()
-					}
-
 					if p.FinalizationRequired {
 						p.OnFailure(errors.New("pipeline frozen"))
 					} else {
@@ -437,7 +433,7 @@ func (p *Pipeline) SendEOS(ctx context.Context) {
 					p.src.(*source.SDKSource).CloseWriters()
 				}
 
-				p.pipeline.SendEvent(gst.NewEOSEvent())
+				p.in.SendEOS()
 			}()
 		}
 	})
@@ -564,6 +560,9 @@ func (p *Pipeline) stop() {
 			}
 		case <-time.After(eosTimeout):
 			logger.Errorw("SetStateNull timed out", nil)
+			if p.Debug.EnableProfiling {
+				p.uploadDebugFiles()
+			}
 		}
 
 		endedAt := time.Now().UnixNano()

@@ -26,7 +26,8 @@ import (
 )
 
 type Bin struct {
-	bin *gst.Bin
+	audioBin *gst.Bin
+	videoBin *gst.Bin
 
 	audio *audioInput
 	video *videoInput
@@ -37,7 +38,8 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 	defer span.End()
 
 	b := &Bin{
-		bin: gst.NewBin("input"),
+		audioBin: gst.NewBin("audio_input"),
+		videoBin: gst.NewBin("video_input"),
 	}
 
 	// build input
@@ -45,16 +47,17 @@ func New(ctx context.Context, pipeline *gst.Pipeline, p *config.PipelineConfig) 
 		if err := b.buildAudioInput(p); err != nil {
 			return nil, err
 		}
+		if err := pipeline.Add(b.audioBin.Element); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
 	}
 	if p.VideoEnabled {
 		if err := b.buildVideoInput(p); err != nil {
 			return nil, err
 		}
-	}
-
-	// add bin to pipeline
-	if err := pipeline.Add(b.bin.Element); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
+		if err := pipeline.Add(b.videoBin.Element); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
 	}
 
 	return b, nil
@@ -84,17 +87,17 @@ func (b *Bin) buildAudioInput(p *config.PipelineConfig) error {
 	}
 
 	// add elements to bin
-	if err := b.bin.AddMany(a.src...); err != nil {
+	if err := b.audioBin.AddMany(a.src...); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err := b.bin.AddMany(a.testSrc...); err != nil {
+	if err := b.audioBin.AddMany(a.testSrc...); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err := b.bin.AddMany(a.mixer...); err != nil {
+	if err := b.audioBin.AddMany(a.mixer...); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 	if a.encoder != nil {
-		if err := b.bin.Add(a.encoder); err != nil {
+		if err := b.audioBin.Add(a.encoder); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 	}
@@ -127,18 +130,18 @@ func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
 	}
 
 	// add elements to bin
-	if err := b.bin.AddMany(v.src...); err != nil {
+	if err := b.videoBin.AddMany(v.src...); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err := b.bin.AddMany(v.testSrc...); err != nil {
+	if err := b.videoBin.AddMany(v.testSrc...); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 	if v.selector != nil {
-		if err := b.bin.Add(v.selector); err != nil {
+		if err := b.videoBin.Add(v.selector); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 	}
-	if err := b.bin.AddMany(v.encoder...); err != nil {
+	if err := b.videoBin.AddMany(v.encoder...); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
@@ -153,7 +156,7 @@ func (b *Bin) Link() (audioPad, videoPad *gst.GhostPad, err error) {
 		if err != nil {
 			return
 		}
-		if !b.bin.AddPad(audioPad.Pad) {
+		if !b.audioBin.AddPad(audioPad.Pad) {
 			err = errors.ErrGhostPadFailed
 			return
 		}
@@ -165,11 +168,20 @@ func (b *Bin) Link() (audioPad, videoPad *gst.GhostPad, err error) {
 		if err != nil {
 			return
 		}
-		if !b.bin.AddPad(videoPad.Pad) {
+		if !b.videoBin.AddPad(videoPad.Pad) {
 			err = errors.ErrGhostPadFailed
 			return
 		}
 	}
 
 	return
+}
+
+func (b *Bin) SendEOS() {
+	if b.audioBin != nil {
+		b.audioBin.SendEvent(gst.NewEOSEvent())
+	}
+	if b.videoBin != nil {
+		b.videoBin.SendEvent(gst.NewEOSEvent())
+	}
 }
