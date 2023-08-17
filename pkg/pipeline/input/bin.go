@@ -130,6 +130,14 @@ func (b *Bin) buildVideoInput(p *config.PipelineConfig) error {
 	if err := b.bin.AddMany(v.src...); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+	if err := b.bin.AddMany(v.testSrc...); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if v.selector != nil {
+		if err := b.bin.Add(v.selector); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+	}
 	if err := b.bin.AddMany(v.encoder...); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}

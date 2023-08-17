@@ -121,8 +121,8 @@ type VideoConfig struct {
 
 type Callbacks struct {
 	GstReady       chan struct{}                              `yaml:"-"`
-	OnTrackMuted   func(string)                               `yaml:"-"`
-	OnTrackUnmuted func(string)                               `yaml:"-"`
+	OnTrackMuted   []func(string)                             `yaml:"-"`
+	OnTrackUnmuted []func(string, time.Duration)              `yaml:"-"`
 	OnTrackAdded   func(*TrackSource)                         `yaml:"-"`
 	OnTrackRemoved func(trackID string)                       `yaml:"-"`
 	OnUpdate       func(context.Context, *livekit.EgressInfo) `yaml:"-"`

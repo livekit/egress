@@ -16,18 +16,31 @@ package input
 
 import (
 	"fmt"
+	"time"
+	"unsafe"
 
+	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/logger"
 )
 
 type videoInput struct {
-	src     []*gst.Element
-	encoder []*gst.Element
+	trackID string
+	lastPTS atomic.Duration
+	nextPTS atomic.Duration
+
+	src        []*gst.Element
+	srcPad     *gst.Pad
+	testSrc    []*gst.Element
+	testSrcPad *gst.Pad
+	selector   *gst.Element
+	encoder    []*gst.Element
 }
 
 func (v *videoInput) buildWebInput(p *config.PipelineConfig) error {
@@ -78,10 +91,25 @@ func (v *videoInput) buildSDKInput(p *config.PipelineConfig) error {
 		}
 	}
 
+	if p.VideoTranscoding {
+		if err := v.buildTestSrc(p); err != nil {
+			return err
+		}
+		if err := v.buildInputSelector(); err != nil {
+			return err
+		}
+
+		// add callbacks
+		p.OnTrackMuted = append(p.OnTrackMuted, v.onTrackMuted)
+		p.OnTrackUnmuted = append(p.OnTrackUnmuted, v.onTrackUnmuted)
+	}
+
 	return nil
 }
 
 func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.TrackSource) error {
+	v.trackID = track.TrackID
+
 	track.AppSrc.Element.SetArg("format", "time")
 	if err := track.AppSrc.Element.SetProperty("is-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -108,7 +136,7 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.Trac
 			return errors.ErrGstPipelineError(err)
 		}
 		if err = caps.SetProperty("caps", gst.NewCapsFromString(
-			`video/x-h264,stream-format="byte-stream"`,
+			"video/x-h264,stream-format=byte-stream",
 		)); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -236,6 +264,41 @@ func (v *videoInput) buildAppSource(p *config.PipelineConfig, track *config.Trac
 	return nil
 }
 
+func (v *videoInput) buildTestSrc(p *config.PipelineConfig) error {
+	videoTestSrc, err := gst.NewElement("videotestsrc")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = videoTestSrc.SetProperty("is-live", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	videoTestSrc.SetArg("pattern", "black")
+
+	caps, err := gst.NewElement("capsfilter")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+		p.Framerate, p.Width, p.Height,
+	))); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	v.testSrc = []*gst.Element{videoTestSrc, caps}
+	return nil
+}
+
+func (v *videoInput) buildInputSelector() error {
+	inputSelector, err := gst.NewElement("input-selector")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	v.selector = inputSelector
+	return nil
+}
+
 func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 	// Put a queue in front of the encoder for pipelining with the stage before
 	videoQueue, err := builder.BuildQueue("video_encoder_queue", p.Latency, false)
@@ -261,7 +324,7 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 			}
 		}
 		if p.GetSegmentConfig() != nil {
-			// Avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
+			// avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
 			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
@@ -317,12 +380,148 @@ func (v *videoInput) buildEncoder(p *config.PipelineConfig) error {
 }
 
 func (v *videoInput) link() (*gst.GhostPad, error) {
-	elements := append(v.src, v.encoder...)
-
-	err := gst.ElementLinkMany(elements...)
-	if err != nil {
-		return nil, errors.ErrGstPipelineError(err)
+	if v.src != nil {
+		// link src elements
+		if err := gst.ElementLinkMany(v.src...); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
 	}
 
-	return gst.NewGhostPad("video_src", builder.GetSrcPad(elements)), nil
+	if v.testSrc != nil {
+		// link test src elements
+		if err := gst.ElementLinkMany(v.testSrc...); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+	}
+
+	if v.selector != nil {
+		if v.src != nil {
+			v.createSrcPad()
+			if err := builder.LinkPads(
+				"video src", builder.GetSrcPad(v.src),
+				"video selector", v.srcPad,
+			); err != nil {
+				return nil, err
+			}
+		}
+
+		if v.testSrc != nil {
+			v.createTestSrcPad()
+			if err := builder.LinkPads(
+				"video test src", builder.GetSrcPad(v.testSrc),
+				"video selector", v.testSrcPad,
+			); err != nil {
+				return nil, err
+			}
+		}
+
+		if v.src != nil {
+			if err := v.setSelectorPad(v.srcPad); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := v.setSelectorPad(v.testSrcPad); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	var ghostPad *gst.Pad
+	if v.encoder != nil {
+		if err := gst.ElementLinkMany(v.encoder...); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+
+		if v.selector != nil {
+			if err := builder.LinkPads(
+				"video selector", v.selector.GetStaticPad("src"),
+				"video encoder", v.encoder[0].GetStaticPad("sink"),
+			); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := builder.LinkPads(
+				"video src", builder.GetSrcPad(v.src),
+				"video encoder", v.encoder[0].GetStaticPad("sink"),
+			); err != nil {
+				return nil, err
+			}
+		}
+
+		ghostPad = builder.GetSrcPad(v.encoder)
+	} else if v.selector != nil {
+		ghostPad = v.selector.GetStaticPad("src")
+	} else {
+		ghostPad = builder.GetSrcPad(v.src)
+	}
+
+	return gst.NewGhostPad("video_src", ghostPad), nil
+}
+
+func (v *videoInput) createSrcPad() {
+	v.srcPad = v.selector.GetRequestPad("sink_%u")
+	v.srcPad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		buffer := info.GetBuffer()
+		v.lastPTS.Store(buffer.PresentationTimestamp())
+		logger.Debugw("pushing src buffer", "pts", buffer.PresentationTimestamp())
+		return gst.PadProbeOK
+	})
+}
+
+func (v *videoInput) createTestSrcPad() {
+	v.testSrcPad = v.selector.GetRequestPad("sink_%u")
+	v.testSrcPad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		buffer := info.GetBuffer()
+
+		if nextPTS := v.nextPTS.Load(); nextPTS != 0 && buffer.PresentationTimestamp() >= nextPTS {
+			v.nextPTS.Store(0)
+			if err := v.setSelectorPad(v.srcPad); err != nil {
+				logger.Errorw("failed to unmute", err)
+				return gst.PadProbeDrop
+			}
+		} else if buffer.PresentationTimestamp() < v.lastPTS.Load() {
+			return gst.PadProbeDrop
+		}
+
+		logger.Debugw("pushing test src buffer", "pts", buffer.PresentationTimestamp())
+		return gst.PadProbeOK
+	})
+}
+
+func (v *videoInput) onTrackMuted(trackID string) {
+	if trackID != v.trackID {
+		return
+	}
+
+	if err := v.setSelectorPad(v.testSrcPad); err != nil {
+		logger.Errorw("failed to set selector pad", err)
+	}
+}
+
+func (v *videoInput) onTrackUnmuted(trackID string, pts time.Duration) {
+	if trackID != v.trackID {
+		return
+	}
+
+	v.nextPTS.Store(pts)
+}
+
+func (v *videoInput) setSelectorPad(pad *gst.Pad) error {
+	// TODO: go-gst should accept objects directly and handle conversion to C
+	pt, err := v.selector.GetPropertyType("active-pad")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	val, err := glib.ValueInit(pt)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	val.SetInstance(uintptr(unsafe.Pointer(pad.Instance())))
+
+	if err = v.selector.SetPropertyValue("active-pad", val); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	return nil
 }

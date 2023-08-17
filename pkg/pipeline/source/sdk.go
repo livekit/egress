@@ -148,45 +148,37 @@ func (s *SDKSource) joinRoom() error {
 		OnDisconnected: s.onDisconnected,
 	}
 
-	s.room = lksdk.CreateRoom(cb)
 	logger.Debugw("connecting to room")
+	s.room = lksdk.CreateRoom(cb)
 	if err := s.room.JoinWithToken(s.WsUrl, s.Token, lksdk.WithAutoSubscribe(false)); err != nil {
 		return err
 	}
 
 	var fileIdentifier string
-	tracks := make(map[string]struct{})
-
+	var err error
 	switch s.RequestType {
 	case types.RequestTypeTrackComposite:
 		fileIdentifier = s.Info.RoomName
+
+		tracks := make(map[string]struct{})
 		if s.AudioEnabled {
 			tracks[s.AudioTrackID] = struct{}{}
 		}
 		if s.VideoEnabled {
 			tracks[s.VideoTrackID] = struct{}{}
 		}
+		err = s.awaitTracks(tracks)
 
 	case types.RequestTypeTrack:
 		fileIdentifier = s.TrackID
-		tracks[s.TrackID] = struct{}{}
-	}
 
-	numTracks := len(tracks)
-	s.errors = make(chan error, numTracks)
-	if err := s.subscribeToTracks(tracks); err != nil {
+		err = s.awaitTracks(map[string]struct{}{s.TrackID: {}})
+	}
+	if err != nil {
 		return err
 	}
 
-	for i := 0; i < numTracks; i++ {
-		if err := <-s.errors; err != nil {
-			return err
-		}
-	}
-
-	s.initialized.Break()
-
-	if err := s.UpdateInfoFromSDK(fileIdentifier, s.filenameReplacements); err != nil {
+	if err = s.UpdateInfoFromSDK(fileIdentifier, s.filenameReplacements); err != nil {
 		logger.Errorw("could not update file params", err)
 		return err
 	}
@@ -194,32 +186,56 @@ func (s *SDKSource) joinRoom() error {
 	return nil
 }
 
-func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}) error {
-	deadline := time.Now().Add(subscriptionTimeout)
-	for time.Now().Before(deadline) {
-		for _, p := range s.room.GetParticipants() {
-			for _, track := range p.Tracks() {
-				trackID := track.SID()
-				if _, ok := expecting[trackID]; ok {
-					if err := s.subscribe(track); err != nil {
-						return err
-					}
+func (s *SDKSource) awaitTracks(expecting map[string]struct{}) error {
+	trackCount := len(expecting)
+	s.errors = make(chan error, trackCount)
 
-					delete(expecting, track.SID())
-					if len(expecting) == 0 {
-						return nil
+	deadline := time.After(subscriptionTimeout)
+	if err := s.subscribeToTracks(expecting, deadline); err != nil {
+		return err
+	}
+
+	for i := 0; i < trackCount; i++ {
+		select {
+		case err := <-s.errors:
+			if err != nil {
+				return err
+			}
+		case <-deadline:
+			return errors.ErrSubscriptionFailed
+		}
+	}
+
+	s.initialized.Break()
+	return nil
+}
+
+func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}, deadline <-chan time.Time) error {
+	for {
+		select {
+		case <-deadline:
+			for trackID := range expecting {
+				return errors.ErrTrackNotFound(trackID)
+			}
+		default:
+			for _, p := range s.room.GetParticipants() {
+				for _, track := range p.Tracks() {
+					trackID := track.SID()
+					if _, ok := expecting[trackID]; ok {
+						if err := s.subscribe(track); err != nil {
+							return err
+						}
+
+						delete(expecting, track.SID())
+						if len(expecting) == 0 {
+							return nil
+						}
 					}
 				}
 			}
+			time.Sleep(100 * time.Millisecond)
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
-
-	for trackID := range expecting {
-		return errors.ErrTrackNotFound(trackID)
-	}
-
-	return nil
 }
 
 func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
@@ -274,7 +290,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		}
 		s.AudioTranscoding = true
 
-		writer, err := s.createWriter(track, rp, ts, false)
+		writer, err := s.createWriter(track, rp, ts)
 		if err != nil {
 			onSubscribeErr = err
 			return
@@ -293,8 +309,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			s.VideoTranscoding = true
 		}
 
-		writeBlanks := s.VideoTranscoding && ts.MimeType != types.MimeTypeVP9
-		writer, err := s.createWriter(track, rp, ts, writeBlanks)
+		writer, err := s.createWriter(track, rp, ts)
 		if err != nil {
 			onSubscribeErr = err
 			return
@@ -340,7 +355,6 @@ func (s *SDKSource) createWriter(
 	track *webrtc.TrackRemote,
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
-	writeBlanks bool,
 ) (*sdk.AppWriter, error) {
 	var logFilename string
 	if s.Debug.EnableProfiling {
@@ -358,7 +372,7 @@ func (s *SDKSource) createWriter(
 	}
 
 	ts.AppSrc = app.SrcFromElement(src)
-	writer, err := sdk.NewAppWriter(track, rp, ts, s.sync, writeBlanks, logFilename)
+	writer, err := sdk.NewAppWriter(track, rp, ts, s.sync, s.Callbacks, logFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -369,18 +383,12 @@ func (s *SDKSource) createWriter(
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.SetTrackMuted(true)
-		if s.OnTrackMuted != nil {
-			s.OnTrackMuted(pub.SID())
-		}
 	}
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.SetTrackMuted(false)
-		if s.OnTrackUnmuted != nil {
-			s.OnTrackUnmuted(pub.SID())
-		}
 	}
 }
 
