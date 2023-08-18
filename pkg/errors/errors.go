@@ -137,6 +137,12 @@ func (e *ErrArray) AppendErr(err error) {
 	e.errs = append(e.errs, err)
 }
 
+func (e *ErrArray) Check(err error) {
+	if err != nil {
+		e.errs = append(e.errs, err)
+	}
+}
+
 func (e *ErrArray) ToError() psrpc.Error {
 	if len(e.errs) == 0 {
 		return nil

@@ -33,7 +33,7 @@ type BaseConfig struct {
 	WsUrl     string             `yaml:"ws_url"`     // (env LIVEKIT_WS_URL)
 
 	// optional
-	Logging       logger.Config           `yaml:"logging"`        // logging config
+	Logging       *logger.Config          `yaml:"logging"`        // logging config
 	TemplateBase  string                  `yaml:"template_base"`  // custom template base url
 	BackupStorage string                  `yaml:"backup_storage"` // backup file location for failed uploads
 	ClusterID     string                  `yaml:"cluster_id"`     // cluster this instance belongs to
@@ -106,7 +106,7 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 		return err
 	}
 
-	zl, err := logger.NewZapLogger(&c.Logging)
+	zl, err := logger.NewZapLogger(c.Logging)
 	if err != nil {
 		return err
 	}

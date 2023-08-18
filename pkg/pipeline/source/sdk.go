@@ -30,6 +30,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
@@ -44,6 +45,7 @@ const (
 
 type SDKSource struct {
 	*config.PipelineConfig
+	callbacks *gstreamer.Callbacks
 
 	room *lksdk.Room
 	sync *synchronizer.Synchronizer
@@ -61,13 +63,14 @@ type SDKSource struct {
 	endRecording   chan struct{}
 }
 
-func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, error) {
+func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*SDKSource, error) {
 	ctx, span := tracer.Start(ctx, "SDKInput.New")
 	defer span.End()
 
 	startRecording := make(chan struct{})
 	s := &SDKSource{
 		PipelineConfig: p,
+		callbacks:      callbacks,
 		sync: synchronizer.NewSynchronizer(func() {
 			close(startRecording)
 		}),
@@ -102,7 +105,7 @@ func (s *SDKSource) EndRecording() chan struct{} {
 	return s.endRecording
 }
 
-func (s *SDKSource) GetEndTime() int64 {
+func (s *SDKSource) GetEndedAt() int64 {
 	return s.sync.GetEndedAt()
 }
 
@@ -248,7 +251,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 	defer func() {
 		if s.initialized.IsBroken() {
 			if onSubscribeErr != nil {
-				s.OnFailure(onSubscribeErr)
+				s.callbacks.OnError(onSubscribeErr)
 			}
 		} else {
 			s.errors <- onSubscribeErr
@@ -351,7 +354,6 @@ func (s *SDKSource) createWriter(
 		}
 	}
 
-	<-s.GstReady
 	src, err := gst.NewElementWithName("appsrc", track.ID())
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
@@ -369,18 +371,14 @@ func (s *SDKSource) createWriter(
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.SetTrackMuted(true)
-		if s.OnTrackMuted != nil {
-			s.OnTrackMuted(pub.SID())
-		}
+		s.callbacks.OnTrackMuted(pub.SID())
 	}
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.SetTrackMuted(false)
-		if s.OnTrackUnmuted != nil {
-			s.OnTrackUnmuted(pub.SID())
-		}
+		s.callbacks.OnTrackUnmuted(pub.SID())
 	}
 }
 

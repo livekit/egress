@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package builder
+package gstreamer
 
 import (
 	"fmt"
@@ -58,8 +58,4 @@ func BuildQueue(name string, latency uint64, leaky bool) (*gst.Element, error) {
 	}
 
 	return queue, nil
-}
-
-func GetSrcPad(elements []*gst.Element) *gst.Pad {
-	return elements[len(elements)-1].GetStaticPad("src")
 }
