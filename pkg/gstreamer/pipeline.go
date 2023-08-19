@@ -19,14 +19,14 @@ import (
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/logger"
 )
 
 type Pipeline struct {
 	*Bin
 
-	pipeline *gst.Pipeline
-	loop     *glib.MainLoop
+	loop *glib.MainLoop
 
 	started core.Fuse
 	running chan struct{}
@@ -41,15 +41,15 @@ func NewPipeline(name string, latency uint64, callbacks *Callbacks) (*Pipeline, 
 	return &Pipeline{
 		Bin: &Bin{
 			Callbacks: callbacks,
+			pipeline:  pipeline,
 			bin:       pipeline.Bin,
-			binType:   BinTypeQueue,
-			state:     gst.StateNull,
+			binType:   BinTypeMultiStream,
 			latency:   latency,
+			queues:    make(map[string]*gst.Element),
 		},
-		pipeline: pipeline,
-		loop:     glib.NewMainLoop(glib.MainContextDefault(), false),
-		started:  core.NewFuse(),
-		running:  make(chan struct{}),
+		loop:    glib.NewMainLoop(glib.MainContextDefault(), false),
+		started: core.NewFuse(),
+		running: make(chan struct{}),
 	}, nil
 }
 
@@ -61,18 +61,24 @@ func (p *Pipeline) SetWatch(watch func(msg *gst.Message) bool) {
 	p.pipeline.GetPipelineBus().AddWatch(watch)
 }
 
+func (p *Pipeline) SetState(state gst.State) error {
+	logger.Debugw("updating pipeline state", "state", state)
+	if err := p.pipeline.SetState(state); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	return nil
+}
+
 func (p *Pipeline) Run() error {
 	p.started.Once(func() {
-		go func() {
-			p.loop.Run()
-			close(p.running)
-		}()
+		if err := p.SetState(gst.StatePlaying); err != nil {
+			p.OnError(err)
+			return
+		}
+		logger.Infow("running")
+		p.loop.Run()
+		close(p.running)
 	})
-
-	logger.Debugw("setting state to playing")
-	if err := p.SetState(gst.StatePlaying); err != nil {
-		return err
-	}
 
 	// wait
 	<-p.running
@@ -93,6 +99,7 @@ func (p *Pipeline) Stop() {
 		p.OnError(err)
 		return
 	}
+	p.loop.Quit()
 }
 
 func (p *Pipeline) DebugBinToDotData(details gst.DebugGraphDetails) string {

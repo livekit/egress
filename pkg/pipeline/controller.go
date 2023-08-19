@@ -68,22 +68,23 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 	var err error
 	c := &Controller{
 		PipelineConfig: conf,
-		callbacks:      &gstreamer.Callbacks{},
-		gstLogger:      logger.GetLogger().(*logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
-		playing:        core.NewFuse(),
-		eosSent:        core.NewFuse(),
-		stopped:        core.NewFuse(),
+		callbacks: &gstreamer.Callbacks{
+			GstReady: make(chan struct{}),
+		},
+		gstLogger: logger.GetLogger().(*logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
+		playing:   core.NewFuse(),
+		eosSent:   core.NewFuse(),
+		stopped:   core.NewFuse(),
 	}
 	c.callbacks.SetOnError(c.OnError)
 
 	// initialize gst
-	initialized := make(chan struct{})
 	go func() {
 		_, span := tracer.Start(ctx, "gst.Init")
 		defer span.End()
 		gst.Init(nil)
-		gst.SetLogFunction(c.gstLog)
-		close(initialized)
+		// gst.SetLogFunction(c.gstLog)
+		close(c.callbacks.GstReady)
 	}()
 
 	// create source
@@ -99,7 +100,7 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 	}
 
 	// create pipeline
-	<-initialized
+	<-c.callbacks.GstReady
 	if err = c.BuildPipeline(); err != nil {
 		return nil, err
 	}
@@ -108,13 +109,15 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 }
 
 func (c *Controller) BuildPipeline() error {
+	logger.Debugw("building pipeline")
+
 	p, err := gstreamer.NewPipeline("pipeline", c.Latency, c.callbacks)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
 	if c.AudioEnabled {
-		audioBin, err := builder.BuildAudioBin(c.PipelineConfig, c.callbacks)
+		audioBin, err := builder.BuildAudioBin(p, c.PipelineConfig)
 		if err != nil {
 			return err
 		}
@@ -124,7 +127,7 @@ func (c *Controller) BuildPipeline() error {
 	}
 
 	if c.VideoEnabled {
-		videoBin, err := builder.BuildVideoBin(c.PipelineConfig, c.callbacks)
+		videoBin, err := builder.BuildVideoBin(p, c.PipelineConfig)
 		if err != nil {
 			return err
 		}
@@ -137,17 +140,17 @@ func (c *Controller) BuildPipeline() error {
 		var sinkBin *gstreamer.Bin
 		switch egressType {
 		case types.EgressTypeFile:
-			sinkBin, err = builder.BuildFileBin(c.PipelineConfig, c.callbacks)
+			sinkBin, err = builder.BuildFileBin(p, c.PipelineConfig)
 
 		case types.EgressTypeSegments:
-			sinkBin, err = builder.BuildSegmentBin(c.PipelineConfig, c.callbacks)
+			sinkBin, err = builder.BuildSegmentBin(p, c.PipelineConfig)
 
 		case types.EgressTypeStream:
-			c.streamBin, sinkBin, err = builder.BuildStreamBin(c.PipelineConfig, c.callbacks)
+			c.streamBin, sinkBin, err = builder.BuildStreamBin(p, c.PipelineConfig)
 
 		case types.EgressTypeWebsocket:
 			writer := c.sinks[egressType].(*sink.WebsocketSink)
-			sinkBin, err = builder.BuildWebsocketBin(writer.SinkCallbacks(), c.callbacks)
+			sinkBin, err = builder.BuildWebsocketBin(p, writer.SinkCallbacks())
 		}
 		if err != nil {
 			return err
@@ -242,6 +245,65 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	}
 
 	return c.Info
+}
+
+func (c *Controller) startSessionLimitTimer(ctx context.Context) {
+	var timeout time.Duration
+	for egressType := range c.Outputs {
+		var t time.Duration
+		switch egressType {
+		case types.EgressTypeFile:
+			t = c.FileOutputMaxDuration
+		case types.EgressTypeStream, types.EgressTypeWebsocket:
+			t = c.StreamOutputMaxDuration
+		case types.EgressTypeSegments:
+			t = c.SegmentOutputMaxDuration
+		}
+		if t > 0 && (timeout == 0 || t < timeout) {
+			timeout = t
+		}
+	}
+
+	if timeout > 0 {
+		c.limitTimer = time.AfterFunc(timeout, func() {
+			switch c.Info.Status {
+			case livekit.EgressStatus_EGRESS_STARTING,
+				livekit.EgressStatus_EGRESS_ACTIVE:
+				c.Info.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
+			}
+			if c.playing.IsBroken() {
+				c.SendEOS(ctx)
+			} else {
+				c.Stop()
+			}
+		})
+	}
+}
+
+func (c *Controller) updateStartTime(startedAt int64) {
+	for egressType, o := range c.Outputs {
+		switch egressType {
+		case types.EgressTypeStream, types.EgressTypeWebsocket:
+			c.mu.Lock()
+			for _, streamInfo := range o.(*config.StreamConfig).StreamInfo {
+				streamInfo.Status = livekit.StreamInfo_ACTIVE
+				streamInfo.StartedAt = startedAt
+			}
+			c.mu.Unlock()
+
+		case types.EgressTypeFile:
+			o.(*config.FileConfig).FileInfo.StartedAt = startedAt
+
+		case types.EgressTypeSegments:
+			o.(*config.SegmentConfig).SegmentsInfo.StartedAt = startedAt
+		}
+	}
+
+	if c.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
+		c.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
+		c.Info.UpdatedAt = time.Now().UnixNano()
+		c.OnUpdate(context.Background(), c.Info)
+	}
 }
 
 func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) error {
@@ -374,65 +436,6 @@ func (c *Controller) removeSink(ctx context.Context, url string, streamErr error
 	return c.streamBin.RemoveStream(url)
 }
 
-func (c *Controller) startSessionLimitTimer(ctx context.Context) {
-	var timeout time.Duration
-	for egressType := range c.Outputs {
-		var t time.Duration
-		switch egressType {
-		case types.EgressTypeFile:
-			t = c.FileOutputMaxDuration
-		case types.EgressTypeStream, types.EgressTypeWebsocket:
-			t = c.StreamOutputMaxDuration
-		case types.EgressTypeSegments:
-			t = c.SegmentOutputMaxDuration
-		}
-		if t > 0 && (timeout == 0 || t < timeout) {
-			timeout = t
-		}
-	}
-
-	if timeout > 0 {
-		c.limitTimer = time.AfterFunc(timeout, func() {
-			switch c.Info.Status {
-			case livekit.EgressStatus_EGRESS_STARTING,
-				livekit.EgressStatus_EGRESS_ACTIVE:
-				c.Info.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
-			}
-			if c.playing.IsBroken() {
-				c.SendEOS(ctx)
-			} else {
-				c.Stop()
-			}
-		})
-	}
-}
-
-func (c *Controller) updateStartTime(startedAt int64) {
-	for egressType, o := range c.Outputs {
-		switch egressType {
-		case types.EgressTypeStream, types.EgressTypeWebsocket:
-			c.mu.Lock()
-			for _, streamInfo := range o.(*config.StreamConfig).StreamInfo {
-				streamInfo.Status = livekit.StreamInfo_ACTIVE
-				streamInfo.StartedAt = startedAt
-			}
-			c.mu.Unlock()
-
-		case types.EgressTypeFile:
-			o.(*config.FileConfig).FileInfo.StartedAt = startedAt
-
-		case types.EgressTypeSegments:
-			o.(*config.SegmentConfig).SegmentsInfo.StartedAt = startedAt
-		}
-	}
-
-	if c.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
-		c.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
-		c.Info.UpdatedAt = time.Now().UnixNano()
-		c.OnUpdate(context.Background(), c.Info)
-	}
-}
-
 func (c *Controller) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
@@ -498,14 +501,18 @@ func (c *Controller) Stop() {
 }
 
 func (c *Controller) OnStop() error {
-	endedAt := c.src.GetEndedAt()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	for egressType, c := range c.Outputs {
+	if c.eosTimer != nil {
+		c.eosTimer.Stop()
+	}
+	endedAt := c.src.GetEndedAt()
+
+	for egressType, o := range c.Outputs {
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
-			for _, info := range c.(*config.StreamConfig).StreamInfo {
+			for _, info := range o.(*config.StreamConfig).StreamInfo {
 				info.Status = livekit.StreamInfo_FINISHED
 				if info.StartedAt == 0 {
 					info.StartedAt = endedAt
@@ -515,7 +522,7 @@ func (c *Controller) OnStop() error {
 			}
 
 		case types.EgressTypeFile:
-			fileInfo := c.(*config.FileConfig).FileInfo
+			fileInfo := o.(*config.FileConfig).FileInfo
 			if fileInfo.StartedAt == 0 {
 				fileInfo.StartedAt = endedAt
 			}
@@ -523,7 +530,7 @@ func (c *Controller) OnStop() error {
 			fileInfo.Duration = endedAt - fileInfo.StartedAt
 
 		case types.EgressTypeSegments:
-			segmentsInfo := c.(*config.SegmentConfig).SegmentsInfo
+			segmentsInfo := o.(*config.SegmentConfig).SegmentsInfo
 			if segmentsInfo.StartedAt == 0 {
 				segmentsInfo.StartedAt = endedAt
 			}
@@ -531,5 +538,6 @@ func (c *Controller) OnStop() error {
 			segmentsInfo.Duration = endedAt - segmentsInfo.StartedAt
 		}
 	}
+
 	return nil
 }

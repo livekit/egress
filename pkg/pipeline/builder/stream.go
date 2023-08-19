@@ -30,6 +30,7 @@ import (
 
 type StreamBin struct {
 	mu            sync.RWMutex
+	pipeline      *gstreamer.Pipeline
 	b             *gstreamer.Bin
 	outputType    types.OutputType
 	bins          map[string]*gstreamer.Bin
@@ -37,8 +38,8 @@ type StreamBin struct {
 	reconnections map[string]int
 }
 
-func BuildStreamBin(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*StreamBin, *gstreamer.Bin, error) {
-	b := gstreamer.NewBin("stream", gstreamer.BinTypeMuxed, callbacks)
+func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*StreamBin, *gstreamer.Bin, error) {
+	b := pipeline.NewBin("stream", gstreamer.BinTypeMuxed)
 	o := p.GetStreamConfig()
 
 	var mux *gst.Element
@@ -80,7 +81,10 @@ func BuildStreamBin(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*
 	}
 
 	sb := &StreamBin{
+		pipeline:      pipeline,
+		b:             b,
 		outputType:    o.OutputType,
+		bins:          make(map[string]*gstreamer.Bin),
 		urls:          make(map[string]string),
 		reconnections: make(map[string]int),
 	}
@@ -105,7 +109,7 @@ func (sb *StreamBin) GetStreamUrl(name string) (string, error) {
 }
 
 func (sb *StreamBin) AddStream(url string) error {
-	sinkBin, name, err := buildStreamSinkBin(sb.outputType, url, sb.b.Callbacks)
+	sinkBin, name, err := buildStreamSinkBin(sb.pipeline, sb.outputType, url)
 	if err != nil {
 		return err
 	}
@@ -168,9 +172,9 @@ func (sb *StreamBin) getStreamName(url string) string {
 	return ""
 }
 
-func buildStreamSinkBin(protocol types.OutputType, url string, callbacks *gstreamer.Callbacks) (*gstreamer.Bin, string, error) {
+func buildStreamSinkBin(pipeline *gstreamer.Pipeline, protocol types.OutputType, url string) (*gstreamer.Bin, string, error) {
 	name := utils.NewGuid("")
-	b := gstreamer.NewBin(name, gstreamer.BinTypeMuxed, callbacks)
+	b := pipeline.NewBin(name, gstreamer.BinTypeMuxed)
 
 	queue, err := gst.NewElementWithName("queue", fmt.Sprintf("stream_queue_%s", name))
 	if err != nil {
@@ -202,6 +206,37 @@ func buildStreamSinkBin(protocol types.OutputType, url string, callbacks *gstrea
 	if err = b.AddElements(queue, sink); err != nil {
 		return nil, "", err
 	}
+
+	b.SetLinkFunc(func() error {
+		proxy := gst.NewGhostPad("proxy", sink.GetStaticPad("sink"))
+
+		// Proxy isn't saved/stored anywhere, so we need to call ref.
+		// It is later released in RemoveSink
+		proxy.Ref()
+
+		// Intercept flows from rtmp2sink. Anything besides EOS will be ignored
+		proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
+			// Buffer gets automatically unreferenced by go-gst.
+			// Without referencing it here, it will sometimes be garbage collected before being written
+			buffer.Ref()
+
+			internal, _ := self.GetInternalLinks()
+			if len(internal) != 1 {
+				return gst.FlowNotLinked
+			}
+
+			if internal[0].Push(buffer) == gst.FlowEOS {
+				return gst.FlowEOS
+			}
+			return gst.FlowOK
+		})
+		proxy.ActivateMode(gst.PadModePush, true)
+
+		if padReturn := queue.GetStaticPad("src").Link(proxy.Pad); padReturn != gst.PadLinkOK {
+			return errors.ErrPadLinkFailed(queue.GetName(), "proxy", padReturn.String())
+		}
+		return nil
+	})
 
 	return b, name, nil
 }

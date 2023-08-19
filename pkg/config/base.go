@@ -105,6 +105,9 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 	if err := os.Setenv("GST_DEBUG", gstDebug); err != nil {
 		return err
 	}
+	if err := os.Setenv("GST_DEBUG_DUMP_DOT_DIR", "/out/output"); err != nil {
+		return err
+	}
 
 	zl, err := logger.NewZapLogger(c.Logging)
 	if err != nil {

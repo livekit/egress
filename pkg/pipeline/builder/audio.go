@@ -27,12 +27,12 @@ import (
 
 const audioMixerLatency = uint64(2e9)
 
-func BuildAudioBin(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*gstreamer.Bin, error) {
-	b := gstreamer.NewBin("audio", gstreamer.BinTypeAudio, callbacks)
+func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
+	b := pipeline.NewBin("audio", gstreamer.BinTypeAudio)
 
 	switch p.SourceType {
 	case types.SourceTypeSDK:
-		if err := buildSDKAudioInput(b, p); err != nil {
+		if err := buildSDKAudioInput(pipeline, b, p); err != nil {
 			return nil, err
 		}
 
@@ -82,9 +82,9 @@ func buildWebAudioInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	return nil
 }
 
-func buildSDKAudioInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
+func buildSDKAudioInput(pipeline *gstreamer.Pipeline, b *gstreamer.Bin, p *config.PipelineConfig) error {
 	if p.AudioTrack != nil {
-		appSrcBin, err := buildAudioAppSrcBin(p, b.Callbacks)
+		appSrcBin, err := buildAudioAppSrcBin(pipeline, p)
 		if err != nil {
 			return err
 		}
@@ -93,7 +93,7 @@ func buildSDKAudioInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 		}
 	}
 
-	testSrcBin, err := buildAudioTestSrcBin(p, b.Callbacks)
+	testSrcBin, err := buildAudioTestSrcBin(pipeline, p)
 	if err != nil {
 		return err
 	}
@@ -113,10 +113,11 @@ func buildSDKAudioInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	return nil
 }
 
-func buildAudioAppSrcBin(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*gstreamer.Bin, error) {
+func buildAudioAppSrcBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
 	track := p.AudioTrack
 
-	b := gstreamer.NewBin(track.TrackID, gstreamer.BinTypeAudio, callbacks)
+	b := pipeline.NewBin(track.TrackID, gstreamer.BinTypeAudio)
+	b.SetEOSFunc(track.EOSFunc)
 
 	track.AppSrc.Element.SetArg("format", "time")
 	if err := track.AppSrc.Element.SetProperty("is-live", true); err != nil {
@@ -161,8 +162,8 @@ func buildAudioAppSrcBin(p *config.PipelineConfig, callbacks *gstreamer.Callback
 	return b, nil
 }
 
-func buildAudioTestSrcBin(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*gstreamer.Bin, error) {
-	b := gstreamer.NewBin("audio_test_src", gstreamer.BinTypeAudio, callbacks)
+func buildAudioTestSrcBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
+	b := pipeline.NewBin("audio_test_src", gstreamer.BinTypeAudio)
 
 	audioTestSrc, err := gst.NewElement("audiotestsrc")
 	if err != nil {

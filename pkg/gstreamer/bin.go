@@ -27,49 +27,40 @@ import (
 type BinType string
 
 const (
-	BinTypeAudio BinType = "audio" // bin handles one audio data stream
-	BinTypeVideo BinType = "video" // bin handles one video data stream
-	BinTypeMuxed BinType = "muxed" // bin handles one stream of mixed/muxed audio and/or video
-	BinTypeQueue BinType = "queue" // no elements, links all src bins to all sink bins using queues
+	BinTypeAudio       BinType = "audio" // bin handles one audio data stream
+	BinTypeVideo       BinType = "video" // bin handles one video data stream
+	BinTypeMuxed       BinType = "muxed" // bin handles one stream of mixed/muxed audio and/or video
+	BinTypeMultiStream BinType = "multi" // bin has no elements of its own, but handles multiple streams
 )
 
 // Bins are designed to hold a single stream, with any number of sources and sinks
 type Bin struct {
 	*Callbacks
 
-	mu      sync.Mutex
-	bin     *gst.Bin
-	binType BinType
-	latency uint64
+	pipeline *gst.Pipeline
+	mu       sync.Mutex
+	bin      *gst.Bin
+	binType  BinType
+	latency  uint64
 
-	stateLock    sync.Mutex
-	pendingState gst.State
-	state        gst.State
-
-	eosFunc func()
+	linkFunc func() error
+	eosFunc  func()
 
 	srcs     []*Bin                   // source bins
 	elements []*gst.Element           // elements within this bin
-	queues   map[string]*gst.Element  // used to link srcs to sinks when there are no elements
+	queues   map[string]*gst.Element  // used with BinTypeMultiStream
 	pads     map[string]*gst.GhostPad // ghost pads by bin name
 	sinks    []*Bin                   // sink bins
 }
 
-func NewBin(name string, binType BinType, callbacks *Callbacks) *Bin {
+func (p *Pipeline) NewBin(name string, binType BinType) *Bin {
+	logger.Debugw(fmt.Sprintf("creating bin %s", name))
 	return &Bin{
-		Callbacks: callbacks,
+		Callbacks: p.Callbacks,
+		pipeline:  p.pipeline,
 		bin:       gst.NewBin(name),
 		binType:   binType,
 		pads:      make(map[string]*gst.GhostPad),
-	}
-}
-
-func NewQueueBin(name string, callbacks *Callbacks) *Bin {
-	return &Bin{
-		Callbacks: callbacks,
-		bin:       gst.NewBin(name),
-		binType:   BinTypeQueue,
-		queues:    make(map[string]*gst.Element),
 	}
 }
 
@@ -79,23 +70,20 @@ func (b *Bin) AddSourceBin(src *Bin) error {
 
 	b.srcs = append(b.srcs, src)
 
-	if b.state == gst.StatePlaying {
+	if b.bin.GetState() == gst.StatePlaying {
 		if err := src.link(); err != nil {
 			return err
 		}
 
 		src.mu.Lock()
-		srcPad, sinkPad, err := createGhostPads(src, b)
+		err := linkPeers(src, b)
 		src.mu.Unlock()
 		if err != nil {
 			return err
 		}
-		if padReturn := srcPad.Link(sinkPad.Pad); padReturn != gst.PadLinkOK {
-			return errors.ErrPadLinkFailed(src.bin.GetName(), b.bin.GetName(), padReturn.String())
-		}
 	}
 
-	if err := b.bin.Add(src.bin.Element); err != nil {
+	if err := b.pipeline.Add(src.bin.Element); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
@@ -123,14 +111,14 @@ func (b *Bin) RemoveSourceBin(name string) (bool, error) {
 		return false, nil
 	}
 
-	if b.state != gst.StatePlaying {
-		if err := b.bin.Remove(src.bin.Element); err != nil {
+	if b.bin.GetState() != gst.StatePlaying {
+		if err := b.pipeline.Remove(src.bin.Element); err != nil {
 			return false, errors.ErrGstPipelineError(err)
 		}
 		return true, nil
 	}
 
-	if err := src.downgradeStateTo(gst.StateNull); err != nil {
+	if err := src.bin.SetState(gst.StateNull); err != nil {
 		return false, err
 	}
 
@@ -142,7 +130,7 @@ func (b *Bin) RemoveSourceBin(name string) (bool, error) {
 	}
 	srcPad.Unlink(sinkPad.Pad)
 
-	if err = b.bin.Remove(src.bin.Element); err != nil {
+	if err = b.pipeline.Remove(src.bin.Element); err != nil {
 		return false, errors.ErrGstPipelineError(err)
 	}
 
@@ -177,11 +165,11 @@ func (b *Bin) AddSinkBin(sink *Bin) error {
 	defer b.mu.Unlock()
 
 	b.sinks = append(b.sinks, sink)
-	if err := b.bin.Add(sink.bin.Element); err != nil {
+	if err := b.pipeline.Add(sink.bin.Element); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	if b.state == gst.StatePlaying {
+	if b.bin.GetState() == gst.StatePlaying {
 		sink.mu.Lock()
 		srcPad, sinkPad, err := createGhostPads(b, sink)
 		sink.mu.Unlock()
@@ -223,8 +211,8 @@ func (b *Bin) RemoveSinkBin(name string) (bool, error) {
 		return false, nil
 	}
 
-	if b.state != gst.StatePlaying {
-		if err := b.bin.Remove(sink.bin.Element); err != nil {
+	if b.bin.GetState() != gst.StatePlaying {
+		if err := b.pipeline.Remove(sink.bin.Element); err != nil {
 			return false, errors.ErrGstPipelineError(err)
 		}
 		return true, nil
@@ -242,14 +230,14 @@ func (b *Bin) RemoveSinkBin(name string) (bool, error) {
 		sinkPad.Pad.SendEvent(gst.NewEOSEvent())
 
 		b.mu.Lock()
-		err = b.bin.Remove(sink.bin.Element)
+		err = b.pipeline.Remove(sink.bin.Element)
 		b.mu.Unlock()
 		if err != nil {
 			b.OnError(errors.ErrGstPipelineError(err))
 			return gst.PadProbeRemove
 		}
 
-		if err = sink.downgradeStateTo(gst.StateNull); err != nil {
+		if err = sink.bin.SetState(gst.StateNull); err != nil {
 			logger.Warnw(fmt.Sprintf("failed to change %s state", sink.bin.GetName()), err)
 		}
 
@@ -261,35 +249,21 @@ func (b *Bin) RemoveSinkBin(name string) (bool, error) {
 }
 
 func (b *Bin) SetState(state gst.State) error {
-	b.stateLock.Lock()
-	b.pendingState = state
-	b.stateLock.Unlock()
+	return b.bin.SetState(state)
+}
 
-	for {
-		b.stateLock.Lock()
+func (b *Bin) SetLinkFunc(f func() error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
-		switch {
-		case b.pendingState != state || b.state == b.pendingState:
-			b.stateLock.Unlock()
-			return nil
+	b.linkFunc = f
+}
 
-		case b.state < b.pendingState:
-			nextState := b.state + 1
-			if err := b.upgradeStateTo(nextState); err != nil {
-				return err
-			}
-			b.state = nextState
+func (b *Bin) SetEOSFunc(f func()) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
-		case b.state > b.pendingState:
-			nextState := b.state - 1
-			if err := b.downgradeStateTo(nextState); err != nil {
-				return err
-			}
-			b.state = nextState
-		}
-
-		b.stateLock.Unlock()
-	}
+	b.eosFunc = f
 }
 
 // ----- Internal -----
@@ -297,8 +271,6 @@ func (b *Bin) SetState(state gst.State) error {
 func (b *Bin) link() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-
-	logger.Debugw("linking", "bin", b.bin.GetName())
 
 	for _, src := range b.srcs {
 		if err := src.link(); err != nil {
@@ -311,14 +283,23 @@ func (b *Bin) link() error {
 		}
 	}
 
-	if b.binType == BinTypeQueue {
-		// link src bins to sink bins using queues
-		b.queues = make(map[string]*gst.Element)
+	switch {
+	case b.linkFunc != nil:
+		return b.linkFunc()
+
+	case b.binType == BinTypeMultiStream:
+		// link all src bins to all sink bins
+		addQueues := len(b.sinks) > 1
 		for _, src := range b.srcs {
 			src.mu.Lock()
 			for _, sink := range b.sinks {
 				sink.mu.Lock()
-				err := b.queueLink(src, sink)
+				var err error
+				if addQueues {
+					err = b.linkPeersWithQueue(src, sink)
+				} else {
+					err = linkPeers(src, sink)
+				}
 				sink.mu.Unlock()
 				if err != nil {
 					src.mu.Unlock()
@@ -327,7 +308,9 @@ func (b *Bin) link() error {
 			}
 			src.mu.Unlock()
 		}
-	} else {
+		return nil
+
+	default:
 		// link elements
 		if err := gst.ElementLinkMany(b.elements...); err != nil {
 			return errors.ErrGstPipelineError(err)
@@ -336,145 +319,71 @@ func (b *Bin) link() error {
 		// link src bins to elements
 		for _, src := range b.srcs {
 			src.mu.Lock()
-			srcPad, sinkPad, err := createGhostPads(src, b)
+			err := linkPeers(src, b)
 			src.mu.Unlock()
 			if err != nil {
 				return err
-			}
-			if padReturn := srcPad.Link(sinkPad.Pad); padReturn != gst.PadLinkOK {
-				return errors.ErrPadLinkFailed(src.bin.GetName(), b.bin.GetName(), padReturn.String())
 			}
 		}
 
 		// link elements to sink bins
 		for _, sink := range b.sinks {
 			sink.mu.Lock()
-			srcPad, sinkPad, err := createGhostPads(b, sink)
+			err := linkPeers(b, sink)
 			sink.mu.Unlock()
 			if err != nil {
 				return err
 			}
-			if padReturn := srcPad.Link(sinkPad.Pad); padReturn != gst.PadLinkOK {
-				return errors.ErrPadLinkFailed(b.bin.GetName(), sink.bin.GetName(), padReturn.String())
-			}
 		}
-	}
 
-	return nil
+		return nil
+	}
 }
 
-func (b *Bin) queueLink(src, sink *Bin) error {
-	srcName := src.bin.GetName()
-	sinkName := sink.bin.GetName()
-	queueName := fmt.Sprintf("%s_queue_%s", srcName, sinkName)
-	queue, err := BuildQueue(queueName, b.latency, true)
-	if err != nil {
-		return err
-	}
-
-	b.queues[queueName] = queue
-	if err = b.bin.Add(queue); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-
+func linkPeers(src, sink *Bin) error {
 	srcPad, sinkPad, err := createGhostPads(src, sink)
 	if err != nil {
 		return err
 	}
-	if padReturn := srcPad.Link(queue.GetStaticPad("sink")); padReturn != gst.PadLinkOK {
+	if padReturn := srcPad.Link(sinkPad.Pad); padReturn != gst.PadLinkOK {
+		return errors.ErrPadLinkFailed(src.bin.GetName(), sink.bin.GetName(), padReturn.String())
+	}
+	return nil
+}
+
+func (b *Bin) linkPeersWithQueue(src, sink *Bin) error {
+	srcName := src.bin.GetName()
+	sinkName := sink.bin.GetName()
+
+	queueName := fmt.Sprintf("%s_%s_queue", srcName, sinkName)
+	queue, err := BuildQueue(queueName, b.latency, true)
+	if err != nil {
+		return err
+	}
+	b.queues[queueName] = queue
+	if err = sink.bin.Add(queue); err != nil {
+		return err
+	}
+
+	srcPad, sinkPad, err := createQueueGhostPads(src, sink, queue)
+	if err != nil {
+		return err
+	}
+	if padReturn := srcPad.Link(sinkPad.Pad); padReturn != gst.PadLinkOK {
 		return errors.ErrPadLinkFailed(srcName, queueName, padReturn.String())
 	}
-	if padReturn := queue.GetStaticPad("src").Link(sinkPad.Pad); padReturn != gst.PadLinkOK {
+
+	sinkElement := sink.elements[0]
+	var pad *gst.Pad
+	if sink.binType != BinTypeMuxed || src.binType == BinTypeMuxed {
+		pad = getPad(sinkElement, "sink")
+	} else {
+		pad = getPad(sinkElement, string(src.binType))
+	}
+	if padReturn := queue.GetStaticPad("src").Link(pad); padReturn != gst.PadLinkOK {
 		return errors.ErrPadLinkFailed(queueName, sinkName, padReturn.String())
 	}
 
-	return nil
-}
-
-func createGhostPads(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad, error) {
-	srcElement := src.elements[len(src.elements)-1]
-	sinkElement := sink.elements[0]
-
-	var srcPad, sinkPad *gst.GhostPad
-	if src.binType != BinTypeMuxed || sink.binType == BinTypeMuxed {
-		srcPad = src.createGhostPad(srcElement, "src", sink)
-	} else {
-		srcPad = src.createGhostPad(srcElement, string(sink.binType), sink)
-	}
-	if sink.binType != BinTypeMuxed || src.binType == BinTypeMuxed {
-		sinkPad = sink.createGhostPad(sinkElement, "sink", src)
-	} else {
-		sinkPad = sink.createGhostPad(sinkElement, string(src.binType), src)
-	}
-
-	if srcPad == nil || sinkPad == nil {
-		return nil, nil, errors.ErrGhostPadFailed
-	}
-
-	src.pads[sink.bin.GetName()] = srcPad
-	sink.pads[src.bin.GetName()] = sinkPad
-	return srcPad, sinkPad, nil
-}
-
-func (b *Bin) createGhostPad(e *gst.Element, padFormat string, other *Bin) *gst.GhostPad {
-	if pad := e.GetStaticPad(padFormat); pad != nil {
-		return gst.NewGhostPad(fmt.Sprintf("%s_%s", b.bin.GetName(), padFormat), pad)
-	}
-	if pad := e.GetRequestPad(fmt.Sprintf("%s_%%u", padFormat)); pad != nil {
-		return gst.NewGhostPad(fmt.Sprintf("%s_%s_%s", b.bin.GetName(), padFormat, other.bin.GetName()), pad)
-	}
-	return nil
-}
-
-func removeGhostPads(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad, error) {
-	var srcPad, sinkPad *gst.GhostPad
-
-	srcPad = src.pads[sink.bin.GetName()]
-	delete(src.pads, sink.bin.GetName())
-
-	sinkPad = sink.pads[src.bin.GetName()]
-	delete(sink.pads, src.bin.GetName())
-
-	if srcPad == nil || sinkPad == nil {
-		return nil, nil, errors.ErrGhostPadFailed
-	}
-
-	return srcPad, sinkPad, nil
-}
-
-func (b *Bin) upgradeStateTo(state gst.State) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	for _, sink := range b.sinks {
-		if err := sink.upgradeStateTo(state); err != nil {
-			return err
-		}
-	}
-	if err := b.bin.BlockSetState(state); err != nil {
-		return errors.ErrStateChangeFailed(b.bin.GetName(), state)
-	}
-
-	b.state = state
-	return nil
-}
-
-func (b *Bin) downgradeStateTo(state gst.State) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	for _, src := range b.srcs {
-		if err := src.downgradeStateTo(state); err != nil {
-			return err
-		}
-	}
-	if b.state > state {
-		if err := b.bin.BlockSetState(state); err != nil {
-			return errors.ErrStateChangeFailed(b.bin.GetName(), state)
-		}
-	}
-
-	b.state = state
 	return nil
 }
 

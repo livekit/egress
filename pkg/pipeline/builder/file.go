@@ -23,8 +23,8 @@ import (
 	"github.com/livekit/egress/pkg/types"
 )
 
-func BuildFileBin(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*gstreamer.Bin, error) {
-	b := gstreamer.NewBin("file", gstreamer.BinTypeMuxed, callbacks)
+func BuildFileBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
+	b := pipeline.NewBin("file", gstreamer.BinTypeMuxed)
 	o := p.GetFileConfig()
 
 	var mux *gst.Element

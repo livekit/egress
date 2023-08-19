@@ -58,6 +58,7 @@ type SDKSource struct {
 	active      atomic.Int32
 	audioWriter *sdk.AppWriter
 	videoWriter *sdk.AppWriter
+	closed      core.Fuse
 
 	startRecording chan struct{}
 	endRecording   chan struct{}
@@ -76,6 +77,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		}),
 		initialized:          core.NewFuse(),
 		filenameReplacements: make(map[string]string),
+		closed:               core.NewFuse(),
 		startRecording:       startRecording,
 		endRecording:         make(chan struct{}),
 	}
@@ -110,24 +112,16 @@ func (s *SDKSource) GetEndedAt() int64 {
 }
 
 func (s *SDKSource) CloseWriters() {
-	s.sync.End()
+	s.closed.Once(func() {
+		s.sync.End()
 
-	var wg sync.WaitGroup
-	if s.audioWriter != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			s.audioWriter.Drain(false)
-		}()
-	}
-	if s.videoWriter != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			s.videoWriter.Drain(false)
-		}()
-	}
-	wg.Wait()
+		if s.audioWriter != nil {
+			go s.audioWriter.Drain(false)
+		}
+		if s.videoWriter != nil {
+			go s.videoWriter.Drain(false)
+		}
+	})
 }
 
 func (s *SDKSource) StreamStopped(trackID string) {
@@ -268,6 +262,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		ClockRate:   track.Codec().ClockRate,
 	}
 
+	<-s.callbacks.GstReady
 	switch ts.MimeType {
 	case types.MimeTypeOpus:
 		s.AudioEnabled = true
@@ -283,6 +278,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			return
 		}
 
+		ts.EOSFunc = s.CloseWriters
 		s.audioWriter = writer
 		s.AudioTrack = ts
 
@@ -398,7 +394,6 @@ func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.Remote
 
 func (s *SDKSource) onTrackFinished(trackID string) {
 	var w *sdk.AppWriter
-
 	if s.audioWriter != nil && s.audioWriter.TrackID() == trackID {
 		logger.Infow("removing audio writer")
 		w = s.audioWriter

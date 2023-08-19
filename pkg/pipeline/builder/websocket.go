@@ -20,8 +20,8 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 )
 
-func BuildWebsocketBin(appSinkCallbacks *app.SinkCallbacks, callbacks *gstreamer.Callbacks) (*gstreamer.Bin, error) {
-	b := gstreamer.NewBin("websocket", gstreamer.BinTypeMuxed, callbacks)
+func BuildWebsocketBin(pipeline *gstreamer.Pipeline, appSinkCallbacks *app.SinkCallbacks) (*gstreamer.Bin, error) {
+	b := pipeline.NewBin("websocket", gstreamer.BinTypeMuxed)
 
 	appSink, err := app.NewAppSink()
 	if err != nil {

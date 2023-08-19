@@ -1,14 +1,31 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package gstreamer
 
 import (
 	"sync"
+
+	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 )
 
 type Callbacks struct {
-	mu sync.RWMutex
+	mu       sync.RWMutex
+	GstReady chan struct{}
 
 	// upstream callbacks
 	onError func(error)
@@ -19,6 +36,10 @@ type Callbacks struct {
 	onTrackMuted   []func(string)
 	onTrackUnmuted []func(string)
 	onTrackRemoved []func(string)
+
+	// internal
+	addBin    func(bin *gst.Bin)
+	removeBin func(bin *gst.Bin)
 }
 
 func (c *Callbacks) SetOnError(f func(error)) {

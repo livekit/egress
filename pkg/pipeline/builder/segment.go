@@ -32,11 +32,8 @@ type FirstSampleMetadata struct {
 	StartDate int64 // Real time date of the first media sample
 }
 
-// TODO
-var startDate time.Time
-
-func BuildSegmentBin(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*gstreamer.Bin, error) {
-	b := gstreamer.NewBin("segment", gstreamer.BinTypeMuxed, callbacks)
+func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
+	b := pipeline.NewBin("segment", gstreamer.BinTypeMuxed)
 	o := p.GetSegmentConfig()
 
 	h264parse, err := gst.NewElement("h264parse")
@@ -58,6 +55,7 @@ func BuildSegmentBin(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
+	var startDate time.Time
 	_, err = sink.Connect("format-location-full", func(self *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
 		var pts time.Duration
 		if firstSample != nil && firstSample.GetBuffer() != nil {

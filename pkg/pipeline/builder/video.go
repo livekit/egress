@@ -25,12 +25,12 @@ import (
 	"github.com/livekit/egress/pkg/types"
 )
 
-func BuildVideoBin(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*gstreamer.Bin, error) {
-	b := gstreamer.NewBin("video", gstreamer.BinTypeVideo, callbacks)
+func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
+	b := pipeline.NewBin("video", gstreamer.BinTypeVideo)
 
 	switch p.SourceType {
 	case types.SourceTypeSDK:
-		if err := buildSDKVideoInput(b, p); err != nil {
+		if err := buildSDKVideoInput(pipeline, b, p); err != nil {
 			return nil, err
 		}
 
@@ -103,9 +103,9 @@ func buildWebVideoInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	return nil
 }
 
-func buildSDKVideoInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
+func buildSDKVideoInput(pipeline *gstreamer.Pipeline, b *gstreamer.Bin, p *config.PipelineConfig) error {
 	if p.VideoTrack != nil {
-		appSrcBin, err := buildVideoAppSrcBin(p, b.Callbacks)
+		appSrcBin, err := buildVideoAppSrcBin(pipeline, p)
 		if err != nil {
 			return err
 		}
@@ -123,10 +123,11 @@ func buildSDKVideoInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	return nil
 }
 
-func buildVideoAppSrcBin(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*gstreamer.Bin, error) {
+func buildVideoAppSrcBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
 	track := p.VideoTrack
 
-	b := gstreamer.NewBin(track.TrackID, gstreamer.BinTypeVideo, callbacks)
+	b := pipeline.NewBin(track.TrackID, gstreamer.BinTypeVideo)
+	b.SetEOSFunc(track.EOSFunc)
 
 	track.AppSrc.Element.SetArg("format", "time")
 	if err := track.AppSrc.Element.SetProperty("is-live", true); err != nil {
