@@ -67,8 +67,11 @@ func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[
 				return nil, err
 			}
 		}
-		callbacks.AddOnStop(s.OnStop)
-		sinks[egressType] = s
+
+		if s != nil {
+			callbacks.AddOnStop(s.OnStop)
+			sinks[egressType] = s
+		}
 	}
 
 	return sinks, nil
