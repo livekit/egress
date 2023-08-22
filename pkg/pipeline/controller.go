@@ -83,7 +83,7 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 		_, span := tracer.Start(ctx, "gst.Init")
 		defer span.End()
 		gst.Init(nil)
-		// gst.SetLogFunction(c.gstLog)
+		gst.SetLogFunction(c.gstLog)
 		close(c.callbacks.GstReady)
 	}()
 

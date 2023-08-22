@@ -21,7 +21,7 @@ import (
 )
 
 func BuildWebsocketBin(pipeline *gstreamer.Pipeline, appSinkCallbacks *app.SinkCallbacks) (*gstreamer.Bin, error) {
-	b := pipeline.NewBin("websocket", gstreamer.BinTypeMuxed)
+	b := pipeline.NewBin("websocket")
 
 	appSink, err := app.NewAppSink()
 	if err != nil {

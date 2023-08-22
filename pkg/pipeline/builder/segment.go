@@ -33,7 +33,7 @@ type FirstSampleMetadata struct {
 }
 
 func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
-	b := pipeline.NewBin("segment", gstreamer.BinTypeMuxed)
+	b := pipeline.NewBin("segment")
 	o := p.GetSegmentConfig()
 
 	h264parse, err := gst.NewElement("h264parse")

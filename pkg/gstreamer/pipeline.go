@@ -43,7 +43,6 @@ func NewPipeline(name string, latency uint64, callbacks *Callbacks) (*Pipeline, 
 			Callbacks: callbacks,
 			pipeline:  pipeline,
 			bin:       pipeline.Bin,
-			binType:   BinTypeMultiStream,
 			latency:   latency,
 			queues:    make(map[string]*gst.Element),
 		},
@@ -62,7 +61,6 @@ func (p *Pipeline) SetWatch(watch func(msg *gst.Message) bool) {
 }
 
 func (p *Pipeline) SetState(state gst.State) error {
-	logger.Debugw("updating pipeline state", "state", state)
 	if err := p.pipeline.SetState(state); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
@@ -90,7 +88,6 @@ func (p *Pipeline) SendEOS() {
 }
 
 func (p *Pipeline) Stop() {
-	logger.Debugw("setting state to null")
 	if err := p.SetState(gst.StateNull); err != nil {
 		p.OnError(err)
 		return

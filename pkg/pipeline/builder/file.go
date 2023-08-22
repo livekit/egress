@@ -24,7 +24,7 @@ import (
 )
 
 func BuildFileBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
-	b := pipeline.NewBin("file", gstreamer.BinTypeMuxed)
+	b := pipeline.NewBin("file")
 	o := p.GetFileConfig()
 
 	var mux *gst.Element

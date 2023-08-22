@@ -26,11 +26,11 @@ import (
 )
 
 func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
-	b := pipeline.NewBin("video", gstreamer.BinTypeVideo)
+	b := pipeline.NewBin("video")
 
 	switch p.SourceType {
 	case types.SourceTypeSDK:
-		if err := buildSDKVideoInput(pipeline, b, p); err != nil {
+		if err := buildSDKVideoInput(b, p); err != nil {
 			return nil, err
 		}
 
@@ -103,9 +103,9 @@ func buildWebVideoInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	return nil
 }
 
-func buildSDKVideoInput(pipeline *gstreamer.Pipeline, b *gstreamer.Bin, p *config.PipelineConfig) error {
+func buildSDKVideoInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	if p.VideoTrack != nil {
-		appSrcBin, err := buildVideoAppSrcBin(pipeline, p)
+		appSrcBin, err := buildVideoAppSrcBin(b, p)
 		if err != nil {
 			return err
 		}
@@ -123,10 +123,10 @@ func buildSDKVideoInput(pipeline *gstreamer.Pipeline, b *gstreamer.Bin, p *confi
 	return nil
 }
 
-func buildVideoAppSrcBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
+func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig) (*gstreamer.Bin, error) {
 	track := p.VideoTrack
 
-	b := pipeline.NewBin(track.TrackID, gstreamer.BinTypeVideo)
+	b := videoBin.NewBin(track.TrackID)
 	b.SetEOSFunc(track.EOSFunc)
 
 	track.AppSrc.Element.SetArg("format", "time")
