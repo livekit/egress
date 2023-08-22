@@ -265,7 +265,6 @@ func (b *Bin) link() error {
 	}
 
 	if len(b.elements) > 0 {
-		logger.Debugw(fmt.Sprintf("linking %s", b.bin.GetName()))
 		if b.linkFunc != nil {
 			if err := b.linkFunc(); err != nil {
 				return err
@@ -277,8 +276,7 @@ func (b *Bin) link() error {
 			}
 		}
 
-		// link src bins to elements
-		for _, src := range b.srcs {
+		for _, src := range getPeerSrcs(b.srcs) {
 			src.mu.Lock()
 			err := linkPeers(src, b)
 			src.mu.Unlock()
@@ -287,8 +285,7 @@ func (b *Bin) link() error {
 			}
 		}
 
-		// link elements to sink bins
-		for _, sink := range b.sinks {
+		for _, sink := range getPeerSinks(b.sinks) {
 			sink.mu.Lock()
 			err := linkPeers(b, sink)
 			sink.mu.Unlock()
@@ -297,11 +294,14 @@ func (b *Bin) link() error {
 			}
 		}
 	} else {
-		// link all src bins to all sink bins
-		addQueues := len(b.sinks) > 1
-		for _, src := range b.srcs {
+		// link src bins to sink bins
+		srcs := getPeerSrcs(b.srcs)
+		sinks := getPeerSinks(b.sinks)
+
+		addQueues := len(sinks) > 1
+		for _, src := range srcs {
 			src.mu.Lock()
-			for _, sink := range b.sinks {
+			for _, sink := range sinks {
 				sink.mu.Lock()
 				var err error
 				if addQueues {
@@ -320,6 +320,30 @@ func (b *Bin) link() error {
 	}
 
 	return nil
+}
+
+func getPeerSrcs(srcs []*Bin) []*Bin {
+	flattened := make([]*Bin, 0, len(srcs))
+	for _, src := range srcs {
+		if len(src.elements) > 0 {
+			flattened = append(flattened, src)
+		} else {
+			flattened = append(flattened, getPeerSrcs(src.srcs)...)
+		}
+	}
+	return flattened
+}
+
+func getPeerSinks(sinks []*Bin) []*Bin {
+	flattened := make([]*Bin, 0, len(sinks))
+	for _, sink := range sinks {
+		if len(sink.elements) > 0 {
+			flattened = append(flattened, sink)
+		} else {
+			flattened = append(flattened, getPeerSinks(sink.sinks)...)
+		}
+	}
+	return flattened
 }
 
 func linkPeers(src, sink *Bin) error {

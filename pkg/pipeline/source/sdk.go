@@ -299,6 +299,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			return
 		}
 
+		ts.EOSFunc = s.CloseWriters
 		s.videoWriter = writer
 		s.VideoTrack = ts
 
