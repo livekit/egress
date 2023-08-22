@@ -34,7 +34,7 @@ func (r *Runner) testTrackComposite(t *testing.T) {
 	r.testTrackCompositeFile(t)
 	r.testTrackCompositeStream(t)
 	r.testTrackCompositeSegments(t)
-	// r.testTrackCompositeMulti(t)
+	r.testTrackCompositeMulti(t)
 }
 
 func (r *Runner) runTrackTest(

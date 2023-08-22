@@ -33,8 +33,10 @@ type Bin struct {
 	bin      *gst.Bin
 	latency  uint64
 
-	linkFunc func() error
-	eosFunc  func()
+	linkFunc   func() error
+	eosFunc    func()
+	getSrcPad  func(string) *gst.Pad
+	getSinkPad func(string) *gst.Pad
 
 	srcs     []*Bin                   // source bins
 	elements []*gst.Element           // elements within this bin
@@ -240,6 +242,20 @@ func (b *Bin) SetLinkFunc(f func() error) {
 	b.linkFunc = f
 }
 
+func (b *Bin) SetGetSrcPad(f func(string) *gst.Pad) {
+	b.mu.Lock()
+	b.mu.Unlock()
+
+	b.getSrcPad = f
+}
+
+func (b *Bin) SetGetSinkPad(f func(string) *gst.Pad) {
+	b.mu.Lock()
+	b.mu.Unlock()
+
+	b.getSinkPad = f
+}
+
 func (b *Bin) SetEOSFunc(f func()) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -322,30 +338,6 @@ func (b *Bin) link() error {
 	return nil
 }
 
-func getPeerSrcs(srcs []*Bin) []*Bin {
-	flattened := make([]*Bin, 0, len(srcs))
-	for _, src := range srcs {
-		if len(src.elements) > 0 {
-			flattened = append(flattened, src)
-		} else {
-			flattened = append(flattened, getPeerSrcs(src.srcs)...)
-		}
-	}
-	return flattened
-}
-
-func getPeerSinks(sinks []*Bin) []*Bin {
-	flattened := make([]*Bin, 0, len(sinks))
-	for _, sink := range sinks {
-		if len(sink.elements) > 0 {
-			flattened = append(flattened, sink)
-		} else {
-			flattened = append(flattened, getPeerSinks(sink.sinks)...)
-		}
-	}
-	return flattened
-}
-
 func linkPeers(src, sink *Bin) error {
 	srcPad, sinkPad, err := createGhostPads(src, sink)
 	if err != nil {
@@ -408,4 +400,28 @@ func (b *Bin) sendEOS() {
 	} else if len(b.elements) > 0 {
 		b.bin.SendEvent(gst.NewEOSEvent())
 	}
+}
+
+func getPeerSrcs(srcs []*Bin) []*Bin {
+	flattened := make([]*Bin, 0, len(srcs))
+	for _, src := range srcs {
+		if len(src.elements) > 0 {
+			flattened = append(flattened, src)
+		} else {
+			flattened = append(flattened, getPeerSrcs(src.srcs)...)
+		}
+	}
+	return flattened
+}
+
+func getPeerSinks(sinks []*Bin) []*Bin {
+	flattened := make([]*Bin, 0, len(sinks))
+	for _, sink := range sinks {
+		if len(sink.elements) > 0 {
+			flattened = append(flattened, sink)
+		} else {
+			flattened = append(flattened, getPeerSinks(sink.sinks)...)
+		}
+	}
+	return flattened
 }

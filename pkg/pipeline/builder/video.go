@@ -351,16 +351,6 @@ func addVideoEncoder(b *gstreamer.Bin, p *config.PipelineConfig) error {
 			return err
 		}
 
-		if p.GetSegmentConfig() != nil {
-			h264parse, err := gst.NewElement("h264parse")
-			if err != nil {
-				return err
-			}
-			if err = b.AddElement(h264parse); err != nil {
-				return err
-			}
-		}
-
 		return nil
 
 	case types.MimeTypeVP9:

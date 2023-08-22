@@ -27,7 +27,7 @@ func createGhostPads(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad, error) {
 	srcName := src.bin.GetName()
 	sinkName := sink.bin.GetName()
 
-	srcPad, sinkPad, err := getPads(src.elements, sink.elements)
+	srcPad, sinkPad, err := getPads(src, sink)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -47,7 +47,7 @@ func createGhostPadsWithQueue(src, sink *Bin, queue *gst.Element) (*gst.GhostPad
 	srcName := src.bin.GetName()
 	sinkName := sink.bin.GetName()
 
-	srcPad, sinkPad, err := getPads(src.elements, sink.elements)
+	srcPad, sinkPad, err := getPads(src, sink)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -76,15 +76,30 @@ func getGhostPads(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad) {
 	return srcPad, sinkPad
 }
 
-func getPads(srcElements, sinkElements []*gst.Element) (*gst.Pad, *gst.Pad, error) {
-	srcIdx := len(srcElements) - 1
-	sinkIdx := 0
+func getPads(src, sink *Bin) (*gst.Pad, *gst.Pad, error) {
+	var srcPad, sinkPad *gst.Pad
+	srcElement := src.elements[len(src.elements)-1]
+	sinkElement := sink.elements[0]
 
-	srcElement := srcElements[srcIdx]
-	sinkElement := sinkElements[sinkIdx]
+	if src.getSinkPad != nil {
+		srcPad = src.getSinkPad(sink.bin.GetName())
+		for _, padTemplate := range sinkElement.GetPadTemplates() {
+			if padTemplate.Direction() == gst.PadDirectionSink {
+				return srcPad, getPad(sinkElement, padTemplate), nil
+			}
+		}
+	}
+	if sink.getSrcPad != nil {
+		sinkPad = sink.getSrcPad(src.bin.GetName())
+		for _, padTemplate := range srcElement.GetPadTemplates() {
+			if padTemplate.Direction() == gst.PadDirectionSource {
+				return getPad(srcElement, padTemplate), sinkPad, nil
+			}
+		}
+	}
 
-	srcPrimary, srcSecondary, srcAny := getPadTemplates(srcElements, gst.PadDirectionSource)
-	sinkPrimary, sinkSecondary, sinkAny := getPadTemplates(sinkElements, gst.PadDirectionSink)
+	srcPrimary, srcSecondary, srcAny := getPadTemplates(src.elements, gst.PadDirectionSource)
+	sinkPrimary, sinkSecondary, sinkAny := getPadTemplates(sink.elements, gst.PadDirectionSink)
 
 	for srcCaps, srcTemplate := range srcPrimary {
 		if sinkTemplate, ok := sinkPrimary[srcCaps]; ok {
