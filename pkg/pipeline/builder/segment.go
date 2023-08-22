@@ -36,11 +36,6 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	b := pipeline.NewBin("segment")
 	o := p.GetSegmentConfig()
 
-	h264parse, err := gst.NewElement("h264parse")
-	if err != nil {
-		return nil, err
-	}
-
 	sink, err := gst.NewElement("splitmuxsink")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
@@ -91,7 +86,7 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	if err = b.AddElements(h264parse, sink); err != nil {
+	if err = b.AddElement(sink); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 

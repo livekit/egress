@@ -16,6 +16,7 @@ package gstreamer
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -90,36 +91,33 @@ func getPads(srcElements, sinkElements []*gst.Element) (*gst.Pad, *gst.Pad, erro
 	sinkTypes := getPadTemplates(sinkElements, gst.PadDirectionSink)
 
 	for srcCaps, srcTemplate := range srcTypes {
-		for sinkCaps, sinkTemplate := range sinkTypes {
-			if srcCaps.CanIntersect(sinkCaps) {
-				// logger.Infow(fmt.Sprintf(
-				// 	"linking %s to %s", srcElement.GetName(), sinkElement.GetName()),
-				// 	"src", srcTemplate.Name(),
-				// 	"sink", sinkTemplate.Name(),
-				// )
-				var srcPad, sinkPad *gst.Pad
-				if srcTemplate.Presence() == gst.PadPresenceAlways {
-					srcPad = srcElement.GetStaticPad(srcTemplate.Name())
-				} else {
-					srcPad = srcElement.GetRequestPad(srcTemplate.Name())
-				}
-				if sinkTemplate.Presence() == gst.PadPresenceAlways {
-					sinkPad = sinkElement.GetStaticPad(sinkTemplate.Name())
-				} else {
-					sinkPad = sinkElement.GetRequestPad(sinkTemplate.Name())
-				}
-				return srcPad, sinkPad, nil
+		if sinkTemplate, ok := sinkTypes[srcCaps]; ok {
+			// logger.Infow(fmt.Sprintf(
+			// 	"linking %s to %s", srcElement.GetName(), sinkElement.GetName()),
+			// 	"src", srcTemplate.Name(),
+			// 	"sink", sinkTemplate.Name(),
+			// )
+			var srcPad, sinkPad *gst.Pad
+			if srcTemplate.Presence() == gst.PadPresenceAlways {
+				srcPad = srcElement.GetStaticPad(srcTemplate.Name())
+			} else {
+				srcPad = srcElement.GetRequestPad(srcTemplate.Name())
 			}
+			if sinkTemplate.Presence() == gst.PadPresenceAlways {
+				sinkPad = sinkElement.GetStaticPad(sinkTemplate.Name())
+			} else {
+				sinkPad = sinkElement.GetRequestPad(sinkTemplate.Name())
+			}
+			return srcPad, sinkPad, nil
 		}
 	}
 
 	return nil, nil, errors.ErrGhostPadFailed
 }
 
-func getPadTemplates(elements []*gst.Element, direction gst.PadDirection) map[*gst.Caps]*gst.PadTemplate {
-	templates := make(map[*gst.Caps]*gst.PadTemplate)
+func getPadTemplates(elements []*gst.Element, direction gst.PadDirection) map[string]*gst.PadTemplate {
+	templates := make(map[string]*gst.PadTemplate)
 
-	var anyCaps *gst.Caps
 	var anyTemplate *gst.PadTemplate
 
 	var i int
@@ -133,39 +131,40 @@ func getPadTemplates(elements []*gst.Element, direction gst.PadDirection) map[*g
 		for _, padTemplate := range padTemplates {
 			if padTemplate.Direction() == direction {
 				caps := padTemplate.Caps()
+
 				if firstLoop {
-					if caps.IsAny() || caps.IsEmpty() {
-						anyTemplate = padTemplate
-						anyCaps = caps
-						break
+					if caps.IsAny() {
+						if strings.HasPrefix(padTemplate.Name(), direction.String()) {
+							anyTemplate = padTemplate
+						} else {
+							templates[strings.Split(padTemplate.Name(), "_")[0]] = padTemplate
+						}
 					} else {
-						templates[caps] = padTemplate
+						templates[strings.SplitN(caps.String(), "/", 2)[0]] = padTemplate
 					}
 				} else {
-					if caps.IsAny() || caps.IsEmpty() {
-						break
+					if caps.IsAny() {
+						if !strings.HasPrefix(padTemplate.Name(), direction.String()) {
+							templates[strings.Split(padTemplate.Name(), "_")[0]] = anyTemplate
+							return templates
+						}
 					} else {
-						templates[caps] = anyTemplate
+						templates[strings.SplitN(caps.String(), "/", 2)[0]] = anyTemplate
 						return templates
 					}
 				}
 			}
 		}
-
 		if anyTemplate == nil {
 			return templates
-		} else {
-			firstLoop = false
 		}
 
+		firstLoop = false
 		if direction == gst.PadDirectionSource {
 			i--
 		} else {
 			i++
 		}
-	}
-	if anyTemplate != nil {
-		templates[anyCaps] = anyTemplate
 	}
 
 	return templates
