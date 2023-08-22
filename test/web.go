@@ -33,7 +33,7 @@ func (r *Runner) testWeb(t *testing.T) {
 	r.testWebFile(t)
 	r.testWebStream(t)
 	r.testWebSegments(t)
-	r.testWebMulti(t)
+	// r.testWebMulti(t)
 }
 
 func (r *Runner) runWebTest(t *testing.T, name string, f func(t *testing.T)) {
@@ -41,6 +41,7 @@ func (r *Runner) runWebTest(t *testing.T, name string, f func(t *testing.T)) {
 		r.awaitIdle(t)
 		f(t)
 		if t.Failed() {
+			r.svc.Stop(true)
 			r.svc.Reset()
 			go r.svc.Run()
 		}

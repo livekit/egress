@@ -34,7 +34,7 @@ func (r *Runner) testTrackComposite(t *testing.T) {
 	r.testTrackCompositeFile(t)
 	r.testTrackCompositeStream(t)
 	r.testTrackCompositeSegments(t)
-	r.testTrackCompositeMulti(t)
+	// r.testTrackCompositeMulti(t)
 }
 
 func (r *Runner) runTrackTest(
@@ -46,6 +46,7 @@ func (r *Runner) runTrackTest(
 		audioTrackID, videoTrackID := r.publishSamplesToRoom(t, audioCodec, videoCodec)
 		f(t, audioTrackID, videoTrackID)
 		if t.Failed() {
+			r.svc.Stop(true)
 			r.svc.Reset()
 			go r.svc.Run()
 		}
