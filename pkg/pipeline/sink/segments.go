@@ -26,6 +26,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/sink/m3u8"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/types"
@@ -37,8 +38,9 @@ const maxPendingUploads = 100
 type SegmentSink struct {
 	uploader.Uploader
 
-	conf *config.PipelineConfig
 	*config.SegmentConfig
+	conf      *config.PipelineConfig
+	callbacks *gstreamer.Callbacks
 
 	playlist                  *m3u8.PlaylistWriter
 	currentItemStartTimestamp int64
@@ -58,7 +60,7 @@ type SegmentUpdate struct {
 	filename string
 }
 
-func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig) (*SegmentSink, error) {
+func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig, callbacks *gstreamer.Callbacks) (*SegmentSink, error) {
 	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
 	playlist, err := m3u8.NewPlaylistWriter(playlistName, o.SegmentDuration)
 	if err != nil {
@@ -69,6 +71,7 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 		Uploader:              u,
 		SegmentConfig:         o,
 		conf:                  p,
+		callbacks:             callbacks,
 		playlist:              playlist,
 		openSegmentsStartTime: make(map[string]int64),
 		endedSegments:         make(chan SegmentUpdate, maxPendingUploads),
@@ -82,7 +85,7 @@ func (s *SegmentSink) Start() error {
 		var err error
 		defer func() {
 			if err != nil {
-				s.conf.OnFailure(err)
+				s.callbacks.OnError(err)
 			}
 			s.done.Break()
 		}()
@@ -204,7 +207,7 @@ func (s *SegmentSink) endSegment(filename string, endTime int64) error {
 	return nil
 }
 
-func (s *SegmentSink) Finalize() error {
+func (s *SegmentSink) OnStop() error {
 	// wait for all pending upload jobs to finish
 	close(s.endedSegments)
 	<-s.done.Watch()

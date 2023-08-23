@@ -16,19 +16,22 @@ package sink
 
 import (
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/types"
 )
 
 type Sink interface {
 	Start() error
-	Finalize() error
+	OnStop() error
 	Cleanup()
 }
 
-func CreateSinks(p *config.PipelineConfig) (map[types.EgressType]Sink, error) {
+func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[types.EgressType]Sink, error) {
 	sinks := make(map[types.EgressType]Sink)
 	for egressType, c := range p.Outputs {
+		var s Sink
+		var err error
 		switch egressType {
 		case types.EgressTypeFile:
 			o := c.(*config.FileConfig)
@@ -38,7 +41,7 @@ func CreateSinks(p *config.PipelineConfig) (map[types.EgressType]Sink, error) {
 				return nil, err
 			}
 
-			sinks[egressType] = newFileSink(u, p, o)
+			s = newFileSink(u, p, o)
 
 		case types.EgressTypeSegments:
 			o := c.(*config.SegmentConfig)
@@ -48,11 +51,10 @@ func CreateSinks(p *config.PipelineConfig) (map[types.EgressType]Sink, error) {
 				return nil, err
 			}
 
-			s, err := newSegmentSink(u, p, o)
+			s, err = newSegmentSink(u, p, o, callbacks)
 			if err != nil {
 				return nil, err
 			}
-			sinks[egressType] = s
 
 		case types.EgressTypeStream:
 			// no sink needed
@@ -60,12 +62,14 @@ func CreateSinks(p *config.PipelineConfig) (map[types.EgressType]Sink, error) {
 		case types.EgressTypeWebsocket:
 			o := c.(*config.StreamConfig)
 
-			s, err := newWebsocketSink(o, types.MimeTypeRawAudio)
+			s, err = newWebsocketSink(o, types.MimeTypeRawAudio, callbacks)
 			if err != nil {
 				return nil, err
 			}
-			p.OnTrackMuted = append(p.OnTrackMuted, s.OnTrackMuted)
-			p.OnTrackUnmuted = append(p.OnTrackUnmuted, s.OnTrackUnmuted)
+		}
+
+		if s != nil {
+			callbacks.AddOnStop(s.OnStop)
 			sinks[egressType] = s
 		}
 	}

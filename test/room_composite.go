@@ -47,6 +47,7 @@ func (r *Runner) runRoomTest(t *testing.T, name string, audioCodec, videoCodec t
 		r.publishSamplesToRoom(t, audioCodec, videoCodec)
 		f(t)
 		if t.Failed() {
+			r.svc.Stop(true)
 			r.svc.Reset()
 			go r.svc.Run()
 		}

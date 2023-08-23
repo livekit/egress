@@ -42,7 +42,7 @@ func (r *Runner) runMultipleTest(
 	require.NoError(t, err)
 
 	if stream {
-		_, err := r.client.UpdateStream(context.Background(), egressID, &livekit.UpdateStreamRequest{
+		_, err = r.client.UpdateStream(context.Background(), egressID, &livekit.UpdateStreamRequest{
 			EgressId:      egressID,
 			AddOutputUrls: []string{streamUrl1},
 		})

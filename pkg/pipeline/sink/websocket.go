@@ -23,10 +23,13 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/tinyzimmer/go-gst/gst"
+	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 )
@@ -34,12 +37,13 @@ import (
 const pingPeriod = time.Second * 30
 
 type WebsocketSink struct {
-	mu     sync.Mutex
-	conn   *websocket.Conn
-	closed atomic.Bool
+	mu            sync.Mutex
+	conn          *websocket.Conn
+	sinkCallbacks *app.SinkCallbacks
+	closed        atomic.Bool
 }
 
-func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*WebsocketSink, error) {
+func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType, callbacks *gstreamer.Callbacks) (*WebsocketSink, error) {
 	// set Content-Type header
 	header := http.Header{}
 	header.Set("Content-Type", string(mimeType))
@@ -48,9 +52,50 @@ func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType) (*Websock
 	if err != nil {
 		return nil, err
 	}
-	return &WebsocketSink{
+
+	s := &WebsocketSink{
 		conn: conn,
-	}, nil
+	}
+	s.sinkCallbacks = &app.SinkCallbacks{
+		EOSFunc: func(appSink *app.Sink) {
+			_ = s.Close()
+		},
+		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
+			// pull the sample that triggered this callback
+			sample := appSink.PullSample()
+			if sample == nil {
+				return gst.FlowOK
+			}
+
+			// retrieve the buffer from the sample
+			buffer := sample.GetBuffer()
+			if buffer == nil {
+				return gst.FlowOK
+			}
+
+			// map the buffer to READ operation
+			samples := buffer.Map(gst.MapRead).Bytes()
+
+			// send to writer
+			_, err = s.Write(samples)
+			if err != nil {
+				if err == io.EOF {
+					return gst.FlowEOS
+				}
+				callbacks.OnError(err)
+			}
+
+			return gst.FlowOK
+		},
+	}
+	callbacks.AddOnTrackMuted(s.OnTrackMuted)
+	callbacks.AddOnTrackUnmuted(s.OnTrackUnmuted)
+
+	return s, nil
+}
+
+func (s *WebsocketSink) SinkCallbacks() *app.SinkCallbacks {
+	return s.sinkCallbacks
 }
 
 func (s *WebsocketSink) Start() error {
@@ -112,7 +157,7 @@ func (s *WebsocketSink) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed.Load() {
-		return 0, nil
+		return 0, io.EOF
 	}
 
 	return len(p), s.conn.WriteMessage(websocket.BinaryMessage, p)
@@ -151,13 +196,11 @@ func (s *WebsocketSink) writeMutedMessage(muted bool) error {
 	return s.conn.WriteMessage(websocket.TextMessage, data)
 }
 
-func (s *WebsocketSink) Finalize() error {
-	return s.Close()
+func (s *WebsocketSink) OnStop() error {
+	return nil
 }
 
 func (s *WebsocketSink) Close() error {
-	logger.Debugw("closing websocket sink")
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.closed.Swap(true) {

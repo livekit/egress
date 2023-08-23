@@ -12,35 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package source
+package builder
 
 import (
-	"context"
+	"github.com/tinyzimmer/go-gst/gst/app"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
-	"github.com/livekit/egress/pkg/types"
 )
 
-type Source interface {
-	StartRecording() chan struct{}
-	EndRecording() chan struct{}
-	GetEndedAt() int64
-	Close()
-}
+func BuildWebsocketBin(pipeline *gstreamer.Pipeline, appSinkCallbacks *app.SinkCallbacks) (*gstreamer.Bin, error) {
+	b := pipeline.NewBin("websocket")
 
-func New(ctx context.Context, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (Source, error) {
-	switch p.RequestType {
-	case types.RequestTypeRoomComposite,
-		types.RequestTypeWeb:
-		return NewWebSource(ctx, p)
-
-	case types.RequestTypeTrackComposite,
-		types.RequestTypeTrack:
-		return NewSDKSource(ctx, p, callbacks)
-
-	default:
-		return nil, errors.ErrInvalidInput("request")
+	appSink, err := app.NewAppSink()
+	if err != nil {
+		return nil, err
 	}
+	appSink.SetCallbacks(appSinkCallbacks)
+
+	if err = b.AddElement(appSink.Element); err != nil {
+		return nil, err
+	}
+
+	return b, nil
 }

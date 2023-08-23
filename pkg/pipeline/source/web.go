@@ -95,6 +95,10 @@ func (s *WebSource) EndRecording() chan struct{} {
 	return s.endRecording
 }
 
+func (s *WebSource) GetEndedAt() int64 {
+	return time.Now().UnixNano()
+}
+
 func (s *WebSource) Close() {
 	if s.chromeCancel != nil {
 		s.chromeCancel()

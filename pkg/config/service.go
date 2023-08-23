@@ -58,7 +58,7 @@ type CPUCostConfig struct {
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	conf := &ServiceConfig{
 		BaseConfig: BaseConfig{
-			Logging: logger.Config{
+			Logging: &logger.Config{
 				Level: "info",
 			},
 			ApiKey:    os.Getenv("LIVEKIT_API_KEY"),

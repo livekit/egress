@@ -25,7 +25,7 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/output"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
 	"github.com/livekit/egress/pkg/types"
@@ -65,7 +65,7 @@ const (
 	msgAggregateSubclass = "Subclass should call gst_aggregator_selected_samples() from its aggregate implementation."
 )
 
-func (p *Pipeline) gstLog(level gst.DebugLevel, file, function string, line int, obj *glib.Object, message string) {
+func (c *Controller) gstLog(level gst.DebugLevel, file, function string, line int, obj *glib.Object, message string) {
 	var lvl string
 	switch level {
 	case gst.LevelNone:
@@ -115,50 +115,37 @@ func (p *Pipeline) gstLog(level gst.DebugLevel, file, function string, line int,
 			args = append(args, "object", name.(string))
 		}
 	}
-	p.gstLogger.Debugw(msg, args...)
+	c.gstLogger.Debugw(msg, args...)
 }
 
-func (p *Pipeline) messageWatch(msg *gst.Message) bool {
+func (c *Controller) messageWatch(msg *gst.Message) bool {
 	var err error
 	switch msg.Type() {
 	case gst.MessageEOS:
-		p.handleMessageEOS()
+		logger.Infow("EOS received, stopping pipeline")
+		c.Stop()
 		return false
-
 	case gst.MessageWarning:
-		err = p.handleMessageWarning(msg.ParseWarning())
-
+		err = c.handleMessageWarning(msg.ParseWarning())
 	case gst.MessageError:
-		err = p.handleMessageError(msg.ParseError())
-
+		err = c.handleMessageError(msg.ParseError())
 	case gst.MessageStateChanged:
-		p.handleMessageStateChanged(msg)
-
+		c.handleMessageStateChanged(msg)
 	case gst.MessageElement:
-		err = p.handleMessageElement(msg)
+		err = c.handleMessageElement(msg)
 	}
-
 	if err != nil {
-		if p.Debug.EnableProfiling {
-			p.uploadDebugFiles()
+		if c.Debug.EnableProfiling {
+			c.uploadDebugFiles()
 		}
-		p.OnFailure(err)
+		c.OnError(err)
 		return false
 	}
 
 	return true
 }
 
-func (p *Pipeline) handleMessageEOS() {
-	if p.eosTimer != nil {
-		p.eosTimer.Stop()
-	}
-
-	logger.Infow("EOS received, stopping pipeline")
-	p.stop()
-}
-
-func (p *Pipeline) handleMessageWarning(gErr *gst.GError) error {
+func (c *Controller) handleMessageWarning(gErr *gst.GError) error {
 	element, _, message := parseDebugInfo(gErr)
 
 	if gErr.Message() == msgClockProblem {
@@ -172,14 +159,14 @@ func (p *Pipeline) handleMessageWarning(gErr *gst.GError) error {
 }
 
 // handleMessageError returns true if the error has been handled, false if the pipeline should quit
-func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
+func (c *Controller) handleMessageError(gErr *gst.GError) error {
 	element, name, message := parseDebugInfo(gErr)
 
 	switch {
 	case element == elementGstRtmp2Sink:
-		if strings.HasPrefix(gErr.Error(), "Connection error") && !p.eosSent.IsBroken() {
+		if strings.HasPrefix(gErr.Error(), "Connection error") && !c.eosSent.IsBroken() {
 			// try reconnecting
-			ok, err := p.out.ResetStream(name, gErr)
+			ok, err := c.streamBin.ResetStream(name, gErr)
 			if err != nil {
 				logger.Errorw("failed to reset stream", err)
 			} else if ok {
@@ -188,26 +175,26 @@ func (p *Pipeline) handleMessageError(gErr *gst.GError) error {
 		}
 
 		// remove sink
-		url, err := p.out.GetStreamUrl(name)
+		url, err := c.streamBin.GetStreamUrl(name)
 		if err != nil {
 			logger.Warnw("rtmp output not found", err, "url", url)
 			return err
 		}
 
-		return p.removeSink(context.Background(), url, gErr)
+		return c.removeSink(context.Background(), url, gErr)
 
 	case element == elementGstAppSrc:
 		if message == msgStreamingNotNegotiated {
 			// send eos to app src
 			logger.Debugw("streaming stopped", "name", name)
-			p.src.(*source.SDKSource).StreamStopped(name)
+			c.src.(*source.SDKSource).StreamStopped(name)
 			return nil
 		}
 
 	case element == elementSplitMuxSink:
 		// We sometimes get GstSplitMuxSink errors if send EOS before the first media was sent to the mux
 		if message == msgMuxer {
-			if p.eosSent.IsBroken() {
+			if c.eosSent.IsBroken() {
 				logger.Debugw("GstSplitMuxSink failure after sending EOS")
 				return nil
 			}
@@ -233,8 +220,8 @@ func parseDebugInfo(gErr *gst.GError) (element, name, message string) {
 	return
 }
 
-func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
-	if p.playing.IsBroken() {
+func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
+	if c.playing.IsBroken() {
 		return
 	}
 
@@ -247,27 +234,27 @@ func (p *Pipeline) handleMessageStateChanged(msg *gst.Message) {
 	if s == pipelineSource {
 		logger.Infow("pipeline playing")
 
-		p.playing.Break()
-		switch p.SourceType {
+		c.playing.Break()
+		switch c.SourceType {
 		case types.SourceTypeSDK:
-			p.updateStartTime(p.src.(*source.SDKSource).GetStartTime())
+			c.updateStartTime(c.src.(*source.SDKSource).GetStartTime())
 		case types.SourceTypeWeb:
-			p.updateStartTime(time.Now().UnixNano())
+			c.updateStartTime(time.Now().UnixNano())
 		}
 	} else if strings.HasPrefix(s, "TR_") {
 		logger.Infow(fmt.Sprintf("%s playing", s))
-		p.src.(*source.SDKSource).Playing(s)
+		c.src.(*source.SDKSource).Playing(s)
 	}
 
 	return
 }
 
-func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
+func (c *Controller) handleMessageElement(msg *gst.Message) error {
 	s := msg.GetStructure()
 	if s != nil {
 		switch s.Name() {
 		case msgFragmentOpened:
-			if timer := p.eosTimer; timer != nil {
+			if timer := c.eosTimer; timer != nil {
 				timer.Reset(eosTimeout)
 			}
 
@@ -277,13 +264,13 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 				return err
 			}
 
-			if err = p.getSegmentSink().StartSegment(filepath, t); err != nil {
+			if err = c.getSegmentSink().StartSegment(filepath, t); err != nil {
 				logger.Errorw("failed to register new segment with playlist writer", err, "location", filepath, "runningTime", t)
 				return err
 			}
 
 		case msgFragmentClosed:
-			if timer := p.eosTimer; timer != nil {
+			if timer := c.eosTimer; timer != nil {
 				timer.Reset(eosTimeout)
 			}
 
@@ -298,7 +285,7 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 			// We need to dispatch to a queue to:
 			// 1. Avoid concurrent access to the SegmentsInfo structure
 			// 2. Ensure that playlists are uploaded in the same order they are enqueued to avoid an older playlist overwriting a newer one
-			if err = p.getSegmentSink().EnqueueSegmentUpload(filepath, t); err != nil {
+			if err = c.getSegmentSink().EnqueueSegmentUpload(filepath, t); err != nil {
 				logger.Errorw("failed to end segment with playlist writer", err, "runningTime", t)
 				return err
 			}
@@ -310,7 +297,7 @@ func (p *Pipeline) handleMessageElement(msg *gst.Message) error {
 			}
 			logger.Debugw("received FirstSampleMetadata message", "startDate", startDate)
 
-			p.getSegmentSink().UpdateStartDate(startDate)
+			c.getSegmentSink().UpdateStartDate(startDate)
 		}
 	}
 
@@ -340,7 +327,7 @@ func getSegmentParamsFromGstStructure(s *gst.Structure) (filepath string, time i
 }
 
 func getFirstSampleMetadataFromGstStructure(s *gst.Structure) (startDate time.Time, err error) {
-	firstSampleMetadata := output.FirstSampleMetadata{}
+	firstSampleMetadata := builder.FirstSampleMetadata{}
 	err = s.UnmarshalInto(&firstSampleMetadata)
 	if err != nil {
 		return time.Time{}, err
@@ -349,6 +336,6 @@ func getFirstSampleMetadataFromGstStructure(s *gst.Structure) (startDate time.Ti
 	return time.Unix(0, firstSampleMetadata.StartDate), nil
 }
 
-func (p *Pipeline) getSegmentSink() *sink.SegmentSink {
-	return p.sinks[types.EgressTypeSegments].(*sink.SegmentSink)
+func (c *Controller) getSegmentSink() *sink.SegmentSink {
+	return c.sinks[types.EgressTypeSegments].(*sink.SegmentSink)
 }

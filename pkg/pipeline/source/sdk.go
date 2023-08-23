@@ -30,6 +30,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
@@ -44,6 +45,7 @@ const (
 
 type SDKSource struct {
 	*config.PipelineConfig
+	callbacks *gstreamer.Callbacks
 
 	room *lksdk.Room
 	sync *synchronizer.Synchronizer
@@ -56,23 +58,26 @@ type SDKSource struct {
 	active      atomic.Int32
 	audioWriter *sdk.AppWriter
 	videoWriter *sdk.AppWriter
+	closed      core.Fuse
 
 	startRecording chan struct{}
 	endRecording   chan struct{}
 }
 
-func NewSDKSource(ctx context.Context, p *config.PipelineConfig) (*SDKSource, error) {
+func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*SDKSource, error) {
 	ctx, span := tracer.Start(ctx, "SDKInput.New")
 	defer span.End()
 
 	startRecording := make(chan struct{})
 	s := &SDKSource{
 		PipelineConfig: p,
+		callbacks:      callbacks,
 		sync: synchronizer.NewSynchronizer(func() {
 			close(startRecording)
 		}),
 		initialized:          core.NewFuse(),
 		filenameReplacements: make(map[string]string),
+		closed:               core.NewFuse(),
 		startRecording:       startRecording,
 		endRecording:         make(chan struct{}),
 	}
@@ -102,29 +107,21 @@ func (s *SDKSource) EndRecording() chan struct{} {
 	return s.endRecording
 }
 
-func (s *SDKSource) GetEndTime() int64 {
+func (s *SDKSource) GetEndedAt() int64 {
 	return s.sync.GetEndedAt()
 }
 
 func (s *SDKSource) CloseWriters() {
-	s.sync.End()
+	s.closed.Once(func() {
+		s.sync.End()
 
-	var wg sync.WaitGroup
-	if s.audioWriter != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			s.audioWriter.Drain(false)
-		}()
-	}
-	if s.videoWriter != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			s.videoWriter.Drain(false)
-		}()
-	}
-	wg.Wait()
+		if s.audioWriter != nil {
+			go s.audioWriter.Drain(false)
+		}
+		if s.videoWriter != nil {
+			go s.videoWriter.Drain(false)
+		}
+	})
 }
 
 func (s *SDKSource) StreamStopped(trackID string) {
@@ -264,7 +261,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 	defer func() {
 		if s.initialized.IsBroken() {
 			if onSubscribeErr != nil {
-				s.OnFailure(onSubscribeErr)
+				s.callbacks.OnError(onSubscribeErr)
 			}
 		} else {
 			s.errors <- onSubscribeErr
@@ -281,6 +278,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		ClockRate:   track.Codec().ClockRate,
 	}
 
+	<-s.callbacks.GstReady
 	switch ts.MimeType {
 	case types.MimeTypeOpus:
 		s.AudioEnabled = true
@@ -296,6 +294,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			return
 		}
 
+		ts.EOSFunc = s.CloseWriters
 		s.audioWriter = writer
 		s.AudioTrack = ts
 
@@ -315,6 +314,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			return
 		}
 
+		ts.EOSFunc = s.CloseWriters
 		s.videoWriter = writer
 		s.VideoTrack = ts
 
@@ -365,14 +365,13 @@ func (s *SDKSource) createWriter(
 		}
 	}
 
-	<-s.GstReady
 	src, err := gst.NewElementWithName("appsrc", track.ID())
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	ts.AppSrc = app.SrcFromElement(src)
-	writer, err := sdk.NewAppWriter(track, rp, ts, s.sync, s.Callbacks, logFilename)
+	writer, err := sdk.NewAppWriter(track, rp, ts, s.sync, s.callbacks, logFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -383,12 +382,14 @@ func (s *SDKSource) createWriter(
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.SetTrackMuted(true)
+		s.callbacks.OnTrackMuted(pub.SID())
 	}
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.SetTrackMuted(false)
+		s.callbacks.OnTrackUnmuted(pub.SID())
 	}
 }
 
@@ -408,7 +409,6 @@ func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.Remote
 
 func (s *SDKSource) onTrackFinished(trackID string) {
 	var w *sdk.AppWriter
-
 	if s.audioWriter != nil && s.audioWriter.TrackID() == trackID {
 		logger.Infow("removing audio writer")
 		w = s.audioWriter

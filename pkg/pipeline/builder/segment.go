@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package output
+package builder
 
 import (
 	"fmt"
@@ -23,34 +23,18 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/builder"
-	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
-
-type SegmentOutput struct {
-	*outputBase
-
-	sink      *gst.Element
-	h264parse *gst.Element
-
-	startDate time.Time
-}
 
 type FirstSampleMetadata struct {
 	StartDate int64 // Real time date of the first media sample
 }
 
-func (b *Bin) buildSegmentOutput(p *config.PipelineConfig) (*SegmentOutput, error) {
+func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
+	b := pipeline.NewBin("segment")
 	o := p.GetSegmentConfig()
-
-	s := &SegmentOutput{}
-
-	base, err := b.buildOutputBase(p, types.EgressTypeSegments)
-	if err != nil {
-		return nil, errors.ErrGstPipelineError(err)
-	}
 
 	h264parse, err := gst.NewElement("h264parse")
 	if err != nil {
@@ -71,6 +55,7 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig) (*SegmentOutput, erro
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
+	var startDate time.Time
 	_, err = sink.Connect("format-location-full", func(self *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
 		var pts time.Duration
 		if firstSample != nil && firstSample.GetBuffer() != nil {
@@ -79,10 +64,10 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig) (*SegmentOutput, erro
 			logger.Infow("nil sample passed into 'format-location-full' event handler, assuming 0 pts")
 		}
 
-		if s.startDate.IsZero() {
+		if startDate.IsZero() {
 			now := time.Now()
 
-			s.startDate = now.Add(-pts)
+			startDate = now.Add(-pts)
 
 			mdata := FirstSampleMetadata{
 				StartDate: now.UnixNano(),
@@ -95,7 +80,7 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig) (*SegmentOutput, erro
 		var segmentName string
 		switch o.SegmentSuffix {
 		case livekit.SegmentedFileSuffix_TIMESTAMP:
-			ts := s.startDate.Add(pts)
+			ts := startDate.Add(pts)
 			segmentName = fmt.Sprintf("%s_%s%03d.ts", o.SegmentPrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000)
 		default:
 			segmentName = fmt.Sprintf("%s_%05d.ts", o.SegmentPrefix, fragmentId)
@@ -106,40 +91,17 @@ func (b *Bin) buildSegmentOutput(p *config.PipelineConfig) (*SegmentOutput, erro
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	if err = b.bin.AddMany(h264parse, sink); err != nil {
+	if err = b.AddElements(h264parse, sink); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	s.outputBase = base
-	s.h264parse = h264parse
-	s.sink = sink
-
-	return s, nil
-}
-
-func (o *SegmentOutput) Link() error {
-	// link audio to sink
-	if o.audioQueue != nil {
-		if err := builder.LinkPads(
-			"audio queue", o.audioQueue.GetStaticPad("src"),
-			"split mux", o.sink.GetRequestPad("audio_%u"),
-		); err != nil {
-			return err
+	b.SetGetSrcPad(func(name string) *gst.Pad {
+		if name == "audio" {
+			return sink.GetRequestPad("audio_%u")
+		} else {
+			return h264parse.GetStaticPad("sink")
 		}
-	}
+	})
 
-	// link video to sink
-	if o.videoQueue != nil {
-		if err := o.videoQueue.Link(o.h264parse); err != nil {
-			return errors.ErrPadLinkFailed("video queue", "h264parse", err.Error())
-		}
-		if err := builder.LinkPads(
-			"h264parse", o.h264parse.GetStaticPad("src"),
-			"split mux", o.sink.GetRequestPad("video"),
-		); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return b, nil
 }

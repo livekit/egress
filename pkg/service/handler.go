@@ -43,7 +43,7 @@ type Handler struct {
 	ipc.UnimplementedEgressHandlerServer
 
 	conf       *config.PipelineConfig
-	pipeline   *pipeline.Pipeline
+	pipeline   *pipeline.Controller
 	rpcServer  rpc.EgressHandlerServer
 	ioClient   rpc.IOInfoClient
 	grpcServer *grpc.Server
