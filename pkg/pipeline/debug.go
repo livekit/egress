@@ -32,12 +32,12 @@ import (
 	"github.com/livekit/protocol/pprof"
 )
 
-func (p *Pipeline) GetGstPipelineDebugDot() string {
-	return p.pipeline.DebugBinToDotData(gst.DebugGraphShowAll)
+func (c *Controller) GetGstPipelineDebugDot() string {
+	return c.p.DebugBinToDotData(gst.DebugGraphShowAll)
 }
 
-func (p *Pipeline) uploadDebugFiles() {
-	u, err := uploader.New(p.Debug.ToUploadConfig(), "")
+func (c *Controller) uploadDebugFiles() {
+	u, err := uploader.New(c.Debug.ToUploadConfig(), "")
 	if err != nil {
 		logger.Errorw("failed to create uploader", err)
 		return
@@ -49,15 +49,15 @@ func (p *Pipeline) uploadDebugFiles() {
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
-		p.uploadDotFile(u)
+		c.uploadDotFile(u)
 	}()
 	go func() {
 		defer wg.Done()
-		p.uploadPProf(u)
+		c.uploadPProf(u)
 	}()
 	go func() {
 		defer wg.Done()
-		p.uploadTrackFiles(u)
+		c.uploadTrackFiles(u)
 	}()
 	go func() {
 		wg.Wait()
@@ -72,12 +72,12 @@ func (p *Pipeline) uploadDebugFiles() {
 	}
 }
 
-func (p *Pipeline) uploadTrackFiles(u uploader.Uploader) {
+func (c *Controller) uploadTrackFiles(u uploader.Uploader) {
 	var dir string
-	if p.Debug.ToUploadConfig() == nil {
-		dir = p.Debug.PathPrefix
+	if c.Debug.ToUploadConfig() == nil {
+		dir = c.Debug.PathPrefix
 	} else {
-		dir = p.TmpDir
+		dir = c.TmpDir
 	}
 
 	files, err := os.ReadDir(dir)
@@ -88,7 +88,7 @@ func (p *Pipeline) uploadTrackFiles(u uploader.Uploader) {
 	for _, f := range files {
 		if strings.HasSuffix(f.Name(), ".csv") {
 			local := path.Join(dir, f.Name())
-			storage := path.Join(p.Debug.PathPrefix, f.Name())
+			storage := path.Join(c.Debug.PathPrefix, f.Name())
 			_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
 			if err != nil {
 				logger.Errorw("failed to upload debug file", err)
@@ -98,31 +98,31 @@ func (p *Pipeline) uploadTrackFiles(u uploader.Uploader) {
 	}
 }
 
-func (p *Pipeline) uploadDotFile(u uploader.Uploader) {
-	dot := p.GetGstPipelineDebugDot()
-	p.uploadDebugFile(u, []byte(dot), ".dot")
+func (c *Controller) uploadDotFile(u uploader.Uploader) {
+	dot := c.GetGstPipelineDebugDot()
+	c.uploadDebugFile(u, []byte(dot), ".dot")
 }
 
-func (p *Pipeline) uploadPProf(u uploader.Uploader) {
+func (c *Controller) uploadPProf(u uploader.Uploader) {
 	b, err := pprof.GetProfileData(context.Background(), "goroutine", 0, 0)
 	if err != nil {
 		logger.Errorw("failed to get profile data", err)
 		return
 	}
-	p.uploadDebugFile(u, b, ".prof")
+	c.uploadDebugFile(u, b, ".prof")
 }
 
-func (p *Pipeline) uploadDebugFile(u uploader.Uploader, data []byte, fileExtension string) {
+func (c *Controller) uploadDebugFile(u uploader.Uploader, data []byte, fileExtension string) {
 	var dir string
-	if p.Debug.ToUploadConfig() == nil {
-		dir = p.Debug.PathPrefix
+	if c.Debug.ToUploadConfig() == nil {
+		dir = c.Debug.PathPrefix
 	} else {
-		dir = p.TmpDir
+		dir = c.TmpDir
 	}
 
-	filename := fmt.Sprintf("%s%s", p.Info.EgressId, fileExtension)
+	filename := fmt.Sprintf("%s%s", c.Info.EgressId, fileExtension)
 	local := path.Join(dir, filename)
-	storage := path.Join(p.Debug.PathPrefix, filename)
+	storage := path.Join(c.Debug.PathPrefix, filename)
 
 	f, err := os.Create(local)
 	if err != nil {

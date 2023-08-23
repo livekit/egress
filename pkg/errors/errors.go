@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/tinyzimmer/go-gst/gst"
+
 	"github.com/livekit/psrpc"
 )
 
@@ -32,6 +34,7 @@ var (
 	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
 	ErrResourceExhausted          = psrpc.NewErrorf(psrpc.ResourceExhausted, "not enough CPU")
 	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Internal, "failed to subscribe to track")
+	ErrPipelineFrozen             = psrpc.NewErrorf(psrpc.Internal, "pipeline frozen")
 )
 
 func New(err string) error {
@@ -122,12 +125,22 @@ func ErrProcessStartFailed(err error) error {
 	return psrpc.NewError(psrpc.Internal, err)
 }
 
+func ErrStateChangeFailed(bin string, state gst.State) error {
+	return psrpc.NewErrorf(psrpc.Internal, "%s failed to change state to %s", bin, state.String())
+}
+
 type ErrArray struct {
 	errs []error
 }
 
 func (e *ErrArray) AppendErr(err error) {
 	e.errs = append(e.errs, err)
+}
+
+func (e *ErrArray) Check(err error) {
+	if err != nil {
+		e.errs = append(e.errs, err)
+	}
 }
 
 func (e *ErrArray) ToError() psrpc.Error {
