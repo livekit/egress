@@ -252,11 +252,17 @@ func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig) erro
 		if err = b.AddElement(rtpVP9Depay); err != nil {
 			return err
 		}
+		if err = b.AddElement(rtpVP9Depay); err != nil {
+			return err
+		}
 
 		if p.VideoTranscoding {
 			vp9Dec, err := gst.NewElement("vp9dec")
 			if err != nil {
 				return errors.ErrGstPipelineError(err)
+			}
+			if err = b.AddElement(vp9Dec); err != nil {
+				return err
 			}
 			if err = b.AddElement(vp9Dec); err != nil {
 				return err

@@ -32,6 +32,8 @@ type Pipeline struct {
 	running chan struct{}
 }
 
+// A pipeline can have either elements or src and sink bins. If you add both you will get a wrong hierarchy error
+// Bins can contain both elements and src and sink bins
 func NewPipeline(name string, latency uint64, callbacks *Callbacks) (*Pipeline, error) {
 	pipeline, err := gst.NewPipeline(name)
 	if err != nil {
@@ -88,6 +90,7 @@ func (p *Pipeline) SendEOS() {
 }
 
 func (p *Pipeline) Stop() {
+	defer p.loop.Quit()
 	if err := p.SetState(gst.StateNull); err != nil {
 		p.OnError(err)
 		return
@@ -96,7 +99,6 @@ func (p *Pipeline) Stop() {
 		p.OnError(err)
 		return
 	}
-	p.loop.Quit()
 }
 
 func (p *Pipeline) DebugBinToDotData(details gst.DebugGraphDetails) string {

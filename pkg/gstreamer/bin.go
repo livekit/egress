@@ -54,6 +54,7 @@ func (b *Bin) NewBin(name string) *Bin {
 	}
 }
 
+// Add src as a source of b. This should only be called once for each source bin
 func (b *Bin) AddSourceBin(src *Bin) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -69,7 +70,7 @@ func (b *Bin) AddSourceBin(src *Bin) error {
 		}
 
 		src.mu.Lock()
-		err := linkPeers(src, b)
+		err := linkPeersLocked(src, b)
 		src.mu.Unlock()
 		if err != nil {
 			return err
@@ -83,6 +84,7 @@ func (b *Bin) AddSourceBin(src *Bin) error {
 	return nil
 }
 
+// Add src as a sink of b. This should only be called once for each sink bin
 func (b *Bin) AddSinkBin(sink *Bin) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -98,7 +100,7 @@ func (b *Bin) AddSinkBin(sink *Bin) error {
 		}
 
 		sink.mu.Lock()
-		err := linkPeers(b, sink)
+		err := linkPeersLocked(b, sink)
 		sink.mu.Unlock()
 		if err != nil {
 			return err
@@ -108,6 +110,7 @@ func (b *Bin) AddSinkBin(sink *Bin) error {
 	return nil
 }
 
+// Elements will be linked in the order they are added
 func (b *Bin) AddElement(e *gst.Element) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -120,6 +123,7 @@ func (b *Bin) AddElement(e *gst.Element) error {
 	return nil
 }
 
+// Elements will be linked in the order they are added
 func (b *Bin) AddElements(elements ...*gst.Element) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -235,6 +239,7 @@ func (b *Bin) SetState(state gst.State) error {
 	return b.bin.SetState(state)
 }
 
+// Set a custom linking function for this bin's elements (used when you need to modify chain functions)
 func (b *Bin) SetLinkFunc(f func() error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -242,20 +247,23 @@ func (b *Bin) SetLinkFunc(f func() error) {
 	b.linkFunc = f
 }
 
-func (b *Bin) SetGetSrcPad(f func(string) *gst.Pad) {
+// Set a custom linking function which returns a pad for the named src bin
+func (b *Bin) SetGetSrcPad(f func(srcName string) *gst.Pad) {
 	b.mu.Lock()
-	b.mu.Unlock()
+	defer b.mu.Unlock()
 
 	b.getSrcPad = f
 }
 
-func (b *Bin) SetGetSinkPad(f func(string) *gst.Pad) {
+// Set a custom linking function which returns a pad for the named sink bin
+func (b *Bin) SetGetSinkPad(f func(sinkName string) *gst.Pad) {
 	b.mu.Lock()
-	b.mu.Unlock()
+	defer b.mu.Unlock()
 
 	b.getSinkPad = f
 }
 
+// Set a custom EOS function (used for appsrc)
 func (b *Bin) SetEOSFunc(f func()) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -294,7 +302,7 @@ func (b *Bin) link() error {
 
 		for _, src := range getPeerSrcs(b.srcs) {
 			src.mu.Lock()
-			err := linkPeers(src, b)
+			err := linkPeersLocked(src, b)
 			src.mu.Unlock()
 			if err != nil {
 				return err
@@ -303,7 +311,7 @@ func (b *Bin) link() error {
 
 		for _, sink := range getPeerSinks(b.sinks) {
 			sink.mu.Lock()
-			err := linkPeers(b, sink)
+			err := linkPeersLocked(b, sink)
 			sink.mu.Unlock()
 			if err != nil {
 				return err
@@ -321,9 +329,9 @@ func (b *Bin) link() error {
 				sink.mu.Lock()
 				var err error
 				if addQueues {
-					err = b.linkPeersWithQueue(src, sink)
+					err = b.linkPeersWithQueueLocked(src, sink)
 				} else {
-					err = linkPeers(src, sink)
+					err = linkPeersLocked(src, sink)
 				}
 				sink.mu.Unlock()
 				if err != nil {
@@ -338,7 +346,7 @@ func (b *Bin) link() error {
 	return nil
 }
 
-func linkPeers(src, sink *Bin) error {
+func linkPeersLocked(src, sink *Bin) error {
 	srcPad, sinkPad, err := createGhostPads(src, sink)
 	if err != nil {
 		return err
@@ -362,7 +370,7 @@ func linkPeers(src, sink *Bin) error {
 	return nil
 }
 
-func (b *Bin) linkPeersWithQueue(src, sink *Bin) error {
+func (b *Bin) linkPeersWithQueueLocked(src, sink *Bin) error {
 	srcName := src.bin.GetName()
 	sinkName := sink.bin.GetName()
 

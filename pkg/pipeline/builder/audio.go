@@ -116,7 +116,6 @@ func buildAudioAppSrcBin(audioBin *gstreamer.Bin, p *config.PipelineConfig) erro
 	if err := track.AppSrc.Element.SetProperty("is-live", true); err != nil {
 		return err
 	}
-
 	if err := b.AddElement(track.AppSrc.Element); err != nil {
 		return err
 	}
