@@ -31,6 +31,19 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+const videoTestSrc = "video_test_src"
+
+type videoBin struct {
+	lastPTS     atomic.Duration
+	nextPTS     atomic.Duration
+	selectedPad string
+	nextPad     *gst.Pad
+
+	mu       sync.Mutex
+	pads     map[string]*gst.Pad
+	selector *gst.Element
+}
+
 func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
 	b := pipeline.NewBin("video")
 
@@ -110,28 +123,25 @@ func buildWebVideoInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 }
 
 func buildSDKVideoInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
+	v := &videoBin{}
+
 	if p.VideoTrack != nil {
-		if err := buildVideoAppSrcBin(b, p); err != nil {
+		if err := v.buildVideoAppSrcBin(b, p); err != nil {
 			return err
 		}
 	}
 
 	if p.VideoTranscoding {
-		v := &videoBin{}
-
-		if err := buildVideoTestSrcBin(b, p); err != nil {
+		if err := v.buildVideoTestSrcBin(b, p); err != nil {
 			return err
 		}
-		if err := addVideoSelector(b); err != nil {
+		if err := v.addVideoSelector(b); err != nil {
 			return err
 		}
 
-		b.SetGetSrcPad(func(name string) *gst.Pad {
-
-		})
-		// add callbacks
-		// p.OnTrackMuted = append(p.OnTrackMuted, v.onTrackMuted)
-		// p.OnTrackUnmuted = append(p.OnTrackUnmuted, v.onTrackUnmuted)
+		b.SetGetSrcPad(v.getSrcPad)
+		b.Callbacks.AddOnTrackMuted(v.onTrackMuted)
+		b.Callbacks.AddOnTrackUnmuted(v.onTrackUnmuted)
 
 		if err := addVideoEncoder(b, p); err != nil {
 			return err
@@ -141,7 +151,7 @@ func buildSDKVideoInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	return nil
 }
 
-func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig) error {
+func (v *videoBin) buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig) error {
 	track := p.VideoTrack
 
 	b := videoBin.NewBin(track.TrackID)
@@ -252,17 +262,11 @@ func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig) erro
 		if err = b.AddElement(rtpVP9Depay); err != nil {
 			return err
 		}
-		if err = b.AddElement(rtpVP9Depay); err != nil {
-			return err
-		}
 
 		if p.VideoTranscoding {
 			vp9Dec, err := gst.NewElement("vp9dec")
 			if err != nil {
 				return errors.ErrGstPipelineError(err)
-			}
-			if err = b.AddElement(vp9Dec); err != nil {
-				return err
 			}
 			if err = b.AddElement(vp9Dec); err != nil {
 				return err
@@ -331,8 +335,8 @@ func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig) erro
 	return nil
 }
 
-func buildVideoTestSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig) error {
-	b := videoBin.NewBin("video_test_src")
+func (v *videoBin) buildVideoTestSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig) error {
+	b := videoBin.NewBin(videoTestSrc)
 	if err := videoBin.AddSourceBin(b); err != nil {
 		return err
 	}
@@ -364,7 +368,7 @@ func buildVideoTestSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig) err
 	return nil
 }
 
-func addVideoSelector(b *gstreamer.Bin) error {
+func (v *videoBin) addVideoSelector(b *gstreamer.Bin) error {
 	inputSelector, err := gst.NewElement("input-selector")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -462,17 +466,6 @@ func addVideoEncoder(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	}
 }
 
-type videoBin struct {
-	trackID string
-	lastPTS atomic.Duration
-	nextPTS atomic.Duration
-	nextPad string
-
-	mu       sync.Mutex
-	pads     map[string]*gst.Pad
-	selector *gst.Element
-}
-
 func (v *videoBin) getSrcPad(name string) *gst.Pad {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -480,9 +473,12 @@ func (v *videoBin) getSrcPad(name string) *gst.Pad {
 	return v.pads[name]
 }
 
-func (v *videoBin) createSrcPad() {
-	v.srcPad = v.selector.GetRequestPad("sink_%u")
-	v.srcPad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+func (v *videoBin) createSrcPad(trackID string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	pad := v.selector.GetRequestPad("sink_%u")
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		buffer := info.GetBuffer()
 
 		for v.nextPTS.Load() != 0 {
@@ -494,15 +490,19 @@ func (v *videoBin) createSrcPad() {
 		logger.Debugw("pushing src buffer", "pts", buffer.PresentationTimestamp())
 		return gst.PadProbeOK
 	})
+	v.pads[trackID] = pad
 }
 
 func (v *videoBin) createTestSrcPad() {
-	v.testSrcPad = v.selector.GetRequestPad("sink_%u")
-	v.testSrcPad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	pad := v.selector.GetRequestPad("sink_%u")
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		buffer := info.GetBuffer()
 
 		if nextPTS := v.nextPTS.Load(); nextPTS != 0 && buffer.PresentationTimestamp() >= nextPTS {
-			if err := v.setSelectorPad(v.srcPad); err != nil {
+			if err := v.setSelectorPad(v.nextPad); err != nil {
 				logger.Errorw("failed to unmute", err)
 				return gst.PadProbeDrop
 			}
@@ -514,31 +514,37 @@ func (v *videoBin) createTestSrcPad() {
 		logger.Debugw("pushing test src buffer", "pts", buffer.PresentationTimestamp())
 		return gst.PadProbeOK
 	})
+	v.pads[videoTestSrc] = pad
 }
 
 func (v *videoBin) onTrackMuted(trackID string) {
-	if trackID != v.trackID {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	if v.selectedPad != trackID {
 		return
 	}
 
-	if err := v.setSelectorPad("video_test_src"); err != nil {
+	pad := v.pads[videoTestSrc]
+	if err := v.setSelectorPad(pad); err != nil {
 		logger.Errorw("failed to set selector pad", err)
 	}
 }
 
 func (v *videoBin) onTrackUnmuted(trackID string, pts time.Duration) {
-	if trackID != v.trackID {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	pad := v.pads[trackID]
+	if pad == nil {
 		return
 	}
 
 	v.nextPTS.Store(pts)
+	v.nextPad = pad
 }
 
-func (v *videoBin) setSelectorPad(name string) error {
-	v.mu.Lock()
-	pad := v.pads[name]
-	v.mu.Unlock()
-
+func (v *videoBin) setSelectorPad(pad *gst.Pad) error {
 	// TODO: go-gst should accept objects directly and handle conversion to C
 	pt, err := v.selector.GetPropertyType("active-pad")
 	if err != nil {

@@ -64,7 +64,6 @@ func buildWebAudioInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	if err = pulseSrc.SetProperty("device", fmt.Sprintf("%s.monitor", p.Info.EgressId)); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-
 	if err = b.AddElement(pulseSrc); err != nil {
 		return err
 	}
@@ -179,11 +178,7 @@ func buildAudioTestSrcBin(audioBin *gstreamer.Bin, p *config.PipelineConfig) err
 		return err
 	}
 
-	if err = b.AddElements(audioTestSrc, audioCaps); err != nil {
-		return err
-	}
-
-	return nil
+	return b.AddElements(audioTestSrc, audioCaps)
 }
 
 func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
