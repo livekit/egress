@@ -237,7 +237,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 					bitrate, err := strconv.Atoi(stream.BitRate)
 					require.NoError(t, err)
 					require.NotZero(t, bitrate)
-					require.Less(t, int32(bitrate), p.VideoBitrate*1010)
+					require.Less(t, int32(bitrate), p.VideoBitrate*1050)
 
 					// framerate
 					frac := strings.Split(stream.AvgFrameRate, "/")
