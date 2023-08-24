@@ -336,7 +336,7 @@ func addVideoEncoder(b *gstreamer.Bin, p *config.PipelineConfig) error {
 			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
-			bufCapacity = uint(p.GetSegmentConfig().SegmentDuration * (time.Second / time.Millisecond))
+			bufCapacity = uint(time.Duration(p.GetSegmentConfig().SegmentDuration) * (time.Second / time.Millisecond))
 		}
 
 		if err = x264Enc.SetProperty("vbv-buf-capacity", bufCapacity); err != nil {
