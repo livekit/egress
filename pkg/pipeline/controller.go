@@ -486,6 +486,11 @@ func (c *Controller) SendEOS(ctx context.Context) {
 				c.p.SendEOS()
 			}()
 		}
+
+		switch c.src.(type) {
+		case *source.WebSource:
+			c.updateDuration(c.src.GetEndedAt())
+		}
 	})
 }
 
@@ -507,8 +512,16 @@ func (c *Controller) OnStop() error {
 	if c.eosTimer != nil {
 		c.eosTimer.Stop()
 	}
-	endedAt := c.src.GetEndedAt()
 
+	switch c.src.(type) {
+	case *source.SDKSource:
+		c.updateDuration(c.src.GetEndedAt())
+	}
+
+	return nil
+}
+
+func (c *Controller) updateDuration(endedAt int64) {
 	for egressType, o := range c.Outputs {
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
@@ -538,6 +551,4 @@ func (c *Controller) OnStop() error {
 			segmentsInfo.Duration = endedAt - segmentsInfo.StartedAt
 		}
 	}
-
-	return nil
 }
