@@ -332,6 +332,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 				s.filenameReplacements["{publisher_identity}"] = s.Identity
 			}
 		case types.RequestTypeTrack:
+			s.Identity = rp.Identity()
 			s.TrackKind = pub.Kind().String()
 			if pub.Kind() == lksdk.TrackKindVideo && s.Outputs[types.EgressTypeWebsocket] != nil {
 				onSubscribeErr = errors.ErrIncompatible("websocket", ts.MimeType)
@@ -365,7 +366,7 @@ func (s *SDKSource) createWriter(
 		}
 	}
 
-	src, err := gst.NewElementWithName("appsrc", track.ID())
+	src, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", track.ID()))
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
@@ -382,14 +383,12 @@ func (s *SDKSource) createWriter(
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.SetTrackMuted(true)
-		s.callbacks.OnTrackMuted(pub.SID())
 	}
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.SetTrackMuted(false)
-		s.callbacks.OnTrackUnmuted(pub.SID())
 	}
 }
 

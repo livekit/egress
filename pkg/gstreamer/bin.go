@@ -38,6 +38,7 @@ type Bin struct {
 	getSrcPad  func(string) *gst.Pad
 	getSinkPad func(string) *gst.Pad
 
+	added    bool
 	srcs     []*Bin                   // source bins
 	elements []*gst.Element           // elements within this bin
 	queues   map[string]*gst.Element  // used with BinTypeMultiStream
@@ -58,6 +59,14 @@ func (b *Bin) NewBin(name string) *Bin {
 func (b *Bin) AddSourceBin(src *Bin) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	src.mu.Lock()
+	alreadyAdded := src.added
+	src.added = true
+	src.mu.Unlock()
+	if alreadyAdded {
+		return errors.ErrBinAlreadyAdded
+	}
 
 	b.srcs = append(b.srcs, src)
 	if err := b.pipeline.Add(src.bin.Element); err != nil {
@@ -88,6 +97,14 @@ func (b *Bin) AddSourceBin(src *Bin) error {
 func (b *Bin) AddSinkBin(sink *Bin) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	sink.mu.Lock()
+	alreadyAdded := sink.added
+	sink.added = true
+	sink.mu.Unlock()
+	if alreadyAdded {
+		return errors.ErrBinAlreadyAdded
+	}
 
 	b.sinks = append(b.sinks, sink)
 	if err := b.pipeline.Add(sink.bin.Element); err != nil {

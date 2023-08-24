@@ -31,6 +31,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
@@ -62,7 +63,7 @@ type AppWriter struct {
 
 	buffer     *jitter.Buffer
 	translator Translator
-	callbacks  *config.Callbacks
+	callbacks  *gstreamer.Callbacks
 	sendPLI    func()
 
 	// a/v sync
@@ -85,7 +86,7 @@ func NewAppWriter(
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
 	sync *synchronizer.Synchronizer,
-	callbacks *config.Callbacks,
+	callbacks *gstreamer.Callbacks,
 	logFilename string,
 ) (*AppWriter, error) {
 	w := &AppWriter{
@@ -160,9 +161,7 @@ func (w *AppWriter) SetTrackMuted(muted bool) {
 	w.muted.Store(muted)
 	if muted {
 		w.logger.Debugw("track muted", "timestamp", time.Since(w.startTime).Seconds())
-		for _, onMute := range w.callbacks.OnTrackMuted {
-			onMute(w.track.ID())
-		}
+		w.callbacks.OnTrackMuted(w.track.ID())
 	} else {
 		w.logger.Debugw("track unmuted", "timestamp", time.Since(w.startTime).Seconds())
 		if w.sendPLI != nil {
@@ -320,9 +319,7 @@ func (w *AppWriter) pushSamples() error {
 		}
 
 		if w.state == stateUnmuting {
-			for _, onUnmute := range w.callbacks.OnTrackUnmuted {
-				onUnmute(w.track.ID(), pts)
-			}
+			w.callbacks.OnTrackUnmuted(w.track.ID(), pts)
 			w.state = statePlaying
 		}
 

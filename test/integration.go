@@ -108,15 +108,14 @@ func (r *Runner) awaitIdle(t *testing.T) {
 }
 
 func (r *Runner) publishSamplesToRoom(t *testing.T, audioCodec, videoCodec types.MimeType) (audioTrackID, videoTrackID string) {
-	withVideoMuting := false
-	if audioCodec == "" {
-		withVideoMuting = r.Muting
-	}
+	withAudioMuting := false
 	if videoCodec != "" {
-		videoTrackID = r.publishSampleToRoom(t, videoCodec, withVideoMuting)
+		videoTrackID = r.publishSampleToRoom(t, videoCodec, r.Muting)
+	} else {
+		withAudioMuting = r.Muting
 	}
 	if audioCodec != "" {
-		audioTrackID = r.publishSampleToRoom(t, audioCodec, r.Muting)
+		audioTrackID = r.publishSampleToRoom(t, audioCodec, withAudioMuting)
 	}
 
 	time.Sleep(time.Second)
