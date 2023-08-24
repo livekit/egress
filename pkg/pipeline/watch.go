@@ -122,8 +122,6 @@ func (c *Controller) messageWatch(msg *gst.Message) bool {
 	var err error
 	switch msg.Type() {
 	case gst.MessageEOS:
-		_ = c.OnEOS()
-
 		logger.Infow("EOS received, stopping pipeline")
 		c.Stop()
 		return false
@@ -233,7 +231,7 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 	}
 
 	s := msg.Source()
-	if s == pipelineSource {
+	if s == pipelineName {
 		logger.Infow("pipeline playing")
 
 		c.playing.Break()

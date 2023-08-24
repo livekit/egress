@@ -37,8 +37,8 @@ import (
 )
 
 const (
-	pipelineSource = "pipeline"
-	eosTimeout     = time.Second * 30
+	pipelineName = "pipeline"
+	eosTimeout   = time.Second * 30
 )
 
 type Controller struct {
@@ -111,7 +111,7 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 func (c *Controller) BuildPipeline() error {
 	logger.Debugw("building pipeline")
 
-	p, err := gstreamer.NewPipeline("pipeline", c.Latency, c.callbacks)
+	p, err := gstreamer.NewPipeline(pipelineName, c.Latency, c.callbacks)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
