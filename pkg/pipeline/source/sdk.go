@@ -374,11 +374,15 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 	if !s.initialized.IsBroken() {
 		s.mu.Lock()
 		switch s.RequestType {
+		case types.RequestTypeParticipant:
+			s.filenameReplacements["{publisher_identity}"] = s.Identity
+
 		case types.RequestTypeTrackComposite:
 			if s.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
 				s.Identity = rp.Identity()
 				s.filenameReplacements["{publisher_identity}"] = s.Identity
 			}
+
 		case types.RequestTypeTrack:
 			s.Identity = rp.Identity()
 			s.TrackKind = pub.Kind().String()
@@ -489,6 +493,7 @@ func (s *SDKSource) onTrackFinished(trackID string) {
 	active := s.active.Dec()
 	if s.RequestType == types.RequestTypeParticipant {
 		s.callbacks.OnTrackRemoved(trackID)
+		s.sync.RemoveTrack(trackID)
 	} else if active == 0 {
 		s.onDisconnected()
 	}

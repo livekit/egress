@@ -109,7 +109,7 @@ func (p *Pipeline) Run() error {
 			p.OnError(err)
 			return
 		}
-		logger.Infow("running")
+		logger.Debugw("starting main loop")
 		p.loop.Run()
 		close(p.running)
 	})
