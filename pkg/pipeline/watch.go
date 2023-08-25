@@ -241,7 +241,8 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 		case types.SourceTypeWeb:
 			c.updateStartTime(time.Now().UnixNano())
 		}
-	} else if strings.HasPrefix(s, "TR_") {
+	} else if strings.HasPrefix(s, "app_") {
+		s = s[4:]
 		logger.Infow(fmt.Sprintf("%s playing", s))
 		c.src.(*source.SDKSource).Playing(s)
 	}

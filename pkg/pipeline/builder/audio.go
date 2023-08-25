@@ -64,7 +64,6 @@ func buildWebAudioInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	if err = pulseSrc.SetProperty("device", fmt.Sprintf("%s.monitor", p.Info.EgressId)); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-
 	if err = b.AddElement(pulseSrc); err != nil {
 		return err
 	}
@@ -84,28 +83,18 @@ func buildWebAudioInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 
 func buildSDKAudioInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	if p.AudioTrack != nil {
-		appSrcBin, err := buildAudioAppSrcBin(b, p)
-		if err != nil {
-			return err
-		}
-		if err = b.AddSourceBin(appSrcBin); err != nil {
+		if err := buildAudioAppSrcBin(b, p); err != nil {
 			return err
 		}
 	}
-
-	testSrcBin, err := buildAudioTestSrcBin(b, p)
-	if err != nil {
+	if err := buildAudioTestSrcBin(b, p); err != nil {
 		return err
 	}
-	if err = b.AddSourceBin(testSrcBin); err != nil {
-		return err
-	}
-
-	if err = addAudioMixer(b, p); err != nil {
+	if err := addAudioMixer(b, p); err != nil {
 		return err
 	}
 	if p.AudioTranscoding {
-		if err = addAudioEncoder(b, p); err != nil {
+		if err := addAudioEncoder(b, p); err != nil {
 			return err
 		}
 	}
@@ -113,19 +102,21 @@ func buildSDKAudioInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	return nil
 }
 
-func buildAudioAppSrcBin(audioBin *gstreamer.Bin, p *config.PipelineConfig) (*gstreamer.Bin, error) {
+func buildAudioAppSrcBin(audioBin *gstreamer.Bin, p *config.PipelineConfig) error {
 	track := p.AudioTrack
 
 	b := audioBin.NewBin(track.TrackID)
 	b.SetEOSFunc(track.EOSFunc)
+	if err := audioBin.AddSourceBin(b); err != nil {
+		return err
+	}
 
 	track.AppSrc.Element.SetArg("format", "time")
 	if err := track.AppSrc.Element.SetProperty("is-live", true); err != nil {
-		return nil, err
+		return err
 	}
-
 	if err := b.AddElement(track.AppSrc.Element); err != nil {
-		return nil, err
+		return err
 	}
 
 	switch track.MimeType {
@@ -134,61 +125,60 @@ func buildAudioAppSrcBin(audioBin *gstreamer.Bin, p *config.PipelineConfig) (*gs
 			"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
 			track.PayloadType, track.ClockRate,
 		))); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
+			return errors.ErrGstPipelineError(err)
 		}
 
 		rtpOpusDepay, err := gst.NewElement("rtpopusdepay")
 		if err != nil {
-			return nil, errors.ErrGstPipelineError(err)
+			return errors.ErrGstPipelineError(err)
 		}
 
 		opusDec, err := gst.NewElement("opusdec")
 		if err != nil {
-			return nil, errors.ErrGstPipelineError(err)
+			return errors.ErrGstPipelineError(err)
 		}
 
 		if err = b.AddElements(rtpOpusDepay, opusDec); err != nil {
-			return nil, err
+			return err
 		}
 
 	default:
-		return nil, errors.ErrNotSupported(string(track.MimeType))
+		return errors.ErrNotSupported(string(track.MimeType))
 	}
 
 	if err := addAudioConverter(b, p); err != nil {
-		return nil, err
+		return err
 	}
 
-	return b, nil
+	return nil
 }
 
-func buildAudioTestSrcBin(audioBin *gstreamer.Bin, p *config.PipelineConfig) (*gstreamer.Bin, error) {
+func buildAudioTestSrcBin(audioBin *gstreamer.Bin, p *config.PipelineConfig) error {
 	b := audioBin.NewBin("audio_test_src")
+	if err := audioBin.AddSourceBin(b); err != nil {
+		return err
+	}
 
 	audioTestSrc, err := gst.NewElement("audiotestsrc")
 	if err != nil {
-		return nil, errors.ErrGstPipelineError(err)
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = audioTestSrc.SetProperty("volume", 0.0); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = audioTestSrc.SetProperty("do-timestamp", true); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = audioTestSrc.SetProperty("is-live", true); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
+		return errors.ErrGstPipelineError(err)
 	}
 
 	audioCaps, err := newAudioCapsFilter(p)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	if err = b.AddElements(audioTestSrc, audioCaps); err != nil {
-		return nil, err
-	}
-
-	return b, nil
+	return b.AddElements(audioTestSrc, audioCaps)
 }
 
 func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {

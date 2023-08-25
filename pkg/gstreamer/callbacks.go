@@ -16,6 +16,7 @@ package gstreamer
 
 import (
 	"sync"
+	"time"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -34,7 +35,7 @@ type Callbacks struct {
 	// source callbacks
 	onTrackAdded   []func(*config.TrackSource)
 	onTrackMuted   []func(string)
-	onTrackUnmuted []func(string)
+	onTrackUnmuted []func(string, time.Duration)
 	onTrackRemoved []func(string)
 
 	// internal
@@ -101,16 +102,16 @@ func (c *Callbacks) OnTrackMuted(trackID string) {
 	c.mu.RUnlock()
 }
 
-func (c *Callbacks) AddOnTrackUnmuted(f func(string)) {
+func (c *Callbacks) AddOnTrackUnmuted(f func(string, time.Duration)) {
 	c.mu.Lock()
 	c.onTrackUnmuted = append(c.onTrackUnmuted, f)
 	c.mu.Unlock()
 }
 
-func (c *Callbacks) OnTrackUnmuted(trackID string) {
+func (c *Callbacks) OnTrackUnmuted(trackID string, pts time.Duration) {
 	c.mu.RLock()
 	for _, onTrackUnmuted := range c.onTrackUnmuted {
-		onTrackUnmuted(trackID)
+		onTrackUnmuted(trackID, pts)
 	}
 	c.mu.RUnlock()
 }

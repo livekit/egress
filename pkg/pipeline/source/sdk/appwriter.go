@@ -31,6 +31,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go"
@@ -53,16 +54,16 @@ const (
 )
 
 type AppWriter struct {
-	logger      logger.Logger
-	logFile     *os.File
-	track       *webrtc.TrackRemote
-	codec       types.MimeType
-	src         *app.Source
-	startTime   time.Time
-	writeBlanks bool
+	logger    logger.Logger
+	logFile   *os.File
+	track     *webrtc.TrackRemote
+	codec     types.MimeType
+	src       *app.Source
+	startTime time.Time
 
 	buffer     *jitter.Buffer
 	translator Translator
+	callbacks  *gstreamer.Callbacks
 	sendPLI    func()
 
 	// a/v sync
@@ -85,7 +86,7 @@ func NewAppWriter(
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
 	sync *synchronizer.Synchronizer,
-	writeBlanks bool,
+	callbacks *gstreamer.Callbacks,
 	logFilename string,
 ) (*AppWriter, error) {
 	w := &AppWriter{
@@ -93,7 +94,7 @@ func NewAppWriter(
 		track:             track,
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
-		writeBlanks:       writeBlanks,
+		callbacks:         callbacks,
 		sync:              sync,
 		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
 		playing:           core.NewFuse(),
@@ -119,7 +120,7 @@ func NewAppWriter(
 
 	case types.MimeTypeH264:
 		depacketizer = &codecs.H264Packet{}
-		w.translator = NewH264Translator()
+		w.translator = NewNullTranslator()
 		w.sendPLI = func() { rp.WritePLI(track.SSRC()) }
 
 	case types.MimeTypeVP8:
@@ -160,6 +161,7 @@ func (w *AppWriter) SetTrackMuted(muted bool) {
 	w.muted.Store(muted)
 	if muted {
 		w.logger.Debugw("track muted", "timestamp", time.Since(w.startTime).Seconds())
+		w.callbacks.OnTrackMuted(w.track.ID())
 	} else {
 		w.logger.Debugw("track unmuted", "timestamp", time.Since(w.startTime).Seconds())
 		if w.sendPLI != nil {
@@ -190,12 +192,10 @@ func (w *AppWriter) run() {
 
 	for !w.endStream.IsBroken() {
 		switch w.state {
-		case statePlaying:
+		case stateUnmuting, statePlaying:
 			w.handlePlaying()
 		case stateMuted:
 			w.handleMuted()
-		case stateUnmuting:
-			w.handleUnmute()
 		}
 	}
 
@@ -257,44 +257,10 @@ func (w *AppWriter) handleMuted() {
 
 	case !w.muted.Load():
 		w.ticker.Stop()
-		if w.writeBlanks {
-			w.state = stateUnmuting
-		} else {
-			w.state = statePlaying
-		}
+		w.state = stateUnmuting
 
 	default:
 		<-w.ticker.C
-		if w.writeBlanks {
-			_, err := w.insertBlankFrame(nil)
-			if err != nil {
-				w.ticker.Stop()
-				w.draining.Once(w.endStream.Break)
-			}
-		}
-	}
-}
-
-func (w *AppWriter) handleUnmute() {
-	_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
-	pkt, _, err := w.track.ReadRTP()
-	if err != nil {
-		w.handleReadError(err)
-		return
-	}
-
-	// the blank frames will be ~500ms behind and need to fill the gap
-	for !w.endStream.IsBroken() {
-		ok, err := w.insertBlankFrame(pkt)
-		if err != nil {
-			w.endStream.Break()
-			return
-		} else if !ok {
-			// push packet to sample builder and return
-			w.buffer.Push(pkt)
-			w.state = statePlaying
-			return
-		}
 	}
 }
 
@@ -333,40 +299,6 @@ func (w *AppWriter) handleReadError(err error) {
 	w.endStream.Break()
 }
 
-func (w *AppWriter) insertBlankFrame(next *rtp.Packet) (bool, error) {
-	pkt := &rtp.Packet{
-		Header: rtp.Header{
-			Version:     2,
-			Padding:     false,
-			Marker:      true,
-			PayloadType: uint8(w.track.PayloadType()),
-			SSRC:        uint32(w.track.SSRC()),
-			CSRC:        []uint32{},
-		},
-	}
-
-	var pts time.Duration
-	if next != nil {
-		var ok bool
-		pts, ok = w.InsertFrameBefore(pkt, next)
-		if !ok {
-			return false, nil
-		}
-	} else {
-		pts = w.InsertFrame(pkt)
-	}
-
-	if err := w.translator.UpdateBlankFrame(pkt); err != nil {
-		return false, err
-	}
-
-	if err := w.pushPacket(pkt, pts); err != nil {
-		return false, err
-	}
-
-	return true, nil
-}
-
 func (w *AppWriter) pushSamples() error {
 	// buffers can only be pushed to the appsrc while in the playing state
 	if !w.playing.IsBroken() {
@@ -384,6 +316,11 @@ func (w *AppWriter) pushSamples() error {
 				return nil
 			}
 			return err
+		}
+
+		if w.state == stateUnmuting {
+			w.callbacks.OnTrackUnmuted(w.track.ID(), pts)
+			w.state = statePlaying
 		}
 
 		if err = w.pushPacket(pkt, pts); err != nil {

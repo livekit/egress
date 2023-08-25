@@ -95,8 +95,8 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	b.SetGetSrcPad(func(b string) *gst.Pad {
-		if b == "audio" {
+	b.SetGetSrcPad(func(name string) *gst.Pad {
+		if name == "audio" {
 			return sink.GetRequestPad("audio_%u")
 		} else {
 			return h264parse.GetStaticPad("sink")

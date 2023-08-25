@@ -28,6 +28,8 @@ var (
 	ErrNoConfig                   = psrpc.NewErrorf(psrpc.Internal, "missing config")
 	ErrGhostPadFailed             = psrpc.NewErrorf(psrpc.Internal, "failed to add ghost pad to bin")
 	ErrStreamAlreadyExists        = psrpc.NewErrorf(psrpc.AlreadyExists, "stream already exists")
+	ErrBinAlreadyAdded            = psrpc.NewErrorf(psrpc.Internal, "bin already added to pipeline")
+	ErrWrongHierarchy             = psrpc.NewErrorf(psrpc.Internal, "pipeline can contain bins or elements, not both")
 	ErrNonStreamingPipeline       = psrpc.NewErrorf(psrpc.InvalidArgument, "UpdateStream called on non-streaming egress")
 	ErrEgressNotFound             = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
 	ErrNoCompatibleCodec          = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")

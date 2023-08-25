@@ -28,8 +28,10 @@ type Pipeline struct {
 
 	loop *glib.MainLoop
 
-	started core.Fuse
-	running chan struct{}
+	binsAdded     bool
+	elementsAdded bool
+	started       core.Fuse
+	running       chan struct{}
 }
 
 // A pipeline can have either elements or src and sink bins. If you add both you will get a wrong hierarchy error
@@ -52,6 +54,38 @@ func NewPipeline(name string, latency uint64, callbacks *Callbacks) (*Pipeline, 
 		started: core.NewFuse(),
 		running: make(chan struct{}),
 	}, nil
+}
+
+func (p *Pipeline) AddSourceBin(src *Bin) error {
+	if p.elementsAdded {
+		return errors.ErrWrongHierarchy
+	}
+	p.binsAdded = true
+	return p.Bin.AddSourceBin(src)
+}
+
+func (p *Pipeline) AddSinkBin(sink *Bin) error {
+	if p.elementsAdded {
+		return errors.ErrWrongHierarchy
+	}
+	p.binsAdded = true
+	return p.Bin.AddSinkBin(sink)
+}
+
+func (p *Pipeline) AddElement(e *gst.Element) error {
+	if p.binsAdded {
+		return errors.ErrWrongHierarchy
+	}
+	p.elementsAdded = true
+	return p.Bin.AddElement(e)
+}
+
+func (p *Pipeline) AddElements(elements ...*gst.Element) error {
+	if p.binsAdded {
+		return errors.ErrWrongHierarchy
+	}
+	p.elementsAdded = true
+	return p.Bin.AddElements(elements...)
 }
 
 func (p *Pipeline) Link() error {
