@@ -43,6 +43,13 @@ func (r *Runner) runParticipantTest(
 	f func(t *testing.T, identity string),
 ) {
 	t.Run(name, func(t *testing.T) {
+		t.Cleanup(func() {
+			if t.Failed() {
+				r.svc.Stop(true)
+				r.svc.Reset()
+				go r.svc.Run()
+			}
+		})
 		r.awaitIdle(t)
 		r.publishSampleOffset(t, test.audioCodec, test.audioDelay, test.audioUnpublish)
 		if test.audioRepublish != 0 {
@@ -53,10 +60,6 @@ func (r *Runner) runParticipantTest(
 			r.publishSampleOffset(t, test.videoCodec, test.videoRepublish, 0)
 		}
 		f(t, r.room.LocalParticipant.Identity())
-		if t.Failed() {
-			r.svc.Reset()
-			go r.svc.Run()
-		}
 	})
 }
 
@@ -88,12 +91,12 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 				filename:       "participant_{room_name}_h264_{time}.mp4",
 			},
 			{
-				name:           "OGG",
-				fileType:       livekit.EncodedFileType_OGG,
+				name:           "AudioOnly",
+				fileType:       livekit.EncodedFileType_MP4,
 				audioCodec:     types.MimeTypeOpus,
 				audioUnpublish: time.Second * 10,
 				audioRepublish: time.Second * 15,
-				filename:       "participant_{room_name}_{time}.ogg",
+				filename:       "participant_{room_name}_{time}.mp4",
 			},
 		} {
 			r.runParticipantTest(t, test.name, test, func(t *testing.T, identity string) {
