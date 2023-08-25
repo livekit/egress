@@ -198,12 +198,10 @@ func (s *SDKSource) awaitParticipant(identity string) error {
 		return err
 	}
 
-	trackCount := 0
-	for trackCount == 0 || trackCount < len(rp.Tracks()) {
+	for trackCount := 0; trackCount == 0 || trackCount < len(rp.Tracks()); trackCount++ {
 		if err = <-s.errors; err != nil {
 			return err
 		}
-		trackCount++
 	}
 
 	s.initialized.Break()
@@ -293,10 +291,6 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 // ----- Callbacks -----
 
 func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-	if s.initialized.IsBroken() {
-		return
-	}
-
 	var onSubscribeErr error
 	defer func() {
 		if s.initialized.IsBroken() {
@@ -309,7 +303,6 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 	}()
 
 	s.active.Inc()
-
 	ts := &config.TrackSource{
 		TrackID:     pub.SID(),
 		Kind:        pub.Kind(),

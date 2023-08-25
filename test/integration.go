@@ -259,7 +259,7 @@ func (r *Runner) getUpdate(t *testing.T, egressID string) *livekit.EgressInfo {
 				return info
 			}
 
-		case <-time.After(time.Minute):
+		case <-time.After(time.Second * 30):
 			t.Fatal("no update from results channel")
 			return nil
 		}

@@ -57,6 +57,7 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	// verify and check updates
 	time.Sleep(time.Second * 5)
 	r.verifyStreams(t, p, streamUrl1, streamUrl2)
+
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		redactedUrl1:    livekit.StreamInfo_ACTIVE,
 		redactedUrl2:    livekit.StreamInfo_ACTIVE,

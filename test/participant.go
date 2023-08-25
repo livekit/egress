@@ -145,10 +145,9 @@ func (r *Runner) testParticipantStream(t *testing.T) {
 	}
 
 	test := &testCase{
-		audioCodec:     types.MimeTypeOpus,
-		audioDelay:     time.Second * 10,
-		videoCodec:     types.MimeTypeVP8,
-		videoUnpublish: time.Second * 20,
+		audioCodec: types.MimeTypeOpus,
+		audioDelay: time.Second * 10,
+		videoCodec: types.MimeTypeVP8,
 	}
 
 	r.runParticipantTest(t, "Participant/Stream", test,
