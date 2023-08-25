@@ -411,11 +411,16 @@ func addVideoEncoder(b *gstreamer.Bin, p *config.PipelineConfig) error {
 				return errors.ErrGstPipelineError(err)
 			}
 		}
+		bufCapacity := uint(2000) // 2s
 		if p.GetSegmentConfig() != nil {
 			// avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
 			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
+			bufCapacity = uint(time.Duration(p.GetSegmentConfig().SegmentDuration) * (time.Second / time.Millisecond))
+		}
+		if err = x264Enc.SetProperty("vbv-buf-capacity", bufCapacity); err != nil {
+			return err
 		}
 
 		caps, err := gst.NewElement("capsfilter")

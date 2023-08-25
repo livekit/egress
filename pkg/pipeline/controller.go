@@ -37,8 +37,8 @@ import (
 )
 
 const (
-	pipelineSource = "pipeline"
-	eosTimeout     = time.Second * 30
+	pipelineName = "pipeline"
+	eosTimeout   = time.Second * 30
 )
 
 type Controller struct {
@@ -111,10 +111,13 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 func (c *Controller) BuildPipeline() error {
 	logger.Debugw("building pipeline")
 
-	p, err := gstreamer.NewPipeline("pipeline", c.Latency, c.callbacks)
+	p, err := gstreamer.NewPipeline(pipelineName, c.Latency, c.callbacks)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+
+	p.SetWatch(c.messageWatch)
+	p.AddOnStop(c.OnStop)
 
 	if c.AudioEnabled {
 		audioBin, err := builder.BuildAudioBin(p, c.PipelineConfig)
@@ -159,9 +162,6 @@ func (c *Controller) BuildPipeline() error {
 			return err
 		}
 	}
-
-	p.SetWatch(c.messageWatch)
-	p.AddOnStop(c.OnStop)
 
 	if err = p.Link(); err != nil {
 		return err
@@ -486,6 +486,11 @@ func (c *Controller) SendEOS(ctx context.Context) {
 				c.p.SendEOS()
 			}()
 		}
+
+		switch c.src.(type) {
+		case *source.WebSource:
+			c.updateDuration(c.src.GetEndedAt())
+		}
 	})
 }
 
@@ -507,8 +512,16 @@ func (c *Controller) OnStop() error {
 	if c.eosTimer != nil {
 		c.eosTimer.Stop()
 	}
-	endedAt := c.src.GetEndedAt()
 
+	switch c.src.(type) {
+	case *source.SDKSource:
+		c.updateDuration(c.src.GetEndedAt())
+	}
+
+	return nil
+}
+
+func (c *Controller) updateDuration(endedAt int64) {
 	for egressType, o := range c.Outputs {
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
@@ -538,6 +551,4 @@ func (c *Controller) OnStop() error {
 			segmentsInfo.Duration = endedAt - segmentsInfo.StartedAt
 		}
 	}
-
-	return nil
 }
