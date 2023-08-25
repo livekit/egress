@@ -116,6 +116,9 @@ func (c *Controller) BuildPipeline() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
+	p.SetWatch(c.messageWatch)
+	p.AddOnStop(c.OnStop)
+
 	if c.AudioEnabled {
 		audioBin, err := builder.BuildAudioBin(p, c.PipelineConfig)
 		if err != nil {
@@ -159,9 +162,6 @@ func (c *Controller) BuildPipeline() error {
 			return err
 		}
 	}
-
-	p.SetWatch(c.messageWatch)
-	p.AddOnStop(c.OnStop)
 
 	if err = p.Link(); err != nil {
 		return err
