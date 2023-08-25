@@ -53,6 +53,10 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gst
 		}
 	}
 
+	if err := pipeline.AddSourceBin(b); err != nil {
+		return nil, err
+	}
+
 	return b, nil
 }
 
@@ -83,7 +87,7 @@ func buildWebAudioInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 
 func buildSDKAudioInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	if p.AudioTrack != nil {
-		if err := buildAudioAppSrcBin(b, p); err != nil {
+		if err := AddAudioAppSrcBin(b, p, p.AudioTrack); err != nil {
 			return err
 		}
 	}
@@ -102,28 +106,23 @@ func buildSDKAudioInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	return nil
 }
 
-func buildAudioAppSrcBin(audioBin *gstreamer.Bin, p *config.PipelineConfig) error {
-	track := p.AudioTrack
+func AddAudioAppSrcBin(audioBin *gstreamer.Bin, p *config.PipelineConfig, ts *config.TrackSource) error {
+	b := audioBin.NewBin(ts.TrackID)
+	b.SetEOSFunc(ts.EOSFunc)
 
-	b := audioBin.NewBin(track.TrackID)
-	b.SetEOSFunc(track.EOSFunc)
-	if err := audioBin.AddSourceBin(b); err != nil {
+	ts.AppSrc.Element.SetArg("format", "time")
+	if err := ts.AppSrc.Element.SetProperty("is-live", true); err != nil {
+		return err
+	}
+	if err := b.AddElement(ts.AppSrc.Element); err != nil {
 		return err
 	}
 
-	track.AppSrc.Element.SetArg("format", "time")
-	if err := track.AppSrc.Element.SetProperty("is-live", true); err != nil {
-		return err
-	}
-	if err := b.AddElement(track.AppSrc.Element); err != nil {
-		return err
-	}
-
-	switch track.MimeType {
+	switch ts.MimeType {
 	case types.MimeTypeOpus:
-		if err := track.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		if err := ts.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
-			track.PayloadType, track.ClockRate,
+			ts.PayloadType, ts.ClockRate,
 		))); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -143,10 +142,14 @@ func buildAudioAppSrcBin(audioBin *gstreamer.Bin, p *config.PipelineConfig) erro
 		}
 
 	default:
-		return errors.ErrNotSupported(string(track.MimeType))
+		return errors.ErrNotSupported(string(ts.MimeType))
 	}
 
 	if err := addAudioConverter(b, p); err != nil {
+		return err
+	}
+
+	if err := audioBin.AddSourceBin(b); err != nil {
 		return err
 	}
 

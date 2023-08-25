@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
+	lksdk "github.com/livekit/server-sdk-go"
 )
 
 const (
@@ -119,25 +120,40 @@ func (c *Controller) BuildPipeline() error {
 	p.SetWatch(c.messageWatch)
 	p.AddOnStop(c.OnStop)
 
+	var audioBin, videoBin *gstreamer.Bin
+	var videoInput *builder.VideoInput
+
 	if c.AudioEnabled {
-		audioBin, err := builder.BuildAudioBin(p, c.PipelineConfig)
+		audioBin, err = builder.BuildAudioBin(p, c.PipelineConfig)
 		if err != nil {
 			return err
 		}
-		if err = p.AddSourceBin(audioBin); err != nil {
+	}
+	if c.VideoEnabled {
+		videoInput, videoBin, err = builder.BuildVideoBin(p, c.PipelineConfig)
+		if err != nil {
 			return err
 		}
 	}
 
-	if c.VideoEnabled {
-		videoBin, err := builder.BuildVideoBin(p, c.PipelineConfig)
+	p.AddOnTrackAdded(func(ts *config.TrackSource) {
+		switch ts.Kind {
+		case lksdk.TrackKindAudio:
+			if err := builder.AddAudioAppSrcBin(audioBin, c.PipelineConfig, ts); err != nil {
+				p.OnError(err)
+			}
+		case lksdk.TrackKindVideo:
+			if err := videoInput.AddVideoAppSrcBin(videoBin, c.PipelineConfig, ts); err != nil {
+				p.OnError(err)
+			}
+		}
+	})
+	p.AddOnTrackRemoved(func(trackID string) {
+		_, err := p.RemoveSinkBin(trackID)
 		if err != nil {
-			return err
+			p.OnError(err)
 		}
-		if err = p.AddSourceBin(videoBin); err != nil {
-			return err
-		}
-	}
+	})
 
 	for egressType := range c.Outputs {
 		var sinkBin *gstreamer.Bin

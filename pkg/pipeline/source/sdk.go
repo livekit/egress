@@ -33,6 +33,7 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 	lksdk "github.com/livekit/server-sdk-go"
@@ -144,6 +145,10 @@ func (s *SDKSource) joinRoom() error {
 		},
 		OnDisconnected: s.onDisconnected,
 	}
+	if s.RequestType == types.RequestTypeParticipant {
+		cb.ParticipantCallback.OnTrackPublished = s.onTrackPublished
+		cb.OnParticipantDisconnected = s.onParticipantDisconnected
+	}
 
 	logger.Debugw("connecting to room")
 	s.room = lksdk.CreateRoom(cb)
@@ -154,9 +159,12 @@ func (s *SDKSource) joinRoom() error {
 	var fileIdentifier string
 	var err error
 	switch s.RequestType {
+	case types.RequestTypeParticipant:
+		fileIdentifier = s.Identity
+		err = s.awaitParticipant(s.Identity)
+
 	case types.RequestTypeTrackComposite:
 		fileIdentifier = s.Info.RoomName
-
 		tracks := make(map[string]struct{})
 		if s.AudioEnabled {
 			tracks[s.AudioTrackID] = struct{}{}
@@ -168,7 +176,6 @@ func (s *SDKSource) joinRoom() error {
 
 	case types.RequestTypeTrack:
 		fileIdentifier = s.TrackID
-
 		err = s.awaitTracks(map[string]struct{}{s.TrackID: {}})
 	}
 	if err != nil {
@@ -181,6 +188,39 @@ func (s *SDKSource) joinRoom() error {
 	}
 
 	return nil
+}
+
+func (s *SDKSource) awaitParticipant(identity string) error {
+	s.errors = make(chan error, 2)
+
+	rp, err := s.getParticipant(identity)
+	if err != nil {
+		return err
+	}
+
+	trackCount := 0
+	for trackCount == 0 || trackCount < len(rp.Tracks()) {
+		if err = <-s.errors; err != nil {
+			return err
+		}
+		trackCount++
+	}
+
+	s.initialized.Break()
+	return nil
+}
+
+func (s *SDKSource) getParticipant(identity string) (*lksdk.RemoteParticipant, error) {
+	deadline := time.Now().Add(subscriptionTimeout)
+	for time.Now().Before(deadline) {
+		for _, p := range s.room.GetParticipants() {
+			if p.Identity() == identity {
+				return p, nil
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil, errors.ErrParticipantNotFound(identity)
 }
 
 func (s *SDKSource) awaitTracks(expecting map[string]struct{}) error {
@@ -296,7 +336,11 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 
 		ts.EOSFunc = s.CloseWriters
 		s.audioWriter = writer
-		s.AudioTrack = ts
+		if s.initialized.IsBroken() {
+			s.callbacks.OnTrackAdded(ts)
+		} else {
+			s.AudioTrack = ts
+		}
 
 	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9:
 		s.VideoEnabled = true
@@ -316,7 +360,11 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 
 		ts.EOSFunc = s.CloseWriters
 		s.videoWriter = writer
-		s.VideoTrack = ts
+		if s.initialized.IsBroken() {
+			s.callbacks.OnTrackAdded(ts)
+		} else {
+			s.VideoTrack = ts
+		}
 
 	default:
 		onSubscribeErr = errors.ErrNotSupported(string(ts.MimeType))
@@ -380,6 +428,23 @@ func (s *SDKSource) createWriter(
 	return writer, nil
 }
 
+func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+	if rp.Identity() != s.Identity {
+		return
+	}
+
+	switch pub.Source() {
+	case livekit.TrackSource_CAMERA, livekit.TrackSource_MICROPHONE:
+		if err := s.subscribe(pub); err != nil {
+			logger.Errorw("failed to subscribe to track", err, "trackID", pub.SID())
+		}
+	default:
+		logger.Infow("ignoring participant track",
+			"reason", fmt.Sprintf("source %s", pub.Source()))
+		return
+	}
+}
+
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	if w := s.getWriterForTrack(pub.SID()); w != nil {
 		w.SetTrackMuted(true)
@@ -421,7 +486,16 @@ func (s *SDKSource) onTrackFinished(trackID string) {
 	}
 
 	w.Drain(true)
-	if s.active.Dec() == 0 {
+	active := s.active.Dec()
+	if s.RequestType == types.RequestTypeParticipant {
+		s.callbacks.OnTrackRemoved(trackID)
+	} else if active == 0 {
+		s.onDisconnected()
+	}
+}
+
+func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
+	if rp.Identity() == s.Identity {
 		s.onDisconnected()
 	}
 }
