@@ -254,10 +254,6 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 	if s != nil {
 		switch s.Name() {
 		case msgFragmentOpened:
-			if timer := c.eosTimer; timer != nil {
-				timer.Reset(eosTimeout)
-			}
-
 			filepath, t, err := getSegmentParamsFromGstStructure(s)
 			if err != nil {
 				logger.Errorw("failed to retrieve segment parameters from event", err)
@@ -270,10 +266,6 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 			}
 
 		case msgFragmentClosed:
-			if timer := c.eosTimer; timer != nil {
-				timer.Reset(eosTimeout)
-			}
-
 			filepath, t, err := getSegmentParamsFromGstStructure(s)
 			if err != nil {
 				logger.Errorw("failed to retrieve segment parameters from event", err, "location", filepath, "runningTime", t)
