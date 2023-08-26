@@ -32,6 +32,7 @@ type Pipeline struct {
 	elementsAdded bool
 	started       core.Fuse
 	running       chan struct{}
+	stopped       core.Fuse
 }
 
 // A pipeline can have either elements or src and sink bins. If you add both you will get a wrong hierarchy error
@@ -53,6 +54,7 @@ func NewPipeline(name string, latency uint64, callbacks *Callbacks) (*Pipeline, 
 		loop:    glib.NewMainLoop(glib.MainContextDefault(), false),
 		started: core.NewFuse(),
 		running: make(chan struct{}),
+		stopped: core.NewFuse(),
 	}, nil
 }
 
@@ -97,8 +99,18 @@ func (p *Pipeline) SetWatch(watch func(msg *gst.Message) bool) {
 }
 
 func (p *Pipeline) SetState(state gst.State) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if err := p.pipeline.SetState(state); err != nil {
 		return errors.ErrGstPipelineError(err)
+	}
+	if state == gst.StateNull {
+		for _, src := range p.srcs {
+			if err := src.SetState(gst.StateNull); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -124,15 +136,14 @@ func (p *Pipeline) SendEOS() {
 }
 
 func (p *Pipeline) Stop() {
-	defer p.loop.Quit()
-	if err := p.SetState(gst.StateNull); err != nil {
-		p.OnError(err)
-		return
-	}
-	if err := p.OnStop(); err != nil {
-		p.OnError(err)
-		return
-	}
+	p.stopped.Once(func() {
+		defer p.loop.Quit()
+
+		_ = p.SetState(gst.StateNull)
+		if err := p.OnStop(); err != nil {
+			p.OnError(err)
+		}
+	})
 }
 
 func (p *Pipeline) DebugBinToDotData(details gst.DebugGraphDetails) string {

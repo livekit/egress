@@ -123,7 +123,7 @@ func (c *Controller) messageWatch(msg *gst.Message) bool {
 	switch msg.Type() {
 	case gst.MessageEOS:
 		logger.Infow("EOS received, stopping pipeline")
-		c.Stop()
+		c.p.Stop()
 		return false
 	case gst.MessageWarning:
 		err = c.handleMessageWarning(msg.ParseWarning())

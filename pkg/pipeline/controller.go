@@ -290,7 +290,7 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 			if c.playing.IsBroken() {
 				c.SendEOS(ctx)
 			} else {
-				c.Stop()
+				c.p.Stop()
 			}
 		})
 	}
@@ -468,13 +468,13 @@ func (c *Controller) SendEOS(ctx context.Context) {
 
 		case livekit.EgressStatus_EGRESS_ABORTED,
 			livekit.EgressStatus_EGRESS_FAILED:
-			c.Stop()
+			c.p.Stop()
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			c.Info.UpdatedAt = time.Now().UnixNano()
 			if c.Info.Error != "" {
 				c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
-				c.Stop()
+				c.p.Stop()
 			} else {
 				c.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 				c.OnUpdate(ctx, c.Info)
@@ -495,7 +495,7 @@ func (c *Controller) SendEOS(ctx context.Context) {
 					if c.FinalizationRequired {
 						c.OnError(errors.ErrPipelineFrozen)
 					} else {
-						c.Stop()
+						c.p.Stop()
 					}
 				})
 
@@ -514,11 +514,7 @@ func (c *Controller) OnError(err error) {
 	if c.Info.Error == "" && (!c.eosSent.IsBroken() || c.FinalizationRequired) {
 		c.Info.Error = err.Error()
 	}
-	go c.Stop()
-}
-
-func (c *Controller) Stop() {
-	c.stopped.Once(c.p.Stop)
+	go c.p.Stop()
 }
 
 func (c *Controller) OnStop() error {
