@@ -105,8 +105,21 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 }
 
 func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.EgressInfo, egressType types.EgressType, withMuting bool, sourceFramerate float64) {
-	info, err := ffprobe(in)
-	require.NoError(t, err, "input %s does not exist", in)
+	var info *FFProbeInfo
+	var err error
+
+	done := make(chan struct{})
+	go func() {
+		info, err = ffprobe(in)
+		close(done)
+	}()
+
+	select {
+	case <-time.After(time.Second * 15):
+		t.Fatal("no response from ffprobe")
+	case <-done:
+		require.NoError(t, err, "input %s does not exist", in)
+	}
 
 	switch p.Outputs[egressType].GetOutputType() {
 	case types.OutputTypeRaw:
