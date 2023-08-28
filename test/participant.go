@@ -18,6 +18,7 @@ package test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
@@ -66,7 +67,7 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 				name:       "VP8",
 				fileType:   livekit.EncodedFileType_MP4,
 				audioCodec: types.MimeTypeOpus,
-				// audioDelay:     time.Second * 8,
+				audioDelay: time.Second * 8,
 				// audioUnpublish: time.Second * 14,
 				// audioRepublish: time.Second * 20,
 				videoCodec: types.MimeTypeVP8,
@@ -77,7 +78,7 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 				fileType:   livekit.EncodedFileType_MP4,
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeH264,
-				// videoDelay:     time.Second * 8,
+				videoDelay: time.Second * 8,
 				// videoUnpublish: time.Second * 14,
 				// videoRepublish: time.Second * 20,
 				filename: "participant_{room_name}_h264_{time}.mp4",
@@ -138,7 +139,7 @@ func (r *Runner) testParticipantStream(t *testing.T) {
 
 	test := &testCase{
 		audioCodec: types.MimeTypeOpus,
-		// audioDelay: time.Second * 10,
+		audioDelay: time.Second * 10,
 		videoCodec: types.MimeTypeVP8,
 	}
 
@@ -173,7 +174,7 @@ func (r *Runner) testParticipantSegments(t *testing.T) {
 				name:       "VP8",
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeVP8,
-				// videoDelay:     time.Second * 10,
+				videoDelay: time.Second * 10,
 				// videoUnpublish: time.Second * 20,
 				filename: "participant_{publisher_identity}_vp8_{time}",
 				playlist: "participant_{publisher_identity}_vp8_{time}.m3u8",
@@ -181,7 +182,7 @@ func (r *Runner) testParticipantSegments(t *testing.T) {
 			{
 				name:       "H264",
 				audioCodec: types.MimeTypeOpus,
-				// audioDelay:     time.Second * 10,
+				audioDelay: time.Second * 10,
 				// audioUnpublish: time.Second * 20,
 				videoCodec: types.MimeTypeH264,
 				filename:   "participant_{room_name}_h264_{time}",
@@ -240,7 +241,7 @@ func (r *Runner) testParticipantMulti(t *testing.T) {
 		audioCodec: types.MimeTypeOpus,
 		// audioUnpublish: time.Second * 20,
 		videoCodec: types.MimeTypeVP8,
-		// videoDelay:     time.Second * 10,
+		videoDelay: time.Second * 10,
 	}
 
 	r.runParticipantTest(t, "Participant/Multi", test,

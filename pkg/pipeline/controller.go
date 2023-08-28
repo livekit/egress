@@ -120,7 +120,7 @@ func (c *Controller) BuildPipeline() error {
 	p.SetWatch(c.messageWatch)
 	p.AddOnStop(c.OnStop)
 
-	var audioBin, videoBin *gstreamer.Bin
+	var audioBin *gstreamer.Bin
 	var videoInput *builder.VideoInput
 
 	if c.AudioEnabled {
@@ -130,7 +130,7 @@ func (c *Controller) BuildPipeline() error {
 		}
 	}
 	if c.VideoEnabled {
-		videoInput, videoBin, err = builder.BuildVideoBin(p, c.PipelineConfig)
+		videoInput, err = builder.BuildVideoBin(p, c.PipelineConfig)
 		if err != nil {
 			return err
 		}
@@ -143,7 +143,7 @@ func (c *Controller) BuildPipeline() error {
 				p.OnError(err)
 			}
 		case lksdk.TrackKindVideo:
-			if err := videoInput.AddVideoAppSrcBin(videoBin, c.PipelineConfig, ts); err != nil {
+			if err := videoInput.AddVideoAppSrcBin(c.PipelineConfig, ts); err != nil {
 				p.OnError(err)
 			}
 		}

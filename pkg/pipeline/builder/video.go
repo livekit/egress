@@ -34,6 +34,8 @@ import (
 const videoTestSrcName = "video_test_src"
 
 type VideoInput struct {
+	bin *gstreamer.Bin
+
 	lastPTS     atomic.Duration
 	nextPTS     atomic.Duration
 	selectedPad string
@@ -44,39 +46,39 @@ type VideoInput struct {
 	selector *gst.Element
 }
 
-func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*VideoInput, *gstreamer.Bin, error) {
-	v := &VideoInput{}
-
-	b := pipeline.NewBin("video")
+func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*VideoInput, error) {
+	v := &VideoInput{
+		bin: pipeline.NewBin("video"),
+	}
 
 	switch p.SourceType {
 	case types.SourceTypeWeb:
-		if err := buildWebVideoInput(b, p); err != nil {
-			return nil, nil, err
+		if err := buildWebVideoInput(v.bin, p); err != nil {
+			return nil, err
 		}
 
 	case types.SourceTypeSDK:
-		if err := v.buildSDKVideoInput(b, p); err != nil {
-			return nil, nil, err
+		if err := v.buildSDKVideoInput(v.bin, p); err != nil {
+			return nil, err
 		}
 	}
 
 	if len(p.Outputs) > 1 {
 		tee, err := gst.NewElementWithName("tee", "video_tee")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
-		if err = b.AddElement(tee); err != nil {
-			return nil, nil, err
+		if err = v.bin.AddElement(tee); err != nil {
+			return nil, err
 		}
 	}
 
-	if err := pipeline.AddSourceBin(b); err != nil {
-		return nil, nil, err
+	if err := pipeline.AddSourceBin(v.bin); err != nil {
+		return nil, err
 	}
 
-	return v, b, nil
+	return v, nil
 }
 
 func buildWebVideoInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
@@ -139,7 +141,7 @@ func (v *VideoInput) buildSDKVideoInput(b *gstreamer.Bin, p *config.PipelineConf
 	}
 
 	if p.VideoTrack != nil {
-		if err := v.AddVideoAppSrcBin(b, p, p.VideoTrack); err != nil {
+		if err := v.AddVideoAppSrcBin(p, p.VideoTrack); err != nil {
 			return err
 		}
 	}
@@ -167,8 +169,8 @@ func (v *VideoInput) buildSDKVideoInput(b *gstreamer.Bin, p *config.PipelineConf
 	return nil
 }
 
-func (v *VideoInput) AddVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig, ts *config.TrackSource) error {
-	b, err := buildVideoAppSrcBin(videoBin, p, ts)
+func (v *VideoInput) AddVideoAppSrcBin(p *config.PipelineConfig, ts *config.TrackSource) error {
+	b, err := buildVideoAppSrcBin(v.bin, p, ts)
 	if err != nil {
 		return err
 	}
@@ -177,7 +179,7 @@ func (v *VideoInput) AddVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.Pipeli
 		v.createSrcPad(ts.TrackID)
 	}
 
-	if err = videoBin.AddSourceBin(b); err != nil {
+	if err = v.bin.AddSourceBin(b); err != nil {
 		return err
 	}
 
