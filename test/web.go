@@ -38,13 +38,6 @@ func (r *Runner) testWeb(t *testing.T) {
 
 func (r *Runner) runWebTest(t *testing.T, name string, f func(t *testing.T)) {
 	t.Run(name, func(t *testing.T) {
-		t.Cleanup(func() {
-			if t.Failed() {
-				r.svc.Stop(true)
-				r.svc.Reset()
-				go r.svc.Run()
-			}
-		})
 		r.awaitIdle(t)
 		f(t)
 	})

@@ -42,13 +42,6 @@ func (r *Runner) runParticipantTest(
 	f func(t *testing.T, identity string),
 ) {
 	t.Run(name, func(t *testing.T) {
-		t.Cleanup(func() {
-			if t.Failed() {
-				r.svc.Stop(true)
-				r.svc.Reset()
-				go r.svc.Run()
-			}
-		})
 		r.awaitIdle(t)
 		r.publishSampleOffset(t, test.audioCodec, test.audioDelay, test.audioUnpublish)
 		if test.audioRepublish != 0 {

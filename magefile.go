@@ -80,6 +80,8 @@ func Proto() error {
 }
 
 func Integration(configFile string) error {
+	defer Dotfiles()
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return err

@@ -43,13 +43,6 @@ func (r *Runner) testRoomComposite(t *testing.T) {
 
 func (r *Runner) runRoomTest(t *testing.T, name string, audioCodec, videoCodec types.MimeType, f func(t *testing.T)) {
 	t.Run(name, func(t *testing.T) {
-		t.Cleanup(func() {
-			if t.Failed() {
-				r.svc.Stop(true)
-				r.svc.Reset()
-				go r.svc.Run()
-			}
-		})
 		r.awaitIdle(t)
 		r.publishSamplesToRoom(t, audioCodec, videoCodec)
 		f(t)

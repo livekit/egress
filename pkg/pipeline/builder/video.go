@@ -225,8 +225,6 @@ func (v *VideoInput) AddVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.Pipeli
 			if err = b.AddElement(h264Parse); err != nil {
 				return err
 			}
-
-			return nil
 		}
 
 	case types.MimeTypeVP8:
@@ -253,8 +251,6 @@ func (v *VideoInput) AddVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.Pipeli
 			if err = b.AddElement(vp8Dec); err != nil {
 				return err
 			}
-		} else {
-			return nil
 		}
 
 	case types.MimeTypeVP9:
@@ -300,47 +296,48 @@ func (v *VideoInput) AddVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.Pipeli
 			if err = b.AddElements(vp9Parse, vp9Caps); err != nil {
 				return err
 			}
-			return nil
 		}
 
 	default:
 		return errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	videoQueue, err := gstreamer.BuildQueue("video_input_queue", p.Latency, true)
-	if err != nil {
-		return err
-	}
+	if p.VideoTranscoding {
+		videoQueue, err := gstreamer.BuildQueue("video_input_queue", p.Latency, true)
+		if err != nil {
+			return err
+		}
 
-	videoConvert, err := gst.NewElement("videoconvert")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
+		videoConvert, err := gst.NewElement("videoconvert")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
 
-	videoScale, err := gst.NewElement("videoscale")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
+		videoScale, err := gst.NewElement("videoscale")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
 
-	videoRate, err := gst.NewElement("videorate")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = videoRate.SetProperty("max-duplication-time", uint64(time.Second)); err != nil {
-		return err
-	}
+		videoRate, err := gst.NewElement("videorate")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = videoRate.SetProperty("max-duplication-time", uint64(time.Second)); err != nil {
+			return err
+		}
 
-	caps, err := newVideoCapsFilter(p, false)
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
+		caps, err := newVideoCapsFilter(p, false)
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
 
-	if err = b.AddElements(videoQueue, videoConvert, videoScale, videoRate, caps); err != nil {
-		return err
+		if err = b.AddElements(videoQueue, videoConvert, videoScale, videoRate, caps); err != nil {
+			return err
+		}
 	}
 
 	v.createSrcPad(ts.TrackID)
-	if err = videoBin.AddSourceBin(b); err != nil {
+	if err := videoBin.AddSourceBin(b); err != nil {
 		return err
 	}
 	return v.setSelectorPad(ts.TrackID)
