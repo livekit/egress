@@ -50,13 +50,13 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*Vid
 	b := pipeline.NewBin("video")
 
 	switch p.SourceType {
-	case types.SourceTypeSDK:
-		if err := v.buildSDKVideoInput(b, p); err != nil {
+	case types.SourceTypeWeb:
+		if err := buildWebVideoInput(b, p); err != nil {
 			return nil, nil, err
 		}
 
-	case types.SourceTypeWeb:
-		if err := buildWebVideoInput(b, p); err != nil {
+	case types.SourceTypeSDK:
+		if err := v.buildSDKVideoInput(b, p); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -168,15 +168,36 @@ func (v *VideoInput) buildSDKVideoInput(b *gstreamer.Bin, p *config.PipelineConf
 }
 
 func (v *VideoInput) AddVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig, ts *config.TrackSource) error {
+	b, err := buildVideoAppSrcBin(videoBin, p, ts)
+	if err != nil {
+		return err
+	}
+
+	if p.VideoTranscoding {
+		v.createSrcPad(ts.TrackID)
+	}
+
+	if err = videoBin.AddSourceBin(b); err != nil {
+		return err
+	}
+
+	if p.VideoTranscoding {
+		return v.setSelectorPad(ts.TrackID)
+	}
+
+	return nil
+}
+
+func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig, ts *config.TrackSource) (*gstreamer.Bin, error) {
 	b := videoBin.NewBin(ts.TrackID)
 	b.SetEOSFunc(ts.EOSFunc)
 
 	ts.AppSrc.Element.SetArg("format", "time")
 	if err := ts.AppSrc.Element.SetProperty("is-live", true); err != nil {
-		return errors.ErrGstPipelineError(err)
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err := b.AddElement(ts.AppSrc.Element); err != nil {
-		return err
+		return nil, err
 	}
 
 	switch ts.MimeType {
@@ -185,46 +206,48 @@ func (v *VideoInput) AddVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.Pipeli
 			"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
 			ts.PayloadType, ts.ClockRate,
 		))); err != nil {
-			return errors.ErrGstPipelineError(err)
+			return nil, errors.ErrGstPipelineError(err)
 		}
 
 		rtpH264Depay, err := gst.NewElement("rtph264depay")
 		if err != nil {
-			return errors.ErrGstPipelineError(err)
+			return nil, errors.ErrGstPipelineError(err)
 		}
 
 		caps, err := gst.NewElement("capsfilter")
 		if err != nil {
-			return errors.ErrGstPipelineError(err)
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = caps.SetProperty("caps", gst.NewCapsFromString(
 			"video/x-h264,stream-format=byte-stream",
 		)); err != nil {
-			return errors.ErrGstPipelineError(err)
+			return nil, errors.ErrGstPipelineError(err)
 		}
 
 		if err = b.AddElements(rtpH264Depay, caps); err != nil {
-			return err
+			return nil, err
 		}
 
 		if p.VideoTranscoding {
 			avDecH264, err := gst.NewElement("avdec_h264")
 			if err != nil {
-				return errors.ErrGstPipelineError(err)
+				return nil, errors.ErrGstPipelineError(err)
 			}
 
 			if err = b.AddElement(avDecH264); err != nil {
-				return err
+				return nil, err
 			}
 		} else {
 			h264Parse, err := gst.NewElement("h264parse")
 			if err != nil {
-				return errors.ErrGstPipelineError(err)
+				return nil, errors.ErrGstPipelineError(err)
 			}
 
 			if err = b.AddElement(h264Parse); err != nil {
-				return err
+				return nil, err
 			}
+
+			return b, nil
 		}
 
 	case types.MimeTypeVP8:
@@ -232,25 +255,27 @@ func (v *VideoInput) AddVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.Pipeli
 			"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
 			ts.PayloadType, ts.ClockRate,
 		))); err != nil {
-			return errors.ErrGstPipelineError(err)
+			return nil, errors.ErrGstPipelineError(err)
 		}
 
 		rtpVP8Depay, err := gst.NewElement("rtpvp8depay")
 		if err != nil {
-			return errors.ErrGstPipelineError(err)
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = b.AddElement(rtpVP8Depay); err != nil {
-			return err
+			return nil, err
 		}
 
 		if p.VideoTranscoding {
 			vp8Dec, err := gst.NewElement("vp8dec")
 			if err != nil {
-				return errors.ErrGstPipelineError(err)
+				return nil, errors.ErrGstPipelineError(err)
 			}
 			if err = b.AddElement(vp8Dec); err != nil {
-				return err
+				return nil, err
 			}
+		} else {
+			return b, nil
 		}
 
 	case types.MimeTypeVP9:
@@ -258,89 +283,89 @@ func (v *VideoInput) AddVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.Pipeli
 			"application/x-rtp,media=video,payload=%d,encoding-name=VP9,clock-rate=%d",
 			ts.PayloadType, ts.ClockRate,
 		))); err != nil {
-			return errors.ErrGstPipelineError(err)
+			return nil, errors.ErrGstPipelineError(err)
 		}
 
 		rtpVP9Depay, err := gst.NewElement("rtpvp9depay")
 		if err != nil {
-			return errors.ErrGstPipelineError(err)
+			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = b.AddElement(rtpVP9Depay); err != nil {
-			return err
+			return nil, err
 		}
 
 		if p.VideoTranscoding {
 			vp9Dec, err := gst.NewElement("vp9dec")
 			if err != nil {
-				return errors.ErrGstPipelineError(err)
+				return nil, errors.ErrGstPipelineError(err)
 			}
 			if err = b.AddElement(vp9Dec); err != nil {
-				return err
+				return nil, err
 			}
 		} else {
 			vp9Parse, err := gst.NewElement("vp9parse")
 			if err != nil {
-				return errors.ErrGstPipelineError(err)
+				return nil, errors.ErrGstPipelineError(err)
 			}
 
 			vp9Caps, err := gst.NewElement("capsfilter")
 			if err != nil {
-				return errors.ErrGstPipelineError(err)
+				return nil, errors.ErrGstPipelineError(err)
 			}
 			if err = vp9Caps.SetProperty("caps", gst.NewCapsFromString(
 				"video/x-vp9,width=[16,2147483647],height=[16,2147483647]",
 			)); err != nil {
-				return errors.ErrGstPipelineError(err)
+				return nil, errors.ErrGstPipelineError(err)
 			}
 
 			if err = b.AddElements(vp9Parse, vp9Caps); err != nil {
-				return err
+				return nil, err
 			}
+
+			return b, nil
 		}
 
 	default:
-		return errors.ErrNotSupported(string(ts.MimeType))
+		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	if p.VideoTranscoding {
-		videoQueue, err := gstreamer.BuildQueue("video_input_queue", p.Latency, true)
-		if err != nil {
-			return err
-		}
-
-		videoConvert, err := gst.NewElement("videoconvert")
-		if err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-
-		videoScale, err := gst.NewElement("videoscale")
-		if err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-
-		videoRate, err := gst.NewElement("videorate")
-		if err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if err = videoRate.SetProperty("max-duplication-time", uint64(time.Second)); err != nil {
-			return err
-		}
-
-		caps, err := newVideoCapsFilter(p, false)
-		if err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-
-		if err = b.AddElements(videoQueue, videoConvert, videoScale, videoRate, caps); err != nil {
-			return err
-		}
+	if err := buildVideoConverter(b, p); err != nil {
+		return nil, err
 	}
 
-	v.createSrcPad(ts.TrackID)
-	if err := videoBin.AddSourceBin(b); err != nil {
+	return b, nil
+}
+
+func buildVideoConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
+	videoQueue, err := gstreamer.BuildQueue("video_input_queue", p.Latency, true)
+	if err != nil {
 		return err
 	}
-	return v.setSelectorPad(ts.TrackID)
+
+	videoConvert, err := gst.NewElement("videoconvert")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	videoScale, err := gst.NewElement("videoscale")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	videoRate, err := gst.NewElement("videorate")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = videoRate.SetProperty("max-duplication-time", uint64(time.Second)); err != nil {
+		return err
+	}
+
+	caps, err := newVideoCapsFilter(p, false)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	return b.AddElements(videoQueue, videoConvert, videoScale, videoRate, caps)
 }
 
 func (v *VideoInput) buildVideoTestSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig) error {
