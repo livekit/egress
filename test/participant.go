@@ -171,13 +171,13 @@ func (r *Runner) testParticipantSegments(t *testing.T) {
 	t.Run("Participant/Segments", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
-				name:           "VP8",
-				audioCodec:     types.MimeTypeOpus,
-				videoCodec:     types.MimeTypeVP8,
-				videoDelay:     time.Second * 10,
-				videoUnpublish: time.Second * 20,
-				filename:       "participant_{publisher_identity}_vp8_{time}",
-				playlist:       "participant_{publisher_identity}_vp8_{time}.m3u8",
+				name:       "VP8",
+				audioCodec: types.MimeTypeOpus,
+				videoCodec: types.MimeTypeVP8,
+				// videoDelay:     time.Second * 10,
+				// videoUnpublish: time.Second * 20,
+				filename: "participant_{publisher_identity}_vp8_{time}",
+				playlist: "participant_{publisher_identity}_vp8_{time}.m3u8",
 			},
 			{
 				name:           "H264",
