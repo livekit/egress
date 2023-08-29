@@ -78,7 +78,7 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 				fileType:   livekit.EncodedFileType_MP4,
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeH264,
-				// videoDelay: time.Second * 8,
+				videoDelay: time.Second * 8,
 				// videoUnpublish: time.Second * 14,
 				// videoRepublish: time.Second * 20,
 				filename: "participant_{room_name}_h264_{time}.mp4",

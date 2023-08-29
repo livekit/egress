@@ -33,7 +33,7 @@ import (
 
 const videoTestSrcName = "video_test_src"
 
-type VideoInput struct {
+type VideoBin struct {
 	bin *gstreamer.Bin
 
 	lastPTS     atomic.Duration
@@ -46,19 +46,19 @@ type VideoInput struct {
 	selector *gst.Element
 }
 
-func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*VideoInput, error) {
-	v := &VideoInput{
+func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*VideoBin, error) {
+	b := &VideoBin{
 		bin: pipeline.NewBin("video"),
 	}
 
 	switch p.SourceType {
 	case types.SourceTypeWeb:
-		if err := buildWebVideoInput(v.bin, p); err != nil {
+		if err := b.buildWebInput(p); err != nil {
 			return nil, err
 		}
 
 	case types.SourceTypeSDK:
-		if err := v.buildSDKVideoInput(v.bin, p); err != nil {
+		if err := b.buildSDKInput(p); err != nil {
 			return nil, err
 		}
 	}
@@ -69,19 +69,138 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*Vid
 			return nil, err
 		}
 
-		if err = v.bin.AddElement(tee); err != nil {
+		if err = b.bin.AddElement(tee); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := pipeline.AddSourceBin(v.bin); err != nil {
+	if err := pipeline.AddSourceBin(b.bin); err != nil {
 		return nil, err
 	}
 
-	return v, nil
+	return b, nil
 }
 
-func buildWebVideoInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
+func (b *VideoBin) AddVideoAppSrcBin(p *config.PipelineConfig, ts *config.TrackSource) error {
+	appSrcBin, err := buildVideoAppSrcBin(b.bin, p, ts)
+	if err != nil {
+		return err
+	}
+
+	if p.VideoTranscoding {
+		b.createSrcPad(ts.TrackID)
+	}
+
+	if err = b.bin.AddSourceBin(appSrcBin); err != nil {
+		return err
+	}
+
+	if p.VideoTranscoding {
+		return b.setSelectorPad(ts.TrackID)
+	}
+
+	return nil
+}
+
+func (b *VideoBin) getSrcPad(name string) *gst.Pad {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.pads[name]
+}
+
+func (b *VideoBin) onTrackMuted(trackID string) {
+	if b.selectedPad != trackID {
+		return
+	}
+
+	if err := b.setSelectorPad(videoTestSrcName); err != nil {
+		logger.Errorw("failed to set selector pad", err)
+	}
+}
+
+func (b *VideoBin) onTrackUnmuted(trackID string, pts time.Duration) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.pads[trackID] == nil {
+		return
+	}
+
+	b.nextPTS.Store(pts)
+	b.nextPad = trackID
+}
+
+func (b *VideoBin) createSrcPad(trackID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	pad := b.selector.GetRequestPad("sink_%u")
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		buffer := info.GetBuffer()
+		for b.nextPTS.Load() != 0 {
+			time.Sleep(time.Millisecond * 100)
+		}
+		if buffer.PresentationTimestamp() < b.lastPTS.Load() {
+			return gst.PadProbeDrop
+		}
+		b.lastPTS.Store(buffer.PresentationTimestamp())
+		return gst.PadProbeOK
+	})
+	b.pads[trackID] = pad
+}
+
+func (b *VideoBin) createTestSrcPad() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	pad := b.selector.GetRequestPad("sink_%u")
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		buffer := info.GetBuffer()
+		if buffer.PresentationTimestamp() < b.lastPTS.Load() {
+			return gst.PadProbeDrop
+		}
+		if nextPTS := b.nextPTS.Load(); nextPTS != 0 && buffer.PresentationTimestamp() >= nextPTS {
+			if err := b.setSelectorPad(b.nextPad); err != nil {
+				logger.Errorw("failed to unmute", err)
+				return gst.PadProbeDrop
+			}
+			b.nextPad = ""
+			b.nextPTS.Store(0)
+		}
+		b.lastPTS.Store(buffer.PresentationTimestamp())
+		return gst.PadProbeOK
+	})
+	b.pads[videoTestSrcName] = pad
+}
+
+// TODO: go-gst should accept objects directly and handle conversion to C
+func (b *VideoBin) setSelectorPad(name string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	pad := b.pads[name]
+
+	pt, err := b.selector.GetPropertyType("active-pad")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	val, err := glib.ValueInit(pt)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	val.SetInstance(uintptr(unsafe.Pointer(pad.Instance())))
+
+	if err = b.selector.SetPropertyValue("active-pad", val); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	b.selectedPad = name
+	return nil
+}
+
+func (b *VideoBin) buildWebInput(p *config.PipelineConfig) error {
 	xImageSrc, err := gst.NewElement("ximagesrc")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -118,73 +237,52 @@ func buildWebVideoInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	if err = b.AddElements(xImageSrc, videoQueue, videoConvert, caps); err != nil {
+	if err = b.bin.AddElements(xImageSrc, videoQueue, videoConvert, caps); err != nil {
 		return err
 	}
 
 	if p.VideoTranscoding {
-		if err = addVideoEncoder(b, p); err != nil {
+		if err = b.addEncoder(p); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (v *VideoInput) buildSDKVideoInput(b *gstreamer.Bin, p *config.PipelineConfig) error {
-	v.pads = make(map[string]*gst.Pad)
+func (b *VideoBin) buildSDKInput(p *config.PipelineConfig) error {
+	b.pads = make(map[string]*gst.Pad)
 
 	// add selector first so pads can be created
 	if p.VideoTranscoding {
-		if err := v.addVideoSelector(b, p); err != nil {
+		if err := b.addSelector(p); err != nil {
 			return err
 		}
 	}
 
 	if p.VideoTrack != nil {
-		if err := v.AddVideoAppSrcBin(p, p.VideoTrack); err != nil {
+		if err := b.AddVideoAppSrcBin(p, p.VideoTrack); err != nil {
 			return err
 		}
 	}
 
 	if p.VideoTranscoding {
-		if err := v.buildVideoTestSrcBin(b, p); err != nil {
+		if err := b.addVideoTestSrcBin(p); err != nil {
 			return err
 		}
 
 		if p.VideoTrack == nil {
-			if err := v.setSelectorPad(videoTestSrcName); err != nil {
+			if err := b.setSelectorPad(videoTestSrcName); err != nil {
 				return err
 			}
 		}
 
-		b.SetGetSrcPad(v.getSrcPad)
-		b.Callbacks.AddOnTrackMuted(v.onTrackMuted)
-		b.Callbacks.AddOnTrackUnmuted(v.onTrackUnmuted)
+		b.bin.SetGetSrcPad(b.getSrcPad)
+		b.bin.Callbacks.AddOnTrackMuted(b.onTrackMuted)
+		b.bin.Callbacks.AddOnTrackUnmuted(b.onTrackUnmuted)
 
-		if err := addVideoEncoder(b, p); err != nil {
+		if err := b.addEncoder(p); err != nil {
 			return err
 		}
-	}
-
-	return nil
-}
-
-func (v *VideoInput) AddVideoAppSrcBin(p *config.PipelineConfig, ts *config.TrackSource) error {
-	b, err := buildVideoAppSrcBin(v.bin, p, ts)
-	if err != nil {
-		return err
-	}
-
-	if p.VideoTranscoding {
-		v.createSrcPad(ts.TrackID)
-	}
-
-	if err = v.bin.AddSourceBin(b); err != nil {
-		return err
-	}
-
-	if p.VideoTranscoding {
-		return v.setSelectorPad(ts.TrackID)
 	}
 
 	return nil
@@ -331,48 +429,16 @@ func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig, ts *
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	if err := buildVideoConverter(b, p); err != nil {
+	if err := addVideoConverter(b, p); err != nil {
 		return nil, err
 	}
 
 	return b, nil
 }
 
-func buildVideoConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
-	videoQueue, err := gstreamer.BuildQueue("video_input_queue", p.Latency, true)
-	if err != nil {
-		return err
-	}
-
-	videoConvert, err := gst.NewElement("videoconvert")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-
-	videoScale, err := gst.NewElement("videoscale")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-
-	videoRate, err := gst.NewElement("videorate")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = videoRate.SetProperty("max-duplication-time", uint64(time.Second)); err != nil {
-		return err
-	}
-
-	caps, err := newVideoCapsFilter(p, false)
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-
-	return b.AddElements(videoQueue, videoConvert, videoScale, videoRate, caps)
-}
-
-func (v *VideoInput) buildVideoTestSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig) error {
-	b := videoBin.NewBin(videoTestSrcName)
-	if err := videoBin.AddSourceBin(b); err != nil {
+func (b *VideoBin) addVideoTestSrcBin(p *config.PipelineConfig) error {
+	testSrcBin := b.bin.NewBin(videoTestSrcName)
+	if err := b.bin.AddSourceBin(testSrcBin); err != nil {
 		return err
 	}
 
@@ -390,34 +456,49 @@ func (v *VideoInput) buildVideoTestSrcBin(videoBin *gstreamer.Bin, p *config.Pip
 		return errors.ErrGstPipelineError(err)
 	}
 
-	if err = b.AddElements(videoTestSrc, caps); err != nil {
+	if err = testSrcBin.AddElements(videoTestSrc, caps); err != nil {
 		return err
 	}
 
-	v.createTestSrcPad()
+	b.createTestSrcPad()
 	return nil
 }
 
-func (v *VideoInput) addVideoSelector(b *gstreamer.Bin, p *config.PipelineConfig) error {
+func (b *VideoBin) addSelector(p *config.PipelineConfig) error {
 	inputSelector, err := gst.NewElement("input-selector")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-
-	if err = b.AddElements(inputSelector); err != nil {
+	videoRate, err := gst.NewElement("videorate")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = videoRate.SetProperty("max-duplication-time", uint64(time.Second)); err != nil {
+		return err
+	}
+	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
 		return err
 	}
 
-	v.selector = inputSelector
+	caps, err := newVideoCapsFilter(p, true)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	if err = b.bin.AddElements(inputSelector, videoRate, caps); err != nil {
+		return err
+	}
+
+	b.selector = inputSelector
 	return nil
 }
 
-func addVideoEncoder(b *gstreamer.Bin, p *config.PipelineConfig) error {
+func (b *VideoBin) addEncoder(p *config.PipelineConfig) error {
 	videoQueue, err := gstreamer.BuildQueue("video_encoder_queue", p.Latency, false)
 	if err != nil {
 		return err
 	}
-	if err = b.AddElement(videoQueue); err != nil {
+	if err = b.bin.AddElement(videoQueue); err != nil {
 		return err
 	}
 
@@ -460,7 +541,7 @@ func addVideoEncoder(b *gstreamer.Bin, p *config.PipelineConfig) error {
 			return errors.ErrGstPipelineError(err)
 		}
 
-		if err = b.AddElements(x264Enc, caps); err != nil {
+		if err = b.bin.AddElements(x264Enc, caps); err != nil {
 			return err
 		}
 
@@ -492,7 +573,7 @@ func addVideoEncoder(b *gstreamer.Bin, p *config.PipelineConfig) error {
 		if err = vp9Enc.SetProperty("min-quantizer", 2); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		if err = b.AddElement(vp9Enc); err != nil {
+		if err = b.bin.AddElement(vp9Enc); err != nil {
 			return err
 		}
 
@@ -503,102 +584,39 @@ func addVideoEncoder(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	}
 }
 
-func (v *VideoInput) getSrcPad(name string) *gst.Pad {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	return v.pads[name]
-}
-
-func (v *VideoInput) createSrcPad(trackID string) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	pad := v.selector.GetRequestPad("sink_%u")
-	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		buffer := info.GetBuffer()
-		for v.nextPTS.Load() != 0 {
-			time.Sleep(time.Millisecond * 100)
-		}
-		if buffer.PresentationTimestamp() < v.lastPTS.Load() {
-			return gst.PadProbeDrop
-		}
-		v.lastPTS.Store(buffer.PresentationTimestamp())
-		return gst.PadProbeOK
-	})
-	v.pads[trackID] = pad
-}
-
-func (v *VideoInput) createTestSrcPad() {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	pad := v.selector.GetRequestPad("sink_%u")
-	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		buffer := info.GetBuffer()
-		if buffer.PresentationTimestamp() < v.lastPTS.Load() {
-			return gst.PadProbeDrop
-		}
-		if nextPTS := v.nextPTS.Load(); nextPTS != 0 && buffer.PresentationTimestamp() >= nextPTS {
-			if err := v.setSelectorPad(v.nextPad); err != nil {
-				logger.Errorw("failed to unmute", err)
-				return gst.PadProbeDrop
-			}
-			v.nextPad = ""
-			v.nextPTS.Store(0)
-		}
-		v.lastPTS.Store(buffer.PresentationTimestamp())
-		return gst.PadProbeOK
-	})
-	v.pads[videoTestSrcName] = pad
-}
-
-func (v *VideoInput) onTrackMuted(trackID string) {
-	if v.selectedPad != trackID {
-		return
+func addVideoConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
+	videoQueue, err := gstreamer.BuildQueue("video_input_queue", p.Latency, true)
+	if err != nil {
+		return err
 	}
 
-	if err := v.setSelectorPad(videoTestSrcName); err != nil {
-		logger.Errorw("failed to set selector pad", err)
-	}
-}
-
-func (v *VideoInput) onTrackUnmuted(trackID string, pts time.Duration) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	if v.pads[trackID] == nil {
-		return
-	}
-
-	v.nextPTS.Store(pts)
-	v.nextPad = trackID
-}
-
-// TODO: go-gst should accept objects directly and handle conversion to C
-func (v *VideoInput) setSelectorPad(name string) error {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	pad := v.pads[name]
-
-	pt, err := v.selector.GetPropertyType("active-pad")
+	videoConvert, err := gst.NewElement("videoconvert")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	val, err := glib.ValueInit(pt)
+	videoScale, err := gst.NewElement("videoscale")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	val.SetInstance(uintptr(unsafe.Pointer(pad.Instance())))
 
-	if err = v.selector.SetPropertyValue("active-pad", val); err != nil {
+	videoRate, err := gst.NewElement("videorate")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = videoRate.SetProperty("max-duplication-time", uint64(time.Second)); err != nil {
+		return err
+	}
+	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
+		return err
+	}
+
+	caps, err := newVideoCapsFilter(p, true)
+	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	v.selectedPad = name
-	return nil
+	return b.AddElements(videoQueue, videoConvert, videoScale, videoRate, caps)
 }
 
 func newVideoCapsFilter(p *config.PipelineConfig, includeFramerate bool) (*gst.Element, error) {

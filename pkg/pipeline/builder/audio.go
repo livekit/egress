@@ -66,51 +66,6 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*Aud
 	return b, nil
 }
 
-func (b *AudioBin) buildWebInput(p *config.PipelineConfig) error {
-	pulseSrc, err := gst.NewElement("pulsesrc")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = pulseSrc.SetProperty("device", fmt.Sprintf("%s.monitor", p.Info.EgressId)); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = b.bin.AddElement(pulseSrc); err != nil {
-		return err
-	}
-
-	if err = addAudioConverter(b.bin, p); err != nil {
-		return err
-	}
-	if p.AudioTranscoding {
-		if err = b.addEncoder(p); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (b *AudioBin) buildSDKInput(p *config.PipelineConfig) error {
-	if p.AudioTrack != nil {
-		if err := b.AddAudioAppSrcBin(p, p.AudioTrack); err != nil {
-			return err
-		}
-	}
-	if err := b.buildAudioTestSrcBin(p); err != nil {
-		return err
-	}
-	if err := b.addMixer(p); err != nil {
-		return err
-	}
-	if p.AudioTranscoding {
-		if err := b.addEncoder(p); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (b *AudioBin) AddAudioAppSrcBin(p *config.PipelineConfig, ts *config.TrackSource) error {
 	appSrcBin := b.bin.NewBin(ts.TrackID)
 	appSrcBin.SetEOSFunc(ts.EOSFunc)
@@ -161,7 +116,52 @@ func (b *AudioBin) AddAudioAppSrcBin(p *config.PipelineConfig, ts *config.TrackS
 	return nil
 }
 
-func (b *AudioBin) buildAudioTestSrcBin(p *config.PipelineConfig) error {
+func (b *AudioBin) buildWebInput(p *config.PipelineConfig) error {
+	pulseSrc, err := gst.NewElement("pulsesrc")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = pulseSrc.SetProperty("device", fmt.Sprintf("%s.monitor", p.Info.EgressId)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = b.bin.AddElement(pulseSrc); err != nil {
+		return err
+	}
+
+	if err = addAudioConverter(b.bin, p); err != nil {
+		return err
+	}
+	if p.AudioTranscoding {
+		if err = b.addEncoder(p); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (b *AudioBin) buildSDKInput(p *config.PipelineConfig) error {
+	if p.AudioTrack != nil {
+		if err := b.AddAudioAppSrcBin(p, p.AudioTrack); err != nil {
+			return err
+		}
+	}
+	if err := b.addAudioTestSrcBin(p); err != nil {
+		return err
+	}
+	if err := b.addMixer(p); err != nil {
+		return err
+	}
+	if p.AudioTranscoding {
+		if err := b.addEncoder(p); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (b *AudioBin) addAudioTestSrcBin(p *config.PipelineConfig) error {
 	testSrcBin := b.bin.NewBin("audio_test_src")
 	if err := b.bin.AddSourceBin(testSrcBin); err != nil {
 		return err

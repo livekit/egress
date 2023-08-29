@@ -84,7 +84,7 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 		_, span := tracer.Start(ctx, "gst.Init")
 		defer span.End()
 		gst.Init(nil)
-		gst.SetLogFunction(c.gstLog)
+		// gst.SetLogFunction(c.gstLog)
 		close(c.callbacks.GstReady)
 	}()
 
@@ -121,7 +121,7 @@ func (c *Controller) BuildPipeline() error {
 	p.AddOnStop(c.OnStop)
 
 	var audioBin *builder.AudioBin
-	var videoBin *builder.VideoInput
+	var videoBin *builder.VideoBin
 
 	if c.AudioEnabled {
 		audioBin, err = builder.BuildAudioBin(p, c.PipelineConfig)
