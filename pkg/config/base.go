@@ -96,7 +96,7 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 	var gstDebug string
 	switch c.Logging.Level {
 	case "debug":
-		gstDebug = "4"
+		gstDebug = "3"
 	case "info", "warn":
 		gstDebug = "2"
 	case "error":
