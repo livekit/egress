@@ -134,62 +134,66 @@ func TestSegmentNaming(t *testing.T) {
 	})
 
 	for _, test := range []struct {
-		filenamePrefix           string
-		playlistName             string
-		expectedStorageDir       string
-		expectedPlaylistFilename string
-		expectedSegmentPrefix    string
+		filenamePrefix               string
+		playlistName                 string
+		livePlaylistName             string
+		expectedStorageDir           string
+		expectedPlaylistFilename     string
+		expectedLivePlaylistFilename string
+		expectedSegmentPrefix        string
 	}{
 		{
-			filenamePrefix: "", playlistName: "playlist",
-			expectedStorageDir: "", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "playlist",
+			filenamePrefix: "", playlistName: "playlist", livePlaylistName: "",
+			expectedStorageDir: "", expectedPlaylistFilename: "playlist.m3u8", expectedLivePlaylistFilename: "", expectedSegmentPrefix: "playlist",
 		},
 		{
-			filenamePrefix: "", playlistName: "conf_test/playlist",
-			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "playlist",
+			filenamePrefix: "", playlistName: "conf_test/playlist", livePlaylistName: "conf_test/live_playlist",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedLivePlaylistFilename: "live_playlist.m3u8", expectedSegmentPrefix: "playlist",
 		},
 		{
-			filenamePrefix: "filename", playlistName: "",
-			expectedStorageDir: "", expectedPlaylistFilename: "filename.m3u8", expectedSegmentPrefix: "filename",
+			filenamePrefix: "filename", playlistName: "", livePlaylistName: "live_playlist2.m3u8",
+			expectedStorageDir: "", expectedPlaylistFilename: "filename.m3u8", expectedLivePlaylistFilename: "live_playlist2.m3u8", expectedSegmentPrefix: "filename",
 		},
 		{
-			filenamePrefix: "filename", playlistName: "playlist",
-			expectedStorageDir: "", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "filename",
+			filenamePrefix: "filename", playlistName: "playlist", livePlaylistName: "",
+			expectedStorageDir: "", expectedPlaylistFilename: "playlist.m3u8", expectedLivePlaylistFilename: "", expectedSegmentPrefix: "filename",
 		},
 		{
-			filenamePrefix: "filename", playlistName: "conf_test/",
-			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "filename.m3u8", expectedSegmentPrefix: "filename",
+			filenamePrefix: "filename", playlistName: "conf_test/", livePlaylistName: "",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "filename.m3u8", expectedLivePlaylistFilename: "", expectedSegmentPrefix: "filename",
 		},
 		{
-			filenamePrefix: "filename", playlistName: "conf_test/playlist",
-			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "filename",
+			filenamePrefix: "filename", playlistName: "conf_test/playlist", livePlaylistName: "",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedLivePlaylistFilename: "", expectedSegmentPrefix: "filename",
 		},
 		{
-			filenamePrefix: "conf_test/", playlistName: "playlist",
-			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "playlist",
+			filenamePrefix: "conf_test/", playlistName: "playlist", livePlaylistName: "",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedLivePlaylistFilename: "", expectedSegmentPrefix: "playlist",
 		},
 		{
-			filenamePrefix: "conf_test/filename", playlistName: "playlist",
-			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "filename",
+			filenamePrefix: "conf_test/filename", playlistName: "playlist", livePlaylistName: "",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedLivePlaylistFilename: "", expectedSegmentPrefix: "filename",
 		},
 		{
-			filenamePrefix: "conf_test/filename", playlistName: "conf_test/playlist",
-			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "filename",
+			filenamePrefix: "conf_test/filename", playlistName: "conf_test/playlist", livePlaylistName: "",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedLivePlaylistFilename: "", expectedSegmentPrefix: "filename",
 		},
 		{
-			filenamePrefix: "conf_test_2/filename", playlistName: "conf_test/playlist",
-			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedSegmentPrefix: "conf_test_2/filename",
+			filenamePrefix: "conf_test_2/filename", playlistName: "conf_test/playlist", livePlaylistName: "",
+			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedLivePlaylistFilename: "", expectedSegmentPrefix: "conf_test_2/filename",
 		},
 	} {
 		p := &PipelineConfig{Info: &livekit.EgressInfo{EgressId: "egress_ID"}}
 		o, err := p.getSegmentConfig(&livekit.SegmentedFileOutput{
-			FilenamePrefix: test.filenamePrefix,
-			PlaylistName:   test.playlistName,
+			FilenamePrefix:   test.filenamePrefix,
+			PlaylistName:     test.playlistName,
+			LivePlaylistName: test.livePlaylistName,
 		})
 		require.NoError(t, err)
 
 		require.Equal(t, test.expectedStorageDir, o.StorageDir)
 		require.Equal(t, test.expectedPlaylistFilename, o.PlaylistFilename)
+		require.Equal(t, test.expectedLivePlaylistFilename, o.LivePlaylistFilename)
 		require.Equal(t, test.expectedSegmentPrefix, o.SegmentPrefix)
 	}
 }
