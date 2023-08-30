@@ -74,14 +74,14 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 				filename:       "participant_{publisher_identity}_vp8_{time}.mp4",
 			},
 			{
-				name:       "H264",
-				fileType:   livekit.EncodedFileType_MP4,
-				audioCodec: types.MimeTypeOpus,
-				videoCodec: types.MimeTypeH264,
-				videoDelay: time.Second * 8,
-				// videoUnpublish: time.Second * 14,
-				// videoRepublish: time.Second * 20,
-				filename: "participant_{room_name}_h264_{time}.mp4",
+				name:           "H264",
+				fileType:       livekit.EncodedFileType_MP4,
+				audioCodec:     types.MimeTypeOpus,
+				videoCodec:     types.MimeTypeH264,
+				videoDelay:     time.Second * 8,
+				videoUnpublish: time.Second * 14,
+				videoRepublish: time.Second * 20,
+				filename:       "participant_{room_name}_h264_{time}.mp4",
 			},
 			{
 				name:           "AudioOnly",
@@ -139,7 +139,7 @@ func (r *Runner) testParticipantStream(t *testing.T) {
 
 	test := &testCase{
 		audioCodec: types.MimeTypeOpus,
-		audioDelay: time.Second * 10,
+		audioDelay: time.Second * 8,
 		videoCodec: types.MimeTypeVP8,
 	}
 
