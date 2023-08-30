@@ -33,7 +33,10 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-const maxPendingUploads = 100
+const (
+	maxPendingUploads         = 100
+	defaultLivePlaylistWindow = 4
+)
 
 type SegmentSink struct {
 	uploader.Uploader
@@ -42,7 +45,8 @@ type SegmentSink struct {
 	conf      *config.PipelineConfig
 	callbacks *gstreamer.Callbacks
 
-	playlist                  *m3u8.PlaylistWriter
+	playlist                  m3u8.PlaylistWriter
+	livePlaylist              m3u8.PlaylistWriter
 	currentItemStartTimestamp int64
 	currentItemFilename       string
 	startDate                 time.Time
@@ -62,9 +66,18 @@ type SegmentUpdate struct {
 
 func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig, callbacks *gstreamer.Callbacks) (*SegmentSink, error) {
 	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
-	playlist, err := m3u8.NewPlaylistWriter(playlistName, o.SegmentDuration)
+	playlist, err := m3u8.NewEventPlaylistWriter(playlistName, o.SegmentDuration)
 	if err != nil {
 		return nil, err
+	}
+
+	var livePlaylist m3u8.PlaylistWriter
+	if o.LivePlaylistFilename != "" {
+		playlistName = path.Join(o.LocalDir, o.PlaylistFilename)
+		livePlaylist, err = m3u8.NewLivePlaylistWriter(playlistName, o.SegmentDuration, defaultLivePlaylistWindow)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &SegmentSink{
@@ -73,6 +86,7 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 		conf:                  p,
 		callbacks:             callbacks,
 		playlist:              playlist,
+		livePlaylist:          livePlaylist,
 		openSegmentsStartTime: make(map[string]int64),
 		endedSegments:         make(chan SegmentUpdate, maxPendingUploads),
 		done:                  core.NewFuse(),
@@ -114,6 +128,15 @@ func (s *SegmentSink) Start() error {
 			s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
 			if err != nil {
 				return
+			}
+
+			if s.LivePlaylistFilename != "" {
+				playlistLocalPath = path.Join(s.LocalDir, s.LivePlaylistFilename)
+				playlistStoragePath = path.Join(s.StorageDir, s.LivePlaylistFilename)
+				s.SegmentsInfo.LivePlaylistLocation, _, err = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
+				if err != nil {
+					return
+				}
 			}
 		}
 	}()
@@ -203,6 +226,11 @@ func (s *SegmentSink) endSegment(filename string, endTime int64) error {
 	if err := s.playlist.Append(segmentStartDate, duration, filename); err != nil {
 		return err
 	}
+	if s.livePlaylist != nil {
+		if err := s.livePlaylist.Append(segmentStartDate, duration, filename); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -220,6 +248,17 @@ func (s *SegmentSink) OnStop() error {
 	playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
 	playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
 	s.SegmentsInfo.PlaylistLocation, _, _ = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
+
+	if s.livePlaylist != nil {
+		if err := s.livePlaylist.Close(); err != nil {
+			logger.Errorw("failed to send EOS to live playlist writer", err)
+		}
+
+		// upload the finalized live playlist
+		playlistLocalPath := path.Join(s.LocalDir, s.LivePlaylistFilename)
+		playlistStoragePath := path.Join(s.StorageDir, s.LivePlaylistFilename)
+		s.SegmentsInfo.LivePlaylistLocation, _, _ = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
+	}
 
 	if !s.DisableManifest {
 		manifestLocalPath := fmt.Sprintf("%s.json", playlistLocalPath)
