@@ -26,7 +26,7 @@ import (
 func TestPlaylistWriter(t *testing.T) {
 	playlistName := "playlist.m3u8"
 
-	w, err := NewPlaylistWriter(playlistName, 6)
+	w, err := NewEventPlaylistWriter(playlistName, 6)
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = os.Remove(playlistName) })
@@ -44,6 +44,6 @@ func TestPlaylistWriter(t *testing.T) {
 	b, err := os.ReadFile(playlistName)
 	require.NoError(t, err)
 
-	expected := "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-ALLOW-CACHE:NO\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:6\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:04.814Z\n#EXTINF:5.994,\nplaylist_00000.ts\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:10.808Z\n#EXTINF:5.994,\nplaylist_00001.ts\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:16.802Z\n#EXTINF:5.994,\nplaylist_00002.ts\n#EXT-X-ENDLIST\n"
+	expected := "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-ALLOW-CACHE:NO\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:04.814Z\n#EXTINF:5.994,\nplaylist_00000.ts\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:10.808Z\n#EXTINF:5.994,\nplaylist_00001.ts\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:16.802Z\n#EXTINF:5.994,\nplaylist_00002.ts\n#EXT-X-ENDLIST\n"
 	require.Equal(t, expected, string(b))
 }
