@@ -55,43 +55,6 @@ type livePlaylistWriter struct {
 	livePlaylistSegments *list.List
 }
 
-func NewEventPlaylistWriter(filename string, targetDuration int) (PlaylistWriter, error) {
-	p := &eventPlaylistWriter{
-		basePlaylistWriter: basePlaylistWriter{
-			filename:       filename,
-			targetDuration: targetDuration,
-		},
-	}
-
-	f, err := os.Create(p.filename)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	_, err = f.WriteString(p.createHeader(PlaylistTypeEvent))
-	if err != nil {
-		return nil, err
-	}
-
-	return p, nil
-}
-
-func NewLivePlaylistWriter(filename string, targetDuration int, windowSize int) (PlaylistWriter, error) {
-	p := &livePlaylistWriter{
-		basePlaylistWriter: basePlaylistWriter{
-			filename:       filename,
-			targetDuration: targetDuration,
-		},
-		windowSize:           windowSize,
-		livePlaylistSegments: list.New(),
-	}
-
-	p.livePlaylistHeader = p.createHeader(PlaylistTypeLive)
-
-	return p, nil
-}
-
 func (p *basePlaylistWriter) createHeader(plType PlaylistType) string {
 	var sb strings.Builder
 	sb.WriteString("#EXTM3U\n")
@@ -122,6 +85,28 @@ func (p *basePlaylistWriter) createSegmentEntry(dateTime time.Time, duration flo
 	return sb.String()
 }
 
+func NewEventPlaylistWriter(filename string, targetDuration int) (PlaylistWriter, error) {
+	p := &eventPlaylistWriter{
+		basePlaylistWriter: basePlaylistWriter{
+			filename:       filename,
+			targetDuration: targetDuration,
+		},
+	}
+
+	f, err := os.Create(p.filename)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	_, err = f.WriteString(p.createHeader(PlaylistTypeEvent))
+	if err != nil {
+		return nil, err
+	}
+
+	return p, nil
+}
+
 func (p *eventPlaylistWriter) Append(dateTime time.Time, duration float64, filename string) error {
 	f, err := os.OpenFile(p.filename, os.O_WRONLY|os.O_APPEND, fs.ModeAppend)
 	if err != nil {
@@ -145,8 +130,23 @@ func (p *eventPlaylistWriter) Close() error {
 	return err
 }
 
+func NewLivePlaylistWriter(filename string, targetDuration int, windowSize int) (PlaylistWriter, error) {
+	p := &livePlaylistWriter{
+		basePlaylistWriter: basePlaylistWriter{
+			filename:       filename,
+			targetDuration: targetDuration,
+		},
+		windowSize:           windowSize,
+		livePlaylistSegments: list.New(),
+	}
+
+	p.livePlaylistHeader = p.createHeader(PlaylistTypeLive)
+
+	return p, nil
+}
+
 func (p *livePlaylistWriter) Append(dateTime time.Time, duration float64, filename string) error {
-	f, err := os.OpenFile(p.filename, os.O_WRONLY|os.O_CREATE, 0)
+	f, err := os.Create(p.filename)
 	if err != nil {
 		return err
 	}
@@ -165,7 +165,7 @@ func (p *livePlaylistWriter) Append(dateTime time.Time, duration float64, filena
 }
 
 func (p *livePlaylistWriter) Close() error {
-	f, err := os.OpenFile(p.filename, os.O_WRONLY|os.O_APPEND, fs.ModeAppend)
+	f, err := os.Create(p.filename)
 	if err != nil {
 		return err
 	}
