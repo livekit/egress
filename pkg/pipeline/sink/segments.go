@@ -73,7 +73,7 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 
 	var livePlaylist m3u8.PlaylistWriter
 	if o.LivePlaylistFilename != "" {
-		playlistName = path.Join(o.LocalDir, o.PlaylistFilename)
+		playlistName = path.Join(o.LocalDir, o.LivePlaylistFilename)
 		livePlaylist, err = m3u8.NewLivePlaylistWriter(playlistName, o.SegmentDuration, defaultLivePlaylistWindow)
 		if err != nil {
 			return nil, err
