@@ -170,12 +170,12 @@ github.com/livekit/go-glib v0.0.0-20230223001336-834490045522 h1:AlU57PAPgzde7q9
 github.com/livekit/go-glib v0.0.0-20230223001336-834490045522/go.mod h1:ltV0gO6xNFzZhsIRbFXv8RTq9NGoNT2dmAER4YmZfaM=
 github.com/livekit/go-gst v0.2.34-0.20230623013326-3ca8cb8f62e5 h1:psIQLAp+yJETA+vZTVphV072nvCgcwC55xcufo1I5v0=
 github.com/livekit/go-gst v0.2.34-0.20230623013326-3ca8cb8f62e5/go.mod h1:0hI+orMYVT61TEh429LvmoV9UmyqjeTqdJ3DW2TX114=
-github.com/livekit/livekit-server v1.4.5-0.20230814182001-77c8e824735b h1:o+fyF5iijKHAMbzXFW6g4pRH/bR/cELRbTZHwRheF24=
-github.com/livekit/livekit-server v1.4.5-0.20230814182001-77c8e824735b/go.mod h1:Dbul6eFPxLw/ItxGjovO1a2Gzrs2EHEuXgjADz6squI=
+github.com/livekit/livekit-server v1.4.6-0.20230831161419-c7683fd3830e h1:H/faRu6zYKJA93VgBUxajHt1PsrjCHGFyTHmpL9G2PE=
+github.com/livekit/livekit-server v1.4.6-0.20230831161419-c7683fd3830e/go.mod h1:BMm0JxGEzBiMw99XjlQ+vaIl+Rq+ZlSgsNnPnqR/ZII=
 github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1 h1:jm09419p0lqTkDaKb5iXdynYrzB84ErPPO4LbRASk58=
 github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
-github.com/livekit/mediatransportutil v0.0.0-20230814030822-8d5de0008b08 h1:e0qwVjrtzmADgNZpdgSJgyhlF6BgrHkpdnkONL8pLrw=
-github.com/livekit/mediatransportutil v0.0.0-20230814030822-8d5de0008b08/go.mod h1:xirUXW8xnLGmfCwUeAv/nj1VGo1OO1BmgxrYP7jK/14=
+github.com/livekit/mediatransportutil v0.0.0-20230823131232-12f579dc9af0 h1:cHNvPzn6VHFcsHx8ZC9LwU/4jj22mW3LILrNg/y5A6I=
+github.com/livekit/mediatransportutil v0.0.0-20230823131232-12f579dc9af0/go.mod h1:xirUXW8xnLGmfCwUeAv/nj1VGo1OO1BmgxrYP7jK/14=
 github.com/livekit/protocol v1.6.2-0.20230830214603-ce275be4e6a5 h1:/S16yVnnoBPDzsbDj2/vRZiC4mPfxP6/RorOJcSQVeU=
 github.com/livekit/protocol v1.6.2-0.20230830214603-ce275be4e6a5/go.mod h1:/JuO+G/btZ5gNwX2+901L6za3UvVO6DHRXHsv8kkLsU=
 github.com/livekit/psrpc v0.3.3 h1:+lltbuN39IdaynXhLLxRShgYqYsRMWeeXKzv60oqyWo=

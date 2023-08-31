@@ -17,7 +17,7 @@ require (
 	github.com/go-logr/logr v1.2.4
 	github.com/googleapis/gax-go/v2 v2.11.0
 	github.com/gorilla/websocket v1.5.0
-	github.com/livekit/livekit-server v1.4.5-0.20230814182001-77c8e824735b
+	github.com/livekit/livekit-server v1.4.6-0.20230831161419-c7683fd3830e
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/protocol v1.6.2-0.20230830214603-ce275be4e6a5
 	github.com/livekit/psrpc v0.3.3
@@ -72,7 +72,7 @@ require (
 	github.com/klauspost/compress v1.16.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
-	github.com/livekit/mediatransportutil v0.0.0-20230814030822-8d5de0008b08 // indirect
+	github.com/livekit/mediatransportutil v0.0.0-20230823131232-12f579dc9af0 // indirect
 	github.com/mackerelio/go-osstat v0.2.4 // indirect
 	github.com/magefile/mage v1.15.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
