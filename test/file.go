@@ -86,5 +86,5 @@ func (r *Runner) verifyFile(t *testing.T, p *config.PipelineConfig, res *livekit
 	}
 
 	// verify
-	verify(t, localPath, p, res, types.EgressTypeFile, r.Muting, r.sourceFramerate)
+	verify(t, localPath, p, res, types.EgressTypeFile, r.Muting, r.sourceFramerate, false)
 }

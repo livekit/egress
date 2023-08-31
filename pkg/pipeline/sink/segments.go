@@ -35,7 +35,7 @@ import (
 
 const (
 	maxPendingUploads         = 100
-	defaultLivePlaylistWindow = 4
+	defaultLivePlaylistWindow = 5
 )
 
 type SegmentSink struct {
