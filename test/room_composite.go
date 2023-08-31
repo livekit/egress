@@ -208,14 +208,16 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 			},
 			filename:               "r_{room_name}_{time}",
 			playlist:               "r_{room_name}_{time}.m3u8",
+			live_playlist:          "r_live_{room_name}_{time}.m3u8",
 			filenameSuffix:         livekit.SegmentedFileSuffix_TIMESTAMP,
 			expectVideoTranscoding: true,
 		}
 
 		segmentOutput := &livekit.SegmentedFileOutput{
-			FilenamePrefix: r.getFilePath(test.filename),
-			PlaylistName:   test.playlist,
-			FilenameSuffix: test.filenameSuffix,
+			FilenamePrefix:   r.getFilePath(test.filename),
+			PlaylistName:     test.playlist,
+			LivePlaylistName: test.live_playlist,
+			FilenameSuffix:   test.filenameSuffix,
 		}
 		if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.GCPUpload != nil {
 			segmentOutput.FilenamePrefix = test.filename
