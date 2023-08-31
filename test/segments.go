@@ -67,8 +67,17 @@ func (r *Runner) verifySegments(t *testing.T, p *config.PipelineConfig, filename
 	require.Greater(t, segments.Duration, int64(0))
 
 	r.verifySegmentOutput(t, p, filenameSuffix, segments.PlaylistName, segments.PlaylistLocation, int(segments.SegmentCount), res, m3u8.PlaylistTypeEvent)
+	r.verifyManifest(t, p, segments.PlaylistName)
 	if enableLivePlaylist {
 		r.verifySegmentOutput(t, p, filenameSuffix, segments.LivePlaylistName, segments.LivePlaylistLocation, 5, res, m3u8.PlaylistTypeLive)
+	}
+}
+
+func (r *Runner) verifyManifest(t *testing.T, p *config.PipelineConfig, plName string) {
+	localPlaylistPath := fmt.Sprintf("%s/%s", r.FilePrefix, plName)
+
+	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
+		download(t, uploadConfig, localPlaylistPath+".json", plName+".json")
 	}
 }
 
@@ -84,7 +93,6 @@ func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, fil
 		base := storedPlaylistPath[:len(storedPlaylistPath)-5]
 		localPlaylistPath = fmt.Sprintf("%s/%s", r.FilePrefix, storedPlaylistPath)
 		download(t, uploadConfig, localPlaylistPath, storedPlaylistPath)
-		download(t, uploadConfig, localPlaylistPath+".json", storedPlaylistPath+".json")
 		for i := 0; i < int(segmentCount); i++ {
 			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
 			localPath := fmt.Sprintf("%s/%s", r.FilePrefix, cloudPath)
