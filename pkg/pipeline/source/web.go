@@ -189,7 +189,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		webUrl = inputUrl.String()
 	}
 
-	logger.Debugw("launching chrome", "url", webUrl)
+	logger.Debugw("launching chrome", "url", webUrl, "enableChomeSandbox", p.EnableChromeSandbox, "insecure", p.Insecure)
 
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.NoFirstRun,
