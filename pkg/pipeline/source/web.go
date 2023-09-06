@@ -233,7 +233,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		chromedp.Flag("display", p.Display),
 
 		// sandbox
-		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("no-sandbox", !p.EnableChomeSandbox),
 	}
 
 	if insecure {
