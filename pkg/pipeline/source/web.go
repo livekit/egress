@@ -231,6 +231,9 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		// output
 		chromedp.Env(fmt.Sprintf("PULSE_SINK=%s", p.Info.EgressId)),
 		chromedp.Flag("display", p.Display),
+
+		// sandbox
+		chromedp.Flag("no-sandbox", true),
 	}
 
 	if insecure {

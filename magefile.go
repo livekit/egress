@@ -114,7 +114,7 @@ func Integration(configFile string) error {
 
 	return mageutil.Run(context.Background(),
 		"docker build -t egress-test -f build/test/Dockerfile .",
-		fmt.Sprintf("docker run --rm -e EGRESS_CONFIG_FILE=%s -v %s/test:/out --cap-add=SYS_ADMIN egress-test", configFile, dir),
+		fmt.Sprintf("docker run --rm -e EGRESS_CONFIG_FILE=%s -v %s/test:/out egress-test", configFile, dir),
 	)
 }
 
