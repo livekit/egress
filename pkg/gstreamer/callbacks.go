@@ -53,6 +53,7 @@ func (c *Callbacks) OnError(err error) {
 	c.mu.RLock()
 	onError := c.onError
 	c.mu.RUnlock()
+
 	if onError != nil {
 		onError(err)
 	}
@@ -65,12 +66,14 @@ func (c *Callbacks) AddOnStop(f func() error) {
 }
 
 func (c *Callbacks) OnStop() error {
-	errArray := &errors.ErrArray{}
 	c.mu.RLock()
-	for _, onStop := range c.onStop {
-		errArray.Check(onStop())
-	}
+	onStop := c.onStop
 	c.mu.RUnlock()
+
+	errArray := &errors.ErrArray{}
+	for _, f := range onStop {
+		errArray.Check(f())
+	}
 	return errArray.ToError()
 }
 
@@ -82,10 +85,12 @@ func (c *Callbacks) AddOnTrackAdded(f func(*config.TrackSource)) {
 
 func (c *Callbacks) OnTrackAdded(ts *config.TrackSource) {
 	c.mu.RLock()
-	for _, onTrackAdded := range c.onTrackAdded {
-		onTrackAdded(ts)
-	}
+	onTrackAdded := c.onTrackAdded
 	c.mu.RUnlock()
+
+	for _, f := range onTrackAdded {
+		f(ts)
+	}
 }
 
 func (c *Callbacks) AddOnTrackMuted(f func(string)) {
@@ -96,10 +101,12 @@ func (c *Callbacks) AddOnTrackMuted(f func(string)) {
 
 func (c *Callbacks) OnTrackMuted(trackID string) {
 	c.mu.RLock()
-	for _, onTrackMuted := range c.onTrackMuted {
-		onTrackMuted(trackID)
-	}
+	onTrackMuted := c.onTrackMuted
 	c.mu.RUnlock()
+
+	for _, f := range onTrackMuted {
+		f(trackID)
+	}
 }
 
 func (c *Callbacks) AddOnTrackUnmuted(f func(string, time.Duration)) {
@@ -110,10 +117,12 @@ func (c *Callbacks) AddOnTrackUnmuted(f func(string, time.Duration)) {
 
 func (c *Callbacks) OnTrackUnmuted(trackID string, pts time.Duration) {
 	c.mu.RLock()
-	for _, onTrackUnmuted := range c.onTrackUnmuted {
-		onTrackUnmuted(trackID, pts)
-	}
+	onTrackUnmuted := c.onTrackUnmuted
 	c.mu.RUnlock()
+
+	for _, f := range onTrackUnmuted {
+		f(trackID, pts)
+	}
 }
 
 func (c *Callbacks) AddOnTrackRemoved(f func(string)) {
@@ -124,8 +133,10 @@ func (c *Callbacks) AddOnTrackRemoved(f func(string)) {
 
 func (c *Callbacks) OnTrackRemoved(trackID string) {
 	c.mu.RLock()
-	for _, onTrackRemoved := range c.onTrackRemoved {
-		onTrackRemoved(trackID)
-	}
+	onTrackRemoved := c.onTrackRemoved
 	c.mu.RUnlock()
+
+	for _, f := range onTrackRemoved {
+		f(trackID)
+	}
 }

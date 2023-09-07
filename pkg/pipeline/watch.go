@@ -228,15 +228,10 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 
 	s := msg.Source()
 	if s == pipelineName {
-		logger.Infow("pipeline playing")
-
-		c.playing.Break()
-		switch c.SourceType {
-		case types.SourceTypeSDK:
-			c.updateStartTime(c.src.(*source.SDKSource).GetStartTime())
-		case types.SourceTypeWeb:
-			c.updateStartTime(time.Now().UnixNano())
-		}
+		c.playing.Once(func() {
+			logger.Infow("pipeline playing")
+			c.updateStartTime(c.src.GetStartedAt())
+		})
 	} else if strings.HasPrefix(s, "app_") {
 		s = s[4:]
 		logger.Infow(fmt.Sprintf("%s playing", s))

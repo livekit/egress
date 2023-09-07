@@ -16,6 +16,7 @@ package builder
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -23,53 +24,137 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
+	lksdk "github.com/livekit/server-sdk-go"
 )
 
 const audioMixerLatency = uint64(2e9)
 
 type AudioBin struct {
 	bin *gstreamer.Bin
+	p   *config.PipelineConfig
+
+	mu     sync.Mutex
+	tracks map[string]struct{}
 }
 
-func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*AudioBin, error) {
+func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
 	b := &AudioBin{
-		bin: pipeline.NewBin("audio"),
+		bin:    pipeline.NewBin("audio"),
+		tracks: make(map[string]struct{}),
 	}
 
 	switch p.SourceType {
 	case types.SourceTypeWeb:
 		if err := b.buildWebInput(p); err != nil {
-			return nil, err
+			return err
 		}
 
 	case types.SourceTypeSDK:
 		if err := b.buildSDKInput(p); err != nil {
-			return nil, err
+			return err
 		}
+
+		pipeline.AddOnTrackAdded(b.onTrackAdded)
+		pipeline.AddOnTrackRemoved(b.onTrackRemoved)
 	}
 
 	if len(p.Outputs) > 1 {
 		tee, err := gst.NewElementWithName("tee", "audio_tee")
 		if err != nil {
-			return nil, err
+			return err
 		}
-
 		if err = b.bin.AddElement(tee); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	if err := pipeline.AddSourceBin(b.bin); err != nil {
-		return nil, err
-	}
-
-	return b, nil
+	return pipeline.AddSourceBin(b.bin)
 }
 
-func (b *AudioBin) AddAudioAppSrcBin(p *config.PipelineConfig, ts *config.TrackSource) error {
-	appSrcBin := b.bin.NewBin(ts.TrackID)
-	appSrcBin.SetEOSFunc(ts.EOSFunc)
+func (b *AudioBin) onTrackAdded(ts *config.TrackSource) {
+	if b.bin.GetState() > gstreamer.StateRunning {
+		return
+	}
 
+	if ts.Kind == lksdk.TrackKindAudio {
+		if err := b.addAudioAppSrcBin(b.p, ts); err != nil {
+			b.bin.OnError(err)
+		}
+	}
+}
+
+func (b *AudioBin) onTrackRemoved(trackID string) {
+	if b.bin.GetState() > gstreamer.StateRunning {
+		return
+	}
+
+	b.mu.Lock()
+	_, ok := b.tracks[trackID]
+	delete(b.tracks, trackID)
+	b.mu.Unlock()
+
+	if ok {
+		if _, err := b.bin.RemoveSourceBin(trackID); err != nil {
+			b.bin.OnError(err)
+		}
+	}
+}
+
+func (b *AudioBin) buildWebInput(p *config.PipelineConfig) error {
+	pulseSrc, err := gst.NewElement("pulsesrc")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = pulseSrc.SetProperty("device", fmt.Sprintf("%s.monitor", p.Info.EgressId)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = b.bin.AddElement(pulseSrc); err != nil {
+		return err
+	}
+
+	if err = addAudioConverter(b.bin, p); err != nil {
+		return err
+	}
+	if p.AudioTranscoding {
+		if err = b.addEncoder(p); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (b *AudioBin) buildSDKInput(p *config.PipelineConfig) error {
+	if p.AudioTrack != nil {
+		if err := b.addAudioAppSrcBin(p, p.AudioTrack); err != nil {
+			return err
+		}
+	}
+	if err := b.addAudioTestSrcBin(p); err != nil {
+		return err
+	}
+	if err := b.addMixer(p); err != nil {
+		return err
+	}
+	if p.AudioTranscoding {
+		if err := b.addEncoder(p); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (b *AudioBin) addAudioAppSrcBin(p *config.PipelineConfig, ts *config.TrackSource) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.tracks[ts.TrackID] = struct{}{}
+
+	appSrcBin := b.bin.NewBin(ts.TrackID)
+	appSrcBin.SetEOSFunc(func() bool {
+		return false
+	})
 	ts.AppSrc.Element.SetArg("format", "time")
 	if err := ts.AppSrc.Element.SetProperty("is-live", true); err != nil {
 		return err
@@ -111,51 +196,6 @@ func (b *AudioBin) AddAudioAppSrcBin(p *config.PipelineConfig, ts *config.TrackS
 
 	if err := b.bin.AddSourceBin(appSrcBin); err != nil {
 		return err
-	}
-
-	return nil
-}
-
-func (b *AudioBin) buildWebInput(p *config.PipelineConfig) error {
-	pulseSrc, err := gst.NewElement("pulsesrc")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = pulseSrc.SetProperty("device", fmt.Sprintf("%s.monitor", p.Info.EgressId)); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = b.bin.AddElement(pulseSrc); err != nil {
-		return err
-	}
-
-	if err = addAudioConverter(b.bin, p); err != nil {
-		return err
-	}
-	if p.AudioTranscoding {
-		if err = b.addEncoder(p); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (b *AudioBin) buildSDKInput(p *config.PipelineConfig) error {
-	if p.AudioTrack != nil {
-		if err := b.AddAudioAppSrcBin(p, p.AudioTrack); err != nil {
-			return err
-		}
-	}
-	if err := b.addAudioTestSrcBin(p); err != nil {
-		return err
-	}
-	if err := b.addMixer(p); err != nil {
-		return err
-	}
-	if p.AudioTranscoding {
-		if err := b.addEncoder(p); err != nil {
-			return err
-		}
 	}
 
 	return nil

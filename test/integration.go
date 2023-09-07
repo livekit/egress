@@ -121,14 +121,14 @@ func (r *Runner) publishSamplesToRoom(t *testing.T, audioCodec, videoCodec types
 	return
 }
 
-func (r *Runner) publishSampleOffset(t *testing.T, codec types.MimeType, publishAfter, unpublishAfter time.Duration) {
+func (r *Runner) publishSampleOffset(t *testing.T, codec types.MimeType, publishAt, unpublishAt time.Duration) {
 	if codec != "" {
 		go func() {
-			time.Sleep(publishAfter)
+			time.Sleep(publishAt)
 			done := make(chan struct{})
 			pub := r.publish(t, codec, done)
-			if unpublishAfter != 0 {
-				time.AfterFunc(unpublishAfter, func() {
+			if unpublishAt != 0 {
+				time.AfterFunc(unpublishAt-publishAt, func() {
 					select {
 					case <-done:
 						return

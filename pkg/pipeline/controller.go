@@ -34,12 +34,10 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
-	lksdk "github.com/livekit/server-sdk-go"
 )
 
 const (
 	pipelineName = "pipeline"
-	eosTimeout   = time.Second * 30
 )
 
 type Controller struct {
@@ -59,7 +57,6 @@ type Controller struct {
 	playing    core.Fuse
 	eosSent    core.Fuse
 	stopped    core.Fuse
-	eosTimer   *time.Timer
 }
 
 func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) {
@@ -118,42 +115,27 @@ func (c *Controller) BuildPipeline() error {
 	}
 
 	p.SetWatch(c.messageWatch)
-	p.AddOnStop(c.OnStop)
-
-	var audioBin *builder.AudioBin
-	var videoBin *builder.VideoBin
+	p.AddOnStop(func() error {
+		c.stopped.Break()
+		return nil
+	})
+	if c.SourceType == types.SourceTypeSDK {
+		p.SetEOSFunc(func() bool {
+			c.src.(*source.SDKSource).CloseWriters()
+			return true
+		})
+	}
 
 	if c.AudioEnabled {
-		audioBin, err = builder.BuildAudioBin(p, c.PipelineConfig)
-		if err != nil {
+		if err = builder.BuildAudioBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
 	if c.VideoEnabled {
-		videoBin, err = builder.BuildVideoBin(p, c.PipelineConfig)
-		if err != nil {
+		if err = builder.BuildVideoBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
-
-	p.AddOnTrackAdded(func(ts *config.TrackSource) {
-		switch ts.Kind {
-		case lksdk.TrackKindAudio:
-			if err := audioBin.AddAudioAppSrcBin(c.PipelineConfig, ts); err != nil {
-				p.OnError(err)
-			}
-		case lksdk.TrackKindVideo:
-			if err := videoBin.AddVideoAppSrcBin(c.PipelineConfig, ts); err != nil {
-				p.OnError(err)
-			}
-		}
-	})
-	p.AddOnTrackRemoved(func(trackID string) {
-		_, err := p.RemoveSinkBin(trackID)
-		if err != nil {
-			p.OnError(err)
-		}
-	})
 
 	for egressType := range c.Outputs {
 		var sinkBin *gstreamer.Bin
@@ -194,6 +176,12 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	c.Info.StartedAt = time.Now().UnixNano()
 	defer func() {
 		now := time.Now().UnixNano()
+		logger.Debugw("CLOSING")
+
+		if c.SourceType == types.SourceTypeSDK {
+			c.updateDuration(c.src.GetEndedAt())
+		}
+
 		c.Info.UpdatedAt = now
 		c.Info.EndedAt = now
 
@@ -457,6 +445,8 @@ func (c *Controller) SendEOS(ctx context.Context) {
 	defer span.End()
 
 	c.eosSent.Once(func() {
+		logger.Debugw("Sending EOS")
+
 		if c.limitTimer != nil {
 			c.limitTimer.Stop()
 		}
@@ -483,24 +473,7 @@ func (c *Controller) SendEOS(ctx context.Context) {
 
 		case livekit.EgressStatus_EGRESS_ENDING,
 			livekit.EgressStatus_EGRESS_LIMIT_REACHED:
-			go func() {
-				logger.Infow("sending EOS to pipeline")
-
-				c.eosTimer = time.AfterFunc(eosTimeout, func() {
-					logger.Errorw("pipeline frozen", nil, "stream", !c.FinalizationRequired)
-					if c.Debug.EnableProfiling {
-						c.uploadDebugFiles()
-					}
-
-					if c.FinalizationRequired {
-						c.OnError(errors.ErrPipelineFrozen)
-					} else {
-						c.p.Stop()
-					}
-				})
-
-				c.p.SendEOS()
-			}()
+			go c.p.SendEOS()
 		}
 
 		switch c.src.(type) {
@@ -511,26 +484,17 @@ func (c *Controller) SendEOS(ctx context.Context) {
 }
 
 func (c *Controller) OnError(err error) {
+	if errors.Is(err, errors.ErrPipelineFrozen) {
+		if c.Debug.EnableProfiling {
+			c.uploadDebugFiles()
+		}
+	}
+
 	if c.Info.Error == "" && (!c.eosSent.IsBroken() || c.FinalizationRequired) {
 		c.Info.Error = err.Error()
 	}
+
 	go c.p.Stop()
-}
-
-func (c *Controller) OnStop() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.eosTimer != nil {
-		c.eosTimer.Stop()
-	}
-
-	switch c.src.(type) {
-	case *source.SDKSource:
-		c.updateDuration(c.src.GetEndedAt())
-	}
-
-	return nil
 }
 
 func (c *Controller) updateDuration(endedAt int64) {

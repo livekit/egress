@@ -56,10 +56,9 @@ type SDKSource struct {
 	filenameReplacements map[string]string
 	errors               chan error
 
-	active      atomic.Int32
-	audioWriter *sdk.AppWriter
-	videoWriter *sdk.AppWriter
-	closed      core.Fuse
+	writers map[string]*sdk.AppWriter
+	active  atomic.Int32
+	closed  core.Fuse
 
 	startRecording chan struct{}
 	endRecording   chan struct{}
@@ -78,6 +77,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		}),
 		initialized:          core.NewFuse(),
 		filenameReplacements: make(map[string]string),
+		writers:              make(map[string]*sdk.AppWriter),
 		closed:               core.NewFuse(),
 		startRecording:       startRecording,
 		endRecording:         make(chan struct{}),
@@ -94,18 +94,22 @@ func (s *SDKSource) StartRecording() chan struct{} {
 	return s.startRecording
 }
 
-func (s *SDKSource) GetStartTime() int64 {
-	return s.sync.GetStartedAt()
+func (s *SDKSource) EndRecording() chan struct{} {
+	return s.endRecording
 }
 
 func (s *SDKSource) Playing(trackID string) {
-	if w := s.getWriterForTrack(trackID); w != nil {
-		w.Play()
+	s.mu.Lock()
+	writer := s.writers[trackID]
+	s.mu.Unlock()
+
+	if writer != nil {
+		writer.Play()
 	}
 }
 
-func (s *SDKSource) EndRecording() chan struct{} {
-	return s.endRecording
+func (s *SDKSource) GetStartedAt() int64 {
+	return s.sync.GetStartedAt()
 }
 
 func (s *SDKSource) GetEndedAt() int64 {
@@ -116,12 +120,17 @@ func (s *SDKSource) CloseWriters() {
 	s.closed.Once(func() {
 		s.sync.End()
 
-		if s.audioWriter != nil {
-			go s.audioWriter.Drain(false)
+		var wg sync.WaitGroup
+		s.mu.Lock()
+		wg.Add(len(s.writers))
+		for _, w := range s.writers {
+			go func(writer *sdk.AppWriter) {
+				defer wg.Done()
+				writer.Drain(false)
+			}(w)
 		}
-		if s.videoWriter != nil {
-			go s.videoWriter.Drain(false)
-		}
+		s.mu.Unlock()
+		wg.Wait()
 	})
 }
 
@@ -327,8 +336,10 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			return
 		}
 
-		ts.EOSFunc = s.CloseWriters
-		s.audioWriter = writer
+		s.mu.Lock()
+		s.writers[ts.TrackID] = writer
+		s.mu.Unlock()
+
 		if s.initialized.IsBroken() {
 			s.callbacks.OnTrackAdded(ts)
 		} else {
@@ -351,8 +362,10 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			return
 		}
 
-		ts.EOSFunc = s.CloseWriters
-		s.videoWriter = writer
+		s.mu.Lock()
+		s.writers[ts.TrackID] = writer
+		s.mu.Unlock()
+
 		if s.initialized.IsBroken() {
 			s.callbacks.OnTrackAdded(ts)
 		} else {
@@ -381,6 +394,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			s.TrackKind = pub.Kind().String()
 			if pub.Kind() == lksdk.TrackKindVideo && s.Outputs[types.EgressTypeWebsocket] != nil {
 				onSubscribeErr = errors.ErrIncompatible("websocket", ts.MimeType)
+				s.mu.Unlock()
 				return
 			}
 			s.TrackSource = strings.ToLower(pub.Source().String())
@@ -443,52 +457,45 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	if w := s.getWriterForTrack(pub.SID()); w != nil {
-		w.SetTrackMuted(true)
+	s.mu.Lock()
+	writer := s.writers[pub.SID()]
+	s.mu.Unlock()
+
+	if writer != nil {
+		writer.SetTrackMuted(true)
 	}
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	if w := s.getWriterForTrack(pub.SID()); w != nil {
-		w.SetTrackMuted(false)
-	}
-}
+	s.mu.Lock()
+	writer := s.writers[pub.SID()]
+	s.mu.Unlock()
 
-func (s *SDKSource) getWriterForTrack(trackID string) *sdk.AppWriter {
-	if s.audioWriter != nil && s.audioWriter.TrackID() == trackID {
-		return s.audioWriter
+	if writer != nil {
+		writer.SetTrackMuted(false)
 	}
-	if s.videoWriter != nil && s.videoWriter.TrackID() == trackID {
-		return s.videoWriter
-	}
-	return nil
 }
 
 func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
+	logger.Debugw("track unsubscribed", "trackID", pub.SID())
 	s.onTrackFinished(pub.SID())
 }
 
 func (s *SDKSource) onTrackFinished(trackID string) {
-	var w *sdk.AppWriter
-	if s.audioWriter != nil && s.audioWriter.TrackID() == trackID {
-		logger.Infow("removing audio writer")
-		w = s.audioWriter
-		s.audioWriter = nil
-	} else if s.videoWriter != nil && s.videoWriter.TrackID() == trackID {
-		logger.Infow("removing video writer")
-		w = s.videoWriter
-		s.videoWriter = nil
-	} else {
-		return
-	}
+	s.mu.Lock()
+	writer := s.writers[trackID]
+	delete(s.writers, trackID)
+	s.mu.Unlock()
 
-	w.Drain(true)
-	active := s.active.Dec()
-	if s.RequestType == types.RequestTypeParticipant {
-		s.callbacks.OnTrackRemoved(trackID)
-		s.sync.RemoveTrack(trackID)
-	} else if active == 0 {
-		s.onDisconnected()
+	if writer != nil {
+		writer.Drain(true)
+		active := s.active.Dec()
+		if s.RequestType == types.RequestTypeParticipant {
+			s.callbacks.OnTrackRemoved(trackID)
+			s.sync.RemoveTrack(trackID)
+		} else if active == 0 {
+			s.onDisconnected()
+		}
 	}
 }
 
