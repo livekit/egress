@@ -168,8 +168,8 @@ github.com/lithammer/shortuuid/v4 v4.0.0 h1:QRbbVkfgNippHOS8PXDkti4NaWeyYfcBTHtw
 github.com/lithammer/shortuuid/v4 v4.0.0/go.mod h1:Zs8puNcrvf2rV9rTH51ZLLcj7ZXqQI3lv67aw4KiB1Y=
 github.com/livekit/go-glib v0.0.0-20230223001336-834490045522 h1:AlU57PAPgzde7q9u6iFU+gyPhwWFUmyFCdzonBif4f4=
 github.com/livekit/go-glib v0.0.0-20230223001336-834490045522/go.mod h1:ltV0gO6xNFzZhsIRbFXv8RTq9NGoNT2dmAER4YmZfaM=
-github.com/livekit/go-gst v0.2.34-0.20230623013326-3ca8cb8f62e5 h1:psIQLAp+yJETA+vZTVphV072nvCgcwC55xcufo1I5v0=
-github.com/livekit/go-gst v0.2.34-0.20230623013326-3ca8cb8f62e5/go.mod h1:0hI+orMYVT61TEh429LvmoV9UmyqjeTqdJ3DW2TX114=
+github.com/livekit/go-gst v0.2.34-0.20230901155409-dd09095b979e h1:/ILuS9M9V3Lbd6ix0eA3uocsndU2hdn7K1NSGPQ2XAU=
+github.com/livekit/go-gst v0.2.34-0.20230901155409-dd09095b979e/go.mod h1:0hI+orMYVT61TEh429LvmoV9UmyqjeTqdJ3DW2TX114=
 github.com/livekit/livekit-server v1.4.5-0.20230814182001-77c8e824735b h1:o+fyF5iijKHAMbzXFW6g4pRH/bR/cELRbTZHwRheF24=
 github.com/livekit/livekit-server v1.4.5-0.20230814182001-77c8e824735b/go.mod h1:Dbul6eFPxLw/ItxGjovO1a2Gzrs2EHEuXgjADz6squI=
 github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1 h1:jm09419p0lqTkDaKb5iXdynYrzB84ErPPO4LbRASk58=
