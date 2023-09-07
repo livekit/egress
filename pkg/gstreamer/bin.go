@@ -173,13 +173,11 @@ func (b *Bin) RemoveSourceBin(name string) (bool, error) {
 	}
 
 	if state != StateBuilding {
-		logger.Debugw(fmt.Sprintf("adding probe to %s", src.bin.GetName()))
 		src.mu.Lock()
 		srcGhostPad, sinkGhostPad := getGhostPads(src, b)
 		src.mu.Unlock()
 
-		srcGhostPad.AddProbe(gst.PadProbeTypeBlocking, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-			logger.Debugw("probe running")
+		srcGhostPad.AddProbe(gst.PadProbeTypeIdle, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
 			sinkPad := sinkGhostPad.GetTarget()
 			b.elements[0].ReleaseRequestPad(sinkPad)
 
