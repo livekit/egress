@@ -40,6 +40,7 @@ type AudioBin struct {
 func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
 	b := &AudioBin{
 		bin:    pipeline.NewBin("audio"),
+		p:      p,
 		tracks: make(map[string]struct{}),
 	}
 
