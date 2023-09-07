@@ -30,8 +30,8 @@ import (
 const audioMixerLatency = uint64(2e9)
 
 type AudioBin struct {
-	bin *gstreamer.Bin
-	p   *config.PipelineConfig
+	bin  *gstreamer.Bin
+	conf *config.PipelineConfig
 
 	mu     sync.Mutex
 	tracks map[string]struct{}
@@ -40,18 +40,18 @@ type AudioBin struct {
 func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
 	b := &AudioBin{
 		bin:    pipeline.NewBin("audio"),
-		p:      p,
+		conf:   p,
 		tracks: make(map[string]struct{}),
 	}
 
 	switch p.SourceType {
 	case types.SourceTypeWeb:
-		if err := b.buildWebInput(p); err != nil {
+		if err := b.buildWebInput(); err != nil {
 			return err
 		}
 
 	case types.SourceTypeSDK:
-		if err := b.buildSDKInput(p); err != nil {
+		if err := b.buildSDKInput(); err != nil {
 			return err
 		}
 
@@ -67,6 +67,14 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 		if err = b.bin.AddElement(tee); err != nil {
 			return err
 		}
+	} else {
+		queue, err := gstreamer.BuildQueue("audio_queue", p.Latency, true)
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = b.bin.AddElement(queue); err != nil {
+			return err
+		}
 	}
 
 	return pipeline.AddSourceBin(b.bin)
@@ -78,7 +86,7 @@ func (b *AudioBin) onTrackAdded(ts *config.TrackSource) {
 	}
 
 	if ts.Kind == lksdk.TrackKindAudio {
-		if err := b.addAudioAppSrcBin(b.p, ts); err != nil {
+		if err := b.addAudioAppSrcBin(ts); err != nil {
 			b.bin.OnError(err)
 		}
 	}
@@ -101,23 +109,23 @@ func (b *AudioBin) onTrackRemoved(trackID string) {
 	}
 }
 
-func (b *AudioBin) buildWebInput(p *config.PipelineConfig) error {
+func (b *AudioBin) buildWebInput() error {
 	pulseSrc, err := gst.NewElement("pulsesrc")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = pulseSrc.SetProperty("device", fmt.Sprintf("%s.monitor", p.Info.EgressId)); err != nil {
+	if err = pulseSrc.SetProperty("device", fmt.Sprintf("%s.monitor", b.conf.Info.EgressId)); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 	if err = b.bin.AddElement(pulseSrc); err != nil {
 		return err
 	}
 
-	if err = addAudioConverter(b.bin, p); err != nil {
+	if err = addAudioConverter(b.bin, b.conf); err != nil {
 		return err
 	}
-	if p.AudioTranscoding {
-		if err = b.addEncoder(p); err != nil {
+	if b.conf.AudioTranscoding {
+		if err = b.addEncoder(); err != nil {
 			return err
 		}
 	}
@@ -125,20 +133,20 @@ func (b *AudioBin) buildWebInput(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (b *AudioBin) buildSDKInput(p *config.PipelineConfig) error {
-	if p.AudioTrack != nil {
-		if err := b.addAudioAppSrcBin(p, p.AudioTrack); err != nil {
+func (b *AudioBin) buildSDKInput() error {
+	if b.conf.AudioTrack != nil {
+		if err := b.addAudioAppSrcBin(b.conf.AudioTrack); err != nil {
 			return err
 		}
 	}
-	if err := b.addAudioTestSrcBin(p); err != nil {
+	if err := b.addAudioTestSrcBin(); err != nil {
 		return err
 	}
-	if err := b.addMixer(p); err != nil {
+	if err := b.addMixer(); err != nil {
 		return err
 	}
-	if p.AudioTranscoding {
-		if err := b.addEncoder(p); err != nil {
+	if b.conf.AudioTranscoding {
+		if err := b.addEncoder(); err != nil {
 			return err
 		}
 	}
@@ -146,7 +154,7 @@ func (b *AudioBin) buildSDKInput(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (b *AudioBin) addAudioAppSrcBin(p *config.PipelineConfig, ts *config.TrackSource) error {
+func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -191,7 +199,7 @@ func (b *AudioBin) addAudioAppSrcBin(p *config.PipelineConfig, ts *config.TrackS
 		return errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	if err := addAudioConverter(appSrcBin, p); err != nil {
+	if err := addAudioConverter(appSrcBin, b.conf); err != nil {
 		return err
 	}
 
@@ -202,7 +210,7 @@ func (b *AudioBin) addAudioAppSrcBin(p *config.PipelineConfig, ts *config.TrackS
 	return nil
 }
 
-func (b *AudioBin) addAudioTestSrcBin(p *config.PipelineConfig) error {
+func (b *AudioBin) addAudioTestSrcBin() error {
 	testSrcBin := b.bin.NewBin("audio_test_src")
 	if err := b.bin.AddSourceBin(testSrcBin); err != nil {
 		return err
@@ -222,7 +230,7 @@ func (b *AudioBin) addAudioTestSrcBin(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	audioCaps, err := newAudioCapsFilter(p)
+	audioCaps, err := newAudioCapsFilter(b.conf)
 	if err != nil {
 		return err
 	}
@@ -230,7 +238,7 @@ func (b *AudioBin) addAudioTestSrcBin(p *config.PipelineConfig) error {
 	return testSrcBin.AddElements(audioTestSrc, audioCaps)
 }
 
-func (b *AudioBin) addMixer(p *config.PipelineConfig) error {
+func (b *AudioBin) addMixer() error {
 	audioMixer, err := gst.NewElement("audiomixer")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -239,7 +247,7 @@ func (b *AudioBin) addMixer(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	mixedCaps, err := newAudioCapsFilter(p)
+	mixedCaps, err := newAudioCapsFilter(b.conf)
 	if err != nil {
 		return err
 	}
@@ -247,14 +255,14 @@ func (b *AudioBin) addMixer(p *config.PipelineConfig) error {
 	return b.bin.AddElements(audioMixer, mixedCaps)
 }
 
-func (b *AudioBin) addEncoder(p *config.PipelineConfig) error {
-	switch p.AudioOutCodec {
+func (b *AudioBin) addEncoder() error {
+	switch b.conf.AudioOutCodec {
 	case types.MimeTypeOpus:
 		opusEnc, err := gst.NewElement("opusenc")
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		if err = opusEnc.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
+		if err = opusEnc.SetProperty("bitrate", int(b.conf.AudioBitrate*1000)); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 		return b.bin.AddElement(opusEnc)
@@ -264,7 +272,7 @@ func (b *AudioBin) addEncoder(p *config.PipelineConfig) error {
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		if err = faac.SetProperty("bitrate", int(p.AudioBitrate*1000)); err != nil {
+		if err = faac.SetProperty("bitrate", int(b.conf.AudioBitrate*1000)); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 		return b.bin.AddElement(faac)
@@ -273,7 +281,7 @@ func (b *AudioBin) addEncoder(p *config.PipelineConfig) error {
 		return nil
 
 	default:
-		return errors.ErrNotSupported(string(p.AudioOutCodec))
+		return errors.ErrNotSupported(string(b.conf.AudioOutCodec))
 	}
 }
 

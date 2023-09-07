@@ -35,8 +35,8 @@ import (
 const videoTestSrcName = "video_test_src"
 
 type VideoBin struct {
-	bin *gstreamer.Bin
-	p   *config.PipelineConfig
+	bin  *gstreamer.Bin
+	conf *config.PipelineConfig
 
 	lastPTS     atomic.Duration
 	nextPTS     atomic.Duration
@@ -50,18 +50,18 @@ type VideoBin struct {
 
 func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
 	b := &VideoBin{
-		bin: pipeline.NewBin("video"),
-		p:   p,
+		bin:  pipeline.NewBin("video"),
+		conf: p,
 	}
 
 	switch p.SourceType {
 	case types.SourceTypeWeb:
-		if err := b.buildWebInput(p); err != nil {
+		if err := b.buildWebInput(); err != nil {
 			return err
 		}
 
 	case types.SourceTypeSDK:
-		if err := b.buildSDKInput(p); err != nil {
+		if err := b.buildSDKInput(); err != nil {
 			return err
 		}
 
@@ -80,6 +80,14 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 		if err = b.bin.AddElement(tee); err != nil {
 			return err
 		}
+	} else {
+		queue, err := gstreamer.BuildQueue("video_queue", p.Latency, true)
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = b.bin.AddElement(queue); err != nil {
+			return err
+		}
 	}
 
 	return pipeline.AddSourceBin(b.bin)
@@ -91,7 +99,7 @@ func (b *VideoBin) onTrackAdded(ts *config.TrackSource) {
 	}
 
 	if ts.Kind == lksdk.TrackKindVideo {
-		if err := b.addAppSrcBin(b.p, ts); err != nil {
+		if err := b.addAppSrcBin(ts); err != nil {
 			b.bin.OnError(err)
 		}
 	}
@@ -150,12 +158,12 @@ func (b *VideoBin) onTrackUnmuted(trackID string, pts time.Duration) {
 	b.nextPad = trackID
 }
 
-func (b *VideoBin) buildWebInput(p *config.PipelineConfig) error {
+func (b *VideoBin) buildWebInput() error {
 	xImageSrc, err := gst.NewElement("ximagesrc")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = xImageSrc.SetProperty("display-name", p.Display); err != nil {
+	if err = xImageSrc.SetProperty("display-name", b.conf.Display); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 	if err = xImageSrc.SetProperty("use-damage", false); err != nil {
@@ -165,7 +173,7 @@ func (b *VideoBin) buildWebInput(p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	videoQueue, err := gstreamer.BuildQueue("video_input_queue", p.Latency, true)
+	videoQueue, err := gstreamer.BuildQueue("video_input_queue", b.conf.Latency, true)
 	if err != nil {
 		return err
 	}
@@ -181,7 +189,7 @@ func (b *VideoBin) buildWebInput(p *config.PipelineConfig) error {
 	}
 	if err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 		"video/x-raw,framerate=%d/1",
-		p.Framerate,
+		b.conf.Framerate,
 	),
 	)); err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -191,31 +199,31 @@ func (b *VideoBin) buildWebInput(p *config.PipelineConfig) error {
 		return err
 	}
 
-	if p.VideoTranscoding {
-		if err = b.addEncoder(p); err != nil {
+	if b.conf.VideoTranscoding {
+		if err = b.addEncoder(); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (b *VideoBin) buildSDKInput(p *config.PipelineConfig) error {
+func (b *VideoBin) buildSDKInput() error {
 	b.pads = make(map[string]*gst.Pad)
 
 	// add selector first so pads can be created
-	if p.VideoTranscoding {
-		if err := b.addSelector(p); err != nil {
+	if b.conf.VideoTranscoding {
+		if err := b.addSelector(); err != nil {
 			return err
 		}
 	}
 
-	if p.VideoTrack != nil {
-		if err := b.addAppSrcBin(p, p.VideoTrack); err != nil {
+	if b.conf.VideoTrack != nil {
+		if err := b.addAppSrcBin(b.conf.VideoTrack); err != nil {
 			return err
 		}
 	}
 
-	if p.VideoTranscoding {
+	if b.conf.VideoTranscoding {
 		b.bin.SetGetSrcPad(b.getSrcPad)
 		b.bin.SetEOSFunc(func() bool {
 			b.mu.Lock()
@@ -229,15 +237,15 @@ func (b *VideoBin) buildSDKInput(p *config.PipelineConfig) error {
 			return false
 		})
 
-		if err := b.addVideoTestSrcBin(p); err != nil {
+		if err := b.addVideoTestSrcBin(); err != nil {
 			return err
 		}
-		if p.VideoTrack == nil {
+		if b.conf.VideoTrack == nil {
 			if err := b.setSelectorPad(videoTestSrcName); err != nil {
 				return err
 			}
 		}
-		if err := b.addEncoder(p); err != nil {
+		if err := b.addEncoder(); err != nil {
 			return err
 		}
 	}
@@ -245,13 +253,13 @@ func (b *VideoBin) buildSDKInput(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (b *VideoBin) addAppSrcBin(p *config.PipelineConfig, ts *config.TrackSource) error {
-	appSrcBin, err := buildVideoAppSrcBin(b.bin, p, ts)
+func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
+	appSrcBin, err := b.buildAppSrcBin(ts)
 	if err != nil {
 		return err
 	}
 
-	if p.VideoTranscoding {
+	if b.conf.VideoTranscoding {
 		b.createSrcPad(ts.TrackID)
 	}
 
@@ -259,20 +267,20 @@ func (b *VideoBin) addAppSrcBin(p *config.PipelineConfig, ts *config.TrackSource
 		return err
 	}
 
-	if p.VideoTranscoding {
+	if b.conf.VideoTranscoding {
 		return b.setSelectorPad(ts.TrackID)
 	}
 
 	return nil
 }
 
-func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig, ts *config.TrackSource) (*gstreamer.Bin, error) {
-	b := videoBin.NewBin(ts.TrackID)
+func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource) (*gstreamer.Bin, error) {
+	appSrcBin := b.bin.NewBin(ts.TrackID)
 	ts.AppSrc.Element.SetArg("format", "time")
 	if err := ts.AppSrc.Element.SetProperty("is-live", true); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if err := b.AddElement(ts.AppSrc.Element); err != nil {
+	if err := appSrcBin.AddElement(ts.AppSrc.Element); err != nil {
 		return nil, err
 	}
 
@@ -300,17 +308,17 @@ func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig, ts *
 			return nil, errors.ErrGstPipelineError(err)
 		}
 
-		if err = b.AddElements(rtpH264Depay, caps); err != nil {
+		if err = appSrcBin.AddElements(rtpH264Depay, caps); err != nil {
 			return nil, err
 		}
 
-		if p.VideoTranscoding {
+		if b.conf.VideoTranscoding {
 			avDecH264, err := gst.NewElement("avdec_h264")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
 			}
 
-			if err = b.AddElement(avDecH264); err != nil {
+			if err = appSrcBin.AddElement(avDecH264); err != nil {
 				return nil, err
 			}
 		} else {
@@ -319,11 +327,11 @@ func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig, ts *
 				return nil, errors.ErrGstPipelineError(err)
 			}
 
-			if err = b.AddElement(h264Parse); err != nil {
+			if err = appSrcBin.AddElement(h264Parse); err != nil {
 				return nil, err
 			}
 
-			return b, nil
+			return appSrcBin, nil
 		}
 
 	case types.MimeTypeVP8:
@@ -338,20 +346,20 @@ func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig, ts *
 		if err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
-		if err = b.AddElement(rtpVP8Depay); err != nil {
+		if err = appSrcBin.AddElement(rtpVP8Depay); err != nil {
 			return nil, err
 		}
 
-		if p.VideoTranscoding {
+		if b.conf.VideoTranscoding {
 			vp8Dec, err := gst.NewElement("vp8dec")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
 			}
-			if err = b.AddElement(vp8Dec); err != nil {
+			if err = appSrcBin.AddElement(vp8Dec); err != nil {
 				return nil, err
 			}
 		} else {
-			return b, nil
+			return appSrcBin, nil
 		}
 
 	case types.MimeTypeVP9:
@@ -366,16 +374,16 @@ func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig, ts *
 		if err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
-		if err = b.AddElement(rtpVP9Depay); err != nil {
+		if err = appSrcBin.AddElement(rtpVP9Depay); err != nil {
 			return nil, err
 		}
 
-		if p.VideoTranscoding {
+		if b.conf.VideoTranscoding {
 			vp9Dec, err := gst.NewElement("vp9dec")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
 			}
-			if err = b.AddElement(vp9Dec); err != nil {
+			if err = appSrcBin.AddElement(vp9Dec); err != nil {
 				return nil, err
 			}
 		} else {
@@ -394,25 +402,25 @@ func buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.PipelineConfig, ts *
 				return nil, errors.ErrGstPipelineError(err)
 			}
 
-			if err = b.AddElements(vp9Parse, vp9Caps); err != nil {
+			if err = appSrcBin.AddElements(vp9Parse, vp9Caps); err != nil {
 				return nil, err
 			}
 
-			return b, nil
+			return appSrcBin, nil
 		}
 
 	default:
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	if err := addVideoConverter(b, p); err != nil {
+	if err := addVideoConverter(appSrcBin, b.conf); err != nil {
 		return nil, err
 	}
 
-	return b, nil
+	return appSrcBin, nil
 }
 
-func (b *VideoBin) addVideoTestSrcBin(p *config.PipelineConfig) error {
+func (b *VideoBin) addVideoTestSrcBin() error {
 	testSrcBin := b.bin.NewBin(videoTestSrcName)
 	if err := b.bin.AddSourceBin(testSrcBin); err != nil {
 		return err
@@ -427,7 +435,7 @@ func (b *VideoBin) addVideoTestSrcBin(p *config.PipelineConfig) error {
 	}
 	videoTestSrc.SetArg("pattern", "black")
 
-	caps, err := newVideoCapsFilter(p, true)
+	caps, err := newVideoCapsFilter(b.conf, true)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
@@ -440,7 +448,7 @@ func (b *VideoBin) addVideoTestSrcBin(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (b *VideoBin) addSelector(p *config.PipelineConfig) error {
+func (b *VideoBin) addSelector() error {
 	inputSelector, err := gst.NewElement("input-selector")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -457,7 +465,7 @@ func (b *VideoBin) addSelector(p *config.PipelineConfig) error {
 		return err
 	}
 
-	caps, err := newVideoCapsFilter(p, true)
+	caps, err := newVideoCapsFilter(b.conf, true)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
@@ -470,8 +478,8 @@ func (b *VideoBin) addSelector(p *config.PipelineConfig) error {
 	return nil
 }
 
-func (b *VideoBin) addEncoder(p *config.PipelineConfig) error {
-	videoQueue, err := gstreamer.BuildQueue("video_encoder_queue", p.Latency, false)
+func (b *VideoBin) addEncoder() error {
+	videoQueue, err := gstreamer.BuildQueue("video_encoder_queue", b.conf.Latency, false)
 	if err != nil {
 		return err
 	}
@@ -479,29 +487,29 @@ func (b *VideoBin) addEncoder(p *config.PipelineConfig) error {
 		return err
 	}
 
-	switch p.VideoOutCodec {
+	switch b.conf.VideoOutCodec {
 	// we only encode h264, the rest are too slow
 	case types.MimeTypeH264:
 		x264Enc, err := gst.NewElement("x264enc")
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		if err = x264Enc.SetProperty("bitrate", uint(p.VideoBitrate)); err != nil {
+		if err = x264Enc.SetProperty("bitrate", uint(b.conf.VideoBitrate)); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
-		if p.KeyFrameInterval != 0 {
-			if err = x264Enc.SetProperty("key-int-max", uint(p.KeyFrameInterval*float64(p.Framerate))); err != nil {
+		if b.conf.KeyFrameInterval != 0 {
+			if err = x264Enc.SetProperty("key-int-max", uint(b.conf.KeyFrameInterval*float64(b.conf.Framerate))); err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
 		}
 		bufCapacity := uint(2000) // 2s
-		if p.GetSegmentConfig() != nil {
+		if b.conf.GetSegmentConfig() != nil {
 			// avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
 			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
-			bufCapacity = uint(time.Duration(p.GetSegmentConfig().SegmentDuration) * (time.Second / time.Millisecond))
+			bufCapacity = uint(time.Duration(b.conf.GetSegmentConfig().SegmentDuration) * (time.Second / time.Millisecond))
 		}
 		if err = x264Enc.SetProperty("vbv-buf-capacity", bufCapacity); err != nil {
 			return err
@@ -513,7 +521,7 @@ func (b *VideoBin) addEncoder(p *config.PipelineConfig) error {
 		}
 		if err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"video/x-h264,profile=%s",
-			p.VideoProfile,
+			b.conf.VideoProfile,
 		))); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -557,7 +565,7 @@ func (b *VideoBin) addEncoder(p *config.PipelineConfig) error {
 		fallthrough
 
 	default:
-		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", p.VideoOutCodec))
+		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", b.conf.VideoOutCodec))
 	}
 }
 

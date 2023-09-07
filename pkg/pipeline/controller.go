@@ -176,7 +176,6 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	c.Info.StartedAt = time.Now().UnixNano()
 	defer func() {
 		now := time.Now().UnixNano()
-		logger.Debugw("CLOSING")
 
 		if c.SourceType == types.SourceTypeSDK {
 			c.updateDuration(c.src.GetEndedAt())
