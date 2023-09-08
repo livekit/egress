@@ -51,6 +51,14 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gst
 		if err = b.AddElement(tee); err != nil {
 			return nil, err
 		}
+	} else {
+		queue, err := gstreamer.BuildQueue("audio_queue", p.Latency, true)
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = b.AddElement(queue); err != nil {
+			return nil, err
+		}
 	}
 
 	return b, nil
@@ -106,7 +114,9 @@ func buildAudioAppSrcBin(audioBin *gstreamer.Bin, p *config.PipelineConfig) erro
 	track := p.AudioTrack
 
 	b := audioBin.NewBin(track.TrackID)
-	b.SetEOSFunc(track.EOSFunc)
+	b.SetEOSFunc(func() bool {
+		return false
+	})
 	if err := audioBin.AddSourceBin(b); err != nil {
 		return err
 	}

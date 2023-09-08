@@ -98,7 +98,6 @@ type TrackSource struct {
 	MimeType    types.MimeType
 	PayloadType webrtc.PayloadType
 	ClockRate   uint32
-	EOSFunc     func()
 }
 
 type AudioConfig struct {

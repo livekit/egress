@@ -93,10 +93,6 @@ func (s *SDKSource) StartRecording() chan struct{} {
 	return s.startRecording
 }
 
-func (s *SDKSource) GetStartTime() int64 {
-	return s.sync.GetStartedAt()
-}
-
 func (s *SDKSource) Playing(trackID string) {
 	if w := s.getWriterForTrack(trackID); w != nil {
 		w.Play()
@@ -105,6 +101,10 @@ func (s *SDKSource) Playing(trackID string) {
 
 func (s *SDKSource) EndRecording() chan struct{} {
 	return s.endRecording
+}
+
+func (s *SDKSource) GetStartedAt() int64 {
+	return s.sync.GetStartedAt()
 }
 
 func (s *SDKSource) GetEndedAt() int64 {
@@ -294,7 +294,6 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			return
 		}
 
-		ts.EOSFunc = s.CloseWriters
 		s.audioWriter = writer
 		s.AudioTrack = ts
 
@@ -314,7 +313,6 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			return
 		}
 
-		ts.EOSFunc = s.CloseWriters
 		s.videoWriter = writer
 		s.VideoTrack = ts
 

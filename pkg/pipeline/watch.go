@@ -122,8 +122,8 @@ func (c *Controller) messageWatch(msg *gst.Message) bool {
 	var err error
 	switch msg.Type() {
 	case gst.MessageEOS:
-		logger.Infow("EOS received, stopping pipeline")
-		c.Stop()
+		logger.Infow("EOS received")
+		c.p.Stop()
 		return false
 	case gst.MessageWarning:
 		err = c.handleMessageWarning(msg.ParseWarning())
@@ -164,7 +164,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 
 	switch {
 	case element == elementGstRtmp2Sink:
-		if strings.HasPrefix(gErr.Error(), "Connection error") && !c.eosSent.IsBroken() {
+		if strings.HasPrefix(gErr.Error(), "Connection error") && !c.eos.IsBroken() {
 			// try reconnecting
 			ok, err := c.streamBin.ResetStream(name, gErr)
 			if err != nil {
@@ -194,7 +194,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 	case element == elementSplitMuxSink:
 		// We sometimes get GstSplitMuxSink errors if send EOS before the first media was sent to the mux
 		if message == msgMuxer {
-			if c.eosSent.IsBroken() {
+			if c.eos.IsBroken() {
 				logger.Debugw("GstSplitMuxSink failure after sending EOS")
 				return nil
 			}
@@ -232,15 +232,10 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 
 	s := msg.Source()
 	if s == pipelineName {
-		logger.Infow("pipeline playing")
-
-		c.playing.Break()
-		switch c.SourceType {
-		case types.SourceTypeSDK:
-			c.updateStartTime(c.src.(*source.SDKSource).GetStartTime())
-		case types.SourceTypeWeb:
-			c.updateStartTime(time.Now().UnixNano())
-		}
+		c.playing.Once(func() {
+			logger.Infow("pipeline playing")
+			c.updateStartTime(c.src.GetStartedAt())
+		})
 	} else if strings.HasPrefix(s, "app_") {
 		s = s[4:]
 		logger.Infow(fmt.Sprintf("%s playing", s))
