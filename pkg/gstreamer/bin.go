@@ -71,6 +71,14 @@ func (b *Bin) AddSinkBin(sink *Bin) error {
 }
 
 func (b *Bin) addBin(bin *Bin, direction gst.PadDirection) error {
+	bin.mu.Lock()
+	alreadyAdded := bin.added
+	bin.added = true
+	bin.mu.Unlock()
+	if alreadyAdded {
+		return errors.ErrBinAlreadyAdded
+	}
+
 	b.LockStateShared()
 	defer b.UnlockStateShared()
 
@@ -81,14 +89,6 @@ func (b *Bin) addBin(bin *Bin, direction gst.PadDirection) error {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
-
-	bin.mu.Lock()
-	alreadyAdded := bin.added
-	bin.added = true
-	bin.mu.Unlock()
-	if alreadyAdded {
-		return errors.ErrBinAlreadyAdded
-	}
 
 	if direction == gst.PadDirectionSource {
 		b.srcs = append(b.srcs, bin)
@@ -208,7 +208,7 @@ func (b *Bin) removeBin(name string, direction gst.PadDirection) (bool, error) {
 
 func (b *Bin) probeRemoveSource(src *Bin) {
 	src.mu.Lock()
-	srcGhostPad, sinkGhostPad := getGhostPads(src, b)
+	srcGhostPad, sinkGhostPad := deleteGhostPadsLocked(src, b)
 	src.mu.Unlock()
 
 	srcGhostPad.AddProbe(gst.PadProbeTypeIdle, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
@@ -231,7 +231,7 @@ func (b *Bin) probeRemoveSource(src *Bin) {
 
 func (b *Bin) probeRemoveSink(sink *Bin) {
 	sink.mu.Lock()
-	srcGhostPad, sinkGhostPad := getGhostPads(b, sink)
+	srcGhostPad, sinkGhostPad := deleteGhostPadsLocked(b, sink)
 	sink.mu.Unlock()
 
 	srcGhostPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
@@ -255,6 +255,16 @@ func (b *Bin) probeRemoveSink(sink *Bin) {
 		b.bin.RemovePad(srcGhostPad.Pad)
 		return gst.PadProbeRemove
 	})
+}
+
+func deleteGhostPadsLocked(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad) {
+	srcPad := src.pads[sink.bin.GetName()]
+	sinkPad := sink.pads[src.bin.GetName()]
+
+	delete(src.pads, sink.bin.GetName())
+	delete(sink.pads, src.bin.GetName())
+
+	return srcPad, sinkPad
 }
 
 func (b *Bin) SetState(state gst.State) error {
@@ -388,7 +398,7 @@ func (b *Bin) link() error {
 				sink.mu.Lock()
 				var err error
 				if addQueues {
-					err = b.linkPeersWithQueueLocked(src, sink)
+					err = b.queueLinkPeersLocked(src, sink)
 				} else {
 					err = linkPeersLocked(src, sink)
 				}
@@ -406,7 +416,7 @@ func (b *Bin) link() error {
 }
 
 func linkPeersLocked(src, sink *Bin) error {
-	srcPad, sinkPad, err := createGhostPads(src, sink, nil)
+	srcPad, sinkPad, err := createGhostPadsLocked(src, sink, nil)
 	if err != nil {
 		return err
 	}
@@ -444,7 +454,7 @@ func linkPeersLocked(src, sink *Bin) error {
 	return nil
 }
 
-func (b *Bin) linkPeersWithQueueLocked(src, sink *Bin) error {
+func (b *Bin) queueLinkPeersLocked(src, sink *Bin) error {
 	srcName := src.bin.GetName()
 	sinkName := sink.bin.GetName()
 
@@ -458,7 +468,7 @@ func (b *Bin) linkPeersWithQueueLocked(src, sink *Bin) error {
 		return err
 	}
 
-	srcPad, sinkPad, err := createGhostPads(src, sink, queue)
+	srcPad, sinkPad, err := createGhostPadsLocked(src, sink, queue)
 	if err != nil {
 		return err
 	}
@@ -491,14 +501,4 @@ func getPeerSinks(sinks []*Bin) []*Bin {
 		}
 	}
 	return flattened
-}
-
-func getGhostPads(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad) {
-	srcPad := src.pads[sink.bin.GetName()]
-	sinkPad := sink.pads[src.bin.GetName()]
-
-	delete(src.pads, sink.bin.GetName())
-	delete(sink.pads, src.bin.GetName())
-
-	return srcPad, sinkPad
 }
