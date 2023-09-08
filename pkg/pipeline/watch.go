@@ -122,7 +122,7 @@ func (c *Controller) messageWatch(msg *gst.Message) bool {
 	var err error
 	switch msg.Type() {
 	case gst.MessageEOS:
-		logger.Infow("EOS received, stopping pipeline")
+		logger.Infow("EOS received")
 		c.p.Stop()
 		return false
 	case gst.MessageWarning:
@@ -164,7 +164,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 
 	switch {
 	case element == elementGstRtmp2Sink:
-		if strings.HasPrefix(gErr.Error(), "Connection error") && !c.eosSent.IsBroken() {
+		if strings.HasPrefix(gErr.Error(), "Connection error") && !c.eos.IsBroken() {
 			// try reconnecting
 			ok, err := c.streamBin.ResetStream(name, gErr)
 			if err != nil {
@@ -194,7 +194,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 	case element == elementSplitMuxSink:
 		// We sometimes get GstSplitMuxSink errors if send EOS before the first media was sent to the mux
 		if message == msgMuxer {
-			if c.eosSent.IsBroken() {
+			if c.eos.IsBroken() {
 				logger.Debugw("GstSplitMuxSink failure after sending EOS")
 				return nil
 			}

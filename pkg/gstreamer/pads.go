@@ -21,13 +21,57 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/protocol/logger"
 )
 
-func createGhostPads(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad, error) {
+type padTemplate struct {
+	element   *gst.Element
+	template  *gst.PadTemplate
+	capsNames map[string]struct{}
+	dataTypes map[string]struct{}
+}
+
+func (p *padTemplate) toPad() *gst.Pad {
+	if p.template.Presence() == gst.PadPresenceAlways {
+		return p.element.GetStaticPad(p.template.Name())
+	} else {
+		return p.element.GetRequestPad(p.template.Name())
+	}
+}
+
+func (p *padTemplate) findDirectMatch(others []*padTemplate) *padTemplate {
+	for _, other := range others {
+		for capsName := range p.capsNames {
+			if _, ok := other.capsNames[capsName]; ok {
+				return other
+			}
+		}
+		for dataType := range p.dataTypes {
+			if _, ok := other.dataTypes[dataType]; ok {
+				return other
+			}
+		}
+	}
+	return nil
+}
+
+func (p *padTemplate) findAnyMatch(others []*padTemplate) *padTemplate {
+	for _, other := range others {
+		if _, ok := p.dataTypes["ANY"]; ok {
+			return other
+		}
+		if _, ok := other.dataTypes["ANY"]; ok {
+			return other
+		}
+	}
+	return nil
+}
+
+func createGhostPadsLocked(src, sink *Bin, queue *gst.Element) (*gst.GhostPad, *gst.GhostPad, error) {
 	srcName := src.bin.GetName()
 	sinkName := sink.bin.GetName()
 
-	srcPad, sinkPad, err := getPads(src, sink)
+	srcPad, sinkPad, err := matchPadsLocked(src, sink)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -35,165 +79,140 @@ func createGhostPads(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad, error) {
 	srcGhostPad := gst.NewGhostPad(fmt.Sprintf("%s_%s_sink", srcName, sinkName), srcPad)
 	src.pads[sinkName] = srcGhostPad
 	src.bin.AddPad(srcGhostPad.Pad)
+
+	if queue != nil {
+		if padReturn := queue.GetStaticPad("src").Link(sinkPad); padReturn != gst.PadLinkOK {
+			return nil, nil, errors.ErrPadLinkFailed(queue.GetName(), sinkName, padReturn.String())
+		}
+
+		sinkGhostPad := gst.NewGhostPad(fmt.Sprintf("%s_%s_src", srcName, sinkName), queue.GetStaticPad("sink"))
+		sink.pads[srcName] = sinkGhostPad
+		sink.bin.AddPad(sinkGhostPad.Pad)
+		return srcGhostPad, sinkGhostPad, nil
+	}
 
 	sinkGhostPad := gst.NewGhostPad(fmt.Sprintf("%s_%s_src", srcName, sinkName), sinkPad)
 	sink.pads[srcName] = sinkGhostPad
 	sink.bin.AddPad(sinkGhostPad.Pad)
-
 	return srcGhostPad, sinkGhostPad, nil
 }
 
-func createGhostPadsWithQueue(src, sink *Bin, queue *gst.Element) (*gst.GhostPad, *gst.GhostPad, error) {
-	srcName := src.bin.GetName()
-	sinkName := sink.bin.GetName()
-
-	srcPad, sinkPad, err := getPads(src, sink)
-	if err != nil {
-		return nil, nil, err
-	}
-	if padReturn := queue.GetStaticPad("src").Link(sinkPad); padReturn != gst.PadLinkOK {
-		return nil, nil, errors.ErrPadLinkFailed(queue.GetName(), sinkName, padReturn.String())
-	}
-
-	srcGhostPad := gst.NewGhostPad(fmt.Sprintf("%s_%s_sink", srcName, sinkName), srcPad)
-	src.pads[sinkName] = srcGhostPad
-	src.bin.AddPad(srcGhostPad.Pad)
-
-	sinkGhostPad := gst.NewGhostPad(fmt.Sprintf("%s_%s_src", srcName, sinkName), queue.GetStaticPad("sink"))
-	sink.pads[srcName] = sinkGhostPad
-	sink.bin.AddPad(sinkGhostPad.Pad)
-
-	return srcGhostPad, sinkGhostPad, nil
-}
-
-func getGhostPads(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad) {
-	srcPad := src.pads[sink.bin.GetName()]
-	sinkPad := sink.pads[src.bin.GetName()]
-
-	delete(src.pads, sink.bin.GetName())
-	delete(sink.pads, src.bin.GetName())
-
-	return srcPad, sinkPad
-}
-
-func getPads(src, sink *Bin) (*gst.Pad, *gst.Pad, error) {
+func matchPadsLocked(src, sink *Bin) (*gst.Pad, *gst.Pad, error) {
 	var srcPad, sinkPad *gst.Pad
-	srcElement := src.elements[len(src.elements)-1]
-	sinkElement := sink.elements[0]
-
+	var srcTemplates, sinkTemplates []*padTemplate
 	if src.getSinkPad != nil {
 		srcPad = src.getSinkPad(sink.bin.GetName())
-		for _, padTemplate := range sinkElement.GetPadTemplates() {
-			if padTemplate.Direction() == gst.PadDirectionSink {
-				return srcPad, getPad(sinkElement, padTemplate), nil
-			}
-		}
+	} else {
+		srcTemplates = src.getPadTemplatesLocked(gst.PadDirectionSource)
 	}
 	if sink.getSrcPad != nil {
 		sinkPad = sink.getSrcPad(src.bin.GetName())
-		for _, padTemplate := range srcElement.GetPadTemplates() {
-			if padTemplate.Direction() == gst.PadDirectionSource {
-				return getPad(srcElement, padTemplate), sinkPad, nil
+	} else {
+		sinkTemplates = sink.getPadTemplatesLocked(gst.PadDirectionSink)
+	}
+
+	switch {
+	case srcPad != nil && sinkPad != nil:
+		return srcPad, sinkPad, nil
+	case srcPad != nil && len(sinkTemplates) == 1:
+		return srcPad, sinkTemplates[0].toPad(), nil
+	case sinkPad != nil && len(srcTemplates) == 1:
+		return srcTemplates[0].toPad(), sinkPad, nil
+	case len(srcTemplates) >= 1 && len(srcTemplates) >= 1:
+		for _, srcTemplate := range srcTemplates {
+			if sinkTemplate := srcTemplate.findDirectMatch(sinkTemplates); sinkTemplate != nil {
+				return srcTemplate.toPad(), sinkTemplate.toPad(), nil
+			}
+		}
+		for _, srcTemplate := range srcTemplates {
+			if sinkTemplate := srcTemplate.findAnyMatch(sinkTemplates); sinkTemplate != nil {
+				return srcTemplate.toPad(), sinkTemplate.toPad(), nil
 			}
 		}
 	}
 
-	srcPrimary, srcSecondary, srcAny := getPadTemplates(src.elements, gst.PadDirectionSource)
-	sinkPrimary, sinkSecondary, sinkAny := getPadTemplates(sink.elements, gst.PadDirectionSink)
-
-	for srcCaps, srcTemplate := range srcPrimary {
-		if sinkTemplate, ok := sinkPrimary[srcCaps]; ok {
-			return getPad(srcElement, srcTemplate), getPad(sinkElement, sinkTemplate), nil
-		}
-	}
-	for dataType, srcTemplate := range srcSecondary {
-		if sinkTemplate, ok := sinkSecondary[dataType]; ok {
-			return getPad(srcElement, srcTemplate), getPad(sinkElement, sinkTemplate), nil
-		}
-	}
-	if srcAny != nil && sinkAny != nil {
-		return getPad(srcElement, srcAny), getPad(sinkElement, sinkAny), nil
-	}
-
+	logger.Warnw("could not match pads", nil, "srcTemplates", srcTemplates, "sinkTemplates", sinkTemplates)
 	return nil, nil, errors.ErrGhostPadFailed
 }
 
-func getPad(e *gst.Element, template *gst.PadTemplate) *gst.Pad {
-	if template.Presence() == gst.PadPresenceAlways {
-		return e.GetStaticPad(template.Name())
-	} else {
-		return e.GetRequestPad(template.Name())
-	}
-}
-
-func getPadTemplates(elements []*gst.Element, direction gst.PadDirection) (
-	map[string]*gst.PadTemplate,
-	map[string]*gst.PadTemplate,
-	*gst.PadTemplate,
-) {
-	primary := make(map[string]*gst.PadTemplate)
-	secondary := make(map[string]*gst.PadTemplate)
-	var anyTemplate *gst.PadTemplate
-
-	var i int
+func (b *Bin) getPadTemplatesLocked(direction gst.PadDirection) []*padTemplate {
+	var element *gst.Element
 	if direction == gst.PadDirectionSource {
-		i = len(elements) - 1
+		element = b.elements[len(b.elements)-1]
+	} else {
+		element = b.elements[0]
 	}
 
-	for i >= 0 && i < len(elements) {
-		padTemplates := elements[i].GetPadTemplates()
-		for _, padTemplate := range padTemplates {
-			if padTemplate.Direction() == direction {
-				caps := padTemplate.Caps()
+	allTemplates := element.GetPadTemplates()
+	templates := make([]*padTemplate, 0)
 
-				if caps.IsAny() {
-					if strings.HasPrefix(padTemplate.Name(), direction.String()) {
-						// most generic pad
-						if anyTemplate == nil {
-							anyTemplate = padTemplate
-						} else {
-							continue
-						}
+	for _, template := range allTemplates {
+		if template.Direction() == direction {
+			t := &padTemplate{
+				element:   element,
+				template:  template,
+				capsNames: make(map[string]struct{}),
+				dataTypes: make(map[string]struct{}),
+			}
+
+			caps := template.Caps()
+			if caps.IsAny() {
+				if strings.HasPrefix(template.Name(), direction.String()) {
+					// src/src_%u/sink/sink_%u pad
+					capsNames, dataTypes, ok := b.getTypesLocked(direction)
+					if ok {
+						t.capsNames = capsNames
+						t.dataTypes = dataTypes
 					} else {
-						// any caps but associated name
-						dataType := padTemplate.Name()
-						if strings.HasSuffix(dataType, "_%u") {
-							dataType = dataType[:len(dataType)-3]
-						}
-						if anyTemplate != nil {
-							secondary[dataType] = anyTemplate
-							return primary, secondary, nil
-						}
-						secondary[dataType] = padTemplate
+						t.dataTypes["ANY"] = struct{}{}
 					}
 				} else {
-					// specified caps
+					// audio/audio_%u/video/video_%u pad
+					dataType := template.Name()
+					if strings.HasSuffix(dataType, "_%u") {
+						dataType = dataType[:len(dataType)-3]
+					}
+					t.dataTypes[dataType] = struct{}{}
+				}
+			} else {
+				// pad has caps
+				splitCaps := strings.Split(caps.String(), "; ")
+				for _, c := range splitCaps {
+					capsName := strings.SplitN(c, ",", 2)[0]
+					t.capsNames[capsName] = struct{}{}
+					t.dataTypes[strings.Split(capsName, "/")[0]] = struct{}{}
+				}
+			}
+
+			templates = append(templates, t)
+		}
+	}
+
+	return templates
+}
+
+func (b *Bin) getTypesLocked(direction gst.PadDirection) (map[string]struct{}, map[string]struct{}, bool) {
+	var i int
+	if direction == gst.PadDirectionSource {
+		i = len(b.elements) - 1
+	}
+
+	for i >= 0 && i < len(b.elements) {
+		allTemplates := b.elements[i].GetPadTemplates()
+		for _, template := range allTemplates {
+			if template.Direction() == gst.PadDirectionSource {
+				if caps := template.Caps(); !caps.IsAny() {
+					capsNames := make(map[string]struct{})
+					dataTypes := make(map[string]struct{})
 					splitCaps := strings.Split(caps.String(), ";")
 					for _, c := range splitCaps {
 						capsName := strings.SplitN(c, ",", 2)[0]
-						dataType := strings.Split(capsName, "/")[0]
-						if anyTemplate != nil {
-							primary[capsName] = anyTemplate
-							secondary[dataType] = anyTemplate
-						} else {
-							primary[capsName] = padTemplate
-							secondary[dataType] = padTemplate
-						}
+						capsNames[capsName] = struct{}{}
+						dataTypes[strings.Split(capsName, "/")[0]] = struct{}{}
 					}
-					if anyTemplate != nil {
-						return primary, secondary, anyTemplate
-					}
+					return capsNames, dataTypes, true
 				}
 			}
-		}
-		if anyTemplate == nil {
-			for _, template := range primary {
-				return primary, secondary, template
-			}
-			for _, template := range secondary {
-				return primary, secondary, template
-			}
-			return primary, secondary, nil
 		}
 
 		if direction == gst.PadDirectionSource {
@@ -203,5 +222,25 @@ func getPadTemplates(elements []*gst.Element, direction gst.PadDirection) (
 		}
 	}
 
-	return primary, secondary, anyTemplate
+	if direction == gst.PadDirectionSource {
+		for _, src := range b.srcs {
+			src.mu.Lock()
+			capsNames, dataTypes, ok := src.getTypesLocked(direction)
+			src.mu.Unlock()
+			if ok {
+				return capsNames, dataTypes, true
+			}
+		}
+	} else {
+		for _, sink := range b.sinks {
+			sink.mu.Lock()
+			capsNames, dataTypes, ok := sink.getTypesLocked(direction)
+			sink.mu.Unlock()
+			if ok {
+				return capsNames, dataTypes, true
+			}
+		}
+	}
+
+	return nil, nil, false
 }

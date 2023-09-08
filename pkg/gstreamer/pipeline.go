@@ -27,7 +27,6 @@ import (
 
 const (
 	stateChangeTimeout = time.Second * 15
-	stopTimeout        = time.Second * 30
 )
 
 type Pipeline struct {
@@ -112,14 +111,6 @@ func (p *Pipeline) SetState(state gst.State) error {
 		stateErr <- p.pipeline.SetState(state)
 	}()
 
-	if state == gst.StateNull {
-		for _, src := range p.srcs {
-			if err := src.SetState(gst.StateNull); err != nil {
-				return err
-			}
-		}
-	}
-
 	select {
 	case <-time.After(stateChangeTimeout):
 		return errors.ErrPipelineFrozen
@@ -172,7 +163,6 @@ func (p *Pipeline) Stop() {
 
 	if old >= StateRunning {
 		p.loop.Quit()
-		logger.Debugw("main loop closed")
 	}
 
 	p.UpgradeState(StateFinished)

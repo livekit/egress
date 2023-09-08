@@ -32,25 +32,6 @@ const (
 	StateFinished
 )
 
-func (s State) String() string {
-	switch s {
-	case StateBuilding:
-		return "building"
-	case StateStarted:
-		return "starting"
-	case StateRunning:
-		return "running"
-	case StateEOS:
-		return "eos"
-	case StateStopping:
-		return "stopping"
-	case StateFinished:
-		return "finished"
-	default:
-		return "unknown"
-	}
-}
-
 type StateManager struct {
 	lock  sync.RWMutex
 	state State
@@ -94,5 +75,24 @@ func (s *StateManager) UpgradeState(state State) (State, bool) {
 		logger.Debugw(fmt.Sprintf("pipeline state %v -> %v", old, state))
 		s.state = state
 		return old, true
+	}
+}
+
+func (s State) String() string {
+	switch s {
+	case StateBuilding:
+		return "building"
+	case StateStarted:
+		return "starting"
+	case StateRunning:
+		return "running"
+	case StateEOS:
+		return "eos"
+	case StateStopping:
+		return "stopping"
+	case StateFinished:
+		return "finished"
+	default:
+		return "unknown"
 	}
 }

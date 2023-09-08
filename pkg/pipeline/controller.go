@@ -55,7 +55,7 @@ type Controller struct {
 	gstLogger  *zap.SugaredLogger
 	limitTimer *time.Timer
 	playing    core.Fuse
-	eosSent    core.Fuse
+	eos        core.Fuse
 	stopped    core.Fuse
 }
 
@@ -71,7 +71,7 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 		},
 		gstLogger: logger.GetLogger().(*logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
 		playing:   core.NewFuse(),
-		eosSent:   core.NewFuse(),
+		eos:       core.NewFuse(),
 		stopped:   core.NewFuse(),
 	}
 	c.callbacks.SetOnError(c.OnError)
@@ -107,8 +107,6 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 }
 
 func (c *Controller) BuildPipeline() error {
-	logger.Debugw("building pipeline")
-
 	p, err := gstreamer.NewPipeline(pipelineName, c.Latency, c.callbacks)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -183,6 +181,9 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 
 		c.Info.UpdatedAt = now
 		c.Info.EndedAt = now
+		if c.SourceType == types.SourceTypeSDK {
+			c.updateDuration(c.src.GetEndedAt())
+		}
 
 		// update status
 		if c.Info.Error != "" {
@@ -443,13 +444,12 @@ func (c *Controller) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
-	c.eosSent.Once(func() {
+	c.eos.Once(func() {
 		logger.Debugw("Sending EOS")
 
 		if c.limitTimer != nil {
 			c.limitTimer.Stop()
 		}
-
 		switch c.Info.Status {
 		case livekit.EgressStatus_EGRESS_STARTING:
 			c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
@@ -489,7 +489,7 @@ func (c *Controller) OnError(err error) {
 		}
 	}
 
-	if c.Info.Error == "" && (!c.eosSent.IsBroken() || c.FinalizationRequired) {
+	if c.Info.Error == "" && (!c.eos.IsBroken() || c.FinalizationRequired) {
 		c.Info.Error = err.Error()
 	}
 

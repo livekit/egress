@@ -193,7 +193,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		webUrl = inputUrl.String()
 	}
 
-	logger.Debugw("launching chrome", "url", webUrl)
+	logger.Debugw("launching chrome", "url", webUrl, "enableChomeSandbox", p.EnableChromeSandbox, "insecure", p.Insecure)
 
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.NoFirstRun,
@@ -235,6 +235,9 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		// output
 		chromedp.Env(fmt.Sprintf("PULSE_SINK=%s", p.Info.EgressId)),
 		chromedp.Flag("display", p.Display),
+
+		// sandbox
+		chromedp.Flag("no-sandbox", !p.EnableChromeSandbox),
 	}
 
 	if insecure {
