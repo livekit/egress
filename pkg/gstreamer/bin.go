@@ -17,6 +17,7 @@ package gstreamer
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/tinyzimmer/go-gst/gst"
 
@@ -27,6 +28,7 @@ import (
 // Bins are designed to hold a single stream, with any number of sources and sinks
 type Bin struct {
 	*Callbacks
+	*StateManager
 
 	pipeline *gst.Pipeline
 	mu       sync.Mutex
@@ -34,7 +36,7 @@ type Bin struct {
 	latency  uint64
 
 	linkFunc   func() error
-	eosFunc    func()
+	eosFunc    func() bool
 	getSrcPad  func(string) *gst.Pad
 	getSinkPad func(string) *gst.Pad
 
@@ -48,80 +50,74 @@ type Bin struct {
 
 func (b *Bin) NewBin(name string) *Bin {
 	return &Bin{
-		Callbacks: b.Callbacks,
-		pipeline:  b.pipeline,
-		bin:       gst.NewBin(name),
-		pads:      make(map[string]*gst.GhostPad),
+		Callbacks:    b.Callbacks,
+		StateManager: b.StateManager,
+		pipeline:     b.pipeline,
+		bin:          gst.NewBin(name),
+		pads:         make(map[string]*gst.GhostPad),
 	}
 }
 
 // Add src as a source of b. This should only be called once for each source bin
 func (b *Bin) AddSourceBin(src *Bin) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	src.mu.Lock()
-	alreadyAdded := src.added
-	src.added = true
-	src.mu.Unlock()
-	if alreadyAdded {
-		return errors.ErrBinAlreadyAdded
-	}
-
-	b.srcs = append(b.srcs, src)
-	if err := b.pipeline.Add(src.bin.Element); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-
-	if b.bin.GetState() == gst.StatePlaying {
-		if err := src.link(); err != nil {
-			return err
-		}
-
-		src.mu.Lock()
-		err := linkPeersLocked(src, b)
-		src.mu.Unlock()
-		if err != nil {
-			return err
-		}
-
-		if err = src.bin.SetState(gst.StatePlaying); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	logger.Debugw(fmt.Sprintf("adding src %s to %s", src.bin.GetName(), b.bin.GetName()))
+	return b.addBin(src, gst.PadDirectionSource)
 }
 
 // Add src as a sink of b. This should only be called once for each sink bin
 func (b *Bin) AddSinkBin(sink *Bin) error {
+	logger.Debugw(fmt.Sprintf("adding sink %s to %s", sink.bin.GetName(), b.bin.GetName()))
+	return b.addBin(sink, gst.PadDirectionSink)
+}
+
+func (b *Bin) addBin(bin *Bin, direction gst.PadDirection) error {
+	b.LockStateShared()
+	defer b.UnlockStateShared()
+
+	state := b.GetStateLocked()
+	if state > StateRunning {
+		return nil
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	sink.mu.Lock()
-	alreadyAdded := sink.added
-	sink.added = true
-	sink.mu.Unlock()
+	bin.mu.Lock()
+	alreadyAdded := bin.added
+	bin.added = true
+	bin.mu.Unlock()
 	if alreadyAdded {
 		return errors.ErrBinAlreadyAdded
 	}
 
-	b.sinks = append(b.sinks, sink)
-	if err := b.pipeline.Add(sink.bin.Element); err != nil {
+	if direction == gst.PadDirectionSource {
+		b.srcs = append(b.srcs, bin)
+	} else {
+		b.sinks = append(b.sinks, bin)
+	}
+
+	if err := b.pipeline.Add(bin.bin.Element); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	if b.bin.GetState() == gst.StatePlaying {
-		if err := sink.link(); err != nil {
-			return err
-		}
+	if state == StateBuilding {
+		return nil
+	}
 
-		sink.mu.Lock()
-		err := linkPeersLocked(b, sink)
-		sink.mu.Unlock()
-		if err != nil {
-			return err
-		}
+	if err := bin.link(); err != nil {
+		return err
+	}
+
+	var err error
+	bin.mu.Lock()
+	if direction == gst.PadDirectionSource {
+		err = linkPeersLocked(bin, b)
+	} else {
+		err = linkPeersLocked(b, bin)
+	}
+	bin.mu.Unlock()
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -153,107 +149,128 @@ func (b *Bin) AddElements(elements ...*gst.Element) error {
 }
 
 func (b *Bin) RemoveSourceBin(name string) (bool, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	var src *Bin
-	for i, s := range b.srcs {
-		if s.bin.GetName() == name {
-			src = s
-			b.srcs = append(b.srcs[:i], b.srcs[i+1:]...)
-			break
-		}
-		removed, err := s.RemoveSourceBin(name)
-		if removed || err != nil {
-			return removed, err
-		}
-	}
-	if src == nil {
-		return false, nil
-	}
-
-	if b.bin.GetState() != gst.StatePlaying {
-		if err := b.pipeline.Remove(src.bin.Element); err != nil {
-			return false, errors.ErrGstPipelineError(err)
-		}
-		return true, nil
-	}
-
-	if err := src.bin.SetState(gst.StateNull); err != nil {
-		return false, err
-	}
-
-	src.mu.Lock()
-	srcPad, sinkPad := getGhostPads(src, b)
-	src.mu.Unlock()
-
-	srcPad.Unlink(sinkPad.Pad)
-	if err := b.pipeline.Remove(src.bin.Element); err != nil {
-		return false, errors.ErrGstPipelineError(err)
-	}
-
-	b.bin.RemovePad(sinkPad.Pad)
-	b.elements[0].ReleaseRequestPad(sinkPad.GetTarget())
-	return true, nil
+	return b.removeBin(name, gst.PadDirectionSource)
 }
 
 func (b *Bin) RemoveSinkBin(name string) (bool, error) {
+	return b.removeBin(name, gst.PadDirectionSink)
+}
+
+func (b *Bin) removeBin(name string, direction gst.PadDirection) (bool, error) {
+	b.LockStateShared()
+	defer b.UnlockStateShared()
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	var sink *Bin
-	for i, s := range b.sinks {
-		if s.bin.GetName() == name {
-			sink = s
-			b.sinks = append(b.sinks[:i], b.sinks[i+1:]...)
-			break
+	var bin *Bin
+	if direction == gst.PadDirectionSource {
+		for i, s := range b.srcs {
+			if s.bin.GetName() == name {
+				bin = s
+				b.srcs = append(b.srcs[:i], b.srcs[i+1:]...)
+				break
+			}
 		}
-		removed, err := s.RemoveSinkBin(name)
-		if removed || err != nil {
-			return removed, err
+	} else {
+		for i, s := range b.sinks {
+			if s.bin.GetName() == name {
+				bin = s
+				b.sinks = append(b.sinks[:i], b.sinks[i+1:]...)
+				break
+			}
 		}
 	}
-	if sink == nil {
+	if bin == nil {
 		return false, nil
 	}
 
-	if b.bin.GetState() != gst.StatePlaying {
-		if err := b.pipeline.Remove(sink.bin.Element); err != nil {
+	state := b.GetStateLocked()
+	if state > StateRunning {
+		return true, nil
+	}
+
+	if state == StateBuilding {
+		if err := b.pipeline.Remove(bin.bin.Element); err != nil {
 			return false, errors.ErrGstPipelineError(err)
 		}
 		return true, nil
 	}
 
+	if direction == gst.PadDirectionSource {
+		b.probeRemoveSource(bin)
+	} else {
+		b.probeRemoveSink(bin)
+	}
+
+	return true, nil
+}
+
+func (b *Bin) probeRemoveSource(src *Bin) {
+	src.mu.Lock()
+	srcGhostPad, sinkGhostPad := getGhostPads(src, b)
+	src.mu.Unlock()
+
+	srcGhostPad.AddProbe(gst.PadProbeTypeIdle, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+		sinkPad := sinkGhostPad.GetTarget()
+		b.elements[0].ReleaseRequestPad(sinkPad)
+
+		srcGhostPad.Unlink(sinkGhostPad.Pad)
+		b.bin.RemovePad(sinkGhostPad.Pad)
+
+		if err := b.pipeline.Remove(src.bin.Element); err != nil {
+			b.OnError(err)
+		}
+
+		if err := src.bin.SetState(gst.StateNull); err != nil {
+			logger.Warnw(fmt.Sprintf("failed to change %s state", src.bin.GetName()), err)
+		}
+		return gst.PadProbeRemove
+	})
+}
+
+func (b *Bin) probeRemoveSink(sink *Bin) {
 	sink.mu.Lock()
-	srcPad, sinkPad := getGhostPads(b, sink)
+	srcGhostPad, sinkGhostPad := getGhostPads(b, sink)
 	sink.mu.Unlock()
 
-	srcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-		srcPad.Unlink(sinkPad.Pad)
-		sinkPad.Pad.SendEvent(gst.NewEOSEvent())
+	srcGhostPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+		srcGhostPad.Unlink(sinkGhostPad.Pad)
+		sinkGhostPad.Pad.SendEvent(gst.NewEOSEvent())
 
 		b.mu.Lock()
 		err := b.pipeline.Remove(sink.bin.Element)
 		b.mu.Unlock()
+
 		if err != nil {
 			b.OnError(errors.ErrGstPipelineError(err))
 			return gst.PadProbeRemove
 		}
 
-		if err = sink.bin.SetState(gst.StateNull); err != nil {
+		if err = sink.SetState(gst.StateNull); err != nil {
 			logger.Warnw(fmt.Sprintf("failed to change %s state", sink.bin.GetName()), err)
 		}
 
-		b.elements[len(b.elements)-1].ReleaseRequestPad(srcPad.GetTarget())
-		b.bin.RemovePad(srcPad.Pad)
+		b.elements[len(b.elements)-1].ReleaseRequestPad(srcGhostPad.GetTarget())
+		b.bin.RemovePad(srcGhostPad.Pad)
 		return gst.PadProbeRemove
 	})
-
-	return true, nil
 }
 
 func (b *Bin) SetState(state gst.State) error {
-	return b.bin.SetState(state)
+	stateErr := make(chan error, 1)
+	go func() {
+		stateErr <- b.bin.SetState(state)
+	}()
+	select {
+	case <-time.After(stateChangeTimeout):
+		return errors.ErrPipelineFrozen
+	case err := <-stateErr:
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+	}
+	return nil
 }
 
 // Set a custom linking function for this bin's elements (used when you need to modify chain functions)
@@ -280,12 +297,37 @@ func (b *Bin) SetGetSinkPad(f func(sinkName string) *gst.Pad) {
 	b.getSinkPad = f
 }
 
-// Set a custom EOS function (used for appsrc)
-func (b *Bin) SetEOSFunc(f func()) {
+// Set a custom EOS function (used for appsrc, input-selector). If it returns true, EOS will also be sent to src bins
+func (b *Bin) SetEOSFunc(f func() bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	b.eosFunc = f
+}
+
+func (b *Bin) sendEOS() {
+	b.mu.Lock()
+	eosFunc := b.eosFunc
+	srcs := b.srcs
+	b.mu.Unlock()
+
+	if eosFunc != nil && !eosFunc() {
+		return
+	}
+
+	if len(srcs) > 0 {
+		var wg sync.WaitGroup
+		wg.Add(len(b.srcs))
+		for _, src := range srcs {
+			go func(s *Bin) {
+				s.sendEOS()
+				wg.Done()
+			}(src)
+		}
+		wg.Wait()
+	} else if len(b.elements) > 0 {
+		b.bin.SendEvent(gst.NewEOSEvent())
+	}
 }
 
 // ----- Internal -----
@@ -364,20 +406,35 @@ func (b *Bin) link() error {
 }
 
 func linkPeersLocked(src, sink *Bin) error {
-	srcPad, sinkPad, err := createGhostPads(src, sink)
+	srcPad, sinkPad, err := createGhostPads(src, sink, nil)
 	if err != nil {
 		return err
 	}
 
-	if src.bin.GetState() == gst.StatePlaying {
-		srcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-			if err = sink.bin.SetState(gst.StatePlaying); err != nil {
-				src.OnError(errors.ErrGstPipelineError(err))
-				return gst.PadProbeUnhandled
-			}
+	srcState := src.bin.GetState()
+	sinkState := sink.bin.GetState()
 
-			return gst.PadProbeRemove
-		})
+	if srcState != sinkState {
+		if srcState == gst.StateNull {
+			srcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+				if padReturn := srcPad.Link(sinkPad.Pad); padReturn != gst.PadLinkOK {
+					logger.Errorw("failed to link", errors.ErrPadLinkFailed(src.bin.GetName(), sink.bin.GetName(), padReturn.String()))
+				}
+				return gst.PadProbeRemove
+			})
+			return src.SetState(gst.StatePlaying)
+		}
+
+		if sinkState == gst.StateNull {
+			srcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+				if err = sink.SetState(gst.StatePlaying); err != nil {
+					src.OnError(errors.ErrGstPipelineError(err))
+					return gst.PadProbeUnhandled
+				}
+
+				return gst.PadProbeRemove
+			})
+		}
 	}
 
 	if padReturn := srcPad.Link(sinkPad.Pad); padReturn != gst.PadLinkOK {
@@ -401,7 +458,7 @@ func (b *Bin) linkPeersWithQueueLocked(src, sink *Bin) error {
 		return err
 	}
 
-	srcPad, sinkPad, err := createGhostPadsWithQueue(src, sink, queue)
+	srcPad, sinkPad, err := createGhostPads(src, sink, queue)
 	if err != nil {
 		return err
 	}
@@ -410,21 +467,6 @@ func (b *Bin) linkPeersWithQueueLocked(src, sink *Bin) error {
 	}
 
 	return nil
-}
-
-func (b *Bin) sendEOS() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if b.eosFunc != nil {
-		b.eosFunc()
-	} else if len(b.srcs) > 0 {
-		for _, src := range b.srcs {
-			src.sendEOS()
-		}
-	} else if len(b.elements) > 0 {
-		b.bin.SendEvent(gst.NewEOSEvent())
-	}
 }
 
 func getPeerSrcs(srcs []*Bin) []*Bin {
@@ -449,4 +491,14 @@ func getPeerSinks(sinks []*Bin) []*Bin {
 		}
 	}
 	return flattened
+}
+
+func getGhostPads(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad) {
+	srcPad := src.pads[sink.bin.GetName()]
+	sinkPad := sink.pads[src.bin.GetName()]
+
+	delete(src.pads, sink.bin.GetName())
+	delete(sink.pads, src.bin.GetName())
+
+	return srcPad, sinkPad
 }

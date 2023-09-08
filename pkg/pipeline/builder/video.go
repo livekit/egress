@@ -57,6 +57,14 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gst
 		if err = b.AddElement(tee); err != nil {
 			return nil, err
 		}
+	} else {
+		queue, err := gstreamer.BuildQueue("video_queue", p.Latency, true)
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = b.AddElement(queue); err != nil {
+			return nil, err
+		}
 	}
 
 	return b, nil
@@ -169,7 +177,9 @@ func (v *videoSDKBin) buildVideoAppSrcBin(videoBin *gstreamer.Bin, p *config.Pip
 	track := p.VideoTrack
 
 	b := videoBin.NewBin(track.TrackID)
-	b.SetEOSFunc(track.EOSFunc)
+	b.SetEOSFunc(func() bool {
+		return false
+	})
 	if err := videoBin.AddSourceBin(b); err != nil {
 		return err
 	}
