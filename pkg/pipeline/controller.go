@@ -126,21 +126,12 @@ func (c *Controller) BuildPipeline() error {
 	}
 
 	if c.AudioEnabled {
-		audioBin, err := builder.BuildAudioBin(p, c.PipelineConfig)
-		if err != nil {
-			return err
-		}
-		if err = p.AddSourceBin(audioBin); err != nil {
+		if err := builder.BuildAudioBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
-
 	if c.VideoEnabled {
-		videoBin, err := builder.BuildVideoBin(p, c.PipelineConfig)
-		if err != nil {
-			return err
-		}
-		if err = p.AddSourceBin(videoBin); err != nil {
+		if err = builder.BuildVideoBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
