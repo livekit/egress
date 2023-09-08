@@ -38,7 +38,6 @@ import (
 
 const (
 	pipelineName = "pipeline"
-	eosTimeout   = time.Second * 30
 )
 
 type Controller struct {
@@ -126,7 +125,7 @@ func (c *Controller) BuildPipeline() error {
 	}
 
 	if c.AudioEnabled {
-		if err := builder.BuildAudioBin(p, c.PipelineConfig); err != nil {
+		if err = builder.BuildAudioBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
@@ -175,6 +174,11 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	c.Info.StartedAt = time.Now().UnixNano()
 	defer func() {
 		now := time.Now().UnixNano()
+
+		if c.SourceType == types.SourceTypeSDK {
+			c.updateDuration(c.src.GetEndedAt())
+		}
+
 		c.Info.UpdatedAt = now
 		c.Info.EndedAt = now
 		if c.SourceType == types.SourceTypeSDK {

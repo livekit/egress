@@ -221,10 +221,6 @@ func parseDebugInfo(gErr *gst.GError) (element, name, message string) {
 }
 
 func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
-	if c.playing.IsBroken() {
-		return
-	}
-
 	_, newState := msg.ParseStateChanged()
 	if newState != gst.StatePlaying {
 		return

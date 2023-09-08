@@ -29,6 +29,7 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
+	lksdk "github.com/livekit/server-sdk-go"
 )
 
 const videoTestSrcName = "video_test_src"
@@ -64,6 +65,8 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 			return err
 		}
 
+		pipeline.AddOnTrackAdded(b.onTrackAdded)
+		pipeline.AddOnTrackRemoved(b.onTrackRemoved)
 		pipeline.AddOnTrackMuted(b.onTrackMuted)
 		pipeline.AddOnTrackUnmuted(b.onTrackUnmuted)
 	}
@@ -88,6 +91,43 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 	}
 
 	return pipeline.AddSourceBin(b.bin)
+}
+
+func (b *VideoBin) onTrackAdded(ts *config.TrackSource) {
+	if b.bin.GetState() > gstreamer.StateRunning {
+		return
+	}
+
+	if ts.Kind == lksdk.TrackKindVideo {
+		if err := b.addAppSrcBin(ts); err != nil {
+			b.bin.OnError(err)
+		}
+	}
+}
+
+func (b *VideoBin) onTrackRemoved(trackID string) {
+	if b.bin.GetState() > gstreamer.StateRunning {
+		return
+	}
+
+	b.mu.Lock()
+	pad := b.pads[trackID]
+	if pad == nil {
+		b.mu.Unlock()
+		return
+	}
+	delete(b.pads, trackID)
+	b.mu.Unlock()
+
+	if b.selectedPad == trackID {
+		if err := b.setSelectorPad(videoTestSrcName); err != nil {
+			b.bin.OnError(err)
+		}
+	}
+
+	if _, err := b.bin.RemoveSourceBin(trackID); err != nil {
+		b.bin.OnError(err)
+	}
 }
 
 func (b *VideoBin) onTrackMuted(trackID string) {

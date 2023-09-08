@@ -22,18 +22,17 @@ import (
 	"github.com/tinyzimmer/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/protocol/logger"
 )
 
 const (
 	stateChangeTimeout = time.Second * 15
-	stopTimeout        = time.Second * 30
 )
 
 type Pipeline struct {
 	*Bin
 
-	loop *glib.MainLoop
-
+	loop          *glib.MainLoop
 	binsAdded     bool
 	elementsAdded bool
 	running       chan struct{}
@@ -111,6 +110,7 @@ func (p *Pipeline) SetState(state gst.State) error {
 	go func() {
 		stateErr <- p.pipeline.SetState(state)
 	}()
+
 	select {
 	case <-time.After(stateChangeTimeout):
 		return errors.ErrPipelineFrozen
@@ -157,6 +157,7 @@ func (p *Pipeline) Stop() {
 	}
 
 	if err := p.OnStop(); err != nil {
+		logger.Errorw("onStop failure", err)
 		p.OnError(err)
 	}
 
