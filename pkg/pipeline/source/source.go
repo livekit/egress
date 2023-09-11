@@ -26,6 +26,7 @@ import (
 type Source interface {
 	StartRecording() chan struct{}
 	EndRecording() chan struct{}
+	GetStartedAt() int64
 	GetEndedAt() int64
 	Close()
 }
@@ -36,7 +37,8 @@ func New(ctx context.Context, p *config.PipelineConfig, callbacks *gstreamer.Cal
 		types.RequestTypeWeb:
 		return NewWebSource(ctx, p)
 
-	case types.RequestTypeTrackComposite,
+	case types.RequestTypeParticipant,
+		types.RequestTypeTrackComposite,
 		types.RequestTypeTrack:
 		return NewSDKSource(ctx, p, callbacks)
 

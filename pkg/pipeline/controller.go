@@ -38,7 +38,6 @@ import (
 
 const (
 	pipelineName = "pipeline"
-	eosTimeout   = time.Second * 30
 )
 
 type Controller struct {
@@ -56,9 +55,8 @@ type Controller struct {
 	gstLogger  *zap.SugaredLogger
 	limitTimer *time.Timer
 	playing    core.Fuse
-	eosSent    core.Fuse
+	eos        core.Fuse
 	stopped    core.Fuse
-	eosTimer   *time.Timer
 }
 
 func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) {
@@ -73,7 +71,7 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 		},
 		gstLogger: logger.GetLogger().(*logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
 		playing:   core.NewFuse(),
-		eosSent:   core.NewFuse(),
+		eos:       core.NewFuse(),
 		stopped:   core.NewFuse(),
 	}
 	c.callbacks.SetOnError(c.OnError)
@@ -109,32 +107,30 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 }
 
 func (c *Controller) BuildPipeline() error {
-	logger.Debugw("building pipeline")
-
 	p, err := gstreamer.NewPipeline(pipelineName, c.Latency, c.callbacks)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
 	p.SetWatch(c.messageWatch)
-	p.AddOnStop(c.OnStop)
+	p.AddOnStop(func() error {
+		c.stopped.Break()
+		return nil
+	})
+	if c.SourceType == types.SourceTypeSDK {
+		p.SetEOSFunc(func() bool {
+			c.src.(*source.SDKSource).CloseWriters()
+			return true
+		})
+	}
 
 	if c.AudioEnabled {
-		audioBin, err := builder.BuildAudioBin(p, c.PipelineConfig)
-		if err != nil {
-			return err
-		}
-		if err = p.AddSourceBin(audioBin); err != nil {
+		if err = builder.BuildAudioBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
-
 	if c.VideoEnabled {
-		videoBin, err := builder.BuildVideoBin(p, c.PipelineConfig)
-		if err != nil {
-			return err
-		}
-		if err = p.AddSourceBin(videoBin); err != nil {
+		if err = builder.BuildVideoBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
@@ -178,8 +174,16 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	c.Info.StartedAt = time.Now().UnixNano()
 	defer func() {
 		now := time.Now().UnixNano()
+
+		if c.SourceType == types.SourceTypeSDK {
+			c.updateDuration(c.src.GetEndedAt())
+		}
+
 		c.Info.UpdatedAt = now
 		c.Info.EndedAt = now
+		if c.SourceType == types.SourceTypeSDK {
+			c.updateDuration(c.src.GetEndedAt())
+		}
 
 		// update status
 		if c.Info.Error != "" {
@@ -274,7 +278,7 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 			if c.playing.IsBroken() {
 				c.SendEOS(ctx)
 			} else {
-				c.Stop()
+				c.p.Stop()
 			}
 		})
 	}
@@ -440,11 +444,12 @@ func (c *Controller) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
-	c.eosSent.Once(func() {
+	c.eos.Once(func() {
+		logger.Debugw("Sending EOS")
+
 		if c.limitTimer != nil {
 			c.limitTimer.Stop()
 		}
-
 		switch c.Info.Status {
 		case livekit.EgressStatus_EGRESS_STARTING:
 			c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
@@ -452,13 +457,13 @@ func (c *Controller) SendEOS(ctx context.Context) {
 
 		case livekit.EgressStatus_EGRESS_ABORTED,
 			livekit.EgressStatus_EGRESS_FAILED:
-			c.Stop()
+			c.p.Stop()
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			c.Info.UpdatedAt = time.Now().UnixNano()
 			if c.Info.Error != "" {
 				c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
-				c.Stop()
+				c.p.Stop()
 			} else {
 				c.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 				c.OnUpdate(ctx, c.Info)
@@ -467,24 +472,7 @@ func (c *Controller) SendEOS(ctx context.Context) {
 
 		case livekit.EgressStatus_EGRESS_ENDING,
 			livekit.EgressStatus_EGRESS_LIMIT_REACHED:
-			go func() {
-				logger.Infow("sending EOS to pipeline")
-
-				c.eosTimer = time.AfterFunc(eosTimeout, func() {
-					logger.Errorw("pipeline frozen", nil, "stream", !c.FinalizationRequired)
-					if c.Debug.EnableProfiling {
-						c.uploadDebugFiles()
-					}
-
-					if c.FinalizationRequired {
-						c.OnError(errors.ErrPipelineFrozen)
-					} else {
-						c.Stop()
-					}
-				})
-
-				c.p.SendEOS()
-			}()
+			go c.p.SendEOS()
 		}
 
 		switch c.src.(type) {
@@ -495,30 +483,17 @@ func (c *Controller) SendEOS(ctx context.Context) {
 }
 
 func (c *Controller) OnError(err error) {
-	if c.Info.Error == "" && (!c.eosSent.IsBroken() || c.FinalizationRequired) {
+	if errors.Is(err, errors.ErrPipelineFrozen) {
+		if c.Debug.EnableProfiling {
+			c.uploadDebugFiles()
+		}
+	}
+
+	if c.Info.Error == "" && (!c.eos.IsBroken() || c.FinalizationRequired) {
 		c.Info.Error = err.Error()
 	}
-	go c.Stop()
-}
 
-func (c *Controller) Stop() {
-	c.stopped.Once(c.p.Stop)
-}
-
-func (c *Controller) OnStop() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.eosTimer != nil {
-		c.eosTimer.Stop()
-	}
-
-	switch c.src.(type) {
-	case *source.SDKSource:
-		c.updateDuration(c.src.GetEndedAt())
-	}
-
-	return nil
+	go c.p.Stop()
 }
 
 func (c *Controller) updateDuration(endedAt int64) {

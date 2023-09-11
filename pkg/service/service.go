@@ -128,7 +128,7 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 		return nil, err
 	}
 
-	requestType, outputType := egress.GetTypes(p.Info)
+	requestType, outputType := egress.GetTypes(p.Info.Request)
 	logger.Infow("request validated",
 		"egressID", req.EgressId,
 		"requestType", requestType,
@@ -183,6 +183,7 @@ func (s *Service) ListActiveEgress(ctx context.Context, _ *rpc.ListActiveEgressR
 func (s *Service) Status() ([]byte, error) {
 	info := map[string]interface{}{
 		"CpuLoad": s.GetCPULoad(),
+		"CpuHold": s.GetCPUHold(),
 	}
 
 	s.mu.RLock()

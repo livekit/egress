@@ -45,11 +45,6 @@ func (r *Runner) runTrackTest(
 		r.awaitIdle(t)
 		audioTrackID, videoTrackID := r.publishSamplesToRoom(t, audioCodec, videoCodec)
 		f(t, audioTrackID, videoTrackID)
-		if t.Failed() {
-			r.svc.Stop(true)
-			r.svc.Reset()
-			go r.svc.Run()
-		}
 	})
 }
 
