@@ -94,12 +94,14 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 	// create sinks
 	c.sinks, err = sink.CreateSinks(conf, c.callbacks)
 	if err != nil {
+		c.src.Close()
 		return nil, err
 	}
 
 	// create pipeline
 	<-c.callbacks.GstReady
 	if err = c.BuildPipeline(); err != nil {
+		c.src.Close()
 		return nil, err
 	}
 
