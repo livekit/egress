@@ -105,11 +105,13 @@ func (s *WebSource) GetEndedAt() int64 {
 
 func (s *WebSource) Close() {
 	if s.chromeCancel != nil {
+		logger.Debugw("closing chrome")
 		s.chromeCancel()
 		s.chromeCancel = nil
 	}
 
 	if s.xvfb != nil {
+		logger.Debugw("closing X display")
 		err := s.xvfb.Process.Signal(os.Interrupt)
 		if err != nil {
 			logger.Errorw("failed to kill xvfb", err)
@@ -118,6 +120,7 @@ func (s *WebSource) Close() {
 	}
 
 	if s.pulseSink != "" {
+		logger.Debugw("unloading pulse module")
 		err := exec.Command("pactl", "unload-module", s.pulseSink).Run()
 		if err != nil {
 			logger.Errorw("failed to unload pulse sink", err)
@@ -139,6 +142,7 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 	ctx, span := tracer.Start(ctx, "WebInput.createPulseSink")
 	defer span.End()
 
+	logger.Debugw("creating pulse sink")
 	cmd := exec.Command("pactl",
 		"load-module", "module-null-sink",
 		fmt.Sprintf("sink_name=\"%s\"", p.Info.EgressId),
@@ -162,7 +166,7 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 	defer span.End()
 
 	dims := fmt.Sprintf("%dx%dx%d", p.Width, p.Height, p.Depth)
-	logger.Debugw("launching xvfb", "display", p.Display, "dims", dims)
+	logger.Debugw("creating X display", "display", p.Display, "dims", dims)
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
 	xvfb.Stderr = &errorLogger{cmd: "xvfb"}
 	if err := xvfb.Start(); err != nil {
@@ -193,7 +197,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		webUrl = inputUrl.String()
 	}
 
-	logger.Debugw("launching chrome", "url", webUrl, "enableChomeSandbox", p.EnableChromeSandbox, "insecure", p.Insecure)
+	logger.Debugw("launching chrome", "url", webUrl, "sandbox", p.EnableChromeSandbox, "insecure", p.Insecure)
 
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.NoFirstRun,
