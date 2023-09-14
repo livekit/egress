@@ -208,6 +208,13 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		return c.Info
 	}
 
+	for _, s := range c.sinks {
+		if err := s.Close(); err != nil {
+			c.Info.Error = err.Error()
+			return c.Info
+		}
+	}
+
 	return c.Info
 }
 
