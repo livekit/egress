@@ -157,7 +157,6 @@ func (p *Pipeline) Stop() {
 	}
 
 	if err := p.OnStop(); err != nil {
-		logger.Errorw("onStop failure", err)
 		p.OnError(err)
 	}
 
@@ -165,10 +164,11 @@ func (p *Pipeline) Stop() {
 		p.loop.Quit()
 	}
 
+	if err := p.SetState(gst.StateNull); err != nil {
+		logger.Errorw("failed to set pipeline to null", err)
+	}
+
 	p.UpgradeState(StateFinished)
-	go func() {
-		_ = p.pipeline.SetState(gst.StateNull)
-	}()
 }
 
 func (p *Pipeline) DebugBinToDotData(details gst.DebugGraphDetails) string {
