@@ -166,6 +166,13 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 				filename:   "tcs_{room_name}_h264_{time}",
 				playlist:   "tcs_{room_name}_h264_{time}.m3u8",
 			},
+			{
+				name:       "Audio Only",
+				audioCodec: types.MimeTypeOpus,
+				filename:   "tcs_{room_name}_audio_{time}",
+				playlist:   "tcs_{room_name}_audio_{time}.m3u8",
+				audioOnly:  true,
+			},
 		} {
 			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec,
 				func(t *testing.T, audioTrackID, videoTrackID string) {
