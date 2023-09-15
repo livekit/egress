@@ -511,6 +511,12 @@ func (b *VideoBin) addEncoder() error {
 			}
 			bufCapacity = uint(time.Duration(b.conf.GetSegmentConfig().SegmentDuration) * (time.Second / time.Millisecond))
 		}
+
+		if bufCapacity > 10000 {
+			// Max value allowed by gstreamer
+			bufCapacity = 10000
+		}
+
 		if err = x264Enc.SetProperty("vbv-buf-capacity", bufCapacity); err != nil {
 			return err
 		}
