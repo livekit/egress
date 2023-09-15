@@ -385,18 +385,15 @@ func (c *Controller) SendEOS(ctx context.Context) {
 			go c.p.SendEOS()
 		}
 
-		switch c.src.(type) {
-		case *source.WebSource:
+		if c.SourceType == types.SourceTypeWeb {
 			c.updateDuration(c.src.GetEndedAt())
 		}
 	})
 }
 
 func (c *Controller) OnError(err error) {
-	if errors.Is(err, errors.ErrPipelineFrozen) {
-		if c.Debug.EnableProfiling {
-			c.uploadDebugFiles()
-		}
+	if errors.Is(err, errors.ErrPipelineFrozen) && c.Debug.EnableProfiling {
+		c.uploadDebugFiles()
 	}
 
 	if c.Info.Error == "" && (!c.eos.IsBroken() || c.FinalizationRequired) {
@@ -407,14 +404,14 @@ func (c *Controller) OnError(err error) {
 }
 
 func (c *Controller) Close() {
+	if c.SourceType == types.SourceTypeSDK || !c.eos.IsBroken() {
+		c.updateDuration(c.src.GetEndedAt())
+	}
 	c.src.Close()
 
 	now := time.Now().UnixNano()
 	c.Info.UpdatedAt = now
 	c.Info.EndedAt = now
-	if c.SourceType == types.SourceTypeSDK {
-		c.updateDuration(c.src.GetEndedAt())
-	}
 
 	// update status
 	if c.Info.Error != "" {
