@@ -231,6 +231,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 
 		// custom args
 		chromedp.Flag("kiosk", true),
+		chromedp.Flag("disable-translate", true),
 		chromedp.Flag("enable-automation", false),
 		chromedp.Flag("autoplay-policy", "no-user-gesture-required"),
 		chromedp.Flag("window-position", "0,0"),
