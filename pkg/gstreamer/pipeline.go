@@ -159,13 +159,12 @@ func (p *Pipeline) Stop() {
 	if err := p.OnStop(); err != nil {
 		p.OnError(err)
 	}
+	if err := p.SetState(gst.StateNull); err != nil {
+		logger.Errorw("failed to set pipeline to null", err)
+	}
 
 	if old >= StateRunning {
 		p.loop.Quit()
-	}
-
-	if err := p.SetState(gst.StateNull); err != nil {
-		logger.Errorw("failed to set pipeline to null", err)
 	}
 
 	p.UpgradeState(StateFinished)
