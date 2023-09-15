@@ -193,52 +193,63 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 	}
 
 	r.runRoomTest(t, "RoomComposite/Segments", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
-		test := &testCase{
-			options: &livekit.EncodingOptions{
-				AudioCodec:   livekit.AudioCodec_AAC,
-				VideoCodec:   livekit.VideoCodec_H264_BASELINE,
-				Width:        1920,
-				Height:       1080,
-				VideoBitrate: 4500,
+		for _, test := range []*testCase{
+			&testCase{
+				options: &livekit.EncodingOptions{
+					AudioCodec:   livekit.AudioCodec_AAC,
+					VideoCodec:   livekit.VideoCodec_H264_BASELINE,
+					Width:        1920,
+					Height:       1080,
+					VideoBitrate: 4500,
+				},
+				filename:               "r_{room_name}_{time}",
+				playlist:               "r_{room_name}_{time}.m3u8",
+				filenameSuffix:         livekit.SegmentedFileSuffix_TIMESTAMP,
+				expectVideoTranscoding: true,
 			},
-			filename:               "r_{room_name}_{time}",
-			playlist:               "r_{room_name}_{time}.m3u8",
-			filenameSuffix:         livekit.SegmentedFileSuffix_TIMESTAMP,
-			expectVideoTranscoding: true,
-		}
-
-		segmentOutput := &livekit.SegmentedFileOutput{
-			FilenamePrefix: r.getFilePath(test.filename),
-			PlaylistName:   test.playlist,
-			FilenameSuffix: test.filenameSuffix,
-		}
-		if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.GCPUpload != nil {
-			segmentOutput.FilenamePrefix = test.filename
-			segmentOutput.Output = &livekit.SegmentedFileOutput_Gcp{
-				Gcp: r.GCPUpload,
-			}
-		}
-
-		room := &livekit.RoomCompositeEgressRequest{
-			RoomName:       r.RoomName,
-			Layout:         "grid-dark",
-			AudioOnly:      test.audioOnly,
-			SegmentOutputs: []*livekit.SegmentedFileOutput{segmentOutput},
-		}
-		if test.options != nil {
-			room.Options = &livekit.RoomCompositeEgressRequest_Advanced{
-				Advanced: test.options,
-			}
-		}
-
-		req := &rpc.StartEgressRequest{
-			EgressId: utils.NewGuid(utils.EgressPrefix),
-			Request: &rpc.StartEgressRequest_RoomComposite{
-				RoomComposite: room,
+			&testCase{
+				options: &livekit.EncodingOptions{
+					AudioCodec: livekit.AudioCodec_AAC,
+				},
+				filename:       "r_{room_name}_audio_{time}",
+				playlist:       "r_{room_name}_audio_{time}.m3u8",
+				filenameSuffix: livekit.SegmentedFileSuffix_TIMESTAMP,
+				audioOnly:      true,
 			},
-		}
+		} {
+			segmentOutput := &livekit.SegmentedFileOutput{
+				FilenamePrefix: r.getFilePath(test.filename),
+				PlaylistName:   test.playlist,
+				FilenameSuffix: test.filenameSuffix,
+			}
+			if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.GCPUpload != nil {
+				segmentOutput.FilenamePrefix = test.filename
+				segmentOutput.Output = &livekit.SegmentedFileOutput_Gcp{
+					Gcp: r.GCPUpload,
+				}
+			}
 
-		r.runSegmentsTest(t, req, test)
+			room := &livekit.RoomCompositeEgressRequest{
+				RoomName:       r.RoomName,
+				Layout:         "grid-dark",
+				AudioOnly:      test.audioOnly,
+				SegmentOutputs: []*livekit.SegmentedFileOutput{segmentOutput},
+			}
+			if test.options != nil {
+				room.Options = &livekit.RoomCompositeEgressRequest_Advanced{
+					Advanced: test.options,
+				}
+			}
+
+			req := &rpc.StartEgressRequest{
+				EgressId: utils.NewGuid(utils.EgressPrefix),
+				Request: &rpc.StartEgressRequest_RoomComposite{
+					RoomComposite: room,
+				},
+			}
+
+			r.runSegmentsTest(t, req, test)
+		}
 	})
 }
 
