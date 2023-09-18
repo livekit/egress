@@ -300,6 +300,10 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 // ----- Callbacks -----
 
 func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+	if s.initialized.IsBroken() && s.RequestType != types.RequestTypeParticipant {
+		return
+	}
+
 	var onSubscribeErr error
 	defer func() {
 		if s.initialized.IsBroken() {
