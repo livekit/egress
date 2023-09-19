@@ -157,7 +157,6 @@ func (r *Runner) publishSampleToRoom(t *testing.T, codec types.MimeType, withMut
 	if withMuting {
 		go func() {
 			muted := false
-			time.Sleep(time.Second * 15)
 			for {
 				select {
 				case <-done:
