@@ -334,7 +334,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		}
 		s.AudioTranscoding = true
 
-		writer, err := s.createWriter(track, rp, ts)
+		writer, err := s.createWriter(track, pub, rp, ts)
 		if err != nil {
 			onSubscribeErr = err
 			return
@@ -360,7 +360,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			s.VideoTranscoding = true
 		}
 
-		writer, err := s.createWriter(track, rp, ts)
+		writer, err := s.createWriter(track, pub, rp, ts)
 		if err != nil {
 			onSubscribeErr = err
 			return
@@ -417,6 +417,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 
 func (s *SDKSource) createWriter(
 	track *webrtc.TrackRemote,
+	pub lksdk.TrackPublication,
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
 ) (*sdk.AppWriter, error) {
@@ -435,7 +436,7 @@ func (s *SDKSource) createWriter(
 	}
 
 	ts.AppSrc = app.SrcFromElement(src)
-	writer, err := sdk.NewAppWriter(track, rp, ts, s.sync, s.callbacks, logFilename)
+	writer, err := sdk.NewAppWriter(track, pub, rp, ts, s.sync, s.callbacks, logFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -505,6 +506,7 @@ func (s *SDKSource) onTrackFinished(trackID string) {
 
 func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
 	if rp.Identity() == s.Identity {
+		logger.Debugw("Participant disconnected")
 		s.onDisconnected()
 	}
 }

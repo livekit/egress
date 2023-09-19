@@ -56,6 +56,7 @@ const (
 type AppWriter struct {
 	logger    logger.Logger
 	logFile   *os.File
+	pub       lksdk.TrackPublication
 	track     *webrtc.TrackRemote
 	codec     types.MimeType
 	src       *app.Source
@@ -83,6 +84,7 @@ type AppWriter struct {
 
 func NewAppWriter(
 	track *webrtc.TrackRemote,
+	pub lksdk.TrackPublication,
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
 	sync *synchronizer.Synchronizer,
@@ -92,6 +94,7 @@ func NewAppWriter(
 	w := &AppWriter{
 		logger:            logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
 		track:             track,
+		pub:               pub,
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
 		callbacks:         callbacks,
@@ -154,10 +157,18 @@ func (w *AppWriter) TrackID() string {
 }
 
 func (w *AppWriter) Play() {
-	w.playing.Break()
+	w.playing.Once(func() {
+		if w.pub.IsMuted() {
+			w.SetTrackMuted(true)
+		}
+	})
 }
 
 func (w *AppWriter) SetTrackMuted(muted bool) {
+	if !w.playing.IsBroken() {
+		return
+	}
+
 	w.muted.Store(muted)
 	if muted {
 		w.logger.Debugw("track muted", "timestamp", time.Since(w.startTime).Seconds())
