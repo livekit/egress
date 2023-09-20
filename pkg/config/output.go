@@ -75,7 +75,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 			return err
 		}
 
-		p.Outputs[types.EgressTypeFile] = conf
+		p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
 		p.OutputCount++
 		p.FinalizationRequired = true
 
@@ -104,7 +104,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 			return err
 		}
 
-		p.Outputs[types.EgressTypeStream] = conf
+		p.Outputs[types.EgressTypeStream] = []OutputConfig{conf}
 		p.OutputCount += len(stream.Urls)
 
 		streamInfoList := make([]*livekit.StreamInfo, 0, len(conf.StreamInfo))
@@ -141,7 +141,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 			return err
 		}
 
-		p.Outputs[types.EgressTypeSegments] = conf
+		p.Outputs[types.EgressTypeSegments] = []OutputConfig{conf}
 		p.OutputCount++
 		p.FinalizationRequired = true
 
@@ -170,7 +170,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
 		p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
 
-		p.Outputs[types.EgressTypeFile] = conf
+		p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
 		p.OutputCount = 1
 		p.FinalizationRequired = true
 
@@ -187,7 +187,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 		p.Info.StreamResults = streamInfoList
 		p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
 
-		p.Outputs[types.EgressTypeWebsocket] = conf
+		p.Outputs[types.EgressTypeWebsocket] = []OutputConfig{conf}
 		p.OutputCount = 1
 
 	default:
@@ -206,7 +206,7 @@ func (p *PipelineConfig) updateImageOutputs(req ImageOutput) error {
 			return err
 		}
 
-		p.Outputs[types.EgressTypeImages] = conf
+		p.Outputs[types.EgressTypeImages] = append(p.Outputs[types.EgressTypeImages], conf)
 	}
 
 	return nil

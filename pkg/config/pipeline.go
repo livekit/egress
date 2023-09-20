@@ -53,9 +53,9 @@ type PipelineConfig struct {
 	AudioConfig       `yaml:"-"`
 	VideoConfig       `yaml:"-"`
 
-	Outputs              map[types.EgressType]OutputConfig `yaml:"-"`
-	OutputCount          int                               `yaml:"-"`
-	FinalizationRequired bool                              `yaml:"-"`
+	Outputs              map[types.EgressType][]OutputConfig `yaml:"-"`
+	OutputCount          int                                 `yaml:"-"`
+	FinalizationRequired bool                                `yaml:"-"`
 
 	OnUpdate func(context.Context, *livekit.EgressInfo) `yaml:"-"`
 
@@ -128,7 +128,7 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 				Level: "info",
 			},
 		},
-		Outputs: make(map[types.EgressType]OutputConfig),
+		Outputs: make(map[types.EgressType][]OutputConfig),
 	}
 
 	if err := yaml.Unmarshal([]byte(confString), p); err != nil {
@@ -153,7 +153,7 @@ func GetValidatedPipelineConfig(conf *ServiceConfig, req *rpc.StartEgressRequest
 
 	p := &PipelineConfig{
 		BaseConfig: conf.BaseConfig,
-		Outputs:    make(map[types.EgressType]OutputConfig),
+		Outputs:    make(map[types.EgressType][]OutputConfig),
 	}
 
 	return p, p.Update(req)
@@ -446,7 +446,8 @@ func (p *PipelineConfig) validateAndUpdateOutputParams() error {
 
 	// Select a codec compatible with all outputs
 	if p.AudioEnabled {
-		for _, o := range p.Outputs {
+		for _, o := range p.GetEncodedOutputs() {
+
 			if compatibleAudioCodecs[types.DefaultAudioCodecs[o.GetOutputType()]] {
 				p.AudioOutCodec = types.DefaultAudioCodecs[o.GetOutputType()]
 				break
@@ -461,7 +462,7 @@ func (p *PipelineConfig) validateAndUpdateOutputParams() error {
 	}
 
 	if p.VideoEnabled {
-		for _, o := range p.Outputs {
+		for _, o := range p.GetEncodedOutputs() {
 			if compatibleVideoCodecs[types.DefaultVideoCodecs[o.GetOutputType()]] {
 				p.VideoOutCodec = types.DefaultVideoCodecs[o.GetOutputType()]
 				break
@@ -490,7 +491,7 @@ func (p *PipelineConfig) validateAndUpdateOutputCodecs() (compatibleAudioCodecs 
 			compatibleAudioCodecs[p.AudioOutCodec] = true
 		}
 
-		for _, o := range p.Outputs {
+		for _, o := range p.GetEncodedOutputs() {
 			compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[o.GetOutputType()])
 			if len(compatibleAudioCodecs) == 0 {
 				if p.AudioOutCodec == "" {
@@ -510,7 +511,7 @@ func (p *PipelineConfig) validateAndUpdateOutputCodecs() (compatibleAudioCodecs 
 			compatibleVideoCodecs[p.VideoOutCodec] = true
 		}
 
-		for _, o := range p.Outputs {
+		for _, o := range p.GetEncodedOutputs() {
 			compatibleVideoCodecs = types.GetMapIntersection(compatibleVideoCodecs, types.CodecCompatibility[o.GetOutputType()])
 			if len(compatibleVideoCodecs) == 0 {
 				if p.AudioOutCodec == "" {
@@ -563,17 +564,22 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 // used for sdk input source
 func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string) error {
 	for egressType, c := range p.Outputs {
+		if len(c) == 0 {
+			continue
+		}
 		switch egressType {
 		case types.EgressTypeFile:
-			return c.(*FileConfig).updateFilepath(p, identifier, replacements)
+			return c[0].(*FileConfig).updateFilepath(p, identifier, replacements)
 
 		case types.EgressTypeSegments:
-			o := c.(*SegmentConfig)
+			o := c[0].(*SegmentConfig)
 			o.LocalDir = stringReplace(o.LocalDir, replacements)
 			o.StorageDir = stringReplace(o.StorageDir, replacements)
 			o.PlaylistFilename = stringReplace(o.PlaylistFilename, replacements)
 			o.SegmentPrefix = stringReplace(o.SegmentPrefix, replacements)
 			o.SegmentsInfo.PlaylistName = stringReplace(o.SegmentsInfo.PlaylistName, replacements)
+
+			// TODO Images
 		}
 	}
 
@@ -607,6 +613,16 @@ func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType)
 	default:
 		return "", "", errors.ErrInvalidInput("stream output type")
 	}
+}
+
+func (p *PipelineConfig) GetEncodedOutputs() []OutputConfig {
+	ret := make([]OutputConfig, 0)
+
+	for _, k := range []types.EgressType{types.EgressTypeFile, types.EgressTypeSegments, types.EgressTypeStream, types.EgressTypeWebsocket} {
+		ret = append(ret, p.Outputs[k]...)
+	}
+
+	return ret
 }
 
 func stringReplace(s string, replacements map[string]string) string {

@@ -30,11 +30,14 @@ type Sink interface {
 func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[types.EgressType]Sink, error) {
 	sinks := make(map[types.EgressType]Sink)
 	for egressType, c := range p.Outputs {
+		if len(c) == 0 {
+			continue
+		}
 		var s Sink
 		var err error
 		switch egressType {
 		case types.EgressTypeFile:
-			o := c.(*config.FileConfig)
+			o := c[0].(*config.FileConfig)
 
 			u, err := uploader.New(o.UploadConfig, p.BackupStorage)
 			if err != nil {
@@ -44,7 +47,7 @@ func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[
 			s = newFileSink(u, p, o)
 
 		case types.EgressTypeSegments:
-			o := c.(*config.SegmentConfig)
+			o := c[0].(*config.SegmentConfig)
 
 			u, err := uploader.New(o.UploadConfig, p.BackupStorage)
 			if err != nil {
@@ -60,12 +63,13 @@ func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[
 			// no sink needed
 
 		case types.EgressTypeWebsocket:
-			o := c.(*config.StreamConfig)
+			o := c[0].(*config.StreamConfig)
 
 			s, err = newWebsocketSink(o, types.MimeTypeRawAudio, callbacks)
 			if err != nil {
 				return nil, err
 			}
+			// TODO Images
 		}
 
 		if s != nil {

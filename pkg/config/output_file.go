@@ -38,10 +38,10 @@ type FileConfig struct {
 
 func (p *PipelineConfig) GetFileConfig() *FileConfig {
 	o, ok := p.Outputs[types.EgressTypeFile]
-	if !ok {
+	if !ok || len(o) == 0 {
 		return nil
 	}
-	return o.(*FileConfig)
+	return o[0].(*FileConfig)
 }
 
 func (p *PipelineConfig) getEncodedFileConfig(file *livekit.EncodedFileOutput) (*FileConfig, error) {

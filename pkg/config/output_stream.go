@@ -28,18 +28,18 @@ type StreamConfig struct {
 
 func (p *PipelineConfig) GetStreamConfig() *StreamConfig {
 	o, ok := p.Outputs[types.EgressTypeStream]
-	if !ok {
+	if !ok || len(o) == 0 {
 		return nil
 	}
-	return o.(*StreamConfig)
+	return o[0].(*StreamConfig)
 }
 
 func (p *PipelineConfig) GetWebsocketConfig() *StreamConfig {
 	o, ok := p.Outputs[types.EgressTypeWebsocket]
-	if !ok {
+	if !ok || len(o) == 0 {
 		return nil
 	}
-	return o.(*StreamConfig)
+	return o[0].(*StreamConfig)
 }
 
 func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []string) (*StreamConfig, error) {

@@ -71,7 +71,7 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 		pipeline.AddOnTrackUnmuted(b.onTrackUnmuted)
 	}
 
-	if len(p.Outputs) > 1 {
+	if len(p.GetEncodedOutputs()) > 1 {
 		tee, err := gst.NewElementWithName("tee", "video_tee")
 		if err != nil {
 			return err

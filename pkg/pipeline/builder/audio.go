@@ -59,7 +59,7 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 		pipeline.AddOnTrackRemoved(b.onTrackRemoved)
 	}
 
-	if len(p.Outputs) > 1 {
+	if len(p.GetEncodedOutputs()) > 1 {
 		tee, err := gst.NewElementWithName("tee", "audio_tee")
 		if err != nil {
 			return err

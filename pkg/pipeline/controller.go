@@ -152,6 +152,8 @@ func (c *Controller) BuildPipeline() error {
 		case types.EgressTypeWebsocket:
 			writer := c.sinks[egressType].(*sink.WebsocketSink)
 			sinkBin, err = builder.BuildWebsocketBin(p, writer.SinkCallbacks())
+
+			// TODO Add Images
 		}
 		if err != nil {
 			return err
@@ -457,6 +459,7 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 		case types.EgressTypeSegments:
 			t = c.SegmentOutputMaxDuration
 		}
+		// TODO Images
 		if t > 0 && (timeout == 0 || t < timeout) {
 			timeout = t
 		}
@@ -480,20 +483,24 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 
 func (c *Controller) updateStartTime(startedAt int64) {
 	for egressType, o := range c.Outputs {
+		if len(o) == 0 {
+			continue
+		}
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
 			c.mu.Lock()
-			for _, streamInfo := range o.(*config.StreamConfig).StreamInfo {
+			for _, streamInfo := range o[0].(*config.StreamConfig).StreamInfo {
 				streamInfo.Status = livekit.StreamInfo_ACTIVE
 				streamInfo.StartedAt = startedAt
 			}
 			c.mu.Unlock()
 
 		case types.EgressTypeFile:
-			o.(*config.FileConfig).FileInfo.StartedAt = startedAt
+			o[0].(*config.FileConfig).FileInfo.StartedAt = startedAt
 
 		case types.EgressTypeSegments:
-			o.(*config.SegmentConfig).SegmentsInfo.StartedAt = startedAt
+			o[0].(*config.SegmentConfig).SegmentsInfo.StartedAt = startedAt
+			// TODO Images
 		}
 	}
 
@@ -506,9 +513,12 @@ func (c *Controller) updateStartTime(startedAt int64) {
 
 func (c *Controller) updateDuration(endedAt int64) {
 	for egressType, o := range c.Outputs {
+		if len(o) == 0 {
+			continue
+		}
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
-			for _, info := range o.(*config.StreamConfig).StreamInfo {
+			for _, info := range o[0].(*config.StreamConfig).StreamInfo {
 				info.Status = livekit.StreamInfo_FINISHED
 				if info.StartedAt == 0 {
 					info.StartedAt = endedAt
@@ -518,7 +528,7 @@ func (c *Controller) updateDuration(endedAt int64) {
 			}
 
 		case types.EgressTypeFile:
-			fileInfo := o.(*config.FileConfig).FileInfo
+			fileInfo := o[0].(*config.FileConfig).FileInfo
 			if fileInfo.StartedAt == 0 {
 				fileInfo.StartedAt = endedAt
 			}
@@ -526,12 +536,13 @@ func (c *Controller) updateDuration(endedAt int64) {
 			fileInfo.Duration = endedAt - fileInfo.StartedAt
 
 		case types.EgressTypeSegments:
-			segmentsInfo := o.(*config.SegmentConfig).SegmentsInfo
+			segmentsInfo := o[0].(*config.SegmentConfig).SegmentsInfo
 			if segmentsInfo.StartedAt == 0 {
 				segmentsInfo.StartedAt = endedAt
 			}
 			segmentsInfo.EndedAt = endedAt
 			segmentsInfo.Duration = endedAt - segmentsInfo.StartedAt
+			// TODO Images
 		}
 	}
 }
