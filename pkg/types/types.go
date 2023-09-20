@@ -39,6 +39,7 @@ const (
 	EgressTypeWebsocket EgressType = "websocket"
 	EgressTypeFile      EgressType = "file"
 	EgressTypeSegments  EgressType = "segments"
+	EgressTypeImages    EgressType = "images"
 
 	// input types
 	MimeTypeAAC      MimeType = "audio/aac"

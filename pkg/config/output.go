@@ -48,6 +48,10 @@ type EncodedOutputDeprecated interface {
 	GetSegmentOutputs() []*livekit.SegmentedFileOutput
 }
 
+type ImageOutput interface {
+	GetImageOutputs() []*livekit.ImageOutput
+}
+
 func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 	files := req.GetFileOutputs()
 	streams := req.GetStreamOutputs()
@@ -188,6 +192,21 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 
 	default:
 		return errors.ErrInvalidInput("output")
+	}
+
+	return nil
+}
+
+func (p *PipelineConfig) updateImageOutputs(req ImageOutput) error {
+	images := req.GetImageOutputs()
+
+	for _, img := range images {
+		conf, err := p.getImageConfig(img)
+		if err != nil {
+			return err
+		}
+
+		p.Outputs[types.EgressTypeImages] = conf
 	}
 
 	return nil
