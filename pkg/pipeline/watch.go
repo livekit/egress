@@ -323,5 +323,10 @@ func getFirstSampleMetadataFromGstStructure(s *gst.Structure) (startDate time.Ti
 }
 
 func (c *Controller) getSegmentSink() *sink.SegmentSink {
-	return c.sinks[types.EgressTypeSegments].(*sink.SegmentSink)
+	s := c.sinks[types.EgressTypeSegments]
+	if len(s) == 0 {
+		return nil
+	}
+
+	return s[0].(*sink.SegmentSink)
 }

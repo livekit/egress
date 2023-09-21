@@ -27,8 +27,8 @@ type Sink interface {
 	Cleanup()
 }
 
-func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[types.EgressType]Sink, error) {
-	sinks := make(map[types.EgressType]Sink)
+func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[types.EgressType][]Sink, error) {
+	sinks := make(map[types.EgressType][]Sink)
 	for egressType, c := range p.Outputs {
 		if len(c) == 0 {
 			continue
@@ -69,11 +69,24 @@ func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[
 			if err != nil {
 				return nil, err
 			}
-			// TODO Images
+		case types.EgressTypeImages:
+			for _, ci := range c {
+				o := ci.(*config.ImageConfig)
+
+				u, err := uploader.New(o.UploadConfig, p.BackupStorage)
+				if err != nil {
+					return nil, err
+				}
+
+				s, err = newImageSink(u, p, o, callbacks)
+				if err != nil {
+					return nil, err
+				}
+			}
 		}
 
 		if s != nil {
-			sinks[egressType] = s
+			sinks[egressType] = append(sinks[egressType], s)
 		}
 	}
 

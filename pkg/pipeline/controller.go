@@ -46,7 +46,7 @@ type Controller struct {
 	// gstreamer
 	src       source.Source
 	p         *gstreamer.Pipeline
-	sinks     map[types.EgressType]sink.Sink
+	sinks     map[types.EgressType][]sink.Sink
 	streamBin *builder.StreamBin
 	callbacks *gstreamer.Callbacks
 
@@ -150,7 +150,7 @@ func (c *Controller) BuildPipeline() error {
 			c.streamBin, sinkBin, err = builder.BuildStreamBin(p, c.PipelineConfig)
 
 		case types.EgressTypeWebsocket:
-			writer := c.sinks[egressType].(*sink.WebsocketSink)
+			writer := c.sinks[egressType][0].(*sink.WebsocketSink)
 			sinkBin, err = builder.BuildWebsocketBin(p, writer.SinkCallbacks())
 
 			// TODO Add Images
@@ -200,10 +200,12 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		}
 	}
 
-	for _, s := range c.sinks {
-		if err := s.Start(); err != nil {
-			c.Info.Error = err.Error()
-			return c.Info
+	for _, si := range c.sinks {
+		for _, s := range si {
+			if err := s.Start(); err != nil {
+				c.Info.Error = err.Error()
+				return c.Info
+			}
 		}
 	}
 
@@ -212,10 +214,12 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		return c.Info
 	}
 
-	for _, s := range c.sinks {
-		if err := s.Close(); err != nil {
-			c.Info.Error = err.Error()
-			return c.Info
+	for _, si := range c.sinks {
+		for _, s := range si {
+			if err := s.Close(); err != nil {
+				c.Info.Error = err.Error()
+				return c.Info
+			}
 		}
 	}
 
@@ -442,8 +446,10 @@ func (c *Controller) Close() {
 		c.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 	}
 
-	for _, s := range c.sinks {
-		s.Cleanup()
+	for _, si := range c.sinks {
+		for _, s := range si {
+			s.Cleanup()
+		}
 	}
 }
 
