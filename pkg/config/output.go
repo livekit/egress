@@ -37,6 +37,7 @@ type EncodedOutput interface {
 	GetFileOutputs() []*livekit.EncodedFileOutput
 	GetStreamOutputs() []*livekit.StreamOutput
 	GetSegmentOutputs() []*livekit.SegmentedFileOutput
+	ImageOutput
 }
 
 type EncodedOutputDeprecated interface {
@@ -152,6 +153,11 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 		}
 	}
 
+	err := p.updateImageOutputs(req)
+	if err != nil {
+		return err
+	}
+
 	if p.OutputCount == 0 {
 		return errors.ErrInvalidInput("output")
 	}
@@ -200,6 +206,10 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 func (p *PipelineConfig) updateImageOutputs(req ImageOutput) error {
 	images := req.GetImageOutputs()
 
+	if !p.VideoEnabled {
+		return errors.ErrInvalidInput("audio_only")
+	}
+
 	for _, img := range images {
 		conf, err := p.getImageConfig(img)
 		if err != nil {
@@ -207,6 +217,10 @@ func (p *PipelineConfig) updateImageOutputs(req ImageOutput) error {
 		}
 
 		p.Outputs[types.EgressTypeImages] = append(p.Outputs[types.EgressTypeImages], conf)
+		p.OutputCount++
+		p.FinalizationRequired = true
+
+		p.Info.ImagesResults = append(p.Info.ImagesResults, conf.ImagesInfo)
 	}
 
 	return nil
