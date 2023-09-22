@@ -43,9 +43,10 @@ type VideoBin struct {
 	selectedPad string
 	nextPad     string
 
-	mu       sync.Mutex
-	pads     map[string]*gst.Pad
-	selector *gst.Element
+	mu          sync.Mutex
+	pads        map[string]*gst.Pad
+	selector    *gst.Element
+	rawVideoTee *gst.Element
 }
 
 func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
@@ -71,6 +72,7 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 		pipeline.AddOnTrackUnmuted(b.onTrackUnmuted)
 	}
 
+	var getPad func() *gst.Pad
 	if len(p.GetEncodedOutputs()) > 1 {
 		tee, err := gst.NewElementWithName("tee", "video_tee")
 		if err != nil {
@@ -80,6 +82,10 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 		if err = b.bin.AddElement(tee); err != nil {
 			return err
 		}
+
+		getPad = func() *gst.Pad {
+			return tee.GetRequestPad("src_%u")
+		}
 	} else {
 		queue, err := gstreamer.BuildQueue("video_queue", p.Latency, true)
 		if err != nil {
@@ -88,7 +94,19 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 		if err = b.bin.AddElement(queue); err != nil {
 			return err
 		}
+
+		getPad = func() *gst.Pad {
+			return queue.GetStaticPad("src")
+		}
 	}
+
+	b.bin.SetGetSinkPad(func(name string) *gst.Pad {
+		if name == "image" {
+			return rawVideoTee.GetRequestPad("src_%u")
+		} else {
+			return getPad()
+		}
+	})
 
 	return pipeline.AddSourceBin(b.bin)
 }
@@ -479,6 +497,15 @@ func (b *VideoBin) addSelector() error {
 }
 
 func (b *VideoBin) addEncoder() error {
+	var err error
+	b.rawVideoTee, err = gst.NewElement("tee")
+	if err != nil {
+		return err
+	}
+	if err = b.bin.AddElement(rawVideoTee); err != nil {
+		return err
+	}
+
 	videoQueue, err := gstreamer.BuildQueue("video_encoder_queue", b.conf.Latency, false)
 	if err != nil {
 		return err
