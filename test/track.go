@@ -165,7 +165,7 @@ func (r *Runner) testTrackStream(t *testing.T) {
 				time.Sleep(time.Second * 30)
 
 				res := r.stopEgress(t, egressID)
-				verify(t, filepath, p, res, types.EgressTypeWebsocket, r.Muting, r.sourceFramerate)
+				verify(t, filepath, p, res, types.EgressTypeWebsocket, r.Muting, r.sourceFramerate, false)
 			})
 			if r.Short {
 				return

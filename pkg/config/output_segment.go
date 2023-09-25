@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
@@ -28,13 +29,14 @@ import (
 type SegmentConfig struct {
 	outputConfig
 
-	SegmentsInfo     *livekit.SegmentsInfo
-	LocalDir         string
-	StorageDir       string
-	PlaylistFilename string
-	SegmentPrefix    string
-	SegmentSuffix    livekit.SegmentedFileSuffix
-	SegmentDuration  int
+	SegmentsInfo         *livekit.SegmentsInfo
+	LocalDir             string
+	StorageDir           string
+	PlaylistFilename     string
+	LivePlaylistFilename string
+	SegmentPrefix        string
+	SegmentSuffix        livekit.SegmentedFileSuffix
+	SegmentDuration      int
 
 	DisableManifest bool
 	UploadConfig    UploadConfig
@@ -51,13 +53,14 @@ func (p *PipelineConfig) GetSegmentConfig() *SegmentConfig {
 // segments should always be added last, so we can check keyframe interval from file/stream
 func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput) (*SegmentConfig, error) {
 	conf := &SegmentConfig{
-		SegmentsInfo:     &livekit.SegmentsInfo{},
-		SegmentPrefix:    clean(segments.FilenamePrefix),
-		SegmentSuffix:    segments.FilenameSuffix,
-		PlaylistFilename: clean(segments.PlaylistName),
-		SegmentDuration:  int(segments.SegmentDuration),
-		DisableManifest:  segments.DisableManifest,
-		UploadConfig:     p.getUploadConfig(segments),
+		SegmentsInfo:         &livekit.SegmentsInfo{},
+		SegmentPrefix:        clean(segments.FilenamePrefix),
+		SegmentSuffix:        segments.FilenameSuffix,
+		PlaylistFilename:     clean(segments.PlaylistName),
+		LivePlaylistFilename: clean(segments.LivePlaylistName),
+		SegmentDuration:      int(segments.SegmentDuration),
+		DisableManifest:      segments.DisableManifest,
+		UploadConfig:         p.getUploadConfig(segments),
 	}
 
 	if conf.SegmentDuration == 0 {
@@ -91,25 +94,39 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 	return conf, nil
 }
 
+func removeKnownExtension(filename string) string {
+	if extIdx := strings.LastIndex(filename, "."); extIdx > -1 {
+		existingExt := types.FileExtension(filename[extIdx:])
+		if _, ok := types.FileExtensions[existingExt]; ok {
+			filename = filename[:extIdx]
+		}
+		filename = filename[:extIdx]
+	}
+
+	return filename
+}
+
 func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 	identifier, replacements := p.getFilenameInfo()
 
 	o.SegmentPrefix = stringReplace(o.SegmentPrefix, replacements)
 	o.PlaylistFilename = stringReplace(o.PlaylistFilename, replacements)
+	o.LivePlaylistFilename = stringReplace(o.LivePlaylistFilename, replacements)
 
 	ext := types.FileExtensionForOutputType[o.OutputType]
 
 	playlistDir, playlistName := path.Split(o.PlaylistFilename)
+	livePlaylistDir, livePlaylistName := path.Split(o.LivePlaylistFilename)
 	fileDir, filePrefix := path.Split(o.SegmentPrefix)
 
-	// remove extension from playlist name
-	if extIdx := strings.LastIndex(playlistName, "."); extIdx > -1 {
-		existingExt := types.FileExtension(playlistName[extIdx:])
-		if _, ok := types.FileExtensions[existingExt]; ok {
-			playlistName = playlistName[:extIdx]
-		}
-		playlistName = playlistName[:extIdx]
+	// force live playlist to be in the same directory as the main playlist
+	if livePlaylistDir != "" && livePlaylistDir != playlistDir {
+		return errors.ErrInvalidInput("live_playlist_name must be in same directory as playlist_name")
 	}
+
+	// remove extension from playlist name
+	playlistName = removeKnownExtension(playlistName)
+	livePlaylistName = removeKnownExtension(livePlaylistName)
 
 	// only keep fileDir if it is a subdirectory of playlistDir
 	if fileDir != "" {
@@ -130,6 +147,7 @@ func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 			playlistName = fmt.Sprintf("%s-%s", identifier, time.Now().Format("2006-01-02T150405"))
 		}
 	}
+	// live playlist disabled by default
 
 	// ensure filePrefix
 	if filePrefix == "" {
@@ -139,7 +157,14 @@ func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 	// update config
 	o.StorageDir = playlistDir
 	o.PlaylistFilename = fmt.Sprintf("%s%s", playlistName, ext)
+	if livePlaylistName != "" {
+		o.LivePlaylistFilename = fmt.Sprintf("%s%s", livePlaylistName, ext)
+	}
 	o.SegmentPrefix = fmt.Sprintf("%s%s", fileDir, filePrefix)
+
+	if o.PlaylistFilename == o.LivePlaylistFilename {
+		return errors.ErrInvalidInput("live_playlist_name cannot be identical to playlist_name")
+	}
 
 	if o.UploadConfig == nil {
 		o.LocalDir = playlistDir
@@ -162,5 +187,8 @@ func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 	}
 
 	o.SegmentsInfo.PlaylistName = path.Join(o.StorageDir, o.PlaylistFilename)
+	if o.LivePlaylistFilename != "" {
+		o.SegmentsInfo.LivePlaylistName = path.Join(o.StorageDir, o.LivePlaylistFilename)
+	}
 	return nil
 }
