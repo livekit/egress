@@ -166,9 +166,9 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 	case element == elementGstRtmp2Sink:
 		name = strings.Split(name, "_")[1]
 
-		if strings.HasPrefix(gErr.Error(), "Connection error") && !c.eos.IsBroken() {
+		if !c.eos.IsBroken() {
 			// try reconnecting
-			ok, err := c.streamBin.ResetStream(name, gErr)
+			ok, err := c.streamBin.MaybeResetStream(name, gErr)
 			if err != nil {
 				logger.Errorw("failed to reset stream", err)
 			} else if ok {
