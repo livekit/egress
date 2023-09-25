@@ -90,10 +90,6 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*St
 		b:          b,
 		outputType: o.OutputType,
 		sinks:      make(map[string]*StreamSink),
-		// bins:          make(map[string]*gstreamer.Bin),
-		// urls:          make(map[string]string),
-		// connections:   make(map[string]time.Time),
-		// reconnections: make(map[string]int),
 	}
 
 	for _, url := range o.Urls {
@@ -229,10 +225,10 @@ func (sb *StreamBin) MaybeResetStream(name string, streamErr error) (bool, error
 	redacted, _ := utils.RedactStreamKey(sink.url)
 	logger.Warnw("resetting stream", streamErr, "url", redacted)
 
-	if err := sink.bin.SetState(gst.StateNull); err != nil {
+	if err = sink.bin.SetState(gst.StateNull); err != nil {
 		return false, err
 	}
-	if err := sink.bin.SetState(gst.StatePlaying); err != nil {
+	if err = sink.bin.SetState(gst.StatePlaying); err != nil {
 		return false, err
 	}
 	return true, nil
