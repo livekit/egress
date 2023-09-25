@@ -235,7 +235,7 @@ func (s *SegmentSink) endSegment(filename string, endTime int64) error {
 	return nil
 }
 
-func (s *SegmentSink) OnStop() error {
+func (s *SegmentSink) Close() error {
 	// wait for all pending upload jobs to finish
 	close(s.endedSegments)
 	<-s.done.Watch()

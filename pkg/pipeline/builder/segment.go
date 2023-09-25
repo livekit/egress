@@ -36,9 +36,17 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	b := pipeline.NewBin("segment")
 	o := p.GetSegmentConfig()
 
-	h264parse, err := gst.NewElement("h264parse")
-	if err != nil {
-		return nil, err
+	var h264parse *gst.Element
+	var err error
+	if p.VideoEnabled {
+		h264parse, err = gst.NewElement("h264parse")
+		if err != nil {
+			return nil, err
+		}
+
+		if err = b.AddElements(h264parse); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
 	}
 
 	sink, err := gst.NewElement("splitmuxsink")
@@ -91,15 +99,18 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	if err = b.AddElements(h264parse, sink); err != nil {
+	if err = b.AddElements(sink); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	b.SetGetSrcPad(func(name string) *gst.Pad {
 		if name == "audio" {
 			return sink.GetRequestPad("audio_%u")
-		} else {
+		} else if h264parse != nil {
 			return h264parse.GetStaticPad("sink")
+		} else {
+			// Should never happen
+			return nil
 		}
 	})
 

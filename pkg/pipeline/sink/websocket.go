@@ -196,10 +196,6 @@ func (s *WebsocketSink) writeMutedMessage(muted bool) error {
 	return s.conn.WriteMessage(websocket.TextMessage, data)
 }
 
-func (s *WebsocketSink) OnStop() error {
-	return nil
-}
-
 func (s *WebsocketSink) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

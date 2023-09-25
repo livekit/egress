@@ -43,7 +43,7 @@ func (s *FileSink) Start() error {
 	return nil
 }
 
-func (s *FileSink) OnStop() error {
+func (s *FileSink) Close() error {
 	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
 	if err != nil {
 		return err

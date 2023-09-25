@@ -51,6 +51,9 @@ func (r *Runner) runSegmentsTest(t *testing.T, req *rpc.StartEgressRequest, test
 
 	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
 	r.verifySegments(t, p, test.filenameSuffix, res, test.live_playlist != "")
+	if !test.audioOnly {
+		require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
+	}
 }
 
 func (r *Runner) verifySegments(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, res *livekit.EgressInfo, enableLivePlaylist bool) {

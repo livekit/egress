@@ -15,6 +15,8 @@
 package gstreamer
 
 import (
+	"time"
+
 	"github.com/frostbyte73/core"
 	"github.com/tinyzimmer/go-glib/glib"
 	"github.com/tinyzimmer/go-gst/gst"
@@ -23,15 +25,18 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+const (
+	stateChangeTimeout = time.Second * 15
+)
+
 type Pipeline struct {
 	*Bin
 
-	loop *glib.MainLoop
-
+	loop          *glib.MainLoop
 	binsAdded     bool
 	elementsAdded bool
-	started       core.Fuse
 	running       chan struct{}
+	stopped       core.Fuse
 }
 
 // A pipeline can have either elements or src and sink bins. If you add both you will get a wrong hierarchy error
@@ -44,15 +49,16 @@ func NewPipeline(name string, latency uint64, callbacks *Callbacks) (*Pipeline, 
 
 	return &Pipeline{
 		Bin: &Bin{
-			Callbacks: callbacks,
-			pipeline:  pipeline,
-			bin:       pipeline.Bin,
-			latency:   latency,
-			queues:    make(map[string]*gst.Element),
+			Callbacks:    callbacks,
+			StateManager: &StateManager{},
+			pipeline:     pipeline,
+			bin:          pipeline.Bin,
+			latency:      latency,
+			queues:       make(map[string]*gst.Element),
 		},
 		loop:    glib.NewMainLoop(glib.MainContextDefault(), false),
-		started: core.NewFuse(),
 		running: make(chan struct{}),
+		stopped: core.NewFuse(),
 	}, nil
 }
 
@@ -97,22 +103,36 @@ func (p *Pipeline) SetWatch(watch func(msg *gst.Message) bool) {
 }
 
 func (p *Pipeline) SetState(state gst.State) error {
-	if err := p.pipeline.SetState(state); err != nil {
-		return errors.ErrGstPipelineError(err)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	stateErr := make(chan error, 1)
+	go func() {
+		stateErr <- p.pipeline.SetState(state)
+	}()
+
+	select {
+	case <-time.After(stateChangeTimeout):
+		return errors.ErrPipelineFrozen
+	case err := <-stateErr:
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
 	}
+
 	return nil
 }
 
 func (p *Pipeline) Run() error {
-	p.started.Once(func() {
+	if _, ok := p.UpgradeState(StateStarted); ok {
 		if err := p.SetState(gst.StatePlaying); err != nil {
-			p.OnError(err)
-			return
+			return err
 		}
-		logger.Infow("running")
-		p.loop.Run()
+		if _, ok = p.UpgradeState(StateRunning); ok {
+			p.loop.Run()
+		}
 		close(p.running)
-	})
+	}
 
 	// wait
 	<-p.running
@@ -120,19 +140,34 @@ func (p *Pipeline) Run() error {
 }
 
 func (p *Pipeline) SendEOS() {
-	p.sendEOS()
+	old, ok := p.UpgradeState(StateEOS)
+	if ok {
+		if old >= StateRunning {
+			p.sendEOS()
+		} else {
+			p.Stop()
+		}
+	}
 }
 
 func (p *Pipeline) Stop() {
-	defer p.loop.Quit()
-	if err := p.SetState(gst.StateNull); err != nil {
-		p.OnError(err)
+	old, ok := p.UpgradeState(StateStopping)
+	if !ok {
 		return
 	}
+
 	if err := p.OnStop(); err != nil {
 		p.OnError(err)
-		return
 	}
+	if err := p.SetState(gst.StateNull); err != nil {
+		logger.Errorw("failed to set pipeline to null", err)
+	}
+
+	if old >= StateRunning {
+		p.loop.Quit()
+	}
+
+	p.UpgradeState(StateFinished)
 }
 
 func (p *Pipeline) DebugBinToDotData(details gst.DebugGraphDetails) string {

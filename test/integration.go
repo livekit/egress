@@ -99,8 +99,7 @@ type testCase struct {
 func (r *Runner) awaitIdle(t *testing.T) {
 	r.svc.KillAll()
 	for i := 0; i < 30; i++ {
-		status := r.getStatus(t)
-		if len(status) == 1 {
+		if r.svc.GetCPUHold() == 0 {
 			return
 		}
 		time.Sleep(time.Second)
@@ -123,26 +122,28 @@ func (r *Runner) publishSamplesToRoom(t *testing.T, audioCodec, videoCodec types
 	return
 }
 
-func (r *Runner) publishSampleOffset(t *testing.T, codec types.MimeType, publishAfter, unpublishAfter time.Duration) {
-	go func() {
-		time.Sleep(publishAfter)
-		done := make(chan struct{})
-		pub := r.publish(t, codec, done)
-		if unpublishAfter != 0 {
-			time.AfterFunc(unpublishAfter, func() {
-				select {
-				case <-done:
-					return
-				default:
+func (r *Runner) publishSampleOffset(t *testing.T, codec types.MimeType, publishAt, unpublishAt time.Duration) {
+	if codec != "" {
+		go func() {
+			time.Sleep(publishAt)
+			done := make(chan struct{})
+			pub := r.publish(t, codec, done)
+			if unpublishAt != 0 {
+				time.AfterFunc(unpublishAt-publishAt, func() {
+					select {
+					case <-done:
+						return
+					default:
+						_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
+					}
+				})
+			} else {
+				t.Cleanup(func() {
 					_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
-				}
-			})
-		} else {
-			t.Cleanup(func() {
-				_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
-			})
-		}
-	}()
+				})
+			}
+		}()
+	}
 }
 
 func (r *Runner) publishSampleToRoom(t *testing.T, codec types.MimeType, withMuting bool) string {
@@ -260,7 +261,7 @@ func (r *Runner) getUpdate(t *testing.T, egressID string) *livekit.EgressInfo {
 				return info
 			}
 
-		case <-time.After(time.Minute):
+		case <-time.After(time.Second * 30):
 			t.Fatal("no update from results channel")
 			return nil
 		}

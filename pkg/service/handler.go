@@ -208,7 +208,7 @@ func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
 }
 
 func sendUpdate(ctx context.Context, c rpc.IOInfoClient, info *livekit.EgressInfo) {
-	requestType, outputType := egress.GetTypes(info)
+	requestType, outputType := egress.GetTypes(info.Request)
 	switch info.Status {
 	case livekit.EgressStatus_EGRESS_FAILED:
 		logger.Warnw("egress failed", errors.New(info.Error),

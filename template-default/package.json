@@ -19,8 +19,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "deploy": "yarn build && echo 'egress-composite.livekit.io' > ./build/CNAME && gh-pages -d build --no-history"
+    "eject": "react-scripts eject"
   },
   "eslintConfig": {
     "extends": [

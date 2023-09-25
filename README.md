@@ -64,8 +64,9 @@ debug_handler_port: port used to host http debug handlers (default 0)
 logging:
   level: debug, info, warn, or error (default info)
   json: true
-template_base: can be used to host custom templates (default https://egress-composite.livekit.io)
+template_base: can be used to host custom templates (default http://localhost:<template_port>/)
 backup_storage: files will be moved here when uploads fail. location must have write access granted for all users
+enable_chrome_sandbox: if true, egress will run Chrome with sandboxing enabled. This requires a specific Docker setup, see below.
 cpu_cost: # optionally override cpu cost estimation, used when accepting or denying requests
   room_composite_cpu_cost: 3.0
   web_cpu_cost: 3.0
@@ -172,18 +173,39 @@ Then to run the service:
 ```shell
 docker run --rm \
     -e EGRESS_CONFIG_FILE=/out/config.yaml \
-    --cap-add=SYS_ADMIN \
     -v ~/egress-test:/out \
     livekit/egress
 ```
 
 You can then use our [cli](https://github.com/livekit/livekit-cli) to submit egress requests to your server.
 
+### Chrome sandboxing
+
+By default, Room Composite and Web egresses run with Chrome sandboxing disabled. This is because the default docker security settings prevent Chrome from
+switching to a different kernel namespace, which is needed by Chrome to setup its sandbox.
+
+Chrome sandboxing within Egress can be reenabled by setting the the `enable_chrome_sandbox` option to `true` in the egress configuration, and launching docker using the [provided
+seccomp security profile](https://github.com/livekit/egress/blob/main/chrome-sandboxing-seccomp-profile.json):
+
+```shell
+docker run --rm \
+    -e EGRESS_CONFIG_FILE=/out/config.yaml \
+    -v ~/egress-test:/out \
+    --security-opt seccomp=chrome-sandboxing-seccomp-profile.json \
+    livekit/egress
+```
+
+This profile is based on the [default docker seccomp security profile](https://github.com/moby/moby/blob/master/profiles/seccomp/default.json) and allows
+the 2 extra system calls (`clone` and `unshare`) that Chrome needs to setup the sandbox.
+
+Note that kubernetes disables seccomp entirely by default, which means that running with Chrome sandboxing enabled is possible on a kubernetes cluster with
+the default security settings.
+
 ## FAQ
 
 ### Can I store the files locally instead of uploading to cloud storage?
-- Yes, you can mount a volume with your `docker run` command (e.g. `-v ~/livekit-egress:/out/`), and use the mounted 
-directory in your filenames (e.g. `/out/my-recording.mp4`). Since egress is not run as the root user, write permissions 
+- Yes, you can mount a volume with your `docker run` command (e.g. `-v ~/livekit-egress:/out/`), and use the mounted
+directory in your filenames (e.g. `/out/my-recording.mp4`). Since egress is not run as the root user, write permissions
 will need to be enabled for all users.
 
 ### I get a `"no response from egress service"` error when sending a request

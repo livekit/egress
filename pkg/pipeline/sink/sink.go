@@ -23,7 +23,7 @@ import (
 
 type Sink interface {
 	Start() error
-	OnStop() error
+	Close() error
 	Cleanup()
 }
 
@@ -69,7 +69,6 @@ func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[
 		}
 
 		if s != nil {
-			callbacks.AddOnStop(s.OnStop)
 			sinks[egressType] = s
 		}
 	}

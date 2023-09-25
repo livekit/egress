@@ -16,7 +16,6 @@ package builder
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/tinyzimmer/go-gst/gst"
@@ -98,9 +97,7 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*St
 	return sb, b, nil
 }
 
-func (sb *StreamBin) GetStreamUrl(element string) (string, error) {
-	name := strings.Split(element, "_")[1]
-
+func (sb *StreamBin) GetStreamUrl(name string) (string, error) {
 	sb.mu.RLock()
 	url, ok := sb.urls[name]
 	sb.mu.RUnlock()

@@ -38,7 +38,6 @@ import (
 
 const (
 	pipelineName = "pipeline"
-	eosTimeout   = time.Second * 30
 )
 
 type Controller struct {
@@ -56,9 +55,8 @@ type Controller struct {
 	gstLogger  *zap.SugaredLogger
 	limitTimer *time.Timer
 	playing    core.Fuse
-	eosSent    core.Fuse
+	eos        core.Fuse
 	stopped    core.Fuse
-	eosTimer   *time.Timer
 }
 
 func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) {
@@ -73,7 +71,7 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 		},
 		gstLogger: logger.GetLogger().(*logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
 		playing:   core.NewFuse(),
-		eosSent:   core.NewFuse(),
+		eos:       core.NewFuse(),
 		stopped:   core.NewFuse(),
 	}
 	c.callbacks.SetOnError(c.OnError)
@@ -96,12 +94,14 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 	// create sinks
 	c.sinks, err = sink.CreateSinks(conf, c.callbacks)
 	if err != nil {
+		c.src.Close()
 		return nil, err
 	}
 
 	// create pipeline
 	<-c.callbacks.GstReady
 	if err = c.BuildPipeline(); err != nil {
+		c.src.Close()
 		return nil, err
 	}
 
@@ -109,32 +109,30 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 }
 
 func (c *Controller) BuildPipeline() error {
-	logger.Debugw("building pipeline")
-
 	p, err := gstreamer.NewPipeline(pipelineName, c.Latency, c.callbacks)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
 	p.SetWatch(c.messageWatch)
-	p.AddOnStop(c.OnStop)
+	p.AddOnStop(func() error {
+		c.stopped.Break()
+		return nil
+	})
+	if c.SourceType == types.SourceTypeSDK {
+		p.SetEOSFunc(func() bool {
+			c.src.(*source.SDKSource).CloseWriters()
+			return true
+		})
+	}
 
 	if c.AudioEnabled {
-		audioBin, err := builder.BuildAudioBin(p, c.PipelineConfig)
-		if err != nil {
-			return err
-		}
-		if err = p.AddSourceBin(audioBin); err != nil {
+		if err = builder.BuildAudioBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
-
 	if c.VideoEnabled {
-		videoBin, err := builder.BuildVideoBin(p, c.PipelineConfig)
-		if err != nil {
-			return err
-		}
-		if err = p.AddSourceBin(videoBin); err != nil {
+		if err = builder.BuildVideoBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
@@ -176,36 +174,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	defer span.End()
 
 	c.Info.StartedAt = time.Now().UnixNano()
-	defer func() {
-		now := time.Now().UnixNano()
-		c.Info.UpdatedAt = now
-		c.Info.EndedAt = now
-
-		// update status
-		if c.Info.Error != "" {
-			c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
-
-			if o := c.GetStreamConfig(); o != nil {
-				for _, streamInfo := range o.StreamInfo {
-					streamInfo.Status = livekit.StreamInfo_FAILED
-				}
-			}
-		}
-
-		// ensure egress ends with a final state
-		switch c.Info.Status {
-		case livekit.EgressStatus_EGRESS_STARTING:
-			c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
-
-		case livekit.EgressStatus_EGRESS_ACTIVE,
-			livekit.EgressStatus_EGRESS_ENDING:
-			c.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
-		}
-
-		for _, s := range c.sinks {
-			s.Cleanup()
-		}
-	}()
+	defer c.Close()
 
 	// session limit timer
 	c.startSessionLimitTimer(ctx)
@@ -222,7 +191,6 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		logger.Debugw("waiting for start signal")
 		select {
 		case <-c.stopped.Watch():
-			c.src.Close()
 			c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
 			return c.Info
 		case <-start:
@@ -232,78 +200,24 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 
 	for _, s := range c.sinks {
 		if err := s.Start(); err != nil {
-			c.src.Close()
 			c.Info.Error = err.Error()
 			return c.Info
 		}
 	}
 
 	if err := c.p.Run(); err != nil {
-		c.src.Close()
 		c.Info.Error = err.Error()
 		return c.Info
 	}
 
+	for _, s := range c.sinks {
+		if err := s.Close(); err != nil {
+			c.Info.Error = err.Error()
+			return c.Info
+		}
+	}
+
 	return c.Info
-}
-
-func (c *Controller) startSessionLimitTimer(ctx context.Context) {
-	var timeout time.Duration
-	for egressType := range c.Outputs {
-		var t time.Duration
-		switch egressType {
-		case types.EgressTypeFile:
-			t = c.FileOutputMaxDuration
-		case types.EgressTypeStream, types.EgressTypeWebsocket:
-			t = c.StreamOutputMaxDuration
-		case types.EgressTypeSegments:
-			t = c.SegmentOutputMaxDuration
-		}
-		if t > 0 && (timeout == 0 || t < timeout) {
-			timeout = t
-		}
-	}
-
-	if timeout > 0 {
-		c.limitTimer = time.AfterFunc(timeout, func() {
-			switch c.Info.Status {
-			case livekit.EgressStatus_EGRESS_STARTING,
-				livekit.EgressStatus_EGRESS_ACTIVE:
-				c.Info.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
-			}
-			if c.playing.IsBroken() {
-				c.SendEOS(ctx)
-			} else {
-				c.Stop()
-			}
-		})
-	}
-}
-
-func (c *Controller) updateStartTime(startedAt int64) {
-	for egressType, o := range c.Outputs {
-		switch egressType {
-		case types.EgressTypeStream, types.EgressTypeWebsocket:
-			c.mu.Lock()
-			for _, streamInfo := range o.(*config.StreamConfig).StreamInfo {
-				streamInfo.Status = livekit.StreamInfo_ACTIVE
-				streamInfo.StartedAt = startedAt
-			}
-			c.mu.Unlock()
-
-		case types.EgressTypeFile:
-			o.(*config.FileConfig).FileInfo.StartedAt = startedAt
-
-		case types.EgressTypeSegments:
-			o.(*config.SegmentConfig).SegmentsInfo.StartedAt = startedAt
-		}
-	}
-
-	if c.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
-		c.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
-		c.Info.UpdatedAt = time.Now().UnixNano()
-		c.OnUpdate(context.Background(), c.Info)
-	}
 }
 
 func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) error {
@@ -440,11 +354,12 @@ func (c *Controller) SendEOS(ctx context.Context) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
-	c.eosSent.Once(func() {
+	c.eos.Once(func() {
+		logger.Debugw("Sending EOS")
+
 		if c.limitTimer != nil {
 			c.limitTimer.Stop()
 		}
-
 		switch c.Info.Status {
 		case livekit.EgressStatus_EGRESS_STARTING:
 			c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
@@ -452,13 +367,13 @@ func (c *Controller) SendEOS(ctx context.Context) {
 
 		case livekit.EgressStatus_EGRESS_ABORTED,
 			livekit.EgressStatus_EGRESS_FAILED:
-			c.Stop()
+			c.p.Stop()
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			c.Info.UpdatedAt = time.Now().UnixNano()
 			if c.Info.Error != "" {
 				c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
-				c.Stop()
+				c.p.Stop()
 			} else {
 				c.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 				c.OnUpdate(ctx, c.Info)
@@ -467,58 +382,119 @@ func (c *Controller) SendEOS(ctx context.Context) {
 
 		case livekit.EgressStatus_EGRESS_ENDING,
 			livekit.EgressStatus_EGRESS_LIMIT_REACHED:
-			go func() {
-				logger.Infow("sending EOS to pipeline")
-
-				c.eosTimer = time.AfterFunc(eosTimeout, func() {
-					logger.Errorw("pipeline frozen", nil, "stream", !c.FinalizationRequired)
-					if c.Debug.EnableProfiling {
-						c.uploadDebugFiles()
-					}
-
-					if c.FinalizationRequired {
-						c.OnError(errors.ErrPipelineFrozen)
-					} else {
-						c.Stop()
-					}
-				})
-
-				c.p.SendEOS()
-			}()
+			go c.p.SendEOS()
 		}
 
-		switch c.src.(type) {
-		case *source.WebSource:
+		if c.SourceType == types.SourceTypeWeb {
 			c.updateDuration(c.src.GetEndedAt())
 		}
 	})
 }
 
 func (c *Controller) OnError(err error) {
-	if c.Info.Error == "" && (!c.eosSent.IsBroken() || c.FinalizationRequired) {
+	if errors.Is(err, errors.ErrPipelineFrozen) && c.Debug.EnableProfiling {
+		c.uploadDebugFiles()
+	}
+
+	if c.Info.Error == "" && (!c.eos.IsBroken() || c.FinalizationRequired) {
 		c.Info.Error = err.Error()
 	}
-	go c.Stop()
+
+	go c.p.Stop()
 }
 
-func (c *Controller) Stop() {
-	c.stopped.Once(c.p.Stop)
-}
-
-func (c *Controller) OnStop() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.eosTimer != nil {
-		c.eosTimer.Stop()
-	}
-
-	switch c.src.(type) {
-	case *source.SDKSource:
+func (c *Controller) Close() {
+	if c.SourceType == types.SourceTypeSDK || !c.eos.IsBroken() {
 		c.updateDuration(c.src.GetEndedAt())
 	}
+	c.src.Close()
 
-	return nil
+	now := time.Now().UnixNano()
+	c.Info.UpdatedAt = now
+	c.Info.EndedAt = now
+
+	// update status
+	if c.Info.Error != "" {
+		c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
+		if o := c.GetStreamConfig(); o != nil {
+			for _, streamInfo := range o.StreamInfo {
+				streamInfo.Status = livekit.StreamInfo_FAILED
+			}
+		}
+	}
+
+	// ensure egress ends with a final state
+	switch c.Info.Status {
+	case livekit.EgressStatus_EGRESS_STARTING:
+		c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
+
+	case livekit.EgressStatus_EGRESS_ACTIVE,
+		livekit.EgressStatus_EGRESS_ENDING:
+		c.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+	}
+
+	for _, s := range c.sinks {
+		s.Cleanup()
+	}
+}
+
+func (c *Controller) startSessionLimitTimer(ctx context.Context) {
+	var timeout time.Duration
+	for egressType := range c.Outputs {
+		var t time.Duration
+		switch egressType {
+		case types.EgressTypeFile:
+			t = c.FileOutputMaxDuration
+		case types.EgressTypeStream, types.EgressTypeWebsocket:
+			t = c.StreamOutputMaxDuration
+		case types.EgressTypeSegments:
+			t = c.SegmentOutputMaxDuration
+		}
+		if t > 0 && (timeout == 0 || t < timeout) {
+			timeout = t
+		}
+	}
+
+	if timeout > 0 {
+		c.limitTimer = time.AfterFunc(timeout, func() {
+			switch c.Info.Status {
+			case livekit.EgressStatus_EGRESS_STARTING,
+				livekit.EgressStatus_EGRESS_ACTIVE:
+				c.Info.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
+			}
+			if c.playing.IsBroken() {
+				c.SendEOS(ctx)
+			} else {
+				c.p.Stop()
+			}
+		})
+	}
+}
+
+func (c *Controller) updateStartTime(startedAt int64) {
+	for egressType, o := range c.Outputs {
+		switch egressType {
+		case types.EgressTypeStream, types.EgressTypeWebsocket:
+			c.mu.Lock()
+			for _, streamInfo := range o.(*config.StreamConfig).StreamInfo {
+				streamInfo.Status = livekit.StreamInfo_ACTIVE
+				streamInfo.StartedAt = startedAt
+			}
+			c.mu.Unlock()
+
+		case types.EgressTypeFile:
+			o.(*config.FileConfig).FileInfo.StartedAt = startedAt
+
+		case types.EgressTypeSegments:
+			o.(*config.SegmentConfig).SegmentsInfo.StartedAt = startedAt
+		}
+	}
+
+	if c.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
+		c.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
+		c.Info.UpdatedAt = time.Now().UnixNano()
+		c.OnUpdate(context.Background(), c.Info)
+	}
 }
 
 func (c *Controller) updateDuration(endedAt int64) {
