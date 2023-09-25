@@ -210,11 +210,12 @@ func (s *SegmentSink) endSegment(filename string, endTime uint64) error {
 	}
 	delete(s.openSegmentsStartTime, filename)
 
-	duration := float64(time.Duration(endTime-t) / time.Second)
+	duration := float64(time.Duration(endTime-t)) / float64(time.Second)
 	segmentStartTime := s.startTime.Add(time.Duration(t - s.startRunningTime))
 	if err := s.playlist.Append(segmentStartTime, duration, filename); err != nil {
 		return err
 	}
+
 	if s.livePlaylist != nil {
 		if err := s.livePlaylist.Append(segmentStartTime, duration, filename); err != nil {
 			return err
