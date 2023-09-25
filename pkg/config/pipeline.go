@@ -572,8 +572,10 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 			o.LocalDir = stringReplace(o.LocalDir, replacements)
 			o.StorageDir = stringReplace(o.StorageDir, replacements)
 			o.PlaylistFilename = stringReplace(o.PlaylistFilename, replacements)
+			o.LivePlaylistFilename = stringReplace(o.LivePlaylistFilename, replacements)
 			o.SegmentPrefix = stringReplace(o.SegmentPrefix, replacements)
 			o.SegmentsInfo.PlaylistName = stringReplace(o.SegmentsInfo.PlaylistName, replacements)
+			o.SegmentsInfo.LivePlaylistName = stringReplace(o.SegmentsInfo.LivePlaylistName, replacements)
 		}
 	}
 

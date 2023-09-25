@@ -63,6 +63,6 @@ func (r *Runner) runMultipleTest(
 		r.verifyFile(t, p, res)
 	}
 	if segments {
-		r.verifySegments(t, p, filenameSuffix, res)
+		r.verifySegments(t, p, filenameSuffix, res, false)
 	}
 }

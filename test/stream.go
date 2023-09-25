@@ -127,6 +127,6 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 
 func (r *Runner) verifyStreams(t *testing.T, p *config.PipelineConfig, urls ...string) {
 	for _, url := range urls {
-		verify(t, url, p, nil, types.EgressTypeStream, false, r.sourceFramerate)
+		verify(t, url, p, nil, types.EgressTypeStream, false, r.sourceFramerate, false)
 	}
 }
