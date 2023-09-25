@@ -29,13 +29,19 @@ import (
 )
 
 type StreamBin struct {
-	mu            sync.RWMutex
-	pipeline      *gstreamer.Pipeline
-	b             *gstreamer.Bin
-	outputType    types.OutputType
-	bins          map[string]*gstreamer.Bin
-	urls          map[string]string
-	reconnections map[string]int
+	mu         sync.RWMutex
+	pipeline   *gstreamer.Pipeline
+	b          *gstreamer.Bin
+	outputType types.OutputType
+	sinks      map[string]*StreamSink
+}
+
+type StreamSink struct {
+	bin           *gstreamer.Bin
+	sink          *gst.Element
+	url           string
+	reconnections int
+	outBytes      uint64
 }
 
 func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*StreamBin, *gstreamer.Bin, error) {
@@ -81,11 +87,13 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*St
 	}
 
 	sb := &StreamBin{
-		b:             b,
-		outputType:    o.OutputType,
-		bins:          make(map[string]*gstreamer.Bin),
-		urls:          make(map[string]string),
-		reconnections: make(map[string]int),
+		b:          b,
+		outputType: o.OutputType,
+		sinks:      make(map[string]*StreamSink),
+		// bins:          make(map[string]*gstreamer.Bin),
+		// urls:          make(map[string]string),
+		// connections:   make(map[string]time.Time),
+		// reconnections: make(map[string]int),
 	}
 
 	for _, url := range o.Urls {
@@ -99,34 +107,21 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*St
 
 func (sb *StreamBin) GetStreamUrl(name string) (string, error) {
 	sb.mu.RLock()
-	url, ok := sb.urls[name]
+	sink, ok := sb.sinks[name]
 	sb.mu.RUnlock()
 	if !ok {
 		return "", errors.ErrStreamNotFound(name)
 	}
-	return url, nil
+	return sink.url, nil
 }
 
 func (sb *StreamBin) AddStream(url string) error {
-	sinkBin, name, err := sb.buildStreamSinkBin(url)
-	if err != nil {
-		return err
-	}
-	sb.mu.Lock()
-	sb.bins[name] = sinkBin
-	sb.urls[name] = url
-	sb.mu.Unlock()
-
-	return sb.b.AddSinkBin(sinkBin)
-}
-
-func (sb *StreamBin) buildStreamSinkBin(url string) (*gstreamer.Bin, string, error) {
 	name := utils.NewGuid("")
 	b := sb.b.NewBin(name)
 
 	queue, err := gst.NewElementWithName("queue", fmt.Sprintf("queue_%s", name))
 	if err != nil {
-		return nil, "", errors.ErrGstPipelineError(err)
+		return errors.ErrGstPipelineError(err)
 	}
 	queue.SetArg("leaky", "downstream")
 
@@ -135,27 +130,27 @@ func (sb *StreamBin) buildStreamSinkBin(url string) (*gstreamer.Bin, string, err
 	case types.OutputTypeRTMP:
 		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("rtmp2sink_%s", name))
 		if err != nil {
-			return nil, "", errors.ErrGstPipelineError(err)
+			return errors.ErrGstPipelineError(err)
 		}
 		if err = sink.SetProperty("async", false); err != nil {
-			return nil, "", errors.ErrGstPipelineError(err)
+			return errors.ErrGstPipelineError(err)
 		}
 		if err = sink.SetProperty("sync", false); err != nil {
-			return nil, "", errors.ErrGstPipelineError(err)
+			return errors.ErrGstPipelineError(err)
 		}
 		if err = sink.SetProperty("async-connect", false); err != nil {
-			return nil, "", errors.ErrGstPipelineError(err)
+			return errors.ErrGstPipelineError(err)
 		}
 		if err = sink.Set("location", url); err != nil {
-			return nil, "", errors.ErrGstPipelineError(err)
+			return errors.ErrGstPipelineError(err)
 		}
 
 	default:
-		return nil, "", errors.ErrInvalidInput("output type")
+		return errors.ErrInvalidInput("output type")
 	}
 
 	if err = b.AddElements(queue, sink); err != nil {
-		return nil, "", err
+		return err
 	}
 
 	b.SetLinkFunc(func() error {
@@ -189,31 +184,55 @@ func (sb *StreamBin) buildStreamSinkBin(url string) (*gstreamer.Bin, string, err
 		return nil
 	})
 
-	return b, name, nil
-}
-
-func (sb *StreamBin) ResetStream(name string, streamErr error) (bool, error) {
 	sb.mu.Lock()
-	sinkBin := sb.bins[name]
-	url := sb.urls[name]
-	reconnections := sb.reconnections[name] + 1
-	sb.reconnections[name] = reconnections
+	sb.sinks[name] = &StreamSink{
+		bin:  b,
+		sink: sink,
+		url:  url,
+	}
 	sb.mu.Unlock()
 
-	if sinkBin == nil {
+	return sb.b.AddSinkBin(b)
+}
+
+func (sb *StreamBin) MaybeResetStream(name string, streamErr error) (bool, error) {
+	sb.mu.Lock()
+	sink := sb.sinks[name]
+	sb.mu.Unlock()
+
+	if sink == nil {
 		return false, errors.ErrStreamNotFound(name)
 	}
-	if reconnections > 3 {
+
+	s, err := sink.sink.GetProperty("stats")
+	if err != nil {
+		return false, err
+	}
+	values := s.(*gst.Structure).Values()
+	outBytes := values["out-bytes-acked"].(uint64)
+	if outBytes == 0 {
+		// unable to connect, probably a bad stream key or url
 		return false, nil
 	}
 
-	redacted, _ := utils.RedactStreamKey(url)
+	if outBytes > sink.outBytes {
+		// connection was working until this failure
+		sink.outBytes = outBytes
+		sink.reconnections = 1
+	} else if sink.reconnections == 3 {
+		// max 3 reconnection attempts
+		return false, nil
+	} else {
+		sink.reconnections++
+	}
+
+	redacted, _ := utils.RedactStreamKey(sink.url)
 	logger.Warnw("resetting stream", streamErr, "url", redacted)
 
-	if err := sinkBin.SetState(gst.StateNull); err != nil {
+	if err := sink.bin.SetState(gst.StateNull); err != nil {
 		return false, err
 	}
-	if err := sinkBin.SetState(gst.StatePlaying); err != nil {
+	if err := sink.bin.SetState(gst.StatePlaying); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -221,22 +240,21 @@ func (sb *StreamBin) ResetStream(name string, streamErr error) (bool, error) {
 
 func (sb *StreamBin) RemoveStream(url string) error {
 	sb.mu.Lock()
-	name := sb.getStreamName(url)
+	name := sb.getStreamNameLocked(url)
 	if name == "" {
 		sb.mu.Unlock()
 		return errors.ErrStreamNotFound(url)
 	}
-	delete(sb.urls, name)
-	delete(sb.reconnections, name)
+	delete(sb.sinks, name)
 	sb.mu.Unlock()
 
 	_, err := sb.b.RemoveSinkBin(name)
 	return err
 }
 
-func (sb *StreamBin) getStreamName(url string) string {
-	for name, u := range sb.urls {
-		if u == url {
+func (sb *StreamBin) getStreamNameLocked(url string) string {
+	for name, sink := range sb.sinks {
+		if sink.url == url {
 			return name
 		}
 	}
