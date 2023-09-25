@@ -16,6 +16,7 @@ package builder
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -101,8 +102,8 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 	}
 
 	b.bin.SetGetSinkPad(func(name string) *gst.Pad {
-		if name == "image" {
-			return rawVideoTee.GetRequestPad("src_%u")
+		if strings.HasPrefix(name, "image") {
+			return b.rawVideoTee.GetRequestPad("src_%u")
 		} else {
 			return getPad()
 		}
@@ -502,7 +503,7 @@ func (b *VideoBin) addEncoder() error {
 	if err != nil {
 		return err
 	}
-	if err = b.bin.AddElement(rawVideoTee); err != nil {
+	if err = b.bin.AddElement(b.rawVideoTee); err != nil {
 		return err
 	}
 

@@ -45,6 +45,17 @@ type ImageConfig struct {
 	ImageOutCodec   types.MimeType
 }
 
+func (p *PipelineConfig) GetImageConfigs() []*ImageConfig {
+	o, _ := p.Outputs[types.EgressTypeImages]
+
+	var configs []*ImageConfig
+	for _, c := range o {
+		configs = append(configs, c.(*ImageConfig))
+	}
+
+	return configs
+}
+
 func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput) (*ImageConfig, error) {
 	outCodec, outputType, err := getMimeTypes(images.ImageCodec)
 	if err != nil {
