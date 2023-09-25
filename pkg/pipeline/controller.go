@@ -137,28 +137,42 @@ func (c *Controller) BuildPipeline() error {
 		}
 	}
 
+	var sinkBins []*gstreamer.Bin
 	for egressType := range c.Outputs {
-		var sinkBin *gstreamer.Bin
 		switch egressType {
 		case types.EgressTypeFile:
+			var sinkBin *gstreamer.Bin
 			sinkBin, err = builder.BuildFileBin(p, c.PipelineConfig)
+			sinkBins = append(sinkBins, sinkBin)
 
 		case types.EgressTypeSegments:
+			var sinkBin *gstreamer.Bin
 			sinkBin, err = builder.BuildSegmentBin(p, c.PipelineConfig)
+			sinkBins = append(sinkBins, sinkBin)
 
 		case types.EgressTypeStream:
+			var sinkBin *gstreamer.Bin
 			c.streamBin, sinkBin, err = builder.BuildStreamBin(p, c.PipelineConfig)
+			sinkBins = append(sinkBins, sinkBin)
 
 		case types.EgressTypeWebsocket:
+			var sinkBin *gstreamer.Bin
 			writer := c.sinks[egressType][0].(*sink.WebsocketSink)
 			sinkBin, err = builder.BuildWebsocketBin(p, writer.SinkCallbacks())
+			sinkBins = append(sinkBins, sinkBin)
 
-			// TODO Add Images
+		case types.EgressTypeImages:
+			var bins []*gstreamer.Bin
+			bins, err = builder.BuildImageBins(p, c.PipelineConfig)
+			sinkBins = append(sinkBins, bins...)
 		}
 		if err != nil {
 			return err
 		}
-		if err = p.AddSinkBin(sinkBin); err != nil {
+	}
+
+	for _, bin := range sinkBins {
+		if err = p.AddSinkBin(bin); err != nil {
 			return err
 		}
 	}

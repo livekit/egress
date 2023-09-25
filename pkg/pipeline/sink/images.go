@@ -56,5 +56,5 @@ func (s *ImageSink) Close() error {
 	return nil
 }
 
-func (*Sink) Cleanup() {
+func (*ImageSink) Cleanup() {
 }
