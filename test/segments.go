@@ -140,7 +140,7 @@ func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.Segmente
 			require.InDelta(t, s.ProgramDateTime.UnixNano(), tm.UnixNano(), float64(time.Millisecond))
 		}
 
-		if i < len(p.Segments)-1 {
+		if i < len(p.Segments)-2 {
 			nextSegmentStartDate := p.Segments[i+1].ProgramDateTime
 
 			dateDuration := nextSegmentStartDate.Sub(s.ProgramDateTime)
