@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/pipeline/sink/m3u8"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
@@ -48,13 +49,13 @@ func (r *Runner) runSegmentsTest(t *testing.T, req *rpc.StartEgressRequest, test
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 
+	r.verifySegments(t, p, test.filenameSuffix, res, test.live_playlist != "")
 	if !test.audioOnly {
 		require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
 	}
-	r.verifySegments(t, p, test.filenameSuffix, res)
 }
 
-func (r *Runner) verifySegments(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, res *livekit.EgressInfo) {
+func (r *Runner) verifySegments(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, res *livekit.EgressInfo, enableLivePlaylist bool) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
@@ -64,37 +65,56 @@ func (r *Runner) verifySegments(t *testing.T, p *config.PipelineConfig, filename
 	require.Len(t, res.GetSegmentResults(), 1)
 	segments := res.GetSegmentResults()[0]
 
-	require.NotEmpty(t, segments.PlaylistName)
-	require.NotEmpty(t, segments.PlaylistLocation)
 	require.Greater(t, segments.Size, int64(0))
 	require.Greater(t, segments.Duration, int64(0))
 
-	storedPlaylistPath := segments.PlaylistName
-	localPlaylistPath := segments.PlaylistName
+	r.verifySegmentOutput(t, p, filenameSuffix, segments.PlaylistName, segments.PlaylistLocation, int(segments.SegmentCount), res, m3u8.PlaylistTypeEvent)
+	r.verifyManifest(t, p, segments.PlaylistName)
+	if enableLivePlaylist {
+		r.verifySegmentOutput(t, p, filenameSuffix, segments.LivePlaylistName, segments.LivePlaylistLocation, 5, res, m3u8.PlaylistTypeLive)
+	}
+}
+
+func (r *Runner) verifyManifest(t *testing.T, p *config.PipelineConfig, plName string) {
+	localPlaylistPath := fmt.Sprintf("%s/%s", r.FilePrefix, plName)
+
+	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
+		download(t, uploadConfig, localPlaylistPath+".json", plName+".json")
+	}
+}
+
+func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, plName string, plLocation string, segmentCount int, res *livekit.EgressInfo, plType m3u8.PlaylistType) {
+	require.NotEmpty(t, plName)
+	require.NotEmpty(t, plLocation)
+
+	storedPlaylistPath := plName
+	localPlaylistPath := plName
 
 	// download from cloud storage
 	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
-		base := storedPlaylistPath[:len(storedPlaylistPath)-5]
 		localPlaylistPath = fmt.Sprintf("%s/%s", r.FilePrefix, storedPlaylistPath)
 		download(t, uploadConfig, localPlaylistPath, storedPlaylistPath)
-		download(t, uploadConfig, localPlaylistPath+".json", storedPlaylistPath+".json")
-		for i := 0; i < int(segments.SegmentCount); i++ {
-			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
-			localPath := fmt.Sprintf("%s/%s", r.FilePrefix, cloudPath)
-			download(t, uploadConfig, localPath, cloudPath)
+		if plType == m3u8.PlaylistTypeEvent {
+			// Only download segments once
+			base := storedPlaylistPath[:len(storedPlaylistPath)-5]
+			for i := 0; i < int(segmentCount); i++ {
+				cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
+				localPath := fmt.Sprintf("%s/%s", r.FilePrefix, cloudPath)
+				download(t, uploadConfig, localPath, cloudPath)
+			}
 		}
 	}
 
-	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath)
+	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath, plType)
 
 	// verify
-	verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.Muting, r.sourceFramerate)
+	verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.Muting, r.sourceFramerate, plType == m3u8.PlaylistTypeLive)
 }
 
-func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.SegmentedFileSuffix, localPlaylistPath string) {
+func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.SegmentedFileSuffix, localPlaylistPath string, plType m3u8.PlaylistType) {
 	p, err := readPlaylist(localPlaylistPath)
 	require.NoError(t, err)
-	require.Equal(t, "EVENT", p.MediaType)
+	require.Equal(t, string(plType), p.MediaType)
 	require.True(t, p.Closed)
 
 	now := time.Now()
@@ -120,7 +140,7 @@ func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.Segmente
 			require.InDelta(t, s.ProgramDateTime.UnixNano(), tm.UnixNano(), float64(time.Millisecond))
 		}
 
-		if i < len(p.Segments)-1 {
+		if i < len(p.Segments)-2 {
 			nextSegmentStartDate := p.Segments[i+1].ProgramDateTime
 
 			dateDuration := nextSegmentStartDate.Sub(s.ProgramDateTime)
@@ -149,10 +169,20 @@ func readPlaylist(filename string) (*Playlist, error) {
 		return nil, err
 	}
 
+	var segmentLineStart = 5
+	var i = 1
+
 	lines := strings.Split(string(b), "\n")
-	version, _ := strconv.Atoi(strings.Split(lines[1], ":")[1])
-	mediaType := strings.Split(lines[2], ":")[1]
-	targetDuration, _ := strconv.Atoi(strings.Split(lines[5], ":")[1])
+	version, _ := strconv.Atoi(strings.Split(lines[i], ":")[1])
+	i++
+	var mediaType string
+	if strings.Contains(string(b), "#EXT-X-PLAYLIST-TYPE") {
+		mediaType = strings.Split(lines[i], ":")[1]
+		segmentLineStart++
+		i++
+	}
+	i++ // #EXT-X-ALLOW-CACHE:NO hardcoded
+	targetDuration, _ := strconv.Atoi(strings.Split(lines[i], ":")[1])
 
 	p := &Playlist{
 		Version:        version,
@@ -161,7 +191,7 @@ func readPlaylist(filename string) (*Playlist, error) {
 		Segments:       make([]*Segment, 0),
 	}
 
-	for i := 6; i < len(lines)-3; i += 3 {
+	for i := segmentLineStart; i < len(lines)-3; i += 3 {
 		startTime, _ := time.Parse("2006-01-02T15:04:05.999Z07:00", strings.SplitN(lines[i], ":", 2)[1])
 		durStr := strings.Split(lines[i+1], ":")[1]
 		durStr = durStr[:len(durStr)-1] // remove trailing comma

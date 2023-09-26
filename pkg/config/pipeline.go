@@ -576,8 +576,11 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 			o.LocalDir = stringReplace(o.LocalDir, replacements)
 			o.StorageDir = stringReplace(o.StorageDir, replacements)
 			o.PlaylistFilename = stringReplace(o.PlaylistFilename, replacements)
+			o.LivePlaylistFilename = stringReplace(o.LivePlaylistFilename, replacements)
 			o.SegmentPrefix = stringReplace(o.SegmentPrefix, replacements)
 			o.SegmentsInfo.PlaylistName = stringReplace(o.SegmentsInfo.PlaylistName, replacements)
+			o.SegmentsInfo.LivePlaylistName = stringReplace(o.SegmentsInfo.LivePlaylistName, replacements)
+
 		case types.EgressTypeImages:
 			for _, ci := range c {
 				o := ci.(*ImageConfig)
@@ -596,9 +599,6 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 
 	return nil
 }
-
-// TODO Images room composite default dimensions
-// TODO Images sdk dimensions
 
 func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, error) {
 	parsed, err := url.Parse(rawUrl)

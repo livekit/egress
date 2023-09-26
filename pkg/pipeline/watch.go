@@ -166,9 +166,9 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 	case element == elementGstRtmp2Sink:
 		name = strings.Split(name, "_")[1]
 
-		if strings.HasPrefix(gErr.Error(), "Connection error") && !c.eos.IsBroken() {
+		if !c.eos.IsBroken() {
 			// try reconnecting
-			ok, err := c.streamBin.ResetStream(name, gErr)
+			ok, err := c.streamBin.MaybeResetStream(name, gErr)
 			if err != nil {
 				logger.Errorw("failed to reset stream", err)
 			} else if ok {
@@ -290,7 +290,7 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 	return nil
 }
 
-func getSegmentParamsFromGstStructure(s *gst.Structure) (filepath string, time int64, err error) {
+func getSegmentParamsFromGstStructure(s *gst.Structure) (filepath string, time uint64, err error) {
 	loc, err := s.GetValue(fragmentLocation)
 	if err != nil {
 		return "", 0, err
@@ -309,7 +309,7 @@ func getSegmentParamsFromGstStructure(s *gst.Structure) (filepath string, time i
 		return "", 0, errors.ErrGstPipelineError(errors.New("invalid type for time"))
 	}
 
-	return filepath, int64(ti), nil
+	return filepath, ti, nil
 }
 
 func getFirstSampleMetadataFromGstStructure(s *gst.Structure) (startDate time.Time, err error) {

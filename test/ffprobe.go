@@ -104,7 +104,7 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
-func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.EgressInfo, egressType types.EgressType, withMuting bool, sourceFramerate float64) {
+func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.EgressInfo, egressType types.EgressType, withMuting bool, sourceFramerate float64, live bool) {
 	var info *FFProbeInfo
 	var err error
 
@@ -165,8 +165,13 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 
 		require.Len(t, res.GetSegmentResults(), 1)
 		segments := res.GetSegmentResults()[0]
-		expected := int64(math.Ceil(actual / float64(p.GetSegmentConfig().SegmentDuration)))
-		require.InDelta(t, expected, segments.SegmentCount, 1)
+
+		if live {
+			require.InDelta(t, float64(5*p.GetSegmentConfig().SegmentDuration), actual, float64(p.GetSegmentConfig().SegmentDuration))
+		} else {
+			expected := int64(math.Ceil(actual / float64(p.GetSegmentConfig().SegmentDuration)))
+			require.InDelta(t, expected, segments.SegmentCount, 1)
+		}
 
 	case types.EgressTypeWebsocket:
 		size, err := strconv.Atoi(info.Format.Size)
