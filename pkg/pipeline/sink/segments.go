@@ -245,9 +245,9 @@ func (s *SegmentSink) Close() error {
 		}
 
 		// upload the finalized live playlist
-		playlistLocalPath = path.Join(s.LocalDir, s.LivePlaylistFilename)
-		playlistStoragePath = path.Join(s.StorageDir, s.LivePlaylistFilename)
-		s.SegmentsInfo.LivePlaylistLocation, _, _ = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
+		liveLocalPath := path.Join(s.LocalDir, s.LivePlaylistFilename)
+		liveStoragePath := path.Join(s.StorageDir, s.LivePlaylistFilename)
+		s.SegmentsInfo.LivePlaylistLocation, _, _ = s.Upload(liveLocalPath, liveStoragePath, s.OutputType, false)
 	}
 
 	if !s.DisableManifest {
