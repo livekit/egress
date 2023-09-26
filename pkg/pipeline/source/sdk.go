@@ -167,10 +167,11 @@ func (s *SDKSource) joinRoom() error {
 
 	var fileIdentifier string
 	var err error
+	var w, h uint32
 	switch s.RequestType {
 	case types.RequestTypeParticipant:
 		fileIdentifier = s.Identity
-		err = s.awaitParticipant(s.Identity)
+		w, h, err = s.awaitParticipant(s.Identity)
 
 	case types.RequestTypeTrackComposite:
 		fileIdentifier = s.Info.RoomName
@@ -181,17 +182,17 @@ func (s *SDKSource) joinRoom() error {
 		if s.VideoEnabled {
 			tracks[s.VideoTrackID] = struct{}{}
 		}
-		err = s.awaitTracks(tracks)
+		w, h, err = s.awaitTracks(tracks)
 
 	case types.RequestTypeTrack:
 		fileIdentifier = s.TrackID
-		err = s.awaitTracks(map[string]struct{}{s.TrackID: {}})
+		w, h, err = s.awaitTracks(map[string]struct{}{s.TrackID: {}})
 	}
 	if err != nil {
 		return err
 	}
 
-	if err = s.UpdateInfoFromSDK(fileIdentifier, s.filenameReplacements); err != nil {
+	if err = s.UpdateInfoFromSDK(fileIdentifier, s.filenameReplacements, w, h); err != nil {
 		logger.Errorw("could not update file params", err)
 		return err
 	}
@@ -199,22 +200,30 @@ func (s *SDKSource) joinRoom() error {
 	return nil
 }
 
-func (s *SDKSource) awaitParticipant(identity string) error {
+func (s *SDKSource) awaitParticipant(identity string) (uint32, uint32, error) {
 	s.errors = make(chan error, 2)
 
 	rp, err := s.getParticipant(identity)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 
 	for trackCount := 0; trackCount == 0 || trackCount < len(rp.Tracks()); trackCount++ {
 		if err = <-s.errors; err != nil {
-			return err
+			return 0, 0, err
 		}
 	}
 
+	for _, t := range rp.Tracks() {
+		if t.TrackInfo().Type == livekit.TrackType_VIDEO {
+			w = t.TrackInfo().Width
+			h = t.TrackInfo().Height
+		}
+
+	}
+
 	s.initialized.Break()
-	return nil
+	return w, h, nil
 }
 
 func (s *SDKSource) getParticipant(identity string) (*lksdk.RemoteParticipant, error) {
@@ -230,12 +239,13 @@ func (s *SDKSource) getParticipant(identity string) (*lksdk.RemoteParticipant, e
 	return nil, errors.ErrParticipantNotFound(identity)
 }
 
-func (s *SDKSource) awaitTracks(expecting map[string]struct{}) error {
+func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, error) {
 	trackCount := len(expecting)
 	s.errors = make(chan error, trackCount)
 
 	deadline := time.After(subscriptionTimeout)
-	if err := s.subscribeToTracks(expecting, deadline); err != nil {
+	tracks, err := s.subscribeToTracks(expecting, deadline)
+	if err != nil {
 		return err
 	}
 
@@ -243,23 +253,33 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) error {
 		select {
 		case err := <-s.errors:
 			if err != nil {
-				return err
+				return 0, 0, err
 			}
 		case <-deadline:
-			return errors.ErrSubscriptionFailed
+			return 0, 0, errors.ErrSubscriptionFailed
+		}
+	}
+
+	var w, h uint32
+	for _, t := range tracks {
+		if t.TrackInfo().Type() == livekit.TrackType_VIDEO {
+			w = t.TrackInfo().Width
+			h = t.TrackInfo().Height
 		}
 	}
 
 	s.initialized.Break()
-	return nil
+	return w, h, nil
 }
 
-func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}, deadline <-chan time.Time) error {
+func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}, deadline <-chan time.Time) ([]lksdk.TrackPublication, error) {
+	var tracks []lksdk.TrackPublication
+
 	for {
 		select {
 		case <-deadline:
 			for trackID := range expecting {
-				return errors.ErrTrackNotFound(trackID)
+				return nil, errors.ErrTrackNotFound(trackID)
 			}
 		default:
 			for _, p := range s.room.GetParticipants() {
@@ -267,12 +287,14 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}, deadline <-
 					trackID := track.SID()
 					if _, ok := expecting[trackID]; ok {
 						if err := s.subscribe(track); err != nil {
-							return err
+							return nil, err
 						}
+
+						tracks = append(tracks, track)
 
 						delete(expecting, track.SID())
 						if len(expecting) == 0 {
-							return nil
+							return tracks, nil
 						}
 					}
 				}

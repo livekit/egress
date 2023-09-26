@@ -82,6 +82,18 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput) (*ImageConf
 		conf.CaptureInterval = 10
 	}
 
+	// Set default dimensions for RoomComposite and Web. For all SDKs input, default will be
+	// set from the track dimensions
+	switch p.Info.Request.(type) {
+	case *livekit.EgressInfo_RoomComposite, *livekit.EgressInfo_Web:
+		if conf.Width == 0 {
+			conf.Width = p.Width
+		}
+		if conf.Height == 0 {
+			conf.Height = p.Height
+		}
+	}
+
 	// filename
 	err = conf.updatePrefix(p)
 	if err != nil {

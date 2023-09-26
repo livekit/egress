@@ -562,7 +562,7 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 }
 
 // used for sdk input source
-func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string) error {
+func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string, w, h uint32) error {
 	for egressType, c := range p.Outputs {
 		if len(c) == 0 {
 			continue
@@ -578,13 +578,27 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 			o.PlaylistFilename = stringReplace(o.PlaylistFilename, replacements)
 			o.SegmentPrefix = stringReplace(o.SegmentPrefix, replacements)
 			o.SegmentsInfo.PlaylistName = stringReplace(o.SegmentsInfo.PlaylistName, replacements)
-
-			// TODO Images
+		case types.EgressTypeImages:
+			for _, ci := range c {
+				o := ci.(*ImageConfig)
+				o.LocalDir = stringReplace(o.LocalDir, replacements)
+				o.StorageDir = stringReplace(o.StorageDir, replacements)
+				o.ImagePrefix = stringReplace(o.ImagePrefix, replacements)
+				if o.Width == 0 {
+					o.Width = int32(w)
+				}
+				if o.Height == 0 {
+					o.Height = int32(h)
+				}
+			}
 		}
 	}
 
 	return nil
 }
+
+// TODO Images room composite default dimensions
+// TODO Images sdk dimensions
 
 func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, error) {
 	parsed, err := url.Parse(rawUrl)

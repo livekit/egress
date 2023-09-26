@@ -478,8 +478,10 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 			t = c.StreamOutputMaxDuration
 		case types.EgressTypeSegments:
 			t = c.SegmentOutputMaxDuration
+		case types.EgressTypeImages:
+			t = c.ImageOutputMaxDuration
+
 		}
-		// TODO Images
 		if t > 0 && (timeout == 0 || t < timeout) {
 			timeout = t
 		}
@@ -520,7 +522,10 @@ func (c *Controller) updateStartTime(startedAt int64) {
 
 		case types.EgressTypeSegments:
 			o[0].(*config.SegmentConfig).SegmentsInfo.StartedAt = startedAt
-			// TODO Images
+		case types.EgressTypeImages:
+			for _, c := range o {
+				c.(*config.ImageConfig).ImagesInfo.StartedAt = startedAt
+			}
 		}
 	}
 
@@ -562,7 +567,14 @@ func (c *Controller) updateDuration(endedAt int64) {
 			}
 			segmentsInfo.EndedAt = endedAt
 			segmentsInfo.Duration = endedAt - segmentsInfo.StartedAt
-			// TODO Images
+		case types.EgressTypeImages:
+			for _, c := range o {
+				imageInfo := c.(*config.ImageConfig).ImagesInfo
+				if imageInfo.StartedAt == 0 {
+					imageInfo.StartedAt = endedAt
+				}
+				imageInfo.EndedAt = endedAt
+			}
 		}
 	}
 }
