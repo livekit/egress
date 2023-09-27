@@ -42,11 +42,12 @@ type ImageSink struct {
 	startTime        time.Time
 	startRunningTime uint64
 
-	createdImages chan ImageUpdate
+	manifest      *ImageManifest
+	createdImages chan *imageUpdate
 	done          core.Fuse
 }
 
-type ImageUpdate struct {
+type imageUpdate struct {
 	timestamp uint64
 	filename  string
 }
@@ -58,7 +59,8 @@ func newImageSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Image
 		conf:        p,
 		callbacks:   callbacks,
 
-		createdImages: make(chan ImageUpdate, maxPendingUploads),
+		manifest:      createImageManifest(p),
+		createdImages: make(chan *imageUpdate, maxPendingUploads),
 		done:          core.NewFuse(),
 	}, nil
 }
@@ -82,40 +84,40 @@ func (s *ImageSink) Start() error {
 		}
 	}()
 
-	// TODO update manifest
-
 	return nil
 }
 
-func (s *ImageSink) handleNewImage(update *ImageUpdate) error {
+func (s *ImageSink) handleNewImage(update *imageUpdate) error {
 	s.ImagesInfo.ImagesCount++
 
 	filename := update.filename
 	ts := s.getImageTime(update.timestamp)
 	imageLocalPath := path.Join(s.LocalDir, filename)
 	if s.ImageSuffix == livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP {
-		newFilemame := fmt.Sprintf("%s_%s%03d%s", s.ImagePrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000, types.FileExtensionForOutputType[s.OutputType])
-		newImageLocalPath = path.Join(s.LocalDir, newFilename)
+		newFilename := fmt.Sprintf("%s_%s%03d%s", s.ImagePrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000, types.FileExtensionForOutputType[s.OutputType])
+		newImageLocalPath := path.Join(s.LocalDir, newFilename)
 
-		err = os.Rename(imageLocalPath, newImageLocalPath)
+		err := os.Rename(imageLocalPath, newImageLocalPath)
 		if err != nil {
 			return err
 		}
-		filename = newFilemame
+		filename = newFilename
 		imageLocalPath = newImageLocalPath
 
 	}
 
 	imageStoragePath := path.Join(s.StorageDir, filename)
 
-	_, size, err = s.Upload(imageLocalPath, imageStoragePath, s.getImageOutputType(), true)
+	_, size, err := s.Upload(imageLocalPath, imageStoragePath, s.OutputType, true)
 	if err != nil {
 		return err
 	}
 
-	err = s.updateManifest(filename, ts, size)
-	if err != nil {
-		return err
+	if !s.DisableManifest {
+		err = s.updateManifest(filename, ts, size)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -131,18 +133,46 @@ func (s *ImageSink) getImageTime(pts uint64) time.Time {
 	return s.startTime.Add(time.Duration(pts - s.startRunningTime))
 }
 
+func (s *ImageSink) updateManifest(filename string, ts time.Time, size int64) error {
+	s.manifest.imageCreated(filename, ts, size)
+
+	manifestLocalPath := fmt.Sprintf("%s.json", path.Join(s.LocalDir, s.ImagePrefix))
+	manifestStoragePath := fmt.Sprintf("%s.json", path.Join(s.StorageDir, s.ImagePrefix))
+	return s.manifest.updateManifest(s.Uploader, manifestLocalPath, manifestStoragePath)
+}
+
 func (s *ImageSink) NewImage(filepath string, ts uint64) error {
 	if !strings.HasPrefix(filepath, s.LocalDir) {
 		return fmt.Errorf("invalid filepath")
+	}
+
+	filename := filepath[len(s.LocalDir):]
+
+	s.createdImages <- &imageUpdate{
+		filename:  filename,
+		timestamp: ts,
 	}
 
 	return nil
 }
 
 func (s *ImageSink) Close() error {
+	close(s.createdImages)
+	<-s.done.Watch()
 
 	return nil
 }
 
-func (*ImageSink) Cleanup() {
+func (s *ImageSink) Cleanup() {
+	if s.LocalDir == s.StorageDir {
+		return
+	}
+
+	if s.LocalDir != "" {
+		logger.Debugw("removing temporary directory", "path", s.LocalDir)
+		if err := os.RemoveAll(s.LocalDir); err != nil {
+			logger.Errorw("could not delete temp dir", err)
+		}
+	}
+
 }

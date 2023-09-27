@@ -120,7 +120,7 @@ func (o *ImageConfig) updatePrefix(p *PipelineConfig) error {
 	}
 
 	// update config
-	o.ImagePrefix = fmt.Sprintf("%s%s", imagesDir, imagesPrefix)
+	o.ImagePrefix = imagesPrefix
 
 	if o.UploadConfig == nil {
 		o.LocalDir = imagesDir
@@ -136,11 +136,7 @@ func (o *ImageConfig) updatePrefix(p *PipelineConfig) error {
 	}
 
 	// create local directories
-	if imagesDir != "" {
-		if err := os.MkdirAll(path.Join(o.LocalDir, imagesDir), 0755); err != nil {
-			return err
-		}
-	} else if o.LocalDir != "" {
+	if o.LocalDir != "" {
 		if err := os.MkdirAll(o.LocalDir, 0755); err != nil {
 			return err
 		}
