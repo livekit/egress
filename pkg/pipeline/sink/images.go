@@ -16,7 +16,10 @@ package sink
 
 import (
 	"fmt"
+	"os"
 	"path"
+	"strings"
+	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/livekit/egress/pkg/config"
@@ -35,12 +38,16 @@ type ImageSink struct {
 	conf      *config.PipelineConfig
 	callbacks *gstreamer.Callbacks
 
+	initialized      bool
+	startTime        time.Time
+	startRunningTime uint64
+
 	createdImages chan ImageUpdate
 	done          core.Fuse
 }
 
 type ImageUpdate struct {
-	timestamp int64
+	timestamp uint64
 	filename  string
 }
 
@@ -67,47 +74,67 @@ func (s *ImageSink) Start() error {
 		}()
 
 		for update := range s.createdImages {
-			s.ImagesInfo.ImagesCount++
-
-			filename := update.filename
-			imageLocalPath := path.Join(s.LocalDir, filename)
-			if s.ImageSuffix == livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP {
-				location := fmt.Sprintf("%s_%%05d%s", c.ImagePrefix, types.FileExtensionForOutputType[c.OutputType])
-				newFilemame := fmt.Sprintf("%s_%s%03d.ts", s.ImagePrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000, types.FileExtensionForOutputType[s.OutputType])
-			}
-
-			imageStoragePath := path.Join(s.StorageDir, filename)
-
-			_, size, err = s.Upload(imageLocalPath, imageStoragePath, s.getImageOutputType(), true)
+			err = s.handleNewImage(update)
 			if err != nil {
-				return
-			}
-
-			s.SegmentsInfo.Size += size
-
-			err = s.endSegment(update.filename, update.endTime)
-			if err != nil {
-				logger.Errorw("failed to end segment", err, "path", segmentLocalPath)
-				return
-			}
-
-			playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
-			playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
-			s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
-			if err != nil {
+				logger.Errorw("new image handling failed", err)
 				return
 			}
 		}
 	}()
 
-	// TODO setup gst pipeline
-	// TODO filename
+	// TODO update manifest
 
 	return nil
 }
 
+func (s *ImageSink) handleNewImage(update *ImageUpdate) error {
+	s.ImagesInfo.ImagesCount++
+
+	filename := update.filename
+	ts := s.getImageTime(update.timestamp)
+	imageLocalPath := path.Join(s.LocalDir, filename)
+	if s.ImageSuffix == livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP {
+		newFilemame := fmt.Sprintf("%s_%s%03d%s", s.ImagePrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000, types.FileExtensionForOutputType[s.OutputType])
+		newImageLocalPath = path.Join(s.LocalDir, newFilename)
+
+		err = os.Rename(imageLocalPath, newImageLocalPath)
+		if err != nil {
+			return err
+		}
+		filename = newFilemame
+		imageLocalPath = newImageLocalPath
+
+	}
+
+	imageStoragePath := path.Join(s.StorageDir, filename)
+
+	_, size, err = s.Upload(imageLocalPath, imageStoragePath, s.getImageOutputType(), true)
+	if err != nil {
+		return err
+	}
+
+	err = s.updateManifest(filename, ts, size)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *ImageSink) getImageTime(pts uint64) time.Time {
+	if !s.initialized {
+		s.startTime = time.Now()
+		s.startRunningTime = pts
+		s.initialized = true
+	}
+
+	return s.startTime.Add(time.Duration(pts - s.startRunningTime))
+}
+
 func (s *ImageSink) NewImage(filepath string, ts uint64) error {
-	// TODO rename file, upload
+	if !strings.HasPrefix(filepath, s.LocalDir) {
+		return fmt.Errorf("invalid filepath")
+	}
 
 	return nil
 }
