@@ -229,7 +229,7 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 }
 
 func (r *Runner) testTrackCompositeImages(t *testing.T) {
-	if !r.runImagesTests() {
+	if !r.runImageTests() {
 		return
 	}
 
@@ -277,7 +277,7 @@ func (r *Runner) testTrackCompositeImages(t *testing.T) {
 							TrackComposite: trackRequest,
 						},
 					}
-					r.runImagessTest(t, req, test)
+					r.runImagesTest(t, req, test)
 				},
 			)
 			if r.Short {

@@ -56,7 +56,7 @@ func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, filenameSu
 	require.Len(t, res.GetImagesResults(), 1)
 	images := res.GetImagesResults()[0]
 
-	require.Greater(t, segments.ImagesCount, int64(0))
+	require.Greater(t, images.ImagesCount, int64(0))
 
 	// r.verifyImagesOutput(t, p, filenameSuffix, segments.PlaylistName, segments.PlaylistLocation, int(segments.SegmentCount), res, m3u8.PlaylistTypeEvent)
 	// r.verifyManifest(t, p, segments.PlaylistName)

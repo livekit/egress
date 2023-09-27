@@ -79,6 +79,9 @@ type testCase struct {
 	live_playlist  string
 	filenameSuffix livekit.SegmentedFileSuffix
 
+	// used by images tests
+	imageFilenameSuffix livekit.ImageFileSuffix
+
 	// used by sdk tests
 	audioCodec     types.MimeType
 	audioDelay     time.Duration

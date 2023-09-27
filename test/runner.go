@@ -63,6 +63,7 @@ type Runner struct {
 	FileTestsOnly           bool   `yaml:"file_only"`
 	StreamTestsOnly         bool   `yaml:"stream_only"`
 	SegmentTestsOnly        bool   `yaml:"segments_only"`
+	ImageTestsOnly          bool   `yaml:"images_only"`
 	MultiTestsOnly          bool   `yaml:"multi_only"`
 	Muting                  bool   `yaml:"muting"`
 	Dotfiles                bool   `yaml:"dot_files"`
@@ -202,17 +203,21 @@ func (r *Runner) runTrackTests() bool {
 }
 
 func (r *Runner) runFileTests() bool {
-	return !r.StreamTestsOnly && !r.SegmentTestsOnly && !r.MultiTestsOnly
+	return !r.StreamTestsOnly && !r.SegmentTestsOnly && !r.MultiTestsOnly && !r.ImageTestsOnly
 }
 
 func (r *Runner) runStreamTests() bool {
-	return !r.FileTestsOnly && !r.SegmentTestsOnly && !r.MultiTestsOnly
+	return !r.FileTestsOnly && !r.SegmentTestsOnly && !r.MultiTestsOnly && !r.ImageTestsOnly
 }
 
 func (r *Runner) runSegmentTests() bool {
-	return !r.FileTestsOnly && !r.StreamTestsOnly && !r.MultiTestsOnly
+	return !r.FileTestsOnly && !r.StreamTestsOnly && !r.MultiTestsOnly && !r.ImageTestsOnly
+}
+
+func (r *Runner) runImageTests() bool {
+	return !r.FileTestsOnly && !r.StreamTestsOnly && !r.SegmentTestsOnly && !r.MultiTestsOnly
 }
 
 func (r *Runner) runMultiTests() bool {
-	return !r.FileTestsOnly && !r.StreamTestsOnly && !r.SegmentTestsOnly
+	return !r.FileTestsOnly && !r.StreamTestsOnly && !r.SegmentTestsOnly && !r.ImageTestsOnly
 }

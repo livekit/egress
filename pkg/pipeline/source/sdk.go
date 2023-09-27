@@ -214,6 +214,7 @@ func (s *SDKSource) awaitParticipant(identity string) (uint32, uint32, error) {
 		}
 	}
 
+	var w, h uint32
 	for _, t := range rp.Tracks() {
 		if t.TrackInfo().Type == livekit.TrackType_VIDEO {
 			w = t.TrackInfo().Width
@@ -246,7 +247,7 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, 
 	deadline := time.After(subscriptionTimeout)
 	tracks, err := s.subscribeToTracks(expecting, deadline)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 
 	for i := 0; i < trackCount; i++ {
@@ -262,7 +263,7 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, 
 
 	var w, h uint32
 	for _, t := range tracks {
-		if t.TrackInfo().Type() == livekit.TrackType_VIDEO {
+		if t.TrackInfo().Type == livekit.TrackType_VIDEO {
 			w = t.TrackInfo().Width
 			h = t.TrackInfo().Height
 		}
