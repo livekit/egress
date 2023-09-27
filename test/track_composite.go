@@ -228,6 +228,65 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 	})
 }
 
+func (r *Runner) testTrackCompositeImages(t *testing.T) {
+	if !r.runImagesTests() {
+		return
+	}
+
+	t.Run("TrackComposite/Images", func(t *testing.T) {
+		for _, test := range []*testCase{
+			{
+				name:       "VP8",
+				audioCodec: types.MimeTypeOpus,
+				videoCodec: types.MimeTypeH264,
+				filename:   "tcs_{publisher_identity}_vp8_{time}",
+			},
+		} {
+			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec,
+				func(t *testing.T, audioTrackID, videoTrackID string) {
+					var aID, vID string
+					if !test.audioOnly {
+						vID = videoTrackID
+					}
+					if !test.videoOnly {
+						aID = audioTrackID
+					}
+
+					imageOutput := &livekit.ImageOutput{
+						CaptureInterval: 5,
+						Width:           1280,
+						Height:          720,
+						FilenamePrefix:  test.filename,
+					}
+
+					trackRequest := &livekit.TrackCompositeEgressRequest{
+						RoomName:     r.room.Name(),
+						AudioTrackId: aID,
+						VideoTrackId: vID,
+						ImageOutputs: []*livekit.ImageOutput{imageOutput},
+					}
+					if test.options != nil {
+						trackRequest.Options = &livekit.TrackCompositeEgressRequest_Advanced{
+							Advanced: test.options,
+						}
+					}
+
+					req := &rpc.StartEgressRequest{
+						EgressId: utils.NewGuid(utils.EgressPrefix),
+						Request: &rpc.StartEgressRequest_TrackComposite{
+							TrackComposite: trackRequest,
+						},
+					}
+					r.runImagessTest(t, req, test)
+				},
+			)
+			if r.Short {
+				return
+			}
+		}
+	})
+}
+
 func (r *Runner) testTrackCompositeMulti(t *testing.T) {
 	if !r.runMultiTests() {
 		return
