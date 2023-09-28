@@ -136,6 +136,8 @@ func (s *SegmentSink) Start() error {
 				if count%2 > 0 {
 					err = s.uploadPlaylist()
 				}
+			} else {
+				err = s.uploadPlaylist()
 			}
 			if err != nil {
 				return
