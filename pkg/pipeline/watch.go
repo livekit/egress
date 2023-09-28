@@ -113,12 +113,6 @@ func (c *Controller) gstLog(level gst.DebugLevel, file, function string, line in
 		msg = fmt.Sprintf("[gst %s] %s", lvl, message)
 	}
 	args := []interface{}{"caller", fmt.Sprintf("%s:%d", file, line)}
-	if obj != nil {
-		name, err := obj.GetProperty("name")
-		if err == nil {
-			args = append(args, "object", name.(string))
-		}
-	}
 	c.gstLogger.Debugw(msg, args...)
 }
 
