@@ -174,10 +174,6 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 	return nil
 }
 
-func (p *PipelineConfig) HasEncodedOutput() bool {
-	return p.GetFileConfig() != nil || p.GetStreamConfig() != nil || p.GetSegmentConfig() != nil
-}
-
 func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) error {
 	switch o := req.Output.(type) {
 	case *livekit.TrackEgressRequest_File:

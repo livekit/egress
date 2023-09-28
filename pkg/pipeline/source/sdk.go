@@ -381,7 +381,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		}
 		if s.VideoInCodec != s.VideoOutCodec {
 			s.VideoDecoding = true
-			if s.HasEncodedOutput() {
+			if len(s.GetEncodedOutputs()) > 0 {
 				s.VideoEncoding = true
 			}
 		}

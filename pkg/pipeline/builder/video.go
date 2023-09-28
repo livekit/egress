@@ -87,7 +87,7 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 		getPad = func() *gst.Pad {
 			return tee.GetRequestPad("src_%u")
 		}
-	} else {
+	} else if len(p.GetEncodedOutputs()) > 0 {
 		queue, err := gstreamer.BuildQueue("video_queue", p.Latency, true)
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
@@ -102,7 +102,6 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 	}
 
 	b.bin.SetGetSinkPad(func(name string) *gst.Pad {
-		fmt.Println("FOO PAD", name)
 		if strings.HasPrefix(name, "image") {
 			return b.rawVideoTee.GetRequestPad("src_%u")
 		} else {
