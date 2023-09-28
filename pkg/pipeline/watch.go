@@ -295,6 +295,16 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 				return err
 			}
 			logger.Debugw("received GstMultiFileSink message", "location", location, "timestamp", ts, "source", msg.Source())
+
+			sink := c.getImageSink(msg.Source())
+			if sink == nil {
+				return errors.ErrSinkNotFound
+			}
+
+			err = sink.NewImage(location, ts)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -363,4 +373,22 @@ func (c *Controller) getSegmentSink() *sink.SegmentSink {
 	}
 
 	return s[0].(*sink.SegmentSink)
+}
+
+func (c *Controller) getImageSink(name string) *sink.ImageSink {
+	id := name[len("multifilesink_"):]
+
+	s := c.sinks[types.EgressTypeImages]
+	if len(s) == 0 {
+		return nil
+	}
+
+	// Use a map here?
+	for _, si := range s {
+		if si.(*sink.ImageSink).Id == id {
+			return si.(*sink.ImageSink)
+		}
+	}
+
+	return nil
 }

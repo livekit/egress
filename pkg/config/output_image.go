@@ -29,6 +29,8 @@ import (
 type ImageConfig struct {
 	outputConfig
 
+	Id string // Used internally to map a gst Bin/element back to a sink and as part of the path
+
 	ImagesInfo     *livekit.ImagesInfo
 	LocalDir       string
 	StorageDir     string
@@ -66,6 +68,8 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput) (*ImageConf
 		outputConfig: outputConfig{
 			OutputType: outputType,
 		},
+
+		Id:              utils.NewGuid(""),
 		ImagesInfo:      &livekit.ImagesInfo{},
 		ImagePrefix:     clean(images.FilenamePrefix),
 		ImageSuffix:     images.FilenameSuffix,
@@ -130,9 +134,7 @@ func (o *ImageConfig) updatePrefix(p *PipelineConfig) error {
 		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
 		// Append a "/" to the path for consistency with the "UploadConfig == nil" case
 
-		slug := utils.NewGuid("")
-
-		o.LocalDir = path.Join(TmpDir, p.Info.EgressId, slug) + "/"
+		o.LocalDir = path.Join(TmpDir, p.Info.EgressId, o.Id) + "/"
 	}
 
 	// create local directories

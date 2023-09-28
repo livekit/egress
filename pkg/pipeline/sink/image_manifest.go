@@ -56,7 +56,7 @@ func (m *ImageManifest) updateManifest(u uploader.Uploader, localFilepath, stora
 		return err
 	}
 
-	b, err := json.Marshal(manifest)
+	b, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}

@@ -23,7 +23,6 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/utils"
 	"github.com/tinyzimmer/go-gst/gst"
 )
 
@@ -48,9 +47,7 @@ func BuildImageBins(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) ([]*
 }
 
 func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
-	id := utils.NewGuid("")
-
-	b := pipeline.NewBin(fmt.Sprintf("image_%s", id))
+	b := pipeline.NewBin(fmt.Sprintf("image_%s", c.Id))
 
 	var err error
 	var fakeAudio *gst.Element
@@ -61,7 +58,7 @@ func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *confi
 		}
 	}
 
-	queue, err := gstreamer.BuildQueue(fmt.Sprintf("image_queue_%s", id), imageQueueLatency, true)
+	queue, err := gstreamer.BuildQueue(fmt.Sprintf("image_queue_%s", c.Id), imageQueueLatency, true)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +123,7 @@ func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *confi
 		return nil, errors.ErrNoCompatibleCodec
 	}
 
-	sink, err := gst.NewElement("multifilesink")
+	sink, err := gst.NewElementWithName("multifilesink", fmt.Sprintf("multifilesink_%s", c.Id))
 	if err != nil {
 		return nil, err
 	}
