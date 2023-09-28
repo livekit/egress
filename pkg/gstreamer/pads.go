@@ -98,6 +98,7 @@ func createGhostPadsLocked(src, sink *Bin, queue *gst.Element) (*gst.GhostPad, *
 }
 
 func matchPadsLocked(src, sink *Bin) (*gst.Pad, *gst.Pad, error) {
+	fmt.Println("matchPadsLocked", src.bin.GetName(), sink.bin.GetName())
 	var srcPad, sinkPad *gst.Pad
 	var srcTemplates, sinkTemplates []*padTemplate
 	if src.getSinkPad != nil {

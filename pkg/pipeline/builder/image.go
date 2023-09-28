@@ -52,6 +52,11 @@ func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *confi
 
 	b := pipeline.NewBin(fmt.Sprintf("image_%s", id))
 
+	fakeAudio, err := gst.NewElement("fakesink")
+	if err != nil {
+		return nil, err
+	}
+
 	queue, err := gstreamer.BuildQueue(fmt.Sprintf("image_queue_%s", id), imageQueueLatency, true)
 	if err != nil {
 		return nil, err
@@ -59,6 +64,14 @@ func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *confi
 	if err := b.AddElements(queue); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
+
+	b.SetGetSrcPad(func(name string) *gst.Pad {
+		if name == "audio" {
+			return fakeAudio.GetStaticPad("sink")
+		} else {
+			return queue.GetStaticPad("sink")
+		}
+	})
 
 	videoRate, err := gst.NewElement("videorate")
 	if err != nil {

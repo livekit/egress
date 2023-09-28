@@ -34,6 +34,7 @@ func (r *Runner) testTrackComposite(t *testing.T) {
 	r.testTrackCompositeFile(t)
 	r.testTrackCompositeStream(t)
 	r.testTrackCompositeSegments(t)
+	r.testTrackCompositeImages(t)
 	r.testTrackCompositeMulti(t)
 }
 
@@ -256,7 +257,7 @@ func (r *Runner) testTrackCompositeImages(t *testing.T) {
 						CaptureInterval: 5,
 						Width:           1280,
 						Height:          720,
-						FilenamePrefix:  test.filename,
+						FilenamePrefix:  r.getFilePath(test.filename),
 					}
 
 					trackRequest := &livekit.TrackCompositeEgressRequest{
