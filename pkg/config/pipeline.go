@@ -110,7 +110,8 @@ type AudioConfig struct {
 
 type VideoConfig struct {
 	VideoEnabled     bool
-	VideoTranscoding bool
+	VideoDecoding    bool
+	VideoEncoding    bool
 	VideoOutCodec    types.MimeType
 	VideoProfile     types.Profile
 	Width            int32
@@ -218,7 +219,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		if !req.RoomComposite.AudioOnly {
 			p.VideoEnabled = true
 			p.VideoInCodec = types.MimeTypeRawVideo
-			p.VideoTranscoding = true
+			p.VideoDecoding = true
 		}
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_only and video_only")
@@ -267,7 +268,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		if !req.Web.AudioOnly {
 			p.VideoEnabled = true
 			p.VideoInCodec = types.MimeTypeRawVideo
-			p.VideoTranscoding = true
+			p.VideoDecoding = true
 		}
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_only and video_only")
@@ -304,7 +305,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.AudioEnabled = true
 		p.AudioTranscoding = true
 		p.VideoEnabled = true
-		p.VideoTranscoding = true
+		p.VideoDecoding = true
 		p.Identity = req.Participant.Identity
 		if p.Identity == "" {
 			return errors.ErrInvalidInput("identity")
@@ -346,7 +347,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		if videoTrackID := req.TrackComposite.VideoTrackId; videoTrackID != "" {
 			p.VideoEnabled = true
 			p.VideoTrackID = videoTrackID
-			p.VideoTranscoding = true
+			p.VideoDecoding = true
 		}
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_track_id or video_track_id")

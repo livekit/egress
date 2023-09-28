@@ -52,9 +52,13 @@ func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *confi
 
 	b := pipeline.NewBin(fmt.Sprintf("image_%s", id))
 
-	fakeAudio, err := gst.NewElement("fakesink")
-	if err != nil {
-		return nil, err
+	var err error
+	var fakeAudio *gst.Element
+	if p.AudioEnabled {
+		fakeAudio, err = gst.NewElement("fakesink")
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	queue, err := gstreamer.BuildQueue(fmt.Sprintf("image_queue_%s", id), imageQueueLatency, true)

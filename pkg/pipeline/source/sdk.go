@@ -380,7 +380,10 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			s.VideoOutCodec = ts.MimeType
 		}
 		if s.VideoInCodec != s.VideoOutCodec {
-			s.VideoTranscoding = true
+			s.VideoDecoding = true
+			if s.HasEncodedOutput() {
+				s.VideoEncoding = true
+			}
 		}
 
 		writer, err := s.createWriter(track, pub, rp, ts)

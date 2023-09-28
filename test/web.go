@@ -71,7 +71,7 @@ func (r *Runner) testWebFile(t *testing.T) {
 		}
 
 		r.runFileTest(t, req, &testCase{
-			expectVideoTranscoding: true,
+			expectVideoEncoding: true,
 		})
 	})
 }
@@ -96,7 +96,7 @@ func (r *Runner) testWebStream(t *testing.T) {
 		}
 
 		r.runStreamTest(t, req, &testCase{
-			expectVideoTranscoding: true,
+			expectVideoEncoding: true,
 		})
 	})
 }
@@ -129,7 +129,7 @@ func (r *Runner) testWebSegments(t *testing.T) {
 		}
 
 		r.runSegmentsTest(t, req, &testCase{
-			expectVideoTranscoding: true,
+			expectVideoEncoding: true,
 		})
 	})
 }

@@ -79,6 +79,9 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 		p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
 		p.OutputCount++
 		p.FinalizationRequired = true
+		if p.VideoEnabled {
+			p.VideoEncoding = true
+		}
 
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
 		if len(streams)+len(segments) == 0 {
@@ -107,6 +110,9 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 
 		p.Outputs[types.EgressTypeStream] = []OutputConfig{conf}
 		p.OutputCount += len(stream.Urls)
+		if p.VideoEnabled {
+			p.VideoEncoding = true
+		}
 
 		streamInfoList := make([]*livekit.StreamInfo, 0, len(conf.StreamInfo))
 		for _, info := range conf.StreamInfo {
@@ -145,6 +151,9 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 		p.Outputs[types.EgressTypeSegments] = []OutputConfig{conf}
 		p.OutputCount++
 		p.FinalizationRequired = true
+		if p.VideoEnabled {
+			p.VideoEncoding = true
+		}
 
 		p.Info.SegmentResults = []*livekit.SegmentsInfo{conf.SegmentsInfo}
 		if len(streams)+len(segments) == 0 {
@@ -163,6 +172,10 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 	}
 
 	return nil
+}
+
+func (p *PipelineConfig) HasEncodedOutput() bool {
+	return p.GetFileConfig() != nil || p.GetStreamConfig() != nil || p.GetSegmentConfig() != nil
 }
 
 func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) error {

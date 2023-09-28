@@ -227,7 +227,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 			case types.MimeTypeH264:
 				require.Equal(t, "h264", stream.CodecName)
 
-				if p.VideoTranscoding {
+				if p.VideoEncoding {
 					switch p.VideoProfile {
 					case types.ProfileBaseline:
 						require.Equal(t, "Constrained Baseline", stream.Profile)
@@ -250,7 +250,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 			case types.OutputTypeMP4:
 				require.Equal(t, "h264", stream.CodecName)
 
-				if p.VideoTranscoding {
+				if p.VideoEncoding {
 					// bitrate, not available for HLS or WebM
 					bitrate, err := strconv.Atoi(stream.BitRate)
 					require.NoError(t, err)
@@ -274,7 +274,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 			case types.OutputTypeHLS:
 				require.Equal(t, "h264", stream.CodecName)
 
-				if p.VideoTranscoding {
+				if p.VideoEncoding {
 					// dimensions
 					require.Equal(t, p.Width, stream.Width)
 					require.Equal(t, p.Height, stream.Height)

@@ -57,9 +57,9 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 	t.Run("RoomComposite/File", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
-				name:                   "Base",
-				filename:               "r_{room_name}_{time}.mp4",
-				expectVideoTranscoding: true,
+				name:                "Base",
+				filename:            "r_{room_name}_{time}.mp4",
+				expectVideoEncoding: true,
 			},
 			{
 				name:      "Video-Only",
@@ -67,8 +67,8 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 				options: &livekit.EncodingOptions{
 					VideoCodec: livekit.VideoCodec_H264_HIGH,
 				},
-				filename:               "r_{room_name}_video_{time}.mp4",
-				expectVideoTranscoding: true,
+				filename:            "r_{room_name}_video_{time}.mp4",
+				expectVideoEncoding: true,
 			},
 			{
 				name:      "Audio-Only",
@@ -77,8 +77,8 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 				options: &livekit.EncodingOptions{
 					AudioCodec: livekit.AudioCodec_OPUS,
 				},
-				filename:               "r_{room_name}_audio_{time}",
-				expectVideoTranscoding: false,
+				filename:            "r_{room_name}_audio_{time}",
+				expectVideoEncoding: false,
 			},
 		} {
 			r.runRoomTest(t, test.name, types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
@@ -147,7 +147,7 @@ func (r *Runner) testRoomCompositeStream(t *testing.T) {
 				},
 			}
 
-			r.runStreamTest(t, req, &testCase{expectVideoTranscoding: true})
+			r.runStreamTest(t, req, &testCase{expectVideoEncoding: true})
 		})
 		if r.Short {
 			return
@@ -202,11 +202,11 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 					Height:       1080,
 					VideoBitrate: 4500,
 				},
-				filename:               "r_{room_name}_{time}",
-				playlist:               "r_{room_name}_{time}.m3u8",
-				live_playlist:          "r_live_{room_name}_{time}.m3u8",
-				filenameSuffix:         livekit.SegmentedFileSuffix_TIMESTAMP,
-				expectVideoTranscoding: true,
+				filename:            "r_{room_name}_{time}",
+				playlist:            "r_{room_name}_{time}.m3u8",
+				live_playlist:       "r_live_{room_name}_{time}.m3u8",
+				filenameSuffix:      livekit.SegmentedFileSuffix_TIMESTAMP,
+				expectVideoEncoding: true,
 			},
 			&testCase{
 				options: &livekit.EncodingOptions{

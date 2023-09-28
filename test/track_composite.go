@@ -110,7 +110,7 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 					},
 				}
 
-				test.expectVideoTranscoding = true
+				test.expectVideoEncoding = true
 				r.runFileTest(t, req, test)
 			})
 			if r.Short {
@@ -141,7 +141,7 @@ func (r *Runner) testTrackCompositeStream(t *testing.T) {
 				},
 			}
 
-			r.runStreamTest(t, req, &testCase{expectVideoTranscoding: true})
+			r.runStreamTest(t, req, &testCase{expectVideoEncoding: true})
 		},
 	)
 }
@@ -217,7 +217,7 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 							TrackComposite: trackRequest,
 						},
 					}
-					test.expectVideoTranscoding = true
+					test.expectVideoEncoding = true
 
 					r.runSegmentsTest(t, req, test)
 				},

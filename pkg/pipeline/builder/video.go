@@ -219,11 +219,10 @@ func (b *VideoBin) buildWebInput() error {
 		return err
 	}
 
-	if b.conf.VideoTranscoding {
-		if err = b.addEncoder(); err != nil {
-			return err
-		}
+	if err = b.addDecodedVideoSink(); err != nil {
+		return err
 	}
+
 	return nil
 }
 
@@ -231,7 +230,7 @@ func (b *VideoBin) buildSDKInput() error {
 	b.pads = make(map[string]*gst.Pad)
 
 	// add selector first so pads can be created
-	if b.conf.VideoTranscoding {
+	if b.conf.VideoDecoding {
 		if err := b.addSelector(); err != nil {
 			return err
 		}
@@ -243,7 +242,7 @@ func (b *VideoBin) buildSDKInput() error {
 		}
 	}
 
-	if b.conf.VideoTranscoding {
+	if b.conf.VideoDecoding {
 		b.bin.SetGetSrcPad(b.getSrcPad)
 		b.bin.SetEOSFunc(func() bool {
 			b.mu.Lock()
@@ -265,7 +264,7 @@ func (b *VideoBin) buildSDKInput() error {
 				return err
 			}
 		}
-		if err := b.addEncoder(); err != nil {
+		if err := b.addDecodedVideoSink(); err != nil {
 			return err
 		}
 	}
@@ -279,7 +278,7 @@ func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
 		return err
 	}
 
-	if b.conf.VideoTranscoding {
+	if b.conf.VideoDecoding {
 		b.createSrcPad(ts.TrackID)
 	}
 
@@ -287,7 +286,7 @@ func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
 		return err
 	}
 
-	if b.conf.VideoTranscoding {
+	if b.conf.VideoDecoding {
 		return b.setSelectorPad(ts.TrackID)
 	}
 
@@ -332,7 +331,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource) (*gstreamer.Bin, error
 			return nil, err
 		}
 
-		if b.conf.VideoTranscoding {
+		if b.conf.VideoDecoding {
 			avDecH264, err := gst.NewElement("avdec_h264")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
@@ -370,7 +369,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource) (*gstreamer.Bin, error
 			return nil, err
 		}
 
-		if b.conf.VideoTranscoding {
+		if b.conf.VideoDecoding {
 			vp8Dec, err := gst.NewElement("vp8dec")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
@@ -398,7 +397,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource) (*gstreamer.Bin, error
 			return nil, err
 		}
 
-		if b.conf.VideoTranscoding {
+		if b.conf.VideoDecoding {
 			vp9Dec, err := gst.NewElement("vp9dec")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
@@ -499,15 +498,6 @@ func (b *VideoBin) addSelector() error {
 }
 
 func (b *VideoBin) addEncoder() error {
-	var err error
-	b.rawVideoTee, err = gst.NewElement("tee")
-	if err != nil {
-		return err
-	}
-	if err = b.bin.AddElement(b.rawVideoTee); err != nil {
-		return err
-	}
-
 	videoQueue, err := gstreamer.BuildQueue("video_encoder_queue", b.conf.Latency, false)
 	if err != nil {
 		return err
@@ -602,6 +592,27 @@ func (b *VideoBin) addEncoder() error {
 	default:
 		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", b.conf.VideoOutCodec))
 	}
+
+}
+
+func (b *VideoBin) addDecodedVideoSink() error {
+	var err error
+	b.rawVideoTee, err = gst.NewElement("tee")
+	if err != nil {
+		return err
+	}
+	if err = b.bin.AddElement(b.rawVideoTee); err != nil {
+		return err
+	}
+
+	if b.conf.VideoEncoding {
+		err = b.addEncoder()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func addVideoConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {

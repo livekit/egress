@@ -96,7 +96,7 @@ type testCase struct {
 	// used by track tests
 	outputType types.OutputType
 
-	expectVideoTranscoding bool
+	expectVideoEncoding bool
 }
 
 func (r *Runner) awaitIdle(t *testing.T) {
