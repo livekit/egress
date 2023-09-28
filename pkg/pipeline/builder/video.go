@@ -104,9 +104,11 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 	b.bin.SetGetSinkPad(func(name string) *gst.Pad {
 		if strings.HasPrefix(name, "image") {
 			return b.rawVideoTee.GetRequestPad("src_%u")
-		} else {
+		} else if getPad != nil {
 			return getPad()
 		}
+
+		return nil
 	})
 
 	return pipeline.AddSourceBin(b.bin)
