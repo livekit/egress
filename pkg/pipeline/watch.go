@@ -46,9 +46,13 @@ const (
 	msgFirstSampleMetadata = "FirstSampleMetadata"
 	msgFragmentOpened      = "splitmuxsink-fragment-opened"
 	msgFragmentClosed      = "splitmuxsink-fragment-closed"
+	msgGstMultiFileSink    = "GstMultiFileSink"
 
 	fragmentLocation    = "location"
 	fragmentRunningTime = "running-time"
+
+	gstMultiFileSinkFilename  = "filename"
+	gstMultiFileSinkTimestamp = "timestamp"
 
 	// common gst errors
 	msgWrongThread = "Called from wrong thread"
@@ -284,6 +288,13 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 			logger.Debugw("received FirstSampleMetadata message", "startDate", startDate)
 
 			c.getSegmentSink().UpdateStartDate(startDate)
+
+		case msgGstMultiFileSink:
+			location, ts, err := getImageInformationFromGstStructure(s)
+			if err != nil {
+				return err
+			}
+			logger.Debugw("received GstMultiFileSink message", "location", location, "timestamp", ts, "source", msg.Source())
 		}
 	}
 
@@ -320,6 +331,29 @@ func getFirstSampleMetadataFromGstStructure(s *gst.Structure) (startDate time.Ti
 	}
 
 	return time.Unix(0, firstSampleMetadata.StartDate), nil
+}
+
+func getImageInformationFromGstStructure(s *gst.Structure) (string, uint64, error) {
+	loc, err := s.GetValue(gstMultiFileSinkFilename)
+	if err != nil {
+		return "", 0, err
+	}
+	filepath, ok := loc.(string)
+	if !ok {
+		return "", 0, errors.ErrGstPipelineError(errors.New("invalid type for location"))
+	}
+
+	t, err := s.GetValue(gstMultiFileSinkTimestamp)
+	if err != nil {
+		return "", 0, err
+	}
+	ti, ok := t.(uint64)
+	if !ok {
+		return "", 0, errors.ErrGstPipelineError(errors.New("invalid type for time"))
+	}
+
+	return filepath, ti, nil
+
 }
 
 func (c *Controller) getSegmentSink() *sink.SegmentSink {
