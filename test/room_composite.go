@@ -255,6 +255,53 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 	})
 }
 
+func (r *Runner) testRoomCompositeImages(t *testing.T) {
+	if !r.runImageTests() {
+		return
+	}
+
+	r.runRoomTest(t, "RoomComposite/Images", types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
+		for _, test := range []*testCase{
+			&testCase{
+				options: &livekit.EncodingOptions{
+					Width:  640,
+					Height: 360,
+				},
+				filename:            "r_{room_name}_{time}",
+				imageFilenameSuffix: livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP,
+			},
+		} {
+			imageOutput := &livekit.ImageOutput{
+				FilenamePrefix: r.getFilePath(test.filename),
+				FilenameSuffix: test.imageFilenameSuffix,
+			}
+
+			// TODO upload
+
+			room := &livekit.RoomCompositeEgressRequest{
+				RoomName:       r.RoomName,
+				Layout:         "grid-dark",
+				AudioOnly:      test.audioOnly,
+				SegmentOutputs: []*livekit.SegmentedFileOutput{segmentOutput},
+			}
+			if test.options != nil {
+				room.Options = &livekit.RoomCompositeEgressRequest_Advanced{
+					Advanced: test.options,
+				}
+			}
+
+			req := &rpc.StartEgressRequest{
+				EgressId: utils.NewGuid(utils.EgressPrefix),
+				Request: &rpc.StartEgressRequest_RoomComposite{
+					RoomComposite: room,
+				},
+			}
+
+			r.runImagesTest(t, req, test)
+		}
+	})
+}
+
 func (r *Runner) testRoomCompositeMulti(t *testing.T) {
 	if !r.runMultiTests() {
 		return

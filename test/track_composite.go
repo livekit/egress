@@ -260,6 +260,8 @@ func (r *Runner) testTrackCompositeImages(t *testing.T) {
 						FilenamePrefix:  r.getFilePath(test.filename),
 					}
 
+					// TODO Upload
+
 					trackRequest := &livekit.TrackCompositeEgressRequest{
 						RoomName:     r.room.Name(),
 						AudioTrackId: aID,
