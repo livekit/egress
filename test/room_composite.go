@@ -38,6 +38,7 @@ func (r *Runner) testRoomComposite(t *testing.T) {
 	r.testRoomCompositeFile(t)
 	r.testRoomCompositeStream(t)
 	r.testRoomCompositeSegments(t)
+	r.testRoomCompositeImages(t)
 	r.testRoomCompositeMulti(t)
 }
 

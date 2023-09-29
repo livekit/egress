@@ -229,7 +229,7 @@ func (p *PipelineConfig) updateImageOutputs(req ImageOutput) error {
 		p.OutputCount++
 		p.FinalizationRequired = true
 
-		p.Info.ImagesResults = append(p.Info.ImagesResults, conf.ImagesInfo)
+		p.Info.ImageResults = append(p.Info.ImageResults, conf.ImagesInfo)
 	}
 
 	return nil

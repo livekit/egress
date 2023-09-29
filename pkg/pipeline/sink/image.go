@@ -88,7 +88,7 @@ func (s *ImageSink) Start() error {
 }
 
 func (s *ImageSink) handleNewImage(update *imageUpdate) error {
-	s.ImagesInfo.ImagesCount++
+	s.ImagesInfo.ImageCount++
 
 	filename := update.filename
 	ts := s.getImageTime(update.timestamp)
