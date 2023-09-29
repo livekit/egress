@@ -215,7 +215,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 func (p *PipelineConfig) updateImageOutputs(req ImageOutput) error {
 	images := req.GetImageOutputs()
 
-	if !p.VideoEnabled {
+	if len(images) > 0 && !p.VideoEnabled {
 		return errors.ErrInvalidInput("audio_only")
 	}
 
