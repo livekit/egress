@@ -280,10 +280,10 @@ func (r *Runner) testRoomCompositeImages(t *testing.T) {
 			// TODO upload
 
 			room := &livekit.RoomCompositeEgressRequest{
-				RoomName:       r.RoomName,
-				Layout:         "grid-dark",
-				AudioOnly:      test.audioOnly,
-				SegmentOutputs: []*livekit.SegmentedFileOutput{segmentOutput},
+				RoomName:     r.RoomName,
+				Layout:       "grid-dark",
+				AudioOnly:    test.audioOnly,
+				ImageOutputs: []*livekit.ImageOutput{imageOutput},
 			}
 			if test.options != nil {
 				room.Options = &livekit.RoomCompositeEgressRequest_Advanced{
