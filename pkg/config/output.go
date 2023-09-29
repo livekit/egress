@@ -148,6 +148,14 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 		}
 	}
 
+	if segmentConf := p.Outputs[types.EgressTypeSegments]; segmentConf != nil {
+		// double the segment length
+		p.KeyFrameInterval = float64(2 * segmentConf.(*SegmentConfig).SegmentDuration)
+	} else if p.KeyFrameInterval == 0 && p.Outputs[types.EgressTypeStream] != nil {
+		// default 4s for streams
+		p.KeyFrameInterval = 4
+	}
+
 	if p.OutputCount == 0 {
 		return errors.ErrInvalidInput("output")
 	}
