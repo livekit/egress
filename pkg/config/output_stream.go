@@ -71,10 +71,5 @@ func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []str
 		p.AudioOutCodec = types.MimeTypeRawAudio
 	}
 
-	// Use a 4s default key frame interval for streaming
-	if p.KeyFrameInterval == 0 {
-		p.KeyFrameInterval = 4
-	}
-
 	return conf, nil
 }
