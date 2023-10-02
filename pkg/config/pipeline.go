@@ -589,10 +589,18 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 				o.StorageDir = stringReplace(o.StorageDir, replacements)
 				o.ImagePrefix = stringReplace(o.ImagePrefix, replacements)
 				if o.Width == 0 {
-					o.Width = int32(w)
+					if w != 0 {
+						o.Width = int32(w)
+					} else {
+						o.Width = p.VideoConfig.Width
+					}
 				}
 				if o.Height == 0 {
-					o.Height = int32(h)
+					if h != 0 {
+						o.Height = int32(h)
+					} else {
+						o.Height = p.VideoConfig.Height
+					}
 				}
 			}
 		}
