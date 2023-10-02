@@ -155,13 +155,13 @@ func (s *SegmentSink) handleClosedSegment(update SegmentUpdate) {
 
 func (s *SegmentSink) handlePlaylistUpdates(update SegmentUpdate) error {
 	s.segmentLock.Lock()
-	defer s.segmentLock.Unlock()
-
 	t, ok := s.openSegmentsStartTime[update.filename]
 	if !ok {
+		s.segmentLock.Unlock()
 		return fmt.Errorf("no open segment with the name %s", update.filename)
 	}
 	delete(s.openSegmentsStartTime, update.filename)
+	s.segmentLock.Unlock()
 
 	duration := float64(time.Duration(update.endTime-t)) / float64(time.Second)
 	segmentStartTime := s.startTime.Add(time.Duration(t - s.startRunningTime))
@@ -180,6 +180,7 @@ func (s *SegmentSink) handlePlaylistUpdates(update SegmentUpdate) error {
 			return err
 		}
 	}
+	s.playlistLock.Unlock()
 
 	// throttle playlist uploads
 	s.throttle(func() {
