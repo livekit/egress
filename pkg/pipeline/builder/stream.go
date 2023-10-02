@@ -99,8 +99,6 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*St
 	}
 
 	b.SetGetSrcPad(func(name string) *gst.Pad {
-		fmt.Println("NAME", name)
-
 		return mux.GetRequestPad(name)
 	})
 
