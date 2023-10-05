@@ -39,6 +39,7 @@ const (
 	EgressTypeWebsocket EgressType = "websocket"
 	EgressTypeFile      EgressType = "file"
 	EgressTypeSegments  EgressType = "segments"
+	EgressTypeImages    EgressType = "images"
 
 	// input types
 	MimeTypeAAC      MimeType = "audio/aac"
@@ -47,6 +48,7 @@ const (
 	MimeTypeH264     MimeType = "video/h264"
 	MimeTypeVP8      MimeType = "video/vp8"
 	MimeTypeVP9      MimeType = "video/vp9"
+	MimeTypeJPEG     MimeType = "image/jpeg"
 	MimeTypeRawVideo MimeType = "video/x-raw"
 
 	// video profiles
@@ -62,6 +64,7 @@ const (
 	OutputTypeMP4         OutputType = "video/mp4"
 	OutputTypeTS          OutputType = "video/mp2t"
 	OutputTypeWebM        OutputType = "video/webm"
+	OutputTypeJPEG        OutputType = "image/jpeg"
 	OutputTypeRTMP        OutputType = "rtmp"
 	OutputTypeHLS         OutputType = "application/x-mpegurl"
 	OutputTypeJSON        OutputType = "application/json"
@@ -75,6 +78,7 @@ const (
 	FileExtensionTS   = ".ts"
 	FileExtensionWebM = ".webm"
 	FileExtensionM3U8 = ".m3u8"
+	FileExtensionJPEG = ".jpeg"
 )
 
 var (
@@ -105,6 +109,7 @@ var (
 		FileExtensionTS:   {},
 		FileExtensionWebM: {},
 		FileExtensionM3U8: {},
+		FileExtensionJPEG: {},
 	}
 
 	FileExtensionForOutputType = map[OutputType]FileExtension{
@@ -115,6 +120,7 @@ var (
 		OutputTypeTS:   FileExtensionTS,
 		OutputTypeWebM: FileExtensionWebM,
 		OutputTypeHLS:  FileExtensionM3U8,
+		OutputTypeJPEG: FileExtensionJPEG,
 	}
 
 	CodecCompatibility = map[OutputType]map[MimeType]bool{

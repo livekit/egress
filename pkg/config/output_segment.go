@@ -44,10 +44,10 @@ type SegmentConfig struct {
 
 func (p *PipelineConfig) GetSegmentConfig() *SegmentConfig {
 	o, ok := p.Outputs[types.EgressTypeSegments]
-	if !ok {
+	if !ok || len(o) == 0 {
 		return nil
 	}
-	return o.(*SegmentConfig)
+	return o[0].(*SegmentConfig)
 }
 
 // segments should always be added last, so we can check keyframe interval from file/stream

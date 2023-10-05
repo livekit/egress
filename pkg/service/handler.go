@@ -145,6 +145,21 @@ func (h *Handler) UpdateStream(ctx context.Context, req *livekit.UpdateStreamReq
 	return h.pipeline.Info, nil
 }
 
+func (h *Handler) UpdateOutputs(ctx context.Context, req *livekit.UpdateOutputsRequest) (*livekit.EgressInfo, error) {
+	ctx, span := tracer.Start(ctx, "Handler.UpdateOutputs")
+	defer span.End()
+
+	if h.pipeline == nil {
+		return nil, errors.ErrEgressNotFound
+	}
+
+	err := h.pipeline.UpdateOutputs(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return h.pipeline.Info, nil
+}
+
 func (h *Handler) StopEgress(ctx context.Context, _ *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
 	ctx, span := tracer.Start(ctx, "Handler.StopEgress")
 	defer span.End()

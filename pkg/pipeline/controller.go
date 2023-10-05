@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/psrpc"
 )
 
 const (
@@ -46,7 +47,7 @@ type Controller struct {
 	// gstreamer
 	src       source.Source
 	p         *gstreamer.Pipeline
-	sinks     map[types.EgressType]sink.Sink
+	sinks     map[types.EgressType][]sink.Sink
 	streamBin *builder.StreamBin
 	callbacks *gstreamer.Callbacks
 
@@ -137,26 +138,42 @@ func (c *Controller) BuildPipeline() error {
 		}
 	}
 
+	var sinkBins []*gstreamer.Bin
 	for egressType := range c.Outputs {
-		var sinkBin *gstreamer.Bin
 		switch egressType {
 		case types.EgressTypeFile:
+			var sinkBin *gstreamer.Bin
 			sinkBin, err = builder.BuildFileBin(p, c.PipelineConfig)
+			sinkBins = append(sinkBins, sinkBin)
 
 		case types.EgressTypeSegments:
+			var sinkBin *gstreamer.Bin
 			sinkBin, err = builder.BuildSegmentBin(p, c.PipelineConfig)
+			sinkBins = append(sinkBins, sinkBin)
 
 		case types.EgressTypeStream:
+			var sinkBin *gstreamer.Bin
 			c.streamBin, sinkBin, err = builder.BuildStreamBin(p, c.PipelineConfig)
+			sinkBins = append(sinkBins, sinkBin)
 
 		case types.EgressTypeWebsocket:
-			writer := c.sinks[egressType].(*sink.WebsocketSink)
+			var sinkBin *gstreamer.Bin
+			writer := c.sinks[egressType][0].(*sink.WebsocketSink)
 			sinkBin, err = builder.BuildWebsocketBin(p, writer.SinkCallbacks())
+			sinkBins = append(sinkBins, sinkBin)
+
+		case types.EgressTypeImages:
+			var bins []*gstreamer.Bin
+			bins, err = builder.BuildImageBins(p, c.PipelineConfig)
+			sinkBins = append(sinkBins, bins...)
 		}
 		if err != nil {
 			return err
 		}
-		if err = p.AddSinkBin(sinkBin); err != nil {
+	}
+
+	for _, bin := range sinkBins {
+		if err = p.AddSinkBin(bin); err != nil {
 			return err
 		}
 	}
@@ -198,10 +215,12 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		}
 	}
 
-	for _, s := range c.sinks {
-		if err := s.Start(); err != nil {
-			c.Info.Error = err.Error()
-			return c.Info
+	for _, si := range c.sinks {
+		for _, s := range si {
+			if err := s.Start(); err != nil {
+				c.Info.Error = err.Error()
+				return c.Info
+			}
 		}
 	}
 
@@ -210,10 +229,12 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		return c.Info
 	}
 
-	for _, s := range c.sinks {
-		if err := s.Close(); err != nil {
-			c.Info.Error = err.Error()
-			return c.Info
+	for _, si := range c.sinks {
+		for _, s := range si {
+			if err := s.Close(); err != nil {
+				c.Info.Error = err.Error()
+				return c.Info
+			}
 		}
 	}
 
@@ -288,6 +309,13 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 	}
 
 	return errs.ToError()
+}
+
+func (c *Controller) UpdateOutputs(ctx context.Context, req *livekit.UpdateOutputsRequest) error {
+	ctx, span := tracer.Start(ctx, "Pipeline.UpdateOutputs")
+	defer span.End()
+
+	return psrpc.NewErrorf(psrpc.Unimplemented, "Updating outputs unimplemented")
 }
 
 func (c *Controller) removeSink(ctx context.Context, url string, streamErr error) error {
@@ -433,8 +461,10 @@ func (c *Controller) Close() {
 		c.Info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 	}
 
-	for _, s := range c.sinks {
-		s.Cleanup()
+	for _, si := range c.sinks {
+		for _, s := range si {
+			s.Cleanup()
+		}
 	}
 }
 
@@ -449,6 +479,9 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 			t = c.StreamOutputMaxDuration
 		case types.EgressTypeSegments:
 			t = c.SegmentOutputMaxDuration
+		case types.EgressTypeImages:
+			t = c.ImageOutputMaxDuration
+
 		}
 		if t > 0 && (timeout == 0 || t < timeout) {
 			timeout = t
@@ -473,20 +506,27 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 
 func (c *Controller) updateStartTime(startedAt int64) {
 	for egressType, o := range c.Outputs {
+		if len(o) == 0 {
+			continue
+		}
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
 			c.mu.Lock()
-			for _, streamInfo := range o.(*config.StreamConfig).StreamInfo {
+			for _, streamInfo := range o[0].(*config.StreamConfig).StreamInfo {
 				streamInfo.Status = livekit.StreamInfo_ACTIVE
 				streamInfo.StartedAt = startedAt
 			}
 			c.mu.Unlock()
 
 		case types.EgressTypeFile:
-			o.(*config.FileConfig).FileInfo.StartedAt = startedAt
+			o[0].(*config.FileConfig).FileInfo.StartedAt = startedAt
 
 		case types.EgressTypeSegments:
-			o.(*config.SegmentConfig).SegmentsInfo.StartedAt = startedAt
+			o[0].(*config.SegmentConfig).SegmentsInfo.StartedAt = startedAt
+		case types.EgressTypeImages:
+			for _, c := range o {
+				c.(*config.ImageConfig).ImagesInfo.StartedAt = startedAt
+			}
 		}
 	}
 
@@ -499,9 +539,12 @@ func (c *Controller) updateStartTime(startedAt int64) {
 
 func (c *Controller) updateDuration(endedAt int64) {
 	for egressType, o := range c.Outputs {
+		if len(o) == 0 {
+			continue
+		}
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
-			for _, info := range o.(*config.StreamConfig).StreamInfo {
+			for _, info := range o[0].(*config.StreamConfig).StreamInfo {
 				info.Status = livekit.StreamInfo_FINISHED
 				if info.StartedAt == 0 {
 					info.StartedAt = endedAt
@@ -511,7 +554,7 @@ func (c *Controller) updateDuration(endedAt int64) {
 			}
 
 		case types.EgressTypeFile:
-			fileInfo := o.(*config.FileConfig).FileInfo
+			fileInfo := o[0].(*config.FileConfig).FileInfo
 			if fileInfo.StartedAt == 0 {
 				fileInfo.StartedAt = endedAt
 			}
@@ -519,12 +562,20 @@ func (c *Controller) updateDuration(endedAt int64) {
 			fileInfo.Duration = endedAt - fileInfo.StartedAt
 
 		case types.EgressTypeSegments:
-			segmentsInfo := o.(*config.SegmentConfig).SegmentsInfo
+			segmentsInfo := o[0].(*config.SegmentConfig).SegmentsInfo
 			if segmentsInfo.StartedAt == 0 {
 				segmentsInfo.StartedAt = endedAt
 			}
 			segmentsInfo.EndedAt = endedAt
 			segmentsInfo.Duration = endedAt - segmentsInfo.StartedAt
+		case types.EgressTypeImages:
+			for _, c := range o {
+				imageInfo := c.(*config.ImageConfig).ImagesInfo
+				if imageInfo.StartedAt == 0 {
+					imageInfo.StartedAt = endedAt
+				}
+				imageInfo.EndedAt = endedAt
+			}
 		}
 	}
 }

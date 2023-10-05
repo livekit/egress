@@ -121,7 +121,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		require.NoError(t, err, "input %s does not exist", in)
 	}
 
-	switch p.Outputs[egressType].GetOutputType() {
+	switch p.Outputs[egressType][0].GetOutputType() {
 	case types.OutputTypeRaw:
 		require.Equal(t, 0, info.Format.ProbeScore)
 	case types.OutputTypeIVF:
@@ -213,7 +213,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 			require.Equal(t, 2, stream.Channels)
 
 			// audio bitrate
-			if p.Outputs[egressType].GetOutputType() == types.OutputTypeMP4 {
+			if p.Outputs[egressType][0].GetOutputType() == types.OutputTypeMP4 {
 				bitrate, err := strconv.Atoi(stream.BitRate)
 				require.NoError(t, err)
 				require.NotZero(t, bitrate)
@@ -227,7 +227,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 			case types.MimeTypeH264:
 				require.Equal(t, "h264", stream.CodecName)
 
-				if p.VideoTranscoding {
+				if p.VideoEncoding {
 					switch p.VideoProfile {
 					case types.ProfileBaseline:
 						require.Equal(t, "Constrained Baseline", stream.Profile)
@@ -243,14 +243,14 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 				require.Equal(t, "vp9", stream.CodecName)
 			}
 
-			switch p.Outputs[egressType].GetOutputType() {
+			switch p.Outputs[egressType][0].GetOutputType() {
 			case types.OutputTypeIVF:
 				require.Equal(t, "vp8", stream.CodecName)
 
 			case types.OutputTypeMP4:
 				require.Equal(t, "h264", stream.CodecName)
 
-				if p.VideoTranscoding {
+				if p.VideoEncoding {
 					// bitrate, not available for HLS or WebM
 					bitrate, err := strconv.Atoi(stream.BitRate)
 					require.NoError(t, err)
@@ -274,7 +274,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 			case types.OutputTypeHLS:
 				require.Equal(t, "h264", stream.CodecName)
 
-				if p.VideoTranscoding {
+				if p.VideoEncoding {
 					// dimensions
 					require.Equal(t, p.Width, stream.Width)
 					require.Equal(t, p.Height, stream.Height)

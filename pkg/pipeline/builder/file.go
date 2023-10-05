@@ -59,5 +59,11 @@ func BuildFileBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstr
 		return nil, err
 	}
 
+	b.SetGetSrcPad(func(name string) *gst.Pad {
+		var padName = name + "_%u"
+
+		return mux.GetRequestPad(padName)
+	})
+
 	return b, nil
 }

@@ -53,9 +53,9 @@ type PipelineConfig struct {
 	AudioConfig       `yaml:"-"`
 	VideoConfig       `yaml:"-"`
 
-	Outputs              map[types.EgressType]OutputConfig `yaml:"-"`
-	OutputCount          int                               `yaml:"-"`
-	FinalizationRequired bool                              `yaml:"-"`
+	Outputs              map[types.EgressType][]OutputConfig `yaml:"-"`
+	OutputCount          int                                 `yaml:"-"`
+	FinalizationRequired bool                                `yaml:"-"`
 
 	OnUpdate func(context.Context, *livekit.EgressInfo) `yaml:"-"`
 
@@ -110,7 +110,8 @@ type AudioConfig struct {
 
 type VideoConfig struct {
 	VideoEnabled     bool
-	VideoTranscoding bool
+	VideoDecoding    bool
+	VideoEncoding    bool
 	VideoOutCodec    types.MimeType
 	VideoProfile     types.Profile
 	Width            int32
@@ -128,7 +129,7 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 				Level: "info",
 			},
 		},
-		Outputs: make(map[types.EgressType]OutputConfig),
+		Outputs: make(map[types.EgressType][]OutputConfig),
 	}
 
 	if err := yaml.Unmarshal([]byte(confString), p); err != nil {
@@ -153,7 +154,7 @@ func GetValidatedPipelineConfig(conf *ServiceConfig, req *rpc.StartEgressRequest
 
 	p := &PipelineConfig{
 		BaseConfig: conf.BaseConfig,
-		Outputs:    make(map[types.EgressType]OutputConfig),
+		Outputs:    make(map[types.EgressType][]OutputConfig),
 	}
 
 	return p, p.Update(req)
@@ -218,7 +219,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		if !req.RoomComposite.AudioOnly {
 			p.VideoEnabled = true
 			p.VideoInCodec = types.MimeTypeRawVideo
-			p.VideoTranscoding = true
+			p.VideoDecoding = true
 		}
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_only and video_only")
@@ -267,7 +268,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		if !req.Web.AudioOnly {
 			p.VideoEnabled = true
 			p.VideoInCodec = types.MimeTypeRawVideo
-			p.VideoTranscoding = true
+			p.VideoDecoding = true
 		}
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_only and video_only")
@@ -304,7 +305,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.AudioEnabled = true
 		p.AudioTranscoding = true
 		p.VideoEnabled = true
-		p.VideoTranscoding = true
+		p.VideoDecoding = true
 		p.Identity = req.Participant.Identity
 		if p.Identity == "" {
 			return errors.ErrInvalidInput("identity")
@@ -346,7 +347,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		if videoTrackID := req.TrackComposite.VideoTrackId; videoTrackID != "" {
 			p.VideoEnabled = true
 			p.VideoTrackID = videoTrackID
-			p.VideoTranscoding = true
+			p.VideoDecoding = true
 		}
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_track_id or video_track_id")
@@ -446,7 +447,8 @@ func (p *PipelineConfig) validateAndUpdateOutputParams() error {
 
 	// Select a codec compatible with all outputs
 	if p.AudioEnabled {
-		for _, o := range p.Outputs {
+		for _, o := range p.GetEncodedOutputs() {
+
 			if compatibleAudioCodecs[types.DefaultAudioCodecs[o.GetOutputType()]] {
 				p.AudioOutCodec = types.DefaultAudioCodecs[o.GetOutputType()]
 				break
@@ -461,7 +463,7 @@ func (p *PipelineConfig) validateAndUpdateOutputParams() error {
 	}
 
 	if p.VideoEnabled {
-		for _, o := range p.Outputs {
+		for _, o := range p.GetEncodedOutputs() {
 			if compatibleVideoCodecs[types.DefaultVideoCodecs[o.GetOutputType()]] {
 				p.VideoOutCodec = types.DefaultVideoCodecs[o.GetOutputType()]
 				break
@@ -490,7 +492,7 @@ func (p *PipelineConfig) validateAndUpdateOutputCodecs() (compatibleAudioCodecs 
 			compatibleAudioCodecs[p.AudioOutCodec] = true
 		}
 
-		for _, o := range p.Outputs {
+		for _, o := range p.GetEncodedOutputs() {
 			compatibleAudioCodecs = types.GetMapIntersection(compatibleAudioCodecs, types.CodecCompatibility[o.GetOutputType()])
 			if len(compatibleAudioCodecs) == 0 {
 				if p.AudioOutCodec == "" {
@@ -510,7 +512,7 @@ func (p *PipelineConfig) validateAndUpdateOutputCodecs() (compatibleAudioCodecs 
 			compatibleVideoCodecs[p.VideoOutCodec] = true
 		}
 
-		for _, o := range p.Outputs {
+		for _, o := range p.GetEncodedOutputs() {
 			compatibleVideoCodecs = types.GetMapIntersection(compatibleVideoCodecs, types.CodecCompatibility[o.GetOutputType()])
 			if len(compatibleVideoCodecs) == 0 {
 				if p.AudioOutCodec == "" {
@@ -561,14 +563,17 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 }
 
 // used for sdk input source
-func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string) error {
+func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string, w, h uint32) error {
 	for egressType, c := range p.Outputs {
+		if len(c) == 0 {
+			continue
+		}
 		switch egressType {
 		case types.EgressTypeFile:
-			return c.(*FileConfig).updateFilepath(p, identifier, replacements)
+			return c[0].(*FileConfig).updateFilepath(p, identifier, replacements)
 
 		case types.EgressTypeSegments:
-			o := c.(*SegmentConfig)
+			o := c[0].(*SegmentConfig)
 			o.LocalDir = stringReplace(o.LocalDir, replacements)
 			o.StorageDir = stringReplace(o.StorageDir, replacements)
 			o.PlaylistFilename = stringReplace(o.PlaylistFilename, replacements)
@@ -576,6 +581,28 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 			o.SegmentPrefix = stringReplace(o.SegmentPrefix, replacements)
 			o.SegmentsInfo.PlaylistName = stringReplace(o.SegmentsInfo.PlaylistName, replacements)
 			o.SegmentsInfo.LivePlaylistName = stringReplace(o.SegmentsInfo.LivePlaylistName, replacements)
+
+		case types.EgressTypeImages:
+			for _, ci := range c {
+				o := ci.(*ImageConfig)
+				o.LocalDir = stringReplace(o.LocalDir, replacements)
+				o.StorageDir = stringReplace(o.StorageDir, replacements)
+				o.ImagePrefix = stringReplace(o.ImagePrefix, replacements)
+				if o.Width == 0 {
+					if w != 0 {
+						o.Width = int32(w)
+					} else {
+						o.Width = p.VideoConfig.Width
+					}
+				}
+				if o.Height == 0 {
+					if h != 0 {
+						o.Height = int32(h)
+					} else {
+						o.Height = p.VideoConfig.Height
+					}
+				}
+			}
 		}
 	}
 
@@ -609,6 +636,16 @@ func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType)
 	default:
 		return "", "", errors.ErrInvalidInput("stream output type")
 	}
+}
+
+func (p *PipelineConfig) GetEncodedOutputs() []OutputConfig {
+	ret := make([]OutputConfig, 0)
+
+	for _, k := range []types.EgressType{types.EgressTypeFile, types.EgressTypeSegments, types.EgressTypeStream, types.EgressTypeWebsocket} {
+		ret = append(ret, p.Outputs[k]...)
+	}
+
+	return ret
 }
 
 func stringReplace(s string, replacements map[string]string) string {

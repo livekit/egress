@@ -37,6 +37,7 @@ var (
 	ErrResourceExhausted          = psrpc.NewErrorf(psrpc.ResourceExhausted, "not enough CPU")
 	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Internal, "failed to subscribe to track")
 	ErrPipelineFrozen             = psrpc.NewErrorf(psrpc.Internal, "pipeline frozen")
+	ErrSinkNotFound               = psrpc.NewErrorf(psrpc.Internal, "sink not found")
 )
 
 func New(err string) error {

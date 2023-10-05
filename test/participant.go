@@ -121,7 +121,7 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 					},
 				}
 
-				test.expectVideoTranscoding = true
+				test.expectVideoEncoding = true
 				r.runFileTest(t, req, test)
 			})
 			if r.Short {
@@ -157,7 +157,7 @@ func (r *Runner) testParticipantStream(t *testing.T) {
 				},
 			}
 
-			r.runStreamTest(t, req, &testCase{expectVideoTranscoding: true})
+			r.runStreamTest(t, req, &testCase{expectVideoEncoding: true})
 		},
 	)
 }
@@ -219,7 +219,7 @@ func (r *Runner) testParticipantSegments(t *testing.T) {
 							Participant: trackRequest,
 						},
 					}
-					test.expectVideoTranscoding = true
+					test.expectVideoEncoding = true
 
 					r.runSegmentsTest(t, req, test)
 				},

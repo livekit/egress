@@ -51,7 +51,7 @@ func (r *Runner) runSegmentsTest(t *testing.T, req *rpc.StartEgressRequest, test
 
 	r.verifySegments(t, p, test.filenameSuffix, res, test.live_playlist != "")
 	if !test.audioOnly {
-		require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
+		require.Equal(t, test.expectVideoEncoding, p.VideoEncoding)
 	}
 }
 

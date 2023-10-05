@@ -60,7 +60,17 @@ func uploadManifest(p *config.PipelineConfig, u uploader.Uploader, localFilepath
 }
 
 func getManifest(p *config.PipelineConfig) ([]byte, error) {
-	manifest := Manifest{
+	manifest := initManifest(p)
+
+	if o := p.GetSegmentConfig(); o != nil {
+		manifest.SegmentCount = o.SegmentsInfo.SegmentCount
+	}
+
+	return json.Marshal(manifest)
+}
+
+func initManifest(p *config.PipelineConfig) Manifest {
+	return Manifest{
 		EgressID:          p.Info.EgressId,
 		RoomID:            p.Info.RoomId,
 		RoomName:          p.Info.RoomName,
@@ -74,10 +84,4 @@ func getManifest(p *config.PipelineConfig) ([]byte, error) {
 		AudioTrackID:      p.AudioTrackID,
 		VideoTrackID:      p.VideoTrackID,
 	}
-
-	if o := p.GetSegmentConfig(); o != nil {
-		manifest.SegmentCount = o.SegmentsInfo.SegmentCount
-	}
-
-	return json.Marshal(manifest)
 }

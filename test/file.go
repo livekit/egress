@@ -50,7 +50,7 @@ func (r *Runner) runFileTest(t *testing.T, req *rpc.StartEgressRequest, test *te
 		p.GetFileConfig().OutputType = test.outputType
 	}
 
-	require.Equal(t, test.expectVideoTranscoding, p.VideoTranscoding)
+	require.Equal(t, test.expectVideoEncoding, p.VideoEncoding)
 
 	// verify
 	r.verifyFile(t, p, res)

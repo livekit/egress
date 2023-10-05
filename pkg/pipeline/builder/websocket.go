@@ -15,6 +15,7 @@
 package builder
 
 import (
+	"github.com/tinyzimmer/go-gst/gst"
 	"github.com/tinyzimmer/go-gst/gst/app"
 
 	"github.com/livekit/egress/pkg/gstreamer"
@@ -32,6 +33,10 @@ func BuildWebsocketBin(pipeline *gstreamer.Pipeline, appSinkCallbacks *app.SinkC
 	if err = b.AddElement(appSink.Element); err != nil {
 		return nil, err
 	}
+
+	b.SetGetSrcPad(func(name string) *gst.Pad {
+		return appSink.GetStaticPad("sink")
+	})
 
 	return b, nil
 }
