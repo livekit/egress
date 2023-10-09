@@ -514,7 +514,15 @@ func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.Remote
 }
 
 func (s *SDKSource) onDataReceived(data []byte, rp *lksdk.RemoteParticipant) {
-	fmt.Println("DATARECEIVED", rp.Name(), string(data))
+	msg := &livekit.PersistableUserPacket{
+		ParticipantSid:      rp.SID(),
+		ParticipantIdentity: rp.Identity(),
+		ParticipantName:     rp.Name(),
+		Timestamp:           time.Now().UnixNano(),
+		Payload:             data,
+	}
+
+	fmt.Println("DATARECEIVED", *msg)
 }
 
 func (s *SDKSource) onTrackFinished(trackID string) {
