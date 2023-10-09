@@ -15,9 +15,7 @@
 package main
 
 import (
-	"embed"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"os/signal"
@@ -37,8 +35,7 @@ import (
 )
 
 var (
-	//go:embed templates
-	templateEmbedFs embed.FS
+// templateEmbedFs embed.FS
 )
 
 func main() {
@@ -146,15 +143,16 @@ func runService(c *cli.Context) error {
 		}
 	}()
 
-	rfs, err := fs.Sub(templateEmbedFs, "templates")
-	if err != nil {
-		return err
-	}
+	/*	rfs, err := fs.Sub(templateEmbedFs, "templates")
+		if err != nil {
+			return err
+		}
 
-	err = svc.StartTemplatesServer(rfs)
-	if err != nil {
-		return err
-	}
+		err = svc.StartTemplatesServer(rfs)
+		if err != nil {
+			return err
+		}
+	*/
 
 	svc.StartDebugHandlers()
 

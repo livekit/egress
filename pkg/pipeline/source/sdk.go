@@ -151,6 +151,7 @@ func (s *SDKSource) joinRoom() error {
 			OnTrackMuted:        s.onTrackMuted,
 			OnTrackUnmuted:      s.onTrackUnmuted,
 			OnTrackUnsubscribed: s.onTrackUnsubscribed,
+			OnDataReceived:      s.onDataReceived,
 		},
 		OnDisconnected: s.onDisconnected,
 	}
@@ -510,6 +511,10 @@ func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participa
 func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
 	logger.Debugw("track unsubscribed", "trackID", pub.SID())
 	s.onTrackFinished(pub.SID())
+}
+
+func (s *SDKSource) onDataReceived(data []byte, rp *lksdk.RemoteParticipant) {
+	fmt.Println("DATARECEIVED", rp.Name(), string(data))
 }
 
 func (s *SDKSource) onTrackFinished(trackID string) {
