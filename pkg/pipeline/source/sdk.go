@@ -522,7 +522,7 @@ func (s *SDKSource) onDataReceived(data []byte, rp *lksdk.RemoteParticipant) {
 		Payload:             data,
 	}
 
-	fmt.Println("DATARECEIVED", *msg)
+	s.callbacks.OnDataMessageReceived(msg)
 }
 
 func (s *SDKSource) onTrackFinished(trackID string) {

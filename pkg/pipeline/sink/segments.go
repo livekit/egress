@@ -47,6 +47,7 @@ type SegmentSink struct {
 
 	playlist     m3u8.PlaylistWriter
 	livePlaylist m3u8.PlaylistWriter
+	ds           *DataEventsStore
 
 	segmentLock  sync.Mutex
 	infoLock     sync.Mutex
@@ -91,6 +92,9 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 		outputType = types.OutputTypeTS
 	}
 
+	ds := NewDataEventsStore(p)
+	callbacks.AddOnDataMessageReceived(ds.AppendMessage)
+
 	return &SegmentSink{
 		Uploader:              u,
 		SegmentConfig:         o,
@@ -98,6 +102,7 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 		callbacks:             callbacks,
 		playlist:              playlist,
 		livePlaylist:          livePlaylist,
+		ds:                    ds,
 		outputType:            outputType,
 		openSegmentsStartTime: make(map[string]uint64),
 		closedSegments:        make(chan SegmentUpdate, maxPendingUploads),
@@ -276,9 +281,21 @@ func (s *SegmentSink) Close() error {
 		}
 	}
 
+	playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
+	playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
+	dataStoreLocalPath := fmt.Sprintf("%s_dataevents.json", playlistLocalPath)
+	dataStoreStoragePath := fmt.Sprintf("%s_dataevents.json", playlistStoragePath)
+
+	err := s.ds.WriteMessages(dataStoreLocalPath)
+	if err != nil {
+		return err
+	}
+	s.SegmentsInfo.DataEventLocation, _, err = s.Upload(dataStoreLocalPath, dataStoreStoragePath, types.OutputTypeJSON, false)
+	if err != nil {
+		return err
+	}
+
 	if !s.DisableManifest {
-		playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
-		playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
 		manifestLocalPath := fmt.Sprintf("%s.json", playlistLocalPath)
 		manifestStoragePath := fmt.Sprintf("%s.json", playlistStoragePath)
 		if err := uploadManifest(s.conf, s.Uploader, manifestLocalPath, manifestStoragePath); err != nil {

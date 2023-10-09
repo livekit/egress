@@ -22,6 +22,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/protocol/livekit"
 )
 
 type Callbacks struct {
@@ -33,10 +34,11 @@ type Callbacks struct {
 	onStop  []func() error
 
 	// source callbacks
-	onTrackAdded   []func(*config.TrackSource)
-	onTrackMuted   []func(string)
-	onTrackUnmuted []func(string, time.Duration)
-	onTrackRemoved []func(string)
+	onTrackAdded          []func(*config.TrackSource)
+	onTrackMuted          []func(string)
+	onTrackUnmuted        []func(string, time.Duration)
+	onTrackRemoved        []func(string)
+	onDataMessageReceived []func(*livekit.PersistableUserPacket)
 
 	// internal
 	addBin    func(bin *gst.Bin)
@@ -138,5 +140,21 @@ func (c *Callbacks) OnTrackRemoved(trackID string) {
 
 	for _, f := range onTrackRemoved {
 		f(trackID)
+	}
+}
+
+func (c *Callbacks) AddOnDataMessageReceived(f func(*livekit.PersistableUserPacket)) {
+	c.mu.Lock()
+	c.onDataMessageReceived = append(c.onDataMessageReceived, f)
+	c.mu.Unlock()
+}
+
+func (c *Callbacks) OnDataMessageReceived(packet *livekit.PersistableUserPacket) {
+	c.mu.RLock()
+	onDataMessageReceived := c.onDataMessageReceived
+	c.mu.RUnlock()
+
+	for _, f := range onDataMessageReceived {
+		f(packet)
 	}
 }
