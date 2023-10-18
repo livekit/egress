@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
@@ -50,6 +51,7 @@ type Controller struct {
 	sinks     map[types.EgressType][]sink.Sink
 	streamBin *builder.StreamBin
 	callbacks *gstreamer.Callbacks
+	ioClient  rpc.IOInfoClient
 
 	// internal
 	mu         sync.Mutex
@@ -60,7 +62,7 @@ type Controller struct {
 	stopped    core.Fuse
 }
 
-func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) {
+func New(ctx context.Context, conf *config.PipelineConfig, ioClient rpc.IOInfoClient) (*Controller, error) {
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
@@ -70,6 +72,7 @@ func New(ctx context.Context, conf *config.PipelineConfig) (*Controller, error) 
 		callbacks: &gstreamer.Callbacks{
 			GstReady: make(chan struct{}),
 		},
+		ioClient:  ioClient,
 		gstLogger: logger.GetLogger().(*logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
 		playing:   core.NewFuse(),
 		eos:       core.NewFuse(),
@@ -305,7 +308,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	if sendUpdate {
 		c.Info.UpdatedAt = time.Now().UnixNano()
-		c.OnUpdate(ctx, c.Info)
+		_, _ = c.ioClient.UpdateEgress(ctx, c.Info)
 	}
 
 	return errs.ToError()
@@ -372,7 +375,7 @@ func (c *Controller) removeSink(ctx context.Context, url string, streamErr error
 	// only send updates if the egress will continue, otherwise it's handled by UpdateStream RPC
 	if streamErr != nil {
 		c.Info.UpdatedAt = time.Now().UnixNano()
-		c.OnUpdate(ctx, c.Info)
+		_, _ = c.ioClient.UpdateEgress(ctx, c.Info)
 	}
 
 	return c.streamBin.RemoveStream(url)
@@ -404,7 +407,7 @@ func (c *Controller) SendEOS(ctx context.Context) {
 				c.p.Stop()
 			} else {
 				c.Info.Status = livekit.EgressStatus_EGRESS_ENDING
-				c.OnUpdate(ctx, c.Info)
+				_, _ = c.ioClient.UpdateEgress(ctx, c.Info)
 			}
 			fallthrough
 
@@ -533,7 +536,7 @@ func (c *Controller) updateStartTime(startedAt int64) {
 	if c.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
 		c.Info.Status = livekit.EgressStatus_EGRESS_ACTIVE
 		c.Info.UpdatedAt = time.Now().UnixNano()
-		c.OnUpdate(context.Background(), c.Info)
+		_, _ = c.ioClient.UpdateEgress(context.Background(), c.Info)
 	}
 }
 

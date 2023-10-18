@@ -195,7 +195,7 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 
 	r.runRoomTest(t, "RoomComposite/Segments", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 		for _, test := range []*testCase{
-			&testCase{
+			{
 				options: &livekit.EncodingOptions{
 					AudioCodec:   livekit.AudioCodec_AAC,
 					VideoCodec:   livekit.VideoCodec_H264_BASELINE,
@@ -209,7 +209,7 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 				filenameSuffix:      livekit.SegmentedFileSuffix_TIMESTAMP,
 				expectVideoEncoding: true,
 			},
-			&testCase{
+			{
 				options: &livekit.EncodingOptions{
 					AudioCodec: livekit.AudioCodec_AAC,
 				},
@@ -263,7 +263,7 @@ func (r *Runner) testRoomCompositeImages(t *testing.T) {
 
 	r.runRoomTest(t, "RoomComposite/Images", types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
 		for _, test := range []*testCase{
-			&testCase{
+			{
 				options: &livekit.EncodingOptions{
 					Width:  640,
 					Height: 360,

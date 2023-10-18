@@ -128,6 +128,12 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 		return nil, err
 	}
 
+	_, err = s.ioClient.CreateEgress(ctx, p.Info)
+	if err != nil {
+		s.EgressAborted(req)
+		return nil, err
+	}
+
 	requestType, outputType := egress.GetTypes(p.Info.Request)
 	logger.Infow("request validated",
 		"egressID", req.EgressId,

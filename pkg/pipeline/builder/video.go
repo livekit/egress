@@ -531,12 +531,10 @@ func (b *VideoBin) addEncoder() error {
 			}
 			bufCapacity = uint(time.Duration(b.conf.GetSegmentConfig().SegmentDuration) * (time.Second / time.Millisecond))
 		}
-
 		if bufCapacity > 10000 {
 			// Max value allowed by gstreamer
 			bufCapacity = 10000
 		}
-
 		if err = x264Enc.SetProperty("vbv-buf-capacity", bufCapacity); err != nil {
 			return err
 		}
@@ -593,7 +591,6 @@ func (b *VideoBin) addEncoder() error {
 	default:
 		return errors.ErrNotSupported(fmt.Sprintf("%s encoding", b.conf.VideoOutCodec))
 	}
-
 }
 
 func (b *VideoBin) addDecodedVideoSink() error {
@@ -736,13 +733,11 @@ func (b *VideoBin) setSelectorPad(name string) error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-
 	val, err := glib.ValueInit(pt)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 	val.SetInstance(uintptr(unsafe.Pointer(pad.Instance())))
-
 	if err = b.selector.SetPropertyValue("active-pad", val); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
