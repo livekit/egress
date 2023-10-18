@@ -57,8 +57,6 @@ type PipelineConfig struct {
 	OutputCount          int                                 `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	OnUpdate func(context.Context, *livekit.EgressInfo) `yaml:"-"`
-
 	Info *livekit.EgressInfo `yaml:"-"`
 }
 

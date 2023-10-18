@@ -146,7 +146,7 @@ func (s *Service) awaitCleanup(p *Process) {
 		p.info.EndedAt = now
 		p.info.Status = livekit.EgressStatus_EGRESS_FAILED
 		p.info.Error = "internal error"
-		sendUpdate(context.Background(), s.ioClient, p.info)
+		_, _ = s.ioClient.UpdateEgress(context.Background(), p.info)
 		s.Stop(false)
 	}
 

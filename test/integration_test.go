@@ -45,7 +45,7 @@ func TestEgress(t *testing.T) {
 	require.NoError(t, err)
 	bus := psrpc.NewRedisMessageBus(rc)
 
-	ioClient, err := rpc.NewIOInfoClient("test_io_client", bus)
+	ioClient, err := service.NewIOClient("test_io_client", bus)
 	require.NoError(t, err)
 
 	svc, err := service.NewService(r.ServiceConfig, ioClient)

@@ -101,7 +101,7 @@ func (u *S3Uploader) getBucketLocation() (string, error) {
 	svc := s3.New(sess)
 	resp, err := svc.GetBucketLocation(req)
 	if err != nil {
-		return "", psrpc.NewErrorf(psrpc.Unknown, "failed to retrieve upload bucket region", err)
+		return "", psrpc.NewErrorf(psrpc.Unknown, "failed to retrieve upload bucket region: %v", err)
 	}
 
 	if resp.LocationConstraint == nil {

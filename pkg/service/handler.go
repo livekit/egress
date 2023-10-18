@@ -28,7 +28,6 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
-	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/pprof"
@@ -58,8 +57,6 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		kill:       core.NewFuse(),
 	}
 
-	conf.OnUpdate = h.sendUpdate
-
 	rpcServer, err := rpc.NewEgressHandlerServer(conf.HandlerID, h, bus)
 	if err != nil {
 		return nil, errors.Fatal(err)
@@ -86,7 +83,7 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		}
 	}()
 
-	h.pipeline, err = pipeline.New(context.Background(), conf)
+	h.pipeline, err = pipeline.New(context.Background(), conf, h.ioClient)
 	if err != nil {
 		if !errors.IsFatal(err) {
 			// user error, send update
@@ -95,7 +92,7 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 			conf.Info.EndedAt = now
 			conf.Info.Status = livekit.EgressStatus_EGRESS_FAILED
 			conf.Info.Error = err.Error()
-			h.sendUpdate(context.Background(), conf.Info)
+			_, _ = h.ioClient.UpdateEgress(context.Background(), conf.Info)
 		}
 		return nil, err
 	}
@@ -122,7 +119,7 @@ func (h *Handler) Run() error {
 
 		case res := <-result:
 			// recording finished
-			h.sendUpdate(ctx, res)
+			_, _ = h.ioClient.UpdateEgress(ctx, res)
 			h.rpcServer.Shutdown()
 			h.grpcServer.Stop()
 			return nil
@@ -216,37 +213,4 @@ func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PPr
 
 func (h *Handler) Kill() {
 	h.kill.Break()
-}
-
-func (h *Handler) sendUpdate(ctx context.Context, info *livekit.EgressInfo) {
-	sendUpdate(ctx, h.ioClient, info)
-}
-
-func sendUpdate(ctx context.Context, c rpc.IOInfoClient, info *livekit.EgressInfo) {
-	requestType, outputType := egress.GetTypes(info.Request)
-	switch info.Status {
-	case livekit.EgressStatus_EGRESS_FAILED:
-		logger.Warnw("egress failed", errors.New(info.Error),
-			"egressID", info.EgressId,
-			"requestType", requestType,
-			"outputType", outputType,
-		)
-	case livekit.EgressStatus_EGRESS_COMPLETE:
-		logger.Infow("egress completed",
-			"egressID", info.EgressId,
-			"requestType", requestType,
-			"outputType", outputType,
-		)
-	default:
-		logger.Infow("egress updated",
-			"egressID", info.EgressId,
-			"requestType", requestType,
-			"outputType", outputType,
-			"status", info.Status,
-		)
-	}
-
-	if _, err := c.UpdateEgressInfo(ctx, info); err != nil {
-		logger.Errorw("failed to send update", err)
-	}
 }
