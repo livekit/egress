@@ -27,6 +27,11 @@ func NewIOClient(nodeID string, bus psrpc.MessageBus) (rpc.IOInfoClient, error) 
 	}, nil
 }
 
+func (c *IOClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo, opts ...psrpc.RequestOption) (*emptypb.Empty, error) {
+	// TODO: add retries, log errors
+	return c.IOInfoClient.CreateEgress(ctx, info, opts...)
+}
+
 func (c *IOClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, opts ...psrpc.RequestOption) (*emptypb.Empty, error) {
 	requestType, outputType := egress.GetTypes(info.Request)
 	switch info.Status {
@@ -52,5 +57,5 @@ func (c *IOClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, o
 	}
 
 	// TODO: add retries, log errors
-	return c.IOInfoClient.UpdateEgress(ctx, info)
+	return c.IOInfoClient.UpdateEgress(ctx, info, opts...)
 }
