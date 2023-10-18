@@ -40,6 +40,7 @@ import (
 )
 
 type Process struct {
+	ctx        context.Context
 	handlerID  string
 	req        *rpc.StartEgressRequest
 	info       *livekit.EgressInfo
@@ -49,6 +50,7 @@ type Process struct {
 }
 
 func NewProcess(
+	ctx context.Context,
 	handlerID string,
 	req *rpc.StartEgressRequest,
 	info *livekit.EgressInfo,
@@ -56,6 +58,7 @@ func NewProcess(
 	tmpDir string,
 ) (*Process, error) {
 	p := &Process{
+		ctx:       ctx,
 		handlerID: handlerID,
 		req:       req,
 		info:      info,
@@ -121,7 +124,7 @@ func (s *Service) launchHandler(req *rpc.StartEgressRequest, info *livekit.Egres
 
 	s.EgressStarted(req)
 
-	h, err := NewProcess(handlerID, req, info, cmd, p.TmpDir)
+	h, err := NewProcess(context.Background(), handlerID, req, info, cmd, p.TmpDir)
 	if err != nil {
 		span.RecordError(err)
 		return err
@@ -146,7 +149,7 @@ func (s *Service) awaitCleanup(p *Process) {
 		p.info.EndedAt = now
 		p.info.Status = livekit.EgressStatus_EGRESS_FAILED
 		p.info.Error = "internal error"
-		_, _ = s.ioClient.UpdateEgress(context.Background(), p.info)
+		_, _ = s.ioClient.UpdateEgress(p.ctx, p.info)
 		s.Stop(false)
 	}
 

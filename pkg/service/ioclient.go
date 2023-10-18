@@ -28,11 +28,21 @@ func NewIOClient(nodeID string, bus psrpc.MessageBus) (rpc.IOInfoClient, error) 
 }
 
 func (c *IOClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo, opts ...psrpc.RequestOption) (*emptypb.Empty, error) {
-	// TODO: add retries, log errors
-	return c.IOInfoClient.CreateEgress(ctx, info, opts...)
+	_, err := c.IOInfoClient.CreateEgress(ctx, info, opts...)
+	if err != nil {
+		logger.Errorw("failed to create egress", err)
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
 }
 
 func (c *IOClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, opts ...psrpc.RequestOption) (*emptypb.Empty, error) {
+	_, err := c.IOInfoClient.UpdateEgress(ctx, info, opts...)
+	if err != nil {
+		logger.Errorw("failed to update egress", err)
+		return nil, err
+	}
+
 	requestType, outputType := egress.GetTypes(info.Request)
 	switch info.Status {
 	case livekit.EgressStatus_EGRESS_FAILED:
@@ -56,6 +66,5 @@ func (c *IOClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, o
 		)
 	}
 
-	// TODO: add retries, log errors
-	return c.IOInfoClient.UpdateEgress(ctx, info, opts...)
+	return &emptypb.Empty{}, nil
 }
