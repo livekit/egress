@@ -21,7 +21,7 @@ require (
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/protocol v1.8.1-0.20231018194636-fac7f187fc16
 	github.com/livekit/psrpc v0.3.3
-	github.com/livekit/server-sdk-go v1.0.17-0.20230928233454-b49bf45b164b
+	github.com/livekit/server-sdk-go v1.1.1
 	github.com/pion/rtp v1.8.2
 	github.com/pion/webrtc/v3 v3.2.21
 	github.com/pkg/errors v0.9.1
@@ -71,7 +71,7 @@ require (
 	github.com/klauspost/compress v1.17.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
-	github.com/livekit/mediatransportutil v0.0.0-20230906055425-e81fd5f6fb3f // indirect
+	github.com/livekit/mediatransportutil v0.0.0-20231017082622-43f077b4e60e // indirect
 	github.com/mackerelio/go-osstat v0.2.4 // indirect
 	github.com/magefile/mage v1.15.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
