@@ -421,8 +421,8 @@ func linkPeersLocked(src, sink *Bin) error {
 		return err
 	}
 
-	srcState := src.bin.GetState()
-	sinkState := sink.bin.GetState()
+	srcState := src.bin.GetCurrentState()
+	sinkState := sink.bin.GetCurrentState()
 
 	if srcState != sinkState {
 		if srcState == gst.StateNull {
