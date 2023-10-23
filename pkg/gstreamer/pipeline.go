@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
-	"github.com/tinyzimmer/go-glib/glib"
-	"github.com/tinyzimmer/go-gst/gst"
+	"github.com/go-gst/go-glib/glib"
+	"github.com/go-gst/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/logger"

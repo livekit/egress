@@ -22,9 +22,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-gst/go-gst/gst"
+	"github.com/go-gst/go-gst/gst/app"
 	"github.com/gorilla/websocket"
-	"github.com/tinyzimmer/go-gst/gst"
-	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"

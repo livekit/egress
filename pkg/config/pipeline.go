@@ -21,8 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-gst/go-gst/gst/app"
 	"github.com/pion/webrtc/v3"
-	"github.com/tinyzimmer/go-gst/gst/app"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 

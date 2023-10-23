@@ -22,11 +22,11 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
+	"github.com/go-gst/go-gst/gst"
+	"github.com/go-gst/go-gst/gst/app"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v3"
-	"github.com/tinyzimmer/go-gst/gst"
-	"github.com/tinyzimmer/go-gst/gst/app"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
@@ -350,7 +350,7 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet, pts time.Duration) error {
 	}
 
 	b := gst.NewBufferFromBytes(p)
-	b.SetPresentationTimestamp(pts)
+	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.logger.Infow("unexpected flow return", "flow", flow)
 	}

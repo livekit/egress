@@ -21,8 +21,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/tinyzimmer/go-glib/glib"
-	"github.com/tinyzimmer/go-gst/gst"
+	"github.com/go-gst/go-glib/glib"
+	"github.com/go-gst/go-gst/gst"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
@@ -687,10 +687,11 @@ func (b *VideoBin) createSrcPad(trackID string) {
 		for b.nextPTS.Load() != 0 {
 			time.Sleep(time.Millisecond * 100)
 		}
-		if buffer.PresentationTimestamp() < b.lastPTS.Load() {
+		pts := *buffer.PresentationTimestamp().AsDuration()
+		if pts < b.lastPTS.Load() {
 			return gst.PadProbeDrop
 		}
-		b.lastPTS.Store(buffer.PresentationTimestamp())
+		b.lastPTS.Store(pts)
 		return gst.PadProbeOK
 	})
 	b.pads[trackID] = pad
@@ -703,10 +704,11 @@ func (b *VideoBin) createTestSrcPad() {
 	pad := b.selector.GetRequestPad("sink_%u")
 	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		buffer := info.GetBuffer()
-		if buffer.PresentationTimestamp() < b.lastPTS.Load() {
+		pts := *buffer.PresentationTimestamp().AsDuration()
+		if pts < b.lastPTS.Load() {
 			return gst.PadProbeDrop
 		}
-		if nextPTS := b.nextPTS.Load(); nextPTS != 0 && buffer.PresentationTimestamp() >= nextPTS {
+		if nextPTS := b.nextPTS.Load(); nextPTS != 0 && pts >= nextPTS {
 			if err := b.setSelectorPad(b.nextPad); err != nil {
 				logger.Errorw("failed to unmute", err)
 				return gst.PadProbeDrop
@@ -715,7 +717,7 @@ func (b *VideoBin) createTestSrcPad() {
 			b.nextPTS.Store(0)
 		}
 		if b.selectedPad == videoTestSrcName {
-			b.lastPTS.Store(buffer.PresentationTimestamp())
+			b.lastPTS.Store(pts)
 		}
 		return gst.PadProbeOK
 	})

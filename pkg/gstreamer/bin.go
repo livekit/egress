@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tinyzimmer/go-gst/gst"
+	"github.com/go-gst/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/logger"
@@ -421,8 +421,8 @@ func linkPeersLocked(src, sink *Bin) error {
 		return err
 	}
 
-	srcState := src.bin.GetState()
-	sinkState := sink.bin.GetState()
+	srcState := src.bin.GetCurrentState()
+	sinkState := sink.bin.GetCurrentState()
 
 	if srcState != sinkState {
 		if srcState == gst.StateNull {

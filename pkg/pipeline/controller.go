@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
-	"github.com/tinyzimmer/go-gst/gst"
+	"github.com/go-gst/go-gst/gst"
 	"go.uber.org/zap"
 
 	"github.com/livekit/egress/pkg/config"

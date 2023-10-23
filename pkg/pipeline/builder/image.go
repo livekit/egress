@@ -19,11 +19,12 @@ import (
 	"path"
 	"time"
 
+	"github.com/go-gst/go-gst/gst"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/tinyzimmer/go-gst/gst"
 )
 
 const (

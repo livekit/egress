@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tinyzimmer/go-gst/gst"
+	"github.com/go-gst/go-gst/gst"
 
 	"github.com/livekit/psrpc"
 )
