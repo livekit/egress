@@ -15,8 +15,8 @@
 package builder
 
 import (
-	"github.com/tinyzimmer/go-gst/gst"
-	"github.com/tinyzimmer/go-gst/gst/app"
+	"github.com/go-gst/go-gst/gst"
+	"github.com/go-gst/go-gst/gst/app"
 
 	"github.com/livekit/egress/pkg/gstreamer"
 )

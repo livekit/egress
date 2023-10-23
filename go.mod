@@ -2,10 +2,6 @@ module github.com/livekit/egress
 
 go 1.20
 
-replace github.com/tinyzimmer/go-glib v0.0.25 => github.com/livekit/go-glib v0.0.0-20230223001336-834490045522
-
-replace github.com/tinyzimmer/go-gst v0.2.33 => github.com/livekit/go-gst v0.2.34-0.20230901155409-dd09095b979e
-
 require (
 	cloud.google.com/go/storage v1.31.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
@@ -14,6 +10,8 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20230625224106-7fafe342e117
 	github.com/chromedp/chromedp v0.9.1
 	github.com/frostbyte73/core v0.0.9
+	github.com/go-gst/go-glib v0.0.0-20230906175327-b2d34240bcb4
+	github.com/go-gst/go-gst v0.0.0-20231009181223-aa872b0f6c0c
 	github.com/go-logr/logr v1.2.4
 	github.com/googleapis/gax-go/v2 v2.12.0
 	github.com/gorilla/websocket v1.5.0
@@ -27,8 +25,6 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.17.0
 	github.com/stretchr/testify v1.8.4
-	github.com/tinyzimmer/go-glib v0.0.25
-	github.com/tinyzimmer/go-gst v0.2.33
 	github.com/urfave/cli/v2 v2.25.7
 	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.26.0
