@@ -46,7 +46,7 @@ func New(conf config.UploadConfig, backup string) (Uploader, error) {
 	var err error
 
 	switch c := conf.(type) {
-	case *livekit.S3Upload:
+	case *config.EgressS3Upload:
 		u, err = newS3Uploader(c)
 	case *livekit.GCPUpload:
 		u, err = newGCPUploader(c)

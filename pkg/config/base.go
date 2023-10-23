@@ -63,12 +63,17 @@ type StorageConfig struct {
 }
 
 type S3Config struct {
-	AccessKey      string `yaml:"access_key"` // (env AWS_ACCESS_KEY_ID)
-	Secret         string `yaml:"secret"`     // (env AWS_SECRET_ACCESS_KEY)
-	Region         string `yaml:"region"`     // (env AWS_DEFAULT_REGION)
-	Endpoint       string `yaml:"endpoint"`
-	Bucket         string `yaml:"bucket"`
-	ForcePathStyle bool   `yaml:"force_path_style"`
+	AccessKey      string        `yaml:"access_key"` // (env AWS_ACCESS_KEY_ID)
+	Secret         string        `yaml:"secret"`     // (env AWS_SECRET_ACCESS_KEY)
+	Region         string        `yaml:"region"`     // (env AWS_DEFAULT_REGION)
+	Endpoint       string        `yaml:"endpoint"`
+	Bucket         string        `yaml:"bucket"`
+	ForcePathStyle bool          `yaml:"force_path_style"`
+	Proxy          string        `yaml:"proxy"`
+	MaxRetries     int           `yaml:"max_retries"`
+	MaxRetryDelay  time.Duration `yaml:"max_retry_delay"`
+	MinRetryDelay  time.Duration `yaml:"min_retry_delay"`
+	AwsLogLevel    string        `yaml:"aws_log_level"`
 }
 
 type AzureConfig struct {

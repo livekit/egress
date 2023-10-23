@@ -16,16 +16,19 @@ package uploader
 
 import (
 	"fmt"
-	"os"
-
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/livekit/egress/pkg/config"
+	"net/http"
+	"net/url"
+	"os"
 
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
 )
@@ -34,6 +37,17 @@ const (
 	getBucketLocationRegion = "us-east-1"
 )
 
+// CustomRetryer wraps the SDK's built in DefaultRetryer adding additional
+// custom features. Namely, to always retry.
+type CustomRetryer struct {
+	client.DefaultRetryer
+}
+
+// ShouldRetry overrides the SDK's built in DefaultRetryer because the PUTs for segments/playlists are always idempotent
+func (r CustomRetryer) ShouldRetry(req *request.Request) bool {
+	return true
+}
+
 type S3Uploader struct {
 	awsConfig *aws.Config
 	bucket    *string
@@ -41,11 +55,24 @@ type S3Uploader struct {
 	tagging   *string
 }
 
-func newS3Uploader(conf *livekit.S3Upload) (uploader, error) {
+func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 	awsConfig := &aws.Config{
-		MaxRetries:       aws.Int(maxRetries), // Switching to v2 of the aws Go SDK would allow to set a maxDelay as well.
+		Retryer: &CustomRetryer{
+			DefaultRetryer: client.DefaultRetryer{
+				NumMaxRetries:    conf.MaxRetries,
+				MaxRetryDelay:    conf.MaxRetryDelay,
+				MaxThrottleDelay: conf.MaxRetryDelay,
+				MinRetryDelay:    conf.MinRetryDelay,
+				MinThrottleDelay: conf.MinRetryDelay,
+			},
+		},
 		S3ForcePathStyle: aws.Bool(conf.ForcePathStyle),
+		LogLevel:         aws.LogLevel(conf.AwsLogLevel),
 	}
+	logger.Infow("setting AWS config", "maxRetries", conf.MaxRetries,
+		"maxDelay", conf.MaxRetryDelay,
+		"minDelay", conf.MinRetryDelay,
+	)
 	if conf.AccessKey != "" && conf.Secret != "" {
 		awsConfig.Credentials = credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, "")
 	}
@@ -69,6 +96,22 @@ func newS3Uploader(conf *livekit.S3Upload) (uploader, error) {
 
 		logger.Infow("retrieved bucket location", "bucket", u.bucket, "location", region)
 		u.awsConfig.Region = aws.String(region)
+	}
+
+	if conf.Proxy != "" {
+		logger.Infow("configuring s3 with proxy", "proxyEndpoint", conf.Proxy)
+		// Proxy configuration
+		proxyURL, err := url.Parse(conf.Proxy)
+		if err != nil {
+			logger.Errorw("failed to parse proxy URL -- proxy not set", err, "proxy", conf.Proxy)
+		} else {
+			proxyTransport := &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			}
+			u.awsConfig.HTTPClient = &http.Client{Transport: proxyTransport}
+		}
+	} else {
+		logger.Infow("not configuring s3 with proxy since none was provided in config")
 	}
 
 	if len(conf.Metadata) > 0 {
