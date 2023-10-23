@@ -350,7 +350,7 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet, pts time.Duration) error {
 	}
 
 	b := gst.NewBufferFromBytes(p)
-	b.SetPresentationTimestamp(pts)
+	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.logger.Infow("unexpected flow return", "flow", flow)
 	}

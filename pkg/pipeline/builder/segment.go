@@ -67,7 +67,7 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	_, err = sink.Connect("format-location-full", func(self *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
 		var pts time.Duration
 		if firstSample != nil && firstSample.GetBuffer() != nil {
-			pts = firstSample.GetBuffer().PresentationTimestamp()
+			pts = *firstSample.GetBuffer().PresentationTimestamp().AsDuration()
 		} else {
 			logger.Infow("nil sample passed into 'format-location-full' event handler, assuming 0 pts")
 		}
