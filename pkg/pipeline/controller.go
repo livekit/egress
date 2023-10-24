@@ -35,7 +35,6 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
-	"github.com/livekit/psrpc"
 )
 
 const (
@@ -312,13 +311,6 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 	}
 
 	return errs.ToError()
-}
-
-func (c *Controller) UpdateOutputs(ctx context.Context, req *livekit.UpdateOutputsRequest) error {
-	ctx, span := tracer.Start(ctx, "Pipeline.UpdateOutputs")
-	defer span.End()
-
-	return psrpc.NewErrorf(psrpc.Unimplemented, "Updating outputs unimplemented")
 }
 
 func (c *Controller) removeSink(ctx context.Context, url string, streamErr error) error {
