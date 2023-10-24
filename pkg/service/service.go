@@ -152,7 +152,7 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 	return p.Info, nil
 }
 
-func (s *Service) StartEgressAffinity(req *rpc.StartEgressRequest) float32 {
+func (s *Service) StartEgressAffinity(ctx context.Context, req *rpc.StartEgressRequest) float32 {
 	if !s.CanAcceptRequest(req) {
 		// cannot accept
 		return -1
