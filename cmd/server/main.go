@@ -109,7 +109,7 @@ func runService(c *cli.Context) error {
 	}
 
 	bus := psrpc.NewRedisMessageBus(rc)
-	ioClient, err := service.NewIOClient(conf.NodeID, bus)
+	ioClient, err := service.NewIOClient(bus)
 	if err != nil {
 		return err
 	}
@@ -117,7 +117,7 @@ func runService(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	psrpcServer, err := rpc.NewEgressInternalServer(conf.NodeID, svc, bus)
+	psrpcServer, err := rpc.NewEgressInternalServer(svc, bus)
 	if err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func runHandler(c *cli.Context) error {
 	signal.Notify(killChan, syscall.SIGINT)
 
 	bus := psrpc.NewRedisMessageBus(rc)
-	ioClient, err := rpc.NewIOInfoClient(conf.NodeID, bus)
+	ioClient, err := rpc.NewIOInfoClient(bus)
 	if err != nil {
 		return err
 	}

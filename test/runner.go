@@ -34,7 +34,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
 	lksdk "github.com/livekit/server-sdk-go"
 )
@@ -140,7 +139,7 @@ func (r *Runner) Run(t *testing.T, svc *service.Service, bus psrpc.MessageBus, t
 	require.NoError(t, err)
 	defer room.Disconnect()
 
-	psrpcClient, err := rpc.NewEgressClient(livekit.NodeID(utils.NewGuid("TEST_")), bus)
+	psrpcClient, err := rpc.NewEgressClient(bus)
 	require.NoError(t, err)
 
 	// start debug handler

@@ -36,7 +36,7 @@ func newIOTestServer(bus psrpc.MessageBus, updates chan *livekit.EgressInfo) (*i
 	s := &ioTestServer{
 		updates: updates,
 	}
-	server, err := rpc.NewIOInfoServer("test_io", s, bus)
+	server, err := rpc.NewIOInfoServer(s, bus)
 	if err != nil {
 		return nil, err
 	}
