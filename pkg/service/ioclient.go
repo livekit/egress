@@ -17,8 +17,8 @@ type IOClient struct {
 	rpc.IOInfoClient
 }
 
-func NewIOClient(nodeID string, bus psrpc.MessageBus) (rpc.IOInfoClient, error) {
-	client, err := rpc.NewIOInfoClient(nodeID, bus)
+func NewIOClient(bus psrpc.MessageBus) (rpc.IOInfoClient, error) {
+	client, err := rpc.NewIOInfoClient(bus)
 	if err != nil {
 		return nil, err
 	}

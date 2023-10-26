@@ -15,10 +15,10 @@ require (
 	github.com/go-logr/logr v1.2.4
 	github.com/googleapis/gax-go/v2 v2.12.0
 	github.com/gorilla/websocket v1.5.0
-	github.com/livekit/livekit-server v1.4.6-0.20230918194757-8a0d417a8c99
+	github.com/livekit/livekit-server v1.5.1-0.20231026153736-8b16db227070
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.8.1-0.20231023233555-b34cb4eb7fad
-	github.com/livekit/psrpc v0.3.4
+	github.com/livekit/protocol v1.8.2-0.20231026030639-f8b1277b3c7b
+	github.com/livekit/psrpc v0.5.0
 	github.com/livekit/server-sdk-go v1.1.1
 	github.com/pion/rtp v1.8.2
 	github.com/pion/webrtc/v3 v3.2.21
@@ -64,7 +64,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jxskiss/base62 v1.1.0 // indirect
-	github.com/klauspost/compress v1.17.0 // indirect
+	github.com/klauspost/compress v1.17.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
 	github.com/livekit/mediatransportutil v0.0.0-20231017082622-43f077b4e60e // indirect
@@ -74,13 +74,13 @@ require (
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
-	github.com/nats-io/nats.go v1.30.2 // indirect
-	github.com/nats-io/nkeys v0.4.5 // indirect
+	github.com/nats-io/nats.go v1.31.0 // indirect
+	github.com/nats-io/nkeys v0.4.6 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.5 // indirect
 	github.com/pion/dtls/v2 v2.2.7 // indirect
 	github.com/pion/ice/v2 v2.3.11 // indirect
-	github.com/pion/interceptor v0.1.23 // indirect
+	github.com/pion/interceptor v0.1.24 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.8 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
@@ -113,7 +113,7 @@ require (
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20231002182017-d307bd883b97 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20230920204549-e6e6cdab5c13 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20231012201019-e917dd12ba7a // indirect
+	google.golang.org/genproto v0.0.0-20231012201019-e917dd12ba7a // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20231002182017-d307bd883b97 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20231016165738-49dd2c1f3d0b // indirect
 )

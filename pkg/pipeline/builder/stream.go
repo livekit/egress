@@ -17,6 +17,7 @@ package builder
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-gst/go-gst/gst"
 
@@ -37,11 +38,11 @@ type StreamBin struct {
 }
 
 type StreamSink struct {
-	bin           *gstreamer.Bin
-	sink          *gst.Element
-	url           string
-	reconnections int
-	outBytes      uint64
+	bin            *gstreamer.Bin
+	sink           *gst.Element
+	url            string
+	reconnections  int
+	disconnectedAt time.Time
 }
 
 func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*StreamBin, *gstreamer.Bin, error) {
@@ -210,22 +211,21 @@ func (sb *StreamBin) MaybeResetStream(name string, streamErr error) (bool, error
 	}
 	values := s.(*gst.Structure).Values()
 	outBytes := values["out-bytes-acked"].(uint64)
-	if outBytes == 0 {
+
+	if sink.reconnections == 0 && outBytes == 0 {
 		// unable to connect, probably a bad stream key or url
 		return false, nil
 	}
 
-	if outBytes > sink.outBytes {
-		// connection was working until this failure
-		sink.outBytes = outBytes
-		sink.reconnections = 1
-	} else if sink.reconnections == 3 {
-		// max 3 reconnection attempts
+	if outBytes > 0 {
+		// first disconnection
+		sink.disconnectedAt = time.Now()
+		sink.reconnections = 0
+	} else if time.Since(sink.disconnectedAt) > time.Second*30 {
 		return false, nil
-	} else {
-		sink.reconnections++
 	}
 
+	sink.reconnections++
 	redacted, _ := utils.RedactStreamKey(sink.url)
 	logger.Warnw("resetting stream", streamErr, "url", redacted)
 
@@ -235,6 +235,7 @@ func (sb *StreamBin) MaybeResetStream(name string, streamErr error) (bool, error
 	if err = sink.bin.SetState(gst.StatePlaying); err != nil {
 		return false, err
 	}
+
 	return true, nil
 }
 
