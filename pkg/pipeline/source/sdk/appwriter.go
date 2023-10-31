@@ -157,11 +157,10 @@ func (w *AppWriter) TrackID() string {
 }
 
 func (w *AppWriter) Play() {
-	w.playing.Once(func() {
-		if w.pub.IsMuted() {
-			w.SetTrackMuted(true)
-		}
-	})
+	w.playing.Break()
+	if w.pub.IsMuted() {
+		w.SetTrackMuted(true)
+	}
 }
 
 func (w *AppWriter) SetTrackMuted(muted bool) {
