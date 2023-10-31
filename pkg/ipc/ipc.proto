@@ -20,6 +20,7 @@ option go_package = "github.com/livekit/egress/pkg/ipc";
 service EgressHandler {
   rpc GetPipelineDot(GstPipelineDebugDotRequest) returns (GstPipelineDebugDotResponse) {};
   rpc GetPProf(PProfRequest) returns (PProfResponse) {};
+  rpc GetMetrics(MetricsRequest) returns (MetricsResponse) {};
 }
 
 message GstPipelineDebugDotRequest {}
@@ -36,4 +37,10 @@ message PProfRequest {
 
 message PProfResponse {
   bytes pprof_file = 1;
+}
+
+message MetricsRequest {}
+
+message MetricsResponse {
+  string metrics = 1;
 }

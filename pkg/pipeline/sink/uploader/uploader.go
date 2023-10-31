@@ -16,6 +16,7 @@ package uploader
 
 import (
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
 	"os"
 	"path"
 	"time"
@@ -61,16 +62,29 @@ func New(conf config.UploadConfig, backup string) (Uploader, error) {
 		return nil, err
 	}
 
-	return &remoteUploader{
+	remoteUploader := &remoteUploader{
 		uploader: u,
 		backup:   backup,
-	}, nil
+	}
+
+	remoteUploader.backupCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "livekit",
+			Subsystem: "egress",
+			Name:      "backup_storage_writes",
+			Help:      "number of writes to backup storage location by output type",
+			// we don't have access to egress_id, so on it being added in server process
+		}, []string{"output_type"})
+	prometheus.MustRegister(remoteUploader.backupCounter)
+
+	return remoteUploader, nil
 }
 
 type remoteUploader struct {
 	uploader
 
-	backup string
+	backup        string
+	backupCounter *prometheus.CounterVec
 }
 
 func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool) (string, int64, error) {
@@ -93,6 +107,7 @@ func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputTyp
 		if err = os.Rename(localFilepath, backupFilepath); err != nil {
 			return "", 0, err
 		}
+		u.backupCounter.With(prometheus.Labels{"output_type": string(outputType)}).Add(1)
 
 		return backupFilepath, stat.Size(), nil
 	}

@@ -16,8 +16,10 @@ package sink
 
 import (
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
 	"os"
 	"path"
+	"time"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
@@ -44,10 +46,20 @@ func (s *FileSink) Start() error {
 }
 
 func (s *FileSink) Close() error {
+	var labels prometheus.Labels
+	start := time.Now()
 	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
+	elapsed := time.Since(start).Milliseconds()
 	if err != nil {
+		labels = prometheus.Labels{"type": "file", "status": "failure"}
+		s.conf.UploadsCounter.With(labels).Add(1)
+		s.conf.UploadsResponseTime.With(labels).Observe(float64(elapsed))
 		return err
 	}
+	labels = prometheus.Labels{"type": "file", "status": "success"}
+	s.conf.UploadsCounter.With(labels).Add(1)
+	s.conf.UploadsResponseTime.With(labels).Observe(float64(elapsed))
+
 	s.FileInfo.Location = location
 	s.FileInfo.Size = size
 

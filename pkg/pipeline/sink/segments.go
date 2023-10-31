@@ -16,6 +16,7 @@ package sink
 
 import (
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
 	"os"
 	"path"
 	"strings"
@@ -91,7 +92,7 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 		outputType = types.OutputTypeTS
 	}
 
-	return &SegmentSink{
+	s := &SegmentSink{
 		Uploader:              u,
 		SegmentConfig:         o,
 		conf:                  p,
@@ -104,7 +105,32 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 		playlistUpdates:       make(chan SegmentUpdate, maxPendingUploads),
 		throttle:              core.NewThrottle(time.Second * 2),
 		done:                  core.NewFuse(),
-	}, nil
+	}
+
+	// Register gauges that track the number of segments and playlist updates pending upload
+	segmentsUploadsGauge := prometheus.NewGaugeFunc(
+		prometheus.GaugeOpts{
+			Namespace:   "livekit",
+			Subsystem:   "egress",
+			Name:        "segments_uploads_channel_size",
+			Help:        "number of segment uploads pending in channel",
+			ConstLabels: prometheus.Labels{"egress_id": s.conf.Info.EgressId},
+		}, func() float64 {
+			return float64(len(s.closedSegments))
+		})
+	playlistUploadsGauge := prometheus.NewGaugeFunc(
+		prometheus.GaugeOpts{
+			Namespace:   "livekit",
+			Subsystem:   "egress",
+			Name:        "playlist_uploads_channel_size",
+			Help:        "number of playlist updates pending in channel",
+			ConstLabels: prometheus.Labels{"egress_id": s.conf.Info.EgressId},
+		}, func() float64 {
+			return float64(len(s.playlistUpdates))
+		})
+	prometheus.MustRegister(segmentsUploadsGauge, playlistUploadsGauge)
+
+	return s, nil
 }
 
 func (s *SegmentSink) Start() error {
@@ -139,11 +165,19 @@ func (s *SegmentSink) handleClosedSegment(update SegmentUpdate) {
 	go func() {
 		defer close(update.uploadComplete)
 
+		start := time.Now()
 		_, size, err := s.Upload(segmentLocalPath, segmentStoragePath, s.outputType, true)
+		elapsed := time.Since(start).Milliseconds()
 		if err != nil {
+			labels := prometheus.Labels{"type": "segment", "status": "failure"}
+			s.conf.UploadsCounter.With(labels).Add(1)
+			s.conf.UploadsResponseTime.With(labels).Observe(float64(elapsed))
 			s.callbacks.OnError(err)
 			return
 		}
+		labels := prometheus.Labels{"type": "segment", "status": "success"}
+		s.conf.UploadsCounter.With(labels).Add(1)
+		s.conf.UploadsResponseTime.With(labels).Observe(float64(elapsed))
 
 		// lock segment info updates
 		s.infoLock.Lock()
@@ -306,7 +340,17 @@ func (s *SegmentSink) uploadPlaylist() error {
 	var err error
 	playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
 	playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
+	var labels prometheus.Labels
+	start := time.Now()
 	s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
+	elapsed := time.Since(start).Milliseconds()
+	if err != nil {
+		labels = prometheus.Labels{"type": "playlist", "status": "failure"}
+	} else {
+		labels = prometheus.Labels{"type": "playlist", "status": "success"}
+	}
+	s.conf.UploadsCounter.With(labels).Add(1)
+	s.conf.UploadsResponseTime.With(labels).Observe(float64(elapsed))
 	return err
 }
 
@@ -314,6 +358,16 @@ func (s *SegmentSink) uploadLivePlaylist() error {
 	var err error
 	liveLocalPath := path.Join(s.LocalDir, s.LivePlaylistFilename)
 	liveStoragePath := path.Join(s.StorageDir, s.LivePlaylistFilename)
+	var labels prometheus.Labels
+	start := time.Now()
 	s.SegmentsInfo.LivePlaylistLocation, _, err = s.Upload(liveLocalPath, liveStoragePath, s.OutputType, false)
+	elapsed := time.Since(start).Milliseconds()
+	if err != nil {
+		labels = prometheus.Labels{"type": "live_playlist", "status": "failure"}
+	} else {
+		labels = prometheus.Labels{"type": "live_playlist", "status": "success"}
+	}
+	s.conf.UploadsCounter.With(labels).Add(1)
+	s.conf.UploadsResponseTime.With(labels).Observe(float64(elapsed))
 	return err
 }

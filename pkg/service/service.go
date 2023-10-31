@@ -18,6 +18,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"net"
 	"net/http"
 	"sync"
@@ -65,7 +67,7 @@ func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service
 	if conf.PrometheusPort > 0 {
 		s.promServer = &http.Server{
 			Addr:    fmt.Sprintf(":%d", conf.PrometheusPort),
-			Handler: promhttp.Handler(),
+			Handler: s.PromHandler(),
 		}
 	}
 
@@ -217,4 +219,31 @@ func (s *Service) Close() {
 	}
 	logger.Infow("closing server")
 	s.psrpcServer.Shutdown()
+}
+
+func (s *Service) CreateGatherer() prometheus.Gatherer {
+	return prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+		_, span := tracer.Start(context.Background(), "Service.GathererOfHandlerMetrics")
+		defer span.End()
+
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+
+		logger.Debugw("gathering metrics", "numHandlers", len(s.activeHandlers))
+
+		gatherers := prometheus.Gatherers{}
+		// Include the default repo
+		gatherers = append(gatherers, prometheus.DefaultGatherer)
+		// add all the active handlers as sources
+		for _, v := range s.activeHandlers {
+			gatherers = append(gatherers, v)
+		}
+		return gatherers.Gather()
+	})
+}
+
+func (s *Service) PromHandler() http.Handler {
+	return promhttp.InstrumentMetricHandler(
+		prometheus.DefaultRegisterer, promhttp.HandlerFor(s.CreateGatherer(), promhttp.HandlerOpts{}),
+	)
 }

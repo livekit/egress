@@ -16,7 +16,9 @@ package sink
 
 import (
 	"encoding/json"
+	"github.com/prometheus/client_golang/prometheus"
 	"os"
+	"time"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
@@ -55,7 +57,18 @@ func uploadManifest(p *config.PipelineConfig, u uploader.Uploader, localFilepath
 		return err
 	}
 
+	var labels prometheus.Labels
+	start := time.Now()
 	_, _, err = u.Upload(localFilepath, storageFilepath, types.OutputTypeJSON, false)
+	elapsed := time.Since(start).Milliseconds()
+	if err != nil {
+		labels = prometheus.Labels{"type": "manifest", "status": "failure"}
+	} else {
+		labels = prometheus.Labels{"type": "manifest", "status": "success"}
+	}
+	p.UploadsCounter.With(labels).Add(1)
+	p.UploadsResponseTime.With(labels).Observe(float64(elapsed))
+
 	return err
 }
 
