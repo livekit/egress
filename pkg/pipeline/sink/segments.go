@@ -16,7 +16,7 @@ package sink
 
 import (
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/livekit/egress/pkg/stats"
 	"os"
 	"path"
 	"strings"
@@ -71,7 +71,7 @@ type SegmentUpdate struct {
 	uploadComplete chan struct{}
 }
 
-func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig, callbacks *gstreamer.Callbacks) (*SegmentSink, error) {
+func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig, callbacks *gstreamer.Callbacks, monitor stats.HandlerMonitor) (*SegmentSink, error) {
 	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
 	playlist, err := m3u8.NewEventPlaylistWriter(playlistName, o.SegmentDuration)
 	if err != nil {
@@ -108,27 +108,14 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 	}
 
 	// Register gauges that track the number of segments and playlist updates pending upload
-	segmentsUploadsGauge := prometheus.NewGaugeFunc(
-		prometheus.GaugeOpts{
-			Namespace:   "livekit",
-			Subsystem:   "egress",
-			Name:        "segments_uploads_channel_size",
-			Help:        "number of segment uploads pending in channel",
-			ConstLabels: prometheus.Labels{"egress_id": s.conf.Info.EgressId},
-		}, func() float64 {
-			return float64(len(s.closedSegments))
-		})
-	playlistUploadsGauge := prometheus.NewGaugeFunc(
-		prometheus.GaugeOpts{
-			Namespace:   "livekit",
-			Subsystem:   "egress",
-			Name:        "playlist_uploads_channel_size",
-			Help:        "number of playlist updates pending in channel",
-			ConstLabels: prometheus.Labels{"egress_id": s.conf.Info.EgressId},
-		}, func() float64 {
+	monitor.RegisterPlaylistChannelSizeGauge(s.conf.NodeID, s.conf.ClusterID, s.conf.Info.EgressId,
+		func() float64 {
 			return float64(len(s.playlistUpdates))
 		})
-	prometheus.MustRegister(segmentsUploadsGauge, playlistUploadsGauge)
+	monitor.RegisterSegmentsChannelSizeGauge(s.conf.NodeID, s.conf.ClusterID, s.conf.Info.EgressId,
+		func() float64 {
+			return float64(len(s.closedSegments))
+		})
 
 	return s, nil
 }

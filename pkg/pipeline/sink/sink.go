@@ -53,7 +53,7 @@ func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[
 				return nil, err
 			}
 
-			s, err = newSegmentSink(u, p, o, callbacks)
+			s, err = newSegmentSink(u, p, o, callbacks, monitor)
 			if err != nil {
 				return nil, err
 			}
