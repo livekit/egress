@@ -17,7 +17,6 @@ package config
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
 	"net/url"
 	"strings"
 	"time"
@@ -61,9 +60,6 @@ type PipelineConfig struct {
 	OnUpdate func(context.Context, *livekit.EgressInfo) `yaml:"-"`
 
 	Info *livekit.EgressInfo `yaml:"-"`
-
-	UploadsCounter      *prometheus.CounterVec   `yaml:"-"`
-	UploadsResponseTime *prometheus.HistogramVec `yaml:"-"`
 }
 
 type SourceConfig struct {
@@ -148,25 +144,6 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 		return nil, err
 	}
 
-	constantLabels := prometheus.Labels{"node_id": p.NodeID, "cluster_id": p.ClusterID, "egress_id": req.EgressId}
-
-	p.UploadsCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "pipeline_uploads",
-		Help:        "Number of uploads per pipeline with type and status labels",
-		ConstLabels: constantLabels,
-	}, []string{"type", "status"}) // type: file, manifest, segment, liveplaylist, playlist; status: success,failure
-
-	p.UploadsResponseTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "pipline_upload_response_time_ms",
-		Help:        "A histogram of latencies for upload requests in milliseconds.",
-		Buckets:     []float64{10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 15000, 20000, 30000},
-		ConstLabels: constantLabels,
-	}, []string{"type", "status"})
-	prometheus.MustRegister(p.UploadsCounter, p.UploadsResponseTime)
 	return p, p.Update(req)
 }
 

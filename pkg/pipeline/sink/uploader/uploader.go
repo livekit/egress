@@ -16,6 +16,7 @@ package uploader
 
 import (
 	"fmt"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/prometheus/client_golang/prometheus"
 	"os"
 	"path"
@@ -35,14 +36,14 @@ const (
 )
 
 type Uploader interface {
-	Upload(string, string, types.OutputType, bool) (string, int64, error)
+	Upload(string, string, types.OutputType, bool, string) (string, int64, error)
 }
 
 type uploader interface {
 	upload(string, string, types.OutputType) (string, int64, error)
 }
 
-func New(conf config.UploadConfig, backup string) (Uploader, error) {
+func New(conf config.UploadConfig, backup string, monitor stats.HandlerMonitor) (Uploader, error) {
 	var u uploader
 	var err error
 
@@ -65,6 +66,7 @@ func New(conf config.UploadConfig, backup string) (Uploader, error) {
 	remoteUploader := &remoteUploader{
 		uploader: u,
 		backup:   backup,
+		monitor:  monitor,
 	}
 
 	remoteUploader.backupCounter = prometheus.NewCounterVec(
@@ -85,17 +87,22 @@ type remoteUploader struct {
 
 	backup        string
 	backupCounter *prometheus.CounterVec
+	monitor       stats.HandlerMonitor
 }
 
-func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool) (string, int64, error) {
+func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool, fileType string) (string, int64, error) {
+	start := time.Now()
 	location, size, err := u.upload(localFilepath, storageFilepath, outputType)
+	elapsed := time.Since(start).Milliseconds()
 	if err == nil {
+		u.monitor.IncUploadCountFailure(fileType, float64(elapsed))
 		if deleteAfterUpload {
 			_ = os.Remove(localFilepath)
 		}
 
 		return location, size, nil
 	}
+	u.monitor.IncUploadCountSuccess(fileType, float64(elapsed))
 
 	if u.backup != "" {
 		stat, err := os.Stat(localFilepath)
@@ -117,7 +124,7 @@ func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputTyp
 
 type localUploader struct{}
 
-func (u *localUploader) Upload(localFilepath, _ string, _ types.OutputType, _ bool) (string, int64, error) {
+func (u *localUploader) Upload(localFilepath, _ string, _ types.OutputType, _ bool, _ string) (string, int64, error) {
 	stat, err := os.Stat(localFilepath)
 	if err != nil {
 		return "", 0, err
