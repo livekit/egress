@@ -83,14 +83,14 @@ func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputTyp
 	location, size, err := u.upload(localFilepath, storageFilepath, outputType)
 	elapsed := time.Since(start).Milliseconds()
 	if err == nil {
-		u.monitor.IncUploadCountFailure(fileType, float64(elapsed))
+		u.monitor.IncUploadCountSuccess(fileType, float64(elapsed))
 		if deleteAfterUpload {
 			_ = os.Remove(localFilepath)
 		}
 
 		return location, size, nil
 	}
-	u.monitor.IncUploadCountSuccess(fileType, float64(elapsed))
+	u.monitor.IncUploadCountFailure(fileType, float64(elapsed))
 
 	if u.backup != "" {
 		stat, err := os.Stat(localFilepath)
