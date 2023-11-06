@@ -201,18 +201,18 @@ func getSocketAddress(handlerTmpDir string) string {
 // Gather implements the prometheus.Gatherer interface on server-side to allow aggregation of handler metrics
 func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 	// Get the metrics from the handler via IPC
-	logger.Debugw("gathering metrics from handler process", "handlerID", p.handlerID)
+	logger.Debugw("gathering metrics from handler process", "egress_id", p.req.EgressId)
 	metricsResponse, err := p.grpcClient.GetMetrics(context.Background(), &ipc.MetricsRequest{})
 	if err != nil {
-		logger.Errorw("Error obtaining metrics from handler", err)
-		return make([]*dto.MetricFamily, 0), err
+		logger.Warnw("Error obtaining metrics from handler, skipping", err, "egress_id", p.req.EgressId)
+		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
 	}
 	// Parse the result to match the Gatherer interface
 	parser := &expfmt.TextParser{}
 	families, err := parser.TextToMetricFamilies(strings.NewReader(metricsResponse.Metrics))
 	if err != nil {
-		logger.Errorw("Error parsing metrics from handler", err)
-		return make([]*dto.MetricFamily, 0), err
+		logger.Warnw("Error parsing metrics from handler, skipping", err, "egress_id", p.req.EgressId)
+		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
 	}
 
 	// Add an egress_id label to every metric all the families, if it doesn't already have one
