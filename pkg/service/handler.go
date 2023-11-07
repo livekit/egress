@@ -16,7 +16,10 @@ package service
 
 import (
 	"context"
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -34,6 +37,8 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/psrpc"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const network = "unix"
@@ -194,6 +199,47 @@ func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PPr
 	return &ipc.PProfResponse{
 		PprofFile: b,
 	}, nil
+}
+
+// GetMetrics implement the handler-side gathering of metrics to return over IPC
+func (h *Handler) GetMetrics(ctx context.Context, req *ipc.MetricsRequest) (*ipc.MetricsResponse, error) {
+	ctx, span := tracer.Start(ctx, "Handler.GetMetrics")
+	defer span.End()
+
+	metrics, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Debugw("returning metrics from handler process", "sizeOfFamilies", len(metrics))
+	metricsAsString, cnt, err := renderMetrics(metrics)
+	if err != nil {
+		return &ipc.MetricsResponse{
+			Metrics: "",
+		}, err
+	}
+	logger.Debugw("Metrics returned from handler process", "cnt", cnt, "metrics", metricsAsString)
+	return &ipc.MetricsResponse{
+		Metrics: metricsAsString,
+	}, nil
+}
+
+func renderMetrics(metrics []*dto.MetricFamily) (string, int, error) {
+	// Create a StringWriter to render the metrics into text format
+	writer := &strings.Builder{}
+	totalCnt := 0
+	for _, metric := range metrics {
+		// Write each metric family to text
+		cnt, err := expfmt.MetricFamilyToText(writer, metric)
+		if err != nil {
+			logger.Errorw("Error writing metric family", err)
+			return "", 0, err
+		}
+		totalCnt += cnt
+	}
+
+	// Get the rendered metrics as a string from the StringWriter
+	return writer.String(), totalCnt, nil
 }
 
 func (h *Handler) Kill() {

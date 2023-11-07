@@ -16,6 +16,7 @@ package sink
 
 import (
 	"fmt"
+	"github.com/livekit/egress/pkg/stats"
 	"os"
 	"path"
 	"strings"
@@ -70,7 +71,7 @@ type SegmentUpdate struct {
 	uploadComplete chan struct{}
 }
 
-func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig, callbacks *gstreamer.Callbacks) (*SegmentSink, error) {
+func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig, callbacks *gstreamer.Callbacks, monitor stats.HandlerMonitor) (*SegmentSink, error) {
 	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
 	playlist, err := m3u8.NewEventPlaylistWriter(playlistName, o.SegmentDuration)
 	if err != nil {
@@ -91,7 +92,7 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 		outputType = types.OutputTypeTS
 	}
 
-	return &SegmentSink{
+	s := &SegmentSink{
 		Uploader:              u,
 		SegmentConfig:         o,
 		conf:                  p,
@@ -104,7 +105,19 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 		playlistUpdates:       make(chan SegmentUpdate, maxPendingUploads),
 		throttle:              core.NewThrottle(time.Second * 2),
 		done:                  core.NewFuse(),
-	}, nil
+	}
+
+	// Register gauges that track the number of segments and playlist updates pending upload
+	monitor.RegisterPlaylistChannelSizeGauge(s.conf.NodeID, s.conf.ClusterID, s.conf.Info.EgressId,
+		func() float64 {
+			return float64(len(s.playlistUpdates))
+		})
+	monitor.RegisterSegmentsChannelSizeGauge(s.conf.NodeID, s.conf.ClusterID, s.conf.Info.EgressId,
+		func() float64 {
+			return float64(len(s.closedSegments))
+		})
+
+	return s, nil
 }
 
 func (s *SegmentSink) Start() error {
@@ -139,11 +152,7 @@ func (s *SegmentSink) handleClosedSegment(update SegmentUpdate) {
 	go func() {
 		defer close(update.uploadComplete)
 
-		_, size, err := s.Upload(segmentLocalPath, segmentStoragePath, s.outputType, true)
-		if err != nil {
-			s.callbacks.OnError(err)
-			return
-		}
+		_, size, _ := s.Upload(segmentLocalPath, segmentStoragePath, s.outputType, true, "segment")
 
 		// lock segment info updates
 		s.infoLock.Lock()
@@ -306,7 +315,7 @@ func (s *SegmentSink) uploadPlaylist() error {
 	var err error
 	playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
 	playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
-	s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
+	s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false, "playlist")
 	return err
 }
 
@@ -314,6 +323,6 @@ func (s *SegmentSink) uploadLivePlaylist() error {
 	var err error
 	liveLocalPath := path.Join(s.LocalDir, s.LivePlaylistFilename)
 	liveStoragePath := path.Join(s.StorageDir, s.LivePlaylistFilename)
-	s.SegmentsInfo.LivePlaylistLocation, _, err = s.Upload(liveLocalPath, liveStoragePath, s.OutputType, false)
+	s.SegmentsInfo.LivePlaylistLocation, _, err = s.Upload(liveLocalPath, liveStoragePath, s.OutputType, false, "live_playlist")
 	return err
 }

@@ -84,6 +84,12 @@ s3:
   region: AWS_DEFAULT_REGION env or IAM role can be used instead
   endpoint: (optional) custom endpoint
   bucket: bucket to upload files to
+  # the following s3 options can only be set in config, *not* per request, they will be added to any per-request options
+  proxy: (optional, no default) proxy url
+  max_retries: (optional, default=3) number or retries to attempt
+  max_retry_delay: (optional, default=5s) max delay between retries (e.g. 5s, 100ms, 1m...)
+  min_retry_delay: (optional, default=500ms) min delay between retries (e.g. 100ms, 1s...)
+  aws_log_level: (optional, default=LogOff) log level for aws sdk (LogDebugWithRequestRetries, LogDebug, ...) 
 azure:
   account_name: AZURE_STORAGE_ACCOUNT env can be used instead
   account_key: AZURE_STORAGE_KEY env can be used instead

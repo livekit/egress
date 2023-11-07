@@ -16,12 +16,11 @@ package sink
 
 import (
 	"fmt"
-	"os"
-	"path"
-
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/protocol/logger"
+	"os"
+	"path"
 )
 
 type FileSink struct {
@@ -44,10 +43,8 @@ func (s *FileSink) Start() error {
 }
 
 func (s *FileSink) Close() error {
-	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
-	if err != nil {
-		return err
-	}
+	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false, "file")
+
 	s.FileInfo.Location = location
 	s.FileInfo.Size = size
 

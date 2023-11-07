@@ -16,6 +16,7 @@ package uploader
 
 import (
 	"fmt"
+	"github.com/livekit/egress/pkg/stats"
 	"os"
 	"path"
 	"time"
@@ -34,19 +35,19 @@ const (
 )
 
 type Uploader interface {
-	Upload(string, string, types.OutputType, bool) (string, int64, error)
+	Upload(string, string, types.OutputType, bool, string) (string, int64, error)
 }
 
 type uploader interface {
 	upload(string, string, types.OutputType) (string, int64, error)
 }
 
-func New(conf config.UploadConfig, backup string) (Uploader, error) {
+func New(conf config.UploadConfig, backup string, monitor stats.HandlerMonitor) (Uploader, error) {
 	var u uploader
 	var err error
 
 	switch c := conf.(type) {
-	case *livekit.S3Upload:
+	case *config.EgressS3Upload:
 		u, err = newS3Uploader(c)
 	case *livekit.GCPUpload:
 		u, err = newGCPUploader(c)
@@ -61,27 +62,35 @@ func New(conf config.UploadConfig, backup string) (Uploader, error) {
 		return nil, err
 	}
 
-	return &remoteUploader{
+	remoteUploader := &remoteUploader{
 		uploader: u,
 		backup:   backup,
-	}, nil
+		monitor:  monitor,
+	}
+
+	return remoteUploader, nil
 }
 
 type remoteUploader struct {
 	uploader
 
-	backup string
+	backup  string
+	monitor stats.HandlerMonitor
 }
 
-func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool) (string, int64, error) {
+func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool, fileType string) (string, int64, error) {
+	start := time.Now()
 	location, size, err := u.upload(localFilepath, storageFilepath, outputType)
+	elapsed := time.Since(start).Milliseconds()
 	if err == nil {
+		u.monitor.IncUploadCountSuccess(fileType, float64(elapsed))
 		if deleteAfterUpload {
 			_ = os.Remove(localFilepath)
 		}
 
 		return location, size, nil
 	}
+	u.monitor.IncUploadCountFailure(fileType, float64(elapsed))
 
 	if u.backup != "" {
 		stat, err := os.Stat(localFilepath)
@@ -93,6 +102,7 @@ func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputTyp
 		if err = os.Rename(localFilepath, backupFilepath); err != nil {
 			return "", 0, err
 		}
+		u.monitor.IncBackupStorageWrites(string(outputType))
 
 		return backupFilepath, stat.Size(), nil
 	}
@@ -102,7 +112,7 @@ func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputTyp
 
 type localUploader struct{}
 
-func (u *localUploader) Upload(localFilepath, _ string, _ types.OutputType, _ bool) (string, int64, error) {
+func (u *localUploader) Upload(localFilepath, _ string, _ types.OutputType, _ bool, _ string) (string, int64, error) {
 	stat, err := os.Stat(localFilepath)
 	if err != nil {
 		return "", 0, err

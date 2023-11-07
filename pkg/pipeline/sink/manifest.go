@@ -16,11 +16,10 @@ package sink
 
 import (
 	"encoding/json"
-	"os"
-
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/types"
+	"os"
 )
 
 type Manifest struct {
@@ -55,7 +54,8 @@ func uploadManifest(p *config.PipelineConfig, u uploader.Uploader, localFilepath
 		return err
 	}
 
-	_, _, err = u.Upload(localFilepath, storageFilepath, types.OutputTypeJSON, false)
+	_, _, err = u.Upload(localFilepath, storageFilepath, types.OutputTypeJSON, false, "manifest")
+
 	return err
 }
 

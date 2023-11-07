@@ -71,7 +71,7 @@ func (m *ImageManifest) updateManifest(u uploader.Uploader, localFilepath, stora
 		return err
 	}
 
-	_, _, err = u.Upload(localFilepath, storageFilepath, types.OutputTypeJSON, false)
+	_, _, err = u.Upload(localFilepath, storageFilepath, types.OutputTypeJSON, false, "image_manifest")
 
 	return err
 }

@@ -15,8 +15,10 @@
 package config
 
 import (
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
+	"time"
 )
 
 type UploadConfig interface{}
@@ -28,9 +30,31 @@ type uploadRequest interface {
 	GetAliOSS() *livekit.AliOSSUpload
 }
 
+type EgressS3Upload struct {
+	*livekit.S3Upload
+	Proxy         string
+	MaxRetries    int
+	MaxRetryDelay time.Duration
+	MinRetryDelay time.Duration
+	AwsLogLevel   aws.LogLevelType
+}
+
 func (p *PipelineConfig) getUploadConfig(req uploadRequest) UploadConfig {
 	if s3 := req.GetS3(); s3 != nil {
-		return s3
+		s3StorageConfigFromReq := &EgressS3Upload{
+			S3Upload: s3,
+		}
+		// merge in options from config (proxy, retry limit, delay and aws logging) if specified
+		if p.S3 != nil {
+			// parse config.yaml options and get defaults
+			S3StorageConfigFromConfigYaml := p.ToUploadConfig().(*EgressS3Upload)
+			// merge into pipeline config created from request options
+			s3StorageConfigFromReq.Proxy = S3StorageConfigFromConfigYaml.Proxy
+			s3StorageConfigFromReq.MaxRetries = S3StorageConfigFromConfigYaml.MaxRetries
+			s3StorageConfigFromReq.MaxRetryDelay = S3StorageConfigFromConfigYaml.MaxRetryDelay
+			s3StorageConfigFromReq.AwsLogLevel = S3StorageConfigFromConfigYaml.AwsLogLevel
+		}
+		return s3StorageConfigFromReq
 	}
 	if gcp := req.GetGcp(); gcp != nil {
 		return gcp
@@ -47,14 +71,50 @@ func (p *PipelineConfig) getUploadConfig(req uploadRequest) UploadConfig {
 
 func (c StorageConfig) ToUploadConfig() UploadConfig {
 	if c.S3 != nil {
-		return &livekit.S3Upload{
-			AccessKey:      c.S3.AccessKey,
-			Secret:         c.S3.Secret,
-			Region:         c.S3.Region,
-			Endpoint:       c.S3.Endpoint,
-			Bucket:         c.S3.Bucket,
-			ForcePathStyle: c.S3.ForcePathStyle,
+		s3StorageConfig := &EgressS3Upload{
+			S3Upload: &livekit.S3Upload{
+				AccessKey:      c.S3.AccessKey,
+				Secret:         c.S3.Secret,
+				Region:         c.S3.Region,
+				Endpoint:       c.S3.Endpoint,
+				Bucket:         c.S3.Bucket,
+				ForcePathStyle: c.S3.ForcePathStyle,
+			},
+			Proxy: c.S3.Proxy,
 		}
+		// Handle max retries with default
+		if c.S3.MaxRetries > 0 {
+			s3StorageConfig.MaxRetries = c.S3.MaxRetries
+		} else {
+			s3StorageConfig.MaxRetries = 3
+		}
+		// Handle min/max delay (for backoff) with defaults
+		if c.S3.MaxRetryDelay > 0 {
+			s3StorageConfig.MaxRetryDelay = c.S3.MaxRetryDelay
+		} else {
+			s3StorageConfig.MaxRetryDelay = time.Second * 5
+		}
+		if c.S3.MinRetryDelay > 0 {
+			s3StorageConfig.MinRetryDelay = c.S3.MinRetryDelay
+		} else {
+			s3StorageConfig.MinRetryDelay = time.Millisecond * 100
+		}
+		// Handle AWS log level with default
+		switch c.S3.AwsLogLevel {
+		case "LogDebugWithRequestRetries":
+			s3StorageConfig.AwsLogLevel = aws.LogDebugWithRequestRetries
+		case "LogDebug":
+			s3StorageConfig.AwsLogLevel = aws.LogDebug
+		case "LogDebugWithRequestErrors":
+			s3StorageConfig.AwsLogLevel = aws.LogDebugWithRequestErrors
+		case "LogDebugWithHTTPBody":
+			s3StorageConfig.AwsLogLevel = aws.LogDebugWithHTTPBody
+		case "LogDebugWithSigning":
+			s3StorageConfig.AwsLogLevel = aws.LogDebugWithSigning
+		default:
+			s3StorageConfig.AwsLogLevel = aws.LogOff
+		}
+		return s3StorageConfig
 	}
 	if c.Azure != nil {
 		return &livekit.AzureBlobUpload{
