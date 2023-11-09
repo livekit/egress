@@ -152,6 +152,8 @@ func (s *SDKSource) joinRoom() error {
 			OnTrackUnmuted:      s.onTrackUnmuted,
 			OnTrackUnsubscribed: s.onTrackUnsubscribed,
 		},
+		OnReconnecting: s.onReconnecting,
+		OnReconnected:  s.onReconnected,
 		OnDisconnected: s.onDisconnected,
 	}
 	if s.RequestType == types.RequestTypeParticipant {
@@ -525,19 +527,42 @@ func (s *SDKSource) onTrackFinished(trackID string) {
 			s.callbacks.OnTrackRemoved(trackID)
 			s.sync.RemoveTrack(trackID)
 		} else if active == 0 {
-			s.onDisconnected()
+			s.finished()
 		}
 	}
 }
 
 func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
 	if rp.Identity() == s.Identity {
-		logger.Debugw("Participant disconnected")
-		s.onDisconnected()
+		logger.Debugw("participant disconnected")
+		s.finished()
+	}
+}
+
+func (s *SDKSource) onReconnecting() {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, writer := range s.writers {
+		writer.SetTrackDisconnected(true)
+	}
+}
+
+func (s *SDKSource) onReconnected() {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, writer := range s.writers {
+		writer.SetTrackDisconnected(false)
 	}
 }
 
 func (s *SDKSource) onDisconnected() {
+	logger.Warnw("disconnected from room", nil)
+	s.finished()
+}
+
+func (s *SDKSource) finished() {
 	select {
 	case <-s.endRecording:
 		return
