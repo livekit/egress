@@ -1,6 +1,8 @@
 module github.com/livekit/egress
 
-go 1.20
+go 1.21
+
+toolchain go1.21.4
 
 require (
 	cloud.google.com/go/storage v1.31.0
