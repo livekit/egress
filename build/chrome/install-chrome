@@ -46,7 +46,7 @@ else
   rm google-chrome-stable_current_amd64.deb
 fi
 
-wget -N http://chromedriver.storage.googleapis.com/2.46/chromedriver_linux64.zip
+wget -N https://chromedriver.storage.googleapis.com/2.46/chromedriver_linux64.zip
 unzip chromedriver_linux64.zip
 chmod +x chromedriver
 mv -f chromedriver /usr/local/bin/chromedriver
