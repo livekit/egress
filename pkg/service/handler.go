@@ -16,11 +16,12 @@ package service
 
 import (
 	"context"
-	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/expfmt"
 	"net"
 	"strings"
 	"time"
+
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
 
 	"github.com/frostbyte73/core"
 	"google.golang.org/grpc"
@@ -218,7 +219,7 @@ func (h *Handler) GetMetrics(ctx context.Context, req *ipc.MetricsRequest) (*ipc
 			Metrics: "",
 		}, err
 	}
-	logger.Debugw("Metrics returned from handler process", "cnt", cnt, "metrics", metricsAsString)
+	logger.Debugw("metrics returned from handler process", "cnt", cnt, "metrics", metricsAsString)
 	return &ipc.MetricsResponse{
 		Metrics: metricsAsString,
 	}, nil
@@ -232,7 +233,7 @@ func renderMetrics(metrics []*dto.MetricFamily) (string, int, error) {
 		// Write each metric family to text
 		cnt, err := expfmt.MetricFamilyToText(writer, metric)
 		if err != nil {
-			logger.Errorw("Error writing metric family", err)
+			logger.Errorw("error writing metric family", err)
 			return "", 0, err
 		}
 		totalCnt += cnt

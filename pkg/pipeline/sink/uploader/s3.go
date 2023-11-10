@@ -16,6 +16,10 @@ package uploader
 
 import (
 	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -24,9 +28,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/livekit/egress/pkg/config"
-	"net/http"
-	"net/url"
-	"os"
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
@@ -45,6 +46,10 @@ type CustomRetryer struct {
 
 // ShouldRetry overrides the SDK's built in DefaultRetryer because the PUTs for segments/playlists are always idempotent
 func (r CustomRetryer) ShouldRetry(req *request.Request) bool {
+	// if the request failed due to a 401 or 403, don't retry
+	if req.HTTPResponse.StatusCode == http.StatusUnauthorized || req.HTTPResponse.StatusCode == http.StatusForbidden {
+		return false
+	}
 	return true
 }
 
@@ -69,7 +74,7 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 		S3ForcePathStyle: aws.Bool(conf.ForcePathStyle),
 		LogLevel:         aws.LogLevel(conf.AwsLogLevel),
 	}
-	logger.Infow("setting AWS config", "maxRetries", conf.MaxRetries,
+	logger.Debugw("setting AWS config", "maxRetries", conf.MaxRetries,
 		"maxDelay", conf.MaxRetryDelay,
 		"minDelay", conf.MinRetryDelay,
 	)
@@ -94,12 +99,12 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 			return nil, err
 		}
 
-		logger.Infow("retrieved bucket location", "bucket", u.bucket, "location", region)
+		logger.Debugw("retrieved bucket location", "bucket", u.bucket, "location", region)
 		u.awsConfig.Region = aws.String(region)
 	}
 
 	if conf.Proxy != "" {
-		logger.Infow("configuring s3 with proxy", "proxyEndpoint", conf.Proxy)
+		logger.Debugw("configuring s3 with proxy", "proxyEndpoint", conf.Proxy)
 		// Proxy configuration
 		proxyURL, err := url.Parse(conf.Proxy)
 		if err != nil {
@@ -111,7 +116,7 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 			u.awsConfig.HTTPClient = &http.Client{Transport: proxyTransport}
 		}
 	} else {
-		logger.Infow("not configuring s3 with proxy since none was provided in config")
+		logger.Debugw("not configuring s3 with proxy since none was provided in config")
 	}
 
 	if len(conf.Metadata) > 0 {

@@ -16,12 +16,13 @@ package sink
 
 import (
 	"fmt"
-	"github.com/livekit/egress/pkg/stats"
 	"os"
 	"path"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/livekit/egress/pkg/stats"
 
 	"github.com/frostbyte73/core"
 

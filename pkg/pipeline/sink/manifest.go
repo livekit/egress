@@ -16,10 +16,11 @@ package sink
 
 import (
 	"encoding/json"
+	"os"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/types"
-	"os"
 )
 
 type Manifest struct {

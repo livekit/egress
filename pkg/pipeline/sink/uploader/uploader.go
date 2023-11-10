@@ -16,10 +16,11 @@ package uploader
 
 import (
 	"fmt"
-	"github.com/livekit/egress/pkg/stats"
 	"os"
 	"path"
 	"time"
+
+	"github.com/livekit/egress/pkg/stats"
 
 	"github.com/pkg/errors"
 
