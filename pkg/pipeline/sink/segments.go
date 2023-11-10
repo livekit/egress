@@ -153,7 +153,11 @@ func (s *SegmentSink) handleClosedSegment(update SegmentUpdate) {
 	go func() {
 		defer close(update.uploadComplete)
 
-		_, size, _ := s.Upload(segmentLocalPath, segmentStoragePath, s.outputType, true, "segment")
+		_, size, err := s.Upload(segmentLocalPath, segmentStoragePath, s.outputType, true, "segment")
+		if err != nil {
+			s.callbacks.OnError(err)
+			return
+		}
 
 		// lock segment info updates
 		s.infoLock.Lock()
