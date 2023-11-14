@@ -34,7 +34,7 @@ jobs:
         with:
           node-version: 18
           cache: "pnpm"
-          cache-dependency-path: ./template-sdk/pnpm-lock.json
+          cache-dependency-path: ./template-sdk/pnpm-lock.yaml
 
       - name: Install Dependencies
         run: pnpm install
