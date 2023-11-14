@@ -20,10 +20,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/frostbyte73/core"
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-
-	"github.com/frostbyte73/core"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -38,8 +38,6 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/psrpc"
-
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 const network = "unix"

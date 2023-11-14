@@ -16,8 +16,6 @@ package service
 
 import (
 	"context"
-	"github.com/prometheus/common/expfmt"
-	"golang.org/x/exp/maps"
 	"net"
 	"os"
 	"os/exec"
@@ -27,6 +25,9 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
+	"golang.org/x/exp/maps"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -40,8 +41,6 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
-
-	dto "github.com/prometheus/client_model/go"
 )
 
 type Process struct {

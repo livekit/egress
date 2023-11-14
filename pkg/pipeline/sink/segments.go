@@ -22,8 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/egress/pkg/stats"
-
 	"github.com/frostbyte73/core"
 
 	"github.com/livekit/egress/pkg/config"
@@ -31,6 +29,7 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/sink/m3u8"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 )

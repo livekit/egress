@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
