@@ -67,9 +67,9 @@ RUN apt-get update && \
 
 # install go
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    wget https://go.dev/dl/go1.20.7.linux-${GOARCH}.tar.gz && \
+    wget https://go.dev/dl/go1.21.4.linux-${GOARCH}.tar.gz && \
     rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go1.20.7.linux-${GOARCH}.tar.gz
+    tar -C /usr/local -xzf go1.21.4.linux-${GOARCH}.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 # install chrome
