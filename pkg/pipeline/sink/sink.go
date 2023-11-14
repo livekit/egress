@@ -18,6 +18,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 )
 
@@ -35,11 +36,12 @@ func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[
 		}
 		var s Sink
 		var err error
+		monitor := *stats.NewHandlerMonitor(p.NodeID, p.ClusterID, p.Info.EgressId)
 		switch egressType {
 		case types.EgressTypeFile:
 			o := c[0].(*config.FileConfig)
 
-			u, err := uploader.New(o.UploadConfig, p.BackupStorage)
+			u, err := uploader.New(o.UploadConfig, p.BackupStorage, monitor)
 			if err != nil {
 				return nil, err
 			}
@@ -49,12 +51,12 @@ func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[
 		case types.EgressTypeSegments:
 			o := c[0].(*config.SegmentConfig)
 
-			u, err := uploader.New(o.UploadConfig, p.BackupStorage)
+			u, err := uploader.New(o.UploadConfig, p.BackupStorage, monitor)
 			if err != nil {
 				return nil, err
 			}
 
-			s, err = newSegmentSink(u, p, o, callbacks)
+			s, err = newSegmentSink(u, p, o, callbacks, monitor)
 			if err != nil {
 				return nil, err
 			}
@@ -73,7 +75,7 @@ func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[
 			for _, ci := range c {
 				o := ci.(*config.ImageConfig)
 
-				u, err := uploader.New(o.UploadConfig, p.BackupStorage)
+				u, err := uploader.New(o.UploadConfig, p.BackupStorage, monitor)
 				if err != nil {
 					return nil, err
 				}

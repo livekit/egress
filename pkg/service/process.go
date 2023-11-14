@@ -16,10 +16,13 @@ package service
 
 import (
 	"context"
+	"github.com/prometheus/common/expfmt"
+	"golang.org/x/exp/maps"
 	"net"
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 	"syscall"
 	"time"
 
@@ -37,6 +40,8 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
+
+	dto "github.com/prometheus/client_model/go"
 )
 
 type Process struct {
@@ -195,3 +200,52 @@ func (s *Service) KillAll() {
 func getSocketAddress(handlerTmpDir string) string {
 	return path.Join(handlerTmpDir, "service_rpc.sock")
 }
+
+// Gather implements the prometheus.Gatherer interface on server-side to allow aggregation of handler metrics
+func (p *Process) Gather() ([]*dto.MetricFamily, error) {
+	// Get the metrics from the handler via IPC
+	logger.Debugw("gathering metrics from handler process", "egress_id", p.req.EgressId)
+	metricsResponse, err := p.grpcClient.GetMetrics(context.Background(), &ipc.MetricsRequest{})
+	if err != nil {
+		logger.Warnw("Error obtaining metrics from handler, skipping", err, "egress_id", p.req.EgressId)
+		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
+	}
+	// Parse the result to match the Gatherer interface
+	parser := &expfmt.TextParser{}
+	families, err := parser.TextToMetricFamilies(strings.NewReader(metricsResponse.Metrics))
+	if err != nil {
+		logger.Warnw("Error parsing metrics from handler, skipping", err, "egress_id", p.req.EgressId)
+		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
+	}
+
+	// Add an egress_id label to every metric all the families, if it doesn't already have one
+	applyDefaultLabel(p, families)
+
+	return maps.Values(families), nil
+}
+
+func applyDefaultLabel(p *Process, families map[string]*dto.MetricFamily) {
+	egressLabelPair := &dto.LabelPair{
+		Name:  StringPtr("egress_id"),
+		Value: &p.req.EgressId,
+	}
+	for _, family := range families {
+		for _, metric := range family.Metric {
+			if metric.Label == nil {
+				metric.Label = make([]*dto.LabelPair, 0)
+			}
+			found := false
+			for _, label := range metric.Label {
+				if label.GetName() == "egress_id" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				metric.Label = append(metric.Label, egressLabelPair)
+			}
+		}
+	}
+}
+
+func StringPtr(v string) *string { return &v }

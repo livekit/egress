@@ -108,7 +108,7 @@ func (s *ImageSink) handleNewImage(update *imageUpdate) error {
 
 	imageStoragePath := path.Join(s.StorageDir, filename)
 
-	_, size, err := s.Upload(imageLocalPath, imageStoragePath, s.OutputType, true)
+	_, size, err := s.Upload(imageLocalPath, imageStoragePath, s.OutputType, true, "image")
 	if err != nil {
 		return err
 	}

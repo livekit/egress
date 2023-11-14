@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/egress/pkg/stats"
+
 	"github.com/go-gst/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -37,7 +39,8 @@ func (c *Controller) GetGstPipelineDebugDot() string {
 }
 
 func (c *Controller) uploadDebugFiles() {
-	u, err := uploader.New(c.Debug.ToUploadConfig(), "")
+	monitor := *stats.NewHandlerMonitor(c.NodeID, c.ClusterID, c.Info.EgressId)
+	u, err := uploader.New(c.Debug.ToUploadConfig(), "", monitor)
 	if err != nil {
 		logger.Errorw("failed to create uploader", err)
 		return
@@ -89,7 +92,7 @@ func (c *Controller) uploadTrackFiles(u uploader.Uploader) {
 		if strings.HasSuffix(f.Name(), ".csv") {
 			local := path.Join(dir, f.Name())
 			storage := path.Join(c.Debug.PathPrefix, f.Name())
-			_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
+			_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false, "track")
 			if err != nil {
 				logger.Errorw("failed to upload debug file", err)
 				return
@@ -137,7 +140,7 @@ func (c *Controller) uploadDebugFile(u uploader.Uploader, data []byte, fileExten
 		return
 	}
 
-	_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
+	_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false, "debug")
 	if err != nil {
 		logger.Errorw("failed to upload debug file", err)
 		return

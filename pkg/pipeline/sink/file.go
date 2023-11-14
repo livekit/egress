@@ -44,10 +44,11 @@ func (s *FileSink) Start() error {
 }
 
 func (s *FileSink) Close() error {
-	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
+	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false, "file")
 	if err != nil {
 		return err
 	}
+
 	s.FileInfo.Location = location
 	s.FileInfo.Size = size
 
