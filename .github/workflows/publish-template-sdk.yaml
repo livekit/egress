@@ -33,23 +33,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-      - uses: actions/cache@v3
-        name: Setup pnpm cache
-        timeout-minutes: 5
-        continue-on-error: true
-        with:
-          path: |
-            ${{ env.STORE_PATH }}
-            ~/go/pkg/mod
-            ~/go/bin
-            ~/.cache
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+          cache: "pnpm"
+          cache-dependency-path: ./template-sdk/pnpm-lock.json
 
       - name: Install Dependencies
         run: pnpm install
