@@ -35,25 +35,28 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
 func download(t *testing.T, uploadParams interface{}, localFilepath, storageFilepath string) {
-	logger.Debugw("download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
 	switch u := uploadParams.(type) {
-	case *livekit.S3Upload:
+	case *config.EgressS3Upload:
+		logger.Debugw("s3 download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
 		downloadS3(t, u, localFilepath, storageFilepath)
 
 	case *livekit.GCPUpload:
+		logger.Debugw("gcp download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
 		downloadGCP(t, u, localFilepath, storageFilepath)
 
 	case *livekit.AzureBlobUpload:
+		logger.Debugw("azure download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
 		downloadAzure(t, u, localFilepath, storageFilepath)
 	}
 }
 
-func downloadS3(t *testing.T, conf *livekit.S3Upload, localFilepath, storageFilepath string) {
+func downloadS3(t *testing.T, conf *config.EgressS3Upload, localFilepath, storageFilepath string) {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, ""),
 		Endpoint:    aws.String(conf.Endpoint),

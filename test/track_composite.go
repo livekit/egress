@@ -161,12 +161,12 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 				playlist:   "tcs_{publisher_identity}_vp8_{time}.m3u8",
 			},
 			{
-				name:          "H264",
-				audioCodec:    types.MimeTypeOpus,
-				videoCodec:    types.MimeTypeH264,
-				filename:      "tcs_{room_name}_h264_{time}",
-				playlist:      "tcs_{room_name}_h264_{time}.m3u8",
-				live_playlist: "tcs_live_{room_name}_h264_{time}.m3u8",
+				name:         "H264",
+				audioCodec:   types.MimeTypeOpus,
+				videoCodec:   types.MimeTypeH264,
+				filename:     "tcs_{room_name}_h264_{time}",
+				playlist:     "tcs_{room_name}_h264_{time}.m3u8",
+				livePlaylist: "tcs_live_{room_name}_h264_{time}.m3u8",
 			},
 			{
 				name:       "Audio Only",
@@ -189,7 +189,7 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 					segmentOutput := &livekit.SegmentedFileOutput{
 						FilenamePrefix:   r.getFilePath(test.filename),
 						PlaylistName:     test.playlist,
-						LivePlaylistName: test.live_playlist,
+						LivePlaylistName: test.livePlaylist,
 						FilenameSuffix:   test.filenameSuffix,
 					}
 					if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.S3Upload != nil {

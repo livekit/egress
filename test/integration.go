@@ -76,7 +76,7 @@ type testCase struct {
 
 	// used by segmented file tests
 	playlist       string
-	live_playlist  string
+	livePlaylist   string
 	filenameSuffix livekit.SegmentedFileSuffix
 
 	// used by images tests

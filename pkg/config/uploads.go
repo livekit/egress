@@ -43,20 +43,21 @@ type EgressS3Upload struct {
 
 func (p *PipelineConfig) getUploadConfig(req uploadRequest) UploadConfig {
 	if s3 := req.GetS3(); s3 != nil {
-		s3StorageConfigFromReq := &EgressS3Upload{
+		s3Conf := &EgressS3Upload{
 			S3Upload: s3,
 		}
 		// merge in options from config (proxy, retry limit, delay and aws logging) if specified
 		if p.S3 != nil {
 			// parse config.yaml options and get defaults
-			S3StorageConfigFromConfigYaml := p.ToUploadConfig().(*EgressS3Upload)
-			// merge into pipeline config created from request options
-			s3StorageConfigFromReq.Proxy = S3StorageConfigFromConfigYaml.Proxy
-			s3StorageConfigFromReq.MaxRetries = S3StorageConfigFromConfigYaml.MaxRetries
-			s3StorageConfigFromReq.MaxRetryDelay = S3StorageConfigFromConfigYaml.MaxRetryDelay
-			s3StorageConfigFromReq.AwsLogLevel = S3StorageConfigFromConfigYaml.AwsLogLevel
+			if s3Base, ok := p.ToUploadConfig().(*EgressS3Upload); ok {
+				// merge into pipeline config created from request options
+				s3Conf.Proxy = s3Base.Proxy
+				s3Conf.MaxRetries = s3Base.MaxRetries
+				s3Conf.MaxRetryDelay = s3Base.MaxRetryDelay
+				s3Conf.AwsLogLevel = s3Base.AwsLogLevel
+			}
 		}
-		return s3StorageConfigFromReq
+		return s3Conf
 	}
 	if gcp := req.GetGcp(); gcp != nil {
 		return gcp
@@ -73,7 +74,7 @@ func (p *PipelineConfig) getUploadConfig(req uploadRequest) UploadConfig {
 
 func (c StorageConfig) ToUploadConfig() UploadConfig {
 	if c.S3 != nil {
-		s3StorageConfig := &EgressS3Upload{
+		s3 := &EgressS3Upload{
 			S3Upload: &livekit.S3Upload{
 				AccessKey:      c.S3.AccessKey,
 				Secret:         c.S3.Secret,
@@ -82,41 +83,38 @@ func (c StorageConfig) ToUploadConfig() UploadConfig {
 				Bucket:         c.S3.Bucket,
 				ForcePathStyle: c.S3.ForcePathStyle,
 			},
-			Proxy: c.S3.Proxy,
+			Proxy:         c.S3.Proxy,
+			MaxRetries:    3,
+			MaxRetryDelay: time.Second * 5,
+			MinRetryDelay: time.Millisecond * 100,
 		}
-		// Handle max retries with default
 		if c.S3.MaxRetries > 0 {
-			s3StorageConfig.MaxRetries = c.S3.MaxRetries
-		} else {
-			s3StorageConfig.MaxRetries = 3
+			s3.MaxRetries = c.S3.MaxRetries
 		}
-		// Handle min/max delay (for backoff) with defaults
 		if c.S3.MaxRetryDelay > 0 {
-			s3StorageConfig.MaxRetryDelay = c.S3.MaxRetryDelay
-		} else {
-			s3StorageConfig.MaxRetryDelay = time.Second * 5
+			s3.MaxRetryDelay = c.S3.MaxRetryDelay
 		}
 		if c.S3.MinRetryDelay > 0 {
-			s3StorageConfig.MinRetryDelay = c.S3.MinRetryDelay
-		} else {
-			s3StorageConfig.MinRetryDelay = time.Millisecond * 100
+			s3.MinRetryDelay = c.S3.MinRetryDelay
 		}
-		// Handle AWS log level with default
+
+		// Handle AWS log level
 		switch c.S3.AwsLogLevel {
 		case "LogDebugWithRequestRetries":
-			s3StorageConfig.AwsLogLevel = aws.LogDebugWithRequestRetries
+			s3.AwsLogLevel = aws.LogDebugWithRequestRetries
 		case "LogDebug":
-			s3StorageConfig.AwsLogLevel = aws.LogDebug
+			s3.AwsLogLevel = aws.LogDebug
 		case "LogDebugWithRequestErrors":
-			s3StorageConfig.AwsLogLevel = aws.LogDebugWithRequestErrors
+			s3.AwsLogLevel = aws.LogDebugWithRequestErrors
 		case "LogDebugWithHTTPBody":
-			s3StorageConfig.AwsLogLevel = aws.LogDebugWithHTTPBody
+			s3.AwsLogLevel = aws.LogDebugWithHTTPBody
 		case "LogDebugWithSigning":
-			s3StorageConfig.AwsLogLevel = aws.LogDebugWithSigning
+			s3.AwsLogLevel = aws.LogDebugWithSigning
 		default:
-			s3StorageConfig.AwsLogLevel = aws.LogOff
+			s3.AwsLogLevel = aws.LogOff
 		}
-		return s3StorageConfig
+
+		return s3
 	}
 	if c.Azure != nil {
 		return &livekit.AzureBlobUpload{
