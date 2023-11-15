@@ -240,7 +240,7 @@ func (r *Runner) testParticipantMulti(t *testing.T) {
 		audioCodec:     types.MimeTypeOpus,
 		audioUnpublish: time.Second * 20,
 		videoCodec:     types.MimeTypeVP8,
-		videoDelay:     time.Second * 10,
+		videoDelay:     time.Second * 5,
 	}
 
 	r.runParticipantTest(t, "3D/Participant/Multi", test,
