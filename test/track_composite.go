@@ -54,7 +54,7 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 		return
 	}
 
-	t.Run("TrackComposite/File", func(t *testing.T) {
+	t.Run("4A/TrackComposite/File", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				name:       "VP8",
@@ -125,7 +125,7 @@ func (r *Runner) testTrackCompositeStream(t *testing.T) {
 		return
 	}
 
-	r.runTrackTest(t, "TrackComposite/Stream", types.MimeTypeOpus, types.MimeTypeVP8,
+	r.runTrackTest(t, "4B/TrackComposite/Stream", types.MimeTypeOpus, types.MimeTypeVP8,
 		func(t *testing.T, audioTrackID, videoTrackID string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
@@ -151,7 +151,7 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 		return
 	}
 
-	t.Run("TrackComposite/Segments", func(t *testing.T) {
+	t.Run("4C/TrackComposite/Segments", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				name:       "VP8",
@@ -161,12 +161,12 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 				playlist:   "tcs_{publisher_identity}_vp8_{time}.m3u8",
 			},
 			{
-				name:          "H264",
-				audioCodec:    types.MimeTypeOpus,
-				videoCodec:    types.MimeTypeH264,
-				filename:      "tcs_{room_name}_h264_{time}",
-				playlist:      "tcs_{room_name}_h264_{time}.m3u8",
-				live_playlist: "tcs_live_{room_name}_h264_{time}.m3u8",
+				name:         "H264",
+				audioCodec:   types.MimeTypeOpus,
+				videoCodec:   types.MimeTypeH264,
+				filename:     "tcs_{room_name}_h264_{time}",
+				playlist:     "tcs_{room_name}_h264_{time}.m3u8",
+				livePlaylist: "tcs_live_{room_name}_h264_{time}.m3u8",
 			},
 			{
 				name:       "Audio Only",
@@ -189,7 +189,7 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 					segmentOutput := &livekit.SegmentedFileOutput{
 						FilenamePrefix:   r.getFilePath(test.filename),
 						PlaylistName:     test.playlist,
-						LivePlaylistName: test.live_playlist,
+						LivePlaylistName: test.livePlaylist,
 						FilenameSuffix:   test.filenameSuffix,
 					}
 					if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.S3Upload != nil {
@@ -234,7 +234,7 @@ func (r *Runner) testTrackCompositeImages(t *testing.T) {
 		return
 	}
 
-	t.Run("TrackComposite/Images", func(t *testing.T) {
+	t.Run("4D/TrackComposite/Images", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				name:       "VP8",
@@ -295,7 +295,7 @@ func (r *Runner) testTrackCompositeMulti(t *testing.T) {
 		return
 	}
 
-	r.runTrackTest(t, "TrackComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8,
+	r.runTrackTest(t, "4E/TrackComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8,
 		func(t *testing.T, audioTrackID, videoTrackID string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),

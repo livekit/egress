@@ -23,12 +23,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/egress/pkg/stats"
-
 	"github.com/go-gst/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/pprof"
@@ -39,7 +38,7 @@ func (c *Controller) GetGstPipelineDebugDot() string {
 }
 
 func (c *Controller) uploadDebugFiles() {
-	monitor := *stats.NewHandlerMonitor(c.NodeID, c.ClusterID, c.Info.EgressId)
+	monitor := stats.NewHandlerMonitor(c.NodeID, c.ClusterID, c.Info.EgressId)
 	u, err := uploader.New(c.Debug.ToUploadConfig(), "", monitor)
 	if err != nil {
 		logger.Errorw("failed to create uploader", err)

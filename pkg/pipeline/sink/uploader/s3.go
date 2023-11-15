@@ -27,8 +27,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/livekit/egress/pkg/config"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
@@ -74,7 +74,8 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 		S3ForcePathStyle: aws.Bool(conf.ForcePathStyle),
 		LogLevel:         aws.LogLevel(conf.AwsLogLevel),
 	}
-	logger.Debugw("setting AWS config", "maxRetries", conf.MaxRetries,
+	logger.Debugw("setting S3 config",
+		"maxRetries", conf.MaxRetries,
 		"maxDelay", conf.MaxRetryDelay,
 		"minDelay", conf.MinRetryDelay,
 	)
@@ -115,8 +116,6 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 			}
 			u.awsConfig.HTTPClient = &http.Client{Transport: proxyTransport}
 		}
-	} else {
-		logger.Debugw("not configuring s3 with proxy since none was provided in config")
 	}
 
 	if len(conf.Metadata) > 0 {

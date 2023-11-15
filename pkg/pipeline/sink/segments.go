@@ -22,8 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/egress/pkg/stats"
-
 	"github.com/frostbyte73/core"
 
 	"github.com/livekit/egress/pkg/config"
@@ -31,6 +29,7 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/sink/m3u8"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 )
@@ -72,7 +71,7 @@ type SegmentUpdate struct {
 	uploadComplete chan struct{}
 }
 
-func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig, callbacks *gstreamer.Callbacks, monitor stats.HandlerMonitor) (*SegmentSink, error) {
+func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig, callbacks *gstreamer.Callbacks, monitor *stats.HandlerMonitor) (*SegmentSink, error) {
 	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
 	playlist, err := m3u8.NewEventPlaylistWriter(playlistName, o.SegmentDuration)
 	if err != nil {

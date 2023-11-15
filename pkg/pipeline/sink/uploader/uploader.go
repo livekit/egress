@@ -20,11 +20,10 @@ import (
 	"path"
 	"time"
 
-	"github.com/livekit/egress/pkg/stats"
-
 	"github.com/pkg/errors"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
@@ -43,13 +42,15 @@ type uploader interface {
 	upload(string, string, types.OutputType) (string, int64, error)
 }
 
-func New(conf config.UploadConfig, backup string, monitor stats.HandlerMonitor) (Uploader, error) {
+func New(conf config.UploadConfig, backup string, monitor *stats.HandlerMonitor) (Uploader, error) {
 	var u uploader
 	var err error
 
 	switch c := conf.(type) {
 	case *config.EgressS3Upload:
 		u, err = newS3Uploader(c)
+	case *livekit.S3Upload:
+		u, err = newS3Uploader(&config.EgressS3Upload{S3Upload: c})
 	case *livekit.GCPUpload:
 		u, err = newGCPUploader(c)
 	case *livekit.AzureBlobUpload:
@@ -63,26 +64,28 @@ func New(conf config.UploadConfig, backup string, monitor stats.HandlerMonitor) 
 		return nil, err
 	}
 
-	remoteUploader := &remoteUploader{
+	remote := &remoteUploader{
 		uploader: u,
 		backup:   backup,
 		monitor:  monitor,
 	}
 
-	return remoteUploader, nil
+	return remote, nil
 }
 
 type remoteUploader struct {
 	uploader
 
 	backup  string
-	monitor stats.HandlerMonitor
+	monitor *stats.HandlerMonitor
 }
 
 func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool, fileType string) (string, int64, error) {
 	start := time.Now()
 	location, size, err := u.upload(localFilepath, storageFilepath, outputType)
 	elapsed := time.Since(start).Milliseconds()
+
+	// success
 	if err == nil {
 		u.monitor.IncUploadCountSuccess(fileType, float64(elapsed))
 		if deleteAfterUpload {
@@ -91,8 +94,9 @@ func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputTyp
 
 		return location, size, nil
 	}
-	u.monitor.IncUploadCountFailure(fileType, float64(elapsed))
 
+	// failure
+	u.monitor.IncUploadCountFailure(fileType, float64(elapsed))
 	if u.backup != "" {
 		stat, err := os.Stat(localFilepath)
 		if err != nil {

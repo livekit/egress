@@ -49,7 +49,7 @@ func (r *Runner) runSegmentsTest(t *testing.T, req *rpc.StartEgressRequest, test
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 
-	r.verifySegments(t, p, test.filenameSuffix, res, test.live_playlist != "")
+	r.verifySegments(t, p, test.filenameSuffix, res, test.livePlaylist != "")
 	if !test.audioOnly {
 		require.Equal(t, test.expectVideoEncoding, p.VideoEncoding)
 	}
