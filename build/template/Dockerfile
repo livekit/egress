@@ -28,4 +28,4 @@ COPY template-default/ .
 
 # build
 RUN pnpm install
-RUN pnpm, build
+RUN pnpm build
