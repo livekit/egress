@@ -48,7 +48,7 @@ func (r *Runner) testWebFile(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "Web/File", func(t *testing.T) {
+	r.runWebTest(t, "2A/Web/File", func(t *testing.T) {
 		fileOutput := &livekit.EncodedFileOutput{
 			Filepath: r.getFilePath("web_{time}"),
 		}
@@ -81,7 +81,7 @@ func (r *Runner) testWebStream(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "Web/Stream", func(t *testing.T) {
+	r.runWebTest(t, "2B/Web/Stream", func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_Web{
@@ -106,7 +106,7 @@ func (r *Runner) testWebSegments(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "Web/Segments", func(t *testing.T) {
+	r.runWebTest(t, "2C/Web/Segments", func(t *testing.T) {
 		segmentOutput := &livekit.SegmentedFileOutput{
 			FilenamePrefix: r.getFilePath("web_{time}"),
 			PlaylistName:   "web_{time}.m3u8",
@@ -139,7 +139,7 @@ func (r *Runner) testWebMulti(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "Web/Multi", func(t *testing.T) {
+	r.runWebTest(t, "2D/Web/Multi", func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 

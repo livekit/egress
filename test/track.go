@@ -52,7 +52,7 @@ func (r *Runner) testTrackFile(t *testing.T) {
 		return
 	}
 
-	t.Run("Track/File", func(t *testing.T) {
+	t.Run("5A/Track/File", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				name:       "OPUS",
@@ -120,7 +120,7 @@ func (r *Runner) testTrackStream(t *testing.T) {
 		return
 	}
 
-	t.Run("Track/Stream", func(t *testing.T) {
+	t.Run("5B/Track/Stream", func(t *testing.T) {
 		now := time.Now().Unix()
 		for _, test := range []*testCase{
 			{

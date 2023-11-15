@@ -61,7 +61,7 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 		return
 	}
 
-	t.Run("Participant/File", func(t *testing.T) {
+	t.Run("3A/Participant/File", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				name:           "VP8",
@@ -142,7 +142,7 @@ func (r *Runner) testParticipantStream(t *testing.T) {
 		videoCodec: types.MimeTypeVP8,
 	}
 
-	r.runParticipantTest(t, "Participant/Stream", test,
+	r.runParticipantTest(t, "3B/Participant/Stream", test,
 		func(t *testing.T, identity string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
@@ -167,7 +167,7 @@ func (r *Runner) testParticipantSegments(t *testing.T) {
 		return
 	}
 
-	t.Run("Participant/Segments", func(t *testing.T) {
+	t.Run("3C/Participant/Segments", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				name:       "VP8",
@@ -243,7 +243,7 @@ func (r *Runner) testParticipantMulti(t *testing.T) {
 		videoDelay:     time.Second * 10,
 	}
 
-	r.runParticipantTest(t, "Participant/Multi", test,
+	r.runParticipantTest(t, "3D/Participant/Multi", test,
 		func(t *testing.T, identity string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),

@@ -42,7 +42,7 @@ type uploader interface {
 	upload(string, string, types.OutputType) (string, int64, error)
 }
 
-func New(conf config.UploadConfig, backup string, monitor stats.HandlerMonitor) (Uploader, error) {
+func New(conf config.UploadConfig, backup string, monitor *stats.HandlerMonitor) (Uploader, error) {
 	var u uploader
 	var err error
 
@@ -77,7 +77,7 @@ type remoteUploader struct {
 	uploader
 
 	backup  string
-	monitor stats.HandlerMonitor
+	monitor *stats.HandlerMonitor
 }
 
 func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool, fileType string) (string, int64, error) {

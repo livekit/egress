@@ -30,13 +30,14 @@ type Sink interface {
 
 func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[types.EgressType][]Sink, error) {
 	sinks := make(map[types.EgressType][]Sink)
+	monitor := stats.NewHandlerMonitor(p.NodeID, p.ClusterID, p.Info.EgressId)
 	for egressType, c := range p.Outputs {
 		if len(c) == 0 {
 			continue
 		}
+
 		var s Sink
 		var err error
-		monitor := *stats.NewHandlerMonitor(p.NodeID, p.ClusterID, p.Info.EgressId)
 		switch egressType {
 		case types.EgressTypeFile:
 			o := c[0].(*config.FileConfig)

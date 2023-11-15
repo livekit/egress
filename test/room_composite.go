@@ -55,7 +55,7 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 		return
 	}
 
-	t.Run("RoomComposite/File", func(t *testing.T) {
+	t.Run("1A/RoomComposite/File", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				name:                "Base",
@@ -132,7 +132,7 @@ func (r *Runner) testRoomCompositeStream(t *testing.T) {
 		return
 	}
 
-	t.Run("RoomComposite/Stream", func(t *testing.T) {
+	t.Run("1B/RoomComposite/Stream", func(t *testing.T) {
 		r.runRoomTest(t, "Rtmp", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
@@ -193,7 +193,7 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 		return
 	}
 
-	r.runRoomTest(t, "RoomComposite/Segments", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+	r.runRoomTest(t, "1C/RoomComposite/Segments", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				options: &livekit.EncodingOptions{
@@ -261,7 +261,7 @@ func (r *Runner) testRoomCompositeImages(t *testing.T) {
 		return
 	}
 
-	r.runRoomTest(t, "RoomComposite/Images", types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
+	r.runRoomTest(t, "1D/RoomComposite/Images", types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				options: &livekit.EncodingOptions{
@@ -308,7 +308,7 @@ func (r *Runner) testRoomCompositeMulti(t *testing.T) {
 		return
 	}
 
-	r.runRoomTest(t, "RoomComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+	r.runRoomTest(t, "1E/RoomComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_RoomComposite{

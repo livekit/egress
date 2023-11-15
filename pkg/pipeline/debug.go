@@ -38,7 +38,7 @@ func (c *Controller) GetGstPipelineDebugDot() string {
 }
 
 func (c *Controller) uploadDebugFiles() {
-	monitor := *stats.NewHandlerMonitor(c.NodeID, c.ClusterID, c.Info.EgressId)
+	monitor := stats.NewHandlerMonitor(c.NodeID, c.ClusterID, c.Info.EgressId)
 	u, err := uploader.New(c.Debug.ToUploadConfig(), "", monitor)
 	if err != nil {
 		logger.Errorw("failed to create uploader", err)
