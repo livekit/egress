@@ -121,6 +121,7 @@ func (c *Controller) messageWatch(msg *gst.Message) bool {
 	switch msg.Type() {
 	case gst.MessageEOS:
 		logger.Infow("EOS received")
+		c.eosTimer.Stop()
 		c.p.Stop()
 		return false
 	case gst.MessageWarning:

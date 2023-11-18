@@ -58,6 +58,7 @@ type Controller struct {
 	limitTimer *time.Timer
 	playing    core.Fuse
 	eos        core.Fuse
+	eosTimer   *time.Timer
 	stopped    core.Fuse
 }
 
@@ -405,7 +406,12 @@ func (c *Controller) SendEOS(ctx context.Context) {
 
 		case livekit.EgressStatus_EGRESS_ENDING,
 			livekit.EgressStatus_EGRESS_LIMIT_REACHED:
-			go c.p.SendEOS()
+			go func() {
+				c.eosTimer = time.AfterFunc(time.Second*30, func() {
+					c.OnError(errors.ErrPipelineFrozen)
+				})
+				c.p.SendEOS()
+			}()
 		}
 
 		if c.SourceType == types.SourceTypeWeb {
@@ -518,6 +524,7 @@ func (c *Controller) updateStartTime(startedAt int64) {
 
 		case types.EgressTypeSegments:
 			o[0].(*config.SegmentConfig).SegmentsInfo.StartedAt = startedAt
+
 		case types.EgressTypeImages:
 			for _, c := range o {
 				c.(*config.ImageConfig).ImagesInfo.StartedAt = startedAt
@@ -563,6 +570,7 @@ func (c *Controller) updateDuration(endedAt int64) {
 			}
 			segmentsInfo.EndedAt = endedAt
 			segmentsInfo.Duration = endedAt - segmentsInfo.StartedAt
+
 		case types.EgressTypeImages:
 			for _, c := range o {
 				imageInfo := c.(*config.ImageConfig).ImagesInfo
