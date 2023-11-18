@@ -232,6 +232,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		return c.Info
 	}
 
+	logger.Debugw("closing sinks")
 	for _, si := range c.sinks {
 		for _, s := range si {
 			if err := s.Close(); err != nil {
@@ -379,7 +380,7 @@ func (c *Controller) SendEOS(ctx context.Context) {
 	defer span.End()
 
 	c.eos.Once(func() {
-		logger.Debugw("Sending EOS")
+		logger.Debugw("sending EOS")
 
 		if c.limitTimer != nil {
 			c.limitTimer.Stop()
@@ -436,6 +437,8 @@ func (c *Controller) Close() {
 	if c.SourceType == types.SourceTypeSDK || !c.eos.IsBroken() {
 		c.updateDuration(c.src.GetEndedAt())
 	}
+
+	logger.Debugw("closing source")
 	c.src.Close()
 
 	now := time.Now().UnixNano()
