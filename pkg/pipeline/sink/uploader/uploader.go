@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -83,11 +84,12 @@ type remoteUploader struct {
 func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool, fileType string) (string, int64, error) {
 	start := time.Now()
 	location, size, err := u.upload(localFilepath, storageFilepath, outputType)
-	elapsed := time.Since(start).Milliseconds()
+	elapsed := time.Since(start)
+	logger.Debugw("upload complete", "fileType", fileType, "time", elapsed.String())
 
 	// success
 	if err == nil {
-		u.monitor.IncUploadCountSuccess(fileType, float64(elapsed))
+		u.monitor.IncUploadCountSuccess(fileType, float64(elapsed.Milliseconds()))
 		if deleteAfterUpload {
 			_ = os.Remove(localFilepath)
 		}
@@ -96,7 +98,7 @@ func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputTyp
 	}
 
 	// failure
-	u.monitor.IncUploadCountFailure(fileType, float64(elapsed))
+	u.monitor.IncUploadCountFailure(fileType, float64(elapsed.Milliseconds()))
 	if u.backup != "" {
 		stat, err := os.Stat(localFilepath)
 		if err != nil {

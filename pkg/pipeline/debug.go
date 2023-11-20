@@ -68,6 +68,7 @@ func (c *Controller) uploadDebugFiles() {
 
 	select {
 	case <-done:
+		logger.Infow("debug files uploaded")
 		return
 	case <-time.After(time.Second * 3):
 		logger.Errorw("failed to upload debug files", errors.New("timed out"))
