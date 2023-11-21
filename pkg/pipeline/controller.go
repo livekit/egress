@@ -29,6 +29,7 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -55,6 +56,7 @@ type Controller struct {
 	// internal
 	mu         sync.Mutex
 	gstLogger  *zap.SugaredLogger
+	monitor    *stats.HandlerMonitor
 	limitTimer *time.Timer
 	playing    core.Fuse
 	eos        core.Fuse
@@ -74,6 +76,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ioClient rpc.IOInfoCl
 		},
 		ioClient:  ioClient,
 		gstLogger: logger.GetLogger().(*logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
+		monitor:   stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
 		playing:   core.NewFuse(),
 		eos:       core.NewFuse(),
 		stopped:   core.NewFuse(),
@@ -96,7 +99,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ioClient rpc.IOInfoCl
 	}
 
 	// create sinks
-	c.sinks, err = sink.CreateSinks(conf, c.callbacks)
+	c.sinks, err = sink.CreateSinks(conf, c.callbacks, c.monitor)
 	if err != nil {
 		c.src.Close()
 		return nil, err
