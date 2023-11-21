@@ -28,9 +28,8 @@ type Sink interface {
 	Cleanup()
 }
 
-func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (map[types.EgressType][]Sink, error) {
+func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks, monitor *stats.HandlerMonitor) (map[types.EgressType][]Sink, error) {
 	sinks := make(map[types.EgressType][]Sink)
-	monitor := stats.NewHandlerMonitor(p.NodeID, p.ClusterID, p.Info.EgressId)
 	for egressType, c := range p.Outputs {
 		if len(c) == 0 {
 			continue
