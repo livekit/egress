@@ -44,7 +44,10 @@ type EgressS3Upload struct {
 func (p *PipelineConfig) getUploadConfig(req uploadRequest) UploadConfig {
 	if s3 := req.GetS3(); s3 != nil {
 		s3Conf := &EgressS3Upload{
-			S3Upload: s3,
+			S3Upload:      s3,
+			MaxRetries:    3,
+			MaxRetryDelay: time.Second * 5,
+			MinRetryDelay: time.Millisecond * 100,
 		}
 		// merge in options from config (proxy, retry limit, delay and aws logging) if specified
 		if p.S3 != nil {

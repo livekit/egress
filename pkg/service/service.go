@@ -235,8 +235,6 @@ func (s *Service) CreateGatherer() prometheus.Gatherer {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
 
-		logger.Debugw("gathering metrics", "numHandlers", len(s.activeHandlers))
-
 		gatherers := prometheus.Gatherers{}
 		// Include the default repo
 		gatherers = append(gatherers, prometheus.DefaultGatherer)
