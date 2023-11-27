@@ -203,7 +203,6 @@ func getSocketAddress(handlerTmpDir string) string {
 // Gather implements the prometheus.Gatherer interface on server-side to allow aggregation of handler metrics
 func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 	// Get the metrics from the handler via IPC
-	logger.Debugw("gathering metrics from handler process", "egress_id", p.req.EgressId)
 	metricsResponse, err := p.grpcClient.GetMetrics(context.Background(), &ipc.MetricsRequest{})
 	if err != nil {
 		logger.Warnw("Error obtaining metrics from handler, skipping", err, "egress_id", p.req.EgressId)
