@@ -54,10 +54,11 @@ func (r CustomRetryer) ShouldRetry(req *request.Request) bool {
 }
 
 type S3Uploader struct {
-	awsConfig *aws.Config
-	bucket    *string
-	metadata  map[string]*string
-	tagging   *string
+	awsConfig          *aws.Config
+	bucket             *string
+	metadata           map[string]*string
+	tagging            *string
+	contentDisposition *string
 }
 
 func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
@@ -130,6 +131,13 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 		u.tagging = aws.String(conf.Tagging)
 	}
 
+	if conf.ContentDisposition != "" {
+		u.contentDisposition = aws.String(conf.ContentDisposition)
+	} else {
+		// this is the default: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition#as_a_response_header_for_the_main_body
+		u.contentDisposition = aws.String("inline")
+	}
+
 	return u, nil
 }
 
@@ -178,12 +186,13 @@ func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType ty
 	}
 
 	_, err = s3manager.NewUploader(sess).Upload(&s3manager.UploadInput{
-		Body:        file,
-		Bucket:      u.bucket,
-		ContentType: aws.String(string(outputType)),
-		Key:         aws.String(storageFilepath),
-		Metadata:    u.metadata,
-		Tagging:     u.tagging,
+		Body:               file,
+		Bucket:             u.bucket,
+		ContentType:        aws.String(string(outputType)),
+		Key:                aws.String(storageFilepath),
+		Metadata:           u.metadata,
+		Tagging:            u.tagging,
+		ContentDisposition: u.contentDisposition,
 	})
 	if err != nil {
 		return "", 0, wrap("S3", err)
