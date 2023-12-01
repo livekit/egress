@@ -71,7 +71,10 @@ func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service
 		}
 	}
 
-	if err := s.Start(s.conf, s.isAvailable); err != nil {
+	if err := s.Start(s.conf,
+		s.promIsIdle,
+		s.promCanAcceptRequest,
+	); err != nil {
 		return nil, err
 	}
 
@@ -203,8 +206,19 @@ func (s *Service) Status() ([]byte, error) {
 	return json.Marshal(info)
 }
 
-func (s *Service) isAvailable() float64 {
+func (s *Service) promIsIdle() float64 {
 	if s.IsIdle() {
+		return 1
+	}
+	return 0
+}
+
+func (s *Service) promCanAcceptRequest() float64 {
+	if s.CanAcceptRequest(&rpc.StartEgressRequest{
+		Request: &rpc.StartEgressRequest_RoomComposite{
+			RoomComposite: &livekit.RoomCompositeEgressRequest{},
+		},
+	}) {
 		return 1
 	}
 	return 0
