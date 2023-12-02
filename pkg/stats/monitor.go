@@ -55,7 +55,11 @@ func NewMonitor(conf *config.ServiceConfig) *Monitor {
 	}
 }
 
-func (m *Monitor) Start(conf *config.ServiceConfig, isAvailable func() float64) error {
+func (m *Monitor) Start(
+	conf *config.ServiceConfig,
+	isIdle func() float64,
+	canAcceptRequest func() float64,
+) error {
 	cpuStats, err := utils.NewCPUStats(func(idle float64) {
 		m.promCPULoad.Set(1 - idle/m.cpuStats.NumCPU())
 	})
@@ -74,7 +78,14 @@ func (m *Monitor) Start(conf *config.ServiceConfig, isAvailable func() float64) 
 		Subsystem:   "egress",
 		Name:        "available",
 		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
-	}, isAvailable)
+	}, isIdle)
+
+	promCanAcceptRequest := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "can_accept_request",
+		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
+	}, canAcceptRequest)
 
 	m.promCPULoad = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   "livekit",
@@ -90,7 +101,7 @@ func (m *Monitor) Start(conf *config.ServiceConfig, isAvailable func() float64) 
 		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
 	}, []string{"type"})
 
-	prometheus.MustRegister(promNodeAvailable, m.promCPULoad, m.requestGauge)
+	prometheus.MustRegister(promNodeAvailable, promCanAcceptRequest, m.promCPULoad, m.requestGauge)
 
 	return nil
 }
