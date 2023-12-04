@@ -194,7 +194,6 @@ func (s *Service) ListActiveEgress(ctx context.Context, _ *rpc.ListActiveEgressR
 func (s *Service) Status() ([]byte, error) {
 	info := map[string]interface{}{
 		"CpuLoad": s.GetCPULoad(),
-		"CpuHold": s.GetCPUHold(),
 	}
 
 	s.mu.RLock()
