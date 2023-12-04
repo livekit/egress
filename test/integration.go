@@ -102,7 +102,7 @@ type testCase struct {
 func (r *Runner) awaitIdle(t *testing.T) {
 	r.svc.KillAll()
 	for i := 0; i < 30; i++ {
-		if r.svc.GetCPUHold() == 0 {
+		if r.svc.GetRequestCount() == 0 {
 			return
 		}
 		time.Sleep(time.Second)
