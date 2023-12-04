@@ -145,6 +145,10 @@ func (m *Monitor) GetCPULoad() float64 {
 	return (m.cpuStats.NumCPU() - m.cpuStats.GetCPUIdle()) / m.cpuStats.NumCPU() * 100
 }
 
+func (m *Monitor) GetRequestCount() int {
+	return int(m.requests.Load())
+}
+
 func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()

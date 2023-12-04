@@ -163,7 +163,7 @@ func (s *Service) StartEgressAffinity(ctx context.Context, req *rpc.StartEgressR
 		return -1
 	}
 
-	if s.IsIdle() {
+	if s.GetRequestCount() == 0 {
 		// group multiple track and track composite requests.
 		// if this instance is idle and another is already handling some, the request will go to that server.
 		// this avoids having many instances with one track request each, taking availability from room composite.
@@ -206,7 +206,7 @@ func (s *Service) Status() ([]byte, error) {
 }
 
 func (s *Service) promIsIdle() float64 {
-	if s.IsIdle() {
+	if s.GetRequestCount() == 0 {
 		return 1
 	}
 	return 0
@@ -233,7 +233,7 @@ func (s *Service) Stop(kill bool) {
 }
 
 func (s *Service) Close() {
-	for !s.IsIdle() {
+	for s.GetRequestCount() > 0 {
 		time.Sleep(shutdownTimer)
 	}
 	logger.Infow("closing server")

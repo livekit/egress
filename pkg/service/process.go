@@ -165,13 +165,6 @@ func (s *Service) awaitCleanup(p *Process) {
 	s.mu.Unlock()
 }
 
-func (s *Service) IsIdle() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	return len(s.activeHandlers) == 0
-}
-
 func (s *Service) getGRPCClient(egressID string) (ipc.EgressHandlerClient, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
