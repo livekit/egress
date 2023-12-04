@@ -105,7 +105,12 @@ func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputTyp
 			return "", 0, err
 		}
 
-		backupFilepath := path.Join(u.backup, storageFilepath)
+		backupDir := path.Join(u.backup, path.Dir(storageFilepath))
+		backupFileName := path.Base(storageFilepath)
+		if err = os.MkdirAll(backupDir, 0755); err != nil {
+			return "", 0, err
+		}
+		backupFilepath := path.Join(backupDir, backupFileName)
 		if err = os.Rename(localFilepath, backupFilepath); err != nil {
 			return "", 0, err
 		}
