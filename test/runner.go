@@ -139,7 +139,7 @@ func (r *Runner) Run(t *testing.T, svc *service.Service, bus psrpc.MessageBus, t
 	require.NoError(t, err)
 	defer room.Disconnect()
 
-	psrpcClient, err := rpc.NewEgressClient(bus)
+	psrpcClient, err := rpc.NewEgressClient(rpc.ClientParams{Bus: bus})
 	require.NoError(t, err)
 
 	// start debug handler
