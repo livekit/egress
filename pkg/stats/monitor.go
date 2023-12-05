@@ -34,10 +34,13 @@ import (
 type Monitor struct {
 	cpuCostConfig config.CPUCostConfig
 
-	promCPULoad  prometheus.Gauge
-	requestGauge *prometheus.GaugeVec
+	promCPULoad     prometheus.Gauge
+	promCPULoadV2   prometheus.Gauge
+	promProcCPULoad *prometheus.GaugeVec
+	requestGauge    *prometheus.GaugeVec
 
-	cpuStats *utils.CPUStats
+	cpuStats  *utils.CPUStats
+	procStats *utils.CPUStats
 
 	pendingCPUs atomic.Float64
 
@@ -57,6 +60,7 @@ func (m *Monitor) Start(
 	conf *config.ServiceConfig,
 	isIdle func() float64,
 	canAcceptRequest func() float64,
+	getEgressIDs func(map[int]float64) map[string]float64,
 ) error {
 	cpuStats, err := utils.NewCPUStats(func(idle float64) {
 		m.promCPULoad.Set(1 - idle/m.cpuStats.NumCPU())
@@ -65,7 +69,19 @@ func (m *Monitor) Start(
 		return err
 	}
 
+	procStats, err := utils.NewProcCPUStats(func(idle float64, usage map[int]float64) {
+		m.promCPULoadV2.Set(1 - idle/m.cpuStats.NumCPU())
+		egressIDs := getEgressIDs(usage)
+		for egressID, cpuUsage := range egressIDs {
+			m.promProcCPULoad.With(prometheus.Labels{"egress_id": egressID}).Set(cpuUsage)
+		}
+	})
+	if err != nil {
+		return err
+	}
+
 	m.cpuStats = cpuStats
+	m.procStats = procStats
 
 	if err = m.checkCPUConfig(); err != nil {
 		return err
@@ -92,6 +108,20 @@ func (m *Monitor) Start(
 		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "node_type": "EGRESS", "cluster_id": conf.ClusterID},
 	})
 
+	m.promCPULoadV2 = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "node",
+		Name:        "cpu_load_v2",
+		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
+	})
+
+	m.promProcCPULoad = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "handler_cpu_load",
+		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
+	}, []string{"egress_id"})
+
 	m.requestGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   "livekit",
 		Subsystem:   "egress",
@@ -99,7 +129,7 @@ func (m *Monitor) Start(
 		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
 	}, []string{"type"})
 
-	prometheus.MustRegister(promNodeAvailable, promCanAcceptRequest, m.promCPULoad, m.requestGauge)
+	prometheus.MustRegister(promNodeAvailable, promCanAcceptRequest, m.promCPULoad, m.promCPULoadV2, m.promProcCPULoad, m.requestGauge)
 
 	return nil
 }

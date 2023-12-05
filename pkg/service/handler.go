@@ -210,20 +210,17 @@ func (h *Handler) GetMetrics(ctx context.Context, req *ipc.MetricsRequest) (*ipc
 		return nil, err
 	}
 
-	logger.Debugw("returning metrics from handler process", "sizeOfFamilies", len(metrics))
-	metricsAsString, cnt, err := renderMetrics(metrics)
+	metricsAsString, err := renderMetrics(metrics)
 	if err != nil {
-		return &ipc.MetricsResponse{
-			Metrics: "",
-		}, err
+		return nil, err
 	}
-	logger.Debugw("metrics returned from handler process", "cnt", cnt, "metrics", metricsAsString)
+
 	return &ipc.MetricsResponse{
 		Metrics: metricsAsString,
 	}, nil
 }
 
-func renderMetrics(metrics []*dto.MetricFamily) (string, int, error) {
+func renderMetrics(metrics []*dto.MetricFamily) (string, error) {
 	// Create a StringWriter to render the metrics into text format
 	writer := &strings.Builder{}
 	totalCnt := 0
@@ -232,13 +229,13 @@ func renderMetrics(metrics []*dto.MetricFamily) (string, int, error) {
 		cnt, err := expfmt.MetricFamilyToText(writer, metric)
 		if err != nil {
 			logger.Errorw("error writing metric family", err)
-			return "", 0, err
+			return "", err
 		}
 		totalCnt += cnt
 	}
 
 	// Get the rendered metrics as a string from the StringWriter
-	return writer.String(), totalCnt, nil
+	return writer.String(), nil
 }
 
 func (h *Handler) Kill() {
