@@ -184,7 +184,14 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 			return err
 		}
 
-		return c.removeSink(context.Background(), url, gErr)
+		if err = c.removeSink(context.Background(), url, gErr); err != nil {
+			return err
+		}
+
+		// send update for failed stream
+		c.Info.UpdatedAt = time.Now().UnixNano()
+		_, _ = c.ioClient.UpdateEgress(context.Background(), c.Info)
+		return nil
 
 	case element == elementGstAppSrc:
 		if message == msgStreamingNotNegotiated {
