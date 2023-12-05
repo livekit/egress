@@ -74,6 +74,7 @@ func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service
 	if err := s.Start(s.conf,
 		s.promIsIdle,
 		s.promCanAcceptRequest,
+		s.promGetEgressIDs,
 	); err != nil {
 		return nil, err
 	}
@@ -221,6 +222,21 @@ func (s *Service) promCanAcceptRequest() float64 {
 		return 1
 	}
 	return 0
+}
+
+func (s *Service) promGetEgressIDs(pUsage map[int]float64) map[string]float64 {
+	s.mu.RLock()
+	pids := make(map[int]string)
+	for _, h := range s.activeHandlers {
+		pids[h.cmd.Process.Pid] = h.req.EgressId
+	}
+	s.mu.RUnlock()
+
+	eUsage := make(map[string]float64)
+	for pid, egressID := range pids {
+		eUsage[egressID] = pUsage[pid]
+	}
+	return eUsage
 }
 
 func (s *Service) Stop(kill bool) {
