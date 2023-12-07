@@ -44,8 +44,9 @@ type Monitor struct {
 
 	pendingCPUs atomic.Float64
 
-	mu       sync.Mutex
-	requests atomic.Int32
+	mu              sync.Mutex
+	requests        atomic.Int32
+	prevEgressUsage map[string]float64
 }
 
 const cpuHoldDuration = time.Second * 5
@@ -60,7 +61,7 @@ func (m *Monitor) Start(
 	conf *config.ServiceConfig,
 	isIdle func() float64,
 	canAcceptRequest func() float64,
-	getEgressIDs func(map[int]float64) map[string]float64,
+	procUpdate func(map[int]float64) map[string]float64,
 ) error {
 	cpuStats, err := utils.NewCPUStats(func(idle float64) {
 		m.promCPULoad.Set(1 - idle/m.cpuStats.NumCPU())
@@ -71,10 +72,16 @@ func (m *Monitor) Start(
 
 	procStats, err := utils.NewProcCPUStats(func(idle float64, usage map[int]float64) {
 		m.promCPULoadV2.Set(1 - idle/m.cpuStats.NumCPU())
-		egressIDs := getEgressIDs(usage)
-		for egressID, cpuUsage := range egressIDs {
+		egressUsage := procUpdate(usage)
+		for egressID, cpuUsage := range egressUsage {
 			m.promProcCPULoad.With(prometheus.Labels{"egress_id": egressID}).Set(cpuUsage)
 		}
+		for egressID := range m.prevEgressUsage {
+			if _, ok := egressUsage[egressID]; !ok {
+				m.promProcCPULoad.With(prometheus.Labels{"egress_id": egressID}).Set(0)
+			}
+		}
+		m.prevEgressUsage = egressUsage
 	})
 	if err != nil {
 		return err

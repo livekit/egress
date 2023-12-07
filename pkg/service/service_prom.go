@@ -70,17 +70,17 @@ func (s *Service) promCanAcceptRequest() float64 {
 	return 0
 }
 
-func (s *Service) promGetEgressIDs(pUsage map[int]float64) map[string]float64 {
+func (s *Service) promProcUpdate(pUsage map[int]float64) map[string]float64 {
 	s.mu.RLock()
-	pids := make(map[int]string)
-	for _, h := range s.activeHandlers {
-		pids[h.cmd.Process.Pid] = h.req.EgressId
-	}
-	s.mu.RUnlock()
+	defer s.mu.RUnlock()
 
 	eUsage := make(map[string]float64)
-	for pid, egressID := range pids {
-		eUsage[egressID] = pUsage[pid]
+	for _, h := range s.activeHandlers {
+		if usage, ok := pUsage[h.cmd.Process.Pid]; ok {
+			eUsage[h.req.EgressId] = usage
+			h.updateCPU(usage)
+		}
 	}
+
 	return eUsage
 }
