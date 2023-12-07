@@ -19,7 +19,7 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/livekit/livekit-server v1.5.1-0.20231026153736-8b16db227070
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.9.4-0.20231206174612-7bba17ea7876
+	github.com/livekit/protocol v1.9.4-0.20231207062609-297e4990e7d3
 	github.com/livekit/psrpc v0.5.2
 	github.com/livekit/server-sdk-go v1.1.1
 	github.com/pion/rtp v1.8.3
@@ -32,7 +32,7 @@ require (
 	github.com/urfave/cli/v2 v2.25.7
 	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.26.0
-	golang.org/x/exp v0.0.0-20231127185646-65229373498e
+	golang.org/x/exp v0.0.0-20231206192017-f3f8817b8deb
 	google.golang.org/api v0.130.0
 	google.golang.org/grpc v1.59.0
 	google.golang.org/protobuf v1.31.0
