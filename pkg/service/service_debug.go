@@ -126,6 +126,17 @@ func (s *Service) handlePProf(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Service) getGRPCClient(egressID string) (ipc.EgressHandlerClient, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	h, ok := s.activeHandlers[egressID]
+	if !ok {
+		return nil, errors.ErrEgressNotFound
+	}
+	return h.ipcHandlerClient, nil
+}
+
 func getErrorCode(err error) int {
 	var e psrpc.Error
 
