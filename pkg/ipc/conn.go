@@ -17,7 +17,6 @@ package ipc
 import (
 	"context"
 	"net"
-	"os"
 	"path"
 
 	"google.golang.org/grpc"
@@ -32,8 +31,8 @@ const (
 	serviceAddress = "service_ipc.sock"
 )
 
-func StartServiceListener(ipcServer *grpc.Server) error {
-	listener, err := net.Listen(network, path.Join(os.TempDir(), serviceAddress))
+func StartServiceListener(ipcServer *grpc.Server, serviceTmpDir string) error {
+	listener, err := net.Listen(network, path.Join(serviceTmpDir, serviceAddress))
 	if err != nil {
 		return err
 	}
@@ -78,8 +77,8 @@ func StartHandlerListener(ipcServer *grpc.Server, handlerTmpDir string) error {
 	return nil
 }
 
-func NewServiceClient() (EgressServiceClient, error) {
-	socketAddr := path.Join(os.TempDir(), serviceAddress)
+func NewServiceClient(serviceTmpDir string) (EgressServiceClient, error) {
+	socketAddr := path.Join(serviceTmpDir, serviceAddress)
 	conn, err := grpc.Dial(socketAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(_ context.Context, addr string) (net.Conn, error) {

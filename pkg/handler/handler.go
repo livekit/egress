@@ -16,6 +16,8 @@ package handler
 
 import (
 	"context"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -26,6 +28,7 @@ import (
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/psrpc"
@@ -44,7 +47,7 @@ type Handler struct {
 }
 
 func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.IOInfoClient) (*Handler, error) {
-	ipcClient, err := ipc.NewServiceClient()
+	ipcClient, err := ipc.NewServiceClient(path.Join(conf.TmpDir[:strings.LastIndex(conf.TmpDir, "/")], conf.NodeID))
 	if err != nil {
 		return nil, err
 	}
@@ -74,10 +77,13 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 	}
 	h.rpcServer = rpcServer
 
-	ctx := context.Background()
-	_, _ = h.ipcServiceClient.HandlerReady(ctx, &ipc.HandlerReadyRequest{EgressId: conf.Info.EgressId})
+	_, err = h.ipcServiceClient.HandlerReady(context.Background(), &ipc.HandlerReadyRequest{EgressId: conf.Info.EgressId})
+	if err != nil {
+		logger.Errorw("failed to notify service", err)
+		return nil, err
+	}
 
-	h.pipeline, err = pipeline.New(ctx, conf, h.ioClient)
+	h.pipeline, err = pipeline.New(context.Background(), conf, h.ioClient)
 	if err != nil {
 		if !errors.IsFatal(err) {
 			// user error, send update
@@ -86,7 +92,7 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 			conf.Info.EndedAt = now
 			conf.Info.Status = livekit.EgressStatus_EGRESS_FAILED
 			conf.Info.Error = err.Error()
-			_, _ = h.ioClient.UpdateEgress(ctx, conf.Info)
+			_, _ = h.ioClient.UpdateEgress(context.Background(), conf.Info)
 		}
 		return nil, err
 	}

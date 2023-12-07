@@ -20,6 +20,8 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
+	"path"
 	"sync"
 	"syscall"
 	"time"
@@ -64,8 +66,13 @@ func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service
 		activeHandlers:   make(map[string]*Process),
 	}
 
+	tmpDir := path.Join(os.TempDir(), conf.NodeID)
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return nil, err
+	}
+
 	ipc.RegisterEgressServiceServer(s.ipcServiceServer, s)
-	if err := ipc.StartServiceListener(s.ipcServiceServer); err != nil {
+	if err := ipc.StartServiceListener(s.ipcServiceServer, tmpDir); err != nil {
 		return nil, err
 	}
 
