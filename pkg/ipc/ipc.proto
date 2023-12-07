@@ -17,6 +17,16 @@ syntax = "proto3";
 package ipc;
 option go_package = "github.com/livekit/egress/pkg/ipc";
 
+import "google/protobuf/empty.proto";
+
+service EgressService {
+  rpc HandlerReady(HandlerReadyRequest) returns (google.protobuf.Empty) {};
+}
+
+message HandlerReadyRequest {
+  string egress_id = 1;
+}
+
 service EgressHandler {
   rpc GetPipelineDot(GstPipelineDebugDotRequest) returns (GstPipelineDebugDotResponse) {};
   rpc GetPProf(PProfRequest) returns (PProfResponse) {};

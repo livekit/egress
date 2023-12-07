@@ -28,6 +28,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/handler"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/version"
 	"github.com/livekit/protocol/logger"
@@ -202,7 +203,7 @@ func runHandler(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	handler, err := service.NewHandler(conf, bus, ioClient)
+	h, err := handler.NewHandler(conf, bus, ioClient)
 	if err != nil {
 		if errors.IsFatal(err) {
 			// service will send info update and shut down
@@ -217,8 +218,8 @@ func runHandler(c *cli.Context) error {
 	go func() {
 		sig := <-killChan
 		logger.Infow("exit requested, stopping recording and shutting down", "signal", sig)
-		handler.Kill()
+		h.Kill()
 	}()
 
-	return handler.Run()
+	return h.Run()
 }

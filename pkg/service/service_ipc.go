@@ -15,29 +15,31 @@
 package service
 
 import (
-	"fmt"
-	"io/fs"
-	"net/http"
+	"context"
+	"time"
 
-	"github.com/livekit/protocol/logger"
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/ipc"
 )
 
-func (s *Service) StartTemplatesServer(fs fs.FS) error {
-	if s.conf.TemplatePort == 0 {
-		logger.Debugw("templates server disabled")
-		return nil
+func (s *Service) HandlerReady(ctx context.Context, req *ipc.HandlerReadyRequest) (*emptypb.Empty, error) {
+	var p *Process
+	for i := 0; i < 3; i++ {
+		s.mu.RLock()
+		p = s.activeHandlers[req.EgressId]
+		s.mu.RUnlock()
+		if p != nil {
+			break
+		}
+		time.Sleep(time.Millisecond * 300)
 	}
 
-	h := http.FileServer(http.FS(fs))
+	if p == nil {
+		return nil, errors.ErrEgressNotFound
+	}
 
-	mux := http.NewServeMux()
-	mux.Handle("/", h)
-
-	go func() {
-		addr := fmt.Sprintf("localhost:%d", s.conf.TemplatePort)
-		logger.Debugw(fmt.Sprintf("starting template server on address %s", addr))
-		_ = http.ListenAndServe(addr, mux)
-	}()
-
-	return nil
+	close(p.ready)
+	return &emptypb.Empty{}, nil
 }
