@@ -16,7 +16,6 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -25,18 +24,11 @@ import (
 )
 
 func (s *Service) HandlerReady(ctx context.Context, req *ipc.HandlerReadyRequest) (*emptypb.Empty, error) {
-	var p *Process
-	for i := 0; i < 3; i++ {
-		s.mu.RLock()
-		p = s.activeHandlers[req.EgressId]
-		s.mu.RUnlock()
-		if p != nil {
-			break
-		}
-		time.Sleep(time.Millisecond * 300)
-	}
+	s.mu.RLock()
+	p, ok := s.activeHandlers[req.EgressId]
+	s.mu.RUnlock()
 
-	if p == nil {
+	if !ok {
 		return nil, errors.ErrEgressNotFound
 	}
 
