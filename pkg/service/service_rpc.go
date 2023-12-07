@@ -125,12 +125,6 @@ func (s *Service) launchHandler(req *rpc.StartEgressRequest, info *livekit.Egres
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err = cmd.Start(); err != nil {
-		span.RecordError(err)
-		logger.Errorw("could not launch process", err)
-		return err
-	}
-
 	s.EgressStarted(req)
 
 	h, err := NewProcess(context.Background(), handlerID, req, info, cmd, p.TmpDir)
@@ -139,26 +133,42 @@ func (s *Service) launchHandler(req *rpc.StartEgressRequest, info *livekit.Egres
 		return err
 	}
 
-	s.AddHandler(req.EgressId, h)
-
-	select {
-	case <-h.ready:
-		return nil
-	case <-time.After(10 * time.Second):
-		return errors.ErrEgressNotFound
+	err = s.AddHandler(req.EgressId, h)
+	if err != nil {
+		span.RecordError(err)
+		return err
 	}
+
+	return nil
 }
 
-func (s *Service) AddHandler(egressID string, h *Process) {
+func (s *Service) AddHandler(egressID string, p *Process) error {
 	s.mu.Lock()
-	s.activeHandlers[egressID] = h
+	s.activeHandlers[egressID] = p
 	s.mu.Unlock()
 
-	go s.awaitCleanup(h)
+	if err := p.cmd.Start(); err != nil {
+		logger.Errorw("could not launch process", err)
+		return err
+	}
+
+	select {
+	case <-p.ready:
+		go func() {
+			err := p.cmd.Wait()
+			s.processEnded(p, err)
+		}()
+
+	case <-time.After(10 * time.Second):
+		_ = p.cmd.Process.Kill()
+		s.processEnded(p, errors.ErrEgressNotFound)
+	}
+
+	return nil
 }
 
-func (s *Service) awaitCleanup(p *Process) {
-	if err := p.cmd.Wait(); err != nil {
+func (s *Service) processEnded(p *Process, err error) {
+	if err != nil {
 		now := time.Now().UnixNano()
 		p.info.UpdatedAt = now
 		p.info.EndedAt = now
