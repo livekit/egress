@@ -178,6 +178,9 @@ func (s *Service) processEnded(p *Process, err error) {
 		s.Stop(false)
 	}
 
+	avgCPU, maxCPU := p.getUsageStats()
+	logger.Infow("egress stats", "egressID", p.req.EgressId, "avgCPU", avgCPU, "maxCPU", maxCPU)
+
 	s.EgressEnded(p.req)
 	p.closed.Break()
 
