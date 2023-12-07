@@ -25,6 +25,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -139,7 +140,13 @@ func (s *Service) launchHandler(req *rpc.StartEgressRequest, info *livekit.Egres
 	}
 
 	s.AddHandler(req.EgressId, h)
-	return nil
+
+	select {
+	case <-h.ready:
+		return nil
+	case <-time.After(10 * time.Second):
+		return errors.ErrEgressNotFound
+	}
 }
 
 func (s *Service) AddHandler(egressID string, h *Process) {
