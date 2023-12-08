@@ -276,8 +276,6 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 				return err
 			}
 
-			logger.Debugw("fragment closed", "location", filepath, "runningTime", t)
-
 			// We need to dispatch to a queue to:
 			// 1. Avoid concurrent access to the SegmentsInfo structure
 			// 2. Ensure that playlists are uploaded in the same order they are enqueued to avoid an older playlist overwriting a newer one
