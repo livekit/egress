@@ -26,7 +26,6 @@ import (
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -85,7 +84,6 @@ func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputTyp
 	start := time.Now()
 	location, size, err := u.upload(localFilepath, storageFilepath, outputType)
 	elapsed := time.Since(start)
-	logger.Debugw("upload complete", "fileType", fileType, "time", elapsed.String())
 
 	// success
 	if err == nil {
