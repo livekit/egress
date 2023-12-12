@@ -192,7 +192,7 @@ func (m *Monitor) canAcceptRequest(req *rpc.StartEgressRequest) bool {
 		available = total
 	} else {
 		// if already running requests, cap usage at 90%
-		available -= 0.9 * total
+		available -= 0.1 * total
 	}
 
 	switch req.Request.(type) {
