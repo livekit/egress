@@ -191,8 +191,8 @@ func (m *Monitor) canAcceptRequest(req *rpc.StartEgressRequest) bool {
 		// if no requests, use total
 		available = total
 	} else {
-		// if already running requests, cap usage at 90%
-		available -= 0.1 * total
+		// if already running requests, cap usage at MaxCpuUtilization
+		available -= (1 - m.cpuCostConfig.MaxCpuUtilization) * total
 	}
 
 	switch req.Request.(type) {
