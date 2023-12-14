@@ -60,6 +60,9 @@ func (s *Service) promIsIdle() float64 {
 }
 
 func (s *Service) promCanAcceptRequest() float64 {
+	if s.shutdown.IsBroken() {
+		return 0
+	}
 	if s.CanAcceptRequest(&rpc.StartEgressRequest{
 		Request: &rpc.StartEgressRequest_RoomComposite{
 			RoomComposite: &livekit.RoomCompositeEgressRequest{},
