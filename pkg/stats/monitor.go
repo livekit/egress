@@ -47,7 +47,7 @@ type Monitor struct {
 	prevEgressUsage map[string]float64
 }
 
-const cpuHoldDuration = time.Second * 5
+const cpuHoldDuration = time.Second * 10
 
 func NewMonitor(conf *config.ServiceConfig) *Monitor {
 	return &Monitor{
@@ -177,23 +177,22 @@ func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 
 func (m *Monitor) canAcceptRequest(req *rpc.StartEgressRequest) bool {
 	accept := false
-
 	total := m.cpuStats.NumCPU()
-	available := m.cpuStats.GetCPUIdle() - m.pendingCPUs.Load()
+
+	var available float64
+	if m.requests.Load() == 0 {
+		// if no requests, use total
+		available = total - m.pendingCPUs.Load()
+	} else {
+		// if already running requests, cap usage at MaxCpuUtilization
+		available = m.cpuStats.GetCPUIdle() - m.pendingCPUs.Load() - (1-m.cpuCostConfig.MaxCpuUtilization)*total
+	}
 
 	logger.Debugw("cpu check",
 		"total", total,
 		"available", available,
-		"active_requests", m.requests,
+		"requests", m.requests,
 	)
-
-	if m.requests.Load() == 0 {
-		// if no requests, use total
-		available = total
-	} else {
-		// if already running requests, cap usage at MaxCpuUtilization
-		available -= (1 - m.cpuCostConfig.MaxCpuUtilization) * total
-	}
 
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
