@@ -16,12 +16,12 @@ require (
 	github.com/go-gst/go-gst v0.0.0-20231009181223-aa872b0f6c0c
 	github.com/go-logr/logr v1.3.0
 	github.com/googleapis/gax-go/v2 v2.12.0
-	github.com/gorilla/websocket v1.5.0
+	github.com/gorilla/websocket v1.5.1
 	github.com/livekit/livekit-server v1.5.1-0.20231026153736-8b16db227070
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/protocol v1.9.4-0.20231207062609-297e4990e7d3
 	github.com/livekit/psrpc v0.5.2
-	github.com/livekit/server-sdk-go v1.1.1
+	github.com/livekit/server-sdk-go v1.1.5-0.20231214205747-54bbfd63ef52
 	github.com/pion/rtp v1.8.3
 	github.com/pion/webrtc/v3 v3.2.23
 	github.com/pkg/errors v0.9.1
@@ -72,7 +72,7 @@ require (
 	github.com/klauspost/compress v1.17.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
-	github.com/livekit/mediatransportutil v0.0.0-20231017082622-43f077b4e60e // indirect
+	github.com/livekit/mediatransportutil v0.0.0-20231130090133-bd1456add80a // indirect
 	github.com/mackerelio/go-osstat v0.2.4 // indirect
 	github.com/magefile/mage v1.15.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -83,11 +83,11 @@ require (
 	github.com/nats-io/nkeys v0.4.6 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.5 // indirect
-	github.com/pion/dtls/v2 v2.2.7 // indirect
+	github.com/pion/dtls/v2 v2.2.8 // indirect
 	github.com/pion/ice/v2 v2.3.11 // indirect
 	github.com/pion/interceptor v0.1.25 // indirect
 	github.com/pion/logging v0.2.2 // indirect
-	github.com/pion/mdns v0.0.8 // indirect
+	github.com/pion/mdns v0.0.9 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.12 // indirect
 	github.com/pion/sctp v1.8.9 // indirect
