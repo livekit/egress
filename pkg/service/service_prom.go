@@ -72,6 +72,9 @@ func (s *Service) promIsIdle() float64 {
 }
 
 func (s *Service) promCanAcceptRequest() float64 {
+	if s.shutdown.IsBroken() {
+		return 0
+	}
 	if s.CanAcceptRequest(&rpc.StartEgressRequest{
 		Request: &rpc.StartEgressRequest_RoomComposite{
 			RoomComposite: &livekit.RoomCompositeEgressRequest{},
@@ -88,9 +91,13 @@ func (s *Service) promProcUpdate(pUsage map[int]float64) map[string]float64 {
 
 	eUsage := make(map[string]float64)
 	for _, h := range s.activeHandlers {
-		if usage, ok := pUsage[h.cmd.Process.Pid]; ok {
-			eUsage[h.req.EgressId] = usage
-			h.updateCPU(usage)
+		if cmd := h.cmd; cmd != nil {
+			if process := cmd.Process; process != nil {
+				if usage, ok := pUsage[process.Pid]; ok {
+					eUsage[h.req.EgressId] = usage
+					h.updateCPU(usage)
+				}
+			}
 		}
 	}
 

@@ -25,6 +25,7 @@ on:
       - cmd/**
       - pkg/**
       - test/**
+      - go.mod
   pull_request:
     branches: [ main ]
     paths:
@@ -35,6 +36,7 @@ on:
       - cmd/**
       - pkg/**
       - test/**
+      - go.mod
 
 jobs:
   integration:
