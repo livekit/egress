@@ -36,24 +36,28 @@ func (s *Service) CreateGatherer() prometheus.Gatherer {
 		_, span := tracer.Start(context.Background(), "Service.GathererOfHandlerMetrics")
 		defer span.End()
 
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-
 		gatherers := prometheus.Gatherers{}
 		// Include the default repo
 		gatherers = append(gatherers, prometheus.DefaultGatherer)
 		// Include process ended metrics
 		gatherers = append(gatherers, prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+			s.mu.Lock()
+
 			m := s.pendingMetrics
 			s.pendingMetrics = nil
+
+			s.mu.Unlock()
 
 			return m, nil
 		}))
 
+		s.mu.RLock()
 		// add all the active handlers as sources
 		for _, v := range s.activeHandlers {
 			gatherers = append(gatherers, v)
 		}
+		s.mu.RUnlock()
+
 		return gatherers.Gather()
 	})
 }
