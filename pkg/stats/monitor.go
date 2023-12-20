@@ -39,15 +39,25 @@ type Monitor struct {
 	requestGauge    *prometheus.GaugeVec
 
 	cpuStats *utils.CPUStats
+	requests atomic.Int32
 
-	pendingCPUs atomic.Float64
-
-	mu              sync.Mutex
-	requests        atomic.Int32
-	prevEgressUsage map[string]float64
+	mu        sync.Mutex
+	pending   map[string]*processStats
+	procStats map[int]*processStats
 }
 
-const cpuHoldDuration = time.Second * 5
+type processStats struct {
+	egressID string
+
+	pendingUsage float64
+	lastUsage    float64
+
+	totalCPU   float64
+	cpuCounter int
+	maxCPU     float64
+}
+
+const cpuHoldDuration = time.Second * 30
 
 func NewMonitor(conf *config.ServiceConfig) *Monitor {
 	return &Monitor{
@@ -59,20 +69,30 @@ func (m *Monitor) Start(
 	conf *config.ServiceConfig,
 	isIdle func() float64,
 	canAcceptRequest func() float64,
-	procUpdate func(map[int]float64) map[string]float64,
 ) error {
 	procStats, err := utils.NewProcCPUStats(func(idle float64, usage map[int]float64) {
 		m.promCPULoad.Set(1 - idle/m.cpuStats.NumCPU())
-		egressUsage := procUpdate(usage)
-		for egressID, cpuUsage := range egressUsage {
-			m.promProcCPULoad.With(prometheus.Labels{"egress_id": egressID}).Set(cpuUsage)
-		}
-		for egressID := range m.prevEgressUsage {
-			if _, ok := egressUsage[egressID]; !ok {
-				m.promProcCPULoad.With(prometheus.Labels{"egress_id": egressID}).Set(0)
+
+		m.mu.Unlock()
+		defer m.mu.Unlock()
+
+		for pid, cpuUsage := range usage {
+			if m.procStats[pid] == nil {
+				m.procStats[pid] = &processStats{}
+			}
+			procStats := m.procStats[pid]
+
+			procStats.lastUsage = cpuUsage
+			procStats.totalCPU += cpuUsage
+			procStats.cpuCounter++
+			if cpuUsage > procStats.maxCPU {
+				procStats.maxCPU = cpuUsage
+			}
+
+			if procStats.egressID != "" {
+				m.promProcCPULoad.With(prometheus.Labels{"egress_id": procStats.egressID}).Set(cpuUsage)
 			}
 		}
-		m.prevEgressUsage = egressUsage
 	})
 	if err != nil {
 		return err
@@ -168,32 +188,77 @@ func (m *Monitor) GetRequestCount() int {
 	return int(m.requests.Load())
 }
 
+func (m *Monitor) UpdatePID(egressID string, pid int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ps := m.pending[egressID]
+	delete(m.pending, egressID)
+
+	if existing := m.procStats[pid]; existing != nil {
+		ps.maxCPU = existing.maxCPU
+		ps.totalCPU = existing.totalCPU
+		ps.cpuCounter = existing.cpuCounter
+	}
+	m.procStats[pid] = ps
+}
+
+func (m *Monitor) GetUsageStats(egressID string) (float64, float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for pid, ps := range m.procStats {
+		if ps.egressID == egressID {
+			delete(m.procStats, pid)
+			return ps.totalCPU / float64(ps.cpuCounter), ps.maxCPU
+		}
+	}
+
+	return 0, 0
+}
+
 func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	return m.canAcceptRequest(req)
+	return m.canAcceptRequestLocked(req)
 }
 
-func (m *Monitor) canAcceptRequest(req *rpc.StartEgressRequest) bool {
+func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 	accept := false
 
 	total := m.cpuStats.NumCPU()
-	available := m.cpuStats.GetCPUIdle() - m.pendingCPUs.Load()
+
+	var available float64
+	if m.requests.Load() == 0 {
+		// if no requests, use total
+		available = total
+	} else {
+		var used float64
+		for _, ps := range m.pending {
+			if ps.pendingUsage > ps.lastUsage {
+				used += ps.pendingUsage
+			} else {
+				used += ps.lastUsage
+			}
+		}
+		for _, ps := range m.procStats {
+			if ps.pendingUsage > ps.lastUsage {
+				used += ps.pendingUsage
+			} else {
+				used += ps.lastUsage
+			}
+		}
+
+		// if already running requests, cap usage at MaxCpuUtilization
+		available = total - used - (total * (1 - m.cpuCostConfig.MaxCpuUtilization))
+	}
 
 	logger.Debugw("cpu check",
 		"total", total,
 		"available", available,
 		"active_requests", m.requests,
 	)
-
-	if m.requests.Load() == 0 {
-		// if no requests, use total
-		available = total
-	} else {
-		// if already running requests, cap usage at MaxCpuUtilization
-		available -= (1 - m.cpuCostConfig.MaxCpuUtilization) * total
-	}
 
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
@@ -215,9 +280,11 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if !m.canAcceptRequest(req) {
+	if !m.canAcceptRequestLocked(req) {
 		return errors.ErrResourceExhausted
 	}
+
+	m.requests.Inc()
 
 	var cpuHold float64
 	switch req.Request.(type) {
@@ -233,9 +300,13 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		cpuHold = m.cpuCostConfig.TrackCpuCost
 	}
 
-	m.requests.Inc()
-	m.pendingCPUs.Add(cpuHold)
-	time.AfterFunc(cpuHoldDuration, func() { m.pendingCPUs.Sub(cpuHold) })
+	ps := &processStats{
+		egressID:     req.EgressId,
+		pendingUsage: cpuHold,
+	}
+	time.AfterFunc(cpuHoldDuration, func() { ps.pendingUsage = 0 })
+	m.pending[req.EgressId] = ps
+
 	return nil
 }
 

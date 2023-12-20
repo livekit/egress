@@ -154,6 +154,7 @@ func (s *Service) AddHandler(egressID string, p *Process) error {
 
 	select {
 	case <-p.ready:
+		s.UpdatePID(egressID, p.cmd.Process.Pid)
 		go func() {
 			err := p.cmd.Wait()
 			s.processEnded(p, err)
@@ -178,7 +179,7 @@ func (s *Service) processEnded(p *Process, err error) {
 		s.Stop(false)
 	}
 
-	avgCPU, maxCPU := p.getUsageStats()
+	avgCPU, maxCPU := s.GetUsageStats(p.info.EgressId)
 	logger.Infow("egress stats", "egressID", p.req.EgressId, "avgCPU", avgCPU, "maxCPU", maxCPU)
 
 	s.EgressEnded(p.req)
