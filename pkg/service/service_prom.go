@@ -17,12 +17,16 @@ package service
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
+	"golang.org/x/exp/maps"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 )
@@ -38,6 +42,14 @@ func (s *Service) CreateGatherer() prometheus.Gatherer {
 		gatherers := prometheus.Gatherers{}
 		// Include the default repo
 		gatherers = append(gatherers, prometheus.DefaultGatherer)
+		// Include process ended metrics
+		gatherers = append(gatherers, prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
+			m := s.pendingMetrics
+			s.pendingMetrics = nil
+
+			return m, nil
+		}))
+
 		// add all the active handlers as sources
 		for _, v := range s.activeHandlers {
 			gatherers = append(gatherers, v)
@@ -83,4 +95,32 @@ func (s *Service) promProcUpdate(pUsage map[int]float64) map[string]float64 {
 	}
 
 	return eUsage
+}
+
+func (s *Service) storeProcessEndedMetrics(egressID string, metrics string) error {
+	m, err := deserializeMetrics(egressID, metrics)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.pendingMetrics = append(s.pendingMetrics, m...)
+
+	return nil
+}
+
+func deserializeMetrics(egressID string, s string) ([]*dto.MetricFamily, error) {
+	parser := &expfmt.TextParser{}
+	families, err := parser.TextToMetricFamilies(strings.NewReader(s))
+	if err != nil {
+		logger.Warnw("failed to parse metrics from handler", err, "egress_id", egressID)
+		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
+	}
+
+	// Add an egress_id label to every metric all the families, if it doesn't already have one
+	applyDefaultLabel(egressID, families)
+
+	return maps.Values(families), nil
 }

@@ -17,12 +17,9 @@ package service
 import (
 	"context"
 	"os/exec"
-	"strings"
 
 	"github.com/frostbyte73/core"
 	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/expfmt"
-	"golang.org/x/exp/maps"
 
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/protocol/livekit"
@@ -94,18 +91,10 @@ func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 		logger.Warnw("failed to obtain metrics from handler", err, "egress_id", p.req.EgressId)
 		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
 	}
+
 	// Parse the result to match the Gatherer interface
-	parser := &expfmt.TextParser{}
-	families, err := parser.TextToMetricFamilies(strings.NewReader(metricsResponse.Metrics))
-	if err != nil {
-		logger.Warnw("failed to parse metrics from handler", err, "egress_id", p.req.EgressId)
-		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
-	}
+	return deserializeMetrics(p.info.EgressId, metricsResponse.Metrics)
 
-	// Add an egress_id label to every metric all the families, if it doesn't already have one
-	applyDefaultLabel(p.info.EgressId, families)
-
-	return maps.Values(families), nil
 }
 
 func applyDefaultLabel(egressID string, families map[string]*dto.MetricFamily) {

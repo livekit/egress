@@ -21,10 +21,16 @@ import "google/protobuf/empty.proto";
 
 service EgressService {
   rpc HandlerReady(HandlerReadyRequest) returns (google.protobuf.Empty) {};
+  rpc HandlerShuttingDown(HandlerShuttingDownRequest) returns (google.protobuf.Empty) {};
 }
 
 message HandlerReadyRequest {
   string egress_id = 1;
+}
+
+message HandlerShuttingDownRequest {
+  string egress_id = 1;
+  string metrics = 2;
 }
 
 service EgressHandler {
