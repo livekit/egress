@@ -73,7 +73,7 @@ func (m *Monitor) Start(
 	procStats, err := utils.NewProcCPUStats(func(idle float64, usage map[int]float64) {
 		m.promCPULoad.Set(1 - idle/m.cpuStats.NumCPU())
 
-		m.mu.Unlock()
+		m.mu.Lock()
 		defer m.mu.Unlock()
 
 		for pid, cpuUsage := range usage {
@@ -203,7 +203,7 @@ func (m *Monitor) UpdatePID(egressID string, pid int) {
 	m.procStats[pid] = ps
 }
 
-func (m *Monitor) GetUsageStats(egressID string) (float64, float64) {
+func (m *Monitor) CloseEgressStats(egressID string) (float64, float64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
