@@ -72,30 +72,7 @@ func (m *Monitor) Start(
 	isIdle func() float64,
 	canAcceptRequest func() float64,
 ) error {
-	procStats, err := utils.NewProcCPUStats(func(idle float64, usage map[int]float64) {
-		m.promCPULoad.Set(1 - idle/m.cpuStats.NumCPU())
-
-		m.mu.Lock()
-		defer m.mu.Unlock()
-
-		for pid, cpuUsage := range usage {
-			if m.procStats[pid] == nil {
-				m.procStats[pid] = &processStats{}
-			}
-			procStats := m.procStats[pid]
-
-			procStats.lastUsage = cpuUsage
-			procStats.totalCPU += cpuUsage
-			procStats.cpuCounter++
-			if cpuUsage > procStats.maxCPU {
-				procStats.maxCPU = cpuUsage
-			}
-
-			if procStats.egressID != "" {
-				m.promProcCPULoad.With(prometheus.Labels{"egress_id": procStats.egressID}).Set(cpuUsage)
-			}
-		}
-	})
+	procStats, err := utils.NewProcCPUStats(m.updateEgressStats)
 	if err != nil {
 		return err
 	}
@@ -205,6 +182,31 @@ func (m *Monitor) UpdatePID(egressID string, pid int) {
 	m.procStats[pid] = ps
 }
 
+func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
+	m.promCPULoad.Set(1 - idle/m.cpuStats.NumCPU())
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for pid, cpuUsage := range usage {
+		if m.procStats[pid] == nil {
+			m.procStats[pid] = &processStats{}
+		}
+		procStats := m.procStats[pid]
+
+		procStats.lastUsage = cpuUsage
+		procStats.totalCPU += cpuUsage
+		procStats.cpuCounter++
+		if cpuUsage > procStats.maxCPU {
+			procStats.maxCPU = cpuUsage
+		}
+
+		if procStats.egressID != "" {
+			m.promProcCPULoad.With(prometheus.Labels{"egress_id": procStats.egressID}).Set(cpuUsage)
+		}
+	}
+}
+
 func (m *Monitor) CloseEgressStats(egressID string) (float64, float64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -212,6 +214,7 @@ func (m *Monitor) CloseEgressStats(egressID string) (float64, float64) {
 	for pid, ps := range m.procStats {
 		if ps.egressID == egressID {
 			delete(m.procStats, pid)
+			m.promProcCPULoad.With(prometheus.Labels{"egress_id": egressID}).Set(0)
 			return ps.totalCPU / float64(ps.cpuCounter), ps.maxCPU
 		}
 	}
