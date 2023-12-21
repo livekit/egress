@@ -35,3 +35,12 @@ func (s *Service) HandlerReady(ctx context.Context, req *ipc.HandlerReadyRequest
 	close(p.ready)
 	return &emptypb.Empty{}, nil
 }
+
+func (s *Service) HandlerShuttingDown(ctx context.Context, req *ipc.HandlerShuttingDownRequest) (*emptypb.Empty, error) {
+	err := s.storeProcessEndedMetrics(req.EgressId, req.Metrics)
+	if err != nil {
+		return nil, err
+	}
+
+	return &emptypb.Empty{}, nil
+}

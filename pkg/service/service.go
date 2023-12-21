@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
+	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/grpc"
 
 	"github.com/livekit/egress/pkg/config"
@@ -52,6 +53,7 @@ type Service struct {
 
 	mu             sync.RWMutex
 	activeHandlers map[string]*Process
+	pendingMetrics []*dto.MetricFamily
 
 	shutdown core.Fuse
 }

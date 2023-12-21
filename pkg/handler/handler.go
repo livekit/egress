@@ -21,6 +21,9 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
 	"google.golang.org/grpc"
 
 	"github.com/livekit/egress/pkg/config"
@@ -120,6 +123,17 @@ func (h *Handler) Run() error {
 		case res := <-result:
 			// recording finished
 			_, _ = h.ioClient.UpdateEgress(ctx, res)
+
+			m, err := h.GenerateMetrics(ctx)
+			if err == nil {
+				h.ipcServiceClient.HandlerShuttingDown(ctx, &ipc.HandlerShuttingDownRequest{
+					EgressId: h.conf.Info.EgressId,
+					Metrics:  m,
+				})
+			} else {
+				logger.Errorw("failed generating handler metrics", err)
+			}
+
 			h.rpcServer.Shutdown()
 			h.ipcHandlerServer.Stop()
 			return nil
@@ -129,4 +143,36 @@ func (h *Handler) Run() error {
 
 func (h *Handler) Kill() {
 	h.kill.Break()
+}
+
+func (h *Handler) GenerateMetrics(ctx context.Context) (string, error) {
+	metrics, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		return "", err
+	}
+
+	metricsAsString, err := renderMetrics(metrics)
+	if err != nil {
+		return "", err
+	}
+
+	return metricsAsString, nil
+}
+
+func renderMetrics(metrics []*dto.MetricFamily) (string, error) {
+	// Create a StringWriter to render the metrics into text format
+	writer := &strings.Builder{}
+	totalCnt := 0
+	for _, metric := range metrics {
+		// Write each metric family to text
+		cnt, err := expfmt.MetricFamilyToText(writer, metric)
+		if err != nil {
+			logger.Errorw("error writing metric family", err)
+			return "", err
+		}
+		totalCnt += cnt
+	}
+
+	// Get the rendered metrics as a string from the StringWriter
+	return writer.String(), nil
 }
