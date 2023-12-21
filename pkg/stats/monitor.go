@@ -62,6 +62,8 @@ const cpuHoldDuration = time.Second * 30
 func NewMonitor(conf *config.ServiceConfig) *Monitor {
 	return &Monitor{
 		cpuCostConfig: conf.CPUCostConfig,
+		pending:       make(map[string]*processStats),
+		procStats:     make(map[int]*processStats),
 	}
 }
 
