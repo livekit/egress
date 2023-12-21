@@ -35,9 +35,6 @@ type Process struct {
 	cmd              *exec.Cmd
 	ipcHandlerClient ipc.EgressHandlerClient
 	ready            chan struct{}
-	totalCPU         float64
-	cpuCounter       int
-	maxCPU           float64
 	closed           core.Fuse
 }
 
@@ -66,21 +63,6 @@ func NewProcess(
 	}
 
 	return p, nil
-}
-
-func (p *Process) updateCPU(cpu float64) {
-	p.totalCPU += cpu
-	p.cpuCounter++
-	if cpu > p.maxCPU {
-		p.maxCPU = cpu
-	}
-}
-
-func (p *Process) getUsageStats() (float64, float64) {
-	if p.cpuCounter == 0 {
-		return 0, 0
-	}
-	return p.totalCPU / float64(p.cpuCounter), p.maxCPU
 }
 
 // Gather implements the prometheus.Gatherer interface on server-side to allow aggregation of handler metrics

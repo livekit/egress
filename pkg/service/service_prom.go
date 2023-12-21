@@ -89,25 +89,6 @@ func (s *Service) promCanAcceptRequest() float64 {
 	return 0
 }
 
-func (s *Service) promProcUpdate(pUsage map[int]float64) map[string]float64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	eUsage := make(map[string]float64)
-	for _, h := range s.activeHandlers {
-		if cmd := h.cmd; cmd != nil {
-			if process := cmd.Process; process != nil {
-				if usage, ok := pUsage[process.Pid]; ok {
-					eUsage[h.req.EgressId] = usage
-					h.updateCPU(usage)
-				}
-			}
-		}
-	}
-
-	return eUsage
-}
-
 func (s *Service) storeProcessEndedMetrics(egressID string, metrics string) error {
 	m, err := deserializeMetrics(egressID, metrics)
 	if err != nil {
