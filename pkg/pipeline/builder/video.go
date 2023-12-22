@@ -514,9 +514,6 @@ func (b *VideoBin) addEncoder() error {
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		if err = x264Enc.SetProperty("bitrate", uint(b.conf.VideoBitrate)); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
 		x264Enc.SetArg("speed-preset", "veryfast")
 		if b.conf.KeyFrameInterval != 0 {
 			if err = x264Enc.SetProperty("key-int-max", uint(b.conf.KeyFrameInterval*float64(b.conf.Framerate))); err != nil {
@@ -537,6 +534,12 @@ func (b *VideoBin) addEncoder() error {
 		}
 		if err = x264Enc.SetProperty("vbv-buf-capacity", bufCapacity); err != nil {
 			return err
+		}
+		if b.conf.GetStreamConfig() != nil {
+			x264Enc.SetArg("pass", "cbr")
+		}
+		if err = x264Enc.SetProperty("bitrate", uint(b.conf.VideoBitrate)); err != nil {
+			return errors.ErrGstPipelineError(err)
 		}
 
 		caps, err := gst.NewElement("capsfilter")
