@@ -9,7 +9,7 @@ COPY compile /
 
 RUN /compile
 
-FROM ubuntu:22.04
+FROM ubuntu:23.10
 
 RUN apt-get update && \
     apt-get dist-upgrade -y && \
@@ -22,10 +22,10 @@ RUN apt-get update && \
         libaa1 \
         libaom3 \
         libass9 \
-        libavcodec58 \
-        libavfilter7 \
-        libavformat58 \
-        libavutil56 \
+        libavcodec60 \
+        libavfilter9 \
+        libavformat60 \
+        libavutil58 \
         libbs2b0 \
         libbz2-1.0 \
         libcaca0 \
@@ -66,11 +66,12 @@ RUN apt-get update && \
         libmpcdec6 \
         libmpeg2-4 \
         libmpg123-0 \
+        libnice10 \
         libofa0 \
         libogg0 \
         libopencore-amrnb0 \
         libopencore-amrwb0 \
-        libopenexr25 \
+        libopenexr-3-1-30 \
         libopenjp2-7 \
         libopus0 \
         liborc-0.4-0 \
@@ -86,7 +87,7 @@ RUN apt-get update && \
         libsoup2.4-1 \
         libspandsp2 \
         libspeex1 \
-        libsrt1.4-openssl \
+        libsrt1.5-openssl \
         libsrtp2-1 \
         libssl3 \
         libtag1v5 \
@@ -106,7 +107,7 @@ RUN apt-get update && \
         libwebrtc-audio-processing1 \
         libwildmidi2 \
         libwoff1 \
-        libx264-163 \
+        libx264-164 \
         libx265-199 \
         libxkbcommon0 \
         libxslt1.1 \

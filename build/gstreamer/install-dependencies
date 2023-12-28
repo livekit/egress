@@ -64,6 +64,7 @@ apt-get install -y --no-install-recommends \
   libmpcdec-dev \
   libmpeg2-4-dev \
   libmpg123-dev \
+  libnice-dev \
   libofa0-dev \
   libogg-dev \
   libopencore-amrnb-dev \
@@ -110,11 +111,11 @@ apt-get install -y --no-install-recommends \
   libxslt1-dev \
   libzbar-dev \
   libzvbi-dev \
+  meson \
+  ninja-build \
   python3 \
-  python3-pip \
   ruby \
   wget \
   xdg-dbus-proxy
-pip3 install meson ninja
 apt-get clean
 rm -rf /var/lib/apt/lists/*

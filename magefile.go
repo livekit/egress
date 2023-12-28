@@ -162,7 +162,7 @@ func PublishGStreamer() error {
 }
 
 func buildGstreamer(cmd string) error {
-	commands := []string{"docker pull ubuntu:22.04"}
+	commands := []string{"docker pull ubuntu:23.10"}
 	for _, build := range []string{"base", "dev", "prod"} {
 		commands = append(commands, fmt.Sprintf("%s"+
 			" --build-arg GSTREAMER_VERSION=%s"+
