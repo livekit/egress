@@ -29,6 +29,7 @@ import (
 
 const (
 	gstVersion      = "1.22.8"
+	libniceVersion  = "0.1.21"
 	chromiumVersion = "117.0.5874.0"
 	dockerBuild     = "docker build"
 	dockerBuildX    = "docker buildx build --push --platform linux/amd64,linux/arm64"
@@ -166,10 +167,11 @@ func buildGstreamer(cmd string) error {
 	for _, build := range []string{"base", "dev", "prod"} {
 		commands = append(commands, fmt.Sprintf("%s"+
 			" --build-arg GSTREAMER_VERSION=%s"+
+			" --build-arg LIBNICE_VERSION=%s"+
 			" -t livekit/gstreamer:%s-%s"+
 			" -f build/gstreamer/Dockerfile-%s"+
 			" ./build/gstreamer",
-			cmd, gstVersion, gstVersion, build, build,
+			cmd, gstVersion, libniceVersion, gstVersion, build, build,
 		))
 	}
 

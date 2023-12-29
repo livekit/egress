@@ -11,6 +11,7 @@ apt-get install -y --no-install-recommends \
   bubblewrap \
   ca-certificates \
   cmake \
+  curl \
   flex \
   flite1-dev \
   gcc \
@@ -64,7 +65,6 @@ apt-get install -y --no-install-recommends \
   libmpcdec-dev \
   libmpeg2-4-dev \
   libmpg123-dev \
-  libnice-dev \
   libofa0-dev \
   libogg-dev \
   libopencore-amrnb-dev \
@@ -119,3 +119,10 @@ apt-get install -y --no-install-recommends \
   xdg-dbus-proxy
 apt-get clean
 rm -rf /var/lib/apt/lists/*
+
+# install rust
+curl -o install-rustup.sh --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs 
+sh install-rustup.sh -y
+source "$HOME/.cargo/env"
+cargo install cargo-c
+rm -rf install-rustup.sh
