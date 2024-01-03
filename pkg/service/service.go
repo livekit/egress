@@ -23,7 +23,6 @@ import (
 	"os"
 	"path"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -88,6 +87,7 @@ func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service
 	if err := s.Start(s.conf,
 		s.promIsIdle,
 		s.promCanAcceptRequest,
+		s.killProcess,
 	); err != nil {
 		return nil, err
 	}
@@ -179,11 +179,16 @@ func (s *Service) KillAll() {
 	defer s.mu.RUnlock()
 
 	for _, h := range s.activeHandlers {
-		if !h.closed.IsBroken() {
-			if err := h.cmd.Process.Signal(syscall.SIGINT); err != nil {
-				logger.Errorw("failed to kill Process", err, "egressID", h.req.EgressId)
-			}
-		}
+		h.kill()
+	}
+}
+
+func (s *Service) killProcess(egressID string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if h, ok := s.activeHandlers[egressID]; ok {
+		h.kill()
 	}
 }
 
