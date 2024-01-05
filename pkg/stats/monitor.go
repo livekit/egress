@@ -32,7 +32,7 @@ import (
 )
 
 type Monitor struct {
-	cpuCostConfig config.CPUCostConfig
+	cpuCostConfig *config.CPUCostConfig
 
 	promCPULoad     prometheus.Gauge
 	promProcCPULoad *prometheus.GaugeVec
