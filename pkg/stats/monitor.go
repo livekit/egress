@@ -54,6 +54,7 @@ type processStats struct {
 
 	pendingUsage float64
 	lastUsage    float64
+	allowedUsage float64
 
 	totalCPU   float64
 	cpuCounter int
@@ -221,7 +222,7 @@ func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
 
 		if procStats.egressID != "" {
 			m.promProcCPULoad.With(prometheus.Labels{"egress_id": procStats.egressID}).Set(cpuUsage)
-			if cpuUsage > maxUsage {
+			if cpuUsage > procStats.allowedUsage && cpuUsage > maxUsage {
 				maxUsage = cpuUsage
 				maxEgress = procStats.egressID
 			}
@@ -348,6 +349,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	ps := &processStats{
 		egressID:     req.EgressId,
 		pendingUsage: cpuHold,
+		allowedUsage: cpuHold,
 	}
 	time.AfterFunc(cpuHoldDuration, func() { ps.pendingUsage = 0 })
 	m.pending[req.EgressId] = ps
