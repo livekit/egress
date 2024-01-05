@@ -97,7 +97,7 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	if conf.TrackCpuCost <= 0 {
 		conf.TrackCpuCost = trackCpuCost
 	}
-	if conf.MaxCpuUtilization <= 0 {
+	if conf.MaxCpuUtilization <= 0 || conf.MaxCpuUtilization > 1 {
 		conf.MaxCpuUtilization = maxCpuUtilization
 	}
 

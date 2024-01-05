@@ -41,9 +41,12 @@ type Monitor struct {
 	cpuStats *utils.CPUStats
 	requests atomic.Int32
 
-	mu        sync.Mutex
-	pending   map[string]*processStats
-	procStats map[int]*processStats
+	mu            sync.Mutex
+	highCPUCount  int
+	killThreshold float64
+	killProcess   func(string)
+	pending       map[string]*processStats
+	procStats     map[int]*processStats
 }
 
 type processStats struct {
@@ -51,17 +54,27 @@ type processStats struct {
 
 	pendingUsage float64
 	lastUsage    float64
+	allowedUsage float64
 
 	totalCPU   float64
 	cpuCounter int
 	maxCPU     float64
 }
 
-const cpuHoldDuration = time.Second * 30
+const (
+	cpuHoldDuration      = time.Second * 30
+	defaultKillThreshold = 0.95
+)
 
 func NewMonitor(conf *config.ServiceConfig) *Monitor {
+	killThreshold := defaultKillThreshold
+	if killThreshold <= conf.CPUCostConfig.MaxCpuUtilization {
+		killThreshold = (1 + conf.CPUCostConfig.MaxCpuUtilization) / 2
+	}
+
 	return &Monitor{
 		cpuCostConfig: conf.CPUCostConfig,
+		killThreshold: killThreshold,
 		pending:       make(map[string]*processStats),
 		procStats:     make(map[int]*processStats),
 	}
@@ -71,7 +84,10 @@ func (m *Monitor) Start(
 	conf *config.ServiceConfig,
 	isIdle func() float64,
 	canAcceptRequest func() float64,
+	killProcess func(string),
 ) error {
+	m.killProcess = killProcess
+
 	procStats, err := utils.NewProcCPUStats(m.updateEgressStats)
 	if err != nil {
 		return err
@@ -183,11 +199,14 @@ func (m *Monitor) UpdatePID(egressID string, pid int) {
 }
 
 func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
-	m.promCPULoad.Set(1 - idle/m.cpuStats.NumCPU())
+	load := 1 - idle/m.cpuStats.NumCPU()
+	m.promCPULoad.Set(load)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	maxUsage := 0.0
+	var maxEgress string
 	for pid, cpuUsage := range usage {
 		if m.procStats[pid] == nil {
 			m.procStats[pid] = &processStats{}
@@ -203,8 +222,30 @@ func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
 
 		if procStats.egressID != "" {
 			m.promProcCPULoad.With(prometheus.Labels{"egress_id": procStats.egressID}).Set(cpuUsage)
+			if cpuUsage > procStats.allowedUsage && cpuUsage > maxUsage {
+				maxUsage = cpuUsage
+				maxEgress = procStats.egressID
+			}
 		}
 	}
+
+	if load > m.killThreshold {
+		logger.Warnw("high cpu usage", nil,
+			"load", load,
+			"requests", m.requests.Load(),
+		)
+
+		if m.requests.Load() > 1 {
+			if m.highCPUCount < 3 {
+				m.highCPUCount++
+				return
+			} else {
+				m.killProcess(maxEgress)
+			}
+		}
+	}
+
+	m.highCPUCount = 0
 }
 
 func (m *Monitor) CloseEgressStats(egressID string) (float64, float64) {
@@ -308,6 +349,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	ps := &processStats{
 		egressID:     req.EgressId,
 		pendingUsage: cpuHold,
+		allowedUsage: cpuHold,
 	}
 	time.AfterFunc(cpuHoldDuration, func() { ps.pendingUsage = 0 })
 	m.pending[req.EgressId] = ps
