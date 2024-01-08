@@ -188,6 +188,7 @@ func (s *Service) killProcess(egressID string) {
 	defer s.mu.RUnlock()
 
 	if h, ok := s.activeHandlers[egressID]; ok {
+		h.info.Error = "CPU exhausted"
 		h.kill()
 	}
 }

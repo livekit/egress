@@ -41,12 +41,12 @@ type Monitor struct {
 	cpuStats *utils.CPUStats
 	requests atomic.Int32
 
-	mu            sync.Mutex
-	highCPUCount  int
-	killThreshold float64
-	killProcess   func(string)
-	pending       map[string]*processStats
-	procStats     map[int]*processStats
+	mu              sync.Mutex
+	highCPUDuration int
+	killThreshold   float64
+	killProcess     func(string)
+	pending         map[string]*processStats
+	procStats       map[int]*processStats
 }
 
 type processStats struct {
@@ -64,6 +64,7 @@ type processStats struct {
 const (
 	cpuHoldDuration      = time.Second * 30
 	defaultKillThreshold = 0.95
+	minKillDuration      = 10
 )
 
 func NewMonitor(conf *config.ServiceConfig) *Monitor {
@@ -236,16 +237,15 @@ func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
 		)
 
 		if m.requests.Load() > 1 {
-			if m.highCPUCount < 3 {
-				m.highCPUCount++
+			m.highCPUDuration++
+			if m.highCPUDuration < minKillDuration {
 				return
-			} else {
-				m.killProcess(maxEgress)
 			}
+			m.killProcess(maxEgress)
 		}
 	}
 
-	m.highCPUCount = 0
+	m.highCPUDuration = 0
 }
 
 func (m *Monitor) CloseEgressStats(egressID string) (float64, float64) {
