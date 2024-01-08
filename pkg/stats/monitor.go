@@ -44,7 +44,7 @@ type Monitor struct {
 	mu              sync.Mutex
 	highCPUDuration int
 	killThreshold   float64
-	killProcess     func(string)
+	killProcess     func(string, float64)
 	pending         map[string]*processStats
 	procStats       map[int]*processStats
 }
@@ -85,7 +85,7 @@ func (m *Monitor) Start(
 	conf *config.ServiceConfig,
 	isIdle func() float64,
 	canAcceptRequest func() float64,
-	killProcess func(string),
+	killProcess func(string, float64),
 ) error {
 	m.killProcess = killProcess
 
@@ -241,7 +241,7 @@ func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
 			if m.highCPUDuration < minKillDuration {
 				return
 			}
-			m.killProcess(maxEgress)
+			m.killProcess(maxEgress, maxUsage)
 		}
 	}
 

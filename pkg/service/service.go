@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/version"
@@ -183,12 +184,13 @@ func (s *Service) KillAll() {
 	}
 }
 
-func (s *Service) killProcess(egressID string) {
+func (s *Service) killProcess(egressID string, maxUsage float64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if h, ok := s.activeHandlers[egressID]; ok {
-		h.info.Error = "CPU exhausted"
+		logger.Errorw("killing egress", errors.ErrCPUExhausted, "egressID", egressID, "usage", maxUsage)
+		h.info.Error = errors.ErrCPUExhausted.Error()
 		h.kill()
 	}
 }
