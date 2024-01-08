@@ -174,7 +174,9 @@ func (s *Service) processEnded(p *Process, err error) {
 		p.info.UpdatedAt = now
 		p.info.EndedAt = now
 		p.info.Status = livekit.EgressStatus_EGRESS_FAILED
-		p.info.Error = "internal error"
+		if p.info.Error == "" {
+			p.info.Error = "internal error"
+		}
 		_, _ = s.ioClient.UpdateEgress(p.ctx, p.info)
 		s.Stop(false)
 	}
