@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"os/exec"
+	"syscall"
 
 	"github.com/frostbyte73/core"
 	dto "github.com/prometheus/client_model/go"
@@ -76,7 +77,14 @@ func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 
 	// Parse the result to match the Gatherer interface
 	return deserializeMetrics(p.info.EgressId, metricsResponse.Metrics)
+}
 
+func (p *Process) kill() {
+	if !p.closed.IsBroken() {
+		if err := p.cmd.Process.Signal(syscall.SIGINT); err != nil {
+			logger.Errorw("failed to kill Process", err, "egressID", p.req.EgressId)
+		}
+	}
 }
 
 func applyDefaultLabel(egressID string, families map[string]*dto.MetricFamily) {

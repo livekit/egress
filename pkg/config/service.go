@@ -47,7 +47,7 @@ type ServiceConfig struct {
 	PrometheusPort   int `yaml:"prometheus_port"`    // prometheus handler port
 	DebugHandlerPort int `yaml:"debug_handler_port"` // egress debug handler port
 
-	CPUCostConfig `yaml:"cpu_cost"` // CPU costs for the different egress types
+	*CPUCostConfig `yaml:"cpu_cost"` // CPU costs for the different egress types
 }
 
 type CPUCostConfig struct {
@@ -69,7 +69,8 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 			ApiSecret: os.Getenv("LIVEKIT_API_SECRET"),
 			WsUrl:     os.Getenv("LIVEKIT_WS_URL"),
 		},
-		TemplatePort: defaultTemplatePort,
+		TemplatePort:  defaultTemplatePort,
+		CPUCostConfig: &CPUCostConfig{},
 	}
 	if confString != "" {
 		if err := yaml.Unmarshal([]byte(confString), conf); err != nil {
@@ -96,7 +97,7 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	if conf.TrackCpuCost <= 0 {
 		conf.TrackCpuCost = trackCpuCost
 	}
-	if conf.MaxCpuUtilization <= 0 {
+	if conf.MaxCpuUtilization <= 0 || conf.MaxCpuUtilization > 1 {
 		conf.MaxCpuUtilization = maxCpuUtilization
 	}
 

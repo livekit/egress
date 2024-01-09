@@ -27,7 +27,6 @@ import (
 var (
 	ErrNoConfig                   = psrpc.NewErrorf(psrpc.Internal, "missing config")
 	ErrGhostPadFailed             = psrpc.NewErrorf(psrpc.Internal, "failed to add ghost pad to bin")
-	ErrStreamAlreadyExists        = psrpc.NewErrorf(psrpc.AlreadyExists, "stream already exists")
 	ErrBinAlreadyAdded            = psrpc.NewErrorf(psrpc.Internal, "bin already added to pipeline")
 	ErrWrongHierarchy             = psrpc.NewErrorf(psrpc.Internal, "pipeline can contain bins or elements, not both")
 	ErrNonStreamingPipeline       = psrpc.NewErrorf(psrpc.InvalidArgument, "UpdateStream called on non-streaming egress")
@@ -38,6 +37,7 @@ var (
 	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Internal, "failed to subscribe to track")
 	ErrPipelineFrozen             = psrpc.NewErrorf(psrpc.Internal, "pipeline frozen")
 	ErrSinkNotFound               = psrpc.NewErrorf(psrpc.Internal, "sink not found")
+	ErrCPUExhausted               = psrpc.NewErrorf(psrpc.Unavailable, "CPU exhausted")
 )
 
 func New(err string) error {
