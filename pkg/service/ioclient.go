@@ -68,3 +68,12 @@ func (c *IOClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, o
 
 	return &emptypb.Empty{}, nil
 }
+
+func (c *IOClient) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest, opts ...psrpc.RequestOption) (*emptypb.Empty, error) {
+	_, err := c.IOInfoClient.UpdateMetrics(ctx, req, opts...)
+	if err != nil {
+		logger.Errorw("failed to update metrics", err)
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
