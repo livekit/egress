@@ -22,6 +22,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 )
@@ -50,5 +51,10 @@ func (s *ioTestServer) CreateEgress(_ context.Context, info *livekit.EgressInfo)
 
 func (s *ioTestServer) UpdateEgress(_ context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
 	s.updates <- info
+	return &emptypb.Empty{}, nil
+}
+
+func (s *ioTestServer) UpdateMetrics(_ context.Context, req *rpc.UpdateMetricsRequest) (*emptypb.Empty, error) {
+	logger.Infow("egress metrics", "egressID", req.Info.EgressId, "avgCPU", req.AvgCpuUsage, "maxCPU", req.MaxCpuUsage)
 	return &emptypb.Empty{}, nil
 }

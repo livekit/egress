@@ -21,9 +21,6 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
-	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/expfmt"
 	"google.golang.org/grpc"
 
 	"github.com/livekit/egress/pkg/config"
@@ -41,11 +38,12 @@ type Handler struct {
 	ipc.UnimplementedEgressHandlerServer
 
 	conf             *config.PipelineConfig
-	pipeline         *pipeline.Controller
+	controller       *pipeline.Controller
 	rpcServer        rpc.EgressHandlerServer
 	ipcHandlerServer *grpc.Server
 	ipcServiceClient ipc.EgressServiceClient
 	ioClient         rpc.IOInfoClient
+	initialized      core.Fuse
 	kill             core.Fuse
 }
 
@@ -60,6 +58,7 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		ioClient:         ioClient,
 		ipcHandlerServer: grpc.NewServer(),
 		ipcServiceClient: ipcClient,
+		initialized:      core.NewFuse(),
 		kill:             core.NewFuse(),
 	}
 
@@ -86,7 +85,8 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		return nil, err
 	}
 
-	h.pipeline, err = pipeline.New(context.Background(), conf, h.ioClient)
+	h.controller, err = pipeline.New(context.Background(), conf, h.ioClient)
+	h.initialized.Break()
 	if err != nil {
 		if !errors.IsFatal(err) {
 			// user error, send update
@@ -110,7 +110,7 @@ func (h *Handler) Run() error {
 	// start egress
 	result := make(chan *livekit.EgressInfo, 1)
 	go func() {
-		result <- h.pipeline.Run(ctx)
+		result <- h.controller.Run(ctx)
 	}()
 
 	kill := h.kill.Watch()
@@ -118,7 +118,7 @@ func (h *Handler) Run() error {
 		select {
 		case <-kill:
 			// kill signal received
-			h.pipeline.SendEOS(ctx)
+			h.controller.SendEOS(ctx)
 
 		case res := <-result:
 			// recording finished
@@ -143,36 +143,4 @@ func (h *Handler) Run() error {
 
 func (h *Handler) Kill() {
 	h.kill.Break()
-}
-
-func (h *Handler) GenerateMetrics(ctx context.Context) (string, error) {
-	metrics, err := prometheus.DefaultGatherer.Gather()
-	if err != nil {
-		return "", err
-	}
-
-	metricsAsString, err := renderMetrics(metrics)
-	if err != nil {
-		return "", err
-	}
-
-	return metricsAsString, nil
-}
-
-func renderMetrics(metrics []*dto.MetricFamily) (string, error) {
-	// Create a StringWriter to render the metrics into text format
-	writer := &strings.Builder{}
-	totalCnt := 0
-	for _, metric := range metrics {
-		// Write each metric family to text
-		cnt, err := expfmt.MetricFamilyToText(writer, metric)
-		if err != nil {
-			logger.Errorw("error writing metric family", err)
-			return "", err
-		}
-		totalCnt += cnt
-	}
-
-	// Get the rendered metrics as a string from the StringWriter
-	return writer.String(), nil
 }
