@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euxo pipefail
 
-for repo in gstreamer libnice gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-plugins-rs gst-libav; do
+for repo in gstreamer libnice gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav; do
   pushd $repo
 
   opts="-D prefix=/usr"
