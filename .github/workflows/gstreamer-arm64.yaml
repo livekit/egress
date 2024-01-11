@@ -2,12 +2,14 @@ name: GStreamer build AMD64
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  gstreamer-build-amd64:
+  gstreamer-build-arm64:
     uses: ./.github/workflows/gstreamer-base.yaml
     with:
-      buildjet-runs-on: buildjet-8vcpu-ubuntu-2204 
+      buildjet-runs-on: buildjet-8vcpu-ubuntu-2204-arm
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
