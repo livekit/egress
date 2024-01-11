@@ -1,0 +1,19 @@
+ARG GSTREAMER_VERSION
+
+FROM livekit/gstreamer:${GSTREAMER_VERSION}-base
+
+FROM livekit/gstreamer:${GSTREAMER_VERSION}-dev
+
+COPY --from=0 /gst-plugins-rs /gst-plugins-rs
+
+ENV DEBUG=false
+ENV OPTIMIZATIONS=true
+ENV PATH=/root/.cargo/bin:$PATH
+
+COPY compile-rs /
+
+RUN /compile-rs 
+
+FROM livekit/gstreamer:${GSTREAMER_VERSION}-prod
+
+COPY --from=1 /compiled-binaries /
