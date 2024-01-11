@@ -32,15 +32,7 @@ const (
 	libniceVersion  = "0.1.21"
 	chromiumVersion = "117.0.5874.0"
 	dockerBuild     = "docker build"
-	dockerBuildX    = "docker buildx build --push --platform "
-)
-
-var (
-	platforms = map[string]string{
-		"all":   "linux/amd64,linux/arm64",
-		"amd64": "linux/amd64",
-		"arm64": "linux/arm64",
-	}
+	dockerBuildX    = "docker buildx build --push --platform linux/amd64,linux/arm64"
 )
 
 type packageInfo struct {
@@ -145,12 +137,12 @@ func BuildChrome() error {
 	)
 }
 
-func PublishChrome(env string) error {
+func PublishChrome() error {
 	return mageutil.Run(context.Background(),
 		"docker pull ubuntu:22.04",
 		fmt.Sprintf(
-			"%s%s -t livekit/chrome-installer:%s ./build/chrome",
-			dockerBuildX, platforms[env], chromiumVersion,
+			"%s -t livekit/chrome-installer:%s ./build/chrome",
+			dockerBuildX, chromiumVersion,
 		),
 	)
 }
@@ -164,10 +156,6 @@ func BuildTemplate() error {
 
 func BuildGStreamer() error {
 	return buildGstreamer(dockerBuild)
-}
-
-func PublishGStreamer(env string) error {
-	return buildGstreamer(dockerBuildX + platforms[env])
 }
 
 func buildGstreamer(cmd string) error {

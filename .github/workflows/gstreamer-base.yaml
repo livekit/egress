@@ -34,7 +34,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./build/gstreamer
-            #          push: true
+          push: true
           load: true
           build-args: |
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
@@ -46,7 +46,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./build/gstreamer
-            #          push: true
+          push: true
           load: true
           build-args: |
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
@@ -58,7 +58,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./build/gstreamer
-            #          push: true
+          push: true
           load: true
           build-args: |
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
@@ -70,7 +70,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./build/gstreamer
-            #          push: true
+          push: true
           load: true
           build-args: |
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
