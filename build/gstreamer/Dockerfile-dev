@@ -6,8 +6,10 @@ ENV DEBUG=true
 ENV OPTIMIZATIONS=false
 
 COPY compile /
+COPY compile-rs /
 
 RUN /compile
+RUN /compile-rs
 
 FROM ubuntu:23.10
 
