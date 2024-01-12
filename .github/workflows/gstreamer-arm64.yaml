@@ -9,7 +9,7 @@ jobs:
   gstreamer-build-arm64:
     uses: ./.github/workflows/gstreamer-base.yaml
     with:
-      buildjet-runs-on: buildjet-16vcpu-ubuntu-2204-arm
+      buildjet-runs-on: namespace-profile-arm-16
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
