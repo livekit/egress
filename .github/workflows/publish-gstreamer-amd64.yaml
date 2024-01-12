@@ -5,7 +5,7 @@ on:
 
 jobs:
   gstreamer-build-amd64:
-    uses: ./.github/workflows/gstreamer-base.yaml
+    uses: ./.github/workflows/publish-gstreamer-base.yaml
     with:
       buildjet-runs-on: buildjet-8vcpu-ubuntu-2204 
     secrets:
