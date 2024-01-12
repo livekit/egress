@@ -1,6 +1,6 @@
 ARG GSTREAMER_VERSION
 
-FROM livekit/gstreamer:${GSTREAMER_VERSION}-base
+FROM livekit/gstreamer:${GSTREAMER_VERSION}-base-${TARGETARCH}
 
 ENV DEBUG=true
 ENV OPTIMIZATIONS=false

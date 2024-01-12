@@ -1,8 +1,8 @@
 ARG GSTREAMER_VERSION
 
-FROM livekit/gstreamer:${GSTREAMER_VERSION}-base
+FROM livekit/gstreamer:${GSTREAMER_VERSION}-base-${TARGETARCH}
 
-FROM livekit/gstreamer:${GSTREAMER_VERSION}-dev
+FROM livekit/gstreamer:${GSTREAMER_VERSION}-dev-${TARGETARCH}
 
 COPY --from=0 /gst-plugins-rs /gst-plugins-rs
 
@@ -14,6 +14,6 @@ COPY compile-rs /
 
 RUN /compile-rs 
 
-FROM livekit/gstreamer:${GSTREAMER_VERSION}-prod
+FROM livekit/gstreamer:${GSTREAMER_VERSION}-prod-${TARGETARCH}
 
 COPY --from=1 /compiled-binaries /

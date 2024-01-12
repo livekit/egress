@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime"
 	"strings"
 
 	"github.com/livekit/mageutil"
@@ -165,9 +166,10 @@ func buildGstreamer(cmd string) error {
 			" --build-arg GSTREAMER_VERSION=%s"+
 			" --build-arg LIBNICE_VERSION=%s"+
 			" -t livekit/gstreamer:%s-%s"+
+			" -t livekit/gstreamer:%s-%s-%s"+
 			" -f build/gstreamer/Dockerfile-%s"+
 			" ./build/gstreamer",
-			cmd, gstVersion, libniceVersion, gstVersion, build, build,
+			cmd, gstVersion, libniceVersion, gstVersion, build, gstVersion, build, runtime.GOARCH, build,
 		))
 	}
 
