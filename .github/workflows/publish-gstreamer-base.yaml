@@ -35,7 +35,6 @@ jobs:
         with:
           context: ./build/gstreamer
           push: true
-          load: true
           build-args: |
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
             LIBNICE_VERSION=${{ env.LIBNICE_VERSION }}
@@ -47,7 +46,6 @@ jobs:
         with:
           context: ./build/gstreamer
           push: true
-          load: true
           build-args: |
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
             LIBNICE_VERSION=${{ env.LIBNICE_VERSION }}
@@ -59,7 +57,6 @@ jobs:
         with:
           context: ./build/gstreamer
           push: true
-          load: true
           build-args: |
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
             LIBNICE_VERSION=${{ env.LIBNICE_VERSION }}
