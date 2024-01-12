@@ -4,6 +4,9 @@ on:
       buildjet-runs-on:
         required: true
         type: string
+      arch:
+        required: true
+        type: string
     secrets:
       DOCKERHUB_USERNAME:
         required: true
@@ -39,7 +42,7 @@ jobs:
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
             LIBNICE_VERSION=${{ env.LIBNICE_VERSION }}
           file: ./build/gstreamer/Dockerfile-base
-          tags: livekit/gstreamer:${{ env.GST_VERSION }}-base
+          tags: livekit/gstreamer:${{ env.GST_VERSION }}-base-${{ inputs.arch }}
 
       - name: Build and push dev
         uses: docker/build-push-action@v5
@@ -50,7 +53,7 @@ jobs:
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
             LIBNICE_VERSION=${{ env.LIBNICE_VERSION }}
           file: ./build/gstreamer/Dockerfile-dev
-          tags: livekit/gstreamer:${{ env.GST_VERSION }}-dev
+          tags: livekit/gstreamer:${{ env.GST_VERSION }}-dev-${{ inputs.arch }}
 
       - name: Build and push prod
         uses: docker/build-push-action@v5
@@ -61,7 +64,7 @@ jobs:
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
             LIBNICE_VERSION=${{ env.LIBNICE_VERSION }}
           file: ./build/gstreamer/Dockerfile-prod
-          tags: livekit/gstreamer:${{ env.GST_VERSION }}-prod
+          tags: livekit/gstreamer:${{ env.GST_VERSION }}-prod-${{ inputs.arch }}
 
       - name: Build and push prod RS
         uses: docker/build-push-action@v5
@@ -72,4 +75,4 @@ jobs:
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
             LIBNICE_VERSION=${{ env.LIBNICE_VERSION }}
           file: ./build/gstreamer/Dockerfile-prod-rs
-          tags: livekit/gstreamer:${{ env.GST_VERSION }}-prod-rs
+          tags: livekit/gstreamer:${{ env.GST_VERSION }}-prod-rs-${{ inputs.arch }}
