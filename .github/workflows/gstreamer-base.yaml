@@ -34,7 +34,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./build/gstreamer
-          push: true
+          #push: true
           load: true
           build-args: |
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
@@ -46,7 +46,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./build/gstreamer
-          push: true
+          #push: true
           load: true
           build-args: |
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
@@ -58,7 +58,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./build/gstreamer
-          push: true
+          #push: true
           load: true
           build-args: |
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
@@ -66,11 +66,14 @@ jobs:
           file: ./build/gstreamer/Dockerfile-prod
           tags: livekit/gstreamer:prod-${{ env.GST_VERSION }}
 
+      - name: Prune docker state
+        run: docker rmi livekit/gstreamer:base-${{ env.GST_VERSION }}
+
       - name: Build and push prod RS
         uses: docker/build-push-action@v5
         with:
           context: ./build/gstreamer
-          push: true
+          #push: true
           load: true
           build-args: |
             GSTREAMER_VERSION=${{ env.GST_VERSION }}
