@@ -1,10 +1,14 @@
-FROM ubuntu:22.04
+FROM ubuntu:23.10
 
 ARG GSTREAMER_VERSION
+
+ARG LIBNICE_VERSION
 
 COPY install-dependencies /
 
 RUN /install-dependencies
+
+ENV PATH=/root/.cargo/bin:$PATH
 
 RUN for lib in gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav; \
         do \
@@ -13,3 +17,15 @@ RUN for lib in gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-p
             rm $lib-$GSTREAMER_VERSION.tar.xz && \
             mv $lib-$GSTREAMER_VERSION $lib; \
         done
+
+# rust plugins are apparently only realeased on gitlab
+
+RUN wget https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs/-/archive/gstreamer-$GSTREAMER_VERSION/gst-plugins-rs-gstreamer-$GSTREAMER_VERSION.tar.gz && \
+tar xfz gst-plugins-rs-gstreamer-$GSTREAMER_VERSION.tar.gz && \
+rm gst-plugins-rs-gstreamer-$GSTREAMER_VERSION.tar.gz && \
+mv gst-plugins-rs-gstreamer-$GSTREAMER_VERSION gst-plugins-rs
+
+RUN wget https://libnice.freedesktop.org/releases/libnice-$LIBNICE_VERSION.tar.gz && \
+tar xfz libnice-$LIBNICE_VERSION.tar.gz && \
+rm libnice-$LIBNICE_VERSION.tar.gz && \
+mv libnice-$LIBNICE_VERSION libnice

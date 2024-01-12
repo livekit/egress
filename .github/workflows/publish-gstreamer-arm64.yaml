@@ -1,0 +1,13 @@
+name: GStreamer build ARM64
+
+on:
+  workflow_dispatch:
+
+jobs:
+  gstreamer-build-arm64:
+    uses: ./.github/workflows/gstreamer-base.yaml
+    with:
+      buildjet-runs-on: namespace-profile-arm-16
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

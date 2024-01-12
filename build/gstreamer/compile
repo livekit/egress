@@ -1,10 +1,14 @@
 #!/bin/bash
 set -euxo pipefail
 
-for repo in gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav; do
+for repo in gstreamer libnice gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav; do
   pushd $repo
 
-  opts="-D prefix=/usr -D tests=disabled -D doc=disabled"
+  opts="-D prefix=/usr"
+
+  if [[ $repo != "libnice" ]]; then
+    opts="$opts -D tests=disabled -D doc=disabled"
+  fi
 
   if [[ $repo == "gstreamer" ]]; then
     opts="$opts -D examples=disabled -D introspection=disabled"
