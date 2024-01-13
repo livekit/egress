@@ -22,6 +22,6 @@ do
 	done
 
 	docker manifest create livekit/gstreamer:$gst_version-$suffix$manifests
-#    docker manifest push livekit/gstreamer:$gst_version-$suffix
+    docker manifest push livekit/gstreamer:$gst_version-$suffix
 done
 
