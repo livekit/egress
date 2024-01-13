@@ -1,8 +1,6 @@
 #!/bin/bash
 set -x
 
-#jq '.manifests[] | select(.platform.architecture == "amd64").digest'
-
 image_suffix=(base dev prod prod-rs)
 archs=(amd64 arm64)
 gst_version=1.22.8
@@ -12,7 +10,6 @@ do
 	digests=()
 	for arch in ${archs[*]}
 	do
-		#docker manifest inspect livekit/gstreamer:$gst_version-$suffix-$arch | jq ".manifests[] | select(.platform.architecture == \"$arch\").digest"
 		digest=`docker manifest inspect livekit/gstreamer:$gst_version-$suffix-$arch | jq ".manifests[] | select(.platform.architecture == \"$arch\").digest"`
 		# remove quotes
 		digest=${digest:1:$[${#digest}-2]}
