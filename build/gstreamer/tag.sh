@@ -1,11 +1,8 @@
 #!/bin/bash
-set -x
 
 image_suffix=(base dev prod prod-rs)
 archs=(amd64 arm64)
 gst_version=1.22.8
-
-docker version
 
 for suffix in ${image_suffix[*]}
 do
