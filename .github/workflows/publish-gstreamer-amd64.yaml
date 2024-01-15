@@ -7,7 +7,8 @@ jobs:
   gstreamer-build-amd64:
     uses: ./.github/workflows/publish-gstreamer-base.yaml
     with:
-      buildjet-runs-on: buildjet-8vcpu-ubuntu-2204 
+      buildjet-runs-on: buildjet-8vcpu-ubuntu-2204
+      arch: amd64
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
