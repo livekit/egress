@@ -300,24 +300,27 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 		available = total - used - (total * (1 - m.cpuCostConfig.MaxCpuUtilization))
 	}
 
-	logger.Debugw("cpu check",
-		"total", total,
-		"available", available,
-		"active_requests", m.requests,
-	)
-
+	var required float64
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		accept = available >= m.cpuCostConfig.RoomCompositeCpuCost
+		required = m.cpuCostConfig.RoomCompositeCpuCost
 	case *rpc.StartEgressRequest_Web:
-		accept = available >= m.cpuCostConfig.WebCpuCost
+		required = m.cpuCostConfig.WebCpuCost
 	case *rpc.StartEgressRequest_Participant:
-		accept = available >= m.cpuCostConfig.ParticipantCpuCost
+		required = m.cpuCostConfig.ParticipantCpuCost
 	case *rpc.StartEgressRequest_TrackComposite:
-		accept = available >= m.cpuCostConfig.TrackCompositeCpuCost
+		required = m.cpuCostConfig.TrackCompositeCpuCost
 	case *rpc.StartEgressRequest_Track:
-		accept = available >= m.cpuCostConfig.TrackCpuCost
+		required = m.cpuCostConfig.TrackCpuCost
 	}
+	accept = available >= required
+
+	logger.Debugw("cpu check",
+		"available", available,
+		"required", required,
+		"activeRequests", m.requests,
+		"canAccept", accept,
+	)
 
 	return accept
 }
