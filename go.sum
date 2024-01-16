@@ -184,8 +184,8 @@ github.com/livekit/protocol v1.9.4-0.20231207062609-297e4990e7d3 h1:1Au/odnRyEe7
 github.com/livekit/protocol v1.9.4-0.20231207062609-297e4990e7d3/go.mod h1:EKF+U1kf2Fh7wG2xLET2dNDVxi7Q+6nHN6uYs5NsIVY=
 github.com/livekit/psrpc v0.5.2 h1:+MvG8Otm/J6MTg2MP/uuMbrkxOWsrj2hDhu/I1VIU1U=
 github.com/livekit/psrpc v0.5.2/go.mod h1:cQjxg1oCxYHhxxv6KJH1gSvdtCHQoRZCHgPdm5N8v2g=
-github.com/livekit/server-sdk-go v1.1.5-0.20231214205747-54bbfd63ef52 h1:x4wfnG3P/2QgC5PY7HnLyxVzKHRSN5xwuu19DX9L0Y0=
-github.com/livekit/server-sdk-go v1.1.5-0.20231214205747-54bbfd63ef52/go.mod h1:xfNiF6LjyG4nLT58cU/K9ZPuBB6Bgtyiy6Zn+VNZY70=
+github.com/livekit/server-sdk-go v1.1.5-0.20240116053441-167f58a9a787 h1:nYF73ZmDd29QlsKUaxxCAAAQHAMZ3duY9DFuqtcrdt8=
+github.com/livekit/server-sdk-go v1.1.5-0.20240116053441-167f58a9a787/go.mod h1:L3Oc1kc4pHcvyfz2S/McEguPwaC5ZAATbhoWz3gQmeQ=
 github.com/mackerelio/go-osstat v0.2.4 h1:qxGbdPkFo65PXOb/F/nhDKpF2nGmGaCFDLXoZjJTtUs=
 github.com/mackerelio/go-osstat v0.2.4/go.mod h1:Zy+qzGdZs3A9cuIqmgbJvwbmLQH9dJvtio5ZjJTbdlQ=
 github.com/magefile/mage v1.15.0 h1:BvGheCMAsG3bWUDbZ8AyXXpCNwU9u5CB6sM+HNb9HYg=
@@ -259,8 +259,8 @@ github.com/pion/transport/v3 v3.0.1/go.mod h1:UY7kiITrlMv7/IKgd5eTUcaahZx5oUN3l9
 github.com/pion/turn/v2 v2.1.3/go.mod h1:huEpByKKHix2/b9kmTAM3YoX6MKP+/D//0ClgUYR2fY=
 github.com/pion/turn/v2 v2.1.4 h1:2xn8rduI5W6sCZQkEnIUDAkrBQNl2eYIBCHMZ3QMmP8=
 github.com/pion/turn/v2 v2.1.4/go.mod h1:huEpByKKHix2/b9kmTAM3YoX6MKP+/D//0ClgUYR2fY=
-github.com/pion/webrtc/v3 v3.2.23 h1:GbqEuxBbVLFhXk0GwxKAoaIJYiEa9TyoZPEZC+2HZxM=
-github.com/pion/webrtc/v3 v3.2.23/go.mod h1:1CaT2fcZzZ6VZA+O1i9yK2DU4EOcXVvSbWG9pr5jefs=
+github.com/pion/webrtc/v3 v3.2.24 h1:MiFL5DMo2bDaaIFWr0DDpwiV/L4EGbLZb+xoRvfEo1Y=
+github.com/pion/webrtc/v3 v3.2.24/go.mod h1:1CaT2fcZzZ6VZA+O1i9yK2DU4EOcXVvSbWG9pr5jefs=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

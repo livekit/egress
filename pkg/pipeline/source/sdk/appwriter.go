@@ -63,10 +63,11 @@ type AppWriter struct {
 	src       *app.Source
 	startTime time.Time
 
-	buffer     *jitter.Buffer
-	translator Translator
-	callbacks  *gstreamer.Callbacks
-	sendPLI    func()
+	buffer      *jitter.Buffer
+	translator  Translator
+	callbacks   *gstreamer.Callbacks
+	sendPLI     func()
+	pliThrottle core.Throttle
 
 	// a/v sync
 	sync *synchronizer.Synchronizer
@@ -126,20 +127,22 @@ func NewAppWriter(
 	case types.MimeTypeH264:
 		depacketizer = &codecs.H264Packet{}
 		w.translator = NewNullTranslator()
-		w.sendPLI = func() { rp.WritePLI(track.SSRC()) }
 
 	case types.MimeTypeVP8:
 		depacketizer = &codecs.VP8Packet{}
 		w.translator = NewVP8Translator(w.logger)
-		w.sendPLI = func() { rp.WritePLI(track.SSRC()) }
 
 	case types.MimeTypeVP9:
 		depacketizer = &codecs.VP9Packet{}
 		w.translator = NewNullTranslator()
-		w.sendPLI = func() { rp.WritePLI(track.SSRC()) }
 
 	default:
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
+	}
+
+	if track.Kind() == webrtc.RTPCodecTypeVideo {
+		w.pliThrottle = core.NewThrottle(time.Second)
+		w.sendPLI = func() { w.pliThrottle(func() { rp.WritePLI(track.SSRC()) }) }
 	}
 
 	w.buffer = jitter.NewBuffer(
