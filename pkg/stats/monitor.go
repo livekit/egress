@@ -43,7 +43,6 @@ type Monitor struct {
 
 	mu              sync.Mutex
 	highCPUDuration int
-	killThreshold   float64
 	killProcess     func(string, float64)
 	pending         map[string]*processStats
 	procStats       map[int]*processStats
@@ -68,14 +67,8 @@ const (
 )
 
 func NewMonitor(conf *config.ServiceConfig) *Monitor {
-	killThreshold := defaultKillThreshold
-	if killThreshold <= conf.CPUCostConfig.MaxCpuUtilization {
-		killThreshold = (1 + conf.CPUCostConfig.MaxCpuUtilization) / 2
-	}
-
 	return &Monitor{
 		cpuCostConfig: conf.CPUCostConfig,
-		killThreshold: killThreshold,
 		pending:       make(map[string]*processStats),
 		procStats:     make(map[int]*processStats),
 	}
@@ -230,7 +223,12 @@ func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
 		}
 	}
 
-	if load > m.killThreshold {
+	killThreshold := defaultKillThreshold
+	if killThreshold <= m.cpuCostConfig.MaxCpuUtilization {
+		killThreshold = (1 + m.cpuCostConfig.MaxCpuUtilization) / 2
+	}
+
+	if load > killThreshold {
 		logger.Warnw("high cpu usage", nil,
 			"load", load,
 			"requests", m.requests.Load(),
