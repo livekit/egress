@@ -270,7 +270,6 @@ func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 
 func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 	accept := false
-
 	total := m.cpuStats.NumCPU()
 
 	var available float64

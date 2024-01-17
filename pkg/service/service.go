@@ -130,6 +130,10 @@ func (s *Service) StartTemplatesServer(fs fs.FS) error {
 	return nil
 }
 
+func (s *Service) RegisterListEgress(topic string) error {
+	return s.psrpcServer.RegisterListActiveEgressTopic(topic)
+}
+
 func (s *Service) Run() error {
 	logger.Debugw("starting service", "version", version.Version)
 
