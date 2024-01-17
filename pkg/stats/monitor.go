@@ -42,6 +42,7 @@ type Monitor struct {
 	requests atomic.Int32
 
 	mu              sync.Mutex
+	enabled         bool
 	highCPUDuration int
 	killProcess     func(string, float64)
 	pending         map[string]*processStats
@@ -69,6 +70,7 @@ const (
 func NewMonitor(conf *config.ServiceConfig) *Monitor {
 	return &Monitor{
 		cpuCostConfig: conf.CPUCostConfig,
+		enabled:       true,
 		pending:       make(map[string]*processStats),
 		procStats:     make(map[int]*processStats),
 	}
@@ -269,8 +271,11 @@ func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 }
 
 func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
-	accept := false
+	if !m.enabled {
+		return false
+	}
 
+	accept := false
 	total := m.cpuStats.NumCPU()
 
 	var available float64
@@ -356,6 +361,12 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.pending[req.EgressId] = ps
 
 	return nil
+}
+
+func (m *Monitor) SetEnabled(enabled bool) {
+	m.mu.Lock()
+	m.enabled = enabled
+	m.mu.Unlock()
 }
 
 func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {

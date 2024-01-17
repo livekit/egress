@@ -159,6 +159,9 @@ func runService(c *cli.Context) error {
 
 	svc.StartDebugHandlers()
 
+	if err = svc.RegisterListEgress(""); err != nil {
+		return err
+	}
 	err = svc.Run()
 	svc.Close()
 	return err
