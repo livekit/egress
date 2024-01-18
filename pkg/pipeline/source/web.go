@@ -128,12 +128,12 @@ func (s *WebSource) Close() {
 	}
 }
 
-type errorLogger struct {
+type infoLogger struct {
 	cmd string
 }
 
-func (l *errorLogger) Write(p []byte) (int, error) {
-	logger.Errorw(fmt.Sprintf("%s: %s", l.cmd, string(p)), nil)
+func (l *infoLogger) Write(p []byte) (int, error) {
+	logger.Infow(fmt.Sprintf("%s: %s", l.cmd, string(p)))
 	return len(p), nil
 }
 
@@ -150,7 +150,7 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 	)
 	var b bytes.Buffer
 	cmd.Stdout = &b
-	cmd.Stderr = &errorLogger{cmd: "pactl"}
+	cmd.Stderr = &infoLogger{cmd: "pactl"}
 	err := cmd.Run()
 	if err != nil {
 		return errors.Fatal(errors.ErrProcessStartFailed(err))
@@ -168,7 +168,7 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 	dims := fmt.Sprintf("%dx%dx%d", p.Width, p.Height, p.Depth)
 	logger.Debugw("creating X display", "display", p.Display, "dims", dims)
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
-	xvfb.Stderr = &errorLogger{cmd: "xvfb"}
+	xvfb.Stderr = &infoLogger{cmd: "xvfb"}
 	if err := xvfb.Start(); err != nil {
 		return errors.Fatal(errors.ErrProcessStartFailed(err))
 	}
