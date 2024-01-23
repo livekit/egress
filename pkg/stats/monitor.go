@@ -272,12 +272,11 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 	accept := false
 	total := m.cpuStats.NumCPU()
 
-	var available float64
+	var available, used float64
 	if m.requests.Load() == 0 {
 		// if no requests, use total
 		available = total
 	} else {
-		var used float64
 		for _, ps := range m.pending {
 			if ps.pendingUsage > ps.lastUsage {
 				used += ps.pendingUsage
@@ -313,9 +312,11 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 	accept = available >= required
 
 	logger.Debugw("cpu check",
-		"available", available,
+		"total", total,
+		"used", used,
 		"required", required,
-		"activeRequests", m.requests,
+		"available", available,
+		"activeRequests", m.requests.Load(),
 		"canAccept", accept,
 	)
 
