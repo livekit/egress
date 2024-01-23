@@ -208,8 +208,11 @@ func (b *Bin) removeBin(name string, direction gst.PadDirection) (bool, error) {
 
 func (b *Bin) probeRemoveSource(src *Bin) {
 	src.mu.Lock()
-	srcGhostPad, sinkGhostPad := deleteGhostPadsLocked(src, b)
+	srcGhostPad, sinkGhostPad, ok := deleteGhostPadsLocked(src, b)
 	src.mu.Unlock()
+	if !ok {
+		return
+	}
 
 	srcGhostPad.AddProbe(gst.PadProbeTypeIdle, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
 		sinkPad := sinkGhostPad.GetTarget()
@@ -231,8 +234,11 @@ func (b *Bin) probeRemoveSource(src *Bin) {
 
 func (b *Bin) probeRemoveSink(sink *Bin) {
 	sink.mu.Lock()
-	srcGhostPad, sinkGhostPad := deleteGhostPadsLocked(b, sink)
+	srcGhostPad, sinkGhostPad, ok := deleteGhostPadsLocked(b, sink)
 	sink.mu.Unlock()
+	if !ok {
+		return
+	}
 
 	srcGhostPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
 		srcGhostPad.Unlink(sinkGhostPad.Pad)
@@ -257,14 +263,20 @@ func (b *Bin) probeRemoveSink(sink *Bin) {
 	})
 }
 
-func deleteGhostPadsLocked(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad) {
-	srcPad := src.pads[sink.bin.GetName()]
-	sinkPad := sink.pads[src.bin.GetName()]
-
+func deleteGhostPadsLocked(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad, bool) {
+	srcPad, srcOK := src.pads[sink.bin.GetName()]
+	if !srcOK {
+		logger.Errorw("source pad missing", nil, "bin", src.bin.GetName())
+	}
 	delete(src.pads, sink.bin.GetName())
+
+	sinkPad, sinkOK := sink.pads[src.bin.GetName()]
+	if !sinkOK {
+		logger.Errorw("sink pad missing", nil, "bin", sink.bin.GetName())
+	}
 	delete(sink.pads, src.bin.GetName())
 
-	return srcPad, sinkPad
+	return srcPad, sinkPad, srcOK && sinkOK
 }
 
 func (b *Bin) SetState(state gst.State) error {

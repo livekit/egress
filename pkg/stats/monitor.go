@@ -294,7 +294,7 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 		}
 
 		// if already running requests, cap usage at MaxCpuUtilization
-		available = total - used - (total * (1 - m.cpuCostConfig.MaxCpuUtilization))
+		available = total*m.cpuCostConfig.MaxCpuUtilization - used
 	}
 
 	var required float64
