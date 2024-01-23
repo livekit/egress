@@ -17,6 +17,7 @@ package handler
 import (
 	"context"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/tracer"
 )
@@ -26,6 +27,9 @@ func (h *Handler) UpdateStream(ctx context.Context, req *livekit.UpdateStreamReq
 	defer span.End()
 
 	<-h.initialized.Watch()
+	if h.controller == nil {
+		return nil, errors.ErrEgressNotFound
+	}
 
 	err := h.controller.UpdateStream(ctx, req)
 	if err != nil {
@@ -39,6 +43,9 @@ func (h *Handler) StopEgress(ctx context.Context, _ *livekit.StopEgressRequest) 
 	defer span.End()
 
 	<-h.initialized.Watch()
+	if h.controller == nil {
+		return nil, errors.ErrEgressNotFound
+	}
 
 	h.controller.SendEOS(ctx)
 	return h.controller.Info, nil
