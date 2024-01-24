@@ -135,7 +135,9 @@ func (m *Monitor) Start(
 func (m *Monitor) checkCPUConfig() error {
 	requirements := []float64{
 		m.cpuCostConfig.RoomCompositeCpuCost,
+		m.cpuCostConfig.AudioRoomCompositeCpuCost,
 		m.cpuCostConfig.WebCpuCost,
+		m.cpuCostConfig.AudioWebCpuCost,
 		m.cpuCostConfig.ParticipantCpuCost,
 		m.cpuCostConfig.TrackCompositeCpuCost,
 		m.cpuCostConfig.TrackCpuCost,
@@ -297,11 +299,19 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 	}
 
 	var required float64
-	switch req.Request.(type) {
+	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		required = m.cpuCostConfig.RoomCompositeCpuCost
+		if r.RoomComposite.AudioOnly {
+			required = m.cpuCostConfig.AudioRoomCompositeCpuCost
+		} else {
+			required = m.cpuCostConfig.RoomCompositeCpuCost
+		}
 	case *rpc.StartEgressRequest_Web:
-		required = m.cpuCostConfig.WebCpuCost
+		if r.Web.AudioOnly {
+			required = m.cpuCostConfig.AudioWebCpuCost
+		} else {
+			required = m.cpuCostConfig.WebCpuCost
+		}
 	case *rpc.StartEgressRequest_Participant:
 		required = m.cpuCostConfig.ParticipantCpuCost
 	case *rpc.StartEgressRequest_TrackComposite:
@@ -334,11 +344,19 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.requests.Inc()
 
 	var cpuHold float64
-	switch req.Request.(type) {
+	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
+		if r.RoomComposite.AudioOnly {
+			cpuHold = m.cpuCostConfig.AudioRoomCompositeCpuCost
+		} else {
+			cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
+		}
 	case *rpc.StartEgressRequest_Web:
-		cpuHold = m.cpuCostConfig.WebCpuCost
+		if r.Web.AudioOnly {
+			cpuHold = m.cpuCostConfig.AudioWebCpuCost
+		} else {
+			cpuHold = m.cpuCostConfig.WebCpuCost
+		}
 	case *rpc.StartEgressRequest_Participant:
 		cpuHold = m.cpuCostConfig.ParticipantCpuCost
 	case *rpc.StartEgressRequest_TrackComposite:

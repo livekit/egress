@@ -28,12 +28,14 @@ import (
 const (
 	TmpDir = "/home/egress/tmp"
 
-	roomCompositeCpuCost  = 4
-	webCpuCost            = 4
-	participantCpuCost    = 1
-	trackCompositeCpuCost = 1
-	trackCpuCost          = 0.5
-	maxCpuUtilization     = 0.8
+	roomCompositeCpuCost      = 4
+	audioRoomCompositeCpuCost = 1
+	webCpuCost                = 4
+	audioWebCpuCost           = 1
+	participantCpuCost        = 2
+	trackCompositeCpuCost     = 1
+	trackCpuCost              = 0.5
+	maxCpuUtilization         = 0.8
 
 	defaultTemplatePort         = 7980
 	defaultTemplateBaseTemplate = "http://localhost:%d/"
@@ -51,12 +53,14 @@ type ServiceConfig struct {
 }
 
 type CPUCostConfig struct {
-	MaxCpuUtilization     float64 `yaml:"max_cpu_utilization"` // Maximum allowed CPU utilization when deciding to accept a request. Default to 80%.
-	RoomCompositeCpuCost  float64 `yaml:"room_composite_cpu_cost"`
-	WebCpuCost            float64 `yaml:"web_cpu_cost"`
-	ParticipantCpuCost    float64 `yaml:"participant_cpu_cost"`
-	TrackCompositeCpuCost float64 `yaml:"track_composite_cpu_cost"`
-	TrackCpuCost          float64 `yaml:"track_cpu_cost"`
+	MaxCpuUtilization         float64 `yaml:"max_cpu_utilization"` // Maximum allowed CPU utilization when deciding to accept a request. Default to 80%.
+	RoomCompositeCpuCost      float64 `yaml:"room_composite_cpu_cost"`
+	AudioRoomCompositeCpuCost float64 `yaml:"audio_room_composite_cpu_cost"`
+	WebCpuCost                float64 `yaml:"web_cpu_cost"`
+	AudioWebCpuCost           float64 `yaml:"audio_web_cpu_cost"`
+	ParticipantCpuCost        float64 `yaml:"participant_cpu_cost"`
+	TrackCompositeCpuCost     float64 `yaml:"track_composite_cpu_cost"`
+	TrackCpuCost              float64 `yaml:"track_cpu_cost"`
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
@@ -85,8 +89,14 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	if conf.RoomCompositeCpuCost <= 0 {
 		conf.RoomCompositeCpuCost = roomCompositeCpuCost
 	}
+	if conf.AudioRoomCompositeCpuCost <= 0 {
+		conf.AudioRoomCompositeCpuCost = audioRoomCompositeCpuCost
+	}
 	if conf.WebCpuCost <= 0 {
 		conf.WebCpuCost = webCpuCost
+	}
+	if conf.AudioWebCpuCost <= 0 {
+		conf.AudioWebCpuCost = audioWebCpuCost
 	}
 	if conf.ParticipantCpuCost <= 0 {
 		conf.ParticipantCpuCost = participantCpuCost
