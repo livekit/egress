@@ -20,9 +20,9 @@ WORKDIR /workspace
 
 # install go
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    wget https://go.dev/dl/go1.21.4.linux-${GOARCH}.tar.gz && \
+    wget https://go.dev/dl/go1.21.6.linux-${GOARCH}.tar.gz && \
     rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go1.21.4.linux-${GOARCH}.tar.gz
+    tar -C /usr/local -xzf go1.21.6.linux-${GOARCH}.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 
@@ -43,7 +43,7 @@ RUN find cmd/server/templates/ -name *.map | xargs rm
 
 # build
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go build -a -o egress ./cmd/server
+    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on GODEBUG=disablethp=1 go build -a -o egress ./cmd/server
 
 FROM livekit/gstreamer:1.22.8-prod
 
