@@ -39,7 +39,7 @@ on:
       - go.mod
 
 jobs:
-  docker:
+  build:
     runs-on: buildjet-8vcpu-ubuntu-2204
     outputs:
       image: ${{ steps.docker-md.outputs.tags }}
@@ -87,8 +87,8 @@ jobs:
           tags: ${{ steps.docker-md.outputs.tags }}
           labels: ${{ steps.docker-md.outputs.labels }}
 
-  integration:
-    needs: docker
+  test:
+    needs: build
     strategy:
       matrix:
         integration_type: [room, web, participant, track_composite, track]
@@ -102,7 +102,7 @@ jobs:
 
       - name: Run tests
         env:
-          IMAGE: ${{needs.docker.outputs.image}}
+          IMAGE: ${{needs.build.outputs.image}}
         run: |
           docker run --rm \
             --network host \
@@ -111,4 +111,4 @@ jobs:
             -e INTEGRATION_TYPE="${{ matrix.integration_type }}" \
             -e S3_UPLOAD="$(echo ${{ secrets.S3_UPLOAD }} | base64 -d)" \
             -e GCP_UPLOAD="$(echo ${{ secrets.GCP_UPLOAD }} | base64 -d)" \
-            livekit/egress-integration:$IMAGE
+            ${{ env.IMAGE }}
