@@ -79,15 +79,35 @@ func NewRunner(t *testing.T) *Runner {
 		confString = string(b)
 	}
 
-	r := &Runner{
-		RoomName: fmt.Sprintf("egress-integration-%d", rand.Intn(100)),
-		Muting:   false,
-	}
+	r := &Runner{}
 	err := yaml.Unmarshal([]byte(confString), r)
 	require.NoError(t, err)
 
+	switch os.Getenv("INTEGRATION_TYPE") {
+	case "room":
+		r.RoomTestsOnly = true
+		r.RoomName = fmt.Sprintf("room-integration-%d", rand.Intn(100))
+	case "web":
+		r.WebTestsOnly = true
+		r.RoomName = fmt.Sprintf("web-integration-%d", rand.Intn(100))
+	case "participant":
+		r.ParticipantTestsOnly = true
+		r.RoomName = fmt.Sprintf("participant-integration-%d", rand.Intn(100))
+	case "track_composite":
+		r.TrackCompositeTestsOnly = true
+		r.RoomName = fmt.Sprintf("track-composite-integration-%d", rand.Intn(100))
+	case "track":
+		r.TrackTestsOnly = true
+		r.RoomName = fmt.Sprintf("track-integration-%d", rand.Intn(100))
+	default:
+		if r.RoomName == "" {
+			r.RoomName = fmt.Sprintf("egress-integration-%d", rand.Intn(100))
+		}
+	}
+
 	conf, err := config.NewServiceConfig(confString)
 	require.NoError(t, err)
+
 	r.ServiceConfig = conf
 
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
