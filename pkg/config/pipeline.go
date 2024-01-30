@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	webLatency = uint64(2e9)
+	webLatency = uint64(25e8)
 	sdkLatency = uint64(3e9)
 )
 
