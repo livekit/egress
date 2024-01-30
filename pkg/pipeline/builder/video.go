@@ -88,7 +88,7 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 			return tee.GetRequestPad("src_%u")
 		}
 	} else if len(p.GetEncodedOutputs()) > 0 {
-		queue, err := gstreamer.BuildQueue("video_queue", p.Latency, true)
+		queue, err := gstreamer.BuildQueue("video_queue", config.Latency, true)
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -617,7 +617,7 @@ func (b *VideoBin) addDecodedVideoSink() error {
 }
 
 func addVideoConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
-	videoQueue, err := gstreamer.BuildQueue("video_input_queue", p.Latency, true)
+	videoQueue, err := gstreamer.BuildQueue("video_input_queue", config.Latency, true)
 	if err != nil {
 		return err
 	}
