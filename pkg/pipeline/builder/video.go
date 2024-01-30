@@ -194,7 +194,7 @@ func (b *VideoBin) buildWebInput() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	videoQueue, err := gstreamer.BuildQueue("video_input_queue", b.conf.Latency, true)
+	videoQueue, err := gstreamer.BuildQueue("video_input_queue", config.Latency, true)
 	if err != nil {
 		return err
 	}
@@ -499,7 +499,7 @@ func (b *VideoBin) addSelector() error {
 }
 
 func (b *VideoBin) addEncoder() error {
-	videoQueue, err := gstreamer.BuildQueue("video_encoder_queue", b.conf.Latency, false)
+	videoQueue, err := gstreamer.BuildQueue("video_encoder_queue", config.Latency, false)
 	if err != nil {
 		return err
 	}
