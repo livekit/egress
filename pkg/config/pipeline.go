@@ -37,10 +37,7 @@ import (
 	lksdk "github.com/livekit/server-sdk-go"
 )
 
-const (
-	webLatency = uint64(2e9)
-	sdkLatency = uint64(3e9)
-)
+const Latency = uint64(3e9)
 
 type PipelineConfig struct {
 	BaseConfig `yaml:",inline"`
@@ -62,7 +59,6 @@ type PipelineConfig struct {
 
 type SourceConfig struct {
 	SourceType types.SourceType
-	Latency    uint64
 	WebSourceParams
 	SDKSourceParams
 }
@@ -195,7 +191,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		p.SourceType = types.SourceTypeWeb
 		p.AwaitStartSignal = true
-		p.Latency = webLatency
 
 		p.Info.RoomName = req.RoomComposite.RoomName
 		p.Layout = req.RoomComposite.Layout
@@ -250,7 +245,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		connectionInfoRequired = false
 		p.SourceType = types.SourceTypeWeb
 		p.AwaitStartSignal = req.Web.AwaitStartSignal
-		p.Latency = webLatency
 
 		p.WebUrl = req.Web.Url
 		webUrl, err := url.Parse(p.WebUrl)
@@ -297,7 +291,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		redactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
-		p.Latency = sdkLatency
 
 		p.Info.RoomName = req.Participant.RoomName
 		p.AudioEnabled = true
@@ -334,7 +327,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		redactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
-		p.Latency = sdkLatency
 
 		p.Info.RoomName = req.TrackComposite.RoomName
 		if audioTrackID := req.TrackComposite.AudioTrackId; audioTrackID != "" {
@@ -378,7 +370,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 		p.SourceType = types.SourceTypeSDK
-		p.Latency = sdkLatency
 
 		p.Info.RoomName = req.Track.RoomName
 		p.TrackID = req.Track.TrackId
