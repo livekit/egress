@@ -39,8 +39,10 @@ on:
       - go.mod
 
 jobs:
-  integration:
+  build:
     runs-on: buildjet-8vcpu-ubuntu-2204
+    outputs:
+      image: ${{ steps.docker-md.outputs.tags }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,25 +53,64 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/go/bin
-            ~/bin/protoc
             ~/.cache
-          key: egress
+          key: egress-integration-${{ hashFiles('**/go.sum') }}
+          restore-keys: egress-integration
 
+      - name: Docker metadata
+        id: docker-md
+        uses: docker/metadata-action@v5
+        with:
+          images: livekit/egress-integration
+          tags: |
+            type=sha
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.21.6
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./build/test/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.docker-md.outputs.tags }}
+          labels: ${{ steps.docker-md.outputs.labels }}
+
+  test:
+    needs: build
+    strategy:
+      matrix:
+        integration_type: [room, web, participant, track_composite, track]
+    runs-on: buildjet-8vcpu-ubuntu-2204
+    steps:
       - uses: shogo82148/actions-setup-redis@v1
         with:
           redis-version: '6.x'
           auto-start: true
       - run: redis-cli ping
 
-      - name: Build docker image
-        run: docker build -t egress-test -f ./build/test/Dockerfile .
-
       - name: Run tests
+        env:
+          IMAGE: ${{needs.build.outputs.image}}
         run: |
           docker run --rm \
             --network host \
             -e GITHUB_WORKFLOW=1 \
             -e EGRESS_CONFIG_STRING="$(echo ${{ secrets.EGRESS_CONFIG_STRING }} | base64 -d)" \
+            -e INTEGRATION_TYPE="${{ matrix.integration_type }}" \
             -e S3_UPLOAD="$(echo ${{ secrets.S3_UPLOAD }} | base64 -d)" \
             -e GCP_UPLOAD="$(echo ${{ secrets.GCP_UPLOAD }} | base64 -d)" \
-            egress-test
+            ${{ env.IMAGE }}
