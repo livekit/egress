@@ -215,6 +215,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		select {
 		case <-c.stopped.Watch():
 			c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
+			c.Info.Error = "Start signal not received"
 			return c.Info
 		case <-start:
 			// continue
@@ -391,6 +392,7 @@ func (c *Controller) SendEOS(ctx context.Context) {
 		switch c.Info.Status {
 		case livekit.EgressStatus_EGRESS_STARTING:
 			c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
+			c.Info.Error = "Stop called before pipeline could start"
 			fallthrough
 
 		case livekit.EgressStatus_EGRESS_ABORTED,
@@ -449,7 +451,7 @@ func (c *Controller) Close() {
 	c.Info.EndedAt = now
 
 	// update status
-	if c.Info.Error != "" {
+	if c.Info.Error != "" && c.Info.Status != livekit.EgressStatus_EGRESS_ABORTED {
 		c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
 		if o := c.GetStreamConfig(); o != nil {
 			for _, streamInfo := range o.StreamInfo {
@@ -462,6 +464,7 @@ func (c *Controller) Close() {
 	switch c.Info.Status {
 	case livekit.EgressStatus_EGRESS_STARTING:
 		c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
+		c.Info.Error = "Stop called before pipeline could start"
 
 	case livekit.EgressStatus_EGRESS_ACTIVE,
 		livekit.EgressStatus_EGRESS_ENDING:
