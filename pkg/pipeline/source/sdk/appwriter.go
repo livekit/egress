@@ -34,9 +34,9 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
-	lksdk "github.com/livekit/server-sdk-go"
-	"github.com/livekit/server-sdk-go/pkg/jitter"
-	"github.com/livekit/server-sdk-go/pkg/synchronizer"
+	lksdk "github.com/livekit/server-sdk-go/v2"
+	"github.com/livekit/server-sdk-go/v2/pkg/jitter"
+	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
 )
 
 type state int

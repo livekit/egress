@@ -36,8 +36,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
-	lksdk "github.com/livekit/server-sdk-go"
-	"github.com/livekit/server-sdk-go/pkg/synchronizer"
+	lksdk "github.com/livekit/server-sdk-go/v2"
+	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
 )
 
 const (
@@ -162,13 +162,13 @@ func (s *SDKSource) joinRoom() error {
 	}
 
 	logger.Debugw("connecting to room")
-	s.room = lksdk.CreateRoom(cb)
-	if err := s.room.JoinWithToken(s.WsUrl, s.Token, lksdk.WithAutoSubscribe(false)); err != nil {
+	room, err := lksdk.ConnectToRoomWithToken(s.WsUrl, s.Token, cb, lksdk.WithAutoSubscribe(false))
+	if err != nil {
 		return err
 	}
+	s.room = room
 
 	var fileIdentifier string
-	var err error
 	var w, h uint32
 	switch s.RequestType {
 	case types.RequestTypeParticipant:
@@ -210,14 +210,14 @@ func (s *SDKSource) awaitParticipant(identity string) (uint32, uint32, error) {
 		return 0, 0, err
 	}
 
-	for trackCount := 0; trackCount == 0 || trackCount < len(rp.Tracks()); trackCount++ {
+	for trackCount := 0; trackCount == 0 || trackCount < len(rp.TrackPublications()); trackCount++ {
 		if err = <-s.errors; err != nil {
 			return 0, 0, err
 		}
 	}
 
 	var w, h uint32
-	for _, t := range rp.Tracks() {
+	for _, t := range rp.TrackPublications() {
 		if t.TrackInfo().Type == livekit.TrackType_VIDEO {
 			w = t.TrackInfo().Width
 			h = t.TrackInfo().Height
@@ -232,7 +232,7 @@ func (s *SDKSource) awaitParticipant(identity string) (uint32, uint32, error) {
 func (s *SDKSource) getParticipant(identity string) (*lksdk.RemoteParticipant, error) {
 	deadline := time.Now().Add(subscriptionTimeout)
 	for time.Now().Before(deadline) {
-		for _, p := range s.room.GetParticipants() {
+		for _, p := range s.room.GetRemoteParticipants() {
 			if p.Identity() == identity {
 				return p, nil
 			}
@@ -285,8 +285,8 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}, deadline <-
 				return nil, errors.ErrTrackNotFound(trackID)
 			}
 		default:
-			for _, p := range s.room.GetParticipants() {
-				for _, track := range p.Tracks() {
+			for _, p := range s.room.GetRemoteParticipants() {
+				for _, track := range p.TrackPublications() {
 					trackID := track.SID()
 					if _, ok := expecting[trackID]; ok {
 						if err := s.subscribe(track); err != nil {
