@@ -20,7 +20,7 @@ import (
 
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/redis"
-	lksdk "github.com/livekit/server-sdk-go"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 type BaseConfig struct {

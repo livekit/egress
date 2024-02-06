@@ -30,7 +30,7 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
-	lksdk "github.com/livekit/server-sdk-go"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 const videoTestSrcName = "video_test_src"
