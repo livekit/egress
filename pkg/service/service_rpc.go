@@ -184,11 +184,13 @@ func (s *Service) processEnded(p *Process, err error) {
 	}
 
 	avgCPU, maxCPU := s.EgressEnded(p.req)
-	_, _ = s.ioClient.UpdateMetrics(p.ctx, &rpc.UpdateMetricsRequest{
-		Info:        p.info,
-		AvgCpuUsage: float32(avgCPU),
-		MaxCpuUsage: float32(maxCPU),
-	})
+	if maxCPU > 0 {
+		_, _ = s.ioClient.UpdateMetrics(p.ctx, &rpc.UpdateMetricsRequest{
+			Info:        p.info,
+			AvgCpuUsage: float32(avgCPU),
+			MaxCpuUsage: float32(maxCPU),
+		})
+	}
 
 	p.closed.Break()
 
