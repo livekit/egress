@@ -35,7 +35,6 @@ type Pipeline struct {
 	loop          *glib.MainLoop
 	binsAdded     bool
 	elementsAdded bool
-	running       chan struct{}
 	stopped       core.Fuse
 }
 
@@ -57,7 +56,6 @@ func NewPipeline(name string, latency uint64, callbacks *Callbacks) (*Pipeline, 
 			queues:       make(map[string]*gst.Element),
 		},
 		loop:    glib.NewMainLoop(glib.MainContextDefault(), false),
-		running: make(chan struct{}),
 		stopped: core.NewFuse(),
 	}, nil
 }
@@ -131,11 +129,8 @@ func (p *Pipeline) Run() error {
 		if _, ok = p.UpgradeState(StateRunning); ok {
 			p.loop.Run()
 		}
-		close(p.running)
 	}
 
-	// wait
-	<-p.running
 	return nil
 }
 
