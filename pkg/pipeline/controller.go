@@ -225,6 +225,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	for _, si := range c.sinks {
 		for _, s := range si {
 			if err := s.Start(); err != nil {
+				c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
 				c.Info.Error = err.Error()
 				return c.Info
 			}
@@ -232,6 +233,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	}
 
 	if err := c.p.Run(); err != nil {
+		c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
 		c.Info.Error = err.Error()
 		return c.Info
 	}
@@ -240,6 +242,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	for _, si := range c.sinks {
 		for _, s := range si {
 			if err := s.Close(); err != nil {
+				c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
 				c.Info.Error = err.Error()
 				return c.Info
 			}
@@ -400,18 +403,14 @@ func (c *Controller) SendEOS(ctx context.Context) {
 			c.p.Stop()
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
-			c.Info.UpdatedAt = time.Now().UnixNano()
-			if c.Info.Error != "" {
-				c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
-				c.p.Stop()
-			} else {
-				c.Info.Status = livekit.EgressStatus_EGRESS_ENDING
-				_, _ = c.ioClient.UpdateEgress(ctx, c.Info)
-			}
+			c.Info.Status = livekit.EgressStatus_EGRESS_ENDING
 			fallthrough
 
 		case livekit.EgressStatus_EGRESS_ENDING,
 			livekit.EgressStatus_EGRESS_LIMIT_REACHED:
+			c.Info.UpdatedAt = time.Now().UnixNano()
+			_, _ = c.ioClient.UpdateEgress(ctx, c.Info)
+
 			go func() {
 				c.eosTimer = time.AfterFunc(time.Second*30, func() {
 					c.OnError(errors.ErrPipelineFrozen)
@@ -431,7 +430,8 @@ func (c *Controller) OnError(err error) {
 		c.uploadDebugFiles()
 	}
 
-	if c.Info.Error == "" && (!c.eos.IsBroken() || c.FinalizationRequired) {
+	if c.Info.Status != livekit.EgressStatus_EGRESS_FAILED && (!c.eos.IsBroken() || c.FinalizationRequired) {
+		c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
 		c.Info.Error = err.Error()
 	}
 
@@ -451,8 +451,7 @@ func (c *Controller) Close() {
 	c.Info.EndedAt = now
 
 	// update status
-	if c.Info.Error != "" && c.Info.Status != livekit.EgressStatus_EGRESS_ABORTED {
-		c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
+	if c.Info.Status == livekit.EgressStatus_EGRESS_FAILED {
 		if o := c.GetStreamConfig(); o != nil {
 			for _, streamInfo := range o.StreamInfo {
 				streamInfo.Status = livekit.StreamInfo_FAILED
@@ -504,6 +503,7 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 			case livekit.EgressStatus_EGRESS_STARTING,
 				livekit.EgressStatus_EGRESS_ACTIVE:
 				c.Info.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
+				c.Info.Error = "Session limit reached"
 			}
 			if c.playing.IsBroken() {
 				c.SendEOS(ctx)

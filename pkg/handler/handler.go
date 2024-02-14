@@ -91,10 +91,10 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		if !errors.IsFatal(err) {
 			// user error, send update
 			now := time.Now().UnixNano()
-			conf.Info.UpdatedAt = now
-			conf.Info.EndedAt = now
 			conf.Info.Status = livekit.EgressStatus_EGRESS_FAILED
 			conf.Info.Error = err.Error()
+			conf.Info.UpdatedAt = now
+			conf.Info.EndedAt = now
 			_, _ = h.ioClient.UpdateEgress(context.Background(), conf.Info)
 		}
 		return nil, err
