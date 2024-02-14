@@ -500,8 +500,10 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 	if timeout > 0 {
 		c.limitTimer = time.AfterFunc(timeout, func() {
 			switch c.Info.Status {
-			case livekit.EgressStatus_EGRESS_STARTING,
-				livekit.EgressStatus_EGRESS_ACTIVE:
+			case livekit.EgressStatus_EGRESS_STARTING:
+				c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
+				c.Info.Error = "Session limit reached before start signal"
+			case livekit.EgressStatus_EGRESS_ACTIVE:
 				c.Info.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
 				c.Info.Error = "Session limit reached"
 			}
