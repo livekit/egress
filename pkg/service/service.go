@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/version"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 )
@@ -194,7 +195,11 @@ func (s *Service) killProcess(egressID string, maxUsage float64) {
 
 	if h, ok := s.activeHandlers[egressID]; ok {
 		logger.Errorw("killing egress", errors.ErrCPUExhausted, "egressID", egressID, "usage", maxUsage)
+		now := time.Now().UnixNano()
+		h.info.Status = livekit.EgressStatus_EGRESS_FAILED
 		h.info.Error = errors.ErrCPUExhausted.Error()
+		h.info.UpdatedAt = now
+		h.info.EndedAt = now
 		h.kill()
 	}
 }

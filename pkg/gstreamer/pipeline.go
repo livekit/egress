@@ -17,7 +17,6 @@ package gstreamer
 import (
 	"time"
 
-	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
 
@@ -35,7 +34,6 @@ type Pipeline struct {
 	loop          *glib.MainLoop
 	binsAdded     bool
 	elementsAdded bool
-	stopped       core.Fuse
 }
 
 // A pipeline can have either elements or src and sink bins. If you add both you will get a wrong hierarchy error
@@ -55,8 +53,7 @@ func NewPipeline(name string, latency uint64, callbacks *Callbacks) (*Pipeline, 
 			latency:      latency,
 			queues:       make(map[string]*gst.Element),
 		},
-		loop:    glib.NewMainLoop(glib.MainContextDefault(), false),
-		stopped: core.NewFuse(),
+		loop: glib.NewMainLoop(glib.MainContextDefault(), false),
 	}, nil
 }
 
