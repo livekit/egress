@@ -30,6 +30,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+const gcpTimeout = time.Minute
+
 type GCPUploader struct {
 	conf   *livekit.GCPUpload
 	client *storage.Client
@@ -73,7 +75,7 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 	var ctx context.Context
 	if stat.Size() <= googleapi.DefaultUploadChunkSize {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), time.Second*32)
+		ctx, cancel = context.WithTimeout(context.Background(), gcpTimeout)
 		defer cancel()
 	} else {
 		ctx = context.Background()
@@ -87,6 +89,7 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 		}),
 		storage.WithPolicy(storage.RetryAlways),
 	).NewWriter(ctx)
+	wc.ChunkRetryDeadline = gcpTimeout
 
 	if _, err = io.Copy(wc, file); err != nil {
 		return "", 0, wrap("GCP", err)
