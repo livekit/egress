@@ -134,7 +134,7 @@ func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *confi
 	}
 
 	// File will be renamed if the TS prefix is configured
-	location := fmt.Sprintf("%s_%%05d%s", path.Join(c.StorageDir, c.ImagePrefix), types.FileExtensionForOutputType[c.OutputType])
+	location := fmt.Sprintf("%s_%%05d%s", path.Join(c.LocalDir, c.ImagePrefix), types.FileExtensionForOutputType[c.OutputType])
 
 	err = sink.SetProperty("location", location)
 	if err != nil {

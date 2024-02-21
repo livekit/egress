@@ -57,6 +57,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 	files := req.GetFileOutputs()
 	streams := req.GetStreamOutputs()
 	segments := req.GetSegmentOutputs()
+	images := req.GetImageOutputs()
 
 	// file output
 	var file *livekit.EncodedFileOutput
@@ -84,7 +85,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 		}
 
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
-		if len(streams)+len(segments) == 0 {
+		if len(streams)+len(segments)+len(images) == 0 {
 			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
 			return nil
 		}
@@ -119,7 +120,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 			streamInfoList = append(streamInfoList, info)
 		}
 		p.Info.StreamResults = streamInfoList
-		if len(files)+len(segments) == 0 {
+		if len(files)+len(segments)+len(images) == 0 {
 			// empty stream output only valid in combination with other outputs
 			if len(stream.Urls) == 0 {
 				return errors.ErrInvalidInput("stream url")
@@ -156,7 +157,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 		}
 
 		p.Info.SegmentResults = []*livekit.SegmentsInfo{conf.SegmentsInfo}
-		if len(streams)+len(segments) == 0 {
+		if len(streams)+len(files)+len(images) == 0 {
 			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
 			return nil
 		}
@@ -170,7 +171,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 		p.KeyFrameInterval = float64(2 * segmentConf[0].(*SegmentConfig).SegmentDuration)
 	}
 
-	err := p.updateImageOutputs(req)
+	err := p.updateImageOutputs(images)
 	if err != nil {
 		return err
 	}
@@ -220,8 +221,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 	return nil
 }
 
-func (p *PipelineConfig) updateImageOutputs(req ImageOutput) error {
-	images := req.GetImageOutputs()
+func (p *PipelineConfig) updateImageOutputs(images []*livekit.ImageOutput) error {
 
 	if len(images) > 0 && !p.VideoEnabled {
 		return errors.ErrInvalidInput("audio_only")
