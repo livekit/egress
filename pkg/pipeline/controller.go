@@ -75,7 +75,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ioClient rpc.IOInfoCl
 			GstReady: make(chan struct{}),
 		},
 		ioClient:  ioClient,
-		gstLogger: logger.GetLogger().(*logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
+		gstLogger: logger.GetLogger().(logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
 		monitor:   stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
 		playing:   core.NewFuse(),
 		eos:       core.NewFuse(),
