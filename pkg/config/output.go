@@ -144,12 +144,11 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		}
 	}
 
-	if p.KeyFrameInterval == 0 && p.Outputs[types.EgressTypeStream] != nil {
+	if segmentConf := p.Outputs[types.EgressTypeSegments]; segmentConf != nil {
+		p.KeyFrameInterval = 0
+	} else if p.KeyFrameInterval == 0 && p.Outputs[types.EgressTypeStream] != nil {
 		// default 4s for streams
 		p.KeyFrameInterval = 4
-	} else if segmentConf := p.Outputs[types.EgressTypeSegments]; segmentConf != nil && len(segmentConf) > 0 {
-		// double the segment length
-		p.KeyFrameInterval = float64(2 * segmentConf[0].(*SegmentConfig).SegmentDuration)
 	}
 
 	err := p.updateImageOutputs(images)
