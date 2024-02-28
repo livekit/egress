@@ -199,6 +199,9 @@ func (s *SegmentSink) handlePlaylistUpdates(update SegmentUpdate) error {
 	s.throttle(func() {
 		s.playlistLock.Lock()
 		defer s.playlistLock.Unlock()
+		if s.done.IsBroken() {
+			return
+		}
 
 		if err := s.uploadPlaylist(); err != nil {
 			s.callbacks.OnError(err)
