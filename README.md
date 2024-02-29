@@ -30,12 +30,12 @@ Irrespective of method used, when moving between protocols, containers or encodi
 
 ## Supported Output
 
-| Egress Type     | MP4 File | OGG File | WebM File | HLS (TS Segments) | RTMP(s) Stream | WebSocket Stream |
-|-----------------|----------|----------|-----------|-------------------|----------------|------------------|
-| Room Composite  | ✅        | ✅        |           | ✅                 | ✅              |                  |
-| Web             | ✅        | ✅        |           | ✅                 | ✅              |                  |
-| Track Composite | ✅        | ✅        |           | ✅                 | ✅              |                  |
-| Track           | ✅        | ✅        | ✅         |                   |                | ✅                |
+| Egress Type     | MP4 File | OGG File | WebM File | HLS (TS Segments) | RTMP(s) Stream | WebSocket Stream | Thumbnails (JPEGs) |
+|-----------------|----------|----------|-----------|-------------------|----------------|------------------|--------------------|
+| Room Composite  | ✅        | ✅        |           | ✅                 | ✅              |                  | ✅                  |
+| Web             | ✅        | ✅        |           | ✅                 | ✅              |                  | ✅                  |
+| Track Composite | ✅        | ✅        |           | ✅                 | ✅              |                  | ✅                  |
+| Track           | ✅        | ✅        | ✅         |                   |                | ✅                |                    |
 
 Files can be uploaded to any S3 compatible storage, Azure, or GCP.
 

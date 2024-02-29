@@ -17,6 +17,7 @@ package config
 import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
@@ -33,27 +34,7 @@ func (o outputConfig) GetOutputType() types.OutputType {
 	return o.OutputType
 }
 
-type EncodedOutput interface {
-	GetFileOutputs() []*livekit.EncodedFileOutput
-	GetStreamOutputs() []*livekit.StreamOutput
-	GetSegmentOutputs() []*livekit.SegmentedFileOutput
-	ImageOutput
-}
-
-type EncodedOutputDeprecated interface {
-	GetFile() *livekit.EncodedFileOutput
-	GetStream() *livekit.StreamOutput
-	GetSegments() *livekit.SegmentedFileOutput
-	GetFileOutputs() []*livekit.EncodedFileOutput
-	GetStreamOutputs() []*livekit.StreamOutput
-	GetSegmentOutputs() []*livekit.SegmentedFileOutput
-}
-
-type ImageOutput interface {
-	GetImageOutputs() []*livekit.ImageOutput
-}
-
-func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
+func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 	files := req.GetFileOutputs()
 	streams := req.GetStreamOutputs()
 	segments := req.GetSegmentOutputs()
@@ -63,7 +44,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 	var file *livekit.EncodedFileOutput
 	switch len(files) {
 	case 0:
-		if r, ok := req.(EncodedOutputDeprecated); ok {
+		if r, ok := req.(egress.EncodedOutputDeprecated); ok {
 			file = r.GetFile()
 		}
 	case 1:
@@ -95,7 +76,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 	var stream *livekit.StreamOutput
 	switch len(streams) {
 	case 0:
-		if r, ok := req.(EncodedOutputDeprecated); ok {
+		if r, ok := req.(egress.EncodedOutputDeprecated); ok {
 			stream = r.GetStream()
 		}
 	case 1:
@@ -135,7 +116,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req EncodedOutput) error {
 	var segment *livekit.SegmentedFileOutput
 	switch len(segments) {
 	case 0:
-		if r, ok := req.(EncodedOutputDeprecated); ok {
+		if r, ok := req.(egress.EncodedOutputDeprecated); ok {
 			segment = r.GetSegments()
 		}
 	case 1:
@@ -242,7 +223,7 @@ func (p *PipelineConfig) updateImageOutputs(images []*livekit.ImageOutput) error
 	return nil
 }
 
-func redactEncodedOutputs(out EncodedOutput) {
+func redactEncodedOutputs(out egress.EncodedOutput) {
 	if files := out.GetFileOutputs(); len(files) == 1 {
 		redactUpload(files[0])
 	}
@@ -252,7 +233,7 @@ func redactEncodedOutputs(out EncodedOutput) {
 	if segments := out.GetSegmentOutputs(); len(segments) == 1 {
 		redactUpload(segments[0])
 	}
-	if o, ok := out.(EncodedOutputDeprecated); ok {
+	if o, ok := out.(egress.EncodedOutputDeprecated); ok {
 		if file := o.GetFile(); file != nil {
 			redactUpload(file)
 		} else if stream := o.GetStream(); stream != nil {
