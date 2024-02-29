@@ -89,7 +89,7 @@ func (s *Service) promCanAcceptRequest() float64 {
 	return 0
 }
 
-func (s *Service) promIsTerminating() float64 {
+func (s *Service) promIsDisabled() float64 {
 	if s.shutdown.IsBroken() {
 		return 1
 	}

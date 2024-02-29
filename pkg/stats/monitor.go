@@ -77,7 +77,7 @@ func (m *Monitor) Start(
 	conf *config.ServiceConfig,
 	isIdle func() float64,
 	canAcceptRequest func() float64,
-	isTerminating func() float64,
+	isDisabled func() float64,
 	killProcess func(string, float64),
 ) error {
 	m.killProcess = killProcess
@@ -106,12 +106,12 @@ func (m *Monitor) Start(
 		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
 	}, canAcceptRequest)
 
-	promIsTerminating := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+	promIsDisabled := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace:   "livekit",
 		Subsystem:   "egress",
-		Name:        "is_terminating",
+		Name:        "is_disabled",
 		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
-	}, isTerminating)
+	}, isDisabled)
 
 	m.promCPULoad = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   "livekit",
@@ -127,7 +127,7 @@ func (m *Monitor) Start(
 		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
 	}, []string{"type"})
 
-	prometheus.MustRegister(promNodeAvailable, promCanAcceptRequest, promIsTerminating, m.promCPULoad, m.requestGauge)
+	prometheus.MustRegister(promNodeAvailable, promCanAcceptRequest, promIsDisabled, m.promCPULoad, m.requestGauge)
 
 	return nil
 }
