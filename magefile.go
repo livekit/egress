@@ -82,7 +82,11 @@ func Proto() error {
 }
 
 func Integration(configFile string) error {
+	if err := Deadlock(); err != nil {
+		return err
+	}
 	defer Dotfiles()
+	defer Sync()
 
 	dir, err := os.Getwd()
 	if err != nil {
@@ -120,6 +124,36 @@ func Integration(configFile string) error {
 		"docker build -t egress-test -f build/test/Dockerfile .",
 		fmt.Sprintf("docker run --rm -e EGRESS_CONFIG_FILE=%s -v %s/test:/out egress-test", configFile, dir),
 	)
+}
+
+func Deadlock() error {
+	ctx := context.Background()
+	if err := mageutil.Run(ctx, "go get github.com/sasha-s/go-deadlock"); err != nil {
+		return err
+	}
+	if err := mageutil.Pipe("grep -rl sync.Mutex ./pkg", "xargs sed -i  -e s/sync.Mutex/deadlock.Mutex/g"); err != nil {
+		return err
+	}
+	if err := mageutil.Pipe("grep -rl sync.RWMutex ./pkg", "xargs sed -i  -e s/sync.RWMutex/deadlock.RWMutex/g"); err != nil {
+		return err
+	}
+	if err := mageutil.Pipe("grep -rl deadlock.Mutex\\|deadlock.RWMutex ./pkg", "xargs goimports -w"); err != nil {
+		return err
+	}
+	return mageutil.Run(ctx, "go mod tidy")
+}
+
+func Sync() error {
+	if err := mageutil.Pipe("grep -rl deadlock.Mutex ./pkg", "xargs sed -i  -e s/deadlock.Mutex/sync.Mutex/g"); err != nil {
+		return err
+	}
+	if err := mageutil.Pipe("grep -rl deadlock.RWMutex ./pkg", "xargs sed -i  -e s/deadlock.RWMutex/sync.RWMutex/g"); err != nil {
+		return err
+	}
+	if err := mageutil.Pipe("grep -rl sync.Mutex\\|sync.RWMutex ./pkg", "xargs goimports -w"); err != nil {
+		return err
+	}
+	return mageutil.Run(context.Background(), "go mod tidy")
 }
 
 func Build() error {
