@@ -69,7 +69,7 @@ func (s *Service) PromHandler() http.Handler {
 }
 
 func (s *Service) promIsIdle() float64 {
-	if s.GetRequestCount() == 0 {
+	if !s.shutdown.IsBroken() && s.GetRequestCount() == 0 {
 		return 1
 	}
 	return 0
@@ -84,6 +84,13 @@ func (s *Service) promCanAcceptRequest() float64 {
 			RoomComposite: &livekit.RoomCompositeEgressRequest{},
 		},
 	}) {
+		return 1
+	}
+	return 0
+}
+
+func (s *Service) promIsTerminating() float64 {
+	if s.shutdown.IsBroken() {
 		return 1
 	}
 	return 0

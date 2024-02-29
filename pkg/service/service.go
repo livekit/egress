@@ -89,6 +89,7 @@ func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service
 	if err := s.Start(s.conf,
 		s.promIsIdle,
 		s.promCanAcceptRequest,
+		s.promIsTerminating,
 		s.killProcess,
 	); err != nil {
 		return nil, err
