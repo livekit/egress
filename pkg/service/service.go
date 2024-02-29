@@ -39,8 +39,6 @@ import (
 	"github.com/livekit/protocol/rpc"
 )
 
-const shutdownTimer = time.Second * 30
-
 type Service struct {
 	ipc.UnimplementedEgressServiceServer
 
@@ -89,6 +87,7 @@ func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service
 	if err := s.Start(s.conf,
 		s.promIsIdle,
 		s.promCanAcceptRequest,
+		s.promIsDisabled,
 		s.killProcess,
 	); err != nil {
 		return nil, err
@@ -206,7 +205,7 @@ func (s *Service) killProcess(egressID string, maxUsage float64) {
 
 func (s *Service) Close() {
 	for s.GetRequestCount() > 0 {
-		time.Sleep(shutdownTimer)
+		time.Sleep(time.Second)
 	}
 	logger.Infow("closing server")
 	s.psrpcServer.Shutdown()
