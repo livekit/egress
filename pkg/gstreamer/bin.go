@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -214,19 +215,31 @@ func (b *Bin) probeRemoveSource(src *Bin) {
 		return
 	}
 
-	srcGhostPad.AddProbe(gst.PadProbeTypeIdle, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-		sinkPad := sinkGhostPad.GetTarget()
-		b.elements[0].ReleaseRequestPad(sinkPad)
+	srcGhostPad.AddProbe(gst.PadProbeTypeBlocking, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+		if _, err := glib.IdleAdd(func() bool {
+			b.LockState()
 
-		srcGhostPad.Unlink(sinkGhostPad.Pad)
-		b.bin.RemovePad(sinkGhostPad.Pad)
+			if b.GetStateLocked() > StateRunning {
+				b.UnlockState()
+				return false
+			}
 
-		if err := b.pipeline.Remove(src.bin.Element); err != nil {
-			b.OnError(err)
-		}
+			sinkPad := sinkGhostPad.GetTarget()
+			b.elements[0].ReleaseRequestPad(sinkPad)
 
-		if err := src.bin.SetState(gst.StateNull); err != nil {
-			logger.Warnw(fmt.Sprintf("failed to change %s state", src.bin.GetName()), err)
+			srcGhostPad.Unlink(sinkGhostPad.Pad)
+			b.bin.RemovePad(sinkGhostPad.Pad)
+			b.UnlockState()
+
+			if err := b.pipeline.Remove(src.bin.Element); err != nil {
+				b.OnError(err)
+			}
+			if err := src.bin.SetState(gst.StateNull); err != nil {
+				logger.Warnw(fmt.Sprintf("failed to change %s state", src.bin.GetName()), err)
+			}
+			return false
+		}); err != nil {
+			logger.Errorw("failed to remove src bin", err, "bin", src.bin.GetName())
 		}
 		return gst.PadProbeRemove
 	})
