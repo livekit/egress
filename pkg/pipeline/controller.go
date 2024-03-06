@@ -241,7 +241,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	logger.Debugw("closing sinks")
 	for _, si := range c.sinks {
 		for _, s := range si {
-			if err := s.Close(); err != nil {
+			if err := s.Close(); err != nil && c.playing.IsBroken() {
 				c.Info.Status = livekit.EgressStatus_EGRESS_FAILED
 				c.Info.Error = err.Error()
 				return c.Info
