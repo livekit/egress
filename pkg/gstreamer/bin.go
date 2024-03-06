@@ -224,8 +224,9 @@ func (b *Bin) probeRemoveSource(src *Bin) {
 				return false
 			}
 
-			sinkPad := sinkGhostPad.GetTarget()
-			b.elements[0].ReleaseRequestPad(sinkPad)
+			if sinkPad := sinkGhostPad.GetTarget(); sinkPad != nil {
+				b.elements[0].ReleaseRequestPad(sinkPad)
+			}
 
 			srcGhostPad.Unlink(sinkGhostPad.Pad)
 			b.bin.RemovePad(sinkGhostPad.Pad)
