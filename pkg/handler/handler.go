@@ -58,8 +58,6 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		ioClient:         ioClient,
 		ipcHandlerServer: grpc.NewServer(),
 		ipcServiceClient: ipcClient,
-		initialized:      core.NewFuse(),
-		kill:             core.NewFuse(),
 	}
 
 	ipc.RegisterEgressHandlerServer(h.ipcHandlerServer, h)

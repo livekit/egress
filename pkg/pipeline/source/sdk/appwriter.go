@@ -103,10 +103,6 @@ func NewAppWriter(
 		callbacks:         callbacks,
 		sync:              sync,
 		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
-		playing:           core.NewFuse(),
-		draining:          core.NewFuse(),
-		endStream:         core.NewFuse(),
-		finished:          core.NewFuse(),
 	}
 
 	if logFilename != "" {

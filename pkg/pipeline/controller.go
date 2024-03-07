@@ -77,9 +77,6 @@ func New(ctx context.Context, conf *config.PipelineConfig, ioClient rpc.IOInfoCl
 		ioClient:  ioClient,
 		gstLogger: logger.GetLogger().(logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
 		monitor:   stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
-		playing:   core.NewFuse(),
-		eos:       core.NewFuse(),
-		stopped:   core.NewFuse(),
 	}
 	c.callbacks.SetOnError(c.OnError)
 
@@ -215,7 +212,9 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		select {
 		case <-c.stopped.Watch():
 			c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
-			c.Info.Error = "Start signal not received"
+			if c.Info.Details == "" {
+				c.Info.Details = "Start signal not received"
+			}
 			return c.Info
 		case <-start:
 			// continue
@@ -395,7 +394,9 @@ func (c *Controller) SendEOS(ctx context.Context) {
 		switch c.Info.Status {
 		case livekit.EgressStatus_EGRESS_STARTING:
 			c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
-			c.Info.Error = "Stop called before pipeline could start"
+			if c.Info.Details == "" {
+				c.Info.Details = "Stop called before pipeline could start"
+			}
 			fallthrough
 
 		case livekit.EgressStatus_EGRESS_ABORTED,
@@ -463,7 +464,9 @@ func (c *Controller) Close() {
 	switch c.Info.Status {
 	case livekit.EgressStatus_EGRESS_STARTING:
 		c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
-		c.Info.Error = "Stop called before pipeline could start"
+		if c.Info.Details == "" {
+			c.Info.Details = "Stop called before pipeline could start"
+		}
 
 	case livekit.EgressStatus_EGRESS_ACTIVE,
 		livekit.EgressStatus_EGRESS_ENDING:
@@ -502,10 +505,12 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 			switch c.Info.Status {
 			case livekit.EgressStatus_EGRESS_STARTING:
 				c.Info.Status = livekit.EgressStatus_EGRESS_ABORTED
-				c.Info.Error = "Session limit reached before start signal"
+				if c.Info.Details == "" {
+					c.Info.Details = "Session limit reached before start signal"
+				}
 			case livekit.EgressStatus_EGRESS_ACTIVE:
 				c.Info.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
-				c.Info.Error = "Session limit reached"
+				c.Info.Details = "Session limit reached"
 			}
 			if c.playing.IsBroken() {
 				c.SendEOS(ctx)

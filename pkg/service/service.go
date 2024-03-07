@@ -63,7 +63,6 @@ func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service
 		conf:             conf,
 		ipcServiceServer: grpc.NewServer(),
 		ioClient:         ioClient,
-		shutdown:         core.NewFuse(),
 		activeHandlers:   make(map[string]*Process),
 	}
 
@@ -153,7 +152,7 @@ func (s *Service) Reset() {
 		s.Stop(false)
 	}
 
-	s.shutdown = core.NewFuse()
+	s.shutdown = core.Fuse{}
 }
 
 func (s *Service) Status() ([]byte, error) {

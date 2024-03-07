@@ -11,7 +11,7 @@ require (
 	github.com/aws/aws-sdk-go v1.44.296
 	github.com/chromedp/cdproto v0.0.0-20230625224106-7fafe342e117
 	github.com/chromedp/chromedp v0.9.1
-	github.com/frostbyte73/core v0.0.9
+	github.com/frostbyte73/core v0.0.10
 	github.com/go-gst/go-glib v0.0.0-20230906175327-b2d34240bcb4
 	github.com/go-gst/go-gst v0.0.0-20231009181223-aa872b0f6c0c
 	github.com/go-logr/logr v1.4.1
@@ -19,16 +19,16 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/livekit/livekit-server v1.5.1-0.20231026153736-8b16db227070
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.9.10-0.20240226212446-6e689b5c3569
-	github.com/livekit/psrpc v0.5.3-0.20240209001357-380f59f00c58
+	github.com/livekit/protocol v1.11.1-0.20240307194236-37d8b0515da0
+	github.com/livekit/psrpc v0.5.3-0.20240228172457-3724cb4adbc4
 	github.com/livekit/server-sdk-go/v2 v2.0.1
 	github.com/pion/rtp v1.8.3
 	github.com/pion/webrtc/v3 v3.2.28
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.18.0
+	github.com/prometheus/client_golang v1.19.0
 	github.com/prometheus/client_model v0.5.0
-	github.com/prometheus/common v0.45.0
-	github.com/stretchr/testify v1.8.4
+	github.com/prometheus/common v0.48.0
+	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli/v2 v2.25.7
 	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.27.0
@@ -57,7 +57,7 @@ require (
 	github.com/elliotchance/orderedmap/v2 v2.2.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/gammazero/deque v0.2.1 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.1 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
@@ -79,7 +79,6 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
-	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/nats-io/nats.go v1.31.0 // indirect
 	github.com/nats-io/nkeys v0.4.6 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect

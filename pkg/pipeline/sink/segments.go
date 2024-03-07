@@ -102,7 +102,6 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 		openSegmentsStartTime: make(map[string]uint64),
 		closedSegments:        make(chan SegmentUpdate, maxPendingUploads),
 		playlistUpdates:       make(chan SegmentUpdate, maxPendingUploads),
-		done:                  core.NewFuse(),
 	}
 
 	// Register gauges that track the number of segments and playlist updates pending upload
