@@ -70,7 +70,7 @@ func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PPr
 }
 
 // GetMetrics implement the handler-side gathering of metrics to return over IPC
-func (h *Handler) GetMetrics(ctx context.Context, req *ipc.MetricsRequest) (*ipc.MetricsResponse, error) {
+func (h *Handler) GetMetrics(ctx context.Context, _ *ipc.MetricsRequest) (*ipc.MetricsResponse, error) {
 	ctx, span := tracer.Start(ctx, "Handler.GetMetrics")
 	defer span.End()
 
@@ -84,7 +84,7 @@ func (h *Handler) GetMetrics(ctx context.Context, req *ipc.MetricsRequest) (*ipc
 	}, nil
 }
 
-func (h *Handler) GenerateMetrics(ctx context.Context) (string, error) {
+func (h *Handler) GenerateMetrics(_ context.Context) (string, error) {
 	metrics, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
 		return "", err

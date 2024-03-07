@@ -97,7 +97,7 @@ func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, fil
 		if plType == m3u8.PlaylistTypeEvent {
 			// Only download segments once
 			base := storedPlaylistPath[:len(storedPlaylistPath)-5]
-			for i := 0; i < int(segmentCount); i++ {
+			for i := 0; i < segmentCount; i++ {
 				cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
 				localPath := fmt.Sprintf("%s/%s", r.FilePrefix, cloudPath)
 				download(t, uploadConfig, localPath, cloudPath)

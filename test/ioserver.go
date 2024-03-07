@@ -45,7 +45,7 @@ func newIOTestServer(bus psrpc.MessageBus, updates chan *livekit.EgressInfo) (*i
 	return s, nil
 }
 
-func (s *ioTestServer) CreateEgress(_ context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
+func (s *ioTestServer) CreateEgress(_ context.Context, _ *livekit.EgressInfo) (*emptypb.Empty, error) {
 	return &emptypb.Empty{}, nil
 }
 
