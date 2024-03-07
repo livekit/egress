@@ -215,8 +215,8 @@ func (b *Bin) probeRemoveSource(src *Bin) {
 		return
 	}
 
+	sinkPad := sinkGhostPad.GetTarget()
 	srcGhostPad.AddProbe(gst.PadProbeTypeBlocking, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-		sinkPad := sinkGhostPad.GetTarget()
 		b.elements[0].ReleaseRequestPad(sinkPad)
 
 		srcGhostPad.Unlink(sinkGhostPad.Pad)
