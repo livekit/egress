@@ -216,32 +216,25 @@ func (b *Bin) probeRemoveSource(src *Bin) {
 	}
 
 	srcGhostPad.AddProbe(gst.PadProbeTypeBlocking, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-		if _, err := glib.IdleAdd(func() bool {
-			b.LockState()
+		sinkPad := sinkGhostPad.GetTarget()
+		b.elements[0].ReleaseRequestPad(sinkPad)
 
-			if b.GetStateLocked() > StateRunning {
-				b.UnlockState()
+		srcGhostPad.Unlink(sinkGhostPad.Pad)
+		b.bin.RemovePad(sinkGhostPad.Pad)
+
+		if _, err := glib.IdleAdd(func() bool {
+			if err := b.pipeline.Remove(src.bin.Element); err != nil {
+				logger.Warnw("failed to remove bin", err, "bin", src.bin.GetName())
 				return false
 			}
-
-			if sinkPad := sinkGhostPad.GetTarget(); sinkPad != nil {
-				b.elements[0].ReleaseRequestPad(sinkPad)
-			}
-
-			srcGhostPad.Unlink(sinkGhostPad.Pad)
-			b.bin.RemovePad(sinkGhostPad.Pad)
-			b.UnlockState()
-
-			if err := b.pipeline.Remove(src.bin.Element); err != nil {
-				b.OnError(err)
-			}
 			if err := src.bin.SetState(gst.StateNull); err != nil {
-				logger.Warnw(fmt.Sprintf("failed to change %s state", src.bin.GetName()), err)
+				logger.Warnw("failed to change bin state", err, "bin", src.bin.GetName())
 			}
 			return false
 		}); err != nil {
 			logger.Errorw("failed to remove src bin", err, "bin", src.bin.GetName())
 		}
+
 		return gst.PadProbeRemove
 	})
 }
