@@ -16,6 +16,7 @@ package builder
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 
 	"github.com/go-gst/go-gst/gst"
@@ -33,15 +34,15 @@ type AudioBin struct {
 	bin  *gstreamer.Bin
 	conf *config.PipelineConfig
 
-	mu     sync.Mutex
-	tracks map[string]struct{}
+	mu    sync.Mutex
+	names map[string]string
 }
 
 func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
 	b := &AudioBin{
-		bin:    pipeline.NewBin("audio"),
-		conf:   p,
-		tracks: make(map[string]struct{}),
+		bin:   pipeline.NewBin("audio"),
+		conf:  p,
+		names: make(map[string]string),
 	}
 
 	switch p.SourceType {
@@ -98,12 +99,12 @@ func (b *AudioBin) onTrackRemoved(trackID string) {
 	}
 
 	b.mu.Lock()
-	_, ok := b.tracks[trackID]
-	delete(b.tracks, trackID)
+	name, ok := b.names[trackID]
+	delete(b.names, trackID)
 	b.mu.Unlock()
 
 	if ok {
-		if _, err := b.bin.RemoveSourceBin(trackID); err != nil {
+		if _, err := b.bin.RemoveSourceBin(name); err != nil {
 			b.bin.OnError(err)
 		}
 	}
@@ -158,9 +159,10 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.tracks[ts.TrackID] = struct{}{}
+	name := fmt.Sprintf("%s_%d", ts.TrackID, rand.Int()%1000)
+	b.names[ts.TrackID] = name
 
-	appSrcBin := b.bin.NewBin(ts.TrackID)
+	appSrcBin := b.bin.NewBin(name)
 	appSrcBin.SetEOSFunc(func() bool {
 		return false
 	})
