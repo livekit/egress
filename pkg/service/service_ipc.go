@@ -23,7 +23,7 @@ import (
 	"github.com/livekit/egress/pkg/ipc"
 )
 
-func (s *Service) HandlerReady(ctx context.Context, req *ipc.HandlerReadyRequest) (*emptypb.Empty, error) {
+func (s *Service) HandlerReady(_ context.Context, req *ipc.HandlerReadyRequest) (*emptypb.Empty, error) {
 	s.mu.RLock()
 	p, ok := s.activeHandlers[req.EgressId]
 	s.mu.RUnlock()
@@ -36,7 +36,7 @@ func (s *Service) HandlerReady(ctx context.Context, req *ipc.HandlerReadyRequest
 	return &emptypb.Empty{}, nil
 }
 
-func (s *Service) HandlerShuttingDown(ctx context.Context, req *ipc.HandlerShuttingDownRequest) (*emptypb.Empty, error) {
+func (s *Service) HandlerShuttingDown(_ context.Context, req *ipc.HandlerShuttingDownRequest) (*emptypb.Empty, error) {
 	err := s.storeProcessEndedMetrics(req.EgressId, req.Metrics)
 	if err != nil {
 		return nil, err

@@ -60,7 +60,6 @@ func NewProcess(
 		cmd:              cmd,
 		ipcHandlerClient: ipcClient,
 		ready:            make(chan struct{}),
-		closed:           core.NewFuse(),
 	}
 
 	return p, nil

@@ -31,6 +31,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 )
@@ -47,6 +48,8 @@ type WebSource struct {
 
 	startRecording chan struct{}
 	endRecording   chan struct{}
+
+	info *livekit.EgressInfo
 }
 
 func init() {
@@ -61,6 +64,7 @@ func NewWebSource(ctx context.Context, p *config.PipelineConfig) (*WebSource, er
 
 	s := &WebSource{
 		endRecording: make(chan struct{}),
+		info:         p.Info,
 	}
 	if p.AwaitStartSignal {
 		s.startRecording = make(chan struct{})
@@ -292,6 +296,13 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 
 		case *runtime.EventExceptionThrown:
 			logChrome("exception", ev)
+			if s.info.Details == "" {
+				if exceptionDetails := ev.ExceptionDetails; exceptionDetails != nil {
+					if exception := exceptionDetails.Exception; exception != nil {
+						s.info.Details = fmt.Sprintf("Uncaught chrome exception: %s", exception.Description)
+					}
+				}
+			}
 		}
 	})
 

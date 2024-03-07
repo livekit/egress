@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-gst/go-gst/gst"
-
 	"github.com/livekit/psrpc"
 )
 
@@ -120,16 +118,8 @@ func ErrUploadFailed(location string, err error) error {
 	return psrpc.NewErrorf(psrpc.Unknown, "%s upload failed: %v", location, err)
 }
 
-func ErrWebsocketClosed(addr string) error {
-	return psrpc.NewErrorf(psrpc.Internal, "websocket closed: %s", addr)
-}
-
 func ErrProcessStartFailed(err error) error {
 	return psrpc.NewError(psrpc.Internal, err)
-}
-
-func ErrStateChangeFailed(bin string, state gst.State) error {
-	return psrpc.NewErrorf(psrpc.Internal, "%s failed to change state to %s", bin, state.String())
 }
 
 type ErrArray struct {

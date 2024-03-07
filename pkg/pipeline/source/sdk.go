@@ -75,10 +75,8 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		sync: synchronizer.NewSynchronizer(func() {
 			close(startRecording)
 		}),
-		initialized:          core.NewFuse(),
 		filenameReplacements: make(map[string]string),
 		writers:              make(map[string]*sdk.AppWriter),
-		closed:               core.NewFuse(),
 		startRecording:       startRecording,
 		endRecording:         make(chan struct{}),
 	}

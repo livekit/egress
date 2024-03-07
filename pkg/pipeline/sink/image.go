@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
@@ -61,7 +62,6 @@ func newImageSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Image
 
 		manifest:      createImageManifest(p),
 		createdImages: make(chan *imageUpdate, maxPendingUploads),
-		done:          core.NewFuse(),
 	}, nil
 }
 

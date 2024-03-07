@@ -69,7 +69,7 @@ const (
 	msgAggregateSubclass = "Subclass should call gst_aggregator_selected_samples() from its aggregate implementation."
 )
 
-func (c *Controller) gstLog(level gst.DebugLevel, file, function string, line int, obj *glib.Object, message string) {
+func (c *Controller) gstLog(level gst.DebugLevel, file, function string, line int, _ *glib.Object, message string) {
 	var lvl string
 	switch level {
 	case gst.LevelNone:
@@ -291,12 +291,12 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 			}
 			logger.Debugw("received GstMultiFileSink message", "location", location, "timestamp", ts, "source", msg.Source())
 
-			sink := c.getImageSink(msg.Source())
-			if sink == nil {
+			imageSink := c.getImageSink(msg.Source())
+			if imageSink == nil {
 				return errors.ErrSinkNotFound
 			}
 
-			err = sink.NewImage(location, ts)
+			err = imageSink.NewImage(location, ts)
 			if err != nil {
 				return err
 			}
