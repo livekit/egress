@@ -85,6 +85,7 @@ type AzureConfig struct {
 type GCPConfig struct {
 	CredentialsJSON string `yaml:"credentials_json"` // (env GOOGLE_APPLICATION_CREDENTIALS)
 	Bucket          string `yaml:"bucket"`
+	Endpoint        string `yaml:"endpoint"`
 }
 
 type SessionLimits struct {

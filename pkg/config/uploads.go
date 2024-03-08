@@ -130,6 +130,7 @@ func (c StorageConfig) ToUploadConfig() UploadConfig {
 		return &livekit.GCPUpload{
 			Credentials: c.GCP.CredentialsJSON,
 			Bucket:      c.GCP.Bucket,
+			Endpoint:    c.GCP.Endpoint,
 		}
 	}
 	if c.AliOSS != nil {

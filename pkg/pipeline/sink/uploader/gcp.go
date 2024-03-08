@@ -50,6 +50,9 @@ func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 	if conf.Credentials != "" {
 		opts = append(opts, option.WithCredentialsJSON([]byte(conf.Credentials)))
 	}
+	if conf.Endpoint != "" {
+		opts = append(opts, option.WithEndpoint(conf.Endpoint))
+	}
 
 	// override default transport DialContext
 	defaultTransport := http.DefaultTransport.(*http.Transport).Clone()

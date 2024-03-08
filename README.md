@@ -99,6 +99,7 @@ azure:
 gcp:
   credentials_json: GOOGLE_APPLICATION_CREDENTIALS env can be used instead
   bucket: bucket to upload files to
+  endpoint: (optional) custom endpoint
 alioss:
   access_key: Ali OSS AccessKeyId
   secret: Ali OSS AccessKeySecret
