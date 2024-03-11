@@ -15,6 +15,7 @@
 package uploader
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -105,18 +106,20 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 		u.awsConfig.Region = aws.String(region)
 	}
 
-	if conf.Proxy != "" {
-		logger.Debugw("configuring s3 with proxy", "proxyEndpoint", conf.Proxy)
-		// Proxy configuration
-		proxyURL, err := url.Parse(conf.Proxy)
+	if conf.Proxy != nil {
+		proxyUrl, err := url.Parse(conf.Proxy.Url)
 		if err != nil {
-			logger.Errorw("failed to parse proxy URL -- proxy not set", err, "proxy", conf.Proxy)
-		} else {
-			proxyTransport := &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			}
-			u.awsConfig.HTTPClient = &http.Client{Transport: proxyTransport}
+			return nil, err
 		}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.Proxy = http.ProxyURL(proxyUrl)
+		if conf.Proxy.Username != "" && conf.Proxy.Password != "" {
+			auth := fmt.Sprintf("%s:%s", conf.Proxy.Username, conf.Proxy.Password)
+			basicAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+			transport.ProxyConnectHeader = http.Header{}
+			transport.ProxyConnectHeader.Add("Proxy-Authorization", basicAuth)
+		}
+		u.awsConfig.HTTPClient = &http.Client{Transport: transport}
 	}
 
 	if len(conf.Metadata) > 0 {

@@ -87,7 +87,10 @@ s3:
   endpoint: (optional) custom endpoint
   bucket: bucket to upload files to
   # the following s3 options can only be set in config, *not* per request, they will be added to any per-request options
-  proxy: (optional, no default) proxy url
+  proxy_config:
+    url: (optional) proxy url
+    username: (optional) proxy username
+    password: (optional) proxy password
   max_retries: (optional, default=3) number or retries to attempt
   max_retry_delay: (optional, default=5s) max delay between retries (e.g. 5s, 100ms, 1m...)
   min_retry_delay: (optional, default=500ms) min delay between retries (e.g. 100ms, 1s...)
@@ -99,7 +102,10 @@ azure:
 gcp:
   credentials_json: GOOGLE_APPLICATION_CREDENTIALS env can be used instead
   bucket: bucket to upload files to
-  endpoint: (optional) custom endpoint
+  proxy_config:
+    url: (optional) proxy url
+    username: (optional) proxy username
+    password: (optional) proxy password
 alioss:
   access_key: Ali OSS AccessKeyId
   secret: Ali OSS AccessKeySecret

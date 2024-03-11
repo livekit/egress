@@ -34,7 +34,6 @@ type uploadRequest interface {
 
 type EgressS3Upload struct {
 	*livekit.S3Upload
-	Proxy         string
 	MaxRetries    int
 	MaxRetryDelay time.Duration
 	MinRetryDelay time.Duration
@@ -49,14 +48,14 @@ func (p *PipelineConfig) getUploadConfig(req uploadRequest) UploadConfig {
 			MaxRetryDelay: time.Second * 5,
 			MinRetryDelay: time.Millisecond * 100,
 		}
-		// merge in options from config (proxy, retry limit, delay and aws logging) if specified
+		// merge in options from config (retry limit, delay and aws logging) if specified
 		if p.S3 != nil {
 			// parse config.yaml options and get defaults
 			if s3Base, ok := p.ToUploadConfig().(*EgressS3Upload); ok {
 				// merge into pipeline config created from request options
-				s3Conf.Proxy = s3Base.Proxy
 				s3Conf.MaxRetries = s3Base.MaxRetries
 				s3Conf.MaxRetryDelay = s3Base.MaxRetryDelay
+				s3Conf.MinRetryDelay = s3Base.MinRetryDelay
 				s3Conf.AwsLogLevel = s3Base.AwsLogLevel
 			}
 		}
@@ -86,10 +85,20 @@ func (c StorageConfig) ToUploadConfig() UploadConfig {
 				Bucket:         c.S3.Bucket,
 				ForcePathStyle: c.S3.ForcePathStyle,
 			},
-			Proxy:         c.S3.Proxy,
 			MaxRetries:    3,
 			MaxRetryDelay: time.Second * 5,
 			MinRetryDelay: time.Millisecond * 100,
+		}
+		if c.S3.ProxyConfig != nil {
+			s3.Proxy = &livekit.ProxyConfig{
+				Url:      c.S3.ProxyConfig.Url,
+				Username: c.S3.ProxyConfig.Username,
+				Password: c.S3.ProxyConfig.Password,
+			}
+		} else if c.S3.Proxy != "" {
+			s3.Proxy = &livekit.ProxyConfig{
+				Url: c.S3.Proxy,
+			}
 		}
 		if c.S3.MaxRetries > 0 {
 			s3.MaxRetries = c.S3.MaxRetries
@@ -127,11 +136,18 @@ func (c StorageConfig) ToUploadConfig() UploadConfig {
 		}
 	}
 	if c.GCP != nil {
-		return &livekit.GCPUpload{
+		gcp := &livekit.GCPUpload{
 			Credentials: c.GCP.CredentialsJSON,
 			Bucket:      c.GCP.Bucket,
-			Endpoint:    c.GCP.Endpoint,
 		}
+		if c.GCP.ProxyConfig != nil {
+			gcp.Proxy = &livekit.ProxyConfig{
+				Url:      c.GCP.ProxyConfig.Url,
+				Username: c.GCP.ProxyConfig.Username,
+				Password: c.GCP.ProxyConfig.Password,
+			}
+		}
+		return gcp
 	}
 	if c.AliOSS != nil {
 		return &livekit.AliOSSUpload{
