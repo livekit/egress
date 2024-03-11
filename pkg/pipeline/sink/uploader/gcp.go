@@ -16,10 +16,12 @@ package uploader
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"syscall"
 	"time"
@@ -50,13 +52,12 @@ func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 	if conf.Credentials != "" {
 		opts = append(opts, option.WithCredentialsJSON([]byte(conf.Credentials)))
 	}
-	if conf.Endpoint != "" {
-		opts = append(opts, option.WithEndpoint(conf.Endpoint))
-	}
 
-	// override default transport DialContext
-	defaultTransport := http.DefaultTransport.(*http.Transport).Clone()
-	http.DefaultTransport.(*http.Transport).DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+	defaultTransport := http.DefaultTransport.(*http.Transport)
+	transportClone := defaultTransport.Clone()
+
+	// override default transport
+	defaultTransport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		return (&net.Dialer{
 			Timeout:       time.Second * 30,
 			KeepAlive:     time.Second * 30,
@@ -70,15 +71,28 @@ func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 			},
 		}).DialContext(ctx, network, addr)
 	}
-
+	if conf.Proxy != nil {
+		proxyUrl, err := url.Parse(conf.Proxy.Url)
+		if err != nil {
+			return nil, err
+		}
+		defaultTransport.Proxy = http.ProxyURL(proxyUrl)
+		if conf.Proxy.Username != "" && conf.Proxy.Password != "" {
+			auth := fmt.Sprintf("%s:%s", conf.Proxy.Username, conf.Proxy.Password)
+			basicAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+			defaultTransport.ProxyConnectHeader = http.Header{}
+			defaultTransport.ProxyConnectHeader.Add("Proxy-Authorization", basicAuth)
+		}
+	}
 	c, err := storage.NewClient(context.Background(), opts...)
+
 	// restore default transport
-	http.DefaultTransport = defaultTransport
+	http.DefaultTransport = transportClone
 	if err != nil {
 		return nil, err
 	}
-	u.client = c
 
+	u.client = c
 	return u, nil
 }
 

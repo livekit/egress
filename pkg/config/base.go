@@ -69,11 +69,14 @@ type S3Config struct {
 	Endpoint       string        `yaml:"endpoint"`
 	Bucket         string        `yaml:"bucket"`
 	ForcePathStyle bool          `yaml:"force_path_style"`
-	Proxy          string        `yaml:"proxy"`
+	ProxyConfig    *ProxyConfig  `yaml:"proxy_config"`
 	MaxRetries     int           `yaml:"max_retries"`
 	MaxRetryDelay  time.Duration `yaml:"max_retry_delay"`
 	MinRetryDelay  time.Duration `yaml:"min_retry_delay"`
 	AwsLogLevel    string        `yaml:"aws_log_level"`
+
+	// deprecated
+	Proxy string `yaml:"proxy"` // use ProxyConfig instead
 }
 
 type AzureConfig struct {
@@ -83,9 +86,15 @@ type AzureConfig struct {
 }
 
 type GCPConfig struct {
-	CredentialsJSON string `yaml:"credentials_json"` // (env GOOGLE_APPLICATION_CREDENTIALS)
-	Bucket          string `yaml:"bucket"`
-	Endpoint        string `yaml:"endpoint"`
+	CredentialsJSON string       `yaml:"credentials_json"` // (env GOOGLE_APPLICATION_CREDENTIALS)
+	Bucket          string       `yaml:"bucket"`
+	ProxyConfig     *ProxyConfig `yaml:"proxy_config"`
+}
+
+type ProxyConfig struct {
+	Url      string `yaml:"url"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 type SessionLimits struct {
