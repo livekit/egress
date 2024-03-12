@@ -78,6 +78,8 @@ github.com/frostbyte73/core v0.0.10 h1:D4DQXdPb8ICayz0n75rs4UYTXrUSdxzUfeleuNJOR
 github.com/frostbyte73/core v0.0.10/go.mod h1:XsOGqrqe/VEV7+8vJ+3a8qnCIXNbKsoEiu/czs7nrcU=
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
 github.com/fsnotify/fsnotify v1.4.9/go.mod h1:znqG4EE+3YCdAaPaxE2ZRY/06pZUdp0tY4IgpuI1SZQ=
+github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=
+github.com/fsnotify/fsnotify v1.7.0/go.mod h1:40Bi/Hjc2AVfZrqy+aj+yEI+/bRxZnMJyTJwOpGvigM=
 github.com/gammazero/deque v0.2.1 h1:qSdsbG6pgp6nL7A0+K/B7s12mcCY/5l5SIUpMOl+dC0=
 github.com/gammazero/deque v0.2.1/go.mod h1:LFroj8x4cMYCukHJDbxFCkT+r9AndaJnFMuZDV34tuU=
 github.com/go-gst/go-glib v0.0.0-20230906175327-b2d34240bcb4 h1:c2y2vC6HUoWfFsnTaR+D80d1pNsvA5uqd2yHAs+emDU=
@@ -174,10 +176,10 @@ github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1 h1:jm09419p0lqTkD
 github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/mediatransportutil v0.0.0-20231213075826-cccbf2b93d3f h1:XHrwGwLNGQB3ZqolH1YdMH/22hgXKr4vm+2M7JKMMGg=
 github.com/livekit/mediatransportutil v0.0.0-20231213075826-cccbf2b93d3f/go.mod h1:GBzn9xL+mivI1pW+tyExcKgbc0VOc29I9yJsNcAVaAc=
-github.com/livekit/protocol v1.11.1-0.20240311174744-00c977ffbb49 h1:eI3blFvnnFvAaT5oTbVZBTQCufv9OEplW8ejYWDR6tY=
-github.com/livekit/protocol v1.11.1-0.20240311174744-00c977ffbb49/go.mod h1:x+QyergF26N374J0HxxDw6AiMEtf8wNtJS7yJrWGufA=
-github.com/livekit/psrpc v0.5.3-0.20240228172457-3724cb4adbc4 h1:253WtQ2VGVHzIIzW9MUZj7vUDDILESU3zsEbiRdxYF0=
-github.com/livekit/psrpc v0.5.3-0.20240228172457-3724cb4adbc4/go.mod h1:CQUBSPfYYAaevg1TNCc6/aYsa8DJH4jSRFdCeSZk5u0=
+github.com/livekit/protocol v1.11.1-0.20240311233654-34e705a573b5 h1:nvLX0rpWyWO1A2LUuvqxNhgnDkOe7kxTQ8Y3P0g/BLc=
+github.com/livekit/protocol v1.11.1-0.20240311233654-34e705a573b5/go.mod h1:znZpBU024XvKIpC9jkFzfrJMDuucDb4B1ON9lbUJMGA=
+github.com/livekit/psrpc v0.5.3-0.20240312110212-61ab09477c30 h1:3GEU6vP+KLTTOEqsFKW+PgIUp+i+s0jaUqogQc/hb7M=
+github.com/livekit/psrpc v0.5.3-0.20240312110212-61ab09477c30/go.mod h1:CQUBSPfYYAaevg1TNCc6/aYsa8DJH4jSRFdCeSZk5u0=
 github.com/livekit/server-sdk-go/v2 v2.0.1 h1:qwuMK7WUd30DM7IJ2sOqpQcZcHqP02tzs5Y6CRsV4Lg=
 github.com/livekit/server-sdk-go/v2 v2.0.1/go.mod h1:l9mRrCvR7H2AAJjs/624duhvuKUTjtVddjqiIQ6YcZw=
 github.com/mackerelio/go-osstat v0.2.4 h1:qxGbdPkFo65PXOb/F/nhDKpF2nGmGaCFDLXoZjJTtUs=
