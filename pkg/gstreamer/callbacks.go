@@ -25,8 +25,9 @@ import (
 )
 
 type Callbacks struct {
-	mu       sync.RWMutex
-	GstReady chan struct{}
+	mu         sync.RWMutex
+	GstReady   chan struct{}
+	BuildReady chan struct{}
 
 	// upstream callbacks
 	onError func(error)

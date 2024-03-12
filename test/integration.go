@@ -206,6 +206,24 @@ func (r *Runner) publish(t *testing.T, codec types.MimeType, done chan struct{})
 }
 
 func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {
+	info := r.sendRequest(t, req)
+
+	// check status
+	if r.HealthPort != 0 {
+		status := r.getStatus(t)
+		require.Contains(t, status, info.EgressId)
+	}
+
+	// wait
+	time.Sleep(time.Second * 5)
+
+	// check active update
+	r.checkUpdate(t, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
+
+	return info.EgressId
+}
+
+func (r *Runner) sendRequest(t *testing.T, req *rpc.StartEgressRequest) *livekit.EgressInfo {
 	// send start request
 	info, err := r.client.StartEgress(context.Background(), "", req)
 
@@ -221,20 +239,7 @@ func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {
 	}
 
 	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING.String(), info.Status.String())
-
-	// check status
-	if r.HealthPort != 0 {
-		status := r.getStatus(t)
-		require.Contains(t, status, info.EgressId)
-	}
-
-	// wait
-	time.Sleep(time.Second * 5)
-
-	// check active update
-	r.checkUpdate(t, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
-
-	return info.EgressId
+	return info
 }
 
 func (r *Runner) checkUpdate(t *testing.T, egressID string, status livekit.EgressStatus) *livekit.EgressInfo {

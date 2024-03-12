@@ -72,7 +72,8 @@ func New(ctx context.Context, conf *config.PipelineConfig, ioClient rpc.IOInfoCl
 	c := &Controller{
 		PipelineConfig: conf,
 		callbacks: &gstreamer.Callbacks{
-			GstReady: make(chan struct{}),
+			GstReady:   make(chan struct{}),
+			BuildReady: make(chan struct{}),
 		},
 		ioClient:  ioClient,
 		gstLogger: logger.GetLogger().(logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
@@ -186,6 +187,7 @@ func (c *Controller) BuildPipeline() error {
 	}
 
 	c.p = p
+	close(c.callbacks.BuildReady)
 	return nil
 }
 

@@ -16,7 +16,6 @@ package builder
 
 import (
 	"fmt"
-	"math/rand"
 	"sync"
 
 	"github.com/go-gst/go-gst/gst"
@@ -34,8 +33,9 @@ type AudioBin struct {
 	bin  *gstreamer.Bin
 	conf *config.PipelineConfig
 
-	mu    sync.Mutex
-	names map[string]string
+	mu     sync.Mutex
+	nextID int
+	names  map[string]string
 }
 
 func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
@@ -159,7 +159,8 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	name := fmt.Sprintf("%s_%d", ts.TrackID, rand.Int()%1000)
+	name := fmt.Sprintf("%s_%d", ts.TrackID, b.nextID)
+	b.nextID++
 	b.names[ts.TrackID] = name
 
 	appSrcBin := b.bin.NewBin(name)
