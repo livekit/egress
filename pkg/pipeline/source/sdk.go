@@ -208,19 +208,30 @@ func (s *SDKSource) awaitParticipant(identity string) (uint32, uint32, error) {
 		return 0, 0, err
 	}
 
-	for trackCount := 0; trackCount == 0 || trackCount < len(rp.TrackPublications()); trackCount++ {
-		if err = <-s.errors; err != nil {
+	pubs := rp.TrackPublications()
+	for _, t := range pubs {
+		if err = s.subscribe(t); err != nil {
 			return 0, 0, err
 		}
 	}
 
+	for trackCount := 0; trackCount == 0 || trackCount < len(pubs); trackCount++ {
+		select {
+		case err = <-s.errors:
+			if err != nil {
+				return 0, 0, err
+			}
+		case <-s.endRecording:
+			return 0, 0, nil
+		}
+	}
+
 	var w, h uint32
-	for _, t := range rp.TrackPublications() {
+	for _, t := range pubs {
 		if t.TrackInfo().Type == livekit.TrackType_VIDEO {
 			w = t.TrackInfo().Width
 			h = t.TrackInfo().Height
 		}
-
 	}
 
 	s.initialized.Break()
