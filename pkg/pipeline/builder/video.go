@@ -16,7 +16,6 @@ package builder
 
 import (
 	"fmt"
-	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +45,7 @@ type VideoBin struct {
 	nextPad     string
 
 	mu          sync.Mutex
+	nextID      int
 	pads        map[string]*gst.Pad
 	names       map[string]string
 	selector    *gst.Element
@@ -282,7 +282,8 @@ func (b *VideoBin) buildSDKInput() error {
 }
 
 func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
-	name := fmt.Sprintf("%s_%d", ts.TrackID, rand.Int()%1000)
+	name := fmt.Sprintf("%s_%d", ts.TrackID, b.nextID)
+	b.nextID++
 
 	appSrcBin, err := b.buildAppSrcBin(ts, name)
 	if err != nil {

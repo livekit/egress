@@ -150,16 +150,23 @@ func (b *Bin) AddElements(elements ...*gst.Element) error {
 }
 
 func (b *Bin) RemoveSourceBin(name string) (bool, error) {
+	logger.Debugw(fmt.Sprintf("removing src %s from %s", name, b.bin.GetName()))
 	return b.removeBin(name, gst.PadDirectionSource)
 }
 
 func (b *Bin) RemoveSinkBin(name string) (bool, error) {
+	logger.Debugw(fmt.Sprintf("removing sink %s from %s", name, b.bin.GetName()))
 	return b.removeBin(name, gst.PadDirectionSink)
 }
 
 func (b *Bin) removeBin(name string, direction gst.PadDirection) (bool, error) {
 	b.LockStateShared()
 	defer b.UnlockStateShared()
+
+	state := b.GetStateLocked()
+	if state > StateRunning {
+		return true, nil
+	}
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -184,11 +191,6 @@ func (b *Bin) removeBin(name string, direction gst.PadDirection) (bool, error) {
 	}
 	if bin == nil {
 		return false, nil
-	}
-
-	state := b.GetStateLocked()
-	if state > StateRunning {
-		return true, nil
 	}
 
 	if state == StateBuilding {
@@ -216,7 +218,12 @@ func (b *Bin) probeRemoveSource(src *Bin) {
 	}
 
 	sinkPad := sinkGhostPad.GetTarget()
-	srcGhostPad.AddProbe(gst.PadProbeTypeBlocking, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+	sinkPad.AddProbe(gst.PadProbeTypeBlockUpstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+		// drop all upstream events
+		return gst.PadProbeDrop
+	})
+
+	srcGhostPad.AddProbe(gst.PadProbeTypeIdle, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
 		b.elements[0].ReleaseRequestPad(sinkPad)
 
 		srcGhostPad.Unlink(sinkGhostPad.Pad)
