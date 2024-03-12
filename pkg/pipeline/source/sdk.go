@@ -216,8 +216,13 @@ func (s *SDKSource) awaitParticipant(identity string) (uint32, uint32, error) {
 	}
 
 	for trackCount := 0; trackCount == 0 || trackCount < len(pubs); trackCount++ {
-		if err = <-s.errors; err != nil {
-			return 0, 0, err
+		select {
+		case err = <-s.errors:
+			if err != nil {
+				return 0, 0, err
+			}
+		case <-s.endRecording:
+			return 0, 0, nil
 		}
 	}
 
