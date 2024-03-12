@@ -147,6 +147,13 @@ func NewRunner(t *testing.T) *Runner {
 func (r *Runner) Run(t *testing.T, svc *service.Service, bus psrpc.MessageBus, templateFs fs.FS) {
 	lksdk.SetLogger(logger.LogRLogger(logr.Discard()))
 	r.svc = svc
+	t.Cleanup(func() {
+		if r.room != nil {
+			r.room.Disconnect()
+		}
+		r.svc.Stop(true)
+		r.svc.Close()
+	})
 
 	// connect to room
 	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
@@ -157,7 +164,6 @@ func (r *Runner) Run(t *testing.T, svc *service.Service, bus psrpc.MessageBus, t
 		ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
-	defer room.Disconnect()
 
 	psrpcClient, err := rpc.NewEgressClient(rpc.ClientParams{Bus: bus})
 	require.NoError(t, err)
@@ -170,10 +176,6 @@ func (r *Runner) Run(t *testing.T, svc *service.Service, bus psrpc.MessageBus, t
 	require.NoError(t, err)
 
 	go r.svc.Run()
-	t.Cleanup(func() {
-		r.svc.Stop(true)
-		r.svc.Close()
-	})
 	time.Sleep(time.Second * 3)
 
 	// subscribe to update channel

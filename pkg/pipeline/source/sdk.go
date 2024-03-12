@@ -57,6 +57,7 @@ type SDKSource struct {
 	errors               chan error
 
 	writers map[string]*sdk.AppWriter
+	subLock sync.RWMutex
 	active  atomic.Int32
 	closed  core.Fuse
 
@@ -76,6 +77,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 			close(startRecording)
 		}),
 		filenameReplacements: make(map[string]string),
+		errors:               make(chan error, 2),
 		writers:              make(map[string]*sdk.AppWriter),
 		startRecording:       startRecording,
 		endRecording:         make(chan struct{}),
@@ -171,7 +173,8 @@ func (s *SDKSource) joinRoom() error {
 	switch s.RequestType {
 	case types.RequestTypeParticipant:
 		fileIdentifier = s.Identity
-		w, h, err = s.awaitParticipant(s.Identity)
+		s.filenameReplacements["{publisher_identity}"] = s.Identity
+		w, h, err = s.awaitParticipantTracks(s.Identity)
 
 	case types.RequestTypeTrackComposite:
 		fileIdentifier = s.Info.RoomName
@@ -200,42 +203,56 @@ func (s *SDKSource) joinRoom() error {
 	return nil
 }
 
-func (s *SDKSource) awaitParticipant(identity string) (uint32, uint32, error) {
-	s.errors = make(chan error, 2)
-
+func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, error) {
 	rp, err := s.getParticipant(identity)
 	if err != nil {
 		return 0, 0, err
 	}
 
 	pubs := rp.TrackPublications()
-	for _, t := range pubs {
-		if err = s.subscribe(t); err != nil {
-			return 0, 0, err
+	expected := 0
+	for _, pub := range pubs {
+		if shouldSubscribe(pub) {
+			expected++
 		}
 	}
 
-	for trackCount := 0; trackCount == 0 || trackCount < len(pubs); trackCount++ {
+	// await all expected subscriptions
+	for trackCount := 0; trackCount < expected; trackCount++ {
 		select {
 		case err = <-s.errors:
 			if err != nil {
 				return 0, 0, err
 			}
-		case <-s.endRecording:
-			return 0, 0, nil
 		}
 	}
 
-	var w, h uint32
-	for _, t := range pubs {
-		if t.TrackInfo().Type == livekit.TrackType_VIDEO {
-			w = t.TrackInfo().Width
-			h = t.TrackInfo().Height
+	// lock any incoming subscriptions
+	s.subLock.Lock()
+	defer s.subLock.Unlock()
+
+	for {
+		select {
+		// check errors from any tracks published in the meantime
+		case err = <-s.errors:
+			if err != nil {
+				return 0, 0, err
+			}
+		default:
+			// get dimensions after subscribing so that track info exists
+			var w, h uint32
+			for _, t := range pubs {
+				if t.TrackInfo().Type == livekit.TrackType_VIDEO && t.IsSubscribed() {
+					w = t.TrackInfo().Width
+					h = t.TrackInfo().Height
+				}
+			}
+
+			// ready
+			s.initialized.Break()
+			return w, h, nil
 		}
 	}
-
-	s.initialized.Break()
-	return w, h, nil
 }
 
 func (s *SDKSource) getParticipant(identity string) (*lksdk.RemoteParticipant, error) {
@@ -253,7 +270,6 @@ func (s *SDKSource) getParticipant(identity string) (*lksdk.RemoteParticipant, e
 
 func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, error) {
 	trackCount := len(expecting)
-	s.errors = make(chan error, trackCount)
 
 	deadline := time.After(subscriptionTimeout)
 	tracks, err := s.subscribeToTracks(expecting, deadline)
@@ -263,7 +279,7 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, 
 
 	for i := 0; i < trackCount; i++ {
 		select {
-		case err := <-s.errors:
+		case err = <-s.errors:
 			if err != nil {
 				return 0, 0, err
 			}
@@ -334,7 +350,10 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 // ----- Callbacks -----
 
 func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+	s.subLock.RLock()
+
 	if s.initialized.IsBroken() && s.RequestType != types.RequestTypeParticipant {
+		s.subLock.RUnlock()
 		return
 	}
 
@@ -347,6 +366,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		} else {
 			s.errors <- onSubscribeErr
 		}
+		s.subLock.RUnlock()
 	}()
 
 	s.active.Inc()
@@ -378,9 +398,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		s.writers[ts.TrackID] = writer
 		s.mu.Unlock()
 
-		if s.initialized.IsBroken() {
-			s.callbacks.OnTrackAdded(ts)
-		} else {
+		if !s.initialized.IsBroken() {
 			s.AudioTrack = ts
 		}
 
@@ -407,9 +425,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		s.writers[ts.TrackID] = writer
 		s.mu.Unlock()
 
-		if s.initialized.IsBroken() {
-			s.callbacks.OnTrackAdded(ts)
-		} else {
+		if !s.initialized.IsBroken() {
 			s.VideoTrack = ts
 		}
 
@@ -418,12 +434,12 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		return
 	}
 
-	if !s.initialized.IsBroken() {
+	if s.initialized.IsBroken() {
+		<-s.callbacks.BuildReady
+		s.callbacks.OnTrackAdded(ts)
+	} else {
 		s.mu.Lock()
 		switch s.RequestType {
-		case types.RequestTypeParticipant:
-			s.filenameReplacements["{publisher_identity}"] = s.Identity
-
 		case types.RequestTypeTrackComposite:
 			if s.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
 				s.Identity = rp.Identity()
@@ -482,19 +498,25 @@ func (s *SDKSource) createWriter(
 }
 
 func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-	if rp.Identity() != s.Identity {
+	if rp.Identity() != s.Identity || s.RequestType != types.RequestTypeParticipant {
 		return
 	}
 
-	switch pub.Source() {
-	case livekit.TrackSource_CAMERA, livekit.TrackSource_MICROPHONE:
+	if shouldSubscribe(pub) {
 		if err := s.subscribe(pub); err != nil {
 			logger.Errorw("failed to subscribe to track", err, "trackID", pub.SID())
 		}
+	} else {
+		logger.Infow("ignoring participant track", "reason", fmt.Sprintf("source %s", pub.Source()))
+	}
+}
+
+func shouldSubscribe(pub lksdk.TrackPublication) bool {
+	switch pub.Source() {
+	case livekit.TrackSource_CAMERA, livekit.TrackSource_MICROPHONE:
+		return true
 	default:
-		logger.Infow("ignoring participant track",
-			"reason", fmt.Sprintf("source %s", pub.Source()))
-		return
+		return false
 	}
 }
 

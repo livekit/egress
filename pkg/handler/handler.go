@@ -116,6 +116,7 @@ func (h *Handler) Run() error {
 		select {
 		case <-kill:
 			// kill signal received
+			h.conf.Info.Details = "service terminated by deployment"
 			h.controller.SendEOS(ctx)
 
 		case res := <-result:
