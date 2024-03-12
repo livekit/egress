@@ -19,8 +19,8 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/livekit/livekit-server v1.5.1-0.20231026153736-8b16db227070
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.11.1-0.20240308170839-fae28895efe6
-	github.com/livekit/psrpc v0.5.3-0.20240228172457-3724cb4adbc4
+	github.com/livekit/protocol v1.11.1-0.20240312091338-0047aaf88487
+	github.com/livekit/psrpc v0.5.3-0.20240312095704-807068643942
 	github.com/livekit/server-sdk-go/v2 v2.0.1
 	github.com/pion/rtp v1.8.3
 	github.com/pion/webrtc/v3 v3.2.28
@@ -56,8 +56,9 @@ require (
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/elliotchance/orderedmap/v2 v2.2.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gammazero/deque v0.2.1 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.2 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
@@ -98,7 +99,7 @@ require (
 	github.com/pion/turn/v2 v2.1.4 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
-	github.com/puzpuzpuz/xsync v1.5.2 // indirect
+	github.com/puzpuzpuz/xsync/v3 v3.1.0 // indirect
 	github.com/redis/go-redis/v9 v9.5.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
