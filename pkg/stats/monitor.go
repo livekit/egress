@@ -28,7 +28,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/hwstats"
 )
 
 type Monitor struct {
@@ -37,7 +37,7 @@ type Monitor struct {
 	promCPULoad  prometheus.Gauge
 	requestGauge *prometheus.GaugeVec
 
-	cpuStats *utils.CPUStats
+	cpuStats *hwstats.CPUStats
 	requests atomic.Int32
 
 	mu              sync.Mutex
@@ -82,7 +82,7 @@ func (m *Monitor) Start(
 ) error {
 	m.killProcess = killProcess
 
-	procStats, err := utils.NewProcCPUStats(m.updateEgressStats)
+	procStats, err := hwstats.NewProcCPUStats(m.updateEgressStats)
 	if err != nil {
 		return err
 	}
