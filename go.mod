@@ -1,8 +1,6 @@
 module github.com/livekit/egress
 
-go 1.21
-
-toolchain go1.21.6
+go 1.22
 
 require (
 	cloud.google.com/go/storage v1.36.0
@@ -19,7 +17,7 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/livekit/livekit-server v1.5.1-0.20231026153736-8b16db227070
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.11.1-0.20240311233654-34e705a573b5
+	github.com/livekit/protocol v1.12.0
 	github.com/livekit/psrpc v0.5.3-0.20240312110212-61ab09477c30
 	github.com/livekit/server-sdk-go/v2 v2.0.1
 	github.com/pion/rtp v1.8.3
@@ -35,7 +33,7 @@ require (
 	golang.org/x/exp v0.0.0-20240222234643-814bf88cf225
 	google.golang.org/api v0.162.0
 	google.golang.org/grpc v1.62.0
-	google.golang.org/protobuf v1.32.0
+	google.golang.org/protobuf v1.33.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
