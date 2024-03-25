@@ -245,7 +245,7 @@ func (r *Runner) sendRequest(t *testing.T, req *rpc.StartEgressRequest) *livekit
 func (r *Runner) checkUpdate(t *testing.T, egressID string, status livekit.EgressStatus) *livekit.EgressInfo {
 	info := r.getUpdate(t, egressID)
 
-	require.Equal(t, status.String(), info.Status.String())
+	require.Equal(t, status.String(), info.Status.String(), info.Error)
 	require.Equal(t, info.Status == livekit.EgressStatus_EGRESS_FAILED, info.Error != "")
 
 	return info

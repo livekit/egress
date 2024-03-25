@@ -172,11 +172,11 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	}
 	p.VideoConfig = VideoConfig{
 		VideoProfile: types.ProfileMain,
-		Width:        1920,
-		Height:       1080,
+		Width:        1280,
+		Height:       720,
 		Depth:        24,
 		Framerate:    30,
-		VideoBitrate: 4500,
+		VideoBitrate: 3000,
 	}
 
 	connectionInfoRequired := true
