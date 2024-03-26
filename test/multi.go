@@ -31,7 +31,7 @@ import (
 func (r *Runner) runMultipleTest(
 	t *testing.T,
 	req *rpc.StartEgressRequest,
-	file, stream, segments bool,
+	file, stream, segments, images bool,
 	filenameSuffix livekit.SegmentedFileSuffix,
 ) {
 	egressID := r.startEgress(t, req)
@@ -64,5 +64,8 @@ func (r *Runner) runMultipleTest(
 	}
 	if segments {
 		r.verifySegments(t, p, filenameSuffix, res, false)
+	}
+	if images {
+		r.verifyImages(t, p, 0, res)
 	}
 }

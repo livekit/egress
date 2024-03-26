@@ -74,6 +74,9 @@ func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *confi
 			return queue.GetStaticPad("sink")
 		}
 	})
+	b.SetShouldLink(func(srcBin string) bool {
+		return srcBin != "audio"
+	})
 
 	videoRate, err := gst.NewElement("videorate")
 	if err != nil {

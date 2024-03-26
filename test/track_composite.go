@@ -315,7 +315,7 @@ func (r *Runner) testTrackCompositeMulti(t *testing.T) {
 				},
 			}
 
-			r.runMultipleTest(t, req, false, true, true, livekit.SegmentedFileSuffix_INDEX)
+			r.runMultipleTest(t, req, false, true, true, false, livekit.SegmentedFileSuffix_INDEX)
 		},
 	)
 }

@@ -319,13 +319,16 @@ func (r *Runner) testRoomCompositeMulti(t *testing.T) {
 						FileType: livekit.EncodedFileType_MP4,
 						Filepath: r.getFilePath("rc_multiple_{time}"),
 					}},
-					StreamOutputs: []*livekit.StreamOutput{{
-						Protocol: livekit.StreamProtocol_RTMP,
+					ImageOutputs: []*livekit.ImageOutput{{
+						CaptureInterval: 10,
+						Width:           1280,
+						Height:          720,
+						FilenamePrefix:  r.getFilePath("rc_image"),
 					}},
 				},
 			},
 		}
 
-		r.runMultipleTest(t, req, true, true, false, livekit.SegmentedFileSuffix_TIMESTAMP)
+		r.runMultipleTest(t, req, true, false, false, true, livekit.SegmentedFileSuffix_TIMESTAMP)
 	})
 }
