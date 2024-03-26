@@ -158,6 +158,6 @@ func (r *Runner) testWebMulti(t *testing.T) {
 			},
 		}
 
-		r.runMultipleTest(t, req, true, false, true, livekit.SegmentedFileSuffix_INDEX)
+		r.runMultipleTest(t, req, true, false, true, false, livekit.SegmentedFileSuffix_INDEX)
 	})
 }

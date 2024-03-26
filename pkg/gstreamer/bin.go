@@ -37,6 +37,7 @@ type Bin struct {
 	latency  uint64
 
 	linkFunc   func() error
+	shouldLink func(string) bool
 	eosFunc    func() bool
 	getSrcPad  func(string) *gst.Pad
 	getSinkPad func(string) *gst.Pad
@@ -317,6 +318,13 @@ func (b *Bin) SetLinkFunc(f func() error) {
 	b.linkFunc = f
 }
 
+func (b *Bin) SetShouldLink(f func(string) bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.shouldLink = f
+}
+
 // Set a custom linking function which returns a pad for the named src bin
 func (b *Bin) SetGetSrcPad(f func(srcName string) *gst.Pad) {
 	b.mu.Lock()
@@ -483,6 +491,10 @@ func linkPeersLocked(src, sink *Bin) error {
 func (b *Bin) queueLinkPeersLocked(src, sink *Bin) error {
 	srcName := src.bin.GetName()
 	sinkName := sink.bin.GetName()
+
+	if (src.shouldLink != nil && !src.shouldLink(sinkName)) || (sink.shouldLink != nil && !sink.shouldLink(srcName)) {
+		return nil
+	}
 
 	queueName := fmt.Sprintf("%s_%s_queue", srcName, sinkName)
 	queue, err := BuildQueue(queueName, b.latency, true)
