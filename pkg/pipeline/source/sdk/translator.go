@@ -60,7 +60,7 @@ func (t *VP8Translator) Translate(pkt *rtp.Packet) {
 		return
 	}
 
-	ep := &buffer.ExtPacket{
+	extPkt := &buffer.ExtPacket{
 		Packet:   pkt,
 		Arrival:  time.Now(),
 		Payload:  vp8Packet,
@@ -73,25 +73,17 @@ func (t *VP8Translator) Translate(pkt *rtp.Packet) {
 
 	if !t.firstPktPushed {
 		t.firstPktPushed = true
-		t.vp8Munger.SetLast(ep)
+		t.vp8Munger.SetLast(extPkt)
 	} else {
-		tpVP8, err := t.vp8Munger.UpdateAndGet(ep, false, pkt.SequenceNumber != t.lastSN+1, ep.Temporal)
+		payload := make([]byte, 1460)
+		incomingHeaderSize, outgoingHeaderSize, err := t.vp8Munger.UpdateAndGet(extPkt, false, pkt.SequenceNumber != t.lastSN+1, extPkt.Temporal, payload)
 		if err != nil {
 			t.logger.Warnw("could not update VP8 packet", err)
 			return
 		}
-		pkt.Payload = translateVP8Packet(ep.Packet, &vp8Packet, tpVP8, &pkt.Payload)
+		copy(payload[outgoingHeaderSize:], extPkt.Packet.Payload[incomingHeaderSize:])
+		pkt.Payload = payload[:outgoingHeaderSize+len(extPkt.Packet.Payload)-incomingHeaderSize]
 	}
-}
-
-func translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 []byte, outbuf *[]byte) []byte {
-	buf := (*outbuf)[:len(pkt.Payload)+len(translatedVP8)-incomingVP8.HeaderSize]
-	srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
-	dstPayload := buf[len(translatedVP8):]
-	copy(dstPayload, srcPayload)
-
-	copy(buf[:len(translatedVP8)], translatedVP8)
-	return buf
 }
 
 // Null
