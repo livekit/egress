@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/logger"
@@ -218,33 +219,39 @@ func (b *Bin) probeRemoveSource(src *Bin) {
 		return
 	}
 
+	var removed atomic.Bool
+	srcPad := srcGhostPad.GetTarget()
+	srcPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+		if removed.Load() {
+			return gst.PadProbeRemove
+		}
+		return gst.PadProbeDrop
+	})
 	sinkPad := sinkGhostPad.GetTarget()
-	sinkPad.AddProbe(gst.PadProbeTypeBlockUpstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-		// drop all upstream events
+	sinkPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+		if removed.Load() {
+			return gst.PadProbeRemove
+		}
 		return gst.PadProbeDrop
 	})
 
-	srcGhostPad.AddProbe(gst.PadProbeTypeIdle, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+	if _, err := glib.IdleAdd(func() bool {
 		b.elements[0].ReleaseRequestPad(sinkPad)
-
 		srcGhostPad.Unlink(sinkGhostPad.Pad)
 		b.bin.RemovePad(sinkGhostPad.Pad)
-
-		if _, err := glib.IdleAdd(func() bool {
-			if err := b.pipeline.Remove(src.bin.Element); err != nil {
-				logger.Warnw("failed to remove bin", err, "bin", src.bin.GetName())
-				return false
-			}
-			if err := src.bin.SetState(gst.StateNull); err != nil {
-				logger.Warnw("failed to change bin state", err, "bin", src.bin.GetName())
-			}
+		removed.Store(true)
+		if err := b.pipeline.Remove(src.bin.Element); err != nil {
+			logger.Warnw("failed to remove bin", err, "bin", src.bin.GetName())
 			return false
-		}); err != nil {
-			logger.Errorw("failed to remove src bin", err, "bin", src.bin.GetName())
 		}
-
-		return gst.PadProbeRemove
-	})
+		if err := src.bin.SetState(gst.StateNull); err != nil {
+			logger.Warnw("failed to change bin state", err, "bin", src.bin.GetName())
+			return false
+		}
+		return false
+	}); err != nil {
+		logger.Errorw("failed to remove bin", err, "bin", src.bin.GetName())
+	}
 }
 
 func (b *Bin) probeRemoveSink(sink *Bin) {
