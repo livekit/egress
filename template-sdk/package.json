@@ -17,6 +17,6 @@
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
-    "livekit-client": "^1.7.0 || ^2.0.0"
+    "livekit-client": "^1.15.13 || ^2.0.10"
   }
 }
