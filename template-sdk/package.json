@@ -12,7 +12,7 @@
     "build": "tsc"
   },
   "devDependencies": {
-    "livekit-client": "^1.7.0 || ^2.0.0",
+    "livekit-client": "^1.15.13 || ^2.0.10",
     "prettier": "^2.8.4",
     "typescript": "^5.0.0"
   },
