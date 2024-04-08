@@ -71,8 +71,8 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
 
       // start recording when there's already a track published
       let hasTrack = false;
-      for (const p of Array.from(room.participants.values())) {
-        if (p.tracks.size > 0) {
+      for (const p of Array.from(room.remoteParticipants.values())) {
+        if (p.trackPublications.size > 0) {
           hasTrack = true;
           break;
         }

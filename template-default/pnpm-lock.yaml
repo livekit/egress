@@ -9,20 +9,20 @@ dependencies:
     specifier: ^7.21.0
     version: 7.23.2
   '@livekit/components-core':
-    specifier: ^0.8.0
-    version: 0.8.0(livekit-client@1.14.4)(tslib@2.6.2)
+    specifier: ^0.9.3
+    version: 0.9.3(@livekit/protocol@1.12.0)(livekit-client@2.0.10)(tslib@2.6.2)
   '@livekit/components-react':
-    specifier: ^1.4.0
-    version: 1.4.0(livekit-client@1.14.4)(react-dom@18.2.0)(react@18.2.0)(tslib@2.6.2)
+    specifier: ^2.0.6
+    version: 2.0.6(@livekit/protocol@1.12.0)(livekit-client@2.0.10)(react-dom@18.2.0)(react@18.2.0)(tslib@2.6.2)
   '@livekit/components-styles':
-    specifier: ^1.0.7
-    version: 1.0.7
+    specifier: ^1.0.11
+    version: 1.0.11
   '@livekit/egress-sdk':
-    specifier: ^0.1.2
-    version: 0.1.2(livekit-client@1.14.4)
+    specifier: ^0.2.0
+    version: 0.2.0(livekit-client@2.0.10)
   livekit-client:
-    specifier: ^1.14.4
-    version: 1.14.4
+    specifier: ^2.0.10
+    version: 2.0.10
   react:
     specifier: '>=18'
     version: 18.2.0
@@ -1543,8 +1543,8 @@ packages:
     resolution: {integrity: sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==}
     dev: false
 
-  /@bufbuild/protobuf@1.4.2:
-    resolution: {integrity: sha512-JyEH8Z+OD5Sc2opSg86qMHn1EM1Sa+zj/Tc0ovxdwk56ByVNONJSabuCUbLQp+eKN3rWNfrho0X+3SEqEPXIow==}
+  /@bufbuild/protobuf@1.8.0:
+    resolution: {integrity: sha512-qR9FwI8QKIveDnUYutvfzbC21UZJJryYrLuZGjeZ/VGz+vXelUkK+xgkOHsvPEdYEdxtgUUq4313N8QtOehJ1Q==}
     dev: false
 
   /@csstools/normalize.css@12.0.0:
@@ -1747,15 +1747,19 @@ packages:
       '@floating-ui/utils': 0.1.6
     dev: false
 
-  /@floating-ui/dom@1.5.3:
-    resolution: {integrity: sha512-ClAbQnEqJAKCJOEbbLo5IUlZHkNszqhuxS4fHAVxRPXPya6Ysf2G8KypnYcOTpx6I8xcgF9bbHb6g/2KpbV8qA==}
+  /@floating-ui/dom@1.6.3:
+    resolution: {integrity: sha512-RnDthu3mzPlQ31Ss/BTwQ1zjzIhr3lk1gZB1OC56h/1vEtaXkESrOqL5fQVMfXpwGtRwX+YsZBdyHtJMQnkArw==}
     dependencies:
       '@floating-ui/core': 1.5.0
-      '@floating-ui/utils': 0.1.6
+      '@floating-ui/utils': 0.2.1
     dev: false
 
   /@floating-ui/utils@0.1.6:
     resolution: {integrity: sha512-OfX7E2oUDYxtBvsuS4e/jSn4Q9Qb6DzgeYtsAdkPZ47znpoNsMgZw0+tVijiv3uGNR6dgNlty6r9rzIzHjtd/A==}
+    dev: false
+
+  /@floating-ui/utils@0.2.1:
+    resolution: {integrity: sha512-9TANp6GPoMtYzQdt54kfAyMmz1+osLlXdg2ENroU7zzrtflTLrrC/lgrIfaSe+Wu0b89GKccT7vxXA0MoAIO+Q==}
     dev: false
 
   /@humanwhocodes/config-array@0.11.13:
@@ -2093,51 +2097,67 @@ packages:
     resolution: {integrity: sha512-Hcv+nVC0kZnQ3tD9GVu5xSMR4VVYOteQIr/hwFPVEvPdlXqgGEuRjiheChHgdM+JyqdgNcmzZOX/tnl0JOiI7A==}
     dev: false
 
-  /@livekit/components-core@0.8.0(livekit-client@1.14.4)(tslib@2.6.2):
-    resolution: {integrity: sha512-nfJO5BBKR1hvkImsErxl7EwSJMXcZ0xSpHT42sevUeL5VKVYUj5YJFuhOs/xUMx06kBSDNMGHNsjRvbYgLFv0w==}
-    engines: {node: '>=14'}
+  /@livekit/components-core@0.9.3(@livekit/protocol@1.12.0)(livekit-client@2.0.10)(tslib@2.6.2):
+    resolution: {integrity: sha512-RUhKw/eg2frnOHq6Xurfg4HqawmdpC/o8Dkp+J6PgnieA6mSQOOez7mUdPNqsAybnLujjJvVJ735sZJRqTb1Sg==}
+    engines: {node: '>=18'}
     peerDependencies:
-      livekit-client: ^1.12.0
+      '@livekit/protocol': ^1.12.0
+      livekit-client: ^2.0.10
       tslib: ^2.6.2
     dependencies:
-      '@floating-ui/dom': 1.5.3
+      '@floating-ui/dom': 1.6.3
+      '@livekit/protocol': 1.12.0
       email-regex: 5.0.0
-      livekit-client: 1.14.4
-      loglevel: 1.8.1
+      livekit-client: 2.0.10
+      loglevel: 1.9.1
       rxjs: 7.8.1
       tslib: 2.6.2
     dev: false
 
-  /@livekit/components-react@1.4.0(livekit-client@1.14.4)(react-dom@18.2.0)(react@18.2.0)(tslib@2.6.2):
-    resolution: {integrity: sha512-hcJWM/E9rqa1KH76nLVlbL6twM5W/xUwobSOGwklCxih4D575qd9XWB3hlOHqHL0h1FIvzuhOJgyJ8NXoRpucA==}
-    engines: {node: '>=14'}
+  /@livekit/components-react@2.0.6(@livekit/protocol@1.12.0)(livekit-client@2.0.10)(react-dom@18.2.0)(react@18.2.0)(tslib@2.6.2):
+    resolution: {integrity: sha512-L0iaIPasPJLftI6FBcWcGicmGpw5LKKFvMV6GSyuv0q8oYrmUYoLLQdGmw7eW4q+7bQFAcFHeD9BzMXdprzCgw==}
+    engines: {node: '>=18'}
     peerDependencies:
-      livekit-client: ^1.12.0
+      '@livekit/protocol': ^1.12.0
+      livekit-client: ^2.0.10
       react: '>=18'
       react-dom: '>=18'
       tslib: ^2.6.2
     dependencies:
-      '@livekit/components-core': 0.8.0(livekit-client@1.14.4)(tslib@2.6.2)
+      '@livekit/components-core': 0.9.3(@livekit/protocol@1.12.0)(livekit-client@2.0.10)(tslib@2.6.2)
+      '@livekit/protocol': 1.12.0
       '@react-hook/latest': 1.0.3(react@18.2.0)
-      clsx: 2.0.0
-      livekit-client: 1.14.4
+      clsx: 2.1.0
+      livekit-client: 2.0.10
       react: 18.2.0
       react-dom: 18.2.0(react@18.2.0)
       tslib: 2.6.2
-      usehooks-ts: 2.9.1(react-dom@18.2.0)(react@18.2.0)
+      usehooks-ts: 2.16.0(react@18.2.0)
     dev: false
 
-  /@livekit/components-styles@1.0.7:
-    resolution: {integrity: sha512-toGyh1tx9j/pmtN6NtF0mEm/fvSJm0hv5R5pfnjALFle6PksNesGHmpuQ8zHgYxjx6AFuFGHJPJ4j1QAkCcrtw==}
-    engines: {node: '>=14'}
+  /@livekit/components-styles@1.0.11:
+    resolution: {integrity: sha512-zRvy87VPvpSW8IjdujYaHRR5EQBPIBno5+A/WfUMWq7DjKlIR9QTQAh3wjdNfWqaV6SkB1KEAC/QxADUZb4j9g==}
+    engines: {node: '>=18'}
     dev: false
 
-  /@livekit/egress-sdk@0.1.2(livekit-client@1.14.4):
-    resolution: {integrity: sha512-q6rNxBIskR8L5Xbn9FGH5SXBBlFxgQZXIsAOgoRtjo29REHrqbRv8lylfygELx9HFTEbc5egdLpTxTs8WPENJg==}
+  /@livekit/egress-sdk@0.2.0(livekit-client@2.0.10):
+    resolution: {integrity: sha512-UVWAIEf8PSWytBorfOw4nbVl/0HoOuVOPr/XS5kQhcrM4TaeG6Sl0KXIKQGvU4xbaBW0WStyvGOBFSzM94OD7g==}
     peerDependencies:
-      livekit-client: ^1.7.0
+      livekit-client: ^1.15.13 || ^2.0.10
     dependencies:
-      livekit-client: 1.14.4
+      livekit-client: 2.0.10
+    dev: false
+
+  /@livekit/protocol@1.10.4:
+    resolution: {integrity: sha512-7Occ6l5VqjsKsUjpLeVJXJkip4ce22iG9QR/haOkrDXYwGSY+TwCA4ubbJ81aQBt2z0kHVZuaQWdzJSDLI+Kag==}
+    dependencies:
+      '@bufbuild/protobuf': 1.8.0
+    dev: false
+
+  /@livekit/protocol@1.12.0:
+    resolution: {integrity: sha512-AMUWxna4AO/biPaKiu45JYYVHi7sc+sK6pkeNNpqkzL85+eeHkNhkFfENn9YbQKQsVWABkOmcL8p4ZbUjxZkeQ==}
+    dependencies:
+      '@bufbuild/protobuf': 1.8.0
     dev: false
 
   /@nicolo-ribaudo/eslint-scope-5-internals@5.1.1-v1:
@@ -3817,8 +3837,8 @@ packages:
       wrap-ansi: 7.0.0
     dev: false
 
-  /clsx@2.0.0:
-    resolution: {integrity: sha512-rQ1+kcj+ttHG0MKVGBUXwayCCF1oh39BF5COIpRzuCEv8Mwjv0XucrI2ExNTOn9IlLifGClWQcU9BrZORvtw6Q==}
+  /clsx@2.1.0:
+    resolution: {integrity: sha512-m3iNNWpd9rl3jvvcBnu70ylMdrXt8Vlq4HYadnU5fwcOtvkSQWPmj7amUcDT2qYI7risszBjI5AUIUox9D16pg==}
     engines: {node: '>=6'}
     dev: false
 
@@ -7101,14 +7121,15 @@ packages:
     resolution: {integrity: sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==}
     dev: false
 
-  /livekit-client@1.14.4:
-    resolution: {integrity: sha512-sXNH+qhqkmXeCVsw3hcEbUsh9QfguBIGgM3glM0v0+YW4C2LdeGWD4pQBLR7USbkwbbVMEHDmqr/iY6XvEIoeQ==}
+  /livekit-client@2.0.10:
+    resolution: {integrity: sha512-V+EyTEd3kM1Vl9/TsE3nc7PEnJI2t21ZV0/nkqhGThszym1SJzmc61hKjmCJBnR199pskUxSjrwzMl9HrPQ85A==}
     dependencies:
-      '@bufbuild/protobuf': 1.4.2
+      '@livekit/protocol': 1.10.4
       events: 3.3.0
       loglevel: 1.8.1
       sdp-transform: 2.14.1
       ts-debounce: 4.0.0
+      tslib: 2.6.2
       typed-emitter: 2.1.0
       webrtc-adapter: 8.2.3
     dev: false
@@ -7178,6 +7199,11 @@ packages:
 
   /loglevel@1.8.1:
     resolution: {integrity: sha512-tCRIJM51SHjAayKwC+QAg8hT8vg6z7GSgLJKGvzuPb1Wc+hLzqtuVLxp6/HzSPOozuK+8ErAhy7U/sVzw8Dgfg==}
+    engines: {node: '>= 0.6.0'}
+    dev: false
+
+  /loglevel@1.9.1:
+    resolution: {integrity: sha512-hP3I3kCrDIMuRwAwHltphhDM1r8i55H33GgqjXbrisuJhF4kRhW1dNuxsRklp4bXl8DSdLaNLuiL4A/LWRfxvg==}
     engines: {node: '>= 0.6.0'}
     dev: false
 
@@ -10188,15 +10214,14 @@ packages:
       requires-port: 1.0.0
     dev: false
 
-  /usehooks-ts@2.9.1(react-dom@18.2.0)(react@18.2.0):
-    resolution: {integrity: sha512-2FAuSIGHlY+apM9FVlj8/oNhd+1y+Uwv5QNkMQz1oSfdHk4PXo1qoCw9I5M7j0vpH8CSWFJwXbVPeYDjLCx9PA==}
-    engines: {node: '>=16.15.0', npm: '>=8'}
+  /usehooks-ts@2.16.0(react@18.2.0):
+    resolution: {integrity: sha512-bez95WqYujxp6hFdM/CpRDiVPirZPxlMzOH2QB8yopoKQMXpscyZoxOjpEdaxvV+CAWUDSM62cWnqHE0E/MZ7w==}
+    engines: {node: '>=16.15.0'}
     peerDependencies:
-      react: ^16.8.0  || ^17.0.0 || ^18.0.0
-      react-dom: ^16.8.0  || ^17.0.0 || ^18.0.0
+      react: ^16.8.0  || ^17 || ^18
     dependencies:
+      lodash.debounce: 4.0.8
       react: 18.2.0
-      react-dom: 18.2.0(react@18.2.0)
     dev: false
 
   /util-deprecate@1.0.2:

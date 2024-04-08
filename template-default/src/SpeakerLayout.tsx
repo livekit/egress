@@ -16,7 +16,7 @@
 
 import { TrackReference } from '@livekit/components-core';
 import {
-  CarouselView,
+  CarouselLayout,
   FocusLayout,
   ParticipantTile,
   VideoTrack,
@@ -33,15 +33,15 @@ const SpeakerLayout = ({ tracks: references }: LayoutProps) => {
     return <></>;
   } else if (remainingTracks.length === 0) {
     const trackRef = mainTrack as TrackReference;
-    return <VideoTrack {...trackRef} />;
+    return <VideoTrack trackRef={trackRef} />;
   }
 
   return (
     <div className="lk-focus-layout">
-      <CarouselView tracks={remainingTracks}>
+      <CarouselLayout tracks={remainingTracks}>
         <ParticipantTile />
-      </CarouselView>
-      <FocusLayout track={mainTrack as TrackReference} />
+      </CarouselLayout>
+      <FocusLayout trackRef={mainTrack as TrackReference} />
     </div>
   );
 };
