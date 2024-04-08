@@ -18,8 +18,8 @@ dependencies:
     specifier: ^1.0.11
     version: 1.0.11
   '@livekit/egress-sdk':
-    specifier: ^0.1.2
-    version: 0.1.2(livekit-client@2.0.10)
+    specifier: ^0.2.0
+    version: 0.2.0(livekit-client@2.0.10)
   livekit-client:
     specifier: ^2.0.10
     version: 2.0.10
@@ -2140,10 +2140,10 @@ packages:
     engines: {node: '>=18'}
     dev: false
 
-  /@livekit/egress-sdk@0.1.2(livekit-client@2.0.10):
-    resolution: {integrity: sha512-q6rNxBIskR8L5Xbn9FGH5SXBBlFxgQZXIsAOgoRtjo29REHrqbRv8lylfygELx9HFTEbc5egdLpTxTs8WPENJg==}
+  /@livekit/egress-sdk@0.2.0(livekit-client@2.0.10):
+    resolution: {integrity: sha512-UVWAIEf8PSWytBorfOw4nbVl/0HoOuVOPr/XS5kQhcrM4TaeG6Sl0KXIKQGvU4xbaBW0WStyvGOBFSzM94OD7g==}
     peerDependencies:
-      livekit-client: ^1.7.0
+      livekit-client: ^1.15.13 || ^2.0.10
     dependencies:
       livekit-client: 2.0.10
     dev: false
