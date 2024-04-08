@@ -16,11 +16,6 @@
 
 import { ParticipantEvent, Room, RoomEvent } from 'livekit-client';
 
-export interface EgressOptions {
-  // automatically finish recording when the last participant leaves
-  autoEnd?: boolean;
-}
-
 const EgressHelper = {
   /**
    * RoomComposite will pass URL to your livekit's server instance.
@@ -62,17 +57,13 @@ const EgressHelper = {
    * Call when successfully connected to the room
    * @param room
    */
-  setRoom(room: Room, opts?: EgressOptions) {
+  setRoom(room: Room) {
     if (currentRoom) {
-      currentRoom.off(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
       currentRoom.off(RoomEvent.Disconnected, EgressHelper.endRecording);
     }
 
     currentRoom = room;
     currentRoom.localParticipant.on(ParticipantEvent.ParticipantMetadataChanged, onMetadataChanged);
-    if (opts?.autoEnd) {
-      currentRoom.on(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
-    }
     currentRoom.on(RoomEvent.Disconnected, EgressHelper.endRecording);
     onMetadataChanged();
   },
@@ -120,14 +111,6 @@ function onMetadataChanged() {
     if (newState && newState.layout !== state.layout) {
       state = newState;
       layoutChangedCallback(state.layout);
-    }
-  }
-}
-
-function onParticipantDisconnected() {
-  if (currentRoom) {
-    if (currentRoom.participants.size === 0) {
-      EgressHelper.endRecording();
     }
   }
 }
