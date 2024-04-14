@@ -13,7 +13,7 @@
   },
   "devDependencies": {
     "livekit-client": "^1.15.13 || ^2.0.10",
-    "prettier": "^2.8.4",
+    "prettier": "^3.0.0",
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
