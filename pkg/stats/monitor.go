@@ -253,33 +253,9 @@ func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 }
 
 func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
-	accept := false
-	total := m.cpuStats.NumCPU()
+	total, available, pending, used := m.getCPUUsageLocked()
 
-	var available, pending, used float64
-	if m.requests.Load() == 0 {
-		// if no requests, use total
-		available = total
-	} else {
-		for _, ps := range m.pending {
-			if ps.pendingUsage > ps.lastUsage {
-				pending += ps.pendingUsage
-			} else {
-				pending += ps.lastUsage
-			}
-		}
-		for _, ps := range m.procStats {
-			if ps.pendingUsage > ps.lastUsage {
-				used += ps.pendingUsage
-			} else {
-				used += ps.lastUsage
-			}
-		}
-
-		// if already running requests, cap usage at MaxCpuUtilization
-		available = total*m.cpuCostConfig.MaxCpuUtilization - pending - used
-	}
-
+	var accept bool
 	var required float64
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
@@ -314,6 +290,42 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 	)
 
 	return accept
+}
+
+func (m *Monitor) GetAvailableCPU() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_, available, _, _ := m.getCPUUsageLocked()
+	return available
+}
+
+func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) {
+	total = m.cpuStats.NumCPU()
+	if m.requests.Load() == 0 {
+		// if no requests, use total
+		available = total
+		return
+	}
+
+	for _, ps := range m.pending {
+		if ps.pendingUsage > ps.lastUsage {
+			pending += ps.pendingUsage
+		} else {
+			pending += ps.lastUsage
+		}
+	}
+	for _, ps := range m.procStats {
+		if ps.pendingUsage > ps.lastUsage {
+			used += ps.pendingUsage
+		} else {
+			used += ps.lastUsage
+		}
+	}
+
+	// if already running requests, cap usage at MaxCpuUtilization
+	available = total*m.cpuCostConfig.MaxCpuUtilization - pending - used
+	return
 }
 
 func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
