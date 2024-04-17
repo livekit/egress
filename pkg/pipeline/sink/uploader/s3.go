@@ -201,5 +201,10 @@ func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType ty
 		return "", 0, wrap("S3", err)
 	}
 
-	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", *u.bucket, storageFilepath), stat.Size(), nil
+	endpoint := "s3.amazonaws.com"
+	if u.awsConfig.Endpoint != nil {
+		endpoint = *u.awsConfig.Endpoint
+	}
+
+	return fmt.Sprintf("https://%s.%s/%s", *u.bucket, endpoint, storageFilepath), stat.Size(), nil
 }
