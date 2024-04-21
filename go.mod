@@ -5,13 +5,13 @@ go 1.22
 require (
 	cloud.google.com/go/storage v1.36.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
-	github.com/aliyun/aliyun-oss-go-sdk v2.2.7+incompatible
+	github.com/aliyun/aliyun-oss-go-sdk v3.0.2+incompatible
 	github.com/aws/aws-sdk-go v1.44.296
 	github.com/chromedp/cdproto v0.0.0-20230625224106-7fafe342e117
 	github.com/chromedp/chromedp v0.9.1
 	github.com/frostbyte73/core v0.0.10
-	github.com/go-gst/go-glib v0.0.0-20230906175327-b2d34240bcb4
-	github.com/go-gst/go-gst v0.0.0-20231009181223-aa872b0f6c0c
+	github.com/go-gst/go-glib v1.0.1
+	github.com/go-gst/go-gst v1.0.0
 	github.com/go-logr/logr v1.4.1
 	github.com/googleapis/gax-go/v2 v2.12.0
 	github.com/gorilla/websocket v1.5.1
@@ -21,6 +21,7 @@ require (
 	github.com/livekit/psrpc v0.5.3-0.20240312110212-61ab09477c30
 	github.com/livekit/server-sdk-go/v2 v2.0.7-0.20240328175250-f718b7f8c71d
 	github.com/pion/rtp v1.8.3
+	github.com/pion/rtp/v2 v2.0.0
 	github.com/pion/webrtc/v3 v3.2.29
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.0
