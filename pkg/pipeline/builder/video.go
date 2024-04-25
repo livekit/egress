@@ -759,7 +759,7 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	val.SetInstance(uintptr(unsafe.Pointer(pad.Instance())))
+	val.SetInstance(unsafe.Pointer(pad.Instance()))
 	if err = b.selector.SetPropertyValue("active-pad", val); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}

@@ -267,7 +267,6 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 					require.NotZero(t, d)
 					require.Less(t, n/d, float64(p.Framerate)*1.5)
 					require.Greater(t, n/d, float64(sourceFramerate)*0.8)
-
 				}
 				fallthrough
 
