@@ -33,7 +33,10 @@ import (
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-const videoTestSrcName = "video_test_src"
+const (
+	videoTestSrcName   = "video_test_src"
+	maxDuplicationTime = time.Second
+)
 
 type VideoBin struct {
 	bin  *gstreamer.Bin
@@ -211,6 +214,17 @@ func (b *VideoBin) buildWebInput() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
+	videoRate, err := gst.NewElement("videorate")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = videoRate.SetProperty("max-duplication-time", uint64(maxDuplicationTime)); err != nil {
+		return err
+	}
+	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
+		return err
+	}
+
 	caps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -223,7 +237,7 @@ func (b *VideoBin) buildWebInput() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	if err = b.bin.AddElements(xImageSrc, videoQueue, videoConvert, caps); err != nil {
+	if err = b.bin.AddElements(xImageSrc, videoQueue, videoConvert, videoRate, caps); err != nil {
 		return err
 	}
 
@@ -489,7 +503,7 @@ func (b *VideoBin) addSelector() error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = videoRate.SetProperty("max-duplication-time", uint64(time.Second)); err != nil {
+	if err = videoRate.SetProperty("max-duplication-time", uint64(maxDuplicationTime)); err != nil {
 		return err
 	}
 	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
@@ -647,7 +661,7 @@ func addVideoConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = videoRate.SetProperty("max-duplication-time", uint64(time.Second)); err != nil {
+	if err = videoRate.SetProperty("max-duplication-time", uint64(maxDuplicationTime)); err != nil {
 		return err
 	}
 	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
