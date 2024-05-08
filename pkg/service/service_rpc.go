@@ -161,6 +161,7 @@ func (s *Service) AddHandler(egressID string, p *Process) error {
 		}()
 
 	case <-time.After(10 * time.Second):
+		logger.Warnw("no response from handler", nil, "egressID", egressID)
 		_ = p.cmd.Process.Kill()
 		s.processEnded(p, errors.ErrEgressNotFound)
 	}

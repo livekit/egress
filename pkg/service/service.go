@@ -203,9 +203,17 @@ func (s *Service) killProcess(egressID string, maxUsage float64) {
 }
 
 func (s *Service) Close() {
-	for s.GetRequestCount() > 0 {
+	for {
+		s.mu.RLock()
+		isIdle := len(s.activeHandlers) == 0
+		s.mu.RUnlock()
+
+		if isIdle {
+			logger.Infow("closing server")
+			s.psrpcServer.Shutdown()
+			return
+		}
+
 		time.Sleep(time.Second)
 	}
-	logger.Infow("closing server")
-	s.psrpcServer.Shutdown()
 }

@@ -70,7 +70,7 @@ func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 	// Get the metrics from the handler via IPC
 	metricsResponse, err := p.ipcHandlerClient.GetMetrics(context.Background(), &ipc.MetricsRequest{})
 	if err != nil {
-		logger.Warnw("failed to obtain metrics from handler", err, "egress_id", p.req.EgressId)
+		logger.Warnw("failed to obtain metrics from handler", err, "egressID", p.req.EgressId)
 		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
 	}
 
