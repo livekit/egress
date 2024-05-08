@@ -203,6 +203,14 @@ func (s *Service) killProcess(egressID string, maxUsage float64) {
 }
 
 func (s *Service) Close() {
+	s.Monitor.Close()
+
+	// activeHandlers might be empty if a request was just accepted
+	for s.GetRequestCount() > 0 {
+		time.Sleep(time.Second)
+	}
+
+	// wait for final handler(s) to finish
 	for {
 		s.mu.RLock()
 		isIdle := len(s.activeHandlers) == 0
