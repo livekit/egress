@@ -45,6 +45,7 @@ type Monitor struct {
 	killProcess     func(string, float64)
 	pending         map[string]*processStats
 	procStats       map[int]*processStats
+	closing         bool
 }
 
 type processStats struct {
@@ -176,6 +177,9 @@ func (m *Monitor) GetCPULoad() float64 {
 }
 
 func (m *Monitor) GetRequestCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	return int(m.requests.Load())
 }
 
@@ -253,6 +257,10 @@ func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 }
 
 func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
+	if m.closing {
+		return false
+	}
+
 	total, available, pending, used := m.getCPUUsageLocked()
 
 	var accept bool
@@ -422,4 +430,11 @@ func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
 
 	delete(m.pending, req.EgressId)
 	m.requests.Dec()
+}
+
+func (m *Monitor) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.closing = true
 }
