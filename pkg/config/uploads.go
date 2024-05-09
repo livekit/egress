@@ -19,18 +19,11 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 )
 
 type UploadConfig interface{}
-
-type uploadRequest interface {
-	GetS3() *livekit.S3Upload
-	GetGcp() *livekit.GCPUpload
-	GetAzure() *livekit.AzureBlobUpload
-	GetAliOSS() *livekit.AliOSSUpload
-}
 
 type EgressS3Upload struct {
 	*livekit.S3Upload
@@ -40,7 +33,7 @@ type EgressS3Upload struct {
 	AwsLogLevel   aws.LogLevelType
 }
 
-func (p *PipelineConfig) getUploadConfig(req uploadRequest) UploadConfig {
+func (p *PipelineConfig) getUploadConfig(req egress.UploadRequest) UploadConfig {
 	if s3 := req.GetS3(); s3 != nil {
 		s3Conf := &EgressS3Upload{
 			S3Upload:      s3,
@@ -159,29 +152,4 @@ func (c StorageConfig) ToUploadConfig() UploadConfig {
 		}
 	}
 	return nil
-}
-
-func redactUpload(req uploadRequest) {
-	if s3 := req.GetS3(); s3 != nil {
-		s3.AccessKey = utils.Redact(s3.AccessKey, "{access_key}")
-		s3.Secret = utils.Redact(s3.Secret, "{secret}")
-		return
-	}
-
-	if gcp := req.GetGcp(); gcp != nil {
-		gcp.Credentials = utils.Redact(gcp.Credentials, "{credentials}")
-		return
-	}
-
-	if azure := req.GetAzure(); azure != nil {
-		azure.AccountName = utils.Redact(azure.AccountName, "{account_name}")
-		azure.AccountKey = utils.Redact(azure.AccountKey, "{account_key}")
-		return
-	}
-
-	if aliOSS := req.GetAliOSS(); aliOSS != nil {
-		aliOSS.AccessKey = utils.Redact(aliOSS.AccessKey, "{access_key}")
-		aliOSS.Secret = utils.Redact(aliOSS.Secret, "{secret}")
-		return
-	}
 }

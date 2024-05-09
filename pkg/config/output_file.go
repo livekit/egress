@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -66,7 +67,7 @@ func (p *PipelineConfig) getDirectFileConfig(file *livekit.DirectFileOutput) (*F
 type fileRequest interface {
 	GetFilepath() string
 	GetDisableManifest() bool
-	uploadRequest
+	egress.UploadRequest
 }
 
 func (p *PipelineConfig) getFileConfig(outputType types.OutputType, req fileRequest) (*FileConfig, error) {

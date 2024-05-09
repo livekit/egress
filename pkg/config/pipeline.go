@@ -187,7 +187,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_RoomComposite{
 			RoomComposite: clone,
 		}
-		redactEncodedOutputs(clone)
+		egress.RedactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeWeb
 		p.AwaitStartSignal = true
@@ -240,7 +240,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_Web{
 			Web: clone,
 		}
-		redactEncodedOutputs(clone)
+		egress.RedactEncodedOutputs(clone)
 
 		connectionInfoRequired = false
 		p.SourceType = types.SourceTypeWeb
@@ -288,7 +288,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_Participant{
 			Participant: clone,
 		}
-		redactEncodedOutputs(clone)
+		egress.RedactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
 
@@ -324,7 +324,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_TrackComposite{
 			TrackComposite: clone,
 		}
-		redactEncodedOutputs(clone)
+		egress.RedactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
 
@@ -365,9 +365,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_Track{
 			Track: clone,
 		}
-		if f := clone.GetFile(); f != nil {
-			redactUpload(f)
-		}
+		egress.RedactDirectOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
 
