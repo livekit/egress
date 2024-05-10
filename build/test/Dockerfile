@@ -81,9 +81,11 @@ RUN rm -rf /var/lib/apt/lists/*
 
 # install rtsp server
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64v8; else ARCH=amd64; fi && \
-    wget https://github.com/aler9/rtsp-simple-server/releases/download/v0.17.6/rtsp-simple-server_v0.17.6_linux_${ARCH}.tar.gz && \
-    tar -zxvf rtsp-simple-server_v0.17.6_linux_${ARCH}.tar.gz && \
-    rm rtsp-simple-server_v0.17.6_linux_${ARCH}.tar.gz
+    wget https://github.com/bluenviron/mediamtx/releases/download/v1.8.1/mediamtx_v1.8.1_linux_${ARCH}.tar.gz && \
+    tar -zxvf mediamtx_v1.8.1_linux_${ARCH}.tar.gz && \
+    rm mediamtx_v1.8.1_linux_${ARCH}.tar.gz && \
+    sed -i 's_record: no_record: yes_g' mediamtx.yml && \
+    sed -i 's_recordPath: ./recordings/%path/_recordPath: /out/output/stream-_g' mediamtx.yml
 
 # create egress user
 RUN useradd -ms /bin/bash -g root -G sudo,pulse,pulse-access egress
