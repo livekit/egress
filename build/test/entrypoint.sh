@@ -20,7 +20,7 @@ rm -rf /var/run/pulse /var/lib/pulse /home/egress/.config/pulse /home/egress/.ca
 pulseaudio -D --verbose --exit-idle-time=-1 --disallow-exit
 
 # Run RTSP server
-./rtsp-simple-server > /dev/null 2>&1 &
+./mediamtx > /dev/null 2>&1 &
 
 # Run tests
 if [[ -z ${GITHUB_WORKFLOW+x} ]]; then
