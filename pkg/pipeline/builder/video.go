@@ -582,6 +582,28 @@ func (b *VideoBin) addEncoder() error {
 			return err
 		}
 
+		if b.conf.GetStreamConfig() != nil && b.conf.Debug.LogKeyFrames {
+			var firstKeyFrame *time.Duration
+			var keyframes []time.Duration
+			x264Enc.GetStaticPad("src").AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+				buffer := info.GetBuffer()
+				if !buffer.HasFlags(gst.BufferFlagDeltaUnit) {
+					clockTime := buffer.PresentationTimestamp().AsDuration()
+					if firstKeyFrame == nil {
+						firstKeyFrame = clockTime
+					}
+					pts := *clockTime - *firstKeyFrame
+					keyframes = append(keyframes, pts)
+					logger.Debugw("keyframe generated", "pts", pts)
+					if pts > time.Second*15 {
+						return gst.PadProbeRemove
+					}
+				}
+
+				return gst.PadProbeOK
+			})
+		}
+
 		return nil
 
 	case types.MimeTypeVP9:
