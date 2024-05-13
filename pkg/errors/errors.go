@@ -34,6 +34,7 @@ var (
 	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
 	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Unavailable, "failed to subscribe to track")
 	ErrEgressNotFound             = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
+	ErrNotEnoughCPU               = psrpc.NewErrorf(psrpc.Unavailable, "not enough CPU")
 )
 
 func New(err string) error {
