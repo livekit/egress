@@ -35,7 +35,7 @@ func (h *Handler) UpdateStream(ctx context.Context, req *livekit.UpdateStreamReq
 	if err != nil {
 		return nil, err
 	}
-	return h.controller.Info, nil
+	return (*livekit.EgressInfo)(h.controller.Info), nil
 }
 
 func (h *Handler) StopEgress(ctx context.Context, _ *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
@@ -48,5 +48,5 @@ func (h *Handler) StopEgress(ctx context.Context, _ *livekit.StopEgressRequest) 
 	}
 
 	h.controller.SendEOS(ctx)
-	return h.controller.Info, nil
+	return (*livekit.EgressInfo)(h.controller.Info), nil
 }

@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
@@ -50,7 +51,7 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 		return nil, err
 	}
 
-	_, err = s.ioClient.CreateEgress(ctx, p.Info)
+	_, err = s.ioClient.CreateEgress(ctx, (*livekit.EgressInfo)(p.Info))
 	if err != nil {
 		s.EgressAborted(req)
 		return nil, err
@@ -65,13 +66,13 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 		"request", p.Info.Request,
 	)
 
-	err = s.launchHandler(req, p.Info)
+	err = s.launchHandler(req, (*livekit.EgressInfo)(p.Info))
 	if err != nil {
 		s.EgressAborted(req)
 		return nil, err
 	}
 
-	return p.Info, nil
+	return (*livekit.EgressInfo)(p.Info), nil
 }
 
 func (s *Service) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequest) float32 {
@@ -177,6 +178,7 @@ func (s *Service) processEnded(p *Process, err error) {
 		p.info.Status = livekit.EgressStatus_EGRESS_FAILED
 		if p.info.Error == "" {
 			p.info.Error = "internal error"
+			p.info.ErrorCode = int32(http.StatusInternalServerError)
 		}
 		_, _ = s.ioClient.UpdateEgress(p.ctx, p.info)
 		if p.info.Error == "internal error" {

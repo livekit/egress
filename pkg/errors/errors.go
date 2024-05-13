@@ -27,15 +27,14 @@ var (
 	ErrGhostPadFailed             = psrpc.NewErrorf(psrpc.Internal, "failed to add ghost pad to bin")
 	ErrBinAlreadyAdded            = psrpc.NewErrorf(psrpc.Internal, "bin already added to pipeline")
 	ErrWrongHierarchy             = psrpc.NewErrorf(psrpc.Internal, "pipeline can contain bins or elements, not both")
-	ErrNonStreamingPipeline       = psrpc.NewErrorf(psrpc.InvalidArgument, "UpdateStream called on non-streaming egress")
-	ErrEgressNotFound             = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
-	ErrNoCompatibleCodec          = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")
-	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
-	ErrResourceExhausted          = psrpc.NewErrorf(psrpc.ResourceExhausted, "not enough CPU")
-	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Internal, "failed to subscribe to track")
 	ErrPipelineFrozen             = psrpc.NewErrorf(psrpc.Internal, "pipeline frozen")
 	ErrSinkNotFound               = psrpc.NewErrorf(psrpc.Internal, "sink not found")
-	ErrCPUExhausted               = psrpc.NewErrorf(psrpc.Unavailable, "CPU exhausted")
+	ErrNonStreamingPipeline       = psrpc.NewErrorf(psrpc.InvalidArgument, "UpdateStream called on non-streaming egress")
+	ErrNoCompatibleCodec          = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")
+	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
+	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Unavailable, "failed to subscribe to track")
+	ErrEgressNotFound             = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
+	ErrNotEnoughCPU               = psrpc.NewErrorf(psrpc.Unavailable, "not enough CPU")
 )
 
 func New(err string) error {
@@ -120,6 +119,10 @@ func ErrUploadFailed(location string, err error) error {
 
 func ErrProcessStartFailed(err error) error {
 	return psrpc.NewError(psrpc.Internal, err)
+}
+
+func ErrCPUExhausted(usage float64) error {
+	return psrpc.NewErrorf(psrpc.PermissionDenied, "CPU exhausted: %.2f cores used", usage)
 }
 
 type ErrArray struct {

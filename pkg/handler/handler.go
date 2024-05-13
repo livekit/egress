@@ -18,13 +18,13 @@ import (
 	"context"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/frostbyte73/core"
 	"google.golang.org/grpc"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/protocol/livekit"
@@ -88,12 +88,8 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 	if err != nil {
 		if !errors.IsFatal(err) {
 			// user error, send update
-			now := time.Now().UnixNano()
-			conf.Info.Status = livekit.EgressStatus_EGRESS_FAILED
-			conf.Info.Error = err.Error()
-			conf.Info.UpdatedAt = now
-			conf.Info.EndedAt = now
-			_, _ = h.ioClient.UpdateEgress(context.Background(), conf.Info)
+			conf.Info.SetFailed(err)
+			_, _ = h.ioClient.UpdateEgress(context.Background(), (*livekit.EgressInfo)(conf.Info))
 		}
 		return nil, err
 	}
@@ -106,7 +102,7 @@ func (h *Handler) Run() error {
 	defer span.End()
 
 	// start egress
-	result := make(chan *livekit.EgressInfo, 1)
+	result := make(chan *info.EgressInfo, 1)
 	go func() {
 		result <- h.controller.Run(ctx)
 	}()
@@ -121,7 +117,7 @@ func (h *Handler) Run() error {
 
 		case res := <-result:
 			// recording finished
-			_, _ = h.ioClient.UpdateEgress(ctx, res)
+			_, _ = h.ioClient.UpdateEgress(ctx, (*livekit.EgressInfo)(res))
 
 			m, err := h.GenerateMetrics(ctx)
 			if err == nil {
