@@ -56,3 +56,10 @@ func (e *EgressInfo) SetFailed(err error) {
 		e.ErrorCode = int32(http.StatusInternalServerError)
 	}
 }
+
+func (e *EgressInfo) SetComplete() {
+	now := time.Now().UnixNano()
+	e.Status = livekit.EgressStatus_EGRESS_COMPLETE
+	e.UpdatedAt = now
+	e.EndedAt = now
+}

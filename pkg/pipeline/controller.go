@@ -455,7 +455,7 @@ func (c *Controller) Close() {
 
 	case livekit.EgressStatus_EGRESS_ACTIVE,
 		livekit.EgressStatus_EGRESS_ENDING:
-		c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_COMPLETE)
+		c.Info.SetComplete()
 	}
 
 	for _, si := range c.sinks {
