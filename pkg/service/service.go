@@ -196,6 +196,7 @@ func (s *Service) killProcess(egressID string, maxUsage float64) {
 		now := time.Now().UnixNano()
 		h.info.Status = livekit.EgressStatus_EGRESS_FAILED
 		h.info.Error = errors.ErrCPUExhausted.Error()
+		h.info.ErrorCode = int32(http.StatusServiceUnavailable)
 		h.info.UpdatedAt = now
 		h.info.EndedAt = now
 		h.kill()

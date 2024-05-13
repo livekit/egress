@@ -50,7 +50,7 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 		return nil, err
 	}
 
-	_, err = s.ioClient.CreateEgress(ctx, p.Info)
+	_, err = s.ioClient.CreateEgress(ctx, (*livekit.EgressInfo)(p.Info))
 	if err != nil {
 		s.EgressAborted(req)
 		return nil, err
@@ -65,13 +65,13 @@ func (s *Service) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) 
 		"request", p.Info.Request,
 	)
 
-	err = s.launchHandler(req, p.Info)
+	err = s.launchHandler(req, (*livekit.EgressInfo)(p.Info))
 	if err != nil {
 		s.EgressAborted(req)
 		return nil, err
 	}
 
-	return p.Info, nil
+	return (*livekit.EgressInfo)(p.Info), nil
 }
 
 func (s *Service) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequest) float32 {

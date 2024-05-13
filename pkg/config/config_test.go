@@ -20,6 +20,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 )
@@ -62,7 +63,7 @@ func TestRedactUpload(t *testing.T) {
 	p, err := GetValidatedPipelineConfig(conf, fileReq)
 	require.NoError(t, err)
 
-	require.Equal(t, "******", p.Info.GetRoomComposite().GetFile().GetS3().AccessKey)
+	require.Equal(t, "******", (*livekit.EgressInfo)(p.Info).GetRoomComposite().GetFile().GetS3().AccessKey)
 
 	require.Len(t, p.Outputs, 1)
 	output := p.GetFileConfig()
@@ -111,12 +112,12 @@ func TestRedactStreamKeys(t *testing.T) {
 	p, err := GetValidatedPipelineConfig(conf, streamReq)
 	require.NoError(t, err)
 
-	urls := p.Info.GetRoomComposite().GetStream().GetUrls()
+	urls := (*livekit.EgressInfo)(p.Info).GetRoomComposite().GetStream().GetUrls()
 	require.Len(t, urls, 2)
 	require.Equal(t, redactedUrl1, urls[0])
 	require.Equal(t, redactedUrl2, urls[1])
 
-	streamInfo := p.Info.GetStream()
+	streamInfo := (*livekit.EgressInfo)(p.Info).GetStream()
 	require.Len(t, streamInfo.Info, 2)
 	require.Equal(t, redactedUrl1, streamInfo.Info[0].Url)
 	require.Equal(t, redactedUrl2, streamInfo.Info[1].Url)
@@ -183,7 +184,7 @@ func TestSegmentNaming(t *testing.T) {
 			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedLivePlaylistFilename: "", expectedSegmentPrefix: "conf_test_2/filename",
 		},
 	} {
-		p := &PipelineConfig{Info: &livekit.EgressInfo{EgressId: "egress_ID"}}
+		p := &PipelineConfig{Info: &info.EgressInfo{EgressId: "egress_ID"}}
 		o, err := p.getSegmentConfig(&livekit.SegmentedFileOutput{
 			FilenamePrefix:   test.filenamePrefix,
 			PlaylistName:     test.playlistName,
