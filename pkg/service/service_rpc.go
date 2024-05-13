@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
@@ -177,6 +178,7 @@ func (s *Service) processEnded(p *Process, err error) {
 		p.info.Status = livekit.EgressStatus_EGRESS_FAILED
 		if p.info.Error == "" {
 			p.info.Error = "internal error"
+			p.info.ErrorCode = int32(http.StatusInternalServerError)
 		}
 		_, _ = s.ioClient.UpdateEgress(p.ctx, p.info)
 		if p.info.Error == "internal error" {
