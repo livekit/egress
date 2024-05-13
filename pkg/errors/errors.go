@@ -33,7 +33,6 @@ var (
 	ErrNoCompatibleCodec          = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")
 	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
 	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Unavailable, "failed to subscribe to track")
-	ErrCPUExhausted               = psrpc.NewErrorf(psrpc.Unavailable, "CPU exhausted")
 	ErrEgressNotFound             = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
 )
 
@@ -119,6 +118,10 @@ func ErrUploadFailed(location string, err error) error {
 
 func ErrProcessStartFailed(err error) error {
 	return psrpc.NewError(psrpc.Internal, err)
+}
+
+func ErrCPUExhausted(usage float64) error {
+	return psrpc.NewErrorf(psrpc.PermissionDenied, "CPU exhausted: %.2f cores used", usage)
 }
 
 type ErrArray struct {

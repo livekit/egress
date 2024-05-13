@@ -192,11 +192,13 @@ func (s *Service) killProcess(egressID string, maxUsage float64) {
 	defer s.mu.RUnlock()
 
 	if h, ok := s.activeHandlers[egressID]; ok {
-		logger.Errorw("killing egress", errors.ErrCPUExhausted, "egressID", egressID, "usage", maxUsage)
+		err := errors.ErrCPUExhausted(maxUsage)
+		logger.Errorw("killing egress", err, "egressID", egressID)
+
 		now := time.Now().UnixNano()
 		h.info.Status = livekit.EgressStatus_EGRESS_FAILED
-		h.info.Error = errors.ErrCPUExhausted.Error()
-		h.info.ErrorCode = int32(http.StatusServiceUnavailable)
+		h.info.Error = err.Error()
+		h.info.ErrorCode = int32(http.StatusForbidden)
 		h.info.UpdatedAt = now
 		h.info.EndedAt = now
 		h.kill()
