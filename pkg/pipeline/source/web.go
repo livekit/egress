@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -116,12 +115,9 @@ func (s *WebSource) Close() {
 
 	if s.xvfb != nil {
 		logger.Debugw("closing X display")
-		if err := s.xvfb.Process.Signal(os.Interrupt); err != nil {
-			logger.Errorw("failed to interrupt xvfb", err)
-		} else {
-			_ = s.xvfb.Wait()
-			s.xvfb = nil
-		}
+		_ = s.xvfb.Process.Kill()
+		_ = s.xvfb.Wait()
+		s.xvfb = nil
 	}
 
 	if s.pulseSink != "" {
