@@ -116,17 +116,17 @@ func (s *WebSource) Close() {
 
 	if s.xvfb != nil {
 		logger.Debugw("closing X display")
-		err := s.xvfb.Process.Signal(os.Interrupt)
-		if err != nil {
-			logger.Errorw("failed to kill xvfb", err)
+		if err := s.xvfb.Process.Signal(os.Interrupt); err != nil {
+			logger.Errorw("failed to interrupt xvfb", err)
+		} else {
+			_ = s.xvfb.Wait()
+			s.xvfb = nil
 		}
-		s.xvfb = nil
 	}
 
 	if s.pulseSink != "" {
 		logger.Debugw("unloading pulse module")
-		err := exec.Command("pactl", "unload-module", s.pulseSink).Run()
-		if err != nil {
+		if err := exec.Command("pactl", "unload-module", s.pulseSink).Run(); err != nil {
 			logger.Errorw("failed to unload pulse sink", err)
 		}
 	}

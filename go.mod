@@ -37,6 +37,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+replace github.com/chromedp/chromedp => github.com/livekit/chromedp v0.0.0-20240514210859-ca7d75d3511c
+
 require (
 	cloud.google.com/go v0.112.1 // indirect
 	cloud.google.com/go/auth v0.3.0 // indirect
