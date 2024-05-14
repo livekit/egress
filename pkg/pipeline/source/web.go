@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -116,17 +115,14 @@ func (s *WebSource) Close() {
 
 	if s.xvfb != nil {
 		logger.Debugw("closing X display")
-		err := s.xvfb.Process.Signal(os.Interrupt)
-		if err != nil {
-			logger.Errorw("failed to kill xvfb", err)
-		}
+		_ = s.xvfb.Process.Kill()
+		_ = s.xvfb.Wait()
 		s.xvfb = nil
 	}
 
 	if s.pulseSink != "" {
 		logger.Debugw("unloading pulse module")
-		err := exec.Command("pactl", "unload-module", s.pulseSink).Run()
-		if err != nil {
+		if err := exec.Command("pactl", "unload-module", s.pulseSink).Run(); err != nil {
 			logger.Errorw("failed to unload pulse sink", err)
 		}
 	}
