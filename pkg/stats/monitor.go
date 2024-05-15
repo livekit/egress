@@ -31,21 +31,33 @@ import (
 	"github.com/livekit/protocol/utils/hwstats"
 )
 
+const (
+	cpuHoldDuration      = time.Second * 30
+	defaultKillThreshold = 0.95
+	minKillDuration      = 10
+)
+
+type Service interface {
+	IsDisabled() bool
+	KillProcess(string, float64)
+}
+
 type Monitor struct {
+	nodeID        string
+	clusterID     string
 	cpuCostConfig *config.CPUCostConfig
 
 	promCPULoad  prometheus.Gauge
 	requestGauge *prometheus.GaugeVec
 
+	svc      Service
 	cpuStats *hwstats.CPUStats
 	requests atomic.Int32
 
 	mu              sync.Mutex
 	highCPUDuration int
-	killProcess     func(string, float64)
 	pending         map[string]*processStats
 	procStats       map[int]*processStats
-	closing         bool
 }
 
 type processStats struct {
@@ -60,80 +72,32 @@ type processStats struct {
 	maxCPU     float64
 }
 
-const (
-	cpuHoldDuration      = time.Second * 30
-	defaultKillThreshold = 0.95
-	minKillDuration      = 10
-)
-
-func NewMonitor(conf *config.ServiceConfig) *Monitor {
-	return &Monitor{
+func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
+	m := &Monitor{
+		nodeID:        conf.NodeID,
+		clusterID:     conf.ClusterID,
 		cpuCostConfig: conf.CPUCostConfig,
+		svc:           svc,
 		pending:       make(map[string]*processStats),
 		procStats:     make(map[int]*processStats),
 	}
-}
-
-func (m *Monitor) Start(
-	conf *config.ServiceConfig,
-	isIdle func() float64,
-	canAcceptRequest func() float64,
-	isDisabled func() float64,
-	killProcess func(string, float64),
-) error {
-	m.killProcess = killProcess
 
 	procStats, err := hwstats.NewProcCPUStats(m.updateEgressStats)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	m.cpuStats = procStats
 
-	if err = m.checkCPUConfig(); err != nil {
-		return err
+	if err = m.validateCPUConfig(); err != nil {
+		return nil, err
 	}
 
-	promNodeAvailable := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "available",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
-	}, isIdle)
+	m.initPrometheus()
 
-	promCanAcceptRequest := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "can_accept_request",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
-	}, canAcceptRequest)
-
-	promIsDisabled := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "is_disabled",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
-	}, isDisabled)
-
-	m.promCPULoad = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "node",
-		Name:        "cpu_load",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "node_type": "EGRESS", "cluster_id": conf.ClusterID},
-	})
-
-	m.requestGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "requests",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
-	}, []string{"type"})
-
-	prometheus.MustRegister(promNodeAvailable, promCanAcceptRequest, promIsDisabled, m.promCPULoad, m.requestGauge)
-
-	return nil
+	return m, nil
 }
 
-func (m *Monitor) checkCPUConfig() error {
+func (m *Monitor) validateCPUConfig() error {
 	requirements := []float64{
 		m.cpuCostConfig.RoomCompositeCpuCost,
 		m.cpuCostConfig.AudioRoomCompositeCpuCost,
@@ -172,83 +136,6 @@ func (m *Monitor) checkCPUConfig() error {
 	return nil
 }
 
-func (m *Monitor) GetCPULoad() float64 {
-	return (m.cpuStats.NumCPU() - m.cpuStats.GetCPUIdle()) / m.cpuStats.NumCPU() * 100
-}
-
-func (m *Monitor) GetRequestCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	return int(m.requests.Load())
-}
-
-func (m *Monitor) UpdatePID(egressID string, pid int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	ps := m.pending[egressID]
-	delete(m.pending, egressID)
-
-	if existing := m.procStats[pid]; existing != nil {
-		ps.maxCPU = existing.maxCPU
-		ps.totalCPU = existing.totalCPU
-		ps.cpuCounter = existing.cpuCounter
-	}
-	m.procStats[pid] = ps
-}
-
-func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
-	load := 1 - idle/m.cpuStats.NumCPU()
-	m.promCPULoad.Set(load)
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	maxUsage := 0.0
-	var maxEgress string
-	for pid, cpuUsage := range usage {
-		procStats := m.procStats[pid]
-		if procStats == nil {
-			continue
-		}
-
-		procStats.lastUsage = cpuUsage
-		procStats.totalCPU += cpuUsage
-		procStats.cpuCounter++
-		if cpuUsage > procStats.maxCPU {
-			procStats.maxCPU = cpuUsage
-		}
-
-		if cpuUsage > procStats.allowedUsage && cpuUsage > maxUsage {
-			maxUsage = cpuUsage
-			maxEgress = procStats.egressID
-		}
-	}
-
-	killThreshold := defaultKillThreshold
-	if killThreshold <= m.cpuCostConfig.MaxCpuUtilization {
-		killThreshold = (1 + m.cpuCostConfig.MaxCpuUtilization) / 2
-	}
-
-	if load > killThreshold {
-		logger.Warnw("high cpu usage", nil,
-			"load", load,
-			"requests", m.requests.Load(),
-		)
-
-		if m.requests.Load() > 1 {
-			m.highCPUDuration++
-			if m.highCPUDuration < minKillDuration {
-				return
-			}
-			m.killProcess(maxEgress, maxUsage)
-		}
-	}
-
-	m.highCPUDuration = 0
-}
-
 func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -257,10 +144,6 @@ func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 }
 
 func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
-	if m.closing {
-		return false
-	}
-
 	total, available, pending, used := m.getCPUUsageLocked()
 
 	var accept bool
@@ -298,42 +181,6 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 	)
 
 	return accept
-}
-
-func (m *Monitor) GetAvailableCPU() float64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	_, available, _, _ := m.getCPUUsageLocked()
-	return available
-}
-
-func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) {
-	total = m.cpuStats.NumCPU()
-	if m.requests.Load() == 0 {
-		// if no requests, use total
-		available = total
-		return
-	}
-
-	for _, ps := range m.pending {
-		if ps.pendingUsage > ps.lastUsage {
-			pending += ps.pendingUsage
-		} else {
-			pending += ps.lastUsage
-		}
-	}
-	for _, ps := range m.procStats {
-		if ps.pendingUsage > ps.lastUsage {
-			used += ps.pendingUsage
-		} else {
-			used += ps.lastUsage
-		}
-	}
-
-	// if already running requests, cap usage at MaxCpuUtilization
-	available = total*m.cpuCostConfig.MaxCpuUtilization - pending - used
-	return
 }
 
 func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
@@ -377,6 +224,29 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.pending[req.EgressId] = ps
 
 	return nil
+}
+
+func (m *Monitor) UpdatePID(egressID string, pid int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ps := m.pending[egressID]
+	delete(m.pending, egressID)
+
+	if existing := m.procStats[pid]; existing != nil {
+		ps.maxCPU = existing.maxCPU
+		ps.totalCPU = existing.totalCPU
+		ps.cpuCounter = existing.cpuCounter
+	}
+	m.procStats[pid] = ps
+}
+
+func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.pending, req.EgressId)
+	m.requests.Dec()
 }
 
 func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
@@ -424,17 +294,89 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64) {
 	return 0, 0
 }
 
-func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
+func (m *Monitor) GetAvailableCPU() float64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	delete(m.pending, req.EgressId)
-	m.requests.Dec()
+	_, available, _, _ := m.getCPUUsageLocked()
+	return available
 }
 
-func (m *Monitor) Close() {
+func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) {
+	total = m.cpuStats.NumCPU()
+	if m.requests.Load() == 0 {
+		// if no requests, use total
+		available = total
+		return
+	}
+
+	for _, ps := range m.pending {
+		if ps.pendingUsage > ps.lastUsage {
+			pending += ps.pendingUsage
+		} else {
+			pending += ps.lastUsage
+		}
+	}
+	for _, ps := range m.procStats {
+		if ps.pendingUsage > ps.lastUsage {
+			used += ps.pendingUsage
+		} else {
+			used += ps.lastUsage
+		}
+	}
+
+	// if already running requests, cap usage at MaxCpuUtilization
+	available = total*m.cpuCostConfig.MaxCpuUtilization - pending - used
+	return
+}
+
+func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
+	load := 1 - idle/m.cpuStats.NumCPU()
+	m.promCPULoad.Set(load)
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.closing = true
+	maxUsage := 0.0
+	var maxEgress string
+	for pid, cpuUsage := range usage {
+		procStats := m.procStats[pid]
+		if procStats == nil {
+			continue
+		}
+
+		procStats.lastUsage = cpuUsage
+		procStats.totalCPU += cpuUsage
+		procStats.cpuCounter++
+		if cpuUsage > procStats.maxCPU {
+			procStats.maxCPU = cpuUsage
+		}
+
+		if cpuUsage > procStats.allowedUsage && cpuUsage > maxUsage {
+			maxUsage = cpuUsage
+			maxEgress = procStats.egressID
+		}
+	}
+
+	killThreshold := defaultKillThreshold
+	if killThreshold <= m.cpuCostConfig.MaxCpuUtilization {
+		killThreshold = (1 + m.cpuCostConfig.MaxCpuUtilization) / 2
+	}
+
+	if load > killThreshold {
+		logger.Warnw("high cpu usage", nil,
+			"load", load,
+			"requests", m.requests.Load(),
+		)
+
+		if m.requests.Load() > 1 {
+			m.highCPUDuration++
+			if m.highCPUDuration < minKillDuration {
+				return
+			}
+			m.svc.KillProcess(maxEgress, maxUsage)
+		}
+	}
+
+	m.highCPUDuration = 0
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/info"
+	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
@@ -34,7 +35,6 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
 )
@@ -47,12 +47,12 @@ type Controller struct {
 	*config.PipelineConfig
 
 	// gstreamer
-	src       source.Source
-	p         *gstreamer.Pipeline
-	sinks     map[types.EgressType][]sink.Sink
-	streamBin *builder.StreamBin
-	callbacks *gstreamer.Callbacks
-	ioClient  rpc.IOInfoClient
+	src              source.Source
+	p                *gstreamer.Pipeline
+	sinks            map[types.EgressType][]sink.Sink
+	streamBin        *builder.StreamBin
+	callbacks        *gstreamer.Callbacks
+	ipcServiceClient ipc.EgressServiceClient
 
 	// internal
 	mu         sync.Mutex
@@ -65,7 +65,7 @@ type Controller struct {
 	stopped    core.Fuse
 }
 
-func New(ctx context.Context, conf *config.PipelineConfig, ioClient rpc.IOInfoClient) (*Controller, error) {
+func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.EgressServiceClient) (*Controller, error) {
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
@@ -76,9 +76,9 @@ func New(ctx context.Context, conf *config.PipelineConfig, ioClient rpc.IOInfoCl
 			GstReady:   make(chan struct{}),
 			BuildReady: make(chan struct{}),
 		},
-		ioClient:  ioClient,
-		gstLogger: logger.GetLogger().(logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
-		monitor:   stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
+		ipcServiceClient: ipcServiceClient,
+		gstLogger:        logger.GetLogger().(logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
+		monitor:          stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
 	}
 	c.callbacks.SetOnError(c.OnError)
 
@@ -312,7 +312,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	if sendUpdate {
 		c.Info.UpdatedAt = time.Now().UnixNano()
-		_, _ = c.ioClient.UpdateEgress(ctx, (*livekit.EgressInfo)(c.Info))
+		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
 	}
 
 	return errs.ToError()
@@ -372,7 +372,7 @@ func (c *Controller) removeSink(ctx context.Context, url string, streamErr error
 	// only send updates if the egress will continue, otherwise it's handled by UpdateStream RPC
 	if streamErr != nil {
 		c.Info.UpdatedAt = time.Now().UnixNano()
-		_, _ = c.ioClient.UpdateEgress(ctx, (*livekit.EgressInfo)(c.Info))
+		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
 	}
 
 	return c.streamBin.RemoveStream(url)
@@ -403,7 +403,7 @@ func (c *Controller) SendEOS(ctx context.Context) {
 
 		case livekit.EgressStatus_EGRESS_ENDING,
 			livekit.EgressStatus_EGRESS_LIMIT_REACHED:
-			_, _ = c.ioClient.UpdateEgress(ctx, (*livekit.EgressInfo)(c.Info))
+			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
 
 			go func() {
 				c.eosTimer = time.AfterFunc(time.Second*30, func() {
@@ -532,7 +532,7 @@ func (c *Controller) updateStartTime(startedAt int64) {
 
 	if c.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
 		c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ACTIVE)
-		_, _ = c.ioClient.UpdateEgress(context.Background(), (*livekit.EgressInfo)(c.Info))
+		_, _ = c.ipcServiceClient.HandlerUpdate(context.Background(), (*livekit.EgressInfo)(c.Info))
 	}
 }
 

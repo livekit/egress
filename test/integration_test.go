@@ -23,9 +23,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/egress/pkg/server"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/protocol/redis"
-	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 )
 
@@ -48,12 +48,8 @@ func TestEgress(t *testing.T) {
 	ioClient, err := service.NewIOClient(bus)
 	require.NoError(t, err)
 
-	svc, err := service.NewService(r.ServiceConfig, ioClient)
+	svc, err := server.NewServer(r.ServiceConfig, bus, ioClient)
 	require.NoError(t, err)
-
-	psrpcServer, err := rpc.NewEgressInternalServer(svc, bus)
-	require.NoError(t, err)
-	svc.Register(psrpcServer)
 
 	r.Run(t, svc, bus, rfs)
 }

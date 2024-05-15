@@ -1,3 +1,17 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package service
 
 import (
@@ -72,7 +86,7 @@ func (c *IOClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, o
 func (c *IOClient) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest, opts ...psrpc.RequestOption) (*emptypb.Empty, error) {
 	_, err := c.IOInfoClient.UpdateMetrics(ctx, req, opts...)
 	if err != nil {
-		logger.Errorw("failed to update metrics", err)
+		logger.Errorw("failed to update ms", err)
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil

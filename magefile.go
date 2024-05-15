@@ -77,7 +77,7 @@ func Proto() error {
 			" --plugin=go=%s"+
 			" --plugin=go-grpc=%s"+
 			" -I%s -I=. ipc.proto",
-		protocGoPath, protocGrpcGoPath, pi.Dir,
+		protocGoPath, protocGrpcGoPath, pi.Dir+"/protobufs",
 	))
 }
 

@@ -17,12 +17,12 @@ package main
 import (
 	"net/http"
 
-	"github.com/livekit/egress/pkg/service"
+	"github.com/livekit/egress/pkg/server"
 	"github.com/livekit/protocol/logger"
 )
 
 type httpHandler struct {
-	svc *service.Service
+	svc *server.Server
 }
 
 func (h *httpHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {

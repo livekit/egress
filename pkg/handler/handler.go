@@ -24,7 +24,6 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/protocol/livekit"
@@ -42,12 +41,11 @@ type Handler struct {
 	rpcServer        rpc.EgressHandlerServer
 	ipcHandlerServer *grpc.Server
 	ipcServiceClient ipc.EgressServiceClient
-	ioClient         rpc.IOInfoClient
 	initialized      core.Fuse
 	kill             core.Fuse
 }
 
-func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.IOInfoClient) (*Handler, error) {
+func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
 	ipcClient, err := ipc.NewServiceClient(path.Join(conf.TmpDir[:strings.LastIndex(conf.TmpDir, "/")], conf.NodeID))
 	if err != nil {
 		return nil, err
@@ -55,7 +53,6 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 
 	h := &Handler{
 		conf:             conf,
-		ioClient:         ioClient,
 		ipcHandlerServer: grpc.NewServer(),
 		ipcServiceClient: ipcClient,
 	}
@@ -83,13 +80,13 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 		return nil, err
 	}
 
-	h.controller, err = pipeline.New(context.Background(), conf, h.ioClient)
+	h.controller, err = pipeline.New(context.Background(), conf, h.ipcServiceClient)
 	h.initialized.Break()
 	if err != nil {
 		if !errors.IsFatal(err) {
 			// user error, send update
 			conf.Info.SetFailed(err)
-			_, _ = h.ioClient.UpdateEgress(context.Background(), (*livekit.EgressInfo)(conf.Info))
+			_, _ = h.ipcServiceClient.HandlerUpdate(context.Background(), (*livekit.EgressInfo)(conf.Info))
 		}
 		return nil, err
 	}
@@ -97,45 +94,29 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus, ioClient rpc.
 	return h, nil
 }
 
-func (h *Handler) Run() error {
+func (h *Handler) Run() {
 	ctx, span := tracer.Start(context.Background(), "Handler.Run")
 	defer span.End()
 
 	// start egress
-	result := make(chan *info.EgressInfo, 1)
-	go func() {
-		result <- h.controller.Run(ctx)
-	}()
-
-	kill := h.kill.Watch()
-	for {
-		select {
-		case <-kill:
-			// kill signal received
-			h.conf.Info.Details = "service terminated by deployment"
-			h.controller.SendEOS(ctx)
-
-		case res := <-result:
-			// recording finished
-			_, _ = h.ioClient.UpdateEgress(ctx, (*livekit.EgressInfo)(res))
-
-			m, err := h.GenerateMetrics(ctx)
-			if err == nil {
-				h.ipcServiceClient.HandlerShuttingDown(ctx, &ipc.HandlerShuttingDownRequest{
-					EgressId: h.conf.Info.EgressId,
-					Metrics:  m,
-				})
-			} else {
-				logger.Errorw("failed generating handler metrics", err)
-			}
-
-			h.rpcServer.Shutdown()
-			h.ipcHandlerServer.Stop()
-			return nil
-		}
+	res := h.controller.Run(ctx)
+	m, err := h.GenerateMetrics(ctx)
+	if err != nil {
+		logger.Errorw("failed to generate handler metrics", err)
 	}
+
+	_, _ = h.ipcServiceClient.HandlerFinished(ctx, &ipc.HandlerFinishedRequest{
+		EgressId: h.conf.Info.EgressId,
+		Metrics:  m,
+		Info:     (*livekit.EgressInfo)(res),
+	})
+
+	h.rpcServer.Shutdown()
+	h.ipcHandlerServer.Stop()
 }
 
 func (h *Handler) Kill() {
-	h.kill.Break()
+	// kill signal received
+	h.conf.Info.Details = "service terminated by deployment"
+	h.controller.SendEOS(context.Background())
 }
