@@ -50,8 +50,6 @@ func (e *EgressInfo) SetFailed(err error) {
 	var perr psrpc.Error
 	if errors.As(err, &perr) {
 		e.ErrorCode = int32(perr.ToHttp())
-	} else {
-		e.ErrorCode = int32(http.StatusInternalServerError)
 	}
 }
 

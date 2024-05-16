@@ -38,6 +38,8 @@ import (
 const (
 	startRecordingLog = "START_RECORDING"
 	endRecordingLog   = "END_RECORDING"
+
+	chromeFailedToStart = "chrome failed to start:"
 )
 
 type WebSource struct {
@@ -314,11 +316,15 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		),
 	)
 	if err != nil {
-		return errors.ErrProcessStartFailed(err)
+		if strings.HasPrefix(err.Error(), chromeFailedToStart) {
+			return errors.ErrProcessStartFailed(err)
+		}
+		errString = err.Error()
 	}
 	if errString != "" {
-		return errors.New(errString)
+		return errors.ErrPageLoadFailed(errString)
 	}
+
 	return nil
 }
 

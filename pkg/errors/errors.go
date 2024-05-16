@@ -104,6 +104,10 @@ var (
 	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
 )
 
+func ErrPageLoadFailed(err string) error {
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "template page load failed: %s", err)
+}
+
 func ErrCouldNotParseConfig(err error) error {
 	return psrpc.NewErrorf(psrpc.InvalidArgument, "could not parse config: %v", err)
 }
