@@ -18,19 +18,22 @@ package ipc;
 option go_package = "github.com/livekit/egress/pkg/ipc";
 
 import "google/protobuf/empty.proto";
+import "livekit_egress.proto";
 
 service EgressService {
   rpc HandlerReady(HandlerReadyRequest) returns (google.protobuf.Empty) {};
-  rpc HandlerShuttingDown(HandlerShuttingDownRequest) returns (google.protobuf.Empty) {};
+  rpc HandlerUpdate(livekit.EgressInfo) returns (google.protobuf.Empty) {};
+  rpc HandlerFinished(HandlerFinishedRequest) returns (google.protobuf.Empty) {};
 }
 
 message HandlerReadyRequest {
   string egress_id = 1;
 }
 
-message HandlerShuttingDownRequest {
+message HandlerFinishedRequest {
   string egress_id = 1;
   string metrics = 2;
+  livekit.EgressInfo info = 3;
 }
 
 service EgressHandler {
