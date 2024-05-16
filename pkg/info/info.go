@@ -1,7 +1,6 @@
 package info
 
 import (
-	"errors"
 	"net/http"
 	"time"
 
