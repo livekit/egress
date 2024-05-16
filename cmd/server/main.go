@@ -193,14 +193,9 @@ func runHandler(c *cli.Context) error {
 	bus := psrpc.NewRedisMessageBus(rc)
 	h, err := handler.NewHandler(conf, bus)
 	if err != nil {
-		if errors.IsFatal(err) {
-			// service will send info update and shut down
-			logger.Errorw("fatal error", err)
-			return err
-		} else {
-			// update sent by handler
-			return nil
-		}
+		// service will send info update and shut down
+		logger.Errorw("failed to create handler", err)
+		return err
 	}
 
 	go func() {

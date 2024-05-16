@@ -16,9 +16,11 @@ package server
 
 import (
 	"context"
+	"net/http"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -35,6 +37,11 @@ func (s *Server) HandlerReady(_ context.Context, req *ipc.HandlerReadyRequest) (
 func (s *Server) HandlerUpdate(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
 	if _, err := s.ioClient.UpdateEgress(ctx, info); err != nil {
 		logger.Errorw("failed to update egress", err)
+	}
+
+	if info.ErrorCode == int32(http.StatusInternalServerError) {
+		logger.Errorw("internal error, shutting down", errors.New(info.Error))
+		s.Shutdown(false)
 	}
 
 	return &emptypb.Empty{}, nil

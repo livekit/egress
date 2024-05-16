@@ -26,7 +26,8 @@ func (e *EgressInfo) UpdateStatus(status livekit.EgressStatus) {
 func (e *EgressInfo) SetLimitReached() {
 	now := time.Now().UnixNano()
 	e.Status = livekit.EgressStatus_EGRESS_LIMIT_REACHED
-	e.Details = MsgLimitReached
+	e.Error = MsgLimitReached
+	e.ErrorCode = int32(http.StatusRequestEntityTooLarge)
 	e.UpdatedAt = now
 	e.EndedAt = now
 }
@@ -34,11 +35,8 @@ func (e *EgressInfo) SetLimitReached() {
 func (e *EgressInfo) SetAborted(msg string) {
 	now := time.Now().UnixNano()
 	e.Status = livekit.EgressStatus_EGRESS_ABORTED
-	if e.Details == "" {
-		e.Details = msg
-	} else {
-		e.Details = e.Details + "; " + msg
-	}
+	e.Error = msg
+	e.ErrorCode = int32(http.StatusPreconditionFailed)
 	e.UpdatedAt = now
 	e.EndedAt = now
 }

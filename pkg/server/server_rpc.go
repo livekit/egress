@@ -137,18 +137,15 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 
 func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressInfo, err error) {
 	if err != nil {
+		// should only happen if process failed catashrophically
 		now := time.Now().UnixNano()
 		info.UpdatedAt = now
 		info.EndedAt = now
 		info.Status = livekit.EgressStatus_EGRESS_FAILED
-		if info.Error == "" {
-			info.Error = "internal error"
-			info.ErrorCode = int32(http.StatusInternalServerError)
-		}
+		info.Error = "internal error"
+		info.ErrorCode = int32(http.StatusInternalServerError)
 		_, _ = s.ioClient.UpdateEgress(context.Background(), info)
-		if info.Error == "internal error" {
-			s.Shutdown(false)
-		}
+		s.Shutdown(false)
 	}
 
 	avgCPU, maxCPU := s.monitor.EgressEnded(req)

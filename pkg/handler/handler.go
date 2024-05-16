@@ -23,7 +23,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/protocol/livekit"
@@ -64,13 +63,13 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 
 	rpcServer, err := rpc.NewEgressHandlerServer(h, bus)
 	if err != nil {
-		return nil, errors.Fatal(err)
+		return nil, err
 	}
 	if err = rpcServer.RegisterUpdateStreamTopic(conf.Info.EgressId); err != nil {
-		return nil, errors.Fatal(err)
+		return nil, err
 	}
 	if err = rpcServer.RegisterStopEgressTopic(conf.Info.EgressId); err != nil {
-		return nil, errors.Fatal(err)
+		return nil, err
 	}
 	h.rpcServer = rpcServer
 
@@ -80,23 +79,26 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 		return nil, err
 	}
 
-	h.controller, err = pipeline.New(context.Background(), conf, h.ipcServiceClient)
-	h.initialized.Break()
-	if err != nil {
-		if !errors.IsFatal(err) {
-			// user error, send update
-			conf.Info.SetFailed(err)
-			_, _ = h.ipcServiceClient.HandlerUpdate(context.Background(), (*livekit.EgressInfo)(conf.Info))
-		}
-		return nil, err
-	}
-
 	return h, nil
 }
 
 func (h *Handler) Run() {
 	ctx, span := tracer.Start(context.Background(), "Handler.Run")
 	defer span.End()
+
+	defer func() {
+		h.rpcServer.Shutdown()
+		h.ipcHandlerServer.Stop()
+	}()
+
+	var err error
+	h.controller, err = pipeline.New(context.Background(), h.conf, h.ipcServiceClient)
+	h.initialized.Break()
+	if err != nil {
+		h.conf.Info.SetFailed(err)
+		_, _ = h.ipcServiceClient.HandlerUpdate(context.Background(), (*livekit.EgressInfo)(h.conf.Info))
+		return
+	}
 
 	// start egress
 	res := h.controller.Run(ctx)
@@ -110,9 +112,6 @@ func (h *Handler) Run() {
 		Metrics:  m,
 		Info:     (*livekit.EgressInfo)(res),
 	})
-
-	h.rpcServer.Shutdown()
-	h.ipcHandlerServer.Stop()
 }
 
 func (h *Handler) Kill() {

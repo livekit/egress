@@ -16,26 +16,9 @@ package errors
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/livekit/psrpc"
-)
-
-var (
-	ErrNoConfig                   = psrpc.NewErrorf(psrpc.Internal, "missing config")
-	ErrGhostPadFailed             = psrpc.NewErrorf(psrpc.Internal, "failed to add ghost pad to bin")
-	ErrBinAlreadyAdded            = psrpc.NewErrorf(psrpc.Internal, "bin already added to pipeline")
-	ErrWrongHierarchy             = psrpc.NewErrorf(psrpc.Internal, "pipeline can contain bins or elements, not both")
-	ErrPipelineFrozen             = psrpc.NewErrorf(psrpc.Internal, "pipeline frozen")
-	ErrSinkNotFound               = psrpc.NewErrorf(psrpc.Internal, "sink not found")
-	ErrNonStreamingPipeline       = psrpc.NewErrorf(psrpc.InvalidArgument, "UpdateStream called on non-streaming egress")
-	ErrNoCompatibleCodec          = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")
-	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
-	ErrEgressNotFound             = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
-	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Unavailable, "failed to subscribe to track")
-	ErrNotEnoughCPU               = psrpc.NewErrorf(psrpc.Unavailable, "not enough CPU")
-	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
 )
 
 func New(err string) error {
@@ -48,82 +31,6 @@ func Is(err, target error) bool {
 
 func As(err error, target any) bool {
 	return errors.As(err, target)
-}
-
-type FatalError struct {
-	err error
-}
-
-func (e *FatalError) Error() string {
-	return fmt.Sprintf("FATAL: %s", e.err.Error())
-}
-
-func (e *FatalError) Unwrap() error {
-	return e.err
-}
-
-func Fatal(err error) error {
-	return &FatalError{err}
-}
-
-func IsFatal(err error) bool {
-	e := &FatalError{}
-
-	return errors.As(err, &e)
-}
-
-func ErrCouldNotParseConfig(err error) error {
-	return psrpc.NewErrorf(psrpc.InvalidArgument, "could not parse config: %v", err)
-}
-
-func ErrNotSupported(feature string) error {
-	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s is not yet supported", feature)
-}
-
-func ErrIncompatible(format, codec interface{}) error {
-	return psrpc.NewErrorf(psrpc.InvalidArgument, "format %v incompatible with codec %v", format, codec)
-}
-
-func ErrInvalidInput(field string) error {
-	return psrpc.NewErrorf(psrpc.InvalidArgument, "request has missing or invalid field: %s", field)
-}
-
-func ErrInvalidUrl(url string, reason string) error {
-	return psrpc.NewErrorf(psrpc.InvalidArgument, "invalid url %s: %s", url, reason)
-}
-
-func ErrStreamNotFound(url string) error {
-	return psrpc.NewErrorf(psrpc.NotFound, "stream %s not found", url)
-}
-
-func ErrTrackNotFound(trackID string) error {
-	return psrpc.NewErrorf(psrpc.NotFound, "track %s not found", trackID)
-}
-
-func ErrParticipantNotFound(identity string) error {
-	return psrpc.NewErrorf(psrpc.NotFound, "participant %s not found", identity)
-}
-
-func ErrPadLinkFailed(src, sink, status string) error {
-	return psrpc.NewErrorf(psrpc.Internal, "failed to link %s to %s: %s", src, sink, status)
-}
-
-func ErrGstPipelineError(err error) error {
-	return psrpc.NewError(psrpc.Internal, err)
-}
-
-// This can have many reasons, some related to invalid parameters, other because of system failure.
-// Do not provide an error code until we have code to analyze the error from the underlying upload library further.
-func ErrUploadFailed(location string, err error) error {
-	return psrpc.NewErrorf(psrpc.Unknown, "%s upload failed: %v", location, err)
-}
-
-func ErrProcessStartFailed(err error) error {
-	return psrpc.NewError(psrpc.Internal, err)
-}
-
-func ErrCPUExhausted(usage float64) error {
-	return psrpc.NewErrorf(psrpc.PermissionDenied, "CPU exhausted: %.2f cores used", usage)
 }
 
 type ErrArray struct {
@@ -160,4 +67,81 @@ func (e *ErrArray) ToError() psrpc.Error {
 	}
 
 	return psrpc.NewErrorf(code, "%s", strings.Join(errStr, "\n"))
+}
+
+// internal errors
+
+var (
+	ErrNoConfig        = psrpc.NewErrorf(psrpc.Internal, "missing config")
+	ErrGhostPadFailed  = psrpc.NewErrorf(psrpc.Internal, "failed to add ghost pad to bin")
+	ErrBinAlreadyAdded = psrpc.NewErrorf(psrpc.Internal, "bin already added to pipeline")
+	ErrWrongHierarchy  = psrpc.NewErrorf(psrpc.Internal, "pipeline can contain bins or elements, not both")
+	ErrPipelineFrozen  = psrpc.NewErrorf(psrpc.Internal, "pipeline frozen")
+	ErrSinkNotFound    = psrpc.NewErrorf(psrpc.Internal, "sink not found")
+)
+
+func ErrPadLinkFailed(src, sink, status string) error {
+	return psrpc.NewErrorf(psrpc.Internal, "failed to link %s to %s: %s", src, sink, status)
+}
+
+func ErrGstPipelineError(err error) error {
+	return psrpc.NewError(psrpc.Internal, err)
+}
+
+func ErrProcessStartFailed(err error) error {
+	return psrpc.NewError(psrpc.Internal, err)
+}
+
+// other errors
+
+var (
+	ErrNonStreamingPipeline       = psrpc.NewErrorf(psrpc.InvalidArgument, "UpdateStream called on non-streaming egress")
+	ErrNoCompatibleCodec          = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")
+	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
+	ErrEgressNotFound             = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
+	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Unavailable, "failed to subscribe to track")
+	ErrNotEnoughCPU               = psrpc.NewErrorf(psrpc.Unavailable, "not enough CPU")
+	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
+)
+
+func ErrCouldNotParseConfig(err error) error {
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "could not parse config: %v", err)
+}
+
+func ErrNotSupported(feature string) error {
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s is not yet supported", feature)
+}
+
+func ErrIncompatible(format, codec interface{}) error {
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "format %v incompatible with codec %v", format, codec)
+}
+
+func ErrInvalidInput(field string) error {
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "request has missing or invalid field: %s", field)
+}
+
+func ErrInvalidUrl(url string, reason string) error {
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "invalid url %s: %s", url, reason)
+}
+
+func ErrStreamNotFound(url string) error {
+	return psrpc.NewErrorf(psrpc.NotFound, "stream %s not found", url)
+}
+
+func ErrTrackNotFound(trackID string) error {
+	return psrpc.NewErrorf(psrpc.NotFound, "track %s not found", trackID)
+}
+
+func ErrParticipantNotFound(identity string) error {
+	return psrpc.NewErrorf(psrpc.NotFound, "participant %s not found", identity)
+}
+
+// This can have many reasons, some related to invalid parameters, other because of system failure.
+// Do not provide an error code until we have code to analyze the error from the underlying upload library further.
+func ErrUploadFailed(location string, err error) error {
+	return psrpc.NewErrorf(psrpc.Unknown, "%s upload failed: %v", location, err)
+}
+
+func ErrCPUExhausted(usage float64) error {
+	return psrpc.NewErrorf(psrpc.PermissionDenied, "CPU exhausted: %.2f cores used", usage)
 }
