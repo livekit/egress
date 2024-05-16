@@ -153,7 +153,7 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 	cmd.Stderr = &infoLogger{cmd: "pactl"}
 	err := cmd.Run()
 	if err != nil {
-		return errors.Fatal(errors.ErrProcessStartFailed(err))
+		return errors.ErrProcessStartFailed(err)
 	}
 
 	s.pulseSink = strings.TrimRight(b.String(), "\n")
@@ -170,7 +170,7 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
 	xvfb.Stderr = &infoLogger{cmd: "xvfb"}
 	if err := xvfb.Start(); err != nil {
-		return errors.Fatal(errors.ErrProcessStartFailed(err))
+		return errors.ErrProcessStartFailed(err)
 	}
 
 	s.xvfb = xvfb
@@ -313,10 +313,13 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 			}`, &errString,
 		),
 	)
-	if err == nil && errString != "" {
-		err = errors.New(errString)
+	if err != nil {
+		return errors.ErrProcessStartFailed(err)
 	}
-	return err
+	if errString != "" {
+		return errors.New(errString)
+	}
+	return nil
 }
 
 func logChrome(eventType string, ev interface{ MarshalJSON() ([]byte, error) }) {
