@@ -541,7 +541,11 @@ func (b *VideoBin) addEncoder() error {
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
 		if b.conf.KeyFrameInterval != 0 {
-			if err = x264Enc.SetProperty("key-int-max", uint(b.conf.KeyFrameInterval*float64(b.conf.Framerate))); err != nil {
+			keyframeInterval := uint(b.conf.KeyFrameInterval * float64(b.conf.Framerate))
+			if b.conf.Debug.LogKeyFrames {
+				logger.Debugw("setting key frame interval", "interval", keyframeInterval)
+			}
+			if err = x264Enc.SetProperty("key-int-max", keyframeInterval); err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
 		}
