@@ -616,6 +616,14 @@ func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType)
 		}
 		return rawUrl, redacted, nil
 
+	case types.OutputTypeSRT:
+		if parsed.Scheme != "srt" {
+			return "", "", errors.ErrInvalidUrl(rawUrl, "invalid scheme")
+		}
+		// Todo: Optionally, you can redact the SRT stream key or other sensitive parts of the URL
+		redacted := rawUrl
+		return rawUrl, redacted, nil
+
 	case types.OutputTypeRaw:
 		if parsed.Scheme != "ws" && parsed.Scheme != "wss" {
 			return "", "", errors.ErrInvalidUrl(rawUrl, "invalid scheme")

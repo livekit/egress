@@ -67,6 +67,10 @@ func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []str
 		p.AudioOutCodec = types.MimeTypeAAC
 		p.VideoOutCodec = types.MimeTypeH264
 
+	case types.OutputTypeSRT:
+		p.AudioOutCodec = types.MimeTypeAAC
+		p.VideoOutCodec = types.MimeTypeH264
+
 	case types.OutputTypeRaw:
 		p.AudioOutCodec = types.MimeTypeRawAudio
 	}

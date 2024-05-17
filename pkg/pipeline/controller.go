@@ -16,6 +16,7 @@ package pipeline
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -268,8 +269,13 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
+		outputType := types.OutputTypeRTMP
+		if strings.HasPrefix(rawUrl, "srt://") {
+			outputType = types.OutputTypeSRT
+		}
 		// validate and redact url
-		url, redacted, err := c.ValidateUrl(rawUrl, types.OutputTypeRTMP)
+		//url, redacted, err := c.ValidateUrl(rawUrl, types.OutputTypeRTMP)
+		url, redacted, err := c.ValidateUrl(rawUrl, outputType)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
@@ -302,7 +308,12 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	// remove stream outputs
 	for _, rawUrl := range req.RemoveOutputUrls {
-		url, _, err := c.ValidateUrl(rawUrl, types.OutputTypeRTMP)
+		outputType := types.OutputTypeRTMP
+		if strings.HasPrefix(rawUrl, "srt://") {
+			outputType = types.OutputTypeSRT
+		}
+		url, _, err := c.ValidateUrl(rawUrl, outputType)
+		//url, _, err := c.ValidateUrl(rawUrl, types.OutputTypeRTMP)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
