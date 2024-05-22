@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM livekit/chrome-installer:117.0.5874.0
+FROM ubuntu:22.04
 
-#COPY arm64/ /chrome-installer/arm64/
+COPY arm64/ /chrome-installer/arm64/
 COPY install-chrome /chrome-installer/
