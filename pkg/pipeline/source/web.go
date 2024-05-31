@@ -21,12 +21,15 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+	"github.com/prometheus/procfs"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -43,9 +46,9 @@ const (
 )
 
 type WebSource struct {
-	pulseSink    string
-	xvfb         *exec.Cmd
-	chromeCancel context.CancelFunc
+	pulseSink   string
+	xvfb        *exec.Cmd
+	closeChrome context.CancelFunc
 
 	startRecording chan struct{}
 	endRecording   chan struct{}
@@ -109,10 +112,10 @@ func (s *WebSource) GetEndedAt() int64 {
 }
 
 func (s *WebSource) Close() {
-	if s.chromeCancel != nil {
+	if s.closeChrome != nil {
 		logger.Debugw("closing chrome")
-		s.chromeCancel()
-		s.chromeCancel = nil
+		s.closeChrome()
+		s.closeChrome = nil
 	}
 
 	if s.xvfb != nil {
@@ -210,6 +213,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		chromedp.Flag("disable-infobars", true),
 		chromedp.Flag("excludeSwitches", "enable-automation"),
 		chromedp.Flag("disable-background-networking", true),
+		chromedp.Flag("enable-crashpad", false),
 		chromedp.Flag("enable-features", "NetworkService,NetworkServiceInProcess"),
 		chromedp.Flag("disable-background-timer-throttling", true),
 		chromedp.Flag("disable-backgrounding-occluded-windows", true),
@@ -254,9 +258,64 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		)
 	}
 
-	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
-	chromeCtx, cancel := chromedp.NewContext(allocCtx)
-	s.chromeCancel = cancel
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
+	s.closeChrome = func() {
+		defer allocCancel()
+		defer chromeCancel()
+
+		// this doesn't work either
+		// if err := exec.Command("pkill", "-g", "0", "chrome").Run(); err != nil {
+		// 	logger.Errorw("failed to kill chrome", err)
+		// }
+
+		chromePID := chromedp.FromContext(chromeCtx).Browser.Process().Pid
+		procs, err := procfs.AllProcs()
+		if err != nil {
+			logger.Errorw("failed to read processes", err)
+		}
+
+		chrome := make([][]procfs.Proc, 0, 5)
+		ppids := make(map[int]int)
+		for _, proc := range procs {
+			ps, err := proc.Stat()
+			fmt.Println(proc.PID, ps.PPID, ps.Comm)
+			if err != nil {
+				logger.Errorw("failed to read stat", err)
+				continue
+			}
+			ppids[proc.PID] = ps.PPID
+		}
+		for _, proc := range procs {
+			pid := proc.PID
+			depth := 0
+			for pid != 0 && pid != chromePID {
+				pid = ppids[pid]
+				depth++
+			}
+			if pid == chromePID {
+				for len(chrome) < depth+1 {
+					chrome = append(chrome, make([]procfs.Proc, 0, 5))
+				}
+				chrome[depth] = append(chrome[depth], proc)
+			}
+		}
+		for i := len(chrome) - 1; i >= 0; i-- {
+			for _, proc := range chrome[i] {
+				process, err := os.FindProcess(proc.PID)
+				if err != nil {
+					logger.Errorw("failed to find process", err)
+					continue
+				}
+				fmt.Println("killing", proc.PID)
+				if err = process.Signal(syscall.SIGTERM); err != nil {
+					logger.Errorw("failed to kill process", err)
+					continue
+				}
+				process.Wait()
+			}
+		}
+	}
 
 	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
 		switch ev := ev.(type) {
@@ -324,6 +383,8 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 	if errString != "" {
 		return errors.ErrPageLoadFailed(errString)
 	}
+
+	chromedp.FromContext(chromeCtx)
 
 	return nil
 }
