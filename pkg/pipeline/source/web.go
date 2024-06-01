@@ -23,7 +23,6 @@ import (
 	"net/url"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/chromedp/cdproto/runtime"
@@ -211,7 +210,6 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		chromedp.Flag("disable-infobars", true),
 		chromedp.Flag("excludeSwitches", "enable-automation"),
 		chromedp.Flag("disable-background-networking", true),
-		chromedp.Flag("enable-crashpad", false),
 		chromedp.Flag("enable-features", "NetworkService,NetworkServiceInProcess"),
 		chromedp.Flag("disable-background-timer-throttling", true),
 		chromedp.Flag("disable-backgrounding-occluded-windows", true),
@@ -259,16 +257,8 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
 	s.closeChrome = func() {
-		defer allocCancel()
-		defer chromeCancel()
-
-		chromeProcess := chromedp.FromContext(chromeCtx).Browser.Process()
-		if err := chromeProcess.Signal(syscall.SIGTERM); err != nil {
-			logger.Errorw("failed to kill chrome", err)
-		}
-		if _, err := chromeProcess.Wait(); err != nil {
-			logger.Errorw("failed to wait for chrome", err)
-		}
+		chromeCancel()
+		allocCancel()
 	}
 
 	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
@@ -337,8 +327,6 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 	if errString != "" {
 		return errors.ErrPageLoadFailed(errString)
 	}
-
-	chromedp.FromContext(chromeCtx)
 
 	return nil
 }
