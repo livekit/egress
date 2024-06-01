@@ -43,9 +43,9 @@ const (
 )
 
 type WebSource struct {
-	pulseSink    string
-	xvfb         *exec.Cmd
-	chromeCancel context.CancelFunc
+	pulseSink   string
+	xvfb        *exec.Cmd
+	closeChrome context.CancelFunc
 
 	startRecording chan struct{}
 	endRecording   chan struct{}
@@ -109,10 +109,10 @@ func (s *WebSource) GetEndedAt() int64 {
 }
 
 func (s *WebSource) Close() {
-	if s.chromeCancel != nil {
+	if s.closeChrome != nil {
 		logger.Debugw("closing chrome")
-		s.chromeCancel()
-		s.chromeCancel = nil
+		s.closeChrome()
+		s.closeChrome = nil
 	}
 
 	if s.xvfb != nil {
@@ -254,9 +254,12 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		)
 	}
 
-	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
-	chromeCtx, cancel := chromedp.NewContext(allocCtx)
-	s.chromeCancel = cancel
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
+	s.closeChrome = func() {
+		chromeCancel()
+		allocCancel()
+	}
 
 	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
 		switch ev := ev.(type) {
