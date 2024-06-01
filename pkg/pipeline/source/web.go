@@ -262,15 +262,12 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		defer allocCancel()
 		defer chromeCancel()
 
-		defer func() {
-			logger.Infow("finished closing Chrome")
-		}()
 		chromeProcess := chromedp.FromContext(chromeCtx).Browser.Process()
 		if err := chromeProcess.Signal(syscall.SIGTERM); err != nil {
-			logger.Errorw("failed to kill chrome main", err)
+			logger.Errorw("failed to kill chrome", err)
 		}
 		if _, err := chromeProcess.Wait(); err != nil {
-			logger.Errorw("failed to wait for chrome main", err)
+			logger.Errorw("failed to wait for chrome", err)
 		}
 	}
 
