@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
-	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -29,7 +28,6 @@ import (
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
-	"github.com/prometheus/procfs"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -264,56 +262,15 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		defer allocCancel()
 		defer chromeCancel()
 
-		// this doesn't work either
-		// if err := exec.Command("pkill", "-g", "0", "chrome").Run(); err != nil {
-		// 	logger.Errorw("failed to kill chrome", err)
-		// }
-
-		chromePID := chromedp.FromContext(chromeCtx).Browser.Process().Pid
-		procs, err := procfs.AllProcs()
-		if err != nil {
-			logger.Errorw("failed to read processes", err)
+		defer func() {
+			logger.Infow("finished closing Chrome")
+		}()
+		chromeProcess := chromedp.FromContext(chromeCtx).Browser.Process()
+		if err := chromeProcess.Signal(syscall.SIGTERM); err != nil {
+			logger.Errorw("failed to kill chrome main", err)
 		}
-
-		chrome := make([][]procfs.Proc, 0, 5)
-		ppids := make(map[int]int)
-		for _, proc := range procs {
-			ps, err := proc.Stat()
-			fmt.Println(proc.PID, ps.PPID, ps.Comm)
-			if err != nil {
-				logger.Errorw("failed to read stat", err)
-				continue
-			}
-			ppids[proc.PID] = ps.PPID
-		}
-		for _, proc := range procs {
-			pid := proc.PID
-			depth := 0
-			for pid != 0 && pid != chromePID {
-				pid = ppids[pid]
-				depth++
-			}
-			if pid == chromePID {
-				for len(chrome) < depth+1 {
-					chrome = append(chrome, make([]procfs.Proc, 0, 5))
-				}
-				chrome[depth] = append(chrome[depth], proc)
-			}
-		}
-		for i := len(chrome) - 1; i >= 0; i-- {
-			for _, proc := range chrome[i] {
-				process, err := os.FindProcess(proc.PID)
-				if err != nil {
-					logger.Errorw("failed to find process", err)
-					continue
-				}
-				fmt.Println("killing", proc.PID)
-				if err = process.Signal(syscall.SIGTERM); err != nil {
-					logger.Errorw("failed to kill process", err)
-					continue
-				}
-				process.Wait()
-			}
+		if _, err := chromeProcess.Wait(); err != nil {
+			logger.Errorw("failed to wait for chrome main", err)
 		}
 	}
 

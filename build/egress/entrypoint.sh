@@ -23,4 +23,4 @@ rm -rf /var/run/pulse /var/lib/pulse /home/egress/.config/pulse /home/egress/.ca
 pulseaudio -D --verbose --exit-idle-time=-1 --disallow-exit
 
 # Run egress service
-exec egress
+exec /tini -- egress
