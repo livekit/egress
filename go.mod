@@ -17,7 +17,7 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/livekit/livekit-server v1.6.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.12.1-0.20240425173505-6d5a8047e6d8
+	github.com/livekit/protocol v1.16.1-0.20240513145257-511f517b1abf
 	github.com/livekit/psrpc v0.5.3-0.20240403150641-811331b106d9
 	github.com/livekit/server-sdk-go/v2 v2.1.2-0.20240425022832-17b2be53a0d7
 	github.com/pion/rtp v1.8.6
@@ -36,6 +36,8 @@ require (
 	google.golang.org/protobuf v1.33.0
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/chromedp/chromedp => github.com/livekit/chromedp v0.0.0-20240514210859-ca7d75d3511c
 
 require (
 	cloud.google.com/go v0.112.1 // indirect

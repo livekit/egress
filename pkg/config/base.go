@@ -52,6 +52,7 @@ type BaseConfig struct {
 type DebugConfig struct {
 	EnableProfiling bool             `yaml:"enable_profiling"` // create dot file and pprof on internal error
 	PathPrefix      string           `yaml:"path_prefix"`      // filepath prefix for uploads
+	LogKeyFrames    bool             `yaml:"log_keyframes"`    // log first 15s of keyframes when streaming
 	StorageConfig   `yaml:",inline"` // upload config (S3, Azure, GCP, or AliOSS)
 }
 

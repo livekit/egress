@@ -33,8 +33,18 @@ const (
 	pprofApp              = "pprof"
 )
 
-func (s *Service) StartDebugHandlers() {
-	if s.conf.DebugHandlerPort == 0 {
+type DebugService struct {
+	pm *ProcessManager
+}
+
+func NewDebugService(pm *ProcessManager) *DebugService {
+	return &DebugService{
+		pm: pm,
+	}
+}
+
+func (s *DebugService) StartDebugHandlers(port int) {
+	if port == 0 {
 		logger.Debugw("debug handler disabled")
 		return
 	}
@@ -44,27 +54,14 @@ func (s *Service) StartDebugHandlers() {
 	mux.HandleFunc(fmt.Sprintf("/%s/", pprofApp), s.handlePProf)
 
 	go func() {
-		addr := fmt.Sprintf(":%d", s.conf.DebugHandlerPort)
+		addr := fmt.Sprintf(":%d", port)
 		logger.Debugw(fmt.Sprintf("starting debug handler on address %s", addr))
 		_ = http.ListenAndServe(addr, mux)
 	}()
 }
 
-func (s *Service) GetGstPipelineDotFile(egressID string) (string, error) {
-	c, err := s.getGRPCClient(egressID)
-	if err != nil {
-		return "", err
-	}
-
-	res, err := c.GetPipelineDot(context.Background(), &ipc.GstPipelineDebugDotRequest{})
-	if err != nil {
-		return "", err
-	}
-	return res.DotFile, nil
-}
-
 // URL path format is "/<application>/<egress_id>/<optional_other_params>"
-func (s *Service) handleGstPipelineDotFile(w http.ResponseWriter, r *http.Request) {
+func (s *DebugService) handleGstPipelineDotFile(w http.ResponseWriter, r *http.Request) {
 	pathElements := strings.Split(r.URL.Path, "/")
 	if len(pathElements) < 3 {
 		http.Error(w, "malformed url", http.StatusNotFound)
@@ -80,8 +77,21 @@ func (s *Service) handleGstPipelineDotFile(w http.ResponseWriter, r *http.Reques
 	_, _ = w.Write([]byte(dotFile))
 }
 
+func (s *DebugService) GetGstPipelineDotFile(egressID string) (string, error) {
+	c, err := s.pm.GetGRPCClient(egressID)
+	if err != nil {
+		return "", err
+	}
+
+	res, err := c.GetPipelineDot(context.Background(), &ipc.GstPipelineDebugDotRequest{})
+	if err != nil {
+		return "", err
+	}
+	return res.DotFile, nil
+}
+
 // URL path format is "/<application>/<egress_id>/<profile_name>" or "/<application>/<profile_name>" to profile the service
-func (s *Service) handlePProf(w http.ResponseWriter, r *http.Request) {
+func (s *DebugService) handlePProf(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var b []byte
 
@@ -96,7 +106,7 @@ func (s *Service) handlePProf(w http.ResponseWriter, r *http.Request) {
 
 	case 4:
 		egressID := pathElements[2]
-		c, err := s.getGRPCClient(egressID)
+		c, err := s.pm.GetGRPCClient(egressID)
 		if err != nil {
 			http.Error(w, "handler not found", http.StatusNotFound)
 			return
@@ -124,17 +134,6 @@ func (s *Service) handlePProf(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), getErrorCode(err))
 		return
 	}
-}
-
-func (s *Service) getGRPCClient(egressID string) (ipc.EgressHandlerClient, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	h, ok := s.activeHandlers[egressID]
-	if !ok {
-		return nil, errors.ErrEgressNotFound
-	}
-	return h.ipcHandlerClient, nil
 }
 
 func getErrorCode(err error) int {

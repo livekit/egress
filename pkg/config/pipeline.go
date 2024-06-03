@@ -27,6 +27,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
@@ -54,7 +55,7 @@ type PipelineConfig struct {
 	OutputCount          int                                 `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	Info *livekit.EgressInfo `yaml:"-"`
+	Info *info.EgressInfo `yaml:"-"`
 }
 
 type SourceConfig struct {
@@ -160,7 +161,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	}
 
 	// start with defaults
-	p.Info = &livekit.EgressInfo{
+	p.Info = &info.EgressInfo{
 		EgressId:  request.EgressId,
 		RoomId:    request.RoomId,
 		Status:    livekit.EgressStatus_EGRESS_STARTING,
@@ -187,7 +188,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_RoomComposite{
 			RoomComposite: clone,
 		}
-		redactEncodedOutputs(clone)
+		egress.RedactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeWeb
 		p.AwaitStartSignal = true
@@ -240,7 +241,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_Web{
 			Web: clone,
 		}
-		redactEncodedOutputs(clone)
+		egress.RedactEncodedOutputs(clone)
 
 		connectionInfoRequired = false
 		p.SourceType = types.SourceTypeWeb
@@ -288,7 +289,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_Participant{
 			Participant: clone,
 		}
-		redactEncodedOutputs(clone)
+		egress.RedactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
 
@@ -324,7 +325,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_TrackComposite{
 			TrackComposite: clone,
 		}
-		redactEncodedOutputs(clone)
+		egress.RedactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
 
@@ -365,9 +366,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_Track{
 			Track: clone,
 		}
-		if f := clone.GetFile(); f != nil {
-			redactUpload(f)
-		}
+		egress.RedactDirectOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
 

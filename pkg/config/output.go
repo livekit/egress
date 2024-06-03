@@ -21,7 +21,6 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 )
 
 type OutputConfig interface {
@@ -233,33 +232,4 @@ func (p *PipelineConfig) updateImageOutputs(images []*livekit.ImageOutput) error
 	}
 
 	return nil
-}
-
-func redactEncodedOutputs(out egress.EncodedOutput) {
-	if files := out.GetFileOutputs(); len(files) == 1 {
-		redactUpload(files[0])
-	}
-	if streams := out.GetStreamOutputs(); len(streams) == 1 {
-		redactStreamKeys(streams[0])
-	}
-	if segments := out.GetSegmentOutputs(); len(segments) == 1 {
-		redactUpload(segments[0])
-	}
-	if o, ok := out.(egress.EncodedOutputDeprecated); ok {
-		if file := o.GetFile(); file != nil {
-			redactUpload(file)
-		} else if stream := o.GetStream(); stream != nil {
-			redactStreamKeys(stream)
-		} else if segment := o.GetSegments(); segment != nil {
-			redactUpload(segment)
-		}
-	}
-}
-
-func redactStreamKeys(stream *livekit.StreamOutput) {
-	for i, url := range stream.Urls {
-		if redacted, ok := utils.RedactStreamKey(url); ok {
-			stream.Urls[i] = redacted
-		}
-	}
 }

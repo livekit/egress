@@ -18,6 +18,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -25,13 +26,30 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"golang.org/x/exp/maps"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 )
 
-func (s *Service) CreateGatherer() prometheus.Gatherer {
+type MetricsService struct {
+	pm *ProcessManager
+
+	mu             sync.Mutex
+	pendingMetrics []*dto.MetricFamily
+}
+
+func NewMetricsService(pm *ProcessManager) *MetricsService {
+	return &MetricsService{
+		pm: pm,
+	}
+}
+
+func (s *MetricsService) PromHandler() http.Handler {
+	return promhttp.InstrumentMetricHandler(
+		prometheus.DefaultRegisterer, promhttp.HandlerFor(s.CreateGatherer(), promhttp.HandlerOpts{}),
+	)
+}
+
+func (s *MetricsService) CreateGatherer() prometheus.Gatherer {
 	return prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
 		_, span := tracer.Start(context.Background(), "Service.GathererOfHandlerMetrics")
 		defer span.End()
@@ -39,73 +57,30 @@ func (s *Service) CreateGatherer() prometheus.Gatherer {
 		gatherers := prometheus.Gatherers{}
 		// Include the default repo
 		gatherers = append(gatherers, prometheus.DefaultGatherer)
-		// Include process ended metrics
+		// Include Process ended ms
 		gatherers = append(gatherers, prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
 			s.mu.Lock()
-
 			m := s.pendingMetrics
 			s.pendingMetrics = nil
-
 			s.mu.Unlock()
-
 			return m, nil
 		}))
 
-		s.mu.RLock()
-		// add all the active handlers as sources
-		for _, v := range s.activeHandlers {
-			gatherers = append(gatherers, v)
-		}
-		s.mu.RUnlock()
+		gatherers = append(gatherers, s.pm.GetGatherers()...)
 
 		return gatherers.Gather()
 	})
 }
 
-func (s *Service) PromHandler() http.Handler {
-	return promhttp.InstrumentMetricHandler(
-		prometheus.DefaultRegisterer, promhttp.HandlerFor(s.CreateGatherer(), promhttp.HandlerOpts{}),
-	)
-}
-
-func (s *Service) promIsIdle() float64 {
-	if !s.shutdown.IsBroken() && s.GetRequestCount() == 0 {
-		return 1
-	}
-	return 0
-}
-
-func (s *Service) promCanAcceptRequest() float64 {
-	if s.shutdown.IsBroken() {
-		return 0
-	}
-	if s.CanAcceptRequest(&rpc.StartEgressRequest{
-		Request: &rpc.StartEgressRequest_RoomComposite{
-			RoomComposite: &livekit.RoomCompositeEgressRequest{},
-		},
-	}) {
-		return 1
-	}
-	return 0
-}
-
-func (s *Service) promIsDisabled() float64 {
-	if s.shutdown.IsBroken() {
-		return 1
-	}
-	return 0
-}
-
-func (s *Service) storeProcessEndedMetrics(egressID string, metrics string) error {
+func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics string) error {
 	m, err := deserializeMetrics(egressID, metrics)
 	if err != nil {
 		return err
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.pendingMetrics = append(s.pendingMetrics, m...)
+	s.mu.Unlock()
 
 	return nil
 }
@@ -114,7 +89,7 @@ func deserializeMetrics(egressID string, s string) ([]*dto.MetricFamily, error) 
 	parser := &expfmt.TextParser{}
 	families, err := parser.TextToMetricFamilies(strings.NewReader(s))
 	if err != nil {
-		logger.Warnw("failed to parse metrics from handler", err, "egress_id", egressID)
+		logger.Warnw("failed to parse ms from handler", err, "egress_id", egressID)
 		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
 	}
 
@@ -122,4 +97,29 @@ func deserializeMetrics(egressID string, s string) ([]*dto.MetricFamily, error) 
 	applyDefaultLabel(egressID, families)
 
 	return maps.Values(families), nil
+}
+
+func applyDefaultLabel(egressID string, families map[string]*dto.MetricFamily) {
+	egressIDLabel := "egress_id"
+	egressLabelPair := &dto.LabelPair{
+		Name:  &egressIDLabel,
+		Value: &egressID,
+	}
+	for _, family := range families {
+		for _, metric := range family.Metric {
+			if metric.Label == nil {
+				metric.Label = make([]*dto.LabelPair, 0)
+			}
+			found := false
+			for _, label := range metric.Label {
+				if label.GetName() == "egress_id" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				metric.Label = append(metric.Label, egressLabelPair)
+			}
+		}
+	}
 }

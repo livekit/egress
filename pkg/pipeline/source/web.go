@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -31,7 +30,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 )
@@ -39,17 +38,19 @@ import (
 const (
 	startRecordingLog = "START_RECORDING"
 	endRecordingLog   = "END_RECORDING"
+
+	chromeFailedToStart = "chrome failed to start:"
 )
 
 type WebSource struct {
-	pulseSink    string
-	xvfb         *exec.Cmd
-	chromeCancel context.CancelFunc
+	pulseSink   string
+	xvfb        *exec.Cmd
+	closeChrome context.CancelFunc
 
 	startRecording chan struct{}
 	endRecording   chan struct{}
 
-	info *livekit.EgressInfo
+	info *info.EgressInfo
 }
 
 func init() {
@@ -108,25 +109,22 @@ func (s *WebSource) GetEndedAt() int64 {
 }
 
 func (s *WebSource) Close() {
-	if s.chromeCancel != nil {
+	if s.closeChrome != nil {
 		logger.Debugw("closing chrome")
-		s.chromeCancel()
-		s.chromeCancel = nil
+		s.closeChrome()
+		s.closeChrome = nil
 	}
 
 	if s.xvfb != nil {
 		logger.Debugw("closing X display")
-		err := s.xvfb.Process.Signal(os.Interrupt)
-		if err != nil {
-			logger.Errorw("failed to kill xvfb", err)
-		}
+		_ = s.xvfb.Process.Kill()
+		_ = s.xvfb.Wait()
 		s.xvfb = nil
 	}
 
 	if s.pulseSink != "" {
 		logger.Debugw("unloading pulse module")
-		err := exec.Command("pactl", "unload-module", s.pulseSink).Run()
-		if err != nil {
+		if err := exec.Command("pactl", "unload-module", s.pulseSink).Run(); err != nil {
 			logger.Errorw("failed to unload pulse sink", err)
 		}
 	}
@@ -157,7 +155,7 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 	cmd.Stderr = &infoLogger{cmd: "pactl"}
 	err := cmd.Run()
 	if err != nil {
-		return errors.Fatal(errors.ErrProcessStartFailed(err))
+		return errors.ErrProcessStartFailed(err)
 	}
 
 	s.pulseSink = strings.TrimRight(b.String(), "\n")
@@ -174,7 +172,7 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
 	xvfb.Stderr = &infoLogger{cmd: "xvfb"}
 	if err := xvfb.Start(); err != nil {
-		return errors.Fatal(errors.ErrProcessStartFailed(err))
+		return errors.ErrProcessStartFailed(err)
 	}
 
 	s.xvfb = xvfb
@@ -256,9 +254,12 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		)
 	}
 
-	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
-	chromeCtx, cancel := chromedp.NewContext(allocCtx)
-	s.chromeCancel = cancel
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
+	s.closeChrome = func() {
+		chromeCancel()
+		allocCancel()
+	}
 
 	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
 		switch ev := ev.(type) {
@@ -317,10 +318,17 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 			}`, &errString,
 		),
 	)
-	if err == nil && errString != "" {
-		err = errors.New(errString)
+	if err != nil {
+		if strings.HasPrefix(err.Error(), chromeFailedToStart) {
+			return errors.ErrProcessStartFailed(err)
+		}
+		errString = err.Error()
 	}
-	return err
+	if errString != "" {
+		return errors.ErrPageLoadFailed(errString)
+	}
+
+	return nil
 }
 
 func logChrome(eventType string, ev interface{ MarshalJSON() ([]byte, error) }) {

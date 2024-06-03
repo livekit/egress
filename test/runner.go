@@ -30,7 +30,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -39,7 +38,7 @@ import (
 )
 
 type Runner struct {
-	svc             *service.Service         `yaml:"-"`
+	svc             Server                   `yaml:"-"`
 	client          rpc.EgressClient         `yaml:"-"`
 	room            *lksdk.Room              `yaml:"-"`
 	updates         chan *livekit.EgressInfo `yaml:"-"`
@@ -67,6 +66,17 @@ type Runner struct {
 	Muting                  bool   `yaml:"muting"`
 	Dotfiles                bool   `yaml:"dot_files"`
 	Short                   bool   `yaml:"short"`
+}
+
+type Server interface {
+	StartTemplatesServer(fs.FS) error
+	Run() error
+	Status() ([]byte, error)
+	GetGstPipelineDotFile(string) (string, error)
+	IsIdle() bool
+	KillAll()
+	Shutdown(bool)
+	Drain()
 }
 
 func NewRunner(t *testing.T) *Runner {
@@ -144,15 +154,15 @@ func NewRunner(t *testing.T) *Runner {
 	return r
 }
 
-func (r *Runner) Run(t *testing.T, svc *service.Service, bus psrpc.MessageBus, templateFs fs.FS) {
+func (r *Runner) Run(t *testing.T, svc Server, bus psrpc.MessageBus, templateFs fs.FS) {
 	lksdk.SetLogger(logger.LogRLogger(logr.Discard()))
 	r.svc = svc
 	t.Cleanup(func() {
 		if r.room != nil {
 			r.room.Disconnect()
 		}
-		r.svc.Stop(true)
-		r.svc.Close()
+		r.svc.Shutdown(true)
+		r.svc.Drain()
 	})
 
 	// connect to room
@@ -167,9 +177,6 @@ func (r *Runner) Run(t *testing.T, svc *service.Service, bus psrpc.MessageBus, t
 
 	psrpcClient, err := rpc.NewEgressClient(rpc.ClientParams{Bus: bus})
 	require.NoError(t, err)
-
-	// start debug handler
-	r.svc.StartDebugHandlers()
 
 	// start templates handler
 	err = r.svc.StartTemplatesServer(templateFs)

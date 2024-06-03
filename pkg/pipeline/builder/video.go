@@ -541,7 +541,11 @@ func (b *VideoBin) addEncoder() error {
 		}
 		x264Enc.SetArg("speed-preset", "veryfast")
 		if b.conf.KeyFrameInterval != 0 {
-			if err = x264Enc.SetProperty("key-int-max", uint(b.conf.KeyFrameInterval*float64(b.conf.Framerate))); err != nil {
+			keyframeInterval := uint(b.conf.KeyFrameInterval * float64(b.conf.Framerate))
+			if b.conf.Debug.LogKeyFrames {
+				logger.Debugw("setting key frame interval", "interval", keyframeInterval)
+			}
+			if err = x264Enc.SetProperty("key-int-max", keyframeInterval); err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
 		}
@@ -580,6 +584,26 @@ func (b *VideoBin) addEncoder() error {
 
 		if err = b.bin.AddElements(x264Enc, caps); err != nil {
 			return err
+		}
+
+		if b.conf.GetStreamConfig() != nil && b.conf.Debug.LogKeyFrames {
+			var firstKeyFrame *time.Duration
+			x264Enc.GetStaticPad("src").AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+				buffer := info.GetBuffer()
+				if !buffer.HasFlags(gst.BufferFlagDeltaUnit) {
+					clockTime := buffer.PresentationTimestamp().AsDuration()
+					if firstKeyFrame == nil {
+						firstKeyFrame = clockTime
+					}
+					pts := *clockTime - *firstKeyFrame
+					logger.Debugw("keyframe generated", "pts", pts)
+					if pts > time.Second*15 {
+						return gst.PadProbeRemove
+					}
+				}
+
+				return gst.PadProbeOK
+			})
 		}
 
 		return nil

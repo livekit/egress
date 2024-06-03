@@ -16,40 +16,47 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"os/exec"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/frostbyte73/core"
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 )
 
-type Process struct {
-	ctx              context.Context
-	handlerID        string
-	req              *rpc.StartEgressRequest
-	info             *livekit.EgressInfo
-	cmd              *exec.Cmd
-	ipcHandlerClient ipc.EgressHandlerClient
-	ready            chan struct{}
-	closed           core.Fuse
+const launchTimeout = 10 * time.Second
+
+type ProcessManager struct {
+	mu             sync.RWMutex
+	activeHandlers map[string]*Process
 }
 
-func NewProcess(
+func NewProcessManager() *ProcessManager {
+	return &ProcessManager{
+		activeHandlers: make(map[string]*Process),
+	}
+}
+
+func (pm *ProcessManager) Launch(
 	ctx context.Context,
 	handlerID string,
 	req *rpc.StartEgressRequest,
 	info *livekit.EgressInfo,
 	cmd *exec.Cmd,
 	tmpDir string,
-) (*Process, error) {
+) error {
 	ipcClient, err := ipc.NewHandlerClient(tmpDir)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	p := &Process{
@@ -62,15 +69,150 @@ func NewProcess(
 		ready:            make(chan struct{}),
 	}
 
-	return p, nil
+	pm.mu.Lock()
+	pm.activeHandlers[info.EgressId] = p
+	pm.mu.Unlock()
+
+	if err = cmd.Start(); err != nil {
+		logger.Errorw("could not launch process", err)
+		return err
+	}
+
+	select {
+	case <-p.ready:
+		return nil
+
+	case <-time.After(launchTimeout):
+		logger.Warnw("no response from handler", nil, "egressID", info.EgressId)
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return errors.ErrEgressNotFound
+	}
 }
 
-// Gather implements the prometheus.Gatherer interface on server-side to allow aggregation of handler metrics
+func (pm *ProcessManager) GetContext(egressID string) context.Context {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	if p, ok := pm.activeHandlers[egressID]; ok {
+		return p.ctx
+	}
+
+	return context.Background()
+}
+
+func (pm *ProcessManager) HandlerStarted(egressID string) error {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	if p, ok := pm.activeHandlers[egressID]; ok {
+		close(p.ready)
+		return nil
+	}
+
+	return errors.ErrEgressNotFound
+}
+
+func (pm *ProcessManager) GetActiveEgressIDs() []string {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	egressIDs := make([]string, 0, len(pm.activeHandlers))
+	for egressID := range pm.activeHandlers {
+		egressIDs = append(egressIDs, egressID)
+	}
+
+	return egressIDs
+}
+
+func (pm *ProcessManager) GetStatus(info map[string]interface{}) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	for _, h := range pm.activeHandlers {
+		info[h.req.EgressId] = h.req.Request
+	}
+}
+
+func (pm *ProcessManager) GetGatherers() []prometheus.Gatherer {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	handlers := make([]prometheus.Gatherer, 0, len(pm.activeHandlers))
+	for _, p := range pm.activeHandlers {
+		handlers = append(handlers, p)
+	}
+
+	return handlers
+}
+
+func (pm *ProcessManager) GetGRPCClient(egressID string) (ipc.EgressHandlerClient, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	h, ok := pm.activeHandlers[egressID]
+	if !ok {
+		return nil, errors.ErrEgressNotFound
+	}
+	return h.ipcHandlerClient, nil
+}
+
+func (pm *ProcessManager) KillAll() {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	for _, h := range pm.activeHandlers {
+		h.kill()
+	}
+}
+
+func (pm *ProcessManager) KillProcess(egressID string, maxUsage float64) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	if h, ok := pm.activeHandlers[egressID]; ok {
+		err := errors.ErrCPUExhausted(maxUsage)
+		logger.Errorw("killing egress", err, "egressID", egressID)
+
+		now := time.Now().UnixNano()
+		h.info.Status = livekit.EgressStatus_EGRESS_FAILED
+		h.info.Error = err.Error()
+		h.info.ErrorCode = int32(http.StatusForbidden)
+		h.info.UpdatedAt = now
+		h.info.EndedAt = now
+		h.kill()
+	}
+}
+
+func (pm *ProcessManager) ProcessFinished(egressID string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	p, ok := pm.activeHandlers[egressID]
+	if ok {
+		p.closed.Break()
+	}
+
+	delete(pm.activeHandlers, egressID)
+}
+
+type Process struct {
+	ctx              context.Context
+	handlerID        string
+	req              *rpc.StartEgressRequest
+	info             *livekit.EgressInfo
+	cmd              *exec.Cmd
+	ipcHandlerClient ipc.EgressHandlerClient
+	ready            chan struct{}
+	closed           core.Fuse
+}
+
+// Gather implements the prometheus.Gatherer interface on server-side to allow aggregation of handler ms
 func (p *Process) Gather() ([]*dto.MetricFamily, error) {
-	// Get the metrics from the handler via IPC
+	// Get the ms from the handler via IPC
 	metricsResponse, err := p.ipcHandlerClient.GetMetrics(context.Background(), &ipc.MetricsRequest{})
 	if err != nil {
-		logger.Warnw("failed to obtain metrics from handler", err, "egress_id", p.req.EgressId)
+		logger.Warnw("failed to obtain ms from handler", err, "egressID", p.req.EgressId)
 		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
 	}
 
@@ -79,34 +221,9 @@ func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 }
 
 func (p *Process) kill() {
-	if !p.closed.IsBroken() {
+	p.closed.Once(func() {
 		if err := p.cmd.Process.Signal(syscall.SIGINT); err != nil {
 			logger.Errorw("failed to kill Process", err, "egressID", p.req.EgressId)
 		}
-	}
-}
-
-func applyDefaultLabel(egressID string, families map[string]*dto.MetricFamily) {
-	egressIDLabel := "egress_id"
-	egressLabelPair := &dto.LabelPair{
-		Name:  &egressIDLabel,
-		Value: &egressID,
-	}
-	for _, family := range families {
-		for _, metric := range family.Metric {
-			if metric.Label == nil {
-				metric.Label = make([]*dto.LabelPair, 0)
-			}
-			found := false
-			for _, label := range metric.Label {
-				if label.GetName() == "egress_id" {
-					found = true
-					break
-				}
-			}
-			if !found {
-				metric.Label = append(metric.Label, egressLabelPair)
-			}
-		}
-	}
+	})
 }
