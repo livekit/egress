@@ -15,7 +15,7 @@
 package config
 
 import (
-	"strings"
+	"net/url"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
@@ -86,9 +86,19 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		return errors.ErrInvalidInput("multiple stream outputs")
 	}
 	if stream != nil {
-		outputType := types.OutputTypeRTMP
-		if len(stream.Urls) > 0 && strings.HasPrefix(stream.Urls[0], "srt://") {
+		u, err := url.Parse(stream.Urls[0])
+		if err != nil {
+			return errors.ErrInvalidInput("malformed url")
+		}
+
+		var outputType types.OutputType
+		switch u.Scheme {
+		case "srt":
 			outputType = types.OutputTypeSRT
+		case "rtmp":
+			outputType = types.OutputTypeRTMP
+		default:
+			return errors.ErrInvalidInput("invalid stream type")
 		}
 
 		conf, err := p.getStreamConfig(outputType, stream.Urls)
