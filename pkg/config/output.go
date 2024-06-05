@@ -67,7 +67,6 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
 		if len(streams)+len(segments)+len(images) == 0 {
 			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
-			return nil
 		}
 	}
 
@@ -107,7 +106,6 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 			}
 
 			p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
-			return nil
 		}
 	}
 
@@ -139,7 +137,6 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		p.Info.SegmentResults = []*livekit.SegmentsInfo{conf.SegmentsInfo}
 		if len(streams)+len(files)+len(images) == 0 {
 			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
-			return nil
 		}
 	}
 
@@ -206,7 +203,6 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 }
 
 func (p *PipelineConfig) updateImageOutputs(images []*livekit.ImageOutput) error {
-
 	if len(images) > 0 && !p.VideoEnabled {
 		return errors.ErrInvalidInput("audio_only")
 	}
