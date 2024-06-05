@@ -21,6 +21,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+const StreamKeyframeInterval = 4
+
 type OutputConfig interface {
 	GetOutputType() types.OutputType
 }
@@ -149,7 +151,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		p.KeyFrameInterval = 0
 	} else if p.KeyFrameInterval == 0 && p.Outputs[types.EgressTypeStream] != nil {
 		// default 4s for streams
-		p.KeyFrameInterval = 4
+		p.KeyFrameInterval = StreamKeyframeInterval
 	}
 
 	err := p.updateImageOutputs(images)

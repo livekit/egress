@@ -95,9 +95,7 @@ func (r *Runner) testWebStream(t *testing.T) {
 			},
 		}
 
-		r.runStreamTest(t, req, &testCase{
-			expectVideoEncoding: true,
-		})
+		r.runStreamTest(t, req, &testCase{expectVideoEncoding: true})
 	})
 }
 

@@ -38,6 +38,9 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 	require.Equal(t, test.expectVideoEncoding, p.VideoEncoding)
+	if test.expectVideoEncoding {
+		require.Equal(t, config.StreamKeyframeInterval, p.KeyFrameInterval)
+	}
 
 	// verify and check update
 	time.Sleep(time.Second * 5)
