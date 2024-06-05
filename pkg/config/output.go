@@ -21,7 +21,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-const StreamKeyframeInterval = 4
+const StreamKeyframeInterval = 4.0
 
 type OutputConfig interface {
 	GetOutputType() types.OutputType
