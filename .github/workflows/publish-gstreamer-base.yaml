@@ -1,6 +1,9 @@
 on:
   workflow_call:
     inputs:
+      version:
+        required: true
+        type: string
       buildjet-runs-on:
         required: true
         type: string
@@ -13,7 +16,7 @@ on:
       DOCKERHUB_TOKEN:
         required: true
 env:
-  GST_VERSION: "1.22.8"
+  GST_VERSION: "${{ inputs.version }}"
   LIBNICE_VERSION: "0.1.21"
 
 jobs:
