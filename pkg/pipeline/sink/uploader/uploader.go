@@ -15,12 +15,9 @@
 package uploader
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"time"
-
-	"github.com/pkg/errors"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/stats"
@@ -82,11 +79,11 @@ type remoteUploader struct {
 
 func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool, fileType string) (string, int64, error) {
 	start := time.Now()
-	location, size, err := u.upload(localFilepath, storageFilepath, outputType)
+	location, size, uploadErr := u.upload(localFilepath, storageFilepath, outputType)
 	elapsed := time.Since(start)
 
 	// success
-	if err == nil {
+	if uploadErr == nil {
 		u.monitor.IncUploadCountSuccess(fileType, float64(elapsed.Milliseconds()))
 		if deleteAfterUpload {
 			_ = os.Remove(localFilepath)
@@ -117,7 +114,7 @@ func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputTyp
 		return backupFilepath, stat.Size(), nil
 	}
 
-	return "", 0, err
+	return "", 0, uploadErr
 }
 
 type localUploader struct{}
@@ -129,8 +126,4 @@ func (u *localUploader) Upload(localFilepath, _ string, _ types.OutputType, _ bo
 	}
 
 	return localFilepath, stat.Size(), nil
-}
-
-func wrap(name string, err error) error {
-	return errors.Wrap(err, fmt.Sprintf("%s upload failed", name))
 }
