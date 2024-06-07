@@ -143,7 +143,7 @@ func ErrParticipantNotFound(identity string) error {
 // This can have many reasons, some related to invalid parameters, other because of system failure.
 // Do not provide an error code until we have code to analyze the error from the underlying upload library further.
 func ErrUploadFailed(location string, err error) error {
-	return psrpc.NewErrorf(psrpc.Unknown, "%s upload failed: %v", location, err)
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s upload failed: %v", location, err)
 }
 
 func ErrCPUExhausted(usage float64) error {

@@ -27,6 +27,7 @@ import (
 	"github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/option"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
@@ -77,7 +78,7 @@ func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {
 	file, err := os.Open(localFilepath)
 	if err != nil {
-		return "", 0, wrap("GCP", err)
+		return "", 0, errors.ErrUploadFailed("GCP", err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -85,7 +86,7 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 
 	stat, err := file.Stat()
 	if err != nil {
-		return "", 0, wrap("GCP", err)
+		return "", 0, errors.ErrUploadFailed("GCP", err)
 	}
 
 	wc := u.client.Bucket(u.conf.Bucket).Object(storageFilepath).Retryer(
@@ -100,11 +101,11 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 	wc.ChunkRetryDeadline = 0
 
 	if _, err = io.Copy(wc, file); err != nil {
-		return "", 0, wrap("GCP", err)
+		return "", 0, errors.ErrUploadFailed("GCP", err)
 	}
 
 	if err = wc.Close(); err != nil {
-		return "", 0, wrap("GCP", err)
+		return "", 0, errors.ErrUploadFailed("GCP", err)
 	}
 
 	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", u.conf.Bucket, storageFilepath), stat.Size(), nil
