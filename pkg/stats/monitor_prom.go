@@ -43,6 +43,13 @@ func (m *Monitor) initPrometheus() {
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	}, m.promIsDisabled)
 
+	promIsTerminating := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "is_terminating",
+		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+	}, m.promIsTerminating)
+
 	m.promCPULoad = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   "livekit",
 		Subsystem:   "node",
@@ -57,7 +64,7 @@ func (m *Monitor) initPrometheus() {
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	}, []string{"type"})
 
-	prometheus.MustRegister(promNodeAvailable, promCanAcceptRequest, promIsDisabled, m.promCPULoad, m.requestGauge)
+	prometheus.MustRegister(promNodeAvailable, promCanAcceptRequest, promIsDisabled, promIsTerminating, m.promCPULoad, m.requestGauge)
 }
 
 func (m *Monitor) promIsIdle() float64 {
