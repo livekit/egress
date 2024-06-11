@@ -84,3 +84,10 @@ func (m *Monitor) promIsDisabled() float64 {
 	}
 	return 0
 }
+
+func (m *Monitor) promIsTerminating() float64 {
+	if m.svc.IsTerminating() {
+		return 1
+	}
+	return 0
+}

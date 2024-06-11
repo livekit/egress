@@ -41,7 +41,7 @@ func (s *Server) HandlerUpdate(ctx context.Context, info *livekit.EgressInfo) (*
 
 	if info.ErrorCode == int32(http.StatusInternalServerError) {
 		logger.Errorw("internal error, shutting down", errors.New(info.Error))
-		s.Shutdown(false)
+		s.Shutdown(false, false)
 	}
 
 	return &emptypb.Empty{}, nil
