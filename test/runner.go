@@ -75,7 +75,7 @@ type Server interface {
 	GetGstPipelineDotFile(string) (string, error)
 	IsIdle() bool
 	KillAll()
-	Shutdown(bool)
+	Shutdown(bool, bool)
 	Drain()
 }
 
@@ -161,7 +161,7 @@ func (r *Runner) Run(t *testing.T, svc Server, bus psrpc.MessageBus, templateFs 
 		if r.room != nil {
 			r.room.Disconnect()
 		}
-		r.svc.Shutdown(true)
+		r.svc.Shutdown(false, true)
 		r.svc.Drain()
 	})
 
