@@ -147,7 +147,9 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 		info.Error = "internal error"
 		info.ErrorCode = int32(http.StatusInternalServerError)
 		_, _ = s.ioClient.UpdateEgress(context.Background(), info)
-		s.Shutdown(false)
+
+		logger.Errorw("process failed, shutting down", err)
+		s.Shutdown(false, false)
 	}
 
 	avgCPU, maxCPU := s.monitor.EgressEnded(req)

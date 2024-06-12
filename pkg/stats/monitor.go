@@ -39,6 +39,7 @@ const (
 
 type Service interface {
 	IsDisabled() bool
+	IsTerminating() bool
 	KillProcess(string, float64)
 }
 
