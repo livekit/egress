@@ -47,9 +47,10 @@ func TestRedactUpload(t *testing.T) {
 						Filepath: "filepath",
 						Output: &livekit.EncodedFileOutput_S3{
 							S3: &livekit.S3Upload{
-								AccessKey: "access",
-								Secret:    "secret",
-								Bucket:    "bucket",
+								AccessKey:    "access",
+								Secret:       "secret",
+								SessionToken: "",
+								Bucket:       "bucket",
 							},
 						},
 					},

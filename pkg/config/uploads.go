@@ -73,6 +73,7 @@ func (c StorageConfig) ToUploadConfig() UploadConfig {
 			S3Upload: &livekit.S3Upload{
 				AccessKey:      c.S3.AccessKey,
 				Secret:         c.S3.Secret,
+				SessionToken:   c.S3.SessionToken,
 				Region:         c.S3.Region,
 				Endpoint:       c.S3.Endpoint,
 				Bucket:         c.S3.Bucket,

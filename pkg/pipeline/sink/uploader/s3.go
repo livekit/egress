@@ -83,7 +83,7 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 		"minDelay", conf.MinRetryDelay,
 	)
 	if conf.AccessKey != "" && conf.Secret != "" {
-		awsConfig.Credentials = credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, "")
+		awsConfig.Credentials = credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, conf.SessionToken)
 	}
 	if conf.Endpoint != "" {
 		awsConfig.Endpoint = aws.String(conf.Endpoint)

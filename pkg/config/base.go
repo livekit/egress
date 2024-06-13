@@ -64,9 +64,10 @@ type StorageConfig struct {
 }
 
 type S3Config struct {
-	AccessKey      string        `yaml:"access_key"` // (env AWS_ACCESS_KEY_ID)
-	Secret         string        `yaml:"secret"`     // (env AWS_SECRET_ACCESS_KEY)
-	Region         string        `yaml:"region"`     // (env AWS_DEFAULT_REGION)
+	AccessKey      string        `yaml:"access_key"`    // (env AWS_ACCESS_KEY_ID)
+	Secret         string        `yaml:"secret"`        // (env AWS_SECRET_ACCESS_KEY)
+	SessionToken   string        `yaml:"session_token"` // (env AWS_SESSION_TOKEN)
+	Region         string        `yaml:"region"`        // (env AWS_DEFAULT_REGION)
 	Endpoint       string        `yaml:"endpoint"`
 	Bucket         string        `yaml:"bucket"`
 	ForcePathStyle bool          `yaml:"force_path_style"`

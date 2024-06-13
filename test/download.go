@@ -58,7 +58,7 @@ func download(t *testing.T, uploadParams interface{}, localFilepath, storageFile
 
 func downloadS3(t *testing.T, conf *config.EgressS3Upload, localFilepath, storageFilepath string) {
 	sess, err := session.NewSession(&aws.Config{
-		Credentials: credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, ""),
+		Credentials: credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, conf.SessionToken),
 		Endpoint:    aws.String(conf.Endpoint),
 		Region:      aws.String(conf.Region),
 		MaxRetries:  aws.Int(maxRetries),
