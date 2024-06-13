@@ -68,7 +68,7 @@ func (m *Monitor) initPrometheus() {
 }
 
 func (m *Monitor) promIsIdle() float64 {
-	if !m.svc.IsDisabled() && m.requests.Load() == 0 {
+	if m.svc.IsIdle() {
 		return 1
 	}
 	return 0
