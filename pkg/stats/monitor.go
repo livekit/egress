@@ -234,6 +234,14 @@ func (m *Monitor) UpdatePID(egressID string, pid int) {
 	ps := m.pending[egressID]
 	delete(m.pending, egressID)
 
+	if ps == nil {
+		logger.Warnw("missing pending procStats", nil, "egressID", egressID)
+		ps = &processStats{
+			egressID:     egressID,
+			allowedUsage: m.cpuCostConfig.WebCpuCost,
+		}
+	}
+
 	if existing := m.procStats[pid]; existing != nil {
 		ps.maxCPU = existing.maxCPU
 		ps.totalCPU = existing.totalCPU
