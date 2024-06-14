@@ -46,7 +46,10 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 		s.activeRequests.Dec()
 		return nil, errors.ErrShuttingDown
 	}
-
+	if s.AlreadyExists(req.EgressId) {
+		s.activeRequests.Dec()
+		return nil, errors.ErrEgressAlreadyExists
+	}
 	if err := s.monitor.AcceptRequest(req); err != nil {
 		s.activeRequests.Dec()
 		return nil, err
