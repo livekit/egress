@@ -101,6 +101,14 @@ func (pm *ProcessManager) GetContext(egressID string) context.Context {
 	return context.Background()
 }
 
+func (pm *ProcessManager) AlreadyExists(egressID string) bool {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	_, ok := pm.activeHandlers[egressID]
+	return ok
+}
+
 func (pm *ProcessManager) HandlerStarted(egressID string) error {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()

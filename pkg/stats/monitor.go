@@ -189,6 +189,9 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.pending[req.EgressId] != nil {
+		return errors.ErrEgressAlreadyExists
+	}
 	if !m.canAcceptRequestLocked(req) {
 		return errors.ErrNotEnoughCPU
 	}
