@@ -50,7 +50,6 @@ func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 			return nil, err
 		}
 		opts = append(opts, option.WithTokenSource(jwtConfig.TokenSource(context.Background())))
-		// opts = append(opts, option.WithCredentialsJSON([]byte(conf.Credentials)))
 	}
 
 	defaultTransport := http.DefaultTransport.(*http.Transport)
