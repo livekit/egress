@@ -33,6 +33,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+const storageScope = "https://www.googleapis.com/auth/devstorage.read_write"
+
 type GCPUploader struct {
 	conf   *livekit.GCPUpload
 	client *storage.Client
@@ -45,7 +47,7 @@ func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 
 	var opts []option.ClientOption
 	if conf.Credentials != "" {
-		jwtConfig, err := google.JWTConfigFromJSON([]byte(conf.Credentials))
+		jwtConfig, err := google.JWTConfigFromJSON([]byte(conf.Credentials), storageScope)
 		if err != nil {
 			return nil, err
 		}
