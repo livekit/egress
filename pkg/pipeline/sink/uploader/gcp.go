@@ -25,12 +25,15 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/googleapis/gax-go/v2"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
+
+const storageScope = "https://www.googleapis.com/auth/devstorage.read_write"
 
 type GCPUploader struct {
 	conf   *livekit.GCPUpload
@@ -44,7 +47,11 @@ func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 
 	var opts []option.ClientOption
 	if conf.Credentials != "" {
-		opts = append(opts, option.WithCredentialsJSON([]byte(conf.Credentials)))
+		jwtConfig, err := google.JWTConfigFromJSON([]byte(conf.Credentials), storageScope)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, option.WithTokenSource(jwtConfig.TokenSource(context.Background())))
 	}
 
 	defaultTransport := http.DefaultTransport.(*http.Transport)
