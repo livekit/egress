@@ -25,6 +25,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/googleapis/gax-go/v2"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -44,7 +45,12 @@ func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 
 	var opts []option.ClientOption
 	if conf.Credentials != "" {
-		opts = append(opts, option.WithCredentialsJSON([]byte(conf.Credentials)))
+		jwtConfig, err := google.JWTConfigFromJSON([]byte(conf.Credentials))
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, option.WithTokenSource(jwtConfig.TokenSource(context.Background())))
+		// opts = append(opts, option.WithCredentialsJSON([]byte(conf.Credentials)))
 	}
 
 	defaultTransport := http.DefaultTransport.(*http.Transport)
