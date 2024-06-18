@@ -83,6 +83,7 @@ session_limits: # optional egress duration limits - once hit, egress will end wi
 s3:
   access_key: AWS_ACCESS_KEY_ID env or IAM role can be used instead
   secret: AWS_SECRET_ACCESS_KEY env or IAM role can be used instead
+  session_token: AWS_SESSION_TOKEN env or IAM role can be used instead
   region: AWS_DEFAULT_REGION env or IAM role can be used instead
   endpoint: (optional) custom endpoint
   bucket: bucket to upload files to

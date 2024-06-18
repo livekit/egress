@@ -54,6 +54,7 @@ type Server struct {
 	ioClient         rpc.IOInfoClient
 
 	activeRequests atomic.Int32
+	terminating    core.Fuse
 	shutdown       core.Fuse
 }
 
@@ -169,7 +170,14 @@ func (s *Server) IsDisabled() bool {
 	return s.shutdown.IsBroken()
 }
 
-func (s *Server) Shutdown(kill bool) {
+func (s *Server) IsTerminating() bool {
+	return s.terminating.IsBroken()
+}
+
+func (s *Server) Shutdown(terminating, kill bool) {
+	if terminating {
+		s.terminating.Break()
+	}
 	s.shutdown.Once(func() {
 		s.psrpcServer.DeregisterStartEgressTopic(s.conf.ClusterID)
 	})

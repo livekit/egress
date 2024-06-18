@@ -38,7 +38,9 @@ const (
 )
 
 type Service interface {
+	IsIdle() bool
 	IsDisabled() bool
+	IsTerminating() bool
 	KillProcess(string, float64)
 }
 
@@ -187,6 +189,9 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.pending[req.EgressId] != nil {
+		return errors.ErrEgressAlreadyExists
+	}
 	if !m.canAcceptRequestLocked(req) {
 		return errors.ErrNotEnoughCPU
 	}
@@ -232,6 +237,14 @@ func (m *Monitor) UpdatePID(egressID string, pid int) {
 
 	ps := m.pending[egressID]
 	delete(m.pending, egressID)
+
+	if ps == nil {
+		logger.Warnw("missing pending procStats", nil, "egressID", egressID)
+		ps = &processStats{
+			egressID:     egressID,
+			allowedUsage: m.cpuCostConfig.WebCpuCost,
+		}
+	}
 
 	if existing := m.procStats[pid]; existing != nil {
 		ps.maxCPU = existing.maxCPU

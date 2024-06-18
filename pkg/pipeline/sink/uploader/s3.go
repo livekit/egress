@@ -30,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
@@ -82,7 +83,7 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 		"minDelay", conf.MinRetryDelay,
 	)
 	if conf.AccessKey != "" && conf.Secret != "" {
-		awsConfig.Credentials = credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, "")
+		awsConfig.Credentials = credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, conf.SessionToken)
 	}
 	if conf.Endpoint != "" {
 		awsConfig.Endpoint = aws.String(conf.Endpoint)
@@ -159,11 +160,11 @@ func (u *S3Uploader) getBucketLocation() (string, error) {
 	svc := s3.New(sess)
 	resp, err := svc.GetBucketLocation(req)
 	if err != nil {
-		return "", psrpc.NewErrorf(psrpc.Unknown, "failed to retrieve upload bucket region: %v", err)
+		return "", psrpc.NewErrorf(psrpc.InvalidArgument, "failed to retrieve upload bucket region: %v", err)
 	}
 
 	if resp.LocationConstraint == nil {
-		return "", psrpc.NewErrorf(psrpc.MalformedResponse, "invalid upload bucket region returned by provider. Try specifying the region manually in the request")
+		return "", psrpc.NewErrorf(psrpc.InvalidArgument, "invalid upload bucket region returned by provider. Try specifying the region manually in the request")
 	}
 
 	return *resp.LocationConstraint, nil
@@ -172,12 +173,12 @@ func (u *S3Uploader) getBucketLocation() (string, error) {
 func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
 	sess, err := session.NewSession(u.awsConfig)
 	if err != nil {
-		return "", 0, wrap("S3", err)
+		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
 	file, err := os.Open(localFilepath)
 	if err != nil {
-		return "", 0, wrap("S3", err)
+		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -185,7 +186,7 @@ func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType ty
 
 	stat, err := file.Stat()
 	if err != nil {
-		return "", 0, wrap("S3", err)
+		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
 	_, err = s3manager.NewUploader(sess).Upload(&s3manager.UploadInput{
@@ -198,7 +199,7 @@ func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType ty
 		ContentDisposition: u.contentDisposition,
 	})
 	if err != nil {
-		return "", 0, wrap("S3", err)
+		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
 	endpoint := "s3.amazonaws.com"

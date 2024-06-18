@@ -99,6 +99,7 @@ var (
 	ErrNoCompatibleCodec          = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")
 	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
 	ErrEgressNotFound             = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
+	ErrEgressAlreadyExists        = psrpc.NewErrorf(psrpc.AlreadyExists, "egress already exists")
 	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Unavailable, "failed to subscribe to track")
 	ErrNotEnoughCPU               = psrpc.NewErrorf(psrpc.Unavailable, "not enough CPU")
 	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
@@ -143,7 +144,7 @@ func ErrParticipantNotFound(identity string) error {
 // This can have many reasons, some related to invalid parameters, other because of system failure.
 // Do not provide an error code until we have code to analyze the error from the underlying upload library further.
 func ErrUploadFailed(location string, err error) error {
-	return psrpc.NewErrorf(psrpc.Unknown, "%s upload failed: %v", location, err)
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s upload failed: %v", location, err)
 }
 
 func ErrCPUExhausted(usage float64) error {
