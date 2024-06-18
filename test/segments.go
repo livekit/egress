@@ -91,21 +91,24 @@ func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, fil
 	localPlaylistPath := plName
 
 	// download from cloud storage
-	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
+	uploadConfig := p.GetSegmentConfig().UploadConfig
+	if uploadConfig != nil {
 		localPlaylistPath = fmt.Sprintf("%s/%s", r.FilePrefix, storedPlaylistPath)
 		download(t, uploadConfig, localPlaylistPath, storedPlaylistPath)
-		if plType == m3u8.PlaylistTypeEvent {
-			// Only download segments once
-			base := storedPlaylistPath[:len(storedPlaylistPath)-5]
-			for i := 0; i < segmentCount; i++ {
-				cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
-				localPath := fmt.Sprintf("%s/%s", r.FilePrefix, cloudPath)
-				download(t, uploadConfig, localPath, cloudPath)
-			}
-		}
 	}
 
+	// verify time before running all the downloads
 	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath, plType)
+
+	if uploadConfig != nil && plType == m3u8.PlaylistTypeEvent {
+		// only download segments once
+		base := storedPlaylistPath[:len(storedPlaylistPath)-5]
+		for i := 0; i < segmentCount; i++ {
+			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
+			localPath := fmt.Sprintf("%s/%s", r.FilePrefix, cloudPath)
+			download(t, uploadConfig, localPath, cloudPath)
+		}
+	}
 
 	// verify
 	verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.Muting, r.sourceFramerate, plType == m3u8.PlaylistTypeLive)
