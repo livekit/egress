@@ -576,7 +576,7 @@ func (b *VideoBin) addEncoder() error {
 			return errors.ErrGstPipelineError(err)
 		}
 		if err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
-			"video/x-h264,profile=%s",
+			"video/x-h264,profile=%s,multiview-mode=mono,multiview-flags=0",
 			b.conf.VideoProfile,
 		))); err != nil {
 			return errors.ErrGstPipelineError(err)
@@ -707,12 +707,12 @@ func newVideoCapsFilter(p *config.PipelineConfig, includeFramerate bool) (*gst.E
 	}
 	if includeFramerate {
 		err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
-			"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1,multiview-mode=mono,multiview-flags=0",
+			"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
 			p.Framerate, p.Width, p.Height,
 		)))
 	} else {
 		err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
-			"video/x-raw,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1,multiview-mode=mono,multiview-flags=0",
+			"video/x-raw,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
 			p.Width, p.Height,
 		)))
 	}
