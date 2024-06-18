@@ -498,6 +498,9 @@ func (b *VideoBin) addSelector() error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+	if err = inputSelector.SetProperty("drop-backwards", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
 
 	videoRate, err := gst.NewElement("videorate")
 	if err != nil {
@@ -576,7 +579,7 @@ func (b *VideoBin) addEncoder() error {
 			return errors.ErrGstPipelineError(err)
 		}
 		if err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
-			"video/x-h264,profile=%s,multiview-mode=mono",
+			"video/x-h264,profile=%s",
 			b.conf.VideoProfile,
 		))); err != nil {
 			return errors.ErrGstPipelineError(err)
