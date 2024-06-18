@@ -707,12 +707,12 @@ func newVideoCapsFilter(p *config.PipelineConfig, includeFramerate bool) (*gst.E
 	}
 	if includeFramerate {
 		err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
-			"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+			"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1,multiview-mode=mono,multiview-flags=0",
 			p.Framerate, p.Width, p.Height,
 		)))
 	} else {
 		err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
-			"video/x-raw,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+			"video/x-raw,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1,multiview-mode=mono,multiview-flags=0",
 			p.Width, p.Height,
 		)))
 	}
