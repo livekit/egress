@@ -55,18 +55,18 @@ func (r *Runner) testTrackFile(t *testing.T) {
 	t.Run("5A/Track/File", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
-				name:       "OPUS",
-				audioOnly:  true,
-				audioCodec: types.MimeTypeOpus,
-				outputType: types.OutputTypeOGG,
-				filename:   "t_{track_source}_{time}.ogg",
-			},
-			{
 				name:       "H264",
 				videoOnly:  true,
 				videoCodec: types.MimeTypeH264,
 				outputType: types.OutputTypeMP4,
 				filename:   "t_{track_id}_{time}.mp4",
+			},
+			{
+				name:       "OPUS",
+				audioOnly:  true,
+				audioCodec: types.MimeTypeOpus,
+				outputType: types.OutputTypeOGG,
+				filename:   "t_{track_source}_{time}.ogg",
 			},
 			{
 				name:       "VP8",

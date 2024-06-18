@@ -58,21 +58,7 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 	t.Run("1A/RoomComposite/File", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
-				name:                "Base",
-				filename:            "r_{room_name}_{time}.mp4",
-				expectVideoEncoding: true,
-			},
-			{
-				name:      "Video-Only",
-				videoOnly: true,
-				options: &livekit.EncodingOptions{
-					VideoCodec: livekit.VideoCodec_H264_HIGH,
-				},
-				filename:            "r_{room_name}_video_{time}.mp4",
-				expectVideoEncoding: true,
-			},
-			{
-				name:      "Audio-Only",
+				name:      "AudioOnly",
 				fileType:  livekit.EncodedFileType_OGG,
 				audioOnly: true,
 				options: &livekit.EncodingOptions{
@@ -80,6 +66,20 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 				},
 				filename:            "r_{room_name}_audio_{time}",
 				expectVideoEncoding: false,
+			},
+			{
+				name:                "Base",
+				filename:            "r_{room_name}_{time}.mp4",
+				expectVideoEncoding: true,
+			},
+			{
+				name:      "VideoOnly",
+				videoOnly: true,
+				options: &livekit.EncodingOptions{
+					VideoCodec: livekit.VideoCodec_H264_HIGH,
+				},
+				filename:            "r_{room_name}_video_{time}.mp4",
+				expectVideoEncoding: true,
 			},
 		} {
 			r.runRoomTest(t, test.name, types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {

@@ -57,18 +57,18 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 	t.Run("4A/TrackComposite/File", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
-				name:       "VP8",
-				fileType:   livekit.EncodedFileType_MP4,
-				audioCodec: types.MimeTypeOpus,
-				videoCodec: types.MimeTypeVP8,
-				filename:   "tc_{publisher_identity}_vp8_{time}.mp4",
-			},
-			{
 				name:       "H264",
 				fileType:   livekit.EncodedFileType_MP4,
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeH264,
 				filename:   "tc_{room_name}_h264_{time}.mp4",
+			},
+			{
+				name:       "VP8",
+				fileType:   livekit.EncodedFileType_MP4,
+				audioCodec: types.MimeTypeOpus,
+				videoCodec: types.MimeTypeVP8,
+				filename:   "tc_{publisher_identity}_vp8_{time}.mp4",
 			},
 		} {
 			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
@@ -154,11 +154,11 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 	t.Run("4C/TrackComposite/Segments", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
-				name:       "VP8",
+				name:       "Audio Only",
 				audioCodec: types.MimeTypeOpus,
-				videoCodec: types.MimeTypeVP8,
-				filename:   "tcs_{publisher_identity}_vp8_{time}",
-				playlist:   "tcs_{publisher_identity}_vp8_{time}.m3u8",
+				filename:   "tcs_{room_name}_audio_{time}",
+				playlist:   "tcs_{room_name}_audio_{time}.m3u8",
+				audioOnly:  true,
 			},
 			{
 				name:         "H264",
@@ -169,11 +169,11 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 				livePlaylist: "tcs_live_{room_name}_h264_{time}.m3u8",
 			},
 			{
-				name:       "Audio Only",
+				name:       "VP8",
 				audioCodec: types.MimeTypeOpus,
-				filename:   "tcs_{room_name}_audio_{time}",
-				playlist:   "tcs_{room_name}_audio_{time}.m3u8",
-				audioOnly:  true,
+				videoCodec: types.MimeTypeVP8,
+				filename:   "tcs_{publisher_identity}_vp8_{time}",
+				playlist:   "tcs_{publisher_identity}_vp8_{time}.m3u8",
 			},
 		} {
 			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec,
