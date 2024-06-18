@@ -23,7 +23,6 @@ import (
 
 	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
-	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -42,10 +41,10 @@ type VideoBin struct {
 	bin  *gstreamer.Bin
 	conf *config.PipelineConfig
 
-	lastPTS     atomic.Duration
-	nextPTS     atomic.Duration
+	// lastPTS     atomic.Duration
+	// nextPTS     atomic.Duration
 	selectedPad string
-	nextPad     string
+	// nextPad     string
 
 	mu          sync.Mutex
 	nextID      int
@@ -175,18 +174,24 @@ func (b *VideoBin) onTrackMuted(trackID string) {
 	b.mu.Unlock()
 }
 
-func (b *VideoBin) onTrackUnmuted(trackID string, pts time.Duration) {
+func (b *VideoBin) onTrackUnmuted(trackID string, _ time.Duration) {
 	if b.bin.GetState() > gstreamer.StateRunning {
 		return
 	}
 
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	if name, ok := b.names[trackID]; ok {
-		b.nextPTS.Store(pts)
-		b.nextPad = name
+		err := b.setSelectorPad(name)
+		if err != nil {
+			b.mu.Unlock()
+			b.bin.OnError(err)
+			return
+		}
+
+		// b.nextPTS.Store(pts)
+		// b.nextPad = name
 	}
+	b.mu.Unlock()
 }
 
 func (b *VideoBin) buildWebInput() error {
@@ -501,6 +506,9 @@ func (b *VideoBin) addSelector() error {
 	if err = inputSelector.SetProperty("drop-backwards", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+	if err = inputSelector.SetProperty("sync-streams", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
 
 	videoRate, err := gst.NewElement("videorate")
 	if err != nil {
@@ -737,18 +745,18 @@ func (b *VideoBin) createSrcPad(trackID, name string) {
 	defer b.mu.Unlock()
 
 	pad := b.selector.GetRequestPad("sink_%u")
-	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		buffer := info.GetBuffer()
-		for b.nextPTS.Load() != 0 {
-			time.Sleep(time.Millisecond * 100)
-		}
-		pts := *buffer.PresentationTimestamp().AsDuration()
-		if pts < b.lastPTS.Load() {
-			return gst.PadProbeDrop
-		}
-		b.lastPTS.Store(pts)
-		return gst.PadProbeOK
-	})
+	// pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	// 	buffer := info.GetBuffer()
+	// 	for b.nextPTS.Load() != 0 {
+	// 		time.Sleep(time.Millisecond * 100)
+	// 	}
+	// 	pts := *buffer.PresentationTimestamp().AsDuration()
+	// 	if pts < b.lastPTS.Load() {
+	// 		return gst.PadProbeDrop
+	// 	}
+	// 	b.lastPTS.Store(pts)
+	// 	return gst.PadProbeOK
+	// })
 
 	b.names[trackID] = name
 	b.pads[name] = pad
@@ -759,25 +767,25 @@ func (b *VideoBin) createTestSrcPad() {
 	defer b.mu.Unlock()
 
 	pad := b.selector.GetRequestPad("sink_%u")
-	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		buffer := info.GetBuffer()
-		pts := *buffer.PresentationTimestamp().AsDuration()
-		if pts < b.lastPTS.Load() {
-			return gst.PadProbeDrop
-		}
-		if nextPTS := b.nextPTS.Load(); nextPTS != 0 && pts >= nextPTS {
-			if err := b.setSelectorPad(b.nextPad); err != nil {
-				logger.Errorw("failed to unmute", err)
-				return gst.PadProbeDrop
-			}
-			b.nextPad = ""
-			b.nextPTS.Store(0)
-		}
-		if b.selectedPad == videoTestSrcName {
-			b.lastPTS.Store(pts)
-		}
-		return gst.PadProbeOK
-	})
+	// pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	// 	buffer := info.GetBuffer()
+	// 	pts := *buffer.PresentationTimestamp().AsDuration()
+	// 	if pts < b.lastPTS.Load() {
+	// 		return gst.PadProbeDrop
+	// 	}
+	// 	if nextPTS := b.nextPTS.Load(); nextPTS != 0 && pts >= nextPTS {
+	// 		if err := b.setSelectorPad(b.nextPad); err != nil {
+	// 			logger.Errorw("failed to unmute", err)
+	// 			return gst.PadProbeDrop
+	// 		}
+	// 		b.nextPad = ""
+	// 		b.nextPTS.Store(0)
+	// 	}
+	// 	if b.selectedPad == videoTestSrcName {
+	// 		b.lastPTS.Store(pts)
+	// 	}
+	// 	return gst.PadProbeOK
+	// })
 	b.pads[videoTestSrcName] = pad
 }
 
