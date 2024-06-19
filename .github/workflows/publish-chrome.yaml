@@ -44,9 +44,9 @@ jobs:
         run: |
           status="provisioning"
           while [ "$status" == "provisioning" ] || [ "$status" == "booting" ]; do \
-              sleep 5; \
               status=$(linode-cli linodes view ${{ steps.create_builder.outputs.builder_id }} --json | jq -r '.[0].status'); \
               echo "Builder status: $status"; \
+              sleep 5; \
           done
         env:
           LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
