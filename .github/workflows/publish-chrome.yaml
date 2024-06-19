@@ -20,17 +20,36 @@ jobs:
         with:
           token: ${{ secrets.LINODE_PAT }}
 
-      - name: Create Builder
-        id: create_builder
+#      For some reason, Linodes created via linode-cli do not work with ssh,
+#      so we have to create the Linode manually and then pull the Linode ID
+#
+#      - name: Create Builder
+#        id: create_builder
+#        run: |
+#          builder_info="$(linode-cli linodes create \
+#            --authorized_users dclivekit \
+#            --backups_enabled false \
+#            --booted true \
+#            --image linode/ubuntu22.04 \
+#            --label chrome-builder \
+#            --private_ip false \
+#            --region us-west \
+#            --root_pass '${{ secrets.LINODE_ROOT_PASS }}' \
+#            --type g6-dedicated-4 \
+#            --json)"
+#          builder_id="$(echo $builder_info | jq -r '.[0].id')"
+#          builder_ip="$(echo $builder_info | jq -r '.[0].ipv4[0]')"
+#          echo "builder_id: $builder_id"
+#          echo "builder_ip: $builder_ip"
+#          echo "builder_id=$builder_id" >> $GITHUB_OUTPUT
+#          echo "builder_ip=$builder_ip" >> $GITHUB_OUTPUT
+#        env:
+#          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
+
+      - name: Get Builder
+        id: get_builder
         run: |
-          builder_info="$(linode-cli linodes create \
-            --region us-west \
-            --type g6-dedicated-56 \
-            --authorized_keys '${{ secrets.LINODE_SSH_PUBLIC_KEY }}' \
-            --image linode/ubuntu22.04 \
-            --label chrome-builder \
-            --root_pass '${{ secrets.LINODE_ROOT_PASS }}' \
-            --json)"
+          builder_info="$(linode-cli linodes list --label chrome-builder --json)"
           builder_id="$(echo $builder_info | jq -r '.[0].id')"
           builder_ip="$(echo $builder_info | jq -r '.[0].ipv4[0]')"
           echo "builder_id: $builder_id"
@@ -42,12 +61,13 @@ jobs:
 
       - name: Wait for Builder
         run: |
-          status="provisioning"
+          status=$(linode-cli linodes view ${{ steps.get_builder.outputs.builder_id }} --json | jq -r '.[0].status')
           while [ "$status" == "provisioning" ] || [ "$status" == "booting" ]; do \
-              status=$(linode-cli linodes view ${{ steps.create_builder.outputs.builder_id }} --json | jq -r '.[0].status'); \
               echo "Builder status: $status"; \
               sleep 5; \
+              status=$(linode-cli linodes view ${{ steps.get_builder.outputs.builder_id }} --json | jq -r '.[0].status'); \
           done
+          echo "Builder status: $status"
         env:
           LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
 
@@ -59,20 +79,20 @@ jobs:
           chmod 600 ~/.ssh/linode_ed25519.pub
           echo "${{ secrets.LINODE_SSH_PRIVATE_KEY }}" > ~/.ssh/linode_ed25519
           chmod 600 ~/.ssh/linode_ed25519
-          ssh-keyscan -H "${{ steps.create_builder.outputs.builder_ip }}" > ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ steps.get_builder.outputs.builder_ip }} > ~/.ssh/known_hosts
 
       - name: Setup
         run: |
           ssh -i ~/.ssh/linode_ed25519 \
               -o PasswordAuthentication=no \
-              -t root@${{ steps.create_builder.outputs.builder_ip }} \
+              -t root@${{ steps.get_builder.outputs.builder_ip }} \
               'bash -s' < ./build/chrome/scripts/setup.sh
 
       - name: Amd64
         run: |
           ssh -i ~/.ssh/linode_ed25519 \
               -o PasswordAuthentication=no \
-              -t chrome@${{ steps.create_builder.outputs.builder_ip }} \
+              -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
               'bash -s ${{ inputs.chrome_version }}' < ./build/chrome/scripts/amd64.sh
 
       - name: Arm64
@@ -80,7 +100,7 @@ jobs:
           ssh -i ~/.ssh/linode_ed25519 \
               -o PasswordAuthentication=no \
               -o ServerAliveInterval=60 \
-              -t chrome@${{ steps.create_builder.outputs.builder_ip }} \
+              -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
               'bash -s ${{ inputs.chrome_version }}' < ./build/chrome/scripts/arm64.sh
 
       - name: Drivers
@@ -88,18 +108,18 @@ jobs:
           ssh -i ~/.ssh/linode_ed25519 \
               -o PasswordAuthentication=no \
               -o ServerAliveInterval=60 \
-              -t chrome@${{ steps.create_builder.outputs.builder_ip }} \
+              -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
               'bash -s ${{ inputs.chrome_version }}' < ./build/chrome/scripts/driver.sh
 
       - name: Download artifacts
         run: |
           ssh -i ~/.ssh/linode_ed25519 \
               -o PasswordAuthentication=no \
-              -t chrome@${{ steps.create_builder.outputs.builder_ip }} \
+              -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
               'zip -r output.zip ./output'
           scp -i ~/.ssh/linode_ed25519 \
               -o PasswordAuthentication=no \
-              chrome@${{ steps.create_builder.outputs.builder_ip }}:/home/chrome/output.zip \
+              chrome@${{ steps.get_builder.outputs.builder_ip }}:/home/chrome/output.zip \
               ${{ github.workspace }}/build/chrome/output.zip
           unzip ${{ github.workspace }}/build/chrome/output.zip -d ${{ github.workspace }}/build/chrome/output
 
@@ -122,7 +142,6 @@ jobs:
           tags: livekit/chrome-installer:${{ inputs.chrome_version }}
 
       - name: Delete Linode
-        if: always()
-        run: linode-cli linodes delete ${{ steps.create_builder.outputs.builder_id }}
+        run: linode-cli linodes delete ${{ steps.get_builder.outputs.builder_id }}
         env:
           LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
