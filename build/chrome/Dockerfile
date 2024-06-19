@@ -14,5 +14,8 @@
 
 FROM ubuntu:22.04
 
-COPY arm64/ /chrome-installer/arm64/
-COPY install-chrome /chrome-installer/
+RUN mkdir /chrome-installer
+COPY output/arm64 /chrome-installer/arm64
+COPY output/amd64 /chrome-installer/amd64
+COPY output/chromedriver /chrome-installer/chromedriver
+COPY install-chrome /chrome-installer/install-chrome

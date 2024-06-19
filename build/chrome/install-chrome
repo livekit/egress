@@ -41,15 +41,9 @@ then
   chown root:root /usr/local/sbin/chrome-devel-sandbox
   chmod 4755 /usr/local/sbin/chrome-devel-sandbox
 else
-  wget https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_124.0.6367.201-1_amd64.deb
-  apt-get install -y ./google-chrome-stable_124.0.6367.201-1_amd64.deb
-  rm google-chrome-stable_124.0.6367.201-1_amd64.deb
+  apt-get install -y /chrome-installer/amd64/google-chrome-stable_124.0.6367.201-1_amd64.deb
 fi
 
-wget -N https://chromedriver.storage.googleapis.com/2.46/chromedriver_linux64.zip
-unzip chromedriver_linux64.zip
-chmod +x chromedriver
-mv -f chromedriver /usr/local/bin/chromedriver
-rm chromedriver_linux64.zip
-
+chmod +x /chrome-installer/chromedriver
+mv -f /chrome-installer/chromedriver /usr/local/bin/chromedriver
 rm -rf /chrome-installer
