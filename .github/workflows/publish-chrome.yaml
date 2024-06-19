@@ -89,7 +89,7 @@ jobs:
               -o PasswordAuthentication=no \
               -o ServerAliveInterval=60 \
               -t chrome@${{ steps.create_builder.outputs.builder_ip }} \
-              'bash -s' < ./build/chrome/scripts/driver.sh
+              'bash -s ${{ inputs.chrome_version }}' < ./build/chrome/scripts/driver.sh
 
       - name: Download artifacts
         run: |
