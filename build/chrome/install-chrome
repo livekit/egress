@@ -36,16 +36,16 @@ then
     libxrender1 \
     libxss1 \
     libxtst6
-  chmod +x /chrome-installer/arm64/chromedriver
-  mv -f /chrome-installer/arm64/chromedriver /usr/local/bin/chromedriver
+  chmod +x /chrome-installer/arm64/chromedriver-mac-arm64/chromedriver
+  mv -f /chrome-installer/arm64/chromedriver-mac-arm64/chromedriver /usr/local/bin/chromedriver
   mv /chrome-installer/arm64/ /chrome
   cp /chrome/chrome_sandbox /usr/local/sbin/chrome-devel-sandbox
   chown root:root /usr/local/sbin/chrome-devel-sandbox
   chmod 4755 /usr/local/sbin/chrome-devel-sandbox
 else
   apt-get install -y /chrome-installer/amd64/google-chrome-stable_124.0.6367.201-1_amd64.deb
-  chmod +x /chrome-installer/amd64/chromedriver
-  mv -f /chrome-installer/amd64/chromedriver /usr/local/bin/chromedriver
+  chmod +x /chrome-installer/amd64/chromedriver-linux64/chromedriver
+  mv -f /chrome-installer/amd64/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
 fi
 
 rm -rf /chrome-installer

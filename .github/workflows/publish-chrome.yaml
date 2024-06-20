@@ -111,17 +111,20 @@ jobs:
               -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
               'bash -s ${{ inputs.chrome_version }}' < ./build/chrome/scripts/driver.sh
 
-      - name: Download artifacts
+      - name: Prepare artifacts
         run: |
           ssh -i ~/.ssh/linode_ed25519 \
               -o PasswordAuthentication=no \
               -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
               'zip -r output.zip ./output'
+
+      - name: Download artifacts
+        run: |
           scp -i ~/.ssh/linode_ed25519 \
               -o PasswordAuthentication=no \
               chrome@${{ steps.get_builder.outputs.builder_ip }}:/home/chrome/output.zip \
               ${{ github.workspace }}/build/chrome/output.zip
-          unzip ${{ github.workspace }}/build/chrome/output.zip -d ${{ github.workspace }}/build/chrome/output
+          unzip ${{ github.workspace }}/build/chrome/output.zip -d ${{ github.workspace }}/build/chrome
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
