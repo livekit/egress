@@ -31,7 +31,7 @@ import (
 const (
 	gstVersion      = "1.22.12"
 	libniceVersion  = "0.1.21"
-	chromiumVersion = "124.0.6367.201"
+	chromiumVersion = "125.0.6422.141"
 	dockerBuild     = "docker build"
 	dockerBuildX    = "docker buildx build --push --platform linux/amd64,linux/arm64"
 )
@@ -162,23 +162,6 @@ func Build() error {
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
 		"docker pull livekit/egress-templates",
 		"docker build -t livekit/egress:latest -f build/egress/Dockerfile .",
-	)
-}
-
-func BuildChrome() error {
-	return mageutil.Run(context.Background(),
-		"docker pull ubuntu:22.04",
-		"docker build -t livekit/chrome-installer ./build/chrome",
-	)
-}
-
-func PublishChrome() error {
-	return mageutil.Run(context.Background(),
-		"docker pull ubuntu:22.04",
-		fmt.Sprintf(
-			"%s -t livekit/chrome-installer:%s ./build/chrome",
-			dockerBuildX, chromiumVersion,
-		),
 	)
 }
 

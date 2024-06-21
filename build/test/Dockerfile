@@ -73,7 +73,7 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 # install chrome
-COPY --from=livekit/chrome-installer:124.0.6367.201.1 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:125.0.6422.141 /chrome-installer /chrome-installer
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 
 # clean up
