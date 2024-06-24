@@ -17,6 +17,9 @@ FROM livekit/gstreamer:1.22.12-dev
 WORKDIR /workspace
 
 ARG TARGETPLATFORM
+ARG TARGETARCH
+ENV TARGETARCH=${TARGETARCH}
+ENV TARGETPLATFORM=${TARGETPLATFORM}
 
 # install go
 RUN wget https://go.dev/dl/go1.22.1.linux-${TARGETARCH}.tar.gz && \
