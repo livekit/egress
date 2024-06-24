@@ -19,10 +19,9 @@ WORKDIR /workspace
 ARG TARGETPLATFORM
 
 # install go
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    wget https://go.dev/dl/go1.22.1.linux-${GOARCH}.tar.gz && \
+RUN wget https://go.dev/dl/go1.22.1.linux-${TARGETARCH}.tar.gz && \
     rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go1.22.1.linux-${GOARCH}.tar.gz
+    tar -C /usr/local -xzf go1.22.1.linux-${TARGETARCH}.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 # download go modules
@@ -41,16 +40,16 @@ COPY --from=livekit/egress-templates workspace/build/ cmd/server/templates/
 COPY --from=livekit/egress-templates workspace/build/ test/templates/
 
 # build (service tests will need to launch the handler)
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on GODEBUG=disablethp=1 go build -a -o egress ./cmd/server
-
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go test -c -v -race --tags=integration ./test
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=${TARGETARCH} GO111MODULE=on GODEBUG=disablethp=1 go build -a -o egress ./cmd/server
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=${TARGETARCH} GO111MODULE=on go test -c -v -race --tags=integration ./test
 
 
 FROM livekit/gstreamer:1.22.12-prod
 
 ARG TARGETPLATFORM
+ARG TARGETARCH
+ENV TARGETARCH=${TARGETARCH}
+ENV TARGETPLATFORM=${TARGETPLATFORM}
 
 # install deps
 RUN apt-get update && \
@@ -66,10 +65,9 @@ RUN apt-get update && \
         gstreamer1.0-plugins-base-
 
 # install go
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    wget https://go.dev/dl/go1.22.1.linux-${GOARCH}.tar.gz && \
+RUN wget https://go.dev/dl/go1.22.1.linux-${TARGETARCH}.tar.gz && \
     rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go1.22.1.linux-${GOARCH}.tar.gz
+    tar -C /usr/local -xzf go1.22.1.linux-${TARGETARCH}.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 # install chrome

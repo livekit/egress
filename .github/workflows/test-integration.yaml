@@ -114,3 +114,14 @@ jobs:
             -e S3_UPLOAD="$(echo ${{ secrets.S3_UPLOAD }} | base64 -d)" \
             -e GCP_UPLOAD="$(echo ${{ secrets.GCP_UPLOAD }} | base64 -d)" \
             ${{ env.IMAGE }}
+
+  cleanup:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete docker image
+        run: |
+          curl -i -X DELETE \
+            -H "Accept: application/json" \
+            -H "Authorization: JWT ${{ secrets.DOCKERHUB_TOKEN }}" \
+            https://hub.docker.com/v2/repositories/livekit/egress-integration/tags/${{ steps.docker-md.outputs.tags }}
