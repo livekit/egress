@@ -225,7 +225,7 @@ func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {
 
 func (r *Runner) sendRequest(t *testing.T, req *rpc.StartEgressRequest) *livekit.EgressInfo {
 	// send start request
-	info, err := r.start(context.Background(), req)
+	info, err := r.StartEgress(context.Background(), req)
 
 	// check returned egress info
 	require.NoError(t, err)
