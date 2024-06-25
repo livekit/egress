@@ -94,7 +94,7 @@ func (r *Runner) testTrackFile(t *testing.T) {
 					TrackId:  trackID,
 					Output: &livekit.TrackEgressRequest_File{
 						File: &livekit.DirectFileOutput{
-							Filepath: r.getFilePath(test.filename),
+							Filepath: path.Join(r.FilePrefix, test.filename),
 						},
 					},
 				}

@@ -19,6 +19,7 @@ package test
 import (
 	"fmt"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"testing"
@@ -76,7 +77,7 @@ func (r *Runner) verifySegments(t *testing.T, p *config.PipelineConfig, filename
 }
 
 func (r *Runner) verifyManifest(t *testing.T, p *config.PipelineConfig, plName string) {
-	localPlaylistPath := fmt.Sprintf("%s/%s", r.FilePrefix, plName)
+	localPlaylistPath := path.Join(r.FilePrefix, path.Base(plName))
 
 	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
 		download(t, uploadConfig, localPlaylistPath+".json", plName+".json")
@@ -92,14 +93,14 @@ func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, fil
 
 	// download from cloud storage
 	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
-		localPlaylistPath = fmt.Sprintf("%s/%s", r.FilePrefix, storedPlaylistPath)
+		localPlaylistPath = path.Join(r.FilePrefix, path.Base(storedPlaylistPath))
 		download(t, uploadConfig, localPlaylistPath, storedPlaylistPath)
 		if plType == m3u8.PlaylistTypeEvent {
 			// Only download segments once
 			base := storedPlaylistPath[:len(storedPlaylistPath)-5]
 			for i := 0; i < segmentCount; i++ {
 				cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
-				localPath := fmt.Sprintf("%s/%s", r.FilePrefix, cloudPath)
+				localPath := path.Join(r.FilePrefix, path.Base(cloudPath))
 				download(t, uploadConfig, localPath, cloudPath)
 			}
 		}

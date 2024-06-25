@@ -18,6 +18,7 @@ package test
 
 import (
 	"context"
+	"path"
 	"testing"
 	"time"
 
@@ -83,14 +84,19 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 			},
 		} {
 			r.runRoomTest(t, test.name, types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
-				fileOutput := &livekit.EncodedFileOutput{
-					FileType: test.fileType,
-					Filepath: r.getFilePath(test.filename),
-				}
+				var fileOutput *livekit.EncodedFileOutput
 				if r.S3Upload != nil {
-					fileOutput.Filepath = test.filename
-					fileOutput.Output = &livekit.EncodedFileOutput_S3{
-						S3: r.S3Upload,
+					fileOutput = &livekit.EncodedFileOutput{
+						FileType: test.fileType,
+						Filepath: path.Join(uploadPrefix, test.filename),
+						Output: &livekit.EncodedFileOutput_S3{
+							S3: r.S3Upload,
+						},
+					}
+				} else {
+					fileOutput = &livekit.EncodedFileOutput{
+						FileType: test.fileType,
+						Filepath: path.Join(r.FilePrefix, test.filename),
 					}
 				}
 
@@ -169,7 +175,7 @@ func (r *Runner) testRoomCompositeStream(t *testing.T) {
 				},
 			}
 
-			info, err := r.client.StartEgress(context.Background(), "", req)
+			info, err := r.StartEgress(context.Background(), req)
 			require.NoError(t, err)
 			require.Empty(t, info.Error)
 			require.NotEmpty(t, info.EgressId)
@@ -219,16 +225,23 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 				audioOnly:      true,
 			},
 		} {
-			segmentOutput := &livekit.SegmentedFileOutput{
-				FilenamePrefix:   r.getFilePath(test.filename),
-				PlaylistName:     test.playlist,
-				LivePlaylistName: test.livePlaylist,
-				FilenameSuffix:   test.filenameSuffix,
-			}
+			var segmentOutput *livekit.SegmentedFileOutput
 			if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.GCPUpload != nil {
-				segmentOutput.FilenamePrefix = test.filename
-				segmentOutput.Output = &livekit.SegmentedFileOutput_Gcp{
-					Gcp: r.GCPUpload,
+				segmentOutput = &livekit.SegmentedFileOutput{
+					FilenamePrefix:   path.Join(uploadPrefix, test.filename),
+					PlaylistName:     test.playlist,
+					LivePlaylistName: test.livePlaylist,
+					FilenameSuffix:   test.filenameSuffix,
+					Output: &livekit.SegmentedFileOutput_Gcp{
+						Gcp: r.GCPUpload,
+					},
+				}
+			} else {
+				segmentOutput = &livekit.SegmentedFileOutput{
+					FilenamePrefix:   path.Join(r.FilePrefix, test.filename),
+					PlaylistName:     test.playlist,
+					LivePlaylistName: test.livePlaylist,
+					FilenameSuffix:   test.filenameSuffix,
 				}
 			}
 
@@ -273,11 +286,9 @@ func (r *Runner) testRoomCompositeImages(t *testing.T) {
 			},
 		} {
 			imageOutput := &livekit.ImageOutput{
-				FilenamePrefix: r.getFilePath(test.filename),
+				FilenamePrefix: path.Join(r.FilePrefix, test.filename),
 				FilenameSuffix: test.imageFilenameSuffix,
 			}
-
-			// TODO upload
 
 			room := &livekit.RoomCompositeEgressRequest{
 				RoomName:     r.RoomName,
@@ -317,13 +328,13 @@ func (r *Runner) testRoomCompositeMulti(t *testing.T) {
 					Layout:   "grid-light",
 					FileOutputs: []*livekit.EncodedFileOutput{{
 						FileType: livekit.EncodedFileType_MP4,
-						Filepath: r.getFilePath("rc_multiple_{time}"),
+						Filepath: path.Join(r.FilePrefix, "rc_multiple_{time}"),
 					}},
 					ImageOutputs: []*livekit.ImageOutput{{
 						CaptureInterval: 10,
 						Width:           1280,
 						Height:          720,
-						FilenamePrefix:  r.getFilePath("rc_image"),
+						FilenamePrefix:  path.Join(r.FilePrefix, "rc_image"),
 					}},
 				},
 			},

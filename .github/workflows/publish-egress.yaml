@@ -33,7 +33,7 @@ jobs:
             ~/go/pkg/mod
             ~/go/bin
             ~/.cache
-          key: ${{ runner.os }}-egress-${{ hashFiles('**/go.sum') }}
+          key: "${{ runner.os }}-egress-${{ hashFiles('**/go.sum') }}"
           restore-keys: ${{ runner.os }}-egress
 
       - name: Docker metadata

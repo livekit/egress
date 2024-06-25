@@ -17,6 +17,7 @@
 package test
 
 import (
+	"path"
 	"testing"
 
 	"github.com/livekit/protocol/livekit"
@@ -49,13 +50,17 @@ func (r *Runner) testWebFile(t *testing.T) {
 	}
 
 	r.runWebTest(t, "2A/Web/File", func(t *testing.T) {
-		fileOutput := &livekit.EncodedFileOutput{
-			Filepath: r.getFilePath("web_{time}"),
-		}
+		var fileOutput *livekit.EncodedFileOutput
 		if r.GCPUpload != nil {
-			fileOutput.Filepath = "web_{time}"
-			fileOutput.Output = &livekit.EncodedFileOutput_Gcp{
-				Gcp: r.GCPUpload,
+			fileOutput = &livekit.EncodedFileOutput{
+				Filepath: path.Join(uploadPrefix, "web_{time}"),
+				Output: &livekit.EncodedFileOutput_Gcp{
+					Gcp: r.GCPUpload,
+				},
+			}
+		} else {
+			fileOutput = &livekit.EncodedFileOutput{
+				Filepath: path.Join(r.FilePrefix, "web_{time}"),
 			}
 		}
 
@@ -105,14 +110,19 @@ func (r *Runner) testWebSegments(t *testing.T) {
 	}
 
 	r.runWebTest(t, "2C/Web/Segments", func(t *testing.T) {
-		segmentOutput := &livekit.SegmentedFileOutput{
-			FilenamePrefix: r.getFilePath("web_{time}"),
-			PlaylistName:   "web_{time}.m3u8",
-		}
+		var segmentOutput *livekit.SegmentedFileOutput
 		if r.AzureUpload != nil {
-			segmentOutput.FilenamePrefix = "web_{time}"
-			segmentOutput.Output = &livekit.SegmentedFileOutput_Azure{
-				Azure: r.AzureUpload,
+			segmentOutput = &livekit.SegmentedFileOutput{
+				FilenamePrefix: path.Join(uploadPrefix, "web_{time}"),
+				PlaylistName:   "web_{time}.m3u8",
+				Output: &livekit.SegmentedFileOutput_Azure{
+					Azure: r.AzureUpload,
+				},
+			}
+		} else {
+			segmentOutput = &livekit.SegmentedFileOutput{
+				FilenamePrefix: path.Join(r.FilePrefix, "web_{time}"),
+				PlaylistName:   "web_{time}.m3u8",
 			}
 		}
 
@@ -146,10 +156,10 @@ func (r *Runner) testWebMulti(t *testing.T) {
 					Url: webUrl,
 					FileOutputs: []*livekit.EncodedFileOutput{{
 						FileType: livekit.EncodedFileType_MP4,
-						Filepath: r.getFilePath("web_multiple_{time}"),
+						Filepath: path.Join(r.FilePrefix, "web_multiple_{time}"),
 					}},
 					SegmentOutputs: []*livekit.SegmentedFileOutput{{
-						FilenamePrefix: r.getFilePath("web_multiple_{time}"),
+						FilenamePrefix: path.Join(r.FilePrefix, "web_multiple_{time}"),
 						PlaylistName:   "web_multiple_{time}",
 					}},
 				},

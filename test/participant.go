@@ -17,6 +17,7 @@
 package test
 
 import (
+	"path"
 	"testing"
 	"time"
 
@@ -95,14 +96,19 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 			},
 		} {
 			r.runParticipantTest(t, test.name, test, func(t *testing.T, identity string) {
-				fileOutput := &livekit.EncodedFileOutput{
-					FileType: test.fileType,
-					Filepath: r.getFilePath(test.filename),
-				}
+				var fileOutput *livekit.EncodedFileOutput
 				if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.AzureUpload != nil {
-					fileOutput.Filepath = test.filename
-					fileOutput.Output = &livekit.EncodedFileOutput_Azure{
-						Azure: r.AzureUpload,
+					fileOutput = &livekit.EncodedFileOutput{
+						FileType: test.fileType,
+						Filepath: path.Join(uploadPrefix, test.filename),
+						Output: &livekit.EncodedFileOutput_Azure{
+							Azure: r.AzureUpload,
+						},
+					}
+				} else {
+					fileOutput = &livekit.EncodedFileOutput{
+						FileType: test.fileType,
+						Filepath: path.Join(r.FilePrefix, test.filename),
 					}
 				}
 
@@ -193,15 +199,21 @@ func (r *Runner) testParticipantSegments(t *testing.T) {
 		} {
 			r.runParticipantTest(t, test.name, test,
 				func(t *testing.T, identity string) {
-					segmentOutput := &livekit.SegmentedFileOutput{
-						FilenamePrefix: r.getFilePath(test.filename),
-						PlaylistName:   test.playlist,
-						FilenameSuffix: test.filenameSuffix,
-					}
+					var segmentOutput *livekit.SegmentedFileOutput
 					if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.S3Upload != nil {
-						segmentOutput.FilenamePrefix = test.filename
-						segmentOutput.Output = &livekit.SegmentedFileOutput_S3{
-							S3: r.S3Upload,
+						segmentOutput = &livekit.SegmentedFileOutput{
+							FilenamePrefix: path.Join(uploadPrefix, test.filename),
+							PlaylistName:   test.playlist,
+							FilenameSuffix: test.filenameSuffix,
+							Output: &livekit.SegmentedFileOutput_S3{
+								S3: r.S3Upload,
+							},
+						}
+					} else {
+						segmentOutput = &livekit.SegmentedFileOutput{
+							FilenamePrefix: path.Join(r.FilePrefix, test.filename),
+							PlaylistName:   test.playlist,
+							FilenameSuffix: test.filenameSuffix,
 						}
 					}
 
@@ -256,7 +268,7 @@ func (r *Runner) testParticipantMulti(t *testing.T) {
 						Identity: identity,
 						FileOutputs: []*livekit.EncodedFileOutput{{
 							FileType: livekit.EncodedFileType_MP4,
-							Filepath: r.getFilePath("participant_multiple_{time}"),
+							Filepath: path.Join(r.FilePrefix, "participant_multiple_{time}"),
 						}},
 						StreamOutputs: []*livekit.StreamOutput{{
 							Protocol: livekit.StreamProtocol_RTMP,

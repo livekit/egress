@@ -62,15 +62,15 @@ func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, filenameSu
 	// r.verifyManifest(t, p, segments.PlaylistName)
 }
 
-//func (r *Runner) verifyManifest(t *testing.T, p *config.PipelineConfig, plName string) {
-//	localPlaylistPath := fmt.Sprintf("%s/%s", r.FilePrefix, plName)
+// func (r *Runner) verifyManifest(t *testing.T, p *config.PipelineConfig, plName string) {
+//	localPlaylistPath := path.Join(r.FilePrefix, plName)
 //
 //	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
 //		download(t, uploadConfig, localPlaylistPath+".json", plName+".json")
 //	}
-//}
+// }
 
-//func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, plName string, plLocation string, segmentCount int, res *livekit.EgressInfo, plType m3u8.PlaylistType) {
+// func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, plName string, plLocation string, segmentCount int, res *livekit.EgressInfo, plType m3u8.PlaylistType) {
 //	require.NotEmpty(t, plName)
 //	require.NotEmpty(t, plLocation)
 
@@ -79,14 +79,14 @@ func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, filenameSu
 
 //	// download from cloud storage
 //	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
-//		localPlaylistPath = fmt.Sprintf("%s/%s", r.FilePrefix, storedPlaylistPath)
+//		localPlaylistPath = path.Join(r.FilePrefix, storedPlaylistPath)
 //		download(t, uploadConfig, localPlaylistPath, storedPlaylistPath)
 //		if plType == m3u8.PlaylistTypeEvent {
 //			// Only download segments once
 //			base := storedPlaylistPath[:len(storedPlaylistPath)-5]
 //			for i := 0; i < int(segmentCount); i++ {
 //				cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
-//				localPath := fmt.Sprintf("%s/%s", r.FilePrefix, cloudPath)
+//				localPath := path.Join(r.FilePrefix, cloudPath)
 //				download(t, uploadConfig, localPath, cloudPath)
 //			}
 //		}
@@ -94,4 +94,4 @@ func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, filenameSu
 
 // verify
 //	verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.Muting, r.sourceFramerate, plType == m3u8.PlaylistTypeLive)
-//}
+// }

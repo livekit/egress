@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +60,8 @@ var (
 		types.MimeTypeVP8:  time.Microsecond * 41708,
 		types.MimeTypeVP9:  time.Microsecond * 41708,
 	}
+
+	uploadPrefix = fmt.Sprintf("integration/%s", time.Now().Format("2006-01-02"))
 )
 
 type testCase struct {
@@ -225,7 +226,7 @@ func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {
 
 func (r *Runner) sendRequest(t *testing.T, req *rpc.StartEgressRequest) *livekit.EgressInfo {
 	// send start request
-	info, err := r.client.StartEgress(context.Background(), "", req)
+	info, err := r.StartEgress(context.Background(), req)
 
 	// check returned egress info
 	require.NoError(t, err)
@@ -326,12 +327,4 @@ func (r *Runner) stopEgress(t *testing.T, egressID string) *livekit.EgressInfo {
 	}
 
 	return res
-}
-
-func (r *Runner) getFilePath(filename string) string {
-	if r.S3 != nil || r.Azure != nil || r.GCP != nil || r.AliOSS != nil {
-		return filename
-	}
-
-	return path.Join(r.FilePrefix, filename)
 }

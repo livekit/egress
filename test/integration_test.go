@@ -51,5 +51,6 @@ func TestEgress(t *testing.T) {
 	svc, err := server.NewServer(r.ServiceConfig, bus, ioClient)
 	require.NoError(t, err)
 
-	r.Run(t, svc, bus, rfs)
+	r.StartServer(t, svc, bus, rfs)
+	r.RunTests(t)
 }
