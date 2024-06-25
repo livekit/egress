@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +45,8 @@ const (
 	badStreamUrl2   = "rtmp://localhost:1936/live/stream"
 	redactedBadUrl2 = "rtmp://localhost:1936/live/{st...am}"
 	webUrl          = "https://videoplayer-2k23.vercel.app/videos/eminem"
+
+	uploadPrefix = "integration"
 )
 
 var (
@@ -326,12 +327,4 @@ func (r *Runner) stopEgress(t *testing.T, egressID string) *livekit.EgressInfo {
 	}
 
 	return res
-}
-
-func (r *Runner) getFilePath(filename string) string {
-	if r.S3 != nil || r.Azure != nil || r.GCP != nil || r.AliOSS != nil {
-		return filename
-	}
-
-	return path.Join(r.FilePrefix, filename)
 }
