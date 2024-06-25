@@ -45,8 +45,6 @@ const (
 	badStreamUrl2   = "rtmp://localhost:1936/live/stream"
 	redactedBadUrl2 = "rtmp://localhost:1936/live/{st...am}"
 	webUrl          = "https://videoplayer-2k23.vercel.app/videos/eminem"
-
-	uploadPrefix = "integration"
 )
 
 var (
@@ -62,6 +60,8 @@ var (
 		types.MimeTypeVP8:  time.Microsecond * 41708,
 		types.MimeTypeVP9:  time.Microsecond * 41708,
 	}
+
+	uploadPrefix = fmt.Sprintf("integration/%s", time.Now().Format("2006-01-02"))
 )
 
 type testCase struct {

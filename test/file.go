@@ -17,7 +17,7 @@
 package test
 
 import (
-	"fmt"
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -77,10 +77,11 @@ func (r *Runner) verifyFile(t *testing.T, p *config.PipelineConfig, res *livekit
 	localPath := fileRes.Filename
 	require.NotEmpty(t, storagePath)
 	require.False(t, strings.Contains(storagePath, "{"))
+	storageFilename := path.Base(storagePath)
 
 	// download from cloud storage
 	if uploadConfig := p.GetFileConfig().UploadConfig; uploadConfig != nil {
-		localPath = fmt.Sprintf("%s/%s", r.FilePrefix, storagePath)
+		localPath = path.Join(r.FilePrefix, storageFilename)
 		download(t, uploadConfig, localPath, storagePath)
 		download(t, uploadConfig, localPath+".json", storagePath+".json")
 	}
