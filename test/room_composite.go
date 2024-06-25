@@ -169,7 +169,7 @@ func (r *Runner) testRoomCompositeStream(t *testing.T) {
 				},
 			}
 
-			info, err := r.client.StartEgress(context.Background(), "", req)
+			info, err := r.start(context.Background(), req)
 			require.NoError(t, err)
 			require.Empty(t, info.Error)
 			require.NotEmpty(t, info.EgressId)

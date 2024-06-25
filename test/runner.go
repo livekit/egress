@@ -17,6 +17,7 @@
 package test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -38,6 +39,8 @@ import (
 )
 
 type Runner struct {
+	StartEgress func(ctx context.Context, request *rpc.StartEgressRequest) (*livekit.EgressInfo, error) `yaml:"-"`
+
 	svc             Server                   `yaml:"-"`
 	client          rpc.EgressClient         `yaml:"-"`
 	room            *lksdk.Room              `yaml:"-"`
@@ -154,7 +157,7 @@ func NewRunner(t *testing.T) *Runner {
 	return r
 }
 
-func (r *Runner) Run(t *testing.T, svc Server, bus psrpc.MessageBus, templateFs fs.FS) {
+func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, templateFs fs.FS) {
 	lksdk.SetLogger(logger.LogRLogger(logr.Discard()))
 	r.svc = svc
 	t.Cleanup(func() {
@@ -177,6 +180,9 @@ func (r *Runner) Run(t *testing.T, svc Server, bus psrpc.MessageBus, templateFs 
 
 	psrpcClient, err := rpc.NewEgressClient(rpc.ClientParams{Bus: bus})
 	require.NoError(t, err)
+	r.StartEgress = func(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
+		return psrpcClient.StartEgress(ctx, "", req)
+	}
 
 	// start templates handler
 	err = r.svc.StartTemplatesServer(templateFs)
@@ -201,7 +207,9 @@ func (r *Runner) Run(t *testing.T, svc Server, bus psrpc.MessageBus, templateFs 
 		require.Len(t, status, 1)
 		require.Contains(t, status, "CpuLoad")
 	}
+}
 
+func (r *Runner) RunTests(t *testing.T) {
 	// run tests
 	r.testRoomComposite(t)
 	r.testWeb(t)
