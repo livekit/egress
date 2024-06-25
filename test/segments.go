@@ -77,7 +77,7 @@ func (r *Runner) verifySegments(t *testing.T, p *config.PipelineConfig, filename
 }
 
 func (r *Runner) verifyManifest(t *testing.T, p *config.PipelineConfig, plName string) {
-	localPlaylistPath := path.Join(r.FilePrefix, plName)
+	localPlaylistPath := path.Join(r.FilePrefix, path.Base(plName))
 
 	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
 		download(t, uploadConfig, localPlaylistPath+".json", plName+".json")
