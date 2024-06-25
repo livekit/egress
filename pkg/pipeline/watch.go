@@ -136,9 +136,6 @@ func (c *Controller) messageWatch(msg *gst.Message) bool {
 		err = c.handleMessageElement(msg)
 	}
 	if err != nil {
-		if c.Debug.EnableProfiling {
-			c.uploadDebugFiles()
-		}
 		c.OnError(err)
 		return false
 	}
