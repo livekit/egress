@@ -477,9 +477,9 @@ func (s *SDKSource) createWriter(
 	var logFilename string
 	if s.Debug.EnableProfiling {
 		if s.Debug.ToUploadConfig() == nil {
-			logFilename = path.Join(s.Debug.PathPrefix, fmt.Sprintf("%s.csv", track.ID()))
+			logFilename = path.Join(s.Debug.PathPrefix, fmt.Sprintf("%s/%s.csv", s.Info.EgressId, track.ID()))
 		} else {
-			logFilename = path.Join(s.TmpDir, fmt.Sprintf("%s.csv", track.ID()))
+			logFilename = path.Join(s.TmpDir, fmt.Sprintf("%s/%s.csv", s.Info.EgressId, track.ID()))
 		}
 	}
 

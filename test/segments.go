@@ -90,10 +90,11 @@ func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, fil
 
 	storedPlaylistPath := plName
 	localPlaylistPath := plName
+	storedPlaylistName := path.Base(plName)
 
 	// download from cloud storage
 	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
-		localPlaylistPath = path.Join(r.FilePrefix, storedPlaylistPath)
+		localPlaylistPath = path.Join(r.FilePrefix, storedPlaylistName)
 		download(t, uploadConfig, localPlaylistPath, storedPlaylistPath)
 		if plType == m3u8.PlaylistTypeEvent {
 			// Only download segments once

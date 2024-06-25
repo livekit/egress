@@ -25,7 +25,6 @@ import (
 
 	"github.com/go-gst/go-gst/gst"
 
-	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
@@ -44,6 +43,7 @@ func (c *Controller) uploadDebugFiles() {
 	}
 
 	done := make(chan struct{})
+	var dotUploaded, pprofUploaded, trackUploaded bool
 
 	var wg sync.WaitGroup
 	wg.Add(3)
@@ -67,9 +67,16 @@ func (c *Controller) uploadDebugFiles() {
 	select {
 	case <-done:
 		logger.Infow("debug files uploaded")
-		return
 	case <-time.After(time.Second * 3):
-		logger.Errorw("failed to upload debug files", errors.New("timed out"))
+		if !dotUploaded {
+			logger.Warnw("failed to upload dotfile", nil)
+		}
+		if !pprofUploaded {
+			logger.Warnw("failed to upload pprof file", nil)
+		}
+		if !trackUploaded {
+			logger.Warnw("failed to upload track debug files", nil)
+		}
 	}
 }
 
@@ -123,7 +130,7 @@ func (c *Controller) uploadDebugFile(u uploader.Uploader, data []byte, fileExten
 
 	filename := fmt.Sprintf("%s%s", c.Info.EgressId, fileExtension)
 	local := path.Join(dir, filename)
-	storage := path.Join(c.Debug.PathPrefix, filename)
+	storage := path.Join(c.Debug.PathPrefix, c.Info.EgressId, filename)
 
 	f, err := os.Create(local)
 	if err != nil {
