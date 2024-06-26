@@ -209,6 +209,8 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 		return 0, 0, err
 	}
 
+	// await expected subscriptions
+	subscribed := 0
 	pubs := rp.TrackPublications()
 	expected := 0
 	for _, pub := range pubs {
@@ -217,13 +219,23 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 		}
 	}
 
-	// await all expected subscriptions
-	for trackCount := 0; trackCount < expected; trackCount++ {
+	deadline := make(chan struct{})
+	time.AfterFunc(time.Second*3, func() {
+		close(deadline)
+	})
+	done := false
+	for !done {
 		select {
 		case err = <-s.errors:
 			if err != nil {
 				return 0, 0, err
 			}
+			subscribed++
+			if subscribed == expected {
+				done = true
+			}
+		case <-deadline:
+			done = true
 		}
 	}
 
