@@ -81,22 +81,19 @@ func (c *Controller) uploadDebugFiles() {
 }
 
 func (c *Controller) uploadTrackFiles(u uploader.Uploader) {
-	var dir string
 	if c.Debug.ToUploadConfig() == nil {
-		dir = c.Debug.PathPrefix
-	} else {
-		dir = c.TmpDir
+		return
 	}
 
-	files, err := os.ReadDir(dir)
+	files, err := os.ReadDir(c.TmpDir)
 	if err != nil {
 		return
 	}
 
 	for _, f := range files {
 		if strings.HasSuffix(f.Name(), ".csv") {
-			local := path.Join(dir, f.Name())
-			storage := path.Join(c.Debug.PathPrefix, f.Name())
+			local := path.Join(c.TmpDir, f.Name())
+			storage := path.Join(c.Debug.PathPrefix, c.Info.EgressId, f.Name())
 			_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false, "track")
 			if err != nil {
 				logger.Errorw("failed to upload debug file", err)
@@ -121,17 +118,16 @@ func (c *Controller) uploadPProf(u uploader.Uploader) {
 }
 
 func (c *Controller) uploadDebugFile(u uploader.Uploader, data []byte, fileExtension string) {
+	storageDir := path.Join(c.Debug.PathPrefix, c.Info.EgressId)
 	var dir string
 	if c.Debug.ToUploadConfig() == nil {
-		dir = c.Debug.PathPrefix
+		dir = storageDir
 	} else {
 		dir = c.TmpDir
 	}
 
 	filename := fmt.Sprintf("%s%s", c.Info.EgressId, fileExtension)
 	local := path.Join(dir, filename)
-	storage := path.Join(c.Debug.PathPrefix, c.Info.EgressId, filename)
-
 	f, err := os.Create(local)
 	if err != nil {
 		logger.Errorw("failed to create debug file", err)
@@ -145,7 +141,11 @@ func (c *Controller) uploadDebugFile(u uploader.Uploader, data []byte, fileExten
 		return
 	}
 
-	_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false, "debug")
+	if c.Debug.ToUploadConfig() == nil {
+		return
+	}
+
+	_, _, err = u.Upload(local, path.Join(storageDir, filename), types.OutputTypeBlob, false, "debug")
 	if err != nil {
 		logger.Errorw("failed to upload debug file", err)
 		return
