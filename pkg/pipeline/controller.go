@@ -16,6 +16,7 @@ package pipeline
 
 import (
 	"context"
+	"net/url"
 	"sync"
 	"time"
 
@@ -263,8 +264,23 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
-		// validate and redact url
-		url, redacted, err := c.ValidateUrl(rawUrl, types.OutputTypeRTMP)
+
+		u, err := url.Parse(rawUrl)
+		if err != nil {
+			return errors.ErrInvalidInput("malformed url")
+		}
+
+		var outputType types.OutputType
+		switch u.Scheme {
+		case "srt":
+			outputType = types.OutputTypeSRT
+		case "rtmp":
+			outputType = types.OutputTypeRTMP
+		default:
+			return errors.ErrInvalidInput("invalid stream type")
+		}
+
+		url, redacted, err := c.ValidateUrl(rawUrl, outputType)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
@@ -297,7 +313,23 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	// remove stream outputs
 	for _, rawUrl := range req.RemoveOutputUrls {
-		url, _, err := c.ValidateUrl(rawUrl, types.OutputTypeRTMP)
+		u, err := url.Parse(rawUrl)
+		if err != nil {
+			return errors.ErrInvalidInput("malformed url")
+		}
+
+		var outputType types.OutputType
+		switch u.Scheme {
+		case "srt":
+			outputType = types.OutputTypeSRT
+		case "rtmp":
+			outputType = types.OutputTypeRTMP
+		default:
+			return errors.ErrInvalidInput("invalid stream type")
+		}
+
+		url, _, err := c.ValidateUrl(rawUrl, outputType)
+
 		if err != nil {
 			errs.AppendErr(err)
 			continue

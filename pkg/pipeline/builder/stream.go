@@ -68,6 +68,13 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*St
 			return nil, nil, errors.ErrGstPipelineError(err)
 		}
 
+	case types.OutputTypeSRT:
+		// add SRT steam
+		mux, err = gst.NewElement("mpegtsmux")
+		if err != nil {
+			return nil, nil, errors.ErrGstPipelineError(err)
+		}
+
 	default:
 		err = errors.ErrInvalidInput("output type")
 	}
@@ -145,6 +152,14 @@ func (sb *StreamBin) AddStream(url string) error {
 		if err = sink.Set("location", url); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
+	case types.OutputTypeSRT:
+		sink, err = gst.NewElementWithName("srtsink", fmt.Sprintf("srtsink_%s", name))
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = sink.SetProperty("uri", url); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
 
 	default:
 		return errors.ErrInvalidInput("output type")
@@ -161,7 +176,7 @@ func (sb *StreamBin) AddStream(url string) error {
 		// It is later released in RemoveSink
 		proxy.Ref()
 
-		// Intercept flows from rtmp2sink. Anything besides EOS will be ignored
+		// Intercept flows from the sink. Anything besides EOS will be ignored
 		proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
 			// Buffer gets automatically unreferenced by go-gst.
 			// Without referencing it here, it will sometimes be garbage collected before being written
