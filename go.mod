@@ -19,7 +19,7 @@ require (
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/protocol v1.19.0
 	github.com/livekit/psrpc v0.5.3-0.20240526192918-fbdaf10e6aa5
-	github.com/livekit/server-sdk-go/v2 v2.2.1-0.20240627232904-83d91fb90f55
+	github.com/livekit/server-sdk-go/v2 v2.2.1-0.20240628022514-ad17d3f0adad
 	github.com/pion/rtp v1.8.6
 	github.com/pion/webrtc/v3 v3.2.43
 	github.com/prometheus/client_golang v1.19.0
