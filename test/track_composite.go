@@ -27,7 +27,7 @@ import (
 )
 
 func (r *Runner) testTrackComposite(t *testing.T) {
-	if !r.runTrackCompositeTests() {
+	if !r.should(runTrackComposite) {
 		return
 	}
 
@@ -45,13 +45,13 @@ func (r *Runner) runTrackTest(
 ) {
 	t.Run(name, func(t *testing.T) {
 		r.awaitIdle(t)
-		audioTrackID, videoTrackID := r.publishSamplesToRoom(t, audioCodec, videoCodec)
+		audioTrackID, videoTrackID := r.publishSamples(t, audioCodec, videoCodec)
 		f(t, audioTrackID, videoTrackID)
 	})
 }
 
 func (r *Runner) testTrackCompositeFile(t *testing.T) {
-	if !r.runFileTests() {
+	if !r.should(runFile) {
 		return
 	}
 
@@ -82,7 +82,7 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 				}
 
 				var fileOutput *livekit.EncodedFileOutput
-				if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.AzureUpload != nil {
+				if r.AzureUpload != nil {
 					fileOutput = &livekit.EncodedFileOutput{
 						FileType: test.fileType,
 						Filepath: path.Join(uploadPrefix, test.filename),
@@ -127,7 +127,7 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 }
 
 func (r *Runner) testTrackCompositeStream(t *testing.T) {
-	if !r.runStreamTests() {
+	if !r.should(runStream) {
 		return
 	}
 
@@ -153,7 +153,7 @@ func (r *Runner) testTrackCompositeStream(t *testing.T) {
 }
 
 func (r *Runner) testTrackCompositeSegments(t *testing.T) {
-	if !r.runSegmentTests() {
+	if !r.should(runSegments) {
 		return
 	}
 
@@ -243,7 +243,7 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 }
 
 func (r *Runner) testTrackCompositeImages(t *testing.T) {
-	if !r.runImageTests() {
+	if !r.should(runImages) {
 		return
 	}
 
@@ -302,7 +302,7 @@ func (r *Runner) testTrackCompositeImages(t *testing.T) {
 }
 
 func (r *Runner) testTrackCompositeMulti(t *testing.T) {
-	if !r.runMultiTests() {
+	if !r.should(runMulti) {
 		return
 	}
 

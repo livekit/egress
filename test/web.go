@@ -26,7 +26,7 @@ import (
 )
 
 func (r *Runner) testWeb(t *testing.T) {
-	if !r.runWebTests() {
+	if !r.should(runWeb) {
 		return
 	}
 
@@ -45,7 +45,7 @@ func (r *Runner) runWebTest(t *testing.T, name string, f func(t *testing.T)) {
 }
 
 func (r *Runner) testWebFile(t *testing.T) {
-	if !r.runFileTests() {
+	if !r.should(runFile) {
 		return
 	}
 
@@ -82,7 +82,7 @@ func (r *Runner) testWebFile(t *testing.T) {
 }
 
 func (r *Runner) testWebStream(t *testing.T) {
-	if !r.runStreamTests() {
+	if !r.should(runStream) {
 		return
 	}
 
@@ -105,7 +105,7 @@ func (r *Runner) testWebStream(t *testing.T) {
 }
 
 func (r *Runner) testWebSegments(t *testing.T) {
-	if !r.runSegmentTests() {
+	if !r.should(runSegments) {
 		return
 	}
 
@@ -143,7 +143,7 @@ func (r *Runner) testWebSegments(t *testing.T) {
 }
 
 func (r *Runner) testWebMulti(t *testing.T) {
-	if !r.runMultiTests() {
+	if !r.should(runMulti) {
 		return
 	}
 

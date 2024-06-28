@@ -115,7 +115,10 @@ func Integration(configFile string) error {
 		files, _ := os.ReadDir("test/output")
 		for _, file := range files {
 			if file.IsDir() {
-				_ = os.RemoveAll(path.Join("test/output", file.Name()))
+				d, _ := os.ReadDir(path.Join("test/output", file.Name()))
+				if len(d) == 0 {
+					_ = os.RemoveAll(path.Join("test/output", file.Name()))
+				}
 			}
 		}
 	}()

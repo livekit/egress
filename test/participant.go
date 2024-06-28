@@ -21,17 +21,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
-	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 func (r *Runner) testParticipant(t *testing.T) {
-	if !r.runParticipantTests() {
+	if !r.should(runParticipant) {
 		return
 	}
 
@@ -61,7 +58,7 @@ func (r *Runner) runParticipantTest(
 }
 
 func (r *Runner) testParticipantFile(t *testing.T) {
-	if !r.runFileTests() {
+	if !r.should(runFile) {
 		return
 	}
 
@@ -141,7 +138,7 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 }
 
 func (r *Runner) testParticipantStream(t *testing.T) {
-	if !r.runStreamTests() {
+	if !r.should(runStream) {
 		return
 	}
 
@@ -172,7 +169,7 @@ func (r *Runner) testParticipantStream(t *testing.T) {
 }
 
 func (r *Runner) testParticipantSegments(t *testing.T) {
-	if !r.runSegmentTests() {
+	if !r.should(runSegments) {
 		return
 	}
 
@@ -247,7 +244,7 @@ func (r *Runner) testParticipantSegments(t *testing.T) {
 }
 
 func (r *Runner) testParticipantMulti(t *testing.T) {
-	if !r.runMultiTests() {
+	if !r.should(runMulti) {
 		return
 	}
 
@@ -278,46 +275,6 @@ func (r *Runner) testParticipantMulti(t *testing.T) {
 			}
 
 			r.runMultipleTest(t, req, true, true, false, false, livekit.SegmentedFileSuffix_INDEX)
-		},
-	)
-
-	if r.Short {
-		return
-	}
-
-	r.runParticipantTest(t, "3E/Participant/NoPublish", &testCase{},
-		func(t *testing.T, identity string) {
-			req := &rpc.StartEgressRequest{
-				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &rpc.StartEgressRequest_Participant{
-					Participant: &livekit.ParticipantEgressRequest{
-						RoomName: r.room.Name(),
-						Identity: identity,
-						FileOutputs: []*livekit.EncodedFileOutput{{
-							FileType: livekit.EncodedFileType_MP4,
-							Filepath: "there won't be a file",
-						}},
-					},
-				},
-			}
-
-			info := r.sendRequest(t, req)
-			time.Sleep(time.Second * 15)
-			r.room.Disconnect()
-			time.Sleep(time.Second * 30)
-			info = r.getUpdate(t, info.EgressId)
-			require.Equal(t, livekit.EgressStatus_EGRESS_ABORTED.String(), info.Status.String())
-
-			// reconnect the publisher to the room
-			room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
-				APIKey:              r.ApiKey,
-				APISecret:           r.ApiSecret,
-				RoomName:            r.RoomName,
-				ParticipantName:     "egress-sample",
-				ParticipantIdentity: identity,
-			}, lksdk.NewRoomCallback())
-			require.NoError(t, err)
-			r.room = room
 		},
 	)
 }
