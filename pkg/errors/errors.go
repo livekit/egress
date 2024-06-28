@@ -88,7 +88,11 @@ func ErrGstPipelineError(err error) error {
 	return psrpc.NewError(psrpc.Internal, err)
 }
 
-func ErrProcessStartFailed(err error) error {
+func ErrProcessFailed(process string, err error) error {
+	return psrpc.NewErrorf(psrpc.Internal, "failed to launch %s: %v", process, err)
+}
+
+func ErrChromeFailedToStart(err error) error {
 	return psrpc.NewError(psrpc.Internal, err)
 }
 
@@ -129,22 +133,20 @@ func ErrInvalidUrl(url string, reason string) error {
 	return psrpc.NewErrorf(psrpc.InvalidArgument, "invalid url %s: %s", url, reason)
 }
 
-func ErrStreamNotFound(url string) error {
-	return psrpc.NewErrorf(psrpc.NotFound, "stream %s not found", url)
-}
-
-func ErrTrackNotFound(trackID string) error {
-	return psrpc.NewErrorf(psrpc.NotFound, "track %s not found", trackID)
+func ErrUploadFailed(location string, err error) error {
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s upload failed: %v", location, err)
 }
 
 func ErrParticipantNotFound(identity string) error {
 	return psrpc.NewErrorf(psrpc.NotFound, "participant %s not found", identity)
 }
 
-// This can have many reasons, some related to invalid parameters, other because of system failure.
-// Do not provide an error code until we have code to analyze the error from the underlying upload library further.
-func ErrUploadFailed(location string, err error) error {
-	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s upload failed: %v", location, err)
+func ErrStreamNotFound(url string) error {
+	return psrpc.NewErrorf(psrpc.NotFound, "stream %s not found", url)
+}
+
+func ErrTrackNotFound(trackID string) error {
+	return psrpc.NewErrorf(psrpc.NotFound, "track %s not found", trackID)
 }
 
 func ErrCPUExhausted(usage float64) error {
