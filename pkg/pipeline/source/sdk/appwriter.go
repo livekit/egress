@@ -106,11 +106,15 @@ func NewAppWriter(
 	}
 
 	if logFilename != "" {
+		logger.Infow("logging to file", "filename", logFilename)
 		f, err := os.Create(logFilename)
 		if err != nil {
 			return nil, err
 		}
-		_, _ = f.WriteString("pts,sn,ts\n")
+		_, err = f.WriteString("pts,received_sn,adjusted_sn,received_ts,adjusted_ts\n")
+		if err != nil {
+			return nil, err
+		}
 		w.logFile = f
 	}
 
@@ -182,7 +186,10 @@ func (w *AppWriter) SetTrackMuted(muted bool) {
 }
 
 func (w *AppWriter) SetTrackDisconnected(disconnected bool) {
-	w.disconnected.Store(disconnected)
+	if w.disconnected.Swap(disconnected) == disconnected {
+		return
+	}
+
 	if disconnected {
 		w.logger.Debugw("track disconnected", "timestamp", time.Since(w.startTime).Seconds())
 		if w.playing.IsBroken() {
@@ -291,45 +298,33 @@ func (w *AppWriter) handleMuted() {
 }
 
 func (w *AppWriter) handleReadError(err error) {
-	if w.draining.IsBroken() {
+	var netErr net.Error
+
+	switch {
+	case w.draining.IsBroken():
 		w.endStream.Break()
-		return
-	}
-
-	// continue on buffer too small error
-	if err.Error() == errBufferTooSmall {
+	case err.Error() == errBufferTooSmall:
 		w.logger.Warnw("read error", err)
-		return
-	}
-
-	// check if reconnecting
-	if w.disconnected.Load() {
-		_ = w.pushSamples()
-		w.state = stateReconnecting
-		return
-	}
-
-	// check if muted
-	if w.muted.Load() {
+	case w.muted.Load():
 		_ = w.pushSamples()
 		w.ticker = time.NewTicker(w.GetFrameDuration())
 		w.state = stateMuted
-		return
-	}
+	case w.disconnected.Load():
+		_ = w.pushSamples()
+		w.state = stateReconnecting
+	case errors.As(err, &netErr) && netErr.Timeout():
+		w.SetTrackDisconnected(true)
+		_ = w.pushSamples()
+		w.state = stateReconnecting
+	default:
+		// log non-EOF errors
+		if !errors.Is(err, io.EOF) {
+			w.logger.Errorw("could not read packet", err)
+		}
 
-	// continue on timeout
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return
+		// end stream
+		w.endStream.Break()
 	}
-
-	// log non-EOF errors
-	if !errors.Is(err, io.EOF) {
-		w.logger.Errorw("could not read packet", err)
-	}
-
-	// end stream
-	w.endStream.Break()
 }
 
 func (w *AppWriter) pushSamples() error {
@@ -340,6 +335,9 @@ func (w *AppWriter) pushSamples() error {
 
 	pkts := w.buffer.Pop(false)
 	for _, pkt := range pkts {
+		sn := pkt.SequenceNumber
+		ts := pkt.Timestamp
+
 		w.translator.Translate(pkt)
 
 		// get PTS
@@ -351,7 +349,19 @@ func (w *AppWriter) pushSamples() error {
 			return err
 		}
 
-		if w.state == stateUnmuting || w.state == stateReconnecting {
+		if w.logFile != nil {
+			_, _ = w.logFile.WriteString(fmt.Sprintf("%s,%d,%d,%d,%d\n",
+				pts.String(),
+				sn, pkt.SequenceNumber,
+				ts, pkt.Timestamp,
+			))
+		}
+
+		if w.state == stateUnmuting {
+			w.callbacks.OnTrackUnmuted(w.track.ID(), pts)
+			w.state = statePlaying
+		} else if w.state == stateReconnecting {
+			w.SetTrackDisconnected(false)
 			w.callbacks.OnTrackUnmuted(w.track.ID(), pts)
 			w.state = statePlaying
 		}
@@ -375,10 +385,6 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet, pts time.Duration) error {
 	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.logger.Infow("unexpected flow return", "flow", flow)
-	}
-
-	if w.logFile != nil {
-		_, _ = w.logFile.WriteString(fmt.Sprintf("%s,%d,%d\n", pts.String(), pkt.SequenceNumber, pkt.Timestamp))
 	}
 
 	return nil

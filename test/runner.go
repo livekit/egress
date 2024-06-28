@@ -54,21 +54,27 @@ type Runner struct {
 	AzureUpload           *livekit.AzureBlobUpload `yaml:"-"`
 
 	// testing config
-	FilePrefix              string `yaml:"file_prefix"`
-	RoomName                string `yaml:"room_name"`
-	RoomTestsOnly           bool   `yaml:"room_only"`
-	WebTestsOnly            bool   `yaml:"web_only"`
-	ParticipantTestsOnly    bool   `yaml:"participant_only"`
-	TrackCompositeTestsOnly bool   `yaml:"track_composite_only"`
-	TrackTestsOnly          bool   `yaml:"track_only"`
-	FileTestsOnly           bool   `yaml:"file_only"`
-	StreamTestsOnly         bool   `yaml:"stream_only"`
-	SegmentTestsOnly        bool   `yaml:"segments_only"`
-	ImageTestsOnly          bool   `yaml:"images_only"`
-	MultiTestsOnly          bool   `yaml:"multi_only"`
-	Muting                  bool   `yaml:"muting"`
-	Dotfiles                bool   `yaml:"dot_files"`
-	Short                   bool   `yaml:"short"`
+	FilePrefix string `yaml:"file_prefix"`
+	RoomName   string `yaml:"room_name"`
+	Muting     bool   `yaml:"muting"`
+	Dotfiles   bool   `yaml:"dot_files"`
+	Short      bool   `yaml:"short"`
+
+	// flagset used to determine which tests to run
+	shouldRun uint `yaml:"-"`
+
+	RoomTestsOnly           bool `yaml:"room_only"`
+	WebTestsOnly            bool `yaml:"web_only"`
+	ParticipantTestsOnly    bool `yaml:"participant_only"`
+	TrackCompositeTestsOnly bool `yaml:"track_composite_only"`
+	TrackTestsOnly          bool `yaml:"track_only"`
+	EdgeCasesOnly           bool `yaml:"edge_cases_only"`
+
+	FileTestsOnly    bool `yaml:"file_only"`
+	StreamTestsOnly  bool `yaml:"stream_only"`
+	SegmentTestsOnly bool `yaml:"segments_only"`
+	ImageTestsOnly   bool `yaml:"images_only"`
+	MultiTestsOnly   bool `yaml:"multi_only"`
 }
 
 type Server interface {
@@ -112,6 +118,9 @@ func NewRunner(t *testing.T) *Runner {
 	case "track":
 		r.TrackTestsOnly = true
 		r.RoomName = fmt.Sprintf("track-integration-%d", rand.Intn(100))
+	case "edge":
+		r.EdgeCasesOnly = true
+		r.RoomName = fmt.Sprintf("edge-integration-%d", rand.Intn(100))
 	default:
 		if r.RoomName == "" {
 			r.RoomName = fmt.Sprintf("egress-integration-%d", rand.Intn(100))
@@ -153,6 +162,8 @@ func NewRunner(t *testing.T) *Runner {
 	} else {
 		logger.Infow("no azure config supplied")
 	}
+
+	r.updateFlagset()
 
 	return r
 }
@@ -216,44 +227,5 @@ func (r *Runner) RunTests(t *testing.T) {
 	r.testParticipant(t)
 	r.testTrackComposite(t)
 	r.testTrack(t)
-}
-
-func (r *Runner) runRoomTests() bool {
-	return !r.ParticipantTestsOnly && !r.TrackCompositeTestsOnly && !r.TrackTestsOnly && !r.WebTestsOnly
-}
-
-func (r *Runner) runWebTests() bool {
-	return !r.RoomTestsOnly && !r.ParticipantTestsOnly && !r.TrackCompositeTestsOnly && !r.TrackTestsOnly
-}
-
-func (r *Runner) runParticipantTests() bool {
-	return !r.RoomTestsOnly && !r.TrackCompositeTestsOnly && !r.TrackTestsOnly && !r.WebTestsOnly
-}
-
-func (r *Runner) runTrackCompositeTests() bool {
-	return !r.RoomTestsOnly && !r.ParticipantTestsOnly && !r.TrackTestsOnly && !r.WebTestsOnly
-}
-
-func (r *Runner) runTrackTests() bool {
-	return !r.RoomTestsOnly && !r.ParticipantTestsOnly && !r.TrackCompositeTestsOnly && !r.WebTestsOnly
-}
-
-func (r *Runner) runFileTests() bool {
-	return !r.StreamTestsOnly && !r.SegmentTestsOnly && !r.MultiTestsOnly && !r.ImageTestsOnly
-}
-
-func (r *Runner) runStreamTests() bool {
-	return !r.FileTestsOnly && !r.SegmentTestsOnly && !r.MultiTestsOnly && !r.ImageTestsOnly
-}
-
-func (r *Runner) runSegmentTests() bool {
-	return !r.FileTestsOnly && !r.StreamTestsOnly && !r.MultiTestsOnly && !r.ImageTestsOnly
-}
-
-func (r *Runner) runImageTests() bool {
-	return !r.FileTestsOnly && !r.StreamTestsOnly && !r.SegmentTestsOnly && !r.MultiTestsOnly
-}
-
-func (r *Runner) runMultiTests() bool {
-	return !r.FileTestsOnly && !r.StreamTestsOnly && !r.SegmentTestsOnly && !r.ImageTestsOnly
+	r.testEdgeCases(t)
 }

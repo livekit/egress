@@ -17,12 +17,8 @@
 package test
 
 import (
-	"context"
 	"path"
 	"testing"
-	"time"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
@@ -31,7 +27,7 @@ import (
 )
 
 func (r *Runner) testRoomComposite(t *testing.T) {
-	if !r.runRoomTests() {
+	if !r.should(runRoom) {
 		return
 	}
 
@@ -46,13 +42,13 @@ func (r *Runner) testRoomComposite(t *testing.T) {
 func (r *Runner) runRoomTest(t *testing.T, name string, audioCodec, videoCodec types.MimeType, f func(t *testing.T)) {
 	t.Run(name, func(t *testing.T) {
 		r.awaitIdle(t)
-		r.publishSamplesToRoom(t, audioCodec, videoCodec)
+		r.publishSamples(t, audioCodec, videoCodec)
 		f(t)
 	})
 }
 
 func (r *Runner) testRoomCompositeFile(t *testing.T) {
-	if !r.runFileTests() {
+	if !r.should(runFile) {
 		return
 	}
 
@@ -134,68 +130,31 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 }
 
 func (r *Runner) testRoomCompositeStream(t *testing.T) {
-	if !r.runStreamTests() {
+	if !r.should(runStream) {
 		return
 	}
 
-	t.Run("1B/RoomComposite/Stream", func(t *testing.T) {
-		r.runRoomTest(t, "Rtmp", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
-			req := &rpc.StartEgressRequest{
-				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &rpc.StartEgressRequest_RoomComposite{
-					RoomComposite: &livekit.RoomCompositeEgressRequest{
-						RoomName: r.room.Name(),
-						Layout:   "grid-light",
-						StreamOutputs: []*livekit.StreamOutput{{
-							Protocol: livekit.StreamProtocol_RTMP,
-							Urls:     []string{streamUrl1, badStreamUrl1},
-						}},
-					},
+	r.runRoomTest(t, "1B/RoomComposite/Stream", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+		req := &rpc.StartEgressRequest{
+			EgressId: utils.NewGuid(utils.EgressPrefix),
+			Request: &rpc.StartEgressRequest_RoomComposite{
+				RoomComposite: &livekit.RoomCompositeEgressRequest{
+					RoomName: r.room.Name(),
+					Layout:   "grid-light",
+					StreamOutputs: []*livekit.StreamOutput{{
+						Protocol: livekit.StreamProtocol_RTMP,
+						Urls:     []string{streamUrl1, badStreamUrl1},
+					}},
 				},
-			}
-
-			r.runStreamTest(t, req, &testCase{expectVideoEncoding: true})
-		})
-		if r.Short {
-			return
+			},
 		}
 
-		r.runRoomTest(t, "Rtmp-Failure", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
-			req := &rpc.StartEgressRequest{
-				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &rpc.StartEgressRequest_RoomComposite{
-					RoomComposite: &livekit.RoomCompositeEgressRequest{
-						RoomName: r.RoomName,
-						Layout:   "speaker-light",
-						StreamOutputs: []*livekit.StreamOutput{{
-							Protocol: livekit.StreamProtocol_RTMP,
-							Urls:     []string{badStreamUrl1},
-						}},
-					},
-				},
-			}
-
-			info, err := r.StartEgress(context.Background(), req)
-			require.NoError(t, err)
-			require.Empty(t, info.Error)
-			require.NotEmpty(t, info.EgressId)
-			require.Equal(t, r.RoomName, info.RoomName)
-			require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
-
-			// check update
-			time.Sleep(time.Second * 5)
-			info = r.getUpdate(t, info.EgressId)
-			if info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
-				r.checkUpdate(t, info.EgressId, livekit.EgressStatus_EGRESS_FAILED)
-			} else {
-				require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
-			}
-		})
+		r.runStreamTest(t, req, &testCase{expectVideoEncoding: true})
 	})
 }
 
 func (r *Runner) testRoomCompositeSegments(t *testing.T) {
-	if !r.runSegmentTests() {
+	if !r.should(runSegments) {
 		return
 	}
 
@@ -270,7 +229,7 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 }
 
 func (r *Runner) testRoomCompositeImages(t *testing.T) {
-	if !r.runImageTests() {
+	if !r.should(runImages) {
 		return
 	}
 
@@ -315,7 +274,7 @@ func (r *Runner) testRoomCompositeImages(t *testing.T) {
 }
 
 func (r *Runner) testRoomCompositeMulti(t *testing.T) {
-	if !r.runMultiTests() {
+	if !r.should(runMulti) {
 		return
 	}
 
