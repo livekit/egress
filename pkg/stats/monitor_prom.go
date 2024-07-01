@@ -16,9 +16,6 @@ package stats
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/rpc"
 )
 
 func (m *Monitor) initPrometheus() {
@@ -75,11 +72,7 @@ func (m *Monitor) promIsIdle() float64 {
 }
 
 func (m *Monitor) promCanAcceptRequest() float64 {
-	if !m.svc.IsDisabled() && m.CanAcceptRequest(&rpc.StartEgressRequest{
-		Request: &rpc.StartEgressRequest_RoomComposite{
-			RoomComposite: &livekit.RoomCompositeEgressRequest{},
-		},
-	}) {
+	if !m.svc.IsDisabled() && m.CanAcceptWebRequest() {
 		return 1
 	}
 	return 0
