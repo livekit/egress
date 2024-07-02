@@ -52,9 +52,10 @@ type Monitor struct {
 	promCPULoad  prometheus.Gauge
 	requestGauge *prometheus.GaugeVec
 
-	svc      Service
-	cpuStats *hwstats.CPUStats
-	requests atomic.Int32
+	svc         Service
+	cpuStats    *hwstats.CPUStats
+	requests    atomic.Int32
+	webRequests atomic.Int32
 
 	mu              sync.Mutex
 	highCPUDuration int
@@ -138,6 +139,15 @@ func (m *Monitor) validateCPUConfig() error {
 	return nil
 }
 
+func (m *Monitor) CanAcceptWebRequest() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.canAcceptRequestLocked(&rpc.StartEgressRequest{
+		Request: &rpc.StartEgressRequest_Web{},
+	})
+}
+
 func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -152,12 +162,18 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 	var required float64
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
+		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+			return false
+		}
 		if r.RoomComposite.AudioOnly {
 			required = m.cpuCostConfig.AudioRoomCompositeCpuCost
 		} else {
 			required = m.cpuCostConfig.RoomCompositeCpuCost
 		}
 	case *rpc.StartEgressRequest_Web:
+		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+			return false
+		}
 		if r.Web.AudioOnly {
 			required = m.cpuCostConfig.AudioWebCpuCost
 		} else {
@@ -197,16 +213,17 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	}
 
 	m.requests.Inc()
-
 	var cpuHold float64
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
+		m.webRequests.Inc()
 		if r.RoomComposite.AudioOnly {
 			cpuHold = m.cpuCostConfig.AudioRoomCompositeCpuCost
 		} else {
 			cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
 		}
 	case *rpc.StartEgressRequest_Web:
+		m.webRequests.Inc()
 		if r.Web.AudioOnly {
 			cpuHold = m.cpuCostConfig.AudioWebCpuCost
 		} else {
@@ -260,6 +277,10 @@ func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
 
 	delete(m.pending, req.EgressId)
 	m.requests.Dec()
+	switch req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite, *rpc.StartEgressRequest_Web:
+		m.webRequests.Dec()
+	}
 }
 
 func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
@@ -284,8 +305,10 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64) {
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Sub(1)
+		m.webRequests.Dec()
 	case *rpc.StartEgressRequest_Web:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
+		m.webRequests.Dec()
 	case *rpc.StartEgressRequest_Participant:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeParticipant}).Sub(1)
 	case *rpc.StartEgressRequest_TrackComposite:
