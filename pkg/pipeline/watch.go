@@ -58,10 +58,11 @@ const (
 	msgWrongThread = "Called from wrong thread"
 
 	// common gst warnings
-	msgKeyframe         = "Could not request a keyframe. Files may not split at the exact location they should"
-	msgLatencyQuery     = "Latency query failed"
-	msgTaps             = "can't find exact taps"
-	msgInputDisappeared = "Can't copy metadata because input buffer disappeared"
+	msgKeyframe                    = "Could not request a keyframe. Files may not split at the exact location they should"
+	msgLatencyQuery                = "Latency query failed"
+	msgTaps                        = "can't find exact taps"
+	msgInputDisappeared            = "Can't copy metadata because input buffer disappeared"
+	fnGstAudioResampleCheckDiscont = "gst_audio_resample_check_discont"
 
 	// common gst fixmes
 	msgStreamStart       = "stream-start event without group-id. Consider implementing group-id handling in the upstream elements"
@@ -83,6 +84,9 @@ func (c *Controller) gstLog(level gst.DebugLevel, file, function string, line in
 			lvl = "error"
 		}
 	case gst.LevelWarning:
+		if function == fnGstAudioResampleCheckDiscont {
+			return
+		}
 		switch message {
 		case msgKeyframe, msgLatencyQuery, msgTaps, msgInputDisappeared:
 			// ignore

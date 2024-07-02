@@ -74,15 +74,16 @@ type AppWriter struct {
 	*synchronizer.TrackSynchronizer
 
 	// state
-	state        state
-	initialized  bool
-	ticker       *time.Ticker
-	muted        atomic.Bool
-	disconnected atomic.Bool
-	playing      core.Fuse
-	draining     core.Fuse
-	endStream    core.Fuse
-	finished     core.Fuse
+	state             state
+	initialized       bool
+	ticker            *time.Ticker
+	muted             atomic.Bool
+	maybeDisconnected bool
+	disconnected      atomic.Bool
+	playing           core.Fuse
+	draining          core.Fuse
+	endStream         core.Fuse
+	finished          core.Fuse
 }
 
 func NewAppWriter(
@@ -265,6 +266,8 @@ func (w *AppWriter) handlePlaying() {
 	if err != nil {
 		w.handleReadError(err)
 		return
+	} else {
+		w.maybeDisconnected = false
 	}
 
 	// initialize track synchronizer
@@ -313,9 +316,13 @@ func (w *AppWriter) handleReadError(err error) {
 		_ = w.pushSamples()
 		w.state = stateReconnecting
 	case errors.As(err, &netErr) && netErr.Timeout():
-		w.SetTrackDisconnected(true)
-		_ = w.pushSamples()
-		w.state = stateReconnecting
+		if w.maybeDisconnected {
+			w.SetTrackDisconnected(true)
+			_ = w.pushSamples()
+			w.state = stateReconnecting
+		} else {
+			w.maybeDisconnected = true
+		}
 	default:
 		// log non-EOF errors
 		if !errors.Is(err, io.EOF) {

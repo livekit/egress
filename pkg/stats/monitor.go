@@ -140,30 +140,35 @@ func (m *Monitor) validateCPUConfig() error {
 }
 
 func (m *Monitor) CanAcceptWebRequest() bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	return m.canAcceptRequestLocked(&rpc.StartEgressRequest{
-		Request: &rpc.StartEgressRequest_Web{},
-	})
+	return m.webRequests.Load() < m.cpuCostConfig.MaxConcurrentWeb
 }
 
 func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	fields, canAccept := m.canAcceptRequestLocked(req)
+	m.mu.Unlock()
 
-	return m.canAcceptRequestLocked(req)
+	logger.Debugw("cpu check", fields...)
+	return canAccept
 }
 
-func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
+func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interface{}, bool) {
 	total, available, pending, used := m.getCPUUsageLocked()
+	fields := []interface{}{
+		"total", total,
+		"available", available,
+		"pending", pending,
+		"used", used,
+		"activeRequests", m.requests.Load(),
+		"activeWeb", m.webRequests.Load(),
+	}
 
 	var accept bool
 	var required float64
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
 		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
-			return false
+			return fields, false
 		}
 		if r.RoomComposite.AudioOnly {
 			required = m.cpuCostConfig.AudioRoomCompositeCpuCost
@@ -172,7 +177,7 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 		}
 	case *rpc.StartEgressRequest_Web:
 		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
-			return false
+			return fields, false
 		}
 		if r.Web.AudioOnly {
 			required = m.cpuCostConfig.AudioWebCpuCost
@@ -188,17 +193,12 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 	}
 	accept = available >= required
 
-	logger.Debugw("cpu check",
-		"total", total,
-		"pending", pending,
-		"used", used,
+	fields = append(fields,
 		"required", required,
-		"available", available,
-		"activeRequests", m.requests.Load(),
 		"canAccept", accept,
 	)
 
-	return accept
+	return fields, accept
 }
 
 func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
@@ -208,7 +208,8 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	if m.pending[req.EgressId] != nil {
 		return errors.ErrEgressAlreadyExists
 	}
-	if !m.canAcceptRequestLocked(req) {
+	if _, ok := m.canAcceptRequestLocked(req); !ok {
+		logger.Warnw("can not accept request", nil)
 		return errors.ErrNotEnoughCPU
 	}
 
