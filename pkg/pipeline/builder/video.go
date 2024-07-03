@@ -34,8 +34,7 @@ import (
 )
 
 const (
-	videoTestSrcName   = "video_test_src"
-	maxDuplicationTime = time.Second
+	videoTestSrcName = "video_test_src"
 )
 
 type VideoBin struct {
@@ -218,7 +217,7 @@ func (b *VideoBin) buildWebInput() error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = videoRate.SetProperty("max-duplication-time", uint64(maxDuplicationTime)); err != nil {
+	if err = videoRate.SetProperty("max-duplication-time", config.Latency); err != nil {
 		return err
 	}
 	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
@@ -458,7 +457,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	if err := addVideoConverter(appSrcBin, b.conf); err != nil {
+	if err := b.addVideoConverter(appSrcBin); err != nil {
 		return nil, err
 	}
 
@@ -480,7 +479,7 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 	}
 	videoTestSrc.SetArg("pattern", "black")
 
-	caps, err := newVideoCapsFilter(b.conf, true)
+	caps, err := b.newVideoCapsFilter(true)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
@@ -503,14 +502,14 @@ func (b *VideoBin) addSelector() error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = videoRate.SetProperty("max-duplication-time", uint64(maxDuplicationTime)); err != nil {
+	if err = videoRate.SetProperty("max-duplication-time", config.Latency); err != nil {
 		return err
 	}
 	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
 		return err
 	}
 
-	caps, err := newVideoCapsFilter(b.conf, true)
+	caps, err := b.newVideoCapsFilter(true)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
@@ -641,7 +640,7 @@ func (b *VideoBin) addDecodedVideoSink() error {
 	return nil
 }
 
-func addVideoConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
+func (b *VideoBin) addVideoConverter(bin *gstreamer.Bin) error {
 	videoQueue, err := gstreamer.BuildQueue("video_input_queue", config.Latency, true)
 	if err != nil {
 		return err
@@ -657,26 +656,32 @@ func addVideoConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	videoRate, err := gst.NewElement("videorate")
+	elements := []*gst.Element{videoQueue, videoConvert, videoScale}
+
+	if !b.conf.VideoDecoding {
+		videoRate, err := gst.NewElement("videorate")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = videoRate.SetProperty("max-duplication-time", config.Latency); err != nil {
+			return err
+		}
+		if err = videoRate.SetProperty("skip-to-first", true); err != nil {
+			return err
+		}
+		elements = append(elements, videoRate)
+	}
+
+	caps, err := b.newVideoCapsFilter(true)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = videoRate.SetProperty("max-duplication-time", uint64(maxDuplicationTime)); err != nil {
-		return err
-	}
-	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
-		return err
-	}
+	elements = append(elements, caps)
 
-	caps, err := newVideoCapsFilter(p, true)
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-
-	return b.AddElements(videoQueue, videoConvert, videoScale, videoRate, caps)
+	return bin.AddElements(elements...)
 }
 
-func newVideoCapsFilter(p *config.PipelineConfig, includeFramerate bool) (*gst.Element, error) {
+func (b *VideoBin) newVideoCapsFilter(includeFramerate bool) (*gst.Element, error) {
 	caps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
@@ -684,12 +689,12 @@ func newVideoCapsFilter(p *config.PipelineConfig, includeFramerate bool) (*gst.E
 	if includeFramerate {
 		err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
-			p.Framerate, p.Width, p.Height,
+			b.conf.Framerate, b.conf.Width, b.conf.Height,
 		)))
 	} else {
 		err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"video/x-raw,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
-			p.Width, p.Height,
+			b.conf.Width, b.conf.Height,
 		)))
 	}
 	if err != nil {
