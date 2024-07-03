@@ -103,7 +103,6 @@ func (s *ImageSink) handleNewImage(update *imageUpdate) error {
 		}
 		filename = newFilename
 		imageLocalPath = newImageLocalPath
-
 	}
 
 	imageStoragePath := path.Join(s.StorageDir, filename)

@@ -17,6 +17,8 @@
 package test
 
 import (
+	"fmt"
+	"path"
 	"testing"
 	"time"
 
@@ -58,40 +60,13 @@ func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, filenameSu
 
 	require.Greater(t, images.ImageCount, int64(0))
 
-	// r.verifyImagesOutput(t, p, filenameSuffix, segments.PlaylistName, segments.PlaylistLocation, int(segments.SegmentCount), res, m3u8.PlaylistTypeEvent)
-	// r.verifyManifest(t, p, segments.PlaylistName)
+	imgConfig := p.GetImageConfigs()[0]
+	if uploadConfig := p.GetImageConfigs()[0].UploadConfig; uploadConfig != nil {
+		for i := range images.ImageCount {
+			storagePath := fmt.Sprintf("%s_%d%s", imgConfig.ImagePrefix, i, imgConfig.ImageExtension)
+			filename := path.Base(storagePath)
+			localPath := path.Join(r.FilePrefix, filename)
+			download(t, uploadConfig, localPath, storagePath)
+		}
+	}
 }
-
-// func (r *Runner) verifyManifest(t *testing.T, p *config.PipelineConfig, plName string) {
-//	localPlaylistPath := path.Join(r.FilePrefix, plName)
-//
-//	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
-//		download(t, uploadConfig, localPlaylistPath+".json", plName+".json")
-//	}
-// }
-
-// func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, plName string, plLocation string, segmentCount int, res *livekit.EgressInfo, plType m3u8.PlaylistType) {
-//	require.NotEmpty(t, plName)
-//	require.NotEmpty(t, plLocation)
-
-//	storedPlaylistPath := plName
-//	localPlaylistPath := plName
-
-//	// download from cloud storage
-//	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
-//		localPlaylistPath = path.Join(r.FilePrefix, storedPlaylistPath)
-//		download(t, uploadConfig, localPlaylistPath, storedPlaylistPath)
-//		if plType == m3u8.PlaylistTypeEvent {
-//			// Only download segments once
-//			base := storedPlaylistPath[:len(storedPlaylistPath)-5]
-//			for i := 0; i < int(segmentCount); i++ {
-//				cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
-//				localPath := path.Join(r.FilePrefix, cloudPath)
-//				download(t, uploadConfig, localPath, cloudPath)
-//			}
-//		}
-//	}
-
-// verify
-//	verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.Muting, r.sourceFramerate, plType == m3u8.PlaylistTypeLive)
-// }

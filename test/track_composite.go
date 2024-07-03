@@ -266,11 +266,24 @@ func (r *Runner) testTrackCompositeImages(t *testing.T) {
 						aID = audioTrackID
 					}
 
-					imageOutput := &livekit.ImageOutput{
-						CaptureInterval: 5,
-						Width:           1280,
-						Height:          720,
-						FilenamePrefix:  path.Join(r.FilePrefix, test.filename),
+					var imageOutput *livekit.ImageOutput
+					if r.S3Upload != nil {
+						imageOutput = &livekit.ImageOutput{
+							CaptureInterval: 5,
+							Width:           1280,
+							Height:          720,
+							FilenamePrefix:  path.Join(uploadPrefix, test.filename),
+							Output: &livekit.ImageOutput_S3{
+								S3: r.S3Upload,
+							},
+						}
+					} else {
+						imageOutput = &livekit.ImageOutput{
+							CaptureInterval: 5,
+							Width:           1280,
+							Height:          720,
+							FilenamePrefix:  path.Join(r.FilePrefix, test.filename),
+						}
 					}
 
 					trackRequest := &livekit.TrackCompositeEgressRequest{
