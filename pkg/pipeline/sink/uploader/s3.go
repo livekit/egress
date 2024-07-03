@@ -189,18 +189,10 @@ func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType ty
 		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
-	var contentType string
-	switch outputType {
-	case types.OutputTypeJPEG:
-		contentType = "binary/octet-stream"
-	default:
-		contentType = string(outputType)
-	}
-
 	_, err = s3manager.NewUploader(sess).Upload(&s3manager.UploadInput{
 		Body:               file,
 		Bucket:             u.bucket,
-		ContentType:        &contentType,
+		ContentType:        aws.String(string(outputType)),
 		Key:                aws.String(storageFilepath),
 		Metadata:           u.metadata,
 		Tagging:            u.tagging,
