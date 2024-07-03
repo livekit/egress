@@ -672,7 +672,7 @@ func (b *VideoBin) addVideoConverter(bin *gstreamer.Bin) error {
 		elements = append(elements, videoRate)
 	}
 
-	caps, err := b.newVideoCapsFilter(true)
+	caps, err := b.newVideoCapsFilter(!b.conf.VideoDecoding)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
