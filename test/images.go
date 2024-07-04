@@ -54,14 +54,14 @@ func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, res *livek
 	require.NotZero(t, res.StartedAt)
 	require.NotZero(t, res.EndedAt)
 
-	// segments info
+	// image info
 	require.Len(t, res.GetImageResults(), 1)
 	images := res.GetImageResults()[0]
 
 	require.Greater(t, images.ImageCount, int64(0))
 
 	imgConfig := p.GetImageConfigs()[0]
-	if uploadConfig := p.GetImageConfigs()[0].UploadConfig; uploadConfig != nil {
+	if uploadConfig := imgConfig.UploadConfig; uploadConfig != nil {
 		for i := range images.ImageCount {
 			storagePath := fmt.Sprintf("%s_%05d%s", imgConfig.ImagePrefix, i, imgConfig.ImageExtension)
 			filename := path.Base(storagePath)
