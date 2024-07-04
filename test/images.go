@@ -60,13 +60,12 @@ func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, res *livek
 
 	require.Greater(t, images.ImageCount, int64(0))
 
-	imgConfig := p.GetImageConfigs()[0]
-	if uploadConfig := imgConfig.UploadConfig; uploadConfig != nil {
+	imageConfig := p.GetImageConfigs()[0]
+	if uploadConfig := imageConfig.UploadConfig; uploadConfig != nil {
 		for i := range images.ImageCount {
-			storagePath := fmt.Sprintf("%s_%05d%s", imgConfig.ImagePrefix, i, imgConfig.ImageExtension)
-			filename := path.Base(storagePath)
-			localPath := path.Join(r.FilePrefix, filename)
-			download(t, uploadConfig, localPath, path.Join(uploadPrefix, storagePath))
+			storagePath := fmt.Sprintf("%s_%05d%s", images.FilenamePrefix, i, imageConfig.ImageExtension)
+			localPath := path.Join(r.FilePrefix, path.Base(storagePath))
+			download(t, uploadConfig, localPath, storagePath)
 		}
 	}
 }

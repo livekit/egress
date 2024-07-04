@@ -253,7 +253,7 @@ func (r *Runner) testTrackCompositeImages(t *testing.T) {
 				name:       "H264",
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeH264,
-				filename:   "tc_images_h264",
+				filename:   "tc_{publisher_identity}_h264",
 			},
 		} {
 			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec,

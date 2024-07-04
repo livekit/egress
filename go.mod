@@ -17,7 +17,7 @@ require (
 	github.com/gorilla/websocket v1.5.2
 	github.com/livekit/livekit-server v1.6.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.19.0
+	github.com/livekit/protocol v1.19.2-0.20240704004618-f710fdd71817
 	github.com/livekit/psrpc v0.5.3-0.20240526192918-fbdaf10e6aa5
 	github.com/livekit/server-sdk-go/v2 v2.2.1-0.20240628022514-ad17d3f0adad
 	github.com/pion/rtp v1.8.6
@@ -38,15 +38,19 @@ require (
 )
 
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.33.0-20240401165935-b983156c5e99.1 // indirect
 	cloud.google.com/go v0.114.0 // indirect
 	cloud.google.com/go/auth v0.5.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.2 // indirect
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	cloud.google.com/go/iam v1.1.8 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
+	github.com/bufbuild/protovalidate-go v0.6.1 // indirect
+	github.com/bufbuild/protoyaml-go v0.1.9 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chromedp/sysutil v1.0.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
@@ -65,6 +69,7 @@ require (
 	github.com/gobwas/ws v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/google/cel-go v0.20.1 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
@@ -103,6 +108,7 @@ require (
 	github.com/puzpuzpuz/xsync/v3 v3.1.0 // indirect
 	github.com/redis/go-redis/v9 v9.5.3 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
