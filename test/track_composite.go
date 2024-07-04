@@ -250,10 +250,10 @@ func (r *Runner) testTrackCompositeImages(t *testing.T) {
 	t.Run("4D/TrackComposite/Images", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
-				name:       "VP8",
+				name:       "H264",
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeH264,
-				filename:   "tcs_{publisher_identity}_vp8_{time}",
+				filename:   "tc_images_h264",
 			},
 		} {
 			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec,

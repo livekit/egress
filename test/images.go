@@ -45,10 +45,10 @@ func (r *Runner) runImagesTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 
-	r.verifyImages(t, p, test.imageFilenameSuffix, res)
+	r.verifyImages(t, p, res)
 }
 
-func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.ImageFileSuffix, res *livekit.EgressInfo) {
+func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, res *livekit.EgressInfo) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
@@ -63,7 +63,7 @@ func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, filenameSu
 	imgConfig := p.GetImageConfigs()[0]
 	if uploadConfig := p.GetImageConfigs()[0].UploadConfig; uploadConfig != nil {
 		for i := range images.ImageCount {
-			storagePath := fmt.Sprintf("%s_%d%s", imgConfig.ImagePrefix, i, imgConfig.ImageExtension)
+			storagePath := fmt.Sprintf("%s_%05d%s", imgConfig.ImagePrefix, i, imgConfig.ImageExtension)
 			filename := path.Base(storagePath)
 			localPath := path.Join(r.FilePrefix, filename)
 			download(t, uploadConfig, localPath, storagePath)
