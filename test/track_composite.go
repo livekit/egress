@@ -250,10 +250,10 @@ func (r *Runner) testTrackCompositeImages(t *testing.T) {
 	t.Run("4D/TrackComposite/Images", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
-				name:       "VP8",
+				name:       "H264",
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeH264,
-				filename:   "tcs_{publisher_identity}_vp8_{time}",
+				filename:   "tc_{publisher_identity}_h264",
 			},
 		} {
 			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec,
@@ -266,11 +266,24 @@ func (r *Runner) testTrackCompositeImages(t *testing.T) {
 						aID = audioTrackID
 					}
 
-					imageOutput := &livekit.ImageOutput{
-						CaptureInterval: 5,
-						Width:           1280,
-						Height:          720,
-						FilenamePrefix:  path.Join(r.FilePrefix, test.filename),
+					var imageOutput *livekit.ImageOutput
+					if r.S3Upload != nil {
+						imageOutput = &livekit.ImageOutput{
+							CaptureInterval: 5,
+							Width:           1280,
+							Height:          720,
+							FilenamePrefix:  path.Join(uploadPrefix, test.filename),
+							Output: &livekit.ImageOutput_S3{
+								S3: r.S3Upload,
+							},
+						}
+					} else {
+						imageOutput = &livekit.ImageOutput{
+							CaptureInterval: 5,
+							Width:           1280,
+							Height:          720,
+							FilenamePrefix:  path.Join(r.FilePrefix, test.filename),
+						}
 					}
 
 					trackRequest := &livekit.TrackCompositeEgressRequest{

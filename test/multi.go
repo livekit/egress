@@ -66,6 +66,6 @@ func (r *Runner) runMultipleTest(
 		r.verifySegments(t, p, filenameSuffix, res, false)
 	}
 	if images {
-		r.verifyImages(t, p, 0, res)
+		r.verifyImages(t, p, res)
 	}
 }
