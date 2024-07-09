@@ -77,8 +77,8 @@ type AppWriter struct {
 	state        state
 	initialized  bool
 	ticker       *time.Ticker
-	muted        atomic.Bool
 	lastRead     time.Time
+	muted        atomic.Bool
 	disconnected atomic.Bool
 	playing      core.Fuse
 	draining     core.Fuse
@@ -180,6 +180,7 @@ func (w *AppWriter) SetTrackMuted(muted bool) {
 		w.callbacks.OnTrackMuted(w.track.ID())
 	} else {
 		w.logger.Debugw("track unmuted", "timestamp", time.Since(w.startTime).Seconds())
+		w.lastRead = time.Now()
 		if w.sendPLI != nil {
 			w.sendPLI()
 		}
