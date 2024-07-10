@@ -105,7 +105,7 @@ func (s *SDKSource) Playing(trackID string) {
 	s.mu.Unlock()
 
 	if writer != nil {
-		writer.Play()
+		writer.Playing()
 	}
 }
 
@@ -153,8 +153,6 @@ func (s *SDKSource) joinRoom() error {
 			OnTrackUnmuted:      s.onTrackUnmuted,
 			OnTrackUnsubscribed: s.onTrackUnsubscribed,
 		},
-		OnReconnecting: s.onReconnecting,
-		OnReconnected:  s.onReconnected,
 		OnDisconnected: s.onDisconnected,
 	}
 	if s.RequestType == types.RequestTypeParticipant {
@@ -537,23 +535,11 @@ func shouldSubscribe(pub lksdk.TrackPublication) bool {
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	s.mu.Lock()
-	writer := s.writers[pub.SID()]
-	s.mu.Unlock()
-
-	if writer != nil {
-		writer.SetTrackMuted(true)
-	}
+	logger.Debugw("track muted", "trackID", pub.SID())
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	s.mu.Lock()
-	writer := s.writers[pub.SID()]
-	s.mu.Unlock()
-
-	if writer != nil {
-		writer.SetTrackMuted(false)
-	}
+	logger.Debugw("track unmuted", "trackID", pub.SID())
 }
 
 func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
@@ -583,24 +569,6 @@ func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
 	if rp.Identity() == s.Identity {
 		logger.Debugw("participant disconnected")
 		s.finished()
-	}
-}
-
-func (s *SDKSource) onReconnecting() {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, writer := range s.writers {
-		writer.SetTrackDisconnected(true)
-	}
-}
-
-func (s *SDKSource) onReconnected() {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, writer := range s.writers {
-		writer.SetTrackDisconnected(false)
 	}
 }
 

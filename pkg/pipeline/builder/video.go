@@ -169,7 +169,7 @@ func (b *VideoBin) onTrackMuted(trackID string) {
 	b.mu.Unlock()
 }
 
-func (b *VideoBin) onTrackUnmuted(trackID string, pts time.Duration) {
+func (b *VideoBin) onTrackUnmuted(trackID string) {
 	if b.bin.GetState() > gstreamer.StateRunning {
 		return
 	}
