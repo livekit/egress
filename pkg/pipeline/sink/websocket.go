@@ -169,7 +169,7 @@ func (s *WebsocketSink) OnTrackMuted(_ string) {
 	}
 }
 
-func (s *WebsocketSink) OnTrackUnmuted(_ string, _ time.Duration) {
+func (s *WebsocketSink) OnTrackUnmuted(_ string) {
 	if err := s.writeMutedMessage(false); err != nil {
 		logger.Errorw("failed to write unmute message", err)
 	}

@@ -82,9 +82,6 @@ func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *confi
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if err = videoRate.SetProperty("max-duplication-time", uint64(time.Duration(c.CaptureInterval)*time.Second)); err != nil {
-		return nil, err
-	}
 	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
 		return nil, err
 	}
