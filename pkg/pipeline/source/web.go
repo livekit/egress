@@ -40,6 +40,7 @@ const (
 	endRecordingLog   = "END_RECORDING"
 
 	chromeFailedToStart = "chrome failed to start:"
+	chromeTimeout       = time.Second * 30
 )
 
 type WebSource struct {
@@ -83,8 +84,19 @@ func NewWebSource(ctx context.Context, p *config.PipelineConfig) (*WebSource, er
 		return nil, err
 	}
 
-	if err := s.launchChrome(ctx, p, p.Insecure); err != nil {
-		logger.Warnw("failed to launch chrome", err, "display", p.Display)
+	var err error
+	chromeErr := make(chan error, 1)
+	go func() {
+		chromeErr <- s.launchChrome(ctx, p, p.Insecure)
+	}()
+	select {
+	case err = <-chromeErr:
+		// chrome launch completed
+	case <-time.After(chromeTimeout):
+		err = errors.ErrPageLoadFailed("timed out")
+	}
+	if err != nil {
+		logger.Warnw("failed to launch chrome", err)
 		s.Close()
 		return nil, err
 	}
