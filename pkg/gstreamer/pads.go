@@ -131,7 +131,9 @@ func matchPadsLocked(src, sink *Bin) (*gst.Pad, *gst.Pad, error) {
 		}
 	}
 
-	logger.Warnw("could not match pads", nil, "srcTemplates", srcTemplates, "sinkTemplates", sinkTemplates)
+	logger.Warnw("could not match pads", nil,
+		"src", src.bin.GetName(), "sink", sink.bin.GetName(),
+		"srcTemplates", srcTemplates, "sinkTemplates", sinkTemplates)
 	return nil, nil, errors.ErrGhostPadFailed
 }
 
