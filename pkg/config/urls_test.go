@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
 )
 
 func TestValidateUrl(t *testing.T) {
@@ -67,5 +68,33 @@ func TestValidateUrl(t *testing.T) {
 			require.Equal(t, test.updated, updated)
 			require.Equal(t, test.redacted, redacted)
 		}
+	}
+}
+
+func TestGetUrl(t *testing.T) {
+	urls := []string{
+		"rtmps://global-live.mux.com:443/app/streamkey",
+		"rtmp://sfo.contribute.live-video.net/app/streamkey",
+		"rtmp://sfo.contribute.live-video.net/app/streamkey",
+		"rtmp://localhost:1935/live/streamkey",
+	}
+
+	o := &StreamConfig{
+		StreamInfo: map[string]*livekit.StreamInfo{
+			urls[0]: {Url: urls[0]},
+			urls[1]: {Url: urls[1]},
+			urls[3]: {Url: urls[3]},
+		},
+	}
+
+	for i, rawUrl := range []string{
+		"mux://streamkey",
+		"twitch://streamkey",
+		"rtmp://jfk.contribute.live-video.net/app/streamkey",
+		"rtmp://localhost:1935/live/streamkey",
+	} {
+		url, err := o.GetStreamUrl(rawUrl)
+		require.NoError(t, err)
+		require.Equal(t, urls[i], url)
 	}
 }

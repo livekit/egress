@@ -69,6 +69,33 @@ func ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, er
 	}
 }
 
+func (o *StreamConfig) GetStreamUrl(rawUrl string) (string, error) {
+	parsed, err := url.Parse(rawUrl)
+	if err != nil {
+		return "", errors.ErrInvalidUrl(rawUrl, err.Error())
+	}
+
+	var twitchKey string
+	if parsed.Scheme == "mux" {
+		return fmt.Sprintf("rtmps://global-live.mux.com:443/app/%s", parsed.Host), nil
+	} else if parsed.Scheme == "twitch" {
+		twitchKey = parsed.Host
+	} else if match := twitchEndpoint.FindStringSubmatch(rawUrl); len(match) > 0 {
+		twitchKey = match[1]
+	} else {
+		return rawUrl, nil
+	}
+
+	// find twitch url by stream key because we can't rely on the ingest endpoint returning consistent results
+	for u := range o.StreamInfo {
+		if match := twitchEndpoint.FindStringSubmatch(u); len(match) > 0 && match[1] == twitchKey {
+			return u, nil
+		}
+	}
+
+	return "", errors.ErrStreamNotFound(rawUrl)
+}
+
 func updateTwitchURL(key string) (string, error) {
 	resp, err := http.Get("https://ingest.twitch.tv/ingests")
 	if err != nil {
