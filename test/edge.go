@@ -35,7 +35,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 	}
 
 	// ParticipantComposite where the participant does not publish a track
-	r.runParticipantTest(t, "6B/Edge/ParticipantNoPublish", &testCase{},
+	r.runParticipantTest(t, "6A/Edge/ParticipantNoPublish", &testCase{},
 		func(t *testing.T, identity string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
@@ -72,7 +72,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 	)
 
 	// Stream output with a bad rtmp url or stream key
-	r.runRoomTest(t, "6A/Edge/RtmpFailure", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+	r.runRoomTest(t, "6B/Edge/RtmpFailure", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_RoomComposite{
@@ -105,7 +105,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 	})
 
 	// Track composite with data loss due to a disconnection
-	t.Run("6B/Edge/TrackDisconnection", func(t *testing.T) {
+	t.Run("6C/Edge/TrackDisconnection", func(t *testing.T) {
 		r.awaitIdle(t)
 
 		test := &testCase{

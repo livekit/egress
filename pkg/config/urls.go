@@ -1,0 +1,97 @@
+// Copyright 2023 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package config
+
+import (
+	"fmt"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strings"
+
+	"github.com/go-jose/go-jose/v3/json"
+
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/utils"
+)
+
+var twitchEndpoint = regexp.MustCompile("^rtmps?://.*\\.contribute\\.live-video\\.net/app/(.*)( live=1)?$")
+
+func ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, error) {
+	parsed, err := url.Parse(rawUrl)
+	if err != nil {
+		return "", "", errors.ErrInvalidUrl(rawUrl, err.Error())
+	}
+
+	switch outputType {
+	case types.OutputTypeRTMP:
+		if parsed.Scheme == "mux" {
+			rawUrl = fmt.Sprintf("rtmps://global-live.mux.com:443/app/%s", parsed.Host)
+		} else if parsed.Scheme == "twitch" {
+			rawUrl, err = updateTwitchURL(parsed.Host)
+			if err != nil {
+				return "", "", errors.ErrInvalidUrl(rawUrl, err.Error())
+			}
+		} else if match := twitchEndpoint.FindStringSubmatch(rawUrl); len(match) > 0 {
+			updated, err := updateTwitchURL(match[1])
+			if err == nil {
+				rawUrl = updated
+			}
+		}
+
+		redacted, ok := utils.RedactStreamKey(rawUrl)
+		if !ok {
+			return "", "", errors.ErrInvalidUrl(rawUrl, "rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)")
+		}
+		return rawUrl, redacted, nil
+
+	case types.OutputTypeRaw:
+		if parsed.Scheme != "ws" && parsed.Scheme != "wss" {
+			return "", "", errors.ErrInvalidUrl(rawUrl, "invalid scheme")
+		}
+		return rawUrl, rawUrl, nil
+
+	default:
+		return "", "", errors.ErrInvalidInput("stream output type")
+	}
+}
+
+func updateTwitchURL(key string) (string, error) {
+	resp, err := http.Get("https://ingest.twitch.tv/ingests")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Ingests []struct {
+			Name              string `json:"name"`
+			URLTemplate       string `json:"url_template"`
+			URLTemplateSecure string `json:"url_template_secure"`
+			Priority          int    `json:"priority"`
+		} `json:"ingests"`
+	}
+	if err = json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", err
+	}
+	for _, ingest := range body.Ingests {
+		if ingest.URLTemplateSecure != "" {
+			return strings.ReplaceAll(ingest.URLTemplateSecure, "{stream_key}", key), nil
+		} else if ingest.URLTemplate != "" {
+			return strings.ReplaceAll(ingest.URLTemplate, "{stream_key}", key), nil
+		}
+	}
+	return "", errors.New("no ingest found")
+}

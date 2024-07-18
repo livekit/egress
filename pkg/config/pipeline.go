@@ -16,7 +16,6 @@ package config
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -34,7 +33,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
-	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
@@ -596,35 +594,6 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 	}
 
 	return nil
-}
-
-func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, error) {
-	parsed, err := url.Parse(rawUrl)
-	if err != nil {
-		return "", "", errors.ErrInvalidUrl(rawUrl, err.Error())
-	}
-
-	switch outputType {
-	case types.OutputTypeRTMP:
-		if parsed.Scheme == "mux" {
-			rawUrl = fmt.Sprintf("rtmps://global-live.mux.com:443/app/%s", parsed.Host)
-		}
-
-		redacted, ok := utils.RedactStreamKey(rawUrl)
-		if !ok {
-			return "", "", errors.ErrInvalidUrl(rawUrl, "rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)")
-		}
-		return rawUrl, redacted, nil
-
-	case types.OutputTypeRaw:
-		if parsed.Scheme != "ws" && parsed.Scheme != "wss" {
-			return "", "", errors.ErrInvalidUrl(rawUrl, "invalid scheme")
-		}
-		return rawUrl, rawUrl, nil
-
-	default:
-		return "", "", errors.ErrInvalidInput("stream output type")
-	}
 }
 
 func (p *PipelineConfig) GetEncodedOutputs() []OutputConfig {
