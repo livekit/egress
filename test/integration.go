@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +60,8 @@ var (
 		types.MimeTypeVP8:  time.Microsecond * 41708,
 		types.MimeTypeVP9:  time.Microsecond * 41708,
 	}
+
+	uploadPrefix = fmt.Sprintf("integration/%s", time.Now().Format("2006-01-02"))
 )
 
 type testCase struct {
@@ -110,46 +111,22 @@ func (r *Runner) awaitIdle(t *testing.T) {
 	t.Fatal("service not idle after 30s")
 }
 
-func (r *Runner) publishSamplesToRoom(t *testing.T, audioCodec, videoCodec types.MimeType) (audioTrackID, videoTrackID string) {
+func (r *Runner) publishSamples(t *testing.T, audioCodec, videoCodec types.MimeType) (audioTrackID, videoTrackID string) {
 	withAudioMuting := false
 	if videoCodec != "" {
-		videoTrackID = r.publishSampleToRoom(t, videoCodec, r.Muting)
+		videoTrackID = r.publishSample(t, videoCodec, r.Muting)
 	} else {
 		withAudioMuting = r.Muting
 	}
 	if audioCodec != "" {
-		audioTrackID = r.publishSampleToRoom(t, audioCodec, withAudioMuting)
+		audioTrackID = r.publishSample(t, audioCodec, withAudioMuting)
 	}
 
 	time.Sleep(time.Second)
 	return
 }
 
-func (r *Runner) publishSampleOffset(t *testing.T, codec types.MimeType, publishAt, unpublishAt time.Duration) {
-	if codec != "" {
-		go func() {
-			time.Sleep(publishAt)
-			done := make(chan struct{})
-			pub := r.publish(t, codec, done)
-			if unpublishAt != 0 {
-				time.AfterFunc(unpublishAt-publishAt, func() {
-					select {
-					case <-done:
-						return
-					default:
-						_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
-					}
-				})
-			} else {
-				t.Cleanup(func() {
-					_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
-				})
-			}
-		}()
-	}
-}
-
-func (r *Runner) publishSampleToRoom(t *testing.T, codec types.MimeType, withMuting bool) string {
+func (r *Runner) publishSample(t *testing.T, codec types.MimeType, withMuting bool) string {
 	done := make(chan struct{})
 	pub := r.publish(t, codec, done)
 	trackID := pub.SID()
@@ -174,6 +151,43 @@ func (r *Runner) publishSampleToRoom(t *testing.T, codec types.MimeType, withMut
 			}
 		}()
 	}
+
+	return trackID
+}
+
+func (r *Runner) publishSampleOffset(t *testing.T, codec types.MimeType, publishAfter, unpublishAfter time.Duration) {
+	if codec == "" {
+		return
+	}
+
+	time.AfterFunc(publishAfter, func() {
+		done := make(chan struct{})
+		pub := r.publish(t, codec, done)
+		if unpublishAfter != 0 {
+			time.AfterFunc(unpublishAfter-publishAfter, func() {
+				select {
+				case <-done:
+					return
+				default:
+					_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
+				}
+			})
+		} else {
+			t.Cleanup(func() {
+				_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
+			})
+		}
+	})
+}
+
+func (r *Runner) publishSampleWithDisconnection(t *testing.T, codec types.MimeType) string {
+	done := make(chan struct{})
+	pub := r.publish(t, codec, done)
+	trackID := pub.SID()
+
+	time.AfterFunc(time.Second*10, func() {
+		pub.SimulateDisconnection(time.Second * 10)
+	})
 
 	return trackID
 }
@@ -225,7 +239,7 @@ func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {
 
 func (r *Runner) sendRequest(t *testing.T, req *rpc.StartEgressRequest) *livekit.EgressInfo {
 	// send start request
-	info, err := r.client.StartEgress(context.Background(), "", req)
+	info, err := r.StartEgress(context.Background(), req)
 
 	// check returned egress info
 	require.NoError(t, err)
@@ -326,12 +340,4 @@ func (r *Runner) stopEgress(t *testing.T, egressID string) *livekit.EgressInfo {
 	}
 
 	return res
-}
-
-func (r *Runner) getFilePath(filename string) string {
-	if r.S3 != nil || r.Azure != nil || r.GCP != nil || r.AliOSS != nil {
-		return filename
-	}
-
-	return path.Join(r.FilePrefix, filename)
 }

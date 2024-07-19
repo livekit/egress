@@ -38,7 +38,7 @@ import (
 )
 
 func (r *Runner) testTrack(t *testing.T) {
-	if !r.runTrackTests() {
+	if !r.should(runTrack) {
 		return
 	}
 
@@ -48,7 +48,7 @@ func (r *Runner) testTrack(t *testing.T) {
 }
 
 func (r *Runner) testTrackFile(t *testing.T) {
-	if !r.runFileTests() {
+	if !r.should(runFile) {
 		return
 	}
 
@@ -94,7 +94,7 @@ func (r *Runner) testTrackFile(t *testing.T) {
 					TrackId:  trackID,
 					Output: &livekit.TrackEgressRequest_File{
 						File: &livekit.DirectFileOutput{
-							Filepath: r.getFilePath(test.filename),
+							Filepath: path.Join(r.FilePrefix, test.filename),
 						},
 					},
 				}
@@ -116,7 +116,7 @@ func (r *Runner) testTrackFile(t *testing.T) {
 }
 
 func (r *Runner) testTrackStream(t *testing.T) {
-	if !r.runStreamTests() {
+	if !r.should(runStream) {
 		return
 	}
 

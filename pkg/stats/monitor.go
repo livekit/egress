@@ -52,9 +52,10 @@ type Monitor struct {
 	promCPULoad  prometheus.Gauge
 	requestGauge *prometheus.GaugeVec
 
-	svc      Service
-	cpuStats *hwstats.CPUStats
-	requests atomic.Int32
+	svc         Service
+	cpuStats    *hwstats.CPUStats
+	requests    atomic.Int32
+	webRequests atomic.Int32
 
 	mu              sync.Mutex
 	highCPUDuration int
@@ -138,26 +139,46 @@ func (m *Monitor) validateCPUConfig() error {
 	return nil
 }
 
-func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	return m.canAcceptRequestLocked(req)
+func (m *Monitor) CanAcceptWebRequest() bool {
+	return m.webRequests.Load() < m.cpuCostConfig.MaxConcurrentWeb
 }
 
-func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
+func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
+	m.mu.Lock()
+	fields, canAccept := m.canAcceptRequestLocked(req)
+	m.mu.Unlock()
+
+	logger.Debugw("cpu check", fields...)
+	return canAccept
+}
+
+func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interface{}, bool) {
 	total, available, pending, used := m.getCPUUsageLocked()
+	fields := []interface{}{
+		"total", total,
+		"available", available,
+		"pending", pending,
+		"used", used,
+		"activeRequests", m.requests.Load(),
+		"activeWeb", m.webRequests.Load(),
+	}
 
 	var accept bool
 	var required float64
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
+		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+			return fields, false
+		}
 		if r.RoomComposite.AudioOnly {
 			required = m.cpuCostConfig.AudioRoomCompositeCpuCost
 		} else {
 			required = m.cpuCostConfig.RoomCompositeCpuCost
 		}
 	case *rpc.StartEgressRequest_Web:
+		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+			return fields, false
+		}
 		if r.Web.AudioOnly {
 			required = m.cpuCostConfig.AudioWebCpuCost
 		} else {
@@ -172,17 +193,12 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
 	}
 	accept = available >= required
 
-	logger.Debugw("cpu check",
-		"total", total,
-		"pending", pending,
-		"used", used,
+	fields = append(fields,
 		"required", required,
-		"available", available,
-		"activeRequests", m.requests.Load(),
 		"canAccept", accept,
 	)
 
-	return accept
+	return fields, accept
 }
 
 func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
@@ -192,21 +208,23 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	if m.pending[req.EgressId] != nil {
 		return errors.ErrEgressAlreadyExists
 	}
-	if !m.canAcceptRequestLocked(req) {
+	if _, ok := m.canAcceptRequestLocked(req); !ok {
+		logger.Warnw("can not accept request", nil)
 		return errors.ErrNotEnoughCPU
 	}
 
 	m.requests.Inc()
-
 	var cpuHold float64
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
+		m.webRequests.Inc()
 		if r.RoomComposite.AudioOnly {
 			cpuHold = m.cpuCostConfig.AudioRoomCompositeCpuCost
 		} else {
 			cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
 		}
 	case *rpc.StartEgressRequest_Web:
+		m.webRequests.Inc()
 		if r.Web.AudioOnly {
 			cpuHold = m.cpuCostConfig.AudioWebCpuCost
 		} else {
@@ -260,6 +278,10 @@ func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
 
 	delete(m.pending, req.EgressId)
 	m.requests.Dec()
+	switch req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite, *rpc.StartEgressRequest_Web:
+		m.webRequests.Dec()
+	}
 }
 
 func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
@@ -284,8 +306,10 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64) {
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Sub(1)
+		m.webRequests.Dec()
 	case *rpc.StartEgressRequest_Web:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
+		m.webRequests.Dec()
 	case *rpc.StartEgressRequest_Participant:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeParticipant}).Sub(1)
 	case *rpc.StartEgressRequest_TrackComposite:

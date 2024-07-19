@@ -576,6 +576,7 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 				o.LocalDir = stringReplace(o.LocalDir, replacements)
 				o.StorageDir = stringReplace(o.StorageDir, replacements)
 				o.ImagePrefix = stringReplace(o.ImagePrefix, replacements)
+				o.ImagesInfo.FilenamePrefix = stringReplace(o.ImagesInfo.FilenamePrefix, replacements)
 				if o.Width == 0 {
 					if w != 0 {
 						o.Width = int32(w)

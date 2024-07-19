@@ -17,6 +17,8 @@
 package test
 
 import (
+	"fmt"
+	"path"
 	"testing"
 	"time"
 
@@ -43,55 +45,27 @@ func (r *Runner) runImagesTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 
-	r.verifyImages(t, p, test.imageFilenameSuffix, res)
+	r.verifyImages(t, p, res)
 }
 
-func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.ImageFileSuffix, res *livekit.EgressInfo) {
+func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, res *livekit.EgressInfo) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
 	require.NotZero(t, res.EndedAt)
 
-	// segments info
+	// image info
 	require.Len(t, res.GetImageResults(), 1)
 	images := res.GetImageResults()[0]
 
 	require.Greater(t, images.ImageCount, int64(0))
 
-	// r.verifyImagesOutput(t, p, filenameSuffix, segments.PlaylistName, segments.PlaylistLocation, int(segments.SegmentCount), res, m3u8.PlaylistTypeEvent)
-	// r.verifyManifest(t, p, segments.PlaylistName)
+	imageConfig := p.GetImageConfigs()[0]
+	if uploadConfig := imageConfig.UploadConfig; uploadConfig != nil {
+		for i := range images.ImageCount {
+			storagePath := fmt.Sprintf("%s_%05d%s", images.FilenamePrefix, i, imageConfig.ImageExtension)
+			localPath := path.Join(r.FilePrefix, path.Base(storagePath))
+			download(t, uploadConfig, localPath, storagePath)
+		}
+	}
 }
-
-//func (r *Runner) verifyManifest(t *testing.T, p *config.PipelineConfig, plName string) {
-//	localPlaylistPath := fmt.Sprintf("%s/%s", r.FilePrefix, plName)
-//
-//	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
-//		download(t, uploadConfig, localPlaylistPath+".json", plName+".json")
-//	}
-//}
-
-//func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, plName string, plLocation string, segmentCount int, res *livekit.EgressInfo, plType m3u8.PlaylistType) {
-//	require.NotEmpty(t, plName)
-//	require.NotEmpty(t, plLocation)
-
-//	storedPlaylistPath := plName
-//	localPlaylistPath := plName
-
-//	// download from cloud storage
-//	if uploadConfig := p.GetSegmentConfig().UploadConfig; uploadConfig != nil {
-//		localPlaylistPath = fmt.Sprintf("%s/%s", r.FilePrefix, storedPlaylistPath)
-//		download(t, uploadConfig, localPlaylistPath, storedPlaylistPath)
-//		if plType == m3u8.PlaylistTypeEvent {
-//			// Only download segments once
-//			base := storedPlaylistPath[:len(storedPlaylistPath)-5]
-//			for i := 0; i < int(segmentCount); i++ {
-//				cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
-//				localPath := fmt.Sprintf("%s/%s", r.FilePrefix, cloudPath)
-//				download(t, uploadConfig, localPath, cloudPath)
-//			}
-//		}
-//	}
-
-// verify
-//	verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.Muting, r.sourceFramerate, plType == m3u8.PlaylistTypeLive)
-//}

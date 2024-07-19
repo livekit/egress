@@ -75,11 +75,13 @@ func (m *Monitor) promIsIdle() float64 {
 }
 
 func (m *Monitor) promCanAcceptRequest() float64 {
-	if !m.svc.IsDisabled() && m.CanAcceptRequest(&rpc.StartEgressRequest{
-		Request: &rpc.StartEgressRequest_RoomComposite{
-			RoomComposite: &livekit.RoomCompositeEgressRequest{},
-		},
-	}) {
+	m.mu.Lock()
+	_, canAccept := m.canAcceptRequestLocked(&rpc.StartEgressRequest{
+		Request: &rpc.StartEgressRequest_Web{Web: &livekit.WebEgressRequest{}},
+	})
+	m.mu.Unlock()
+
+	if !m.svc.IsDisabled() && canAccept {
 		return 1
 	}
 	return 0

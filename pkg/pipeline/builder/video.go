@@ -23,7 +23,6 @@ import (
 
 	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
-	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -34,21 +33,17 @@ import (
 )
 
 const (
-	videoTestSrcName   = "video_test_src"
-	maxDuplicationTime = time.Second
+	videoTestSrcName = "video_test_src"
 )
 
 type VideoBin struct {
 	bin  *gstreamer.Bin
 	conf *config.PipelineConfig
 
-	lastPTS     atomic.Duration
-	nextPTS     atomic.Duration
-	selectedPad string
-	nextPad     string
-
 	mu          sync.Mutex
 	nextID      int
+	selectedPad string
+	lastPTS     uint64
 	pads        map[string]*gst.Pad
 	names       map[string]string
 	selector    *gst.Element
@@ -82,7 +77,7 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 	if len(p.GetEncodedOutputs()) > 1 {
 		tee, err := gst.NewElementWithName("tee", "video_tee")
 		if err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 
 		if err = b.bin.AddElement(tee); err != nil {
@@ -175,18 +170,20 @@ func (b *VideoBin) onTrackMuted(trackID string) {
 	b.mu.Unlock()
 }
 
-func (b *VideoBin) onTrackUnmuted(trackID string, pts time.Duration) {
+func (b *VideoBin) onTrackUnmuted(trackID string) {
 	if b.bin.GetState() > gstreamer.StateRunning {
 		return
 	}
 
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	if name, ok := b.names[trackID]; ok {
-		b.nextPTS.Store(pts)
-		b.nextPad = name
+		if err := b.setSelectorPadLocked(name); err != nil {
+			b.mu.Unlock()
+			b.bin.OnError(err)
+			return
+		}
 	}
+	b.mu.Unlock()
 }
 
 func (b *VideoBin) buildWebInput() error {
@@ -206,7 +203,7 @@ func (b *VideoBin) buildWebInput() error {
 
 	videoQueue, err := gstreamer.BuildQueue("video_input_queue", config.Latency, true)
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	videoConvert, err := gst.NewElement("videoconvert")
@@ -218,11 +215,8 @@ func (b *VideoBin) buildWebInput() error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = videoRate.SetProperty("max-duplication-time", uint64(maxDuplicationTime)); err != nil {
-		return err
-	}
 	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	caps, err := gst.NewElement("capsfilter")
@@ -458,7 +452,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	if err := addVideoConverter(appSrcBin, b.conf); err != nil {
+	if err := b.addVideoConverter(appSrcBin); err != nil {
 		return nil, err
 	}
 
@@ -480,12 +474,20 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 	}
 	videoTestSrc.SetArg("pattern", "black")
 
-	caps, err := newVideoCapsFilter(b.conf, true)
+	queue, err := gstreamer.BuildQueue("video_test_src_queue", config.Latency, false)
+	if err != nil {
+		return err
+	}
+	if err = queue.SetProperty("min-threshold-time", uint64(2e9)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	caps, err := b.newVideoCapsFilter(true)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	if err = testSrcBin.AddElements(videoTestSrc, caps); err != nil {
+	if err = testSrcBin.AddElements(videoTestSrc, queue, caps); err != nil {
 		return err
 	}
 
@@ -503,14 +505,11 @@ func (b *VideoBin) addSelector() error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = videoRate.SetProperty("max-duplication-time", uint64(maxDuplicationTime)); err != nil {
-		return err
-	}
 	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
-	caps, err := newVideoCapsFilter(b.conf, true)
+	caps, err := b.newVideoCapsFilter(true)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
@@ -526,7 +525,7 @@ func (b *VideoBin) addSelector() error {
 func (b *VideoBin) addEncoder() error {
 	videoQueue, err := gstreamer.BuildQueue("video_encoder_queue", config.Latency, false)
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = b.bin.AddElement(videoQueue); err != nil {
 		return err
@@ -542,9 +541,6 @@ func (b *VideoBin) addEncoder() error {
 		x264Enc.SetArg("speed-preset", "veryfast")
 		if b.conf.KeyFrameInterval != 0 {
 			keyframeInterval := uint(b.conf.KeyFrameInterval * float64(b.conf.Framerate))
-			if b.conf.Debug.LogKeyFrames {
-				logger.Debugw("setting key frame interval", "interval", keyframeInterval)
-			}
 			if err = x264Enc.SetProperty("key-int-max", keyframeInterval); err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
@@ -562,7 +558,7 @@ func (b *VideoBin) addEncoder() error {
 			bufCapacity = 10000
 		}
 		if err = x264Enc.SetProperty("vbv-buf-capacity", bufCapacity); err != nil {
-			return err
+			return errors.ErrGstPipelineError(err)
 		}
 		if b.conf.GetStreamConfig() != nil {
 			x264Enc.SetArg("pass", "cbr")
@@ -585,27 +581,6 @@ func (b *VideoBin) addEncoder() error {
 		if err = b.bin.AddElements(x264Enc, caps); err != nil {
 			return err
 		}
-
-		if b.conf.GetStreamConfig() != nil && b.conf.Debug.LogKeyFrames {
-			var firstKeyFrame *time.Duration
-			x264Enc.GetStaticPad("src").AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-				buffer := info.GetBuffer()
-				if !buffer.HasFlags(gst.BufferFlagDeltaUnit) {
-					clockTime := buffer.PresentationTimestamp().AsDuration()
-					if firstKeyFrame == nil {
-						firstKeyFrame = clockTime
-					}
-					pts := *clockTime - *firstKeyFrame
-					logger.Debugw("keyframe generated", "pts", pts)
-					if pts > time.Second*15 {
-						return gst.PadProbeRemove
-					}
-				}
-
-				return gst.PadProbeOK
-			})
-		}
-
 		return nil
 
 	case types.MimeTypeVP9:
@@ -649,7 +624,7 @@ func (b *VideoBin) addDecodedVideoSink() error {
 	var err error
 	b.rawVideoTee, err = gst.NewElement("tee")
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 	if err = b.bin.AddElement(b.rawVideoTee); err != nil {
 		return err
@@ -665,10 +640,10 @@ func (b *VideoBin) addDecodedVideoSink() error {
 	return nil
 }
 
-func addVideoConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
+func (b *VideoBin) addVideoConverter(bin *gstreamer.Bin) error {
 	videoQueue, err := gstreamer.BuildQueue("video_input_queue", config.Latency, true)
 	if err != nil {
-		return err
+		return errors.ErrGstPipelineError(err)
 	}
 
 	videoConvert, err := gst.NewElement("videoconvert")
@@ -681,26 +656,29 @@ func addVideoConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	videoRate, err := gst.NewElement("videorate")
+	elements := []*gst.Element{videoQueue, videoConvert, videoScale}
+
+	if !b.conf.VideoDecoding {
+		videoRate, err := gst.NewElement("videorate")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = videoRate.SetProperty("skip-to-first", true); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		elements = append(elements, videoRate)
+	}
+
+	caps, err := b.newVideoCapsFilter(!b.conf.VideoDecoding)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = videoRate.SetProperty("max-duplication-time", uint64(maxDuplicationTime)); err != nil {
-		return err
-	}
-	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
-		return err
-	}
+	elements = append(elements, caps)
 
-	caps, err := newVideoCapsFilter(p, true)
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-
-	return b.AddElements(videoQueue, videoConvert, videoScale, videoRate, caps)
+	return bin.AddElements(elements...)
 }
 
-func newVideoCapsFilter(p *config.PipelineConfig, includeFramerate bool) (*gst.Element, error) {
+func (b *VideoBin) newVideoCapsFilter(includeFramerate bool) (*gst.Element, error) {
 	caps, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
@@ -708,12 +686,12 @@ func newVideoCapsFilter(p *config.PipelineConfig, includeFramerate bool) (*gst.E
 	if includeFramerate {
 		err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
-			p.Framerate, p.Width, p.Height,
+			b.conf.Framerate, b.conf.Width, b.conf.Height,
 		)))
 	} else {
 		err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"video/x-raw,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
-			p.Width, p.Height,
+			b.conf.Width, b.conf.Height,
 		)))
 	}
 	if err != nil {
@@ -733,21 +711,23 @@ func (b *VideoBin) createSrcPad(trackID, name string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	b.names[trackID] = name
+
 	pad := b.selector.GetRequestPad("sink_%u")
 	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		buffer := info.GetBuffer()
-		for b.nextPTS.Load() != 0 {
-			time.Sleep(time.Millisecond * 100)
-		}
-		pts := *buffer.PresentationTimestamp().AsDuration()
-		if pts < b.lastPTS.Load() {
+		pts := uint64(info.GetBuffer().PresentationTimestamp())
+		b.mu.Lock()
+		if pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name) {
+			b.mu.Unlock()
+			logger.Debugw(fmt.Sprintf("%s dropping %v", name, time.Duration(pts)))
 			return gst.PadProbeDrop
 		}
-		b.lastPTS.Store(pts)
+		b.lastPTS = pts
+		b.mu.Unlock()
+		logger.Debugw(fmt.Sprintf("%s pushing %v", name, time.Duration(pts)))
 		return gst.PadProbeOK
 	})
 
-	b.names[trackID] = name
 	b.pads[name] = pad
 }
 
@@ -757,24 +737,19 @@ func (b *VideoBin) createTestSrcPad() {
 
 	pad := b.selector.GetRequestPad("sink_%u")
 	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		buffer := info.GetBuffer()
-		pts := *buffer.PresentationTimestamp().AsDuration()
-		if pts < b.lastPTS.Load() {
+		pts := uint64(info.GetBuffer().PresentationTimestamp())
+		b.mu.Lock()
+		if pts < b.lastPTS || (b.selectedPad != videoTestSrcName) {
+			b.mu.Unlock()
+			logger.Debugw(fmt.Sprintf("%s dropping %v", videoTestSrcName, time.Duration(pts)))
 			return gst.PadProbeDrop
 		}
-		if nextPTS := b.nextPTS.Load(); nextPTS != 0 && pts >= nextPTS {
-			if err := b.setSelectorPad(b.nextPad); err != nil {
-				logger.Errorw("failed to unmute", err)
-				return gst.PadProbeDrop
-			}
-			b.nextPad = ""
-			b.nextPTS.Store(0)
-		}
-		if b.selectedPad == videoTestSrcName {
-			b.lastPTS.Store(pts)
-		}
+		b.lastPTS = pts
+		b.mu.Unlock()
+		logger.Debugw(fmt.Sprintf("%s pushing %v", videoTestSrcName, time.Duration(pts)))
 		return gst.PadProbeOK
 	})
+
 	b.pads[videoTestSrcName] = pad
 }
 
@@ -788,6 +763,16 @@ func (b *VideoBin) setSelectorPad(name string) error {
 // TODO: go-gst should accept objects directly and handle conversion to C
 func (b *VideoBin) setSelectorPadLocked(name string) error {
 	pad := b.pads[name]
+
+	// drop until the next keyframe
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		buffer := info.GetBuffer()
+		if buffer.HasFlags(gst.BufferFlagDeltaUnit) {
+			return gst.PadProbeDrop
+		}
+		logger.Debugw("active pad changed", "name", name)
+		return gst.PadProbeRemove
+	})
 
 	pt, err := b.selector.GetPropertyType("active-pad")
 	if err != nil {
