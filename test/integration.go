@@ -40,8 +40,8 @@ const (
 	redactedUrl1    = "rtmp://localhost:1935/live/{st...am}"
 	streamUrl2      = "rtmp://localhost:1935/live/stream_key"
 	redactedUrl2    = "rtmp://localhost:1935/live/{str...key}"
-	badStreamUrl1   = "rtmp://sfo.contribute.live-video.net/app/fake1"
-	redactedBadUrl1 = "rtmp://sfo.contribute.live-video.net/app/{f...1}"
+	badStreamUrl1   = "rtmp://xxx.contribute.live-video.net/app/fake1"
+	redactedBadUrl1 = "rtmp://xxx.contribute.live-video.net/app/{f...1}"
 	badStreamUrl2   = "rtmp://localhost:1936/live/stream"
 	redactedBadUrl2 = "rtmp://localhost:1936/live/{st...am}"
 	webUrl          = "https://videoplayer-2k23.vercel.app/videos/eminem"
@@ -270,7 +270,11 @@ func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[s
 
 	require.Equal(t, len(expected), len(info.StreamResults))
 	for _, s := range info.StreamResults {
-		require.Equal(t, expected[s.Url], s.Status)
+		if strings.HasSuffix(s.Url, ".contribute.live-video.net/app/{f...1}") {
+			require.Equal(t, expected[redactedBadUrl1], s.Status)
+		} else {
+			require.Equal(t, expected[s.Url], s.Status)
+		}
 		require.Equal(t, s.Status == livekit.StreamInfo_FAILED, s.Error != "")
 	}
 }

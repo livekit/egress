@@ -213,7 +213,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 
 // Debug info comes in the following format:
 // file.c(line): method_name (): /GstPipeline:pipeline/GstBin:bin_name/GstElement:element_name:\nError message
-var regExp = regexp.MustCompile("(?s)(.*?)GstPipeline:pipeline\\/GstBin:(.*?)\\/(.*?):([^:]*)(:\n)?(.*)")
+var regExp = regexp.MustCompile("(?s)(.*?)GstPipeline:pipeline/GstBin:(.*?)/(.*?):([^:]*)(:\n)?(.*)")
 
 func parseDebugInfo(gErr *gst.GError) (element, name, message string) {
 	match := regExp.FindStringSubmatch(gErr.DebugString())

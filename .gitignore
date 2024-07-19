@@ -2,7 +2,7 @@
 .DS_Store
 
 .github/workflows/config.yaml
-build/gstcefsrc/*.tar.bz2
+build/plugins/
 test/output/*
 test/*.yaml
 !test/config-sample.yaml

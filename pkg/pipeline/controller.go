@@ -264,7 +264,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
 		// validate and redact url
-		url, redacted, err := c.ValidateUrl(rawUrl, types.OutputTypeRTMP)
+		url, redacted, err := config.ValidateUrl(rawUrl, types.OutputTypeRTMP)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
@@ -287,6 +287,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 			Status:    livekit.StreamInfo_ACTIVE,
 		}
 		o.StreamInfo[url] = streamInfo
+
 		c.Info.StreamResults = append(c.Info.StreamResults, streamInfo)
 		if list := (*livekit.EgressInfo)(c.Info).GetStream(); list != nil {
 			list.Info = append(list.Info, streamInfo)
@@ -297,7 +298,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	// remove stream outputs
 	for _, rawUrl := range req.RemoveOutputUrls {
-		url, _, err := c.ValidateUrl(rawUrl, types.OutputTypeRTMP)
+		url, err := o.GetStreamUrl(rawUrl)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
