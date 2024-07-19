@@ -37,7 +37,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push base
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./build/gstreamer
           push: true
@@ -48,7 +48,7 @@ jobs:
           tags: livekit/gstreamer:${{ env.GST_VERSION }}-base-${{ inputs.arch }}
 
       - name: Build and push dev
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./build/gstreamer
           push: true
@@ -59,7 +59,7 @@ jobs:
           tags: livekit/gstreamer:${{ env.GST_VERSION }}-dev-${{ inputs.arch }}
 
       - name: Build and push prod
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./build/gstreamer
           push: true
@@ -70,7 +70,7 @@ jobs:
           tags: livekit/gstreamer:${{ env.GST_VERSION }}-prod-${{ inputs.arch }}
 
       - name: Build and push prod RS
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./build/gstreamer
           push: true
