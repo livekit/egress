@@ -1,4 +1,4 @@
-FROM ubuntu:mantic-20240530
+FROM ubuntu:24.04
 
 ARG GSTREAMER_VERSION
 
