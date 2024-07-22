@@ -66,6 +66,7 @@ const (
 	OutputTypeWebM        OutputType = "video/webm"
 	OutputTypeJPEG        OutputType = "image/jpeg"
 	OutputTypeRTMP        OutputType = "rtmp"
+	OutputTypeSRT         OutputType = "srt"
 	OutputTypeHLS         OutputType = "application/x-mpegurl"
 	OutputTypeJSON        OutputType = "application/json"
 	OutputTypeBlob        OutputType = "application/octet-stream"
@@ -89,6 +90,7 @@ var (
 		OutputTypeTS:   MimeTypeAAC,
 		OutputTypeWebM: MimeTypeOpus,
 		OutputTypeRTMP: MimeTypeAAC,
+		OutputTypeSRT:  MimeTypeAAC,
 		OutputTypeHLS:  MimeTypeAAC,
 	}
 
@@ -98,6 +100,7 @@ var (
 		OutputTypeTS:   MimeTypeH264,
 		OutputTypeWebM: MimeTypeVP8,
 		OutputTypeRTMP: MimeTypeH264,
+		OutputTypeSRT:  MimeTypeH264,
 		OutputTypeHLS:  MimeTypeH264,
 	}
 
@@ -150,6 +153,10 @@ var (
 			MimeTypeVP9:  true,
 		},
 		OutputTypeRTMP: {
+			MimeTypeAAC:  true,
+			MimeTypeH264: true,
+		},
+		OutputTypeSRT: {
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,
 		},
