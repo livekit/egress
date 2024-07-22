@@ -17,6 +17,7 @@
 package test
 
 import (
+	"path"
 	"testing"
 
 	"github.com/livekit/protocol/livekit"
@@ -25,7 +26,7 @@ import (
 )
 
 func (r *Runner) testWeb(t *testing.T) {
-	if !r.runWebTests() {
+	if !r.should(runWeb) {
 		return
 	}
 
@@ -44,18 +45,22 @@ func (r *Runner) runWebTest(t *testing.T, name string, f func(t *testing.T)) {
 }
 
 func (r *Runner) testWebFile(t *testing.T) {
-	if !r.runFileTests() {
+	if !r.should(runFile) {
 		return
 	}
 
 	r.runWebTest(t, "2A/Web/File", func(t *testing.T) {
-		fileOutput := &livekit.EncodedFileOutput{
-			Filepath: r.getFilePath("web_{time}"),
-		}
+		var fileOutput *livekit.EncodedFileOutput
 		if r.GCPUpload != nil {
-			fileOutput.Filepath = "web_{time}"
-			fileOutput.Output = &livekit.EncodedFileOutput_Gcp{
-				Gcp: r.GCPUpload,
+			fileOutput = &livekit.EncodedFileOutput{
+				Filepath: path.Join(uploadPrefix, "web_{time}"),
+				Output: &livekit.EncodedFileOutput_Gcp{
+					Gcp: r.GCPUpload,
+				},
+			}
+		} else {
+			fileOutput = &livekit.EncodedFileOutput{
+				Filepath: path.Join(r.FilePrefix, "web_{time}"),
 			}
 		}
 
@@ -77,7 +82,7 @@ func (r *Runner) testWebFile(t *testing.T) {
 }
 
 func (r *Runner) testWebStream(t *testing.T) {
-	if !r.runStreamTests() {
+	if !r.should(runStream) {
 		return
 	}
 
@@ -95,26 +100,29 @@ func (r *Runner) testWebStream(t *testing.T) {
 			},
 		}
 
-		r.runStreamTest(t, req, &testCase{
-			expectVideoEncoding: true,
-		})
+		r.runStreamTest(t, req, &testCase{expectVideoEncoding: true})
 	})
 }
 
 func (r *Runner) testWebSegments(t *testing.T) {
-	if !r.runSegmentTests() {
+	if !r.should(runSegments) {
 		return
 	}
 
 	r.runWebTest(t, "2C/Web/Segments", func(t *testing.T) {
-		segmentOutput := &livekit.SegmentedFileOutput{
-			FilenamePrefix: r.getFilePath("web_{time}"),
-			PlaylistName:   "web_{time}.m3u8",
-		}
+		var segmentOutput *livekit.SegmentedFileOutput
 		if r.AzureUpload != nil {
-			segmentOutput.FilenamePrefix = "web_{time}"
-			segmentOutput.Output = &livekit.SegmentedFileOutput_Azure{
-				Azure: r.AzureUpload,
+			segmentOutput = &livekit.SegmentedFileOutput{
+				FilenamePrefix: path.Join(uploadPrefix, "web_{time}"),
+				PlaylistName:   "web_{time}.m3u8",
+				Output: &livekit.SegmentedFileOutput_Azure{
+					Azure: r.AzureUpload,
+				},
+			}
+		} else {
+			segmentOutput = &livekit.SegmentedFileOutput{
+				FilenamePrefix: path.Join(r.FilePrefix, "web_{time}"),
+				PlaylistName:   "web_{time}.m3u8",
 			}
 		}
 
@@ -135,7 +143,7 @@ func (r *Runner) testWebSegments(t *testing.T) {
 }
 
 func (r *Runner) testWebMulti(t *testing.T) {
-	if !r.runMultiTests() {
+	if !r.should(runMulti) {
 		return
 	}
 
@@ -148,10 +156,10 @@ func (r *Runner) testWebMulti(t *testing.T) {
 					Url: webUrl,
 					FileOutputs: []*livekit.EncodedFileOutput{{
 						FileType: livekit.EncodedFileType_MP4,
-						Filepath: r.getFilePath("web_multiple_{time}"),
+						Filepath: path.Join(r.FilePrefix, "web_multiple_{time}"),
 					}},
 					SegmentOutputs: []*livekit.SegmentedFileOutput{{
-						FilenamePrefix: r.getFilePath("web_multiple_{time}"),
+						FilenamePrefix: path.Join(r.FilePrefix, "web_multiple_{time}"),
 						PlaylistName:   "web_multiple_{time}",
 					}},
 				},

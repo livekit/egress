@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM livekit/gstreamer:1.22.8-dev
+FROM livekit/gstreamer:1.24.4-dev
 
 ARG TARGETPLATFORM
 ARG TARGETARCH
@@ -51,7 +51,7 @@ ENV TINI_VERSION v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TARGETARCH} /tini
 RUN chmod +x /tini
 
-FROM livekit/gstreamer:1.22.8-prod
+FROM livekit/gstreamer:1.24.4-prod
 
 ARG TARGETPLATFORM
 
@@ -68,7 +68,7 @@ RUN apt-get update && \
     gstreamer1.0-plugins-base-
 
 # install chrome
-COPY --from=livekit/chrome-installer:124.0.6367.201 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:125.0.6422.141 /chrome-installer /chrome-installer
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 
 # clean up

@@ -17,6 +17,7 @@
 package test
 
 import (
+	"path"
 	"testing"
 
 	"github.com/livekit/egress/pkg/types"
@@ -26,7 +27,7 @@ import (
 )
 
 func (r *Runner) testTrackComposite(t *testing.T) {
-	if !r.runTrackCompositeTests() {
+	if !r.should(runTrackComposite) {
 		return
 	}
 
@@ -44,13 +45,13 @@ func (r *Runner) runTrackTest(
 ) {
 	t.Run(name, func(t *testing.T) {
 		r.awaitIdle(t)
-		audioTrackID, videoTrackID := r.publishSamplesToRoom(t, audioCodec, videoCodec)
+		audioTrackID, videoTrackID := r.publishSamples(t, audioCodec, videoCodec)
 		f(t, audioTrackID, videoTrackID)
 	})
 }
 
 func (r *Runner) testTrackCompositeFile(t *testing.T) {
-	if !r.runFileTests() {
+	if !r.should(runFile) {
 		return
 	}
 
@@ -80,14 +81,19 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 					aID = audioTrackID
 				}
 
-				fileOutput := &livekit.EncodedFileOutput{
-					FileType: test.fileType,
-					Filepath: r.getFilePath(test.filename),
-				}
-				if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.AzureUpload != nil {
-					fileOutput.Filepath = test.filename
-					fileOutput.Output = &livekit.EncodedFileOutput_Azure{
-						Azure: r.AzureUpload,
+				var fileOutput *livekit.EncodedFileOutput
+				if r.AzureUpload != nil {
+					fileOutput = &livekit.EncodedFileOutput{
+						FileType: test.fileType,
+						Filepath: path.Join(uploadPrefix, test.filename),
+						Output: &livekit.EncodedFileOutput_Azure{
+							Azure: r.AzureUpload,
+						},
+					}
+				} else {
+					fileOutput = &livekit.EncodedFileOutput{
+						FileType: test.fileType,
+						Filepath: path.Join(r.FilePrefix, test.filename),
 					}
 				}
 
@@ -121,7 +127,7 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 }
 
 func (r *Runner) testTrackCompositeStream(t *testing.T) {
-	if !r.runStreamTests() {
+	if !r.should(runStream) {
 		return
 	}
 
@@ -147,7 +153,7 @@ func (r *Runner) testTrackCompositeStream(t *testing.T) {
 }
 
 func (r *Runner) testTrackCompositeSegments(t *testing.T) {
-	if !r.runSegmentTests() {
+	if !r.should(runSegments) {
 		return
 	}
 
@@ -186,16 +192,23 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 						aID = audioTrackID
 					}
 
-					segmentOutput := &livekit.SegmentedFileOutput{
-						FilenamePrefix:   r.getFilePath(test.filename),
-						PlaylistName:     test.playlist,
-						LivePlaylistName: test.livePlaylist,
-						FilenameSuffix:   test.filenameSuffix,
-					}
+					var segmentOutput *livekit.SegmentedFileOutput
 					if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.S3Upload != nil {
-						segmentOutput.FilenamePrefix = test.filename
-						segmentOutput.Output = &livekit.SegmentedFileOutput_S3{
-							S3: r.S3Upload,
+						segmentOutput = &livekit.SegmentedFileOutput{
+							FilenamePrefix:   path.Join(uploadPrefix, test.filename),
+							PlaylistName:     test.playlist,
+							LivePlaylistName: test.livePlaylist,
+							FilenameSuffix:   test.filenameSuffix,
+							Output: &livekit.SegmentedFileOutput_S3{
+								S3: r.S3Upload,
+							},
+						}
+					} else {
+						segmentOutput = &livekit.SegmentedFileOutput{
+							FilenamePrefix:   path.Join(r.FilePrefix, test.filename),
+							PlaylistName:     test.playlist,
+							LivePlaylistName: test.livePlaylist,
+							FilenameSuffix:   test.filenameSuffix,
 						}
 					}
 
@@ -230,17 +243,17 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 }
 
 func (r *Runner) testTrackCompositeImages(t *testing.T) {
-	if !r.runImageTests() {
+	if !r.should(runImages) {
 		return
 	}
 
 	t.Run("4D/TrackComposite/Images", func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
-				name:       "VP8",
+				name:       "H264",
 				audioCodec: types.MimeTypeOpus,
 				videoCodec: types.MimeTypeH264,
-				filename:   "tcs_{publisher_identity}_vp8_{time}",
+				filename:   "tc_{publisher_identity}_h264",
 			},
 		} {
 			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec,
@@ -253,14 +266,25 @@ func (r *Runner) testTrackCompositeImages(t *testing.T) {
 						aID = audioTrackID
 					}
 
-					imageOutput := &livekit.ImageOutput{
-						CaptureInterval: 5,
-						Width:           1280,
-						Height:          720,
-						FilenamePrefix:  r.getFilePath(test.filename),
+					var imageOutput *livekit.ImageOutput
+					if r.S3Upload != nil {
+						imageOutput = &livekit.ImageOutput{
+							CaptureInterval: 5,
+							Width:           1280,
+							Height:          720,
+							FilenamePrefix:  path.Join(uploadPrefix, test.filename),
+							Output: &livekit.ImageOutput_S3{
+								S3: r.S3Upload,
+							},
+						}
+					} else {
+						imageOutput = &livekit.ImageOutput{
+							CaptureInterval: 5,
+							Width:           1280,
+							Height:          720,
+							FilenamePrefix:  path.Join(r.FilePrefix, test.filename),
+						}
 					}
-
-					// TODO Upload
 
 					trackRequest := &livekit.TrackCompositeEgressRequest{
 						RoomName:     r.room.Name(),
@@ -291,7 +315,7 @@ func (r *Runner) testTrackCompositeImages(t *testing.T) {
 }
 
 func (r *Runner) testTrackCompositeMulti(t *testing.T) {
-	if !r.runMultiTests() {
+	if !r.should(runMulti) {
 		return
 	}
 
@@ -308,7 +332,7 @@ func (r *Runner) testTrackCompositeMulti(t *testing.T) {
 							Protocol: livekit.StreamProtocol_RTMP,
 						}},
 						SegmentOutputs: []*livekit.SegmentedFileOutput{{
-							FilenamePrefix: r.getFilePath("tc_multiple_{time}"),
+							FilenamePrefix: path.Join(r.FilePrefix, "tc_multiple_{time}"),
 							PlaylistName:   "tc_multiple_{time}",
 						}},
 					},

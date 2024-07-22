@@ -88,7 +88,11 @@ func ErrGstPipelineError(err error) error {
 	return psrpc.NewError(psrpc.Internal, err)
 }
 
-func ErrProcessStartFailed(err error) error {
+func ErrProcessFailed(process string, err error) error {
+	return psrpc.NewErrorf(psrpc.Internal, "failed to launch %s: %v", process, err)
+}
+
+func ErrChromeFailedToStart(err error) error {
 	return psrpc.NewError(psrpc.Internal, err)
 }
 
@@ -99,6 +103,7 @@ var (
 	ErrNoCompatibleCodec          = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported codec is compatible with all outputs")
 	ErrNoCompatibleFileOutputType = psrpc.NewErrorf(psrpc.InvalidArgument, "no supported file output type is compatible with the selected codecs")
 	ErrEgressNotFound             = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
+	ErrEgressAlreadyExists        = psrpc.NewErrorf(psrpc.AlreadyExists, "egress already exists")
 	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Unavailable, "failed to subscribe to track")
 	ErrNotEnoughCPU               = psrpc.NewErrorf(psrpc.Unavailable, "not enough CPU")
 	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
@@ -128,22 +133,20 @@ func ErrInvalidUrl(url string, reason string) error {
 	return psrpc.NewErrorf(psrpc.InvalidArgument, "invalid url %s: %s", url, reason)
 }
 
-func ErrStreamNotFound(url string) error {
-	return psrpc.NewErrorf(psrpc.NotFound, "stream %s not found", url)
-}
-
-func ErrTrackNotFound(trackID string) error {
-	return psrpc.NewErrorf(psrpc.NotFound, "track %s not found", trackID)
+func ErrUploadFailed(location string, err error) error {
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s upload failed: %v", location, err)
 }
 
 func ErrParticipantNotFound(identity string) error {
 	return psrpc.NewErrorf(psrpc.NotFound, "participant %s not found", identity)
 }
 
-// This can have many reasons, some related to invalid parameters, other because of system failure.
-// Do not provide an error code until we have code to analyze the error from the underlying upload library further.
-func ErrUploadFailed(location string, err error) error {
-	return psrpc.NewErrorf(psrpc.Unknown, "%s upload failed: %v", location, err)
+func ErrStreamNotFound(url string) error {
+	return psrpc.NewErrorf(psrpc.NotFound, "stream %s not found", url)
+}
+
+func ErrTrackNotFound(trackID string) error {
+	return psrpc.NewErrorf(psrpc.NotFound, "track %s not found", trackID)
 }
 
 func ErrCPUExhausted(usage float64) error {

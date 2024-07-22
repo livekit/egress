@@ -40,6 +40,7 @@ const (
 	endRecordingLog   = "END_RECORDING"
 
 	chromeFailedToStart = "chrome failed to start:"
+	chromeTimeout       = time.Second * 30
 )
 
 type WebSource struct {
@@ -83,8 +84,19 @@ func NewWebSource(ctx context.Context, p *config.PipelineConfig) (*WebSource, er
 		return nil, err
 	}
 
-	if err := s.launchChrome(ctx, p, p.Insecure); err != nil {
-		logger.Warnw("failed to launch chrome", err, "display", p.Display)
+	var err error
+	chromeErr := make(chan error, 1)
+	go func() {
+		chromeErr <- s.launchChrome(ctx, p, p.Insecure)
+	}()
+	select {
+	case err = <-chromeErr:
+		// chrome launch completed
+	case <-time.After(chromeTimeout):
+		err = errors.ErrPageLoadFailed("timed out")
+	}
+	if err != nil {
+		logger.Warnw("failed to launch chrome", err)
 		s.Close()
 		return nil, err
 	}
@@ -155,7 +167,7 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 	cmd.Stderr = &infoLogger{cmd: "pactl"}
 	err := cmd.Run()
 	if err != nil {
-		return errors.ErrProcessStartFailed(err)
+		return errors.ErrProcessFailed("pulse", err)
 	}
 
 	s.pulseSink = strings.TrimRight(b.String(), "\n")
@@ -172,7 +184,7 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
 	xvfb.Stderr = &infoLogger{cmd: "xvfb"}
 	if err := xvfb.Start(); err != nil {
-		return errors.ErrProcessStartFailed(err)
+		return errors.ErrProcessFailed("xvfb", err)
 	}
 
 	s.xvfb = xvfb
@@ -320,7 +332,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 	)
 	if err != nil {
 		if strings.HasPrefix(err.Error(), chromeFailedToStart) {
-			return errors.ErrProcessStartFailed(err)
+			return errors.ErrChromeFailedToStart(err)
 		}
 		errString = err.Error()
 	}

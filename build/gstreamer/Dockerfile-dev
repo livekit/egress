@@ -11,7 +11,7 @@ COPY compile-rs /
 RUN /compile
 RUN /compile-rs
 
-FROM ubuntu:23.10
+FROM ubuntu:22.04
 
 COPY install-dependencies /
 

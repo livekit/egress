@@ -2,7 +2,7 @@
 
 image_suffix=(base dev prod prod-rs)
 archs=(amd64 arm64)
-gst_version=1.22.8
+gst_version=$1
 
 for suffix in ${image_suffix[*]}
 do
@@ -24,4 +24,3 @@ do
     docker manifest create livekit/gstreamer:$gst_version-$suffix$manifests
     docker manifest push livekit/gstreamer:$gst_version-$suffix
 done
-

@@ -50,7 +50,7 @@ func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []str
 	conf.StreamInfo = make(map[string]*livekit.StreamInfo)
 	var streamInfoList []*livekit.StreamInfo
 	for _, rawUrl := range urls {
-		url, redacted, err := p.ValidateUrl(rawUrl, outputType)
+		url, redacted, err := ValidateUrl(rawUrl, outputType)
 		if err != nil {
 			return nil, err
 		}

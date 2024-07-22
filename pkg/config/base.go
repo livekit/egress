@@ -52,7 +52,6 @@ type BaseConfig struct {
 type DebugConfig struct {
 	EnableProfiling bool             `yaml:"enable_profiling"` // create dot file and pprof on internal error
 	PathPrefix      string           `yaml:"path_prefix"`      // filepath prefix for uploads
-	LogKeyFrames    bool             `yaml:"log_keyframes"`    // log first 15s of keyframes when streaming
 	StorageConfig   `yaml:",inline"` // upload config (S3, Azure, GCP, or AliOSS)
 }
 
@@ -64,9 +63,10 @@ type StorageConfig struct {
 }
 
 type S3Config struct {
-	AccessKey      string        `yaml:"access_key"` // (env AWS_ACCESS_KEY_ID)
-	Secret         string        `yaml:"secret"`     // (env AWS_SECRET_ACCESS_KEY)
-	Region         string        `yaml:"region"`     // (env AWS_DEFAULT_REGION)
+	AccessKey      string        `yaml:"access_key"`    // (env AWS_ACCESS_KEY_ID)
+	Secret         string        `yaml:"secret"`        // (env AWS_SECRET_ACCESS_KEY)
+	SessionToken   string        `yaml:"session_token"` // (env AWS_SESSION_TOKEN)
+	Region         string        `yaml:"region"`        // (env AWS_DEFAULT_REGION)
 	Endpoint       string        `yaml:"endpoint"`
 	Bucket         string        `yaml:"bucket"`
 	ForcePathStyle bool          `yaml:"force_path_style"`

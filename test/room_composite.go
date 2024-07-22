@@ -17,11 +17,8 @@
 package test
 
 import (
-	"context"
+	"path"
 	"testing"
-	"time"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
@@ -30,7 +27,7 @@ import (
 )
 
 func (r *Runner) testRoomComposite(t *testing.T) {
-	if !r.runRoomTests() {
+	if !r.should(runRoom) {
 		return
 	}
 
@@ -45,13 +42,13 @@ func (r *Runner) testRoomComposite(t *testing.T) {
 func (r *Runner) runRoomTest(t *testing.T, name string, audioCodec, videoCodec types.MimeType, f func(t *testing.T)) {
 	t.Run(name, func(t *testing.T) {
 		r.awaitIdle(t)
-		r.publishSamplesToRoom(t, audioCodec, videoCodec)
+		r.publishSamples(t, audioCodec, videoCodec)
 		f(t)
 	})
 }
 
 func (r *Runner) testRoomCompositeFile(t *testing.T) {
-	if !r.runFileTests() {
+	if !r.should(runFile) {
 		return
 	}
 
@@ -83,14 +80,19 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 			},
 		} {
 			r.runRoomTest(t, test.name, types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
-				fileOutput := &livekit.EncodedFileOutput{
-					FileType: test.fileType,
-					Filepath: r.getFilePath(test.filename),
-				}
+				var fileOutput *livekit.EncodedFileOutput
 				if r.S3Upload != nil {
-					fileOutput.Filepath = test.filename
-					fileOutput.Output = &livekit.EncodedFileOutput_S3{
-						S3: r.S3Upload,
+					fileOutput = &livekit.EncodedFileOutput{
+						FileType: test.fileType,
+						Filepath: path.Join(uploadPrefix, test.filename),
+						Output: &livekit.EncodedFileOutput_S3{
+							S3: r.S3Upload,
+						},
+					}
+				} else {
+					fileOutput = &livekit.EncodedFileOutput{
+						FileType: test.fileType,
+						Filepath: path.Join(r.FilePrefix, test.filename),
 					}
 				}
 
@@ -128,68 +130,31 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 }
 
 func (r *Runner) testRoomCompositeStream(t *testing.T) {
-	if !r.runStreamTests() {
+	if !r.should(runStream) {
 		return
 	}
 
-	t.Run("1B/RoomComposite/Stream", func(t *testing.T) {
-		r.runRoomTest(t, "Rtmp", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
-			req := &rpc.StartEgressRequest{
-				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &rpc.StartEgressRequest_RoomComposite{
-					RoomComposite: &livekit.RoomCompositeEgressRequest{
-						RoomName: r.room.Name(),
-						Layout:   "grid-light",
-						StreamOutputs: []*livekit.StreamOutput{{
-							Protocol: livekit.StreamProtocol_RTMP,
-							Urls:     []string{streamUrl1, badStreamUrl1},
-						}},
-					},
+	r.runRoomTest(t, "1B/RoomComposite/Stream", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+		req := &rpc.StartEgressRequest{
+			EgressId: utils.NewGuid(utils.EgressPrefix),
+			Request: &rpc.StartEgressRequest_RoomComposite{
+				RoomComposite: &livekit.RoomCompositeEgressRequest{
+					RoomName: r.room.Name(),
+					Layout:   "grid-light",
+					StreamOutputs: []*livekit.StreamOutput{{
+						Protocol: livekit.StreamProtocol_RTMP,
+						Urls:     []string{streamUrl1, badStreamUrl1},
+					}},
 				},
-			}
-
-			r.runStreamTest(t, req, &testCase{expectVideoEncoding: true})
-		})
-		if r.Short {
-			return
+			},
 		}
 
-		r.runRoomTest(t, "Rtmp-Failure", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
-			req := &rpc.StartEgressRequest{
-				EgressId: utils.NewGuid(utils.EgressPrefix),
-				Request: &rpc.StartEgressRequest_RoomComposite{
-					RoomComposite: &livekit.RoomCompositeEgressRequest{
-						RoomName: r.RoomName,
-						Layout:   "speaker-light",
-						StreamOutputs: []*livekit.StreamOutput{{
-							Protocol: livekit.StreamProtocol_RTMP,
-							Urls:     []string{badStreamUrl1},
-						}},
-					},
-				},
-			}
-
-			info, err := r.client.StartEgress(context.Background(), "", req)
-			require.NoError(t, err)
-			require.Empty(t, info.Error)
-			require.NotEmpty(t, info.EgressId)
-			require.Equal(t, r.RoomName, info.RoomName)
-			require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
-
-			// check update
-			time.Sleep(time.Second * 5)
-			info = r.getUpdate(t, info.EgressId)
-			if info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
-				r.checkUpdate(t, info.EgressId, livekit.EgressStatus_EGRESS_FAILED)
-			} else {
-				require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
-			}
-		})
+		r.runStreamTest(t, req, &testCase{expectVideoEncoding: true})
 	})
 }
 
 func (r *Runner) testRoomCompositeSegments(t *testing.T) {
-	if !r.runSegmentTests() {
+	if !r.should(runSegments) {
 		return
 	}
 
@@ -219,16 +184,23 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 				audioOnly:      true,
 			},
 		} {
-			segmentOutput := &livekit.SegmentedFileOutput{
-				FilenamePrefix:   r.getFilePath(test.filename),
-				PlaylistName:     test.playlist,
-				LivePlaylistName: test.livePlaylist,
-				FilenameSuffix:   test.filenameSuffix,
-			}
+			var segmentOutput *livekit.SegmentedFileOutput
 			if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.GCPUpload != nil {
-				segmentOutput.FilenamePrefix = test.filename
-				segmentOutput.Output = &livekit.SegmentedFileOutput_Gcp{
-					Gcp: r.GCPUpload,
+				segmentOutput = &livekit.SegmentedFileOutput{
+					FilenamePrefix:   path.Join(uploadPrefix, test.filename),
+					PlaylistName:     test.playlist,
+					LivePlaylistName: test.livePlaylist,
+					FilenameSuffix:   test.filenameSuffix,
+					Output: &livekit.SegmentedFileOutput_Gcp{
+						Gcp: r.GCPUpload,
+					},
+				}
+			} else {
+				segmentOutput = &livekit.SegmentedFileOutput{
+					FilenamePrefix:   path.Join(r.FilePrefix, test.filename),
+					PlaylistName:     test.playlist,
+					LivePlaylistName: test.livePlaylist,
+					FilenameSuffix:   test.filenameSuffix,
 				}
 			}
 
@@ -257,7 +229,7 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 }
 
 func (r *Runner) testRoomCompositeImages(t *testing.T) {
-	if !r.runImageTests() {
+	if !r.should(runImages) {
 		return
 	}
 
@@ -273,11 +245,9 @@ func (r *Runner) testRoomCompositeImages(t *testing.T) {
 			},
 		} {
 			imageOutput := &livekit.ImageOutput{
-				FilenamePrefix: r.getFilePath(test.filename),
+				FilenamePrefix: path.Join(r.FilePrefix, test.filename),
 				FilenameSuffix: test.imageFilenameSuffix,
 			}
-
-			// TODO upload
 
 			room := &livekit.RoomCompositeEgressRequest{
 				RoomName:     r.RoomName,
@@ -304,7 +274,7 @@ func (r *Runner) testRoomCompositeImages(t *testing.T) {
 }
 
 func (r *Runner) testRoomCompositeMulti(t *testing.T) {
-	if !r.runMultiTests() {
+	if !r.should(runMulti) {
 		return
 	}
 
@@ -317,13 +287,13 @@ func (r *Runner) testRoomCompositeMulti(t *testing.T) {
 					Layout:   "grid-light",
 					FileOutputs: []*livekit.EncodedFileOutput{{
 						FileType: livekit.EncodedFileType_MP4,
-						Filepath: r.getFilePath("rc_multiple_{time}"),
+						Filepath: path.Join(r.FilePrefix, "rc_multiple_{time}"),
 					}},
 					ImageOutputs: []*livekit.ImageOutput{{
 						CaptureInterval: 10,
 						Width:           1280,
 						Height:          720,
-						FilenamePrefix:  r.getFilePath("rc_image"),
+						FilenamePrefix:  path.Join(r.FilePrefix, "rc_image"),
 					}},
 				},
 			},

@@ -80,7 +80,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./build/test/Dockerfile
@@ -93,7 +93,7 @@ jobs:
     needs: build
     strategy:
       matrix:
-        integration_type: [room, web, participant, track_composite, track]
+        integration_type: [room, web, participant, track_composite, track, edge]
     runs-on: buildjet-8vcpu-ubuntu-2204
     steps:
       - uses: shogo82148/actions-setup-redis@v1

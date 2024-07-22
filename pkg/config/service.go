@@ -36,6 +36,7 @@ const (
 	trackCompositeCpuCost     = 1
 	trackCpuCost              = 0.5
 	maxCpuUtilization         = 0.8
+	maxConcurrentWeb          = 18
 
 	defaultTemplatePort         = 7980
 	defaultTemplateBaseTemplate = "http://localhost:%d/"
@@ -53,7 +54,8 @@ type ServiceConfig struct {
 }
 
 type CPUCostConfig struct {
-	MaxCpuUtilization         float64 `yaml:"max_cpu_utilization"` // Maximum allowed CPU utilization when deciding to accept a request. Default to 80%.
+	MaxCpuUtilization         float64 `yaml:"max_cpu_utilization"` // maximum allowed CPU utilization when deciding to accept a request. Default to 80%.
+	MaxConcurrentWeb          int32   `yaml:"max_concurrent_web"`  // maximum allowed chrome/x/pulse instances
 	RoomCompositeCpuCost      float64 `yaml:"room_composite_cpu_cost"`
 	AudioRoomCompositeCpuCost float64 `yaml:"audio_room_composite_cpu_cost"`
 	WebCpuCost                float64 `yaml:"web_cpu_cost"`
@@ -109,6 +111,9 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	}
 	if conf.MaxCpuUtilization <= 0 || conf.MaxCpuUtilization > 1 {
 		conf.MaxCpuUtilization = maxCpuUtilization
+	}
+	if conf.MaxConcurrentWeb <= 0 {
+		conf.MaxConcurrentWeb = maxConcurrentWeb
 	}
 
 	if conf.TemplateBase == "" {

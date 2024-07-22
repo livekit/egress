@@ -264,7 +264,6 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
-
 		u, err := url.Parse(rawUrl)
 		if err != nil {
 			return errors.ErrInvalidInput("malformed url")
@@ -280,7 +279,8 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 			return errors.ErrInvalidInput("invalid stream type")
 		}
 
-		url, redacted, err := c.ValidateUrl(rawUrl, outputType)
+		// validate and redact url
+		url, redacted, err := config.ValidateUrl(rawUrl, outputType)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
@@ -303,6 +303,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 			Status:    livekit.StreamInfo_ACTIVE,
 		}
 		o.StreamInfo[url] = streamInfo
+
 		c.Info.StreamResults = append(c.Info.StreamResults, streamInfo)
 		if list := (*livekit.EgressInfo)(c.Info).GetStream(); list != nil {
 			list.Info = append(list.Info, streamInfo)
@@ -328,8 +329,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 			return errors.ErrInvalidInput("invalid stream type")
 		}
 
-		url, _, err := c.ValidateUrl(rawUrl, outputType)
-
+		url, err := o.GetStreamUrl(rawUrl)
 		if err != nil {
 			errs.AppendErr(err)
 			continue

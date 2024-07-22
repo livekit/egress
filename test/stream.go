@@ -38,6 +38,9 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 	require.Equal(t, test.expectVideoEncoding, p.VideoEncoding)
+	if test.expectVideoEncoding {
+		require.Equal(t, config.StreamKeyframeInterval, p.KeyFrameInterval)
+	}
 
 	// verify and check update
 	time.Sleep(time.Second * 5)
@@ -116,11 +119,8 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 			require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
 			require.Greater(t, float64(info.Duration)/1e9, 10.0)
 
-		case redactedBadUrl1, redactedBadUrl2:
-			require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
-
 		default:
-			t.Fatal("invalid stream url in result")
+			require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
 		}
 	}
 }

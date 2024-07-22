@@ -58,10 +58,11 @@ const (
 	msgWrongThread = "Called from wrong thread"
 
 	// common gst warnings
-	msgKeyframe         = "Could not request a keyframe. Files may not split at the exact location they should"
-	msgLatencyQuery     = "Latency query failed"
-	msgTaps             = "can't find exact taps"
-	msgInputDisappeared = "Can't copy metadata because input buffer disappeared"
+	msgKeyframe                    = "Could not request a keyframe. Files may not split at the exact location they should"
+	msgLatencyQuery                = "Latency query failed"
+	msgTaps                        = "can't find exact taps"
+	msgInputDisappeared            = "Can't copy metadata because input buffer disappeared"
+	fnGstAudioResampleCheckDiscont = "gst_audio_resample_check_discont"
 
 	// common gst fixmes
 	msgStreamStart       = "stream-start event without group-id. Consider implementing group-id handling in the upstream elements"
@@ -83,6 +84,9 @@ func (c *Controller) gstLog(level gst.DebugLevel, file, function string, line in
 			lvl = "error"
 		}
 	case gst.LevelWarning:
+		if function == fnGstAudioResampleCheckDiscont {
+			return
+		}
 		switch message {
 		case msgKeyframe, msgLatencyQuery, msgTaps, msgInputDisappeared:
 			// ignore
@@ -136,9 +140,6 @@ func (c *Controller) messageWatch(msg *gst.Message) bool {
 		err = c.handleMessageElement(msg)
 	}
 	if err != nil {
-		if c.Debug.EnableProfiling {
-			c.uploadDebugFiles()
-		}
 		c.OnError(err)
 		return false
 	}
@@ -212,7 +213,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 
 // Debug info comes in the following format:
 // file.c(line): method_name (): /GstPipeline:pipeline/GstBin:bin_name/GstElement:element_name:\nError message
-var regExp = regexp.MustCompile("(?s)(.*?)GstPipeline:pipeline\\/GstBin:(.*?)\\/(.*?):([^:]*)(:\n)?(.*)")
+var regExp = regexp.MustCompile("(?s)(.*?)GstPipeline:pipeline/GstBin:(.*?)/(.*?):([^:]*)(:\n)?(.*)")
 
 func parseDebugInfo(gErr *gst.GError) (element, name, message string) {
 	match := regExp.FindStringSubmatch(gErr.DebugString())

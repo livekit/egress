@@ -136,10 +136,10 @@ func runService(c *cli.Context) error {
 		select {
 		case sig := <-stopChan:
 			logger.Infow("exit requested, finishing recording then shutting down", "signal", sig)
-			svc.Shutdown(false)
+			svc.Shutdown(true, false)
 		case sig := <-killChan:
 			logger.Infow("exit requested, stopping recording and shutting down", "signal", sig)
-			svc.Shutdown(true)
+			svc.Shutdown(true, true)
 		}
 	}()
 
