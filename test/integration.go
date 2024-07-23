@@ -33,12 +33,6 @@ import (
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-const (
-	muteDuration = time.Second * 10
-
-	webUrl = "https://videoplayer-2k23.vercel.app/videos/eminem"
-)
-
 var (
 	samples = map[types.MimeType]string{
 		types.MimeTypeOpus: "/workspace/test/sample/matrix-trailer.ogg",
@@ -138,7 +132,7 @@ func (r *Runner) publishSample(t *testing.T, codec types.MimeType, withMuting bo
 				default:
 					pub.SetMuted(!muted)
 					muted = !muted
-					time.Sleep(muteDuration)
+					time.Sleep(time.Second * 10)
 				}
 			}
 		}()

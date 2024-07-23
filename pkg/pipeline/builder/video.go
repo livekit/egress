@@ -149,7 +149,7 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	}
 	b.mu.Unlock()
 
-	if _, err := b.bin.RemoveSourceBin(name); err != nil {
+	if err := b.bin.RemoveSourceBin(name); err != nil {
 		b.bin.OnError(err)
 	}
 }

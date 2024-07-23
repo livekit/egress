@@ -13,17 +13,15 @@ require (
 	github.com/go-gst/go-glib v1.0.1
 	github.com/go-gst/go-gst v1.0.0
 	github.com/go-jose/go-jose/v3 v3.0.3
-	github.com/go-jose/go-jose/v4 v4.0.3
 	github.com/go-logr/logr v1.4.2
 	github.com/googleapis/gax-go/v2 v2.12.4
 	github.com/gorilla/websocket v1.5.2
 	github.com/livekit/livekit-server v1.6.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.19.2-0.20240722200827-2c910325dbfb
+	github.com/livekit/protocol v1.19.2-0.20240723043112-bacbd15bfb3a
 	github.com/livekit/psrpc v0.5.3-0.20240526192918-fbdaf10e6aa5
 	github.com/livekit/server-sdk-go/v2 v2.2.1-0.20240628022514-ad17d3f0adad
 	github.com/pion/rtp v1.8.6
-	github.com/pion/rtp/v2 v2.0.0
 	github.com/pion/webrtc/v3 v3.2.43
 	github.com/prometheus/client_golang v1.19.0
 	github.com/prometheus/client_model v0.6.1

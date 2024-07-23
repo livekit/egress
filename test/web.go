@@ -26,6 +26,8 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
+const webUrl = "https://videoplayer-2k23.vercel.app/videos/eminem"
+
 func (r *Runner) testWeb(t *testing.T) {
 	if !r.should(runWeb) {
 		return

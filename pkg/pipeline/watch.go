@@ -33,61 +33,60 @@ import (
 )
 
 const (
-	// gst error logs
+	// noisy gst errors
 	msgWrongThread = "Called from wrong thread"
 
-	// gst warning logs
+	// noisy gst warnings
 	msgKeyframe                    = "Could not request a keyframe. Files may not split at the exact location they should"
 	msgLatencyQuery                = "Latency query failed"
 	msgTaps                        = "can't find exact taps"
 	msgInputDisappeared            = "Can't copy metadata because input buffer disappeared"
+	msgSkippingSegment             = "error reading data -1 (reason: Success), skipping segment"
 	fnGstAudioResampleCheckDiscont = "gst_audio_resample_check_discont"
+	callerEPollUpdateEvents        = "./srtcore/epoll.cpp:905"
 
-	// gst fix me logs
+	// noisy gst fixmes
 	msgStreamStart       = "stream-start event without group-id. Consider implementing group-id handling in the upstream elements"
 	msgCreatingStream    = "Creating random stream-id, consider implementing a deterministic way of creating a stream-id"
 	msgAggregateSubclass = "Subclass should call gst_aggregator_selected_samples() from its aggregate implementation."
 )
 
+var (
+	logLevels = map[gst.DebugLevel]string{
+		gst.LevelError:   "error",
+		gst.LevelWarning: "warning",
+		gst.LevelFixMe:   "fixme",
+		gst.LevelInfo:    "info",
+		gst.LevelDebug:   "debug",
+		gst.LevelLog:     "log",
+		gst.LevelTrace:   "trace",
+		gst.LevelMemDump: "memdump",
+	}
+
+	ignore = map[string]bool{
+		msgWrongThread:                 true,
+		msgKeyframe:                    true,
+		msgLatencyQuery:                true,
+		msgTaps:                        true,
+		msgInputDisappeared:            true,
+		msgSkippingSegment:             true,
+		fnGstAudioResampleCheckDiscont: true,
+		callerEPollUpdateEvents:        true,
+		msgStreamStart:                 true,
+		msgCreatingStream:              true,
+		msgAggregateSubclass:           true,
+	}
+)
+
 func (c *Controller) gstLog(level gst.DebugLevel, file, function string, line int, _ *glib.Object, message string) {
-	var lvl string
-	switch level {
-	case gst.LevelNone:
-		lvl = "none"
-	case gst.LevelError:
-		switch message {
-		case msgWrongThread:
-			// ignore
-			return
-		default:
-			lvl = "error"
-		}
-	case gst.LevelWarning:
-		if function == fnGstAudioResampleCheckDiscont {
-			// ignore
-			return
-		}
-		switch message {
-		case msgKeyframe, msgLatencyQuery, msgTaps, msgInputDisappeared:
-			// ignore
-			return
-		default:
-			lvl = "warning"
-		}
-	case gst.LevelFixMe:
-		switch message {
-		case msgStreamStart, msgCreatingStream, msgAggregateSubclass:
-			// ignore
-			return
-		default:
-			lvl = "fixme"
-		}
-	case gst.LevelInfo:
-		lvl = "info"
-	case gst.LevelDebug:
-		lvl = "debug"
-	default:
-		lvl = "log"
+	lvl, ok := logLevels[level]
+	if !ok || ignore[message] || ignore[function] {
+		return
+	}
+
+	caller := fmt.Sprintf("%s:%d", file, line)
+	if ignore[caller] {
+		return
 	}
 
 	var msg string
@@ -96,8 +95,7 @@ func (c *Controller) gstLog(level gst.DebugLevel, file, function string, line in
 	} else {
 		msg = fmt.Sprintf("[gst %s] %s", lvl, message)
 	}
-	args := []interface{}{"caller", fmt.Sprintf("%s:%d", file, line)}
-	c.gstLogger.Debugw(msg, args...)
+	c.gstLogger.Debugw(msg, "caller", caller)
 }
 
 func (c *Controller) messageWatch(msg *gst.Message) bool {
@@ -149,7 +147,6 @@ const (
 	elementGstRtmp2Sink    = "GstRtmp2Sink"
 	elementGstSplitMuxSink = "GstSplitMuxSink"
 	elementGstSrtSink      = "GstSRTSink"
-	elementGstQueue        = "GstQueue"
 
 	msgStreamingNotNegotiated = "streaming stopped, reason not-negotiated (-4)"
 	msgMuxer                  = ":muxer"
@@ -190,12 +187,6 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 		}
 
 		return c.removeSink(context.Background(), url, gErr)
-
-	case element == elementGstQueue:
-		sinkName := strings.Split(name, "_")[1]
-		if c.streamBin.Removed(sinkName) {
-			return nil
-		}
 
 	case element == elementGstAppSrc:
 		if message == msgStreamingNotNegotiated {

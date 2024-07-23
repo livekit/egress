@@ -137,7 +137,7 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	require.NotZero(t, res.EndedAt)
 
 	// check stream info
-	require.Len(t, res.StreamResults, 2)
+	require.Len(t, res.StreamResults, 4)
 	for _, info := range res.StreamResults {
 		require.NotZero(t, info.StartedAt)
 		require.NotZero(t, info.EndedAt)
