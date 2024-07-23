@@ -207,6 +207,8 @@ var (
 		"mux":    OutputTypeRTMP,
 		"twitch": OutputTypeRTMP,
 		"srt":    OutputTypeSRT,
+		"ws":     OutputTypeRaw,
+		"wss":    OutputTypeRaw,
 	}
 )
 
