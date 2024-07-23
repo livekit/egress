@@ -43,6 +43,7 @@ type StreamSink struct {
 	url            string
 	reconnections  int
 	disconnectedAt time.Time
+	failed         bool
 }
 
 func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*StreamBin, *gstreamer.Bin, error) {
@@ -65,6 +66,16 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*St
 		}
 		// add latency to give time for flvmux to receive and order packets from both streams
 		if err = mux.SetProperty("latency", config.Latency); err != nil {
+			return nil, nil, errors.ErrGstPipelineError(err)
+		}
+
+		b.SetGetSrcPad(func(name string) *gst.Pad {
+			return mux.GetRequestPad(name)
+		})
+
+	case types.OutputTypeSRT:
+		mux, err = gst.NewElement("mpegtsmux")
+		if err != nil {
 			return nil, nil, errors.ErrGstPipelineError(err)
 		}
 
@@ -99,11 +110,117 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*St
 		}
 	}
 
-	b.SetGetSrcPad(func(name string) *gst.Pad {
-		return mux.GetRequestPad(name)
+	return sb, b, nil
+}
+
+func (sb *StreamBin) AddStream(url string) error {
+	name := utils.NewGuid("")
+	b := sb.b.NewBin(name)
+
+	queue, err := gstreamer.BuildQueue(fmt.Sprintf("queue_%s", name), config.Latency, true)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	var sink *gst.Element
+	switch sb.outputType {
+	case types.OutputTypeRTMP:
+		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("rtmp2sink_%s", name))
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = sink.Set("location", url); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = sink.SetProperty("async-connect", false); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+	case types.OutputTypeSRT:
+		sink, err = gst.NewElementWithName("srtsink", fmt.Sprintf("srtsink_%s", name))
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = sink.SetProperty("uri", url); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = sink.SetProperty("wait-for-connection", false); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+	default:
+		return errors.ErrInvalidInput("output type")
+	}
+
+	// GstBaseSink properties
+	if err = sink.SetProperty("async", false); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = sink.SetProperty("sync", false); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = b.AddElements(queue, sink); err != nil {
+		return err
+	}
+
+	ss := &StreamSink{
+		bin:  b,
+		sink: sink,
+		url:  url,
+	}
+
+	// add a proxy pad between the queue and sink to prevent errors from propagating upstream
+	b.SetLinkFunc(func() error {
+		proxy := gst.NewGhostPad(fmt.Sprintf("proxy_%s", name), sink.GetStaticPad("sink"))
+		proxy.Ref()
+		proxy.ActivateMode(gst.PadModePush, true)
+
+		switch sb.outputType {
+		case types.OutputTypeRTMP:
+			proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
+				buffer.Ref()
+				links, _ := self.GetInternalLinks()
+				switch {
+				case len(links) != 1:
+					return gst.FlowNotLinked
+				case links[0].Push(buffer) == gst.FlowEOS:
+					return gst.FlowEOS
+				default:
+					return gst.FlowOK
+				}
+			})
+		case types.OutputTypeSRT:
+			proxy.SetChainListFunction(func(self *gst.Pad, _ *gst.Object, list *gst.BufferList) gst.FlowReturn {
+				list.Ref()
+				if ss.failed {
+					return gst.FlowOK
+				}
+				links, _ := self.GetInternalLinks()
+				if len(links) != 1 {
+					return gst.FlowNotLinked
+				}
+				switch links[0].PushList(list) {
+				case gst.FlowEOS:
+					return gst.FlowEOS
+				case gst.FlowError:
+					ss.failed = true
+				}
+				return gst.FlowOK
+			})
+		}
+
+		// link queue to sink
+		if padReturn := queue.GetStaticPad("src").Link(proxy.Pad); padReturn != gst.PadLinkOK {
+			return errors.ErrPadLinkFailed(queue.GetName(), "proxy", padReturn.String())
+		}
+		return nil
 	})
 
-	return sb, b, nil
+	sb.mu.Lock()
+	sb.sinks[name] = ss
+	sb.mu.Unlock()
+
+	return sb.b.AddSinkBin(b)
 }
 
 func (sb *StreamBin) GetStreamUrl(name string) (string, error) {
@@ -114,86 +231,6 @@ func (sb *StreamBin) GetStreamUrl(name string) (string, error) {
 		return "", errors.ErrStreamNotFound(name)
 	}
 	return sink.url, nil
-}
-
-func (sb *StreamBin) AddStream(url string) error {
-	name := utils.NewGuid("")
-	b := sb.b.NewBin(name)
-
-	queue, err := gst.NewElementWithName("queue", fmt.Sprintf("queue_%s", name))
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	queue.SetArg("leaky", "downstream")
-
-	var sink *gst.Element
-	switch sb.outputType {
-	case types.OutputTypeRTMP:
-		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("rtmp2sink_%s", name))
-		if err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if err = sink.SetProperty("async", false); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if err = sink.SetProperty("sync", false); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if err = sink.SetProperty("async-connect", false); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if err = sink.Set("location", url); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-
-	default:
-		return errors.ErrInvalidInput("output type")
-	}
-
-	if err = b.AddElements(queue, sink); err != nil {
-		return err
-	}
-
-	b.SetLinkFunc(func() error {
-		proxy := gst.NewGhostPad("proxy", sink.GetStaticPad("sink"))
-
-		// Proxy isn't saved/stored anywhere, so we need to call ref.
-		// It is later released in RemoveSink
-		proxy.Ref()
-
-		// Intercept flows from rtmp2sink. Anything besides EOS will be ignored
-		proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
-			// Buffer gets automatically unreferenced by go-gst.
-			// Without referencing it here, it will sometimes be garbage collected before being written
-			buffer.Ref()
-
-			internal, _ := self.GetInternalLinks()
-			if len(internal) != 1 {
-				return gst.FlowNotLinked
-			}
-
-			if internal[0].Push(buffer) == gst.FlowEOS {
-				return gst.FlowEOS
-			}
-			return gst.FlowOK
-		})
-		proxy.ActivateMode(gst.PadModePush, true)
-
-		if padReturn := queue.GetStaticPad("src").Link(proxy.Pad); padReturn != gst.PadLinkOK {
-			return errors.ErrPadLinkFailed(queue.GetName(), "proxy", padReturn.String())
-		}
-		return nil
-	})
-
-	sb.mu.Lock()
-	sb.sinks[name] = &StreamSink{
-		bin:  b,
-		sink: sink,
-		url:  url,
-	}
-	sb.mu.Unlock()
-
-	return sb.b.AddSinkBin(b)
 }
 
 func (sb *StreamBin) MaybeResetStream(name string, streamErr error) (bool, error) {
@@ -241,23 +278,21 @@ func (sb *StreamBin) MaybeResetStream(name string, streamErr error) (bool, error
 
 func (sb *StreamBin) RemoveStream(url string) error {
 	sb.mu.Lock()
-	name := sb.getStreamNameLocked(url)
-	if name == "" {
+	var name string
+	var sink *StreamSink
+	for n, s := range sb.sinks {
+		if s.url == url {
+			name = n
+			sink = s
+			break
+		}
+	}
+	if sink == nil {
 		sb.mu.Unlock()
 		return errors.ErrStreamNotFound(url)
 	}
 	delete(sb.sinks, name)
 	sb.mu.Unlock()
 
-	_, err := sb.b.RemoveSinkBin(name)
-	return err
-}
-
-func (sb *StreamBin) getStreamNameLocked(url string) string {
-	for name, sink := range sb.sinks {
-		if sink.url == url {
-			return name
-		}
-	}
-	return ""
+	return sb.b.RemoveSinkBin(name)
 }

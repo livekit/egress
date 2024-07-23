@@ -151,23 +151,23 @@ func (b *Bin) AddElements(elements ...*gst.Element) error {
 	return nil
 }
 
-func (b *Bin) RemoveSourceBin(name string) (bool, error) {
+func (b *Bin) RemoveSourceBin(name string) error {
 	logger.Debugw(fmt.Sprintf("removing src %s from %s", name, b.bin.GetName()))
 	return b.removeBin(name, gst.PadDirectionSource)
 }
 
-func (b *Bin) RemoveSinkBin(name string) (bool, error) {
+func (b *Bin) RemoveSinkBin(name string) error {
 	logger.Debugw(fmt.Sprintf("removing sink %s from %s", name, b.bin.GetName()))
 	return b.removeBin(name, gst.PadDirectionSink)
 }
 
-func (b *Bin) removeBin(name string, direction gst.PadDirection) (bool, error) {
+func (b *Bin) removeBin(name string, direction gst.PadDirection) error {
 	b.LockStateShared()
 	defer b.UnlockStateShared()
 
 	state := b.GetStateLocked()
 	if state > StateRunning {
-		return true, nil
+		return nil
 	}
 
 	b.mu.Lock()
@@ -192,14 +192,14 @@ func (b *Bin) removeBin(name string, direction gst.PadDirection) (bool, error) {
 		}
 	}
 	if bin == nil {
-		return false, nil
+		return nil
 	}
 
 	if state == StateBuilding {
 		if err := b.pipeline.Remove(bin.bin.Element); err != nil {
-			return false, errors.ErrGstPipelineError(err)
+			return errors.ErrGstPipelineError(err)
 		}
-		return true, nil
+		return nil
 	}
 
 	if direction == gst.PadDirectionSource {
@@ -208,7 +208,7 @@ func (b *Bin) removeBin(name string, direction gst.PadDirection) (bool, error) {
 		b.probeRemoveSink(bin)
 	}
 
-	return true, nil
+	return nil
 }
 
 func (b *Bin) probeRemoveSource(src *Bin) {
@@ -262,7 +262,7 @@ func (b *Bin) probeRemoveSink(sink *Bin) {
 		return
 	}
 
-	srcGhostPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+	srcGhostPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
 		srcGhostPad.Unlink(sinkGhostPad.Pad)
 		sinkGhostPad.Pad.SendEvent(gst.NewEOSEvent())
 
@@ -281,7 +281,7 @@ func (b *Bin) probeRemoveSink(sink *Bin) {
 
 		b.elements[len(b.elements)-1].ReleaseRequestPad(srcGhostPad.GetTarget())
 		b.bin.RemovePad(srcGhostPad.Pad)
-		return gst.PadProbeRemove
+		return gst.PadProbeOK
 	})
 }
 

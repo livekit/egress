@@ -33,17 +33,19 @@ func (r *Runner) testParticipant(t *testing.T) {
 	}
 
 	r.sourceFramerate = 23.97
-	r.testParticipantFile(t)
-	r.testParticipantStream(t)
-	r.testParticipantSegments(t)
-	r.testParticipantMulti(t)
+	t.Run("Participant", func(t *testing.T) {
+		r.testParticipantFile(t)
+		r.testParticipantStream(t)
+		r.testParticipantSegments(t)
+		r.testParticipantMulti(t)
+	})
 }
 
 func (r *Runner) runParticipantTest(
 	t *testing.T, name string, test *testCase,
 	f func(t *testing.T, identity string),
 ) {
-	t.Run(name, func(t *testing.T) {
+	run(t, name, func(t *testing.T) {
 		r.awaitIdle(t)
 		r.publishSampleOffset(t, test.audioCodec, test.audioDelay, test.audioUnpublish)
 		if test.audioRepublish != 0 {
@@ -62,79 +64,77 @@ func (r *Runner) testParticipantFile(t *testing.T) {
 		return
 	}
 
-	t.Run("3A/Participant/File", func(t *testing.T) {
-		for _, test := range []*testCase{
-			{
-				name:           "VP8",
-				fileType:       livekit.EncodedFileType_MP4,
-				audioCodec:     types.MimeTypeOpus,
-				audioDelay:     time.Second * 8,
-				audioUnpublish: time.Second * 14,
-				audioRepublish: time.Second * 20,
-				videoCodec:     types.MimeTypeVP8,
-				filename:       "participant_{publisher_identity}_vp8_{time}.mp4",
-			},
-			{
-				name:           "H264",
-				fileType:       livekit.EncodedFileType_MP4,
-				audioCodec:     types.MimeTypeOpus,
-				videoCodec:     types.MimeTypeH264,
-				videoUnpublish: time.Second * 10,
-				videoRepublish: time.Second * 20,
-				filename:       "participant_{room_name}_h264_{time}.mp4",
-			},
-			{
-				name:           "AudioOnly",
-				fileType:       livekit.EncodedFileType_MP4,
-				audioCodec:     types.MimeTypeOpus,
-				audioUnpublish: time.Second * 10,
-				audioRepublish: time.Second * 15,
-				filename:       "participant_{room_name}_{time}.mp4",
-			},
-		} {
-			r.runParticipantTest(t, test.name, test, func(t *testing.T, identity string) {
-				var fileOutput *livekit.EncodedFileOutput
-				if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.AzureUpload != nil {
-					fileOutput = &livekit.EncodedFileOutput{
-						FileType: test.fileType,
-						Filepath: path.Join(uploadPrefix, test.filename),
-						Output: &livekit.EncodedFileOutput_Azure{
-							Azure: r.AzureUpload,
-						},
-					}
-				} else {
-					fileOutput = &livekit.EncodedFileOutput{
-						FileType: test.fileType,
-						Filepath: path.Join(r.FilePrefix, test.filename),
-					}
-				}
-
-				participantRequest := &livekit.ParticipantEgressRequest{
-					RoomName:    r.room.Name(),
-					Identity:    identity,
-					FileOutputs: []*livekit.EncodedFileOutput{fileOutput},
-				}
-				if test.options != nil {
-					participantRequest.Options = &livekit.ParticipantEgressRequest_Advanced{
-						Advanced: test.options,
-					}
-				}
-
-				req := &rpc.StartEgressRequest{
-					EgressId: utils.NewGuid(utils.EgressPrefix),
-					Request: &rpc.StartEgressRequest_Participant{
-						Participant: participantRequest,
+	for _, test := range []*testCase{
+		{
+			name:           "File/VP8",
+			fileType:       livekit.EncodedFileType_MP4,
+			audioCodec:     types.MimeTypeOpus,
+			audioDelay:     time.Second * 8,
+			audioUnpublish: time.Second * 14,
+			audioRepublish: time.Second * 20,
+			videoCodec:     types.MimeTypeVP8,
+			filename:       "participant_{publisher_identity}_vp8_{time}.mp4",
+		},
+		{
+			name:           "File/H264",
+			fileType:       livekit.EncodedFileType_MP4,
+			audioCodec:     types.MimeTypeOpus,
+			videoCodec:     types.MimeTypeH264,
+			videoUnpublish: time.Second * 10,
+			videoRepublish: time.Second * 20,
+			filename:       "participant_{room_name}_h264_{time}.mp4",
+		},
+		{
+			name:           "File/AudioOnly",
+			fileType:       livekit.EncodedFileType_MP4,
+			audioCodec:     types.MimeTypeOpus,
+			audioUnpublish: time.Second * 10,
+			audioRepublish: time.Second * 15,
+			filename:       "participant_{room_name}_{time}.mp4",
+		},
+	} {
+		r.runParticipantTest(t, test.name, test, func(t *testing.T, identity string) {
+			var fileOutput *livekit.EncodedFileOutput
+			if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.AzureUpload != nil {
+				fileOutput = &livekit.EncodedFileOutput{
+					FileType: test.fileType,
+					Filepath: path.Join(uploadPrefix, test.filename),
+					Output: &livekit.EncodedFileOutput_Azure{
+						Azure: r.AzureUpload,
 					},
 				}
-
-				test.expectVideoEncoding = true
-				r.runFileTest(t, req, test)
-			})
-			if r.Short {
-				return
+			} else {
+				fileOutput = &livekit.EncodedFileOutput{
+					FileType: test.fileType,
+					Filepath: path.Join(r.FilePrefix, test.filename),
+				}
 			}
+
+			participantRequest := &livekit.ParticipantEgressRequest{
+				RoomName:    r.room.Name(),
+				Identity:    identity,
+				FileOutputs: []*livekit.EncodedFileOutput{fileOutput},
+			}
+			if test.options != nil {
+				participantRequest.Options = &livekit.ParticipantEgressRequest_Advanced{
+					Advanced: test.options,
+				}
+			}
+
+			req := &rpc.StartEgressRequest{
+				EgressId: utils.NewGuid(utils.EgressPrefix),
+				Request: &rpc.StartEgressRequest_Participant{
+					Participant: participantRequest,
+				},
+			}
+
+			test.expectVideoEncoding = true
+			r.runFileTest(t, req, test)
+		})
+		if r.Short {
+			return
 		}
-	})
+	}
 }
 
 func (r *Runner) testParticipantStream(t *testing.T) {
@@ -148,7 +148,7 @@ func (r *Runner) testParticipantStream(t *testing.T) {
 		videoCodec: types.MimeTypeVP8,
 	}
 
-	r.runParticipantTest(t, "3B/Participant/Stream", test,
+	r.runParticipantTest(t, "Stream", test,
 		func(t *testing.T, identity string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
@@ -157,13 +157,16 @@ func (r *Runner) testParticipantStream(t *testing.T) {
 						RoomName: r.room.Name(),
 						Identity: identity,
 						StreamOutputs: []*livekit.StreamOutput{{
-							Urls: []string{streamUrl1, badStreamUrl1},
+							Urls: []string{rtmpUrl1, badRtmpUrl1},
 						}},
 					},
 				},
 			}
 
-			r.runStreamTest(t, req, &testCase{expectVideoEncoding: true})
+			r.runStreamTest(t, req, &testCase{
+				expectVideoEncoding: true,
+				outputType:          types.OutputTypeRTMP,
+			})
 		},
 	)
 }
@@ -173,74 +176,72 @@ func (r *Runner) testParticipantSegments(t *testing.T) {
 		return
 	}
 
-	t.Run("3C/Participant/Segments", func(t *testing.T) {
-		for _, test := range []*testCase{
-			{
-				name:       "VP8",
-				audioCodec: types.MimeTypeOpus,
-				videoCodec: types.MimeTypeVP8,
-				// videoDelay:     time.Second * 10,
-				// videoUnpublish: time.Second * 20,
-				filename: "participant_{publisher_identity}_vp8_{time}",
-				playlist: "participant_{publisher_identity}_vp8_{time}.m3u8",
-			},
-			{
-				name:           "H264",
-				audioCodec:     types.MimeTypeOpus,
-				audioDelay:     time.Second * 10,
-				audioUnpublish: time.Second * 20,
-				videoCodec:     types.MimeTypeH264,
-				filename:       "participant_{room_name}_h264_{time}",
-				playlist:       "participant_{room_name}_h264_{time}.m3u8",
-			},
-		} {
-			r.runParticipantTest(t, test.name, test,
-				func(t *testing.T, identity string) {
-					var segmentOutput *livekit.SegmentedFileOutput
-					if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.S3Upload != nil {
-						segmentOutput = &livekit.SegmentedFileOutput{
-							FilenamePrefix: path.Join(uploadPrefix, test.filename),
-							PlaylistName:   test.playlist,
-							FilenameSuffix: test.filenameSuffix,
-							Output: &livekit.SegmentedFileOutput_S3{
-								S3: r.S3Upload,
-							},
-						}
-					} else {
-						segmentOutput = &livekit.SegmentedFileOutput{
-							FilenamePrefix: path.Join(r.FilePrefix, test.filename),
-							PlaylistName:   test.playlist,
-							FilenameSuffix: test.filenameSuffix,
-						}
-					}
-
-					trackRequest := &livekit.ParticipantEgressRequest{
-						RoomName:       r.room.Name(),
-						Identity:       identity,
-						SegmentOutputs: []*livekit.SegmentedFileOutput{segmentOutput},
-					}
-					if test.options != nil {
-						trackRequest.Options = &livekit.ParticipantEgressRequest_Advanced{
-							Advanced: test.options,
-						}
-					}
-
-					req := &rpc.StartEgressRequest{
-						EgressId: utils.NewGuid(utils.EgressPrefix),
-						Request: &rpc.StartEgressRequest_Participant{
-							Participant: trackRequest,
+	for _, test := range []*testCase{
+		{
+			name:       "Segments/VP8",
+			audioCodec: types.MimeTypeOpus,
+			videoCodec: types.MimeTypeVP8,
+			// videoDelay:     time.Second * 10,
+			// videoUnpublish: time.Second * 20,
+			filename: "participant_{publisher_identity}_vp8_{time}",
+			playlist: "participant_{publisher_identity}_vp8_{time}.m3u8",
+		},
+		{
+			name:           "Segments/H264",
+			audioCodec:     types.MimeTypeOpus,
+			audioDelay:     time.Second * 10,
+			audioUnpublish: time.Second * 20,
+			videoCodec:     types.MimeTypeH264,
+			filename:       "participant_{room_name}_h264_{time}",
+			playlist:       "participant_{room_name}_h264_{time}.m3u8",
+		},
+	} {
+		r.runParticipantTest(t, test.name, test,
+			func(t *testing.T, identity string) {
+				var segmentOutput *livekit.SegmentedFileOutput
+				if test.filenameSuffix == livekit.SegmentedFileSuffix_INDEX && r.S3Upload != nil {
+					segmentOutput = &livekit.SegmentedFileOutput{
+						FilenamePrefix: path.Join(uploadPrefix, test.filename),
+						PlaylistName:   test.playlist,
+						FilenameSuffix: test.filenameSuffix,
+						Output: &livekit.SegmentedFileOutput_S3{
+							S3: r.S3Upload,
 						},
 					}
-					test.expectVideoEncoding = true
+				} else {
+					segmentOutput = &livekit.SegmentedFileOutput{
+						FilenamePrefix: path.Join(r.FilePrefix, test.filename),
+						PlaylistName:   test.playlist,
+						FilenameSuffix: test.filenameSuffix,
+					}
+				}
 
-					r.runSegmentsTest(t, req, test)
-				},
-			)
-			if r.Short {
-				return
-			}
+				trackRequest := &livekit.ParticipantEgressRequest{
+					RoomName:       r.room.Name(),
+					Identity:       identity,
+					SegmentOutputs: []*livekit.SegmentedFileOutput{segmentOutput},
+				}
+				if test.options != nil {
+					trackRequest.Options = &livekit.ParticipantEgressRequest_Advanced{
+						Advanced: test.options,
+					}
+				}
+
+				req := &rpc.StartEgressRequest{
+					EgressId: utils.NewGuid(utils.EgressPrefix),
+					Request: &rpc.StartEgressRequest_Participant{
+						Participant: trackRequest,
+					},
+				}
+				test.expectVideoEncoding = true
+
+				r.runSegmentsTest(t, req, test)
+			},
+		)
+		if r.Short {
+			return
 		}
-	})
+	}
 }
 
 func (r *Runner) testParticipantMulti(t *testing.T) {
@@ -255,7 +256,7 @@ func (r *Runner) testParticipantMulti(t *testing.T) {
 		videoDelay:     time.Second * 5,
 	}
 
-	r.runParticipantTest(t, "3D/Participant/Multi", test,
+	r.runParticipantTest(t, "Multi", test,
 		func(t *testing.T, identity string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),

@@ -149,7 +149,7 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	}
 	b.mu.Unlock()
 
-	if _, err := b.bin.RemoveSourceBin(name); err != nil {
+	if err := b.bin.RemoveSourceBin(name); err != nil {
 		b.bin.OnError(err)
 	}
 }
@@ -719,12 +719,10 @@ func (b *VideoBin) createSrcPad(trackID, name string) {
 		b.mu.Lock()
 		if pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name) {
 			b.mu.Unlock()
-			logger.Debugw(fmt.Sprintf("%s dropping %v", name, time.Duration(pts)))
 			return gst.PadProbeDrop
 		}
 		b.lastPTS = pts
 		b.mu.Unlock()
-		logger.Debugw(fmt.Sprintf("%s pushing %v", name, time.Duration(pts)))
 		return gst.PadProbeOK
 	})
 
@@ -741,12 +739,10 @@ func (b *VideoBin) createTestSrcPad() {
 		b.mu.Lock()
 		if pts < b.lastPTS || (b.selectedPad != videoTestSrcName) {
 			b.mu.Unlock()
-			logger.Debugw(fmt.Sprintf("%s dropping %v", videoTestSrcName, time.Duration(pts)))
 			return gst.PadProbeDrop
 		}
 		b.lastPTS = pts
 		b.mu.Unlock()
-		logger.Debugw(fmt.Sprintf("%s pushing %v", videoTestSrcName, time.Duration(pts)))
 		return gst.PadProbeOK
 	})
 

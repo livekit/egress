@@ -43,8 +43,10 @@ func (r *Runner) testTrack(t *testing.T) {
 	}
 
 	r.sourceFramerate = 23.97
-	r.testTrackFile(t)
-	r.testTrackStream(t)
+	t.Run("Track", func(t *testing.T) {
+		r.testTrackFile(t)
+		r.testTrackStream(t)
+	})
 }
 
 func (r *Runner) testTrackFile(t *testing.T) {
@@ -52,67 +54,65 @@ func (r *Runner) testTrackFile(t *testing.T) {
 		return
 	}
 
-	t.Run("5A/Track/File", func(t *testing.T) {
-		for _, test := range []*testCase{
-			{
-				name:       "OPUS",
-				audioOnly:  true,
-				audioCodec: types.MimeTypeOpus,
-				outputType: types.OutputTypeOGG,
-				filename:   "t_{track_source}_{time}.ogg",
-			},
-			{
-				name:       "H264",
-				videoOnly:  true,
-				videoCodec: types.MimeTypeH264,
-				outputType: types.OutputTypeMP4,
-				filename:   "t_{track_id}_{time}.mp4",
-			},
-			{
-				name:       "VP8",
-				videoOnly:  true,
-				videoCodec: types.MimeTypeVP8,
-				outputType: types.OutputTypeWebM,
-				filename:   "t_{track_type}_{time}.webm",
-			},
-			// {
-			// 	name:       "VP9",
-			// 	videoOnly:  true,
-			// 	videoCodec: types.MimeTypeVP9,
-			// 	outputType: types.OutputTypeWebM,
-			// 	filename:   "t_{track_type}_{time}.webm",
-			// },
-		} {
-			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
-				trackID := audioTrackID
-				if trackID == "" {
-					trackID = videoTrackID
-				}
-
-				trackRequest := &livekit.TrackEgressRequest{
-					RoomName: r.room.Name(),
-					TrackId:  trackID,
-					Output: &livekit.TrackEgressRequest_File{
-						File: &livekit.DirectFileOutput{
-							Filepath: path.Join(r.FilePrefix, test.filename),
-						},
-					},
-				}
-
-				req := &rpc.StartEgressRequest{
-					EgressId: utils.NewGuid(utils.EgressPrefix),
-					Request: &rpc.StartEgressRequest_Track{
-						Track: trackRequest,
-					},
-				}
-
-				r.runFileTest(t, req, test)
-			})
-			if r.Short {
-				return
+	for _, test := range []*testCase{
+		{
+			name:       "File/OPUS",
+			audioOnly:  true,
+			audioCodec: types.MimeTypeOpus,
+			outputType: types.OutputTypeOGG,
+			filename:   "t_{track_source}_{time}.ogg",
+		},
+		{
+			name:       "File/H264",
+			videoOnly:  true,
+			videoCodec: types.MimeTypeH264,
+			outputType: types.OutputTypeMP4,
+			filename:   "t_{track_id}_{time}.mp4",
+		},
+		{
+			name:       "File/VP8",
+			videoOnly:  true,
+			videoCodec: types.MimeTypeVP8,
+			outputType: types.OutputTypeWebM,
+			filename:   "t_{track_type}_{time}.webm",
+		},
+		// {
+		// 	name:       "File/VP9",
+		// 	videoOnly:  true,
+		// 	videoCodec: types.MimeTypeVP9,
+		// 	outputType: types.OutputTypeWebM,
+		// 	filename:   "t_{track_type}_{time}.webm",
+		// },
+	} {
+		r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
+			trackID := audioTrackID
+			if trackID == "" {
+				trackID = videoTrackID
 			}
+
+			trackRequest := &livekit.TrackEgressRequest{
+				RoomName: r.room.Name(),
+				TrackId:  trackID,
+				Output: &livekit.TrackEgressRequest_File{
+					File: &livekit.DirectFileOutput{
+						Filepath: path.Join(r.FilePrefix, test.filename),
+					},
+				},
+			}
+
+			req := &rpc.StartEgressRequest{
+				EgressId: utils.NewGuid(utils.EgressPrefix),
+				Request: &rpc.StartEgressRequest_Track{
+					Track: trackRequest,
+				},
+			}
+
+			r.runFileTest(t, req, test)
+		})
+		if r.Short {
+			return
 		}
-	})
+	}
 }
 
 func (r *Runner) testTrackStream(t *testing.T) {
@@ -120,58 +120,56 @@ func (r *Runner) testTrackStream(t *testing.T) {
 		return
 	}
 
-	t.Run("5B/Track/Stream", func(t *testing.T) {
-		now := time.Now().Unix()
-		for _, test := range []*testCase{
-			{
-				name:       "Websocket",
-				audioOnly:  true,
-				audioCodec: types.MimeTypeOpus,
-				filename:   fmt.Sprintf("track-ws-%v.raw", now),
-			},
-		} {
-			r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
-				trackID := audioTrackID
-				if trackID == "" {
-					trackID = videoTrackID
-				}
+	now := time.Now().Unix()
+	for _, test := range []*testCase{
+		{
+			name:       "Websocket",
+			audioOnly:  true,
+			audioCodec: types.MimeTypeOpus,
+			filename:   fmt.Sprintf("track-ws-%v.raw", now),
+		},
+	} {
+		r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
+			trackID := audioTrackID
+			if trackID == "" {
+				trackID = videoTrackID
+			}
 
-				filepath := path.Join(r.FilePrefix, test.filename)
-				wss := newTestWebsocketServer(filepath)
-				s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
-				defer func() {
-					wss.close()
-					s.Close()
-				}()
+			filepath := path.Join(r.FilePrefix, test.filename)
+			wss := newTestWebsocketServer(filepath)
+			s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
+			defer func() {
+				wss.close()
+				s.Close()
+			}()
 
-				req := &rpc.StartEgressRequest{
-					EgressId: utils.NewGuid(utils.EgressPrefix),
-					Request: &rpc.StartEgressRequest_Track{
-						Track: &livekit.TrackEgressRequest{
-							RoomName: r.room.Name(),
-							TrackId:  trackID,
-							Output: &livekit.TrackEgressRequest_WebsocketUrl{
-								WebsocketUrl: "ws" + strings.TrimPrefix(s.URL, "http"),
-							},
+			req := &rpc.StartEgressRequest{
+				EgressId: utils.NewGuid(utils.EgressPrefix),
+				Request: &rpc.StartEgressRequest_Track{
+					Track: &livekit.TrackEgressRequest{
+						RoomName: r.room.Name(),
+						TrackId:  trackID,
+						Output: &livekit.TrackEgressRequest_WebsocketUrl{
+							WebsocketUrl: "ws" + strings.TrimPrefix(s.URL, "http"),
 						},
 					},
-				}
-
-				egressID := r.startEgress(t, req)
-
-				p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
-				require.NoError(t, err)
-
-				time.Sleep(time.Second * 30)
-
-				res := r.stopEgress(t, egressID)
-				verify(t, filepath, p, res, types.EgressTypeWebsocket, r.Muting, r.sourceFramerate, false)
-			})
-			if r.Short {
-				return
+				},
 			}
+
+			egressID := r.startEgress(t, req)
+
+			p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+			require.NoError(t, err)
+
+			time.Sleep(time.Second * 30)
+
+			res := r.stopEgress(t, egressID)
+			verify(t, filepath, p, res, types.EgressTypeWebsocket, r.Muting, r.sourceFramerate, false)
+		})
+		if r.Short {
+			return
 		}
-	})
+	}
 }
 
 type websocketTestServer struct {

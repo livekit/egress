@@ -32,15 +32,17 @@ func (r *Runner) testRoomComposite(t *testing.T) {
 	}
 
 	r.sourceFramerate = 30
-	r.testRoomCompositeFile(t)
-	r.testRoomCompositeStream(t)
-	r.testRoomCompositeSegments(t)
-	r.testRoomCompositeImages(t)
-	r.testRoomCompositeMulti(t)
+	t.Run("RoomComposite", func(t *testing.T) {
+		r.testRoomCompositeFile(t)
+		r.testRoomCompositeStream(t)
+		r.testRoomCompositeSegments(t)
+		r.testRoomCompositeImages(t)
+		r.testRoomCompositeMulti(t)
+	})
 }
 
 func (r *Runner) runRoomTest(t *testing.T, name string, audioCodec, videoCodec types.MimeType, f func(t *testing.T)) {
-	t.Run(name, func(t *testing.T) {
+	run(t, name, func(t *testing.T) {
 		r.awaitIdle(t)
 		r.publishSamples(t, audioCodec, videoCodec)
 		f(t)
@@ -52,81 +54,79 @@ func (r *Runner) testRoomCompositeFile(t *testing.T) {
 		return
 	}
 
-	t.Run("1A/RoomComposite/File", func(t *testing.T) {
-		for _, test := range []*testCase{
-			{
-				name:                "Base",
-				filename:            "r_{room_name}_{time}.mp4",
-				expectVideoEncoding: true,
+	for _, test := range []*testCase{
+		{
+			name:                "File/Base",
+			filename:            "r_{room_name}_{time}.mp4",
+			expectVideoEncoding: true,
+		},
+		{
+			name:      "File/Video-Only",
+			videoOnly: true,
+			options: &livekit.EncodingOptions{
+				VideoCodec: livekit.VideoCodec_H264_HIGH,
 			},
-			{
-				name:      "Video-Only",
-				videoOnly: true,
-				options: &livekit.EncodingOptions{
-					VideoCodec: livekit.VideoCodec_H264_HIGH,
-				},
-				filename:            "r_{room_name}_video_{time}.mp4",
-				expectVideoEncoding: true,
+			filename:            "r_{room_name}_video_{time}.mp4",
+			expectVideoEncoding: true,
+		},
+		{
+			name:      "File/Audio-Only",
+			fileType:  livekit.EncodedFileType_OGG,
+			audioOnly: true,
+			options: &livekit.EncodingOptions{
+				AudioCodec: livekit.AudioCodec_OPUS,
 			},
-			{
-				name:      "Audio-Only",
-				fileType:  livekit.EncodedFileType_OGG,
-				audioOnly: true,
-				options: &livekit.EncodingOptions{
-					AudioCodec: livekit.AudioCodec_OPUS,
-				},
-				filename:            "r_{room_name}_audio_{time}",
-				expectVideoEncoding: false,
-			},
-		} {
-			r.runRoomTest(t, test.name, types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
-				var fileOutput *livekit.EncodedFileOutput
-				if r.S3Upload != nil {
-					fileOutput = &livekit.EncodedFileOutput{
-						FileType: test.fileType,
-						Filepath: path.Join(uploadPrefix, test.filename),
-						Output: &livekit.EncodedFileOutput_S3{
-							S3: r.S3Upload,
-						},
-					}
-				} else {
-					fileOutput = &livekit.EncodedFileOutput{
-						FileType: test.fileType,
-						Filepath: path.Join(r.FilePrefix, test.filename),
-					}
-				}
-
-				roomRequest := &livekit.RoomCompositeEgressRequest{
-					RoomName:    r.room.Name(),
-					Layout:      "speaker-dark",
-					AudioOnly:   test.audioOnly,
-					VideoOnly:   test.videoOnly,
-					FileOutputs: []*livekit.EncodedFileOutput{fileOutput},
-				}
-				if test.options != nil {
-					roomRequest.Options = &livekit.RoomCompositeEgressRequest_Advanced{
-						Advanced: test.options,
-					}
-				} else if test.preset != 0 {
-					roomRequest.Options = &livekit.RoomCompositeEgressRequest_Preset{
-						Preset: test.preset,
-					}
-				}
-
-				req := &rpc.StartEgressRequest{
-					EgressId: utils.NewGuid(utils.EgressPrefix),
-					Request: &rpc.StartEgressRequest_RoomComposite{
-						RoomComposite: roomRequest,
+			filename:            "r_{room_name}_audio_{time}",
+			expectVideoEncoding: false,
+		},
+	} {
+		r.runRoomTest(t, test.name, types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
+			var fileOutput *livekit.EncodedFileOutput
+			if r.S3Upload != nil {
+				fileOutput = &livekit.EncodedFileOutput{
+					FileType: test.fileType,
+					Filepath: path.Join(uploadPrefix, test.filename),
+					Output: &livekit.EncodedFileOutput_S3{
+						S3: r.S3Upload,
 					},
 				}
-
-				r.runFileTest(t, req, test)
-			})
-			if r.Short {
-				return
+			} else {
+				fileOutput = &livekit.EncodedFileOutput{
+					FileType: test.fileType,
+					Filepath: path.Join(r.FilePrefix, test.filename),
+				}
 			}
+
+			roomRequest := &livekit.RoomCompositeEgressRequest{
+				RoomName:    r.room.Name(),
+				Layout:      "speaker-dark",
+				AudioOnly:   test.audioOnly,
+				VideoOnly:   test.videoOnly,
+				FileOutputs: []*livekit.EncodedFileOutput{fileOutput},
+			}
+			if test.options != nil {
+				roomRequest.Options = &livekit.RoomCompositeEgressRequest_Advanced{
+					Advanced: test.options,
+				}
+			} else if test.preset != 0 {
+				roomRequest.Options = &livekit.RoomCompositeEgressRequest_Preset{
+					Preset: test.preset,
+				}
+			}
+
+			req := &rpc.StartEgressRequest{
+				EgressId: utils.NewGuid(utils.EgressPrefix),
+				Request: &rpc.StartEgressRequest_RoomComposite{
+					RoomComposite: roomRequest,
+				},
+			}
+
+			r.runFileTest(t, req, test)
+		})
+		if r.Short {
+			return
 		}
-	})
+	}
 }
 
 func (r *Runner) testRoomCompositeStream(t *testing.T) {
@@ -134,7 +134,7 @@ func (r *Runner) testRoomCompositeStream(t *testing.T) {
 		return
 	}
 
-	r.runRoomTest(t, "1B/RoomComposite/Stream", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+	r.runRoomTest(t, "Stream", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_RoomComposite{
@@ -143,13 +143,16 @@ func (r *Runner) testRoomCompositeStream(t *testing.T) {
 					Layout:   "grid-light",
 					StreamOutputs: []*livekit.StreamOutput{{
 						Protocol: livekit.StreamProtocol_RTMP,
-						Urls:     []string{streamUrl1, badStreamUrl1},
+						Urls:     []string{rtmpUrl1, badRtmpUrl1},
 					}},
 				},
 			},
 		}
 
-		r.runStreamTest(t, req, &testCase{expectVideoEncoding: true})
+		r.runStreamTest(t, req, &testCase{
+			expectVideoEncoding: true,
+			outputType:          types.OutputTypeRTMP,
+		})
 	})
 }
 
@@ -158,7 +161,7 @@ func (r *Runner) testRoomCompositeSegments(t *testing.T) {
 		return
 	}
 
-	r.runRoomTest(t, "1C/RoomComposite/Segments", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+	r.runRoomTest(t, "Segments", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				options: &livekit.EncodingOptions{
@@ -233,7 +236,7 @@ func (r *Runner) testRoomCompositeImages(t *testing.T) {
 		return
 	}
 
-	r.runRoomTest(t, "1D/RoomComposite/Images", types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
+	r.runRoomTest(t, "Images", types.MimeTypeOpus, types.MimeTypeH264, func(t *testing.T) {
 		for _, test := range []*testCase{
 			{
 				options: &livekit.EncodingOptions{
@@ -278,7 +281,7 @@ func (r *Runner) testRoomCompositeMulti(t *testing.T) {
 		return
 	}
 
-	r.runRoomTest(t, "1E/RoomComposite/Multi", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+	r.runRoomTest(t, "Multi", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_RoomComposite{
