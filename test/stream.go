@@ -143,11 +143,11 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 		require.NotZero(t, info.EndedAt)
 
 		switch info.Url {
-		case urls[0][0]:
+		case urls[0][1]:
 			require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
 			require.Greater(t, float64(info.Duration)/1e9, 15.0)
 
-		case urls[2][0]:
+		case urls[2][1]:
 			require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
 			require.Greater(t, float64(info.Duration)/1e9, 10.0)
 
