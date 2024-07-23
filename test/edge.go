@@ -34,8 +34,17 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 		return
 	}
 
-	// ParticipantComposite where the participant does not publish a track
-	r.runParticipantTest(t, "6A/Edge/ParticipantNoPublish", &testCase{},
+	t.Run("EdgeCases", func(t *testing.T) {
+		r.testNoPublish(t)
+		r.testRtmpFailure(t)
+		r.testSrtFailure(t)
+		r.testTrackDisconnection(t)
+	})
+}
+
+// ParticipantComposite where the participant never publishes
+func (r *Runner) testNoPublish(t *testing.T) {
+	r.runParticipantTest(t, "ParticipantNoPublish", &testCase{},
 		func(t *testing.T, identity string) {
 			req := &rpc.StartEgressRequest{
 				EgressId: utils.NewGuid(utils.EgressPrefix),
@@ -45,7 +54,6 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 						Identity: identity,
 						FileOutputs: []*livekit.EncodedFileOutput{{
 							FileType: livekit.EncodedFileType_MP4,
-							Filepath: "there won't be a file",
 						}},
 					},
 				},
@@ -70,9 +78,11 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 			r.room = room
 		},
 	)
+}
 
-	// Stream output with a bad rtmp url or stream key
-	r.runRoomTest(t, "6B/Edge/RtmpFailure", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+// RTMP output with no valid urls
+func (r *Runner) testRtmpFailure(t *testing.T) {
+	r.runRoomTest(t, "RtmpFailure", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_RoomComposite{
@@ -81,7 +91,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 					Layout:   "speaker-light",
 					StreamOutputs: []*livekit.StreamOutput{{
 						Protocol: livekit.StreamProtocol_RTMP,
-						Urls:     []string{badStreamUrl1},
+						Urls:     []string{badRtmpUrl1},
 					}},
 				},
 			},
@@ -103,9 +113,45 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 			require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
 		}
 	})
+}
 
-	// Track composite with data loss due to a disconnection
-	t.Run("6C/Edge/TrackDisconnection", func(t *testing.T) {
+// SRT output with a no valid urls
+func (r *Runner) testSrtFailure(t *testing.T) {
+	r.runWebTest(t, "SrtFailure", func(t *testing.T) {
+		req := &rpc.StartEgressRequest{
+			EgressId: utils.NewGuid(utils.EgressPrefix),
+			Request: &rpc.StartEgressRequest_Web{
+				Web: &livekit.WebEgressRequest{
+					Url: webUrl,
+					StreamOutputs: []*livekit.StreamOutput{{
+						Protocol: livekit.StreamProtocol_SRT,
+						Urls:     []string{badSrtUrl1},
+					}},
+				},
+			},
+		}
+
+		info, err := r.StartEgress(context.Background(), req)
+		require.NoError(t, err)
+		require.Empty(t, info.Error)
+		require.NotEmpty(t, info.EgressId)
+		require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
+
+		// check update
+		time.Sleep(time.Second * 5)
+		info = r.getUpdate(t, info.EgressId)
+		if info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
+			r.checkUpdate(t, info.EgressId, livekit.EgressStatus_EGRESS_FAILED)
+		} else {
+			require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
+		}
+	})
+
+}
+
+// Track composite with data loss due to a disconnection
+func (r *Runner) testTrackDisconnection(t *testing.T) {
+	run(t, "TrackDisconnection", func(t *testing.T) {
 		r.awaitIdle(t)
 
 		test := &testCase{

@@ -35,6 +35,9 @@ func ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, er
 	if err != nil {
 		return "", "", errors.ErrInvalidUrl(rawUrl, err.Error())
 	}
+	if types.StreamOutputTypes[parsed.Scheme] != outputType {
+		return "", "", errors.ErrInvalidUrl(rawUrl, "invalid scheme")
+	}
 
 	switch outputType {
 	case types.OutputTypeRTMP:
@@ -58,10 +61,10 @@ func ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, er
 		}
 		return rawUrl, redacted, nil
 
+	case types.OutputTypeSRT:
+		return rawUrl, rawUrl, nil
+
 	case types.OutputTypeRaw:
-		if parsed.Scheme != "ws" && parsed.Scheme != "wss" {
-			return "", "", errors.ErrInvalidUrl(rawUrl, "invalid scheme")
-		}
 		return rawUrl, rawUrl, nil
 
 	default:

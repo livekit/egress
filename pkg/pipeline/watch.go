@@ -33,38 +33,17 @@ import (
 )
 
 const (
-	// watch errors
-	msgClockProblem           = "GStreamer error: clock problem."
-	msgStreamingNotNegotiated = "streaming stopped, reason not-negotiated (-4)"
-	msgMuxer                  = ":muxer"
-
-	elementGstRtmp2Sink = "GstRtmp2Sink"
-	elementGstAppSrc    = "GstAppSrc"
-	elementSplitMuxSink = "GstSplitMuxSink"
-
-	// watch elements
-	msgFirstSampleMetadata = "FirstSampleMetadata"
-	msgFragmentOpened      = "splitmuxsink-fragment-opened"
-	msgFragmentClosed      = "splitmuxsink-fragment-closed"
-	msgGstMultiFileSink    = "GstMultiFileSink"
-
-	fragmentLocation    = "location"
-	fragmentRunningTime = "running-time"
-
-	gstMultiFileSinkFilename  = "filename"
-	gstMultiFileSinkTimestamp = "timestamp"
-
-	// common gst errors
+	// gst error logs
 	msgWrongThread = "Called from wrong thread"
 
-	// common gst warnings
+	// gst warning logs
 	msgKeyframe                    = "Could not request a keyframe. Files may not split at the exact location they should"
 	msgLatencyQuery                = "Latency query failed"
 	msgTaps                        = "can't find exact taps"
 	msgInputDisappeared            = "Can't copy metadata because input buffer disappeared"
 	fnGstAudioResampleCheckDiscont = "gst_audio_resample_check_discont"
 
-	// common gst fixmes
+	// gst fix me logs
 	msgStreamStart       = "stream-start event without group-id. Consider implementing group-id handling in the upstream elements"
 	msgCreatingStream    = "Creating random stream-id, consider implementing a deterministic way of creating a stream-id"
 	msgAggregateSubclass = "Subclass should call gst_aggregator_selected_samples() from its aggregate implementation."
@@ -85,6 +64,7 @@ func (c *Controller) gstLog(level gst.DebugLevel, file, function string, line in
 		}
 	case gst.LevelWarning:
 		if function == fnGstAudioResampleCheckDiscont {
+			// ignore
 			return
 		}
 		switch message {
@@ -147,6 +127,10 @@ func (c *Controller) messageWatch(msg *gst.Message) bool {
 	return true
 }
 
+const (
+	msgClockProblem = "GStreamer error: clock problem."
+)
+
 func (c *Controller) handleMessageWarning(gErr *gst.GError) error {
 	element, _, message := parseDebugInfo(gErr)
 
@@ -160,17 +144,27 @@ func (c *Controller) handleMessageWarning(gErr *gst.GError) error {
 	return nil
 }
 
+const (
+	elementGstAppSrc       = "GstAppSrc"
+	elementGstRtmp2Sink    = "GstRtmp2Sink"
+	elementGstSplitMuxSink = "GstSplitMuxSink"
+	elementGstSrtSink      = "GstSRTSink"
+	elementGstQueue        = "GstQueue"
+
+	msgStreamingNotNegotiated = "streaming stopped, reason not-negotiated (-4)"
+	msgMuxer                  = ":muxer"
+)
+
 // handleMessageError returns true if the error has been handled, false if the pipeline should quit
 func (c *Controller) handleMessageError(gErr *gst.GError) error {
 	element, name, message := parseDebugInfo(gErr)
 
 	switch {
 	case element == elementGstRtmp2Sink:
-		name = strings.Split(name, "_")[1]
-
+		sinkName := strings.Split(name, "_")[1]
 		if !c.eos.IsBroken() {
 			// try reconnecting
-			ok, err := c.streamBin.MaybeResetStream(name, gErr)
+			ok, err := c.streamBin.MaybeResetStream(sinkName, gErr)
 			if err != nil {
 				logger.Errorw("failed to reset stream", err)
 			} else if ok {
@@ -179,13 +173,29 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 		}
 
 		// remove sink
-		url, err := c.streamBin.GetStreamUrl(name)
+		url, err := c.streamBin.GetStreamUrl(sinkName)
 		if err != nil {
 			logger.Warnw("rtmp output not found", err, "url", url)
 			return err
 		}
 
 		return c.removeSink(context.Background(), url, gErr)
+
+	case element == elementGstSrtSink:
+		sinkName := strings.Split(name, "_")[1]
+		url, err := c.streamBin.GetStreamUrl(sinkName)
+		if err != nil {
+			logger.Warnw("srt output not found", err, "url", url)
+			return err
+		}
+
+		return c.removeSink(context.Background(), url, gErr)
+
+	case element == elementGstQueue:
+		sinkName := strings.Split(name, "_")[1]
+		if c.streamBin.Removed(sinkName) {
+			return nil
+		}
 
 	case element == elementGstAppSrc:
 		if message == msgStreamingNotNegotiated {
@@ -195,8 +205,8 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 			return nil
 		}
 
-	case element == elementSplitMuxSink:
-		// We sometimes get GstSplitMuxSink errors if send EOS before the first media was sent to the mux
+	case element == elementGstSplitMuxSink:
+		// We sometimes get GstSplitMuxSink errors if EOS was received before any data
 		if message == msgMuxer {
 			if c.eos.IsBroken() {
 				logger.Debugw("GstSplitMuxSink failure after sending EOS")
@@ -207,21 +217,8 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 
 	// input failure or file write failure. Fatal
 	err := errors.ErrGstPipelineError(gErr)
-	logger.Errorw(gErr.Error(), errors.New(message), "element", name)
+	logger.Errorw(gErr.Error(), errors.New(message), "element", element, "name", name)
 	return err
-}
-
-// Debug info comes in the following format:
-// file.c(line): method_name (): /GstPipeline:pipeline/GstBin:bin_name/GstElement:element_name:\nError message
-var regExp = regexp.MustCompile("(?s)(.*?)GstPipeline:pipeline/GstBin:(.*?)/(.*?):([^:]*)(:\n)?(.*)")
-
-func parseDebugInfo(gErr *gst.GError) (element, name, message string) {
-	match := regExp.FindStringSubmatch(gErr.DebugString())
-
-	element = match[3]
-	name = match[4]
-	message = match[6]
-	return
 }
 
 func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
@@ -244,6 +241,13 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 
 	return
 }
+
+const (
+	msgFirstSampleMetadata = "FirstSampleMetadata"
+	msgFragmentOpened      = "splitmuxsink-fragment-opened"
+	msgFragmentClosed      = "splitmuxsink-fragment-closed"
+	msgGstMultiFileSink    = "GstMultiFileSink"
+)
 
 func (c *Controller) handleMessageElement(msg *gst.Message) error {
 	s := msg.GetStructure()
@@ -307,6 +311,24 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 	return nil
 }
 
+// Debug info comes in the following format:
+// file.c(line): method_name (): /GstPipeline:pipeline/GstBin:bin_name/GstElement:element_name:\nError message
+var gstDebug = regexp.MustCompile("(?s)(.*?)GstPipeline:pipeline/GstBin:(.*?)/(.*?):([^:]*)(:\n)?(.*)")
+
+func parseDebugInfo(gErr *gst.GError) (element, name, message string) {
+	match := gstDebug.FindStringSubmatch(gErr.DebugString())
+
+	element = match[3]
+	name = match[4]
+	message = match[6]
+	return
+}
+
+const (
+	fragmentLocation    = "location"
+	fragmentRunningTime = "running-time"
+)
+
 func getSegmentParamsFromGstStructure(s *gst.Structure) (filepath string, time uint64, err error) {
 	loc, err := s.GetValue(fragmentLocation)
 	if err != nil {
@@ -338,6 +360,11 @@ func getFirstSampleMetadataFromGstStructure(s *gst.Structure) (startDate time.Ti
 
 	return time.Unix(0, firstSampleMetadata.StartDate), nil
 }
+
+const (
+	gstMultiFileSinkFilename  = "filename"
+	gstMultiFileSinkTimestamp = "timestamp"
+)
 
 func getImageInformationFromGstStructure(s *gst.Structure) (string, uint64, error) {
 	loc, err := s.GetValue(gstMultiFileSinkFilename)

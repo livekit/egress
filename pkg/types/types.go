@@ -200,6 +200,14 @@ var (
 		MimeTypeVP8:  OutputTypeWebM,
 		MimeTypeVP9:  OutputTypeWebM,
 	}
+
+	StreamOutputTypes = map[string]OutputType{
+		"rtmp":   OutputTypeRTMP,
+		"rtmps":  OutputTypeRTMP,
+		"mux":    OutputTypeRTMP,
+		"twitch": OutputTypeRTMP,
+		"srt":    OutputTypeSRT,
+	}
 )
 
 func GetOutputTypeCompatibleWithCodecs(types []OutputType, audioCodecs map[MimeType]bool, videoCodecs map[MimeType]bool) OutputType {

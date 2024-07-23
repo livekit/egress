@@ -20,6 +20,7 @@ import (
 	"path"
 	"testing"
 
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -31,14 +32,16 @@ func (r *Runner) testWeb(t *testing.T) {
 	}
 
 	r.sourceFramerate = 30
-	r.testWebFile(t)
-	r.testWebStream(t)
-	r.testWebSegments(t)
-	r.testWebMulti(t)
+	t.Run("Web", func(t *testing.T) {
+		r.testWebFile(t)
+		r.testWebStream(t)
+		r.testWebSegments(t)
+		r.testWebMulti(t)
+	})
 }
 
 func (r *Runner) runWebTest(t *testing.T, name string, f func(t *testing.T)) {
-	t.Run(name, func(t *testing.T) {
+	run(t, name, func(t *testing.T) {
 		r.awaitIdle(t)
 		f(t)
 	})
@@ -49,7 +52,7 @@ func (r *Runner) testWebFile(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "2A/Web/File", func(t *testing.T) {
+	r.runWebTest(t, "File", func(t *testing.T) {
 		var fileOutput *livekit.EncodedFileOutput
 		if r.GCPUpload != nil {
 			fileOutput = &livekit.EncodedFileOutput{
@@ -86,21 +89,24 @@ func (r *Runner) testWebStream(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "2B/Web/Stream", func(t *testing.T) {
+	r.runWebTest(t, "Stream", func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_Web{
 				Web: &livekit.WebEgressRequest{
 					Url: webUrl,
 					StreamOutputs: []*livekit.StreamOutput{{
-						Protocol: livekit.StreamProtocol_RTMP,
-						Urls:     []string{badStreamUrl1, streamUrl1},
+						Protocol: livekit.StreamProtocol_SRT,
+						Urls:     []string{srtPublishUrl1, badSrtUrl1},
 					}},
 				},
 			},
 		}
 
-		r.runStreamTest(t, req, &testCase{expectVideoEncoding: true})
+		r.runStreamTest(t, req, &testCase{
+			expectVideoEncoding: true,
+			outputType:          types.OutputTypeSRT,
+		})
 	})
 }
 
@@ -109,7 +115,7 @@ func (r *Runner) testWebSegments(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "2C/Web/Segments", func(t *testing.T) {
+	r.runWebTest(t, "Segments", func(t *testing.T) {
 		var segmentOutput *livekit.SegmentedFileOutput
 		if r.AzureUpload != nil {
 			segmentOutput = &livekit.SegmentedFileOutput{
@@ -147,7 +153,7 @@ func (r *Runner) testWebMulti(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "2D/Web/Multi", func(t *testing.T) {
+	r.runWebTest(t, "Multi", func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 

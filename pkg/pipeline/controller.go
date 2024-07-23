@@ -16,7 +16,6 @@ package pipeline
 
 import (
 	"context"
-	"net/url"
 	"sync"
 	"time"
 
@@ -46,18 +45,18 @@ const (
 
 type Controller struct {
 	*config.PipelineConfig
+	ipcServiceClient ipc.EgressServiceClient
 
 	// gstreamer
-	src              source.Source
-	p                *gstreamer.Pipeline
-	sinks            map[types.EgressType][]sink.Sink
-	streamBin        *builder.StreamBin
-	callbacks        *gstreamer.Callbacks
-	ipcServiceClient ipc.EgressServiceClient
+	gstLogger *zap.SugaredLogger
+	src       source.Source
+	p         *gstreamer.Pipeline
+	sinks     map[types.EgressType][]sink.Sink
+	streamBin *builder.StreamBin
+	callbacks *gstreamer.Callbacks
 
 	// internal
 	mu         sync.Mutex
-	gstLogger  *zap.SugaredLogger
 	monitor    *stats.HandlerMonitor
 	limitTimer *time.Timer
 	playing    core.Fuse
@@ -72,14 +71,14 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 
 	var err error
 	c := &Controller{
-		PipelineConfig: conf,
+		PipelineConfig:   conf,
+		ipcServiceClient: ipcServiceClient,
+		gstLogger:        logger.GetLogger().(logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
 		callbacks: &gstreamer.Callbacks{
 			GstReady:   make(chan struct{}),
 			BuildReady: make(chan struct{}),
 		},
-		ipcServiceClient: ipcServiceClient,
-		gstLogger:        logger.GetLogger().(logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
-		monitor:          stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
+		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
 	}
 	c.callbacks.SetOnError(c.OnError)
 
@@ -264,23 +263,8 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
-		u, err := url.Parse(rawUrl)
-		if err != nil {
-			return errors.ErrInvalidInput("malformed url")
-		}
-
-		var outputType types.OutputType
-		switch u.Scheme {
-		case "srt":
-			outputType = types.OutputTypeSRT
-		case "rtmp":
-			outputType = types.OutputTypeRTMP
-		default:
-			return errors.ErrInvalidInput("invalid stream type")
-		}
-
 		// validate and redact url
-		url, redacted, err := config.ValidateUrl(rawUrl, outputType)
+		url, redacted, err := config.ValidateUrl(rawUrl, o.OutputType)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
@@ -314,21 +298,6 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	// remove stream outputs
 	for _, rawUrl := range req.RemoveOutputUrls {
-		u, err := url.Parse(rawUrl)
-		if err != nil {
-			return errors.ErrInvalidInput("malformed url")
-		}
-
-		var outputType types.OutputType
-		switch u.Scheme {
-		case "srt":
-			outputType = types.OutputTypeSRT
-		case "rtmp":
-			outputType = types.OutputTypeRTMP
-		default:
-			return errors.ErrInvalidInput("invalid stream type")
-		}
-
 		url, err := o.GetStreamUrl(rawUrl)
 		if err != nil {
 			errs.AppendErr(err)

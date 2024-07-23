@@ -87,19 +87,29 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		return errors.ErrInvalidInput("multiple stream outputs")
 	}
 	if stream != nil {
-		u, err := url.Parse(stream.Urls[0])
-		if err != nil {
-			return errors.ErrInvalidInput("malformed url")
-		}
-
 		var outputType types.OutputType
-		switch u.Scheme {
-		case "srt":
-			outputType = types.OutputTypeSRT
-		case "rtmp":
+		switch stream.Protocol {
+		case livekit.StreamProtocol_DEFAULT_PROTOCOL:
+			if len(stream.Urls) == 0 {
+				return errors.ErrInvalidInput("stream protocol")
+			}
+
+			parsed, err := url.Parse(stream.Urls[0])
+			if err != nil {
+				return errors.ErrInvalidUrl(stream.Urls[0], err.Error())
+			}
+
+			var ok bool
+			outputType, ok = types.StreamOutputTypes[parsed.Scheme]
+			if !ok {
+				return errors.ErrInvalidUrl(stream.Urls[0], "invalid protocol")
+			}
+
+		case livekit.StreamProtocol_RTMP:
 			outputType = types.OutputTypeRTMP
-		default:
-			return errors.ErrInvalidInput("invalid stream type")
+
+		case livekit.StreamProtocol_SRT:
+			outputType = types.OutputTypeSRT
 		}
 
 		conf, err := p.getStreamConfig(outputType, stream.Urls)

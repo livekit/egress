@@ -262,26 +262,34 @@ func (b *Bin) probeRemoveSink(sink *Bin) {
 		return
 	}
 
-	srcGhostPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+	logger.Debugw("adding probe")
+	srcGhostPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+		logger.Debugw("unlinking")
 		srcGhostPad.Unlink(sinkGhostPad.Pad)
+		logger.Debugw("sending EOS to sinkGhostPad")
 		sinkGhostPad.Pad.SendEvent(gst.NewEOSEvent())
 
 		b.mu.Lock()
+		logger.Debugw("removing sink bin")
 		err := b.pipeline.Remove(sink.bin.Element)
 		b.mu.Unlock()
 
 		if err != nil {
+			logger.Debugw("failed to remove sink bin", "error", err)
 			b.OnError(errors.ErrGstPipelineError(err))
 			return gst.PadProbeRemove
 		}
 
+		logger.Debugw("setting state to null")
 		if err = sink.SetState(gst.StateNull); err != nil {
 			logger.Warnw(fmt.Sprintf("failed to change %s state", sink.bin.GetName()), err)
 		}
 
+		logger.Debugw("releasing tee request pad")
 		b.elements[len(b.elements)-1].ReleaseRequestPad(srcGhostPad.GetTarget())
+		logger.Debugw("removing tee pad")
 		b.bin.RemovePad(srcGhostPad.Pad)
-		return gst.PadProbeRemove
+		return gst.PadProbeOK
 	})
 }
 

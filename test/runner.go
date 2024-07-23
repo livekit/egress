@@ -229,3 +229,10 @@ func (r *Runner) RunTests(t *testing.T) {
 	r.testTrack(t)
 	r.testEdgeCases(t)
 }
+
+var testNumber int
+
+func run(t *testing.T, name string, f func(t *testing.T)) {
+	testNumber++
+	t.Run(fmt.Sprintf("%d/%s", testNumber, name), f)
+}

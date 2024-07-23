@@ -36,15 +36,7 @@ import (
 const (
 	muteDuration = time.Second * 10
 
-	streamUrl1      = "rtmp://localhost:1935/live/stream"
-	redactedUrl1    = "rtmp://localhost:1935/live/{st...am}"
-	streamUrl2      = "rtmp://localhost:1935/live/stream_key"
-	redactedUrl2    = "rtmp://localhost:1935/live/{str...key}"
-	badStreamUrl1   = "rtmp://xxx.contribute.live-video.net/app/fake1"
-	redactedBadUrl1 = "rtmp://xxx.contribute.live-video.net/app/{f...1}"
-	badStreamUrl2   = "rtmp://localhost:1936/live/stream"
-	redactedBadUrl2 = "rtmp://localhost:1936/live/{st...am}"
-	webUrl          = "https://videoplayer-2k23.vercel.app/videos/eminem"
+	webUrl = "https://videoplayer-2k23.vercel.app/videos/eminem"
 )
 
 var (
@@ -94,7 +86,7 @@ type testCase struct {
 	videoUnpublish time.Duration
 	videoRepublish time.Duration
 
-	// used by track tests
+	// used by track and stream tests
 	outputType types.OutputType
 
 	expectVideoEncoding bool
@@ -271,7 +263,7 @@ func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[s
 	require.Equal(t, len(expected), len(info.StreamResults))
 	for _, s := range info.StreamResults {
 		if strings.HasSuffix(s.Url, ".contribute.live-video.net/app/{f...1}") {
-			require.Equal(t, expected[redactedBadUrl1], s.Status)
+			require.Equal(t, expected[badRtmpUrl1Redacted], s.Status)
 		} else {
 			require.Equal(t, expected[s.Url], s.Status)
 		}

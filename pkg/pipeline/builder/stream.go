@@ -35,6 +35,7 @@ type StreamBin struct {
 	b          *gstreamer.Bin
 	outputType types.OutputType
 	sinks      map[string]*StreamSink
+	removals   map[string]struct{}
 }
 
 type StreamSink struct {
@@ -68,8 +69,11 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*St
 			return nil, nil, errors.ErrGstPipelineError(err)
 		}
 
+		b.SetGetSrcPad(func(name string) *gst.Pad {
+			return mux.GetRequestPad(name)
+		})
+
 	case types.OutputTypeSRT:
-		// add SRT steam
 		mux, err = gst.NewElement("mpegtsmux")
 		if err != nil {
 			return nil, nil, errors.ErrGstPipelineError(err)
@@ -98,6 +102,7 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*St
 		b:          b,
 		outputType: o.OutputType,
 		sinks:      make(map[string]*StreamSink),
+		removals:   make(map[string]struct{}),
 	}
 
 	for _, url := range o.Urls {
@@ -106,32 +111,17 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*St
 		}
 	}
 
-	b.SetGetSrcPad(func(name string) *gst.Pad {
-		return mux.GetRequestPad(name)
-	})
-
 	return sb, b, nil
-}
-
-func (sb *StreamBin) GetStreamUrl(name string) (string, error) {
-	sb.mu.RLock()
-	sink, ok := sb.sinks[name]
-	sb.mu.RUnlock()
-	if !ok {
-		return "", errors.ErrStreamNotFound(name)
-	}
-	return sink.url, nil
 }
 
 func (sb *StreamBin) AddStream(url string) error {
 	name := utils.NewGuid("")
 	b := sb.b.NewBin(name)
 
-	queue, err := gst.NewElementWithName("queue", fmt.Sprintf("queue_%s", name))
+	queue, err := gstreamer.BuildQueue(fmt.Sprintf("queue_%s", name), config.Latency, true)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	queue.SetArg("leaky", "downstream")
 
 	var sink *gst.Element
 	switch sb.outputType {
@@ -152,12 +142,16 @@ func (sb *StreamBin) AddStream(url string) error {
 		if err = sink.Set("location", url); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
+
 	case types.OutputTypeSRT:
 		sink, err = gst.NewElementWithName("srtsink", fmt.Sprintf("srtsink_%s", name))
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 		if err = sink.SetProperty("uri", url); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = sink.SetProperty("wait-for-connection", false); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 
@@ -169,34 +163,29 @@ func (sb *StreamBin) AddStream(url string) error {
 		return err
 	}
 
+	// add a proxy pad between the queue and sink to intercept errors
 	b.SetLinkFunc(func() error {
 		proxy := gst.NewGhostPad("proxy", sink.GetStaticPad("sink"))
-
-		// Proxy isn't saved/stored anywhere, so we need to call ref.
-		// It is later released in RemoveSink
+		// proxy isn't saved/stored anywhere, so we need to reference it
 		proxy.Ref()
-
-		// Intercept flows from the sink. Anything besides EOS will be ignored
 		proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
-			// Buffer gets automatically unreferenced by go-gst.
-			// Without referencing it here, it will sometimes be garbage collected before being written
+			// buffer needs to be referenced or it might get freed
 			buffer.Ref()
-
-			internal, _ := self.GetInternalLinks()
-			if len(internal) != 1 {
-				return gst.FlowNotLinked
-			}
-
-			if internal[0].Push(buffer) == gst.FlowEOS {
-				return gst.FlowEOS
+			links, _ := self.GetInternalLinks()
+			for _, link := range links {
+				if link.Push(buffer) == gst.FlowEOS {
+					return gst.FlowEOS
+				}
 			}
 			return gst.FlowOK
 		})
 		proxy.ActivateMode(gst.PadModePush, true)
 
+		// link queue to sink
 		if padReturn := queue.GetStaticPad("src").Link(proxy.Pad); padReturn != gst.PadLinkOK {
 			return errors.ErrPadLinkFailed(queue.GetName(), "proxy", padReturn.String())
 		}
+
 		return nil
 	})
 
@@ -209,6 +198,16 @@ func (sb *StreamBin) AddStream(url string) error {
 	sb.mu.Unlock()
 
 	return sb.b.AddSinkBin(b)
+}
+
+func (sb *StreamBin) GetStreamUrl(name string) (string, error) {
+	sb.mu.RLock()
+	sink, ok := sb.sinks[name]
+	sb.mu.RUnlock()
+	if !ok {
+		return "", errors.ErrStreamNotFound(name)
+	}
+	return sink.url, nil
 }
 
 func (sb *StreamBin) MaybeResetStream(name string, streamErr error) (bool, error) {
@@ -262,6 +261,8 @@ func (sb *StreamBin) RemoveStream(url string) error {
 		return errors.ErrStreamNotFound(url)
 	}
 	delete(sb.sinks, name)
+
+	sb.removals[name] = struct{}{}
 	sb.mu.Unlock()
 
 	_, err := sb.b.RemoveSinkBin(name)
@@ -275,4 +276,11 @@ func (sb *StreamBin) getStreamNameLocked(url string) string {
 		}
 	}
 	return ""
+}
+
+func (sb *StreamBin) Removed(name string) bool {
+	sb.mu.Lock()
+	_, ok := sb.removals[name]
+	sb.mu.Unlock()
+	return ok
 }
