@@ -42,19 +42,12 @@ func (r *Runner) testWeb(t *testing.T) {
 	})
 }
 
-func (r *Runner) runWebTest(t *testing.T, name string, f func(t *testing.T)) {
-	run(t, name, func(t *testing.T) {
-		r.awaitIdle(t)
-		f(t)
-	})
-}
-
 func (r *Runner) testWebFile(t *testing.T) {
 	if !r.should(runFile) {
 		return
 	}
 
-	r.runWebTest(t, "File", func(t *testing.T) {
+	r.run(t, "File", func(t *testing.T) {
 		var fileOutput *livekit.EncodedFileOutput
 		if r.GCPUpload != nil {
 			fileOutput = &livekit.EncodedFileOutput{
@@ -91,7 +84,7 @@ func (r *Runner) testWebStream(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "Stream", func(t *testing.T) {
+	r.run(t, "Stream", func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_Web{
@@ -117,7 +110,7 @@ func (r *Runner) testWebSegments(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "Segments", func(t *testing.T) {
+	r.run(t, "Segments", func(t *testing.T) {
 		var segmentOutput *livekit.SegmentedFileOutput
 		if r.AzureUpload != nil {
 			segmentOutput = &livekit.SegmentedFileOutput{
@@ -155,7 +148,7 @@ func (r *Runner) testWebMulti(t *testing.T) {
 		return
 	}
 
-	r.runWebTest(t, "Multi", func(t *testing.T) {
+	r.run(t, "Multi", func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 
