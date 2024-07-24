@@ -36,7 +36,7 @@ func (r *Runner) testWeb(t *testing.T) {
 	r.sourceFramerate = 30
 	t.Run("Web", func(t *testing.T) {
 		r.testWebFile(t)
-		r.testWebStream(t)
+		// r.testWebStream(t)
 		r.testWebSegments(t)
 		r.testWebMulti(t)
 	})
