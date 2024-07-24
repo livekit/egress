@@ -30,25 +30,9 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
-	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-var (
-	samples = map[types.MimeType]string{
-		types.MimeTypeOpus: "/workspace/test/sample/matrix-trailer.ogg",
-		types.MimeTypeH264: "/workspace/test/sample/matrix-trailer.h264",
-		types.MimeTypeVP8:  "/workspace/test/sample/matrix-trailer-vp8.ivf",
-		types.MimeTypeVP9:  "/workspace/test/sample/matrix-trailer-vp9.ivf",
-	}
-
-	frameDurations = map[types.MimeType]time.Duration{
-		types.MimeTypeH264: time.Microsecond * 41708,
-		types.MimeTypeVP8:  time.Microsecond * 41708,
-		types.MimeTypeVP9:  time.Microsecond * 41708,
-	}
-
-	uploadPrefix = fmt.Sprintf("integration/%s", time.Now().Format("2006-01-02"))
-)
+var uploadPrefix = fmt.Sprintf("integration/%s", time.Now().Format("2006-01-02"))
 
 type testCase struct {
 	name      string
@@ -86,6 +70,24 @@ type testCase struct {
 	expectVideoEncoding bool
 }
 
+func (r *Runner) RunTests(t *testing.T) {
+	// run tests
+	r.testRoomComposite(t)
+	r.testWeb(t)
+	r.testParticipant(t)
+	r.testTrackComposite(t)
+	r.testTrack(t)
+	r.testEdgeCases(t)
+}
+
+var testNumber int
+
+func (r *Runner) run(t *testing.T, name string, f func(t *testing.T)) {
+	r.awaitIdle(t)
+	testNumber++
+	t.Run(fmt.Sprintf("%d/%s", testNumber, name), f)
+}
+
 func (r *Runner) awaitIdle(t *testing.T) {
 	r.svc.KillAll()
 	for i := 0; i < 30; i++ {
@@ -95,114 +97,6 @@ func (r *Runner) awaitIdle(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 	t.Fatal("service not idle after 30s")
-}
-
-func (r *Runner) publishSamples(t *testing.T, audioCodec, videoCodec types.MimeType) (audioTrackID, videoTrackID string) {
-	withAudioMuting := false
-	if videoCodec != "" {
-		videoTrackID = r.publishSample(t, videoCodec, r.Muting)
-	} else {
-		withAudioMuting = r.Muting
-	}
-	if audioCodec != "" {
-		audioTrackID = r.publishSample(t, audioCodec, withAudioMuting)
-	}
-
-	time.Sleep(time.Second)
-	return
-}
-
-func (r *Runner) publishSample(t *testing.T, codec types.MimeType, withMuting bool) string {
-	done := make(chan struct{})
-	pub := r.publish(t, codec, done)
-	trackID := pub.SID()
-
-	t.Cleanup(func() {
-		_ = r.room.LocalParticipant.UnpublishTrack(trackID)
-	})
-
-	if withMuting {
-		go func() {
-			muted := false
-			time.Sleep(time.Second * 15)
-			for {
-				select {
-				case <-done:
-					return
-				default:
-					pub.SetMuted(!muted)
-					muted = !muted
-					time.Sleep(time.Second * 10)
-				}
-			}
-		}()
-	}
-
-	return trackID
-}
-
-func (r *Runner) publishSampleOffset(t *testing.T, codec types.MimeType, publishAfter, unpublishAfter time.Duration) {
-	if codec == "" {
-		return
-	}
-
-	time.AfterFunc(publishAfter, func() {
-		done := make(chan struct{})
-		pub := r.publish(t, codec, done)
-		if unpublishAfter != 0 {
-			time.AfterFunc(unpublishAfter-publishAfter, func() {
-				select {
-				case <-done:
-					return
-				default:
-					_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
-				}
-			})
-		} else {
-			t.Cleanup(func() {
-				_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
-			})
-		}
-	})
-}
-
-func (r *Runner) publishSampleWithDisconnection(t *testing.T, codec types.MimeType) string {
-	done := make(chan struct{})
-	pub := r.publish(t, codec, done)
-	trackID := pub.SID()
-
-	time.AfterFunc(time.Second*10, func() {
-		pub.SimulateDisconnection(time.Second * 10)
-	})
-
-	return trackID
-}
-
-func (r *Runner) publish(t *testing.T, codec types.MimeType, done chan struct{}) *lksdk.LocalTrackPublication {
-	filename := samples[codec]
-	frameDuration := frameDurations[codec]
-
-	var pub *lksdk.LocalTrackPublication
-	opts := []lksdk.ReaderSampleProviderOption{
-		lksdk.ReaderTrackWithOnWriteComplete(func() {
-			close(done)
-			if pub != nil {
-				_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
-			}
-		}),
-	}
-
-	if frameDuration != 0 {
-		opts = append(opts, lksdk.ReaderTrackWithFrameDuration(frameDuration))
-	}
-
-	track, err := lksdk.NewLocalFileTrack(filename, opts...)
-	require.NoError(t, err)
-
-	pub, err = r.room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
-	require.NoError(t, err)
-
-	return pub
 }
 
 func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {

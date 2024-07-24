@@ -35,7 +35,8 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 	}
 
 	t.Run("EdgeCases", func(t *testing.T) {
-		r.testNoPublish(t)
+		r.testParticipantNoPublish(t)
+		r.testRoomCompositeStaysOpen(t)
 		r.testRtmpFailure(t)
 		r.testSrtFailure(t)
 		r.testTrackDisconnection(t)
@@ -43,7 +44,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 }
 
 // ParticipantComposite where the participant never publishes
-func (r *Runner) testNoPublish(t *testing.T) {
+func (r *Runner) testParticipantNoPublish(t *testing.T) {
 	r.runParticipantTest(t, "ParticipantNoPublish", &testCase{},
 		func(t *testing.T, identity string) {
 			req := &rpc.StartEgressRequest{
@@ -78,6 +79,47 @@ func (r *Runner) testNoPublish(t *testing.T) {
 			r.room = room
 		},
 	)
+}
+
+// Test that the egress continues if a user leaves
+func (r *Runner) testRoomCompositeStaysOpen(t *testing.T) {
+	r.run(t, "RoomCompositeStaysOpen", func(t *testing.T) {
+		req := &rpc.StartEgressRequest{
+			EgressId: utils.NewGuid(utils.EgressPrefix),
+			Request: &rpc.StartEgressRequest_RoomComposite{
+				RoomComposite: &livekit.RoomCompositeEgressRequest{
+					RoomName: r.RoomName,
+					Layout:   "speaker",
+					FileOutputs: []*livekit.EncodedFileOutput{{
+						Filepath: path.Join(r.FilePrefix, "room_composite_duration_{time}.mp4"),
+					}},
+				},
+			},
+		}
+
+		info := r.sendRequest(t, req)
+		time.Sleep(time.Second * 10)
+		identity := r.room.LocalParticipant.Identity()
+		r.room.Disconnect()
+		time.Sleep(time.Second * 10)
+
+		// reconnect the publisher to the room
+		room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+			APIKey:              r.ApiKey,
+			APISecret:           r.ApiSecret,
+			RoomName:            r.RoomName,
+			ParticipantName:     "egress-sample",
+			ParticipantIdentity: identity,
+		}, lksdk.NewRoomCallback())
+		require.NoError(t, err)
+		r.room = room
+
+		r.publishSamples(t, types.MimeTypeOpus, types.MimeTypeVP8)
+		time.Sleep(time.Second * 10)
+
+		r.checkUpdate(t, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
+		r.stopEgress(t, info.EgressId)
+	})
 }
 
 // RTMP output with no valid urls
@@ -117,7 +159,7 @@ func (r *Runner) testRtmpFailure(t *testing.T) {
 
 // SRT output with a no valid urls
 func (r *Runner) testSrtFailure(t *testing.T) {
-	r.runWebTest(t, "SrtFailure", func(t *testing.T) {
+	r.run(t, "SrtFailure", func(t *testing.T) {
 		req := &rpc.StartEgressRequest{
 			EgressId: utils.NewGuid(utils.EgressPrefix),
 			Request: &rpc.StartEgressRequest_Web{
@@ -151,9 +193,7 @@ func (r *Runner) testSrtFailure(t *testing.T) {
 
 // Track composite with data loss due to a disconnection
 func (r *Runner) testTrackDisconnection(t *testing.T) {
-	run(t, "TrackDisconnection", func(t *testing.T) {
-		r.awaitIdle(t)
-
+	r.run(t, "TrackDisconnection", func(t *testing.T) {
 		test := &testCase{
 			fileType:   livekit.EncodedFileType_MP4,
 			audioCodec: types.MimeTypeOpus,

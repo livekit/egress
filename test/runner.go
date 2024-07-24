@@ -219,20 +219,3 @@ func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, tem
 		require.Contains(t, status, "CpuLoad")
 	}
 }
-
-func (r *Runner) RunTests(t *testing.T) {
-	// run tests
-	r.testRoomComposite(t)
-	r.testWeb(t)
-	r.testParticipant(t)
-	r.testTrackComposite(t)
-	r.testTrack(t)
-	r.testEdgeCases(t)
-}
-
-var testNumber int
-
-func run(t *testing.T, name string, f func(t *testing.T)) {
-	testNumber++
-	t.Run(fmt.Sprintf("%d/%s", testNumber, name), f)
-}

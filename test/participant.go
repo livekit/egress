@@ -45,8 +45,7 @@ func (r *Runner) runParticipantTest(
 	t *testing.T, name string, test *testCase,
 	f func(t *testing.T, identity string),
 ) {
-	run(t, name, func(t *testing.T) {
-		r.awaitIdle(t)
+	r.run(t, name, func(t *testing.T) {
 		r.publishSampleOffset(t, test.audioCodec, test.audioDelay, test.audioUnpublish)
 		if test.audioRepublish != 0 {
 			r.publishSampleOffset(t, test.audioCodec, test.audioRepublish, 0)

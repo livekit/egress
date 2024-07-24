@@ -45,8 +45,7 @@ func (r *Runner) runTrackTest(
 	t *testing.T, name string, audioCodec, videoCodec types.MimeType,
 	f func(t *testing.T, audioTrackID, videoTrackID string),
 ) {
-	run(t, name, func(t *testing.T) {
-		r.awaitIdle(t)
+	r.run(t, name, func(t *testing.T) {
 		audioTrackID, videoTrackID := r.publishSamples(t, audioCodec, videoCodec)
 		f(t, audioTrackID, videoTrackID)
 	})
