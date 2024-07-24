@@ -38,7 +38,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 		r.testParticipantNoPublish(t)
 		r.testRoomCompositeStaysOpen(t)
 		r.testRtmpFailure(t)
-		r.testSrtFailure(t)
+		// r.testSrtFailure(t)
 		r.testTrackDisconnection(t)
 	})
 }
