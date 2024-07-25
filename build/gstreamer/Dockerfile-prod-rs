@@ -12,7 +12,7 @@ ENV PATH=/root/.cargo/bin:$PATH
 
 COPY compile-rs /
 
-RUN /compile-rs 
+RUN /compile-rs
 
 FROM livekit/gstreamer:${GSTREAMER_VERSION}-prod-${TARGETARCH}
 

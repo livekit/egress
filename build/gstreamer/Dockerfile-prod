@@ -9,7 +9,7 @@ COPY compile /
 
 RUN /compile
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 RUN apt-get update && \
     apt-get dist-upgrade -y && \
@@ -97,7 +97,7 @@ RUN apt-get update && \
         libvo-aacenc0 \
         libvo-amrwbenc0 \
         libvorbis0a \
-        libvpx7 \
+        libvpx9 \
         libvulkan1 \
         libwavpack1 \
         libwebp7 \
