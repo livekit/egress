@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	gstVersion      = "1.22.12"
+	gstVersion      = "1.24.5"
 	libniceVersion  = "0.1.21"
 	chromiumVersion = "125.0.6422.141"
 	dockerBuild     = "docker build"
@@ -175,25 +175,19 @@ func BuildTemplate() error {
 	)
 }
 
-func BuildGStreamer() error {
-	return buildGstreamer(dockerBuild)
-}
+// base, dev, prod, prod-rs
+func BuildGStreamer(build string) error {
+	command := fmt.Sprintf("%s"+
+		" --build-arg GSTREAMER_VERSION=%s"+
+		" --build-arg LIBNICE_VERSION=%s"+
+		" -t livekit/gstreamer:%s-%s"+
+		" -t livekit/gstreamer:%s-%s-%s"+
+		" -f build/gstreamer/Dockerfile-%s"+
+		" ./build/gstreamer",
+		dockerBuild, gstVersion, libniceVersion, gstVersion, build, gstVersion, build, runtime.GOARCH, build,
+	)
 
-func buildGstreamer(cmd string) error {
-	commands := []string{"docker pull ubuntu:23.10"}
-	for _, build := range []string{"base", "dev", "prod", "prod-rs"} {
-		commands = append(commands, fmt.Sprintf("%s"+
-			" --build-arg GSTREAMER_VERSION=%s"+
-			" --build-arg LIBNICE_VERSION=%s"+
-			" -t livekit/gstreamer:%s-%s"+
-			" -t livekit/gstreamer:%s-%s-%s"+
-			" -f build/gstreamer/Dockerfile-%s"+
-			" ./build/gstreamer",
-			cmd, gstVersion, libniceVersion, gstVersion, build, gstVersion, build, runtime.GOARCH, build,
-		))
-	}
-
-	return mageutil.Run(context.Background(), commands...)
+	return mageutil.Run(context.Background(), command)
 }
 
 func Dotfiles() error {

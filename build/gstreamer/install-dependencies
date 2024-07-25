@@ -121,7 +121,7 @@ apt-get clean
 rm -rf /var/lib/apt/lists/*
 
 # install rust
-curl -o install-rustup.sh --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs 
+curl -o install-rustup.sh --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs
 sh install-rustup.sh -y
 source "$HOME/.cargo/env"
 cargo install cargo-c
