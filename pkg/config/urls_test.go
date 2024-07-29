@@ -28,6 +28,8 @@ func TestValidateUrl(t *testing.T) {
 	var twitchUpdated = regexp.MustCompile("rtmps://(.*).contribute.live-video.net/app/streamkey")
 	var twitchRedacted = regexp.MustCompile("rtmps://(.*).contribute.live-video.net/app/\\{str\\.\\.\\.key}")
 
+	o := &StreamConfig{}
+
 	for _, test := range []struct {
 		url      string
 		twitch   bool
@@ -58,7 +60,7 @@ func TestValidateUrl(t *testing.T) {
 			redacted: "rtmps://localhost:1935/live/{str...key}",
 		},
 	} {
-		updated, redacted, err := ValidateUrl(test.url, types.OutputTypeRTMP)
+		updated, redacted, err := o.ValidateUrl(test.url, types.OutputTypeRTMP)
 		require.NoError(t, err)
 
 		if test.twitch {

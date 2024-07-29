@@ -264,7 +264,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
 		// validate and redact url
-		url, redacted, err := config.ValidateUrl(rawUrl, o.OutputType)
+		url, redacted, err := o.ValidateUrl(rawUrl, o.OutputType)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
