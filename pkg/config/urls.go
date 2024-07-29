@@ -30,7 +30,7 @@ import (
 
 var twitchEndpoint = regexp.MustCompile("^rtmps?://.*\\.contribute\\.live-video\\.net/app/(.*)( live=1)?$")
 
-func ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, error) {
+func (o *StreamConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, error) {
 	parsed, err := url.Parse(rawUrl)
 	if err != nil {
 		return "", "", errors.ErrInvalidUrl(rawUrl, err.Error())
@@ -44,12 +44,12 @@ func ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, er
 		if parsed.Scheme == "mux" {
 			rawUrl = fmt.Sprintf("rtmps://global-live.mux.com:443/app/%s", parsed.Host)
 		} else if parsed.Scheme == "twitch" {
-			rawUrl, err = updateTwitchURL(parsed.Host)
+			rawUrl, err = o.updateTwitchURL(parsed.Host)
 			if err != nil {
 				return "", "", errors.ErrInvalidUrl(rawUrl, err.Error())
 			}
 		} else if match := twitchEndpoint.FindStringSubmatch(rawUrl); len(match) > 0 {
-			updated, err := updateTwitchURL(match[1])
+			updated, err := o.updateTwitchURL(match[1])
 			if err == nil {
 				rawUrl = updated
 			}
@@ -99,12 +99,25 @@ func (o *StreamConfig) GetStreamUrl(rawUrl string) (string, error) {
 	return "", errors.ErrStreamNotFound(rawUrl)
 }
 
-func updateTwitchURL(key string) (string, error) {
-	resp, err := http.Get("https://ingest.twitch.tv/ingests")
-	if err != nil {
+func (o *StreamConfig) updateTwitchURL(key string) (string, error) {
+	if err := o.updateTwitchTemplate(); err != nil {
 		return "", err
 	}
+
+	return strings.ReplaceAll(o.twitchTemplate, "{stream_key}", key), nil
+}
+
+func (o *StreamConfig) updateTwitchTemplate() error {
+	if o.twitchTemplate != "" {
+		return nil
+	}
+
+	resp, err := http.Get("https://ingest.twitch.tv/ingests")
+	if err != nil {
+		return err
+	}
 	defer resp.Body.Close()
+
 	var body struct {
 		Ingests []struct {
 			Name              string `json:"name"`
@@ -114,14 +127,18 @@ func updateTwitchURL(key string) (string, error) {
 		} `json:"ingests"`
 	}
 	if err = json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", err
+		return err
 	}
+
 	for _, ingest := range body.Ingests {
 		if ingest.URLTemplateSecure != "" {
-			return strings.ReplaceAll(ingest.URLTemplateSecure, "{stream_key}", key), nil
+			o.twitchTemplate = ingest.URLTemplateSecure
+			return nil
 		} else if ingest.URLTemplate != "" {
-			return strings.ReplaceAll(ingest.URLTemplate, "{stream_key}", key), nil
+			o.twitchTemplate = ingest.URLTemplate
+			return nil
 		}
 	}
-	return "", errors.New("no ingest found")
+
+	return errors.New("no ingest found")
 }
