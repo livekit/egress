@@ -10,8 +10,8 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20240421230201-ab917191657d
 	github.com/chromedp/chromedp v0.9.5
 	github.com/frostbyte73/core v0.0.10
-	github.com/go-gst/go-glib v1.0.1
-	github.com/go-gst/go-gst v1.0.0
+	github.com/go-gst/go-glib v1.1.0
+	github.com/go-gst/go-gst v1.1.1-0.20240625092621-9195795a271e
 	github.com/go-jose/go-jose/v3 v3.0.3
 	github.com/go-logr/logr v1.4.2
 	github.com/googleapis/gax-go/v2 v2.12.4
