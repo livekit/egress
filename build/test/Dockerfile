@@ -33,9 +33,9 @@ RUN go mod download
 # copy source
 COPY cmd/ cmd/
 COPY pkg/ pkg/
+COPY test/ test/
 COPY version/ version/
 
-COPY test/ test/
 # copy templates
 COPY --from=livekit/egress-templates workspace/build/ cmd/server/templates/
 COPY --from=livekit/egress-templates workspace/build/ test/templates/
@@ -97,6 +97,11 @@ COPY test/ /workspace/test/
 COPY --from=0 /workspace/egress /bin/
 COPY --from=0 /workspace/test.test .
 COPY build/test/entrypoint.sh .
+
+# download samples
+RUN apt-get update && apt-get install -y git-lfs
+RUN git clone --depth 1 https://github.com/livekit/media-samples.git
+RUN cd media-samples && git lfs pull
 
 # run tests
 USER egress

@@ -28,16 +28,16 @@ import (
 
 var (
 	samples = map[types.MimeType]string{
-		types.MimeTypeOpus: "/workspace/test/sample/matrix-trailer.ogg",
-		types.MimeTypeH264: "/workspace/test/sample/matrix-trailer.h264",
-		types.MimeTypeVP8:  "/workspace/test/sample/matrix-trailer-vp8.ivf",
-		types.MimeTypeVP9:  "/workspace/test/sample/matrix-trailer-vp9.ivf",
+		types.MimeTypeOpus: "/media-samples/SolLevante.ogg",
+		types.MimeTypeH264: "/media-samples/SolLevante.h264",
+		types.MimeTypeVP8:  "/media-samples/SolLevante-vp8.ivf",
+		types.MimeTypeVP9:  "/media-samples/SolLevante-vp9.ivf",
 	}
 
 	frameDurations = map[types.MimeType]time.Duration{
-		types.MimeTypeH264: time.Microsecond * 41708,
-		types.MimeTypeVP8:  time.Microsecond * 41708,
-		types.MimeTypeVP9:  time.Microsecond * 41708,
+		types.MimeTypeH264: time.Microsecond * 41667,
+		types.MimeTypeVP8:  time.Microsecond * 41667,
+		types.MimeTypeVP9:  time.Microsecond * 41667,
 	}
 )
 
