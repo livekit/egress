@@ -26,7 +26,7 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-const webUrl = "https://videoplayer-2k23.vercel.app/videos/eminem"
+const webUrl = "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
 
 func (r *Runner) testWeb(t *testing.T) {
 	if !r.should(runWeb) {

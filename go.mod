@@ -20,9 +20,9 @@ require (
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/protocol v1.19.2-0.20240723043112-bacbd15bfb3a
 	github.com/livekit/psrpc v0.5.3-0.20240526192918-fbdaf10e6aa5
-	github.com/livekit/server-sdk-go/v2 v2.2.1-0.20240628022514-ad17d3f0adad
+	github.com/livekit/server-sdk-go/v2 v2.2.1-0.20240731013006-cfee4c8c656d
 	github.com/pion/rtp v1.8.6
-	github.com/pion/webrtc/v3 v3.2.43
+	github.com/pion/webrtc/v3 v3.2.47
 	github.com/prometheus/client_golang v1.19.0
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.53.0
@@ -90,7 +90,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.6 // indirect
 	github.com/pion/dtls/v2 v2.2.11 // indirect
-	github.com/pion/ice/v2 v2.3.24 // indirect
+	github.com/pion/ice/v2 v2.3.29 // indirect
 	github.com/pion/interceptor v0.1.29 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.12 // indirect
