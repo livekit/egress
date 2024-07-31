@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -78,7 +77,14 @@ var (
 	}
 )
 
-func (c *Controller) gstLog(level gst.DebugLevel, file, function string, line int, _ *glib.Object, message string) {
+func (c *Controller) gstLog(
+	_ *gst.DebugCategory,
+	level gst.DebugLevel,
+	file, function string, line int,
+	_ *gst.LoggedObject,
+	debugMsg *gst.DebugMessage,
+) {
+	message := debugMsg.Get()
 	lvl, ok := logLevels[level]
 	if !ok || ignore[message] || ignore[function] {
 		return
