@@ -132,9 +132,6 @@ func (sb *StreamBin) AddStream(url string) error {
 		if err = sink.Set("location", url); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		if err = sink.SetProperty("async-connect", false); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
 
 	case types.OutputTypeSRT:
 		sink, err = gst.NewElementWithName("srtsink", fmt.Sprintf("srtsink_%s", name))
