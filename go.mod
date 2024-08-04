@@ -13,6 +13,7 @@ require (
 	github.com/go-gst/go-glib v1.1.0
 	github.com/go-gst/go-gst v1.1.1-0.20240625092621-9195795a271e
 	github.com/go-jose/go-jose/v3 v3.0.3
+	github.com/go-jose/go-jose/v4 v4.0.4
 	github.com/go-logr/logr v1.4.2
 	github.com/googleapis/gax-go/v2 v2.12.4
 	github.com/gorilla/websocket v1.5.2
@@ -22,6 +23,7 @@ require (
 	github.com/livekit/psrpc v0.5.3-0.20240526192918-fbdaf10e6aa5
 	github.com/livekit/server-sdk-go/v2 v2.2.1-0.20240731013006-cfee4c8c656d
 	github.com/pion/rtp v1.8.6
+	github.com/pion/rtp/v2 v2.0.0
 	github.com/pion/webrtc/v3 v3.2.47
 	github.com/prometheus/client_golang v1.19.0
 	github.com/prometheus/client_model v0.6.1
