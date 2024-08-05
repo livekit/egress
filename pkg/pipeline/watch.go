@@ -97,6 +97,7 @@ func (c *Controller) gstLog(
 		if function == fnSendCreateStream {
 			streamID := strings.Split(message, "'")[1]
 			if o := c.GetStreamConfig(); o != nil {
+				c.mu.Lock()
 				for url, sID := range o.StreamIDs {
 					if streamID == sID {
 						if streamInfo := o.StreamInfo[url]; streamInfo != nil && streamInfo.StartedAt == 0 {
@@ -105,6 +106,7 @@ func (c *Controller) gstLog(
 						}
 					}
 				}
+				c.mu.Unlock()
 			}
 		}
 		return

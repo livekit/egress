@@ -265,6 +265,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	sendUpdate := false
 	errs := errors.ErrArray{}
+	now := time.Now().UnixNano()
 
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
@@ -296,7 +297,9 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 			continue
 		}
 
-		// add to output count
+		if o.OutputType != types.OutputTypeRTMP {
+			streamInfo.StartedAt = now
+		}
 		c.OutputCount++
 		sendUpdate = true
 	}
