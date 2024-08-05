@@ -265,7 +265,6 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	sendUpdate := false
 	errs := errors.ErrArray{}
-	now := time.Now().UnixNano()
 
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
@@ -276,21 +275,11 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 			continue
 		}
 
-		// add stream
-		if err = c.streamBin.AddStream(url); err != nil {
-			errs.AppendErr(err)
-			continue
-		}
-
-		// add to output count
-		c.OutputCount++
-
 		// add stream info to results
 		c.mu.Lock()
 		streamInfo := &livekit.StreamInfo{
-			Url:       redacted,
-			StartedAt: now,
-			Status:    livekit.StreamInfo_ACTIVE,
+			Url:    redacted,
+			Status: livekit.StreamInfo_ACTIVE,
 		}
 		o.StreamInfo[url] = streamInfo
 
@@ -299,6 +288,16 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 			list.Info = append(list.Info, streamInfo)
 		}
 		c.mu.Unlock()
+
+		// add stream
+		if err = c.streamBin.AddStream(url); err != nil {
+			streamInfo.Status = livekit.StreamInfo_FAILED
+			errs.AppendErr(err)
+			continue
+		}
+
+		// add to output count
+		c.OutputCount++
 		sendUpdate = true
 	}
 
@@ -520,8 +519,13 @@ func (c *Controller) updateStartTime(startedAt int64) {
 		}
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
+			streamConfig := o[0].(*config.StreamConfig)
+			if streamConfig.OutputType == types.OutputTypeRTMP {
+				continue
+			}
+
 			c.mu.Lock()
-			for _, streamInfo := range o[0].(*config.StreamConfig).StreamInfo {
+			for _, streamInfo := range streamConfig.StreamInfo {
 				streamInfo.Status = livekit.StreamInfo_ACTIVE
 				streamInfo.StartedAt = startedAt
 			}

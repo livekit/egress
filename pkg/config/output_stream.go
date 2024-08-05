@@ -23,6 +23,7 @@ type StreamConfig struct {
 	outputConfig
 
 	Urls       []string
+	StreamIDs  map[string]string
 	StreamInfo map[string]*livekit.StreamInfo
 
 	twitchTemplate string
@@ -47,6 +48,7 @@ func (p *PipelineConfig) GetWebsocketConfig() *StreamConfig {
 func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []string) (*StreamConfig, error) {
 	conf := &StreamConfig{
 		outputConfig: outputConfig{OutputType: outputType},
+		StreamIDs:    make(map[string]string),
 	}
 
 	conf.StreamInfo = make(map[string]*livekit.StreamInfo)

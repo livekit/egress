@@ -28,7 +28,11 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-var twitchEndpoint = regexp.MustCompile("^rtmps?://.*\\.contribute\\.live-video\\.net/app/(.*)( live=1)?$")
+// rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)
+var (
+	rtmpRegexp     = regexp.MustCompile("^(rtmps?:\\/\\/)(.*\\/)(.*\\/)(\\S*)( live=1)?$")
+	twitchEndpoint = regexp.MustCompile("^rtmps?://.*\\.contribute\\.live-video\\.net/app/(.*)( live=1)?$")
+)
 
 func (o *StreamConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, error) {
 	parsed, err := url.Parse(rawUrl)
@@ -55,10 +59,12 @@ func (o *StreamConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (
 			}
 		}
 
-		redacted, ok := utils.RedactStreamKey(rawUrl)
+		redacted, streamID, ok := redactStreamKey(rawUrl)
 		if !ok {
 			return "", "", errors.ErrInvalidUrl(rawUrl, "rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)")
 		}
+		o.StreamIDs[rawUrl] = streamID
+
 		return rawUrl, redacted, nil
 
 	case types.OutputTypeSRT:
@@ -141,4 +147,15 @@ func (o *StreamConfig) updateTwitchTemplate() error {
 	}
 
 	return errors.New("no ingest found")
+}
+
+func redactStreamKey(url string) (string, string, bool) {
+	match := rtmpRegexp.FindStringSubmatch(url)
+	if len(match) != 6 {
+		return url, "", false
+	}
+
+	streamID := match[4]
+	match[4] = utils.RedactIdentifier(match[4])
+	return strings.Join(match[1:], ""), streamID, true
 }
