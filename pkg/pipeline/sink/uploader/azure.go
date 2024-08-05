@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 
@@ -89,5 +88,5 @@ func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType
 		return "", 0, errors.ErrUploadFailed("Azure", err)
 	}
 
-	return path.Join(u.container, storageFilepath), stat.Size(), nil
+	return fmt.Sprintf("%s/%s", u.container, storageFilepath), stat.Size(), nil
 }
