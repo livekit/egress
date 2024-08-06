@@ -42,12 +42,15 @@ const (
 	msgInputDisappeared            = "Can't copy metadata because input buffer disappeared"
 	msgSkippingSegment             = "error reading data -1 (reason: Success), skipping segment"
 	fnGstAudioResampleCheckDiscont = "gst_audio_resample_check_discont"
-	callerEPollUpdateEvents        = "./srtcore/epoll.cpp:905"
 
 	// noisy gst fixmes
 	msgStreamStart       = "stream-start event without group-id. Consider implementing group-id handling in the upstream elements"
 	msgCreatingStream    = "Creating random stream-id, consider implementing a deterministic way of creating a stream-id"
 	msgAggregateSubclass = "Subclass should call gst_aggregator_selected_samples() from its aggregate implementation."
+
+	// rtmp client
+	catRtmpClient      = "rtmpclient"
+	fnSendCreateStream = "send_create_stream"
 )
 
 var (
@@ -70,7 +73,6 @@ var (
 		msgInputDisappeared:            true,
 		msgSkippingSegment:             true,
 		fnGstAudioResampleCheckDiscont: true,
-		callerEPollUpdateEvents:        true,
 		msgStreamStart:                 true,
 		msgCreatingStream:              true,
 		msgAggregateSubclass:           true,
@@ -78,30 +80,45 @@ var (
 )
 
 func (c *Controller) gstLog(
-	_ *gst.DebugCategory,
+	cat *gst.DebugCategory,
 	level gst.DebugLevel,
 	file, function string, line int,
 	_ *gst.LoggedObject,
 	debugMsg *gst.DebugMessage,
 ) {
+	category := cat.GetName()
 	message := debugMsg.Get()
 	lvl, ok := logLevels[level]
 	if !ok || ignore[message] || ignore[function] {
 		return
 	}
 
-	caller := fmt.Sprintf("%s:%d", file, line)
-	if ignore[caller] {
+	if category == catRtmpClient {
+		if function == fnSendCreateStream {
+			streamID := strings.Split(message, "'")[1]
+			if o := c.GetStreamConfig(); o != nil {
+				c.mu.Lock()
+				for url, sID := range o.StreamIDs {
+					if streamID == sID {
+						if streamInfo := o.StreamInfo[url]; streamInfo != nil && streamInfo.StartedAt == 0 {
+							streamInfo.StartedAt = time.Now().UnixNano()
+							break
+						}
+					}
+				}
+				c.mu.Unlock()
+			}
+		}
 		return
 	}
 
 	var msg string
 	if function != "" {
-		msg = fmt.Sprintf("[gst %s] %s: %s", lvl, function, message)
+		msg = fmt.Sprintf("[%s %s] %s: %s", category, lvl, function, message)
 	} else {
-		msg = fmt.Sprintf("[gst %s] %s", lvl, message)
+		msg = fmt.Sprintf("[%s %s] %s", category, lvl, message)
 	}
-	c.gstLogger.Debugw(msg, "caller", caller)
+	c.gstLogger.Debugw(msg, "caller", fmt.Sprintf("%s:%d", file, line))
 }
 
 func (c *Controller) messageWatch(msg *gst.Message) bool {

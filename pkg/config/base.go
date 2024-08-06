@@ -16,6 +16,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/livekit/protocol/logger"
@@ -111,16 +112,20 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 		c.Logging.Level = c.LogLevel
 	}
 
-	var gstDebug string
+	var gstDebug []string
 	switch c.Logging.Level {
 	case "debug":
-		gstDebug = "3"
+		gstDebug = []string{"3"}
 	case "info", "warn":
-		gstDebug = "2"
+		gstDebug = []string{"2"}
 	case "error":
-		gstDebug = "1"
+		gstDebug = []string{"1"}
 	}
-	if err := os.Setenv("GST_DEBUG", gstDebug); err != nil {
+	gstDebug = append(gstDebug,
+		"rtmpclient:4",
+		"srtlib:1",
+	)
+	if err := os.Setenv("GST_DEBUG", strings.Join(gstDebug, ",")); err != nil {
 		return err
 	}
 
