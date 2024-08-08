@@ -74,9 +74,8 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 		require.Equal(t, config.StreamKeyframeInterval, p.KeyFrameInterval)
 	}
 
-	// verify and check update
+	// verify
 	time.Sleep(time.Second * 5)
-
 	r.verifyStreams(t, p, urls[0][2])
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		urls[0][1]: livekit.StreamInfo_ACTIVE,
@@ -91,14 +90,8 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	require.NoError(t, err)
 	time.Sleep(time.Second * 5)
 
-	// verify and check updates
+	// verify
 	r.verifyStreams(t, p, urls[0][2], urls[2][2])
-	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		urls[0][1]: livekit.StreamInfo_ACTIVE,
-		urls[1][1]: livekit.StreamInfo_FAILED,
-		urls[2][1]: livekit.StreamInfo_ACTIVE,
-		urls[3][1]: livekit.StreamInfo_ACTIVE,
-	})
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		urls[0][1]: livekit.StreamInfo_ACTIVE,
 		urls[1][1]: livekit.StreamInfo_FAILED,

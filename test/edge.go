@@ -146,14 +146,25 @@ func (r *Runner) testRtmpFailure(t *testing.T) {
 		require.Equal(t, r.RoomName, info.RoomName)
 		require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
 
-		// check update
+		// check updates
 		time.Sleep(time.Second * 5)
 		info = r.getUpdate(t, info.EgressId)
-		if info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
-			r.checkUpdate(t, info.EgressId, livekit.EgressStatus_EGRESS_FAILED)
-		} else {
-			require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
+		streamFailed := false
+		for info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
+			if !streamFailed && info.StreamResults[0].Status == livekit.StreamInfo_FAILED {
+				streamFailed = true
+			}
+			if streamFailed {
+				// make sure this never reverts in subsequent updates
+				require.Equal(t, livekit.StreamInfo_FAILED, info.StreamResults[0].Status)
+			}
+			info = r.getUpdate(t, info.EgressId)
 		}
+
+		require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
+		require.NotEmpty(t, info.Error)
+		require.Equal(t, livekit.StreamInfo_FAILED, info.StreamResults[0].Status)
+		require.NotEmpty(t, info.StreamResults[0].Error)
 	})
 }
 

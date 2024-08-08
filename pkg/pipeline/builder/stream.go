@@ -38,9 +38,9 @@ type StreamBin struct {
 }
 
 type StreamSink struct {
+	stream         *config.Stream
 	bin            *gstreamer.Bin
 	sink           *gst.Element
-	url            string
 	reconnections  int
 	disconnectedAt time.Time
 	failed         bool
@@ -104,20 +104,22 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*St
 		sinks:      make(map[string]*StreamSink),
 	}
 
-	for _, url := range o.Urls {
-		if err = sb.AddStream(url); err != nil {
-			return nil, nil, err
-		}
+	o.Streams.Range(func(_, stream any) bool {
+		err = sb.AddStream(stream.(*config.Stream))
+		return err == nil
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return sb, b, nil
 }
 
-func (sb *StreamBin) AddStream(url string) error {
-	name := utils.NewGuid("")
-	b := sb.b.NewBin(name)
+func (sb *StreamBin) AddStream(stream *config.Stream) error {
+	stream.Name = utils.NewGuid("")
+	b := sb.b.NewBin(stream.Name)
 
-	queue, err := gstreamer.BuildQueue(fmt.Sprintf("queue_%s", name), config.Latency, true)
+	queue, err := gstreamer.BuildQueue(fmt.Sprintf("queue_%s", stream.Name), config.Latency, true)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
@@ -125,20 +127,20 @@ func (sb *StreamBin) AddStream(url string) error {
 	var sink *gst.Element
 	switch sb.outputType {
 	case types.OutputTypeRTMP:
-		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("rtmp2sink_%s", name))
+		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("rtmp2sink_%s", stream.Name))
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		if err = sink.Set("location", url); err != nil {
+		if err = sink.Set("location", stream.ParsedUrl); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 
 	case types.OutputTypeSRT:
-		sink, err = gst.NewElementWithName("srtsink", fmt.Sprintf("srtsink_%s", name))
+		sink, err = gst.NewElementWithName("srtsink", fmt.Sprintf("srtsink_%s", stream.Name))
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		if err = sink.SetProperty("uri", url); err != nil {
+		if err = sink.SetProperty("uri", stream.ParsedUrl); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 		if err = sink.SetProperty("wait-for-connection", false); err != nil {
@@ -161,14 +163,14 @@ func (sb *StreamBin) AddStream(url string) error {
 	}
 
 	ss := &StreamSink{
-		bin:  b,
-		sink: sink,
-		url:  url,
+		stream: stream,
+		bin:    b,
+		sink:   sink,
 	}
 
 	// add a proxy pad between the queue and sink to prevent errors from propagating upstream
 	b.SetLinkFunc(func() error {
-		proxy := gst.NewGhostPad(fmt.Sprintf("proxy_%s", name), sink.GetStaticPad("sink"))
+		proxy := gst.NewGhostPad(fmt.Sprintf("proxy_%s", stream.Name), sink.GetStaticPad("sink"))
 		proxy.Ref()
 		proxy.ActivateMode(gst.PadModePush, true)
 
@@ -214,29 +216,29 @@ func (sb *StreamBin) AddStream(url string) error {
 	})
 
 	sb.mu.Lock()
-	sb.sinks[name] = ss
+	sb.sinks[stream.Name] = ss
 	sb.mu.Unlock()
 
 	return sb.b.AddSinkBin(b)
 }
 
-func (sb *StreamBin) GetStreamUrl(name string) (string, error) {
-	sb.mu.RLock()
+func (sb *StreamBin) GetStream(name string) (*config.Stream, error) {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+
 	sink, ok := sb.sinks[name]
-	sb.mu.RUnlock()
 	if !ok {
-		return "", errors.ErrStreamNotFound(name)
+		return nil, errors.ErrStreamNotFound(name)
 	}
-	return sink.url, nil
+	return sink.stream, nil
 }
 
-func (sb *StreamBin) MaybeResetStream(name string, streamErr error) (bool, error) {
+func (sb *StreamBin) MaybeResetStream(stream *config.Stream, streamErr error) (bool, error) {
 	sb.mu.Lock()
-	sink := sb.sinks[name]
+	sink, ok := sb.sinks[stream.Name]
 	sb.mu.Unlock()
-
-	if sink == nil {
-		return false, errors.ErrStreamNotFound(name)
+	if !ok {
+		return false, errors.ErrStreamNotFound(stream.Name)
 	}
 
 	s, err := sink.sink.GetProperty("stats")
@@ -260,8 +262,7 @@ func (sb *StreamBin) MaybeResetStream(name string, streamErr error) (bool, error
 	}
 
 	sink.reconnections++
-	redacted, _ := utils.RedactStreamKey(sink.url)
-	logger.Warnw("resetting stream", streamErr, "url", redacted)
+	logger.Warnw("resetting stream", streamErr, "url", sink.stream.RedactedUrl)
 
 	if err = sink.bin.SetState(gst.StateNull); err != nil {
 		return false, err
@@ -273,23 +274,15 @@ func (sb *StreamBin) MaybeResetStream(name string, streamErr error) (bool, error
 	return true, nil
 }
 
-func (sb *StreamBin) RemoveStream(url string) error {
+func (sb *StreamBin) RemoveStream(stream *config.Stream) error {
 	sb.mu.Lock()
-	var name string
-	var sink *StreamSink
-	for n, s := range sb.sinks {
-		if s.url == url {
-			name = n
-			sink = s
-			break
-		}
-	}
-	if sink == nil {
+	_, ok := sb.sinks[stream.Name]
+	if !ok {
 		sb.mu.Unlock()
-		return errors.ErrStreamNotFound(url)
+		return errors.ErrStreamNotFound(stream.RedactedUrl)
 	}
-	delete(sb.sinks, name)
+	delete(sb.sinks, stream.Name)
 	sb.mu.Unlock()
 
-	return sb.b.RemoveSinkBin(name)
+	return sb.b.RemoveSinkBin(stream.Name)
 }
