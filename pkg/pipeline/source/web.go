@@ -309,13 +309,6 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 
 		case *runtime.EventExceptionThrown:
 			logChrome("exception", ev)
-			if s.info.Details == "" {
-				if exceptionDetails := ev.ExceptionDetails; exceptionDetails != nil {
-					if exception := exceptionDetails.Exception; exception != nil {
-						s.info.Details = fmt.Sprintf("Uncaught chrome exception: %s", exception.Description)
-					}
-				}
-			}
 		}
 	})
 

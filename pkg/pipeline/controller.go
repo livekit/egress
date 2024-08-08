@@ -16,6 +16,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -205,7 +206,7 @@ func (c *Controller) Run(ctx context.Context) *info.EgressInfo {
 	// close when room ends
 	go func() {
 		<-c.src.EndRecording()
-		c.SendEOS(ctx)
+		c.SendEOS(ctx, "source closed")
 	}()
 
 	// wait until room is ready
@@ -373,7 +374,7 @@ func (c *Controller) removeSink(ctx context.Context, url string, streamErr error
 		if streamErr != nil {
 			return streamErr
 		} else {
-			c.SendEOS(ctx)
+			c.SendEOS(ctx, "all streams removed")
 			return nil
 		}
 	}
@@ -387,7 +388,7 @@ func (c *Controller) removeSink(ctx context.Context, url string, streamErr error
 	return c.streamBin.RemoveStream(url)
 }
 
-func (c *Controller) SendEOS(ctx context.Context) {
+func (c *Controller) SendEOS(ctx context.Context, reason string) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
@@ -396,6 +397,7 @@ func (c *Controller) SendEOS(ctx context.Context) {
 			c.limitTimer.Stop()
 		}
 
+		c.Info.Details = fmt.Sprintf("end reason: %s", reason)
 		switch c.Info.Status {
 		case livekit.EgressStatus_EGRESS_STARTING:
 			c.Info.SetAborted(info.MsgStoppedBeforeStarted)
@@ -507,7 +509,7 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 				c.Info.SetLimitReached()
 			}
 			if c.playing.IsBroken() {
-				c.SendEOS(ctx)
+				c.SendEOS(ctx, "time limit reached")
 			} else {
 				c.p.Stop()
 			}
