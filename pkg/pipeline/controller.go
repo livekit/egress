@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bep/debounce"
 	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
 	"go.uber.org/zap"
@@ -37,7 +38,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
-	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -47,6 +47,7 @@ const (
 type Controller struct {
 	*config.PipelineConfig
 	ipcServiceClient ipc.EgressServiceClient
+	streamUpdates    func(func()) // debounce stream updates since they can come in quick succession
 
 	// gstreamer
 	gstLogger *zap.SugaredLogger
@@ -74,6 +75,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 	c := &Controller{
 		PipelineConfig:   conf,
 		ipcServiceClient: ipcServiceClient,
+		streamUpdates:    debounce.New(time.Millisecond * 500),
 		gstLogger:        logger.GetLogger().(logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
 		callbacks: &gstreamer.Callbacks{
 			GstReady:   make(chan struct{}),
@@ -264,14 +266,12 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 		return errors.ErrNonStreamingPipeline
 	}
 
-	sendUpdate := false
 	errs := errors.ErrArray{}
-	now := time.Now().UnixNano()
 
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
 		// validate and redact url
-		url, redacted, err := o.ValidateUrl(rawUrl, o.OutputType)
+		stream, err := o.AddStream(rawUrl, o.OutputType)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
@@ -279,94 +279,76 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 		// add stream info to results
 		c.mu.Lock()
-		streamInfo := &livekit.StreamInfo{
-			Url:    redacted,
-			Status: livekit.StreamInfo_ACTIVE,
-		}
-		o.StreamInfo[url] = streamInfo
-
-		c.Info.StreamResults = append(c.Info.StreamResults, streamInfo)
+		c.Info.StreamResults = append(c.Info.StreamResults, stream.StreamInfo)
 		if list := (*livekit.EgressInfo)(c.Info).GetStream(); list != nil {
-			list.Info = append(list.Info, streamInfo)
+			list.Info = append(list.Info, stream.StreamInfo)
 		}
 		c.mu.Unlock()
 
 		// add stream
-		if err = c.streamBin.AddStream(url); err != nil {
-			streamInfo.Status = livekit.StreamInfo_FAILED
+		if err = c.streamBin.AddStream(stream); err != nil {
+			stream.StreamInfo.Status = livekit.StreamInfo_FAILED
 			errs.AppendErr(err)
 			continue
 		}
 
-		if o.OutputType != types.OutputTypeRTMP {
-			streamInfo.StartedAt = now
-		}
 		c.OutputCount++
-		sendUpdate = true
 	}
 
 	// remove stream outputs
 	for _, rawUrl := range req.RemoveOutputUrls {
-		url, err := o.GetStreamUrl(rawUrl)
+		stream, err := o.GetStream(rawUrl)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
 		}
 
-		if err = c.removeSink(ctx, url, nil); err != nil {
+		if err = c.removeStream(ctx, stream, nil); err != nil {
 			errs.AppendErr(err)
-		} else {
-			sendUpdate = true
 		}
 	}
 
-	if sendUpdate {
-		c.Info.UpdatedAt = time.Now().UnixNano()
-		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
-	}
+	c.Info.UpdatedAt = time.Now().UnixNano()
+	c.streamUpdates(func() {
+		_, _ = c.ipcServiceClient.HandlerUpdate(context.Background(), (*livekit.EgressInfo)(c.Info))
+	})
 
 	return errs.ToError()
 }
 
-func (c *Controller) removeSink(ctx context.Context, url string, streamErr error) error {
+func (c *Controller) removeStream(ctx context.Context, stream *config.Stream, streamErr error) error {
 	now := time.Now().UnixNano()
 
 	c.mu.Lock()
 	o := c.GetStreamConfig()
 
-	streamInfo := o.StreamInfo[url]
-	if streamInfo == nil {
-		c.mu.Unlock()
-		return errors.ErrStreamNotFound(url)
-	}
-
 	// set error if exists
 	if streamErr != nil {
-		streamInfo.Status = livekit.StreamInfo_FAILED
-		streamInfo.Error = streamErr.Error()
+		stream.StreamInfo.Status = livekit.StreamInfo_FAILED
+		stream.StreamInfo.Error = streamErr.Error()
 	} else {
-		streamInfo.Status = livekit.StreamInfo_FINISHED
+		stream.StreamInfo.Status = livekit.StreamInfo_FINISHED
 	}
 
 	// update end time and duration
-	streamInfo.EndedAt = now
-	if streamInfo.StartedAt == 0 {
-		streamInfo.StartedAt = now
+	stream.StreamInfo.EndedAt = now
+	if stream.StreamInfo.StartedAt == 0 {
+		logger.Warnw("stream missing start time", nil, "url", stream.RedactedUrl)
+		stream.StreamInfo.StartedAt = now
 	} else {
-		streamInfo.Duration = now - streamInfo.StartedAt
+		stream.StreamInfo.Duration = now - stream.StreamInfo.StartedAt
 	}
 
 	// remove output
-	delete(o.StreamInfo, url)
+	o.Streams.Delete(stream.ParsedUrl)
 	c.OutputCount--
 	c.mu.Unlock()
 
 	// log removal
-	redacted, _ := utils.RedactStreamKey(url)
 	logger.Infow("removing stream sink",
-		"url", redacted,
-		"status", streamInfo.Status,
-		"duration", streamInfo.Duration,
+		"url", stream.RedactedUrl,
+		"status", stream.StreamInfo.Status,
+		"duration", stream.StreamInfo.Duration,
 		"error", streamErr)
 
 	// shut down if no outputs remaining
@@ -379,13 +361,7 @@ func (c *Controller) removeSink(ctx context.Context, url string, streamErr error
 		}
 	}
 
-	// only send updates if the egress will continue, otherwise it's handled by UpdateStream RPC
-	if streamErr != nil {
-		c.Info.UpdatedAt = time.Now().UnixNano()
-		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
-	}
-
-	return c.streamBin.RemoveStream(url)
+	return c.streamBin.RemoveStream(stream)
 }
 
 func (c *Controller) SendEOS(ctx context.Context, reason string) {
@@ -456,9 +432,10 @@ func (c *Controller) Close() {
 	// update status
 	if c.Info.Status == livekit.EgressStatus_EGRESS_FAILED {
 		if o := c.GetStreamConfig(); o != nil {
-			for _, streamInfo := range o.StreamInfo {
-				streamInfo.Status = livekit.StreamInfo_FAILED
-			}
+			o.Streams.Range(func(_, stream any) bool {
+				stream.(*config.Stream).StreamInfo.Status = livekit.StreamInfo_FAILED
+				return true
+			})
 		}
 	}
 
@@ -526,15 +503,13 @@ func (c *Controller) updateStartTime(startedAt int64) {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
 			streamConfig := o[0].(*config.StreamConfig)
 			if streamConfig.OutputType == types.OutputTypeRTMP {
+				// rtmp has special start time handling
 				continue
 			}
-
-			c.mu.Lock()
-			for _, streamInfo := range streamConfig.StreamInfo {
-				streamInfo.Status = livekit.StreamInfo_ACTIVE
-				streamInfo.StartedAt = startedAt
-			}
-			c.mu.Unlock()
+			streamConfig.Streams.Range(func(_, stream any) bool {
+				stream.(*config.Stream).StreamInfo.StartedAt = startedAt
+				return true
+			})
 
 		case types.EgressTypeFile:
 			o[0].(*config.FileConfig).FileInfo.StartedAt = startedAt
@@ -555,6 +530,23 @@ func (c *Controller) updateStartTime(startedAt int64) {
 	}
 }
 
+func (c *Controller) updateStreamStartTime(streamID string) {
+	if o := c.GetStreamConfig(); o != nil {
+		o.Streams.Range(func(_, s any) bool {
+			if stream := s.(*config.Stream); stream.StreamID == streamID && stream.StreamInfo.StartedAt == 0 {
+				logger.Debugw("stream started", "url", stream.RedactedUrl)
+				stream.StreamInfo.StartedAt = time.Now().UnixNano()
+				c.Info.UpdatedAt = time.Now().UnixNano()
+				c.streamUpdates(func() {
+					_, _ = c.ipcServiceClient.HandlerUpdate(context.Background(), (*livekit.EgressInfo)(c.Info))
+				})
+				return false
+			}
+			return true
+		})
+	}
+}
+
 func (c *Controller) updateDuration(endedAt int64) {
 	for egressType, o := range c.Outputs {
 		if len(o) == 0 {
@@ -562,14 +554,18 @@ func (c *Controller) updateDuration(endedAt int64) {
 		}
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
-			for _, streamInfo := range o[0].(*config.StreamConfig).StreamInfo {
+			streamConfig := o[0].(*config.StreamConfig)
+			streamConfig.Streams.Range(func(_, stream any) bool {
+				streamInfo := stream.(*config.Stream).StreamInfo
 				streamInfo.Status = livekit.StreamInfo_FINISHED
 				if streamInfo.StartedAt == 0 {
+					logger.Warnw("stream missing start time", nil, "url", streamInfo.Url)
 					streamInfo.StartedAt = endedAt
 				}
 				streamInfo.EndedAt = endedAt
 				streamInfo.Duration = endedAt - streamInfo.StartedAt
-			}
+				return true
+			})
 
 		case types.EgressTypeFile:
 			fileInfo := o[0].(*config.FileConfig).FileInfo

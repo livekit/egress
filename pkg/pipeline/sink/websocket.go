@@ -48,7 +48,13 @@ func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType, callbacks
 	header := http.Header{}
 	header.Set("Content-Type", string(mimeType))
 
-	conn, _, err := websocket.DefaultDialer.Dial(o.Urls[0], header)
+	var wsUrl string
+	o.Streams.Range(func(url, _ any) bool {
+		wsUrl = url.(string)
+		return false
+	})
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsUrl, header)
 	if err != nil {
 		return nil, err
 	}

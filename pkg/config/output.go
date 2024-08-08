@@ -123,11 +123,13 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 			p.VideoEncoding = true
 		}
 
-		streamInfoList := make([]*livekit.StreamInfo, 0, len(conf.StreamInfo))
-		for _, info := range conf.StreamInfo {
-			streamInfoList = append(streamInfoList, info)
-		}
+		streamInfoList := make([]*livekit.StreamInfo, 0, len(stream.Urls))
+		conf.Streams.Range(func(_, stream any) bool {
+			streamInfoList = append(streamInfoList, stream.(*Stream).StreamInfo)
+			return true
+		})
 		p.Info.StreamResults = streamInfoList
+
 		if len(files)+len(segments)+len(images) == 0 {
 			// empty stream output only valid in combination with other outputs
 			if len(stream.Urls) == 0 {
@@ -214,10 +216,12 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 			return err
 		}
 
-		streamInfoList := make([]*livekit.StreamInfo, 0, len(conf.StreamInfo))
-		for _, info := range conf.StreamInfo {
-			streamInfoList = append(streamInfoList, info)
-		}
+		streamInfoList := make([]*livekit.StreamInfo, 0, 1)
+		conf.Streams.Range(func(_, stream any) bool {
+			streamInfoList = append(streamInfoList, stream.(*Stream).StreamInfo)
+			return true
+		})
+
 		p.Info.StreamResults = streamInfoList
 		p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
 
