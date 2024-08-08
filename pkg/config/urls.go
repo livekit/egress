@@ -79,17 +79,13 @@ func (o *StreamConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (
 		} else if parsedUrl.Scheme == "twitch" {
 			parsed, err = o.updateTwitchURL(parsedUrl.Host)
 			if err != nil {
-				err = errors.ErrInvalidUrl(rawUrl, err.Error())
 				return
 			}
 		} else if match := twitchEndpoint.FindStringSubmatch(rawUrl); len(match) > 0 {
-			updated, err := o.updateTwitchURL(match[1])
-			if err == nil {
+			if updated, err := o.updateTwitchURL(match[1]); err == nil {
 				parsed = updated
 			}
-		}
-
-		if parsed == "" {
+		} else {
 			parsed = rawUrl
 		}
 
@@ -122,30 +118,28 @@ func (o *StreamConfig) GetStream(rawUrl string) (*Stream, error) {
 		return nil, errors.ErrInvalidUrl(rawUrl, err.Error())
 	}
 
-	var parsed, twitchStreamID string
+	var parsed string
 	if parsedUrl.Scheme == "mux" {
 		parsed = fmt.Sprintf("rtmps://global-live.mux.com:443/app/%s", parsedUrl.Host)
 	} else if parsedUrl.Scheme == "twitch" {
-		twitchStreamID = parsedUrl.Host
+		parsed, err = o.updateTwitchURL(parsedUrl.Host)
+		if err != nil {
+			return nil, err
+		}
 	} else if match := twitchEndpoint.FindStringSubmatch(rawUrl); len(match) > 0 {
-		twitchStreamID = match[1]
+		parsed, err = o.updateTwitchURL(match[1])
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		parsed = rawUrl
 	}
 
-	var stream *Stream
-	o.Streams.Range(func(url, s any) bool {
-		if (parsed != "" && url == parsed) || (twitchStreamID != "" && s.(*Stream).StreamID == twitchStreamID) {
-			stream = s.(*Stream)
-			return false
-		}
-		return true
-	})
-
-	if stream != nil {
-		return stream, nil
+	stream, ok := o.Streams.Load(parsed)
+	if !ok {
+		return nil, errors.ErrStreamNotFound(rawUrl)
 	}
-	return nil, errors.ErrStreamNotFound(rawUrl)
+	return stream.(*Stream), nil
 }
 
 func (o *StreamConfig) updateTwitchURL(key string) (string, error) {

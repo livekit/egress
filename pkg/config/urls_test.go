@@ -16,12 +16,12 @@ package config
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/livekit"
 )
 
 func TestValidateUrl(t *testing.T) {
@@ -33,12 +33,12 @@ func TestValidateUrl(t *testing.T) {
 	for _, test := range []struct {
 		url      string
 		twitch   bool
-		updated  string
+		parsed   string
 		redacted string
 	}{
 		{
 			url:      "mux://streamkey",
-			updated:  "rtmps://global-live.mux.com:443/app/streamkey",
+			parsed:   "rtmps://global-live.mux.com:443/app/streamkey",
 			redacted: "rtmps://global-live.mux.com:443/app/{str...key}",
 		},
 		{
@@ -51,52 +51,54 @@ func TestValidateUrl(t *testing.T) {
 		},
 		{
 			url:      "rtmp://localhost:1935/live/streamkey",
-			updated:  "rtmp://localhost:1935/live/streamkey",
+			parsed:   "rtmp://localhost:1935/live/streamkey",
 			redacted: "rtmp://localhost:1935/live/{str...key}",
 		},
 		{
 			url:      "rtmps://localhost:1935/live/streamkey",
-			updated:  "rtmps://localhost:1935/live/streamkey",
+			parsed:   "rtmps://localhost:1935/live/streamkey",
 			redacted: "rtmps://localhost:1935/live/{str...key}",
 		},
 	} {
-		updated, redacted, err := o.ValidateUrl(test.url, types.OutputTypeRTMP)
+		parsed, redacted, streamID, err := o.ValidateUrl(test.url, types.OutputTypeRTMP)
 		require.NoError(t, err)
+		require.NotEmpty(t, streamID)
 
 		if test.twitch {
-			require.NotEmpty(t, twitchUpdated.FindString(updated), updated)
+			require.NotEmpty(t, twitchUpdated.FindString(parsed), parsed)
 			require.NotEmpty(t, twitchRedacted.FindString(redacted), redacted)
 		} else {
-			require.Equal(t, test.updated, updated)
+			require.Equal(t, test.parsed, parsed)
 			require.Equal(t, test.redacted, redacted)
 		}
 	}
 }
 
 func TestGetUrl(t *testing.T) {
+	o := &StreamConfig{}
+	require.NoError(t, o.updateTwitchTemplate())
+
+	parsedTwitchUrl := strings.ReplaceAll(o.twitchTemplate, "{stream_key}", "streamkey")
 	urls := []string{
 		"rtmps://global-live.mux.com:443/app/streamkey",
-		"rtmp://sfo.contribute.live-video.net/app/streamkey",
-		"rtmp://sfo.contribute.live-video.net/app/streamkey",
+		parsedTwitchUrl,
+		parsedTwitchUrl,
 		"rtmp://localhost:1935/live/streamkey",
 	}
 
-	o := &StreamConfig{
-		StreamInfo: map[string]*livekit.StreamInfo{
-			urls[0]: {Url: urls[0]},
-			urls[1]: {Url: urls[1]},
-			urls[3]: {Url: urls[3]},
-		},
+	for _, url := range []string{urls[0], urls[1], urls[3]} {
+		_, err := o.AddStream(url, types.OutputTypeRTMP)
+		require.NoError(t, err)
 	}
 
 	for i, rawUrl := range []string{
 		"mux://streamkey",
 		"twitch://streamkey",
-		"rtmp://jfk.contribute.live-video.net/app/streamkey",
+		"rtmp://any.contribute.live-video.net/app/streamkey",
 		"rtmp://localhost:1935/live/streamkey",
 	} {
-		url, err := o.GetStreamUrl(rawUrl)
+		stream, err := o.GetStream(rawUrl)
 		require.NoError(t, err)
-		require.Equal(t, urls[i], url)
+		require.Equal(t, urls[i], stream.ParsedUrl)
 	}
 }
