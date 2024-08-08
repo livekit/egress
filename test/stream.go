@@ -92,6 +92,14 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 
 	// verify
 	r.verifyStreams(t, p, urls[0][2], urls[2][2])
+	if test.outputType != types.OutputTypeRTMP {
+		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
+			urls[0][1]: livekit.StreamInfo_ACTIVE,
+			urls[1][1]: livekit.StreamInfo_FAILED,
+			urls[2][1]: livekit.StreamInfo_ACTIVE,
+			urls[3][1]: livekit.StreamInfo_ACTIVE,
+		})
+	}
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		urls[0][1]: livekit.StreamInfo_ACTIVE,
 		urls[1][1]: livekit.StreamInfo_FAILED,
