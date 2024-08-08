@@ -187,7 +187,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 		}
 
 		// remove sink
-		return c.removeStream(context.Background(), stream, gErr)
+		return c.streamFailed(context.Background(), stream, gErr)
 
 	case element == elementGstSrtSink:
 		streamName := strings.Split(name, "_")[1]
@@ -196,7 +196,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 			return err
 		}
 
-		return c.removeStream(context.Background(), stream, gErr)
+		return c.streamFailed(context.Background(), stream, gErr)
 
 	case element == elementGstAppSrc:
 		if message == msgStreamingNotNegotiated {

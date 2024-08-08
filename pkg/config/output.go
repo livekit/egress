@@ -62,7 +62,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		}
 
 		p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
-		p.OutputCount++
+		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 		if p.VideoEnabled {
 			p.VideoEncoding = true
@@ -118,7 +118,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		}
 
 		p.Outputs[types.EgressTypeStream] = []OutputConfig{conf}
-		p.OutputCount += len(stream.Urls)
+		p.OutputCount.Add(int32(len(stream.Urls)))
 		if p.VideoEnabled {
 			p.VideoEncoding = true
 		}
@@ -159,7 +159,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		}
 
 		p.Outputs[types.EgressTypeSegments] = []OutputConfig{conf}
-		p.OutputCount++
+		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 		if p.VideoEnabled {
 			p.VideoEncoding = true
@@ -188,7 +188,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		return err
 	}
 
-	if p.OutputCount == 0 {
+	if p.OutputCount.Load() == 0 {
 		return errors.ErrInvalidInput("output")
 	}
 
@@ -207,7 +207,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 		p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
 
 		p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
-		p.OutputCount = 1
+		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 
 	case *livekit.TrackEgressRequest_WebsocketUrl:
@@ -226,7 +226,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 		p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
 
 		p.Outputs[types.EgressTypeWebsocket] = []OutputConfig{conf}
-		p.OutputCount = 1
+		p.OutputCount.Inc()
 
 	default:
 		return errors.ErrInvalidInput("output")
@@ -247,7 +247,7 @@ func (p *PipelineConfig) updateImageOutputs(images []*livekit.ImageOutput) error
 		}
 
 		p.Outputs[types.EgressTypeImages] = append(p.Outputs[types.EgressTypeImages], conf)
-		p.OutputCount++
+		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 
 		p.Info.ImageResults = append(p.Info.ImageResults, conf.ImagesInfo)

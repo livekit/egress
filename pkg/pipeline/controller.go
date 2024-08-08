@@ -267,6 +267,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 	}
 
 	errs := errors.ErrArray{}
+	sendUpdate := false
 
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
@@ -286,13 +287,14 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 		c.mu.Unlock()
 
 		// add stream
+		sendUpdate = true
 		if err = c.streamBin.AddStream(stream); err != nil {
 			stream.StreamInfo.Status = livekit.StreamInfo_FAILED
 			errs.AppendErr(err)
 			continue
 		}
 
-		c.OutputCount++
+		c.OutputCount.Inc()
 	}
 
 	// remove stream outputs
@@ -303,63 +305,70 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 			continue
 		}
 
-		if err = c.removeStream(ctx, stream, nil); err != nil {
+		sendUpdate = true
+		if err = c.streamFinished(ctx, stream); err != nil {
 			errs.AppendErr(err)
 		}
 	}
 
-	c.Info.UpdatedAt = time.Now().UnixNano()
-	c.streamUpdates(func() {
-		_, _ = c.ipcServiceClient.HandlerUpdate(context.Background(), (*livekit.EgressInfo)(c.Info))
-	})
+	if sendUpdate {
+		c.Info.UpdatedAt = time.Now().UnixNano()
+		c.streamUpdates(func() {
+			_, _ = c.ipcServiceClient.HandlerUpdate(context.Background(), (*livekit.EgressInfo)(c.Info))
+		})
+	}
 
 	return errs.ToError()
 }
 
-func (c *Controller) removeStream(ctx context.Context, stream *config.Stream, streamErr error) error {
-	now := time.Now().UnixNano()
-
-	c.mu.Lock()
-	o := c.GetStreamConfig()
-
-	// set error if exists
-	if streamErr != nil {
-		stream.StreamInfo.Status = livekit.StreamInfo_FAILED
-		stream.StreamInfo.Error = streamErr.Error()
-	} else {
-		stream.StreamInfo.Status = livekit.StreamInfo_FINISHED
-	}
-
-	// update end time and duration
-	stream.StreamInfo.EndedAt = now
-	if stream.StreamInfo.StartedAt == 0 {
-		logger.Warnw("stream missing start time", nil, "url", stream.RedactedUrl)
-		stream.StreamInfo.StartedAt = now
-	} else {
-		stream.StreamInfo.Duration = now - stream.StreamInfo.StartedAt
-	}
+func (c *Controller) streamFinished(ctx context.Context, stream *config.Stream) error {
+	stream.StreamInfo.Status = livekit.StreamInfo_FINISHED
+	stream.UpdateEndTime(time.Now().UnixNano())
 
 	// remove output
+	o := c.GetStreamConfig()
 	o.Streams.Delete(stream.ParsedUrl)
-	c.OutputCount--
-	c.mu.Unlock()
+	c.OutputCount.Dec()
 
-	// log removal
-	logger.Infow("removing stream sink",
+	// end egress if no outputs remaining
+	if c.OutputCount.Load() == 0 {
+		c.SendEOS(ctx, "all streams removed")
+		return nil
+	}
+
+	logger.Infow("stream finished",
+		"url", stream.RedactedUrl,
+		"status", stream.StreamInfo.Status,
+		"duration", stream.StreamInfo.Duration,
+	)
+
+	return c.streamBin.RemoveStream(stream)
+}
+
+func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, streamErr error) error {
+	stream.StreamInfo.Status = livekit.StreamInfo_FAILED
+	stream.StreamInfo.Error = streamErr.Error()
+	stream.UpdateEndTime(time.Now().UnixNano())
+
+	// remove output
+	o := c.GetStreamConfig()
+	o.Streams.Delete(stream.ParsedUrl)
+	c.OutputCount.Dec()
+
+	// fail egress if no outputs remaining
+	if c.OutputCount.Load() == 0 {
+		return streamErr
+	}
+
+	logger.Infow("stream failed",
 		"url", stream.RedactedUrl,
 		"status", stream.StreamInfo.Status,
 		"duration", stream.StreamInfo.Duration,
 		"error", streamErr)
 
-	// shut down if no outputs remaining
-	if c.OutputCount == 0 {
-		if streamErr != nil {
-			return streamErr
-		} else {
-			c.SendEOS(ctx, "all streams removed")
-			return nil
-		}
-	}
+	c.streamUpdates(func() {
+		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
+	})
 
 	return c.streamBin.RemoveStream(stream)
 }
@@ -555,15 +564,10 @@ func (c *Controller) updateDuration(endedAt int64) {
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
 			streamConfig := o[0].(*config.StreamConfig)
-			streamConfig.Streams.Range(func(_, stream any) bool {
-				streamInfo := stream.(*config.Stream).StreamInfo
-				streamInfo.Status = livekit.StreamInfo_FINISHED
-				if streamInfo.StartedAt == 0 {
-					logger.Warnw("stream missing start time", nil, "url", streamInfo.Url)
-					streamInfo.StartedAt = endedAt
-				}
-				streamInfo.EndedAt = endedAt
-				streamInfo.Duration = endedAt - streamInfo.StartedAt
+			streamConfig.Streams.Range(func(_, s any) bool {
+				stream := s.(*config.Stream)
+				stream.StreamInfo.Status = livekit.StreamInfo_FINISHED
+				stream.UpdateEndTime(endedAt)
 				return true
 			})
 

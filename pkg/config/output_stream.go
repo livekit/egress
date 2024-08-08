@@ -19,6 +19,7 @@ import (
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 type StreamConfig struct {
@@ -80,4 +81,14 @@ func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []str
 	}
 
 	return conf, nil
+}
+
+func (s *Stream) UpdateEndTime(endedAt int64) {
+	s.StreamInfo.EndedAt = endedAt
+	if s.StreamInfo.StartedAt == 0 {
+		logger.Warnw("stream missing start time", nil, "url", s.RedactedUrl)
+		s.StreamInfo.StartedAt = endedAt
+	} else {
+		s.StreamInfo.Duration = endedAt - s.StreamInfo.StartedAt
+	}
 }
