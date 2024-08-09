@@ -146,20 +146,31 @@ func (r *Runner) checkUpdate(t *testing.T, egressID string, status livekit.Egres
 }
 
 func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[string]livekit.StreamInfo_Status) {
-	info := r.getUpdate(t, egressID)
-	require.Equal(t, len(expected), len(info.StreamResults))
+	for {
+		info := r.getUpdate(t, egressID)
+		require.Equal(t, len(expected), len(info.StreamResults))
 
-	for _, s := range info.StreamResults {
-		require.Equal(t, s.Status == livekit.StreamInfo_FAILED, s.Error != "")
+		failureStillActive := false
+		for _, s := range info.StreamResults {
+			require.Equal(t, s.Status == livekit.StreamInfo_FAILED, s.Error != "")
 
-		var e livekit.StreamInfo_Status
-		if strings.HasSuffix(s.Url, ".contribute.live-video.net/app/{f...1}") {
-			e = expected[badRtmpUrl1Redacted]
-		} else {
-			e = expected[s.Url]
+			var e livekit.StreamInfo_Status
+			if strings.HasSuffix(s.Url, ".contribute.live-video.net/app/{f...1}") {
+				e = expected[badRtmpUrl1Redacted]
+			} else {
+				e = expected[s.Url]
+			}
+			if e == livekit.StreamInfo_FAILED && s.Status == livekit.StreamInfo_ACTIVE {
+				failureStillActive = true
+				continue
+			}
+
+			require.Equal(t, e, s.Status)
 		}
 
-		require.Equal(t, e, s.Status)
+		if !failureStillActive {
+			return
+		}
 	}
 }
 
