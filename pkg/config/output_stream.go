@@ -86,7 +86,9 @@ func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []str
 func (s *Stream) UpdateEndTime(endedAt int64) {
 	s.StreamInfo.EndedAt = endedAt
 	if s.StreamInfo.StartedAt == 0 {
-		logger.Warnw("stream missing start time", nil, "url", s.RedactedUrl)
+		if s.StreamInfo.Status != livekit.StreamInfo_FAILED {
+			logger.Warnw("stream missing start time", nil, "url", s.RedactedUrl)
+		}
 		s.StreamInfo.StartedAt = endedAt
 	} else {
 		s.StreamInfo.Duration = endedAt - s.StreamInfo.StartedAt
