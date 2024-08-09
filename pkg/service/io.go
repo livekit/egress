@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"sync"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -29,6 +30,9 @@ import (
 
 type IOClient struct {
 	rpc.IOInfoClient
+
+	mu      sync.Mutex
+	updates chan *livekit.EgressInfo
 }
 
 func NewIOClient(bus psrpc.MessageBus) (rpc.IOInfoClient, error) {
@@ -38,6 +42,7 @@ func NewIOClient(bus psrpc.MessageBus) (rpc.IOInfoClient, error) {
 	}
 	return &IOClient{
 		IOInfoClient: client,
+		updates:      make(chan *livekit.EgressInfo, 10),
 	}, nil
 }
 
@@ -51,36 +56,46 @@ func (c *IOClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo, o
 }
 
 func (c *IOClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, opts ...psrpc.RequestOption) (*emptypb.Empty, error) {
-	_, err := c.IOInfoClient.UpdateEgress(ctx, info, opts...)
-	if err != nil {
-		logger.Errorw("failed to update egress", err)
-		return nil, err
-	}
+	c.updates <- info
 
-	requestType, outputType := egress.GetTypes(info.Request)
-	switch info.Status {
-	case livekit.EgressStatus_EGRESS_FAILED:
-		logger.Warnw("egress failed", errors.New(info.Error),
-			"egressID", info.EgressId,
-			"requestType", requestType,
-			"outputType", outputType,
-		)
-	case livekit.EgressStatus_EGRESS_COMPLETE:
-		logger.Infow("egress completed",
-			"egressID", info.EgressId,
-			"requestType", requestType,
-			"outputType", outputType,
-		)
-	default:
-		logger.Infow("egress updated",
-			"egressID", info.EgressId,
-			"requestType", requestType,
-			"outputType", outputType,
-			"status", info.Status,
-		)
-	}
+	// ensure updates are sent sequentially
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for {
+		select {
+		case update := <-c.updates:
+			_, err := c.IOInfoClient.UpdateEgress(ctx, update, opts...)
+			if err != nil {
+				logger.Errorw("failed to update egress", err)
+				return nil, err
+			}
 
-	return &emptypb.Empty{}, nil
+			requestType, outputType := egress.GetTypes(update.Request)
+			switch update.Status {
+			case livekit.EgressStatus_EGRESS_FAILED:
+				logger.Warnw("egress failed", errors.New(update.Error),
+					"egressID", update.EgressId,
+					"requestType", requestType,
+					"outputType", outputType,
+				)
+			case livekit.EgressStatus_EGRESS_COMPLETE:
+				logger.Infow("egress completed",
+					"egressID", update.EgressId,
+					"requestType", requestType,
+					"outputType", outputType,
+				)
+			default:
+				logger.Infow("egress updated",
+					"egressID", update.EgressId,
+					"requestType", requestType,
+					"outputType", outputType,
+					"status", update.Status,
+				)
+			}
+		default:
+			return &emptypb.Empty{}, nil
+		}
+	}
 }
 
 func (c *IOClient) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest, opts ...psrpc.RequestOption) (*emptypb.Empty, error) {

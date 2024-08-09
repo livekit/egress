@@ -96,18 +96,7 @@ func (c *Controller) gstLog(
 	if category == catRtmpClient {
 		if function == fnSendCreateStream {
 			streamID := strings.Split(message, "'")[1]
-			if o := c.GetStreamConfig(); o != nil {
-				c.mu.Lock()
-				for url, sID := range o.StreamIDs {
-					if streamID == sID {
-						if streamInfo := o.StreamInfo[url]; streamInfo != nil && streamInfo.StartedAt == 0 {
-							streamInfo.StartedAt = time.Now().UnixNano()
-							break
-						}
-					}
-				}
-				c.mu.Unlock()
-			}
+			c.updateStreamStartTime(streamID)
 		}
 		return
 	}
@@ -181,10 +170,15 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 
 	switch {
 	case element == elementGstRtmp2Sink:
-		sinkName := strings.Split(name, "_")[1]
+		streamName := strings.Split(name, "_")[1]
+		stream, err := c.streamBin.GetStream(streamName)
+		if err != nil {
+			return err
+		}
+
 		if !c.eos.IsBroken() {
 			// try reconnecting
-			ok, err := c.streamBin.MaybeResetStream(sinkName, gErr)
+			ok, err := c.streamBin.MaybeResetStream(stream, gErr)
 			if err != nil {
 				logger.Errorw("failed to reset stream", err)
 			} else if ok {
@@ -193,23 +187,16 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 		}
 
 		// remove sink
-		url, err := c.streamBin.GetStreamUrl(sinkName)
-		if err != nil {
-			logger.Warnw("rtmp output not found", err, "url", url)
-			return err
-		}
-
-		return c.removeSink(context.Background(), url, gErr)
+		return c.streamFailed(context.Background(), stream, gErr)
 
 	case element == elementGstSrtSink:
-		sinkName := strings.Split(name, "_")[1]
-		url, err := c.streamBin.GetStreamUrl(sinkName)
+		streamName := strings.Split(name, "_")[1]
+		stream, err := c.streamBin.GetStream(streamName)
 		if err != nil {
-			logger.Warnw("srt output not found", err, "url", url)
 			return err
 		}
 
-		return c.removeSink(context.Background(), url, gErr)
+		return c.streamFailed(context.Background(), stream, gErr)
 
 	case element == elementGstAppSrc:
 		if message == msgStreamingNotNegotiated {
