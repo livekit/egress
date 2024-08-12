@@ -161,7 +161,6 @@ func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[s
 				e = expected[s.Url]
 			}
 			if e == livekit.StreamInfo_FAILED && s.Status == livekit.StreamInfo_ACTIVE {
-				// expecting another update
 				failureStillActive = true
 				continue
 			}
