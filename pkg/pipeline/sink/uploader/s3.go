@@ -47,11 +47,7 @@ type CustomRetryer struct {
 }
 
 // ShouldRetry overrides the SDK's built in DefaultRetryer because the PUTs for segments/playlists are always idempotent
-func (r CustomRetryer) ShouldRetry(req *request.Request) bool {
-	// if the request failed due to a 401 or 403, don't retry
-	if req.HTTPResponse.StatusCode == http.StatusUnauthorized || req.HTTPResponse.StatusCode == http.StatusForbidden {
-		return false
-	}
+func (r CustomRetryer) ShouldRetry(_ *request.Request) bool {
 	return true
 }
 
@@ -75,8 +71,16 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 			},
 		},
 		S3ForcePathStyle: aws.Bool(conf.ForcePathStyle),
-		LogLevel:         aws.LogLevel(conf.AwsLogLevel),
+		LogLevel:         &conf.AwsLogLevel,
+		Logger: aws.LoggerFunc(func(args ...interface{}) {
+			msg := "aws sdk:"
+			for range len(args) {
+				msg += " %v"
+			}
+			logger.Debugw(fmt.Sprintf(msg, args...))
+		}),
 	}
+
 	logger.Debugw("setting S3 config",
 		"maxRetries", conf.MaxRetries,
 		"maxDelay", conf.MaxRetryDelay,

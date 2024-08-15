@@ -106,6 +106,8 @@ func (c StorageConfig) ToUploadConfig() UploadConfig {
 
 		// Handle AWS log level
 		switch c.S3.AwsLogLevel {
+		case "LogOff":
+			s3.AwsLogLevel = aws.LogOff
 		case "LogDebugWithRequestRetries":
 			s3.AwsLogLevel = aws.LogDebugWithRequestRetries
 		case "LogDebug":
@@ -117,7 +119,7 @@ func (c StorageConfig) ToUploadConfig() UploadConfig {
 		case "LogDebugWithSigning":
 			s3.AwsLogLevel = aws.LogDebugWithSigning
 		default:
-			s3.AwsLogLevel = aws.LogOff
+			s3.AwsLogLevel = aws.LogDebugWithRequestRetries | aws.LogDebugWithRequestErrors
 		}
 
 		return s3
