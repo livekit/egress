@@ -81,6 +81,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
 	}
 	c.callbacks.SetOnError(c.OnError)
+	c.callbacks.SetOnEOSSent(c.onEOSSent)
 
 	// initialize gst
 	go func() {
@@ -360,6 +361,15 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 	return c.streamBin.RemoveStream(stream)
 }
 
+func (c *Controller) onEOSSent() {
+	// for video-only track/track composite, EOS might have already
+	// made it through the pipeline by the time endRecording is closed
+	if c.SourceType == types.SourceTypeSDK && !c.AudioEnabled {
+		// this will not actually send a second EOS, but will make sure everything is in the correct state
+		c.SendEOS(context.Background(), "source closed")
+	}
+}
+
 func (c *Controller) SendEOS(ctx context.Context, reason string) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
@@ -399,11 +409,11 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 }
 
 func (c *Controller) sendEOS() {
+	c.eosTimer = time.AfterFunc(time.Second*30, func() {
+		c.OnError(errors.ErrPipelineFrozen)
+	})
 	go func() {
 		logger.Debugw("sending EOS")
-		c.eosTimer = time.AfterFunc(time.Second*30, func() {
-			c.OnError(errors.ErrPipelineFrozen)
-		})
 		c.p.SendEOS()
 	}()
 }

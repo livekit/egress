@@ -37,6 +37,7 @@ type Callbacks struct {
 	onTrackMuted   []func(string)
 	onTrackUnmuted []func(string)
 	onTrackRemoved []func(string)
+	onEOSSent      func()
 
 	// internal
 	addBin    func(bin *gst.Bin)
@@ -138,5 +139,21 @@ func (c *Callbacks) OnTrackRemoved(trackID string) {
 
 	for _, f := range onTrackRemoved {
 		f(trackID)
+	}
+}
+
+func (c *Callbacks) SetOnEOSSent(f func()) {
+	c.mu.Lock()
+	c.onEOSSent = f
+	c.mu.Unlock()
+}
+
+func (c *Callbacks) OnEOSSent() {
+	c.mu.RLock()
+	onEOSSent := c.onEOSSent
+	c.mu.RUnlock()
+
+	if onEOSSent != nil {
+		onEOSSent()
 	}
 }
