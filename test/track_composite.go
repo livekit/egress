@@ -71,6 +71,13 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 			videoCodec: types.MimeTypeH264,
 			filename:   "tc_{room_name}_h264_{time}.mp4",
 		},
+		{
+			name:       "File/VideoOnly",
+			fileType:   livekit.EncodedFileType_MP4,
+			videoCodec: types.MimeTypeH264,
+			filename:   "tc_{room_name}_video_{time}.mp4",
+			videoOnly:  true,
+		},
 	} {
 		r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
 			var aID, vID string
