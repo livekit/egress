@@ -116,5 +116,8 @@ func (h *Handler) Run() {
 
 func (h *Handler) Kill() {
 	<-h.initialized.Watch()
+	if h.controller == nil {
+		return
+	}
 	h.controller.SendEOS(context.Background(), "handler killed")
 }
