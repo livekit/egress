@@ -128,6 +128,7 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 
 	u := &S3Uploader{
 		awsConfig: awsConfig,
+		logger:    l,
 		bucket:    aws.String(conf.Bucket),
 	}
 
