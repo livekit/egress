@@ -65,7 +65,11 @@ func (l *S3Logger) Log(args ...interface{}) {
 	}
 
 	l.mu.Lock()
-	l.msgs = append(l.msgs, msg)
+	if len(l.msgs) >= 10 {
+		l.msgs = append(l.msgs[1:], msg)
+	} else {
+		l.msgs = append(l.msgs, msg)
+	}
 	l.mu.Unlock()
 }
 
