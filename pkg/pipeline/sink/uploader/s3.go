@@ -75,8 +75,9 @@ func (l *S3Logger) Log(args ...interface{}) {
 
 func (l *S3Logger) PrintLogs() {
 	l.mu.Lock()
-	for range 10 {
-		if msg := l.msgs[l.idx%len(l.msgs)]; msg != "" {
+	size := len(l.msgs)
+	for range size {
+		if msg := l.msgs[l.idx%size]; msg != "" {
 			logger.Debugw(msg)
 		}
 		l.idx++
