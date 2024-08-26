@@ -58,15 +58,14 @@ type S3Logger struct {
 	msgs []string
 }
 
-func (l *S3Logger) Log(msg string) {
+func (l *S3Logger) Log(args ...interface{}) {
+	msg := "aws sdk:"
+	for range len(args) {
+		msg += " %v"
+	}
+
 	l.mu.Lock()
 	l.msgs = append(l.msgs, msg)
-	l.mu.Unlock()
-}
-
-func (l *S3Logger) Clear() {
-	l.mu.Lock()
-	l.msgs = nil
 	l.mu.Unlock()
 }
 
@@ -75,13 +74,12 @@ func (l *S3Logger) PrintLogs() {
 	for _, msg := range l.msgs {
 		logger.Debugw(msg)
 	}
-	l.msgs = nil
 	l.mu.Unlock()
 }
 
 type S3Uploader struct {
+	mu                 sync.Mutex
 	awsConfig          *aws.Config
-	logger             *S3Logger
 	bucket             *string
 	metadata           map[string]*string
 	tagging            *string
@@ -89,7 +87,6 @@ type S3Uploader struct {
 }
 
 func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
-	l := &S3Logger{}
 	awsConfig := &aws.Config{
 		Retryer: &S3Retryer{
 			DefaultRetryer: client.DefaultRetryer{
@@ -102,13 +99,6 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 		},
 		S3ForcePathStyle: aws.Bool(conf.ForcePathStyle),
 		LogLevel:         &conf.AwsLogLevel,
-		Logger: aws.LoggerFunc(func(args ...interface{}) {
-			msg := "aws sdk:"
-			for range len(args) {
-				msg += " %v"
-			}
-			l.Log(fmt.Sprintf(msg, args...))
-		}),
 	}
 
 	logger.Debugw("setting S3 config",
@@ -128,7 +118,6 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 
 	u := &S3Uploader{
 		awsConfig: awsConfig,
-		logger:    l,
 		bucket:    aws.String(conf.Bucket),
 	}
 
@@ -141,7 +130,6 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 		logger.Debugw("retrieved bucket location", "bucket", u.bucket, "location", region)
 
 		u.awsConfig.Region = aws.String(region)
-		u.logger.Clear()
 	}
 
 	if conf.Proxy != nil {
@@ -208,7 +196,13 @@ func (u *S3Uploader) getBucketLocation() (string, error) {
 }
 
 func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
+	// use a separate logger for each upload
+	l := &S3Logger{}
+	u.mu.Lock()
+	u.awsConfig.Logger = l
 	sess, err := session.NewSession(u.awsConfig)
+	u.awsConfig.Logger = nil
+	u.mu.Unlock()
 	if err != nil {
 		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
@@ -236,10 +230,8 @@ func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType ty
 		ContentDisposition: u.contentDisposition,
 	})
 	if err != nil {
-		u.logger.PrintLogs()
+		l.PrintLogs()
 		return "", 0, errors.ErrUploadFailed("S3", err)
-	} else {
-		u.logger.Clear()
 	}
 
 	endpoint := "s3.amazonaws.com"
