@@ -15,17 +15,6 @@
 name: Integration Test
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
-    paths:
-      - build/chrome/**
-      - build/egress/**
-      - build/gstreamer/**
-      - build/test/**
-      - cmd/**
-      - pkg/**
-      - test/**
-      - go.mod
   pull_request:
     branches: [ main ]
     paths:
