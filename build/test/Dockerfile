@@ -19,7 +19,7 @@ WORKDIR /workspace
 ARG TARGETPLATFORM
 
 # install go
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
+RUN if [[ "$TARGETPLATFORM" == linux/arm64* ]]; then GOARCH=arm64; else GOARCH=amd64; fi && \
     wget https://go.dev/dl/go1.22.1.linux-${GOARCH}.tar.gz && \
     rm -rf /usr/local/go && \
     tar -C /usr/local -xzf go1.22.1.linux-${GOARCH}.tar.gz
@@ -41,10 +41,10 @@ COPY --from=livekit/egress-templates workspace/build/ cmd/server/templates/
 COPY --from=livekit/egress-templates workspace/build/ test/templates/
 
 # build (service tests will need to launch the handler)
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
+RUN if [[ "$TARGETPLATFORM" == linux/arm64* ]]; then GOARCH=arm64; else GOARCH=amd64; fi && \
     CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on GODEBUG=disablethp=1 go build -a -o egress ./cmd/server
 
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
+RUN if [[ "$TARGETPLATFORM" == linux/arm64* ]]; then GOARCH=arm64; else GOARCH=amd64; fi && \
     CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go test -c -v -race --tags=integration ./test
 
 
@@ -66,7 +66,7 @@ RUN apt-get update && \
         gstreamer1.0-plugins-base-
 
 # install go
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
+RUN if [[ "$TARGETPLATFORM" == linux/arm64* ]]; then GOARCH=arm64; else GOARCH=amd64; fi && \
     wget https://go.dev/dl/go1.22.1.linux-${GOARCH}.tar.gz && \
     rm -rf /usr/local/go && \
     tar -C /usr/local -xzf go1.22.1.linux-${GOARCH}.tar.gz
@@ -80,7 +80,7 @@ RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 RUN rm -rf /var/lib/apt/lists/*
 
 # install rtsp server
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64v8; else ARCH=amd64; fi && \
+RUN if [[ "$TARGETPLATFORM" == linux/arm64* ]]; then ARCH=arm64v8; else ARCH=amd64; fi && \
     wget https://github.com/aler9/rtsp-simple-server/releases/download/v0.17.6/rtsp-simple-server_v0.17.6_linux_${ARCH}.tar.gz && \
     tar -zxvf rtsp-simple-server_v0.17.6_linux_${ARCH}.tar.gz && \
     rm rtsp-simple-server_v0.17.6_linux_${ARCH}.tar.gz
