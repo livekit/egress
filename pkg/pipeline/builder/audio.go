@@ -100,13 +100,15 @@ func (b *AudioBin) onTrackRemoved(trackID string) {
 
 	b.mu.Lock()
 	name, ok := b.names[trackID]
+	if !ok {
+		b.mu.Unlock()
+		return
+	}
 	delete(b.names, trackID)
 	b.mu.Unlock()
 
-	if ok {
-		if _, err := b.bin.RemoveSourceBin(name); err != nil {
-			b.bin.OnError(err)
-		}
+	if err := b.bin.RemoveSourceBin(name); err != nil {
+		b.bin.OnError(err)
 	}
 }
 

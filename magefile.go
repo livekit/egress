@@ -29,9 +29,9 @@ import (
 )
 
 const (
-	gstVersion      = "1.22.8"
+	gstVersion      = "1.22.12"
 	libniceVersion  = "0.1.21"
-	chromiumVersion = "117.0.5874.0"
+	chromiumVersion = "125.0.6422.141"
 	dockerBuild     = "docker build"
 	dockerBuildX    = "docker buildx build --push --platform linux/amd64,linux/arm64"
 )
@@ -77,7 +77,7 @@ func Proto() error {
 			" --plugin=go=%s"+
 			" --plugin=go-grpc=%s"+
 			" -I%s -I=. ipc.proto",
-		protocGoPath, protocGrpcGoPath, pi.Dir,
+		protocGoPath, protocGrpcGoPath, pi.Dir+"/protobufs",
 	))
 }
 
@@ -115,7 +115,10 @@ func Integration(configFile string) error {
 		files, _ := os.ReadDir("test/output")
 		for _, file := range files {
 			if file.IsDir() {
-				_ = os.RemoveAll(path.Join("test/output", file.Name()))
+				d, _ := os.ReadDir(path.Join("test/output", file.Name()))
+				if len(d) == 0 {
+					_ = os.RemoveAll(path.Join("test/output", file.Name()))
+				}
 			}
 		}
 	}()
@@ -162,23 +165,6 @@ func Build() error {
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
 		"docker pull livekit/egress-templates",
 		"docker build -t livekit/egress:latest -f build/egress/Dockerfile .",
-	)
-}
-
-func BuildChrome() error {
-	return mageutil.Run(context.Background(),
-		"docker pull ubuntu:22.04",
-		"docker build -t livekit/chrome-installer ./build/chrome",
-	)
-}
-
-func PublishChrome() error {
-	return mageutil.Run(context.Background(),
-		"docker pull ubuntu:22.04",
-		fmt.Sprintf(
-			"%s -t livekit/chrome-installer:%s ./build/chrome",
-			dockerBuildX, chromiumVersion,
-		),
 	)
 }
 

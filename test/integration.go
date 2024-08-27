@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"strings"
 	"testing"
 	"time"
@@ -31,37 +30,9 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
-	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-const (
-	muteDuration = time.Second * 10
-
-	streamUrl1      = "rtmp://localhost:1935/live/stream"
-	redactedUrl1    = "rtmp://localhost:1935/live/{st...am}"
-	streamUrl2      = "rtmp://localhost:1935/live/stream_key"
-	redactedUrl2    = "rtmp://localhost:1935/live/{str...key}"
-	badStreamUrl1   = "rtmp://sfo.contribute.live-video.net/app/fake1"
-	redactedBadUrl1 = "rtmp://sfo.contribute.live-video.net/app/{f...1}"
-	badStreamUrl2   = "rtmp://localhost:1936/live/stream"
-	redactedBadUrl2 = "rtmp://localhost:1936/live/{st...am}"
-	webUrl          = "https://videoplayer-2k23.vercel.app/videos/eminem"
-)
-
-var (
-	samples = map[types.MimeType]string{
-		types.MimeTypeOpus: "/workspace/test/sample/matrix-trailer.ogg",
-		types.MimeTypeH264: "/workspace/test/sample/matrix-trailer.h264",
-		types.MimeTypeVP8:  "/workspace/test/sample/matrix-trailer-vp8.ivf",
-		types.MimeTypeVP9:  "/workspace/test/sample/matrix-trailer-vp9.ivf",
-	}
-
-	frameDurations = map[types.MimeType]time.Duration{
-		types.MimeTypeH264: time.Microsecond * 41708,
-		types.MimeTypeVP8:  time.Microsecond * 41708,
-		types.MimeTypeVP9:  time.Microsecond * 41708,
-	}
-)
+var uploadPrefix = fmt.Sprintf("integration/%s", time.Now().Format("2006-01-02"))
 
 type testCase struct {
 	name      string
@@ -93,116 +64,39 @@ type testCase struct {
 	videoUnpublish time.Duration
 	videoRepublish time.Duration
 
-	// used by track tests
+	// used by track and stream tests
 	outputType types.OutputType
 
 	expectVideoEncoding bool
 }
 
+func (r *Runner) RunTests(t *testing.T) {
+	// run tests
+	r.testRoomComposite(t)
+	r.testWeb(t)
+	r.testParticipant(t)
+	r.testTrackComposite(t)
+	r.testTrack(t)
+	r.testEdgeCases(t)
+}
+
+var testNumber int
+
+func (r *Runner) run(t *testing.T, name string, f func(t *testing.T)) {
+	r.awaitIdle(t)
+	testNumber++
+	t.Run(fmt.Sprintf("%d/%s", testNumber, name), f)
+}
+
 func (r *Runner) awaitIdle(t *testing.T) {
 	r.svc.KillAll()
 	for i := 0; i < 30; i++ {
-		if r.svc.GetRequestCount() == 0 {
+		if r.svc.IsIdle() {
 			return
 		}
 		time.Sleep(time.Second)
 	}
 	t.Fatal("service not idle after 30s")
-}
-
-func (r *Runner) publishSamplesToRoom(t *testing.T, audioCodec, videoCodec types.MimeType) (audioTrackID, videoTrackID string) {
-	withAudioMuting := false
-	if videoCodec != "" {
-		videoTrackID = r.publishSampleToRoom(t, videoCodec, r.Muting)
-	} else {
-		withAudioMuting = r.Muting
-	}
-	if audioCodec != "" {
-		audioTrackID = r.publishSampleToRoom(t, audioCodec, withAudioMuting)
-	}
-
-	time.Sleep(time.Second)
-	return
-}
-
-func (r *Runner) publishSampleOffset(t *testing.T, codec types.MimeType, publishAt, unpublishAt time.Duration) {
-	if codec != "" {
-		go func() {
-			time.Sleep(publishAt)
-			done := make(chan struct{})
-			pub := r.publish(t, codec, done)
-			if unpublishAt != 0 {
-				time.AfterFunc(unpublishAt-publishAt, func() {
-					select {
-					case <-done:
-						return
-					default:
-						_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
-					}
-				})
-			} else {
-				t.Cleanup(func() {
-					_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
-				})
-			}
-		}()
-	}
-}
-
-func (r *Runner) publishSampleToRoom(t *testing.T, codec types.MimeType, withMuting bool) string {
-	done := make(chan struct{})
-	pub := r.publish(t, codec, done)
-	trackID := pub.SID()
-
-	t.Cleanup(func() {
-		_ = r.room.LocalParticipant.UnpublishTrack(trackID)
-	})
-
-	if withMuting {
-		go func() {
-			muted := false
-			time.Sleep(time.Second * 15)
-			for {
-				select {
-				case <-done:
-					return
-				default:
-					pub.SetMuted(!muted)
-					muted = !muted
-					time.Sleep(muteDuration)
-				}
-			}
-		}()
-	}
-
-	return trackID
-}
-
-func (r *Runner) publish(t *testing.T, codec types.MimeType, done chan struct{}) *lksdk.LocalTrackPublication {
-	filename := samples[codec]
-	frameDuration := frameDurations[codec]
-
-	var pub *lksdk.LocalTrackPublication
-	opts := []lksdk.ReaderSampleProviderOption{
-		lksdk.ReaderTrackWithOnWriteComplete(func() {
-			close(done)
-			if pub != nil {
-				_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
-			}
-		}),
-	}
-
-	if frameDuration != 0 {
-		opts = append(opts, lksdk.ReaderTrackWithFrameDuration(frameDuration))
-	}
-
-	track, err := lksdk.NewLocalFileTrack(filename, opts...)
-	require.NoError(t, err)
-
-	pub, err = r.room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
-	require.NoError(t, err)
-
-	return pub
 }
 
 func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {
@@ -225,7 +119,7 @@ func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {
 
 func (r *Runner) sendRequest(t *testing.T, req *rpc.StartEgressRequest) *livekit.EgressInfo {
 	// send start request
-	info, err := r.client.StartEgress(context.Background(), "", req)
+	info, err := r.StartEgress(context.Background(), req)
 
 	// check returned egress info
 	require.NoError(t, err)
@@ -245,19 +139,38 @@ func (r *Runner) sendRequest(t *testing.T, req *rpc.StartEgressRequest) *livekit
 func (r *Runner) checkUpdate(t *testing.T, egressID string, status livekit.EgressStatus) *livekit.EgressInfo {
 	info := r.getUpdate(t, egressID)
 
-	require.Equal(t, status.String(), info.Status.String())
+	require.Equal(t, status.String(), info.Status.String(), info.Error)
 	require.Equal(t, info.Status == livekit.EgressStatus_EGRESS_FAILED, info.Error != "")
 
 	return info
 }
 
 func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[string]livekit.StreamInfo_Status) {
-	info := r.getUpdate(t, egressID)
+	for {
+		info := r.getUpdate(t, egressID)
+		require.Equal(t, len(expected), len(info.StreamResults))
 
-	require.Equal(t, len(expected), len(info.StreamResults))
-	for _, s := range info.StreamResults {
-		require.Equal(t, expected[s.Url], s.Status)
-		require.Equal(t, s.Status == livekit.StreamInfo_FAILED, s.Error != "")
+		failureStillActive := false
+		for _, s := range info.StreamResults {
+			require.Equal(t, s.Status == livekit.StreamInfo_FAILED, s.Error != "")
+
+			var e livekit.StreamInfo_Status
+			if strings.HasSuffix(s.Url, ".contribute.live-video.net/app/{f...1}") {
+				e = expected[badRtmpUrl1Redacted]
+			} else {
+				e = expected[s.Url]
+			}
+			if e == livekit.StreamInfo_FAILED && s.Status == livekit.StreamInfo_ACTIVE {
+				failureStillActive = true
+				continue
+			}
+
+			require.Equal(t, e, s.Status)
+		}
+
+		if !failureStillActive {
+			return
+		}
 	}
 }
 
@@ -326,12 +239,4 @@ func (r *Runner) stopEgress(t *testing.T, egressID string) *livekit.EgressInfo {
 	}
 
 	return res
-}
-
-func (r *Runner) getFilePath(filename string) string {
-	if r.S3 != nil || r.Azure != nil || r.GCP != nil || r.AliOSS != nil {
-		return filename
-	}
-
-	return path.Join(r.FilePrefix, filename)
 }

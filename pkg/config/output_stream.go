@@ -15,15 +15,28 @@
 package config
 
 import (
+	"sync"
+
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 type StreamConfig struct {
 	outputConfig
 
-	Urls       []string
-	StreamInfo map[string]*livekit.StreamInfo
+	// url -> Stream
+	Streams sync.Map
+
+	twitchTemplate string
+}
+
+type Stream struct {
+	Name        string // gstreamer stream ID
+	ParsedUrl   string // parsed/validated url
+	RedactedUrl string // url with stream key removed
+	StreamID    string // stream ID used by rtmpconnection
+	StreamInfo  *livekit.StreamInfo
 }
 
 func (p *PipelineConfig) GetStreamConfig() *StreamConfig {
@@ -47,23 +60,19 @@ func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []str
 		outputConfig: outputConfig{OutputType: outputType},
 	}
 
-	conf.StreamInfo = make(map[string]*livekit.StreamInfo)
-	var streamInfoList []*livekit.StreamInfo
 	for _, rawUrl := range urls {
-		url, redacted, err := p.ValidateUrl(rawUrl, outputType)
+		_, err := conf.AddStream(rawUrl, outputType)
 		if err != nil {
 			return nil, err
 		}
-
-		conf.Urls = append(conf.Urls, url)
-
-		info := &livekit.StreamInfo{Url: redacted}
-		conf.StreamInfo[url] = info
-		streamInfoList = append(streamInfoList, info)
 	}
 
 	switch outputType {
 	case types.OutputTypeRTMP:
+		p.AudioOutCodec = types.MimeTypeAAC
+		p.VideoOutCodec = types.MimeTypeH264
+
+	case types.OutputTypeSRT:
 		p.AudioOutCodec = types.MimeTypeAAC
 		p.VideoOutCodec = types.MimeTypeH264
 
@@ -72,4 +81,16 @@ func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []str
 	}
 
 	return conf, nil
+}
+
+func (s *Stream) UpdateEndTime(endedAt int64) {
+	s.StreamInfo.EndedAt = endedAt
+	if s.StreamInfo.StartedAt == 0 {
+		if s.StreamInfo.Status != livekit.StreamInfo_FAILED {
+			logger.Warnw("stream missing start time", nil, "url", s.RedactedUrl)
+		}
+		s.StreamInfo.StartedAt = endedAt
+	} else {
+		s.StreamInfo.Duration = endedAt - s.StreamInfo.StartedAt
+	}
 }

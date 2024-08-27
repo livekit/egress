@@ -64,14 +64,17 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput) (*ImageConf
 		return nil, err
 	}
 
+	filenamePrefix := clean(images.FilenamePrefix)
 	conf := &ImageConfig{
 		outputConfig: outputConfig{
 			OutputType: outputType,
 		},
 
-		Id:              utils.NewGuid(""),
-		ImagesInfo:      &livekit.ImagesInfo{},
-		ImagePrefix:     clean(images.FilenamePrefix),
+		Id: utils.NewGuid(""),
+		ImagesInfo: &livekit.ImagesInfo{
+			FilenamePrefix: filenamePrefix,
+		},
+		ImagePrefix:     filenamePrefix,
 		ImageSuffix:     images.FilenameSuffix,
 		DisableManifest: images.DisableManifest,
 		UploadConfig:    p.getUploadConfig(images),
@@ -111,11 +114,10 @@ func (o *ImageConfig) updatePrefix(p *PipelineConfig) error {
 	identifier, replacements := p.getFilenameInfo()
 
 	o.ImagePrefix = stringReplace(o.ImagePrefix, replacements)
-
+	o.ImagesInfo.FilenamePrefix = stringReplace(o.ImagesInfo.FilenamePrefix, replacements)
 	o.ImageExtension = types.FileExtensionForOutputType[o.OutputType]
 
 	imagesDir, imagesPrefix := path.Split(o.ImagePrefix)
-
 	o.StorageDir = imagesDir
 
 	// ensure playlistName
@@ -133,7 +135,6 @@ func (o *ImageConfig) updatePrefix(p *PipelineConfig) error {
 		// there is more than one image output
 		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
 		// Append a "/" to the path for consistency with the "UploadConfig == nil" case
-
 		o.LocalDir = path.Join(TmpDir, p.Info.EgressId, o.Id) + "/"
 	}
 

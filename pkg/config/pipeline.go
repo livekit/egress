@@ -16,24 +16,24 @@ package config
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/go-gst/go-gst/gst/app"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
-	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
@@ -51,10 +51,10 @@ type PipelineConfig struct {
 	VideoConfig       `yaml:"-"`
 
 	Outputs              map[types.EgressType][]OutputConfig `yaml:"-"`
-	OutputCount          int                                 `yaml:"-"`
+	OutputCount          atomic.Int32                        `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	Info *livekit.EgressInfo `yaml:"-"`
+	Info *info.EgressInfo `yaml:"-"`
 }
 
 type SourceConfig struct {
@@ -160,7 +160,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	}
 
 	// start with defaults
-	p.Info = &livekit.EgressInfo{
+	p.Info = &info.EgressInfo{
 		EgressId:  request.EgressId,
 		RoomId:    request.RoomId,
 		Status:    livekit.EgressStatus_EGRESS_STARTING,
@@ -172,11 +172,11 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	}
 	p.VideoConfig = VideoConfig{
 		VideoProfile: types.ProfileMain,
-		Width:        1920,
-		Height:       1080,
+		Width:        1280,
+		Height:       720,
 		Depth:        24,
 		Framerate:    30,
-		VideoBitrate: 4500,
+		VideoBitrate: 3000,
 	}
 
 	connectionInfoRequired := true
@@ -187,7 +187,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_RoomComposite{
 			RoomComposite: clone,
 		}
-		redactEncodedOutputs(clone)
+		egress.RedactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeWeb
 		p.AwaitStartSignal = true
@@ -240,7 +240,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_Web{
 			Web: clone,
 		}
-		redactEncodedOutputs(clone)
+		egress.RedactEncodedOutputs(clone)
 
 		connectionInfoRequired = false
 		p.SourceType = types.SourceTypeWeb
@@ -288,7 +288,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_Participant{
 			Participant: clone,
 		}
-		redactEncodedOutputs(clone)
+		egress.RedactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
 
@@ -324,7 +324,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_TrackComposite{
 			TrackComposite: clone,
 		}
-		redactEncodedOutputs(clone)
+		egress.RedactEncodedOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
 
@@ -365,9 +365,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.Info.Request = &livekit.EgressInfo_Track{
 			Track: clone,
 		}
-		if f := clone.GetFile(); f != nil {
-			redactUpload(f)
-		}
+		egress.RedactDirectOutputs(clone)
 
 		p.SourceType = types.SourceTypeSDK
 
@@ -577,6 +575,7 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 				o.LocalDir = stringReplace(o.LocalDir, replacements)
 				o.StorageDir = stringReplace(o.StorageDir, replacements)
 				o.ImagePrefix = stringReplace(o.ImagePrefix, replacements)
+				o.ImagesInfo.FilenamePrefix = stringReplace(o.ImagesInfo.FilenamePrefix, replacements)
 				if o.Width == 0 {
 					if w != 0 {
 						o.Width = int32(w)
@@ -596,35 +595,6 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 	}
 
 	return nil
-}
-
-func (p *PipelineConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, error) {
-	parsed, err := url.Parse(rawUrl)
-	if err != nil {
-		return "", "", errors.ErrInvalidUrl(rawUrl, err.Error())
-	}
-
-	switch outputType {
-	case types.OutputTypeRTMP:
-		if parsed.Scheme == "mux" {
-			rawUrl = fmt.Sprintf("rtmps://global-live.mux.com:443/app/%s", parsed.Host)
-		}
-
-		redacted, ok := utils.RedactStreamKey(rawUrl)
-		if !ok {
-			return "", "", errors.ErrInvalidUrl(rawUrl, "rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)")
-		}
-		return rawUrl, redacted, nil
-
-	case types.OutputTypeRaw:
-		if parsed.Scheme != "ws" && parsed.Scheme != "wss" {
-			return "", "", errors.ErrInvalidUrl(rawUrl, "invalid scheme")
-		}
-		return rawUrl, rawUrl, nil
-
-	default:
-		return "", "", errors.ErrInvalidInput("stream output type")
-	}
 }
 
 func (p *PipelineConfig) GetEncodedOutputs() []OutputConfig {

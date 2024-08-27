@@ -31,7 +31,7 @@ import (
 func (r *Runner) runMultipleTest(
 	t *testing.T,
 	req *rpc.StartEgressRequest,
-	file, stream, segments bool,
+	file, stream, segments, images bool,
 	filenameSuffix livekit.SegmentedFileSuffix,
 ) {
 	egressID := r.startEgress(t, req)
@@ -44,14 +44,14 @@ func (r *Runner) runMultipleTest(
 	if stream {
 		_, err = r.client.UpdateStream(context.Background(), egressID, &livekit.UpdateStreamRequest{
 			EgressId:      egressID,
-			AddOutputUrls: []string{streamUrl1},
+			AddOutputUrls: []string{rtmpUrl1},
 		})
 		require.NoError(t, err)
 
 		time.Sleep(time.Second * 10)
-		r.verifyStreams(t, p, streamUrl1)
+		r.verifyStreams(t, p, rtmpUrl1)
 		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-			redactedUrl1: livekit.StreamInfo_ACTIVE,
+			rtmpUrl1Redacted: livekit.StreamInfo_ACTIVE,
 		})
 		time.Sleep(time.Second * 10)
 	} else {
@@ -64,5 +64,8 @@ func (r *Runner) runMultipleTest(
 	}
 	if segments {
 		r.verifySegments(t, p, filenameSuffix, res, false)
+	}
+	if images {
+		r.verifyImages(t, p, res)
 	}
 }

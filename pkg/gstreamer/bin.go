@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/logger"
@@ -37,6 +38,7 @@ type Bin struct {
 	latency  uint64
 
 	linkFunc   func() error
+	shouldLink func(string) bool
 	eosFunc    func() bool
 	getSrcPad  func(string) *gst.Pad
 	getSinkPad func(string) *gst.Pad
@@ -149,23 +151,23 @@ func (b *Bin) AddElements(elements ...*gst.Element) error {
 	return nil
 }
 
-func (b *Bin) RemoveSourceBin(name string) (bool, error) {
+func (b *Bin) RemoveSourceBin(name string) error {
 	logger.Debugw(fmt.Sprintf("removing src %s from %s", name, b.bin.GetName()))
 	return b.removeBin(name, gst.PadDirectionSource)
 }
 
-func (b *Bin) RemoveSinkBin(name string) (bool, error) {
+func (b *Bin) RemoveSinkBin(name string) error {
 	logger.Debugw(fmt.Sprintf("removing sink %s from %s", name, b.bin.GetName()))
 	return b.removeBin(name, gst.PadDirectionSink)
 }
 
-func (b *Bin) removeBin(name string, direction gst.PadDirection) (bool, error) {
+func (b *Bin) removeBin(name string, direction gst.PadDirection) error {
 	b.LockStateShared()
 	defer b.UnlockStateShared()
 
 	state := b.GetStateLocked()
 	if state > StateRunning {
-		return true, nil
+		return nil
 	}
 
 	b.mu.Lock()
@@ -190,14 +192,14 @@ func (b *Bin) removeBin(name string, direction gst.PadDirection) (bool, error) {
 		}
 	}
 	if bin == nil {
-		return false, nil
+		return nil
 	}
 
 	if state == StateBuilding {
 		if err := b.pipeline.Remove(bin.bin.Element); err != nil {
-			return false, errors.ErrGstPipelineError(err)
+			return errors.ErrGstPipelineError(err)
 		}
-		return true, nil
+		return nil
 	}
 
 	if direction == gst.PadDirectionSource {
@@ -206,7 +208,7 @@ func (b *Bin) removeBin(name string, direction gst.PadDirection) (bool, error) {
 		b.probeRemoveSink(bin)
 	}
 
-	return true, nil
+	return nil
 }
 
 func (b *Bin) probeRemoveSource(src *Bin) {
@@ -217,33 +219,39 @@ func (b *Bin) probeRemoveSource(src *Bin) {
 		return
 	}
 
+	var removed atomic.Bool
+	srcPad := srcGhostPad.GetTarget()
+	srcPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+		if removed.Load() {
+			return gst.PadProbeRemove
+		}
+		return gst.PadProbeDrop
+	})
 	sinkPad := sinkGhostPad.GetTarget()
-	sinkPad.AddProbe(gst.PadProbeTypeBlockUpstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-		// drop all upstream events
+	sinkPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+		if removed.Load() {
+			return gst.PadProbeRemove
+		}
 		return gst.PadProbeDrop
 	})
 
-	srcGhostPad.AddProbe(gst.PadProbeTypeIdle, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+	if _, err := glib.IdleAdd(func() bool {
 		b.elements[0].ReleaseRequestPad(sinkPad)
-
 		srcGhostPad.Unlink(sinkGhostPad.Pad)
 		b.bin.RemovePad(sinkGhostPad.Pad)
-
-		if _, err := glib.IdleAdd(func() bool {
-			if err := b.pipeline.Remove(src.bin.Element); err != nil {
-				logger.Warnw("failed to remove bin", err, "bin", src.bin.GetName())
-				return false
-			}
-			if err := src.bin.SetState(gst.StateNull); err != nil {
-				logger.Warnw("failed to change bin state", err, "bin", src.bin.GetName())
-			}
+		removed.Store(true)
+		if err := b.pipeline.Remove(src.bin.Element); err != nil {
+			logger.Warnw("failed to remove bin", err, "bin", src.bin.GetName())
 			return false
-		}); err != nil {
-			logger.Errorw("failed to remove src bin", err, "bin", src.bin.GetName())
 		}
-
-		return gst.PadProbeRemove
-	})
+		if err := src.bin.SetState(gst.StateNull); err != nil {
+			logger.Warnw("failed to change bin state", err, "bin", src.bin.GetName())
+			return false
+		}
+		return false
+	}); err != nil {
+		logger.Errorw("failed to remove bin", err, "bin", src.bin.GetName())
+	}
 }
 
 func (b *Bin) probeRemoveSink(sink *Bin) {
@@ -254,7 +262,7 @@ func (b *Bin) probeRemoveSink(sink *Bin) {
 		return
 	}
 
-	srcGhostPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+	srcGhostPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
 		srcGhostPad.Unlink(sinkGhostPad.Pad)
 		sinkGhostPad.Pad.SendEvent(gst.NewEOSEvent())
 
@@ -273,7 +281,7 @@ func (b *Bin) probeRemoveSink(sink *Bin) {
 
 		b.elements[len(b.elements)-1].ReleaseRequestPad(srcGhostPad.GetTarget())
 		b.bin.RemovePad(srcGhostPad.Pad)
-		return gst.PadProbeRemove
+		return gst.PadProbeOK
 	})
 }
 
@@ -315,6 +323,13 @@ func (b *Bin) SetLinkFunc(f func() error) {
 	defer b.mu.Unlock()
 
 	b.linkFunc = f
+}
+
+func (b *Bin) SetShouldLink(f func(string) bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.shouldLink = f
 }
 
 // Set a custom linking function which returns a pad for the named src bin
@@ -483,6 +498,10 @@ func linkPeersLocked(src, sink *Bin) error {
 func (b *Bin) queueLinkPeersLocked(src, sink *Bin) error {
 	srcName := src.bin.GetName()
 	sinkName := sink.bin.GetName()
+
+	if (src.shouldLink != nil && !src.shouldLink(sinkName)) || (sink.shouldLink != nil && !sink.shouldLink(srcName)) {
+		return nil
+	}
 
 	queueName := fmt.Sprintf("%s_%s_queue", srcName, sinkName)
 	queue, err := BuildQueue(queueName, b.latency, true)

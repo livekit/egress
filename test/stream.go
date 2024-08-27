@@ -18,6 +18,7 @@ package test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -27,54 +28,88 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils"
 )
+
+const (
+	badRtmpUrl1         = "rtmp://xxx.contribute.live-video.net/app/fake1"
+	badRtmpUrl1Redacted = "rtmp://xxx.contribute.live-video.net/app/{f...1}"
+	badRtmpUrl2         = "rtmp://localhost:1936/live/stream"
+	badRtmpUrl2Redacted = "rtmp://localhost:1936/live/{st...am}"
+	badSrtUrl1          = "srt://localhost:8891?streamid=publish:wrongport&pkt_size=1316"
+	badSrtUrl2          = "srt://localhost:8891?streamid=publish:badstream&pkt_size=1316"
+)
+
+var (
+	streamKey1          = utils.NewGuid("")
+	streamKey2          = utils.NewGuid("")
+	rtmpUrl1            = fmt.Sprintf("rtmp://localhost:1935/live/%s", streamKey1)
+	rtmpUrl1Redacted, _ = utils.RedactStreamKey(rtmpUrl1)
+	rtmpUrl2            = fmt.Sprintf("rtmp://localhost:1935/live/%s", streamKey2)
+	rtmpUrl2Redacted, _ = utils.RedactStreamKey(rtmpUrl2)
+	srtPublishUrl1      = fmt.Sprintf("srt://localhost:8890?streamid=publish:%s&pkt_size=1316", streamKey1)
+	srtReadUrl1         = fmt.Sprintf("srt://localhost:8890?streamid=read:%s", streamKey1)
+	srtPublishUrl2      = fmt.Sprintf("srt://localhost:8890?streamid=publish:%s&pkt_size=1316", streamKey2)
+	srtReadUrl2         = fmt.Sprintf("srt://localhost:8890?streamid=read:%s", streamKey2)
+)
+
+// [[publish, redacted, verification]]
+var streamUrls = map[types.OutputType][][]string{
+	types.OutputTypeRTMP: {
+		{rtmpUrl1, rtmpUrl1Redacted, rtmpUrl1},
+		{badRtmpUrl1, badRtmpUrl1Redacted, ""},
+		{rtmpUrl2, rtmpUrl2Redacted, rtmpUrl2},
+		{badRtmpUrl2, badRtmpUrl2Redacted, ""},
+	},
+	types.OutputTypeSRT: {
+		{srtPublishUrl1, srtPublishUrl1, srtReadUrl1},
+		{badSrtUrl1, badSrtUrl1, ""},
+		{srtPublishUrl2, srtPublishUrl2, srtReadUrl2},
+		{badSrtUrl2, badSrtUrl2, ""},
+	},
+}
 
 func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *testCase) {
 	ctx := context.Background()
-
+	urls := streamUrls[test.outputType]
 	egressID := r.startEgress(t, req)
 
-	// get params
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 	require.Equal(t, test.expectVideoEncoding, p.VideoEncoding)
+	if test.expectVideoEncoding {
+		require.Equal(t, config.StreamKeyframeInterval, p.KeyFrameInterval)
+	}
 
-	// verify and check update
+	// verify
 	time.Sleep(time.Second * 5)
-	r.verifyStreams(t, p, streamUrl1)
+	r.verifyStreams(t, p, urls[0][2])
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		redactedUrl1:    livekit.StreamInfo_ACTIVE,
-		redactedBadUrl1: livekit.StreamInfo_FAILED,
+		urls[0][1]: livekit.StreamInfo_ACTIVE,
+		urls[1][1]: livekit.StreamInfo_FAILED,
 	})
 
 	// add one good stream url and one bad
 	_, err = r.client.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
 		EgressId:      egressID,
-		AddOutputUrls: []string{badStreamUrl2, streamUrl2},
+		AddOutputUrls: []string{urls[2][0], urls[3][0]},
 	})
 	require.NoError(t, err)
-
-	// verify and check updates
 	time.Sleep(time.Second * 5)
-	r.verifyStreams(t, p, streamUrl1, streamUrl2)
 
+	// verify
+	r.verifyStreams(t, p, urls[0][2], urls[2][2])
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		redactedUrl1:    livekit.StreamInfo_ACTIVE,
-		redactedUrl2:    livekit.StreamInfo_ACTIVE,
-		redactedBadUrl1: livekit.StreamInfo_FAILED,
-		redactedBadUrl2: livekit.StreamInfo_ACTIVE,
-	})
-	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		redactedUrl1:    livekit.StreamInfo_ACTIVE,
-		redactedUrl2:    livekit.StreamInfo_ACTIVE,
-		redactedBadUrl1: livekit.StreamInfo_FAILED,
-		redactedBadUrl2: livekit.StreamInfo_FAILED,
+		urls[0][1]: livekit.StreamInfo_ACTIVE,
+		urls[1][1]: livekit.StreamInfo_FAILED,
+		urls[2][1]: livekit.StreamInfo_ACTIVE,
+		urls[3][1]: livekit.StreamInfo_FAILED,
 	})
 
 	// remove one of the stream urls
 	_, err = r.client.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
 		EgressId:         egressID,
-		RemoveOutputUrls: []string{streamUrl1},
+		RemoveOutputUrls: []string{urls[0][0]},
 	})
 	require.NoError(t, err)
 
@@ -84,12 +119,12 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	}
 
 	// verify the remaining stream
-	r.verifyStreams(t, p, streamUrl2)
+	r.verifyStreams(t, p, urls[2][2])
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		redactedUrl1:    livekit.StreamInfo_FINISHED,
-		redactedUrl2:    livekit.StreamInfo_ACTIVE,
-		redactedBadUrl1: livekit.StreamInfo_FAILED,
-		redactedBadUrl2: livekit.StreamInfo_FAILED,
+		urls[0][1]: livekit.StreamInfo_FINISHED,
+		urls[1][1]: livekit.StreamInfo_FAILED,
+		urls[2][1]: livekit.StreamInfo_ACTIVE,
+		urls[3][1]: livekit.StreamInfo_FAILED,
 	})
 
 	// stop
@@ -108,19 +143,16 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 		require.NotZero(t, info.EndedAt)
 
 		switch info.Url {
-		case redactedUrl1:
+		case urls[0][1]:
 			require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
 			require.Greater(t, float64(info.Duration)/1e9, 15.0)
 
-		case redactedUrl2:
+		case urls[2][1]:
 			require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
 			require.Greater(t, float64(info.Duration)/1e9, 10.0)
 
-		case redactedBadUrl1, redactedBadUrl2:
-			require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
-
 		default:
-			t.Fatal("invalid stream url in result")
+			require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
 		}
 	}
 }

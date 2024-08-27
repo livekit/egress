@@ -17,6 +17,7 @@ package source
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -104,7 +105,7 @@ func (s *SDKSource) Playing(trackID string) {
 	s.mu.Unlock()
 
 	if writer != nil {
-		writer.Play()
+		writer.Playing()
 	}
 }
 
@@ -152,8 +153,6 @@ func (s *SDKSource) joinRoom() error {
 			OnTrackUnmuted:      s.onTrackUnmuted,
 			OnTrackUnsubscribed: s.onTrackUnsubscribed,
 		},
-		OnReconnecting: s.onReconnecting,
-		OnReconnected:  s.onReconnected,
 		OnDisconnected: s.onDisconnected,
 	}
 	if s.RequestType == types.RequestTypeParticipant {
@@ -209,6 +208,8 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 		return 0, 0, err
 	}
 
+	// await expected subscriptions
+	subscribed := 0
 	pubs := rp.TrackPublications()
 	expected := 0
 	for _, pub := range pubs {
@@ -217,13 +218,23 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 		}
 	}
 
-	// await all expected subscriptions
-	for trackCount := 0; trackCount < expected; trackCount++ {
+	deadline := make(chan struct{})
+	time.AfterFunc(time.Second*3, func() {
+		close(deadline)
+	})
+	done := false
+	for !done {
 		select {
 		case err = <-s.errors:
 			if err != nil {
 				return 0, 0, err
 			}
+			subscribed++
+			if subscribed == expected {
+				done = true
+			}
+		case <-deadline:
+			done = true
 		}
 	}
 
@@ -477,7 +488,10 @@ func (s *SDKSource) createWriter(
 	var logFilename string
 	if s.Debug.EnableProfiling {
 		if s.Debug.ToUploadConfig() == nil {
-			logFilename = path.Join(s.Debug.PathPrefix, fmt.Sprintf("%s.csv", track.ID()))
+			if err := os.MkdirAll(path.Join(s.Debug.PathPrefix, s.Info.EgressId), 0755); err != nil {
+				return nil, err
+			}
+			logFilename = path.Join(s.Debug.PathPrefix, s.Info.EgressId, fmt.Sprintf("%s.csv", track.ID()))
 		} else {
 			logFilename = path.Join(s.TmpDir, fmt.Sprintf("%s.csv", track.ID()))
 		}
@@ -521,22 +535,20 @@ func shouldSubscribe(pub lksdk.TrackPublication) bool {
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	s.mu.Lock()
-	writer := s.writers[pub.SID()]
-	s.mu.Unlock()
-
-	if writer != nil {
-		writer.SetTrackMuted(true)
+	s.mu.RLock()
+	_, ok := s.writers[pub.SID()]
+	s.mu.RUnlock()
+	if ok {
+		logger.Debugw("track muted", "trackID", pub.SID())
 	}
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	s.mu.Lock()
-	writer := s.writers[pub.SID()]
-	s.mu.Unlock()
-
-	if writer != nil {
-		writer.SetTrackMuted(false)
+	s.mu.RLock()
+	_, ok := s.writers[pub.SID()]
+	s.mu.RUnlock()
+	if ok {
+		logger.Debugw("track unmuted", "trackID", pub.SID())
 	}
 }
 
@@ -567,24 +579,6 @@ func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
 	if rp.Identity() == s.Identity {
 		logger.Debugw("participant disconnected")
 		s.finished()
-	}
-}
-
-func (s *SDKSource) onReconnecting() {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, writer := range s.writers {
-		writer.SetTrackDisconnected(true)
-	}
-}
-
-func (s *SDKSource) onReconnected() {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, writer := range s.writers {
-		writer.SetTrackDisconnected(false)
 	}
 }
 

@@ -29,6 +29,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/handler"
+	"github.com/livekit/egress/pkg/server"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/version"
 	"github.com/livekit/protocol/logger"
@@ -114,15 +115,10 @@ func runService(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	svc, err := service.NewService(conf, ioClient)
+	svc, err := server.NewServer(conf, bus, ioClient)
 	if err != nil {
 		return err
 	}
-	psrpcServer, err := rpc.NewEgressInternalServer(svc, bus)
-	if err != nil {
-		return err
-	}
-	svc.Register(psrpcServer)
 
 	if conf.HealthPort != 0 {
 		go func() {
@@ -140,10 +136,10 @@ func runService(c *cli.Context) error {
 		select {
 		case sig := <-stopChan:
 			logger.Infow("exit requested, finishing recording then shutting down", "signal", sig)
-			svc.Stop(false)
+			svc.Shutdown(true, false)
 		case sig := <-killChan:
 			logger.Infow("exit requested, stopping recording and shutting down", "signal", sig)
-			svc.Stop(true)
+			svc.Shutdown(true, true)
 		}
 	}()
 
@@ -157,14 +153,7 @@ func runService(c *cli.Context) error {
 		return err
 	}
 
-	svc.StartDebugHandlers()
-
-	if err = svc.RegisterListEgress(""); err != nil {
-		return err
-	}
-	err = svc.Run()
-	svc.Close()
-	return err
+	return svc.Run()
 }
 
 func runHandler(c *cli.Context) error {
@@ -202,20 +191,11 @@ func runHandler(c *cli.Context) error {
 	signal.Notify(killChan, syscall.SIGINT)
 
 	bus := psrpc.NewRedisMessageBus(rc)
-	ioClient, err := rpc.NewIOInfoClient(bus)
+	h, err := handler.NewHandler(conf, bus)
 	if err != nil {
+		// service will send info update and shut down
+		logger.Errorw("failed to create handler", err)
 		return err
-	}
-	h, err := handler.NewHandler(conf, bus, ioClient)
-	if err != nil {
-		if errors.IsFatal(err) {
-			// service will send info update and shut down
-			logger.Errorw("fatal error", err)
-			return err
-		} else {
-			// update sent by handler
-			return nil
-		}
 	}
 
 	go func() {
@@ -224,5 +204,6 @@ func runHandler(c *cli.Context) error {
 		h.Kill()
 	}()
 
-	return h.Run()
+	h.Run()
+	return nil
 }

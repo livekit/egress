@@ -16,6 +16,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/livekit/protocol/logger"
@@ -63,9 +64,10 @@ type StorageConfig struct {
 }
 
 type S3Config struct {
-	AccessKey      string        `yaml:"access_key"` // (env AWS_ACCESS_KEY_ID)
-	Secret         string        `yaml:"secret"`     // (env AWS_SECRET_ACCESS_KEY)
-	Region         string        `yaml:"region"`     // (env AWS_DEFAULT_REGION)
+	AccessKey      string        `yaml:"access_key"`    // (env AWS_ACCESS_KEY_ID)
+	Secret         string        `yaml:"secret"`        // (env AWS_SECRET_ACCESS_KEY)
+	SessionToken   string        `yaml:"session_token"` // (env AWS_SESSION_TOKEN)
+	Region         string        `yaml:"region"`        // (env AWS_DEFAULT_REGION)
 	Endpoint       string        `yaml:"endpoint"`
 	Bucket         string        `yaml:"bucket"`
 	ForcePathStyle bool          `yaml:"force_path_style"`
@@ -110,16 +112,20 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 		c.Logging.Level = c.LogLevel
 	}
 
-	var gstDebug string
+	var gstDebug []string
 	switch c.Logging.Level {
 	case "debug":
-		gstDebug = "3"
+		gstDebug = []string{"3"}
 	case "info", "warn":
-		gstDebug = "2"
+		gstDebug = []string{"2"}
 	case "error":
-		gstDebug = "1"
+		gstDebug = []string{"1"}
 	}
-	if err := os.Setenv("GST_DEBUG", gstDebug); err != nil {
+	gstDebug = append(gstDebug,
+		"rtmpclient:4",
+		"srtlib:1",
+	)
+	if err := os.Setenv("GST_DEBUG", strings.Join(gstDebug, ",")); err != nil {
 		return err
 	}
 

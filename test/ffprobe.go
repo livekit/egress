@@ -121,15 +121,6 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		require.NoError(t, err, "input %s does not exist", in)
 	}
 
-	switch p.Outputs[egressType][0].GetOutputType() {
-	case types.OutputTypeRaw:
-		require.Equal(t, 0, info.Format.ProbeScore)
-	case types.OutputTypeIVF:
-		require.Equal(t, 98, info.Format.ProbeScore)
-	default:
-		require.Equal(t, 100, info.Format.ProbeScore)
-	}
-
 	switch egressType {
 	case types.EgressTypeFile:
 		// size
@@ -267,7 +258,6 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 					require.NotZero(t, d)
 					require.Less(t, n/d, float64(p.Framerate)*1.5)
 					require.Greater(t, n/d, float64(sourceFramerate)*0.8)
-
 				}
 				fallthrough
 

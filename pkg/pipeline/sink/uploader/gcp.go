@@ -19,16 +19,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"syscall"
-	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/googleapis/gax-go/v2"
-	"google.golang.org/api/googleapi"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -36,7 +33,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-const gcpTimeout = time.Minute
+const storageScope = "https://www.googleapis.com/auth/devstorage.read_write"
 
 type GCPUploader struct {
 	conf   *livekit.GCPUpload
@@ -50,27 +47,16 @@ func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 
 	var opts []option.ClientOption
 	if conf.Credentials != "" {
-		opts = append(opts, option.WithCredentialsJSON([]byte(conf.Credentials)))
+		jwtConfig, err := google.JWTConfigFromJSON([]byte(conf.Credentials), storageScope)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, option.WithTokenSource(jwtConfig.TokenSource(context.Background())))
 	}
 
 	defaultTransport := http.DefaultTransport.(*http.Transport)
 	transportClone := defaultTransport.Clone()
 
-	// override default transport
-	defaultTransport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		return (&net.Dialer{
-			Timeout:       time.Second * 30,
-			KeepAlive:     time.Second * 30,
-			FallbackDelay: -1,
-			ControlContext: func(ctx context.Context, network, address string, c syscall.RawConn) error {
-				// force ipv4 to avoid "service not available in your location, forbidden" errors from Google
-				if network == "tcp6" {
-					return errors.New("tcp6 disabled")
-				}
-				return nil
-			},
-		}).DialContext(ctx, network, addr)
-	}
 	if conf.Proxy != nil {
 		proxyUrl, err := url.Parse(conf.Proxy.Url)
 		if err != nil {
@@ -99,7 +85,7 @@ func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {
 	file, err := os.Open(localFilepath)
 	if err != nil {
-		return "", 0, wrap("GCP", err)
+		return "", 0, errors.ErrUploadFailed("GCP", err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -107,19 +93,7 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 
 	stat, err := file.Stat()
 	if err != nil {
-		return "", 0, wrap("GCP", err)
-	}
-
-	// In case where the total amount of data to upload is larger than googleapi.DefaultUploadChunkSize, each upload request will have a timeout of
-	// ChunkRetryDeadline, which is 32s by default. If the request payload is smaller than googleapi.DefaultUploadChunkSize, use a context deadline
-	// to apply the same timeout
-	var ctx context.Context
-	if stat.Size() <= googleapi.DefaultUploadChunkSize {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), gcpTimeout)
-		defer cancel()
-	} else {
-		ctx = context.Background()
+		return "", 0, errors.ErrUploadFailed("GCP", err)
 	}
 
 	wc := u.client.Bucket(u.conf.Bucket).Object(storageFilepath).Retryer(
@@ -128,16 +102,17 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 			Max:        maxDelay,
 			Multiplier: 2,
 		}),
+		storage.WithMaxAttempts(maxRetries),
 		storage.WithPolicy(storage.RetryAlways),
-	).NewWriter(ctx)
-	wc.ChunkRetryDeadline = gcpTimeout
+	).NewWriter(context.Background())
+	wc.ChunkRetryDeadline = 0
 
 	if _, err = io.Copy(wc, file); err != nil {
-		return "", 0, wrap("GCP", err)
+		return "", 0, errors.ErrUploadFailed("GCP", err)
 	}
 
 	if err = wc.Close(); err != nil {
-		return "", 0, wrap("GCP", err)
+		return "", 0, errors.ErrUploadFailed("GCP", err)
 	}
 
 	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", u.conf.Bucket, storageFilepath), stat.Size(), nil

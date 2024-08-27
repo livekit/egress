@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
@@ -30,6 +32,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
@@ -39,22 +42,51 @@ const (
 	getBucketLocationRegion = "us-east-1"
 )
 
-// CustomRetryer wraps the SDK's built in DefaultRetryer adding additional
+// S3Retryer wraps the SDK's built in DefaultRetryer adding additional
 // custom features. Namely, to always retry.
-type CustomRetryer struct {
+type S3Retryer struct {
 	client.DefaultRetryer
 }
 
 // ShouldRetry overrides the SDK's built in DefaultRetryer because the PUTs for segments/playlists are always idempotent
-func (r CustomRetryer) ShouldRetry(req *request.Request) bool {
-	// if the request failed due to a 401 or 403, don't retry
-	if req.HTTPResponse.StatusCode == http.StatusUnauthorized || req.HTTPResponse.StatusCode == http.StatusForbidden {
-		return false
-	}
+func (r S3Retryer) ShouldRetry(_ *request.Request) bool {
 	return true
 }
 
+// S3Logger only logs aws messages on upload failure
+type S3Logger struct {
+	mu   sync.Mutex
+	msgs []string
+	idx  int
+}
+
+func (l *S3Logger) Log(args ...interface{}) {
+	var sb strings.Builder
+	sb.WriteString("aws sdk:")
+	for range len(args) {
+		sb.WriteString(" %v")
+	}
+
+	l.mu.Lock()
+	l.msgs[l.idx%len(l.msgs)] = fmt.Sprintf(sb.String(), args...)
+	l.idx++
+	l.mu.Unlock()
+}
+
+func (l *S3Logger) PrintLogs() {
+	l.mu.Lock()
+	size := len(l.msgs)
+	for range size {
+		if msg := l.msgs[l.idx%size]; msg != "" {
+			logger.Debugw(msg)
+		}
+		l.idx++
+	}
+	l.mu.Unlock()
+}
+
 type S3Uploader struct {
+	mu                 sync.Mutex
 	awsConfig          *aws.Config
 	bucket             *string
 	metadata           map[string]*string
@@ -64,7 +96,7 @@ type S3Uploader struct {
 
 func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 	awsConfig := &aws.Config{
-		Retryer: &CustomRetryer{
+		Retryer: &S3Retryer{
 			DefaultRetryer: client.DefaultRetryer{
 				NumMaxRetries:    conf.MaxRetries,
 				MaxRetryDelay:    conf.MaxRetryDelay,
@@ -74,15 +106,16 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 			},
 		},
 		S3ForcePathStyle: aws.Bool(conf.ForcePathStyle),
-		LogLevel:         aws.LogLevel(conf.AwsLogLevel),
+		LogLevel:         &conf.AwsLogLevel,
 	}
+
 	logger.Debugw("setting S3 config",
 		"maxRetries", conf.MaxRetries,
 		"maxDelay", conf.MaxRetryDelay,
 		"minDelay", conf.MinRetryDelay,
 	)
 	if conf.AccessKey != "" && conf.Secret != "" {
-		awsConfig.Credentials = credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, "")
+		awsConfig.Credentials = credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, conf.SessionToken)
 	}
 	if conf.Endpoint != "" {
 		awsConfig.Endpoint = aws.String(conf.Endpoint)
@@ -103,6 +136,7 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 		}
 
 		logger.Debugw("retrieved bucket location", "bucket", u.bucket, "location", region)
+
 		u.awsConfig.Region = aws.String(region)
 	}
 
@@ -159,25 +193,33 @@ func (u *S3Uploader) getBucketLocation() (string, error) {
 	svc := s3.New(sess)
 	resp, err := svc.GetBucketLocation(req)
 	if err != nil {
-		return "", psrpc.NewErrorf(psrpc.Unknown, "failed to retrieve upload bucket region: %v", err)
+		return "", psrpc.NewErrorf(psrpc.InvalidArgument, "failed to retrieve upload bucket region: %v", err)
 	}
 
 	if resp.LocationConstraint == nil {
-		return "", psrpc.NewErrorf(psrpc.MalformedResponse, "invalid upload bucket region returned by provider. Try specifying the region manually in the request")
+		return "", psrpc.NewErrorf(psrpc.InvalidArgument, "invalid upload bucket region returned by provider. Try specifying the region manually in the request")
 	}
 
 	return *resp.LocationConstraint, nil
 }
 
 func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
+	// use a separate logger for each upload
+	l := &S3Logger{
+		msgs: make([]string, 10),
+	}
+	u.mu.Lock()
+	u.awsConfig.Logger = l
 	sess, err := session.NewSession(u.awsConfig)
+	u.awsConfig.Logger = nil
+	u.mu.Unlock()
 	if err != nil {
-		return "", 0, wrap("S3", err)
+		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
 	file, err := os.Open(localFilepath)
 	if err != nil {
-		return "", 0, wrap("S3", err)
+		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -185,7 +227,7 @@ func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType ty
 
 	stat, err := file.Stat()
 	if err != nil {
-		return "", 0, wrap("S3", err)
+		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
 	_, err = s3manager.NewUploader(sess).Upload(&s3manager.UploadInput{
@@ -198,8 +240,14 @@ func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType ty
 		ContentDisposition: u.contentDisposition,
 	})
 	if err != nil {
-		return "", 0, wrap("S3", err)
+		l.PrintLogs()
+		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
-	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", *u.bucket, storageFilepath), stat.Size(), nil
+	endpoint := "s3.amazonaws.com"
+	if u.awsConfig.Endpoint != nil {
+		endpoint = *u.awsConfig.Endpoint
+	}
+
+	return fmt.Sprintf("https://%s.%s/%s", *u.bucket, endpoint, storageFilepath), stat.Size(), nil
 }

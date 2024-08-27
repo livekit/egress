@@ -15,12 +15,15 @@
 package config
 
 import (
+	"net/url"
+
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 )
+
+const StreamKeyframeInterval = 4.0
 
 type OutputConfig interface {
 	GetOutputType() types.OutputType
@@ -59,7 +62,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		}
 
 		p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
-		p.OutputCount++
+		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 		if p.VideoEnabled {
 			p.VideoEncoding = true
@@ -68,7 +71,6 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
 		if len(streams)+len(segments)+len(images) == 0 {
 			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
-			return nil
 		}
 	}
 
@@ -85,22 +87,49 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		return errors.ErrInvalidInput("multiple stream outputs")
 	}
 	if stream != nil {
-		conf, err := p.getStreamConfig(types.OutputTypeRTMP, stream.Urls)
+		var outputType types.OutputType
+		switch stream.Protocol {
+		case livekit.StreamProtocol_DEFAULT_PROTOCOL:
+			if len(stream.Urls) == 0 {
+				return errors.ErrInvalidInput("stream protocol")
+			}
+
+			parsed, err := url.Parse(stream.Urls[0])
+			if err != nil {
+				return errors.ErrInvalidUrl(stream.Urls[0], err.Error())
+			}
+
+			var ok bool
+			outputType, ok = types.StreamOutputTypes[parsed.Scheme]
+			if !ok {
+				return errors.ErrInvalidUrl(stream.Urls[0], "invalid protocol")
+			}
+
+		case livekit.StreamProtocol_RTMP:
+			outputType = types.OutputTypeRTMP
+
+		case livekit.StreamProtocol_SRT:
+			outputType = types.OutputTypeSRT
+		}
+
+		conf, err := p.getStreamConfig(outputType, stream.Urls)
 		if err != nil {
 			return err
 		}
 
 		p.Outputs[types.EgressTypeStream] = []OutputConfig{conf}
-		p.OutputCount += len(stream.Urls)
+		p.OutputCount.Add(int32(len(stream.Urls)))
 		if p.VideoEnabled {
 			p.VideoEncoding = true
 		}
 
-		streamInfoList := make([]*livekit.StreamInfo, 0, len(conf.StreamInfo))
-		for _, info := range conf.StreamInfo {
-			streamInfoList = append(streamInfoList, info)
-		}
+		streamInfoList := make([]*livekit.StreamInfo, 0, len(stream.Urls))
+		conf.Streams.Range(func(_, stream any) bool {
+			streamInfoList = append(streamInfoList, stream.(*Stream).StreamInfo)
+			return true
+		})
 		p.Info.StreamResults = streamInfoList
+
 		if len(files)+len(segments)+len(images) == 0 {
 			// empty stream output only valid in combination with other outputs
 			if len(stream.Urls) == 0 {
@@ -108,7 +137,6 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 			}
 
 			p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
-			return nil
 		}
 	}
 
@@ -131,7 +159,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		}
 
 		p.Outputs[types.EgressTypeSegments] = []OutputConfig{conf}
-		p.OutputCount++
+		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 		if p.VideoEnabled {
 			p.VideoEncoding = true
@@ -140,15 +168,19 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		p.Info.SegmentResults = []*livekit.SegmentsInfo{conf.SegmentsInfo}
 		if len(streams)+len(files)+len(images) == 0 {
 			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
-			return nil
 		}
 	}
 
 	if segmentConf := p.Outputs[types.EgressTypeSegments]; segmentConf != nil {
+		if stream != nil && p.KeyFrameInterval > 0 {
+			// segment duration must match keyframe interval - use the lower of the two
+			conf := segmentConf[0].(*SegmentConfig)
+			conf.SegmentDuration = min(int(p.KeyFrameInterval), conf.SegmentDuration)
+		}
 		p.KeyFrameInterval = 0
 	} else if p.KeyFrameInterval == 0 && p.Outputs[types.EgressTypeStream] != nil {
 		// default 4s for streams
-		p.KeyFrameInterval = 4
+		p.KeyFrameInterval = StreamKeyframeInterval
 	}
 
 	err := p.updateImageOutputs(images)
@@ -156,7 +188,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		return err
 	}
 
-	if p.OutputCount == 0 {
+	if p.OutputCount.Load() == 0 {
 		return errors.ErrInvalidInput("output")
 	}
 
@@ -175,7 +207,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 		p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
 
 		p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
-		p.OutputCount = 1
+		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 
 	case *livekit.TrackEgressRequest_WebsocketUrl:
@@ -184,15 +216,17 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 			return err
 		}
 
-		streamInfoList := make([]*livekit.StreamInfo, 0, len(conf.StreamInfo))
-		for _, info := range conf.StreamInfo {
-			streamInfoList = append(streamInfoList, info)
-		}
+		streamInfoList := make([]*livekit.StreamInfo, 0, 1)
+		conf.Streams.Range(func(_, stream any) bool {
+			streamInfoList = append(streamInfoList, stream.(*Stream).StreamInfo)
+			return true
+		})
+
 		p.Info.StreamResults = streamInfoList
 		p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
 
 		p.Outputs[types.EgressTypeWebsocket] = []OutputConfig{conf}
-		p.OutputCount = 1
+		p.OutputCount.Inc()
 
 	default:
 		return errors.ErrInvalidInput("output")
@@ -202,7 +236,6 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 }
 
 func (p *PipelineConfig) updateImageOutputs(images []*livekit.ImageOutput) error {
-
 	if len(images) > 0 && !p.VideoEnabled {
 		return errors.ErrInvalidInput("audio_only")
 	}
@@ -214,40 +247,11 @@ func (p *PipelineConfig) updateImageOutputs(images []*livekit.ImageOutput) error
 		}
 
 		p.Outputs[types.EgressTypeImages] = append(p.Outputs[types.EgressTypeImages], conf)
-		p.OutputCount++
+		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 
 		p.Info.ImageResults = append(p.Info.ImageResults, conf.ImagesInfo)
 	}
 
 	return nil
-}
-
-func redactEncodedOutputs(out egress.EncodedOutput) {
-	if files := out.GetFileOutputs(); len(files) == 1 {
-		redactUpload(files[0])
-	}
-	if streams := out.GetStreamOutputs(); len(streams) == 1 {
-		redactStreamKeys(streams[0])
-	}
-	if segments := out.GetSegmentOutputs(); len(segments) == 1 {
-		redactUpload(segments[0])
-	}
-	if o, ok := out.(egress.EncodedOutputDeprecated); ok {
-		if file := o.GetFile(); file != nil {
-			redactUpload(file)
-		} else if stream := o.GetStream(); stream != nil {
-			redactStreamKeys(stream)
-		} else if segment := o.GetSegments(); segment != nil {
-			redactUpload(segment)
-		}
-	}
-}
-
-func redactStreamKeys(stream *livekit.StreamOutput) {
-	for i, url := range stream.Urls {
-		if redacted, ok := utils.RedactStreamKey(url); ok {
-			stream.Urls[i] = redacted
-		}
-	}
 }

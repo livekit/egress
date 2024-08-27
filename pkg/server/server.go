@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package service
+package server
 
 import (
 	"encoding/json"
@@ -22,58 +22,62 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
-	dto "github.com/prometheus/client_model/go"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
+	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/version"
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/psrpc"
 )
 
-type Service struct {
+type Server struct {
 	ipc.UnimplementedEgressServiceServer
 
-	*stats.Monitor
+	conf *config.ServiceConfig
 
-	conf             *config.ServiceConfig
+	*service.ProcessManager
+	*service.MetricsService
+	*service.DebugService
+	monitor *stats.Monitor
+
 	psrpcServer      rpc.EgressInternalServer
 	ipcServiceServer *grpc.Server
-	ioClient         rpc.IOInfoClient
 	promServer       *http.Server
+	ioClient         rpc.IOInfoClient
 
-	mu             sync.RWMutex
-	activeHandlers map[string]*Process
-	pendingMetrics []*dto.MetricFamily
-
-	shutdown core.Fuse
+	activeRequests atomic.Int32
+	terminating    core.Fuse
+	shutdown       core.Fuse
 }
 
-func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service, error) {
-	s := &Service{
-		Monitor:          stats.NewMonitor(conf),
+func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient rpc.IOInfoClient) (*Server, error) {
+	pm := service.NewProcessManager()
+
+	s := &Server{
 		conf:             conf,
+		ProcessManager:   pm,
+		MetricsService:   service.NewMetricsService(pm),
+		DebugService:     service.NewDebugService(pm),
 		ipcServiceServer: grpc.NewServer(),
 		ioClient:         ioClient,
-		activeHandlers:   make(map[string]*Process),
 	}
 
-	tmpDir := path.Join(os.TempDir(), conf.NodeID)
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+	monitor, err := stats.NewMonitor(conf, s)
+	if err != nil {
 		return nil, err
 	}
+	s.monitor = monitor
 
-	ipc.RegisterEgressServiceServer(s.ipcServiceServer, s)
-	if err := ipc.StartServiceListener(s.ipcServiceServer, tmpDir); err != nil {
-		return nil, err
+	if conf.DebugHandlerPort > 0 {
+		s.StartDebugHandlers(conf.DebugHandlerPort)
 	}
 
 	if conf.PrometheusPort > 0 {
@@ -81,18 +85,7 @@ func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service
 			Addr:    fmt.Sprintf(":%d", conf.PrometheusPort),
 			Handler: s.PromHandler(),
 		}
-	}
 
-	if err := s.Start(s.conf,
-		s.promIsIdle,
-		s.promCanAcceptRequest,
-		s.promIsDisabled,
-		s.killProcess,
-	); err != nil {
-		return nil, err
-	}
-
-	if s.promServer != nil {
 		promListener, err := net.Listen("tcp", s.promServer.Addr)
 		if err != nil {
 			return nil, err
@@ -102,14 +95,29 @@ func NewService(conf *config.ServiceConfig, ioClient rpc.IOInfoClient) (*Service
 		}()
 	}
 
+	tmpDir := path.Join(os.TempDir(), s.conf.NodeID)
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return nil, err
+	}
+
+	ipc.RegisterEgressServiceServer(s.ipcServiceServer, s)
+	if err := ipc.StartServiceListener(s.ipcServiceServer, tmpDir); err != nil {
+		return nil, err
+	}
+
+	psrpcServer, err := rpc.NewEgressInternalServer(s, bus)
+	if err != nil {
+		return nil, err
+	}
+	if err = psrpcServer.RegisterListActiveEgressTopic(""); err != nil {
+		return nil, err
+	}
+	s.psrpcServer = psrpcServer
+
 	return s, nil
 }
 
-func (s *Service) Register(psrpcServer rpc.EgressInternalServer) {
-	s.psrpcServer = psrpcServer
-}
-
-func (s *Service) StartTemplatesServer(fs fs.FS) error {
+func (s *Server) StartTemplatesServer(fs fs.FS) error {
 	if s.conf.TemplatePort == 0 {
 		logger.Debugw("templates server disabled")
 		return nil
@@ -129,11 +137,7 @@ func (s *Service) StartTemplatesServer(fs fs.FS) error {
 	return nil
 }
 
-func (s *Service) RegisterListEgress(topic string) error {
-	return s.psrpcServer.RegisterListActiveEgressTopic(topic)
-}
-
-func (s *Service) Run() error {
+func (s *Server) Run() error {
 	logger.Debugw("starting service", "version", version.Version)
 
 	if err := s.psrpcServer.RegisterStartEgressTopic(s.conf.ClusterID); err != nil {
@@ -144,32 +148,36 @@ func (s *Service) Run() error {
 	<-s.shutdown.Watch()
 	logger.Infow("shutting down")
 
+	s.Drain()
 	return nil
 }
 
-func (s *Service) Reset() {
-	if !s.shutdown.IsBroken() {
-		s.Stop(false)
-	}
-
-	s.shutdown = core.Fuse{}
-}
-
-func (s *Service) Status() ([]byte, error) {
+func (s *Server) Status() ([]byte, error) {
 	info := map[string]interface{}{
-		"CpuLoad": s.GetCPULoad(),
+		"CpuLoad": s.monitor.GetAvailableCPU(),
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.GetStatus(info)
 
-	for _, h := range s.activeHandlers {
-		info[h.req.EgressId] = h.req.Request
-	}
 	return json.Marshal(info)
 }
 
-func (s *Service) Stop(kill bool) {
+func (s *Server) IsIdle() bool {
+	return s.activeRequests.Load() == 0
+}
+
+func (s *Server) IsDisabled() bool {
+	return s.shutdown.IsBroken()
+}
+
+func (s *Server) IsTerminating() bool {
+	return s.terminating.IsBroken()
+}
+
+func (s *Server) Shutdown(terminating, kill bool) {
+	if terminating {
+		s.terminating.Break()
+	}
 	s.shutdown.Once(func() {
 		s.psrpcServer.DeregisterStartEgressTopic(s.conf.ClusterID)
 	})
@@ -178,34 +186,11 @@ func (s *Service) Stop(kill bool) {
 	}
 }
 
-func (s *Service) KillAll() {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, h := range s.activeHandlers {
-		h.kill()
-	}
-}
-
-func (s *Service) killProcess(egressID string, maxUsage float64) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if h, ok := s.activeHandlers[egressID]; ok {
-		logger.Errorw("killing egress", errors.ErrCPUExhausted, "egressID", egressID, "usage", maxUsage)
-		now := time.Now().UnixNano()
-		h.info.Status = livekit.EgressStatus_EGRESS_FAILED
-		h.info.Error = errors.ErrCPUExhausted.Error()
-		h.info.UpdatedAt = now
-		h.info.EndedAt = now
-		h.kill()
-	}
-}
-
-func (s *Service) Close() {
-	for s.GetRequestCount() > 0 {
+func (s *Server) Drain() {
+	for !s.IsIdle() {
 		time.Sleep(time.Second)
 	}
+
 	logger.Infow("closing server")
 	s.psrpcServer.Shutdown()
 }

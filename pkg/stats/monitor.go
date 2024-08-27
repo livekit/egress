@@ -31,18 +31,34 @@ import (
 	"github.com/livekit/protocol/utils/hwstats"
 )
 
+const (
+	cpuHoldDuration      = time.Second * 30
+	defaultKillThreshold = 0.95
+	minKillDuration      = 10
+)
+
+type Service interface {
+	IsIdle() bool
+	IsDisabled() bool
+	IsTerminating() bool
+	KillProcess(string, float64)
+}
+
 type Monitor struct {
+	nodeID        string
+	clusterID     string
 	cpuCostConfig *config.CPUCostConfig
 
 	promCPULoad  prometheus.Gauge
 	requestGauge *prometheus.GaugeVec
 
-	cpuStats *hwstats.CPUStats
-	requests atomic.Int32
+	svc         Service
+	cpuStats    *hwstats.CPUStats
+	requests    atomic.Int32
+	webRequests atomic.Int32
 
 	mu              sync.Mutex
 	highCPUDuration int
-	killProcess     func(string, float64)
 	pending         map[string]*processStats
 	procStats       map[int]*processStats
 }
@@ -59,80 +75,32 @@ type processStats struct {
 	maxCPU     float64
 }
 
-const (
-	cpuHoldDuration      = time.Second * 30
-	defaultKillThreshold = 0.95
-	minKillDuration      = 10
-)
-
-func NewMonitor(conf *config.ServiceConfig) *Monitor {
-	return &Monitor{
+func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
+	m := &Monitor{
+		nodeID:        conf.NodeID,
+		clusterID:     conf.ClusterID,
 		cpuCostConfig: conf.CPUCostConfig,
+		svc:           svc,
 		pending:       make(map[string]*processStats),
 		procStats:     make(map[int]*processStats),
 	}
-}
-
-func (m *Monitor) Start(
-	conf *config.ServiceConfig,
-	isIdle func() float64,
-	canAcceptRequest func() float64,
-	isDisabled func() float64,
-	killProcess func(string, float64),
-) error {
-	m.killProcess = killProcess
 
 	procStats, err := hwstats.NewProcCPUStats(m.updateEgressStats)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	m.cpuStats = procStats
 
-	if err = m.checkCPUConfig(); err != nil {
-		return err
+	if err = m.validateCPUConfig(); err != nil {
+		return nil, err
 	}
 
-	promNodeAvailable := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "available",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
-	}, isIdle)
+	m.initPrometheus()
 
-	promCanAcceptRequest := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "can_accept_request",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
-	}, canAcceptRequest)
-
-	promIsDisabled := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "is_disabled",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
-	}, isDisabled)
-
-	m.promCPULoad = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "node",
-		Name:        "cpu_load",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "node_type": "EGRESS", "cluster_id": conf.ClusterID},
-	})
-
-	m.requestGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "requests",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
-	}, []string{"type"})
-
-	prometheus.MustRegister(promNodeAvailable, promCanAcceptRequest, promIsDisabled, m.promCPULoad, m.requestGauge)
-
-	return nil
+	return m, nil
 }
 
-func (m *Monitor) checkCPUConfig() error {
+func (m *Monitor) validateCPUConfig() error {
 	requirements := []float64{
 		m.cpuCostConfig.RoomCompositeCpuCost,
 		m.cpuCostConfig.AudioRoomCompositeCpuCost,
@@ -171,12 +139,114 @@ func (m *Monitor) checkCPUConfig() error {
 	return nil
 }
 
-func (m *Monitor) GetCPULoad() float64 {
-	return (m.cpuStats.NumCPU() - m.cpuStats.GetCPUIdle()) / m.cpuStats.NumCPU() * 100
+func (m *Monitor) CanAcceptWebRequest() bool {
+	return m.webRequests.Load() < m.cpuCostConfig.MaxConcurrentWeb
 }
 
-func (m *Monitor) GetRequestCount() int {
-	return int(m.requests.Load())
+func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
+	m.mu.Lock()
+	fields, canAccept := m.canAcceptRequestLocked(req)
+	m.mu.Unlock()
+
+	logger.Debugw("cpu check", fields...)
+	return canAccept
+}
+
+func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interface{}, bool) {
+	total, available, pending, used := m.getCPUUsageLocked()
+	fields := []interface{}{
+		"total", total,
+		"available", available,
+		"pending", pending,
+		"used", used,
+		"activeRequests", m.requests.Load(),
+		"activeWeb", m.webRequests.Load(),
+	}
+
+	var accept bool
+	var required float64
+	switch r := req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite:
+		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+			return fields, false
+		}
+		if r.RoomComposite.AudioOnly {
+			required = m.cpuCostConfig.AudioRoomCompositeCpuCost
+		} else {
+			required = m.cpuCostConfig.RoomCompositeCpuCost
+		}
+	case *rpc.StartEgressRequest_Web:
+		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+			return fields, false
+		}
+		if r.Web.AudioOnly {
+			required = m.cpuCostConfig.AudioWebCpuCost
+		} else {
+			required = m.cpuCostConfig.WebCpuCost
+		}
+	case *rpc.StartEgressRequest_Participant:
+		required = m.cpuCostConfig.ParticipantCpuCost
+	case *rpc.StartEgressRequest_TrackComposite:
+		required = m.cpuCostConfig.TrackCompositeCpuCost
+	case *rpc.StartEgressRequest_Track:
+		required = m.cpuCostConfig.TrackCpuCost
+	}
+	accept = available >= required
+
+	fields = append(fields,
+		"required", required,
+		"canAccept", accept,
+	)
+
+	return fields, accept
+}
+
+func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.pending[req.EgressId] != nil {
+		return errors.ErrEgressAlreadyExists
+	}
+	if _, ok := m.canAcceptRequestLocked(req); !ok {
+		logger.Warnw("can not accept request", nil)
+		return errors.ErrNotEnoughCPU
+	}
+
+	m.requests.Inc()
+	var cpuHold float64
+	switch r := req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite:
+		m.webRequests.Inc()
+		if r.RoomComposite.AudioOnly {
+			cpuHold = m.cpuCostConfig.AudioRoomCompositeCpuCost
+		} else {
+			cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
+		}
+	case *rpc.StartEgressRequest_Web:
+		m.webRequests.Inc()
+		if r.Web.AudioOnly {
+			cpuHold = m.cpuCostConfig.AudioWebCpuCost
+		} else {
+			cpuHold = m.cpuCostConfig.WebCpuCost
+		}
+	case *rpc.StartEgressRequest_Participant:
+		cpuHold = m.cpuCostConfig.ParticipantCpuCost
+	case *rpc.StartEgressRequest_TrackComposite:
+		cpuHold = m.cpuCostConfig.TrackCompositeCpuCost
+	case *rpc.StartEgressRequest_Track:
+		cpuHold = m.cpuCostConfig.TrackCpuCost
+	}
+
+	ps := &processStats{
+		egressID:     req.EgressId,
+		pendingUsage: cpuHold,
+		allowedUsage: cpuHold,
+	}
+	time.AfterFunc(cpuHoldDuration, func() { ps.pendingUsage = 0 })
+	m.pending[req.EgressId] = ps
+
+	return nil
 }
 
 func (m *Monitor) UpdatePID(egressID string, pid int) {
@@ -186,12 +256,115 @@ func (m *Monitor) UpdatePID(egressID string, pid int) {
 	ps := m.pending[egressID]
 	delete(m.pending, egressID)
 
+	if ps == nil {
+		logger.Warnw("missing pending procStats", nil, "egressID", egressID)
+		ps = &processStats{
+			egressID:     egressID,
+			allowedUsage: m.cpuCostConfig.WebCpuCost,
+		}
+	}
+
 	if existing := m.procStats[pid]; existing != nil {
 		ps.maxCPU = existing.maxCPU
 		ps.totalCPU = existing.totalCPU
 		ps.cpuCounter = existing.cpuCounter
 	}
 	m.procStats[pid] = ps
+}
+
+func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.pending, req.EgressId)
+	m.requests.Dec()
+	switch req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite, *rpc.StartEgressRequest_Web:
+		m.webRequests.Dec()
+	}
+}
+
+func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
+	switch req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite:
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Add(1)
+	case *rpc.StartEgressRequest_Web:
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Add(1)
+	case *rpc.StartEgressRequest_Participant:
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeParticipant}).Add(1)
+	case *rpc.StartEgressRequest_TrackComposite:
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Add(1)
+	case *rpc.StartEgressRequest_Track:
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrack}).Add(1)
+	}
+}
+
+func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	switch req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite:
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Sub(1)
+		m.webRequests.Dec()
+	case *rpc.StartEgressRequest_Web:
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
+		m.webRequests.Dec()
+	case *rpc.StartEgressRequest_Participant:
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeParticipant}).Sub(1)
+	case *rpc.StartEgressRequest_TrackComposite:
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Sub(1)
+	case *rpc.StartEgressRequest_Track:
+		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrack}).Sub(1)
+	}
+
+	delete(m.pending, req.EgressId)
+	m.requests.Dec()
+
+	for pid, ps := range m.procStats {
+		if ps.egressID == req.EgressId {
+			delete(m.procStats, pid)
+			return ps.totalCPU / float64(ps.cpuCounter), ps.maxCPU
+		}
+	}
+
+	return 0, 0
+}
+
+func (m *Monitor) GetAvailableCPU() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_, available, _, _ := m.getCPUUsageLocked()
+	return available
+}
+
+func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) {
+	total = m.cpuStats.NumCPU()
+	if m.requests.Load() == 0 {
+		// if no requests, use total
+		available = total
+		return
+	}
+
+	for _, ps := range m.pending {
+		if ps.pendingUsage > ps.lastUsage {
+			pending += ps.pendingUsage
+		} else {
+			pending += ps.lastUsage
+		}
+	}
+	for _, ps := range m.procStats {
+		if ps.pendingUsage > ps.lastUsage {
+			used += ps.pendingUsage
+		} else {
+			used += ps.lastUsage
+		}
+	}
+
+	// if already running requests, cap usage at MaxCpuUtilization
+	available = total*m.cpuCostConfig.MaxCpuUtilization - pending - used
+	return
 }
 
 func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
@@ -238,176 +411,9 @@ func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
 			if m.highCPUDuration < minKillDuration {
 				return
 			}
-			m.killProcess(maxEgress, maxUsage)
+			m.svc.KillProcess(maxEgress, maxUsage)
 		}
 	}
 
 	m.highCPUDuration = 0
-}
-
-func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	return m.canAcceptRequestLocked(req)
-}
-
-func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) bool {
-	accept := false
-	total := m.cpuStats.NumCPU()
-
-	var available, pending, used float64
-	if m.requests.Load() == 0 {
-		// if no requests, use total
-		available = total
-	} else {
-		for _, ps := range m.pending {
-			if ps.pendingUsage > ps.lastUsage {
-				pending += ps.pendingUsage
-			} else {
-				pending += ps.lastUsage
-			}
-		}
-		for _, ps := range m.procStats {
-			if ps.pendingUsage > ps.lastUsage {
-				used += ps.pendingUsage
-			} else {
-				used += ps.lastUsage
-			}
-		}
-
-		// if already running requests, cap usage at MaxCpuUtilization
-		available = total*m.cpuCostConfig.MaxCpuUtilization - pending - used
-	}
-
-	var required float64
-	switch r := req.Request.(type) {
-	case *rpc.StartEgressRequest_RoomComposite:
-		if r.RoomComposite.AudioOnly {
-			required = m.cpuCostConfig.AudioRoomCompositeCpuCost
-		} else {
-			required = m.cpuCostConfig.RoomCompositeCpuCost
-		}
-	case *rpc.StartEgressRequest_Web:
-		if r.Web.AudioOnly {
-			required = m.cpuCostConfig.AudioWebCpuCost
-		} else {
-			required = m.cpuCostConfig.WebCpuCost
-		}
-	case *rpc.StartEgressRequest_Participant:
-		required = m.cpuCostConfig.ParticipantCpuCost
-	case *rpc.StartEgressRequest_TrackComposite:
-		required = m.cpuCostConfig.TrackCompositeCpuCost
-	case *rpc.StartEgressRequest_Track:
-		required = m.cpuCostConfig.TrackCpuCost
-	}
-	accept = available >= required
-
-	logger.Debugw("cpu check",
-		"total", total,
-		"pending", pending,
-		"used", used,
-		"required", required,
-		"available", available,
-		"activeRequests", m.requests.Load(),
-		"canAccept", accept,
-	)
-
-	return accept
-}
-
-func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if !m.canAcceptRequestLocked(req) {
-		return errors.ErrResourceExhausted
-	}
-
-	m.requests.Inc()
-
-	var cpuHold float64
-	switch r := req.Request.(type) {
-	case *rpc.StartEgressRequest_RoomComposite:
-		if r.RoomComposite.AudioOnly {
-			cpuHold = m.cpuCostConfig.AudioRoomCompositeCpuCost
-		} else {
-			cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
-		}
-	case *rpc.StartEgressRequest_Web:
-		if r.Web.AudioOnly {
-			cpuHold = m.cpuCostConfig.AudioWebCpuCost
-		} else {
-			cpuHold = m.cpuCostConfig.WebCpuCost
-		}
-	case *rpc.StartEgressRequest_Participant:
-		cpuHold = m.cpuCostConfig.ParticipantCpuCost
-	case *rpc.StartEgressRequest_TrackComposite:
-		cpuHold = m.cpuCostConfig.TrackCompositeCpuCost
-	case *rpc.StartEgressRequest_Track:
-		cpuHold = m.cpuCostConfig.TrackCpuCost
-	}
-
-	ps := &processStats{
-		egressID:     req.EgressId,
-		pendingUsage: cpuHold,
-		allowedUsage: cpuHold,
-	}
-	time.AfterFunc(cpuHoldDuration, func() { ps.pendingUsage = 0 })
-	m.pending[req.EgressId] = ps
-
-	return nil
-}
-
-func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
-	switch req.Request.(type) {
-	case *rpc.StartEgressRequest_RoomComposite:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Add(1)
-	case *rpc.StartEgressRequest_Web:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Add(1)
-	case *rpc.StartEgressRequest_Participant:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeParticipant}).Add(1)
-	case *rpc.StartEgressRequest_TrackComposite:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Add(1)
-	case *rpc.StartEgressRequest_Track:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrack}).Add(1)
-	}
-}
-
-func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	switch req.Request.(type) {
-	case *rpc.StartEgressRequest_RoomComposite:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Sub(1)
-	case *rpc.StartEgressRequest_Web:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
-	case *rpc.StartEgressRequest_Participant:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeParticipant}).Sub(1)
-	case *rpc.StartEgressRequest_TrackComposite:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Sub(1)
-	case *rpc.StartEgressRequest_Track:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrack}).Sub(1)
-	}
-
-	delete(m.pending, req.EgressId)
-	m.requests.Dec()
-
-	for pid, ps := range m.procStats {
-		if ps.egressID == req.EgressId {
-			delete(m.procStats, pid)
-			return ps.totalCPU / float64(ps.cpuCounter), ps.maxCPU
-		}
-	}
-
-	return 0, 0
-}
-
-func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	delete(m.pending, req.EgressId)
-	m.requests.Dec()
 }

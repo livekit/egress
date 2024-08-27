@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { useVisualStableUpdate, VideoTrack } from '@livekit/components-react';
+import { TrackReference, useVisualStableUpdate, VideoTrack } from '@livekit/components-react';
 import { LayoutProps } from './common';
 
 const SingleSpeakerLayout = ({ tracks: references }: LayoutProps) => {
@@ -22,7 +22,7 @@ const SingleSpeakerLayout = ({ tracks: references }: LayoutProps) => {
   if (sortedReferences.length === 0) {
     return null;
   }
-  return <VideoTrack {...sortedReferences[0]} />;
+  return <VideoTrack trackRef={sortedReferences[0] as TrackReference} />;
 };
 
 export default SingleSpeakerLayout;

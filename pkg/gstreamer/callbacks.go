@@ -16,7 +16,6 @@ package gstreamer
 
 import (
 	"sync"
-	"time"
 
 	"github.com/go-gst/go-gst/gst"
 
@@ -36,8 +35,9 @@ type Callbacks struct {
 	// source callbacks
 	onTrackAdded   []func(*config.TrackSource)
 	onTrackMuted   []func(string)
-	onTrackUnmuted []func(string, time.Duration)
+	onTrackUnmuted []func(string)
 	onTrackRemoved []func(string)
+	onEOSSent      func()
 
 	// internal
 	addBin    func(bin *gst.Bin)
@@ -110,19 +110,19 @@ func (c *Callbacks) OnTrackMuted(trackID string) {
 	}
 }
 
-func (c *Callbacks) AddOnTrackUnmuted(f func(string, time.Duration)) {
+func (c *Callbacks) AddOnTrackUnmuted(f func(string)) {
 	c.mu.Lock()
 	c.onTrackUnmuted = append(c.onTrackUnmuted, f)
 	c.mu.Unlock()
 }
 
-func (c *Callbacks) OnTrackUnmuted(trackID string, pts time.Duration) {
+func (c *Callbacks) OnTrackUnmuted(trackID string) {
 	c.mu.RLock()
 	onTrackUnmuted := c.onTrackUnmuted
 	c.mu.RUnlock()
 
 	for _, f := range onTrackUnmuted {
-		f(trackID, pts)
+		f(trackID)
 	}
 }
 
@@ -139,5 +139,21 @@ func (c *Callbacks) OnTrackRemoved(trackID string) {
 
 	for _, f := range onTrackRemoved {
 		f(trackID)
+	}
+}
+
+func (c *Callbacks) SetOnEOSSent(f func()) {
+	c.mu.Lock()
+	c.onEOSSent = f
+	c.mu.Unlock()
+}
+
+func (c *Callbacks) OnEOSSent() {
+	c.mu.RLock()
+	onEOSSent := c.onEOSSent
+	c.mu.RUnlock()
+
+	if onEOSSent != nil {
+		onEOSSent()
 	}
 }
