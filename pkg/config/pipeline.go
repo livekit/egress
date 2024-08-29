@@ -160,11 +160,13 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	}
 
 	// start with defaults
+	now := time.Now().UnixNano()
 	p.Info = &info.EgressInfo{
 		EgressId:  request.EgressId,
 		RoomId:    request.RoomId,
 		Status:    livekit.EgressStatus_EGRESS_STARTING,
-		UpdatedAt: time.Now().UnixNano(),
+		StartedAt: now,
+		UpdatedAt: now,
 	}
 	p.AudioConfig = AudioConfig{
 		AudioBitrate:   128,

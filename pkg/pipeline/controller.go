@@ -197,7 +197,6 @@ func (c *Controller) Run(ctx context.Context) *info.EgressInfo {
 	ctx, span := tracer.Start(ctx, "Pipeline.Run")
 	defer span.End()
 
-	c.Info.StartedAt = time.Now().UnixNano()
 	defer c.Close()
 
 	// session limit timer
@@ -380,6 +379,8 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 		}
 
 		c.Info.Details = fmt.Sprintf("end reason: %s", reason)
+		logger.Debugw("stopping pipeline", "reason", reason)
+
 		switch c.Info.Status {
 		case livekit.EgressStatus_EGRESS_STARTING:
 			c.Info.SetAborted(info.MsgStoppedBeforeStarted)
@@ -392,29 +393,30 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ENDING)
 			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
-			c.sendEOS()
+			c.sendEOS(reason)
 
 		case livekit.EgressStatus_EGRESS_ENDING:
 			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
-			c.sendEOS()
+			c.sendEOS(reason)
 
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
-			c.sendEOS()
+			c.sendEOS(reason)
 		}
 
 		if c.SourceType == types.SourceTypeWeb {
-			c.updateDuration(c.src.GetEndedAt())
+			// web source uses the current time
+			c.updateEndTime()
 		}
 	})
 }
 
-func (c *Controller) sendEOS() {
+func (c *Controller) sendEOS(reason string) {
 	c.eosTimer = time.AfterFunc(time.Second*30, func() {
 		c.OnError(errors.ErrPipelineFrozen)
 	})
 	go func() {
-		logger.Debugw("sending EOS")
 		c.p.SendEOS()
+		logger.Debugw("eos sent")
 	}()
 }
 
@@ -432,7 +434,8 @@ func (c *Controller) OnError(err error) {
 
 func (c *Controller) Close() {
 	if c.SourceType == types.SourceTypeSDK || !c.eos.IsBroken() {
-		c.updateDuration(c.src.GetEndedAt())
+		// sdk source will use the timestamp of the last packet pushed to the pipeline
+		c.updateEndTime()
 	}
 
 	// update status
@@ -543,11 +546,11 @@ func (c *Controller) updateStreamStartTime(streamID string) {
 				logger.Debugw("stream started", "url", stream.RedactedUrl)
 				stream.StreamInfo.StartedAt = time.Now().UnixNano()
 				c.Info.UpdatedAt = time.Now().UnixNano()
+				c.streamUpdated(context.Background())
 				return false
 			}
 			return true
 		})
-		c.streamUpdated(context.Background())
 	}
 }
 
@@ -573,7 +576,9 @@ func (c *Controller) streamUpdated(ctx context.Context) {
 	_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
 }
 
-func (c *Controller) updateDuration(endedAt int64) {
+func (c *Controller) updateEndTime() {
+	endedAt := c.src.GetEndedAt()
+
 	for egressType, o := range c.Outputs {
 		if len(o) == 0 {
 			continue
