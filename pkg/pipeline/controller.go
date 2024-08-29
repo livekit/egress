@@ -393,14 +393,14 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ENDING)
 			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
-			c.sendEOS(reason)
+			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_ENDING:
 			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
-			c.sendEOS(reason)
+			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
-			c.sendEOS(reason)
+			c.sendEOS()
 		}
 
 		if c.SourceType == types.SourceTypeWeb {
@@ -410,7 +410,7 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 	})
 }
 
-func (c *Controller) sendEOS(reason string) {
+func (c *Controller) sendEOS() {
 	c.eosTimer = time.AfterFunc(time.Second*30, func() {
 		c.OnError(errors.ErrPipelineFrozen)
 	})
