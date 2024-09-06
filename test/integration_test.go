@@ -23,8 +23,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/server"
-	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/protocol/redis"
 	"github.com/livekit/psrpc"
 )
@@ -45,7 +45,7 @@ func TestEgress(t *testing.T) {
 	require.NoError(t, err)
 	bus := psrpc.NewRedisMessageBus(rc)
 
-	ioClient, err := service.NewIOClient(bus)
+	ioClient, err := info.NewIOClient(bus)
 	require.NoError(t, err)
 
 	svc, err := server.NewServer(r.ServiceConfig, bus, ioClient)
