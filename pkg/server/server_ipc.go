@@ -48,12 +48,11 @@ func (s *Server) HandlerUpdate(ctx context.Context, info *livekit.EgressInfo) (*
 }
 
 func (s *Server) HandlerFinished(ctx context.Context, req *ipc.HandlerFinishedRequest) (*emptypb.Empty, error) {
-	_, err := s.ioClient.UpdateEgress(ctx, req.Info)
-	if err != nil {
+	if err := s.ioClient.UpdateEgress(ctx, req.Info); err != nil {
 		logger.Errorw("failed to update egress", err)
 	}
 
-	if err = s.StoreProcessEndedMetrics(req.EgressId, req.Metrics); err != nil {
+	if err := s.StoreProcessEndedMetrics(req.EgressId, req.Metrics); err != nil {
 		logger.Errorw("failed to store ms", err)
 	}
 
