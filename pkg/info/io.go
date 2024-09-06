@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/egress"
@@ -36,7 +35,9 @@ const (
 )
 
 type IOClient interface {
-	rpc.IOInfoClient
+	CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error
+	UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error
+	UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error
 	Drain()
 }
 
@@ -67,7 +68,7 @@ func NewIOClient(bus psrpc.MessageBus) (IOClient, error) {
 	}, nil
 }
 
-func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo, opts ...psrpc.RequestOption) (*emptypb.Empty, error) {
+func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error {
 	e := &egressIOClient{
 		pending: make(chan *livekit.EgressInfo),
 	}
@@ -75,27 +76,32 @@ func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo, o
 	c.egresses[info.EgressId] = e
 	c.mu.Unlock()
 
-	_, err := c.IOInfoClient.CreateEgress(ctx, info, opts...)
-	if err != nil {
-		logger.Errorw("failed to create egress", err)
-		e.aborted.Break()
+	errChan := make(chan error, 1)
+	go func() {
+		_, err := c.IOInfoClient.CreateEgress(ctx, info)
+		if err != nil {
+			logger.Errorw("failed to create egress", err)
+			e.aborted.Break()
+			errChan <- err
 
-		c.mu.Lock()
-		delete(c.egresses, info.EgressId)
-		c.mu.Unlock()
+			c.mu.Lock()
+			delete(c.egresses, info.EgressId)
+			c.mu.Unlock()
+		} else {
+			e.created.Break()
+			errChan <- nil
+		}
+	}()
 
-		return nil, err
-	}
-
-	return &emptypb.Empty{}, nil
+	return errChan
 }
 
-func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, opts ...psrpc.RequestOption) (*emptypb.Empty, error) {
+func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error {
 	c.mu.Lock()
 	e, ok := c.egresses[info.EgressId]
 	c.mu.Unlock()
 	if !ok {
-		return nil, errors.ErrEgressNotFound
+		return errors.ErrEgressNotFound
 	}
 
 	// ensure updates are sent sequentially
@@ -106,7 +112,7 @@ func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, o
 		// egress was created, continue
 	case <-e.aborted.Watch():
 		// egress was aborted, ignore
-		return &emptypb.Empty{}, nil
+		return nil
 	}
 
 	// ensure only one thread is sending updates sequentially
@@ -117,7 +123,7 @@ func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, o
 		case update := <-e.pending:
 			var err error
 			for i := 0; i < 10; i++ {
-				_, err = c.IOInfoClient.UpdateEgress(ctx, update, opts...)
+				_, err = c.IOInfoClient.UpdateEgress(ctx, update)
 				if err == nil {
 					break
 				}
@@ -125,7 +131,7 @@ func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, o
 			}
 			if err != nil {
 				logger.Warnw("failed to update egress", err, "egressID", update.EgressId)
-				return nil, err
+				return err
 			}
 
 			requestType, outputType := egress.GetTypes(update.Request)
@@ -149,18 +155,19 @@ func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, o
 			}
 
 		default:
-			return &emptypb.Empty{}, nil
+			return nil
 		}
 	}
 }
 
-func (c *ioClient) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest, opts ...psrpc.RequestOption) (*emptypb.Empty, error) {
-	_, err := c.IOInfoClient.UpdateMetrics(ctx, req, opts...)
+func (c *ioClient) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error {
+	_, err := c.IOInfoClient.UpdateMetrics(ctx, req)
 	if err != nil {
 		logger.Errorw("failed to update ms", err)
-		return nil, err
+		return err
 	}
-	return &emptypb.Empty{}, nil
+
+	return nil
 }
 
 func (c *ioClient) Drain() {

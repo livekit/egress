@@ -35,7 +35,7 @@ func (s *Server) HandlerReady(_ context.Context, req *ipc.HandlerReadyRequest) (
 }
 
 func (s *Server) HandlerUpdate(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
-	if _, err := s.ioClient.UpdateEgress(ctx, info); err != nil {
+	if err := s.ioClient.UpdateEgress(ctx, info); err != nil {
 		logger.Errorw("failed to update egress", err)
 	}
 
