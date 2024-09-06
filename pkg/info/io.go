@@ -31,6 +31,10 @@ import (
 	"github.com/livekit/psrpc"
 )
 
+const (
+	ioTimeout = time.Second * 30
+)
+
 type IOClient interface {
 	rpc.IOInfoClient
 	Drain()
@@ -52,10 +56,11 @@ type egressIOClient struct {
 }
 
 func NewIOClient(bus psrpc.MessageBus) (IOClient, error) {
-	client, err := rpc.NewIOInfoClient(bus)
+	client, err := rpc.NewIOInfoClient(bus, psrpc.WithClientTimeout(ioTimeout))
 	if err != nil {
 		return nil, err
 	}
+
 	return &ioClient{
 		IOInfoClient: client,
 		egresses:     make(map[string]*egressIOClient),
@@ -110,9 +115,16 @@ func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo, o
 	for {
 		select {
 		case update := <-e.pending:
-			_, err := c.IOInfoClient.UpdateEgress(ctx, update, opts...)
+			var err error
+			for i := 0; i < 10; i++ {
+				_, err = c.IOInfoClient.UpdateEgress(ctx, update, opts...)
+				if err == nil {
+					break
+				}
+				time.Sleep(time.Millisecond * 100 * time.Duration(i))
+			}
 			if err != nil {
-				logger.Errorw("failed to update egress", err)
+				logger.Warnw("failed to update egress", err, "egressID", update.EgressId)
 				return nil, err
 			}
 
