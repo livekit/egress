@@ -29,8 +29,8 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/handler"
+	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/server"
-	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/version"
 	"github.com/livekit/protocol/logger"
 	lkredis "github.com/livekit/protocol/redis"
@@ -111,7 +111,7 @@ func runService(c *cli.Context) error {
 	}
 
 	bus := psrpc.NewRedisMessageBus(rc)
-	ioClient, err := service.NewIOClient(bus)
+	ioClient, err := info.NewIOClient(bus)
 	if err != nil {
 		return err
 	}
