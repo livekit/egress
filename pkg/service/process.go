@@ -181,6 +181,8 @@ func (pm *ProcessManager) AbortProcess(egressID string, err error) {
 	if h, ok := pm.activeHandlers[egressID]; ok {
 		logger.Warnw("aborting egress", err, "egressID", egressID)
 		h.kill()
+		h.closed.Break()
+		delete(pm.activeHandlers, egressID)
 	}
 }
 
