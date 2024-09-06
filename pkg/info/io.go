@@ -70,7 +70,7 @@ func NewIOClient(bus psrpc.MessageBus) (IOClient, error) {
 
 func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error {
 	e := &egressIOClient{
-		pending: make(chan *livekit.EgressInfo),
+		pending: make(chan *livekit.EgressInfo, 10),
 	}
 	c.mu.Lock()
 	c.egresses[info.EgressId] = e
