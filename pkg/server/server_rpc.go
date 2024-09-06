@@ -64,13 +64,6 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 		return nil, err
 	}
 
-	_, err = s.ioClient.CreateEgress(ctx, (*livekit.EgressInfo)(p.Info))
-	if err != nil {
-		s.monitor.EgressAborted(req)
-		s.activeRequests.Dec()
-		return nil, err
-	}
-
 	requestType, outputType := egress.GetTypes(p.Info.Request)
 	logger.Infow("request validated",
 		"egressID", req.EgressId,
@@ -82,6 +75,14 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 
 	err = s.launchProcess(req, (*livekit.EgressInfo)(p.Info))
 	if err != nil {
+		s.monitor.EgressAborted(req)
+		s.activeRequests.Dec()
+		return nil, err
+	}
+
+	_, err = s.ioClient.CreateEgress(ctx, (*livekit.EgressInfo)(p.Info))
+	if err != nil {
+		s.AbortProcess(req.EgressId, err)
 		s.monitor.EgressAborted(req)
 		s.activeRequests.Dec()
 		return nil, err

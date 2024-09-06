@@ -174,6 +174,16 @@ func (pm *ProcessManager) KillAll() {
 	}
 }
 
+func (pm *ProcessManager) AbortProcess(egressID string, err error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	if h, ok := pm.activeHandlers[egressID]; ok {
+		logger.Warnw("aborting egress", err, "egressID", egressID)
+		h.kill()
+	}
+}
+
 func (pm *ProcessManager) KillProcess(egressID string, maxUsage float64) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()

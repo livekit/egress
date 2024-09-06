@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/pkg/stats"
@@ -51,14 +52,14 @@ type Server struct {
 	psrpcServer      rpc.EgressInternalServer
 	ipcServiceServer *grpc.Server
 	promServer       *http.Server
-	ioClient         rpc.IOInfoClient
+	ioClient         info.IOClient
 
 	activeRequests atomic.Int32
 	terminating    core.Fuse
 	shutdown       core.Fuse
 }
 
-func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient rpc.IOInfoClient) (*Server, error) {
+func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.IOClient) (*Server, error) {
 	pm := service.NewProcessManager()
 
 	s := &Server{
@@ -146,9 +147,9 @@ func (s *Server) Run() error {
 
 	logger.Infow("service ready")
 	<-s.shutdown.Watch()
-	logger.Infow("shutting down")
-
+	logger.Infow("draining")
 	s.Drain()
+	logger.Infow("service stopped")
 	return nil
 }
 
@@ -191,6 +192,7 @@ func (s *Server) Drain() {
 		time.Sleep(time.Second)
 	}
 
-	logger.Infow("closing server")
 	s.psrpcServer.Shutdown()
+	logger.Infow("draining io client")
+	s.ioClient.Drain()
 }
