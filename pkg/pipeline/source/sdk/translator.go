@@ -62,7 +62,7 @@ func (t *VP8Translator) Translate(pkt *rtp.Packet) {
 
 	extPkt := &buffer.ExtPacket{
 		Packet:   pkt,
-		Arrival:  time.Now(),
+		Arrival:  time.Now().UnixNano(),
 		Payload:  vp8Packet,
 		KeyFrame: vp8Packet.IsKeyFrame,
 		VideoLayer: buffer.VideoLayer{
@@ -76,13 +76,14 @@ func (t *VP8Translator) Translate(pkt *rtp.Packet) {
 		t.vp8Munger.SetLast(extPkt)
 	} else {
 		payload := make([]byte, 1460)
-		incomingHeaderSize, outgoingHeaderSize, err := t.vp8Munger.UpdateAndGet(extPkt, false, pkt.SequenceNumber != t.lastSN+1, extPkt.Temporal, payload)
+		incomingHeaderSize, header, err := t.vp8Munger.UpdateAndGet(extPkt, false, pkt.SequenceNumber != t.lastSN+1, extPkt.Temporal)
 		if err != nil {
 			t.logger.Warnw("could not update VP8 packet", err)
 			return
 		}
-		copy(payload[outgoingHeaderSize:], extPkt.Packet.Payload[incomingHeaderSize:])
-		pkt.Payload = payload[:outgoingHeaderSize+len(extPkt.Packet.Payload)-incomingHeaderSize]
+		copy(payload, header)
+		n := copy(payload[len(header):], extPkt.Packet.Payload[incomingHeaderSize:])
+		pkt.Payload = payload[:len(header)+n]
 	}
 }
 
