@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-gst/go-gst/gst/app"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
@@ -50,7 +51,7 @@ type PipelineConfig struct {
 	VideoConfig       `yaml:"-"`
 
 	Outputs              map[types.EgressType][]OutputConfig `yaml:"-"`
-	OutputCount          int                                 `yaml:"-"`
+	OutputCount          atomic.Int32                        `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
 	Info *info.EgressInfo `yaml:"-"`
@@ -159,11 +160,13 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	}
 
 	// start with defaults
+	now := time.Now().UnixNano()
 	p.Info = &info.EgressInfo{
 		EgressId:  request.EgressId,
 		RoomId:    request.RoomId,
 		Status:    livekit.EgressStatus_EGRESS_STARTING,
-		UpdatedAt: time.Now().UnixNano(),
+		StartedAt: now,
+		UpdatedAt: now,
 	}
 	p.AudioConfig = AudioConfig{
 		AudioBitrate:   128,

@@ -64,13 +64,6 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 		return nil, err
 	}
 
-	_, err = s.ioClient.CreateEgress(ctx, (*livekit.EgressInfo)(p.Info))
-	if err != nil {
-		s.monitor.EgressAborted(req)
-		s.activeRequests.Dec()
-		return nil, err
-	}
-
 	requestType, outputType := egress.GetTypes(p.Info.Request)
 	logger.Infow("request validated",
 		"egressID", req.EgressId,
@@ -80,8 +73,10 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 		"request", p.Info.Request,
 	)
 
-	err = s.launchProcess(req, (*livekit.EgressInfo)(p.Info))
-	if err != nil {
+	errChan := s.ioClient.CreateEgress(ctx, (*livekit.EgressInfo)(p.Info))
+	s.launchProcess(req, (*livekit.EgressInfo)(p.Info))
+	if err = <-errChan; err != nil {
+		s.AbortProcess(req.EgressId, err)
 		s.monitor.EgressAborted(req)
 		s.activeRequests.Dec()
 		return nil, err
@@ -90,9 +85,11 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 	return (*livekit.EgressInfo)(p.Info), nil
 }
 
-func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.EgressInfo) error {
+func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.EgressInfo) {
 	_, span := tracer.Start(context.Background(), "Service.launchProcess")
 	defer span.End()
+
+	s.monitor.EgressStarted(req)
 
 	handlerID := utils.NewGuid("EGH_")
 	p := &config.PipelineConfig{
@@ -105,14 +102,16 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	if err != nil {
 		span.RecordError(err)
 		logger.Errorw("could not marshal config", err)
-		return err
+		s.processEnded(req, info, err)
+		return
 	}
 
 	reqString, err := protojson.Marshal(req)
 	if err != nil {
 		span.RecordError(err)
 		logger.Errorw("could not marshal request", err)
-		return err
+		s.processEnded(req, info, err)
+		return
 	}
 
 	cmd := exec.Command("egress",
@@ -125,8 +124,6 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
-	s.monitor.EgressStarted(req)
-
 	if err = s.Launch(context.Background(), handlerID, req, info, cmd, p.TmpDir); err != nil {
 		s.processEnded(req, info, err)
 	} else {
@@ -136,8 +133,6 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 			s.processEnded(req, info, err)
 		}()
 	}
-
-	return nil
 }
 
 func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressInfo, err error) {
@@ -149,15 +144,14 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 		info.Status = livekit.EgressStatus_EGRESS_FAILED
 		info.Error = "internal error"
 		info.ErrorCode = int32(http.StatusInternalServerError)
-		_, _ = s.ioClient.UpdateEgress(context.Background(), info)
-
+		_ = s.ioClient.UpdateEgress(context.Background(), info)
 		logger.Errorw("process failed, shutting down", err)
 		s.Shutdown(false, false)
 	}
 
 	avgCPU, maxCPU := s.monitor.EgressEnded(req)
 	if maxCPU > 0 {
-		_, _ = s.ioClient.UpdateMetrics(context.Background(), &rpc.UpdateMetricsRequest{
+		_ = s.ioClient.UpdateMetrics(context.Background(), &rpc.UpdateMetricsRequest{
 			Info:        info,
 			AvgCpuUsage: float32(avgCPU),
 			MaxCpuUsage: float32(maxCPU),

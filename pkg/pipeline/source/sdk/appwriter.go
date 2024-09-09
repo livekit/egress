@@ -155,6 +155,7 @@ func (w *AppWriter) start() {
 
 	// clean up
 	if w.playing.IsBroken() {
+		w.callbacks.OnEOSSent()
 		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
 			w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
 		}

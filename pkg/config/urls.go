@@ -20,83 +20,126 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/go-jose/go-jose/v3/json"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
 
-var twitchEndpoint = regexp.MustCompile("^rtmps?://.*\\.contribute\\.live-video\\.net/app/(.*)( live=1)?$")
+// rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)
+var (
+	rtmpRegexp     = regexp.MustCompile("^(rtmps?:\\/\\/)(.*\\/)(.*\\/)(\\S*)( live=1)?$")
+	twitchEndpoint = regexp.MustCompile("^rtmps?://.*\\.contribute\\.live-video\\.net/app/(.*)( live=1)?$")
+)
 
-func (o *StreamConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (string, string, error) {
-	parsed, err := url.Parse(rawUrl)
+func (o *StreamConfig) AddStream(rawUrl string, outputType types.OutputType) (*Stream, error) {
+	parsed, redacted, streamID, err := o.ValidateUrl(rawUrl, outputType)
 	if err != nil {
-		return "", "", errors.ErrInvalidUrl(rawUrl, err.Error())
+		return nil, err
 	}
-	if types.StreamOutputTypes[parsed.Scheme] != outputType {
-		return "", "", errors.ErrInvalidUrl(rawUrl, "invalid scheme")
+
+	stream := &Stream{
+		ParsedUrl:   parsed,
+		RedactedUrl: redacted,
+		StreamID:    streamID,
+		StreamInfo: &livekit.StreamInfo{
+			Url:    redacted,
+			Status: livekit.StreamInfo_ACTIVE,
+		},
+	}
+	if outputType != types.OutputTypeRTMP {
+		stream.StreamInfo.StartedAt = time.Now().UnixNano()
+	}
+	o.Streams.Store(parsed, stream)
+
+	return stream, nil
+}
+
+func (o *StreamConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (
+	parsed string, redacted string, streamID string, err error,
+) {
+	parsedUrl, err := url.Parse(rawUrl)
+	if err != nil {
+		err = errors.ErrInvalidUrl(rawUrl, err.Error())
+		return
+	}
+	if types.StreamOutputTypes[parsedUrl.Scheme] != outputType {
+		err = errors.ErrInvalidUrl(rawUrl, "invalid scheme")
+		return
 	}
 
 	switch outputType {
 	case types.OutputTypeRTMP:
-		if parsed.Scheme == "mux" {
-			rawUrl = fmt.Sprintf("rtmps://global-live.mux.com:443/app/%s", parsed.Host)
-		} else if parsed.Scheme == "twitch" {
-			rawUrl, err = o.updateTwitchURL(parsed.Host)
+		if parsedUrl.Scheme == "mux" {
+			parsed = fmt.Sprintf("rtmps://global-live.mux.com:443/app/%s", parsedUrl.Host)
+		} else if parsedUrl.Scheme == "twitch" {
+			parsed, err = o.updateTwitchURL(parsedUrl.Host)
 			if err != nil {
-				return "", "", errors.ErrInvalidUrl(rawUrl, err.Error())
+				return
 			}
 		} else if match := twitchEndpoint.FindStringSubmatch(rawUrl); len(match) > 0 {
-			updated, err := o.updateTwitchURL(match[1])
-			if err == nil {
-				rawUrl = updated
+			if updated, err := o.updateTwitchURL(match[1]); err == nil {
+				parsed = updated
 			}
+		} else {
+			parsed = rawUrl
 		}
 
-		redacted, ok := utils.RedactStreamKey(rawUrl)
+		var ok bool
+		redacted, streamID, ok = redactStreamKey(parsed)
 		if !ok {
-			return "", "", errors.ErrInvalidUrl(rawUrl, "rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)")
+			err = errors.ErrInvalidUrl(rawUrl, "rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)")
 		}
-		return rawUrl, redacted, nil
+		return
 
 	case types.OutputTypeSRT:
-		return rawUrl, rawUrl, nil
+		parsed = rawUrl
+		redacted = rawUrl
+		return
 
 	case types.OutputTypeRaw:
-		return rawUrl, rawUrl, nil
+		parsed = rawUrl
+		redacted = rawUrl
+		return
 
 	default:
-		return "", "", errors.ErrInvalidInput("stream output type")
+		err = errors.ErrInvalidInput("stream output type")
+		return
 	}
 }
 
-func (o *StreamConfig) GetStreamUrl(rawUrl string) (string, error) {
-	parsed, err := url.Parse(rawUrl)
+func (o *StreamConfig) GetStream(rawUrl string) (*Stream, error) {
+	parsedUrl, err := url.Parse(rawUrl)
 	if err != nil {
-		return "", errors.ErrInvalidUrl(rawUrl, err.Error())
+		return nil, errors.ErrInvalidUrl(rawUrl, err.Error())
 	}
 
-	var twitchKey string
-	if parsed.Scheme == "mux" {
-		return fmt.Sprintf("rtmps://global-live.mux.com:443/app/%s", parsed.Host), nil
-	} else if parsed.Scheme == "twitch" {
-		twitchKey = parsed.Host
-	} else if match := twitchEndpoint.FindStringSubmatch(rawUrl); len(match) > 0 {
-		twitchKey = match[1]
-	} else {
-		return rawUrl, nil
-	}
-
-	// find twitch url by stream key because we can't rely on the ingest endpoint returning consistent results
-	for u := range o.StreamInfo {
-		if match := twitchEndpoint.FindStringSubmatch(u); len(match) > 0 && match[1] == twitchKey {
-			return u, nil
+	var parsed string
+	if parsedUrl.Scheme == "mux" {
+		parsed = fmt.Sprintf("rtmps://global-live.mux.com:443/app/%s", parsedUrl.Host)
+	} else if parsedUrl.Scheme == "twitch" {
+		parsed, err = o.updateTwitchURL(parsedUrl.Host)
+		if err != nil {
+			return nil, err
 		}
+	} else if match := twitchEndpoint.FindStringSubmatch(rawUrl); len(match) > 0 {
+		parsed, err = o.updateTwitchURL(match[1])
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		parsed = rawUrl
 	}
 
-	return "", errors.ErrStreamNotFound(rawUrl)
+	stream, ok := o.Streams.Load(parsed)
+	if !ok {
+		return nil, errors.ErrStreamNotFound(rawUrl)
+	}
+	return stream.(*Stream), nil
 }
 
 func (o *StreamConfig) updateTwitchURL(key string) (string, error) {
@@ -141,4 +184,15 @@ func (o *StreamConfig) updateTwitchTemplate() error {
 	}
 
 	return errors.New("no ingest found")
+}
+
+func redactStreamKey(url string) (string, string, bool) {
+	match := rtmpRegexp.FindStringSubmatch(url)
+	if len(match) != 6 {
+		return url, "", false
+	}
+
+	streamID := match[4]
+	match[4] = utils.RedactIdentifier(match[4])
+	return strings.Join(match[1:], ""), streamID, true
 }

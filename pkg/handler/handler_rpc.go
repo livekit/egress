@@ -47,6 +47,6 @@ func (h *Handler) StopEgress(ctx context.Context, _ *livekit.StopEgressRequest) 
 		return nil, errors.ErrEgressNotFound
 	}
 
-	h.controller.SendEOS(ctx)
+	h.controller.SendEOS(ctx, "StopEgress API")
 	return (*livekit.EgressInfo)(h.controller.Info), nil
 }

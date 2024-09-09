@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
@@ -40,6 +41,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 		r.testRtmpFailure(t)
 		r.testSrtFailure(t)
 		r.testTrackDisconnection(t)
+		r.testEmptyStreamBin(t)
 	})
 }
 
@@ -146,14 +148,25 @@ func (r *Runner) testRtmpFailure(t *testing.T) {
 		require.Equal(t, r.RoomName, info.RoomName)
 		require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
 
-		// check update
+		// check updates
 		time.Sleep(time.Second * 5)
 		info = r.getUpdate(t, info.EgressId)
-		if info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
-			r.checkUpdate(t, info.EgressId, livekit.EgressStatus_EGRESS_FAILED)
-		} else {
-			require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
+		streamFailed := false
+		for info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
+			if !streamFailed && info.StreamResults[0].Status == livekit.StreamInfo_FAILED {
+				streamFailed = true
+			}
+			if streamFailed {
+				// make sure this never reverts in subsequent updates
+				require.Equal(t, livekit.StreamInfo_FAILED, info.StreamResults[0].Status)
+			}
+			info = r.getUpdate(t, info.EgressId)
 		}
+
+		require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
+		require.NotEmpty(t, info.Error)
+		require.Equal(t, livekit.StreamInfo_FAILED, info.StreamResults[0].Status)
+		require.NotEmpty(t, info.StreamResults[0].Error)
 	})
 }
 
@@ -234,5 +247,52 @@ func (r *Runner) testTrackDisconnection(t *testing.T) {
 
 		test.expectVideoEncoding = true
 		r.runFileTest(t, req, test)
+	})
+}
+
+func (r *Runner) testEmptyStreamBin(t *testing.T) {
+	r.runRoomTest(t, "Multi", types.MimeTypeOpus, types.MimeTypeVP8, func(t *testing.T) {
+		req := &rpc.StartEgressRequest{
+			EgressId: utils.NewGuid(utils.EgressPrefix),
+			Request: &rpc.StartEgressRequest_RoomComposite{
+				RoomComposite: &livekit.RoomCompositeEgressRequest{
+					RoomName: r.room.Name(),
+					Layout:   "grid-light",
+					StreamOutputs: []*livekit.StreamOutput{{
+						Urls: []string{rtmpUrl1, badRtmpUrl1},
+					}},
+					SegmentOutputs: []*livekit.SegmentedFileOutput{{
+						FilenamePrefix: path.Join(r.FilePrefix, "empty_stream_{time}"),
+						PlaylistName:   "empty_stream_{time}",
+					}},
+				},
+			},
+		}
+
+		info := r.sendRequest(t, req)
+		egressID := info.EgressId
+		time.Sleep(time.Second * 15)
+
+		// get params
+		p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+		require.NoError(t, err)
+
+		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
+			rtmpUrl1Redacted:    livekit.StreamInfo_ACTIVE,
+			badRtmpUrl1Redacted: livekit.StreamInfo_FAILED,
+		})
+		_, err = r.client.UpdateStream(context.Background(), egressID, &livekit.UpdateStreamRequest{
+			EgressId:         egressID,
+			RemoveOutputUrls: []string{rtmpUrl1},
+		})
+		require.NoError(t, err)
+		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
+			rtmpUrl1Redacted:    livekit.StreamInfo_FINISHED,
+			badRtmpUrl1Redacted: livekit.StreamInfo_FAILED,
+		})
+
+		time.Sleep(time.Second * 10)
+		res := r.stopEgress(t, egressID)
+		r.verifySegments(t, p, livekit.SegmentedFileSuffix_INDEX, res, false)
 	})
 }

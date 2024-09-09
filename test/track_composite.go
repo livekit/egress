@@ -65,11 +65,11 @@ func (r *Runner) testTrackCompositeFile(t *testing.T) {
 			filename:   "tc_{publisher_identity}_vp8_{time}.mp4",
 		},
 		{
-			name:       "File/H264",
+			name:       "File/VideoOnly",
 			fileType:   livekit.EncodedFileType_MP4,
-			audioCodec: types.MimeTypeOpus,
 			videoCodec: types.MimeTypeH264,
-			filename:   "tc_{room_name}_h264_{time}.mp4",
+			filename:   "tc_{room_name}_video_{time}.mp4",
+			videoOnly:  true,
 		},
 	} {
 		r.runTrackTest(t, test.name, test.audioCodec, test.videoCodec, func(t *testing.T, audioTrackID, videoTrackID string) {
@@ -160,13 +160,6 @@ func (r *Runner) testTrackCompositeSegments(t *testing.T) {
 	}
 
 	for _, test := range []*testCase{
-		{
-			name:       "Segments/VP8",
-			audioCodec: types.MimeTypeOpus,
-			videoCodec: types.MimeTypeVP8,
-			filename:   "tcs_{publisher_identity}_vp8_{time}",
-			playlist:   "tcs_{publisher_identity}_vp8_{time}.m3u8",
-		},
 		{
 			name:         "Segments/H264",
 			audioCodec:   types.MimeTypeOpus,

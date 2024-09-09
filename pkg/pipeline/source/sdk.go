@@ -535,11 +535,21 @@ func shouldSubscribe(pub lksdk.TrackPublication) bool {
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	logger.Debugw("track muted", "trackID", pub.SID())
+	s.mu.RLock()
+	_, ok := s.writers[pub.SID()]
+	s.mu.RUnlock()
+	if ok {
+		logger.Debugw("track muted", "trackID", pub.SID())
+	}
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	logger.Debugw("track unmuted", "trackID", pub.SID())
+	s.mu.RLock()
+	_, ok := s.writers[pub.SID()]
+	s.mu.RUnlock()
+	if ok {
+		logger.Debugw("track unmuted", "trackID", pub.SID())
+	}
 }
 
 func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {

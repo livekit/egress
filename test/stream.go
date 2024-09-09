@@ -18,6 +18,7 @@ package test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -27,23 +28,29 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils"
 )
 
 const (
-	rtmpUrl1            = "rtmp://localhost:1935/live/stream"
-	rtmpUrl1Redacted    = "rtmp://localhost:1935/live/{st...am}"
-	rtmpUrl2            = "rtmp://localhost:1935/live/stream_key"
-	rtmpUrl2Redacted    = "rtmp://localhost:1935/live/{str...key}"
 	badRtmpUrl1         = "rtmp://xxx.contribute.live-video.net/app/fake1"
 	badRtmpUrl1Redacted = "rtmp://xxx.contribute.live-video.net/app/{f...1}"
 	badRtmpUrl2         = "rtmp://localhost:1936/live/stream"
 	badRtmpUrl2Redacted = "rtmp://localhost:1936/live/{st...am}"
-	srtPublishUrl1      = "srt://localhost:8890?streamid=publish:mystream&pkt_size=1316"
-	srtReadUrl1         = "srt://localhost:8890?streamid=read:mystream"
-	srtPublishUrl2      = "srt://localhost:8890?streamid=publish:otherstream&pkt_size=1316"
-	srtReadUrl2         = "srt://localhost:8890?streamid=read:otherstream"
 	badSrtUrl1          = "srt://localhost:8891?streamid=publish:wrongport&pkt_size=1316"
 	badSrtUrl2          = "srt://localhost:8891?streamid=publish:badstream&pkt_size=1316"
+)
+
+var (
+	streamKey1          = utils.NewGuid("")
+	streamKey2          = utils.NewGuid("")
+	rtmpUrl1            = fmt.Sprintf("rtmp://localhost:1935/live/%s", streamKey1)
+	rtmpUrl1Redacted, _ = utils.RedactStreamKey(rtmpUrl1)
+	rtmpUrl2            = fmt.Sprintf("rtmp://localhost:1935/live/%s", streamKey2)
+	rtmpUrl2Redacted, _ = utils.RedactStreamKey(rtmpUrl2)
+	srtPublishUrl1      = fmt.Sprintf("srt://localhost:8890?streamid=publish:%s&pkt_size=1316", streamKey1)
+	srtReadUrl1         = fmt.Sprintf("srt://localhost:8890?streamid=read:%s", streamKey1)
+	srtPublishUrl2      = fmt.Sprintf("srt://localhost:8890?streamid=publish:%s&pkt_size=1316", streamKey2)
+	srtReadUrl2         = fmt.Sprintf("srt://localhost:8890?streamid=read:%s", streamKey2)
 )
 
 // [[publish, redacted, verification]]
@@ -74,9 +81,8 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 		require.Equal(t, config.StreamKeyframeInterval, p.KeyFrameInterval)
 	}
 
-	// verify and check update
+	// verify
 	time.Sleep(time.Second * 5)
-
 	r.verifyStreams(t, p, urls[0][2])
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		urls[0][1]: livekit.StreamInfo_ACTIVE,
@@ -91,14 +97,8 @@ func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *
 	require.NoError(t, err)
 	time.Sleep(time.Second * 5)
 
-	// verify and check updates
+	// verify
 	r.verifyStreams(t, p, urls[0][2], urls[2][2])
-	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		urls[0][1]: livekit.StreamInfo_ACTIVE,
-		urls[1][1]: livekit.StreamInfo_FAILED,
-		urls[2][1]: livekit.StreamInfo_ACTIVE,
-		urls[3][1]: livekit.StreamInfo_ACTIVE,
-	})
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		urls[0][1]: livekit.StreamInfo_ACTIVE,
 		urls[1][1]: livekit.StreamInfo_FAILED,

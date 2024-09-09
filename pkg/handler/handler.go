@@ -115,9 +115,9 @@ func (h *Handler) Run() {
 }
 
 func (h *Handler) Kill() {
-	// kill signal received
-	h.conf.Info.Details = "service terminated by deployment"
-
 	<-h.initialized.Watch()
-	h.controller.SendEOS(context.Background())
+	if h.controller == nil {
+		return
+	}
+	h.controller.SendEOS(context.Background(), "handler killed")
 }

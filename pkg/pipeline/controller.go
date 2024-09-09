@@ -16,6 +16,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -36,7 +37,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
-	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -81,6 +81,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
 	}
 	c.callbacks.SetOnError(c.OnError)
+	c.callbacks.SetOnEOSSent(c.onEOSSent)
 
 	// initialize gst
 	go func() {
@@ -196,7 +197,6 @@ func (c *Controller) Run(ctx context.Context) *info.EgressInfo {
 	ctx, span := tracer.Start(ctx, "Pipeline.Run")
 	defer span.End()
 
-	c.Info.StartedAt = time.Now().UnixNano()
 	defer c.Close()
 
 	// session limit timer
@@ -205,7 +205,7 @@ func (c *Controller) Run(ctx context.Context) *info.EgressInfo {
 	// close when room ends
 	go func() {
 		<-c.src.EndRecording()
-		c.SendEOS(ctx)
+		c.SendEOS(ctx, "source closed")
 	}()
 
 	// wait until room is ready
@@ -263,129 +263,113 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 		return errors.ErrNonStreamingPipeline
 	}
 
-	sendUpdate := false
 	errs := errors.ErrArray{}
-	now := time.Now().UnixNano()
 
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
 		// validate and redact url
-		url, redacted, err := o.ValidateUrl(rawUrl, o.OutputType)
+		stream, err := o.AddStream(rawUrl, o.OutputType)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
 		}
 
+		// add stream info to results
+		c.mu.Lock()
+		c.Info.StreamResults = append(c.Info.StreamResults, stream.StreamInfo)
+		if list := (*livekit.EgressInfo)(c.Info).GetStream(); list != nil {
+			list.Info = append(list.Info, stream.StreamInfo)
+		}
+		c.mu.Unlock()
+
 		// add stream
-		if err = c.streamBin.AddStream(url); err != nil {
+		if err = c.streamBin.AddStream(stream); err != nil {
+			stream.StreamInfo.Status = livekit.StreamInfo_FAILED
+			stream.StreamInfo.Error = err.Error()
+			stream.UpdateEndTime(time.Now().UnixNano())
 			errs.AppendErr(err)
 			continue
 		}
 
-		// add to output count
-		c.OutputCount++
-
-		// add stream info to results
-		c.mu.Lock()
-		streamInfo := &livekit.StreamInfo{
-			Url:       redacted,
-			StartedAt: now,
-			Status:    livekit.StreamInfo_ACTIVE,
-		}
-		o.StreamInfo[url] = streamInfo
-
-		c.Info.StreamResults = append(c.Info.StreamResults, streamInfo)
-		if list := (*livekit.EgressInfo)(c.Info).GetStream(); list != nil {
-			list.Info = append(list.Info, streamInfo)
-		}
-		c.mu.Unlock()
-		sendUpdate = true
+		c.OutputCount.Inc()
 	}
 
 	// remove stream outputs
 	for _, rawUrl := range req.RemoveOutputUrls {
-		url, err := o.GetStreamUrl(rawUrl)
+		stream, err := o.GetStream(rawUrl)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
 		}
 
-		if err = c.removeSink(ctx, url, nil); err != nil {
+		if err = c.streamFinished(ctx, stream); err != nil {
 			errs.AppendErr(err)
-		} else {
-			sendUpdate = true
 		}
 	}
 
-	if sendUpdate {
-		c.Info.UpdatedAt = time.Now().UnixNano()
-		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
-	}
-
+	c.streamUpdated(ctx)
 	return errs.ToError()
 }
 
-func (c *Controller) removeSink(ctx context.Context, url string, streamErr error) error {
-	now := time.Now().UnixNano()
-
-	c.mu.Lock()
-	o := c.GetStreamConfig()
-
-	streamInfo := o.StreamInfo[url]
-	if streamInfo == nil {
-		c.mu.Unlock()
-		return errors.ErrStreamNotFound(url)
-	}
-
-	// set error if exists
-	if streamErr != nil {
-		streamInfo.Status = livekit.StreamInfo_FAILED
-		streamInfo.Error = streamErr.Error()
-	} else {
-		streamInfo.Status = livekit.StreamInfo_FINISHED
-	}
-
-	// update end time and duration
-	streamInfo.EndedAt = now
-	if streamInfo.StartedAt == 0 {
-		streamInfo.StartedAt = now
-	} else {
-		streamInfo.Duration = now - streamInfo.StartedAt
-	}
+func (c *Controller) streamFinished(ctx context.Context, stream *config.Stream) error {
+	stream.StreamInfo.Status = livekit.StreamInfo_FINISHED
+	stream.UpdateEndTime(time.Now().UnixNano())
 
 	// remove output
-	delete(o.StreamInfo, url)
-	c.OutputCount--
-	c.mu.Unlock()
+	o := c.GetStreamConfig()
+	o.Streams.Delete(stream.ParsedUrl)
+	c.OutputCount.Dec()
 
-	// log removal
-	redacted, _ := utils.RedactStreamKey(url)
-	logger.Infow("removing stream sink",
-		"url", redacted,
-		"status", streamInfo.Status,
-		"duration", streamInfo.Duration,
-		"error", streamErr)
-
-	// shut down if no outputs remaining
-	if c.OutputCount == 0 {
-		if streamErr != nil {
-			return streamErr
-		} else {
-			c.SendEOS(ctx)
-			return nil
-		}
+	// end egress if no outputs remaining
+	if c.OutputCount.Load() == 0 {
+		c.SendEOS(ctx, "all streams removed")
+		return nil
 	}
 
-	// only send updates if the egress will continue, otherwise it's handled by UpdateStream RPC
-	if streamErr != nil {
-		c.Info.UpdatedAt = time.Now().UnixNano()
-		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
-	}
+	logger.Infow("stream finished",
+		"url", stream.RedactedUrl,
+		"status", stream.StreamInfo.Status,
+		"duration", stream.StreamInfo.Duration,
+	)
 
-	return c.streamBin.RemoveStream(url)
+	return c.streamBin.RemoveStream(stream)
 }
 
-func (c *Controller) SendEOS(ctx context.Context) {
+func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, streamErr error) error {
+	stream.StreamInfo.Status = livekit.StreamInfo_FAILED
+	stream.StreamInfo.Error = streamErr.Error()
+	stream.UpdateEndTime(time.Now().UnixNano())
+
+	// remove output
+	o := c.GetStreamConfig()
+	o.Streams.Delete(stream.ParsedUrl)
+	c.OutputCount.Dec()
+
+	// fail egress if no outputs remaining
+	if c.OutputCount.Load() == 0 {
+		return streamErr
+	}
+
+	logger.Infow("stream failed",
+		"url", stream.RedactedUrl,
+		"status", stream.StreamInfo.Status,
+		"duration", stream.StreamInfo.Duration,
+		"error", streamErr)
+
+	c.streamUpdated(ctx)
+	return c.streamBin.RemoveStream(stream)
+}
+
+func (c *Controller) onEOSSent() {
+	// for video-only track/track composite, EOS might have already
+	// made it through the pipeline by the time endRecording is closed
+	if c.SourceType == types.SourceTypeSDK && !c.AudioEnabled {
+		// this will not actually send a second EOS, but will make sure everything is in the correct state
+		c.SendEOS(context.Background(), "source closed")
+	}
+}
+
+func (c *Controller) SendEOS(ctx context.Context, reason string) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
@@ -393,6 +377,9 @@ func (c *Controller) SendEOS(ctx context.Context) {
 		if c.limitTimer != nil {
 			c.limitTimer.Stop()
 		}
+
+		c.Info.Details = fmt.Sprintf("end reason: %s", reason)
+		logger.Debugw("stopping pipeline", "reason", reason)
 
 		switch c.Info.Status {
 		case livekit.EgressStatus_EGRESS_STARTING:
@@ -417,18 +404,19 @@ func (c *Controller) SendEOS(ctx context.Context) {
 		}
 
 		if c.SourceType == types.SourceTypeWeb {
-			c.updateDuration(c.src.GetEndedAt())
+			// web source uses the current time
+			c.updateEndTime()
 		}
 	})
 }
 
 func (c *Controller) sendEOS() {
+	c.eosTimer = time.AfterFunc(time.Second*30, func() {
+		c.OnError(errors.ErrPipelineFrozen)
+	})
 	go func() {
-		logger.Debugw("sending EOS")
-		c.eosTimer = time.AfterFunc(time.Second*30, func() {
-			c.OnError(errors.ErrPipelineFrozen)
-		})
 		c.p.SendEOS()
+		logger.Debugw("eos sent")
 	}()
 }
 
@@ -446,15 +434,17 @@ func (c *Controller) OnError(err error) {
 
 func (c *Controller) Close() {
 	if c.SourceType == types.SourceTypeSDK || !c.eos.IsBroken() {
-		c.updateDuration(c.src.GetEndedAt())
+		// sdk source will use the timestamp of the last packet pushed to the pipeline
+		c.updateEndTime()
 	}
 
 	// update status
 	if c.Info.Status == livekit.EgressStatus_EGRESS_FAILED {
 		if o := c.GetStreamConfig(); o != nil {
-			for _, streamInfo := range o.StreamInfo {
-				streamInfo.Status = livekit.StreamInfo_FAILED
-			}
+			o.Streams.Range(func(_, stream any) bool {
+				stream.(*config.Stream).StreamInfo.Status = livekit.StreamInfo_FAILED
+				return true
+			})
 		}
 	}
 
@@ -505,7 +495,7 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 				c.Info.SetLimitReached()
 			}
 			if c.playing.IsBroken() {
-				c.SendEOS(ctx)
+				c.SendEOS(ctx, "time limit reached")
 			} else {
 				c.p.Stop()
 			}
@@ -520,12 +510,15 @@ func (c *Controller) updateStartTime(startedAt int64) {
 		}
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
-			c.mu.Lock()
-			for _, streamInfo := range o[0].(*config.StreamConfig).StreamInfo {
-				streamInfo.Status = livekit.StreamInfo_ACTIVE
-				streamInfo.StartedAt = startedAt
+			streamConfig := o[0].(*config.StreamConfig)
+			if streamConfig.OutputType == types.OutputTypeRTMP {
+				// rtmp has special start time handling
+				continue
 			}
-			c.mu.Unlock()
+			streamConfig.Streams.Range(func(_, stream any) bool {
+				stream.(*config.Stream).StreamInfo.StartedAt = startedAt
+				return true
+			})
 
 		case types.EgressTypeFile:
 			o[0].(*config.FileConfig).FileInfo.StartedAt = startedAt
@@ -546,21 +539,59 @@ func (c *Controller) updateStartTime(startedAt int64) {
 	}
 }
 
-func (c *Controller) updateDuration(endedAt int64) {
+func (c *Controller) updateStreamStartTime(streamID string) {
+	if o := c.GetStreamConfig(); o != nil {
+		o.Streams.Range(func(_, s any) bool {
+			if stream := s.(*config.Stream); stream.StreamID == streamID && stream.StreamInfo.StartedAt == 0 {
+				logger.Debugw("stream started", "url", stream.RedactedUrl)
+				stream.StreamInfo.StartedAt = time.Now().UnixNano()
+				c.Info.UpdatedAt = time.Now().UnixNano()
+				c.streamUpdated(context.Background())
+				return false
+			}
+			return true
+		})
+	}
+}
+
+func (c *Controller) streamUpdated(ctx context.Context) {
+	c.Info.UpdatedAt = time.Now().UnixNano()
+
+	if o := c.GetStreamConfig(); o != nil {
+		skipUpdate := false
+		// when adding streams, wait until they've all either started or failed before sending the update
+		o.Streams.Range(func(_, stream any) bool {
+			streamInfo := stream.(*config.Stream).StreamInfo
+			if streamInfo.Status == livekit.StreamInfo_ACTIVE && streamInfo.StartedAt == 0 {
+				skipUpdate = true
+				return false
+			}
+			return true
+		})
+		if skipUpdate {
+			return
+		}
+	}
+
+	_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
+}
+
+func (c *Controller) updateEndTime() {
+	endedAt := c.src.GetEndedAt()
+
 	for egressType, o := range c.Outputs {
 		if len(o) == 0 {
 			continue
 		}
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
-			for _, streamInfo := range o[0].(*config.StreamConfig).StreamInfo {
-				streamInfo.Status = livekit.StreamInfo_FINISHED
-				if streamInfo.StartedAt == 0 {
-					streamInfo.StartedAt = endedAt
-				}
-				streamInfo.EndedAt = endedAt
-				streamInfo.Duration = endedAt - streamInfo.StartedAt
-			}
+			streamConfig := o[0].(*config.StreamConfig)
+			streamConfig.Streams.Range(func(_, s any) bool {
+				stream := s.(*config.Stream)
+				stream.StreamInfo.Status = livekit.StreamInfo_FINISHED
+				stream.UpdateEndTime(endedAt)
+				return true
+			})
 
 		case types.EgressTypeFile:
 			fileInfo := o[0].(*config.FileConfig).FileInfo
