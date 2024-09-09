@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go v1.55.5
 	github.com/chromedp/cdproto v0.0.0-20240810084448-b931b754e476
 	github.com/chromedp/chromedp v0.10.0
-	github.com/frostbyte73/core v0.0.12
+	github.com/frostbyte73/core v0.0.13
 	github.com/go-gst/go-glib v1.2.1
 	github.com/go-gst/go-gst v1.2.2-0.20240907184934-f0fa8a765a08
 	github.com/go-jose/go-jose/v3 v3.0.3
@@ -33,7 +33,7 @@ require (
 	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e
 	golang.org/x/oauth2 v0.23.0
 	google.golang.org/api v0.196.0
-	google.golang.org/grpc v1.66.0
+	google.golang.org/grpc v1.66.1
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/yaml.v3 v3.0.1
 )
