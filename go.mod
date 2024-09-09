@@ -11,7 +11,7 @@ require (
 	github.com/chromedp/chromedp v0.10.0
 	github.com/frostbyte73/core v0.0.12
 	github.com/go-gst/go-glib v1.2.1
-	github.com/go-gst/go-gst v1.2.1
+	github.com/go-gst/go-gst v1.2.2-0.20240907184934-f0fa8a765a08
 	github.com/go-jose/go-jose/v3 v3.0.3
 	github.com/go-logr/logr v1.4.2
 	github.com/googleapis/gax-go/v2 v2.13.0
