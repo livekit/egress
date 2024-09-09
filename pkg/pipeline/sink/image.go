@@ -54,6 +54,7 @@ type imageUpdate struct {
 }
 
 func newImageSink(u uploader.Uploader, p *config.PipelineConfig, o *config.ImageConfig, callbacks *gstreamer.Callbacks) (*ImageSink, error) {
+	maxPendingUploads := 900 / o.CaptureInterval
 	return &ImageSink{
 		Uploader:    u,
 		ImageConfig: o,
