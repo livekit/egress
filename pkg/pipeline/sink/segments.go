@@ -35,7 +35,6 @@ import (
 )
 
 const (
-	maxPendingUploads         = 100
 	defaultLivePlaylistWindow = 5
 )
 
@@ -91,6 +90,7 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 		outputType = types.OutputTypeTS
 	}
 
+	maxPendingUploads := 900 / o.SegmentDuration
 	s := &SegmentSink{
 		Uploader:              u,
 		SegmentConfig:         o,
