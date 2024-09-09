@@ -1,6 +1,6 @@
 module github.com/livekit/egress
 
-go 1.22
+go 1.22.1
 
 require (
 	cloud.google.com/go/storage v1.43.0
@@ -12,7 +12,7 @@ require (
 	github.com/frostbyte73/core v0.0.13
 	github.com/go-gst/go-glib v1.2.1
 	github.com/go-gst/go-gst v1.2.2-0.20240907184934-f0fa8a765a08
-	github.com/go-jose/go-jose/v3 v3.0.3
+	github.com/go-jose/go-jose/v4 v4.0.4
 	github.com/go-logr/logr v1.4.2
 	github.com/googleapis/gax-go/v2 v2.13.0
 	github.com/gorilla/websocket v1.5.3
@@ -30,7 +30,7 @@ require (
 	github.com/urfave/cli/v2 v2.27.4
 	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.27.0
-	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e
+	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
 	golang.org/x/oauth2 v0.23.0
 	google.golang.org/api v0.196.0
 	google.golang.org/grpc v1.66.1
@@ -63,6 +63,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gammazero/deque v0.2.1 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect

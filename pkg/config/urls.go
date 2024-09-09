@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-jose/go-jose/v3/json"
+	"github.com/go-jose/go-jose/v4/json"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
