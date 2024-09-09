@@ -19,9 +19,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
-	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/config"
@@ -756,7 +754,6 @@ func (b *VideoBin) setSelectorPad(name string) error {
 	return b.setSelectorPadLocked(name)
 }
 
-// TODO: go-gst should accept objects directly and handle conversion to C
 func (b *VideoBin) setSelectorPadLocked(name string) error {
 	pad := b.pads[name]
 
@@ -770,16 +767,7 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 		return gst.PadProbeRemove
 	})
 
-	pt, err := b.selector.GetPropertyType("active-pad")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	val, err := glib.ValueInit(pt)
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	val.SetInstance(unsafe.Pointer(pad.Instance()))
-	if err = b.selector.SetPropertyValue("active-pad", val); err != nil {
+	if err := b.selector.SetProperty("active-pad", pad); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
