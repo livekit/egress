@@ -39,6 +39,7 @@ type BaseConfig struct {
 	BackupStorage       string                  `yaml:"backup_storage"`        // backup file location for failed uploads
 	ClusterID           string                  `yaml:"cluster_id"`            // cluster this instance belongs to
 	EnableChromeSandbox bool                    `yaml:"enable_chrome_sandbox"` // enable Chrome sandbox, requires extra docker configuration
+	MaxUploadQueue      int                     `yaml:"max_upload_queue"`      // maximum upload queue size, in minutes
 	StorageConfig       `yaml:",inline"`        // upload config (S3, Azure, GCP, or AliOSS)
 	SessionLimits       `yaml:"session_limits"` // session duration limits
 

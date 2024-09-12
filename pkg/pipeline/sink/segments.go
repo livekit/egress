@@ -90,7 +90,7 @@ func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.Seg
 		outputType = types.OutputTypeTS
 	}
 
-	maxPendingUploads := 900 / o.SegmentDuration
+	maxPendingUploads := (p.MaxUploadQueue * 60) / o.SegmentDuration
 	s := &SegmentSink{
 		Uploader:              u,
 		SegmentConfig:         o,

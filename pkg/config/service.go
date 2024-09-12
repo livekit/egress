@@ -37,6 +37,7 @@ const (
 	trackCpuCost              = 0.5
 	maxCpuUtilization         = 0.8
 	maxConcurrentWeb          = 18
+	maxUploadQueue            = 60
 
 	defaultTemplatePort         = 7980
 	defaultTemplateBaseTemplate = "http://localhost:%d/"
@@ -114,6 +115,9 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	}
 	if conf.MaxConcurrentWeb <= 0 {
 		conf.MaxConcurrentWeb = maxConcurrentWeb
+	}
+	if conf.MaxUploadQueue <= 0 {
+		conf.MaxUploadQueue = maxUploadQueue
 	}
 
 	if conf.TemplateBase == "" {
