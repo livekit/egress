@@ -47,7 +47,7 @@ func (r *Runner) RunTests(t *testing.T) {
 var testNumber int
 
 func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)) {
-	if !r.should(runRequestType[test.requestType]) {
+	if test.custom == nil && !r.should(runRequestType[test.requestType]) {
 		return
 	}
 

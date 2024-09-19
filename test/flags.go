@@ -22,17 +22,17 @@ const (
 	runParticipant    = 0b1 << 2
 	runTrackComposite = 0b1 << 3
 	runTrack          = 0b1 << 4
-	runEdge           = 0b1 << 5
 
-	runAllRequests = 0b111111
+	runAllRequests = 0b11111
 
 	runFile     = 0b1 << 31
 	runStream   = 0b1 << 30
 	runSegments = 0b1 << 29
 	runImages   = 0b1 << 28
 	runMulti    = 0b1 << 27
+	runEdge     = 0b1 << 26
 
-	runAllOutputs = 0b11111 << 27
+	runAllOutputs = 0b111111 << 26
 )
 
 var runRequestType = map[types.RequestType]uint{
@@ -55,8 +55,6 @@ func (r *Runner) updateFlagset() {
 		r.shouldRun |= runTrackComposite
 	case r.TrackTestsOnly:
 		r.shouldRun |= runTrack
-	case r.EdgeCasesOnly:
-		r.shouldRun |= runEdge
 	default:
 		r.shouldRun |= runAllRequests
 	}
@@ -72,6 +70,8 @@ func (r *Runner) updateFlagset() {
 		r.shouldRun |= runImages
 	case r.MultiTestsOnly:
 		r.shouldRun |= runMulti
+	case r.EdgeCasesOnly:
+		r.shouldRun |= runEdge
 	default:
 		r.shouldRun |= runAllOutputs
 	}
