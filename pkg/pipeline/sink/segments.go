@@ -45,6 +45,7 @@ type SegmentSink struct {
 	conf      *config.PipelineConfig
 	callbacks *gstreamer.Callbacks
 
+	segmentCount int
 	playlist     m3u8.PlaylistWriter
 	livePlaylist m3u8.PlaylistWriter
 
@@ -185,9 +186,14 @@ func (s *SegmentSink) handlePlaylistUpdates(update SegmentUpdate) error {
 	if err := s.playlist.Append(segmentStartTime, duration, update.filename); err != nil {
 		return err
 	}
-	if err := s.uploadPlaylist(); err != nil {
-		s.callbacks.OnError(err)
+
+	s.segmentCount++
+	if s.shouldUploadPlaylist() {
+		if err := s.uploadPlaylist(); err != nil {
+			s.callbacks.OnError(err)
+		}
 	}
+
 	if s.livePlaylist != nil {
 		if err := s.livePlaylist.Append(segmentStartTime, duration, update.filename); err != nil {
 			return err
@@ -198,6 +204,13 @@ func (s *SegmentSink) handlePlaylistUpdates(update SegmentUpdate) error {
 	}
 
 	return nil
+}
+
+// Each segment adds about 100 bytes in the playlist, and long playlists can get very large.
+func (s *SegmentSink) shouldUploadPlaylist() bool {
+	// with the default of 6s segments, this will upload every update for the first hour, then every
+	// other update for the second, every third update for the third, etc.
+	return s.segmentCount < 600 || s.segmentCount%(s.segmentCount/600) == 0
 }
 
 func (s *SegmentSink) UpdateStartDate(t time.Time) {
