@@ -14,6 +14,8 @@
 
 package test
 
+import "github.com/livekit/egress/pkg/types"
+
 const (
 	runRoom           = 0b1 << 0
 	runWeb            = 0b1 << 1
@@ -21,15 +23,25 @@ const (
 	runTrackComposite = 0b1 << 3
 	runTrack          = 0b1 << 4
 	runEdge           = 0b1 << 5
-	runAllRequests    = 0b111111
 
-	runFile       = 0b1 << 31
-	runStream     = 0b1 << 30
-	runSegments   = 0b1 << 29
-	runImages     = 0b1 << 28
-	runMulti      = 0b1 << 27
+	runAllRequests = 0b111111
+
+	runFile     = 0b1 << 31
+	runStream   = 0b1 << 30
+	runSegments = 0b1 << 29
+	runImages   = 0b1 << 28
+	runMulti    = 0b1 << 27
+
 	runAllOutputs = 0b11111 << 27
 )
+
+var runRequestType = map[types.RequestType]uint{
+	types.RequestTypeRoomComposite:  runRoom,
+	types.RequestTypeWeb:            runWeb,
+	types.RequestTypeParticipant:    runParticipant,
+	types.RequestTypeTrackComposite: runTrackComposite,
+	types.RequestTypeTrack:          runTrack,
+}
 
 func (r *Runner) updateFlagset() {
 	switch {
