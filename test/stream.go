@@ -132,7 +132,6 @@ func (r *Runner) testStream(t *testing.T) {
 				requestType: types.RequestTypeTrackComposite,
 				publishOptions: publishOptions{
 					audioCodec: types.MimeTypeOpus,
-					audioDelay: time.Second * 8,
 					videoCodec: types.MimeTypeVP8,
 				},
 				streamOptions: &streamOptions{
