@@ -81,7 +81,6 @@ func (r *Runner) testStream(t *testing.T) {
 	}
 
 	t.Run("Stream", func(t *testing.T) {
-		t.Skip("skip for now")
 		for _, test := range []*testCase{
 
 			// ---- Room Composite -----
