@@ -84,9 +84,12 @@ func (r *Runner) testSegments(t *testing.T) {
 			// ---------- Web ----------
 
 			{
-				name:           "Web",
-				requestType:    types.RequestTypeWeb,
-				segmentOptions: &segmentOptions{},
+				name:        "Web",
+				requestType: types.RequestTypeWeb,
+				segmentOptions: &segmentOptions{
+					prefix:   "web_{time}",
+					playlist: "web_{time}.m3u8",
+				},
 			},
 
 			// ------ Participant ------
