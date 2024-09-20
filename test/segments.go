@@ -31,10 +31,137 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/sink/m3u8"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/rpc"
 )
 
-func (r *Runner) runSegmentsTest(t *testing.T, req *rpc.StartEgressRequest, test *testCase) {
+func (r *Runner) testSegments(t *testing.T) {
+	if !r.should(runSegments) {
+		return
+	}
+
+	t.Run("Segments", func(t *testing.T) {
+		for _, test := range []*testCase{
+
+			// ---- Room Composite -----
+
+			{
+				name:        "RoomComposite",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					AudioCodec:   livekit.AudioCodec_AAC,
+					VideoCodec:   livekit.VideoCodec_H264_BASELINE,
+					Width:        1920,
+					Height:       1080,
+					VideoBitrate: 4500,
+				},
+				segmentOptions: &segmentOptions{
+					prefix:       "r_{room_name}_{time}",
+					playlist:     "r_{room_name}_{time}.m3u8",
+					livePlaylist: "r_live_{room_name}_{time}.m3u8",
+					suffix:       livekit.SegmentedFileSuffix_TIMESTAMP,
+				},
+			},
+			{
+				name:        "RoomComposite/AudioOnly",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					AudioCodec: livekit.AudioCodec_AAC,
+				},
+				segmentOptions: &segmentOptions{
+					prefix:   "r_{room_name}_audio_{time}",
+					playlist: "r_{room_name}_audio_{time}.m3u8",
+					suffix:   livekit.SegmentedFileSuffix_TIMESTAMP,
+				},
+			},
+
+			// ---------- Web ----------
+
+			{
+				name:        "Web",
+				requestType: types.RequestTypeWeb,
+				segmentOptions: &segmentOptions{
+					prefix:   "web_{time}",
+					playlist: "web_{time}.m3u8",
+				},
+			},
+
+			// ------ Participant ------
+
+			{
+				name:        "ParticipantComposite/VP8",
+				requestType: types.RequestTypeParticipant,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+					// videoDelay:     time.Second * 10,
+					// videoUnpublish: time.Second * 20,
+				},
+				segmentOptions: &segmentOptions{
+					prefix:   "participant_{publisher_identity}_vp8_{time}",
+					playlist: "participant_{publisher_identity}_vp8_{time}.m3u8",
+				},
+			},
+			{
+				name:        "ParticipantComposite/H264",
+				requestType: types.RequestTypeParticipant,
+				publishOptions: publishOptions{
+					audioCodec:     types.MimeTypeOpus,
+					audioDelay:     time.Second * 10,
+					audioUnpublish: time.Second * 20,
+					videoCodec:     types.MimeTypeH264,
+				},
+				segmentOptions: &segmentOptions{
+					prefix:   "participant_{room_name}_h264_{time}",
+					playlist: "participant_{room_name}_h264_{time}.m3u8",
+				},
+			},
+
+			// ---- Track Composite ----
+
+			{
+				name:        "TrackComposite/H264",
+				requestType: types.RequestTypeTrackComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+				},
+				segmentOptions: &segmentOptions{
+					prefix:       "tcs_{room_name}_h264_{time}",
+					playlist:     "tcs_{room_name}_h264_{time}.m3u8",
+					livePlaylist: "tcs_live_{room_name}_h264_{time}.m3u8",
+				},
+			},
+			{
+				name:        "TrackComposite/AudioOnly",
+				requestType: types.RequestTypeTrackComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				segmentOptions: &segmentOptions{
+					prefix:   "tcs_{room_name}_audio_{time}",
+					playlist: "tcs_{room_name}_audio_{time}.m3u8",
+				},
+			},
+		} {
+			r.run(t, test, r.runSegmentsTest)
+			if r.Short {
+				return
+			}
+		}
+	})
+}
+
+func (r *Runner) runSegmentsTest(t *testing.T, test *testCase) {
+	req := r.build(test)
+
 	egressID := r.startEgress(t, req)
 
 	time.Sleep(time.Second * 10)
@@ -50,10 +177,9 @@ func (r *Runner) runSegmentsTest(t *testing.T, req *rpc.StartEgressRequest, test
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 
-	r.verifySegments(t, p, test.filenameSuffix, res, test.livePlaylist != "")
-	if !test.audioOnly {
-		require.Equal(t, test.expectVideoEncoding, p.VideoEncoding)
-	}
+	require.Equal(t, !test.audioOnly, p.VideoEncoding)
+
+	r.verifySegments(t, p, test.segmentOptions.suffix, res, test.livePlaylist != "")
 }
 
 func (r *Runner) verifySegments(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, res *livekit.EgressInfo, enableLivePlaylist bool) {

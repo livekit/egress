@@ -19,21 +19,27 @@ package test
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 )
 
 const (
-	badRtmpUrl1         = "rtmp://xxx.contribute.live-video.net/app/fake1"
-	badRtmpUrl1Redacted = "rtmp://xxx.contribute.live-video.net/app/{f...1}"
+	badRtmpUrl1         = "rtmp://localhost:1936/wrong/stream"
+	badRtmpUrl1Redacted = "rtmp://localhost:1936/wrong/{st...am}"
 	badRtmpUrl2         = "rtmp://localhost:1936/live/stream"
 	badRtmpUrl2Redacted = "rtmp://localhost:1936/live/{st...am}"
 	badSrtUrl1          = "srt://localhost:8891?streamid=publish:wrongport&pkt_size=1316"
@@ -69,15 +75,111 @@ var streamUrls = map[types.OutputType][][]string{
 	},
 }
 
-func (r *Runner) runStreamTest(t *testing.T, req *rpc.StartEgressRequest, test *testCase) {
+func (r *Runner) testStream(t *testing.T) {
+	if !r.should(runStream) {
+		return
+	}
+
+	t.Run("Stream", func(t *testing.T) {
+		for _, test := range []*testCase{
+
+			// ---- Room Composite -----
+
+			{
+				name:        "RoomComposite",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+				},
+				streamOptions: &streamOptions{
+					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
+					outputType: types.OutputTypeRTMP,
+				},
+			},
+
+			// ---------- Web ----------
+
+			{
+				name:        "Web",
+				requestType: types.RequestTypeWeb,
+				streamOptions: &streamOptions{
+					streamUrls: []string{srtPublishUrl1, badSrtUrl1},
+					outputType: types.OutputTypeSRT,
+				},
+			},
+
+			// ------ Participant ------
+
+			{
+				name:        "ParticipantComposite",
+				requestType: types.RequestTypeParticipant,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioDelay: time.Second * 8,
+					videoCodec: types.MimeTypeVP8,
+				},
+				streamOptions: &streamOptions{
+					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
+					outputType: types.OutputTypeRTMP,
+				},
+			},
+
+			// ---- Track Composite ----
+
+			{
+				name:        "TrackComposite",
+				requestType: types.RequestTypeTrackComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+				},
+				streamOptions: &streamOptions{
+					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
+					outputType: types.OutputTypeRTMP,
+				},
+			},
+
+			// --------- Track ---------
+
+			{
+				name:        "Track",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				streamOptions: &streamOptions{
+					rawFileName: fmt.Sprintf("track-ws-%v.raw", time.Now().Unix()),
+					outputType:  types.OutputTypeRaw,
+				},
+			},
+		} {
+			r.run(t, test, r.runStreamTest)
+			if r.Short {
+				return
+			}
+		}
+	})
+}
+
+func (r *Runner) runStreamTest(t *testing.T, test *testCase) {
+	if test.requestType == types.RequestTypeTrack {
+		r.runWebsocketTest(t, test)
+		return
+	}
+
+	req := r.build(test)
+
 	ctx := context.Background()
-	urls := streamUrls[test.outputType]
+	urls := streamUrls[test.streamOptions.outputType]
 	egressID := r.startEgress(t, req)
 
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
-	require.Equal(t, test.expectVideoEncoding, p.VideoEncoding)
-	if test.expectVideoEncoding {
+
+	if !test.audioOnly {
+		require.True(t, p.VideoEncoding)
 		require.Equal(t, config.StreamKeyframeInterval, p.KeyFrameInterval)
 	}
 
@@ -161,4 +263,98 @@ func (r *Runner) verifyStreams(t *testing.T, p *config.PipelineConfig, urls ...s
 	for _, url := range urls {
 		verify(t, url, p, nil, types.EgressTypeStream, false, r.sourceFramerate, false)
 	}
+}
+
+func (r *Runner) runWebsocketTest(t *testing.T, test *testCase) {
+	filepath := path.Join(r.FilePrefix, test.streamOptions.rawFileName)
+	wss := newTestWebsocketServer(filepath)
+	s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
+	test.websocketUrl = "ws" + strings.TrimPrefix(s.URL, "http")
+	defer func() {
+		wss.close()
+		s.Close()
+	}()
+
+	req := r.build(test)
+
+	egressID := r.startEgress(t, req)
+
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+
+	time.Sleep(time.Second * 30)
+
+	res := r.stopEgress(t, egressID)
+	verify(t, filepath, p, res, types.EgressTypeWebsocket, r.Muting, r.sourceFramerate, false)
+}
+
+type websocketTestServer struct {
+	path string
+	file *os.File
+	conn *websocket.Conn
+	done chan struct{}
+}
+
+func newTestWebsocketServer(filepath string) *websocketTestServer {
+	return &websocketTestServer{
+		path: filepath,
+		done: make(chan struct{}),
+	}
+}
+
+func (s *websocketTestServer) handleWebsocket(w http.ResponseWriter, r *http.Request) {
+	var err error
+
+	s.file, err = os.Create(s.path)
+	if err != nil {
+		logger.Errorw("could not create file", err)
+		return
+	}
+
+	// accept ws connection
+	upgrader := websocket.Upgrader{}
+	s.conn, err = upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		logger.Errorw("could not accept ws connection", err)
+		return
+	}
+
+	go func() {
+		defer func() {
+			_ = s.file.Close()
+
+			// close the connection only if it's not closed already
+			if !websocket.IsUnexpectedCloseError(err) {
+				_ = s.conn.Close()
+			}
+		}()
+
+		for {
+			select {
+			case <-s.done:
+				return
+			default:
+				mt, msg, err := s.conn.ReadMessage()
+				if err != nil {
+					if !websocket.IsUnexpectedCloseError(err) {
+						logger.Errorw("unexpected ws close", err)
+					}
+					return
+				}
+
+				switch mt {
+				case websocket.BinaryMessage:
+					_, err = s.file.Write(msg)
+					if err != nil {
+						logger.Errorw("could not write to file", err)
+						return
+					}
+				}
+			}
+		}
+	}()
+}
+
+func (s *websocketTestServer) close() {
+	close(s.done)
 }
