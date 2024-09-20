@@ -266,7 +266,7 @@ func (r *Runner) verifyStreams(t *testing.T, p *config.PipelineConfig, urls ...s
 }
 
 func (r *Runner) runWebsocketTest(t *testing.T, test *testCase) {
-	filepath := path.Join(r.FilePrefix, test.filename)
+	filepath := path.Join(r.FilePrefix, test.streamOptions.rawFileName)
 	wss := newTestWebsocketServer(filepath)
 	s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
 	test.websocketUrl = "ws" + strings.TrimPrefix(s.URL, "http")
