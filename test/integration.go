@@ -47,7 +47,7 @@ func (r *Runner) RunTests(t *testing.T) {
 var testNumber int
 
 func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)) {
-	if test.custom == nil && !r.should(runRequestType[test.requestType]) {
+	if !r.should(runRequestType[test.requestType]) {
 		return
 	}
 
@@ -144,18 +144,12 @@ func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[s
 		for _, s := range info.StreamResults {
 			require.Equal(t, s.Status == livekit.StreamInfo_FAILED, s.Error != "")
 
-			var e livekit.StreamInfo_Status
-			if strings.HasSuffix(s.Url, ".contribute.live-video.net/app/{f...1}") {
-				e = expected[badRtmpUrl1Redacted]
-			} else {
-				e = expected[s.Url]
-			}
-			if e == livekit.StreamInfo_FAILED && s.Status == livekit.StreamInfo_ACTIVE {
+			if expected[s.Url] == livekit.StreamInfo_FAILED && s.Status == livekit.StreamInfo_ACTIVE {
 				failureStillActive = true
 				continue
 			}
 
-			require.Equal(t, e, s.Status)
+			require.Equal(t, expected[s.Url], s.Status)
 		}
 
 		if !failureStillActive {

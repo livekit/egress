@@ -38,8 +38,8 @@ import (
 )
 
 const (
-	badRtmpUrl1         = "rtmp://xxx.contribute.live-video.net/app/fake1"
-	badRtmpUrl1Redacted = "rtmp://xxx.contribute.live-video.net/app/{f...1}"
+	badRtmpUrl1         = "rtmp://localhost:1936/wrong/stream"
+	badRtmpUrl1Redacted = "rtmp://localhost:1936/wrong/{st...am}"
 	badRtmpUrl2         = "rtmp://localhost:1936/live/stream"
 	badRtmpUrl2Redacted = "rtmp://localhost:1936/live/{st...am}"
 	badSrtUrl1          = "srt://localhost:8891?streamid=publish:wrongport&pkt_size=1316"
