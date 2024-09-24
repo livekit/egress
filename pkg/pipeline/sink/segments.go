@@ -207,10 +207,11 @@ func (s *SegmentSink) handlePlaylistUpdates(update SegmentUpdate) error {
 }
 
 // Each segment adds about 100 bytes in the playlist, and long playlists can get very large.
+// Uploads every N segments, where N is the number of hours, with a minimum frequency of once per minute
 func (s *SegmentSink) shouldUploadPlaylist() bool {
-	// with the default of 6s segments, this will upload every update for the first hour, then every
-	// other update for the second, every third update for the third, etc.
-	return s.segmentCount < 600 || s.segmentCount%(s.segmentCount/600) == 0
+	segmentsPerHour := 3600 / s.SegmentDuration
+	frequency := min(s.segmentCount/segmentsPerHour, segmentsPerHour/60)
+	return s.segmentCount < segmentsPerHour || s.segmentCount%frequency == 0
 }
 
 func (s *SegmentSink) UpdateStartDate(t time.Time) {
