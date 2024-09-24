@@ -70,8 +70,7 @@ func (r *Runner) testImages(t *testing.T) {
 				},
 			},
 		} {
-			r.run(t, test, r.runImagesTest)
-			if r.Short {
+			if !r.run(t, test, r.runImagesTest) {
 				return
 			}
 		}

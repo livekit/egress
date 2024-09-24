@@ -46,9 +46,9 @@ func (r *Runner) RunTests(t *testing.T) {
 
 var testNumber int
 
-func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)) {
+func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)) bool {
 	if !r.should(runRequestType[test.requestType]) {
-		return
+		return true
 	}
 
 	switch test.requestType {
@@ -76,6 +76,8 @@ func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)
 
 		f(t, test)
 	})
+
+	return !r.Short
 }
 
 func (r *Runner) awaitIdle(t *testing.T) {
