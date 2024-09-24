@@ -14,22 +14,34 @@
 
 package test
 
+import "github.com/livekit/egress/pkg/types"
+
 const (
 	runRoom           = 0b1 << 0
 	runWeb            = 0b1 << 1
 	runParticipant    = 0b1 << 2
 	runTrackComposite = 0b1 << 3
 	runTrack          = 0b1 << 4
-	runEdge           = 0b1 << 5
-	runAllRequests    = 0b111111
 
-	runFile       = 0b1 << 31
-	runStream     = 0b1 << 30
-	runSegments   = 0b1 << 29
-	runImages     = 0b1 << 28
-	runMulti      = 0b1 << 27
-	runAllOutputs = 0b11111 << 27
+	runAllRequests = 0b11111
+
+	runFile     = 0b1 << 31
+	runStream   = 0b1 << 30
+	runSegments = 0b1 << 29
+	runImages   = 0b1 << 28
+	runMulti    = 0b1 << 27
+	runEdge     = 0b1 << 26
+
+	runAllOutputs = 0b111111 << 26
 )
+
+var runRequestType = map[types.RequestType]uint{
+	types.RequestTypeRoomComposite:  runRoom,
+	types.RequestTypeWeb:            runWeb,
+	types.RequestTypeParticipant:    runParticipant,
+	types.RequestTypeTrackComposite: runTrackComposite,
+	types.RequestTypeTrack:          runTrack,
+}
 
 func (r *Runner) updateFlagset() {
 	switch {
@@ -43,8 +55,6 @@ func (r *Runner) updateFlagset() {
 		r.shouldRun |= runTrackComposite
 	case r.TrackTestsOnly:
 		r.shouldRun |= runTrack
-	case r.EdgeCasesOnly:
-		r.shouldRun |= runEdge
 	default:
 		r.shouldRun |= runAllRequests
 	}
@@ -60,6 +70,8 @@ func (r *Runner) updateFlagset() {
 		r.shouldRun |= runImages
 	case r.MultiTestsOnly:
 		r.shouldRun |= runMulti
+	case r.EdgeCasesOnly:
+		r.shouldRun |= runEdge
 	default:
 		r.shouldRun |= runAllOutputs
 	}

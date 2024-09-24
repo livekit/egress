@@ -34,58 +34,48 @@ import (
 
 var uploadPrefix = fmt.Sprintf("integration/%s", time.Now().Format("2006-01-02"))
 
-type testCase struct {
-	name      string
-	audioOnly bool
-	videoOnly bool
-	filename  string
-
-	// used by room and track composite tests
-	fileType livekit.EncodedFileType
-	options  *livekit.EncodingOptions
-	preset   livekit.EncodingOptionsPreset
-
-	// used by segmented file tests
-	playlist       string
-	livePlaylist   string
-	filenameSuffix livekit.SegmentedFileSuffix
-
-	// used by images tests
-	imageFilenameSuffix livekit.ImageFileSuffix
-
-	// used by sdk tests
-	audioCodec     types.MimeType
-	audioDelay     time.Duration
-	audioUnpublish time.Duration
-	audioRepublish time.Duration
-
-	videoCodec     types.MimeType
-	videoDelay     time.Duration
-	videoUnpublish time.Duration
-	videoRepublish time.Duration
-
-	// used by track and stream tests
-	outputType types.OutputType
-
-	expectVideoEncoding bool
-}
-
 func (r *Runner) RunTests(t *testing.T) {
 	// run tests
-	r.testRoomComposite(t)
-	r.testWeb(t)
-	r.testParticipant(t)
-	r.testTrackComposite(t)
-	r.testTrack(t)
+	r.testFile(t)
+	r.testStream(t)
+	r.testSegments(t)
+	r.testImages(t)
+	r.testMulti(t)
 	r.testEdgeCases(t)
 }
 
 var testNumber int
 
-func (r *Runner) run(t *testing.T, name string, f func(t *testing.T)) {
+func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)) {
+	if !r.should(runRequestType[test.requestType]) {
+		return
+	}
+
+	switch test.requestType {
+	case types.RequestTypeRoomComposite, types.RequestTypeWeb:
+		r.sourceFramerate = 30
+	case types.RequestTypeParticipant, types.RequestTypeTrackComposite, types.RequestTypeTrack:
+		r.sourceFramerate = 23.97
+	}
+
 	r.awaitIdle(t)
+
 	testNumber++
-	t.Run(fmt.Sprintf("%d/%s", testNumber, name), f)
+	t.Run(fmt.Sprintf("%d/%s", testNumber, test.name), func(t *testing.T) {
+		audioMuting := r.Muting
+		videoMuting := r.Muting && test.audioCodec == ""
+
+		test.audioTrackID = r.publishSample(t, test.audioCodec, test.audioDelay, test.audioUnpublish, audioMuting)
+		if test.audioRepublish != 0 {
+			r.publishSample(t, test.audioCodec, test.audioRepublish, 0, audioMuting)
+		}
+		test.videoTrackID = r.publishSample(t, test.videoCodec, test.videoDelay, test.videoUnpublish, videoMuting)
+		if test.videoRepublish != 0 {
+			r.publishSample(t, test.videoCodec, test.videoRepublish, 0, videoMuting)
+		}
+
+		f(t, test)
+	})
 }
 
 func (r *Runner) awaitIdle(t *testing.T) {
@@ -154,18 +144,12 @@ func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[s
 		for _, s := range info.StreamResults {
 			require.Equal(t, s.Status == livekit.StreamInfo_FAILED, s.Error != "")
 
-			var e livekit.StreamInfo_Status
-			if strings.HasSuffix(s.Url, ".contribute.live-video.net/app/{f...1}") {
-				e = expected[badRtmpUrl1Redacted]
-			} else {
-				e = expected[s.Url]
-			}
-			if e == livekit.StreamInfo_FAILED && s.Status == livekit.StreamInfo_ACTIVE {
+			if expected[s.Url] == livekit.StreamInfo_FAILED && s.Status == livekit.StreamInfo_ACTIVE {
 				failureStillActive = true
 				continue
 			}
 
-			require.Equal(t, e, s.Status)
+			require.Equal(t, expected[s.Url], s.Status)
 		}
 
 		if !failureStillActive {

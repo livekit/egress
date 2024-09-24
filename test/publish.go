@@ -41,64 +41,45 @@ var (
 	}
 )
 
-func (r *Runner) publishSamples(t *testing.T, audioCodec, videoCodec types.MimeType) (audioTrackID, videoTrackID string) {
-	withAudioMuting := false
-	if videoCodec != "" {
-		videoTrackID = r.publishSample(t, videoCodec, r.Muting)
-	} else {
-		withAudioMuting = r.Muting
-	}
-	if audioCodec != "" {
-		audioTrackID = r.publishSample(t, audioCodec, withAudioMuting)
-	}
-
-	time.Sleep(time.Second)
-	return
-}
-
-func (r *Runner) publishSample(t *testing.T, codec types.MimeType, withMuting bool) string {
-	done := make(chan struct{})
-	pub := r.publish(t, codec, done)
-	trackID := pub.SID()
-
-	t.Cleanup(func() {
-		_ = r.room.LocalParticipant.UnpublishTrack(trackID)
-	})
-
-	if withMuting {
-		go func() {
-			muted := false
-			time.Sleep(time.Second * 15)
-			for {
-				select {
-				case <-done:
-					return
-				default:
-					pub.SetMuted(!muted)
-					muted = !muted
-					time.Sleep(time.Second * 10)
-				}
-			}
-		}()
-	}
-
-	return trackID
-}
-
-func (r *Runner) publishSampleOffset(t *testing.T, codec types.MimeType, publishAfter, unpublishAfter time.Duration) {
+func (r *Runner) publishSample(t *testing.T, codec types.MimeType, publishAfter, unpublishAfter time.Duration, withMuting bool) string {
 	if codec == "" {
-		return
+		return ""
 	}
 
+	trackID := make(chan string, 1)
 	time.AfterFunc(publishAfter, func() {
 		done := make(chan struct{})
+		unpublished := make(chan struct{})
+
 		pub := r.publish(t, codec, done)
+		trackID <- pub.SID()
+
+		if withMuting {
+			go func() {
+				muted := false
+				time.Sleep(time.Second * 15)
+				for {
+					select {
+					case <-unpublished:
+						return
+					case <-done:
+						return
+					default:
+						pub.SetMuted(!muted)
+						muted = !muted
+						time.Sleep(time.Second * 10)
+					}
+				}
+			}()
+		}
+
 		if unpublishAfter != 0 {
 			time.AfterFunc(unpublishAfter-publishAfter, func() {
 				select {
 				case <-done:
 					return
 				default:
+					close(unpublished)
 					_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
 				}
 			})
@@ -108,6 +89,12 @@ func (r *Runner) publishSampleOffset(t *testing.T, codec types.MimeType, publish
 			})
 		}
 	})
+
+	if publishAfter == 0 {
+		return <-trackID
+	} else {
+		return "TBD"
+	}
 }
 
 func (r *Runner) publishSampleWithDisconnection(t *testing.T, codec types.MimeType) string {

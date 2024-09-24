@@ -27,10 +27,195 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/rpc"
 )
 
-func (r *Runner) runFileTest(t *testing.T, req *rpc.StartEgressRequest, test *testCase) {
+func (r *Runner) testFile(t *testing.T) {
+	if !r.should(runFile) {
+		return
+	}
+
+	t.Run("File", func(t *testing.T) {
+		for _, test := range []*testCase{
+
+			// ---- Room Composite -----
+
+			{
+				name:        "RoomComposite/Base",
+				requestType: types.RequestTypeRoomComposite, publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_{time}.mp4",
+				},
+			},
+			{
+				name:        "RoomComposite/VideoOnly",
+				requestType: types.RequestTypeRoomComposite, publishOptions: publishOptions{
+					videoCodec: types.MimeTypeH264,
+					videoOnly:  true,
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					VideoCodec: livekit.VideoCodec_H264_HIGH,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_video_{time}.mp4",
+				},
+			},
+			{
+				name:        "RoomComposite/AudioOnly",
+				requestType: types.RequestTypeRoomComposite, publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					AudioCodec: livekit.AudioCodec_OPUS,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_audio_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+			},
+
+			// ---------- Web ----------
+
+			{
+				name: "Web",
+				publishOptions: publishOptions{
+					videoOnly: true,
+				},
+				requestType: types.RequestTypeWeb,
+				fileOptions: &fileOptions{
+					filename: "web_{time}",
+				},
+			},
+
+			// ------ Participant ------
+
+			{
+				name:        "ParticipantComposite/VP8",
+				requestType: types.RequestTypeParticipant, publishOptions: publishOptions{
+					audioCodec:     types.MimeTypeOpus,
+					audioDelay:     time.Second * 8,
+					audioUnpublish: time.Second * 14,
+					audioRepublish: time.Second * 20,
+					videoCodec:     types.MimeTypeVP8,
+				},
+				fileOptions: &fileOptions{
+					filename: "participant_{publisher_identity}_vp8_{time}.mp4",
+					fileType: livekit.EncodedFileType_MP4,
+				},
+			},
+			{
+				name:        "ParticipantComposite/H264",
+				requestType: types.RequestTypeParticipant, publishOptions: publishOptions{
+					audioCodec:     types.MimeTypeOpus,
+					videoCodec:     types.MimeTypeH264,
+					videoUnpublish: time.Second * 10,
+					videoRepublish: time.Second * 20,
+				},
+				fileOptions: &fileOptions{
+					filename: "participant_{room_name}_h264_{time}.mp4",
+					fileType: livekit.EncodedFileType_MP4,
+				},
+			},
+			{
+				name:        "ParticipantComposite/AudioOnly",
+				requestType: types.RequestTypeParticipant, publishOptions: publishOptions{
+					audioCodec:     types.MimeTypeOpus,
+					audioUnpublish: time.Second * 10,
+					audioRepublish: time.Second * 15,
+				},
+				fileOptions: &fileOptions{
+					filename: "participant_{room_name}_{time}.mp4",
+					fileType: livekit.EncodedFileType_MP4,
+				},
+			},
+
+			// ---- Track Composite ----
+
+			{
+				name:        "TrackComposite/VP8",
+				requestType: types.RequestTypeTrackComposite, publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+				},
+				fileOptions: &fileOptions{
+					filename: "tc_{publisher_identity}_vp8_{time}.mp4",
+					fileType: livekit.EncodedFileType_MP4,
+				},
+			},
+			{
+				name:        "TrackComposite/VideoOnly",
+				requestType: types.RequestTypeTrackComposite,
+				publishOptions: publishOptions{
+					videoCodec: types.MimeTypeH264,
+					videoOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename: "tc_{room_name}_video_{time}.mp4",
+					fileType: livekit.EncodedFileType_MP4,
+				},
+			},
+
+			// --------- Track ---------
+
+			{
+				name:        "Track/Opus",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "t_{track_source}_{time}.ogg",
+					outputType: types.OutputTypeOGG,
+				},
+			},
+			{
+				name:        "Track/H264",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					videoCodec: types.MimeTypeH264,
+					videoOnly:  true,
+				},
+
+				fileOptions: &fileOptions{
+					filename:   "t_{track_id}_{time}.mp4",
+					outputType: types.OutputTypeMP4,
+				},
+			},
+			{
+				name:        "Track/VP8",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					videoCodec: types.MimeTypeVP8,
+					videoOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "t_{track_type}_{time}.webm",
+					outputType: types.OutputTypeWebM,
+				},
+			},
+			// {
+			// 	name:       "Track/VP9",
+			// 	videoOnly:  true,
+			// 	videoCodec: types.MimeTypeVP9,
+			// 	outputType: types.OutputTypeWebM,
+			// 	filename:   "t_{track_type}_{time}.webm",
+			// },
+		} {
+			r.run(t, test, r.runFileTest)
+			if r.Short {
+				return
+			}
+		}
+	})
+}
+
+func (r *Runner) runFileTest(t *testing.T, test *testCase) {
+	req := r.build(test)
+
 	// start
 	egressID := r.startEgress(t, req)
 
@@ -47,10 +232,10 @@ func (r *Runner) runFileTest(t *testing.T, req *rpc.StartEgressRequest, test *te
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 	if p.GetFileConfig().OutputType == types.OutputTypeUnknownFile {
-		p.GetFileConfig().OutputType = test.outputType
+		p.GetFileConfig().OutputType = test.fileOptions.outputType
 	}
 
-	require.Equal(t, test.expectVideoEncoding, p.VideoEncoding)
+	require.Equal(t, test.requestType != types.RequestTypeTrack && !test.audioOnly, p.VideoEncoding)
 
 	// verify
 	r.verifyFile(t, p, res)

@@ -81,8 +81,9 @@ jobs:
   test:
     needs: build
     strategy:
+      fail-fast: false
       matrix:
-        integration_type: [room, web, participant, track_composite, track, edge]
+        integration_type: [file, stream, segments, images, multi, edge]
     runs-on: buildjet-8vcpu-ubuntu-2204
     steps:
       - uses: shogo82148/actions-setup-redis@v1
