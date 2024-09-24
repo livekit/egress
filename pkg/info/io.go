@@ -99,7 +99,7 @@ func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) c
 		delete(c.egresses, info.EgressId)
 
 		if err != nil {
-			logger.Errorw("failed to create egress", err)
+			logger.Errorw("failed to create egress", err, "egressID", info.EgressId)
 			errChan <- err
 			return
 		}
@@ -128,8 +128,12 @@ func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) e
 	}
 	c.mu.Unlock()
 
-	c.updates <- u
-	return nil
+	select {
+	case c.updates <- u:
+		return nil
+	default:
+		return errors.New("channel full or closed")
+	}
 }
 
 func (c *ioClient) updateWorker() {
@@ -158,7 +162,7 @@ func (c *ioClient) sendUpdate(u *update) {
 				continue
 			}
 
-			logger.Errorw("failed to update egress", err)
+			logger.Errorw("failed to update egress", err, "egressID", u.info.EgressId)
 			return
 		}
 
@@ -180,7 +184,7 @@ func (c *ioClient) sendUpdate(u *update) {
 func (c *ioClient) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error {
 	_, err := c.IOInfoClient.UpdateMetrics(ctx, req)
 	if err != nil {
-		logger.Errorw("failed to update ms", err)
+		logger.Errorw("failed to update metrics", err, "egressID", req.Info.EgressId)
 		return err
 	}
 
