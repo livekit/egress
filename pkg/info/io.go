@@ -100,18 +100,14 @@ func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) c
 
 		if err != nil {
 			logger.Errorw("failed to create egress", err)
-			if errors.Is(err, psrpc.ErrRequestTimedOut) && c.healthy.Swap(false) {
-				logger.Infow("io connection unhealthy")
-			}
 			errChan <- err
 			return
-		} else if !c.healthy.Swap(true) {
-			logger.Infow("io connection restored")
 		}
 
 		if e.pending != nil {
 			c.updates <- e.pending
 		}
+
 		errChan <- nil
 	}()
 
