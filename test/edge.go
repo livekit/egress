@@ -120,8 +120,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				custom: r.testEmptyStreamBin,
 			},
 		} {
-			r.run(t, test, test.custom)
-			if r.Short {
+			if !r.run(t, test, test.custom) {
 				return
 			}
 		}

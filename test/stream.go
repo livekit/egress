@@ -155,8 +155,7 @@ func (r *Runner) testStream(t *testing.T) {
 				},
 			},
 		} {
-			r.run(t, test, r.runStreamTest)
-			if r.Short {
+			if !r.run(t, test, r.runStreamTest) {
 				return
 			}
 		}

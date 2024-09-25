@@ -34,9 +34,9 @@ func (s *Server) HandlerReady(_ context.Context, req *ipc.HandlerReadyRequest) (
 	return &emptypb.Empty{}, nil
 }
 
-func (s *Server) HandlerUpdate(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
-	if err := s.ioClient.UpdateEgress(ctx, info); err != nil {
-		logger.Errorw("failed to update egress", err)
+func (s *Server) HandlerUpdate(_ context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
+	if err := s.ioClient.UpdateEgress(context.Background(), info); err != nil {
+		logger.Errorw("failed to update egress", err, "egressID", info.EgressId)
 	}
 
 	if info.ErrorCode == int32(http.StatusInternalServerError) {
@@ -47,13 +47,13 @@ func (s *Server) HandlerUpdate(ctx context.Context, info *livekit.EgressInfo) (*
 	return &emptypb.Empty{}, nil
 }
 
-func (s *Server) HandlerFinished(ctx context.Context, req *ipc.HandlerFinishedRequest) (*emptypb.Empty, error) {
-	if err := s.ioClient.UpdateEgress(ctx, req.Info); err != nil {
-		logger.Errorw("failed to update egress", err)
+func (s *Server) HandlerFinished(_ context.Context, req *ipc.HandlerFinishedRequest) (*emptypb.Empty, error) {
+	if err := s.ioClient.UpdateEgress(context.Background(), req.Info); err != nil {
+		logger.Errorw("failed to update egress", err, "egressID", req.EgressId)
 	}
 
 	if err := s.StoreProcessEndedMetrics(req.EgressId, req.Metrics); err != nil {
-		logger.Errorw("failed to store ms", err)
+		logger.Errorw("failed to store metrics", err, "egressID", req.EgressId)
 	}
 
 	return &emptypb.Empty{}, nil

@@ -105,8 +105,7 @@ func (r *Runner) testMulti(t *testing.T) {
 				multi: true,
 			},
 		} {
-			r.run(t, test, r.runMultiTest)
-			if r.Short {
+			if !r.run(t, test, r.runMultiTest) {
 				return
 			}
 		}

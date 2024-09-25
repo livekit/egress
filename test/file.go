@@ -205,8 +205,7 @@ func (r *Runner) testFile(t *testing.T) {
 			// 	filename:   "t_{track_type}_{time}.webm",
 			// },
 		} {
-			r.run(t, test, r.runFileTest)
-			if r.Short {
+			if !r.run(t, test, r.runFileTest) {
 				return
 			}
 		}

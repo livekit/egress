@@ -154,13 +154,11 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) Status() ([]byte, error) {
-	info := map[string]interface{}{
+	status := map[string]interface{}{
 		"CpuLoad": s.monitor.GetAvailableCPU(),
 	}
-
-	s.GetStatus(info)
-
-	return json.Marshal(info)
+	s.GetStatus(status)
+	return json.Marshal(status)
 }
 
 func (s *Server) IsIdle() bool {
@@ -168,7 +166,7 @@ func (s *Server) IsIdle() bool {
 }
 
 func (s *Server) IsDisabled() bool {
-	return s.shutdown.IsBroken()
+	return s.shutdown.IsBroken() || !s.ioClient.IsHealthy()
 }
 
 func (s *Server) IsTerminating() bool {

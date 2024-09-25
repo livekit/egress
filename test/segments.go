@@ -151,8 +151,7 @@ func (r *Runner) testSegments(t *testing.T) {
 				},
 			},
 		} {
-			r.run(t, test, r.runSegmentsTest)
-			if r.Short {
+			if !r.run(t, test, r.runSegmentsTest) {
 				return
 			}
 		}
