@@ -183,9 +183,31 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		p.KeyFrameInterval = StreamKeyframeInterval
 	}
 
-	err := p.updateImageOutputs(images)
-	if err != nil {
-		return err
+	// image output
+	if len(images) > 0 {
+		if !p.VideoEnabled {
+			return errors.ErrInvalidInput("audio_only images")
+		}
+
+		if len(p.Outputs) == 0 {
+			// enforce video only
+			p.AudioEnabled = false
+			p.AudioTrackID = ""
+			p.AudioTranscoding = false
+		}
+
+		for _, img := range images {
+			conf, err := p.getImageConfig(img)
+			if err != nil {
+				return err
+			}
+
+			p.Outputs[types.EgressTypeImages] = append(p.Outputs[types.EgressTypeImages], conf)
+			p.OutputCount.Inc()
+			p.FinalizationRequired = true
+
+			p.Info.ImageResults = append(p.Info.ImageResults, conf.ImagesInfo)
+		}
 	}
 
 	if p.OutputCount.Load() == 0 {
@@ -230,27 +252,6 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 
 	default:
 		return errors.ErrInvalidInput("output")
-	}
-
-	return nil
-}
-
-func (p *PipelineConfig) updateImageOutputs(images []*livekit.ImageOutput) error {
-	if len(images) > 0 && !p.VideoEnabled {
-		return errors.ErrInvalidInput("audio_only")
-	}
-
-	for _, img := range images {
-		conf, err := p.getImageConfig(img)
-		if err != nil {
-			return err
-		}
-
-		p.Outputs[types.EgressTypeImages] = append(p.Outputs[types.EgressTypeImages], conf)
-		p.OutputCount.Inc()
-		p.FinalizationRequired = true
-
-		p.Info.ImageResults = append(p.Info.ImageResults, conf.ImagesInfo)
 	}
 
 	return nil
