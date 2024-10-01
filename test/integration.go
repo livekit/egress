@@ -44,8 +44,6 @@ func (r *Runner) RunTests(t *testing.T) {
 	r.testEdgeCases(t)
 }
 
-var testNumber int
-
 func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)) bool {
 	if !r.should(runRequestType[test.requestType]) {
 		return true
@@ -60,8 +58,8 @@ func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)
 
 	r.awaitIdle(t)
 
-	testNumber++
-	t.Run(fmt.Sprintf("%d/%s", testNumber, test.name), func(t *testing.T) {
+	r.testNumber++
+	t.Run(fmt.Sprintf("%d/%s", r.testNumber, test.name), func(t *testing.T) {
 		audioMuting := r.Muting
 		videoMuting := r.Muting && test.audioCodec == ""
 

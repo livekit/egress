@@ -247,6 +247,13 @@ func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
 }
 
 func (r *Runner) buildFileOutputs(o *fileOptions) []*livekit.EncodedFileOutput {
+	if r.S3Upload != nil {
+		return []*livekit.EncodedFileOutput{{
+			FileType: o.fileType,
+			Filepath: path.Join(uploadPrefix, o.filename),
+			Output:   &livekit.EncodedFileOutput_S3{S3: r.S3Upload},
+		}}
+	}
 	return []*livekit.EncodedFileOutput{{
 		FileType: o.fileType,
 		Filepath: path.Join(r.FilePrefix, o.filename),

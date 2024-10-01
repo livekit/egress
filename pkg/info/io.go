@@ -171,6 +171,7 @@ func (c *ioClient) sendUpdate(u *update) {
 		}
 		requestType, outputType := egress.GetTypes(u.info.Request)
 		logger.Infow(strings.ToLower(u.info.Status.String()),
+			"egressID", u.info.EgressId,
 			"requestType", requestType,
 			"outputType", outputType,
 			"error", u.info.Error,

@@ -46,6 +46,7 @@ type Runner struct {
 	room            *lksdk.Room              `yaml:"-"`
 	updates         chan *livekit.EgressInfo `yaml:"-"`
 	sourceFramerate float64                  `yaml:"-"`
+	testNumber      int                      `yaml:"-"`
 
 	// service config
 	*config.ServiceConfig `yaml:",inline"`
