@@ -6,7 +6,6 @@ require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/aliyun/aliyun-oss-go-sdk v3.0.2+incompatible
-	github.com/aws/aws-sdk-go v1.55.5
 	github.com/aws/aws-sdk-go-v2 v1.31.0
 	github.com/aws/aws-sdk-go-v2/config v1.27.39
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.37
@@ -93,7 +92,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.3 // indirect
 	github.com/jellydator/ttlcache/v3 v3.2.0 // indirect
-	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jxskiss/base62 v1.1.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect

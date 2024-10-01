@@ -150,6 +150,7 @@ func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType ty
 	}
 	client := s3.NewFromConfig(*u.awsConf, func(o *s3.Options) {
 		o.Logger = l
+		o.ClientLogMode = aws.LogRequest | aws.LogResponse | aws.LogRetries
 		o.UsePathStyle = u.conf.ForcePathStyle
 	})
 
