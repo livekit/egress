@@ -17,8 +17,6 @@ package config
 import (
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 )
@@ -30,7 +28,6 @@ type EgressS3Upload struct {
 	MaxRetries    int
 	MaxRetryDelay time.Duration
 	MinRetryDelay time.Duration
-	AwsLogLevel   aws.LogLevelType
 }
 
 func (p *PipelineConfig) getUploadConfig(req egress.UploadRequest) UploadConfig {
@@ -49,7 +46,6 @@ func (p *PipelineConfig) getUploadConfig(req egress.UploadRequest) UploadConfig 
 				s3Conf.MaxRetries = s3Base.MaxRetries
 				s3Conf.MaxRetryDelay = s3Base.MaxRetryDelay
 				s3Conf.MinRetryDelay = s3Base.MinRetryDelay
-				s3Conf.AwsLogLevel = s3Base.AwsLogLevel
 			}
 		}
 		return s3Conf
@@ -102,24 +98,6 @@ func (c StorageConfig) ToUploadConfig() UploadConfig {
 		}
 		if c.S3.MinRetryDelay > 0 {
 			s3.MinRetryDelay = c.S3.MinRetryDelay
-		}
-
-		// Handle AWS log level
-		switch c.S3.AwsLogLevel {
-		case "LogOff":
-			s3.AwsLogLevel = aws.LogOff
-		case "LogDebugWithRequestRetries":
-			s3.AwsLogLevel = aws.LogDebugWithRequestRetries
-		case "LogDebug":
-			s3.AwsLogLevel = aws.LogDebug
-		case "LogDebugWithRequestErrors":
-			s3.AwsLogLevel = aws.LogDebugWithRequestErrors
-		case "LogDebugWithHTTPBody":
-			s3.AwsLogLevel = aws.LogDebugWithHTTPBody
-		case "LogDebugWithSigning":
-			s3.AwsLogLevel = aws.LogDebugWithSigning
-		default:
-			s3.AwsLogLevel = aws.LogDebugWithRequestRetries | aws.LogDebugWithRequestErrors
 		}
 
 		return s3

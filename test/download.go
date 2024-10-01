@@ -26,11 +26,11 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsConfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/googleapis/gax-go/v2"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
@@ -57,19 +57,28 @@ func download(t *testing.T, uploadParams interface{}, localFilepath, storageFile
 }
 
 func downloadS3(t *testing.T, conf *config.EgressS3Upload, localFilepath, storageFilepath string) {
-	sess, err := session.NewSession(&aws.Config{
-		Credentials: credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, conf.SessionToken),
-		Endpoint:    aws.String(conf.Endpoint),
-		Region:      aws.String(conf.Region),
-		MaxRetries:  aws.Int(maxRetries),
-	})
-	require.NoError(t, err)
-
 	file, err := os.Create(localFilepath)
 	require.NoError(t, err)
 	defer file.Close()
 
-	_, err = s3manager.NewDownloader(sess).Download(file,
+	awsConf, err := awsConfig.LoadDefaultConfig(context.Background(), func(o *awsConfig.LoadOptions) error {
+		o.Region = conf.Region
+		o.Credentials = credentials.StaticCredentialsProvider{
+			Value: aws.Credentials{
+				AccessKeyID:     conf.AccessKey,
+				SecretAccessKey: conf.Secret,
+				SessionToken:    conf.SessionToken,
+			},
+		}
+
+		return nil
+	})
+	require.NoError(t, err)
+	s3Client := s3.NewFromConfig(awsConf)
+
+	_, err = manager.NewDownloader(s3Client).Download(
+		context.Background(),
+		file,
 		&s3.GetObjectInput{
 			Bucket: aws.String(conf.Bucket),
 			Key:    aws.String(storageFilepath),
@@ -77,7 +86,7 @@ func downloadS3(t *testing.T, conf *config.EgressS3Upload, localFilepath, storag
 	)
 	require.NoError(t, err)
 
-	_, err = s3.New(sess).DeleteObject(&s3.DeleteObjectInput{
+	_, err = s3Client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
 		Bucket: aws.String(conf.Bucket),
 		Key:    aws.String(storageFilepath),
 	})

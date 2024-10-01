@@ -15,6 +15,7 @@
 package uploader
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -23,13 +24,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/client"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
+	awsConfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go/logging"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -39,184 +40,98 @@ import (
 )
 
 const (
-	getBucketLocationRegion = "us-east-1"
+	defaultBucketLocation = "us-east-1"
 )
 
-// S3Retryer wraps the SDK's built in DefaultRetryer adding additional
-// custom features. Namely, to always retry.
-type S3Retryer struct {
-	client.DefaultRetryer
-}
-
-// ShouldRetry overrides the SDK's built in DefaultRetryer because the PUTs for segments/playlists are always idempotent
-func (r S3Retryer) ShouldRetry(_ *request.Request) bool {
-	return true
-}
-
-// S3Logger only logs aws messages on upload failure
-type S3Logger struct {
-	mu   sync.Mutex
-	msgs []string
-	idx  int
-}
-
-func (l *S3Logger) Log(args ...interface{}) {
-	var sb strings.Builder
-	sb.WriteString("aws sdk:")
-	for range len(args) {
-		sb.WriteString(" %v")
-	}
-
-	l.mu.Lock()
-	l.msgs[l.idx%len(l.msgs)] = fmt.Sprintf(sb.String(), args...)
-	l.idx++
-	l.mu.Unlock()
-}
-
-func (l *S3Logger) PrintLogs() {
-	l.mu.Lock()
-	size := len(l.msgs)
-	for range size {
-		if msg := l.msgs[l.idx%size]; msg != "" {
-			logger.Debugw(msg)
-		}
-		l.idx++
-	}
-	l.mu.Unlock()
-}
-
 type S3Uploader struct {
-	mu                 sync.Mutex
-	awsConfig          *aws.Config
-	bucket             *string
-	metadata           map[string]*string
-	tagging            *string
-	contentDisposition *string
+	mu      sync.Mutex
+	conf    *config.EgressS3Upload
+	awsConf *aws.Config
 }
 
 func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
-	awsConfig := &aws.Config{
-		Retryer: &S3Retryer{
-			DefaultRetryer: client.DefaultRetryer{
-				NumMaxRetries:    conf.MaxRetries,
-				MaxRetryDelay:    conf.MaxRetryDelay,
-				MaxThrottleDelay: conf.MaxRetryDelay,
-				MinRetryDelay:    conf.MinRetryDelay,
-				MinThrottleDelay: conf.MinRetryDelay,
-			},
-		},
-		S3ForcePathStyle: aws.Bool(conf.ForcePathStyle),
-		LogLevel:         &conf.AwsLogLevel,
+	opts := func(o *awsConfig.LoadOptions) error {
+		if conf.Region != "" {
+			o.Region = conf.Region
+		} else {
+			o.Region = defaultBucketLocation
+		}
+
+		if conf.AccessKey != "" && conf.Secret != "" {
+			o.Credentials = credentials.StaticCredentialsProvider{
+				Value: aws.Credentials{
+					AccessKeyID:     conf.AccessKey,
+					SecretAccessKey: conf.Secret,
+					SessionToken:    conf.SessionToken,
+				},
+			}
+		}
+
+		o.Retryer = func() aws.Retryer {
+			return retry.NewStandard(func(o *retry.StandardOptions) {
+				o.MaxAttempts = conf.MaxRetries
+				o.MaxBackoff = conf.MaxRetryDelay
+				o.Retryables = append(o.Retryables, &s3Retryer{})
+			})
+		}
+
+		if conf.Proxy != nil {
+			proxyUrl, err := url.Parse(conf.Proxy.Url)
+			if err != nil {
+				return err
+			}
+			s3Transport := http.DefaultTransport.(*http.Transport).Clone()
+			s3Transport.Proxy = http.ProxyURL(proxyUrl)
+			if conf.Proxy.Username != "" && conf.Proxy.Password != "" {
+				auth := fmt.Sprintf("%s:%s", conf.Proxy.Username, conf.Proxy.Password)
+				basicAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+				s3Transport.ProxyConnectHeader = http.Header{}
+				s3Transport.ProxyConnectHeader.Add("Proxy-Authorization", basicAuth)
+			}
+			o.HTTPClient = &http.Client{Transport: s3Transport}
+		}
+
+		return nil
 	}
 
-	logger.Debugw("setting S3 config",
-		"maxRetries", conf.MaxRetries,
-		"maxDelay", conf.MaxRetryDelay,
-		"minDelay", conf.MinRetryDelay,
-	)
-	if conf.AccessKey != "" && conf.Secret != "" {
-		awsConfig.Credentials = credentials.NewStaticCredentials(conf.AccessKey, conf.Secret, conf.SessionToken)
+	awsConf, err := awsConfig.LoadDefaultConfig(context.Background(), opts)
+	if err != nil {
+		return nil, err
+	}
+
+	if conf.Region == "" {
+		if err = updateRegion(&awsConf, conf.Bucket); err != nil {
+			return nil, err
+		}
 	}
 	if conf.Endpoint != "" {
-		awsConfig.Endpoint = aws.String(conf.Endpoint)
-	}
-	if conf.Region != "" {
-		awsConfig.Region = aws.String(conf.Region)
+		awsConf.BaseEndpoint = &conf.Endpoint
 	}
 
-	u := &S3Uploader{
-		awsConfig: awsConfig,
-		bucket:    aws.String(conf.Bucket),
-	}
-
-	if u.awsConfig.Region == nil {
-		region, err := u.getBucketLocation()
-		if err != nil {
-			return nil, err
-		}
-
-		logger.Debugw("retrieved bucket location", "bucket", u.bucket, "location", region)
-
-		u.awsConfig.Region = aws.String(region)
-	}
-
-	if conf.Proxy != nil {
-		proxyUrl, err := url.Parse(conf.Proxy.Url)
-		if err != nil {
-			return nil, err
-		}
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.Proxy = http.ProxyURL(proxyUrl)
-		if conf.Proxy.Username != "" && conf.Proxy.Password != "" {
-			auth := fmt.Sprintf("%s:%s", conf.Proxy.Username, conf.Proxy.Password)
-			basicAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
-			transport.ProxyConnectHeader = http.Header{}
-			transport.ProxyConnectHeader.Add("Proxy-Authorization", basicAuth)
-		}
-		u.awsConfig.HTTPClient = &http.Client{Transport: transport}
-	}
-
-	if len(conf.Metadata) > 0 {
-		u.metadata = make(map[string]*string, len(conf.Metadata))
-		for k, v := range conf.Metadata {
-			v := v
-			u.metadata[k] = &v
-		}
-	}
-
-	if conf.Tagging != "" {
-		u.tagging = aws.String(conf.Tagging)
-	}
-
-	if conf.ContentDisposition != "" {
-		u.contentDisposition = aws.String(conf.ContentDisposition)
-	} else {
-		// this is the default: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition#as_a_response_header_for_the_main_body
-		u.contentDisposition = aws.String("inline")
-	}
-
-	return u, nil
+	return &S3Uploader{
+		conf:    conf,
+		awsConf: &awsConf,
+	}, nil
 }
 
-func (u *S3Uploader) getBucketLocation() (string, error) {
-	u.awsConfig.Region = aws.String(getBucketLocationRegion)
-
-	sess, err := session.NewSession(u.awsConfig)
-	if err != nil {
-		return "", err
-	}
-
+func updateRegion(awsConf *aws.Config, bucket string) error {
 	req := &s3.GetBucketLocationInput{
-		Bucket: u.bucket,
+		Bucket: &bucket,
 	}
 
-	svc := s3.New(sess)
-	resp, err := svc.GetBucketLocation(req)
+	resp, err := s3.NewFromConfig(*awsConf).GetBucketLocation(context.Background(), req)
 	if err != nil {
-		return "", psrpc.NewErrorf(psrpc.InvalidArgument, "failed to retrieve upload bucket region: %v", err)
+		return psrpc.NewErrorf(psrpc.InvalidArgument, "failed to retrieve upload bucket region: %v", err)
 	}
 
-	if resp.LocationConstraint == nil {
-		return "", psrpc.NewErrorf(psrpc.InvalidArgument, "invalid upload bucket region returned by provider. Try specifying the region manually in the request")
+	if resp.LocationConstraint != "" {
+		awsConf.Region = string(resp.LocationConstraint)
 	}
 
-	return *resp.LocationConstraint, nil
+	return nil
 }
 
 func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
-	// use a separate logger for each upload
-	l := &S3Logger{
-		msgs: make([]string, 10),
-	}
-	u.mu.Lock()
-	u.awsConfig.Logger = l
-	sess, err := session.NewSession(u.awsConfig)
-	u.awsConfig.Logger = nil
-	u.mu.Unlock()
-	if err != nil {
-		return "", 0, errors.ErrUploadFailed("S3", err)
-	}
-
 	file, err := os.Open(localFilepath)
 	if err != nil {
 		return "", 0, errors.ErrUploadFailed("S3", err)
@@ -230,24 +145,83 @@ func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType ty
 		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
-	_, err = s3manager.NewUploader(sess).Upload(&s3manager.UploadInput{
-		Body:               file,
-		Bucket:             u.bucket,
-		ContentType:        aws.String(string(outputType)),
-		Key:                aws.String(storageFilepath),
-		Metadata:           u.metadata,
-		Tagging:            u.tagging,
-		ContentDisposition: u.contentDisposition,
+	l := &s3Logger{
+		msgs: make([]string, 10),
+	}
+	client := s3.NewFromConfig(*u.awsConf, func(o *s3.Options) {
+		o.Logger = l
+		o.ClientLogMode = aws.LogRequest | aws.LogResponse | aws.LogRetries
+		o.UsePathStyle = u.conf.ForcePathStyle
 	})
-	if err != nil {
-		l.PrintLogs()
+
+	input := &s3.PutObjectInput{
+		Body:        file,
+		Bucket:      &u.conf.Bucket,
+		ContentType: aws.String(string(outputType)),
+		Key:         aws.String(storageFilepath),
+		Metadata:    u.conf.Metadata,
+	}
+	if u.conf.Tagging != "" {
+		input.Tagging = &u.conf.Tagging
+	}
+	if u.conf.ContentDisposition != "" {
+		input.ContentDisposition = &u.conf.ContentDisposition
+	} else {
+		contentDisposition := "inline"
+		input.ContentDisposition = &contentDisposition
+	}
+
+	if _, err = manager.NewUploader(client).Upload(context.Background(), input); err != nil {
+		l.log()
 		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
 	endpoint := "s3.amazonaws.com"
-	if u.awsConfig.Endpoint != nil {
-		endpoint = *u.awsConfig.Endpoint
+	if u.conf.Endpoint != "" {
+		endpoint = u.conf.Endpoint
 	}
 
-	return fmt.Sprintf("https://%s.%s/%s", *u.bucket, endpoint, storageFilepath), stat.Size(), nil
+	var location string
+	if u.conf.ForcePathStyle {
+		location = fmt.Sprintf("https://%s/%s/%s", endpoint, u.conf.Bucket, storageFilepath)
+	} else {
+		location = fmt.Sprintf("https://%s.%s/%s", u.conf.Bucket, endpoint, storageFilepath)
+	}
+
+	return location, stat.Size(), nil
+}
+
+// s3Logger only logs aws messages on upload failure
+type s3Logger struct {
+	mu   sync.Mutex
+	msgs []string
+	idx  int
+}
+
+func (l *s3Logger) Logf(classification logging.Classification, format string, v ...interface{}) {
+	format = "aws %s: " + format
+	v = append([]interface{}{strings.ToLower(string(classification))}, v...)
+
+	l.mu.Lock()
+	l.msgs[l.idx%len(l.msgs)] = fmt.Sprintf(format, v...)
+	l.idx++
+	l.mu.Unlock()
+}
+
+func (l *s3Logger) log() {
+	l.mu.Lock()
+	size := len(l.msgs)
+	for range size {
+		if msg := l.msgs[l.idx%size]; msg != "" {
+			logger.Debugw(msg)
+		}
+		l.idx++
+	}
+	l.mu.Unlock()
+}
+
+type s3Retryer struct{}
+
+func (r *s3Retryer) IsErrorRetryable(_ error) aws.Ternary {
+	return aws.TrueTernary
 }
