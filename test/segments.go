@@ -61,7 +61,7 @@ func (r *Runner) testSegments(t *testing.T) {
 					prefix:       "r_{room_name}_{time}",
 					playlist:     "r_{room_name}_{time}.m3u8",
 					livePlaylist: "r_live_{room_name}_{time}.m3u8",
-					suffix:       livekit.SegmentedFileSuffix_TIMESTAMP,
+					suffix:       livekit.SegmentedFileSuffix_INDEX,
 				},
 			},
 			{

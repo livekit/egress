@@ -247,13 +247,24 @@ func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
 }
 
 func (r *Runner) buildFileOutputs(o *fileOptions) []*livekit.EncodedFileOutput {
-	if r.S3Upload != nil {
-		return []*livekit.EncodedFileOutput{{
+	if u := r.getUploadConfig(); u != nil {
+		output := &livekit.EncodedFileOutput{
 			FileType: o.fileType,
 			Filepath: path.Join(uploadPrefix, o.filename),
-			Output:   &livekit.EncodedFileOutput_S3{S3: r.S3Upload},
-		}}
+		}
+
+		switch conf := u.(type) {
+		case *livekit.S3Upload:
+			output.Output = &livekit.EncodedFileOutput_S3{S3: conf}
+		case *livekit.GCPUpload:
+			output.Output = &livekit.EncodedFileOutput_Gcp{Gcp: conf}
+		case *livekit.AzureBlobUpload:
+			output.Output = &livekit.EncodedFileOutput_Azure{Azure: conf}
+		}
+
+		return []*livekit.EncodedFileOutput{output}
 	}
+
 	return []*livekit.EncodedFileOutput{{
 		FileType: o.fileType,
 		Filepath: path.Join(r.FilePrefix, o.filename),
@@ -270,6 +281,7 @@ func (r *Runner) buildStreamOutputs(o *streamOptions) []*livekit.StreamOutput {
 	default:
 		protocol = livekit.StreamProtocol_DEFAULT_PROTOCOL
 	}
+
 	return []*livekit.StreamOutput{{
 		Protocol: protocol,
 		Urls:     o.streamUrls,
@@ -277,6 +289,26 @@ func (r *Runner) buildStreamOutputs(o *streamOptions) []*livekit.StreamOutput {
 }
 
 func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFileOutput {
+	if u := r.getUploadConfig(); u != nil && o.suffix == livekit.SegmentedFileSuffix_INDEX {
+		output := &livekit.SegmentedFileOutput{
+			FilenamePrefix:   path.Join(uploadPrefix, o.prefix),
+			PlaylistName:     o.playlist,
+			LivePlaylistName: o.livePlaylist,
+			FilenameSuffix:   o.suffix,
+		}
+
+		switch conf := u.(type) {
+		case *livekit.S3Upload:
+			output.Output = &livekit.SegmentedFileOutput_S3{S3: conf}
+		case *livekit.GCPUpload:
+			output.Output = &livekit.SegmentedFileOutput_Gcp{Gcp: conf}
+		case *livekit.AzureBlobUpload:
+			output.Output = &livekit.SegmentedFileOutput_Azure{Azure: conf}
+		}
+
+		return []*livekit.SegmentedFileOutput{output}
+	}
+
 	return []*livekit.SegmentedFileOutput{{
 		FilenamePrefix:   path.Join(r.FilePrefix, o.prefix),
 		PlaylistName:     o.playlist,
@@ -293,4 +325,21 @@ func (r *Runner) buildImageOutputs(o *imageOptions) []*livekit.ImageOutput {
 		FilenamePrefix:  path.Join(r.FilePrefix, o.prefix),
 		FilenameSuffix:  o.suffix,
 	}}
+}
+
+func (r *Runner) getUploadConfig() interface{} {
+	configs := make([]interface{}, 0)
+	if r.S3Upload != nil {
+		configs = append(configs, r.S3Upload)
+	}
+	if r.GCPUpload != nil {
+		configs = append(configs, r.GCPUpload)
+	}
+	if r.AzureUpload != nil {
+		configs = append(configs, r.AzureUpload)
+	}
+	if len(configs) == 0 {
+		return nil
+	}
+	return configs[r.testNumber%len(configs)]
 }
