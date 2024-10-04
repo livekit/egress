@@ -53,7 +53,7 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 	opts := func(o *awsConfig.LoadOptions) error {
 		if conf.Region != "" {
 			o.Region = conf.Region
-		} else {
+		} else if conf.Endpoint == "" {
 			o.Region = defaultBucketLocation
 		}
 
@@ -99,13 +99,12 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 		return nil, err
 	}
 
-	if conf.Region == "" {
+	if conf.Endpoint != "" {
+		awsConf.BaseEndpoint = &conf.Endpoint
+	} else if conf.Region == "" {
 		if err = updateRegion(&awsConf, conf.Bucket); err != nil {
 			return nil, err
 		}
-	}
-	if conf.Endpoint != "" {
-		awsConf.BaseEndpoint = &conf.Endpoint
 	}
 
 	return &S3Uploader{
