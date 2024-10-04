@@ -53,7 +53,7 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 	opts := func(o *awsConfig.LoadOptions) error {
 		if conf.Region != "" {
 			o.Region = conf.Region
-		} else if conf.Endpoint == "" {
+		} else {
 			o.Region = defaultBucketLocation
 		}
 
