@@ -536,6 +536,7 @@ func (b *VideoBin) addEncoder() error {
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
+
 		x264Enc.SetArg("speed-preset", "veryfast")
 		if b.conf.KeyFrameInterval != 0 {
 			keyframeInterval := uint(b.conf.KeyFrameInterval * float64(b.conf.Framerate))
@@ -543,12 +544,12 @@ func (b *VideoBin) addEncoder() error {
 				return errors.ErrGstPipelineError(err)
 			}
 		}
+
+		var options []string
 		bufCapacity := uint(2000) // 2s
 		if b.conf.GetSegmentConfig() != nil {
 			// avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
-			if err = x264Enc.SetProperty("option-string", "scenecut=0"); err != nil {
-				return errors.ErrGstPipelineError(err)
-			}
+			options = append(options, "scenecut=0")
 			bufCapacity = uint(time.Duration(b.conf.GetSegmentConfig().SegmentDuration) * (time.Second / time.Millisecond))
 		}
 		if bufCapacity > 10000 {
@@ -558,11 +559,19 @@ func (b *VideoBin) addEncoder() error {
 		if err = x264Enc.SetProperty("vbv-buf-capacity", bufCapacity); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		if b.conf.GetStreamConfig() != nil {
-			x264Enc.SetArg("pass", "cbr")
-		}
+
 		if err = x264Enc.SetProperty("bitrate", uint(b.conf.VideoBitrate)); err != nil {
 			return errors.ErrGstPipelineError(err)
+		}
+
+		if b.conf.GetStreamConfig() != nil {
+			options = append(options, "nal-hrd=cbr")
+		}
+		if len(options) > 0 {
+			optionString := strings.Join(options, ":")
+			if err = x264Enc.SetProperty("option-string", optionString); err != nil {
+				return errors.ErrGstPipelineError(err)
+			}
 		}
 
 		caps, err := gst.NewElement("capsfilter")
