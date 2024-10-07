@@ -332,17 +332,11 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		p.Info.RoomName = req.TrackComposite.RoomName
 		if audioTrackID := req.TrackComposite.AudioTrackId; audioTrackID != "" {
-			if strings.HasPrefix(audioTrackID, "TR_V") {
-				return errors.ErrInvalidInput("audio_track_id")
-			}
 			p.AudioEnabled = true
 			p.AudioTrackID = audioTrackID
 			p.AudioTranscoding = true
 		}
 		if videoTrackID := req.TrackComposite.VideoTrackId; videoTrackID != "" {
-			if strings.HasPrefix(videoTrackID, "TR_A") {
-				return errors.ErrInvalidInput("video_track_id")
-			}
 			p.VideoEnabled = true
 			p.VideoTrackID = videoTrackID
 			p.VideoDecoding = true
