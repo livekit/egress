@@ -325,6 +325,12 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}, deadline <-
 				for _, track := range p.TrackPublications() {
 					trackID := track.SID()
 					if _, ok := expecting[trackID]; ok {
+						if trackID == s.AudioTrackID && track.Kind() == lksdk.TrackKindVideo {
+							return nil, errors.ErrInvalidInput("audio_track_id")
+						} else if trackID == s.VideoTrackID && track.Kind() == lksdk.TrackKindAudio {
+							return nil, errors.ErrInvalidInput("video_track_id")
+						}
+
 						if err := s.subscribe(track); err != nil {
 							return nil, err
 						}
