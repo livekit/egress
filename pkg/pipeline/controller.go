@@ -244,7 +244,7 @@ func (c *Controller) Run(ctx context.Context) *info.EgressInfo {
 	logger.Debugw("closing sinks")
 	for _, si := range c.sinks {
 		for _, s := range si {
-			if err := s.Close(); err != nil && c.playing.IsBroken() {
+			if err := s.Close(); err != nil && c.playing.IsBroken() && c.FinalizationRequired {
 				c.Info.SetFailed(err)
 				return c.Info
 			}

@@ -206,11 +206,13 @@ func (s *WebsocketSink) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.closed.Swap(true) {
+		logger.Debugw("closing websocket connection")
+
 		// write close message for graceful disconnection
 		_ = s.conn.WriteMessage(websocket.CloseMessage, nil)
 
 		// terminate connection and close the `closed` channel
-		return s.conn.Close()
+		_ = s.conn.Close()
 	}
 
 	return nil
