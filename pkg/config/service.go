@@ -26,8 +26,6 @@ import (
 )
 
 const (
-	TmpDir = "/home/egress/tmp"
-
 	roomCompositeCpuCost      = 4
 	audioRoomCompositeCpuCost = 1
 	webCpuCost                = 4

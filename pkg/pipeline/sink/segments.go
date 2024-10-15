@@ -16,7 +16,6 @@ package sink
 
 import (
 	"fmt"
-	"os"
 	"path"
 	"strings"
 	"sync"
@@ -39,7 +38,7 @@ const (
 )
 
 type SegmentSink struct {
-	uploader.Uploader
+	*uploader.Uploader
 
 	*config.SegmentConfig
 	conf      *config.PipelineConfig
@@ -70,7 +69,7 @@ type SegmentUpdate struct {
 	uploadComplete chan struct{}
 }
 
-func newSegmentSink(u uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig, callbacks *gstreamer.Callbacks, monitor *stats.HandlerMonitor) (*SegmentSink, error) {
+func newSegmentSink(u *uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig, callbacks *gstreamer.Callbacks, monitor *stats.HandlerMonitor) (*SegmentSink, error) {
 	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
 	playlist, err := m3u8.NewEventPlaylistWriter(playlistName, o.SegmentDuration)
 	if err != nil {
@@ -150,7 +149,7 @@ func (s *SegmentSink) handleClosedSegment(update SegmentUpdate) {
 	go func() {
 		defer close(update.uploadComplete)
 
-		_, size, err := s.Upload(segmentLocalPath, segmentStoragePath, s.outputType, true, "segment")
+		_, size, err := s.Upload(segmentLocalPath, segmentStoragePath, s.outputType, true)
 		if err != nil {
 			s.callbacks.OnError(err)
 			return
@@ -212,6 +211,22 @@ func (s *SegmentSink) shouldUploadPlaylist() bool {
 	segmentsPerHour := 3600 / s.SegmentDuration
 	frequency := min(s.segmentCount/segmentsPerHour, segmentsPerHour/60)
 	return s.segmentCount < segmentsPerHour || s.segmentCount%frequency == 0
+}
+
+func (s *SegmentSink) uploadPlaylist() error {
+	var err error
+	playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
+	playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
+	s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
+	return err
+}
+
+func (s *SegmentSink) uploadLivePlaylist() error {
+	var err error
+	liveLocalPath := path.Join(s.LocalDir, s.LivePlaylistFilename)
+	liveStoragePath := path.Join(s.StorageDir, s.LivePlaylistFilename)
+	s.SegmentsInfo.LivePlaylistLocation, _, err = s.Upload(liveLocalPath, liveStoragePath, s.OutputType, false)
+	return err
 }
 
 func (s *SegmentSink) UpdateStartDate(t time.Time) {
@@ -301,33 +316,4 @@ func (s *SegmentSink) Close() error {
 	}
 
 	return nil
-}
-
-func (s *SegmentSink) Cleanup() {
-	if s.LocalDir == s.StorageDir {
-		return
-	}
-
-	if s.LocalDir != "" {
-		logger.Debugw("removing temporary directory", "path", s.LocalDir)
-		if err := os.RemoveAll(s.LocalDir); err != nil {
-			logger.Errorw("could not delete temp dir", err)
-		}
-	}
-}
-
-func (s *SegmentSink) uploadPlaylist() error {
-	var err error
-	playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
-	playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
-	s.SegmentsInfo.PlaylistLocation, _, err = s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false, "playlist")
-	return err
-}
-
-func (s *SegmentSink) uploadLivePlaylist() error {
-	var err error
-	liveLocalPath := path.Join(s.LocalDir, s.LivePlaylistFilename)
-	liveStoragePath := path.Join(s.StorageDir, s.LivePlaylistFilename)
-	s.SegmentsInfo.LivePlaylistLocation, _, err = s.Upload(liveLocalPath, liveStoragePath, s.OutputType, false, "live_playlist")
-	return err
 }

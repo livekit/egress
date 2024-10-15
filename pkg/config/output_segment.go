@@ -39,7 +39,7 @@ type SegmentConfig struct {
 	SegmentDuration      int
 
 	DisableManifest bool
-	UploadConfig    UploadConfig
+	StorageConfig   *StorageConfig
 }
 
 func (p *PipelineConfig) GetSegmentConfig() *SegmentConfig {
@@ -60,7 +60,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 		LivePlaylistFilename: clean(segments.LivePlaylistName),
 		SegmentDuration:      int(segments.SegmentDuration),
 		DisableManifest:      segments.DisableManifest,
-		UploadConfig:         p.getUploadConfig(segments),
+		StorageConfig:        p.getStorageConfig(segments),
 	}
 
 	if conf.SegmentDuration == 0 {
@@ -154,24 +154,18 @@ func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 		return errors.ErrInvalidInput("live_playlist_name cannot be identical to playlist_name")
 	}
 
-	if o.UploadConfig == nil {
-		o.LocalDir = playlistDir
-	} else {
-		// Prepend the configuration base directory and the egress Id
-		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
-		// Append a "/" to the path for consistency with the "UploadConfig == nil" case
-		o.LocalDir = path.Join(TmpDir, p.Info.EgressId) + "/"
-	}
+	// Prepend the configuration base directory and the egress Id
+	// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
+	// Append a "/" to the path for consistency with the "UploadConfig == nil" case
+	o.LocalDir = path.Join(p.TmpDir, p.Info.EgressId) + "/"
 
 	// create local directories
 	if fileDir != "" {
 		if err := os.MkdirAll(path.Join(o.LocalDir, fileDir), 0755); err != nil {
 			return err
 		}
-	} else if o.LocalDir != "" {
-		if err := os.MkdirAll(o.LocalDir, 0755); err != nil {
-			return err
-		}
+	} else if err := os.MkdirAll(o.LocalDir, 0755); err != nil {
+		return err
 	}
 
 	o.SegmentsInfo.PlaylistName = path.Join(o.StorageDir, o.PlaylistFilename)

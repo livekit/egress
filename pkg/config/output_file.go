@@ -34,7 +34,7 @@ type FileConfig struct {
 	StorageFilepath string
 
 	DisableManifest bool
-	UploadConfig    UploadConfig
+	StorageConfig   *StorageConfig
 }
 
 func (p *PipelineConfig) GetFileConfig() *FileConfig {
@@ -76,7 +76,7 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, req fileRequ
 		FileInfo:        &livekit.FileInfo{},
 		StorageFilepath: clean(req.GetFilepath()),
 		DisableManifest: req.GetDisableManifest(),
-		UploadConfig:    p.getUploadConfig(req),
+		StorageConfig:   p.getStorageConfig(req),
 	}
 
 	// filename
@@ -137,28 +137,18 @@ func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replac
 	o.FileInfo.Filename = o.StorageFilepath
 
 	// get local filepath
-	dir, filename := path.Split(o.StorageFilepath)
-	if o.UploadConfig == nil {
-		if dir != "" {
-			// create local directory
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				return err
-			}
-		}
-		// write directly to requested location
-		o.LocalFilepath = o.StorageFilepath
-	} else {
-		// prepend the configuration base directory and the egress Id
-		tempDir := path.Join(TmpDir, p.Info.EgressId)
+	_, filename := path.Split(o.StorageFilepath)
 
-		// create temporary directory
-		if err := os.MkdirAll(tempDir, 0755); err != nil {
-			return err
-		}
+	// prepend the configuration base directory and the egress Id
+	local := path.Join(p.TmpDir, p.Info.EgressId)
 
-		// write to tmp dir
-		o.LocalFilepath = path.Join(tempDir, filename)
+	// create temporary directory
+	if err := os.MkdirAll(local, 0755); err != nil {
+		return err
 	}
+
+	// write to tmp dir
+	o.LocalFilepath = path.Join(local, filename)
 
 	return nil
 }

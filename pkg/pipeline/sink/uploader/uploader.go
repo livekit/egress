@@ -16,13 +16,13 @@ package uploader
 
 import (
 	"os"
-	"path"
 	"time"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/psrpc"
 )
 
 const (
@@ -31,99 +31,81 @@ const (
 	maxDelay   = time.Second * 5
 )
 
-type Uploader interface {
-	Upload(string, string, types.OutputType, bool, string) (string, int64, error)
-}
-
 type uploader interface {
 	upload(string, string, types.OutputType) (string, int64, error)
 }
 
-func New(conf config.UploadConfig, backup string, monitor *stats.HandlerMonitor) (Uploader, error) {
-	var u uploader
-	var err error
+type Uploader struct {
+	primary uploader
+	backup  uploader
+	monitor *stats.HandlerMonitor
+}
 
-	switch c := conf.(type) {
-	case *config.EgressS3Upload:
-		u, err = newS3Uploader(c)
-	case *livekit.S3Upload:
-		u, err = newS3Uploader(&config.EgressS3Upload{S3Upload: c})
-	case *livekit.GCPUpload:
-		u, err = newGCPUploader(c)
-	case *livekit.AzureBlobUpload:
-		u, err = newAzureUploader(c)
-	case *livekit.AliOSSUpload:
-		u, err = newAliOSSUploader(c)
-	default:
-		return &localUploader{}, nil
-	}
+func New(conf, backup *config.StorageConfig, monitor *stats.HandlerMonitor) (*Uploader, error) {
+	p, err := getUploader(conf)
 	if err != nil {
 		return nil, err
 	}
 
-	remote := &remoteUploader{
-		uploader: u,
-		backup:   backup,
-		monitor:  monitor,
+	u := &Uploader{
+		primary: p,
+		monitor: monitor,
 	}
 
-	return remote, nil
+	if backup != nil {
+		b, err := getUploader(backup)
+		if err != nil {
+			logger.Errorw("failed to create backup uploader", err)
+		} else {
+			u.backup = b
+		}
+	}
+
+	return u, nil
 }
 
-type remoteUploader struct {
-	uploader
-
-	backup  string
-	monitor *stats.HandlerMonitor
+func getUploader(conf *config.StorageConfig) (uploader, error) {
+	switch {
+	case conf == nil:
+		return newLocalUploader("")
+	case conf.S3 != nil:
+		return newS3Uploader(conf.S3, conf.PathPrefix)
+	case conf.GCP != nil:
+		return newGCPUploader(conf.GCP, conf.PathPrefix)
+	case conf.Azure != nil:
+		return newAzureUploader(conf.Azure, conf.PathPrefix)
+	case conf.AliOSS != nil:
+		return newAliOSSUploader(conf.AliOSS, conf.PathPrefix)
+	default:
+		return newLocalUploader(conf.PathPrefix)
+	}
 }
 
-func (u *remoteUploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool, fileType string) (string, int64, error) {
+func (u *Uploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool) (string, int64, error) {
 	start := time.Now()
-	location, size, uploadErr := u.upload(localFilepath, storageFilepath, outputType)
+	location, size, primaryErr := u.primary.upload(localFilepath, storageFilepath, outputType)
 	elapsed := time.Since(start)
 
-	// success
-	if uploadErr == nil {
-		u.monitor.IncUploadCountSuccess(fileType, float64(elapsed.Milliseconds()))
+	if primaryErr == nil {
+		// success
+		u.monitor.IncUploadCountSuccess(string(outputType), float64(elapsed.Milliseconds()))
 		if deleteAfterUpload {
 			_ = os.Remove(localFilepath)
 		}
-
 		return location, size, nil
 	}
 
-	// failure
-	u.monitor.IncUploadCountFailure(fileType, float64(elapsed.Milliseconds()))
-	if u.backup != "" {
-		stat, err := os.Stat(localFilepath)
-		if err != nil {
-			return "", 0, err
+	u.monitor.IncUploadCountFailure(string(outputType), float64(elapsed.Milliseconds()))
+	if u.backup != nil {
+		location, size, backupErr := u.backup.upload(localFilepath, storageFilepath, outputType)
+		if backupErr == nil {
+			u.monitor.IncBackupStorageWrites(string(outputType))
+			return location, size, nil
 		}
 
-		backupDir := path.Join(u.backup, path.Dir(storageFilepath))
-		backupFileName := path.Base(storageFilepath)
-		if err = os.MkdirAll(backupDir, 0755); err != nil {
-			return "", 0, err
-		}
-		backupFilepath := path.Join(backupDir, backupFileName)
-		if err = os.Rename(localFilepath, backupFilepath); err != nil {
-			return "", 0, err
-		}
-		u.monitor.IncBackupStorageWrites(string(outputType))
-
-		return backupFilepath, stat.Size(), nil
+		return "", 0, psrpc.NewErrorf(psrpc.InvalidArgument,
+			"primary and backup uploads failed: %s\n%s", primaryErr.Error(), backupErr.Error())
 	}
 
-	return "", 0, uploadErr
-}
-
-type localUploader struct{}
-
-func (u *localUploader) Upload(localFilepath, _ string, _ types.OutputType, _ bool, _ string) (string, int64, error) {
-	stat, err := os.Stat(localFilepath)
-	if err != nil {
-		return "", 0, err
-	}
-
-	return localFilepath, stat.Size(), nil
+	return "", 0, primaryErr
 }

@@ -34,64 +34,24 @@ type BaseConfig struct {
 	WsUrl     string             `yaml:"ws_url"`     // (env LIVEKIT_WS_URL)
 
 	// optional
-	Logging             *logger.Config          `yaml:"logging"`               // logging config
-	TemplateBase        string                  `yaml:"template_base"`         // custom template base url
-	BackupStorage       string                  `yaml:"backup_storage"`        // backup file location for failed uploads
-	ClusterID           string                  `yaml:"cluster_id"`            // cluster this instance belongs to
-	EnableChromeSandbox bool                    `yaml:"enable_chrome_sandbox"` // enable Chrome sandbox, requires extra docker configuration
-	MaxUploadQueue      int                     `yaml:"max_upload_queue"`      // maximum upload queue size, in minutes
-	StorageConfig       `yaml:",inline"`        // upload config (S3, Azure, GCP, or AliOSS)
-	SessionLimits       `yaml:"session_limits"` // session duration limits
+	Logging             *logger.Config `yaml:"logging"`               // logging config
+	TemplateBase        string         `yaml:"template_base"`         // custom template base url
+	ClusterID           string         `yaml:"cluster_id"`            // cluster this instance belongs to
+	EnableChromeSandbox bool           `yaml:"enable_chrome_sandbox"` // enable Chrome sandbox, requires extra docker configuration
+	MaxUploadQueue      int            `yaml:"max_upload_queue"`      // maximum upload queue size, in minutes
+
+	SessionLimits `yaml:"session_limits"` // session duration limits
+	StorageConfig *StorageConfig          `yaml:"storage,omitempty"` // storage config
+	BackupConfig  *StorageConfig          `yaml:"backup,omitempty"`  // backup config, for storage failures
 
 	// dev/debugging
 	Insecure bool        `yaml:"insecure"` // allow chrome to connect to an insecure websocket
 	Debug    DebugConfig `yaml:"debug"`    // create dot file on internal error
-
-	// deprecated
-	LogLevel string `yaml:"log_level"` // Use Logging instead
 }
 
 type DebugConfig struct {
 	EnableProfiling bool             `yaml:"enable_profiling"` // create dot file and pprof on internal error
-	PathPrefix      string           `yaml:"path_prefix"`      // filepath prefix for uploads
 	StorageConfig   `yaml:",inline"` // upload config (S3, Azure, GCP, or AliOSS)
-}
-
-type StorageConfig struct {
-	S3     *S3Config    `yaml:"s3"`
-	Azure  *AzureConfig `yaml:"azure"`
-	GCP    *GCPConfig   `yaml:"gcp"`
-	AliOSS *S3Config    `yaml:"alioss"`
-}
-
-type S3Config struct {
-	AccessKey      string        `yaml:"access_key"`    // (env AWS_ACCESS_KEY_ID)
-	Secret         string        `yaml:"secret"`        // (env AWS_SECRET_ACCESS_KEY)
-	SessionToken   string        `yaml:"session_token"` // (env AWS_SESSION_TOKEN)
-	Region         string        `yaml:"region"`        // (env AWS_DEFAULT_REGION)
-	Endpoint       string        `yaml:"endpoint"`
-	Bucket         string        `yaml:"bucket"`
-	ForcePathStyle bool          `yaml:"force_path_style"`
-	ProxyConfig    *ProxyConfig  `yaml:"proxy_config"`
-	MaxRetries     int           `yaml:"max_retries"`
-	MaxRetryDelay  time.Duration `yaml:"max_retry_delay"`
-	MinRetryDelay  time.Duration `yaml:"min_retry_delay"`
-	AwsLogLevel    string        `yaml:"aws_log_level"`
-
-	// deprecated
-	Proxy string `yaml:"proxy"` // use ProxyConfig instead
-}
-
-type AzureConfig struct {
-	AccountName   string `yaml:"account_name"` // (env AZURE_STORAGE_ACCOUNT)
-	AccountKey    string `yaml:"account_key"`  // (env AZURE_STORAGE_KEY)
-	ContainerName string `yaml:"container_name"`
-}
-
-type GCPConfig struct {
-	CredentialsJSON string       `yaml:"credentials_json"` // (env GOOGLE_APPLICATION_CREDENTIALS)
-	Bucket          string       `yaml:"bucket"`
-	ProxyConfig     *ProxyConfig `yaml:"proxy_config"`
 }
 
 type ProxyConfig struct {
@@ -108,11 +68,6 @@ type SessionLimits struct {
 }
 
 func (c *BaseConfig) initLogger(values ...interface{}) error {
-	if c.LogLevel != "" {
-		logger.Warnw("log_level deprecated. use logging instead", nil)
-		c.Logging.Level = c.LogLevel
-	}
-
 	var gstDebug []string
 	switch c.Logging.Level {
 	case "debug":

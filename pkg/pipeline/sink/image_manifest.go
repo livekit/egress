@@ -50,7 +50,7 @@ func (m *ImageManifest) imageCreated(filename string, ts time.Time, size int64) 
 	})
 }
 
-func (m *ImageManifest) updateManifest(u uploader.Uploader, localFilepath, storageFilepath string) error {
+func (m *ImageManifest) updateManifest(u *uploader.Uploader, localFilepath, storageFilepath string) error {
 	manifest, err := os.Create(localFilepath)
 	if err != nil {
 		return err
@@ -71,7 +71,7 @@ func (m *ImageManifest) updateManifest(u uploader.Uploader, localFilepath, stora
 		return err
 	}
 
-	_, _, err = u.Upload(localFilepath, storageFilepath, types.OutputTypeJSON, false, "image_manifest")
+	_, _, err = u.Upload(localFilepath, storageFilepath, types.OutputTypeJSON, false)
 
 	return err
 }

@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"sync"
 
@@ -44,12 +45,12 @@ const (
 )
 
 type S3Uploader struct {
-	mu      sync.Mutex
-	conf    *config.EgressS3Upload
+	conf    *config.S3Config
+	prefix  string
 	awsConf *aws.Config
 }
 
-func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
+func newS3Uploader(conf *config.S3Config, prefix string) (uploader, error) {
 	opts := func(o *awsConfig.LoadOptions) error {
 		if conf.Region != "" {
 			o.Region = conf.Region
@@ -75,15 +76,15 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 			})
 		}
 
-		if conf.Proxy != nil {
-			proxyUrl, err := url.Parse(conf.Proxy.Url)
+		if conf.ProxyConfig != nil {
+			proxyUrl, err := url.Parse(conf.ProxyConfig.Url)
 			if err != nil {
 				return err
 			}
 			s3Transport := http.DefaultTransport.(*http.Transport).Clone()
 			s3Transport.Proxy = http.ProxyURL(proxyUrl)
-			if conf.Proxy.Username != "" && conf.Proxy.Password != "" {
-				auth := fmt.Sprintf("%s:%s", conf.Proxy.Username, conf.Proxy.Password)
+			if conf.ProxyConfig.Username != "" && conf.ProxyConfig.Password != "" {
+				auth := fmt.Sprintf("%s:%s", conf.ProxyConfig.Username, conf.ProxyConfig.Password)
 				basicAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
 				s3Transport.ProxyConnectHeader = http.Header{}
 				s3Transport.ProxyConnectHeader.Add("Proxy-Authorization", basicAuth)
@@ -109,6 +110,7 @@ func newS3Uploader(conf *config.EgressS3Upload) (uploader, error) {
 
 	return &S3Uploader{
 		conf:    conf,
+		prefix:  prefix,
 		awsConf: &awsConf,
 	}, nil
 }
@@ -131,6 +133,8 @@ func updateRegion(awsConf *aws.Config, bucket string) error {
 }
 
 func (u *S3Uploader) upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
+	storageFilepath = path.Join(u.prefix, storageFilepath)
+
 	file, err := os.Open(localFilepath)
 	if err != nil {
 		return "", 0, errors.ErrUploadFailed("S3", err)

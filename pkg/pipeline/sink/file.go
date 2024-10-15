@@ -16,22 +16,19 @@ package sink
 
 import (
 	"fmt"
-	"os"
-	"path"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
-	"github.com/livekit/protocol/logger"
 )
 
 type FileSink struct {
-	uploader.Uploader
+	*uploader.Uploader
 
 	conf *config.PipelineConfig
 	*config.FileConfig
 }
 
-func newFileSink(u uploader.Uploader, conf *config.PipelineConfig, o *config.FileConfig) *FileSink {
+func newFileSink(u *uploader.Uploader, conf *config.PipelineConfig, o *config.FileConfig) *FileSink {
 	return &FileSink{
 		Uploader:   u,
 		conf:       conf,
@@ -44,7 +41,7 @@ func (s *FileSink) Start() error {
 }
 
 func (s *FileSink) Close() error {
-	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false, "file")
+	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
 	if err != nil {
 		return err
 	}
@@ -61,18 +58,4 @@ func (s *FileSink) Close() error {
 	}
 
 	return nil
-}
-
-func (s *FileSink) Cleanup() {
-	if s.LocalFilepath == s.StorageFilepath {
-		return
-	}
-
-	dir, _ := path.Split(s.LocalFilepath)
-	if dir != "" {
-		logger.Debugw("removing temporary directory", "path", dir)
-		if err := os.RemoveAll(dir); err != nil {
-			logger.Errorw("could not delete temp dir", err)
-		}
-	}
 }

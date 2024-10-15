@@ -217,5 +217,3 @@ func (s *WebsocketSink) Close() error {
 
 	return nil
 }
-
-func (s *WebsocketSink) Cleanup() {}

@@ -39,7 +39,7 @@ type Manifest struct {
 	SegmentCount      int64  `json:"segment_count,omitempty"`
 }
 
-func uploadManifest(p *config.PipelineConfig, u uploader.Uploader, localFilepath, storageFilepath string) error {
+func uploadManifest(p *config.PipelineConfig, u *uploader.Uploader, localFilepath, storageFilepath string) error {
 	manifest, err := os.Create(localFilepath)
 	if err != nil {
 		return err
@@ -55,7 +55,7 @@ func uploadManifest(p *config.PipelineConfig, u uploader.Uploader, localFilepath
 		return err
 	}
 
-	_, _, err = u.Upload(localFilepath, storageFilepath, types.OutputTypeJSON, false, "manifest")
+	_, _, err = u.Upload(localFilepath, storageFilepath, types.OutputTypeJSON, false)
 
 	return err
 }

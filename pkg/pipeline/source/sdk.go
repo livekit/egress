@@ -17,7 +17,6 @@ package source
 import (
 	"context"
 	"fmt"
-	"os"
 	"path"
 	"strings"
 	"sync"
@@ -493,14 +492,7 @@ func (s *SDKSource) createWriter(
 ) (*sdk.AppWriter, error) {
 	var logFilename string
 	if s.Debug.EnableProfiling {
-		if s.Debug.ToUploadConfig() == nil {
-			if err := os.MkdirAll(path.Join(s.Debug.PathPrefix, s.Info.EgressId), 0755); err != nil {
-				return nil, err
-			}
-			logFilename = path.Join(s.Debug.PathPrefix, s.Info.EgressId, fmt.Sprintf("%s.csv", track.ID()))
-		} else {
-			logFilename = path.Join(s.TmpDir, fmt.Sprintf("%s.csv", track.ID()))
-		}
+		logFilename = path.Join(s.TmpDir, fmt.Sprintf("%s.csv", track.ID()))
 	}
 
 	src, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", track.ID()))

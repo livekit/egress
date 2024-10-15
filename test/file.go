@@ -264,11 +264,9 @@ func (r *Runner) verifyFile(t *testing.T, p *config.PipelineConfig, res *livekit
 	storageFilename := path.Base(storagePath)
 
 	// download from cloud storage
-	if uploadConfig := p.GetFileConfig().UploadConfig; uploadConfig != nil {
-		localPath = path.Join(r.FilePrefix, storageFilename)
-		download(t, uploadConfig, localPath, storagePath)
-		download(t, uploadConfig, localPath+".json", storagePath+".json")
-	}
+	localPath = path.Join(r.FilePrefix, storageFilename)
+	download(t, p.GetFileConfig().StorageConfig, localPath, storagePath)
+	download(t, p.GetFileConfig().StorageConfig, localPath+".json", storagePath+".json")
 
 	// verify
 	verify(t, localPath, p, res, types.EgressTypeFile, r.Muting, r.sourceFramerate, false)
