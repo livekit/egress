@@ -16,6 +16,7 @@ package handler
 
 import (
 	"context"
+	"os"
 	"path"
 
 	"github.com/frostbyte73/core"
@@ -44,7 +45,7 @@ type Handler struct {
 }
 
 func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
-	ipcClient, err := ipc.NewServiceClient(path.Join(config.TmpDir, conf.NodeID))
+	ipcClient, err := ipc.NewServiceClient(path.Join(os.TempDir(), conf.NodeID))
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +57,7 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 	}
 
 	ipc.RegisterEgressHandlerServer(h.ipcHandlerServer, h)
-	ipcHandlerDir := path.Join(config.TmpDir, conf.HandlerID)
+	ipcHandlerDir := path.Join(os.TempDir(), conf.HandlerID)
 	if err = ipc.StartHandlerListener(h.ipcHandlerServer, ipcHandlerDir); err != nil {
 		return nil, err
 	}
