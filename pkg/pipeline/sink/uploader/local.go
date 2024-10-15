@@ -15,6 +15,7 @@
 package uploader
 
 import (
+	"io"
 	"os"
 	"path"
 
@@ -42,7 +43,21 @@ func (u *localUploader) upload(localFilepath, storageFilepath string, _ types.Ou
 		return "", 0, err
 	}
 
-	if err = os.Rename(localFilepath, storageFilepath); err != nil {
+	tmp, err := os.Open(localFilepath)
+	if err != nil {
+		return "", 0, err
+	}
+
+	f, err := os.Create(storageFilepath)
+	if err != nil {
+		_ = tmp.Close()
+		return "", 0, err
+	}
+
+	_, err = io.Copy(f, tmp)
+	_ = f.Close()
+	_ = tmp.Close()
+	if err != nil {
 		return "", 0, err
 	}
 

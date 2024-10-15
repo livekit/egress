@@ -40,15 +40,17 @@ import (
 )
 
 func download(t *testing.T, c *config.StorageConfig, localFilepath, storageFilepath string) {
-	if c.S3 != nil {
-		logger.Debugw("s3 download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
-		downloadS3(t, c.S3, localFilepath, storageFilepath)
-	} else if c.GCP != nil {
-		logger.Debugw("gcp download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
-		downloadGCP(t, c.GCP, localFilepath, storageFilepath)
-	} else if c.Azure != nil {
-		logger.Debugw("azure download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
-		downloadAzure(t, c.Azure, localFilepath, storageFilepath)
+	if c != nil {
+		if c.S3 != nil {
+			logger.Debugw("s3 download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
+			downloadS3(t, c.S3, localFilepath, storageFilepath)
+		} else if c.GCP != nil {
+			logger.Debugw("gcp download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
+			downloadGCP(t, c.GCP, localFilepath, storageFilepath)
+		} else if c.Azure != nil {
+			logger.Debugw("azure download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
+			downloadAzure(t, c.Azure, localFilepath, storageFilepath)
+		}
 	}
 }
 

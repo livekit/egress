@@ -16,7 +16,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"path"
 	"strings"
 	"time"
@@ -139,16 +138,8 @@ func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replac
 	// get local filepath
 	_, filename := path.Split(o.StorageFilepath)
 
-	// prepend the configuration base directory and the egress Id
-	local := path.Join(p.TmpDir, p.Info.EgressId)
-
-	// create temporary directory
-	if err := os.MkdirAll(local, 0755); err != nil {
-		return err
-	}
-
 	// write to tmp dir
-	o.LocalFilepath = path.Join(local, filename)
+	o.LocalFilepath = path.Join(p.TmpDir, filename)
 
 	return nil
 }

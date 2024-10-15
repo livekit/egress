@@ -132,9 +132,7 @@ func (o *ImageConfig) updatePrefix(p *PipelineConfig) error {
 	// there is more than one image output
 	// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
 	// Append a "/" to the path for consistency with the "UploadConfig == nil" case
-	o.LocalDir = path.Join(p.TmpDir, p.Info.EgressId, o.Id) + "/"
-
-	// create local directories
+	o.LocalDir = path.Join(p.TmpDir, o.Id) + "/"
 	if err := os.MkdirAll(o.LocalDir, 0755); err != nil {
 		return err
 	}

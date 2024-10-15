@@ -39,6 +39,7 @@ import (
 
 const (
 	Latency = uint64(3e9)
+	TmpDir  = "/home/egress/tmp"
 )
 
 type PipelineConfig struct {

@@ -96,7 +96,7 @@ func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.I
 		}()
 	}
 
-	tmpDir := path.Join(os.TempDir(), s.conf.NodeID)
+	tmpDir := path.Join(config.TmpDir, s.conf.NodeID)
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		return nil, err
 	}
