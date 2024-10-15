@@ -17,6 +17,7 @@ package config
 import (
 	"context"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -126,6 +127,7 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 				Level: "info",
 			},
 		},
+		TmpDir:  path.Join(TmpDir, req.EgressId),
 		Outputs: make(map[types.EgressType][]OutputConfig),
 	}
 
@@ -151,6 +153,7 @@ func GetValidatedPipelineConfig(conf *ServiceConfig, req *rpc.StartEgressRequest
 
 	p := &PipelineConfig{
 		BaseConfig: conf.BaseConfig,
+		TmpDir:     path.Join(TmpDir, req.EgressId),
 		Outputs:    make(map[types.EgressType][]OutputConfig),
 	}
 
