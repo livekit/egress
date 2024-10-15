@@ -17,7 +17,6 @@ package handler
 import (
 	"context"
 	"path"
-	"strings"
 
 	"github.com/frostbyte73/core"
 	"google.golang.org/grpc"
@@ -45,7 +44,7 @@ type Handler struct {
 }
 
 func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
-	ipcClient, err := ipc.NewServiceClient(path.Join(conf.TmpDir[:strings.LastIndex(conf.TmpDir, "/")], conf.NodeID))
+	ipcClient, err := ipc.NewServiceClient(path.Join(config.TmpDir, conf.NodeID))
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +56,8 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 	}
 
 	ipc.RegisterEgressHandlerServer(h.ipcHandlerServer, h)
-	if err = ipc.StartHandlerListener(h.ipcHandlerServer, conf.TmpDir); err != nil {
+	ipcHandlerDir := path.Join(config.TmpDir, conf.HandlerID)
+	if err = ipc.StartHandlerListener(h.ipcHandlerServer, ipcHandlerDir); err != nil {
 		return nil, err
 	}
 

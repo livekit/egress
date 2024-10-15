@@ -122,7 +122,7 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
-	if err = s.Launch(context.Background(), handlerID, req, info, cmd, p.TmpDir); err != nil {
+	if err = s.Launch(context.Background(), handlerID, req, info, cmd); err != nil {
 		s.processEnded(req, info, err)
 	} else {
 		s.monitor.UpdatePID(info.EgressId, cmd.Process.Pid)
