@@ -36,7 +36,7 @@ func (c *Controller) GetGstPipelineDebugDot() string {
 }
 
 func (c *Controller) uploadDebugFiles() {
-	u, err := uploader.New(c.Debug.ToUploadConfig(), "", c.monitor)
+	u, err := uploader.New(&c.Debug.StorageConfig, nil, c.monitor)
 	if err != nil {
 		logger.Errorw("failed to create uploader", err)
 		return
@@ -80,11 +80,7 @@ func (c *Controller) uploadDebugFiles() {
 	}
 }
 
-func (c *Controller) uploadTrackFiles(u uploader.Uploader) {
-	if c.Debug.ToUploadConfig() == nil {
-		return
-	}
-
+func (c *Controller) uploadTrackFiles(u *uploader.Uploader) {
 	files, err := os.ReadDir(c.TmpDir)
 	if err != nil {
 		return
@@ -93,8 +89,8 @@ func (c *Controller) uploadTrackFiles(u uploader.Uploader) {
 	for _, f := range files {
 		if strings.HasSuffix(f.Name(), ".csv") {
 			local := path.Join(c.TmpDir, f.Name())
-			storage := path.Join(c.Debug.PathPrefix, c.Info.EgressId, f.Name())
-			_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false, "track")
+			storage := path.Join(c.Info.EgressId, f.Name())
+			_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
 			if err != nil {
 				logger.Errorw("failed to upload debug file", err)
 				return
@@ -103,12 +99,12 @@ func (c *Controller) uploadTrackFiles(u uploader.Uploader) {
 	}
 }
 
-func (c *Controller) uploadDotFile(u uploader.Uploader) {
+func (c *Controller) uploadDotFile(u *uploader.Uploader) {
 	dot := c.GetGstPipelineDebugDot()
 	c.uploadDebugFile(u, []byte(dot), ".dot")
 }
 
-func (c *Controller) uploadPProf(u uploader.Uploader) {
+func (c *Controller) uploadPProf(u *uploader.Uploader) {
 	b, err := pprof.GetProfileData(context.Background(), "goroutine", 0, 0)
 	if err != nil {
 		logger.Errorw("failed to get profile data", err)
@@ -117,17 +113,11 @@ func (c *Controller) uploadPProf(u uploader.Uploader) {
 	c.uploadDebugFile(u, b, ".prof")
 }
 
-func (c *Controller) uploadDebugFile(u uploader.Uploader, data []byte, fileExtension string) {
-	storageDir := path.Join(c.Debug.PathPrefix, c.Info.EgressId)
-	var dir string
-	if c.Debug.ToUploadConfig() == nil {
-		dir = storageDir
-	} else {
-		dir = c.TmpDir
-	}
+func (c *Controller) uploadDebugFile(u *uploader.Uploader, data []byte, fileExtension string) {
+	storageDir := c.Info.EgressId
 
 	filename := fmt.Sprintf("%s%s", c.Info.EgressId, fileExtension)
-	local := path.Join(dir, filename)
+	local := path.Join(c.TmpDir, filename)
 	f, err := os.Create(local)
 	if err != nil {
 		logger.Errorw("failed to create debug file", err)
@@ -141,11 +131,7 @@ func (c *Controller) uploadDebugFile(u uploader.Uploader, data []byte, fileExten
 		return
 	}
 
-	if c.Debug.ToUploadConfig() == nil {
-		return
-	}
-
-	_, _, err = u.Upload(local, path.Join(storageDir, filename), types.OutputTypeBlob, false, "debug")
+	_, _, err = u.Upload(local, path.Join(storageDir, filename), types.OutputTypeBlob, false)
 	if err != nil {
 		logger.Errorw("failed to upload debug file", err)
 		return

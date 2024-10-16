@@ -180,6 +180,7 @@ func runHandler(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
+	defer os.RemoveAll(conf.TmpDir)
 	_ = os.Setenv("TMPDIR", conf.TmpDir)
 
 	rc, err := lkredis.GetRedisClient(conf.Redis)

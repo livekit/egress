@@ -457,12 +457,6 @@ func (c *Controller) Close() {
 		livekit.EgressStatus_EGRESS_ENDING:
 		c.Info.SetComplete()
 	}
-
-	for _, si := range c.sinks {
-		for _, s := range si {
-			s.Cleanup()
-		}
-	}
 }
 
 func (c *Controller) startSessionLimitTimer(ctx context.Context) {

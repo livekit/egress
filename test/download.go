@@ -36,27 +36,25 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
-func download(t *testing.T, uploadParams interface{}, localFilepath, storageFilepath string) {
-	switch u := uploadParams.(type) {
-	case *config.EgressS3Upload:
-		logger.Debugw("s3 download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
-		downloadS3(t, u, localFilepath, storageFilepath)
-
-	case *livekit.GCPUpload:
-		logger.Debugw("gcp download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
-		downloadGCP(t, u, localFilepath, storageFilepath)
-
-	case *livekit.AzureBlobUpload:
-		logger.Debugw("azure download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
-		downloadAzure(t, u, localFilepath, storageFilepath)
+func download(t *testing.T, c *config.StorageConfig, localFilepath, storageFilepath string) {
+	if c != nil {
+		if c.S3 != nil {
+			logger.Debugw("s3 download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
+			downloadS3(t, c.S3, localFilepath, storageFilepath)
+		} else if c.GCP != nil {
+			logger.Debugw("gcp download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
+			downloadGCP(t, c.GCP, localFilepath, storageFilepath)
+		} else if c.Azure != nil {
+			logger.Debugw("azure download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
+			downloadAzure(t, c.Azure, localFilepath, storageFilepath)
+		}
 	}
 }
 
-func downloadS3(t *testing.T, conf *config.EgressS3Upload, localFilepath, storageFilepath string) {
+func downloadS3(t *testing.T, conf *config.S3Config, localFilepath, storageFilepath string) {
 	file, err := os.Create(localFilepath)
 	require.NoError(t, err)
 	defer file.Close()
@@ -93,7 +91,7 @@ func downloadS3(t *testing.T, conf *config.EgressS3Upload, localFilepath, storag
 	require.NoError(t, err)
 }
 
-func downloadAzure(t *testing.T, conf *livekit.AzureBlobUpload, localFilepath, storageFilepath string) {
+func downloadAzure(t *testing.T, conf *config.AzureConfig, localFilepath, storageFilepath string) {
 	credential, err := azblob.NewSharedKeyCredential(
 		conf.AccountName,
 		conf.AccountKey,
@@ -131,13 +129,13 @@ func downloadAzure(t *testing.T, conf *livekit.AzureBlobUpload, localFilepath, s
 	require.NoError(t, err)
 }
 
-func downloadGCP(t *testing.T, conf *livekit.GCPUpload, localFilepath, storageFilepath string) {
+func downloadGCP(t *testing.T, conf *config.GCPConfig, localFilepath, storageFilepath string) {
 	ctx := context.Background()
 	var client *storage.Client
 
 	var err error
-	if conf.Credentials != "" {
-		client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(conf.Credentials)))
+	if conf.CredentialsJSON != "" {
+		client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(conf.CredentialsJSON)))
 	} else {
 		client, err = storage.NewClient(ctx)
 	}

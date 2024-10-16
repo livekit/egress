@@ -39,7 +39,7 @@ type ImageConfig struct {
 	ImageExtension types.FileExtension
 
 	DisableManifest bool
-	UploadConfig    UploadConfig
+	StorageConfig   *StorageConfig
 
 	CaptureInterval uint32
 	Width           int32
@@ -77,7 +77,7 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput) (*ImageConf
 		ImagePrefix:     filenamePrefix,
 		ImageSuffix:     images.FilenameSuffix,
 		DisableManifest: images.DisableManifest,
-		UploadConfig:    p.getUploadConfig(images),
+		StorageConfig:   p.getStorageConfig(images),
 		CaptureInterval: images.CaptureInterval,
 		Width:           images.Width,
 		Height:          images.Height,
@@ -128,25 +128,17 @@ func (o *ImageConfig) updatePrefix(p *PipelineConfig) error {
 	// update config
 	o.ImagePrefix = imagesPrefix
 
-	if o.UploadConfig == nil {
-		o.LocalDir = imagesDir
-	} else {
-		// Prepend the configuration base directory and the egress Id, and slug to prevent conflict if
-		// there is more than one image output
-		// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
-		// Append a "/" to the path for consistency with the "UploadConfig == nil" case
-		o.LocalDir = path.Join(TmpDir, p.Info.EgressId, o.Id) + "/"
-	}
-
-	// create local directories
-	if o.LocalDir != "" {
-		if err := os.MkdirAll(o.LocalDir, 0755); err != nil {
-			return err
-		}
+	// Prepend the configuration base directory and the egress Id, and slug to prevent conflict if
+	// there is more than one image output
+	// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
+	o.LocalDir = path.Join(p.TmpDir, o.Id)
+	if err := os.MkdirAll(o.LocalDir, 0755); err != nil {
+		return err
 	}
 
 	return nil
 }
+
 func getMimeTypes(imageCodec livekit.ImageCodec) (types.MimeType, types.OutputType, error) {
 	switch imageCodec {
 	case livekit.ImageCodec_IC_DEFAULT, livekit.ImageCodec_IC_JPEG:

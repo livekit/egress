@@ -95,7 +95,7 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	p := &config.PipelineConfig{
 		BaseConfig: s.conf.BaseConfig,
 		HandlerID:  handlerID,
-		TmpDir:     path.Join(os.TempDir(), handlerID),
+		TmpDir:     path.Join(config.TmpDir, req.EgressId),
 	}
 
 	confString, err := yaml.Marshal(p)
@@ -124,7 +124,7 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
-	if err = s.Launch(context.Background(), handlerID, req, info, cmd, p.TmpDir); err != nil {
+	if err = s.Launch(context.Background(), handlerID, req, info, cmd); err != nil {
 		s.processEnded(req, info, err)
 	} else {
 		s.monitor.UpdatePID(info.EgressId, cmd.Process.Pid)

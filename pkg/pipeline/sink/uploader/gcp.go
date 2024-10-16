@@ -22,32 +22,35 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 
 	"cloud.google.com/go/storage"
 	"github.com/googleapis/gax-go/v2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/livekit"
 )
 
 const storageScope = "https://www.googleapis.com/auth/devstorage.read_write"
 
 type GCPUploader struct {
-	conf   *livekit.GCPUpload
+	conf   *config.GCPConfig
+	prefix string
 	client *storage.Client
 }
 
-func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
+func newGCPUploader(conf *config.GCPConfig, prefix string) (uploader, error) {
 	u := &GCPUploader{
-		conf: conf,
+		conf:   conf,
+		prefix: prefix,
 	}
 
 	var opts []option.ClientOption
-	if conf.Credentials != "" {
-		jwtConfig, err := google.JWTConfigFromJSON([]byte(conf.Credentials), storageScope)
+	if conf.CredentialsJSON != "" {
+		jwtConfig, err := google.JWTConfigFromJSON([]byte(conf.CredentialsJSON), storageScope)
 		if err != nil {
 			return nil, err
 		}
@@ -57,14 +60,14 @@ func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 	defaultTransport := http.DefaultTransport.(*http.Transport)
 	transportClone := defaultTransport.Clone()
 
-	if conf.Proxy != nil {
-		proxyUrl, err := url.Parse(conf.Proxy.Url)
+	if conf.ProxyConfig != nil {
+		proxyUrl, err := url.Parse(conf.ProxyConfig.Url)
 		if err != nil {
 			return nil, err
 		}
 		defaultTransport.Proxy = http.ProxyURL(proxyUrl)
-		if conf.Proxy.Username != "" && conf.Proxy.Password != "" {
-			auth := fmt.Sprintf("%s:%s", conf.Proxy.Username, conf.Proxy.Password)
+		if conf.ProxyConfig.Username != "" && conf.ProxyConfig.Password != "" {
+			auth := fmt.Sprintf("%s:%s", conf.ProxyConfig.Username, conf.ProxyConfig.Password)
 			basicAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
 			defaultTransport.ProxyConnectHeader = http.Header{}
 			defaultTransport.ProxyConnectHeader.Add("Proxy-Authorization", basicAuth)
@@ -83,6 +86,8 @@ func newGCPUploader(conf *livekit.GCPUpload) (uploader, error) {
 }
 
 func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {
+	storageFilepath = path.Join(u.prefix, storageFilepath)
+
 	file, err := os.Open(localFilepath)
 	if err != nil {
 		return "", 0, errors.ErrUploadFailed("GCP", err)

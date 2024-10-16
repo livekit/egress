@@ -32,7 +32,7 @@ import (
 )
 
 type ImageSink struct {
-	uploader.Uploader
+	*uploader.Uploader
 
 	*config.ImageConfig
 
@@ -53,7 +53,7 @@ type imageUpdate struct {
 	filename  string
 }
 
-func newImageSink(u uploader.Uploader, p *config.PipelineConfig, o *config.ImageConfig, callbacks *gstreamer.Callbacks) (*ImageSink, error) {
+func newImageSink(u *uploader.Uploader, p *config.PipelineConfig, o *config.ImageConfig, callbacks *gstreamer.Callbacks) (*ImageSink, error) {
 	maxPendingUploads := (p.MaxUploadQueue * 60) / int(o.CaptureInterval)
 	return &ImageSink{
 		Uploader:    u,
@@ -108,7 +108,7 @@ func (s *ImageSink) handleNewImage(update *imageUpdate) error {
 
 	imageStoragePath := path.Join(s.StorageDir, filename)
 
-	_, size, err := s.Upload(imageLocalPath, imageStoragePath, s.OutputType, true, "image")
+	_, size, err := s.Upload(imageLocalPath, imageStoragePath, s.OutputType, true)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func (s *ImageSink) NewImage(filepath string, ts uint64) error {
 		return fmt.Errorf("invalid filepath")
 	}
 
-	filename := filepath[len(s.LocalDir):]
+	filename := filepath[len(s.LocalDir)+1:]
 
 	s.createdImages <- &imageUpdate{
 		filename:  filename,
@@ -161,18 +161,4 @@ func (s *ImageSink) Close() error {
 	<-s.done.Watch()
 
 	return nil
-}
-
-func (s *ImageSink) Cleanup() {
-	if s.LocalDir == s.StorageDir {
-		return
-	}
-
-	if s.LocalDir != "" {
-		logger.Debugw("removing temporary directory", "path", s.LocalDir)
-		if err := os.RemoveAll(s.LocalDir); err != nil {
-			logger.Errorw("could not delete temp dir", err)
-		}
-	}
-
 }
