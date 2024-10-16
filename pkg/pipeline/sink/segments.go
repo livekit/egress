@@ -241,7 +241,7 @@ func (s *SegmentSink) FragmentOpened(filepath string, startTime uint64) error {
 		return fmt.Errorf("invalid filepath")
 	}
 
-	filename := filepath[len(s.LocalDir):]
+	filename := filepath[len(s.LocalDir)+1:]
 
 	s.segmentLock.Lock()
 	defer s.segmentLock.Unlock()
@@ -264,7 +264,7 @@ func (s *SegmentSink) FragmentClosed(filepath string, endTime uint64) error {
 		return fmt.Errorf("invalid filepath")
 	}
 
-	filename := filepath[len(s.LocalDir):]
+	filename := filepath[len(s.LocalDir)+1:]
 
 	select {
 	case s.closedSegments <- SegmentUpdate{

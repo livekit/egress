@@ -118,7 +118,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 	case <-time.After(time.Second * 15):
 		t.Fatal("no response from ffprobe")
 	case <-done:
-		require.NoError(t, err, "input %s does not exist", in)
+		require.NoError(t, err, "ffprobe failed for input %s", in)
 	}
 
 	switch egressType {

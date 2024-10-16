@@ -146,7 +146,7 @@ func (s *ImageSink) NewImage(filepath string, ts uint64) error {
 		return fmt.Errorf("invalid filepath")
 	}
 
-	filename := filepath[len(s.LocalDir):]
+	filename := filepath[len(s.LocalDir)+1:]
 
 	s.createdImages <- &imageUpdate{
 		filename:  filename,

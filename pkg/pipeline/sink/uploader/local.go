@@ -43,20 +43,19 @@ func (u *localUploader) upload(localFilepath, storageFilepath string, _ types.Ou
 		return "", 0, err
 	}
 
-	tmp, err := os.Open(localFilepath)
+	local, err := os.Open(localFilepath)
 	if err != nil {
 		return "", 0, err
 	}
+	defer local.Close()
 
-	f, err := os.Create(storageFilepath)
+	storage, err := os.Create(storageFilepath)
 	if err != nil {
-		_ = tmp.Close()
 		return "", 0, err
 	}
+	defer storage.Close()
 
-	_, err = io.Copy(f, tmp)
-	_ = f.Close()
-	_ = tmp.Close()
+	_, err = io.Copy(storage, local)
 	if err != nil {
 		return "", 0, err
 	}

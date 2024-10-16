@@ -313,7 +313,7 @@ func readPlaylist(filename string) (*Playlist, error) {
 		Segments:       make([]*Segment, 0),
 	}
 
-	for i := segmentLineStart; i < len(lines)-3; i += 3 {
+	for i = segmentLineStart; i < len(lines)-3; i += 3 {
 		startTime, _ := time.Parse("2006-01-02T15:04:05.999Z07:00", strings.SplitN(lines[i], ":", 2)[1])
 		durStr := strings.Split(lines[i+1], ":")[1]
 		durStr = durStr[:len(durStr)-1] // remove trailing comma

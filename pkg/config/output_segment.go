@@ -116,7 +116,7 @@ func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 	playlistName = removeKnownExtension(playlistName)
 	livePlaylistName = removeKnownExtension(livePlaylistName)
 
-	// only keep fileDir if it is a subdirectory of playlistDir
+	// only keep segmentDir if it is a subdirectory of playlistDir
 	if segmentDir != "" {
 		if playlistDir == segmentDir {
 			segmentDir = ""
@@ -156,7 +156,6 @@ func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 
 	// Prepend the configuration base directory and the egress Id
 	// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
-	// Append a "/" to the path for consistency with the "UploadConfig == nil" case
 	o.LocalDir = p.TmpDir
 	if segmentDir != "" {
 		if err := os.MkdirAll(path.Join(o.LocalDir, segmentDir), 0755); err != nil {
