@@ -38,10 +38,7 @@ import (
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-const (
-	Latency = uint64(3e9)
-	TmpDir  = "/home/egress/tmp"
-)
+const Latency = uint64(3e9)
 
 type PipelineConfig struct {
 	BaseConfig `yaml:",inline"`
@@ -127,7 +124,6 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 				Level: "info",
 			},
 		},
-		TmpDir:  path.Join(TmpDir, req.EgressId),
 		Outputs: make(map[types.EgressType][]OutputConfig),
 	}
 

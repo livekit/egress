@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"syscall"
 	"time"
 
@@ -94,6 +95,7 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	p := &config.PipelineConfig{
 		BaseConfig: s.conf.BaseConfig,
 		HandlerID:  handlerID,
+		TmpDir:     path.Join(config.TmpDir, req.EgressId),
 	}
 
 	confString, err := yaml.Marshal(p)

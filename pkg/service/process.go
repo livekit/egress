@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/protocol/livekit"
@@ -55,7 +56,7 @@ func (pm *ProcessManager) Launch(
 	info *livekit.EgressInfo,
 	cmd *exec.Cmd,
 ) error {
-	ipcHandlerDir := path.Join(os.TempDir(), handlerID)
+	ipcHandlerDir := path.Join(config.TmpDir, handlerID)
 	if err := os.MkdirAll(ipcHandlerDir, 0755); err != nil {
 		return err
 	}

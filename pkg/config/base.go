@@ -24,6 +24,8 @@ import (
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
+const TmpDir = "/home/egress/tmp"
+
 type BaseConfig struct {
 	NodeID string // do not supply - will be overwritten
 
