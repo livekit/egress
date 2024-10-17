@@ -210,15 +210,17 @@ func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, fil
 	localPlaylistPath = path.Join(r.FilePrefix, path.Base(storedPlaylistPath))
 	download(t, p.GetSegmentConfig().StorageConfig, localPlaylistPath, storedPlaylistPath)
 
-	manifestLocal := path.Join(path.Dir(localPlaylistPath), res.EgressId+".json")
-	manifestStorage := path.Join(path.Dir(storedPlaylistPath), res.EgressId+".json")
-	manifest := loadManifest(t, p.GetSegmentConfig().StorageConfig, manifestLocal, manifestStorage)
+	if plType == m3u8.PlaylistTypeEvent {
+		manifestLocal := path.Join(path.Dir(localPlaylistPath), res.EgressId+".json")
+		manifestStorage := path.Join(path.Dir(storedPlaylistPath), res.EgressId+".json")
+		manifest := loadManifest(t, p.GetSegmentConfig().StorageConfig, manifestLocal, manifestStorage)
 
-	for _, playlist := range manifest.Playlists {
-		require.Equal(t, segmentCount, len(playlist.Segments))
-		for _, segment := range playlist.Segments {
-			localPath := path.Join(r.FilePrefix, path.Base(segment.Filename))
-			download(t, p.GetSegmentConfig().StorageConfig, localPath, segment.Filename)
+		for _, playlist := range manifest.Playlists {
+			require.Equal(t, segmentCount, len(playlist.Segments))
+			for _, segment := range playlist.Segments {
+				localPath := path.Join(r.FilePrefix, path.Base(segment.Filename))
+				download(t, p.GetSegmentConfig().StorageConfig, localPath, segment.Filename)
+			}
 		}
 	}
 
