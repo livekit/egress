@@ -55,7 +55,8 @@ type PipelineConfig struct {
 	OutputCount          atomic.Int32                        `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	Info *info.EgressInfo `yaml:"-"`
+	Info     *info.EgressInfo `yaml:"-"`
+	Manifest *Manifest        `yaml:"-"`
 }
 
 type SourceConfig struct {

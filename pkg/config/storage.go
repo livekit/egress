@@ -27,6 +27,8 @@ type StorageConfig struct {
 	Azure  *AzureConfig `yaml:"azure"`  // upload to azure
 	GCP    *GCPConfig   `yaml:"gcp"`    // upload to gcp
 	AliOSS *S3Config    `yaml:"alioss"` // upload to aliyun
+
+	GeneratePresignedUrl bool `yaml:"generate_presigned_url"`
 }
 
 type S3Config struct {

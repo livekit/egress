@@ -23,8 +23,8 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/livekit/livekit-server v1.7.2
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.21.0
-	github.com/livekit/psrpc v0.5.3-0.20240616012458-ac39c8549a0a
+	github.com/livekit/protocol v1.26.1-0.20241017190602-ef6fc8f9c752
+	github.com/livekit/psrpc v0.6.1-0.20240924010758-9f0a4268a3b9
 	github.com/livekit/server-sdk-go/v2 v2.2.1
 	github.com/pion/rtp v1.8.9
 	github.com/pion/webrtc/v3 v3.3.1
@@ -75,8 +75,6 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/eapache/channels v1.1.0 // indirect
-	github.com/eapache/queue v1.1.0 // indirect
 	github.com/elliotchance/orderedmap/v2 v2.2.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect

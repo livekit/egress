@@ -27,39 +27,42 @@ import (
 )
 
 type AliOSSUploader struct {
-	conf   *config.S3Config
-	prefix string
+	conf                 *config.S3Config
+	prefix               string
+	generatePresignedUrl bool
 }
 
-func newAliOSSUploader(conf *config.S3Config, prefix string) (uploader, error) {
+func newAliOSSUploader(c *config.StorageConfig) (uploader, error) {
+	conf := c.AliOSS
 	return &AliOSSUploader{
-		conf:   conf,
-		prefix: prefix,
+		conf:                 conf,
+		prefix:               c.PathPrefix,
+		generatePresignedUrl: c.GeneratePresignedUrl,
 	}, nil
 }
 
-func (u *AliOSSUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {
+func (u *AliOSSUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, string, error) {
 	storageFilepath = path.Join(u.prefix, storageFilepath)
 
 	stat, err := os.Stat(localFilepath)
 	if err != nil {
-		return "", 0, errors.ErrUploadFailed("AliOSS", err)
+		return "", 0, "", errors.ErrUploadFailed("AliOSS", err)
 	}
 
 	client, err := oss.New(u.conf.Endpoint, u.conf.AccessKey, u.conf.Secret)
 	if err != nil {
-		return "", 0, errors.ErrUploadFailed("AliOSS", err)
+		return "", 0, "", errors.ErrUploadFailed("AliOSS", err)
 	}
 
 	bucket, err := client.Bucket(u.conf.Bucket)
 	if err != nil {
-		return "", 0, errors.ErrUploadFailed("AliOSS", err)
+		return "", 0, "", errors.ErrUploadFailed("AliOSS", err)
 	}
 
 	err = bucket.PutObjectFromFile(storageFilepath, localFilepath)
 	if err != nil {
-		return "", 0, errors.ErrUploadFailed("AliOSS", err)
+		return "", 0, "", errors.ErrUploadFailed("AliOSS", err)
 	}
 
-	return fmt.Sprintf("https://%s.%s/%s", u.conf.Bucket, u.conf.Endpoint, storageFilepath), stat.Size(), nil
+	return fmt.Sprintf("https://%s.%s/%s", u.conf.Bucket, u.conf.Endpoint, storageFilepath), stat.Size(), "", nil
 }
