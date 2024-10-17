@@ -266,7 +266,11 @@ func (r *Runner) verifyFile(t *testing.T, p *config.PipelineConfig, res *livekit
 	// download from cloud storage
 	localPath = path.Join(r.FilePrefix, storageFilename)
 	download(t, p.GetFileConfig().StorageConfig, localPath, storagePath)
-	download(t, p.GetFileConfig().StorageConfig, localPath+".json", storagePath+".json")
+
+	manifestLocal := path.Join(path.Dir(localPath), res.EgressId+".json")
+	manifestStorage := path.Join(path.Dir(storagePath), res.EgressId+".json")
+	manifest := loadManifest(t, p.GetFileConfig().StorageConfig, manifestLocal, manifestStorage)
+	require.NotNil(t, manifest)
 
 	// verify
 	verify(t, localPath, p, res, types.EgressTypeFile, r.Muting, r.sourceFramerate, false)

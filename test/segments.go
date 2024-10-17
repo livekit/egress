@@ -17,7 +17,6 @@
 package test
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"strconv"
@@ -195,16 +194,9 @@ func (r *Runner) verifySegments(t *testing.T, p *config.PipelineConfig, filename
 	require.Greater(t, segments.Duration, int64(0))
 
 	r.verifySegmentOutput(t, p, filenameSuffix, segments.PlaylistName, segments.PlaylistLocation, int(segments.SegmentCount), res, m3u8.PlaylistTypeEvent)
-	r.verifyManifest(t, p, segments.PlaylistName)
 	if enableLivePlaylist {
 		r.verifySegmentOutput(t, p, filenameSuffix, segments.LivePlaylistName, segments.LivePlaylistLocation, 5, res, m3u8.PlaylistTypeLive)
 	}
-}
-
-func (r *Runner) verifyManifest(t *testing.T, p *config.PipelineConfig, plName string) {
-	localPlaylistPath := path.Join(r.FilePrefix, path.Base(plName))
-
-	download(t, p.GetSegmentConfig().StorageConfig, localPlaylistPath+".json", plName+".json")
 }
 
 func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, plName string, plLocation string, segmentCount int, res *livekit.EgressInfo, plType m3u8.PlaylistType) {
@@ -217,13 +209,16 @@ func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, fil
 	// download from cloud storage
 	localPlaylistPath = path.Join(r.FilePrefix, path.Base(storedPlaylistPath))
 	download(t, p.GetSegmentConfig().StorageConfig, localPlaylistPath, storedPlaylistPath)
-	if plType == m3u8.PlaylistTypeEvent {
-		// Only download segments once
-		base := storedPlaylistPath[:len(storedPlaylistPath)-5]
-		for i := 0; i < segmentCount; i++ {
-			cloudPath := fmt.Sprintf("%s_%05d.ts", base, i)
-			localPath := path.Join(r.FilePrefix, path.Base(cloudPath))
-			download(t, p.GetSegmentConfig().StorageConfig, localPath, cloudPath)
+
+	manifestLocal := path.Join(path.Dir(localPlaylistPath), res.EgressId+".json")
+	manifestStorage := path.Join(path.Dir(storedPlaylistPath), res.EgressId+".json")
+	manifest := loadManifest(t, p.GetSegmentConfig().StorageConfig, manifestLocal, manifestStorage)
+
+	for _, playlist := range manifest.Playlists {
+		require.Equal(t, segmentCount, len(playlist.Segments))
+		for _, segment := range playlist.Segments {
+			localPath := path.Join(r.FilePrefix, path.Base(segment.Filename))
+			download(t, p.GetSegmentConfig().StorageConfig, localPath, segment.Filename)
 		}
 	}
 

@@ -18,6 +18,7 @@ package test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -38,6 +39,20 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/protocol/logger"
 )
+
+func loadManifest(t *testing.T, c *config.StorageConfig, localFilepath, storageFilepath string) *config.Manifest {
+	download(t, c, localFilepath, storageFilepath)
+	defer os.Remove(localFilepath)
+
+	b, err := os.ReadFile(localFilepath)
+	require.NoError(t, err)
+
+	m := &config.Manifest{}
+	err = json.Unmarshal(b, m)
+	require.NoError(t, err)
+
+	return m
+}
 
 func download(t *testing.T, c *config.StorageConfig, localFilepath, storageFilepath string) {
 	if c != nil {
