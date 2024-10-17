@@ -180,7 +180,11 @@ func (r *Runner) runSegmentsTest(t *testing.T, test *testCase) {
 	r.verifySegments(t, p, test.segmentOptions.suffix, res, test.livePlaylist != "")
 }
 
-func (r *Runner) verifySegments(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, res *livekit.EgressInfo, enableLivePlaylist bool) {
+func (r *Runner) verifySegments(
+	t *testing.T, p *config.PipelineConfig,
+	filenameSuffix livekit.SegmentedFileSuffix,
+	res *livekit.EgressInfo, enableLivePlaylist bool,
+) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
@@ -199,7 +203,13 @@ func (r *Runner) verifySegments(t *testing.T, p *config.PipelineConfig, filename
 	}
 }
 
-func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, filenameSuffix livekit.SegmentedFileSuffix, plName string, plLocation string, segmentCount int, res *livekit.EgressInfo, plType m3u8.PlaylistType) {
+func (r *Runner) verifySegmentOutput(
+	t *testing.T, p *config.PipelineConfig,
+	filenameSuffix livekit.SegmentedFileSuffix,
+	plName string, plLocation string, segmentCount int,
+	res *livekit.EgressInfo, plType m3u8.PlaylistType,
+) {
+
 	require.NotEmpty(t, plName)
 	require.NotEmpty(t, plLocation)
 
@@ -208,7 +218,7 @@ func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, fil
 
 	// download from cloud storage
 	localPlaylistPath = path.Join(r.FilePrefix, path.Base(storedPlaylistPath))
-	download(t, p.GetSegmentConfig().StorageConfig, localPlaylistPath, storedPlaylistPath)
+	download(t, p.GetSegmentConfig().StorageConfig, localPlaylistPath, storedPlaylistPath, true)
 
 	if plType == m3u8.PlaylistTypeEvent {
 		manifestLocal := path.Join(path.Dir(localPlaylistPath), res.EgressId+".json")
@@ -219,7 +229,7 @@ func (r *Runner) verifySegmentOutput(t *testing.T, p *config.PipelineConfig, fil
 			require.Equal(t, segmentCount, len(playlist.Segments))
 			for _, segment := range playlist.Segments {
 				localPath := path.Join(r.FilePrefix, path.Base(segment.Filename))
-				download(t, p.GetSegmentConfig().StorageConfig, localPath, segment.Filename)
+				download(t, p.GetSegmentConfig().StorageConfig, localPath, segment.Filename, true)
 			}
 		}
 	}
