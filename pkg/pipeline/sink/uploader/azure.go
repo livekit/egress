@@ -36,6 +36,10 @@ type AzureUploader struct {
 }
 
 func newAzureUploader(c *config.StorageConfig) (uploader, error) {
+	if c.GeneratePresignedUrl {
+		return nil, errors.ErrUploadFailed("Azure", fmt.Errorf("presigned URLs not supported"))
+	}
+
 	conf := c.Azure
 	return &AzureUploader{
 		conf:                 conf,

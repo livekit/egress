@@ -33,6 +33,10 @@ type AliOSSUploader struct {
 }
 
 func newAliOSSUploader(c *config.StorageConfig) (uploader, error) {
+	if c.GeneratePresignedUrl {
+		return nil, errors.ErrUploadFailed("AliOSS", fmt.Errorf("presigned URLs not supported"))
+	}
+
 	conf := c.AliOSS
 	return &AliOSSUploader{
 		conf:                 conf,
