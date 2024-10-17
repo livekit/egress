@@ -81,10 +81,6 @@ func (p *PipelineConfig) initManifest() {
 			AudioTrackID:      p.AudioTrackID,
 			VideoTrackID:      p.VideoTrackID,
 		}
-
-		if p.GetSegmentConfig() != nil {
-			p.Manifest.Playlists = append(p.Manifest.Playlists, &Playlist{})
-		}
 	}
 }
 

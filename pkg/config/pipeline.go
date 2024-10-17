@@ -381,7 +381,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 		if err := p.updateDirectOutput(req.Track); err != nil {
-			return nil
+			return err
 		}
 
 	default:
@@ -422,6 +422,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 	}
 
+	p.initManifest()
 	return nil
 }
 
