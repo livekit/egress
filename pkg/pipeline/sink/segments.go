@@ -226,8 +226,8 @@ func (s *SegmentSink) uploadPlaylist() error {
 	if err == nil {
 		s.SegmentsInfo.PlaylistLocation = playlistLocation
 		if s.manifestPlaylist != nil {
-			s.manifestPlaylist.PlaylistLocation = playlistLocation
-			s.manifestPlaylist.PlaylistPresignedUrl = presignedUrl
+			s.manifestPlaylist.Location = playlistLocation
+			s.manifestPlaylist.PresignedUrl = presignedUrl
 		}
 	}
 	return err

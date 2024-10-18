@@ -47,10 +47,10 @@ type File struct {
 }
 
 type Playlist struct {
-	mu                   sync.Mutex
-	PlaylistLocation     string     `json:"playlist_location"`
-	PlaylistPresignedUrl string     `json:"playlist_presigned_url"`
-	Segments             []*Segment `json:"segments,omitempty"`
+	mu           sync.Mutex
+	Location     string     `json:"location,omitempty"`
+	PresignedUrl string     `json:"presigned_url,omitempty"`
+	Segments     []*Segment `json:"segments,omitempty"`
 }
 
 type Segment struct {
@@ -124,8 +124,8 @@ func (m *Manifest) AddPlaylist() *Playlist {
 
 func (p *Playlist) UpdateLocation(location, presignedUrl string) {
 	p.mu.Lock()
-	p.PlaylistLocation = location
-	p.PlaylistPresignedUrl = presignedUrl
+	p.Location = location
+	p.PresignedUrl = presignedUrl
 	p.mu.Unlock()
 }
 
