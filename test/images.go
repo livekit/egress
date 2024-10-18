@@ -114,6 +114,6 @@ func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, res *livek
 	for i := range images.ImageCount {
 		storagePath := fmt.Sprintf("%s_%05d%s", images.FilenamePrefix, i, imageConfig.ImageExtension)
 		localPath := path.Join(r.FilePrefix, path.Base(storagePath))
-		download(t, imageConfig.StorageConfig, localPath, storagePath)
+		download(t, imageConfig.StorageConfig, localPath, storagePath, true)
 	}
 }

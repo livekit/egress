@@ -43,7 +43,6 @@ type ImageSink struct {
 	startTime        time.Time
 	startRunningTime uint64
 
-	manifest      *ImageManifest
 	createdImages chan *imageUpdate
 	done          core.Fuse
 }
@@ -61,7 +60,6 @@ func newImageSink(u *uploader.Uploader, p *config.PipelineConfig, o *config.Imag
 		conf:        p,
 		callbacks:   callbacks,
 
-		manifest:      createImageManifest(p),
 		createdImages: make(chan *imageUpdate, maxPendingUploads),
 	}, nil
 }
@@ -108,16 +106,13 @@ func (s *ImageSink) handleNewImage(update *imageUpdate) error {
 
 	imageStoragePath := path.Join(s.StorageDir, filename)
 
-	_, size, err := s.Upload(imageLocalPath, imageStoragePath, s.OutputType, true)
+	location, _, presignedUrl, err := s.Upload(imageLocalPath, imageStoragePath, s.OutputType, true)
 	if err != nil {
 		return err
 	}
 
-	if !s.DisableManifest {
-		err = s.updateManifest(filename, ts, size)
-		if err != nil {
-			return err
-		}
+	if s.conf.Manifest != nil {
+		s.conf.Manifest.AddImage(imageStoragePath, ts, location, presignedUrl)
 	}
 
 	return nil
@@ -131,14 +126,6 @@ func (s *ImageSink) getImageTime(pts uint64) time.Time {
 	}
 
 	return s.startTime.Add(time.Duration(pts - s.startRunningTime))
-}
-
-func (s *ImageSink) updateManifest(filename string, ts time.Time, size int64) error {
-	s.manifest.imageCreated(filename, ts, size)
-
-	manifestLocalPath := fmt.Sprintf("%s.json", path.Join(s.LocalDir, s.ImagePrefix))
-	manifestStoragePath := fmt.Sprintf("%s.json", path.Join(s.StorageDir, s.ImagePrefix))
-	return s.manifest.updateManifest(s.Uploader, manifestLocalPath, manifestStoragePath)
 }
 
 func (s *ImageSink) NewImage(filepath string, ts uint64) error {
@@ -161,4 +148,18 @@ func (s *ImageSink) Close() error {
 	<-s.done.Watch()
 
 	return nil
+}
+
+func (s *ImageSink) UploadManifest(filepath string) (string, string, bool, error) {
+	if s.DisableManifest && !s.ManifestRequired() {
+		return "", "", false, nil
+	}
+
+	storagePath := path.Join(s.StorageDir, path.Base(filepath))
+	location, _, presignedUrl, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
+	if err != nil {
+		return "", "", false, err
+	}
+
+	return location, presignedUrl, true, nil
 }

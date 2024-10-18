@@ -37,15 +37,22 @@ import (
 const storageScope = "https://www.googleapis.com/auth/devstorage.read_write"
 
 type GCPUploader struct {
-	conf   *config.GCPConfig
-	prefix string
-	client *storage.Client
+	conf                 *config.GCPConfig
+	prefix               string
+	generatePresignedUrl bool
+	client               *storage.Client
 }
 
-func newGCPUploader(conf *config.GCPConfig, prefix string) (uploader, error) {
+func newGCPUploader(c *config.StorageConfig) (uploader, error) {
+	if c.GeneratePresignedUrl {
+		return nil, errors.ErrUploadFailed("GCP", fmt.Errorf("presigned URLs not supported"))
+	}
+
+	conf := c.GCP
 	u := &GCPUploader{
-		conf:   conf,
-		prefix: prefix,
+		conf:                 conf,
+		prefix:               c.PathPrefix,
+		generatePresignedUrl: c.GeneratePresignedUrl,
 	}
 
 	var opts []option.ClientOption
@@ -73,7 +80,7 @@ func newGCPUploader(conf *config.GCPConfig, prefix string) (uploader, error) {
 			defaultTransport.ProxyConnectHeader.Add("Proxy-Authorization", basicAuth)
 		}
 	}
-	c, err := storage.NewClient(context.Background(), opts...)
+	client, err := storage.NewClient(context.Background(), opts...)
 
 	// restore default transport
 	http.DefaultTransport = transportClone
@@ -81,16 +88,16 @@ func newGCPUploader(conf *config.GCPConfig, prefix string) (uploader, error) {
 		return nil, err
 	}
 
-	u.client = c
+	u.client = client
 	return u, nil
 }
 
-func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {
+func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, string, error) {
 	storageFilepath = path.Join(u.prefix, storageFilepath)
 
 	file, err := os.Open(localFilepath)
 	if err != nil {
-		return "", 0, errors.ErrUploadFailed("GCP", err)
+		return "", 0, "", errors.ErrUploadFailed("GCP", err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -98,7 +105,7 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 
 	stat, err := file.Stat()
 	if err != nil {
-		return "", 0, errors.ErrUploadFailed("GCP", err)
+		return "", 0, "", errors.ErrUploadFailed("GCP", err)
 	}
 
 	wc := u.client.Bucket(u.conf.Bucket).Object(storageFilepath).Retryer(
@@ -113,12 +120,12 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 	wc.ChunkRetryDeadline = 0
 
 	if _, err = io.Copy(wc, file); err != nil {
-		return "", 0, errors.ErrUploadFailed("GCP", err)
+		return "", 0, "", errors.ErrUploadFailed("GCP", err)
 	}
 
 	if err = wc.Close(); err != nil {
-		return "", 0, errors.ErrUploadFailed("GCP", err)
+		return "", 0, "", errors.ErrUploadFailed("GCP", err)
 	}
 
-	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", u.conf.Bucket, storageFilepath), stat.Size(), nil
+	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", u.conf.Bucket, storageFilepath), stat.Size(), "", nil
 }

@@ -32,13 +32,14 @@ const (
 )
 
 type uploader interface {
-	upload(string, string, types.OutputType) (string, int64, error)
+	upload(string, string, types.OutputType) (string, int64, string, error)
 }
 
 type Uploader struct {
-	primary uploader
-	backup  uploader
-	monitor *stats.HandlerMonitor
+	primary    uploader
+	backup     uploader
+	backupUsed bool
+	monitor    *stats.HandlerMonitor
 }
 
 func New(conf, backup *config.StorageConfig, monitor *stats.HandlerMonitor) (*Uploader, error) {
@@ -67,45 +68,64 @@ func New(conf, backup *config.StorageConfig, monitor *stats.HandlerMonitor) (*Up
 func getUploader(conf *config.StorageConfig) (uploader, error) {
 	switch {
 	case conf == nil:
-		return newLocalUploader("")
+		return newLocalUploader(&config.StorageConfig{})
 	case conf.S3 != nil:
-		return newS3Uploader(conf.S3, conf.PathPrefix)
+		return newS3Uploader(conf)
 	case conf.GCP != nil:
-		return newGCPUploader(conf.GCP, conf.PathPrefix)
+		return newGCPUploader(conf)
 	case conf.Azure != nil:
-		return newAzureUploader(conf.Azure, conf.PathPrefix)
+		return newAzureUploader(conf)
 	case conf.AliOSS != nil:
-		return newAliOSSUploader(conf.AliOSS, conf.PathPrefix)
+		return newAliOSSUploader(conf)
 	default:
-		return newLocalUploader(conf.PathPrefix)
+		return newLocalUploader(conf)
 	}
 }
 
-func (u *Uploader) Upload(localFilepath, storageFilepath string, outputType types.OutputType, deleteAfterUpload bool) (string, int64, error) {
+func (u *Uploader) Upload(
+	localFilepath, storageFilepath string,
+	outputType types.OutputType,
+	deleteAfterUpload bool,
+) (string, int64, string, error) {
+
 	start := time.Now()
-	location, size, primaryErr := u.primary.upload(localFilepath, storageFilepath, outputType)
+	location, size, presignedUrl, primaryErr := u.primary.upload(localFilepath, storageFilepath, outputType)
 	elapsed := time.Since(start)
 
 	if primaryErr == nil {
 		// success
-		u.monitor.IncUploadCountSuccess(string(outputType), float64(elapsed.Milliseconds()))
+		if u.monitor != nil {
+			u.monitor.IncUploadCountSuccess(string(outputType), float64(elapsed.Milliseconds()))
+		}
 		if deleteAfterUpload {
 			_ = os.Remove(localFilepath)
 		}
-		return location, size, nil
+		return location, size, presignedUrl, nil
 	}
 
-	u.monitor.IncUploadCountFailure(string(outputType), float64(elapsed.Milliseconds()))
+	if u.monitor != nil {
+		u.monitor.IncUploadCountFailure(string(outputType), float64(elapsed.Milliseconds()))
+	}
 	if u.backup != nil {
-		location, size, backupErr := u.backup.upload(localFilepath, storageFilepath, outputType)
+		location, size, presignedUrl, backupErr := u.backup.upload(localFilepath, storageFilepath, outputType)
 		if backupErr == nil {
-			u.monitor.IncBackupStorageWrites(string(outputType))
-			return location, size, nil
+			u.backupUsed = true
+			if u.monitor != nil {
+				u.monitor.IncBackupStorageWrites(string(outputType))
+			}
+			if deleteAfterUpload {
+				_ = os.Remove(localFilepath)
+			}
+			return location, size, presignedUrl, nil
 		}
 
-		return "", 0, psrpc.NewErrorf(psrpc.InvalidArgument,
-			"primary and backup uploads failed: %s\n%s", primaryErr.Error(), backupErr.Error())
+		return "", 0, "", psrpc.NewErrorf(psrpc.InvalidArgument,
+			"primary: %s\nbackup: %s", primaryErr.Error(), backupErr.Error())
 	}
 
-	return "", 0, primaryErr
+	return "", 0, "", primaryErr
+}
+
+func (u *Uploader) ManifestRequired() bool {
+	return u.backupUsed
 }

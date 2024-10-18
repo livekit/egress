@@ -25,6 +25,7 @@ import (
 type Sink interface {
 	Start() error
 	Close() error
+	UploadManifest(string) (string, string, bool, error)
 }
 
 func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks, monitor *stats.HandlerMonitor) (map[types.EgressType][]Sink, error) {
