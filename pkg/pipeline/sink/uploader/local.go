@@ -19,6 +19,7 @@ import (
 	"os"
 	"path"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
 )
 
@@ -26,39 +27,39 @@ type localUploader struct {
 	prefix string
 }
 
-func newLocalUploader(prefix string) (*localUploader, error) {
-	return &localUploader{prefix: prefix}, nil
+func newLocalUploader(c *config.StorageConfig) (*localUploader, error) {
+	return &localUploader{prefix: c.PathPrefix}, nil
 }
 
-func (u *localUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {
+func (u *localUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, string, error) {
 	storageFilepath = path.Join(u.prefix, storageFilepath)
 
 	stat, err := os.Stat(localFilepath)
 	if err != nil {
-		return "", 0, err
+		return "", 0, "", err
 	}
 
 	dir, _ := path.Split(storageFilepath)
 	if err = os.MkdirAll(dir, 0755); err != nil {
-		return "", 0, err
+		return "", 0, "", err
 	}
 
 	local, err := os.Open(localFilepath)
 	if err != nil {
-		return "", 0, err
+		return "", 0, "", err
 	}
 	defer local.Close()
 
 	storage, err := os.Create(storageFilepath)
 	if err != nil {
-		return "", 0, err
+		return "", 0, "", err
 	}
 	defer storage.Close()
 
 	_, err = io.Copy(storage, local)
 	if err != nil {
-		return "", 0, err
+		return "", 0, "", err
 	}
 
-	return storageFilepath, stat.Size(), nil
+	return storageFilepath, stat.Size(), "", nil
 }

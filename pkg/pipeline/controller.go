@@ -17,6 +17,8 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"os"
+	"path"
 	"sync"
 	"time"
 
@@ -457,6 +459,9 @@ func (c *Controller) Close() {
 		livekit.EgressStatus_EGRESS_ENDING:
 		c.Info.SetComplete()
 	}
+
+	// upload manifest and add location to egress info
+	c.uploadManifest()
 }
 
 func (c *Controller) startSessionLimitTimer(ctx context.Context) {
@@ -610,6 +615,50 @@ func (c *Controller) updateEndTime() {
 					imageInfo.StartedAt = endedAt
 				}
 				imageInfo.EndedAt = endedAt
+			}
+		}
+	}
+}
+
+// uploadManifest happens last, after all sinks have finished
+func (c *Controller) uploadManifest() {
+	if c.Manifest == nil {
+		return
+	}
+
+	b, err := c.Manifest.Close(c.Info.EndedAt)
+	if err != nil {
+		logger.Errorw("failed to close manifest", err)
+		return
+	}
+
+	manifestPath := path.Join(c.TmpDir, fmt.Sprintf("%s.json", c.Info.EgressId))
+	f, err := os.Create(manifestPath)
+	if err != nil {
+		logger.Errorw("failed to create manifest file", err)
+		return
+	}
+
+	_, err = f.Write(b)
+	if err != nil {
+		logger.Errorw("failed to write to manifest file", err)
+		return
+	}
+	_ = f.Close()
+
+	infoUpdated := false
+	for _, si := range c.sinks {
+		for _, s := range si {
+			location, presignedUrl, uploaded, err := s.UploadManifest(manifestPath)
+			if err != nil {
+				logger.Errorw("failed to upload manifest", err)
+				continue
+			}
+
+			if !infoUpdated && uploaded {
+				c.Info.ManifestLocation = location
+				c.Info.ManifestPresignedUrl = presignedUrl
+				infoUpdated = true
 			}
 		}
 	}

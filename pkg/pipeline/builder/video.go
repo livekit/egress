@@ -564,7 +564,7 @@ func (b *VideoBin) addEncoder() error {
 			return errors.ErrGstPipelineError(err)
 		}
 
-		if b.conf.GetStreamConfig() != nil {
+		if sc := b.conf.GetStreamConfig(); sc != nil && sc.OutputType == types.OutputTypeRTMP {
 			options = append(options, "nal-hrd=cbr")
 		}
 		if len(options) > 0 {

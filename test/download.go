@@ -18,6 +18,7 @@ package test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -39,22 +40,36 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func download(t *testing.T, c *config.StorageConfig, localFilepath, storageFilepath string) {
+func loadManifest(t *testing.T, c *config.StorageConfig, localFilepath, storageFilepath string) *config.Manifest {
+	download(t, c, localFilepath, storageFilepath, false)
+	defer os.Remove(localFilepath)
+
+	b, err := os.ReadFile(localFilepath)
+	require.NoError(t, err)
+
+	m := &config.Manifest{}
+	err = json.Unmarshal(b, m)
+	require.NoError(t, err)
+
+	return m
+}
+
+func download(t *testing.T, c *config.StorageConfig, localFilepath, storageFilepath string, delete bool) {
 	if c != nil {
 		if c.S3 != nil {
 			logger.Debugw("s3 download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
-			downloadS3(t, c.S3, localFilepath, storageFilepath)
+			downloadS3(t, c.S3, localFilepath, storageFilepath, delete)
 		} else if c.GCP != nil {
 			logger.Debugw("gcp download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
-			downloadGCP(t, c.GCP, localFilepath, storageFilepath)
+			downloadGCP(t, c.GCP, localFilepath, storageFilepath, delete)
 		} else if c.Azure != nil {
 			logger.Debugw("azure download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
-			downloadAzure(t, c.Azure, localFilepath, storageFilepath)
+			downloadAzure(t, c.Azure, localFilepath, storageFilepath, delete)
 		}
 	}
 }
 
-func downloadS3(t *testing.T, conf *config.S3Config, localFilepath, storageFilepath string) {
+func downloadS3(t *testing.T, conf *config.S3Config, localFilepath, storageFilepath string, delete bool) {
 	file, err := os.Create(localFilepath)
 	require.NoError(t, err)
 	defer file.Close()
@@ -84,14 +99,16 @@ func downloadS3(t *testing.T, conf *config.S3Config, localFilepath, storageFilep
 	)
 	require.NoError(t, err)
 
-	_, err = s3Client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
-		Bucket: aws.String(conf.Bucket),
-		Key:    aws.String(storageFilepath),
-	})
-	require.NoError(t, err)
+	if delete {
+		_, err = s3Client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+			Bucket: aws.String(conf.Bucket),
+			Key:    aws.String(storageFilepath),
+		})
+		require.NoError(t, err)
+	}
 }
 
-func downloadAzure(t *testing.T, conf *config.AzureConfig, localFilepath, storageFilepath string) {
+func downloadAzure(t *testing.T, conf *config.AzureConfig, localFilepath, storageFilepath string, delete bool) {
 	credential, err := azblob.NewSharedKeyCredential(
 		conf.AccountName,
 		conf.AccountKey,
@@ -125,11 +142,13 @@ func downloadAzure(t *testing.T, conf *config.AzureConfig, localFilepath, storag
 	})
 	require.NoError(t, err)
 
-	_, err = blobURL.Delete(context.Background(), azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
-	require.NoError(t, err)
+	if delete {
+		_, err = blobURL.Delete(context.Background(), azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
+		require.NoError(t, err)
+	}
 }
 
-func downloadGCP(t *testing.T, conf *config.GCPConfig, localFilepath, storageFilepath string) {
+func downloadGCP(t *testing.T, conf *config.GCPConfig, localFilepath, storageFilepath string, delete bool) {
 	ctx := context.Background()
 	var client *storage.Client
 
@@ -161,6 +180,8 @@ func downloadGCP(t *testing.T, conf *config.GCPConfig, localFilepath, storageFil
 	_ = rc.Close()
 	require.NoError(t, err)
 
-	err = client.Bucket(conf.Bucket).Object(storageFilepath).Delete(context.Background())
-	require.NoError(t, err)
+	if delete {
+		err = client.Bucket(conf.Bucket).Object(storageFilepath).Delete(context.Background())
+		require.NoError(t, err)
+	}
 }

@@ -90,7 +90,7 @@ func (c *Controller) uploadTrackFiles(u *uploader.Uploader) {
 		if strings.HasSuffix(f.Name(), ".csv") {
 			local := path.Join(c.TmpDir, f.Name())
 			storage := path.Join(c.Info.EgressId, f.Name())
-			_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
+			_, _, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
 			if err != nil {
 				logger.Errorw("failed to upload debug file", err)
 				return
@@ -131,7 +131,7 @@ func (c *Controller) uploadDebugFile(u *uploader.Uploader, data []byte, fileExte
 		return
 	}
 
-	_, _, err = u.Upload(local, path.Join(storageDir, filename), types.OutputTypeBlob, false)
+	_, _, _, err = u.Upload(local, path.Join(storageDir, filename), types.OutputTypeBlob, false)
 	if err != nil {
 		logger.Errorw("failed to upload debug file", err)
 		return

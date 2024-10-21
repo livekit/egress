@@ -55,7 +55,8 @@ type PipelineConfig struct {
 	OutputCount          atomic.Int32                        `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	Info *info.EgressInfo `yaml:"-"`
+	Info     *info.EgressInfo `yaml:"-"`
+	Manifest *Manifest        `yaml:"-"`
 }
 
 type SourceConfig struct {
@@ -380,7 +381,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 		if err := p.updateDirectOutput(req.Track); err != nil {
-			return nil
+			return err
 		}
 
 	default:
@@ -421,6 +422,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 	}
 
+	p.initManifest()
 	return nil
 }
 

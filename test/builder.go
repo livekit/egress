@@ -289,7 +289,7 @@ func (r *Runner) buildStreamOutputs(o *streamOptions) []*livekit.StreamOutput {
 }
 
 func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFileOutput {
-	if u := r.getUploadConfig(); u != nil && o.suffix == livekit.SegmentedFileSuffix_INDEX {
+	if u := r.getUploadConfig(); u != nil {
 		output := &livekit.SegmentedFileOutput{
 			FilenamePrefix:   path.Join(uploadPrefix, o.prefix),
 			PlaylistName:     o.playlist,
