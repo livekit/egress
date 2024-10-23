@@ -64,6 +64,11 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput) (*ImageConf
 		return nil, err
 	}
 
+	sc, err := p.getStorageConfig(images)
+	if err != nil {
+		return nil, err
+	}
+
 	filenamePrefix := clean(images.FilenamePrefix)
 	conf := &ImageConfig{
 		outputConfig: outputConfig{
@@ -77,7 +82,7 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput) (*ImageConf
 		ImagePrefix:     filenamePrefix,
 		ImageSuffix:     images.FilenameSuffix,
 		DisableManifest: images.DisableManifest,
-		StorageConfig:   p.getStorageConfig(images),
+		StorageConfig:   sc,
 		CaptureInterval: images.CaptureInterval,
 		Width:           images.Width,
 		Height:          images.Height,
