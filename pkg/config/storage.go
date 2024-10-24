@@ -17,6 +17,7 @@ package config
 import (
 	"time"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/egress"
 )
 
@@ -61,7 +62,7 @@ type GCPConfig struct {
 	ProxyConfig     *ProxyConfig `yaml:"proxy_config"`
 }
 
-func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) *StorageConfig {
+func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageConfig, error) {
 	sc := &StorageConfig{}
 	if p.StorageConfig != nil {
 		sc.PathPrefix = p.StorageConfig.PathPrefix
@@ -102,7 +103,7 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) *StorageConf
 		if sc.S3.MinRetryDelay == 0 {
 			sc.S3.MinRetryDelay = time.Millisecond * 100
 		}
-		return sc
+		return sc, nil
 	}
 
 	if gcp := req.GetGcp(); gcp != nil {
@@ -117,7 +118,7 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) *StorageConf
 				Password: gcp.Proxy.Password,
 			}
 		}
-		return sc
+		return sc, nil
 	}
 
 	if azure := req.GetAzure(); azure != nil {
@@ -126,7 +127,7 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) *StorageConf
 			AccountKey:    azure.AccountKey,
 			ContainerName: azure.ContainerName,
 		}
-		return sc
+		return sc, nil
 	}
 
 	if ali := req.GetAliOSS(); ali != nil {
@@ -137,8 +138,17 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) *StorageConf
 			Endpoint:  ali.Endpoint,
 			Bucket:    ali.Bucket,
 		}
-		return sc
+		return sc, nil
 	}
 
-	return p.StorageConfig
+	sc = p.StorageConfig
+	if p.DisallowLocalStorage && (sc == nil || sc.IsLocal()) {
+		return nil, errors.ErrInvalidInput("output")
+	}
+
+	return sc, nil
+}
+
+func (c *StorageConfig) IsLocal() bool {
+	return c.S3 == nil && c.GCP == nil && c.Azure == nil && c.AliOSS == nil
 }

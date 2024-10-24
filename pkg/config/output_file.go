@@ -70,12 +70,17 @@ type fileRequest interface {
 }
 
 func (p *PipelineConfig) getFileConfig(outputType types.OutputType, req fileRequest) (*FileConfig, error) {
+	sc, err := p.getStorageConfig(req)
+	if err != nil {
+		return nil, err
+	}
+
 	conf := &FileConfig{
 		outputConfig:    outputConfig{OutputType: outputType},
 		FileInfo:        &livekit.FileInfo{},
 		StorageFilepath: clean(req.GetFilepath()),
 		DisableManifest: req.GetDisableManifest(),
-		StorageConfig:   p.getStorageConfig(req),
+		StorageConfig:   sc,
 	}
 
 	// filename

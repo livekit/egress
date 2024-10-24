@@ -163,36 +163,37 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 		"activeWeb", m.webRequests.Load(),
 	}
 
-	var accept bool
-	var required float64
-	switch r := req.Request.(type) {
-	case *rpc.StartEgressRequest_RoomComposite:
-		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
-			return fields, false
+	required := req.EstimatedCpu
+	if required == 0 {
+		switch r := req.Request.(type) {
+		case *rpc.StartEgressRequest_RoomComposite:
+			if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+				return fields, false
+			}
+			if r.RoomComposite.AudioOnly {
+				required = m.cpuCostConfig.AudioRoomCompositeCpuCost
+			} else {
+				required = m.cpuCostConfig.RoomCompositeCpuCost
+			}
+		case *rpc.StartEgressRequest_Web:
+			if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+				return fields, false
+			}
+			if r.Web.AudioOnly {
+				required = m.cpuCostConfig.AudioWebCpuCost
+			} else {
+				required = m.cpuCostConfig.WebCpuCost
+			}
+		case *rpc.StartEgressRequest_Participant:
+			required = m.cpuCostConfig.ParticipantCpuCost
+		case *rpc.StartEgressRequest_TrackComposite:
+			required = m.cpuCostConfig.TrackCompositeCpuCost
+		case *rpc.StartEgressRequest_Track:
+			required = m.cpuCostConfig.TrackCpuCost
 		}
-		if r.RoomComposite.AudioOnly {
-			required = m.cpuCostConfig.AudioRoomCompositeCpuCost
-		} else {
-			required = m.cpuCostConfig.RoomCompositeCpuCost
-		}
-	case *rpc.StartEgressRequest_Web:
-		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
-			return fields, false
-		}
-		if r.Web.AudioOnly {
-			required = m.cpuCostConfig.AudioWebCpuCost
-		} else {
-			required = m.cpuCostConfig.WebCpuCost
-		}
-	case *rpc.StartEgressRequest_Participant:
-		required = m.cpuCostConfig.ParticipantCpuCost
-	case *rpc.StartEgressRequest_TrackComposite:
-		required = m.cpuCostConfig.TrackCompositeCpuCost
-	case *rpc.StartEgressRequest_Track:
-		required = m.cpuCostConfig.TrackCpuCost
 	}
-	accept = available >= required
 
+	accept := available >= required
 	fields = append(fields,
 		"required", required,
 		"canAccept", accept,

@@ -52,6 +52,11 @@ func (p *PipelineConfig) GetSegmentConfig() *SegmentConfig {
 
 // segments should always be added last, so we can check keyframe interval from file/stream
 func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput) (*SegmentConfig, error) {
+	sc, err := p.getStorageConfig(segments)
+	if err != nil {
+		return nil, err
+	}
+
 	conf := &SegmentConfig{
 		SegmentsInfo:         &livekit.SegmentsInfo{},
 		SegmentPrefix:        clean(segments.FilenamePrefix),
@@ -60,7 +65,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 		LivePlaylistFilename: clean(segments.LivePlaylistName),
 		SegmentDuration:      int(segments.SegmentDuration),
 		DisableManifest:      segments.DisableManifest,
-		StorageConfig:        p.getStorageConfig(segments),
+		StorageConfig:        sc,
 	}
 
 	if conf.SegmentDuration == 0 {
@@ -74,8 +79,7 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 	}
 
 	// filename
-	err := conf.updatePrefixAndPlaylist(p)
-	if err != nil {
+	if err = conf.updatePrefixAndPlaylist(p); err != nil {
 		return nil, err
 	}
 
