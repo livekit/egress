@@ -458,10 +458,13 @@ func (c *Controller) Close() {
 	case livekit.EgressStatus_EGRESS_ACTIVE,
 		livekit.EgressStatus_EGRESS_ENDING:
 		c.Info.SetComplete()
-	}
+		fallthrough
 
-	// upload manifest and add location to egress info
-	c.uploadManifest()
+	case livekit.EgressStatus_EGRESS_LIMIT_REACHED,
+		livekit.EgressStatus_EGRESS_COMPLETE:
+		// upload manifest and add location to egress info
+		c.uploadManifest()
+	}
 }
 
 func (c *Controller) startSessionLimitTimer(ctx context.Context) {
