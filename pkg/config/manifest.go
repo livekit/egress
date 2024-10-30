@@ -15,6 +15,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"sync"
 	"time"
@@ -153,5 +154,12 @@ func (m *Manifest) AddImage(filename string, ts time.Time, location, presignedUr
 func (m *Manifest) Close(endedAt int64) ([]byte, error) {
 	m.EndedAt = endedAt
 
-	return json.Marshal(m)
+	buf := bytes.NewBuffer(nil)
+	enc := json.NewEncoder(buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(m); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
