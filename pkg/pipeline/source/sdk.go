@@ -54,7 +54,7 @@ type SDKSource struct {
 	mu                   sync.RWMutex
 	initialized          core.Fuse
 	filenameReplacements map[string]string
-	errors               chan error
+	errors               chan *subscriptionInfo
 
 	writers map[string]*sdk.AppWriter
 	subLock sync.RWMutex
@@ -63,6 +63,11 @@ type SDKSource struct {
 
 	startRecording chan struct{}
 	endRecording   chan struct{}
+}
+
+type subscriptionInfo struct {
+	trackID string
+	err     error
 }
 
 func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*SDKSource, error) {
@@ -77,7 +82,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 			close(startRecording)
 		}),
 		filenameReplacements: make(map[string]string),
-		errors:               make(chan error, 2),
+		errors:               make(chan *subscriptionInfo, 2),
 		writers:              make(map[string]*sdk.AppWriter),
 		startRecording:       startRecording,
 		endRecording:         make(chan struct{}),
@@ -224,9 +229,9 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 	done := false
 	for !done {
 		select {
-		case err = <-s.errors:
-			if err != nil {
-				return 0, 0, err
+		case sub := <-s.errors:
+			if sub.err != nil {
+				return 0, 0, sub.err
 			}
 			subscribed++
 			if subscribed == expected {
@@ -244,9 +249,9 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 	for {
 		select {
 		// check errors from any tracks published in the meantime
-		case err = <-s.errors:
-			if err != nil {
-				return 0, 0, err
+		case sub := <-s.errors:
+			if sub.err != nil {
+				return 0, 0, sub.err
 			}
 		default:
 			// get dimensions after subscribing so that track info exists
@@ -289,12 +294,15 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, 
 
 	for i := 0; i < trackCount; i++ {
 		select {
-		case err = <-s.errors:
-			if err != nil {
-				return 0, 0, err
+		case sub := <-s.errors:
+			if sub.err != nil {
+				return 0, 0, sub.err
 			}
+			delete(expecting, sub.trackID)
 		case <-deadline:
-			return 0, 0, errors.ErrSubscriptionFailed
+			for trackID := range expecting {
+				return 0, 0, errors.ErrTrackNotFound(trackID)
+			}
 		}
 	}
 
@@ -380,7 +388,10 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 				s.callbacks.OnError(onSubscribeErr)
 			}
 		} else {
-			s.errors <- onSubscribeErr
+			s.errors <- &subscriptionInfo{
+				trackID: pub.SID(),
+				err:     onSubscribeErr,
+			}
 		}
 		s.subLock.RUnlock()
 	}()

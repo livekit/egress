@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
+	"github.com/livekit/psrpc"
 )
 
 const (
@@ -349,7 +350,7 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 
 	// fail egress if no outputs remaining
 	if c.OutputCount.Load() == 0 {
-		return streamErr
+		return psrpc.NewError(psrpc.Unavailable, streamErr)
 	}
 
 	logger.Infow("stream failed",

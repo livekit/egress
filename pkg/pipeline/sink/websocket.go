@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/psrpc"
 )
 
 const pingPeriod = time.Second * 30
@@ -56,7 +57,7 @@ func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType, callbacks
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsUrl, header)
 	if err != nil {
-		return nil, err
+		return nil, psrpc.NewError(psrpc.InvalidArgument, err)
 	}
 
 	s := &WebsocketSink{
@@ -88,7 +89,7 @@ func newWebsocketSink(o *config.StreamConfig, mimeType types.MimeType, callbacks
 				if err == io.EOF {
 					return gst.FlowEOS
 				}
-				callbacks.OnError(err)
+				callbacks.OnError(psrpc.NewError(psrpc.Unavailable, err))
 			}
 
 			return gst.FlowOK
