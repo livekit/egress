@@ -18,6 +18,7 @@ import (
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 )
 
@@ -26,7 +27,7 @@ func BuildWebsocketBin(pipeline *gstreamer.Pipeline, appSinkCallbacks *app.SinkC
 
 	appSink, err := app.NewAppSink()
 	if err != nil {
-		return nil, err
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	appSink.SetCallbacks(appSinkCallbacks)
 

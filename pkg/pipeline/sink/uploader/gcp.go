@@ -59,7 +59,7 @@ func newGCPUploader(c *config.StorageConfig) (uploader, error) {
 	if conf.CredentialsJSON != "" {
 		jwtConfig, err := google.JWTConfigFromJSON([]byte(conf.CredentialsJSON), storageScope)
 		if err != nil {
-			return nil, err
+			return nil, errors.ErrUploadFailed("GCP", err)
 		}
 		opts = append(opts, option.WithTokenSource(jwtConfig.TokenSource(context.Background())))
 	}
@@ -80,12 +80,12 @@ func newGCPUploader(c *config.StorageConfig) (uploader, error) {
 			defaultTransport.ProxyConnectHeader.Add("Proxy-Authorization", basicAuth)
 		}
 	}
-	client, err := storage.NewClient(context.Background(), opts...)
 
+	client, err := storage.NewClient(context.Background(), opts...)
 	// restore default transport
 	http.DefaultTransport = transportClone
 	if err != nil {
-		return nil, err
+		return nil, errors.ErrUploadFailed("GCP", err)
 	}
 
 	u.client = client
