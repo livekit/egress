@@ -150,16 +150,16 @@ func (s *ImageSink) Close() error {
 	return nil
 }
 
-func (s *ImageSink) UploadManifest(filepath string) (string, string, bool, error) {
+func (s *ImageSink) UploadManifest(filepath string) (string, bool, error) {
 	if s.DisableManifest && !s.ManifestRequired() {
-		return "", "", false, nil
+		return "", false, nil
 	}
 
 	storagePath := path.Join(s.StorageDir, path.Base(filepath))
-	location, _, presignedUrl, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
+	location, _, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
 	if err != nil {
-		return "", "", false, err
+		return "", false, err
 	}
 
-	return location, presignedUrl, true, nil
+	return location, true, nil
 }
