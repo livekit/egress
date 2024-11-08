@@ -92,12 +92,12 @@ func newGCPUploader(c *config.StorageConfig) (uploader, error) {
 	return u, nil
 }
 
-func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, string, error) {
+func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {
 	storageFilepath = path.Join(u.prefix, storageFilepath)
 
 	file, err := os.Open(localFilepath)
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("GCP", err)
+		return "", 0, errors.ErrUploadFailed("GCP", err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -105,7 +105,7 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 
 	stat, err := file.Stat()
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("GCP", err)
+		return "", 0, errors.ErrUploadFailed("GCP", err)
 	}
 
 	wc := u.client.Bucket(u.conf.Bucket).Object(storageFilepath).Retryer(
@@ -120,12 +120,12 @@ func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.Outp
 	wc.ChunkRetryDeadline = 0
 
 	if _, err = io.Copy(wc, file); err != nil {
-		return "", 0, "", errors.ErrUploadFailed("GCP", err)
+		return "", 0, errors.ErrUploadFailed("GCP", err)
 	}
 
 	if err = wc.Close(); err != nil {
-		return "", 0, "", errors.ErrUploadFailed("GCP", err)
+		return "", 0, errors.ErrUploadFailed("GCP", err)
 	}
 
-	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", u.conf.Bucket, storageFilepath), stat.Size(), "", nil
+	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", u.conf.Bucket, storageFilepath), stat.Size(), nil
 }

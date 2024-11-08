@@ -42,7 +42,7 @@ func (s *FileSink) Start() error {
 }
 
 func (s *FileSink) Close() error {
-	location, size, presignedUrl, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
+	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
 	if err != nil {
 		return err
 	}
@@ -51,22 +51,22 @@ func (s *FileSink) Close() error {
 	s.FileInfo.Size = size
 
 	if s.conf.Manifest != nil {
-		s.conf.Manifest.AddFile(s.StorageFilepath, location, presignedUrl)
+		s.conf.Manifest.AddFile(s.StorageFilepath, location)
 	}
 
 	return nil
 }
 
-func (s *FileSink) UploadManifest(filepath string) (string, string, bool, error) {
+func (s *FileSink) UploadManifest(filepath string) (string, bool, error) {
 	if s.DisableManifest && !s.ManifestRequired() {
-		return "", "", false, nil
+		return "", false, nil
 	}
 
 	storagePath := path.Join(path.Dir(s.StorageFilepath), path.Base(filepath))
-	location, _, presignedUrl, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
+	location, _, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
 	if err != nil {
-		return "", "", false, err
+		return "", false, err
 	}
 
-	return location, presignedUrl, true, nil
+	return location, true, nil
 }

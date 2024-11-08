@@ -106,13 +106,13 @@ func (s *ImageSink) handleNewImage(update *imageUpdate) error {
 
 	imageStoragePath := path.Join(s.StorageDir, filename)
 
-	location, _, presignedUrl, err := s.Upload(imageLocalPath, imageStoragePath, s.OutputType, true)
+	location, _, err := s.Upload(imageLocalPath, imageStoragePath, s.OutputType, true)
 	if err != nil {
 		return err
 	}
 
 	if s.conf.Manifest != nil {
-		s.conf.Manifest.AddImage(imageStoragePath, ts, location, presignedUrl)
+		s.conf.Manifest.AddImage(imageStoragePath, ts, location)
 	}
 
 	return nil

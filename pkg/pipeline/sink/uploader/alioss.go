@@ -45,28 +45,28 @@ func newAliOSSUploader(c *config.StorageConfig) (uploader, error) {
 	}, nil
 }
 
-func (u *AliOSSUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, string, error) {
+func (u *AliOSSUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {
 	storageFilepath = path.Join(u.prefix, storageFilepath)
 
 	stat, err := os.Stat(localFilepath)
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("AliOSS", err)
+		return "", 0, errors.ErrUploadFailed("AliOSS", err)
 	}
 
 	client, err := oss.New(u.conf.Endpoint, u.conf.AccessKey, u.conf.Secret)
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("AliOSS", err)
+		return "", 0, errors.ErrUploadFailed("AliOSS", err)
 	}
 
 	bucket, err := client.Bucket(u.conf.Bucket)
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("AliOSS", err)
+		return "", 0, errors.ErrUploadFailed("AliOSS", err)
 	}
 
 	err = bucket.PutObjectFromFile(storageFilepath, localFilepath)
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("AliOSS", err)
+		return "", 0, errors.ErrUploadFailed("AliOSS", err)
 	}
 
-	return fmt.Sprintf("https://%s.%s/%s", u.conf.Bucket, u.conf.Endpoint, storageFilepath), stat.Size(), "", nil
+	return fmt.Sprintf("https://%s.%s/%s", u.conf.Bucket, u.conf.Endpoint, storageFilepath), stat.Size(), nil
 }

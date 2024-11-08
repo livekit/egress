@@ -32,7 +32,7 @@ const (
 )
 
 type uploader interface {
-	upload(string, string, types.OutputType) (string, int64, string, error)
+	upload(string, string, types.OutputType) (string, int64, error)
 }
 
 type Uploader struct {
@@ -86,10 +86,10 @@ func (u *Uploader) Upload(
 	localFilepath, storageFilepath string,
 	outputType types.OutputType,
 	deleteAfterUpload bool,
-) (string, int64, string, error) {
+) (string, int64, error) {
 
 	start := time.Now()
-	location, size, presignedUrl, primaryErr := u.primary.upload(localFilepath, storageFilepath, outputType)
+	location, size, primaryErr := u.primary.upload(localFilepath, storageFilepath, outputType)
 	elapsed := time.Since(start)
 
 	if primaryErr == nil {
@@ -100,14 +100,14 @@ func (u *Uploader) Upload(
 		if deleteAfterUpload {
 			_ = os.Remove(localFilepath)
 		}
-		return location, size, presignedUrl, nil
+		return location, size, nil
 	}
 
 	if u.monitor != nil {
 		u.monitor.IncUploadCountFailure(string(outputType), float64(elapsed.Milliseconds()))
 	}
 	if u.backup != nil {
-		location, size, presignedUrl, backupErr := u.backup.upload(localFilepath, storageFilepath, outputType)
+		location, size, backupErr := u.backup.upload(localFilepath, storageFilepath, outputType)
 		if backupErr == nil {
 			u.backupUsed = true
 			if u.monitor != nil {
@@ -116,14 +116,14 @@ func (u *Uploader) Upload(
 			if deleteAfterUpload {
 				_ = os.Remove(localFilepath)
 			}
-			return location, size, presignedUrl, nil
+			return location, size, nil
 		}
 
-		return "", 0, "", psrpc.NewErrorf(psrpc.InvalidArgument,
+		return "", 0, psrpc.NewErrorf(psrpc.InvalidArgument,
 			"primary: %s\nbackup: %s", primaryErr.Error(), backupErr.Error())
 	}
 
-	return "", 0, "", primaryErr
+	return "", 0, primaryErr
 }
 
 func (u *Uploader) ManifestRequired() bool {

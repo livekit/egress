@@ -49,7 +49,7 @@ func newAzureUploader(c *config.StorageConfig) (uploader, error) {
 	}, nil
 }
 
-func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, string, error) {
+func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType types.OutputType) (string, int64, error) {
 	storageFilepath = path.Join(u.prefix, storageFilepath)
 
 	credential, err := azblob.NewSharedKeyCredential(
@@ -57,12 +57,12 @@ func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType
 		u.conf.AccountKey,
 	)
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("Azure", err)
+		return "", 0, errors.ErrUploadFailed("Azure", err)
 	}
 
 	azUrl, err := url.Parse(u.container)
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("Azure", err)
+		return "", 0, errors.ErrUploadFailed("Azure", err)
 	}
 
 	pipeline := azblob.NewPipeline(credential, azblob.PipelineOptions{
@@ -78,7 +78,7 @@ func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType
 
 	file, err := os.Open(localFilepath)
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("Azure", err)
+		return "", 0, errors.ErrUploadFailed("Azure", err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -86,7 +86,7 @@ func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType
 
 	stat, err := file.Stat()
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("Azure", err)
+		return "", 0, errors.ErrUploadFailed("Azure", err)
 	}
 
 	// upload blocks in parallel for optimal performance
@@ -97,8 +97,8 @@ func (u *AzureUploader) upload(localFilepath, storageFilepath string, outputType
 		Parallelism:     16,
 	})
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("Azure", err)
+		return "", 0, errors.ErrUploadFailed("Azure", err)
 	}
 
-	return fmt.Sprintf("%s/%s", u.container, storageFilepath), stat.Size(), "", nil
+	return fmt.Sprintf("%s/%s", u.container, storageFilepath), stat.Size(), nil
 }

@@ -138,13 +138,13 @@ func updateRegion(awsConf *aws.Config, bucket string) error {
 func (u *S3Uploader) upload(
 	localFilepath, storageFilepath string,
 	outputType types.OutputType,
-) (string, int64, string, error) {
+) (string, int64, error) {
 
 	storageFilepath = path.Join(u.prefix, storageFilepath)
 
 	file, err := os.Open(localFilepath)
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("S3", err)
+		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 	defer func() {
 		_ = file.Close()
@@ -152,7 +152,7 @@ func (u *S3Uploader) upload(
 
 	stat, err := file.Stat()
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("S3", err)
+		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
 	l := &s3Logger{
@@ -183,7 +183,7 @@ func (u *S3Uploader) upload(
 
 	if _, err = manager.NewUploader(client).Upload(context.Background(), input); err != nil {
 		l.log()
-		return "", 0, "", errors.ErrUploadFailed("S3", err)
+		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
 	endpoint := "s3.amazonaws.com"
@@ -199,7 +199,7 @@ func (u *S3Uploader) upload(
 	}
 
 	if !u.generatePresignedUrl {
-		return location, stat.Size(), "", nil
+		return location, stat.Size(), nil
 	}
 
 	res, err := s3.NewPresignClient(client).PresignGetObject(context.Background(), &s3.GetObjectInput{
@@ -207,10 +207,10 @@ func (u *S3Uploader) upload(
 		Key:    aws.String(storageFilepath),
 	})
 	if err != nil {
-		return "", 0, "", errors.ErrUploadFailed("S3", err)
+		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
-	return location, stat.Size(), res.URL, nil
+	return res.URL, stat.Size(), nil
 }
 
 // s3Logger only logs aws messages on upload failure

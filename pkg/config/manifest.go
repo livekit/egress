@@ -42,29 +42,25 @@ type Manifest struct {
 }
 
 type File struct {
-	Filename     string `json:"filename,omitempty"`
-	Location     string `json:"location,omitempty"`
-	PresignedUrl string `json:"presigned_url,omitempty"`
+	Filename string `json:"filename,omitempty"`
+	Location string `json:"location,omitempty"`
 }
 
 type Playlist struct {
-	mu           sync.Mutex
-	Location     string     `json:"location,omitempty"`
-	PresignedUrl string     `json:"presigned_url,omitempty"`
-	Segments     []*Segment `json:"segments,omitempty"`
+	mu       sync.Mutex
+	Location string     `json:"location,omitempty"`
+	Segments []*Segment `json:"segments,omitempty"`
 }
 
 type Segment struct {
-	Filename     string `json:"filename,omitempty"`
-	Location     string `json:"location,omitempty"`
-	PresignedUrl string `json:"presigned_url,omitempty"`
+	Filename string `json:"filename,omitempty"`
+	Location string `json:"location,omitempty"`
 }
 
 type Image struct {
-	Filename     string    `json:"filename,omitempty"`
-	Timestamp    time.Time `json:"timestamp,omitempty"`
-	Location     string    `json:"location,omitempty"`
-	PresignedUrl string    `json:"presigned_url,omitempty"`
+	Filename  string    `json:"filename,omitempty"`
+	Timestamp time.Time `json:"timestamp,omitempty"`
+	Location  string    `json:"location,omitempty"`
 }
 
 func (p *PipelineConfig) initManifest() {
@@ -103,12 +99,11 @@ func (p *PipelineConfig) shouldCreateManifest() bool {
 	return false
 }
 
-func (m *Manifest) AddFile(filename, location, presignedUrl string) {
+func (m *Manifest) AddFile(filename, location string) {
 	m.mu.Lock()
 	m.Files = append(m.Files, &File{
-		Filename:     filename,
-		Location:     location,
-		PresignedUrl: presignedUrl,
+		Filename: filename,
+		Location: location,
 	})
 	m.mu.Unlock()
 }
@@ -123,30 +118,27 @@ func (m *Manifest) AddPlaylist() *Playlist {
 	return p
 }
 
-func (p *Playlist) UpdateLocation(location, presignedUrl string) {
+func (p *Playlist) UpdateLocation(location string) {
 	p.mu.Lock()
 	p.Location = location
-	p.PresignedUrl = presignedUrl
 	p.mu.Unlock()
 }
 
-func (p *Playlist) AddSegment(filename, location, presignedUrl string) {
+func (p *Playlist) AddSegment(filename, location string) {
 	p.mu.Lock()
 	p.Segments = append(p.Segments, &Segment{
-		Filename:     filename,
-		Location:     location,
-		PresignedUrl: presignedUrl,
+		Filename: filename,
+		Location: location,
 	})
 	p.mu.Unlock()
 }
 
-func (m *Manifest) AddImage(filename string, ts time.Time, location, presignedUrl string) {
+func (m *Manifest) AddImage(filename string, ts time.Time, location string) {
 	m.mu.Lock()
 	m.Images = append(m.Images, &Image{
-		Filename:     filename,
-		Timestamp:    ts,
-		Location:     location,
-		PresignedUrl: presignedUrl,
+		Filename:  filename,
+		Timestamp: ts,
+		Location:  location,
 	})
 	m.mu.Unlock()
 }
