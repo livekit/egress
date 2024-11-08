@@ -1,7 +1,6 @@
 package uploader
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -44,16 +43,13 @@ func TestUploader(t *testing.T) {
 	filepath := "uploader_test.go"
 	storagePath := "uploader_test.go"
 
-	location, size, presignedUrl, err := u.Upload(filepath, storagePath, "test/plain", false)
+	location, size, err := u.Upload(filepath, storagePath, "test/plain", false)
 	require.NoError(t, err)
 
-	expectedLocation := fmt.Sprintf("https://%s.s3.amazonaws.com/testProject/uploader_test.go", bucket)
-
-	require.Equal(t, expectedLocation, location)
 	require.NotZero(t, size)
-	require.NotEmpty(t, presignedUrl)
+	require.NotEmpty(t, location)
 
-	response, err := http.Get(presignedUrl)
+	response, err := http.Get(location)
 	require.NoError(t, err)
 	defer response.Body.Close()
 

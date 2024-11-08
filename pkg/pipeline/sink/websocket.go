@@ -219,6 +219,6 @@ func (s *WebsocketSink) Close() error {
 	return nil
 }
 
-func (s *WebsocketSink) UploadManifest(_ string) (string, string, bool, error) {
-	return "", "", false, nil
+func (s *WebsocketSink) UploadManifest(_ string) (string, bool, error) {
+	return "", false, nil
 }

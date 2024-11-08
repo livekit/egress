@@ -154,7 +154,7 @@ func (s *SegmentSink) handleClosedSegment(update SegmentUpdate) {
 	go func() {
 		defer close(update.uploadComplete)
 
-		location, size, presignedUrl, err := s.Upload(segmentLocalPath, segmentStoragePath, s.outputType, true)
+		location, size, err := s.Upload(segmentLocalPath, segmentStoragePath, s.outputType, true)
 		if err != nil {
 			s.callbacks.OnError(err)
 			return
@@ -165,7 +165,7 @@ func (s *SegmentSink) handleClosedSegment(update SegmentUpdate) {
 		s.SegmentsInfo.SegmentCount++
 		s.SegmentsInfo.Size += size
 		if s.manifestPlaylist != nil {
-			s.manifestPlaylist.AddSegment(segmentStoragePath, location, presignedUrl)
+			s.manifestPlaylist.AddSegment(segmentStoragePath, location)
 		}
 		s.infoLock.Unlock()
 	}()
@@ -222,12 +222,11 @@ func (s *SegmentSink) shouldUploadPlaylist() bool {
 func (s *SegmentSink) uploadPlaylist() error {
 	playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
 	playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
-	playlistLocation, _, presignedUrl, err := s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
+	playlistLocation, _, err := s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
 	if err == nil {
 		s.SegmentsInfo.PlaylistLocation = playlistLocation
 		if s.manifestPlaylist != nil {
 			s.manifestPlaylist.Location = playlistLocation
-			s.manifestPlaylist.PresignedUrl = presignedUrl
 		}
 	}
 	return err
@@ -236,7 +235,7 @@ func (s *SegmentSink) uploadPlaylist() error {
 func (s *SegmentSink) uploadLivePlaylist() error {
 	liveLocalPath := path.Join(s.LocalDir, s.LivePlaylistFilename)
 	liveStoragePath := path.Join(s.StorageDir, s.LivePlaylistFilename)
-	livePlaylistLocation, _, _, err := s.Upload(liveLocalPath, liveStoragePath, s.OutputType, false)
+	livePlaylistLocation, _, err := s.Upload(liveLocalPath, liveStoragePath, s.OutputType, false)
 	if err == nil {
 		s.SegmentsInfo.LivePlaylistLocation = livePlaylistLocation
 	}
@@ -322,16 +321,16 @@ func (s *SegmentSink) Close() error {
 	return nil
 }
 
-func (s *SegmentSink) UploadManifest(filepath string) (string, string, bool, error) {
+func (s *SegmentSink) UploadManifest(filepath string) (string, bool, error) {
 	if s.DisableManifest && !s.ManifestRequired() {
-		return "", "", false, nil
+		return "", false, nil
 	}
 
 	storagePath := path.Join(s.StorageDir, path.Base(filepath))
-	location, _, presignedUrl, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
+	location, _, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
 	if err != nil {
-		return "", "", false, err
+		return "", false, err
 	}
 
-	return location, presignedUrl, true, nil
+	return location, true, nil
 }

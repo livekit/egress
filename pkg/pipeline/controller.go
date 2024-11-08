@@ -653,7 +653,7 @@ func (c *Controller) uploadManifest() {
 	infoUpdated := false
 	for _, si := range c.sinks {
 		for _, s := range si {
-			location, presignedUrl, uploaded, err := s.UploadManifest(manifestPath)
+			location, uploaded, err := s.UploadManifest(manifestPath)
 			if err != nil {
 				logger.Errorw("failed to upload manifest", err)
 				continue
@@ -661,7 +661,6 @@ func (c *Controller) uploadManifest() {
 
 			if !infoUpdated && uploaded {
 				c.Info.ManifestLocation = location
-				c.Info.ManifestPresignedUrl = presignedUrl
 				infoUpdated = true
 			}
 		}
