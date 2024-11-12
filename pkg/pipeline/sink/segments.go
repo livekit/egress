@@ -322,7 +322,7 @@ func (s *SegmentSink) Close() error {
 }
 
 func (s *SegmentSink) UploadManifest(filepath string) (string, bool, error) {
-	if s.DisableManifest && !s.ManifestRequired() {
+	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
 		return "", false, nil
 	}
 

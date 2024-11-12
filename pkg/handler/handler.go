@@ -95,7 +95,7 @@ func (h *Handler) Run() {
 	h.initialized.Break()
 	if err != nil {
 		h.conf.Info.SetFailed(err)
-		_, _ = h.ipcServiceClient.HandlerUpdate(context.Background(), (*livekit.EgressInfo)(h.conf.Info))
+		_, _ = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
 		return
 	}
 
@@ -109,7 +109,7 @@ func (h *Handler) Run() {
 	_, _ = h.ipcServiceClient.HandlerFinished(ctx, &ipc.HandlerFinishedRequest{
 		EgressId: h.conf.Info.EgressId,
 		Metrics:  m,
-		Info:     (*livekit.EgressInfo)(res),
+		Info:     res,
 	})
 }
 
@@ -118,5 +118,5 @@ func (h *Handler) Kill() {
 	if h.controller == nil {
 		return
 	}
-	h.controller.SendEOS(context.Background(), "handler killed")
+	h.controller.SendEOS(context.Background(), livekit.EndReasonKilled)
 }

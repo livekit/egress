@@ -73,27 +73,25 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 		"request", p.Info.Request,
 	)
 
-	info := (*livekit.EgressInfo)(p.Info)
-
-	errChan := s.ioClient.CreateEgress(ctx, info)
-	launchErr := s.launchProcess(req, info)
+	errChan := s.ioClient.CreateEgress(ctx, p.Info)
+	launchErr := s.launchProcess(req, p.Info)
 	createErr := <-errChan
 
 	if launchErr != nil {
 		if createErr == nil {
 			// send failed update if it was saved to db
-			s.processEnded(req, info, launchErr)
+			s.processEnded(req, p.Info, launchErr)
 		}
 		return nil, launchErr
 	} else if createErr != nil {
 		// launched but failed to save - abort and return error
-		info.Error = createErr.Error()
-		info.ErrorCode = int32(http.StatusInternalServerError)
+		p.Info.Error = createErr.Error()
+		p.Info.ErrorCode = int32(http.StatusInternalServerError)
 		s.AbortProcess(req.EgressId, createErr)
 		return nil, createErr
 	}
 
-	return (*livekit.EgressInfo)(p.Info), nil
+	return p.Info, nil
 }
 
 func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.EgressInfo) error {

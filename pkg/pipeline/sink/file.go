@@ -58,7 +58,7 @@ func (s *FileSink) Close() error {
 }
 
 func (s *FileSink) UploadManifest(filepath string) (string, bool, error) {
-	if s.DisableManifest && !s.ManifestRequired() {
+	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
 		return "", false, nil
 	}
 

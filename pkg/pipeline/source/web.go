@@ -30,7 +30,6 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/tracer"
 )
@@ -51,7 +50,7 @@ type WebSource struct {
 	startRecording chan struct{}
 	endRecording   chan struct{}
 
-	info *info.EgressInfo
+	info *livekit.EgressInfo
 }
 
 func init() {

@@ -29,7 +29,6 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
-	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink"
@@ -196,7 +195,7 @@ func (c *Controller) BuildPipeline() error {
 	return nil
 }
 
-func (c *Controller) Run(ctx context.Context) *info.EgressInfo {
+func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	ctx, span := tracer.Start(ctx, "Pipeline.Run")
 	defer span.End()
 
@@ -208,7 +207,7 @@ func (c *Controller) Run(ctx context.Context) *info.EgressInfo {
 	// close when room ends
 	go func() {
 		<-c.src.EndRecording()
-		c.SendEOS(ctx, "source closed")
+		c.SendEOS(ctx, livekit.EndReasonSrcClosed)
 	}()
 
 	// wait until room is ready
@@ -218,7 +217,7 @@ func (c *Controller) Run(ctx context.Context) *info.EgressInfo {
 		select {
 		case <-c.stopped.Watch():
 			c.src.Close()
-			c.Info.SetAborted(info.MsgStartNotReceived)
+			c.Info.SetAborted(livekit.MsgStartNotReceived)
 			return c.Info
 		case <-start:
 			// continue
@@ -280,7 +279,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 		// add stream info to results
 		c.mu.Lock()
 		c.Info.StreamResults = append(c.Info.StreamResults, stream.StreamInfo)
-		if list := (*livekit.EgressInfo)(c.Info).GetStream(); list != nil {
+		if list := c.Info.GetStream(); list != nil {
 			list.Info = append(list.Info, stream.StreamInfo)
 		}
 		c.mu.Unlock()
@@ -325,7 +324,7 @@ func (c *Controller) streamFinished(ctx context.Context, stream *config.Stream) 
 
 	// end egress if no outputs remaining
 	if c.OutputCount.Load() == 0 {
-		c.SendEOS(ctx, "all streams removed")
+		c.SendEOS(ctx, livekit.EndReasonStreamsStopped)
 		return nil
 	}
 
@@ -368,7 +367,7 @@ func (c *Controller) onEOSSent() {
 	// made it through the pipeline by the time endRecording is closed
 	if c.SourceType == types.SourceTypeSDK && !c.AudioEnabled {
 		// this will not actually send a second EOS, but will make sure everything is in the correct state
-		c.SendEOS(context.Background(), "source closed")
+		c.SendEOS(context.Background(), livekit.EndReasonSrcClosed)
 	}
 }
 
@@ -381,12 +380,12 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 			c.limitTimer.Stop()
 		}
 
-		c.Info.Details = fmt.Sprintf("end reason: %s", reason)
+		c.Info.SetEndReason(reason)
 		logger.Debugw("stopping pipeline", "reason", reason)
 
 		switch c.Info.Status {
 		case livekit.EgressStatus_EGRESS_STARTING:
-			c.Info.SetAborted(info.MsgStoppedBeforeStarted)
+			c.Info.SetAborted(livekit.MsgStoppedBeforeStarted)
 			c.p.Stop()
 
 		case livekit.EgressStatus_EGRESS_ABORTED,
@@ -395,11 +394,11 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ENDING)
-			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
+			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
 			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_ENDING:
-			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
+			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
 			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
@@ -454,7 +453,7 @@ func (c *Controller) Close() {
 	// ensure egress ends with a final state
 	switch c.Info.Status {
 	case livekit.EgressStatus_EGRESS_STARTING:
-		c.Info.SetAborted(info.MsgStoppedBeforeStarted)
+		c.Info.SetAborted(livekit.MsgStoppedBeforeStarted)
 
 	case livekit.EgressStatus_EGRESS_ACTIVE,
 		livekit.EgressStatus_EGRESS_ENDING:
@@ -492,13 +491,13 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 		c.limitTimer = time.AfterFunc(timeout, func() {
 			switch c.Info.Status {
 			case livekit.EgressStatus_EGRESS_STARTING:
-				c.Info.SetAborted(info.MsgLimitReachedWithoutStart)
+				c.Info.SetAborted(livekit.MsgLimitReachedWithoutStart)
 
 			case livekit.EgressStatus_EGRESS_ACTIVE:
 				c.Info.SetLimitReached()
 			}
 			if c.playing.IsBroken() {
-				c.SendEOS(ctx, "time limit reached")
+				c.SendEOS(ctx, livekit.EndReasonLimitReached)
 			} else {
 				c.p.Stop()
 			}
@@ -538,7 +537,7 @@ func (c *Controller) updateStartTime(startedAt int64) {
 
 	if c.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
 		c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ACTIVE)
-		_, _ = c.ipcServiceClient.HandlerUpdate(context.Background(), (*livekit.EgressInfo)(c.Info))
+		_, _ = c.ipcServiceClient.HandlerUpdate(context.Background(), c.Info)
 	}
 }
 
@@ -576,7 +575,7 @@ func (c *Controller) streamUpdated(ctx context.Context) {
 		}
 	}
 
-	_, _ = c.ipcServiceClient.HandlerUpdate(ctx, (*livekit.EgressInfo)(c.Info))
+	_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
 }
 
 func (c *Controller) updateEndTime() {

@@ -36,7 +36,7 @@ func (c *Controller) GetGstPipelineDebugDot() string {
 }
 
 func (c *Controller) uploadDebugFiles() {
-	u, err := uploader.New(&c.Debug.StorageConfig, nil, c.monitor)
+	u, err := uploader.New(&c.Debug.StorageConfig, nil, c.monitor, nil)
 	if err != nil {
 		logger.Errorw("failed to create uploader", err)
 		return
