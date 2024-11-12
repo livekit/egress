@@ -105,7 +105,8 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
         clearInterval(interval);
       }
     }, 100);
-  });
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
 
   useEffect(() => {
     if (screenshareTracks.length > 0 && screenshareTracks[0].publication) {
