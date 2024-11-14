@@ -28,7 +28,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
@@ -55,8 +54,8 @@ type PipelineConfig struct {
 	OutputCount          atomic.Int32                        `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	Info     *info.EgressInfo `yaml:"-"`
-	Manifest *Manifest        `yaml:"-"`
+	Info     *livekit.EgressInfo `yaml:"-"`
+	Manifest *Manifest           `yaml:"-"`
 }
 
 type SourceConfig struct {
@@ -164,7 +163,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 	// start with defaults
 	now := time.Now().UnixNano()
-	p.Info = &info.EgressInfo{
+	p.Info = &livekit.EgressInfo{
 		EgressId:  request.EgressId,
 		RoomId:    request.RoomId,
 		Status:    livekit.EgressStatus_EGRESS_STARTING,

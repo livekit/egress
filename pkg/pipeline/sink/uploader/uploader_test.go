@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/protocol/livekit"
 )
 
 func TestUploader(t *testing.T) {
@@ -37,7 +38,8 @@ func TestUploader(t *testing.T) {
 		GeneratePresignedUrl: true,
 	}
 
-	u, err := New(primary, backup, nil)
+	info := &livekit.EgressInfo{}
+	u, err := New(primary, backup, nil, info)
 	require.NoError(t, err)
 
 	filepath := "uploader_test.go"
@@ -48,6 +50,7 @@ func TestUploader(t *testing.T) {
 
 	require.NotZero(t, size)
 	require.NotEmpty(t, location)
+	require.True(t, info.BackupStorageUsed)
 
 	response, err := http.Get(location)
 	require.NoError(t, err)

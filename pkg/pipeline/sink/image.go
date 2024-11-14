@@ -151,7 +151,7 @@ func (s *ImageSink) Close() error {
 }
 
 func (s *ImageSink) UploadManifest(filepath string) (string, bool, error) {
-	if s.DisableManifest && !s.ManifestRequired() {
+	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
 		return "", false, nil
 	}
 

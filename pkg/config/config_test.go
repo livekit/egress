@@ -20,7 +20,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -79,7 +78,7 @@ func TestSegmentNaming(t *testing.T) {
 			expectedStorageDir: "conf_test/", expectedPlaylistFilename: "playlist.m3u8", expectedLivePlaylistFilename: "", expectedSegmentPrefix: "conf_test_2/filename",
 		},
 	} {
-		p := &PipelineConfig{Info: &info.EgressInfo{EgressId: "egress_ID"}}
+		p := &PipelineConfig{Info: &livekit.EgressInfo{EgressId: "egress_ID"}}
 		o, err := p.getSegmentConfig(&livekit.SegmentedFileOutput{
 			FilenamePrefix:   test.filenamePrefix,
 			PlaylistName:     test.playlistName,

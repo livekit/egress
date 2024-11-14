@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
 )
@@ -36,13 +37,13 @@ type uploader interface {
 }
 
 type Uploader struct {
-	primary    uploader
-	backup     uploader
-	backupUsed bool
-	monitor    *stats.HandlerMonitor
+	primary uploader
+	backup  uploader
+	info    *livekit.EgressInfo
+	monitor *stats.HandlerMonitor
 }
 
-func New(conf, backup *config.StorageConfig, monitor *stats.HandlerMonitor) (*Uploader, error) {
+func New(conf, backup *config.StorageConfig, monitor *stats.HandlerMonitor, info *livekit.EgressInfo) (*Uploader, error) {
 	p, err := getUploader(conf)
 	if err != nil {
 		return nil, err
@@ -51,6 +52,7 @@ func New(conf, backup *config.StorageConfig, monitor *stats.HandlerMonitor) (*Up
 	u := &Uploader{
 		primary: p,
 		monitor: monitor,
+		info:    info,
 	}
 
 	if backup != nil {
@@ -109,7 +111,9 @@ func (u *Uploader) Upload(
 	if u.backup != nil {
 		location, size, backupErr := u.backup.upload(localFilepath, storageFilepath, outputType)
 		if backupErr == nil {
-			u.backupUsed = true
+			if u.info != nil {
+				u.info.SetBackupUsed()
+			}
 			if u.monitor != nil {
 				u.monitor.IncBackupStorageWrites(string(outputType))
 			}
@@ -124,8 +128,4 @@ func (u *Uploader) Upload(
 	}
 
 	return "", 0, primaryErr
-}
-
-func (u *Uploader) ManifestRequired() bool {
-	return u.backupUsed
 }
