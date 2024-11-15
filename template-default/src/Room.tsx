@@ -28,6 +28,8 @@ import { ReactElement, useEffect, useState } from 'react';
 import SingleSpeakerLayout from './SingleSpeakerLayout';
 import SpeakerLayout from './SpeakerLayout';
 
+const FRAME_DECODE_TIMEOUT = 5000;
+
 interface RoomPageProps {
   url: string;
   token: string;
@@ -96,7 +98,7 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
       } else if (!hasVideoTracks && hasSubscribedTracks && timeDelta > 500) {
         // adding a small timeout to ensure video tracks has a chance to be published
         shouldStartRecording = true;
-      } else if (timeDelta > 10000 && hasSubscribedTracks) {
+      } else if (timeDelta > FRAME_DECODE_TIMEOUT && hasSubscribedTracks) {
         shouldStartRecording = true;
       }
 
