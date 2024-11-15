@@ -23,10 +23,12 @@ import {
   useTracks,
 } from '@livekit/components-react';
 import EgressHelper from '@livekit/egress-sdk';
-import { ConnectionState, RoomEvent, Track } from 'livekit-client';
+import { ConnectionState, Track } from 'livekit-client';
 import { ReactElement, useEffect, useState } from 'react';
 import SingleSpeakerLayout from './SingleSpeakerLayout';
 import SpeakerLayout from './SpeakerLayout';
+
+const FRAME_DECODE_TIMEOUT = 5000;
 
 interface RoomPageProps {
   url: string;
@@ -53,38 +55,60 @@ interface CompositeTemplateProps {
 
 function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
   const room = useRoomContext();
-  const [layout, setLayout] = useState(initialLayout);
+  const [layout] = useState(initialLayout);
   const [hasScreenShare, setHasScreenShare] = useState(false);
   const screenshareTracks = useTracks([Track.Source.ScreenShare], {
     onlySubscribed: true,
   });
 
   useEffect(() => {
-    if (room) {
-      EgressHelper.setRoom(room);
-
-      // Egress layout can change on the fly, we can react to the new layout
-      // here.
-      EgressHelper.onLayoutChanged((newLayout) => {
-        setLayout(newLayout);
-      });
-
-      // start recording when there's already a track published
-      let hasTrack = false;
+    // determines when to start recording
+    // the algorithm used is:
+    // * if there are video tracks published, wait for frames to be decoded
+    // * if there are no video tracks published, start immediately
+    // * if it's been more than 10s, record as long as there are tracks subscribed
+    const startTime = Date.now();
+    const interval = setInterval(async () => {
+      let shouldStartRecording = false;
+      let hasVideoTracks = false;
+      let hasSubscribedTracks = false;
+      let hasDecodedFrames = false;
       for (const p of Array.from(room.remoteParticipants.values())) {
-        if (p.trackPublications.size > 0) {
-          hasTrack = true;
-          break;
+        for (const pub of Array.from(p.trackPublications.values())) {
+          if (pub.isSubscribed) {
+            hasSubscribedTracks = true;
+          }
+          if (pub.kind === Track.Kind.Video) {
+            hasVideoTracks = true;
+            if (pub.videoTrack) {
+              const stats = await pub.videoTrack.getRTCStatsReport();
+              if (stats) {
+                hasDecodedFrames = Array.from(stats).some(
+                  (item) => item[1].type === 'inbound-rtp' && item[1].framesDecoded > 0,
+                );
+              }
+            }
+          }
         }
       }
 
-      if (hasTrack) {
-        EgressHelper.startRecording();
-      } else {
-        room.once(RoomEvent.TrackSubscribed, () => EgressHelper.startRecording());
+      const timeDelta = Date.now() - startTime;
+      if (hasDecodedFrames) {
+        shouldStartRecording = true;
+      } else if (!hasVideoTracks && hasSubscribedTracks && timeDelta > 500) {
+        // adding a small timeout to ensure video tracks has a chance to be published
+        shouldStartRecording = true;
+      } else if (timeDelta > FRAME_DECODE_TIMEOUT && hasSubscribedTracks) {
+        shouldStartRecording = true;
       }
-    }
-  }, [room]);
+
+      if (shouldStartRecording) {
+        EgressHelper.startRecording();
+        clearInterval(interval);
+      }
+    }, 100);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
 
   useEffect(() => {
     if (screenshareTracks.length > 0 && screenshareTracks[0].publication) {
