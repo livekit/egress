@@ -39,7 +39,7 @@ func BuildFileBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstr
 	case types.OutputTypeWebM:
 		mux, err = gst.NewElement("webmmux")
 	default:
-		err = errors.ErrInvalidInput("output type")
+		return nil, errors.ErrInvalidInput("output type")
 	}
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
