@@ -164,31 +164,39 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 	}
 
 	required := req.EstimatedCpu
-	if required == 0 {
-		switch r := req.Request.(type) {
-		case *rpc.StartEgressRequest_RoomComposite:
-			if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
-				return fields, false
-			}
+	switch r := req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite:
+		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+			return fields, false
+		}
+		if required == 0 {
 			if r.RoomComposite.AudioOnly {
 				required = m.cpuCostConfig.AudioRoomCompositeCpuCost
 			} else {
 				required = m.cpuCostConfig.RoomCompositeCpuCost
 			}
-		case *rpc.StartEgressRequest_Web:
-			if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
-				return fields, false
-			}
+		}
+	case *rpc.StartEgressRequest_Web:
+		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+			return fields, false
+		}
+		if required == 0 {
 			if r.Web.AudioOnly {
 				required = m.cpuCostConfig.AudioWebCpuCost
 			} else {
 				required = m.cpuCostConfig.WebCpuCost
 			}
-		case *rpc.StartEgressRequest_Participant:
+		}
+	case *rpc.StartEgressRequest_Participant:
+		if required == 0 {
 			required = m.cpuCostConfig.ParticipantCpuCost
-		case *rpc.StartEgressRequest_TrackComposite:
+		}
+	case *rpc.StartEgressRequest_TrackComposite:
+		if required == 0 {
 			required = m.cpuCostConfig.TrackCompositeCpuCost
-		case *rpc.StartEgressRequest_Track:
+		}
+	case *rpc.StartEgressRequest_Track:
+		if required == 0 {
 			required = m.cpuCostConfig.TrackCpuCost
 		}
 	}
