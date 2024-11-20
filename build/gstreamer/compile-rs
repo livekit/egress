@@ -6,7 +6,8 @@ for repo in gst-plugins-rs; do
 
   # strip binaries in debug mode
   mv Cargo.toml Cargo.toml.old
-  sed s,'\[profile.release\]','[profile.release]\nstrip="debuginfo"', Cargo.toml.old > Cargo.toml 
+  sed s,'\[profile.release\]','[profile.release]\nstrip="debuginfo"', Cargo.toml.old > Cargo.toml
+  cargo update -p time
 
   opts="-D prefix=/usr -D tests=disabled -D doc=disabled"
 
