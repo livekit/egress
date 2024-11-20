@@ -97,7 +97,7 @@ RUN apt-get update && \
         libvo-aacenc0 \
         libvo-amrwbenc0 \
         libvorbis0a \
-        libvpx7 \
+        libvpx9 \
         libvulkan1 \
         libwavpack1 \
         libwebp7 \
