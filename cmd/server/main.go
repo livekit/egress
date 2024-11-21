@@ -111,7 +111,7 @@ func runService(c *cli.Context) error {
 	}
 
 	bus := psrpc.NewRedisMessageBus(rc)
-	ioClient, err := info.NewIOClient(bus)
+	ioClient, err := info.NewIOClient(&conf.BaseConfig, bus)
 	if err != nil {
 		return err
 	}

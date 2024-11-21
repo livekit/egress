@@ -42,6 +42,8 @@ type BaseConfig struct {
 	EnableChromeSandbox  bool           `yaml:"enable_chrome_sandbox"`  // enable Chrome sandbox, requires extra docker configuration
 	MaxUploadQueue       int            `yaml:"max_upload_queue"`       // maximum upload queue size, in minutes
 	DisallowLocalStorage bool           `yaml:"disallow_local_storage"` // require an upload config for all requests
+	IOCreateTimeout      time.Duration  `yaml:"io_create_timeout"`      // timeout for CreateEgress calls
+	IOUpdateTimeout      time.Duration  `yaml:"io_update_timeout"`      // timeout for UpdateEgress calls
 
 	SessionLimits `yaml:"session_limits"` // session duration limits
 	StorageConfig *StorageConfig          `yaml:"storage,omitempty"` // storage config
