@@ -170,7 +170,7 @@ func Build() error {
 
 func BuildTemplate() error {
 	return mageutil.Run(context.Background(),
-		"docker pull ubuntu:22.04",
+		"docker pull ubuntu:24.04",
 		"docker build -t livekit/egress-templates -f ./build/template/Dockerfile .",
 	)
 }
