@@ -32,8 +32,9 @@ import (
 )
 
 const (
-	ioTimeout  = time.Second * 30
-	maxBackoff = time.Minute * 10
+	createTimeout = time.Second * 10
+	ioTimeout     = time.Second * 30
+	maxBackoff    = time.Minute * 10
 )
 
 type IOClient interface {
@@ -91,7 +92,7 @@ func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) c
 
 	errChan := make(chan error, 1)
 	go func() {
-		_, err := c.IOInfoClient.CreateEgress(ctx, info)
+		_, err := c.IOInfoClient.CreateEgress(ctx, info, psrpc.WithRequestTimeout(createTimeout))
 
 		c.mu.Lock()
 		defer c.mu.Unlock()
