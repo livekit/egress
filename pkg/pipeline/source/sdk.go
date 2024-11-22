@@ -222,7 +222,7 @@ func (s *SDKSource) awaitRoomTracks() error {
 
 	for _, p := range s.room.GetRemoteParticipants() {
 		for _, track := range p.TrackPublications() {
-			if s.shouldSubscribe(types.RequestTypeRoomComposite, track) {
+			if s.shouldSubscribe(track) {
 				if err := s.subscribe(track); err != nil {
 					return err
 				}
@@ -262,7 +262,7 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 	pubs := rp.TrackPublications()
 	expected := 0
 	for _, pub := range pubs {
-		if s.shouldSubscribe(types.RequestTypeParticipant, pub) {
+		if s.shouldSubscribe(pub) {
 			expected++
 		}
 	}
@@ -574,7 +574,7 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 		return
 	}
 
-	if s.shouldSubscribe(s.RequestType, pub) {
+	if s.shouldSubscribe(pub) {
 		if err := s.subscribe(pub); err != nil {
 			logger.Errorw("failed to subscribe to track", err, "trackID", pub.SID())
 		}
@@ -583,7 +583,7 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 	}
 }
 
-func (s *SDKSource) shouldSubscribe(requestType types.RequestType, pub lksdk.TrackPublication) bool {
+func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 	switch s.RequestType {
 	case types.RequestTypeParticipant:
 		switch pub.Source() {
