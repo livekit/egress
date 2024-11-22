@@ -17,6 +17,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -39,6 +40,9 @@ const (
 
 	defaultTemplatePort         = 7980
 	defaultTemplateBaseTemplate = "http://localhost:%d/"
+
+	defaultIOCreateTimeout = time.Second * 15
+	defaultIOUpdateTimeout = time.Second * 30
 )
 
 type ServiceConfig struct {
@@ -99,6 +103,13 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.TemplateBase == "" {
 		c.TemplateBase = fmt.Sprintf(defaultTemplateBaseTemplate, c.TemplatePort)
+	}
+
+	if c.IOCreateTimeout == 0 {
+		c.IOCreateTimeout = defaultIOCreateTimeout
+	}
+	if c.IOUpdateTimeout == 0 {
+		c.IOUpdateTimeout = defaultIOUpdateTimeout
 	}
 
 	// Setting CPU costs from config. Ensure that CPU costs are positive

@@ -23,6 +23,7 @@ import (
 	"github.com/frostbyte73/core"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
@@ -32,7 +33,6 @@ import (
 )
 
 const (
-	ioTimeout  = time.Second * 30
 	maxBackoff = time.Minute * 10
 )
 
@@ -46,6 +46,9 @@ type IOClient interface {
 
 type ioClient struct {
 	rpc.IOInfoClient
+
+	createTimeout time.Duration
+	updateTimeout time.Duration
 
 	mu       sync.Mutex
 	egresses map[string]*egressCreation
@@ -65,16 +68,18 @@ type update struct {
 	info *livekit.EgressInfo
 }
 
-func NewIOClient(bus psrpc.MessageBus) (IOClient, error) {
-	client, err := rpc.NewIOInfoClient(bus, psrpc.WithClientTimeout(ioTimeout))
+func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error) {
+	client, err := rpc.NewIOInfoClient(bus)
 	if err != nil {
 		return nil, err
 	}
 
 	c := &ioClient{
-		IOInfoClient: client,
-		egresses:     make(map[string]*egressCreation),
-		updates:      make(chan *update, 1000),
+		IOInfoClient:  client,
+		createTimeout: conf.IOCreateTimeout,
+		updateTimeout: conf.IOUpdateTimeout,
+		egresses:      make(map[string]*egressCreation),
+		updates:       make(chan *update, 1000),
 	}
 	c.healthy.Store(true)
 	go c.updateWorker()
@@ -91,7 +96,7 @@ func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) c
 
 	errChan := make(chan error, 1)
 	go func() {
-		_, err := c.IOInfoClient.CreateEgress(ctx, info)
+		_, err := c.IOInfoClient.CreateEgress(ctx, info, psrpc.WithRequestTimeout(c.createTimeout))
 
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -152,7 +157,7 @@ func (c *ioClient) updateWorker() {
 func (c *ioClient) sendUpdate(u *update) {
 	d := time.Millisecond * 250
 	for {
-		if _, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info); err != nil {
+		if _, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info, psrpc.WithRequestTimeout(c.updateTimeout)); err != nil {
 			if errors.Is(err, psrpc.ErrRequestTimedOut) {
 				if c.healthy.Swap(false) {
 					logger.Infow("io connection unhealthy")
