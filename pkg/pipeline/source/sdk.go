@@ -218,18 +218,21 @@ func (s *SDKSource) joinRoom() error {
 }
 
 func (s *SDKSource) awaitRoomTracks() error {
-	filter := func(pub lksdk.TrackPublication) (bool, error) {
-		sub := s.shouldSubscribe(types.RequestTypeRoomComposite, pub)
+	var tracks []lksdk.TrackPublication
 
-		return sub, nil
+	for _, p := range s.room.GetRemoteParticipants() {
+		for _, track := range p.TrackPublications() {
+			if s.shouldSubscribe(types.RequestTypeRoomComposite, track) {
+				if err := s.subscribe(track); err != nil {
+					return err
+				}
+
+				tracks = append(tracks, track)
+			}
+		}
 	}
 
 	deadline := time.After(subscriptionTimeout)
-	tracks, err := s.subscribeWithFilter(deadline, filter)
-	if err != nil {
-		return err
-	}
-
 	trackCount := len(tracks)
 loop:
 	for i := 0; i < trackCount; i++ {
@@ -360,68 +363,42 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, 
 	return w, h, nil
 }
 
-var stopSubscribeErr = errors.New("stop subscribe loop")
-
-func (s *SDKSource) subscribeWithFilter(deadline <-chan time.Time, filter func(pub lksdk.TrackPublication) (subscribe bool, err error)) ([]lksdk.TrackPublication, error) {
+func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}, deadline <-chan time.Time) ([]lksdk.TrackPublication, error) {
 	var tracks []lksdk.TrackPublication
 
 	for {
 		select {
 		case <-deadline:
-			return errors.Err
 			for trackID := range expecting {
 				return nil, errors.ErrTrackNotFound(trackID)
 			}
 		default:
 			for _, p := range s.room.GetRemoteParticipants() {
 				for _, track := range p.TrackPublications() {
-					subscribe, err := filter(track)
+					trackID := track.SID()
+					if _, ok := expecting[trackID]; ok {
+						if trackID == s.AudioTrackID && track.Kind() == lksdk.TrackKindVideo {
+							return nil, errors.ErrInvalidInput("audio_track_id")
+						} else if trackID == s.VideoTrackID && track.Kind() == lksdk.TrackKindAudio {
+							return nil, errors.ErrInvalidInput("video_track_id")
+						}
 
-					if subscribe {
 						if err := s.subscribe(track); err != nil {
 							return nil, err
 						}
 
 						tracks = append(tracks, track)
-					}
 
-					if err == stopSubscribeErr {
-						return tracks, nil
-					} else if err != nil {
-						return nil, err
+						delete(expecting, track.SID())
+						if len(expecting) == 0 {
+							return tracks, nil
+						}
 					}
 				}
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
-
-	return tracks, nil
-}
-
-func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}, deadline <-chan time.Time) ([]lksdk.TrackPublication, error) {
-	filter := func(pub lksdk.TrackPublication) (bool, error) {
-		trackID := track.SID()
-		if _, ok := expecting[trackID]; ok {
-			if trackID == s.AudioTrackID && track.Kind() == lksdk.TrackKindVideo {
-				return false, errors.ErrInvalidInput("audio_track_id")
-			} else if trackID == s.VideoTrackID && track.Kind() == lksdk.TrackKindAudio {
-				return false, errors.ErrInvalidInput("video_track_id")
-			}
-
-			delete(expecting, track.SID())
-
-			if len(expecting) == 0 {
-				return true, stopSubscribeErr
-			}
-
-			return true, nil
-		}
-
-		return false, nil
-	}
-
-	return s.subscribeWithFilter(deadline, filter)
 }
 
 func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
@@ -597,7 +574,7 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 		return
 	}
 
-	if s.shouldSubscribe(pub) {
+	if s.shouldSubscribe(s.RequestType, pub) {
 		if err := s.subscribe(pub); err != nil {
 			logger.Errorw("failed to subscribe to track", err, "trackID", pub.SID())
 		}
@@ -616,7 +593,7 @@ func (s *SDKSource) shouldSubscribe(requestType types.RequestType, pub lksdk.Tra
 			return false
 		}
 	case types.RequestTypeRoomComposite:
-		switch pub.Kind {
+		switch pub.Kind() {
 		case lksdk.TrackKindAudio:
 			return s.AudioEnabled
 		case lksdk.TrackKindVideo:
