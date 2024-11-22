@@ -82,7 +82,7 @@ type SDKSourceParams struct {
 	TrackKind    string
 	AudioInCodec types.MimeType
 	VideoInCodec types.MimeType
-	AudioTrack   *TrackSource
+	AudioTracks  []*TrackSource
 	VideoTrack   *TrackSource
 }
 

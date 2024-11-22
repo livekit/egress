@@ -471,7 +471,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		s.mu.Unlock()
 
 		if !s.initialized.IsBroken() {
-			s.AudioTrack = ts
+			s.AudioTracks = append(s.AudioTracks, ts)
 		}
 
 	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9:
