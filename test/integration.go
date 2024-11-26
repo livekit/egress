@@ -138,7 +138,7 @@ func (r *Runner) checkUpdate(t *testing.T, egressID string, status livekit.Egres
 func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[string]livekit.StreamInfo_Status) {
 	for {
 		info := r.getUpdate(t, egressID)
-		if len(expected) < len(info.StreamResults) {
+		if len(expected) != len(info.StreamResults) {
 			continue
 		}
 
