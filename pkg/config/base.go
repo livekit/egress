@@ -36,12 +36,13 @@ type BaseConfig struct {
 	WsUrl     string             `yaml:"ws_url"`     // (env LIVEKIT_WS_URL)
 
 	// optional
-	Logging              *logger.Config `yaml:"logging"`                // logging config
-	TemplateBase         string         `yaml:"template_base"`          // custom template base url
-	ClusterID            string         `yaml:"cluster_id"`             // cluster this instance belongs to
-	EnableChromeSandbox  bool           `yaml:"enable_chrome_sandbox"`  // enable Chrome sandbox, requires extra docker configuration
-	MaxUploadQueue       int            `yaml:"max_upload_queue"`       // maximum upload queue size, in minutes
-	DisallowLocalStorage bool           `yaml:"disallow_local_storage"` // require an upload config for all requests
+	Logging                      *logger.Config `yaml:"logging"`                          // logging config
+	TemplateBase                 string         `yaml:"template_base"`                    // custom template base url
+	ClusterID                    string         `yaml:"cluster_id"`                       // cluster this instance belongs to
+	EnableChromeSandbox          bool           `yaml:"enable_chrome_sandbox"`            // enable Chrome sandbox, requires extra docker configuration
+	MaxUploadQueue               int            `yaml:"max_upload_queue"`                 // maximum upload queue size, in minutes
+	DisallowLocalStorage         bool           `yaml:"disallow_local_storage"`           // require an upload config for all requests
+	EnableRoomCompositeSDKSource bool           `yaml:"enable_room_composite_sdk_source"` // attempt to render supported audio only room composite use cases using the SDK source instead of Chrome
 
 	SessionLimits `yaml:"session_limits"` // session duration limits
 	StorageConfig *StorageConfig          `yaml:"storage,omitempty"` // storage config

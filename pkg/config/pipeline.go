@@ -193,7 +193,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 		egress.RedactEncodedOutputs(clone)
 
-		p.SourceType = getRoomCompositeRequestType(req.RoomComposite)
+		p.SourceType = p.getRoomCompositeRequestType(req.RoomComposite)
 		p.AwaitStartSignal = true
 
 		p.Info.RoomName = req.RoomComposite.RoomName
@@ -561,6 +561,24 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 	return nil
 }
 
+func (p *PipelineConfig) getRoomCompositeRequestType(req *livekit.RoomCompositeEgressRequest) types.SourceType {
+	// Test for possible chrome-less room composition for audio only
+	if !p.EnableRoomCompositeSDKSource {
+		return types.SourceTypeWeb
+	}
+	if req.Layout != "" {
+		return types.SourceTypeWeb
+	}
+	if !req.AudioOnly {
+		return types.SourceTypeWeb
+	}
+	if req.CustomBaseUrl != "" {
+		return types.SourceTypeWeb
+	}
+
+	return types.SourceTypeSDK
+}
+
 // used for sdk input source
 func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string, w, h uint32) error {
 	for egressType, c := range p.Outputs {
@@ -624,19 +642,4 @@ func stringReplace(s string, replacements map[string]string) string {
 		s = strings.Replace(s, template, value, -1)
 	}
 	return s
-}
-
-func getRoomCompositeRequestType(req *livekit.RoomCompositeEgressRequest) types.SourceType {
-	// Test for possible chrome-less room composition for audio only
-	if req.Layout != "" {
-		return types.SourceTypeWeb
-	}
-	if !req.AudioOnly {
-		return types.SourceTypeWeb
-	}
-	if req.CustomBaseUrl != "" {
-		return types.SourceTypeWeb
-	}
-
-	return types.SourceTypeSDK
 }
