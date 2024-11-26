@@ -387,6 +387,13 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		return errors.ErrInvalidInput("request")
 	}
 
+	switch p.SourceType {
+	case types.SourceTypeWeb:
+		p.Info.SourceType = livekit.EgressSourceType_EGRESS_SOURCE_TYPE_WEB
+	case types.SourceTypeSDK:
+		p.Info.SourceType = livekit.EgressSourceType_EGRESS_SOURCE_TYPE_SDK
+	}
+
 	// connection info
 	if connectionInfoRequired {
 		if p.Info.RoomName == "" {
