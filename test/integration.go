@@ -29,6 +29,7 @@ import (
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 )
 
@@ -141,22 +142,20 @@ func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[s
 		if len(expected) != len(info.StreamResults) {
 			continue
 		}
-
 		require.Equal(t, len(expected), len(info.StreamResults))
 
-		failureStillActive := false
+		checkNext := false
 		for _, s := range info.StreamResults {
 			require.Equal(t, s.Status == livekit.StreamInfo_FAILED, s.Error != "")
-
-			if expected[s.Url] == livekit.StreamInfo_FAILED && s.Status == livekit.StreamInfo_ACTIVE {
-				failureStillActive = true
+			if expected[s.Url] > s.Status {
+				logger.Debugw(fmt.Sprintf("stream status %s, expecting %s", s.Status.String(), expected[s.Url].String()))
+				checkNext = true
 				continue
 			}
-
 			require.Equal(t, expected[s.Url], s.Status)
 		}
 
-		if !failureStillActive {
+		if !checkNext {
 			return
 		}
 	}
