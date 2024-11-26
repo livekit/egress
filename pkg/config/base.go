@@ -98,6 +98,14 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 	l := zl.WithValues(values...)
 
 	logger.SetLogger(l, "egress")
-	lksdk.SetLogger(l)
+	lksdk.SetLogger(&downgradeLogger{Logger: l})
 	return nil
+}
+
+type downgradeLogger struct {
+	logger.Logger
+}
+
+func (d *downgradeLogger) Errorw(msg string, err error, keysAndValues ...interface{}) {
+	d.Logger.Warnw(msg, err, keysAndValues...)
 }

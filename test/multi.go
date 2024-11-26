@@ -125,14 +125,14 @@ func (r *Runner) runMultiTest(t *testing.T, test *testCase) {
 	if test.streamOptions != nil {
 		_, err = r.client.UpdateStream(context.Background(), egressID, &livekit.UpdateStreamRequest{
 			EgressId:      egressID,
-			AddOutputUrls: []string{rtmpUrl1},
+			AddOutputUrls: []string{rtmpUrl3},
 		})
 		require.NoError(t, err)
 
 		time.Sleep(time.Second * 10)
-		r.verifyStreams(t, p, rtmpUrl1)
+		r.verifyStreams(t, p, rtmpUrl3)
 		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-			rtmpUrl1Redacted: livekit.StreamInfo_ACTIVE,
+			rtmpUrl3Redacted: livekit.StreamInfo_ACTIVE,
 		})
 		time.Sleep(time.Second * 10)
 	} else {
