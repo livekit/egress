@@ -159,6 +159,11 @@ func (s *SDKSource) joinRoom() error {
 		},
 		OnDisconnected: s.onDisconnected,
 	}
+
+	if s.RequestType == types.RequestTypeRoomComposite {
+		cb.ParticipantCallback.OnTrackPublished = s.onTrackPublished
+	}
+
 	if s.RequestType == types.RequestTypeParticipant {
 		cb.ParticipantCallback.OnTrackPublished = s.onTrackPublished
 		cb.OnParticipantDisconnected = s.onParticipantDisconnected
@@ -174,6 +179,12 @@ func (s *SDKSource) joinRoom() error {
 	var fileIdentifier string
 	var w, h uint32
 	switch s.RequestType {
+	case types.RequestTypeRoomComposite:
+		fileIdentifier = s.room.Name()
+		// room_name and room_id are already handled as replacements
+
+		err = s.awaitRoomTracks()
+
 	case types.RequestTypeParticipant:
 		fileIdentifier = s.Identity
 		s.filenameReplacements["{publisher_identity}"] = s.Identity
@@ -206,6 +217,40 @@ func (s *SDKSource) joinRoom() error {
 	return nil
 }
 
+func (s *SDKSource) awaitRoomTracks() error {
+	var tracks []lksdk.TrackPublication
+
+	for _, p := range s.room.GetRemoteParticipants() {
+		for _, track := range p.TrackPublications() {
+			if s.shouldSubscribe(track) {
+				if err := s.subscribe(track); err != nil {
+					return err
+				}
+
+				tracks = append(tracks, track)
+			}
+		}
+	}
+
+	deadline := time.After(subscriptionTimeout)
+	trackCount := len(tracks)
+loop:
+	for i := 0; i < trackCount; i++ {
+		select {
+		case sub := <-s.errors:
+			if sub.err != nil {
+				return sub.err
+			}
+		case <-deadline:
+			break loop
+		}
+	}
+
+	s.initialized.Break()
+
+	return nil
+}
+
 func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, error) {
 	rp, err := s.getParticipant(identity)
 	if err != nil {
@@ -217,7 +262,7 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 	pubs := rp.TrackPublications()
 	expected := 0
 	for _, pub := range pubs {
-		if shouldSubscribe(pub) {
+		if s.shouldSubscribe(pub) {
 			expected++
 		}
 	}
@@ -376,7 +421,7 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 	s.subLock.RLock()
 
-	if s.initialized.IsBroken() && s.RequestType != types.RequestTypeParticipant {
+	if s.initialized.IsBroken() && s.RequestType != types.RequestTypeParticipant && s.RequestType != types.RequestTypeRoomComposite {
 		s.subLock.RUnlock()
 		return
 	}
@@ -426,7 +471,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		s.mu.Unlock()
 
 		if !s.initialized.IsBroken() {
-			s.AudioTrack = ts
+			s.AudioTracks = append(s.AudioTracks, ts)
 		}
 
 	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9:
@@ -521,26 +566,42 @@ func (s *SDKSource) createWriter(
 }
 
 func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-	if rp.Identity() != s.Identity || s.RequestType != types.RequestTypeParticipant {
+	if s.RequestType != types.RequestTypeParticipant && s.RequestType != types.RequestTypeRoomComposite {
 		return
 	}
 
-	if shouldSubscribe(pub) {
+	if s.RequestType == types.RequestTypeParticipant && rp.Identity() != s.Identity {
+		return
+	}
+
+	if s.shouldSubscribe(pub) {
 		if err := s.subscribe(pub); err != nil {
 			logger.Errorw("failed to subscribe to track", err, "trackID", pub.SID())
 		}
 	} else {
-		logger.Infow("ignoring participant track", "reason", fmt.Sprintf("source %s", pub.Source()))
+		logger.Infow("ignoring track", "reason", fmt.Sprintf("source %s", pub.Source()))
 	}
 }
 
-func shouldSubscribe(pub lksdk.TrackPublication) bool {
-	switch pub.Source() {
-	case livekit.TrackSource_CAMERA, livekit.TrackSource_MICROPHONE:
-		return true
-	default:
-		return false
+func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
+	switch s.RequestType {
+	case types.RequestTypeParticipant:
+		switch pub.Source() {
+		case livekit.TrackSource_CAMERA, livekit.TrackSource_MICROPHONE:
+			return true
+		default:
+			return false
+		}
+	case types.RequestTypeRoomComposite:
+		switch pub.Kind() {
+		case lksdk.TrackKindAudio:
+			return s.AudioEnabled
+		case lksdk.TrackKindVideo:
+			return s.VideoEnabled
+		}
 	}
+
+	return false
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
@@ -575,7 +636,7 @@ func (s *SDKSource) onTrackFinished(trackID string) {
 	if writer != nil {
 		writer.Drain(true)
 		active := s.active.Dec()
-		if s.RequestType == types.RequestTypeParticipant {
+		if s.RequestType == types.RequestTypeParticipant || s.RequestType == types.RequestTypeRoomComposite {
 			s.callbacks.OnTrackRemoved(trackID)
 			s.sync.RemoveTrack(trackID)
 		} else if active == 0 {
