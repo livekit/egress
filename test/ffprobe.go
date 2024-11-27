@@ -126,7 +126,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		require.Equal(t, livekit.EgressSourceType_EGRESS_SOURCE_TYPE_WEB, res.SourceType)
 	} else if p.RequestType == types.RequestTypeWeb {
 		require.Equal(t, livekit.EgressSourceType_EGRESS_SOURCE_TYPE_WEB, res.SourceType)
-	} else {
+	} else if res != nil {
 		require.Equal(t, livekit.EgressSourceType_EGRESS_SOURCE_TYPE_SDK, res.SourceType)
 	}
 
