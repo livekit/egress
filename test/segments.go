@@ -48,6 +48,7 @@ func (r *Runner) testSegments(t *testing.T) {
 				publishOptions: publishOptions{
 					audioCodec: types.MimeTypeOpus,
 					videoCodec: types.MimeTypeVP8,
+					layout:     "speaker",
 				},
 				encodingOptions: &livekit.EncodingOptions{
 					AudioCodec:   livekit.AudioCodec_AAC,

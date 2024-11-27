@@ -122,7 +122,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 	}
 
 	// Check source type
-	if p.RequestType == types.RequestTypeRoomComposite && p.VideoEnabled {
+	if p.RequestType == types.RequestTypeRoomComposite && (p.VideoEnabled || p.Layout != "") {
 		require.Equal(t, livekit.EgressSourceType_EGRESS_SOURCE_TYPE_WEB, res.SourceType)
 	} else {
 		require.Equal(t, livekit.EgressSourceType_EGRESS_SOURCE_TYPE_SDK, res.SourceType)
