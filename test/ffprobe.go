@@ -121,6 +121,13 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		require.NoError(t, err, "ffprobe failed for input %s", in)
 	}
 
+	// Check source type
+	if p.RequestType == types.RequestTypeRoomComposite && p.VideoEnabled {
+		require.Equal(t, types.SourceTypeWeb, res.SourceType)
+	} else {
+		require.Equal(t, types.SourceTypeSDK, res.SourceType)
+	}
+
 	switch egressType {
 	case types.EgressTypeFile:
 		// size
