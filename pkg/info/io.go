@@ -188,12 +188,6 @@ func (c *ioClient) sendUpdate(u *update) {
 }
 
 func (c *ioClient) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error {
-	_, err := c.IOInfoClient.UpdateMetrics(ctx, req)
-	if err != nil {
-		logger.Errorw("failed to update metrics", err, "egressID", req.Info.EgressId)
-		return err
-	}
-
 	return nil
 }
 
