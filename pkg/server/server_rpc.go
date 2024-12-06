@@ -159,7 +159,12 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 
 	avgCPU, maxCPU, maxMemory := s.monitor.EgressEnded(req)
 	if maxCPU > 0 {
-		logger.Debugw("egress stats", "egressID", info.EgressId, "avgCPU", avgCPU, "maxCPU", maxCPU, "maxMemory", maxMemory)
+		logger.Debugw("egress metrics",
+			"egressID", info.EgressId,
+			"avgCPU", avgCPU,
+			"maxCPU", maxCPU,
+			"maxMemory", maxMemory,
+		)
 	}
 
 	s.ProcessFinished(info.EgressId)
