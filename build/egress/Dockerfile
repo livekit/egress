@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM livekit/gstreamer:1.22.12-dev
+FROM livekit/gstreamer:1.24.5-dev
 
 ARG TARGETPLATFORM
 ARG TARGETARCH
@@ -51,7 +51,7 @@ ENV TINI_VERSION v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TARGETARCH} /tini
 RUN chmod +x /tini
 
-FROM livekit/gstreamer:1.22.12-prod
+FROM livekit/gstreamer:1.24.5-prod
 
 ARG TARGETPLATFORM
 
