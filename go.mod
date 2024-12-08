@@ -27,6 +27,7 @@ require (
 	github.com/livekit/psrpc v0.6.1-0.20241018124827-1efff3d113a8
 	github.com/livekit/server-sdk-go/v2 v2.4.0
 	github.com/pion/rtp v1.8.9
+	github.com/pion/rtp/v2 v2.0.0
 	github.com/pion/webrtc/v4 v4.0.4
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/client_model v0.6.1
