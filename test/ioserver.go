@@ -56,7 +56,6 @@ func (s *ioTestServer) UpdateEgress(_ context.Context, info *livekit.EgressInfo)
 	return &emptypb.Empty{}, nil
 }
 
-func (s *ioTestServer) UpdateMetrics(_ context.Context, req *rpc.UpdateMetricsRequest) (*emptypb.Empty, error) {
-	logger.Infow("egress metrics", "egressID", req.Info.EgressId, "avgCPU", req.AvgCpuUsage, "maxCPU", req.MaxCpuUsage)
+func (s *ioTestServer) UpdateMetrics(_ context.Context, _ *rpc.UpdateMetricsRequest) (*emptypb.Empty, error) {
 	return &emptypb.Empty{}, nil
 }

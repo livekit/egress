@@ -66,13 +66,14 @@ type Monitor struct {
 type processStats struct {
 	egressID string
 
-	pendingUsage float64
-	lastUsage    float64
-	allowedUsage float64
+	pendingCPU float64
+	lastCPU    float64
+	allowedCPU float64
 
 	totalCPU   float64
 	cpuCounter int
 	maxCPU     float64
+	maxMemory  int
 }
 
 func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
@@ -85,7 +86,7 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 		procStats:     make(map[int]*processStats),
 	}
 
-	procStats, err := hwstats.NewProcCPUStats(m.updateEgressStats)
+	procStats, err := hwstats.NewProcMonitor(m.updateEgressStats)
 	if err != nil {
 		return nil, err
 	}
@@ -248,11 +249,11 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	}
 
 	ps := &processStats{
-		egressID:     req.EgressId,
-		pendingUsage: cpuHold,
-		allowedUsage: cpuHold,
+		egressID:   req.EgressId,
+		pendingCPU: cpuHold,
+		allowedCPU: cpuHold,
 	}
-	time.AfterFunc(cpuHoldDuration, func() { ps.pendingUsage = 0 })
+	time.AfterFunc(cpuHoldDuration, func() { ps.pendingCPU = 0 })
 	m.pending[req.EgressId] = ps
 
 	return nil
@@ -268,8 +269,8 @@ func (m *Monitor) UpdatePID(egressID string, pid int) {
 	if ps == nil {
 		logger.Warnw("missing pending procStats", nil, "egressID", egressID)
 		ps = &processStats{
-			egressID:     egressID,
-			allowedUsage: m.cpuCostConfig.WebCpuCost,
+			egressID:   egressID,
+			allowedCPU: m.cpuCostConfig.WebCpuCost,
 		}
 	}
 
@@ -308,7 +309,7 @@ func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 	}
 }
 
-func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64) {
+func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64, int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -333,11 +334,11 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64) {
 	for pid, ps := range m.procStats {
 		if ps.egressID == req.EgressId {
 			delete(m.procStats, pid)
-			return ps.totalCPU / float64(ps.cpuCounter), ps.maxCPU
+			return ps.totalCPU / float64(ps.cpuCounter), ps.maxCPU, ps.maxMemory
 		}
 	}
 
-	return 0, 0
+	return 0, 0, 0
 }
 
 func (m *Monitor) GetAvailableCPU() float64 {
@@ -357,17 +358,17 @@ func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) 
 	}
 
 	for _, ps := range m.pending {
-		if ps.pendingUsage > ps.lastUsage {
-			pending += ps.pendingUsage
+		if ps.pendingCPU > ps.lastCPU {
+			pending += ps.pendingCPU
 		} else {
-			pending += ps.lastUsage
+			pending += ps.lastCPU
 		}
 	}
 	for _, ps := range m.procStats {
-		if ps.pendingUsage > ps.lastUsage {
-			used += ps.pendingUsage
+		if ps.pendingCPU > ps.lastCPU {
+			used += ps.pendingCPU
 		} else {
-			used += ps.lastUsage
+			used += ps.lastCPU
 		}
 	}
 
@@ -376,8 +377,8 @@ func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) 
 	return
 }
 
-func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
-	load := 1 - idle/m.cpuStats.NumCPU()
+func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
+	load := 1 - stats.CpuIdle/m.cpuStats.NumCPU()
 	m.promCPULoad.Set(load)
 
 	m.mu.Lock()
@@ -385,22 +386,33 @@ func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
 
 	maxUsage := 0.0
 	var maxEgress string
-	for pid, cpuUsage := range usage {
+	for pid, cpuUsage := range stats.Cpu {
 		procStats := m.procStats[pid]
 		if procStats == nil {
 			continue
 		}
 
-		procStats.lastUsage = cpuUsage
+		procStats.lastCPU = cpuUsage
 		procStats.totalCPU += cpuUsage
 		procStats.cpuCounter++
 		if cpuUsage > procStats.maxCPU {
 			procStats.maxCPU = cpuUsage
 		}
 
-		if cpuUsage > procStats.allowedUsage && cpuUsage > maxUsage {
+		if cpuUsage > procStats.allowedCPU && cpuUsage > maxUsage {
 			maxUsage = cpuUsage
 			maxEgress = procStats.egressID
+		}
+	}
+
+	for pid, memUsage := range stats.Memory {
+		procStats := m.procStats[pid]
+		if procStats == nil {
+			continue
+		}
+
+		if memUsage > procStats.maxMemory {
+			procStats.maxMemory = memUsage
 		}
 	}
 

@@ -239,7 +239,9 @@ func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 	// Get the ms from the handler via IPC
 	metricsResponse, err := p.ipcHandlerClient.GetMetrics(context.Background(), &ipc.MetricsRequest{})
 	if err != nil {
-		logger.Warnw("failed to obtain ms from handler", err, "egressID", p.req.EgressId)
+		if !p.closed.IsBroken() {
+			logger.Warnw("failed to obtain ms from handler", err, "egressID", p.req.EgressId)
+		}
 		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
 	}
 
