@@ -192,7 +192,6 @@ func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, tem
 			r.room.Disconnect()
 		}
 		r.svc.Shutdown(false, true)
-		r.svc.Drain()
 	})
 
 	// connect to room
