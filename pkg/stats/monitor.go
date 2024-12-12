@@ -35,13 +35,14 @@ const (
 	cpuHoldDuration      = time.Second * 30
 	defaultKillThreshold = 0.95
 	minKillDuration      = 10
+	gb                   = 1024.0 * 1024.0 * 1024.0
 )
 
 type Service interface {
 	IsIdle() bool
 	IsDisabled() bool
 	IsTerminating() bool
-	KillProcess(string, float64)
+	KillProcess(string, error)
 }
 
 type Monitor struct {
@@ -384,8 +385,8 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	maxUsage := 0.0
-	var maxEgress string
+	maxCPU := 0.0
+	var maxCPUEgress string
 	for pid, cpuUsage := range stats.Cpu {
 		procStats := m.procStats[pid]
 		if procStats == nil {
@@ -399,13 +400,38 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 			procStats.maxCPU = cpuUsage
 		}
 
-		if cpuUsage > procStats.allowedCPU && cpuUsage > maxUsage {
-			maxUsage = cpuUsage
-			maxEgress = procStats.egressID
+		if cpuUsage > procStats.allowedCPU && cpuUsage > maxCPU {
+			maxCPU = cpuUsage
+			maxCPUEgress = procStats.egressID
 		}
 	}
 
+	cpuKillThreshold := defaultKillThreshold
+	if cpuKillThreshold <= m.cpuCostConfig.MaxCpuUtilization {
+		cpuKillThreshold = (1 + m.cpuCostConfig.MaxCpuUtilization) / 2
+	}
+
+	if load > cpuKillThreshold {
+		logger.Warnw("high cpu usage", nil,
+			"cpu", load,
+			"requests", m.requests.Load(),
+		)
+
+		if m.requests.Load() > 1 {
+			m.highCPUDuration++
+			if m.highCPUDuration >= minKillDuration {
+				m.svc.KillProcess(maxCPUEgress, errors.ErrCPUExhausted(maxCPU))
+				m.highCPUDuration = 0
+			}
+		}
+	}
+
+	totalMemory := 0
+	maxMemory := 0
+	var maxMemoryEgress string
 	for pid, memUsage := range stats.Memory {
+		totalMemory += memUsage
+
 		procStats := m.procStats[pid]
 		if procStats == nil {
 			continue
@@ -414,27 +440,17 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 		if memUsage > procStats.maxMemory {
 			procStats.maxMemory = memUsage
 		}
-	}
-
-	killThreshold := defaultKillThreshold
-	if killThreshold <= m.cpuCostConfig.MaxCpuUtilization {
-		killThreshold = (1 + m.cpuCostConfig.MaxCpuUtilization) / 2
-	}
-
-	if load > killThreshold {
-		logger.Warnw("high cpu usage", nil,
-			"load", load,
-			"requests", m.requests.Load(),
-		)
-
-		if m.requests.Load() > 1 {
-			m.highCPUDuration++
-			if m.highCPUDuration < minKillDuration {
-				return
-			}
-			m.svc.KillProcess(maxEgress, maxUsage)
+		if memUsage > maxMemory {
+			maxMemory = memUsage
+			maxMemoryEgress = procStats.egressID
 		}
 	}
 
-	m.highCPUDuration = 0
+	if m.cpuCostConfig.MaxMemory > 0 && totalMemory > m.cpuCostConfig.MaxMemory*gb {
+		logger.Warnw("high memory usage", nil,
+			"memory", float64(totalMemory)/gb,
+			"requests", m.requests.Load(),
+		)
+		m.svc.KillProcess(maxMemoryEgress, errors.ErrOOM(float64(maxMemory)/gb))
+	}
 }

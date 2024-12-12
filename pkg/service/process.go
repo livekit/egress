@@ -193,12 +193,12 @@ func (pm *ProcessManager) AbortProcess(egressID string, err error) {
 	}
 }
 
-func (pm *ProcessManager) KillProcess(egressID string, maxUsage float64) {
+func (pm *ProcessManager) KillProcess(egressID string, err error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
 	if h, ok := pm.activeHandlers[egressID]; ok {
-		err := errors.ErrCPUExhausted(maxUsage)
+
 		logger.Errorw("killing egress", err, "egressID", egressID)
 
 		now := time.Now().UnixNano()
