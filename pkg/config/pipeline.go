@@ -80,6 +80,7 @@ type SDKSourceParams struct {
 	Identity     string
 	TrackSource  string
 	TrackKind    string
+	ScreenShare  bool
 	AudioInCodec types.MimeType
 	VideoInCodec types.MimeType
 	AudioTrack   *TrackSource
@@ -302,6 +303,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.VideoEnabled = true
 		p.VideoDecoding = true
 		p.Identity = req.Participant.Identity
+		p.ScreenShare = req.Participant.ScreenShare
 		if p.Identity == "" {
 			return errors.ErrInvalidInput("identity")
 		}
