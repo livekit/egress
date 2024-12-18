@@ -217,7 +217,7 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 	pubs := rp.TrackPublications()
 	expected := 0
 	for _, pub := range pubs {
-		if shouldSubscribe(pub) {
+		if s.shouldSubscribe(pub) {
 			expected++
 		}
 	}
@@ -525,7 +525,7 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 		return
 	}
 
-	if shouldSubscribe(pub) {
+	if s.shouldSubscribe(pub) {
 		if err := s.subscribe(pub); err != nil {
 			logger.Errorw("failed to subscribe to track", err, "trackID", pub.SID())
 		}
@@ -534,12 +534,12 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 	}
 }
 
-func shouldSubscribe(pub lksdk.TrackPublication) bool {
+func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 	switch pub.Source() {
 	case livekit.TrackSource_CAMERA, livekit.TrackSource_MICROPHONE:
-		return true
+		return !s.ScreenShare
 	default:
-		return false
+		return s.ScreenShare
 	}
 }
 
