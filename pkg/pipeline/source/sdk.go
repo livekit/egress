@@ -217,7 +217,7 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 	pubs := rp.TrackPublications()
 	expected := 0
 	for _, pub := range pubs {
-		if shouldSubscribe(pub) {
+		if s.shouldSubscribe(pub) {
 			expected++
 		}
 	}
