@@ -446,7 +446,7 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 		}
 	}
 
-	if m.cpuCostConfig.MaxMemory > 0 && totalMemory > m.cpuCostConfig.MaxMemory*gb {
+	if m.cpuCostConfig.MaxMemory > 0 && totalMemory > int(m.cpuCostConfig.MaxMemory*gb) {
 		logger.Warnw("high memory usage", nil,
 			"memory", float64(totalMemory)/gb,
 			"requests", m.requests.Load(),
