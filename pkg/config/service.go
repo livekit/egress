@@ -17,6 +17,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -39,6 +40,9 @@ const (
 
 	defaultTemplatePort         = 7980
 	defaultTemplateBaseTemplate = "http://localhost:%d/"
+
+	defaultIOCreateTimeout = time.Second * 15
+	defaultIOUpdateTimeout = time.Second * 30
 )
 
 type ServiceConfig struct {
@@ -53,7 +57,8 @@ type ServiceConfig struct {
 }
 
 type CPUCostConfig struct {
-	MaxCpuUtilization         float64 `yaml:"max_cpu_utilization"` // maximum allowed CPU utilization when deciding to accept a request. Default to 80%.
+	MaxCpuUtilization         float64 `yaml:"max_cpu_utilization"` // maximum allowed CPU utilization when deciding to accept a request. Default to 80%
+	MaxMemory                 float64 `yaml:"max_memory"`          // maximum allowed memory usage in GB. 0 to disable
 	MaxConcurrentWeb          int32   `yaml:"max_concurrent_web"`  // maximum allowed chrome/x/pulse instances
 	RoomCompositeCpuCost      float64 `yaml:"room_composite_cpu_cost"`
 	AudioRoomCompositeCpuCost float64 `yaml:"audio_room_composite_cpu_cost"`
@@ -99,6 +104,13 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.TemplateBase == "" {
 		c.TemplateBase = fmt.Sprintf(defaultTemplateBaseTemplate, c.TemplatePort)
+	}
+
+	if c.IOCreateTimeout == 0 {
+		c.IOCreateTimeout = defaultIOCreateTimeout
+	}
+	if c.IOUpdateTimeout == 0 {
+		c.IOUpdateTimeout = defaultIOUpdateTimeout
 	}
 
 	// Setting CPU costs from config. Ensure that CPU costs are positive

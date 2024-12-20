@@ -157,13 +157,14 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 		logger.Errorw("process failed", err)
 	}
 
-	avgCPU, maxCPU := s.monitor.EgressEnded(req)
+	avgCPU, maxCPU, maxMemory := s.monitor.EgressEnded(req)
 	if maxCPU > 0 {
-		_ = s.ioClient.UpdateMetrics(context.Background(), &rpc.UpdateMetricsRequest{
-			Info:        info,
-			AvgCpuUsage: float32(avgCPU),
-			MaxCpuUsage: float32(maxCPU),
-		})
+		logger.Debugw("egress metrics",
+			"egressID", info.EgressId,
+			"avgCPU", avgCPU,
+			"maxCPU", maxCPU,
+			"maxMemory", maxMemory,
+		)
 	}
 
 	s.ProcessFinished(info.EgressId)

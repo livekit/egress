@@ -152,3 +152,7 @@ func ErrTrackNotFound(trackID string) error {
 func ErrCPUExhausted(usage float64) error {
 	return psrpc.NewErrorf(psrpc.PermissionDenied, "CPU exhausted: %.2f cores used", usage)
 }
+
+func ErrOOM(usage float64) error {
+	return psrpc.NewErrorf(psrpc.PermissionDenied, "OOM: %.2f GB used", usage)
+}

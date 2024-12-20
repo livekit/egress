@@ -25,7 +25,7 @@ import (
 	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
@@ -588,9 +588,9 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 	case types.RequestTypeParticipant:
 		switch pub.Source() {
 		case livekit.TrackSource_CAMERA, livekit.TrackSource_MICROPHONE:
-			return true
+			return !s.ScreenShare
 		default:
-			return false
+			return s.ScreenShare
 		}
 	case types.RequestTypeRoomComposite:
 		switch pub.Kind() {

@@ -35,13 +35,14 @@ const (
 	cpuHoldDuration      = time.Second * 30
 	defaultKillThreshold = 0.95
 	minKillDuration      = 10
+	gb                   = 1024.0 * 1024.0 * 1024.0
 )
 
 type Service interface {
 	IsIdle() bool
 	IsDisabled() bool
 	IsTerminating() bool
-	KillProcess(string, float64)
+	KillProcess(string, error)
 }
 
 type Monitor struct {
@@ -66,13 +67,14 @@ type Monitor struct {
 type processStats struct {
 	egressID string
 
-	pendingUsage float64
-	lastUsage    float64
-	allowedUsage float64
+	pendingCPU float64
+	lastCPU    float64
+	allowedCPU float64
 
 	totalCPU   float64
 	cpuCounter int
 	maxCPU     float64
+	maxMemory  int
 }
 
 func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
@@ -85,7 +87,7 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 		procStats:     make(map[int]*processStats),
 	}
 
-	procStats, err := hwstats.NewProcCPUStats(m.updateEgressStats)
+	procStats, err := hwstats.NewProcMonitor(m.updateEgressStats)
 	if err != nil {
 		return nil, err
 	}
@@ -248,11 +250,11 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	}
 
 	ps := &processStats{
-		egressID:     req.EgressId,
-		pendingUsage: cpuHold,
-		allowedUsage: cpuHold,
+		egressID:   req.EgressId,
+		pendingCPU: cpuHold,
+		allowedCPU: cpuHold,
 	}
-	time.AfterFunc(cpuHoldDuration, func() { ps.pendingUsage = 0 })
+	time.AfterFunc(cpuHoldDuration, func() { ps.pendingCPU = 0 })
 	m.pending[req.EgressId] = ps
 
 	return nil
@@ -268,8 +270,8 @@ func (m *Monitor) UpdatePID(egressID string, pid int) {
 	if ps == nil {
 		logger.Warnw("missing pending procStats", nil, "egressID", egressID)
 		ps = &processStats{
-			egressID:     egressID,
-			allowedUsage: m.cpuCostConfig.WebCpuCost,
+			egressID:   egressID,
+			allowedCPU: m.cpuCostConfig.WebCpuCost,
 		}
 	}
 
@@ -308,7 +310,7 @@ func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 	}
 }
 
-func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64) {
+func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64, int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -333,11 +335,11 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64) {
 	for pid, ps := range m.procStats {
 		if ps.egressID == req.EgressId {
 			delete(m.procStats, pid)
-			return ps.totalCPU / float64(ps.cpuCounter), ps.maxCPU
+			return ps.totalCPU / float64(ps.cpuCounter), ps.maxCPU, ps.maxMemory
 		}
 	}
 
-	return 0, 0
+	return 0, 0, 0
 }
 
 func (m *Monitor) GetAvailableCPU() float64 {
@@ -357,17 +359,17 @@ func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) 
 	}
 
 	for _, ps := range m.pending {
-		if ps.pendingUsage > ps.lastUsage {
-			pending += ps.pendingUsage
+		if ps.pendingCPU > ps.lastCPU {
+			pending += ps.pendingCPU
 		} else {
-			pending += ps.lastUsage
+			pending += ps.lastCPU
 		}
 	}
 	for _, ps := range m.procStats {
-		if ps.pendingUsage > ps.lastUsage {
-			used += ps.pendingUsage
+		if ps.pendingCPU > ps.lastCPU {
+			used += ps.pendingCPU
 		} else {
-			used += ps.lastUsage
+			used += ps.lastCPU
 		}
 	}
 
@@ -376,53 +378,79 @@ func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) 
 	return
 }
 
-func (m *Monitor) updateEgressStats(idle float64, usage map[int]float64) {
-	load := 1 - idle/m.cpuStats.NumCPU()
+func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
+	load := 1 - stats.CpuIdle/m.cpuStats.NumCPU()
 	m.promCPULoad.Set(load)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	maxUsage := 0.0
-	var maxEgress string
-	for pid, cpuUsage := range usage {
+	maxCPU := 0.0
+	var maxCPUEgress string
+	for pid, cpuUsage := range stats.Cpu {
 		procStats := m.procStats[pid]
 		if procStats == nil {
 			continue
 		}
 
-		procStats.lastUsage = cpuUsage
+		procStats.lastCPU = cpuUsage
 		procStats.totalCPU += cpuUsage
 		procStats.cpuCounter++
 		if cpuUsage > procStats.maxCPU {
 			procStats.maxCPU = cpuUsage
 		}
 
-		if cpuUsage > procStats.allowedUsage && cpuUsage > maxUsage {
-			maxUsage = cpuUsage
-			maxEgress = procStats.egressID
+		if cpuUsage > procStats.allowedCPU && cpuUsage > maxCPU {
+			maxCPU = cpuUsage
+			maxCPUEgress = procStats.egressID
 		}
 	}
 
-	killThreshold := defaultKillThreshold
-	if killThreshold <= m.cpuCostConfig.MaxCpuUtilization {
-		killThreshold = (1 + m.cpuCostConfig.MaxCpuUtilization) / 2
+	cpuKillThreshold := defaultKillThreshold
+	if cpuKillThreshold <= m.cpuCostConfig.MaxCpuUtilization {
+		cpuKillThreshold = (1 + m.cpuCostConfig.MaxCpuUtilization) / 2
 	}
 
-	if load > killThreshold {
+	if load > cpuKillThreshold {
 		logger.Warnw("high cpu usage", nil,
-			"load", load,
+			"cpu", load,
 			"requests", m.requests.Load(),
 		)
 
 		if m.requests.Load() > 1 {
 			m.highCPUDuration++
-			if m.highCPUDuration < minKillDuration {
-				return
+			if m.highCPUDuration >= minKillDuration {
+				m.svc.KillProcess(maxCPUEgress, errors.ErrCPUExhausted(maxCPU))
+				m.highCPUDuration = 0
 			}
-			m.svc.KillProcess(maxEgress, maxUsage)
 		}
 	}
 
-	m.highCPUDuration = 0
+	totalMemory := 0
+	maxMemory := 0
+	var maxMemoryEgress string
+	for pid, memUsage := range stats.Memory {
+		totalMemory += memUsage
+
+		procStats := m.procStats[pid]
+		if procStats == nil {
+			continue
+		}
+
+		if memUsage > procStats.maxMemory {
+			procStats.maxMemory = memUsage
+		}
+		if memUsage > maxMemory {
+			maxMemory = memUsage
+			maxMemoryEgress = procStats.egressID
+		}
+	}
+
+	if m.cpuCostConfig.MaxMemory > 0 && totalMemory > int(m.cpuCostConfig.MaxMemory*gb) {
+		logger.Warnw("high memory usage", nil,
+			"memory", float64(totalMemory)/gb,
+			"requests", m.requests.Load(),
+		)
+		m.svc.KillProcess(maxMemoryEgress, errors.ErrOOM(float64(maxMemory)/gb))
+	}
 }

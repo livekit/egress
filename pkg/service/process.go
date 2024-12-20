@@ -193,12 +193,12 @@ func (pm *ProcessManager) AbortProcess(egressID string, err error) {
 	}
 }
 
-func (pm *ProcessManager) KillProcess(egressID string, maxUsage float64) {
+func (pm *ProcessManager) KillProcess(egressID string, err error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
 	if h, ok := pm.activeHandlers[egressID]; ok {
-		err := errors.ErrCPUExhausted(maxUsage)
+
 		logger.Errorw("killing egress", err, "egressID", egressID)
 
 		now := time.Now().UnixNano()
@@ -239,7 +239,9 @@ func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 	// Get the ms from the handler via IPC
 	metricsResponse, err := p.ipcHandlerClient.GetMetrics(context.Background(), &ipc.MetricsRequest{})
 	if err != nil {
-		logger.Warnw("failed to obtain ms from handler", err, "egressID", p.req.EgressId)
+		if !p.closed.IsBroken() {
+			logger.Warnw("failed to obtain ms from handler", err, "egressID", p.req.EgressId)
+		}
 		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
 	}
 

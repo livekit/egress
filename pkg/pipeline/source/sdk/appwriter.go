@@ -26,7 +26,7 @@ import (
 	"github.com/go-gst/go-gst/gst/app"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"

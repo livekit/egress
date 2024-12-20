@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/go-gst/go-gst/gst/app"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
@@ -80,6 +80,7 @@ type SDKSourceParams struct {
 	Identity     string
 	TrackSource  string
 	TrackKind    string
+	ScreenShare  bool
 	AudioInCodec types.MimeType
 	VideoInCodec types.MimeType
 	AudioTracks  []*TrackSource
@@ -302,6 +303,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		p.VideoEnabled = true
 		p.VideoDecoding = true
 		p.Identity = req.Participant.Identity
+		p.ScreenShare = req.Participant.ScreenShare
 		if p.Identity == "" {
 			return errors.ErrInvalidInput("identity")
 		}
