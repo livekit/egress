@@ -42,7 +42,7 @@ type BaseConfig struct {
 	EnableChromeSandbox          bool           `yaml:"enable_chrome_sandbox"`            // enable Chrome sandbox, requires extra docker configuration
 	MaxUploadQueue               int            `yaml:"max_upload_queue"`                 // maximum upload queue size, in minutes
 	DisallowLocalStorage         bool           `yaml:"disallow_local_storage"`           // require an upload config for all requests
-	EnableRoomCompositeSDKSource bool           `yaml:"enable_room_composite_sdk_source"` // attempt to render supported audio only room composite use cases using the SDK source instead of Chrome
+	EnableRoomCompositeSDKSource bool           `yaml:"enable_room_composite_sdk_source"` // attempt to render supported audio only room composite use cases using the SDK source instead of Chrome. This option will be removed when this becomes the default behavior eventually.
 	IOCreateTimeout              time.Duration  `yaml:"io_create_timeout"`                // timeout for CreateEgress calls
 	IOUpdateTimeout              time.Duration  `yaml:"io_update_timeout"`                // timeout for UpdateEgress calls
 

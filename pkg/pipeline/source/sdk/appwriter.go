@@ -235,7 +235,7 @@ func (w *AppWriter) readNext() {
 
 	// push completed packets to appsrc
 	if err = w.pushSamples(); err != nil {
-		w.draining.Once(w.endStream.Break)
+		w.draining.Once(func() { w.endStream.Break() })
 	}
 }
 
@@ -292,7 +292,7 @@ func (w *AppWriter) Drain(force bool) {
 		if force || !w.active.Load() {
 			w.endStream.Break()
 		} else {
-			time.AfterFunc(drainTimeout, w.endStream.Break)
+			time.AfterFunc(drainTimeout, func() { w.endStream.Break() })
 		}
 	})
 
