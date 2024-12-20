@@ -97,6 +97,7 @@ func (r *Runner) testStream(t *testing.T) {
 				publishOptions: publishOptions{
 					audioCodec: types.MimeTypeOpus,
 					videoCodec: types.MimeTypeVP8,
+					layout:     "speaker",
 				},
 				streamOptions: &streamOptions{
 					streamUrls: []string{rtmpUrl1, badRtmpUrl1},

@@ -137,8 +137,8 @@ func (b *AudioBin) buildWebInput() error {
 }
 
 func (b *AudioBin) buildSDKInput() error {
-	if b.conf.AudioTrack != nil {
-		if err := b.addAudioAppSrcBin(b.conf.AudioTrack); err != nil {
+	for _, tr := range b.conf.AudioTracks {
+		if err := b.addAudioAppSrcBin(tr); err != nil {
 			return err
 		}
 	}

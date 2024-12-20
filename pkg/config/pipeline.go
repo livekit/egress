@@ -83,7 +83,7 @@ type SDKSourceParams struct {
 	ScreenShare  bool
 	AudioInCodec types.MimeType
 	VideoInCodec types.MimeType
-	AudioTrack   *TrackSource
+	AudioTracks  []*TrackSource
 	VideoTrack   *TrackSource
 }
 
@@ -194,7 +194,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 		egress.RedactEncodedOutputs(clone)
 
-		p.SourceType = types.SourceTypeWeb
+		p.SourceType = p.getRoomCompositeRequestType(req.RoomComposite)
 		p.AwaitStartSignal = true
 
 		p.Info.RoomName = req.RoomComposite.RoomName
@@ -389,6 +389,13 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		return errors.ErrInvalidInput("request")
 	}
 
+	switch p.SourceType {
+	case types.SourceTypeWeb:
+		p.Info.SourceType = livekit.EgressSourceType_EGRESS_SOURCE_TYPE_WEB
+	case types.SourceTypeSDK:
+		p.Info.SourceType = livekit.EgressSourceType_EGRESS_SOURCE_TYPE_SDK
+	}
+
 	// connection info
 	if connectionInfoRequired {
 		if p.Info.RoomName == "" {
@@ -554,6 +561,24 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 	}
 
 	return nil
+}
+
+func (p *PipelineConfig) getRoomCompositeRequestType(req *livekit.RoomCompositeEgressRequest) types.SourceType {
+	// Test for possible chrome-less room composition for audio only
+	if !p.EnableRoomCompositeSDKSource {
+		return types.SourceTypeWeb
+	}
+	if req.Layout != "" {
+		return types.SourceTypeWeb
+	}
+	if !req.AudioOnly {
+		return types.SourceTypeWeb
+	}
+	if req.CustomBaseUrl != "" {
+		return types.SourceTypeWeb
+	}
+
+	return types.SourceTypeSDK
 }
 
 // used for sdk input source

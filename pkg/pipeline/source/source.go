@@ -32,14 +32,11 @@ type Source interface {
 }
 
 func New(ctx context.Context, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (Source, error) {
-	switch p.RequestType {
-	case types.RequestTypeRoomComposite,
-		types.RequestTypeWeb:
+	switch p.SourceType {
+	case types.SourceTypeWeb:
 		return NewWebSource(ctx, p)
 
-	case types.RequestTypeParticipant,
-		types.RequestTypeTrackComposite,
-		types.RequestTypeTrack:
+	case types.SourceTypeSDK:
 		return NewSDKSource(ctx, p, callbacks)
 
 	default:

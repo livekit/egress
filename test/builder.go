@@ -60,6 +60,8 @@ type publishOptions struct {
 	videoRepublish time.Duration
 	videoOnly      bool
 	videoTrackID   string
+
+	layout string
 }
 
 type fileOptions struct {
@@ -92,7 +94,7 @@ func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
 	case types.RequestTypeRoomComposite:
 		room := &livekit.RoomCompositeEgressRequest{
 			RoomName:  r.RoomName,
-			Layout:    "speaker",
+			Layout:    test.layout,
 			AudioOnly: test.audioOnly,
 			VideoOnly: test.videoOnly,
 		}

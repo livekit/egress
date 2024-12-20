@@ -147,6 +147,7 @@ func NewRunner(t *testing.T) *Runner {
 	require.NoError(t, err)
 
 	r.ServiceConfig = conf
+	r.ServiceConfig.EnableRoomCompositeSDKSource = true
 
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
 		t.Fatal("api key, secret, and ws url required")

@@ -44,6 +44,7 @@ func (r *Runner) testFile(t *testing.T) {
 				requestType: types.RequestTypeRoomComposite, publishOptions: publishOptions{
 					audioCodec: types.MimeTypeOpus,
 					videoCodec: types.MimeTypeH264,
+					layout:     "speaker",
 				},
 				fileOptions: &fileOptions{
 					filename: "r_{room_name}_{time}.mp4",
@@ -54,6 +55,7 @@ func (r *Runner) testFile(t *testing.T) {
 				requestType: types.RequestTypeRoomComposite, publishOptions: publishOptions{
 					videoCodec: types.MimeTypeH264,
 					videoOnly:  true,
+					layout:     "speaker",
 				},
 				encodingOptions: &livekit.EncodingOptions{
 					VideoCodec: livekit.VideoCodec_H264_HIGH,
