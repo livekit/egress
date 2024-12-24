@@ -16,6 +16,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
+	"github.com/livekit/egress/pkg/pipeline/source/pactl"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 )
@@ -108,6 +110,22 @@ func (c *Controller) gstLog(
 		msg = fmt.Sprintf("[%s %s] %s", category, lvl, message)
 	}
 	c.gstLogger.Debugw(msg, "caller", fmt.Sprintf("%s:%d", file, line))
+
+	if category == "pulse" {
+		info, err := pactl.List()
+		if err != nil {
+			logger.Errorw("failed to get pulse info", err)
+		} else {
+			b, _ := json.Marshal(info.GetEgressInfo())
+			logger.Infow("pactl status",
+				"modules", len(info.Modules),
+				"sinks", len(info.Sinks),
+				"sources", len(info.Sources),
+				"clients", len(info.Clients),
+				"egresses", string(b),
+			)
+		}
+	}
 }
 
 func (c *Controller) messageWatch(msg *gst.Message) bool {
