@@ -68,6 +68,7 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
     // * if there are no video tracks published, start immediately
     // * if it's been more than 10s, record as long as there are tracks subscribed
     const startTime = Date.now();
+	EgressHelper.setRoom(room);
     const interval = setInterval(async () => {
       let shouldStartRecording = false;
       let hasVideoTracks = false;
