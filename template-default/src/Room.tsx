@@ -61,6 +61,8 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
     onlySubscribed: true,
   });
 
+  EgressHelper.setRoom(room);
+
   useEffect(() => {
     // determines when to start recording
     // the algorithm used is:
