@@ -416,7 +416,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		}
 
 		if b.conf.VideoDecoding {
-			vp9Dec, err := gst.NewElement("vp9dec")
+			vp9Dec, err := gst.NewElement("avdec_vp9")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
 			}
