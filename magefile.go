@@ -85,14 +85,18 @@ func Integration(configFile string) error {
 	if err := Deadlock(); err != nil {
 		return err
 	}
-	defer Dotfiles()
 	defer Sync()
 
-	dir, err := os.Getwd()
-	if err != nil {
+	if err := mageutil.Run(context.Background(),
+		"docker build -t egress-test -f build/test/Dockerfile .",
+	); err != nil {
 		return err
 	}
 
+	return Retest(configFile)
+}
+
+func Retest(configFile string) error {
 	if configFile != "" {
 		if strings.HasPrefix(configFile, "test/") {
 			configFile = configFile[5:]
@@ -102,7 +106,7 @@ func Integration(configFile string) error {
 			if idx != -1 {
 				configFile = configFile[idx+1:]
 			}
-			if err = os.Rename(oldLocation, "test/"+configFile); err != nil {
+			if err := os.Rename(oldLocation, "test/"+configFile); err != nil {
 				return err
 			}
 		}
@@ -110,6 +114,7 @@ func Integration(configFile string) error {
 		configFile = "/out/" + configFile
 	}
 
+	defer Dotfiles()
 	defer func() {
 		// for some reason, these can't be deleted from within the docker container
 		files, _ := os.ReadDir("test/output")
@@ -123,8 +128,12 @@ func Integration(configFile string) error {
 		}
 	}()
 
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
 	return mageutil.Run(context.Background(),
-		"docker build -t egress-test -f build/test/Dockerfile .",
 		fmt.Sprintf("docker run --rm -e EGRESS_CONFIG_FILE=%s -v %s/test:/out egress-test", configFile, dir),
 	)
 }
