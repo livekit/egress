@@ -195,6 +195,8 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		egress.RedactEncodedOutputs(clone)
 
 		p.SourceType = p.getRoomCompositeRequestType(req.RoomComposite)
+		logger.Debugw("selected room composite source type", "sourceType", p.SourceType)
+
 		p.AwaitStartSignal = true
 
 		p.Info.RoomName = req.RoomComposite.RoomName
