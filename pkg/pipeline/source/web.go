@@ -263,6 +263,8 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		opts = append(opts,
 			chromedp.Flag("disable-web-security", true),
 			chromedp.Flag("allow-running-insecure-content", true),
+			chromedp.Flag("ignore-certificate-errors", true),
+			chromedp.Flag("mute-audio", false),
 		)
 	}
 
