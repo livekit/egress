@@ -62,6 +62,7 @@ type Monitor struct {
 	highCPUDuration int
 	pending         map[string]*processStats
 	procStats       map[int]*processStats
+	memoryUsage     float64
 }
 
 type processStats struct {
@@ -163,12 +164,19 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 		"used", used,
 		"activeRequests", m.requests.Load(),
 		"activeWeb", m.webRequests.Load(),
+		"memory", m.memoryUsage,
+	}
+
+	if m.cpuCostConfig.MaxMemory > 0 && m.memoryUsage+m.cpuCostConfig.MemoryCost >= m.cpuCostConfig.MaxMemory {
+		fields = append(fields, "canAccept", false)
+		return fields, false
 	}
 
 	required := req.EstimatedCpu
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
 		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+			fields = append(fields, "canAccept", false)
 			return fields, false
 		}
 		if required == 0 {
@@ -180,6 +188,7 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 		}
 	case *rpc.StartEgressRequest_Web:
 		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+			fields = append(fields, "canAccept", false)
 			return fields, false
 		}
 		if required == 0 {
@@ -446,9 +455,10 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 		}
 	}
 
+	m.memoryUsage = float64(totalMemory) / gb
 	if m.cpuCostConfig.MaxMemory > 0 && totalMemory > int(m.cpuCostConfig.MaxMemory*gb) {
 		logger.Warnw("high memory usage", nil,
-			"memory", float64(totalMemory)/gb,
+			"memory", m.memoryUsage,
 			"requests", m.requests.Load(),
 		)
 		m.svc.KillProcess(maxMemoryEgress, errors.ErrOOM(float64(maxMemory)/gb))

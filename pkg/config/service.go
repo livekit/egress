@@ -59,6 +59,7 @@ type ServiceConfig struct {
 type CPUCostConfig struct {
 	MaxCpuUtilization         float64 `yaml:"max_cpu_utilization"` // maximum allowed CPU utilization when deciding to accept a request. Default to 80%
 	MaxMemory                 float64 `yaml:"max_memory"`          // maximum allowed memory usage in GB. 0 to disable
+	MemoryCost                float64 `yaml:"memory_cost"`         // minimum memory in GB
 	MaxConcurrentWeb          int32   `yaml:"max_concurrent_web"`  // maximum allowed chrome/x/pulse instances
 	RoomCompositeCpuCost      float64 `yaml:"room_composite_cpu_cost"`
 	AudioRoomCompositeCpuCost float64 `yaml:"audio_room_composite_cpu_cost"`
