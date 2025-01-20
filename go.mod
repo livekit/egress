@@ -23,10 +23,10 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/livekit/livekit-server v1.8.1-0.20241220025800-08b58a23afdc
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.30.0
+	github.com/livekit/protocol v1.31.0
 	github.com/livekit/psrpc v0.6.1-0.20241018124827-1efff3d113a8
-	github.com/livekit/server-sdk-go/v2 v2.4.1
-	github.com/pion/rtp v1.8.10
+	github.com/livekit/server-sdk-go/v2 v2.4.2-0.20250117060943-67a3d4b3afb8
+	github.com/pion/rtp v1.8.11
 	github.com/pion/webrtc/v4 v4.0.7
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/client_model v0.6.1
@@ -39,7 +39,7 @@ require (
 	golang.org/x/oauth2 v0.25.0
 	google.golang.org/api v0.214.0
 	google.golang.org/grpc v1.69.2
-	google.golang.org/protobuf v1.36.1
+	google.golang.org/protobuf v1.36.3
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -123,7 +123,7 @@ require (
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.15 // indirect
 	github.com/pion/sctp v1.8.35 // indirect
-	github.com/pion/sdp/v3 v3.0.9 // indirect
+	github.com/pion/sdp/v3 v3.0.10 // indirect
 	github.com/pion/srtp/v3 v3.0.4 // indirect
 	github.com/pion/stun/v3 v3.0.0 // indirect
 	github.com/pion/transport/v3 v3.0.7 // indirect
