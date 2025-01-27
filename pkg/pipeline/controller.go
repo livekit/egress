@@ -43,6 +43,7 @@ import (
 
 const (
 	pipelineName = "pipeline"
+	eosTimeout   = time.Second * 30
 )
 
 type Controller struct {
@@ -52,19 +53,19 @@ type Controller struct {
 	// gstreamer
 	gstLogger *zap.SugaredLogger
 	src       source.Source
+	callbacks *gstreamer.Callbacks
 	p         *gstreamer.Pipeline
 	sinks     map[types.EgressType][]sink.Sink
-	streamBin *builder.StreamBin
-	callbacks *gstreamer.Callbacks
 
 	// internal
-	mu         sync.Mutex
-	monitor    *stats.HandlerMonitor
-	limitTimer *time.Timer
-	playing    core.Fuse
-	eos        core.Fuse
-	eosTimer   *time.Timer
-	stopped    core.Fuse
+	mu          sync.Mutex
+	monitor     *stats.HandlerMonitor
+	limitTimer  *time.Timer
+	playing     core.Fuse
+	eosSent     core.Fuse
+	eosTimer    *time.Timer
+	eosReceived core.Fuse
+	stopped     core.Fuse
 }
 
 func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.EgressServiceClient) (*Controller, error) {
@@ -80,6 +81,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 			GstReady:   make(chan struct{}),
 			BuildReady: make(chan struct{}),
 		},
+		sinks:   make(map[types.EgressType][]sink.Sink),
 		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
 	}
 	c.callbacks.SetOnError(c.OnError)
@@ -97,13 +99,6 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 	// create source
 	c.src, err = source.New(ctx, conf, c.callbacks)
 	if err != nil {
-		return nil, err
-	}
-
-	// create sinks
-	c.sinks, err = sink.CreateSinks(conf, c.callbacks, c.monitor)
-	if err != nil {
-		c.src.Close()
 		return nil, err
 	}
 
@@ -146,43 +141,13 @@ func (c *Controller) BuildPipeline() error {
 		}
 	}
 
-	var sinkBins []*gstreamer.Bin
-	for egressType := range c.Outputs {
-		switch egressType {
-		case types.EgressTypeFile:
-			var sinkBin *gstreamer.Bin
-			sinkBin, err = builder.BuildFileBin(p, c.PipelineConfig)
-			sinkBins = append(sinkBins, sinkBin)
-
-		case types.EgressTypeSegments:
-			var sinkBin *gstreamer.Bin
-			sinkBin, err = builder.BuildSegmentBin(p, c.PipelineConfig)
-			sinkBins = append(sinkBins, sinkBin)
-
-		case types.EgressTypeStream:
-			var sinkBin *gstreamer.Bin
-			c.streamBin, sinkBin, err = builder.BuildStreamBin(p, c.PipelineConfig)
-			sinkBins = append(sinkBins, sinkBin)
-
-		case types.EgressTypeWebsocket:
-			var sinkBin *gstreamer.Bin
-			writer := c.sinks[egressType][0].(*sink.WebsocketSink)
-			sinkBin, err = builder.BuildWebsocketBin(p, writer.SinkCallbacks())
-			sinkBins = append(sinkBins, sinkBin)
-
-		case types.EgressTypeImages:
-			var bins []*gstreamer.Bin
-			bins, err = builder.BuildImageBins(p, c.PipelineConfig)
-			sinkBins = append(sinkBins, bins...)
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	for _, bin := range sinkBins {
-		if err = p.AddSinkBin(bin); err != nil {
-			return err
+	for egressType, outputs := range c.Outputs {
+		for _, o := range outputs {
+			s, err := sink.NewSink(p, c.PipelineConfig, egressType, o, c.callbacks, c.monitor)
+			if err != nil {
+				return err
+			}
+			c.sinks[egressType] = append(c.sinks[egressType], s)
 		}
 	}
 
@@ -243,12 +208,15 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	logger.Debugw("closing source")
 	c.src.Close()
 
-	logger.Debugw("closing sinks")
-	for _, si := range c.sinks {
-		for _, s := range si {
-			if err := s.Close(); err != nil && c.playing.IsBroken() && c.FinalizationRequired {
-				c.Info.SetFailed(err)
-				return c.Info
+	if c.playing.IsBroken() {
+		for _, si := range c.sinks {
+			for _, s := range si {
+				if c.eosReceived.IsBroken() || s.EOSReceived() {
+					if err := <-s.Err(); err != nil {
+						c.Info.SetFailed(err)
+						return c.Info
+					}
+				}
 			}
 		}
 	}
@@ -285,7 +253,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 		c.mu.Unlock()
 
 		// add stream
-		if err = c.streamBin.AddStream(stream); err != nil {
+		if err = c.getStreamSink().AddStream(stream); err != nil {
 			stream.StreamInfo.Status = livekit.StreamInfo_FAILED
 			stream.StreamInfo.Error = err.Error()
 			stream.UpdateEndTime(time.Now().UnixNano())
@@ -334,7 +302,7 @@ func (c *Controller) streamFinished(ctx context.Context, stream *config.Stream) 
 		"duration", stream.StreamInfo.Duration,
 	)
 
-	return c.streamBin.RemoveStream(stream)
+	return c.getStreamSink().RemoveStream(stream)
 }
 
 func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, streamErr error) error {
@@ -359,7 +327,7 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 		"error", streamErr)
 
 	c.streamUpdated(ctx)
-	return c.streamBin.RemoveStream(stream)
+	return c.getStreamSink().RemoveStream(stream)
 }
 
 func (c *Controller) onEOSSent() {
@@ -375,7 +343,7 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
-	c.eos.Once(func() {
+	c.eosSent.Once(func() {
 		if c.limitTimer != nil {
 			c.limitTimer.Stop()
 		}
@@ -413,12 +381,32 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 }
 
 func (c *Controller) sendEOS() {
-	c.eosTimer = time.AfterFunc(time.Second*30, func() {
-		c.OnError(errors.ErrPipelineFrozen)
+	for _, sinks := range c.sinks {
+		for _, s := range sinks {
+			s.AddEOSProbe()
+		}
+	}
+
+	c.eosTimer = time.AfterFunc(eosTimeout, func() {
+		for egressType, si := range c.sinks {
+			switch egressType {
+			case types.EgressTypeFile, types.EgressTypeSegments, types.EgressTypeImages:
+				for _, s := range si {
+					if !s.EOSReceived() {
+						c.OnError(errors.ErrPipelineFrozen)
+						return
+					}
+				}
+			default:
+				// finalization not required
+			}
+		}
+		c.p.Stop()
 	})
+
 	go func() {
 		c.p.SendEOS()
-		logger.Debugw("eos sent")
+		logger.Debugw("eosSent sent")
 	}()
 }
 
@@ -427,7 +415,7 @@ func (c *Controller) OnError(err error) {
 		c.uploadDebugFiles()
 	}
 
-	if c.Info.Status != livekit.EgressStatus_EGRESS_FAILED && (!c.eos.IsBroken() || c.FinalizationRequired) {
+	if c.Info.Status != livekit.EgressStatus_EGRESS_FAILED && (!c.eosSent.IsBroken() || c.FinalizationRequired) {
 		c.Info.SetFailed(err)
 	}
 
@@ -435,7 +423,7 @@ func (c *Controller) OnError(err error) {
 }
 
 func (c *Controller) Close() {
-	if c.SourceType == types.SourceTypeSDK || !c.eos.IsBroken() {
+	if c.SourceType == types.SourceTypeSDK || !c.eosSent.IsBroken() {
 		// sdk source will use the timestamp of the last packet pushed to the pipeline
 		c.updateEndTime()
 	}
@@ -480,7 +468,6 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 			t = c.SegmentOutputMaxDuration
 		case types.EgressTypeImages:
 			t = c.ImageOutputMaxDuration
-
 		}
 		if t > 0 && (timeout == 0 || t < timeout) {
 			timeout = t
@@ -492,10 +479,10 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 			switch c.Info.Status {
 			case livekit.EgressStatus_EGRESS_STARTING:
 				c.Info.SetAborted(livekit.MsgLimitReachedWithoutStart)
-
 			case livekit.EgressStatus_EGRESS_ACTIVE:
 				c.Info.SetLimitReached()
 			}
+
 			if c.playing.IsBroken() {
 				c.SendEOS(ctx, livekit.EndReasonLimitReached)
 			} else {
@@ -510,6 +497,7 @@ func (c *Controller) updateStartTime(startedAt int64) {
 		if len(o) == 0 {
 			continue
 		}
+
 		switch egressType {
 		case types.EgressTypeStream, types.EgressTypeWebsocket:
 			streamConfig := o[0].(*config.StreamConfig)
@@ -664,4 +652,40 @@ func (c *Controller) uploadManifest() {
 			}
 		}
 	}
+}
+
+func (c *Controller) getStreamSink() *sink.StreamSink {
+	s := c.sinks[types.EgressTypeStream]
+	if len(s) == 0 {
+		return nil
+	}
+
+	return s[0].(*sink.StreamSink)
+}
+
+func (c *Controller) getSegmentSink() *sink.SegmentSink {
+	s := c.sinks[types.EgressTypeSegments]
+	if len(s) == 0 {
+		return nil
+	}
+
+	return s[0].(*sink.SegmentSink)
+}
+
+func (c *Controller) getImageSink(name string) *sink.ImageSink {
+	id := name[len("multifilesink_"):]
+
+	s := c.sinks[types.EgressTypeImages]
+	if len(s) == 0 {
+		return nil
+	}
+
+	// Use a map here?
+	for _, si := range s {
+		if i := si.(*sink.ImageSink); i.Id == id {
+			return i
+		}
+	}
+
+	return nil
 }

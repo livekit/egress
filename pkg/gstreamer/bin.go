@@ -61,6 +61,10 @@ func (b *Bin) NewBin(name string) *Bin {
 	}
 }
 
+func (b *Bin) GetName() string {
+	return b.bin.GetName()
+}
+
 // Add src as a source of b. This should only be called once for each source bin
 func (b *Bin) AddSourceBin(src *Bin) error {
 	logger.Debugw(fmt.Sprintf("adding src %s to %s", src.bin.GetName(), b.bin.GetName()))
@@ -379,6 +383,38 @@ func (b *Bin) sendEOS() {
 	} else if len(b.elements) > 0 {
 		b.bin.SendEvent(gst.NewEOSEvent())
 	}
+}
+
+func (b *Bin) AddOnEOSReceived(f func()) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if len(b.elements) == 0 {
+		return nil
+	}
+
+	sink := b.elements[len(b.elements)-1]
+	sinkPads, err := sink.GetSinkPads()
+	if err != nil {
+		return err
+	}
+
+	var expecting atomic.Int32
+	expecting.Add(int32(len(sinkPads)))
+
+	for _, sinkPad := range sinkPads {
+		sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if event := info.GetEvent(); event != nil && event.Type() == gst.EventTypeEOS {
+				if expecting.Dec() == 0 {
+					go f()
+				}
+				return gst.PadProbeRemove
+			}
+			return gst.PadProbeOK
+		})
+	}
+
+	return nil
 }
 
 // ----- Internal -----

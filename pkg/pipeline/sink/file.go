@@ -19,41 +19,36 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 )
 
 type FileSink struct {
+	*sink
+	*config.FileConfig
 	*uploader.Uploader
 
 	conf *config.PipelineConfig
-	*config.FileConfig
 }
 
-func newFileSink(u *uploader.Uploader, conf *config.PipelineConfig, o *config.FileConfig) *FileSink {
+func NewFileSink(
+	conf *config.PipelineConfig,
+	o *config.FileConfig,
+	monitor *stats.HandlerMonitor,
+) (*FileSink, error) {
+	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.Info)
+	if err != nil {
+		return nil, err
+	}
+
 	return &FileSink{
+		FileConfig: o,
 		Uploader:   u,
 		conf:       conf,
-		FileConfig: o,
-	}
+	}, nil
 }
 
 func (s *FileSink) Start() error {
-	return nil
-}
-
-func (s *FileSink) Close() error {
-	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
-	if err != nil {
-		return err
-	}
-
-	s.FileInfo.Location = location
-	s.FileInfo.Size = size
-
-	if s.conf.Manifest != nil {
-		s.conf.Manifest.AddFile(s.StorageFilepath, location)
-	}
-
 	return nil
 }
 
@@ -69,4 +64,20 @@ func (s *FileSink) UploadManifest(filepath string) (string, bool, error) {
 	}
 
 	return location, true, nil
+}
+
+func (s *FileSink) close() error {
+	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
+	if err != nil {
+		return err
+	}
+
+	s.FileInfo.Location = location
+	s.FileInfo.Size = size
+
+	if s.conf.Manifest != nil {
+		s.conf.Manifest.AddFile(s.StorageFilepath, location)
+	}
+
+	return nil
 }

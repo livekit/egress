@@ -38,9 +38,10 @@ const (
 )
 
 type SegmentSink struct {
+	*sink
 	*uploader.Uploader
-
 	*config.SegmentConfig
+
 	conf             *config.PipelineConfig
 	manifestPlaylist *config.Playlist
 	callbacks        *gstreamer.Callbacks
@@ -70,7 +71,17 @@ type SegmentUpdate struct {
 	uploadComplete chan struct{}
 }
 
-func newSegmentSink(u *uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig, callbacks *gstreamer.Callbacks, monitor *stats.HandlerMonitor) (*SegmentSink, error) {
+func NewSegmentSink(
+	conf *config.PipelineConfig,
+	o *config.SegmentConfig,
+	callbacks *gstreamer.Callbacks,
+	monitor *stats.HandlerMonitor,
+) (*SegmentSink, error) {
+	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.Info)
+	if err != nil {
+		return nil, err
+	}
+
 	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
 	playlist, err := m3u8.NewEventPlaylistWriter(playlistName, o.SegmentDuration)
 	if err != nil {
@@ -91,11 +102,11 @@ func newSegmentSink(u *uploader.Uploader, p *config.PipelineConfig, o *config.Se
 		outputType = types.OutputTypeTS
 	}
 
-	maxPendingUploads := (p.MaxUploadQueue * 60) / o.SegmentDuration
-	s := &SegmentSink{
+	maxPendingUploads := (conf.MaxUploadQueue * 60) / o.SegmentDuration
+	segmentSink := &SegmentSink{
 		Uploader:              u,
 		SegmentConfig:         o,
-		conf:                  p,
+		conf:                  conf,
 		callbacks:             callbacks,
 		playlist:              playlist,
 		livePlaylist:          livePlaylist,
@@ -105,21 +116,21 @@ func newSegmentSink(u *uploader.Uploader, p *config.PipelineConfig, o *config.Se
 		playlistUpdates:       make(chan SegmentUpdate, maxPendingUploads),
 	}
 
-	if p.Manifest != nil {
-		s.manifestPlaylist = p.Manifest.AddPlaylist()
+	if conf.Manifest != nil {
+		segmentSink.manifestPlaylist = conf.Manifest.AddPlaylist()
 	}
 
 	// Register gauges that track the number of segments and playlist updates pending upload
-	monitor.RegisterPlaylistChannelSizeGauge(s.conf.NodeID, s.conf.ClusterID, s.conf.Info.EgressId,
+	monitor.RegisterPlaylistChannelSizeGauge(segmentSink.conf.NodeID, segmentSink.conf.ClusterID, segmentSink.conf.Info.EgressId,
 		func() float64 {
-			return float64(len(s.playlistUpdates))
+			return float64(len(segmentSink.playlistUpdates))
 		})
-	monitor.RegisterSegmentsChannelSizeGauge(s.conf.NodeID, s.conf.ClusterID, s.conf.Info.EgressId,
+	monitor.RegisterSegmentsChannelSizeGauge(segmentSink.conf.NodeID, segmentSink.conf.ClusterID, segmentSink.conf.Info.EgressId,
 		func() float64 {
-			return float64(len(s.closedSegments))
+			return float64(len(segmentSink.closedSegments))
 		})
 
-	return s, nil
+	return segmentSink, nil
 }
 
 func (s *SegmentSink) Start() error {
@@ -294,7 +305,21 @@ func (s *SegmentSink) FragmentClosed(filepath string, endTime uint64) error {
 	}
 }
 
-func (s *SegmentSink) Close() error {
+func (s *SegmentSink) UploadManifest(filepath string) (string, bool, error) {
+	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
+		return "", false, nil
+	}
+
+	storagePath := path.Join(s.StorageDir, path.Base(filepath))
+	location, _, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
+	if err != nil {
+		return "", false, err
+	}
+
+	return location, true, nil
+}
+
+func (s *SegmentSink) close() error {
 	// wait for pending jobs to finish
 	close(s.closedSegments)
 	<-s.done.Watch()
@@ -319,18 +344,4 @@ func (s *SegmentSink) Close() error {
 	}
 
 	return nil
-}
-
-func (s *SegmentSink) UploadManifest(filepath string) (string, bool, error) {
-	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
-		return "", false, nil
-	}
-
-	storagePath := path.Join(s.StorageDir, path.Base(filepath))
-	location, _, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
-	if err != nil {
-		return "", false, err
-	}
-
-	return location, true, nil
 }
