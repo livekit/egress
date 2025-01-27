@@ -208,8 +208,8 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	logger.Debugw("closing source")
 	c.src.Close()
 
-	logger.Debugw("closing sinks")
 	if c.playing.IsBroken() {
+		logger.Debugw("closing sinks")
 		for _, si := range c.sinks {
 			for _, s := range si {
 				if c.eosReceived.IsBroken() || s.EOSReceived() {
@@ -406,7 +406,7 @@ func (c *Controller) sendEOS() {
 
 	go func() {
 		c.p.SendEOS()
-		logger.Debugw("eosSent sent")
+		logger.Debugw("eos sent")
 	}()
 }
 
