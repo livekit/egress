@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink/m3u8"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/stats"
@@ -38,7 +39,7 @@ const (
 )
 
 type SegmentSink struct {
-	*sink
+	*base
 	*uploader.Uploader
 	*config.SegmentConfig
 
@@ -71,7 +72,8 @@ type SegmentUpdate struct {
 	uploadComplete chan struct{}
 }
 
-func NewSegmentSink(
+func newSegmentSink(
+	p *gstreamer.Pipeline,
 	conf *config.PipelineConfig,
 	o *config.SegmentConfig,
 	callbacks *gstreamer.Callbacks,
@@ -102,8 +104,19 @@ func NewSegmentSink(
 		outputType = types.OutputTypeTS
 	}
 
+	segmentBin, err := builder.BuildSegmentBin(p, conf)
+	if err != nil {
+		return nil, err
+	}
+	if err = p.AddSinkBin(segmentBin); err != nil {
+		return nil, err
+	}
+
 	maxPendingUploads := (conf.MaxUploadQueue * 60) / o.SegmentDuration
 	segmentSink := &SegmentSink{
+		base: &base{
+			bin: segmentBin,
+		},
 		Uploader:              u,
 		SegmentConfig:         o,
 		conf:                  conf,
@@ -319,7 +332,7 @@ func (s *SegmentSink) UploadManifest(filepath string) (string, bool, error) {
 	return location, true, nil
 }
 
-func (s *SegmentSink) close() error {
+func (s *SegmentSink) Close() error {
 	// wait for pending jobs to finish
 	close(s.closedSegments)
 	<-s.done.Watch()

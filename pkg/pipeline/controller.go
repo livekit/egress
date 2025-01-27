@@ -208,13 +208,13 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	logger.Debugw("closing source")
 	c.src.Close()
 
+	logger.Debugw("closing sinks")
 	if c.playing.IsBroken() {
 		for _, si := range c.sinks {
 			for _, s := range si {
 				if c.eosReceived.IsBroken() || s.EOSReceived() {
-					if err := <-s.Err(); err != nil {
+					if err := s.Close(); err != nil && c.Info.Status != livekit.EgressStatus_EGRESS_FAILED {
 						c.Info.SetFailed(err)
-						return c.Info
 					}
 				}
 			}

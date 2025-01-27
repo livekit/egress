@@ -30,6 +30,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
@@ -38,7 +39,7 @@ import (
 const pingPeriod = time.Second * 30
 
 type WebsocketSink struct {
-	*sink
+	*base
 
 	mu            sync.Mutex
 	conn          *websocket.Conn
@@ -46,7 +47,8 @@ type WebsocketSink struct {
 	closed        atomic.Bool
 }
 
-func NewWebsocketSink(
+func newWebsocketSink(
+	p *gstreamer.Pipeline,
 	o *config.StreamConfig,
 	mimeType types.MimeType,
 	callbacks *gstreamer.Callbacks,
@@ -68,11 +70,12 @@ func NewWebsocketSink(
 	}
 
 	websocketSink := &WebsocketSink{
+		base: &base{},
 		conn: conn,
 	}
 	websocketSink.sinkCallbacks = &app.SinkCallbacks{
 		EOSFunc: func(appSink *app.Sink) {
-			_ = websocketSink.close()
+			_ = websocketSink.Close()
 		},
 		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
 			// pull the sample that triggered this callback
@@ -104,6 +107,14 @@ func NewWebsocketSink(
 	}
 	callbacks.AddOnTrackMuted(websocketSink.OnTrackMuted)
 	callbacks.AddOnTrackUnmuted(websocketSink.OnTrackUnmuted)
+
+	websocketSink.bin, err = builder.BuildWebsocketBin(p, websocketSink.sinkCallbacks)
+	if err != nil {
+		return nil, err
+	}
+	if err = p.AddSinkBin(websocketSink.bin); err != nil {
+		return nil, err
+	}
 
 	return websocketSink, nil
 }
@@ -210,7 +221,7 @@ func (s *WebsocketSink) UploadManifest(_ string) (string, bool, error) {
 	return "", false, nil
 }
 
-func (s *WebsocketSink) close() error {
+func (s *WebsocketSink) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.closed.Swap(true) {

@@ -406,7 +406,7 @@ func (b *Bin) AddOnEOSReceived(f func()) error {
 		sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			if event := info.GetEvent(); event != nil && event.Type() == gst.EventTypeEOS {
 				if expecting.Dec() == 0 {
-					go f()
+					f()
 				}
 				return gst.PadProbeRemove
 			}

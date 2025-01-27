@@ -18,20 +18,23 @@ import (
 	"path"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 )
 
 type FileSink struct {
-	*sink
+	*base
 	*config.FileConfig
 	*uploader.Uploader
 
 	conf *config.PipelineConfig
 }
 
-func NewFileSink(
+func newFileSink(
+	p *gstreamer.Pipeline,
 	conf *config.PipelineConfig,
 	o *config.FileConfig,
 	monitor *stats.HandlerMonitor,
@@ -41,7 +44,18 @@ func NewFileSink(
 		return nil, err
 	}
 
+	fileBin, err := builder.BuildFileBin(p, conf)
+	if err != nil {
+		return nil, err
+	}
+	if err = p.AddSinkBin(fileBin); err != nil {
+		return nil, err
+	}
+
 	return &FileSink{
+		base: &base{
+			bin: fileBin,
+		},
 		FileConfig: o,
 		Uploader:   u,
 		conf:       conf,
@@ -66,7 +80,7 @@ func (s *FileSink) UploadManifest(filepath string) (string, bool, error) {
 	return location, true, nil
 }
 
-func (s *FileSink) close() error {
+func (s *FileSink) Close() error {
 	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
 	if err != nil {
 		return err

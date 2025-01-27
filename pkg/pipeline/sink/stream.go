@@ -19,29 +19,41 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 )
 
 type StreamSink struct {
-	*sink
+	*base
 
 	mu      sync.RWMutex
 	bin     *builder.StreamBin
 	streams map[string]*builder.Stream
 }
 
-func NewStreamSink(streamBin *builder.StreamBin, o *config.StreamConfig) (*StreamSink, error) {
+func newStreamSink(p *gstreamer.Pipeline, o *config.StreamConfig) (*StreamSink, error) {
+	streamBin, err := builder.BuildStreamBin(p, o)
+	if err != nil {
+		return nil, err
+	}
+
 	streamSink := &StreamSink{
+		base: &base{
+			bin: streamBin.Bin,
+		},
 		bin:     streamBin,
 		streams: make(map[string]*builder.Stream),
 	}
 
-	var err error
 	o.Streams.Range(func(_, stream any) bool {
 		err = streamSink.AddStream(stream.(*config.Stream))
 		return err == nil
 	})
 	if err != nil {
+		return nil, err
+	}
+
+	if err = p.AddSinkBin(streamBin.Bin); err != nil {
 		return nil, err
 	}
 
@@ -104,6 +116,6 @@ func (s *StreamSink) UploadManifest(_ string) (string, bool, error) {
 	return "", false, nil
 }
 
-func (s *StreamSink) close() error {
+func (s *StreamSink) Close() error {
 	return nil
 }

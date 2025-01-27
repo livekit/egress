@@ -25,6 +25,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
@@ -33,7 +34,7 @@ import (
 )
 
 type ImageSink struct {
-	*sink
+	*base
 	*config.ImageConfig
 	*uploader.Uploader
 
@@ -53,25 +54,37 @@ type imageUpdate struct {
 	filename  string
 }
 
-func NewImageSink(
+func newImageSink(
+	p *gstreamer.Pipeline,
 	conf *config.PipelineConfig,
 	o *config.ImageConfig,
 	callbacks *gstreamer.Callbacks,
 	monitor *stats.HandlerMonitor,
 ) (*ImageSink, error) {
-
 	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.Info)
 	if err != nil {
 		return nil, err
 	}
 
+	imageBin, err := builder.BuildImageBin(o, p, conf)
+	if err != nil {
+		return nil, err
+	}
+	if err = p.AddSinkBin(imageBin); err != nil {
+		return nil, err
+	}
+
 	maxPendingUploads := (conf.MaxUploadQueue * 60) / int(o.CaptureInterval)
 	return &ImageSink{
+		base: &base{
+			bin: imageBin,
+		},
+
 		ImageConfig: o,
 		Uploader:    u,
-		conf:        conf,
-		callbacks:   callbacks,
 
+		conf:          conf,
+		callbacks:     callbacks,
 		createdImages: make(chan *imageUpdate, maxPendingUploads),
 	}, nil
 }
@@ -169,7 +182,7 @@ func (s *ImageSink) UploadManifest(filepath string) (string, bool, error) {
 	return location, true, nil
 }
 
-func (s *ImageSink) close() error {
+func (s *ImageSink) Close() error {
 	close(s.createdImages)
 	<-s.done.Watch()
 
