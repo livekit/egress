@@ -385,6 +385,7 @@ func (b *Bin) sendEOS() {
 	}
 }
 
+// AddOnEOSReceived adds a callback to be called when EOS is received on every pad of the last element in the bin
 func (b *Bin) AddOnEOSReceived(f func()) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
