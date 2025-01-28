@@ -15,82 +15,67 @@
 package sink
 
 import (
+	"go.uber.org/atomic"
+
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
-	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/logger"
 )
 
 type Sink interface {
 	Start() error
+	AddEOSProbe()
+	EOSReceived() bool
 	Close() error
 	UploadManifest(string) (string, bool, error)
 }
 
-func CreateSinks(p *config.PipelineConfig, callbacks *gstreamer.Callbacks, monitor *stats.HandlerMonitor) (map[types.EgressType][]Sink, error) {
-	sinks := make(map[types.EgressType][]Sink)
-	for egressType, c := range p.Outputs {
-		if len(c) == 0 {
-			continue
-		}
+type base struct {
+	bin         *gstreamer.Bin
+	eosReceived atomic.Bool
+}
 
-		var s Sink
-		var err error
-		switch egressType {
-		case types.EgressTypeFile:
-			o := c[0].(*config.FileConfig)
+func NewSink(
+	p *gstreamer.Pipeline,
+	conf *config.PipelineConfig,
+	egressType types.EgressType,
+	o config.OutputConfig,
+	callbacks *gstreamer.Callbacks,
+	monitor *stats.HandlerMonitor,
+) (Sink, error) {
 
-			u, err := uploader.New(o.StorageConfig, p.BackupConfig, monitor, p.Info)
-			if err != nil {
-				return nil, err
-			}
+	switch egressType {
+	case types.EgressTypeFile:
+		return newFileSink(p, conf, o.(*config.FileConfig), monitor)
 
-			s = newFileSink(u, p, o)
+	case types.EgressTypeSegments:
+		return newSegmentSink(p, conf, o.(*config.SegmentConfig), callbacks, monitor)
 
-		case types.EgressTypeSegments:
-			o := c[0].(*config.SegmentConfig)
+	case types.EgressTypeStream:
+		return newStreamSink(p, o.(*config.StreamConfig))
 
-			u, err := uploader.New(o.StorageConfig, p.BackupConfig, monitor, p.Info)
-			if err != nil {
-				return nil, err
-			}
+	case types.EgressTypeWebsocket:
+		return newWebsocketSink(p, o.(*config.StreamConfig), types.MimeTypeRawAudio, callbacks)
 
-			s, err = newSegmentSink(u, p, o, callbacks, monitor)
-			if err != nil {
-				return nil, err
-			}
+	case types.EgressTypeImages:
+		return newImageSink(p, conf, o.(*config.ImageConfig), callbacks, monitor)
 
-		case types.EgressTypeStream:
-			// no sink needed
-
-		case types.EgressTypeWebsocket:
-			o := c[0].(*config.StreamConfig)
-
-			s, err = newWebsocketSink(o, types.MimeTypeRawAudio, callbacks)
-			if err != nil {
-				return nil, err
-			}
-		case types.EgressTypeImages:
-			for _, ci := range c {
-				o := ci.(*config.ImageConfig)
-
-				u, err := uploader.New(o.StorageConfig, p.BackupConfig, monitor, p.Info)
-				if err != nil {
-					return nil, err
-				}
-
-				s, err = newImageSink(u, p, o, callbacks)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-
-		if s != nil {
-			sinks[egressType] = append(sinks[egressType], s)
-		}
+	default:
+		return nil, errors.ErrInvalidInput("output type")
 	}
+}
 
-	return sinks, nil
+func (s *base) AddEOSProbe() {
+	if err := s.bin.AddOnEOSReceived(func() {
+		s.eosReceived.Store(true)
+	}); err != nil {
+		logger.Errorw("failed to add EOS probe", err)
+	}
+}
+
+func (s *base) EOSReceived() bool {
+	return s.eosReceived.Load()
 }

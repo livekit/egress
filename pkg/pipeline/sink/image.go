@@ -25,16 +25,18 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
 type ImageSink struct {
-	*uploader.Uploader
-
+	*base
 	*config.ImageConfig
+	*uploader.Uploader
 
 	conf      *config.PipelineConfig
 	callbacks *gstreamer.Callbacks
@@ -52,14 +54,37 @@ type imageUpdate struct {
 	filename  string
 }
 
-func newImageSink(u *uploader.Uploader, p *config.PipelineConfig, o *config.ImageConfig, callbacks *gstreamer.Callbacks) (*ImageSink, error) {
-	maxPendingUploads := (p.MaxUploadQueue * 60) / int(o.CaptureInterval)
-	return &ImageSink{
-		Uploader:    u,
-		ImageConfig: o,
-		conf:        p,
-		callbacks:   callbacks,
+func newImageSink(
+	p *gstreamer.Pipeline,
+	conf *config.PipelineConfig,
+	o *config.ImageConfig,
+	callbacks *gstreamer.Callbacks,
+	monitor *stats.HandlerMonitor,
+) (*ImageSink, error) {
+	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.Info)
+	if err != nil {
+		return nil, err
+	}
 
+	imageBin, err := builder.BuildImageBin(o, p, conf)
+	if err != nil {
+		return nil, err
+	}
+	if err = p.AddSinkBin(imageBin); err != nil {
+		return nil, err
+	}
+
+	maxPendingUploads := (conf.MaxUploadQueue * 60) / int(o.CaptureInterval)
+	return &ImageSink{
+		base: &base{
+			bin: imageBin,
+		},
+
+		ImageConfig: o,
+		Uploader:    u,
+
+		conf:          conf,
+		callbacks:     callbacks,
 		createdImages: make(chan *imageUpdate, maxPendingUploads),
 	}, nil
 }
@@ -143,13 +168,6 @@ func (s *ImageSink) NewImage(filepath string, ts uint64) error {
 	return nil
 }
 
-func (s *ImageSink) Close() error {
-	close(s.createdImages)
-	<-s.done.Watch()
-
-	return nil
-}
-
 func (s *ImageSink) UploadManifest(filepath string) (string, bool, error) {
 	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
 		return "", false, nil
@@ -162,4 +180,11 @@ func (s *ImageSink) UploadManifest(filepath string) (string, bool, error) {
 	}
 
 	return location, true, nil
+}
+
+func (s *ImageSink) Close() error {
+	close(s.createdImages)
+	<-s.done.Watch()
+
+	return nil
 }

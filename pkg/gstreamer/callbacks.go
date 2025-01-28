@@ -17,8 +17,6 @@ package gstreamer
 import (
 	"sync"
 
-	"github.com/go-gst/go-gst/gst"
-
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 )
@@ -38,10 +36,6 @@ type Callbacks struct {
 	onTrackUnmuted []func(string)
 	onTrackRemoved []func(string)
 	onEOSSent      func()
-
-	// internal
-	addBin    func(bin *gst.Bin)
-	removeBin func(bin *gst.Bin)
 }
 
 func (c *Callbacks) SetOnError(f func(error)) {

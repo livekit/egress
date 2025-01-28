@@ -18,27 +18,66 @@ import (
 	"path"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 )
 
 type FileSink struct {
+	*base
+	*config.FileConfig
 	*uploader.Uploader
 
 	conf *config.PipelineConfig
-	*config.FileConfig
 }
 
-func newFileSink(u *uploader.Uploader, conf *config.PipelineConfig, o *config.FileConfig) *FileSink {
+func newFileSink(
+	p *gstreamer.Pipeline,
+	conf *config.PipelineConfig,
+	o *config.FileConfig,
+	monitor *stats.HandlerMonitor,
+) (*FileSink, error) {
+	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.Info)
+	if err != nil {
+		return nil, err
+	}
+
+	fileBin, err := builder.BuildFileBin(p, conf)
+	if err != nil {
+		return nil, err
+	}
+	if err = p.AddSinkBin(fileBin); err != nil {
+		return nil, err
+	}
+
 	return &FileSink{
+		base: &base{
+			bin: fileBin,
+		},
+		FileConfig: o,
 		Uploader:   u,
 		conf:       conf,
-		FileConfig: o,
-	}
+	}, nil
 }
 
 func (s *FileSink) Start() error {
 	return nil
+}
+
+func (s *FileSink) UploadManifest(filepath string) (string, bool, error) {
+	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
+		return "", false, nil
+	}
+
+	storagePath := path.Join(path.Dir(s.StorageFilepath), path.Base(filepath))
+	location, _, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
+	if err != nil {
+		return "", false, err
+	}
+
+	return location, true, nil
 }
 
 func (s *FileSink) Close() error {
@@ -55,18 +94,4 @@ func (s *FileSink) Close() error {
 	}
 
 	return nil
-}
-
-func (s *FileSink) UploadManifest(filepath string) (string, bool, error) {
-	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
-		return "", false, nil
-	}
-
-	storagePath := path.Join(path.Dir(s.StorageFilepath), path.Base(filepath))
-	location, _, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
-	if err != nil {
-		return "", false, err
-	}
-
-	return location, true, nil
 }
