@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink/m3u8"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/stats"
@@ -38,9 +39,10 @@ const (
 )
 
 type SegmentSink struct {
+	*base
 	*uploader.Uploader
-
 	*config.SegmentConfig
+
 	conf             *config.PipelineConfig
 	manifestPlaylist *config.Playlist
 	callbacks        *gstreamer.Callbacks
@@ -70,7 +72,18 @@ type SegmentUpdate struct {
 	uploadComplete chan struct{}
 }
 
-func newSegmentSink(u *uploader.Uploader, p *config.PipelineConfig, o *config.SegmentConfig, callbacks *gstreamer.Callbacks, monitor *stats.HandlerMonitor) (*SegmentSink, error) {
+func newSegmentSink(
+	p *gstreamer.Pipeline,
+	conf *config.PipelineConfig,
+	o *config.SegmentConfig,
+	callbacks *gstreamer.Callbacks,
+	monitor *stats.HandlerMonitor,
+) (*SegmentSink, error) {
+	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.Info)
+	if err != nil {
+		return nil, err
+	}
+
 	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
 	playlist, err := m3u8.NewEventPlaylistWriter(playlistName, o.SegmentDuration)
 	if err != nil {
@@ -91,11 +104,22 @@ func newSegmentSink(u *uploader.Uploader, p *config.PipelineConfig, o *config.Se
 		outputType = types.OutputTypeTS
 	}
 
-	maxPendingUploads := (p.MaxUploadQueue * 60) / o.SegmentDuration
-	s := &SegmentSink{
+	segmentBin, err := builder.BuildSegmentBin(p, conf)
+	if err != nil {
+		return nil, err
+	}
+	if err = p.AddSinkBin(segmentBin); err != nil {
+		return nil, err
+	}
+
+	maxPendingUploads := (conf.MaxUploadQueue * 60) / o.SegmentDuration
+	segmentSink := &SegmentSink{
+		base: &base{
+			bin: segmentBin,
+		},
 		Uploader:              u,
 		SegmentConfig:         o,
-		conf:                  p,
+		conf:                  conf,
 		callbacks:             callbacks,
 		playlist:              playlist,
 		livePlaylist:          livePlaylist,
@@ -105,21 +129,21 @@ func newSegmentSink(u *uploader.Uploader, p *config.PipelineConfig, o *config.Se
 		playlistUpdates:       make(chan SegmentUpdate, maxPendingUploads),
 	}
 
-	if p.Manifest != nil {
-		s.manifestPlaylist = p.Manifest.AddPlaylist()
+	if conf.Manifest != nil {
+		segmentSink.manifestPlaylist = conf.Manifest.AddPlaylist()
 	}
 
 	// Register gauges that track the number of segments and playlist updates pending upload
-	monitor.RegisterPlaylistChannelSizeGauge(s.conf.NodeID, s.conf.ClusterID, s.conf.Info.EgressId,
+	monitor.RegisterPlaylistChannelSizeGauge(segmentSink.conf.NodeID, segmentSink.conf.ClusterID, segmentSink.conf.Info.EgressId,
 		func() float64 {
-			return float64(len(s.playlistUpdates))
+			return float64(len(segmentSink.playlistUpdates))
 		})
-	monitor.RegisterSegmentsChannelSizeGauge(s.conf.NodeID, s.conf.ClusterID, s.conf.Info.EgressId,
+	monitor.RegisterSegmentsChannelSizeGauge(segmentSink.conf.NodeID, segmentSink.conf.ClusterID, segmentSink.conf.Info.EgressId,
 		func() float64 {
-			return float64(len(s.closedSegments))
+			return float64(len(segmentSink.closedSegments))
 		})
 
-	return s, nil
+	return segmentSink, nil
 }
 
 func (s *SegmentSink) Start() error {
@@ -294,6 +318,20 @@ func (s *SegmentSink) FragmentClosed(filepath string, endTime uint64) error {
 	}
 }
 
+func (s *SegmentSink) UploadManifest(filepath string) (string, bool, error) {
+	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
+		return "", false, nil
+	}
+
+	storagePath := path.Join(s.StorageDir, path.Base(filepath))
+	location, _, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
+	if err != nil {
+		return "", false, err
+	}
+
+	return location, true, nil
+}
+
 func (s *SegmentSink) Close() error {
 	// wait for pending jobs to finish
 	close(s.closedSegments)
@@ -319,18 +357,4 @@ func (s *SegmentSink) Close() error {
 	}
 
 	return nil
-}
-
-func (s *SegmentSink) UploadManifest(filepath string) (string, bool, error) {
-	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
-		return "", false, nil
-	}
-
-	storagePath := path.Join(s.StorageDir, path.Base(filepath))
-	location, _, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
-	if err != nil {
-		return "", false, err
-	}
-
-	return location, true, nil
 }

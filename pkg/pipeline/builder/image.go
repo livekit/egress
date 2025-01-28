@@ -31,22 +31,6 @@ const (
 	imageQueueLatency = uint64(200 * time.Millisecond)
 )
 
-func BuildImageBins(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) ([]*gstreamer.Bin, error) {
-	o := p.GetImageConfigs()
-
-	var bins []*gstreamer.Bin
-	for _, c := range o {
-		b, err := BuildImageBin(c, pipeline, p)
-		if err != nil {
-			return nil, err
-		}
-
-		bins = append(bins, b)
-	}
-
-	return bins, nil
-}
-
 func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
 	b := pipeline.NewBin(fmt.Sprintf("image_%s", c.Id))
 
@@ -140,7 +124,7 @@ func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *confi
 	if err != nil {
 		return nil, err
 	}
-	if err := b.AddElements(sink); err != nil {
+	if err = b.AddElements(sink); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 

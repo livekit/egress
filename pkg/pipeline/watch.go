@@ -25,10 +25,8 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/builder"
-	"github.com/livekit/egress/pkg/pipeline/sink"
 	"github.com/livekit/egress/pkg/pipeline/source"
 	"github.com/livekit/egress/pkg/pipeline/source/pulse"
-	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -119,10 +117,11 @@ func (c *Controller) messageWatch(msg *gst.Message) bool {
 	var err error
 	switch msg.Type() {
 	case gst.MessageEOS:
-		logger.Infow("EOS received")
+		logger.Infow("pipeline received EOS")
 		if c.eosTimer != nil {
 			c.eosTimer.Stop()
 		}
+		c.eosReceived.Break()
 		c.p.Stop()
 		return false
 	case gst.MessageWarning:
@@ -175,15 +174,17 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 
 	switch {
 	case element == elementGstRtmp2Sink:
+		streamSink := c.getStreamSink()
+
 		streamName := strings.Split(name, "_")[1]
-		stream, err := c.streamBin.GetStream(streamName)
+		stream, err := streamSink.GetStream(streamName)
 		if err != nil {
 			return err
 		}
 
-		if !c.eos.IsBroken() {
+		if !c.eosSent.IsBroken() {
 			// try reconnecting
-			ok, err := c.streamBin.MaybeResetStream(stream, gErr)
+			ok, err := streamSink.ResetStream(stream, gErr)
 			if err != nil {
 				logger.Errorw("failed to reset stream", err)
 			} else if ok {
@@ -196,7 +197,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 
 	case element == elementGstSrtSink:
 		streamName := strings.Split(name, "_")[1]
-		stream, err := c.streamBin.GetStream(streamName)
+		stream, err := c.getStreamSink().GetStream(streamName)
 		if err != nil {
 			return err
 		}
@@ -205,7 +206,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 
 	case element == elementGstAppSrc:
 		if message == msgStreamingNotNegotiated {
-			// send eos to app src
+			// send eosSent to app src
 			logger.Debugw("streaming stopped", "name", name)
 			c.src.(*source.SDKSource).StreamStopped(name)
 			return nil
@@ -214,7 +215,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 	case element == elementGstSplitMuxSink:
 		// We sometimes get GstSplitMuxSink errors if EOS was received before any data
 		if message == msgMuxer {
-			if c.eos.IsBroken() {
+			if c.eosSent.IsBroken() {
 				logger.Debugw("GstSplitMuxSink failure after sending EOS")
 				return nil
 			}
@@ -393,31 +394,4 @@ func getImageInformationFromGstStructure(s *gst.Structure) (string, uint64, erro
 
 	return filepath, ti, nil
 
-}
-
-func (c *Controller) getSegmentSink() *sink.SegmentSink {
-	s := c.sinks[types.EgressTypeSegments]
-	if len(s) == 0 {
-		return nil
-	}
-
-	return s[0].(*sink.SegmentSink)
-}
-
-func (c *Controller) getImageSink(name string) *sink.ImageSink {
-	id := name[len("multifilesink_"):]
-
-	s := c.sinks[types.EgressTypeImages]
-	if len(s) == 0 {
-		return nil
-	}
-
-	// Use a map here?
-	for _, si := range s {
-		if si.(*sink.ImageSink).Id == id {
-			return si.(*sink.ImageSink)
-		}
-	}
-
-	return nil
 }
