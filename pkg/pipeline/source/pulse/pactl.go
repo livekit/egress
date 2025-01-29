@@ -1,24 +1,44 @@
-package pactl
+package pulse
 
 import (
 	"bytes"
 	"encoding/json"
 	"os/exec"
+
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/protocol/logger"
 )
 
-func List() (*PactlInfo, error) {
+func LogStatus() {
+	info, err := List()
+	if err != nil {
+		logger.Warnw("failed to list pulse info", err)
+	} else {
+		b, _ := json.Marshal(info.GetEgressInfo())
+		logger.Debugw("pulse status",
+			"modules", len(info.Modules),
+			"sinks", len(info.Sinks),
+			"sources", len(info.Sources),
+			"clients", len(info.Clients),
+			"egresses", string(b),
+		)
+	}
+}
+
+func List() (*PulseInfo, error) {
 	cmd := exec.Command("pactl", "--format", "json", "list")
-	var b bytes.Buffer
+	var b, e bytes.Buffer
 	cmd.Stdout = &b
-	if err := cmd.Run(); err != nil {
-		return nil, err
+	cmd.Stderr = &e
+	if cmd.Run() != nil {
+		return nil, errors.New(e.String())
 	}
 
-	info := &PactlInfo{}
+	info := &PulseInfo{}
 	return info, json.Unmarshal(b.Bytes(), info)
 }
 
-type PactlInfo struct {
+type PulseInfo struct {
 	Modules       []Module       `json:"modules"`
 	Sinks         []Device       `json:"sinks"`
 	Sources       []Device       `json:"sources"`
@@ -110,7 +130,7 @@ type EgressInfo struct {
 	SourceOutputs int
 }
 
-func (info *PactlInfo) GetEgressInfo() map[int]*EgressInfo {
+func (info *PulseInfo) GetEgressInfo() map[int]*EgressInfo {
 	egressMap := make(map[int]*EgressInfo)
 	for _, sink := range info.Sinks {
 		egressMap[sink.Index] = &EgressInfo{
