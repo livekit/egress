@@ -263,91 +263,104 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 	}
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	s.closeChrome = allocCancel
 
+	var err error
+	var retryable bool
 	for i := range chromeRetries {
 		if i > 0 {
 			logger.Debugw("navigation timed out, reloading")
 		}
 
 		chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
+		s.closeChrome = func() {
+			chromeCancel()
+			allocCancel()
+		}
 
-		chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
-			switch ev := ev.(type) {
-			case *runtime.EventConsoleAPICalled:
-				for _, arg := range ev.Args {
-					var val interface{}
-					err := json.Unmarshal(arg.Value, &val)
-					if err != nil {
-						continue
-					}
+		err, retryable = s.navigate(chromeCtx, chromeCancel, webUrl)
+		if !retryable {
+			break
+		}
+	}
 
-					switch fmt.Sprint(val) {
-					case startRecordingLog:
-						logger.Infow("chrome: START_RECORDING")
-						if s.startRecording != nil {
-							select {
-							case <-s.startRecording:
-								continue
-							default:
-								close(s.startRecording)
-							}
+	return err
+}
+
+func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.CancelFunc, webUrl string) (error, bool) {
+	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
+		switch ev := ev.(type) {
+		case *runtime.EventConsoleAPICalled:
+			for _, arg := range ev.Args {
+				var val interface{}
+				err := json.Unmarshal(arg.Value, &val)
+				if err != nil {
+					continue
+				}
+
+				switch fmt.Sprint(val) {
+				case startRecordingLog:
+					logger.Infow("chrome: START_RECORDING")
+					if s.startRecording != nil {
+						select {
+						case <-s.startRecording:
+							continue
+						default:
+							close(s.startRecording)
 						}
-					case endRecordingLog:
-						logger.Infow("chrome: END_RECORDING")
-						if s.endRecording != nil {
-							select {
-							case <-s.endRecording:
-								continue
-							default:
-								close(s.endRecording)
-							}
+					}
+				case endRecordingLog:
+					logger.Infow("chrome: END_RECORDING")
+					if s.endRecording != nil {
+						select {
+						case <-s.endRecording:
+							continue
+						default:
+							close(s.endRecording)
 						}
 					}
 				}
-
-			case *runtime.EventExceptionThrown:
-				logChrome("exception", ev)
 			}
-		})
 
-		// navigate
-		var timeout *time.Timer
-		var errString string
+		case *runtime.EventExceptionThrown:
+			logChrome("exception", ev)
+		}
+	})
 
-		if err := chromedp.Run(chromeCtx,
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				logger.Debugw("chrome initialized")
-				timeout = time.AfterFunc(chromeTimeout, chromeCancel)
-				return nil
-			}),
-			chromedp.Navigate(webUrl),
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				timeout.Stop()
-				return nil
-			}),
-			chromedp.Evaluate(`
+	// navigate
+	var timeout *time.Timer
+	var errString string
+	if err := chromedp.Run(chromeCtx,
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			logger.Debugw("chrome initialized")
+			// set page load timeout
+			timeout = time.AfterFunc(chromeTimeout, chromeCancel)
+			return nil
+		}),
+		chromedp.Navigate(webUrl),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			// cancel timer
+			timeout.Stop()
+			return nil
+		}),
+		chromedp.Evaluate(`
 			if (document.querySelector('div.error')) {
 				document.querySelector('div.error').innerText;
 			} else {
 				''
 			}`, &errString),
-		); err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				continue
-			}
-			if strings.HasPrefix(err.Error(), chromeFailedToStart) {
-				return errors.ChromeError(err)
-			}
-			return errors.PageLoadError(err.Error())
-		} else if errString != "" {
-			return errors.TemplateError(errString)
+	); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return errors.PageLoadError("timed out"), true
 		}
-
-		return nil
+		if strings.HasPrefix(err.Error(), chromeFailedToStart) {
+			return errors.ChromeError(err), false
+		}
+		return errors.PageLoadError(err.Error()), false
+	} else if errString != "" {
+		return errors.TemplateError(errString), false
 	}
 
-	return errors.PageLoadError("timed out")
+	return nil, false
 }
 
 func logChrome(eventType string, ev interface{ MarshalJSON() ([]byte, error) }) {
