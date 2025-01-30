@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/redis"
 	lksdk "github.com/livekit/server-sdk-go/v2"
@@ -99,14 +100,6 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 	l := zl.WithValues(values...)
 
 	logger.SetLogger(l, "egress")
-	lksdk.SetLogger(&downgradeLogger{Logger: l})
+	lksdk.SetLogger(logging.NewDowngradeLogger())
 	return nil
-}
-
-type downgradeLogger struct {
-	logger.Logger
-}
-
-func (d *downgradeLogger) Errorw(msg string, err error, keysAndValues ...interface{}) {
-	d.Logger.Warnw(msg, err, keysAndValues...)
 }

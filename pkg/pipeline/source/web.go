@@ -30,6 +30,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/pipeline/source/pulse"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -143,15 +144,6 @@ func (s *WebSource) Close() {
 	}
 }
 
-type infoLogger struct {
-	cmd string
-}
-
-func (l *infoLogger) Write(p []byte) (int, error) {
-	logger.Infow(fmt.Sprintf("%s: %s", l.cmd, string(p)))
-	return len(p), nil
-}
-
 // creates a new pulse audio sink
 func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfig) error {
 	ctx, span := tracer.Start(ctx, "WebInput.createPulseSink")
@@ -167,7 +159,7 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 	)
 	var b bytes.Buffer
 	cmd.Stdout = &b
-	cmd.Stderr = &infoLogger{cmd: "pactl"}
+	cmd.Stderr = logging.NewInfoLogger("pactl")
 	err := cmd.Run()
 	if err != nil {
 		return errors.ErrProcessFailed("pulse", err)
@@ -185,7 +177,7 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 	dims := fmt.Sprintf("%dx%dx%d", p.Width, p.Height, p.Depth)
 	logger.Debugw("creating X display", "display", p.Display, "dims", dims)
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
-	xvfb.Stderr = &infoLogger{cmd: "xvfb"}
+	xvfb.Stderr = logging.NewInfoLogger("xvfb")
 	if err := xvfb.Start(); err != nil {
 		return errors.ErrProcessFailed("xvfb", err)
 	}

@@ -22,8 +22,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"strings"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/retry"
@@ -31,12 +29,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/smithy-go/logging"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
 )
 
@@ -155,9 +152,7 @@ func (u *S3Uploader) upload(
 		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
-	l := &s3Logger{
-		msgs: make([]string, 10),
-	}
+	l := logging.NewS3Logger()
 	client := s3.NewFromConfig(*u.awsConf, func(o *s3.Options) {
 		o.Logger = l
 		o.ClientLogMode = aws.LogRequest | aws.LogResponse | aws.LogRetries
@@ -182,7 +177,7 @@ func (u *S3Uploader) upload(
 	}
 
 	if _, err = manager.NewUploader(client).Upload(context.Background(), input); err != nil {
-		l.log()
+		l.WriteLogs()
 		return "", 0, errors.ErrUploadFailed("S3", err)
 	}
 
@@ -211,35 +206,6 @@ func (u *S3Uploader) upload(
 	}
 
 	return res.URL, stat.Size(), nil
-}
-
-// s3Logger only logs aws messages on upload failure
-type s3Logger struct {
-	mu   sync.Mutex
-	msgs []string
-	idx  int
-}
-
-func (l *s3Logger) Logf(classification logging.Classification, format string, v ...interface{}) {
-	format = "aws %s: " + format
-	v = append([]interface{}{strings.ToLower(string(classification))}, v...)
-
-	l.mu.Lock()
-	l.msgs[l.idx%len(l.msgs)] = fmt.Sprintf(format, v...)
-	l.idx++
-	l.mu.Unlock()
-}
-
-func (l *s3Logger) log() {
-	l.mu.Lock()
-	size := len(l.msgs)
-	for range size {
-		if msg := l.msgs[l.idx%size]; msg != "" {
-			logger.Debugw(msg)
-		}
-		l.idx++
-	}
-	l.mu.Unlock()
 }
 
 type s3Retryer struct{}
