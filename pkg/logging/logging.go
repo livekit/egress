@@ -39,18 +39,18 @@ func (l *DowngradeLogger) Errorw(msg string, err error, keysAndValues ...interfa
 	l.Logger.Warnw(msg, err, keysAndValues...)
 }
 
-// InfoLogger logs command outputs
-type InfoLogger struct {
+// DebugLogger logs command outputs
+type DebugLogger struct {
 	cmd string
 }
 
-func NewInfoLogger(cmd string) *InfoLogger {
-	return &InfoLogger{
+func NewDebugLogger(cmd string) *DebugLogger {
+	return &DebugLogger{
 		cmd: cmd,
 	}
 }
 
-func (l *InfoLogger) Write(p []byte) (int, error) {
+func (l *DebugLogger) Write(p []byte) (int, error) {
 	logger.Infow(fmt.Sprintf("%s: %s", l.cmd, string(p)))
 	return len(p), nil
 }

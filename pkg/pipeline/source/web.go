@@ -43,6 +43,7 @@ const (
 
 	chromeFailedToStart = "chrome failed to start:"
 	chromeTimeout       = time.Second * 30
+	chromeRetries       = 3
 )
 
 type WebSource struct {
@@ -86,18 +87,7 @@ func NewWebSource(ctx context.Context, p *config.PipelineConfig) (*WebSource, er
 		return nil, err
 	}
 
-	var err error
-	chromeErr := make(chan error, 1)
-	go func() {
-		chromeErr <- s.launchChrome(ctx, p, p.Insecure)
-	}()
-	select {
-	case err = <-chromeErr:
-		// chrome launch completed
-	case <-time.After(chromeTimeout):
-		err = errors.ErrPageLoadFailed("timed out")
-	}
-	if err != nil {
+	if err := s.launchChrome(ctx, p); err != nil {
 		logger.Warnw("failed to launch chrome", err)
 		s.Close()
 		return nil, err
@@ -158,10 +148,14 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 		fmt.Sprintf("sink_properties=device.description=\"%s\"", p.Info.EgressId),
 	)
 	var b bytes.Buffer
+	l := logging.NewDebugLogger("pactl")
 	cmd.Stdout = &b
-	cmd.Stderr = logging.NewInfoLogger("pactl")
+	cmd.Stderr = l
 	err := cmd.Run()
 	if err != nil {
+		if out := b.Bytes(); out != nil {
+			_, _ = l.Write(out)
+		}
 		return errors.ErrProcessFailed("pulse", err)
 	}
 
@@ -177,7 +171,6 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 	dims := fmt.Sprintf("%dx%dx%d", p.Width, p.Height, p.Depth)
 	logger.Debugw("creating X display", "display", p.Display, "dims", dims)
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
-	xvfb.Stderr = logging.NewInfoLogger("xvfb")
 	if err := xvfb.Start(); err != nil {
 		return errors.ErrProcessFailed("xvfb", err)
 	}
@@ -187,7 +180,7 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 }
 
 // launches chrome and navigates to the url
-func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, insecure bool) error {
+func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) error {
 	ctx, span := tracer.Start(ctx, "WebInput.launchChrome")
 	defer span.End()
 
@@ -254,7 +247,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		chromedp.Flag("no-sandbox", !p.EnableChromeSandbox),
 	}
 
-	if insecure {
+	if p.Insecure {
 		opts = append(opts,
 			chromedp.Flag("disable-web-security", true),
 			chromedp.Flag("allow-running-insecure-content", true),
@@ -262,12 +255,30 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 	}
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
-	s.closeChrome = func() {
-		chromeCancel()
-		allocCancel()
+
+	var err error
+	var retryable bool
+	for i := range chromeRetries {
+		if i > 0 {
+			logger.Debugw("navigation timed out, reloading")
+		}
+
+		chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
+		s.closeChrome = func() {
+			chromeCancel()
+			allocCancel()
+		}
+
+		err, retryable = s.navigate(chromeCtx, chromeCancel, webUrl)
+		if !retryable {
+			break
+		}
 	}
 
+	return err
+}
+
+func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.CancelFunc, webUrl string) (error, bool) {
 	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *runtime.EventConsoleAPICalled:
@@ -307,28 +318,41 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig, 
 		}
 	})
 
+	// navigate
+	var timeout *time.Timer
 	var errString string
-	err := chromedp.Run(chromeCtx,
+	if err := chromedp.Run(chromeCtx,
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			logger.Debugw("chrome initialized")
+			// set page load timeout
+			timeout = time.AfterFunc(chromeTimeout, chromeCancel)
+			return nil
+		}),
 		chromedp.Navigate(webUrl),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			// cancel timer
+			timeout.Stop()
+			return nil
+		}),
 		chromedp.Evaluate(`
 			if (document.querySelector('div.error')) {
 				document.querySelector('div.error').innerText;
 			} else {
 				''
-			}`, &errString,
-		),
-	)
-	if err != nil {
-		if strings.HasPrefix(err.Error(), chromeFailedToStart) {
-			return errors.ErrChromeFailedToStart(err)
+			}`, &errString),
+	); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return errors.PageLoadError("timed out"), true
 		}
-		errString = err.Error()
-	}
-	if errString != "" {
-		return errors.ErrPageLoadFailed(errString)
+		if strings.HasPrefix(err.Error(), chromeFailedToStart) {
+			return errors.ChromeError(err), false
+		}
+		return errors.PageLoadError(err.Error()), false
+	} else if errString != "" {
+		return errors.TemplateError(errString), false
 	}
 
-	return nil
+	return nil, false
 }
 
 func logChrome(eventType string, ev interface{ MarshalJSON() ([]byte, error) }) {

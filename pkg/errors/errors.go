@@ -92,7 +92,7 @@ func ErrProcessFailed(process string, err error) error {
 	return psrpc.NewErrorf(psrpc.Internal, "failed to launch %s: %v", process, err)
 }
 
-func ErrChromeFailedToStart(err error) error {
+func ChromeError(err error) error {
 	return psrpc.NewError(psrpc.Internal, err)
 }
 
@@ -109,8 +109,15 @@ var (
 	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
 )
 
-func ErrPageLoadFailed(err string) error {
-	return psrpc.NewErrorf(psrpc.InvalidArgument, "template page load failed: %s", err)
+func PageLoadError(err string) error {
+	if strings.HasPrefix(err, "page load error ") {
+		err = err[16:]
+	}
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "page load error: %s", err)
+}
+
+func TemplateError(err string) error {
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "template error: %s", err)
 }
 
 func ErrCouldNotParseConfig(err error) error {
