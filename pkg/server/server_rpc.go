@@ -17,7 +17,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"os"
 	"os/exec"
 	"path"
 	"syscall"
@@ -28,6 +27,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -127,8 +127,10 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 		"--request", string(reqString),
 	)
 	cmd.Dir = "/"
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+
+	l := logging.NewProcessLogger(handlerID, info.EgressId)
+	cmd.Stdout = l
+	cmd.Stderr = l
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	if err = s.Launch(context.Background(), handlerID, req, info, cmd); err != nil {

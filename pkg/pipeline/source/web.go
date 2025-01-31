@@ -30,6 +30,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/pipeline/source/pulse"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -133,15 +134,6 @@ func (s *WebSource) Close() {
 	}
 }
 
-type debugLogger struct {
-	cmd string
-}
-
-func (l *debugLogger) Write(b []byte) (int, error) {
-	logger.Debugw(fmt.Sprintf("%s: %s", l.cmd, string(b)))
-	return len(b), nil
-}
-
 // creates a new pulse audio sink
 func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfig) error {
 	ctx, span := tracer.Start(ctx, "WebInput.createPulseSink")
@@ -156,7 +148,7 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 		fmt.Sprintf("sink_properties=device.description=\"%s\"", p.Info.EgressId),
 	)
 	var b bytes.Buffer
-	l := &debugLogger{cmd: "pactl"}
+	l := logging.NewDebugLogger("pactl")
 	cmd.Stdout = &b
 	cmd.Stderr = l
 	err := cmd.Run()
