@@ -25,6 +25,11 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd
     tar -C /usr/local -xzf go1.22.1.linux-${GOARCH}.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
+# download samples
+RUN apt-get update && apt-get install -y git-lfs
+RUN git clone --depth 1 https://github.com/livekit/media-samples.git
+RUN cd media-samples && git lfs pull
+
 # download go modules
 COPY go.mod .
 COPY go.sum .
@@ -96,12 +101,8 @@ RUN mkdir -p home/egress/tmp home/egress/.cache/xdgr && \
 COPY test/ /workspace/test/
 COPY --from=0 /workspace/egress /bin/
 COPY --from=0 /workspace/test.test .
+COPY --from=0 /workspace/media-samples /media-samples
 COPY build/test/entrypoint.sh .
-
-# download samples
-RUN apt-get update && apt-get install -y git-lfs
-RUN git clone --depth 1 https://github.com/livekit/media-samples.git
-RUN cd media-samples && git lfs pull
 
 # run tests
 USER egress

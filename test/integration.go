@@ -82,7 +82,7 @@ func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)
 func (r *Runner) awaitIdle(t *testing.T) {
 	r.svc.KillAll()
 	for i := 0; i < 30; i++ {
-		if r.svc.IsIdle() {
+		if r.svc.IsIdle() && len(r.room.LocalParticipant.TrackPublications()) == 0 {
 			return
 		}
 		time.Sleep(time.Second)
