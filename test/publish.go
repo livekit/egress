@@ -83,10 +83,6 @@ func (r *Runner) publishSample(t *testing.T, codec types.MimeType, publishAfter,
 					_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
 				}
 			})
-		} else {
-			t.Cleanup(func() {
-				_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
-			})
 		}
 	})
 
@@ -132,6 +128,11 @@ func (r *Runner) publish(t *testing.T, codec types.MimeType, done chan struct{})
 
 	pub, err = r.room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
 	require.NoError(t, err)
+
+	trackID := pub.SID()
+	t.Cleanup(func() {
+		_ = r.room.LocalParticipant.UnpublishTrack(trackID)
+	})
 
 	return pub
 }

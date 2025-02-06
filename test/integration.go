@@ -87,7 +87,12 @@ func (r *Runner) awaitIdle(t *testing.T) {
 		}
 		time.Sleep(time.Second)
 	}
-	t.Fatal("service not idle after 30s")
+
+	if !r.svc.IsIdle() {
+		t.Fatal("service not idle after 30s")
+	} else if len(r.room.LocalParticipant.TrackPublications()) != 0 {
+		t.Fatal("room still has tracks after 30s")
+	}
 }
 
 func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {
