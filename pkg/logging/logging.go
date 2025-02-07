@@ -68,7 +68,10 @@ func NewProcessLogger(handlerID, egressID string) *ProcessLogger {
 
 func (l *ProcessLogger) Write(p []byte) (n int, err error) {
 	s := string(p)
-	if strings.HasPrefix(s, "00:00:") {
+	if strings.HasSuffix(s, "}\n") {
+		// normal handler logs
+		fmt.Print(s)
+	} else if strings.HasPrefix(s, "0:00:") {
 		// ignore cuda and template not mapped gstreamer warnings
 	} else if strings.HasPrefix(s, "turnc") {
 		// warn on turnc error
@@ -77,6 +80,7 @@ func (l *ProcessLogger) Write(p []byte) (n int, err error) {
 		// panics and unexpected errors
 		l.logger.Errorw(s, nil)
 	}
+
 	return len(p), nil
 }
 

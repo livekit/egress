@@ -79,7 +79,6 @@ RUN useradd -ms /bin/bash -g root -G sudo,pulse,pulse-access egress
 RUN mkdir -p home/egress/tmp home/egress/.cache/xdgr && \
     chown -R egress /home/egress
 
-
 # copy files
 COPY --from=0 /workspace/egress /bin/
 COPY --from=0 /tini /tini
