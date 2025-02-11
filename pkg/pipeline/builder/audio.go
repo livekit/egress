@@ -24,23 +24,23 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 const (
 	audioMixerLatency = uint64(2e9)
 	audioChannelNone  = 0
-	audioChannelLeft  = 1
-	audioChannelRight = 2
 )
 
 type AudioBin struct {
 	bin  *gstreamer.Bin
 	conf *config.PipelineConfig
 
-	mu     sync.Mutex
-	nextID int
-	names  map[string]string
+	mu          sync.Mutex
+	nextID      int
+	nextChannel int
+	names       map[string]string
 }
 
 func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
@@ -142,8 +142,6 @@ func (b *AudioBin) buildWebInput() error {
 }
 
 func (b *AudioBin) buildSDKInput() error {
-	b.conf.DualChannel = true
-
 	for _, tr := range b.conf.AudioTracks {
 		if err := b.addAudioAppSrcBin(tr); err != nil {
 			return err
@@ -223,13 +221,24 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 }
 
 func (b *AudioBin) getChannel(ts *config.TrackSource) int {
-	if !b.conf.DualChannel {
-		return audioChannelNone
+	switch b.conf.AudioMixing {
+	case livekit.AudioMixing_DEFAULT_MIXING:
+		return 0
+
+	case livekit.AudioMixing_DUAL_CHANNEL_AGENT:
+		if ts.ParticipantKind == lksdk.ParticipantAgent {
+			return 1
+		} else {
+			return 2
+		}
+
+	case livekit.AudioMixing_DUAL_CHANNEL_ALTERNATE:
+		next := b.nextChannel
+		b.nextChannel++
+		return next%2 + 1
 	}
-	if ts.ParticipantKind != lksdk.ParticipantAgent {
-		return audioChannelLeft
-	}
-	return audioChannelRight
+
+	return 0
 }
 
 func (b *AudioBin) addAudioTestSrcBin() error {

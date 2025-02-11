@@ -202,6 +202,7 @@ func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, tem
 		RoomName:            r.RoomName,
 		ParticipantName:     "egress-sample",
 		ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
+		ParticipantKind:     lksdk.ParticipantAgent,
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 

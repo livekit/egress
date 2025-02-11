@@ -103,7 +103,7 @@ type AudioConfig struct {
 	AudioOutCodec    types.MimeType
 	AudioBitrate     int32
 	AudioFrequency   int32
-	DualChannel      bool
+	AudioMixing      livekit.AudioMixing
 }
 
 type VideoConfig struct {
