@@ -16,6 +16,8 @@ package test
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -34,6 +36,21 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 
 	t.Run("EdgeCases", func(t *testing.T) {
 		for _, test := range []*testCase{
+
+			// RoomComposite audio mixing
+
+			{
+				name:        "AudioMixing",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioOnly:   true,
+					audioMixing: livekit.AudioMixing_DUAL_CHANNEL_AGENT,
+				},
+				fileOptions: &fileOptions{
+					filename: "audio_mixing_{time}",
+				},
+				custom: r.testAudioMixing,
+			},
 
 			// ParticipantComposite where the participant never publishes
 
@@ -125,6 +142,44 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 			}
 		}
 	})
+}
+
+func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
+	p1, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "egress-sample-1",
+		ParticipantIdentity: fmt.Sprintf("sample-1-%d", rand.Intn(100)),
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	t.Cleanup(p1.Disconnect)
+	r.publish(t, p1.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+
+	agent, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "egress-sample",
+		ParticipantIdentity: fmt.Sprintf("agent-%d", rand.Intn(100)),
+		ParticipantKind:     lksdk.ParticipantAgent,
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	t.Cleanup(agent.Disconnect)
+	r.publish(t, agent.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+
+	p2, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "egress-sample",
+		ParticipantIdentity: fmt.Sprintf("sample-2-%d", rand.Intn(100)),
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	t.Cleanup(p2.Disconnect)
+	r.publish(t, p2.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+
+	r.runFileTest(t, test)
 }
 
 func (r *Runner) testParticipantNoPublish(t *testing.T, test *testCase) {

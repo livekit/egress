@@ -582,6 +582,9 @@ func (p *PipelineConfig) getRoomCompositeRequestType(req *livekit.RoomCompositeE
 		return types.SourceTypeWeb
 	}
 
+	// apply audio mixing option
+	p.AudioMixing = req.AudioMixing
+
 	return types.SourceTypeSDK
 }
 

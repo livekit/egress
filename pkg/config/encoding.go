@@ -87,7 +87,6 @@ func (p *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) error 
 	if advanced.AudioFrequency != 0 {
 		p.AudioFrequency = advanced.AudioFrequency
 	}
-	p.AudioMixing = advanced.AudioMixing
 
 	// video
 	switch advanced.VideoCodec {
