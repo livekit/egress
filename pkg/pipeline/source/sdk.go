@@ -330,6 +330,10 @@ func (s *SDKSource) getParticipant(identity string) (*lksdk.RemoteParticipant, e
 
 func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, error) {
 	trackCount := len(expecting)
+	waiting := make(map[string]struct{})
+	for trackID := range expecting {
+		waiting[trackID] = struct{}{}
+	}
 
 	deadline := time.After(subscriptionTimeout)
 	tracks, err := s.subscribeToTracks(expecting, deadline)
@@ -343,9 +347,9 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, 
 			if sub.err != nil {
 				return 0, 0, sub.err
 			}
-			delete(expecting, sub.trackID)
+			delete(waiting, sub.trackID)
 		case <-deadline:
-			for trackID := range expecting {
+			for trackID := range waiting {
 				return 0, 0, errors.ErrTrackNotFound(trackID)
 			}
 		}
