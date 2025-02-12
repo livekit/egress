@@ -51,7 +51,7 @@ func (r *Runner) publishSample(t *testing.T, codec types.MimeType, publishAfter,
 		done := make(chan struct{})
 		unpublished := make(chan struct{})
 
-		pub := r.publish(t, codec, done)
+		pub := r.publish(t, r.room.LocalParticipant, codec, done)
 		trackID <- pub.SID()
 
 		if withMuting {
@@ -94,8 +94,7 @@ func (r *Runner) publishSample(t *testing.T, codec types.MimeType, publishAfter,
 }
 
 func (r *Runner) publishSampleWithDisconnection(t *testing.T, codec types.MimeType) string {
-	done := make(chan struct{})
-	pub := r.publish(t, codec, done)
+	pub := r.publish(t, r.room.LocalParticipant, codec, make(chan struct{}))
 	trackID := pub.SID()
 
 	time.AfterFunc(time.Second*10, func() {
@@ -105,7 +104,7 @@ func (r *Runner) publishSampleWithDisconnection(t *testing.T, codec types.MimeTy
 	return trackID
 }
 
-func (r *Runner) publish(t *testing.T, codec types.MimeType, done chan struct{}) *lksdk.LocalTrackPublication {
+func (r *Runner) publish(t *testing.T, p *lksdk.LocalParticipant, codec types.MimeType, done chan struct{}) *lksdk.LocalTrackPublication {
 	filename := samples[codec]
 	frameDuration := frameDurations[codec]
 
@@ -114,7 +113,7 @@ func (r *Runner) publish(t *testing.T, codec types.MimeType, done chan struct{})
 		lksdk.ReaderTrackWithOnWriteComplete(func() {
 			close(done)
 			if pub != nil {
-				_ = r.room.LocalParticipant.UnpublishTrack(pub.SID())
+				_ = p.UnpublishTrack(pub.SID())
 			}
 		}),
 	}
@@ -126,12 +125,12 @@ func (r *Runner) publish(t *testing.T, codec types.MimeType, done chan struct{})
 	track, err := lksdk.NewLocalFileTrack(filename, opts...)
 	require.NoError(t, err)
 
-	pub, err = r.room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
+	pub, err = p.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
 	require.NoError(t, err)
 
 	trackID := pub.SID()
 	t.Cleanup(func() {
-		_ = r.room.LocalParticipant.UnpublishTrack(trackID)
+		_ = p.UnpublishTrack(trackID)
 	})
 
 	return pub

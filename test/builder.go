@@ -52,6 +52,7 @@ type publishOptions struct {
 	audioUnpublish time.Duration
 	audioRepublish time.Duration
 	audioOnly      bool
+	audioMixing    livekit.AudioMixing
 	audioTrackID   string
 
 	videoCodec     types.MimeType
@@ -93,10 +94,11 @@ func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
 	switch test.requestType {
 	case types.RequestTypeRoomComposite:
 		room := &livekit.RoomCompositeEgressRequest{
-			RoomName:  r.RoomName,
-			Layout:    test.layout,
-			AudioOnly: test.audioOnly,
-			VideoOnly: test.videoOnly,
+			RoomName:    r.RoomName,
+			Layout:      test.layout,
+			AudioOnly:   test.audioOnly,
+			AudioMixing: test.audioMixing,
+			VideoOnly:   test.videoOnly,
 		}
 		if test.encodingOptions != nil {
 			room.Options = &livekit.RoomCompositeEgressRequest_Advanced{

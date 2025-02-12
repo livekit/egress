@@ -24,18 +24,23 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-const audioMixerLatency = uint64(2e9)
+const (
+	audioMixerLatency = uint64(2e9)
+	audioChannelNone  = 0
+)
 
 type AudioBin struct {
 	bin  *gstreamer.Bin
 	conf *config.PipelineConfig
 
-	mu     sync.Mutex
-	nextID int
-	names  map[string]string
+	mu          sync.Mutex
+	nextID      int
+	nextChannel int
+	names       map[string]string
 }
 
 func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
@@ -86,7 +91,7 @@ func (b *AudioBin) onTrackAdded(ts *config.TrackSource) {
 		return
 	}
 
-	if ts.Kind == lksdk.TrackKindAudio {
+	if ts.TrackKind == lksdk.TrackKindAudio {
 		if err := b.addAudioAppSrcBin(ts); err != nil {
 			b.bin.OnError(err)
 		}
@@ -124,7 +129,7 @@ func (b *AudioBin) buildWebInput() error {
 		return err
 	}
 
-	if err = addAudioConverter(b.bin, b.conf); err != nil {
+	if err = addAudioConverter(b.bin, b.conf, audioChannelNone); err != nil {
 		return err
 	}
 	if b.conf.AudioTranscoding {
@@ -204,7 +209,7 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 		return errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	if err := addAudioConverter(appSrcBin, b.conf); err != nil {
+	if err := addAudioConverter(appSrcBin, b.conf, b.getChannel(ts)); err != nil {
 		return err
 	}
 
@@ -213,6 +218,27 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 	}
 
 	return nil
+}
+
+func (b *AudioBin) getChannel(ts *config.TrackSource) int {
+	switch b.conf.AudioMixing {
+	case livekit.AudioMixing_DEFAULT_MIXING:
+		return 0
+
+	case livekit.AudioMixing_DUAL_CHANNEL_AGENT:
+		if ts.ParticipantKind == lksdk.ParticipantAgent {
+			return 1
+		} else {
+			return 2
+		}
+
+	case livekit.AudioMixing_DUAL_CHANNEL_ALTERNATE:
+		next := b.nextChannel
+		b.nextChannel++
+		return next%2 + 1
+	}
+
+	return 0
 }
 
 func (b *AudioBin) addAudioTestSrcBin() error {
@@ -235,7 +261,7 @@ func (b *AudioBin) addAudioTestSrcBin() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	audioCaps, err := newAudioCapsFilter(b.conf)
+	audioCaps, err := newAudioCapsFilter(b.conf, audioChannelNone)
 	if err != nil {
 		return err
 	}
@@ -252,7 +278,7 @@ func (b *AudioBin) addMixer() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	mixedCaps, err := newAudioCapsFilter(b.conf)
+	mixedCaps, err := newAudioCapsFilter(b.conf, audioChannelNone)
 	if err != nil {
 		return err
 	}
@@ -290,7 +316,7 @@ func (b *AudioBin) addEncoder() error {
 	}
 }
 
-func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
+func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel int) error {
 	audioQueue, err := gstreamer.BuildQueue("audio_input_queue", config.Latency, true)
 	if err != nil {
 		return err
@@ -306,7 +332,7 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	capsFilter, err := newAudioCapsFilter(p)
+	capsFilter, err := newAudioCapsFilter(p, channel)
 	if err != nil {
 		return err
 	}
@@ -314,17 +340,25 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig) error {
 	return b.AddElements(audioQueue, audioConvert, audioResample, capsFilter)
 }
 
-func newAudioCapsFilter(p *config.PipelineConfig) (*gst.Element, error) {
+func newAudioCapsFilter(p *config.PipelineConfig, channel int) (*gst.Element, error) {
+	var channelCaps string
+	if channel == audioChannelNone {
+		channelCaps = "channels=2"
+	} else {
+		channelCaps = fmt.Sprintf("channels=1,channel-mask=(bitmask)0x%d", channel)
+	}
+
 	var caps *gst.Caps
 	switch p.AudioOutCodec {
 	case types.MimeTypeOpus, types.MimeTypeRawAudio:
-		caps = gst.NewCapsFromString(
-			"audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2",
-		)
+		caps = gst.NewCapsFromString(fmt.Sprintf(
+			"audio/x-raw,format=S16LE,layout=interleaved,rate=48000,%s",
+			channelCaps,
+		))
 	case types.MimeTypeAAC:
 		caps = gst.NewCapsFromString(fmt.Sprintf(
-			"audio/x-raw,format=S16LE,layout=interleaved,rate=%d,channels=2",
-			p.AudioFrequency,
+			"audio/x-raw,format=S16LE,layout=interleaved,rate=%d,%s",
+			p.AudioFrequency, channelCaps,
 		))
 	default:
 		return nil, errors.ErrNotSupported(string(p.AudioOutCodec))

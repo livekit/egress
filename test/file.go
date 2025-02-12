@@ -167,7 +167,7 @@ func (r *Runner) testFile(t *testing.T) {
 				requestType: types.RequestTypeTrack,
 				publishOptions: publishOptions{
 					audioCodec: types.MimeTypeOpus,
-					videoOnly:  true,
+					audioOnly:  true,
 				},
 				fileOptions: &fileOptions{
 					filename:   "t_{track_source}_{time}.ogg",
