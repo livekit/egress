@@ -43,7 +43,7 @@ func newAzureUploader(c *config.StorageConfig) (uploader, error) {
 	conf := c.Azure
 	return &AzureUploader{
 		conf:                 conf,
-		prefix:               c.PathPrefix,
+		prefix:               c.Prefix,
 		generatePresignedUrl: c.GeneratePresignedUrl,
 		container:            fmt.Sprintf("https://%s.blob.core.windows.net/%s", conf.AccountName, conf.ContainerName),
 	}, nil

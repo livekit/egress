@@ -264,8 +264,8 @@ github.com/livekit/protocol v1.33.1-0.20250212175645-82dadcf6078f h1:UoZY0mQk9y+
 github.com/livekit/protocol v1.33.1-0.20250212175645-82dadcf6078f/go.mod h1:23cpl78K2XxTrYB9VT2qw/YTB86/Au/i2ohO0xNIIHM=
 github.com/livekit/psrpc v0.6.1-0.20250205181828-a0beed2e4126 h1:fzuYpAQbCid7ySPpQWWePfQOWUrs8x6dJ0T3Wl07n+Y=
 github.com/livekit/psrpc v0.6.1-0.20250205181828-a0beed2e4126/go.mod h1:X5WtEZ7OnEs72Fi5/J+i0on3964F1aynQpCalcgMqRo=
-github.com/livekit/server-sdk-go/v2 v2.4.2-0.20250117060943-67a3d4b3afb8 h1:9YDQkFw0ZoRpgMEhvPmuBWDF6sZNVPg4it+Dai0eSXc=
-github.com/livekit/server-sdk-go/v2 v2.4.2-0.20250117060943-67a3d4b3afb8/go.mod h1:Bu6SWMDIW+EAyZhuqUwFkdYZg9Q/6sOwOS06qkavu3g=
+github.com/livekit/server-sdk-go/v2 v2.4.3-0.20250217101751-cfb1b7bf6ce6 h1:g+y3jxdRNuSfi8YC7j0MKq0+vdFmiTXIr5sGe6IJJUI=
+github.com/livekit/server-sdk-go/v2 v2.4.3-0.20250217101751-cfb1b7bf6ce6/go.mod h1:98/Sa+Wgb27ABwu0WYxLaMZaRfGljrrtoZDQ2xA4oVg=
 github.com/mackerelio/go-osstat v0.2.5 h1:+MqTbZUhoIt4m8qzkVoXUJg1EuifwlAJSk4Yl2GXh+o=
 github.com/mackerelio/go-osstat v0.2.5/go.mod h1:atxwWF+POUZcdtR1wnsUcQxTytoHG4uhl2AKKzrOajY=
 github.com/magefile/mage v1.15.0 h1:BvGheCMAsG3bWUDbZ8AyXXpCNwU9u5CB6sM+HNb9HYg=
@@ -304,8 +304,8 @@ github.com/pion/datachannel v1.5.10 h1:ly0Q26K1i6ZkGf42W7D4hQYR90pZwzFOjTq5AuCKk
 github.com/pion/datachannel v1.5.10/go.mod h1:p/jJfC9arb29W7WrxyKbepTU20CFgyx5oLo8Rs4Py/M=
 github.com/pion/dtls/v3 v3.0.4 h1:44CZekewMzfrn9pmGrj5BNnTMDCFwr+6sLH+cCuLM7U=
 github.com/pion/dtls/v3 v3.0.4/go.mod h1:R373CsjxWqNPf6MEkfdy3aSe9niZvL/JaKlGeFphtMg=
-github.com/pion/ice/v4 v4.0.5 h1:6awVfa1jg9YsI9/Lep4TG/o3kwS1Oayr5b8xz50ibJ8=
-github.com/pion/ice/v4 v4.0.5/go.mod h1:JJaoEIxUIlGDA9gaRZbwXYqI3j6VG/QchpjX+QmwN6A=
+github.com/pion/ice/v4 v4.0.6 h1:jmM9HwI9lfetQV/39uD0nY4y++XZNPhvzIPCb8EwxUM=
+github.com/pion/ice/v4 v4.0.6/go.mod h1:y3M18aPhIxLlcO/4dn9X8LzLLSma84cx6emMSu14FGw=
 github.com/pion/interceptor v0.1.37 h1:aRA8Zpab/wE7/c0O3fh1PqY0AJI3fCSEM5lRWJVorwI=
 github.com/pion/interceptor v0.1.37/go.mod h1:JzxbJ4umVTlZAf+/utHzNesY8tmRkM2lVmkS82TTj8Y=
 github.com/pion/logging v0.2.3 h1:gHuf0zpoh1GW67Nr6Gj4cv5Z9ZscU7g/EaoC/Ke/igI=
@@ -330,8 +330,8 @@ github.com/pion/transport/v3 v3.0.7 h1:iRbMH05BzSNwhILHoBoAPxoB9xQgOaJk+591KC9P1
 github.com/pion/transport/v3 v3.0.7/go.mod h1:YleKiTZ4vqNxVwh77Z0zytYi7rXHl7j6uPLGhhz9rwo=
 github.com/pion/turn/v4 v4.0.0 h1:qxplo3Rxa9Yg1xXDxxH8xaqcyGUtbHYw4QSCvmFWvhM=
 github.com/pion/turn/v4 v4.0.0/go.mod h1:MuPDkm15nYSklKpN8vWJ9W2M0PlyQZqYt1McGuxG7mA=
-github.com/pion/webrtc/v4 v4.0.8 h1:T1ZmnT9qxIJIt4d8XoiMOBrTClGHDDXNg9e/fh018Qc=
-github.com/pion/webrtc/v4 v4.0.8/go.mod h1:HHBeUVBAC+j4ZFnYhovEFStF02Arb1EyD4G7e7HBTJw=
+github.com/pion/webrtc/v4 v4.0.9 h1:PyOYMRKJgfy0dzPcYtFD/4oW9zaw3Ze3oZzzbj2LV9E=
+github.com/pion/webrtc/v4 v4.0.9/go.mod h1:ViHLVaNpiuvaH8pdiuQxuA9awuE6KVzAXx3vVWilOck=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 h1:GFCKgmp0tecUJ0sJuv4pzYCqS9+RGSn52M3FUwPs+uo=
@@ -428,8 +428,8 @@ golang.org/x/crypto v0.19.0/go.mod h1:Iy9bg/ha4yyC70EfRS8jz+B6ybOBKMaSxLj6P6oBDf
 golang.org/x/crypto v0.32.0 h1:euUpcYgM8WcP71gNpTqQCn6rC2t6ULUPiOzfWaXVVfc=
 golang.org/x/crypto v0.32.0/go.mod h1:ZnnJkOaASj8g0AjIduWNlq2NRxL0PlBrbKVyZ6V/Ugc=
 golang.org/x/exp v0.0.0-20190121172915-509febef88a4/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=
-golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c h1:KL/ZBHXgKGVmuZBZ01Lt57yE5ws8ZPSkkihmEyq7FXc=
-golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c/go.mod h1:tujkw807nyEEAamNbDrEGzRav+ilXA7PCRAd6xsmwiU=
+golang.org/x/exp v0.0.0-20250207012021-f9890c6ad9f3 h1:qNgPs5exUA+G0C96DrPwNrvLSj7GT/9D+3WMWUcUg34=
+golang.org/x/exp v0.0.0-20250207012021-f9890c6ad9f3/go.mod h1:tujkw807nyEEAamNbDrEGzRav+ilXA7PCRAd6xsmwiU=
 golang.org/x/lint v0.0.0-20181026193005-c67002cb31c3/go.mod h1:UVdnD1Gm6xHRNCYTkRU2/jEulfH38KcIWyp/GAMgvoE=
 golang.org/x/lint v0.0.0-20190227174305-5b3e6a55c961/go.mod h1:wehouNa3lNwaWXcvxsM5YxQ5yQlVC4a0KAMCusXpPoU=
 golang.org/x/lint v0.0.0-20190313153728-d0100b6bd8b3/go.mod h1:6SW0HCj/g11FgYtHlgUYUwCkIfeOF89ocIRzGO/8vkc=

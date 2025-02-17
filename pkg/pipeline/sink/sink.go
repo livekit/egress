@@ -55,7 +55,7 @@ func NewSink(
 		return newSegmentSink(p, conf, o.(*config.SegmentConfig), callbacks, monitor)
 
 	case types.EgressTypeStream:
-		return newStreamSink(p, o.(*config.StreamConfig))
+		return newStreamSink(p, conf, o.(*config.StreamConfig))
 
 	case types.EgressTypeWebsocket:
 		return newWebsocketSink(p, o.(*config.StreamConfig), types.MimeTypeRawAudio, callbacks)

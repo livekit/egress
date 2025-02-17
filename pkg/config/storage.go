@@ -22,7 +22,7 @@ import (
 )
 
 type StorageConfig struct {
-	PathPrefix           string `yaml:"prefix"` // prefix applied to all filenames
+	Prefix               string `yaml:"prefix"` // prefix applied to all filenames
 	GeneratePresignedUrl bool   `yaml:"generate_presigned_url"`
 
 	S3     *S3Config    `yaml:"s3"`     // upload to s3
@@ -65,7 +65,7 @@ type GCPConfig struct {
 func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageConfig, error) {
 	sc := &StorageConfig{}
 	if p.StorageConfig != nil {
-		sc.PathPrefix = p.StorageConfig.PathPrefix
+		sc.Prefix = p.StorageConfig.Prefix
 		sc.GeneratePresignedUrl = p.StorageConfig.GeneratePresignedUrl
 	}
 

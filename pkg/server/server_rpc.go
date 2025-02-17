@@ -128,7 +128,7 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	)
 	cmd.Dir = "/"
 
-	l := logging.NewProcessLogger(handlerID, info.EgressId)
+	l := logging.NewHandlerLogger(handlerID, info.EgressId)
 	cmd.Stdout = l
 	cmd.Stderr = l
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

@@ -148,7 +148,7 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 		fmt.Sprintf("sink_properties=device.description=\"%s\"", p.Info.EgressId),
 	)
 	var b bytes.Buffer
-	l := logging.NewDebugLogger("pactl")
+	l := logging.NewCmdLogger("pactl")
 	cmd.Stdout = &b
 	cmd.Stderr = l
 	err := cmd.Run()
@@ -300,6 +300,7 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 							close(s.startRecording)
 						}
 					}
+
 				case endRecordingLog:
 					logger.Infow("chrome: END_RECORDING")
 					if s.endRecording != nil {
@@ -314,7 +315,7 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 			}
 
 		case *runtime.EventExceptionThrown:
-			logChrome("exception", ev)
+			logger.Debugw("chrome exception", "err", ev.ExceptionDetails.Error())
 		}
 	})
 
@@ -353,16 +354,4 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 	}
 
 	return nil, false
-}
-
-func logChrome(eventType string, ev interface{ MarshalJSON() ([]byte, error) }) {
-	values := make([]interface{}, 0)
-	if j, err := ev.MarshalJSON(); err == nil {
-		m := make(map[string]interface{})
-		_ = json.Unmarshal(j, &m)
-		for k, v := range m {
-			values = append(values, k, v)
-		}
-	}
-	logger.Debugw(fmt.Sprintf("chrome %s", eventType), values...)
 }

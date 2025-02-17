@@ -28,7 +28,7 @@ type localUploader struct {
 }
 
 func newLocalUploader(c *config.StorageConfig) (*localUploader, error) {
-	return &localUploader{prefix: c.PathPrefix}, nil
+	return &localUploader{prefix: c.Prefix}, nil
 }
 
 func (u *localUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {

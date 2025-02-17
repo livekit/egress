@@ -17,13 +17,10 @@ package handler
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/protocol/logger"
@@ -37,20 +34,14 @@ func (h *Handler) GetPipelineDot(ctx context.Context, _ *ipc.GstPipelineDebugDot
 
 	<-h.initialized.Watch()
 
-	res := make(chan string, 1)
-	go func() {
-		res <- h.controller.GetGstPipelineDebugDot()
-	}()
-
-	select {
-	case r := <-res:
-		return &ipc.GstPipelineDebugDotResponse{
-			DotFile: r,
-		}, nil
-
-	case <-time.After(2 * time.Second):
-		return nil, status.New(codes.DeadlineExceeded, "timed out requesting pipeline debug info").Err()
+	r, err := h.controller.GetGstPipelineDebugDot()
+	if err != nil {
+		return nil, err
 	}
+
+	return &ipc.GstPipelineDebugDotResponse{
+		DotFile: r,
+	}, nil
 }
 
 func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PProfResponse, error) {

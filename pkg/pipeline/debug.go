@@ -20,10 +20,11 @@ import (
 	"os"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/types"
@@ -31,8 +32,49 @@ import (
 	"github.com/livekit/protocol/pprof"
 )
 
-func (c *Controller) GetGstPipelineDebugDot() string {
-	return c.p.DebugBinToDotData(gst.DebugGraphShowAll)
+func (c *Controller) GetGstPipelineDebugDot() (string, error) {
+	dot := make(chan string, 1)
+	go func() {
+		dot <- c.p.DebugBinToDotData(gst.DebugGraphShowAll)
+	}()
+
+	select {
+	case d := <-dot:
+		return d, nil
+	case <-time.After(3 * time.Second):
+		return "", status.New(codes.DeadlineExceeded, "timed out requesting pipeline debug info").Err()
+	}
+}
+
+func (c *Controller) generateDotFile() {
+	dot, err := c.GetGstPipelineDebugDot()
+	if err != nil {
+		return
+	}
+
+	f, err := os.Create(path.Join(c.TmpDir, fmt.Sprintf("%s.dot", c.Info.EgressId)))
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	_, _ = f.WriteString(dot)
+}
+
+func (c *Controller) generatePProf() {
+	b, err := pprof.GetProfileData(context.Background(), "goroutine", 0, 0)
+	if err != nil {
+		logger.Errorw("failed to get profile data", err)
+		return
+	}
+
+	f, err := os.Create(path.Join(c.TmpDir, fmt.Sprintf("%s.prof", c.Info.EgressId)))
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	_, _ = f.Write(b)
 }
 
 func (c *Controller) uploadDebugFiles() {
@@ -42,52 +84,13 @@ func (c *Controller) uploadDebugFiles() {
 		return
 	}
 
-	done := make(chan struct{})
-	var dotUploaded, pprofUploaded, trackUploaded bool
-
-	var wg sync.WaitGroup
-	wg.Add(3)
-	go func() {
-		defer wg.Done()
-		c.uploadDotFile(u)
-	}()
-	go func() {
-		defer wg.Done()
-		c.uploadPProf(u)
-	}()
-	go func() {
-		defer wg.Done()
-		c.uploadTrackFiles(u)
-	}()
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		logger.Infow("debug files uploaded")
-	case <-time.After(time.Second * 3):
-		if !dotUploaded {
-			logger.Warnw("failed to upload dotfile", nil)
-		}
-		if !pprofUploaded {
-			logger.Warnw("failed to upload pprof file", nil)
-		}
-		if !trackUploaded {
-			logger.Warnw("failed to upload track debug files", nil)
-		}
-	}
-}
-
-func (c *Controller) uploadTrackFiles(u *uploader.Uploader) {
 	files, err := os.ReadDir(c.TmpDir)
 	if err != nil {
 		return
 	}
 
 	for _, f := range files {
-		if strings.HasSuffix(f.Name(), ".csv") {
+		if strings.HasSuffix(f.Name(), ".csv") || strings.HasSuffix(f.Name(), ".dot") || strings.HasSuffix(f.Name(), ".prof") {
 			local := path.Join(c.TmpDir, f.Name())
 			storage := path.Join(c.Info.EgressId, f.Name())
 			_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
@@ -96,44 +99,5 @@ func (c *Controller) uploadTrackFiles(u *uploader.Uploader) {
 				return
 			}
 		}
-	}
-}
-
-func (c *Controller) uploadDotFile(u *uploader.Uploader) {
-	dot := c.GetGstPipelineDebugDot()
-	c.uploadDebugFile(u, []byte(dot), ".dot")
-}
-
-func (c *Controller) uploadPProf(u *uploader.Uploader) {
-	b, err := pprof.GetProfileData(context.Background(), "goroutine", 0, 0)
-	if err != nil {
-		logger.Errorw("failed to get profile data", err)
-		return
-	}
-	c.uploadDebugFile(u, b, ".prof")
-}
-
-func (c *Controller) uploadDebugFile(u *uploader.Uploader, data []byte, fileExtension string) {
-	storageDir := c.Info.EgressId
-
-	filename := fmt.Sprintf("%s%s", c.Info.EgressId, fileExtension)
-	local := path.Join(c.TmpDir, filename)
-	f, err := os.Create(local)
-	if err != nil {
-		logger.Errorw("failed to create debug file", err)
-		return
-	}
-	defer f.Close()
-
-	_, err = f.Write(data)
-	if err != nil {
-		logger.Errorw("failed to write debug file", err)
-		return
-	}
-
-	_, _, err = u.Upload(local, path.Join(storageDir, filename), types.OutputTypeBlob, false)
-	if err != nil {
-		logger.Errorw("failed to upload debug file", err)
-		return
 	}
 }
