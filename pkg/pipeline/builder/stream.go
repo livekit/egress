@@ -45,7 +45,6 @@ type Stream struct {
 
 	sink           *gst.Element
 	keyframes      atomic.Uint64
-	lastKeyFrame   atomic.Uint64
 	reconnections  atomic.Int32
 	disconnectedAt atomic.Time
 	failed         atomic.Bool
@@ -110,7 +109,7 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, o *config.StreamConfig) (*Stre
 	return sb, nil
 }
 
-func (sb *StreamBin) BuildStream(stream *config.Stream) (*Stream, error) {
+func (sb *StreamBin) BuildStream(stream *config.Stream, framerate int32) (*Stream, error) {
 	stream.Name = utils.NewGuid("")
 	b := sb.Bin.NewBin(stream.Name)
 
@@ -174,14 +173,13 @@ func (sb *StreamBin) BuildStream(stream *config.Stream) (*Stream, error) {
 
 		switch sb.OutputType {
 		case types.OutputTypeRTMP:
+			videoFrameDuration := uint64(1000000000 / framerate)
 			proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
 				buffer.Ref()
-				if !buffer.HasFlags(gst.BufferFlagDeltaUnit) {
-					pts := uint64(buffer.PresentationTimestamp())
-					if pts != uint64(gst.ClockTimeNone) && pts != ss.lastKeyFrame.Load() {
-						ss.lastKeyFrame.Store(pts)
-						ss.keyframes.Inc()
-					}
+
+				if uint64(buffer.Duration())-videoFrameDuration < 2 && !buffer.HasFlags(gst.BufferFlagDeltaUnit) {
+					// non-delta video frame
+					ss.keyframes.Inc()
 				}
 
 				links, _ := self.GetInternalLinks()

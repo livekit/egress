@@ -103,7 +103,7 @@ func (s *StreamSink) Start() error {
 }
 
 func (s *StreamSink) AddStream(stream *config.Stream) error {
-	ss, err := s.bin.BuildStream(stream)
+	ss, err := s.bin.BuildStream(stream, s.conf.Framerate)
 	if err != nil {
 		return err
 	}
