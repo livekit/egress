@@ -16,37 +16,49 @@ package sink
 
 import (
 	"sync"
+	"time"
+
+	"github.com/frostbyte73/core"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/pipeline/builder"
+	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/logger"
 )
 
 type StreamSink struct {
 	*base
 
+	conf   *config.PipelineConfig
+	bin    *builder.StreamBin
+	closed core.Fuse
+
 	mu      sync.RWMutex
-	bin     *builder.StreamBin
 	streams map[string]*builder.Stream
+	loggers map[string]*logging.CSVLogger[logging.StreamStats]
 }
 
-func newStreamSink(p *gstreamer.Pipeline, o *config.StreamConfig) (*StreamSink, error) {
+func newStreamSink(p *gstreamer.Pipeline, conf *config.PipelineConfig, o *config.StreamConfig) (*StreamSink, error) {
 	streamBin, err := builder.BuildStreamBin(p, o)
 	if err != nil {
 		return nil, err
 	}
 
-	streamSink := &StreamSink{
+	ss := &StreamSink{
 		base: &base{
 			bin: streamBin.Bin,
 		},
+		conf:    conf,
 		bin:     streamBin,
 		streams: make(map[string]*builder.Stream),
+		loggers: make(map[string]*logging.CSVLogger[logging.StreamStats]),
 	}
 
 	o.Streams.Range(func(_, stream any) bool {
-		err = streamSink.AddStream(stream.(*config.Stream))
+		err = ss.AddStream(stream.(*config.Stream))
 		return err == nil
 	})
 	if err != nil {
@@ -57,10 +69,36 @@ func newStreamSink(p *gstreamer.Pipeline, o *config.StreamConfig) (*StreamSink, 
 		return nil, err
 	}
 
-	return streamSink, nil
+	return ss, nil
 }
 
 func (s *StreamSink) Start() error {
+	if s.conf.Debug.EnableProfiling {
+		go func() {
+			closed := s.closed.Watch()
+			ticker := time.NewTicker(time.Second * 10)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-closed:
+					return
+
+				case <-ticker.C:
+					s.mu.RLock()
+					for name, stream := range s.streams {
+						if stats, ok := stream.Stats(); ok {
+							if csvLogger, ok := s.loggers[name]; ok {
+								csvLogger.Write(stats)
+							}
+						}
+					}
+					s.mu.RUnlock()
+				}
+			}
+		}()
+	}
+
 	return nil
 }
 
@@ -72,6 +110,15 @@ func (s *StreamSink) AddStream(stream *config.Stream) error {
 
 	s.mu.Lock()
 	s.streams[stream.Name] = ss
+	if s.conf.Debug.EnableProfiling && s.bin.OutputType == types.OutputTypeRTMP {
+		csvLogger, err := logging.NewCSVLogger[logging.StreamStats](stream.Name)
+		if err != nil {
+			logger.Errorw("failed to create stream logger", err)
+		} else {
+			s.loggers[stream.Name] = csvLogger
+		}
+	}
+
 	s.mu.Unlock()
 
 	return s.bin.Bin.AddSinkBin(ss.Bin)
@@ -117,5 +164,14 @@ func (s *StreamSink) UploadManifest(_ string) (string, bool, error) {
 }
 
 func (s *StreamSink) Close() error {
+	s.closed.Once(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		for _, l := range s.loggers {
+			l.Close()
+		}
+	})
+
 	return nil
 }

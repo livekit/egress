@@ -199,7 +199,8 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		}
 	}
 
-	if err := c.p.Run(); err != nil {
+	err := c.p.Run()
+	if err != nil {
 		c.src.Close()
 		c.Info.SetFailed(err)
 		return c.Info
@@ -412,7 +413,8 @@ func (c *Controller) sendEOS() {
 
 func (c *Controller) OnError(err error) {
 	if errors.Is(err, errors.ErrPipelineFrozen) && c.Debug.EnableProfiling {
-		c.uploadDebugFiles()
+		c.generateDotFile()
+		c.generatePProf()
 	}
 
 	if c.Info.Status != livekit.EgressStatus_EGRESS_FAILED && (!c.eosSent.IsBroken() || c.FinalizationRequired) {
@@ -452,6 +454,11 @@ func (c *Controller) Close() {
 		livekit.EgressStatus_EGRESS_COMPLETE:
 		// upload manifest and add location to egress info
 		c.uploadManifest()
+	}
+
+	// upload debug logs
+	if c.Debug.EnableProfiling {
+		c.uploadDebugFiles()
 	}
 }
 

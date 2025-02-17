@@ -20,21 +20,23 @@ import (
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 )
 
 type StreamBin struct {
-	Bin *gstreamer.Bin
+	Bin        *gstreamer.Bin
+	OutputType types.OutputType
 
-	mu         sync.RWMutex
-	pipeline   *gstreamer.Pipeline
-	outputType types.OutputType
+	mu       sync.RWMutex
+	pipeline *gstreamer.Pipeline
 }
 
 type Stream struct {
@@ -42,9 +44,11 @@ type Stream struct {
 	Bin  *gstreamer.Bin
 
 	sink           *gst.Element
-	reconnections  int
-	disconnectedAt time.Time
-	failed         bool
+	keyframes      atomic.Uint64
+	lastKeyFrame   atomic.Uint64
+	reconnections  atomic.Int32
+	disconnectedAt atomic.Time
+	failed         atomic.Bool
 }
 
 func BuildStreamBin(pipeline *gstreamer.Pipeline, o *config.StreamConfig) (*StreamBin, error) {
@@ -100,7 +104,7 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, o *config.StreamConfig) (*Stre
 
 	sb := &StreamBin{
 		Bin:        b,
-		outputType: o.OutputType,
+		OutputType: o.OutputType,
 	}
 
 	return sb, nil
@@ -115,8 +119,13 @@ func (sb *StreamBin) BuildStream(stream *config.Stream) (*Stream, error) {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
+	ss := &Stream{
+		Conf: stream,
+		Bin:  b,
+	}
+
 	var sink *gst.Element
-	switch sb.outputType {
+	switch sb.OutputType {
 	case types.OutputTypeRTMP:
 		sink, err = gst.NewElementWithName("rtmp2sink", fmt.Sprintf("rtmp2sink_%s", stream.Name))
 		if err != nil {
@@ -155,12 +164,7 @@ func (sb *StreamBin) BuildStream(stream *config.Stream) (*Stream, error) {
 	if err = b.AddElements(queue, sink); err != nil {
 		return nil, err
 	}
-
-	ss := &Stream{
-		Conf: stream,
-		Bin:  b,
-		sink: sink,
-	}
+	ss.sink = sink
 
 	// add a proxy pad between the queue and sink to prevent errors from propagating upstream
 	b.SetLinkFunc(func() error {
@@ -168,10 +172,18 @@ func (sb *StreamBin) BuildStream(stream *config.Stream) (*Stream, error) {
 		proxy.Ref()
 		proxy.ActivateMode(gst.PadModePush, true)
 
-		switch sb.outputType {
+		switch sb.OutputType {
 		case types.OutputTypeRTMP:
 			proxy.SetChainFunction(func(self *gst.Pad, _ *gst.Object, buffer *gst.Buffer) gst.FlowReturn {
 				buffer.Ref()
+				if !buffer.HasFlags(gst.BufferFlagDeltaUnit) {
+					pts := uint64(buffer.PresentationTimestamp())
+					if pts != uint64(gst.ClockTimeNone) && pts != ss.lastKeyFrame.Load() {
+						ss.lastKeyFrame.Store(pts)
+						ss.keyframes.Inc()
+					}
+				}
+
 				links, _ := self.GetInternalLinks()
 				switch {
 				case len(links) != 1:
@@ -182,23 +194,28 @@ func (sb *StreamBin) BuildStream(stream *config.Stream) (*Stream, error) {
 					return gst.FlowOK
 				}
 			})
+
 		case types.OutputTypeSRT:
 			proxy.SetChainListFunction(func(self *gst.Pad, _ *gst.Object, list *gst.BufferList) gst.FlowReturn {
 				list.Ref()
-				if ss.failed {
+				if ss.failed.Load() {
 					return gst.FlowOK
 				}
+
 				links, _ := self.GetInternalLinks()
 				if len(links) != 1 {
 					return gst.FlowNotLinked
 				}
+
 				switch links[0].PushList(list) {
 				case gst.FlowEOS:
 					return gst.FlowEOS
 				case gst.FlowError:
-					ss.failed = true
+					ss.failed.Store(true)
+					return gst.FlowOK
+				default:
+					return gst.FlowOK
 				}
-				return gst.FlowOK
 			})
 		}
 
@@ -213,35 +230,58 @@ func (sb *StreamBin) BuildStream(stream *config.Stream) (*Stream, error) {
 }
 
 func (s *Stream) Reset(streamErr error) (bool, error) {
-	structure, err := s.sink.GetProperty("stats")
-	if err != nil {
-		return false, err
+	var outBytes uint64
+	if stats, ok := s.Stats(); ok {
+		outBytes = stats.OutBytesAcked
 	}
-	values := structure.(*gst.Structure).Values()
-	outBytes := values["out-bytes-acked"].(uint64)
 
-	if s.reconnections == 0 && outBytes == 0 {
+	if s.reconnections.Load() == 0 && outBytes == 0 {
 		// unable to connect, probably a bad stream key or url
 		return false, nil
 	}
 
 	if outBytes > 0 {
 		// first disconnection
-		s.disconnectedAt = time.Now()
-		s.reconnections = 0
-	} else if time.Since(s.disconnectedAt) > time.Second*30 {
+		s.disconnectedAt.Store(time.Now())
+		s.reconnections.Store(0)
+	} else if time.Since(s.disconnectedAt.Load()) > time.Second*30 {
 		return false, nil
 	}
 
-	s.reconnections++
+	s.reconnections.Inc()
 	logger.Warnw("resetting stream", streamErr, "url", s.Conf.RedactedUrl)
 
-	if err = s.Bin.SetState(gst.StateNull); err != nil {
+	if err := s.Bin.SetState(gst.StateNull); err != nil {
 		return false, err
 	}
-	if err = s.Bin.SetState(gst.StatePlaying); err != nil {
+	if err := s.Bin.SetState(gst.StatePlaying); err != nil {
 		return false, err
 	}
 
 	return true, nil
+}
+
+const (
+	outBytesTotal = "out-bytes-total"
+	outBytesAcked = "out-bytes-acked"
+	inBytesTotal  = "in-bytes-total"
+	inBytesAcked  = "in-bytes-acked"
+)
+
+func (s *Stream) Stats() (*logging.StreamStats, bool) {
+	structure, err := s.sink.GetProperty("stats")
+	if err != nil || structure == nil {
+		return nil, false
+	}
+	if stats := structure.(*gst.Structure).Values(); stats != nil {
+		return &logging.StreamStats{
+			Timestamp:     time.Now().Format(time.DateTime),
+			Keyframes:     s.keyframes.Load(),
+			OutBytesTotal: stats[outBytesTotal].(uint64),
+			OutBytesAcked: stats[outBytesAcked].(uint64),
+			InBytesTotal:  stats[inBytesTotal].(uint64),
+			InBytesAcked:  stats[inBytesAcked].(uint64),
+		}, true
+	}
+	return nil, false
 }

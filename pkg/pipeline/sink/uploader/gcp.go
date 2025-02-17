@@ -51,7 +51,7 @@ func newGCPUploader(c *config.StorageConfig) (uploader, error) {
 	conf := c.GCP
 	u := &GCPUploader{
 		conf:                 conf,
-		prefix:               c.PathPrefix,
+		prefix:               c.Prefix,
 		generatePresignedUrl: c.GeneratePresignedUrl,
 	}
 

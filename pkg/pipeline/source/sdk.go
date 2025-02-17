@@ -17,7 +17,6 @@ package source
 import (
 	"context"
 	"fmt"
-	"path"
 	"strings"
 	"sync"
 	"time"
@@ -551,18 +550,13 @@ func (s *SDKSource) createWriter(
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
 ) (*sdk.AppWriter, error) {
-	var logFilename string
-	if s.Debug.EnableProfiling {
-		logFilename = path.Join(s.TmpDir, fmt.Sprintf("%s.csv", track.ID()))
-	}
-
 	src, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", track.ID()))
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	ts.AppSrc = app.SrcFromElement(src)
-	writer, err := sdk.NewAppWriter(track, pub, rp, ts, s.sync, s.callbacks, logFilename)
+	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, s.callbacks)
 	if err != nil {
 		return nil, err
 	}

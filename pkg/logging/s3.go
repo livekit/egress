@@ -24,66 +24,6 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-// DowngradeLogger converts errors to warnings
-type DowngradeLogger struct {
-	logger.Logger
-}
-
-func NewDowngradeLogger() *DowngradeLogger {
-	return &DowngradeLogger{
-		Logger: logger.GetLogger(),
-	}
-}
-
-func (l *DowngradeLogger) Errorw(msg string, err error, keysAndValues ...interface{}) {
-	l.Logger.Warnw(msg, err, keysAndValues...)
-}
-
-// DebugLogger logs command outputs
-type DebugLogger struct {
-	cmd string
-}
-
-func NewDebugLogger(cmd string) *DebugLogger {
-	return &DebugLogger{
-		cmd: cmd,
-	}
-}
-
-func (l *DebugLogger) Write(p []byte) (int, error) {
-	logger.Infow(fmt.Sprintf("%s: %s", l.cmd, string(p)))
-	return len(p), nil
-}
-
-// ProcessLogger catches stray outputs from handlers
-type ProcessLogger struct {
-	logger logger.Logger
-}
-
-func NewProcessLogger(handlerID, egressID string) *ProcessLogger {
-	return &ProcessLogger{
-		logger: logger.GetLogger().WithValues("handlerID", handlerID, "egressID", egressID),
-	}
-}
-
-func (l *ProcessLogger) Write(p []byte) (n int, err error) {
-	s := string(p)
-	if strings.HasSuffix(s, "}\n") {
-		// normal handler logs
-		fmt.Print(s)
-	} else if strings.HasPrefix(s, "0:00:") {
-		// ignore cuda and template not mapped gstreamer warnings
-	} else if strings.HasPrefix(s, "turnc") {
-		// warn on turnc error
-		l.logger.Warnw(s, nil)
-	} else {
-		// panics and unexpected errors
-		l.logger.Errorw(s, nil)
-	}
-
-	return len(p), nil
-}
-
 // S3Logger only logs aws messages on upload failure
 type S3Logger struct {
 	mu   sync.Mutex
