@@ -240,7 +240,7 @@ func (s *SegmentSink) handlePlaylistUpdates(update SegmentUpdate) error {
 func (s *SegmentSink) shouldUploadPlaylist() bool {
 	segmentsPerHour := 3600 / s.SegmentDuration
 	frequency := min(s.segmentCount/segmentsPerHour, segmentsPerHour/60)
-	return s.segmentCount < segmentsPerHour || s.segmentCount%frequency == 0
+	return s.segmentCount > 0 && (s.segmentCount < segmentsPerHour || s.segmentCount%frequency == 0)
 }
 
 func (s *SegmentSink) uploadPlaylist() error {
