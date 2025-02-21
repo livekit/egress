@@ -130,7 +130,7 @@ func (s *Server) StartTemplatesServer(fs fs.FS) error {
 	mux.Handle("/", h)
 
 	go func() {
-		addr := fmt.Sprintf("localhost:%d", s.conf.TemplatePort)
+		addr := fmt.Sprintf("%s:%d", s.conf.TemplateBase, s.conf.TemplatePort)
 		logger.Debugw(fmt.Sprintf("starting template server on address %s", addr))
 		_ = http.ListenAndServe(addr, mux)
 	}()
