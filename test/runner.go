@@ -148,6 +148,7 @@ func NewRunner(t *testing.T) *Runner {
 
 	r.ServiceConfig = conf
 	r.ServiceConfig.EnableRoomCompositeSDKSource = true
+	r.ServiceConfig.ExperimentalGPU = true
 
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
 		t.Fatal("api key, secret, and ws url required")

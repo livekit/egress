@@ -351,7 +351,7 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 	return nil, false
 }
 
-func CheckGPU() bool {
+func CheckGPU(conf *config.ServiceConfig) bool {
 	// create X display
 	dims := fmt.Sprintf("640x480x24")
 	display := fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
@@ -403,9 +403,14 @@ func CheckGPU() bool {
 		chromedp.Flag("window-position", "0,0"),
 
 		// config
-		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", 1920, 1080)),
+		chromedp.Flag("window-size", "640,480"),
+		chromedp.Flag("disable-web-security", conf.Insecure),
+		chromedp.Flag("allow-running-insecure-content", conf.Insecure),
+		chromedp.Flag("no-sandbox", !conf.EnableChromeSandbox),
+		chromedp.Flag("disable-gpu", !conf.ExperimentalGPU),
+
+		// output
 		chromedp.Flag("display", display),
-		chromedp.Flag("disable-gpu", false),
 	}
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
@@ -457,9 +462,9 @@ func CheckGPU() bool {
 
 	if !enabled {
 		logger.Errorw("GPU disabled", nil, fields...)
-		return false
+	} else {
+		logger.Infow("GPU enabled", fields...)
 	}
 
-	logger.Infow("GPU enabled", fields...)
-	return true
+	return enabled
 }

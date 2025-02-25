@@ -143,7 +143,7 @@ func (s *Server) Run() error {
 	logger.Debugw("starting service", "version", version.Version)
 
 	if s.conf.ExperimentalGPU {
-		s.conf.ExperimentalGPU = source.CheckGPU()
+		s.conf.ExperimentalGPU = source.CheckGPU(s.conf)
 	}
 
 	if err := s.psrpcServer.RegisterStartEgressTopic(s.conf.ClusterID); err != nil {
