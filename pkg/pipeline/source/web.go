@@ -242,11 +242,16 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 		chromedp.Flag("disable-web-security", p.Insecure),
 		chromedp.Flag("allow-running-insecure-content", p.Insecure),
 		chromedp.Flag("no-sandbox", !p.EnableChromeSandbox),
-		chromedp.Flag("disable-gpu", !p.ExperimentalGPU),
 
 		// output
 		chromedp.Env(fmt.Sprintf("PULSE_SINK=%s", p.Info.EgressId)),
 		chromedp.Flag("display", p.Display),
+	}
+
+	if p.ExperimentalGPU {
+		opts = append(opts, chromedp.Flag("enable-gpu", true))
+	} else {
+		opts = append(opts, chromedp.Flag("disable-gpu", true))
 	}
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
@@ -407,10 +412,15 @@ func CheckGPU(conf *config.ServiceConfig) bool {
 		chromedp.Flag("disable-web-security", conf.Insecure),
 		chromedp.Flag("allow-running-insecure-content", conf.Insecure),
 		chromedp.Flag("no-sandbox", !conf.EnableChromeSandbox),
-		chromedp.Flag("disable-gpu", !conf.ExperimentalGPU),
 
 		// output
 		chromedp.Flag("display", display),
+	}
+
+	if conf.ExperimentalGPU {
+		opts = append(opts, chromedp.Flag("enable-gpu", true))
+	} else {
+		opts = append(opts, chromedp.Flag("disable-gpu", true))
 	}
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
