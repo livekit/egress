@@ -40,7 +40,7 @@ func newAliOSSUploader(c *config.StorageConfig) (uploader, error) {
 	conf := c.AliOSS
 	return &AliOSSUploader{
 		conf:                 conf,
-		prefix:               c.PathPrefix,
+		prefix:               c.Prefix,
 		generatePresignedUrl: c.GeneratePresignedUrl,
 	}, nil
 }

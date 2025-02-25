@@ -28,7 +28,7 @@ func TestUploader(t *testing.T) {
 		},
 	}
 	backup := &config.StorageConfig{
-		PathPrefix: "testProject",
+		Prefix: "testProject",
 		S3: &config.S3Config{
 			AccessKey: key,
 			Secret:    secret,

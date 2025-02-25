@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -32,6 +31,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
@@ -47,7 +47,8 @@ const (
 
 type AppWriter struct {
 	logger    logger.Logger
-	logFile   *os.File
+	csvLogger *logging.CSVLogger[logging.TrackStats]
+
 	pub       lksdk.TrackPublication
 	track     *webrtc.TrackRemote
 	codec     types.MimeType
@@ -65,22 +66,23 @@ type AppWriter struct {
 	*synchronizer.TrackSynchronizer
 
 	// state
-	lastRead  time.Time
-	active    atomic.Bool
-	playing   core.Fuse
-	draining  core.Fuse
-	endStream core.Fuse
-	finished  core.Fuse
+	active       atomic.Bool
+	lastReceived atomic.Time
+	lastPushed   atomic.Time
+	playing      core.Fuse
+	draining     core.Fuse
+	endStream    core.Fuse
+	finished     core.Fuse
 }
 
 func NewAppWriter(
+	conf *config.PipelineConfig,
 	track *webrtc.TrackRemote,
 	pub lksdk.TrackPublication,
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
 	sync *synchronizer.Synchronizer,
 	callbacks *gstreamer.Callbacks,
-	logFilename string,
 ) (*AppWriter, error) {
 	w := &AppWriter{
 		logger:            logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
@@ -93,17 +95,13 @@ func NewAppWriter(
 		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
 	}
 
-	if logFilename != "" {
-		logger.Infow("logging to file", "filename", logFilename)
-		f, err := os.Create(logFilename)
+	if conf.Debug.EnableProfiling {
+		csvLogger, err := logging.NewCSVLogger[logging.TrackStats](track.ID())
 		if err != nil {
-			return nil, err
+			logger.Errorw("failed to create csv logger", err)
+		} else {
+			w.csvLogger = csvLogger
 		}
-		_, err = f.WriteString("pts,received_sn,adjusted_sn,received_ts,adjusted_ts\n")
-		if err != nil {
-			return nil, err
-		}
-		w.logFile = f
 	}
 
 	var depacketizer rtp.Depacketizer
@@ -148,6 +146,9 @@ func NewAppWriter(
 func (w *AppWriter) start() {
 	w.startTime = time.Now()
 	w.active.Store(true)
+	if w.csvLogger != nil {
+		go w.logStats()
+	}
 
 	for !w.endStream.IsBroken() {
 		w.readNext()
@@ -171,8 +172,8 @@ func (w *AppWriter) start() {
 		"maxDrift", fmt.Sprint(stats.MaxDrift),
 		"packetLoss", fmt.Sprintf("%.2f%%", loss*100),
 	)
-	if w.logFile != nil {
-		_ = w.logFile.Close()
+	if w.csvLogger != nil {
+		w.csvLogger.Close()
 	}
 
 	w.finished.Break()
@@ -182,40 +183,16 @@ func (w *AppWriter) readNext() {
 	_ = w.track.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
 	pkt, _, err := w.track.ReadRTP()
 	if err != nil {
-		var netErr net.Error
-		switch {
-		case w.draining.IsBroken():
-			w.endStream.Break()
-		case errors.As(err, &netErr) && netErr.Timeout():
-			if !w.active.Load() {
-				return
-			}
-			timeout := w.lastRead
-			if timeout.IsZero() {
-				timeout = w.startTime
-			}
-			if w.pub.IsMuted() || time.Since(timeout) > latency {
-				// set track inactive
-				w.logger.Debugw("track inactive", "timestamp", time.Since(w.startTime))
-				w.active.Store(false)
-				w.callbacks.OnTrackMuted(w.track.ID())
-			}
-		case err.Error() == errBufferTooSmall:
-			w.logger.Warnw("read error", err)
-		default:
-			if !errors.Is(err, io.EOF) {
-				w.logger.Errorw("could not read packet", err)
-			}
-			w.endStream.Break()
-		}
+		w.handleReadError(err)
 		return
 	}
 
 	// initialize on first packet
-	if w.lastRead.IsZero() {
+	if w.lastReceived.Load().IsZero() {
 		w.Initialize(pkt)
 	}
-	w.lastRead = time.Now()
+	w.lastReceived.Store(time.Now())
+
 	if !w.active.Swap(true) {
 		// set track active
 		w.logger.Debugw("track active", "timestamp", time.Since(w.startTime))
@@ -239,41 +216,68 @@ func (w *AppWriter) readNext() {
 	}
 }
 
+func (w *AppWriter) handleReadError(err error) {
+	var netErr net.Error
+	switch {
+	case w.draining.IsBroken():
+		w.endStream.Break()
+
+	case errors.As(err, &netErr) && netErr.Timeout():
+		if !w.active.Load() {
+			return
+		}
+		lastRecv := w.lastReceived.Load()
+		if lastRecv.IsZero() {
+			lastRecv = w.startTime
+		}
+		if w.pub.IsMuted() || time.Since(lastRecv) > latency {
+			// set track inactive
+			w.logger.Debugw("track inactive", "timestamp", time.Since(w.startTime))
+			w.active.Store(false)
+			w.callbacks.OnTrackMuted(w.track.ID())
+		}
+
+	case err.Error() == errBufferTooSmall:
+		w.logger.Warnw("read error", err)
+
+	default:
+		if !errors.Is(err, io.EOF) {
+			w.logger.Errorw("could not read packet", err)
+		}
+		w.endStream.Break()
+	}
+}
+
 func (w *AppWriter) pushSamples() error {
-	pkts := w.buffer.Pop(false)
-	for _, pkt := range pkts {
-		sn := pkt.SequenceNumber
-		ts := pkt.Timestamp
+	samples := w.buffer.PopSamples(false)
+	for _, sample := range samples {
+		for _, pkt := range sample {
+			w.translator.Translate(pkt)
 
-		w.translator.Translate(pkt)
-
-		// get PTS
-		pts, err := w.GetPTS(pkt)
-		if err != nil {
-			if errors.Is(err, synchronizer.ErrBackwardsPTS) {
-				return nil
+			// get PTS
+			pts, err := w.GetPTS(pkt)
+			if err != nil {
+				if errors.Is(err, synchronizer.ErrBackwardsPTS) {
+					if sendPLI := w.sendPLI; sendPLI != nil {
+						sendPLI()
+					}
+					break
+				}
+				return err
 			}
-			return err
-		}
 
-		if w.logFile != nil {
-			_, _ = w.logFile.WriteString(fmt.Sprintf("%s,%d,%d,%d,%d\n",
-				pts.String(),
-				sn, pkt.SequenceNumber,
-				ts, pkt.Timestamp,
-			))
-		}
+			p, err := pkt.Marshal()
+			if err != nil {
+				w.logger.Errorw("could not marshal packet", err)
+				return err
+			}
 
-		p, err := pkt.Marshal()
-		if err != nil {
-			w.logger.Errorw("could not marshal packet", err)
-			return err
-		}
-
-		b := gst.NewBufferFromBytes(p)
-		b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
-		if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
-			w.logger.Infow("unexpected flow return", "flow", flow)
+			b := gst.NewBufferFromBytes(p)
+			b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
+			if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
+				w.logger.Infow("unexpected flow return", "flow", flow)
+			}
+			w.lastPushed.Store(time.Now())
 		}
 	}
 
@@ -298,4 +302,37 @@ func (w *AppWriter) Drain(force bool) {
 
 	// wait until finished
 	<-w.finished.Watch()
+}
+
+func (w *AppWriter) logStats() {
+	draining := w.draining.Watch()
+	ticker := time.NewTicker(time.Second * 10)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-draining:
+			w.writeStats()
+			w.csvLogger.Close()
+			return
+
+		case <-ticker.C:
+			w.writeStats()
+		}
+	}
+}
+
+func (w *AppWriter) writeStats() {
+	stats := w.buffer.Stats()
+
+	w.csvLogger.Write(&logging.TrackStats{
+		Timestamp:       time.Now().Format(time.DateTime),
+		PacketsReceived: stats.PacketsPushed,
+		PaddingReceived: stats.PaddingPushed,
+		LastReceived:    w.lastReceived.Load().Format(time.DateTime),
+		PacketsDropped:  stats.PacketsDropped,
+		PacketsPushed:   stats.PacketsPopped,
+		SamplesPushed:   stats.SamplesPopped,
+		LastPushed:      w.lastPushed.Load().Format(time.DateTime),
+	})
 }
