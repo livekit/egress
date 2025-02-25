@@ -25,9 +25,9 @@ require (
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/protocol v1.33.1-0.20250212175645-82dadcf6078f
 	github.com/livekit/psrpc v0.6.1-0.20250205181828-a0beed2e4126
-	github.com/livekit/server-sdk-go/v2 v2.4.2-0.20250117060943-67a3d4b3afb8
+	github.com/livekit/server-sdk-go/v2 v2.4.3-0.20250219104850-1477da59f27c
 	github.com/pion/rtp v1.8.11
-	github.com/pion/webrtc/v4 v4.0.8
+	github.com/pion/webrtc/v4 v4.0.9
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.61.0
@@ -35,7 +35,7 @@ require (
 	github.com/urfave/cli/v2 v2.27.5
 	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.27.0
-	golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c
+	golang.org/x/exp v0.0.0-20250207012021-f9890c6ad9f3
 	golang.org/x/oauth2 v0.25.0
 	google.golang.org/api v0.214.0
 	google.golang.org/grpc v1.70.0
@@ -117,7 +117,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v3 v3.0.4 // indirect
-	github.com/pion/ice/v4 v4.0.5 // indirect
+	github.com/pion/ice/v4 v4.0.6 // indirect
 	github.com/pion/interceptor v0.1.37 // indirect
 	github.com/pion/logging v0.2.3 // indirect
 	github.com/pion/mdns/v2 v2.0.7 // indirect

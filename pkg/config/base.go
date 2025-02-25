@@ -101,6 +101,6 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 	l := zl.WithValues(values...)
 
 	logger.SetLogger(l, "egress")
-	lksdk.SetLogger(logging.NewDowngradeLogger())
+	lksdk.SetLogger(logging.NewOverrideLogger())
 	return nil
 }

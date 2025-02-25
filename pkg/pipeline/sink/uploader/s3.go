@@ -109,7 +109,7 @@ func newS3Uploader(c *config.StorageConfig) (uploader, error) {
 
 	return &S3Uploader{
 		conf:                 conf,
-		prefix:               c.PathPrefix,
+		prefix:               c.Prefix,
 		generatePresignedUrl: c.GeneratePresignedUrl,
 		awsConf:              &awsConf,
 	}, nil
