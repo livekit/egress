@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/ipc"
+	"github.com/livekit/egress/pkg/pipeline/source"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/version"
@@ -140,6 +141,10 @@ func (s *Server) StartTemplatesServer(fs fs.FS) error {
 
 func (s *Server) Run() error {
 	logger.Debugw("starting service", "version", version.Version)
+
+	if s.conf.ExperimentalGPU {
+		s.conf.ExperimentalGPU = source.CheckGPU()
+	}
 
 	if err := s.psrpcServer.RegisterStartEgressTopic(s.conf.ClusterID); err != nil {
 		return err

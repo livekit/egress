@@ -204,7 +204,6 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.NoFirstRun,
 		chromedp.NoDefaultBrowserCheck,
-		chromedp.DisableGPU,
 
 		// puppeteer default behavior
 		chromedp.Flag("disable-infobars", true),
@@ -237,21 +236,17 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 		chromedp.Flag("enable-automation", false),
 		chromedp.Flag("autoplay-policy", "no-user-gesture-required"),
 		chromedp.Flag("window-position", "0,0"),
+
+		// config
 		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", p.Width, p.Height)),
+		chromedp.Flag("disable-web-security", p.Insecure),
+		chromedp.Flag("allow-running-insecure-content", p.Insecure),
+		chromedp.Flag("no-sandbox", !p.EnableChromeSandbox),
+		chromedp.Flag("disable-gpu", !p.ExperimentalGPU),
 
 		// output
 		chromedp.Env(fmt.Sprintf("PULSE_SINK=%s", p.Info.EgressId)),
 		chromedp.Flag("display", p.Display),
-
-		// sandbox
-		chromedp.Flag("no-sandbox", !p.EnableChromeSandbox),
-	}
-
-	if p.Insecure {
-		opts = append(opts,
-			chromedp.Flag("disable-web-security", true),
-			chromedp.Flag("allow-running-insecure-content", true),
-		)
 	}
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
@@ -365,4 +360,117 @@ func logChrome(eventType string, ev interface{ MarshalJSON() ([]byte, error) }) 
 		}
 	}
 	logger.Debugw(fmt.Sprintf("chrome %s", eventType), values...)
+}
+
+func CheckGPU() bool {
+	// create X display
+	dims := fmt.Sprintf("640x480x24")
+	display := fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
+
+	xvfb := exec.Command("Xvfb", display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
+	if err := xvfb.Start(); err != nil {
+		logger.Errorw("failed to launch xvfb", err)
+		return false
+	}
+	defer func() {
+		_ = xvfb.Process.Kill()
+		_ = xvfb.Wait()
+	}()
+
+	opts := []chromedp.ExecAllocatorOption{
+		chromedp.NoFirstRun,
+		chromedp.NoDefaultBrowserCheck,
+
+		// puppeteer default behavior
+		chromedp.Flag("disable-infobars", true),
+		chromedp.Flag("excludeSwitches", "enable-automation"),
+		chromedp.Flag("disable-background-networking", true),
+		chromedp.Flag("enable-features", "NetworkService,NetworkServiceInProcess"),
+		chromedp.Flag("disable-background-timer-throttling", true),
+		chromedp.Flag("disable-backgrounding-occluded-windows", true),
+		chromedp.Flag("disable-breakpad", true),
+		chromedp.Flag("disable-client-side-phishing-detection", true),
+		chromedp.Flag("disable-default-apps", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("disable-extensions", true),
+		chromedp.Flag("disable-features", "AudioServiceOutOfProcess,site-per-process,Translate,TranslateUI,BlinkGenPropertyTrees"),
+		chromedp.Flag("disable-hang-monitor", true),
+		chromedp.Flag("disable-ipc-flooding-protection", true),
+		chromedp.Flag("disable-popup-blocking", true),
+		chromedp.Flag("disable-prompt-on-repost", true),
+		chromedp.Flag("disable-renderer-backgrounding", true),
+		chromedp.Flag("disable-sync", true),
+		chromedp.Flag("force-color-profile", "srgb"),
+		chromedp.Flag("metrics-recording-only", true),
+		chromedp.Flag("safebrowsing-disable-auto-update", true),
+		chromedp.Flag("password-store", "basic"),
+		chromedp.Flag("use-mock-keychain", true),
+
+		// custom args
+		chromedp.Flag("kiosk", true),
+		chromedp.Flag("disable-translate", true),
+		chromedp.Flag("enable-automation", false),
+		chromedp.Flag("autoplay-policy", "no-user-gesture-required"),
+		chromedp.Flag("window-position", "0,0"),
+
+		// config
+		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", 1920, 1080)),
+		chromedp.Flag("display", display),
+		chromedp.Flag("disable-gpu", false),
+	}
+
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+
+	chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
+	defer chromeCancel()
+
+	var listItems []string
+	if err := chromedp.Run(chromeCtx,
+		chromedp.Navigate("chrome://gpu"),
+		chromedp.WaitVisible(`info-view`, chromedp.ByQuery),
+		chromedp.Evaluate(`(function() {
+			const infoView = document.querySelector('info-view');
+			if (infoView && infoView.shadowRoot) {
+				const firstUl = infoView.shadowRoot.querySelector('#content ul');
+				if (!firstUl) return [];
+
+				// Extract each <li> item
+				return Array.from(firstUl.querySelectorAll('li')).map(li => {
+					const spans = Array.from(li.querySelectorAll('span')).map(span => span.innerText.trim()).filter(text => text);
+					if (spans.length >= 3) {
+						// Skip the first span ("* ") and extract the key-value pair
+						const key = spans[1].replace(':', '').trim();
+						const value = spans.slice(2).join(' ').trim();
+						return key + '|' + value;
+					}
+					return '';
+				}).filter(item => item);
+			}
+			return [];
+		})()`, &listItems),
+	); err != nil {
+		logger.Errorw("failed to get GPU info", err)
+		return false
+	}
+
+	enabled := false
+	fields := make([]any, 0, len(listItems)*2)
+	for _, item := range listItems {
+		parts := strings.SplitN(item, "|", 2)
+		if len(parts) == 2 {
+			fields = append(fields, parts[0], parts[1])
+			if parts[1] == "Hardware accelerated" || parts[1] == "Enabled" {
+				enabled = true
+			}
+		}
+	}
+
+	if !enabled {
+		logger.Errorw("GPU disabled", nil, fields...)
+		return false
+	}
+
+	logger.Infow("GPU enabled", fields...)
+	return true
 }
