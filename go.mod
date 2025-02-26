@@ -14,7 +14,7 @@ require (
 	github.com/aws/smithy-go v1.22.1
 	github.com/chromedp/cdproto v0.0.0-20250101192427-60a0ca35cb84
 	github.com/chromedp/chromedp v0.11.2
-	github.com/frostbyte73/core v0.1.0
+	github.com/frostbyte73/core v0.1.1
 	github.com/go-gst/go-glib v1.4.0
 	github.com/go-gst/go-gst v1.4.0
 	github.com/go-jose/go-jose/v4 v4.0.4
@@ -23,7 +23,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/livekit/livekit-server v1.8.1-0.20241220025800-08b58a23afdc
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.33.1-0.20250212175645-82dadcf6078f
+	github.com/livekit/protocol v1.34.1-0.20250226183830-fda1c2ca859c
 	github.com/livekit/psrpc v0.6.1-0.20250205181828-a0beed2e4126
 	github.com/livekit/server-sdk-go/v2 v2.4.3-0.20250219104850-1477da59f27c
 	github.com/pion/rtp v1.8.11

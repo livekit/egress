@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/medialogutils"
 	"github.com/livekit/protocol/redis"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
@@ -100,6 +100,6 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 	l := zl.WithValues(values...)
 
 	logger.SetLogger(l, "egress")
-	lksdk.SetLogger(logging.NewOverrideLogger())
+	lksdk.SetLogger(medialogutils.NewOverrideLogger())
 	return nil
 }
