@@ -100,6 +100,6 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 	l := zl.WithValues(values...)
 
 	logger.SetLogger(l, "egress")
-	lksdk.SetLogger(medialogutils.NewOverrideLogger())
+	lksdk.SetLogger(medialogutils.NewOverrideLogger(nil))
 	return nil
 }
