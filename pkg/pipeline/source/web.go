@@ -30,10 +30,10 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/pipeline/source/pulse"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/medialogutils"
 	"github.com/livekit/protocol/tracer"
 )
 
@@ -148,7 +148,7 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 		fmt.Sprintf("sink_properties=device.description=\"%s\"", p.Info.EgressId),
 	)
 	var b bytes.Buffer
-	l := logging.NewCmdLogger("pactl")
+	l := medialogutils.NewCmdLogger("pactl")
 	cmd.Stdout = &b
 	cmd.Stderr = l
 	err := cmd.Run()
