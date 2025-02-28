@@ -237,21 +237,21 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 		chromedp.Flag("enable-automation", false),
 		chromedp.Flag("autoplay-policy", "no-user-gesture-required"),
 		chromedp.Flag("window-position", "0,0"),
+
+		// config
 		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", p.Width, p.Height)),
+		chromedp.Flag("disable-web-security", p.Insecure),
+		chromedp.Flag("allow-running-insecure-content", p.Insecure),
+		chromedp.Flag("no-sandbox", !p.EnableChromeSandbox),
 
 		// output
 		chromedp.Env(fmt.Sprintf("PULSE_SINK=%s", p.Info.EgressId)),
 		chromedp.Flag("display", p.Display),
-
-		// sandbox
-		chromedp.Flag("no-sandbox", !p.EnableChromeSandbox),
 	}
 
-	if p.Insecure {
-		opts = append(opts,
-			chromedp.Flag("disable-web-security", true),
-			chromedp.Flag("allow-running-insecure-content", true),
-		)
+	// custom
+	for k, v := range p.ChromeFlags {
+		opts = append(opts, chromedp.Flag(k, v))
 	}
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)

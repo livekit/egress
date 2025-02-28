@@ -52,8 +52,9 @@ type BaseConfig struct {
 	BackupConfig  *StorageConfig          `yaml:"backup,omitempty"`  // backup config, for storage failures
 
 	// dev/debugging
-	Insecure bool        `yaml:"insecure"` // allow chrome to connect to an insecure websocket
-	Debug    DebugConfig `yaml:"debug"`    // create dot file on internal error
+	Insecure    bool                   `yaml:"insecure"`     // allow chrome to connect to an insecure websocket
+	Debug       DebugConfig            `yaml:"debug"`        // create dot file on internal error
+	ChromeFlags map[string]interface{} `yaml:"chrome_flags"` // additional flags to pass to Chrome
 }
 
 type DebugConfig struct {
