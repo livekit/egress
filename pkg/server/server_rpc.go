@@ -128,7 +128,7 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	)
 	cmd.Dir = "/"
 
-	l := medialogutils.NewHandlerLogger("handlerID", handlerID, "egressID", info.EgressId)
+	l := medialogutils.NewHandlerLogger(s.conf.Logging.JSON, "handlerID", handlerID, "egressID", info.EgressId)
 	cmd.Stdout = l
 	cmd.Stderr = l
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
