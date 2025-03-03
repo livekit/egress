@@ -239,25 +239,25 @@ func (s *SegmentSink) handlePlaylistUpdates(update SegmentUpdate) error {
 // Each segment adds about 100 bytes in the playlist, and long playlists can get very large.
 // Uploads every N segments, where N is the number of hours, with a minimum frequency of once per minute
 func (s *SegmentSink) shouldUploadPlaylist() bool {
-	hours := int(time.Since(s.startTime)/time.Hour) + 1
-	if s.lastUpload.IsZero() || time.Since(s.lastUpload) > time.Minute || s.segmentCount%hours == 0 {
-		s.lastUpload = time.Now()
-		return true
-	}
-	return false
+	return s.lastUpload.IsZero() ||
+		s.segmentCount%(int(time.Since(s.startTime)/time.Hour)+1) == 0 ||
+		time.Since(s.lastUpload) > time.Minute
 }
 
 func (s *SegmentSink) uploadPlaylist() error {
 	playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
 	playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
 	playlistLocation, _, err := s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
-	if err == nil {
-		s.SegmentsInfo.PlaylistLocation = playlistLocation
-		if s.manifestPlaylist != nil {
-			s.manifestPlaylist.Location = playlistLocation
-		}
+	if err != nil {
+		return err
 	}
-	return err
+
+	s.lastUpload = time.Now()
+	s.SegmentsInfo.PlaylistLocation = playlistLocation
+	if s.manifestPlaylist != nil {
+		s.manifestPlaylist.Location = playlistLocation
+	}
+	return nil
 }
 
 func (s *SegmentSink) uploadLivePlaylist() error {
