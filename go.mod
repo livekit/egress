@@ -23,7 +23,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/livekit/livekit-server v1.8.1-0.20241220025800-08b58a23afdc
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.34.1-0.20250227175732-e8f463c43a44
+	github.com/livekit/protocol v1.34.1-0.20250303024358-b007d0efe442
 	github.com/livekit/psrpc v0.6.1-0.20250205181828-a0beed2e4126
 	github.com/livekit/server-sdk-go/v2 v2.4.3-0.20250219104850-1477da59f27c
 	github.com/pion/rtp v1.8.11
@@ -89,7 +89,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/gammazero/deque v1.0.0 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
