@@ -57,6 +57,7 @@ type SegmentSink struct {
 
 	initialized           bool
 	startTime             time.Time
+	lastUpload            time.Time
 	outputType            types.OutputType
 	startRunningTime      uint64
 	openSegmentsStartTime map[string]uint64
@@ -238,9 +239,12 @@ func (s *SegmentSink) handlePlaylistUpdates(update SegmentUpdate) error {
 // Each segment adds about 100 bytes in the playlist, and long playlists can get very large.
 // Uploads every N segments, where N is the number of hours, with a minimum frequency of once per minute
 func (s *SegmentSink) shouldUploadPlaylist() bool {
-	segmentsPerHour := 3600 / s.SegmentDuration
-	frequency := min(s.segmentCount/segmentsPerHour, segmentsPerHour/60)
-	return s.segmentCount > 0 && (s.segmentCount < segmentsPerHour || s.segmentCount%frequency == 0)
+	hours := int(time.Since(s.startTime)/time.Hour) + 1
+	if s.lastUpload.IsZero() || time.Since(s.lastUpload) > time.Minute || s.segmentCount%hours == 0 {
+		s.lastUpload = time.Now()
+		return true
+	}
+	return false
 }
 
 func (s *SegmentSink) uploadPlaylist() error {
