@@ -199,6 +199,10 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		}
 	}
 
+	if err := source.CheckGPU(c.BaseConfig); err != nil {
+		logger.Errorw("GPU check failed", err)
+	}
+
 	err := c.p.Run()
 	if err != nil {
 		c.src.Close()

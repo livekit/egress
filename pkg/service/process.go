@@ -36,7 +36,7 @@ import (
 	"github.com/livekit/protocol/rpc"
 )
 
-const launchTimeout = 10 * time.Second
+const launchTimeout = 30 * time.Second
 
 type ProcessManager struct {
 	mu             sync.RWMutex

@@ -46,7 +46,7 @@ RUN find cmd/server/templates/ -name *.map | xargs rm
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=${TARGETARCH} GO111MODULE=on GODEBUG=disablethp=1 go build -a -o egress ./cmd/server
 
 # install tini
-ENV TINI_VERSION v0.19.0
+ENV TINI_VERSION=v0.19.0
 
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TARGETARCH} /tini
 RUN chmod +x /tini

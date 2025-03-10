@@ -355,3 +355,181 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 
 	return nil, false
 }
+
+func CheckGPU(p config.BaseConfig) error {
+	display := fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
+	width := 1280
+	height := 720
+	depth := 24
+
+	dims := fmt.Sprintf("%dx%dx%d", width, height, depth)
+	logger.Debugw("creating X display", "display", display, "dims", dims)
+	xvfb := exec.Command("Xvfb", display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
+	if err := xvfb.Start(); err != nil {
+		return errors.ErrProcessFailed("xvfb", err)
+	}
+	defer func() {
+		_ = xvfb.Process.Kill()
+		_ = xvfb.Wait()
+	}()
+
+	opts := []chromedp.ExecAllocatorOption{
+		chromedp.NoFirstRun,
+		chromedp.NoDefaultBrowserCheck,
+		chromedp.DisableGPU,
+
+		// puppeteer default behavior
+		chromedp.Flag("disable-infobars", true),
+		chromedp.Flag("excludeSwitches", "enable-automation"),
+		chromedp.Flag("disable-background-networking", true),
+		chromedp.Flag("enable-features", "NetworkService,NetworkServiceInProcess"),
+		chromedp.Flag("disable-background-timer-throttling", true),
+		chromedp.Flag("disable-backgrounding-occluded-windows", true),
+		chromedp.Flag("disable-breakpad", true),
+		chromedp.Flag("disable-client-side-phishing-detection", true),
+		chromedp.Flag("disable-default-apps", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("disable-extensions", true),
+		chromedp.Flag("disable-features", "AudioServiceOutOfProcess,site-per-process,Translate,TranslateUI,BlinkGenPropertyTrees"),
+		chromedp.Flag("disable-hang-monitor", true),
+		chromedp.Flag("disable-ipc-flooding-protection", true),
+		chromedp.Flag("disable-popup-blocking", true),
+		chromedp.Flag("disable-prompt-on-repost", true),
+		chromedp.Flag("disable-renderer-backgrounding", true),
+		chromedp.Flag("disable-sync", true),
+		chromedp.Flag("force-color-profile", "srgb"),
+		chromedp.Flag("metrics-recording-only", true),
+		chromedp.Flag("safebrowsing-disable-auto-update", true),
+		chromedp.Flag("password-store", "basic"),
+		chromedp.Flag("use-mock-keychain", true),
+
+		// custom args
+		chromedp.Flag("kiosk", true),
+		chromedp.Flag("disable-translate", true),
+		chromedp.Flag("enable-automation", false),
+		chromedp.Flag("autoplay-policy", "no-user-gesture-required"),
+		chromedp.Flag("window-position", "0,0"),
+
+		// config
+		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", width, height)),
+		chromedp.Flag("disable-web-security", p.Insecure),
+		chromedp.Flag("allow-running-insecure-content", p.Insecure),
+		chromedp.Flag("no-sandbox", !p.EnableChromeSandbox),
+
+		// output
+		chromedp.Flag("display", display),
+	}
+
+	// custom
+	for k, v := range p.ChromeFlags {
+		opts = append(opts, chromedp.Flag(k, v))
+	}
+
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
+	defer func() {
+		chromeCancel()
+		allocCancel()
+	}()
+
+	var listItems, problems []string
+	if err := chromedp.Run(chromeCtx,
+		chromedp.Navigate("chrome://gpu"),
+		chromedp.WaitVisible(`info-view`, chromedp.ByQuery),
+		chromedp.Evaluate(`(function() {
+			const infoView = document.querySelector('info-view');
+			if (infoView && infoView.shadowRoot) {
+				const firstUl = infoView.shadowRoot.querySelector('#content ul');
+				if (!firstUl) return [];
+
+				return Array.from(firstUl.querySelectorAll('li')).map(li => {
+					const spans = Array.from(li.querySelectorAll('span')).map(span => span.innerText.trim()).filter(text => text);
+					if (spans.length >= 3) {
+						const key = spans[1].replace(':', '').trim();
+						const value = spans.slice(2).join(' ').trim();
+						return key + '|' + value;
+					}
+					return '';
+				}).filter(item => item);
+			}
+			return [];
+		})()`, &listItems),
+		chromedp.Evaluate(`(function() {
+			const infoView = document.querySelector('info-view');
+			if (!infoView || !infoView.shadowRoot) return [];
+	
+			const contentDiv = infoView.shadowRoot.querySelector('#content');
+			if (!contentDiv) return [];
+	
+			const problemContainer = Array.from(contentDiv.querySelectorAll('div'))
+				.find(div => {
+					const h3 = div.querySelector('h3');
+					if (!h3) return false;
+					return Array.from(h3.querySelectorAll('span'))
+						.some(span => span.innerText.includes('Problems Detected'));
+				});
+
+			if (!problemContainer) return [];
+	
+			let output = [];
+	
+			// Find the first <ul> inside this section
+			const problemUl = problemContainer.querySelector('ul');
+			if (!problemUl) return output;
+	
+			// Extract each <li> item properly
+			Array.from(problemUl.querySelectorAll('li')).forEach(li => {
+				let spans = Array.from(li.querySelectorAll('span'))
+					.map(span => span.innerText.trim())
+					.filter(text => text);
+	
+				if (spans.length > 2) {
+					// Extract main problem description
+					let key = spans[1].replace(/:/g, "").trim();
+					output.push(key);
+					output.push("    " + spans.slice(2).join(' ').trim());
+				}
+			});
+
+			return output;
+		})()`, &problems),
+	); err != nil {
+		return err
+	}
+
+	var chromeGPU []any
+	for _, item := range listItems {
+		if parts := strings.SplitN(item, "|", 2); len(parts) == 2 {
+			chromeGPU = append(chromeGPU, parts[0], parts[1])
+		}
+	}
+	logger.Infow("chrome gpu info", chromeGPU...)
+
+	logger.Infow("chrome problems", "problems", strings.Join(problems, "\n"))
+
+	var rows []string
+	if err := chromedp.Run(chromeCtx,
+		chromedp.Navigate("https://webglreport.com/?v=1"),
+		chromedp.Evaluate(`(() => {
+            let trs = Array.from(document.querySelectorAll('.report table tbody tr'));
+            let result = [];
+            for (let tr of trs) {
+				let th = tr.querySelector("th") ? tr.querySelector("th").innerText.trim() : "";
+        		let td = tr.querySelector("td") ? tr.querySelector("td").innerText.trim() : "";
+                result.push(th + " " + td);
+                if (th.includes("Major Performance Caveat:")) break;
+            }
+            return result;
+        })()`, &rows),
+	); err != nil {
+		return err
+	}
+
+	var webGL []any
+	for _, row := range rows {
+		webGL = append(webGL, row)
+	}
+	logger.Infow("webgl report", webGL...)
+
+	return nil
+}
