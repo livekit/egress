@@ -148,7 +148,9 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 		fmt.Sprintf("sink_properties=device.description=\"%s\"", p.Info.EgressId),
 	)
 	var b bytes.Buffer
-	l := medialogutils.NewCmdLogger("pactl")
+	l := medialogutils.NewCmdLogger(func(s string) {
+		logger.Infow(fmt.Sprintf("pactl: %s", s))
+	})
 	cmd.Stdout = &b
 	cmd.Stderr = l
 	err := cmd.Run()
