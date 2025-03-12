@@ -27,10 +27,10 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/logger/medialogutils"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
@@ -128,7 +128,7 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	)
 	cmd.Dir = "/"
 
-	l := medialogutils.NewHandlerLogger("handlerID", handlerID, "egressID", info.EgressId)
+	l := logging.NewHandlerLogger(handlerID, req.EgressId)
 	cmd.Stdout = l
 	cmd.Stderr = l
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -152,11 +152,13 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 		info.UpdatedAt = now
 		info.EndedAt = now
 		info.Status = livekit.EgressStatus_EGRESS_FAILED
-		info.Error = "internal error"
-		info.ErrorCode = int32(http.StatusInternalServerError)
+		if info.Error == "" {
+			info.Error = err.Error()
+			info.ErrorCode = int32(http.StatusInternalServerError)
+		}
 		_ = s.ioClient.UpdateEgress(context.Background(), info)
 
-		logger.Errorw("process failed", err)
+		logger.Errorw("process failed", err, "egressID", info.EgressId)
 	}
 
 	avgCPU, maxCPU, maxMemory := s.monitor.EgressEnded(req)
