@@ -152,11 +152,13 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 		info.UpdatedAt = now
 		info.EndedAt = now
 		info.Status = livekit.EgressStatus_EGRESS_FAILED
-		info.Error = "internal error"
-		info.ErrorCode = int32(http.StatusInternalServerError)
+		if info.Error == "" {
+			info.Error = err.Error()
+			info.ErrorCode = int32(http.StatusInternalServerError)
+		}
 		_ = s.ioClient.UpdateEgress(context.Background(), info)
 
-		logger.Errorw("process failed", err)
+		logger.Errorw("process failed", err, "egressID", info.EgressId)
 	}
 
 	avgCPU, maxCPU, maxMemory := s.monitor.EgressEnded(req)
