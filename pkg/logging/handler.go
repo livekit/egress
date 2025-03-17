@@ -17,6 +17,7 @@ const (
 
 var actions = map[string]int{
 	"0:00:": ignore,
+	"te_au": ignore,
 	"turnc": logInfo,
 	"ice E": logInfo,
 	"SDK 2": logInfo,
