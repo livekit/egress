@@ -16,7 +16,6 @@ package builder
 
 import (
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
@@ -277,10 +276,10 @@ func (s *Stream) Stats() (*logging.StreamStats, bool) {
 		return &logging.StreamStats{
 			Timestamp:     time.Now().Format(time.DateTime),
 			Keyframes:     s.keyframes.Load(),
-			OutBytesTotal: tryUint64(stats, outBytesTotal),
-			OutBytesAcked: tryUint64(stats, outBytesAcked),
-			InBytesTotal:  tryUint64(stats, inBytesTotal),
-			InBytesAcked:  tryUint64(stats, inBytesAcked),
+			OutBytesTotal: tryUInt64(stats, outBytesTotal),
+			OutBytesAcked: tryUInt64(stats, outBytesAcked),
+			InBytesTotal:  tryUInt64(stats, inBytesTotal),
+			InBytesAcked:  tryUInt64(stats, inBytesAcked),
 		}, true
 	}
 
@@ -288,17 +287,10 @@ func (s *Stream) Stats() (*logging.StreamStats, bool) {
 }
 
 // sink stats sometimes returns strings instead of uint64
-func tryUint64(stats map[string]interface{}, key string) uint64 {
+func tryUInt64(stats map[string]interface{}, key string) uint64 {
 	switch val := stats[key].(type) {
 	case uint64:
 		return val
-	case string:
-		logger.Infow(fmt.Sprintf("unexpected type for %s", key),
-			"type", fmt.Sprintf("%T", val),
-			"value", val,
-		)
-		v, _ := strconv.ParseUint(val, 10, 64)
-		return v
 	default:
 		logger.Infow(fmt.Sprintf("unexpected type for %s", key),
 			"type", fmt.Sprintf("%T", val),
