@@ -27,7 +27,8 @@ import { LayoutProps } from './common';
 const SpeakerLayout = ({ tracks: references }: LayoutProps) => {
   const sortedTracks = useVisualStableUpdate(references, 1);
   const mainTrack = sortedTracks.shift();
-  const remainingTracks = useVisualStableUpdate(sortedTracks, 3);
+
+  const remainingTracks = useVisualStableUpdate(sortedTracks, 5);
 
   if (!mainTrack) {
     return <></>;
@@ -38,7 +39,7 @@ const SpeakerLayout = ({ tracks: references }: LayoutProps) => {
 
   return (
     <div className="lk-focus-layout">
-      <CarouselLayout tracks={remainingTracks}>
+      <CarouselLayout tracks={remainingTracks} className="lk-carousel-layout">
         <ParticipantTile />
       </CarouselLayout>
       <FocusLayout trackRef={mainTrack as TrackReference} />

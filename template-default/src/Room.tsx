@@ -15,12 +15,13 @@
  */
 
 import {
-  GridLayout,
   LiveKitRoom,
   ParticipantTile,
   RoomAudioRenderer,
   useRoomContext,
   useTracks,
+  useVisualStableUpdate,
+  VideoTrack,
 } from '@livekit/components-react';
 import EgressHelper from '@livekit/egress-sdk';
 import { ConnectionState, Track } from 'livekit-client';
@@ -29,6 +30,27 @@ import SingleSpeakerLayout from './SingleSpeakerLayout';
 import SpeakerLayout from './SpeakerLayout';
 
 const FRAME_DECODE_TIMEOUT = 5000;
+
+const CustomGridLayout: React.FC<{ tracks: any[] }> = ({ tracks }: { tracks: any[] }) => (
+<div className="lk-grid-layout-wrapper">
+           
+              {tracks.map((track) => {
+               
+                return (
+                  <div
+                    key={track.participant.identity}
+                    className='lk-grid-layout-item'
+                  >
+                    <ParticipantTile trackRef={track}>
+                        <VideoTrack trackRef={track} />
+                    </ParticipantTile>
+                  
+                  </div>
+                )
+              })}
+            </div>
+  );
+
 
 interface RoomPageProps {
   url: string;
@@ -60,6 +82,7 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
   const screenshareTracks = useTracks([Track.Source.ScreenShare], {
     onlySubscribed: true,
   });
+
 
   EgressHelper.setRoom(room);
 
@@ -132,6 +155,9 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
       tr.participant.identity !== room.localParticipant.identity,
   );
 
+  const sortedTracks = useVisualStableUpdate(allTracks, 6);
+
+
   let interfaceStyle = 'dark';
   if (layout.endsWith('-light')) {
     interfaceStyle = 'light';
@@ -153,11 +179,10 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
       main = <SpeakerLayout tracks={filteredTracks} />;
     } else if (effectiveLayout.startsWith('single-speaker')) {
       main = <SingleSpeakerLayout tracks={filteredTracks} />;
-    } else {
+    } else { 
+
       main = (
-        <GridLayout tracks={filteredTracks}>
-          <ParticipantTile />
-        </GridLayout>
+    <CustomGridLayout tracks={sortedTracks} />
       );
     }
   }
