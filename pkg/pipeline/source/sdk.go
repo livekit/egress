@@ -53,7 +53,7 @@ type SDKSource struct {
 	mu                   sync.RWMutex
 	initialized          core.Fuse
 	filenameReplacements map[string]string
-	errors               chan *subscriptionInfo
+	subs                 chan *subscriptionResult
 
 	writers map[string]*sdk.AppWriter
 	subLock sync.RWMutex
@@ -64,7 +64,7 @@ type SDKSource struct {
 	endRecording   chan struct{}
 }
 
-type subscriptionInfo struct {
+type subscriptionResult struct {
 	trackID string
 	err     error
 }
@@ -81,7 +81,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 			close(startRecording)
 		}),
 		filenameReplacements: make(map[string]string),
-		errors:               make(chan *subscriptionInfo, 2),
+		subs:                 make(chan *subscriptionResult, 100),
 		writers:              make(map[string]*sdk.AppWriter),
 		startRecording:       startRecording,
 		endRecording:         make(chan struct{}),
@@ -238,7 +238,7 @@ func (s *SDKSource) awaitRoomTracks() error {
 	for {
 		select {
 		// check errors from any tracks published in the meantime
-		case sub := <-s.errors:
+		case sub := <-s.subs:
 			if sub.err != nil {
 				return sub.err
 			}
@@ -275,7 +275,7 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 	for {
 		select {
 		// check errors from any tracks published in the meantime
-		case sub := <-s.errors:
+		case sub := <-s.subs:
 			if sub.err != nil {
 				return 0, 0, sub.err
 			}
@@ -305,7 +305,7 @@ func (s *SDKSource) awaitExpected(expected int) error {
 
 	for {
 		select {
-		case sub := <-s.errors:
+		case sub := <-s.subs:
 			if sub.err != nil {
 				return sub.err
 			}
@@ -347,7 +347,7 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, 
 
 	for i := 0; i < trackCount; i++ {
 		select {
-		case sub := <-s.errors:
+		case sub := <-s.subs:
 			if sub.err != nil {
 				return 0, 0, sub.err
 			}
@@ -441,7 +441,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 				s.callbacks.OnError(onSubscribeErr)
 			}
 		} else {
-			s.errors <- &subscriptionInfo{
+			s.subs <- &subscriptionResult{
 				trackID: pub.SID(),
 				err:     onSubscribeErr,
 			}
