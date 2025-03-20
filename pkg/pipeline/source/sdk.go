@@ -217,37 +217,55 @@ func (s *SDKSource) joinRoom() error {
 }
 
 func (s *SDKSource) awaitRoomTracks() error {
-	var tracks []lksdk.TrackPublication
-
-	for _, p := range s.room.GetRemoteParticipants() {
-		for _, track := range p.TrackPublications() {
-			if s.shouldSubscribe(track) {
-				if err := s.subscribe(track); err != nil {
-					return err
-				}
-
-				tracks = append(tracks, track)
+	// await expected subscriptions
+	subscribed := 0
+	expected := 0
+	for _, rp := range s.room.GetRemoteParticipants() {
+		pubs := rp.TrackPublications()
+		for _, pub := range pubs {
+			if s.shouldSubscribe(pub) {
+				expected++
 			}
 		}
 	}
 
-	deadline := time.After(subscriptionTimeout)
-	trackCount := len(tracks)
-loop:
-	for i := 0; i < trackCount; i++ {
+	deadline := make(chan struct{})
+	time.AfterFunc(time.Second*3, func() {
+		close(deadline)
+	})
+	done := false
+	for !done {
 		select {
 		case sub := <-s.errors:
 			if sub.err != nil {
 				return sub.err
 			}
+			subscribed++
+			if subscribed == expected {
+				done = true
+			}
 		case <-deadline:
-			break loop
+			done = true
 		}
 	}
 
-	s.initialized.Break()
+	// lock any incoming subscriptions
+	s.subLock.Lock()
+	defer s.subLock.Unlock()
 
-	return nil
+	for {
+		select {
+		// check errors from any tracks published in the meantime
+		case sub := <-s.errors:
+			if sub.err != nil {
+				return sub.err
+			}
+		default:
+			// ready
+			s.initialized.Break()
+			return nil
+		}
+	}
 }
 
 func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, error) {
