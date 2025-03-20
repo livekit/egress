@@ -53,7 +53,7 @@ type SDKSource struct {
 	mu                   sync.RWMutex
 	initialized          core.Fuse
 	filenameReplacements map[string]string
-	errors               chan *subscriptionInfo
+	subs                 chan *subscriptionResult
 
 	writers map[string]*sdk.AppWriter
 	subLock sync.RWMutex
@@ -64,7 +64,7 @@ type SDKSource struct {
 	endRecording   chan struct{}
 }
 
-type subscriptionInfo struct {
+type subscriptionResult struct {
 	trackID string
 	err     error
 }
@@ -81,7 +81,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 			close(startRecording)
 		}),
 		filenameReplacements: make(map[string]string),
-		errors:               make(chan *subscriptionInfo, 2),
+		subs:                 make(chan *subscriptionResult, 100),
 		writers:              make(map[string]*sdk.AppWriter),
 		startRecording:       startRecording,
 		endRecording:         make(chan struct{}),
@@ -217,73 +217,18 @@ func (s *SDKSource) joinRoom() error {
 }
 
 func (s *SDKSource) awaitRoomTracks() error {
-	var tracks []lksdk.TrackPublication
-
-	for _, p := range s.room.GetRemoteParticipants() {
-		for _, track := range p.TrackPublications() {
-			if s.shouldSubscribe(track) {
-				if err := s.subscribe(track); err != nil {
-					return err
-				}
-
-				tracks = append(tracks, track)
-			}
-		}
-	}
-
-	deadline := time.After(subscriptionTimeout)
-	trackCount := len(tracks)
-loop:
-	for i := 0; i < trackCount; i++ {
-		select {
-		case sub := <-s.errors:
-			if sub.err != nil {
-				return sub.err
-			}
-		case <-deadline:
-			break loop
-		}
-	}
-
-	s.initialized.Break()
-
-	return nil
-}
-
-func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, error) {
-	rp, err := s.getParticipant(identity)
-	if err != nil {
-		return 0, 0, err
-	}
-
 	// await expected subscriptions
-	subscribed := 0
-	pubs := rp.TrackPublications()
 	expected := 0
-	for _, pub := range pubs {
-		if s.shouldSubscribe(pub) {
-			expected++
+	for _, rp := range s.room.GetRemoteParticipants() {
+		pubs := rp.TrackPublications()
+		for _, pub := range pubs {
+			if s.shouldSubscribe(pub) {
+				expected++
+			}
 		}
 	}
-
-	deadline := make(chan struct{})
-	time.AfterFunc(time.Second*3, func() {
-		close(deadline)
-	})
-	done := false
-	for !done {
-		select {
-		case sub := <-s.errors:
-			if sub.err != nil {
-				return 0, 0, sub.err
-			}
-			subscribed++
-			if subscribed == expected {
-				done = true
-			}
-		case <-deadline:
-			done = true
-		}
+	if err := s.awaitExpected(expected); err != nil {
+		return err
 	}
 
 	// lock any incoming subscriptions
@@ -293,7 +238,44 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 	for {
 		select {
 		// check errors from any tracks published in the meantime
-		case sub := <-s.errors:
+		case sub := <-s.subs:
+			if sub.err != nil {
+				return sub.err
+			}
+		default:
+			// ready
+			s.initialized.Break()
+			return nil
+		}
+	}
+}
+
+func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, error) {
+	rp, err := s.getParticipant(identity)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// await expected subscriptions
+	pubs := rp.TrackPublications()
+	expected := 0
+	for _, pub := range pubs {
+		if s.shouldSubscribe(pub) {
+			expected++
+		}
+	}
+	if err = s.awaitExpected(expected); err != nil {
+		return 0, 0, err
+	}
+
+	// lock any incoming subscriptions
+	s.subLock.Lock()
+	defer s.subLock.Unlock()
+
+	for {
+		select {
+		// check errors from any tracks published in the meantime
+		case sub := <-s.subs:
 			if sub.err != nil {
 				return 0, 0, sub.err
 			}
@@ -310,6 +292,29 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 			// ready
 			s.initialized.Break()
 			return w, h, nil
+		}
+	}
+}
+
+func (s *SDKSource) awaitExpected(expected int) error {
+	subscribed := 0
+	deadline := make(chan struct{})
+	time.AfterFunc(time.Second*3, func() {
+		close(deadline)
+	})
+
+	for {
+		select {
+		case sub := <-s.subs:
+			if sub.err != nil {
+				return sub.err
+			}
+			subscribed++
+			if subscribed == expected {
+				return nil
+			}
+		case <-deadline:
+			return nil
 		}
 	}
 }
@@ -342,7 +347,7 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, 
 
 	for i := 0; i < trackCount; i++ {
 		select {
-		case sub := <-s.errors:
+		case sub := <-s.subs:
 			if sub.err != nil {
 				return 0, 0, sub.err
 			}
@@ -436,7 +441,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 				s.callbacks.OnError(onSubscribeErr)
 			}
 		} else {
-			s.errors <- &subscriptionInfo{
+			s.subs <- &subscriptionResult{
 				trackID: pub.SID(),
 				err:     onSubscribeErr,
 			}
