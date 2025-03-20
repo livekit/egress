@@ -218,7 +218,6 @@ func (s *SDKSource) joinRoom() error {
 
 func (s *SDKSource) awaitRoomTracks() error {
 	// await expected subscriptions
-	subscribed := 0
 	expected := 0
 	for _, rp := range s.room.GetRemoteParticipants() {
 		pubs := rp.TrackPublications()
@@ -228,25 +227,8 @@ func (s *SDKSource) awaitRoomTracks() error {
 			}
 		}
 	}
-
-	deadline := make(chan struct{})
-	time.AfterFunc(time.Second*3, func() {
-		close(deadline)
-	})
-	done := false
-	for !done {
-		select {
-		case sub := <-s.errors:
-			if sub.err != nil {
-				return sub.err
-			}
-			subscribed++
-			if subscribed == expected {
-				done = true
-			}
-		case <-deadline:
-			done = true
-		}
+	if err := s.awaitExpected(expected); err != nil {
+		return err
 	}
 
 	// lock any incoming subscriptions
@@ -275,7 +257,6 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 	}
 
 	// await expected subscriptions
-	subscribed := 0
 	pubs := rp.TrackPublications()
 	expected := 0
 	for _, pub := range pubs {
@@ -283,25 +264,8 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 			expected++
 		}
 	}
-
-	deadline := make(chan struct{})
-	time.AfterFunc(time.Second*3, func() {
-		close(deadline)
-	})
-	done := false
-	for !done {
-		select {
-		case sub := <-s.errors:
-			if sub.err != nil {
-				return 0, 0, sub.err
-			}
-			subscribed++
-			if subscribed == expected {
-				done = true
-			}
-		case <-deadline:
-			done = true
-		}
+	if err = s.awaitExpected(expected); err != nil {
+		return 0, 0, err
 	}
 
 	// lock any incoming subscriptions
@@ -328,6 +292,29 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 			// ready
 			s.initialized.Break()
 			return w, h, nil
+		}
+	}
+}
+
+func (s *SDKSource) awaitExpected(expected int) error {
+	subscribed := 0
+	deadline := make(chan struct{})
+	time.AfterFunc(time.Second*3, func() {
+		close(deadline)
+	})
+
+	for {
+		select {
+		case sub := <-s.errors:
+			if sub.err != nil {
+				return sub.err
+			}
+			subscribed++
+			if subscribed == expected {
+				return nil
+			}
+		case <-deadline:
+			return nil
 		}
 	}
 }
