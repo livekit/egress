@@ -27,7 +27,8 @@ var actions = map[string]int{
 func NewHandlerLogger(handlerID, egressID string) *medialogutils.CmdLogger {
 	l := logger.GetLogger().WithValues("handlerID", handlerID, "egressID", egressID)
 	return medialogutils.NewCmdLogger(func(s string) {
-		lines := strings.Split(strings.TrimSuffix(s, "\n"), "\n")
+		// glib inserts 2 carriage returns at the end of its warning/error logs
+		lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
 		for _, line := range lines {
 			if strings.HasSuffix(line, "}") {
 				fmt.Println(line)
