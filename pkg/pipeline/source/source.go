@@ -24,8 +24,8 @@ import (
 )
 
 type Source interface {
-	StartRecording() chan struct{}
-	EndRecording() chan struct{}
+	StartRecording() <-chan struct{}
+	EndRecording() <-chan struct{}
 	GetStartedAt() int64
 	GetEndedAt() int64
 	Close()

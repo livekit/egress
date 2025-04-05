@@ -60,8 +60,8 @@ type SDKSource struct {
 	active  atomic.Int32
 	closed  core.Fuse
 
-	startRecording chan struct{}
-	endRecording   chan struct{}
+	startRecording core.Fuse
+	endRecording   core.Fuse
 }
 
 type subscriptionResult struct {
@@ -73,19 +73,17 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 	ctx, span := tracer.Start(ctx, "SDKInput.New")
 	defer span.End()
 
-	startRecording := make(chan struct{})
 	s := &SDKSource{
-		PipelineConfig: p,
-		callbacks:      callbacks,
-		sync: synchronizer.NewSynchronizer(func() {
-			close(startRecording)
-		}),
+		PipelineConfig:       p,
+		callbacks:            callbacks,
 		filenameReplacements: make(map[string]string),
 		subs:                 make(chan *subscriptionResult, 100),
 		writers:              make(map[string]*sdk.AppWriter),
-		startRecording:       startRecording,
-		endRecording:         make(chan struct{}),
 	}
+
+	s.sync = synchronizer.NewSynchronizer(func() {
+		s.startRecording.Break()
+	})
 
 	if err := s.joinRoom(); err != nil {
 		return nil, err
@@ -94,12 +92,12 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 	return s, nil
 }
 
-func (s *SDKSource) StartRecording() chan struct{} {
-	return s.startRecording
+func (s *SDKSource) StartRecording() <-chan struct{} {
+	return s.startRecording.Watch()
 }
 
-func (s *SDKSource) EndRecording() chan struct{} {
-	return s.endRecording
+func (s *SDKSource) EndRecording() <-chan struct{} {
+	return s.endRecording.Watch()
 }
 
 func (s *SDKSource) Playing(trackID string) {
@@ -662,10 +660,5 @@ func (s *SDKSource) onDisconnected() {
 }
 
 func (s *SDKSource) finished() {
-	select {
-	case <-s.endRecording:
-		return
-	default:
-		close(s.endRecording)
-	}
+	s.endRecording.Break()
 }
