@@ -85,9 +85,16 @@ func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *confi
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
-		"video/x-raw,framerate=1/%d,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
-		c.CaptureInterval, c.Width, c.Height)))
+
+	capsString := fmt.Sprintf(
+		"video/x-raw,framerate=1/%d,format=I420,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+		c.CaptureInterval)
+
+	if c.Width > 0 && c.Height > 0 {
+		capsString = fmt.Sprintf("%s,width=%d,height=%d,", capsString, c.Width, c.Height)
+	}
+
+	err = caps.SetProperty("caps", gst.NewCapsFromString(capsString))
 	if err != nil {
 		return nil, err
 	}
