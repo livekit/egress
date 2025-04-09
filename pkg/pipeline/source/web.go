@@ -27,6 +27,7 @@ import (
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+	"github.com/frostbyte73/core"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -51,8 +52,8 @@ type WebSource struct {
 	xvfb        *exec.Cmd
 	closeChrome context.CancelFunc
 
-	startRecording chan struct{}
-	endRecording   chan struct{}
+	startRecording core.Fuse
+	endRecording   core.Fuse
 
 	info *livekit.EgressInfo
 }
@@ -68,11 +69,10 @@ func NewWebSource(ctx context.Context, p *config.PipelineConfig) (*WebSource, er
 	p.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
 
 	s := &WebSource{
-		endRecording: make(chan struct{}),
-		info:         p.Info,
+		info: p.Info,
 	}
-	if p.AwaitStartSignal {
-		s.startRecording = make(chan struct{})
+	if !p.AwaitStartSignal {
+		s.startRecording.Break()
 	}
 
 	if err := s.createPulseSink(ctx, p); err != nil {
@@ -96,12 +96,12 @@ func NewWebSource(ctx context.Context, p *config.PipelineConfig) (*WebSource, er
 	return s, nil
 }
 
-func (s *WebSource) StartRecording() chan struct{} {
-	return s.startRecording
+func (s *WebSource) StartRecording() <-chan struct{} {
+	return s.startRecording.Watch()
 }
 
-func (s *WebSource) EndRecording() chan struct{} {
-	return s.endRecording
+func (s *WebSource) EndRecording() <-chan struct{} {
+	return s.endRecording.Watch()
 }
 
 func (s *WebSource) GetStartedAt() int64 {
@@ -294,25 +294,11 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 				switch fmt.Sprint(val) {
 				case startRecordingLog:
 					logger.Infow("chrome: START_RECORDING")
-					if s.startRecording != nil {
-						select {
-						case <-s.startRecording:
-							continue
-						default:
-							close(s.startRecording)
-						}
-					}
+					s.startRecording.Break()
 
 				case endRecordingLog:
 					logger.Infow("chrome: END_RECORDING")
-					if s.endRecording != nil {
-						select {
-						case <-s.endRecording:
-							continue
-						default:
-							close(s.endRecording)
-						}
-					}
+					s.endRecording.Break()
 				}
 			}
 
