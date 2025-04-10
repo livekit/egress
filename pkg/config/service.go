@@ -100,6 +100,10 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 }
 
 func (c *ServiceConfig) InitDefaults() {
+	if c.CPUCostConfig == nil {
+		c.CPUCostConfig = new(CPUCostConfig)
+	}
+
 	if c.TemplatePort == 0 {
 		c.TemplatePort = defaultTemplatePort
 	}
