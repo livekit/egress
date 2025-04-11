@@ -639,8 +639,9 @@ func (s *SDKSource) onTrackFinished(trackID string) {
 		writer.Drain(true)
 		active := s.active.Dec()
 		if s.RequestType == types.RequestTypeParticipant || s.RequestType == types.RequestTypeRoomComposite {
-			s.callbacks.OnTrackRemoved(trackID)
 			s.sync.RemoveTrack(trackID)
+			<-s.callbacks.BuildReady
+			s.callbacks.OnTrackRemoved(trackID)
 		} else if active == 0 {
 			s.finished()
 		}
