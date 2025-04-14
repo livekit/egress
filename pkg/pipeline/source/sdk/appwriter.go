@@ -66,6 +66,7 @@ type AppWriter struct {
 	*synchronizer.TrackSynchronizer
 
 	// state
+	buildReady   core.Fuse
 	active       atomic.Bool
 	lastReceived atomic.Time
 	lastPushed   atomic.Time
@@ -150,6 +151,15 @@ func (w *AppWriter) start() {
 		go w.logStats()
 	}
 
+	go func() {
+		<-w.callbacks.BuildReady
+		w.buildReady.Once(func() {
+			if !w.active.Load() {
+				w.callbacks.OnTrackMuted(w.track.ID())
+			}
+		})
+	}()
+
 	for !w.endStream.IsBroken() {
 		w.readNext()
 	}
@@ -196,7 +206,9 @@ func (w *AppWriter) readNext() {
 	if !w.active.Swap(true) {
 		// set track active
 		w.logger.Debugw("track active", "timestamp", time.Since(w.startTime))
-		w.callbacks.OnTrackUnmuted(w.track.ID())
+		if w.buildReady.IsBroken() {
+			w.callbacks.OnTrackUnmuted(w.track.ID())
+		}
 		if w.sendPLI != nil {
 			w.sendPLI()
 		}
@@ -234,7 +246,9 @@ func (w *AppWriter) handleReadError(err error) {
 			// set track inactive
 			w.logger.Debugw("track inactive", "timestamp", time.Since(w.startTime))
 			w.active.Store(false)
-			w.callbacks.OnTrackMuted(w.track.ID())
+			if w.buildReady.IsBroken() {
+				w.callbacks.OnTrackMuted(w.track.ID())
+			}
 		}
 
 	case err.Error() == errBufferTooSmall:
