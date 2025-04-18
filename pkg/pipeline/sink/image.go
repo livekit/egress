@@ -24,6 +24,7 @@ import (
 	"github.com/frostbyte73/core"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
@@ -117,8 +118,17 @@ func (s *ImageSink) handleNewImage(update *imageUpdate) error {
 	filename := update.filename
 	ts := s.getImageTime(update.timestamp)
 	imageLocalPath := path.Join(s.LocalDir, filename)
-	if s.ImageSuffix == livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP {
-		newFilename := fmt.Sprintf("%s_%s%03d%s", s.ImagePrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000, types.FileExtensionForOutputType[s.OutputType])
+	if s.ImageSuffix != livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX {
+		var newFilename string
+
+		if s.ImageSuffix == livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP {
+			newFilename = fmt.Sprintf("%s_%s%03d%s", s.ImagePrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000, types.FileExtensionForOutputType[s.OutputType])
+		} else if s.ImageSuffix == livekit.ImageFileSuffix_IMAGE_SUFFIX_NONE_OVERWRITE {
+			newFilename = fmt.Sprintf("%s%s", s.ImagePrefix, types.FileExtensionForOutputType[s.OutputType])
+		} else {
+			return errors.ErrNotSupported(s.ImageSuffix.String())
+		}
+
 		newImageLocalPath := path.Join(s.LocalDir, newFilename)
 
 		err := os.Rename(imageLocalPath, newImageLocalPath)
