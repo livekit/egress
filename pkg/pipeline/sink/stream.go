@@ -73,7 +73,7 @@ func newStreamSink(p *gstreamer.Pipeline, conf *config.PipelineConfig, o *config
 }
 
 func (s *StreamSink) Start() error {
-	if s.conf.Debug.EnableProfiling {
+	if s.conf.Debug.EnableStreamLogging {
 		go func() {
 			closed := s.closed.Watch()
 			ticker := time.NewTicker(time.Second * 10)
@@ -110,7 +110,7 @@ func (s *StreamSink) AddStream(stream *config.Stream) error {
 
 	s.mu.Lock()
 	s.streams[stream.Name] = ss
-	if s.conf.Debug.EnableProfiling && s.bin.OutputType == types.OutputTypeRTMP {
+	if s.conf.Debug.EnableStreamLogging && s.bin.OutputType == types.OutputTypeRTMP {
 		csvLogger, err := logging.NewCSVLogger[logging.StreamStats](stream.Name)
 		if err != nil {
 			logger.Errorw("failed to create stream logger", err)

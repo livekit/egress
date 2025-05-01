@@ -58,8 +58,11 @@ type BaseConfig struct {
 }
 
 type DebugConfig struct {
-	EnableProfiling bool             `yaml:"enable_profiling"` // create dot file and pprof on internal error
-	StorageConfig   `yaml:",inline"` // upload config (S3, Azure, GCP, or AliOSS)
+	EnableProfiling     bool             `yaml:"enable_profiling"`      // create dot file and pprof on internal error
+	EnableTrackLogging  bool             `yaml:"enable_track_logging"`  // log packets and keyframes for each track
+	EnableStreamLogging bool             `yaml:"enable_stream_logging"` // log bytes and keyframes for each stream
+	EnableChromeLogging bool             `yaml:"enable_chrome_logging"` // log all chrome console events
+	StorageConfig       `yaml:",inline"` // upload config (S3, Azure, GCP, or AliOSS)
 }
 
 type ProxyConfig struct {

@@ -77,27 +77,42 @@ func (c *Controller) generatePProf() {
 	_, _ = f.Write(b)
 }
 
-func (c *Controller) uploadDebugFiles() {
-	u, err := uploader.New(&c.Debug.StorageConfig, nil, c.monitor, nil)
-	if err != nil {
-		logger.Errorw("failed to create uploader", err)
-		return
-	}
+var debugFileExtensions = map[string]struct{}{
+	"csv":  {},
+	"dot":  {},
+	"prof": {},
+	"log":  {},
+}
 
+func (c *Controller) uploadDebugFiles() {
 	files, err := os.ReadDir(c.TmpDir)
 	if err != nil {
+		logger.Errorw("failed to read tmp dir", err)
 		return
 	}
 
+	var u *uploader.Uploader
+
 	for _, f := range files {
-		if strings.HasSuffix(f.Name(), ".csv") || strings.HasSuffix(f.Name(), ".dot") || strings.HasSuffix(f.Name(), ".prof") {
-			local := path.Join(c.TmpDir, f.Name())
-			storage := path.Join(c.Info.EgressId, f.Name())
-			_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
+		s := strings.Split(f.Name(), ".")
+		if _, ok := debugFileExtensions[s[len(s)-1]]; !ok {
+			continue
+		}
+
+		if u == nil {
+			u, err = uploader.New(&c.Debug.StorageConfig, nil, c.monitor, nil)
 			if err != nil {
-				logger.Errorw("failed to upload debug file", err)
+				logger.Errorw("failed to create uploader", err)
 				return
 			}
+		}
+
+		local := path.Join(c.TmpDir, f.Name())
+		storage := path.Join(c.Info.EgressId, f.Name())
+		_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
+		if err != nil {
+			logger.Errorw("failed to upload debug file", err)
+			return
 		}
 	}
 }

@@ -96,7 +96,7 @@ func NewAppWriter(
 		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
 	}
 
-	if conf.Debug.EnableProfiling {
+	if conf.Debug.EnableTrackLogging {
 		csvLogger, err := logging.NewCSVLogger[logging.TrackStats](track.ID())
 		if err != nil {
 			logger.Errorw("failed to create csv logger", err)
