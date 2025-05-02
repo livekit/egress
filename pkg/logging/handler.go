@@ -34,19 +34,26 @@ func NewHandlerLogger(handlerID, egressID string) *medialogutils.CmdLogger {
 				continue
 			case len(line) > 5 && sdkPrefixes[line[:5]]:
 				l.Infow(line)
+			case strings.HasPrefix(line, "{\"level\":"):
+				// should have ended with "}", probably got split
+				if i < len(lines)-1 && strings.HasSuffix(lines[i+1], "}") {
+					line = line + lines[i+1]
+					i++
+				}
+				fmt.Println(line)
 			case strings.HasPrefix(line, "(egress:"):
-				// these also get split
 				if len(line) > 13 && !gstSuffixes[line[len(line)-13:]] && i < len(lines)-1 {
 					next := lines[i+1]
 					if len(next) > 13 && gstSuffixes[next[:13]] {
+						// line got split
 						line = line + next
 						i++
 					}
 				}
 				logger.Warnw(line, nil)
 			case strings.HasPrefix(line, "0:00:"):
-				// these sometimes get split
 				if !strings.HasSuffix(line, "is not mapped") {
+					// line got split
 					if i < len(lines)-1 && strings.HasSuffix(lines[i+1], "is not mapped") {
 						i++
 					}
