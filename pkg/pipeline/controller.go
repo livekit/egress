@@ -456,10 +456,8 @@ func (c *Controller) Close() {
 		c.uploadManifest()
 	}
 
-	// upload debug logs
-	if c.Debug.EnableProfiling {
-		c.uploadDebugFiles()
-	}
+	// upload debug files
+	c.uploadDebugFiles()
 }
 
 func (c *Controller) startSessionLimitTimer(ctx context.Context) {
