@@ -25,8 +25,7 @@ func NewHandlerLogger(handlerID, egressID string) *medialogutils.CmdLogger {
 	l := logger.GetLogger().WithValues("handlerID", handlerID, "egressID", egressID)
 	return medialogutils.NewCmdLogger(func(s string) {
 		lines := strings.Split(s, "\n")
-		for i := 0; i < len(lines); i++ {
-			line := strings.Trim(lines[i], "\n")
+		for i, line := range lines {
 			switch {
 			case strings.HasSuffix(line, "}"):
 				fmt.Println(line)
