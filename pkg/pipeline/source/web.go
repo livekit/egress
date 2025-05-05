@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"os"
 	"os/exec"
+	"path"
 	"strings"
 	"time"
 
@@ -51,9 +53,11 @@ type WebSource struct {
 	pulseSink   string
 	xvfb        *exec.Cmd
 	closeChrome context.CancelFunc
+	chromeLog   *os.File
 
 	startRecording core.Fuse
 	endRecording   core.Fuse
+	closed         core.Fuse
 
 	info *livekit.EgressInfo
 }
@@ -113,25 +117,29 @@ func (s *WebSource) GetEndedAt() int64 {
 }
 
 func (s *WebSource) Close() {
-	if s.closeChrome != nil {
-		logger.Debugw("closing chrome")
-		s.closeChrome()
-		s.closeChrome = nil
-	}
-
-	if s.xvfb != nil {
-		logger.Debugw("closing X display")
-		_ = s.xvfb.Process.Kill()
-		_ = s.xvfb.Wait()
-		s.xvfb = nil
-	}
-
-	if s.pulseSink != "" {
-		logger.Debugw("unloading pulse module")
-		if err := exec.Command("pactl", "unload-module", s.pulseSink).Run(); err != nil {
-			logger.Errorw("failed to unload pulse sink", err)
+	s.closed.Once(func() {
+		if s.closeChrome != nil {
+			logger.Debugw("closing chrome")
+			s.closeChrome()
 		}
-	}
+
+		if s.chromeLog != nil {
+			_ = s.chromeLog.Close()
+		}
+
+		if s.xvfb != nil {
+			logger.Debugw("closing X display")
+			_ = s.xvfb.Process.Kill()
+			_ = s.xvfb.Wait()
+		}
+
+		if s.pulseSink != "" {
+			logger.Debugw("unloading pulse module")
+			if err := exec.Command("pactl", "unload-module", s.pulseSink).Run(); err != nil {
+				logger.Errorw("failed to unload pulse sink", err)
+			}
+		}
+	})
 }
 
 // creates a new pulse audio sink
@@ -199,6 +207,15 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 		values.Set("token", p.Token)
 		inputUrl.RawQuery = values.Encode()
 		webUrl = inputUrl.String()
+	}
+
+	if p.Debug.EnableChromeLogging {
+		f, err := os.Create(path.Join(os.TempDir(), "chrome.log"))
+		if err != nil {
+			logger.Errorw("failed to create chrome log file", err)
+		} else {
+			s.chromeLog = f
+		}
 	}
 
 	logger.Debugw("launching chrome", "url", webUrl, "sandbox", p.EnableChromeSandbox, "insecure", p.Insecure)
@@ -284,6 +301,12 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *runtime.EventConsoleAPICalled:
+			if s.chromeLog != nil {
+				if b, err := ev.MarshalJSON(); err == nil {
+					_, _ = s.chromeLog.Write(append(b, '\n'))
+				}
+			}
+
 			for _, arg := range ev.Args {
 				var val interface{}
 				err := json.Unmarshal(arg.Value, &val)
@@ -303,6 +326,12 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 			}
 
 		case *runtime.EventExceptionThrown:
+			if s.chromeLog != nil {
+				if b, err := ev.MarshalJSON(); err == nil {
+					_, _ = s.chromeLog.Write(append(b, '\n'))
+				}
+			}
+
 			logger.Debugw("chrome exception", "err", ev.ExceptionDetails.Error())
 		}
 	})

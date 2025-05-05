@@ -8,45 +8,58 @@ import (
 	"github.com/livekit/protocol/logger/medialogutils"
 )
 
-const (
-	logError = iota
-	logWarn
-	logInfo
-	ignore
-)
+var sdkPrefixes = map[string]bool{
+	"turnc": true, // turnc ERROR
+	"ice E": true, // ice ERROR
+	"pc ER": true, // pc ERROR
+	"twcc_": true, // twcc_sender_interceptor ERROR
+	"SDK 2": true, // SDK 2025
+}
 
-var actions = map[string]int{
-	"0:00:": ignore,
-	"te_au": ignore,
-	"turnc": logInfo,
-	"ice E": logInfo,
-	"SDK 2": logInfo,
-	"(egre": logWarn,
+var gstSuffixes = map[string]bool{
+	"before 'caps'": true,
+	"f type 'gint'": true,
 }
 
 func NewHandlerLogger(handlerID, egressID string) *medialogutils.CmdLogger {
 	l := logger.GetLogger().WithValues("handlerID", handlerID, "egressID", egressID)
 	return medialogutils.NewCmdLogger(func(s string) {
-		// glib inserts 2 carriage returns at the end of its warning/error logs
-		lines := strings.Split(strings.TrimLeft(strings.TrimRight(s, "\n"), "\n"), "\n")
-		for _, line := range lines {
-			if strings.HasSuffix(line, "}") {
+		lines := strings.Split(s, "\n")
+		for i, line := range lines {
+			switch {
+			case strings.HasSuffix(line, "}"):
 				fmt.Println(line)
-			} else {
-				action := logError
-				if len(line) > 5 {
-					action = actions[line[:5]]
+			case len(line) == 0:
+				continue
+			case len(line) > 5 && sdkPrefixes[line[:5]]:
+				l.Infow(line)
+			case strings.HasPrefix(line, "{\"level\":"):
+				// should have ended with "}", probably got split
+				if i < len(lines)-1 && strings.HasSuffix(lines[i+1], "}") {
+					line = line + lines[i+1]
+					i++
 				}
-				switch action {
-				case ignore:
-					continue
-				case logInfo:
-					l.Infow(line)
-				case logWarn:
-					l.Warnw(line, nil)
-				case logError:
-					l.Errorw(line, nil)
+				fmt.Println(line)
+			case strings.HasPrefix(line, "(egress:"):
+				if len(line) > 13 && !gstSuffixes[line[len(line)-13:]] && i < len(lines)-1 {
+					next := lines[i+1]
+					if len(next) > 13 && gstSuffixes[next[:13]] {
+						// line got split
+						line = line + next
+						i++
+					}
 				}
+				logger.Warnw(line, nil)
+			case strings.HasPrefix(line, "0:00:"):
+				if !strings.HasSuffix(line, "is not mapped") {
+					// line got split
+					if i < len(lines)-1 && strings.HasSuffix(lines[i+1], "is not mapped") {
+						i++
+					}
+				}
+				continue
+			default:
+				l.Errorw(line, nil)
 			}
 		}
 	})
