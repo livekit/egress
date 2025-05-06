@@ -23,7 +23,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/livekit/livekit-server v1.8.1-0.20241220025800-08b58a23afdc
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/protocol v1.36.2-0.20250409225025-9c8b99db90f5
+	github.com/livekit/protocol v1.36.2-0.20250421173646-62b2525e9494
 	github.com/livekit/psrpc v0.6.1-0.20250205181828-a0beed2e4126
 	github.com/livekit/server-sdk-go/v2 v2.4.3-0.20250219104850-1477da59f27c
 	github.com/pion/rtp v1.8.11
@@ -99,6 +99,8 @@ require (
 	github.com/google/s2a-go v0.1.8 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/jellydator/ttlcache/v3 v3.3.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jxskiss/base62 v1.1.0 // indirect
