@@ -16,7 +16,6 @@ package sink
 
 import (
 	"fmt"
-	"os"
 	"path"
 	"strings"
 	"time"
@@ -129,14 +128,7 @@ func (s *ImageSink) handleNewImage(update *imageUpdate) error {
 			return errors.ErrNotSupported(s.ImageSuffix.String())
 		}
 
-		newImageLocalPath := path.Join(s.LocalDir, newFilename)
-
-		err := os.Rename(imageLocalPath, newImageLocalPath)
-		if err != nil {
-			return err
-		}
 		filename = newFilename
-		imageLocalPath = newImageLocalPath
 	}
 
 	imageStoragePath := path.Join(s.StorageDir, filename)
