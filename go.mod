@@ -27,12 +27,14 @@ require (
 	github.com/livekit/psrpc v0.6.1-0.20250205181828-a0beed2e4126
 	github.com/livekit/server-sdk-go/v2 v2.4.3-0.20250219104850-1477da59f27c
 	github.com/pion/rtp v1.8.11
+	github.com/pion/rtp/v2 v2.0.0
 	github.com/pion/webrtc/v4 v4.0.9
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.61.0
 	github.com/stretchr/testify v1.10.0
-	github.com/urfave/cli/v2 v2.27.5
+	github.com/urfave/cli/v2 v2.27.4
+	github.com/urfave/cli/v3 v3.3.3
 	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20250207012021-f9890c6ad9f3
