@@ -302,7 +302,7 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 		switch ev := ev.(type) {
 		case *runtime.EventConsoleAPICalled:
 			if s.chromeLog != nil {
-				if b, err := ev.MarshalJSON(); err == nil {
+				if b, err := json.Marshal(ev); err == nil {
 					_, _ = s.chromeLog.Write(append(b, '\n'))
 				}
 			}
@@ -327,7 +327,7 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 
 		case *runtime.EventExceptionThrown:
 			if s.chromeLog != nil {
-				if b, err := ev.MarshalJSON(); err == nil {
+				if b, err := json.Marshal(ev); err == nil {
 					_, _ = s.chromeLog.Write(append(b, '\n'))
 				}
 			}
