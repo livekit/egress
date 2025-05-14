@@ -1,5 +1,7 @@
 module github.com/livekit/egress
 
+replace github.com/go-gst/go-gst => github.com/livekit/go-gst v0.2.34-0.20250213212803-e8b19bcbb3e9
+
 go 1.24.2
 
 toolchain go1.24.3
@@ -17,7 +19,7 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20250509201441-70372ae9ef75
 	github.com/chromedp/chromedp v0.13.6
 	github.com/frostbyte73/core v0.1.1
-	github.com/go-gst/go-glib v1.4.0
+	github.com/go-gst/go-glib v1.4.1-0.20241209142714-f53cebf18559
 	github.com/go-gst/go-gst v1.4.0
 	github.com/go-jose/go-jose/v4 v4.1.0
 	github.com/go-logr/logr v1.4.2
@@ -91,6 +93,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/gammazero/deque v1.0.0 // indirect
+	github.com/go-gst/go-pointer v0.0.0-20241127163939-ba766f075b4c // indirect
 	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
 	github.com/go-json-experiment/json v0.0.0-20250417205406-170dfdcf87d1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -112,7 +115,6 @@ require (
 	github.com/mackerelio/go-osstat v0.2.5 // indirect
 	github.com/magefile/mage v1.15.0 // indirect
 	github.com/mattn/go-ieproxy v0.0.12 // indirect
-	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nats-io/nats.go v1.42.0 // indirect
 	github.com/nats-io/nkeys v0.4.11 // indirect
