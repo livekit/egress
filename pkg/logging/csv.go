@@ -20,6 +20,7 @@ import (
 	"path"
 	"reflect"
 	"strings"
+	"time"
 )
 
 type TrackStats struct {
@@ -31,6 +32,7 @@ type TrackStats struct {
 	PacketsPushed   uint64
 	SamplesPushed   uint64
 	LastPushed      string
+	Drift           time.Duration
 }
 
 type StreamStats struct {

@@ -15,7 +15,6 @@
 package sdk
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"time"
@@ -41,13 +40,14 @@ import (
 
 const (
 	latency           = time.Second * 2
-	drainTimeout      = time.Second * 4
+	drainTimeout      = time.Millisecond * 3500
 	errBufferTooSmall = "buffer too small"
 )
 
 type AppWriter struct {
 	logger    logger.Logger
 	csvLogger *logging.CSVLogger[logging.TrackStats]
+	drift     atomic.Duration
 
 	pub       lksdk.TrackPublication
 	track     *webrtc.TrackRemote
@@ -104,6 +104,9 @@ func NewAppWriter(
 			logger.Errorw("failed to create csv logger", err)
 		} else {
 			w.csvLogger = csvLogger
+			w.TrackSynchronizer.OnSenderReport(func(drift time.Duration) {
+				w.drift.Store(drift)
+			})
 		}
 	}
 
@@ -177,12 +180,7 @@ func (w *AppWriter) start() {
 
 	w.draining.Break()
 
-	stats := w.GetTrackStats()
-	w.logger.Infow("writer finished",
-		"sampleDuration", fmt.Sprint(w.GetFrameDuration()),
-		"avgDrift", fmt.Sprint(time.Duration(stats.AvgDrift)),
-		"maxDrift", fmt.Sprint(stats.MaxDrift),
-	)
+	w.logger.Infow("writer finished")
 	if w.csvLogger != nil {
 		w.csvLogger.Close()
 	}
@@ -269,12 +267,6 @@ func (w *AppWriter) pushSamples() {
 		case sample := <-w.samples:
 			for _, pkt := range sample {
 				if err := w.pushPacket(pkt); err != nil {
-					if errors.Is(err, synchronizer.ErrBackwardsPTS) {
-						if sendPLI := w.sendPLI; sendPLI != nil {
-							sendPLI()
-						}
-						break
-					}
 					w.draining.Once(func() { w.endStream.Break() })
 				}
 			}
@@ -327,13 +319,13 @@ func (w *AppWriter) Drain(force bool) {
 }
 
 func (w *AppWriter) logStats() {
-	draining := w.draining.Watch()
+	ended := w.endStream.Watch()
 	ticker := time.NewTicker(time.Second * 10)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-draining:
+		case <-ended:
 			w.writeStats()
 			w.csvLogger.Close()
 			return
@@ -356,5 +348,6 @@ func (w *AppWriter) writeStats() {
 		PacketsPushed:   stats.PacketsPopped,
 		SamplesPushed:   stats.SamplesPopped,
 		LastPushed:      w.lastPushed.Load().Format(time.DateTime),
+		Drift:           w.drift.Load(),
 	})
 }

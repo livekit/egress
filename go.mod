@@ -28,7 +28,7 @@ require (
 	github.com/livekit/media-sdk v0.0.0-20250514034139-e28792a9ecb7
 	github.com/livekit/protocol v1.38.1-0.20250512190841-13a3168da6ce
 	github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c
-	github.com/livekit/server-sdk-go/v2 v2.7.0
+	github.com/livekit/server-sdk-go/v2 v2.7.1-0.20250514183351-e76a3e71736d
 	github.com/pion/rtp v1.8.15
 	github.com/pion/webrtc/v4 v4.1.0
 	github.com/prometheus/client_golang v1.22.0
