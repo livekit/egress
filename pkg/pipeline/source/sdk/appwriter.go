@@ -33,9 +33,9 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/media-sdk/jitter"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
-	"github.com/livekit/server-sdk-go/v2/pkg/jitter"
 	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
 )
 
@@ -56,6 +56,7 @@ type AppWriter struct {
 	startTime time.Time
 
 	buffer      *jitter.Buffer
+	samples     chan []*rtp.Packet
 	translator  Translator
 	callbacks   *gstreamer.Callbacks
 	sendPLI     func()
@@ -91,6 +92,7 @@ func NewAppWriter(
 		pub:               pub,
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
+		samples:           make(chan []*rtp.Packet, 100),
 		callbacks:         callbacks,
 		sync:              sync,
 		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
@@ -134,10 +136,10 @@ func NewAppWriter(
 
 	w.buffer = jitter.NewBuffer(
 		depacketizer,
-		ts.ClockRate,
 		latency,
-		jitter.WithPacketDroppedHandler(w.sendPLI),
+		w.samples,
 		jitter.WithLogger(w.logger),
+		jitter.WithPacketLossHandler(w.sendPLI),
 	)
 
 	go w.start()
@@ -160,6 +162,7 @@ func (w *AppWriter) start() {
 		})
 	}()
 
+	go w.pushSamples()
 	for !w.endStream.IsBroken() {
 		w.readNext()
 	}
@@ -175,12 +178,10 @@ func (w *AppWriter) start() {
 	w.draining.Break()
 
 	stats := w.GetTrackStats()
-	loss := w.buffer.PacketLoss()
 	w.logger.Infow("writer finished",
 		"sampleDuration", fmt.Sprint(w.GetFrameDuration()),
 		"avgDrift", fmt.Sprint(time.Duration(stats.AvgDrift)),
 		"maxDrift", fmt.Sprint(stats.MaxDrift),
-		"packetLoss", fmt.Sprintf("%.2f%%", loss*100),
 	)
 	if w.csvLogger != nil {
 		w.csvLogger.Close()
@@ -216,16 +217,6 @@ func (w *AppWriter) readNext() {
 
 	// push packet to jitter buffer
 	w.buffer.Push(pkt)
-
-	// buffers can only be pushed to the appsrc while in the playing state
-	if !w.playing.IsBroken() {
-		return
-	}
-
-	// push completed packets to appsrc
-	if err = w.pushSamples(); err != nil {
-		w.draining.Once(func() { w.endStream.Break() })
-	}
 }
 
 func (w *AppWriter) handleReadError(err error) {
@@ -262,39 +253,56 @@ func (w *AppWriter) handleReadError(err error) {
 	}
 }
 
-func (w *AppWriter) pushSamples() error {
-	samples := w.buffer.PopSamples(false)
-	for _, sample := range samples {
-		for _, pkt := range sample {
-			w.translator.Translate(pkt)
-
-			// get PTS
-			pts, err := w.GetPTS(pkt)
-			if err != nil {
-				if errors.Is(err, synchronizer.ErrBackwardsPTS) {
-					if sendPLI := w.sendPLI; sendPLI != nil {
-						sendPLI()
-					}
-					break
-				}
-				return err
-			}
-
-			p, err := pkt.Marshal()
-			if err != nil {
-				w.logger.Errorw("could not marshal packet", err)
-				return err
-			}
-
-			b := gst.NewBufferFromBytes(p)
-			b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
-			if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
-				w.logger.Infow("unexpected flow return", "flow", flow)
-			}
-			w.lastPushed.Store(time.Now())
-		}
+func (w *AppWriter) pushSamples() {
+	select {
+	case <-w.playing.Watch():
+		// continue
+	case <-w.draining.Watch():
+		return
 	}
 
+	end := w.endStream.Watch()
+	for {
+		select {
+		case <-end:
+			return
+		case sample := <-w.samples:
+			for _, pkt := range sample {
+				if err := w.pushPacket(pkt); err != nil {
+					if errors.Is(err, synchronizer.ErrBackwardsPTS) {
+						if sendPLI := w.sendPLI; sendPLI != nil {
+							sendPLI()
+						}
+						break
+					}
+					w.draining.Once(func() { w.endStream.Break() })
+				}
+			}
+		}
+	}
+}
+
+func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
+	w.translator.Translate(pkt)
+
+	// get PTS
+	pts, err := w.GetPTS(pkt)
+	if err != nil {
+		return err
+	}
+
+	p, err := pkt.Marshal()
+	if err != nil {
+		w.logger.Errorw("could not marshal packet", err)
+		return err
+	}
+
+	b := gst.NewBufferFromBytes(p)
+	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
+	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
+		w.logger.Infow("unexpected flow return", "flow", flow)
+	}
+	w.lastPushed.Store(time.Now())
 	return nil
 }
 
