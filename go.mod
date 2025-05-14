@@ -1,6 +1,6 @@
 module github.com/livekit/egress
 
-replace github.com/go-gst/go-gst => github.com/livekit/go-gst v0.2.34-0.20250213212803-e8b19bcbb3e9
+replace github.com/go-gst/go-gst => github.com/livekit/go-gst v0.0.0-20250514220046-f9fdbbcec92b
 
 go 1.24.2
 
