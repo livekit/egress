@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	audioMixerLatency = uint64(2e9)
+	audioMixerLatency = uint64(25e8)
 	audioChannelNone  = 0
 )
 
