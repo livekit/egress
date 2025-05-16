@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  nth-check: ^2.1.1
+
 importers:
 
   .:
@@ -13,19 +16,19 @@ importers:
         version: 7.27.1
       '@livekit/components-core':
         specifier: ^0.11.11
-        version: 0.11.11(livekit-client@2.12.0)(tslib@2.8.1)
+        version: 0.11.11(livekit-client@2.13.0)(tslib@2.8.1)
       '@livekit/components-react':
-        specifier: ^2.9.3
-        version: 2.9.3(livekit-client@2.12.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tslib@2.8.1)
+        specifier: ^2.9.4
+        version: 2.9.4(livekit-client@2.13.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tslib@2.8.1)
       '@livekit/components-styles':
         specifier: ^1.1.5
         version: 1.1.5
       '@livekit/egress-sdk':
         specifier: ^0.2.1
-        version: 0.2.1(livekit-client@2.12.0)
+        version: 0.2.1(livekit-client@2.13.0)
       livekit-client:
-        specifier: ^2.12.0
-        version: 2.12.0
+        specifier: ^2.13.0
+        version: 2.13.0
       react:
         specifier: ^19.1.0
         version: 19.1.0
@@ -1050,15 +1053,15 @@ packages:
       livekit-client: ^2.5.7
       tslib: ^2.6.2
 
-  '@livekit/components-core@0.12.4':
-    resolution: {integrity: sha512-a/GkK8XFULPhXoSKxuXEU62gwTAYJ83DP5/vlRzwESEY+rsoiw2NvvPZtDCU17yyd/5QBIF9VdDjB9ZZF0dOfQ==}
+  '@livekit/components-core@0.12.5':
+    resolution: {integrity: sha512-HaUt/Wi7WMz2QRFYcqeXbu3h9GH6bMrcBM8hjOeys/476tINVtiuVTcUkXkkx3JD1pIXpqV8HjwRATRY7iRG0g==}
     engines: {node: '>=18'}
     peerDependencies:
       livekit-client: ^2.11.1
       tslib: ^2.6.2
 
-  '@livekit/components-react@2.9.3':
-    resolution: {integrity: sha512-gE1sEE57BkBz3+TQHrOXVDVwVMwV5wtIYokdrfd7vshh22/PtWWj3vON9wzYLFRKx98L6QyAzyh7W9EWu3Lj9Q==}
+  '@livekit/components-react@2.9.4':
+    resolution: {integrity: sha512-R4jNLynjeRs6jpRcUTCdAWBxCa2w2LYUCxOI5rMVhiYNpKqYcI1RyDUS66RaaeAsdq8q7pFDJyCQmmEcG836jA==}
     engines: {node: '>=18'}
     peerDependencies:
       '@livekit/krisp-noise-filter': ^0.2.12
@@ -2439,8 +2442,8 @@ packages:
     engines: {node: '>=0.10.0'}
     hasBin: true
 
-  electron-to-chromium@1.5.152:
-    resolution: {integrity: sha512-xBOfg/EBaIlVsHipHl2VdTPJRSvErNUaqW8ejTq5OlOlIYx1wOllCHsAvAIrr55jD1IYEfdR86miUEt8H5IeJg==}
+  electron-to-chromium@1.5.155:
+    resolution: {integrity: sha512-ps5KcGGmwL8VaeJlvlDlu4fORQpv3+GIcF5I3f9tUKUlJ/wsysh6HU8P5L1XWRYeXfA0oJd4PyM8ds8zTFf6Ng==}
 
   email-addresses@5.0.0:
     resolution: {integrity: sha512-4OIPYlA6JXqtVn8zpHpGiI7vE6EQOAg16aGnDMIAlZVinnoZ8208tW1hAbjWydgN/4PLTT9q+O1K6AH/vALJGw==}
@@ -3696,8 +3699,8 @@ packages:
   lines-and-columns@1.2.4:
     resolution: {integrity: sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==}
 
-  livekit-client@2.12.0:
-    resolution: {integrity: sha512-W1dcH+TSfZ7mnWm3jZvFUzi7/FbjMJM2HtLh3+uZx5d3M1WcBa4LCKY581RTd1NaD+gwtMDY0D7RnaOKlfpWeQ==}
+  livekit-client@2.13.0:
+    resolution: {integrity: sha512-Q2FAQbJt0zFBdOHIom1YRfsIYIdTC2dxJfus084w4ni4ZHwNYZ9GZQcp9zpuxFg1O36fTobLCn3B1JCSY834nw==}
 
   loader-runner@4.3.0:
     resolution: {integrity: sha512-3R/1M+yS3j5ou80Me59j7F9IMs4PXs3VqRrm0TU3AbKPxlmpoY1TNscJV/oGJXo8qCatFGTfDbY6W6ipGOYXfg==}
@@ -3935,9 +3938,6 @@ packages:
   npm-run-path@4.0.1:
     resolution: {integrity: sha512-S48WzZW777zhNIrn7gxOlISNAqi9ZC/uQFnRdbeIHhZhCA6UqpkOT8T1G7BvfdgP4Er8gF4sUbaS0i7QvIfCWw==}
     engines: {node: '>=8'}
-
-  nth-check@1.0.2:
-    resolution: {integrity: sha512-WeBOdju8SnzPN5vTUJYxYUxLeXpCaVP5i5e0LF8fg7WORF2Wd7wFX/pk0tYZk7s8T+J7VLy0Da6J1+wCT0AtHg==}
 
   nth-check@2.1.1:
     resolution: {integrity: sha512-lqjrjmaOoAnWfMmBPL+XNnynZh2+swxiX3WUE0s4yEHI6m+AwrK2UZOimIRl3X/4QctVqS8AiZjFqyOGrMXb/w==}
@@ -5280,8 +5280,8 @@ packages:
       uglify-js:
         optional: true
 
-  terser@5.39.1:
-    resolution: {integrity: sha512-Mm6+uad0ZuDtcV8/4uOZQDQ8RuiC5Pu+iZRedJtF7yA/27sPL7d++In/AJKpWZlU3SYMPPkVfwetn6sgZ66pUA==}
+  terser@5.39.2:
+    resolution: {integrity: sha512-yEPUmWve+VA78bI71BW70Dh0TuV4HHd+I5SHOAfS1+QBOmvmCiiffgjR8ryyEd3KIfvPGFqoADt8LdQ6XpXIvg==}
     engines: {node: '>=10'}
     hasBin: true
 
@@ -5750,9 +5750,9 @@ packages:
     resolution: {integrity: sha512-r3vXyErRCYJ7wg28yvBY5VSoAF8ZvlcW9/BwUzEtUsjvX/DKs24dIkuwjtuprwJJHsbyUbLApepYTR1BN4uHrg==}
     engines: {node: '>= 6'}
 
-  yaml@2.7.1:
-    resolution: {integrity: sha512-10ULxpnOCQXxJvBgxsn9ptjq6uviG/htZKk9veJGhlqn3w/DxQ631zFF+nlQXLwmImeS5amR2dl2U8sg6U9jsQ==}
-    engines: {node: '>= 14'}
+  yaml@2.8.0:
+    resolution: {integrity: sha512-4lLa/EcQCB0cJkyts+FpIRx5G/llPxfP6VQU5KByHEhLxY3IJCH0f0Hy1MHI8sClTvsIb8qwRJ6R/ZdlDJ/leQ==}
+    engines: {node: '>= 14.6'}
     hasBin: true
 
   yargs-parser@20.2.9:
@@ -7034,27 +7034,27 @@ snapshots:
 
   '@leichtgewicht/ip-codec@2.0.5': {}
 
-  '@livekit/components-core@0.11.11(livekit-client@2.12.0)(tslib@2.8.1)':
+  '@livekit/components-core@0.11.11(livekit-client@2.13.0)(tslib@2.8.1)':
     dependencies:
       '@floating-ui/dom': 1.6.11
-      livekit-client: 2.12.0
+      livekit-client: 2.13.0
       loglevel: 1.9.1
       rxjs: 7.8.1
       tslib: 2.8.1
 
-  '@livekit/components-core@0.12.4(livekit-client@2.12.0)(tslib@2.8.1)':
+  '@livekit/components-core@0.12.5(livekit-client@2.13.0)(tslib@2.8.1)':
     dependencies:
       '@floating-ui/dom': 1.6.13
-      livekit-client: 2.12.0
+      livekit-client: 2.13.0
       loglevel: 1.9.1
       rxjs: 7.8.2
       tslib: 2.8.1
 
-  '@livekit/components-react@2.9.3(livekit-client@2.12.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tslib@2.8.1)':
+  '@livekit/components-react@2.9.4(livekit-client@2.13.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tslib@2.8.1)':
     dependencies:
-      '@livekit/components-core': 0.12.4(livekit-client@2.12.0)(tslib@2.8.1)
+      '@livekit/components-core': 0.12.5(livekit-client@2.13.0)(tslib@2.8.1)
       clsx: 2.1.1
-      livekit-client: 2.12.0
+      livekit-client: 2.13.0
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)
       tslib: 2.8.1
@@ -7062,9 +7062,9 @@ snapshots:
 
   '@livekit/components-styles@1.1.5': {}
 
-  '@livekit/egress-sdk@0.2.1(livekit-client@2.12.0)':
+  '@livekit/egress-sdk@0.2.1(livekit-client@2.13.0)':
     dependencies:
-      livekit-client: 2.12.0
+      livekit-client: 2.13.0
 
   '@livekit/mutex@1.1.1': {}
 
@@ -8071,7 +8071,7 @@ snapshots:
   browserslist@4.24.5:
     dependencies:
       caniuse-lite: 1.0.30001718
-      electron-to-chromium: 1.5.152
+      electron-to-chromium: 1.5.155
       node-releases: 2.0.19
       update-browserslist-db: 1.1.3(browserslist@4.24.5)
 
@@ -8338,7 +8338,7 @@ snapshots:
       boolbase: 1.0.0
       css-what: 3.4.2
       domutils: 1.7.0
-      nth-check: 1.0.2
+      nth-check: 2.1.1
 
   css-select@4.3.0:
     dependencies:
@@ -8621,7 +8621,7 @@ snapshots:
     dependencies:
       jake: 10.9.2
 
-  electron-to-chromium@1.5.152: {}
+  electron-to-chromium@1.5.155: {}
 
   email-addresses@5.0.0: {}
 
@@ -9459,7 +9459,7 @@ snapshots:
       he: 1.2.0
       param-case: 3.0.4
       relateurl: 0.2.7
-      terser: 5.39.1
+      terser: 5.39.2
 
   html-webpack-plugin@5.6.3(webpack@5.99.8):
     dependencies:
@@ -10378,7 +10378,7 @@ snapshots:
 
   lines-and-columns@1.2.4: {}
 
-  livekit-client@2.12.0:
+  livekit-client@2.13.0:
     dependencies:
       '@livekit/mutex': 1.1.1
       '@livekit/protocol': 1.38.0
@@ -10575,10 +10575,6 @@ snapshots:
   npm-run-path@4.0.1:
     dependencies:
       path-key: 3.1.1
-
-  nth-check@1.0.2:
-    dependencies:
-      boolbase: 1.0.0
 
   nth-check@2.1.1:
     dependencies:
@@ -10941,7 +10937,7 @@ snapshots:
   postcss-load-config@4.0.2(postcss@8.5.3):
     dependencies:
       lilconfig: 3.1.3
-      yaml: 2.7.1
+      yaml: 2.8.0
     optionalDependencies:
       postcss: 8.5.3
 
@@ -11591,7 +11587,7 @@ snapshots:
       jest-worker: 26.6.2
       rollup: 2.79.2
       serialize-javascript: 4.0.0
-      terser: 5.39.1
+      terser: 5.39.2
 
   rollup@2.79.2:
     optionalDependencies:
@@ -12119,10 +12115,10 @@ snapshots:
       jest-worker: 27.5.1
       schema-utils: 4.3.2
       serialize-javascript: 6.0.2
-      terser: 5.39.1
+      terser: 5.39.2
       webpack: 5.99.8
 
-  terser@5.39.1:
+  terser@5.39.2:
     dependencies:
       '@jridgewell/source-map': 0.3.6
       acorn: 8.14.1
@@ -12711,7 +12707,7 @@ snapshots:
 
   yaml@1.10.2: {}
 
-  yaml@2.7.1: {}
+  yaml@2.8.0: {}
 
   yargs-parser@20.2.9: {}
 
