@@ -68,7 +68,7 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, o *config.StreamConfig) (*Stre
 			return nil, errors.ErrGstPipelineError(err)
 		}
 		// add latency to give time for flvmux to receive and order packets from both streams
-		if err = mux.SetProperty("latency", config.Latency); err != nil {
+		if err = mux.SetProperty("latency", config.PipelineLatency); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 
@@ -113,7 +113,7 @@ func (sb *StreamBin) BuildStream(stream *config.Stream, framerate int32) (*Strea
 	stream.Name = utils.NewGuid("")
 	b := sb.Bin.NewBin(stream.Name)
 
-	queue, err := gstreamer.BuildQueue(fmt.Sprintf("queue_%s", stream.Name), config.Latency, true)
+	queue, err := gstreamer.BuildQueue(fmt.Sprintf("queue_%s", stream.Name), config.PipelineLatency, true)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}

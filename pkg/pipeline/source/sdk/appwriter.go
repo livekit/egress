@@ -39,8 +39,6 @@ import (
 )
 
 const (
-	latency           = time.Second * 2
-	drainTimeout      = time.Millisecond * 3500
 	errBufferTooSmall = "buffer too small"
 )
 
@@ -139,7 +137,7 @@ func NewAppWriter(
 
 	w.buffer = jitter.NewBuffer(
 		depacketizer,
-		latency,
+		config.JitterBufferLatency,
 		w.samples,
 		jitter.WithLogger(w.logger),
 		jitter.WithPacketLossHandler(w.sendPLI),
@@ -231,7 +229,7 @@ func (w *AppWriter) handleReadError(err error) {
 		if lastRecv.IsZero() {
 			lastRecv = w.startTime
 		}
-		if w.pub.IsMuted() || time.Since(lastRecv) > latency {
+		if w.pub.IsMuted() || time.Since(lastRecv) > config.JitterBufferLatency {
 			// set track inactive
 			w.logger.Debugw("track inactive", "timestamp", time.Since(w.startTime))
 			w.active.Store(false)
@@ -267,7 +265,8 @@ func (w *AppWriter) pushSamples() {
 		case sample := <-w.samples:
 			for _, pkt := range sample {
 				if err := w.pushPacket(pkt); err != nil {
-					w.draining.Once(func() { w.endStream.Break() })
+					w.draining.Break()
+					w.endStream.Break()
 				}
 			}
 		}
@@ -310,7 +309,7 @@ func (w *AppWriter) Drain(force bool) {
 		if force || !w.active.Load() {
 			w.endStream.Break()
 		} else {
-			time.AfterFunc(drainTimeout, func() { w.endStream.Break() })
+			time.AfterFunc(config.AppSrcDrainTimeout, func() { w.endStream.Break() })
 		}
 	})
 

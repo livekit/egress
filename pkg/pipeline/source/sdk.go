@@ -122,17 +122,13 @@ func (s *SDKSource) CloseWriters() {
 	s.closed.Once(func() {
 		s.sync.End()
 
-		var wg sync.WaitGroup
 		s.mu.Lock()
-		wg.Add(len(s.writers))
 		for _, w := range s.writers {
 			go func(writer *sdk.AppWriter) {
-				defer wg.Done()
 				writer.Drain(false)
 			}(w)
 		}
 		s.mu.Unlock()
-		wg.Wait()
 	})
 }
 

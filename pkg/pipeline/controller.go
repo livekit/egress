@@ -113,7 +113,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 }
 
 func (c *Controller) BuildPipeline() error {
-	p, err := gstreamer.NewPipeline(pipelineName, config.Latency, c.callbacks)
+	p, err := gstreamer.NewPipeline(pipelineName, config.PipelineLatency, c.callbacks)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}

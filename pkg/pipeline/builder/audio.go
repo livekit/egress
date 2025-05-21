@@ -29,8 +29,9 @@ import (
 )
 
 const (
-	audioMixerLatency = uint64(25e8)
-	audioChannelNone  = 0
+	audioChannelStereo = 0
+	audioChannelLeft   = 1
+	audioChannelRight  = 2
 )
 
 type AudioBin struct {
@@ -74,7 +75,7 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 			return err
 		}
 	} else {
-		queue, err := gstreamer.BuildQueue("audio_queue", config.Latency, true)
+		queue, err := gstreamer.BuildQueue("audio_queue", config.PipelineLatency, true)
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -129,7 +130,7 @@ func (b *AudioBin) buildWebInput() error {
 		return err
 	}
 
-	if err = addAudioConverter(b.bin, b.conf, audioChannelNone); err != nil {
+	if err = addAudioConverter(b.bin, b.conf, audioChannelStereo); err != nil {
 		return err
 	}
 	if b.conf.AudioTranscoding {
@@ -223,13 +224,13 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 func (b *AudioBin) getChannel(ts *config.TrackSource) int {
 	switch b.conf.AudioMixing {
 	case livekit.AudioMixing_DEFAULT_MIXING:
-		return 0
+		return audioChannelStereo
 
 	case livekit.AudioMixing_DUAL_CHANNEL_AGENT:
 		if ts.ParticipantKind == lksdk.ParticipantAgent {
-			return 1
+			return audioChannelLeft
 		} else {
-			return 2
+			return audioChannelRight
 		}
 
 	case livekit.AudioMixing_DUAL_CHANNEL_ALTERNATE:
@@ -238,7 +239,7 @@ func (b *AudioBin) getChannel(ts *config.TrackSource) int {
 		return next%2 + 1
 	}
 
-	return 0
+	return audioChannelStereo
 }
 
 func (b *AudioBin) addAudioTestSrcBin() error {
@@ -261,7 +262,7 @@ func (b *AudioBin) addAudioTestSrcBin() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	audioCaps, err := newAudioCapsFilter(b.conf, audioChannelNone)
+	audioCaps, err := newAudioCapsFilter(b.conf, audioChannelStereo)
 	if err != nil {
 		return err
 	}
@@ -274,11 +275,11 @@ func (b *AudioBin) addMixer() error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = audioMixer.SetProperty("latency", audioMixerLatency); err != nil {
+	if err = audioMixer.SetProperty("latency", config.AudioMixerLatency); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	mixedCaps, err := newAudioCapsFilter(b.conf, audioChannelNone)
+	mixedCaps, err := newAudioCapsFilter(b.conf, audioChannelStereo)
 	if err != nil {
 		return err
 	}
@@ -317,7 +318,7 @@ func (b *AudioBin) addEncoder() error {
 }
 
 func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel int) error {
-	audioQueue, err := gstreamer.BuildQueue("audio_input_queue", config.Latency, true)
+	audioQueue, err := gstreamer.BuildQueue("audio_input_queue", config.PipelineLatency, true)
 	if err != nil {
 		return err
 	}
@@ -342,7 +343,7 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel int) 
 
 func newAudioCapsFilter(p *config.PipelineConfig, channel int) (*gst.Element, error) {
 	var channelCaps string
-	if channel == audioChannelNone {
+	if channel == audioChannelStereo {
 		channelCaps = "channels=2"
 	} else {
 		channelCaps = fmt.Sprintf("channels=1,channel-mask=(bitmask)0x%d", channel)
