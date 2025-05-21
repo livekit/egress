@@ -176,8 +176,6 @@ func (w *AppWriter) start() {
 		}
 	}
 
-	w.draining.Break()
-
 	w.logger.Infow("writer finished")
 	if w.csvLogger != nil {
 		w.csvLogger.Close()
@@ -245,6 +243,7 @@ func (w *AppWriter) handleReadError(err error) {
 		if !errors.Is(err, io.EOF) {
 			w.logger.Errorw("could not read packet", err)
 		}
+		w.draining.Break()
 		w.endStream.Break()
 	}
 }
