@@ -68,6 +68,7 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 	logger.Infow("request validated",
 		"egressID", req.EgressId,
 		"requestType", requestType,
+		"sourceType", p.Info.SourceType,
 		"outputType", outputType,
 		"room", p.Info.RoomName,
 		"request", p.Info.Request,

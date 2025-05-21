@@ -16,6 +16,7 @@ package info
 
 import (
 	"context"
+	"hash/fnv"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,7 @@ import (
 )
 
 const (
+	numWorkers = 5
 	maxBackoff = time.Minute * 10
 )
 
@@ -50,17 +52,18 @@ type ioClient struct {
 	createTimeout time.Duration
 	updateTimeout time.Duration
 
-	mu       sync.Mutex
-	egresses map[string]*egressCreation
-	updates  chan *update
+	workers []*worker
 
 	healthy  atomic.Bool
 	draining core.Fuse
 	done     core.Fuse
 }
 
-type egressCreation struct {
-	pending *update
+type worker struct {
+	mu       sync.Mutex
+	creating map[string]*update
+	updates  map[string]*update
+	queue    chan *update
 }
 
 type update struct {
@@ -78,83 +81,128 @@ func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error
 		IOInfoClient:  client,
 		createTimeout: conf.IOCreateTimeout,
 		updateTimeout: conf.IOUpdateTimeout,
-		egresses:      make(map[string]*egressCreation),
-		updates:       make(chan *update, 1000),
+		workers:       make([]*worker, numWorkers),
 	}
 	c.healthy.Store(true)
-	go c.updateWorker()
+
+	for i := 0; i < numWorkers; i++ {
+		c.workers[i] = &worker{
+			creating: make(map[string]*update),
+			updates:  make(map[string]*update),
+			queue:    make(chan *update, 500),
+		}
+		go c.runWorker(c.workers[i])
+	}
 
 	return c, nil
 }
 
 func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error {
-	e := &egressCreation{}
+	u := &update{}
+	w := c.getWorker(info.EgressId)
 
-	c.mu.Lock()
-	c.egresses[info.EgressId] = e
-	c.mu.Unlock()
+	w.mu.Lock()
+	w.creating[info.EgressId] = u
+	w.mu.Unlock()
 
 	errChan := make(chan error, 1)
 	go func() {
 		_, err := c.IOInfoClient.CreateEgress(ctx, info, psrpc.WithRequestTimeout(c.createTimeout))
 
-		c.mu.Lock()
-		defer c.mu.Unlock()
-
-		delete(c.egresses, info.EgressId)
-
+		w.mu.Lock()
+		delete(w.creating, info.EgressId)
 		if err != nil {
 			logger.Errorw("failed to create egress", err, "egressID", info.EgressId)
-			errChan <- err
-			return
+			delete(w.updates, info.EgressId)
+		} else if u.info != nil {
+			err = w.submit(u)
 		}
+		w.mu.Unlock()
 
-		if e.pending != nil {
-			c.updates <- e.pending
-		}
-
-		errChan <- nil
+		errChan <- err
 	}()
 
 	return errChan
 }
 
 func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error {
-	u := &update{
+	w := c.getWorker(info.EgressId)
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	u := w.creating[info.EgressId]
+	if u == nil {
+		u = w.updates[info.EgressId]
+	}
+	if u != nil {
+		u.ctx = ctx
+		u.info = info
+		return nil
+	}
+
+	return w.submit(&update{
 		ctx:  ctx,
 		info: info,
-	}
-
-	c.mu.Lock()
-	if e, ok := c.egresses[info.EgressId]; ok {
-		e.pending = u
-		c.mu.Unlock()
-		return nil
-	}
-	c.mu.Unlock()
-
-	select {
-	case c.updates <- u:
-		return nil
-	default:
-		return errors.New("channel full or closed")
-	}
+	})
 }
 
-func (c *ioClient) updateWorker() {
+func (c *ioClient) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error {
+	return nil
+}
+
+func (c *ioClient) IsHealthy() bool {
+	return c.healthy.Load()
+}
+
+func (c *ioClient) Drain() {
+	c.draining.Break()
+	<-c.done.Watch()
+}
+
+func (c *ioClient) runWorker(w *worker) {
 	draining := c.draining.Watch()
 	for {
 		select {
-		case u := <-c.updates:
-			c.sendUpdate(u)
+		case u := <-w.queue:
+			c.handleUpdate(w, u)
 		case <-draining:
-			c.done.Break()
-			return
+			for {
+				select {
+				case u := <-w.queue:
+					c.handleUpdate(w, u)
+				default:
+					c.done.Break()
+					return
+				}
+			}
 		}
 	}
 }
 
-func (c *ioClient) sendUpdate(u *update) {
+func (c *ioClient) getWorker(egressID string) *worker {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(egressID))
+	return c.workers[int(h.Sum32())%numWorkers]
+}
+
+func (w *worker) submit(u *update) error {
+	w.updates[u.info.EgressId] = u
+
+	select {
+	case w.queue <- u:
+		return nil
+	default:
+		delete(w.updates, u.info.EgressId)
+		return errors.New("queue is full")
+	}
+}
+
+func (c *ioClient) handleUpdate(w *worker, u *update) {
+	w.mu.Lock()
+	delete(w.updates, u.info.EgressId)
+	w.mu.Unlock()
+
 	d := time.Millisecond * 250
 	for {
 		if _, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info, psrpc.WithRequestTimeout(c.updateTimeout)); err != nil {
@@ -185,17 +233,4 @@ func (c *ioClient) sendUpdate(u *update) {
 		)
 		return
 	}
-}
-
-func (c *ioClient) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error {
-	return nil
-}
-
-func (c *ioClient) IsHealthy() bool {
-	return c.healthy.Load()
-}
-
-func (c *ioClient) Drain() {
-	c.draining.Break()
-	<-c.done.Watch()
 }
