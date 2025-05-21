@@ -63,7 +63,7 @@ type worker struct {
 	mu       sync.Mutex
 	creating map[string]*update
 	updates  map[string]*update
-	queue    chan *update
+	queue    chan string
 }
 
 type update struct {
@@ -89,7 +89,7 @@ func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error
 		c.workers[i] = &worker{
 			creating: make(map[string]*update),
 			updates:  make(map[string]*update),
-			queue:    make(chan *update, 500),
+			queue:    make(chan string, 500),
 		}
 		go c.runWorker(c.workers[i])
 	}
@@ -164,13 +164,13 @@ func (c *ioClient) runWorker(w *worker) {
 	draining := c.draining.Watch()
 	for {
 		select {
-		case u := <-w.queue:
-			c.handleUpdate(w, u)
+		case egressID := <-w.queue:
+			c.handleUpdate(w, egressID)
 		case <-draining:
 			for {
 				select {
-				case u := <-w.queue:
-					c.handleUpdate(w, u)
+				case egressID := <-w.queue:
+					c.handleUpdate(w, egressID)
 				default:
 					c.done.Break()
 					return
@@ -190,7 +190,7 @@ func (w *worker) submit(u *update) error {
 	w.updates[u.info.EgressId] = u
 
 	select {
-	case w.queue <- u:
+	case w.queue <- u.info.EgressId:
 		return nil
 	default:
 		delete(w.updates, u.info.EgressId)
@@ -198,17 +198,21 @@ func (w *worker) submit(u *update) error {
 	}
 }
 
-func (c *ioClient) handleUpdate(w *worker, u *update) {
+func (c *ioClient) handleUpdate(w *worker, egressID string) {
 	w.mu.Lock()
-	delete(w.updates, u.info.EgressId)
+	u := w.updates[egressID]
+	delete(w.updates, egressID)
 	w.mu.Unlock()
+	if u == nil {
+		return
+	}
 
 	d := time.Millisecond * 250
 	for {
 		if _, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info, psrpc.WithRequestTimeout(c.updateTimeout)); err != nil {
 			if errors.Is(err, psrpc.ErrRequestTimedOut) {
 				if c.healthy.Swap(false) {
-					logger.Infow("io connection unhealthy")
+					logger.Warnw("io connection unhealthy", err)
 				}
 				d = min(d*2, maxBackoff)
 				time.Sleep(d)
