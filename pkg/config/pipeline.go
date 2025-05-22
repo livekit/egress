@@ -37,7 +37,12 @@ import (
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-const Latency = uint64(3e9)
+const (
+	JitterBufferLatency = time.Second * 2
+	AudioMixerLatency   = uint64(25e8)
+	PipelineLatency     = uint64(3e9)
+	AppSrcDrainTimeout  = time.Millisecond * 3500
+)
 
 type PipelineConfig struct {
 	BaseConfig `yaml:",inline"`

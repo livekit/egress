@@ -113,7 +113,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 }
 
 func (c *Controller) BuildPipeline() error {
-	p, err := gstreamer.NewPipeline(pipelineName, config.Latency, c.callbacks)
+	p, err := gstreamer.NewPipeline(pipelineName, config.PipelineLatency, c.callbacks)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
@@ -334,7 +334,7 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 func (c *Controller) onEOSSent() {
 	// for video-only track/track composite, EOS might have already
 	// made it through the pipeline by the time endRecording is closed
-	if c.SourceType == types.SourceTypeSDK && !c.AudioEnabled {
+	if (c.RequestType == types.RequestTypeTrack || c.RequestType == types.RequestTypeTrackComposite) && !c.AudioEnabled {
 		// this will not actually send a second EOS, but will make sure everything is in the correct state
 		c.SendEOS(context.Background(), livekit.EndReasonSrcClosed)
 	}
