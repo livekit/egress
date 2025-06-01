@@ -1,49 +1,49 @@
 module github.com/livekit/egress
 
-replace github.com/go-gst/go-gst => github.com/livekit/go-gst v0.0.0-20250515181339-414b58eb8a18
+replace github.com/go-gst/go-gst => github.com/livekit/go-gst v0.2.33
 
 go 1.24.2
 
 toolchain go1.24.3
 
 require (
-	cloud.google.com/go/storage v1.53.0
+	cloud.google.com/go/storage v1.55.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/aliyun/aliyun-oss-go-sdk v3.0.2+incompatible
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/config v1.29.14
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.67
-	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.75
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.3
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.77
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.80.0
 	github.com/aws/smithy-go v1.22.3
-	github.com/chromedp/cdproto v0.0.0-20250509201441-70372ae9ef75
+	github.com/chromedp/cdproto 4dcc110a7b92
 	github.com/chromedp/chromedp v0.13.6
 	github.com/frostbyte73/core v0.1.1
-	github.com/go-gst/go-glib v1.4.1-0.20241209142714-f53cebf18559
+	github.com/go-gst/go-glib 35ebad1471fd
 	github.com/go-gst/go-gst v1.4.0
 	github.com/go-jose/go-jose/v4 v4.1.0
-	github.com/go-logr/logr v1.4.2
-	github.com/googleapis/gax-go/v2 v2.14.1
+	github.com/go-logr/logr v1.4.3
+	github.com/googleapis/gax-go/v2 v2.14.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/livekit/livekit-server v1.8.4
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
-	github.com/livekit/media-sdk v0.0.0-20250514070716-74b488e25cc7
-	github.com/livekit/protocol v1.38.1-0.20250512190841-13a3168da6ce
+	github.com/livekit/media-sdk b07af88637c5
+	github.com/livekit/protocol v1.39.0
 	github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c
-	github.com/livekit/server-sdk-go/v2 v2.8.2-0.20250515012651-36db9bf95ff3
-	github.com/pion/rtp v1.8.15
-	github.com/pion/webrtc/v4 v4.1.0
+	github.com/livekit/server-sdk-go/v2 v2.9.0
+	github.com/pion/rtp v1.8.16
+	github.com/pion/webrtc/v4 v4.1.1
 	github.com/prometheus/client_golang v1.22.0
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.63.0
+	github.com/prometheus/common v0.64.0
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.6
 	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.27.0
-	golang.org/x/exp v0.0.0-20250506013437-ce4c2cf36ca6
+	golang.org/x/exp b6e5de432a8b
 	golang.org/x/oauth2 v0.30.0
-	google.golang.org/api v0.232.0
-	google.golang.org/grpc v1.72.0
+	google.golang.org/api v0.235.0
+	google.golang.org/grpc v1.72.2
 	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v3 v3.0.1
 )
