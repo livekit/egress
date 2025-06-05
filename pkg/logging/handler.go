@@ -1,7 +1,6 @@
 package logging
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/livekit/protocol/logger"
@@ -27,19 +26,10 @@ func NewHandlerLogger(handlerID, egressID string) *medialogutils.CmdLogger {
 		lines := strings.Split(s, "\n")
 		for i, line := range lines {
 			switch {
-			case strings.HasSuffix(line, "}"):
-				fmt.Println(line)
 			case len(line) == 0:
 				continue
 			case len(line) > 5 && sdkPrefixes[line[:5]]:
-				l.Infow(line)
-			case strings.HasPrefix(line, "{\"level\":"):
-				// should have ended with "}", probably got split
-				if i < len(lines)-1 && strings.HasSuffix(lines[i+1], "}") {
-					line = line + lines[i+1]
-					i++
-				}
-				fmt.Println(line)
+				l.Debugw(line)
 			case strings.HasPrefix(line, "(egress:"):
 				if len(line) > 13 && !gstSuffixes[line[len(line)-13:]] && i < len(lines)-1 {
 					next := lines[i+1]
