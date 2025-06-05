@@ -35,6 +35,7 @@ type StreamBin struct {
 	Bin        *gstreamer.Bin
 	OutputType types.OutputType
 
+	latency  time.Duration
 	mu       sync.RWMutex
 	pipeline *gstreamer.Pipeline
 }
@@ -50,7 +51,7 @@ type Stream struct {
 	failed         atomic.Bool
 }
 
-func BuildStreamBin(pipeline *gstreamer.Pipeline, o *config.StreamConfig) (*StreamBin, error) {
+func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, o *config.StreamConfig) (*StreamBin, error) {
 	b := pipeline.NewBin("stream")
 
 	var mux *gst.Element
@@ -68,7 +69,7 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, o *config.StreamConfig) (*Stre
 			return nil, errors.ErrGstPipelineError(err)
 		}
 		// add latency to give time for flvmux to receive and order packets from both streams
-		if err = mux.SetProperty("latency", config.PipelineLatency); err != nil {
+		if err = mux.SetProperty("latency", p.Latency.PipelineLatency); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 
@@ -104,6 +105,7 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, o *config.StreamConfig) (*Stre
 	sb := &StreamBin{
 		Bin:        b,
 		OutputType: o.OutputType,
+		latency:    p.Latency.PipelineLatency,
 	}
 
 	return sb, nil
@@ -113,7 +115,7 @@ func (sb *StreamBin) BuildStream(stream *config.Stream, framerate int32) (*Strea
 	stream.Name = utils.NewGuid("")
 	b := sb.Bin.NewBin(stream.Name)
 
-	queue, err := gstreamer.BuildQueue(fmt.Sprintf("queue_%s", stream.Name), config.PipelineLatency, true)
+	queue, err := gstreamer.BuildQueue(fmt.Sprintf("queue_%s", stream.Name), sb.latency, true)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}

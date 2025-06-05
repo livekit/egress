@@ -43,6 +43,11 @@ const (
 
 	defaultIOCreateTimeout = time.Second * 15
 	defaultIOUpdateTimeout = time.Second * 30
+
+	defaultJitterBufferLatency = time.Second * 2
+	defaultAudioMixerLatency   = time.Millisecond * 2500
+	defaultPipelineLatency     = time.Second * 3
+	defaultAppSrcDrainTimeout  = time.Millisecond * 3500
 )
 
 type ServiceConfig struct {
@@ -148,5 +153,18 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.MaxUploadQueue <= 0 {
 		c.MaxUploadQueue = maxUploadQueue
+	}
+
+	if c.Latency.JitterBufferLatency == 0 {
+		c.Latency.JitterBufferLatency = defaultJitterBufferLatency
+	}
+	if c.Latency.AudioMixerLatency == 0 {
+		c.Latency.AudioMixerLatency = defaultAudioMixerLatency
+	}
+	if c.Latency.PipelineLatency == 0 {
+		c.Latency.PipelineLatency = defaultPipelineLatency
+	}
+	if c.Latency.AppSrcDrainTimeout == 0 {
+		c.Latency.AppSrcDrainTimeout = defaultAppSrcDrainTimeout
 	}
 }

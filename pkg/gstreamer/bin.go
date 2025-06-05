@@ -35,7 +35,7 @@ type Bin struct {
 	pipeline *gst.Pipeline
 	mu       sync.Mutex
 	bin      *gst.Bin
-	latency  uint64
+	latency  time.Duration
 
 	linkFunc   func() error
 	shouldLink func(string) bool

@@ -15,18 +15,20 @@
 package gstreamer
 
 import (
+	"time"
+
 	"github.com/go-gst/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
 )
 
-func BuildQueue(name string, latency uint64, leaky bool) (*gst.Element, error) {
+func BuildQueue(name string, latency time.Duration, leaky bool) (*gst.Element, error) {
 	queue, err := gst.NewElementWithName("queue", name)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 	if latency > 0 {
-		if err = queue.SetProperty("max-size-time", latency); err != nil {
+		if err = queue.SetProperty("max-size-time", uint64(latency)); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = queue.SetProperty("max-size-bytes", uint(0)); err != nil {

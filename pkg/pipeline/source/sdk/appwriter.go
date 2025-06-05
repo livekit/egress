@@ -43,6 +43,8 @@ const (
 )
 
 type AppWriter struct {
+	conf *config.PipelineConfig
+
 	logger    logger.Logger
 	csvLogger *logging.CSVLogger[logging.TrackStats]
 	drift     atomic.Duration
@@ -85,6 +87,7 @@ func NewAppWriter(
 	callbacks *gstreamer.Callbacks,
 ) (*AppWriter, error) {
 	w := &AppWriter{
+		conf:              conf,
 		logger:            logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
 		track:             track,
 		pub:               pub,
@@ -137,7 +140,7 @@ func NewAppWriter(
 
 	w.buffer = jitter.NewBuffer(
 		depacketizer,
-		config.JitterBufferLatency,
+		conf.Latency.JitterBufferLatency,
 		w.samples,
 		jitter.WithLogger(w.logger),
 		jitter.WithPacketLossHandler(w.sendPLI),
@@ -227,7 +230,7 @@ func (w *AppWriter) handleReadError(err error) {
 		if lastRecv.IsZero() {
 			lastRecv = w.startTime
 		}
-		if w.pub.IsMuted() || time.Since(lastRecv) > config.JitterBufferLatency {
+		if w.pub.IsMuted() || time.Since(lastRecv) > w.conf.Latency.JitterBufferLatency {
 			// set track inactive
 			w.logger.Debugw("track inactive", "timestamp", time.Since(w.startTime))
 			w.active.Store(false)
@@ -308,7 +311,7 @@ func (w *AppWriter) Drain(force bool) {
 		if force || !w.active.Load() {
 			w.endStream.Break()
 		} else {
-			time.AfterFunc(config.AppSrcDrainTimeout, func() { w.endStream.Break() })
+			time.AfterFunc(w.conf.Latency.AppSrcDrainTimeout, func() { w.endStream.Break() })
 		}
 	})
 
