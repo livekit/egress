@@ -43,6 +43,11 @@ const (
 
 	defaultIOCreateTimeout = time.Second * 15
 	defaultIOUpdateTimeout = time.Second * 30
+
+	defaultJitterBufferLatency = time.Second * 2
+	defaultAudioMixerLatency   = time.Millisecond * 2500
+	defaultPipelineLatency     = time.Second * 3
+	defaultAppSrcDrainTimeout  = time.Millisecond * 3500
 )
 
 type ServiceConfig struct {
@@ -79,6 +84,12 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 			ApiKey:    os.Getenv("LIVEKIT_API_KEY"),
 			ApiSecret: os.Getenv("LIVEKIT_API_SECRET"),
 			WsUrl:     os.Getenv("LIVEKIT_WS_URL"),
+			Latency: LatencyConfig{
+				JitterBufferLatency: defaultJitterBufferLatency,
+				AudioMixerLatency:   defaultAudioMixerLatency,
+				PipelineLatency:     defaultPipelineLatency,
+				AppSrcDrainTimeout:  defaultAppSrcDrainTimeout,
+			},
 		},
 		CPUCostConfig: &CPUCostConfig{},
 	}

@@ -62,6 +62,12 @@ type GCPConfig struct {
 	ProxyConfig     *ProxyConfig `yaml:"proxy_config"`
 }
 
+type ProxyConfig struct {
+	Url      string `yaml:"url"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+}
+
 func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageConfig, error) {
 	sc := &StorageConfig{}
 	if p.StorageConfig != nil {

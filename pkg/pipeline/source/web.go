@@ -17,7 +17,6 @@ package source
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/url"
@@ -301,20 +300,16 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *runtime.EventConsoleAPICalled:
+			var args []string
+			for _, arg := range ev.Args {
+				args = append(args, arg.Value.String())
+			}
 			if s.chromeLog != nil {
-				if b, err := json.Marshal(ev); err == nil {
-					_, _ = s.chromeLog.Write(append(b, '\n'))
-				}
+				_, _ = s.chromeLog.WriteString(fmt.Sprintf("%v: %s\n", ev.Type, strings.Join(args, " ")))
 			}
 
-			for _, arg := range ev.Args {
-				var val interface{}
-				err := json.Unmarshal(arg.Value, &val)
-				if err != nil {
-					continue
-				}
-
-				switch fmt.Sprint(val) {
+			for _, arg := range args {
+				switch arg {
 				case startRecordingLog:
 					logger.Infow("chrome: START_RECORDING")
 					s.startRecording.Break()
@@ -327,9 +322,7 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 
 		case *runtime.EventExceptionThrown:
 			if s.chromeLog != nil {
-				if b, err := json.Marshal(ev); err == nil {
-					_, _ = s.chromeLog.Write(append(b, '\n'))
-				}
+				_, _ = s.chromeLog.WriteString(fmt.Sprintf("Exception: %s\n", ev.ExceptionDetails.Error()))
 			}
 
 			logger.Debugw("chrome exception", "err", ev.ExceptionDetails.Error())
