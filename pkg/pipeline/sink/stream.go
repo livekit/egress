@@ -42,7 +42,7 @@ type StreamSink struct {
 }
 
 func newStreamSink(p *gstreamer.Pipeline, conf *config.PipelineConfig, o *config.StreamConfig) (*StreamSink, error) {
-	streamBin, err := builder.BuildStreamBin(p, o)
+	streamBin, err := builder.BuildStreamBin(p, conf, o)
 	if err != nil {
 		return nil, err
 	}
