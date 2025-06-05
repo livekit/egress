@@ -55,6 +55,14 @@ type BaseConfig struct {
 	Insecure    bool                   `yaml:"insecure"`     // allow chrome to connect to an insecure websocket
 	Debug       DebugConfig            `yaml:"debug"`        // create dot file on internal error
 	ChromeFlags map[string]interface{} `yaml:"chrome_flags"` // additional flags to pass to Chrome
+	Latency     LatencyConfig          `yaml:"latency"`      // gstreamer latencies, modifying this may break the service
+}
+
+type SessionLimits struct {
+	FileOutputMaxDuration    time.Duration `yaml:"file_output_max_duration"`
+	StreamOutputMaxDuration  time.Duration `yaml:"stream_output_max_duration"`
+	SegmentOutputMaxDuration time.Duration `yaml:"segment_output_max_duration"`
+	ImageOutputMaxDuration   time.Duration `yaml:"image_output_max_duration"`
 }
 
 type DebugConfig struct {
@@ -65,17 +73,11 @@ type DebugConfig struct {
 	StorageConfig       `yaml:",inline"` // upload config (S3, Azure, GCP, or AliOSS)
 }
 
-type ProxyConfig struct {
-	Url      string `yaml:"url"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-}
-
-type SessionLimits struct {
-	FileOutputMaxDuration    time.Duration `yaml:"file_output_max_duration"`
-	StreamOutputMaxDuration  time.Duration `yaml:"stream_output_max_duration"`
-	SegmentOutputMaxDuration time.Duration `yaml:"segment_output_max_duration"`
-	ImageOutputMaxDuration   time.Duration `yaml:"image_output_max_duration"`
+type LatencyConfig struct {
+	JitterBufferLatency time.Duration
+	AudioMixerLatency   time.Duration
+	PipelineLatency     time.Duration
+	AppSrcDrainTimeout  time.Duration
 }
 
 func (c *BaseConfig) initLogger(values ...interface{}) error {

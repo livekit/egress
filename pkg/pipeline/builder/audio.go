@@ -75,7 +75,7 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 			return err
 		}
 	} else {
-		queue, err := gstreamer.BuildQueue("audio_queue", config.PipelineLatency, true)
+		queue, err := gstreamer.BuildQueue("audio_queue", p.Latency.PipelineLatency, true)
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -275,7 +275,7 @@ func (b *AudioBin) addMixer() error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = audioMixer.SetProperty("latency", config.AudioMixerLatency); err != nil {
+	if err = audioMixer.SetProperty("latency", uint64(b.conf.Latency.AudioMixerLatency)); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
@@ -318,7 +318,7 @@ func (b *AudioBin) addEncoder() error {
 }
 
 func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel int) error {
-	audioQueue, err := gstreamer.BuildQueue("audio_input_queue", config.PipelineLatency, true)
+	audioQueue, err := gstreamer.BuildQueue("audio_input_queue", p.Latency.PipelineLatency, true)
 	if err != nil {
 		return err
 	}
