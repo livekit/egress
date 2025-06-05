@@ -82,10 +82,10 @@ session_limits: # optional egress duration limits - once hit, egress will end wi
 # file upload config - only one of the following. Can be overridden per request
 storage:
   s3:
-    access_key: AWS_ACCESS_KEY_ID env or IAM role can be used instead
-    secret: AWS_SECRET_ACCESS_KEY env or IAM role can be used instead
-    session_token: AWS_SESSION_TOKEN env or IAM role can be used instead
-    region: AWS_DEFAULT_REGION env or IAM role can be used instead
+    access_key: AWS_ACCESS_KEY_ID env or EMPTY if using IAM Role or instance profile
+    secret: AWS_SECRET_ACCESS_KEY env or EMPTY if using IAM Role or instance profile
+    session_token: AWS_SESSION_TOKEN env or EMPTY if using IAM Role or instance profile
+    region: AWS_DEFAULT_REGION env or EMPTY if using IAM Role or instance profile
     endpoint: (optional) custom endpoint
     bucket: bucket to upload files to
     # the following s3 options can only be set in config, *not* per request, they will be added to any per-request options
