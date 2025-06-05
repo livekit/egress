@@ -27,7 +27,6 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -129,8 +128,8 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	)
 	cmd.Dir = "/"
 
-	l := logging.NewHandlerLogger(handlerID, req.EgressId)
-	cmd.Stderr = l
+	// l := logging.NewHandlerLogger(handlerID, req.EgressId)
+	// cmd.Stderr = l
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	if err = s.Launch(context.Background(), handlerID, req, info, cmd); err != nil {
