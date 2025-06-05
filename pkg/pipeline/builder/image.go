@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	imageQueueLatency = uint64(200 * time.Millisecond)
+	imageQueueLatency = 200 * time.Millisecond
 )
 
 func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
