@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM livekit/gstreamer:1.22.12-dev
+FROM livekit/gstreamer:1.24.12-dev
 
 WORKDIR /workspace
 
@@ -53,7 +53,7 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd
     CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go test -c -v -race --tags=integration ./test
 
 
-FROM livekit/gstreamer:1.22.12-prod
+FROM livekit/gstreamer:1.24.12-prod
 
 ARG TARGETPLATFORM
 
