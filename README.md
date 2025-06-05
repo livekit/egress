@@ -80,39 +80,40 @@ session_limits: # optional egress duration limits - once hit, egress will end wi
   segment_output_max_duration: 3h
 
 # file upload config - only one of the following. Can be overridden per request
-s3:
-  access_key: AWS_ACCESS_KEY_ID env or IAM role can be used instead
-  secret: AWS_SECRET_ACCESS_KEY env or IAM role can be used instead
-  session_token: AWS_SESSION_TOKEN env or IAM role can be used instead
-  region: AWS_DEFAULT_REGION env or IAM role can be used instead
-  endpoint: (optional) custom endpoint
-  bucket: bucket to upload files to
-  # the following s3 options can only be set in config, *not* per request, they will be added to any per-request options
-  proxy_config:
-    url: (optional) proxy url
-    username: (optional) proxy username
-    password: (optional) proxy password
-  max_retries: (optional, default=3) number or retries to attempt
-  max_retry_delay: (optional, default=5s) max delay between retries (e.g. 5s, 100ms, 1m...)
-  min_retry_delay: (optional, default=500ms) min delay between retries (e.g. 100ms, 1s...)
-  aws_log_level: (optional, default=LogOff) log level for aws sdk (LogDebugWithRequestRetries, LogDebug, ...) 
-azure:
-  account_name: AZURE_STORAGE_ACCOUNT env can be used instead
-  account_key: AZURE_STORAGE_KEY env can be used instead
-  container_name: container to upload files to
-gcp:
-  credentials_json: GOOGLE_APPLICATION_CREDENTIALS env can be used instead
-  bucket: bucket to upload files to
-  proxy_config:
-    url: (optional) proxy url
-    username: (optional) proxy username
-    password: (optional) proxy password
-alioss:
-  access_key: Ali OSS AccessKeyId
-  secret: Ali OSS AccessKeySecret
-  region: Ali OSS region
-  endpoint: (optional) custom endpoint
-  bucket: bucket to upload files to
+storage:
+  s3:
+    access_key: AWS_ACCESS_KEY_ID env or EMPTY if using IAM Role or instance profile
+    secret: AWS_SECRET_ACCESS_KEY env or EMPTY if using IAM Role or instance profile
+    session_token: AWS_SESSION_TOKEN env or EMPTY if using IAM Role or instance profile
+    region: AWS_DEFAULT_REGION env or EMPTY if using IAM Role or instance profile
+    endpoint: (optional) custom endpoint
+    bucket: bucket to upload files to
+    # the following s3 options can only be set in config, *not* per request, they will be added to any per-request options
+    proxy_config:
+      url: (optional) proxy url
+      username: (optional) proxy username
+      password: (optional) proxy password
+    max_retries: (optional, default=3) number or retries to attempt
+    max_retry_delay: (optional, default=5s) max delay between retries (e.g. 5s, 100ms, 1m...)
+    min_retry_delay: (optional, default=500ms) min delay between retries (e.g. 100ms, 1s...)
+    aws_log_level: (optional, default=LogOff) log level for aws sdk (LogDebugWithRequestRetries, LogDebug, ...) 
+  azure:
+    account_name: AZURE_STORAGE_ACCOUNT env can be used instead
+    account_key: AZURE_STORAGE_KEY env can be used instead
+    container_name: container to upload files to
+  gcp:
+    credentials_json: GOOGLE_APPLICATION_CREDENTIALS env can be used instead
+    bucket: bucket to upload files to
+    proxy_config:
+      url: (optional) proxy url
+      username: (optional) proxy username
+      password: (optional) proxy password
+  alioss:
+    access_key: Ali OSS AccessKeyId
+    secret: Ali OSS AccessKeySecret
+    region: Ali OSS region
+    endpoint: (optional) custom endpoint
+    bucket: bucket to upload files to
 
 # dev/debugging fields
 insecure: can be used to connect to an insecure websocket (default false)
