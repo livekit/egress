@@ -292,18 +292,6 @@ func (m *Monitor) UpdatePID(egressID string, pid int) {
 	m.procStats[pid] = ps
 }
 
-func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	delete(m.pending, req.EgressId)
-	m.requests.Dec()
-	switch req.Request.(type) {
-	case *rpc.StartEgressRequest_RoomComposite, *rpc.StartEgressRequest_Web:
-		m.webRequests.Dec()
-	}
-}
-
 func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
@@ -316,6 +304,18 @@ func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Add(1)
 	case *rpc.StartEgressRequest_Track:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrack}).Add(1)
+	}
+}
+
+func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.pending, req.EgressId)
+	m.requests.Dec()
+	switch req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite, *rpc.StartEgressRequest_Web:
+		m.webRequests.Dec()
 	}
 }
 

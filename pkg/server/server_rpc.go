@@ -78,21 +78,25 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 	launchErr := s.launchProcess(req, p.Info)
 	createErr := <-errChan
 
-	if launchErr != nil {
-		if createErr == nil {
-			// send failed update if it was saved to db
-			s.processEnded(req, p.Info, launchErr)
-		}
+	switch {
+	case launchErr != nil && createErr != nil:
+		s.processEnded(req, p.Info, nil)
 		return nil, launchErr
-	} else if createErr != nil {
+
+	case launchErr != nil:
+		s.processEnded(req, p.Info, launchErr)
+		return nil, launchErr
+
+	case createErr != nil:
 		// launched but failed to save - abort and return error
 		p.Info.Error = createErr.Error()
 		p.Info.ErrorCode = int32(http.StatusInternalServerError)
 		s.AbortProcess(req.EgressId, createErr)
 		return nil, createErr
-	}
 
-	return p.Info, nil
+	default:
+		return p.Info, nil
+	}
 }
 
 func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.EgressInfo) error {
@@ -136,14 +140,14 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 
 	if err = s.Launch(context.Background(), handlerID, req, info, cmd); err != nil {
 		return err
-	} else {
-		s.monitor.UpdatePID(info.EgressId, cmd.Process.Pid)
-		go func() {
-			err = cmd.Wait()
-			s.processEnded(req, info, err)
-		}()
-		return nil
 	}
+
+	s.monitor.UpdatePID(info.EgressId, cmd.Process.Pid)
+	go func() {
+		err = cmd.Wait()
+		s.processEnded(req, info, err)
+	}()
+	return nil
 }
 
 func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressInfo, err error) {
