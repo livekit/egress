@@ -45,7 +45,7 @@ func TestUploader(t *testing.T) {
 	filepath := "uploader_test.go"
 	storagePath := "uploader_test.go"
 
-	location, size, err := u.Upload(filepath, storagePath, "test/plain", false)
+	location, size, err := u.Upload(filepath, storagePath, "text/plain", false)
 	require.NoError(t, err)
 
 	require.NotZero(t, size)
