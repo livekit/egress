@@ -77,11 +77,11 @@ func (c *Controller) generatePProf() {
 	_, _ = f.Write(b)
 }
 
-var debugFileExtensions = map[string]struct{}{
-	"csv":  {},
-	"dot":  {},
-	"prof": {},
-	"log":  {},
+var debugFileDataTypes = map[string]types.OutputType{
+	"csv":  "text/csv",
+	"dot":  types.OutputTypeBlob,
+	"prof": types.OutputTypeBlob,
+	"log":  "text/plain",
 }
 
 func (c *Controller) uploadDebugFiles() {
@@ -94,8 +94,14 @@ func (c *Controller) uploadDebugFiles() {
 	var u *uploader.Uploader
 
 	for _, f := range files {
+		info, err := f.Info()
+		if err != nil || info.Size() == 0 {
+			continue
+		}
+
 		s := strings.Split(f.Name(), ".")
-		if _, ok := debugFileExtensions[s[len(s)-1]]; !ok {
+		outputType, ok := debugFileDataTypes[s[len(s)-1]]
+		if !ok {
 			continue
 		}
 
@@ -109,7 +115,7 @@ func (c *Controller) uploadDebugFiles() {
 
 		local := path.Join(c.TmpDir, f.Name())
 		storage := path.Join(c.Info.EgressId, f.Name())
-		_, _, err = u.Upload(local, storage, types.OutputTypeBlob, false)
+		_, _, err = u.Upload(local, storage, outputType, false)
 		if err != nil {
 			logger.Errorw("failed to upload debug file", err)
 			return
