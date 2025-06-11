@@ -58,6 +58,8 @@ func NewHandlerLogger(handlerID, egressID string) *medialogutils.CmdLogger {
 					}
 				}
 				continue
+			case strings.Contains(s, "unmarshal JSON string into Go network.CookiePartitionKey"):
+				continue
 			default:
 				l.Errorw(line, nil)
 			}
