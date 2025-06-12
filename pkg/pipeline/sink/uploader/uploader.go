@@ -129,8 +129,12 @@ func (u *Uploader) Upload(
 			return location, size, nil
 		}
 
-		return "", 0, psrpc.NewErrorf(psrpc.InvalidArgument,
-			"primary: %s\nbackup: %s", primaryErr.Error(), backupErr.Error())
+		if primaryErr != nil {
+			return "", 0, psrpc.NewErrorf(psrpc.InvalidArgument,
+				"primary: %s\nbackup: %s", primaryErr.Error(), backupErr.Error())
+		} else {
+			return "", 0, psrpc.NewError(psrpc.InvalidArgument, backupErr)
+		}
 	}
 
 	return "", 0, primaryErr
