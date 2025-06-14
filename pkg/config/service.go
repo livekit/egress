@@ -97,11 +97,51 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	conf.NodeID = utils.NewGuid("NE_")
 	conf.InitDefaults()
 
+	if conf.StorageConfig != nil {
+		err := handlePresignedUrl(conf.StorageConfig)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if conf.BackupConfig != nil {
+		err := handlePresignedUrl(conf.BackupConfig)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if err := conf.initLogger("nodeID", conf.NodeID, "clusterID", conf.ClusterID); err != nil {
 		return nil, err
 	}
 
 	return conf, nil
+}
+
+func handlePresignedUrl(storageConfig *StorageConfig) error {
+	if !storageConfig.GeneratePresignedUrl {
+		return nil
+	}
+
+	if storageConfig.S3 != nil {
+		storageConfig.S3.GeneratePresignedUrl = true
+	}
+
+	if storageConfig.AliOSS != nil {
+		storageConfig.AliOSS.GeneratePresignedUrl = true
+	}
+
+	if storageConfig.Azure != nil {
+		return errors.ErrCouldNotParseConfig(fmt.Errorf("GeneratePresignedUrl cannot be selected with Azure uploads"))
+	}
+
+	if storageConfig.GCP != nil {
+		return errors.ErrCouldNotParseConfig(fmt.Errorf("GeneratePresignedUrl cannot be selected with GCP uploads"))
+	}
+
+	return nil
 }
 
 func (c *ServiceConfig) InitDefaults() {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils/storage"
 )
 
 func TestUploader(t *testing.T) {
@@ -20,7 +21,7 @@ func TestUploader(t *testing.T) {
 	bucket := os.Getenv("AWS_BUCKET")
 
 	primary := &config.StorageConfig{
-		S3: &config.S3Config{
+		S3: &storage.S3Config{
 			AccessKey: "nonsense",
 			Secret:    "public",
 			Region:    "us-east-1",
@@ -29,7 +30,7 @@ func TestUploader(t *testing.T) {
 	}
 	backup := &config.StorageConfig{
 		Prefix: "testProject",
-		S3: &config.S3Config{
+		S3: &storage.S3Config{
 			AccessKey: key,
 			Secret:    secret,
 			Region:    region,

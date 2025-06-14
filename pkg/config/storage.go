@@ -19,53 +19,17 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/egress"
+	"github.com/livekit/protocol/utils/storage"
 )
 
 type StorageConfig struct {
 	Prefix               string `yaml:"prefix"` // prefix applied to all filenames
 	GeneratePresignedUrl bool   `yaml:"generate_presigned_url"`
 
-	S3     *S3Config    `yaml:"s3"`     // upload to s3
-	Azure  *AzureConfig `yaml:"azure"`  // upload to azure
-	GCP    *GCPConfig   `yaml:"gcp"`    // upload to gcp
-	AliOSS *S3Config    `yaml:"alioss"` // upload to aliyun
-}
-
-type S3Config struct {
-	AccessKey      string       `yaml:"access_key"`    // (env AWS_ACCESS_KEY_ID)
-	Secret         string       `yaml:"secret"`        // (env AWS_SECRET_ACCESS_KEY)
-	SessionToken   string       `yaml:"session_token"` // (env AWS_SESSION_TOKEN)
-	Region         string       `yaml:"region"`        // (env AWS_DEFAULT_REGION)
-	Endpoint       string       `yaml:"endpoint"`
-	Bucket         string       `yaml:"bucket"`
-	ForcePathStyle bool         `yaml:"force_path_style"`
-	ProxyConfig    *ProxyConfig `yaml:"proxy_config"`
-
-	MaxRetries    int           `yaml:"max_retries"`
-	MaxRetryDelay time.Duration `yaml:"max_retry_delay"`
-	MinRetryDelay time.Duration `yaml:"min_retry_delay"`
-
-	Metadata           map[string]string `yaml:"metadata"`
-	Tagging            string            `yaml:"tagging"`
-	ContentDisposition string            `yaml:"content_disposition"`
-}
-
-type AzureConfig struct {
-	AccountName   string `yaml:"account_name"` // (env AZURE_STORAGE_ACCOUNT)
-	AccountKey    string `yaml:"account_key"`  // (env AZURE_STORAGE_KEY)
-	ContainerName string `yaml:"container_name"`
-}
-
-type GCPConfig struct {
-	CredentialsJSON string       `yaml:"credentials_json"` // (env GOOGLE_APPLICATION_CREDENTIALS)
-	Bucket          string       `yaml:"bucket"`
-	ProxyConfig     *ProxyConfig `yaml:"proxy_config"`
-}
-
-type ProxyConfig struct {
-	Url      string `yaml:"url"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
+	S3     *storage.S3Config    `yaml:"s3"`     // upload to s3
+	Azure  *storage.AzureConfig `yaml:"azure"`  // upload to azure
+	GCP    *storage.GCPConfig   `yaml:"gcp"`    // upload to gcp
+	AliOSS *storage.S3Config    `yaml:"alioss"` // upload to aliyun
 }
 
 func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageConfig, error) {
@@ -76,17 +40,18 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 	}
 
 	if s3 := req.GetS3(); s3 != nil {
-		sc.S3 = &S3Config{
-			AccessKey:          s3.AccessKey,
-			Secret:             s3.Secret,
-			SessionToken:       s3.SessionToken,
-			Region:             s3.Region,
-			Endpoint:           s3.Endpoint,
-			Bucket:             s3.Bucket,
-			ForcePathStyle:     s3.ForcePathStyle,
-			Metadata:           s3.Metadata,
-			Tagging:            s3.Tagging,
-			ContentDisposition: s3.ContentDisposition,
+		sc.S3 = &storage.S3Config{
+			AccessKey:            s3.AccessKey,
+			Secret:               s3.Secret,
+			SessionToken:         s3.SessionToken,
+			Region:               s3.Region,
+			Endpoint:             s3.Endpoint,
+			Bucket:               s3.Bucket,
+			ForcePathStyle:       s3.ForcePathStyle,
+			Metadata:             s3.Metadata,
+			Tagging:              s3.Tagging,
+			ContentDisposition:   s3.ContentDisposition,
+			GeneratePresignedUrl: sc.GeneratePresignedUrl,
 		}
 		if p.StorageConfig != nil && p.StorageConfig.S3 != nil {
 			sc.S3.MaxRetries = p.StorageConfig.S3.MaxRetries
@@ -94,7 +59,7 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 			sc.S3.MinRetryDelay = p.StorageConfig.S3.MinRetryDelay
 		}
 		if s3.Proxy != nil {
-			sc.S3.ProxyConfig = &ProxyConfig{
+			sc.S3.ProxyConfig = &storage.ProxyConfig{
 				Url:      s3.Proxy.Url,
 				Username: s3.Proxy.Username,
 				Password: s3.Proxy.Password,
@@ -113,12 +78,12 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 	}
 
 	if gcp := req.GetGcp(); gcp != nil {
-		sc.GCP = &GCPConfig{
+		sc.GCP = &storage.GCPConfig{
 			CredentialsJSON: gcp.Credentials,
 			Bucket:          gcp.Bucket,
 		}
 		if gcp.Proxy != nil {
-			sc.GCP.ProxyConfig = &ProxyConfig{
+			sc.GCP.ProxyConfig = &storage.ProxyConfig{
 				Url:      gcp.Proxy.Url,
 				Username: gcp.Proxy.Username,
 				Password: gcp.Proxy.Password,
@@ -128,7 +93,7 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 	}
 
 	if azure := req.GetAzure(); azure != nil {
-		sc.Azure = &AzureConfig{
+		sc.Azure = &storage.AzureConfig{
 			AccountName:   azure.AccountName,
 			AccountKey:    azure.AccountKey,
 			ContainerName: azure.ContainerName,
@@ -137,12 +102,13 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 	}
 
 	if ali := req.GetAliOSS(); ali != nil {
-		sc.AliOSS = &S3Config{
-			AccessKey: ali.AccessKey,
-			Secret:    ali.Secret,
-			Region:    ali.Region,
-			Endpoint:  ali.Endpoint,
-			Bucket:    ali.Bucket,
+		sc.AliOSS = &storage.S3Config{
+			AccessKey:            ali.AccessKey,
+			Secret:               ali.Secret,
+			Region:               ali.Region,
+			Endpoint:             ali.Endpoint,
+			Bucket:               ali.Bucket,
+			GeneratePresignedUrl: sc.GeneratePresignedUrl,
 		}
 		return sc, nil
 	}

@@ -23,6 +23,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/storage"
 	"github.com/livekit/psrpc"
 )
 
@@ -32,13 +33,9 @@ const (
 	maxDelay   = time.Second * 5
 )
 
-type uploader interface {
-	upload(string, string, types.OutputType) (string, int64, error)
-}
-
 type Uploader struct {
-	primary       uploader
-	backup        uploader
+	primary       storage.StorageClient
+	backup        storage.StorageClient
 	primaryFailed bool
 	info          *livekit.EgressInfo
 	monitor       *stats.HandlerMonitor
@@ -68,20 +65,20 @@ func New(conf, backup *config.StorageConfig, monitor *stats.HandlerMonitor, info
 	return u, nil
 }
 
-func getUploader(conf *config.StorageConfig) (uploader, error) {
+func getUploader(conf *config.StorageConfig) (storage.StorageClient, error) {
 	switch {
 	case conf == nil:
-		return newLocalUploader(&config.StorageConfig{})
+		return storage.NewLocalClient("")
 	case conf.S3 != nil:
-		return newS3Uploader(conf)
+		return storage.NewS3Client(conf.S3, conf.Prefix)
 	case conf.GCP != nil:
-		return newGCPUploader(conf)
+		return storage.NewGCPClient(conf.GCP, conf.Prefix)
 	case conf.Azure != nil:
-		return newAzureUploader(conf)
+		return storage.NewAzureClient(conf.Azure, conf.Prefix)
 	case conf.AliOSS != nil:
-		return newAliOSSUploader(conf)
+		return storage.NewAliOSSClient(conf.AliOSS, conf.Prefix)
 	default:
-		return newLocalUploader(conf)
+		return storage.NewLocalClient(conf.Prefix)
 	}
 }
 
@@ -94,7 +91,7 @@ func (u *Uploader) Upload(
 	var primaryErr error
 	if !u.primaryFailed {
 		start := time.Now()
-		location, size, err := u.primary.upload(localFilepath, storageFilepath, outputType)
+		location, size, err := u.primary.UploadFile(localFilepath, storageFilepath, string(outputType))
 		elapsed := time.Since(start)
 
 		if err == nil {
@@ -115,7 +112,7 @@ func (u *Uploader) Upload(
 	}
 
 	if u.backup != nil {
-		location, size, backupErr := u.backup.upload(localFilepath, storageFilepath, outputType)
+		location, size, backupErr := u.backup.UploadFile(localFilepath, storageFilepath, string(outputType))
 		if backupErr == nil {
 			if u.info != nil {
 				u.info.SetBackupUsed()
