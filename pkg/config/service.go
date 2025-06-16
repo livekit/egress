@@ -45,9 +45,8 @@ const (
 	defaultIOUpdateTimeout = time.Second * 30
 
 	defaultJitterBufferLatency = time.Second * 2
-	defaultAudioMixerLatency   = time.Millisecond * 2500
+	defaultAudioMixerLatency   = time.Millisecond * 2750
 	defaultPipelineLatency     = time.Second * 3
-	defaultAppSrcDrainTimeout  = time.Millisecond * 3500
 )
 
 type ServiceConfig struct {
@@ -163,8 +162,5 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.Latency.PipelineLatency == 0 {
 		c.Latency.PipelineLatency = defaultPipelineLatency
-	}
-	if c.Latency.AppSrcDrainTimeout == 0 {
-		c.Latency.AppSrcDrainTimeout = defaultAppSrcDrainTimeout
 	}
 }

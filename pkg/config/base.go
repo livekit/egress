@@ -77,7 +77,6 @@ type LatencyConfig struct {
 	JitterBufferLatency time.Duration
 	AudioMixerLatency   time.Duration
 	PipelineLatency     time.Duration
-	AppSrcDrainTimeout  time.Duration
 }
 
 func (c *BaseConfig) initLogger(values ...interface{}) error {

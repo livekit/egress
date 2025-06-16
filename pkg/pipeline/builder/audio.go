@@ -278,6 +278,9 @@ func (b *AudioBin) addMixer() error {
 	if err = audioMixer.SetProperty("latency", uint64(b.conf.Latency.AudioMixerLatency)); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+	if err = audioMixer.SetProperty("alignment-threshold", uint64(b.conf.Latency.AudioMixerLatency)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
 
 	mixedCaps, err := newAudioCapsFilter(b.conf, audioChannelStereo)
 	if err != nil {

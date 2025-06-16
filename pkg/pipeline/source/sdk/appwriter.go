@@ -311,7 +311,7 @@ func (w *AppWriter) Drain(force bool) {
 		if force || !w.active.Load() {
 			w.endStream.Break()
 		} else {
-			time.AfterFunc(w.conf.Latency.AppSrcDrainTimeout, func() { w.endStream.Break() })
+			time.AfterFunc(w.conf.Latency.PipelineLatency, func() { w.endStream.Break() })
 		}
 	})
 
