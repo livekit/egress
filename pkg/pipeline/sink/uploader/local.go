@@ -15,25 +15,26 @@
 package uploader
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/types"
 )
 
 type localUploader struct {
-	prefix string
 }
 
-func newLocalUploader(c *config.StorageConfig) (*localUploader, error) {
-	return &localUploader{prefix: c.Prefix}, nil
+func newLocalUploader(c *config.StorageConfig) (*store, error) {
+	return &store{
+		Storage: &localUploader{},
+		conf:    c,
+		name:    "Local",
+	}, nil
 }
 
-func (u *localUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {
-	storageFilepath = path.Join(u.prefix, storageFilepath)
-
+func (u *localUploader) UploadFile(localFilepath, storageFilepath string, _ string) (string, int64, error) {
 	stat, err := os.Stat(localFilepath)
 	if err != nil {
 		return "", 0, err
@@ -62,4 +63,25 @@ func (u *localUploader) upload(localFilepath, storageFilepath string, _ types.Ou
 	}
 
 	return storageFilepath, stat.Size(), nil
+}
+
+func (u *localUploader) UploadData(data []byte, storagePath, contentType string) (location string, size int64, err error) {
+	return "", 0, fmt.Errorf("Unimplemented")
+}
+
+func (u *localUploader) DownloadData(storagePath string) (data []byte, err error) {
+	return nil, fmt.Errorf("Unimplemented")
+}
+
+func (u *localUploader) DownloadFile(filepath, storagePath string) (size int64, err error) {
+
+	return 0, fmt.Errorf("Unimplemented")
+}
+
+func (u *localUploader) GeneratePresignedUrl(storagePath string) (url string, err error) {
+	return "", fmt.Errorf("Unimplemented")
+}
+
+func (u *localUploader) Delete(storagePath string) error {
+	return fmt.Errorf("Unimplemented")
 }

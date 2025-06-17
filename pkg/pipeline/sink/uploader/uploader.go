@@ -16,14 +16,17 @@ package uploader
 
 import (
 	"os"
+	"path"
 	"time"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/storage"
 )
 
 const (
@@ -32,16 +35,18 @@ const (
 	maxDelay   = time.Second * 5
 )
 
-type uploader interface {
-	upload(string, string, types.OutputType) (string, int64, error)
-}
-
 type Uploader struct {
-	primary       uploader
-	backup        uploader
+	primary       *store
+	backup        *store
 	primaryFailed bool
 	info          *livekit.EgressInfo
 	monitor       *stats.HandlerMonitor
+}
+
+type store struct {
+	storage.Storage
+	conf *config.StorageConfig
+	name string
 }
 
 func New(conf, backup *config.StorageConfig, monitor *stats.HandlerMonitor, info *livekit.EgressInfo) (*Uploader, error) {
@@ -68,7 +73,7 @@ func New(conf, backup *config.StorageConfig, monitor *stats.HandlerMonitor, info
 	return u, nil
 }
 
-func getUploader(conf *config.StorageConfig) (uploader, error) {
+func getUploader(conf *config.StorageConfig) (*store, error) {
 	switch {
 	case conf == nil:
 		return newLocalUploader(&config.StorageConfig{})
@@ -85,6 +90,24 @@ func getUploader(conf *config.StorageConfig) (uploader, error) {
 	}
 }
 
+func uploadToProvider(s *store, localFilepath string, storageFilepath string, outputType types.OutputType) (location string, size int64, err error) {
+	storageFilepath = path.Join(s.conf.Prefix, storageFilepath)
+
+	location, size, err = s.UploadFile(localFilepath, storageFilepath, string(outputType))
+	if err != nil {
+		return "", 0, errors.ErrUploadFailed(s.name, err)
+	}
+
+	if s.conf.GeneratePresignedUrl {
+		location, err = s.GeneratePresignedUrl(storageFilepath)
+		if err != nil {
+			return "", 0, errors.ErrUploadFailed(s.name, err)
+		}
+	}
+
+	return location, size, nil
+}
+
 func (u *Uploader) Upload(
 	localFilepath, storageFilepath string,
 	outputType types.OutputType,
@@ -94,7 +117,7 @@ func (u *Uploader) Upload(
 	var primaryErr error
 	if !u.primaryFailed {
 		start := time.Now()
-		location, size, err := u.primary.upload(localFilepath, storageFilepath, outputType)
+		location, size, err := uploadToProvider(u.primary, localFilepath, storageFilepath, outputType)
 		elapsed := time.Since(start)
 
 		if err == nil {
@@ -115,7 +138,7 @@ func (u *Uploader) Upload(
 	}
 
 	if u.backup != nil {
-		location, size, backupErr := u.backup.upload(localFilepath, storageFilepath, outputType)
+		location, size, backupErr := uploadToProvider(u.backup, localFilepath, storageFilepath, outputType)
 		if backupErr == nil {
 			if u.info != nil {
 				u.info.SetBackupUsed()

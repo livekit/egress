@@ -19,16 +19,17 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/egress"
+	"github.com/livekit/storage"
 )
 
 type StorageConfig struct {
 	Prefix               string `yaml:"prefix"` // prefix applied to all filenames
 	GeneratePresignedUrl bool   `yaml:"generate_presigned_url"`
 
-	S3     *S3Config    `yaml:"s3"`     // upload to s3
-	Azure  *AzureConfig `yaml:"azure"`  // upload to azure
-	GCP    *GCPConfig   `yaml:"gcp"`    // upload to gcp
-	AliOSS *S3Config    `yaml:"alioss"` // upload to aliyun
+	S3     *storage.S3Config     `yaml:"s3"`     // upload to s3
+	Azure  *storage.AzureConfig  `yaml:"azure"`  // upload to azure
+	GCP    *storage.GCPConfig    `yaml:"gcp"`    // upload to gcp
+	AliOSS *storage.AliOSSConfig `yaml:"alioss"` // upload to aliyun
 }
 
 type S3Config struct {
@@ -76,7 +77,7 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 	}
 
 	if s3 := req.GetS3(); s3 != nil {
-		sc.S3 = &S3Config{
+		sc.S3 = &storage.S3Config{
 			AccessKey:          s3.AccessKey,
 			Secret:             s3.Secret,
 			SessionToken:       s3.SessionToken,
@@ -94,7 +95,7 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 			sc.S3.MinRetryDelay = p.StorageConfig.S3.MinRetryDelay
 		}
 		if s3.Proxy != nil {
-			sc.S3.ProxyConfig = &ProxyConfig{
+			sc.S3.ProxyConfig = &storage.ProxyConfig{
 				Url:      s3.Proxy.Url,
 				Username: s3.Proxy.Username,
 				Password: s3.Proxy.Password,
@@ -113,12 +114,12 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 	}
 
 	if gcp := req.GetGcp(); gcp != nil {
-		sc.GCP = &GCPConfig{
+		sc.GCP = &storage.GCPConfig{
 			CredentialsJSON: gcp.Credentials,
 			Bucket:          gcp.Bucket,
 		}
 		if gcp.Proxy != nil {
-			sc.GCP.ProxyConfig = &ProxyConfig{
+			sc.GCP.ProxyConfig = &storage.ProxyConfig{
 				Url:      gcp.Proxy.Url,
 				Username: gcp.Proxy.Username,
 				Password: gcp.Proxy.Password,
@@ -128,7 +129,7 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 	}
 
 	if azure := req.GetAzure(); azure != nil {
-		sc.Azure = &AzureConfig{
+		sc.Azure = &storage.AzureConfig{
 			AccountName:   azure.AccountName,
 			AccountKey:    azure.AccountKey,
 			ContainerName: azure.ContainerName,
@@ -137,10 +138,9 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 	}
 
 	if ali := req.GetAliOSS(); ali != nil {
-		sc.AliOSS = &S3Config{
+		sc.AliOSS = &storage.AliOSSConfig{
 			AccessKey: ali.AccessKey,
 			Secret:    ali.Secret,
-			Region:    ali.Region,
 			Endpoint:  ali.Endpoint,
 			Bucket:    ali.Bucket,
 		}

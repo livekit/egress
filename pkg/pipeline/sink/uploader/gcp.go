@@ -15,117 +15,21 @@
 package uploader
 
 import (
-	"context"
-	"encoding/base64"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
-	"path"
-
-	"cloud.google.com/go/storage"
-	"github.com/googleapis/gax-go/v2"
-	"golang.org/x/oauth2/google"
-	"google.golang.org/api/option"
+	"github.com/livekit/storage"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/types"
 )
 
-const storageScope = "https://www.googleapis.com/auth/devstorage.read_write"
-
-type GCPUploader struct {
-	conf                 *config.GCPConfig
-	prefix               string
-	generatePresignedUrl bool
-	client               *storage.Client
-}
-
-func newGCPUploader(c *config.StorageConfig) (uploader, error) {
-	if c.GeneratePresignedUrl {
-		return nil, errors.ErrUploadFailed("GCP", fmt.Errorf("presigned URLs not supported"))
-	}
-
-	conf := c.GCP
-	u := &GCPUploader{
-		conf:                 conf,
-		prefix:               c.Prefix,
-		generatePresignedUrl: c.GeneratePresignedUrl,
-	}
-
-	var opts []option.ClientOption
-	if conf.CredentialsJSON != "" {
-		jwtConfig, err := google.JWTConfigFromJSON([]byte(conf.CredentialsJSON), storageScope)
-		if err != nil {
-			return nil, errors.ErrUploadFailed("GCP", err)
-		}
-		opts = append(opts, option.WithTokenSource(jwtConfig.TokenSource(context.Background())))
-	}
-
-	defaultTransport := http.DefaultTransport.(*http.Transport)
-	transportClone := defaultTransport.Clone()
-
-	if conf.ProxyConfig != nil {
-		proxyUrl, err := url.Parse(conf.ProxyConfig.Url)
-		if err != nil {
-			return nil, err
-		}
-		defaultTransport.Proxy = http.ProxyURL(proxyUrl)
-		if conf.ProxyConfig.Username != "" && conf.ProxyConfig.Password != "" {
-			auth := fmt.Sprintf("%s:%s", conf.ProxyConfig.Username, conf.ProxyConfig.Password)
-			basicAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
-			defaultTransport.ProxyConnectHeader = http.Header{}
-			defaultTransport.ProxyConnectHeader.Add("Proxy-Authorization", basicAuth)
-		}
-	}
-
-	client, err := storage.NewClient(context.Background(), opts...)
-	// restore default transport
-	http.DefaultTransport = transportClone
+func newGCPUploader(c *config.StorageConfig) (*store, error) {
+	st, err := storage.NewGCP(c.GCP)
 	if err != nil {
-		return nil, errors.ErrUploadFailed("GCP", err)
+		return nil, err
 	}
 
-	u.client = client
-	return u, nil
-}
+	return &store{
+		Storage: st,
+		conf:    c,
+		name:    "GCP",
+	}, nil
 
-func (u *GCPUploader) upload(localFilepath, storageFilepath string, _ types.OutputType) (string, int64, error) {
-	storageFilepath = path.Join(u.prefix, storageFilepath)
-
-	file, err := os.Open(localFilepath)
-	if err != nil {
-		return "", 0, errors.ErrUploadFailed("GCP", err)
-	}
-	defer func() {
-		_ = file.Close()
-	}()
-
-	stat, err := file.Stat()
-	if err != nil {
-		return "", 0, errors.ErrUploadFailed("GCP", err)
-	}
-
-	wc := u.client.Bucket(u.conf.Bucket).Object(storageFilepath).Retryer(
-		storage.WithBackoff(gax.Backoff{
-			Initial:    minDelay,
-			Max:        maxDelay,
-			Multiplier: 2,
-		}),
-		storage.WithMaxAttempts(maxRetries),
-		storage.WithPolicy(storage.RetryAlways),
-	).NewWriter(context.Background())
-	wc.ChunkRetryDeadline = 0
-
-	if _, err = io.Copy(wc, file); err != nil {
-		return "", 0, errors.ErrUploadFailed("GCP", err)
-	}
-
-	if err = wc.Close(); err != nil {
-		return "", 0, errors.ErrUploadFailed("GCP", err)
-	}
-
-	return fmt.Sprintf("https://%s.storage.googleapis.com/%s", u.conf.Bucket, storageFilepath), stat.Size(), nil
 }
