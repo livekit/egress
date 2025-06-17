@@ -38,6 +38,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/protocol/logger"
+	lkstorage "github.com/livekit/storage"
 )
 
 func loadManifest(t *testing.T, c *config.StorageConfig, localFilepath, storageFilepath string) *config.Manifest {
@@ -69,7 +70,7 @@ func download(t *testing.T, c *config.StorageConfig, localFilepath, storageFilep
 	}
 }
 
-func downloadS3(t *testing.T, conf *config.S3Config, localFilepath, storageFilepath string, delete bool) {
+func downloadS3(t *testing.T, conf *lkstorage.S3Config, localFilepath, storageFilepath string, delete bool) {
 	file, err := os.Create(localFilepath)
 	require.NoError(t, err)
 	defer file.Close()
@@ -108,7 +109,7 @@ func downloadS3(t *testing.T, conf *config.S3Config, localFilepath, storageFilep
 	}
 }
 
-func downloadAzure(t *testing.T, conf *config.AzureConfig, localFilepath, storageFilepath string, delete bool) {
+func downloadAzure(t *testing.T, conf *lkstorage.AzureConfig, localFilepath, storageFilepath string, delete bool) {
 	credential, err := azblob.NewSharedKeyCredential(
 		conf.AccountName,
 		conf.AccountKey,
@@ -148,7 +149,7 @@ func downloadAzure(t *testing.T, conf *config.AzureConfig, localFilepath, storag
 	}
 }
 
-func downloadGCP(t *testing.T, conf *config.GCPConfig, localFilepath, storageFilepath string, delete bool) {
+func downloadGCP(t *testing.T, conf *lkstorage.GCPConfig, localFilepath, storageFilepath string, delete bool) {
 	ctx := context.Background()
 	var client *storage.Client
 
