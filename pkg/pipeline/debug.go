@@ -117,7 +117,7 @@ func (c *Controller) uploadDebugFiles() {
 		storage := path.Join(c.Info.EgressId, f.Name())
 		_, _, err = u.Upload(local, storage, outputType, false)
 		if err != nil {
-			logger.Errorw("failed to upload debug file", err)
+			logger.Errorw("failed to upload debug file", err, "filename", local)
 			return
 		}
 	}
