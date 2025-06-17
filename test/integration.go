@@ -175,6 +175,7 @@ func (r *Runner) getUpdate(t *testing.T, egressID string) *livekit.EgressInfo {
 			}
 
 		case <-time.After(time.Second * 30):
+			r.createDotFile(t, egressID)
 			t.Fatal("no update from results channel")
 			return nil
 		}
