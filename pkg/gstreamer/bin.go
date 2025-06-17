@@ -37,7 +37,7 @@ type Bin struct {
 	bin      *gst.Bin
 	latency  time.Duration
 
-	linkFunc   func() error
+	linkFunc   func([]*gst.Element) error
 	shouldLink func(string) bool
 	eosFunc    func() bool
 	getSrcPad  func(string) *gst.Pad
@@ -322,7 +322,7 @@ func (b *Bin) SetState(state gst.State) error {
 }
 
 // Set a custom linking function for this bin's elements (used when you need to modify chain functions)
-func (b *Bin) SetLinkFunc(f func() error) {
+func (b *Bin) SetLinkFunc(f func([]*gst.Element) error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -437,7 +437,7 @@ func (b *Bin) link() error {
 
 	if len(b.elements) > 0 {
 		if b.linkFunc != nil {
-			if err := b.linkFunc(); err != nil {
+			if err := b.linkFunc(b.elements); err != nil {
 				return err
 			}
 		} else {

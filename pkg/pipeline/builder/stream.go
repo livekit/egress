@@ -168,7 +168,7 @@ func (sb *StreamBin) BuildStream(stream *config.Stream, framerate int32) (*Strea
 	ss.sink = sink
 
 	// add a proxy pad between the queue and sink to prevent errors from propagating upstream
-	b.SetLinkFunc(func() error {
+	b.SetLinkFunc(func(_ []*gst.Element) error {
 		proxy := gst.NewGhostPad(fmt.Sprintf("proxy_%s", stream.Name), sink.GetStaticPad("sink"))
 		proxy.Ref()
 		proxy.ActivateMode(gst.PadModePush, true)
