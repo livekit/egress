@@ -69,7 +69,7 @@ func download(t *testing.T, c *config.StorageConfig, localFilepath, storageFilep
 	}
 }
 
-func downloadS3(t *testing.T, conf *config.S3Config, localFilepath, storageFilepath string, delete bool) {
+func downloadS3(t *testing.T, conf *storage.S3Config, localFilepath, storageFilepath string, delete bool) {
 	file, err := os.Create(localFilepath)
 	require.NoError(t, err)
 	defer file.Close()
@@ -108,7 +108,7 @@ func downloadS3(t *testing.T, conf *config.S3Config, localFilepath, storageFilep
 	}
 }
 
-func downloadAzure(t *testing.T, conf *config.AzureConfig, localFilepath, storageFilepath string, delete bool) {
+func downloadAzure(t *testing.T, conf *storage.AzureConfig, localFilepath, storageFilepath string, delete bool) {
 	credential, err := azblob.NewSharedKeyCredential(
 		conf.AccountName,
 		conf.AccountKey,
@@ -148,7 +148,7 @@ func downloadAzure(t *testing.T, conf *config.AzureConfig, localFilepath, storag
 	}
 }
 
-func downloadGCP(t *testing.T, conf *config.GCPConfig, localFilepath, storageFilepath string, delete bool) {
+func downloadGCP(t *testing.T, conf *storage.GCPConfig, localFilepath, storageFilepath string, delete bool) {
 	ctx := context.Background()
 	var client *storage.Client
 
