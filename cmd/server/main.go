@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -23,7 +24,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/livekit/egress/pkg/config"
@@ -44,7 +45,7 @@ var (
 )
 
 func main() {
-	app := &cli.App{
+	cmd := &cli.Command{
 		Name:        "egress",
 		Usage:       "LiveKit Egress",
 		Version:     version.Version,
@@ -69,24 +70,24 @@ func main() {
 			&cli.StringFlag{
 				Name:    "config",
 				Usage:   "LiveKit Egress yaml config file",
-				EnvVars: []string{"EGRESS_CONFIG_FILE"},
+				Sources: cli.EnvVars("EGRESS_CONFIG_FILE"),
 			},
 			&cli.StringFlag{
 				Name:    "config-body",
 				Usage:   "LiveKit Egress yaml config body",
-				EnvVars: []string{"EGRESS_CONFIG_BODY"},
+				Sources: cli.EnvVars("EGRESS_CONFIG_BODY"),
 			},
 		},
 		Action: runService,
 	}
 
-	if err := app.Run(os.Args); err != nil {
+	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 }
 
-func runService(c *cli.Context) error {
+func runService(_ context.Context, c *cli.Command) error {
 	configFile := c.String("config")
 	configBody := c.String("config-body")
 	if configBody == "" {
@@ -156,7 +157,7 @@ func runService(c *cli.Context) error {
 	return svc.Run()
 }
 
-func runHandler(c *cli.Context) error {
+func runHandler(_ context.Context, c *cli.Command) error {
 	configBody := c.String("config")
 	if configBody == "" {
 		return errors.ErrNoConfig
