@@ -6,23 +6,14 @@ import (
 	"os/exec"
 
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/protocol/logger"
 )
 
-func LogStatus() {
+func Clients() (int, error) {
 	info, err := List()
 	if err != nil {
-		logger.Warnw("failed to list pulse info", err)
-	} else {
-		b, _ := json.Marshal(info.GetEgressInfo())
-		logger.Debugw("pulse status",
-			"modules", len(info.Modules),
-			"sinks", len(info.Sinks),
-			"sources", len(info.Sources),
-			"clients", len(info.Clients),
-			"egresses", string(b),
-		)
+		return 0, err
 	}
+	return len(info.Clients), nil
 }
 
 func List() (*PulseInfo, error) {

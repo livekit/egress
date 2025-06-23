@@ -26,7 +26,6 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/source"
-	"github.com/livekit/egress/pkg/pipeline/source/pulse"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -107,10 +106,6 @@ func (c *Controller) gstLog(
 		msg = fmt.Sprintf("[%s %s] %s", category, lvl, message)
 	}
 	c.gstLogger.Debugw(msg, "caller", fmt.Sprintf("%s:%d", file, line))
-
-	if category == "pulse" {
-		pulse.LogStatus()
-	}
 }
 
 func (c *Controller) messageWatch(msg *gst.Message) bool {
