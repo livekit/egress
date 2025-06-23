@@ -80,21 +80,27 @@ type LatencyConfig struct {
 }
 
 func (c *BaseConfig) initLogger(values ...interface{}) error {
-	var gstDebug []string
-	switch c.Logging.Level {
-	case "debug":
-		gstDebug = []string{"3"}
-	case "info", "warn":
-		gstDebug = []string{"2"}
-	case "error":
-		gstDebug = []string{"1"}
-	}
-	gstDebug = append(gstDebug,
-		"rtmpclient:4",
-		"srtlib:1",
-	)
-	if err := os.Setenv("GST_DEBUG", strings.Join(gstDebug, ",")); err != nil {
-		return err
+	_, exists := os.LookupEnv("GST_DEBUG")
+
+	// If GST_DEBUG is not set, use pre-defined values based on logging level
+	if !exists {
+		var gstDebug []string
+		switch c.Logging.Level {
+		case "debug":
+			gstDebug = []string{"3"}
+		case "info", "warn":
+			gstDebug = []string{"2"}
+		case "error":
+			gstDebug = []string{"1"}
+		}
+		gstDebug = append(gstDebug,
+			"rtmpclient:4",
+			"srtlib:1",
+		)
+
+		if err := os.Setenv("GST_DEBUG", strings.Join(gstDebug, ",")); err != nil {
+			return err
+		}
 	}
 
 	zl, err := logger.NewZapLogger(c.Logging)
