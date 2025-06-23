@@ -33,7 +33,6 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/source/pulse"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/medialogutils"
@@ -146,8 +145,6 @@ func (s *WebSource) Close() {
 func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfig) error {
 	ctx, span := tracer.Start(ctx, "WebInput.createPulseSink")
 	defer span.End()
-
-	pulse.LogStatus()
 
 	logger.Debugw("creating pulse sink")
 	cmd := exec.Command("pactl",

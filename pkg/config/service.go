@@ -35,7 +35,6 @@ const (
 	trackCompositeCpuCost     = 1
 	trackCpuCost              = 0.5
 	maxCpuUtilization         = 0.8
-	maxConcurrentWeb          = 18
 	maxUploadQueue            = 60
 
 	defaultTemplatePort         = 7980
@@ -47,6 +46,8 @@ const (
 	defaultJitterBufferLatency = time.Second * 2
 	defaultAudioMixerLatency   = time.Millisecond * 2750
 	defaultPipelineLatency     = time.Second * 3
+
+	defaultMaxPulseClients = 56
 )
 
 type ServiceConfig struct {
@@ -64,7 +65,6 @@ type CPUCostConfig struct {
 	MaxCpuUtilization         float64 `yaml:"max_cpu_utilization"` // maximum allowed CPU utilization when deciding to accept a request. Default to 80%
 	MaxMemory                 float64 `yaml:"max_memory"`          // maximum allowed memory usage in GB. 0 to disable
 	MemoryCost                float64 `yaml:"memory_cost"`         // minimum memory in GB
-	MaxConcurrentWeb          int32   `yaml:"max_concurrent_web"`  // maximum allowed chrome/x/pulse instances
 	RoomCompositeCpuCost      float64 `yaml:"room_composite_cpu_cost"`
 	AudioRoomCompositeCpuCost float64 `yaml:"audio_room_composite_cpu_cost"`
 	WebCpuCost                float64 `yaml:"web_cpu_cost"`
@@ -72,6 +72,7 @@ type CPUCostConfig struct {
 	ParticipantCpuCost        float64 `yaml:"participant_cpu_cost"`
 	TrackCompositeCpuCost     float64 `yaml:"track_composite_cpu_cost"`
 	TrackCpuCost              float64 `yaml:"track_cpu_cost"`
+	MaxPulseClients           int     `yaml:"max_pulse_clients"` // pulse client limit for launching chrome
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
@@ -123,6 +124,9 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 
 	// Setting CPU costs from config. Ensure that CPU costs are positive
+	if c.MaxCpuUtilization <= 0 || c.MaxCpuUtilization > 1 {
+		c.MaxCpuUtilization = maxCpuUtilization
+	}
 	if c.RoomCompositeCpuCost <= 0 {
 		c.RoomCompositeCpuCost = roomCompositeCpuCost
 	}
@@ -144,12 +148,10 @@ func (c *ServiceConfig) InitDefaults() {
 	if c.TrackCpuCost <= 0 {
 		c.TrackCpuCost = trackCpuCost
 	}
-	if c.MaxCpuUtilization <= 0 || c.MaxCpuUtilization > 1 {
-		c.MaxCpuUtilization = maxCpuUtilization
+	if c.MaxPulseClients == 0 {
+		c.MaxPulseClients = defaultMaxPulseClients
 	}
-	if c.MaxConcurrentWeb <= 0 {
-		c.MaxConcurrentWeb = maxConcurrentWeb
-	}
+
 	if c.MaxUploadQueue <= 0 {
 		c.MaxUploadQueue = maxUploadQueue
 	}

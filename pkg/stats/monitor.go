@@ -25,6 +25,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/source/pulse"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -36,6 +37,7 @@ const (
 	defaultKillThreshold = 0.95
 	minKillDuration      = 10
 	gb                   = 1024.0 * 1024.0 * 1024.0
+	pulseClientHold      = 4
 )
 
 type Service interface {
@@ -53,10 +55,11 @@ type Monitor struct {
 	promCPULoad  prometheus.Gauge
 	requestGauge *prometheus.GaugeVec
 
-	svc         Service
-	cpuStats    *hwstats.CPUStats
-	requests    atomic.Int32
-	webRequests atomic.Int32
+	svc                 Service
+	cpuStats            *hwstats.CPUStats
+	requests            atomic.Int32
+	webRequests         atomic.Int32
+	pendingPulseClients atomic.Int32
 
 	mu              sync.Mutex
 	highCPUDuration int
@@ -142,10 +145,6 @@ func (m *Monitor) validateCPUConfig() error {
 	return nil
 }
 
-func (m *Monitor) CanAcceptWebRequest() bool {
-	return m.webRequests.Load() < m.cpuCostConfig.MaxConcurrentWeb
-}
-
 func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 	m.mu.Lock()
 	fields, canAccept := m.canAcceptRequestLocked(req)
@@ -153,6 +152,13 @@ func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 
 	logger.Debugw("cpu check", fields...)
 	return canAccept
+}
+
+func (m *Monitor) CanAcceptWebRequest() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.canAcceptWebLocked()
 }
 
 func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interface{}, bool) {
@@ -175,7 +181,7 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 	required := req.EstimatedCpu
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+		if !m.canAcceptWebLocked() {
 			fields = append(fields, "canAccept", false)
 			return fields, false
 		}
@@ -187,7 +193,7 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 			}
 		}
 	case *rpc.StartEgressRequest_Web:
-		if m.webRequests.Load() >= m.cpuCostConfig.MaxConcurrentWeb {
+		if !m.canAcceptWebLocked() {
 			fields = append(fields, "canAccept", false)
 			return fields, false
 		}
@@ -221,6 +227,14 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 	return fields, accept
 }
 
+func (m *Monitor) canAcceptWebLocked() bool {
+	clients, err := pulse.Clients()
+	if err != nil {
+		return false
+	}
+	return clients+int(m.pendingPulseClients.Load()) <= m.cpuCostConfig.MaxPulseClients
+}
+
 func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -235,9 +249,12 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 
 	m.requests.Inc()
 	var cpuHold float64
+	var pulseClients int
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
 		m.webRequests.Inc()
+		pulseClients = pulseClientHold
+		m.pendingPulseClients.Add(pulseClientHold)
 		if r.RoomComposite.AudioOnly {
 			cpuHold = m.cpuCostConfig.AudioRoomCompositeCpuCost
 		} else {
@@ -245,6 +262,8 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		}
 	case *rpc.StartEgressRequest_Web:
 		m.webRequests.Inc()
+		pulseClients = pulseClientHold
+		m.pendingPulseClients.Add(pulseClientHold)
 		if r.Web.AudioOnly {
 			cpuHold = m.cpuCostConfig.AudioWebCpuCost
 		} else {
@@ -263,7 +282,13 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		pendingCPU: cpuHold,
 		allowedCPU: cpuHold,
 	}
-	time.AfterFunc(cpuHoldDuration, func() { ps.pendingCPU = 0 })
+
+	time.AfterFunc(cpuHoldDuration, func() {
+		ps.pendingCPU = 0
+		if pulseClients > 0 {
+			m.pendingPulseClients.Add(int32(-pulseClients))
+		}
+	})
 	m.pending[req.EgressId] = ps
 
 	return nil
