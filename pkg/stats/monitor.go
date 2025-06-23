@@ -232,7 +232,7 @@ func (m *Monitor) canAcceptWebLocked() bool {
 	if err != nil {
 		return false
 	}
-	return clients+int(m.pendingPulseClients.Load()) <= m.cpuCostConfig.MaxPulseClients
+	return clients+int(m.pendingPulseClients.Load())+pulseClientHold <= m.cpuCostConfig.MaxPulseClients
 }
 
 func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {

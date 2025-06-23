@@ -47,7 +47,7 @@ const (
 	defaultAudioMixerLatency   = time.Millisecond * 2750
 	defaultPipelineLatency     = time.Second * 3
 
-	defaultMaxPulseClients = 56
+	defaultMaxPulseClients = 60
 )
 
 type ServiceConfig struct {
