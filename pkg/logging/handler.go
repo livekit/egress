@@ -16,11 +16,6 @@ var sdkPrefixes = map[string]bool{
 	"SDK 2": true, // SDK 2025
 }
 
-var gstSuffixes = map[string]bool{
-	"before 'caps'": true,
-	"f type 'gint'": true,
-}
-
 func NewHandlerLogger(handlerID, egressID string) *medialogutils.CmdLogger {
 	l := logger.GetLogger().WithValues("handlerID", handlerID, "egressID", egressID)
 	return medialogutils.NewCmdLogger(func(s string) {
@@ -29,37 +24,38 @@ func NewHandlerLogger(handlerID, egressID string) *medialogutils.CmdLogger {
 			switch {
 			case strings.HasSuffix(line, "}"):
 				fmt.Println(line)
+
 			case len(line) == 0:
 				continue
+
 			case len(line) > 5 && sdkPrefixes[line[:5]]:
 				l.Infow(line)
+
 			case strings.HasPrefix(line, "{\"level\":"):
 				// should have ended with "}", probably got split
-				if i < len(lines)-1 && strings.HasSuffix(lines[i+1], "}") {
-					line = line + lines[i+1]
-					i++
+				var next string
+				for j := i + 1; j < len(lines); j++ {
+					next = lines[j]
+					if len(next) > 0 && strings.HasSuffix(next, "}") {
+						line += next
+						i = j
+						break
+					}
 				}
 				fmt.Println(line)
-			case strings.HasPrefix(line, "(egress:"):
-				if len(line) > 13 && !gstSuffixes[line[len(line)-13:]] && i < len(lines)-1 {
-					next := lines[i+1]
-					if len(next) > 13 && gstSuffixes[next[:13]] {
-						// line got split
-						line = line + next
-						i++
-					}
-				}
+
+			case strings.HasPrefix(line, "(egress:"),
+				strings.Contains(line, "before 'caps'"),
+				strings.Contains(line, "' of type '"):
 				logger.Warnw(line, nil)
-			case strings.HasPrefix(line, "0:00:"):
-				if !strings.HasSuffix(line, "is not mapped") {
-					// line got split
-					if i < len(lines)-1 && strings.HasSuffix(lines[i+1], "is not mapped") {
-						i++
-					}
-				}
+
+			case strings.Contains(line, "unmarshal JSON string into Go network.CookiePartitionKey"),
+				strings.HasPrefix(line, "0:00:"),
+				strings.HasSuffix(line, "is not mapped"),
+				strings.HasSuffix(line, "load cuda library"),
+				strings.Contains(line, "libcuda.so.1"):
 				continue
-			case strings.Contains(s, "unmarshal JSON string into Go network.CookiePartitionKey"):
-				continue
+
 			default:
 				l.Errorw(line, nil)
 			}

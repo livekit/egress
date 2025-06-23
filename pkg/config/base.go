@@ -55,7 +55,7 @@ type BaseConfig struct {
 	Insecure    bool                   `yaml:"insecure"`     // allow chrome to connect to an insecure websocket
 	Debug       DebugConfig            `yaml:"debug"`        // create dot file on internal error
 	ChromeFlags map[string]interface{} `yaml:"chrome_flags"` // additional flags to pass to Chrome
-	Latency     LatencyConfig          `yaml:"latency"`      // gstreamer latencies, modifying this may break the service
+	Latency     LatencyConfig          `yaml:"latency"`      // gstreamer latencies, modifying these may break the service
 }
 
 type SessionLimits struct {
@@ -74,9 +74,9 @@ type DebugConfig struct {
 }
 
 type LatencyConfig struct {
-	JitterBufferLatency time.Duration
-	AudioMixerLatency   time.Duration
-	PipelineLatency     time.Duration
+	JitterBufferLatency time.Duration `yaml:"jitter_buffer_latency"` // jitter buffer max latency for sdk egress
+	AudioMixerLatency   time.Duration `yaml:"audio_mixer_latency"`   // audio mixer latency, must be greater than jitter buffer latency
+	PipelineLatency     time.Duration `yaml:"pipeline_latency"`      // max latency for the entire pipeline
 }
 
 func (c *BaseConfig) initLogger(values ...interface{}) error {

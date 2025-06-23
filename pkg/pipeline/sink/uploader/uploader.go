@@ -29,12 +29,6 @@ import (
 	"github.com/livekit/storage"
 )
 
-const (
-	maxRetries = 5
-	minDelay   = time.Millisecond * 100
-	maxDelay   = time.Second * 5
-)
-
 type Uploader struct {
 	primary       *store
 	backup        *store
@@ -74,20 +68,41 @@ func New(conf, backup *config.StorageConfig, monitor *stats.HandlerMonitor, info
 }
 
 func getUploader(conf *config.StorageConfig) (*store, error) {
-	switch {
-	case conf == nil:
-		return newLocalUploader(&config.StorageConfig{})
-	case conf.S3 != nil:
-		return newS3Uploader(conf)
-	case conf.GCP != nil:
-		return newGCPUploader(conf)
-	case conf.Azure != nil:
-		return newAzureUploader(conf)
-	case conf.AliOSS != nil:
-		return newAliOSSUploader(conf)
-	default:
-		return newLocalUploader(conf)
+	if conf == nil {
+		conf = &config.StorageConfig{}
 	}
+
+	var (
+		s    storage.Storage
+		err  error
+		name string
+	)
+	switch {
+	case conf.S3 != nil:
+		s, err = storage.NewS3(conf.S3)
+		name = "S3"
+	case conf.GCP != nil:
+		s, err = storage.NewGCP(conf.GCP)
+		name = "GCP"
+	case conf.Azure != nil:
+		s, err = storage.NewAzure(conf.Azure)
+		name = "Azure"
+	case conf.AliOSS != nil:
+		s, err = storage.NewAliOSS(conf.AliOSS)
+		name = "AliOSS"
+	default:
+		s = storage.NewLocal()
+		name = "Local"
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &store{
+		Storage: s,
+		conf:    conf,
+		name:    name,
+	}, nil
 }
 
 func uploadToProvider(s *store, localFilepath string, storageFilepath string, outputType types.OutputType) (location string, size int64, err error) {
