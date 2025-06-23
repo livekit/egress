@@ -16,6 +16,7 @@ package stats
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -410,6 +411,17 @@ func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) 
 	// if already running requests, cap usage at MaxCpuUtilization
 	available = total*m.cpuCostConfig.MaxCpuUtilization - pending - used
 	return
+}
+
+func (m *Monitor) GetAvailableMemory() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.cpuCostConfig.MaxMemory == 0 {
+		return math.MaxFloat64
+	}
+
+	return m.cpuCostConfig.MaxMemory - m.memoryUsage
 }
 
 func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
