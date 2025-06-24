@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"os"
 	"os/exec"
 	"path"
 	"syscall"
@@ -175,6 +176,10 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 			"maxMemory", maxMemory,
 		)
 	}
+
+	// Make sure we delete all the handler context regardless of the handler termination status
+	tmpDir := path.Join(config.TmpDir, req.EgressId)
+	os.RemoveAll(tmpDir)
 
 	s.ProcessFinished(info.EgressId)
 	s.activeRequests.Dec()
