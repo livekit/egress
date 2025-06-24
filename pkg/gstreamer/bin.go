@@ -517,7 +517,7 @@ func linkPeersLocked(src, sink *Bin) error {
 			srcPad.AddProbe(gst.PadProbeTypeBlockDownstream, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
 				if err = sink.SetState(gst.StatePlaying); err != nil {
 					src.OnError(errors.ErrGstPipelineError(err))
-					return gst.PadProbeHandled
+					return gst.PadProbeUnhandled
 				}
 
 				return gst.PadProbeRemove
