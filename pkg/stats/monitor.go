@@ -16,11 +16,11 @@ package stats
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/pbnjay/memory"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	cpuHoldDuration      = time.Second * 30
+	cpuHoldDuration      = time.Second * 15
 	defaultKillThreshold = 0.95
 	minKillDuration      = 10
 	gb                   = 1024.0 * 1024.0 * 1024.0
@@ -61,6 +61,7 @@ type Monitor struct {
 	requests            atomic.Int32
 	webRequests         atomic.Int32
 	pendingPulseClients atomic.Int32
+	pendingMemoryUsage  atomic.Float64
 
 	mu              sync.Mutex
 	highCPUDuration int
@@ -174,8 +175,10 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 		"memory", m.memoryUsage,
 	}
 
-	if m.cpuCostConfig.MaxMemory > 0 && m.memoryUsage+m.cpuCostConfig.MemoryCost >= m.cpuCostConfig.MaxMemory {
-		fields = append(fields, "canAccept", false)
+	memoryUsage := m.memoryUsage + m.pendingMemoryUsage.Load()
+
+	if m.cpuCostConfig.MaxMemory > 0 && memoryUsage+m.cpuCostConfig.MemoryCost >= m.cpuCostConfig.MaxMemory {
+		fields = append(fields, "canAccept", false, "reason", "memory")
 		return fields, false
 	}
 
@@ -183,7 +186,7 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
 		if !m.canAcceptWebLocked() {
-			fields = append(fields, "canAccept", false)
+			fields = append(fields, "canAccept", false, "reason", "pulse clients")
 			return fields, false
 		}
 		if required == 0 {
@@ -195,7 +198,7 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 		}
 	case *rpc.StartEgressRequest_Web:
 		if !m.canAcceptWebLocked() {
-			fields = append(fields, "canAccept", false)
+			fields = append(fields, "canAccept", false, "reason", "pulse clients")
 			return fields, false
 		}
 		if required == 0 {
@@ -224,6 +227,9 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 		"required", required,
 		"canAccept", accept,
 	)
+	if !accept {
+		fields = append(fields, "reason", "cpu")
+	}
 
 	return fields, accept
 }
@@ -250,12 +256,11 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 
 	m.requests.Inc()
 	var cpuHold float64
-	var pulseClients int
+	var pulseClients int32
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
 		m.webRequests.Inc()
 		pulseClients = pulseClientHold
-		m.pendingPulseClients.Add(pulseClientHold)
 		if r.RoomComposite.AudioOnly {
 			cpuHold = m.cpuCostConfig.AudioRoomCompositeCpuCost
 		} else {
@@ -264,7 +269,6 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	case *rpc.StartEgressRequest_Web:
 		m.webRequests.Inc()
 		pulseClients = pulseClientHold
-		m.pendingPulseClients.Add(pulseClientHold)
 		if r.Web.AudioOnly {
 			cpuHold = m.cpuCostConfig.AudioWebCpuCost
 		} else {
@@ -284,11 +288,13 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		allowedCPU: cpuHold,
 	}
 
+	m.pendingMemoryUsage.Add(m.cpuCostConfig.MemoryCost)
+	m.pendingPulseClients.Add(pulseClients)
+
 	time.AfterFunc(cpuHoldDuration, func() {
 		ps.pendingCPU = 0
-		if pulseClients > 0 {
-			m.pendingPulseClients.Add(int32(-pulseClients))
-		}
+		m.pendingMemoryUsage.Add(-m.cpuCostConfig.MemoryCost)
+		m.pendingPulseClients.Add(-pulseClients)
 	})
 	m.pending[req.EgressId] = ps
 
@@ -418,7 +424,7 @@ func (m *Monitor) GetAvailableMemory() float64 {
 	defer m.mu.Unlock()
 
 	if m.cpuCostConfig.MaxMemory == 0 {
-		return math.MaxFloat64
+		return float64(memory.FreeMemory()) / gb
 	}
 
 	return m.cpuCostConfig.MaxMemory - m.memoryUsage
