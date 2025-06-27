@@ -471,11 +471,10 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 
 		s.mu.Lock()
 		s.writers[ts.TrackID] = writer
-		s.mu.Unlock()
-
 		if !s.initialized.IsBroken() {
 			s.AudioTracks = append(s.AudioTracks, ts)
 		}
+		s.mu.Unlock()
 
 	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9:
 		s.VideoEnabled = true
