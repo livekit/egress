@@ -33,14 +33,16 @@ type StorageConfig struct {
 }
 
 type S3Config struct {
-	AccessKey      string       `yaml:"access_key"`    // (env AWS_ACCESS_KEY_ID)
-	Secret         string       `yaml:"secret"`        // (env AWS_SECRET_ACCESS_KEY)
-	SessionToken   string       `yaml:"session_token"` // (env AWS_SESSION_TOKEN)
-	Region         string       `yaml:"region"`        // (env AWS_DEFAULT_REGION)
-	Endpoint       string       `yaml:"endpoint"`
-	Bucket         string       `yaml:"bucket"`
-	ForcePathStyle bool         `yaml:"force_path_style"`
-	ProxyConfig    *ProxyConfig `yaml:"proxy_config"`
+	AccessKey             string       `yaml:"access_key"`               // (env AWS_ACCESS_KEY_ID)
+	Secret                string       `yaml:"secret"`                   // (env AWS_SECRET_ACCESS_KEY)
+	SessionToken          string       `yaml:"session_token"`            // (env AWS_SESSION_TOKEN)
+	AssumedRoleArn        string       `yaml:"assumed_role_arn"`         // ARN of the role to assume for file upload. Egress will make an AssumeRole API call using the provided access_key and secret to assume that role
+	AssumedRoleExternalId string       `yaml:"assumed_role_external_id"` // ExternalID to use when assuming role for upload
+	Region                string       `yaml:"region"`                   // (env AWS_DEFAULT_REGION)
+	Endpoint              string       `yaml:"endpoint"`
+	Bucket                string       `yaml:"bucket"`
+	ForcePathStyle        bool         `yaml:"force_path_style"`
+	ProxyConfig           *ProxyConfig `yaml:"proxy_config"`
 
 	MaxRetries    int           `yaml:"max_retries"`
 	MaxRetryDelay time.Duration `yaml:"max_retry_delay"`
@@ -78,21 +80,30 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 
 	if s3 := req.GetS3(); s3 != nil {
 		sc.S3 = &storage.S3Config{
-			AccessKey:          s3.AccessKey,
-			Secret:             s3.Secret,
-			SessionToken:       s3.SessionToken,
-			Region:             s3.Region,
-			Endpoint:           s3.Endpoint,
-			Bucket:             s3.Bucket,
-			ForcePathStyle:     s3.ForcePathStyle,
-			Metadata:           s3.Metadata,
-			Tagging:            s3.Tagging,
-			ContentDisposition: s3.ContentDisposition,
+			AccessKey:             s3.AccessKey,
+			Secret:                s3.Secret,
+			SessionToken:          s3.SessionToken,
+			AssumedRoleArn:        s3.AssumedRoleArn,
+			AssumedRoleExternalId: s3.AssumedRoleExternalId,
+			Region:                s3.Region,
+			Endpoint:              s3.Endpoint,
+			Bucket:                s3.Bucket,
+			ForcePathStyle:        s3.ForcePathStyle,
+			Metadata:              s3.Metadata,
+			Tagging:               s3.Tagging,
+			ContentDisposition:    s3.ContentDisposition,
 		}
 		if p.StorageConfig != nil && p.StorageConfig.S3 != nil {
 			sc.S3.MaxRetries = p.StorageConfig.S3.MaxRetries
 			sc.S3.MaxRetryDelay = p.StorageConfig.S3.MaxRetryDelay
 			sc.S3.MinRetryDelay = p.StorageConfig.S3.MinRetryDelay
+
+			if sc.S3.AssumedRoleArn != "" && sc.S3.AccessKey == "" && s3.Secret == "" {
+				// If an AssummedRole is set but not any AccessKey, default to using the one from conf. This is usefull for uploading to S3
+				// using an external account.
+				sc.S3.AccessKey = p.StorageConfig.S3.AccessKey
+				sc.S3.Secret = p.StorageConfig.S3.Secret
+			}
 		}
 		if s3.Proxy != nil {
 			sc.S3.ProxyConfig = &storage.ProxyConfig{
