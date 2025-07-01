@@ -32,45 +32,6 @@ type StorageConfig struct {
 	AliOSS *storage.AliOSSConfig `yaml:"alioss"` // upload to aliyun
 }
 
-type S3Config struct {
-	AccessKey             string       `yaml:"access_key"`               // (env AWS_ACCESS_KEY_ID)
-	Secret                string       `yaml:"secret"`                   // (env AWS_SECRET_ACCESS_KEY)
-	SessionToken          string       `yaml:"session_token"`            // (env AWS_SESSION_TOKEN)
-	AssumedRoleArn        string       `yaml:"assumed_role_arn"`         // ARN of the role to assume for file upload. Egress will make an AssumeRole API call using the provided access_key and secret to assume that role
-	AssumedRoleExternalId string       `yaml:"assumed_role_external_id"` // ExternalID to use when assuming role for upload
-	Region                string       `yaml:"region"`                   // (env AWS_DEFAULT_REGION)
-	Endpoint              string       `yaml:"endpoint"`
-	Bucket                string       `yaml:"bucket"`
-	ForcePathStyle        bool         `yaml:"force_path_style"`
-	ProxyConfig           *ProxyConfig `yaml:"proxy_config"`
-
-	MaxRetries    int           `yaml:"max_retries"`
-	MaxRetryDelay time.Duration `yaml:"max_retry_delay"`
-	MinRetryDelay time.Duration `yaml:"min_retry_delay"`
-
-	Metadata           map[string]string `yaml:"metadata"`
-	Tagging            string            `yaml:"tagging"`
-	ContentDisposition string            `yaml:"content_disposition"`
-}
-
-type AzureConfig struct {
-	AccountName   string `yaml:"account_name"` // (env AZURE_STORAGE_ACCOUNT)
-	AccountKey    string `yaml:"account_key"`  // (env AZURE_STORAGE_KEY)
-	ContainerName string `yaml:"container_name"`
-}
-
-type GCPConfig struct {
-	CredentialsJSON string       `yaml:"credentials_json"` // (env GOOGLE_APPLICATION_CREDENTIALS)
-	Bucket          string       `yaml:"bucket"`
-	ProxyConfig     *ProxyConfig `yaml:"proxy_config"`
-}
-
-type ProxyConfig struct {
-	Url      string `yaml:"url"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-}
-
 func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageConfig, error) {
 	sc := &StorageConfig{}
 	if p.StorageConfig != nil {
@@ -99,10 +60,14 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 			sc.S3.MinRetryDelay = p.StorageConfig.S3.MinRetryDelay
 
 			if sc.S3.AssumedRoleArn != "" && sc.S3.AccessKey == "" && s3.Secret == "" {
-				// If an AssummedRole is set but not any AccessKey, default to using the one from conf. This is usefull for uploading to S3
-				// using an external account.
-				sc.S3.AccessKey = p.StorageConfig.S3.AccessKey
-				sc.S3.Secret = p.StorageConfig.S3.Secret
+				if p.EnableExternalAccountAssumeRole {
+					// If an AssummedRole is set but not any AccessKey, default to using the one from conf. This is usefull for uploading to S3
+					// using an external account.
+					sc.S3.AccessKey = p.StorageConfig.S3.AccessKey
+					sc.S3.Secret = p.StorageConfig.S3.Secret
+				} else {
+					return nil, errors.ErrNotSupported("assumed role ARN")
+				}
 			}
 		}
 		if s3.Proxy != nil {

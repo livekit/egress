@@ -37,15 +37,16 @@ type BaseConfig struct {
 	WsUrl     string             `yaml:"ws_url"`     // (env LIVEKIT_WS_URL)
 
 	// optional
-	Logging                      *logger.Config `yaml:"logging"`                          // logging config
-	TemplateBase                 string         `yaml:"template_base"`                    // custom template base url
-	ClusterID                    string         `yaml:"cluster_id"`                       // cluster this instance belongs to
-	EnableChromeSandbox          bool           `yaml:"enable_chrome_sandbox"`            // enable Chrome sandbox, requires extra docker configuration
-	MaxUploadQueue               int            `yaml:"max_upload_queue"`                 // maximum upload queue size, in minutes
-	DisallowLocalStorage         bool           `yaml:"disallow_local_storage"`           // require an upload config for all requests
-	EnableRoomCompositeSDKSource bool           `yaml:"enable_room_composite_sdk_source"` // attempt to render supported audio only room composite use cases using the SDK source instead of Chrome. This option will be removed when this becomes the default behavior eventually.
-	IOCreateTimeout              time.Duration  `yaml:"io_create_timeout"`                // timeout for CreateEgress calls
-	IOUpdateTimeout              time.Duration  `yaml:"io_update_timeout"`                // timeout for UpdateEgress calls
+	Logging                         *logger.Config `yaml:"logging"`                             // logging config
+	TemplateBase                    string         `yaml:"template_base"`                       // custom template base url
+	ClusterID                       string         `yaml:"cluster_id"`                          // cluster this instance belongs to
+	EnableChromeSandbox             bool           `yaml:"enable_chrome_sandbox"`               // enable Chrome sandbox, requires extra docker configuration
+	MaxUploadQueue                  int            `yaml:"max_upload_queue"`                    // maximum upload queue size, in minutes
+	DisallowLocalStorage            bool           `yaml:"disallow_local_storage"`              // require an upload config for all requests
+	EnableRoomCompositeSDKSource    bool           `yaml:"enable_room_composite_sdk_source"`    // attempt to render supported audio only room composite use cases using the SDK source instead of Chrome. This option will be removed when this becomes the default behavior eventually.
+	EnableExternalAccountAssumeRole bool           `yaml:"enable_external_account_assume_role"` // if true, S3 uploads are allowed to use the S3 key and secret from StorageConfig to assume a role from an external account speicifed in the request assumed_role_arn field
+	IOCreateTimeout                 time.Duration  `yaml:"io_create_timeout"`                   // timeout for CreateEgress calls
+	IOUpdateTimeout                 time.Duration  `yaml:"io_update_timeout"`                   // timeout for UpdateEgress calls
 
 	SessionLimits `yaml:"session_limits"` // session duration limits
 	StorageConfig *StorageConfig          `yaml:"storage,omitempty"` // storage config
