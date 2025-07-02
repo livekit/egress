@@ -6,8 +6,6 @@ go 1.24.2
 
 toolchain go1.24.3
 
-replace github.com/livekit/protocol => ../protocol
-
 replace github.com/livekit/storage => ../storage
 
 require (
@@ -31,7 +29,7 @@ require (
 	github.com/livekit/livekit-server v1.8.4
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/media-sdk v0.0.0-20250514070716-74b488e25cc7
-	github.com/livekit/protocol v1.39.2
+	github.com/livekit/protocol v1.39.4-0.20250702051801-2e032c725dc9
 	github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c
 	github.com/livekit/server-sdk-go/v2 v2.8.2-0.20250515012651-36db9bf95ff3
 	github.com/livekit/storage v0.0.0-20250625163308-9c1062d0eafc
