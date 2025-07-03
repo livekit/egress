@@ -156,6 +156,10 @@ func ErrTrackNotFound(trackID string) error {
 	return psrpc.NewErrorf(psrpc.NotFound, "track %s not found", trackID)
 }
 
+func ErrFeatureDisabled(feature string) error {
+	return psrpc.NewErrorf(psrpc.PermissionDenied, "%s is disabled for this account", feature)
+}
+
 func ErrCPUExhausted(usage float64) error {
 	return psrpc.NewErrorf(psrpc.PermissionDenied, "CPU exhausted: %.2f cores used", usage)
 }

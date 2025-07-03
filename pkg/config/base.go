@@ -47,9 +47,11 @@ type BaseConfig struct {
 	IOCreateTimeout              time.Duration  `yaml:"io_create_timeout"`                // timeout for CreateEgress calls
 	IOUpdateTimeout              time.Duration  `yaml:"io_update_timeout"`                // timeout for UpdateEgress calls
 
-	SessionLimits `yaml:"session_limits"` // session duration limits
-	StorageConfig *StorageConfig          `yaml:"storage,omitempty"` // storage config
-	BackupConfig  *StorageConfig          `yaml:"backup,omitempty"`  // backup config, for storage failures
+	SessionLimits      `yaml:"session_limits"` // session duration limits
+	StorageConfig      *StorageConfig          `yaml:"storage,omitempty"`     // storage config
+	BackupConfig       *StorageConfig          `yaml:"backup,omitempty"`      // backup config, for storage failures
+	S3AssumeRoleKey    string                  `yaml:"s3_assume_role_key"`    // if set, this key is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
+	S3AssumeRoleSecret string                  `yaml:"s3_assume_role_secret"` // if true, S3 uploads are allowed to use the S3 key and secret from StorageConfig to assume a role from an external account speicifed in the request assumed_role_arn field
 
 	// advanced
 	Insecure    bool                   `yaml:"insecure"`     // allow chrome to connect to an insecure websocket
