@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -48,6 +49,11 @@ func (s *Server) HandlerUpdate(_ context.Context, info *livekit.EgressInfo) (*em
 }
 
 func (s *Server) HandlerFinished(_ context.Context, req *ipc.HandlerFinishedRequest) (*emptypb.Empty, error) {
+	if strings.Contains(req.Info.Details, livekit.EndReasonKilled) && req.Info.Status == livekit.EgressStatus_EGRESS_COMPLETE {
+		// error is not sent to the handler
+		s.UpdateError(req.Info)
+	}
+
 	if err := s.ioClient.UpdateEgress(context.Background(), req.Info); err != nil {
 		logger.Errorw("failed to update egress", err, "egressID", req.EgressId)
 	}
