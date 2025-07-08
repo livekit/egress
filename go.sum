@@ -250,8 +250,8 @@ github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c h1:WwEr0YBejYbKzk8
 github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c/go.mod h1:kmD+AZPkWu0MaXIMv57jhNlbiSZZ/Jx4bzlxBDVmJes=
 github.com/livekit/server-sdk-go/v2 v2.8.2-0.20250515012651-36db9bf95ff3 h1:qy6GVTk6q3p9P29Q7mVY3KyTCawkNI3nWkOaMeaUvFU=
 github.com/livekit/server-sdk-go/v2 v2.8.2-0.20250515012651-36db9bf95ff3/go.mod h1:T/8z/w3SVL6dlwNRjDDEGSFoZqNvPB/3Hg/ThX0JJ6k=
-github.com/livekit/storage v0.0.0-20250625163308-9c1062d0eafc h1:Dtop+JYfmgHUNrDpnxORwpCD51P70o9v9EybmPLiT/Q=
-github.com/livekit/storage v0.0.0-20250625163308-9c1062d0eafc/go.mod h1:upfKG+nj4mPaD0dBMLlAUs/I1W5p96+z6N+lfRR4N44=
+github.com/livekit/storage v0.0.0-20250708191628-2d4035bf941c h1:mTrrFjNw1lPzBcshWiuk8xfUlO62jefX4mWOhIjxXPs=
+github.com/livekit/storage v0.0.0-20250708191628-2d4035bf941c/go.mod h1:upfKG+nj4mPaD0dBMLlAUs/I1W5p96+z6N+lfRR4N44=
 github.com/mackerelio/go-osstat v0.2.5 h1:+MqTbZUhoIt4m8qzkVoXUJg1EuifwlAJSk4Yl2GXh+o=
 github.com/mackerelio/go-osstat v0.2.5/go.mod h1:atxwWF+POUZcdtR1wnsUcQxTytoHG4uhl2AKKzrOajY=
 github.com/magefile/mage v1.15.0 h1:BvGheCMAsG3bWUDbZ8AyXXpCNwU9u5CB6sM+HNb9HYg=
