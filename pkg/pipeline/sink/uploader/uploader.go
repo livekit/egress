@@ -29,6 +29,8 @@ import (
 	"github.com/livekit/storage"
 )
 
+const presignedExpiration = time.Hour * 24 * 7 // 7 days
+
 type Uploader struct {
 	primary       *store
 	backup        *store
@@ -114,7 +116,7 @@ func uploadToProvider(s *store, localFilepath string, storageFilepath string, ou
 	}
 
 	if s.conf.GeneratePresignedUrl {
-		location, err = s.GeneratePresignedUrl(storageFilepath)
+		location, err = s.GeneratePresignedUrl(storageFilepath, presignedExpiration)
 		if err != nil {
 			return "", 0, errors.ErrUploadFailed(s.name, err)
 		}
