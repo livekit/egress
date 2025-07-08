@@ -141,12 +141,22 @@ const (
 )
 
 func (c *Controller) handleMessageWarning(gErr *gst.GError) error {
-	element, _, message := parseDebugInfo(gErr)
+	element, name, message := parseDebugInfo(gErr)
 
 	if gErr.Message() == msgClockProblem {
 		err := errors.ErrGstPipelineError(gErr)
 		logger.Errorw(gErr.Error(), errors.New(message), "element", element)
 		return err
+	}
+
+	if element == elementGstSrtSink {
+		streamName := strings.Split(name, "_")[1]
+		stream, err := c.getStreamSink().GetStream(streamName)
+		if err != nil {
+			return err
+		}
+
+		return c.streamFailed(context.Background(), stream, gErr)
 	}
 
 	logger.Warnw(gErr.Message(), errors.New(message), "element", element)
