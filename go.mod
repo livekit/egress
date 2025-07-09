@@ -33,6 +33,7 @@ require (
 	github.com/livekit/storage v0.0.0-20250708191628-2d4035bf941c
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.8.15
+	github.com/pion/rtp/v2 v2.0.0
 	github.com/pion/webrtc/v4 v4.1.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/prometheus/client_model v0.6.2
