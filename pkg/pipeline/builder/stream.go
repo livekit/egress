@@ -82,6 +82,9 @@ func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, o *c
 		if err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
+		if err = mux.SetProperty("latency", uint64(p.Latency.PipelineLatency)); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
 
 	default:
 		err = errors.ErrInvalidInput("output type")
