@@ -6,8 +6,6 @@ go 1.24.2
 
 toolchain go1.24.3
 
-replace github.com/livekit/storage => ../storage
-
 require (
 	cloud.google.com/go/storage v1.55.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
@@ -32,7 +30,7 @@ require (
 	github.com/livekit/protocol v1.39.4-0.20250702051801-2e032c725dc9
 	github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c
 	github.com/livekit/server-sdk-go/v2 v2.8.2-0.20250515012651-36db9bf95ff3
-	github.com/livekit/storage v0.0.0-20250625163308-9c1062d0eafc
+	github.com/livekit/storage v0.0.0-20250711185412-0dabf9984ad7
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.8.16
 	github.com/pion/webrtc/v4 v4.1.1
