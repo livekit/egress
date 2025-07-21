@@ -73,7 +73,6 @@ func (pm *ProcessManager) Launch(
 		info:             info,
 		cmd:              cmd,
 		ipcHandlerClient: ipcClient,
-		ready:            make(chan struct{}),
 	}
 
 	pm.mu.Lock()
@@ -86,7 +85,7 @@ func (pm *ProcessManager) Launch(
 	}
 
 	select {
-	case <-p.ready:
+	case <-p.ready.Watch():
 		return nil
 
 	case <-time.After(launchTimeout):
@@ -121,11 +120,34 @@ func (pm *ProcessManager) HandlerStarted(egressID string) error {
 	defer pm.mu.RUnlock()
 
 	if p, ok := pm.activeHandlers[egressID]; ok {
-		close(p.ready)
+		p.ready.Break()
 		return nil
 	}
 
 	return errors.ErrEgressNotFound
+}
+
+func (pm *ProcessManager) HandlerUpdated(info *livekit.EgressInfo) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	if p, ok := pm.activeHandlers[info.EgressId]; ok {
+		p.info = info
+		if info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
+			p.active.Break()
+		}
+	}
+}
+
+func (pm *ProcessManager) HandlerActive(egressID string) bool {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	if p, ok := pm.activeHandlers[egressID]; ok {
+		return p.active.IsBroken()
+	}
+
+	return false
 }
 
 func (pm *ProcessManager) GetActiveEgressIDs() []string {
@@ -230,7 +252,8 @@ type Process struct {
 	info             *livekit.EgressInfo
 	cmd              *exec.Cmd
 	ipcHandlerClient ipc.EgressHandlerClient
-	ready            chan struct{}
+	ready            core.Fuse
+	active           core.Fuse
 	closed           core.Fuse
 }
 
