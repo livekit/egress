@@ -198,16 +198,24 @@ func (pm *ProcessManager) KillProcess(egressID string, err error) {
 	defer pm.mu.RUnlock()
 
 	if h, ok := pm.activeHandlers[egressID]; ok {
-
 		logger.Errorw("killing egress", err, "egressID", egressID)
 
-		now := time.Now().UnixNano()
 		h.info.Status = livekit.EgressStatus_EGRESS_FAILED
 		h.info.Error = err.Error()
 		h.info.ErrorCode = int32(http.StatusForbidden)
-		h.info.UpdatedAt = now
-		h.info.EndedAt = now
+
 		h.kill()
+	}
+}
+
+func (pm *ProcessManager) UpdateError(info *livekit.EgressInfo) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	if h, ok := pm.activeHandlers[info.EgressId]; ok && h.info.Error != "" {
+		info.Status = livekit.EgressStatus_EGRESS_FAILED
+		info.Error = h.info.Error
+		info.ErrorCode = h.info.ErrorCode
 	}
 }
 
