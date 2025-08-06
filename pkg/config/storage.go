@@ -58,10 +58,11 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 			sc.S3.MaxRetries = p.StorageConfig.S3.MaxRetries
 			sc.S3.MaxRetryDelay = p.StorageConfig.S3.MaxRetryDelay
 			sc.S3.MinRetryDelay = p.StorageConfig.S3.MinRetryDelay
-			if sc.S3.AssumeRoleArn == "" {
-				sc.S3.AssumeRoleArn = p.StorageConfig.S3.AssumeRoleArn
-				sc.S3.AssumeRoleExternalId = p.StorageConfig.S3.AssumeRoleExternalId
-			}
+		}
+
+		if sc.S3.AssumeRoleArn == "" {
+			sc.S3.AssumeRoleArn = p.S3AssumeRoleArn
+			sc.S3.AssumeRoleExternalId = p.S3AssumeRoleExternalID
 		}
 
 		if sc.S3.AssumeRoleArn != "" && sc.S3.AccessKey == "" {
