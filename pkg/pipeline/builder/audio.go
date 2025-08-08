@@ -15,12 +15,7 @@
 package builder
 
 import (
-	"bytes"
 	"fmt"
-	"runtime"
-	"sort"
-	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/go-gst/go-gst/gst"
@@ -49,137 +44,7 @@ type AudioBin struct {
 	nextChannel int
 	names       map[string]string
 
-	audioMixerDebug *AudioMixerDebug
-}
-
-type AudioMixerDebug struct {
-	mixer     *gst.Element
-	ptsRanges map[string][]GstTimeInfo
-	lock      sync.Mutex
-}
-
-type GstTimeInfo struct {
-	pts      gst.ClockTime
-	duration gst.ClockTime
-}
-
-func (amd *AudioMixerDebug) MergeRanges(padName string, newRange GstTimeInfo) {
-	ranges := amd.ptsRanges[padName]
-	start := newRange.pts
-	end := start + newRange.duration
-
-	merged := []GstTimeInfo{}
-
-	for _, r := range ranges {
-		rStart := r.pts
-		rEnd := rStart + r.duration
-
-		// Check for overlap or consecutive (touching) ranges
-		if end < rStart || start > rEnd {
-			// No overlap
-			merged = append(merged, r)
-			continue
-		}
-
-		// Merge overlapping/consecutive ranges
-		start = min(start, rStart)
-		end = max(end, rEnd)
-	}
-
-	// Insert the new (merged) range
-	merged = append(merged, GstTimeInfo{
-		pts:      start,
-		duration: end - start,
-	})
-
-	// Update the pad's range list (re-sort to help future merges if needed)
-	amd.ptsRanges[padName] = sortAndMerge(merged)
-}
-
-func gstRangesToString(ranges []GstTimeInfo) string {
-	if len(ranges) == 0 {
-		return "[]"
-	}
-
-	var str string
-	for _, r := range ranges {
-		str += fmt.Sprintf("{pts: %s, duration: %s}, ", r.pts.String(), r.duration.String())
-	}
-	return "[" + str[:len(str)-2] + "]"
-}
-
-func sortAndMerge(ranges []GstTimeInfo) []GstTimeInfo {
-	if len(ranges) == 0 {
-		return nil
-	}
-
-	// Sort by pts
-	sort.Slice(ranges, func(i, j int) bool {
-		return ranges[i].pts < ranges[j].pts
-	})
-
-	merged := []GstTimeInfo{ranges[0]}
-	for i := 1; i < len(ranges); i++ {
-		last := merged[len(merged)-1]
-		curr := ranges[i]
-
-		lastStart := last.pts
-		lastEnd := lastStart + last.duration
-		currStart := curr.pts
-		currEnd := currStart + curr.duration
-
-		if currStart <= lastEnd { // overlap or consecutive
-			merged[len(merged)-1] = GstTimeInfo{
-				pts:      min(lastStart, currStart),
-				duration: max(lastEnd, currEnd) - min(lastStart, currStart),
-			}
-		} else {
-			merged = append(merged, curr)
-		}
-	}
-	return merged
-}
-
-func (amd *AudioMixerDebug) IsRangeCoveredBySinks(srcRange GstTimeInfo) bool {
-	srcStart := srcRange.pts
-	srcEnd := srcStart + srcRange.duration
-
-	for sinkPad, ranges := range amd.ptsRanges {
-		if !strings.HasPrefix(sinkPad, "sink") {
-			continue // skip non-sink pads
-		}
-
-		if len(ranges) == 0 {
-			return false // no data on this sink pad
-		}
-
-		covered := false
-		for _, r := range ranges {
-			rStart := r.pts
-			rEnd := rStart + r.duration
-
-			if srcStart >= rStart && srcEnd <= rEnd {
-				covered = true
-				break
-			}
-		}
-
-		if !covered {
-			return false // this sink pad does not fully cover the src range
-		}
-	}
-
-	return true // all sink pads cover the src range
-}
-
-// GetGoid extracts the goroutine ID from the stack trace.
-func getGoid() uint64 {
-	b := make([]byte, 64)
-	b = b[:runtime.Stack(b, false)]
-	b = bytes.TrimPrefix(b, []byte("goroutine "))
-	b = b[:bytes.IndexByte(b, ' ')]
-	n, _ := strconv.ParseUint(string(b), 10, 64)
-	return n
+	audioMixerStats *audioMixerStats
 }
 
 func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
@@ -428,79 +293,7 @@ func (b *AudioBin) addMixer() error {
 		return err
 	}
 
-	b.audioMixerDebug = &AudioMixerDebug{
-		mixer:     audioMixer,
-		ptsRanges: make(map[string][]GstTimeInfo),
-	}
-
-	audioMixer.Connect("pad-added", func(el *gst.Element, pad *gst.Pad) {
-		padName := pad.GetName()
-		fmt.Printf("***Pad added: %s", padName)
-		pad.AddProbe(gst.PadProbeTypeBuffer, func(p *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-			buffer := info.GetBuffer()
-			if buffer == nil {
-				return gst.PadProbeOK
-			}
-			fmt.Printf("***[%d]<%s>Buffer pts: %s, duration: %s", getGoid(), padName, buffer.PresentationTimestamp().String(), buffer.Duration().String())
-			if buffer.Duration() == gst.ClockTimeNone {
-				fmt.Printf("***<%s>Buffer duration is None", padName)
-				return gst.PadProbeOK
-			}
-
-			if b.audioMixerDebug == nil {
-				fmt.Printf("*** audioMixerDebug is nil! ***\n")
-			}
-
-			b.audioMixerDebug.lock.Lock()
-			defer b.audioMixerDebug.lock.Unlock()
-
-			ranges := b.audioMixerDebug.ptsRanges[padName]
-			var prevPts gst.ClockTime
-			var prevDuration gst.ClockTime
-			if len(ranges) > 0 {
-				prevPts = ranges[len(ranges)-1].pts
-				prevDuration = ranges[len(ranges)-1].duration
-			}
-
-			if prevPts > 0 && (buffer.PresentationTimestamp() != prevPts+prevDuration) {
-				fmt.Printf("***<%s>Discontinuity discovered at: %s", padName, buffer.PresentationTimestamp().String())
-				fmt.Printf("***<%s>Existing ranges: %s", padName, gstRangesToString(ranges))
-			}
-			b.audioMixerDebug.MergeRanges(padName, GstTimeInfo{
-				pts:      buffer.PresentationTimestamp(),
-				duration: buffer.Duration(),
-			})
-			return gst.PadProbeOK
-		})
-	})
-	srcPad := audioMixer.GetStaticPad("src")
-	srcPad.AddProbe(gst.PadProbeTypeBuffer, func(p *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		fmt.Printf("***<[%d]%s>Buffer pts %s, duration: %s", getGoid(), srcPad.GetName(), info.GetBuffer().PresentationTimestamp().String(), info.GetBuffer().Duration().String())
-		buffer := info.GetBuffer()
-		if buffer == nil {
-			return gst.PadProbeOK
-		}
-
-		b.audioMixerDebug.lock.Lock()
-		defer b.audioMixerDebug.lock.Unlock()
-
-		if b.audioMixerDebug == nil {
-			fmt.Printf("*** audioMixerDebug is nil! ***\n")
-		}
-
-		gstTimeinfo := GstTimeInfo{
-			pts:      buffer.PresentationTimestamp(),
-			duration: buffer.Duration(),
-		}
-
-		if !b.audioMixerDebug.IsRangeCoveredBySinks(gstTimeinfo) {
-			fmt.Printf("***<%s>Source range not covered by sinks: %s", srcPad.GetName(), buffer.PresentationTimestamp().String())
-		}
-
-		b.audioMixerDebug.MergeRanges(srcPad.GetName(), gstTimeinfo)
-		return gst.PadProbeOK
-	})
-	// probes should be removed but conciously not doing it - debugging only
+	b.installAudioMixerProbes(audioMixer)
 
 	return b.bin.AddElements(audioMixer, mixedCaps)
 }
@@ -592,4 +385,23 @@ func newAudioCapsFilter(p *config.PipelineConfig, channel int) (*gst.Element, er
 	}
 
 	return capsFilter, nil
+}
+
+func (b *AudioBin) installAudioMixerProbes(mixer *gst.Element) {
+	b.audioMixerStats = &audioMixerStats{
+		mixer:     mixer,
+		ptsRanges: make(map[string][]gstTimeInfo),
+	}
+
+	mixer.Connect("pad-added", func(el *gst.Element, pad *gst.Pad) {
+		padName := pad.GetName()
+
+		pad.AddProbe(gst.PadProbeTypeBuffer, func(p *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			return b.audioMixerStats.sinkProbe(padName, info)
+		})
+	})
+	srcPad := mixer.GetStaticPad("src")
+	srcPad.AddProbe(gst.PadProbeTypeBuffer, func(p *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		return b.audioMixerStats.srcProbe(info)
+	})
 }
