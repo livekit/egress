@@ -59,6 +59,12 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 			sc.S3.MaxRetryDelay = p.StorageConfig.S3.MaxRetryDelay
 			sc.S3.MinRetryDelay = p.StorageConfig.S3.MinRetryDelay
 		}
+
+		if sc.S3.AssumeRoleArn == "" {
+			sc.S3.AssumeRoleArn = p.S3AssumeRoleArn
+			sc.S3.AssumeRoleExternalId = p.S3AssumeRoleExternalID
+		}
+
 		if sc.S3.AssumeRoleArn != "" && sc.S3.AccessKey == "" {
 			if p.S3AssumeRoleKey != "" {
 				// If an AssummedRole is set but not any AccessKey, default to using the one from conf. This is usefull for uploading to S3
