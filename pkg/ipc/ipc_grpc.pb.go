@@ -202,6 +202,7 @@ const (
 	EgressHandler_GetPipelineDot_FullMethodName = "/ipc.EgressHandler/GetPipelineDot"
 	EgressHandler_GetPProf_FullMethodName       = "/ipc.EgressHandler/GetPProf"
 	EgressHandler_GetMetrics_FullMethodName     = "/ipc.EgressHandler/GetMetrics"
+	EgressHandler_KillEgress_FullMethodName     = "/ipc.EgressHandler/KillEgress"
 )
 
 // EgressHandlerClient is the client API for EgressHandler service.
@@ -211,6 +212,7 @@ type EgressHandlerClient interface {
 	GetPipelineDot(ctx context.Context, in *GstPipelineDebugDotRequest, opts ...grpc.CallOption) (*GstPipelineDebugDotResponse, error)
 	GetPProf(ctx context.Context, in *PProfRequest, opts ...grpc.CallOption) (*PProfResponse, error)
 	GetMetrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsResponse, error)
+	KillEgress(ctx context.Context, in *KillEgressRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type egressHandlerClient struct {
@@ -248,6 +250,15 @@ func (c *egressHandlerClient) GetMetrics(ctx context.Context, in *MetricsRequest
 	return out, nil
 }
 
+func (c *egressHandlerClient) KillEgress(ctx context.Context, in *KillEgressRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, EgressHandler_KillEgress_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EgressHandlerServer is the server API for EgressHandler service.
 // All implementations must embed UnimplementedEgressHandlerServer
 // for forward compatibility
@@ -255,6 +266,7 @@ type EgressHandlerServer interface {
 	GetPipelineDot(context.Context, *GstPipelineDebugDotRequest) (*GstPipelineDebugDotResponse, error)
 	GetPProf(context.Context, *PProfRequest) (*PProfResponse, error)
 	GetMetrics(context.Context, *MetricsRequest) (*MetricsResponse, error)
+	KillEgress(context.Context, *KillEgressRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedEgressHandlerServer()
 }
 
@@ -270,6 +282,9 @@ func (UnimplementedEgressHandlerServer) GetPProf(context.Context, *PProfRequest)
 }
 func (UnimplementedEgressHandlerServer) GetMetrics(context.Context, *MetricsRequest) (*MetricsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMetrics not implemented")
+}
+func (UnimplementedEgressHandlerServer) KillEgress(context.Context, *KillEgressRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method KillEgress not implemented")
 }
 func (UnimplementedEgressHandlerServer) mustEmbedUnimplementedEgressHandlerServer() {}
 
@@ -338,6 +353,24 @@ func _EgressHandler_GetMetrics_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EgressHandler_KillEgress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KillEgressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EgressHandlerServer).KillEgress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EgressHandler_KillEgress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EgressHandlerServer).KillEgress(ctx, req.(*KillEgressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // EgressHandler_ServiceDesc is the grpc.ServiceDesc for EgressHandler service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -356,6 +389,10 @@ var EgressHandler_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMetrics",
 			Handler:    _EgressHandler_GetMetrics_Handler,
+		},
+		{
+			MethodName: "KillEgress",
+			Handler:    _EgressHandler_KillEgress_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

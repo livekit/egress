@@ -16,7 +16,6 @@ package service
 
 import (
 	"context"
-	"net/http"
 	"os"
 	"os/exec"
 	"path"
@@ -177,7 +176,7 @@ func (pm *ProcessManager) KillAll() {
 	defer pm.mu.RUnlock()
 
 	for _, h := range pm.activeHandlers {
-		h.kill()
+		h.kill(errors.ErrShuttingDown)
 	}
 }
 
@@ -187,8 +186,7 @@ func (pm *ProcessManager) AbortProcess(egressID string, err error) {
 
 	if h, ok := pm.activeHandlers[egressID]; ok {
 		logger.Warnw("aborting egress", err, "egressID", egressID)
-		h.kill()
-		h.closed.Break()
+		h.kill(err)
 		delete(pm.activeHandlers, egressID)
 	}
 }
@@ -198,16 +196,8 @@ func (pm *ProcessManager) KillProcess(egressID string, err error) {
 	defer pm.mu.RUnlock()
 
 	if h, ok := pm.activeHandlers[egressID]; ok {
-
 		logger.Errorw("killing egress", err, "egressID", egressID)
-
-		now := time.Now().UnixNano()
-		h.info.Status = livekit.EgressStatus_EGRESS_FAILED
-		h.info.Error = err.Error()
-		h.info.ErrorCode = int32(http.StatusForbidden)
-		h.info.UpdatedAt = now
-		h.info.EndedAt = now
-		h.kill()
+		h.kill(err)
 	}
 }
 
@@ -249,10 +239,14 @@ func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 	return deserializeMetrics(p.info.EgressId, metricsResponse.Metrics)
 }
 
-func (p *Process) kill() {
+func (p *Process) kill(e error) {
 	p.closed.Once(func() {
-		if err := p.cmd.Process.Signal(syscall.SIGINT); err != nil {
-			logger.Errorw("failed to kill Process", err, "egressID", p.req.EgressId)
+		if _, err := p.ipcHandlerClient.KillEgress(p.ctx, &ipc.KillEgressRequest{
+			Error: e.Error(),
+		}); err != nil {
+			if err = p.cmd.Process.Signal(syscall.SIGINT); err != nil {
+				logger.Errorw("failed to kill Process", err, "egressID", p.req.EgressId)
+			}
 		}
 	})
 }
