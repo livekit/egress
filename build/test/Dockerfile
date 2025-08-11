@@ -65,6 +65,8 @@ RUN apt-get update && \
         fonts-noto \
         gnupg \
         pulseaudio \
+        python3 \
+        python3-pip \
         unzip \
         wget \
         xvfb \
@@ -102,7 +104,11 @@ COPY test/ /workspace/test/
 COPY --from=0 /workspace/egress /bin/
 COPY --from=0 /workspace/test.test .
 COPY --from=0 /workspace/media-samples /media-samples
+COPY --from=0 /workspace/test/agents /agents
 COPY build/test/entrypoint.sh .
+
+# install agent deps
+RUN pip install --break-system-packages --no-cache-dir -r /agents/requirements.txt
 
 # run tests
 USER egress

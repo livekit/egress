@@ -21,11 +21,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/egress/pkg/ipc"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/pprof"
 	"github.com/livekit/protocol/tracer"
+	"github.com/livekit/psrpc"
 )
 
 func (h *Handler) GetPipelineDot(ctx context.Context, _ *ipc.GstPipelineDebugDotRequest) (*ipc.GstPipelineDebugDotResponse, error) {
@@ -105,4 +108,16 @@ func renderMetrics(metrics []*dto.MetricFamily) (string, error) {
 
 	// Get the rendered metrics as a string from the StringWriter
 	return writer.String(), nil
+}
+
+func (h *Handler) KillEgress(ctx context.Context, req *ipc.KillEgressRequest) (*emptypb.Empty, error) {
+	ctx, span := tracer.Start(ctx, "Handler.KillEgress")
+	defer span.End()
+
+	<-h.initialized.Watch()
+
+	h.controller.SendEOS(ctx, livekit.EndReasonKilled)
+	h.controller.Info.SetFailed(psrpc.NewErrorf(psrpc.PermissionDenied, req.Error))
+
+	return &emptypb.Empty{}, nil
 }

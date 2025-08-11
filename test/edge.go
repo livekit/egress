@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
@@ -38,6 +39,17 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 
 	t.Run("EdgeCases", func(t *testing.T) {
 		for _, test := range []*testCase{
+
+			// Agents with room composite audio only
+
+			{
+				name:        "Agents",
+				requestType: types.RequestTypeRoomComposite,
+				fileOptions: &fileOptions{
+					filename: "agents_{time}",
+				},
+				custom: r.testAgents,
+			},
 
 			// RoomComposite audio mixing
 
@@ -144,6 +156,17 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 			}
 		}
 	})
+}
+
+func (r *Runner) testAgents(t *testing.T, test *testCase) {
+	_, err := os.Stat("/agents/.env")
+	if err != nil {
+		t.Skip("skipping agents test; missing env file")
+	}
+
+	r.launchAgents(t)
+	time.Sleep(time.Second * 5)
+	r.runFileTest(t, test)
 }
 
 func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
