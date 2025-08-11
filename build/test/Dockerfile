@@ -107,6 +107,7 @@ COPY --from=0 /workspace/media-samples /media-samples
 COPY --from=0 /workspace/test/agents /agents
 COPY build/test/entrypoint.sh .
 
+# install agent deps
 RUN pip install --break-system-packages --no-cache-dir -r /agents/requirements.txt
 
 # run tests

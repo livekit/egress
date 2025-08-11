@@ -29,23 +29,38 @@ import (
 )
 
 func (r *Runner) launchAgents(t *testing.T) {
-	cmd := exec.Command("python3", "agent.py", "dev")
+	cmd := exec.Command("python3", "guest.py", "dev")
 	cmd.Dir = "/agents"
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Start()
-	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+
+	cmd = exec.Command("python3", "host.py", "dev")
+	cmd.Dir = "/agents"
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	require.NoError(t, cmd.Start())
 
 	agentsClient := lksdk.NewAgentDispatchServiceClient(r.WsUrl, r.ApiKey, r.ApiSecret)
-	res, err := agentsClient.CreateDispatch(context.Background(), &livekit.CreateAgentDispatchRequest{
-		AgentName: "egress-integration",
+	guest, err := agentsClient.CreateDispatch(context.Background(), &livekit.CreateAgentDispatchRequest{
+		AgentName: "egress-integration-guest",
+		Room:      r.RoomName,
+	})
+	require.NoError(t, err)
+
+	host, err := agentsClient.CreateDispatch(context.Background(), &livekit.CreateAgentDispatchRequest{
+		AgentName: "egress-integration-host",
 		Room:      r.RoomName,
 	})
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
 		_, _ = agentsClient.DeleteDispatch(context.Background(), &livekit.DeleteAgentDispatchRequest{
-			DispatchId: res.Id,
+			DispatchId: host.Id,
+			Room:       r.RoomName,
+		})
+		_, _ = agentsClient.DeleteDispatch(context.Background(), &livekit.DeleteAgentDispatchRequest{
+			DispatchId: guest.Id,
 			Room:       r.RoomName,
 		})
 	})

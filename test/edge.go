@@ -165,6 +165,7 @@ func (r *Runner) testAgents(t *testing.T, test *testCase) {
 	}
 
 	r.launchAgents(t)
+	time.Sleep(time.Second * 5)
 	r.runFileTest(t, test)
 }
 
