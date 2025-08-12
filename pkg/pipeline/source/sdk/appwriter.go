@@ -334,7 +334,7 @@ func (w *AppWriter) logStats() {
 			stats := w.getStats()
 			w.csvLogger.Write(stats)
 			w.csvLogger.Close()
-			w.logger.Debugw("appwriter stats, ", "stats", stats)
+			w.logger.Debugw("appwriter stats ", "stats", stats)
 			return
 
 		case <-ticker.C:
