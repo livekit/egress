@@ -126,7 +126,6 @@ func (c *Controller) BuildPipeline() error {
 	if c.SourceType == types.SourceTypeSDK {
 		p.SetEOSFunc(func() bool {
 			c.src.(*source.SDKSource).CloseWriters()
-			c.src.(*source.SDKSource).LogStats()
 			return true
 		})
 	}

@@ -76,9 +76,6 @@ type AppWriter struct {
 	draining     core.Fuse
 	endStream    core.Fuse
 	finished     core.Fuse
-
-	// stats
-	statsCallback func(trackID string, ts *logging.TrackStats)
 }
 
 func NewAppWriter(
@@ -89,7 +86,6 @@ func NewAppWriter(
 	ts *config.TrackSource,
 	sync *synchronizer.Synchronizer,
 	callbacks *gstreamer.Callbacks,
-	statsCallback func(string, *logging.TrackStats),
 ) (*AppWriter, error) {
 	w := &AppWriter{
 		conf:              conf,
@@ -102,7 +98,6 @@ func NewAppWriter(
 		callbacks:         callbacks,
 		sync:              sync,
 		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
-		statsCallback:     statsCallback,
 	}
 
 	if conf.Debug.EnableTrackLogging {
@@ -336,20 +331,22 @@ func (w *AppWriter) logStats() {
 	for {
 		select {
 		case <-ended:
-			w.writeStats()
+			stats := w.getStats()
+			w.csvLogger.Write(stats)
 			w.csvLogger.Close()
+			w.logger.Debugw("appwriter stats, ", "stats", stats)
 			return
 
 		case <-ticker.C:
-			w.writeStats()
+			stats := w.getStats()
+			w.csvLogger.Write(stats)
 		}
 	}
 }
 
-func (w *AppWriter) writeStats() {
+func (w *AppWriter) getStats() *logging.TrackStats {
 	stats := w.buffer.Stats()
-
-	trackStats := &logging.TrackStats{
+	return &logging.TrackStats{
 		Timestamp:       time.Now().Format(time.DateTime),
 		PacketsReceived: stats.PacketsPushed,
 		PaddingReceived: stats.PaddingPushed,
@@ -360,11 +357,5 @@ func (w *AppWriter) writeStats() {
 		LastPushed:      w.lastPushed.Load().Format(time.DateTime),
 		Drift:           w.drift.Load(),
 		MaxDrift:        w.maxDrift.Load(),
-	}
-
-	w.csvLogger.Write(trackStats)
-
-	if w.statsCallback != nil {
-		w.statsCallback(w.track.ID(), trackStats)
 	}
 }
