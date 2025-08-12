@@ -107,10 +107,7 @@ func NewAppWriter(
 		} else {
 			w.csvLogger = csvLogger
 			w.TrackSynchronizer.OnSenderReport(func(drift time.Duration) {
-				w.drift.Store(drift)
-				if drift > w.maxDrift.Load() {
-					w.maxDrift.Store(drift)
-				}
+				w.updateDrift(drift)
 			})
 		}
 	}
@@ -357,5 +354,18 @@ func (w *AppWriter) getStats() *logging.TrackStats {
 		LastPushed:      w.lastPushed.Load().Format(time.DateTime),
 		Drift:           w.drift.Load(),
 		MaxDrift:        w.maxDrift.Load(),
+	}
+}
+
+func (w *AppWriter) updateDrift(drift time.Duration) {
+	w.drift.Store(drift)
+	for {
+		maxDrift := w.maxDrift.Load()
+		if drift.Abs() <= maxDrift.Abs() {
+			break
+		}
+		if w.maxDrift.CompareAndSwap(maxDrift, drift) {
+			break
+		}
 	}
 }
