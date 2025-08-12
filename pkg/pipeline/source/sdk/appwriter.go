@@ -48,6 +48,7 @@ type AppWriter struct {
 	logger    logger.Logger
 	csvLogger *logging.CSVLogger[logging.TrackStats]
 	drift     atomic.Duration
+	maxDrift  atomic.Duration
 
 	pub       lksdk.TrackPublication
 	track     *webrtc.TrackRemote
@@ -75,6 +76,9 @@ type AppWriter struct {
 	draining     core.Fuse
 	endStream    core.Fuse
 	finished     core.Fuse
+
+	// stats
+	statsCallback func(trackID string, ts *logging.TrackStats)
 }
 
 func NewAppWriter(
@@ -85,6 +89,7 @@ func NewAppWriter(
 	ts *config.TrackSource,
 	sync *synchronizer.Synchronizer,
 	callbacks *gstreamer.Callbacks,
+	statsCallback func(string, *logging.TrackStats),
 ) (*AppWriter, error) {
 	w := &AppWriter{
 		conf:              conf,
@@ -97,6 +102,7 @@ func NewAppWriter(
 		callbacks:         callbacks,
 		sync:              sync,
 		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
+		statsCallback:     statsCallback,
 	}
 
 	if conf.Debug.EnableTrackLogging {
@@ -107,6 +113,9 @@ func NewAppWriter(
 			w.csvLogger = csvLogger
 			w.TrackSynchronizer.OnSenderReport(func(drift time.Duration) {
 				w.drift.Store(drift)
+				if drift > w.maxDrift.Load() {
+					w.maxDrift.Store(drift)
+				}
 			})
 		}
 	}
@@ -340,7 +349,7 @@ func (w *AppWriter) logStats() {
 func (w *AppWriter) writeStats() {
 	stats := w.buffer.Stats()
 
-	w.csvLogger.Write(&logging.TrackStats{
+	trackStats := &logging.TrackStats{
 		Timestamp:       time.Now().Format(time.DateTime),
 		PacketsReceived: stats.PacketsPushed,
 		PaddingReceived: stats.PaddingPushed,
@@ -350,5 +359,12 @@ func (w *AppWriter) writeStats() {
 		SamplesPushed:   stats.SamplesPopped,
 		LastPushed:      w.lastPushed.Load().Format(time.DateTime),
 		Drift:           w.drift.Load(),
-	})
+		MaxDrift:        w.maxDrift.Load(),
+	}
+
+	w.csvLogger.Write(trackStats)
+
+	if w.statsCallback != nil {
+		w.statsCallback(w.track.ID(), trackStats)
+	}
 }

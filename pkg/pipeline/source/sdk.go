@@ -30,6 +30,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
@@ -62,11 +63,22 @@ type SDKSource struct {
 
 	startRecording core.Fuse
 	endRecording   core.Fuse
+
+	stats map[string]sdkSourceStats
 }
 
 type subscriptionResult struct {
 	trackID string
 	err     error
+}
+
+type sdkSourceStats struct {
+	PacketsReceived uint64
+	PaddingReceived uint64
+	PacketsDropped  uint64
+	PacketsPushed   uint64
+	SamplesPushed   uint64
+	MaxDrift        time.Duration
 }
 
 func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*SDKSource, error) {
@@ -79,6 +91,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		filenameReplacements: make(map[string]string),
 		subs:                 make(chan *subscriptionResult, 100),
 		writers:              make(map[string]*sdk.AppWriter),
+		stats:                make(map[string]sdkSourceStats),
 	}
 
 	s.sync = synchronizer.NewSynchronizer(func() {
@@ -554,7 +567,7 @@ func (s *SDKSource) createWriter(
 	}
 
 	ts.AppSrc = app.SrcFromElement(src)
-	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, s.callbacks)
+	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, s.callbacks, s.statsCallback)
 	if err != nil {
 		return nil, err
 	}
@@ -657,4 +670,36 @@ func (s *SDKSource) onDisconnected() {
 
 func (s *SDKSource) finished() {
 	s.endRecording.Break()
+}
+
+func (s *SDKSource) statsCallback(trackID string, ts *logging.TrackStats) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.stats[trackID] = sdkSourceStats{
+		PacketsReceived: ts.PacketsReceived,
+		PaddingReceived: ts.PaddingReceived,
+		PacketsDropped:  ts.PacketsDropped,
+		PacketsPushed:   ts.PacketsPushed,
+		SamplesPushed:   ts.SamplesPushed,
+		MaxDrift:        ts.MaxDrift,
+	}
+}
+
+func (s *SDKSource) LogStats() {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var aggregatedStats sdkSourceStats
+
+	for _, stats := range s.stats {
+		aggregatedStats.PacketsReceived += stats.PacketsReceived
+		aggregatedStats.PaddingReceived += stats.PaddingReceived
+		aggregatedStats.PacketsDropped += stats.PacketsDropped
+		aggregatedStats.PacketsPushed += stats.PacketsPushed
+		aggregatedStats.SamplesPushed += stats.SamplesPushed
+		aggregatedStats.MaxDrift = max(aggregatedStats.MaxDrift, stats.MaxDrift)
+	}
+
+	logger.Infow("sdk source stats", "stats", aggregatedStats)
 }
