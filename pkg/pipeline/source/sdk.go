@@ -69,15 +69,6 @@ type subscriptionResult struct {
 	err     error
 }
 
-type sdkSourceStats struct {
-	PacketsReceived uint64
-	PaddingReceived uint64
-	PacketsDropped  uint64
-	PacketsPushed   uint64
-	SamplesPushed   uint64
-	MaxDrift        time.Duration
-}
-
 func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*SDKSource, error) {
 	ctx, span := tracer.Start(ctx, "SDKInput.New")
 	defer span.End()
