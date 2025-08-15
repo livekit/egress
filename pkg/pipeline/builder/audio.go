@@ -148,9 +148,6 @@ func (b *AudioBin) buildSDKInput() error {
 			return err
 		}
 	}
-	if err := b.addAudioTestSrcBin(); err != nil {
-		return err
-	}
 	if err := b.addMixer(); err != nil {
 		return err
 	}
@@ -242,34 +239,6 @@ func (b *AudioBin) getChannel(ts *config.TrackSource) int {
 	return audioChannelStereo
 }
 
-func (b *AudioBin) addAudioTestSrcBin() error {
-	testSrcBin := b.bin.NewBin("audio_test_src")
-	if err := b.bin.AddSourceBin(testSrcBin); err != nil {
-		return err
-	}
-
-	audioTestSrc, err := gst.NewElement("audiotestsrc")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = audioTestSrc.SetProperty("volume", 0.0); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = audioTestSrc.SetProperty("do-timestamp", true); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = audioTestSrc.SetProperty("is-live", true); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-
-	audioCaps, err := newAudioCapsFilter(b.conf, audioChannelStereo)
-	if err != nil {
-		return err
-	}
-
-	return testSrcBin.AddElements(audioTestSrc, audioCaps)
-}
-
 func (b *AudioBin) addMixer() error {
 	audioMixer, err := gst.NewElement("audiomixer")
 	if err != nil {
@@ -278,7 +247,7 @@ func (b *AudioBin) addMixer() error {
 	if err = audioMixer.SetProperty("latency", uint64(b.conf.Latency.AudioMixerLatency)); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = audioMixer.SetProperty("alignment-threshold", uint64(b.conf.Latency.PipelineLatency)); err != nil {
+	if err = audioMixer.SetProperty("force-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
