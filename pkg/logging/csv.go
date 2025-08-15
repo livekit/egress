@@ -33,6 +33,7 @@ type TrackStats struct {
 	SamplesPushed   uint64
 	LastPushed      string
 	Drift           time.Duration
+	MaxDrift        time.Duration
 }
 
 type StreamStats struct {
