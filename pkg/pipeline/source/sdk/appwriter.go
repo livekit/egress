@@ -48,6 +48,7 @@ type AppWriter struct {
 	logger    logger.Logger
 	csvLogger *logging.CSVLogger[logging.TrackStats]
 	drift     atomic.Duration
+	maxDrift  atomic.Duration
 
 	pub       lksdk.TrackPublication
 	track     *webrtc.TrackRemote
@@ -106,7 +107,7 @@ func NewAppWriter(
 		} else {
 			w.csvLogger = csvLogger
 			w.TrackSynchronizer.OnSenderReport(func(drift time.Duration) {
-				w.drift.Store(drift)
+				w.updateDrift(drift)
 			})
 		}
 	}
@@ -327,20 +328,22 @@ func (w *AppWriter) logStats() {
 	for {
 		select {
 		case <-ended:
-			w.writeStats()
+			stats := w.getStats()
+			w.csvLogger.Write(stats)
 			w.csvLogger.Close()
+			w.logger.Debugw("appwriter stats ", "stats", stats)
 			return
 
 		case <-ticker.C:
-			w.writeStats()
+			stats := w.getStats()
+			w.csvLogger.Write(stats)
 		}
 	}
 }
 
-func (w *AppWriter) writeStats() {
+func (w *AppWriter) getStats() *logging.TrackStats {
 	stats := w.buffer.Stats()
-
-	w.csvLogger.Write(&logging.TrackStats{
+	return &logging.TrackStats{
 		Timestamp:       time.Now().Format(time.DateTime),
 		PacketsReceived: stats.PacketsPushed,
 		PaddingReceived: stats.PaddingPushed,
@@ -350,5 +353,19 @@ func (w *AppWriter) writeStats() {
 		SamplesPushed:   stats.SamplesPopped,
 		LastPushed:      w.lastPushed.Load().Format(time.DateTime),
 		Drift:           w.drift.Load(),
-	})
+		MaxDrift:        w.maxDrift.Load(),
+	}
+}
+
+func (w *AppWriter) updateDrift(drift time.Duration) {
+	w.drift.Store(drift)
+	for {
+		maxDrift := w.maxDrift.Load()
+		if drift.Abs() <= maxDrift.Abs() {
+			break
+		}
+		if w.maxDrift.CompareAndSwap(maxDrift, drift) {
+			break
+		}
+	}
 }
