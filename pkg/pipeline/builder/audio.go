@@ -240,14 +240,13 @@ func (b *AudioBin) getChannel(ts *config.TrackSource) int {
 }
 
 func (b *AudioBin) addMixer() error {
-	audioMixer, err := gst.NewElement("audiomixer")
+	audioMixer, err := gst.NewElementWithProperties("audiomixer", map[string]interface{}{
+		"force-live": true,
+	})
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 	if err = audioMixer.SetProperty("latency", uint64(b.conf.Latency.AudioMixerLatency)); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = audioMixer.SetProperty("force-live", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
