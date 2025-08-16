@@ -262,6 +262,11 @@ func (b *AudioBin) addAudioTestSrcBin() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
+	// 20 ms @ 48 kHz
+	if err = audioTestSrc.SetProperty("samplesperbuffer", 960); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
 	audioCaps, err := newAudioCapsFilter(b.conf, audioChannelStereo)
 	if err != nil {
 		return err
