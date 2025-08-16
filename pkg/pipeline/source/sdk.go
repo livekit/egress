@@ -41,6 +41,7 @@ import (
 
 const (
 	subscriptionTimeout = time.Second * 30
+	maxTsDiff           = time.Second * 1
 )
 
 type SDKSource struct {
@@ -81,9 +82,11 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		writers:              make(map[string]*sdk.AppWriter),
 	}
 
-	s.sync = synchronizer.NewSynchronizer(func() {
-		s.startRecording.Break()
-	})
+	s.sync = synchronizer.NewSynchronizerWithOptions(
+		synchronizer.WithMaxTsDiff(maxTsDiff),
+		synchronizer.WithOnStarted(func() {
+			s.startRecording.Break()
+		}))
 
 	if err := s.joinRoom(); err != nil {
 		return nil, err
