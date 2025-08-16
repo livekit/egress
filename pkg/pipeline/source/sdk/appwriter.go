@@ -77,8 +77,6 @@ type AppWriter struct {
 	endStream    core.Fuse
 	finished     core.Fuse
 	stats        appWriterStats
-
-	//lastSeenPts time.Duration
 }
 
 type appWriterStats struct {
