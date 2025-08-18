@@ -78,9 +78,10 @@ type DebugConfig struct {
 }
 
 type LatencyConfig struct {
-	JitterBufferLatency time.Duration `yaml:"jitter_buffer_latency"` // jitter buffer max latency for sdk egress
-	AudioMixerLatency   time.Duration `yaml:"audio_mixer_latency"`   // audio mixer latency, must be greater than jitter buffer latency
-	PipelineLatency     time.Duration `yaml:"pipeline_latency"`      // max latency for the entire pipeline
+	JitterBufferLatency time.Duration `yaml:"jitter_buffer_latency"`   // jitter buffer max latency for sdk egress
+	AudioMixerLatency   time.Duration `yaml:"audio_mixer_latency"`     // audio mixer latency, must be greater than jitter buffer latency
+	PipelineLatency     time.Duration `yaml:"pipeline_latency"`        // max latency for the entire pipeline
+	RTPMaxAllowedTsDiff time.Duration `ymal:"rtp_max_allowed_ts_diff"` // max allowed PTS discont. for a RTP stream, before applying PTS alignment
 }
 
 func (c *BaseConfig) initLogger(values ...interface{}) error {

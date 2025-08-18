@@ -46,6 +46,7 @@ const (
 	defaultJitterBufferLatency = time.Second * 2
 	defaultAudioMixerLatency   = time.Millisecond * 2750
 	defaultPipelineLatency     = time.Second * 3
+	defaultRTPMaxAllowedTsDiff = time.Second
 
 	defaultMaxPulseClients = 60
 )
@@ -164,5 +165,8 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.Latency.PipelineLatency == 0 {
 		c.Latency.PipelineLatency = defaultPipelineLatency
+	}
+	if c.Latency.RTPMaxAllowedTsDiff == 0 {
+		c.Latency.RTPMaxAllowedTsDiff = defaultRTPMaxAllowedTsDiff
 	}
 }
