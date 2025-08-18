@@ -25,6 +25,7 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
@@ -292,6 +293,8 @@ func (b *AudioBin) addMixer() error {
 		return err
 	}
 
+	subscribeForQoS(audioMixer)
+
 	return b.bin.AddElements(audioMixer, mixedCaps)
 }
 
@@ -382,4 +385,12 @@ func newAudioCapsFilter(p *config.PipelineConfig, channel int) (*gst.Element, er
 	}
 
 	return capsFilter, nil
+}
+
+func subscribeForQoS(mixer *gst.Element) {
+	mixer.Connect("pad-added", func(_ *gst.Element, pad *gst.Pad) {
+		if err := pad.SetProperty("qos-messages", true); err != nil {
+			logger.Errorw("failed to set QoS messages on pad", err)
+		}
+	})
 }

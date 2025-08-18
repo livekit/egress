@@ -127,6 +127,8 @@ func (c *Controller) messageWatch(msg *gst.Message) bool {
 		c.handleMessageStateChanged(msg)
 	case gst.MessageElement:
 		err = c.handleMessageElement(msg)
+	case gst.MessageQoS:
+		c.handleMessageQoS(msg)
 	}
 	if err != nil {
 		c.OnError(err)
@@ -250,8 +252,6 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 		logger.Infow(fmt.Sprintf("%s playing", s))
 		c.src.(*source.SDKSource).Playing(s)
 	}
-
-	return
 }
 
 const (
@@ -321,6 +321,28 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 	}
 
 	return nil
+}
+
+func (c *Controller) handleMessageQoS(msg *gst.Message) {
+	if isQosForAudioMixer(msg) {
+		qos := msg.ParseQoS()
+		if qos == nil {
+			logger.Debugw("failed to parse audio mixer QoS message")
+			return
+		}
+		c.handleAudioMixerQoS(qos)
+		return
+	}
+}
+
+func (c *Controller) handleAudioMixerQoS(qosValues *gst.QoSValues) {
+	logger.Debugw("Audio mixer QoS, buffer dropped",
+		"running time", qosValues.RunningTime,
+		"stream time", qosValues.StreamTime,
+		"duration", qosValues.Duration,
+	)
+	c.stats.droppedAudioBuffers.Inc()
+	c.stats.droppedAudioDuration.Add(qosValues.Duration)
 }
 
 // Debug info comes in the following format:
@@ -399,4 +421,22 @@ func getImageInformationFromGstStructure(s *gst.Structure) (string, uint64, erro
 
 	return filepath, ti, nil
 
+}
+
+func isQosForAudioMixer(msg *gst.Message) bool {
+	src := msg.SourceObject()
+	if src == nil {
+		return false
+	}
+
+	srcName := src.GetName()
+	parent := src.GetParent()
+
+	var parentName string
+	if parent != nil {
+		parentName = parent.GetName()
+	}
+
+	// a bit brittle as it relies on mixer name not being changed
+	return strings.HasPrefix(srcName, "sink_") && strings.HasPrefix(parentName, "audiomixer")
 }
