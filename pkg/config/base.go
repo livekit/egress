@@ -50,8 +50,8 @@ type BaseConfig struct {
 	SessionLimits          `yaml:"session_limits"` // session duration limits
 	StorageConfig          *StorageConfig          `yaml:"storage,omitempty"`          // storage config
 	BackupConfig           *StorageConfig          `yaml:"backup,omitempty"`           // backup config, for storage failures
-	S3AssumeRoleKey        string                  `yaml:"s3_assume_role_key"`         // if set, this key is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
-	S3AssumeRoleSecret     string                  `yaml:"s3_assume_role_secret"`      // if set, this secret is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
+	S3DefaultKey           string                  `yaml:"s3_default_key"`             // if set, this key is used for S3 uploads by default
+	S3DefaultSecret        string                  `yaml:"s3_default_secret"`          // if set, this secret is used for S3 uploads by default
 	S3AssumeRoleArn        string                  `yaml:"s3_assume_role_arn"`         // if set, this arn is used by default for S3 uploads
 	S3AssumeRoleExternalID string                  `yaml:"s3_assume_role_external_id"` // if set, this external ID is used by default for S3 uploads
 
