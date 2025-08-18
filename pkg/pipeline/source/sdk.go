@@ -41,7 +41,6 @@ import (
 
 const (
 	subscriptionTimeout = time.Second * 30
-	maxTsDiff           = time.Second * 1
 )
 
 type SDKSource struct {
