@@ -80,7 +80,7 @@ type AppWriter struct {
 }
 
 type appWriterStats struct {
-	packetsDropped uint64
+	packetsDropped atomic.Uint64
 }
 
 func NewAppWriter(
@@ -262,7 +262,7 @@ func (w *AppWriter) onPacket(sample []*rtp.Packet) {
 	case w.samples <- sample:
 		// ok
 	default:
-		w.stats.packetsDropped += uint64(len(sample))
+		w.stats.packetsDropped.Add(uint64(len(sample)))
 		w.logger.Warnw("buffer full, dropping sample", nil)
 	}
 
@@ -298,13 +298,13 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 	// get PTS
 	pts, err := w.GetPTS(pkt)
 	if err != nil {
-		w.stats.packetsDropped++
+		w.stats.packetsDropped.Inc()
 		return err
 	}
 
 	p, err := pkt.Marshal()
 	if err != nil {
-		w.stats.packetsDropped++
+		w.stats.packetsDropped.Inc()
 		w.logger.Errorw("could not marshal packet", err)
 		return err
 	}
@@ -312,7 +312,7 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 	b := gst.NewBufferFromBytes(p)
 	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
-		w.stats.packetsDropped++
+		w.stats.packetsDropped.Inc()
 		w.logger.Infow("unexpected flow return", "flow", flow)
 	}
 	w.lastPushed.Store(time.Now())
@@ -367,7 +367,7 @@ func (w *AppWriter) getStats() *logging.TrackStats {
 		PacketsReceived: stats.PacketsPushed,
 		PaddingReceived: stats.PaddingPushed,
 		LastReceived:    w.lastReceived.Load().Format(time.DateTime),
-		PacketsDropped:  stats.PacketsDropped + w.stats.packetsDropped,
+		PacketsDropped:  stats.PacketsDropped + w.stats.packetsDropped.Load(),
 		PacketsPushed:   stats.PacketsPopped,
 		SamplesPushed:   stats.SamplesPopped,
 		LastPushed:      w.lastPushed.Load().Format(time.DateTime),
