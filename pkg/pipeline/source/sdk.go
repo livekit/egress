@@ -81,9 +81,11 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		writers:              make(map[string]*sdk.AppWriter),
 	}
 
-	s.sync = synchronizer.NewSynchronizer(func() {
-		s.startRecording.Break()
-	})
+	s.sync = synchronizer.NewSynchronizerWithOptions(
+		synchronizer.WithMaxTsDiff(p.Latency.RTPMaxAllowedTsDiff),
+		synchronizer.WithOnStarted(func() {
+			s.startRecording.Break()
+		}))
 
 	if err := s.joinRoom(); err != nil {
 		return nil, err
