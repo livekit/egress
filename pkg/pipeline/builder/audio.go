@@ -33,6 +33,9 @@ const (
 	audioChannelStereo = 0
 	audioChannelLeft   = 1
 	audioChannelRight  = 2
+
+	leakyQueue    = true
+	blockingQueue = false
 )
 
 type AudioBin struct {
@@ -76,7 +79,7 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 			return err
 		}
 	} else {
-		queue, err := gstreamer.BuildQueue("audio_queue", p.Latency.PipelineLatency, true)
+		queue, err := gstreamer.BuildQueue("audio_queue", p.Latency.PipelineLatency, leakyQueue)
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -131,7 +134,7 @@ func (b *AudioBin) buildWebInput() error {
 		return err
 	}
 
-	if err = addAudioConverter(b.bin, b.conf, audioChannelStereo); err != nil {
+	if err = addAudioConverter(b.bin, b.conf, audioChannelStereo, leakyQueue); err != nil {
 		return err
 	}
 	if b.conf.AudioTranscoding {
@@ -211,7 +214,7 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 		return errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	if err := addAudioConverter(appSrcBin, b.conf, b.getChannel(ts)); err != nil {
+	if err := addAudioConverter(appSrcBin, b.conf, b.getChannel(ts), blockingQueue); err != nil {
 		return err
 	}
 
@@ -328,8 +331,8 @@ func (b *AudioBin) addEncoder() error {
 	}
 }
 
-func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel int) error {
-	audioQueue, err := gstreamer.BuildQueue("audio_input_queue", p.Latency.PipelineLatency, true)
+func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel int, isLeaky bool) error {
+	audioQueue, err := gstreamer.BuildQueue("audio_input_queue", p.Latency.PipelineLatency, isLeaky)
 	if err != nil {
 		return err
 	}
