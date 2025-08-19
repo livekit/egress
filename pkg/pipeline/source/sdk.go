@@ -41,7 +41,6 @@ import (
 
 const (
 	subscriptionTimeout = time.Second * 30
-	maxTsDiff           = time.Second * 1
 )
 
 type SDKSource struct {
@@ -83,7 +82,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 	}
 
 	s.sync = synchronizer.NewSynchronizerWithOptions(
-		synchronizer.WithMaxTsDiff(maxTsDiff),
+		synchronizer.WithMaxTsDiff(p.Latency.RTPMaxAllowedTsDiff),
 		synchronizer.WithOnStarted(func() {
 			s.startRecording.Break()
 		}))
