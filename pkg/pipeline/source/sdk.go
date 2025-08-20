@@ -413,7 +413,9 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 
 		logger.Infow("subscribing to track", "trackID", track.SID())
 
-		pub.OnRTCP(s.sync.OnRTCP)
+		if s.PipelineConfig.RequestType != types.RequestTypeRoomComposite {
+			pub.OnRTCP(s.sync.OnRTCP)
+		}
 		return pub.SetSubscribed(true)
 	}
 
