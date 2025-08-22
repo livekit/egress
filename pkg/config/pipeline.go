@@ -28,6 +28,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/tempo"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
@@ -93,6 +94,7 @@ type TrackSource struct {
 	MimeType        types.MimeType
 	PayloadType     webrtc.PayloadType
 	ClockRate       uint32
+	TempoController *tempo.Controller
 }
 
 type AudioConfig struct {

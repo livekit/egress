@@ -66,6 +66,7 @@ type AppWriter struct {
 	// a/v sync
 	sync *synchronizer.Synchronizer
 	*synchronizer.TrackSynchronizer
+	driftHandler DriftHandler
 
 	// state
 	buildReady   core.Fuse
@@ -83,6 +84,10 @@ type appWriterStats struct {
 	packetsDropped atomic.Uint64
 }
 
+type DriftHandler interface {
+	EnqueueDrift(t time.Duration)
+}
+
 func NewAppWriter(
 	conf *config.PipelineConfig,
 	track *webrtc.TrackRemote,
@@ -90,6 +95,7 @@ func NewAppWriter(
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
 	sync *synchronizer.Synchronizer,
+	driftHandler DriftHandler,
 	callbacks *gstreamer.Callbacks,
 ) (*AppWriter, error) {
 	w := &AppWriter{
@@ -103,6 +109,7 @@ func NewAppWriter(
 		callbacks:         callbacks,
 		sync:              sync,
 		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
+		driftHandler:      driftHandler,
 	}
 
 	if conf.Debug.EnableTrackLogging {
@@ -112,6 +119,10 @@ func NewAppWriter(
 		} else {
 			w.csvLogger = csvLogger
 			w.TrackSynchronizer.OnSenderReport(func(drift time.Duration) {
+				logger.Debugw("received sender report", "drift", drift)
+				if w.driftHandler != nil {
+					w.driftHandler.EnqueueDrift(drift)
+				}
 				w.updateDrift(drift)
 			})
 		}

@@ -17,6 +17,7 @@ package builder
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-gst/go-gst/gst"
 
@@ -46,6 +47,59 @@ type AudioBin struct {
 	nextID      int
 	nextChannel int
 	names       map[string]string
+
+	audioPacer audioPacer
+}
+
+type driftProcessNotifier interface {
+	DriftProcessed()
+}
+
+type audioPacer struct {
+	pitch     *gst.Element
+	active    bool
+	remaining time.Duration
+	tc        driftProcessNotifier
+}
+
+func (a *audioPacer) start(drift time.Duration) {
+	if a.pitch == nil || drift == 0 {
+		return
+	}
+
+	logger.Debugw("Handling audio time drift", "drift", drift)
+	rate := 1.1
+	if drift > 0 {
+		rate = 0.9
+	}
+	a.remaining = 10 * drift.Abs()
+
+	a.pitch.SetArg("tempo", fmt.Sprintf("%.2f", rate))
+
+	a.active = true
+
+}
+
+func (a *audioPacer) observeProcessedDuration(d time.Duration) {
+	if !a.active {
+		return
+	}
+	a.remaining -= d
+	if a.remaining <= 0 {
+		logger.Debugw("audio gap processed, stopping the pacer")
+		a.tc.DriftProcessed()
+		a.stop()
+	}
+}
+
+func (a *audioPacer) stop() {
+	if a.pitch == nil || a.tc == nil {
+		return
+	}
+	a.pitch.SetArg("tempo", fmt.Sprintf("%.1f", 1.0))
+
+	a.active = false
+	a.remaining = 0
 }
 
 func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
@@ -214,12 +268,23 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 		return errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	if err := addAudioConverter(appSrcBin, b.conf, b.getChannel(ts), blockingQueue); err != nil {
+	if err := b.addAudioConvertWithPitch(appSrcBin, b.conf, b.getChannel(ts), blockingQueue); err != nil {
 		return err
 	}
 
 	if err := b.bin.AddSourceBin(appSrcBin); err != nil {
 		return err
+	}
+
+	logger.Debugw("addAudioAppSrcBin", "tempo controller", ts.TempoController)
+	if ts.TempoController != nil {
+		ts.TempoController.OnDriftDetectedCallback(func(drift time.Duration) {
+			if b.audioPacer.pitch != nil {
+				logger.Debugw("starting audio pacer to cover the drift")
+				b.audioPacer.start(drift)
+			}
+		})
+		b.audioPacer.tc = ts.TempoController
 	}
 
 	return nil
@@ -353,6 +418,89 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel int, 
 	}
 
 	return b.AddElements(audioQueue, audioConvert, audioResample, capsFilter)
+}
+
+func (b *AudioBin) installPitchSrcProbe() {
+	if b.audioPacer.pitch == nil {
+		return
+	}
+	if pad := b.audioPacer.pitch.GetStaticPad("src"); pad != nil {
+		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
+				b.audioPacer.observeProcessedDuration(*buf.Duration().AsDuration())
+			}
+			return gst.PadProbeOK
+		})
+	}
+}
+
+// --- convert + time strecher/comressor chain used by SDK (appsrc tracks) ---
+func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.PipelineConfig, channel int, isLeaky bool) error {
+	q, err := gstreamer.BuildQueue("audio_input_queue", p.Latency.PipelineLatency, isLeaky)
+	if err != nil {
+		return err
+	}
+
+	ac1, err := gst.NewElement("audioconvert")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	ar1, err := gst.NewElement("audioresample")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	// go to float for pitch element
+	f32caps, err := newAudioFloatCapsFilter(p, channel)
+	if err != nil {
+		return err
+	}
+
+	pitch, err := gst.NewElement("pitch")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	pitch.SetArg("tempo", fmt.Sprintf("%.1f", 1.0))
+
+	ac2, err := gst.NewElement("audioconvert")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	// back to pipeline/native format
+	s16caps, err := newAudioCapsFilter(p, channel)
+	if err != nil {
+		return err
+	}
+
+	// keep a handle for pacer control & probe
+	ab.audioPacer.pitch = pitch
+	ab.installPitchSrcProbe()
+
+	return b.AddElements(q, ac1, ar1, f32caps, pitch, ac2, s16caps)
+}
+
+// F32 caps used only around `pitch`
+func newAudioFloatCapsFilter(p *config.PipelineConfig, channel int) (*gst.Element, error) {
+	var channelCaps string
+	if channel == audioChannelStereo {
+		channelCaps = "channels=2"
+	} else {
+		channelCaps = fmt.Sprintf("channels=1,channel-mask=(bitmask)0x%d", channel)
+	}
+	rate := 48000
+	if p.AudioOutCodec == types.MimeTypeAAC {
+		rate = int(p.AudioFrequency)
+	}
+	caps := gst.NewCapsFromString(fmt.Sprintf("audio/x-raw,format=F32LE,layout=interleaved,rate=%d,%s", rate, channelCaps))
+
+	cf, err := gst.NewElement("capsfilter")
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+	if err = cf.SetProperty("caps", caps); err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+	return cf, nil
 }
 
 func newAudioCapsFilter(p *config.PipelineConfig, channel int) (*gst.Element, error) {
