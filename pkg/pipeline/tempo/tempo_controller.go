@@ -3,76 +3,89 @@ package tempo
 import (
 	"sync"
 	"time"
+)
 
-	"github.com/livekit/protocol/logger"
+const (
+	DefaultThreshold = 10 * time.Millisecond // don’t start tiny corrections
+	MaxDriftBudget   = 2 * time.Second       // cap on processed drift magnitude
 )
 
 type Controller struct {
-	sync.Mutex
-	pendingOffset time.Duration // backlog of SRs generated offsets
-	currentOffset time.Duration
+	mu sync.Mutex
 
-	driftDetectedCallback func(time.Duration)
+	pending   time.Duration // accumulated, not yet started
+	current   time.Duration // currently being corrected
+	processed time.Duration // signed sum of ALL corrections already applied
+
+	cb func(time.Duration) // invoked with the next 'current' to apply
 }
 
+func NewController() *Controller { return &Controller{} }
+
+// EnqueueDrift adds signed drift. It may synchronously arm a new correction
+// if idle, above threshold, and starting it would not exceed the budget.
 func (tc *Controller) EnqueueDrift(drift time.Duration) {
 	if drift == 0 {
 		return
 	}
 
-	tc.Lock()
-	var cb func(time.Duration)
+	tc.mu.Lock()
+	tc.pending += drift
 
-	logger.Debugw("tempo controller, adding drift")
-	if tc.currentOffset == 0 {
-		tc.currentOffset = drift
-		if tc.driftDetectedCallback != nil {
-			cb = tc.driftDetectedCallback
+	var toStart time.Duration
+	if tc.current == 0 && tc.pending.Abs() >= DefaultThreshold {
+		// Only start if applying 'pending' keeps processed within budget.
+		if (tc.processed + tc.pending).Abs() < MaxDriftBudget {
+			toStart = tc.pending
+			tc.current = toStart
+			tc.pending = 0
 		}
-	} else {
-		tc.pendingOffset += drift
 	}
+	cb := tc.cb
+	tc.mu.Unlock()
 
-	tc.Unlock()
-
-	if cb != nil {
-		cb(drift)
+	if toStart != 0 && cb != nil {
+		cb(toStart)
 	}
 }
 
+// DriftProcessed marks the *current* correction as finished and may start the next
+// one if available and within budget.
 func (tc *Controller) DriftProcessed() {
-	logger.Debugw("controller, drift processed")
+	tc.mu.Lock()
+	tc.processed += tc.current
+	tc.current = 0
 
-	tc.Lock()
-	var currentOffset time.Duration
-	var cb func(time.Duration)
-
-	if tc.pendingOffset != 0 {
-		tc.currentOffset = tc.pendingOffset
-		tc.pendingOffset = 0
-		if tc.driftDetectedCallback != nil {
-			cb = tc.driftDetectedCallback
-			currentOffset = tc.currentOffset
-		}
-	} else {
-		tc.currentOffset = 0
+	var toStart time.Duration
+	if tc.pending.Abs() >= DefaultThreshold && (tc.processed+tc.pending).Abs() < MaxDriftBudget {
+		toStart = tc.pending
+		tc.current = toStart
+		tc.pending = 0
 	}
-	tc.Unlock()
+	cb := tc.cb
+	tc.mu.Unlock()
 
-	if cb != nil {
-		cb(currentOffset)
+	if toStart != 0 && cb != nil {
+		cb(toStart)
 	}
 }
 
+// OnDriftDetectedCallback sets the callback. If a correction is already armed,
+// it’s invoked immediately with that value.
 func (tc *Controller) OnDriftDetectedCallback(cb func(time.Duration)) {
-	logger.Debugw("setting drift detected callback")
+	tc.mu.Lock()
+	tc.cb = cb
+	cur := tc.current
+	tc.mu.Unlock()
 
-	tc.Lock()
-	tc.driftDetectedCallback = cb
-	cw := tc.currentOffset
-	tc.Unlock()
-
-	if cw != 0 {
-		cb(cw)
+	if cb != nil && cur != 0 {
+		cb(cur)
 	}
+}
+
+// Processed returns the total of already-applied corrections.
+func (tc *Controller) Processed() time.Duration {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	return tc.processed
 }
