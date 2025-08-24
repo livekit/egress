@@ -471,7 +471,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		}
 		s.AudioTranscoding = true
 
-		tc := &tempo.Controller{}
+		tc := tempo.NewController()
 		ts.TempoController = tc
 		writer, err := s.createWriter(track, pub, rp, ts, tc)
 		if err != nil {
