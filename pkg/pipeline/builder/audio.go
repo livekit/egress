@@ -37,6 +37,10 @@ const (
 
 	leakyQueue    = true
 	blockingQueue = false
+
+	speedUpTempo       = 1.1
+	slowDownTempo      = 0.9
+	compensationFactor = 10
 )
 
 type AudioBin struct {
@@ -66,16 +70,20 @@ func (a *audioPacer) start(drift time.Duration) {
 	if a.pitch == nil || drift == 0 {
 		return
 	}
-
-	logger.Debugw("Handling audio time drift", "drift", drift)
-	rate := 1.1
-	if drift > 0 {
-		rate = 0.9
+	if a.active {
+		logger.Errorw(
+			"starting audio pacer, but it's already active",
+			errors.New("tempo controller bug"),
+		)
+		return
 	}
-	a.remaining = 10 * drift.Abs()
 
+	rate := speedUpTempo
+	if drift > 0 {
+		rate = slowDownTempo
+	}
+	a.remaining = compensationFactor * drift.Abs()
 	a.pitch.SetArg("tempo", fmt.Sprintf("%.2f", rate))
-
 	a.active = true
 
 }
@@ -87,8 +95,8 @@ func (a *audioPacer) observeProcessedDuration(d time.Duration) {
 	a.remaining -= d
 	if a.remaining <= 0 {
 		logger.Debugw("audio gap processed, stopping the pacer")
-		a.tc.DriftProcessed()
 		a.stop()
+		a.tc.DriftProcessed()
 	}
 }
 
@@ -97,7 +105,6 @@ func (a *audioPacer) stop() {
 		return
 	}
 	a.pitch.SetArg("tempo", fmt.Sprintf("%.1f", 1.0))
-
 	a.active = false
 	a.remaining = 0
 }
@@ -276,11 +283,10 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 		return err
 	}
 
-	logger.Debugw("addAudioAppSrcBin", "tempo controller", ts.TempoController)
 	if ts.TempoController != nil {
 		ts.TempoController.OnDriftDetectedCallback(func(drift time.Duration) {
 			if b.audioPacer.pitch != nil {
-				logger.Debugw("starting audio pacer to cover the drift")
+				logger.Debugw("starting audio pacer to cover the drift", "drift", drift)
 				b.audioPacer.start(drift)
 			}
 		})
@@ -420,12 +426,15 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel int, 
 	return b.AddElements(audioQueue, audioConvert, audioResample, capsFilter)
 }
 
-func (b *AudioBin) installPitchSrcProbe() {
+func (b *AudioBin) installPitchProbes() {
 	if b.audioPacer.pitch == nil {
 		return
 	}
-	if pad := b.audioPacer.pitch.GetStaticPad("src"); pad != nil {
-		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	if sinkPad := b.audioPacer.pitch.GetStaticPad("sink"); sinkPad != nil {
+		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if !b.audioPacer.active {
+				return gst.PadProbeOK
+			}
 			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
 				b.audioPacer.observeProcessedDuration(*buf.Duration().AsDuration())
 			}
@@ -434,7 +443,6 @@ func (b *AudioBin) installPitchSrcProbe() {
 	}
 }
 
-// --- convert + time strecher/comressor chain used by SDK (appsrc tracks) ---
 func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.PipelineConfig, channel int, isLeaky bool) error {
 	q, err := gstreamer.BuildQueue("audio_input_queue", p.Latency.PipelineLatency, isLeaky)
 	if err != nil {
@@ -474,7 +482,7 @@ func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.Pipelin
 
 	// keep a handle for pacer control & probe
 	ab.audioPacer.pitch = pitch
-	ab.installPitchSrcProbe()
+	ab.installPitchProbes()
 
 	return b.AddElements(q, ac1, ar1, f32caps, pitch, ac2, s16caps)
 }
