@@ -24,10 +24,10 @@ type HandlerMonitor struct {
 	backupCounter       *prometheus.CounterVec
 }
 
-func NewHandlerMonitor(nodeId string, clusterId string) *HandlerMonitor {
+func NewHandlerMonitor(nodeId string, clusterId string, egressId string) *HandlerMonitor {
 	m := &HandlerMonitor{}
 
-	constantLabels := prometheus.Labels{"node_id": nodeId, "cluster_id": clusterId}
+	constantLabels := prometheus.Labels{"node_id": nodeId, "cluster_id": clusterId, "egress_id": egressId}
 
 	m.uploadsCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   "livekit",
@@ -75,26 +75,26 @@ func (m *HandlerMonitor) IncBackupStorageWrites(outputType string) {
 	m.backupCounter.With(prometheus.Labels{"output_type": outputType}).Add(1)
 }
 
-func (m *HandlerMonitor) RegisterSegmentsChannelSizeGauge(nodeId string, clusterId string, channelSizeFunction func() float64) {
+func (m *HandlerMonitor) RegisterSegmentsChannelSizeGauge(nodeId string, clusterId string, egressId string, channelSizeFunction func() float64) {
 	segmentsUploadsGauge := prometheus.NewGaugeFunc(
 		prometheus.GaugeOpts{
 			Namespace:   "livekit",
 			Subsystem:   "egress",
 			Name:        "segments_uploads_channel_size",
 			Help:        "number of segment uploads pending in channel",
-			ConstLabels: prometheus.Labels{"node_id": nodeId, "cluster_id": clusterId},
+			ConstLabels: prometheus.Labels{"node_id": nodeId, "cluster_id": clusterId, "egress_id": egressId},
 		}, channelSizeFunction)
 	prometheus.MustRegister(segmentsUploadsGauge)
 }
 
-func (m *HandlerMonitor) RegisterPlaylistChannelSizeGauge(nodeId string, clusterId string, channelSizeFunction func() float64) {
+func (m *HandlerMonitor) RegisterPlaylistChannelSizeGauge(nodeId string, clusterId string, egressId string, channelSizeFunction func() float64) {
 	playlistUploadsGauge := prometheus.NewGaugeFunc(
 		prometheus.GaugeOpts{
 			Namespace:   "livekit",
 			Subsystem:   "egress",
 			Name:        "playlist_uploads_channel_size",
 			Help:        "number of playlist updates pending in channel",
-			ConstLabels: prometheus.Labels{"node_id": nodeId, "cluster_id": clusterId},
+			ConstLabels: prometheus.Labels{"node_id": nodeId, "cluster_id": clusterId, "egress_id": egressId},
 		}, channelSizeFunction)
 	prometheus.MustRegister(playlistUploadsGauge)
 }
