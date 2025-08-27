@@ -89,7 +89,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 			BuildReady: make(chan struct{}),
 		},
 		sinks:   make(map[types.EgressType][]sink.Sink),
-		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
+		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID),
 	}
 	c.callbacks.SetOnError(c.OnError)
 	c.callbacks.SetOnEOSSent(c.onEOSSent)

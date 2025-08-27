@@ -94,16 +94,17 @@ func deserializeMetrics(egressID string, s string) ([]*dto.MetricFamily, error) 
 	}
 
 	// Add an egress_id label to every metric all the families, if it doesn't already have one
-	applyDefaultLabel(egressID, families)
+	applyDefaultLabel(families)
 
 	return maps.Values(families), nil
 }
 
-func applyDefaultLabel(egressID string, families map[string]*dto.MetricFamily) {
+func applyDefaultLabel(families map[string]*dto.MetricFamily) {
 	egressIDLabel := "egress_id"
+	empty := ""
 	egressLabelPair := &dto.LabelPair{
 		Name:  &egressIDLabel,
-		Value: &egressID,
+		Value: &empty,
 	}
 	for _, family := range families {
 		for _, metric := range family.Metric {
