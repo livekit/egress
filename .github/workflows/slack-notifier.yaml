@@ -1,0 +1,155 @@
+name: Slack PR Notifier
+
+on:
+  pull_request:
+    types: [review_requested, closed]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  SLACK_CS_CHANNEL_ID: ${{ secrets.SLACK_CS_CHANNEL_ID }}
+
+jobs:
+  notify_team_requested:
+    name: Notify when team livekit/cs-devs is requested
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.action == 'review_requested' &&
+      github.event.requested_team.slug == 'cs-devs'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compose Slack text
+        id: compose
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          TEXT="❌ <${PR_URL}|${REPO_NAME}: ${PR_TITLE}> is waiting for review from @cs-devs"
+          echo "text=${TEXT}" >> "$GITHUB_OUTPUT"
+
+      - name: Post Slack message
+        id: slack
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          payload: |
+            {
+              "channel": "${{ env.SLACK_CS_CHANNEL_ID }}",
+              "text": "${{ steps.compose.outputs.text }}"
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_PR_NOTIFIER_TOKEN }}
+
+      - name: Extract Slack ts and label PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TS=$(jq -r '.ts' <<< "${{ steps.slack.outputs.response }}")
+          if [ -z "$TS" ] || [ "$TS" = "null" ]; then
+            echo "Failed to get Slack ts"; exit 1
+          fi
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          LABEL="slack-ts:${TS}"
+          gh api \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/${{ github.repository }}/issues/$PR_NUMBER/labels \
+            -f labels[]="$LABEL"
+
+  update_on_approval:
+    name: Update Slack on approval
+    if: >
+      github.event_name == 'pull_request_review' &&
+      github.event.action == 'submitted' &&
+      github.event.review.state == 'approved'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find Slack ts label
+        id: findts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          LABELS=$(gh api /repos/${{ github.repository }}/issues/$PR_NUMBER/labels)
+          TS=$(echo "$LABELS" | jq -r '.[]?.name | select(startswith("slack-ts:")) | sub("^slack-ts:";"")' | head -n1)
+          if [ -z "$TS" ]; then
+            echo "ts=" >> "$GITHUB_OUTPUT"
+          else
+            echo "ts=$TS" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compose Slack text
+        id: compose
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          TEXT="✅ <${PR_URL}|${REPO_NAME}: ${PR_TITLE}> is ready to merge"
+          echo "text=${TEXT}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Slack message (if ts present)
+        if: ${{ steps.findts.outputs.ts != '' }}
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.update
+          payload: |
+            {
+              "channel": "${{ env.SLACK_CS_CHANNEL_ID }}",
+              "ts": "${{ steps.findts.outputs.ts }}",
+              "text": "${{ steps.compose.outputs.text }}"
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_PR_NOTIFIER_TOKEN }}
+
+  update_on_close_or_merge:
+    name: Update Slack on close/merge
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find Slack ts label
+        id: findts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          LABELS=$(gh api /repos/${{ github.repository }}/issues/$PR_NUMBER/labels)
+          TS=$(echo "$LABELS" | jq -r '.[]?.name | select(startswith("slack-ts:")) | sub("^slack-ts:";"")' | head -n1)
+          if [ -z "$TS" ]; then
+            echo "ts=" >> "$GITHUB_OUTPUT"
+          else
+            echo "ts=$TS" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compose Slack text (merged vs closed)
+        id: compose
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          if [ "${{ github.event.pull_request.merged }}" = "true" ]; then
+            TEXT="✔️ <${PR_URL}|${REPO_NAME}: ${PR_TITLE}> was merged"
+          else
+            TEXT="✖️ <${PR_URL}|${REPO_NAME}: ${PR_TITLE}> was closed"
+          fi
+          echo "text=${TEXT}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Slack message (if ts present)
+        if: ${{ steps.findts.outputs.ts != '' }}
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.update
+          payload: |
+            {
+              "channel": "${{ env.SLACK_CS_CHANNEL_ID }}",
+              "ts": "${{ steps.findts.outputs.ts }}",
+              "text": "${{ steps.compose.outputs.text }}"
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_PR_NOTIFIER_TOKEN }}
