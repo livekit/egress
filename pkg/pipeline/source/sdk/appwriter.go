@@ -39,7 +39,8 @@ import (
 )
 
 const (
-	errBufferTooSmall = "buffer too small"
+	errBufferTooSmall      = "buffer too small"
+	discontinuityTolerance = 500 * time.Millisecond
 )
 
 type AppWriter struct {
@@ -67,6 +68,9 @@ type AppWriter struct {
 	sync *synchronizer.Synchronizer
 	*synchronizer.TrackSynchronizer
 	driftHandler DriftHandler
+
+	lastPTS   time.Duration
+	lastDrift time.Duration
 
 	// state
 	buildReady   core.Fuse
@@ -121,7 +125,10 @@ func NewAppWriter(
 			w.TrackSynchronizer.OnSenderReport(func(drift time.Duration) {
 				logger.Debugw("received sender report", "drift", drift)
 				if w.driftHandler != nil {
-					w.driftHandler.EnqueueDrift(drift)
+					// presence of the drift handler means that PTS updates on SRs are disabled
+					d := drift - w.lastDrift
+					w.lastDrift = drift
+					w.driftHandler.EnqueueDrift(d)
 				}
 				w.updateDrift(drift)
 			})
@@ -322,11 +329,28 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 
 	b := gst.NewBufferFromBytes(p)
 	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
+
+	if isDiscontinuity(w.lastPTS, pts) && w.shouldHandleDiscontinuity() {
+		w.logger.Debugw("discontinuity detected", "pts", pts, "lastPTS", w.lastPTS)
+
+		flushOk := w.src.SendEvent(gst.NewFlushStartEvent())
+		if !flushOk {
+			w.logger.Errorw("failed to send flush start event", nil)
+		}
+		flushOk = w.src.SendEvent(gst.NewFlushStopEvent(false))
+		if !flushOk {
+			w.logger.Errorw("failed to send flush stop event", nil)
+		}
+
+		b.SetFlags(b.GetFlags() | gst.BufferFlagDiscont)
+	}
+
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.stats.packetsDropped.Inc()
 		w.logger.Infow("unexpected flow return", "flow", flow)
 	}
 	w.lastPushed.Store(time.Now())
+	w.lastPTS = pts
 	return nil
 }
 
@@ -398,4 +422,12 @@ func (w *AppWriter) updateDrift(drift time.Duration) {
 			break
 		}
 	}
+}
+
+func (w *AppWriter) shouldHandleDiscontinuity() bool {
+	return w.track.Kind() == webrtc.RTPCodecTypeAudio && w.driftHandler != nil
+}
+
+func isDiscontinuity(lastPTS time.Duration, pts time.Duration) bool {
+	return pts > lastPTS+discontinuityTolerance
 }

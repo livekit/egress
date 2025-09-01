@@ -41,6 +41,8 @@ const (
 	speedUpTempo       = 1.1
 	slowDownTempo      = 0.9
 	compensationFactor = 10
+
+	audioRateTolerance = 5 * time.Millisecond
 )
 
 type AudioBin struct {
@@ -464,6 +466,18 @@ func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.Pipelin
 		return err
 	}
 
+	// add audio rate element to handle discontinuities on packet loss
+	rate, err := gst.NewElement("audiorate")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = rate.SetProperty("skip-to-first", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = rate.SetProperty("tolerance", uint64(audioRateTolerance)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
 	pitch, err := gst.NewElement("pitch")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -484,7 +498,7 @@ func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.Pipelin
 	ab.audioPacer.pitch = pitch
 	ab.installPitchProbes()
 
-	return b.AddElements(q, ac1, ar1, f32caps, pitch, ac2, s16caps)
+	return b.AddElements(q, ac1, ar1, f32caps, rate, pitch, ac2, s16caps)
 }
 
 // F32 caps used only around `pitch`
