@@ -90,6 +90,7 @@ type appWriterStats struct {
 
 type DriftHandler interface {
 	EnqueueDrift(t time.Duration)
+	Processed() time.Duration
 }
 
 func NewAppWriter(
@@ -200,6 +201,9 @@ func (w *AppWriter) start() {
 		w.callbacks.OnEOSSent()
 		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
 			w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
+		}
+		if w.driftHandler != nil {
+			w.logger.Debugw("processed drift", "drift", w.driftHandler.Processed())
 		}
 	}
 
