@@ -202,7 +202,7 @@ func runHandler(_ context.Context, c *cli.Command) error {
 
 	go func() {
 		sig := <-killChan
-		logger.Infow("process interrupt, stopping recording", "signal", sig)
+		logger.Infow("exit requested, stopping recording and shutting down", "signal", sig)
 		h.Kill()
 	}()
 
