@@ -38,10 +38,6 @@ const (
 	leakyQueue    = true
 	blockingQueue = false
 
-	speedUpTempo       = 1.1
-	slowDownTempo      = 0.9
-	compensationFactor = 10
-
 	audioRateTolerance = 5 * time.Millisecond
 )
 
@@ -54,7 +50,7 @@ type AudioBin struct {
 	nextChannel int
 	names       map[string]string
 
-	audioPacer audioPacer
+	audioPacer *audioPacer
 }
 
 type driftProcessNotifier interface {
@@ -62,10 +58,11 @@ type driftProcessNotifier interface {
 }
 
 type audioPacer struct {
-	pitch     *gst.Element
-	active    bool
-	remaining time.Duration
-	tc        driftProcessNotifier
+	pitch               *gst.Element
+	active              bool
+	remaining           time.Duration
+	tc                  driftProcessNotifier
+	tempoAdjustmentRate float64
 }
 
 func (a *audioPacer) start(drift time.Duration) {
@@ -80,11 +77,17 @@ func (a *audioPacer) start(drift time.Duration) {
 		return
 	}
 
-	rate := speedUpTempo
+	rate := 1 + a.tempoAdjustmentRate
 	if drift > 0 {
-		rate = slowDownTempo
+		rate = 1 - a.tempoAdjustmentRate
 	}
-	a.remaining = compensationFactor * drift.Abs()
+	compensationFactor := 1 / a.tempoAdjustmentRate
+	driftNanoseconds := int64(drift)
+	compensationNanoseconds := int64(compensationFactor * float64(driftNanoseconds))
+	compensationDuration := time.Duration(compensationNanoseconds)
+
+	a.remaining = compensationDuration.Abs()
+	logger.Debugw("starting audio pacer", "remaining", a.remaining, "rate", rate)
 	a.pitch.SetArg("tempo", fmt.Sprintf("%.2f", rate))
 	a.active = true
 
@@ -277,7 +280,12 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 		return errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	if err := b.addAudioConvertWithPitch(appSrcBin, b.conf, b.getChannel(ts), blockingQueue); err != nil {
+	addAudioConvertFunc := addAudioConverter
+	if b.conf.AudioTempoController.Enabled {
+		addAudioConvertFunc = b.addAudioConvertWithPitch
+	}
+
+	if err := addAudioConvertFunc(appSrcBin, b.conf, b.getChannel(ts), blockingQueue); err != nil {
 		return err
 	}
 
@@ -494,8 +502,12 @@ func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.Pipelin
 		return err
 	}
 
-	// keep a handle for pacer control & probe
-	ab.audioPacer.pitch = pitch
+	// keep a handle for pacer control
+	ab.audioPacer = &audioPacer{
+		pitch:               pitch,
+		tempoAdjustmentRate: p.AudioTempoController.AdjustmentRate,
+	}
+
 	ab.installPitchProbes()
 
 	return b.AddElements(q, ac1, ar1, f32caps, rate, pitch, ac2, s16caps)

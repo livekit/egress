@@ -332,13 +332,12 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 
 	if isDiscontinuity(w.lastPTS, pts) && w.shouldHandleDiscontinuity() {
 		w.logger.Debugw("discontinuity detected", "pts", pts, "lastPTS", w.lastPTS)
-
-		flushOk := w.src.SendEvent(gst.NewFlushStartEvent())
-		if !flushOk {
+		ok := w.src.SendEvent(gst.NewFlushStartEvent())
+		if !ok {
 			w.logger.Errorw("failed to send flush start event", nil)
 		}
-		flushOk = w.src.SendEvent(gst.NewFlushStopEvent(false))
-		if !flushOk {
+		ok = w.src.SendEvent(gst.NewFlushStopEvent(false))
+		if !ok {
 			w.logger.Errorw("failed to send flush stop event", nil)
 		}
 
@@ -425,7 +424,7 @@ func (w *AppWriter) updateDrift(drift time.Duration) {
 }
 
 func (w *AppWriter) shouldHandleDiscontinuity() bool {
-	return w.track.Kind() == webrtc.RTPCodecTypeAudio && w.driftHandler != nil
+	return w.track.Kind() == webrtc.RTPCodecTypeAudio && w.conf.AudioTempoController.Enabled
 }
 
 func isDiscontinuity(lastPTS time.Duration, pts time.Duration) bool {

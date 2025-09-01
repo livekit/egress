@@ -82,14 +82,20 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		writers:              make(map[string]*sdk.AppWriter),
 	}
 
-	s.sync = synchronizer.NewSynchronizerWithOptions(
+	opts := []synchronizer.SynchronizerOption{
 		synchronizer.WithMaxTsDiff(p.Latency.RTPMaxAllowedTsDiff),
 		synchronizer.WithOnStarted(func() {
 			s.startRecording.Break()
 		}),
-		// perform signal time comression/steatching instead of timestamp manipulation to
-		// avoid gaps on RTCP sender reports
-		synchronizer.WithAudioPTSAdjustmentDisabled(),
+	}
+	if p.AudioTempoController.Enabled {
+		// perform signal time comression/steatching instead of timestamp manipulation
+		// on RTCP sender reports
+		opts = append(opts, synchronizer.WithAudioPTSAdjustmentDisabled())
+	}
+
+	s.sync = synchronizer.NewSynchronizerWithOptions(
+		opts...,
 	)
 
 	if err := s.joinRoom(); err != nil {
@@ -471,8 +477,12 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		}
 		s.AudioTranscoding = true
 
-		tc := tempo.NewController()
-		ts.TempoController = tc
+		var tc sdk.DriftHandler
+		if s.AudioTempoController.Enabled {
+			c := tempo.NewController()
+			ts.TempoController = c
+			tc = c
+		}
 		writer, err := s.createWriter(track, pub, rp, ts, tc)
 		if err != nil {
 			onSubscribeErr = err
