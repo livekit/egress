@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -59,7 +60,7 @@ type driftProcessNotifier interface {
 
 type audioPacer struct {
 	pitch               *gst.Element
-	active              bool
+	active              atomic.Bool
 	remaining           time.Duration
 	tc                  driftProcessNotifier
 	tempoAdjustmentRate float64
@@ -69,7 +70,7 @@ func (a *audioPacer) start(drift time.Duration) {
 	if a.pitch == nil || drift == 0 {
 		return
 	}
-	if a.active {
+	if a.active.Load() {
 		logger.Errorw(
 			"starting audio pacer, but it's already active",
 			errors.New("tempo controller bug"),
@@ -89,12 +90,12 @@ func (a *audioPacer) start(drift time.Duration) {
 	a.remaining = compensationDuration.Abs()
 	logger.Debugw("starting audio pacer", "remaining", a.remaining, "rate", rate)
 	a.pitch.SetArg("tempo", fmt.Sprintf("%.2f", rate))
-	a.active = true
+	a.active.Store(true)
 
 }
 
 func (a *audioPacer) observeProcessedDuration(d time.Duration) {
-	if !a.active {
+	if !a.active.Load() {
 		return
 	}
 	a.remaining -= d
@@ -110,7 +111,7 @@ func (a *audioPacer) stop() {
 		return
 	}
 	a.pitch.SetArg("tempo", fmt.Sprintf("%.1f", 1.0))
-	a.active = false
+	a.active.Store(false)
 	a.remaining = 0
 }
 
@@ -442,7 +443,7 @@ func (b *AudioBin) installPitchProbes() {
 	}
 	if sinkPad := b.audioPacer.pitch.GetStaticPad("sink"); sinkPad != nil {
 		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-			if !b.audioPacer.active {
+			if !b.audioPacer.active.Load() {
 				return gst.PadProbeOK
 			}
 			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
