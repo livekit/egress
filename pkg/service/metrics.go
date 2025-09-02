@@ -101,7 +101,7 @@ func deserializeMetrics(egressID string, s string) ([]*dto.MetricFamily, error) 
 
 func applyDefaultLabel(families map[string]*dto.MetricFamily) {
 	egressIDLabel := "egress_id"
-	empty := ""
+	empty := "null"
 	egressLabelPair := &dto.LabelPair{
 		Name:  &egressIDLabel,
 		Value: &empty,
