@@ -336,11 +336,6 @@ func (c *Controller) handleMessageQoS(msg *gst.Message) {
 }
 
 func (c *Controller) handleAudioMixerQoS(qosValues *gst.QoSValues) {
-	logger.Debugw("Audio mixer QoS, buffer dropped",
-		"running time", qosValues.RunningTime,
-		"stream time", qosValues.StreamTime,
-		"duration", qosValues.Duration,
-	)
 	c.stats.droppedAudioBuffers.Inc()
 	c.stats.droppedAudioDuration.Add(qosValues.Duration)
 }
