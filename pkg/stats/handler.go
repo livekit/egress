@@ -27,7 +27,7 @@ type HandlerMonitor struct {
 func NewHandlerMonitor(nodeID, clusterID string) *HandlerMonitor {
 	m := &HandlerMonitor{}
 
-	constantLabels := prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID, "egress_id": ""}
+	constantLabels := prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID, "egress_id": "null"}
 
 	m.uploadsCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   "livekit",
@@ -82,7 +82,7 @@ func (m *HandlerMonitor) RegisterSegmentsChannelSizeGauge(nodeID, clusterID stri
 			Subsystem:   "egress",
 			Name:        "segments_uploads_channel_size",
 			Help:        "number of segment uploads pending in channel",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID, "egress_id": ""},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID, "egress_id": "null"},
 		}, channelSizeFunction)
 	prometheus.MustRegister(segmentsUploadsGauge)
 }
@@ -94,7 +94,7 @@ func (m *HandlerMonitor) RegisterPlaylistChannelSizeGauge(nodeID, clusterID stri
 			Subsystem:   "egress",
 			Name:        "playlist_uploads_channel_size",
 			Help:        "number of playlist updates pending in channel",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID, "egress_id": ""},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID, "egress_id": "null"},
 		}, channelSizeFunction)
 	prometheus.MustRegister(playlistUploadsGauge)
 }
