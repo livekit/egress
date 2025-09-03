@@ -135,11 +135,11 @@ func newSegmentSink(
 	}
 
 	// Register gauges that track the number of segments and playlist updates pending upload
-	monitor.RegisterPlaylistChannelSizeGauge(segmentSink.conf.NodeID, segmentSink.conf.ClusterID,
+	monitor.RegisterPlaylistChannelSizeGauge(segmentSink.conf.NodeID, segmentSink.conf.ClusterID, segmentSink.conf.Info.EgressId,
 		func() float64 {
 			return float64(len(segmentSink.playlistUpdates))
 		})
-	monitor.RegisterSegmentsChannelSizeGauge(segmentSink.conf.NodeID, segmentSink.conf.ClusterID,
+	monitor.RegisterSegmentsChannelSizeGauge(segmentSink.conf.NodeID, segmentSink.conf.ClusterID, segmentSink.conf.Info.EgressId,
 		func() float64 {
 			return float64(len(segmentSink.closedSegments))
 		})
