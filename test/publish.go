@@ -28,10 +28,10 @@ import (
 
 var (
 	samples = map[types.MimeType]string{
-		types.MimeTypeOpus: "/media-samples/SolLevante.ogg",
-		types.MimeTypeH264: "/media-samples/SolLevante.h264",
-		types.MimeTypeVP8:  "/media-samples/SolLevante-vp8.ivf",
-		types.MimeTypeVP9:  "/media-samples/SolLevante-vp9.ivf",
+		types.MimeTypeOpus: "/media-samples/avsync_minmotion_livekit_audio_48k_120s.ogg",
+		types.MimeTypeH264: "/media-samples/avsync_minmotion_livekit_video_1080p25_120s.h264",
+		types.MimeTypeVP8:  "/media-samples/avsync_minmotion_livekit_1080p24_vp8.ivf",
+		types.MimeTypeVP9:  "/media-samples/avsync_minmotion_livekit_1080p24_vp9.ivf",
 	}
 
 	frameDurations = map[types.MimeType]time.Duration{
