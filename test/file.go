@@ -17,6 +17,7 @@
 package test
 
 import (
+	"fmt"
 	"path"
 	"strings"
 	"testing"
@@ -309,7 +310,8 @@ func (r *Runner) fullContentCheck(t *testing.T, file string, info *FFProbeInfo) 
 
 	silenceRanges, err := detectSilence(file, testSampleSilenceLevel, time.Millisecond*100)
 	require.NoError(t, err)
-	require.True(t, len(silenceRanges) == 0 || silenceRanges[0].start > dur-time.Second*2)
+	require.True(t, len(silenceRanges) == 0 || silenceRanges[0].start > dur-time.Second*2,
+		fmt.Sprintf("unexpected silence ranges: %v", silenceRanges))
 
 	require.InDelta(t, len(flashes), len(beeps), 3)
 	require.InDelta(t, len(flashes), dur.Round(time.Second).Seconds(), 3)
@@ -353,7 +355,8 @@ func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, info *FFProbeI
 	silenceRanges, err := detectSilence(file, testSampleSilenceLevel, time.Millisecond*100)
 	require.NoError(t, err)
 	// sometimes the silence range is at the end of the file, ignore it
-	require.True(t, len(silenceRanges) == 0 || silenceRanges[0].start > dur-time.Second*2)
+	require.True(t, len(silenceRanges) == 0 || silenceRanges[0].start > dur-time.Second*2,
+		fmt.Sprintf("unexpected silence ranges: %v", silenceRanges))
 
 	require.InDelta(t, len(beeps), dur.Round(time.Second).Seconds(), 3)
 
