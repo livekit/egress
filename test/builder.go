@@ -46,6 +46,8 @@ type testCase struct {
 
 	multi  bool
 	custom func(*testing.T, *testCase)
+
+	contentCheck func(t *testing.T, path string, info *FFProbeInfo)
 }
 
 type publishOptions struct {
