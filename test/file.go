@@ -290,11 +290,11 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 	}
 }
 
-// helpper function for the full test content analysis
+// helper function for the full test content analysis
 // analyzes the file for flashes, beeps, and silence
 func (r *Runner) fullContentCheck(t *testing.T, file string, info *FFProbeInfo) {
 	if r.Muting {
-		// support for content check on muted audio tracks to be added later
+		// TODO: support for content check on muted audio tracks to be added later
 		return
 	}
 	flashes, err := extractFlashTimestamps(file, r.FilePrefix)
@@ -339,7 +339,7 @@ func (r *Runner) videoOnlyContentCheck(t *testing.T, file string, info *FFProbeI
 
 func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, info *FFProbeInfo) {
 	if r.Muting {
-		// support for content check on muted audio tracks to be added later
+		// TODO: support for content check on muted audio tracks to be added later
 		return
 	}
 	beeps, err := extractBeepTimestamps(file, testSampleBeepLevel, r.FilePrefix)
