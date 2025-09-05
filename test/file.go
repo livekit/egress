@@ -297,6 +297,10 @@ func (r *Runner) fullContentCheck(t *testing.T, file string, info *FFProbeInfo) 
 		// TODO: support for content check on muted audio tracks to be added later
 		return
 	}
+
+	dur, err := parseFFProbeDuration(info.Format.Duration)
+	require.NoError(t, err)
+
 	flashes, err := extractFlashTimestamps(file, r.FilePrefix)
 	require.NoError(t, err)
 
@@ -305,10 +309,7 @@ func (r *Runner) fullContentCheck(t *testing.T, file string, info *FFProbeInfo) 
 
 	silenceRanges, err := detectSilence(file, testSampleSilenceLevel, time.Millisecond*100)
 	require.NoError(t, err)
-	require.Empty(t, silenceRanges)
-
-	dur, err := parseFFProbeDuration(info.Format.Duration)
-	require.NoError(t, err)
+	require.True(t, len(silenceRanges) == 0 || silenceRanges[0].start > dur-time.Second*2)
 
 	require.InDelta(t, len(flashes), len(beeps), 3)
 	require.InDelta(t, len(flashes), dur.Round(time.Second).Seconds(), 3)
@@ -342,15 +343,18 @@ func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, info *FFProbeI
 		// TODO: support for content check on muted audio tracks to be added later
 		return
 	}
+
+	dur, err := parseFFProbeDuration(info.Format.Duration)
+	require.NoError(t, err)
+
 	beeps, err := extractBeepTimestamps(file, testSampleBeepLevel, r.FilePrefix)
 	require.NoError(t, err)
 
 	silenceRanges, err := detectSilence(file, testSampleSilenceLevel, time.Millisecond*100)
 	require.NoError(t, err)
-	require.Empty(t, silenceRanges)
+	// sometimes the silence range is at the end of the file, ignore it
+	require.True(t, len(silenceRanges) == 0 || silenceRanges[0].start > dur-time.Second*2)
 
-	dur, err := parseFFProbeDuration(info.Format.Duration)
-	require.NoError(t, err)
 	require.InDelta(t, len(beeps), dur.Round(time.Second).Seconds(), 3)
 
 	avgBeepSpacing, err := averageSpacing(beeps)
