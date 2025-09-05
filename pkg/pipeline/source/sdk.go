@@ -91,6 +91,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 	if p.AudioTempoController.Enabled {
 		// perform signal time comression/steatching instead of timestamp manipulation
 		// on RTCP sender reports
+		logger.Debugw("audio tempo controller enabled", "adjustment rate", p.AudioTempoController.AdjustmentRate)
 		opts = append(opts, synchronizer.WithAudioPTSAdjustmentDisabled())
 	}
 
