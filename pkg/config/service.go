@@ -48,6 +48,8 @@ const (
 	defaultPipelineLatency     = time.Second * 3
 	defaultRTPMaxAllowedTsDiff = time.Second
 
+	defaultAudioTempoControllerAdjustmentRate = 0.05
+
 	defaultMaxPulseClients = 60
 )
 
@@ -168,5 +170,10 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.Latency.RTPMaxAllowedTsDiff == 0 {
 		c.Latency.RTPMaxAllowedTsDiff = defaultRTPMaxAllowedTsDiff
+	}
+	if c.AudioTempoController.Enabled {
+		if c.AudioTempoController.AdjustmentRate > 0.2 || c.AudioTempoController.AdjustmentRate <= 0 {
+			c.AudioTempoController.AdjustmentRate = defaultAudioTempoControllerAdjustmentRate
+		}
 	}
 }
