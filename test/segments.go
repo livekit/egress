@@ -63,6 +63,7 @@ func (r *Runner) testSegments(t *testing.T) {
 					livePlaylist: "r_live_{room_name}_{time}.m3u8",
 					suffix:       livekit.SegmentedFileSuffix_INDEX,
 				},
+				contentCheck: r.fullContentCheck,
 			},
 			{
 				name:        "RoomComposite/AudioOnly",
@@ -79,6 +80,7 @@ func (r *Runner) testSegments(t *testing.T) {
 					playlist: "r_{room_name}_audio_{time}.m3u8",
 					suffix:   livekit.SegmentedFileSuffix_TIMESTAMP,
 				},
+				contentCheck: r.audioOnlyContentCheck,
 			},
 
 			// ---------- Web ----------
@@ -107,6 +109,7 @@ func (r *Runner) testSegments(t *testing.T) {
 					prefix:   "participant_{publisher_identity}_vp8_{time}",
 					playlist: "participant_{publisher_identity}_vp8_{time}.m3u8",
 				},
+				contentCheck: r.fullContentCheck,
 			},
 			{
 				name:        "ParticipantComposite/H264",
@@ -137,6 +140,7 @@ func (r *Runner) testSegments(t *testing.T) {
 					playlist:     "tcs_{room_name}_h264_{time}.m3u8",
 					livePlaylist: "tcs_live_{room_name}_h264_{time}.m3u8",
 				},
+				contentCheck: r.fullContentCheck,
 			},
 			{
 				name:        "TrackComposite/AudioOnly",
@@ -149,6 +153,7 @@ func (r *Runner) testSegments(t *testing.T) {
 					prefix:   "tcs_{room_name}_audio_{time}",
 					playlist: "tcs_{room_name}_audio_{time}.m3u8",
 				},
+				contentCheck: r.audioOnlyContentCheck,
 			},
 		} {
 			if !r.run(t, test, r.runSegmentsTest) {
@@ -178,11 +183,11 @@ func (r *Runner) runSegmentsTest(t *testing.T, test *testCase) {
 
 	require.Equal(t, !test.audioOnly, p.VideoEncoding)
 
-	r.verifySegments(t, p, test.segmentOptions.suffix, res, test.livePlaylist != "")
+	r.verifySegments(t, test, p, test.segmentOptions.suffix, res, test.livePlaylist != "")
 }
 
 func (r *Runner) verifySegments(
-	t *testing.T, p *config.PipelineConfig,
+	t *testing.T, tc *testCase, p *config.PipelineConfig,
 	filenameSuffix livekit.SegmentedFileSuffix,
 	res *livekit.EgressInfo, enableLivePlaylist bool,
 ) {
@@ -198,14 +203,14 @@ func (r *Runner) verifySegments(
 	require.Greater(t, segments.Size, int64(0))
 	require.Greater(t, segments.Duration, int64(0))
 
-	r.verifySegmentOutput(t, p, filenameSuffix, segments.PlaylistName, segments.PlaylistLocation, int(segments.SegmentCount), res, m3u8.PlaylistTypeEvent)
+	r.verifySegmentOutput(t, tc, p, filenameSuffix, segments.PlaylistName, segments.PlaylistLocation, int(segments.SegmentCount), res, m3u8.PlaylistTypeEvent)
 	if enableLivePlaylist {
-		r.verifySegmentOutput(t, p, filenameSuffix, segments.LivePlaylistName, segments.LivePlaylistLocation, 5, res, m3u8.PlaylistTypeLive)
+		r.verifySegmentOutput(t, tc, p, filenameSuffix, segments.LivePlaylistName, segments.LivePlaylistLocation, 5, res, m3u8.PlaylistTypeLive)
 	}
 }
 
 func (r *Runner) verifySegmentOutput(
-	t *testing.T, p *config.PipelineConfig,
+	t *testing.T, tc *testCase, p *config.PipelineConfig,
 	filenameSuffix livekit.SegmentedFileSuffix,
 	plName string, plLocation string, segmentCount int,
 	res *livekit.EgressInfo, plType m3u8.PlaylistType,
@@ -238,7 +243,10 @@ func (r *Runner) verifySegmentOutput(
 	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath, plType)
 
 	// verify
-	verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.Muting, r.sourceFramerate, plType == m3u8.PlaylistTypeLive)
+	info := verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.Muting, r.sourceFramerate, plType == m3u8.PlaylistTypeLive)
+	if tc.contentCheck != nil && info != nil {
+		tc.contentCheck(t, localPlaylistPath, info)
+	}
 }
 
 func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.SegmentedFileSuffix, localPlaylistPath string, plType m3u8.PlaylistType) {

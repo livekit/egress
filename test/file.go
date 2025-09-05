@@ -17,7 +17,6 @@
 package test
 
 import (
-	"fmt"
 	"path"
 	"strings"
 	"testing"
@@ -124,6 +123,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "participant_{room_name}_h264_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
+				contentCheck: r.fullContentCheckWithVideoUnpublishAt10AndRepublishAt20,
 			},
 			{
 				name:        "ParticipantComposite/AudioOnly",
@@ -289,78 +289,4 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 	if tc.contentCheck != nil && info != nil {
 		tc.contentCheck(t, localPath, info)
 	}
-}
-
-// helper function for the full test content analysis
-// analyzes the file for flashes, beeps, and silence
-func (r *Runner) fullContentCheck(t *testing.T, file string, info *FFProbeInfo) {
-	if r.Muting {
-		// TODO: support for content check on muted audio tracks to be added later
-		return
-	}
-
-	dur, err := parseFFProbeDuration(info.Format.Duration)
-	require.NoError(t, err)
-
-	flashes, err := extractFlashTimestamps(file, r.FilePrefix)
-	require.NoError(t, err)
-
-	beeps, err := extractBeepTimestamps(file, testSampleBeepLevel, r.FilePrefix)
-	require.NoError(t, err)
-
-	silenceRanges, err := detectSilence(file, testSampleSilenceLevel, time.Millisecond*100)
-	require.NoError(t, err)
-	require.True(t, len(silenceRanges) == 0 || silenceRanges[0].start > dur-time.Second*2,
-		fmt.Sprintf("unexpected silence ranges: %v", silenceRanges))
-
-	require.InDelta(t, len(flashes), len(beeps), 3)
-	require.InDelta(t, len(flashes), dur.Round(time.Second).Seconds(), 3)
-
-	avgFlashSpacing, err := averageSpacing(flashes)
-	require.NoError(t, err)
-	// 200ms is still pretty generous, should be tighter
-	requireDurationInDelta(t, avgFlashSpacing, time.Second, time.Millisecond*200)
-
-	avgBeepSpacing, err := averageSpacing(beeps)
-	require.NoError(t, err)
-	requireDurationInDelta(t, avgBeepSpacing, time.Second, time.Millisecond*200)
-}
-
-func (r *Runner) videoOnlyContentCheck(t *testing.T, file string, info *FFProbeInfo) {
-	flashes, err := extractFlashTimestamps(file, r.FilePrefix)
-	require.NoError(t, err)
-
-	dur, err := parseFFProbeDuration(info.Format.Duration)
-	require.NoError(t, err)
-
-	require.InDelta(t, len(flashes), dur.Round(time.Second).Seconds(), 3)
-	avgFlashSpacing, err := averageSpacing(flashes)
-	require.NoError(t, err)
-	// 200ms is still pretty generous, should be tighter
-	requireDurationInDelta(t, avgFlashSpacing, time.Second, time.Millisecond*200)
-}
-
-func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, info *FFProbeInfo) {
-	if r.Muting {
-		// TODO: support for content check on muted audio tracks to be added later
-		return
-	}
-
-	dur, err := parseFFProbeDuration(info.Format.Duration)
-	require.NoError(t, err)
-
-	beeps, err := extractBeepTimestamps(file, testSampleBeepLevel, r.FilePrefix)
-	require.NoError(t, err)
-
-	silenceRanges, err := detectSilence(file, testSampleSilenceLevel, time.Millisecond*100)
-	require.NoError(t, err)
-	// sometimes the silence range is at the end of the file, ignore it
-	require.True(t, len(silenceRanges) == 0 || silenceRanges[0].start > dur-time.Second*2,
-		fmt.Sprintf("unexpected silence ranges: %v", silenceRanges))
-
-	require.InDelta(t, len(beeps), dur.Round(time.Second).Seconds(), 3)
-
-	avgBeepSpacing, err := averageSpacing(beeps)
-	require.NoError(t, err)
-	requireDurationInDelta(t, avgBeepSpacing, time.Second, time.Millisecond*200)
 }
