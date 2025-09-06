@@ -42,8 +42,8 @@ COPY test/ test/
 COPY version/ version/
 
 # copy templates
-COPY --from=livekit/egress-templates workspace/build/ cmd/server/templates/
-COPY --from=livekit/egress-templates workspace/build/ test/templates/
+COPY --from=livekit/egress-templates workspace/dist/ cmd/server/templates/
+COPY --from=livekit/egress-templates workspace/dist/ test/templates/
 
 # build (service tests will need to launch the handler)
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \

@@ -18,7 +18,7 @@ WORKDIR /workspace
 
 RUN apt update
 RUN apt install -y curl
-RUN curl -sL https://deb.nodesource.com/setup_18.x | bash -
+RUN curl -sL https://deb.nodesource.com/setup_22.x | bash -
 RUN apt update
 RUN apt install -y nodejs
 RUN npm install -g pnpm
