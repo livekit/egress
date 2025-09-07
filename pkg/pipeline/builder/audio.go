@@ -38,7 +38,9 @@ const (
 	leakyQueue    = true
 	blockingQueue = false
 
-	opusPlcMaxFrames = 4
+	opusPlcMaxFrames         = 4
+	opusDecStatsPollInterval = time.Second * 5
+	opusDecPlcMaxJitter      = 3 * time.Millisecond
 )
 
 type AudioBin struct {
@@ -222,7 +224,7 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 		if err = appSrcBin.AddElements(rtpOpusDepay, opusParse, opusDec); err != nil {
 			return err
 		}
-		installOpusParseSrcProbe(opusParse)
+		installOpusParseSrcProbe(opusParse, opusDec)
 
 	default:
 		return errors.ErrNotSupported(string(ts.MimeType))
@@ -412,11 +414,11 @@ func subscribeForQoS(mixer *gst.Element) {
 	})
 }
 
-func installOpusParseSrcProbe(opusParse *gst.Element) {
+func installOpusParseSrcProbe(opusParse *gst.Element, opusDec *gst.Element) {
 	src := opusParse.GetStaticPad("src")
 
 	var lastPTS, lastDur time.Duration
-	const maxJitter = 3 * time.Millisecond // allow tiny wobble
+	var lastPoll time.Time
 
 	src.AddProbe(gst.PadProbeTypeBuffer, func(p *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		buf := info.GetBuffer()
@@ -441,14 +443,13 @@ func installOpusParseSrcProbe(opusParse *gst.Element) {
 			if pts > expected {
 				gap := pts - expected
 				// Only trigger for at least ~one full frame gap
-				if gap+maxJitter >= lastDur {
+				if gap+opusDecPlcMaxJitter >= lastDur {
 					// k missing frames (rounded)
 					k := int((gap + lastDur - 1) / lastDur)
 					if k < 1 {
 						k = 1
 					}
 					if k <= opusPlcMaxFrames {
-						logger.Debugw("opusparse src probe: gap detected", "gap", gap, "lastDur", lastDur, "expected", expected, "pts", pts)
 						missed := time.Duration(k) * lastDur
 						// Push GAP so opusdec generates PLC
 						gapEv := gst.NewGapEvent(gst.ClockTime(expected), gst.ClockTime(missed))
@@ -459,6 +460,18 @@ func installOpusParseSrcProbe(opusParse *gst.Element) {
 			}
 		}
 		lastPTS, lastDur = pts, dur
+
+		// periodically gather stats from opusdec
+		if lastPoll.IsZero() || time.Since(lastPoll) >= opusDecStatsPollInterval {
+			stats, err := getOpusDecStats(opusDec)
+			if err != nil {
+				logger.Debugw("opusdec stats: parse error", "err", err)
+				return gst.PadProbeOK
+			}
+			postOpusStatsMessage(opusDec, stats)
+			lastPoll = time.Now()
+		}
+
 		return gst.PadProbeOK
 
 	})

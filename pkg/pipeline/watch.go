@@ -317,6 +317,8 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 			if err != nil {
 				return err
 			}
+		case builder.OpusStatsStructName:
+			c.handleOpusStats(s)
 		}
 	}
 
@@ -338,6 +340,42 @@ func (c *Controller) handleMessageQoS(msg *gst.Message) {
 func (c *Controller) handleAudioMixerQoS(qosValues *gst.QoSValues) {
 	c.stats.droppedAudioBuffers.Inc()
 	c.stats.droppedAudioDuration.Add(qosValues.Duration)
+}
+
+func (c *Controller) handleOpusStats(s *gst.Structure) {
+	dur, err := s.GetValue(builder.OpusStatsKeyPlcDurationNs)
+	if err != nil {
+		return
+	}
+	plcDurationNs, ok := dur.(uint64)
+	if !ok {
+		return
+	}
+	numSamples, err := s.GetValue(builder.OpusStatsKeyPlcNumSamples)
+	if err != nil {
+		return
+	}
+	plcNumSamples, ok := numSamples.(uint64)
+	if !ok {
+		return
+	}
+	numGap, err := s.GetValue(builder.OpusStatsKeyNumGap)
+	if err != nil {
+		return
+	}
+	plcNumGap, ok := numGap.(uint64)
+	if !ok {
+		return
+	}
+	pushed, err := s.GetValue(builder.OpusStatsKeyNumPushed)
+	if err != nil {
+		return
+	}
+	plcNumPushed, ok := pushed.(uint64)
+	if !ok {
+		return
+	}
+	logger.Debugw("opusdec PLC stats", "plcDurationNs", plcDurationNs, "plcNumSamples", plcNumSamples, "numGap", plcNumGap, "numPushed", plcNumPushed)
 }
 
 // Debug info comes in the following format:
