@@ -17,6 +17,7 @@ package builder
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-gst/go-gst/gst"
 
@@ -36,6 +37,11 @@ const (
 
 	leakyQueue    = true
 	blockingQueue = false
+
+	opusPlcMaxFrames          = 5
+	opusDecStatsPollInterval  = time.Second * 5
+	opusDecPlcMaxJitter       = 3 * time.Millisecond
+	defaultOpusPacketDuration = time.Millisecond * 20
 )
 
 type AudioBin struct {
@@ -201,14 +207,25 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 			return errors.ErrGstPipelineError(err)
 		}
 
+		opusParse, err := gst.NewElement("opusparse")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
 		opusDec, err := gst.NewElement("opusdec")
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 
-		if err = appSrcBin.AddElements(rtpOpusDepay, opusDec); err != nil {
+		err = opusDec.SetProperty("plc", true)
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		if err = appSrcBin.AddElements(rtpOpusDepay, opusParse, opusDec); err != nil {
 			return err
 		}
+		installOpusParseSrcProbe(opusParse, opusDec)
 
 	default:
 		return errors.ErrNotSupported(string(ts.MimeType))
@@ -395,5 +412,68 @@ func subscribeForQoS(mixer *gst.Element) {
 		if err := pad.SetProperty("qos-messages", true); err != nil {
 			logger.Errorw("failed to set QoS messages on pad", err)
 		}
+	})
+}
+
+func installOpusParseSrcProbe(opusParse *gst.Element, opusDec *gst.Element) {
+	src := opusParse.GetStaticPad("src")
+
+	var lastPTS, lastDur time.Duration
+	var lastPoll time.Time
+
+	src.AddProbe(gst.PadProbeTypeBuffer, func(p *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		buf := info.GetBuffer()
+		if buf == nil {
+			return gst.PadProbeOK
+		}
+
+		pts := time.Duration(buf.PresentationTimestamp())
+		dur := time.Duration(buf.Duration())
+
+		if dur <= 0 {
+			// Fallback if TOC wasn’t parsed (shouldn’t happen with opusparse)
+			if lastDur > 0 {
+				dur = lastDur
+			} else {
+				dur = defaultOpusPacketDuration
+			}
+		}
+
+		if lastDur > 0 {
+			expected := lastPTS + lastDur
+			if pts > expected {
+				gap := pts - expected
+				// Only trigger for at least ~one full frame gap
+				if gap+opusDecPlcMaxJitter >= lastDur {
+					// k missing frames (rounded)
+					k := int((gap + lastDur - 1) / lastDur)
+					if k < 1 {
+						k = 1
+					}
+					if k <= opusPlcMaxFrames {
+						missed := time.Duration(k) * lastDur
+						// Push GAP so opusdec generates PLC
+						gapEv := gst.NewGapEvent(gst.ClockTime(expected), gst.ClockTime(missed))
+						p.PushEvent(gapEv)
+						buf.SetFlags(buf.GetFlags() | gst.BufferFlagDiscont)
+					}
+				}
+			}
+		}
+		lastPTS, lastDur = pts, dur
+
+		// periodically gather stats from opusdec
+		if lastPoll.IsZero() || time.Since(lastPoll) >= opusDecStatsPollInterval {
+			stats, err := getOpusDecStats(opusDec)
+			if err != nil {
+				logger.Debugw("opusdec stats: parse error", "err", err)
+				return gst.PadProbeOK
+			}
+			postOpusDecStatsMessage(opusDec, stats)
+			lastPoll = time.Now()
+		}
+
+		return gst.PadProbeOK
+
 	})
 }
