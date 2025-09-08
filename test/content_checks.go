@@ -57,8 +57,6 @@ func (r *Runner) fullContentCheck(t *testing.T, file string, info *FFProbeInfo) 
 
 	logger.Debugw("beeps", "beeps", beeps)
 	logger.Debugw("flashes", "flashes", flashes)
-	//requireDurationInDelta(t, avgDrift, time.Millisecond*100, time.Millisecond*100)
-	//require.Equal(t, pairs, len(flashes)-4)
 }
 
 func (r *Runner) videoOnlyContentCheck(t *testing.T, file string, info *FFProbeInfo) {
