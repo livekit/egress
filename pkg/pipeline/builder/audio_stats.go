@@ -3,14 +3,13 @@ package builder
 import (
 	"fmt"
 	"log"
-	"math"
 	"regexp"
-	"strconv"
 	"time"
 
 	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -22,16 +21,12 @@ const (
 )
 
 var (
-	reU64 = map[string]*regexp.Regexp{
-		"num-pushed":      regexp.MustCompile(`\bnum-pushed=\(g?uint64\)(\d+)`),
-		"num-gap":         regexp.MustCompile(`\bnum-gap=\(g?uint64\)(\d+)`),
-		"plc-num-samples": regexp.MustCompile(`\bplc-num-samples=\(g?uint64\)(\d+)`),
-		"plc-duration":    regexp.MustCompile(`\bplc-duration=\(g?uint64\)(\d+)`), // ns
-	}
-	reU32 = map[string]*regexp.Regexp{
-		"sample-rate": regexp.MustCompile(`\bsample-rate=\(uint\)(\d+)`),
-		"channels":    regexp.MustCompile(`\bchannels=\(uint\)(\d+)`),
-	}
+	rePushed        = regexp.MustCompile(`\bnum-pushed=\(g?uint64\)(\d+)`)
+	reGap           = regexp.MustCompile(`\bnum-gap=\(g?uint64\)(\d+)`)
+	rePlcNumSamples = regexp.MustCompile(`\bplc-num-samples=\(g?uint64\)(\d+)`)
+	rePlcDuration   = regexp.MustCompile(`\bplc-duration=\(g?uint64\)(\d+)`)
+	reSampleRate    = regexp.MustCompile(`\bsample-rate=\(uint\)(\d+)`)
+	reChannels      = regexp.MustCompile(`\bchannels=\(uint\)(\d+)`)
 )
 
 type OpusDecStats struct {
@@ -39,8 +34,8 @@ type OpusDecStats struct {
 	NumGap        uint64
 	PlcNumSamples uint64
 	PlcDuration   time.Duration // ns
-	SampleRate    uint32
-	Channels      uint32
+	SampleRate    uint64
+	Channels      uint64
 }
 
 func serializeOpusStats(opusdec *gst.Element) (string, bool) {
@@ -67,41 +62,24 @@ func serializeOpusStats(opusdec *gst.Element) (string, bool) {
 func parseStatsString(s string) (OpusDecStats, error) {
 	var st OpusDecStats
 
-	getU64 := func(k string) (uint64, error) {
-		if m := reU64[k].FindStringSubmatch(s); len(m) == 2 {
-			return strconv.ParseUint(m[1], 10, 64)
-		}
-		return 0, fmt.Errorf("missing %s", k)
-	}
-	getU32 := func(k string) (uint32, error) {
-		if m := reU32[k].FindStringSubmatch(s); len(m) == 2 {
-			v, _ := strconv.ParseUint(m[1], 10, 32)
-			return uint32(v), nil
-		}
-		return 0, fmt.Errorf("missing %s", k)
-	}
+	kv := utils.NewKVRegexScanner(s)
 
-	// Required
-	if v, err := getU64("num-pushed"); err == nil {
+	if v, ok := kv.Uint64(rePushed); ok {
 		st.NumPushed = v
 	}
-	if v, err := getU64("num-gap"); err == nil {
+	if v, ok := kv.Uint64(reGap); ok {
 		st.NumGap = v
 	}
-	if v, err := getU64("plc-num-samples"); err == nil {
+	if v, ok := kv.Uint64(rePlcNumSamples); ok {
 		st.PlcNumSamples = v
 	}
-	if v, err := getU64("plc-duration"); err == nil {
-		if v <= math.MaxInt64 {
-			st.PlcDuration = time.Duration(v) * time.Nanosecond
-		}
+	if v, ok := kv.DurationNs(rePlcDuration); ok {
+		st.PlcDuration = v
 	}
-
-	// Optional
-	if v, err := getU32("sample-rate"); err == nil {
+	if v, ok := kv.Uint64(reSampleRate); ok {
 		st.SampleRate = v
 	}
-	if v, err := getU32("channels"); err == nil {
+	if v, ok := kv.Uint64(reChannels); ok {
 		st.Channels = v
 	}
 	return st, nil
