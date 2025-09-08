@@ -38,7 +38,7 @@ COPY pkg/ pkg/
 COPY version/ version/
 
 # copy templates
-COPY --from=livekit/egress-templates workspace/build/ cmd/server/templates/
+COPY --from=livekit/egress-templates workspace/dist/ cmd/server/templates/
 # delete .map files
 RUN find cmd/server/templates/ -name *.map | xargs rm
 
