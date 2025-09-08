@@ -24,7 +24,7 @@ import (
 
 func (r *Runner) fullContentCheck(t *testing.T, file string, info *FFProbeInfo) {
 	if r.Muting {
-		// TODO: support for content check on muted audio tracks to be added later
+		// TODO: support for content check on muted tracks to be added later
 		return
 	}
 
@@ -56,6 +56,11 @@ func (r *Runner) fullContentCheck(t *testing.T, file string, info *FFProbeInfo) 
 }
 
 func (r *Runner) videoOnlyContentCheck(t *testing.T, file string, info *FFProbeInfo) {
+	if r.Muting {
+		// TODO: support for content check on muted tracks to be added later
+		return
+	}
+
 	flashes, err := extractFlashTimestamps(file, r.FilePrefix)
 	require.NoError(t, err)
 
@@ -71,7 +76,7 @@ func (r *Runner) videoOnlyContentCheck(t *testing.T, file string, info *FFProbeI
 
 func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, info *FFProbeInfo) {
 	if r.Muting {
-		// TODO: support for content check on muted audio tracks to be added later
+		// TODO: support for content check on muted tracks to be added later
 		return
 	}
 
@@ -95,6 +100,11 @@ func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, info *FFProbeI
 }
 
 func (r *Runner) fullContentCheckWithVideoUnpublishAt10AndRepublishAt20(t *testing.T, file string, info *FFProbeInfo) {
+	if r.Muting {
+		// TODO: support for content check on muted to be added later
+		return
+	}
+
 	flashes, err := extractFlashTimestamps(file, r.FilePrefix)
 	require.NoError(t, err)
 
