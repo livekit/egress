@@ -3,6 +3,7 @@ package builder
 import (
 	"fmt"
 	"log"
+	"math"
 	"regexp"
 	"strconv"
 	"time"
@@ -91,7 +92,9 @@ func parseStatsString(s string) (OpusDecStats, error) {
 		st.PlcNumSamples = v
 	}
 	if v, err := getU64("plc-duration"); err == nil {
-		st.PlcDuration = time.Duration(v) * time.Nanosecond
+		if v <= math.MaxInt64 {
+			st.PlcDuration = time.Duration(v) * time.Nanosecond
+		}
 	}
 
 	// Optional

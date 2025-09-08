@@ -38,9 +38,10 @@ const (
 	leakyQueue    = true
 	blockingQueue = false
 
-	opusPlcMaxFrames         = 5
-	opusDecStatsPollInterval = time.Second * 5
-	opusDecPlcMaxJitter      = 3 * time.Millisecond
+	opusPlcMaxFrames          = 5
+	opusDecStatsPollInterval  = time.Second * 5
+	opusDecPlcMaxJitter       = 3 * time.Millisecond
+	defaultOpusPacketDuration = time.Millisecond * 20
 )
 
 type AudioBin struct {
@@ -434,7 +435,7 @@ func installOpusParseSrcProbe(opusParse *gst.Element, opusDec *gst.Element) {
 			if lastDur > 0 {
 				dur = lastDur
 			} else {
-				dur = 20 * time.Millisecond
+				dur = defaultOpusPacketDuration
 			}
 		}
 
