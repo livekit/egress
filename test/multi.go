@@ -144,7 +144,7 @@ func (r *Runner) runMultiTest(t *testing.T, test *testCase) {
 		r.verifyFile(t, test, p, res)
 	}
 	if test.segmentOptions != nil {
-		r.verifySegments(t, p, test.segmentOptions.suffix, res, false)
+		r.verifySegments(t, test, p, test.segmentOptions.suffix, res, false)
 	}
 	if test.imageOptions != nil {
 		r.verifyImages(t, p, res)

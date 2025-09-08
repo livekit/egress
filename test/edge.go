@@ -342,5 +342,5 @@ func (r *Runner) testEmptyStreamBin(t *testing.T, test *testCase) {
 
 	time.Sleep(time.Second * 10)
 	res := r.stopEgress(t, egressID)
-	r.verifySegments(t, p, livekit.SegmentedFileSuffix_INDEX, res, false)
+	r.verifySegments(t, test, p, livekit.SegmentedFileSuffix_INDEX, res, false)
 }
