@@ -317,8 +317,8 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 			if err != nil {
 				return err
 			}
-		case builder.OpusStatsStructName:
-			c.handleOpusStats(s)
+		case builder.OpusDecStatsStructName:
+			c.handleOpusDecStats(s)
 		}
 	}
 
@@ -342,8 +342,8 @@ func (c *Controller) handleAudioMixerQoS(qosValues *gst.QoSValues) {
 	c.stats.droppedAudioDuration.Add(qosValues.Duration)
 }
 
-func (c *Controller) handleOpusStats(s *gst.Structure) {
-	dur, err := s.GetValue(builder.OpusStatsKeyPlcDurationNs)
+func (c *Controller) handleOpusDecStats(s *gst.Structure) {
+	dur, err := s.GetValue(builder.OpusDecStatsKeyPlcDurationNs)
 	if err != nil {
 		return
 	}
@@ -351,7 +351,7 @@ func (c *Controller) handleOpusStats(s *gst.Structure) {
 	if !ok {
 		return
 	}
-	numSamples, err := s.GetValue(builder.OpusStatsKeyPlcNumSamples)
+	numSamples, err := s.GetValue(builder.OpusDecStatsKeyPlcNumSamples)
 	if err != nil {
 		return
 	}
@@ -359,7 +359,7 @@ func (c *Controller) handleOpusStats(s *gst.Structure) {
 	if !ok {
 		return
 	}
-	numGap, err := s.GetValue(builder.OpusStatsKeyNumGap)
+	numGap, err := s.GetValue(builder.OpusDecStatsKeyNumGap)
 	if err != nil {
 		return
 	}
@@ -367,7 +367,7 @@ func (c *Controller) handleOpusStats(s *gst.Structure) {
 	if !ok {
 		return
 	}
-	pushed, err := s.GetValue(builder.OpusStatsKeyNumPushed)
+	pushed, err := s.GetValue(builder.OpusDecStatsKeyNumPushed)
 	if err != nil {
 		return
 	}
@@ -375,7 +375,11 @@ func (c *Controller) handleOpusStats(s *gst.Structure) {
 	if !ok {
 		return
 	}
-	logger.Debugw("opusdec PLC stats", "plcDurationNs", plcDurationNs, "plcNumSamples", plcNumSamples, "numGap", plcNumGap, "numPushed", plcNumPushed)
+
+	c.stats.opusDecPLCDuration.Store(time.Duration(plcDurationNs) * time.Nanosecond)
+	c.stats.opusDecPLCSamples.Store(plcNumSamples)
+	c.stats.opusDecGapPackets.Store(plcNumGap)
+	c.stats.opusDecPacketsPushed.Store(plcNumPushed)
 }
 
 // Debug info comes in the following format:

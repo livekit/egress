@@ -13,11 +13,11 @@ import (
 )
 
 const (
-	OpusStatsStructName       = "livekit-opus-plc-stats"
-	OpusStatsKeyPlcDurationNs = "plc-duration-ns"
-	OpusStatsKeyPlcNumSamples = "plc-num-samples"
-	OpusStatsKeyNumGap        = "num-gap"
-	OpusStatsKeyNumPushed     = "num-pushed"
+	OpusDecStatsStructName       = "livekit-opus-plc-stats"
+	OpusDecStatsKeyPlcDurationNs = "plc-duration-ns"
+	OpusDecStatsKeyPlcNumSamples = "plc-num-samples"
+	OpusDecStatsKeyNumGap        = "num-gap"
+	OpusDecStatsKeyNumPushed     = "num-pushed"
 )
 
 var (
@@ -112,18 +112,18 @@ func getOpusDecStats(opusdec *gst.Element) (OpusDecStats, error) {
 	return parseStatsString(ser)
 }
 
-func postOpusStatsMessage(src *gst.Element, stats OpusDecStats) {
+func postOpusDecStatsMessage(src *gst.Element, stats OpusDecStats) {
 	s := gst.NewStructureFromString(
 		fmt.Sprintf("%s, %s=(guint64)%d, %s=(guint64)%d, %s=(guint64)%d, %s=(guint64)%d",
-			OpusStatsStructName,
-			OpusStatsKeyPlcDurationNs, stats.PlcDuration.Nanoseconds(),
-			OpusStatsKeyPlcNumSamples, stats.PlcNumSamples,
-			OpusStatsKeyNumGap, stats.NumGap,
-			OpusStatsKeyNumPushed, stats.NumPushed,
+			OpusDecStatsStructName,
+			OpusDecStatsKeyPlcDurationNs, stats.PlcDuration.Nanoseconds(),
+			OpusDecStatsKeyPlcNumSamples, stats.PlcNumSamples,
+			OpusDecStatsKeyNumGap, stats.NumGap,
+			OpusDecStatsKeyNumPushed, stats.NumPushed,
 		))
 	msg := gst.NewElementMessage(src, s)
 	sent := src.PostMessage(msg)
 	if !sent {
-		logger.Debugw("failed to send opusdec PLC stats", "sent", sent)
+		logger.Debugw("failed to send opusdec PLC stats")
 	}
 }

@@ -73,6 +73,11 @@ type Controller struct {
 type controllerStats struct {
 	droppedAudioBuffers  atomic.Uint64
 	droppedAudioDuration atomic.Duration
+	// opusdec stats
+	opusDecPLCDuration   atomic.Duration
+	opusDecPLCSamples    atomic.Uint64
+	opusDecPacketsPushed atomic.Uint64
+	opusDecGapPackets    atomic.Uint64
 }
 
 func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.EgressServiceClient) (*Controller, error) {
@@ -177,6 +182,10 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		logger.Debugw("Audio QoS stats",
 			"audio buffers dropped", c.stats.droppedAudioBuffers.Load(),
 			"total audio duration dropped", c.stats.droppedAudioDuration.Load(),
+			"opusdec PLC duration", c.stats.opusDecPLCDuration.Load(),
+			"opusdec PLC samples", c.stats.opusDecPLCSamples.Load(),
+			"opusdec gap packets", c.stats.opusDecGapPackets.Load(),
+			"opusdec packets pushed", c.stats.opusDecPacketsPushed.Load(),
 		)
 	}()
 

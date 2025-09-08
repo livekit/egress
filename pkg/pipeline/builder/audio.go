@@ -38,7 +38,7 @@ const (
 	leakyQueue    = true
 	blockingQueue = false
 
-	opusPlcMaxFrames         = 4
+	opusPlcMaxFrames         = 5
 	opusDecStatsPollInterval = time.Second * 5
 	opusDecPlcMaxJitter      = 3 * time.Millisecond
 )
@@ -468,7 +468,7 @@ func installOpusParseSrcProbe(opusParse *gst.Element, opusDec *gst.Element) {
 				logger.Debugw("opusdec stats: parse error", "err", err)
 				return gst.PadProbeOK
 			}
-			postOpusStatsMessage(opusDec, stats)
+			postOpusDecStatsMessage(opusDec, stats)
 			lastPoll = time.Now()
 		}
 
