@@ -452,6 +452,27 @@ func (b *AudioBin) installPitchProbes() {
 			return gst.PadProbeOK
 		})
 	}
+	if srcPad := b.audioPacer.pitch.GetStaticPad("src"); srcPad != nil {
+		// pitch element min latency can go negative, so we need to normalize it
+		// to workaround the obvious issue with the element latency query handling
+		srcPad.AddProbe(gst.PadProbeTypeQueryUpstream|gst.PadProbeTypePull,
+			func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+				q := info.GetQuery()
+				if q == nil || q.Type() != gst.QueryLatency {
+					return gst.PadProbeOK
+				}
+
+				live, min, max := q.ParseLatency()
+				// Normalize: ensure min <= max
+				if min > max {
+					logger.Debugw("normalizing min latency to 0", "min", min)
+					min = 0
+				}
+				q.SetLatency(live, min, max)
+				return gst.PadProbeOK
+			},
+		)
+	}
 }
 
 func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.PipelineConfig, channel int, isLeaky bool) error {
