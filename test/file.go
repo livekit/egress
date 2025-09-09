@@ -49,6 +49,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "r_{room_name}_{time}.mp4",
 				},
+				contentCheck: r.fullContentCheck,
 			},
 			{
 				name:        "RoomComposite/VideoOnly",
@@ -63,6 +64,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "r_{room_name}_video_{time}.mp4",
 				},
+				contentCheck: r.videoOnlyContentCheck,
 			},
 			{
 				name:        "RoomComposite/AudioOnly",
@@ -77,6 +79,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "r_{room_name}_audio_{time}",
 					fileType: livekit.EncodedFileType_OGG,
 				},
+				contentCheck: r.audioOnlyContentCheck,
 			},
 
 			// ---------- Web ----------
@@ -120,6 +123,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "participant_{room_name}_h264_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
+				contentCheck: r.fullContentCheckWithVideoUnpublishAt10AndRepublishAt20,
 			},
 			{
 				name:        "ParticipantComposite/AudioOnly",
@@ -146,6 +150,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "tc_{publisher_identity}_vp8_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
+				contentCheck: r.fullContentCheck,
 			},
 			{
 				name:        "TrackComposite/VideoOnly",
@@ -158,6 +163,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "tc_{room_name}_video_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
+				contentCheck: r.videoOnlyContentCheck,
 			},
 
 			// --------- Track ---------
@@ -173,6 +179,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_source}_{time}.ogg",
 					outputType: types.OutputTypeOGG,
 				},
+				contentCheck: r.audioOnlyContentCheck,
 			},
 			{
 				name:        "Track/H264",
@@ -186,6 +193,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_id}_{time}.mp4",
 					outputType: types.OutputTypeMP4,
 				},
+				contentCheck: r.videoOnlyContentCheck,
 			},
 			{
 				name:        "Track/VP8",
@@ -198,6 +206,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_type}_{time}.webm",
 					outputType: types.OutputTypeWebM,
 				},
+				contentCheck: r.videoOnlyContentCheck,
 			},
 			// {
 			// 	name:       "Track/VP9",
@@ -239,10 +248,10 @@ func (r *Runner) runFileTest(t *testing.T, test *testCase) {
 	require.Equal(t, test.requestType != types.RequestTypeTrack && !test.audioOnly, p.VideoEncoding)
 
 	// verify
-	r.verifyFile(t, p, res)
+	r.verifyFile(t, test, p, res)
 }
 
-func (r *Runner) verifyFile(t *testing.T, p *config.PipelineConfig, res *livekit.EgressInfo) {
+func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig, res *livekit.EgressInfo) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
 	require.NotZero(t, res.StartedAt)
@@ -275,5 +284,9 @@ func (r *Runner) verifyFile(t *testing.T, p *config.PipelineConfig, res *livekit
 	require.NotNil(t, manifest)
 
 	// verify
-	verify(t, localPath, p, res, types.EgressTypeFile, r.Muting, r.sourceFramerate, false)
+	info := verify(t, localPath, p, res, types.EgressTypeFile, r.Muting, r.sourceFramerate, false)
+
+	if tc.contentCheck != nil && info != nil {
+		tc.contentCheck(t, localPath, info)
+	}
 }

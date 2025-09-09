@@ -17,7 +17,9 @@
 package test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os/exec"
@@ -93,9 +95,15 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 
 	args = append(args, input)
 
-	cmd := exec.Command("ffprobe", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffprobe", args...)
 	out, err := cmd.Output()
 	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("ffprobe timeout after 15s")
+		}
 		return nil, err
 	}
 
@@ -104,22 +112,9 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
-func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.EgressInfo, egressType types.EgressType, withMuting bool, sourceFramerate float64, live bool) {
-	var info *FFProbeInfo
-	var err error
-
-	done := make(chan struct{})
-	go func() {
-		info, err = ffprobe(in)
-		close(done)
-	}()
-
-	select {
-	case <-time.After(time.Second * 15):
-		t.Fatal("no response from ffprobe")
-	case <-done:
-		require.NoError(t, err, "ffprobe failed for input %s", in)
-	}
+func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.EgressInfo, egressType types.EgressType, withMuting bool, sourceFramerate float64, live bool) *FFProbeInfo {
+	info, err := ffprobe(in)
+	require.NoError(t, err)
 
 	// Check source type
 	if res != nil {
@@ -296,4 +291,42 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		require.True(t, hasVideo)
 		require.NotEmpty(t, p.VideoOutCodec)
 	}
+	return info
+}
+
+// parseFFProbeDuration supports either "123.456" (seconds) or "HH:MM:SS.mmm"
+func parseFFProbeDuration(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, errors.New("empty duration")
+	}
+
+	if strings.Contains(s, ":") {
+		// HH:MM:SS(.frac)
+		parts := strings.Split(s, ":")
+		if len(parts) != 3 {
+			return 0, fmt.Errorf("invalid H:M:S format: %q", s)
+		}
+		h, err := strconv.ParseFloat(parts[0], 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid h part: %w", err)
+		}
+		m, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid m part: %w", err)
+		}
+		sec, err := strconv.ParseFloat(parts[2], 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid s part: %w", err)
+		}
+		total := h*3600 + m*60 + sec
+		return time.Duration(total * float64(time.Second)), nil
+	}
+
+	// Plain seconds (stringified float)
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid seconds format %q: %w", s, err)
+	}
+	return time.Duration(f * float64(time.Second)), nil
 }
