@@ -1,4 +1,4 @@
-// Copyright 2023 LiveKit, Inc.
+// Copyright 2025 LiveKit, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package version
+package main
 
-const (
-	Version         = "1.10.0"
-	TemplateVersion = "1.10.0"
+import (
+	"fmt"
+
+	"github.com/livekit/egress/version"
 )
+
+func main() {
+	fmt.Println(version.TemplateVersion)
+}
