@@ -531,7 +531,6 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 
 	if s.initialized.IsBroken() {
 		<-s.callbacks.BuildReady
-		logger.Debugw("sdk onTrackSubscribed", "tempo controller", ts.TempoController)
 		s.callbacks.OnTrackAdded(ts)
 	} else {
 		s.mu.Lock()
