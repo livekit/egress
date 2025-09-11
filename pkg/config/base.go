@@ -56,10 +56,11 @@ type BaseConfig struct {
 	S3AssumeRoleExternalID string                  `yaml:"s3_assume_role_external_id"` // if set, this external ID is used by default for S3 uploads
 
 	// advanced
-	Insecure    bool                   `yaml:"insecure"`     // allow chrome to connect to an insecure websocket
-	Debug       DebugConfig            `yaml:"debug"`        // create dot file on internal error
-	ChromeFlags map[string]interface{} `yaml:"chrome_flags"` // additional flags to pass to Chrome
-	Latency     LatencyConfig          `yaml:"latency"`      // gstreamer latencies, modifying these may break the service
+	Insecure             bool                   `yaml:"insecure"`               // allow chrome to connect to an insecure websocket
+	Debug                DebugConfig            `yaml:"debug"`                  // create dot file on internal error
+	ChromeFlags          map[string]interface{} `yaml:"chrome_flags"`           // additional flags to pass to Chrome
+	Latency              LatencyConfig          `yaml:"latency"`                // gstreamer latencies, modifying these may break the service
+	AudioTempoController AudioTempoController   `yaml:"audio_tempo_controller"` // audio tempo controller
 }
 
 type SessionLimits struct {
@@ -82,6 +83,11 @@ type LatencyConfig struct {
 	AudioMixerLatency   time.Duration `yaml:"audio_mixer_latency"`     // audio mixer latency, must be greater than jitter buffer latency
 	PipelineLatency     time.Duration `yaml:"pipeline_latency"`        // max latency for the entire pipeline
 	RTPMaxAllowedTsDiff time.Duration `ymal:"rtp_max_allowed_ts_diff"` // max allowed PTS discont. for a RTP stream, before applying PTS alignment
+}
+
+type AudioTempoController struct {
+	Enabled        bool    `yaml:"enabled"`         // enable audio tempo adjustments for compensating PTS drift
+	AdjustmentRate float64 `yaml:"adjustment_rate"` // rate at which to adjust the tempo to compensate for PTS drift
 }
 
 func (c *BaseConfig) initLogger(values ...interface{}) error {
