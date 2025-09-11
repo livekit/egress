@@ -66,5 +66,5 @@ jobs:
             Commit: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
             Ref: https://github.com/${{ github.repository }}/tree/${{ github.ref_name }}
             By: ${{ github.actor }}
-        push: true
+          push: true
 
