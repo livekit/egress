@@ -15,7 +15,6 @@
 name: Publish Templates
 on:
   push:
-    branches: [main]
     paths:
       - build/template/Dockerfile
       - template-default/**
@@ -54,3 +53,18 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker-md.outputs.tags }}
           labels: ${{ steps.docker-md.outputs.labels }}
+
+      - name: Update template version
+        run:  sed 's/TemplateVersion.*= "[a-z0-9]*"/TemplateVersion = "${GITHUB_SHA}"/' < version/version.go
+
+      - name: Commit version changes
+        uses: EndBug/add-and-commit@v9
+        with:
+          default_author: github_actions
+          pull: --rebase --autostash
+          message: |
+            Commit: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+            Ref: https://github.com/${{ github.repository }}/tree/${{ github.ref_name }}
+            By: ${{ github.actor }}
+        push: true
+
