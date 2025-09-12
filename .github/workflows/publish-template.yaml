@@ -67,7 +67,8 @@ jobs:
 
       - name: Update template version
         run: |
-          sed "s/TemplateVersion.*= \"[a-z0-9]*\"/TemplateVersion = \"${GITHUB_SHA}\"/" < version/version.go > version.go
+          SHORT_SHA=`echo ${GITHUB_SHA} | cut -c 1-7`
+          sed "s/TemplateVersion.*= \"[-a-z0-9]*\"/TemplateVersion = \"sha-${SHORT_SHA}\"/" < version/version.go  > version.go
           mv -f version.go version/version.go
 
 
