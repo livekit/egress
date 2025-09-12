@@ -15,7 +15,6 @@
 ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
 
-
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template
 
 FROM livekit/gstreamer:1.24.12-dev

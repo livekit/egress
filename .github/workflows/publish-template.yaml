@@ -71,7 +71,6 @@ jobs:
           sed "s/TemplateVersion.*= \"[-a-z0-9]*\"/TemplateVersion = \"sha-${SHORT_SHA}\"/" < version/version.go  > version.go
           mv -f version.go version/version.go
 
-
       - name: Commit version changes
         uses: EndBug/add-and-commit@v9
         with:
