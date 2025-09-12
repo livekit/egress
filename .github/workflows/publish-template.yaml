@@ -21,7 +21,6 @@ on:
       - build/template/Dockerfile
       - template-default/**
       - template-sdk/**
-      - version/**
 
 jobs:
   docker:
