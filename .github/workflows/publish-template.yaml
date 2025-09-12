@@ -58,7 +58,10 @@ jobs:
           labels: ${{ steps.docker-md.outputs.labels }}
 
       - name: Update template version
-        run:  sed 's/TemplateVersion.*= "[a-z0-9]*"/TemplateVersion = "${GITHUB_SHA}"/' < version/version.go
+        run: |
+          sed "s/TemplateVersion.*= \"[a-z0-9]*\"/TemplateVersion = \"${GITHUB_SHA}\"/" < version/version.go > version.go
+          mv -f version.go version/version.go
+
 
       - name: Commit version changes
         uses: EndBug/add-and-commit@v9
