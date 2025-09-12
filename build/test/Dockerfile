@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+ARG TARGETPLATFORM
+ARG TEMPLATE_TAG=latest
+
+
+FROM livekit/egress-templates:$TEMPLATE_TAG AS template
+
 FROM livekit/gstreamer:1.24.12-dev
 
 WORKDIR /workspace
-
-ARG TARGETPLATFORM
 
 # install go
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
@@ -42,8 +46,8 @@ COPY test/ test/
 COPY version/ version/
 
 # copy templates
-COPY --from=livekit/egress-templates workspace/build/ cmd/server/templates/
-COPY --from=livekit/egress-templates workspace/build/ test/templates/
+COPY --from=template workspace/build/ cmd/server/templates/
+COPY --from=template workspace/build/ test/templates/
 
 # build (service tests will need to launch the handler)
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
@@ -101,10 +105,10 @@ RUN mkdir -p home/egress/tmp home/egress/.cache/xdgr && \
 
 # copy files
 COPY test/ /workspace/test/
-COPY --from=0 /workspace/egress /bin/
-COPY --from=0 /workspace/test.test .
-COPY --from=0 /workspace/media-samples /media-samples
-COPY --from=0 /workspace/test/agents /agents
+COPY --from=1 /workspace/egress /bin/
+COPY --from=1 /workspace/test.test .
+COPY --from=1 /workspace/media-samples /media-samples
+COPY --from=1 /workspace/test/agents /agents
 COPY build/test/entrypoint.sh .
 
 # install agent deps

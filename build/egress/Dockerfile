@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+ARG TEMPLATE_TAG=latest
+
+FROM livekit/egress-templates:$TEMPLATE_TAG AS template
+
 FROM livekit/gstreamer:1.24.12-dev
 
 ARG TARGETPLATFORM
@@ -38,7 +42,7 @@ COPY pkg/ pkg/
 COPY version/ version/
 
 # copy templates
-COPY --from=livekit/egress-templates workspace/build/ cmd/server/templates/
+COPY --from=template workspace/build/ cmd/server/templates/
 # delete .map files
 RUN find cmd/server/templates/ -name *.map | xargs rm
 
@@ -80,8 +84,8 @@ RUN mkdir -p home/egress/tmp home/egress/.cache/xdgr && \
     chown -R egress /home/egress
 
 # copy files
-COPY --from=0 /workspace/egress /bin/
-COPY --from=0 /tini /tini
+COPY --from=1 /workspace/egress /bin/
+COPY --from=1 /tini /tini
 COPY build/egress/entrypoint.sh /
 
 # run
