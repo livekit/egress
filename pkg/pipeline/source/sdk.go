@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
+	"github.com/livekit/egress/pkg/pipeline/tempo"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -81,11 +82,22 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		writers:              make(map[string]*sdk.AppWriter),
 	}
 
-	s.sync = synchronizer.NewSynchronizerWithOptions(
+	opts := []synchronizer.SynchronizerOption{
 		synchronizer.WithMaxTsDiff(p.Latency.RTPMaxAllowedTsDiff),
 		synchronizer.WithOnStarted(func() {
 			s.startRecording.Break()
-		}))
+		}),
+	}
+	if p.AudioTempoController.Enabled {
+		// perform signal time comression/steatching instead of timestamp manipulation
+		// on RTCP sender reports
+		logger.Debugw("audio tempo controller enabled", "adjustment rate", p.AudioTempoController.AdjustmentRate)
+		opts = append(opts, synchronizer.WithAudioPTSAdjustmentDisabled())
+	}
+
+	s.sync = synchronizer.NewSynchronizerWithOptions(
+		opts...,
+	)
 
 	if err := s.joinRoom(); err != nil {
 		return nil, err
@@ -413,9 +425,11 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 
 		logger.Infow("subscribing to track", "trackID", track.SID())
 
-		if s.PipelineConfig.RequestType != types.RequestTypeRoomComposite {
+		if s.PipelineConfig.RequestType != types.RequestTypeRoomComposite ||
+			s.PipelineConfig.AudioTempoController.Enabled {
 			pub.OnRTCP(s.sync.OnRTCP)
 		}
+
 		return pub.SetSubscribed(true)
 	}
 
@@ -467,7 +481,13 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		}
 		s.AudioTranscoding = true
 
-		writer, err := s.createWriter(track, pub, rp, ts)
+		var tc sdk.DriftHandler
+		if s.AudioTempoController.Enabled {
+			c := tempo.NewController()
+			ts.TempoController = c
+			tc = c
+		}
+		writer, err := s.createWriter(track, pub, rp, ts, tc)
 		if err != nil {
 			onSubscribeErr = err
 			return
@@ -493,7 +513,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			}
 		}
 
-		writer, err := s.createWriter(track, pub, rp, ts)
+		writer, err := s.createWriter(track, pub, rp, ts, nil)
 		if err != nil {
 			onSubscribeErr = err
 			return
@@ -551,6 +571,7 @@ func (s *SDKSource) createWriter(
 	pub lksdk.TrackPublication,
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
+	tc sdk.DriftHandler,
 ) (*sdk.AppWriter, error) {
 	src, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", track.ID()))
 	if err != nil {
@@ -558,7 +579,7 @@ func (s *SDKSource) createWriter(
 	}
 
 	ts.AppSrc = app.SrcFromElement(src)
-	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, s.callbacks)
+	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, tc, s.callbacks)
 	if err != nil {
 		return nil, err
 	}
