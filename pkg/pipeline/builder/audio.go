@@ -414,6 +414,11 @@ func (b *AudioBin) addEncoder() error {
 }
 
 func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel int, isLeaky bool) error {
+	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
+	if err != nil {
+		return err
+	}
+
 	audioQueue, err := gstreamer.BuildQueue("audio_input_queue", p.Latency.PipelineLatency, isLeaky)
 	if err != nil {
 		return err
@@ -434,7 +439,7 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel int, 
 		return err
 	}
 
-	return b.AddElements(audioQueue, audioConvert, audioResample, capsFilter)
+	return b.AddElements(rate, audioQueue, audioConvert, audioResample, capsFilter)
 }
 
 func (b *AudioBin) installPitchProbes() {
@@ -476,6 +481,12 @@ func (b *AudioBin) installPitchProbes() {
 }
 
 func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.PipelineConfig, channel int, isLeaky bool) error {
+	// add audio rate element to handle discontinuities or codec DTX
+	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
+	if err != nil {
+		return err
+	}
+
 	q, err := gstreamer.BuildQueue("audio_input_queue", p.Latency.PipelineLatency, isLeaky)
 	if err != nil {
 		return err
@@ -494,18 +505,6 @@ func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.Pipelin
 	f32caps, err := newAudioFloatCapsFilter(p, channel)
 	if err != nil {
 		return err
-	}
-
-	// add audio rate element to handle discontinuities on packet loss
-	rate, err := gst.NewElement("audiorate")
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = rate.SetProperty("skip-to-first", true); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	if err = rate.SetProperty("tolerance", uint64(audioRateTolerance)); err != nil {
-		return errors.ErrGstPipelineError(err)
 	}
 
 	pitch, err := gst.NewElement("pitch")
@@ -532,7 +531,7 @@ func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.Pipelin
 
 	ab.installPitchProbes()
 
-	return b.AddElements(q, ac1, ar1, f32caps, rate, pitch, ac2, s16caps)
+	return b.AddElements(rate, q, ac1, ar1, f32caps, pitch, ac2, s16caps)
 }
 
 // F32 caps used only around `pitch`
