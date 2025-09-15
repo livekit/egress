@@ -81,11 +81,33 @@ func Proto() error {
 	))
 }
 
+func EnsureMediaSamples() error {
+	ctx := context.Background()
+
+	const script = "build/test/fetch-media-samples.sh"
+	if _, err := os.Stat(script); err != nil {
+		return fmt.Errorf("missing %s: %w", script, err)
+	}
+
+	if err := mageutil.Run(ctx, script); err != nil {
+		return err
+	}
+
+	if entries, _ := os.ReadDir("media-samples"); len(entries) == 0 {
+		return fmt.Errorf("media-samples is empty after %s", script)
+	}
+	return nil
+}
+
 func Integration(configFile string) error {
 	if err := Deadlock(); err != nil {
 		return err
 	}
 	defer Sync()
+
+	if err := EnsureMediaSamples(); err != nil {
+		return err
+	}
 
 	if err := mageutil.Run(context.Background(),
 		"docker build -t egress-test -f build/test/Dockerfile .",
