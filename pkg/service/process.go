@@ -19,11 +19,11 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/frostbyte73/core"
+	"github.com/linkdata/deadlock"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
@@ -38,7 +38,7 @@ import (
 const launchTimeout = 10 * time.Second
 
 type ProcessManager struct {
-	mu             sync.RWMutex
+	mu             deadlock.RWMutex
 	activeHandlers map[string]*Process
 }
 

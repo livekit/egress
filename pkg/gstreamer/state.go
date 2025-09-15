@@ -16,8 +16,8 @@ package gstreamer
 
 import (
 	"fmt"
-	"sync"
 
+	"github.com/linkdata/deadlock"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -33,7 +33,7 @@ const (
 )
 
 type StateManager struct {
-	lock  sync.RWMutex
+	lock  deadlock.RWMutex
 	state State
 }
 

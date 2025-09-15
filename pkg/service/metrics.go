@@ -18,8 +18,8 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"sync"
 
+	"github.com/linkdata/deadlock"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	dto "github.com/prometheus/client_model/go"
@@ -33,7 +33,7 @@ import (
 type MetricsService struct {
 	pm *ProcessManager
 
-	mu             sync.Mutex
+	mu             deadlock.Mutex
 	pendingMetrics []*dto.MetricFamily
 }
 

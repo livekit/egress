@@ -16,7 +16,6 @@ package builder
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
@@ -35,9 +34,7 @@ type StreamBin struct {
 	Bin        *gstreamer.Bin
 	OutputType types.OutputType
 
-	latency  time.Duration
-	mu       sync.RWMutex
-	pipeline *gstreamer.Pipeline
+	latency time.Duration
 }
 
 type Stream struct {

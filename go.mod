@@ -24,6 +24,7 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/googleapis/gax-go/v2 v2.14.2
 	github.com/gorilla/websocket v1.5.3
+	github.com/linkdata/deadlock v0.5.5
 	github.com/livekit/livekit-server v1.8.4
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/media-sdk v0.0.0-20250518151703-b07af88637c5
@@ -120,6 +121,7 @@ require (
 	github.com/nats-io/nkeys v0.4.11 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/ory/dockertest/v3 v3.12.0 // indirect
+	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v3 v3.0.7 // indirect
 	github.com/pion/ice/v4 v4.0.10 // indirect

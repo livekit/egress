@@ -12,11 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# syntax=docker/dockerfile:1.6
+
 FROM livekit/gstreamer:1.24.12-dev
 
 WORKDIR /workspace
 
 ARG TARGETPLATFORM
+
+# Deadlock 0 = off, 1 = on
+ARG DEADLOCK=0
 
 # install go
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
@@ -25,13 +30,15 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd
     tar -C /usr/local -xzf go1.22.1.linux-${GOARCH}.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
-# copy media samples
-COPY media-samples /workspace/media-samples
+ENV GOMODCACHE=/go/pkg/mod \
+    GOCACHE=/go/build-cache
 
 # download go modules
 COPY go.mod .
 COPY go.sum .
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/go/build-cache \
+    go mod download
 
 # copy source
 COPY cmd/ cmd/
@@ -44,11 +51,17 @@ COPY --from=livekit/egress-templates workspace/build/ cmd/server/templates/
 COPY --from=livekit/egress-templates workspace/build/ test/templates/
 
 # build (service tests will need to launch the handler)
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on GODEBUG=disablethp=1 go build -a -o egress ./cmd/server
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/go/build-cache \
+    if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
+    TAGS=""; \
+    if [ "${DEADLOCK:-0}" = "1" ]; then TAGS="deadlock"; fi; \
+    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GODEBUG=disablethp=1 go build ${TAGS:+-tags} ${TAGS:+"$TAGS"} -o egress ./cmd/server
 
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go test -c -v -race --tags=integration ./test
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/go/build-cache \
+    if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
+    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} go test -c -v -race --tags=integration ./test
 
 
 FROM livekit/gstreamer:1.24.12-prod
@@ -71,10 +84,7 @@ RUN apt-get update && \
         gstreamer1.0-plugins-base-
 
 # install go
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    wget https://go.dev/dl/go1.22.1.linux-${GOARCH}.tar.gz && \
-    rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go1.22.1.linux-${GOARCH}.tar.gz
+COPY --from=0 /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 # install chrome
@@ -104,7 +114,7 @@ RUN pip install --break-system-packages --no-cache-dir -r /agents/requirements.t
 COPY test/ /workspace/test/
 COPY --from=0 /workspace/egress /bin/
 COPY --from=0 /workspace/test.test .
-COPY --from=0 /workspace/media-samples /media-samples
+COPY media-samples /media-samples
 COPY --from=0 /workspace/test/agents /agents
 COPY build/test/entrypoint.sh .
 

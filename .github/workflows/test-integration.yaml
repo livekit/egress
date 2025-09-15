@@ -81,6 +81,10 @@ jobs:
           platforms: linux/amd64
           tags: ${{ steps.docker-md.outputs.tags }}
           labels: ${{ steps.docker-md.outputs.labels }}
+          build-args: |
+            DEADLOCK=1
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   test:
     needs: build

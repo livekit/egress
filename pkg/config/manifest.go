@@ -17,8 +17,9 @@ package config
 import (
 	"bytes"
 	"encoding/json"
-	"sync"
 	"time"
+
+	"github.com/linkdata/deadlock"
 )
 
 type Manifest struct {
@@ -35,7 +36,7 @@ type Manifest struct {
 	AudioTrackID      string `json:"audio_track_id,omitempty"`
 	VideoTrackID      string `json:"video_track_id,omitempty"`
 
-	mu        sync.Mutex
+	mu        deadlock.Mutex
 	Files     []*File     `json:"files,omitempty"`
 	Playlists []*Playlist `json:"playlists,omitempty"`
 	Images    []*Image    `json:"images,omitempty"`
@@ -47,7 +48,7 @@ type File struct {
 }
 
 type Playlist struct {
-	mu       sync.Mutex
+	mu       deadlock.Mutex
 	Location string     `json:"location,omitempty"`
 	Segments []*Segment `json:"segments,omitempty"`
 }

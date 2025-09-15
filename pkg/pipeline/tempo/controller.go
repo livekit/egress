@@ -1,8 +1,9 @@
 package tempo
 
 import (
-	"sync"
 	"time"
+
+	"github.com/linkdata/deadlock"
 )
 
 const (
@@ -11,7 +12,7 @@ const (
 )
 
 type Controller struct {
-	mu sync.Mutex
+	mu deadlock.Mutex
 
 	pending   time.Duration // accumulated, not yet started
 	current   time.Duration // currently being corrected

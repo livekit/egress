@@ -100,21 +100,19 @@ func EnsureMediaSamples() error {
 }
 
 func Integration(configFile string) error {
-	if err := Deadlock(); err != nil {
-		return err
-	}
-	defer Sync()
-
 	if err := EnsureMediaSamples(); err != nil {
 		return err
 	}
 
-	if err := mageutil.Run(context.Background(),
-		"docker build -t egress-test -f build/test/Dockerfile .",
+	ctx := context.Background()
+	os.Setenv("DOCKER_BUILDKIT", "1")
+	defer os.Unsetenv("DOCKER_BUILDKIT")
+
+	if err := mageutil.Run(ctx,
+		`docker build --build-arg DEADLOCK=1 -t egress-test -f build/test/Dockerfile .`,
 	); err != nil {
 		return err
 	}
-
 	return Retest(configFile)
 }
 
@@ -158,36 +156,6 @@ func Retest(configFile string) error {
 	return mageutil.Run(context.Background(),
 		fmt.Sprintf("docker run --rm -e EGRESS_CONFIG_FILE=%s -v %s/test:/out egress-test", configFile, dir),
 	)
-}
-
-func Deadlock() error {
-	ctx := context.Background()
-	if err := mageutil.Run(ctx, "go get github.com/sasha-s/go-deadlock"); err != nil {
-		return err
-	}
-	if err := mageutil.Pipe("grep -rl sync.Mutex ./pkg", "xargs sed -i  -e s/sync.Mutex/deadlock.Mutex/g"); err != nil {
-		return err
-	}
-	if err := mageutil.Pipe("grep -rl sync.RWMutex ./pkg", "xargs sed -i  -e s/sync.RWMutex/deadlock.RWMutex/g"); err != nil {
-		return err
-	}
-	if err := mageutil.Pipe("grep -rl deadlock.Mutex\\|deadlock.RWMutex ./pkg", "xargs goimports -w"); err != nil {
-		return err
-	}
-	return mageutil.Run(ctx, "go mod tidy")
-}
-
-func Sync() error {
-	if err := mageutil.Pipe("grep -rl deadlock.Mutex ./pkg", "xargs sed -i  -e s/deadlock.Mutex/sync.Mutex/g"); err != nil {
-		return err
-	}
-	if err := mageutil.Pipe("grep -rl deadlock.RWMutex ./pkg", "xargs sed -i  -e s/deadlock.RWMutex/sync.RWMutex/g"); err != nil {
-		return err
-	}
-	if err := mageutil.Pipe("grep -rl sync.Mutex\\|sync.RWMutex ./pkg", "xargs goimports -w"); err != nil {
-		return err
-	}
-	return mageutil.Run(context.Background(), "go mod tidy")
 }
 
 func Build() error {

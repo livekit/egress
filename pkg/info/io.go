@@ -18,10 +18,10 @@ import (
 	"context"
 	"hash/fnv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
+	"github.com/linkdata/deadlock"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
@@ -60,7 +60,7 @@ type ioClient struct {
 }
 
 type worker struct {
-	mu       sync.Mutex
+	mu       deadlock.Mutex
 	creating map[string]*update
 	updates  map[string]*update
 	queue    chan string
