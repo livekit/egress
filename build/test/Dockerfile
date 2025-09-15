@@ -25,10 +25,8 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd
     tar -C /usr/local -xzf go1.22.1.linux-${GOARCH}.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
-# download samples
-RUN apt-get update && apt-get install -y git-lfs
-RUN git clone --depth 1 https://github.com/livekit/media-samples.git
-RUN cd media-samples && git lfs pull
+# copy media samples
+COPY media-samples /workspace/media-samples
 
 # download go modules
 COPY go.mod .
@@ -100,15 +98,15 @@ RUN mkdir -p home/egress/tmp home/egress/.cache/xdgr && \
     chown -R egress /home/egress
 
 # copy files
+COPY test/agents/requirements.txt /agents/requirements.txt
+RUN pip install --break-system-packages --no-cache-dir -r /agents/requirements.txt
+
 COPY test/ /workspace/test/
 COPY --from=0 /workspace/egress /bin/
 COPY --from=0 /workspace/test.test .
 COPY --from=0 /workspace/media-samples /media-samples
 COPY --from=0 /workspace/test/agents /agents
 COPY build/test/entrypoint.sh .
-
-# install agent deps
-RUN pip install --break-system-packages --no-cache-dir -r /agents/requirements.txt
 
 # run tests
 USER egress
