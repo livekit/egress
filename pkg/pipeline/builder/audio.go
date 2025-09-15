@@ -535,7 +535,7 @@ func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.Pipelin
 	return b.AddElements(q, ac1, ar1, f32caps, rate, pitch, ac2, s16caps)
 }
 
-// F32 caps used only around `pitch`
+// F32 caps used only around pitch
 func newAudioFloatCapsFilter(p *config.PipelineConfig, channel int) (*gst.Element, error) {
 	var channelCaps string
 	if channel == audioChannelStereo {
