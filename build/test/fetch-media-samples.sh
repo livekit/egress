@@ -25,10 +25,15 @@ g() {
 }
 
 if [[ -d "$DEST/.git" ]]; then
+  git -C "$DEST" config core.hooksPath /dev/null
   g -C "$DEST" fetch --depth=1 origin "$REF"
   git -C "$DEST" checkout -f FETCH_HEAD
 else
-  g clone --depth 1 --branch "$REF" "https://github.com/${REPO}.git" "$DEST"
+  tmpl="$(mktemp -d)"
+  g -c core.hooksPath=/dev/null \
+    clone --template "$tmpl" --depth 1 --branch "$REF" \
+    "https://github.com/${REPO}.git" "$DEST"
+  rm -rf "$tmpl"
 fi
 
 g -C "$DEST" lfs pull
