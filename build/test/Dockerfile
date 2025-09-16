@@ -88,7 +88,7 @@ RUN apt-get update && \
         gstreamer1.0-plugins-base-
 
 # install go
-COPY --from=0 /usr/local/go /usr/local/go
+COPY --from=1 /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 # install chrome
