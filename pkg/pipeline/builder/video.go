@@ -17,10 +17,10 @@ package builder
 import (
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
+	"github.com/linkdata/deadlock"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -38,7 +38,7 @@ type VideoBin struct {
 	bin  *gstreamer.Bin
 	conf *config.PipelineConfig
 
-	mu          sync.Mutex
+	mu          deadlock.Mutex
 	nextID      int
 	selectedPad string
 	lastPTS     uint64

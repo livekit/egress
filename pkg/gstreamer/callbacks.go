@@ -15,14 +15,13 @@
 package gstreamer
 
 import (
-	"sync"
-
+	"github.com/linkdata/deadlock"
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 )
 
 type Callbacks struct {
-	mu         sync.RWMutex
+	mu         deadlock.RWMutex
 	GstReady   chan struct{}
 	BuildReady chan struct{}
 

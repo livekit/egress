@@ -18,12 +18,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
+	"github.com/linkdata/deadlock"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 
@@ -51,13 +51,13 @@ type SDKSource struct {
 	room *lksdk.Room
 	sync *synchronizer.Synchronizer
 
-	mu                   sync.RWMutex
+	mu                   deadlock.RWMutex
 	initialized          core.Fuse
 	filenameReplacements map[string]string
 	subs                 chan *subscriptionResult
 
 	writers map[string]*sdk.AppWriter
-	subLock sync.RWMutex
+	subLock deadlock.RWMutex
 	active  atomic.Int32
 	closed  core.Fuse
 

@@ -19,11 +19,11 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
+	"github.com/linkdata/deadlock"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
@@ -59,7 +59,7 @@ type Controller struct {
 	sinks     map[types.EgressType][]sink.Sink
 
 	// internal
-	mu          sync.Mutex
+	mu          deadlock.Mutex
 	monitor     *stats.HandlerMonitor
 	limitTimer  *time.Timer
 	playing     core.Fuse

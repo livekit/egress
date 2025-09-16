@@ -17,16 +17,16 @@ package logging
 import (
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/aws/smithy-go/logging"
+	"github.com/linkdata/deadlock"
 
 	"github.com/livekit/protocol/logger"
 )
 
 // S3Logger only logs aws messages on upload failure
 type S3Logger struct {
-	mu   sync.Mutex
+	mu   deadlock.Mutex
 	msgs []string
 	idx  int
 }

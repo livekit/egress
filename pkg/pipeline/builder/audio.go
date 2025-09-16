@@ -16,10 +16,10 @@ package builder
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
+	"github.com/linkdata/deadlock"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
@@ -46,7 +46,7 @@ type AudioBin struct {
 	bin  *gstreamer.Bin
 	conf *config.PipelineConfig
 
-	mu          sync.Mutex
+	mu          deadlock.Mutex
 	nextID      int
 	nextChannel int
 	names       map[string]string

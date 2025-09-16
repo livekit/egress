@@ -40,7 +40,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: build/test/fetch-media-samples.sh
-
+ 
       - uses: actions/cache@v4
         with:
           path: |
@@ -78,9 +78,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Set up Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          install: true
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
+          builder: ${{ steps.buildx.outputs.name }}
           context: .
           file: ./build/test/Dockerfile
           push: true
@@ -88,7 +96,11 @@ jobs:
           tags: ${{ steps.docker-md.outputs.tags }}
           labels: ${{ steps.docker-md.outputs.labels }}
           build-args: |
+            DEADLOCK=1
             TEMPLATE_TAG=${{ steps.template-tag.outputs.template_tag }}
+          # TODO: Enable caching once registry periodic cleanup is implemented
+          #cache-from: type=registry,ref=livekit/egress-integration:buildcache
+          #cache-to:   type=registry,ref=livekit/egress-integration:buildcache,mode=max,ignore-error=true
 
   test:
     needs: build
