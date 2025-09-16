@@ -1,0 +1,33 @@
+run:
+  timeout: 5m
+  tests: true
+  build-tags:
+    - deadlock   # include your deadlock build when needed
+    - integration
+linters:
+  disable-all: true 
+  enable:
+  #  - revive
+    - forbidigo
+linters-settings:
+  # revive:
+  #   rules:
+  #     #- name: exported
+  #     - name: errorf
+  #     - name: error-strings
+  #     - name: receiver-naming
+  #     - name: indent-error-flow
+  forbidigo:
+    forbid:
+      - 'sync\.Mutex'   # Use deadlock.Mutex instead
+      - 'sync\.RWMutex' # Use deadlock.RWMutex instead
+    analyze-types: true
+    analyze-generics: true
+issues:
+  exclude-rules:
+    - path: cmd/server/main.go
+      text: "pattern templates: no matching files found"
+
+  exclude-use-default: false
+  max-same-issues: 0
+  max-issues-per-linter: 0
