@@ -98,8 +98,9 @@ jobs:
           build-args: |
             DEADLOCK=1
             TEMPLATE_TAG=${{ steps.template-tag.outputs.template_tag }}
-          cache-from: type=registry,ref=livekit/egress-integration:buildcache
-          cache-to:   type=registry,ref=livekit/egress-integration:buildcache,mode=max,ignore-error=true
+          # TODO: Enable caching once registry periodic cleanup is implemented
+          #cache-from: type=registry,ref=livekit/egress-integration:buildcache
+          #cache-to:   type=registry,ref=livekit/egress-integration:buildcache,mode=max,ignore-error=true
 
   test:
     needs: build
