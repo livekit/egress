@@ -49,6 +49,20 @@ jobs:
           tags: |
             type=sha
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.1
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Get template image
+        id: template-tag
+        run: |
+          TEMPLATE_TAG=`go run github.com/livekit/egress/cmd/template_version`
+          echo "template_tag=$TEMPLATE_TAG" > "$GITHUB_OUTPUT"
+
       - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
@@ -74,6 +88,7 @@ jobs:
           labels: ${{ steps.docker-md.outputs.labels }}
           build-args: |
             DEADLOCK=1
+            TEMPLATE_TAG=${{ steps.template-tag.outputs.template_tag }}
           cache-from: type=registry,ref=livekit/egress-integration:buildcache
           cache-to:   type=registry,ref=livekit/egress-integration:buildcache,mode=max,ignore-error=true
 

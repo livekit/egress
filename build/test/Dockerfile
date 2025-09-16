@@ -13,6 +13,10 @@
 # limitations under the License.
 
 # syntax=docker/dockerfile:1.6
+ARG TARGETPLATFORM
+ARG TEMPLATE_TAG=latest
+
+FROM livekit/egress-templates:$TEMPLATE_TAG AS template
 
 FROM livekit/gstreamer:1.24.12-dev
 
@@ -47,8 +51,8 @@ COPY test/ test/
 COPY version/ version/
 
 # copy templates
-COPY --from=livekit/egress-templates workspace/build/ cmd/server/templates/
-COPY --from=livekit/egress-templates workspace/build/ test/templates/
+COPY --from=template workspace/build/ cmd/server/templates/
+COPY --from=template workspace/build/ test/templates/
 
 # build (service tests will need to launch the handler)
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
@@ -112,10 +116,10 @@ COPY test/agents/requirements.txt /agents/requirements.txt
 RUN pip install --break-system-packages --no-cache-dir -r /agents/requirements.txt
 
 COPY test/ /workspace/test/
-COPY --from=0 /workspace/egress /bin/
-COPY --from=0 /workspace/test.test .
+COPY --from=1 /workspace/egress /bin/
+COPY --from=1 /workspace/test.test .
 COPY media-samples /media-samples
-COPY --from=0 /workspace/test/agents /agents
+COPY --from=1 /workspace/test/agents /agents
 COPY build/test/entrypoint.sh .
 
 # run tests

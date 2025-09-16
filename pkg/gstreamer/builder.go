@@ -44,3 +44,20 @@ func BuildQueue(name string, latency time.Duration, leaky bool) (*gst.Element, e
 
 	return queue, nil
 }
+
+func BuildAudioRate(name string, tolerance time.Duration) (*gst.Element, error) {
+	audioRate, err := gst.NewElementWithName("audiorate", name)
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
+	if err = audioRate.SetProperty("skip-to-first", true); err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
+	if err = audioRate.SetProperty("tolerance", uint64(tolerance)); err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
+	return audioRate, nil
+}

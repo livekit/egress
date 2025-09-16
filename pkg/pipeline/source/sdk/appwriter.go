@@ -334,17 +334,18 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 	b := gst.NewBufferFromBytes(p)
 	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
 
-	if isDiscontinuity(w.lastPTS, pts) && w.shouldHandleDiscontinuity() {
-		w.logger.Debugw("discontinuity detected", "pts", pts, "lastPTS", w.lastPTS)
-		ok := w.src.SendEvent(gst.NewFlushStartEvent())
-		if !ok {
-			w.logger.Errorw("failed to send flush start event", nil)
+	if isDiscontinuity(w.lastPTS, pts) {
+		if w.shouldHandleDiscontinuity() {
+			w.logger.Debugw("discontinuity detected", "pts", pts, "lastPTS", w.lastPTS)
+			ok := w.src.SendEvent(gst.NewFlushStartEvent())
+			if !ok {
+				w.logger.Errorw("failed to send flush start event", nil)
+			}
+			ok = w.src.SendEvent(gst.NewFlushStopEvent(false))
+			if !ok {
+				w.logger.Errorw("failed to send flush stop event", nil)
+			}
 		}
-		ok = w.src.SendEvent(gst.NewFlushStopEvent(false))
-		if !ok {
-			w.logger.Errorw("failed to send flush stop event", nil)
-		}
-
 		b.SetFlags(b.GetFlags() | gst.BufferFlagDiscont)
 	}
 
