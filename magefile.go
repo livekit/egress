@@ -25,6 +25,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/livekit/egress/version"
 	"github.com/livekit/mageutil"
 )
 
@@ -110,7 +111,7 @@ func Integration(configFile string) error {
 	}
 
 	if err := mageutil.Run(context.Background(),
-		"docker build -t egress-test -f build/test/Dockerfile .",
+		fmt.Sprintf("docker build -t egress-test --build-arg TEMPLATE_TAG=%s -f build/test/Dockerfile .", version.TemplateVersion),
 	); err != nil {
 		return err
 	}
@@ -194,8 +195,7 @@ func Build() error {
 	return mageutil.Run(context.Background(),
 		fmt.Sprintf("docker pull livekit/chrome-installer:%s", chromiumVersion),
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
-		"docker pull livekit/egress-templates",
-		"docker build -t livekit/egress:latest -f build/egress/Dockerfile .",
+		fmt.Sprintf("docker build -t livekit/egress:latest --build-arg TEMPLATE_TAG=%s -f build/egress/Dockerfile .", version.TemplateVersion),
 	)
 }
 
