@@ -110,7 +110,7 @@ func Integration(configFile string) error {
 	defer os.Unsetenv("DOCKER_BUILDKIT")
 
 	if err := mageutil.Run(ctx,
-		`docker build --build-arg TEMPLATE_TAG=%s --build-arg DEADLOCK=1 -t egress-test -f build/test/Dockerfile .`,
+		fmt.Sprintf("docker build --build-arg TEMPLATE_TAG=%s --build-arg DEADLOCK=1 -t egress-test -f build/test/Dockerfile .", version.TemplateVersion),
 	); err != nil {
 		return err
 	}

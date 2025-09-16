@@ -40,6 +40,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: build/test/fetch-media-samples.sh
+      
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/go/bin
+            ~/.cache
+          key: egress-integration-${{ hashFiles('**/go.sum') }}
+          restore-keys: egress-integration
 
       - name: Docker metadata
         id: docker-md
