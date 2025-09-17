@@ -224,7 +224,7 @@ func (r *Runner) verifySegmentOutput(
 
 	// download from cloud storage
 	localPlaylistPath = path.Join(r.FilePrefix, path.Base(storedPlaylistPath))
-	download(t, p.GetSegmentConfig().StorageConfig, localPlaylistPath, storedPlaylistPath, true)
+	download(t, p.GetSegmentConfig().StorageConfig, localPlaylistPath, storedPlaylistPath, false)
 
 	if plType == m3u8.PlaylistTypeEvent {
 		manifestLocal := path.Join(path.Dir(localPlaylistPath), res.EgressId+".json")
@@ -235,7 +235,7 @@ func (r *Runner) verifySegmentOutput(
 			require.Equal(t, segmentCount, len(playlist.Segments))
 			for _, segment := range playlist.Segments {
 				localPath := path.Join(r.FilePrefix, path.Base(segment.Filename))
-				download(t, p.GetSegmentConfig().StorageConfig, localPath, segment.Filename, true)
+				download(t, p.GetSegmentConfig().StorageConfig, localPath, segment.Filename, false)
 			}
 		}
 	}
