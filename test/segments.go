@@ -17,6 +17,7 @@
 package test
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"strconv"
@@ -73,12 +74,30 @@ func (r *Runner) testSegments(t *testing.T) {
 					audioOnly:  true,
 				},
 				encodingOptions: &livekit.EncodingOptions{
-					AudioCodec: livekit.AudioCodec_AAC,
+					AudioCodec: livekit.AudioCodec_CODEC_MP3,
 				},
 				segmentOptions: &segmentOptions{
 					prefix:   "r_{room_name}_audio_{time}",
 					playlist: "r_{room_name}_audio_{time}.m3u8",
 					suffix:   livekit.SegmentedFileSuffix_TIMESTAMP,
+				},
+				contentCheck: r.audioOnlyContentCheck,
+			},
+			{
+				name:        "RoomComposite/AudioOnlyLiveMP3",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					AudioCodec: livekit.AudioCodec_CODEC_MP3,
+				},
+				segmentOptions: &segmentOptions{
+					prefix:       "r_{room_name}_audio_live_{time}",
+					playlist:     "r_{room_name}_audio_live_{time}.m3u8",
+					livePlaylist: "r_{room_name}_audio_live_{time}_live.m3u8",
+					suffix:       livekit.SegmentedFileSuffix_TIMESTAMP,
 				},
 				contentCheck: r.audioOnlyContentCheck,
 			},
@@ -240,6 +259,7 @@ func (r *Runner) verifySegmentOutput(
 		}
 	}
 
+	fmt.Println("***filenameSuffix", filenameSuffix)
 	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath, plType)
 
 	// verify

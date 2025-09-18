@@ -76,6 +76,7 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	}
 
 	if useMP3 {
+		// dummy muxer to map the audio pad to the sink
 		mp3mux, err := gst.NewElement("identity")
 		if err != nil {
 			return nil, errors.ErrGstPipelineError(err)
