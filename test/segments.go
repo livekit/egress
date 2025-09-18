@@ -17,7 +17,6 @@
 package test
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"strconv"
@@ -259,7 +258,6 @@ func (r *Runner) verifySegmentOutput(
 		}
 	}
 
-	fmt.Println("***filenameSuffix", filenameSuffix)
 	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath, plType)
 
 	// verify
