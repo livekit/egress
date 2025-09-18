@@ -594,7 +594,7 @@ func newAudioCapsFilter(p *config.PipelineConfig, channel int) (*gst.Element, er
 	case types.MimeTypeMP3:
 		caps = gst.NewCapsFromString(fmt.Sprintf(
 			"audio/x-raw,format=S16LE,layout=interleaved,rate=%d,%s",
-			48000, channelCaps,
+			p.AudioFrequency, channelCaps,
 		))
 	default:
 		return nil, errors.ErrNotSupported(string(p.AudioOutCodec))
