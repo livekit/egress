@@ -38,6 +38,10 @@ func BuildFileBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstr
 		mux, err = gst.NewElement("mp4mux")
 	case types.OutputTypeWebM:
 		mux, err = gst.NewElement("webmmux")
+	case types.OutputTypeMP3:
+		// MP3 is elementary audio frames; no container muxer needed.
+		// We'll link audio→filesink directly (see below).
+		mux = nil
 	default:
 		return nil, errors.ErrInvalidInput("output type")
 	}
@@ -55,14 +59,26 @@ func BuildFileBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstr
 	if err = sink.SetProperty("sync", false); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
+
+	if o.OutputType == types.OutputTypeMP3 {
+		// MP3 path: only filesink in the bin
+		if err = b.AddElements(sink); err != nil {
+			return nil, err
+		}
+		// Hand a concrete sink pad for the outer linker to ghost/link to
+		b.SetGetSrcPad(func(_ string) *gst.Pad {
+			return sink.GetStaticPad("sink")
+		})
+		return b, nil
+	}
+
+	// Container path (unchanged): mux → filesink
 	if err = b.AddElements(mux, sink); err != nil {
 		return nil, err
 	}
 
 	b.SetGetSrcPad(func(name string) *gst.Pad {
-		var padName = name + "_%u"
-
-		return mux.GetRequestPad(padName)
+		return mux.GetRequestPad(name + "_%u")
 	})
 
 	return b, nil
