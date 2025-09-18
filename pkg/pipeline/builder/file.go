@@ -65,14 +65,12 @@ func BuildFileBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstr
 		if err = b.AddElements(sink); err != nil {
 			return nil, err
 		}
-		// Hand a concrete sink pad for the outer linker to ghost/link to
 		b.SetGetSrcPad(func(_ string) *gst.Pad {
 			return sink.GetStaticPad("sink")
 		})
 		return b, nil
 	}
 
-	// Container path (unchanged): mux → filesink
 	if err = b.AddElements(mux, sink); err != nil {
 		return nil, err
 	}
