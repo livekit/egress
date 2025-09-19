@@ -27,21 +27,20 @@ func BuildFileBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstr
 	b := pipeline.NewBin("file")
 	o := p.GetFileConfig()
 
-	var mux *gst.Element
+	var mux muxer
 	var err error
 	switch o.OutputType {
 	case types.OutputTypeOGG:
-		mux, err = gst.NewElement("oggmux")
+		mux, err = newMuxer("oggmux")
 	case types.OutputTypeIVF:
-		mux, err = gst.NewElement("avmux_ivf")
+		mux, err = newMuxer("avmux_ivf")
 	case types.OutputTypeMP4:
-		mux, err = gst.NewElement("mp4mux")
+		mux, err = newMuxer("mp4mux")
 	case types.OutputTypeWebM:
-		mux, err = gst.NewElement("webmmux")
+		mux, err = newMuxer("webmmux")
 	case types.OutputTypeMP3:
-		// MP3 is elementary audio frames; no container muxer needed.
-		// We'll link audio→filesink directly (see below).
-		mux = nil
+		mux, err = newMP3Muxer()
+
 	default:
 		return nil, errors.ErrInvalidInput("output type")
 	}
@@ -60,18 +59,7 @@ func BuildFileBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstr
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	if o.OutputType == types.OutputTypeMP3 {
-		// MP3 path: only filesink in the bin
-		if err = b.AddElements(sink); err != nil {
-			return nil, err
-		}
-		b.SetGetSrcPad(func(_ string) *gst.Pad {
-			return sink.GetStaticPad("sink")
-		})
-		return b, nil
-	}
-
-	if err = b.AddElements(mux, sink); err != nil {
+	if err = b.AddElements(mux.GetElement(), sink); err != nil {
 		return nil, err
 	}
 
