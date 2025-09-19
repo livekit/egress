@@ -24,7 +24,6 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
-	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -38,7 +37,6 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	o := p.GetSegmentConfig()
 
 	var h264parse *gst.Element
-	var mp3parse *gst.Element
 
 	var err error
 	if p.VideoEnabled {
@@ -48,18 +46,6 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 		}
 
 		if err = b.AddElements(h264parse); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
-	}
-
-	// Detect audio-only MP3 segments
-	useMP3 := !p.VideoEnabled && p.AudioOutCodec == types.MimeTypeMP3
-	if useMP3 {
-		mp3parse, err = gst.NewElement("mpegaudioparse")
-		if err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
-		if err = b.AddElements(mp3parse); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 	}
@@ -75,20 +61,8 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	if useMP3 {
-		// dummy muxer to map the audio pad to the sink
-		mp3mux, err := gst.NewElement("identity")
-		if err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
-		if err = sink.SetProperty("muxer", mp3mux); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
-
-	} else {
-		if err = sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
+	if err = sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	var startDate time.Time
@@ -114,16 +88,12 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 		}
 
 		var segmentName string
-		segmentExtension := "ts"
-		if useMP3 {
-			segmentExtension = "mp3"
-		}
 		switch o.SegmentSuffix {
 		case livekit.SegmentedFileSuffix_TIMESTAMP:
 			ts := startDate.Add(pts)
-			segmentName = fmt.Sprintf("%s_%s%03d.%s", o.SegmentPrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000, segmentExtension)
+			segmentName = fmt.Sprintf("%s_%s%03d.ts", o.SegmentPrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000)
 		default:
-			segmentName = fmt.Sprintf("%s_%05d.%s", o.SegmentPrefix, fragmentId, segmentExtension)
+			segmentName = fmt.Sprintf("%s_%05d.ts", o.SegmentPrefix, fragmentId)
 		}
 		return path.Join(o.LocalDir, segmentName)
 	})
@@ -137,9 +107,6 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 
 	b.SetGetSrcPad(func(name string) *gst.Pad {
 		if name == "audio" {
-			if useMP3 {
-				return mp3parse.GetStaticPad("sink")
-			}
 			return sink.GetRequestPad("audio_%u")
 		} else if h264parse != nil {
 			return h264parse.GetStaticPad("sink")

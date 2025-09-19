@@ -94,26 +94,7 @@ func TestSegmentNaming(t *testing.T) {
 	}
 }
 
-func TestValidateAndUpdateOutputParamsRejectsVideoHLSMP3(t *testing.T) {
-	p := &PipelineConfig{
-		Outputs: map[types.EgressType][]OutputConfig{
-			types.EgressTypeSegments: {
-				&SegmentConfig{outputConfig: outputConfig{OutputType: types.OutputTypeHLS}},
-			},
-		},
-	}
-
-	p.AudioEnabled = true
-	p.VideoEnabled = true
-	p.AudioOutCodec = types.MimeTypeMP3
-	p.Info = &livekit.EgressInfo{}
-
-	err := p.validateAndUpdateOutputParams()
-	require.Error(t, err)
-	require.ErrorContains(t, err, "format application/x-mpegurl incompatible with codec audio/mpeg")
-}
-
-func TestValidateAndUpdateOutputParamsAllowsAudioOnlyHLSMP3(t *testing.T) {
+func TestValidateAndUpdateOutputParamsRejectsHLSMP3(t *testing.T) {
 	p := &PipelineConfig{
 		Outputs: map[types.EgressType][]OutputConfig{
 			types.EgressTypeSegments: {
@@ -127,7 +108,9 @@ func TestValidateAndUpdateOutputParamsAllowsAudioOnlyHLSMP3(t *testing.T) {
 	p.AudioOutCodec = types.MimeTypeMP3
 	p.Info = &livekit.EgressInfo{}
 
-	require.NoError(t, p.validateAndUpdateOutputParams())
+	err := p.validateAndUpdateOutputParams()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "format application/x-mpegurl incompatible with codec audio/mpeg")
 }
 
 func TestValidateAndUpdateOutputParamsRejectsVideoFileMP3(t *testing.T) {

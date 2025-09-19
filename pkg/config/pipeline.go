@@ -480,14 +480,6 @@ func (p *PipelineConfig) validateAndUpdateOutputParams() error {
 		}
 	}
 
-	// MP3 audio codec is compatible with HLS output if it's audio only
-	if p.VideoEnabled && p.AudioOutCodec == types.MimeTypeMP3 {
-		if segs := p.Outputs[types.EgressTypeSegments]; len(segs) > 0 &&
-			segs[0].GetOutputType() == types.OutputTypeHLS {
-			return errors.ErrIncompatible(types.OutputTypeHLS, types.MimeTypeMP3)
-		}
-	}
-
 	return nil
 }
 

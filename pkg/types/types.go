@@ -152,7 +152,6 @@ var (
 			MimeTypeAAC:  true,
 			MimeTypeOpus: true,
 			MimeTypeH264: true,
-			MimeTypeMP3:  true,
 		},
 		OutputTypeWebM: {
 			MimeTypeOpus: true,
@@ -170,7 +169,6 @@ var (
 		OutputTypeHLS: {
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,
-			MimeTypeMP3:  true,
 		},
 		OutputTypeMP3: {
 			MimeTypeMP3:      true,
