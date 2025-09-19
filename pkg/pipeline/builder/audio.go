@@ -405,6 +405,19 @@ func (b *AudioBin) addEncoder() error {
 		}
 		return b.bin.AddElement(faac)
 
+	case types.MimeTypeMP3:
+		mp3enc, err := gst.NewElement("lamemp3enc")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = mp3enc.SetProperty("bitrate", int(b.conf.AudioBitrate)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = mp3enc.SetProperty("cbr", true); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		return b.bin.AddElement(mp3enc)
+
 	case types.MimeTypeRawAudio:
 		return nil
 
@@ -574,6 +587,11 @@ func newAudioCapsFilter(p *config.PipelineConfig, channel int) (*gst.Element, er
 			channelCaps,
 		))
 	case types.MimeTypeAAC:
+		caps = gst.NewCapsFromString(fmt.Sprintf(
+			"audio/x-raw,format=S16LE,layout=interleaved,rate=%d,%s",
+			p.AudioFrequency, channelCaps,
+		))
+	case types.MimeTypeMP3:
 		caps = gst.NewCapsFromString(fmt.Sprintf(
 			"audio/x-raw,format=S16LE,layout=interleaved,rate=%d,%s",
 			p.AudioFrequency, channelCaps,

@@ -20,6 +20,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -91,4 +92,43 @@ func TestSegmentNaming(t *testing.T) {
 		require.Equal(t, test.expectedLivePlaylistFilename, o.LivePlaylistFilename)
 		require.Equal(t, test.expectedSegmentPrefix, o.SegmentPrefix)
 	}
+}
+
+func TestValidateAndUpdateOutputParamsRejectsHLSMP3(t *testing.T) {
+	p := &PipelineConfig{
+		Outputs: map[types.EgressType][]OutputConfig{
+			types.EgressTypeSegments: {
+				&SegmentConfig{outputConfig: outputConfig{OutputType: types.OutputTypeHLS}},
+			},
+		},
+	}
+
+	p.AudioEnabled = true
+	p.VideoEnabled = false
+	p.AudioOutCodec = types.MimeTypeMP3
+	p.Info = &livekit.EgressInfo{}
+
+	err := p.validateAndUpdateOutputParams()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "format application/x-mpegurl incompatible with codec audio/mpeg")
+}
+
+func TestValidateAndUpdateOutputParamsRejectsVideoFileMP3(t *testing.T) {
+	p := &PipelineConfig{
+		Outputs: map[types.EgressType][]OutputConfig{
+			types.EgressTypeFile: {
+				&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMP3}},
+			},
+		},
+	}
+
+	p.AudioEnabled = true
+	p.VideoEnabled = true
+	p.AudioOutCodec = types.MimeTypeMP3
+	p.VideoOutCodec = types.MimeTypeH264
+	p.Info = &livekit.EgressInfo{}
+
+	err := p.validateAndUpdateOutputParams()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "format audio/mpeg incompatible with codec video/h264")
 }
