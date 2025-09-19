@@ -15,6 +15,9 @@
 package builder
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/go-gst/go-gst/gst"
 )
 
@@ -35,6 +38,12 @@ func newMuxer(elementName string) (*muxerImpl, error) {
 	element, err := gst.NewElement(elementName)
 	if err != nil {
 		return nil, err
+	}
+	if factory := element.GetFactory(); factory != nil {
+		if klass := factory.GetMetadata("klass"); !strings.Contains(klass, "Muxer") {
+			element.Unref()
+			return nil, fmt.Errorf("element %s is not a muxer", elementName)
+		}
 	}
 	return &muxerImpl{
 		Element: element,
