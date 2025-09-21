@@ -5,7 +5,7 @@
   "version": "0.2.1",
   "private": true,
   "dependencies": {
-    "@livekit/components-core": "^0.11.11",
+    "@livekit/components-core": "^0.12.0",
     "@livekit/components-react": "^2.9.14",
     "@livekit/components-styles": "^1.1.6",
     "@livekit/egress-sdk": "^0.2.1",
@@ -28,7 +28,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.3.0",
-    "typescript": "~5.8.3",
+    "typescript": "~5.9.0",
     "typescript-eslint": "^8.39.1",
     "vite": "^7.1.2"
   }
