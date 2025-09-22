@@ -198,9 +198,12 @@ func (w *AppWriter) start() {
 
 	// clean up
 	if w.playing.IsBroken() {
-		w.callbacks.OnEOSSent()
-		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
-			w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
+		if !(w.conf.RequestType == types.RequestTypeParticipant && w.track.Kind() == webrtc.RTPCodecTypeVideo) {
+			// Do not send eos for participant video tracks, since the input selector will switch to videoTestSrc
+			w.callbacks.OnEOSSent()
+			if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
+				w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
+			}
 		}
 		if w.driftHandler != nil {
 			w.logger.Debugw("processed drift", "drift", w.driftHandler.Processed())
