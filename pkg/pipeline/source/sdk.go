@@ -656,14 +656,20 @@ func (s *SDKSource) onTrackFinished(trackID string) {
 	s.mu.Unlock()
 
 	if writer != nil {
-		writer.Drain(true)
 		active := s.active.Dec()
-		if s.RequestType == types.RequestTypeParticipant || s.RequestType == types.RequestTypeRoomComposite {
+		shouldContinue := s.RequestType == types.RequestTypeParticipant || s.RequestType == types.RequestTypeRoomComposite
+
+		if shouldContinue {
 			s.sync.RemoveTrack(trackID)
 			<-s.callbacks.BuildReady
 			s.callbacks.OnTrackRemoved(trackID)
-		} else if active == 0 {
-			s.finished()
+
+			writer.Drain(true)
+		} else {
+			writer.Drain(true)
+			if active == 0 {
+				s.finished()
+			}
 		}
 	}
 }
