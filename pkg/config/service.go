@@ -59,6 +59,14 @@ type ServiceConfig struct {
 	DebugHandlerPort int `yaml:"debug_handler_port"` // egress debug handler port
 
 	*CPUCostConfig `yaml:"cpu_cost"` // CPU costs for the different egress types
+
+	// BEGIN OPENVIDU BLOCK
+	// controls how StartEgressAffinity is computed by the egress server
+	// supported values:
+	//  - "binpack": default behavior (0 if no capacity, 0.5 if idle, 1 if busy)
+	//  - "cpuload": prefer nodes with more available CPU (normalized 0..1)
+	NodeSelector string `yaml:"node_selector"`
+	// END OPENVIDU BLOCK
 }
 
 type CPUCostConfig struct {
@@ -108,6 +116,12 @@ func (c *ServiceConfig) InitDefaults() {
 	if c.CPUCostConfig == nil {
 		c.CPUCostConfig = new(CPUCostConfig)
 	}
+
+	// BEGIN OPENVIDU BLOCK
+	if c.NodeSelector == "" {
+		c.NodeSelector = "binpack"
+	}
+	// END OPENVIDU BLOCK
 
 	if c.TemplatePort == 0 {
 		c.TemplatePort = defaultTemplatePort

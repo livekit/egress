@@ -391,6 +391,13 @@ func (m *Monitor) GetAvailableCPU() float64 {
 	return available
 }
 
+// BEGIN OPENVIDU BLOCK
+func (m *Monitor) GetCPUTotal() float64 {
+	return m.cpuStats.NumCPU()
+}
+
+// END OPENVIDU BLOCK
+
 func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) {
 	total = m.cpuStats.NumCPU()
 	if m.requests.Load() == 0 {
