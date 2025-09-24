@@ -88,11 +88,13 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 			s.startRecording.Break()
 		}),
 	}
-	if p.AudioTempoController.Enabled {
-		// perform signal time comression/steatching instead of timestamp manipulation
-		// on RTCP sender reports
-		logger.Debugw("audio tempo controller enabled", "adjustment rate", p.AudioTempoController.AdjustmentRate)
+	if p.RequestType == types.RequestTypeRoomComposite || p.AudioTempoController.Enabled {
+		// in case of room composite don't adjust audio timestamps on RTCP sender reports,
+		// to avoid gaps in the audio stream
 		opts = append(opts, synchronizer.WithAudioPTSAdjustmentDisabled())
+		if p.AudioTempoController.Enabled {
+			logger.Debugw("audio tempo controller enabled", "adjustmentRate", p.AudioTempoController.AdjustmentRate)
+		}
 	}
 
 	s.sync = synchronizer.NewSynchronizerWithOptions(
@@ -425,10 +427,7 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 
 		logger.Infow("subscribing to track", "trackID", track.SID())
 
-		if s.PipelineConfig.RequestType != types.RequestTypeRoomComposite ||
-			s.PipelineConfig.AudioTempoController.Enabled {
-			pub.OnRTCP(s.sync.OnRTCP)
-		}
+		pub.OnRTCP(s.sync.OnRTCP)
 
 		return pub.SetSubscribed(true)
 	}
