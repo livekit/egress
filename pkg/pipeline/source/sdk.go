@@ -93,7 +93,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		// to avoid gaps in the audio stream
 		opts = append(opts, synchronizer.WithAudioPTSAdjustmentDisabled())
 		if p.AudioTempoController.Enabled {
-			logger.Debugw("audio tempo controller enabled", "adjustment rate", p.AudioTempoController.AdjustmentRate)
+			logger.Debugw("audio tempo controller enabled", "adjustmentRate", p.AudioTempoController.AdjustmentRate)
 		}
 	}
 
