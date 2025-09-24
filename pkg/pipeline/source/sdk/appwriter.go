@@ -222,6 +222,10 @@ func (w *AppWriter) readNext() {
 		w.handleReadError(err)
 		return
 	}
+	// skip dummy packets
+	if len(pkt.Payload) == 0 {
+		return
+	}
 
 	// initialize on first packet
 	if w.lastReceived.Load().IsZero() {
