@@ -94,6 +94,169 @@ type DriftHandler interface {
 	Processed() time.Duration
 }
 
+type pacerState struct {
+	clockRate   uint32
+	maxLag      time.Duration
+	timer       *time.Timer
+	lastTS      uint32
+	releaseAt   time.Time
+	initialized bool
+	lastForward time.Time
+}
+
+type pacerSnapshot struct {
+	lastTS      uint32
+	releaseAt   time.Time
+	initialized bool
+}
+
+func newPacerState(clockRate uint32, maxLag time.Duration) *pacerState {
+	t := time.NewTimer(time.Hour)
+	if !t.Stop() {
+		<-t.C
+	}
+	return &pacerState{
+		clockRate: clockRate,
+		maxLag:    maxLag,
+		timer:     t,
+	}
+}
+
+func (p *pacerState) snapshot() pacerSnapshot {
+	return pacerSnapshot{
+		lastTS:      p.lastTS,
+		releaseAt:   p.releaseAt,
+		initialized: p.initialized,
+	}
+}
+
+func (p *pacerState) restore(s pacerSnapshot) {
+	p.lastTS = s.lastTS
+	p.releaseAt = s.releaseAt
+	p.initialized = s.initialized
+}
+
+func (p *pacerState) prepare(now time.Time, ts uint32) (time.Duration, bool) {
+	if !p.initialized || p.lastForward.IsZero() || now.Sub(p.lastForward) > p.maxLag {
+		p.releaseAt = now
+		p.initialized = true
+	} else {
+		p.releaseAt = p.releaseAt.Add(durationFromTimestampDiff(ts-p.lastTS, p.clockRate))
+	}
+
+	p.lastTS = ts
+
+	wait := time.Until(p.releaseAt)
+	if wait > p.maxLag {
+		p.releaseAt = time.Now()
+		return 0, true
+	}
+	return wait, false
+}
+
+func (p *pacerState) wait(wait time.Duration, end, draining <-chan struct{}) bool {
+	if wait <= 0 {
+		p.stopTimer()
+		return true
+	}
+
+	p.stopTimer()
+	p.timer.Reset(wait)
+	select {
+	case <-p.timer.C:
+		return true
+	case <-end:
+		p.stopTimer()
+		return false
+	case <-draining:
+		p.stopTimer()
+		return false
+	}
+}
+
+func (p *pacerState) stopTimer() {
+	if !p.timer.Stop() {
+		select {
+		case <-p.timer.C:
+		default:
+		}
+	}
+}
+
+func (p *pacerState) markForward() {
+	p.lastForward = time.Now()
+}
+
+func (p *pacerState) close() {
+	p.timer.Stop()
+}
+
+func (w *AppWriter) pacerParams() (uint32, time.Duration) {
+	clockRate := uint32(w.track.Codec().ClockRate)
+	if clockRate == 0 {
+		if w.track.Kind() == webrtc.RTPCodecTypeAudio {
+			clockRate = 48000
+		} else {
+			clockRate = 90000
+		}
+	}
+
+	maxLag := w.conf.Latency.JitterBufferLatency
+	if maxLag <= 0 {
+		maxLag = time.Second
+	}
+	if maxLag > time.Second {
+		maxLag = time.Second
+	}
+
+	return clockRate, maxLag
+}
+
+func waitForPacerStart(playing, end, draining <-chan struct{}) bool {
+	select {
+	case <-playing:
+		return true
+	case <-draining:
+		return false
+	case <-end:
+		return false
+	}
+}
+
+func (w *AppWriter) nextIncomingSample(end, draining <-chan struct{}) ([]*rtp.Packet, bool) {
+	select {
+	case <-end:
+		return nil, false
+	case <-draining:
+		return nil, false
+	case sample, ok := <-w.incomingSamples:
+		if !ok {
+			return nil, false
+		}
+		return sample, true
+	}
+}
+
+func (w *AppWriter) forwardPacedSample(state *pacerState, sample []*rtp.Packet, snapshot pacerSnapshot, end, draining <-chan struct{}) bool {
+	select {
+	case <-end:
+		state.restore(snapshot)
+		return false
+	case <-draining:
+		state.restore(snapshot)
+		return false
+	case w.pacedSamples <- sample:
+		state.markForward()
+		return true
+	default:
+		state.restore(snapshot)
+		state.markForward()
+		w.stats.packetsDropped.Add(uint64(len(sample)))
+		w.logger.Warnw("output queue full, dropping sample", nil)
+		return true
+	}
+}
+
 func NewAppWriter(
 	conf *config.PipelineConfig,
 	track *webrtc.TrackRemote,
@@ -321,114 +484,42 @@ func (w *AppWriter) pushSamples() {
 	}
 }
 
-// pacer is responsible for pacing the incoming samples
-// preventing the track timeline from drifting too far from the real-time timeline
-// in case of bursts of received packets
+// pacer is responsible for pacing incoming samples, preventing timeline bursts.
 func (w *AppWriter) pacer() {
-	clockRate := uint32(w.track.Codec().ClockRate)
-	if clockRate == 0 {
-		// fall back to defaults for common media types
-		if w.track.Kind() == webrtc.RTPCodecTypeAudio {
-			clockRate = 48000
-		} else {
-			clockRate = 90000
-		}
-	}
-
-	var (
-		lastTimestamp uint32
-		releaseAt     time.Time
-		initialized   bool
-		lastForward   time.Time
-	)
-
-	maxLag := w.conf.Latency.JitterBufferLatency
-	if maxLag <= 0 {
-		maxLag = time.Second
-	}
-
-	timer := time.NewTimer(0)
-	if !timer.Stop() {
-		<-timer.C
-	}
-
+	clockRate, maxLag := w.pacerParams()
 	playing := w.playing.Watch()
 	end := w.endStream.Watch()
 	draining := w.draining.Watch()
 
-	select {
-	case <-playing:
-		// pipeline is ready
-	case <-draining:
-		return
-	case <-end:
+	if !waitForPacerStart(playing, end, draining) {
 		return
 	}
 
+	state := newPacerState(clockRate, maxLag)
+	defer state.close()
+
 	for {
-		select {
-		case <-end:
+		sample, ok := w.nextIncomingSample(end, draining)
+		if !ok {
 			return
-		case <-draining:
+		}
+		if len(sample) == 0 {
+			continue
+		}
+
+		snapshot := state.snapshot()
+		wait, clamped := state.prepare(time.Now(), sample[0].Timestamp)
+		if clamped && w.sendPLI != nil && w.track.Kind() == webrtc.RTPCodecTypeVideo {
+			w.sendPLI()
+		}
+
+		if !state.wait(wait, end, draining) {
+			state.restore(snapshot)
 			return
-		case sample := <-w.incomingSamples:
-			if len(sample) == 0 {
-				continue
-			}
+		}
 
-			ts := sample[0].Timestamp
-			if !initialized {
-				releaseAt = time.Now()
-				initialized = true
-			} else {
-				diff := ts - lastTimestamp
-				releaseAt = releaseAt.Add(durationFromTimestampDiff(diff, clockRate))
-			}
-
-			lastTimestamp = ts
-
-			if !lastForward.IsZero() && time.Since(lastForward) > maxLag {
-				releaseAt = time.Now()
-			}
-
-			wait := time.Until(releaseAt)
-			if wait > maxLag {
-				w.logger.Infow("pacer lag exceeded, clamping", "wait", wait, "maxLag", maxLag)
-				if w.sendPLI != nil && w.track.Kind() == webrtc.RTPCodecTypeVideo {
-					w.sendPLI()
-				}
-				releaseAt = time.Now()
-				wait = 0
-			}
-			if wait > 0 {
-				timer.Reset(wait)
-				select {
-				case <-timer.C:
-					// timer fired, continue
-				case <-end:
-					if !timer.Stop() {
-						<-timer.C
-					}
-					return
-				case <-draining:
-					if !timer.Stop() {
-						<-timer.C
-					}
-					return
-				}
-			}
-
-			select {
-			case <-end:
-				return
-			case <-draining:
-				return
-			case w.pacedSamples <- sample:
-				lastForward = time.Now()
-			default:
-				w.stats.packetsDropped.Add(uint64(len(sample)))
-				w.logger.Warnw("output queue full, dropping sample", nil)
-			}
+		if !w.forwardPacedSample(state, sample, snapshot, end, draining) {
+			return
 		}
 	}
 }
