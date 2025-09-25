@@ -57,12 +57,13 @@ type AppWriter struct {
 	src       *app.Source
 	startTime time.Time
 
-	buffer      *jitter.Buffer
-	samples     chan []*rtp.Packet
-	translator  Translator
-	callbacks   *gstreamer.Callbacks
-	sendPLI     func()
-	pliThrottle core.Throttle
+	buffer          *jitter.Buffer
+	incomingSamples chan []*rtp.Packet
+	samples         chan []*rtp.Packet
+	translator      Translator
+	callbacks       *gstreamer.Callbacks
+	sendPLI         func()
+	pliThrottle     core.Throttle
 
 	// a/v sync
 	sync *synchronizer.Synchronizer
@@ -110,7 +111,8 @@ func NewAppWriter(
 		pub:               pub,
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
-		samples:           make(chan []*rtp.Packet, 100),
+		samples:           make(chan []*rtp.Packet, 50),
+		incomingSamples:   make(chan []*rtp.Packet, 150),
 		callbacks:         callbacks,
 		sync:              sync,
 		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
@@ -191,6 +193,7 @@ func (w *AppWriter) start() {
 		})
 	}()
 
+	go w.pacer()
 	go w.pushSamples()
 	for !w.endStream.IsBroken() {
 		w.readNext()
@@ -285,11 +288,11 @@ func (w *AppWriter) handleReadError(err error) {
 
 func (w *AppWriter) onPacket(sample []*rtp.Packet) {
 	select {
-	case w.samples <- sample:
+	case w.incomingSamples <- sample:
 		// ok
 	default:
 		w.stats.packetsDropped.Add(uint64(len(sample)))
-		w.logger.Warnw("buffer full, dropping sample", nil)
+		w.logger.Warnw("pacer queue full, dropping sample", nil)
 	}
 
 }
@@ -316,6 +319,76 @@ func (w *AppWriter) pushSamples() {
 			}
 		}
 	}
+}
+
+func (w *AppWriter) pacer() {
+	clockRate := uint32(w.track.Codec().ClockRate)
+	if clockRate == 0 {
+		// fall back to defaults for common media types
+		if w.track.Kind() == webrtc.RTPCodecTypeAudio {
+			clockRate = 48000
+		} else {
+			clockRate = 90000
+		}
+	}
+
+	var (
+		lastTimestamp uint32
+		releaseAt     time.Time
+		initialized   bool
+	)
+
+	end := w.endStream.Watch()
+	for {
+		select {
+		case <-end:
+			return
+
+		case sample := <-w.incomingSamples:
+			if len(sample) == 0 {
+				continue
+			}
+
+			ts := sample[0].Timestamp
+			if !initialized {
+				releaseAt = time.Now()
+				initialized = true
+			} else {
+				diff := ts - lastTimestamp
+				releaseAt = releaseAt.Add(durationFromTimestampDiff(diff, clockRate))
+			}
+
+			lastTimestamp = ts
+
+			wait := time.Until(releaseAt)
+			if wait > 0 {
+				timer := time.NewTimer(wait)
+				select {
+				case <-timer.C:
+				case <-end:
+					timer.Stop()
+					return
+				}
+			}
+
+			select {
+			case <-end:
+				return
+			case w.samples <- sample:
+			default:
+				w.stats.packetsDropped.Add(uint64(len(sample)))
+				w.logger.Warnw("output queue full, dropping sample", nil)
+			}
+		}
+	}
+}
+
+func durationFromTimestampDiff(diff uint32, clockRate uint32) time.Duration {
+	if clockRate == 0 || diff == 0 {
+		return 0
+	}
+
+	return time.Duration(diff) * time.Second / time.Duration(clockRate)
 }
 
 func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
