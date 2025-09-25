@@ -338,12 +338,30 @@ func (w *AppWriter) pacer() {
 		initialized   bool
 	)
 
+	timer := time.NewTimer(0)
+	if !timer.Stop() {
+		<-timer.C
+	}
+
+	playing := w.playing.Watch()
 	end := w.endStream.Watch()
+	draining := w.draining.Watch()
+
+	select {
+	case <-playing:
+		// pipeline is ready
+	case <-draining:
+		return
+	case <-end:
+		return
+	}
+
 	for {
 		select {
 		case <-end:
 			return
-
+		case <-draining:
+			return
 		case sample := <-w.incomingSamples:
 			if len(sample) == 0 {
 				continue
@@ -362,17 +380,27 @@ func (w *AppWriter) pacer() {
 
 			wait := time.Until(releaseAt)
 			if wait > 0 {
-				timer := time.NewTimer(wait)
+				timer.Reset(wait)
 				select {
 				case <-timer.C:
+					// timer fired, continue
 				case <-end:
-					timer.Stop()
+					if !timer.Stop() {
+						<-timer.C
+					}
+					return
+				case <-draining:
+					if !timer.Stop() {
+						<-timer.C
+					}
 					return
 				}
 			}
 
 			select {
 			case <-end:
+				return
+			case <-draining:
 				return
 			case w.samples <- sample:
 			default:
