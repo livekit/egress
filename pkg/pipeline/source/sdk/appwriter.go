@@ -59,7 +59,7 @@ type AppWriter struct {
 
 	buffer          *jitter.Buffer
 	incomingSamples chan []*rtp.Packet
-	samples         chan []*rtp.Packet
+	pacedSamples    chan []*rtp.Packet
 	translator      Translator
 	callbacks       *gstreamer.Callbacks
 	sendPLI         func()
@@ -111,7 +111,7 @@ func NewAppWriter(
 		pub:               pub,
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
-		samples:           make(chan []*rtp.Packet, 50),
+		pacedSamples:      make(chan []*rtp.Packet, 50),
 		incomingSamples:   make(chan []*rtp.Packet, 150),
 		callbacks:         callbacks,
 		sync:              sync,
@@ -310,7 +310,7 @@ func (w *AppWriter) pushSamples() {
 		select {
 		case <-end:
 			return
-		case sample := <-w.samples:
+		case sample := <-w.pacedSamples:
 			for _, pkt := range sample {
 				if err := w.pushPacket(pkt); err != nil {
 					w.draining.Break()
@@ -321,6 +321,9 @@ func (w *AppWriter) pushSamples() {
 	}
 }
 
+// pacer is responsible for pacing the incoming samples
+// preventing the track timeline from drifting too far from the real-time timeline
+// in case of bursts of received packets
 func (w *AppWriter) pacer() {
 	clockRate := uint32(w.track.Codec().ClockRate)
 	if clockRate == 0 {
@@ -398,25 +401,13 @@ func (w *AppWriter) pacer() {
 			}
 
 			select {
-			case <-end:
-				return
-			case <-draining:
-				return
-			case w.samples <- sample:
+			case w.pacedSamples <- sample:
 			default:
 				w.stats.packetsDropped.Add(uint64(len(sample)))
 				w.logger.Warnw("output queue full, dropping sample", nil)
 			}
 		}
 	}
-}
-
-func durationFromTimestampDiff(diff uint32, clockRate uint32) time.Duration {
-	if clockRate == 0 || diff == 0 {
-		return 0
-	}
-
-	return time.Duration(diff) * time.Second / time.Duration(clockRate)
 }
 
 func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
@@ -539,4 +530,12 @@ func (w *AppWriter) shouldHandleDiscontinuity() bool {
 
 func isDiscontinuity(lastPTS time.Duration, pts time.Duration) bool {
 	return pts > lastPTS+discontinuityTolerance
+}
+
+func durationFromTimestampDiff(diff uint32, clockRate uint32) time.Duration {
+	if clockRate == 0 || diff == 0 {
+		return 0
+	}
+
+	return time.Duration(diff) * time.Second / time.Duration(clockRate)
 }
