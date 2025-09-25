@@ -339,7 +339,13 @@ func (w *AppWriter) pacer() {
 		lastTimestamp uint32
 		releaseAt     time.Time
 		initialized   bool
+		lastForward   time.Time
 	)
+
+	maxLag := w.conf.Latency.JitterBufferLatency
+	if maxLag <= 0 {
+		maxLag = time.Second
+	}
 
 	timer := time.NewTimer(0)
 	if !timer.Stop() {
@@ -381,7 +387,19 @@ func (w *AppWriter) pacer() {
 
 			lastTimestamp = ts
 
+			if !lastForward.IsZero() && time.Since(lastForward) > maxLag {
+				releaseAt = time.Now()
+			}
+
 			wait := time.Until(releaseAt)
+			if wait > maxLag {
+				w.logger.Infow("pacer lag exceeded, clamping", "wait", wait, "maxLag", maxLag)
+				if w.sendPLI != nil && w.track.Kind() == webrtc.RTPCodecTypeVideo {
+					w.sendPLI()
+				}
+				releaseAt = time.Now()
+				wait = 0
+			}
 			if wait > 0 {
 				timer.Reset(wait)
 				select {
@@ -401,7 +419,12 @@ func (w *AppWriter) pacer() {
 			}
 
 			select {
+			case <-end:
+				return
+			case <-draining:
+				return
 			case w.pacedSamples <- sample:
+				lastForward = time.Now()
 			default:
 				w.stats.packetsDropped.Add(uint64(len(sample)))
 				w.logger.Warnw("output queue full, dropping sample", nil)
