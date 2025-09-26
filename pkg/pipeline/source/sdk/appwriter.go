@@ -32,7 +32,6 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/media-sdk/jitter"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
@@ -57,13 +56,11 @@ type AppWriter struct {
 	src       *app.Source
 	startTime time.Time
 
-	buffer          *jitter.Buffer
-	incomingSamples chan []*rtp.Packet
-	pacedSamples    chan []*rtp.Packet
-	translator      Translator
-	callbacks       *gstreamer.Callbacks
-	sendPLI         func()
-	pliThrottle     core.Throttle
+	pacer       *PacerBuffer
+	translator  Translator
+	callbacks   *gstreamer.Callbacks
+	sendPLI     func()
+	pliThrottle core.Throttle
 
 	// a/v sync
 	sync *synchronizer.Synchronizer
@@ -94,171 +91,6 @@ type DriftHandler interface {
 	Processed() time.Duration
 }
 
-type pacerState struct {
-	clockRate   uint32
-	maxLag      time.Duration
-	allowLead   time.Duration
-	timer       *time.Timer
-	lastTS      uint32
-	releaseAt   time.Time
-	initialized bool
-	lastForward time.Time
-}
-
-type pacerSnapshot struct {
-	lastTS      uint32
-	releaseAt   time.Time
-	initialized bool
-}
-
-func newPacerState(clockRate uint32, maxLag, allowLead time.Duration) *pacerState {
-	t := time.NewTimer(time.Hour)
-	if !t.Stop() {
-		<-t.C
-	}
-	return &pacerState{
-		clockRate: clockRate,
-		maxLag:    maxLag,
-		allowLead: allowLead,
-		timer:     t,
-	}
-}
-
-func (p *pacerState) snapshot() pacerSnapshot {
-	return pacerSnapshot{
-		lastTS:      p.lastTS,
-		releaseAt:   p.releaseAt,
-		initialized: p.initialized,
-	}
-}
-
-func (p *pacerState) restore(s pacerSnapshot) {
-	p.lastTS = s.lastTS
-	p.releaseAt = s.releaseAt
-	p.initialized = s.initialized
-}
-
-func (p *pacerState) prepare(now time.Time, ts uint32) (time.Duration, bool) {
-	if !p.initialized || p.lastForward.IsZero() || now.Sub(p.lastForward) > p.maxLag {
-		// allow up to allowedLead burst to be released fast
-		p.releaseAt = now.Add(-p.allowLead)
-		p.initialized = true
-	} else {
-		p.releaseAt = p.releaseAt.Add(durationFromTimestampDiff(ts-p.lastTS, p.clockRate))
-	}
-
-	if p.allowLead > 0 {
-		maxRelease := now.Add(p.allowLead)
-		if p.releaseAt.After(maxRelease) {
-			p.releaseAt = maxRelease
-		}
-	}
-
-	p.lastTS = ts
-
-	wait := time.Until(p.releaseAt)
-	if wait > p.maxLag {
-		p.releaseAt = time.Now()
-		return 0, true
-	}
-	return wait, false
-}
-
-func (p *pacerState) wait(wait time.Duration, end <-chan struct{}) bool {
-	if wait <= 0 {
-		p.stopTimer()
-		return true
-	}
-
-	p.stopTimer()
-	p.timer.Reset(wait)
-	select {
-	case <-p.timer.C:
-		return true
-	case <-end:
-		p.stopTimer()
-		return false
-	}
-}
-
-func (p *pacerState) stopTimer() {
-	if !p.timer.Stop() {
-		select {
-		case <-p.timer.C:
-		default:
-		}
-	}
-}
-
-func (p *pacerState) markForward() {
-	p.lastForward = time.Now()
-}
-
-func (p *pacerState) close() {
-	p.timer.Stop()
-}
-
-const pacerLeadHeadroom = 500 * time.Millisecond
-
-func (w *AppWriter) pacerParams() (uint32, time.Duration, time.Duration) {
-	clockRate := uint32(w.track.Codec().ClockRate)
-	if clockRate == 0 {
-		if w.track.Kind() == webrtc.RTPCodecTypeAudio {
-			clockRate = 48000
-		} else {
-			clockRate = 90000
-		}
-	}
-
-	maxLag := w.conf.Latency.JitterBufferLatency
-	if maxLag <= 0 {
-		maxLag = time.Second
-	}
-	if maxLag > time.Second {
-		maxLag = time.Second
-	}
-
-	return clockRate, maxLag, pacerLeadHeadroom
-}
-
-func waitForPacerStart(playing, end, draining <-chan struct{}) bool {
-	select {
-	case <-playing:
-		return true
-	case <-end:
-		return false
-	}
-}
-
-func (w *AppWriter) nextIncomingSample(end <-chan struct{}) ([]*rtp.Packet, bool) {
-	select {
-	case <-end:
-		return nil, false
-	case sample, ok := <-w.incomingSamples:
-		if !ok {
-			return nil, false
-		}
-		return sample, true
-	}
-}
-
-func (w *AppWriter) forwardPacedSample(state *pacerState, sample []*rtp.Packet, snapshot pacerSnapshot, end <-chan struct{}) bool {
-	select {
-	case <-end:
-		state.restore(snapshot)
-		return false
-	case w.pacedSamples <- sample:
-		w.logger.Infow("forwarded paced packet", "packetTimestamp", sample[0].Timestamp)
-		state.markForward()
-		return true
-	default:
-		state.restore(snapshot)
-		w.stats.packetsDropped.Add(uint64(len(sample)))
-		w.logger.Warnw("output queue full, dropping sample", nil)
-		return true
-	}
-}
-
 func NewAppWriter(
 	conf *config.PipelineConfig,
 	track *webrtc.TrackRemote,
@@ -276,8 +108,6 @@ func NewAppWriter(
 		pub:               pub,
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
-		pacedSamples:      make(chan []*rtp.Packet, 50),
-		incomingSamples:   make(chan []*rtp.Packet, 150),
 		callbacks:         callbacks,
 		sync:              sync,
 		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
@@ -330,12 +160,28 @@ func NewAppWriter(
 		w.sendPLI = func() { w.pliThrottle(func() { rp.WritePLI(track.SSRC()) }) }
 	}
 
-	w.buffer = jitter.NewBuffer(
+	clockRate := uint32(track.Codec().ClockRate)
+	if clockRate == 0 {
+		if track.Kind() == webrtc.RTPCodecTypeAudio {
+			clockRate = 48000
+		} else {
+			clockRate = 90000
+		}
+	}
+
+	allowLead := 500 * time.Millisecond
+	maxLag := conf.Latency.JitterBufferLatency
+
+	w.pacer = NewPacerBuffer(
 		depacketizer,
 		conf.Latency.JitterBufferLatency,
-		w.onPacket,
-		jitter.WithLogger(w.logger),
-		jitter.WithPacketLossHandler(w.sendPLI),
+		clockRate,
+		allowLead,
+		maxLag,
+		track.Kind(),
+		w.sendPLI,
+		w.logger,
+		func(d int) { w.stats.packetsDropped.Add(uint64(d)) },
 	)
 
 	go w.start()
@@ -345,6 +191,7 @@ func NewAppWriter(
 func (w *AppWriter) start() {
 	w.startTime = time.Now()
 	w.active.Store(true)
+	defer w.pacer.Close()
 	if w.csvLogger != nil {
 		go w.logStats()
 	}
@@ -358,7 +205,6 @@ func (w *AppWriter) start() {
 		})
 	}()
 
-	go w.pacer()
 	go w.pushSamples()
 	for !w.endStream.IsBroken() {
 		w.readNext()
@@ -412,8 +258,8 @@ func (w *AppWriter) readNext() {
 		}
 	}
 
-	// push packet to jitter buffer
-	w.buffer.Push(pkt)
+	// push packet to jitter buffer/pacer
+	w.pacer.Push(pkt)
 }
 
 func (w *AppWriter) handleReadError(err error) {
@@ -451,18 +297,6 @@ func (w *AppWriter) handleReadError(err error) {
 	}
 }
 
-func (w *AppWriter) onPacket(sample []*rtp.Packet) {
-	select {
-	case w.incomingSamples <- sample:
-		w.logger.Infow("incoming sample", "packetTimestamp", sample[0].Timestamp)
-		// ok
-	default:
-		w.stats.packetsDropped.Add(uint64(len(sample)))
-		w.logger.Warnw("pacer queue full, dropping sample", nil)
-	}
-
-}
-
 func (w *AppWriter) pushSamples() {
 	select {
 	case <-w.playing.Watch():
@@ -472,57 +306,21 @@ func (w *AppWriter) pushSamples() {
 	}
 
 	end := w.endStream.Watch()
+	samples := w.pacer.Samples()
 	for {
 		select {
 		case <-end:
 			return
-		case sample := <-w.pacedSamples:
+		case sample, ok := <-samples:
+			if !ok {
+				return
+			}
 			for _, pkt := range sample {
 				if err := w.pushPacket(pkt); err != nil {
 					w.draining.Break()
 					w.endStream.Break()
 				}
 			}
-		}
-	}
-}
-
-// pacer is responsible for pacing incoming samples, preventing timeline bursts.
-func (w *AppWriter) pacer() {
-	clockRate, maxLag, allowLead := w.pacerParams()
-	playing := w.playing.Watch()
-	end := w.endStream.Watch()
-	draining := w.draining.Watch()
-
-	if !waitForPacerStart(playing, end, draining) {
-		return
-	}
-
-	state := newPacerState(clockRate, maxLag, allowLead)
-	defer state.close()
-
-	for {
-		sample, ok := w.nextIncomingSample(end)
-		if !ok {
-			return
-		}
-		if len(sample) == 0 {
-			continue
-		}
-
-		snapshot := state.snapshot()
-		wait, clamped := state.prepare(time.Now(), sample[0].Timestamp)
-		if clamped {
-			w.logger.Infow("pacer lag exceeded, clamping", "wait", wait, "maxLag", maxLag)
-		}
-
-		if !state.wait(wait, end) {
-			state.restore(snapshot)
-			return
-		}
-
-		if !w.forwardPacedSample(state, sample, snapshot, end) {
-			return
 		}
 	}
 }
@@ -573,6 +371,7 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 
 func (w *AppWriter) Playing() {
 	w.playing.Break()
+	w.pacer.Start()
 }
 
 // Drain blocks until finished
@@ -613,7 +412,7 @@ func (w *AppWriter) logStats() {
 }
 
 func (w *AppWriter) getStats() *logging.TrackStats {
-	stats := w.buffer.Stats()
+	stats := w.pacer.Stats()
 	return &logging.TrackStats{
 		Timestamp:       time.Now().Format(time.DateTime),
 		PacketsReceived: stats.PacketsPushed,
@@ -647,12 +446,4 @@ func (w *AppWriter) shouldHandleDiscontinuity() bool {
 
 func isDiscontinuity(lastPTS time.Duration, pts time.Duration) bool {
 	return pts > lastPTS+discontinuityTolerance
-}
-
-func durationFromTimestampDiff(diff uint32, clockRate uint32) time.Duration {
-	if clockRate == 0 || diff == 0 {
-		return 0
-	}
-
-	return time.Duration(diff) * time.Second / time.Duration(clockRate)
 }
