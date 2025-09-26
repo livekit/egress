@@ -79,6 +79,8 @@ func (p *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) error 
 		p.AudioOutCodec = types.MimeTypeOpus
 	case livekit.AudioCodec_AAC:
 		p.AudioOutCodec = types.MimeTypeAAC
+	case livekit.AudioCodec_AC_MP3:
+		p.AudioOutCodec = types.MimeTypeMP3
 	}
 
 	if advanced.AudioBitrate != 0 {

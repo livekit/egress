@@ -50,6 +50,7 @@ const (
 	MimeTypeVP9      MimeType = "video/vp9"
 	MimeTypeJPEG     MimeType = "image/jpeg"
 	MimeTypeRawVideo MimeType = "video/x-raw"
+	MimeTypeMP3      MimeType = "audio/mpeg"
 
 	// video profiles
 	ProfileBaseline Profile = "baseline"
@@ -60,6 +61,7 @@ const (
 	OutputTypeUnknownFile OutputType = ""
 	OutputTypeRaw         OutputType = "audio/x-raw"
 	OutputTypeOGG         OutputType = "audio/ogg"
+	OutputTypeMP3         OutputType = "audio/mpeg"
 	OutputTypeIVF         OutputType = "video/x-ivf"
 	OutputTypeMP4         OutputType = "video/mp4"
 	OutputTypeTS          OutputType = "video/mp2t"
@@ -74,6 +76,7 @@ const (
 	// file extensions
 	FileExtensionRaw  = ".raw"
 	FileExtensionOGG  = ".ogg"
+	FileExtensionMP3  = ".mp3"
 	FileExtensionIVF  = ".ivf"
 	FileExtensionMP4  = ".mp4"
 	FileExtensionTS   = ".ts"
@@ -86,6 +89,7 @@ var (
 	DefaultAudioCodecs = map[OutputType]MimeType{
 		OutputTypeRaw:  MimeTypeRawAudio,
 		OutputTypeOGG:  MimeTypeOpus,
+		OutputTypeMP3:  MimeTypeMP3,
 		OutputTypeMP4:  MimeTypeAAC,
 		OutputTypeTS:   MimeTypeAAC,
 		OutputTypeWebM: MimeTypeOpus,
@@ -107,6 +111,7 @@ var (
 	FileExtensions = map[FileExtension]struct{}{
 		FileExtensionRaw:  {},
 		FileExtensionOGG:  {},
+		FileExtensionMP3:  {},
 		FileExtensionIVF:  {},
 		FileExtensionMP4:  {},
 		FileExtensionTS:   {},
@@ -118,6 +123,7 @@ var (
 	FileExtensionForOutputType = map[OutputType]FileExtension{
 		OutputTypeRaw:  FileExtensionRaw,
 		OutputTypeOGG:  FileExtensionOGG,
+		OutputTypeMP3:  FileExtensionMP3,
 		OutputTypeIVF:  FileExtensionIVF,
 		OutputTypeMP4:  FileExtensionMP4,
 		OutputTypeTS:   FileExtensionTS,
@@ -164,9 +170,16 @@ var (
 			MimeTypeAAC:  true,
 			MimeTypeH264: true,
 		},
+		OutputTypeMP3: {
+			MimeTypeMP3:      true,
+			MimeTypeOpus:     true,
+			MimeTypeAAC:      true,
+			MimeTypeRawAudio: true,
+		},
 		OutputTypeUnknownFile: {
 			MimeTypeAAC:  true,
 			MimeTypeOpus: true,
+			MimeTypeMP3:  true,
 			MimeTypeH264: true,
 			MimeTypeVP8:  true,
 			MimeTypeVP9:  true,
@@ -177,6 +190,7 @@ var (
 		MimeTypeAAC:      true,
 		MimeTypeOpus:     true,
 		MimeTypeRawAudio: true,
+		MimeTypeMP3:      true,
 	}
 
 	AllOutputVideoCodecs = map[MimeType]bool{
@@ -186,6 +200,7 @@ var (
 	AudioOnlyFileOutputTypes = []OutputType{
 		OutputTypeOGG,
 		OutputTypeMP4,
+		OutputTypeMP3,
 	}
 	VideoOnlyFileOutputTypes = []OutputType{
 		OutputTypeMP4,
