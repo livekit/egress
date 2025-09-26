@@ -32,7 +32,6 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/media-sdk/jitter"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
@@ -57,8 +56,7 @@ type AppWriter struct {
 	src       *app.Source
 	startTime time.Time
 
-	buffer      *jitter.Buffer
-	samples     chan []*rtp.Packet
+	pacer       *PacerBuffer
 	translator  Translator
 	callbacks   *gstreamer.Callbacks
 	sendPLI     func()
@@ -110,7 +108,6 @@ func NewAppWriter(
 		pub:               pub,
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
-		samples:           make(chan []*rtp.Packet, 100),
 		callbacks:         callbacks,
 		sync:              sync,
 		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
@@ -163,12 +160,28 @@ func NewAppWriter(
 		w.sendPLI = func() { w.pliThrottle(func() { rp.WritePLI(track.SSRC()) }) }
 	}
 
-	w.buffer = jitter.NewBuffer(
+	clockRate := uint32(track.Codec().ClockRate)
+	if clockRate == 0 {
+		if track.Kind() == webrtc.RTPCodecTypeAudio {
+			clockRate = 48000
+		} else {
+			clockRate = 90000
+		}
+	}
+
+	allowLead := 500 * time.Millisecond
+	maxLag := conf.Latency.JitterBufferLatency
+
+	w.pacer = NewPacerBuffer(
 		depacketizer,
 		conf.Latency.JitterBufferLatency,
-		w.onPacket,
-		jitter.WithLogger(w.logger),
-		jitter.WithPacketLossHandler(w.sendPLI),
+		clockRate,
+		allowLead,
+		maxLag,
+		track.Kind(),
+		w.sendPLI,
+		w.logger,
+		func(d int) { w.stats.packetsDropped.Add(uint64(d)) },
 	)
 
 	go w.start()
@@ -178,6 +191,7 @@ func NewAppWriter(
 func (w *AppWriter) start() {
 	w.startTime = time.Now()
 	w.active.Store(true)
+	defer w.pacer.Close()
 	if w.csvLogger != nil {
 		go w.logStats()
 	}
@@ -244,8 +258,8 @@ func (w *AppWriter) readNext() {
 		}
 	}
 
-	// push packet to jitter buffer
-	w.buffer.Push(pkt)
+	// push packet to jitter buffer/pacer
+	w.pacer.Push(pkt)
 }
 
 func (w *AppWriter) handleReadError(err error) {
@@ -283,17 +297,6 @@ func (w *AppWriter) handleReadError(err error) {
 	}
 }
 
-func (w *AppWriter) onPacket(sample []*rtp.Packet) {
-	select {
-	case w.samples <- sample:
-		// ok
-	default:
-		w.stats.packetsDropped.Add(uint64(len(sample)))
-		w.logger.Warnw("buffer full, dropping sample", nil)
-	}
-
-}
-
 func (w *AppWriter) pushSamples() {
 	select {
 	case <-w.playing.Watch():
@@ -303,11 +306,15 @@ func (w *AppWriter) pushSamples() {
 	}
 
 	end := w.endStream.Watch()
+	samples := w.pacer.Samples()
 	for {
 		select {
 		case <-end:
 			return
-		case sample := <-w.samples:
+		case sample, ok := <-samples:
+			if !ok {
+				return
+			}
 			for _, pkt := range sample {
 				if err := w.pushPacket(pkt); err != nil {
 					w.draining.Break()
@@ -364,6 +371,7 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 
 func (w *AppWriter) Playing() {
 	w.playing.Break()
+	w.pacer.Start()
 }
 
 // Drain blocks until finished
@@ -404,7 +412,7 @@ func (w *AppWriter) logStats() {
 }
 
 func (w *AppWriter) getStats() *logging.TrackStats {
-	stats := w.buffer.Stats()
+	stats := w.pacer.Stats()
 	return &logging.TrackStats{
 		Timestamp:       time.Now().Format(time.DateTime),
 		PacketsReceived: stats.PacketsPushed,
