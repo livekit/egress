@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/media-sdk/jitter"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
 )
@@ -310,8 +311,10 @@ func (w *AppWriter) pushSamples() {
 		case sample := <-w.samples:
 			for _, pkt := range sample {
 				if err := w.pushPacket(pkt); err != nil {
-					w.draining.Break()
-					w.endStream.Break()
+					if !utils.ErrorIsOneOf(err, synchronizer.ErrPacketOutOfOrder, synchronizer.ErrPacketTooOld) {
+						w.draining.Break()
+						w.endStream.Break()
+					}
 				}
 			}
 		}
