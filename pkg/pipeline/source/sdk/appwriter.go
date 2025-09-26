@@ -97,6 +97,7 @@ type DriftHandler interface {
 type pacerState struct {
 	clockRate   uint32
 	maxLag      time.Duration
+	allowLead   time.Duration
 	timer       *time.Timer
 	lastTS      uint32
 	releaseAt   time.Time
@@ -110,7 +111,7 @@ type pacerSnapshot struct {
 	initialized bool
 }
 
-func newPacerState(clockRate uint32, maxLag time.Duration) *pacerState {
+func newPacerState(clockRate uint32, maxLag, allowLead time.Duration) *pacerState {
 	t := time.NewTimer(time.Hour)
 	if !t.Stop() {
 		<-t.C
@@ -118,6 +119,7 @@ func newPacerState(clockRate uint32, maxLag time.Duration) *pacerState {
 	return &pacerState{
 		clockRate: clockRate,
 		maxLag:    maxLag,
+		allowLead: allowLead,
 		timer:     t,
 	}
 }
@@ -138,10 +140,17 @@ func (p *pacerState) restore(s pacerSnapshot) {
 
 func (p *pacerState) prepare(now time.Time, ts uint32) (time.Duration, bool) {
 	if !p.initialized || p.lastForward.IsZero() || now.Sub(p.lastForward) > p.maxLag {
-		p.releaseAt = now
+		p.releaseAt = now.Add(-p.allowLead)
 		p.initialized = true
 	} else {
 		p.releaseAt = p.releaseAt.Add(durationFromTimestampDiff(ts-p.lastTS, p.clockRate))
+	}
+
+	if p.allowLead > 0 {
+		maxRelease := now.Add(p.allowLead)
+		if p.releaseAt.After(maxRelease) {
+			p.releaseAt = maxRelease
+		}
 	}
 
 	p.lastTS = ts
@@ -168,9 +177,6 @@ func (p *pacerState) wait(wait time.Duration, end, draining <-chan struct{}) boo
 	case <-end:
 		p.stopTimer()
 		return false
-	case <-draining:
-		p.stopTimer()
-		return false
 	}
 }
 
@@ -191,7 +197,9 @@ func (p *pacerState) close() {
 	p.timer.Stop()
 }
 
-func (w *AppWriter) pacerParams() (uint32, time.Duration) {
+const pacerLeadHeadroom = 500 * time.Millisecond
+
+func (w *AppWriter) pacerParams() (uint32, time.Duration, time.Duration) {
 	clockRate := uint32(w.track.Codec().ClockRate)
 	if clockRate == 0 {
 		if w.track.Kind() == webrtc.RTPCodecTypeAudio {
@@ -209,25 +217,21 @@ func (w *AppWriter) pacerParams() (uint32, time.Duration) {
 		maxLag = time.Second
 	}
 
-	return clockRate, maxLag
+	return clockRate, maxLag, pacerLeadHeadroom
 }
 
 func waitForPacerStart(playing, end, draining <-chan struct{}) bool {
 	select {
 	case <-playing:
 		return true
-	case <-draining:
-		return false
 	case <-end:
 		return false
 	}
 }
 
-func (w *AppWriter) nextIncomingSample(end, draining <-chan struct{}) ([]*rtp.Packet, bool) {
+func (w *AppWriter) nextIncomingSample(end <-chan struct{}) ([]*rtp.Packet, bool) {
 	select {
 	case <-end:
-		return nil, false
-	case <-draining:
 		return nil, false
 	case sample, ok := <-w.incomingSamples:
 		if !ok {
@@ -237,20 +241,17 @@ func (w *AppWriter) nextIncomingSample(end, draining <-chan struct{}) ([]*rtp.Pa
 	}
 }
 
-func (w *AppWriter) forwardPacedSample(state *pacerState, sample []*rtp.Packet, snapshot pacerSnapshot, end, draining <-chan struct{}) bool {
+func (w *AppWriter) forwardPacedSample(state *pacerState, sample []*rtp.Packet, snapshot pacerSnapshot, end <-chan struct{}) bool {
 	select {
 	case <-end:
 		state.restore(snapshot)
 		return false
-	case <-draining:
-		state.restore(snapshot)
-		return false
 	case w.pacedSamples <- sample:
+		w.logger.Infow("forwarded paced packet", "packetTimestamp", sample[0].Timestamp)
 		state.markForward()
 		return true
 	default:
 		state.restore(snapshot)
-		state.markForward()
 		w.stats.packetsDropped.Add(uint64(len(sample)))
 		w.logger.Warnw("output queue full, dropping sample", nil)
 		return true
@@ -452,6 +453,7 @@ func (w *AppWriter) handleReadError(err error) {
 func (w *AppWriter) onPacket(sample []*rtp.Packet) {
 	select {
 	case w.incomingSamples <- sample:
+		w.logger.Infow("incoming sample", "packetTimestamp", sample[0].Timestamp)
 		// ok
 	default:
 		w.stats.packetsDropped.Add(uint64(len(sample)))
@@ -486,7 +488,7 @@ func (w *AppWriter) pushSamples() {
 
 // pacer is responsible for pacing incoming samples, preventing timeline bursts.
 func (w *AppWriter) pacer() {
-	clockRate, maxLag := w.pacerParams()
+	clockRate, maxLag, allowLead := w.pacerParams()
 	playing := w.playing.Watch()
 	end := w.endStream.Watch()
 	draining := w.draining.Watch()
@@ -495,11 +497,11 @@ func (w *AppWriter) pacer() {
 		return
 	}
 
-	state := newPacerState(clockRate, maxLag)
+	state := newPacerState(clockRate, maxLag, allowLead)
 	defer state.close()
 
 	for {
-		sample, ok := w.nextIncomingSample(end, draining)
+		sample, ok := w.nextIncomingSample(end)
 		if !ok {
 			return
 		}
@@ -509,8 +511,8 @@ func (w *AppWriter) pacer() {
 
 		snapshot := state.snapshot()
 		wait, clamped := state.prepare(time.Now(), sample[0].Timestamp)
-		if clamped && w.sendPLI != nil && w.track.Kind() == webrtc.RTPCodecTypeVideo {
-			w.sendPLI()
+		if clamped {
+			w.logger.Infow("pacer lag exceeded, clamping", "wait", wait, "maxLag", maxLag)
 		}
 
 		if !state.wait(wait, end, draining) {
@@ -518,7 +520,7 @@ func (w *AppWriter) pacer() {
 			return
 		}
 
-		if !w.forwardPacedSample(state, sample, snapshot, end, draining) {
+		if !w.forwardPacedSample(state, sample, snapshot, end) {
 			return
 		}
 	}
