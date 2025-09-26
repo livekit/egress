@@ -140,6 +140,7 @@ func (p *pacerState) restore(s pacerSnapshot) {
 
 func (p *pacerState) prepare(now time.Time, ts uint32) (time.Duration, bool) {
 	if !p.initialized || p.lastForward.IsZero() || now.Sub(p.lastForward) > p.maxLag {
+		// allow up to allowedLead burst to be released fast
 		p.releaseAt = now.Add(-p.allowLead)
 		p.initialized = true
 	} else {
@@ -163,7 +164,7 @@ func (p *pacerState) prepare(now time.Time, ts uint32) (time.Duration, bool) {
 	return wait, false
 }
 
-func (p *pacerState) wait(wait time.Duration, end, draining <-chan struct{}) bool {
+func (p *pacerState) wait(wait time.Duration, end <-chan struct{}) bool {
 	if wait <= 0 {
 		p.stopTimer()
 		return true
@@ -515,7 +516,7 @@ func (w *AppWriter) pacer() {
 			w.logger.Infow("pacer lag exceeded, clamping", "wait", wait, "maxLag", maxLag)
 		}
 
-		if !state.wait(wait, end, draining) {
+		if !state.wait(wait, end) {
 			state.restore(snapshot)
 			return
 		}
