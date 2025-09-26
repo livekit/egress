@@ -306,7 +306,6 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 			if err != nil {
 				return err
 			}
-			logger.Debugw("received GstMultiFileSink message", "location", location, "timestamp", ts, "source", msg.Source())
 
 			imageSink := c.getImageSink(msg.Source())
 			if imageSink == nil {

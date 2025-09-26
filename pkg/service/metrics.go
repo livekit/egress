@@ -21,6 +21,7 @@ import (
 
 	"github.com/linkdata/deadlock"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -38,6 +39,9 @@ type MetricsService struct {
 }
 
 func NewMetricsService(pm *ProcessManager) *MetricsService {
+	prometheus.Unregister(prometheus.NewGoCollector())
+	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll)))
+
 	return &MetricsService{
 		pm: pm,
 	}
