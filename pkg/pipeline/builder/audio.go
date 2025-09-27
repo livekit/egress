@@ -39,7 +39,7 @@ const (
 	leakyQueue    = true
 	blockingQueue = false
 
-	audioRateTolerance = 3 * time.Millisecond
+	audioRateTolerance = 1 * time.Millisecond
 )
 
 type AudioBin struct {
