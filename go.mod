@@ -30,7 +30,7 @@ require (
 	github.com/livekit/media-sdk v0.0.0-20250927042745-ec5ef273fc4b
 	github.com/livekit/protocol v1.42.0
 	github.com/livekit/psrpc v0.7.0
-	github.com/livekit/server-sdk-go/v2 v2.11.4-0.20250927080142-6bcde8dad335
+	github.com/livekit/server-sdk-go/v2 v2.11.4-0.20250927102835-8ae891e67568
 	github.com/livekit/storage v0.0.0-20250711185412-0dabf9984ad7
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.8.22
