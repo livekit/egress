@@ -46,7 +46,7 @@ const (
 	defaultJitterBufferLatency = time.Second * 2
 	defaultAudioMixerLatency   = time.Millisecond * 2750
 	defaultPipelineLatency     = time.Second * 3
-	defaultRTPMaxAllowedTsDiff = time.Second
+	defaultRTPMaxAllowedTsDiff = time.Second * 5
 
 	defaultAudioTempoControllerAdjustmentRate = 0.05
 
