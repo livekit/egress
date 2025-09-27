@@ -47,6 +47,7 @@ const (
 	defaultAudioMixerLatency   = time.Millisecond * 2750
 	defaultPipelineLatency     = time.Second * 3
 	defaultRTPMaxAllowedTsDiff = time.Second
+	defaultOldPacketThreshold  = 500 * time.Millisecond
 
 	defaultAudioTempoControllerAdjustmentRate = 0.05
 
@@ -170,6 +171,9 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.Latency.RTPMaxAllowedTsDiff == 0 {
 		c.Latency.RTPMaxAllowedTsDiff = defaultRTPMaxAllowedTsDiff
+	}
+	if c.Latency.OldPacketThreshold == 0 {
+		c.Latency.OldPacketThreshold = defaultOldPacketThreshold
 	}
 	if c.AudioTempoController.Enabled {
 		if c.AudioTempoController.AdjustmentRate > 0.2 || c.AudioTempoController.AdjustmentRate <= 0 {

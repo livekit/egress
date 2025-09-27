@@ -84,9 +84,16 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 
 	opts := []synchronizer.SynchronizerOption{
 		synchronizer.WithMaxTsDiff(p.Latency.RTPMaxAllowedTsDiff),
+		synchronizer.WithOldPacketThreshold(p.Latency.OldPacketThreshold),
 		synchronizer.WithOnStarted(func() {
 			s.startRecording.Break()
 		}),
+	}
+	if p.Latency.PreJitterBufferReceiveTimeEnabled {
+		opts = append(opts, synchronizer.WithPreJitterBufferReceiveTimeEnabled())
+	}
+	if p.Latency.RTCPSenderReportRebaseEnabled {
+		opts = append(opts, synchronizer.WithRTCPSenderReportRebaseEnabled())
 	}
 	if p.RequestType == types.RequestTypeRoomComposite || p.AudioTempoController.Enabled {
 		// in case of room composite don't adjust audio timestamps on RTCP sender reports,
