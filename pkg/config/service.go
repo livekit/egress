@@ -171,6 +171,10 @@ func (c *ServiceConfig) InitDefaults() {
 	if c.Latency.RTPMaxAllowedTsDiff == 0 {
 		c.Latency.RTPMaxAllowedTsDiff = defaultRTPMaxAllowedTsDiff
 	}
+	if c.Latency.RTPMaxAllowedTsDiff < c.Latency.JitterBufferLatency {
+		// RTP max allowed ts diff must be greater than jitter buffer latency to absorb the jitter buffer burst
+		c.Latency.RTPMaxAllowedTsDiff = c.Latency.JitterBufferLatency
+	}
 	if c.AudioTempoController.Enabled {
 		if c.AudioTempoController.AdjustmentRate > 0.2 || c.AudioTempoController.AdjustmentRate <= 0 {
 			c.AudioTempoController.AdjustmentRate = defaultAudioTempoControllerAdjustmentRate
