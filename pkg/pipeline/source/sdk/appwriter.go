@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/media-sdk/jitter"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
@@ -56,7 +57,7 @@ type AppWriter struct {
 	src       *app.Source
 	startTime time.Time
 
-	pacer       *PacerBuffer
+	pacer       *jitter.PacedBuffer
 	translator  Translator
 	callbacks   *gstreamer.Callbacks
 	sendPLI     func()
@@ -172,7 +173,7 @@ func NewAppWriter(
 	allowLead := 500 * time.Millisecond
 	maxLag := conf.Latency.JitterBufferLatency
 
-	w.pacer = NewPacerBuffer(
+	w.pacer = jitter.NewPacedBuffer(
 		depacketizer,
 		conf.Latency.JitterBufferLatency,
 		clockRate,
