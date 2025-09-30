@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/media-sdk/jitter"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
 )
@@ -58,7 +59,7 @@ type AppWriter struct {
 	startTime time.Time
 
 	buffer      *jitter.Buffer
-	samples     chan []*rtp.Packet
+	samples     chan []jitter.ExtPacket
 	translator  Translator
 	callbacks   *gstreamer.Callbacks
 	sendPLI     func()
@@ -110,7 +111,7 @@ func NewAppWriter(
 		pub:               pub,
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
-		samples:           make(chan []*rtp.Packet, 100),
+		samples:           make(chan []jitter.ExtPacket, 100),
 		callbacks:         callbacks,
 		sync:              sync,
 		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
@@ -283,7 +284,7 @@ func (w *AppWriter) handleReadError(err error) {
 	}
 }
 
-func (w *AppWriter) onPacket(sample []*rtp.Packet) {
+func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
 	select {
 	case w.samples <- sample:
 		// ok
@@ -310,16 +311,18 @@ func (w *AppWriter) pushSamples() {
 		case sample := <-w.samples:
 			for _, pkt := range sample {
 				if err := w.pushPacket(pkt); err != nil {
-					w.draining.Break()
-					w.endStream.Break()
+					if !utils.ErrorIsOneOf(err, synchronizer.ErrPacketOutOfOrder, synchronizer.ErrPacketTooOld) {
+						w.draining.Break()
+						w.endStream.Break()
+					}
 				}
 			}
 		}
 	}
 }
 
-func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
-	w.translator.Translate(pkt)
+func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
+	w.translator.Translate(pkt.Packet)
 
 	// get PTS
 	pts, err := w.GetPTS(pkt)
@@ -328,7 +331,7 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 		return err
 	}
 
-	p, err := pkt.Marshal()
+	p, err := pkt.Packet.Marshal()
 	if err != nil {
 		w.stats.packetsDropped.Inc()
 		w.logger.Errorw("could not marshal packet", err)
