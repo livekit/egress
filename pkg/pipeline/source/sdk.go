@@ -84,6 +84,8 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 
 	opts := []synchronizer.SynchronizerOption{
 		synchronizer.WithMaxTsDiff(p.Latency.RTPMaxAllowedTsDiff),
+		synchronizer.WithMaxDriftAdjustment(p.Latency.RTPMaxDriftAdjustment),
+		synchronizer.WithDriftAdjustmentWindowPercent(p.Latency.RTPDriftAdjustmentWindowPercent),
 		synchronizer.WithOldPacketThreshold(p.Latency.OldPacketThreshold),
 		synchronizer.WithOnStarted(func() {
 			s.startRecording.Break()
