@@ -63,6 +63,8 @@ type SDKSource struct {
 
 	startRecording core.Fuse
 	endRecording   core.Fuse
+
+	timeProvider gstreamer.TimeProvider
 }
 
 type subscriptionResult struct {
@@ -154,6 +156,15 @@ func (s *SDKSource) StreamStopped(trackID string) {
 
 func (s *SDKSource) Close() {
 	s.room.Disconnect()
+}
+
+func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
+	s.mu.Lock()
+	s.timeProvider = tp
+	for _, w := range s.writers {
+		w.SetTimeProvider(tp)
+	}
+	s.mu.Unlock()
 }
 
 // ----- Subscriptions -----
@@ -578,7 +589,7 @@ func (s *SDKSource) createWriter(
 	}
 
 	ts.AppSrc = app.SrcFromElement(src)
-	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, tc, s.callbacks)
+	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, tc, s.timeProvider, s.callbacks)
 	if err != nil {
 		return nil, err
 	}

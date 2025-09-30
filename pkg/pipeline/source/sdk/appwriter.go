@@ -17,6 +17,7 @@ package sdk
 import (
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -82,6 +83,9 @@ type AppWriter struct {
 	endStream    core.Fuse
 	finished     core.Fuse
 	stats        appWriterStats
+
+	tpMu         sync.RWMutex
+	timeProvider gstreamer.TimeProvider
 }
 
 type appWriterStats struct {
@@ -101,6 +105,7 @@ func NewAppWriter(
 	ts *config.TrackSource,
 	sync *synchronizer.Synchronizer,
 	driftHandler DriftHandler,
+	timeProvider gstreamer.TimeProvider,
 	callbacks *gstreamer.Callbacks,
 ) (*AppWriter, error) {
 	w := &AppWriter{
@@ -170,6 +175,7 @@ func NewAppWriter(
 		jitter.WithLogger(w.logger),
 		jitter.WithPacketLossHandler(w.sendPLI),
 	)
+	w.SetTimeProvider(timeProvider)
 
 	go w.start()
 	return w, nil
@@ -235,7 +241,7 @@ func (w *AppWriter) readNext() {
 
 	if !w.active.Swap(true) {
 		// set track active
-		w.logger.Debugw("track active", "timestamp", time.Since(w.startTime))
+		w.logTrackState("track active")
 		if w.buildReady.IsBroken() {
 			w.callbacks.OnTrackUnmuted(w.track.ID())
 		}
@@ -264,7 +270,7 @@ func (w *AppWriter) handleReadError(err error) {
 		}
 		if w.pub.IsMuted() || time.Since(lastRecv) > w.conf.Latency.JitterBufferLatency {
 			// set track inactive
-			w.logger.Debugw("track inactive", "timestamp", time.Since(w.startTime))
+			w.logTrackState("track inactive")
 			w.active.Store(false)
 			if w.buildReady.IsBroken() {
 				w.callbacks.OnTrackMuted(w.track.ID())
@@ -281,6 +287,43 @@ func (w *AppWriter) handleReadError(err error) {
 		w.draining.Break()
 		w.endStream.Break()
 	}
+}
+
+func (w *AppWriter) SetTimeProvider(tp gstreamer.TimeProvider) {
+	w.tpMu.Lock()
+	w.timeProvider = tp
+	w.tpMu.Unlock()
+}
+
+func (w *AppWriter) pipelineRunningTime() (time.Duration, bool) {
+	w.tpMu.RLock()
+	provider := w.timeProvider
+	w.tpMu.RUnlock()
+	if provider == nil {
+		return 0, false
+	}
+	return provider.RunningTime()
+}
+
+func (w *AppWriter) pipelinePlayhead() (time.Duration, bool) {
+	w.tpMu.RLock()
+	provider := w.timeProvider
+	w.tpMu.RUnlock()
+	if provider == nil {
+		return 0, false
+	}
+	return provider.PlayheadPosition()
+}
+
+func (w *AppWriter) logTrackState(event string) {
+	fields := []any{"timestamp", time.Since(w.startTime)}
+	if pipelineTime, ok := w.pipelineRunningTime(); ok {
+		fields = append(fields, "pipeline_time", pipelineTime)
+	}
+	if playhead, ok := w.pipelinePlayhead(); ok {
+		fields = append(fields, "playhead", playhead)
+	}
+	w.logger.Debugw(event, fields...)
 }
 
 func (w *AppWriter) onPacket(sample []*rtp.Packet) {
@@ -356,6 +399,13 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.stats.packetsDropped.Inc()
 		w.logger.Infow("unexpected flow return", "flow", flow)
+	}
+	w.logger.Debugw("pushed packet", "pts", pts)
+	if pipelineTime, ok := w.pipelineRunningTime(); ok {
+		w.logger.Debugw("pipeline time", "pipelineTime", pipelineTime)
+	}
+	if playheadTime, ok := w.pipelinePlayhead(); ok {
+		w.logger.Debugw("playhead time", "playheadTime", playheadTime)
 	}
 	w.lastPushed.Store(time.Now())
 	w.lastPTS = pts
