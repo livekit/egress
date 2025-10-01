@@ -30,7 +30,7 @@ require (
 	github.com/livekit/media-sdk v0.0.0-20250927154350-bd99739b439b
 	github.com/livekit/protocol v1.42.0
 	github.com/livekit/psrpc v0.7.0
-	github.com/livekit/server-sdk-go/v2 v2.11.4-0.20250930132334-bb890d1748d9
+	github.com/livekit/server-sdk-go/v2 v2.11.4-0.20251001102258-9dc7c666758f
 	github.com/livekit/storage v0.0.0-20250711185412-0dabf9984ad7
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.8.22
@@ -117,7 +117,7 @@ require (
 	github.com/magefile/mage v1.15.0 // indirect
 	github.com/mattn/go-ieproxy v0.0.12 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/nats-io/nats.go v1.46.0 // indirect
+	github.com/nats-io/nats.go v1.46.1 // indirect
 	github.com/nats-io/nkeys v0.4.11 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/ory/dockertest/v3 v3.12.0 // indirect
@@ -134,7 +134,7 @@ require (
 	github.com/pion/sdp/v3 v3.0.16 // indirect
 	github.com/pion/srtp/v3 v3.0.8 // indirect
 	github.com/pion/stun/v3 v3.0.0 // indirect
-	github.com/pion/transport/v3 v3.0.7 // indirect
+	github.com/pion/transport/v3 v3.0.8 // indirect
 	github.com/pion/turn/v4 v4.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
