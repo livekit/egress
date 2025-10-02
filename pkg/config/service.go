@@ -48,6 +48,7 @@ const (
 	defaultPipelineLatency       = time.Second * 3
 	defaultRTPMaxDriftAdjustment = time.Millisecond * 5
 	defaultOldPacketThreshold    = 500 * time.Millisecond
+	defaultRTPMaxAllowedTsDiff   = time.Second * 5
 
 	defaultAudioTempoControllerAdjustmentRate = 0.05
 
@@ -169,8 +170,11 @@ func (c *ServiceConfig) InitDefaults() {
 	if c.Latency.PipelineLatency == 0 {
 		c.Latency.PipelineLatency = defaultPipelineLatency
 	}
+	if c.Latency.RTPMaxAllowedTsDiff == 0 {
+		c.Latency.RTPMaxAllowedTsDiff = defaultRTPMaxAllowedTsDiff
+	}
 	if c.Latency.RTPMaxAllowedTsDiff < c.Latency.JitterBufferLatency {
-		// RTP max allowed ts diff must be greater than jitter buffer latency to absorb the jitter buffer burst
+		// RTP max allowed ts diff must be equal orgreater than jitter buffer latency to absorb the jitter buffer burst
 		c.Latency.RTPMaxAllowedTsDiff = c.Latency.JitterBufferLatency
 	}
 	if c.Latency.RTPMaxDriftAdjustment == 0 {
