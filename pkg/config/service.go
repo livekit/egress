@@ -174,7 +174,7 @@ func (c *ServiceConfig) InitDefaults() {
 		c.Latency.RTPMaxAllowedTsDiff = defaultRTPMaxAllowedTsDiff
 	}
 	if c.Latency.RTPMaxAllowedTsDiff < c.Latency.JitterBufferLatency {
-		// RTP max allowed ts diff must be equal orgreater than jitter buffer latency to absorb the jitter buffer burst
+		// RTP max allowed ts diff must be equal or greater than jitter buffer latency to absorb the jitter buffer burst
 		c.Latency.RTPMaxAllowedTsDiff = c.Latency.JitterBufferLatency
 	}
 	if c.Latency.RTPMaxDriftAdjustment == 0 {
