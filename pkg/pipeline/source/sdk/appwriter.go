@@ -17,6 +17,7 @@ package sdk
 import (
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -42,7 +43,13 @@ import (
 const (
 	errBufferTooSmall      = "buffer too small"
 	discontinuityTolerance = 500 * time.Millisecond
+	cSamplesQueueDepth     = 100
 )
+
+type sampleItem struct {
+	sample []jitter.ExtPacket
+	next   *sampleItem
+}
 
 type AppWriter struct {
 	conf *config.PipelineConfig
@@ -58,15 +65,20 @@ type AppWriter struct {
 	src       *app.Source
 	startTime time.Time
 
-	buffer      *jitter.Buffer
-	samples     chan []jitter.ExtPacket
+	buffer *jitter.Buffer
+
+	samplesHead *sampleItem
+	samplesTail *sampleItem
+	samplesLen  int
+	samplesLock sync.Mutex
+	samplesCond *sync.Cond
+
 	translator  Translator
 	callbacks   *gstreamer.Callbacks
 	sendPLI     func()
 	pliThrottle core.Throttle
 
 	// a/v sync
-	sync *synchronizer.Synchronizer
 	*synchronizer.TrackSynchronizer
 	driftHandler DriftHandler
 
@@ -100,7 +112,7 @@ func NewAppWriter(
 	pub lksdk.TrackPublication,
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
-	sync *synchronizer.Synchronizer,
+	synchronizer *synchronizer.Synchronizer,
 	driftHandler DriftHandler,
 	callbacks *gstreamer.Callbacks,
 ) (*AppWriter, error) {
@@ -111,12 +123,11 @@ func NewAppWriter(
 		pub:               pub,
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
-		samples:           make(chan []jitter.ExtPacket, 100),
 		callbacks:         callbacks,
-		sync:              sync,
-		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
+		TrackSynchronizer: synchronizer.AddTrack(track, rp.Identity()),
 		driftHandler:      driftHandler,
 	}
+	w.samplesCond = sync.NewCond(&w.samplesLock)
 
 	if conf.Debug.EnableTrackLogging {
 		csvLogger, err := logging.NewCSVLogger[logging.TrackStats](track.ID())
@@ -255,6 +266,10 @@ func (w *AppWriter) handleReadError(err error) {
 	case w.draining.IsBroken():
 		w.endStream.Break()
 
+		w.samplesLock.Lock()
+		w.samplesCond.Broadcast()
+		w.samplesLock.Unlock()
+
 	case errors.As(err, &netErr) && netErr.Timeout():
 		if !w.active.Load() {
 			return
@@ -281,18 +296,39 @@ func (w *AppWriter) handleReadError(err error) {
 		}
 		w.draining.Break()
 		w.endStream.Break()
+
+		w.samplesLock.Lock()
+		w.samplesCond.Broadcast()
+		w.samplesLock.Unlock()
 	}
 }
 
 func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
-	select {
-	case w.samples <- sample:
-		// ok
-	default:
-		w.stats.packetsDropped.Add(uint64(len(sample)))
-		w.logger.Warnw("buffer full, dropping sample", nil)
+	w.samplesLock.Lock()
+	item := &sampleItem{sample, nil}
+	if w.samplesHead == nil {
+		w.samplesHead = item
+		w.samplesTail = w.samplesHead
+		w.samplesLen = 1
+	} else {
+		w.samplesTail.next = item
+		w.samplesTail = item
+		w.samplesLen++
 	}
-
+	// drop old samples if queue is overflowing
+	for w.samplesLen > cSamplesQueueDepth {
+		if w.samplesHead != nil {
+			w.samplesHead = w.samplesHead.next
+			w.samplesLen--
+			w.logger.Warnw("buffer full, dropping sample", nil)
+		}
+		if w.samplesHead == nil {
+			w.samplesTail = nil
+			w.samplesLen = 0
+		}
+	}
+	w.samplesCond.Broadcast()
+	w.samplesLock.Unlock()
 }
 
 func (w *AppWriter) pushSamples() {
@@ -303,21 +339,41 @@ func (w *AppWriter) pushSamples() {
 		return
 	}
 
-	end := w.endStream.Watch()
 	for {
-		select {
-		case <-end:
-			return
-		case sample := <-w.samples:
-			for _, pkt := range sample {
+		w.samplesLock.Lock()
+		for w.samplesHead != nil {
+			if w.endStream.IsBroken() {
+				w.samplesLock.Unlock()
+				return
+			}
+
+			item := w.samplesHead
+			w.samplesHead = item.next
+			w.samplesLen--
+			if w.samplesHead == nil {
+				w.samplesTail = nil
+			}
+			w.samplesLock.Unlock()
+
+			for _, pkt := range item.sample {
 				if err := w.pushPacket(pkt); err != nil {
 					if !utils.ErrorIsOneOf(err, synchronizer.ErrPacketOutOfOrder, synchronizer.ErrPacketTooOld) {
 						w.draining.Break()
 						w.endStream.Break()
+						break
 					}
 				}
 			}
+
+			w.samplesLock.Lock()
 		}
+
+		if w.endStream.IsBroken() {
+			w.samplesLock.Unlock()
+			return
+		}
+
+		w.samplesCond.Wait()
 	}
 }
 
@@ -376,6 +432,10 @@ func (w *AppWriter) Drain(force bool) {
 
 		if force || !w.active.Load() {
 			w.endStream.Break()
+
+			w.samplesLock.Lock()
+			w.samplesCond.Broadcast()
+			w.samplesLock.Unlock()
 		} else {
 			time.AfterFunc(w.conf.Latency.PipelineLatency, func() { w.endStream.Break() })
 		}
