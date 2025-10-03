@@ -402,13 +402,7 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 		w.stats.packetsDropped.Inc()
 		w.logger.Infow("unexpected flow return", "flow", flow)
 	}
-	w.logger.Debugw("pushed packet", "pts", pts)
-	if pipelineTime, ok := w.pipelineRunningTime(); ok {
-		w.logger.Debugw("pipeline time", "pipelineTime", pipelineTime)
-	}
-	if playheadTime, ok := w.pipelinePlayhead(); ok {
-		w.logger.Debugw("playhead time", "playheadTime", playheadTime)
-	}
+
 	w.lastPushed.Store(time.Now())
 	w.lastPTS = pts
 	w.maybeCheckPipelineLag(pts)
