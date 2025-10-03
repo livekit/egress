@@ -37,6 +37,7 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	o := p.GetSegmentConfig()
 
 	var h264parse *gst.Element
+
 	var err error
 	if p.VideoEnabled {
 		h264parse, err = gst.NewElement("h264parse")
@@ -59,6 +60,7 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	if err = sink.SetProperty("send-keyframe-requests", true); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
+
 	if err = sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}

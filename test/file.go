@@ -81,6 +81,19 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 				contentCheck: r.audioOnlyContentCheck,
 			},
+			{
+				name:        "RoomComposite/AudioOnlyMP3",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_audio_mp3_{time}",
+					fileType: livekit.EncodedFileType_MP3,
+				},
+				contentCheck: r.audioOnlyContentCheck,
+			},
 
 			// ---------- Web ----------
 
@@ -164,6 +177,20 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType: livekit.EncodedFileType_MP4,
 				},
 				contentCheck: r.videoOnlyContentCheck,
+			},
+			{
+				name:        "TrackComposite/AudioOnlyMP3",
+				requestType: types.RequestTypeTrackComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "tc_{room_name}_audio_mp3_{time}",
+					fileType:   livekit.EncodedFileType_MP3,
+					outputType: types.OutputTypeMP3,
+				},
+				contentCheck: r.audioOnlyContentCheck,
 			},
 
 			// --------- Track ---------
