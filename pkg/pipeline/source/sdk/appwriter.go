@@ -320,6 +320,7 @@ func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
 		if w.samplesHead != nil {
 			w.samplesHead = w.samplesHead.next
 			w.samplesLen--
+			w.stats.packetsDropped.Add(uint64(len(sample)))
 			w.logger.Warnw("buffer full, dropping sample", nil)
 		}
 		if w.samplesHead == nil {
@@ -374,6 +375,7 @@ func (w *AppWriter) pushSamples() {
 		}
 
 		w.samplesCond.Wait()
+		w.samplesLock.Unlock()
 	}
 }
 
