@@ -347,7 +347,6 @@ func (w *AppWriter) logTrackState(event string) {
 	w.logger.Debugw(event, fields...)
 }
 
-=======
 func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
 	w.samplesLock.Lock()
 	item := &sampleItem{sample, nil}
@@ -358,7 +357,6 @@ func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
 		w.samplesTail.next = item
 		w.samplesTail = item
 		w.samplesLen++
->>>>>>> main
 	}
 	// drop old samples if queue is overflowing
 	for w.samplesLen > cSamplesQueueDepth {
