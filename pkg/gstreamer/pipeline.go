@@ -37,6 +37,7 @@ type Pipeline struct {
 	elementsAdded bool
 }
 
+// TimeProvider is used to get the running time and playhead position of the pipeline
 type TimeProvider interface {
 	RunningTime() (time.Duration, bool)
 	PlayheadPosition() (time.Duration, bool)
@@ -175,25 +176,7 @@ func (p *Pipeline) DebugBinToDotData(details gst.DebugGraphDetails) string {
 	return p.pipeline.DebugBinToDotData(details)
 }
 
-func (p *Pipeline) ClockTime() (time.Duration, bool) {
-	clock := p.pipeline.GetPipelineClock()
-	if clock == nil {
-		return 0, false
-	}
-
-	clockTime := clock.GetTime()
-	if clockTime == gst.ClockTimeNone {
-		return 0, false
-	}
-
-	value := uint64(clockTime)
-	if value > uint64(math.MaxInt64) {
-		return time.Duration(math.MaxInt64), false
-	}
-
-	return time.Duration(int64(value)), true
-}
-
+// RunningTime returns the running time of the gst pipeline
 func (p *Pipeline) RunningTime() (time.Duration, bool) {
 	clock := p.pipeline.GetPipelineClock()
 	if clock == nil {

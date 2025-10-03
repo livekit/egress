@@ -42,6 +42,7 @@ import (
 const (
 	errBufferTooSmall      = "buffer too small"
 	discontinuityTolerance = 500 * time.Millisecond
+	pipelineCheckInterval  = 5 * time.Second
 )
 
 type AppWriter struct {
@@ -70,8 +71,9 @@ type AppWriter struct {
 	*synchronizer.TrackSynchronizer
 	driftHandler DriftHandler
 
-	lastPTS   time.Duration
-	lastDrift time.Duration
+	lastPTS              time.Duration
+	lastDrift            time.Duration
+	lastPipelineCheckPTS time.Duration
 
 	// state
 	buildReady   core.Fuse
@@ -409,7 +411,31 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 	}
 	w.lastPushed.Store(time.Now())
 	w.lastPTS = pts
+	w.maybeCheckPipelineLag(pts)
 	return nil
+}
+
+func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {
+	if pts-w.lastPipelineCheckPTS < pipelineCheckInterval {
+		return
+	}
+	pipelineTime, ok := w.pipelineRunningTime()
+	if !ok {
+		return
+	}
+	w.lastPipelineCheckPTS = pts
+	if pipelineTime <= w.conf.Latency.AudioMixerLatency {
+		return
+	}
+
+	if pts < pipelineTime-w.conf.Latency.AudioMixerLatency {
+		w.logger.Errorw(
+			"packet PTS too far in the past compared to the pipeline, mixer will drop the buffer!",
+			nil,
+			"pts", pts,
+			"pipelineRunningTime", pipelineTime,
+		)
+	}
 }
 
 func (w *AppWriter) Playing() {
