@@ -598,7 +598,11 @@ func (s *SDKSource) createWriter(
 	}
 
 	ts.AppSrc = app.SrcFromElement(src)
-	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, tc, s.timeProvider, s.callbacks)
+	s.mu.RLock()
+	timeProvider := s.timeProvider
+	s.mu.RUnlock()
+
+	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, tc, timeProvider, s.callbacks)
 	if err != nil {
 		return nil, err
 	}
