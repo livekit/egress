@@ -430,14 +430,18 @@ func (w *AppWriter) Drain(force bool) {
 	w.draining.Once(func() {
 		w.logger.Debugw("draining")
 
-		if force || !w.active.Load() {
+		endStream := func() {
 			w.endStream.Break()
 
 			w.samplesLock.Lock()
 			w.samplesCond.Broadcast()
 			w.samplesLock.Unlock()
+		}
+
+		if force || !w.active.Load() {
+			endStream()
 		} else {
-			time.AfterFunc(w.conf.Latency.PipelineLatency, func() { w.endStream.Break() })
+			time.AfterFunc(w.conf.Latency.PipelineLatency, endStream)
 		}
 	})
 
