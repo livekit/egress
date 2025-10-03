@@ -385,7 +385,6 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 
 	// get PTS
 	pts, err := w.GetPTS(pkt)
-	logger.Infow("push packet", "pts", pts, "err", err, "trackID", w.track.ID())
 	if err != nil {
 		w.stats.packetsDropped.Inc()
 		return err
