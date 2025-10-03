@@ -84,15 +84,26 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 
 	opts := []synchronizer.SynchronizerOption{
 		synchronizer.WithMaxTsDiff(p.Latency.RTPMaxAllowedTsDiff),
+		synchronizer.WithMaxDriftAdjustment(p.Latency.RTPMaxDriftAdjustment),
+		synchronizer.WithDriftAdjustmentWindowPercent(p.Latency.RTPDriftAdjustmentWindowPercent),
+		synchronizer.WithOldPacketThreshold(p.Latency.OldPacketThreshold),
 		synchronizer.WithOnStarted(func() {
 			s.startRecording.Break()
 		}),
 	}
-	if p.AudioTempoController.Enabled {
-		// perform signal time comression/steatching instead of timestamp manipulation
-		// on RTCP sender reports
-		logger.Debugw("audio tempo controller enabled", "adjustment rate", p.AudioTempoController.AdjustmentRate)
+	if p.Latency.PreJitterBufferReceiveTimeEnabled {
+		opts = append(opts, synchronizer.WithPreJitterBufferReceiveTimeEnabled())
+	}
+	if p.Latency.RTCPSenderReportRebaseEnabled {
+		opts = append(opts, synchronizer.WithRTCPSenderReportRebaseEnabled())
+	}
+	if p.RequestType == types.RequestTypeRoomComposite || p.AudioTempoController.Enabled {
+		// in case of room composite don't adjust audio timestamps on RTCP sender reports,
+		// to avoid gaps in the audio stream
 		opts = append(opts, synchronizer.WithAudioPTSAdjustmentDisabled())
+		if p.AudioTempoController.Enabled {
+			logger.Debugw("audio tempo controller enabled", "adjustmentRate", p.AudioTempoController.AdjustmentRate)
+		}
 	}
 
 	s.sync = synchronizer.NewSynchronizerWithOptions(
@@ -425,10 +436,7 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 
 		logger.Infow("subscribing to track", "trackID", track.SID())
 
-		if s.PipelineConfig.RequestType != types.RequestTypeRoomComposite ||
-			s.PipelineConfig.AudioTempoController.Enabled {
-			pub.OnRTCP(s.sync.OnRTCP)
-		}
+		pub.OnRTCP(s.sync.OnRTCP)
 
 		return pub.SetSubscribed(true)
 	}
@@ -656,14 +664,20 @@ func (s *SDKSource) onTrackFinished(trackID string) {
 	s.mu.Unlock()
 
 	if writer != nil {
-		writer.Drain(true)
 		active := s.active.Dec()
-		if s.RequestType == types.RequestTypeParticipant || s.RequestType == types.RequestTypeRoomComposite {
+		shouldContinue := s.RequestType == types.RequestTypeParticipant || s.RequestType == types.RequestTypeRoomComposite
+
+		if shouldContinue {
 			s.sync.RemoveTrack(trackID)
 			<-s.callbacks.BuildReady
 			s.callbacks.OnTrackRemoved(trackID)
-		} else if active == 0 {
-			s.finished()
+
+			writer.Drain(true)
+		} else {
+			writer.Drain(true)
+			if active == 0 {
+				s.finished()
+			}
 		}
 	}
 }
