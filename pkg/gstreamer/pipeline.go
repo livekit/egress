@@ -205,6 +205,8 @@ func (p *Pipeline) RunningTime() (time.Duration, bool) {
 	return time.Duration(int64(delta)), true
 }
 
+// PlayheadPosition returns the playhead position of the gst pipeline
+// It is equivalent to the last timestamp seen by a sink element
 func (p *Pipeline) PlayheadPosition() (time.Duration, bool) {
 	ok, position := p.pipeline.QueryPosition(gst.FormatTime)
 	if !ok || position < 0 {
