@@ -52,7 +52,7 @@ func NewPipeline(name string, latency time.Duration, callbacks *Callbacks) (*Pip
 		return nil, err
 	}
 
-	p := &Pipeline{
+	return &Pipeline{
 		Bin: &Bin{
 			Callbacks:    callbacks,
 			StateManager: &StateManager{},
@@ -62,9 +62,7 @@ func NewPipeline(name string, latency time.Duration, callbacks *Callbacks) (*Pip
 			queues:       make(map[string]*gst.Element),
 		},
 		loop: glib.NewMainLoop(glib.MainContextDefault(), false),
-	}
-
-	return p, nil
+	}, nil
 }
 
 func (p *Pipeline) AddSourceBin(src *Bin) error {
