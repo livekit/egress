@@ -343,40 +343,36 @@ func (w *AppWriter) pushSamples() {
 
 	for {
 		w.samplesLock.Lock()
-		for w.samplesHead != nil {
-			if w.endStream.IsBroken() {
-				w.samplesLock.Unlock()
-				return
-			}
-
-			item := w.samplesHead
-			w.samplesHead = item.next
-			w.samplesLen--
-			if w.samplesHead == nil {
-				w.samplesTail = nil
-			}
-			w.samplesLock.Unlock()
-
-			for _, pkt := range item.sample {
-				if err := w.pushPacket(pkt); err != nil {
-					if !utils.ErrorIsOneOf(err, synchronizer.ErrPacketOutOfOrder, synchronizer.ErrPacketTooOld) {
-						w.draining.Break()
-						w.endStream.Break()
-						break
-					}
-				}
-			}
-
-			w.samplesLock.Lock()
+		for w.samplesHead == nil && !w.endStream.IsBroken() {
+			w.samplesCond.Wait()
 		}
-
 		if w.endStream.IsBroken() {
 			w.samplesLock.Unlock()
 			return
 		}
 
-		w.samplesCond.Wait()
+		item := w.samplesHead
+		w.samplesHead = item.next
+		w.samplesLen--
+		if w.samplesHead == nil {
+			w.samplesTail = nil
+		}
 		w.samplesLock.Unlock()
+
+		for _, pkt := range item.sample {
+			if err := w.pushPacket(pkt); err != nil {
+				if !utils.ErrorIsOneOf(err, synchronizer.ErrPacketOutOfOrder, synchronizer.ErrPacketTooOld) {
+					w.draining.Break()
+					w.endStream.Break()
+
+					// wake any waiter
+					w.samplesLock.Lock()
+					w.samplesCond.Broadcast()
+					w.samplesLock.Unlock()
+					break
+				}
+			}
+		}
 	}
 }
 
@@ -385,6 +381,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 
 	// get PTS
 	pts, err := w.GetPTS(pkt)
+	logger.Infow("push packet", "pts", pts, "err", err, "trackID", w.track.ID())
 	if err != nil {
 		w.stats.packetsDropped.Inc()
 		return err
