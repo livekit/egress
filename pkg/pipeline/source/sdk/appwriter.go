@@ -318,10 +318,11 @@ func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
 	// drop old samples if queue is overflowing
 	for w.samplesLen > cSamplesQueueDepth {
 		if w.samplesHead != nil {
+			itemToDrop := w.samplesHead
 			w.samplesHead = w.samplesHead.next
 			w.samplesLen--
-			w.stats.packetsDropped.Add(uint64(len(sample)))
-			w.logger.Warnw("buffer full, dropping sample", nil)
+			w.stats.packetsDropped.Add(uint64(len(itemToDrop.sample)))
+			w.logger.Warnw("buffer full, dropping sample", nil, "numPackets", len(itemToDrop.sample))
 		}
 		if w.samplesHead == nil {
 			w.samplesTail = nil
@@ -384,6 +385,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 
 	// get PTS
 	pts, err := w.GetPTS(pkt)
+	logger.Infow("push packet", "pts", pts, "err", err, "trackID", w.track.ID())
 	if err != nil {
 		w.stats.packetsDropped.Inc()
 		return err
