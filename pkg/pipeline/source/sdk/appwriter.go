@@ -65,7 +65,8 @@ type AppWriter struct {
 	src       *app.Source
 	startTime time.Time
 
-	buffer *jitter.Buffer
+	buffer         *jitter.Buffer
+	burstEstimator *burstEstimator
 
 	samplesHead *sampleItem
 	samplesTail *sampleItem
@@ -126,6 +127,7 @@ func NewAppWriter(
 		callbacks:         callbacks,
 		TrackSynchronizer: synchronizer.AddTrack(track, rp.Identity()),
 		driftHandler:      driftHandler,
+		burstEstimator:    newBurstEstimator(track.Codec().ClockRate, track.Kind()),
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
 
@@ -239,11 +241,19 @@ func (w *AppWriter) readNext() {
 		return
 	}
 
-	// initialize on first packet
+	receivedAt := time.Now()
+
 	if w.lastReceived.Load().IsZero() {
+		if !w.burstEstimator.ShouldInitialize(pkt, receivedAt) {
+			w.stats.packetsDropped.Inc()
+			return
+		}
+		if dropped := w.stats.packetsDropped.Load(); dropped > 0 {
+			w.logger.Infow("initializing track synchronizer after burst", "packetsDropped", dropped)
+		}
 		w.Initialize(pkt)
 	}
-	w.lastReceived.Store(time.Now())
+	w.lastReceived.Store(receivedAt)
 
 	if !w.active.Swap(true) {
 		// set track active
