@@ -31,6 +31,10 @@ type Source interface {
 	Close()
 }
 
+type TimeAware interface {
+	SetTimeProvider(gstreamer.TimeProvider)
+}
+
 func New(ctx context.Context, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (Source, error) {
 	switch p.SourceType {
 	case types.SourceTypeWeb:
