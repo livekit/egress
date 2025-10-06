@@ -88,6 +88,7 @@ type LatencyConfig struct {
 	PreJitterBufferReceiveTimeEnabled bool          `yaml:"pre_jitter_buffer_receive_time_enabled,omitempty"` // use packet arrival time in synchronizer
 	OldPacketThreshold                time.Duration `yaml:"old_packet_threshold,omitempty"`                   // syncrhonizer drops packets older than this, 0 to disable packet drops
 	RTCPSenderReportRebaseEnabled     bool          `yaml:"rtcp_sender_report_rebase_enabled,omitempty"`      // synchronizer will rebase RTCP Sender Report to local clock
+	PacketBurstEstimatorEnabled       bool          `yaml:"packet_burst_estimator_enabled,omitempty"`         // enable burst estimator for improving track synchronization
 }
 
 type AudioTempoController struct {
