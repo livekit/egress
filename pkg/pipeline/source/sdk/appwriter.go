@@ -83,8 +83,10 @@ type AppWriter struct {
 	*synchronizer.TrackSynchronizer
 	driftHandler DriftHandler
 
-	lastPTS   time.Duration
-	lastDrift time.Duration
+	lastPTS      time.Duration
+	lastDrift    time.Duration
+	initialized  bool
+	singlePacket [1]jitter.ExtPacket
 
 	// state
 	buildReady   core.Fuse
@@ -242,18 +244,37 @@ func (w *AppWriter) readNext() {
 	}
 
 	receivedAt := time.Now()
-
-	if w.lastReceived.Load().IsZero() {
-		if !w.burstEstimator.ShouldInitialize(pkt, receivedAt) {
-			w.stats.packetsDropped.Inc()
+	var packets []jitter.ExtPacket
+	if !w.initialized {
+		ready, dropped, done := w.burstEstimator.Push(jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt})
+		if dropped > 0 {
+			w.stats.packetsDropped.Add(uint64(dropped))
+			if w.sendPLI != nil {
+				w.sendPLI()
+				w.logger.Debugw("requesting keyframe after dropping burst", "packetsDropped", dropped)
+			}
+		}
+		if !done {
+			w.logger.Debugw("packet sequence not stable yet", "packetTS", pkt.Timestamp, "receivedAt", receivedAt)
 			return
 		}
+		if len(ready) == 0 {
+			w.logger.Warnw("burst estimator returned empty sequence, bug inside burst estimator", nil)
+			w.singlePacket[0] = jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt}
+			ready = w.singlePacket[:1]
+		}
+		w.initialized = true
+		w.Initialize(ready[0].Packet)
 		if dropped := w.stats.packetsDropped.Load(); dropped > 0 {
 			w.logger.Infow("initializing track synchronizer after burst", "packetsDropped", dropped)
 		}
-		w.Initialize(pkt)
+		packets = ready
+		w.lastReceived.Store(ready[len(ready)-1].ReceivedAt)
+	} else {
+		w.singlePacket[0] = jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt}
+		packets = w.singlePacket[:1]
+		w.lastReceived.Store(receivedAt)
 	}
-	w.lastReceived.Store(receivedAt)
 
 	if !w.active.Swap(true) {
 		// set track active
@@ -267,7 +288,9 @@ func (w *AppWriter) readNext() {
 	}
 
 	// push packet to jitter buffer
-	w.buffer.Push(pkt)
+	for _, ext := range packets {
+		w.buffer.Push(ext.Packet)
+	}
 }
 
 func (w *AppWriter) handleReadError(err error) {
