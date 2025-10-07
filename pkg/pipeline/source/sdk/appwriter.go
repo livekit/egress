@@ -236,10 +236,6 @@ func (w *AppWriter) readNext() {
 		w.handleReadError(err)
 		return
 	}
-	// skip dummy packets
-	if len(pkt.Payload) == 0 {
-		return
-	}
 
 	receivedAt := time.Now()
 	var packets []jitter.ExtPacket
@@ -249,22 +245,12 @@ func (w *AppWriter) readNext() {
 			w.stats.packetsDropped.Add(uint64(dropped))
 			if w.sendPLI != nil {
 				w.sendPLI()
-				w.logger.Debugw("requesting keyframe after dropping burst", "packetsDropped", dropped)
 			}
 		}
 		if !done {
-			w.logger.Debugw("packet sequence not stable yet", "packetTS", pkt.Timestamp, "receivedAt", receivedAt)
 			return
 		}
-		if len(ready) == 0 {
-			w.logger.Warnw("burst estimator returned empty sequence, bug inside burst estimator", nil)
-			w.singlePacket[0] = jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt}
-			ready = w.singlePacket[:1]
-		}
 		w.initialized = true
-		if dropped := w.stats.packetsDropped.Load(); dropped > 0 {
-			w.logger.Infow("initializing track synchronizer after burst", "packetsDropped", dropped)
-		}
 		packets = ready
 		w.lastReceived.Store(ready[len(ready)-1].ReceivedAt)
 	} else {
@@ -284,10 +270,7 @@ func (w *AppWriter) readNext() {
 		}
 	}
 
-	// push packet to jitter buffer
-	for _, ext := range packets {
-		w.buffer.Push(ext.Packet)
-	}
+	w.buffer.PushExtPacketBatch(packets)
 }
 
 func (w *AppWriter) handleReadError(err error) {
