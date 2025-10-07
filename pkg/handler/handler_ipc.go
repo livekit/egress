@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -36,6 +37,10 @@ func (h *Handler) GetPipelineDot(ctx context.Context, _ *ipc.GstPipelineDebugDot
 	defer span.End()
 
 	<-h.initialized.Watch()
+	if h.controller == nil {
+		// egress handler is shutting down on error
+		return nil, errors.ErrEgressNotFound
+	}
 
 	r, err := h.controller.GetGstPipelineDebugDot()
 	if err != nil {
@@ -52,6 +57,10 @@ func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PPr
 	defer span.End()
 
 	<-h.initialized.Watch()
+	if h.controller == nil {
+		// egress handler is shutting down on error
+		return nil, errors.ErrEgressNotFound
+	}
 
 	b, err := pprof.GetProfileData(ctx, req.ProfileName, int(req.Timeout), int(req.Debug))
 	if err != nil {
@@ -115,6 +124,11 @@ func (h *Handler) KillEgress(ctx context.Context, req *ipc.KillEgressRequest) (*
 	defer span.End()
 
 	<-h.initialized.Watch()
+
+	if h.controller == nil {
+		// failed to start controller
+		return &emptypb.Empty{}, nil
+	}
 
 	h.controller.SendEOS(ctx, livekit.EndReasonKilled)
 	h.controller.Info.SetFailed(psrpc.NewErrorf(psrpc.PermissionDenied, req.Error))
