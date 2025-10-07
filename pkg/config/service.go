@@ -96,8 +96,6 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 		if err := yaml.Unmarshal([]byte(confString), conf); err != nil {
 			return nil, errors.ErrCouldNotParseConfig(err)
 		}
-	} else {
-		fmt.Println("config string is empty")
 	}
 
 	// always create a new node ID
