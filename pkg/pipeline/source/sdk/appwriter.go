@@ -82,10 +82,9 @@ type AppWriter struct {
 	*synchronizer.TrackSynchronizer
 	driftHandler DriftHandler
 
-	lastPTS      time.Duration
-	lastDrift    time.Duration
-	initialized  bool
-	singlePacket [1]jitter.ExtPacket
+	lastPTS     time.Duration
+	lastDrift   time.Duration
+	initialized bool
 
 	// state
 	buildReady   core.Fuse
@@ -254,8 +253,6 @@ func (w *AppWriter) readNext() {
 		packets = ready
 		w.lastReceived.Store(ready[len(ready)-1].ReceivedAt)
 	} else {
-		w.singlePacket[0] = jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt}
-		packets = w.singlePacket[:1]
 		w.lastReceived.Store(receivedAt)
 	}
 
@@ -269,8 +266,11 @@ func (w *AppWriter) readNext() {
 			w.sendPLI()
 		}
 	}
-
-	w.buffer.PushExtPacketBatch(packets)
+	if len(packets) > 0 {
+		w.buffer.PushExtPacketBatch(packets)
+	} else {
+		w.buffer.Push(pkt)
+	}
 }
 
 func (w *AppWriter) handleReadError(err error) {
