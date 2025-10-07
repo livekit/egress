@@ -82,8 +82,9 @@ type AppWriter struct {
 	*synchronizer.TrackSynchronizer
 	driftHandler DriftHandler
 
-	lastPTS   time.Duration
-	lastDrift time.Duration
+	lastPTS     time.Duration
+	lastDrift   time.Duration
+	initialized bool
 
 	// state
 	buildReady   core.Fuse
@@ -234,16 +235,26 @@ func (w *AppWriter) readNext() {
 		w.handleReadError(err)
 		return
 	}
-	// skip dummy packets
-	if len(pkt.Payload) == 0 {
-		return
-	}
 
-	// initialize on first packet
-	if w.lastReceived.Load().IsZero() {
-		w.Initialize(pkt)
+	receivedAt := time.Now()
+	var packets []jitter.ExtPacket
+	if !w.initialized {
+		ready, dropped, done := w.PrimeForStart(jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt})
+		if dropped > 0 {
+			w.stats.packetsDropped.Add(uint64(dropped))
+			if w.sendPLI != nil {
+				w.sendPLI()
+			}
+		}
+		if !done {
+			return
+		}
+		w.initialized = true
+		packets = ready
+		w.lastReceived.Store(ready[len(ready)-1].ReceivedAt)
+	} else {
+		w.lastReceived.Store(receivedAt)
 	}
-	w.lastReceived.Store(time.Now())
 
 	if !w.active.Swap(true) {
 		// set track active
@@ -255,9 +266,11 @@ func (w *AppWriter) readNext() {
 			w.sendPLI()
 		}
 	}
-
-	// push packet to jitter buffer
-	w.buffer.Push(pkt)
+	if len(packets) > 0 {
+		w.buffer.PushExtPacketBatch(packets)
+	} else {
+		w.buffer.Push(pkt)
+	}
 }
 
 func (w *AppWriter) handleReadError(err error) {
