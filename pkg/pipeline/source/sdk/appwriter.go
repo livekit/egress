@@ -79,6 +79,7 @@ type AppWriter struct {
 	pliThrottle core.Throttle
 
 	// a/v sync
+	synchronizer *synchronizer.Synchronizer
 	*synchronizer.TrackSynchronizer
 	driftHandler DriftHandler
 
@@ -125,6 +126,7 @@ func NewAppWriter(
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
 		callbacks:         callbacks,
+		synchronizer:      synchronizer,
 		TrackSynchronizer: synchronizer.AddTrack(track, rp.Identity()),
 		driftHandler:      driftHandler,
 	}
@@ -466,6 +468,7 @@ func (w *AppWriter) Drain(force bool) {
 
 	// wait until finished
 	<-w.finished.Watch()
+	w.synchronizer.RemoveTrack(w.track.ID())
 }
 
 func (w *AppWriter) logStats() {
