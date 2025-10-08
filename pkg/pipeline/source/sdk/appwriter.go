@@ -399,6 +399,13 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		return err
 	}
 
+	if pts < 0 {
+		// TODO: handle it by sending new gst segment that will reflect the offset
+		w.logger.Debugw("negative packet pts, dropping", "pts", pts)
+		w.stats.packetsDropped.Inc()
+		return nil
+	}
+
 	p, err := pkt.Packet.Marshal()
 	if err != nil {
 		w.stats.packetsDropped.Inc()
