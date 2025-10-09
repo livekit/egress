@@ -286,7 +286,7 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 		addAudioConvertFunc = b.addAudioConvertWithPitch
 	}
 
-	if err := addAudioConvertFunc(appSrcBin, b.conf, b.getChannel(ts), leakyQueue); err != nil {
+	if err := addAudioConvertFunc(appSrcBin, b.conf, b.getChannel(ts), blockingQueue); err != nil {
 		return err
 	}
 
