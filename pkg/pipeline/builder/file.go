@@ -27,17 +27,20 @@ func BuildFileBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstr
 	b := pipeline.NewBin("file")
 	o := p.GetFileConfig()
 
-	var mux *gst.Element
+	var mux muxer
 	var err error
 	switch o.OutputType {
 	case types.OutputTypeOGG:
-		mux, err = gst.NewElement("oggmux")
+		mux, err = newMuxer("oggmux")
 	case types.OutputTypeIVF:
-		mux, err = gst.NewElement("avmux_ivf")
+		mux, err = newMuxer("avmux_ivf")
 	case types.OutputTypeMP4:
-		mux, err = gst.NewElement("mp4mux")
+		mux, err = newMuxer("mp4mux")
 	case types.OutputTypeWebM:
-		mux, err = gst.NewElement("webmmux")
+		mux, err = newMuxer("webmmux")
+	case types.OutputTypeMP3:
+		mux, err = newMP3Muxer()
+
 	default:
 		return nil, errors.ErrInvalidInput("output type")
 	}
@@ -55,14 +58,13 @@ func BuildFileBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstr
 	if err = sink.SetProperty("sync", false); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if err = b.AddElements(mux, sink); err != nil {
+
+	if err = b.AddElements(mux.GetElement(), sink); err != nil {
 		return nil, err
 	}
 
 	b.SetGetSrcPad(func(name string) *gst.Pad {
-		var padName = name + "_%u"
-
-		return mux.GetRequestPad(padName)
+		return mux.GetRequestPad(name + "_%u")
 	})
 
 	return b, nil

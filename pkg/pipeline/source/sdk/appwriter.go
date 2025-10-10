@@ -17,6 +17,7 @@ package sdk
 import (
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -34,6 +35,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/media-sdk/jitter"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
 )
@@ -41,7 +43,13 @@ import (
 const (
 	errBufferTooSmall      = "buffer too small"
 	discontinuityTolerance = 500 * time.Millisecond
+	cSamplesQueueDepth     = 100
 )
+
+type sampleItem struct {
+	sample []jitter.ExtPacket
+	next   *sampleItem
+}
 
 type AppWriter struct {
 	conf *config.PipelineConfig
@@ -57,20 +65,27 @@ type AppWriter struct {
 	src       *app.Source
 	startTime time.Time
 
-	buffer      *jitter.Buffer
-	samples     chan []*rtp.Packet
+	buffer *jitter.Buffer
+
+	samplesHead *sampleItem
+	samplesTail *sampleItem
+	samplesLen  int
+	samplesLock sync.Mutex
+	samplesCond *sync.Cond
+
 	translator  Translator
 	callbacks   *gstreamer.Callbacks
 	sendPLI     func()
 	pliThrottle core.Throttle
 
 	// a/v sync
-	sync *synchronizer.Synchronizer
+	synchronizer *synchronizer.Synchronizer
 	*synchronizer.TrackSynchronizer
 	driftHandler DriftHandler
 
-	lastPTS   time.Duration
-	lastDrift time.Duration
+	lastPTS     time.Duration
+	lastDrift   time.Duration
+	initialized bool
 
 	// state
 	buildReady   core.Fuse
@@ -99,7 +114,7 @@ func NewAppWriter(
 	pub lksdk.TrackPublication,
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
-	sync *synchronizer.Synchronizer,
+	synchronizer *synchronizer.Synchronizer,
 	driftHandler DriftHandler,
 	callbacks *gstreamer.Callbacks,
 ) (*AppWriter, error) {
@@ -110,12 +125,12 @@ func NewAppWriter(
 		pub:               pub,
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
-		samples:           make(chan []*rtp.Packet, 100),
 		callbacks:         callbacks,
-		sync:              sync,
-		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
+		synchronizer:      synchronizer,
+		TrackSynchronizer: synchronizer.AddTrack(track, rp.Identity()),
 		driftHandler:      driftHandler,
 	}
+	w.samplesCond = sync.NewCond(&w.samplesLock)
 
 	if conf.Debug.EnableTrackLogging {
 		csvLogger, err := logging.NewCSVLogger[logging.TrackStats](track.ID())
@@ -223,11 +238,25 @@ func (w *AppWriter) readNext() {
 		return
 	}
 
-	// initialize on first packet
-	if w.lastReceived.Load().IsZero() {
-		w.Initialize(pkt)
+	receivedAt := time.Now()
+	var packets []jitter.ExtPacket
+	if !w.initialized {
+		ready, dropped, done := w.PrimeForStart(jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt})
+		if dropped > 0 {
+			w.stats.packetsDropped.Add(uint64(dropped))
+			if w.sendPLI != nil {
+				w.sendPLI()
+			}
+		}
+		if !done {
+			return
+		}
+		w.initialized = true
+		packets = ready
+		w.lastReceived.Store(ready[len(ready)-1].ReceivedAt)
+	} else {
+		w.lastReceived.Store(receivedAt)
 	}
-	w.lastReceived.Store(time.Now())
 
 	if !w.active.Swap(true) {
 		// set track active
@@ -239,9 +268,11 @@ func (w *AppWriter) readNext() {
 			w.sendPLI()
 		}
 	}
-
-	// push packet to jitter buffer
-	w.buffer.Push(pkt)
+	if len(packets) > 0 {
+		w.buffer.PushExtPacketBatch(packets)
+	} else {
+		w.buffer.Push(pkt)
+	}
 }
 
 func (w *AppWriter) handleReadError(err error) {
@@ -249,6 +280,10 @@ func (w *AppWriter) handleReadError(err error) {
 	switch {
 	case w.draining.IsBroken():
 		w.endStream.Break()
+
+		w.samplesLock.Lock()
+		w.samplesCond.Broadcast()
+		w.samplesLock.Unlock()
 
 	case errors.As(err, &netErr) && netErr.Timeout():
 		if !w.active.Load() {
@@ -276,18 +311,41 @@ func (w *AppWriter) handleReadError(err error) {
 		}
 		w.draining.Break()
 		w.endStream.Break()
+
+		w.samplesLock.Lock()
+		w.samplesCond.Broadcast()
+		w.samplesLock.Unlock()
 	}
 }
 
-func (w *AppWriter) onPacket(sample []*rtp.Packet) {
-	select {
-	case w.samples <- sample:
-		// ok
-	default:
-		w.stats.packetsDropped.Add(uint64(len(sample)))
-		w.logger.Warnw("buffer full, dropping sample", nil)
+func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
+	w.samplesLock.Lock()
+	item := &sampleItem{sample, nil}
+	if w.samplesHead == nil {
+		w.samplesHead = item
+		w.samplesTail = w.samplesHead
+		w.samplesLen = 1
+	} else {
+		w.samplesTail.next = item
+		w.samplesTail = item
+		w.samplesLen++
 	}
-
+	// drop old samples if queue is overflowing
+	for w.samplesLen > cSamplesQueueDepth {
+		if w.samplesHead != nil {
+			itemToDrop := w.samplesHead
+			w.samplesHead = w.samplesHead.next
+			w.samplesLen--
+			w.stats.packetsDropped.Add(uint64(len(itemToDrop.sample)))
+			w.logger.Warnw("buffer full, dropping sample", nil, "numPackets", len(itemToDrop.sample))
+		}
+		if w.samplesHead == nil {
+			w.samplesTail = nil
+			w.samplesLen = 0
+		}
+	}
+	w.samplesCond.Broadcast()
+	w.samplesLock.Unlock()
 }
 
 func (w *AppWriter) pushSamples() {
@@ -298,24 +356,43 @@ func (w *AppWriter) pushSamples() {
 		return
 	}
 
-	end := w.endStream.Watch()
 	for {
-		select {
-		case <-end:
+		w.samplesLock.Lock()
+		for w.samplesHead == nil && !w.endStream.IsBroken() {
+			w.samplesCond.Wait()
+		}
+		if w.endStream.IsBroken() {
+			w.samplesLock.Unlock()
 			return
-		case sample := <-w.samples:
-			for _, pkt := range sample {
-				if err := w.pushPacket(pkt); err != nil {
+		}
+
+		item := w.samplesHead
+		w.samplesHead = item.next
+		w.samplesLen--
+		if w.samplesHead == nil {
+			w.samplesTail = nil
+		}
+		w.samplesLock.Unlock()
+
+		for _, pkt := range item.sample {
+			if err := w.pushPacket(pkt); err != nil {
+				if !utils.ErrorIsOneOf(err, synchronizer.ErrPacketOutOfOrder, synchronizer.ErrPacketTooOld) {
 					w.draining.Break()
 					w.endStream.Break()
+
+					// wake any waiter
+					w.samplesLock.Lock()
+					w.samplesCond.Broadcast()
+					w.samplesLock.Unlock()
+					break
 				}
 			}
 		}
 	}
 }
 
-func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
-	w.translator.Translate(pkt)
+func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
+	w.translator.Translate(pkt.Packet)
 
 	// get PTS
 	pts, err := w.GetPTS(pkt)
@@ -324,7 +401,14 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 		return err
 	}
 
-	p, err := pkt.Marshal()
+	if pts < 0 {
+		// TODO: handle it by sending new gst segment that will reflect the offset
+		w.logger.Debugw("negative packet pts, dropping", "pts", pts)
+		w.stats.packetsDropped.Inc()
+		return nil
+	}
+
+	p, err := pkt.Packet.Marshal()
 	if err != nil {
 		w.stats.packetsDropped.Inc()
 		w.logger.Errorw("could not marshal packet", err)
@@ -367,15 +451,24 @@ func (w *AppWriter) Drain(force bool) {
 	w.draining.Once(func() {
 		w.logger.Debugw("draining")
 
-		if force || !w.active.Load() {
+		endStream := func() {
 			w.endStream.Break()
+
+			w.samplesLock.Lock()
+			w.samplesCond.Broadcast()
+			w.samplesLock.Unlock()
+		}
+
+		if force || !w.active.Load() {
+			endStream()
 		} else {
-			time.AfterFunc(w.conf.Latency.PipelineLatency, func() { w.endStream.Break() })
+			time.AfterFunc(w.conf.Latency.PipelineLatency, endStream)
 		}
 	})
 
 	// wait until finished
 	<-w.finished.Watch()
+	w.synchronizer.RemoveTrack(w.track.ID())
 }
 
 func (w *AppWriter) logStats() {
