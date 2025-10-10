@@ -203,36 +203,53 @@ func (r *Runner) verifySegments(
 	require.Greater(t, segments.Size, int64(0))
 	require.Greater(t, segments.Duration, int64(0))
 
-	r.verifySegmentOutput(t, tc, p, filenameSuffix, segments.PlaylistName, segments.PlaylistLocation, int(segments.SegmentCount), res, m3u8.PlaylistTypeEvent)
+	r.verifySegmentOutput(t, tc, p, filenameSuffix, segmentPlaylist{
+		name:         segments.PlaylistName,
+		location:     segments.PlaylistLocation,
+		segmentCount: int(segments.SegmentCount),
+		playlistType: m3u8.PlaylistTypeEvent,
+	}, res)
 	if enableLivePlaylist {
-		r.verifySegmentOutput(t, tc, p, filenameSuffix, segments.LivePlaylistName, segments.LivePlaylistLocation, 5, res, m3u8.PlaylistTypeLive)
+		r.verifySegmentOutput(t, tc, p, filenameSuffix, segmentPlaylist{
+			name:         segments.LivePlaylistName,
+			location:     segments.LivePlaylistLocation,
+			segmentCount: 5,
+			playlistType: m3u8.PlaylistTypeLive,
+		}, res)
 	}
+}
+
+type segmentPlaylist struct {
+	name         string
+	location     string
+	segmentCount int
+	playlistType m3u8.PlaylistType
 }
 
 func (r *Runner) verifySegmentOutput(
 	t *testing.T, tc *testCase, p *config.PipelineConfig,
 	filenameSuffix livekit.SegmentedFileSuffix,
-	plName string, plLocation string, segmentCount int,
-	res *livekit.EgressInfo, plType m3u8.PlaylistType,
+	pl segmentPlaylist,
+	res *livekit.EgressInfo,
 ) {
 
-	require.NotEmpty(t, plName)
-	require.NotEmpty(t, plLocation)
+	require.NotEmpty(t, pl.name)
+	require.NotEmpty(t, pl.location)
 
-	storedPlaylistPath := plName
-	localPlaylistPath := plName
+	storedPlaylistPath := pl.name
+	localPlaylistPath := pl.name
 
 	// download from cloud storage
 	localPlaylistPath = path.Join(r.FilePrefix, path.Base(storedPlaylistPath))
 	download(t, p.GetSegmentConfig().StorageConfig, localPlaylistPath, storedPlaylistPath, false)
 
-	if plType == m3u8.PlaylistTypeEvent {
+	if pl.playlistType == m3u8.PlaylistTypeEvent {
 		manifestLocal := path.Join(path.Dir(localPlaylistPath), res.EgressId+".json")
 		manifestStorage := path.Join(path.Dir(storedPlaylistPath), res.EgressId+".json")
 		manifest := loadManifest(t, p.GetSegmentConfig().StorageConfig, manifestLocal, manifestStorage)
 
 		for _, playlist := range manifest.Playlists {
-			require.Equal(t, segmentCount, len(playlist.Segments))
+			require.Equal(t, pl.segmentCount, len(playlist.Segments))
 			for _, segment := range playlist.Segments {
 				localPath := path.Join(r.FilePrefix, path.Base(segment.Filename))
 				download(t, p.GetSegmentConfig().StorageConfig, localPath, segment.Filename, false)
@@ -240,10 +257,10 @@ func (r *Runner) verifySegmentOutput(
 		}
 	}
 
-	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath, plType)
+	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath, pl.playlistType)
 
 	// verify
-	info := verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.Muting, r.sourceFramerate, plType == m3u8.PlaylistTypeLive)
+	info := verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.Muting, r.sourceFramerate, pl.playlistType == m3u8.PlaylistTypeLive)
 	if tc.contentCheck != nil && info != nil {
 		tc.contentCheck(t, localPlaylistPath, info)
 	}

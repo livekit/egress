@@ -35,7 +35,7 @@ func BuildWebsocketBin(pipeline *gstreamer.Pipeline, appSinkCallbacks *app.SinkC
 		return nil, err
 	}
 
-	b.SetGetSrcPad(func(name string) *gst.Pad {
+	b.SetGetSrcPad(func(_ string) *gst.Pad {
 		return appSink.GetStaticPad("sink")
 	})
 

@@ -500,10 +500,10 @@ func (p *PipelineConfig) validateAndUpdateOutputCodecs() (compatibleAudioCodecs 
 			if len(compatibleAudioCodecs) == 0 {
 				if p.AudioOutCodec == "" {
 					return nil, nil, errors.ErrNoCompatibleCodec
-				} else {
-					// Return a more specific error if a codec was provided
-					return nil, nil, errors.ErrIncompatible(o.GetOutputType(), p.AudioOutCodec)
 				}
+				// Return a more specific error if a codec was provided
+				return nil, nil, errors.ErrIncompatible(o.GetOutputType(), p.AudioOutCodec)
+
 			}
 		}
 	}
@@ -520,10 +520,10 @@ func (p *PipelineConfig) validateAndUpdateOutputCodecs() (compatibleAudioCodecs 
 			if len(compatibleVideoCodecs) == 0 {
 				if p.AudioOutCodec == "" {
 					return nil, nil, errors.ErrNoCompatibleCodec
-				} else {
-					// Return a more specific error if a codec was provided
-					return nil, nil, errors.ErrIncompatible(o.GetOutputType(), p.VideoOutCodec)
 				}
+				// Return a more specific error if a codec was provided
+				return nil, nil, errors.ErrIncompatible(o.GetOutputType(), p.VideoOutCodec)
+
 			}
 		}
 	}

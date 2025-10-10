@@ -34,9 +34,8 @@ type padTemplate struct {
 func (p *padTemplate) toPad() *gst.Pad {
 	if p.template.Presence() == gst.PadPresenceAlways {
 		return p.element.GetStaticPad(p.template.Name())
-	} else {
-		return p.element.GetRequestPad(p.template.Name())
 	}
+	return p.element.GetRequestPad(p.template.Name())
 }
 
 func (p *padTemplate) findDirectMatch(others []*padTemplate) *padTemplate {

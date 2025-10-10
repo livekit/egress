@@ -66,7 +66,7 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	}
 
 	var startDate time.Time
-	_, err = sink.Connect("format-location-full", func(self *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
+	_, err = sink.Connect("format-location-full", func(_ *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
 		var pts time.Duration
 		if firstSample != nil && firstSample.GetBuffer() != nil {
 			pts = *firstSample.GetBuffer().PresentationTimestamp().AsDuration()
@@ -106,14 +106,14 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	}
 
 	b.SetGetSrcPad(func(name string) *gst.Pad {
-		if name == "audio" {
+		if name == audioBinName {
 			return sink.GetRequestPad("audio_%u")
 		} else if h264parse != nil {
 			return h264parse.GetStaticPad("sink")
-		} else {
-			// Should never happen
-			return nil
 		}
+		// Should never happen
+		return nil
+
 	})
 
 	return b, nil
