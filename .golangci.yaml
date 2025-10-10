@@ -9,19 +9,41 @@ linters:
   enable:
     - revive
     - forbidigo
+    - asasalint # checks for pass []any as any in variadic func(...any)
+    - copyloopvar # detects places where loop variables are copied (Go 1.22+)
+    #- cyclop # detects complex functions - very useful, requires a bit of refactoring
+    - dupl # detects duplicate code
+    - errname # checks that sentinel errors are prefixed with the Err and error types are suffixed with the Error
+    - fatcontext # detects nested contexts in loops
+    - goconst # checks for hardcoded strings that could be replaced with a constant
+
 linters-settings:
   revive:
     severity: warning
     confidence: 0.8
     ignore-generated-header: true
     rules:
+      - name: argument-limit
+      - name: atomic
       - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: deep-exit
+      - name: defer
       - name: dot-imports
+      - name: early-return
       - name: errorf
       - name: error-strings
+      - name: if-return
+      - name: increment-decrement
       - name: indent-error-flow
       - name: range
+      - name: range-val-address
       - name: receiver-naming
+      - name: superfluous-else
+      - name: unexported-return
+      - name: unused-parameter
+      - name: var-declaration
       - name: waitgroup-by-value
   forbidigo:
     forbid:
