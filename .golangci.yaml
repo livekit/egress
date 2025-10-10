@@ -5,18 +5,25 @@ run:
     - deadlock   # include your deadlock build when needed
     - integration
 linters:
-  disable-all: true 
+  disable-all: true
   enable:
-  #  - revive
+    - revive
     - forbidigo
 linters-settings:
-  # revive:
-  #   rules:
-  #     #- name: exported
-  #     - name: errorf
-  #     - name: error-strings
-  #     - name: receiver-naming
-  #     - name: indent-error-flow
+  revive:
+    severity: warning
+    confidence: 0.8
+    ignore-generated-header: true
+    rules:
+      - name: blank-imports
+      - name: dot-imports
+      - name: errorf
+      - name: error-strings
+      - name: indent-error-flow
+      - name: range
+      - name: receiver-naming
+      - name: var-naming
+      - name: waitgroup-by-value
   forbidigo:
     forbid:
       - 'sync\.Mutex'   # Use deadlock.Mutex instead
