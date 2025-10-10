@@ -16,6 +16,7 @@
 ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
 ARG GO_VERSION=1.24.5
+ARG LINT_VERSION=v1.64.2
 
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template
 
@@ -69,16 +70,17 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
     CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} go test -c -v -race --tags=integration ./test
 
-FROM builder AS lint
-ARG LINT_VERSION=v1.64.2
+FROM golangci/golangci-lint:${LINT_VERSION} AS golangci
 
+FROM builder AS lint
+
+COPY --from=golangci /usr/bin/golangci-lint /usr/local/bin/golangci-lint
 COPY .golangci.yaml .
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/go/build-cache \
-    env GOTOOLCHAIN=local CGO_ENABLED=1 \
-    go run github.com/golangci/golangci-lint/cmd/golangci-lint@${LINT_VERSION} \
-        run \
+    CGO_ENABLED=1 \
+    golangci-lint run \
         --timeout=5m \
         --modules-download-mode=mod \
         --build-tags="${LINT_TAGS}"
