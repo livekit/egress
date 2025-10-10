@@ -137,11 +137,7 @@ func (o *ImageConfig) updatePrefix(p *PipelineConfig) error {
 	// there is more than one image output
 	// os.ModeDir creates a directory with mode 000 when mapping the directory outside the container
 	o.LocalDir = path.Join(p.TmpDir, o.Id)
-	if err := os.MkdirAll(o.LocalDir, 0755); err != nil {
-		return err
-	}
-
-	return nil
+	return os.MkdirAll(o.LocalDir, 0755)
 }
 
 func getMimeTypes(imageCodec livekit.ImageCodec) (types.MimeType, types.OutputType, error) {

@@ -88,9 +88,8 @@ func (r *Runner) publishSample(t *testing.T, codec types.MimeType, publishAfter,
 
 	if publishAfter == 0 {
 		return <-trackID
-	} else {
-		return "TBD"
 	}
+	return "TBD"
 }
 
 func (r *Runner) publishSampleWithDisconnection(t *testing.T, codec types.MimeType) string {

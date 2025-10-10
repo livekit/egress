@@ -23,6 +23,7 @@ import (
 	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
+	"github.com/linkdata/deadlock"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
@@ -70,7 +71,7 @@ type AppWriter struct {
 	samplesHead *sampleItem
 	samplesTail *sampleItem
 	samplesLen  int
-	samplesLock sync.Mutex
+	samplesLock deadlock.Mutex
 	samplesCond *sync.Cond
 
 	translator  Translator

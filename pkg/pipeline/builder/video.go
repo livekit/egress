@@ -233,11 +233,7 @@ func (b *VideoBin) buildWebInput() error {
 		return err
 	}
 
-	if err = b.addDecodedVideoSink(); err != nil {
-		return err
-	}
-
-	return nil
+	return b.addDecodedVideoSink()
 }
 
 func (b *VideoBin) buildSDKInput() error {
@@ -341,16 +337,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, err
 		}
 
-		if b.conf.VideoDecoding {
-			avDecH264, err := gst.NewElement("avdec_h264")
-			if err != nil {
-				return nil, errors.ErrGstPipelineError(err)
-			}
-
-			if err = appSrcBin.AddElement(avDecH264); err != nil {
-				return nil, err
-			}
-		} else {
+		if !b.conf.VideoDecoding {
 			h264Parse, err := gst.NewElement("h264parse")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
@@ -361,6 +348,15 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			}
 
 			return appSrcBin, nil
+		}
+
+		avDecH264, err := gst.NewElement("avdec_h264")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+
+		if err = appSrcBin.AddElement(avDecH264); err != nil {
+			return nil, err
 		}
 
 	case types.MimeTypeVP8:
@@ -379,16 +375,15 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, err
 		}
 
-		if b.conf.VideoDecoding {
-			vp8Dec, err := gst.NewElement("vp8dec")
-			if err != nil {
-				return nil, errors.ErrGstPipelineError(err)
-			}
-			if err = appSrcBin.AddElement(vp8Dec); err != nil {
-				return nil, err
-			}
-		} else {
+		if !b.conf.VideoDecoding {
 			return appSrcBin, nil
+		}
+		vp8Dec, err := gst.NewElement("vp8dec")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = appSrcBin.AddElement(vp8Dec); err != nil {
+			return nil, err
 		}
 
 	case types.MimeTypeVP9:
@@ -407,15 +402,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, err
 		}
 
-		if b.conf.VideoDecoding {
-			vp9Dec, err := gst.NewElement("vp9dec")
-			if err != nil {
-				return nil, errors.ErrGstPipelineError(err)
-			}
-			if err = appSrcBin.AddElement(vp9Dec); err != nil {
-				return nil, err
-			}
-		} else {
+		if !b.conf.VideoDecoding {
 			vp9Parse, err := gst.NewElement("vp9parse")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
@@ -434,8 +421,15 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			if err = appSrcBin.AddElements(vp9Parse, vp9Caps); err != nil {
 				return nil, err
 			}
-
 			return appSrcBin, nil
+		}
+
+		vp9Dec, err := gst.NewElement("vp9dec")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = appSrcBin.AddElement(vp9Dec); err != nil {
+			return nil, err
 		}
 
 	default:
@@ -713,7 +707,7 @@ func (b *VideoBin) createSrcPad(trackID, name string) {
 	b.names[trackID] = name
 
 	pad := b.selector.GetRequestPad("sink_%u")
-	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		pts := uint64(info.GetBuffer().PresentationTimestamp())
 		b.mu.Lock()
 		if pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name) {
@@ -733,7 +727,7 @@ func (b *VideoBin) createTestSrcPad() {
 	defer b.mu.Unlock()
 
 	pad := b.selector.GetRequestPad("sink_%u")
-	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		pts := uint64(info.GetBuffer().PresentationTimestamp())
 		b.mu.Lock()
 		if pts < b.lastPTS || (b.selectedPad != videoTestSrcName) {
@@ -759,7 +753,7 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 	pad := b.pads[name]
 
 	// drop until the next keyframe
-	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		buffer := info.GetBuffer()
 		if buffer.HasFlags(gst.BufferFlagDeltaUnit) {
 			return gst.PadProbeDrop

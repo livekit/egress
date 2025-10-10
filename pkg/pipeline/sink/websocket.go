@@ -74,7 +74,7 @@ func newWebsocketSink(
 		conn: conn,
 	}
 	websocketSink.sinkCallbacks = &app.SinkCallbacks{
-		EOSFunc: func(appSink *app.Sink) {
+		EOSFunc: func(_ *app.Sink) {
 			_ = websocketSink.Close()
 		},
 		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {

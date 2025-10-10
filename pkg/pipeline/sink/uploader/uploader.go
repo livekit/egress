@@ -145,13 +145,13 @@ func (u *Uploader) Upload(
 				_ = os.Remove(localFilepath)
 			}
 			return location, size, nil
-		} else {
-			if u.monitor != nil {
-				u.monitor.IncUploadCountFailure(string(outputType), float64(elapsed.Milliseconds()))
-			}
-			u.primaryFailed = true
-			primaryErr = err
 		}
+		if u.monitor != nil {
+			u.monitor.IncUploadCountFailure(string(outputType), float64(elapsed.Milliseconds()))
+		}
+		u.primaryFailed = true
+		primaryErr = err
+
 	}
 
 	if u.backup != nil {
@@ -172,9 +172,8 @@ func (u *Uploader) Upload(
 		if primaryErr != nil {
 			return "", 0, psrpc.NewErrorf(psrpc.InvalidArgument,
 				"primary: %s\nbackup: %s", primaryErr.Error(), backupErr.Error())
-		} else {
-			return "", 0, psrpc.NewError(psrpc.InvalidArgument, backupErr)
 		}
+		return "", 0, psrpc.NewError(psrpc.InvalidArgument, backupErr)
 	}
 
 	return "", 0, primaryErr

@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func (r *Runner) fullContentCheck(t *testing.T, file string, info *FFProbeInfo) {
+func (r *Runner) fullContentCheck(t *testing.T, file string, _ *FFProbeInfo) {
 	if r.Muting {
 		// TODO: support for content check on muted tracks to be added later
 		return
@@ -79,7 +79,7 @@ func (r *Runner) videoOnlyContentCheck(t *testing.T, file string, info *FFProbeI
 	requireDurationInDelta(t, avgFlashSpacing, time.Second, time.Millisecond*200)
 }
 
-func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, info *FFProbeInfo) {
+func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, _ *FFProbeInfo) {
 	if r.Muting {
 		// TODO: support for content check on muted tracks to be added later
 		return
