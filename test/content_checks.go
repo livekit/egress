@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//go:build integration
 
 package test
 
@@ -22,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func (r *Runner) fullContentCheck(t *testing.T, file string, info *FFProbeInfo) {
+func (r *Runner) fullContentCheck(t *testing.T, file string, _ *FFProbeInfo) {
 	if r.Muting {
 		// TODO: support for content check on muted tracks to be added later
 		return
@@ -78,7 +79,7 @@ func (r *Runner) videoOnlyContentCheck(t *testing.T, file string, info *FFProbeI
 	requireDurationInDelta(t, avgFlashSpacing, time.Second, time.Millisecond*200)
 }
 
-func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, info *FFProbeInfo) {
+func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, _ *FFProbeInfo) {
 	if r.Muting {
 		// TODO: support for content check on muted tracks to be added later
 		return

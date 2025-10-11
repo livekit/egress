@@ -37,6 +37,7 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	o := p.GetSegmentConfig()
 
 	var h264parse *gst.Element
+
 	var err error
 	if p.VideoEnabled {
 		h264parse, err = gst.NewElement("h264parse")
@@ -59,12 +60,13 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	if err = sink.SetProperty("send-keyframe-requests", true); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
+
 	if err = sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	var startDate time.Time
-	_, err = sink.Connect("format-location-full", func(self *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
+	_, err = sink.Connect("format-location-full", func(_ *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
 		var pts time.Duration
 		if firstSample != nil && firstSample.GetBuffer() != nil {
 			pts = *firstSample.GetBuffer().PresentationTimestamp().AsDuration()
@@ -104,14 +106,14 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	}
 
 	b.SetGetSrcPad(func(name string) *gst.Pad {
-		if name == "audio" {
+		if name == audioBinName {
 			return sink.GetRequestPad("audio_%u")
 		} else if h264parse != nil {
 			return h264parse.GetStaticPad("sink")
-		} else {
-			// Should never happen
-			return nil
 		}
+		// Should never happen
+		return nil
+
 	})
 
 	return b, nil

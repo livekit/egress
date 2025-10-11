@@ -52,14 +52,13 @@ func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *confi
 	}
 
 	b.SetGetSrcPad(func(name string) *gst.Pad {
-		if name == "audio" {
+		if name == audioBinName {
 			return fakeAudio.GetStaticPad("sink")
-		} else {
-			return queue.GetStaticPad("sink")
 		}
+		return queue.GetStaticPad("sink")
 	})
 	b.SetShouldLink(func(srcBin string) bool {
-		return srcBin != "audio"
+		return srcBin != audioBinName
 	})
 
 	videoRate, err := gst.NewElement("videorate")

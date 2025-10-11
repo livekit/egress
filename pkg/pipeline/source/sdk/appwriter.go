@@ -23,6 +23,7 @@ import (
 	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
+	"github.com/linkdata/deadlock"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
@@ -71,7 +72,7 @@ type AppWriter struct {
 	samplesHead *sampleItem
 	samplesTail *sampleItem
 	samplesLen  int
-	samplesLock sync.Mutex
+	samplesLock deadlock.Mutex
 	samplesCond *sync.Cond
 
 	translator  Translator
@@ -80,12 +81,14 @@ type AppWriter struct {
 	pliThrottle core.Throttle
 
 	// a/v sync
+	synchronizer *synchronizer.Synchronizer
 	*synchronizer.TrackSynchronizer
 	driftHandler DriftHandler
 
 	lastPTS              time.Duration
 	lastDrift            time.Duration
 	lastPipelineCheckPTS time.Duration
+	initialized          bool
 
 	// state
 	buildReady   core.Fuse
@@ -130,6 +133,7 @@ func NewAppWriter(
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
 		callbacks:         callbacks,
+		synchronizer:      synchronizer,
 		TrackSynchronizer: synchronizer.AddTrack(track, rp.Identity()),
 		driftHandler:      driftHandler,
 	}
@@ -241,16 +245,26 @@ func (w *AppWriter) readNext() {
 		w.handleReadError(err)
 		return
 	}
-	// skip dummy packets
-	if len(pkt.Payload) == 0 {
-		return
-	}
 
-	// initialize on first packet
-	if w.lastReceived.Load().IsZero() {
-		w.Initialize(pkt)
+	receivedAt := time.Now()
+	var packets []jitter.ExtPacket
+	if !w.initialized {
+		ready, dropped, done := w.PrimeForStart(jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt})
+		if dropped > 0 {
+			w.stats.packetsDropped.Add(uint64(dropped))
+			if w.sendPLI != nil {
+				w.sendPLI()
+			}
+		}
+		if !done {
+			return
+		}
+		w.initialized = true
+		packets = ready
+		w.lastReceived.Store(ready[len(ready)-1].ReceivedAt)
+	} else {
+		w.lastReceived.Store(receivedAt)
 	}
-	w.lastReceived.Store(time.Now())
 
 	if !w.active.Swap(true) {
 		// set track active
@@ -262,9 +276,11 @@ func (w *AppWriter) readNext() {
 			w.sendPLI()
 		}
 	}
-
-	// push packet to jitter buffer
-	w.buffer.Push(pkt)
+	if len(packets) > 0 {
+		w.buffer.PushExtPacketBatch(packets)
+	} else {
+		w.buffer.Push(pkt)
+	}
 }
 
 func (w *AppWriter) handleReadError(err error) {
@@ -430,6 +446,13 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		return err
 	}
 
+	if pts < 0 {
+		// TODO: handle it by sending new gst segment that will reflect the offset
+		w.logger.Debugw("negative packet pts, dropping", "pts", pts)
+		w.stats.packetsDropped.Inc()
+		return nil
+	}
+
 	p, err := pkt.Packet.Marshal()
 	if err != nil {
 		w.stats.packetsDropped.Inc()
@@ -515,6 +538,7 @@ func (w *AppWriter) Drain(force bool) {
 
 	// wait until finished
 	<-w.finished.Watch()
+	w.synchronizer.RemoveTrack(w.track.ID())
 }
 
 func (w *AppWriter) logStats() {

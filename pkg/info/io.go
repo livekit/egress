@@ -147,7 +147,7 @@ func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) e
 	})
 }
 
-func (c *ioClient) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error {
+func (c *ioClient) UpdateMetrics(_ context.Context, _ *rpc.UpdateMetricsRequest) error {
 	return nil
 }
 

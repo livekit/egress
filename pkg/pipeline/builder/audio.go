@@ -40,6 +40,7 @@ const (
 	blockingQueue = false
 
 	audioRateTolerance = 3 * time.Millisecond
+	audioBinName       = "audio"
 )
 
 type AudioBin struct {
@@ -117,7 +118,7 @@ func (a *audioPacer) stop() {
 
 func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
 	b := &AudioBin{
-		bin:   pipeline.NewBin("audio"),
+		bin:   pipeline.NewBin(audioBinName),
 		conf:  p,
 		names: make(map[string]string),
 	}
@@ -138,7 +139,7 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 	}
 
 	if len(p.GetEncodedOutputs()) > 1 {
-		tee, err := gst.NewElementWithName("tee", "audio_tee")
+		tee, err := gst.NewElementWithName("tee", fmt.Sprintf("%s_tee", audioBinName))
 		if err != nil {
 			return err
 		}
@@ -146,7 +147,7 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 			return err
 		}
 	} else {
-		queue, err := gstreamer.BuildQueue("audio_queue", p.Latency.PipelineLatency, leakyQueue)
+		queue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_queue", audioBinName), p.Latency.PipelineLatency, leakyQueue)
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -286,7 +287,7 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 		addAudioConvertFunc = b.addAudioConvertWithPitch
 	}
 
-	if err := addAudioConvertFunc(appSrcBin, b.conf, b.getChannel(ts), leakyQueue); err != nil {
+	if err := addAudioConvertFunc(appSrcBin, b.conf, b.getChannel(ts), blockingQueue); err != nil {
 		return err
 	}
 
@@ -315,9 +316,8 @@ func (b *AudioBin) getChannel(ts *config.TrackSource) int {
 	case livekit.AudioMixing_DUAL_CHANNEL_AGENT:
 		if ts.ParticipantKind == lksdk.ParticipantAgent {
 			return audioChannelLeft
-		} else {
-			return audioChannelRight
 		}
+		return audioChannelRight
 
 	case livekit.AudioMixing_DUAL_CHANNEL_ALTERNATE:
 		next := b.nextChannel
@@ -329,7 +329,7 @@ func (b *AudioBin) getChannel(ts *config.TrackSource) int {
 }
 
 func (b *AudioBin) addAudioTestSrcBin() error {
-	testSrcBin := b.bin.NewBin("audio_test_src")
+	testSrcBin := b.bin.NewBin(fmt.Sprintf("%s_test_src", audioBinName))
 	if err := b.bin.AddSourceBin(testSrcBin); err != nil {
 		return err
 	}
@@ -405,6 +405,19 @@ func (b *AudioBin) addEncoder() error {
 		}
 		return b.bin.AddElement(faac)
 
+	case types.MimeTypeMP3:
+		mp3enc, err := gst.NewElement("lamemp3enc")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = mp3enc.SetProperty("bitrate", int(b.conf.AudioBitrate)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = mp3enc.SetProperty("cbr", true); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		return b.bin.AddElement(mp3enc)
+
 	case types.MimeTypeRawAudio:
 		return nil
 
@@ -419,7 +432,7 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel int, 
 		return err
 	}
 
-	audioQueue, err := gstreamer.BuildQueue("audio_input_queue", p.Latency.PipelineLatency, isLeaky)
+	audioQueue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_input_queue", audioBinName), p.Latency.PipelineLatency, isLeaky)
 	if err != nil {
 		return err
 	}
@@ -480,14 +493,14 @@ func (b *AudioBin) installPitchProbes() {
 	}
 }
 
-func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.PipelineConfig, channel int, isLeaky bool) error {
+func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.PipelineConfig, channel int, isLeaky bool) error {
 	// add audio rate element to handle discontinuities or codec DTX
 	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
 	if err != nil {
 		return err
 	}
 
-	q, err := gstreamer.BuildQueue("audio_input_queue", p.Latency.PipelineLatency, isLeaky)
+	q, err := gstreamer.BuildQueue(fmt.Sprintf("%s_input_queue", audioBinName), p.Latency.PipelineLatency, isLeaky)
 	if err != nil {
 		return err
 	}
@@ -524,14 +537,14 @@ func (ab *AudioBin) addAudioConvertWithPitch(b *gstreamer.Bin, p *config.Pipelin
 	}
 
 	// keep a handle for pacer control
-	ab.audioPacer = &audioPacer{
+	b.audioPacer = &audioPacer{
 		pitch:               pitch,
 		tempoAdjustmentRate: p.AudioTempoController.AdjustmentRate,
 	}
 
-	ab.installPitchProbes()
+	b.installPitchProbes()
 
-	return b.AddElements(rate, q, ac1, ar1, f32caps, pitch, ac2, s16caps)
+	return bin.AddElements(rate, q, ac1, ar1, f32caps, pitch, ac2, s16caps)
 }
 
 // F32 caps used only around `pitch`
@@ -574,6 +587,11 @@ func newAudioCapsFilter(p *config.PipelineConfig, channel int) (*gst.Element, er
 			channelCaps,
 		))
 	case types.MimeTypeAAC:
+		caps = gst.NewCapsFromString(fmt.Sprintf(
+			"audio/x-raw,format=S16LE,layout=interleaved,rate=%d,%s",
+			p.AudioFrequency, channelCaps,
+		))
+	case types.MimeTypeMP3:
 		caps = gst.NewCapsFromString(fmt.Sprintf(
 			"audio/x-raw,format=S16LE,layout=interleaved,rate=%d,%s",
 			p.AudioFrequency, channelCaps,

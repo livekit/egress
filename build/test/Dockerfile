@@ -15,10 +15,12 @@
 # syntax=docker/dockerfile:1.6
 ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
+ARG GO_VERSION=1.24.5
+ARG LINT_VERSION=v1.64.2
 
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template
 
-FROM livekit/gstreamer:1.24.12-dev
+FROM livekit/gstreamer:1.24.12-dev AS builder
 
 WORKDIR /workspace
 
@@ -26,12 +28,13 @@ ARG TARGETPLATFORM
 
 # Deadlock 0 = off, 1 = on
 ARG DEADLOCK=0
+ARG GO_VERSION
 
 # install go
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    wget https://go.dev/dl/go1.22.1.linux-${GOARCH}.tar.gz && \
+    wget https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz && \
     rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go1.22.1.linux-${GOARCH}.tar.gz
+    tar -C /usr/local -xzf go${GO_VERSION}.linux-${GOARCH}.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 ENV GOMODCACHE=/go/pkg/mod \
@@ -66,6 +69,22 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/go/build-cache \
     if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
     CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} go test -c -v -race --tags=integration ./test
+
+FROM golangci/golangci-lint:${LINT_VERSION} AS golangci
+
+FROM builder AS lint
+
+COPY --from=golangci /usr/bin/golangci-lint /usr/local/bin/golangci-lint
+COPY .golangci.yaml .
+
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/go/build-cache \
+    CGO_ENABLED=1 \
+    golangci-lint run \
+        --timeout=5m \
+        --modules-download-mode=mod \
+        --build-tags="${LINT_TAGS}"
+RUN echo ok >/lint_ok
 
 
 FROM livekit/gstreamer:1.24.12-prod
@@ -121,6 +140,9 @@ COPY --from=1 /workspace/test.test .
 COPY media-samples /media-samples
 COPY --from=1 /workspace/test/agents /agents
 COPY build/test/entrypoint.sh .
+
+# Force lint stage to run successfully
+COPY --from=lint /lint_ok /__lint_ok
 
 # run tests
 USER egress
