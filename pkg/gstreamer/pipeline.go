@@ -37,12 +37,6 @@ type Pipeline struct {
 	elementsAdded bool
 }
 
-// TimeProvider is used to get the running time and playhead position of the pipeline
-type TimeProvider interface {
-	RunningTime() (time.Duration, bool)
-	PlayheadPosition() (time.Duration, bool)
-}
-
 // A pipeline can have either elements or src and sink bins. If you add both you will get a wrong hierarchy error
 // Bins can contain both elements and src and sink bins
 

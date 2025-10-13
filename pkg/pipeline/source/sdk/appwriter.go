@@ -101,7 +101,7 @@ type AppWriter struct {
 	finished     core.Fuse
 	stats        appWriterStats
 
-	tpMu         sync.RWMutex
+	tpLock       deadlock.RWMutex
 	timeProvider gstreamer.TimeProvider
 }
 
@@ -122,7 +122,6 @@ func NewAppWriter(
 	ts *config.TrackSource,
 	synchronizer *synchronizer.Synchronizer,
 	driftHandler DriftHandler,
-	timeProvider gstreamer.TimeProvider,
 	callbacks *gstreamer.Callbacks,
 ) (*AppWriter, error) {
 	w := &AppWriter{
@@ -136,6 +135,7 @@ func NewAppWriter(
 		synchronizer:      synchronizer,
 		TrackSynchronizer: synchronizer.AddTrack(track, rp.Identity()),
 		driftHandler:      driftHandler,
+		timeProvider:      gstreamer.NopTimeProvider(),
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
 
@@ -192,8 +192,6 @@ func NewAppWriter(
 		jitter.WithLogger(w.logger),
 		jitter.WithPacketLossHandler(w.sendPLI),
 	)
-	w.SetTimeProvider(timeProvider)
-
 	go w.start()
 	return w, nil
 }
@@ -327,28 +325,25 @@ func (w *AppWriter) handleReadError(err error) {
 }
 
 func (w *AppWriter) SetTimeProvider(tp gstreamer.TimeProvider) {
-	w.tpMu.Lock()
+	w.tpLock.Lock()
+	if tp == nil {
+		tp = gstreamer.NopTimeProvider()
+	}
 	w.timeProvider = tp
-	w.tpMu.Unlock()
+	w.tpLock.Unlock()
 }
 
 func (w *AppWriter) pipelineRunningTime() (time.Duration, bool) {
-	w.tpMu.RLock()
+	w.tpLock.RLock()
 	provider := w.timeProvider
-	w.tpMu.RUnlock()
-	if provider == nil {
-		return 0, false
-	}
+	w.tpLock.RUnlock()
 	return provider.RunningTime()
 }
 
 func (w *AppWriter) pipelinePlayhead() (time.Duration, bool) {
-	w.tpMu.RLock()
+	w.tpLock.RLock()
 	provider := w.timeProvider
-	w.tpMu.RUnlock()
-	if provider == nil {
-		return 0, false
-	}
+	w.tpLock.RUnlock()
 	return provider.PlayheadPosition()
 }
 

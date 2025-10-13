@@ -603,14 +603,15 @@ func (s *SDKSource) createWriter(
 	}
 
 	ts.AppSrc = app.SrcFromElement(src)
-	s.mu.RLock()
-	timeProvider := s.timeProvider
-	s.mu.RUnlock()
 
-	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, tc, timeProvider, s.callbacks)
+	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, tc, s.callbacks)
 	if err != nil {
 		return nil, err
 	}
+
+	s.mu.RLock()
+	writer.SetTimeProvider(s.timeProvider)
+	s.mu.RUnlock()
 
 	return writer, nil
 }
