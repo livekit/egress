@@ -165,7 +165,9 @@ func (b *AudioBin) onTrackAdded(ts *config.TrackSource) {
 	}
 
 	if ts.TrackKind == lksdk.TrackKindAudio {
+		logger.Debugw("adding audio app src bin", "trackID", ts.TrackID)
 		if err := b.addAudioAppSrcBin(ts); err != nil {
+			logger.Errorw("failed to add audio app src bin", err, "trackID", ts.TrackID)
 			b.bin.OnError(err)
 		}
 	}

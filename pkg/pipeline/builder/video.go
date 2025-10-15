@@ -118,7 +118,9 @@ func (b *VideoBin) onTrackAdded(ts *config.TrackSource) {
 	}
 
 	if ts.TrackKind == lksdk.TrackKindVideo {
+		logger.Debugw("adding video app src bin", "trackID", ts.TrackID)
 		if err := b.addAppSrcBin(ts); err != nil {
+			logger.Errorw("failed to add video app src bin", err, "trackID", ts.TrackID)
 			b.bin.OnError(err)
 		}
 	}
