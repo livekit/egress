@@ -174,10 +174,14 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	defer c.Close()
 
 	defer func() {
-		logger.Debugw("Audio QoS stats",
-			"audio buffers dropped", c.stats.droppedAudioBuffers.Load(),
-			"total audio duration dropped", c.stats.droppedAudioDuration.Load(),
-		)
+		if c.SourceType == types.SourceTypeSDK {
+			logger.Debugw(
+				"audio qos stats",
+				"audioBuffersDropped", c.stats.droppedAudioBuffers.Load(),
+				"totalAudioDurationDropped", c.stats.droppedAudioDuration.Load(),
+				"requestType", c.RequestType,
+			)
+		}
 	}()
 
 	// session limit timer
