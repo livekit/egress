@@ -426,6 +426,7 @@ func (c *Controller) sendEOS() {
 }
 
 func (c *Controller) OnError(err error) {
+	logger.Errorw("controller onError invoked", err)
 	if errors.Is(err, errors.ErrPipelineFrozen) && c.Debug.EnableProfiling {
 		c.generateDotFile()
 		c.generatePProf()
