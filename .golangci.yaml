@@ -16,6 +16,7 @@ linters:
     - errname # checks that sentinel errors are prefixed with the Err and error types are suffixed with the Error
     - fatcontext # detects nested contexts in loops
     - goconst # checks for hardcoded strings that could be replaced with a constant
+    - misspell # checks for misspelled words
 
 linters-settings:
   revive:
@@ -51,6 +52,9 @@ linters-settings:
       - 'sync\.RWMutex' # Use deadlock.RWMutex instead
     analyze-types: true
     analyze-generics: true
+  misspell:
+    locale: US
+    mode: default
 issues:
   exclude-rules:
     - path: cmd/server/main.go
