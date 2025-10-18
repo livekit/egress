@@ -21,7 +21,7 @@ import (
 	"github.com/go-gst/go-gst/gst"
 )
 
-// muxer captures the minimal behaviour builders need from a muxing element, allowing
+// muxer captures the minimal behavior builders need from a muxing element, allowing
 // us to swap between real gst muxers and light-weight shims (e.g. identity for MP3).
 type muxer interface {
 	GetRequestPad(name string) *gst.Pad
