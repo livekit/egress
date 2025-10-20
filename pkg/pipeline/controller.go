@@ -407,6 +407,7 @@ func (c *Controller) sendEOS() {
 	}
 
 	c.eosTimer = time.AfterFunc(eosTimeout, func() {
+		logger.Debugw("eos timer firing")
 		for egressType, si := range c.sinks {
 			switch egressType {
 			case types.EgressTypeFile, types.EgressTypeSegments, types.EgressTypeImages:
