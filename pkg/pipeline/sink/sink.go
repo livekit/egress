@@ -70,6 +70,7 @@ func NewSink(
 
 func (s *base) AddEOSProbe() {
 	if err := s.bin.AddOnEOSReceived(func() {
+		logger.Debugw("eos received", "sink", s.bin.GetName())
 		s.eosReceived.Store(true)
 	}); err != nil {
 		logger.Errorw("failed to add EOS probe", err)
