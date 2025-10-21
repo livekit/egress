@@ -44,6 +44,7 @@ import (
 const (
 	errBufferTooSmall      = "buffer too small"
 	discontinuityTolerance = 500 * time.Millisecond
+	pipelineCheckInterval  = 5 * time.Second
 	cSamplesQueueDepth     = 100
 )
 
@@ -84,9 +85,10 @@ type AppWriter struct {
 	*synchronizer.TrackSynchronizer
 	driftHandler DriftHandler
 
-	lastPTS     time.Duration
-	lastDrift   time.Duration
-	initialized bool
+	lastPTS              time.Duration
+	lastDrift            time.Duration
+	lastPipelineCheckPTS time.Duration
+	initialized          bool
 
 	// state
 	buildReady   core.Fuse
@@ -98,6 +100,9 @@ type AppWriter struct {
 	endStream    core.Fuse
 	finished     core.Fuse
 	stats        appWriterStats
+
+	tpLock       deadlock.RWMutex
+	timeProvider gstreamer.TimeProvider
 }
 
 type appWriterStats struct {
@@ -130,6 +135,7 @@ func NewAppWriter(
 		synchronizer:      synchronizer,
 		TrackSynchronizer: synchronizer.AddTrack(track, rp.Identity()),
 		driftHandler:      driftHandler,
+		timeProvider:      gstreamer.NopTimeProvider(),
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
 
@@ -186,7 +192,6 @@ func NewAppWriter(
 		jitter.WithLogger(w.logger),
 		jitter.WithPacketLossHandler(w.sendPLI),
 	)
-
 	go w.start()
 	return w, nil
 }
@@ -261,7 +266,7 @@ func (w *AppWriter) readNext() {
 
 	if !w.active.Swap(true) {
 		// set track active
-		w.logger.Debugw("track active", "timestamp", time.Since(w.startTime))
+		w.logTrackState("track active")
 		if w.buildReady.IsBroken() {
 			w.callbacks.OnTrackUnmuted(w.track.ID())
 		}
@@ -296,7 +301,7 @@ func (w *AppWriter) handleReadError(err error) {
 		}
 		if w.pub.IsMuted() || time.Since(lastRecv) > w.conf.Latency.JitterBufferLatency {
 			// set track inactive
-			w.logger.Debugw("track inactive", "timestamp", time.Since(w.startTime))
+			w.logTrackState("track inactive")
 			w.active.Store(false)
 			if w.buildReady.IsBroken() {
 				w.callbacks.OnTrackMuted(w.track.ID())
@@ -317,6 +322,40 @@ func (w *AppWriter) handleReadError(err error) {
 		w.samplesCond.Broadcast()
 		w.samplesLock.Unlock()
 	}
+}
+
+func (w *AppWriter) SetTimeProvider(tp gstreamer.TimeProvider) {
+	w.tpLock.Lock()
+	if tp == nil {
+		tp = gstreamer.NopTimeProvider()
+	}
+	w.timeProvider = tp
+	w.tpLock.Unlock()
+}
+
+func (w *AppWriter) pipelineRunningTime() (time.Duration, bool) {
+	w.tpLock.RLock()
+	provider := w.timeProvider
+	w.tpLock.RUnlock()
+	return provider.RunningTime()
+}
+
+func (w *AppWriter) pipelinePlayhead() (time.Duration, bool) {
+	w.tpLock.RLock()
+	provider := w.timeProvider
+	w.tpLock.RUnlock()
+	return provider.PlayheadPosition()
+}
+
+func (w *AppWriter) logTrackState(event string) {
+	fields := []any{"timestamp", time.Since(w.startTime)}
+	if pipelineTime, ok := w.pipelineRunningTime(); ok {
+		fields = append(fields, "pipeline_time", pipelineTime)
+	}
+	if playhead, ok := w.pipelinePlayhead(); ok {
+		fields = append(fields, "playhead", playhead)
+	}
+	w.logger.Debugw(event, fields...)
 }
 
 func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
@@ -438,9 +477,34 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		w.stats.packetsDropped.Inc()
 		w.logger.Infow("unexpected flow return", "flow", flow)
 	}
+
 	w.lastPushed.Store(time.Now())
 	w.lastPTS = pts
+	w.maybeCheckPipelineLag(pts)
 	return nil
+}
+
+func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {
+	if pts-w.lastPipelineCheckPTS < pipelineCheckInterval {
+		return
+	}
+	pipelineTime, ok := w.pipelineRunningTime()
+	if !ok {
+		return
+	}
+	w.lastPipelineCheckPTS = pts
+	if pipelineTime <= w.conf.Latency.AudioMixerLatency {
+		return
+	}
+
+	if pts < pipelineTime-w.conf.Latency.AudioMixerLatency {
+		w.logger.Errorw(
+			"packet PTS too far in the past compared to the pipeline, mixer will drop the buffer!",
+			nil,
+			"pts", pts,
+			"pipelineRunningTime", pipelineTime,
+		)
+	}
 }
 
 func (w *AppWriter) Playing() {

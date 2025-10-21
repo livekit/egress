@@ -89,6 +89,7 @@ type LatencyConfig struct {
 	OldPacketThreshold                time.Duration `yaml:"old_packet_threshold,omitempty"`                   // syncrhonizer drops packets older than this, 0 to disable packet drops
 	RTCPSenderReportRebaseEnabled     bool          `yaml:"rtcp_sender_report_rebase_enabled,omitempty"`      // synchronizer will rebase RTCP Sender Report to local clock
 	PacketBurstEstimatorEnabled       bool          `yaml:"packet_burst_estimator_enabled,omitempty"`         // enable burst estimator for improving track synchronization
+	EnablePipelineTimeFeedback        bool          `yaml:"enable_pipeline_time_feedback,omitempty"`          // enable pipeline time feedback for synchronizer
 }
 
 type AudioTempoController struct {

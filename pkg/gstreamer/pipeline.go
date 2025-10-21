@@ -15,6 +15,7 @@
 package gstreamer
 
 import (
+	"math"
 	"time"
 
 	"github.com/go-gst/go-glib/glib"
@@ -38,6 +39,7 @@ type Pipeline struct {
 
 // A pipeline can have either elements or src and sink bins. If you add both you will get a wrong hierarchy error
 // Bins can contain both elements and src and sink bins
+
 func NewPipeline(name string, latency time.Duration, callbacks *Callbacks) (*Pipeline, error) {
 	pipeline, err := gst.NewPipeline(name)
 	if err != nil {
@@ -165,4 +167,46 @@ func (p *Pipeline) Stop() {
 
 func (p *Pipeline) DebugBinToDotData(details gst.DebugGraphDetails) string {
 	return p.pipeline.DebugBinToDotData(details)
+}
+
+// RunningTime returns the running time of the gst pipeline
+func (p *Pipeline) RunningTime() (time.Duration, bool) {
+	clock := p.pipeline.GetPipelineClock()
+	if clock == nil {
+		return 0, false
+	}
+
+	clockTime := clock.GetTime()
+	if clockTime == gst.ClockTimeNone {
+		return 0, false
+	}
+
+	baseTime := p.pipeline.GetBaseTime()
+	if baseTime == gst.ClockTimeNone {
+		return 0, false
+	}
+
+	clockValue := uint64(clockTime)
+	baseValue := uint64(baseTime)
+	if clockValue < baseValue {
+		return 0, false
+	}
+
+	delta := clockValue - baseValue
+	if delta > uint64(math.MaxInt64) {
+		return time.Duration(math.MaxInt64), false
+	}
+
+	return time.Duration(int64(delta)), true
+}
+
+// PlayheadPosition returns the playhead position of the gst pipeline
+// It is equivalent to the last timestamp seen by a sink element
+func (p *Pipeline) PlayheadPosition() (time.Duration, bool) {
+	ok, position := p.pipeline.QueryPosition(gst.FormatTime)
+	if !ok || position < 0 {
+		return 0, false
+	}
+
+	return time.Duration(position), true
 }

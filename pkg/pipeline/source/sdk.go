@@ -63,6 +63,8 @@ type SDKSource struct {
 
 	startRecording core.Fuse
 	endRecording   core.Fuse
+
+	timeProvider gstreamer.TimeProvider
 }
 
 type subscriptionResult struct {
@@ -100,6 +102,11 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 	}
 	if p.Latency.PacketBurstEstimatorEnabled {
 		opts = append(opts, synchronizer.WithStartGate())
+	}
+	if p.Latency.EnablePipelineTimeFeedback {
+		// time provider is not available yet, will be set later
+		// add some leeway to the mixer latency
+		opts = append(opts, synchronizer.WithMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond))
 	}
 
 	if p.RequestType == types.RequestTypeRoomComposite || p.AudioTempoController.Enabled {
@@ -168,6 +175,20 @@ func (s *SDKSource) StreamStopped(trackID string) {
 
 func (s *SDKSource) Close() {
 	s.room.Disconnect()
+}
+
+func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
+	s.mu.Lock()
+	s.timeProvider = tp
+	if s.Latency.EnablePipelineTimeFeedback && tp != nil {
+		s.sync.SetMediaRunningTime(tp.RunningTime)
+	} else {
+		s.sync.SetMediaRunningTime(nil)
+	}
+	for _, w := range s.writers {
+		w.SetTimeProvider(tp)
+	}
+	s.mu.Unlock()
 }
 
 // ----- Subscriptions -----
@@ -592,10 +613,15 @@ func (s *SDKSource) createWriter(
 	}
 
 	ts.AppSrc = app.SrcFromElement(src)
+
 	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, tc, s.callbacks)
 	if err != nil {
 		return nil, err
 	}
+
+	s.mu.RLock()
+	writer.SetTimeProvider(s.timeProvider)
+	s.mu.RUnlock()
 
 	return writer, nil
 }
