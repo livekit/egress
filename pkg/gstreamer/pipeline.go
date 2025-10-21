@@ -145,6 +145,7 @@ func (p *Pipeline) SendEOS() {
 }
 
 func (p *Pipeline) Stop() {
+	logger.Debugw("stopping pipeline")
 	old, ok := p.UpgradeState(StateStopping)
 	if !ok {
 		return
