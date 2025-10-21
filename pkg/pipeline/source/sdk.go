@@ -92,6 +92,9 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		synchronizer.WithOnStarted(func() {
 			s.startRecording.Break()
 		}),
+		// time provider is not available yet, will be set later
+		// add some leeway to the mixer latency
+		synchronizer.WithMediaRunningTime(nil, s.Latency.AudioMixerLatency+200*time.Millisecond),
 	}
 
 	if p.Latency.PreJitterBufferReceiveTimeEnabled {
@@ -175,6 +178,11 @@ func (s *SDKSource) Close() {
 func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
 	s.mu.Lock()
 	s.timeProvider = tp
+	if tp != nil {
+		s.sync.SetMediaRunningTime(tp.RunningTime)
+	} else {
+		s.sync.SetMediaRunningTime(nil)
+	}
 	for _, w := range s.writers {
 		w.SetTimeProvider(tp)
 	}
