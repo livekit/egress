@@ -92,9 +92,6 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		synchronizer.WithOnStarted(func() {
 			s.startRecording.Break()
 		}),
-		// time provider is not available yet, will be set later
-		// add some leeway to the mixer latency
-		synchronizer.WithMediaRunningTime(nil, s.Latency.AudioMixerLatency+200*time.Millisecond),
 	}
 
 	if p.Latency.PreJitterBufferReceiveTimeEnabled {
@@ -105,6 +102,11 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 	}
 	if p.Latency.PacketBurstEstimatorEnabled {
 		opts = append(opts, synchronizer.WithStartGate())
+	}
+	if p.Latency.EnablePipelineTimeFeedback {
+		// time provider is not available yet, will be set later
+		// add some leeway to the mixer latency
+		opts = append(opts, synchronizer.WithMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond))
 	}
 
 	if p.RequestType == types.RequestTypeRoomComposite || p.AudioTempoController.Enabled {
@@ -178,7 +180,7 @@ func (s *SDKSource) Close() {
 func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
 	s.mu.Lock()
 	s.timeProvider = tp
-	if tp != nil {
+	if s.Latency.EnablePipelineTimeFeedback && tp != nil {
 		s.sync.SetMediaRunningTime(tp.RunningTime)
 	} else {
 		s.sync.SetMediaRunningTime(nil)
