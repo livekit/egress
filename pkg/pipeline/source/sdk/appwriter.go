@@ -141,7 +141,7 @@ func NewAppWriter(
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
 
-	ts.OnPLISignalRequired = w.onPLISignalRequired
+	ts.OnPLIRequired = w.onPLIRequired
 
 	if conf.Debug.EnableTrackLogging {
 		csvLogger, err := logging.NewCSVLogger[logging.TrackStats](track.ID())
@@ -238,7 +238,7 @@ func (w *AppWriter) start() {
 	}
 
 	if w.trackSource != nil {
-		w.trackSource.OnPLISignalRequired = nil
+		w.trackSource.OnPLIRequired = nil
 	}
 
 	w.finished.Break()
@@ -366,7 +366,7 @@ func (w *AppWriter) logTrackState(event string) {
 	w.logger.Debugw(event, fields...)
 }
 
-func (w *AppWriter) onPLISignalRequired() {
+func (w *AppWriter) onPLIRequired() {
 	if w.finished.IsBroken() || w.sendPLI == nil {
 		return
 	}
