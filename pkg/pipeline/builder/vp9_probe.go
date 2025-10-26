@@ -2,7 +2,6 @@ package builder
 
 import (
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -41,14 +40,12 @@ type vp9ParseProbe struct {
 	lastSinkPTS   atomic.Uint64
 	lastSinkValid atomic.Bool
 
-	keyframeMu       deadlock.Mutex
-	keyframePTS      []time.Duration
-	totalIntervalSum time.Duration
-	totalIntervals   int
-
-	keyframeReqMu   deadlock.Mutex
-	keyframeReqStop chan struct{}
-	keyframeReqWG   sync.WaitGroup
+	keyframeMu            deadlock.Mutex
+	keyframePTS           []time.Duration
+	totalIntervalSum      time.Duration
+	totalIntervals        int
+	lastKeyframeRequestNS atomic.Int64
+	keyframePending       atomic.Bool
 }
 
 func newVP9ParseProbe(trackID string, parse *gst.Element, onSignal func()) (*vp9ParseProbe, error) {
@@ -79,7 +76,6 @@ func newVP9ParseProbe(trackID string, parse *gst.Element, onSignal func()) (*vp9
 }
 
 func (p *vp9ParseProbe) Close() {
-	p.stopKeyframeRequestLoop()
 	p.logKeyframeHistory("probe_closed")
 
 	if p.srcPad != nil {
@@ -142,10 +138,8 @@ func (p *vp9ParseProbe) onSinkBuffer(_ *gst.Pad, info *gst.PadProbeInfo) gst.Pad
 }
 
 func (p *vp9ParseProbe) handleMissingPTS() {
-	if p.onSignal != nil {
-		p.onSignal()
-	}
-	p.startKeyframeRequestLoop()
+	p.keyframePending.Store(true)
+	p.requestKeyframeIfDue()
 
 	if !p.missingPTS.CompareAndSwap(false, true) {
 		return
@@ -169,8 +163,10 @@ func (p *vp9ParseProbe) handleValidPTS(buffer *gst.Buffer, pts time.Duration) {
 	p.missingPTS.Store(false)
 
 	if buffer.GetFlags()&gst.BufferFlagDeltaUnit == 0 {
-		p.stopKeyframeRequestLoop()
+		p.keyframePending.Store(false)
 		p.trackKeyframe(pts)
+	} else {
+		p.requestKeyframeIfDue()
 	}
 }
 
@@ -194,49 +190,24 @@ func (p *vp9ParseProbe) trackKeyframe(pts time.Duration) {
 
 }
 
-func (p *vp9ParseProbe) startKeyframeRequestLoop() {
-	p.keyframeReqMu.Lock()
-	if p.keyframeReqStop != nil {
-		p.keyframeReqMu.Unlock()
+func (p *vp9ParseProbe) requestKeyframeIfDue() {
+	if p.onSignal == nil {
 		return
 	}
-	stop := make(chan struct{})
-	p.keyframeReqStop = stop
-	p.keyframeReqWG.Add(1)
-	p.keyframeReqMu.Unlock()
-
-	go func() {
-		defer p.keyframeReqWG.Done()
-		p.logger.Debugw("starting keyframe request loop")
-		ticker := time.NewTicker(keyframeRequestInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				if p.onSignal != nil {
-					p.onSignal()
-				}
-			case <-stop:
-				return
-			}
-		}
-	}()
-}
-
-func (p *vp9ParseProbe) stopKeyframeRequestLoop() {
-	p.keyframeReqMu.Lock()
-	stop := p.keyframeReqStop
-	if stop != nil {
-		p.logger.Debugw("stopping keyframe request loop")
-		close(stop)
-		p.keyframeReqStop = nil
+	if !p.keyframePending.Load() {
+		return
 	}
-	p.keyframeReqMu.Unlock()
 
-	if stop != nil {
-		p.keyframeReqWG.Wait()
+	now := time.Now().UnixNano()
+	last := p.lastKeyframeRequestNS.Load()
+	if last != 0 && time.Duration(now-last) < keyframeRequestInterval {
+		return
 	}
+
+	if p.onSignal != nil {
+		p.onSignal()
+	}
+	p.lastKeyframeRequestNS.Store(now)
 }
 
 func clockTimeToDuration(ct gst.ClockTime) (time.Duration, bool) {
