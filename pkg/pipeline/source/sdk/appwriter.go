@@ -61,11 +61,12 @@ type AppWriter struct {
 	drift     atomic.Duration
 	maxDrift  atomic.Duration
 
-	pub       lksdk.TrackPublication
-	track     *webrtc.TrackRemote
-	codec     types.MimeType
-	src       *app.Source
-	startTime time.Time
+	pub         lksdk.TrackPublication
+	track       *webrtc.TrackRemote
+	codec       types.MimeType
+	src         *app.Source
+	startTime   time.Time
+	trackSource *config.TrackSource
 
 	buffer *jitter.Buffer
 
@@ -131,6 +132,7 @@ func NewAppWriter(
 		pub:               pub,
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
+		trackSource:       ts,
 		callbacks:         callbacks,
 		synchronizer:      synchronizer,
 		TrackSynchronizer: synchronizer.AddTrack(track, rp.Identity()),
@@ -138,6 +140,8 @@ func NewAppWriter(
 		timeProvider:      gstreamer.NopTimeProvider(),
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
+
+	ts.OnPLISignalRequired = w.onPLISignalRequired
 
 	if conf.Debug.EnableTrackLogging {
 		csvLogger, err := logging.NewCSVLogger[logging.TrackStats](track.ID())
@@ -231,6 +235,10 @@ func (w *AppWriter) start() {
 	w.logger.Infow("writer finished")
 	if w.csvLogger != nil {
 		w.csvLogger.Close()
+	}
+
+	if w.trackSource != nil {
+		w.trackSource.OnPLISignalRequired = nil
 	}
 
 	w.finished.Break()
@@ -356,6 +364,13 @@ func (w *AppWriter) logTrackState(event string) {
 		fields = append(fields, "playhead", playhead)
 	}
 	w.logger.Debugw(event, fields...)
+}
+
+func (w *AppWriter) onPLISignalRequired() {
+	if w.finished.IsBroken() || w.sendPLI == nil {
+		return
+	}
+	w.sendPLI()
 }
 
 func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
