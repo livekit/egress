@@ -2,6 +2,7 @@ package builder
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -12,8 +13,14 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-const keyframeHistorySize = 10
+const (
+	keyframeHistorySize     = 10
+	keyframeRequestInterval = 200 * time.Millisecond
+)
 
+// vp9ParseProbe inspects buffers around vp9parse to detect and signal missing
+// PTS and capture timing diagnostics. It never mutates the media flow; state
+// such as lastSinkPTS is tracked solely for logging and debugging.
 type vp9ParseProbe struct {
 	trackID string
 
@@ -38,6 +45,10 @@ type vp9ParseProbe struct {
 	keyframePTS      []time.Duration
 	totalIntervalSum time.Duration
 	totalIntervals   int
+
+	keyframeReqMu   deadlock.Mutex
+	keyframeReqStop chan struct{}
+	keyframeReqWG   sync.WaitGroup
 }
 
 func newVP9ParseProbe(trackID string, parse *gst.Element, onSignal func()) (*vp9ParseProbe, error) {
@@ -68,6 +79,7 @@ func newVP9ParseProbe(trackID string, parse *gst.Element, onSignal func()) (*vp9
 }
 
 func (p *vp9ParseProbe) Close() {
+	p.stopKeyframeRequestLoop()
 	p.logKeyframeHistory("probe_closed")
 
 	if p.srcPad != nil {
@@ -99,6 +111,7 @@ func (p *vp9ParseProbe) onSrcBuffer(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadP
 	return gst.PadProbeOK
 }
 
+// just for logging purposes
 func (p *vp9ParseProbe) onSinkBuffer(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 	buffer := info.GetBuffer()
 	if buffer == nil {
@@ -132,6 +145,7 @@ func (p *vp9ParseProbe) handleMissingPTS() {
 	if p.onSignal != nil {
 		p.onSignal()
 	}
+	p.startKeyframeRequestLoop()
 
 	if !p.missingPTS.CompareAndSwap(false, true) {
 		return
@@ -152,8 +166,10 @@ func (p *vp9ParseProbe) handleMissingPTS() {
 func (p *vp9ParseProbe) handleValidPTS(buffer *gst.Buffer, pts time.Duration) {
 	p.lastSrcPTS.Store(uint64(pts))
 	p.lastSrcValid.Store(true)
+	p.missingPTS.Store(false)
 
 	if buffer.GetFlags()&gst.BufferFlagDeltaUnit == 0 {
+		p.stopKeyframeRequestLoop()
 		p.trackKeyframe(pts)
 	}
 }
@@ -176,6 +192,51 @@ func (p *vp9ParseProbe) trackKeyframe(pts time.Duration) {
 		// sliding window only keeps the most recent timestamps for debugging logs
 	}
 
+}
+
+func (p *vp9ParseProbe) startKeyframeRequestLoop() {
+	p.keyframeReqMu.Lock()
+	if p.keyframeReqStop != nil {
+		p.keyframeReqMu.Unlock()
+		return
+	}
+	stop := make(chan struct{})
+	p.keyframeReqStop = stop
+	p.keyframeReqWG.Add(1)
+	p.keyframeReqMu.Unlock()
+
+	go func() {
+		defer p.keyframeReqWG.Done()
+		p.logger.Debugw("starting keyframe request loop")
+		ticker := time.NewTicker(keyframeRequestInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if p.onSignal != nil {
+					p.onSignal()
+				}
+			case <-stop:
+				return
+			}
+		}
+	}()
+}
+
+func (p *vp9ParseProbe) stopKeyframeRequestLoop() {
+	p.keyframeReqMu.Lock()
+	stop := p.keyframeReqStop
+	if stop != nil {
+		p.logger.Debugw("stopping keyframe request loop")
+		close(stop)
+		p.keyframeReqStop = nil
+	}
+	p.keyframeReqMu.Unlock()
+
+	if stop != nil {
+		p.keyframeReqWG.Wait()
+	}
 }
 
 func clockTimeToDuration(ct gst.ClockTime) (time.Duration, bool) {

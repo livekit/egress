@@ -430,7 +430,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 				return nil, err
 			}
 
-			probe, err := newVP9ParseProbe(ts.TrackID, vp9Parse, ts.OnPLIRequired)
+			probe, err := newVP9ParseProbe(ts.TrackID, vp9Parse, ts.OnKeyframeRequired)
 			if err != nil {
 				return nil, err
 			}
