@@ -12,7 +12,7 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-const keyframeHistorySize = 100
+const keyframeHistorySize = 10
 
 type vp9ParseProbe struct {
 	trackID string
