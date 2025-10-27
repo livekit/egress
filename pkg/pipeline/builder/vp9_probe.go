@@ -204,9 +204,8 @@ func (p *vp9ParseProbe) requestKeyframeIfDue() {
 		return
 	}
 
-	if p.onSignal != nil {
-		p.onSignal()
-	}
+	p.onSignal()
+
 	p.lastKeyframeRequestNS.Store(now)
 }
 
