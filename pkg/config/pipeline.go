@@ -87,14 +87,15 @@ type SDKSourceParams struct {
 }
 
 type TrackSource struct {
-	TrackID         string
-	TrackKind       lksdk.TrackKind
-	ParticipantKind lksdk.ParticipantKind
-	AppSrc          *app.Source
-	MimeType        types.MimeType
-	PayloadType     webrtc.PayloadType
-	ClockRate       uint32
-	TempoController *tempo.Controller
+	TrackID            string
+	TrackKind          lksdk.TrackKind
+	ParticipantKind    lksdk.ParticipantKind
+	AppSrc             *app.Source
+	MimeType           types.MimeType
+	PayloadType        webrtc.PayloadType
+	ClockRate          uint32
+	TempoController    *tempo.Controller
+	OnKeyframeRequired func()
 }
 
 type AudioConfig struct {

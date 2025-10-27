@@ -46,12 +46,14 @@ type VideoBin struct {
 	names       map[string]string
 	selector    *gst.Element
 	rawVideoTee *gst.Element
+	probes      map[string]*vp9ParseProbe
 }
 
 func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
 	b := &VideoBin{
-		bin:  pipeline.NewBin("video"),
-		conf: p,
+		bin:    pipeline.NewBin("video"),
+		conf:   p,
+		probes: make(map[string]*vp9ParseProbe),
 	}
 
 	switch p.SourceType {
@@ -139,6 +141,10 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	}
 	delete(b.names, trackID)
 	delete(b.pads, name)
+	if probe, ok := b.probes[name]; ok {
+		probe.Close()
+		delete(b.probes, name)
+	}
 
 	if b.selectedPad == name {
 		if err := b.setSelectorPadLocked(videoTestSrcName); err != nil {
@@ -423,6 +429,14 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			if err = appSrcBin.AddElements(vp9Parse, vp9Caps); err != nil {
 				return nil, err
 			}
+
+			probe, err := newVP9ParseProbe(ts.TrackID, vp9Parse, ts.OnKeyframeRequired)
+			if err != nil {
+				return nil, err
+			}
+			b.mu.Lock()
+			b.probes[name] = probe
+			b.mu.Unlock()
 			return appSrcBin, nil
 		}
 
