@@ -99,11 +99,14 @@ func (p *vp9ParseProbe) onSrcBuffer(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadP
 	pts, ok := clockTimeToDuration(buffer.PresentationTimestamp())
 	if !ok {
 		p.handleMissingPTS()
-		// we might even consider dropping the buffer here
-		return gst.PadProbeOK
+		return gst.PadProbeDrop
 	}
 
 	p.handleValidPTS(buffer, pts)
+	if p.keyframePending.Load() {
+		p.logger.Debugw("keyframe pending, rejecting buffer")
+		return gst.PadProbeDrop
+	}
 	return gst.PadProbeOK
 }
 
@@ -163,7 +166,11 @@ func (p *vp9ParseProbe) handleValidPTS(buffer *gst.Buffer, pts time.Duration) {
 	p.missingPTS.Store(false)
 
 	if buffer.GetFlags()&gst.BufferFlagDeltaUnit == 0 {
-		p.keyframePending.Store(false)
+		wasPending := p.keyframePending.Swap(false)
+		if wasPending {
+			p.logger.Debugw("keyframe pending, got one")
+			buffer.SetFlags(buffer.GetFlags() | gst.BufferFlagDiscont)
+		}
 		p.trackKeyframe(pts)
 	} else {
 		p.requestKeyframeIfDue()
