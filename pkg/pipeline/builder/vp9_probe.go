@@ -104,7 +104,6 @@ func (p *vp9ParseProbe) onSrcBuffer(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadP
 
 	p.handleValidPTS(buffer, pts)
 	if p.keyframePending.Load() {
-		p.logger.Debugw("keyframe pending, rejecting buffer")
 		return gst.PadProbeDrop
 	}
 	return gst.PadProbeOK
