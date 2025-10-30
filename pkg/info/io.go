@@ -35,7 +35,7 @@ import (
 
 const (
 	numWorkers = 5
-	maxBackoff = time.Minute * 10
+	maxBackoff = time.Minute * 1
 )
 
 type IOClient interface {
@@ -210,7 +210,7 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 	d := time.Millisecond * 250
 	for {
 		if _, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info, psrpc.WithRequestTimeout(c.updateTimeout)); err != nil {
-			if errors.Is(err, psrpc.ErrRequestTimedOut) {
+			if isRetryableError(err) {
 				if c.healthy.Swap(false) {
 					logger.Warnw("io connection unhealthy", err)
 				}
@@ -237,4 +237,8 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 		)
 		return
 	}
+}
+
+func isRetryableError(err error) bool {
+	return errors.Is(err, psrpc.ErrRequestTimedOut) || errors.Is(err, psrpc.ErrNoResponse)
 }
