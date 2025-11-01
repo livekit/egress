@@ -41,13 +41,6 @@ func newPTSFixer(elementName, context string) (*ptsFixer, error) {
 	return fixer, nil
 }
 
-func (f *ptsFixer) GetElement() *gst.Element {
-	if f == nil {
-		return nil
-	}
-	return f.Element
-}
-
 func (f *ptsFixer) onBuffer(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 	buf := info.GetBuffer()
 	if buf == nil {

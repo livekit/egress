@@ -45,7 +45,7 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 			return nil, err
 		}
 
-		if err = b.AddElements(h264ParseFixer.GetElement()); err != nil {
+		if err = b.AddElements(h264ParseFixer.Element); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 	}
@@ -109,7 +109,7 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 		if name == audioBinName {
 			return sink.GetRequestPad("audio_%u")
 		} else if h264ParseFixer != nil {
-			return h264ParseFixer.GetElement().GetStaticPad("sink")
+			return h264ParseFixer.Element.GetStaticPad("sink")
 		}
 		// Should never happen
 		return nil

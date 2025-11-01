@@ -345,7 +345,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 				return nil, err
 			}
 
-			if err = appSrcBin.AddElement(h264ParseFixer.GetElement()); err != nil {
+			if err = appSrcBin.AddElement(h264ParseFixer.Element); err != nil {
 				return nil, err
 			}
 
@@ -409,7 +409,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			if err != nil {
 				return nil, err
 			}
-			vp9Parse := vp9ParseFixer.GetElement()
+			vp9Parse := vp9ParseFixer.Element
 
 			vp9Caps, err := gst.NewElement("capsfilter")
 			if err != nil {
