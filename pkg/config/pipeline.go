@@ -426,6 +426,9 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 	}
 
+	p.Latency = p.getLatencyConfig(p.RequestType)
+	applyLatencyDefaults(&p.Latency)
+
 	if p.RequestType != types.RequestTypeTrack {
 		err := p.validateAndUpdateOutputParams()
 		if err != nil {

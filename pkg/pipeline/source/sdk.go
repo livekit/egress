@@ -83,6 +83,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		subs:                 make(chan *subscriptionResult, 100),
 		writers:              make(map[string]*sdk.AppWriter),
 	}
+	logger.Debugw("latency config", "latency", p.Latency)
 
 	opts := []synchronizer.SynchronizerOption{
 		synchronizer.WithMaxTsDiff(p.Latency.RTPMaxAllowedTsDiff),
