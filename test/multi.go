@@ -79,10 +79,14 @@ func (r *Runner) testMulti(t *testing.T) {
 					videoDelay:     time.Second * 5,
 				},
 				fileOptions: &fileOptions{
-					filename: "participant_multiple_{time}",
+					filename: "participant_{publisher_identity}_multi_{time}.mp4",
 				},
 				streamOptions: &streamOptions{
 					outputType: types.OutputTypeRTMP,
+				},
+				segmentOptions: &segmentOptions{
+					prefix:   "participant_{publisher_identity}_multi_{time}",
+					playlist: "participant_{publisher_identity}_multi_{time}.m3u8",
 				},
 				multi: true,
 			},
@@ -144,6 +148,17 @@ func (r *Runner) runMultiTest(t *testing.T, test *testCase) {
 		r.verifyFile(t, test, p, res)
 	}
 	if test.segmentOptions != nil {
+		require.Len(t, res.GetSegmentResults(), 1)
+		segments := res.GetSegmentResults()[0]
+		require.Greater(t, segments.Size, int64(0))
+		require.NotContains(t, segments.PlaylistName, "{")
+		require.NotContains(t, segments.PlaylistLocation, "{")
+		if segments.LivePlaylistName != "" {
+			require.NotContains(t, segments.LivePlaylistName, "{")
+		}
+		if segments.LivePlaylistLocation != "" {
+			require.NotContains(t, segments.LivePlaylistLocation, "{")
+		}
 		r.verifySegments(t, test, p, test.segmentOptions.suffix, res, false)
 	}
 	if test.imageOptions != nil {
