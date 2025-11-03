@@ -161,31 +161,36 @@ func (c *ServiceConfig) InitDefaults() {
 		c.MaxUploadQueue = maxUploadQueue
 	}
 
-	if c.Latency.JitterBufferLatency == 0 {
-		c.Latency.JitterBufferLatency = defaultJitterBufferLatency
-	}
-	if c.Latency.AudioMixerLatency == 0 {
-		c.Latency.AudioMixerLatency = defaultAudioMixerLatency
-	}
-	if c.Latency.PipelineLatency == 0 {
-		c.Latency.PipelineLatency = defaultPipelineLatency
-	}
-	if c.Latency.RTPMaxAllowedTsDiff == 0 {
-		c.Latency.RTPMaxAllowedTsDiff = defaultRTPMaxAllowedTsDiff
-	}
-	if c.Latency.RTPMaxAllowedTsDiff < c.Latency.JitterBufferLatency {
-		// RTP max allowed ts diff must be equal or greater than jitter buffer latency to absorb the jitter buffer burst
-		c.Latency.RTPMaxAllowedTsDiff = c.Latency.JitterBufferLatency
-	}
-	if c.Latency.RTPMaxDriftAdjustment == 0 {
-		c.Latency.RTPMaxDriftAdjustment = defaultRTPMaxDriftAdjustment
-	}
-	if c.Latency.OldPacketThreshold == 0 {
-		c.Latency.OldPacketThreshold = defaultOldPacketThreshold
-	}
+	applyLatencyDefaults(&c.Latency)
+
 	if c.AudioTempoController.Enabled {
 		if c.AudioTempoController.AdjustmentRate > 0.2 || c.AudioTempoController.AdjustmentRate <= 0 {
 			c.AudioTempoController.AdjustmentRate = defaultAudioTempoControllerAdjustmentRate
 		}
+	}
+}
+
+func applyLatencyDefaults(latency *LatencyConfig) {
+	if latency.JitterBufferLatency == 0 {
+		latency.JitterBufferLatency = defaultJitterBufferLatency
+	}
+	if latency.AudioMixerLatency == 0 {
+		latency.AudioMixerLatency = defaultAudioMixerLatency
+	}
+	if latency.PipelineLatency == 0 {
+		latency.PipelineLatency = defaultPipelineLatency
+	}
+	if latency.RTPMaxAllowedTsDiff == 0 {
+		latency.RTPMaxAllowedTsDiff = defaultRTPMaxAllowedTsDiff
+	}
+	if latency.RTPMaxAllowedTsDiff < latency.JitterBufferLatency {
+		// RTP max allowed ts diff must be equal or greater than jitter buffer latency to absorb the jitter buffer burst
+		latency.RTPMaxAllowedTsDiff = latency.JitterBufferLatency
+	}
+	if latency.RTPMaxDriftAdjustment == 0 {
+		latency.RTPMaxDriftAdjustment = defaultRTPMaxDriftAdjustment
+	}
+	if latency.OldPacketThreshold == 0 {
+		latency.OldPacketThreshold = defaultOldPacketThreshold
 	}
 }
