@@ -32,12 +32,18 @@ for repo in gstreamer libnice gst-plugins-base gst-plugins-good gst-plugins-bad 
     opts="$opts -D buildtype=release -D b_lto=true"
   fi
 
-  meson build $opts
+  rm -rf build
+  meson setup build $opts
+
+  if [[ -z "${NINJA_JOBS:-}" ]]; then
+    # Limit to 4 jobs to avoid OOM issues
+    NINJA_JOBS=4
+  fi
 
   # This is needed for other plugins to be built properly
-  ninja -C build install
+  ninja -j "${NINJA_JOBS}" -C build install
   # This is where we'll grab build artifacts from
-  DESTDIR=/compiled-binaries ninja -C build install
+  DESTDIR=/compiled-binaries ninja -j "${NINJA_JOBS}" -C build install
   popd
 done
 
