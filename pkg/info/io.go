@@ -212,7 +212,7 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 		if _, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info, psrpc.WithRequestTimeout(c.updateTimeout)); err != nil {
 			if isRetryableError(err) {
 				if c.healthy.Swap(false) {
-					logger.Warnw("io connection unhealthy", err)
+					logger.Warnw("io connection unhealthy", err, "egressID", u.info.EgressId)
 				}
 				d = min(d*2, maxBackoff)
 				time.Sleep(d)
@@ -224,7 +224,7 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 		}
 
 		if !c.healthy.Swap(true) {
-			logger.Infow("io connection restored")
+			logger.Infow("io connection restored", "egressID", u.info.EgressId)
 		}
 		requestType, outputType := egress.GetTypes(u.info.Request)
 		logger.Infow(strings.ToLower(u.info.Status.String()),
