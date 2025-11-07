@@ -352,6 +352,17 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 	return c.getStreamSink().RemoveStream(stream)
 }
 
+func (c *Controller) trackStreamRetry(ctx context.Context, stream *config.Stream) {
+	stream.StreamInfo.LastRetryAt = time.Now().UnixNano()
+	stream.StreamInfo.Retries++
+	logger.Infow("retrying stream",
+		"url", stream.RedactedUrl,
+		"retries", stream.StreamInfo.Retries,
+	)
+
+	c.streamUpdated(ctx)
+}
+
 func (c *Controller) onEOSSent() {
 	// for video-only track/track composite, EOS might have already
 	// made it through the pipeline by the time endRecording is closed
