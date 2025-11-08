@@ -45,6 +45,8 @@ import (
 const (
 	pipelineName = "pipeline"
 	eosTimeout   = time.Second * 30
+
+	streamRetryUpdateInterval = time.Minute
 )
 
 type Controller struct {
@@ -353,9 +355,13 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 }
 
 func (c *Controller) trackStreamRetry(ctx context.Context, stream *config.Stream) {
-	stream.StreamInfo.LastRetryAt = time.Now().UnixNano()
+	now := time.Now()
+	stream.StreamInfo.LastRetryAt = now.UnixNano()
 	stream.StreamInfo.Retries++
-	logger.Infow("retrying stream",
+	if !stream.ShouldSendRetryUpdate(now, streamRetryUpdateInterval) {
+		return
+	}
+	logger.Infow("retrying stream update",
 		"url", stream.RedactedUrl,
 		"retries", stream.StreamInfo.Retries,
 	)
