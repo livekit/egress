@@ -19,10 +19,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -101,6 +103,8 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	// always create a new node ID
 	conf.NodeID = utils.NewGuid("NE_")
 	conf.InitDefaults()
+
+	rpc.InitPSRPCStats(prometheus.Labels{"node_id": conf.NodeID, "node_type": "EGRESS"})
 
 	if err := conf.initLogger("nodeID", conf.NodeID, "clusterID", conf.ClusterID); err != nil {
 		return nil, err

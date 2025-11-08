@@ -72,7 +72,7 @@ type update struct {
 }
 
 func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error) {
-	client, err := rpc.NewIOInfoClient(bus)
+	client, err := rpc.NewIOInfoClient(bus, rpc.WithClientObservability(logger.GetLogger()))
 	if err != nil {
 		return nil, err
 	}
