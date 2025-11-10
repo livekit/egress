@@ -17,12 +17,12 @@ package info
 import (
 	"context"
 	"hash/fnv"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/linkdata/deadlock"
-	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -34,8 +34,9 @@ import (
 )
 
 const (
-	numWorkers = 5
-	maxBackoff = time.Minute * 1
+	numWorkers                     = 5
+	maxBackoff                     = time.Minute * 1
+	unhealthyShutdownWatchdogDelay = 10 * time.Minute
 )
 
 type IOClient interface {
@@ -43,6 +44,7 @@ type IOClient interface {
 	UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error
 	UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error
 	IsHealthy() bool
+	SetWatchdogHandler(w func())
 	Drain()
 }
 
@@ -54,7 +56,11 @@ type ioClient struct {
 
 	workers []*worker
 
-	healthy  atomic.Bool
+	healthyLock            deadlock.Mutex
+	healthy                bool
+	healthyWatchdogHandler func()
+	healthyTimer           time.Timer
+
 	draining core.Fuse
 	done     core.Fuse
 }
@@ -83,7 +89,16 @@ func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error
 		updateTimeout: conf.IOUpdateTimeout,
 		workers:       make([]*worker, numWorkers),
 	}
-	c.healthy.Store(true)
+	c.healthy = true
+	c.healthyTimer = *time.AfterFunc(time.Duration(math.MaxInt64), func() {
+		c.healthyLock.Lock()
+		defer c.healthyLock.Unlock()
+
+		logger.Errorw("io client watchdog triggered", errors.New("io client unhealthy"))
+		if c.healthyWatchdogHandler != nil {
+			c.healthyWatchdogHandler()
+		}
+	})
 
 	for i := 0; i < numWorkers; i++ {
 		c.workers[i] = &worker{
@@ -151,8 +166,18 @@ func (c *ioClient) UpdateMetrics(_ context.Context, _ *rpc.UpdateMetricsRequest)
 	return nil
 }
 
+func (c *ioClient) SetWatchdogHandler(w func()) {
+	c.healthyLock.Lock()
+	defer c.healthyLock.Unlock()
+
+	c.healthyWatchdogHandler = w
+}
+
 func (c *ioClient) IsHealthy() bool {
-	return c.healthy.Load()
+	c.healthyLock.Lock()
+	defer c.healthyLock.Unlock()
+
+	return c.healthy
 }
 
 func (c *ioClient) Drain() {
@@ -211,9 +236,11 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 	for {
 		if _, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info, psrpc.WithRequestTimeout(c.updateTimeout)); err != nil {
 			if isRetryableError(err) {
-				if c.healthy.Swap(false) {
+				if c.setHealthy(false) {
 					logger.Warnw("io connection unhealthy", err, "egressID", u.info.EgressId)
 				}
+				logger.Debugw("psrpc IO request failed", "error", err, "egressID", u.info.EgressId)
+
 				d = min(d*2, maxBackoff)
 				time.Sleep(d)
 				continue
@@ -223,7 +250,7 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 			return
 		}
 
-		if !c.healthy.Swap(true) {
+		if !c.setHealthy(true) {
 			logger.Infow("io connection restored", "egressID", u.info.EgressId)
 		}
 		requestType, outputType := egress.GetTypes(u.info.Request)
@@ -237,6 +264,28 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 		)
 		return
 	}
+}
+
+func (c *ioClient) setHealthy(isHealthy bool) bool {
+	c.healthyLock.Lock()
+	defer c.healthyLock.Unlock()
+
+	oldHealthy := c.healthy
+
+	switch c.healthy {
+	case true:
+		if !isHealthy {
+			c.healthyTimer.Reset(unhealthyShutdownWatchdogDelay)
+		}
+	case false:
+		if isHealthy {
+			c.healthyTimer.Reset(time.Duration(math.MaxInt64))
+		}
+	}
+
+	c.healthy = isHealthy
+
+	return oldHealthy
 }
 
 func isRetryableError(err error) bool {
