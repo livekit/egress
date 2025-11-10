@@ -182,7 +182,7 @@ func (c *ioClient) runWorker(w *worker) {
 func (c *ioClient) getWorker(egressID string) *worker {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(egressID))
-	return c.workers[int(h.Sum32())%numWorkers]
+	return c.workers[int(h.Sum32())%len(c.workers)]
 }
 
 func (w *worker) submit(u *update) error {
