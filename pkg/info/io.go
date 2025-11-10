@@ -34,7 +34,6 @@ import (
 )
 
 const (
-	numWorkers = 5
 	maxBackoff = time.Minute * 1
 )
 
@@ -81,11 +80,11 @@ func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error
 		IOInfoClient:  client,
 		createTimeout: conf.IOCreateTimeout,
 		updateTimeout: conf.IOUpdateTimeout,
-		workers:       make([]*worker, numWorkers),
+		workers:       make([]*worker, conf.IOWorkers),
 	}
 	c.healthy.Store(true)
 
-	for i := 0; i < numWorkers; i++ {
+	for i := 0; i < conf.IOWorkers; i++ {
 		c.workers[i] = &worker{
 			creating: make(map[string]*update),
 			updates:  make(map[string]*update),
@@ -183,7 +182,7 @@ func (c *ioClient) runWorker(w *worker) {
 func (c *ioClient) getWorker(egressID string) *worker {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(egressID))
-	return c.workers[int(h.Sum32())%numWorkers]
+	return c.workers[int(h.Sum32())%len(c.workers)]
 }
 
 func (w *worker) submit(u *update) error {

@@ -47,6 +47,7 @@ type BaseConfig struct {
 	EnableRoomCompositeSDKSource bool           `yaml:"enable_room_composite_sdk_source"` // attempt to render supported audio only room composite use cases using the SDK source instead of Chrome. This option will be removed when this becomes the default behavior eventually.
 	IOCreateTimeout              time.Duration  `yaml:"io_create_timeout"`                // timeout for CreateEgress calls
 	IOUpdateTimeout              time.Duration  `yaml:"io_update_timeout"`                // timeout for UpdateEgress calls
+	IOWorkers                    int            `yaml:"io_workers"`                       // number of IO update workers
 
 	SessionLimits          `yaml:"session_limits"` // session duration limits
 	StorageConfig          *StorageConfig          `yaml:"storage,omitempty"`          // storage config
