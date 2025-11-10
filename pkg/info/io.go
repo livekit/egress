@@ -247,11 +247,11 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 				d = min(d*2, maxBackoff)
 				time.Sleep(d)
 
-				d, ok := u.ctx.Deadline()
-				if ok && d.Before(time.Now()) {
+				select {
+				case <-u.ctx.Done():
 					logger.Infow("failed to update egress on expired context", "egressID", u.info.EgressId)
 					return
-				} else {
+				default:
 					continue
 				}
 			}
