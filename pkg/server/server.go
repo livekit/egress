@@ -28,15 +28,17 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/psrpc"
+
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/service"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/version"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/psrpc"
 )
 
 type Server struct {
@@ -70,6 +72,11 @@ func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.I
 		ipcServiceServer: grpc.NewServer(),
 		ioClient:         ioClient,
 	}
+
+	ioClient.SetWatchdogHandler(func() {
+		logger.Errorw("shutting down server on io client watchdog trigger", errors.New("io client failure"))
+		s.Shutdown(false, false)
+	})
 
 	monitor, err := stats.NewMonitor(conf, s)
 	if err != nil {
