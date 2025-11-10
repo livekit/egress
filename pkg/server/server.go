@@ -162,7 +162,7 @@ func (s *Server) Status() ([]byte, error) {
 }
 
 func (s *Server) IsIdle() bool {
-	return s.activeRequests.Load() == 0
+	return s.activeRequests.Load() == 0 && !s.IsDisabled()
 }
 
 func (s *Server) IsDisabled() bool {
