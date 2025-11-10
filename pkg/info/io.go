@@ -36,7 +36,7 @@ import (
 const (
 	numWorkers                     = 5
 	maxBackoff                     = time.Minute * 1
-	unhealthyShutdownWatchdogDelay = 10 * time.Minute
+	unhealthyShutdownWatchdogDelay = 20 * time.Second // TODO change to 10 min once we undrerstant PSRPC failures
 )
 
 type IOClient interface {
@@ -59,7 +59,7 @@ type ioClient struct {
 	healthyLock            deadlock.Mutex
 	healthy                bool
 	healthyWatchdogHandler func()
-	healthyTimer           time.Timer
+	healthyTimer           *time.Timer
 
 	draining core.Fuse
 	done     core.Fuse
@@ -90,7 +90,7 @@ func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error
 		workers:       make([]*worker, numWorkers),
 	}
 	c.healthy = true
-	c.healthyTimer = *time.AfterFunc(time.Duration(math.MaxInt64), func() {
+	c.healthyTimer = time.AfterFunc(time.Duration(math.MaxInt64), func() {
 		c.healthyLock.Lock()
 		defer c.healthyLock.Unlock()
 
@@ -98,6 +98,8 @@ func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error
 		if c.healthyWatchdogHandler != nil {
 			c.healthyWatchdogHandler()
 		}
+		// Do not wait for the event queue to drain
+		c.done.Break()
 	})
 
 	for i := 0; i < numWorkers; i++ {
