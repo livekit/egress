@@ -44,6 +44,7 @@ const (
 
 	defaultIOCreateTimeout = time.Second * 15
 	defaultIOUpdateTimeout = time.Second * 30
+	defaultIOWorkers       = 5
 
 	defaultJitterBufferLatency   = time.Second * 2
 	defaultAudioMixerLatency     = time.Millisecond * 2750
@@ -130,6 +131,9 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.IOUpdateTimeout == 0 {
 		c.IOUpdateTimeout = defaultIOUpdateTimeout
+	}
+	if c.IOWorkers <= 0 {
+		c.IOWorkers = defaultIOWorkers
 	}
 
 	// Setting CPU costs from config. Ensure that CPU costs are positive
