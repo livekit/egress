@@ -24,13 +24,14 @@ import (
 	"github.com/frostbyte73/core"
 	"github.com/linkdata/deadlock"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 )
 
 const (
@@ -245,7 +246,14 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 
 				d = min(d*2, maxBackoff)
 				time.Sleep(d)
-				continue
+
+				d, ok := u.ctx.Deadline()
+				if ok && d.Before(time.Now()) {
+					logger.Infow("failed to update egress on expired context", "egressID", u.info.EgressId)
+					return
+				} else {
+					continue
+				}
 			}
 
 			logger.Errorw("failed to update egress", err, "egressID", u.info.EgressId)
