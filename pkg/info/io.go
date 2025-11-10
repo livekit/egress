@@ -74,7 +74,6 @@ type worker struct {
 }
 
 type update struct {
-	ctx  context.Context
 	info *livekit.EgressInfo
 }
 
@@ -116,9 +115,7 @@ func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error
 }
 
 func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error {
-	u := &update{
-		ctx: ctx,
-	}
+	u := &update{}
 	w := c.getWorker(info.EgressId)
 
 	w.mu.Lock()
@@ -135,7 +132,7 @@ func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) c
 			logger.Errorw("failed to create egress", err, "egressID", info.EgressId)
 			delete(w.updates, info.EgressId)
 		} else if u.info != nil {
-			err = w.submit(u)
+			err = w.submit(*u)
 		}
 		w.mu.Unlock()
 
@@ -156,13 +153,11 @@ func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) e
 		u = w.updates[info.EgressId]
 	}
 	if u != nil {
-		u.ctx = ctx
 		u.info = info
 		return nil
 	}
 
-	return w.submit(&update{
-		ctx:  ctx,
+	return w.submit(update{
 		info: info,
 	})
 }
@@ -216,8 +211,8 @@ func (c *ioClient) getWorker(egressID string) *worker {
 	return c.workers[int(h.Sum32())%len(c.workers)]
 }
 
-func (w *worker) submit(u *update) error {
-	w.updates[u.info.EgressId] = u
+func (w *worker) submit(u update) error {
+	w.updates[u.info.EgressId] = &u
 
 	select {
 	case w.queue <- u.info.EgressId:
@@ -239,7 +234,7 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 
 	d := time.Millisecond * 250
 	for {
-		if _, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info, psrpc.WithRequestTimeout(c.updateTimeout)); err != nil {
+		if _, err := c.IOInfoClient.UpdateEgress(context.Background(), u.info, psrpc.WithRequestTimeout(c.updateTimeout)); err != nil {
 			if isRetryableError(err) {
 				if c.setHealthy(false) {
 					logger.Warnw("io connection unhealthy", err, "egressID", u.info.EgressId)
@@ -248,14 +243,6 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 
 				d = min(d*2, maxBackoff)
 				time.Sleep(d)
-
-				select {
-				case <-u.ctx.Done():
-					logger.Infow("failed to update egress on expired context", "egressID", u.info.EgressId)
-					return
-				default:
-					continue
-				}
 			}
 
 			logger.Errorw("failed to update egress", err, "egressID", u.info.EgressId)
