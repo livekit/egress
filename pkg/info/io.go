@@ -116,7 +116,9 @@ func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error
 }
 
 func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error {
-	u := &update{}
+	u := &update{
+		ctx: ctx,
+	}
 	w := c.getWorker(info.EgressId)
 
 	w.mu.Lock()
