@@ -144,6 +144,8 @@ func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) c
 }
 
 func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error {
+	ctx = context.WithoutCancel(ctx)
+
 	w := c.getWorker(info.EgressId)
 
 	w.mu.Lock()
