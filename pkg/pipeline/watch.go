@@ -195,6 +195,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 			if err != nil {
 				logger.Errorw("failed to reset stream", err)
 			} else if ok {
+				c.trackStreamRetry(context.Background(), stream)
 				return nil
 			}
 		}

@@ -16,6 +16,8 @@ package config
 
 import (
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
@@ -37,6 +39,8 @@ type Stream struct {
 	RedactedUrl string // url with stream key removed
 	StreamID    string // stream ID used by rtmpconnection
 	StreamInfo  *livekit.StreamInfo
+
+	lastRetryUpdate atomic.Int64
 }
 
 func (p *PipelineConfig) GetStreamConfig() *StreamConfig {
@@ -93,4 +97,13 @@ func (s *Stream) UpdateEndTime(endedAt int64) {
 	} else {
 		s.StreamInfo.Duration = endedAt - s.StreamInfo.StartedAt
 	}
+}
+
+func (s *Stream) ShouldSendRetryUpdate(now time.Time, minInterval time.Duration) bool {
+	last := s.lastRetryUpdate.Load()
+	if last == 0 || now.UnixNano()-last >= int64(minInterval) {
+		s.lastRetryUpdate.Store(now.UnixNano())
+		return true
+	}
+	return false
 }
