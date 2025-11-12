@@ -186,7 +186,7 @@ func (pm *ProcessManager) AbortProcess(egressID string, err error) {
 	defer pm.mu.RUnlock()
 
 	if h, ok := pm.activeHandlers[egressID]; ok {
-		logger.Warnw("killing handler", err, "egressID", egressID)
+		logger.Warnw("aborting handler", err, "egressID", egressID)
 		h.kill(err)
 		h.ipcHandlerClient.Close()
 		delete(pm.activeHandlers, egressID)
