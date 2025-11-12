@@ -17,25 +17,27 @@ package info
 import (
 	"context"
 	"hash/fnv"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/linkdata/deadlock"
-	"go.uber.org/atomic"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 )
 
 const (
-	numWorkers = 5
-	maxBackoff = time.Minute * 1
+	numWorkers                     = 5
+	maxBackoff                     = time.Minute * 1
+	unhealthyShutdownWatchdogDelay = 20 * time.Second // TODO change to 10 min once we undrerstant PSRPC failures
 )
 
 type IOClient interface {
@@ -43,6 +45,7 @@ type IOClient interface {
 	UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error
 	UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error
 	IsHealthy() bool
+	SetWatchdogHandler(w func())
 	Drain()
 }
 
@@ -54,7 +57,11 @@ type ioClient struct {
 
 	workers []*worker
 
-	healthy  atomic.Bool
+	healthyLock            deadlock.Mutex
+	healthy                bool
+	healthyWatchdogHandler func()
+	healthyTimer           *time.Timer
+
 	draining core.Fuse
 	done     core.Fuse
 }
@@ -72,7 +79,7 @@ type update struct {
 }
 
 func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error) {
-	client, err := rpc.NewIOInfoClient(bus)
+	client, err := rpc.NewIOInfoClient(bus, rpc.WithClientObservability(logger.GetLogger()))
 	if err != nil {
 		return nil, err
 	}
@@ -81,11 +88,22 @@ func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error
 		IOInfoClient:  client,
 		createTimeout: conf.IOCreateTimeout,
 		updateTimeout: conf.IOUpdateTimeout,
-		workers:       make([]*worker, numWorkers),
+		workers:       make([]*worker, conf.IOWorkers),
 	}
-	c.healthy.Store(true)
+	c.healthy = true
+	c.healthyTimer = time.AfterFunc(time.Duration(math.MaxInt64), func() {
+		c.healthyLock.Lock()
+		defer c.healthyLock.Unlock()
 
-	for i := 0; i < numWorkers; i++ {
+		logger.Errorw("io client watchdog triggered", errors.New("io client unhealthy"))
+		if c.healthyWatchdogHandler != nil {
+			c.healthyWatchdogHandler()
+		}
+		// Do not wait for the event queue to drain
+		c.done.Break()
+	})
+
+	for i := 0; i < conf.IOWorkers; i++ {
 		c.workers[i] = &worker{
 			creating: make(map[string]*update),
 			updates:  make(map[string]*update),
@@ -151,8 +169,18 @@ func (c *ioClient) UpdateMetrics(_ context.Context, _ *rpc.UpdateMetricsRequest)
 	return nil
 }
 
+func (c *ioClient) SetWatchdogHandler(w func()) {
+	c.healthyLock.Lock()
+	defer c.healthyLock.Unlock()
+
+	c.healthyWatchdogHandler = w
+}
+
 func (c *ioClient) IsHealthy() bool {
-	return c.healthy.Load()
+	c.healthyLock.Lock()
+	defer c.healthyLock.Unlock()
+
+	return c.healthy
 }
 
 func (c *ioClient) Drain() {
@@ -183,7 +211,7 @@ func (c *ioClient) runWorker(w *worker) {
 func (c *ioClient) getWorker(egressID string) *worker {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(egressID))
-	return c.workers[int(h.Sum32())%numWorkers]
+	return c.workers[int(h.Sum32())%len(c.workers)]
 }
 
 func (w *worker) submit(u *update) error {
@@ -211,19 +239,28 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 	for {
 		if _, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info, psrpc.WithRequestTimeout(c.updateTimeout)); err != nil {
 			if isRetryableError(err) {
-				if c.healthy.Swap(false) {
+				if c.setHealthy(false) {
 					logger.Warnw("io connection unhealthy", err, "egressID", u.info.EgressId)
 				}
+				logger.Debugw("psrpc IO request failed", "error", err, "egressID", u.info.EgressId)
+
 				d = min(d*2, maxBackoff)
 				time.Sleep(d)
-				continue
+
+				select {
+				case <-u.ctx.Done():
+					logger.Infow("failed to update egress on expired context", "egressID", u.info.EgressId)
+					return
+				default:
+					continue
+				}
 			}
 
 			logger.Errorw("failed to update egress", err, "egressID", u.info.EgressId)
 			return
 		}
 
-		if !c.healthy.Swap(true) {
+		if !c.setHealthy(true) {
 			logger.Infow("io connection restored", "egressID", u.info.EgressId)
 		}
 		requestType, outputType := egress.GetTypes(u.info.Request)
@@ -237,6 +274,28 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 		)
 		return
 	}
+}
+
+func (c *ioClient) setHealthy(isHealthy bool) bool {
+	c.healthyLock.Lock()
+	defer c.healthyLock.Unlock()
+
+	oldHealthy := c.healthy
+
+	switch c.healthy {
+	case true:
+		if !isHealthy {
+			c.healthyTimer.Reset(unhealthyShutdownWatchdogDelay)
+		}
+	case false:
+		if isHealthy {
+			c.healthyTimer.Reset(time.Duration(math.MaxInt64))
+		}
+	}
+
+	c.healthy = isHealthy
+
+	return oldHealthy
 }
 
 func isRetryableError(err error) bool {
