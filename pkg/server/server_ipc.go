@@ -27,14 +27,17 @@ import (
 )
 
 func (s *Server) HandlerReady(_ context.Context, req *ipc.HandlerReadyRequest) (*emptypb.Empty, error) {
+	logger.Debugw("handler ready", "egressID", req.EgressId)
 	if err := s.HandlerStarted(req.EgressId); err != nil {
 		return nil, err
 	}
 
+	logger.Debugw("handler ready completed", "egressID", req.EgressId)
 	return &emptypb.Empty{}, nil
 }
 
 func (s *Server) HandlerUpdate(_ context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
+	logger.Debugw("handler update", "egressID", info.EgressId)
 	if err := s.ioClient.UpdateEgress(context.Background(), info); err != nil {
 		logger.Errorw("failed to update egress", err, "egressID", info.EgressId)
 	}
@@ -43,11 +46,13 @@ func (s *Server) HandlerUpdate(_ context.Context, info *livekit.EgressInfo) (*em
 		logger.Errorw("internal error, shutting down", errors.New(info.Error))
 		s.Shutdown(false, false)
 	}
+	logger.Debugw("handler update completed", "egressID", info.EgressId)
 
 	return &emptypb.Empty{}, nil
 }
 
 func (s *Server) HandlerFinished(_ context.Context, req *ipc.HandlerFinishedRequest) (*emptypb.Empty, error) {
+	logger.Debugw("handler finished", "egressID", req.EgressId)
 	if err := s.ioClient.UpdateEgress(context.Background(), req.Info); err != nil {
 		logger.Errorw("failed to update egress", err, "egressID", req.EgressId)
 	}
@@ -56,5 +61,6 @@ func (s *Server) HandlerFinished(_ context.Context, req *ipc.HandlerFinishedRequ
 		logger.Errorw("failed to store metrics", err, "egressID", req.EgressId)
 	}
 
+	logger.Debugw("handler finished completed", "egressID", req.EgressId)
 	return &emptypb.Empty{}, nil
 }
