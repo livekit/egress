@@ -187,6 +187,7 @@ func (pm *ProcessManager) AbortProcess(egressID string, err error) {
 	if h, ok := pm.activeHandlers[egressID]; ok {
 		logger.Warnw("aborting egress", err, "egressID", egressID)
 		h.kill(err)
+		h.ipcHandlerClient.Close()
 		delete(pm.activeHandlers, egressID)
 	}
 }
@@ -207,6 +208,7 @@ func (pm *ProcessManager) ProcessFinished(egressID string) {
 
 	p, ok := pm.activeHandlers[egressID]
 	if ok {
+		p.ipcHandlerClient.Close()
 		p.closed.Break()
 	}
 
@@ -219,7 +221,7 @@ type Process struct {
 	req              *rpc.StartEgressRequest
 	info             *livekit.EgressInfo
 	cmd              *exec.Cmd
-	ipcHandlerClient ipc.EgressHandlerClient
+	ipcHandlerClient *ipc.EgressHandlerClientWrapper
 	ready            chan struct{}
 	closed           core.Fuse
 }
