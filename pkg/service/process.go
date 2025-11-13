@@ -181,38 +181,45 @@ func (pm *ProcessManager) KillAll() {
 }
 
 func (pm *ProcessManager) AbortProcess(egressID string, err error) {
+	logger.Debugw("aborting egress", err, "egressID", egressID)
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
 	if h, ok := pm.activeHandlers[egressID]; ok {
-		logger.Warnw("aborting egress", err, "egressID", egressID)
+		logger.Warnw("aborting handler", err, "egressID", egressID)
 		h.kill(err)
 		h.ipcHandlerClient.Close()
 		delete(pm.activeHandlers, egressID)
 	}
+	logger.Debugw("aborting egress completed", "egressID", egressID)
 }
 
 func (pm *ProcessManager) KillProcess(egressID string, err error) {
+	logger.Debugw("killing egress", err, "egressID", egressID)
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
 	if h, ok := pm.activeHandlers[egressID]; ok {
-		logger.Errorw("killing egress", err, "egressID", egressID)
+		logger.Errorw("killing handler", err, "egressID", egressID)
 		h.kill(err)
 	}
+	logger.Debugw("killing egress completed", "egressID", egressID)
 }
 
 func (pm *ProcessManager) ProcessFinished(egressID string) {
+	logger.Debugw("process finished", "egressID", egressID)
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
 	p, ok := pm.activeHandlers[egressID]
 	if ok {
+		logger.Debugw("process finished, closing handler client", "egressID", egressID)
 		p.ipcHandlerClient.Close()
 		p.closed.Break()
 	}
 
 	delete(pm.activeHandlers, egressID)
+	logger.Debugw("process finished, deleted from active handlers", "egressID", egressID)
 }
 
 type Process struct {
