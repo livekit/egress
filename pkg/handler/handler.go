@@ -97,13 +97,15 @@ func (h *Handler) Run() {
 	}()
 
 	var err error
+	egressID := h.conf.Info.EgressId
+
 	h.controller, err = pipeline.New(context.Background(), h.conf, h.ipcServiceClient)
 	h.initialized.Break()
 	if err != nil {
 		h.conf.Info.SetFailed(err)
 		_, err = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
 		if err != nil {
-			logger.Errorw("egress update ipc call failed", err)
+			logger.Errorw("egress update ipc call failed", err, "egressID", egressID)
 		}
 		return
 	}
@@ -112,16 +114,16 @@ func (h *Handler) Run() {
 	res := h.controller.Run(ctx)
 	m, err := h.GenerateMetrics(ctx)
 	if err != nil {
-		logger.Errorw("failed to generate handler metrics", err)
+		logger.Errorw("failed to generate handler metrics", err, "egressID", egressID)
 	}
 
 	_, err = h.ipcServiceClient.HandlerFinished(ctx, &ipc.HandlerFinishedRequest{
-		EgressId: h.conf.Info.EgressId,
+		EgressId: egressID,
 		Metrics:  m,
 		Info:     res,
 	})
 	if err != nil {
-		logger.Errorw("egress finished ipc call failed", err)
+		logger.Errorw("egress finished ipc call failed", err, "egressID", egressID)
 	}
 }
 
