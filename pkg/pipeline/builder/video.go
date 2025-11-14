@@ -530,6 +530,7 @@ func (b *VideoBin) addEncoder() error {
 
 		var options []string
 		disabledSceneCut := false
+		// Streaming outputs always set KeyFrameInterval, so this effectively disables scenecut for RTMP/SRT.
 		if b.conf.KeyFrameInterval != 0 {
 			keyframeInterval := uint(b.conf.KeyFrameInterval * float64(b.conf.Framerate))
 			if err = x264Enc.SetProperty("key-int-max", keyframeInterval); err != nil {
