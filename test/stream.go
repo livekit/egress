@@ -104,6 +104,23 @@ func (r *Runner) testStream(t *testing.T) {
 					outputType: types.OutputTypeRTMP,
 				},
 			},
+			{
+				name:        "RoomCompositeFixedKeyframeInterval",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+					layout:     "speaker",
+				},
+				streamOptions: &streamOptions{
+					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
+					outputType: types.OutputTypeRTMP,
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					KeyFrameInterval: 2,
+				},
+				contentCheck: r.streamKeyframeContentCheck(2),
+			},
 
 			// ---------- Web ----------
 
@@ -186,12 +203,11 @@ func (r *Runner) runStreamTest(t *testing.T, test *testCase) {
 
 	if !test.audioOnly {
 		require.True(t, p.VideoEncoding)
-		require.Equal(t, config.StreamKeyframeInterval, p.KeyFrameInterval)
 	}
 
 	// verify
 	time.Sleep(time.Second * 5)
-	r.verifyStreams(t, p, urls[0][2])
+	r.verifyStreams(t, test, p, urls[0][2])
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		urls[0][1]: livekit.StreamInfo_ACTIVE,
 		urls[1][1]: livekit.StreamInfo_FAILED,
@@ -206,7 +222,7 @@ func (r *Runner) runStreamTest(t *testing.T, test *testCase) {
 	time.Sleep(time.Second * 5)
 
 	// verify
-	r.verifyStreams(t, p, urls[0][2], urls[2][2])
+	r.verifyStreams(t, test, p, urls[0][2], urls[2][2])
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		urls[0][1]: livekit.StreamInfo_ACTIVE,
 		urls[1][1]: livekit.StreamInfo_FAILED,
@@ -227,7 +243,7 @@ func (r *Runner) runStreamTest(t *testing.T, test *testCase) {
 	}
 
 	// verify the remaining stream
-	r.verifyStreams(t, p, urls[2][2])
+	r.verifyStreams(t, test, p, urls[2][2])
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 		urls[0][1]: livekit.StreamInfo_FINISHED,
 		urls[1][1]: livekit.StreamInfo_FAILED,
@@ -265,9 +281,12 @@ func (r *Runner) runStreamTest(t *testing.T, test *testCase) {
 	}
 }
 
-func (r *Runner) verifyStreams(t *testing.T, p *config.PipelineConfig, urls ...string) {
+func (r *Runner) verifyStreams(t *testing.T, tc *testCase, p *config.PipelineConfig, urls ...string) {
 	for _, url := range urls {
-		verify(t, url, p, nil, types.EgressTypeStream, false, r.sourceFramerate, false)
+		info := verify(t, url, p, nil, types.EgressTypeStream, false, r.sourceFramerate, false)
+		if tc != nil && tc.contentCheck != nil && info != nil {
+			tc.contentCheck(t, url, info)
+		}
 	}
 }
 
