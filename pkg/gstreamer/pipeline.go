@@ -121,13 +121,11 @@ func (p *Pipeline) SetState(state gst.State) error {
 }
 
 func (p *Pipeline) Run() error {
-	if _, ok := p.UpgradeState(StateStarted); ok {
-		if err := p.SetState(gst.StatePlaying); err != nil {
-			return err
-		}
-		if _, ok = p.UpgradeState(StateRunning); ok {
-			p.loop.Run()
-		}
+	if err := p.SetState(gst.StatePlaying); err != nil {
+		return err
+	}
+	if _, ok := p.UpgradeState(StateRunning); ok {
+		p.loop.Run()
 	}
 
 	return nil

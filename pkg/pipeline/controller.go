@@ -169,6 +169,9 @@ func (c *Controller) BuildPipeline() error {
 		return err
 	}
 
+	// initial graph is fully wired; from now on, dynamic additions must be linked immediately
+	p.UpgradeState(gstreamer.StateStarted)
+
 	c.p = p
 	if timeAware, ok := c.src.(source.TimeAware); ok {
 		timeAware.SetTimeProvider(p)
