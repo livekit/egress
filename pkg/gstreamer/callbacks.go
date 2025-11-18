@@ -26,8 +26,9 @@ type Callbacks struct {
 	BuildReady chan struct{}
 
 	// upstream callbacks
-	onError func(error)
-	onStop  []func() error
+	onError           func(error)
+	onStop            []func() error
+	onDebugDotRequest func(string)
 
 	// source callbacks
 	onTrackAdded   []func(*config.TrackSource)
@@ -50,6 +51,22 @@ func (c *Callbacks) OnError(err error) {
 
 	if onError != nil {
 		onError(err)
+	}
+}
+
+func (c *Callbacks) SetOnDebugDotRequest(f func(string)) {
+	c.mu.Lock()
+	c.onDebugDotRequest = f
+	c.mu.Unlock()
+}
+
+func (c *Callbacks) OnDebugDotRequest(reason string) {
+	c.mu.RLock()
+	onDebugDotRequest := c.onDebugDotRequest
+	c.mu.RUnlock()
+
+	if onDebugDotRequest != nil {
+		onDebugDotRequest(reason)
 	}
 }
 
