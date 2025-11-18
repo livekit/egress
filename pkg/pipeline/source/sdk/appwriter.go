@@ -102,6 +102,9 @@ type AppWriter struct {
 	finished     core.Fuse
 	stats        appWriterStats
 
+	// diagnostics, set on unexpected flushing when pushing packets to the pipeline
+	flushDotRequested atomic.Bool
+
 	tpLock       deadlock.RWMutex
 	timeProvider gstreamer.TimeProvider
 }
@@ -491,6 +494,9 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.stats.packetsDropped.Inc()
 		w.logger.Infow("unexpected flow return", "flow", flow)
+		if flow == gst.FlowFlushing && w.flushDotRequested.CompareAndSwap(false, true) {
+			w.callbacks.OnDebugDotRequest("appsrc_flush_" + w.track.ID())
+		}
 	}
 
 	w.lastPushed.Store(time.Now())
