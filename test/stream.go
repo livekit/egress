@@ -131,6 +131,9 @@ func (r *Runner) testStream(t *testing.T) {
 					streamUrls: []string{srtPublishUrl1, badSrtUrl1},
 					outputType: types.OutputTypeSRT,
 				},
+				encodingOptions: &livekit.EncodingOptions{
+					KeyFrameInterval: 2,
+				},
 			},
 
 			// ------ Participant ------
