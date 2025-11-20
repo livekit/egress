@@ -62,6 +62,7 @@ type Controller struct {
 	mu          deadlock.Mutex
 	monitor     *stats.HandlerMonitor
 	limitTimer  *time.Timer
+	paused      core.Fuse
 	playing     core.Fuse
 	eosSent     core.Fuse
 	eosTimer    *time.Timer
