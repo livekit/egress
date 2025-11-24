@@ -45,6 +45,8 @@ import (
 const (
 	pipelineName = "pipeline"
 	eosTimeout   = time.Second * 30
+
+	streamRetryUpdateInterval = time.Minute
 )
 
 type Controller struct {
@@ -361,6 +363,21 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 
 	c.streamUpdated(ctx)
 	return c.getStreamSink().RemoveStream(stream)
+}
+
+func (c *Controller) trackStreamRetry(ctx context.Context, stream *config.Stream) {
+	now := time.Now()
+	stream.StreamInfo.LastRetryAt = now.UnixNano()
+	stream.StreamInfo.Retries++
+	if !stream.ShouldSendRetryUpdate(now, streamRetryUpdateInterval) {
+		return
+	}
+	logger.Infow("retrying stream update",
+		"url", stream.RedactedUrl,
+		"retries", stream.StreamInfo.Retries,
+	)
+
+	c.streamUpdated(ctx)
 }
 
 func (c *Controller) onEOSSent() {
