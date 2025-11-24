@@ -64,6 +64,7 @@ type Controller struct {
 	mu          deadlock.Mutex
 	monitor     *stats.HandlerMonitor
 	limitTimer  *time.Timer
+	paused      core.Fuse
 	playing     core.Fuse
 	eosSent     core.Fuse
 	eosTimer    *time.Timer
@@ -95,6 +96,13 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 	}
 	c.callbacks.SetOnError(c.OnError)
 	c.callbacks.SetOnEOSSent(c.onEOSSent)
+	c.callbacks.SetOnDebugDotRequest(func(reason string) {
+		if !c.Debug.EnableProfiling {
+			return
+		}
+		logger.Debugw("debug dot requested", "reason", reason)
+		c.generateDotFile(reason)
+	})
 
 	// initialize gst
 	go func() {
@@ -163,6 +171,9 @@ func (c *Controller) BuildPipeline() error {
 	if err = p.Link(); err != nil {
 		return err
 	}
+
+	// initial graph is fully wired; from now on, dynamic additions must be linked immediately
+	p.UpgradeState(gstreamer.StateStarted)
 
 	c.p = p
 	if timeAware, ok := c.src.(source.TimeAware); ok {
@@ -453,7 +464,7 @@ func (c *Controller) sendEOS() {
 func (c *Controller) OnError(err error) {
 	logger.Errorw("controller onError invoked", err)
 	if errors.Is(err, errors.ErrPipelineFrozen) && c.Debug.EnableProfiling {
-		c.generateDotFile()
+		c.generateDotFile("error")
 		c.generatePProf()
 	}
 

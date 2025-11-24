@@ -102,6 +102,9 @@ type AppWriter struct {
 	finished     core.Fuse
 	stats        appWriterStats
 
+	// diagnostics, set on unexpected flushing when pushing packets to the pipeline
+	flushDotRequested atomic.Bool
+
 	tpLock       deadlock.RWMutex
 	timeProvider gstreamer.TimeProvider
 }
@@ -341,6 +344,18 @@ func (w *AppWriter) SetTimeProvider(tp gstreamer.TimeProvider) {
 	w.tpLock.Unlock()
 }
 
+func (w *AppWriter) waitFor(ch <-chan struct{}) bool {
+	if ch == nil {
+		return true
+	}
+	select {
+	case <-ch:
+		return true
+	case <-w.draining.Watch():
+		return false
+	}
+}
+
 func (w *AppWriter) pipelineRunningTime() (time.Duration, bool) {
 	w.tpLock.RLock()
 	provider := w.timeProvider
@@ -404,10 +419,11 @@ func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
 }
 
 func (w *AppWriter) pushSamples() {
-	select {
-	case <-w.playing.Watch():
-		// continue
-	case <-w.draining.Watch():
+	if !w.waitFor(w.callbacks.PipelinePaused()) {
+		return
+	}
+
+	if !w.waitFor(w.playing.Watch()) {
 		return
 	}
 
@@ -491,6 +507,9 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.stats.packetsDropped.Inc()
 		w.logger.Infow("unexpected flow return", "flow", flow)
+		if flow == gst.FlowFlushing && w.flushDotRequested.CompareAndSwap(false, true) {
+			w.callbacks.OnDebugDotRequest("appsrc_flush_" + w.track.ID())
+		}
 	}
 
 	w.lastPushed.Store(time.Now())

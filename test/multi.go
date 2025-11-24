@@ -134,7 +134,7 @@ func (r *Runner) runMultiTest(t *testing.T, test *testCase) {
 		require.NoError(t, err)
 
 		time.Sleep(time.Second * 10)
-		r.verifyStreams(t, p, rtmpUrl3)
+		r.verifyStreams(t, nil, p, rtmpUrl3)
 		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 			rtmpUrl3Redacted: livekit.StreamInfo_ACTIVE,
 		})

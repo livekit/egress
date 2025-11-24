@@ -93,7 +93,7 @@ func getUploader(conf *config.StorageConfig) (*store, error) {
 		s, err = storage.NewAliOSS(conf.AliOSS)
 		name = "AliOSS"
 	default:
-		s = storage.NewLocal()
+		s, err = storage.NewLocal(&storage.LocalConfig{})
 		name = "Local"
 	}
 	if err != nil {

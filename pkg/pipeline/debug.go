@@ -46,19 +46,53 @@ func (c *Controller) GetGstPipelineDebugDot() (string, error) {
 	}
 }
 
-func (c *Controller) generateDotFile() {
-	dot, err := c.GetGstPipelineDebugDot()
-	if err != nil {
-		return
+func sanitizeDebugFilenameComponent(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('_')
+		}
 	}
+	return strings.Trim(b.String(), "_")
+}
 
-	f, err := os.Create(path.Join(c.TmpDir, fmt.Sprintf("%s.dot", c.Info.EgressId)))
+func (c *Controller) writeDotFile(filename, contents string) {
+	f, err := os.Create(path.Join(c.TmpDir, filename))
 	if err != nil {
 		return
 	}
 	defer f.Close()
 
-	_, _ = f.WriteString(dot)
+	_, _ = f.WriteString(contents)
+}
+
+func (c *Controller) generateDotFile(reason string) {
+	dot, err := c.GetGstPipelineDebugDot()
+	if err != nil {
+		return
+	}
+
+	// always write the canonical file name for easy discovery
+	c.writeDotFile(fmt.Sprintf("%s.dot", c.Info.EgressId), dot)
+
+	if reason == "" {
+		return
+	}
+
+	// make sure all dot captures for the egressID are written with timestamp suffix
+	var suffixParts []string
+	if ext := sanitizeDebugFilenameComponent(reason); ext != "" {
+		suffixParts = append(suffixParts, ext)
+	}
+	suffixParts = append(suffixParts, time.Now().UTC().Format("20060102T150405Z"))
+
+	filename := fmt.Sprintf("%s_%s.dot", c.Info.EgressId, strings.Join(suffixParts, "_"))
+	c.writeDotFile(filename, dot)
 }
 
 func (c *Controller) generatePProf() {

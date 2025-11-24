@@ -15,6 +15,7 @@
 package gstreamer
 
 import (
+	"github.com/frostbyte73/core"
 	"github.com/linkdata/deadlock"
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -26,8 +27,9 @@ type Callbacks struct {
 	BuildReady chan struct{}
 
 	// upstream callbacks
-	onError func(error)
-	onStop  []func() error
+	onError           func(error)
+	onStop            []func() error
+	onDebugDotRequest func(string)
 
 	// source callbacks
 	onTrackAdded   []func(*config.TrackSource)
@@ -35,6 +37,8 @@ type Callbacks struct {
 	onTrackUnmuted []func(string)
 	onTrackRemoved []func(string)
 	onEOSSent      func()
+
+	pipelinePaused core.Fuse
 }
 
 func (c *Callbacks) SetOnError(f func(error)) {
@@ -51,6 +55,30 @@ func (c *Callbacks) OnError(err error) {
 	if onError != nil {
 		onError(err)
 	}
+}
+
+func (c *Callbacks) SetOnDebugDotRequest(f func(string)) {
+	c.mu.Lock()
+	c.onDebugDotRequest = f
+	c.mu.Unlock()
+}
+
+func (c *Callbacks) OnDebugDotRequest(reason string) {
+	c.mu.RLock()
+	onDebugDotRequest := c.onDebugDotRequest
+	c.mu.RUnlock()
+
+	if onDebugDotRequest != nil {
+		onDebugDotRequest(reason)
+	}
+}
+
+func (c *Callbacks) PipelinePaused() <-chan struct{} {
+	return c.pipelinePaused.Watch()
+}
+
+func (c *Callbacks) OnPipelinePaused() {
+	c.pipelinePaused.Break()
 }
 
 func (c *Callbacks) AddOnStop(f func() error) {

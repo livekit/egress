@@ -527,18 +527,26 @@ func (b *VideoBin) addEncoder() error {
 		}
 
 		x264Enc.SetArg("speed-preset", "veryfast")
+
+		var options []string
+		disabledSceneCut := false
+		// Streaming outputs always set KeyFrameInterval, so this effectively disables scenecut for RTMP/SRT.
 		if b.conf.KeyFrameInterval != 0 {
 			keyframeInterval := uint(b.conf.KeyFrameInterval * float64(b.conf.Framerate))
 			if err = x264Enc.SetProperty("key-int-max", keyframeInterval); err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
+			options = append(options, "scenecut=0")
+			disabledSceneCut = true
 		}
 
-		var options []string
 		bufCapacity := uint(2000) // 2s
 		if b.conf.GetSegmentConfig() != nil {
 			// avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
-			options = append(options, "scenecut=0")
+			if !disabledSceneCut {
+				options = append(options, "scenecut=0")
+				disabledSceneCut = true
+			}
 			bufCapacity = uint(time.Duration(b.conf.GetSegmentConfig().SegmentDuration) * (time.Second / time.Millisecond))
 		}
 		if bufCapacity > 10000 {
