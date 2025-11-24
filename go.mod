@@ -28,8 +28,8 @@ require (
 	github.com/livekit/livekit-server v1.8.4
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/media-sdk v0.0.0-20251006100658-7bffd4440294
-	github.com/livekit/protocol v1.42.3-0.20251107180803-b0215c77312b
-	github.com/livekit/psrpc v0.7.1-0.20251021235041-bdebea7dacf4
+	github.com/livekit/protocol v1.43.2
+	github.com/livekit/psrpc v0.7.1
 	github.com/livekit/server-sdk-go/v2 v2.11.4-0.20251021124258-003550a83b17
 	github.com/livekit/storage v0.0.0-20250711185412-0dabf9984ad7
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
