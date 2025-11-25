@@ -53,6 +53,12 @@ jobs:
       - name: Download Go modules
         run: go mod download
 
+      - name: Get template image
+        id: template-tag
+        run: |
+          TEMPLATE_TAG=`go run github.com/livekit/egress/cmd/template_version`
+          echo "template_tag=$TEMPLATE_TAG" > "$GITHUB_OUTPUT"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -74,3 +80,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker-md.outputs.tags }}
           labels: ${{ steps.docker-md.outputs.labels }}
+          build-args: |
+            TEMPLATE_TAG=${{ steps.template-tag.outputs.template_tag }}

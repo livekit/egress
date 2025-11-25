@@ -25,6 +25,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/livekit/egress/version"
 	"github.com/livekit/mageutil"
 )
 
@@ -81,18 +82,38 @@ func Proto() error {
 	))
 }
 
-func Integration(configFile string) error {
-	if err := Deadlock(); err != nil {
+func EnsureMediaSamples() error {
+	ctx := context.Background()
+
+	const script = "build/test/fetch-media-samples.sh"
+	if _, err := os.Stat(script); err != nil {
+		return fmt.Errorf("missing %s: %w", script, err)
+	}
+
+	if err := mageutil.Run(ctx, script); err != nil {
 		return err
 	}
-	defer Sync()
 
-	if err := mageutil.Run(context.Background(),
-		"docker build -t egress-test -f build/test/Dockerfile .",
+	if entries, _ := os.ReadDir("media-samples"); len(entries) == 0 {
+		return fmt.Errorf("media-samples is empty after %s", script)
+	}
+	return nil
+}
+
+func Integration(configFile string) error {
+	if err := EnsureMediaSamples(); err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	os.Setenv("DOCKER_BUILDKIT", "1")
+	defer os.Unsetenv("DOCKER_BUILDKIT")
+
+	if err := mageutil.Run(ctx,
+		fmt.Sprintf("docker build --build-arg TEMPLATE_TAG=%s --build-arg DEADLOCK=1 -t egress-test -f build/test/Dockerfile .", version.TemplateVersion),
 	); err != nil {
 		return err
 	}
-
 	return Retest(configFile)
 }
 
@@ -138,42 +159,11 @@ func Retest(configFile string) error {
 	)
 }
 
-func Deadlock() error {
-	ctx := context.Background()
-	if err := mageutil.Run(ctx, "go get github.com/sasha-s/go-deadlock"); err != nil {
-		return err
-	}
-	if err := mageutil.Pipe("grep -rl sync.Mutex ./pkg", "xargs sed -i  -e s/sync.Mutex/deadlock.Mutex/g"); err != nil {
-		return err
-	}
-	if err := mageutil.Pipe("grep -rl sync.RWMutex ./pkg", "xargs sed -i  -e s/sync.RWMutex/deadlock.RWMutex/g"); err != nil {
-		return err
-	}
-	if err := mageutil.Pipe("grep -rl deadlock.Mutex\\|deadlock.RWMutex ./pkg", "xargs goimports -w"); err != nil {
-		return err
-	}
-	return mageutil.Run(ctx, "go mod tidy")
-}
-
-func Sync() error {
-	if err := mageutil.Pipe("grep -rl deadlock.Mutex ./pkg", "xargs sed -i  -e s/deadlock.Mutex/sync.Mutex/g"); err != nil {
-		return err
-	}
-	if err := mageutil.Pipe("grep -rl deadlock.RWMutex ./pkg", "xargs sed -i  -e s/deadlock.RWMutex/sync.RWMutex/g"); err != nil {
-		return err
-	}
-	if err := mageutil.Pipe("grep -rl sync.Mutex\\|sync.RWMutex ./pkg", "xargs goimports -w"); err != nil {
-		return err
-	}
-	return mageutil.Run(context.Background(), "go mod tidy")
-}
-
 func Build() error {
 	return mageutil.Run(context.Background(),
 		fmt.Sprintf("docker pull livekit/chrome-installer:%s", chromiumVersion),
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
-		"docker pull livekit/egress-templates",
-		"docker build -t livekit/egress:latest -f build/egress/Dockerfile .",
+		fmt.Sprintf("docker build -t livekit/egress:latest --build-arg TEMPLATE_TAG=%s -f build/egress/Dockerfile .", version.TemplateVersion),
 	)
 }
 

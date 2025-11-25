@@ -31,6 +31,11 @@ const (
 	serviceAddress = "service_ipc.sock"
 )
 
+type EgressHandlerClientWrapper struct {
+	EgressHandlerClient
+	conn *grpc.ClientConn
+}
+
 func StartServiceListener(ipcServer *grpc.Server, serviceTmpDir string) error {
 	listener, err := net.Listen(network, path.Join(serviceTmpDir, serviceAddress))
 	if err != nil {
@@ -46,7 +51,7 @@ func StartServiceListener(ipcServer *grpc.Server, serviceTmpDir string) error {
 	return nil
 }
 
-func NewHandlerClient(handlerTmpDir string) (EgressHandlerClient, error) {
+func NewHandlerClient(handlerTmpDir string) (*EgressHandlerClientWrapper, error) {
 	socketAddr := path.Join(handlerTmpDir, handlerAddress)
 	conn, err := grpc.Dial(socketAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -59,7 +64,7 @@ func NewHandlerClient(handlerTmpDir string) (EgressHandlerClient, error) {
 		return nil, err
 	}
 
-	return NewEgressHandlerClient(conn), nil
+	return &EgressHandlerClientWrapper{EgressHandlerClient: NewEgressHandlerClient(conn), conn: conn}, nil
 }
 
 func StartHandlerListener(ipcServer *grpc.Server, handlerTmpDir string) error {
@@ -91,4 +96,8 @@ func NewServiceClient(serviceTmpDir string) (EgressServiceClient, error) {
 	}
 
 	return NewEgressServiceClient(conn), nil
+}
+
+func (c EgressHandlerClientWrapper) Close() error {
+	return c.conn.Close()
 }

@@ -17,9 +17,9 @@ package stats
 import (
 	"fmt"
 	"sort"
-	"sync"
 	"time"
 
+	"github.com/linkdata/deadlock"
 	"github.com/pbnjay/memory"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
@@ -63,7 +63,7 @@ type Monitor struct {
 	pendingPulseClients atomic.Int32
 	pendingMemoryUsage  atomic.Float64
 
-	mu              sync.Mutex
+	mu              deadlock.Mutex
 	highCPUDuration int
 	pending         map[string]*processStats
 	procStats       map[int]*processStats

@@ -12,28 +12,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM livekit/gstreamer:1.24.12-dev
+# syntax=docker/dockerfile:1.6
+ARG TARGETPLATFORM
+ARG TEMPLATE_TAG=latest
+ARG GO_VERSION=1.24.5
+ARG LINT_VERSION=v1.64.2
+
+FROM livekit/egress-templates:$TEMPLATE_TAG AS template
+
+FROM livekit/gstreamer:1.24.12-dev AS builder
 
 WORKDIR /workspace
 
 ARG TARGETPLATFORM
 
+# Deadlock 0 = off, 1 = on
+ARG DEADLOCK=0
+ARG GO_VERSION
+
 # install go
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    wget https://go.dev/dl/go1.22.1.linux-${GOARCH}.tar.gz && \
+    wget https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz && \
     rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go1.22.1.linux-${GOARCH}.tar.gz
+    tar -C /usr/local -xzf go${GO_VERSION}.linux-${GOARCH}.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
-# download samples
-RUN apt-get update && apt-get install -y git-lfs
-RUN git clone --depth 1 https://github.com/livekit/media-samples.git
-RUN cd media-samples && git lfs pull
+ENV GOMODCACHE=/go/pkg/mod \
+    GOCACHE=/go/build-cache
 
 # download go modules
 COPY go.mod .
 COPY go.sum .
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/go/build-cache \
+    go mod download
 
 # copy source
 COPY cmd/ cmd/
@@ -42,15 +54,37 @@ COPY test/ test/
 COPY version/ version/
 
 # copy templates
-COPY --from=livekit/egress-templates workspace/build/ cmd/server/templates/
-COPY --from=livekit/egress-templates workspace/build/ test/templates/
+COPY --from=template workspace/build/ cmd/server/templates/
+COPY --from=template workspace/build/ test/templates/
 
 # build (service tests will need to launch the handler)
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on GODEBUG=disablethp=1 go build -a -o egress ./cmd/server
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/go/build-cache \
+    if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
+    TAGS=""; \
+    if [ "${DEADLOCK:-0}" = "1" ]; then TAGS="deadlock"; fi; \
+    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GODEBUG=disablethp=1 go build ${TAGS:+-tags} ${TAGS:+"$TAGS"} -o egress ./cmd/server
 
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} GO111MODULE=on go test -c -v -race --tags=integration ./test
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/go/build-cache \
+    if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
+    CGO_ENABLED=1 GOOS=linux GOARCH=${GOARCH} go test -c -v -race --tags=integration ./test
+
+FROM golangci/golangci-lint:${LINT_VERSION} AS golangci
+
+FROM builder AS lint
+
+COPY --from=golangci /usr/bin/golangci-lint /usr/local/bin/golangci-lint
+COPY .golangci.yaml .
+
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/go/build-cache \
+    CGO_ENABLED=1 \
+    golangci-lint run \
+        --timeout=5m \
+        --modules-download-mode=mod \
+        --build-tags="${LINT_TAGS}"
+RUN echo ok >/lint_ok
 
 
 FROM livekit/gstreamer:1.24.12-prod
@@ -73,10 +107,7 @@ RUN apt-get update && \
         gstreamer1.0-plugins-base-
 
 # install go
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    wget https://go.dev/dl/go1.22.1.linux-${GOARCH}.tar.gz && \
-    rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go1.22.1.linux-${GOARCH}.tar.gz
+COPY --from=1 /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 # install chrome
@@ -100,15 +131,18 @@ RUN mkdir -p home/egress/tmp home/egress/.cache/xdgr && \
     chown -R egress /home/egress
 
 # copy files
+COPY test/agents/requirements.txt /agents/requirements.txt
+RUN pip install --break-system-packages --no-cache-dir -r /agents/requirements.txt
+
 COPY test/ /workspace/test/
-COPY --from=0 /workspace/egress /bin/
-COPY --from=0 /workspace/test.test .
-COPY --from=0 /workspace/media-samples /media-samples
-COPY --from=0 /workspace/test/agents /agents
+COPY --from=1 /workspace/egress /bin/
+COPY --from=1 /workspace/test.test .
+COPY media-samples /media-samples
+COPY --from=1 /workspace/test/agents /agents
 COPY build/test/entrypoint.sh .
 
-# install agent deps
-RUN pip install --break-system-packages --no-cache-dir -r /agents/requirements.txt
+# Force lint stage to run successfully
+COPY --from=lint /lint_ok /__lint_ok
 
 # run tests
 USER egress

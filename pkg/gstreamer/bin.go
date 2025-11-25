@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
+	"github.com/linkdata/deadlock"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -33,7 +34,7 @@ type Bin struct {
 	*StateManager
 
 	pipeline *gst.Pipeline
-	mu       sync.Mutex
+	mu       deadlock.Mutex
 	bin      *gst.Bin
 	latency  time.Duration
 

@@ -16,7 +16,6 @@ package builder
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
@@ -35,15 +34,14 @@ type StreamBin struct {
 	Bin        *gstreamer.Bin
 	OutputType types.OutputType
 
-	latency  time.Duration
-	mu       sync.RWMutex
-	pipeline *gstreamer.Pipeline
+	latency time.Duration
 }
 
 type Stream struct {
 	Conf *config.Stream
 	Bin  *gstreamer.Bin
 
+	outputType     types.OutputType
 	sink           *gst.Element
 	keyframes      atomic.Uint64
 	reconnections  atomic.Int32
@@ -124,8 +122,9 @@ func (sb *StreamBin) BuildStream(stream *config.Stream, framerate int32) (*Strea
 	}
 
 	ss := &Stream{
-		Conf: stream,
-		Bin:  b,
+		Conf:       stream,
+		Bin:        b,
+		outputType: sb.OutputType,
 	}
 
 	var sink *gst.Element
@@ -269,6 +268,7 @@ const (
 	outBytesAcked = "out-bytes-acked"
 	inBytesTotal  = "in-bytes-total"
 	inBytesAcked  = "in-bytes-acked"
+	srtBytesSent  = "bytes-sent-total"
 )
 
 func (s *Stream) Stats() (*logging.StreamStats, bool) {
@@ -277,18 +277,29 @@ func (s *Stream) Stats() (*logging.StreamStats, bool) {
 		return nil, false
 	}
 
-	if stats := structure.(*gst.Structure).Values(); stats != nil {
-		return &logging.StreamStats{
-			Timestamp:     time.Now().Format(time.DateTime),
-			Keyframes:     s.keyframes.Load(),
-			OutBytesTotal: tryUInt64(stats, outBytesTotal),
-			OutBytesAcked: tryUInt64(stats, outBytesAcked),
-			InBytesTotal:  tryUInt64(stats, inBytesTotal),
-			InBytesAcked:  tryUInt64(stats, inBytesAcked),
-		}, true
+	stats := structure.(*gst.Structure).Values()
+	if stats == nil {
+		return nil, false
 	}
 
-	return nil, false
+	streamStats := &logging.StreamStats{
+		Timestamp: time.Now().Format(time.DateTime),
+	}
+
+	switch s.outputType {
+	case types.OutputTypeRTMP:
+		streamStats.Keyframes = s.keyframes.Load()
+		streamStats.OutBytesTotal = tryUInt64(stats, outBytesTotal)
+		streamStats.OutBytesAcked = tryUInt64(stats, outBytesAcked)
+		streamStats.InBytesTotal = tryUInt64(stats, inBytesTotal)
+		streamStats.InBytesAcked = tryUInt64(stats, inBytesAcked)
+	case types.OutputTypeSRT:
+		streamStats.OutBytesTotal = tryUInt64(stats, srtBytesSent)
+	default:
+		return nil, false
+	}
+
+	return streamStats, true
 }
 
 // sink stats sometimes returns strings instead of uint64

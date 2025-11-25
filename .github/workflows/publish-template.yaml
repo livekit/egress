@@ -14,7 +14,8 @@
 
 name: Publish Templates
 on:
-  push:
+  workflow_dispatch:
+  pull_request:
     branches: [main]
     paths:
       - build/template/Dockerfile
@@ -26,6 +27,14 @@ jobs:
     runs-on: buildjet-8vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v4
+        # for pull requests, need to checkout head for EndBug/add-and-commit to work
+        if: github.event_name == 'pull_request'
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - uses: actions/checkout@v4
+        if: github.event_name != 'pull_request'
 
       - name: Docker metadata
         id: docker-md
@@ -54,3 +63,20 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker-md.outputs.tags }}
           labels: ${{ steps.docker-md.outputs.labels }}
+
+      - name: Update template version
+        run: |
+          SHORT_SHA=`echo ${GITHUB_SHA} | cut -c 1-7`
+          sed "s/TemplateVersion.*= \"[-a-z0-9]*\"/TemplateVersion = \"sha-${SHORT_SHA}\"/" < version/version.go  > version.go
+          mv -f version.go version/version.go
+
+      - name: Commit version changes
+        uses: EndBug/add-and-commit@v9
+        with:
+          default_author: github_actions
+          message: |
+            Commit: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+            Ref: https://github.com/${{ github.repository }}/tree/${{ github.ref_name }}
+            By: ${{ github.actor }}
+          push: true
+

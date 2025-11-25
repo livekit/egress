@@ -19,6 +19,8 @@ import (
 	"path"
 
 	"github.com/frostbyte73/core"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"google.golang.org/grpc"
 
 	"github.com/livekit/egress/pkg/config"
@@ -44,6 +46,10 @@ type Handler struct {
 }
 
 func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
+	// Register all GO process metrics
+	prometheus.Unregister(prometheus.NewGoCollector())
+	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll)))
+
 	ipcClient, err := ipc.NewServiceClient(path.Join(config.TmpDir, conf.NodeID))
 	if err != nil {
 		return nil, err
@@ -91,11 +97,16 @@ func (h *Handler) Run() {
 	}()
 
 	var err error
+	egressID := h.conf.Info.EgressId
+
 	h.controller, err = pipeline.New(context.Background(), h.conf, h.ipcServiceClient)
 	h.initialized.Break()
 	if err != nil {
 		h.conf.Info.SetFailed(err)
-		_, _ = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
+		_, err = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
+		if err != nil {
+			logger.Errorw("egress update ipc call failed", err, "egressID", egressID)
+		}
 		return
 	}
 
@@ -103,14 +114,17 @@ func (h *Handler) Run() {
 	res := h.controller.Run(ctx)
 	m, err := h.GenerateMetrics(ctx)
 	if err != nil {
-		logger.Errorw("failed to generate handler metrics", err)
+		logger.Errorw("failed to generate handler metrics", err, "egressID", egressID)
 	}
 
-	_, _ = h.ipcServiceClient.HandlerFinished(ctx, &ipc.HandlerFinishedRequest{
-		EgressId: h.conf.Info.EgressId,
+	_, err = h.ipcServiceClient.HandlerFinished(ctx, &ipc.HandlerFinishedRequest{
+		EgressId: egressID,
 		Metrics:  m,
 		Info:     res,
 	})
+	if err != nil {
+		logger.Errorw("egress finished ipc call failed", err, "egressID", egressID)
+	}
 }
 
 func (h *Handler) Kill() {

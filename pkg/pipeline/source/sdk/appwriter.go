@@ -17,11 +17,13 @@ package sdk
 import (
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
+	"github.com/linkdata/deadlock"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
@@ -34,13 +36,22 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/media-sdk/jitter"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
 )
 
 const (
-	errBufferTooSmall = "buffer too small"
+	errBufferTooSmall      = "buffer too small"
+	discontinuityTolerance = 500 * time.Millisecond
+	pipelineCheckInterval  = 5 * time.Second
+	cSamplesQueueDepth     = 100
 )
+
+type sampleItem struct {
+	sample []jitter.ExtPacket
+	next   *sampleItem
+}
 
 type AppWriter struct {
 	conf *config.PipelineConfig
@@ -50,22 +61,35 @@ type AppWriter struct {
 	drift     atomic.Duration
 	maxDrift  atomic.Duration
 
-	pub       lksdk.TrackPublication
-	track     *webrtc.TrackRemote
-	codec     types.MimeType
-	src       *app.Source
-	startTime time.Time
+	pub         lksdk.TrackPublication
+	track       *webrtc.TrackRemote
+	codec       types.MimeType
+	src         *app.Source
+	startTime   time.Time
+	trackSource *config.TrackSource
 
-	buffer      *jitter.Buffer
-	samples     chan []*rtp.Packet
+	buffer *jitter.Buffer
+
+	samplesHead *sampleItem
+	samplesTail *sampleItem
+	samplesLen  int
+	samplesLock deadlock.Mutex
+	samplesCond *sync.Cond
+
 	translator  Translator
 	callbacks   *gstreamer.Callbacks
 	sendPLI     func()
 	pliThrottle core.Throttle
 
 	// a/v sync
-	sync *synchronizer.Synchronizer
+	synchronizer *synchronizer.Synchronizer
 	*synchronizer.TrackSynchronizer
+	driftHandler DriftHandler
+
+	lastPTS              time.Duration
+	lastDrift            time.Duration
+	lastPipelineCheckPTS time.Duration
+	initialized          bool
 
 	// state
 	buildReady   core.Fuse
@@ -77,10 +101,21 @@ type AppWriter struct {
 	endStream    core.Fuse
 	finished     core.Fuse
 	stats        appWriterStats
+
+	// diagnostics, set on unexpected flushing when pushing packets to the pipeline
+	flushDotRequested atomic.Bool
+
+	tpLock       deadlock.RWMutex
+	timeProvider gstreamer.TimeProvider
 }
 
 type appWriterStats struct {
 	packetsDropped atomic.Uint64
+}
+
+type DriftHandler interface {
+	EnqueueDrift(t time.Duration)
+	Processed() time.Duration
 }
 
 func NewAppWriter(
@@ -89,7 +124,8 @@ func NewAppWriter(
 	pub lksdk.TrackPublication,
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
-	sync *synchronizer.Synchronizer,
+	synchronizer *synchronizer.Synchronizer,
+	driftHandler DriftHandler,
 	callbacks *gstreamer.Callbacks,
 ) (*AppWriter, error) {
 	w := &AppWriter{
@@ -99,11 +135,16 @@ func NewAppWriter(
 		pub:               pub,
 		codec:             ts.MimeType,
 		src:               ts.AppSrc,
-		samples:           make(chan []*rtp.Packet, 100),
+		trackSource:       ts,
 		callbacks:         callbacks,
-		sync:              sync,
-		TrackSynchronizer: sync.AddTrack(track, rp.Identity()),
+		synchronizer:      synchronizer,
+		TrackSynchronizer: synchronizer.AddTrack(track, rp.Identity()),
+		driftHandler:      driftHandler,
+		timeProvider:      gstreamer.NopTimeProvider(),
 	}
+	w.samplesCond = sync.NewCond(&w.samplesLock)
+
+	ts.OnKeyframeRequired = w.onKeyframeRequired
 
 	if conf.Debug.EnableTrackLogging {
 		csvLogger, err := logging.NewCSVLogger[logging.TrackStats](track.ID())
@@ -112,6 +153,13 @@ func NewAppWriter(
 		} else {
 			w.csvLogger = csvLogger
 			w.TrackSynchronizer.OnSenderReport(func(drift time.Duration) {
+				logger.Debugw("received sender report", "drift", drift)
+				if w.driftHandler != nil {
+					// presence of the drift handler means that PTS updates on SRs are disabled
+					d := drift - w.lastDrift
+					w.lastDrift = drift
+					w.driftHandler.EnqueueDrift(d)
+				}
 				w.updateDrift(drift)
 			})
 		}
@@ -151,7 +199,6 @@ func NewAppWriter(
 		jitter.WithLogger(w.logger),
 		jitter.WithPacketLossHandler(w.sendPLI),
 	)
-
 	go w.start()
 	return w, nil
 }
@@ -183,11 +230,18 @@ func (w *AppWriter) start() {
 		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
 			w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
 		}
+		if w.driftHandler != nil {
+			w.logger.Debugw("processed drift", "drift", w.driftHandler.Processed())
+		}
 	}
 
 	w.logger.Infow("writer finished")
 	if w.csvLogger != nil {
 		w.csvLogger.Close()
+	}
+
+	if w.trackSource != nil {
+		w.trackSource.OnKeyframeRequired = nil
 	}
 
 	w.finished.Break()
@@ -201,15 +255,29 @@ func (w *AppWriter) readNext() {
 		return
 	}
 
-	// initialize on first packet
-	if w.lastReceived.Load().IsZero() {
-		w.Initialize(pkt)
+	receivedAt := time.Now()
+	var packets []jitter.ExtPacket
+	if !w.initialized {
+		ready, dropped, done := w.PrimeForStart(jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt})
+		if dropped > 0 {
+			w.stats.packetsDropped.Add(uint64(dropped))
+			if w.sendPLI != nil {
+				w.sendPLI()
+			}
+		}
+		if !done {
+			return
+		}
+		w.initialized = true
+		packets = ready
+		w.lastReceived.Store(ready[len(ready)-1].ReceivedAt)
+	} else {
+		w.lastReceived.Store(receivedAt)
 	}
-	w.lastReceived.Store(time.Now())
 
 	if !w.active.Swap(true) {
 		// set track active
-		w.logger.Debugw("track active", "timestamp", time.Since(w.startTime))
+		w.logTrackState("track active")
 		if w.buildReady.IsBroken() {
 			w.callbacks.OnTrackUnmuted(w.track.ID())
 		}
@@ -217,9 +285,11 @@ func (w *AppWriter) readNext() {
 			w.sendPLI()
 		}
 	}
-
-	// push packet to jitter buffer
-	w.buffer.Push(pkt)
+	if len(packets) > 0 {
+		w.buffer.PushExtPacketBatch(packets)
+	} else {
+		w.buffer.Push(pkt)
+	}
 }
 
 func (w *AppWriter) handleReadError(err error) {
@@ -227,6 +297,10 @@ func (w *AppWriter) handleReadError(err error) {
 	switch {
 	case w.draining.IsBroken():
 		w.endStream.Break()
+
+		w.samplesLock.Lock()
+		w.samplesCond.Broadcast()
+		w.samplesLock.Unlock()
 
 	case errors.As(err, &netErr) && netErr.Timeout():
 		if !w.active.Load() {
@@ -238,7 +312,7 @@ func (w *AppWriter) handleReadError(err error) {
 		}
 		if w.pub.IsMuted() || time.Since(lastRecv) > w.conf.Latency.JitterBufferLatency {
 			// set track inactive
-			w.logger.Debugw("track inactive", "timestamp", time.Since(w.startTime))
+			w.logTrackState("track inactive")
 			w.active.Store(false)
 			if w.buildReady.IsBroken() {
 				w.callbacks.OnTrackMuted(w.track.ID())
@@ -254,46 +328,142 @@ func (w *AppWriter) handleReadError(err error) {
 		}
 		w.draining.Break()
 		w.endStream.Break()
+
+		w.samplesLock.Lock()
+		w.samplesCond.Broadcast()
+		w.samplesLock.Unlock()
 	}
 }
 
-func (w *AppWriter) onPacket(sample []*rtp.Packet) {
-	select {
-	case w.samples <- sample:
-		// ok
-	default:
-		w.stats.packetsDropped.Add(uint64(len(sample)))
-		w.logger.Warnw("buffer full, dropping sample", nil)
+func (w *AppWriter) SetTimeProvider(tp gstreamer.TimeProvider) {
+	w.tpLock.Lock()
+	if tp == nil {
+		tp = gstreamer.NopTimeProvider()
 	}
+	w.timeProvider = tp
+	w.tpLock.Unlock()
+}
 
+func (w *AppWriter) waitFor(ch <-chan struct{}) bool {
+	if ch == nil {
+		return true
+	}
+	select {
+	case <-ch:
+		return true
+	case <-w.draining.Watch():
+		return false
+	}
+}
+
+func (w *AppWriter) pipelineRunningTime() (time.Duration, bool) {
+	w.tpLock.RLock()
+	provider := w.timeProvider
+	w.tpLock.RUnlock()
+	return provider.RunningTime()
+}
+
+func (w *AppWriter) pipelinePlayhead() (time.Duration, bool) {
+	w.tpLock.RLock()
+	provider := w.timeProvider
+	w.tpLock.RUnlock()
+	return provider.PlayheadPosition()
+}
+
+func (w *AppWriter) logTrackState(event string) {
+	fields := []any{"timestamp", time.Since(w.startTime)}
+	if pipelineTime, ok := w.pipelineRunningTime(); ok {
+		fields = append(fields, "pipeline_time", pipelineTime)
+	}
+	if playhead, ok := w.pipelinePlayhead(); ok {
+		fields = append(fields, "playhead", playhead)
+	}
+	w.logger.Debugw(event, fields...)
+}
+
+func (w *AppWriter) onKeyframeRequired() {
+	if w.finished.IsBroken() || w.sendPLI == nil {
+		return
+	}
+	w.sendPLI()
+}
+
+func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
+	w.samplesLock.Lock()
+	item := &sampleItem{sample, nil}
+	if w.samplesHead == nil {
+		w.samplesHead = item
+		w.samplesTail = w.samplesHead
+		w.samplesLen = 1
+	} else {
+		w.samplesTail.next = item
+		w.samplesTail = item
+		w.samplesLen++
+	}
+	// drop old samples if queue is overflowing
+	for w.samplesLen > cSamplesQueueDepth {
+		if w.samplesHead != nil {
+			itemToDrop := w.samplesHead
+			w.samplesHead = w.samplesHead.next
+			w.samplesLen--
+			w.stats.packetsDropped.Add(uint64(len(itemToDrop.sample)))
+			w.logger.Warnw("buffer full, dropping sample", nil, "numPackets", len(itemToDrop.sample))
+		}
+		if w.samplesHead == nil {
+			w.samplesTail = nil
+			w.samplesLen = 0
+		}
+	}
+	w.samplesCond.Broadcast()
+	w.samplesLock.Unlock()
 }
 
 func (w *AppWriter) pushSamples() {
-	select {
-	case <-w.playing.Watch():
-		// continue
-	case <-w.draining.Watch():
+	if !w.waitFor(w.callbacks.PipelinePaused()) {
 		return
 	}
 
-	end := w.endStream.Watch()
+	if !w.waitFor(w.playing.Watch()) {
+		return
+	}
+
 	for {
-		select {
-		case <-end:
+		w.samplesLock.Lock()
+		for w.samplesHead == nil && !w.endStream.IsBroken() {
+			w.samplesCond.Wait()
+		}
+		if w.endStream.IsBroken() {
+			w.samplesLock.Unlock()
 			return
-		case sample := <-w.samples:
-			for _, pkt := range sample {
-				if err := w.pushPacket(pkt); err != nil {
+		}
+
+		item := w.samplesHead
+		w.samplesHead = item.next
+		w.samplesLen--
+		if w.samplesHead == nil {
+			w.samplesTail = nil
+		}
+		w.samplesLock.Unlock()
+
+		for _, pkt := range item.sample {
+			if err := w.pushPacket(pkt); err != nil {
+				if !utils.ErrorIsOneOf(err, synchronizer.ErrPacketOutOfOrder, synchronizer.ErrPacketTooOld) {
 					w.draining.Break()
 					w.endStream.Break()
+
+					// wake any waiter
+					w.samplesLock.Lock()
+					w.samplesCond.Broadcast()
+					w.samplesLock.Unlock()
+					break
 				}
 			}
 		}
 	}
 }
 
-func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
-	w.translator.Translate(pkt)
+func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
+	w.translator.Translate(pkt.Packet)
 
 	// get PTS
 	pts, err := w.GetPTS(pkt)
@@ -302,7 +472,14 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 		return err
 	}
 
-	p, err := pkt.Marshal()
+	if pts < 0 {
+		// TODO: handle it by sending new gst segment that will reflect the offset
+		w.logger.Debugw("negative packet pts, dropping", "pts", pts)
+		w.stats.packetsDropped.Inc()
+		return nil
+	}
+
+	p, err := pkt.Packet.Marshal()
 	if err != nil {
 		w.stats.packetsDropped.Inc()
 		w.logger.Errorw("could not marshal packet", err)
@@ -311,12 +488,57 @@ func (w *AppWriter) pushPacket(pkt *rtp.Packet) error {
 
 	b := gst.NewBufferFromBytes(p)
 	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
+
+	if isDiscontinuity(w.lastPTS, pts) {
+		if w.shouldHandleDiscontinuity() {
+			w.logger.Debugw("discontinuity detected", "pts", pts, "lastPTS", w.lastPTS)
+			ok := w.src.SendEvent(gst.NewFlushStartEvent())
+			if !ok {
+				w.logger.Errorw("failed to send flush start event", nil)
+			}
+			ok = w.src.SendEvent(gst.NewFlushStopEvent(false))
+			if !ok {
+				w.logger.Errorw("failed to send flush stop event", nil)
+			}
+		}
+		b.SetFlags(b.GetFlags() | gst.BufferFlagDiscont)
+	}
+
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.stats.packetsDropped.Inc()
 		w.logger.Infow("unexpected flow return", "flow", flow)
+		if flow == gst.FlowFlushing && w.flushDotRequested.CompareAndSwap(false, true) {
+			w.callbacks.OnDebugDotRequest("appsrc_flush_" + w.track.ID())
+		}
 	}
+
 	w.lastPushed.Store(time.Now())
+	w.lastPTS = pts
+	w.maybeCheckPipelineLag(pts)
 	return nil
+}
+
+func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {
+	if pts-w.lastPipelineCheckPTS < pipelineCheckInterval {
+		return
+	}
+	pipelineTime, ok := w.pipelineRunningTime()
+	if !ok {
+		return
+	}
+	w.lastPipelineCheckPTS = pts
+	if pipelineTime <= w.conf.Latency.AudioMixerLatency {
+		return
+	}
+
+	if pts < pipelineTime-w.conf.Latency.AudioMixerLatency {
+		w.logger.Errorw(
+			"packet PTS too far in the past compared to the pipeline, mixer will drop the buffer!",
+			nil,
+			"pts", pts,
+			"pipelineRunningTime", pipelineTime,
+		)
+	}
 }
 
 func (w *AppWriter) Playing() {
@@ -328,15 +550,24 @@ func (w *AppWriter) Drain(force bool) {
 	w.draining.Once(func() {
 		w.logger.Debugw("draining")
 
-		if force || !w.active.Load() {
+		endStream := func() {
 			w.endStream.Break()
+
+			w.samplesLock.Lock()
+			w.samplesCond.Broadcast()
+			w.samplesLock.Unlock()
+		}
+
+		if force || !w.active.Load() {
+			endStream()
 		} else {
-			time.AfterFunc(w.conf.Latency.PipelineLatency, func() { w.endStream.Break() })
+			time.AfterFunc(w.conf.Latency.PipelineLatency, endStream)
 		}
 	})
 
 	// wait until finished
 	<-w.finished.Watch()
+	w.synchronizer.RemoveTrack(w.track.ID())
 }
 
 func (w *AppWriter) logStats() {
@@ -350,7 +581,7 @@ func (w *AppWriter) logStats() {
 			stats := w.getStats()
 			w.csvLogger.Write(stats)
 			w.csvLogger.Close()
-			w.logger.Debugw("appwriter stats ", "stats", stats)
+			w.logger.Debugw("appwriter stats ", "stats", stats, "requestType", w.conf.RequestType)
 			return
 
 		case <-ticker.C:
@@ -387,4 +618,12 @@ func (w *AppWriter) updateDrift(drift time.Duration) {
 			break
 		}
 	}
+}
+
+func (w *AppWriter) shouldHandleDiscontinuity() bool {
+	return w.track.Kind() == webrtc.RTPCodecTypeAudio && w.conf.AudioTempoController.Enabled
+}
+
+func isDiscontinuity(lastPTS time.Duration, pts time.Duration) bool {
+	return pts > lastPTS+discontinuityTolerance
 }

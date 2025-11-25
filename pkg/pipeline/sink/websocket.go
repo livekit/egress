@@ -19,12 +19,12 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
 	"github.com/gorilla/websocket"
+	"github.com/linkdata/deadlock"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
@@ -41,7 +41,7 @@ const pingPeriod = time.Second * 30
 type WebsocketSink struct {
 	*base
 
-	mu            sync.Mutex
+	mu            deadlock.Mutex
 	conn          *websocket.Conn
 	sinkCallbacks *app.SinkCallbacks
 	closed        atomic.Bool
@@ -74,7 +74,7 @@ func newWebsocketSink(
 		conn: conn,
 	}
 	websocketSink.sinkCallbacks = &app.SinkCallbacks{
-		EOSFunc: func(appSink *app.Sink) {
+		EOSFunc: func(_ *app.Sink) {
 			_ = websocketSink.Close()
 		},
 		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {

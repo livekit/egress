@@ -1,0 +1,65 @@
+run:
+  timeout: 5m
+  tests: true
+  build-tags:
+    - deadlock   # include your deadlock build when needed
+    - integration
+linters:
+  disable-all: true
+  enable:
+    - revive
+    - forbidigo
+    - asasalint # checks for pass []any as any in variadic func(...any)
+    - copyloopvar # detects places where loop variables are copied (Go 1.22+)
+    #- cyclop # detects complex functions - very useful, requires a bit of refactoring
+    - dupl # detects duplicate code
+    - errname # checks that sentinel errors are prefixed with the Err and error types are suffixed with the Error
+    - fatcontext # detects nested contexts in loops
+    - goconst # checks for hardcoded strings that could be replaced with a constant
+    - misspell # checks for misspelled words
+
+linters-settings:
+  revive:
+    severity: warning
+    confidence: 0.8
+    ignore-generated-header: true
+    rules:
+      - name: argument-limit
+      - name: atomic
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: deep-exit
+      - name: defer
+      - name: dot-imports
+      - name: early-return
+      - name: errorf
+      - name: error-strings
+      - name: if-return
+      - name: increment-decrement
+      - name: indent-error-flow
+      - name: range
+      - name: range-val-address
+      - name: receiver-naming
+      - name: superfluous-else
+      - name: unexported-return
+      - name: unused-parameter
+      - name: var-declaration
+      - name: waitgroup-by-value
+  forbidigo:
+    forbid:
+      - 'sync\.Mutex'   # Use deadlock.Mutex instead
+      - 'sync\.RWMutex' # Use deadlock.RWMutex instead
+    analyze-types: true
+    analyze-generics: true
+  misspell:
+    locale: US
+    mode: default
+issues:
+  exclude-rules:
+    - path: cmd/server/main.go
+      text: "pattern templates: no matching files found"
+
+  exclude-use-default: false
+  max-same-issues: 0
+  max-issues-per-linter: 0

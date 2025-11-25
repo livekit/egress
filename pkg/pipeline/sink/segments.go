@@ -18,10 +18,10 @@ import (
 	"fmt"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
+	"github.com/linkdata/deadlock"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -51,9 +51,9 @@ type SegmentSink struct {
 	playlist     m3u8.PlaylistWriter
 	livePlaylist m3u8.PlaylistWriter
 
-	segmentLock  sync.Mutex
-	infoLock     sync.Mutex
-	playlistLock sync.Mutex
+	segmentLock  deadlock.Mutex
+	infoLock     deadlock.Mutex
+	playlistLock deadlock.Mutex
 
 	initialized           bool
 	startTime             time.Time

@@ -110,12 +110,31 @@ apt-get install -y --no-install-recommends \
   libxslt1-dev \
   libzbar-dev \
   libzvbi-dev \
-  meson \
   ninja-build \
   python3 \
   ruby \
   wget \
   xdg-dbus-proxy
+
+# install meson version needed for gstreamer 1.26.7 as it's not available in ubuntu 24.04
+MESON_VERSION=1.4.1
+MESON_BASENAME="meson-${MESON_VERSION}"
+MESON_BASE_URL="https://github.com/mesonbuild/meson/releases/download/${MESON_VERSION}"
+
+pushd /tmp >/dev/null
+curl -fsSL "${MESON_BASE_URL}/${MESON_BASENAME}.tar.gz" -o "${MESON_BASENAME}.tar.gz"
+popd >/dev/null
+
+tar -xzf "/tmp/${MESON_BASENAME}.tar.gz" -C /opt
+rm -f "/tmp/${MESON_BASENAME}.tar.gz"
+
+cat <<EOF >/usr/local/bin/meson
+#!/bin/sh
+exec /usr/bin/env python3 /opt/${MESON_BASENAME}/meson.py "\$@"
+EOF
+chmod +x /usr/local/bin/meson
+ln -sf /usr/local/bin/meson /usr/bin/meson
+
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 

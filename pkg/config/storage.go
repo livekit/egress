@@ -66,14 +66,13 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 		}
 
 		if sc.S3.AssumeRoleArn != "" && sc.S3.AccessKey == "" {
-			if p.S3AssumeRoleKey != "" {
-				// If an AssummedRole is set but not any AccessKey, default to using the one from conf. This is usefull for uploading to S3
-				// using an external account.
-				sc.S3.AccessKey = p.S3AssumeRoleKey
-				sc.S3.Secret = p.S3AssumeRoleSecret
-			} else {
+			if p.S3AssumeRoleKey == "" {
 				return nil, errors.ErrFeatureDisabled("S3 upload using AssumeRole")
 			}
+			// If an AssummedRole is set but not any AccessKey, default to using the one from conf. This is useful for uploading to S3
+			// using an external account.
+			sc.S3.AccessKey = p.S3AssumeRoleKey
+			sc.S3.Secret = p.S3AssumeRoleSecret
 		}
 
 		if s3.Proxy != nil {

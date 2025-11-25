@@ -18,12 +18,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
+	"github.com/linkdata/deadlock"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 
@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
+	"github.com/livekit/egress/pkg/pipeline/tempo"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -50,18 +51,20 @@ type SDKSource struct {
 	room *lksdk.Room
 	sync *synchronizer.Synchronizer
 
-	mu                   sync.RWMutex
+	mu                   deadlock.RWMutex
 	initialized          core.Fuse
 	filenameReplacements map[string]string
 	subs                 chan *subscriptionResult
 
 	writers map[string]*sdk.AppWriter
-	subLock sync.RWMutex
+	subLock deadlock.RWMutex
 	active  atomic.Int32
 	closed  core.Fuse
 
 	startRecording core.Fuse
 	endRecording   core.Fuse
+
+	timeProvider gstreamer.TimeProvider
 }
 
 type subscriptionResult struct {
@@ -80,12 +83,45 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		subs:                 make(chan *subscriptionResult, 100),
 		writers:              make(map[string]*sdk.AppWriter),
 	}
+	logger.Debugw("latency config", "latency", p.Latency)
 
-	s.sync = synchronizer.NewSynchronizerWithOptions(
+	opts := []synchronizer.SynchronizerOption{
 		synchronizer.WithMaxTsDiff(p.Latency.RTPMaxAllowedTsDiff),
+		synchronizer.WithMaxDriftAdjustment(p.Latency.RTPMaxDriftAdjustment),
+		synchronizer.WithDriftAdjustmentWindowPercent(p.Latency.RTPDriftAdjustmentWindowPercent),
+		synchronizer.WithOldPacketThreshold(p.Latency.OldPacketThreshold),
 		synchronizer.WithOnStarted(func() {
 			s.startRecording.Break()
-		}))
+		}),
+	}
+
+	if p.Latency.PreJitterBufferReceiveTimeEnabled {
+		opts = append(opts, synchronizer.WithPreJitterBufferReceiveTimeEnabled())
+	}
+	if p.Latency.RTCPSenderReportRebaseEnabled {
+		opts = append(opts, synchronizer.WithRTCPSenderReportRebaseEnabled())
+	}
+	if p.Latency.PacketBurstEstimatorEnabled {
+		opts = append(opts, synchronizer.WithStartGate())
+	}
+	if p.Latency.EnablePipelineTimeFeedback {
+		// time provider is not available yet, will be set later
+		// add some leeway to the mixer latency
+		opts = append(opts, synchronizer.WithMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond))
+	}
+
+	if p.RequestType == types.RequestTypeRoomComposite || p.AudioTempoController.Enabled {
+		// in case of room composite don't adjust audio timestamps on RTCP sender reports,
+		// to avoid gaps in the audio stream
+		opts = append(opts, synchronizer.WithAudioPTSAdjustmentDisabled())
+		if p.AudioTempoController.Enabled {
+			logger.Debugw("audio tempo controller enabled", "adjustmentRate", p.AudioTempoController.AdjustmentRate)
+		}
+	}
+
+	s.sync = synchronizer.NewSynchronizerWithOptions(
+		opts...,
+	)
 
 	if err := s.joinRoom(); err != nil {
 		return nil, err
@@ -140,6 +176,20 @@ func (s *SDKSource) StreamStopped(trackID string) {
 
 func (s *SDKSource) Close() {
 	s.room.Disconnect()
+}
+
+func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
+	s.mu.Lock()
+	s.timeProvider = tp
+	if s.Latency.EnablePipelineTimeFeedback && tp != nil {
+		s.sync.SetMediaRunningTime(tp.RunningTime)
+	} else {
+		s.sync.SetMediaRunningTime(nil)
+	}
+	for _, w := range s.writers {
+		w.SetTimeProvider(tp)
+	}
+	s.mu.Unlock()
 }
 
 // ----- Subscriptions -----
@@ -413,9 +463,8 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 
 		logger.Infow("subscribing to track", "trackID", track.SID())
 
-		if s.PipelineConfig.RequestType != types.RequestTypeRoomComposite {
-			pub.OnRTCP(s.sync.OnRTCP)
-		}
+		pub.OnRTCP(s.sync.OnRTCP)
+
 		return pub.SetSubscribed(true)
 	}
 
@@ -467,7 +516,13 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		}
 		s.AudioTranscoding = true
 
-		writer, err := s.createWriter(track, pub, rp, ts)
+		var tc sdk.DriftHandler
+		if s.AudioTempoController.Enabled {
+			c := tempo.NewController()
+			ts.TempoController = c
+			tc = c
+		}
+		writer, err := s.createWriter(track, pub, rp, ts, tc)
 		if err != nil {
 			onSubscribeErr = err
 			return
@@ -493,7 +548,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			}
 		}
 
-		writer, err := s.createWriter(track, pub, rp, ts)
+		writer, err := s.createWriter(track, pub, rp, ts, nil)
 		if err != nil {
 			onSubscribeErr = err
 			return
@@ -551,6 +606,7 @@ func (s *SDKSource) createWriter(
 	pub lksdk.TrackPublication,
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
+	tc sdk.DriftHandler,
 ) (*sdk.AppWriter, error) {
 	src, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", track.ID()))
 	if err != nil {
@@ -558,10 +614,15 @@ func (s *SDKSource) createWriter(
 	}
 
 	ts.AppSrc = app.SrcFromElement(src)
-	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, s.callbacks)
+
+	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, tc, s.callbacks)
 	if err != nil {
 		return nil, err
 	}
+
+	s.mu.RLock()
+	writer.SetTimeProvider(s.timeProvider)
+	s.mu.RUnlock()
 
 	return writer, nil
 }
@@ -635,14 +696,20 @@ func (s *SDKSource) onTrackFinished(trackID string) {
 	s.mu.Unlock()
 
 	if writer != nil {
-		writer.Drain(true)
 		active := s.active.Dec()
-		if s.RequestType == types.RequestTypeParticipant || s.RequestType == types.RequestTypeRoomComposite {
+		shouldContinue := s.RequestType == types.RequestTypeParticipant || s.RequestType == types.RequestTypeRoomComposite
+
+		if shouldContinue {
 			s.sync.RemoveTrack(trackID)
 			<-s.callbacks.BuildReady
 			s.callbacks.OnTrackRemoved(trackID)
-		} else if active == 0 {
-			s.finished()
+
+			writer.Drain(true)
+		} else {
+			writer.Drain(true)
+			if active == 0 {
+				s.finished()
+			}
 		}
 	}
 }

@@ -16,8 +16,8 @@ package gstreamer
 
 import (
 	"fmt"
-	"sync"
 
+	"github.com/linkdata/deadlock"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -33,7 +33,7 @@ const (
 )
 
 type StateManager struct {
-	lock  sync.RWMutex
+	lock  deadlock.RWMutex
 	state State
 }
 
@@ -71,11 +71,10 @@ func (s *StateManager) UpgradeState(state State) (State, bool) {
 	old := s.state
 	if old >= state {
 		return old, false
-	} else {
-		logger.Debugw(fmt.Sprintf("pipeline state %v -> %v", old, state))
-		s.state = state
-		return old, true
 	}
+	logger.Debugw(fmt.Sprintf("pipeline state %v -> %v", old, state))
+	s.state = state
+	return old, true
 }
 
 func (s State) String() string {

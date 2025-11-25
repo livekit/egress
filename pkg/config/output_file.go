@@ -54,6 +54,8 @@ func (p *PipelineConfig) getEncodedFileConfig(file *livekit.EncodedFileOutput) (
 		outputType = types.OutputTypeMP4
 	case livekit.EncodedFileType_OGG:
 		outputType = types.OutputTypeOGG
+	case livekit.EncodedFileType_MP3:
+		outputType = types.OutputTypeMP3
 	}
 
 	return p.getFileConfig(outputType, file)

@@ -11,10 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//go:build integration
 
 package test
 
 import (
+	"context"
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os/exec"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,7 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func (r *Runner) fullContentCheck(t *testing.T, file string, info *FFProbeInfo) {
+func (r *Runner) fullContentCheck(t *testing.T, file string, _ *FFProbeInfo) {
 	if r.Muting {
 		// TODO: support for content check on muted tracks to be added later
 		return
@@ -78,7 +86,7 @@ func (r *Runner) videoOnlyContentCheck(t *testing.T, file string, info *FFProbeI
 	requireDurationInDelta(t, avgFlashSpacing, time.Second, time.Millisecond*200)
 }
 
-func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, info *FFProbeInfo) {
+func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, _ *FFProbeInfo) {
 	if r.Muting {
 		// TODO: support for content check on muted tracks to be added later
 		return
@@ -144,4 +152,104 @@ func (r *Runner) fullContentCheckWithVideoUnpublishAt10AndRepublishAt20(t *testi
 
 	r.audioOnlyContentCheck(t, file, info)
 
+}
+
+func (r *Runner) streamKeyframeContentCheck(expectedInterval float64) func(t *testing.T, target string, _ *FFProbeInfo) {
+	return func(t *testing.T, target string, _ *FFProbeInfo) {
+		requireKeyframeInterval(t, target, expectedInterval)
+	}
+}
+
+// ensures input is read long enough to get sufficient keyframes for spacing check
+func requireKeyframeInterval(t *testing.T, input string, expectedInterval float64) {
+	t.Helper()
+	if expectedInterval <= 0 {
+		return
+	}
+
+	timestamps, err := ffprobeKeyframeTimestamps(input, expectedInterval)
+
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(timestamps), 2, "ffprobe returned less than two keyframes for %s", input)
+
+	tolerance := 0.020 // 20ms
+	prev := timestamps[0]
+	found := false
+	for _, ts := range timestamps[1:] {
+		if ts <= prev {
+			prev = ts
+			continue
+		}
+		found = true
+		require.InDelta(t, expectedInterval, ts-prev, tolerance, "keyframe spacing mismatch for %s", input)
+		prev = ts
+	}
+	require.True(t, found, "no increasing keyframe timestamps found for %s", input)
+}
+
+func ffprobeKeyframeTimestamps(input string, expectedInterval float64) ([]float64, error) {
+	timestamps := []float64{}
+	var err error
+
+	// ensure at least 3 keyframes are read
+	readSeconds := expectedInterval*4 + 1
+
+	args := []string{
+		"-v", "error",
+		"-fflags", "nobuffer",
+		"-rw_timeout", "5000000",
+		"-select_streams", "v:0",
+		"-show_packets",
+		"-show_entries", "packet=pts_time,dts_time,flags,stream_index,size,pos",
+		"-of", "csv=p=0",
+		input,
+	}
+
+	timeout := time.Duration(readSeconds) * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stdout pipe: %w", err)
+	}
+
+	if err = cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start ffprobe: %w", err)
+	}
+	defer cmd.Wait()
+
+	csvReader := csv.NewReader(stdout)
+
+	for {
+		record, e := csvReader.Read()
+		if e != nil {
+			if ctx.Err() != nil || e == io.EOF {
+				// ignore context && EOF errors, we could be canceling the context after readSeconds
+			} else {
+				err = fmt.Errorf("read csv: %w", e)
+			}
+			break
+		}
+
+		if len(record) != 6 {
+			err = fmt.Errorf("unexpected record length: %d", len(record))
+			break
+		}
+
+		pts, e := strconv.ParseFloat(record[1], 64)
+		if e != nil {
+			err = fmt.Errorf("parse pts: %w", e)
+			break
+		}
+		if strings.Contains(record[5], "K") {
+			timestamps = append(timestamps, pts)
+		}
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	return timestamps, nil
 }

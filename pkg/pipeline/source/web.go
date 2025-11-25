@@ -337,14 +337,14 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 	var timeout *time.Timer
 	var errString string
 	if err := chromedp.Run(chromeCtx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
+		chromedp.ActionFunc(func(_ context.Context) error {
 			logger.Debugw("chrome initialized")
 			// set page load timeout
 			timeout = time.AfterFunc(chromeTimeout, chromeCancel)
 			return nil
 		}),
 		chromedp.Navigate(webUrl),
-		chromedp.ActionFunc(func(ctx context.Context) error {
+		chromedp.ActionFunc(func(_ context.Context) error {
 			// cancel timer
 			timeout.Stop()
 			return nil

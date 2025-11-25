@@ -17,10 +17,10 @@ package builder
 import (
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
+	"github.com/linkdata/deadlock"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -38,7 +38,7 @@ type VideoBin struct {
 	bin  *gstreamer.Bin
 	conf *config.PipelineConfig
 
-	mu          sync.Mutex
+	mu          deadlock.Mutex
 	nextID      int
 	selectedPad string
 	lastPTS     uint64
@@ -118,7 +118,9 @@ func (b *VideoBin) onTrackAdded(ts *config.TrackSource) {
 	}
 
 	if ts.TrackKind == lksdk.TrackKindVideo {
+		logger.Debugw("adding video app src bin", "trackID", ts.TrackID)
 		if err := b.addAppSrcBin(ts); err != nil {
+			logger.Errorw("failed to add video app src bin", err, "trackID", ts.TrackID)
 			b.bin.OnError(err)
 		}
 	}
@@ -233,11 +235,7 @@ func (b *VideoBin) buildWebInput() error {
 		return err
 	}
 
-	if err = b.addDecodedVideoSink(); err != nil {
-		return err
-	}
-
-	return nil
+	return b.addDecodedVideoSink()
 }
 
 func (b *VideoBin) buildSDKInput() error {
@@ -341,26 +339,26 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, err
 		}
 
-		if b.conf.VideoDecoding {
-			avDecH264, err := gst.NewElement("avdec_h264")
+		if !b.conf.VideoDecoding {
+			h264ParseFixer, err := newPTSFixer("h264parse", fmt.Sprintf("track:%s", ts.TrackID))
 			if err != nil {
-				return nil, errors.ErrGstPipelineError(err)
-			}
-
-			if err = appSrcBin.AddElement(avDecH264); err != nil {
 				return nil, err
 			}
-		} else {
-			h264Parse, err := gst.NewElement("h264parse")
-			if err != nil {
-				return nil, errors.ErrGstPipelineError(err)
-			}
 
-			if err = appSrcBin.AddElement(h264Parse); err != nil {
+			if err = appSrcBin.AddElement(h264ParseFixer.Element); err != nil {
 				return nil, err
 			}
 
 			return appSrcBin, nil
+		}
+
+		avDecH264, err := gst.NewElement("avdec_h264")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+
+		if err = appSrcBin.AddElement(avDecH264); err != nil {
+			return nil, err
 		}
 
 	case types.MimeTypeVP8:
@@ -379,16 +377,15 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, err
 		}
 
-		if b.conf.VideoDecoding {
-			vp8Dec, err := gst.NewElement("vp8dec")
-			if err != nil {
-				return nil, errors.ErrGstPipelineError(err)
-			}
-			if err = appSrcBin.AddElement(vp8Dec); err != nil {
-				return nil, err
-			}
-		} else {
+		if !b.conf.VideoDecoding {
 			return appSrcBin, nil
+		}
+		vp8Dec, err := gst.NewElement("vp8dec")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = appSrcBin.AddElement(vp8Dec); err != nil {
+			return nil, err
 		}
 
 	case types.MimeTypeVP9:
@@ -407,19 +404,12 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, err
 		}
 
-		if b.conf.VideoDecoding {
-			vp9Dec, err := gst.NewElement("vp9dec")
+		if !b.conf.VideoDecoding {
+			vp9ParseFixer, err := newPTSFixer("vp9parse", fmt.Sprintf("track:%s", ts.TrackID))
 			if err != nil {
-				return nil, errors.ErrGstPipelineError(err)
-			}
-			if err = appSrcBin.AddElement(vp9Dec); err != nil {
 				return nil, err
 			}
-		} else {
-			vp9Parse, err := gst.NewElement("vp9parse")
-			if err != nil {
-				return nil, errors.ErrGstPipelineError(err)
-			}
+			vp9Parse := vp9ParseFixer.Element
 
 			vp9Caps, err := gst.NewElement("capsfilter")
 			if err != nil {
@@ -434,8 +424,15 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			if err = appSrcBin.AddElements(vp9Parse, vp9Caps); err != nil {
 				return nil, err
 			}
-
 			return appSrcBin, nil
+		}
+
+		vp9Dec, err := gst.NewElement("vp9dec")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = appSrcBin.AddElement(vp9Dec); err != nil {
+			return nil, err
 		}
 
 	default:
@@ -530,18 +527,26 @@ func (b *VideoBin) addEncoder() error {
 		}
 
 		x264Enc.SetArg("speed-preset", "veryfast")
+
+		var options []string
+		disabledSceneCut := false
+		// Streaming outputs always set KeyFrameInterval, so this effectively disables scenecut for RTMP/SRT.
 		if b.conf.KeyFrameInterval != 0 {
 			keyframeInterval := uint(b.conf.KeyFrameInterval * float64(b.conf.Framerate))
 			if err = x264Enc.SetProperty("key-int-max", keyframeInterval); err != nil {
 				return errors.ErrGstPipelineError(err)
 			}
+			options = append(options, "scenecut=0")
+			disabledSceneCut = true
 		}
 
-		var options []string
 		bufCapacity := uint(2000) // 2s
 		if b.conf.GetSegmentConfig() != nil {
 			// avoid key frames other than at segments boundaries as splitmuxsink can become inconsistent otherwise
-			options = append(options, "scenecut=0")
+			if !disabledSceneCut {
+				options = append(options, "scenecut=0")
+				disabledSceneCut = true
+			}
 			bufCapacity = uint(time.Duration(b.conf.GetSegmentConfig().SegmentDuration) * (time.Second / time.Millisecond))
 		}
 		if bufCapacity > 10000 {
@@ -713,7 +718,7 @@ func (b *VideoBin) createSrcPad(trackID, name string) {
 	b.names[trackID] = name
 
 	pad := b.selector.GetRequestPad("sink_%u")
-	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		pts := uint64(info.GetBuffer().PresentationTimestamp())
 		b.mu.Lock()
 		if pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name) {
@@ -733,7 +738,7 @@ func (b *VideoBin) createTestSrcPad() {
 	defer b.mu.Unlock()
 
 	pad := b.selector.GetRequestPad("sink_%u")
-	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		pts := uint64(info.GetBuffer().PresentationTimestamp())
 		b.mu.Lock()
 		if pts < b.lastPTS || (b.selectedPad != videoTestSrcName) {
@@ -759,7 +764,7 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 	pad := b.pads[name]
 
 	// drop until the next keyframe
-	pad.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		buffer := info.GetBuffer()
 		if buffer.HasFlags(gst.BufferFlagDeltaUnit) {
 			return gst.PadProbeDrop

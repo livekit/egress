@@ -19,11 +19,11 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
+	"github.com/linkdata/deadlock"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
@@ -45,6 +45,8 @@ import (
 const (
 	pipelineName = "pipeline"
 	eosTimeout   = time.Second * 30
+
+	streamRetryUpdateInterval = time.Minute
 )
 
 type Controller struct {
@@ -59,9 +61,10 @@ type Controller struct {
 	sinks     map[types.EgressType][]sink.Sink
 
 	// internal
-	mu          sync.Mutex
+	mu          deadlock.Mutex
 	monitor     *stats.HandlerMonitor
 	limitTimer  *time.Timer
+	paused      core.Fuse
 	playing     core.Fuse
 	eosSent     core.Fuse
 	eosTimer    *time.Timer
@@ -93,6 +96,13 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 	}
 	c.callbacks.SetOnError(c.OnError)
 	c.callbacks.SetOnEOSSent(c.onEOSSent)
+	c.callbacks.SetOnDebugDotRequest(func(reason string) {
+		if !c.Debug.EnableProfiling {
+			return
+		}
+		logger.Debugw("debug dot requested", "reason", reason)
+		c.generateDotFile(reason)
+	})
 
 	// initialize gst
 	go func() {
@@ -162,7 +172,13 @@ func (c *Controller) BuildPipeline() error {
 		return err
 	}
 
+	// initial graph is fully wired; from now on, dynamic additions must be linked immediately
+	p.UpgradeState(gstreamer.StateStarted)
+
 	c.p = p
+	if timeAware, ok := c.src.(source.TimeAware); ok {
+		timeAware.SetTimeProvider(p)
+	}
 	close(c.callbacks.BuildReady)
 	return nil
 }
@@ -174,10 +190,14 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	defer c.Close()
 
 	defer func() {
-		logger.Debugw("Audio QoS stats",
-			"audio buffers dropped", c.stats.droppedAudioBuffers.Load(),
-			"total audio duration dropped", c.stats.droppedAudioDuration.Load(),
-		)
+		if c.SourceType == types.SourceTypeSDK {
+			logger.Debugw(
+				"audio qos stats",
+				"audioBuffersDropped", c.stats.droppedAudioBuffers.Load(),
+				"totalAudioDurationDropped", c.stats.droppedAudioDuration.Load(),
+				"requestType", c.RequestType,
+			)
+		}
 	}()
 
 	// session limit timer
@@ -345,6 +365,21 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 	return c.getStreamSink().RemoveStream(stream)
 }
 
+func (c *Controller) trackStreamRetry(ctx context.Context, stream *config.Stream) {
+	now := time.Now()
+	stream.StreamInfo.LastRetryAt = now.UnixNano()
+	stream.StreamInfo.Retries++
+	if !stream.ShouldSendRetryUpdate(now, streamRetryUpdateInterval) {
+		return
+	}
+	logger.Infow("retrying stream update",
+		"url", stream.RedactedUrl,
+		"retries", stream.StreamInfo.Retries,
+	)
+
+	c.streamUpdated(ctx)
+}
+
 func (c *Controller) onEOSSent() {
 	// for video-only track/track composite, EOS might have already
 	// made it through the pipeline by the time endRecording is closed
@@ -403,6 +438,7 @@ func (c *Controller) sendEOS() {
 	}
 
 	c.eosTimer = time.AfterFunc(eosTimeout, func() {
+		logger.Debugw("eos timer firing")
 		for egressType, si := range c.sinks {
 			switch egressType {
 			case types.EgressTypeFile, types.EgressTypeSegments, types.EgressTypeImages:
@@ -426,8 +462,9 @@ func (c *Controller) sendEOS() {
 }
 
 func (c *Controller) OnError(err error) {
+	logger.Errorw("controller onError invoked", err)
 	if errors.Is(err, errors.ErrPipelineFrozen) && c.Debug.EnableProfiling {
-		c.generateDotFile()
+		c.generateDotFile("error")
 		c.generatePProf()
 	}
 

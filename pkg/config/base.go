@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/medialogutils"
 	"github.com/livekit/protocol/redis"
@@ -46,6 +47,7 @@ type BaseConfig struct {
 	EnableRoomCompositeSDKSource bool           `yaml:"enable_room_composite_sdk_source"` // attempt to render supported audio only room composite use cases using the SDK source instead of Chrome. This option will be removed when this becomes the default behavior eventually.
 	IOCreateTimeout              time.Duration  `yaml:"io_create_timeout"`                // timeout for CreateEgress calls
 	IOUpdateTimeout              time.Duration  `yaml:"io_update_timeout"`                // timeout for UpdateEgress calls
+	IOWorkers                    int            `yaml:"io_workers"`                       // number of IO update workers
 
 	SessionLimits          `yaml:"session_limits"` // session duration limits
 	StorageConfig          *StorageConfig          `yaml:"storage,omitempty"`          // storage config
@@ -56,10 +58,12 @@ type BaseConfig struct {
 	S3AssumeRoleExternalID string                  `yaml:"s3_assume_role_external_id"` // if set, this external ID is used by default for S3 uploads
 
 	// advanced
-	Insecure    bool                   `yaml:"insecure"`     // allow chrome to connect to an insecure websocket
-	Debug       DebugConfig            `yaml:"debug"`        // create dot file on internal error
-	ChromeFlags map[string]interface{} `yaml:"chrome_flags"` // additional flags to pass to Chrome
-	Latency     LatencyConfig          `yaml:"latency"`      // gstreamer latencies, modifying these may break the service
+	Insecure             bool                                `yaml:"insecure"`               // allow chrome to connect to an insecure websocket
+	Debug                DebugConfig                         `yaml:"debug"`                  // create dot file on internal error
+	ChromeFlags          map[string]interface{}              `yaml:"chrome_flags"`           // additional flags to pass to Chrome
+	Latency              LatencyConfig                       `yaml:"latency"`                // gstreamer latencies, modifying these may break the service
+	LatencyOverrides     map[types.RequestType]LatencyConfig `yaml:"latency_overrides"`      // latency overrides for different request types, experimental only, will be removed
+	AudioTempoController AudioTempoController                `yaml:"audio_tempo_controller"` // audio tempo controller
 }
 
 type SessionLimits struct {
@@ -78,10 +82,22 @@ type DebugConfig struct {
 }
 
 type LatencyConfig struct {
-	JitterBufferLatency time.Duration `yaml:"jitter_buffer_latency"`   // jitter buffer max latency for sdk egress
-	AudioMixerLatency   time.Duration `yaml:"audio_mixer_latency"`     // audio mixer latency, must be greater than jitter buffer latency
-	PipelineLatency     time.Duration `yaml:"pipeline_latency"`        // max latency for the entire pipeline
-	RTPMaxAllowedTsDiff time.Duration `ymal:"rtp_max_allowed_ts_diff"` // max allowed PTS discont. for a RTP stream, before applying PTS alignment
+	JitterBufferLatency               time.Duration `yaml:"jitter_buffer_latency"`                            // jitter buffer max latency for sdk egress
+	AudioMixerLatency                 time.Duration `yaml:"audio_mixer_latency"`                              // audio mixer latency, must be greater than jitter buffer latency
+	PipelineLatency                   time.Duration `yaml:"pipeline_latency"`                                 // max latency for the entire pipeline
+	RTPMaxAllowedTsDiff               time.Duration `ymal:"rtp_max_allowed_ts_diff"`                          // max allowed PTS discont. for a RTP stream, before applying PTS alignment
+	RTPMaxDriftAdjustment             time.Duration `ymal:"rtp_max_drift_adjustment,omitempty"`               // max allowed drift adjustment for a RTP stream
+	RTPDriftAdjustmentWindowPercent   float64       `ymal:"rtp_drift_adjustment_window_percent,omitempty"`    // how much to throttle drift adjustment, 0.0 disables it
+	PreJitterBufferReceiveTimeEnabled bool          `yaml:"pre_jitter_buffer_receive_time_enabled,omitempty"` // use packet arrival time in synchronizer
+	OldPacketThreshold                time.Duration `yaml:"old_packet_threshold,omitempty"`                   // syncrhonizer drops packets older than this, 0 to disable packet drops
+	RTCPSenderReportRebaseEnabled     bool          `yaml:"rtcp_sender_report_rebase_enabled,omitempty"`      // synchronizer will rebase RTCP Sender Report to local clock
+	PacketBurstEstimatorEnabled       bool          `yaml:"packet_burst_estimator_enabled,omitempty"`         // enable burst estimator for improving track synchronization
+	EnablePipelineTimeFeedback        bool          `yaml:"enable_pipeline_time_feedback,omitempty"`          // enable pipeline time feedback for synchronizer
+}
+
+type AudioTempoController struct {
+	Enabled        bool    `yaml:"enabled"`         // enable audio tempo adjustments for compensating PTS drift
+	AdjustmentRate float64 `yaml:"adjustment_rate"` // rate at which to adjust the tempo to compensate for PTS drift
 }
 
 func (c *BaseConfig) initLogger(values ...interface{}) error {
@@ -118,4 +134,11 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 	logger.SetLogger(l, "egress")
 	lksdk.SetLogger(medialogutils.NewOverrideLogger(nil))
 	return nil
+}
+
+func (c *BaseConfig) getLatencyConfig(requestType types.RequestType) LatencyConfig {
+	if override, ok := c.LatencyOverrides[requestType]; ok {
+		return override
+	}
+	return c.Latency
 }
