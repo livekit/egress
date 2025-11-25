@@ -156,6 +156,7 @@ func (s *Server) Run() error {
 func (s *Server) Status() ([]byte, error) {
 	status := map[string]interface{}{
 		"CpuLoad": s.monitor.GetAvailableCPU(),
+		"NodeId":  s.conf.NodeID,
 	}
 	s.GetStatus(status)
 	return json.Marshal(status)
