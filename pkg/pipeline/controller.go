@@ -217,9 +217,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		select {
 		case <-c.stopped.Watch():
 			c.src.Close()
-			if c.Info.Status != livekit.EgressStatus_EGRESS_LIMIT_REACHED {
-				c.Info.SetAborted(livekit.MsgStartNotReceived)
-			}
+			c.Info.SetAborted(livekit.MsgStartNotReceived)
 			return c.Info
 		case <-start:
 			// continue
