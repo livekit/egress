@@ -49,7 +49,7 @@ func NewSink(
 
 	switch egressType {
 	case types.EgressTypeFile:
-		return newFileSink(p, conf, o.(*config.FileConfig), monitor)
+		return newFileSink(p, conf, o.(*config.FileConfig), callbacks, monitor)
 
 	case types.EgressTypeSegments:
 		return newSegmentSink(p, conf, o.(*config.SegmentConfig), callbacks, monitor)

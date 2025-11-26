@@ -18,6 +18,7 @@ import (
 	"context"
 	"os"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/livekit/egress/pkg/config"
@@ -39,12 +40,16 @@ type FileSink struct {
 
 	cancelSizeLogger context.CancelFunc
 	sizeLoggerCtx    context.Context
+	storageLimit     int64
+	limitOnce        sync.Once
+	callbacks        *gstreamer.Callbacks
 }
 
 func newFileSink(
 	p *gstreamer.Pipeline,
 	conf *config.PipelineConfig,
 	o *config.FileConfig,
+	callbacks *gstreamer.Callbacks,
 	monitor *stats.HandlerMonitor,
 ) (*FileSink, error) {
 	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.Info)
@@ -75,6 +80,8 @@ func newFileSink(
 		conf:             conf,
 		cancelSizeLogger: cancel,
 		sizeLoggerCtx:    ctx,
+		storageLimit:     conf.FileOutputMaxSize,
+		callbacks:        callbacks,
 	}, nil
 }
 
@@ -127,7 +134,7 @@ func (s *FileSink) monitorFileSize(ctx context.Context) {
 		50 << 30, // 50GB
 	}
 
-	ticker := time.NewTicker(time.Second * 30)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	nextThreshold := 0
@@ -149,6 +156,23 @@ func (s *FileSink) monitorFileSize(ctx context.Context) {
 			statErrorLogged = false
 
 			pos := info.Size()
+
+			if s.storageLimit > 0 && pos >= s.storageLimit {
+				logger.Warnw(
+					"filesink storage limit reached",
+					nil,
+					"filepath", s.LocalFilepath,
+					"bytesWritten", pos,
+					"limitBytes", s.storageLimit,
+				)
+				s.limitOnce.Do(func() {
+					if s.callbacks != nil {
+						s.callbacks.OnStorageLimitReached()
+					}
+				})
+				return
+			}
+
 			for nextThreshold < len(thresholds) && pos >= thresholds[nextThreshold] {
 				logger.Debugw(
 					"filesink size threshold exceeded",

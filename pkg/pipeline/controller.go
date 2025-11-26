@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"path/filepath"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -65,7 +64,6 @@ type Controller struct {
 	mu          deadlock.Mutex
 	monitor     *stats.HandlerMonitor
 	limitTimer  *time.Timer
-	stopStorage chan struct{}
 	paused      core.Fuse
 	playing     core.Fuse
 	eosSent     core.Fuse
@@ -98,6 +96,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 	}
 	c.callbacks.SetOnError(c.OnError)
 	c.callbacks.SetOnEOSSent(c.onEOSSent)
+	c.callbacks.SetOnStorageLimitReached(c.onStorageLimitReached)
 	c.callbacks.SetOnDebugDotRequest(func(reason string) {
 		if !c.Debug.EnableProfiling {
 			return
@@ -226,8 +225,6 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 			// continue
 		}
 	}
-
-	c.startStorageLimitMonitor(ctx)
 
 	for _, si := range c.sinks {
 		for _, s := range si {
@@ -395,6 +392,11 @@ func (c *Controller) onEOSSent() {
 	}
 }
 
+func (c *Controller) onStorageLimitReached() {
+	c.Info.SetLimitReached()
+	c.SendEOS(context.Background(), livekit.EndReasonLimitReached)
+}
+
 func (c *Controller) SendEOS(ctx context.Context, reason string) {
 	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
@@ -426,7 +428,6 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
-			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
 			c.sendEOS()
 		}
 
@@ -486,10 +487,6 @@ func (c *Controller) Close() {
 	if c.SourceType == types.SourceTypeSDK || !c.eosSent.IsBroken() {
 		// sdk source will use the timestamp of the last packet pushed to the pipeline
 		c.updateEndTime()
-	}
-
-	if c.stopStorage != nil {
-		close(c.stopStorage)
 	}
 
 	// update status
@@ -557,44 +554,6 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 			}
 		})
 	}
-}
-
-func (c *Controller) startStorageLimitMonitor(ctx context.Context) {
-	if c.FileOutputMaxSize <= 0 {
-		return
-	}
-
-	c.stopStorage = make(chan struct{})
-
-	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				size, err := dirSize(c.TmpDir)
-				if err != nil {
-					logger.Warnw("failed to get storage usage", err, "dir", c.TmpDir)
-					continue
-				}
-
-				if size >= c.FileOutputMaxSize {
-					logger.Warnw("storage limit reached", nil,
-						"sizeBytes", size,
-						"limitBytes", c.FileOutputMaxSize,
-					)
-					c.Info.SetLimitReached()
-					c.SendEOS(ctx, livekit.EndReasonLimitReached)
-					return
-				}
-			case <-c.stopped.Watch():
-				return
-			case <-c.stopStorage:
-				return
-			}
-		}
-	}()
 }
 
 func (c *Controller) updateStartTime(startedAt int64) {
@@ -793,32 +752,4 @@ func (c *Controller) getImageSink(name string) *sink.ImageSink {
 	}
 
 	return nil
-}
-
-func dirSize(root string) (int64, error) {
-	if _, err := os.Stat(root); err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, err
-	}
-
-	var size int64
-
-	err := filepath.WalkDir(root, func(_ string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		size += info.Size()
-		return nil
-	})
-
-	return size, err
 }

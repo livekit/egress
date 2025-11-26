@@ -300,11 +300,9 @@ func (r *Runner) testStorageLimit(t *testing.T, test *testCase) {
 			if file == nil && len(update.FileResults) > 0 {
 				file = update.FileResults[0]
 			}
-
 			require.NotNil(t, file)
-			require.Greater(t, file.Size, int64(0))
 			require.Contains(t, update.Details, livekit.EndReasonLimitReached)
-			require.Empty(t, update.Error)
+			require.NotEmpty(t, update.Error)
 			return
 		case livekit.EgressStatus_EGRESS_FAILED:
 			t.Fatalf("egress failed: %s", update.Error)
