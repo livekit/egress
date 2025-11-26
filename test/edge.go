@@ -150,6 +150,18 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				},
 				custom: r.testEmptyStreamBin,
 			},
+
+			// File storage limit reached
+
+			{
+				name:        "FileStorageLimit",
+				requestType: types.RequestTypeRoomComposite,
+				fileOptions: &fileOptions{
+					filename: "storage_limit_{time}.mp4",
+					fileType: livekit.EncodedFileType_MP4,
+				},
+				custom: r.testStorageLimit,
+			},
 		} {
 			if !r.run(t, test, test.custom) {
 				return
@@ -258,6 +270,48 @@ func (r *Runner) testRoomCompositeStaysOpen(t *testing.T, test *testCase) {
 
 	r.checkUpdate(t, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
 	r.stopEgress(t, info.EgressId)
+}
+
+func (r *Runner) testStorageLimit(t *testing.T, test *testCase) {
+	origLimit := r.ServiceConfig.SessionLimits.FileOutputMaxSize
+	r.ServiceConfig.SessionLimits.FileOutputMaxSize = 300000 // ~300KB to trigger quickly
+	t.Cleanup(func() {
+		r.ServiceConfig.SessionLimits.FileOutputMaxSize = origLimit
+	})
+
+	req := r.build(test)
+	info := r.sendRequest(t, req)
+	egressID := info.EgressId
+
+	deadline := time.After(45 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for storage limit")
+		default:
+		}
+
+		update := r.getUpdate(t, egressID)
+		switch update.Status {
+		case livekit.EgressStatus_EGRESS_ACTIVE:
+			continue
+		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
+			file := update.GetFile()
+			if file == nil && len(update.FileResults) > 0 {
+				file = update.FileResults[0]
+			}
+
+			require.NotNil(t, file)
+			require.Greater(t, file.Size, int64(0))
+			require.Contains(t, update.Details, livekit.EndReasonLimitReached)
+			require.Empty(t, update.Error)
+			return
+		case livekit.EgressStatus_EGRESS_FAILED:
+			t.Fatalf("egress failed: %s", update.Error)
+		default:
+			continue
+		}
+	}
 }
 
 func (r *Runner) testRtmpFailure(t *testing.T, test *testCase) {
