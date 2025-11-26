@@ -156,6 +156,10 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 			{
 				name:        "FileStorageLimit",
 				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+				},
 				fileOptions: &fileOptions{
 					filename: "storage_limit_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
