@@ -68,10 +68,10 @@ type BaseConfig struct {
 
 type SessionLimits struct {
 	FileOutputMaxDuration    time.Duration `yaml:"file_output_max_duration"`
+	FileOutputMaxSize        int64         `yaml:"file_output_max_size"` // max on-disk size in bytes before stopping; 0 to disable
 	StreamOutputMaxDuration  time.Duration `yaml:"stream_output_max_duration"`
 	SegmentOutputMaxDuration time.Duration `yaml:"segment_output_max_duration"`
 	ImageOutputMaxDuration   time.Duration `yaml:"image_output_max_duration"`
-	FileOutputMaxSize        int64         `yaml:"file_output_max_size"` // max on-disk size in bytes before stopping; 0 to disable
 }
 
 type DebugConfig struct {
