@@ -15,20 +15,14 @@
 package sink
 
 import (
-	"context"
-	"os"
 	"path"
-	"sync"
-	"time"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/logger"
 )
 
 type FileSink struct {
@@ -37,19 +31,12 @@ type FileSink struct {
 	*uploader.Uploader
 
 	conf *config.PipelineConfig
-
-	cancelSizeLogger context.CancelFunc
-	sizeLoggerCtx    context.Context
-	storageLimit     int64
-	limitOnce        sync.Once
-	callbacks        *gstreamer.Callbacks
 }
 
 func newFileSink(
 	p *gstreamer.Pipeline,
 	conf *config.PipelineConfig,
 	o *config.FileConfig,
-	callbacks *gstreamer.Callbacks,
 	monitor *stats.HandlerMonitor,
 ) (*FileSink, error) {
 	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.Info)
@@ -65,28 +52,15 @@ func newFileSink(
 		return nil, err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	p.AddOnStop(func() error {
-		cancel()
-		return nil
-	})
-
 	return &FileSink{
-		base: &base{
-			bin: fileBin,
-		},
-		FileConfig:       o,
-		Uploader:         u,
-		conf:             conf,
-		cancelSizeLogger: cancel,
-		sizeLoggerCtx:    ctx,
-		storageLimit:     conf.FileOutputMaxSize,
-		callbacks:        callbacks,
+		base:       &base{bin: fileBin},
+		FileConfig: o,
+		Uploader:   u,
+		conf:       conf,
 	}, nil
 }
 
 func (s *FileSink) Start() error {
-	go s.monitorFileSize(s.sizeLoggerCtx)
 	return nil
 }
 
@@ -105,10 +79,6 @@ func (s *FileSink) UploadManifest(filepath string) (string, bool, error) {
 }
 
 func (s *FileSink) Close() error {
-	if s.cancelSizeLogger != nil {
-		s.cancelSizeLogger()
-	}
-
 	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
 	if err != nil {
 		return err
@@ -122,66 +92,4 @@ func (s *FileSink) Close() error {
 	}
 
 	return nil
-}
-
-func (s *FileSink) monitorFileSize(ctx context.Context) {
-	thresholds := []int64{
-		1 << 30,  // 1GB
-		3 << 30,  // 3GB
-		5 << 30,  // 5GB
-		10 << 30, // 10GB
-		20 << 30, // 20GB
-		50 << 30, // 50GB
-	}
-
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
-	nextThreshold := 0
-	statErrorLogged := false
-
-	for nextThreshold < len(thresholds) {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			info, err := os.Stat(s.LocalFilepath)
-			if err != nil {
-				if !statErrorLogged && !errors.Is(err, os.ErrNotExist) {
-					logger.Debugw("failed to stat filesink output", err, "filepath", s.LocalFilepath)
-					statErrorLogged = true
-				}
-				continue
-			}
-			statErrorLogged = false
-
-			pos := info.Size()
-
-			if s.storageLimit > 0 && pos >= s.storageLimit {
-				logger.Warnw(
-					"filesink storage limit reached",
-					nil,
-					"filepath", s.LocalFilepath,
-					"bytesWritten", pos,
-					"limitBytes", s.storageLimit,
-				)
-				s.limitOnce.Do(func() {
-					if s.callbacks != nil {
-						s.callbacks.OnStorageLimitReached()
-					}
-				})
-				return
-			}
-
-			for nextThreshold < len(thresholds) && pos >= thresholds[nextThreshold] {
-				logger.Debugw(
-					"filesink size threshold exceeded",
-					"filepath", s.LocalFilepath,
-					"bytesWritten", pos,
-					"thresholdBytes", thresholds[nextThreshold],
-				)
-				nextThreshold++
-			}
-		}
-	}
 }
