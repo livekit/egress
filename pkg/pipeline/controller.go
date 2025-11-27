@@ -565,10 +565,6 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 }
 
 func (c *Controller) startOutputSizeMonitor() {
-	if c.storageMonitorCancel != nil {
-		return
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	c.storageMonitorCancel = cancel
 
