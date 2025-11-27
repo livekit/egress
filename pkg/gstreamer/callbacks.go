@@ -30,7 +30,6 @@ type Callbacks struct {
 	onError           func(error)
 	onStop            []func() error
 	onDebugDotRequest func(string)
-	onStorageLimit    func()
 
 	// source callbacks
 	onTrackAdded   []func(*config.TrackSource)
@@ -71,22 +70,6 @@ func (c *Callbacks) OnDebugDotRequest(reason string) {
 
 	if onDebugDotRequest != nil {
 		onDebugDotRequest(reason)
-	}
-}
-
-func (c *Callbacks) SetOnStorageLimitReached(f func()) {
-	c.mu.Lock()
-	c.onStorageLimit = f
-	c.mu.Unlock()
-}
-
-func (c *Callbacks) OnStorageLimitReached() {
-	c.mu.RLock()
-	onStorageLimit := c.onStorageLimit
-	c.mu.RUnlock()
-
-	if onStorageLimit != nil {
-		onStorageLimit()
 	}
 }
 

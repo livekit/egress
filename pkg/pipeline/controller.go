@@ -101,7 +101,6 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 	}
 	c.callbacks.SetOnError(c.OnError)
 	c.callbacks.SetOnEOSSent(c.onEOSSent)
-	c.callbacks.SetOnStorageLimitReached(c.onStorageLimitReached)
 	c.callbacks.SetOnDebugDotRequest(func(reason string) {
 		if !c.Debug.EnableProfiling {
 			return
