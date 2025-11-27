@@ -621,7 +621,7 @@ func (c *Controller) monitorOutputDirSize(ctx context.Context) {
 		statErrorLogged = false
 
 		if c.FileOutputMaxSize > 0 && size >= c.FileOutputMaxSize {
-			c.logOutputFileSizes(files)
+			c.logOutputFileSizes(files, 10)
 			logger.Warnw(
 				"output storage limit reached",
 				nil,
@@ -645,7 +645,7 @@ func (c *Controller) monitorOutputDirSize(ctx context.Context) {
 			nextThreshold++
 		}
 		if thresholdTriggered {
-			c.logOutputFileSizes(files)
+			c.logOutputFileSizes(files, 10)
 		}
 	}
 }
@@ -701,9 +701,13 @@ func (c *Controller) getOutputDirStats() (int64, []outputFileStat, error) {
 	return total, files, nil
 }
 
-func (c *Controller) logOutputFileSizes(files []outputFileStat) {
+func (c *Controller) logOutputFileSizes(files []outputFileStat, limit int) {
 	if files == nil {
 		return
+	}
+
+	if limit > 0 && len(files) > limit {
+		files = files[:limit]
 	}
 
 	for _, f := range files {
