@@ -23,9 +23,11 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
@@ -49,10 +51,10 @@ const (
 )
 
 type WebSource struct {
-	pulseSink   string
-	xvfb        *exec.Cmd
-	closeChrome context.CancelFunc
-	chromeLog   *os.File
+	pulseSink    string
+	xvfb         *exec.Cmd
+	closeChrome  context.CancelFunc
+	chromeLogger *lumberjack.Logger
 
 	startRecording core.Fuse
 	endRecording   core.Fuse
@@ -122,10 +124,6 @@ func (s *WebSource) Close() {
 			s.closeChrome()
 		}
 
-		if s.chromeLog != nil {
-			_ = s.chromeLog.Close()
-		}
-
 		if s.xvfb != nil {
 			logger.Debugw("closing X display")
 			_ = s.xvfb.Process.Kill()
@@ -137,6 +135,10 @@ func (s *WebSource) Close() {
 			if err := exec.Command("pactl", "unload-module", s.pulseSink).Run(); err != nil {
 				logger.Errorw("failed to unload pulse sink", err)
 			}
+		}
+		if s.chromeLogger != nil {
+			_ = s.chromeLogger.Close()
+			s.chromeLogger = nil
 		}
 	})
 }
@@ -186,6 +188,17 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 	return nil
 }
 
+func newChromeLogger(tmpDir string) *lumberjack.Logger {
+	writer := &lumberjack.Logger{
+		Filename:   filepath.Join(tmpDir, "chrome.log"),
+		MaxSize:    100, // MB per file (smallest unit)
+		MaxBackups: 1,   // current + 1 backup = 2 files total
+		MaxAge:     7,   // days
+		Compress:   false,
+	}
+	return writer
+}
+
 // launches chrome and navigates to the url
 func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) error {
 	ctx, span := tracer.Start(ctx, "WebInput.launchChrome")
@@ -207,12 +220,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 	}
 
 	if p.Debug.EnableChromeLogging {
-		f, err := os.Create(path.Join(os.TempDir(), "chrome.log"))
-		if err != nil {
-			logger.Errorw("failed to create chrome log file", err)
-		} else {
-			s.chromeLog = f
-		}
+		s.chromeLogger = newChromeLogger(os.TempDir())
 	}
 
 	logger.Debugw("launching chrome", "url", webUrl, "sandbox", p.EnableChromeSandbox, "insecure", p.Insecure)
@@ -298,9 +306,9 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *runtime.EventConsoleAPICalled:
-			if s.chromeLog != nil {
+			if s.chromeLogger != nil {
 				if b, err := json.Marshal(ev); err == nil {
-					_, _ = s.chromeLog.Write(append(b, '\n'))
+					_, _ = s.chromeLogger.Write(append(b, '\n'))
 				}
 			}
 
@@ -323,9 +331,9 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 			}
 
 		case *runtime.EventExceptionThrown:
-			if s.chromeLog != nil {
+			if s.chromeLogger != nil {
 				if b, err := json.Marshal(ev); err == nil {
-					_, _ = s.chromeLog.Write(append(b, '\n'))
+					_, _ = s.chromeLogger.Write(append(b, '\n'))
 				}
 			}
 
