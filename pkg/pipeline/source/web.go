@@ -192,7 +192,7 @@ func newChromeLogger(tmpDir string) *lumberjack.Logger {
 	writer := &lumberjack.Logger{
 		Filename:   filepath.Join(tmpDir, "chrome.log"),
 		MaxSize:    100, // MB per file (smallest unit)
-		MaxBackups: 2,   // current + 2 backups = 3 files total
+		MaxBackups: 1,   // current + 1 backup = 2 files total
 		MaxAge:     7,   // days
 		Compress:   false,
 	}
