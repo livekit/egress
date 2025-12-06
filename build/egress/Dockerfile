@@ -16,7 +16,7 @@ ARG TEMPLATE_TAG=latest
 
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template
 
-FROM livekit/gstreamer:1.24.12-dev
+FROM livekit/gstreamer:1.26.7-dev
 
 ARG TARGETPLATFORM
 ARG TARGETARCH
@@ -55,7 +55,7 @@ ENV TINI_VERSION v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TARGETARCH} /tini
 RUN chmod +x /tini
 
-FROM livekit/gstreamer:1.24.12-prod
+FROM livekit/gstreamer:1.26.7-prod
 
 ARG TARGETPLATFORM
 
