@@ -624,6 +624,10 @@ func (w *AppWriter) shouldHandleDiscontinuity() bool {
 	return w.track.Kind() == webrtc.RTPCodecTypeAudio && w.conf.AudioTempoController.Enabled
 }
 
+func (w *AppWriter) TrackKind() webrtc.RTPCodecType {
+	return w.track.Kind()
+}
+
 func isDiscontinuity(lastPTS time.Duration, pts time.Duration) bool {
 	return pts > lastPTS+discontinuityTolerance
 }

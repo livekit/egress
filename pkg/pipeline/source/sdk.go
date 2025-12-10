@@ -700,11 +700,20 @@ func (s *SDKSource) onTrackFinished(trackID string) {
 		shouldContinue := s.RequestType == types.RequestTypeParticipant || s.RequestType == types.RequestTypeRoomComposite
 
 		if shouldContinue {
+			trackKind := writer.TrackKind()
+			if trackKind == webrtc.RTPCodecTypeAudio {
+				// drain for video tracks could set EOS for encoder which could lead to issues after switching
+				// to test videosrc if participant stays, so drain audio tracks at this point and only do that after
+				// removing the appsource for video tracks
+				writer.Drain(true)
+			}
 			s.sync.RemoveTrack(trackID)
 			<-s.callbacks.BuildReady
 			s.callbacks.OnTrackRemoved(trackID)
 
-			writer.Drain(true)
+			if trackKind == webrtc.RTPCodecTypeVideo {
+				writer.Drain(true)
+			}
 		} else {
 			writer.Drain(true)
 			if active == 0 {
