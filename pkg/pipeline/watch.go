@@ -23,10 +23,11 @@ import (
 
 	"github.com/go-gst/go-gst/gst"
 
+	"github.com/livekit/protocol/logger"
+
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/source"
-	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -357,6 +358,10 @@ var gstDebug = regexp.MustCompile("(?s)(.*?)GstPipeline:pipeline/GstBin:(.*?)/(.
 
 func parseDebugInfo(gErr *gst.GError) (element, name, message string) {
 	match := gstDebug.FindStringSubmatch(gErr.DebugString())
+
+	if len(match) == 0 {
+		return
+	}
 
 	element = match[3]
 	name = match[4]
