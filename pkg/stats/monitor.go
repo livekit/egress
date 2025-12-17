@@ -39,6 +39,7 @@ const (
 	minKillDuration      = 10
 	gb                   = 1024.0 * 1024.0 * 1024.0
 	pulseClientHold      = 4
+	memoryBuffer         = 1
 )
 
 type Service interface {
@@ -177,7 +178,7 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 
 	memoryUsage := m.memoryUsage + m.pendingMemoryUsage.Load()
 
-	if m.cpuCostConfig.MaxMemory > 0 && memoryUsage+m.cpuCostConfig.MemoryCost >= m.cpuCostConfig.MaxMemory {
+	if m.cpuCostConfig.MaxMemory > 0 && memoryUsage+m.cpuCostConfig.MemoryCost+memoryBuffer >= m.cpuCostConfig.MaxMemory {
 		fields = append(fields, "canAccept", false, "reason", "memory")
 		return fields, false
 	}
