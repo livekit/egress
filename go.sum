@@ -245,8 +245,8 @@ github.com/livekit/livekit-server v1.8.4 h1:WYb3nX4vcZ6DesBobdATvcwh3Y+kYberRG/3
 github.com/livekit/livekit-server v1.8.4/go.mod h1:wiO/lLJ9xcpA2tDT+4wDfsi278kC0LdccIJh0cz4Lh4=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 h1:9x+U2HGLrSw5ATTo469PQPkqzdoU7be46ryiCDO3boc=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
-github.com/livekit/media-sdk v0.0.0-20251006100658-7bffd4440294 h1:xwcL5qC1ICAqT5hATEnO5IVFPkrXabaUP49MyZDGURI=
-github.com/livekit/media-sdk v0.0.0-20251006100658-7bffd4440294/go.mod h1:7ssWiG+U4xnbvLih9WiZbhQP6zIKMjgXdUtIE1bm/E8=
+github.com/livekit/media-sdk v0.0.0-20251218175659-d0b840bb38ef h1:1V6d6BII8plnPt5BoYqCfBvMG+tc5mOzIH/bNoSzE4g=
+github.com/livekit/media-sdk v0.0.0-20251218175659-d0b840bb38ef/go.mod h1:7ssWiG+U4xnbvLih9WiZbhQP6zIKMjgXdUtIE1bm/E8=
 github.com/livekit/mediatransportutil v0.0.0-20250922175932-f537f0880397 h1:Z7j2mY+bvG05UC80MpnJkitlJju8sSDWsr0Bb4dPceo=
 github.com/livekit/mediatransportutil v0.0.0-20250922175932-f537f0880397/go.mod h1:mSNtYzSf6iY9xM3UX42VEI+STHvMgHmrYzEHPcdhB8A=
 github.com/livekit/protocol v1.43.3-0.20251202235353-eec8df247cf9 h1:WO2HEG3b6KQZpc+n7p6i5kRd2ldNFud7Nvne/EDEwME=
