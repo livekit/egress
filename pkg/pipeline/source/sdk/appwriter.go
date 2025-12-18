@@ -550,7 +550,7 @@ func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {
 	}
 
 	if pts < pipelineTime-w.conf.Latency.AudioMixerLatency {
-		w.logger.Errorw(
+		w.logger.Warnw(
 			"packet PTS too far in the past compared to the pipeline, mixer will drop the buffer!",
 			nil,
 			"pts", pts,
