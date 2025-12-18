@@ -46,6 +46,7 @@ const (
 	discontinuityTolerance = 500 * time.Millisecond
 	pipelineCheckInterval  = 5 * time.Second
 	cSamplesQueueDepth     = 100
+	drainingTimeout        = time.Second * 3
 )
 
 type sampleItem struct {
@@ -227,8 +228,19 @@ func (w *AppWriter) start() {
 	}
 	w.drainJitterBuffer()
 
-	<-w.endStreamProcessed.Watch()
-	w.logger.Debugw("endStreamProcessed fuse broken")
+	select {
+	case <-w.endStreamProcessed.Watch():
+		w.logger.Debugw("endStreamProcessed fuse broken")
+	case <-time.After(drainingTimeout):
+		w.logger.Errorw("endStreamProcessed not broken after 3 seconds, bug in the draining logic!", nil,
+			"endStreamSourceProcessed", w.endStreamSourceProcessed.IsBroken(),
+			"playing", w.playing.IsBroken(),
+			"active", w.active.Load(),
+			"lastReceived", w.lastReceived.Load(),
+			"lastPushed", w.lastPushed.Load(),
+			"lastPTS", w.lastPTS,
+		)
+	}
 
 	// clean up
 	if w.playing.IsBroken() {
