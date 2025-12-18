@@ -40,7 +40,7 @@ const (
 	unhealthyShutdownWatchdogDelay = 20 * time.Second // TODO change to 10 min once we undrerstant PSRPC failures
 )
 
-type IOClient interface {
+type SessionReporter interface {
 	CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error
 	UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error
 	UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error
@@ -78,7 +78,7 @@ type update struct {
 	info *livekit.EgressInfo
 }
 
-func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (IOClient, error) {
+func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (SessionReporter, error) {
 	client, err := rpc.NewIOInfoClient(bus, rpc.WithClientObservability(logger.GetLogger()))
 	if err != nil {
 		return nil, err
