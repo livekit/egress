@@ -94,6 +94,8 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 		procStats:     make(map[int]*processStats),
 	}
 
+	m.initPrometheus()
+
 	procStats, err := hwstats.NewProcMonitor(m.updateEgressStats)
 	if err != nil {
 		return nil, err
@@ -103,8 +105,6 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 	if err = m.validateCPUConfig(); err != nil {
 		return nil, err
 	}
-
-	m.initPrometheus()
 
 	return m, nil
 }
