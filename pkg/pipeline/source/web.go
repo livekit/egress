@@ -29,7 +29,9 @@ import (
 
 	"gopkg.in/natefinch/lumberjack.v2"
 
+	"github.com/chromedp/cdproto/inspector"
 	"github.com/chromedp/cdproto/runtime"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/frostbyte73/core"
 
@@ -336,8 +338,13 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 					_, _ = s.chromeLogger.Write(append(b, '\n'))
 				}
 			}
-
 			logger.Debugw("chrome exception", "err", ev.ExceptionDetails.Error())
+
+		case *target.EventTargetCrashed:
+			logger.Errorw("chrome crashed", nil, "targetId", ev.TargetID, "status", ev.Status, "errorCode", ev.ErrorCode)
+
+		case *inspector.EventTargetCrashed:
+			logger.Errorw("chrome crashed", nil)
 		}
 	})
 
