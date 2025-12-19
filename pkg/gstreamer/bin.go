@@ -28,6 +28,10 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+const (
+	removeSourceBinTimeout = 3 * time.Second
+)
+
 // Bins are designed to hold a single stream, with any number of sources and sinks
 type Bin struct {
 	*Callbacks
@@ -49,6 +53,7 @@ type Bin struct {
 	elements []*gst.Element           // elements within this bin
 	queues   map[string]*gst.Element  // used with BinTypeMultiStream
 	pads     map[string]*gst.GhostPad // ghost pads by bin name
+	eosSeen  map[string]*atomic.Bool  // downstream EOS seen per peer bin name
 	sinks    []*Bin                   // sink bins
 }
 
@@ -59,6 +64,7 @@ func (b *Bin) NewBin(name string) *Bin {
 		pipeline:     b.pipeline,
 		bin:          gst.NewBin(name),
 		pads:         make(map[string]*gst.GhostPad),
+		eosSeen:      make(map[string]*atomic.Bool),
 	}
 }
 
@@ -225,38 +231,75 @@ func (b *Bin) probeRemoveSource(src *Bin) {
 	}
 
 	var removed atomic.Bool
+	var removalScheduled atomic.Bool
 	srcPad := srcGhostPad.GetTarget()
-	srcPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-		if removed.Load() {
-			return gst.PadProbeRemove
-		}
-		return gst.PadProbeDrop
-	})
 	sinkPad := sinkGhostPad.GetTarget()
-	sinkPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+
+	var eosSeen *atomic.Bool
+	src.mu.Lock()
+	if seen, ok := src.eosSeen[b.bin.GetName()]; ok {
+		eosSeen = seen
+	}
+	src.mu.Unlock()
+
+	scheduleRemoval := func(reason string) {
+		if !removalScheduled.CompareAndSwap(false, true) {
+			return
+		}
+
+		if _, err := glib.IdleAdd(func() bool {
+			removed.Store(true)
+			logger.Debugw("removing source bin", "bin", src.bin.GetName(), "reason", reason)
+			b.elements[0].ReleaseRequestPad(sinkPad)
+			srcGhostPad.Unlink(sinkGhostPad.Pad)
+			b.bin.RemovePad(sinkGhostPad.Pad)
+			if err := b.pipeline.Remove(src.bin.Element); err != nil {
+				logger.Warnw("failed to remove bin", err, "bin", src.bin.GetName())
+				return false
+			}
+			if err := src.bin.SetState(gst.StateNull); err != nil {
+				logger.Warnw("failed to change bin state", err, "bin", src.bin.GetName())
+				return false
+			}
+			return false
+		}); err != nil {
+			logger.Errorw("failed to remove bin", err, "bin", src.bin.GetName())
+		}
+	}
+
+	probe := func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		if removed.Load() {
 			return gst.PadProbeRemove
 		}
-		return gst.PadProbeDrop
-	})
 
-	if _, err := glib.IdleAdd(func() bool {
-		b.elements[0].ReleaseRequestPad(sinkPad)
-		srcGhostPad.Unlink(sinkGhostPad.Pad)
-		b.bin.RemovePad(sinkGhostPad.Pad)
-		removed.Store(true)
-		if err := b.pipeline.Remove(src.bin.Element); err != nil {
-			logger.Warnw("failed to remove bin", err, "bin", src.bin.GetName())
-			return false
+		if info.Type()&gst.PadProbeTypeEventDownstream != 0 {
+			if event := info.GetEvent(); event != nil && event.Type() == gst.EventTypeEOS {
+				logger.Debugw("received EOS", "bin", src.bin.GetName())
+				if eosSeen != nil {
+					eosSeen.Store(true)
+				}
+				scheduleRemoval("eos")
+			}
 		}
-		if err := src.bin.SetState(gst.StateNull); err != nil {
-			logger.Warnw("failed to change bin state", err, "bin", src.bin.GetName())
-			return false
-		}
-		return false
-	}); err != nil {
-		logger.Errorw("failed to remove bin", err, "bin", src.bin.GetName())
+
+		return gst.PadProbeOK
 	}
+	srcPad.AddProbe(gst.PadProbeTypeEventDownstream, probe)
+	sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, probe)
+
+	if eosSeen != nil && eosSeen.Load() {
+		logger.Debugw("eos already seen, removing source bin", "bin", src.bin.GetName(), "reason", "eos-seen-after-probe")
+		scheduleRemoval("eos-seen-after-probe")
+		return
+	}
+
+	time.AfterFunc(removeSourceBinTimeout, func() {
+		if removalScheduled.Load() {
+			return
+		}
+		logger.Warnw("timeout waiting for EOS before removing source bin", nil, "bin", src.bin.GetName())
+		scheduleRemoval("timeout")
+	})
 }
 
 func (b *Bin) probeRemoveSink(sink *Bin) {
@@ -296,6 +339,7 @@ func deleteGhostPadsLocked(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad, bool) 
 		logger.Errorw("source pad missing", nil, "bin", src.bin.GetName())
 	}
 	delete(src.pads, sink.bin.GetName())
+	// keep eosSeen so probeRemoveSource can still detect prior EOS when called after pad deletion
 
 	sinkPad, sinkOK := sink.pads[src.bin.GetName()]
 	if !sinkOK {
