@@ -117,7 +117,7 @@ func matchPadsLocked(src, sink *Bin) (*gst.Pad, *gst.Pad, error) {
 		return srcPad, sinkTemplates[0].toPad(), nil
 	case sinkPad != nil && len(srcTemplates) == 1:
 		return srcTemplates[0].toPad(), sinkPad, nil
-	case len(srcTemplates) >= 1 && len(srcTemplates) >= 1:
+	case len(srcTemplates) > 0 && len(sinkTemplates) > 0:
 		for _, srcTemplate := range srcTemplates {
 			if sinkTemplate := srcTemplate.findDirectMatch(sinkTemplates); sinkTemplate != nil {
 				return srcTemplate.toPad(), sinkTemplate.toPad(), nil

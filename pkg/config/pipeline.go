@@ -34,8 +34,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/tracer"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+	"go.opentelemetry.io/otel"
 )
 
 type PipelineConfig struct {
@@ -148,7 +148,7 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 }
 
 func GetValidatedPipelineConfig(conf *ServiceConfig, req *rpc.StartEgressRequest) (*PipelineConfig, error) {
-	_, span := tracer.Start(context.Background(), "config.GetValidatedPipelineConfig")
+	_, span := otel.Tracer("egress.config").Start(context.Background(), "config.GetValidatedPipelineConfig")
 	defer span.End()
 
 	p := &PipelineConfig{

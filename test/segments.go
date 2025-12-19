@@ -237,10 +237,9 @@ func (r *Runner) verifySegmentOutput(
 	require.NotEmpty(t, pl.location)
 
 	storedPlaylistPath := pl.name
-	localPlaylistPath := pl.name
 
 	// download from cloud storage
-	localPlaylistPath = path.Join(r.FilePrefix, path.Base(storedPlaylistPath))
+	localPlaylistPath := path.Join(r.FilePrefix, path.Base(storedPlaylistPath))
 	download(t, p.GetSegmentConfig().StorageConfig, localPlaylistPath, storedPlaylistPath, false)
 
 	if pl.playlistType == m3u8.PlaylistTypeEvent {

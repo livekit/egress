@@ -33,14 +33,14 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
+	"go.opentelemetry.io/otel"
 )
 
 func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
 	s.activeRequests.Inc()
 
-	ctx, span := tracer.Start(ctx, "Service.StartEgress")
+	ctx, span := otel.Tracer("egress.service").Start(ctx, "Service.StartEgress")
 	defer span.End()
 
 	if s.IsDisabled() {
@@ -101,7 +101,7 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 }
 
 func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.EgressInfo) error {
-	_, span := tracer.Start(context.Background(), "Service.launchProcess")
+	_, span := otel.Tracer("egress.service").Start(context.Background(), "Service.launchProcess")
 	defer span.End()
 
 	s.monitor.EgressStarted(req)
@@ -202,7 +202,7 @@ func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequ
 }
 
 func (s *Server) ListActiveEgress(ctx context.Context, _ *rpc.ListActiveEgressRequest) (*rpc.ListActiveEgressResponse, error) {
-	ctx, span := tracer.Start(ctx, "Service.ListActiveEgress")
+	_, span := otel.Tracer("egress.service").Start(ctx, "Service.ListActiveEgress")
 	defer span.End()
 
 	return &rpc.ListActiveEgressResponse{

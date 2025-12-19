@@ -40,7 +40,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/medialogutils"
-	"github.com/livekit/protocol/tracer"
+	"go.opentelemetry.io/otel"
 )
 
 const (
@@ -65,12 +65,8 @@ type WebSource struct {
 	info *livekit.EgressInfo
 }
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 func NewWebSource(ctx context.Context, p *config.PipelineConfig) (*WebSource, error) {
-	ctx, span := tracer.Start(ctx, "WebInput.New")
+	ctx, span := otel.Tracer("egress.web").Start(ctx, "WebInput.New")
 	defer span.End()
 
 	p.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
@@ -147,7 +143,7 @@ func (s *WebSource) Close() {
 
 // creates a new pulse audio sink
 func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfig) error {
-	ctx, span := tracer.Start(ctx, "WebInput.createPulseSink")
+	_, span := otel.Tracer("egress.web").Start(ctx, "WebInput.createPulseSink")
 	defer span.End()
 
 	logger.Debugw("creating pulse sink")
@@ -176,7 +172,7 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 
 // creates a new xvfb display
 func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) error {
-	ctx, span := tracer.Start(ctx, "WebInput.launchXvfb")
+	_, span := otel.Tracer("egress.web").Start(ctx, "WebInput.launchXvfb")
 	defer span.End()
 
 	dims := fmt.Sprintf("%dx%dx%d", p.Width, p.Height, p.Depth)
@@ -203,7 +199,7 @@ func newChromeLogger(tmpDir string) *lumberjack.Logger {
 
 // launches chrome and navigates to the url
 func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) error {
-	ctx, span := tracer.Start(ctx, "WebInput.launchChrome")
+	_, span := otel.Tracer("egress.web").Start(ctx, "WebInput.launchChrome")
 	defer span.End()
 
 	webUrl := p.WebUrl

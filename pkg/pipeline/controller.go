@@ -41,8 +41,8 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/psrpc"
+	"go.opentelemetry.io/otel"
 )
 
 const (
@@ -84,7 +84,7 @@ type controllerStats struct {
 }
 
 func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.EgressServiceClient) (*Controller, error) {
-	ctx, span := tracer.Start(ctx, "Pipeline.New")
+	ctx, span := otel.Tracer("egress.pipeline").Start(ctx, "Pipeline.New")
 	defer span.End()
 
 	var err error
@@ -111,7 +111,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 
 	// initialize gst
 	go func() {
-		_, span := tracer.Start(ctx, "gst.Init")
+		_, span := otel.Tracer("egress.pipeline").Start(ctx, "gst.Init")
 		defer span.End()
 		gst.Init(nil)
 		gst.SetLogFunction(c.gstLog)
@@ -189,7 +189,7 @@ func (c *Controller) BuildPipeline() error {
 }
 
 func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
-	ctx, span := tracer.Start(ctx, "Pipeline.Run")
+	ctx, span := otel.Tracer("egress.pipeline").Start(ctx, "Pipeline.Run")
 	defer span.End()
 
 	defer c.Close()
@@ -267,7 +267,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 }
 
 func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) error {
-	ctx, span := tracer.Start(ctx, "Pipeline.UpdateStream")
+	ctx, span := otel.Tracer("egress.pipeline").Start(ctx, "Pipeline.UpdateStream")
 	defer span.End()
 
 	o := c.GetStreamConfig()
@@ -289,7 +289,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 		// add stream info to results
 		c.mu.Lock()
 		c.Info.StreamResults = append(c.Info.StreamResults, stream.StreamInfo)
-		if list := c.Info.GetStream(); list != nil {
+		if list := c.Info.GetStream(); list != nil { //nolint:staticcheck // keep deprecated field for older clients
 			list.Info = append(list.Info, stream.StreamInfo)
 		}
 		c.mu.Unlock()
@@ -404,7 +404,7 @@ func (c *Controller) onStorageLimitReached() {
 }
 
 func (c *Controller) SendEOS(ctx context.Context, reason string) {
-	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
+	ctx, span := otel.Tracer("egress.pipeline").Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
 	c.eosSent.Once(func() {

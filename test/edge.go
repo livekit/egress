@@ -300,7 +300,7 @@ func (r *Runner) testStorageLimit(t *testing.T, test *testCase) {
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			continue
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
-			file := update.GetFile()
+			file := update.GetFile() //nolint:staticcheck // keep deprecated field for older clients
 			if file == nil && len(update.FileResults) > 0 {
 				file = update.FileResults[0]
 			}
