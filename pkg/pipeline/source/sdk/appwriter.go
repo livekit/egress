@@ -347,7 +347,7 @@ func (w *AppWriter) handleReadError(err error) {
 		if !errors.Is(err, io.EOF) {
 			w.logger.Errorw("could not read packet", err)
 		} else {
-			w.logger.Debugw("read EOF, signalling end of stream")
+			w.logger.Debugw("read EOF, signaling end of stream")
 		}
 		w.draining.Break()
 		w.endStreamSignaled.Break()
