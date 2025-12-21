@@ -29,11 +29,10 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/pprof"
 	"github.com/livekit/psrpc"
-	"go.opentelemetry.io/otel"
 )
 
 func (h *Handler) GetPipelineDot(ctx context.Context, _ *ipc.GstPipelineDebugDotRequest) (*ipc.GstPipelineDebugDotResponse, error) {
-	_, span := otel.Tracer("egress.handler").Start(ctx, "Handler.GetPipelineDot")
+	_, span := tracer.Start(ctx, "Handler.GetPipelineDot")
 	defer span.End()
 
 	<-h.initialized.Watch()
@@ -53,7 +52,7 @@ func (h *Handler) GetPipelineDot(ctx context.Context, _ *ipc.GstPipelineDebugDot
 }
 
 func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PProfResponse, error) {
-	ctx, span := otel.Tracer("egress.handler").Start(ctx, "Handler.GetPProf")
+	ctx, span := tracer.Start(ctx, "Handler.GetPProf")
 	defer span.End()
 
 	<-h.initialized.Watch()
@@ -74,7 +73,7 @@ func (h *Handler) GetPProf(ctx context.Context, req *ipc.PProfRequest) (*ipc.PPr
 
 // GetMetrics implement the handler-side gathering of metrics to return over IPC
 func (h *Handler) GetMetrics(ctx context.Context, _ *ipc.MetricsRequest) (*ipc.MetricsResponse, error) {
-	ctx, span := otel.Tracer("egress.handler").Start(ctx, "Handler.GetMetrics")
+	ctx, span := tracer.Start(ctx, "Handler.GetMetrics")
 	defer span.End()
 
 	metricsAsString, err := h.GenerateMetrics(ctx)
@@ -120,7 +119,7 @@ func renderMetrics(metrics []*dto.MetricFamily) (string, error) {
 }
 
 func (h *Handler) KillEgress(ctx context.Context, req *ipc.KillEgressRequest) (*emptypb.Empty, error) {
-	ctx, span := otel.Tracer("egress.handler").Start(ctx, "Handler.KillEgress")
+	ctx, span := tracer.Start(ctx, "Handler.KillEgress")
 	defer span.End()
 
 	<-h.initialized.Watch()

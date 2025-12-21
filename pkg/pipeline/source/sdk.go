@@ -37,7 +37,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
-	"go.opentelemetry.io/otel"
 )
 
 const (
@@ -73,7 +72,7 @@ type subscriptionResult struct {
 }
 
 func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*SDKSource, error) {
-	_, span := otel.Tracer("egress.sdk").Start(ctx, "SDKInput.New")
+	_, span := tracer.Start(ctx, "SDKInput.New")
 	defer span.End()
 
 	s := &SDKSource{

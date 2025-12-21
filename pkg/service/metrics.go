@@ -38,6 +38,10 @@ type MetricsService struct {
 	pendingMetrics []*dto.MetricFamily
 }
 
+var (
+	tracer = otel.Tracer("github.com/livekit/egress/pkg/service")
+)
+
 func NewMetricsService(pm *ProcessManager) *MetricsService {
 	prometheus.Unregister(collectors.NewGoCollector())
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll)))
@@ -55,7 +59,7 @@ func (s *MetricsService) PromHandler() http.Handler {
 
 func (s *MetricsService) CreateGatherer() prometheus.Gatherer {
 	return prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) {
-		_, span := otel.Tracer("egress.service").Start(context.Background(), "Service.GathererOfHandlerMetrics")
+		_, span := tracer.Start(context.Background(), "Service.GathererOfHandlerMetrics")
 		defer span.End()
 
 		gatherers := prometheus.Gatherers{}

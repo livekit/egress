@@ -83,8 +83,12 @@ type controllerStats struct {
 	droppedAudioDuration atomic.Duration
 }
 
+var (
+	tracer = otel.Tracer("github.com/livekit/egress/pkg/pipeline")
+)
+
 func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.EgressServiceClient) (*Controller, error) {
-	ctx, span := otel.Tracer("egress.pipeline").Start(ctx, "Pipeline.New")
+	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
 	var err error
@@ -111,7 +115,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 
 	// initialize gst
 	go func() {
-		_, span := otel.Tracer("egress.pipeline").Start(ctx, "gst.Init")
+		_, span := tracer.Start(ctx, "gst.Init")
 		defer span.End()
 		gst.Init(nil)
 		gst.SetLogFunction(c.gstLog)
@@ -189,7 +193,7 @@ func (c *Controller) BuildPipeline() error {
 }
 
 func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
-	ctx, span := otel.Tracer("egress.pipeline").Start(ctx, "Pipeline.Run")
+	ctx, span := tracer.Start(ctx, "Pipeline.Run")
 	defer span.End()
 
 	defer c.Close()
@@ -267,7 +271,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 }
 
 func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) error {
-	ctx, span := otel.Tracer("egress.pipeline").Start(ctx, "Pipeline.UpdateStream")
+	ctx, span := tracer.Start(ctx, "Pipeline.UpdateStream")
 	defer span.End()
 
 	o := c.GetStreamConfig()
@@ -404,7 +408,7 @@ func (c *Controller) onStorageLimitReached() {
 }
 
 func (c *Controller) SendEOS(ctx context.Context, reason string) {
-	ctx, span := otel.Tracer("egress.pipeline").Start(ctx, "Pipeline.SendEOS")
+	ctx, span := tracer.Start(ctx, "Pipeline.SendEOS")
 	defer span.End()
 
 	c.eosSent.Once(func() {

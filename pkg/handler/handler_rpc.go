@@ -19,11 +19,10 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/livekit"
-	"go.opentelemetry.io/otel"
 )
 
 func (h *Handler) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) (*livekit.EgressInfo, error) {
-	ctx, span := otel.Tracer("egress.handler").Start(ctx, "Handler.UpdateStream")
+	ctx, span := tracer.Start(ctx, "Handler.UpdateStream")
 	defer span.End()
 
 	<-h.initialized.Watch()
@@ -39,7 +38,7 @@ func (h *Handler) UpdateStream(ctx context.Context, req *livekit.UpdateStreamReq
 }
 
 func (h *Handler) StopEgress(ctx context.Context, _ *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
-	ctx, span := otel.Tracer("egress.handler").Start(ctx, "Handler.StopEgress")
+	ctx, span := tracer.Start(ctx, "Handler.StopEgress")
 	defer span.End()
 
 	<-h.initialized.Watch()

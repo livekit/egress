@@ -45,6 +45,10 @@ type Handler struct {
 	kill             core.Fuse
 }
 
+var (
+	tracer = otel.Tracer("github.com/livekit/egress/pkg/handler")
+)
+
 func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
 	// Register all GO process metrics
 	prometheus.Unregister(collectors.NewGoCollector())
@@ -88,7 +92,7 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 }
 
 func (h *Handler) Run() {
-	ctx, span := otel.Tracer("egress.handler").Start(context.Background(), "Handler.Run")
+	ctx, span := tracer.Start(context.Background(), "Handler.Run")
 	defer span.End()
 
 	defer func() {

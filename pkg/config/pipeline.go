@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-gst/go-gst/gst/app"
 	"github.com/pion/webrtc/v4"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
@@ -35,7 +36,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	lksdk "github.com/livekit/server-sdk-go/v2"
-	"go.opentelemetry.io/otel"
 )
 
 type PipelineConfig struct {
@@ -56,6 +56,10 @@ type PipelineConfig struct {
 	Info     *livekit.EgressInfo `yaml:"-"`
 	Manifest *Manifest           `yaml:"-"`
 }
+
+var (
+	tracer = otel.Tracer("github.com/livekit/egress/pkg/config")
+)
 
 type SourceConfig struct {
 	SourceType types.SourceType
@@ -148,7 +152,7 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 }
 
 func GetValidatedPipelineConfig(conf *ServiceConfig, req *rpc.StartEgressRequest) (*PipelineConfig, error) {
-	_, span := otel.Tracer("egress.config").Start(context.Background(), "config.GetValidatedPipelineConfig")
+	_, span := tracer.Start(context.Background(), "config.GetValidatedPipelineConfig")
 	defer span.End()
 
 	p := &PipelineConfig{
