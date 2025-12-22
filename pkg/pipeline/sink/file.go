@@ -16,6 +16,7 @@ package sink
 
 import (
 	"path"
+	"time"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/gstreamer"
@@ -23,6 +24,7 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/logger"
 )
 
 type FileSink struct {
@@ -79,13 +81,18 @@ func (s *FileSink) UploadManifest(filepath string) (string, bool, error) {
 }
 
 func (s *FileSink) Close() error {
+	start := time.Now()
 	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
 	if err != nil {
+		logger.Debugw("file upload failed", err)
 		return err
 	}
 
 	s.FileInfo.Location = location
 	s.FileInfo.Size = size
+	logger.Debugw("file upload completed",
+		"bytes", size,
+		"duration", time.Since(start))
 
 	if s.conf.Manifest != nil {
 		s.conf.Manifest.AddFile(s.StorageFilepath, location)
