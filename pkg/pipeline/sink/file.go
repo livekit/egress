@@ -91,8 +91,6 @@ func (s *FileSink) Close() error {
 	s.FileInfo.Location = location
 	s.FileInfo.Size = size
 	logger.Infow("file upload completed",
-		"storagePath", s.StorageFilepath,
-		"location", location,
 		"bytes", size,
 		"duration", time.Since(start))
 
