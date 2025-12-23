@@ -41,8 +41,8 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/psrpc"
+	"go.opentelemetry.io/otel"
 )
 
 const (
@@ -82,6 +82,10 @@ type controllerStats struct {
 	droppedAudioBuffers  atomic.Uint64
 	droppedAudioDuration atomic.Duration
 }
+
+var (
+	tracer = otel.Tracer("github.com/livekit/egress/pkg/pipeline")
+)
 
 func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.EgressServiceClient) (*Controller, error) {
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
@@ -289,7 +293,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 		// add stream info to results
 		c.mu.Lock()
 		c.Info.StreamResults = append(c.Info.StreamResults, stream.StreamInfo)
-		if list := c.Info.GetStream(); list != nil {
+		if list := c.Info.GetStream(); list != nil { //nolint:staticcheck // keep deprecated field for older clients
 			list.Info = append(list.Info, stream.StreamInfo)
 		}
 		c.mu.Unlock()

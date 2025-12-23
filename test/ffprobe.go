@@ -133,7 +133,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		require.NotEqual(t, "0", info.Format.Size)
 
 		// duration
-		fileRes := res.GetFile()
+		fileRes := res.GetFile() //nolint:staticcheck
 		if fileRes == nil {
 			fileRes = res.FileResults[0]
 		}

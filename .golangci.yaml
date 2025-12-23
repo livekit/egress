@@ -17,6 +17,7 @@ linters:
     - fatcontext # detects nested contexts in loops
     - goconst # checks for hardcoded strings that could be replaced with a constant
     - misspell # checks for misspelled words
+    - staticcheck
 
 linters-settings:
   revive:
