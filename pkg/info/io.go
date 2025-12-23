@@ -49,7 +49,7 @@ type SessionReporter interface {
 	Drain()
 }
 
-type ioClient struct {
+type sessionReporter struct {
 	rpc.IOInfoClient
 
 	createTimeout time.Duration
@@ -78,13 +78,13 @@ type update struct {
 	info *livekit.EgressInfo
 }
 
-func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (SessionReporter, error) {
+func NewSessionReporter(conf *config.BaseConfig, bus psrpc.MessageBus) (SessionReporter, error) {
 	client, err := rpc.NewIOInfoClient(bus, rpc.WithClientObservability(logger.GetLogger()))
 	if err != nil {
 		return nil, err
 	}
 
-	c := &ioClient{
+	c := &sessionReporter{
 		IOInfoClient:  client,
 		createTimeout: conf.IOCreateTimeout,
 		updateTimeout: conf.IOUpdateTimeout,
@@ -115,7 +115,7 @@ func NewIOClient(conf *config.BaseConfig, bus psrpc.MessageBus) (SessionReporter
 	return c, nil
 }
 
-func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error {
+func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error {
 	u := &update{}
 	w := c.getWorker(info.EgressId)
 
@@ -143,7 +143,7 @@ func (c *ioClient) CreateEgress(ctx context.Context, info *livekit.EgressInfo) c
 	return errChan
 }
 
-func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error {
+func (c *sessionReporter) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error {
 	ctx = context.WithoutCancel(ctx)
 
 	w := c.getWorker(info.EgressId)
@@ -167,30 +167,30 @@ func (c *ioClient) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) e
 	})
 }
 
-func (c *ioClient) UpdateMetrics(_ context.Context, _ *rpc.UpdateMetricsRequest) error {
+func (c *sessionReporter) UpdateMetrics(_ context.Context, _ *rpc.UpdateMetricsRequest) error {
 	return nil
 }
 
-func (c *ioClient) SetWatchdogHandler(w func()) {
+func (c *sessionReporter) SetWatchdogHandler(w func()) {
 	c.healthyLock.Lock()
 	defer c.healthyLock.Unlock()
 
 	c.healthyWatchdogHandler = w
 }
 
-func (c *ioClient) IsHealthy() bool {
+func (c *sessionReporter) IsHealthy() bool {
 	c.healthyLock.Lock()
 	defer c.healthyLock.Unlock()
 
 	return c.healthy
 }
 
-func (c *ioClient) Drain() {
+func (c *sessionReporter) Drain() {
 	c.draining.Break()
 	<-c.done.Watch()
 }
 
-func (c *ioClient) runWorker(w *worker) {
+func (c *sessionReporter) runWorker(w *worker) {
 	draining := c.draining.Watch()
 	for {
 		select {
@@ -210,7 +210,7 @@ func (c *ioClient) runWorker(w *worker) {
 	}
 }
 
-func (c *ioClient) getWorker(egressID string) *worker {
+func (c *sessionReporter) getWorker(egressID string) *worker {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(egressID))
 	return c.workers[int(h.Sum32())%len(c.workers)]
@@ -228,7 +228,7 @@ func (w *worker) submit(u *update) error {
 	}
 }
 
-func (c *ioClient) handleUpdate(w *worker, egressID string) {
+func (c *sessionReporter) handleUpdate(w *worker, egressID string) {
 	w.mu.Lock()
 	u := w.updates[egressID]
 	delete(w.updates, egressID)
@@ -278,7 +278,7 @@ func (c *ioClient) handleUpdate(w *worker, egressID string) {
 	}
 }
 
-func (c *ioClient) setHealthy(isHealthy bool) bool {
+func (c *sessionReporter) setHealthy(isHealthy bool) bool {
 	c.healthyLock.Lock()
 	defer c.healthyLock.Unlock()
 
