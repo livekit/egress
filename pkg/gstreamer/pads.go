@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/go-gst/go-gst/gst"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/logger"
@@ -74,6 +75,15 @@ func createGhostPadsLocked(src, sink *Bin, queue *gst.Element) (*gst.GhostPad, *
 	if err != nil {
 		return nil, nil, err
 	}
+
+	eosSeen := &atomic.Bool{}
+	src.eosSeen[sinkName] = eosSeen
+	srcPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		if event := info.GetEvent(); event != nil && event.Type() == gst.EventTypeEOS {
+			eosSeen.Store(true)
+		}
+		return gst.PadProbeOK
+	})
 
 	srcGhostPad := gst.NewGhostPad(fmt.Sprintf("%s_%s_sink", srcName, sinkName), srcPad)
 	src.pads[sinkName] = srcGhostPad
@@ -170,9 +180,7 @@ func (b *Bin) getPadTemplatesLocked(direction gst.PadDirection) []*padTemplate {
 				} else {
 					// audio/audio_%u/video/video_%u pad
 					dataType := template.Name()
-					if strings.HasSuffix(dataType, "_%u") {
-						dataType = dataType[:len(dataType)-3]
-					}
+					dataType = strings.TrimSuffix(dataType, "_%u")
 					t.dataTypes[dataType] = struct{}{}
 				}
 			} else {
