@@ -28,7 +28,7 @@ import (
 	"golang.org/x/exp/maps"
 
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/tracer"
+	"go.opentelemetry.io/otel"
 )
 
 type MetricsService struct {
@@ -38,8 +38,12 @@ type MetricsService struct {
 	pendingMetrics []*dto.MetricFamily
 }
 
+var (
+	tracer = otel.Tracer("github.com/livekit/egress/pkg/service")
+)
+
 func NewMetricsService(pm *ProcessManager) *MetricsService {
-	prometheus.Unregister(prometheus.NewGoCollector())
+	prometheus.Unregister(collectors.NewGoCollector())
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll)))
 
 	return &MetricsService{

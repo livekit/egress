@@ -108,6 +108,9 @@ type AppWriter struct {
 	// diagnostics, set on unexpected flushing when pushing packets to the pipeline
 	flushDotRequested atomic.Bool
 
+	// ensure selector/bin removal is only triggered once on terminal read errors
+	removalRequested atomic.Bool
+
 	tpLock       deadlock.RWMutex
 	timeProvider gstreamer.TimeProvider
 }
@@ -338,8 +341,13 @@ func (w *AppWriter) handleReadError(err error) {
 		w.logger.Warnw("read error", err)
 
 	default:
+		// ensure selector switches before EOS propagation to avoid encoder errors
+		w.ensureRemovedBeforeDrain()
+
 		if !errors.Is(err, io.EOF) {
 			w.logger.Errorw("could not read packet", err)
+		} else {
+			w.logger.Debugw("read EOF, signaling end of stream")
 		}
 		w.draining.Break()
 		w.endStreamSignaled.Break()
@@ -655,4 +663,15 @@ func (w *AppWriter) drainJitterBuffer() {
 
 func isDiscontinuity(lastPTS time.Duration, pts time.Duration) bool {
 	return pts > lastPTS+discontinuityTolerance
+}
+
+func (w *AppWriter) shouldRemoveBeforeDrain() bool {
+	return w.track.Kind() == webrtc.RTPCodecTypeVideo &&
+		(w.conf.RequestType == types.RequestTypeParticipant || w.conf.RequestType == types.RequestTypeRoomComposite)
+}
+
+func (w *AppWriter) ensureRemovedBeforeDrain() {
+	if w.shouldRemoveBeforeDrain() && w.removalRequested.CompareAndSwap(false, true) {
+		w.callbacks.OnTrackRemoved(w.track.ID())
+	}
 }

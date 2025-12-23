@@ -15,7 +15,6 @@
 package ipc
 
 import (
-	"context"
 	"net"
 	"path"
 
@@ -52,12 +51,9 @@ func StartServiceListener(ipcServer *grpc.Server, serviceTmpDir string) error {
 }
 
 func NewHandlerClient(handlerTmpDir string) (*EgressHandlerClientWrapper, error) {
-	socketAddr := path.Join(handlerTmpDir, handlerAddress)
-	conn, err := grpc.Dial(socketAddr,
+	socketAddr := "unix://" + path.Join(handlerTmpDir, handlerAddress)
+	conn, err := grpc.NewClient(socketAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(_ context.Context, addr string) (net.Conn, error) {
-			return net.Dial(network, addr)
-		}),
 	)
 	if err != nil {
 		logger.Errorw("could not dial grpc handler", err)
@@ -83,12 +79,9 @@ func StartHandlerListener(ipcServer *grpc.Server, handlerTmpDir string) error {
 }
 
 func NewServiceClient(serviceTmpDir string) (EgressServiceClient, error) {
-	socketAddr := path.Join(serviceTmpDir, serviceAddress)
-	conn, err := grpc.Dial(socketAddr,
+	socketAddr := "unix://" + path.Join(serviceTmpDir, serviceAddress)
+	conn, err := grpc.NewClient(socketAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(_ context.Context, addr string) (net.Conn, error) {
-			return net.Dial(network, addr)
-		}),
 	)
 	if err != nil {
 		logger.Errorw("could not dial grpc handler", err)

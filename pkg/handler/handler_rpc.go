@@ -19,7 +19,6 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/tracer"
 )
 
 func (h *Handler) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) (*livekit.EgressInfo, error) {

@@ -29,8 +29,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/psrpc"
+	"go.opentelemetry.io/otel"
 )
 
 type Handler struct {
@@ -45,9 +45,13 @@ type Handler struct {
 	kill             core.Fuse
 }
 
+var (
+	tracer = otel.Tracer("github.com/livekit/egress/pkg/handler")
+)
+
 func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
 	// Register all GO process metrics
-	prometheus.Unregister(prometheus.NewGoCollector())
+	prometheus.Unregister(collectors.NewGoCollector())
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll)))
 
 	ipcClient, err := ipc.NewServiceClient(path.Join(config.TmpDir, conf.NodeID))

@@ -28,12 +28,11 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/pprof"
-	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/psrpc"
 )
 
 func (h *Handler) GetPipelineDot(ctx context.Context, _ *ipc.GstPipelineDebugDotRequest) (*ipc.GstPipelineDebugDotResponse, error) {
-	ctx, span := tracer.Start(ctx, "Handler.GetPipelineDot")
+	_, span := tracer.Start(ctx, "Handler.GetPipelineDot")
 	defer span.End()
 
 	<-h.initialized.Watch()
