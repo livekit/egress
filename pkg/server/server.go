@@ -54,14 +54,14 @@ type Server struct {
 	psrpcServer      rpc.EgressInternalServer
 	ipcServiceServer *grpc.Server
 	promServer       *http.Server
-	ioClient         info.IOClient
+	ioClient         info.SessionReporter
 
 	activeRequests atomic.Int32
 	terminating    core.Fuse
 	shutdown       core.Fuse
 }
 
-func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.IOClient) (*Server, error) {
+func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.SessionReporter) (*Server, error) {
 	pm := service.NewProcessManager()
 
 	s := &Server{
