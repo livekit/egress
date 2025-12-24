@@ -285,7 +285,7 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 	require.NotZero(t, res.EndedAt)
 
 	// file info
-	fileRes := res.GetFile()
+	fileRes := res.GetFile() //nolint:staticcheck
 	if fileRes == nil {
 		require.Len(t, res.FileResults, 1)
 		fileRes = res.FileResults[0]
@@ -296,13 +296,12 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 	require.Greater(t, fileRes.Duration, int64(0))
 
 	storagePath := fileRes.Filename
-	localPath := fileRes.Filename
 	require.NotEmpty(t, storagePath)
 	require.False(t, strings.Contains(storagePath, "{"))
 	storageFilename := path.Base(storagePath)
 
 	// download from cloud storage
-	localPath = path.Join(r.FilePrefix, storageFilename)
+	localPath := path.Join(r.FilePrefix, storageFilename)
 	download(t, p.GetFileConfig().StorageConfig, localPath, storagePath, false)
 
 	manifestLocal := path.Join(path.Dir(localPath), res.EgressId+".json")

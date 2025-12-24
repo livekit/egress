@@ -136,7 +136,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 				return errors.ErrInvalidInput("stream url")
 			}
 
-			p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
+			p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}} //nolint:staticcheck // keep deprecated field for older clients
 		}
 	}
 
@@ -245,7 +245,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 		})
 
 		p.Info.StreamResults = streamInfoList
-		p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}}
+		p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}} //nolint:staticcheck // keep deprecated field for older clients
 
 		p.Outputs[types.EgressTypeWebsocket] = []OutputConfig{conf}
 		p.OutputCount.Inc()

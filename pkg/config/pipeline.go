@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-gst/go-gst/gst/app"
 	"github.com/pion/webrtc/v4"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
@@ -34,7 +35,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/tracer"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
@@ -56,6 +56,10 @@ type PipelineConfig struct {
 	Info     *livekit.EgressInfo `yaml:"-"`
 	Manifest *Manifest           `yaml:"-"`
 }
+
+var (
+	tracer = otel.Tracer("github.com/livekit/egress/pkg/config")
+)
 
 type SourceConfig struct {
 	SourceType types.SourceType

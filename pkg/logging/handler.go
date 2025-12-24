@@ -38,7 +38,6 @@ func NewHandlerLogger(handlerID, egressID string) *medialogutils.CmdLogger {
 					next = lines[j]
 					if len(next) > 0 && strings.HasSuffix(next, "}") {
 						line += next
-						i = j
 						break
 					}
 				}
