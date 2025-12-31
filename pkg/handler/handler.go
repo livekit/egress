@@ -17,6 +17,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -157,14 +158,14 @@ func (h *Handler) Kill() {
 }
 
 func (h *Handler) shouldInjectEgressFailure() (bool, error) {
-	markerFile := filepath.Join(h.conf.TmpDir, ".egress_failure_marker")
+	egressID := h.conf.Info.EgressId
+	markerFile := filepath.Join(config.TmpDir, fmt.Sprintf(".egress_failure_marker_%s", egressID))
 
 	if _, err := os.Stat(markerFile); err == nil {
 		return false, nil
 	}
 
-	markerDir := filepath.Dir(markerFile)
-	if err := os.MkdirAll(markerDir, 0755); err != nil {
+	if err := os.MkdirAll(config.TmpDir, 0755); err != nil {
 		return false, err
 	}
 	if err := os.WriteFile(markerFile, []byte("1"), 0644); err != nil {
