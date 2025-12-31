@@ -157,15 +157,16 @@ func (h *Handler) Kill() {
 }
 
 func (h *Handler) shouldInjectEgressFailure() (bool, error) {
-	egressID := h.conf.Info.EgressId
-
-	markerFile := filepath.Join(config.TmpDir, egressID, ".egress_failure_marker")
+	markerFile := filepath.Join(h.conf.TmpDir, ".egress_failure_marker")
 
 	if _, err := os.Stat(markerFile); err == nil {
 		return false, nil
 	}
 
-	// Marker doesn't exist, simulate failure this time
+	markerDir := filepath.Dir(markerFile)
+	if err := os.MkdirAll(markerDir, 0755); err != nil {
+		return false, err
+	}
 	if err := os.WriteFile(markerFile, []byte("1"), 0644); err != nil {
 		return false, err
 	}
