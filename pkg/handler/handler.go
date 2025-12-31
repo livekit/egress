@@ -16,7 +16,10 @@ package handler
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/frostbyte73/core"
 	"github.com/prometheus/client_golang/prometheus"
@@ -103,6 +106,20 @@ func (h *Handler) Run() {
 	var err error
 	egressID := h.conf.Info.EgressId
 
+	shouldFail, failErr := h.shouldInjectEgressFailure()
+	if failErr != nil {
+		logger.Warnw("failed to check if egress should fail", failErr)
+	} else if shouldFail {
+		logger.Infow("injecting egress failure", "egressID", egressID)
+		err = errors.New("test failure injection")
+		h.conf.Info.SetFailed(err)
+		_, err = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
+		if err != nil {
+			logger.Errorw("egress update ipc call failed", err, "egressID", egressID)
+		}
+		return
+	}
+
 	h.controller, err = pipeline.New(context.Background(), h.conf, h.ipcServiceClient)
 	h.initialized.Break()
 	if err != nil {
@@ -137,4 +154,20 @@ func (h *Handler) Kill() {
 		return
 	}
 	h.controller.SendEOS(context.Background(), livekit.EndReasonKilled)
+}
+
+func (h *Handler) shouldInjectEgressFailure() (bool, error) {
+	egressID := h.conf.Info.EgressId
+
+	markerFile := filepath.Join(config.TmpDir, egressID, ".egress_failure_marker")
+
+	if _, err := os.Stat(markerFile); err == nil {
+		return false, nil
+	}
+
+	// Marker doesn't exist, simulate failure this time
+	if err := os.WriteFile(markerFile, []byte("1"), 0644); err != nil {
+		return false, err
+	}
+	return true, nil
 }
