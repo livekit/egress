@@ -25,9 +25,9 @@ jobs:
   docker:
     runs-on: buildjet-8vcpu-ubuntu-2204
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/go/pkg/mod
@@ -46,7 +46,7 @@ jobs:
             type=semver,pattern=v{{major}}.{{minor}}
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: 1.22.1
 
