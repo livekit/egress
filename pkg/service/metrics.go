@@ -94,6 +94,8 @@ func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics strin
 }
 
 func deserializeMetrics(egressID string, s string) ([]*dto.MetricFamily, error) {
+	logger.Infow("METRICS", "string", s)
+
 	parser := &expfmt.TextParser{}
 	families, err := parser.TextToMetricFamilies(strings.NewReader(s))
 	if err != nil {
