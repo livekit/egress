@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"golang.org/x/exp/maps"
 
 	"github.com/livekit/protocol/logger"
@@ -94,9 +95,7 @@ func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics strin
 }
 
 func deserializeMetrics(egressID string, s string) ([]*dto.MetricFamily, error) {
-	logger.Infow("METRICS", "string", s)
-
-	parser := &expfmt.TextParser{}
+	parser := expfmt.NewTextParser(model.LegacyValidation)
 	families, err := parser.TextToMetricFamilies(strings.NewReader(s))
 	if err != nil {
 		logger.Warnw("failed to parse ms from handler", err, "egress_id", egressID)
