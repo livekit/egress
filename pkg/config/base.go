@@ -29,7 +29,7 @@ import (
 const TmpDir = "/home/egress/tmp"
 
 type BaseConfig struct {
-	NodeID string // do not supply - will be overwritten
+	NodeID string `yaml:"node_id"` // do not supply - will be overwritten
 
 	// required
 	Redis     *redis.RedisConfig `yaml:"redis"`      // redis config
@@ -47,6 +47,7 @@ type BaseConfig struct {
 	EnableRoomCompositeSDKSource bool           `yaml:"enable_room_composite_sdk_source"` // attempt to render supported audio only room composite use cases using the SDK source instead of Chrome. This option will be removed when this becomes the default behavior eventually.
 	IOCreateTimeout              time.Duration  `yaml:"io_create_timeout"`                // timeout for CreateEgress calls
 	IOUpdateTimeout              time.Duration  `yaml:"io_update_timeout"`                // timeout for UpdateEgress calls
+	IOSelectionTimeout           time.Duration  `yaml:"io_selection_timeout"`             // timeout for affinity stage of IO RPC
 	IOWorkers                    int            `yaml:"io_workers"`                       // number of IO update workers
 
 	SessionLimits          `yaml:"session_limits"` // session duration limits

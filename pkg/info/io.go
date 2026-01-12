@@ -79,7 +79,7 @@ type update struct {
 }
 
 func NewSessionReporter(conf *config.BaseConfig, bus psrpc.MessageBus) (SessionReporter, error) {
-	client, err := rpc.NewIOInfoClient(bus, rpc.WithClientObservability(logger.GetLogger()))
+	client, err := rpc.NewIOInfoClient(bus, psrpc.WithClientSelectTimeout(conf.IOSelectionTimeout), rpc.WithClientObservability(logger.GetLogger()))
 	if err != nil {
 		return nil, err
 	}
