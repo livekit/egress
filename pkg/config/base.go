@@ -29,7 +29,7 @@ import (
 const TmpDir = "/home/egress/tmp"
 
 type BaseConfig struct {
-	NodeID string `yaml:"node_id"` // do not supply - will be overwritten
+	NodeID string // do not supply - will be overwritten
 
 	// required
 	Redis     *redis.RedisConfig `yaml:"redis"`      // redis config
