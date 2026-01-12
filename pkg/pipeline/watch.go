@@ -249,7 +249,13 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 		}
 		if newState == gst.StatePlaying {
 			c.playing.Once(func() {
-				logger.Infow("pipeline playing")
+				var timeToPlaying time.Duration
+
+				if !c.pipelineCreatedAt.IsZero() {
+					timeToPlaying = time.Since(c.pipelineCreatedAt)
+				}
+
+				logger.Infow("pipeline playing", "timeToPlaying", timeToPlaying)
 				c.updateStartTime(c.src.GetStartedAt())
 			})
 		}
