@@ -76,6 +76,7 @@ type Controller struct {
 	stopped              core.Fuse
 	storageLimitOnce     sync.Once
 	stats                controllerStats
+	pipelineCreatedAt    time.Time
 }
 
 type controllerStats struct {
@@ -143,6 +144,8 @@ func (c *Controller) BuildPipeline() error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+
+	c.pipelineCreatedAt = time.Now()
 
 	p.SetWatch(c.messageWatch)
 	p.AddOnStop(func() error {
