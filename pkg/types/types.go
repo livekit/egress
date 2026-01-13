@@ -51,6 +51,8 @@ const (
 	MimeTypeJPEG     MimeType = "image/jpeg"
 	MimeTypeRawVideo MimeType = "video/x-raw"
 	MimeTypeMP3      MimeType = "audio/mpeg"
+	MimeTypePCMU     MimeType = "audio/pcmu"
+	MimeTypePCMA     MimeType = "audio/pcma"
 
 	// video profiles
 	ProfileBaseline Profile = "baseline"
