@@ -26,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
@@ -57,6 +56,7 @@ type Runner struct {
 	// testing config
 	FilePrefix string `yaml:"file_prefix"`
 	RoomName   string `yaml:"room_name"`
+	RoomBaseName string `yaml:"-"`
 	Muting     bool   `yaml:"muting"`
 	Dotfiles   bool   `yaml:"dot_files"`
 	Short      bool   `yaml:"short"`
@@ -180,13 +180,35 @@ func NewRunner(t *testing.T) *Runner {
 		logger.Infow("no azure config supplied")
 	}
 
+	if r.RoomBaseName == "" {
+		r.RoomBaseName = r.RoomName
+	}
+
 	r.updateFlagset()
 
 	return r
 }
 
+func (r *Runner) connectRoom(t *testing.T, roomName string) {
+	if r.room != nil {
+		r.room.Disconnect()
+	}
+
+	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            roomName,
+		ParticipantName:     "egress-sample",
+		ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+
+	r.room = room
+	r.RoomName = roomName
+}
+
 func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, templateFs fs.FS) {
-	lksdk.SetLogger(logger.LogRLogger(logr.Discard()))
+	lksdk.SetLogger(logger.GetLogger())
 	r.svc = svc
 	t.Cleanup(func() {
 		if r.room != nil {
@@ -195,15 +217,7 @@ func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, tem
 		r.svc.Shutdown(false, true)
 	})
 
-	// connect to room
-	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
-		APIKey:              r.ApiKey,
-		APISecret:           r.ApiSecret,
-		RoomName:            r.RoomName,
-		ParticipantName:     "egress-sample",
-		ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
-	}, lksdk.NewRoomCallback())
-	require.NoError(t, err)
+	r.connectRoom(t, r.RoomName)
 
 	psrpcClient, err := rpc.NewEgressClient(rpc.ClientParams{Bus: bus})
 	require.NoError(t, err)
@@ -226,7 +240,6 @@ func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, tem
 	// update test config
 	r.client = psrpcClient
 	r.updates = psrpcUpdates
-	r.room = room
 
 	// check status
 	if r.HealthPort != 0 {

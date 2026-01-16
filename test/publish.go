@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/types"
@@ -128,7 +129,11 @@ func (r *Runner) publish(t *testing.T, p *lksdk.LocalParticipant, codec types.Mi
 	track, err := lksdk.NewLocalFileTrack(filename, opts...)
 	require.NoError(t, err)
 
-	pub, err = p.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
+	publishOptions := []lksdk.LocalTrackPublishOption{}
+	if cap, ok := codecCapability(codec); ok {
+		publishOptions = append(publishOptions, lksdk.WithCodec(cap))
+	}
+	pub, err = p.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename}, publishOptions...)
 	require.NoError(t, err)
 
 	trackID := pub.SID()
@@ -137,4 +142,15 @@ func (r *Runner) publish(t *testing.T, p *lksdk.LocalParticipant, codec types.Mi
 	})
 
 	return pub
+}
+
+func codecCapability(codec types.MimeType) (webrtc.RTPCodecCapability, bool) {
+	switch codec {
+	case types.MimeTypePCMU:
+		return webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypePCMU, ClockRate: 8000, Channels: 1}, true
+	case types.MimeTypePCMA:
+		return webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypePCMA, ClockRate: 8000, Channels: 1}, true
+	default:
+		return webrtc.RTPCodecCapability{}, false
+	}
 }

@@ -213,6 +213,8 @@ var (
 
 	TrackOutputTypes = map[MimeType]OutputType{
 		MimeTypeOpus: OutputTypeOGG,
+		MimeTypePCMU: OutputTypeOGG,
+		MimeTypePCMA: OutputTypeOGG,
 		MimeTypeH264: OutputTypeMP4,
 		MimeTypeVP8:  OutputTypeWebM,
 		MimeTypeVP9:  OutputTypeWebM,
