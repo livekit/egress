@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
@@ -189,9 +190,14 @@ func NewRunner(t *testing.T) *Runner {
 	return r
 }
 
-func (r *Runner) connectRoom(t *testing.T, roomName string) {
+func (r *Runner) connectRoom(t *testing.T, roomName string, codecs []webrtc.RTPCodecParameters) {
 	if r.room != nil {
 		r.room.Disconnect()
+	}
+
+	opts := []lksdk.ConnectOption{}
+	if len(codecs) > 0 {
+		opts = append(opts, lksdk.WithCodecs(codecs))
 	}
 
 	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
@@ -200,7 +206,7 @@ func (r *Runner) connectRoom(t *testing.T, roomName string) {
 		RoomName:            roomName,
 		ParticipantName:     "egress-sample",
 		ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
-	}, lksdk.NewRoomCallback())
+	}, lksdk.NewRoomCallback(), opts...)
 	require.NoError(t, err)
 
 	r.room = room
@@ -217,7 +223,7 @@ func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, tem
 		r.svc.Shutdown(false, true)
 	})
 
-	r.connectRoom(t, r.RoomName)
+	r.connectRoom(t, r.RoomName, nil)
 
 	psrpcClient, err := rpc.NewEgressClient(rpc.ClientParams{Bus: bus})
 	require.NoError(t, err)
