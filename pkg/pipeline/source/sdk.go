@@ -507,11 +507,16 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 
 	<-s.callbacks.GstReady
 	switch ts.MimeType {
-	case types.MimeTypeOpus:
+	case types.MimeTypeOpus, types.MimeTypePCMU, types.MimeTypePCMA:
 		s.AudioEnabled = true
 		s.AudioInCodec = ts.MimeType
 		if s.AudioOutCodec == "" {
-			s.AudioOutCodec = ts.MimeType
+			// PCMU/PCMA are input-only codecs, use Opus as default output
+			if ts.MimeType == types.MimeTypePCMU || ts.MimeType == types.MimeTypePCMA {
+				s.AudioOutCodec = types.MimeTypeOpus
+			} else {
+				s.AudioOutCodec = ts.MimeType
+			}
 		}
 		s.AudioTranscoding = true
 

@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/types"
@@ -58,6 +59,7 @@ func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)
 	}
 
 	r.awaitIdle(t)
+	r.ensureRoomForTest(t, test)
 
 	r.testNumber++
 	t.Run(fmt.Sprintf("%d/%s", r.testNumber, test.name), func(t *testing.T) {
@@ -73,10 +75,52 @@ func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)
 			r.publishSample(t, test.videoCodec, test.videoRepublish, 0, videoMuting)
 		}
 
+		logger.Infow("test publish summary",
+			"test", test.name,
+			"room", r.RoomName,
+			"audioCodec", test.audioCodec,
+			"audioTrackID", test.audioTrackID,
+			"videoCodec", test.videoCodec,
+			"videoTrackID", test.videoTrackID,
+		)
+
 		f(t, test)
 	})
 
 	return !r.Short
+}
+
+func (r *Runner) ensureRoomForTest(t *testing.T, test *testCase) {
+	desiredRoom := r.RoomBaseName
+	var codecs []webrtc.RTPCodecParameters
+	switch test.audioCodec {
+	case types.MimeTypePCMU:
+		desiredRoom = fmt.Sprintf("%s-pcmu", r.RoomBaseName)
+		codecs = []webrtc.RTPCodecParameters{{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  webrtc.MimeTypePCMU,
+				ClockRate: 8000,
+				Channels:  1,
+			},
+			PayloadType: 0,
+		}}
+	case types.MimeTypePCMA:
+		desiredRoom = fmt.Sprintf("%s-pcma", r.RoomBaseName)
+		codecs = []webrtc.RTPCodecParameters{{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  webrtc.MimeTypePCMA,
+				ClockRate: 8000,
+				Channels:  1,
+			},
+			PayloadType: 8,
+		}}
+	}
+
+	if desiredRoom == "" || desiredRoom == r.RoomName {
+		return
+	}
+
+	r.connectRoom(t, desiredRoom, codecs)
 }
 
 func (r *Runner) awaitIdle(t *testing.T) {

@@ -177,6 +177,10 @@ func NewAppWriter(
 		depacketizer = &codecs.OpusPacket{}
 		w.translator = NewNullTranslator()
 
+	case types.MimeTypePCMU, types.MimeTypePCMA:
+		depacketizer = &G711Packet{}
+		w.translator = NewNullTranslator()
+
 	case types.MimeTypeH264:
 		depacketizer = &codecs.H264Packet{}
 		w.translator = NewNullTranslator()
@@ -674,4 +678,22 @@ func (w *AppWriter) ensureRemovedBeforeDrain() {
 	if w.shouldRemoveBeforeDrain() && w.removalRequested.CompareAndSwap(false, true) {
 		w.callbacks.OnTrackRemoved(w.track.ID())
 	}
+}
+
+type G711Packet struct{}
+
+func (p *G711Packet) Unmarshal(packet []byte) ([]byte, error) {
+	// G.711 payload is just the raw samples, return as-is (same as OpusPacket)
+	if packet == nil {
+		return nil, errors.New("nil packet")
+	}
+	return packet, nil
+}
+
+func (p *G711Packet) IsPartitionHead(_ []byte) bool {
+	return true
+}
+
+func (p *G711Packet) IsPartitionTail(_ bool, _ []byte) bool {
+	return true
 }

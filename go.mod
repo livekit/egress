@@ -21,7 +21,6 @@ require (
 	github.com/go-gst/go-glib v1.4.1-0.20241209142714-f53cebf18559
 	github.com/go-gst/go-gst v1.4.0
 	github.com/go-jose/go-jose/v4 v4.1.3
-	github.com/go-logr/logr v1.4.3
 	github.com/googleapis/gax-go/v2 v2.14.2
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/linkdata/deadlock v0.5.5
@@ -30,7 +29,7 @@ require (
 	github.com/livekit/media-sdk v0.0.0-20251218175659-d0b840bb38ef
 	github.com/livekit/protocol v1.43.3-0.20251202235353-eec8df247cf9
 	github.com/livekit/psrpc v0.7.1
-	github.com/livekit/server-sdk-go/v2 v2.13.2-0.20251229060503-9ea8d56a5b52
+	github.com/livekit/server-sdk-go/v2 v2.13.2-0.20260116205633-8c6faa41e269
 	github.com/livekit/storage v0.0.0-20251113154014-aa1f4d0ce057
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.8.25
@@ -99,6 +98,7 @@ require (
 	github.com/go-gst/go-pointer v0.0.0-20241127163939-ba766f075b4c // indirect
 	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
 	github.com/go-json-experiment/json v0.0.0-20250417205406-170dfdcf87d1 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect

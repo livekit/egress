@@ -51,6 +51,8 @@ const (
 	MimeTypeJPEG     MimeType = "image/jpeg"
 	MimeTypeRawVideo MimeType = "video/x-raw"
 	MimeTypeMP3      MimeType = "audio/mpeg"
+	MimeTypePCMU     MimeType = "audio/pcmu"
+	MimeTypePCMA     MimeType = "audio/pcma"
 
 	// video profiles
 	ProfileBaseline Profile = "baseline"
@@ -211,6 +213,8 @@ var (
 
 	TrackOutputTypes = map[MimeType]OutputType{
 		MimeTypeOpus: OutputTypeOGG,
+		MimeTypePCMU: OutputTypeOGG,
+		MimeTypePCMA: OutputTypeOGG,
 		MimeTypeH264: OutputTypeMP4,
 		MimeTypeVP8:  OutputTypeWebM,
 		MimeTypeVP9:  OutputTypeWebM,
