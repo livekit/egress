@@ -74,6 +74,7 @@ func (c *Controller) writeDotFile(filename, contents string) {
 func (c *Controller) generateDotFile(reason string) {
 	dot, err := c.GetGstPipelineDebugDot()
 	if err != nil {
+		logger.Errorw("failed to get gst pipeline debug dot", err)
 		return
 	}
 
@@ -81,6 +82,7 @@ func (c *Controller) generateDotFile(reason string) {
 	c.writeDotFile(fmt.Sprintf("%s.dot", c.Info.EgressId), dot)
 
 	if reason == "" {
+		logger.Errorw("failed to get gst pipeline debug dot, reason is empty", nil)
 		return
 	}
 
