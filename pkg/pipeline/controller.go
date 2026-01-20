@@ -82,6 +82,7 @@ type Controller struct {
 type controllerStats struct {
 	droppedAudioBuffers  atomic.Uint64
 	droppedAudioDuration atomic.Duration
+	droppedVideoBuffers  atomic.Uint64
 }
 
 var (
@@ -165,7 +166,7 @@ func (c *Controller) BuildPipeline() error {
 		}
 	}
 	if c.VideoEnabled {
-		if err = builder.BuildVideoBin(p, c.PipelineConfig, c.callbacks); err != nil {
+		if err = builder.BuildVideoBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
@@ -205,7 +206,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		if c.VideoEnabled {
 			logger.Infow(
 				"video input queue stats",
-				"videoBuffersDropped", c.callbacks.GetVideoDroppedBuffers(),
+				"videoBuffersDropped", c.stats.droppedVideoBuffers.Load(),
 				"requestType", c.RequestType,
 				"sourceType", c.SourceType,
 			)

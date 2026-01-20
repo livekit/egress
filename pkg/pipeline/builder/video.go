@@ -35,9 +35,8 @@ const (
 )
 
 type VideoBin struct {
-	bin       *gstreamer.Bin
-	conf      *config.PipelineConfig
-	callbacks *gstreamer.Callbacks
+	bin  *gstreamer.Bin
+	conf *config.PipelineConfig
 
 	mu            deadlock.Mutex
 	nextID        int
@@ -48,15 +47,6 @@ type VideoBin struct {
 	selector      *gst.Element
 	rawVideoTee   *gst.Element
 	queueMonitors []*LeakyQueueMonitor
-}
-
-// DroppedBuffers returns the total number of buffers dropped across all monitored queues
-func (b *VideoBin) DroppedBuffers() uint64 {
-	var total uint64
-	for _, m := range b.queueMonitors {
-		total += m.DroppedBuffers()
-	}
-	return total
 }
 
 // buildLeakyVideoQueue creates a leaky queue and attaches a monitor to track dropped buffers
@@ -72,11 +62,10 @@ func (b *VideoBin) buildLeakyVideoQueue(name string) (*gst.Element, error) {
 	return queue, nil
 }
 
-func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) error {
+func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
 	b := &VideoBin{
-		bin:       pipeline.NewBin("video"),
-		conf:      p,
-		callbacks: callbacks,
+		bin:  pipeline.NewBin("video"),
+		conf: p,
 	}
 
 	switch p.SourceType {
@@ -133,11 +122,6 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, callb
 
 		return nil
 	})
-
-	// Register callback to expose dropped buffer count
-	if callbacks != nil {
-		callbacks.SetGetVideoDroppedBuffers(b.DroppedBuffers)
-	}
 
 	return pipeline.AddSourceBin(b.bin)
 }

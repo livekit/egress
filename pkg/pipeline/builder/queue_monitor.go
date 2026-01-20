@@ -63,8 +63,11 @@ func NewLeakyQueueMonitor(name string, queue *gst.Element) *LeakyQueueMonitor {
 		srcPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			if event := info.GetEvent(); event != nil && event.Type() == gst.EventTypeEOS {
 				if !m.eosSeen.Swap(true) {
-					m.eosIn.Store(m.inCount.Load())
-					m.eosOut.Store(m.outCount.Load())
+					inCount := m.inCount.Load()
+					outCount := m.outCount.Load()
+					m.eosIn.Store(inCount)
+					m.eosOut.Store(outCount)
+					m.postEOSStats(inCount, outCount)
 				}
 				return gst.PadProbeRemove
 			}
@@ -75,6 +78,33 @@ func NewLeakyQueueMonitor(name string, queue *gst.Element) *LeakyQueueMonitor {
 	}
 
 	return m
+}
+
+// LeakyQueueStatsMessage is the element message name for leaky queue stats.
+const LeakyQueueStatsMessage = "LeakyQueueStats"
+
+func (m *LeakyQueueMonitor) postEOSStats(inCount, outCount uint64) {
+	if m.queue == nil {
+		return
+	}
+	dropped := uint64(0)
+	if outCount <= inCount {
+		dropped = inCount - outCount
+	}
+
+	st := gst.NewStructure(LeakyQueueStatsMessage)
+	_ = st.SetValue("queue", m.name)
+	_ = st.SetValue("in", inCount)
+	_ = st.SetValue("out", outCount)
+	_ = st.SetValue("dropped", dropped)
+	msg := gst.NewElementMessage(m.queue, st)
+	if msg == nil {
+		logger.Debugw("failed to build leaky queue stats message", nil, "queue", m.name)
+		return
+	}
+	if ok := m.queue.PostMessage(msg); !ok {
+		logger.Debugw("failed to post leaky queue stats message", nil, "queue", m.name)
+	}
 }
 
 // DroppedBuffers calculates the number of buffers dropped by the leaky queue.

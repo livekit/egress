@@ -38,9 +38,6 @@ type Callbacks struct {
 	onTrackRemoved []func(string)
 	onEOSSent      func()
 
-	// stats callbacks
-	getVideoDroppedBuffers func() uint64
-
 	pipelinePaused core.Fuse
 }
 
@@ -180,21 +177,4 @@ func (c *Callbacks) OnEOSSent() {
 	if onEOSSent != nil {
 		onEOSSent()
 	}
-}
-
-func (c *Callbacks) SetGetVideoDroppedBuffers(f func() uint64) {
-	c.mu.Lock()
-	c.getVideoDroppedBuffers = f
-	c.mu.Unlock()
-}
-
-func (c *Callbacks) GetVideoDroppedBuffers() uint64 {
-	c.mu.RLock()
-	getVideoDroppedBuffers := c.getVideoDroppedBuffers
-	c.mu.RUnlock()
-
-	if getVideoDroppedBuffers != nil {
-		return getVideoDroppedBuffers()
-	}
-	return 0
 }
