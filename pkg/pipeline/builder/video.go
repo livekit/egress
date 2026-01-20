@@ -35,23 +35,48 @@ const (
 )
 
 type VideoBin struct {
-	bin  *gstreamer.Bin
-	conf *config.PipelineConfig
+	bin       *gstreamer.Bin
+	conf      *config.PipelineConfig
+	callbacks *gstreamer.Callbacks
 
-	mu          deadlock.Mutex
-	nextID      int
-	selectedPad string
-	lastPTS     uint64
-	pads        map[string]*gst.Pad
-	names       map[string]string
-	selector    *gst.Element
-	rawVideoTee *gst.Element
+	mu            deadlock.Mutex
+	nextID        int
+	selectedPad   string
+	lastPTS       uint64
+	pads          map[string]*gst.Pad
+	names         map[string]string
+	selector      *gst.Element
+	rawVideoTee   *gst.Element
+	queueMonitors []*LeakyQueueMonitor
 }
 
-func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
+// DroppedBuffers returns the total number of buffers dropped across all monitored queues
+func (b *VideoBin) DroppedBuffers() uint64 {
+	var total uint64
+	for _, m := range b.queueMonitors {
+		total += m.DroppedBuffers()
+	}
+	return total
+}
+
+// buildLeakyVideoQueue creates a leaky queue and attaches a monitor to track dropped buffers
+func (b *VideoBin) buildLeakyVideoQueue(name string) (*gst.Element, error) {
+	queue, err := gstreamer.BuildQueue(name, b.conf.Latency.PipelineLatency, true)
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
+	monitor := NewLeakyQueueMonitor(name, queue)
+	b.queueMonitors = append(b.queueMonitors, monitor)
+
+	return queue, nil
+}
+
+func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) error {
 	b := &VideoBin{
-		bin:  pipeline.NewBin("video"),
-		conf: p,
+		bin:       pipeline.NewBin("video"),
+		conf:      p,
+		callbacks: callbacks,
 	}
 
 	switch p.SourceType {
@@ -86,9 +111,9 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 			return tee.GetRequestPad("src_%u")
 		}
 	} else if len(p.GetEncodedOutputs()) > 0 {
-		queue, err := gstreamer.BuildQueue("video_queue", b.conf.Latency.PipelineLatency, true)
+		queue, err := b.buildLeakyVideoQueue("video_queue")
 		if err != nil {
-			return errors.ErrGstPipelineError(err)
+			return err
 		}
 		if err = b.bin.AddElement(queue); err != nil {
 			return err
@@ -108,6 +133,11 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 
 		return nil
 	})
+
+	// Register callback to expose dropped buffer count
+	if callbacks != nil {
+		callbacks.SetGetVideoDroppedBuffers(b.DroppedBuffers)
+	}
 
 	return pipeline.AddSourceBin(b.bin)
 }
@@ -201,9 +231,9 @@ func (b *VideoBin) buildWebInput() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	videoQueue, err := gstreamer.BuildQueue("video_input_queue", b.conf.Latency.PipelineLatency, true)
+	videoQueue, err := b.buildLeakyVideoQueue("video_input_queue")
 	if err != nil {
-		return errors.ErrGstPipelineError(err)
+		return err
 	}
 
 	videoConvert, err := gst.NewElement("videoconvert")
@@ -645,9 +675,9 @@ func (b *VideoBin) addDecodedVideoSink() error {
 }
 
 func (b *VideoBin) addVideoConverter(bin *gstreamer.Bin) error {
-	videoQueue, err := gstreamer.BuildQueue("video_input_queue", b.conf.Latency.PipelineLatency, true)
+	videoQueue, err := b.buildLeakyVideoQueue("video_input_queue")
 	if err != nil {
-		return errors.ErrGstPipelineError(err)
+		return err
 	}
 
 	videoConvert, err := gst.NewElement("videoconvert")

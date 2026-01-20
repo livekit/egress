@@ -165,7 +165,7 @@ func (c *Controller) BuildPipeline() error {
 		}
 	}
 	if c.VideoEnabled {
-		if err = builder.BuildVideoBin(p, c.PipelineConfig); err != nil {
+		if err = builder.BuildVideoBin(p, c.PipelineConfig, c.callbacks); err != nil {
 			return err
 		}
 	}
@@ -202,6 +202,14 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	defer c.Close()
 
 	defer func() {
+		if c.VideoEnabled {
+			logger.Infow(
+				"video input queue stats",
+				"videoBuffersDropped", c.callbacks.GetVideoDroppedBuffers(),
+				"requestType", c.RequestType,
+				"sourceType", c.SourceType,
+			)
+		}
 		if c.SourceType == types.SourceTypeSDK {
 			logger.Debugw(
 				"audio qos stats",
