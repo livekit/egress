@@ -38,15 +38,14 @@ type VideoBin struct {
 	bin  *gstreamer.Bin
 	conf *config.PipelineConfig
 
-	mu            deadlock.Mutex
-	nextID        int
-	selectedPad   string
-	lastPTS       uint64
-	pads          map[string]*gst.Pad
-	names         map[string]string
-	selector      *gst.Element
-	rawVideoTee   *gst.Element
-	queueMonitors []*LeakyQueueMonitor
+	mu          deadlock.Mutex
+	nextID      int
+	selectedPad string
+	lastPTS     uint64
+	pads        map[string]*gst.Pad
+	names       map[string]string
+	selector    *gst.Element
+	rawVideoTee *gst.Element
 }
 
 // buildLeakyVideoQueue creates a leaky queue and attaches a monitor to track dropped buffers
@@ -56,8 +55,7 @@ func (b *VideoBin) buildLeakyVideoQueue(name string) (*gst.Element, error) {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	monitor := NewLeakyQueueMonitor(name, queue)
-	b.queueMonitors = append(b.queueMonitors, monitor)
+	NewLeakyQueueMonitor(name, queue)
 
 	return queue, nil
 }

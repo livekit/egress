@@ -80,9 +80,10 @@ type Controller struct {
 }
 
 type controllerStats struct {
-	droppedAudioBuffers  atomic.Uint64
-	droppedAudioDuration atomic.Duration
-	droppedVideoBuffers  atomic.Uint64
+	droppedAudioBuffers      atomic.Uint64
+	droppedAudioDuration     atomic.Duration
+	droppedVideoBuffers      atomic.Uint64
+	droppedVideoBuffersByQueue map[string]uint64
 }
 
 var (
@@ -104,6 +105,9 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 		},
 		sinks:   make(map[types.EgressType][]sink.Sink),
 		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
+		stats: controllerStats{
+			droppedVideoBuffersByQueue: make(map[string]uint64),
+		},
 	}
 	c.callbacks.SetOnError(c.OnError)
 	c.callbacks.SetOnEOSSent(c.onEOSSent)
@@ -209,6 +213,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 				"videoBuffersDropped", c.stats.droppedVideoBuffers.Load(),
 				"requestType", c.RequestType,
 				"sourceType", c.SourceType,
+				"droppedByQueue", c.stats.droppedVideoBuffersByQueue,
 			)
 		}
 		if c.SourceType == types.SourceTypeSDK {

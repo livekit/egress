@@ -291,6 +291,7 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 				return nil
 			}
 			c.stats.droppedVideoBuffers.Add(dropped)
+			c.stats.droppedVideoBuffersByQueue[queueName] = dropped
 			logger.Debugw("leaky queue stats", "queue", queueName, "dropped", dropped)
 
 		case msgFirstSampleMetadata:
