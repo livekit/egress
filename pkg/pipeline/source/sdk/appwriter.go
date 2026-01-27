@@ -330,6 +330,7 @@ func (w *AppWriter) handleReadError(err error) {
 				return
 			}
 		}
+		w.logger.Debugw("handleReadError, breaking endStreamSignaled", "error", err)
 		// connection closed or EOF - no point in trying to read anymore
 		w.endStreamSignaled.Break()
 		w.notifyPushSamples()
