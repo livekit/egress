@@ -689,8 +689,29 @@ func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participa
 }
 
 func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
-	logger.Debugw("track unsubscribed", "trackID", pub.SID())
-	s.onTrackFinished(pub.SID())
+	trackID := pub.SID()
+	logger.Debugw("track unsubscribed", "trackID", trackID)
+
+	s.mu.Lock()
+	writer := s.writers[trackID]
+	s.mu.Unlock()
+
+	if writer == nil {
+		return
+	}
+
+	// Signal unsubscribed but let the reader continue until error or grace period.
+	// This allows any remaining buffers in flight from the SFU to be processed.
+	writer.OnUnsubscribed()
+
+	go func() {
+		logger.Debugw("waiting for writer to finish", "trackID", trackID)
+		// Wait for the writer to finish naturally
+		<-writer.Finished()
+		logger.Debugw("writer finished", "trackID", trackID)
+		s.onTrackFinished(trackID)
+		logger.Debugw("track finished", "trackID", trackID)
+	}()
 }
 
 func (s *SDKSource) onTrackFinished(trackID string) {
