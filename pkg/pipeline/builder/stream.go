@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
 	"go.uber.org/atomic"
 
@@ -46,6 +47,8 @@ type Stream struct {
 	keyframes      atomic.Uint64
 	reconnections  atomic.Int32
 	disconnectedAt atomic.Time
+	connectedOnce  atomic.Bool
+	reconnectGen   atomic.Int64
 	failed         atomic.Bool
 }
 
@@ -237,15 +240,16 @@ func (s *Stream) Reset(streamErr error) (bool, error) {
 		outBytes = stats.OutBytesAcked
 	}
 
-	if s.reconnections.Load() == 0 && outBytes == 0 {
-		// unable to connect, probably a bad stream key or url
+	if s.isInitialConnectionFailure(outBytes) {
 		return false, nil
 	}
 
 	if outBytes > 0 {
-		// first disconnection
+		s.connectedOnce.Store(true)
+	}
+
+	if s.disconnectedAt.Load().IsZero() {
 		s.disconnectedAt.Store(time.Now())
-		s.reconnections.Store(0)
 	} else if time.Since(s.disconnectedAt.Load()) > time.Second*30 {
 		return false, nil
 	}
@@ -259,6 +263,31 @@ func (s *Stream) Reset(streamErr error) (bool, error) {
 	if err := s.Bin.SetState(gst.StatePlaying); err != nil {
 		return false, err
 	}
+
+	reconnectGen := s.reconnectGen.Inc()
+	time.AfterFunc(10*time.Second, func() {
+		if s.failed.Load() || s.reconnectGen.Load() != reconnectGen {
+			return
+		}
+		if _, err := glib.IdleAdd(func() bool {
+			if s.failed.Load() || s.reconnectGen.Load() != reconnectGen {
+				return false
+			}
+			var outBytes uint64
+			if stats, ok := s.Stats(); ok {
+				outBytes = stats.OutBytesAcked
+			}
+			if outBytes == 0 {
+				return false
+			}
+			s.connectedOnce.Store(true)
+			s.reconnections.Store(0)
+			s.disconnectedAt.Store(time.Time{})
+			return false
+		}); err != nil {
+			logger.Warnw("failed to schedule reconnect success check", err)
+		}
+	})
 
 	return true, nil
 }
@@ -300,6 +329,10 @@ func (s *Stream) Stats() (*logging.StreamStats, bool) {
 	}
 
 	return streamStats, true
+}
+
+func (s *Stream) isInitialConnectionFailure(outBytes uint64) bool {
+	return s.reconnections.Load() == 0 && outBytes == 0 && !s.connectedOnce.Load()
 }
 
 // sink stats sometimes returns strings instead of uint64
