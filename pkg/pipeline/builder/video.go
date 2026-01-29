@@ -130,26 +130,26 @@ func (b *VideoBin) onTrackAdded(ts *config.TrackSource) {
 	}
 
 	if ts.TrackKind == lksdk.TrackKindVideo {
-		logger.Debugw("adding video app src bin", "trackID", ts.TrackID)
+		logger.Debugw("adding video app src bin", "writerKey", ts.WriterKey)
 		if err := b.addAppSrcBin(ts); err != nil {
-			logger.Errorw("failed to add video app src bin", err, "trackID", ts.TrackID)
+			logger.Errorw("failed to add video app src bin", err, "writerKey", ts.WriterKey)
 			b.bin.OnError(err)
 		}
 	}
 }
 
-func (b *VideoBin) onTrackRemoved(trackID string) {
+func (b *VideoBin) onTrackRemoved(writerKey string) {
 	if b.bin.GetState() > gstreamer.StateRunning {
 		return
 	}
 
 	b.mu.Lock()
-	name, ok := b.names[trackID]
+	name, ok := b.names[writerKey]
 	if !ok {
 		b.mu.Unlock()
 		return
 	}
-	delete(b.names, trackID)
+	delete(b.names, writerKey)
 	delete(b.pads, name)
 
 	if b.selectedPad == name {
@@ -287,7 +287,7 @@ func (b *VideoBin) buildSDKInput() error {
 }
 
 func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
-	name := fmt.Sprintf("%s_%d", ts.TrackID, b.nextID)
+	name := fmt.Sprintf("%s_%d", ts.WriterKey, b.nextID)
 	b.nextID++
 
 	appSrcBin, err := b.buildAppSrcBin(ts, name)
@@ -296,7 +296,7 @@ func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
 	}
 
 	if b.conf.VideoDecoding {
-		b.createSrcPad(ts.TrackID, name)
+		b.createSrcPad(ts.WriterKey, name)
 	}
 
 	if err = b.bin.AddSourceBin(appSrcBin); err != nil {
@@ -352,7 +352,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		}
 
 		if !b.conf.VideoDecoding {
-			h264ParseFixer, err := newPTSFixer("h264parse", fmt.Sprintf("track:%s", ts.TrackID))
+			h264ParseFixer, err := newPTSFixer("h264parse", fmt.Sprintf("track:%s", ts.WriterKey))
 			if err != nil {
 				return nil, err
 			}
@@ -417,7 +417,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		}
 
 		if !b.conf.VideoDecoding {
-			vp9ParseFixer, err := newPTSFixer("vp9parse", fmt.Sprintf("track:%s", ts.TrackID))
+			vp9ParseFixer, err := newPTSFixer("vp9parse", fmt.Sprintf("track:%s", ts.WriterKey))
 			if err != nil {
 				return nil, err
 			}
@@ -723,11 +723,11 @@ func (b *VideoBin) getSrcPad(name string) *gst.Pad {
 	return b.pads[name]
 }
 
-func (b *VideoBin) createSrcPad(trackID, name string) {
+func (b *VideoBin) createSrcPad(writerKey, name string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.names[trackID] = name
+	b.names[writerKey] = name
 
 	pad := b.selector.GetRequestPad("sink_%u")
 	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {

@@ -267,9 +267,9 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 	}
 
 	if strings.HasPrefix(s, "app_") {
-		trackID := s[4:]
-		logger.Infow(fmt.Sprintf("%s playing", trackID))
-		c.src.(*source.SDKSource).Playing(trackID)
+		writerKey := s[4:]
+		logger.Infow(fmt.Sprintf("%s playing", writerKey))
+		c.src.(*source.SDKSource).Playing(writerKey)
 	}
 }
 

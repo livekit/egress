@@ -85,6 +85,7 @@ type AppWriter struct {
 	// a/v sync
 	synchronizer *synchronizer.Synchronizer
 	*synchronizer.TrackSynchronizer
+	writerKey string
 	driftHandler DriftHandler
 
 	lastPTS              time.Duration
@@ -134,9 +135,11 @@ func NewAppWriter(
 	driftHandler DriftHandler,
 	callbacks *gstreamer.Callbacks,
 ) (*AppWriter, error) {
+	writerKey := ts.WriterKey
+	syncTrack := trackWithID{TrackRemote: track, id: writerKey}
 	w := &AppWriter{
 		conf:              conf,
-		logger:            logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
+		logger:            logger.GetLogger().WithValues("trackID", track.ID(), "writerKey", writerKey, "kind", track.Kind().String()),
 		track:             track,
 		pub:               pub,
 		codec:             ts.MimeType,
@@ -144,7 +147,8 @@ func NewAppWriter(
 		trackSource:       ts,
 		callbacks:         callbacks,
 		synchronizer:      synchronizer,
-		TrackSynchronizer: synchronizer.AddTrack(track, rp.Identity()),
+		TrackSynchronizer: synchronizer.AddTrack(syncTrack, rp.Identity()),
+		writerKey:         writerKey,
 		driftHandler:      driftHandler,
 		timeProvider:      gstreamer.NopTimeProvider(),
 	}
@@ -594,7 +598,7 @@ func (w *AppWriter) Drain(force bool) {
 
 	<-w.finished.Watch()
 	w.logger.Debugw("finished fuse broken")
-	w.synchronizer.RemoveTrack(w.track.ID())
+	w.synchronizer.RemoveTrack(w.writerKey)
 }
 
 func (w *AppWriter) logStats() {
@@ -655,6 +659,10 @@ func (w *AppWriter) TrackKind() webrtc.RTPCodecType {
 	return w.track.Kind()
 }
 
+func (w *AppWriter) Track() *webrtc.TrackRemote {
+	return w.track
+}
+
 func (w *AppWriter) drainJitterBuffer() {
 	w.logger.Debugw("draining jitter buffer")
 	w.buffer.Close()
@@ -676,8 +684,17 @@ func (w *AppWriter) shouldRemoveBeforeDrain() bool {
 
 func (w *AppWriter) ensureRemovedBeforeDrain() {
 	if w.shouldRemoveBeforeDrain() && w.removalRequested.CompareAndSwap(false, true) {
-		w.callbacks.OnTrackRemoved(w.track.ID())
+		w.callbacks.OnTrackRemoved(w.writerKey)
 	}
+}
+
+type trackWithID struct {
+	synchronizer.TrackRemote
+	id string
+}
+
+func (t trackWithID) ID() string {
+	return t.id
 }
 
 type G711Packet struct{}

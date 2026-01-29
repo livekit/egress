@@ -92,6 +92,7 @@ type SDKSourceParams struct {
 
 type TrackSource struct {
 	TrackID            string
+	WriterKey          string
 	TrackKind          lksdk.TrackKind
 	ParticipantKind    lksdk.ParticipantKind
 	AppSrc             *app.Source
