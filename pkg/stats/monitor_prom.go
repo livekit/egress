@@ -64,7 +64,70 @@ func (m *Monitor) initPrometheus() {
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	}, []string{"type"})
 
-	prometheus.MustRegister(promNodeAvailable, promCanAcceptRequest, promIsDisabled, promIsTerminating, m.promCPULoad, m.requestGauge)
+	// Cgroup memory metrics
+	m.promCgroupMemory = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "cgroup_memory_bytes",
+		Help:        "Cgroup total memory usage in bytes",
+		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+	})
+
+	m.promCgroupInactiveFile = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "cgroup_inactive_file_bytes",
+		Help:        "Cgroup inactive file memory in bytes",
+		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+	})
+
+	m.promCgroupWorkingSet = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "cgroup_workingset_bytes",
+		Help:        "Cgroup working set (total - inactive_file) in bytes",
+		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+	})
+
+	m.promCgroupReadSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "cgroup_read_success",
+		Help:        "Whether cgroup memory read succeeded (1) or failed (0)",
+		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+	})
+
+	m.promLegacyProcRSS = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "legacy_proc_rss_bytes",
+		Help:        "Legacy per-process RSS sum in bytes",
+		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+	})
+
+	m.promWouldRejectCgroupTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "would_reject_cgroup_total",
+		Help:        "Whether request would be rejected using cgroup_total mode (1) or not (0)",
+		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+	})
+
+	m.promWouldRejectCgroupWS = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "would_reject_cgroup_workingset",
+		Help:        "Whether request would be rejected using cgroup_workingset mode (1) or not (0)",
+		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+	})
+
+	prometheus.MustRegister(
+		promNodeAvailable, promCanAcceptRequest, promIsDisabled, promIsTerminating,
+		m.promCPULoad, m.requestGauge,
+		m.promCgroupMemory, m.promCgroupInactiveFile, m.promCgroupWorkingSet,
+		m.promCgroupReadSuccess, m.promLegacyProcRSS,
+		m.promWouldRejectCgroupTotal, m.promWouldRejectCgroupWS,
+	)
 }
 
 func (m *Monitor) promIsIdle() float64 {

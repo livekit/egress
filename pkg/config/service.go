@@ -69,6 +69,20 @@ type ServiceConfig struct {
 	*CPUCostConfig `yaml:"cpu_cost"` // CPU costs for the different egress types
 }
 
+// MemorySource defines how memory usage is measured for admission and kill decisions.
+type MemorySource string
+
+const (
+	// MemorySourceLegacy uses per-process RSS sum from hwstats (existing behavior).
+	MemorySourceLegacy MemorySource = "legacy"
+	// MemorySourceCgroupTotal uses cgroup total memory (v2: memory.current, v1: memory.usage_in_bytes).
+	MemorySourceCgroupTotal MemorySource = "cgroup_total"
+	// MemorySourceCgroupWorkingSet uses cgroup total - inactive_file as "effective memory".
+	MemorySourceCgroupWorkingSet MemorySource = "cgroup_workingset"
+	// MemorySourceHybrid uses working set for soft gate and total for hard safety gate.
+	MemorySourceHybrid MemorySource = "hybrid"
+)
+
 type CPUCostConfig struct {
 	MaxCpuUtilization         float64 `yaml:"max_cpu_utilization"` // maximum allowed CPU utilization when deciding to accept a request. Default to 80%
 	MaxMemory                 float64 `yaml:"max_memory"`          // maximum allowed memory usage in GB. 0 to disable
@@ -81,6 +95,11 @@ type CPUCostConfig struct {
 	TrackCompositeCpuCost     float64 `yaml:"track_composite_cpu_cost"`
 	TrackCpuCost              float64 `yaml:"track_cpu_cost"`
 	MaxPulseClients           int     `yaml:"max_pulse_clients"` // pulse client limit for launching chrome
+
+	// Memory source configuration (cgroup-aware memory accounting)
+	MemorySource       MemorySource `yaml:"memory_source"`        // memory measurement source: legacy, cgroup_total, cgroup_workingset, hybrid
+	MemoryHeadroomGB   float64      `yaml:"memory_headroom_gb"`   // headroom in GB applied to admission checks
+	MemoryKillGraceSec int          `yaml:"memory_kill_grace_sec"` // seconds over threshold before kill (0 = immediate)
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
@@ -163,6 +182,15 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.MaxPulseClients == 0 {
 		c.MaxPulseClients = defaultMaxPulseClients
+	}
+
+	// Memory source defaults to legacy (preserves existing behavior)
+	if c.MemorySource == "" {
+		c.MemorySource = MemorySourceLegacy
+	}
+	// Default headroom of 1 GB (matches existing memoryBuffer behavior)
+	if c.MemoryHeadroomGB == 0 {
+		c.MemoryHeadroomGB = 1
 	}
 
 	if c.MaxUploadQueue <= 0 {

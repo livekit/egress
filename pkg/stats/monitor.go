@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/egress/pkg/cgroupmem"
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/source/pulse"
@@ -39,7 +40,6 @@ const (
 	minKillDuration      = 10
 	gb                   = 1024.0 * 1024.0 * 1024.0
 	pulseClientHold      = 4
-	memoryBuffer         = 1
 )
 
 type Service interface {
@@ -54,21 +54,34 @@ type Monitor struct {
 	clusterID     string
 	cpuCostConfig *config.CPUCostConfig
 
-	promCPULoad  prometheus.Gauge
-	requestGauge *prometheus.GaugeVec
+	promCPULoad                prometheus.Gauge
+	promCgroupMemory           prometheus.Gauge
+	promCgroupInactiveFile     prometheus.Gauge
+	promCgroupWorkingSet       prometheus.Gauge
+	promCgroupReadSuccess      prometheus.Gauge
+	promLegacyProcRSS          prometheus.Gauge
+	promWouldRejectCgroupTotal prometheus.Gauge
+	promWouldRejectCgroupWS    prometheus.Gauge
+	requestGauge               *prometheus.GaugeVec
 
 	svc                 Service
 	cpuStats            *hwstats.CPUStats
+	cgroupReader        *cgroupmem.Reader
 	requests            atomic.Int32
 	webRequests         atomic.Int32
 	pendingPulseClients atomic.Int32
 	pendingMemoryUsage  atomic.Float64
 
-	mu              deadlock.Mutex
-	highCPUDuration int
-	pending         map[string]*processStats
-	procStats       map[int]*processStats
-	memoryUsage     float64
+	mu                    deadlock.Mutex
+	highCPUDuration       int
+	highMemoryDuration    int
+	pending               map[string]*processStats
+	procStats             map[int]*processStats
+	memoryUsage           float64
+	cgroupTotalBytes      uint64
+	cgroupWorkingSetBytes uint64
+	cgroupOK              bool
+	cgroupErrorLogged     bool
 }
 
 type processStats struct {
@@ -90,6 +103,7 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 		clusterID:     conf.ClusterID,
 		cpuCostConfig: conf.CPUCostConfig,
 		svc:           svc,
+		cgroupReader:  cgroupmem.NewReader(),
 		pending:       make(map[string]*processStats),
 		procStats:     make(map[int]*processStats),
 	}
@@ -105,6 +119,14 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 	if err = m.validateCPUConfig(); err != nil {
 		return nil, err
 	}
+
+	// Log memory configuration at startup
+	logger.Infow("memory monitoring configured",
+		"memorySource", conf.CPUCostConfig.MemorySource,
+		"maxMemoryGB", conf.CPUCostConfig.MaxMemory,
+		"memoryHeadroomGB", conf.CPUCostConfig.MemoryHeadroomGB,
+		"memoryKillGraceSec", conf.CPUCostConfig.MemoryKillGraceSec,
+	)
 
 	return m, nil
 }
@@ -174,12 +196,12 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 		"activeRequests", m.requests.Load(),
 		"activeWeb", m.webRequests.Load(),
 		"memory", m.memoryUsage,
+		"memorySource", m.cpuCostConfig.MemorySource,
 	}
 
-	memoryUsage := m.memoryUsage + m.pendingMemoryUsage.Load()
-
-	if m.cpuCostConfig.MaxMemory > 0 && memoryUsage+m.cpuCostConfig.MemoryCost+memoryBuffer >= m.cpuCostConfig.MaxMemory {
-		fields = append(fields, "canAccept", false, "reason", "memory")
+	// Memory admission check based on configured source
+	if reject, reason := m.checkMemoryAdmissionLocked(); reject {
+		fields = append(fields, "canAccept", false, "reason", reason)
 		return fields, false
 	}
 
@@ -241,6 +263,70 @@ func (m *Monitor) canAcceptWebLocked() bool {
 		return false
 	}
 	return clients+int(m.pendingPulseClients.Load())+pulseClientHold <= m.cpuCostConfig.MaxPulseClients
+}
+
+// checkMemoryAdmissionLocked checks if a request should be rejected due to memory constraints.
+// Returns (reject, reason) where reject=true means the request should be rejected.
+func (m *Monitor) checkMemoryAdmissionLocked() (bool, string) {
+	if m.cpuCostConfig.MaxMemory == 0 {
+		return false, ""
+	}
+
+	pendingMem := m.pendingMemoryUsage.Load()
+	memoryCost := m.cpuCostConfig.MemoryCost
+	headroom := m.cpuCostConfig.MemoryHeadroomGB
+	maxMem := m.cpuCostConfig.MaxMemory
+
+	switch m.cpuCostConfig.MemorySource {
+	case config.MemorySourceCgroupTotal:
+		if !m.cgroupOK {
+			// Fallback to legacy
+			return m.checkLegacyMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
+		}
+		cgroupGB := float64(m.cgroupTotalBytes) / gb
+		if cgroupGB+pendingMem+memoryCost+headroom >= maxMem {
+			return true, "memory_cgroup_total"
+		}
+
+	case config.MemorySourceCgroupWorkingSet:
+		if !m.cgroupOK {
+			return m.checkLegacyMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
+		}
+		wsGB := float64(m.cgroupWorkingSetBytes) / gb
+		if wsGB+pendingMem+memoryCost+headroom >= maxMem {
+			return true, "memory_cgroup_workingset"
+		}
+
+	case config.MemorySourceHybrid:
+		if !m.cgroupOK {
+			return m.checkLegacyMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
+		}
+		// Soft gate on working set
+		wsGB := float64(m.cgroupWorkingSetBytes) / gb
+		if wsGB+pendingMem+memoryCost+headroom >= maxMem {
+			return true, "memory_cgroup_workingset_soft"
+		}
+		// Hard gate on total (with extra headroom)
+		hardHeadroom := headroom + 1 // extra 1GB safety margin for hard gate
+		totalGB := float64(m.cgroupTotalBytes) / gb
+		if totalGB+pendingMem+memoryCost+hardHeadroom >= maxMem {
+			return true, "memory_cgroup_total_hard"
+		}
+
+	default: // legacy
+		return m.checkLegacyMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
+	}
+
+	return false, ""
+}
+
+// checkLegacyMemoryAdmission implements the original per-process RSS based admission.
+func (m *Monitor) checkLegacyMemoryAdmission(pendingMem, memoryCost, headroom, maxMem float64) (bool, string) {
+	memoryUsage := m.memoryUsage + pendingMem
+	if memoryUsage+memoryCost+headroom >= maxMem {
+		return true, "memory"
+	}
+	return false, ""
 }
 
 func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
@@ -479,6 +565,7 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 		}
 	}
 
+	// Collect legacy per-process memory stats
 	totalMemory := 0
 	maxMemory := 0
 	var maxMemoryEgress string
@@ -500,11 +587,119 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 	}
 
 	m.memoryUsage = float64(totalMemory) / gb
-	if m.cpuCostConfig.MaxMemory > 0 && totalMemory > int(m.cpuCostConfig.MaxMemory*gb) {
-		logger.Warnw("high memory usage", nil,
-			"memory", m.memoryUsage,
-			"requests", m.requests.Load(),
-		)
-		m.svc.KillProcess(maxMemoryEgress, errors.ErrOOM(float64(maxMemory)/gb))
+	m.promLegacyProcRSS.Set(float64(totalMemory))
+
+	// Read cgroup memory stats (always, for metrics)
+	m.updateCgroupStats()
+
+	// Update "would reject" metrics for evaluation purposes
+	m.updateWouldRejectMetrics()
+
+	// Memory kill logic based on configured source
+	m.checkMemoryKill(maxMemoryEgress, maxMemory)
+}
+
+// updateCgroupStats reads cgroup memory statistics and updates metrics.
+func (m *Monitor) updateCgroupStats() {
+	cgStats, err := m.cgroupReader.Read()
+	if err != nil {
+		m.cgroupOK = false
+		m.promCgroupReadSuccess.Set(0)
+		// Throttle error logging
+		if !m.cgroupErrorLogged {
+			logger.Warnw("failed to read cgroup memory stats, falling back to legacy", err)
+			m.cgroupErrorLogged = true
+		}
+		return
+	}
+
+	m.cgroupOK = true
+	m.cgroupErrorLogged = false
+	m.cgroupTotalBytes = cgStats.TotalBytes
+	m.cgroupWorkingSetBytes = cgStats.WorkingSetBytes
+
+	m.promCgroupReadSuccess.Set(1)
+	m.promCgroupMemory.Set(float64(cgStats.TotalBytes))
+	m.promCgroupInactiveFile.Set(float64(cgStats.InactiveFileBytes))
+	m.promCgroupWorkingSet.Set(float64(cgStats.WorkingSetBytes))
+}
+
+// updateWouldRejectMetrics computes what admission would do with alternative memory sources.
+func (m *Monitor) updateWouldRejectMetrics() {
+	if !m.cgroupOK || m.cpuCostConfig.MaxMemory == 0 {
+		return
+	}
+
+	pendingMem := m.pendingMemoryUsage.Load()
+	headroom := m.cpuCostConfig.MemoryHeadroomGB
+	maxMem := m.cpuCostConfig.MaxMemory
+
+	// Would reject with cgroup_total?
+	cgroupTotalGB := float64(m.cgroupTotalBytes) / gb
+	if cgroupTotalGB+pendingMem+m.cpuCostConfig.MemoryCost+headroom >= maxMem {
+		m.promWouldRejectCgroupTotal.Set(1)
+	} else {
+		m.promWouldRejectCgroupTotal.Set(0)
+	}
+
+	// Would reject with cgroup_workingset?
+	cgroupWSGB := float64(m.cgroupWorkingSetBytes) / gb
+	if cgroupWSGB+pendingMem+m.cpuCostConfig.MemoryCost+headroom >= maxMem {
+		m.promWouldRejectCgroupWS.Set(1)
+	} else {
+		m.promWouldRejectCgroupWS.Set(0)
+	}
+}
+
+// checkMemoryKill evaluates whether to kill a process based on memory usage.
+func (m *Monitor) checkMemoryKill(maxMemoryEgress string, maxMemory int) {
+	if m.cpuCostConfig.MaxMemory == 0 {
+		return
+	}
+
+	maxMemoryBytes := uint64(m.cpuCostConfig.MaxMemory * gb)
+	var killTriggerBytes uint64
+
+	switch m.cpuCostConfig.MemorySource {
+	case config.MemorySourceCgroupTotal:
+		if !m.cgroupOK {
+			// Fallback to legacy
+			killTriggerBytes = uint64(m.memoryUsage * gb)
+		} else {
+			killTriggerBytes = m.cgroupTotalBytes
+		}
+	case config.MemorySourceCgroupWorkingSet:
+		// For working set mode, still kill based on total (safer)
+		if !m.cgroupOK {
+			killTriggerBytes = uint64(m.memoryUsage * gb)
+		} else {
+			killTriggerBytes = m.cgroupTotalBytes
+		}
+	case config.MemorySourceHybrid:
+		// Kill on total
+		if !m.cgroupOK {
+			killTriggerBytes = uint64(m.memoryUsage * gb)
+		} else {
+			killTriggerBytes = m.cgroupTotalBytes
+		}
+	default: // legacy
+		killTriggerBytes = uint64(m.memoryUsage * gb)
+	}
+
+	if killTriggerBytes > maxMemoryBytes {
+		// Apply grace period if configured
+		m.highMemoryDuration++
+		if m.highMemoryDuration > m.cpuCostConfig.MemoryKillGraceSec {
+			logger.Warnw("high memory usage", nil,
+				"source", m.cpuCostConfig.MemorySource,
+				"memoryGB", float64(killTriggerBytes)/gb,
+				"maxMemoryGB", m.cpuCostConfig.MaxMemory,
+				"requests", m.requests.Load(),
+			)
+			m.svc.KillProcess(maxMemoryEgress, errors.ErrOOM(float64(maxMemory)/gb))
+			m.highMemoryDuration = 0
+		}
+	} else {
+		m.highMemoryDuration = 0
 	}
 }
