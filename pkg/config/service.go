@@ -97,9 +97,10 @@ type CPUCostConfig struct {
 	MaxPulseClients           int     `yaml:"max_pulse_clients"` // pulse client limit for launching chrome
 
 	// Memory source configuration (cgroup-aware memory accounting)
-	MemorySource       MemorySource `yaml:"memory_source"`        // memory measurement source: legacy, cgroup_total, cgroup_workingset, hybrid
-	MemoryHeadroomGB   float64      `yaml:"memory_headroom_gb"`   // headroom in GB applied to admission checks
-	MemoryKillGraceSec int          `yaml:"memory_kill_grace_sec"` // seconds over threshold before kill (0 = immediate)
+	MemorySource         MemorySource `yaml:"memory_source"`           // memory measurement source: legacy, cgroup_total, cgroup_workingset, hybrid
+	MemoryHeadroomGB     *float64     `yaml:"memory_headroom_gb"`      // headroom in GB applied to admission checks (default: 1)
+	MemoryHardHeadroomGB *float64     `yaml:"memory_hard_headroom_gb"` // extra headroom for hybrid mode hard gate (default: 1)
+	MemoryKillGraceSec   int          `yaml:"memory_kill_grace_sec"`   // grace period in update cycles before kill (0 = immediate)
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
@@ -188,9 +189,23 @@ func (c *ServiceConfig) InitDefaults() {
 	if c.MemorySource == "" {
 		c.MemorySource = MemorySourceLegacy
 	}
+	// Validate memory source
+	switch c.MemorySource {
+	case MemorySourceLegacy, MemorySourceCgroupTotal, MemorySourceCgroupWorkingSet, MemorySourceHybrid:
+		// valid
+	default:
+		logger.Warnw("unknown memory_source, falling back to legacy", nil, "memorySource", c.MemorySource)
+		c.MemorySource = MemorySourceLegacy
+	}
 	// Default headroom of 1 GB (matches existing memoryBuffer behavior)
-	if c.MemoryHeadroomGB == 0 {
-		c.MemoryHeadroomGB = 1
+	if c.MemoryHeadroomGB == nil {
+		defaultHeadroom := 1.0
+		c.MemoryHeadroomGB = &defaultHeadroom
+	}
+	// Default hard headroom of 1 GB for hybrid mode
+	if c.MemoryHardHeadroomGB == nil {
+		defaultHardHeadroom := 1.0
+		c.MemoryHardHeadroomGB = &defaultHardHeadroom
 	}
 
 	if c.MaxUploadQueue <= 0 {

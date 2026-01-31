@@ -81,7 +81,7 @@ type Monitor struct {
 	cgroupTotalBytes      uint64
 	cgroupWorkingSetBytes uint64
 	cgroupOK              bool
-	cgroupErrorLogged     bool
+	cgroupErrorLogged     atomic.Bool
 }
 
 type processStats struct {
@@ -124,7 +124,8 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 	logger.Infow("memory monitoring configured",
 		"memorySource", conf.CPUCostConfig.MemorySource,
 		"maxMemoryGB", conf.CPUCostConfig.MaxMemory,
-		"memoryHeadroomGB", conf.CPUCostConfig.MemoryHeadroomGB,
+		"memoryHeadroomGB", *conf.CPUCostConfig.MemoryHeadroomGB,
+		"memoryHardHeadroomGB", *conf.CPUCostConfig.MemoryHardHeadroomGB,
 		"memoryKillGraceSec", conf.CPUCostConfig.MemoryKillGraceSec,
 	)
 
@@ -274,7 +275,7 @@ func (m *Monitor) checkMemoryAdmissionLocked() (bool, string) {
 
 	pendingMem := m.pendingMemoryUsage.Load()
 	memoryCost := m.cpuCostConfig.MemoryCost
-	headroom := m.cpuCostConfig.MemoryHeadroomGB
+	headroom := *m.cpuCostConfig.MemoryHeadroomGB
 	maxMem := m.cpuCostConfig.MaxMemory
 
 	switch m.cpuCostConfig.MemorySource {
@@ -307,7 +308,7 @@ func (m *Monitor) checkMemoryAdmissionLocked() (bool, string) {
 			return true, "memory_cgroup_workingset_soft"
 		}
 		// Hard gate on total (with extra headroom)
-		hardHeadroom := headroom + 1 // extra 1GB safety margin for hard gate
+		hardHeadroom := headroom + *m.cpuCostConfig.MemoryHardHeadroomGB
 		totalGB := float64(m.cgroupTotalBytes) / gb
 		if totalGB+pendingMem+memoryCost+hardHeadroom >= maxMem {
 			return true, "memory_cgroup_total_hard"
@@ -596,7 +597,7 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 	m.updateWouldRejectMetrics()
 
 	// Memory kill logic based on configured source
-	m.checkMemoryKill(maxMemoryEgress, maxMemory)
+	m.checkMemoryKill(maxMemoryEgress)
 }
 
 // updateCgroupStats reads cgroup memory statistics and updates metrics.
@@ -605,16 +606,15 @@ func (m *Monitor) updateCgroupStats() {
 	if err != nil {
 		m.cgroupOK = false
 		m.promCgroupReadSuccess.Set(0)
-		// Throttle error logging
-		if !m.cgroupErrorLogged {
+		// Throttle error logging (CompareAndSwap ensures we log only once)
+		if m.cgroupErrorLogged.CompareAndSwap(false, true) {
 			logger.Warnw("failed to read cgroup memory stats, falling back to legacy", err)
-			m.cgroupErrorLogged = true
 		}
 		return
 	}
 
 	m.cgroupOK = true
-	m.cgroupErrorLogged = false
+	m.cgroupErrorLogged.Store(false)
 	m.cgroupTotalBytes = cgStats.TotalBytes
 	m.cgroupWorkingSetBytes = cgStats.WorkingSetBytes
 
@@ -631,7 +631,7 @@ func (m *Monitor) updateWouldRejectMetrics() {
 	}
 
 	pendingMem := m.pendingMemoryUsage.Load()
-	headroom := m.cpuCostConfig.MemoryHeadroomGB
+	headroom := *m.cpuCostConfig.MemoryHeadroomGB
 	maxMem := m.cpuCostConfig.MaxMemory
 
 	// Would reject with cgroup_total?
@@ -652,7 +652,7 @@ func (m *Monitor) updateWouldRejectMetrics() {
 }
 
 // checkMemoryKill evaluates whether to kill a process based on memory usage.
-func (m *Monitor) checkMemoryKill(maxMemoryEgress string, maxMemory int) {
+func (m *Monitor) checkMemoryKill(maxMemoryEgress string) {
 	if m.cpuCostConfig.MaxMemory == 0 {
 		return
 	}
@@ -687,16 +687,20 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string, maxMemory int) {
 	}
 
 	if killTriggerBytes > maxMemoryBytes {
-		// Apply grace period if configured
+		// Apply grace period if configured.
+		// Note: highMemoryDuration counts update cycles (typically 1 second each),
+		// so MemoryKillGraceSec is approximate.
 		m.highMemoryDuration++
 		if m.highMemoryDuration > m.cpuCostConfig.MemoryKillGraceSec {
+			killTriggerGB := float64(killTriggerBytes) / gb
 			logger.Warnw("high memory usage", nil,
 				"source", m.cpuCostConfig.MemorySource,
-				"memoryGB", float64(killTriggerBytes)/gb,
+				"memoryGB", killTriggerGB,
 				"maxMemoryGB", m.cpuCostConfig.MaxMemory,
 				"requests", m.requests.Load(),
 			)
-			m.svc.KillProcess(maxMemoryEgress, errors.ErrOOM(float64(maxMemory)/gb))
+			// Report the actual memory that triggered the kill, not per-process max
+			m.svc.KillProcess(maxMemoryEgress, errors.ErrOOM(killTriggerGB))
 			m.highMemoryDuration = 0
 		}
 	} else {
