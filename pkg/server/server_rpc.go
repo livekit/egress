@@ -55,7 +55,7 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 		s.activeRequests.Dec()
 		return nil, errors.ErrEgressAlreadyExists
 	}
-	if err := s.monitor.AcceptRequest(req); err != nil {
+	if err := s.monitor.AcceptRequest(req, s.conf.EnableRoomCompositeSDKSource); err != nil {
 		s.activeRequests.Dec()
 		return nil, err
 	}
@@ -190,7 +190,7 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 }
 
 func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequest) float32 {
-	if s.IsDisabled() || !s.monitor.CanAcceptRequest(req) {
+	if s.IsDisabled() || !s.monitor.CanAcceptRequest(req, s.conf.EnableRoomCompositeSDKSource) {
 		// cannot accept
 		return -1
 	}
