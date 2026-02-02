@@ -663,23 +663,12 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string) {
 	var killTriggerBytes uint64
 
 	switch m.cpuCostConfig.MemorySource {
-	case config.MemorySourceCgroupTotal:
+	case config.MemorySourceCgroupTotal,
+		config.MemorySourceCgroupWorkingSet,
+		config.MemorySourceHybrid:
+		// For all cgroup modes, kill on total (safer).
 		if !m.cgroupOK {
 			// Fallback to proc_rss
-			killTriggerBytes = uint64(m.memoryUsage * gb)
-		} else {
-			killTriggerBytes = m.cgroupTotalBytes
-		}
-	case config.MemorySourceCgroupWorkingSet:
-		// For working set mode, still kill based on total (safer)
-		if !m.cgroupOK {
-			killTriggerBytes = uint64(m.memoryUsage * gb)
-		} else {
-			killTriggerBytes = m.cgroupTotalBytes
-		}
-	case config.MemorySourceHybrid:
-		// Kill on total
-		if !m.cgroupOK {
 			killTriggerBytes = uint64(m.memoryUsage * gb)
 		} else {
 			killTriggerBytes = m.cgroupTotalBytes
