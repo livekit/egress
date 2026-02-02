@@ -54,9 +54,6 @@ func (b *VideoBin) buildLeakyVideoQueue(name string) (*gst.Element, error) {
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-
-	NewLeakyQueueMonitor(name, queue)
-
 	return queue, nil
 }
 
