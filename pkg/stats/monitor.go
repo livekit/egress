@@ -59,7 +59,7 @@ type Monitor struct {
 	promCgroupInactiveFile     prometheus.Gauge
 	promCgroupWorkingSet       prometheus.Gauge
 	promCgroupReadSuccess      prometheus.Gauge
-	promLegacyProcRSS          prometheus.Gauge
+	promProcRSS                prometheus.Gauge
 	promWouldRejectCgroupTotal prometheus.Gauge
 	promWouldRejectCgroupWS    prometheus.Gauge
 	requestGauge               *prometheus.GaugeVec
@@ -281,8 +281,8 @@ func (m *Monitor) checkMemoryAdmissionLocked() (bool, string) {
 	switch m.cpuCostConfig.MemorySource {
 	case config.MemorySourceCgroupTotal:
 		if !m.cgroupOK {
-			// Fallback to legacy
-			return m.checkLegacyMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
+			// Fallback to proc_rss
+			return m.checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
 		}
 		cgroupGB := float64(m.cgroupTotalBytes) / gb
 		if cgroupGB+pendingMem+memoryCost+headroom >= maxMem {
@@ -291,7 +291,7 @@ func (m *Monitor) checkMemoryAdmissionLocked() (bool, string) {
 
 	case config.MemorySourceCgroupWorkingSet:
 		if !m.cgroupOK {
-			return m.checkLegacyMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
+			return m.checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
 		}
 		wsGB := float64(m.cgroupWorkingSetBytes) / gb
 		if wsGB+pendingMem+memoryCost+headroom >= maxMem {
@@ -300,7 +300,7 @@ func (m *Monitor) checkMemoryAdmissionLocked() (bool, string) {
 
 	case config.MemorySourceHybrid:
 		if !m.cgroupOK {
-			return m.checkLegacyMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
+			return m.checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
 		}
 		// Soft gate on working set
 		wsGB := float64(m.cgroupWorkingSetBytes) / gb
@@ -314,15 +314,15 @@ func (m *Monitor) checkMemoryAdmissionLocked() (bool, string) {
 			return true, "memory_cgroup_total_hard"
 		}
 
-	default: // legacy
-		return m.checkLegacyMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
+	default: // proc_rss
+		return m.checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
 	}
 
 	return false, ""
 }
 
-// checkLegacyMemoryAdmission implements the original per-process RSS based admission.
-func (m *Monitor) checkLegacyMemoryAdmission(pendingMem, memoryCost, headroom, maxMem float64) (bool, string) {
+// checkProcRSSMemoryAdmission implements the original per-process RSS based admission.
+func (m *Monitor) checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem float64) (bool, string) {
 	memoryUsage := m.memoryUsage + pendingMem
 	if memoryUsage+memoryCost+headroom >= maxMem {
 		return true, "memory"
@@ -566,7 +566,7 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 		}
 	}
 
-	// Collect legacy per-process memory stats
+	// Collect proc RSS per-process memory stats
 	totalMemory := 0
 	maxMemory := 0
 	var maxMemoryEgress string
@@ -588,7 +588,7 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 	}
 
 	m.memoryUsage = float64(totalMemory) / gb
-	m.promLegacyProcRSS.Set(float64(totalMemory))
+	m.promProcRSS.Set(float64(totalMemory))
 
 	// Read cgroup memory stats (always, for metrics)
 	m.updateCgroupStats()
@@ -608,7 +608,7 @@ func (m *Monitor) updateCgroupStats() {
 		m.promCgroupReadSuccess.Set(0)
 		// Throttle error logging (CompareAndSwap ensures we log only once)
 		if m.cgroupErrorLogged.CompareAndSwap(false, true) {
-			logger.Warnw("failed to read cgroup memory stats, falling back to legacy", err)
+			logger.Warnw("failed to read cgroup memory stats, falling back to proc_rss", err)
 		}
 		return
 	}
@@ -622,6 +622,8 @@ func (m *Monitor) updateCgroupStats() {
 	m.promCgroupMemory.Set(float64(cgStats.TotalBytes))
 	m.promCgroupInactiveFile.Set(float64(cgStats.InactiveFileBytes))
 	m.promCgroupWorkingSet.Set(float64(cgStats.WorkingSetBytes))
+	logger.Infow("cgroup memory stats", "version", cgStats.Version, "totalBytes", cgStats.TotalBytes, "inactiveFileBytes", cgStats.InactiveFileBytes, "workingSetBytes", cgStats.WorkingSetBytes)
+	logger.Infow("rss memory stats", "memoryUsage", m.memoryUsage)
 }
 
 // updateWouldRejectMetrics computes what admission would do with alternative memory sources.
@@ -663,7 +665,7 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string) {
 	switch m.cpuCostConfig.MemorySource {
 	case config.MemorySourceCgroupTotal:
 		if !m.cgroupOK {
-			// Fallback to legacy
+			// Fallback to proc_rss
 			killTriggerBytes = uint64(m.memoryUsage * gb)
 		} else {
 			killTriggerBytes = m.cgroupTotalBytes
@@ -682,7 +684,7 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string) {
 		} else {
 			killTriggerBytes = m.cgroupTotalBytes
 		}
-	default: // legacy
+	default: // proc_rss
 		killTriggerBytes = uint64(m.memoryUsage * gb)
 	}
 

@@ -38,7 +38,8 @@ func TestReadV2(t *testing.T) {
 		},
 	}
 
-	stats, err := ReadWithFS(fsys)
+	r := NewReaderWithFS(fsys)
+	stats, err := r.Read()
 	require.NoError(t, err)
 	require.Equal(t, "v2", stats.Version)
 	require.Equal(t, uint64(1073741824), stats.TotalBytes)       // 1 GiB
@@ -59,7 +60,8 @@ func TestReadV2Fallback(t *testing.T) {
 		},
 	}
 
-	stats, err := ReadWithFS(fsys)
+	r := NewReaderWithFS(fsys)
+	stats, err := r.Read()
 	require.NoError(t, err)
 	require.Equal(t, "v2", stats.Version)
 	require.Equal(t, uint64(2147483648), stats.TotalBytes)
@@ -83,7 +85,8 @@ func TestReadV1(t *testing.T) {
 		},
 	}
 
-	stats, err := ReadWithFS(fsys)
+	r := NewReaderWithFS(fsys)
+	stats, err := r.Read()
 	require.NoError(t, err)
 	require.Equal(t, "v1", stats.Version)
 	require.Equal(t, uint64(3221225472), stats.TotalBytes)       // 3 GiB
@@ -107,16 +110,43 @@ func TestReadV1FallbackToInactiveFile(t *testing.T) {
 		},
 	}
 
-	stats, err := ReadWithFS(fsys)
+	r := NewReaderWithFS(fsys)
+	stats, err := r.Read()
 	require.NoError(t, err)
 	require.Equal(t, "v1", stats.Version)
+	require.Equal(t, uint64(268435456), stats.InactiveFileBytes)
+}
+
+func TestReadV1NamespacedMountFallback(t *testing.T) {
+	fsys := fstest.MapFS{
+		"proc/self/cgroup": &fstest.MapFile{
+			Data: []byte("11:memory:/kubepods.slice/pod123/container456\n"),
+		},
+		"proc/self/mountinfo": &fstest.MapFile{
+			Data: []byte("30 25 0:26 / /sys/fs/cgroup/memory rw - cgroup cgroup rw,memory\n"),
+		},
+		// Only root files exist (namespaced/scoped mount)
+		"sys/fs/cgroup/memory/memory.usage_in_bytes": &fstest.MapFile{
+			Data: []byte("1073741824\n"),
+		},
+		"sys/fs/cgroup/memory/memory.stat": &fstest.MapFile{
+			Data: []byte("total_inactive_file 268435456\n"),
+		},
+	}
+
+	r := NewReaderWithFS(fsys)
+	stats, err := r.Read()
+	require.NoError(t, err)
+	require.Equal(t, "v1", stats.Version)
+	require.Equal(t, uint64(1073741824), stats.TotalBytes)
 	require.Equal(t, uint64(268435456), stats.InactiveFileBytes)
 }
 
 func TestReadNotAvailable(t *testing.T) {
 	fsys := fstest.MapFS{}
 
-	_, err := ReadWithFS(fsys)
+	r := NewReaderWithFS(fsys)
+	_, err := r.Read()
 	require.ErrorIs(t, err, ErrCgroupNotAvailable)
 }
 
@@ -134,7 +164,8 @@ func TestWorkingSetClamp(t *testing.T) {
 		},
 	}
 
-	stats, err := ReadWithFS(fsys)
+	r := NewReaderWithFS(fsys)
+	stats, err := r.Read()
 	require.NoError(t, err)
 	require.Equal(t, uint64(100), stats.TotalBytes)
 	require.Equal(t, uint64(200), stats.InactiveFileBytes)
@@ -312,7 +343,8 @@ func TestKubernetesLikeCgroupPaths(t *testing.T) {
 		},
 	}
 
-	stats, err := ReadWithFS(fsys)
+	r := NewReaderWithFS(fsys)
+	stats, err := r.Read()
 	require.NoError(t, err)
 	require.Equal(t, "v2", stats.Version)
 	require.Equal(t, uint64(4294967296), stats.TotalBytes)        // 4 GiB
@@ -418,7 +450,8 @@ func TestMissingInactiveFile(t *testing.T) {
 		},
 	}
 
-	stats, err := ReadWithFS(fsys)
+	r := NewReaderWithFS(fsys)
+	stats, err := r.Read()
 	require.NoError(t, err)
 	require.Equal(t, "v2", stats.Version)
 	require.Equal(t, uint64(1073741824), stats.TotalBytes)

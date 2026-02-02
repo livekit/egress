@@ -73,8 +73,8 @@ type ServiceConfig struct {
 type MemorySource string
 
 const (
-	// MemorySourceLegacy uses per-process RSS sum from hwstats (existing behavior).
-	MemorySourceLegacy MemorySource = "legacy"
+	// MemorySourceProcRSS uses per-process RSS sum from hwstats (existing behavior).
+	MemorySourceProcRSS MemorySource = "proc_rss"
 	// MemorySourceCgroupTotal uses cgroup total memory (v2: memory.current, v1: memory.usage_in_bytes).
 	MemorySourceCgroupTotal MemorySource = "cgroup_total"
 	// MemorySourceCgroupWorkingSet uses cgroup total - inactive_file as "effective memory".
@@ -97,7 +97,7 @@ type CPUCostConfig struct {
 	MaxPulseClients           int     `yaml:"max_pulse_clients"` // pulse client limit for launching chrome
 
 	// Memory source configuration (cgroup-aware memory accounting)
-	MemorySource         MemorySource `yaml:"memory_source"`           // memory measurement source: legacy, cgroup_total, cgroup_workingset, hybrid
+	MemorySource         MemorySource `yaml:"memory_source"`           // memory measurement source: proc_rss, cgroup_total, cgroup_workingset, hybrid
 	MemoryHeadroomGB     *float64     `yaml:"memory_headroom_gb"`      // headroom in GB applied to admission checks (default: 1)
 	MemoryHardHeadroomGB *float64     `yaml:"memory_hard_headroom_gb"` // extra headroom for hybrid mode hard gate (default: 1)
 	MemoryKillGraceSec   int          `yaml:"memory_kill_grace_sec"`   // grace period in update cycles before kill (0 = immediate)
@@ -185,17 +185,17 @@ func (c *ServiceConfig) InitDefaults() {
 		c.MaxPulseClients = defaultMaxPulseClients
 	}
 
-	// Memory source defaults to legacy (preserves existing behavior)
+	// Memory source defaults to proc_rss (preserves existing behavior)
 	if c.MemorySource == "" {
-		c.MemorySource = MemorySourceLegacy
+		c.MemorySource = MemorySourceProcRSS
 	}
 	// Validate memory source
 	switch c.MemorySource {
-	case MemorySourceLegacy, MemorySourceCgroupTotal, MemorySourceCgroupWorkingSet, MemorySourceHybrid:
+	case MemorySourceProcRSS, MemorySourceCgroupTotal, MemorySourceCgroupWorkingSet, MemorySourceHybrid:
 		// valid
 	default:
-		logger.Warnw("unknown memory_source, falling back to legacy", nil, "memorySource", c.MemorySource)
-		c.MemorySource = MemorySourceLegacy
+		logger.Warnw("unknown memory_source, falling back to proc_rss", nil, "memorySource", c.MemorySource)
+		c.MemorySource = MemorySourceProcRSS
 	}
 	// Default headroom of 1 GB (matches existing memoryBuffer behavior)
 	if c.MemoryHeadroomGB == nil {

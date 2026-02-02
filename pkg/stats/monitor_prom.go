@@ -97,11 +97,11 @@ func (m *Monitor) initPrometheus() {
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	})
 
-	m.promLegacyProcRSS = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.promProcRSS = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   "livekit",
 		Subsystem:   "egress",
-		Name:        "legacy_proc_rss_bytes",
-		Help:        "Legacy per-process RSS sum in bytes",
+		Name:        "proc_rss_bytes",
+		Help:        "Per-process RSS sum in bytes",
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	})
 
@@ -125,7 +125,7 @@ func (m *Monitor) initPrometheus() {
 		promNodeAvailable, promCanAcceptRequest, promIsDisabled, promIsTerminating,
 		m.promCPULoad, m.requestGauge,
 		m.promCgroupMemory, m.promCgroupInactiveFile, m.promCgroupWorkingSet,
-		m.promCgroupReadSuccess, m.promLegacyProcRSS,
+		m.promCgroupReadSuccess, m.promProcRSS,
 		m.promWouldRejectCgroupTotal, m.promWouldRejectCgroupWS,
 	)
 }
