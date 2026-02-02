@@ -80,10 +80,10 @@ type Controller struct {
 }
 
 type controllerStats struct {
-	droppedAudioBuffers atomic.Uint64 // dropped by mixer
-	droppedVideoBuffers atomic.Uint64
+	mixerDroppedAudioBuffers atomic.Uint64
+	droppedVideoBuffers      atomic.Uint64
 
-	droppedAudioDuration atomic.Duration // dropped by mixer
+	mixerDroppedAudioDuration atomic.Duration
 
 	queuesDroppedAudioBuffers atomic.Uint64
 
@@ -225,8 +225,8 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		if c.SourceType == types.SourceTypeSDK {
 			logger.Debugw(
 				"audio qos stats",
-				"audioBuffersDropped", c.stats.droppedAudioBuffers.Load(),
-				"totalAudioDurationDropped", c.stats.droppedAudioDuration.Load(),
+				"audioBuffersDropped", c.stats.mixerDroppedAudioBuffers.Load(),
+				"totalAudioDurationDropped", c.stats.mixerDroppedAudioDuration.Load(),
 				"queueDroppedAudioBuffers", c.stats.queuesDroppedAudioBuffers.Load(),
 				"droppedByQueue", c.stats.droppedAudioBuffersByQueue,
 				"requestType", c.RequestType,

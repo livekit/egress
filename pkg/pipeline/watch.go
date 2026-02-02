@@ -409,8 +409,8 @@ func (c *Controller) handleMessageQoS(msg *gst.Message) {
 }
 
 func (c *Controller) handleAudioMixerQoS(qosValues *gst.QoSValues) {
-	c.stats.droppedAudioBuffers.Inc()
-	c.stats.droppedAudioDuration.Add(qosValues.Duration)
+	c.stats.mixerDroppedAudioBuffers.Inc()
+	c.stats.mixerDroppedAudioDuration.Add(qosValues.Duration)
 }
 
 // Debug info comes in the following format:
