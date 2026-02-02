@@ -125,7 +125,6 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 		"memorySource", conf.CPUCostConfig.MemorySource,
 		"maxMemoryGB", conf.CPUCostConfig.MaxMemory,
 		"memoryHeadroomGB", *conf.CPUCostConfig.MemoryHeadroomGB,
-		"memoryHardHeadroomGB", *conf.CPUCostConfig.MemoryHardHeadroomGB,
 		"memoryKillGraceSec", conf.CPUCostConfig.MemoryKillGraceSec,
 	)
 
@@ -296,22 +295,6 @@ func (m *Monitor) checkMemoryAdmissionLocked() (bool, string) {
 		wsGB := float64(m.cgroupWorkingSetBytes) / gb
 		if wsGB+pendingMem+memoryCost+headroom >= maxMem {
 			return true, "memory_cgroup_workingset"
-		}
-
-	case config.MemorySourceHybrid:
-		if !m.cgroupOK {
-			return m.checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
-		}
-		// Soft gate on working set
-		wsGB := float64(m.cgroupWorkingSetBytes) / gb
-		if wsGB+pendingMem+memoryCost+headroom >= maxMem {
-			return true, "memory_cgroup_workingset_soft"
-		}
-		// Hard gate on total (with extra headroom)
-		hardHeadroom := headroom + *m.cpuCostConfig.MemoryHardHeadroomGB
-		totalGB := float64(m.cgroupTotalBytes) / gb
-		if totalGB+pendingMem+memoryCost+hardHeadroom >= maxMem {
-			return true, "memory_cgroup_total_hard"
 		}
 
 	default: // proc_rss
@@ -662,19 +645,17 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string) {
 	maxMemoryBytes := uint64(m.cpuCostConfig.MaxMemory * gb)
 	var killTriggerBytes uint64
 
+	killTriggerBytes = uint64(m.memoryUsage * gb)
 	switch m.cpuCostConfig.MemorySource {
-	case config.MemorySourceCgroupTotal,
-		config.MemorySourceCgroupWorkingSet,
-		config.MemorySourceHybrid:
-		// For all cgroup modes, kill on total (safer).
-		if !m.cgroupOK {
-			// Fallback to proc_rss
-			killTriggerBytes = uint64(m.memoryUsage * gb)
-		} else {
+	case config.MemorySourceCgroupTotal:
+		if m.cgroupOK {
 			killTriggerBytes = m.cgroupTotalBytes
 		}
+	case config.MemorySourceCgroupWorkingSet:
+		if m.cgroupOK {
+			killTriggerBytes = m.cgroupWorkingSetBytes
+		}
 	default: // proc_rss
-		killTriggerBytes = uint64(m.memoryUsage * gb)
 	}
 
 	if killTriggerBytes > maxMemoryBytes {

@@ -79,8 +79,6 @@ const (
 	MemorySourceCgroupTotal MemorySource = "cgroup_total"
 	// MemorySourceCgroupWorkingSet uses cgroup total - inactive_file as "effective memory".
 	MemorySourceCgroupWorkingSet MemorySource = "cgroup_workingset"
-	// MemorySourceHybrid uses working set for soft gate and total for hard safety gate.
-	MemorySourceHybrid MemorySource = "hybrid"
 )
 
 type CPUCostConfig struct {
@@ -97,9 +95,8 @@ type CPUCostConfig struct {
 	MaxPulseClients           int     `yaml:"max_pulse_clients"` // pulse client limit for launching chrome
 
 	// Memory source configuration (cgroup-aware memory accounting)
-	MemorySource         MemorySource `yaml:"memory_source"`           // memory measurement source: proc_rss, cgroup_total, cgroup_workingset, hybrid
+	MemorySource         MemorySource `yaml:"memory_source"`           // memory measurement source: proc_rss, cgroup_total, cgroup_workingset
 	MemoryHeadroomGB     *float64     `yaml:"memory_headroom_gb"`      // headroom in GB applied to admission checks (default: 1)
-	MemoryHardHeadroomGB *float64     `yaml:"memory_hard_headroom_gb"` // extra headroom for hybrid mode hard gate (default: 1)
 	MemoryKillGraceSec   int          `yaml:"memory_kill_grace_sec"`   // grace period in update cycles before kill (0 = immediate)
 }
 
@@ -191,7 +188,7 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	// Validate memory source
 	switch c.MemorySource {
-	case MemorySourceProcRSS, MemorySourceCgroupTotal, MemorySourceCgroupWorkingSet, MemorySourceHybrid:
+	case MemorySourceProcRSS, MemorySourceCgroupTotal, MemorySourceCgroupWorkingSet:
 		// valid
 	default:
 		logger.Warnw("unknown memory_source, falling back to proc_rss", nil, "memorySource", c.MemorySource)
@@ -201,11 +198,6 @@ func (c *ServiceConfig) InitDefaults() {
 	if c.MemoryHeadroomGB == nil {
 		defaultHeadroom := 1.0
 		c.MemoryHeadroomGB = &defaultHeadroom
-	}
-	// Default hard headroom of 1 GB for hybrid mode
-	if c.MemoryHardHeadroomGB == nil {
-		defaultHardHeadroom := 1.0
-		c.MemoryHardHeadroomGB = &defaultHardHeadroom
 	}
 
 	if c.MaxUploadQueue <= 0 {
