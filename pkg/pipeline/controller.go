@@ -80,9 +80,14 @@ type Controller struct {
 }
 
 type controllerStats struct {
-	droppedAudioBuffers      atomic.Uint64
-	droppedAudioDuration     atomic.Duration
-	droppedVideoBuffers      atomic.Uint64
+	droppedAudioBuffers atomic.Uint64 // dropped by mixer
+	droppedVideoBuffers atomic.Uint64
+
+	droppedAudioDuration atomic.Duration // dropped by mixer
+
+	queuesDroppedAudioBuffers atomic.Uint64
+
+	droppedAudioBuffersByQueue map[string]uint64
 	droppedVideoBuffersByQueue map[string]uint64
 }
 
@@ -107,6 +112,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
 		stats: controllerStats{
 			droppedVideoBuffersByQueue: make(map[string]uint64),
+			droppedAudioBuffersByQueue: make(map[string]uint64),
 		},
 	}
 	c.callbacks.SetOnError(c.OnError)
@@ -221,6 +227,8 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 				"audio qos stats",
 				"audioBuffersDropped", c.stats.droppedAudioBuffers.Load(),
 				"totalAudioDurationDropped", c.stats.droppedAudioDuration.Load(),
+				"queueDroppedAudioBuffers", c.stats.queuesDroppedAudioBuffers.Load(),
+				"droppedByQueue", c.stats.droppedAudioBuffersByQueue,
 				"requestType", c.RequestType,
 			)
 		}
