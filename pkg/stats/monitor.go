@@ -40,6 +40,7 @@ const (
 	minKillDuration      = 10
 	gb                   = 1024.0 * 1024.0 * 1024.0
 	pulseClientHold      = 4
+	memoryHeadroomGB     = 1.0
 )
 
 type Service interface {
@@ -124,7 +125,7 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 	logger.Infow("memory monitoring configured",
 		"memorySource", conf.CPUCostConfig.MemorySource,
 		"maxMemoryGB", conf.CPUCostConfig.MaxMemory,
-		"memoryHeadroomGB", *conf.CPUCostConfig.MemoryHeadroomGB,
+		"memoryHeadroomGB", memoryHeadroomGB,
 		"memoryKillGraceSec", conf.CPUCostConfig.MemoryKillGraceSec,
 	)
 
@@ -274,7 +275,7 @@ func (m *Monitor) checkMemoryAdmissionLocked() (bool, string) {
 
 	pendingMem := m.pendingMemoryUsage.Load()
 	memoryCost := m.cpuCostConfig.MemoryCost
-	headroom := *m.cpuCostConfig.MemoryHeadroomGB
+	headroom := memoryHeadroomGB
 	maxMem := m.cpuCostConfig.MaxMemory
 
 	switch m.cpuCostConfig.MemorySource {
@@ -573,13 +574,10 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 	m.memoryUsage = float64(totalMemory) / gb
 	m.promProcRSS.Set(float64(totalMemory))
 
-	// Read cgroup memory stats (always, for metrics)
 	m.updateCgroupStats()
 
-	// Update "would reject" metrics for evaluation purposes
 	m.updateWouldRejectMetrics()
 
-	// Memory kill logic based on configured source
 	m.checkMemoryKill(maxMemoryEgress)
 }
 
@@ -616,7 +614,7 @@ func (m *Monitor) updateWouldRejectMetrics() {
 	}
 
 	pendingMem := m.pendingMemoryUsage.Load()
-	headroom := *m.cpuCostConfig.MemoryHeadroomGB
+	headroom := memoryHeadroomGB
 	maxMem := m.cpuCostConfig.MaxMemory
 
 	// Would reject with cgroup_total?

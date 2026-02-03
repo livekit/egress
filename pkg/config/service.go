@@ -96,7 +96,6 @@ type CPUCostConfig struct {
 
 	// Memory source configuration (cgroup-aware memory accounting)
 	MemorySource         MemorySource `yaml:"memory_source"`           // memory measurement source: proc_rss, cgroup_total, cgroup_workingset
-	MemoryHeadroomGB     *float64     `yaml:"memory_headroom_gb"`      // headroom in GB applied to admission checks (default: 1)
 	MemoryKillGraceSec   int          `yaml:"memory_kill_grace_sec"`   // grace period in update cycles before kill (0 = immediate)
 }
 
@@ -193,11 +192,6 @@ func (c *ServiceConfig) InitDefaults() {
 	default:
 		logger.Warnw("unknown memory_source, falling back to proc_rss", nil, "memorySource", c.MemorySource)
 		c.MemorySource = MemorySourceProcRSS
-	}
-	// Default headroom of 1 GB (matches existing memoryBuffer behavior)
-	if c.MemoryHeadroomGB == nil {
-		defaultHeadroom := 1.0
-		c.MemoryHeadroomGB = &defaultHeadroom
 	}
 
 	if c.MaxUploadQueue <= 0 {

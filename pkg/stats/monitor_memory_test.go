@@ -22,17 +22,11 @@ import (
 	"github.com/livekit/egress/pkg/config"
 )
 
-// helper to create float64 pointer
-func ptrFloat64(v float64) *float64 {
-	return &v
-}
-
 func TestCheckMemoryAdmissionLocked_Legacy(t *testing.T) {
 	m := &Monitor{
 		cpuCostConfig: &config.CPUCostConfig{
 			MaxMemory:        10,            // 10 GB
 			MemoryCost:       1,             // 1 GB per request
-			MemoryHeadroomGB: ptrFloat64(1), // 1 GB headroom
 			MemorySource:     config.MemorySourceProcRSS,
 		},
 		memoryUsage: 5, // 5 GB current usage
@@ -54,7 +48,6 @@ func TestCheckMemoryAdmissionLocked_CgroupTotal(t *testing.T) {
 		cpuCostConfig: &config.CPUCostConfig{
 			MaxMemory:        10,
 			MemoryCost:       1,
-			MemoryHeadroomGB: ptrFloat64(1),
 			MemorySource:     config.MemorySourceCgroupTotal,
 		},
 		cgroupTotalBytes: 5 * gb, // 5 GB
@@ -77,7 +70,6 @@ func TestCheckMemoryAdmissionLocked_CgroupWorkingSet(t *testing.T) {
 		cpuCostConfig: &config.CPUCostConfig{
 			MaxMemory:        10,
 			MemoryCost:       1,
-			MemoryHeadroomGB: ptrFloat64(1),
 			MemorySource:     config.MemorySourceCgroupWorkingSet,
 		},
 		cgroupWorkingSetBytes: 5 * gb,
@@ -100,7 +92,6 @@ func TestCheckMemoryAdmissionLocked_FallbackToProcRSS(t *testing.T) {
 		cpuCostConfig: &config.CPUCostConfig{
 			MaxMemory:        10,
 			MemoryCost:       1,
-			MemoryHeadroomGB: ptrFloat64(1),
 			MemorySource:     config.MemorySourceCgroupTotal,
 		},
 		memoryUsage: 5,
@@ -136,7 +127,6 @@ func TestCheckMemoryAdmissionLocked_WithPendingMemory(t *testing.T) {
 		cpuCostConfig: &config.CPUCostConfig{
 			MaxMemory:        10,
 			MemoryCost:       1,
-			MemoryHeadroomGB: ptrFloat64(1),
 			MemorySource:     config.MemorySourceProcRSS,
 		},
 		memoryUsage: 5,
