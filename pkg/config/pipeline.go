@@ -54,9 +54,9 @@ type PipelineConfig struct {
 	OutputCount          atomic.Int32                        `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	Info     *livekit.EgressInfo        `yaml:"-"`
-	Manifest *Manifest                  `yaml:"-"`
-	Reporter storageobs.ProjectReporter `yaml:"-"`
+	Info            *livekit.EgressInfo        `yaml:"-"`
+	Manifest        *Manifest                  `yaml:"-"`
+	StorageReporter storageobs.ProjectReporter `yaml:"-"`
 }
 
 var (
@@ -134,8 +134,8 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 				Level: "info",
 			},
 		},
-		Outputs:  make(map[types.EgressType][]OutputConfig),
-		Reporter: storageobs.NewNoopProjectReporter(),
+		Outputs:         make(map[types.EgressType][]OutputConfig),
+		StorageReporter: storageobs.NewNoopProjectReporter(),
 	}
 
 	if err := yaml.Unmarshal([]byte(confString), p); err != nil {
