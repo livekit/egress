@@ -142,7 +142,7 @@ func (c *Controller) uploadDebugFiles() {
 		}
 
 		if u == nil {
-			u, err = uploader.New(&c.Debug.StorageConfig, nil, c.monitor, nil)
+			u, err = uploader.New(&c.Debug.StorageConfig, nil, c.monitor, nil, nil)
 			if err != nil {
 				logger.Errorw("failed to create uploader", err)
 				return

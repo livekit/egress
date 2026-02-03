@@ -3,6 +3,7 @@
 
 .github/workflows/config.yaml
 build/plugins/
+media-samples/
 test/output/*
 test/*.yaml
 !test/config-sample.yaml
