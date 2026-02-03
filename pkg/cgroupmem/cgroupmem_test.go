@@ -1,4 +1,4 @@
-// Copyright 2023 LiveKit, Inc.
+// Copyright 2026 LiveKit, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -455,8 +455,31 @@ func TestMissingInactiveFile(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "v2", stats.Version)
 	require.Equal(t, uint64(1073741824), stats.TotalBytes)
-	require.Equal(t, uint64(0), stats.InactiveFileBytes)           // missing = 0
-	require.Equal(t, uint64(1073741824), stats.WorkingSetBytes)    // Total - 0 = Total
+	require.Equal(t, uint64(0), stats.InactiveFileBytes)        // missing = 0
+	require.Equal(t, uint64(1073741824), stats.WorkingSetBytes) // Total - 0 = Total
+}
+
+func TestReadV2DoesNotMixPaths(t *testing.T) {
+	fsys := fstest.MapFS{
+		"proc/self/cgroup": &fstest.MapFile{
+			Data: []byte("0::/test\n"),
+		},
+		"proc/self/mountinfo": &fstest.MapFile{
+			Data: []byte("30 25 0:26 / /sys/fs/cgroup rw - cgroup2 cgroup2 rw,nsdelegate\n"),
+		},
+		// cgroup path has memory.current but no memory.stat
+		"sys/fs/cgroup/test/memory.current": &fstest.MapFile{
+			Data: []byte("1073741824\n"),
+		},
+		// root has memory.stat (should NOT be used)
+		"sys/fs/cgroup/memory.stat": &fstest.MapFile{
+			Data: []byte("inactive_file 134217728\n"),
+		},
+	}
+
+	r := NewReaderWithFS(fsys)
+	_, err := r.Read()
+	require.Error(t, err)
 }
 
 func TestJoinCgroupPath(t *testing.T) {
@@ -481,7 +504,7 @@ func TestCsvContains(t *testing.T) {
 	require.True(t, csvContains("cpu,memory", "memory"))
 	require.True(t, csvContains("memory,cpu", "memory"))
 	require.True(t, csvContains("cpu,memory,blkio", "memory"))
-	require.True(t, csvContains("cpu, memory", "memory"))  // with spaces
+	require.True(t, csvContains("cpu, memory", "memory")) // with spaces
 	require.False(t, csvContains("cpu,cpuacct", "memory"))
 	require.False(t, csvContains("memoryleak", "memory")) // exact match only
 	require.False(t, csvContains("", "memory"))

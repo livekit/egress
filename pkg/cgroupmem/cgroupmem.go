@@ -172,46 +172,24 @@ func readV2(fsys fs.FS) (Stats, error) {
 		cgroupPath = "" // try default fallback
 	}
 
-	// Build paths to memory files
-	mountpoint := "/sys/fs/cgroup"
-	if cgroupPath != "" {
-		if mp, err := getCgroupMountpointV2(fsys); err == nil {
-			mountpoint = mp
-		}
+	basePath, err := resolveBaseCgroupPathV2(fsys, cgroupPath)
+	if err != nil {
+		return Stats{}, err
 	}
 
-	var totalPath, statPath string
-	if cgroupPath != "" {
-		totalPath = joinCgroupPath(mountpoint, cgroupPath, "memory.current")
-		statPath = joinCgroupPath(mountpoint, cgroupPath, "memory.stat")
-	} else {
-		totalPath = filepath.Join(mountpoint, "memory.current")
-		statPath = filepath.Join(mountpoint, "memory.stat")
-	}
+	totalPath := filepath.Join(basePath, "memory.current")
+	statPath := filepath.Join(basePath, "memory.stat")
 
 	// Read total memory
 	totalBytes, err := readUint64File(fsys, totalPath)
 	if err != nil {
-		if cgroupPath != "" && errors.Is(err, os.ErrNotExist) {
-			totalPath = filepath.Join(mountpoint, "memory.current")
-			statPath = filepath.Join(mountpoint, "memory.stat")
-			totalBytes, err = readUint64File(fsys, totalPath)
-		}
-		if err != nil {
-			return Stats{}, err
-		}
+		return Stats{}, err
 	}
 
 	// Read inactive_file from memory.stat (default to 0 if not found)
 	inactiveFile, err := readStatValue(fsys, statPath, "inactive_file")
-	if err != nil {
-		if cgroupPath != "" && errors.Is(err, os.ErrNotExist) {
-			statPath = filepath.Join(mountpoint, "memory.stat")
-			inactiveFile, err = readStatValue(fsys, statPath, "inactive_file")
-		}
-		if err != nil && !errors.Is(err, ErrKeyNotFound) {
-			return Stats{}, err
-		}
+	if err != nil && !errors.Is(err, ErrKeyNotFound) {
+		return Stats{}, err
 	}
 
 	workingSet := totalBytes
@@ -236,59 +214,28 @@ func readV1(fsys fs.FS) (Stats, error) {
 		cgroupPath = "" // try default fallback
 	}
 
-	// Build paths to memory files
-	mountpoint := "/sys/fs/cgroup/memory"
-	if cgroupPath != "" {
-		if mp, err := getCgroupMountpointV1(fsys); err == nil {
-			mountpoint = mp
-		}
+	basePath, err := resolveBaseCgroupPathV1(fsys, cgroupPath)
+	if err != nil {
+		return Stats{}, err
 	}
 
-	var totalPath, statPath string
-	if cgroupPath != "" {
-		totalPath = joinCgroupPath(mountpoint, cgroupPath, "memory.usage_in_bytes")
-		statPath = joinCgroupPath(mountpoint, cgroupPath, "memory.stat")
-	} else {
-		totalPath = filepath.Join(mountpoint, "memory.usage_in_bytes")
-		statPath = filepath.Join(mountpoint, "memory.stat")
-	}
+	totalPath := filepath.Join(basePath, "memory.usage_in_bytes")
+	statPath := filepath.Join(basePath, "memory.stat")
 
 	// Read total memory
 	totalBytes, err := readUint64File(fsys, totalPath)
 	if err != nil {
-		if cgroupPath != "" && errors.Is(err, os.ErrNotExist) {
-			totalPath = filepath.Join(mountpoint, "memory.usage_in_bytes")
-			statPath = filepath.Join(mountpoint, "memory.stat")
-			totalBytes, err = readUint64File(fsys, totalPath)
-		}
-		if err != nil {
-			return Stats{}, err
-		}
+		return Stats{}, err
 	}
 
 	// Read inactive_file from memory.stat (try total_inactive_file first, then inactive_file)
 	// Default to 0 if neither is found (some environments may not expose this)
 	inactiveFile, err := readStatValue(fsys, statPath, "total_inactive_file")
-	if err != nil {
-		if cgroupPath != "" && errors.Is(err, os.ErrNotExist) {
-			statPath = filepath.Join(mountpoint, "memory.stat")
-			inactiveFile, err = readStatValue(fsys, statPath, "total_inactive_file")
-		}
-	}
-	if err != nil {
-		if !errors.Is(err, ErrKeyNotFound) {
-			return Stats{}, err
-		}
+	if errors.Is(err, ErrKeyNotFound) {
 		inactiveFile, err = readStatValue(fsys, statPath, "inactive_file")
-		if err != nil {
-			if cgroupPath != "" && errors.Is(err, os.ErrNotExist) {
-				statPath = filepath.Join(mountpoint, "memory.stat")
-				inactiveFile, err = readStatValue(fsys, statPath, "inactive_file")
-			}
-			if err != nil && !errors.Is(err, ErrKeyNotFound) {
-				return Stats{}, err
-			}
-		}
+	}
+	if err != nil && !errors.Is(err, ErrKeyNotFound) {
+		return Stats{}, err
 	}
 
 	workingSet := totalBytes
@@ -304,6 +251,48 @@ func readV1(fsys fs.FS) (Stats, error) {
 		TotalPath:         totalPath,
 		StatPath:          statPath,
 	}, nil
+}
+
+// resolveBaseCgroupPathV2 resolves the base directory to read v2 files from.
+func resolveBaseCgroupPathV2(fsys fs.FS, cgroupPath string) (string, error) {
+	mountpoint := "/sys/fs/cgroup"
+	if mp, err := getCgroupMountpointV2(fsys); err == nil {
+		mountpoint = mp
+	}
+
+	if cgroupPath != "" {
+		candidate := joinCgroupPath(mountpoint, cgroupPath, "")
+		if _, err := fs.Stat(fsys, toFSPath(filepath.Join(candidate, "memory.current"))); err == nil {
+			return candidate, nil
+		}
+	}
+
+	if _, err := fs.Stat(fsys, toFSPath(filepath.Join(mountpoint, "memory.current"))); err == nil {
+		return mountpoint, nil
+	}
+
+	return "", fmt.Errorf("cgroup v2 base path not found at %s", mountpoint)
+}
+
+// resolveBaseCgroupPathV1 resolves the base directory to read v1 files from.
+func resolveBaseCgroupPathV1(fsys fs.FS, cgroupPath string) (string, error) {
+	mountpoint := "/sys/fs/cgroup/memory"
+	if mp, err := getCgroupMountpointV1(fsys); err == nil {
+		mountpoint = mp
+	}
+
+	if cgroupPath != "" {
+		candidate := joinCgroupPath(mountpoint, cgroupPath, "")
+		if _, err := fs.Stat(fsys, toFSPath(filepath.Join(candidate, "memory.usage_in_bytes"))); err == nil {
+			return candidate, nil
+		}
+	}
+
+	if _, err := fs.Stat(fsys, toFSPath(filepath.Join(mountpoint, "memory.usage_in_bytes"))); err == nil {
+		return mountpoint, nil
+	}
+
+	return "", fmt.Errorf("cgroup v1 base path not found at %s", mountpoint)
 }
 
 // getCgroupPathV2 parses /proc/self/cgroup to find the cgroup path for v2.
