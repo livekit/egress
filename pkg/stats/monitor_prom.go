@@ -78,7 +78,7 @@ func (m *Monitor) promCanAcceptRequest() float64 {
 	m.mu.Lock()
 	_, canAccept := m.canAcceptRequestLocked(&rpc.StartEgressRequest{
 		Request: &rpc.StartEgressRequest_Web{Web: &livekit.WebEgressRequest{}},
-	}, false)
+	})
 	m.mu.Unlock()
 
 	if !m.svc.IsDisabled() && canAccept {

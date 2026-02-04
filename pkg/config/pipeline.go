@@ -28,15 +28,16 @@ import (
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/tempo"
-	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability/storageobs"
 	"github.com/livekit/protocol/rpc"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/tempo"
+	"github.com/livekit/egress/pkg/types"
 )
 
 type PipelineConfig struct {
@@ -578,10 +579,7 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 
 // RoomCompositeUsesSDKSource reports whether a room composite request will use
 // the SDK source (no Chrome/Pulse) instead of Web
-func RoomCompositeUsesSDKSource(req *livekit.RoomCompositeEgressRequest, enableSDK bool) bool {
-	if !enableSDK {
-		return false
-	}
+func RoomCompositeUsesSDKSource(req *livekit.RoomCompositeEgressRequest) bool {
 	if req.Layout != "" {
 		return false
 	}
@@ -595,7 +593,7 @@ func RoomCompositeUsesSDKSource(req *livekit.RoomCompositeEgressRequest, enableS
 }
 
 func (p *PipelineConfig) getRoomCompositeRequestType(req *livekit.RoomCompositeEgressRequest) types.SourceType {
-	if !RoomCompositeUsesSDKSource(req, p.EnableRoomCompositeSDKSource) {
+	if !RoomCompositeUsesSDKSource(req) {
 		return types.SourceTypeWeb
 	}
 	p.AudioMixing = req.AudioMixing

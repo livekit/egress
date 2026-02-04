@@ -24,13 +24,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils/hwstats"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/source/pulse"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/utils/hwstats"
 )
 
 const (
@@ -149,9 +150,9 @@ func (m *Monitor) validateCPUConfig() error {
 	return nil
 }
 
-func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest, sdkRoomCompositeEnabled bool) bool {
+func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
 	m.mu.Lock()
-	fields, canAccept := m.canAcceptRequestLocked(req, sdkRoomCompositeEnabled)
+	fields, canAccept := m.canAcceptRequestLocked(req)
 	m.mu.Unlock()
 
 	logger.Debugw("cpu check", fields...)
@@ -165,7 +166,7 @@ func (m *Monitor) CanAcceptWebRequest() bool {
 	return m.canAcceptWebLocked()
 }
 
-func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest, sdkRoomCompositeEnabled bool) ([]interface{}, bool) {
+func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interface{}, bool) {
 	total, available, pending, used := m.getCPUUsageLocked()
 	fields := []interface{}{
 		"total", total,
@@ -187,7 +188,7 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest, sdkRoomCom
 	required := req.EstimatedCpu
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		useSDK := config.RoomCompositeUsesSDKSource(r.RoomComposite, sdkRoomCompositeEnabled)
+		useSDK := config.RoomCompositeUsesSDKSource(r.RoomComposite)
 		if !useSDK && !m.canAcceptWebLocked() {
 			fields = append(fields, "canAccept", false, "reason", "pulse clients")
 			return fields, false
@@ -245,14 +246,14 @@ func (m *Monitor) canAcceptWebLocked() bool {
 	return clients+int(m.pendingPulseClients.Load())+pulseClientHold <= m.cpuCostConfig.MaxPulseClients
 }
 
-func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest, sdkRoomCompositeEnabled bool) error {
+func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.pending[req.EgressId] != nil {
 		return errors.ErrEgressAlreadyExists
 	}
-	if _, ok := m.canAcceptRequestLocked(req, sdkRoomCompositeEnabled); !ok {
+	if _, ok := m.canAcceptRequestLocked(req); !ok {
 		logger.Warnw("can not accept request", nil)
 		return errors.ErrNotEnoughCPU
 	}
@@ -264,7 +265,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest, sdkRoomCompositeEna
 
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		useSDK := config.RoomCompositeUsesSDKSource(r.RoomComposite, sdkRoomCompositeEnabled)
+		useSDK := config.RoomCompositeUsesSDKSource(r.RoomComposite)
 		if !useSDK {
 			m.webRequests.Inc()
 			countedAsWeb = true
