@@ -26,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
@@ -55,12 +54,12 @@ type Runner struct {
 	AzureUpload           *livekit.AzureBlobUpload `yaml:"-"`
 
 	// testing config
-	FilePrefix string `yaml:"file_prefix"`
-	RoomName   string `yaml:"room_name"`
+	FilePrefix   string `yaml:"file_prefix"`
+	RoomName     string `yaml:"room_name"`
 	RoomBaseName string `yaml:"-"`
-	Muting     bool   `yaml:"muting"`
-	Dotfiles   bool   `yaml:"dot_files"`
-	Short      bool   `yaml:"short"`
+	Muting       bool   `yaml:"muting"`
+	Dotfiles     bool   `yaml:"dot_files"`
+	Short        bool   `yaml:"short"`
 
 	// flagset used to determine which tests to run
 	shouldRun uint `yaml:"-"`
@@ -190,7 +189,7 @@ func NewRunner(t *testing.T) *Runner {
 	return r
 }
 
-func (r *Runner) connectRoom(t *testing.T, roomName string, codecs []webrtc.RTPCodecParameters) {
+func (r *Runner) connectRoom(t *testing.T, roomName string, codecs []livekit.Codec) {
 	if r.room != nil {
 		r.room.Disconnect()
 	}
