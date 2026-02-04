@@ -519,6 +519,25 @@ func (c *Controller) OnError(err error) {
 }
 
 func (c *Controller) Close() {
+	const closeSlowThreshold = 1 * time.Hour
+	closeStart := time.Now()
+	closeDone := make(chan struct{})
+	defer close(closeDone)
+
+	go func() {
+		select {
+		case <-closeDone:
+			return
+		case <-time.After(closeSlowThreshold):
+			logger.Warnw("Close() taking longer than expected", nil,
+				"threshold", closeSlowThreshold,
+				"elapsed", time.Since(closeStart),
+				"egressID", c.Info.EgressId,
+				"sourceType", c.SourceType,
+			)
+		}
+	}()
+
 	c.stopOutputSizeMonitor()
 
 	if c.SourceType == types.SourceTypeSDK || !c.eosSent.IsBroken() {
