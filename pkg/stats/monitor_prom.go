@@ -69,23 +69,7 @@ func (m *Monitor) initPrometheus() {
 		Namespace:   "livekit",
 		Subsystem:   "egress",
 		Name:        "cgroup_memory_bytes",
-		Help:        "Cgroup total memory usage in bytes",
-		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
-	})
-
-	m.promCgroupInactiveFile = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "cgroup_inactive_file_bytes",
-		Help:        "Cgroup inactive file memory in bytes",
-		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
-	})
-
-	m.promCgroupWorkingSet = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "cgroup_workingset_bytes",
-		Help:        "Cgroup working set (total - inactive_file) in bytes",
+		Help:        "Cgroup memory usage in bytes",
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	})
 
@@ -105,28 +89,20 @@ func (m *Monitor) initPrometheus() {
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	})
 
-	m.promWouldRejectCgroupTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.promWouldRejectCgroupUsage = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   "livekit",
 		Subsystem:   "egress",
-		Name:        "would_reject_cgroup_total",
-		Help:        "Whether request would be rejected using cgroup_total mode (1) or not (0)",
-		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
-	})
-
-	m.promWouldRejectCgroupWS = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "would_reject_cgroup_workingset",
-		Help:        "Whether request would be rejected using cgroup_workingset mode (1) or not (0)",
+		Name:        "would_reject_cgroup_usage",
+		Help:        "Whether request would be rejected using cgroup_usage mode (1) or not (0)",
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	})
 
 	prometheus.MustRegister(
 		promNodeAvailable, promCanAcceptRequest, promIsDisabled, promIsTerminating,
 		m.promCPULoad, m.requestGauge,
-		m.promCgroupMemory, m.promCgroupInactiveFile, m.promCgroupWorkingSet,
+		m.promCgroupMemory,
 		m.promCgroupReadSuccess, m.promProcRSS,
-		m.promWouldRejectCgroupTotal, m.promWouldRejectCgroupWS,
+		m.promWouldRejectCgroupUsage,
 	)
 }
 
