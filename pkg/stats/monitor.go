@@ -534,7 +534,6 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 		}
 	}
 
-	// Collect proc RSS per-process memory stats
 	totalMemory := 0
 	maxMemory := 0
 	var maxMemoryEgress string
