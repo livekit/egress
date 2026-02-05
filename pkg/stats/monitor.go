@@ -69,15 +69,15 @@ type Monitor struct {
 	pendingPulseClients atomic.Int32
 	pendingMemoryUsage  atomic.Float64
 
-	mu                 deadlock.Mutex
-	highCPUDuration    int
-	highMemoryDuration int
-	pending            map[string]*processStats
-	procStats          map[int]*processStats
-	memoryUsage        float64
-	cgroupUsageBytes   uint64
-	cgroupOK           bool
-	cgroupErrorLogged  atomic.Bool
+	mu                deadlock.Mutex
+	highCPUDuration   int
+	highMemoryStart   time.Time
+	pending           map[string]*processStats
+	procStats         map[int]*processStats
+	memoryUsage       float64
+	cgroupUsageBytes  uint64
+	cgroupOK          bool
+	cgroupErrorLogged atomic.Bool
 }
 
 type processStats struct {
@@ -659,10 +659,10 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string) {
 
 	if killTriggerBytes > maxMemoryBytes {
 		// Apply grace period if configured.
-		// Note: highMemoryDuration counts update cycles (typically 1 second each),
-		// so MemoryKillGraceSec is approximate.
-		m.highMemoryDuration++
-		if m.highMemoryDuration > m.cpuCostConfig.MemoryKillGraceSec {
+		if m.highMemoryStart.IsZero() {
+			m.highMemoryStart = time.Now()
+		}
+		if time.Since(m.highMemoryStart) >= time.Duration(m.cpuCostConfig.MemoryKillGraceSec)*time.Second {
 			killTriggerGB := float64(killTriggerBytes) / gb
 			logger.Warnw("high memory usage", nil,
 				"source", m.cpuCostConfig.MemorySource,
@@ -672,9 +672,9 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string) {
 			)
 			// Report the actual memory that triggered the kill, not per-process max
 			m.svc.KillProcess(maxMemoryEgress, errors.ErrOOM(killTriggerGB))
-			m.highMemoryDuration = 0
+			m.highMemoryStart = time.Time{}
 		}
 	} else {
-		m.highMemoryDuration = 0
+		m.highMemoryStart = time.Time{}
 	}
 }
