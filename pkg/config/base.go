@@ -90,9 +90,7 @@ type LatencyConfig struct {
 	RTPMaxAllowedTsDiff             time.Duration `ymal:"rtp_max_allowed_ts_diff"`                       // max allowed PTS discont. for a RTP stream, before applying PTS alignment
 	RTPMaxDriftAdjustment           time.Duration `ymal:"rtp_max_drift_adjustment,omitempty"`            // max allowed drift adjustment for a RTP stream
 	RTPDriftAdjustmentWindowPercent float64       `ymal:"rtp_drift_adjustment_window_percent,omitempty"` // how much to throttle drift adjustment, 0.0 disables it
-	OldPacketThreshold              time.Duration `yaml:"old_packet_threshold,omitempty"`                // syncrhonizer drops packets older than this, 0 to disable packet drops
-	RTCPSenderReportRebaseEnabled   bool          `yaml:"rtcp_sender_report_rebase_enabled,omitempty"`   // synchronizer will rebase RTCP Sender Report to local clock
-	PacketBurstEstimatorEnabled     bool          `yaml:"packet_burst_estimator_enabled,omitempty"`      // enable burst estimator for improving track synchronization
+	OldPacketThreshold time.Duration `yaml:"old_packet_threshold,omitempty"` // syncrhonizer drops packets older than this, 0 to disable packet drops
 }
 
 type AudioTempoController struct {

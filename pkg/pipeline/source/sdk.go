@@ -95,11 +95,12 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		}),
 	}
 
-	if p.Latency.RTCPSenderReportRebaseEnabled {
-		opts = append(opts, synchronizer.WithRTCPSenderReportRebaseEnabled())
-	}
-	if p.Latency.PacketBurstEstimatorEnabled {
+	if p.RequestType == types.RequestTypeRoomComposite {
+		// Enable Packet Burst Estimator for Room Composite requests
 		opts = append(opts, synchronizer.WithStartGate())
+	} else {
+		// Enable Sender Report Rebase except for Room Composite
+		opts = append(opts, synchronizer.WithRTCPSenderReportRebaseEnabled())
 	}
 	// time provider is not available yet, will be set later
 	// add some leeway to the mixer latency
