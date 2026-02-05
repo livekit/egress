@@ -122,14 +122,6 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 		m.cgroupMemStats = memStats
 	}
 
-	// Log memory configuration at startup
-	logger.Infow("memory monitoring configured",
-		"memorySource", conf.CPUCostConfig.MemorySource,
-		"maxMemoryGB", conf.CPUCostConfig.MaxMemory,
-		"memoryHeadroomGB", memoryHeadroomGB,
-		"memoryKillGraceSec", conf.CPUCostConfig.MemoryKillGraceSec,
-	)
-
 	return m, nil
 }
 
