@@ -55,10 +55,10 @@ type Monitor struct {
 	cpuCostConfig *config.CPUCostConfig
 
 	promCPULoad                prometheus.Gauge
-	promCgroupMemory          prometheus.Gauge
-	promCgroupReadSuccess     prometheus.Gauge
-	promProcRSS               prometheus.Gauge
-	promWouldRejectCgroupUsage prometheus.Gauge
+	promCgroupMemory      prometheus.Gauge
+	promCgroupReadSuccess prometheus.Gauge
+	promProcRSS           prometheus.Gauge
+	promWouldRejectCgroup prometheus.Gauge
 	requestGauge               *prometheus.GaugeVec
 
 	svc                 Service
@@ -69,15 +69,15 @@ type Monitor struct {
 	pendingPulseClients atomic.Int32
 	pendingMemoryUsage  atomic.Float64
 
-	mu                    deadlock.Mutex
-	highCPUDuration       int
-	highMemoryDuration    int
-	pending               map[string]*processStats
-	procStats             map[int]*processStats
-	memoryUsage           float64
-	cgroupUsageBytes uint64
-	cgroupOK              bool
-	cgroupErrorLogged     atomic.Bool
+	mu                 deadlock.Mutex
+	highCPUDuration    int
+	highMemoryDuration int
+	pending            map[string]*processStats
+	procStats          map[int]*processStats
+	memoryUsage        float64
+	cgroupUsageBytes   uint64
+	cgroupOK           bool
+	cgroupErrorLogged  atomic.Bool
 }
 
 type processStats struct {
@@ -280,14 +280,14 @@ func (m *Monitor) checkMemoryAdmissionLocked() (bool, string) {
 	maxMem := m.cpuCostConfig.MaxMemory
 
 	switch m.cpuCostConfig.MemorySource {
-	case config.MemorySourceCgroupUsage:
+	case config.MemorySourceCgroup:
 		if !m.cgroupOK {
 			// Fallback to proc_rss
 			return m.checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
 		}
 		cgroupGB := float64(m.cgroupUsageBytes) / gb
 		if cgroupGB+pendingMem+memoryCost+headroom >= maxMem {
-			return true, "memory_cgroup_usage"
+			return true, "memory_cgroup"
 		}
 
 	default: // proc_rss
@@ -612,12 +612,12 @@ func (m *Monitor) updateWouldRejectMetrics() {
 	headroom := memoryHeadroomGB
 	maxMem := m.cpuCostConfig.MaxMemory
 
-	// Would reject with cgroup_usage?
+	// Would reject with cgroup?
 	cgroupUsageGB := float64(m.cgroupUsageBytes) / gb
 	if cgroupUsageGB+pendingMem+m.cpuCostConfig.MemoryCost+headroom >= maxMem {
-		m.promWouldRejectCgroupUsage.Set(1)
+		m.promWouldRejectCgroup.Set(1)
 	} else {
-		m.promWouldRejectCgroupUsage.Set(0)
+		m.promWouldRejectCgroup.Set(0)
 	}
 }
 
@@ -632,7 +632,7 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string) {
 
 	killTriggerBytes = uint64(m.memoryUsage * gb)
 	switch m.cpuCostConfig.MemorySource {
-	case config.MemorySourceCgroupUsage:
+	case config.MemorySourceCgroup:
 		if m.cgroupOK {
 			killTriggerBytes = m.cgroupUsageBytes
 		}

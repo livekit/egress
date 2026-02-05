@@ -89,11 +89,11 @@ func (m *Monitor) initPrometheus() {
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	})
 
-	m.promWouldRejectCgroupUsage = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.promWouldRejectCgroup = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   "livekit",
 		Subsystem:   "egress",
-		Name:        "would_reject_cgroup_usage",
-		Help:        "Whether request would be rejected using cgroup_usage mode (1) or not (0)",
+		Name:        "would_reject_cgroup",
+		Help:        "Whether request would be rejected using cgroup mode (1) or not (0)",
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	})
 
@@ -102,7 +102,7 @@ func (m *Monitor) initPrometheus() {
 		m.promCPULoad, m.requestGauge,
 		m.promCgroupMemory,
 		m.promCgroupReadSuccess, m.promProcRSS,
-		m.promWouldRejectCgroupUsage,
+		m.promWouldRejectCgroup,
 	)
 }
 

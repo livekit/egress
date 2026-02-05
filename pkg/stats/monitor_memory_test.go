@@ -48,7 +48,7 @@ func TestCheckMemoryAdmissionLocked_CgroupTotal(t *testing.T) {
 		cpuCostConfig: &config.CPUCostConfig{
 			MaxMemory:        10,
 			MemoryCost:       1,
-			MemorySource:     config.MemorySourceCgroupUsage,
+			MemorySource:     config.MemorySourceCgroup,
 		},
 		cgroupUsageBytes: 5 * gb, // 5 GB
 		cgroupOK:         true,
@@ -62,7 +62,7 @@ func TestCheckMemoryAdmissionLocked_CgroupTotal(t *testing.T) {
 	m.cgroupUsageBytes = 8 * gb // 8 + 0 + 1 + 1 = 10 >= 10
 	reject, reason := m.checkMemoryAdmissionLocked()
 	require.True(t, reject)
-	require.Equal(t, "memory_cgroup_usage", reason)
+	require.Equal(t, "memory_cgroup", reason)
 }
 
 func TestCheckMemoryAdmissionLocked_CgroupWorkingSet(t *testing.T) {
@@ -70,7 +70,7 @@ func TestCheckMemoryAdmissionLocked_CgroupWorkingSet(t *testing.T) {
 		cpuCostConfig: &config.CPUCostConfig{
 			MaxMemory:        10,
 			MemoryCost:       1,
-			MemorySource:     config.MemorySourceCgroupUsage,
+			MemorySource:     config.MemorySourceCgroup,
 		},
 		cgroupUsageBytes: 5 * gb,
 		cgroupOK:              true,
@@ -84,7 +84,7 @@ func TestCheckMemoryAdmissionLocked_CgroupWorkingSet(t *testing.T) {
 	m.cgroupUsageBytes = 8 * gb
 	reject, reason := m.checkMemoryAdmissionLocked()
 	require.True(t, reject)
-	require.Equal(t, "memory_cgroup_usage", reason)
+	require.Equal(t, "memory_cgroup", reason)
 }
 
 func TestCheckMemoryAdmissionLocked_FallbackToProcRSS(t *testing.T) {
@@ -92,7 +92,7 @@ func TestCheckMemoryAdmissionLocked_FallbackToProcRSS(t *testing.T) {
 		cpuCostConfig: &config.CPUCostConfig{
 			MaxMemory:        10,
 			MemoryCost:       1,
-			MemorySource:     config.MemorySourceCgroupUsage,
+			MemorySource:     config.MemorySourceCgroup,
 		},
 		memoryUsage: 5,
 		cgroupOK:    false, // cgroup not available
@@ -112,7 +112,7 @@ func TestCheckMemoryAdmissionLocked_NoMaxMemory(t *testing.T) {
 	m := &Monitor{
 		cpuCostConfig: &config.CPUCostConfig{
 			MaxMemory:    0, // disabled
-			MemorySource: config.MemorySourceCgroupUsage,
+			MemorySource: config.MemorySourceCgroup,
 		},
 		memoryUsage: 100,
 	}

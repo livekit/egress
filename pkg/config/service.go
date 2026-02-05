@@ -75,8 +75,8 @@ type MemorySource string
 const (
 	// MemorySourceProcRSS uses per-process RSS sum from hwstats (existing behavior).
 	MemorySourceProcRSS MemorySource = "proc_rss"
-	// MemorySourceCgroupUsage uses cgroup-aware memory usage (working set).
-	MemorySourceCgroupUsage MemorySource = "cgroup_usage"
+	// MemorySourceCgroup uses cgroup-aware memory usage (working set).
+	MemorySourceCgroup MemorySource = "cgroup"
 )
 
 type CPUCostConfig struct {
@@ -93,7 +93,7 @@ type CPUCostConfig struct {
 	MaxPulseClients           int     `yaml:"max_pulse_clients"` // pulse client limit for launching chrome
 
 	// Memory source configuration (cgroup-aware memory accounting)
-	MemorySource         MemorySource `yaml:"memory_source"`           // memory measurement source: proc_rss, cgroup_usage
+	MemorySource         MemorySource `yaml:"memory_source"`           // memory measurement source: proc_rss, cgroup
 	MemoryKillGraceSec   int          `yaml:"memory_kill_grace_sec"`   // grace period in update cycles before kill (0 = immediate)
 }
 
@@ -185,7 +185,7 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	// Validate memory source
 	switch c.MemorySource {
-	case MemorySourceProcRSS, MemorySourceCgroupUsage:
+	case MemorySourceProcRSS, MemorySourceCgroup:
 		// valid
 	default:
 		logger.Warnw("unknown memory_source, falling back to proc_rss", nil, "memorySource", c.MemorySource)
