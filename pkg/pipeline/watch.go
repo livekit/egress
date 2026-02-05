@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/source"
 )
@@ -284,14 +285,20 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 	s := msg.GetStructure()
 	if s != nil {
 		switch s.Name() {
-		case builder.LeakyQueueStatsMessage:
+		case gstreamer.LeakyQueueStatsMessage:
 			queueName, dropped, err := parseLeakyQueueStats(s)
 			if err != nil {
 				logger.Debugw("failed to parse leaky queue stats message", err)
 				return nil
 			}
-			c.stats.droppedVideoBuffers.Add(dropped)
-			c.stats.droppedVideoBuffersByQueue[queueName] = dropped
+			if strings.HasPrefix(queueName, "video") {
+				c.stats.droppedVideoBuffers.Add(dropped)
+				c.stats.droppedVideoBuffersByQueue[queueName] = dropped
+			}
+			if strings.HasPrefix(queueName, "audio") {
+				c.stats.queuesDroppedAudioBuffers.Add(dropped)
+				c.stats.droppedAudioBuffersByQueue[queueName] = dropped
+			}
 
 		case msgFirstSampleMetadata:
 			startDate, err := getFirstSampleMetadataFromGstStructure(s)
@@ -402,8 +409,8 @@ func (c *Controller) handleMessageQoS(msg *gst.Message) {
 }
 
 func (c *Controller) handleAudioMixerQoS(qosValues *gst.QoSValues) {
-	c.stats.droppedAudioBuffers.Inc()
-	c.stats.droppedAudioDuration.Add(qosValues.Duration)
+	c.stats.mixerDroppedAudioBuffers.Inc()
+	c.stats.mixerDroppedAudioDuration.Add(qosValues.Duration)
 }
 
 // Debug info comes in the following format:

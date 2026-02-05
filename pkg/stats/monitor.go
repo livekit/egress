@@ -87,10 +87,11 @@ type processStats struct {
 	lastCPU    float64
 	allowedCPU float64
 
-	totalCPU   float64
-	cpuCounter int
-	maxCPU     float64
-	maxMemory  int
+	totalCPU     float64
+	cpuCounter   int
+	maxCPU       float64
+	maxMemory    int
+	countedAsWeb bool
 }
 
 func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
@@ -164,9 +165,9 @@ func (m *Monitor) validateCPUConfig() error {
 	return nil
 }
 
-func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest) bool {
+func (m *Monitor) CanAcceptRequest(req *rpc.StartEgressRequest, sdkRoomCompositeEnabled bool) bool {
 	m.mu.Lock()
-	fields, canAccept := m.canAcceptRequestLocked(req)
+	fields, canAccept := m.canAcceptRequestLocked(req, sdkRoomCompositeEnabled)
 	m.mu.Unlock()
 
 	logger.Debugw("cpu check", fields...)
@@ -180,7 +181,7 @@ func (m *Monitor) CanAcceptWebRequest() bool {
 	return m.canAcceptWebLocked()
 }
 
-func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interface{}, bool) {
+func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest, sdkRoomCompositeEnabled bool) ([]interface{}, bool) {
 	total, available, pending, used := m.getCPUUsageLocked()
 	fields := []interface{}{
 		"total", total,
@@ -202,7 +203,8 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 	required := req.EstimatedCpu
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		if !m.canAcceptWebLocked() {
+		useSDK := config.RoomCompositeUsesSDKSource(r.RoomComposite, sdkRoomCompositeEnabled)
+		if !useSDK && !m.canAcceptWebLocked() {
 			fields = append(fields, "canAccept", false, "reason", "pulse clients")
 			return fields, false
 		}
@@ -298,14 +300,14 @@ func (m *Monitor) checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, 
 	return false, ""
 }
 
-func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
+func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest, sdkRoomCompositeEnabled bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.pending[req.EgressId] != nil {
 		return errors.ErrEgressAlreadyExists
 	}
-	if _, ok := m.canAcceptRequestLocked(req); !ok {
+	if _, ok := m.canAcceptRequestLocked(req, sdkRoomCompositeEnabled); !ok {
 		logger.Warnw("can not accept request", nil)
 		return errors.ErrNotEnoughCPU
 	}
@@ -313,18 +315,25 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.requests.Inc()
 	var cpuHold float64
 	var pulseClients int32
+	var countedAsWeb bool
+
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		m.webRequests.Inc()
-		pulseClients = pulseClientHold
+		useSDK := config.RoomCompositeUsesSDKSource(r.RoomComposite, sdkRoomCompositeEnabled)
+		if !useSDK {
+			m.webRequests.Inc()
+			countedAsWeb = true
+			pulseClients = pulseClientHold
+		}
 		if r.RoomComposite.AudioOnly {
 			cpuHold = m.cpuCostConfig.AudioRoomCompositeCpuCost
 		} else {
 			cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
 		}
 	case *rpc.StartEgressRequest_Web:
-		m.webRequests.Inc()
 		pulseClients = pulseClientHold
+		m.webRequests.Inc()
+		countedAsWeb = true
 		if r.Web.AudioOnly {
 			cpuHold = m.cpuCostConfig.AudioWebCpuCost
 		} else {
@@ -339,9 +348,10 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	}
 
 	ps := &processStats{
-		egressID:   req.EgressId,
-		pendingCPU: cpuHold,
-		allowedCPU: cpuHold,
+		egressID:     req.EgressId,
+		pendingCPU:   cpuHold,
+		allowedCPU:   cpuHold,
+		countedAsWeb: countedAsWeb,
 	}
 
 	m.pendingMemoryUsage.Add(m.cpuCostConfig.MemoryCost)
@@ -376,6 +386,7 @@ func (m *Monitor) UpdatePID(egressID string, pid int) {
 		ps.maxCPU = existing.maxCPU
 		ps.totalCPU = existing.totalCPU
 		ps.cpuCounter = existing.cpuCounter
+		ps.countedAsWeb = existing.countedAsWeb
 	}
 	m.procStats[pid] = ps
 }
@@ -399,11 +410,14 @@ func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	ps := m.pending[req.EgressId]
 	delete(m.pending, req.EgressId)
 	m.requests.Dec()
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite, *rpc.StartEgressRequest_Web:
-		m.webRequests.Dec()
+		if ps != nil && ps.countedAsWeb {
+			m.webRequests.Dec()
+		}
 	}
 }
 
@@ -411,10 +425,24 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64, in
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	var countedAsWeb bool
+	if ps := m.pending[req.EgressId]; ps != nil {
+		countedAsWeb = ps.countedAsWeb
+	} else {
+		for _, s := range m.procStats {
+			if s.egressID == req.EgressId {
+				countedAsWeb = s.countedAsWeb
+				break
+			}
+		}
+	}
+
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Sub(1)
-		m.webRequests.Dec()
+		if countedAsWeb {
+			m.webRequests.Dec()
+		}
 	case *rpc.StartEgressRequest_Web:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
 		m.webRequests.Dec()
