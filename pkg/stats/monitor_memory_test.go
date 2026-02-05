@@ -25,9 +25,9 @@ import (
 func TestCheckMemoryAdmissionLocked_Legacy(t *testing.T) {
 	m := &Monitor{
 		cpuCostConfig: &config.CPUCostConfig{
-			MaxMemory:        10,            // 10 GB
-			MemoryCost:       1,             // 1 GB per request
-			MemorySource:     config.MemorySourceProcRSS,
+			MaxMemory:    10, // 10 GB
+			MemoryCost:   1,  // 1 GB per request
+			MemorySource: config.MemorySourceProcRSS,
 		},
 		memoryUsage: 5, // 5 GB current usage
 	}
@@ -43,37 +43,15 @@ func TestCheckMemoryAdmissionLocked_Legacy(t *testing.T) {
 	require.Equal(t, "memory", reason)
 }
 
-func TestCheckMemoryAdmissionLocked_CgroupTotal(t *testing.T) {
-	m := &Monitor{
-		cpuCostConfig: &config.CPUCostConfig{
-			MaxMemory:        10,
-			MemoryCost:       1,
-			MemorySource:     config.MemorySourceCgroup,
-		},
-		cgroupUsageBytes: 5 * gb, // 5 GB
-		cgroupOK:         true,
-	}
-
-	// 5 + 0 + 1 + 1 = 7 < 10, should accept
-	reject, _ := m.checkMemoryAdmissionLocked()
-	require.False(t, reject)
-
-	// Increase to trigger rejection
-	m.cgroupUsageBytes = 8 * gb // 8 + 0 + 1 + 1 = 10 >= 10
-	reject, reason := m.checkMemoryAdmissionLocked()
-	require.True(t, reject)
-	require.Equal(t, "memory_cgroup", reason)
-}
-
 func TestCheckMemoryAdmissionLocked_CgroupWorkingSet(t *testing.T) {
 	m := &Monitor{
 		cpuCostConfig: &config.CPUCostConfig{
-			MaxMemory:        10,
-			MemoryCost:       1,
-			MemorySource:     config.MemorySourceCgroup,
+			MaxMemory:    10,
+			MemoryCost:   1,
+			MemorySource: config.MemorySourceCgroup,
 		},
 		cgroupUsageBytes: 5 * gb,
-		cgroupOK:              true,
+		cgroupOK:         true,
 	}
 
 	// Working set is 5 GB, should accept
@@ -90,9 +68,9 @@ func TestCheckMemoryAdmissionLocked_CgroupWorkingSet(t *testing.T) {
 func TestCheckMemoryAdmissionLocked_FallbackToProcRSS(t *testing.T) {
 	m := &Monitor{
 		cpuCostConfig: &config.CPUCostConfig{
-			MaxMemory:        10,
-			MemoryCost:       1,
-			MemorySource:     config.MemorySourceCgroup,
+			MaxMemory:    10,
+			MemoryCost:   1,
+			MemorySource: config.MemorySourceCgroup,
 		},
 		memoryUsage: 5,
 		cgroupOK:    false, // cgroup not available
@@ -125,9 +103,9 @@ func TestCheckMemoryAdmissionLocked_NoMaxMemory(t *testing.T) {
 func TestCheckMemoryAdmissionLocked_WithPendingMemory(t *testing.T) {
 	m := &Monitor{
 		cpuCostConfig: &config.CPUCostConfig{
-			MaxMemory:        10,
-			MemoryCost:       1,
-			MemorySource:     config.MemorySourceProcRSS,
+			MaxMemory:    10,
+			MemoryCost:   1,
+			MemorySource: config.MemorySourceProcRSS,
 		},
 		memoryUsage: 5,
 	}

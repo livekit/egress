@@ -54,12 +54,12 @@ type Monitor struct {
 	clusterID     string
 	cpuCostConfig *config.CPUCostConfig
 
-	promCPULoad                prometheus.Gauge
+	promCPULoad           prometheus.Gauge
 	promCgroupMemory      prometheus.Gauge
 	promCgroupReadSuccess prometheus.Gauge
 	promProcRSS           prometheus.Gauge
 	promWouldRejectCgroup prometheus.Gauge
-	requestGauge               *prometheus.GaugeVec
+	requestGauge          *prometheus.GaugeVec
 
 	svc                 Service
 	cpuStats            *hwstats.CPUStats
@@ -628,9 +628,8 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string) {
 	}
 
 	maxMemoryBytes := uint64(m.cpuCostConfig.MaxMemory * gb)
-	var killTriggerBytes uint64
+	killTriggerBytes := uint64(m.memoryUsage * gb)
 
-	killTriggerBytes = uint64(m.memoryUsage * gb)
 	switch m.cpuCostConfig.MemorySource {
 	case config.MemorySourceCgroup:
 		if m.cgroupOK {
