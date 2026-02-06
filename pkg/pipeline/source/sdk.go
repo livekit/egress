@@ -56,6 +56,8 @@ type SDKSource struct {
 	subs                 chan *subscriptionResult
 
 	writers map[string]*sdk.AppWriter
+	writerByTrack map[*webrtc.TrackRemote]string
+	writerSeq atomic.Int64
 	subLock deadlock.RWMutex
 	active  atomic.Int32
 	closed  core.Fuse
@@ -81,6 +83,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		filenameReplacements: make(map[string]string),
 		subs:                 make(chan *subscriptionResult, 100),
 		writers:              make(map[string]*sdk.AppWriter),
+		writerByTrack:        make(map[*webrtc.TrackRemote]string),
 	}
 	logger.Debugw("latency config", "latency", p.Latency)
 
@@ -137,9 +140,9 @@ func (s *SDKSource) EndRecording() <-chan struct{} {
 	return s.endRecording.Watch()
 }
 
-func (s *SDKSource) Playing(trackID string) {
+func (s *SDKSource) Playing(writerKey string) {
 	s.mu.Lock()
-	writer := s.writers[trackID]
+	writer := s.writers[writerKey]
 	s.mu.Unlock()
 
 	if writer != nil {
@@ -169,8 +172,9 @@ func (s *SDKSource) CloseWriters() {
 	})
 }
 
-func (s *SDKSource) StreamStopped(trackID string) {
-	s.onTrackFinished(trackID)
+func (s *SDKSource) StreamStopped(elementName string) {
+	writerKey := strings.TrimPrefix(elementName, "app_")
+	s.onTrackFinished(writerKey)
 }
 
 func (s *SDKSource) Close() {
@@ -504,6 +508,8 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		PayloadType:     track.Codec().PayloadType,
 		ClockRate:       track.Codec().ClockRate,
 	}
+	writerKey := fmt.Sprintf("%s-%d", pub.SID(), s.writerSeq.Inc())
+	ts.WriterKey = writerKey
 
 	<-s.callbacks.GstReady
 	switch ts.MimeType {
@@ -526,14 +532,15 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			ts.TempoController = c
 			tc = c
 		}
-		writer, err := s.createWriter(track, pub, rp, ts, tc)
+	writer, err := s.createWriter(track, pub, rp, ts, tc)
 		if err != nil {
 			onSubscribeErr = err
 			return
 		}
 
 		s.mu.Lock()
-		s.writers[ts.TrackID] = writer
+		s.writers[ts.WriterKey] = writer
+		s.writerByTrack[track] = ts.WriterKey
 		if !s.initialized.IsBroken() {
 			s.AudioTracks = append(s.AudioTracks, ts)
 		}
@@ -559,7 +566,8 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		}
 
 		s.mu.Lock()
-		s.writers[ts.TrackID] = writer
+		s.writers[ts.WriterKey] = writer
+		s.writerByTrack[track] = ts.WriterKey
 		s.mu.Unlock()
 
 		if !s.initialized.IsBroken() {
@@ -612,7 +620,7 @@ func (s *SDKSource) createWriter(
 	ts *config.TrackSource,
 	tc sdk.DriftHandler,
 ) (*sdk.AppWriter, error) {
-	src, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", track.ID()))
+	src, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", ts.WriterKey))
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
@@ -671,32 +679,38 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	s.mu.RLock()
-	_, ok := s.writers[pub.SID()]
-	s.mu.RUnlock()
+	ok := s.hasWriterForTrackSID(pub.SID())
 	if ok {
 		logger.Debugw("track muted", "trackID", pub.SID())
 	}
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	s.mu.RLock()
-	_, ok := s.writers[pub.SID()]
-	s.mu.RUnlock()
+	ok := s.hasWriterForTrackSID(pub.SID())
 	if ok {
 		logger.Debugw("track unmuted", "trackID", pub.SID())
 	}
 }
 
-func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
+func (s *SDKSource) onTrackUnsubscribed(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
 	logger.Debugw("track unsubscribed", "trackID", pub.SID())
-	s.onTrackFinished(pub.SID())
+	if track == nil {
+		return
+	}
+	writerKey := s.writerKeyForTrack(track)
+	if writerKey == "" {
+		return
+	}
+	s.onTrackFinished(writerKey)
 }
 
-func (s *SDKSource) onTrackFinished(trackID string) {
+func (s *SDKSource) onTrackFinished(writerKey string) {
 	s.mu.Lock()
-	writer := s.writers[trackID]
-	delete(s.writers, trackID)
+	writer := s.writers[writerKey]
+	delete(s.writers, writerKey)
+	if writer != nil {
+		delete(s.writerByTrack, writer.Track())
+	}
 	s.mu.Unlock()
 
 	if writer != nil {
@@ -711,9 +725,8 @@ func (s *SDKSource) onTrackFinished(trackID string) {
 				// removing the appsource for video tracks
 				writer.Drain(true)
 			}
-			s.sync.RemoveTrack(trackID)
 			<-s.callbacks.BuildReady
-			s.callbacks.OnTrackRemoved(trackID)
+			s.callbacks.OnTrackRemoved(writerKey)
 
 			if trackKind == webrtc.RTPCodecTypeVideo {
 				writer.Drain(true)
@@ -741,4 +754,35 @@ func (s *SDKSource) onDisconnected() {
 
 func (s *SDKSource) finished() {
 	s.endRecording.Break()
+}
+
+func (s *SDKSource) writerKeyForTrack(track *webrtc.TrackRemote) string {
+	s.mu.RLock()
+	writerKey := s.writerByTrack[track]
+	s.mu.RUnlock()
+	if writerKey != "" {
+		return writerKey
+	}
+
+	s.mu.RLock()
+	for key, writer := range s.writers {
+		if writer.Track() == track {
+			s.mu.RUnlock()
+			return key
+		}
+	}
+	s.mu.RUnlock()
+
+	return ""
+}
+
+func (s *SDKSource) hasWriterForTrackSID(trackSID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for key := range s.writers {
+		if strings.HasPrefix(key, trackSID+"-") {
+			return true
+		}
+	}
+	return false
 }

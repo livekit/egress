@@ -165,26 +165,26 @@ func (b *AudioBin) onTrackAdded(ts *config.TrackSource) {
 	}
 
 	if ts.TrackKind == lksdk.TrackKindAudio {
-		logger.Debugw("adding audio app src bin", "trackID", ts.TrackID)
+		logger.Debugw("adding audio app src bin", "writerKey", ts.WriterKey)
 		if err := b.addAudioAppSrcBin(ts); err != nil {
-			logger.Errorw("failed to add audio app src bin", err, "trackID", ts.TrackID)
+			logger.Errorw("failed to add audio app src bin", err, "writerKey", ts.WriterKey)
 			b.bin.OnError(err)
 		}
 	}
 }
 
-func (b *AudioBin) onTrackRemoved(trackID string) {
+func (b *AudioBin) onTrackRemoved(writerKey string) {
 	if b.bin.GetState() > gstreamer.StateRunning {
 		return
 	}
 
 	b.mu.Lock()
-	name, ok := b.names[trackID]
+	name, ok := b.names[writerKey]
 	if !ok {
 		b.mu.Unlock()
 		return
 	}
-	delete(b.names, trackID)
+	delete(b.names, writerKey)
 	b.mu.Unlock()
 
 	if err := b.bin.RemoveSourceBin(name); err != nil {
@@ -241,9 +241,9 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	name := fmt.Sprintf("%s_%d", ts.TrackID, b.nextID)
+	name := fmt.Sprintf("%s_%d", ts.WriterKey, b.nextID)
 	b.nextID++
-	b.names[ts.TrackID] = name
+	b.names[ts.WriterKey] = name
 
 	appSrcBin := b.bin.NewBin(name)
 	appSrcBin.SetEOSFunc(func() bool {
