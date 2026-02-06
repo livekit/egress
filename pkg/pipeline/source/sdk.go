@@ -43,6 +43,18 @@ const (
 	subscriptionTimeout = time.Second * 30
 )
 
+type trackState struct {
+	writer   *sdk.AppWriter  // current active writer (nil if none)
+	pending  *pendingSubData // queued subscription while cleaning
+	cleaning bool            // cleanup in progress
+}
+
+type pendingSubData struct {
+	track *webrtc.TrackRemote
+	pub   *lksdk.RemoteTrackPublication
+	rp    *lksdk.RemoteParticipant
+}
+
 type SDKSource struct {
 	*config.PipelineConfig
 	callbacks *gstreamer.Callbacks
@@ -55,7 +67,9 @@ type SDKSource struct {
 	filenameReplacements map[string]string
 	subs                 chan *subscriptionResult
 
-	writers map[string]*sdk.AppWriter
+	trackStates map[string]*trackState
+	closing     bool
+
 	subLock deadlock.RWMutex
 	active  atomic.Int32
 	closed  core.Fuse
@@ -80,7 +94,8 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		callbacks:            callbacks,
 		filenameReplacements: make(map[string]string),
 		subs:                 make(chan *subscriptionResult, 100),
-		writers:              make(map[string]*sdk.AppWriter),
+		trackStates:          make(map[string]*trackState),
+		closing:              false,
 	}
 	logger.Debugw("latency config", "latency", p.Latency)
 
@@ -138,9 +153,13 @@ func (s *SDKSource) EndRecording() <-chan struct{} {
 }
 
 func (s *SDKSource) Playing(trackID string) {
-	s.mu.Lock()
-	writer := s.writers[trackID]
-	s.mu.Unlock()
+	s.mu.RLock()
+	state := s.trackStates[trackID]
+	var writer *sdk.AppWriter
+	if state != nil {
+		writer = state.writer
+	}
+	s.mu.RUnlock()
 
 	if writer != nil {
 		writer.Playing()
@@ -160,17 +179,48 @@ func (s *SDKSource) CloseWriters() {
 		s.sync.End()
 
 		s.mu.Lock()
-		for _, w := range s.writers {
-			go func(writer *sdk.AppWriter) {
-				writer.Drain(false)
-			}(w)
+		s.closing = true
+
+		var writers []*sdk.AppWriter
+		for _, state := range s.trackStates {
+			if state.writer != nil {
+				writers = append(writers, state.writer)
+				state.cleaning = true
+			}
+			state.pending = nil
 		}
+
 		s.mu.Unlock()
+
+		for _, writer := range writers {
+			go writer.Drain(false)
+		}
 	})
 }
 
-func (s *SDKSource) StreamStopped(trackID string) {
-	s.onTrackFinished(trackID)
+func (s *SDKSource) StreamStopped(elementName string) {
+	trackID := strings.TrimPrefix(elementName, "app_")
+
+	s.mu.Lock()
+	state := s.trackStates[trackID]
+	if state == nil || state.writer == nil {
+		s.mu.Unlock()
+		return
+	}
+
+	if state.cleaning {
+		logger.Debugw("cleanup already in progress, clearing pending", "trackID", trackID)
+		state.pending = nil
+		s.mu.Unlock()
+		return
+	}
+
+	state.cleaning = true
+	state.pending = nil
+	writer := state.writer
+	s.mu.Unlock()
+
+	s.onTrackFinished(trackID, writer)
 }
 
 func (s *SDKSource) Close() {
@@ -185,7 +235,11 @@ func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
 	} else {
 		s.sync.SetMediaRunningTime(nil)
 	}
-	for _, w := range s.writers {
+	for _, trackState := range s.trackStates {
+		w := trackState.writer
+		if w == nil {
+			continue
+		}
 		w.SetTimeProvider(tp)
 	}
 	s.mu.Unlock()
@@ -473,6 +527,29 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 // ----- Callbacks -----
 
 func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+	trackID := pub.SID()
+
+	s.mu.Lock()
+	if s.closing {
+		s.mu.Unlock()
+		logger.Debugw("ignoring subscription, source closing", "trackID", trackID)
+		return
+	}
+
+	state := s.trackStates[trackID]
+	if state != nil && state.cleaning {
+		state.pending = &pendingSubData{track: track, pub: pub, rp: rp}
+		s.mu.Unlock()
+		logger.Debugw("subscription queued, cleanup in progress", "trackID", trackID)
+		return
+	}
+
+	if state == nil {
+		state = &trackState{}
+		s.trackStates[trackID] = state
+	}
+	s.mu.Unlock()
+
 	s.subLock.RLock()
 
 	if s.initialized.IsBroken() && s.RequestType != types.RequestTypeParticipant && s.RequestType != types.RequestTypeRoomComposite {
@@ -481,7 +558,13 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 	}
 
 	var onSubscribeErr error
+	var subscriptionQueued bool
 	defer func() {
+		if subscriptionQueued {
+			// Subscription was queued as pending - result will be sent when pending executes
+			s.subLock.RUnlock()
+			return
+		}
 		if s.initialized.IsBroken() {
 			if onSubscribeErr != nil {
 				s.callbacks.OnError(onSubscribeErr)
@@ -495,7 +578,6 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 		s.subLock.RUnlock()
 	}()
 
-	s.active.Inc()
 	ts := &config.TrackSource{
 		TrackID:         pub.SID(),
 		TrackKind:       pub.Kind(),
@@ -531,13 +613,11 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			onSubscribeErr = err
 			return
 		}
-
-		s.mu.Lock()
-		s.writers[ts.TrackID] = writer
-		if !s.initialized.IsBroken() {
-			s.AudioTracks = append(s.AudioTracks, ts)
+		if writer == nil {
+			s.tryQueuePendingSubscription(ts.TrackID, track, pub, rp)
+			subscriptionQueued = true
+			return
 		}
-		s.mu.Unlock()
 
 	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9:
 		s.VideoEnabled = true
@@ -557,13 +637,10 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 			onSubscribeErr = err
 			return
 		}
-
-		s.mu.Lock()
-		s.writers[ts.TrackID] = writer
-		s.mu.Unlock()
-
-		if !s.initialized.IsBroken() {
-			s.VideoTrack = ts
+		if writer == nil {
+			s.tryQueuePendingSubscription(ts.TrackID, track, pub, rp)
+			subscriptionQueued = true
+			return
 		}
 
 	default:
@@ -628,7 +705,52 @@ func (s *SDKSource) createWriter(
 	writer.SetTimeProvider(s.timeProvider)
 	s.mu.RUnlock()
 
+	// Store the writer - returns nil if state changed during creation
+	if !s.storeWriter(ts.TrackID, writer, ts) {
+		return nil, nil
+	}
+
 	return writer, nil
+}
+
+// tryQueuePendingSubscription attempts to queue a subscription that failed to store.
+// Called when createWriter returns nil (state changed during creation).
+// If state.cleaning is true, queues the subscription for later execution.
+func (s *SDKSource) tryQueuePendingSubscription(trackID string, track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state := s.trackStates[trackID]
+	if state != nil && state.cleaning && !s.closing {
+		state.pending = &pendingSubData{track: track, pub: pub, rp: rp}
+		logger.Debugw("subscription queued after failed store", "trackID", trackID)
+	}
+}
+
+func (s *SDKSource) storeWriter(trackID string, writer *sdk.AppWriter, ts *config.TrackSource) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state := s.trackStates[trackID]
+	if state == nil || state.cleaning || s.closing {
+		logger.Warnw("state changed during writer creation", nil, "trackID", trackID)
+		go s.handleOrphanedWriter(trackID, writer)
+		return false
+	}
+	state.writer = writer
+	s.active.Inc()
+
+	if s.timeProvider != nil {
+		writer.SetTimeProvider(s.timeProvider)
+	}
+	if !s.initialized.IsBroken() {
+		if ts.TrackKind == lksdk.TrackKindAudio {
+			s.AudioTracks = append(s.AudioTracks, ts)
+		} else {
+			s.VideoTrack = ts
+		}
+	}
+	return true
 }
 
 func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
@@ -672,18 +794,18 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	s.mu.RLock()
-	_, ok := s.writers[pub.SID()]
+	state := s.trackStates[pub.SID()]
 	s.mu.RUnlock()
-	if ok {
+	if state != nil && state.writer != nil {
 		logger.Debugw("track muted", "trackID", pub.SID())
 	}
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
 	s.mu.RLock()
-	_, ok := s.writers[pub.SID()]
+	state := s.trackStates[pub.SID()]
 	s.mu.RUnlock()
-	if ok {
+	if state != nil && state.writer != nil {
 		logger.Debugw("track unmuted", "trackID", pub.SID())
 	}
 }
@@ -693,12 +815,28 @@ func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.Remote
 	logger.Debugw("track unsubscribed", "trackID", trackID)
 
 	s.mu.Lock()
-	writer := s.writers[trackID]
-	s.mu.Unlock()
-
-	if writer == nil {
+	if s.closing {
+		logger.Debugw("ignoring track unsubscribed, source closing", "trackID", trackID)
+		s.mu.Unlock()
 		return
 	}
+	state := s.trackStates[trackID]
+	if state == nil || state.writer == nil {
+		logger.Warnw("ignoring track unsubscribed, writer not found", nil, "trackID", trackID)
+		s.mu.Unlock()
+		return
+	}
+
+	if state.cleaning {
+		logger.Debugw("ignoring track unsubscribed, cleanup in progress", "trackID", trackID)
+		state.pending = nil
+		s.mu.Unlock()
+		return
+	}
+
+	state.cleaning = true
+	writer := state.writer
+	s.mu.Unlock()
 
 	// Signal unsubscribed but let the reader continue until error or grace period.
 	// This allows any remaining buffers in flight from the SFU to be processed.
@@ -709,43 +847,71 @@ func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.Remote
 		// Wait for the writer to finish naturally
 		<-writer.Finished()
 		logger.Debugw("writer finished", "trackID", trackID)
-		s.onTrackFinished(trackID)
+		s.onTrackFinished(trackID, writer)
 		logger.Debugw("track finished", "trackID", trackID)
 	}()
 }
 
-func (s *SDKSource) onTrackFinished(trackID string) {
+func (s *SDKSource) onTrackFinished(trackID string, finishedWriter *sdk.AppWriter) {
 	s.mu.Lock()
-	writer := s.writers[trackID]
-	delete(s.writers, trackID)
+	state := s.trackStates[trackID]
+	if state == nil || state.writer != finishedWriter || finishedWriter == nil || !state.cleaning {
+		s.mu.Unlock()
+		logger.Warnw("ignoring track finished, stale writer or writer is nil or not cleaning", nil,
+			"trackID", trackID,
+			"finishedWriter", finishedWriter,
+		)
+		return
+	}
+
+	// Clear writer but keep cleaning=true during cleanup
+	// This ensures new subscriptions queue in pending instead of creating writers
+	state.writer = nil
 	s.mu.Unlock()
 
-	if writer != nil {
-		active := s.active.Dec()
-		shouldContinue := s.RequestType == types.RequestTypeParticipant || s.RequestType == types.RequestTypeRoomComposite
+	active := s.active.Dec()
+	shouldContinue := s.RequestType == types.RequestTypeParticipant || s.RequestType == types.RequestTypeRoomComposite
 
-		if shouldContinue {
-			trackKind := writer.TrackKind()
-			if trackKind == webrtc.RTPCodecTypeAudio {
-				// drain for video tracks could set EOS for encoder which could lead to issues after switching
-				// to test videosrc if participant stays, so drain audio tracks at this point and only do that after
-				// removing the appsource for video tracks
-				writer.Drain(true)
-			}
-			s.sync.RemoveTrack(trackID)
-			<-s.callbacks.BuildReady
-			s.callbacks.OnTrackRemoved(trackID)
+	if shouldContinue {
+		trackKind := finishedWriter.TrackKind()
+		if trackKind == webrtc.RTPCodecTypeAudio {
+			// drain for video tracks could set EOS for encoder which could lead to issues after switching
+			// to test videosrc if participant stays, so drain audio tracks at this point and only do that after
+			// removing the appsource for video tracks
+			finishedWriter.Drain(true)
+		}
+		s.sync.RemoveTrack(trackID)
+		<-s.callbacks.BuildReady
+		s.callbacks.OnTrackRemoved(trackID)
 
-			if trackKind == webrtc.RTPCodecTypeVideo {
-				writer.Drain(true)
-			}
-		} else {
-			writer.Drain(true)
-			if active == 0 {
-				s.finished()
-			}
+		if trackKind == webrtc.RTPCodecTypeVideo {
+			finishedWriter.Drain(true)
+		}
+	} else {
+		finishedWriter.Drain(true)
+		if active == 0 {
+			s.finished()
 		}
 	}
+
+	s.mu.Lock()
+	state = s.trackStates[trackID]
+	if state == nil {
+		logger.Debugw("state changed during track finished, no need to execute pending subscription", "trackID", trackID)
+		s.mu.Unlock()
+		return
+	}
+	// After this unlock, new subscriptions create writers directly (won't queue)
+	pending := state.pending
+	state.cleaning = false
+	state.pending = nil
+	s.mu.Unlock()
+
+	if pending != nil && !s.closing {
+		logger.Debugw("executing pending subscription", "trackID", trackID)
+		s.onTrackSubscribed(pending.track, pending.pub, pending.rp)
+	}
+
 }
 
 func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
@@ -762,4 +928,9 @@ func (s *SDKSource) onDisconnected() {
 
 func (s *SDKSource) finished() {
 	s.endRecording.Break()
+}
+
+func (s *SDKSource) handleOrphanedWriter(trackID string, writer *sdk.AppWriter) {
+	writer.Drain(true)
+	logger.Debugw("orphaned writer cleaned up", "trackID", trackID)
 }
