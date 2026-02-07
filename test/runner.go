@@ -26,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
@@ -190,7 +189,7 @@ func NewRunner(t *testing.T) *Runner {
 	return r
 }
 
-func (r *Runner) connectRoom(t *testing.T, roomName string, codecs []webrtc.RTPCodecParameters) {
+func (r *Runner) connectRoom(t *testing.T, roomName string, codecs []livekit.Codec) {
 	if r.room != nil {
 		r.room.Disconnect()
 	}
