@@ -301,7 +301,7 @@ func (m *Monitor) checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, 
 	return false, ""
 }
 
-func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest, sdkRoomCompositeEnabled bool) error {
+func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
