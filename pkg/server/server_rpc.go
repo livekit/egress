@@ -26,15 +26,16 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"gopkg.in/yaml.v3"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"go.opentelemetry.io/otel"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/logging"
 )
 
 var (
@@ -55,7 +56,7 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 		s.activeRequests.Dec()
 		return nil, errors.ErrEgressAlreadyExists
 	}
-	if err := s.monitor.AcceptRequest(req, s.conf.EnableRoomCompositeSDKSource); err != nil {
+	if err := s.monitor.AcceptRequest(req); err != nil {
 		s.activeRequests.Dec()
 		return nil, err
 	}
@@ -190,7 +191,7 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 }
 
 func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequest) float32 {
-	if s.IsDisabled() || !s.monitor.CanAcceptRequest(req, s.conf.EnableRoomCompositeSDKSource) {
+	if s.IsDisabled() || !s.monitor.CanAcceptRequest(req) {
 		// cannot accept
 		return -1
 	}

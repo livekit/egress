@@ -50,7 +50,7 @@ const (
 	defaultAudioMixerLatency     = time.Millisecond * 2750
 	defaultPipelineLatency       = time.Second * 3
 	defaultRTPMaxDriftAdjustment = time.Millisecond * 5
-	defaultOldPacketThreshold    = 500 * time.Millisecond
+	defaultOldPacketThreshold    = 2200 * time.Millisecond
 	defaultRTPMaxAllowedTsDiff   = time.Second * 5
 
 	defaultAudioTempoControllerAdjustmentRate = 0.05

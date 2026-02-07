@@ -29,12 +29,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+
+	"github.com/livekit/egress/pkg/config"
 )
 
 type Runner struct {
@@ -147,7 +148,6 @@ func NewRunner(t *testing.T) *Runner {
 	require.NoError(t, err)
 
 	r.ServiceConfig = conf
-	r.ServiceConfig.EnableRoomCompositeSDKSource = true
 
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
 		t.Fatal("api key, secret, and ws url required")
