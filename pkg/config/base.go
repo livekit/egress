@@ -19,11 +19,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/medialogutils"
 	"github.com/livekit/protocol/redis"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+
+	"github.com/livekit/egress/pkg/types"
 )
 
 const TmpDir = "/home/egress/tmp"
@@ -38,17 +39,16 @@ type BaseConfig struct {
 	WsUrl     string             `yaml:"ws_url"`     // (env LIVEKIT_WS_URL)
 
 	// optional
-	Logging                      *logger.Config `yaml:"logging"`                          // logging config
-	TemplateBase                 string         `yaml:"template_base"`                    // custom template base url
-	ClusterID                    string         `yaml:"cluster_id"`                       // cluster this instance belongs to
-	EnableChromeSandbox          bool           `yaml:"enable_chrome_sandbox"`            // enable Chrome sandbox, requires extra docker configuration
-	MaxUploadQueue               int            `yaml:"max_upload_queue"`                 // maximum upload queue size, in minutes
-	DisallowLocalStorage         bool           `yaml:"disallow_local_storage"`           // require an upload config for all requests
-	EnableRoomCompositeSDKSource bool           `yaml:"enable_room_composite_sdk_source"` // attempt to render supported audio only room composite use cases using the SDK source instead of Chrome. This option will be removed when this becomes the default behavior eventually.
-	IOCreateTimeout              time.Duration  `yaml:"io_create_timeout"`                // timeout for CreateEgress calls
-	IOUpdateTimeout              time.Duration  `yaml:"io_update_timeout"`                // timeout for UpdateEgress calls
-	IOSelectionTimeout           time.Duration  `yaml:"io_selection_timeout"`             // timeout for affinity stage of IO RPC
-	IOWorkers                    int            `yaml:"io_workers"`                       // number of IO update workers
+	Logging              *logger.Config `yaml:"logging"`                // logging config
+	TemplateBase         string         `yaml:"template_base"`          // custom template base url
+	ClusterID            string         `yaml:"cluster_id"`             // cluster this instance belongs to
+	EnableChromeSandbox  bool           `yaml:"enable_chrome_sandbox"`  // enable Chrome sandbox, requires extra docker configuration
+	MaxUploadQueue       int            `yaml:"max_upload_queue"`       // maximum upload queue size, in minutes
+	DisallowLocalStorage bool           `yaml:"disallow_local_storage"` // require an upload config for all requests
+	IOCreateTimeout      time.Duration  `yaml:"io_create_timeout"`      // timeout for CreateEgress calls
+	IOUpdateTimeout      time.Duration  `yaml:"io_update_timeout"`      // timeout for UpdateEgress calls
+	IOSelectionTimeout   time.Duration  `yaml:"io_selection_timeout"`   // timeout for affinity stage of IO RPC
+	IOWorkers            int            `yaml:"io_workers"`             // number of IO update workers
 
 	SessionLimits          `yaml:"session_limits"` // session duration limits
 	StorageConfig          *StorageConfig          `yaml:"storage,omitempty"`          // storage config
@@ -84,17 +84,13 @@ type DebugConfig struct {
 }
 
 type LatencyConfig struct {
-	JitterBufferLatency               time.Duration `yaml:"jitter_buffer_latency"`                            // jitter buffer max latency for sdk egress
-	AudioMixerLatency                 time.Duration `yaml:"audio_mixer_latency"`                              // audio mixer latency, must be greater than jitter buffer latency
-	PipelineLatency                   time.Duration `yaml:"pipeline_latency"`                                 // max latency for the entire pipeline
-	RTPMaxAllowedTsDiff               time.Duration `ymal:"rtp_max_allowed_ts_diff"`                          // max allowed PTS discont. for a RTP stream, before applying PTS alignment
-	RTPMaxDriftAdjustment             time.Duration `ymal:"rtp_max_drift_adjustment,omitempty"`               // max allowed drift adjustment for a RTP stream
-	RTPDriftAdjustmentWindowPercent   float64       `ymal:"rtp_drift_adjustment_window_percent,omitempty"`    // how much to throttle drift adjustment, 0.0 disables it
-	PreJitterBufferReceiveTimeEnabled bool          `yaml:"pre_jitter_buffer_receive_time_enabled,omitempty"` // use packet arrival time in synchronizer
-	OldPacketThreshold                time.Duration `yaml:"old_packet_threshold,omitempty"`                   // syncrhonizer drops packets older than this, 0 to disable packet drops
-	RTCPSenderReportRebaseEnabled     bool          `yaml:"rtcp_sender_report_rebase_enabled,omitempty"`      // synchronizer will rebase RTCP Sender Report to local clock
-	PacketBurstEstimatorEnabled       bool          `yaml:"packet_burst_estimator_enabled,omitempty"`         // enable burst estimator for improving track synchronization
-	EnablePipelineTimeFeedback        bool          `yaml:"enable_pipeline_time_feedback,omitempty"`          // enable pipeline time feedback for synchronizer
+	JitterBufferLatency             time.Duration `yaml:"jitter_buffer_latency"`                         // jitter buffer max latency for sdk egress
+	AudioMixerLatency               time.Duration `yaml:"audio_mixer_latency"`                           // audio mixer latency, must be greater than jitter buffer latency
+	PipelineLatency                 time.Duration `yaml:"pipeline_latency"`                              // max latency for the entire pipeline
+	RTPMaxAllowedTsDiff             time.Duration `ymal:"rtp_max_allowed_ts_diff"`                       // max allowed PTS discont. for a RTP stream, before applying PTS alignment
+	RTPMaxDriftAdjustment           time.Duration `ymal:"rtp_max_drift_adjustment,omitempty"`            // max allowed drift adjustment for a RTP stream
+	RTPDriftAdjustmentWindowPercent float64       `ymal:"rtp_drift_adjustment_window_percent,omitempty"` // how much to throttle drift adjustment, 0.0 disables it
+	OldPacketThreshold time.Duration `yaml:"old_packet_threshold,omitempty"` // syncrhonizer drops packets older than this, 0 to disable packet drops
 }
 
 type AudioTempoController struct {
