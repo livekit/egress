@@ -139,7 +139,7 @@ func (s *SDKSource) getOrCreateWorker(trackID string) *trackWorker {
 
 	w = &trackWorker{
 		trackID:    trackID,
-		opChan:     make(chan Operation, 10),
+		opChan:     make(chan Operation, 100),
 		done:       make(chan struct{}),
 		generation: atomic.Uint64{},
 	}
