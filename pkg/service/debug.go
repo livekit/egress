@@ -101,7 +101,7 @@ func (s *DebugService) handlePProf(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad timeout parameter", http.StatusBadRequest)
 		return
 	}
-	debug, err := strconv.Atoi(r.URL.Query().Get("debug"))
+	debug, err := strconv.ParseInt(r.URL.Query().Get("debug"), 10, 32)
 	if err != nil {
 		http.Error(w, "bad debug parameter", http.StatusBadRequest)
 		return
