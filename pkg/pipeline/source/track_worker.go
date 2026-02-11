@@ -330,6 +330,7 @@ func (s *SDKSource) processOp(w *trackWorker, trackID string, ws *workerState, o
 		// Ops queue in opChan and are processed after cleanup completes (in IDLE state).
 		return false
 	default:
+		logger.Warnw("invalid state", nil, "trackID", trackID, "state", ws.state.String())
 		return false
 	}
 }
@@ -344,14 +345,14 @@ func (s *SDKSource) processIdleOp(w *trackWorker, trackID string, state *workerS
 		}
 
 	case OpPlaying:
-		// No writer in IDLE, ignore
+		logger.Warnw("invalid op in IDLE", nil, "trackID", trackID, "op", op.Type.String(), "generation", op.Generation)
 	case OpSetTimeProvider:
-		// No writer in IDLE, ignore (will get it on creation)
+		logger.Warnw("invalid op in IDLE", nil, "trackID", trackID, "op", op.Type.String())
 	case OpClose:
-		// No writer in IDLE, nothing to clean up
+		logger.Warnw("invalid op in IDLE", nil, "trackID", trackID, "op", op.Type.String())
 		return true
 	case OpUnsubscribe, OpFinished:
-		logger.Warnw("invalid op in IDLE", nil, "trackID", trackID, "op", op.Type)
+		logger.Warnw("invalid op in IDLE", nil, "trackID", trackID, "op", op.Type.String())
 	}
 	return false
 }
@@ -365,7 +366,9 @@ func (s *SDKSource) processActiveOp(_ *trackWorker, trackID string, state *worke
 	case OpPlaying:
 		if op.Generation == state.generation && state.writer != nil {
 			state.writer.Playing()
-		} // else: stale Playing for previous writer, ignore
+		} else {
+			logger.Warnw("playing for previous writer", nil, "trackID", trackID, "op", op.Type.String(), "generation", op.Generation)
+		}
 
 	case OpSetTimeProvider:
 		if state.writer != nil {
