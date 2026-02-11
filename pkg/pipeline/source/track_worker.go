@@ -151,9 +151,9 @@ func (s *SDKSource) getOrCreateWorker(trackID string) *trackWorker {
 
 func (s *SDKSource) runWorker(w *trackWorker) {
 	defer func() {
-		close(w.done) // Signal exit first
+		close(w.done)
 		s.workersMu.Lock()
-		delete(s.workers, w.trackID) // Then remove from map
+		delete(s.workers, w.trackID)
 		s.workersMu.Unlock()
 	}()
 	state := &workerState{state: TrackStateIdle}
