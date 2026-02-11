@@ -84,7 +84,6 @@ type SDKSourceParams struct {
 	TrackSource  string
 	TrackKind    string
 	ScreenShare  bool
-	AudioInCodec types.MimeType
 	VideoInCodec types.MimeType
 	AudioTracks  []*TrackSource
 	VideoTrack   *TrackSource
@@ -218,7 +217,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		if !req.RoomComposite.VideoOnly {
 			p.AudioEnabled = true
-			p.AudioInCodec = types.MimeTypeRawAudio
 			p.AudioTranscoding = true
 		}
 		if !req.RoomComposite.AudioOnly {
@@ -266,7 +264,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		if !req.Web.VideoOnly {
 			p.AudioEnabled = true
-			p.AudioInCodec = types.MimeTypeRawAudio
 			p.AudioTranscoding = true
 		}
 		if !req.Web.AudioOnly {
