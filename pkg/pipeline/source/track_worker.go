@@ -25,6 +25,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/frostbyte73/core"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
 	"github.com/livekit/egress/pkg/pipeline/tempo"
@@ -110,7 +111,7 @@ type workerState struct {
 type trackWorker struct {
 	trackID    string
 	opChan     chan Operation // buffered channel for operations
-	done       chan struct{}  // closed when worker exits
+	done       core.Fuse      // broken when worker exits
 	generation atomic.Uint64  // current generation (for Playing coordination)
 }
 
@@ -140,7 +141,6 @@ func (s *SDKSource) getOrCreateWorker(trackID string) *trackWorker {
 	w = &trackWorker{
 		trackID:    trackID,
 		opChan:     make(chan Operation, 100),
-		done:       make(chan struct{}),
 		generation: atomic.Uint64{},
 	}
 	s.workers[trackID] = w
@@ -151,7 +151,7 @@ func (s *SDKSource) getOrCreateWorker(trackID string) *trackWorker {
 
 func (s *SDKSource) runWorker(w *trackWorker) {
 	defer func() {
-		close(w.done)
+		w.done.Break()
 		s.workersMu.Lock()
 		delete(s.workers, w.trackID)
 		s.workersMu.Unlock()
@@ -179,7 +179,7 @@ func (s *SDKSource) submitOp(trackID string, op Operation) {
 
 	select {
 	case w.opChan <- op:
-	case <-w.done:
+	case <-w.done.Watch():
 		// worker already exited, op dropped
 	}
 }
