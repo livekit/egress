@@ -176,7 +176,7 @@ func (s *SDKSource) CloseWriters() {
 		for _, w := range workers {
 			select {
 			case w.opChan <- Operation{Type: OpClose}:
-			case <-w.done:
+			case <-w.done.Watch():
 				// already exited
 			}
 		}
