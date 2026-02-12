@@ -23,9 +23,9 @@ import (
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 
+	"github.com/frostbyte73/core"
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
-	"github.com/frostbyte73/core"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
 	"github.com/livekit/egress/pkg/pipeline/tempo"
@@ -361,7 +361,7 @@ func (s *SDKSource) processActiveOp(_ *trackWorker, trackID string, state *worke
 	switch op.Type {
 	case OpSubscribe:
 		// Not possible, double subscribe shouldn't be possible, nothing to do
-		logger.Warnw("unexpected Subscribe in ACTIVE state", nil, "trackID", trackID)
+		logger.Warnw("unexpected subscribe in ACTIVE state", nil, "trackID", trackID)
 
 	case OpPlaying:
 		if op.Generation == state.generation && state.writer != nil {

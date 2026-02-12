@@ -53,10 +53,9 @@ type SDKSource struct {
 	workersMu deadlock.RWMutex
 	workers   map[string]*trackWorker
 
-	// subLock ensures in-flight pre-init subscriptions complete before initialized.Break().
-	// This keeps pre-init errors in the startup failure path rather than OnError path.
-	// Workers hold RLock during subscription processing.
-	// Await functions hold Lock before calling initialized.Break().
+	// subLock prevents a race where a subscription starts during init completion.
+	// Without it, the subscription could see "not yet initialized", then init completes,
+	// leaving the track orphaned (missed by both pipeline build and dynamic add).
 	subLock deadlock.RWMutex
 
 	closing atomic.Bool
@@ -303,11 +302,10 @@ func (s *SDKSource) stopAwaitingTracks() {
 	s.initResultChan.Store(nil) // just nil out, don't close
 }
 
-// waitForInFlightSubscriptions blocks until all workers release their RLock.
-// This ensures in-flight subscription processing completes before initialized.Break(),
-func (s *SDKSource) waitForInFlightSubscriptions() {
+func (s *SDKSource) completeInit() {
 	s.subLock.Lock()
-	s.subLock.Unlock() //nolint:staticcheck // SA2001: intentionally empty - Lock is a barrier
+	defer s.subLock.Unlock()
+	s.initialized.Break()
 }
 
 // getInitResultChan returns the current init result channel (nil after init complete)
@@ -345,8 +343,7 @@ func (s *SDKSource) awaitRoomTracks() error {
 		return err
 	}
 
-	s.waitForInFlightSubscriptions()
-	s.initialized.Break()
+	s.completeInit()
 	return nil
 }
 
@@ -377,8 +374,7 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 		}
 	}
 
-	s.waitForInFlightSubscriptions()
-	s.initialized.Break()
+	s.completeInit()
 	return w, h, nil
 }
 
@@ -423,8 +419,7 @@ func (s *SDKSource) getParticipant(identity string) (*lksdk.RemoteParticipant, e
 func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, error) {
 	trackCount := len(expecting)
 	if trackCount == 0 {
-		s.waitForInFlightSubscriptions()
-		s.initialized.Break()
+		s.completeInit()
 		return 0, 0, nil
 	}
 
@@ -465,8 +460,7 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, 
 		}
 	}
 
-	s.waitForInFlightSubscriptions()
-	s.initialized.Break()
+	s.completeInit()
 	return w, h, nil
 }
 
