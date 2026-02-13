@@ -27,7 +27,7 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-const webUrl = "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+const webUrl = "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4"
 
 type testCase struct {
 	name        string
