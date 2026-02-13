@@ -26,16 +26,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+
+	"github.com/livekit/egress/pkg/config"
 )
 
 type Runner struct {
@@ -55,12 +55,12 @@ type Runner struct {
 	AzureUpload           *livekit.AzureBlobUpload `yaml:"-"`
 
 	// testing config
-	FilePrefix string `yaml:"file_prefix"`
-	RoomName   string `yaml:"room_name"`
+	FilePrefix   string `yaml:"file_prefix"`
+	RoomName     string `yaml:"room_name"`
 	RoomBaseName string `yaml:"-"`
-	Muting     bool   `yaml:"muting"`
-	Dotfiles   bool   `yaml:"dot_files"`
-	Short      bool   `yaml:"short"`
+	Muting       bool   `yaml:"muting"`
+	Dotfiles     bool   `yaml:"dot_files"`
+	Short        bool   `yaml:"short"`
 
 	// flagset used to determine which tests to run
 	shouldRun uint `yaml:"-"`
@@ -148,7 +148,6 @@ func NewRunner(t *testing.T) *Runner {
 	require.NoError(t, err)
 
 	r.ServiceConfig = conf
-	r.ServiceConfig.EnableRoomCompositeSDKSource = true
 
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
 		t.Fatal("api key, secret, and ws url required")
@@ -190,7 +189,7 @@ func NewRunner(t *testing.T) *Runner {
 	return r
 }
 
-func (r *Runner) connectRoom(t *testing.T, roomName string, codecs []webrtc.RTPCodecParameters) {
+func (r *Runner) connectRoom(t *testing.T, roomName string, codecs []livekit.Codec) {
 	if r.room != nil {
 		r.room.Disconnect()
 	}

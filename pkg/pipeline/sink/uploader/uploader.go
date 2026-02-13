@@ -25,6 +25,8 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/storageobs"
+	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
 	"github.com/livekit/storage"
 )
@@ -37,6 +39,7 @@ type Uploader struct {
 	primaryFailed bool
 	info          *livekit.EgressInfo
 	monitor       *stats.HandlerMonitor
+	reporter      storageobs.ProjectReporter
 }
 
 type store struct {
@@ -45,16 +48,17 @@ type store struct {
 	name string
 }
 
-func New(conf, backup *config.StorageConfig, monitor *stats.HandlerMonitor, info *livekit.EgressInfo) (*Uploader, error) {
-	p, err := getUploader(conf)
+func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, reporter storageobs.ProjectReporter, info *livekit.EgressInfo) (*Uploader, error) {
+	p, err := getUploader(primary)
 	if err != nil {
 		return nil, err
 	}
 
 	u := &Uploader{
-		primary: p,
-		monitor: monitor,
-		info:    info,
+		primary:  p,
+		info:     info,
+		monitor:  monitor,
+		reporter: reporter,
 	}
 
 	if backup != nil {
@@ -107,24 +111,6 @@ func getUploader(conf *config.StorageConfig) (*store, error) {
 	}, nil
 }
 
-func uploadToProvider(s *store, localFilepath string, storageFilepath string, outputType types.OutputType) (location string, size int64, err error) {
-	storageFilepath = path.Join(s.conf.Prefix, storageFilepath)
-
-	location, size, err = s.UploadFile(localFilepath, storageFilepath, string(outputType))
-	if err != nil {
-		return "", 0, errors.ErrUploadFailed(s.name, err)
-	}
-
-	if s.conf.GeneratePresignedUrl {
-		location, err = s.GeneratePresignedUrl(storageFilepath, presignedExpiration)
-		if err != nil {
-			return "", 0, errors.ErrUploadFailed(s.name, err)
-		}
-	}
-
-	return location, size, nil
-}
-
 func (u *Uploader) Upload(
 	localFilepath, storageFilepath string,
 	outputType types.OutputType,
@@ -134,9 +120,8 @@ func (u *Uploader) Upload(
 	var primaryErr error
 	if !u.primaryFailed {
 		start := time.Now()
-		location, size, err := uploadToProvider(u.primary, localFilepath, storageFilepath, outputType)
+		location, size, err := u.upload(localFilepath, storageFilepath, outputType, true)
 		elapsed := time.Since(start)
-
 		if err == nil {
 			if u.monitor != nil {
 				u.monitor.IncUploadCountSuccess(string(outputType), float64(elapsed.Milliseconds()))
@@ -155,7 +140,7 @@ func (u *Uploader) Upload(
 	}
 
 	if u.backup != nil {
-		location, size, backupErr := uploadToProvider(u.backup, localFilepath, storageFilepath, outputType)
+		location, size, backupErr := u.upload(localFilepath, storageFilepath, outputType, false)
 		if backupErr == nil {
 			if u.info != nil {
 				u.info.SetBackupUsed()
@@ -177,4 +162,50 @@ func (u *Uploader) Upload(
 	}
 
 	return "", 0, primaryErr
+}
+
+func (u *Uploader) upload(localFilepath string, storageFilepath string, outputType types.OutputType, primary bool) (location string, size int64, err error) {
+	var s *store
+	if primary {
+		s = u.primary
+	} else {
+		s = u.backup
+	}
+
+	storageFilepath = path.Join(s.conf.Prefix, storageFilepath)
+
+	location, size, err = s.UploadFile(localFilepath, storageFilepath, string(outputType))
+	if err != nil {
+		return "", 0, errors.ErrUploadFailed(s.name, err)
+	}
+
+	if !primary {
+		u.reporter.WithEvent(utils.NewGuid("STO_")).Tx(func(tx storageobs.EventTx) {
+			tx.ReportService(storageobs.EventServiceEgress)
+			tx.ReportServiceID(u.info.EgressId)
+			tx.ReportOperation(storageobs.EventOperationUpload)
+			tx.ReportPath(location)
+			tx.ReportSize(uint64(size))
+			tx.ReportLifetime(uint64(presignedExpiration/time.Hour) / 24)
+		})
+	}
+
+	if s.conf.GeneratePresignedUrl {
+		location, err = s.GeneratePresignedUrl(storageFilepath, presignedExpiration)
+		if err != nil {
+			return "", 0, errors.ErrUploadFailed(s.name, err)
+		}
+
+		if !primary {
+			u.reporter.WithEvent(utils.NewGuid("STO_")).Tx(func(tx storageobs.EventTx) {
+				tx.ReportService(storageobs.EventServiceEgress)
+				tx.ReportServiceID(u.info.EgressId)
+				tx.ReportOperation(storageobs.EventOperationDownload)
+				tx.ReportPath(location)
+				tx.ReportSize(uint64(size))
+			})
+		}
+	}
+
+	return location, size, nil
 }

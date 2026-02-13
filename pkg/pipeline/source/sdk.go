@@ -25,14 +25,15 @@ import (
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/gstreamer"
-	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/types"
 )
 
 const (
@@ -96,20 +97,16 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		}),
 	}
 
-	if p.Latency.PreJitterBufferReceiveTimeEnabled {
-		opts = append(opts, synchronizer.WithPreJitterBufferReceiveTimeEnabled())
-	}
-	if p.Latency.RTCPSenderReportRebaseEnabled {
+	if p.RequestType == types.RequestTypeRoomComposite {
+		// Enable Packet Burst Estimator for Room Composite requests
+		opts = append(opts, synchronizer.WithStartGate())
+	} else {
+		// Enable Sender Report Rebase except for Room Composite
 		opts = append(opts, synchronizer.WithRTCPSenderReportRebaseEnabled())
 	}
-	if p.Latency.PacketBurstEstimatorEnabled {
-		opts = append(opts, synchronizer.WithStartGate())
-	}
-	if p.Latency.EnablePipelineTimeFeedback {
-		// time provider is not available yet, will be set later
-		// add some leeway to the mixer latency
-		opts = append(opts, synchronizer.WithMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond))
-	}
+	// time provider is not available yet, will be set later
+	// add some leeway to the mixer latency
+	opts = append(opts, synchronizer.WithMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond))
 
 	if p.RequestType == types.RequestTypeRoomComposite || p.AudioTempoController.Enabled {
 		// in case of room composite don't adjust audio timestamps on RTCP sender reports,
@@ -204,7 +201,7 @@ func (s *SDKSource) Close() {
 func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
 	s.timeProvider.Store(&tp)
 
-	if s.Latency.EnablePipelineTimeFeedback && tp != nil {
+	if tp != nil {
 		s.sync.SetMediaRunningTime(tp.RunningTime)
 	} else {
 		s.sync.SetMediaRunningTime(nil)

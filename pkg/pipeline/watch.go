@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/source"
 )
@@ -284,6 +285,21 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 	s := msg.GetStructure()
 	if s != nil {
 		switch s.Name() {
+		case gstreamer.LeakyQueueStatsMessage:
+			queueName, dropped, err := parseLeakyQueueStats(s)
+			if err != nil {
+				logger.Debugw("failed to parse leaky queue stats message", err)
+				return nil
+			}
+			if strings.HasPrefix(queueName, "video") {
+				c.stats.droppedVideoBuffers.Add(dropped)
+				c.stats.droppedVideoBuffersByQueue[queueName] = dropped
+			}
+			if strings.HasPrefix(queueName, "audio") {
+				c.stats.queuesDroppedAudioBuffers.Add(dropped)
+				c.stats.droppedAudioBuffersByQueue[queueName] = dropped
+			}
+
 		case msgFirstSampleMetadata:
 			startDate, err := getFirstSampleMetadataFromGstStructure(s)
 			if err != nil {
@@ -341,6 +357,45 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 	return nil
 }
 
+func parseLeakyQueueStats(s *gst.Structure) (queue string, dropped uint64, err error) {
+	queueValue, err := s.GetValue("queue")
+	if err != nil {
+		return "", 0, err
+	}
+	queue, _ = queueValue.(string)
+
+	droppedValue, err := s.GetValue("dropped")
+	if err != nil {
+		return queue, 0, err
+	}
+	dropped = normalizeUint64(droppedValue)
+	return queue, dropped, nil
+}
+
+func normalizeUint64(value interface{}) uint64 {
+	switch v := value.(type) {
+	case uint64:
+		return v
+	case uint:
+		return uint64(v)
+	case uint32:
+		return uint64(v)
+	case int:
+		if v > 0 {
+			return uint64(v)
+		}
+	case int64:
+		if v > 0 {
+			return uint64(v)
+		}
+	case int32:
+		if v > 0 {
+			return uint64(v)
+		}
+	}
+	return 0
+}
+
 func (c *Controller) handleMessageQoS(msg *gst.Message) {
 	if isQosForAudioMixer(msg) {
 		qos := msg.ParseQoS()
@@ -354,8 +409,8 @@ func (c *Controller) handleMessageQoS(msg *gst.Message) {
 }
 
 func (c *Controller) handleAudioMixerQoS(qosValues *gst.QoSValues) {
-	c.stats.droppedAudioBuffers.Inc()
-	c.stats.droppedAudioDuration.Add(qosValues.Duration)
+	c.stats.mixerDroppedAudioBuffers.Inc()
+	c.stats.mixerDroppedAudioDuration.Add(qosValues.Duration)
 }
 
 // Debug info comes in the following format:

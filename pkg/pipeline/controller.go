@@ -80,8 +80,15 @@ type Controller struct {
 }
 
 type controllerStats struct {
-	droppedAudioBuffers  atomic.Uint64
-	droppedAudioDuration atomic.Duration
+	mixerDroppedAudioBuffers atomic.Uint64
+	droppedVideoBuffers      atomic.Uint64
+
+	mixerDroppedAudioDuration atomic.Duration
+
+	queuesDroppedAudioBuffers atomic.Uint64
+
+	droppedAudioBuffersByQueue map[string]uint64
+	droppedVideoBuffersByQueue map[string]uint64
 }
 
 var (
@@ -103,6 +110,10 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 		},
 		sinks:   make(map[types.EgressType][]sink.Sink),
 		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
+		stats: controllerStats{
+			droppedVideoBuffersByQueue: make(map[string]uint64),
+			droppedAudioBuffersByQueue: make(map[string]uint64),
+		},
 	}
 	c.callbacks.SetOnError(c.OnError)
 	c.callbacks.SetOnEOSSent(c.onEOSSent)
@@ -202,11 +213,22 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	defer c.Close()
 
 	defer func() {
+		if c.VideoEnabled {
+			logger.Infow(
+				"video input queue stats",
+				"videoBuffersDropped", c.stats.droppedVideoBuffers.Load(),
+				"requestType", c.RequestType,
+				"sourceType", c.SourceType,
+				"droppedByQueue", c.stats.droppedVideoBuffersByQueue,
+			)
+		}
 		if c.SourceType == types.SourceTypeSDK {
 			logger.Debugw(
 				"audio qos stats",
-				"audioBuffersDropped", c.stats.droppedAudioBuffers.Load(),
-				"totalAudioDurationDropped", c.stats.droppedAudioDuration.Load(),
+				"audioBuffersDropped", c.stats.mixerDroppedAudioBuffers.Load(),
+				"totalAudioDurationDropped", c.stats.mixerDroppedAudioDuration.Load(),
+				"queueDroppedAudioBuffers", c.stats.queuesDroppedAudioBuffers.Load(),
+				"droppedByQueue", c.stats.droppedAudioBuffersByQueue,
 				"requestType", c.RequestType,
 			)
 		}
@@ -497,6 +519,25 @@ func (c *Controller) OnError(err error) {
 }
 
 func (c *Controller) Close() {
+	const closeSlowThreshold = 1 * time.Hour
+	closeStart := time.Now()
+	closeDone := make(chan struct{})
+	defer close(closeDone)
+
+	go func() {
+		select {
+		case <-closeDone:
+			return
+		case <-time.After(closeSlowThreshold):
+			logger.Warnw("Close() taking longer than expected", nil,
+				"threshold", closeSlowThreshold,
+				"elapsed", time.Since(closeStart),
+				"egressID", c.Info.EgressId,
+				"sourceType", c.SourceType,
+			)
+		}
+	}()
+
 	c.stopOutputSizeMonitor()
 
 	if c.SourceType == types.SourceTypeSDK || !c.eosSent.IsBroken() {

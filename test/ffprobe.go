@@ -240,6 +240,12 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 				require.Equal(t, "vp9", stream.CodecName)
 			}
 
+			if p.VideoEncoding {
+				// dimensions
+				require.Equal(t, p.Width, stream.Width)
+				require.Equal(t, p.Height, stream.Height)
+			}
+
 			switch p.Outputs[egressType][0].GetOutputType() {
 			case types.OutputTypeIVF:
 				require.Equal(t, "vp8", stream.CodecName)
@@ -265,16 +271,9 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 					require.Less(t, n/d, float64(p.Framerate)*1.5)
 					require.Greater(t, n/d, float64(sourceFramerate)*0.8)
 				}
-				fallthrough
 
 			case types.OutputTypeHLS:
 				require.Equal(t, "h264", stream.CodecName)
-
-				if p.VideoEncoding {
-					// dimensions
-					require.Equal(t, p.Width, stream.Width)
-					require.Equal(t, p.Height, stream.Height)
-				}
 			}
 
 		default:
