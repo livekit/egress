@@ -299,6 +299,7 @@ func (s *SDKSource) handleSubscribe(w *trackWorker, trackID string, state *worke
 	s.mu.Lock()
 	if isPreInit {
 		s.updatePreInitStateLocked(op, ts)
+		writer.MarkAddedToPipeline()
 	}
 	s.mu.Unlock()
 
@@ -312,6 +313,7 @@ func (s *SDKSource) handleSubscribe(w *trackWorker, trackID string, state *worke
 	if isPostInit {
 		<-s.callbacks.BuildReady
 		s.callbacks.OnTrackAdded(ts)
+		writer.MarkAddedToPipeline()
 	}
 
 	return writer
