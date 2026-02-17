@@ -601,7 +601,7 @@ func (m *Monitor) updateCgroupStats() {
 		return
 	}
 
-	usageBytes, limitBytes, err := m.cgroupMemStats.GetMemory()
+	usageBytes, _, err := m.cgroupMemStats.GetMemory()
 	if err != nil {
 		m.cgroupOK = false
 		m.promCgroupReadSuccess.Set(0)
