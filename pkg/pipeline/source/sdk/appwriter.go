@@ -100,6 +100,7 @@ type AppWriter struct {
 	lastPushed               atomic.Time
 	playing                  core.Fuse
 	srcNeedsData             core.Fuse
+	addedToPipeline          core.Fuse
 	draining                 core.Fuse
 	unsubscribed             core.Fuse
 	endStreamSignaled        core.Fuse
@@ -261,10 +262,10 @@ func (w *AppWriter) start() {
 	}
 
 	// clean up
-	if w.playing.IsBroken() {
+	if w.addedToPipeline.IsBroken() {
 		w.callbacks.OnEOSSent()
 		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
-			w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
+			w.logger.Warnw("unexpected flow return", nil, "flowReturn", flow.String())
 		}
 		if w.driftHandler != nil {
 			w.logger.Debugw("processed drift", "drift", w.driftHandler.Processed())
@@ -644,6 +645,12 @@ func (w *AppWriter) OnUnsubscribed() {
 // Finished returns a channel that is closed when the writer has finished.
 func (w *AppWriter) Finished() <-chan struct{} {
 	return w.finished.Watch()
+}
+
+// MarkAddedToPipeline signals that the appsrc has been linked to the GStreamer pipeline.
+// This is used to determine if EOS must be sent during cleanup.
+func (w *AppWriter) MarkAddedToPipeline() {
+	w.addedToPipeline.Break()
 }
 
 func (w *AppWriter) logStats() {

@@ -314,6 +314,7 @@ func (s *SDKSource) handleSubscribe(w *trackWorker, trackID string, state *worke
 		s.callbacks.OnTrackAdded(ts)
 	}
 
+	writer.MarkAddedToPipeline()
 	return writer
 }
 

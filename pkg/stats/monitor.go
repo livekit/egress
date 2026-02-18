@@ -601,7 +601,7 @@ func (m *Monitor) updateCgroupStats() {
 		return
 	}
 
-	usageBytes, limitBytes, err := m.cgroupMemStats.GetMemory()
+	usageBytes, _, err := m.cgroupMemStats.GetMemory()
 	if err != nil {
 		m.cgroupOK = false
 		m.promCgroupReadSuccess.Set(0)
@@ -618,8 +618,6 @@ func (m *Monitor) updateCgroupStats() {
 
 	m.promCgroupReadSuccess.Set(1)
 	m.promCgroupMemory.Set(float64(usageBytes))
-	logger.Infow("cgroup memory stats", "usageBytes", usageBytes, "limitBytes", limitBytes)
-	logger.Infow("rss memory stats", "memoryUsage", m.memoryUsage)
 }
 
 // updateWouldRejectMetrics computes what admission would do with alternative memory sources.
