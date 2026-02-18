@@ -99,6 +99,7 @@ type AppWriter struct {
 	lastReceived             atomic.Time
 	lastPushed               atomic.Time
 	playing                  core.Fuse
+	srcNeedsData             core.Fuse
 	addedToPipeline          core.Fuse
 	draining                 core.Fuse
 	unsubscribed             core.Fuse
@@ -152,6 +153,14 @@ func NewAppWriter(
 		timeProvider:      gstreamer.NopTimeProvider(),
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
+	w.src.SetCallbacks(&app.SourceCallbacks{
+		NeedDataFunc: func(_ *app.Source, _ uint) {
+			w.srcNeedsData.Once(func() {
+				w.logger.Debugw("src needs data", "src", w.src)
+				w.notifyPushSamples()
+			})
+		},
+	})
 
 	ts.OnKeyframeRequired = w.onKeyframeRequired
 
@@ -483,6 +492,10 @@ func (w *AppWriter) pushSamples() {
 	}
 
 	if !w.waitFor(w.playing.Watch()) {
+		return
+	}
+
+	if !w.waitFor(w.srcNeedsData.Watch()) {
 		return
 	}
 
