@@ -122,10 +122,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 	)
 
 	if err := s.joinRoom(); err != nil {
-		if s.room != nil {
-			s.room.Disconnect()
-			s.room = nil
-		}
+		s.disconnectRoom()
 		return nil, err
 	}
 
@@ -199,10 +196,7 @@ func (s *SDKSource) StreamStopped(elementName string) {
 }
 
 func (s *SDKSource) Close() {
-	if s.room != nil {
-		s.room.Disconnect()
-		s.room = nil
-	}
+	s.disconnectRoom()
 }
 
 func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
@@ -635,4 +629,11 @@ func (s *SDKSource) finished() {
 
 func (s *SDKSource) shouldSkipTrackSubscriptions() bool {
 	return s.initialized.IsBroken() && s.RequestType != types.RequestTypeParticipant && s.RequestType != types.RequestTypeRoomComposite
+}
+
+func (s *SDKSource) disconnectRoom() {
+	if s.room != nil {
+		s.room.Disconnect()
+		s.room = nil
+	}
 }
