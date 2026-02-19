@@ -122,6 +122,10 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 	)
 
 	if err := s.joinRoom(); err != nil {
+		if s.room != nil {
+			s.room.Disconnect()
+			s.room = nil
+		}
 		return nil, err
 	}
 
@@ -195,7 +199,10 @@ func (s *SDKSource) StreamStopped(elementName string) {
 }
 
 func (s *SDKSource) Close() {
-	s.room.Disconnect()
+	if s.room != nil {
+		s.room.Disconnect()
+		s.room = nil
+	}
 }
 
 func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
