@@ -100,21 +100,22 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 	if p.RequestType == types.RequestTypeRoomComposite {
 		// Enable Packet Burst Estimator for Room Composite requests
 		opts = append(opts, synchronizer.WithStartGate())
-	} else {
-		// Enable Sender Report Rebase except for Room Composite
-		opts = append(opts, synchronizer.WithRTCPSenderReportRebaseEnabled())
 	}
+
 	// time provider is not available yet, will be set later
 	// add some leeway to the mixer latency
 	opts = append(opts, synchronizer.WithMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond))
 
-	if p.RequestType == types.RequestTypeRoomComposite || p.AudioTempoController.Enabled {
-		// in case of room composite don't adjust audio timestamps on RTCP sender reports,
+	if s.shouldDisableAudioPTSAdjustment() {
+		// in case of room composite and track requests don't adjust audio timestamps on RTCP sender reports,
 		// to avoid gaps in the audio stream
 		opts = append(opts, synchronizer.WithAudioPTSAdjustmentDisabled())
-		if p.AudioTempoController.Enabled {
-			logger.Debugw("audio tempo controller enabled", "adjustmentRate", p.AudioTempoController.AdjustmentRate)
-		}
+	} else {
+		opts = append(opts, synchronizer.WithRTCPSenderReportRebaseEnabled())
+	}
+
+	if p.AudioTempoController.Enabled {
+		logger.Debugw("audio tempo controller enabled", "adjustmentRate", p.AudioTempoController.AdjustmentRate)
 	}
 
 	s.sync = synchronizer.NewSynchronizerWithOptions(
@@ -636,4 +637,10 @@ func (s *SDKSource) disconnectRoom() {
 		s.room.Disconnect()
 		s.room = nil
 	}
+}
+
+func (s *SDKSource) shouldDisableAudioPTSAdjustment() bool {
+	return s.RequestType == types.RequestTypeRoomComposite || // SDK room composites are audio only - no need to adjust audio timestamps
+		s.RequestType == types.RequestTypeTrack || // no A/V sync needed for single track requests
+		s.AudioTempoController.Enabled
 }
