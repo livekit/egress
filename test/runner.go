@@ -26,16 +26,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+
+	"github.com/livekit/egress/pkg/config"
 )
 
 type Runner struct {
@@ -55,11 +55,12 @@ type Runner struct {
 	AzureUpload           *livekit.AzureBlobUpload `yaml:"-"`
 
 	// testing config
-	FilePrefix string `yaml:"file_prefix"`
-	RoomName   string `yaml:"room_name"`
-	Muting     bool   `yaml:"muting"`
-	Dotfiles   bool   `yaml:"dot_files"`
-	Short      bool   `yaml:"short"`
+	FilePrefix   string `yaml:"file_prefix"`
+	RoomName     string `yaml:"room_name"`
+	RoomBaseName string `yaml:"-"`
+	Muting       bool   `yaml:"muting"`
+	Dotfiles     bool   `yaml:"dot_files"`
+	Short        bool   `yaml:"short"`
 
 	// flagset used to determine which tests to run
 	shouldRun uint `yaml:"-"`
@@ -147,7 +148,6 @@ func NewRunner(t *testing.T) *Runner {
 	require.NoError(t, err)
 
 	r.ServiceConfig = conf
-	r.ServiceConfig.EnableRoomCompositeSDKSource = true
 
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
 		t.Fatal("api key, secret, and ws url required")
@@ -180,13 +180,40 @@ func NewRunner(t *testing.T) *Runner {
 		logger.Infow("no azure config supplied")
 	}
 
+	if r.RoomBaseName == "" {
+		r.RoomBaseName = r.RoomName
+	}
+
 	r.updateFlagset()
 
 	return r
 }
 
+func (r *Runner) connectRoom(t *testing.T, roomName string, codecs []livekit.Codec) {
+	if r.room != nil {
+		r.room.Disconnect()
+	}
+
+	opts := []lksdk.ConnectOption{}
+	if len(codecs) > 0 {
+		opts = append(opts, lksdk.WithCodecs(codecs))
+	}
+
+	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            roomName,
+		ParticipantName:     "egress-sample",
+		ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
+	}, lksdk.NewRoomCallback(), opts...)
+	require.NoError(t, err)
+
+	r.room = room
+	r.RoomName = roomName
+}
+
 func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, templateFs fs.FS) {
-	lksdk.SetLogger(logger.LogRLogger(logr.Discard()))
+	lksdk.SetLogger(logger.GetLogger())
 	r.svc = svc
 	t.Cleanup(func() {
 		if r.room != nil {
@@ -195,15 +222,7 @@ func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, tem
 		r.svc.Shutdown(false, true)
 	})
 
-	// connect to room
-	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
-		APIKey:              r.ApiKey,
-		APISecret:           r.ApiSecret,
-		RoomName:            r.RoomName,
-		ParticipantName:     "egress-sample",
-		ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
-	}, lksdk.NewRoomCallback())
-	require.NoError(t, err)
+	r.connectRoom(t, r.RoomName, nil)
 
 	psrpcClient, err := rpc.NewEgressClient(rpc.ClientParams{Bus: bus})
 	require.NoError(t, err)
@@ -226,7 +245,6 @@ func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, tem
 	// update test config
 	r.client = psrpcClient
 	r.updates = psrpcUpdates
-	r.room = room
 
 	// check status
 	if r.HealthPort != 0 {

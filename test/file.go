@@ -192,6 +192,34 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 				contentCheck: r.audioOnlyContentCheck,
 			},
+			{
+				name:        "TrackComposite/AudioOnlyPCMU",
+				requestType: types.RequestTypeTrackComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypePCMU,
+					audioOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "tc_{room_name}_audio_pcmu_{time}.mp4",
+					fileType:   livekit.EncodedFileType_MP4,
+					outputType: types.OutputTypeMP4,
+				},
+				contentCheck: r.audioOnlyContentCheck,
+			},
+			{
+				name:        "TrackComposite/AudioOnlyPCMA",
+				requestType: types.RequestTypeTrackComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypePCMA,
+					audioOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "tc_{room_name}_audio_pcma_{time}.mp4",
+					fileType:   livekit.EncodedFileType_MP4,
+					outputType: types.OutputTypeMP4,
+				},
+				contentCheck: r.audioOnlyContentCheck,
+			},
 
 			// --------- Track ---------
 
@@ -204,6 +232,32 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 				fileOptions: &fileOptions{
 					filename:   "t_{track_source}_{time}.ogg",
+					outputType: types.OutputTypeOGG,
+				},
+				contentCheck: r.audioOnlyContentCheck,
+			},
+			{
+				name:        "Track/PCMU",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypePCMU,
+					audioOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "t_{track_source}_pcmu_{time}.ogg",
+					outputType: types.OutputTypeOGG,
+				},
+				contentCheck: r.audioOnlyContentCheck,
+			},
+			{
+				name:        "Track/PCMA",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypePCMA,
+					audioOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "t_{track_source}_pcma_{time}.ogg",
 					outputType: types.OutputTypeOGG,
 				},
 				contentCheck: r.audioOnlyContentCheck,

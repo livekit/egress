@@ -21,11 +21,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/pprof"
 	"github.com/livekit/psrpc"
+
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/ipc"
 )
 
 const (
@@ -95,14 +96,22 @@ func (s *DebugService) handlePProf(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var b []byte
 
-	timeout, _ := strconv.Atoi(r.URL.Query().Get("timeout"))
-	debug, _ := strconv.Atoi(r.URL.Query().Get("debug"))
+	timeout, err := strconv.ParseInt(r.URL.Query().Get("timeout"), 10, 32)
+	if err != nil {
+		http.Error(w, "bad timeout parameter", http.StatusBadRequest)
+		return
+	}
+	debug, err := strconv.ParseInt(r.URL.Query().Get("debug"), 10, 32)
+	if err != nil {
+		http.Error(w, "bad debug parameter", http.StatusBadRequest)
+		return
+	}
 
 	pathElements := strings.Split(r.URL.Path, "/")
 	switch len(pathElements) {
 	case 3:
 		// profile main service
-		b, err = pprof.GetProfileData(context.Background(), pathElements[2], timeout, debug)
+		b, err = pprof.GetProfileData(context.Background(), pathElements[2], int(timeout), int(debug))
 
 	case 4:
 		egressID := pathElements[2]

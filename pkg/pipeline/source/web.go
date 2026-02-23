@@ -353,7 +353,17 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 			timeout = time.AfterFunc(chromeTimeout, chromeCancel)
 			return nil
 		}),
-		chromedp.Navigate(webUrl),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			// use RunResponse wrapped in ActionFunc to get the response details
+			r, err := chromedp.RunResponse(ctx, chromedp.Navigate(webUrl))
+			if err != nil {
+				return err
+			}
+			if r.Status >= 400 {
+				return errors.PageLoadError(r.StatusText)
+			}
+			return nil
+		}),
 		chromedp.ActionFunc(func(_ context.Context) error {
 			// cancel timer
 			timeout.Stop()

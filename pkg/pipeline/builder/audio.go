@@ -280,6 +280,50 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 			return err
 		}
 
+	case types.MimeTypePCMU:
+		if err := ts.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+			"application/x-rtp,media=audio,payload=%d,encoding-name=PCMU,clock-rate=%d",
+			ts.PayloadType, ts.ClockRate,
+		))); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		rtpPCMUDepay, err := gst.NewElement("rtppcmudepay")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		mulawDec, err := gst.NewElement("mulawdec")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		if err = appSrcBin.AddElements(rtpPCMUDepay, mulawDec); err != nil {
+			return err
+		}
+
+	case types.MimeTypePCMA:
+		if err := ts.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+			"application/x-rtp,media=audio,payload=%d,encoding-name=PCMA,clock-rate=%d",
+			ts.PayloadType, ts.ClockRate,
+		))); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		rtpPCMADepay, err := gst.NewElement("rtppcmadepay")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		alawDec, err := gst.NewElement("alawdec")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		if err = appSrcBin.AddElements(rtpPCMADepay, alawDec); err != nil {
+			return err
+		}
+
 	default:
 		return errors.ErrNotSupported(string(ts.MimeType))
 	}

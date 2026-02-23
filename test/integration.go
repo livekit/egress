@@ -58,6 +58,7 @@ func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)
 	}
 
 	r.awaitIdle(t)
+	r.ensureRoomForTest(t, test)
 
 	r.testNumber++
 	t.Run(fmt.Sprintf("%d/%s", r.testNumber, test.name), func(t *testing.T) {
@@ -73,10 +74,42 @@ func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)
 			r.publishSample(t, test.videoCodec, test.videoRepublish, 0, videoMuting)
 		}
 
+		logger.Infow("test publish summary",
+			"test", test.name,
+			"room", r.RoomName,
+			"audioCodec", test.audioCodec,
+			"audioTrackID", test.audioTrackID,
+			"videoCodec", test.videoCodec,
+			"videoTrackID", test.videoTrackID,
+		)
+
 		f(t, test)
 	})
 
 	return !r.Short
+}
+
+func (r *Runner) ensureRoomForTest(t *testing.T, test *testCase) {
+	desiredRoom := r.RoomBaseName
+	var codecs []livekit.Codec
+	switch test.audioCodec {
+	case types.MimeTypePCMU:
+		desiredRoom = fmt.Sprintf("%s-pcmu", r.RoomBaseName)
+		codecs = []livekit.Codec{{
+			Mime: string(types.MimeTypePCMU),
+		}}
+	case types.MimeTypePCMA:
+		desiredRoom = fmt.Sprintf("%s-pcma", r.RoomBaseName)
+		codecs = []livekit.Codec{{
+			Mime: string(types.MimeTypePCMA),
+		}}
+	}
+
+	if desiredRoom == "" || desiredRoom == r.RoomName {
+		return
+	}
+
+	r.connectRoom(t, desiredRoom, codecs)
 }
 
 func (r *Runner) awaitIdle(t *testing.T) {

@@ -42,11 +42,12 @@ import (
 )
 
 const (
-	errBufferTooSmall      = "buffer too small"
-	discontinuityTolerance = 500 * time.Millisecond
-	pipelineCheckInterval  = 5 * time.Second
-	cSamplesQueueDepth     = 100
-	drainingTimeout        = time.Second * 3
+	errBufferTooSmall       = "buffer too small"
+	discontinuityTolerance  = 500 * time.Millisecond
+	pipelineCheckInterval   = 5 * time.Second
+	cSamplesQueueDepth      = 100
+	drainingTimeout         = time.Second * 3
+	unsubscribedGracePeriod = time.Second * 2
 )
 
 type sampleItem struct {
@@ -98,7 +99,10 @@ type AppWriter struct {
 	lastReceived             atomic.Time
 	lastPushed               atomic.Time
 	playing                  core.Fuse
+	srcNeedsData             core.Fuse
+	addedToPipeline          core.Fuse
 	draining                 core.Fuse
+	unsubscribed             core.Fuse
 	endStreamSignaled        core.Fuse
 	endStreamSourceProcessed core.Fuse
 	endStreamProcessed       core.Fuse
@@ -149,6 +153,14 @@ func NewAppWriter(
 		timeProvider:      gstreamer.NopTimeProvider(),
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
+	w.src.SetCallbacks(&app.SourceCallbacks{
+		NeedDataFunc: func(_ *app.Source, _ uint) {
+			w.srcNeedsData.Once(func() {
+				w.logger.Debugw("src needs data", "src", w.src)
+				w.notifyPushSamples()
+			})
+		},
+	})
 
 	ts.OnKeyframeRequired = w.onKeyframeRequired
 
@@ -175,6 +187,10 @@ func NewAppWriter(
 	switch ts.MimeType {
 	case types.MimeTypeOpus:
 		depacketizer = &codecs.OpusPacket{}
+		w.translator = NewNullTranslator()
+
+	case types.MimeTypePCMU, types.MimeTypePCMA:
+		depacketizer = &G711Packet{}
 		w.translator = NewNullTranslator()
 
 	case types.MimeTypeH264:
@@ -246,10 +262,10 @@ func (w *AppWriter) start() {
 	}
 
 	// clean up
-	if w.playing.IsBroken() {
+	if w.addedToPipeline.IsBroken() {
 		w.callbacks.OnEOSSent()
 		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
-			w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
+			w.logger.Warnw("unexpected flow return", nil, "flowReturn", flow.String())
 		}
 		if w.driftHandler != nil {
 			w.logger.Debugw("processed drift", "drift", w.driftHandler.Processed())
@@ -317,16 +333,37 @@ func (w *AppWriter) handleReadError(err error) {
 	var netErr net.Error
 	switch {
 	case w.draining.IsBroken():
+		if !w.endStreamSignaled.IsBroken() {
+			// Delayed drain in progress (Drain(false) was called, timer pending)
+			if (errors.As(err, &netErr) && netErr.Timeout()) || err.Error() == errBufferTooSmall {
+				// Keep reading until timer fires to preserve pipeline latency timeout
+				return
+			}
+		}
+		w.logger.Debugw("handleReadError, breaking endStreamSignaled", "error", err)
+		// connection closed or EOF - no point in trying to read anymore
 		w.endStreamSignaled.Break()
 		w.notifyPushSamples()
 
 	case errors.As(err, &netErr) && netErr.Timeout():
-		if !w.active.Load() {
-			return
-		}
+		w.logger.Debugw("read timeout", "error", err)
 		lastRecv := w.lastReceived.Load()
 		if lastRecv.IsZero() {
 			lastRecv = w.startTime
+		}
+
+		// If track was unsubscribed and grace period elapsed, end the stream
+		if w.unsubscribed.IsBroken() && time.Since(lastRecv) > unsubscribedGracePeriod {
+			w.logger.Debugw("unsubscribed grace period elapsed, ending stream")
+			w.ensureRemovedBeforeDrain()
+			w.draining.Break()
+			w.endStreamSignaled.Break()
+			w.notifyPushSamples()
+			return
+		}
+
+		if !w.active.Load() {
+			return
 		}
 		if w.pub.IsMuted() || time.Since(lastRecv) > w.conf.Latency.JitterBufferLatency {
 			// set track inactive
@@ -458,6 +495,10 @@ func (w *AppWriter) pushSamples() {
 		return
 	}
 
+	if !w.waitFor(w.srcNeedsData.Watch()) {
+		return
+	}
+
 	for {
 		w.samplesLock.Lock()
 		for w.samplesHead == nil && !w.endStreamSourceProcessed.IsBroken() {
@@ -574,7 +615,7 @@ func (w *AppWriter) Playing() {
 // Drain blocks until finished
 func (w *AppWriter) Drain(force bool) {
 	w.draining.Once(func() {
-		w.logger.Debugw("draining")
+		w.logger.Debugw("draining", "force", force)
 
 		endStream := func() {
 			w.endStreamSignaled.Break()
@@ -591,6 +632,25 @@ func (w *AppWriter) Drain(force bool) {
 	<-w.finished.Watch()
 	w.logger.Debugw("finished fuse broken")
 	w.synchronizer.RemoveTrack(w.track.ID())
+}
+
+// OnUnsubscribed signals that the track was unsubscribed but allows the reader
+// to continue reading until an error occurs or grace period elapses.
+// This allows any remaining buffers in flight from the SFU to be processed.
+func (w *AppWriter) OnUnsubscribed() {
+	w.unsubscribed.Break()
+	w.logger.Debugw("track unsubscribed, continuing to read until error or grace period")
+}
+
+// Finished returns a channel that is closed when the writer has finished.
+func (w *AppWriter) Finished() <-chan struct{} {
+	return w.finished.Watch()
+}
+
+// MarkAddedToPipeline signals that the appsrc has been linked to the GStreamer pipeline.
+// This is used to determine if EOS must be sent during cleanup.
+func (w *AppWriter) MarkAddedToPipeline() {
+	w.addedToPipeline.Break()
 }
 
 func (w *AppWriter) logStats() {
@@ -674,4 +734,22 @@ func (w *AppWriter) ensureRemovedBeforeDrain() {
 	if w.shouldRemoveBeforeDrain() && w.removalRequested.CompareAndSwap(false, true) {
 		w.callbacks.OnTrackRemoved(w.track.ID())
 	}
+}
+
+type G711Packet struct{}
+
+func (p *G711Packet) Unmarshal(packet []byte) ([]byte, error) {
+	// G.711 payload is just the raw samples, return as-is (same as OpusPacket)
+	if packet == nil {
+		return nil, errors.New("nil packet")
+	}
+	return packet, nil
+}
+
+func (p *G711Packet) IsPartitionHead(_ []byte) bool {
+	return true
+}
+
+func (p *G711Packet) IsPartitionTail(_ bool, _ []byte) bool {
+	return true
 }

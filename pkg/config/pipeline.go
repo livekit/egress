@@ -29,14 +29,16 @@ import (
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/tempo"
-	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/storageobs"
 	"github.com/livekit/protocol/rpc"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/tempo"
+	"github.com/livekit/egress/pkg/types"
 )
 
 type PipelineConfig struct {
@@ -54,8 +56,9 @@ type PipelineConfig struct {
 	OutputCount          atomic.Int32                        `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	Info     *livekit.EgressInfo `yaml:"-"`
-	Manifest *Manifest           `yaml:"-"`
+	Info            *livekit.EgressInfo        `yaml:"-"`
+	Manifest        *Manifest                  `yaml:"-"`
+	StorageReporter storageobs.ProjectReporter `yaml:"-"`
 }
 
 var (
@@ -85,7 +88,6 @@ type SDKSourceParams struct {
 	TrackSource  string
 	TrackKind    string
 	ScreenShare  bool
-	AudioInCodec types.MimeType
 	VideoInCodec types.MimeType
 	AudioTracks  []*TrackSource
 	VideoTrack   *TrackSource
@@ -133,7 +135,8 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 				Level: "info",
 			},
 		},
-		Outputs: make(map[types.EgressType][]OutputConfig),
+		Outputs:         make(map[types.EgressType][]OutputConfig),
+		StorageReporter: storageobs.NewNoopProjectReporter(),
 	}
 
 	if err := yaml.Unmarshal([]byte(confString), p); err != nil {
@@ -221,7 +224,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		if !req.RoomComposite.VideoOnly {
 			p.AudioEnabled = true
-			p.AudioInCodec = types.MimeTypeRawAudio
 			p.AudioTranscoding = true
 		}
 		if !req.RoomComposite.AudioOnly {
@@ -269,7 +271,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		if !req.Web.VideoOnly {
 			p.AudioEnabled = true
-			p.AudioInCodec = types.MimeTypeRawAudio
 			p.AudioTranscoding = true
 		}
 		if !req.Web.AudioOnly {
@@ -576,24 +577,26 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 	return nil
 }
 
-func (p *PipelineConfig) getRoomCompositeRequestType(req *livekit.RoomCompositeEgressRequest) types.SourceType {
-	// Test for possible chrome-less room composition for audio only
-	if !p.EnableRoomCompositeSDKSource {
-		return types.SourceTypeWeb
-	}
+// RoomCompositeUsesSDKSource reports whether a room composite request will use
+// the SDK source (no Chrome/Pulse) instead of Web
+func RoomCompositeUsesSDKSource(req *livekit.RoomCompositeEgressRequest) bool {
 	if req.Layout != "" {
-		return types.SourceTypeWeb
+		return false
 	}
 	if !req.AudioOnly {
-		return types.SourceTypeWeb
+		return false
 	}
 	if req.CustomBaseUrl != "" {
+		return false
+	}
+	return true
+}
+
+func (p *PipelineConfig) getRoomCompositeRequestType(req *livekit.RoomCompositeEgressRequest) types.SourceType {
+	if !RoomCompositeUsesSDKSource(req) {
 		return types.SourceTypeWeb
 	}
-
-	// apply audio mixing option
 	p.AudioMixing = req.AudioMixing
-
 	return types.SourceTypeSDK
 }
 
