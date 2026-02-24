@@ -107,7 +107,7 @@ var (
 	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Unavailable, "failed to subscribe to track")
 	ErrNotEnoughCPU               = psrpc.NewErrorf(psrpc.Unavailable, "not enough CPU")
 	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
-	ErrHandlerFailedToStart       = psrpc.NewErrorf(psrpc.Unavailable, "handler failed to start")
+	ErrHandlerFailedToStart       = psrpc.NewErrorf(psrpc.Internal, "handler failed to start")
 )
 
 func PageLoadError(err string) error {
