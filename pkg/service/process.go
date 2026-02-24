@@ -92,7 +92,7 @@ func (pm *ProcessManager) Launch(
 		logger.Warnw("no response from handler", nil, "egressID", info.EgressId)
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		return errors.ErrEgressNotFound
+		return errors.ErrHandlerFailedToStart
 	}
 }
 
