@@ -251,8 +251,8 @@ github.com/livekit/media-sdk v0.0.0-20251218175659-d0b840bb38ef h1:1V6d6BII8plnP
 github.com/livekit/media-sdk v0.0.0-20251218175659-d0b840bb38ef/go.mod h1:7ssWiG+U4xnbvLih9WiZbhQP6zIKMjgXdUtIE1bm/E8=
 github.com/livekit/mediatransportutil v0.0.0-20251128105421-19c7a7b81c22 h1:dzCBxOGLLWVtQhL7OYK2EGN+5Q+23Mq/jfz4vQisirA=
 github.com/livekit/mediatransportutil v0.0.0-20251128105421-19c7a7b81c22/go.mod h1:mSNtYzSf6iY9xM3UX42VEI+STHvMgHmrYzEHPcdhB8A=
-github.com/livekit/protocol v1.44.1-0.20260223130443-6539ef61bfc2 h1:WvEc+eOEJ/0Bz2dU2dH4TES4/2Jh3kiynFF/TEUm7MU=
-github.com/livekit/protocol v1.44.1-0.20260223130443-6539ef61bfc2/go.mod h1:BLJHYHErQTu3+fnmfGrzN6CbHxNYiooFIIYGYxXxotw=
+github.com/livekit/protocol v1.44.1-0.20260224000104-64df1ef933ff h1:pOWQkWgPzYRkxwMEhhLzJGJg72FqpQj+euHAZaQa5Vo=
+github.com/livekit/protocol v1.44.1-0.20260224000104-64df1ef933ff/go.mod h1:BLJHYHErQTu3+fnmfGrzN6CbHxNYiooFIIYGYxXxotw=
 github.com/livekit/psrpc v0.7.1 h1:ms37az0QTD3UXIWuUC5D/SkmKOlRMVRsI261eBWu/Vw=
 github.com/livekit/psrpc v0.7.1/go.mod h1:bZ4iHFQptTkbPnB0LasvRNu/OBYXEu1NA6O5BMFo9kk=
 github.com/livekit/server-sdk-go/v2 v2.13.4-0.20260205010318-ca8b66238d43 h1:UsVVXRlO5awj4s38Q+S4jTqeYEOYs8N5elWfcmz+N6M=
