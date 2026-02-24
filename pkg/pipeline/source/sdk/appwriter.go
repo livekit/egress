@@ -345,7 +345,6 @@ func (w *AppWriter) handleReadError(err error) {
 		w.notifyPushSamples()
 
 	case errors.As(err, &netErr) && netErr.Timeout():
-		w.logger.Debugw("read timeout", "error", err)
 		lastRecv := w.lastReceived.Load()
 		if lastRecv.IsZero() {
 			lastRecv = w.startTime

@@ -349,7 +349,6 @@ func (s *SDKSource) processIdleOp(w *trackWorker, trackID string, state *workerS
 	case OpSetTimeProvider:
 		logger.Warnw("invalid op in IDLE", nil, "trackID", trackID, "op", op.Type.String())
 	case OpClose:
-		logger.Warnw("invalid op in IDLE", nil, "trackID", trackID, "op", op.Type.String())
 		return true
 	case OpUnsubscribe, OpFinished:
 		logger.Warnw("invalid op in IDLE", nil, "trackID", trackID, "op", op.Type.String())
