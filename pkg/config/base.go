@@ -65,6 +65,7 @@ type BaseConfig struct {
 	Latency              LatencyConfig                       `yaml:"latency"`                // gstreamer latencies, modifying these may break the service
 	LatencyOverrides     map[types.RequestType]LatencyConfig `yaml:"latency_overrides"`      // latency overrides for different request types, experimental only, will be removed
 	AudioTempoController AudioTempoController                `yaml:"audio_tempo_controller"` // audio tempo controller
+	TestFailureInjection bool                                `yaml:"test_failure_injection"` // staging-only: enable e2e failure injection via room name
 }
 
 type SessionLimits struct {

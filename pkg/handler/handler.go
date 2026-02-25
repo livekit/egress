@@ -17,10 +17,8 @@ package handler
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"path"
-	"path/filepath"
+	"strings"
 
 	"github.com/frostbyte73/core"
 	"github.com/prometheus/client_golang/prometheus"
@@ -107,10 +105,7 @@ func (h *Handler) Run() {
 	var err error
 	egressID := h.conf.Info.EgressId
 
-	shouldFail, failErr := h.shouldInjectEgressFailure()
-	if failErr != nil {
-		logger.Warnw("failed to check if egress should fail", failErr)
-	} else if shouldFail {
+	if h.shouldInjectEgressFailure() {
 		logger.Infow("injecting egress failure", "egressID", egressID)
 		err = errors.New("test failure injection")
 		h.conf.Info.SetFailed(err)
@@ -157,19 +152,12 @@ func (h *Handler) Kill() {
 	h.controller.SendEOS(context.Background(), livekit.EndReasonKilled)
 }
 
-func (h *Handler) shouldInjectEgressFailure() (bool, error) {
-	egressID := h.conf.Info.EgressId
-	markerFile := filepath.Join(config.TmpDir, fmt.Sprintf(".egress_failure_marker_%s", egressID))
-
-	if _, err := os.Stat(markerFile); err == nil {
-		return false, nil
+func (h *Handler) shouldInjectEgressFailure() bool {
+	if !h.conf.TestFailureInjection {
+		return false
 	}
-
-	if err := os.MkdirAll(config.TmpDir, 0755); err != nil {
-		return false, err
+	if h.conf.Info.Retries > 0 {
+		return false
 	}
-	if err := os.WriteFile(markerFile, []byte("1"), 0644); err != nil {
-		return false, err
-	}
-	return true, nil
+	return strings.Contains(h.conf.Info.RoomName, "_inject_failure")
 }
