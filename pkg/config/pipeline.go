@@ -16,6 +16,7 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"path"
 	"strings"
@@ -180,7 +181,9 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		Status:    livekit.EgressStatus_EGRESS_STARTING,
 		StartedAt: now,
 		UpdatedAt: now,
+		Retries:   request.Retries,
 	}
+
 	p.AudioConfig = AudioConfig{
 		AudioBitrate:   128,
 		AudioFrequency: 44100,
@@ -599,6 +602,9 @@ func (p *PipelineConfig) getRoomCompositeRequestType(req *livekit.RoomCompositeE
 
 // used for sdk input source
 func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string, w, h uint32) error {
+	if p.Info.Retries > 0 {
+		replacements["{retry}"] = fmt.Sprintf("%d", p.Info.Retries)
+	}
 	var err error
 	for egressType, c := range p.Outputs {
 		if len(c) == 0 {

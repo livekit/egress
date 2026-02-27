@@ -16,7 +16,9 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"path"
+	"strings"
 
 	"github.com/frostbyte73/core"
 	"github.com/prometheus/client_golang/prometheus"
@@ -103,6 +105,17 @@ func (h *Handler) Run() {
 	var err error
 	egressID := h.conf.Info.EgressId
 
+	if h.shouldInjectEgressFailure() {
+		logger.Infow("injecting egress failure", "egressID", egressID)
+		err = errors.New("test failure injection")
+		h.conf.Info.SetFailed(err)
+		_, err = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
+		if err != nil {
+			logger.Errorw("egress update ipc call failed", err, "egressID", egressID)
+		}
+		return
+	}
+
 	h.controller, err = pipeline.New(context.Background(), h.conf, h.ipcServiceClient)
 	h.initialized.Break()
 	if err != nil {
@@ -137,4 +150,14 @@ func (h *Handler) Kill() {
 		return
 	}
 	h.controller.SendEOS(context.Background(), livekit.EndReasonKilled)
+}
+
+func (h *Handler) shouldInjectEgressFailure() bool {
+	if !h.conf.TestFailureInjection {
+		return false
+	}
+	if h.conf.Info.Retries > 0 {
+		return false
+	}
+	return strings.Contains(h.conf.Info.RoomName, "_inject_failure")
 }
