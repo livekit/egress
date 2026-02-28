@@ -558,7 +558,8 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.stats.packetsDropped.Inc()
-		w.logger.Infow("unexpected flow return", "flow", flow)
+		w.logger.Infow("unexpected flow return", "flow", flow,
+			"appsrcState", w.src.Element.GetCurrentState().String())
 		if flow == gst.FlowFlushing && w.flushDotRequested.CompareAndSwap(false, true) {
 			w.callbacks.OnDebugDotRequest("appsrc_flush_" + w.track.ID())
 		}
