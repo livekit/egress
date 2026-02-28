@@ -272,10 +272,6 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 		}
 		return
 	}
-
-	if newState != gst.StatePlaying {
-		return
-	}
 }
 
 const (
