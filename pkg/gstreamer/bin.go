@@ -167,7 +167,7 @@ func (b *Bin) AddElements(elements ...*gst.Element) error {
 // This is used for FlowFlushing recovery where EOS will never propagate from a stuck appsrc.
 // The removal runs on the GLib main loop thread via glib.IdleAdd and blocks until complete.
 func (b *Bin) ForceRemoveSourceBin(name string) error {
-	logger.Debugw(fmt.Sprintf("force removing src %s from %s", name, b.bin.GetName()))
+	logger.Infow("force removing source bin", "src", name, "from", b.bin.GetName())
 
 	b.LockStateShared()
 	defer b.UnlockStateShared()
