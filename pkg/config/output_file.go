@@ -104,8 +104,8 @@ func (p *PipelineConfig) getFilenameInfo() (string, map[string]string) {
 	utc := fmt.Sprintf("%s%03d", now.Format("20060102150405"), now.UnixMilli()%1000)
 
 	replacements := make(map[string]string)
-	if p.Info.Retries > 0 {
-		replacements["{retry}"] = fmt.Sprintf("%d", p.Info.Retries)
+	if p.Info.RetryCount > 0 {
+		replacements["{retry}"] = fmt.Sprintf("%d", p.Info.RetryCount)
 	}
 	if p.Info.RoomName != "" {
 		replacements["{room_name}"] = p.Info.RoomName
@@ -133,8 +133,8 @@ func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replac
 	if o.StorageFilepath == "" || strings.HasSuffix(o.StorageFilepath, "/") {
 		// generate filepath
 		baseName := fmt.Sprintf("%s-%s", identifier, time.Now().Format("2006-01-02T150405"))
-		if p.Info.Retries > 0 && !hasRetryTemplate {
-			baseName = fmt.Sprintf("%s-%d", baseName, p.Info.Retries)
+		if p.Info.RetryCount > 0 && !hasRetryTemplate {
+			baseName = fmt.Sprintf("%s-%d", baseName, p.Info.RetryCount)
 		}
 		o.StorageFilepath = fmt.Sprintf("%s%s%s", o.StorageFilepath, baseName, ext)
 	} else if !strings.HasSuffix(o.StorageFilepath, string(ext)) {
@@ -145,8 +145,8 @@ func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replac
 				o.StorageFilepath = o.StorageFilepath[:extIdx]
 			}
 		}
-		if p.Info.Retries > 0 && !hasRetryTemplate {
-			o.StorageFilepath = fmt.Sprintf("%s-%d", o.StorageFilepath, p.Info.Retries)
+		if p.Info.RetryCount > 0 && !hasRetryTemplate {
+			o.StorageFilepath = fmt.Sprintf("%s-%d", o.StorageFilepath, p.Info.RetryCount)
 		}
 
 		// add file extension
