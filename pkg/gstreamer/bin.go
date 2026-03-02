@@ -16,6 +16,7 @@ package gstreamer
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -162,6 +163,61 @@ func (b *Bin) AddElements(elements ...*gst.Element) error {
 	return nil
 }
 
+// ForceRemoveSourceBin synchronously removes a source bin without waiting for EOS.
+// This is used for FlowFlushing recovery where EOS will never propagate from a stuck appsrc.
+// The removal runs on the GLib main loop thread via glib.IdleAdd and blocks until complete.
+func (b *Bin) ForceRemoveSourceBin(name string) error {
+	logger.Infow("force removing source bin", "src", name, "from", b.bin.GetName())
+
+	b.LockStateShared()
+	defer b.UnlockStateShared()
+
+	state := b.GetStateLocked()
+	if state > StateRunning {
+		return nil
+	}
+
+	b.mu.Lock()
+
+	idx := slices.IndexFunc(b.srcs, func(s *Bin) bool { return s.bin.GetName() == name })
+	if idx == -1 {
+		b.mu.Unlock()
+		return nil
+	}
+	src := b.srcs[idx]
+
+	src.mu.Lock()
+	srcGhostPad, sinkGhostPad, ok := deleteGhostPadsLocked(src, b)
+	src.mu.Unlock()
+	if !ok {
+		b.mu.Unlock()
+		return errors.New("ghost pads not found for force removal")
+	}
+
+	// Now safe to remove from the tracking slice
+	b.srcs = slices.Delete(b.srcs, idx, idx+1)
+
+	// Capture references before releasing the lock.
+	// These fields are set during construction and never modified, so safe to use after unlock.
+	peerElement := b.elements[0]
+	parentBin := b.bin
+	pipeline := b.pipeline
+
+	b.mu.Unlock()
+
+	// Execute removal synchronously on the GLib main loop thread
+	done := make(chan error, 1)
+	if _, err := glib.IdleAdd(func() bool {
+		logger.Debugw("force removing source bin on GLib thread", "bin", src.bin.GetName())
+		done <- detachSourceBin(src, srcGhostPad, sinkGhostPad, peerElement, parentBin, pipeline)
+		return false
+	}); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	return <-done
+}
+
 func (b *Bin) RemoveSourceBin(name string) error {
 	logger.Debugw(fmt.Sprintf("removing src %s from %s", name, b.bin.GetName()))
 	return b.removeBin(name, gst.PadDirectionSource)
@@ -170,6 +226,16 @@ func (b *Bin) RemoveSourceBin(name string) error {
 func (b *Bin) RemoveSinkBin(name string) error {
 	logger.Debugw(fmt.Sprintf("removing sink %s from %s", name, b.bin.GetName()))
 	return b.removeBin(name, gst.PadDirectionSink)
+}
+
+func (b *Bin) removeSourceLocked(name string) *Bin {
+	for i, s := range b.srcs {
+		if s.bin.GetName() == name {
+			b.srcs = append(b.srcs[:i], b.srcs[i+1:]...)
+			return s
+		}
+	}
+	return nil
 }
 
 func (b *Bin) removeBin(name string, direction gst.PadDirection) error {
@@ -186,13 +252,7 @@ func (b *Bin) removeBin(name string, direction gst.PadDirection) error {
 
 	var bin *Bin
 	if direction == gst.PadDirectionSource {
-		for i, s := range b.srcs {
-			if s.bin.GetName() == name {
-				bin = s
-				b.srcs = append(b.srcs[:i], b.srcs[i+1:]...)
-				break
-			}
-		}
+		bin = b.removeSourceLocked(name)
 	} else {
 		for i, s := range b.sinks {
 			if s.bin.GetName() == name {
@@ -250,20 +310,12 @@ func (b *Bin) probeRemoveSource(src *Bin) {
 		if _, err := glib.IdleAdd(func() bool {
 			removed.Store(true)
 			logger.Debugw("removing source bin", "bin", src.bin.GetName(), "reason", reason)
-			b.elements[0].ReleaseRequestPad(sinkPad)
-			srcGhostPad.Unlink(sinkGhostPad.Pad)
-			b.bin.RemovePad(sinkGhostPad.Pad)
-			if err := b.pipeline.Remove(src.bin.Element); err != nil {
-				logger.Warnw("failed to remove bin", err, "bin", src.bin.GetName())
-				return false
-			}
-			if err := src.bin.SetState(gst.StateNull); err != nil {
-				logger.Warnw("failed to change bin state", err, "bin", src.bin.GetName())
-				return false
+			if err := detachSourceBin(src, srcGhostPad, sinkGhostPad, b.elements[0], b.bin, b.pipeline); err != nil {
+				logger.Errorw("failed to detach source bin", err, "bin", src.bin.GetName())
 			}
 			return false
 		}); err != nil {
-			logger.Errorw("failed to remove bin", err, "bin", src.bin.GetName())
+			logger.Errorw("failed to schedule source bin removal", err, "bin", src.bin.GetName())
 		}
 	}
 
@@ -331,6 +383,28 @@ func (b *Bin) probeRemoveSink(sink *Bin) {
 		b.bin.RemovePad(srcGhostPad.Pad)
 		return gst.PadProbeOK
 	})
+}
+
+// detachSourceBin performs the GStreamer operations to disconnect and remove a source bin.
+// Must be called on the GLib main loop thread.
+func detachSourceBin(src *Bin, srcGhostPad, sinkGhostPad *gst.GhostPad, peerElement *gst.Element, parentBin *gst.Bin, pipeline *gst.Pipeline) error {
+	sinkPad := sinkGhostPad.GetTarget()
+
+	peerElement.ReleaseRequestPad(sinkPad)
+	srcGhostPad.Unlink(sinkGhostPad.Pad)
+	parentBin.RemovePad(sinkGhostPad.Pad)
+
+	if err := pipeline.Remove(src.bin.Element); err != nil {
+		logger.Warnw("failed to remove bin", err, "bin", src.bin.GetName())
+		return errors.ErrGstPipelineError(err)
+	}
+
+	if err := src.bin.SetState(gst.StateNull); err != nil {
+		logger.Warnw("failed to change bin state", err, "bin", src.bin.GetName())
+		return errors.ErrGstPipelineError(err)
+	}
+
+	return nil
 }
 
 func deleteGhostPadsLocked(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad, bool) {
