@@ -176,12 +176,12 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	// start with defaults
 	now := time.Now().UnixNano()
 	p.Info = &livekit.EgressInfo{
-		EgressId:  request.EgressId,
-		RoomId:    request.RoomId,
-		Status:    livekit.EgressStatus_EGRESS_STARTING,
-		StartedAt: now,
-		UpdatedAt: now,
-		Retries:   request.Retries,
+		EgressId:   request.EgressId,
+		RoomId:     request.RoomId,
+		Status:     livekit.EgressStatus_EGRESS_STARTING,
+		StartedAt:  now,
+		UpdatedAt:  now,
+		RetryCount: request.RetryCount,
 	}
 
 	p.AudioConfig = AudioConfig{
@@ -602,8 +602,8 @@ func (p *PipelineConfig) getRoomCompositeRequestType(req *livekit.RoomCompositeE
 
 // used for sdk input source
 func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string, w, h uint32) error {
-	if p.Info.Retries > 0 {
-		replacements["{retry}"] = fmt.Sprintf("%d", p.Info.Retries)
+	if p.Info.RetryCount > 0 {
+		replacements["{retry}"] = fmt.Sprintf("%d", p.Info.RetryCount)
 	}
 	var err error
 	for egressType, c := range p.Outputs {
