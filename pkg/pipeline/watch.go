@@ -265,8 +265,7 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 
 	if strings.HasPrefix(s, "app_") {
 		trackID := s[4:]
-		logger.Debugw(fmt.Sprintf("%s state change", trackID),
-			"oldState", oldState.String(), "newState", newState.String())
+		logger.Debugw("appsrc state change", "trackID", trackID, "oldState", oldState.String(), "newState", newState.String())
 		if newState == gst.StatePlaying {
 			c.src.(*source.SDKSource).Playing(trackID)
 		}
