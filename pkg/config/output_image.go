@@ -128,6 +128,9 @@ func (o *ImageConfig) updatePrefix(p *PipelineConfig) error {
 	// ensure playlistName
 	if imagesPrefix == "" {
 		imagesPrefix = fmt.Sprintf("%s-%s", identifier, time.Now().Format("2006-01-02T150405"))
+		if p.Info.RetryCount > 0 {
+			imagesPrefix = fmt.Sprintf("%s-%d", imagesPrefix, p.Info.RetryCount)
+		}
 	}
 
 	// update config
