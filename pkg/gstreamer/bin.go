@@ -33,6 +33,23 @@ const (
 	removeSourceBinTimeout = 3 * time.Second
 )
 
+// Locking rules for Bin/StateManager (maintainer reference):
+//  1. if both state and bin data are needed, take StateManager lock first
+//     (LockState/LockStateShared), then Bin.mu.
+//  2. for multi-bin operations, take the "owner"/parent bin mutex before peer
+//     bin mutexes (for example: b.mu -> src.mu -> sink.mu).
+//  3. do not introduce paths that acquire locks in the reverse order
+//     (peer/child -> parent), or AB-BA deadlocks are possible.
+//  4. for work executed later on the GLib loop (IdleAdd callbacks), snapshot
+//     fields while holding the lock that protects them:
+//     - State under StateManager lock.
+//     - Bin fields (`srcs`, `sinks`, `elements`, `pads`, etc.) under `b.mu`.
+//     Then unlock before scheduling the callback. Avoid holding these locks
+//     while waiting for the callback to run on the GLib loop.
+//     Exception: ForceRemoveSourceBin intentionally holds a shared state lock
+//     across the wait to prevent state-mutation races from concurrent Stop/
+//     state-transition calls while forced detach is in progress.
+//
 // Bins are designed to hold a single stream, with any number of sources and sinks
 type Bin struct {
 	*Callbacks
