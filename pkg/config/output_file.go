@@ -122,9 +122,6 @@ func (p *PipelineConfig) getFilenameInfo() (string, map[string]string) {
 }
 
 func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replacements map[string]string) error {
-	originalPath := o.StorageFilepath
-	hasRetryTemplate := strings.Contains(originalPath, "{retry}")
-
 	o.StorageFilepath = stringReplace(o.StorageFilepath, replacements)
 
 	// get file extension
@@ -133,9 +130,6 @@ func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replac
 	if o.StorageFilepath == "" || strings.HasSuffix(o.StorageFilepath, "/") {
 		// generate filepath
 		baseName := fmt.Sprintf("%s-%s", identifier, time.Now().Format("2006-01-02T150405"))
-		if p.Info.RetryCount > 0 && !hasRetryTemplate {
-			baseName = fmt.Sprintf("%s-%d", baseName, p.Info.RetryCount)
-		}
 		o.StorageFilepath = fmt.Sprintf("%s%s%s", o.StorageFilepath, baseName, ext)
 	} else if !strings.HasSuffix(o.StorageFilepath, string(ext)) {
 		// check for existing (incorrect) extension
@@ -144,9 +138,6 @@ func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replac
 			if _, ok := types.FileExtensions[existingExt]; ok {
 				o.StorageFilepath = o.StorageFilepath[:extIdx]
 			}
-		}
-		if p.Info.RetryCount > 0 && !hasRetryTemplate {
-			o.StorageFilepath = fmt.Sprintf("%s-%d", o.StorageFilepath, p.Info.RetryCount)
 		}
 
 		// add file extension
