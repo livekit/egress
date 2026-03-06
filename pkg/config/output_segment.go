@@ -137,6 +137,9 @@ func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 			playlistName = segmentPrefix
 		} else {
 			playlistName = fmt.Sprintf("%s-%s", identifier, time.Now().Format("2006-01-02T150405"))
+			if p.Info.RetryCount > 0 {
+				playlistName = fmt.Sprintf("%s-%d", playlistName, p.Info.RetryCount)
+			}
 		}
 	}
 	// live playlist disabled by default
