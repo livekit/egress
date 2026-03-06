@@ -64,7 +64,7 @@ func (t *VP8Translator) Translate(pkt *rtp.Packet) {
 		Packet:   pkt,
 		Arrival:  time.Now().UnixNano(),
 		Payload:  vp8Packet,
-		KeyFrame: vp8Packet.IsKeyFrame,
+		IsKeyFrame: vp8Packet.IsKeyFrame,
 		VideoLayer: buffer.VideoLayer{
 			Spatial:  -1,
 			Temporal: int32(vp8Packet.TID),
