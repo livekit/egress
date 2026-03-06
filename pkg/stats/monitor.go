@@ -566,19 +566,19 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 	totalMemory := 0
 	maxMemory := 0
 	var maxMemoryEgress string
-	for pid, memUsage := range stats.Memory {
-		totalMemory += memUsage
+	for pid, gm := range stats.Memory {
+		totalMemory += gm.Total
 
 		procStats := m.procStats[pid]
 		if procStats == nil {
 			continue
 		}
 
-		if memUsage > procStats.maxMemory {
-			procStats.maxMemory = memUsage
+		if gm.Total > procStats.maxMemory {
+			procStats.maxMemory = gm.Total
 		}
-		if memUsage > maxMemory {
-			maxMemory = memUsage
+		if gm.Total > maxMemory {
+			maxMemory = gm.Total
 			maxMemoryEgress = procStats.egressID
 		}
 	}
