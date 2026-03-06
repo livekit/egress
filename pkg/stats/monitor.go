@@ -566,6 +566,7 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 	totalMemory := 0
 	maxMemory := 0
 	var maxMemoryEgress string
+	var maxMemoryGroup *hwstats.GroupMemory
 	for pid, gm := range stats.Memory {
 		totalMemory += gm.Total
 
@@ -580,6 +581,7 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 		if gm.Total > maxMemory {
 			maxMemory = gm.Total
 			maxMemoryEgress = procStats.egressID
+			maxMemoryGroup = gm
 		}
 	}
 
@@ -590,7 +592,7 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 
 	m.updateWouldRejectMetrics()
 
-	m.checkMemoryKill(maxMemoryEgress)
+	m.checkMemoryKill(maxMemoryEgress, maxMemoryGroup)
 }
 
 // updateCgroupStats reads cgroup memory statistics and updates metrics.
@@ -640,7 +642,7 @@ func (m *Monitor) updateWouldRejectMetrics() {
 }
 
 // checkMemoryKill evaluates whether to kill a process based on memory usage.
-func (m *Monitor) checkMemoryKill(maxMemoryEgress string) {
+func (m *Monitor) checkMemoryKill(maxMemoryEgress string, maxMemoryGroup *hwstats.GroupMemory) {
 	if m.cpuCostConfig.MaxMemory == 0 {
 		return
 	}
@@ -669,6 +671,10 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string) {
 				"maxMemoryGB", m.cpuCostConfig.MaxMemory,
 				"requests", m.requests.Load(),
 			)
+			if maxMemoryGroup != nil {
+				logger.Infow("killing egress process memory",
+					"egressID", maxMemoryEgress, "processes", maxMemoryGroup.Procs)
+			}
 			// Report the actual memory that triggered the kill, not per-process max
 			m.svc.KillProcess(maxMemoryEgress, errors.ErrOOM(killTriggerGB))
 			m.highMemoryStart = time.Time{}
