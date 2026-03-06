@@ -2,8 +2,6 @@ module github.com/livekit/egress
 
 replace github.com/go-gst/go-gst => github.com/livekit/gst-go v0.0.0-20250701011214-e7f61abd14cb
 
-replace github.com/livekit/protocol => ../protocol
-
 go 1.24.4
 
 toolchain go1.24.5
@@ -29,7 +27,7 @@ require (
 	github.com/livekit/livekit-server v1.8.4
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/media-sdk v0.0.0-20251218175659-d0b840bb38ef
-	github.com/livekit/protocol v1.44.1-0.20260202232333-28d227bae771
+	github.com/livekit/protocol v1.45.1-0.20260306180950-3241c3b4103e
 	github.com/livekit/psrpc v0.7.1
 	github.com/livekit/server-sdk-go/v2 v2.13.4-0.20260205010318-ca8b66238d43
 	github.com/livekit/storage v0.0.0-20251113154014-aa1f4d0ce057
