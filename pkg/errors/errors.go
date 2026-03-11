@@ -108,6 +108,7 @@ var (
 	ErrNotEnoughCPU               = psrpc.NewErrorf(psrpc.Unavailable, "not enough CPU")
 	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
 	ErrNonRetryableOutput         = psrpc.NewErrorf(psrpc.FailedPrecondition, "output configuration does not support retry")
+	ErrHandlerFailedToStart       = psrpc.NewErrorf(psrpc.Internal, "handler failed to start")
 )
 
 func PageLoadError(err string) error {

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
+	"github.com/go-gst/go-gst/gst/app"
 	"github.com/linkdata/deadlock"
 
 	"github.com/livekit/egress/pkg/config"
@@ -78,6 +79,7 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 		pipeline.AddOnTrackRemoved(b.onTrackRemoved)
 		pipeline.AddOnTrackMuted(b.onTrackMuted)
 		pipeline.AddOnTrackUnmuted(b.onTrackUnmuted)
+		pipeline.AddOnSourceBinReset(b.onSourceBinReset)
 	}
 
 	var getPad func() *gst.Pad
@@ -193,6 +195,75 @@ func (b *VideoBin) onTrackUnmuted(trackID string) {
 		}
 	}
 	b.mu.Unlock()
+}
+
+func (b *VideoBin) onSourceBinReset(ts *config.TrackSource) error {
+	if ts.TrackKind != lksdk.TrackKindVideo {
+		return nil
+	}
+	return b.resetVideoAppSrcBin(ts)
+}
+
+func (b *VideoBin) resetVideoAppSrcBin(ts *config.TrackSource) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	oldName, ok := b.names[ts.TrackID]
+	if !ok {
+		return errors.New("track already removed, cannot reset video source bin")
+	}
+
+	if b.bin.GetState() > gstreamer.StateRunning {
+		return errors.New("pipeline stopping, cannot reset video source bin")
+	}
+
+	// If the stuck bin is the currently selected pad, switch to test src first
+	if b.conf.VideoDecoding && b.selectedPad == oldName {
+		if err := b.setSelectorPadLocked(videoTestSrcName); err != nil {
+			return err
+		}
+	}
+
+	// Clean up old pad reference before force-remove
+	delete(b.pads, oldName)
+
+	// Force-remove old bin (blocks on GLib main loop, safe to hold b.mu since
+	// ForceRemoveSourceBin only acquires gstreamer.Bin's internal mutex)
+	if err := b.bin.ForceRemoveSourceBin(oldName); err != nil {
+		return fmt.Errorf("failed to force remove video source bin: %w", err)
+	}
+
+	// Create new appsrc element (reuse the same element name so watch.go works)
+	newElement, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", ts.TrackID))
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	ts.AppSrc = app.SrcFromElement(newElement)
+
+	name := fmt.Sprintf("%s_%d", ts.TrackID, b.nextID)
+	b.nextID++
+
+	appSrcBin, err := b.buildAppSrcBin(ts, name)
+	if err != nil {
+		return fmt.Errorf("failed to build new video source bin: %w", err)
+	}
+
+	if b.conf.VideoDecoding {
+		b.createSrcPadLocked(ts.TrackID, name)
+	}
+
+	if err = b.bin.AddSourceBin(appSrcBin); err != nil {
+		return fmt.Errorf("failed to add new video source bin: %w", err)
+	}
+
+	if b.conf.VideoDecoding {
+		if err := b.setSelectorPadLocked(name); err != nil {
+			return err
+		}
+	}
+
+	logger.Infow("video source bin reset complete", "trackID", ts.TrackID, "newBin", name)
+	return nil
 }
 
 func (b *VideoBin) buildWebInput() error {
@@ -724,6 +795,10 @@ func (b *VideoBin) createSrcPad(trackID, name string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	b.createSrcPadLocked(trackID, name)
+}
+
+func (b *VideoBin) createSrcPadLocked(trackID, name string) {
 	b.names[trackID] = name
 
 	pad := b.selector.GetRequestPad("sink_%u")

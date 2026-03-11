@@ -48,7 +48,15 @@ const (
 	cSamplesQueueDepth      = 100
 	drainingTimeout         = time.Second * 3
 	unsubscribedGracePeriod = time.Second * 2
+
+	// FlowFlushing recovery: threshold of consecutive FlowFlushing returns before
+	// triggering source bin reset. ~2 seconds of 20ms audio packets.
+	flushingThreshold = 100
+	// Maximum number of source bin resets per writer lifetime.
+	maxSrcResets = 2
 )
+
+var errFlowFlushingThreshold = errors.New("persistent FlowFlushing detected")
 
 type sampleItem struct {
 	sample []jitter.ExtPacket
@@ -99,8 +107,6 @@ type AppWriter struct {
 	lastReceived             atomic.Time
 	lastPushed               atomic.Time
 	playing                  core.Fuse
-	srcNeedsData             core.Fuse
-	addedToPipeline          core.Fuse
 	draining                 core.Fuse
 	unsubscribed             core.Fuse
 	endStreamSignaled        core.Fuse
@@ -108,6 +114,10 @@ type AppWriter struct {
 	endStreamProcessed       core.Fuse
 	finished                 core.Fuse
 	stats                    appWriterStats
+
+	// FlowFlushing recovery
+	flushingCount int // consecutive FlowFlushing returns from PushBuffer
+	srcResetCount int // number of source bin resets performed
 
 	// diagnostics, set on unexpected flushing when pushing packets to the pipeline
 	flushDotRequested atomic.Bool
@@ -153,14 +163,6 @@ func NewAppWriter(
 		timeProvider:      gstreamer.NopTimeProvider(),
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
-	w.src.SetCallbacks(&app.SourceCallbacks{
-		NeedDataFunc: func(_ *app.Source, _ uint) {
-			w.srcNeedsData.Once(func() {
-				w.logger.Debugw("src needs data", "src", w.src)
-				w.notifyPushSamples()
-			})
-		},
-	})
 
 	ts.OnKeyframeRequired = w.onKeyframeRequired
 
@@ -262,7 +264,7 @@ func (w *AppWriter) start() {
 	}
 
 	// clean up
-	if w.addedToPipeline.IsBroken() {
+	if w.playing.IsBroken() {
 		w.callbacks.OnEOSSent()
 		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
 			w.logger.Warnw("unexpected flow return", nil, "flowReturn", flow.String())
@@ -346,7 +348,6 @@ func (w *AppWriter) handleReadError(err error) {
 		w.notifyPushSamples()
 
 	case errors.As(err, &netErr) && netErr.Timeout():
-		w.logger.Debugw("read timeout", "error", err)
 		lastRecv := w.lastReceived.Load()
 		if lastRecv.IsZero() {
 			lastRecv = w.startTime
@@ -495,10 +496,6 @@ func (w *AppWriter) pushSamples() {
 		return
 	}
 
-	if !w.waitFor(w.srcNeedsData.Watch()) {
-		return
-	}
-
 	for {
 		w.samplesLock.Lock()
 		for w.samplesHead == nil && !w.endStreamSourceProcessed.IsBroken() {
@@ -519,6 +516,14 @@ func (w *AppWriter) pushSamples() {
 
 		for _, pkt := range item.sample {
 			if err := w.pushPacket(pkt); err != nil {
+				if errors.Is(err, errFlowFlushingThreshold) {
+					if w.tryRecoverFromFlushing() {
+						continue
+					}
+					w.draining.Break()
+					w.notifyPushSamples()
+					return
+				}
 				if !utils.ErrorIsOneOf(err, synchronizer.ErrPacketOutOfOrder, synchronizer.ErrPacketTooOld) {
 					w.draining.Break()
 					w.notifyPushSamples()
@@ -573,16 +578,81 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.stats.packetsDropped.Inc()
-		w.logger.Infow("unexpected flow return", "flow", flow)
-		if flow == gst.FlowFlushing && w.flushDotRequested.CompareAndSwap(false, true) {
-			w.callbacks.OnDebugDotRequest("appsrc_flush_" + w.track.ID())
+		if flow == gst.FlowFlushing {
+			w.flushingCount++
+			if w.flushingCount == 1 {
+				w.logger.Infow("FlowFlushing detected",
+					"appsrcState", w.src.Element.GetCurrentState().String())
+				if w.flushDotRequested.CompareAndSwap(false, true) {
+					w.callbacks.OnDebugDotRequest("appsrc_flush_" + w.track.ID())
+				}
+			}
+			if w.flushingCount >= flushingThreshold {
+				return errFlowFlushingThreshold
+			}
+		} else {
+			w.logger.Infow("unexpected flow return", "flow", flow,
+				"appsrcState", w.src.Element.GetCurrentState().String())
 		}
+	} else if w.flushingCount > 0 {
+		w.logger.Infow("FlowFlushing cleared after successful push",
+			"previousCount", w.flushingCount)
+		w.flushingCount = 0
 	}
 
 	w.lastPushed.Store(time.Now())
 	w.lastPTS = pts
 	w.maybeCheckPipelineLag(pts)
 	return nil
+}
+
+// tryRecoverFromFlushing attempts to recover from persistent FlowFlushing by
+// removing the stuck source bin and replacing it with a new one.
+// Returns true if recovery succeeded and pushing can continue.
+func (w *AppWriter) tryRecoverFromFlushing() bool {
+	if w.draining.IsBroken() {
+		w.logger.Debugw("skipping FlowFlushing recovery: draining")
+		return false
+	}
+	if w.unsubscribed.IsBroken() {
+		w.logger.Debugw("skipping FlowFlushing recovery: unsubscribed")
+		return false
+	}
+	if w.endStreamSignaled.IsBroken() {
+		w.logger.Debugw("skipping FlowFlushing recovery: end stream signaled")
+		return false
+	}
+
+	if w.srcResetCount >= maxSrcResets {
+		w.logger.Warnw("max FlowFlushing recovery attempts reached, giving up", nil,
+			"attempts", w.srcResetCount)
+		return false
+	}
+
+	w.logger.Infow("attempting FlowFlushing recovery via source bin reset",
+		"flushingCount", w.flushingCount, "attempt", w.srcResetCount+1)
+
+	oldAppSrc := w.trackSource.AppSrc
+
+	// Call the builder layer to force-remove the old bin and add a new one.
+	// The callback updates ts.AppSrc to the new appsrc on success.
+	if err := w.callbacks.OnSourceBinReset(w.trackSource); err != nil {
+		w.logger.Errorw("FlowFlushing recovery failed", err)
+		return false
+	}
+
+	if w.trackSource.AppSrc == oldAppSrc {
+		w.logger.Errorw("FlowFlushing recovery: no handler replaced the appsrc", nil)
+		return false
+	}
+
+	w.src = w.trackSource.AppSrc
+	w.flushingCount = 0
+	w.srcResetCount++
+
+	w.logger.Infow("FlowFlushing recovery succeeded, continuing with new appsrc",
+		"totalResets", w.srcResetCount)
+	return true
 }
 
 func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {
@@ -645,12 +715,6 @@ func (w *AppWriter) OnUnsubscribed() {
 // Finished returns a channel that is closed when the writer has finished.
 func (w *AppWriter) Finished() <-chan struct{} {
 	return w.finished.Watch()
-}
-
-// MarkAddedToPipeline signals that the appsrc has been linked to the GStreamer pipeline.
-// This is used to determine if EOS must be sent during cleanup.
-func (w *AppWriter) MarkAddedToPipeline() {
-	w.addedToPipeline.Break()
 }
 
 func (w *AppWriter) logStats() {

@@ -239,7 +239,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 }
 
 func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
-	_, newState := msg.ParseStateChanged()
+	oldState, newState := msg.ParseStateChanged()
 	s := msg.Source()
 	if s == pipelineName {
 		if newState == gst.StatePaused {
@@ -263,14 +263,13 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 		return
 	}
 
-	if newState != gst.StatePlaying {
-		return
-	}
-
 	if strings.HasPrefix(s, "app_") {
 		trackID := s[4:]
-		logger.Infow(fmt.Sprintf("%s playing", trackID))
-		c.src.(*source.SDKSource).Playing(trackID)
+		logger.Debugw("appsrc state change", "trackID", trackID, "oldState", oldState.String(), "newState", newState.String())
+		if newState == gst.StatePlaying {
+			c.src.(*source.SDKSource).Playing(trackID)
+		}
+		return
 	}
 }
 

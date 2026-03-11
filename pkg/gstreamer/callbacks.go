@@ -32,11 +32,12 @@ type Callbacks struct {
 	onDebugDotRequest func(string)
 
 	// source callbacks
-	onTrackAdded   []func(*config.TrackSource)
-	onTrackMuted   []func(string)
-	onTrackUnmuted []func(string)
-	onTrackRemoved []func(string)
-	onEOSSent      func()
+	onTrackAdded     []func(*config.TrackSource)
+	onTrackMuted     []func(string)
+	onTrackUnmuted   []func(string)
+	onTrackRemoved   []func(string)
+	onSourceBinReset []func(*config.TrackSource) error
+	onEOSSent        func()
 
 	pipelinePaused core.Fuse
 }
@@ -161,6 +162,29 @@ func (c *Callbacks) OnTrackRemoved(trackID string) {
 	for _, f := range onTrackRemoved {
 		f(trackID)
 	}
+}
+
+func (c *Callbacks) AddOnSourceBinReset(f func(*config.TrackSource) error) {
+	c.mu.Lock()
+	c.onSourceBinReset = append(c.onSourceBinReset, f)
+	c.mu.Unlock()
+}
+
+// OnSourceBinReset calls registered handlers to force-remove a stuck source bin and
+// replace it with a new one. Each handler checks the track kind and returns nil if
+// not applicable. The first handler that returns a non-nil error aborts the operation.
+// On success, ts.AppSrc is updated to the new appsrc by the handler.
+func (c *Callbacks) OnSourceBinReset(ts *config.TrackSource) error {
+	c.mu.RLock()
+	handlers := c.onSourceBinReset
+	c.mu.RUnlock()
+
+	for _, f := range handlers {
+		if err := f(ts); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Callbacks) SetOnEOSSent(f func()) {

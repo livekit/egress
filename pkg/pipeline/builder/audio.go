@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
+	"github.com/go-gst/go-gst/gst/app"
 	"github.com/linkdata/deadlock"
 	"go.uber.org/atomic"
 
@@ -136,6 +137,7 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 
 		pipeline.AddOnTrackAdded(b.onTrackAdded)
 		pipeline.AddOnTrackRemoved(b.onTrackRemoved)
+		pipeline.AddOnSourceBinReset(b.onSourceBinReset)
 	}
 
 	if len(p.GetEncodedOutputs()) > 1 {
@@ -241,6 +243,10 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	return b.addAudioAppSrcBinLocked(ts)
+}
+
+func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 	name := fmt.Sprintf("%s_%d", ts.TrackID, b.nextID)
 	b.nextID++
 	b.names[ts.TrackID] = name
@@ -351,6 +357,46 @@ func (b *AudioBin) addAudioAppSrcBin(ts *config.TrackSource) error {
 		b.audioPacer.tc = ts.TempoController
 	}
 
+	return nil
+}
+
+func (b *AudioBin) onSourceBinReset(ts *config.TrackSource) error {
+	if ts.TrackKind != lksdk.TrackKindAudio {
+		return nil
+	}
+	return b.resetAudioAppSrcBin(ts)
+}
+
+func (b *AudioBin) resetAudioAppSrcBin(ts *config.TrackSource) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	oldName, ok := b.names[ts.TrackID]
+	if !ok {
+		return errors.New("track already removed, cannot reset audio source bin")
+	}
+
+	if b.bin.GetState() > gstreamer.StateRunning {
+		return errors.New("pipeline stopping, cannot reset audio source bin")
+	}
+
+	// Force-remove old bin (blocks on GLib main loop, safe to hold b.mu since
+	// ForceRemoveSourceBin only acquires gstreamer.Bin's internal mutex)
+	if err := b.bin.ForceRemoveSourceBin(oldName); err != nil {
+		return fmt.Errorf("failed to force remove audio source bin: %w", err)
+	}
+
+	newElement, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", ts.TrackID))
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	ts.AppSrc = app.SrcFromElement(newElement)
+
+	if err := b.addAudioAppSrcBinLocked(ts); err != nil {
+		return fmt.Errorf("failed to add new audio source bin: %w", err)
+	}
+
+	logger.Infow("audio source bin reset complete", "trackID", ts.TrackID, "newBin", b.names[ts.TrackID])
 	return nil
 }
 
