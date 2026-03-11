@@ -153,11 +153,11 @@ func (h *Handler) Kill() {
 }
 
 func (h *Handler) shouldInjectEgressFailure() bool {
-	if h.conf.TestFailureInjectionRoom == "" {
+	if h.conf.TestOverrides.FailureInjectionRoom == "" {
 		return false
 	}
 	if h.conf.Info.RetryCount > 0 {
 		return false
 	}
-	return strings.Contains(h.conf.Info.RoomName, h.conf.TestFailureInjectionRoom)
+	return strings.Contains(h.conf.Info.RoomName, h.conf.TestOverrides.FailureInjectionRoom)
 }
