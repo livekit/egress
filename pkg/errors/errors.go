@@ -107,6 +107,7 @@ var (
 	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Unavailable, "failed to subscribe to track")
 	ErrNotEnoughCPU               = psrpc.NewErrorf(psrpc.Unavailable, "not enough CPU")
 	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
+	ErrNonRetryableOutput         = psrpc.NewErrorf(psrpc.FailedPrecondition, "output configuration does not support retry")
 )
 
 func PageLoadError(err string) error {

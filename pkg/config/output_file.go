@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
@@ -77,10 +78,18 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, req fileRequ
 		return nil, err
 	}
 
+	filepath := clean(req.GetFilepath())
+
+	// On retry, explicit paths must include {retry} to avoid overwriting previous attempt.
+	// Empty or directory-only paths are auto-generated with retry count appended.
+	if p.Info.RetryCount > 0 && filepath != "" && !strings.HasSuffix(filepath, "/") && !strings.Contains(filepath, "{retry}") {
+		return nil, errors.ErrNonRetryableOutput
+	}
+
 	conf := &FileConfig{
 		outputConfig:    outputConfig{OutputType: outputType},
 		FileInfo:        &livekit.FileInfo{},
-		StorageFilepath: clean(req.GetFilepath()),
+		StorageFilepath: filepath,
 		DisableManifest: req.GetDisableManifest(),
 		StorageConfig:   sc,
 	}

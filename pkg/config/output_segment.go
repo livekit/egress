@@ -57,11 +57,22 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 		return nil, err
 	}
 
+	prefix := clean(segments.FilenamePrefix)
+	playlist := clean(segments.PlaylistName)
+
+	// On retry, explicit paths must include {retry} to avoid overwriting previous attempt.
+	// When both prefix and playlist are empty, they're auto-generated with retry count.
+	if p.Info.RetryCount > 0 && (prefix != "" || playlist != "") {
+		if !strings.Contains(prefix, "{retry}") && !strings.Contains(playlist, "{retry}") {
+			return nil, errors.ErrNonRetryableOutput
+		}
+	}
+
 	conf := &SegmentConfig{
 		SegmentsInfo:         &livekit.SegmentsInfo{},
-		SegmentPrefix:        clean(segments.FilenamePrefix),
+		SegmentPrefix:        prefix,
 		SegmentSuffix:        segments.FilenameSuffix,
-		PlaylistFilename:     clean(segments.PlaylistName),
+		PlaylistFilename:     playlist,
 		LivePlaylistFilename: clean(segments.LivePlaylistName),
 		SegmentDuration:      int(segments.SegmentDuration),
 		DisableManifest:      segments.DisableManifest,
