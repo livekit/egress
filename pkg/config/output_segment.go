@@ -60,10 +60,14 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput)
 	prefix := clean(segments.FilenamePrefix)
 	playlist := clean(segments.PlaylistName)
 
-	// On retry, explicit paths must include {retry} to avoid overwriting previous attempt.
-	// When both prefix and playlist are empty, they're auto-generated with retry count.
-	if p.Info.RetryCount > 0 && (prefix != "" || playlist != "") {
-		if !strings.Contains(prefix, "{retry}") && !strings.Contains(playlist, "{retry}") {
+	// On retry, segment filenames are "{prefix}_{index}.ts" so prefix must contain {retry}
+	// to avoid overwriting. When prefix is empty it derives from playlist name, so playlist
+	// must contain {retry}. When both are empty, names are auto-generated with retry count.
+	if p.Info.RetryCount > 0 {
+		if prefix != "" && !strings.Contains(prefix, "{retry}") {
+			return nil, errors.ErrNonRetryableOutput
+		}
+		if prefix == "" && playlist != "" && !strings.Contains(playlist, "{retry}") {
 			return nil, errors.ErrNonRetryableOutput
 		}
 	}

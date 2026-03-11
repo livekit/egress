@@ -131,11 +131,11 @@ func TestSegmentOutputRetrySafety(t *testing.T) {
 			expectErr:  false,
 		},
 		{
-			name:       "retry with {retry} in playlist only",
+			name:       "retry with {retry} in playlist only (prefix explicit)",
 			retryCount: 1,
 			prefix:     "segments/my-stream",
 			playlist:   "segments/playlist-{retry}",
-			expectErr:  false,
+			expectErr:  true,
 		},
 		{
 			name:       "retry with {retry} in both",
@@ -150,6 +150,13 @@ func TestSegmentOutputRetrySafety(t *testing.T) {
 			prefix:     "segments/my-stream",
 			playlist:   "",
 			expectErr:  true,
+		},
+		{
+			name:       "retry with {retry} in playlist only (prefix empty, derives from playlist)",
+			retryCount: 1,
+			prefix:     "",
+			playlist:   "segments/playlist-{retry}",
+			expectErr:  false,
 		},
 		{
 			name:       "retry with explicit playlist missing {retry}",
