@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
@@ -77,10 +78,18 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, req fileRequ
 		return nil, err
 	}
 
+	filepath := clean(req.GetFilepath())
+
+	// On retry, explicit paths must include {retry} to avoid overwriting previous attempt.
+	// Empty or directory-only paths are auto-generated with retry count appended.
+	if p.Info.RetryCount > 0 && filepath != "" && !strings.HasSuffix(filepath, "/") && !strings.Contains(filepath, "{retry}") {
+		return nil, errors.ErrNonRetryableOutput
+	}
+
 	conf := &FileConfig{
 		outputConfig:    outputConfig{OutputType: outputType},
 		FileInfo:        &livekit.FileInfo{},
-		StorageFilepath: clean(req.GetFilepath()),
+		StorageFilepath: filepath,
 		DisableManifest: req.GetDisableManifest(),
 		StorageConfig:   sc,
 	}
@@ -102,19 +111,23 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, req fileRequ
 func (p *PipelineConfig) getFilenameInfo() (string, map[string]string) {
 	now := time.Now()
 	utc := fmt.Sprintf("%s%03d", now.Format("20060102150405"), now.UnixMilli()%1000)
+
+	replacements := make(map[string]string)
+	if p.Info.RetryCount > 0 {
+		replacements["{retry}"] = fmt.Sprintf("%d", p.Info.RetryCount)
+	}
 	if p.Info.RoomName != "" {
-		return p.Info.RoomName, map[string]string{
-			"{room_name}": p.Info.RoomName,
-			"{room_id}":   p.Info.RoomId,
-			"{time}":      now.Format("2006-01-02T150405"),
-			"{utc}":       utc,
-		}
+		replacements["{room_name}"] = p.Info.RoomName
+		replacements["{room_id}"] = p.Info.RoomId
+		replacements["{time}"] = now.Format("2006-01-02T150405")
+		replacements["{utc}"] = utc
+		return p.Info.RoomName, replacements
 	}
 
-	return "web", map[string]string{
-		"{time}": now.Format("2006-01-02T150405"),
-		"{utc}":  utc,
-	}
+	replacements["{time}"] = now.Format("2006-01-02T150405")
+	replacements["{utc}"] = utc
+
+	return "web", replacements
 }
 
 func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replacements map[string]string) error {
@@ -125,7 +138,11 @@ func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replac
 
 	if o.StorageFilepath == "" || strings.HasSuffix(o.StorageFilepath, "/") {
 		// generate filepath
-		o.StorageFilepath = fmt.Sprintf("%s%s-%s%s", o.StorageFilepath, identifier, time.Now().Format("2006-01-02T150405"), ext)
+		baseName := fmt.Sprintf("%s-%s", identifier, time.Now().Format("2006-01-02T150405"))
+		if p.Info.RetryCount > 0 {
+			baseName = fmt.Sprintf("%s-%d", baseName, p.Info.RetryCount)
+		}
+		o.StorageFilepath = fmt.Sprintf("%s%s%s", o.StorageFilepath, baseName, ext)
 	} else if !strings.HasSuffix(o.StorageFilepath, string(ext)) {
 		// check for existing (incorrect) extension
 		if extIdx := strings.LastIndex(o.StorageFilepath, "."); extIdx > -1 {

@@ -65,6 +65,7 @@ type BaseConfig struct {
 	Latency              LatencyConfig                       `yaml:"latency"`                // gstreamer latencies, modifying these may break the service
 	LatencyOverrides     map[types.RequestType]LatencyConfig `yaml:"latency_overrides"`      // latency overrides for different request types, experimental only, will be removed
 	AudioTempoController AudioTempoController                `yaml:"audio_tempo_controller"` // audio tempo controller
+	TestOverrides        TestOverrides                       `yaml:"test_overrides"`         // set of config overrides for testing purposes
 }
 
 type SessionLimits struct {
@@ -90,7 +91,7 @@ type LatencyConfig struct {
 	RTPMaxAllowedTsDiff             time.Duration `ymal:"rtp_max_allowed_ts_diff"`                       // max allowed PTS discont. for a RTP stream, before applying PTS alignment
 	RTPMaxDriftAdjustment           time.Duration `ymal:"rtp_max_drift_adjustment,omitempty"`            // max allowed drift adjustment for a RTP stream
 	RTPDriftAdjustmentWindowPercent float64       `ymal:"rtp_drift_adjustment_window_percent,omitempty"` // how much to throttle drift adjustment, 0.0 disables it
-	OldPacketThreshold time.Duration `yaml:"old_packet_threshold,omitempty"` // syncrhonizer drops packets older than this, 0 to disable packet drops
+	OldPacketThreshold              time.Duration `yaml:"old_packet_threshold,omitempty"`                // syncrhonizer drops packets older than this, 0 to disable packet drops
 }
 
 type AudioTempoController struct {
