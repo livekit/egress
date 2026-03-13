@@ -35,10 +35,10 @@ const (
 )
 
 type DebugService struct {
-	pm *ProcessManager
+	pm ProcessManager
 }
 
-func NewDebugService(pm *ProcessManager) *DebugService {
+func NewDebugService(pm ProcessManager) *DebugService {
 	return &DebugService{
 		pm: pm,
 	}

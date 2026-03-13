@@ -37,18 +37,35 @@ import (
 
 const launchTimeout = 10 * time.Second
 
-type ProcessManager struct {
+//go:generate go tool github.com/maxbrunsfeld/counterfeiter/v6  . ProcessManager
+
+type ProcessManager interface {
+	Launch(ctx context.Context, handlerID string, req *rpc.StartEgressRequest, info *livekit.EgressInfo, cmd *exec.Cmd) error
+	GetContext(egressID string) context.Context
+	AlreadyExists(egressID string) bool
+	HandlerStarted(egressID string) error
+	GetActiveEgressIDs() []string
+	GetStatus(info map[string]interface{})
+	GetGatherers() []prometheus.Gatherer
+	GetGRPCClient(egressID string) (ipc.EgressHandlerClient, error)
+	KillAll()
+	AbortProcess(egressID string, err error)
+	KillProcess(egressID string, err error)
+	ProcessFinished(egressID string)
+}
+
+type processManager struct {
 	mu             deadlock.RWMutex
 	activeHandlers map[string]*Process
 }
 
-func NewProcessManager() *ProcessManager {
-	return &ProcessManager{
+func NewProcessManager() ProcessManager {
+	return &processManager{
 		activeHandlers: make(map[string]*Process),
 	}
 }
 
-func (pm *ProcessManager) Launch(
+func (pm *processManager) Launch(
 	ctx context.Context,
 	handlerID string,
 	req *rpc.StartEgressRequest,
@@ -96,7 +113,7 @@ func (pm *ProcessManager) Launch(
 	}
 }
 
-func (pm *ProcessManager) GetContext(egressID string) context.Context {
+func (pm *processManager) GetContext(egressID string) context.Context {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -107,7 +124,7 @@ func (pm *ProcessManager) GetContext(egressID string) context.Context {
 	return context.Background()
 }
 
-func (pm *ProcessManager) AlreadyExists(egressID string) bool {
+func (pm *processManager) AlreadyExists(egressID string) bool {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -115,7 +132,7 @@ func (pm *ProcessManager) AlreadyExists(egressID string) bool {
 	return ok
 }
 
-func (pm *ProcessManager) HandlerStarted(egressID string) error {
+func (pm *processManager) HandlerStarted(egressID string) error {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -127,7 +144,7 @@ func (pm *ProcessManager) HandlerStarted(egressID string) error {
 	return errors.ErrEgressNotFound
 }
 
-func (pm *ProcessManager) GetActiveEgressIDs() []string {
+func (pm *processManager) GetActiveEgressIDs() []string {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -139,7 +156,7 @@ func (pm *ProcessManager) GetActiveEgressIDs() []string {
 	return egressIDs
 }
 
-func (pm *ProcessManager) GetStatus(info map[string]interface{}) {
+func (pm *processManager) GetStatus(info map[string]interface{}) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -148,7 +165,7 @@ func (pm *ProcessManager) GetStatus(info map[string]interface{}) {
 	}
 }
 
-func (pm *ProcessManager) GetGatherers() []prometheus.Gatherer {
+func (pm *processManager) GetGatherers() []prometheus.Gatherer {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -160,7 +177,7 @@ func (pm *ProcessManager) GetGatherers() []prometheus.Gatherer {
 	return handlers
 }
 
-func (pm *ProcessManager) GetGRPCClient(egressID string) (ipc.EgressHandlerClient, error) {
+func (pm *processManager) GetGRPCClient(egressID string) (ipc.EgressHandlerClient, error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -171,7 +188,7 @@ func (pm *ProcessManager) GetGRPCClient(egressID string) (ipc.EgressHandlerClien
 	return h.ipcHandlerClient, nil
 }
 
-func (pm *ProcessManager) KillAll() {
+func (pm *processManager) KillAll() {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -180,7 +197,7 @@ func (pm *ProcessManager) KillAll() {
 	}
 }
 
-func (pm *ProcessManager) AbortProcess(egressID string, err error) {
+func (pm *processManager) AbortProcess(egressID string, err error) {
 	logger.Debugw("aborting egress", err, "egressID", egressID)
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
@@ -194,7 +211,7 @@ func (pm *ProcessManager) AbortProcess(egressID string, err error) {
 	logger.Debugw("aborting egress completed", "egressID", egressID)
 }
 
-func (pm *ProcessManager) KillProcess(egressID string, err error) {
+func (pm *processManager) KillProcess(egressID string, err error) {
 	logger.Debugw("killing egress", err, "egressID", egressID)
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
@@ -206,7 +223,7 @@ func (pm *ProcessManager) KillProcess(egressID string, err error) {
 	logger.Debugw("killing egress completed", "egressID", egressID)
 }
 
-func (pm *ProcessManager) ProcessFinished(egressID string) {
+func (pm *processManager) ProcessFinished(egressID string) {
 	logger.Debugw("process finished", "egressID", egressID)
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
