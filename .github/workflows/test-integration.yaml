@@ -29,7 +29,7 @@ on:
 
 jobs:
   build:
-    runs-on: buildjet-8vcpu-ubuntu-2204
+    runs-on: namespace-profile-8vcpu-cache
     outputs:
       image: ${{ steps.docker-md.outputs.tags }}
     steps:
@@ -61,7 +61,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: 1.25.5
+          go-version: 1.25.8
 
       - name: Download Go modules
         run: go mod download
@@ -108,7 +108,7 @@ jobs:
       fail-fast: false
       matrix:
         integration_type: [file, stream, segments, images, multi, edge]
-    runs-on: buildjet-8vcpu-ubuntu-2204
+    runs-on: namespace-profile-8vcpu-cache
     steps:
       - uses: shogo82148/actions-setup-redis@v1
         with:
