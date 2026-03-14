@@ -13,7 +13,7 @@ jobs:
     uses: ./.github/workflows/publish-gstreamer-base.yaml
     with:
       version: ${{ inputs.version }}
-      buildjet-runs-on: buildjet-8vcpu-ubuntu-2204
+      buildjet-runs-on: namespace-profile-8vcpu-cache
       arch: amd64
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
