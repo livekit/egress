@@ -237,12 +237,12 @@ func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
 		if test.fileOptions != nil {
 			track.Output = &livekit.TrackEgressRequest_File{
 				File: &livekit.DirectFileOutput{
-					Filepath: path.Join(r.FilePrefix, test.fileOptions.filename),
+					Filepath: path.Join(r.FilePrefix, test.filename),
 				},
 			}
 		} else if test.streamOptions != nil {
 			track.Output = &livekit.TrackEgressRequest_WebsocketUrl{
-				WebsocketUrl: test.streamOptions.websocketUrl,
+				WebsocketUrl: test.websocketUrl,
 			}
 		}
 		return &rpc.StartEgressRequest{

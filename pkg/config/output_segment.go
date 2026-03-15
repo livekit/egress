@@ -137,9 +137,10 @@ func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 
 	// only keep segmentDir if it is a subdirectory of playlistDir
 	if segmentDir != "" {
-		if playlistDir == segmentDir {
+		switch playlistDir {
+		case segmentDir:
 			segmentDir = ""
-		} else if playlistDir == "" {
+		case "":
 			playlistDir = segmentDir
 			segmentDir = ""
 		}

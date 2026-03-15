@@ -65,7 +65,8 @@ func NewCSVLogger[T any](filename string) (*CSVLogger[T], error) {
 	for i := range t.NumField() {
 		columns = append(columns, t.Field(i).Name)
 	}
-	_, _ = f.WriteString(fmt.Sprintf("%s\n", strings.Join(columns, ",")))
+
+	_, _ = fmt.Fprintf(f, "%s\n", strings.Join(columns, ","))
 
 	return &CSVLogger[T]{
 		f: f,

@@ -112,9 +112,7 @@ var (
 )
 
 func PageLoadError(err string) error {
-	if strings.HasPrefix(err, "page load error ") {
-		err = err[16:]
-	}
+	err = strings.TrimPrefix(err, "page load error ")
 	return psrpc.NewErrorf(psrpc.InvalidArgument, "page load error: %s", err)
 }
 
