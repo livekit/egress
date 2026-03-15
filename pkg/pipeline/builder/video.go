@@ -383,8 +383,8 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 	appSrcBin.SetEOSFunc(func() bool {
 		return false
 	})
-	ts.AppSrc.Element.SetArg("format", "time")
-	if err := ts.AppSrc.Element.SetProperty("is-live", true); err != nil {
+	ts.AppSrc.SetArg("format", "time")
+	if err := ts.AppSrc.SetProperty("is-live", true); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err := appSrcBin.AddElement(ts.AppSrc.Element); err != nil {
@@ -393,7 +393,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 
 	switch ts.MimeType {
 	case types.MimeTypeH264:
-		if err := ts.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		if err := ts.AppSrc.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"application/x-rtp,media=video,payload=%d,encoding-name=H264,clock-rate=%d",
 			ts.PayloadType, ts.ClockRate,
 		))); err != nil {
@@ -442,7 +442,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		}
 
 	case types.MimeTypeVP8:
-		if err := ts.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		if err := ts.AppSrc.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"application/x-rtp,media=video,payload=%d,encoding-name=VP8,clock-rate=%d",
 			ts.PayloadType, ts.ClockRate,
 		))); err != nil {
@@ -469,7 +469,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		}
 
 	case types.MimeTypeVP9:
-		if err := ts.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		if err := ts.AppSrc.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"application/x-rtp,media=video,payload=%d,encoding-name=VP9,clock-rate=%d",
 			ts.PayloadType, ts.ClockRate,
 		))); err != nil {

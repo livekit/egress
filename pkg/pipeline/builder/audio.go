@@ -255,8 +255,8 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 	appSrcBin.SetEOSFunc(func() bool {
 		return false
 	})
-	ts.AppSrc.Element.SetArg("format", "time")
-	if err := ts.AppSrc.Element.SetProperty("is-live", true); err != nil {
+	ts.AppSrc.SetArg("format", "time")
+	if err := ts.AppSrc.SetProperty("is-live", true); err != nil {
 		return err
 	}
 	if err := appSrcBin.AddElement(ts.AppSrc.Element); err != nil {
@@ -265,7 +265,7 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 
 	switch ts.MimeType {
 	case types.MimeTypeOpus:
-		if err := ts.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		if err := ts.AppSrc.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"application/x-rtp,media=audio,payload=%d,encoding-name=OPUS,clock-rate=%d",
 			ts.PayloadType, ts.ClockRate,
 		))); err != nil {
@@ -287,7 +287,7 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 		}
 
 	case types.MimeTypePCMU:
-		if err := ts.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		if err := ts.AppSrc.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"application/x-rtp,media=audio,payload=%d,encoding-name=PCMU,clock-rate=%d",
 			ts.PayloadType, ts.ClockRate,
 		))); err != nil {
@@ -309,7 +309,7 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 		}
 
 	case types.MimeTypePCMA:
-		if err := ts.AppSrc.Element.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		if err := ts.AppSrc.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 			"application/x-rtp,media=audio,payload=%d,encoding-name=PCMA,clock-rate=%d",
 			ts.PayloadType, ts.ClockRate,
 		))); err != nil {
@@ -678,12 +678,7 @@ func newAudioCapsFilter(p *config.PipelineConfig, channel int) (*gst.Element, er
 			"audio/x-raw,format=S16LE,layout=interleaved,rate=48000,%s",
 			channelCaps,
 		))
-	case types.MimeTypeAAC:
-		caps = gst.NewCapsFromString(fmt.Sprintf(
-			"audio/x-raw,format=S16LE,layout=interleaved,rate=%d,%s",
-			p.AudioFrequency, channelCaps,
-		))
-	case types.MimeTypeMP3:
+	case types.MimeTypeAAC, types.MimeTypeMP3:
 		caps = gst.NewCapsFromString(fmt.Sprintf(
 			"audio/x-raw,format=S16LE,layout=interleaved,rate=%d,%s",
 			p.AudioFrequency, channelCaps,

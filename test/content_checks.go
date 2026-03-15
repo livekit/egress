@@ -225,9 +225,8 @@ func ffprobeKeyframeTimestamps(input string, expectedInterval float64) ([]float6
 	for {
 		record, e := csvReader.Read()
 		if e != nil {
-			if ctx.Err() != nil || e == io.EOF {
-				// ignore context && EOF errors, we could be canceling the context after readSeconds
-			} else {
+			// ignore context && EOF errors, we could be canceling the context after readSeconds
+			if ctx.Err() == nil && e != io.EOF {
 				err = fmt.Errorf("read csv: %w", e)
 			}
 			break

@@ -342,10 +342,10 @@ func (r *Runner) testRoomCompositeStaysOpen(t *testing.T, test *testCase) {
 }
 
 func (r *Runner) testStorageLimit(t *testing.T, test *testCase) {
-	origLimit := r.ServiceConfig.SessionLimits.FileOutputMaxSize
-	r.ServiceConfig.SessionLimits.FileOutputMaxSize = 300000 // ~300KB to trigger quickly
+	origLimit := r.FileOutputMaxSize
+	r.FileOutputMaxSize = 300000 // ~300KB to trigger quickly
 	t.Cleanup(func() {
-		r.ServiceConfig.SessionLimits.FileOutputMaxSize = origLimit
+		r.FileOutputMaxSize = origLimit
 	})
 
 	req := r.build(test)
@@ -361,7 +361,7 @@ func (r *Runner) testStorageLimit(t *testing.T, test *testCase) {
 		}
 
 		update := r.getUpdate(t, egressID)
-		switch update.Status {
+		switch update.Status { //nolint:revive // EGRESS_ACTIVE explicitly listed for readability
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			continue
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
