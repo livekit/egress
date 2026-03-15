@@ -40,6 +40,24 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 	t.Run("EdgeCases", func(t *testing.T) {
 		for _, test := range []*testCase{
 
+			// RoomComposite with a late-joining participant (audio only).
+			// Verifies that file duration reflects wall-clock time, not
+			// inflated by the late track's PTS offset.
+
+			{
+				name:        "RoomCompositeLateTrackDuration",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename: "room_composite_late_track_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				custom: r.testRoomCompositeLateTrackDuration,
+			},
+
 			// Agents with room composite audio only
 
 			{
@@ -172,6 +190,53 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 			}
 		}
 	})
+}
+
+func (r *Runner) testRoomCompositeLateTrackDuration(t *testing.T, test *testCase) {
+	// First participant is already connected (r.room) and publishes audio immediately.
+	// Start egress, wait for it to become active, then connect a second participant
+	// after a delay. Stop egress and verify that the reported file duration is close
+	// to wall-clock time and not inflated by the late track's synchronizer offset.
+	req := r.build(test)
+	testStart := time.Now()
+	egressID := r.startEgress(t, req)
+
+	// Second participant joins several seconds after egress is active
+	time.Sleep(time.Second * 5)
+
+	p2, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "egress-late-joiner",
+		ParticipantIdentity: fmt.Sprintf("late-joiner-%d", rand.Intn(100)),
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	t.Cleanup(p2.Disconnect)
+	r.publish(t, p2.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+
+	// Let the late track record for a few seconds
+	time.Sleep(time.Second * 7)
+
+	// Stop and verify
+	res := r.stopEgress(t, egressID)
+	wallClock := time.Since(testStart)
+
+	fileRes := res.GetFile() //nolint:staticcheck
+	if fileRes == nil {
+		require.Len(t, res.FileResults, 1)
+		fileRes = res.FileResults[0]
+	}
+
+	reportedDuration := time.Duration(fileRes.Duration)
+	t.Logf("reported duration: %s, wall-clock: %s, startedAt: %d, endedAt: %d",
+		reportedDuration, wallClock, fileRes.StartedAt, fileRes.EndedAt)
+
+	// Reported duration must not exceed wall-clock time. It can legitimately be
+	// shorter (pipeline startup delay between testStart and first packet), but
+	// should never be longer.
+	require.LessOrEqual(t, reportedDuration.Seconds(), wallClock.Seconds()+3.0,
+		"file duration should not exceed wall-clock duration (inflated by late track offset)")
 }
 
 func (r *Runner) testAgents(t *testing.T, test *testCase) {
