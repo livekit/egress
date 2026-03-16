@@ -46,7 +46,7 @@ type Server struct {
 
 	conf *config.ServiceConfig
 
-	*service.ProcessManager
+	service.ProcessManager
 	*service.MetricsService
 	*service.DebugService
 	monitor *stats.Monitor
