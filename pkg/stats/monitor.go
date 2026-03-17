@@ -103,8 +103,9 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 		clusterID:     conf.ClusterID,
 		cpuCostConfig: conf.CPUCostConfig,
 		svc:           svc,
-		pending:       make(map[string]*processStats),
-		procStats:     make(map[int]*processStats),
+		pending:        make(map[string]*processStats),
+		procStats:      make(map[int]*processStats),
+		lastMemoryDump: time.Now(),
 	}
 
 	m.initPrometheus()
