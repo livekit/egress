@@ -181,8 +181,8 @@ const (
 func (c *Controller) handleMessageError(gErr *gst.GError) error {
 	element, name, message := parseDebugInfo(gErr)
 
-	switch {
-	case element == elementGstRtmp2Sink:
+	switch element {
+	case elementGstRtmp2Sink:
 		streamSink := c.getStreamSink()
 
 		streamName := strings.Split(name, "_")[1]
@@ -205,7 +205,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 		// remove sink
 		return c.streamFailed(context.Background(), stream, gErr)
 
-	case element == elementGstSrtSink:
+	case elementGstSrtSink:
 		streamName := strings.Split(name, "_")[1]
 		stream, err := c.getStreamSink().GetStream(streamName)
 		if err != nil {
@@ -214,7 +214,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 
 		return c.streamFailed(context.Background(), stream, gErr)
 
-	case element == elementGstAppSrc:
+	case elementGstAppSrc:
 		if message == msgStreamingNotNegotiated {
 			// send eosSent to app src
 			logger.Debugw("streaming stopped", "name", name)
@@ -222,7 +222,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 			return nil
 		}
 
-	case element == elementGstSplitMuxSink:
+	case elementGstSplitMuxSink:
 		// We sometimes get GstSplitMuxSink errors if EOS was received before any data
 		if message == msgMuxer {
 			if c.eosSent.IsBroken() {

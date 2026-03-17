@@ -26,7 +26,7 @@ import (
 
 func TestValidateUrl(t *testing.T) {
 	var twitchUpdated = regexp.MustCompile("rtmps://(.*).contribute.live-video.net/app/streamkey")
-	var twitchRedacted = regexp.MustCompile("rtmps://(.*).contribute.live-video.net/app/\\{str\\.\\.\\.key}")
+	var twitchRedacted = regexp.MustCompile(`rtmps://(.*).contribute.live-video.net/app/\{str\.\.\.key}`)
 
 	o := &StreamConfig{}
 

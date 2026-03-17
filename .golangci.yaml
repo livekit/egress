@@ -8,13 +8,14 @@ linters:
   default: none
   enable:
     - asasalint
-    - copyloopvar
     - dupl
     - errname
     - fatcontext
     - forbidigo
     - goconst
+    - govet
     - misspell
+    - nilerr
     - revive
     - staticcheck
   settings:
@@ -26,9 +27,8 @@ linters:
     staticcheck:
       checks:
         - "all"
-        - "-QF*"  # quick-fix suggestions — too noisy, address separately
-        - "-S*"   # simplification suggestions — too noisy, address separately
-        - "-ST*"  # style checks — too noisy, address separately
+        - "-ST1000" # package comments — not useful for internal packages
+        - "-ST1003" # naming conventions — would break exported API
     misspell:
       mode: default
       locale: US
@@ -58,6 +58,12 @@ linters:
         - name: unused-parameter
         - name: var-declaration
         - name: waitgroup-by-value
+        - name: datarace
+        - name: identical-branches
+        - name: identical-switch-branches
+        - name: unconditional-recursion
+        - name: unreachable-code 
+        - name: empty-block
   exclusions:
     generated: lax
     rules:

@@ -79,5 +79,5 @@ func newMP3Muxer() (*mp3Muxer, error) {
 
 // GetRequestPad always returns the static sink pad to satisfy the muxer contract.
 func (m *mp3Muxer) GetRequestPad(_ string) *gst.Pad {
-	return m.Element.GetStaticPad("sink")
+	return m.GetStaticPad("sink")
 }

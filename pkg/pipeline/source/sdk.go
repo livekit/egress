@@ -234,11 +234,11 @@ func (s *SDKSource) joinRoom() error {
 	}
 
 	if s.RequestType == types.RequestTypeRoomComposite {
-		cb.ParticipantCallback.OnTrackPublished = s.onTrackPublished
+		cb.OnTrackPublished = s.onTrackPublished
 	}
 
 	if s.RequestType == types.RequestTypeParticipant {
-		cb.ParticipantCallback.OnTrackPublished = s.onTrackPublished
+		cb.OnTrackPublished = s.onTrackPublished
 		cb.OnParticipantDisconnected = s.onParticipantDisconnected
 	}
 

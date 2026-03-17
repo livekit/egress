@@ -600,7 +600,7 @@ func (p *PipelineConfig) getRoomCompositeRequestType(req *livekit.RoomCompositeE
 	return types.SourceTypeSDK
 }
 
-// used for sdk input source
+// UpdateInfoFromSDK - updates the pipeline config with the identifier, replacements, width, and height
 func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string, w, h uint32) error {
 	if p.Info.RetryCount > 0 {
 		replacements["{retry}"] = fmt.Sprintf("%d", p.Info.RetryCount)
@@ -635,14 +635,14 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 					if w != 0 {
 						o.Width = int32(w)
 					} else {
-						o.Width = p.VideoConfig.Width
+						o.Width = p.Width
 					}
 				}
 				if o.Height == 0 {
 					if h != 0 {
 						o.Height = int32(h)
 					} else {
-						o.Height = p.VideoConfig.Height
+						o.Height = p.Height
 					}
 				}
 			}
@@ -664,7 +664,7 @@ func (p *PipelineConfig) GetEncodedOutputs() []OutputConfig {
 
 func stringReplace(s string, replacements map[string]string) string {
 	for template, value := range replacements {
-		s = strings.Replace(s, template, value, -1)
+		s = strings.ReplaceAll(s, template, value)
 	}
 	return s
 }

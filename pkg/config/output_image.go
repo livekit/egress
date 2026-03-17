@@ -48,7 +48,7 @@ type ImageConfig struct {
 }
 
 func (p *PipelineConfig) GetImageConfigs() []*ImageConfig {
-	o, _ := p.Outputs[types.EgressTypeImages]
+	o := p.Outputs[types.EgressTypeImages]
 
 	var configs []*ImageConfig
 	for _, c := range o {

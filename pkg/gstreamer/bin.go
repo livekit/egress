@@ -50,7 +50,8 @@ const (
 //     across the wait to prevent state-mutation races from concurrent Stop/
 //     state-transition calls while forced detach is in progress.
 //
-// Bins are designed to hold a single stream, with any number of sources and sinks
+
+// Bin is designed to hold a single stream, with any number of sources and sinks
 type Bin struct {
 	*Callbacks
 	*StateManager
@@ -90,13 +91,13 @@ func (b *Bin) GetName() string {
 	return b.bin.GetName()
 }
 
-// Add src as a source of b. This should only be called once for each source bin
+// AddSourceBin - adds src as a source of b. This should only be called once for each source bin
 func (b *Bin) AddSourceBin(src *Bin) error {
 	logger.Debugw(fmt.Sprintf("adding src %s to %s", src.bin.GetName(), b.bin.GetName()))
 	return b.addBin(src, gst.PadDirectionSource)
 }
 
-// Add src as a sink of b. This should only be called once for each sink bin
+// AddSinkBin - adds sink as a sink of b. This should only be called once for each sink bin
 func (b *Bin) AddSinkBin(sink *Bin) error {
 	logger.Debugw(fmt.Sprintf("adding sink %s to %s", sink.bin.GetName(), b.bin.GetName()))
 	return b.addBin(sink, gst.PadDirectionSink)
@@ -155,7 +156,7 @@ func (b *Bin) addBin(bin *Bin, direction gst.PadDirection) error {
 	return nil
 }
 
-// Elements will be linked in the order they are added
+// AddElement - adds element to the bin. Elements will be linked in the order they are added
 func (b *Bin) AddElement(e *gst.Element) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -168,7 +169,7 @@ func (b *Bin) AddElement(e *gst.Element) error {
 	return nil
 }
 
-// Elements will be linked in the order they are added
+// AddElements - adds elements to the bin. Elements will be linked in the order they are added
 func (b *Bin) AddElements(elements ...*gst.Element) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -381,7 +382,7 @@ func (b *Bin) probeRemoveSink(sink *Bin) {
 
 	srcGhostPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
 		srcGhostPad.Unlink(sinkGhostPad.Pad)
-		sinkGhostPad.Pad.SendEvent(gst.NewEOSEvent())
+		sinkGhostPad.SendEvent(gst.NewEOSEvent())
 
 		b.mu.Lock()
 		err := b.pipeline.Remove(sink.bin.Element)
@@ -457,7 +458,7 @@ func (b *Bin) SetState(state gst.State) error {
 	return nil
 }
 
-// Set a custom linking function for this bin's elements (used when you need to modify chain functions)
+// SetLinkFunc - sets a custom linking function for this bin's elements (used when you need to modify chain functions)
 func (b *Bin) SetLinkFunc(f func([]*gst.Element) error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -472,7 +473,7 @@ func (b *Bin) SetShouldLink(f func(string) bool) {
 	b.shouldLink = f
 }
 
-// Set a custom linking function which returns a pad for the named src bin
+// SetGetSrcPad - sets a custom linking function which returns a pad for the named src bin
 func (b *Bin) SetGetSrcPad(f func(srcName string) *gst.Pad) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -480,7 +481,7 @@ func (b *Bin) SetGetSrcPad(f func(srcName string) *gst.Pad) {
 	b.getSrcPad = f
 }
 
-// Set a custom linking function which returns a pad for the named sink bin
+// SetGetSinkPad - sets a custom linking function which returns a pad for the named sink bin
 func (b *Bin) SetGetSinkPad(f func(sinkName string) *gst.Pad) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -488,7 +489,7 @@ func (b *Bin) SetGetSinkPad(f func(sinkName string) *gst.Pad) {
 	b.getSinkPad = f
 }
 
-// Set a custom EOS function (used for appsrc, input-selector). If it returns true, EOS will also be sent to src bins
+// SetEOSFunc - sets a custom EOS function (used for appsrc, input-selector). If it returns true, EOS will also be sent to src bins
 func (b *Bin) SetEOSFunc(f func() bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

@@ -172,7 +172,7 @@ func NewAppWriter(
 			logger.Errorw("failed to create csv logger", err)
 		} else {
 			w.csvLogger = csvLogger
-			w.TrackSynchronizer.OnSenderReport(func(drift time.Duration) {
+			w.OnSenderReport(func(drift time.Duration) {
 				logger.Debugw("received sender report", "drift", drift)
 				if w.driftHandler != nil {
 					// presence of the drift handler means that PTS updates on SRs are disabled
@@ -551,7 +551,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		return nil
 	}
 
-	p, err := pkt.Packet.Marshal()
+	p, err := pkt.Marshal()
 	if err != nil {
 		w.stats.packetsDropped.Inc()
 		w.logger.Errorw("could not marshal packet", err)
