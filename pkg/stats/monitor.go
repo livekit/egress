@@ -35,12 +35,13 @@ import (
 )
 
 const (
-	cpuHoldDuration      = time.Second * 15
-	defaultKillThreshold = 0.95
-	minKillDuration      = 10
-	gb                   = 1024.0 * 1024.0 * 1024.0
-	pulseClientHold      = 4
-	memoryHeadroomGB     = 1.0
+	cpuHoldDuration         = time.Second * 15
+	defaultKillThreshold    = 0.95
+	minKillDuration         = 10
+	gb                      = 1024.0 * 1024.0 * 1024.0
+	pulseClientHold         = 4
+	memoryHeadroomGB        = 1.0
+	memoryUsageDumpInterval = 10 * time.Minute
 )
 
 type Service interface {
@@ -73,6 +74,7 @@ type Monitor struct {
 	mu                deadlock.Mutex
 	highCPUDuration   int
 	highMemoryStart   time.Time
+	lastMemoryDump    time.Time
 	pending           map[string]*processStats
 	procStats         map[int]*processStats
 	memoryUsage       float64
@@ -588,11 +590,35 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 	m.memoryUsage = float64(totalMemory) / gb
 	m.promProcRSS.Set(float64(totalMemory))
 
+	m.maybeLogMemoryUsage(stats.Memory)
+
 	m.updateCgroupStats()
 
 	m.updateWouldRejectMetrics()
 
 	m.checkMemoryKill(maxMemoryEgress, maxMemoryGroup)
+}
+
+// maybeLogMemoryUsage periodically logs per-group process RSS to aid memory leak diagnosis.
+func (m *Monitor) maybeLogMemoryUsage(memory map[int]*hwstats.GroupMemory) {
+	now := time.Now()
+	if now.Sub(m.lastMemoryDump) < memoryUsageDumpInterval {
+		return
+	}
+	m.lastMemoryDump = now
+
+	for groupPID, gm := range memory {
+		egressID := ""
+		if ps := m.procStats[groupPID]; ps != nil {
+			egressID = ps.egressID
+		}
+		logger.Infow("current memory usage",
+			"egressID", egressID,
+			"groupPID", groupPID,
+			"totalRSSBytes", gm.Total,
+			"processes", gm.Procs,
+		)
+	}
 }
 
 // updateCgroupStats reads cgroup memory statistics and updates metrics.
