@@ -230,7 +230,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			p.BaseUrl = p.TemplateBase
 		}
 		baseUrl, err := url.Parse(p.BaseUrl)
-		if err != nil || (baseUrl.Scheme != "http" && baseUrl.Scheme != "https") {
+		if err != nil || !isHttp(baseUrl) {
 			return errors.ErrInvalidInput("template base url")
 		}
 
@@ -277,7 +277,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		p.WebUrl = req.Web.Url
 		webUrl, err := url.Parse(p.WebUrl)
-		if err != nil || (webUrl.Scheme != "http" && webUrl.Scheme != "https") {
+		if err != nil || !isHttp(webUrl) {
 			return errors.ErrInvalidInput("web url")
 		}
 
@@ -436,7 +436,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 				p.BaseUrl = p.TemplateBase
 			}
 			baseUrl, err := url.Parse(p.BaseUrl)
-			if err != nil || (baseUrl.Scheme != "http" && baseUrl.Scheme != "https") {
+			if err != nil || !isHttp(baseUrl) {
 				return errors.ErrInvalidInput("template base url")
 			}
 
@@ -462,7 +462,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 			p.WebUrl = web.Url
 			webUrl, err := url.Parse(p.WebUrl)
-			if err != nil || (webUrl.Scheme != "http" && webUrl.Scheme != "https") {
+			if err != nil || !isHttp(webUrl) {
 				return errors.ErrInvalidInput("web url")
 			}
 
@@ -827,6 +827,10 @@ func (p *PipelineConfig) GetEncodedOutputs() []OutputConfig {
 	}
 
 	return ret
+}
+
+func isHttp(parsedUrl *url.URL) bool {
+	return parsedUrl.Scheme == "http" || parsedUrl.Scheme == "https"
 }
 
 func stringReplace(s string, replacements map[string]string) string {
