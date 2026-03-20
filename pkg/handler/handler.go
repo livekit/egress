@@ -82,6 +82,9 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 	if err = rpcServer.RegisterStopEgressTopic(conf.Info.EgressId); err != nil {
 		return nil, err
 	}
+	if err = rpcServer.RegisterUpdateEgressTopic(conf.Info.EgressId); err != nil {
+		return nil, err
+	}
 	h.rpcServer = rpcServer
 
 	_, err = h.ipcServiceClient.HandlerReady(context.Background(), &ipc.HandlerReadyRequest{EgressId: conf.Info.EgressId})

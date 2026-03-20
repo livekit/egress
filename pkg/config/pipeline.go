@@ -91,6 +91,18 @@ type SDKSourceParams struct {
 	VideoInCodec types.MimeType
 	AudioTracks  []*TrackSource
 	VideoTrack   *TrackSource
+	AudioRoutes  []AudioRouteConfig
+}
+
+type AudioRouteConfig struct {
+	Match   AudioRouteMatch
+	Channel livekit.AudioChannel
+}
+
+type AudioRouteMatch struct {
+	TrackID             string
+	ParticipantIdentity string
+	ParticipantKind     lksdk.ParticipantKind
 }
 
 type TrackSource struct {
@@ -396,6 +408,145 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			return err
 		}
 
+	case *rpc.StartEgressRequest_Egress:
+		egressReq := req.Egress
+		clone := proto.Clone(egressReq).(*livekit.StartEgressRequest)
+		p.Info.Request = &livekit.EgressInfo_Egress{
+			Egress: clone,
+		}
+		egress.RedactStartEgressRequest(clone)
+
+		switch source := egressReq.Source.(type) {
+		case *livekit.StartEgressRequest_Template:
+			tmpl := source.Template
+			p.RequestType = types.RequestTypeTemplate
+
+			if TemplateUsesSDKSource(tmpl) {
+				p.SourceType = types.SourceTypeSDK
+			} else {
+				p.SourceType = types.SourceTypeWeb
+			}
+			p.AwaitStartSignal = true
+
+			p.Info.RoomName = egressReq.RoomName
+			p.Layout = tmpl.Layout
+			if tmpl.CustomBaseUrl != "" {
+				p.BaseUrl = tmpl.CustomBaseUrl
+			} else {
+				p.BaseUrl = p.TemplateBase
+			}
+			baseUrl, err := url.Parse(p.BaseUrl)
+			if err != nil || (baseUrl.Scheme != "http" && baseUrl.Scheme != "https") {
+				return errors.ErrInvalidInput("template base url")
+			}
+
+			if !tmpl.VideoOnly {
+				p.AudioEnabled = true
+				p.AudioTranscoding = true
+			}
+			if !tmpl.AudioOnly {
+				p.VideoEnabled = true
+				p.VideoInCodec = types.MimeTypeRawVideo
+				p.VideoDecoding = true
+			}
+			if !p.AudioEnabled && !p.VideoEnabled {
+				return errors.ErrInvalidInput("audio_only and video_only")
+			}
+
+		case *livekit.StartEgressRequest_Web:
+			web := source.Web
+			p.RequestType = types.RequestTypeWeb
+			connectionInfoRequired = false
+			p.SourceType = types.SourceTypeWeb
+			p.AwaitStartSignal = web.AwaitStartSignal
+
+			p.WebUrl = web.Url
+			webUrl, err := url.Parse(p.WebUrl)
+			if err != nil || (webUrl.Scheme != "http" && webUrl.Scheme != "https") {
+				return errors.ErrInvalidInput("web url")
+			}
+
+			if !web.VideoOnly {
+				p.AudioEnabled = true
+				p.AudioTranscoding = true
+			}
+			if !web.AudioOnly {
+				p.VideoEnabled = true
+				p.VideoInCodec = types.MimeTypeRawVideo
+				p.VideoDecoding = true
+			}
+			if !p.AudioEnabled && !p.VideoEnabled {
+				return errors.ErrInvalidInput("audio_only and video_only")
+			}
+
+		case *livekit.StartEgressRequest_Media:
+			media := source.Media
+			p.RequestType = types.RequestTypeMedia
+			p.SourceType = types.SourceTypeSDK
+
+			p.Info.RoomName = egressReq.RoomName
+
+			// data config not yet supported
+			if media.Data != nil {
+				return errors.ErrFeatureDisabled("data track egress")
+			}
+
+			// video
+			switch v := media.Video.(type) {
+			case *livekit.MediaSource_VideoTrackId:
+				p.VideoEnabled = true
+				p.VideoDecoding = true
+				p.VideoTrackID = v.VideoTrackId
+			case *livekit.MediaSource_ParticipantVideo:
+				p.VideoEnabled = true
+				p.VideoDecoding = true
+				p.Identity = v.ParticipantVideo.Identity
+				p.ScreenShare = v.ParticipantVideo.PreferScreenShare
+			}
+
+			// audio
+			if media.Audio != nil {
+				p.AudioEnabled = true
+				p.AudioTranscoding = true
+				for _, route := range media.Audio.Routes {
+					arc := AudioRouteConfig{
+						Channel: route.Channel,
+					}
+					switch m := route.Match.(type) {
+					case *livekit.AudioRoute_TrackId:
+						arc.Match.TrackID = m.TrackId
+					case *livekit.AudioRoute_ParticipantIdentity:
+						arc.Match.ParticipantIdentity = m.ParticipantIdentity
+					case *livekit.AudioRoute_ParticipantKind:
+						arc.Match.ParticipantKind = lksdk.ParticipantKind(m.ParticipantKind)
+					}
+					p.AudioRoutes = append(p.AudioRoutes, arc)
+				}
+			}
+
+			if !p.AudioEnabled && !p.VideoEnabled {
+				return errors.ErrInvalidInput("audio or video")
+			}
+
+		default:
+			return errors.ErrInvalidInput("source")
+		}
+
+		// encoding options
+		switch opts := egressReq.Encoding.(type) {
+		case *livekit.StartEgressRequest_Preset:
+			p.applyPreset(opts.Preset)
+		case *livekit.StartEgressRequest_Advanced:
+			if err := p.applyAdvanced(opts.Advanced); err != nil {
+				return err
+			}
+		}
+
+		// output params
+		if err := p.updateOutputs(egressReq); err != nil {
+			return err
+		}
+
 	default:
 		return errors.ErrInvalidInput("request")
 	}
@@ -575,6 +726,22 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 	}
 
 	return nil
+}
+
+// TemplateUsesSDKSource reports whether a template source request will use
+// the SDK source (no Chrome/Pulse) instead of Web.
+// Same heuristic as RoomCompositeUsesSDKSource.
+func TemplateUsesSDKSource(req *livekit.TemplateSource) bool {
+	if req.Layout != "" {
+		return false
+	}
+	if !req.AudioOnly {
+		return false
+	}
+	if req.CustomBaseUrl != "" {
+		return false
+	}
+	return true
 }
 
 // RoomCompositeUsesSDKSource reports whether a room composite request will use

@@ -153,7 +153,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		return errors.ErrInvalidInput("multiple segmented file outputs")
 	}
 	if segment != nil {
-		conf, err := p.getSegmentConfig(segment)
+		conf, err := p.getSegmentConfig(segment, segment)
 		if err != nil {
 			return err
 		}
@@ -197,7 +197,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		}
 
 		for _, img := range images {
-			conf, err := p.getImageConfig(img)
+			conf, err := p.getImageConfig(img, img)
 			if err != nil {
 				return err
 			}
@@ -212,6 +212,188 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 
 	if p.OutputCount.Load() == 0 {
 		return errors.ErrInvalidInput("output")
+	}
+
+	return nil
+}
+
+func (p *PipelineConfig) updateOutputs(req *livekit.StartEgressRequest) error {
+	if len(req.Outputs) == 0 {
+		return errors.ErrInvalidInput("output")
+	}
+
+	var hasFile, hasStream, hasSegments bool
+	var fileCount, streamCount, segmentCount int
+
+	for _, output := range req.Outputs {
+		storage := resolveStorageConfig(output.Storage, req.Storage)
+
+		switch o := output.Config.(type) {
+		case *livekit.Output_File:
+			fileCount++
+			if fileCount > 1 {
+				return errors.ErrInvalidInput("multiple file outputs")
+			}
+			hasFile = true
+
+			conf, err := p.getFileConfig(fileTypeToOutputType(o.File.FileType), o.File.GetFilepath(), o.File.GetDisableManifest(), storage)
+			if err != nil {
+				return err
+			}
+
+			p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
+			p.OutputCount.Inc()
+			p.FinalizationRequired = true
+			if p.VideoEnabled {
+				p.VideoEncoding = true
+			}
+
+			p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
+
+		case *livekit.Output_Stream:
+			stream := o.Stream
+			streamCount++
+			if streamCount > 1 {
+				return errors.ErrInvalidInput("multiple stream outputs")
+			}
+			hasStream = true
+
+			var outputType types.OutputType
+			var egressType types.EgressType
+
+			switch stream.Protocol {
+			case livekit.StreamProtocol_DEFAULT_PROTOCOL:
+				if len(stream.Urls) == 0 {
+					return errors.ErrInvalidInput("stream protocol")
+				}
+				parsed, err := url.Parse(stream.Urls[0])
+				if err != nil {
+					return errors.ErrInvalidUrl(stream.Urls[0], err.Error())
+				}
+				var ok bool
+				outputType, ok = types.StreamOutputTypes[parsed.Scheme]
+				if !ok {
+					return errors.ErrInvalidUrl(stream.Urls[0], "invalid protocol")
+				}
+				if parsed.Scheme == "ws" || parsed.Scheme == "wss" {
+					egressType = types.EgressTypeWebsocket
+				} else {
+					egressType = types.EgressTypeStream
+				}
+
+			case livekit.StreamProtocol_RTMP:
+				outputType = types.OutputTypeRTMP
+				egressType = types.EgressTypeStream
+
+			case livekit.StreamProtocol_SRT:
+				outputType = types.OutputTypeSRT
+				egressType = types.EgressTypeStream
+
+			case livekit.StreamProtocol_WEBSOCKET:
+				outputType = types.OutputTypeRaw
+				egressType = types.EgressTypeWebsocket
+			}
+
+			// websocket is audio-only
+			if egressType == types.EgressTypeWebsocket && p.VideoEnabled && p.AudioEnabled {
+				p.VideoEnabled = false
+				p.VideoDecoding = false
+			}
+
+			conf, err := p.getStreamConfig(outputType, stream.Urls)
+			if err != nil {
+				return err
+			}
+
+			p.Outputs[egressType] = []OutputConfig{conf}
+			p.OutputCount.Add(int32(len(stream.Urls)))
+			if p.VideoEnabled {
+				p.VideoEncoding = true
+			}
+
+			streamInfoList := make([]*livekit.StreamInfo, 0, len(stream.Urls))
+			conf.Streams.Range(func(_, s any) bool {
+				streamInfoList = append(streamInfoList, s.(*Stream).StreamInfo)
+				return true
+			})
+			p.Info.StreamResults = streamInfoList
+
+		case *livekit.Output_Segments:
+			segmentCount++
+			if segmentCount > 1 {
+				return errors.ErrInvalidInput("multiple segmented file outputs")
+			}
+			hasSegments = true
+
+			conf, err := p.getSegmentConfig(o.Segments, storage)
+			if err != nil {
+				return err
+			}
+
+			p.Outputs[types.EgressTypeSegments] = []OutputConfig{conf}
+			p.OutputCount.Inc()
+			p.FinalizationRequired = true
+			if p.VideoEnabled {
+				p.VideoEncoding = true
+			}
+
+			p.Info.SegmentResults = []*livekit.SegmentsInfo{conf.SegmentsInfo}
+
+		case *livekit.Output_Images:
+			if !p.VideoEnabled {
+				return errors.ErrInvalidInput("audio_only images")
+			}
+
+			conf, err := p.getImageConfig(o.Images, storage)
+			if err != nil {
+				return err
+			}
+
+			p.Outputs[types.EgressTypeImages] = append(p.Outputs[types.EgressTypeImages], conf)
+			p.OutputCount.Inc()
+			p.FinalizationRequired = true
+
+			p.Info.ImageResults = append(p.Info.ImageResults, conf.ImagesInfo)
+
+		default:
+			return errors.ErrInvalidInput("output config")
+		}
+	}
+
+	if p.OutputCount.Load() == 0 {
+		return errors.ErrInvalidInput("output")
+	}
+
+	// image-only: enforce video only
+	if !hasFile && !hasStream && !hasSegments && len(p.Outputs[types.EgressTypeImages]) > 0 {
+		p.AudioEnabled = false
+		p.AudioTranscoding = false
+	}
+
+	// populate deprecated single-result field for older clients
+	if hasFile && !hasStream && !hasSegments && len(p.Outputs[types.EgressTypeImages]) == 0 {
+		if fc := p.GetFileConfig(); fc != nil {
+			p.Info.Result = &livekit.EgressInfo_File{File: fc.FileInfo}
+		}
+	} else if hasStream && !hasFile && !hasSegments && len(p.Outputs[types.EgressTypeImages]) == 0 {
+		if len(p.Info.StreamResults) > 0 {
+			p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: p.Info.StreamResults}} //nolint:staticcheck
+		}
+	} else if hasSegments && !hasFile && !hasStream && len(p.Outputs[types.EgressTypeImages]) == 0 {
+		if sc := p.GetSegmentConfig(); sc != nil {
+			p.Info.Result = &livekit.EgressInfo_Segments{Segments: sc.SegmentsInfo}
+		}
+	}
+
+	// keyframe interval handling
+	if segmentConf := p.Outputs[types.EgressTypeSegments]; segmentConf != nil {
+		if hasStream && p.KeyFrameInterval > 0 {
+			conf := segmentConf[0].(*SegmentConfig)
+			conf.SegmentDuration = min(int(p.KeyFrameInterval), conf.SegmentDuration)
+		}
+		p.KeyFrameInterval = 0
+	} else if p.KeyFrameInterval == 0 && p.Outputs[types.EgressTypeStream] != nil {
+		p.KeyFrameInterval = StreamKeyframeInterval
 	}
 
 	return nil

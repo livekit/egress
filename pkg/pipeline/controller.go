@@ -352,6 +352,37 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 	return errs.ToError()
 }
 
+func (c *Controller) UpdateEgress(ctx context.Context, req *livekit.UpdateEgressRequest) error {
+	ctx, span := tracer.Start(ctx, "Pipeline.UpdateEgress")
+	defer span.End()
+
+	errs := errors.ErrArray{}
+
+	// update stream targets
+	if len(req.AddStreamUrls) > 0 || len(req.RemoveStreamUrls) > 0 {
+		streamReq := &livekit.UpdateStreamRequest{
+			EgressId:         req.EgressId,
+			AddOutputUrls:    req.AddStreamUrls,
+			RemoveOutputUrls: req.RemoveStreamUrls,
+		}
+		if err := c.UpdateStream(ctx, streamReq); err != nil {
+			errs.AppendErr(err)
+		}
+	}
+
+	// update layout — not yet supported
+	if req.Layout != "" {
+		errs.AppendErr(errors.ErrFeatureDisabled("layout update"))
+	}
+
+	// update URL — not yet supported
+	if req.Url != "" {
+		errs.AppendErr(errors.ErrFeatureDisabled("url update"))
+	}
+
+	return errs.ToError()
+}
+
 func (c *Controller) streamFinished(ctx context.Context, stream *config.Stream) error {
 	stream.StreamInfo.Status = livekit.StreamInfo_FINISHED
 	stream.UpdateEndTime(time.Now().UnixNano())

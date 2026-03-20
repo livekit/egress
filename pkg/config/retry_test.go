@@ -180,10 +180,11 @@ func TestSegmentOutputRetrySafety(t *testing.T) {
 				Outputs: make(map[types.EgressType][]OutputConfig),
 			}
 
-			_, err := p.getSegmentConfig(&livekit.SegmentedFileOutput{
+			seg := &livekit.SegmentedFileOutput{
 				FilenamePrefix: test.prefix,
 				PlaylistName:   test.playlist,
-			})
+			}
+			_, err := p.getSegmentConfig(seg, seg)
 
 			if test.expectErr {
 				require.ErrorIs(t, err, errors.ErrNonRetryableOutput)
