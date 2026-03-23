@@ -84,6 +84,24 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				custom: r.testAudioMixing,
 			},
 
+			// RoomComposite with video compositing via SDK source (no Chrome).
+			// Multiple participants publish audio + video; output is an MP4
+			// with all video tracks composited in a grid layout.
+
+			{
+				name:        "VideoCompositing",
+				requestType: types.RequestTypeRoomComposite,
+				fileOptions: &fileOptions{
+					filename: "video_compositing_{time}.mp4",
+					fileType: livekit.EncodedFileType_MP4,
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					VideoCodec: livekit.VideoCodec_H264_HIGH,
+					AudioCodec: livekit.AudioCodec_OPUS,
+				},
+				custom: r.testVideoCompositing,
+			},
+
 			// ParticipantComposite where the participant never publishes
 
 			{
@@ -284,6 +302,32 @@ func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	require.NoError(t, err)
 	t.Cleanup(p2.Disconnect)
 	r.publish(t, p2.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+
+	r.runFileTest(t, test)
+}
+
+func (r *Runner) testVideoCompositing(t *testing.T, test *testCase) {
+	// Create 3 participants, each publishing both audio and video.
+	// The SDK room composite with video compositing should tile them in a 2x2 grid.
+	participants := make([]*lksdk.Room, 3)
+	for i := range participants {
+		p, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+			APIKey:              r.ApiKey,
+			APISecret:           r.ApiSecret,
+			RoomName:            r.RoomName,
+			ParticipantName:     fmt.Sprintf("compositor-p%d", i+1),
+			ParticipantIdentity: fmt.Sprintf("compositor-%d-%d", i+1, rand.Intn(100)),
+		}, lksdk.NewRoomCallback())
+		require.NoError(t, err)
+		participants[i] = p
+		t.Cleanup(p.Disconnect)
+
+		r.publish(t, p.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+		r.publish(t, p.LocalParticipant, types.MimeTypeH264, make(chan struct{}))
+	}
+
+	// Allow tracks to be received before starting egress
+	time.Sleep(time.Second * 3)
 
 	r.runFileTest(t, test)
 }

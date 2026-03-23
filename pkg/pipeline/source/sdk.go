@@ -640,7 +640,7 @@ func (s *SDKSource) disconnectRoom() {
 }
 
 func (s *SDKSource) shouldDisableAudioPTSAdjustment() bool {
-	return s.RequestType == types.RequestTypeRoomComposite || // SDK room composites are audio only - no need to adjust audio timestamps
+	return s.RequestType == types.RequestTypeRoomComposite || // SDK room composites use audiomixer - PTS adjustments cause gaps
 		s.RequestType == types.RequestTypeTrack || // no A/V sync needed for single track requests
 		s.AudioTempoController.Enabled
 }

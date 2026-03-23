@@ -47,6 +47,11 @@ type VideoBin struct {
 	names       map[string]string
 	selector    *gst.Element
 	rawVideoTee *gst.Element
+
+	// Compositor mode (VideoCompositing)
+	compositor *gst.Element
+	layout     *LayoutManager
+	trackOrder []string
 }
 
 // buildLeakyVideoQueue creates a leaky queue and attaches a monitor to track dropped buffers
@@ -130,7 +135,13 @@ func (b *VideoBin) onTrackAdded(ts *config.TrackSource) {
 
 	if ts.TrackKind == lksdk.TrackKindVideo {
 		logger.Debugw("adding video app src bin", "trackID", ts.TrackID)
-		if err := b.addAppSrcBin(ts); err != nil {
+		var err error
+		if b.compositor != nil {
+			err = b.addCompositorAppSrcBin(ts)
+		} else {
+			err = b.addAppSrcBin(ts)
+		}
+		if err != nil {
 			logger.Errorw("failed to add video app src bin", err, "trackID", ts.TrackID)
 			b.bin.OnError(err)
 		}
@@ -139,6 +150,13 @@ func (b *VideoBin) onTrackAdded(ts *config.TrackSource) {
 
 func (b *VideoBin) onTrackRemoved(trackID string) {
 	if b.bin.GetState() > gstreamer.StateRunning {
+		return
+	}
+
+	if b.compositor != nil {
+		if err := b.removeCompositorAppSrcBin(trackID); err != nil {
+			b.bin.OnError(err)
+		}
 		return
 	}
 
@@ -170,6 +188,11 @@ func (b *VideoBin) onTrackMuted(trackID string) {
 		return
 	}
 
+	// In compositor mode, muted tracks hold their last frame (no-op).
+	if b.compositor != nil {
+		return
+	}
+
 	b.mu.Lock()
 	if name, ok := b.names[trackID]; ok && b.selectedPad == name {
 		if err := b.setSelectorPadLocked(videoTestSrcName); err != nil {
@@ -183,6 +206,11 @@ func (b *VideoBin) onTrackMuted(trackID string) {
 
 func (b *VideoBin) onTrackUnmuted(trackID string) {
 	if b.bin.GetState() > gstreamer.StateRunning {
+		return
+	}
+
+	// In compositor mode, unmute is a no-op (track resumes pushing buffers).
+	if b.compositor != nil {
 		return
 	}
 
@@ -205,6 +233,66 @@ func (b *VideoBin) onSourceBinReset(ts *config.TrackSource) error {
 }
 
 func (b *VideoBin) resetVideoAppSrcBin(ts *config.TrackSource) error {
+	if b.compositor != nil {
+		return b.resetCompositorAppSrcBin(ts)
+	}
+	return b.resetSelectorAppSrcBin(ts)
+}
+
+func (b *VideoBin) resetCompositorAppSrcBin(ts *config.TrackSource) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	oldName, ok := b.names[ts.TrackID]
+	if !ok {
+		return errors.New("track already removed, cannot reset video source bin")
+	}
+
+	if b.bin.GetState() > gstreamer.StateRunning {
+		return errors.New("pipeline stopping, cannot reset video source bin")
+	}
+
+	// Release the old compositor pad
+	if pad, ok := b.pads[oldName]; ok {
+		b.compositor.ReleaseRequestPad(pad)
+		delete(b.pads, oldName)
+	}
+
+	if err := b.bin.ForceRemoveSourceBin(oldName); err != nil {
+		return fmt.Errorf("failed to force remove video source bin: %w", err)
+	}
+
+	newElement, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", ts.TrackID))
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	ts.AppSrc = app.SrcFromElement(newElement)
+
+	name := fmt.Sprintf("%s_%d", ts.TrackID, b.nextID)
+	b.nextID++
+
+	appSrcBin, err := b.buildAppSrcBin(ts, name)
+	if err != nil {
+		return fmt.Errorf("failed to build new video source bin: %w", err)
+	}
+
+	pad := b.compositor.GetRequestPad("sink_%u")
+	if err = pad.SetProperty("zorder", uint(1)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	b.pads[name] = pad
+	b.names[ts.TrackID] = name
+	b.recomputeLayoutLocked()
+
+	if err = b.bin.AddSourceBin(appSrcBin); err != nil {
+		return fmt.Errorf("failed to add new video source bin: %w", err)
+	}
+
+	logger.Infow("compositor video source bin reset complete", "trackID", ts.TrackID, "newBin", name)
+	return nil
+}
+
+func (b *VideoBin) resetSelectorAppSrcBin(ts *config.TrackSource) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -319,6 +407,13 @@ func (b *VideoBin) buildWebInput() error {
 }
 
 func (b *VideoBin) buildSDKInput() error {
+	if b.conf.VideoCompositing {
+		return b.buildCompositorInput()
+	}
+	return b.buildSelectorInput()
+}
+
+func (b *VideoBin) buildSelectorInput() error {
 	b.pads = make(map[string]*gst.Pad)
 	b.names = make(map[string]string)
 
@@ -352,6 +447,46 @@ func (b *VideoBin) buildSDKInput() error {
 	}
 
 	return nil
+}
+
+func (b *VideoBin) buildCompositorInput() error {
+	b.pads = make(map[string]*gst.Pad)
+	b.names = make(map[string]string)
+	b.trackOrder = make([]string, 0)
+	b.layout = NewLayoutManager(int(b.conf.Width), int(b.conf.Height), LayoutGrid)
+
+	compositor, err := gst.NewElement("compositor")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	compositor.SetArg("background", "black")
+	b.compositor = compositor
+
+	caps, err := b.newVideoCapsFilter(true)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	if err = b.bin.AddElements(compositor, caps); err != nil {
+		return err
+	}
+
+	// Provide custom pad lookup so source bins link to pre-created compositor sink pads
+	b.bin.SetGetSrcPad(b.getCompositorSrcPad)
+
+	// Add background test source so pipeline has data before any tracks arrive
+	if err = b.addCompositorTestSrc(); err != nil {
+		return err
+	}
+
+	// Add any pre-existing video tracks
+	for _, vt := range b.conf.VideoTracks {
+		if err = b.addCompositorAppSrcBin(vt); err != nil {
+			return err
+		}
+	}
+
+	return b.addDecodedVideoSink()
 }
 
 func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
@@ -560,6 +695,124 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 
 	b.createTestSrcPad()
 	return nil
+}
+
+// addCompositorTestSrc adds a black background source at z-order 0 so the
+// compositor always has data flowing, even before any participant tracks arrive.
+func (b *VideoBin) addCompositorTestSrc() error {
+	testSrcBin := b.bin.NewBin(videoTestSrcName)
+	if err := b.bin.AddSourceBin(testSrcBin); err != nil {
+		return err
+	}
+
+	videoTestSrc, err := gst.NewElement("videotestsrc")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = videoTestSrc.SetProperty("is-live", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	videoTestSrc.SetArg("pattern", "black")
+
+	queue, err := gstreamer.BuildQueue("video_compositor_test_src_queue", b.conf.Latency.PipelineLatency, false)
+	if err != nil {
+		return err
+	}
+
+	caps, err := b.newVideoCapsFilter(true)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	if err = testSrcBin.AddElements(videoTestSrc, queue, caps); err != nil {
+		return err
+	}
+
+	// Request a compositor pad for the test source at z-order 0 (behind everything)
+	pad := b.compositor.GetRequestPad("sink_%u")
+	if err = pad.SetProperty("zorder", uint(0)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	b.pads[videoTestSrcName] = pad
+	return nil
+}
+
+func (b *VideoBin) addCompositorAppSrcBin(ts *config.TrackSource) error {
+	name := fmt.Sprintf("%s_%d", ts.TrackID, b.nextID)
+	b.nextID++
+
+	appSrcBin, err := b.buildAppSrcBin(ts, name)
+	if err != nil {
+		return err
+	}
+
+	pad := b.compositor.GetRequestPad("sink_%u")
+	if err = pad.SetProperty("zorder", uint(1)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	b.mu.Lock()
+	b.pads[name] = pad
+	b.names[ts.TrackID] = name
+	b.trackOrder = append(b.trackOrder, ts.TrackID)
+	b.recomputeLayoutLocked()
+	b.mu.Unlock()
+
+	return b.bin.AddSourceBin(appSrcBin)
+}
+
+func (b *VideoBin) removeCompositorAppSrcBin(trackID string) error {
+	b.mu.Lock()
+	name, ok := b.names[trackID]
+	if !ok {
+		b.mu.Unlock()
+		return nil
+	}
+	delete(b.names, trackID)
+
+	// Remove from trackOrder
+	for i, id := range b.trackOrder {
+		if id == trackID {
+			b.trackOrder = append(b.trackOrder[:i], b.trackOrder[i+1:]...)
+			break
+		}
+	}
+
+	// Release the compositor pad
+	if pad, ok := b.pads[name]; ok {
+		b.compositor.ReleaseRequestPad(pad)
+		delete(b.pads, name)
+	}
+
+	b.recomputeLayoutLocked()
+	b.mu.Unlock()
+
+	return b.bin.RemoveSourceBin(name)
+}
+
+func (b *VideoBin) getCompositorSrcPad(name string) *gst.Pad {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.pads[name]
+}
+
+// recomputeLayoutLocked recalculates tile positions for all active video tracks
+// and updates the compositor sink pad properties. Must be called with b.mu held.
+func (b *VideoBin) recomputeLayoutLocked() {
+	positions := b.layout.ComputePositions(len(b.trackOrder))
+	for i, trackID := range b.trackOrder {
+		name := b.names[trackID]
+		pad, ok := b.pads[name]
+		if !ok {
+			continue
+		}
+		pos := positions[i]
+		_ = pad.SetProperty("xpos", pos.X)
+		_ = pad.SetProperty("ypos", pos.Y)
+		_ = pad.SetProperty("width", pos.W)
+		_ = pad.SetProperty("height", pos.H)
+	}
 }
 
 func (b *VideoBin) addSelector() error {

@@ -224,7 +224,14 @@ func (s *SDKSource) updatePreInitStateLocked(op Operation, ts *config.TrackSourc
 		if s.VideoOutCodec == "" {
 			s.VideoOutCodec = ts.MimeType
 		}
-		if s.VideoInCodec != s.VideoOutCodec {
+		if s.VideoCompositing {
+			// Compositing always decodes all tracks to raw video for the compositor
+			s.VideoDecoding = true
+			if len(s.GetEncodedOutputs()) > 0 {
+				s.VideoEncoding = true
+			}
+			s.VideoTracks = append(s.VideoTracks, ts)
+		} else if s.VideoInCodec != s.VideoOutCodec {
 			s.VideoDecoding = true
 			if len(s.GetEncodedOutputs()) > 0 {
 				s.VideoEncoding = true

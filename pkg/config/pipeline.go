@@ -91,6 +91,7 @@ type SDKSourceParams struct {
 	VideoInCodec types.MimeType
 	AudioTracks  []*TrackSource
 	VideoTrack   *TrackSource
+	VideoTracks  []*TrackSource
 }
 
 type TrackSource struct {
@@ -118,6 +119,7 @@ type VideoConfig struct {
 	VideoEnabled     bool
 	VideoDecoding    bool
 	VideoEncoding    bool
+	VideoCompositing bool
 	VideoOutCodec    types.MimeType
 	VideoProfile     types.Profile
 	Width            int32
@@ -228,8 +230,12 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 		if !req.RoomComposite.AudioOnly {
 			p.VideoEnabled = true
-			p.VideoInCodec = types.MimeTypeRawVideo
 			p.VideoDecoding = true
+			if p.SourceType == types.SourceTypeWeb {
+				p.VideoInCodec = types.MimeTypeRawVideo
+			}
+			// SDK source: VideoInCodec determined by subscribed tracks in track_worker.
+			// VideoEncoding set by updateEncodedOutputs below.
 		}
 		if !p.AudioEnabled && !p.VideoEnabled {
 			return errors.ErrInvalidInput("audio_only and video_only")
@@ -578,12 +584,11 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 }
 
 // RoomCompositeUsesSDKSource reports whether a room composite request will use
-// the SDK source (no Chrome/Pulse) instead of Web
+// the SDK source (no Chrome/Pulse) instead of Web.
+// SDK source is used when no custom layout or template URL is specified.
+// It supports both audio-only (audiomixer) and video (compositor) modes.
 func RoomCompositeUsesSDKSource(req *livekit.RoomCompositeEgressRequest) bool {
 	if req.Layout != "" {
-		return false
-	}
-	if !req.AudioOnly {
 		return false
 	}
 	if req.CustomBaseUrl != "" {
@@ -597,6 +602,9 @@ func (p *PipelineConfig) getRoomCompositeRequestType(req *livekit.RoomCompositeE
 		return types.SourceTypeWeb
 	}
 	p.AudioMixing = req.AudioMixing
+	if !req.AudioOnly {
+		p.VideoCompositing = true
+	}
 	return types.SourceTypeSDK
 }
 
