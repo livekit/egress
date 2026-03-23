@@ -940,7 +940,11 @@ func (c *Controller) uploadManifest() {
 		for _, s := range si {
 			location, uploaded, err := s.UploadManifest(manifestPath)
 			if err != nil {
-				logger.Errorw("failed to upload manifest", err)
+				if c.Info.BackupStorageUsed {
+					logger.Errorw("failed to upload manifest", err)
+				} else {
+					logger.Warnw("failed to upload manifest", err)
+				}
 				continue
 			}
 
