@@ -312,7 +312,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		return errors.ErrEgressAlreadyExists
 	}
 	if _, ok := m.canAcceptRequestLocked(req); !ok {
-		logger.Warnw("can not accept request", nil)
+		logger.Debugw("can not accept request", nil)
 		return errors.ErrNotEnoughCPU
 	}
 
