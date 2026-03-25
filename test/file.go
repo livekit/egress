@@ -310,7 +310,7 @@ func (r *Runner) testFile(t *testing.T) {
 					AudioCodec: livekit.AudioCodec_OPUS,
 				},
 				fileOptions: &fileOptions{
-					filename: "tmpl_{room_name}_audio_{time}",
+					filename: "template_audio_{time}",
 					fileType: livekit.EncodedFileType_OGG,
 				},
 				contentCheck: r.audioOnlyContentCheck,
@@ -324,7 +324,7 @@ func (r *Runner) testFile(t *testing.T) {
 					layout:     "speaker",
 				},
 				fileOptions: &fileOptions{
-					filename: "tmpl_{room_name}_video_{time}.mp4",
+					filename: "template_video_{time}.mp4",
 				},
 				contentCheck: r.videoOnlyContentCheck,
 			},
@@ -337,7 +337,7 @@ func (r *Runner) testFile(t *testing.T) {
 					layout:     "speaker",
 				},
 				fileOptions: &fileOptions{
-					filename: "tmpl_{room_name}_{time}.mp4",
+					filename: "template_{time}.mp4",
 				},
 				contentCheck: r.fullContentCheck,
 			},
