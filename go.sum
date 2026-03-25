@@ -262,6 +262,8 @@ github.com/livekit/server-sdk-go/v2 v2.16.1-0.20260313212054-4493ba0c3cfc h1:PyF
 github.com/livekit/server-sdk-go/v2 v2.16.1-0.20260313212054-4493ba0c3cfc/go.mod h1:+HCKTpzV21b/jvBtu+OmWbquUxaL74kHLI9ZwKmdhKU=
 github.com/livekit/server-sdk-go/v2 v2.16.2-0.20260324172353-80d45b0a3448 h1:6h6DzUJWW2AY0Txfmp21P5kZVwZHy6nw55ftSvsC5Eg=
 github.com/livekit/server-sdk-go/v2 v2.16.2-0.20260324172353-80d45b0a3448/go.mod h1:oQbYijcbPzfjBAOzoq7tz9Ktqur8JNRCd923VP8xOQQ=
+github.com/livekit/server-sdk-go/v2 v2.16.2-0.20260325131348-3302552d1edd h1:+fjf+67s2zyBse1d7lb9Guk2y1zyFja/tN3golSrCJk=
+github.com/livekit/server-sdk-go/v2 v2.16.2-0.20260325131348-3302552d1edd/go.mod h1:oQbYijcbPzfjBAOzoq7tz9Ktqur8JNRCd923VP8xOQQ=
 github.com/livekit/storage v0.0.0-20251113154014-aa1f4d0ce057 h1:6XTEL0cSGkDPWYl1nAS/3cNOK1QoIo11C/O4pc4vPMg=
 github.com/livekit/storage v0.0.0-20251113154014-aa1f4d0ce057/go.mod h1:m+EDdiNremMNJbggvfj5mY8w7nbzVGtZka5Jhj4pg0g=
 github.com/mackerelio/go-osstat v0.2.6 h1:gs4U8BZeS1tjrL08tt5VUliVvSWP26Ai2Ob8Lr7f2i0=
