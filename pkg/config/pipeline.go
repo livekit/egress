@@ -103,13 +103,14 @@ type AudioRouteConfig struct {
 type AudioRouteMatch struct {
 	TrackID             string
 	ParticipantIdentity string
-	ParticipantKind     lksdk.ParticipantKind
+	ParticipantKind     *lksdk.ParticipantKind
 }
 
 type TrackSource struct {
 	TrackID            string
 	TrackKind          lksdk.TrackKind
 	ParticipantKind    lksdk.ParticipantKind
+	AudioChannel       *livekit.AudioChannel
 	AppSrc             *app.Source
 	MimeType           types.MimeType
 	PayloadType        webrtc.PayloadType
@@ -517,7 +518,8 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 					case *livekit.AudioRoute_ParticipantIdentity:
 						arc.Match.ParticipantIdentity = m.ParticipantIdentity
 					case *livekit.AudioRoute_ParticipantKind:
-						arc.Match.ParticipantKind = lksdk.ParticipantKind(m.ParticipantKind)
+						kind := lksdk.ParticipantKind(m.ParticipantKind)
+						arc.Match.ParticipantKind = &kind
 					}
 					p.AudioRoutes = append(p.AudioRoutes, arc)
 				}

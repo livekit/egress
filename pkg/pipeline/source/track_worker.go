@@ -424,7 +424,8 @@ func (s *SDKSource) doCleanup(trackID string, state *workerState) {
 	// Blocking cleanup - only affects this track's worker
 	active := s.active.Dec()
 	shouldContinue := s.RequestType == types.RequestTypeParticipant ||
-		s.RequestType == types.RequestTypeRoomComposite
+		s.RequestType == types.RequestTypeRoomComposite ||
+		s.RequestType == types.RequestTypeMedia
 
 	if shouldContinue {
 		trackKind := writer.TrackKind()
@@ -467,6 +468,14 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 		PayloadType:     track.Codec().PayloadType,
 		ClockRate:       track.Codec().ClockRate,
 	}
+
+	// Set audio channel from route match (RequestTypeMedia)
+	s.mu.Lock()
+	if ch, ok := s.audioChannels[pub.SID()]; ok {
+		ts.AudioChannel = &ch
+	}
+	s.mu.Unlock()
+
 	ts.AppSrc = app.SrcFromElement(src)
 
 	var tc sdk.DriftHandler
