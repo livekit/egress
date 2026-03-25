@@ -166,19 +166,23 @@ func NewRunner(t *testing.T) *Runner {
 
 	r.ServiceConfig = conf
 
-	logConf := *conf.Logging
-	if logConf.ComponentLevels == nil {
-		logConf.ComponentLevels = make(map[string]string, 2)
-	} else {
-		existing := logConf.ComponentLevels
-		logConf.ComponentLevels = make(map[string]string, len(existing)+2)
-		for k, v := range existing {
-			logConf.ComponentLevels[k] = v
-		}
+	componentLevels := make(map[string]string, len(conf.Logging.ComponentLevels)+2)
+	for k, v := range conf.Logging.ComponentLevels {
+		componentLevels[k] = v
 	}
-	logConf.ComponentLevels["pion.ice"] = "warn"
-	logConf.ComponentLevels["pion.dtls"] = "warn"
-	_ = conf.Logging.Update(&logConf)
+	componentLevels["pion.ice"] = "warn"
+	componentLevels["pion.dtls"] = "warn"
+	_ = conf.Logging.Update(&logger.Config{
+		JSON:               conf.Logging.JSON,
+		Level:              conf.Logging.Level,
+		Sample:             conf.Logging.Sample,
+		ComponentLevels:    componentLevels,
+		SampleInitial:      conf.Logging.SampleInitial,
+		SampleInterval:     conf.Logging.SampleInterval,
+		ItemSampleSeconds:  conf.Logging.ItemSampleSeconds,
+		ItemSampleInitial:  conf.Logging.ItemSampleInitial,
+		ItemSampleInterval: conf.Logging.ItemSampleInterval,
+	})
 
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
 		t.Fatal("api key, secret, and ws url required")
