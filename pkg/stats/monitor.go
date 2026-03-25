@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils/hwstats"
@@ -243,6 +244,39 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 		if required == 0 {
 			required = m.cpuCostConfig.TrackCpuCost
 		}
+	case *rpc.StartEgressRequest_Replay:
+		replayReq := r.Replay
+		switch source := replayReq.Source.(type) {
+		case *livekit.ExportReplayRequest_Template:
+			useSDK := config.TemplateUsesSDKSource(source.Template)
+			if !useSDK && !m.canAcceptWebLocked() {
+				fields = append(fields, "canAccept", false, "reason", "pulse clients")
+				return fields, false
+			}
+			if required == 0 {
+				if source.Template.AudioOnly {
+					required = m.cpuCostConfig.AudioRoomCompositeCpuCost
+				} else {
+					required = m.cpuCostConfig.RoomCompositeCpuCost
+				}
+			}
+		case *livekit.ExportReplayRequest_Web:
+			if !m.canAcceptWebLocked() {
+				fields = append(fields, "canAccept", false, "reason", "pulse clients")
+				return fields, false
+			}
+			if required == 0 {
+				if source.Web.AudioOnly {
+					required = m.cpuCostConfig.AudioWebCpuCost
+				} else {
+					required = m.cpuCostConfig.WebCpuCost
+				}
+			}
+		case *livekit.ExportReplayRequest_Media:
+			if required == 0 {
+				required = m.cpuCostConfig.ParticipantCpuCost
+			}
+		}
 	}
 
 	accept := available >= required
@@ -349,6 +383,33 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		cpuHold = m.cpuCostConfig.TrackCompositeCpuCost
 	case *rpc.StartEgressRequest_Track:
 		cpuHold = m.cpuCostConfig.TrackCpuCost
+	case *rpc.StartEgressRequest_Replay:
+		replayReq := r.Replay
+		switch source := replayReq.Source.(type) {
+		case *livekit.ExportReplayRequest_Template:
+			useSDK := config.TemplateUsesSDKSource(source.Template)
+			if !useSDK {
+				m.webRequests.Inc()
+				countedAsWeb = true
+				pulseClients = pulseClientHold
+			}
+			if source.Template.AudioOnly {
+				cpuHold = m.cpuCostConfig.AudioRoomCompositeCpuCost
+			} else {
+				cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
+			}
+		case *livekit.ExportReplayRequest_Web:
+			pulseClients = pulseClientHold
+			m.webRequests.Inc()
+			countedAsWeb = true
+			if source.Web.AudioOnly {
+				cpuHold = m.cpuCostConfig.AudioWebCpuCost
+			} else {
+				cpuHold = m.cpuCostConfig.WebCpuCost
+			}
+		case *livekit.ExportReplayRequest_Media:
+			cpuHold = m.cpuCostConfig.ParticipantCpuCost
+		}
 	}
 
 	ps := &processStats{
@@ -407,6 +468,16 @@ func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Add(1)
 	case *rpc.StartEgressRequest_Track:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrack}).Add(1)
+	case *rpc.StartEgressRequest_Replay:
+		replayReq := req.Request.(*rpc.StartEgressRequest_Replay).Replay
+		switch replayReq.Source.(type) {
+		case *livekit.ExportReplayRequest_Template:
+			m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTemplate}).Add(1)
+		case *livekit.ExportReplayRequest_Web:
+			m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Add(1)
+		case *livekit.ExportReplayRequest_Media:
+			m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeMedia}).Add(1)
+		}
 	}
 }
 
@@ -418,7 +489,7 @@ func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
 	delete(m.pending, req.EgressId)
 	m.requests.Dec()
 	switch req.Request.(type) {
-	case *rpc.StartEgressRequest_RoomComposite, *rpc.StartEgressRequest_Web:
+	case *rpc.StartEgressRequest_RoomComposite, *rpc.StartEgressRequest_Web, *rpc.StartEgressRequest_Replay:
 		if ps != nil && ps.countedAsWeb {
 			m.webRequests.Dec()
 		}
@@ -456,6 +527,20 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64, in
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Sub(1)
 	case *rpc.StartEgressRequest_Track:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrack}).Sub(1)
+	case *rpc.StartEgressRequest_Replay:
+		replayReq := req.Request.(*rpc.StartEgressRequest_Replay).Replay
+		switch replayReq.Source.(type) {
+		case *livekit.ExportReplayRequest_Template:
+			m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTemplate}).Sub(1)
+			if countedAsWeb {
+				m.webRequests.Dec()
+			}
+		case *livekit.ExportReplayRequest_Web:
+			m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
+			m.webRequests.Dec()
+		case *livekit.ExportReplayRequest_Media:
+			m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeMedia}).Sub(1)
+		}
 	}
 
 	delete(m.pending, req.EgressId)

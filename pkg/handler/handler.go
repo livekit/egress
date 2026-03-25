@@ -19,11 +19,14 @@ import (
 	"errors"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"google.golang.org/grpc"
+
+	"go.opentelemetry.io/otel"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/ipc"
@@ -32,7 +35,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
-	"go.opentelemetry.io/otel"
 )
 
 type Handler struct {
@@ -82,6 +84,9 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 	if err = rpcServer.RegisterStopEgressTopic(conf.Info.EgressId); err != nil {
 		return nil, err
 	}
+	if err = rpcServer.RegisterUpdateEgressTopic(conf.Info.EgressId); err != nil {
+		return nil, err
+	}
 	h.rpcServer = rpcServer
 
 	_, err = h.ipcServiceClient.HandlerReady(context.Background(), &ipc.HandlerReadyRequest{EgressId: conf.Info.EgressId})
@@ -125,6 +130,21 @@ func (h *Handler) Run() {
 			logger.Errorw("egress update ipc call failed", err, "egressID", egressID)
 		}
 		return
+	}
+
+	// Replay coordination: signal ready and get timing
+	if h.conf.IsReplay {
+		rctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		resp, err := h.ipcServiceClient.ReplayReady(rctx, &rpc.EgressReadyRequest{
+			EgressId: h.conf.Info.EgressId,
+		})
+		cancel()
+		if err != nil {
+			h.conf.Info.SetFailed(err)
+			_, _ = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
+			return
+		}
+		h.controller.SetReplayTiming(resp.StartAt, resp.DurationMs)
 	}
 
 	// start egress

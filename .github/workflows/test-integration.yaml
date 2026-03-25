@@ -107,7 +107,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        integration_type: [file, stream, segments, images, multi, edge]
+        integration_type: [file-room, file-track, file-media, stream, segments, images, multi, edge]
     runs-on: namespace-profile-8vcpu-cache
     steps:
       - uses: shogo82148/actions-setup-redis@v1

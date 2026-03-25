@@ -23,6 +23,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -51,8 +52,8 @@ func (p *PipelineConfig) GetSegmentConfig() *SegmentConfig {
 }
 
 // segments should always be added last, so we can check keyframe interval from file/stream
-func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput) (*SegmentConfig, error) {
-	sc, err := p.getStorageConfig(segments)
+func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput, upload egress.UploadRequest) (*SegmentConfig, error) {
+	sc, err := p.getStorageConfig(upload)
 	if err != nil {
 		return nil, err
 	}

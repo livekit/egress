@@ -46,39 +46,33 @@ func (p *PipelineConfig) GetFileConfig() *FileConfig {
 }
 
 func (p *PipelineConfig) getEncodedFileConfig(file *livekit.EncodedFileOutput) (*FileConfig, error) {
-	var outputType types.OutputType
-
-	switch file.FileType {
-	case livekit.EncodedFileType_DEFAULT_FILETYPE:
-		outputType = types.OutputTypeUnknownFile
-	case livekit.EncodedFileType_MP4:
-		outputType = types.OutputTypeMP4
-	case livekit.EncodedFileType_OGG:
-		outputType = types.OutputTypeOGG
-	case livekit.EncodedFileType_MP3:
-		outputType = types.OutputTypeMP3
-	}
-
-	return p.getFileConfig(outputType, file)
+	return p.getFileConfig(fileTypeToOutputType(file.FileType), file.GetFilepath(), file.GetDisableManifest(), file)
 }
 
 func (p *PipelineConfig) getDirectFileConfig(file *livekit.DirectFileOutput) (*FileConfig, error) {
-	return p.getFileConfig(types.OutputTypeUnknownFile, file)
+	return p.getFileConfig(types.OutputTypeUnknownFile, file.GetFilepath(), file.GetDisableManifest(), file)
 }
 
-type fileRequest interface {
-	GetFilepath() string
-	GetDisableManifest() bool
-	egress.UploadRequest
+func fileTypeToOutputType(ft livekit.EncodedFileType) types.OutputType {
+	switch ft {
+	case livekit.EncodedFileType_MP4:
+		return types.OutputTypeMP4
+	case livekit.EncodedFileType_OGG:
+		return types.OutputTypeOGG
+	case livekit.EncodedFileType_MP3:
+		return types.OutputTypeMP3
+	default:
+		return types.OutputTypeUnknownFile
+	}
 }
 
-func (p *PipelineConfig) getFileConfig(outputType types.OutputType, req fileRequest) (*FileConfig, error) {
-	sc, err := p.getStorageConfig(req)
+func (p *PipelineConfig) getFileConfig(outputType types.OutputType, filepath string, disableManifest bool, upload egress.UploadRequest) (*FileConfig, error) {
+	sc, err := p.getStorageConfig(upload)
 	if err != nil {
 		return nil, err
 	}
 
-	filepath := clean(req.GetFilepath())
+	filepath = clean(filepath)
 
 	// On retry, explicit paths must include {retry} to avoid overwriting previous attempt.
 	// Empty or directory-only paths are auto-generated with retry count appended.
@@ -90,7 +84,7 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, req fileRequ
 		outputConfig:    outputConfig{OutputType: outputType},
 		FileInfo:        &livekit.FileInfo{},
 		StorageFilepath: filepath,
-		DisableManifest: req.GetDisableManifest(),
+		DisableManifest: disableManifest,
 		StorageConfig:   sc,
 	}
 

@@ -296,6 +296,229 @@ func (r *Runner) testFile(t *testing.T) {
 			// 	outputType: types.OutputTypeWebM,
 			// 	filename:   "t_{track_type}_{time}.webm",
 			// },
+
+			// -------- Template --------
+
+			{
+				name:        "Template/AudioOnly",
+				requestType: types.RequestTypeTemplate,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					AudioCodec: livekit.AudioCodec_OPUS,
+				},
+				fileOptions: &fileOptions{
+					filename: "template_audio_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				contentCheck: r.audioOnlyContentCheck,
+			},
+			{
+				name:        "Template/VideoOnly",
+				requestType: types.RequestTypeTemplate,
+				publishOptions: publishOptions{
+					videoCodec: types.MimeTypeH264,
+					videoOnly:  true,
+					layout:     "speaker",
+				},
+				fileOptions: &fileOptions{
+					filename: "template_video_{time}.mp4",
+				},
+				contentCheck: r.videoOnlyContentCheck,
+			},
+			{
+				name:        "Template/Base",
+				requestType: types.RequestTypeTemplate,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+					layout:     "speaker",
+				},
+				fileOptions: &fileOptions{
+					filename: "template_{time}.mp4",
+				},
+				contentCheck: r.fullContentCheck,
+			},
+
+			// --------- Web V2 --------
+
+			{
+				name:        "WebV2/AudioOnly",
+				requestType: types.RequestTypeWeb,
+				publishOptions: publishOptions{
+					audioOnly: true,
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					AudioCodec: livekit.AudioCodec_OPUS,
+				},
+				fileOptions: &fileOptions{
+					filename: "webv2_audio_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				v2OutputOptions: &v2OutputOptions{},
+				contentCheck:    r.audioOnlyContentCheck,
+			},
+			{
+				name:        "WebV2/VideoOnly",
+				requestType: types.RequestTypeWeb,
+				publishOptions: publishOptions{
+					videoOnly: true,
+				},
+				fileOptions: &fileOptions{
+					filename: "webv2_video_{time}.mp4",
+				},
+				v2OutputOptions: &v2OutputOptions{},
+			},
+			{
+				name:        "WebV2/Base",
+				requestType: types.RequestTypeWeb,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+				},
+				fileOptions: &fileOptions{
+					filename: "webv2_{time}.mp4",
+				},
+				v2OutputOptions: &v2OutputOptions{},
+			},
+
+			// -------- Media ----------
+
+			{
+				name:        "Media/AudioOnly",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: "set-at-runtime"},
+					}},
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					AudioCodec: livekit.AudioCodec_OPUS,
+				},
+				fileOptions: &fileOptions{
+					filename: "media_audio_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				contentCheck: r.audioOnlyContentCheck,
+			},
+			{
+				name:        "Media/VideoOnly",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					videoCodec: types.MimeTypeH264,
+					videoOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename: "media_video_{time}.mp4",
+				},
+				contentCheck: r.videoOnlyContentCheck,
+			},
+			{
+				name:        "Media/Base",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: "set-at-runtime"},
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename: "media_{time}.mp4",
+				},
+				contentCheck: r.fullContentCheck,
+			},
+
+			// ---- Media Audio Routing ----
+
+			{
+				name:        "Media/AudioRouteByTrackID",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match:   &livekit.AudioRoute_TrackId{TrackId: "set-at-runtime"},
+						Channel: livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename: "media_route_trackid_{time}.mp4",
+				},
+			},
+			{
+				name:        "Media/AudioRouteByParticipantIdentity",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: "set-at-runtime"},
+						Channel: livekit.AudioChannel_AUDIO_CHANNEL_BOTH,
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename: "media_route_identity_{time}.mp4",
+				},
+			},
+			{
+				name:        "Media/AudioRouteByParticipantKind",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match:   &livekit.AudioRoute_ParticipantKind{ParticipantKind: livekit.ParticipantInfo_STANDARD},
+						Channel: livekit.AudioChannel_AUDIO_CHANNEL_BOTH,
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename: "media_route_kind_{time}.mp4",
+				},
+			},
+			{
+				name:        "Media/MultiRoute",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+					audioRoutes: []*livekit.AudioRoute{
+						{
+							Match:   &livekit.AudioRoute_TrackId{TrackId: "set-at-runtime"},
+							Channel: livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						},
+						{
+							Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: "set-at-runtime"},
+							Channel: livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+						},
+					},
+				},
+				fileOptions: &fileOptions{
+					filename: "media_multiroute_{time}.mp4",
+				},
+			},
+			{
+				name:        "Media/ParticipantVideo",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+					mediaParticipantVideo: &livekit.ParticipantVideo{
+						Identity: "set-at-runtime",
+					},
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: "set-at-runtime"},
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename: "media_participant_video_{time}.mp4",
+				},
+				contentCheck: r.fullContentCheck,
+			},
 		} {
 			if !r.run(t, test, r.runFileTest) {
 				return
@@ -305,7 +528,7 @@ func (r *Runner) testFile(t *testing.T) {
 }
 
 func (r *Runner) runFileTest(t *testing.T, test *testCase) {
-	req := r.build(test)
+	req := r.buildRequest(test)
 
 	// start
 	egressID := r.startEgress(t, req)

@@ -55,6 +55,15 @@ func Proto() error {
 		return err
 	}
 
+	psrpcOut, err := mageutil.Out(ctx, "go list -json -m github.com/livekit/psrpc")
+	if err != nil {
+		return err
+	}
+	psrpcInfo := packageInfo{}
+	if err = json.Unmarshal(psrpcOut, &psrpcInfo); err != nil {
+		return err
+	}
+
 	_, err = mageutil.GetToolPath("protoc")
 	if err != nil {
 		return err
@@ -77,8 +86,8 @@ func Proto() error {
 			" --go-grpc_opt=paths=source_relative"+
 			" --plugin=go=%s"+
 			" --plugin=go-grpc=%s"+
-			" -I%s -I=. ipc.proto",
-		protocGoPath, protocGrpcGoPath, pi.Dir+"/protobufs",
+			" -I%s -I%s -I=. ipc.proto",
+		protocGoPath, protocGrpcGoPath, pi.Dir+"/protobufs", psrpcInfo.Dir+"/protoc-gen-psrpc/options",
 	))
 }
 

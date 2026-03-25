@@ -791,7 +791,7 @@ func isDiscontinuity(lastPTS time.Duration, pts time.Duration) bool {
 
 func (w *AppWriter) shouldRemoveBeforeDrain() bool {
 	return w.track.Kind() == webrtc.RTPCodecTypeVideo &&
-		(w.conf.RequestType == types.RequestTypeParticipant || w.conf.RequestType == types.RequestTypeRoomComposite)
+		(w.conf.RequestType == types.RequestTypeParticipant || w.conf.RequestType == types.RequestTypeRoomComposite || w.conf.RequestType == types.RequestTypeMedia)
 }
 
 func (w *AppWriter) ensureRemovedBeforeDrain() {

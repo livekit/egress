@@ -70,6 +70,8 @@ type Runner struct {
 	ParticipantTestsOnly    bool `yaml:"participant_only"`
 	TrackCompositeTestsOnly bool `yaml:"track_composite_only"`
 	TrackTestsOnly          bool `yaml:"track_only"`
+	TemplateTestsOnly       bool `yaml:"template_only"`
+	MediaTestsOnly          bool `yaml:"media_only"`
 	EdgeCasesOnly           bool `yaml:"edge_cases_only"`
 
 	FileTestsOnly    bool `yaml:"file_only"`
@@ -120,6 +122,21 @@ func NewRunner(t *testing.T) *Runner {
 	case "track":
 		r.TrackTestsOnly = true
 		r.RoomName = fmt.Sprintf("track-integration-%d", rand.Intn(100))
+	case "template":
+		r.TemplateTestsOnly = true
+		r.RoomName = fmt.Sprintf("template-integration-%d", rand.Intn(100))
+	case "media":
+		r.MediaTestsOnly = true
+		r.RoomName = fmt.Sprintf("media-integration-%d", rand.Intn(100))
+	case "file-room":
+		r.shouldRun = runFile | runRoom | runWeb | runTemplate
+		r.RoomName = fmt.Sprintf("file-room-integration-%d", rand.Intn(100))
+	case "file-track":
+		r.shouldRun = runFile | runTrackComposite | runTrack
+		r.RoomName = fmt.Sprintf("file-track-integration-%d", rand.Intn(100))
+	case "file-media":
+		r.shouldRun = runFile | runMedia | runParticipant
+		r.RoomName = fmt.Sprintf("file-media-integration-%d", rand.Intn(100))
 	case "file":
 		r.FileTestsOnly = true
 		r.RoomName = fmt.Sprintf("file-integration-%d", rand.Intn(100))
@@ -148,6 +165,24 @@ func NewRunner(t *testing.T) *Runner {
 	require.NoError(t, err)
 
 	r.ServiceConfig = conf
+
+	componentLevels := make(map[string]string, len(conf.Logging.ComponentLevels)+2)
+	for k, v := range conf.Logging.ComponentLevels {
+		componentLevels[k] = v
+	}
+	componentLevels["pion.ice"] = "warn"
+	componentLevels["pion.dtls"] = "warn"
+	_ = conf.Logging.Update(&logger.Config{
+		JSON:               conf.Logging.JSON,
+		Level:              conf.Logging.Level,
+		Sample:             conf.Logging.Sample,
+		ComponentLevels:    componentLevels,
+		SampleInitial:      conf.Logging.SampleInitial,
+		SampleInterval:     conf.Logging.SampleInterval,
+		ItemSampleSeconds:  conf.Logging.ItemSampleSeconds,
+		ItemSampleInitial:  conf.Logging.ItemSampleInitial,
+		ItemSampleInterval: conf.Logging.ItemSampleInterval,
+	})
 
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
 		t.Fatal("api key, secret, and ws url required")
@@ -184,7 +219,9 @@ func NewRunner(t *testing.T) *Runner {
 		r.RoomBaseName = r.RoomName
 	}
 
-	r.updateFlagset()
+	if r.shouldRun == 0 {
+		r.updateFlagset()
+	}
 
 	return r
 }

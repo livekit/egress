@@ -22,6 +22,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
@@ -58,13 +59,13 @@ func (p *PipelineConfig) GetImageConfigs() []*ImageConfig {
 	return configs
 }
 
-func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput) (*ImageConfig, error) {
+func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput, upload egress.UploadRequest) (*ImageConfig, error) {
 	outCodec, outputType, err := getMimeTypes(images.ImageCodec)
 	if err != nil {
 		return nil, err
 	}
 
-	sc, err := p.getStorageConfig(images)
+	sc, err := p.getStorageConfig(upload)
 	if err != nil {
 		return nil, err
 	}
@@ -96,13 +97,23 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput) (*ImageConf
 
 	// Set default dimensions for RoomComposite and Web. For all SDKs input, default will be
 	// set from the track dimensions
-	switch p.Info.Request.(type) {
+	switch req := p.Info.Request.(type) {
 	case *livekit.EgressInfo_RoomComposite, *livekit.EgressInfo_Web:
 		if conf.Width == 0 {
 			conf.Width = p.Width
 		}
 		if conf.Height == 0 {
 			conf.Height = p.Height
+		}
+	case *livekit.EgressInfo_Replay:
+		switch req.Replay.Source.(type) {
+		case *livekit.ExportReplayRequest_Template, *livekit.ExportReplayRequest_Web:
+			if conf.Width == 0 {
+				conf.Width = p.Width
+			}
+			if conf.Height == 0 {
+				conf.Height = p.Height
+			}
 		}
 	}
 

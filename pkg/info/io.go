@@ -265,7 +265,11 @@ func (c *sessionReporter) handleUpdate(w *worker, egressID string) {
 		if !c.setHealthy(true) {
 			logger.Infow("io connection restored", "egressID", u.info.EgressId)
 		}
-		requestType, outputType := egress.GetTypes(u.info.Request)
+		var typesInput interface{} = u.info.Request
+		if e, ok := u.info.Request.(*livekit.EgressInfo_Replay); ok {
+			typesInput = e.Replay
+		}
+		requestType, outputType := egress.GetTypes(typesInput)
 		logger.Infow(strings.ToLower(u.info.Status.String()),
 			"egressID", u.info.EgressId,
 			"requestType", requestType,

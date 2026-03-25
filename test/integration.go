@@ -53,8 +53,14 @@ func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)
 	switch test.requestType {
 	case types.RequestTypeRoomComposite, types.RequestTypeWeb:
 		r.sourceFramerate = 30
-	case types.RequestTypeParticipant, types.RequestTypeTrackComposite, types.RequestTypeTrack:
+	case types.RequestTypeParticipant, types.RequestTypeTrackComposite, types.RequestTypeTrack, types.RequestTypeMedia:
 		r.sourceFramerate = 23.97
+	case types.RequestTypeTemplate:
+		if test.audioOnly && test.layout == "" && test.templateCustomBaseUrl == "" {
+			r.sourceFramerate = 23.97
+		} else {
+			r.sourceFramerate = 30
+		}
 	}
 
 	r.awaitIdle(t)
@@ -157,6 +163,11 @@ func (r *Runner) sendRequest(t *testing.T, req *rpc.StartEgressRequest) *livekit
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_Web:
 		require.Empty(t, info.RoomName)
+	case *rpc.StartEgressRequest_Replay:
+		replayReq := req.Request.(*rpc.StartEgressRequest_Replay).Replay
+		if _, ok := replayReq.Source.(*livekit.ExportReplayRequest_Web); ok {
+			require.Empty(t, info.RoomName)
+		}
 	default:
 		require.Equal(t, r.RoomName, info.RoomName)
 	}

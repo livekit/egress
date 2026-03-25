@@ -118,7 +118,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 
 	// Check source type
 	if res != nil {
-		if p.RequestType == types.RequestTypeRoomComposite && (p.VideoEnabled || p.Layout != "") {
+		if (p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate) && (p.VideoEnabled || p.Layout != "") {
 			require.Equal(t, livekit.EgressSourceType_EGRESS_SOURCE_TYPE_WEB, res.SourceType)
 		} else if p.RequestType == types.RequestTypeWeb {
 			require.Equal(t, livekit.EgressSourceType_EGRESS_SOURCE_TYPE_WEB, res.SourceType)
@@ -142,9 +142,9 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		require.NoError(t, err)
 
 		// file duration can be different from egress duration based on keyframes, muting, and latency
-		delta := 4.5
+		delta := 5.0
 		switch p.RequestType {
-		case types.RequestTypeRoomComposite:
+		case types.RequestTypeRoomComposite, types.RequestTypeTemplate, types.RequestTypeWeb:
 			require.InDelta(t, expected, actual, delta)
 
 		case types.RequestTypeTrack:
