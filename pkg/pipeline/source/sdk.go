@@ -106,12 +106,16 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 	// add some leeway to the mixer latency
 	opts = append(opts, synchronizer.WithMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond))
 
-	if s.shouldDisableAudioPTSAdjustment() {
-		// in case of room composite and track requests don't adjust audio timestamps on RTCP sender reports,
-		// to avoid gaps in the audio stream
+	if s.shouldEnableOneShotSenderReportSync() {
+		opts = append(opts, synchronizer.WithSenderReportSyncMode(synchronizer.SenderReportSyncModeOneShot))
+		opts = append(opts, synchronizer.WithOneShotDriftCorrectionThreshold(
+			time.Duration(float64(p.Latency.AudioMixerLatency)*0.8),
+		))
+	} else if s.shouldDisableAudioPTSAdjustment() {
+		opts = append(opts, synchronizer.WithSenderReportSyncMode(synchronizer.SenderReportSyncModeWithoutRebase))
 		opts = append(opts, synchronizer.WithAudioPTSAdjustmentDisabled())
 	} else {
-		opts = append(opts, synchronizer.WithRTCPSenderReportRebaseEnabled())
+		opts = append(opts, synchronizer.WithSenderReportSyncMode(synchronizer.SenderReportSyncModeRebase))
 	}
 
 	if p.AudioTempoController.Enabled {
@@ -637,6 +641,14 @@ func (s *SDKSource) disconnectRoom() {
 		s.room.Disconnect()
 		s.room = nil
 	}
+}
+
+func (s *SDKSource) shouldUseOneShotSenderReportSync() bool {
+	return s.RequestType == types.RequestTypeRoomComposite // one-shot correction is only useful when the audio mixer can drop late audio
+}
+
+func (s *SDKSource) shouldEnableOneShotSenderReportSync() bool {
+	return s.EnableOneShotSenderReportSync && s.shouldUseOneShotSenderReportSync()
 }
 
 func (s *SDKSource) shouldDisableAudioPTSAdjustment() bool {

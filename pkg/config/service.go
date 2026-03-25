@@ -93,8 +93,8 @@ type CPUCostConfig struct {
 	MaxPulseClients           int     `yaml:"max_pulse_clients"` // pulse client limit for launching chrome
 
 	// Memory source configuration (cgroup-aware memory accounting)
-	MemorySource         MemorySource `yaml:"memory_source"`           // memory measurement source: proc_rss, cgroup
-	MemoryKillGraceSec   int          `yaml:"memory_kill_grace_sec"`   // grace period in update cycles before kill (0 = immediate)
+	MemorySource       MemorySource `yaml:"memory_source"`         // memory measurement source: proc_rss, cgroup
+	MemoryKillGraceSec int          `yaml:"memory_kill_grace_sec"` // grace period in update cycles before kill (0 = immediate)
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
