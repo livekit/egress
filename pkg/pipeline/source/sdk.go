@@ -99,7 +99,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		}),
 	}
 
-	if p.RequestType == types.RequestTypeRoomComposite {
+	if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
 		// Enable Packet Burst Estimator for Room Composite requests
 		opts = append(opts, synchronizer.WithStartGate())
 	}
@@ -235,17 +235,12 @@ func (s *SDKSource) joinRoom() error {
 		OnDisconnected: s.onDisconnected,
 	}
 
-	if s.RequestType == types.RequestTypeRoomComposite {
+	switch s.RequestType {
+	case types.RequestTypeRoomComposite, types.RequestTypeTemplate, types.RequestTypeMedia:
 		cb.OnTrackPublished = s.onTrackPublished
-	}
-
-	if s.RequestType == types.RequestTypeParticipant {
+	case types.RequestTypeParticipant:
 		cb.OnTrackPublished = s.onTrackPublished
 		cb.OnParticipantDisconnected = s.onParticipantDisconnected
-	}
-
-	if s.RequestType == types.RequestTypeMedia {
-		cb.OnTrackPublished = s.onTrackPublished
 	}
 
 	logger.Debugw("connecting to room")
@@ -261,7 +256,11 @@ func (s *SDKSource) joinRoom() error {
 	case types.RequestTypeRoomComposite:
 		fileIdentifier = s.room.Name()
 		// room_name and room_id are already handled as replacements
+		err = s.awaitRoomTracks()
 
+	case types.RequestTypeTemplate:
+		fileIdentifier = s.room.Name()
+		s.filenameReplacements["{room_name}"] = s.room.Name()
 		err = s.awaitRoomTracks()
 
 	case types.RequestTypeParticipant:
@@ -286,6 +285,7 @@ func (s *SDKSource) joinRoom() error {
 
 	case types.RequestTypeMedia:
 		fileIdentifier = s.room.Name()
+		s.filenameReplacements["{room_name}"] = s.room.Name()
 		w, h, err = s.awaitMediaTracks()
 	}
 	if err != nil {
@@ -627,7 +627,10 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 }
 
 func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-	if s.RequestType != types.RequestTypeParticipant && s.RequestType != types.RequestTypeRoomComposite && s.RequestType != types.RequestTypeMedia {
+	if s.RequestType != types.RequestTypeParticipant &&
+		s.RequestType != types.RequestTypeRoomComposite &&
+		s.RequestType != types.RequestTypeTemplate &&
+		s.RequestType != types.RequestTypeMedia {
 		return
 	}
 
@@ -660,7 +663,7 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 		default:
 			return s.ScreenShare
 		}
-	case types.RequestTypeRoomComposite:
+	case types.RequestTypeRoomComposite, types.RequestTypeTemplate:
 		switch pub.Kind() {
 		case lksdk.TrackKindAudio:
 			return s.AudioEnabled
@@ -779,7 +782,11 @@ func (s *SDKSource) finished() {
 }
 
 func (s *SDKSource) shouldSkipTrackSubscriptions() bool {
-	return s.initialized.IsBroken() && s.RequestType != types.RequestTypeParticipant && s.RequestType != types.RequestTypeRoomComposite && s.RequestType != types.RequestTypeMedia
+	return s.initialized.IsBroken() &&
+		s.RequestType != types.RequestTypeParticipant &&
+		s.RequestType != types.RequestTypeRoomComposite &&
+		s.RequestType != types.RequestTypeTemplate &&
+		s.RequestType != types.RequestTypeMedia
 }
 
 func (s *SDKSource) disconnectRoom() {
@@ -791,6 +798,7 @@ func (s *SDKSource) disconnectRoom() {
 
 func (s *SDKSource) shouldDisableAudioPTSAdjustment() bool {
 	return s.RequestType == types.RequestTypeRoomComposite || // SDK room composites are audio only - no need to adjust audio timestamps
+		s.RequestType == types.RequestTypeTemplate || // SDK templates are audio only - same as room composite
 		s.RequestType == types.RequestTypeTrack || // no A/V sync needed for single track requests
 		s.AudioTempoController.Enabled
 }

@@ -425,6 +425,7 @@ func (s *SDKSource) doCleanup(trackID string, state *workerState) {
 	active := s.active.Dec()
 	shouldContinue := s.RequestType == types.RequestTypeParticipant ||
 		s.RequestType == types.RequestTypeRoomComposite ||
+		s.RequestType == types.RequestTypeTemplate ||
 		s.RequestType == types.RequestTypeMedia
 
 	if shouldContinue {
