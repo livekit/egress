@@ -128,6 +128,15 @@ func NewRunner(t *testing.T) *Runner {
 	case "media":
 		r.MediaTestsOnly = true
 		r.RoomName = fmt.Sprintf("media-integration-%d", rand.Intn(100))
+	case "file-room":
+		r.shouldRun = runFile | runRoom | runWeb | runTemplate
+		r.RoomName = fmt.Sprintf("file-room-integration-%d", rand.Intn(100))
+	case "file-track":
+		r.shouldRun = runFile | runTrackComposite | runTrack
+		r.RoomName = fmt.Sprintf("file-track-integration-%d", rand.Intn(100))
+	case "file-media":
+		r.shouldRun = runFile | runMedia | runParticipant
+		r.RoomName = fmt.Sprintf("file-media-integration-%d", rand.Intn(100))
 	case "file":
 		r.FileTestsOnly = true
 		r.RoomName = fmt.Sprintf("file-integration-%d", rand.Intn(100))
@@ -156,6 +165,20 @@ func NewRunner(t *testing.T) *Runner {
 	require.NoError(t, err)
 
 	r.ServiceConfig = conf
+
+	logConf := *conf.Logging
+	if logConf.ComponentLevels == nil {
+		logConf.ComponentLevels = make(map[string]string, 2)
+	} else {
+		existing := logConf.ComponentLevels
+		logConf.ComponentLevels = make(map[string]string, len(existing)+2)
+		for k, v := range existing {
+			logConf.ComponentLevels[k] = v
+		}
+	}
+	logConf.ComponentLevels["pion.ice"] = "warn"
+	logConf.ComponentLevels["pion.dtls"] = "warn"
+	_ = conf.Logging.Update(&logConf)
 
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
 		t.Fatal("api key, secret, and ws url required")
@@ -192,7 +215,9 @@ func NewRunner(t *testing.T) *Runner {
 		r.RoomBaseName = r.RoomName
 	}
 
-	r.updateFlagset()
+	if r.shouldRun == 0 {
+		r.updateFlagset()
+	}
 
 	return r
 }
