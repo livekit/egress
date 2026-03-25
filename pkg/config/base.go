@@ -59,13 +59,14 @@ type BaseConfig struct {
 	S3AssumeRoleExternalID string                  `yaml:"s3_assume_role_external_id"` // if set, this external ID is used by default for S3 uploads
 
 	// advanced
-	Insecure             bool                                `yaml:"insecure"`               // allow chrome to connect to an insecure websocket
-	Debug                DebugConfig                         `yaml:"debug"`                  // create dot file on internal error
-	ChromeFlags          map[string]interface{}              `yaml:"chrome_flags"`           // additional flags to pass to Chrome
-	Latency              LatencyConfig                       `yaml:"latency"`                // gstreamer latencies, modifying these may break the service
-	LatencyOverrides     map[types.RequestType]LatencyConfig `yaml:"latency_overrides"`      // latency overrides for different request types, experimental only, will be removed
-	AudioTempoController AudioTempoController                `yaml:"audio_tempo_controller"` // audio tempo controller
-	TestOverrides        TestOverrides                       `yaml:"test_overrides"`         // set of config overrides for testing purposes
+	Insecure                      bool                                `yaml:"insecure"`                           // allow chrome to connect to an insecure websocket
+	Debug                         DebugConfig                         `yaml:"debug"`                              // create dot file on internal error
+	ChromeFlags                   map[string]interface{}              `yaml:"chrome_flags"`                       // additional flags to pass to Chrome
+	Latency                       LatencyConfig                       `yaml:"latency"`                            // gstreamer latencies, modifying these may break the service
+	LatencyOverrides              map[types.RequestType]LatencyConfig `yaml:"latency_overrides"`                  // latency overrides for different request types, experimental only, will be removed
+	EnableOneShotSenderReportSync bool                                `yaml:"enable_one_shot_sender_report_sync"` // temporary rollout flag enabling one-shot sender report correction for room composite / track requests that previously used audio PTS adjustment disabling
+	AudioTempoController          AudioTempoController                `yaml:"audio_tempo_controller"`             // audio tempo controller
+	TestOverrides                 TestOverrides                       `yaml:"test_overrides"`                     // set of config overrides for testing purposes
 }
 
 type SessionLimits struct {

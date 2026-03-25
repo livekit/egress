@@ -27,9 +27,9 @@ require (
 	github.com/livekit/livekit-server v1.9.12
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/media-sdk v0.0.0-20251218175659-d0b840bb38ef
-	github.com/livekit/protocol v1.45.1-0.20260306180950-3241c3b4103e
+	github.com/livekit/protocol v1.45.1
 	github.com/livekit/psrpc v0.7.1
-	github.com/livekit/server-sdk-go/v2 v2.16.1-0.20260313212054-4493ba0c3cfc
+	github.com/livekit/server-sdk-go/v2 v2.16.2-0.20260324172353-80d45b0a3448
 	github.com/livekit/storage v0.0.0-20251113154014-aa1f4d0ce057
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.10.1
@@ -167,7 +167,7 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	golang.org/x/tools v0.41.0 // indirect
+	golang.org/x/tools v0.42.0 // indirect
 	google.golang.org/genproto v0.0.0-20250505200425-f936aa4a68b2 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260209200024-4cfbd4190f57 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260209200024-4cfbd4190f57 // indirect
