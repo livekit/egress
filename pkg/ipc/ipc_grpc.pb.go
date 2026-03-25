@@ -49,7 +49,7 @@ type EgressServiceClient interface {
 	HandlerReady(ctx context.Context, in *HandlerReadyRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	HandlerUpdate(ctx context.Context, in *livekit.EgressInfo, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	HandlerFinished(ctx context.Context, in *HandlerFinishedRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	ReplayReady(ctx context.Context, in *ReplayReadyRequest, opts ...grpc.CallOption) (*rpc.EgressReadyResponse, error)
+	ReplayReady(ctx context.Context, in *rpc.EgressReadyRequest, opts ...grpc.CallOption) (*rpc.EgressReadyResponse, error)
 }
 
 type egressServiceClient struct {
@@ -87,7 +87,7 @@ func (c *egressServiceClient) HandlerFinished(ctx context.Context, in *HandlerFi
 	return out, nil
 }
 
-func (c *egressServiceClient) ReplayReady(ctx context.Context, in *ReplayReadyRequest, opts ...grpc.CallOption) (*rpc.EgressReadyResponse, error) {
+func (c *egressServiceClient) ReplayReady(ctx context.Context, in *rpc.EgressReadyRequest, opts ...grpc.CallOption) (*rpc.EgressReadyResponse, error) {
 	out := new(rpc.EgressReadyResponse)
 	err := c.cc.Invoke(ctx, EgressService_ReplayReady_FullMethodName, in, out, opts...)
 	if err != nil {
@@ -103,7 +103,7 @@ type EgressServiceServer interface {
 	HandlerReady(context.Context, *HandlerReadyRequest) (*emptypb.Empty, error)
 	HandlerUpdate(context.Context, *livekit.EgressInfo) (*emptypb.Empty, error)
 	HandlerFinished(context.Context, *HandlerFinishedRequest) (*emptypb.Empty, error)
-	ReplayReady(context.Context, *ReplayReadyRequest) (*rpc.EgressReadyResponse, error)
+	ReplayReady(context.Context, *rpc.EgressReadyRequest) (*rpc.EgressReadyResponse, error)
 	mustEmbedUnimplementedEgressServiceServer()
 }
 
@@ -120,7 +120,7 @@ func (UnimplementedEgressServiceServer) HandlerUpdate(context.Context, *livekit.
 func (UnimplementedEgressServiceServer) HandlerFinished(context.Context, *HandlerFinishedRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HandlerFinished not implemented")
 }
-func (UnimplementedEgressServiceServer) ReplayReady(context.Context, *ReplayReadyRequest) (*rpc.EgressReadyResponse, error) {
+func (UnimplementedEgressServiceServer) ReplayReady(context.Context, *rpc.EgressReadyRequest) (*rpc.EgressReadyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReplayReady not implemented")
 }
 func (UnimplementedEgressServiceServer) mustEmbedUnimplementedEgressServiceServer() {}
@@ -191,7 +191,7 @@ func _EgressService_HandlerFinished_Handler(srv interface{}, ctx context.Context
 }
 
 func _EgressService_ReplayReady_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ReplayReadyRequest)
+	in := new(rpc.EgressReadyRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func _EgressService_ReplayReady_Handler(srv interface{}, ctx context.Context, de
 		FullMethod: EgressService_ReplayReady_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(EgressServiceServer).ReplayReady(ctx, req.(*ReplayReadyRequest))
+		return srv.(EgressServiceServer).ReplayReady(ctx, req.(*rpc.EgressReadyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

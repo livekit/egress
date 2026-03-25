@@ -20,11 +20,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/protocol/rpc"
 )
 
-func (s *Server) ReplayReady(context.Context, *ipc.ReplayReadyRequest) (*rpc.EgressReadyResponse, error) {
+func (s *Server) ReplayReady(context.Context, *rpc.EgressReadyRequest) (*rpc.EgressReadyResponse, error) {
 	return &rpc.EgressReadyResponse{
 		StartAt:    time.Now().UnixNano(),
 		DurationMs: 0,

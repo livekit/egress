@@ -25,7 +25,7 @@ service EgressService {
   rpc HandlerReady(HandlerReadyRequest) returns (google.protobuf.Empty) {};
   rpc HandlerUpdate(livekit.EgressInfo) returns (google.protobuf.Empty) {};
   rpc HandlerFinished(HandlerFinishedRequest) returns (google.protobuf.Empty) {};
-  rpc ReplayReady(ReplayReadyRequest) returns (rpc.EgressReadyResponse) {};
+  rpc ReplayReady(rpc.EgressReadyRequest) returns (rpc.EgressReadyResponse) {};
 }
 
 message HandlerReadyRequest {
@@ -36,10 +36,6 @@ message HandlerFinishedRequest {
   string egress_id = 1;
   string metrics = 2;
   livekit.EgressInfo info = 3;
-}
-
-message ReplayReadyRequest {
-  string egress_id = 1;
 }
 
 service EgressHandler {
