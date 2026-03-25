@@ -223,7 +223,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 			)
 		}
 		if c.SourceType == types.SourceTypeSDK {
-			logger.Debugw(
+			logger.Infow(
 				"audio qos stats",
 				"audioBuffersDropped", c.stats.mixerDroppedAudioBuffers.Load(),
 				"totalAudioDurationDropped", c.stats.mixerDroppedAudioDuration.Load(),
