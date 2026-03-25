@@ -71,8 +71,8 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 	}
 
 	var typesInput interface{} = p.Info.Request
-	if e, ok := p.Info.Request.(*livekit.EgressInfo_Egress); ok {
-		typesInput = e.Egress
+	if e, ok := p.Info.Request.(*livekit.EgressInfo_Replay); ok {
+		typesInput = e.Replay
 	}
 	requestType, outputType := egress.GetTypes(typesInput)
 	logger.Infow("request validated",

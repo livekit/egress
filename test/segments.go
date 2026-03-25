@@ -155,6 +155,18 @@ func (r *Runner) testSegments(t *testing.T) {
 				},
 				contentCheck: r.audioOnlyContentCheck,
 			},
+
+			// --------- Web V2 --------
+
+			{
+				name:        "WebV2",
+				requestType: types.RequestTypeWeb,
+				segmentOptions: &segmentOptions{
+					prefix:   "webv2_{time}",
+					playlist: "webv2_{time}.m3u8",
+				},
+				v2OutputOptions: &v2OutputOptions{},
+			},
 		} {
 			if !r.run(t, test, r.runSegmentsTest) {
 				return
@@ -164,7 +176,7 @@ func (r *Runner) testSegments(t *testing.T) {
 }
 
 func (r *Runner) runSegmentsTest(t *testing.T, test *testCase) {
-	req := r.build(test)
+	req := r.buildRequest(test)
 
 	egressID := r.startEgress(t, req)
 

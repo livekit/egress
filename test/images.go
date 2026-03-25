@@ -70,6 +70,21 @@ func (r *Runner) testImages(t *testing.T) {
 					prefix: "tc_{publisher_identity}_h264",
 				},
 			},
+
+			// -------- Media ----------
+
+			{
+				name:        "Media",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					videoCodec: types.MimeTypeH264,
+					videoOnly:  true,
+				},
+				imageOptions: &imageOptions{
+					prefix: "media_{room_name}_{time}",
+					suffix: livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP,
+				},
+			},
 		} {
 			if !r.run(t, test, r.runImagesTest) {
 				return
@@ -79,7 +94,7 @@ func (r *Runner) testImages(t *testing.T) {
 }
 
 func (r *Runner) runImagesTest(t *testing.T, test *testCase) {
-	req := r.build(test)
+	req := r.buildRequest(test)
 
 	egressID := r.startEgress(t, req)
 

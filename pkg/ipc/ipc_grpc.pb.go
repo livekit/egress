@@ -23,6 +23,7 @@ package ipc
 import (
 	context "context"
 	livekit "github.com/livekit/protocol/livekit"
+	rpc "github.com/livekit/protocol/rpc"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -38,6 +39,7 @@ const (
 	EgressService_HandlerReady_FullMethodName    = "/ipc.EgressService/HandlerReady"
 	EgressService_HandlerUpdate_FullMethodName   = "/ipc.EgressService/HandlerUpdate"
 	EgressService_HandlerFinished_FullMethodName = "/ipc.EgressService/HandlerFinished"
+	EgressService_ReplayReady_FullMethodName     = "/ipc.EgressService/ReplayReady"
 )
 
 // EgressServiceClient is the client API for EgressService service.
@@ -47,6 +49,7 @@ type EgressServiceClient interface {
 	HandlerReady(ctx context.Context, in *HandlerReadyRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	HandlerUpdate(ctx context.Context, in *livekit.EgressInfo, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	HandlerFinished(ctx context.Context, in *HandlerFinishedRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	ReplayReady(ctx context.Context, in *ReplayReadyRequest, opts ...grpc.CallOption) (*rpc.EgressReadyResponse, error)
 }
 
 type egressServiceClient struct {
@@ -84,6 +87,15 @@ func (c *egressServiceClient) HandlerFinished(ctx context.Context, in *HandlerFi
 	return out, nil
 }
 
+func (c *egressServiceClient) ReplayReady(ctx context.Context, in *ReplayReadyRequest, opts ...grpc.CallOption) (*rpc.EgressReadyResponse, error) {
+	out := new(rpc.EgressReadyResponse)
+	err := c.cc.Invoke(ctx, EgressService_ReplayReady_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EgressServiceServer is the server API for EgressService service.
 // All implementations must embed UnimplementedEgressServiceServer
 // for forward compatibility
@@ -91,6 +103,7 @@ type EgressServiceServer interface {
 	HandlerReady(context.Context, *HandlerReadyRequest) (*emptypb.Empty, error)
 	HandlerUpdate(context.Context, *livekit.EgressInfo) (*emptypb.Empty, error)
 	HandlerFinished(context.Context, *HandlerFinishedRequest) (*emptypb.Empty, error)
+	ReplayReady(context.Context, *ReplayReadyRequest) (*rpc.EgressReadyResponse, error)
 	mustEmbedUnimplementedEgressServiceServer()
 }
 
@@ -106,6 +119,9 @@ func (UnimplementedEgressServiceServer) HandlerUpdate(context.Context, *livekit.
 }
 func (UnimplementedEgressServiceServer) HandlerFinished(context.Context, *HandlerFinishedRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HandlerFinished not implemented")
+}
+func (UnimplementedEgressServiceServer) ReplayReady(context.Context, *ReplayReadyRequest) (*rpc.EgressReadyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReplayReady not implemented")
 }
 func (UnimplementedEgressServiceServer) mustEmbedUnimplementedEgressServiceServer() {}
 
@@ -174,6 +190,24 @@ func _EgressService_HandlerFinished_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EgressService_ReplayReady_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReplayReadyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EgressServiceServer).ReplayReady(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EgressService_ReplayReady_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EgressServiceServer).ReplayReady(ctx, req.(*ReplayReadyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // EgressService_ServiceDesc is the grpc.ServiceDesc for EgressService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -192,6 +226,10 @@ var EgressService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HandlerFinished",
 			Handler:    _EgressService_HandlerFinished_Handler,
+		},
+		{
+			MethodName: "ReplayReady",
+			Handler:    _EgressService_ReplayReady_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/prometheus/client_golang/prometheus"
@@ -128,6 +129,21 @@ func (h *Handler) Run() {
 			logger.Errorw("egress update ipc call failed", err, "egressID", egressID)
 		}
 		return
+	}
+
+	// Replay coordination: signal ready and get timing
+	if h.conf.IsReplay {
+		rctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		resp, err := h.ipcServiceClient.ReplayReady(rctx, &ipc.ReplayReadyRequest{
+			EgressId: h.conf.Info.EgressId,
+		})
+		cancel()
+		if err != nil {
+			h.conf.Info.SetFailed(err)
+			_, _ = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
+			return
+		}
+		h.controller.SetReplayTiming(resp.StartAt, resp.DurationMs)
 	}
 
 	// start egress

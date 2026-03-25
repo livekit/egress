@@ -181,6 +181,43 @@ func (r *Runner) testStream(t *testing.T) {
 					outputType:  types.OutputTypeRaw,
 				},
 			},
+
+			// -------- Template --------
+
+			{
+				name:        "Template",
+				requestType: types.RequestTypeTemplate,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+					layout:     "speaker",
+				},
+				streamOptions: &streamOptions{
+					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
+					outputType: types.OutputTypeRTMP,
+				},
+			},
+
+			// -------- Media ----------
+
+			{
+				name:        "Media/ParticipantVideoStream",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+					mediaParticipantVideo: &livekit.ParticipantVideo{
+						Identity: "set-at-runtime",
+					},
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: "set-at-runtime"},
+					}},
+				},
+				streamOptions: &streamOptions{
+					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
+					outputType: types.OutputTypeRTMP,
+				},
+			},
 		} {
 			if !r.run(t, test, r.runStreamTest) {
 				return
@@ -195,7 +232,7 @@ func (r *Runner) runStreamTest(t *testing.T, test *testCase) {
 		return
 	}
 
-	req := r.build(test)
+	req := r.buildRequest(test)
 
 	ctx := context.Background()
 	urls := streamUrls[test.streamOptions.outputType]

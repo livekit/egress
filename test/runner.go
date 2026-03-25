@@ -70,6 +70,8 @@ type Runner struct {
 	ParticipantTestsOnly    bool `yaml:"participant_only"`
 	TrackCompositeTestsOnly bool `yaml:"track_composite_only"`
 	TrackTestsOnly          bool `yaml:"track_only"`
+	TemplateTestsOnly       bool `yaml:"template_only"`
+	MediaTestsOnly          bool `yaml:"media_only"`
 	EdgeCasesOnly           bool `yaml:"edge_cases_only"`
 
 	FileTestsOnly    bool `yaml:"file_only"`
@@ -120,6 +122,12 @@ func NewRunner(t *testing.T) *Runner {
 	case "track":
 		r.TrackTestsOnly = true
 		r.RoomName = fmt.Sprintf("track-integration-%d", rand.Intn(100))
+	case "template":
+		r.TemplateTestsOnly = true
+		r.RoomName = fmt.Sprintf("template-integration-%d", rand.Intn(100))
+	case "media":
+		r.MediaTestsOnly = true
+		r.RoomName = fmt.Sprintf("media-integration-%d", rand.Intn(100))
 	case "file":
 		r.FileTestsOnly = true
 		r.RoomName = fmt.Sprintf("file-integration-%d", rand.Intn(100))

@@ -59,6 +59,7 @@ type PipelineConfig struct {
 	Info            *livekit.EgressInfo        `yaml:"-"`
 	Manifest        *Manifest                  `yaml:"-"`
 	StorageReporter storageobs.ProjectReporter `yaml:"-"`
+	IsReplay        bool                       `yaml:"-"`
 }
 
 var (
@@ -408,16 +409,17 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			return err
 		}
 
-	case *rpc.StartEgressRequest_Egress:
-		egressReq := req.Egress
-		clone := proto.Clone(egressReq).(*livekit.StartEgressRequest)
-		p.Info.Request = &livekit.EgressInfo_Egress{
-			Egress: clone,
+	case *rpc.StartEgressRequest_Replay:
+		p.IsReplay = true
+		replayReq := req.Replay
+		clone := proto.Clone(replayReq).(*livekit.ExportReplayRequest)
+		p.Info.Request = &livekit.EgressInfo_Replay{
+			Replay: clone,
 		}
 		egress.RedactStartEgressRequest(clone)
 
-		switch source := egressReq.Source.(type) {
-		case *livekit.StartEgressRequest_Template:
+		switch source := replayReq.Source.(type) {
+		case *livekit.ExportReplayRequest_Template:
 			tmpl := source.Template
 			p.RequestType = types.RequestTypeTemplate
 
@@ -428,7 +430,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			}
 			p.AwaitStartSignal = true
 
-			p.Info.RoomName = egressReq.RoomName
 			p.Layout = tmpl.Layout
 			if tmpl.CustomBaseUrl != "" {
 				p.BaseUrl = tmpl.CustomBaseUrl
@@ -453,7 +454,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 				return errors.ErrInvalidInput("audio_only and video_only")
 			}
 
-		case *livekit.StartEgressRequest_Web:
+		case *livekit.ExportReplayRequest_Web:
 			web := source.Web
 			p.RequestType = types.RequestTypeWeb
 			connectionInfoRequired = false
@@ -479,12 +480,10 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 				return errors.ErrInvalidInput("audio_only and video_only")
 			}
 
-		case *livekit.StartEgressRequest_Media:
+		case *livekit.ExportReplayRequest_Media:
 			media := source.Media
 			p.RequestType = types.RequestTypeMedia
 			p.SourceType = types.SourceTypeSDK
-
-			p.Info.RoomName = egressReq.RoomName
 
 			// data config not yet supported
 			if media.Data != nil {
@@ -533,17 +532,17 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 		// encoding options
-		switch opts := egressReq.Encoding.(type) {
-		case *livekit.StartEgressRequest_Preset:
+		switch opts := replayReq.Encoding.(type) {
+		case *livekit.ExportReplayRequest_Preset:
 			p.applyPreset(opts.Preset)
-		case *livekit.StartEgressRequest_Advanced:
+		case *livekit.ExportReplayRequest_Advanced:
 			if err := p.applyAdvanced(opts.Advanced); err != nil {
 				return err
 			}
 		}
 
 		// output params
-		if err := p.updateOutputs(egressReq); err != nil {
+		if err := p.updateOutputs(replayReq); err != nil {
 			return err
 		}
 
@@ -560,10 +559,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 	// connection info
 	if connectionInfoRequired {
-		if p.Info.RoomName == "" {
-			return errors.ErrInvalidInput("room_name")
-		}
-
 		// token
 		if request.Token != "" {
 			p.Token = request.Token

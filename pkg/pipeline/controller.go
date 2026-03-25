@@ -63,6 +63,10 @@ type Controller struct {
 	p         *gstreamer.Pipeline
 	sinks     map[types.EgressType][]sink.Sink
 
+	// replay timing
+	replayStartAt  int64 // wallclock unix nanos
+	replayDuration int64 // milliseconds
+
 	// internal
 	mu                   deadlock.Mutex
 	monitor              *stats.HandlerMonitor
@@ -206,6 +210,11 @@ func (c *Controller) BuildPipeline() error {
 	return nil
 }
 
+func (c *Controller) SetReplayTiming(startAt, durationMs int64) {
+	c.replayStartAt = startAt
+	c.replayDuration = durationMs
+}
+
 func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	ctx, span := tracer.Start(ctx, "Pipeline.Run")
 	defer span.End()
@@ -223,7 +232,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 			)
 		}
 		if c.SourceType == types.SourceTypeSDK {
-			logger.Debugw(
+			logger.Infow(
 				"audio qos stats",
 				"audioBuffersDropped", c.stats.mixerDroppedAudioBuffers.Load(),
 				"totalAudioDurationDropped", c.stats.mixerDroppedAudioDuration.Load(),
@@ -257,6 +266,22 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		}
 	}
 
+	// Replay timing gate: wait until start_at
+	if c.replayStartAt > 0 {
+		waitDuration := time.Until(time.Unix(0, c.replayStartAt))
+		if waitDuration > 0 {
+			logger.Debugw("waiting for replay start time", "waitDuration", waitDuration)
+			select {
+			case <-c.stopped.Watch():
+				c.src.Close()
+				c.Info.SetAborted(livekit.MsgStartNotReceived)
+				return c.Info
+			case <-time.After(waitDuration):
+				// continue
+			}
+		}
+	}
+
 	for _, si := range c.sinks {
 		for _, s := range si {
 			if err := s.Start(); err != nil {
@@ -268,6 +293,13 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	}
 
 	c.startOutputSizeMonitor()
+
+	// Replay duration timer
+	if c.replayDuration > 0 {
+		time.AfterFunc(time.Duration(c.replayDuration)*time.Millisecond, func() {
+			c.SendEOS(ctx, livekit.EndReasonSrcClosed)
+		})
+	}
 
 	err := c.p.Run()
 	if err != nil {

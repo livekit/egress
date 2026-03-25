@@ -217,7 +217,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 	return nil
 }
 
-func (p *PipelineConfig) updateOutputs(req *livekit.StartEgressRequest) error {
+func (p *PipelineConfig) updateOutputs(req *livekit.ExportReplayRequest) error {
 	if len(req.Outputs) == 0 {
 		return errors.ErrInvalidInput("output")
 	}
