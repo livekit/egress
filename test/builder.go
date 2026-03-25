@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -577,8 +578,14 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 		replayReq.Storage = test.storage
 	}
 
+	// build token since we don't pass a room name
+	egressID := utils.NewGuid(utils.EgressPrefix)
+	token, _ := egress.BuildEgressToken(egressID, r.ApiKey, r.ApiSecret, r.RoomName)
+
 	return &rpc.StartEgressRequest{
-		EgressId: utils.NewGuid(utils.EgressPrefix),
+		EgressId: egressID,
 		Request:  &rpc.StartEgressRequest_Replay{Replay: replayReq},
+		Token:    token,
+		WsUrl:    r.WsUrl,
 	}
 }
