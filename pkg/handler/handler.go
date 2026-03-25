@@ -26,6 +26,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"google.golang.org/grpc"
 
+	"go.opentelemetry.io/otel"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
@@ -33,7 +35,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
-	"go.opentelemetry.io/otel"
 )
 
 type Handler struct {
@@ -134,7 +135,7 @@ func (h *Handler) Run() {
 	// Replay coordination: signal ready and get timing
 	if h.conf.IsReplay {
 		rctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		resp, err := h.ipcServiceClient.ReplayReady(rctx, &ipc.ReplayReadyRequest{
+		resp, err := h.ipcServiceClient.ReplayReady(rctx, &rpc.EgressReadyRequest{
 			EgressId: h.conf.Info.EgressId,
 		})
 		cancel()
