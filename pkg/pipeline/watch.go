@@ -43,6 +43,10 @@ const (
 	msgSkippingSegment             = "error reading data -1 (reason: Success), skipping segment"
 	fnGstAudioResampleCheckDiscont = "gst_audio_resample_check_discont"
 
+	// noisy colorimetry warnings from decoders that omit VUI color info
+	msgColorMatrix         = "Need to specify a color matrix when using YUV format (I420)"
+	msgInvalidColorimetry  = "invalid colorimetry, using default"
+
 	// noisy gst fixmes
 	msgStreamStart       = "stream-start event without group-id. Consider implementing group-id handling in the upstream elements"
 	msgCreatingStream    = "Creating random stream-id, consider implementing a deterministic way of creating a stream-id"
@@ -73,6 +77,8 @@ var (
 		msgInputDisappeared:            true,
 		msgSkippingSegment:             true,
 		fnGstAudioResampleCheckDiscont: true,
+		msgColorMatrix:                 true,
+		msgInvalidColorimetry:          true,
 		msgStreamStart:                 true,
 		msgCreatingStream:              true,
 		msgAggregateSubclass:           true,
