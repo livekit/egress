@@ -108,16 +108,7 @@ func (c *Controller) gstLog(
 		msg = fmt.Sprintf("[%s %s] %s", category, lvl, message)
 	}
 	caller := fmt.Sprintf("%s:%d", file, line)
-	switch level {
-	case gst.LevelError:
-		c.gstLogger.Errorw(msg, "caller", caller)
-	case gst.LevelWarning, gst.LevelFixMe:
-		c.gstLogger.Warnw(msg, "caller", caller)
-	case gst.LevelInfo:
-		c.gstLogger.Infow(msg, "caller", caller)
-	default:
-		c.gstLogger.Debugw(msg, "caller", caller)
-	}
+	c.gstLogger.Infow(msg, "caller", caller)
 }
 
 func (c *Controller) messageWatch(msg *gst.Message) bool {
