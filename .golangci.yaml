@@ -69,8 +69,6 @@ linters:
     rules:
       - path: cmd/server/main.go
         text: 'pattern templates: no matching files found'
-      - path: test/integration_test.go
-        text: 'pattern templates: no matching files found'
     paths:
       - third_party$
       - builtin$
