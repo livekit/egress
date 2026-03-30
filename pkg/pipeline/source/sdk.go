@@ -483,7 +483,8 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 	// ConnectToRoomWithToken, so check IsSubscribed to avoid double-counting.
 	// shouldSubscribeMedia is still called for unsubscribed tracks to populate
 	// the audioChannels map before subscribing.
-	var expected, alreadySubscribed int
+	var toSubscribe []lksdk.TrackPublication
+	var alreadySubscribed int
 	for _, rp := range s.room.GetRemoteParticipants() {
 		for _, pub := range rp.TrackPublications() {
 			if s.shouldSubscribeMedia(pub, rp) {
@@ -491,16 +492,15 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 					alreadySubscribed++
 					continue // Already subscribed via onTrackPublished
 				}
-				if err := s.subscribe(pub); err != nil {
-					return 0, 0, err
-				}
-				expected++
+				toSubscribe = append(toSubscribe, pub)
 			}
 		}
 	}
 
-	// Set up result channel before waiting. Use expected count if we subscribed
-	// to tracks, otherwise 1 (waiting for first dynamic track).
+	// Install result channel BEFORE subscribing to avoid race where the
+	// subscription round-trip completes before the channel exists, which
+	// would cause onTrackSubscribed to silently drop the result.
+	expected := len(toSubscribe)
 	chanSize := expected
 	if chanSize == 0 {
 		chanSize = 1
@@ -508,22 +508,40 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 	resultChan := s.startAwaitingTracks(chanSize)
 	defer s.stopAwaitingTracks()
 
-	// Wait for at least one subscription to complete (or first dynamic match).
-	// Use a soft 3-second deadline like awaitExpected — if onTrackPublished
-	// already handled subscription during connect, the result may have been
-	// sent before startAwaitingTracks was called, so we don't hard-fail.
+	for _, pub := range toSubscribe {
+		if err := s.subscribe(pub); err != nil {
+			return 0, 0, err
+		}
+	}
+
 	deadline := time.After(subscriptionTimeout)
-	softDeadline := time.After(3 * time.Second)
 
 	if expected > 0 || alreadySubscribed > 0 {
-		// We subscribed to tracks (or they were already subscribed) — wait for first result
-		select {
-		case result := <-resultChan:
-			if result.err != nil {
-				return 0, 0, result.err
+		// We subscribed to tracks (or they were already subscribed) — wait for first result.
+		// alreadySubscribed tracks completed before startAwaitingTracks, so use a
+		// soft deadline: their results were captured by the channel for new subscriptions,
+		// but if ALL tracks were alreadySubscribed (expected == 0), no result will arrive.
+		softDeadline := time.After(3 * time.Second)
+		if expected > 0 {
+			// At least one subscription is in-flight — its result will arrive on the channel
+			select {
+			case result := <-resultChan:
+				if result.err != nil {
+					return 0, 0, result.err
+				}
+			case <-deadline:
+				return 0, 0, errors.ErrSubscriptionFailed
 			}
-		case <-softDeadline:
-			// Tracks may have already been handled — continue
+		} else {
+			// All tracks were already subscribed before we installed the channel
+			select {
+			case result := <-resultChan:
+				if result.err != nil {
+					return 0, 0, result.err
+				}
+			case <-softDeadline:
+				// Already-subscribed tracks were handled — continue
+			}
 		}
 	} else {
 		// No matching tracks found yet — wait for first track via onTrackPublished
