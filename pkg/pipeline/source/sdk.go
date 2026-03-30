@@ -360,26 +360,72 @@ func (s *SDKSource) awaitRoomTracks() error {
 	return nil
 }
 
-func (s *SDKSource) awaitMediaTracks() error {
+func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
+	// Phase 1: Collect prerequisites from config
+	requiredParticipants := make(map[string]struct{})
+	requiredTracks := make(map[string]struct{})
+
+	if s.Identity != "" {
+		requiredParticipants[s.Identity] = struct{}{}
+	}
+	if s.VideoTrackID != "" {
+		requiredTracks[s.VideoTrackID] = struct{}{}
+	}
+	for _, route := range s.AudioRoutes {
+		if route.Match.TrackID != "" {
+			requiredTracks[route.Match.TrackID] = struct{}{}
+		}
+		if route.Match.ParticipantIdentity != "" {
+			requiredParticipants[route.Match.ParticipantIdentity] = struct{}{}
+		}
+	}
+
+	// Phase 2: Wait for prerequisites with shared deadline
+	deadline := time.Now().Add(subscriptionTimeout)
+
+	for identity := range requiredParticipants {
+		if _, err := s.getParticipant(identity, deadline); err != nil {
+			return 0, 0, err
+		}
+	}
+	for trackID := range requiredTracks {
+		if err := s.awaitTrackPublication(trackID, deadline); err != nil {
+			return 0, 0, err
+		}
+	}
+
+	// Phase 3: Count all matching subscriptions and soft-wait
 	expected := 0
 	for _, rp := range s.room.GetRemoteParticipants() {
-		pubs := rp.TrackPublications()
-		for _, pub := range pubs {
+		for _, pub := range rp.TrackPublications() {
 			if s.shouldSubscribeMedia(pub, rp) {
 				expected++
 			}
 		}
 	}
 	if err := s.awaitExpected(expected); err != nil {
-		return err
+		return 0, 0, err
+	}
+
+	// Phase 4: Get video dimensions from subscribed tracks
+	var w, h uint32
+	for _, rp := range s.room.GetRemoteParticipants() {
+		for _, pub := range rp.TrackPublications() {
+			if pub.IsSubscribed() && pub.Kind() == lksdk.TrackKindVideo {
+				if info := pub.TrackInfo(); info != nil {
+					w = info.Width
+					h = info.Height
+				}
+			}
+		}
 	}
 
 	s.completeInit()
-	return nil
+	return w, h, nil
 }
 
 func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, error) {
-	rp, err := s.getParticipant(identity)
+	rp, err := s.getParticipant(identity, time.Now().Add(subscriptionTimeout))
 	if err != nil {
 		return 0, 0, err
 	}
@@ -434,8 +480,7 @@ func (s *SDKSource) awaitExpected(expected int) error {
 	return nil
 }
 
-func (s *SDKSource) getParticipant(identity string) (*lksdk.RemoteParticipant, error) {
-	deadline := time.Now().Add(subscriptionTimeout)
+func (s *SDKSource) getParticipant(identity string, deadline time.Time) (*lksdk.RemoteParticipant, error) {
 	for time.Now().Before(deadline) {
 		for _, p := range s.room.GetRemoteParticipants() {
 			if p.Identity() == identity {
@@ -445,6 +490,20 @@ func (s *SDKSource) getParticipant(identity string) (*lksdk.RemoteParticipant, e
 		time.Sleep(100 * time.Millisecond)
 	}
 	return nil, errors.ErrParticipantNotFound(identity)
+}
+
+func (s *SDKSource) awaitTrackPublication(trackID string, deadline time.Time) error {
+	for time.Now().Before(deadline) {
+		for _, p := range s.room.GetRemoteParticipants() {
+			for _, pub := range p.TrackPublications() {
+				if pub.SID() == trackID {
+					return nil
+				}
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return errors.ErrTrackNotFound(trackID)
 }
 
 func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, error) {
