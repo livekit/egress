@@ -198,7 +198,7 @@ func (pm *processManager) KillAll() {
 }
 
 func (pm *processManager) AbortProcess(egressID string, err error) {
-	logger.Debugw("aborting egress", err, "egressID", egressID)
+	logger.Infow("aborting egress", err, "egressID", egressID)
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -208,11 +208,11 @@ func (pm *processManager) AbortProcess(egressID string, err error) {
 		h.ipcHandlerClient.Close()
 		delete(pm.activeHandlers, egressID)
 	}
-	logger.Debugw("aborting egress completed", "egressID", egressID)
+	logger.Infow("aborting egress completed", "egressID", egressID)
 }
 
 func (pm *processManager) KillProcess(egressID string, err error) {
-	logger.Debugw("killing egress", err, "egressID", egressID)
+	logger.Infow("killing egress", err, "egressID", egressID)
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -220,7 +220,7 @@ func (pm *processManager) KillProcess(egressID string, err error) {
 		logger.Errorw("killing handler", err, "egressID", egressID)
 		h.kill(err)
 	}
-	logger.Debugw("killing egress completed", "egressID", egressID)
+	logger.Infow("killing egress completed", "egressID", egressID)
 }
 
 func (pm *processManager) ProcessFinished(egressID string) {
