@@ -221,7 +221,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 		egress.RedactEncodedOutputs(clone)
 
-		if shouldUseSDKSource(req.RoomComposite) {
+		if ShouldUseSDKSource(req.RoomComposite) {
 			p.AudioMixing = req.RoomComposite.AudioMixing
 			p.SourceType = types.SourceTypeSDK
 		} else {
@@ -430,7 +430,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			tmpl := source.Template
 			p.RequestType = types.RequestTypeTemplate
 
-			if shouldUseSDKSource(tmpl) {
+			if ShouldUseSDKSource(tmpl) {
 				p.SourceType = types.SourceTypeSDK
 			} else {
 				p.SourceType = types.SourceTypeWeb
@@ -602,7 +602,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	return nil
 }
 
-func shouldUseSDKSource(req interface {
+func ShouldUseSDKSource(req interface {
 	GetLayout() string
 	GetAudioOnly() bool
 	GetCustomBaseUrl() string
