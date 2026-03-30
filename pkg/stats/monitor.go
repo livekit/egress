@@ -100,10 +100,10 @@ type processStats struct {
 
 func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 	m := &Monitor{
-		nodeID:        conf.NodeID,
-		clusterID:     conf.ClusterID,
-		cpuCostConfig: conf.CPUCostConfig,
-		svc:           svc,
+		nodeID:         conf.NodeID,
+		clusterID:      conf.ClusterID,
+		cpuCostConfig:  conf.CPUCostConfig,
+		svc:            svc,
 		pending:        make(map[string]*processStats),
 		procStats:      make(map[int]*processStats),
 		lastMemoryDump: time.Now(),
@@ -208,7 +208,7 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 	required := req.EstimatedCpu
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		useSDK := config.RoomCompositeUsesSDKSource(r.RoomComposite)
+		useSDK := config.ShouldUseSDKSource(r.RoomComposite)
 		if !useSDK && !m.canAcceptWebLocked() {
 			fields = append(fields, "canAccept", false, "reason", "pulse clients")
 			return fields, false
@@ -248,7 +248,7 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 		replayReq := r.Replay
 		switch source := replayReq.Source.(type) {
 		case *livekit.ExportReplayRequest_Template:
-			useSDK := config.TemplateUsesSDKSource(source.Template)
+			useSDK := config.ShouldUseSDKSource(source.Template)
 			if !useSDK && !m.canAcceptWebLocked() {
 				fields = append(fields, "canAccept", false, "reason", "pulse clients")
 				return fields, false
@@ -357,7 +357,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		useSDK := config.RoomCompositeUsesSDKSource(r.RoomComposite)
+		useSDK := config.ShouldUseSDKSource(r.RoomComposite)
 		if !useSDK {
 			m.webRequests.Inc()
 			countedAsWeb = true
@@ -387,7 +387,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		replayReq := r.Replay
 		switch source := replayReq.Source.(type) {
 		case *livekit.ExportReplayRequest_Template:
-			useSDK := config.TemplateUsesSDKSource(source.Template)
+			useSDK := config.ShouldUseSDKSource(source.Template)
 			if !useSDK {
 				m.webRequests.Inc()
 				countedAsWeb = true

@@ -221,7 +221,13 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 		egress.RedactEncodedOutputs(clone)
 
-		p.SourceType = p.getRoomCompositeRequestType(req.RoomComposite)
+		if ShouldUseSDKSource(req.RoomComposite) {
+			p.AudioMixing = req.RoomComposite.AudioMixing
+			p.SourceType = types.SourceTypeSDK
+		} else {
+			p.SourceType = types.SourceTypeWeb
+		}
+
 		p.AwaitStartSignal = true
 
 		p.Info.RoomName = req.RoomComposite.RoomName
@@ -424,7 +430,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			tmpl := source.Template
 			p.RequestType = types.RequestTypeTemplate
 
-			if TemplateUsesSDKSource(tmpl) {
+			if ShouldUseSDKSource(tmpl) {
 				p.SourceType = types.SourceTypeSDK
 			} else {
 				p.SourceType = types.SourceTypeWeb
@@ -596,6 +602,14 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	return nil
 }
 
+func ShouldUseSDKSource(req interface {
+	GetLayout() string
+	GetAudioOnly() bool
+	GetCustomBaseUrl() string
+}) bool {
+	return req.GetAudioOnly() && req.GetLayout() == "" && req.GetCustomBaseUrl() == ""
+}
+
 func (p *PipelineConfig) validateAndUpdateOutputParams() error {
 	compatibleAudioCodecs, compatibleVideoCodecs, err := p.validateAndUpdateOutputCodecs()
 	if err != nil {
@@ -723,45 +737,6 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 	}
 
 	return nil
-}
-
-// TemplateUsesSDKSource reports whether a template source request will use
-// the SDK source (no Chrome/Pulse) instead of Web.
-// Same heuristic as RoomCompositeUsesSDKSource.
-func TemplateUsesSDKSource(req *livekit.TemplateSource) bool {
-	if req.Layout != "" {
-		return false
-	}
-	if !req.AudioOnly {
-		return false
-	}
-	if req.CustomBaseUrl != "" {
-		return false
-	}
-	return true
-}
-
-// RoomCompositeUsesSDKSource reports whether a room composite request will use
-// the SDK source (no Chrome/Pulse) instead of Web
-func RoomCompositeUsesSDKSource(req *livekit.RoomCompositeEgressRequest) bool {
-	if req.Layout != "" {
-		return false
-	}
-	if !req.AudioOnly {
-		return false
-	}
-	if req.CustomBaseUrl != "" {
-		return false
-	}
-	return true
-}
-
-func (p *PipelineConfig) getRoomCompositeRequestType(req *livekit.RoomCompositeEgressRequest) types.SourceType {
-	if !RoomCompositeUsesSDKSource(req) {
-		return types.SourceTypeWeb
-	}
-	p.AudioMixing = req.AudioMixing
-	return types.SourceTypeSDK
 }
 
 // UpdateInfoFromSDK - updates the pipeline config with the identifier, replacements, width, and height
