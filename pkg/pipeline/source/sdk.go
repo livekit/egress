@@ -360,6 +360,24 @@ func (s *SDKSource) awaitRoomTracks() error {
 	return nil
 }
 
+func (s *SDKSource) awaitMediaTracks() error {
+	expected := 0
+	for _, rp := range s.room.GetRemoteParticipants() {
+		pubs := rp.TrackPublications()
+		for _, pub := range pubs {
+			if s.shouldSubscribeMedia(pub, rp) {
+				expected++
+			}
+		}
+	}
+	if err := s.awaitExpected(expected); err != nil {
+		return err
+	}
+
+	s.completeInit()
+	return nil
+}
+
 func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, error) {
 	rp, err := s.getParticipant(identity)
 	if err != nil {
@@ -470,101 +488,6 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, 
 		if t.TrackInfo().Type == livekit.TrackType_VIDEO {
 			w = t.TrackInfo().Width
 			h = t.TrackInfo().Height
-		}
-	}
-
-	s.completeInit()
-	return w, h, nil
-}
-
-func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
-	// Scan existing participants for matching tracks.
-	// Note: onTrackPublished may have already subscribed to some tracks during
-	// ConnectToRoomWithToken, so check IsSubscribed to avoid double-counting.
-	// shouldSubscribeMedia is still called for unsubscribed tracks to populate
-	// the audioChannels map before subscribing.
-	var toSubscribe []lksdk.TrackPublication
-	var alreadySubscribed int
-	for _, rp := range s.room.GetRemoteParticipants() {
-		for _, pub := range rp.TrackPublications() {
-			if s.shouldSubscribeMedia(pub, rp) {
-				if pub.IsSubscribed() {
-					alreadySubscribed++
-					continue // Already subscribed via onTrackPublished
-				}
-				toSubscribe = append(toSubscribe, pub)
-			}
-		}
-	}
-
-	// Install result channel BEFORE subscribing to avoid race where the
-	// subscription round-trip completes before the channel exists, which
-	// would cause onTrackSubscribed to silently drop the result.
-	expected := len(toSubscribe)
-	chanSize := expected
-	if chanSize == 0 {
-		chanSize = 1
-	}
-	resultChan := s.startAwaitingTracks(chanSize)
-	defer s.stopAwaitingTracks()
-
-	for _, pub := range toSubscribe {
-		if err := s.subscribe(pub); err != nil {
-			return 0, 0, err
-		}
-	}
-
-	deadline := time.After(subscriptionTimeout)
-
-	if expected > 0 || alreadySubscribed > 0 {
-		// We subscribed to tracks (or they were already subscribed) — wait for first result.
-		// alreadySubscribed tracks completed before startAwaitingTracks, so use a
-		// soft deadline: their results were captured by the channel for new subscriptions,
-		// but if ALL tracks were alreadySubscribed (expected == 0), no result will arrive.
-		softDeadline := time.After(3 * time.Second)
-		if expected > 0 {
-			// At least one subscription is in-flight — its result will arrive on the channel
-			select {
-			case result := <-resultChan:
-				if result.err != nil {
-					return 0, 0, result.err
-				}
-			case <-deadline:
-				return 0, 0, errors.ErrSubscriptionFailed
-			}
-		} else {
-			// All tracks were already subscribed before we installed the channel
-			select {
-			case result := <-resultChan:
-				if result.err != nil {
-					return 0, 0, result.err
-				}
-			case <-softDeadline:
-				// Already-subscribed tracks were handled — continue
-			}
-		}
-	} else {
-		// No matching tracks found yet — wait for first track via onTrackPublished
-		select {
-		case result := <-resultChan:
-			if result.err != nil {
-				return 0, 0, result.err
-			}
-		case <-deadline:
-			return 0, 0, errors.ErrSubscriptionFailed
-		}
-	}
-
-	// Get video dimensions from any subscribed video track
-	var w, h uint32
-	for _, rp := range s.room.GetRemoteParticipants() {
-		for _, pub := range rp.TrackPublications() {
-			if pub.IsSubscribed() && pub.Kind() == lksdk.TrackKindVideo {
-				if info := pub.TrackInfo(); info != nil {
-					w = info.Width
-					h = info.Height
-				}
-			}
 		}
 	}
 
