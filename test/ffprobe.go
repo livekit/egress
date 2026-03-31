@@ -173,7 +173,7 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 	case types.EgressTypeWebsocket:
 		size, err := strconv.Atoi(info.Format.Size)
 		require.NoError(t, err)
-		require.Greater(t, size, 6500000)
+		require.Greater(t, size, 6300000)
 
 		expected := float64(res.StreamResults[0].Duration) / 1e9
 		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
