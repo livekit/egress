@@ -424,9 +424,12 @@ func (r *Runner) testRoomCompositeDisconnectDuration(t *testing.T, test *testCas
 	t.Logf("reported duration: %s, startedAt: %d, endedAt: %d",
 		reportedDuration, fileRes.StartedAt, fileRes.EndedAt)
 
-	// The reported duration should include the silence tail. At minimum it
-	// should be longer than the active recording period (10s) plus most of
-	// the silence gap. We allow 5s of slack for pipeline startup/teardown.
+	// The reported duration should include the silence tail. The default
+	// room departure_timeout is 20s, so the silence gap is typically ~20s
+	// between the last participant leaving and the server-initiated disconnect.
+	// Ideally we'd create the room with a specific departure_timeout for a
+	// tighter assertion, but for now we measure the actual gap and allow 5s
+	// of slack for pipeline startup/teardown.
 	minExpected := 10*time.Second + silenceGap - 5*time.Second
 	require.GreaterOrEqual(t, reportedDuration, minExpected,
 		"file duration should include silence tail after participants left")
