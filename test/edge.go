@@ -106,6 +106,25 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				custom: r.testRoomCompositeStaysOpen,
 			},
 
+			// Room composite where all participants leave and the server
+			// eventually disconnects the egress. Verifies that the reported
+			// duration includes the silence tail between participant departure
+			// and server-initiated leave.
+
+			{
+				name:        "RoomCompositeDisconnectDuration",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename: "room_composite_disconnect_duration_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				custom: r.testRoomCompositeDisconnectDuration,
+			},
+
 			// RTMP output with no valid urls
 
 			{
@@ -339,6 +358,78 @@ func (r *Runner) testRoomCompositeStaysOpen(t *testing.T, test *testCase) {
 
 	r.checkUpdate(t, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
 	r.stopEgress(t, info.EgressId)
+}
+
+func (r *Runner) testRoomCompositeDisconnectDuration(t *testing.T, test *testCase) {
+	// Start egress, record for a while, then disconnect all participants.
+	// The server will eventually disconnect the egress (~15-20s later).
+	// The file will contain silence during that gap, so endedAt must
+	// reflect the full file content including the silence tail.
+	req := r.build(test)
+	egressID := r.startEgress(t, req)
+
+	// Record with active audio for 10 seconds
+	time.Sleep(time.Second * 10)
+
+	// Disconnect all participants — the room becomes empty, but the
+	// egress stays connected until the server kicks it out.
+	disconnectTime := time.Now()
+	identity := r.room.LocalParticipant.Identity()
+	r.room.Disconnect()
+
+	// Reconnect the publisher on exit so subsequent tests have a room
+	defer func() {
+		room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+			APIKey:              r.ApiKey,
+			APISecret:           r.ApiSecret,
+			RoomName:            r.RoomName,
+			ParticipantName:     "egress-sample",
+			ParticipantIdentity: identity,
+		}, lksdk.NewRoomCallback())
+		require.NoError(t, err)
+		r.room = room
+	}()
+
+	// Wait for the egress to complete on its own (server-initiated leave).
+	// Drain updates until we see EGRESS_COMPLETE or EGRESS_FAILED.
+	var res *livekit.EgressInfo
+	deadline := time.After(90 * time.Second)
+	for res == nil {
+		select {
+		case info := <-r.updates:
+			if info.EgressId != egressID {
+				continue
+			}
+			switch info.Status {
+			case livekit.EgressStatus_EGRESS_COMPLETE:
+				res = info
+			case livekit.EgressStatus_EGRESS_FAILED:
+				t.Fatalf("egress failed: %s", info.Error)
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for egress to complete after room disconnect")
+		}
+	}
+
+	silenceGap := time.Since(disconnectTime)
+	t.Logf("silence gap after disconnect: %s", silenceGap)
+
+	fileRes := res.GetFile() //nolint:staticcheck
+	if fileRes == nil {
+		require.Len(t, res.FileResults, 1)
+		fileRes = res.FileResults[0]
+	}
+
+	reportedDuration := time.Duration(fileRes.Duration)
+	t.Logf("reported duration: %s, startedAt: %d, endedAt: %d",
+		reportedDuration, fileRes.StartedAt, fileRes.EndedAt)
+
+	// The reported duration should include the silence tail. At minimum it
+	// should be longer than the active recording period (10s) plus most of
+	// the silence gap. We allow 5s of slack for pipeline startup/teardown.
+	minExpected := 10*time.Second + silenceGap - 5*time.Second
+	require.GreaterOrEqual(t, reportedDuration, minExpected,
+		"file duration should include silence tail after participants left")
 }
 
 func (r *Runner) testStorageLimit(t *testing.T, test *testCase) {

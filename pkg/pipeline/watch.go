@@ -44,8 +44,8 @@ const (
 	fnGstAudioResampleCheckDiscont = "gst_audio_resample_check_discont"
 
 	// noisy colorimetry warnings from decoders that omit VUI color info
-	msgColorMatrix         = "Need to specify a color matrix when using YUV format (I420)"
-	msgInvalidColorimetry  = "invalid colorimetry, using default"
+	msgColorMatrix        = "Need to specify a color matrix when using YUV format (I420)"
+	msgInvalidColorimetry = "invalid colorimetry, using default"
 
 	// noisy gst fixmes
 	msgStreamStart       = "stream-start event without group-id. Consider implementing group-id handling in the upstream elements"
@@ -124,6 +124,13 @@ func (c *Controller) messageWatch(msg *gst.Message) bool {
 		logger.Infow("pipeline received EOS")
 		if c.eosTimer != nil {
 			c.eosTimer.Stop()
+		}
+		// Capture pipeline running time at EOS — all content has been flushed
+		// to sinks at this point, so this reflects the actual file duration.
+		// Used as a floor for endedAt to account for pipeline-generated content
+		// beyond the last RTP packet (e.g. mixer silence after all tracks leave).
+		if rt, ok := c.p.RunningTime(); ok {
+			c.pipelineEndedAt = c.src.GetStartedAt() + rt.Nanoseconds()
 		}
 		c.eosReceived.Break()
 		c.p.Stop()
