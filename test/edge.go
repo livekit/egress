@@ -362,9 +362,20 @@ func (r *Runner) testRoomCompositeStaysOpen(t *testing.T, test *testCase) {
 
 func (r *Runner) testRoomCompositeDisconnectDuration(t *testing.T, test *testCase) {
 	// Start egress, record for a while, then disconnect all participants.
-	// The server will eventually disconnect the egress (~15-20s later).
+	// The server will eventually disconnect the egress after departure_timeout.
 	// The file will contain silence during that gap, so endedAt must
 	// reflect the full file content including the silence tail.
+	const departureTimeout = 20 // seconds
+
+	// Create the room with an explicit departure_timeout so the silence
+	// gap is predictable regardless of server defaults.
+	roomClient := lksdk.NewRoomServiceClient(r.WsUrl, r.ApiKey, r.ApiSecret)
+	_, err := roomClient.CreateRoom(context.Background(), &livekit.CreateRoomRequest{
+		Name:             r.RoomName,
+		DepartureTimeout: departureTimeout,
+	})
+	require.NoError(t, err)
+
 	req := r.build(test)
 	egressID := r.startEgress(t, req)
 
@@ -424,12 +435,10 @@ func (r *Runner) testRoomCompositeDisconnectDuration(t *testing.T, test *testCas
 	t.Logf("reported duration: %s, startedAt: %d, endedAt: %d",
 		reportedDuration, fileRes.StartedAt, fileRes.EndedAt)
 
-	// The reported duration should include the silence tail. The default
-	// room departure_timeout is 20s, so the silence gap is typically ~20s
-	// between the last participant leaving and the server-initiated disconnect.
-	// Ideally we'd create the room with a specific departure_timeout for a
-	// tighter assertion, but for now we measure the actual gap and allow 5s
-	// of slack for pipeline startup/teardown.
+	// The reported duration should include the silence tail. The room was
+	// created with departure_timeout=20s, so the server disconnects the
+	// egress ~20s after the last participant leaves. We allow 5s of slack
+	// for pipeline startup/teardown.
 	minExpected := 10*time.Second + silenceGap - 5*time.Second
 	require.GreaterOrEqual(t, reportedDuration, minExpected,
 		"file duration should include silence tail after participants left")
