@@ -79,6 +79,7 @@ type Controller struct {
 	eosReceived          core.Fuse
 	stopped              core.Fuse
 	storageLimitOnce     sync.Once
+	pipelineEndedAt      int64
 	stats                controllerStats
 	pipelineCreatedAt    time.Time
 }
@@ -898,6 +899,9 @@ func (c *Controller) streamUpdated(ctx context.Context) {
 
 func (c *Controller) updateEndTime() {
 	endedAt := c.src.GetEndedAt()
+	if c.pipelineEndedAt > endedAt {
+		endedAt = c.pipelineEndedAt
+	}
 
 	for egressType, o := range c.Outputs {
 		if len(o) == 0 {
