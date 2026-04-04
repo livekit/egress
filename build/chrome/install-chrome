@@ -6,7 +6,8 @@ then
   apt-get update
   apt-get install -y \
     ca-certificates \
-    libasound2t64 \
+    fonts-liberation \
+    libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
     libc6 \
@@ -16,13 +17,11 @@ then
     libexpat1 \
     libfontconfig1 \
     libgbm1 \
-    libgcc1 \
     libglib2.0-0 \
     libnspr4 \
     libnss3 \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
-    libstdc++6 \
     libx11-6 \
     libx11-xcb1 \
     libxcb1 \
@@ -35,7 +34,8 @@ then
     libxrandr2 \
     libxrender1 \
     libxss1 \
-    libxtst6
+    libxtst6 \
+    xdg-utils
   chmod +x /chrome-installer/arm64/chromedriver-mac-arm64/chromedriver
   mv -f /chrome-installer/arm64/chromedriver-mac-arm64/chromedriver /usr/local/bin/chromedriver
   mv /chrome-installer/arm64/ /chrome
