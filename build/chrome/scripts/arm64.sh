@@ -16,10 +16,15 @@ if [ ! -d "$HOME/depot_tools" ]; then
 fi
 export PATH="$PATH:$HOME/depot_tools"
 
-mkdir -p "$HOME/chromium"
-cd "$HOME/chromium"
+mkdir -p "$HOME"
 
-fetch --nohooks --no-history chromium
+if [ ! -d "$HOME/chromium/.gclient" ] && [ ! -f "$HOME/chromium/.gclient" ]; then
+  mkdir -p "$HOME/chromium"
+  cd "$HOME/chromium"
+  fetch --nohooks --no-history chromium
+fi
+
+cd "$HOME/chromium"
 
 cat > .gclient <<'EOF'
 solutions = [
@@ -41,7 +46,20 @@ cd src
 git fetch --no-tags --depth=1 origin "refs/tags/$1:refs/tags/$1"
 git checkout -B stable "tags/$1"
 
-gclient sync -D --with_branch_heads
+for attempt in 1 2 3 4 5; do
+  if gclient sync -D --with_branch_heads -j 8; then
+    break
+  fi
+
+  if [ "$attempt" -eq 5 ]; then
+    echo "gclient sync failed after $attempt attempts"
+    exit 1
+  fi
+
+  sleep_secs=$((attempt * 30))
+  echo "gclient sync failed, retrying in ${sleep_secs}s..."
+  sleep "$sleep_secs"
+done
 
 ./build/install-build-deps.sh
 ./build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
@@ -77,8 +95,8 @@ autoninja -C out/default chrome chrome_sandbox -j "$(nproc)"
 
 cd out/default
 
+rm -rf "$HOME/output/arm64"
 mkdir -p "$HOME/output/arm64/locales"
-mkdir -p "$HOME/output/arm64"
 
 mv locales/en-US.pak "$HOME/output/arm64/locales/"
 
