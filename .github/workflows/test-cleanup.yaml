@@ -5,6 +5,8 @@ on:
     - cron: '0 6 * * *'
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   cleanup:
     runs-on: ubuntu-latest
