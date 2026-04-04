@@ -40,7 +40,7 @@ jobs:
 
           builder_info="$(linode-cli linodes create \
             --backups_enabled false \
-            --booted true \
+            --booted false \
             --image linode/ubuntu22.04 \
             --label chrome-builder \
             --private_ip false \
@@ -90,17 +90,12 @@ jobs:
 
           interface_json="$(linode-cli linodes interface-view "$linode_id" "$interface_id" --json)"
 
-          ipv4_addresses="$(echo "$interface_json" | jq -c '.[0].public.ipv4.addresses')"
-          ipv6_ranges="$(echo "$interface_json" | jq -c '.[0].public.ipv6.ranges // []')"
-          default_route_ipv4="$(echo "$interface_json" | jq -r '.[0].default_route.ipv4')"
-          default_route_ipv6="$(echo "$interface_json" | jq -r '.[0].default_route.ipv6')"
-
           linode-cli linodes interface-update "$linode_id" "$interface_id" \
             --firewall_id "$firewall_id" \
-            --default_route.ipv4 "$default_route_ipv4" \
-            --default_route.ipv6 "$default_route_ipv6" \
-            --public.ipv4.addresses "$ipv4_addresses" \
-            --public.ipv6.ranges "$ipv6_ranges" \
+            --default_route.ipv4 "$(echo "$interface_json" | jq -r '.[0].default_route.ipv4')" \
+            --default_route.ipv6 "$(echo "$interface_json" | jq -r '.[0].default_route.ipv6')" \
+            --public.ipv4.addresses "$(echo "$interface_json" | jq -c '.[0].public.ipv4.addresses')" \
+            --public.ipv6.ranges "$(echo "$interface_json" | jq -c '.[0].public.ipv6.ranges // []')" \
             --json
 
           echo "firewall_id=$firewall_id" >> "$GITHUB_OUTPUT"
@@ -117,6 +112,14 @@ jobs:
             "${{ steps.attach_firewall.outputs.interface_id }}" \
             --json
 
+      - name: Boot Builder
+        shell: bash
+        env:
+          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
+        run: |
+          set -euo pipefail
+          linode-cli linodes boot "${{ steps.create_builder.outputs.builder_id }}"
+
       - name: Wait for Builder status
         shell: bash
         env:
@@ -126,7 +129,7 @@ jobs:
 
           status="$(linode-cli linodes view "${{ steps.create_builder.outputs.builder_id }}" --json | jq -r '.[0].status')"
 
-          while [ "$status" = "provisioning" ] || [ "$status" = "booting" ]; do
+          while [ "$status" = "provisioning" ] || [ "$status" = "booting" ] || [ "$status" = "offline" ]; do
             echo "Builder status: $status"
             sleep 5
             status="$(linode-cli linodes view "${{ steps.create_builder.outputs.builder_id }}" --json | jq -r '.[0].status')"
