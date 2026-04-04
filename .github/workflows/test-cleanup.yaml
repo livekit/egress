@@ -13,8 +13,8 @@ jobs:
     steps:
       - name: Delete old integration image tags
         env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_CLEANUP_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_CLEANUP_TOKEN }}
           REPO: livekit/egress-integration
           RETENTION_DAYS: 3
         run: |
