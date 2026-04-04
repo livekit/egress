@@ -162,7 +162,7 @@ jobs:
           printf '%s\n' "${{ secrets.LINODE_SSH_PUBLIC_KEY }}" > ~/.ssh/linode_ed25519.pub
           chmod 600 ~/.ssh/linode_ed25519 ~/.ssh/linode_ed25519.pub
 
-      - name: Wait for SSH
+      - name: Wait for SSH and cloud-init
         shell: bash
         run: |
           set -euo pipefail
@@ -170,29 +170,23 @@ jobs:
           ip="${{ steps.create_builder.outputs.builder_ip }}"
 
           for i in $(seq 1 180); do
-            if nc -z "$ip" 22; then
-              echo "SSH is reachable"
+            if ssh -i ~/.ssh/linode_ed25519 \
+              -o BatchMode=yes \
+              -o PasswordAuthentication=no \
+              -o StrictHostKeyChecking=accept-new \
+              -o ConnectTimeout=5 \
+              root@"$ip" \
+              'cloud-init status --wait >/dev/null 2>&1 || true; echo ready' >/tmp/ssh-ready.txt 2>/tmp/ssh-ready.err; then
+              echo "SSH and cloud-init are ready"
               break
             fi
-            echo "Waiting for SSH on $ip..."
+
+            echo "Waiting for SSH/cloud-init on $ip..."
+            cat /tmp/ssh-ready.err || true
             sleep 2
           done
 
-          nc -z "$ip" 22
-          ssh-keyscan -H "$ip" >> ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-      - name: Verify SSH access
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ssh -i ~/.ssh/linode_ed25519 \
-            -o BatchMode=yes \
-            -o PasswordAuthentication=no \
-            -o StrictHostKeyChecking=yes \
-            root@${{ steps.create_builder.outputs.builder_ip }} \
-            'echo "connected as $(whoami)" && cloud-init status --wait'
+          grep -q ready /tmp/ssh-ready.txt
 
       - name: Verify chrome user
         shell: bash
