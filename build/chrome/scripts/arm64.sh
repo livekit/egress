@@ -63,7 +63,6 @@ gn gen out/default --args='
   enable_printing=false
   enable_basic_printing=false
   enable_pdf=false
-  enable_extensions=false
 
   rtc_use_pipewire=false
 
