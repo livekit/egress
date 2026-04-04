@@ -67,10 +67,6 @@ gn gen out/default --args='
 
   rtc_use_pipewire=false
 
-  use_ozone=false
-  use_x11=false
-  use_gtk=false
-
   is_component_build=false
   use_jumbo_build=true
 
@@ -78,8 +74,7 @@ gn gen out/default --args='
 '
 
 export NINJA_SUMMARIZE_BUILD=1
-
-autoninja -C out/default chrome chrome_sandbox -j $(nproc)
+autoninja -C out/default chrome chrome_sandbox -j "$(nproc)"
 
 cd out/default
 
