@@ -11,6 +11,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -20,111 +21,247 @@ jobs:
         with:
           token: ${{ secrets.LINODE_PAT }}
 
-#      For some reason, Linodes created via linode-cli do not work with ssh,
-#      so we have to create the Linode manually and then pull the Linode ID
-#
-#      - name: Create Builder
-#        id: create_builder
-#        run: |
-#          builder_info="$(linode-cli linodes create \
-#            --authorized_users dclivekit \
-#            --backups_enabled false \
-#            --booted true \
-#            --image linode/ubuntu22.04 \
-#            --label chrome-builder \
-#            --private_ip false \
-#            --region us-west \
-#            --root_pass '${{ secrets.LINODE_ROOT_PASS }}' \
-#            --type g6-dedicated-4 \
-#            --json)"
-#          builder_id="$(echo $builder_info | jq -r '.[0].id')"
-#          builder_ip="$(echo $builder_info | jq -r '.[0].ipv4[0]')"
-#          echo "builder_id: $builder_id"
-#          echo "builder_ip: $builder_ip"
-#          echo "builder_id=$builder_id" >> $GITHUB_OUTPUT
-#          echo "builder_ip=$builder_ip" >> $GITHUB_OUTPUT
-#        env:
-#          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
-
-      - name: Get Builder
-        id: get_builder
-        run: |
-          builder_info="$(linode-cli linodes list --label chrome-builder --json)"
-          builder_id="$(echo $builder_info | jq -r '.[0].id')"
-          builder_ip="$(echo $builder_info | jq -r '.[0].ipv4[0]')"
-          echo "builder_id: $builder_id"
-          echo "builder_ip: $builder_ip"
-          echo "builder_id=$builder_id" >> $GITHUB_OUTPUT
-          echo "builder_ip=$builder_ip" >> $GITHUB_OUTPUT
+      - name: Create Builder
+        id: create_builder
+        shell: bash
         env:
           LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
-
-      - name: Wait for Builder
         run: |
-          status=$(linode-cli linodes view ${{ steps.get_builder.outputs.builder_id }} --json | jq -r '.[0].status')
-          while [ "$status" == "provisioning" ] || [ "$status" == "booting" ]; do \
-              echo "Builder status: $status"; \
-              sleep 5; \
-              status=$(linode-cli linodes view ${{ steps.get_builder.outputs.builder_id }} --json | jq -r '.[0].status'); \
+          set -euo pipefail
+
+          existing="$(linode-cli linodes list --label chrome-builder --json)"
+          existing_id="$(echo "$existing" | jq -r '.[0].id // empty')"
+
+          if [ -n "$existing_id" ]; then
+            echo "Deleting existing builder: $existing_id"
+            linode-cli linodes delete "$existing_id"
+            sleep 10
+          fi
+
+          builder_info="$(linode-cli linodes create \
+            --backups_enabled false \
+            --booted true \
+            --image linode/ubuntu22.04 \
+            --label chrome-builder \
+            --private_ip false \
+            --region us-west \
+            --root_pass "${{ secrets.LINODE_ROOT_PASS }}" \
+            --type g6-dedicated-4 \
+            --authorized_keys "${{ secrets.LINODE_SSH_PUBLIC_KEY }}" \
+            --json)"
+
+          echo "$builder_info"
+
+          builder_id="$(echo "$builder_info" | jq -r '.[0].id')"
+          builder_ip="$(echo "$builder_info" | jq -r '.[0].ipv4[0]')"
+
+          echo "builder_id=$builder_id" >> "$GITHUB_OUTPUT"
+          echo "builder_ip=$builder_ip" >> "$GITHUB_OUTPUT"
+
+      - name: Attach firewall to public interface
+        id: attach_firewall
+        shell: bash
+        env:
+          LINODE_PAT: ${{ secrets.LINODE_PAT }}
+        run: |
+          set -euo pipefail
+
+          linode_id="${{ steps.create_builder.outputs.builder_id }}"
+
+          firewall_json="$(curl -fsSL \
+            -H "Authorization: Bearer $LINODE_PAT" \
+            -H "Accept: application/json" \
+            "https://api.linode.com/v4/networking/firewalls?label=chrome-builder")"
+
+          firewall_id="$(echo "$firewall_json" | jq -r '.data[0].id // empty')"
+
+          if [ -z "$firewall_id" ]; then
+            echo "Firewall with label chrome-builder not found"
+            exit 1
+          fi
+
+          interfaces_json="$(curl -fsSL \
+            -H "Authorization: Bearer $LINODE_PAT" \
+            -H "Accept: application/json" \
+            "https://api.linode.com/v4/linode/instances/$linode_id/interfaces")"
+
+          interface_id="$(echo "$interfaces_json" | jq -r '
+            .data[]
+            | select(.purpose == "public")
+            | .id
+          ' | head -n1)"
+
+          if [ -z "$interface_id" ]; then
+            echo "Public interface not found for Linode $linode_id"
+            exit 1
+          fi
+
+          echo "Using firewall_id=$firewall_id"
+          echo "Using interface_id=$interface_id"
+
+          curl -fsSL \
+            -X POST \
+            -H "Authorization: Bearer $LINODE_PAT" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            "https://api.linode.com/v4/networking/firewalls/$firewall_id/devices" \
+            -d "{\"id\": $interface_id, \"type\": \"linode_interface\"}"
+
+          echo "firewall_id=$firewall_id" >> "$GITHUB_OUTPUT"
+          echo "interface_id=$interface_id" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Builder status
+        shell: bash
+        env:
+          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
+        run: |
+          set -euo pipefail
+
+          status="$(linode-cli linodes view "${{ steps.create_builder.outputs.builder_id }}" --json | jq -r '.[0].status')"
+
+          while [ "$status" = "provisioning" ] || [ "$status" = "booting" ]; do
+            echo "Builder status: $status"
+            sleep 5
+            status="$(linode-cli linodes view "${{ steps.create_builder.outputs.builder_id }}" --json | jq -r '.[0].status')"
           done
+
           echo "Builder status: $status"
-        env:
-          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
+
+          if [ "$status" != "running" ]; then
+            echo "Builder failed to reach running state"
+            exit 1
+          fi
 
       - name: Write SSH keys
+        shell: bash
         run: |
-          mkdir ~/.ssh
-          chmod 700 ~/.ssh
-          echo "${{ secrets.LINODE_SSH_PUBLIC_KEY }}" > ~/.ssh/linode_ed25519.pub
-          chmod 600 ~/.ssh/linode_ed25519.pub
-          echo "${{ secrets.LINODE_SSH_PRIVATE_KEY }}" > ~/.ssh/linode_ed25519
-          chmod 600 ~/.ssh/linode_ed25519
-          ssh-keyscan -H ${{ steps.get_builder.outputs.builder_ip }} > ~/.ssh/known_hosts
+          set -euo pipefail
 
-      - name: Setup
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.LINODE_SSH_PRIVATE_KEY }}" > ~/.ssh/linode_ed25519
+          printf '%s\n' "${{ secrets.LINODE_SSH_PUBLIC_KEY }}" > ~/.ssh/linode_ed25519.pub
+          chmod 600 ~/.ssh/linode_ed25519 ~/.ssh/linode_ed25519.pub
+
+      - name: Wait for SSH
+        shell: bash
         run: |
+          set -euo pipefail
+
+          ip="${{ steps.create_builder.outputs.builder_ip }}"
+
+          for i in $(seq 1 120); do
+            if nc -z "$ip" 22; then
+              echo "SSH is reachable"
+              break
+            fi
+            echo "Waiting for SSH on $ip..."
+            sleep 2
+          done
+
+          nc -z "$ip" 22
+          ssh-keyscan -H "$ip" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Verify SSH access
+        shell: bash
+        run: |
+          set -euo pipefail
+
           ssh -i ~/.ssh/linode_ed25519 \
-              -o PasswordAuthentication=no \
-              -t root@${{ steps.get_builder.outputs.builder_ip }} \
-              'bash -s' < ./build/chrome/scripts/setup.sh
+            -o BatchMode=yes \
+            -o PasswordAuthentication=no \
+            -o StrictHostKeyChecking=yes \
+            root@${{ steps.create_builder.outputs.builder_ip }} \
+            'echo "connected as $(whoami)"'
+
+      - name: Setup builder
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh -i ~/.ssh/linode_ed25519 \
+            -o BatchMode=yes \
+            -o PasswordAuthentication=no \
+            -o StrictHostKeyChecking=yes \
+            root@${{ steps.create_builder.outputs.builder_ip }} \
+            'bash -s' < ./build/chrome/scripts/setup.sh
+
+      - name: Verify chrome user
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh -i ~/.ssh/linode_ed25519 \
+            -o BatchMode=yes \
+            -o PasswordAuthentication=no \
+            root@${{ steps.create_builder.outputs.builder_ip }} \
+            'id chrome && sudo -iu chrome whoami'
 
       - name: Amd64
+        shell: bash
         run: |
+          set -euo pipefail
+
           ssh -i ~/.ssh/linode_ed25519 \
-              -o PasswordAuthentication=no \
-              -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
-              'bash -s ${{ inputs.chrome_version }}' < ./build/chrome/scripts/amd64.sh
+            -o BatchMode=yes \
+            -o PasswordAuthentication=no \
+            -o ServerAliveInterval=60 \
+            root@${{ steps.create_builder.outputs.builder_ip }} \
+            "sudo -iu chrome bash -s -- '${{ inputs.chrome_version }}'" \
+            < ./build/chrome/scripts/amd64.sh
 
       - name: Arm64
+        shell: bash
         run: |
+          set -euo pipefail
+
           ssh -i ~/.ssh/linode_ed25519 \
-              -o PasswordAuthentication=no \
-              -o ServerAliveInterval=60 \
-              -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
-              'bash -s ${{ inputs.chrome_version }}' < ./build/chrome/scripts/arm64.sh
+            -o BatchMode=yes \
+            -o PasswordAuthentication=no \
+            -o ServerAliveInterval=60 \
+            root@${{ steps.create_builder.outputs.builder_ip }} \
+            "sudo -iu chrome bash -s -- '${{ inputs.chrome_version }}'" \
+            < ./build/chrome/scripts/arm64.sh
 
       - name: Drivers
+        shell: bash
         run: |
+          set -euo pipefail
+
           ssh -i ~/.ssh/linode_ed25519 \
-              -o PasswordAuthentication=no \
-              -o ServerAliveInterval=60 \
-              -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
-              'bash -s ${{ inputs.chrome_version }}' < ./build/chrome/scripts/driver.sh
+            -o BatchMode=yes \
+            -o PasswordAuthentication=no \
+            -o ServerAliveInterval=60 \
+            root@${{ steps.create_builder.outputs.builder_ip }} \
+            "sudo -iu chrome bash -s -- '${{ inputs.chrome_version }}'" \
+            < ./build/chrome/scripts/driver.sh
 
       - name: Prepare artifacts
+        shell: bash
         run: |
+          set -euo pipefail
+
           ssh -i ~/.ssh/linode_ed25519 \
-              -o PasswordAuthentication=no \
-              -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
-              'zip -r output.zip ./output'
+            -o BatchMode=yes \
+            -o PasswordAuthentication=no \
+            root@${{ steps.create_builder.outputs.builder_ip }} \
+            'sudo -iu chrome bash -lc "cd /home/chrome && zip -r output.zip ./output"'
 
       - name: Download artifacts
+        shell: bash
         run: |
+          set -euo pipefail
+
+          mkdir -p "${{ github.workspace }}/build/chrome"
+
           scp -i ~/.ssh/linode_ed25519 \
-              -o PasswordAuthentication=no \
-              chrome@${{ steps.get_builder.outputs.builder_ip }}:/home/chrome/output.zip \
-              ${{ github.workspace }}/build/chrome/output.zip
-          unzip ${{ github.workspace }}/build/chrome/output.zip -d ${{ github.workspace }}/build/chrome
+            -o BatchMode=yes \
+            -o PasswordAuthentication=no \
+            root@${{ steps.create_builder.outputs.builder_ip }}:/home/chrome/output.zip \
+            "${{ github.workspace }}/build/chrome/output.zip"
+
+          unzip -o "${{ github.workspace }}/build/chrome/output.zip" -d "${{ github.workspace }}/build/chrome"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -145,6 +282,10 @@ jobs:
           tags: livekit/chrome-installer:${{ inputs.chrome_version }}
 
       - name: Delete Linode
-        run: linode-cli linodes delete ${{ steps.get_builder.outputs.builder_id }}
+        if: always()
+        shell: bash
         env:
           LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
+        run: |
+          set +e
+          linode-cli linodes delete "${{ steps.create_builder.outputs.builder_id }}"
