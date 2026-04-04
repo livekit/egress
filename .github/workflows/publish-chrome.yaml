@@ -115,7 +115,7 @@ jobs:
             --private_ip false \
             --region us-west \
             --root_pass "${{ secrets.LINODE_ROOT_PASS }}" \
-            --type g6-dedicated-4 \
+            --type g6-dedicated-56 \
             --authorized_keys "${{ secrets.LINODE_SSH_PUBLIC_KEY }}" \
             --firewall_id "${{ steps.firewall.outputs.firewall_id }}" \
             --metadata.user_data "${{ steps.userdata.outputs.user_data_b64 }}" \
