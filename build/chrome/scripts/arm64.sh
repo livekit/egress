@@ -10,12 +10,19 @@ sudo apt-get install -y \
   python3 \
   sudo \
   zip
-git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+
+if [ ! -d "$HOME/depot_tools" ]; then
+  git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git "$HOME/depot_tools"
+fi
 export PATH="$PATH:$HOME/depot_tools"
-mkdir chromium
-cd chromium || exit
+
+mkdir -p "$HOME/chromium"
+cd "$HOME/chromium"
+
 fetch --nohooks --no-history chromium
-echo 'solutions = [
+
+cat > .gclient <<'EOF'
+solutions = [
   {
     "name": "src",
     "url": "https://chromium.googlesource.com/chromium/src.git",
@@ -26,20 +33,30 @@ echo 'solutions = [
     },
     "target_cpu": "arm64",
   },
-]' | tee '.gclient' > /dev/null
-cd src || exit
-git fetch --tags
-git checkout -b stable "$1"
-gclient sync -D --with_branch_heads --with_tags
+]
+EOF
+
+cd src
+
+git fetch origin "refs/tags/$1:refs/tags/$1"
+git checkout -B stable "tags/$1"
+
+gclient sync -D --with_branch_heads
+
 ./build/install-build-deps.sh
 ./build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
 gclient runhooks
+
 gn gen out/default --args='target_cpu="arm64" proprietary_codecs=true ffmpeg_branding="Chrome" enable_nacl=false is_debug=false symbol_level=0 v8_symbol_level=0 dcheck_always_on=false is_official_build=true'
 autoninja -C out/default chrome chrome_sandbox
-cd out/default || exit
+
+cd out/default
+
 mkdir -p "$HOME/output/arm64/locales"
+
 mv locales/en-US.pak "$HOME/output/arm64/locales/"
-mv chrome \
+mv \
+  chrome \
   chrome-wrapper \
   chrome_100_percent.pak \
   chrome_200_percent.pak \
