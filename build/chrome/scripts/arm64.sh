@@ -78,8 +78,6 @@ gn gen out/default --args='
   v8_symbol_level=0
 
   enable_nacl=false
-  enable_printing=false
-
   rtc_use_pipewire=false
 
   is_component_build=false
