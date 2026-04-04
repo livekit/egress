@@ -62,53 +62,60 @@ jobs:
         id: attach_firewall
         shell: bash
         env:
-          LINODE_PAT: ${{ secrets.LINODE_PAT }}
+          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
         run: |
           set -euo pipefail
 
           linode_id="${{ steps.create_builder.outputs.builder_id }}"
 
-          firewall_json="$(curl -fsSL \
-            -H "Authorization: Bearer $LINODE_PAT" \
-            -H "Accept: application/json" \
-            "https://api.linode.com/v4/networking/firewalls?label=chrome-builder")"
-
-          firewall_id="$(echo "$firewall_json" | jq -r '.data[0].id // empty')"
-
+          firewall_id="$(linode-cli firewalls list --label chrome-builder --json | jq -r '.[0].id // empty')"
           if [ -z "$firewall_id" ]; then
             echo "Firewall with label chrome-builder not found"
             exit 1
           fi
 
-          interfaces_json="$(curl -fsSL \
-            -H "Authorization: Bearer $LINODE_PAT" \
-            -H "Accept: application/json" \
-            "https://api.linode.com/v4/linode/instances/$linode_id/interfaces")"
-
+          interfaces_json="$(linode-cli linodes interfaces-list "$linode_id" --json)"
           interface_id="$(echo "$interfaces_json" | jq -r '
-            .data[]
-            | select(.purpose == "public")
-            | .id
+            .[] | select(.purpose == "public") | .id
           ' | head -n1)"
 
           if [ -z "$interface_id" ]; then
             echo "Public interface not found for Linode $linode_id"
+            echo "$interfaces_json"
             exit 1
           fi
 
           echo "Using firewall_id=$firewall_id"
           echo "Using interface_id=$interface_id"
 
-          curl -fsSL \
-            -X POST \
-            -H "Authorization: Bearer $LINODE_PAT" \
-            -H "Accept: application/json" \
-            -H "Content-Type: application/json" \
-            "https://api.linode.com/v4/networking/firewalls/$firewall_id/devices" \
-            -d "{\"id\": $interface_id, \"type\": \"linode_interface\"}"
+          interface_json="$(linode-cli linodes interface-view "$linode_id" "$interface_id" --json)"
+
+          ipv4_addresses="$(echo "$interface_json" | jq -c '.[0].public.ipv4.addresses')"
+          ipv6_ranges="$(echo "$interface_json" | jq -c '.[0].public.ipv6.ranges // []')"
+          default_route_ipv4="$(echo "$interface_json" | jq -r '.[0].default_route.ipv4')"
+          default_route_ipv6="$(echo "$interface_json" | jq -r '.[0].default_route.ipv6')"
+
+          linode-cli linodes interface-update "$linode_id" "$interface_id" \
+            --firewall_id "$firewall_id" \
+            --default_route.ipv4 "$default_route_ipv4" \
+            --default_route.ipv6 "$default_route_ipv6" \
+            --public.ipv4.addresses "$ipv4_addresses" \
+            --public.ipv6.ranges "$ipv6_ranges" \
+            --json
 
           echo "firewall_id=$firewall_id" >> "$GITHUB_OUTPUT"
           echo "interface_id=$interface_id" >> "$GITHUB_OUTPUT"
+
+      - name: Verify firewall attachment
+        shell: bash
+        env:
+          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
+        run: |
+          set -euo pipefail
+          linode-cli linodes interface-firewalls-list \
+            "${{ steps.create_builder.outputs.builder_id }}" \
+            "${{ steps.attach_firewall.outputs.interface_id }}" \
+            --json
 
       - name: Wait for Builder status
         shell: bash
