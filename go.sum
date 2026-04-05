@@ -172,8 +172,8 @@ github.com/go-gst/go-pointer v0.0.0-20241127163939-ba766f075b4c h1:x8kKRVDmz5BRl
 github.com/go-gst/go-pointer v0.0.0-20241127163939-ba766f075b4c/go.mod h1:qKw5ZZ0U58W6PU/7F/Lopv+14nKYmdXlOd7VnAZ17Mk=
 github.com/go-jose/go-jose/v3 v3.0.4 h1:Wp5HA7bLQcKnf6YYao/4kpRpVMp/yf6+pJKV8WFSaNY=
 github.com/go-jose/go-jose/v3 v3.0.4/go.mod h1:5b+7YgP7ZICgJDBdfjZaIt+H/9L9T/YQrVfLAMboGkQ=
-github.com/go-jose/go-jose/v4 v4.1.3 h1:CVLmWDhDVRa6Mi/IgCgaopNosCaHz7zrMeF9MlZRkrs=
-github.com/go-jose/go-jose/v4 v4.1.3/go.mod h1:x4oUasVrzR7071A4TnHLGSPpNOm2a21K9Kf04k1rs08=
+github.com/go-jose/go-jose/v4 v4.1.4 h1:moDMcTHmvE6Groj34emNPLs/qtYXRVcd6S7NHbHz3kA=
+github.com/go-jose/go-jose/v4 v4.1.4/go.mod h1:x4oUasVrzR7071A4TnHLGSPpNOm2a21K9Kf04k1rs08=
 github.com/go-json-experiment/json v0.0.0-20250417205406-170dfdcf87d1 h1:+VexzzkMLb1tnvpuQdGT/DicIRW7MN8ozsXqBMgp0Hk=
 github.com/go-json-experiment/json v0.0.0-20250417205406-170dfdcf87d1/go.mod h1:TiCD2a1pcmjd7YnhGH0f/zKNcCD06B029pHhzV23c2M=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
@@ -256,8 +256,6 @@ github.com/livekit/protocol v1.45.2-0.20260325115805-976c55192006 h1:SWmjEXSybRh
 github.com/livekit/protocol v1.45.2-0.20260325115805-976c55192006/go.mod h1:63AUi0vQak6Y6gPqSBHLc+ExYTUwEqF/m4b2IRW1iO0=
 github.com/livekit/psrpc v0.7.1 h1:ms37az0QTD3UXIWuUC5D/SkmKOlRMVRsI261eBWu/Vw=
 github.com/livekit/psrpc v0.7.1/go.mod h1:bZ4iHFQptTkbPnB0LasvRNu/OBYXEu1NA6O5BMFo9kk=
-github.com/livekit/server-sdk-go/v2 v2.16.2-0.20260325214428-fbcb73e74a2f h1:6mLyX/5kObrOVNZJiAB5y85fYFtCpQWI/oz2tI75gkw=
-github.com/livekit/server-sdk-go/v2 v2.16.2-0.20260325214428-fbcb73e74a2f/go.mod h1:oQbYijcbPzfjBAOzoq7tz9Ktqur8JNRCd923VP8xOQQ=
 github.com/livekit/server-sdk-go/v2 v2.16.2-0.20260401161108-50e969e2961f h1:xSUtbUe3wBIFG/Ki3KEIsmjkOcfbpSOYJh2xxwJEllg=
 github.com/livekit/server-sdk-go/v2 v2.16.2-0.20260401161108-50e969e2961f/go.mod h1:oQbYijcbPzfjBAOzoq7tz9Ktqur8JNRCd923VP8xOQQ=
 github.com/livekit/storage v0.0.0-20251113154014-aa1f4d0ce057 h1:6XTEL0cSGkDPWYl1nAS/3cNOK1QoIo11C/O4pc4vPMg=
