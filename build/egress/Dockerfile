@@ -26,9 +26,9 @@ ENV TARGETPLATFORM=${TARGETPLATFORM}
 WORKDIR /workspace
 
 # install go
-RUN wget https://go.dev/dl/go1.25.8.linux-${TARGETARCH}.tar.gz && \
+RUN wget https://go.dev/dl/go1.26.1.linux-${TARGETARCH}.tar.gz && \
     rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go1.25.8.linux-${TARGETARCH}.tar.gz
+    tar -C /usr/local -xzf go1.26.1.linux-${TARGETARCH}.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 # download go modules
@@ -72,7 +72,7 @@ RUN apt-get update && \
     gstreamer1.0-plugins-base-
 
 # install chrome
-COPY --from=livekit/chrome-installer:125.0.6422.141 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:146.0.7680.177 /chrome-installer /chrome-installer
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 
 # clean up

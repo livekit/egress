@@ -40,7 +40,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: build/test/fetch-media-samples.sh
- 
+
       - uses: actions/cache@v5
         with:
           path: |
@@ -61,7 +61,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: 1.25.8
+          go-version: 1.26.1
 
       - name: Download Go modules
         run: go mod download
