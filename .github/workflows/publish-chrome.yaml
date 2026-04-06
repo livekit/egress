@@ -7,6 +7,10 @@ on:
         description: "Version of Chrome to build"
         required: true
         type: string
+      image_tag:
+        description: "Docker image tag (defaults to chrome_version if empty)"
+        required: false
+        type: string
 
 jobs:
   build:
@@ -307,7 +311,7 @@ jobs:
           file: ./build/chrome/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: livekit/chrome-installer:${{ inputs.chrome_version }}
+          tags: livekit/chrome-installer:${{ inputs.image_tag || inputs.chrome_version }}
 
       - name: Delete created builder on success
         if: success()
