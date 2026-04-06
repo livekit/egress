@@ -104,7 +104,66 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
+	c := newController(conf, ipcServiceClient)
+
+	// initialize gst
+	go func() {
+		_, span := tracer.Start(ctx, "gst.Init")
+		defer span.End()
+		gst.Init(nil)
+		gst.SetLogFunction(c.gstLog)
+		close(c.callbacks.GstReady)
+	}()
+
+	// create source
 	var err error
+	c.src, err = source.New(ctx, conf, c.callbacks)
+	if err != nil {
+		return nil, err
+	}
+
+	// create pipeline
+	<-c.callbacks.GstReady
+	if err = c.BuildPipeline(); err != nil {
+		c.src.Close()
+		return nil, err
+	}
+
+	return c, nil
+}
+
+// NewWithSource creates a Controller with a pre-built source. This is used when
+// the source is constructed externally (e.g. TestSource for non-live pipeline
+// testing, or ReplaySource for offline export). The source must have already
+// populated the PipelineConfig with track information before calling this.
+func NewWithSource(ctx context.Context, conf *config.PipelineConfig, src source.Source) (*Controller, error) {
+	c := newController(conf, nil)
+	c.src = src
+
+	// initialize gst
+	go func() {
+		gst.Init(nil)
+		gst.SetLogFunction(c.gstLog)
+		close(c.callbacks.GstReady)
+	}()
+
+	// create pipeline
+	<-c.callbacks.GstReady
+	if err := c.BuildPipeline(); err != nil {
+		c.src.Close()
+		return nil, err
+	}
+
+	return c, nil
+}
+
+// Callbacks returns the pipeline callbacks. Sources that need to wait for
+// GstReady before creating appsrc elements can use this.
+func (c *Controller) Callbacks() *gstreamer.Callbacks {
+	return c.callbacks
+}
+
+func newController(conf *config.PipelineConfig, ipcServiceClient ipc.EgressServiceClient) *Controller {
 	c := &Controller{
 		PipelineConfig:   conf,
 		ipcServiceClient: ipcServiceClient,
@@ -129,30 +188,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 		logger.Debugw("debug dot requested", "reason", reason)
 		c.generateDotFile(reason)
 	})
-
-	// initialize gst
-	go func() {
-		_, span := tracer.Start(ctx, "gst.Init")
-		defer span.End()
-		gst.Init(nil)
-		gst.SetLogFunction(c.gstLog)
-		close(c.callbacks.GstReady)
-	}()
-
-	// create source
-	c.src, err = source.New(ctx, conf, c.callbacks)
-	if err != nil {
-		return nil, err
-	}
-
-	// create pipeline
-	<-c.callbacks.GstReady
-	if err = c.BuildPipeline(); err != nil {
-		c.src.Close()
-		return nil, err
-	}
-
-	return c, nil
+	return c
 }
 
 func (c *Controller) BuildPipeline() error {
@@ -168,9 +204,9 @@ func (c *Controller) BuildPipeline() error {
 		c.stopped.Break()
 		return nil
 	})
-	if c.SourceType == types.SourceTypeSDK {
+	if sdkSrc, ok := c.src.(*source.SDKSource); ok {
 		p.SetEOSFunc(func() bool {
-			c.src.(*source.SDKSource).CloseWriters()
+			sdkSrc.CloseWriters()
 			return true
 		})
 	}
@@ -519,11 +555,11 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ENDING)
-			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
+			c.sendHandlerUpdate(ctx, c.Info)
 			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_ENDING:
-			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
+			c.sendHandlerUpdate(ctx, c.Info)
 			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
@@ -856,7 +892,7 @@ func (c *Controller) updateStartTime(startedAt int64) {
 
 	if c.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
 		c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ACTIVE)
-		_, _ = c.ipcServiceClient.HandlerUpdate(context.Background(), c.Info)
+		c.sendHandlerUpdate(context.Background(), c.Info)
 	}
 }
 
@@ -894,7 +930,13 @@ func (c *Controller) streamUpdated(ctx context.Context) {
 		}
 	}
 
-	_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
+	c.sendHandlerUpdate(ctx, c.Info)
+}
+
+func (c *Controller) sendHandlerUpdate(ctx context.Context, info *livekit.EgressInfo) {
+	if c.ipcServiceClient != nil {
+		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, info)
+	}
 }
 
 func (c *Controller) updateEndTime() {

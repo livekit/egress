@@ -58,6 +58,11 @@ func BuildFileBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstr
 	if err = sink.SetProperty("sync", false); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
+	if !p.Live {
+		if err = sink.SetProperty("async", false); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+	}
 
 	if err = b.AddElements(mux.GetElement(), sink); err != nil {
 		return nil, err

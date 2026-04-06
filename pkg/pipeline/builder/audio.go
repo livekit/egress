@@ -145,7 +145,7 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 			return err
 		}
 	} else {
-		queue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_queue", audioBinName), p.Latency.PipelineLatency, leakyQueue)
+		queue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_queue", audioBinName), p.Latency.PipelineLatency, p.Live)
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -220,8 +220,10 @@ func (b *AudioBin) buildSDKInput() error {
 			return err
 		}
 	}
-	if err := b.addAudioTestSrcBin(); err != nil {
-		return err
+	if b.conf.Live {
+		if err := b.addAudioTestSrcBin(); err != nil {
+			return err
+		}
 	}
 	if err := b.addMixer(); err != nil {
 		return err
@@ -252,8 +254,13 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 		return false
 	})
 	ts.AppSrc.SetArg("format", "time")
-	if err := ts.AppSrc.SetProperty("is-live", true); err != nil {
+	if err := ts.AppSrc.SetProperty("is-live", b.conf.Live); err != nil {
 		return err
+	}
+	if !b.conf.Live {
+		if err := ts.AppSrc.SetProperty("block", true); err != nil {
+			return err
+		}
 	}
 	if err := appSrcBin.AddElement(ts.AppSrc.Element); err != nil {
 		return err
@@ -475,7 +482,124 @@ func (b *AudioBin) addMixer() error {
 
 	subscribeForQoS(audioMixer)
 
+	if !b.conf.Live {
+		installMixerProbes(audioMixer)
+	}
+
 	return b.bin.AddElements(audioMixer, mixedCaps)
+}
+
+// installTestSrcDisconnect sets up a probe on the mixer that sends EOS to the
+// audiotestsrc once the first real audio buffer arrives from our appsrc path.
+// The audiotestsrc is only needed for preroll — once real data is flowing, it
+func installMixerProbes(mixer *gst.Element) {
+	// Install probes on sink pads as they're created (request pads)
+	mixer.Connect("pad-added", func(_ *gst.Element, pad *gst.Pad) {
+		name := pad.GetName()
+		var count uint64
+		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			count++
+			buf := info.GetBuffer()
+			if buf != nil && (count <= 5 || count%100 == 0) {
+				logger.Infow("mixer sink probe",
+					"pad", name,
+					"count", count,
+					"pts", buf.PresentationTimestamp(),
+					"dur", buf.Duration(),
+					"size", buf.GetSize(),
+				)
+			}
+			return gst.PadProbeOK
+		})
+		pad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if event := info.GetEvent(); event != nil {
+				logger.Infow("mixer sink event", "pad", name, "type", event.Type().String())
+			}
+			return gst.PadProbeOK
+		})
+		logger.Infow("mixer probe installed", "pad", name)
+	})
+
+	// Src pad is static — probe it directly
+	srcPad := mixer.GetStaticPad("src")
+	if srcPad != nil {
+		var srcCount uint64
+		srcPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			srcCount++
+			buf := info.GetBuffer()
+			if buf != nil && (srcCount <= 5 || srcCount%100 == 0) {
+				logger.Infow("mixer src probe",
+					"count", srcCount,
+					"pts", buf.PresentationTimestamp(),
+					"dur", buf.Duration(),
+					"size", buf.GetSize(),
+				)
+			}
+			return gst.PadProbeOK
+		})
+		srcPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if event := info.GetEvent(); event != nil {
+				logger.Infow("mixer src event", "type", event.Type().String())
+			}
+			return gst.PadProbeOK
+		})
+	}
+}
+
+func installQueueProbes(queue *gst.Element, name string) {
+	sinkPad := queue.GetStaticPad("sink")
+	if sinkPad != nil {
+		var sinkBufs uint64
+		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			sinkBufs++
+			buf := info.GetBuffer()
+			if buf != nil {
+				curTime, _ := queue.GetProperty("current-level-time")
+				curBufs, _ := queue.GetProperty("current-level-buffers")
+				logger.Infow("queue sink buf",
+					"queue", name,
+					"count", sinkBufs,
+					"pts", buf.PresentationTimestamp(),
+					"dur", buf.Duration(),
+					"size", buf.GetSize(),
+					"qTime", curTime,
+					"qBufs", curBufs,
+				)
+			}
+			return gst.PadProbeOK
+		})
+		sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if event := info.GetEvent(); event != nil {
+				logger.Infow("queue sink event", "queue", name, "type", event.Type().String(), "bufsSoFar", sinkBufs)
+			}
+			return gst.PadProbeOK
+		})
+	}
+
+	srcPad := queue.GetStaticPad("src")
+	if srcPad != nil {
+		var srcBufs uint64
+		srcPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			srcBufs++
+			buf := info.GetBuffer()
+			if buf != nil && (srcBufs <= 3 || srcBufs%100 == 0) {
+				logger.Infow("queue src buf",
+					"queue", name,
+					"count", srcBufs,
+					"pts", buf.PresentationTimestamp(),
+					"dur", buf.Duration(),
+					"size", buf.GetSize(),
+				)
+			}
+			return gst.PadProbeOK
+		})
+		srcPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if event := info.GetEvent(); event != nil {
+				logger.Infow("queue src event", "queue", name, "type", event.Type().String(), "srcBufsSoFar", srcBufs)
+			}
+			return gst.PadProbeOK
+		})
+	}
 }
 
 func (b *AudioBin) addEncoder() error {
@@ -530,6 +654,10 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel livek
 	audioQueue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_input_queue", audioBinName), p.Latency.PipelineLatency, isLeaky)
 	if err != nil {
 		return err
+	}
+
+	if !p.Live {
+		installQueueProbes(audioQueue, "audio_input_queue")
 	}
 
 	audioConvert, err := gst.NewElement("audioconvert")

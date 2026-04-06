@@ -133,7 +133,7 @@ func (h *Handler) Run() {
 	}
 
 	// Replay coordination: signal ready and get timing
-	if h.conf.IsReplay {
+	if !h.conf.Live {
 		rctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		resp, err := h.ipcServiceClient.ReplayReady(rctx, &rpc.EgressReadyRequest{
 			EgressId: h.conf.Info.EgressId,

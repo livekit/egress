@@ -232,7 +232,9 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 		if message == msgStreamingNotNegotiated {
 			// send eosSent to app src
 			logger.Debugw("streaming stopped", "name", name)
-			c.src.(*source.SDKSource).StreamStopped(name)
+			if sdkSrc, ok := c.src.(*source.SDKSource); ok {
+				sdkSrc.StreamStopped(name)
+			}
 			return nil
 		}
 
@@ -281,7 +283,9 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 		trackID := s[4:]
 		logger.Debugw("appsrc state change", "trackID", trackID, "oldState", oldState.String(), "newState", newState.String())
 		if newState == gst.StatePlaying {
-			c.src.(*source.SDKSource).Playing(trackID)
+			if sdkSrc, ok := c.src.(*source.SDKSource); ok {
+				sdkSrc.Playing(trackID)
+			}
 		}
 		return
 	}
