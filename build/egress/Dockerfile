@@ -73,6 +73,8 @@ RUN apt-get update && \
 
 # install chrome
 COPY --from=livekit/chrome-installer:146.0.7680.177 /chrome-installer /chrome-installer
+# TODO: remove sed workaround when chrome-installer image is rebuilt with fixed install-chrome
+RUN sed -i 's/libasound2 /libasound2t64 /' /chrome-installer/install-chrome
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 
 # clean up
