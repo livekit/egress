@@ -21,6 +21,7 @@
 package testfeeder
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -68,6 +69,7 @@ type TrackFeeder struct {
 	codec      types.MimeType
 	startTS    uint32
 	currentTS  uint32
+	ptsOffset  time.Duration // accumulated offset from GAP events
 }
 
 // TrackFeederParams configures a TrackFeeder.
@@ -154,6 +156,21 @@ func (f *TrackFeeder) Feed() error {
 			)
 			return nil
 		}
+		var gapErr *ErrGap
+		if errors.As(err, &gapErr) {
+			pts := rtpToDuration(f.currentTS, clockRate)
+			logger.Infow("feeder sending GAP event",
+				"pts", pts,
+				"gapDuration", gapErr.Duration,
+				"framesBeforeGap", frameCount,
+			)
+			if err := f.sendGapEvent(pts+f.ptsOffset, gapErr.Duration); err != nil {
+				return fmt.Errorf("sending GAP event: %w", err)
+			}
+			// Accumulate the gap so subsequent buffer PTS values are shifted forward.
+			f.ptsOffset += gapErr.Duration
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("reading frame: %w", err)
 		}
@@ -196,7 +213,7 @@ func (f *TrackFeeder) pushRTPPacket(pkt *rtp.Packet, clockRate uint32) error {
 		return fmt.Errorf("marshaling RTP packet: %w", err)
 	}
 
-	pts := rtpToDuration(pkt.Timestamp-f.startTS, clockRate)
+	pts := rtpToDuration(pkt.Timestamp-f.startTS, clockRate) + f.ptsOffset
 
 	b := gst.NewBufferFromBytes(buf)
 	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
@@ -210,6 +227,26 @@ func (f *TrackFeeder) pushRTPPacket(pkt *rtp.Packet, clockRate uint32) error {
 
 func (f *TrackFeeder) sendEOS() {
 	f.src.EndStream()
+}
+
+// sendGapEvent pushes a GAP event downstream from the appsrc, telling the
+// mixer to insert silence for this track over the given duration.
+//
+// GAP is a downstream serialized event. We push it via Pad.PushEvent on the
+// appsrc's src pad (not SendEvent, which is for upstream events).
+func (f *TrackFeeder) sendGapEvent(pts time.Duration, duration time.Duration) error {
+	event := gst.NewGapEvent(
+		gst.ClockTime(uint64(pts)),
+		gst.ClockTime(uint64(duration)),
+	)
+	srcPad := f.src.GetStaticPad("src")
+	if srcPad == nil {
+		return fmt.Errorf("appsrc has no src pad")
+	}
+	if !srcPad.PushEvent(event) {
+		return fmt.Errorf("failed to push GAP event on appsrc src pad")
+	}
+	return nil
 }
 
 // rtpToDuration converts an RTP timestamp delta to a time.Duration.

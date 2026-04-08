@@ -82,6 +82,11 @@ type TrackDef struct {
 
 	// TrackID is an optional identifier. Auto-generated if empty.
 	TrackID string
+
+	// Reader optionally overrides the file-based reader. When set, Path is
+	// ignored and this reader is used directly. This allows wrapping readers
+	// (e.g. SlowReader) for testing.
+	Reader FrameReader
 }
 
 // NewTestSource creates a TestSource that populates the PipelineConfig with
@@ -101,10 +106,14 @@ func NewTestSource(conf *config.PipelineConfig, defs []TrackDef) (*TestSource, e
 			def.TrackID = fmt.Sprintf("test_track_%d", i)
 		}
 
-		reader, err := openReader(def)
-		if err != nil {
-			s.closeReaders()
-			return nil, fmt.Errorf("opening %s: %w", def.Path, err)
+		reader := def.Reader
+		if reader == nil {
+			var err error
+			reader, err = openReader(def)
+			if err != nil {
+				s.closeReaders()
+				return nil, fmt.Errorf("opening %s: %w", def.Path, err)
+			}
 		}
 
 		src, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", def.TrackID))
