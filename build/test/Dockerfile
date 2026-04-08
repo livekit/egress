@@ -111,9 +111,8 @@ COPY --from=1 /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 # install chrome
-COPY --from=livekit/chrome-installer:146.0.7680.177 /chrome-installer /chrome-installer
-# TODO: remove sed workaround when chrome-installer image is rebuilt with fixed install-chrome
-RUN sed -i 's/libasound2 /libasound2t64 /' /chrome-installer/install-chrome
+COPY --from=livekit/chrome-installer:146.0.7680.177-1 /chrome-installer /chrome-installer
+
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 
 # clean up

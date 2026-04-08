@@ -32,7 +32,7 @@ import (
 const (
 	gstVersion      = "1.24.12"
 	libniceVersion  = "0.1.21"
-	chromiumVersion = "146.0.7680.177"
+	chromiumVersion = "146.0.7680.177-1"
 	dockerBuild     = "docker build"
 	dockerBuildX    = "docker buildx build --push --platform linux/amd64,linux/arm64"
 )
