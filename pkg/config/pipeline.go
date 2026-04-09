@@ -59,7 +59,14 @@ type PipelineConfig struct {
 	Info            *livekit.EgressInfo        `yaml:"-"`
 	Manifest        *Manifest                  `yaml:"-"`
 	StorageReporter storageobs.ProjectReporter `yaml:"-"`
-	IsReplay        bool                       `yaml:"-"`
+	Live            bool                       `yaml:"-"`
+}
+
+// IsReplay returns true when this is a replay/export pipeline. Use this for
+// replay-specific integration points (IPC calls, storage access). For generic
+// pipeline behavior (is-live, leaky queues, backpressure) use the Live field.
+func (p *PipelineConfig) IsReplay() bool {
+	return !p.Live
 }
 
 var (
@@ -151,6 +158,7 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 		},
 		Outputs:         make(map[types.EgressType][]OutputConfig),
 		StorageReporter: storageobs.NewNoopProjectReporter(),
+		Live:            true,
 	}
 
 	if err := yaml.Unmarshal([]byte(confString), p); err != nil {
@@ -177,6 +185,7 @@ func GetValidatedPipelineConfig(conf *ServiceConfig, req *rpc.StartEgressRequest
 		BaseConfig: conf.BaseConfig,
 		TmpDir:     path.Join(TmpDir, req.EgressId),
 		Outputs:    make(map[types.EgressType][]OutputConfig),
+		Live:       true,
 	}
 
 	return p, p.Update(req)
@@ -417,7 +426,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 	case *rpc.StartEgressRequest_Replay:
-		p.IsReplay = true
 		replayReq := req.Replay
 		clone := proto.Clone(replayReq).(*livekit.ExportReplayRequest)
 		p.Info.Request = &livekit.EgressInfo_Replay{

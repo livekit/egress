@@ -145,7 +145,7 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 			return err
 		}
 	} else {
-		queue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_queue", audioBinName), p.Latency.PipelineLatency, leakyQueue)
+		queue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_queue", audioBinName), p.Latency.PipelineLatency, p.Live)
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -220,8 +220,10 @@ func (b *AudioBin) buildSDKInput() error {
 			return err
 		}
 	}
-	if err := b.addAudioTestSrcBin(); err != nil {
-		return err
+	if b.conf.Live {
+		if err := b.addAudioTestSrcBin(); err != nil {
+			return err
+		}
 	}
 	if err := b.addMixer(); err != nil {
 		return err
@@ -252,8 +254,13 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 		return false
 	})
 	ts.AppSrc.SetArg("format", "time")
-	if err := ts.AppSrc.SetProperty("is-live", true); err != nil {
+	if err := ts.AppSrc.SetProperty("is-live", b.conf.Live); err != nil {
 		return err
+	}
+	if !b.conf.Live {
+		if err := ts.AppSrc.SetProperty("block", true); err != nil {
+			return err
+		}
 	}
 	if err := appSrcBin.AddElement(ts.AppSrc.Element); err != nil {
 		return err

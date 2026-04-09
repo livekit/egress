@@ -222,6 +222,16 @@ func (p *PipelineConfig) updateOutputs(req *livekit.ExportReplayRequest) error {
 		return errors.ErrInvalidInput("output")
 	}
 
+	// Non-live pipelines produce data faster than realtime. Stream outputs
+	// (RTMP, WebSocket) cannot ingest faster than 1x playback speed.
+	if !p.Live {
+		for _, output := range req.Outputs {
+			if _, ok := output.Config.(*livekit.Output_Stream); ok {
+				return errors.ErrNotSupported("stream output for non-live pipeline")
+			}
+		}
+	}
+
 	var hasFile, hasStream, hasSegments bool
 	var fileCount, streamCount, segmentCount int
 
