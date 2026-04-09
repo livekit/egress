@@ -61,7 +61,7 @@ func newImageSink(
 	callbacks *gstreamer.Callbacks,
 	monitor *stats.HandlerMonitor,
 ) (*ImageSink, error) {
-	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.Info)
+	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.Info, conf.StorageObserver)
 	if err != nil {
 		return nil, err
 	}
