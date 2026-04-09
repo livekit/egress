@@ -80,7 +80,7 @@ func newSegmentSink(
 	callbacks *gstreamer.Callbacks,
 	monitor *stats.HandlerMonitor,
 ) (*SegmentSink, error) {
-	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.Info, conf.StorageObserver)
+	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.StorageObserver, conf.Info)
 	if err != nil {
 		return nil, err
 	}

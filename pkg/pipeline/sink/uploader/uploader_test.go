@@ -40,7 +40,7 @@ func TestUploader(t *testing.T) {
 	}
 
 	info := &livekit.EgressInfo{}
-	u, err := New(primary, backup, nil, info, nil)
+	u, err := New(primary, backup, nil, nil, info)
 	require.NoError(t, err)
 
 	filepath := "uploader_test.go"

@@ -46,7 +46,7 @@ type store struct {
 	name string
 }
 
-func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, info *livekit.EgressInfo, storageObserver config.StorageObserver) (*Uploader, error) {
+func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, storageObserver config.StorageObserver, info *livekit.EgressInfo) (*Uploader, error) {
 	p, err := getUploader(primary)
 	if err != nil {
 		return nil, err
