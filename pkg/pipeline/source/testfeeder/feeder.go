@@ -17,7 +17,7 @@
 // OGG), packetizes the frames into RTP packets, and pushes them to an appsrc as
 // fast as the pipeline will accept. This is used to test the egress GStreamer
 // pipeline in non-live (faster-than-realtime) mode without needing a live
-// WebRTC source or the full replay infrastructure.
+// WebRTC source.
 package testfeeder
 
 import (

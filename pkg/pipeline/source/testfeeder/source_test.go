@@ -42,19 +42,34 @@ func init() {
 
 // mediaSamplesDir returns the path to the media-samples directory.
 // Set MEDIA_SAMPLES_DIR env var to override, otherwise defaults to the
-// cloud-egress media-samples relative to this repo.
+// media-samples directory at the repo root.
 func mediaSamplesDir(t *testing.T) string {
 	if dir := os.Getenv("MEDIA_SAMPLES_DIR"); dir != "" {
 		return dir
 	}
-	// Default: assume egress and cloud-egress are sibling dirs
-	dir := filepath.Join("..", "..", "..", "..", "..", "cloud-egress", "media-samples")
-	abs, err := filepath.Abs(dir)
-	require.NoError(t, err)
-	if _, err := os.Stat(abs); err != nil {
-		t.Skipf("media-samples not found at %s (set MEDIA_SAMPLES_DIR)", abs)
+	dir := repoRoot(t)
+	samples := filepath.Join(dir, "media-samples")
+	if _, err := os.Stat(samples); err != nil {
+		t.Skipf("media-samples not found at %s (set MEDIA_SAMPLES_DIR)", samples)
 	}
-	return abs
+	return samples
+}
+
+// repoRoot walks up from the current file's directory until it finds go.mod.
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	require.NoError(t, err)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("could not find repo root (no go.mod found)")
+		}
+		dir = parent
+	}
 }
 
 // newTestPipelineConfig creates a minimal PipelineConfig suitable for pipeline
@@ -215,8 +230,8 @@ func TestAsymmetricAudioRates(t *testing.T) {
 
 // TestMixerStallsOnGap proves that the non-live audiomixer blocks forever when
 // one track stops producing data without sending EOS or a GAP event. This
-// demonstrates why the replay coordinator must detect gaps in recorded RTP
-// data and inject GAP events.
+// demonstrates why non-live sources must detect gaps in their input data and
+// inject GAP events.
 func TestMixerStallsOnGap(t *testing.T) {
 	samples := mediaSamplesDir(t)
 	outputPath := "/tmp/testfeeder-stall.ogg"
