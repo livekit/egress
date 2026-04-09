@@ -25,6 +25,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/storageobs"
 	"github.com/livekit/psrpc"
 	"github.com/livekit/storage"
 )
@@ -178,7 +179,7 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 	}
 
 	if !primary && u.storageObserver != nil {
-		u.storageObserver.OnStorageEvent(u.info.EgressId, "upload", location, size, int64(presignedExpiration/time.Hour/24))
+		u.storageObserver.OnStorageEvent(u.info.EgressId, string(storageobs.EventOperationUpload), location, size, int64(presignedExpiration/time.Hour/24))
 	}
 
 	if s.conf.GeneratePresignedUrl {
@@ -188,7 +189,7 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 		}
 
 		if !primary && u.storageObserver != nil {
-			u.storageObserver.OnStorageEvent(u.info.EgressId, "download", location, size, 0)
+			u.storageObserver.OnStorageEvent(u.info.EgressId, string(storageobs.EventOperationDownload), location, size, 0)
 		}
 	}
 
