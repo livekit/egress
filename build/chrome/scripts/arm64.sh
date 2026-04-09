@@ -10,12 +10,24 @@ sudo apt-get install -y \
   python3 \
   sudo \
   zip
-git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+
+if [ ! -d "$HOME/depot_tools" ]; then
+  git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git "$HOME/depot_tools"
+fi
 export PATH="$PATH:$HOME/depot_tools"
-mkdir chromium
-cd chromium || exit
-fetch --nohooks --no-history chromium
-echo 'solutions = [
+
+mkdir -p "$HOME"
+
+if [ ! -d "$HOME/chromium/.gclient" ] && [ ! -f "$HOME/chromium/.gclient" ]; then
+  mkdir -p "$HOME/chromium"
+  cd "$HOME/chromium"
+  fetch --nohooks --no-history chromium
+fi
+
+cd "$HOME/chromium"
+
+cat > .gclient <<'EOF'
+solutions = [
   {
     "name": "src",
     "url": "https://chromium.googlesource.com/chromium/src.git",
@@ -26,31 +38,83 @@ echo 'solutions = [
     },
     "target_cpu": "arm64",
   },
-]' | tee '.gclient' > /dev/null
-cd src || exit
-git fetch --tags
-git checkout -b stable "$1"
-gclient sync -D --with_branch_heads --with_tags
+]
+EOF
+
+cd src
+
+git fetch --no-tags --depth=1 origin "refs/tags/$1:refs/tags/$1"
+git checkout -B stable "tags/$1"
+
+for attempt in 1 2 3 4 5; do
+  if gclient sync -D --with_branch_heads -j 8; then
+    break
+  fi
+
+  if [ "$attempt" -eq 5 ]; then
+    echo "gclient sync failed after $attempt attempts"
+    exit 1
+  fi
+
+  sleep_secs=$((attempt * 30))
+  echo "gclient sync failed, retrying in ${sleep_secs}s..."
+  sleep "$sleep_secs"
+done
+
 ./build/install-build-deps.sh
 ./build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
 gclient runhooks
-gn gen out/default --args='target_cpu="arm64" proprietary_codecs=true ffmpeg_branding="Chrome" enable_nacl=false is_debug=false symbol_level=0 v8_symbol_level=0 dcheck_always_on=false is_official_build=true'
-autoninja -C out/default chrome chrome_sandbox
-cd out/default || exit
+
+gn gen out/default --args='
+  target_cpu="arm64"
+  proprietary_codecs=true
+  ffmpeg_branding="Chrome"
+
+  is_official_build=true
+  is_debug=false
+
+  symbol_level=0
+  blink_symbol_level=0
+  v8_symbol_level=0
+
+  enable_nacl=false
+  rtc_use_pipewire=false
+
+  is_component_build=false
+  use_jumbo_build=true
+
+  dcheck_always_on=false
+'
+
+export NINJA_SUMMARIZE_BUILD=1
+autoninja -C out/default chrome chrome_sandbox -j "$(nproc)"
+
+cd out/default
+
+rm -rf "$HOME/output/arm64"
 mkdir -p "$HOME/output/arm64/locales"
+
 mv locales/en-US.pak "$HOME/output/arm64/locales/"
-mv chrome \
-  chrome-wrapper \
-  chrome_100_percent.pak \
-  chrome_200_percent.pak \
-  chrome_crashpad_handler \
-  chrome_sandbox \
-  headless_lib_data.pak \
-  headless_lib_strings.pak \
-  icudtl.dat \
-  libEGL.so \
-  libGLESv2.so \
-  resources.pak \
-  snapshot_blob.bin \
-  v8_context_snapshot.bin \
-  "$HOME/output/arm64/"
+
+required_files=(
+  chrome
+  chrome-wrapper
+  chrome_100_percent.pak
+  chrome_200_percent.pak
+  chrome_crashpad_handler
+  chrome_sandbox
+  icudtl.dat
+  libEGL.so
+  libGLESv2.so
+  resources.pak
+  snapshot_blob.bin
+  v8_context_snapshot.bin
+)
+
+for f in "${required_files[@]}"; do
+  if [ ! -e "$f" ]; then
+    echo "Missing required build output: $f"
+    exit 1
+  fi
+  mv "$f" "$HOME/output/arm64/"
+done
