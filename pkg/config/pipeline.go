@@ -32,7 +32,6 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/observability/storageobs"
 	"github.com/livekit/protocol/rpc"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 
@@ -56,10 +55,9 @@ type PipelineConfig struct {
 	OutputCount          atomic.Int32                        `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	Info            *livekit.EgressInfo        `yaml:"-"`
-	Manifest        *Manifest                  `yaml:"-"`
-	StorageReporter storageobs.ProjectReporter `yaml:"-"`
-	IsReplay        bool                       `yaml:"-"`
+	Info     *livekit.EgressInfo `yaml:"-"`
+	Manifest *Manifest           `yaml:"-"`
+	IsReplay bool                `yaml:"-"`
 }
 
 var (
@@ -149,8 +147,7 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 				Level: "info",
 			},
 		},
-		Outputs:         make(map[types.EgressType][]OutputConfig),
-		StorageReporter: storageobs.NewNoopProjectReporter(),
+		Outputs: make(map[types.EgressType][]OutputConfig),
 	}
 
 	if err := yaml.Unmarshal([]byte(confString), p); err != nil {
