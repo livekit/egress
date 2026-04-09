@@ -62,6 +62,13 @@ type PipelineConfig struct {
 	Live            bool                       `yaml:"-"`
 }
 
+// IsReplay returns true when this is a replay/export pipeline. Use this for
+// replay-specific integration points (IPC calls, storage access). For generic
+// pipeline behavior (is-live, leaky queues, backpressure) use the Live field.
+func (p *PipelineConfig) IsReplay() bool {
+	return !p.Live
+}
+
 var (
 	tracer = otel.Tracer("github.com/livekit/egress/pkg/config")
 )

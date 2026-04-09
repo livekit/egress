@@ -137,11 +137,15 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 // testing, or ReplaySource for offline export). The source must have already
 // populated the PipelineConfig with track information before calling this.
 func NewWithSource(ctx context.Context, conf *config.PipelineConfig, src source.Source) (*Controller, error) {
+	ctx, span := tracer.Start(ctx, "Pipeline.NewWithSource")
+	defer span.End()
 	c := newController(conf, nil)
 	c.src = src
 
 	// initialize gst
 	go func() {
+		_, span := tracer.Start(ctx, "gst.Init")
+		defer span.End()
 		gst.Init(nil)
 		gst.SetLogFunction(c.gstLog)
 		close(c.callbacks.GstReady)

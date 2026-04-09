@@ -156,7 +156,7 @@ func (f *TrackFeeder) Feed() error {
 			)
 			return nil
 		}
-		var gapErr *ErrGap
+		var gapErr *GapError
 		if errors.As(err, &gapErr) {
 			pts := rtpToDuration(f.currentTS, clockRate)
 			logger.Infow("feeder sending GAP event",

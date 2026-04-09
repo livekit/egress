@@ -20,19 +20,19 @@ import (
 	"time"
 )
 
-// ErrGap is returned by a FrameReader to signal a gap in the media data.
+// GapError is returned by a FrameReader to signal a gap in the media data.
 // The feeder should send a GStreamer GAP event for the specified duration
 // instead of pushing a buffer, then continue reading.
-type ErrGap struct {
+type GapError struct {
 	Duration time.Duration
 }
 
-func (e *ErrGap) Error() string {
+func (e *GapError) Error() string {
 	return fmt.Sprintf("gap: %v", e.Duration)
 }
 
 // GappingReader wraps a FrameReader and introduces a gap after a fixed number
-// of frames. After delivering gapAfter frames, it returns an ErrGap with the
+// of frames. After delivering gapAfter frames, it returns an GapError with the
 // specified duration. After the gap, it continues reading from the inner reader
 // until EOF.
 type GappingReader struct {
@@ -44,7 +44,7 @@ type GappingReader struct {
 }
 
 // NewGappingReader wraps an existing FrameReader. After gapAfter frames, the
-// next call to NextFrame returns ErrGap with the given duration. Subsequent
+// next call to NextFrame returns GapError with the given duration. Subsequent
 // calls continue reading from inner.
 func NewGappingReader(inner FrameReader, gapAfter int, gapDuration time.Duration) *GappingReader {
 	return &GappingReader{
@@ -57,7 +57,7 @@ func NewGappingReader(inner FrameReader, gapAfter int, gapDuration time.Duration
 func (r *GappingReader) NextFrame() ([]byte, uint32, error) {
 	if r.delivered >= r.gapAfter && !r.gapSent {
 		r.gapSent = true
-		return nil, 0, &ErrGap{Duration: r.gapDuration}
+		return nil, 0, &GapError{Duration: r.gapDuration}
 	}
 
 	payload, samples, err := r.inner.NextFrame()
