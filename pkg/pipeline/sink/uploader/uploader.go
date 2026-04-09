@@ -25,8 +25,6 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/observability/storageobs"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
 	"github.com/livekit/storage"
 )
@@ -39,7 +37,6 @@ type Uploader struct {
 	primaryFailed bool
 	info          *livekit.EgressInfo
 	monitor       *stats.HandlerMonitor
-	reporter      storageobs.ProjectReporter
 }
 
 type store struct {
@@ -48,17 +45,16 @@ type store struct {
 	name string
 }
 
-func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, reporter storageobs.ProjectReporter, info *livekit.EgressInfo) (*Uploader, error) {
+func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, info *livekit.EgressInfo) (*Uploader, error) {
 	p, err := getUploader(primary)
 	if err != nil {
 		return nil, err
 	}
 
 	u := &Uploader{
-		primary:  p,
-		info:     info,
-		monitor:  monitor,
-		reporter: reporter,
+		primary: p,
+		info:    info,
+		monitor: monitor,
 	}
 
 	if backup != nil {
@@ -179,31 +175,10 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 		return "", 0, errors.ErrUploadFailed(s.name, err)
 	}
 
-	if !primary {
-		u.reporter.WithEvent(utils.NewGuid("STO_")).Tx(func(tx storageobs.EventTx) {
-			tx.ReportService(storageobs.EventServiceEgress)
-			tx.ReportServiceID(u.info.EgressId)
-			tx.ReportOperation(storageobs.EventOperationUpload)
-			tx.ReportPath(location)
-			tx.ReportSize(uint64(size))
-			tx.ReportLifetime(uint64(presignedExpiration/time.Hour) / 24)
-		})
-	}
-
 	if s.conf.GeneratePresignedUrl {
 		location, err = s.GeneratePresignedUrl(storageFilepath, presignedExpiration)
 		if err != nil {
 			return "", 0, errors.ErrUploadFailed(s.name, err)
-		}
-
-		if !primary {
-			u.reporter.WithEvent(utils.NewGuid("STO_")).Tx(func(tx storageobs.EventTx) {
-				tx.ReportService(storageobs.EventServiceEgress)
-				tx.ReportServiceID(u.info.EgressId)
-				tx.ReportOperation(storageobs.EventOperationDownload)
-				tx.ReportPath(location)
-				tx.ReportSize(uint64(size))
-			})
 		}
 	}
 
