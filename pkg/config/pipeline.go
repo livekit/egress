@@ -55,9 +55,14 @@ type PipelineConfig struct {
 	OutputCount          atomic.Int32                        `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	Info     *livekit.EgressInfo `yaml:"-"`
-	Manifest *Manifest           `yaml:"-"`
-	IsReplay bool                `yaml:"-"`
+	Info             *livekit.EgressInfo  `yaml:"-"`
+	Manifest         *Manifest            `yaml:"-"`
+	IsReplay         bool                 `yaml:"-"`
+	StorageObserver  StorageObserver      `yaml:"-"`
+}
+
+type StorageObserver interface {
+	OnStorageEvent(egressID, operation, path string, size, lifetimeDays int64)
 }
 
 var (

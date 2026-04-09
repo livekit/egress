@@ -25,6 +25,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/storageobs"
 	"github.com/livekit/psrpc"
 	"github.com/livekit/storage"
 )
@@ -32,11 +33,12 @@ import (
 const presignedExpiration = time.Hour * 24 * 7 // 7 days
 
 type Uploader struct {
-	primary       *store
-	backup        *store
-	primaryFailed bool
-	info          *livekit.EgressInfo
-	monitor       *stats.HandlerMonitor
+	primary         *store
+	backup          *store
+	primaryFailed   bool
+	info            *livekit.EgressInfo
+	monitor         *stats.HandlerMonitor
+	storageObserver config.StorageObserver
 }
 
 type store struct {
@@ -45,16 +47,17 @@ type store struct {
 	name string
 }
 
-func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, info *livekit.EgressInfo) (*Uploader, error) {
+func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, storageObserver config.StorageObserver, info *livekit.EgressInfo) (*Uploader, error) {
 	p, err := getUploader(primary)
 	if err != nil {
 		return nil, err
 	}
 
 	u := &Uploader{
-		primary: p,
-		info:    info,
-		monitor: monitor,
+		primary:         p,
+		info:            info,
+		monitor:         monitor,
+		storageObserver: storageObserver,
 	}
 
 	if backup != nil {
@@ -175,10 +178,18 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 		return "", 0, errors.ErrUploadFailed(s.name, err)
 	}
 
+	if !primary && u.storageObserver != nil {
+		u.storageObserver.OnStorageEvent(u.info.EgressId, string(storageobs.EventOperationUpload), location, size, int64(presignedExpiration/time.Hour/24))
+	}
+
 	if s.conf.GeneratePresignedUrl {
 		location, err = s.GeneratePresignedUrl(storageFilepath, presignedExpiration)
 		if err != nil {
 			return "", 0, errors.ErrUploadFailed(s.name, err)
+		}
+
+		if !primary && u.storageObserver != nil {
+			u.storageObserver.OnStorageEvent(u.info.EgressId, string(storageobs.EventOperationDownload), location, size, 0)
 		}
 	}
 
