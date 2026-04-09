@@ -426,7 +426,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 	case *rpc.StartEgressRequest_Replay:
-		p.Live = false
 		replayReq := req.Replay
 		clone := proto.Clone(replayReq).(*livekit.ExportReplayRequest)
 		p.Info.Request = &livekit.EgressInfo_Replay{
