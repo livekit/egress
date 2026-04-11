@@ -11,11 +11,12 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Delete old integration image tags
+      - name: Delete old integration images
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_CLEANUP_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_CLEANUP_TOKEN }}
-          REPO: livekit/egress-integration
+          NAMESPACE: livekit
+          REPOSITORY: egress-integration
           RETENTION_DAYS: 3
         run: |
           set -euo pipefail
@@ -31,50 +32,89 @@ jobs:
             exit 1
           fi
 
-          CUTOFF=$(date -u -d "${RETENTION_DAYS} days ago" +%Y-%m-%dT%H:%M:%S.%NZ)
-          echo "Deleting tags last updated before ${CUTOFF}"
+          CUTOFF=$(date -u -d "${RETENTION_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ)
+          echo "Deleting images pushed before ${CUTOFF}"
 
-          DELETED=0
+          QUEUED=0
           RETAINED=0
+          FAILED=0
           PAGE=1
+          DIGESTS_FILE=$(mktemp)
 
+          # Collect digests of old images
           while true; do
-            RESPONSE=$(curl -sf "https://hub.docker.com/v2/repositories/${REPO}/tags?page_size=100&page=${PAGE}" \
+            RESPONSE=$(curl -s --max-time 30 -w "\n%{http_code}" \
+              "https://hub.docker.com/v2/namespaces/${NAMESPACE}/repositories/${REPOSITORY}/images?page_size=100&page=${PAGE}&status=active" \
               -H "Authorization: Bearer ${TOKEN}")
 
-            TAGS=$(echo "$RESPONSE" | jq -r '.results // empty')
-            if [ -z "$TAGS" ] || [ "$TAGS" = "[]" ]; then
+            HTTP_STATUS=$(echo "$RESPONSE" | tail -1)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+
+            if [ "$HTTP_STATUS" != "200" ]; then
+              echo "::error::Failed to list images (page ${PAGE}): HTTP ${HTTP_STATUS}"
+              exit 1
+            fi
+
+            IMAGES=$(echo "$BODY" | jq -r '.results // empty')
+            if [ -z "$IMAGES" ] || [ "$IMAGES" = "[]" ]; then
               break
             fi
 
-            for TAG_INFO in $(echo "$TAGS" | jq -c '.[]'); do
-              TAG_NAME=$(echo "$TAG_INFO" | jq -r '.name')
-              LAST_UPDATED=$(echo "$TAG_INFO" | jq -r '.last_updated')
+            while IFS= read -r IMAGE_INFO; do
+              DIGEST=$(echo "$IMAGE_INFO" | jq -r '.digest')
+              LAST_PUSHED=$(echo "$IMAGE_INFO" | jq -r '.last_pushed')
+              TAGS=$(echo "$IMAGE_INFO" | jq -r '[.tags[]?.tag] | join(", ")')
 
-              if [[ "$LAST_UPDATED" < "$CUTOFF" ]]; then
-                STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
-                  "https://hub.docker.com/v2/repositories/${REPO}/tags/${TAG_NAME}" \
-                  -H "Authorization: Bearer ${TOKEN}")
-
-                if [ "$STATUS" = "204" ]; then
-                  echo "Deleted: ${TAG_NAME} (last updated: ${LAST_UPDATED})"
-                  DELETED=$((DELETED + 1))
-                else
-                  echo "::warning::Failed to delete ${TAG_NAME}: HTTP ${STATUS}"
-                fi
-
-                sleep 0.5
+              if [[ "$LAST_PUSHED" < "$CUTOFF" ]]; then
+                printf '{"repository":"%s/%s","digest":"%s"}\n' "$NAMESPACE" "$REPOSITORY" "$DIGEST" >> "$DIGESTS_FILE"
+                QUEUED=$((QUEUED + 1))
+                echo "Queued: ${DIGEST} tags=[${TAGS}] (pushed: ${LAST_PUSHED})"
               else
                 RETAINED=$((RETAINED + 1))
               fi
-            done
+            done < <(echo "$IMAGES" | jq -c '.[]')
 
-            NEXT=$(echo "$RESPONSE" | jq -r '.next // empty')
+            NEXT=$(echo "$BODY" | jq -r '.next // empty')
             if [ -z "$NEXT" ] || [ "$NEXT" = "null" ]; then
               break
             fi
             PAGE=$((PAGE + 1))
           done
 
+          # Bulk-delete images by digest
+          if [ "$QUEUED" -gt 0 ]; then
+            echo ""
+            echo "Deleting ${QUEUED} images..."
+
+            DIGESTS_TO_DELETE=$(jq -s '.' "$DIGESTS_FILE")
+            TOTAL=$(echo "$DIGESTS_TO_DELETE" | jq length)
+            OFFSET=0
+            while [ "$OFFSET" -lt "$TOTAL" ]; do
+              BATCH=$(echo "$DIGESTS_TO_DELETE" | jq ".[$OFFSET:$((OFFSET + 100))]")
+              BATCH_SIZE=$(echo "$BATCH" | jq length)
+              RESULT=$(curl -s --max-time 30 -w "\n%{http_code}" -X POST \
+                "https://hub.docker.com/v2/namespaces/${NAMESPACE}/repositories/${REPOSITORY}/images/delete" \
+                -H "Authorization: Bearer ${TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "{\"dry_run\": false, \"manifests\": ${BATCH}}")
+
+              STATUS=$(echo "$RESULT" | tail -1)
+              if [ "$STATUS" = "200" ] || [ "$STATUS" = "202" ]; then
+                echo "Batch deleted ${BATCH_SIZE} images"
+              else
+                RESP_BODY=$(echo "$RESULT" | sed '$d')
+                echo "::error::Batch delete failed (HTTP ${STATUS}): ${RESP_BODY}"
+                FAILED=$((FAILED + BATCH_SIZE))
+              fi
+              OFFSET=$((OFFSET + 100))
+            done
+          fi
+
+          rm -f "$DIGESTS_FILE"
+
           echo ""
-          echo "Summary: deleted=${DELETED} retained=${RETAINED}"
+          echo "Summary: queued=${QUEUED} failed=${FAILED} retained=${RETAINED}"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::${FAILED} images failed to delete"
+            exit 1
+          fi
