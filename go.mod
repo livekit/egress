@@ -115,6 +115,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lithammer/shortuuid/v4 v4.2.0 // indirect
 	github.com/livekit/mediatransportutil v0.0.0-20260113174415-2e8ba344fca3 // indirect
+	github.com/llehouerou/go-mp3 v1.2.0 // indirect
 	github.com/mackerelio/go-osstat v0.2.6 // indirect
 	github.com/magefile/mage v1.15.0 // indirect
 	github.com/mattn/go-ieproxy v0.0.12 // indirect

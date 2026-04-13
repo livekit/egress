@@ -22,7 +22,7 @@ import (
 )
 
 // muxer captures the minimal behavior builders need from a muxing element, allowing
-// us to swap between real gst muxers and light-weight shims (e.g. identity for MP3).
+// us to swap between real gst muxers and light-weight shims (e.g. xingmux for MP3).
 type muxer interface {
 	GetRequestPad(name string) *gst.Pad
 	GetElement() *gst.Element
@@ -58,21 +58,23 @@ func (m *muxerImpl) GetElement() *gst.Element {
 	return m.Element
 }
 
-// mp3Muxer makes the identity element look like a muxer so audio-only MP3 outputs
+// mp3Muxer wraps xingmux as a muxer so audio-only MP3 outputs
 // can reuse the same linking logic as containerised formats.
 type mp3Muxer struct {
 	muxerImpl
 }
 
-// newMP3Muxer provides a muxer-compatible wrapper around gst identity.
+// newMP3Muxer provides a muxer-compatible wrapper around gst xingmux.
+// xingmux inserts a Xing header containing total frame and byte counts,
+// allowing players to determine the file duration without scanning every frame.
 func newMP3Muxer() (*mp3Muxer, error) {
-	identity, err := gst.NewElement("identity")
+	xing, err := gst.NewElement("xingmux")
 	if err != nil {
 		return nil, err
 	}
 	return &mp3Muxer{
 		muxerImpl: muxerImpl{
-			Element: identity,
+			Element: xing,
 		},
 	}, nil
 }
