@@ -263,8 +263,13 @@ func (s *SDKSource) joinRoom() error {
 		err = s.awaitRoomTracks()
 
 	case types.RequestTypeTemplate:
-		fileIdentifier = s.room.Name()
-		s.filenameReplacements["{room_name}"] = s.room.Name()
+		if s.Info.RoomName != "" {
+			fileIdentifier = s.Info.RoomName
+		} else {
+			fileIdentifier = s.room.Name()
+			s.filenameReplacements["{room_name}"] = s.room.Name()
+		}
+
 		err = s.awaitRoomTracks()
 
 	case types.RequestTypeParticipant:
@@ -288,8 +293,12 @@ func (s *SDKSource) joinRoom() error {
 		w, h, err = s.awaitTracks(map[string]struct{}{s.TrackID: {}})
 
 	case types.RequestTypeMedia:
-		fileIdentifier = s.room.Name()
-		s.filenameReplacements["{room_name}"] = s.room.Name()
+		if s.Info.RoomName != "" {
+			fileIdentifier = s.Info.RoomName
+		} else {
+			fileIdentifier = s.room.Name()
+			s.filenameReplacements["{room_name}"] = s.room.Name()
+		}
 		w, h, err = s.awaitMediaTracks()
 	}
 	if err != nil {
