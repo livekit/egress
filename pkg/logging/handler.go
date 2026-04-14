@@ -1,63 +1,126 @@
 package logging
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
+	"github.com/linkdata/deadlock"
+
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/logger/medialogutils"
 )
 
-var sdkPrefixes = map[string]bool{
-	"turnc": true, // turnc ERROR
-	"ice E": true, // ice ERROR
-	"pc ER": true, // pc ERROR
-	"twcc_": true, // twcc_sender_interceptor ERROR
-	"SDK 2": true, // SDK 2025
+type HandlerLogger struct {
+	mu       deadlock.Mutex
+	buf      []byte
+	panicBuf []string
+	l        logger.Logger
 }
 
-func NewHandlerLogger(handlerID, egressID string) *medialogutils.CmdLogger {
-	l := logger.GetLogger().WithValues("handlerID", handlerID, "egressID", egressID)
-	return medialogutils.NewCmdLogger(func(s string) {
-		lines := strings.Split(s, "\n")
-		for i, line := range lines {
-			switch {
-			case strings.HasSuffix(line, "}"):
-				fmt.Println(line)
+func NewHandlerLogger(handlerID, egressID string) *HandlerLogger {
+	return &HandlerLogger{
+		l: logger.GetLogger().WithValues(
+			"handlerID", handlerID,
+			"egressID", egressID,
+		),
+	}
+}
 
-			case len(line) == 0:
-				continue
+func (h *HandlerLogger) Write(p []byte) (int, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
-			case len(line) > 5 && sdkPrefixes[line[:5]]:
-				l.Infow(line)
+	h.buf = append(h.buf, p...)
 
-			case strings.HasPrefix(line, "{\"level\":"):
-				// should have ended with "}", probably got split
-				var next string
-				for j := i + 1; j < len(lines); j++ {
-					next = lines[j]
-					if len(next) > 0 && strings.HasSuffix(next, "}") {
-						line += next
-						break
-					}
-				}
-				fmt.Println(line)
-
-			case strings.HasPrefix(line, "(egress:"),
-				strings.Contains(line, "before 'caps'"),
-				strings.Contains(line, "' of type '"):
-				logger.Warnw(line, nil)
-
-			case strings.Contains(line, "unmarshal JSON string into Go network.CookiePartitionKey"),
-				strings.HasPrefix(line, "0:00:"),
-				strings.HasSuffix(line, "is not mapped"),
-				strings.HasSuffix(line, "load cuda library"),
-				strings.Contains(line, "libcuda.so.1"):
-				continue
-
-			default:
-				l.Errorw(line, nil)
-			}
+	for {
+		idx := bytes.IndexByte(h.buf, '\n')
+		if idx < 0 {
+			break
 		}
-	})
+		line := string(h.buf[:idx])
+		h.buf = h.buf[idx+1:]
+		if len(line) > 0 {
+			h.processLine(line)
+		}
+	}
+
+	return len(p), nil
+}
+
+func (h *HandlerLogger) Close() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// flush buffer
+	if len(h.buf) > 0 {
+		line := string(h.buf)
+		h.buf = nil
+		if len(line) > 0 {
+			h.processLine(line)
+		}
+	}
+
+	// flush panic
+	h.flushPanic()
+	return nil
+}
+
+func (h *HandlerLogger) processLine(line string) {
+	if line[len(line)-1] == '}' {
+		if len(h.panicBuf) > 0 {
+			h.flushPanic()
+		}
+		fmt.Println(line)
+		return
+	}
+
+	// gstreamer stderr (timestamp-prefixed)
+	if strings.HasPrefix(line, "0:00:0") {
+		return
+	}
+
+	// glib/gobject warnings from gstreamer
+	if strings.HasPrefix(line, "(egress:") {
+		h.l.Warnw(line, nil)
+		return
+	}
+
+	// panic entry
+	if strings.HasPrefix(line, "panic:") ||
+		strings.HasPrefix(line, "fatal error:") ||
+		strings.HasPrefix(line, "goroutine ") {
+		h.panicBuf = append(h.panicBuf, line)
+		return
+	}
+
+	// panic accumulation
+	if len(h.panicBuf) > 0 {
+		if h.isPanicContinuation(line) {
+			h.panicBuf = append(h.panicBuf, line)
+			return
+		}
+		h.flushPanic()
+	}
+
+	h.l.Errorw(line, nil)
+}
+
+func (h *HandlerLogger) isPanicContinuation(line string) bool {
+	if line[0] == '\t' {
+		return true
+	}
+	if strings.HasPrefix(line, "goroutine ") {
+		return true
+	}
+	if !strings.HasPrefix(line, "(") && strings.Contains(line, "(") {
+		return true
+	}
+	return false
+}
+
+func (h *HandlerLogger) flushPanic() {
+	if len(h.panicBuf) > 0 {
+		h.l.Errorw(strings.Join(h.panicBuf, "\n"), nil)
+		h.panicBuf = nil
+	}
 }

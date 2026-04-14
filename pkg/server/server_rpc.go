@@ -156,6 +156,7 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	s.monitor.UpdatePID(info.EgressId, cmd.Process.Pid)
 	go func() {
 		err = cmd.Wait()
+		_ = l.Close()
 		s.processEnded(req, info, err)
 	}()
 	return nil
