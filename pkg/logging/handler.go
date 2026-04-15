@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/frostbyte73/core"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/logger"
@@ -18,7 +19,7 @@ const (
 
 type HandlerLogger struct {
 	ch          chan []byte
-	done        chan struct{}
+	done        core.Fuse
 	dropped     atomic.Int64
 	lastDropLog atomic.Int64 // unix nanos
 	l           logger.Logger
@@ -26,8 +27,7 @@ type HandlerLogger struct {
 
 func NewHandlerLogger(handlerID, egressID string) *HandlerLogger {
 	h := &HandlerLogger{
-		ch:   make(chan []byte, channelSize),
-		done: make(chan struct{}),
+		ch: make(chan []byte, channelSize),
 		l: logger.GetLogger().WithValues(
 			"handlerID", handlerID,
 			"egressID", egressID,
@@ -60,7 +60,7 @@ func (h *HandlerLogger) Write(p []byte) (int, error) {
 
 func (h *HandlerLogger) Close() error {
 	close(h.ch)
-	<-h.done
+	<-h.done.Watch()
 	return nil
 }
 
@@ -77,7 +77,7 @@ func (h *HandlerLogger) drain() {
 		if len(panicBuf) > 0 {
 			h.l.Errorw(strings.Join(panicBuf, "\n"), nil)
 		}
-		close(h.done)
+		h.done.Break()
 	}()
 
 	for chunk := range h.ch {
