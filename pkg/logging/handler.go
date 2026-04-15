@@ -4,71 +4,105 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"time"
 
-	"github.com/linkdata/deadlock"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/logger"
 )
 
+const (
+	channelSize     = 4096
+	dropLogThrottle = 10 * time.Second
+)
+
 type HandlerLogger struct {
-	mu       deadlock.Mutex
-	buf      []byte
-	panicBuf []string
-	l        logger.Logger
+	ch          chan []byte
+	done        chan struct{}
+	dropped     atomic.Int64
+	lastDropLog atomic.Int64 // unix nanos
+	l           logger.Logger
 }
 
 func NewHandlerLogger(handlerID, egressID string) *HandlerLogger {
-	return &HandlerLogger{
+	h := &HandlerLogger{
+		ch:   make(chan []byte, channelSize),
+		done: make(chan struct{}),
 		l: logger.GetLogger().WithValues(
 			"handlerID", handlerID,
 			"egressID", egressID,
 		),
 	}
+	go h.drain()
+	return h
 }
 
 func (h *HandlerLogger) Write(p []byte) (int, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	cp := make([]byte, len(p))
+	copy(cp, p)
 
-	h.buf = append(h.buf, p...)
-
-	for {
-		idx := bytes.IndexByte(h.buf, '\n')
-		if idx < 0 {
-			break
+	select {
+	case h.ch <- cp:
+	default:
+		count := h.dropped.Inc()
+		now := time.Now().UnixNano()
+		last := h.lastDropLog.Load()
+		if now-last >= int64(dropLogThrottle) {
+			if h.lastDropLog.CompareAndSwap(last, now) {
+				h.l.Warnw(fmt.Sprintf("handler logger dropped %d messages", count), nil)
+				h.dropped.Store(0)
+			}
 		}
-		line := string(h.buf[:idx])
-		h.buf = h.buf[idx+1:]
-		h.processLine(line)
 	}
 
 	return len(p), nil
 }
 
 func (h *HandlerLogger) Close() error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	// flush buffer
-	if len(h.buf) > 0 {
-		line := string(h.buf)
-		h.buf = nil
-		h.processLine(line)
-	}
-
-	// flush panic
-	h.flushPanic()
+	close(h.ch)
+	<-h.done
 	return nil
 }
 
-func (h *HandlerLogger) processLine(line string) {
+func (h *HandlerLogger) drain() {
+	var buf []byte
+	var panicBuf []string
+
+	defer func() {
+		// flush remaining buffer
+		if len(buf) > 0 {
+			h.processLine(string(buf), &panicBuf)
+		}
+		// flush any accumulated panic
+		if len(panicBuf) > 0 {
+			h.l.Errorw(strings.Join(panicBuf, "\n"), nil)
+		}
+		close(h.done)
+	}()
+
+	for chunk := range h.ch {
+		buf = append(buf, chunk...)
+
+		for {
+			idx := bytes.IndexByte(buf, '\n')
+			if idx < 0 {
+				break
+			}
+			line := string(buf[:idx])
+			buf = buf[idx+1:]
+			h.processLine(line, &panicBuf)
+		}
+	}
+}
+
+func (h *HandlerLogger) processLine(line string, panicBuf *[]string) {
 	if len(line) == 0 {
 		return
 	}
 
 	if line[len(line)-1] == '}' {
-		if len(h.panicBuf) > 0 {
-			h.flushPanic()
+		if len(*panicBuf) > 0 {
+			h.flushPanic(panicBuf)
 		}
 		fmt.Println(line)
 		return
@@ -89,17 +123,17 @@ func (h *HandlerLogger) processLine(line string) {
 	if strings.HasPrefix(line, "panic:") ||
 		strings.HasPrefix(line, "fatal error:") ||
 		strings.HasPrefix(line, "goroutine ") {
-		h.panicBuf = append(h.panicBuf, line)
+		*panicBuf = append(*panicBuf, line)
 		return
 	}
 
 	// panic accumulation
-	if len(h.panicBuf) > 0 {
+	if len(*panicBuf) > 0 {
 		if h.isPanicContinuation(line) {
-			h.panicBuf = append(h.panicBuf, line)
+			*panicBuf = append(*panicBuf, line)
 			return
 		}
-		h.flushPanic()
+		h.flushPanic(panicBuf)
 	}
 
 	h.l.Errorw(line, nil)
@@ -118,9 +152,9 @@ func (h *HandlerLogger) isPanicContinuation(line string) bool {
 	return false
 }
 
-func (h *HandlerLogger) flushPanic() {
-	if len(h.panicBuf) > 0 {
-		h.l.Errorw(strings.Join(h.panicBuf, "\n"), nil)
-		h.panicBuf = nil
+func (h *HandlerLogger) flushPanic(panicBuf *[]string) {
+	if len(*panicBuf) > 0 {
+		h.l.Errorw(strings.Join(*panicBuf, "\n"), nil)
+		*panicBuf = nil
 	}
 }
