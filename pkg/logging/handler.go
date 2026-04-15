@@ -39,9 +39,7 @@ func (h *HandlerLogger) Write(p []byte) (int, error) {
 		}
 		line := string(h.buf[:idx])
 		h.buf = h.buf[idx+1:]
-		if len(line) > 0 {
-			h.processLine(line)
-		}
+		h.processLine(line)
 	}
 
 	return len(p), nil
@@ -55,9 +53,7 @@ func (h *HandlerLogger) Close() error {
 	if len(h.buf) > 0 {
 		line := string(h.buf)
 		h.buf = nil
-		if len(line) > 0 {
-			h.processLine(line)
-		}
+		h.processLine(line)
 	}
 
 	// flush panic
@@ -66,6 +62,10 @@ func (h *HandlerLogger) Close() error {
 }
 
 func (h *HandlerLogger) processLine(line string) {
+	if len(line) == 0 {
+		return
+	}
+
 	if line[len(line)-1] == '}' {
 		if len(h.panicBuf) > 0 {
 			h.flushPanic()

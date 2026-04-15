@@ -55,10 +55,10 @@ type PipelineConfig struct {
 	OutputCount          atomic.Int32                        `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	Info             *livekit.EgressInfo  `yaml:"-"`
-	Manifest         *Manifest            `yaml:"-"`
-	IsReplay         bool                 `yaml:"-"`
-	StorageObserver  StorageObserver      `yaml:"-"`
+	Info            *livekit.EgressInfo `yaml:"-"`
+	Manifest        *Manifest           `yaml:"-"`
+	IsReplay        bool                `yaml:"-"`
+	StorageObserver StorageObserver     `yaml:"-"`
 }
 
 type StorageObserver interface {
@@ -194,6 +194,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	p.Info = &livekit.EgressInfo{
 		EgressId:   request.EgressId,
 		RoomId:     request.RoomId,
+		RoomName:   request.RoomName,
 		Status:     livekit.EgressStatus_EGRESS_STARTING,
 		StartedAt:  now,
 		UpdatedAt:  now,
@@ -572,7 +573,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		// token
 		if request.Token != "" {
 			p.Token = request.Token
-		} else if p.ApiKey != "" && p.ApiSecret != "" {
+		} else if p.ApiKey != "" && p.ApiSecret != "" && p.Info.RoomName != "" {
 			token, err := egress.BuildEgressToken(p.Info.EgressId, p.ApiKey, p.ApiSecret, p.Info.RoomName)
 			if err != nil {
 				return err
