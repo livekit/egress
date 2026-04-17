@@ -26,7 +26,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability/storageobs"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
 	"github.com/livekit/storage"
 )
@@ -34,12 +33,12 @@ import (
 const presignedExpiration = time.Hour * 24 * 7 // 7 days
 
 type Uploader struct {
-	primary       *store
-	backup        *store
-	primaryFailed bool
-	info          *livekit.EgressInfo
-	monitor       *stats.HandlerMonitor
-	reporter      storageobs.ProjectReporter
+	primary         *store
+	backup          *store
+	primaryFailed   bool
+	info            *livekit.EgressInfo
+	monitor         *stats.HandlerMonitor
+	storageObserver config.StorageObserver
 }
 
 type store struct {
@@ -48,17 +47,17 @@ type store struct {
 	name string
 }
 
-func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, reporter storageobs.ProjectReporter, info *livekit.EgressInfo) (*Uploader, error) {
+func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, storageObserver config.StorageObserver, info *livekit.EgressInfo) (*Uploader, error) {
 	p, err := getUploader(primary)
 	if err != nil {
 		return nil, err
 	}
 
 	u := &Uploader{
-		primary:  p,
-		info:     info,
-		monitor:  monitor,
-		reporter: reporter,
+		primary:         p,
+		info:            info,
+		monitor:         monitor,
+		storageObserver: storageObserver,
 	}
 
 	if backup != nil {
@@ -179,15 +178,8 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 		return "", 0, errors.ErrUploadFailed(s.name, err)
 	}
 
-	if !primary {
-		u.reporter.WithEvent(utils.NewGuid("STO_")).Tx(func(tx storageobs.EventTx) {
-			tx.ReportService(storageobs.EventServiceEgress)
-			tx.ReportServiceID(u.info.EgressId)
-			tx.ReportOperation(storageobs.EventOperationUpload)
-			tx.ReportPath(location)
-			tx.ReportSize(uint64(size))
-			tx.ReportLifetime(uint64(presignedExpiration/time.Hour) / 24)
-		})
+	if !primary && u.storageObserver != nil {
+		u.storageObserver.OnStorageEvent(u.info.EgressId, string(storageobs.EventOperationUpload), location, size, int64(presignedExpiration/time.Hour/24))
 	}
 
 	if s.conf.GeneratePresignedUrl {
@@ -196,14 +188,8 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 			return "", 0, errors.ErrUploadFailed(s.name, err)
 		}
 
-		if !primary {
-			u.reporter.WithEvent(utils.NewGuid("STO_")).Tx(func(tx storageobs.EventTx) {
-				tx.ReportService(storageobs.EventServiceEgress)
-				tx.ReportServiceID(u.info.EgressId)
-				tx.ReportOperation(storageobs.EventOperationDownload)
-				tx.ReportPath(location)
-				tx.ReportSize(uint64(size))
-			})
+		if !primary && u.storageObserver != nil {
+			u.storageObserver.OnStorageEvent(u.info.EgressId, string(storageobs.EventOperationDownload), location, size, 0)
 		}
 	}
 

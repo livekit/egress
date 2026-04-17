@@ -512,10 +512,13 @@ func (b *AudioBin) addEncoder() error {
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		if err = mp3enc.SetProperty("bitrate", int(b.conf.AudioBitrate)); err != nil {
+		// target=bitrate is required for cbr and bitrate to take effect;
+		// without it lamemp3enc defaults to quality-based VBR.
+		mp3enc.SetArg("target", "bitrate")
+		if err = mp3enc.SetProperty("cbr", true); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		if err = mp3enc.SetProperty("cbr", true); err != nil {
+		if err = mp3enc.SetProperty("bitrate", int(b.conf.AudioBitrate)); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 		return b.bin.AddElement(mp3enc)

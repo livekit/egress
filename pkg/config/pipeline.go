@@ -32,7 +32,6 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/observability/storageobs"
 	"github.com/livekit/protocol/rpc"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 
@@ -56,10 +55,10 @@ type PipelineConfig struct {
 	OutputCount          atomic.Int32                        `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	Info            *livekit.EgressInfo        `yaml:"-"`
-	Manifest        *Manifest                  `yaml:"-"`
-	StorageReporter storageobs.ProjectReporter `yaml:"-"`
-	Live            bool                       `yaml:"-"`
+	Info            *livekit.EgressInfo `yaml:"-"`
+	Manifest        *Manifest           `yaml:"-"`
+	Live            bool                `yaml:"-"`
+	StorageObserver StorageObserver     `yaml:"-"`
 }
 
 // IsReplay returns true when this is a replay/export pipeline. Use this for
@@ -67,6 +66,10 @@ type PipelineConfig struct {
 // pipeline behavior (is-live, leaky queues, backpressure) use the Live field.
 func (p *PipelineConfig) IsReplay() bool {
 	return !p.Live
+}
+
+type StorageObserver interface {
+	OnStorageEvent(egressID, operation, path string, size, lifetimeDays int64)
 }
 
 var (
@@ -156,9 +159,8 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 				Level: "info",
 			},
 		},
-		Outputs:         make(map[types.EgressType][]OutputConfig),
-		StorageReporter: storageobs.NewNoopProjectReporter(),
-		Live:            true,
+		Outputs: make(map[types.EgressType][]OutputConfig),
+		Live:    true,
 	}
 
 	if err := yaml.Unmarshal([]byte(confString), p); err != nil {
@@ -201,6 +203,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	p.Info = &livekit.EgressInfo{
 		EgressId:   request.EgressId,
 		RoomId:     request.RoomId,
+		RoomName:   request.RoomName,
 		Status:     livekit.EgressStatus_EGRESS_STARTING,
 		StartedAt:  now,
 		UpdatedAt:  now,
@@ -578,7 +581,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		// token
 		if request.Token != "" {
 			p.Token = request.Token
-		} else if p.ApiKey != "" && p.ApiSecret != "" {
+		} else if p.ApiKey != "" && p.ApiSecret != "" && p.Info.RoomName != "" {
 			token, err := egress.BuildEgressToken(p.Info.EgressId, p.ApiKey, p.ApiSecret, p.Info.RoomName)
 			if err != nil {
 				return err

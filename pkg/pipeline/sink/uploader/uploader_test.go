@@ -11,7 +11,6 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/observability/storageobs"
 	"github.com/livekit/storage"
 )
 
@@ -41,7 +40,7 @@ func TestUploader(t *testing.T) {
 	}
 
 	info := &livekit.EgressInfo{}
-	u, err := New(primary, backup, nil, storageobs.NewNoopProjectReporter(), info)
+	u, err := New(primary, backup, nil, nil, info)
 	require.NoError(t, err)
 
 	filepath := "uploader_test.go"

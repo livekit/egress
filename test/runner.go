@@ -166,24 +166,6 @@ func NewRunner(t *testing.T) *Runner {
 
 	r.ServiceConfig = conf
 
-	componentLevels := make(map[string]string, len(conf.Logging.ComponentLevels)+2)
-	for k, v := range conf.Logging.ComponentLevels {
-		componentLevels[k] = v
-	}
-	componentLevels["pion.ice"] = "warn"
-	componentLevels["pion.dtls"] = "warn"
-	_ = conf.Logging.Update(&logger.Config{
-		JSON:               conf.Logging.JSON,
-		Level:              conf.Logging.Level,
-		Sample:             conf.Logging.Sample,
-		ComponentLevels:    componentLevels,
-		SampleInitial:      conf.Logging.SampleInitial,
-		SampleInterval:     conf.Logging.SampleInterval,
-		ItemSampleSeconds:  conf.Logging.ItemSampleSeconds,
-		ItemSampleInitial:  conf.Logging.ItemSampleInitial,
-		ItemSampleInterval: conf.Logging.ItemSampleInterval,
-	})
-
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
 		t.Fatal("api key, secret, and ws url required")
 	}
@@ -250,7 +232,6 @@ func (r *Runner) connectRoom(t *testing.T, roomName string, codecs []livekit.Cod
 }
 
 func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, templateFs fs.FS) {
-	lksdk.SetLogger(logger.GetLogger())
 	r.svc = svc
 	t.Cleanup(func() {
 		if r.room != nil {

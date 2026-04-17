@@ -63,6 +63,8 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 		return nil, err
 	}
 
+	conf.StorageObserver = &ipcStorageObserver{client: ipcClient}
+
 	h := &Handler{
 		conf:             conf,
 		ipcHandlerServer: grpc.NewServer(),
@@ -180,4 +182,21 @@ func (h *Handler) shouldInjectEgressFailure() bool {
 		return false
 	}
 	return strings.Contains(h.conf.Info.RoomName, h.conf.TestOverrides.FailureInjectionRoom)
+}
+
+type ipcStorageObserver struct {
+	client ipc.EgressServiceClient
+}
+
+func (o *ipcStorageObserver) OnStorageEvent(egressID, operation, path string, size, lifetimeDays int64) {
+	_, err := o.client.StorageEvent(context.Background(), &ipc.StorageEventRequest{
+		EgressId:     egressID,
+		Operation:    operation,
+		Path:         path,
+		Size:         size,
+		LifetimeDays: lifetimeDays,
+	})
+	if err != nil {
+		logger.Errorw("storage event ipc call failed", err, "egressID", egressID)
+	}
 }

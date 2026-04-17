@@ -64,3 +64,7 @@ func (s *Server) HandlerFinished(_ context.Context, req *ipc.HandlerFinishedRequ
 	logger.Debugw("handler finished completed", "egressID", req.EgressId)
 	return &emptypb.Empty{}, nil
 }
+
+func (s *Server) StorageEvent(_ context.Context, _ *ipc.StorageEventRequest) (*emptypb.Empty, error) {
+	return &emptypb.Empty{}, nil
+}
