@@ -96,6 +96,11 @@ type controllerStats struct {
 	droppedVideoBuffersByQueue map[string]uint64
 }
 
+// SourceBuilder constructs a pipeline source. It receives the controller's
+// callbacks so the source can synchronize on GstReady; custom sources that
+// don't need gst synchronization can ignore the argument.
+type SourceBuilder func(callbacks *gstreamer.Callbacks) (source.Source, error)
+
 var (
 	tracer = otel.Tracer("github.com/livekit/egress/pkg/pipeline")
 )
@@ -104,6 +109,21 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
+	return NewWithSource(ctx, conf, ipcServiceClient, func(callbacks *gstreamer.Callbacks) (source.Source, error) {
+		return source.New(ctx, conf, callbacks)
+	})
+}
+
+// NewWithSource creates a Controller using the given SourceBuilder. The builder
+// runs after the controller has been constructed and receives the controller's
+// Callbacks, so the source can share GstReady with the pipeline. Use this when
+// the source isn't the standard source.New (testfeeder, replay export, etc.).
+func NewWithSource(
+	ctx context.Context,
+	conf *config.PipelineConfig,
+	ipcServiceClient ipc.EgressServiceClient,
+	srcBuilder SourceBuilder,
+) (*Controller, error) {
 	c := newController(conf, ipcServiceClient)
 
 	// initialize gst
@@ -115,41 +135,11 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 		close(c.callbacks.GstReady)
 	}()
 
-	// create source
-	var err error
-	c.src, err = source.New(ctx, conf, c.callbacks)
+	src, err := srcBuilder(c.callbacks)
 	if err != nil {
 		return nil, err
 	}
-
-	// create pipeline
-	<-c.callbacks.GstReady
-	if err = c.BuildPipeline(); err != nil {
-		c.src.Close()
-		return nil, err
-	}
-
-	return c, nil
-}
-
-// NewWithSource creates a Controller with a pre-built source. This is used when
-// the source is constructed externally (e.g. TestSource for non-live pipeline
-// testing, or ReplaySource for offline export). The source must have already
-// populated the PipelineConfig with track information before calling this.
-func NewWithSource(ctx context.Context, conf *config.PipelineConfig, src source.Source) (*Controller, error) {
-	ctx, span := tracer.Start(ctx, "Pipeline.NewWithSource")
-	defer span.End()
-	c := newController(conf, nil)
 	c.src = src
-
-	// initialize gst
-	go func() {
-		_, span := tracer.Start(ctx, "gst.Init")
-		defer span.End()
-		gst.Init(nil)
-		gst.SetLogFunction(c.gstLog)
-		close(c.callbacks.GstReady)
-	}()
 
 	// create pipeline
 	<-c.callbacks.GstReady
