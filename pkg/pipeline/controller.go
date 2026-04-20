@@ -96,6 +96,11 @@ type controllerStats struct {
 	droppedVideoBuffersByQueue map[string]uint64
 }
 
+// SourceBuilder constructs a pipeline source. It receives the controller's
+// callbacks so the source can synchronize on GstReady; custom sources that
+// don't need gst synchronization can ignore the argument.
+type SourceBuilder func(callbacks *gstreamer.Callbacks) (source.Source, error)
+
 var (
 	tracer = otel.Tracer("github.com/livekit/egress/pkg/pipeline")
 )
@@ -104,7 +109,55 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
-	var err error
+	return NewWithSource(ctx, conf, ipcServiceClient, func(callbacks *gstreamer.Callbacks) (source.Source, error) {
+		return source.New(ctx, conf, callbacks)
+	})
+}
+
+// NewWithSource creates a Controller using the given SourceBuilder. The builder
+// runs after the controller has been constructed and receives the controller's
+// Callbacks, so the source can share GstReady with the pipeline. Use this when
+// the source isn't the standard source.New (testfeeder, replay export, etc.).
+func NewWithSource(
+	ctx context.Context,
+	conf *config.PipelineConfig,
+	ipcServiceClient ipc.EgressServiceClient,
+	srcBuilder SourceBuilder,
+) (*Controller, error) {
+	c := newController(conf, ipcServiceClient)
+
+	// initialize gst
+	go func() {
+		_, span := tracer.Start(ctx, "gst.Init")
+		defer span.End()
+		gst.Init(nil)
+		gst.SetLogFunction(c.gstLog)
+		close(c.callbacks.GstReady)
+	}()
+
+	src, err := srcBuilder(c.callbacks)
+	if err != nil {
+		return nil, err
+	}
+	c.src = src
+
+	// create pipeline
+	<-c.callbacks.GstReady
+	if err := c.BuildPipeline(); err != nil {
+		c.src.Close()
+		return nil, err
+	}
+
+	return c, nil
+}
+
+// Callbacks returns the pipeline callbacks. Sources that need to wait for
+// GstReady before creating appsrc elements can use this.
+func (c *Controller) Callbacks() *gstreamer.Callbacks {
+	return c.callbacks
+}
+
+func newController(conf *config.PipelineConfig, ipcServiceClient ipc.EgressServiceClient) *Controller {
 	c := &Controller{
 		PipelineConfig:   conf,
 		ipcServiceClient: ipcServiceClient,
@@ -129,30 +182,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 		logger.Debugw("debug dot requested", "reason", reason)
 		c.generateDotFile(reason)
 	})
-
-	// initialize gst
-	go func() {
-		_, span := tracer.Start(ctx, "gst.Init")
-		defer span.End()
-		gst.Init(nil)
-		gst.SetLogFunction(c.gstLog)
-		close(c.callbacks.GstReady)
-	}()
-
-	// create source
-	c.src, err = source.New(ctx, conf, c.callbacks)
-	if err != nil {
-		return nil, err
-	}
-
-	// create pipeline
-	<-c.callbacks.GstReady
-	if err = c.BuildPipeline(); err != nil {
-		c.src.Close()
-		return nil, err
-	}
-
-	return c, nil
+	return c
 }
 
 func (c *Controller) BuildPipeline() error {
@@ -168,9 +198,9 @@ func (c *Controller) BuildPipeline() error {
 		c.stopped.Break()
 		return nil
 	})
-	if c.SourceType == types.SourceTypeSDK {
+	if sdkSrc, ok := c.src.(*source.SDKSource); ok {
 		p.SetEOSFunc(func() bool {
-			c.src.(*source.SDKSource).CloseWriters()
+			sdkSrc.CloseWriters()
 			return true
 		})
 	}
@@ -519,11 +549,11 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ENDING)
-			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
+			c.sendHandlerUpdate(ctx, c.Info)
 			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_ENDING:
-			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
+			c.sendHandlerUpdate(ctx, c.Info)
 			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
@@ -856,7 +886,7 @@ func (c *Controller) updateStartTime(startedAt int64) {
 
 	if c.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
 		c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ACTIVE)
-		_, _ = c.ipcServiceClient.HandlerUpdate(context.Background(), c.Info)
+		c.sendHandlerUpdate(context.Background(), c.Info)
 	}
 }
 
@@ -894,7 +924,13 @@ func (c *Controller) streamUpdated(ctx context.Context) {
 		}
 	}
 
-	_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
+	c.sendHandlerUpdate(ctx, c.Info)
+}
+
+func (c *Controller) sendHandlerUpdate(ctx context.Context, info *livekit.EgressInfo) {
+	if c.ipcServiceClient != nil {
+		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, info)
+	}
 }
 
 func (c *Controller) updateEndTime() {

@@ -59,7 +59,7 @@ type BaseConfig struct {
 	S3AssumeRoleExternalID string                  `yaml:"s3_assume_role_external_id"` // if set, this external ID is used by default for S3 uploads
 
 	// advanced
-	Insecure                      bool                                `yaml:"insecure"`                           // allow chrome to connect to an insecure websocket
+	Insecure                      bool                                `yaml:"insecure"`                           // allow chrome to connect to an insecure websocket, bypasses chrome LNA checks
 	Debug                         DebugConfig                         `yaml:"debug"`                              // create dot file on internal error
 	ChromeFlags                   map[string]interface{}              `yaml:"chrome_flags"`                       // additional flags to pass to Chrome
 	Latency                       LatencyConfig                       `yaml:"latency"`                            // gstreamer latencies, modifying these may break the service

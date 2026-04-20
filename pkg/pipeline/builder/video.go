@@ -49,9 +49,11 @@ type VideoBin struct {
 	rawVideoTee *gst.Element
 }
 
-// buildLeakyVideoQueue creates a leaky queue and attaches a monitor to track dropped buffers
-func (b *VideoBin) buildLeakyVideoQueue(name string) (*gst.Element, error) {
-	queue, err := gstreamer.BuildQueue(name, b.conf.Latency.PipelineLatency, true)
+// buildVideoQueue creates a queue for the video pipeline. For live sources the
+// queue is leaky (drops old buffers when full) to handle real-time overrun. For
+// non-live replay the queue is blocking so backpressure throttles the source.
+func (b *VideoBin) buildVideoQueue(name string) (*gst.Element, error) {
+	queue, err := gstreamer.BuildQueue(name, b.conf.Latency.PipelineLatency, b.conf.Live)
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
@@ -97,7 +99,7 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 			return tee.GetRequestPad("src_%u")
 		}
 	} else if len(p.GetEncodedOutputs()) > 0 {
-		queue, err := b.buildLeakyVideoQueue("video_queue")
+		queue, err := b.buildVideoQueue("video_queue")
 		if err != nil {
 			return err
 		}
@@ -281,7 +283,7 @@ func (b *VideoBin) buildWebInput() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	videoQueue, err := b.buildLeakyVideoQueue("video_input_queue")
+	videoQueue, err := b.buildVideoQueue("video_input_queue")
 	if err != nil {
 		return err
 	}
@@ -384,8 +386,13 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		return false
 	})
 	ts.AppSrc.SetArg("format", "time")
-	if err := ts.AppSrc.SetProperty("is-live", true); err != nil {
+	if err := ts.AppSrc.SetProperty("is-live", b.conf.Live); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
+	}
+	if !b.conf.Live {
+		if err := ts.AppSrc.SetProperty("block", true); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
 	}
 	if err := appSrcBin.AddElement(ts.AppSrc.Element); err != nil {
 		return nil, err
@@ -725,7 +732,7 @@ func (b *VideoBin) addDecodedVideoSink() error {
 }
 
 func (b *VideoBin) addVideoConverter(bin *gstreamer.Bin) error {
-	videoQueue, err := b.buildLeakyVideoQueue("video_input_queue")
+	videoQueue, err := b.buildVideoQueue("video_input_queue")
 	if err != nil {
 		return err
 	}
