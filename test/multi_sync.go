@@ -144,9 +144,10 @@ func (r *Runner) testMultiParticipantScreenShare(t *testing.T, test *testCase) {
 	mp := NewMultiPublisher(t, r, 2, true, true)
 
 	// Add a screen share track from participant 0
-	ssTrack, err := lksdk.NewLocalFileTrack(participantMediaDefs[0].VideoFile,
+	ssFile, ssFd := videoFile(0)
+	ssTrack, err := lksdk.NewLocalFileTrack(ssFile,
 		lksdk.ReaderTrackWithOnWriteComplete(func() {}),
-		lksdk.ReaderTrackWithFrameDuration(time.Microsecond*41667),
+		lksdk.ReaderTrackWithFrameDuration(ssFd),
 	)
 	require.NoError(t, err)
 	ssPub, err := mp.Participants()[0].LocalParticipant.PublishTrack(ssTrack, &lksdk.TrackPublicationOptions{
@@ -226,8 +227,6 @@ func (r *Runner) testMultiParticipantAudioRouting(t *testing.T, test *testCase) 
 // connectAgent connects an agent participant and publishes audio at the given participant index's frequency.
 func (r *Runner) connectAgent(t *testing.T, participantIdx int) (*lksdk.Room, *lksdk.LocalTrackPublication) {
 	t.Helper()
-	media := participantMediaDefs[participantIdx]
-
 	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
@@ -238,12 +237,17 @@ func (r *Runner) connectAgent(t *testing.T, participantIdx int) (*lksdk.Room, *l
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 
-	track, err := lksdk.NewLocalFileTrack(media.AudioFile,
+	agentFile, agentFd := audioFile(participantIdx)
+	opts := []lksdk.ReaderSampleProviderOption{
 		lksdk.ReaderTrackWithOnWriteComplete(func() {}),
-	)
+	}
+	if agentFd != 0 {
+		opts = append(opts, lksdk.ReaderTrackWithFrameDuration(agentFd))
+	}
+	track, err := lksdk.NewLocalFileTrack(agentFile, opts...)
 	require.NoError(t, err)
 
-	pub, err := room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: media.AudioFile})
+	pub, err := room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: agentFile})
 	require.NoError(t, err)
 
 	return room, pub

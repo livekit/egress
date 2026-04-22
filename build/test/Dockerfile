@@ -132,14 +132,11 @@ RUN mkdir -p home/egress/tmp home/egress/.cache/xdgr && \
     chown -R egress /home/egress
 
 # copy files
-COPY test/agents/requirements.txt /agents/requirements.txt
-RUN pip install --break-system-packages --no-cache-dir -r /agents/requirements.txt
-
 COPY test/ /workspace/test/
 COPY --from=1 /workspace/egress /bin/
 COPY --from=1 /workspace/test.test .
 COPY media-samples /media-samples
-COPY --from=1 /workspace/test/agents /agents
+RUN /workspace/test/generate_test_media.sh /media-samples
 COPY build/test/entrypoint.sh .
 
 # Force lint stage to run successfully

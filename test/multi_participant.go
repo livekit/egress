@@ -172,7 +172,8 @@ func (mp *MultiPublisher) publishAll(t *testing.T, n int, publishAudio, publishV
 		lp := mp.rooms[i].LocalParticipant
 
 		if publishAudio {
-			pub := publishFileTrack(t, lp, audioFile(i))
+			f, fd := audioFile(i)
+			pub := publishFileTrack(t, lp, f, fd)
 			mp.audioPubs = append(mp.audioPubs, pub)
 			if i == 0 {
 				mp.AudioTrackID = pub.SID()
@@ -180,7 +181,8 @@ func (mp *MultiPublisher) publishAll(t *testing.T, n int, publishAudio, publishV
 		}
 
 		if publishVideo {
-			pub := publishFileTrack(t, lp, videoFile(i))
+			f, fd := videoFile(i)
+			pub := publishFileTrack(t, lp, f, fd)
 			mp.videoPubs = append(mp.videoPubs, pub)
 			if i == 0 {
 				mp.VideoTrackID = pub.SID()
@@ -221,10 +223,12 @@ func PublishOnRoom(t *testing.T, room *lksdk.Room, participantIdx int, publishAu
 	lp := room.LocalParticipant
 
 	if publishAudio {
-		audioPub = publishFileTrack(t, lp, audioFile(participantIdx))
+		f, fd := audioFile(participantIdx)
+		audioPub = publishFileTrack(t, lp, f, fd)
 	}
 	if publishVideo {
-		videoPub = publishFileTrack(t, lp, videoFile(participantIdx))
+		f, fd := videoFile(participantIdx)
+		videoPub = publishFileTrack(t, lp, f, fd)
 	}
 	return
 }
