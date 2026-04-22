@@ -29,14 +29,14 @@ import (
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-// participantMedia defines a participant's unique audio frequency and video color.
-type participantMedia struct {
+// ParticipantMediaDef defines a participant's unique audio frequency and video color.
+type ParticipantMediaDef struct {
 	Frequency float64 // Hz, for sync analysis
 	Color     string  // color name, for video file selection
 }
 
-// Per-participant definitions: unique frequency + color for sync analysis.
-var participantMediaDefs = []participantMedia{
+// ParticipantMediaDefs defines each participant's unique frequency and color for sync analysis.
+var ParticipantMediaDefs = []ParticipantMediaDef{
 	{Frequency: 440, Color: "red"},
 	{Frequency: 880, Color: "green"},
 	{Frequency: 1320, Color: "blue"},
@@ -53,7 +53,7 @@ var participantVideoCodecs = []types.MimeType{types.MimeTypeH264, types.MimeType
 
 // audioFile returns the audio file and frame duration for participant i.
 func audioFile(i int) (string, time.Duration) {
-	freq := participantMediaDefs[i].Frequency
+	freq := ParticipantMediaDefs[i].Frequency
 	switch participantAudioCodecs[i%3] {
 	case types.MimeTypeOpus:
 		return fmt.Sprintf("/media-samples/participant_%d_%.0fhz.ogg", i, freq), 0
@@ -72,7 +72,7 @@ func audioCodecFor(i int) types.MimeType {
 
 // videoFile returns the video file and frame duration for participant i.
 func videoFile(i int) (string, time.Duration) {
-	color := participantMediaDefs[i].Color
+	color := ParticipantMediaDefs[i].Color
 	switch participantVideoCodecs[i%3] {
 	case types.MimeTypeH264:
 		return fmt.Sprintf("/media-samples/participant_%d_%s.h264", i, color), time.Microsecond * 41667
@@ -97,7 +97,7 @@ type MultiPublisher struct {
 
 	audioPubs []*lksdk.LocalTrackPublication
 	videoPubs []*lksdk.LocalTrackPublication
-	media     []participantMedia
+	media     []ParticipantMediaDef
 
 	// Track IDs for the first participant (backward compat with testCase fields).
 	AudioTrackID string
@@ -114,12 +114,12 @@ type MultiPublisher struct {
 // to false to skip that media type. Maximum 6 participants.
 func NewMultiPublisher(t *testing.T, r *Runner, n int, publishAudio, publishVideo bool) *MultiPublisher {
 	t.Helper()
-	require.LessOrEqual(t, n, len(participantMediaDefs), "max %d participants supported", len(participantMediaDefs))
+	require.LessOrEqual(t, n, len(ParticipantMediaDefs), "max %d participants supported", len(ParticipantMediaDefs))
 
 	mp := &MultiPublisher{
 		t:         t,
 		rooms:     make([]*lksdk.Room, n),
-		media:     participantMediaDefs[:n],
+		media:     ParticipantMediaDefs[:n],
 		ownsRooms: true,
 		stopCh:    make(chan struct{}),
 	}
@@ -158,7 +158,7 @@ func NewRunnerPublisher(t *testing.T, r *Runner, publishAudio, publishVideo bool
 	mp := &MultiPublisher{
 		t:         t,
 		rooms:     []*lksdk.Room{r.room},
-		media:     participantMediaDefs[:1],
+		media:     ParticipantMediaDefs[:1],
 		ownsRooms: false,
 		stopCh:    make(chan struct{}),
 	}
@@ -264,7 +264,7 @@ func (mp *MultiPublisher) Participants() []*lksdk.Room {
 }
 
 // ParticipantMedia returns the media definitions (frequencies, file paths) for each participant.
-func (mp *MultiPublisher) ParticipantMedia() []participantMedia {
+func (mp *MultiPublisher) ParticipantMedia() []ParticipantMediaDef {
 	return mp.media
 }
 

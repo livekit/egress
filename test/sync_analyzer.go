@@ -631,7 +631,7 @@ func parseAudioEvents(logFile string, threshold float64) ([]audioEvent, error) {
 
 // extractRegionFlashes runs FFmpeg with a crop filter targeting a specific tile region
 // and detects flash events using signalstats YAVG.
-func extractRegionFlashes(videoPath string, tileX, tileY, tileW, tileH int, outPath string) ([]videoEvent, error) {
+func extractRegionFlashes(videoPath string, tileX, tileY, tileW, tileH int, outPath string) ([]videoEvent, error) { //nolint:revive
 	logFile := filepath.Join(outPath, fmt.Sprintf("video_region_%d_%d.log", tileX, tileY))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

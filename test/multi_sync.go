@@ -117,7 +117,7 @@ func (r *Runner) testMultiParticipantSync(t *testing.T, test *testCase, numParti
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 
-	fileRes := res.GetFile()
+	fileRes := res.GetFile() //nolint:staticcheck
 	if fileRes == nil {
 		require.Len(t, res.FileResults, 1)
 		fileRes = res.FileResults[0]
@@ -168,7 +168,7 @@ func (r *Runner) testMultiParticipantScreenShare(t *testing.T, test *testCase) {
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 
-	fileRes := res.GetFile()
+	fileRes := res.GetFile() //nolint:staticcheck
 	if fileRes == nil {
 		require.Len(t, res.FileResults, 1)
 		fileRes = res.FileResults[0]
@@ -203,7 +203,7 @@ func (r *Runner) testMultiParticipantAudioRouting(t *testing.T, test *testCase) 
 	time.Sleep(20 * time.Second)
 	res := r.stopEgress(t, egressID)
 
-	fileRes := res.GetFile()
+	fileRes := res.GetFile() //nolint:staticcheck
 	if fileRes == nil {
 		require.Len(t, res.FileResults, 1)
 		fileRes = res.FileResults[0]
