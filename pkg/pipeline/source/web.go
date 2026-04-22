@@ -46,9 +46,11 @@ const (
 	startRecordingLog = "START_RECORDING"
 	endRecordingLog   = "END_RECORDING"
 
-	chromeFailedToStart = "chrome failed to start:"
-	chromeTimeout       = time.Second * 30
-	chromeRetries       = 3
+	chromeFailedToStart       = "chrome failed to start:"
+	chromeCertVerifierChanged = "net::ERR_CERT_VERIFIER_CHANGED"
+
+	chromeTimeout = time.Second * 30
+	chromeRetries = 3
 )
 
 type WebSource struct {
@@ -381,6 +383,10 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 		}
 		if strings.HasPrefix(err.Error(), chromeFailedToStart) {
 			return errors.ChromeError(err), false
+		}
+		if strings.Contains(err.Error(), chromeCertVerifierChanged) {
+			logger.Warnw("chrome cert verifier changed, retrying", nil)
+			return errors.PageLoadError(err.Error()), true
 		}
 		return errors.PageLoadError(err.Error()), false
 	} else if errString != "" {
