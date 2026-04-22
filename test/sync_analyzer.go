@@ -182,7 +182,9 @@ func ffmpegSilenceStats(audioPath string, noiseLevel int, minDuration float64) (
 //----------------------------------------------------------------------
 
 // extractFlashTimestamps runs ffmpeg + signalstats on the top stripe
-// and returns one timestamp per flash event (YAVG >= 130, spaced >= 0.2s).
+// and returns one timestamp per flash event (YAVG >= flashDetectionThreshold, spaced >= 0.2s).
+// The threshold is set low enough to detect colored flashes (red Y≈76, green Y≈150, blue Y≈29)
+// as well as white flashes (Y=255).
 func extractFlashTimestamps(videoPath, outPath string) ([]time.Duration, error) {
 	logFile := filepath.Join(outPath, "video_flash.log")
 
@@ -197,7 +199,7 @@ func extractFlashTimestamps(videoPath, outPath string) ([]time.Duration, error) 
 	}
 	defer file.Close()
 
-	const flashThreshold = 130.0
+	const flashThreshold = 15.0
 	const minGap = 200 * time.Millisecond
 
 	var (
@@ -670,7 +672,7 @@ func parseFlashEvents(logFile string) ([]videoEvent, error) {
 	}
 	defer file.Close()
 
-	const flashThreshold = 130.0
+	const flashThreshold = 15.0
 	const minGap = 200 * time.Millisecond
 
 	var (

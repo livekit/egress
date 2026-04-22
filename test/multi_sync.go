@@ -19,6 +19,7 @@ package test
 import (
 	"fmt"
 	"math/rand"
+	"path"
 	"testing"
 	"time"
 
@@ -122,15 +123,18 @@ func (r *Runner) testMultiParticipantSync(t *testing.T, test *testCase, numParti
 		require.Len(t, res.FileResults, 1)
 		fileRes = res.FileResults[0]
 	}
-	outputFile := fileRes.Filename
-	_ = p
+
+	// Download from cloud storage
+	storagePath := fileRes.Filename
+	localPath := path.Join(r.FilePrefix, path.Base(storagePath))
+	download(t, p.GetFileConfig().StorageConfig, localPath, storagePath, false)
 
 	// Build participant specs with expected tile positions
 	specs := buildParticipantSpecs(mp, layout, int(p.Width), int(p.Height))
 
 	// Run sync analysis
 	tolerance := 300 * time.Millisecond
-	results := AnalyzeSync(t, outputFile, specs, turnDuration, tolerance, r.FilePrefix)
+	results := AnalyzeSync(t, localPath, specs, turnDuration, tolerance, r.FilePrefix)
 
 	for _, result := range results {
 		t.Logf("participant=%s intra=%v inter=%v audio=%v video=%v",
@@ -173,12 +177,15 @@ func (r *Runner) testMultiParticipantScreenShare(t *testing.T, test *testCase) {
 		require.Len(t, res.FileResults, 1)
 		fileRes = res.FileResults[0]
 	}
-	outputFile := fileRes.Filename
+
+	storagePath := fileRes.Filename
+	localPath := path.Join(r.FilePrefix, path.Base(storagePath))
+	download(t, p.GetFileConfig().StorageConfig, localPath, storagePath, false)
 
 	// With a screen share, grid should auto-switch to speaker layout.
 	// Screen share should be in the focus position (75% width).
 	focusW := int(p.Width) * 3 / 4
-	focusFlashes, err := extractRegionFlashes(outputFile, 0, 0, focusW, int(p.Height), r.FilePrefix)
+	focusFlashes, err := extractRegionFlashes(localPath, 0, 0, focusW, int(p.Height), r.FilePrefix)
 	require.NoError(t, err)
 	require.NotEmpty(t, focusFlashes, "screen share should produce flashes in focus region")
 }
@@ -203,23 +210,29 @@ func (r *Runner) testMultiParticipantAudioRouting(t *testing.T, test *testCase) 
 	time.Sleep(20 * time.Second)
 	res := r.stopEgress(t, egressID)
 
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+
 	fileRes := res.GetFile() //nolint:staticcheck
 	if fileRes == nil {
 		require.Len(t, res.FileResults, 1)
 		fileRes = res.FileResults[0]
 	}
-	outputFile := fileRes.Filename
+
+	storagePath := fileRes.Filename
+	localPath := path.Join(r.FilePrefix, path.Base(storagePath))
+	download(t, p.GetFileConfig().StorageConfig, localPath, storagePath, false)
 
 	// With DUAL_CHANNEL_AGENT, agent audio is routed to a separate channel.
 	// Verify user frequencies (440Hz, 880Hz) are present in the mix.
 	for _, freq := range []float64{440, 880} {
-		events, err := extractFrequencyAudio(outputFile, freq, r.FilePrefix)
+		events, err := extractFrequencyAudio(localPath, freq, r.FilePrefix)
 		require.NoError(t, err)
 		require.NotEmpty(t, events, "user audio (%.0fHz) should be present in mix", freq)
 	}
 
 	// Verify agent's frequency (1320Hz) is present (it's in the output, just on a separate channel)
-	agentEvents, err := extractFrequencyAudio(outputFile, 1320, r.FilePrefix)
+	agentEvents, err := extractFrequencyAudio(localPath, 1320, r.FilePrefix)
 	require.NoError(t, err)
 	require.NotEmpty(t, agentEvents, "agent audio (1320Hz) should be present in dual-channel output")
 }
