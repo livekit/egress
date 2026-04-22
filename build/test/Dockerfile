@@ -135,7 +135,6 @@ RUN mkdir -p home/egress/tmp home/egress/.cache/xdgr && \
 COPY test/ /workspace/test/
 COPY --from=1 /workspace/egress /bin/
 COPY --from=1 /workspace/test.test .
-RUN mkdir -p /media-samples && /workspace/test/generate_test_media.sh /media-samples
 COPY build/test/entrypoint.sh .
 
 # Force lint stage to run successfully

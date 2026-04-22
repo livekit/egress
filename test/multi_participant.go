@@ -56,11 +56,11 @@ func audioFile(i int) (string, time.Duration) {
 	freq := ParticipantMediaDefs[i].Frequency
 	switch participantAudioCodecs[i%3] {
 	case types.MimeTypeOpus:
-		return fmt.Sprintf("/media-samples/participant_%d_%.0fhz.ogg", i, freq), 0
+		return fmt.Sprintf("/workspace/test/samples/participant_%d_%.0fhz.ogg", i, freq), 0
 	case types.MimeTypePCMU:
-		return fmt.Sprintf("/media-samples/participant_%d_%.0fhz_pcmu.wav", i, freq), time.Millisecond * 20
+		return fmt.Sprintf("/workspace/test/samples/participant_%d_%.0fhz_pcmu.wav", i, freq), time.Millisecond * 20
 	case types.MimeTypePCMA:
-		return fmt.Sprintf("/media-samples/participant_%d_%.0fhz_pcma.wav", i, freq), time.Millisecond * 20
+		return fmt.Sprintf("/workspace/test/samples/participant_%d_%.0fhz_pcma.wav", i, freq), time.Millisecond * 20
 	}
 	return "", 0
 }
@@ -75,11 +75,11 @@ func videoFile(i int) (string, time.Duration) {
 	color := ParticipantMediaDefs[i].Color
 	switch participantVideoCodecs[i%3] {
 	case types.MimeTypeH264:
-		return fmt.Sprintf("/media-samples/participant_%d_%s.h264", i, color), time.Microsecond * 41667
+		return fmt.Sprintf("/workspace/test/samples/participant_%d_%s.h264", i, color), time.Microsecond * 41667
 	case types.MimeTypeVP8:
-		return fmt.Sprintf("/media-samples/participant_%d_%s_vp8.ivf", i, color), time.Microsecond * 41667
+		return fmt.Sprintf("/workspace/test/samples/participant_%d_%s_vp8.ivf", i, color), time.Microsecond * 41667
 	case types.MimeTypeVP9:
-		return fmt.Sprintf("/media-samples/participant_%d_%s_vp9.ivf", i, color), time.Microsecond * 41667
+		return fmt.Sprintf("/workspace/test/samples/participant_%d_%s_vp9.ivf", i, color), time.Microsecond * 41667
 	}
 	return "", 0
 }

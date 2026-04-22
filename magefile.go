@@ -91,18 +91,7 @@ func Proto() error {
 	))
 }
 
-func EnsureMediaSamples() error {
-	if err := os.MkdirAll("media-samples", 0o755); err != nil {
-		return err
-	}
-	return nil
-}
-
 func Integration(configFile string) error {
-	if err := EnsureMediaSamples(); err != nil {
-		return err
-	}
-
 	ctx := context.Background()
 	os.Setenv("DOCKER_BUILDKIT", "1")
 	defer os.Unsetenv("DOCKER_BUILDKIT")
