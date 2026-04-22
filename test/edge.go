@@ -232,7 +232,7 @@ func (r *Runner) testRoomCompositeLateTrackDuration(t *testing.T, test *testCase
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(p2.Disconnect)
-	r.publish(t, p2.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	publishLegacyTrack(t, p2.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
 
 	// Let the late track record for a few seconds
 	time.Sleep(time.Second * 7)
@@ -279,7 +279,7 @@ func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(p1.Disconnect)
-	r.publish(t, p1.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	publishLegacyTrack(t, p1.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
 
 	agent, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
@@ -291,7 +291,7 @@ func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(agent.Disconnect)
-	r.publish(t, agent.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	publishLegacyTrack(t, agent.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
 
 	p2, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
@@ -302,7 +302,7 @@ func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(p2.Disconnect)
-	r.publish(t, p2.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	publishLegacyTrack(t, p2.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
 
 	r.runFileTest(t, test)
 }
@@ -351,8 +351,8 @@ func (r *Runner) testRoomCompositeStaysOpen(t *testing.T, test *testCase) {
 	require.NoError(t, err)
 	r.room = room
 
-	r.publishSample(t, types.MimeTypeOpus, 0, 0, false)
-	r.publishSample(t, types.MimeTypeVP8, 0, 0, false)
+	publishLegacyTrack(t, r.room.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	publishLegacyTrack(t, r.room.LocalParticipant, types.MimeTypeVP8, make(chan struct{}))
 
 	time.Sleep(time.Second * 10)
 
@@ -535,7 +535,13 @@ func (r *Runner) testSrtFailure(t *testing.T, test *testCase) {
 }
 
 func (r *Runner) testTrackDisconnection(t *testing.T, test *testCase) {
-	test.videoTrackID = r.publishSampleWithDisconnection(t, types.MimeTypeVP8)
+	pub := publishLegacyTrack(t, r.room.LocalParticipant, types.MimeTypeVP8, make(chan struct{}))
+	test.videoTrackID = pub.SID()
+
+	time.AfterFunc(time.Second*10, func() {
+		pub.SimulateDisconnection(time.Second * 10)
+	})
+
 	r.runFileTest(t, test)
 }
 

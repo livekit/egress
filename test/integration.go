@@ -43,6 +43,7 @@ func (r *Runner) RunTests(t *testing.T) {
 	r.testImages(t)
 	r.testMulti(t)
 	r.testEdgeCases(t)
+	r.testMultiSync(t)
 }
 
 func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)) bool {
@@ -68,17 +69,9 @@ func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)
 
 	r.testNumber++
 	t.Run(fmt.Sprintf("%d/%s", r.testNumber, test.name), func(t *testing.T) {
-		audioMuting := r.Muting
-		videoMuting := r.Muting && test.audioCodec == ""
-
-		test.audioTrackID = r.publishSample(t, test.audioCodec, test.audioDelay, test.audioUnpublish, audioMuting)
-		if test.audioRepublish != 0 {
-			r.publishSample(t, test.audioCodec, test.audioRepublish, 0, audioMuting)
-		}
-		test.videoTrackID = r.publishSample(t, test.videoCodec, test.videoDelay, test.videoUnpublish, videoMuting)
-		if test.videoRepublish != 0 {
-			r.publishSample(t, test.videoCodec, test.videoRepublish, 0, videoMuting)
-		}
+		mp := NewLegacyPublisher(t, r, test.publishOptions)
+		test.audioTrackID = mp.AudioTrackID
+		test.videoTrackID = mp.VideoTrackID
 
 		logger.Infow("test publish summary",
 			"test", test.name,

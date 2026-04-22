@@ -29,14 +29,15 @@ const (
 
 	runAllRequests = 0b1111111
 
-	runFile     = 0b1 << 31
-	runStream   = 0b1 << 30
-	runSegments = 0b1 << 29
-	runImages   = 0b1 << 28
-	runMulti    = 0b1 << 27
-	runEdge     = 0b1 << 26
+	runFile      = 0b1 << 31
+	runStream    = 0b1 << 30
+	runSegments  = 0b1 << 29
+	runImages    = 0b1 << 28
+	runMulti     = 0b1 << 27
+	runEdge      = 0b1 << 26
+	runMultiSync = 0b1 << 25
 
-	runAllOutputs = 0b111111 << 26
+	runAllOutputs = 0b1111111 << 25
 )
 
 var runRequestType = map[types.RequestType]uint{
@@ -82,6 +83,8 @@ func (r *Runner) updateFlagset() {
 		r.shouldRun |= runMulti
 	case r.EdgeCasesOnly:
 		r.shouldRun |= runEdge
+	case r.MultiSyncTestsOnly:
+		r.shouldRun |= runMultiSync
 	default:
 		r.shouldRun |= runAllOutputs
 	}

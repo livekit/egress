@@ -74,11 +74,12 @@ type Runner struct {
 	MediaTestsOnly          bool `yaml:"media_only"`
 	EdgeCasesOnly           bool `yaml:"edge_cases_only"`
 
-	FileTestsOnly    bool `yaml:"file_only"`
-	StreamTestsOnly  bool `yaml:"stream_only"`
-	SegmentTestsOnly bool `yaml:"segments_only"`
-	ImageTestsOnly   bool `yaml:"images_only"`
-	MultiTestsOnly   bool `yaml:"multi_only"`
+	FileTestsOnly      bool `yaml:"file_only"`
+	StreamTestsOnly    bool `yaml:"stream_only"`
+	SegmentTestsOnly   bool `yaml:"segments_only"`
+	ImageTestsOnly     bool `yaml:"images_only"`
+	MultiTestsOnly     bool `yaml:"multi_only"`
+	MultiSyncTestsOnly bool `yaml:"multi_sync_only"`
 }
 
 type Server interface {
@@ -152,6 +153,9 @@ func NewRunner(t *testing.T) *Runner {
 	case "multi":
 		r.MultiTestsOnly = true
 		r.RoomName = fmt.Sprintf("multi-integration-%d", rand.Intn(100))
+	case "multi_sync":
+		r.MultiSyncTestsOnly = true
+		r.RoomName = fmt.Sprintf("multi-sync-integration-%d", rand.Intn(100))
 	case "edge":
 		r.EdgeCasesOnly = true
 		r.RoomName = fmt.Sprintf("edge-integration-%d", rand.Intn(100))

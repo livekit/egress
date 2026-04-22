@@ -7,3 +7,4 @@ media-samples/
 test/output/*
 test/*.yaml
 !test/config-sample.yaml
+test/templates/*
