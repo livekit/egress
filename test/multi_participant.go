@@ -29,20 +29,64 @@ import (
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-// participantMedia maps participant index to audio/video file paths and frequency.
+// participantMedia defines a participant's unique audio frequency and video color.
 type participantMedia struct {
-	AudioFile string
-	VideoFile string
 	Frequency float64 // Hz, for sync analysis
+	Color     string  // color name, for video file selection
 }
 
+// Per-participant definitions: unique frequency + color for sync analysis.
 var participantMediaDefs = []participantMedia{
-	{"/media-samples/participant_0_440hz.ogg", "/media-samples/participant_0_red.h264", 440},
-	{"/media-samples/participant_1_880hz.ogg", "/media-samples/participant_1_green.h264", 880},
-	{"/media-samples/participant_2_1320hz.ogg", "/media-samples/participant_2_blue.h264", 1320},
-	{"/media-samples/participant_3_1760hz.ogg", "/media-samples/participant_3_yellow.h264", 1760},
-	{"/media-samples/participant_4_2200hz.ogg", "/media-samples/participant_4_cyan.h264", 2200},
-	{"/media-samples/participant_5_2640hz.ogg", "/media-samples/participant_5_magenta.h264", 2640},
+	{Frequency: 440, Color: "red"},
+	{Frequency: 880, Color: "green"},
+	{Frequency: 1320, Color: "blue"},
+	{Frequency: 1760, Color: "yellow"},
+	{Frequency: 2200, Color: "cyan"},
+	{Frequency: 2640, Color: "magenta"},
+}
+
+// Codec rotation: participant i uses codec at index i%3.
+// Audio: 0,3=Opus  1,4=PCMU  2,5=PCMA
+// Video: 0,3=H264  1,4=VP8   2,5=VP9
+var participantAudioCodecs = []types.MimeType{types.MimeTypeOpus, types.MimeTypePCMU, types.MimeTypePCMA}
+var participantVideoCodecs = []types.MimeType{types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9}
+
+// audioFile returns the audio file and frame duration for participant i.
+func audioFile(i int) (string, time.Duration) {
+	freq := participantMediaDefs[i].Frequency
+	switch participantAudioCodecs[i%3] {
+	case types.MimeTypeOpus:
+		return fmt.Sprintf("/media-samples/participant_%d_%.0fhz.ogg", i, freq), 0
+	case types.MimeTypePCMU:
+		return fmt.Sprintf("/media-samples/participant_%d_%.0fhz_pcmu.wav", i, freq), time.Millisecond * 20
+	case types.MimeTypePCMA:
+		return fmt.Sprintf("/media-samples/participant_%d_%.0fhz_pcma.wav", i, freq), time.Millisecond * 20
+	}
+	return "", 0
+}
+
+// audioCodecFor returns the audio codec assigned to participant i.
+func audioCodecFor(i int) types.MimeType {
+	return participantAudioCodecs[i%3]
+}
+
+// videoFile returns the video file and frame duration for participant i.
+func videoFile(i int) (string, time.Duration) {
+	color := participantMediaDefs[i].Color
+	switch participantVideoCodecs[i%3] {
+	case types.MimeTypeH264:
+		return fmt.Sprintf("/media-samples/participant_%d_%s.h264", i, color), time.Microsecond * 41667
+	case types.MimeTypeVP8:
+		return fmt.Sprintf("/media-samples/participant_%d_%s_vp8.ivf", i, color), time.Microsecond * 41667
+	case types.MimeTypeVP9:
+		return fmt.Sprintf("/media-samples/participant_%d_%s_vp9.ivf", i, color), time.Microsecond * 41667
+	}
+	return "", 0
+}
+
+// videoCodecFor returns the video codec assigned to participant i.
+func videoCodecFor(i int) types.MimeType {
+	return participantVideoCodecs[i%3]
 }
 
 // MultiPublisher manages N participants in a room, each publishing
@@ -55,26 +99,29 @@ type MultiPublisher struct {
 	videoPubs []*lksdk.LocalTrackPublication
 	media     []participantMedia
 
-	// Track IDs set after publishing (for legacy compat with testCase.audioTrackID/videoTrackID)
+	// Track IDs for the first participant (backward compat with testCase fields).
 	AudioTrackID string
 	VideoTrackID string
 
-	stopOnce sync.Once
-	stopCh   chan struct{}
+	ownsRooms bool // false when using runner's room
+	stopOnce  sync.Once
+	stopCh    chan struct{}
 }
 
-// NewMultiPublisher connects n participants to the runner's room and publishes
-// audio and video tracks for each using per-participant test media (unique frequency/color).
-// Use audioCodec="" or videoCodec="" to skip that media type. Maximum 6 participants.
-func NewMultiPublisher(t *testing.T, r *Runner, n int, audioCodec, videoCodec types.MimeType) *MultiPublisher {
+// NewMultiPublisher connects n new participants to the runner's room and publishes
+// audio and video tracks for each. Each participant uses its assigned codec from the
+// rotation (audio: Opus/PCMU/PCMA, video: H264/VP8/VP9). Set publishAudio/publishVideo
+// to false to skip that media type. Maximum 6 participants.
+func NewMultiPublisher(t *testing.T, r *Runner, n int, publishAudio, publishVideo bool) *MultiPublisher {
 	t.Helper()
 	require.LessOrEqual(t, n, len(participantMediaDefs), "max %d participants supported", len(participantMediaDefs))
 
 	mp := &MultiPublisher{
-		t:      t,
-		rooms:  make([]*lksdk.Room, n),
-		media:  participantMediaDefs[:n],
-		stopCh: make(chan struct{}),
+		t:         t,
+		rooms:     make([]*lksdk.Room, n),
+		media:     participantMediaDefs[:n],
+		ownsRooms: true,
+		stopCh:    make(chan struct{}),
 	}
 
 	for i := 0; i < n; i++ {
@@ -89,165 +136,122 @@ func NewMultiPublisher(t *testing.T, r *Runner, n int, audioCodec, videoCodec ty
 		mp.rooms[i] = room
 	}
 
-	// Publish tracks
+	mp.publishAll(t, n, publishAudio, publishVideo)
+
+	t.Cleanup(func() {
+		mp.StopRotation()
+		if mp.ownsRooms {
+			for _, room := range mp.rooms {
+				room.Disconnect()
+			}
+		}
+	})
+
+	return mp
+}
+
+// NewRunnerPublisher creates a single-participant MultiPublisher on the runner's
+// existing room. Used by r.run() so the runner's primary participant publishes.
+func NewRunnerPublisher(t *testing.T, r *Runner, publishAudio, publishVideo bool) *MultiPublisher {
+	t.Helper()
+
+	mp := &MultiPublisher{
+		t:         t,
+		rooms:     []*lksdk.Room{r.room},
+		media:     participantMediaDefs[:1],
+		ownsRooms: false,
+		stopCh:    make(chan struct{}),
+	}
+
+	mp.publishAll(t, 1, publishAudio, publishVideo)
+	return mp
+}
+
+func (mp *MultiPublisher) publishAll(t *testing.T, n int, publishAudio, publishVideo bool) {
 	for i := 0; i < n; i++ {
 		lp := mp.rooms[i].LocalParticipant
-		done := make(chan struct{})
 
-		if audioCodec != "" {
-			audioFile := mp.media[i].AudioFile
-			audioTrack, err := lksdk.NewLocalFileTrack(audioFile,
-				lksdk.ReaderTrackWithOnWriteComplete(func() {}),
-			)
-			require.NoError(t, err)
-			pub, err := lp.PublishTrack(audioTrack, &lksdk.TrackPublicationOptions{Name: audioFile})
-			require.NoError(t, err)
+		if publishAudio {
+			pub := publishFileTrack(t, lp, audioFile(i))
 			mp.audioPubs = append(mp.audioPubs, pub)
 			if i == 0 {
 				mp.AudioTrackID = pub.SID()
 			}
 		}
 
-		if videoCodec != "" {
-			videoFile := mp.media[i].VideoFile
-			videoTrack, err := lksdk.NewLocalFileTrack(videoFile,
-				lksdk.ReaderTrackWithOnWriteComplete(func() { close(done) }),
-				lksdk.ReaderTrackWithFrameDuration(time.Microsecond*41667), // ~24fps
-			)
-			require.NoError(t, err)
-			pub, err := lp.PublishTrack(videoTrack, &lksdk.TrackPublicationOptions{Name: videoFile})
-			require.NoError(t, err)
+		if publishVideo {
+			pub := publishFileTrack(t, lp, videoFile(i))
 			mp.videoPubs = append(mp.videoPubs, pub)
 			if i == 0 {
 				mp.VideoTrackID = pub.SID()
 			}
 		}
 	}
-
-	t.Cleanup(func() {
-		mp.StopRotation()
-		for _, room := range mp.rooms {
-			room.Disconnect()
-		}
-	})
-
-	return mp
 }
 
-// NewLegacyPublisher creates a single-participant MultiPublisher using the existing
-// test media files (avsync_minmotion_livekit*) and the runner's primary room. This
-// provides backward compatibility for tests that use publishOptions with timing features.
-// The participant is the runner's own room local participant — no new room is connected.
-func NewLegacyPublisher(t *testing.T, r *Runner, opts publishOptions) *MultiPublisher {
-	t.Helper()
+// publishFileTrack publishes a single track from a file with an optional frame duration.
+func publishFileTrack(t *testing.T, lp *lksdk.LocalParticipant, file string, frameDuration time.Duration) *lksdk.LocalTrackPublication {
+	require.NotEmpty(t, file)
 
-	mp := &MultiPublisher{
-		t:      t,
-		rooms:  []*lksdk.Room{r.room},
-		stopCh: make(chan struct{}),
-	}
-
-	lp := r.room.LocalParticipant
-	audioMuting := r.Muting
-	videoMuting := r.Muting && opts.audioCodec == ""
-
-	mp.AudioTrackID = mp.publishWithTiming(t, lp, opts.audioCodec, opts.audioDelay, opts.audioUnpublish, audioMuting)
-	if opts.audioRepublish != 0 {
-		mp.publishWithTiming(t, lp, opts.audioCodec, opts.audioRepublish, 0, audioMuting)
-	}
-	mp.VideoTrackID = mp.publishWithTiming(t, lp, opts.videoCodec, opts.videoDelay, opts.videoUnpublish, videoMuting)
-	if opts.videoRepublish != 0 {
-		mp.publishWithTiming(t, lp, opts.videoCodec, opts.videoRepublish, 0, videoMuting)
-	}
-
-	// Don't disconnect r.room on cleanup — it's owned by the Runner
-	return mp
-}
-
-// publishWithTiming publishes a track from the old test media with delay/unpublish/muting support.
-// This is the MultiPublisher equivalent of the old Runner.publishSample.
-func (mp *MultiPublisher) publishWithTiming(t *testing.T, lp *lksdk.LocalParticipant, codec types.MimeType, publishAfter, unpublishAfter time.Duration, withMuting bool) string {
-	if codec == "" {
-		return ""
-	}
-
-	trackID := make(chan string, 1)
-	time.AfterFunc(publishAfter, func() {
-		done := make(chan struct{})
-		unpublished := make(chan struct{})
-
-		pub := publishLegacyTrack(t, lp, codec, done)
-		trackID <- pub.SID()
-
-		if withMuting {
-			go func() {
-				muted := false
-				time.Sleep(time.Second * 15)
-				for {
-					select {
-					case <-unpublished:
-						return
-					case <-done:
-						return
-					default:
-						pub.SetMuted(!muted)
-						muted = !muted
-						time.Sleep(time.Second * 10)
-					}
-				}
-			}()
-		}
-
-		if unpublishAfter != 0 {
-			time.AfterFunc(unpublishAfter-publishAfter, func() {
-				select {
-				case <-done:
-					return
-				default:
-					close(unpublished)
-					_ = lp.UnpublishTrack(pub.SID())
-				}
-			})
-		}
-	})
-
-	if publishAfter == 0 {
-		return <-trackID
-	}
-	return "TBD"
-}
-
-// publishLegacyTrack publishes a track using the old test media files (samples map).
-func publishLegacyTrack(t *testing.T, p *lksdk.LocalParticipant, codec types.MimeType, done chan struct{}) *lksdk.LocalTrackPublication {
-	filename := samples[codec]
-	frameDuration := frameDurations[codec]
-
-	var pub *lksdk.LocalTrackPublication
 	opts := []lksdk.ReaderSampleProviderOption{
-		lksdk.ReaderTrackWithOnWriteComplete(func() {
-			close(done)
-			if pub != nil {
-				_ = p.UnpublishTrack(pub.SID())
-			}
-		}),
+		lksdk.ReaderTrackWithOnWriteComplete(func() {}),
 	}
-
 	if frameDuration != 0 {
 		opts = append(opts, lksdk.ReaderTrackWithFrameDuration(frameDuration))
 	}
 
-	track, err := lksdk.NewLocalFileTrack(filename, opts...)
+	track, err := lksdk.NewLocalFileTrack(file, opts...)
 	require.NoError(t, err)
 
-	pub, err = p.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
+	pub, err := lp.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: file})
 	require.NoError(t, err)
 
 	trackID := pub.SID()
 	t.Cleanup(func() {
-		_ = p.UnpublishTrack(trackID)
+		_ = lp.UnpublishTrack(trackID)
 	})
 
 	return pub
+}
+
+// PublishOnRoom publishes audio and/or video on an externally-connected participant.
+// Uses the participant index to select the right files from the rotation.
+func PublishOnRoom(t *testing.T, room *lksdk.Room, participantIdx int, publishAudio, publishVideo bool) (audioPub, videoPub *lksdk.LocalTrackPublication) {
+	t.Helper()
+	lp := room.LocalParticipant
+
+	if publishAudio {
+		audioPub = publishFileTrack(t, lp, audioFile(participantIdx))
+	}
+	if publishVideo {
+		videoPub = publishFileTrack(t, lp, videoFile(participantIdx))
+	}
+	return
+}
+
+// ScheduleUnpublish unpublishes a track after a delay.
+func ScheduleUnpublish(lp *lksdk.LocalParticipant, trackID string, after time.Duration) {
+	time.AfterFunc(after, func() {
+		_ = lp.UnpublishTrack(trackID)
+	})
+}
+
+// ScheduleMuting starts periodic muting on a publication (15s delay, then toggle every 10s).
+func ScheduleMuting(pub *lksdk.LocalTrackPublication, stop <-chan struct{}) {
+	go func() {
+		muted := false
+		time.Sleep(time.Second * 15)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				pub.SetMuted(!muted)
+				muted = !muted
+				time.Sleep(time.Second * 10)
+			}
+		}
+	}()
 }
 
 // Participants returns the connected rooms.
@@ -273,7 +277,6 @@ func (mp *MultiPublisher) StartRotation(turnDuration time.Duration) {
 		return
 	}
 
-	// Start with all muted except participant 0
 	for i, pub := range mp.audioPubs {
 		pub.SetMuted(i != 0)
 	}

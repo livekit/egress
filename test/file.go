@@ -49,8 +49,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "r_{room_name}_{time}.mp4",
 				},
-				contentCheck: r.fullContentCheck,
-			},
+							},
 			{
 				name:        "RoomComposite/VideoOnly",
 				requestType: types.RequestTypeRoomComposite, publishOptions: publishOptions{
@@ -64,8 +63,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "r_{room_name}_video_{time}.mp4",
 				},
-				contentCheck: r.videoOnlyContentCheck,
-			},
+							},
 			{
 				name:        "RoomComposite/AudioOnly",
 				requestType: types.RequestTypeRoomComposite, publishOptions: publishOptions{
@@ -79,8 +77,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "r_{room_name}_audio_{time}",
 					fileType: livekit.EncodedFileType_OGG,
 				},
-				contentCheck: r.audioOnlyContentCheck,
-			},
+							},
 			{
 				name:        "RoomComposite/AudioOnlyMP3",
 				requestType: types.RequestTypeRoomComposite,
@@ -92,8 +89,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "r_{room_name}_audio_mp3_{time}",
 					fileType: livekit.EncodedFileType_MP3,
 				},
-				contentCheck: r.audioOnlyContentCheck,
-			},
+							},
 
 			// ---------- Web ----------
 
@@ -136,7 +132,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "participant_{room_name}_h264_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
-				contentCheck: r.fullContentCheckWithVideoUnpublishAt10AndRepublishAt20,
+				contentCheck: verifyVideoGap,
 			},
 			{
 				name:        "ParticipantComposite/AudioOnly",
@@ -163,8 +159,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "tc_{publisher_identity}_vp8_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
-				contentCheck: r.fullContentCheck,
-			},
+							},
 			{
 				name:        "TrackComposite/VideoOnly",
 				requestType: types.RequestTypeTrackComposite,
@@ -176,8 +171,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "tc_{room_name}_video_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
-				contentCheck: r.videoOnlyContentCheck,
-			},
+							},
 			{
 				name:        "TrackComposite/AudioOnlyMP3",
 				requestType: types.RequestTypeTrackComposite,
@@ -190,8 +184,7 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType:   livekit.EncodedFileType_MP3,
 					outputType: types.OutputTypeMP3,
 				},
-				contentCheck: r.audioOnlyContentCheck,
-			},
+							},
 			{
 				name:        "TrackComposite/AudioOnlyPCMU",
 				requestType: types.RequestTypeTrackComposite,
@@ -204,8 +197,7 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType:   livekit.EncodedFileType_MP4,
 					outputType: types.OutputTypeMP4,
 				},
-				contentCheck: r.audioOnlyContentCheck,
-			},
+							},
 			{
 				name:        "TrackComposite/AudioOnlyPCMA",
 				requestType: types.RequestTypeTrackComposite,
@@ -218,8 +210,7 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType:   livekit.EncodedFileType_MP4,
 					outputType: types.OutputTypeMP4,
 				},
-				contentCheck: r.audioOnlyContentCheck,
-			},
+							},
 
 			// --------- Track ---------
 
@@ -234,8 +225,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_source}_{time}.ogg",
 					outputType: types.OutputTypeOGG,
 				},
-				contentCheck: r.audioOnlyContentCheck,
-			},
+							},
 			{
 				name:        "Track/PCMU",
 				requestType: types.RequestTypeTrack,
@@ -247,8 +237,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_source}_pcmu_{time}.ogg",
 					outputType: types.OutputTypeOGG,
 				},
-				contentCheck: r.audioOnlyContentCheck,
-			},
+							},
 			{
 				name:        "Track/PCMA",
 				requestType: types.RequestTypeTrack,
@@ -260,8 +249,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_source}_pcma_{time}.ogg",
 					outputType: types.OutputTypeOGG,
 				},
-				contentCheck: r.audioOnlyContentCheck,
-			},
+							},
 			{
 				name:        "Track/H264",
 				requestType: types.RequestTypeTrack,
@@ -274,8 +262,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_id}_{time}.mp4",
 					outputType: types.OutputTypeMP4,
 				},
-				contentCheck: r.videoOnlyContentCheck,
-			},
+							},
 			{
 				name:        "Track/VP8",
 				requestType: types.RequestTypeTrack,
@@ -287,8 +274,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_type}_{time}.webm",
 					outputType: types.OutputTypeWebM,
 				},
-				contentCheck: r.videoOnlyContentCheck,
-			},
+							},
 			// {
 			// 	name:       "Track/VP9",
 			// 	videoOnly:  true,
@@ -313,8 +299,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "template_audio_{time}",
 					fileType: livekit.EncodedFileType_OGG,
 				},
-				contentCheck: r.audioOnlyContentCheck,
-			},
+							},
 			{
 				name:        "Template/VideoOnly",
 				requestType: types.RequestTypeTemplate,
@@ -326,8 +311,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "template_video_{time}.mp4",
 				},
-				contentCheck: r.videoOnlyContentCheck,
-			},
+							},
 			{
 				name:        "Template/Base",
 				requestType: types.RequestTypeTemplate,
@@ -339,8 +323,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "template_{time}.mp4",
 				},
-				contentCheck: r.fullContentCheck,
-			},
+							},
 
 			// --------- Web V2 --------
 
@@ -358,8 +341,7 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType: livekit.EncodedFileType_OGG,
 				},
 				v2OutputOptions: &v2OutputOptions{},
-				contentCheck:    r.audioOnlyContentCheck,
-			},
+							},
 			{
 				name:        "WebV2/VideoOnly",
 				requestType: types.RequestTypeWeb,
@@ -403,8 +385,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "media_audio_{time}",
 					fileType: livekit.EncodedFileType_OGG,
 				},
-				contentCheck: r.audioOnlyContentCheck,
-			},
+							},
 			{
 				name:        "Media/VideoOnly",
 				requestType: types.RequestTypeMedia,
@@ -415,8 +396,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "media_video_{time}.mp4",
 				},
-				contentCheck: r.videoOnlyContentCheck,
-			},
+							},
 			{
 				name:        "Media/Base",
 				requestType: types.RequestTypeMedia,
@@ -430,8 +410,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "media_{time}.mp4",
 				},
-				contentCheck: r.fullContentCheck,
-			},
+							},
 
 			// ---- Media Audio Routing ----
 
@@ -517,8 +496,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "media_participant_video_{time}.mp4",
 				},
-				contentCheck: r.fullContentCheck,
-			},
+							},
 		} {
 			if !r.run(t, test, r.runFileTest) {
 				return
@@ -588,6 +566,10 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 
 	// verify
 	info := verify(t, localPath, p, res, types.EgressTypeFile, r.Muting, r.sourceFramerate, false)
+
+	if info != nil {
+		verifyContent(t, localPath, info, p.AudioEnabled, p.VideoEnabled, r.Muting, r.FilePrefix)
+	}
 
 	if tc.contentCheck != nil && info != nil {
 		tc.contentCheck(t, localPath, info)

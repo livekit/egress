@@ -69,9 +69,60 @@ func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)
 
 	r.testNumber++
 	t.Run(fmt.Sprintf("%d/%s", r.testNumber, test.name), func(t *testing.T) {
-		mp := NewLegacyPublisher(t, r, test.publishOptions)
+		lp := r.room.LocalParticipant
+
+		// Publish immediate tracks (no delay)
+		publishAudio := test.audioCodec != "" && test.audioDelay == 0
+		publishVideo := test.videoCodec != "" && test.videoDelay == 0
+		mp := NewRunnerPublisher(t, r, publishAudio, publishVideo)
 		test.audioTrackID = mp.AudioTrackID
 		test.videoTrackID = mp.VideoTrackID
+
+		// Schedule delayed publishes
+		if test.audioDelay != 0 && test.audioCodec != "" {
+			time.AfterFunc(test.audioDelay, func() {
+				audioPub, _ := PublishOnRoom(t, r.room, 0, true, false)
+				test.audioTrackID = audioPub.SID()
+			})
+		}
+		if test.videoDelay != 0 && test.videoCodec != "" {
+			time.AfterFunc(test.videoDelay, func() {
+				_, videoPub := PublishOnRoom(t, r.room, 0, false, true)
+				test.videoTrackID = videoPub.SID()
+			})
+		}
+
+		// Schedule unpublishes
+		if test.audioUnpublish != 0 && mp.AudioTrackID != "" {
+			ScheduleUnpublish(lp, mp.AudioTrackID, test.audioUnpublish)
+		}
+		if test.videoUnpublish != 0 && mp.VideoTrackID != "" {
+			ScheduleUnpublish(lp, mp.VideoTrackID, test.videoUnpublish)
+		}
+
+		// Schedule republishes
+		if test.audioRepublish != 0 && test.audioCodec != "" {
+			time.AfterFunc(test.audioRepublish, func() {
+				PublishOnRoom(t, r.room, 0, true, false)
+			})
+		}
+		if test.videoRepublish != 0 && test.videoCodec != "" {
+			time.AfterFunc(test.videoRepublish, func() {
+				PublishOnRoom(t, r.room, 0, false, true)
+			})
+		}
+
+		// Schedule muting
+		if r.Muting {
+			stop := make(chan struct{})
+			t.Cleanup(func() { close(stop) })
+			if test.audioCodec != "" && len(mp.audioPubs) > 0 {
+				ScheduleMuting(mp.audioPubs[0], stop)
+			}
+			if test.audioCodec == "" && len(mp.videoPubs) > 0 {
+				ScheduleMuting(mp.videoPubs[0], stop)
+			}
+		}
 
 		logger.Infow("test publish summary",
 			"test", test.name,

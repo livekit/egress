@@ -98,7 +98,7 @@ func (r *Runner) testMultiSync(t *testing.T) {
 }
 
 func (r *Runner) testMultiParticipantSync(t *testing.T, test *testCase, numParticipants int, layout string, turnDuration time.Duration) {
-	mp := NewMultiPublisher(t, r, numParticipants, types.MimeTypeOpus, types.MimeTypeH264)
+	mp := NewMultiPublisher(t, r, numParticipants, true, true)
 	mp.StartRotation(turnDuration)
 
 	// Give tracks time to be subscribed
@@ -141,7 +141,7 @@ func (r *Runner) testMultiParticipantSync(t *testing.T, test *testCase, numParti
 
 func (r *Runner) testMultiParticipantScreenShare(t *testing.T, test *testCase) {
 	// 2 camera participants
-	mp := NewMultiPublisher(t, r, 2, types.MimeTypeOpus, types.MimeTypeH264)
+	mp := NewMultiPublisher(t, r, 2, true, true)
 
 	// Add a screen share track from participant 0
 	ssTrack, err := lksdk.NewLocalFileTrack(participantMediaDefs[0].VideoFile,
@@ -184,7 +184,7 @@ func (r *Runner) testMultiParticipantScreenShare(t *testing.T, test *testCase) {
 
 func (r *Runner) testMultiParticipantAudioRouting(t *testing.T, test *testCase) {
 	// 2 users + 1 agent
-	mp := NewMultiPublisher(t, r, 2, types.MimeTypeOpus, types.MimeTypeH264)
+	mp := NewMultiPublisher(t, r, 2, true, true)
 
 	// Connect an agent participant separately
 	agentRoom, agentPub := r.connectAgent(t, 2) // index 2 = 1320Hz

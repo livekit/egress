@@ -2,17 +2,17 @@
 # Generate per-participant test media for multi-participant integration tests.
 # Run once; commit the output files to /media-samples/.
 #
-# Audio: continuous tone at a unique frequency per participant (Opus, 48kHz, 120s)
-# Video: flashing top-stripe pattern with a unique color per participant (H264, 1080p25, 120s)
+# Each participant gets a unique frequency + color, with codecs rotating:
+#   Audio: 0,3=Opus  1,4=PCMU  2,5=PCMA
+#   Video: 0,3=H264  1,4=VP8   2,5=VP9
 #
-# The video pattern matches the existing test media's flash cadence:
+# The video pattern matches the existing flash cadence:
 # 1 flash per second, bright top stripe (YAVG >= 130 in top 8px), dark otherwise.
 
 set -euo pipefail
 
 OUTDIR="${1:-/media-samples}"
 DURATION=120
-SAMPLE_RATE=48000
 VIDEO_SIZE="1920x1080"
 VIDEO_FPS=25
 
@@ -26,33 +26,69 @@ PARTICIPANTS=(
   "5 2640 magenta FF00FF"
 )
 
+# Codec rotation (mod 3)
+AUDIO_CODECS=("opus" "pcmu" "pcma")
+VIDEO_CODECS=("h264" "vp8" "vp9")
+
+vf_flash() {
+  echo "drawbox=x=0:y=0:w=iw:h=8:c=0x${1}:t=fill:enable='lt(mod(t,1),0.5)'"
+}
+
 for entry in "${PARTICIPANTS[@]}"; do
   read -r idx freq color_name color_hex <<< "$entry"
 
-  audio_out="${OUTDIR}/participant_${idx}_${freq}hz.ogg"
-  video_out="${OUTDIR}/participant_${idx}_${color_name}.h264"
+  audio_codec=${AUDIO_CODECS[$((idx % 3))]}
+  video_codec=${VIDEO_CODECS[$((idx % 3))]}
 
-  echo "Generating participant ${idx}: ${freq}Hz / ${color_name}"
+  echo "Generating participant ${idx}: ${freq}Hz/${color_name} audio=${audio_codec} video=${video_codec}"
 
-  # Audio: continuous sine tone
-  ffmpeg -y -f lavfi \
-    -i "sine=frequency=${freq}:duration=${DURATION}:sample_rate=${SAMPLE_RATE}" \
-    -c:a libopus -b:a 48k \
-    "$audio_out"
+  RAW_VIDEO="color=c=black:s=${VIDEO_SIZE}:d=${DURATION}:r=${VIDEO_FPS}"
+  VF=$(vf_flash "$color_hex")
 
-  # Video: 1-second flash cycle.
-  # Each second: 0.5s of bright color in top 8px (rest black), then 0.5s all black.
-  # This produces YAVG >= 130 in the top-8px crop during the bright half,
-  # matching extractFlashTimestamps() detection logic.
-  ffmpeg -y -f lavfi \
-    -i "color=c=black:s=${VIDEO_SIZE}:d=${DURATION}:r=${VIDEO_FPS}" \
-    -vf "drawbox=x=0:y=0:w=iw:h=8:c=0x${color_hex}:t=fill:enable='lt(mod(t,1),0.5)'" \
-    -c:v libx264 -preset ultrafast -tune zerolatency \
-    -profile:v baseline -g ${VIDEO_FPS} \
-    "$video_out"
+  # Audio
+  case $audio_codec in
+    opus)
+      ffmpeg -y -f lavfi \
+        -i "sine=frequency=${freq}:duration=${DURATION}:sample_rate=48000" \
+        -c:a libopus -b:a 48k \
+        "${OUTDIR}/participant_${idx}_${freq}hz.ogg"
+      ;;
+    pcmu)
+      ffmpeg -y -f lavfi \
+        -i "sine=frequency=${freq}:duration=${DURATION}:sample_rate=8000" \
+        -c:a pcm_mulaw -ar 8000 -ac 1 \
+        "${OUTDIR}/participant_${idx}_${freq}hz_pcmu.wav"
+      ;;
+    pcma)
+      ffmpeg -y -f lavfi \
+        -i "sine=frequency=${freq}:duration=${DURATION}:sample_rate=8000" \
+        -c:a pcm_alaw -ar 8000 -ac 1 \
+        "${OUTDIR}/participant_${idx}_${freq}hz_pcma.wav"
+      ;;
+  esac
 
-  echo "  -> ${audio_out}"
-  echo "  -> ${video_out}"
+  # Video
+  case $video_codec in
+    h264)
+      ffmpeg -y -f lavfi -i "$RAW_VIDEO" \
+        -vf "$VF" \
+        -c:v libx264 -preset ultrafast -tune zerolatency \
+        -profile:v baseline -g ${VIDEO_FPS} \
+        "${OUTDIR}/participant_${idx}_${color_name}.h264"
+      ;;
+    vp8)
+      ffmpeg -y -f lavfi -i "$RAW_VIDEO" \
+        -vf "$VF" \
+        -c:v libvpx -b:v 1M -g ${VIDEO_FPS} \
+        "${OUTDIR}/participant_${idx}_${color_name}_vp8.ivf"
+      ;;
+    vp9)
+      ffmpeg -y -f lavfi -i "$RAW_VIDEO" \
+        -vf "$VF" \
+        -c:v libvpx-vp9 -b:v 1M -g ${VIDEO_FPS} \
+        "${OUTDIR}/participant_${idx}_${color_name}_vp9.ivf"
+      ;;
+  esac
 done
 
-echo "Done. Generated media for ${#PARTICIPANTS[@]} participants."
+echo "Done. Generated 12 files for ${#PARTICIPANTS[@]} participants."

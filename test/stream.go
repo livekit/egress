@@ -119,7 +119,7 @@ func (r *Runner) testStream(t *testing.T) {
 				encodingOptions: &livekit.EncodingOptions{
 					KeyFrameInterval: 2,
 				},
-				contentCheck: r.streamKeyframeContentCheck(2),
+				contentCheck: keyframeContentCheck(2),
 			},
 
 			// ---------- Web ----------
