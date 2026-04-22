@@ -99,6 +99,7 @@ type SDKSourceParams struct {
 	TrackSource  string
 	TrackKind    string
 	ScreenShare  bool
+	Compositing  bool
 	VideoInCodec types.MimeType
 	AudioTracks  []*TrackSource
 	VideoTrack   *TrackSource
@@ -117,9 +118,11 @@ type AudioRouteMatch struct {
 }
 
 type TrackSource struct {
-	TrackID            string
-	TrackKind          lksdk.TrackKind
-	ParticipantKind    lksdk.ParticipantKind
+	TrackID             string
+	TrackKind           lksdk.TrackKind
+	ParticipantIdentity string
+	PublicationSource   livekit.TrackSource
+	ParticipantKind     lksdk.ParticipantKind
 	AudioChannel       *livekit.AudioChannel
 	AppSrc             *app.Source
 	MimeType           types.MimeType
@@ -441,7 +444,10 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			tmpl := source.Template
 			p.RequestType = types.RequestTypeTemplate
 
-			if ShouldUseSDKSource(tmpl) {
+			if p.EnableTemplateSDK && tmpl.CustomBaseUrl == "" {
+				p.SourceType = types.SourceTypeSDK
+				p.Compositing = true
+			} else if ShouldUseSDKSource(tmpl) {
 				p.SourceType = types.SourceTypeSDK
 			} else {
 				p.SourceType = types.SourceTypeWeb
