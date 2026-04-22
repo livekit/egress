@@ -25,6 +25,16 @@ type TrackSource int
 const (
 	TrackSourceCamera TrackSource = iota
 	TrackSourceScreenShare
+
+	LayoutGrid               = "grid"
+	LayoutGridLight          = "grid-light"
+	LayoutGridDark           = "grid-dark"
+	LayoutSingleSpeaker      = "single-speaker"
+	LayoutSingleSpeakerLight = "single-speaker-light"
+	LayoutSingleSpeakerDark  = "single-speaker-dark"
+	LayoutSpeaker            = "speaker"
+	LayoutSpeakerLight       = "speaker-light"
+	LayoutSpeakerDark        = "speaker-dark"
 )
 
 // PadLayout describes the compositor pad geometry for a single track.
@@ -77,12 +87,12 @@ var gridDefs = []gridDef{
 
 // LayoutManager computes compositor pad geometries for a set of participant tracks.
 type LayoutManager struct {
-	layout       string
-	origLayout   string
+	layout        string
+	origLayout    string
 	width, height int
-	tracks       []trackInfo
-	displayOrder []string
-	addCounter   int
+	tracks        []trackInfo
+	displayOrder  []string
+	addCounter    int
 }
 
 // NewLayoutManager creates a new LayoutManager with the given layout name and canvas dimensions.
@@ -159,25 +169,25 @@ func (l *LayoutManager) onScreenShareChanged() {
 }
 
 func isGridLayout(layout string) bool {
-	return layout == "grid" || layout == "grid-light" || layout == "grid-dark"
+	return layout == LayoutGrid || layout == LayoutGridLight || layout == LayoutGridDark
 }
 
 func gridToSpeaker(layout string) string {
 	switch layout {
-	case "grid-light":
-		return "speaker-light"
-	case "grid-dark":
-		return "speaker-dark"
+	case LayoutGridLight:
+		return LayoutSpeakerLight
+	case LayoutGridDark:
+		return LayoutSpeakerDark
 	default:
-		return "speaker"
+		return LayoutSpeaker
 	}
 }
 
 func (l *LayoutManager) recalculate() []PadLayout {
 	switch l.layout {
-	case "speaker", "speaker-light", "speaker-dark":
+	case LayoutSpeaker, LayoutSpeakerLight, LayoutSpeakerDark:
 		return l.calculateSpeakerLayout()
-	case "single-speaker", "single-speaker-light", "single-speaker-dark":
+	case LayoutSingleSpeaker, LayoutSingleSpeakerLight, LayoutSingleSpeakerDark:
 		return l.calculateSingleSpeakerLayout()
 	default:
 		return l.calculateGridLayout()
@@ -242,7 +252,7 @@ func (l *LayoutManager) calculateSpeakerLayout() []PadLayout {
 	if count == 1 {
 		return []PadLayout{{
 			TrackID: ordered[0].TrackID,
-			X: 0, Y: 0,
+			X:       0, Y: 0,
 			W: l.width, H: l.height,
 			ZOrder: 1, Alpha: 1.0,
 		}}
@@ -262,7 +272,7 @@ func (l *LayoutManager) calculateSpeakerLayout() []PadLayout {
 
 	pads = append(pads, PadLayout{
 		TrackID: ordered[0].TrackID,
-		X: 0, Y: 0,
+		X:       0, Y: 0,
 		W: focusW, H: l.height,
 		ZOrder: 1, Alpha: 1.0,
 	})
@@ -282,7 +292,7 @@ func (l *LayoutManager) calculateSpeakerLayout() []PadLayout {
 	for i := maxCarousel + 1; i < count; i++ {
 		pads = append(pads, PadLayout{
 			TrackID: ordered[i].TrackID,
-			X: 0, Y: 0,
+			X:       0, Y: 0,
 			W: 0, H: 0,
 			ZOrder: 0, Alpha: 0.0,
 		})
@@ -301,7 +311,7 @@ func (l *LayoutManager) calculateSingleSpeakerLayout() []PadLayout {
 
 	pads = append(pads, PadLayout{
 		TrackID: ordered[0].TrackID,
-		X: 0, Y: 0,
+		X:       0, Y: 0,
 		W: l.width, H: l.height,
 		ZOrder: 1, Alpha: 1.0,
 	})
@@ -309,7 +319,7 @@ func (l *LayoutManager) calculateSingleSpeakerLayout() []PadLayout {
 	for i := 1; i < len(ordered); i++ {
 		pads = append(pads, PadLayout{
 			TrackID: ordered[i].TrackID,
-			X: 0, Y: 0,
+			X:       0, Y: 0,
 			W: 0, H: 0,
 			ZOrder: 0, Alpha: 0.0,
 		})
@@ -521,9 +531,9 @@ func (l *LayoutManager) refreshOrder(idealOrder []string) []string {
 
 func (l *LayoutManager) maxItemsOnPage() int {
 	switch l.layout {
-	case "single-speaker", "single-speaker-light", "single-speaker-dark":
+	case LayoutSingleSpeaker, LayoutSingleSpeakerLight, LayoutSingleSpeakerDark:
 		return 1
-	case "speaker", "speaker-light", "speaker-dark":
+	case LayoutSpeaker, LayoutSpeakerLight, LayoutSpeakerDark:
 		return 4
 	default:
 		cols, rows := l.selectGrid(len(l.tracks))
