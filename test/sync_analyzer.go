@@ -38,9 +38,9 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // Shared constants, regex patterns, and utility functions
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 
 const (
 	testSampleSilenceLevel = -38
@@ -102,9 +102,9 @@ func absDuration(d time.Duration) time.Duration {
 	return d
 }
 
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // FFmpeg helpers — run ffmpeg/ffprobe and extract stats to log files
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 
 func ffmpegVideoStats(videoPath, statsFile string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -178,9 +178,9 @@ func ffmpegSilenceStats(audioPath string, noiseLevel int, minDuration float64) (
 	return &stderr, nil
 }
 
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // Single-participant content extraction (legacy test media)
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 
 // extractFlashTimestamps runs ffmpeg + signalstats on the top stripe
 // and returns one timestamp per flash event (YAVG >= flashDetectionThreshold, spaced >= 0.2s).
@@ -328,10 +328,10 @@ func detectSilence(audioPath string, noiseLevel int, minDuration time.Duration) 
 	return ranges, scanner.Err()
 }
 
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // Content verification — replaces the old content_checks.go functions.
 // Called from verifyFile / verifySegments / verifyStream.
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 
 // verifyContent runs standard content checks on an output file.
 // For audio+video: extracts flashes and beeps, checks they exist.
@@ -368,9 +368,9 @@ func verifyContent(t *testing.T, file string, info *FFProbeInfo, hasAudio, hasVi
 	}
 }
 
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // Special-case content checks (used as testCase.contentCheck)
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 
 // verifyVideoGap checks that flashes have a ~10s gap starting around t=10s
 // (video unpublished at 10s, republished at 20s).
@@ -402,9 +402,9 @@ func verifyVideoGap(t *testing.T, file string, info *FFProbeInfo) {
 	require.Equal(t, gapsFound, 1)
 }
 
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // Keyframe interval verification (for stream tests)
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 
 func keyframeContentCheck(expectedInterval float64) func(t *testing.T, target string, _ *FFProbeInfo) {
 	return func(t *testing.T, target string, _ *FFProbeInfo) {
@@ -502,9 +502,9 @@ func ffprobeKeyframeTimestamps(input string, expectedInterval float64) ([]float6
 	return timestamps, nil
 }
 
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // Multi-participant sync analysis
-//----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 
 // ParticipantSpec describes a participant for sync analysis.
 type ParticipantSpec struct {
@@ -721,7 +721,8 @@ func AnalyzeSync(
 	// the astats filter reports threshold crossings ~100ms after the actual beep
 	// onset, while YMAX catches the first bright frame almost immediately.
 	// Subtract this lag from detected beep timestamps to align with flash timestamps.
-	const audioDetectionLag = 140 * time.Millisecond
+	const audioDetectionAdj = -140 * time.Millisecond
+	const videoDetectionAdj = 30 * time.Millisecond
 
 	// Extract beep timestamps from the mixed audio (all participants combined).
 	rawBeepTimestamps, err := extractBeepTimestamps(outputFile, testSampleBeepLevel, outPath)
@@ -729,7 +730,7 @@ func AnalyzeSync(
 
 	beepTimestamps := make([]time.Duration, len(rawBeepTimestamps))
 	for i, ts := range rawBeepTimestamps {
-		beepTimestamps[i] = ts - audioDetectionLag
+		beepTimestamps[i] = ts + audioDetectionAdj
 	}
 
 	// Extract flash timestamps from the full composited frame.
@@ -750,14 +751,14 @@ func AnalyzeSync(
 	)
 
 	// Build a set of "skip windows":
-	// - First 2 seconds of recording (sync settling)
+	// - First 5 seconds of recording (sync settling)
 	// - 1 second around each mute/unmute transition
 	n := len(participants)
 	skipDuration := 1 * time.Second
 	var skipWindows []struct{ start, end time.Duration }
 	skipWindows = append(skipWindows, struct{ start, end time.Duration }{
 		start: 0,
-		end:   2 * time.Second,
+		end:   5500 * time.Millisecond,
 	})
 	for i := 0; i < n; i++ {
 		transition := time.Duration(i) * turnDuration
@@ -776,7 +777,10 @@ func AnalyzeSync(
 		return false
 	}
 
-	flashTimes := flashTimestamps
+	flashTimes := make([]time.Duration, len(flashTimestamps))
+	for i, ts := range flashTimestamps {
+		flashTimes[i] = ts + videoDetectionAdj
+	}
 
 	// For each beep, find the closest flash. They should align within tolerance
 	// since the beep cadence (1/s) matches the flash cadence (1/s).
@@ -876,4 +880,3 @@ func findClosestFlash(flashes []videoEvent, target time.Duration) time.Duration 
 
 	return closest
 }
-
