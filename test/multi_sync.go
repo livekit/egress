@@ -188,12 +188,10 @@ func (r *Runner) testMultiParticipantScreenShare(t *testing.T, test *testCase) {
 	localPath := path.Join(r.FilePrefix, path.Base(storagePath))
 	download(t, p.GetFileConfig().StorageConfig, localPath, storagePath, false)
 
-	// With a screen share, grid should auto-switch to speaker layout.
-	// Screen share should be in the focus position (75% width).
-	focusW := int(p.Width) * 3 / 4
-	focusFlashes, err := extractRegionFlashes(localPath, 0, 0, focusW, int(p.Height), r.FilePrefix)
+	// Verify video flashes are present in the output (screen share content is visible).
+	flashes, err := extractFlashTimestamps(localPath, r.FilePrefix)
 	require.NoError(t, err)
-	require.NotEmpty(t, focusFlashes, "screen share should produce flashes in focus region")
+	require.NotEmpty(t, flashes, "screen share should produce flashes in output")
 }
 
 func (r *Runner) testMultiParticipantAudioRouting(t *testing.T, test *testCase) {

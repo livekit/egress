@@ -531,10 +531,6 @@ type audioEvent struct {
 	end   time.Duration
 }
 
-// videoEvent represents a detected flash in a video region.
-type videoEvent struct {
-	timestamp time.Duration
-}
 
 // extractFrequencyAudio runs FFmpeg with a bandpass filter at the given frequency
 // and returns time ranges where RMS exceeds the threshold.
@@ -624,78 +620,6 @@ func parseAudioEvents(logFile string, threshold float64) ([]audioEvent, error) {
 		events = append(events, *current)
 	}
 
-	return events, scanner.Err()
-}
-
-// extractRegionFlashes runs FFmpeg with a crop filter targeting a specific tile region
-// and detects flash events using signalstats YAVG.
-func extractRegionFlashes(videoPath string, tileX, tileY, tileW, tileH int, outPath string) ([]videoEvent, error) { //nolint:revive
-	logFile := filepath.Join(outPath, fmt.Sprintf("video_region_%d_%d.log", tileX, tileY))
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	vf := fmt.Sprintf("crop=w=%d:h=8:x=%d:y=%d,signalstats,metadata=print:file=%s",
-		tileW, tileX, tileY, logFile)
-
-	cmd := exec.CommandContext(ctx, "ffmpeg",
-		"-hide_banner", "-nostats", "-loglevel", "repeat+info",
-		"-i", videoPath,
-		"-map", "0:v:0",
-		"-vf", vf,
-		"-f", "null", "-")
-
-	var outBuf, errBuf bytes.Buffer
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-
-	if err := cmd.Run(); err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("ffmpeg region flash extraction timeout after 30s")
-		}
-		return nil, fmt.Errorf("ffmpeg region flash extraction failed: %w\nstderr:\n%s",
-			err, errBuf.String())
-	}
-
-	return parseFlashEvents(logFile)
-}
-
-// parseFlashEvents reads a signalstats log file and returns timestamps of flash events.
-func parseFlashEvents(logFile string) ([]videoEvent, error) {
-	file, err := os.Open(logFile)
-	if err != nil {
-		return nil, fmt.Errorf("open video log: %w", err)
-	}
-	defer file.Close()
-
-	const flashThreshold = 28.0
-	const minGap = 200 * time.Millisecond
-
-	var (
-		events    []videoEvent
-		lastFlash = -999 * time.Second
-		curPTS    time.Duration
-	)
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if m := rePTS.FindStringSubmatch(line); len(m) == 2 {
-			if d, perr := parsePTSSecondsToDuration(m[1]); perr == nil {
-				curPTS = d
-			}
-			continue
-		}
-
-		if m := reYAVG.FindStringSubmatch(line); len(m) == 2 {
-			y, _ := strconv.ParseFloat(m[1], 64)
-			if y >= flashThreshold && curPTS-lastFlash > minGap {
-				events = append(events, videoEvent{timestamp: curPTS})
-				lastFlash = curPTS
-			}
-		}
-	}
 	return events, scanner.Err()
 }
 
@@ -860,23 +784,3 @@ func AnalyzeSync(
 	return results
 }
 
-// findClosestFlash returns the timestamp of the flash closest to the target time,
-// or -1 if there are no flashes.
-func findClosestFlash(flashes []videoEvent, target time.Duration) time.Duration {
-	if len(flashes) == 0 {
-		return -1
-	}
-
-	closest := flashes[0].timestamp
-	closestDist := absDuration(target - closest)
-
-	for _, f := range flashes[1:] {
-		dist := absDuration(target - f.timestamp)
-		if dist < closestDist {
-			closest = f.timestamp
-			closestDist = dist
-		}
-	}
-
-	return closest
-}
