@@ -124,7 +124,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		logger.Debugw("audio tempo controller enabled", "adjustmentRate", p.AudioTempoController.AdjustmentRate)
 	}
 
-	if p.EnableNewSyncEngine {
+	if p.EnableSyncEngine {
 		syncEngineOpts := []synchronizer.SyncEngineOption{
 			synchronizer.WithSyncEngineOnStarted(func() {
 				s.startRecording.Break()

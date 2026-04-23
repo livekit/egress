@@ -164,6 +164,8 @@ func NewRunner(t *testing.T) *Runner {
 	conf, err := config.NewServiceConfig(confString)
 	require.NoError(t, err)
 
+	conf.EnableSyncEngine = true
+
 	r.ServiceConfig = conf
 
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
