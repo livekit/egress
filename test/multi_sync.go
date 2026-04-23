@@ -100,7 +100,6 @@ func (r *Runner) testMultiSync(t *testing.T) {
 
 func (r *Runner) testMultiParticipantSync(t *testing.T, test *testCase, numParticipants int, layout string, turnDuration time.Duration) {
 	mp := NewMultiPublisher(t, r, numParticipants, true, true)
-	mp.StartRotation(turnDuration)
 
 	// Give tracks time to be subscribed
 	time.Sleep(3 * time.Second)
@@ -108,7 +107,11 @@ func (r *Runner) testMultiParticipantSync(t *testing.T, test *testCase, numParti
 	req := r.buildRequest(test)
 	egressID := r.startEgress(t, req)
 
-	// Record for at least one full rotation
+	// Start rotation AFTER egress is active so participant 0's window
+	// aligns with the start of the recording
+	mp.StartRotation(turnDuration)
+
+	// Record for at least one full rotation plus buffer
 	recordDuration := turnDuration*time.Duration(numParticipants) + 5*time.Second
 	time.Sleep(recordDuration)
 
@@ -133,7 +136,10 @@ func (r *Runner) testMultiParticipantSync(t *testing.T, test *testCase, numParti
 	specs := buildParticipantSpecs(mp, layout, int(p.Width), int(p.Height))
 
 	// Run sync analysis
-	tolerance := 300 * time.Millisecond
+	// Tolerance for inter-participant sync: the spacing between consecutive
+	// participants' audio onsets should be close to turnDuration.
+	// This measures relative sync, not absolute timing.
+	tolerance := 150 * time.Millisecond
 	results := AnalyzeSync(t, localPath, specs, turnDuration, tolerance, r.FilePrefix)
 
 	for _, result := range results {

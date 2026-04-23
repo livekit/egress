@@ -49,7 +49,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "r_{room_name}_{time}.mp4",
 				},
-							},
+			},
 			{
 				name:        "RoomComposite/VideoOnly",
 				requestType: types.RequestTypeRoomComposite, publishOptions: publishOptions{
@@ -63,7 +63,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "r_{room_name}_video_{time}.mp4",
 				},
-							},
+			},
 			{
 				name:        "RoomComposite/AudioOnly",
 				requestType: types.RequestTypeRoomComposite, publishOptions: publishOptions{
@@ -77,7 +77,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "r_{room_name}_audio_{time}",
 					fileType: livekit.EncodedFileType_OGG,
 				},
-							},
+			},
 			{
 				name:        "RoomComposite/AudioOnlyMP3",
 				requestType: types.RequestTypeRoomComposite,
@@ -89,7 +89,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "r_{room_name}_audio_mp3_{time}",
 					fileType: livekit.EncodedFileType_MP3,
 				},
-							},
+			},
 
 			// ---------- Web ----------
 
@@ -159,7 +159,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "tc_{publisher_identity}_vp8_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
-							},
+			},
 			{
 				name:        "TrackComposite/VideoOnly",
 				requestType: types.RequestTypeTrackComposite,
@@ -171,7 +171,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "tc_{room_name}_video_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
-							},
+			},
 			{
 				name:        "TrackComposite/AudioOnlyMP3",
 				requestType: types.RequestTypeTrackComposite,
@@ -184,7 +184,7 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType:   livekit.EncodedFileType_MP3,
 					outputType: types.OutputTypeMP3,
 				},
-							},
+			},
 			{
 				name:        "TrackComposite/AudioOnlyPCMU",
 				requestType: types.RequestTypeTrackComposite,
@@ -197,7 +197,7 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType:   livekit.EncodedFileType_MP4,
 					outputType: types.OutputTypeMP4,
 				},
-							},
+			},
 			{
 				name:        "TrackComposite/AudioOnlyPCMA",
 				requestType: types.RequestTypeTrackComposite,
@@ -210,7 +210,7 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType:   livekit.EncodedFileType_MP4,
 					outputType: types.OutputTypeMP4,
 				},
-							},
+			},
 
 			// --------- Track ---------
 
@@ -225,7 +225,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_source}_{time}.ogg",
 					outputType: types.OutputTypeOGG,
 				},
-							},
+			},
 			{
 				name:        "Track/PCMU",
 				requestType: types.RequestTypeTrack,
@@ -237,7 +237,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_source}_pcmu_{time}.ogg",
 					outputType: types.OutputTypeOGG,
 				},
-							},
+			},
 			{
 				name:        "Track/PCMA",
 				requestType: types.RequestTypeTrack,
@@ -249,7 +249,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_source}_pcma_{time}.ogg",
 					outputType: types.OutputTypeOGG,
 				},
-							},
+			},
 			{
 				name:        "Track/H264",
 				requestType: types.RequestTypeTrack,
@@ -262,7 +262,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_id}_{time}.mp4",
 					outputType: types.OutputTypeMP4,
 				},
-							},
+			},
 			{
 				name:        "Track/VP8",
 				requestType: types.RequestTypeTrack,
@@ -274,7 +274,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_type}_{time}.webm",
 					outputType: types.OutputTypeWebM,
 				},
-							},
+			},
 			// {
 			// 	name:       "Track/VP9",
 			// 	videoOnly:  true,
@@ -299,7 +299,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "template_audio_{time}",
 					fileType: livekit.EncodedFileType_OGG,
 				},
-							},
+			},
 			{
 				name:        "Template/VideoOnly",
 				requestType: types.RequestTypeTemplate,
@@ -311,7 +311,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "template_video_{time}.mp4",
 				},
-							},
+			},
 			{
 				name:        "Template/Base",
 				requestType: types.RequestTypeTemplate,
@@ -323,7 +323,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "template_{time}.mp4",
 				},
-							},
+			},
 
 			// --------- Web V2 --------
 
@@ -341,7 +341,7 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType: livekit.EncodedFileType_OGG,
 				},
 				v2OutputOptions: &v2OutputOptions{},
-							},
+			},
 			{
 				name:        "WebV2/VideoOnly",
 				requestType: types.RequestTypeWeb,
@@ -385,7 +385,7 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "media_audio_{time}",
 					fileType: livekit.EncodedFileType_OGG,
 				},
-							},
+			},
 			{
 				name:        "Media/VideoOnly",
 				requestType: types.RequestTypeMedia,
@@ -396,7 +396,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "media_video_{time}.mp4",
 				},
-							},
+			},
 			{
 				name:        "Media/Base",
 				requestType: types.RequestTypeMedia,
@@ -410,7 +410,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "media_{time}.mp4",
 				},
-							},
+			},
 
 			// ---- Media Audio Routing ----
 
@@ -496,7 +496,7 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "media_participant_video_{time}.mp4",
 				},
-							},
+			},
 		} {
 			if !r.run(t, test, r.runFileTest) {
 				return

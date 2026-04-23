@@ -73,13 +73,14 @@ func audioCodecFor(i int) types.MimeType {
 // videoFile returns the video file and frame duration for participant i.
 func videoFile(i int) (string, time.Duration) {
 	color := ParticipantMediaDefs[i].Color
+	fd := time.Microsecond * 40000 // 25fps matching generated media
 	switch participantVideoCodecs[i%3] {
 	case types.MimeTypeH264:
-		return fmt.Sprintf("/workspace/test/samples/participant_%d_%s.h264", i, color), time.Microsecond * 41667
+		return fmt.Sprintf("/workspace/test/samples/participant_%d_%s.h264", i, color), fd
 	case types.MimeTypeVP8:
-		return fmt.Sprintf("/workspace/test/samples/participant_%d_%s_vp8.ivf", i, color), time.Microsecond * 41667
+		return fmt.Sprintf("/workspace/test/samples/participant_%d_%s_vp8.ivf", i, color), fd
 	case types.MimeTypeVP9:
-		return fmt.Sprintf("/workspace/test/samples/participant_%d_%s_vp9.ivf", i, color), time.Microsecond * 41667
+		return fmt.Sprintf("/workspace/test/samples/participant_%d_%s_vp9.ivf", i, color), fd
 	}
 	return "", 0
 }
@@ -168,24 +169,95 @@ func NewRunnerPublisher(t *testing.T, r *Runner, publishAudio, publishVideo bool
 }
 
 func (mp *MultiPublisher) publishAll(t *testing.T, n int, publishAudio, publishVideo bool) {
+	// Create all tracks first, then publish them all as close together as possible.
+	type trackPair struct {
+		lp         *lksdk.LocalParticipant
+		idx        int
+		audioTrack *lksdk.LocalSampleTrack
+		videoTrack *lksdk.LocalSampleTrack
+		audioFile  string
+		videoFile  string
+	}
+
+	pairs := make([]trackPair, n)
 	for i := 0; i < n; i++ {
-		lp := mp.rooms[i].LocalParticipant
+		pairs[i].lp = mp.rooms[i].LocalParticipant
+		pairs[i].idx = i
 
 		if publishAudio {
 			f, fd := audioFile(i)
-			pub := publishFileTrack(t, lp, f, fd)
-			mp.audioPubs = append(mp.audioPubs, pub)
-			if i == 0 {
-				mp.AudioTrackID = pub.SID()
+			pairs[i].audioFile = f
+			opts := []lksdk.ReaderSampleProviderOption{
+				lksdk.ReaderTrackWithOnWriteComplete(func() {}),
 			}
+			if fd != 0 {
+				opts = append(opts, lksdk.ReaderTrackWithFrameDuration(fd))
+			}
+			track, err := lksdk.NewLocalFileTrack(f, opts...)
+			require.NoError(t, err)
+			pairs[i].audioTrack = track
 		}
 
 		if publishVideo {
 			f, fd := videoFile(i)
-			pub := publishFileTrack(t, lp, f, fd)
-			mp.videoPubs = append(mp.videoPubs, pub)
-			if i == 0 {
-				mp.VideoTrackID = pub.SID()
+			pairs[i].videoFile = f
+			opts := []lksdk.ReaderSampleProviderOption{
+				lksdk.ReaderTrackWithOnWriteComplete(func() {}),
+			}
+			if fd != 0 {
+				opts = append(opts, lksdk.ReaderTrackWithFrameDuration(fd))
+			}
+			track, err := lksdk.NewLocalFileTrack(f, opts...)
+			require.NoError(t, err)
+			pairs[i].videoTrack = track
+		}
+	}
+
+	// Publish every track in its own goroutine — all audio and video
+	// tracks across all participants fire simultaneously.
+	type pubResult struct {
+		idx     int
+		isAudio bool
+		pub     *lksdk.LocalTrackPublication
+	}
+
+	total := 0
+	results := make(chan pubResult, n*2)
+
+	for _, p := range pairs {
+		if p.audioTrack != nil {
+			total++
+			go func(p trackPair) {
+				pub, err := p.lp.PublishTrack(p.audioTrack, &lksdk.TrackPublicationOptions{Name: p.audioFile})
+				require.NoError(t, err)
+				sid := pub.SID()
+				t.Cleanup(func() { _ = p.lp.UnpublishTrack(sid) })
+				results <- pubResult{idx: p.idx, isAudio: true, pub: pub}
+			}(p)
+		}
+		if p.videoTrack != nil {
+			total++
+			go func(p trackPair) {
+				pub, err := p.lp.PublishTrack(p.videoTrack, &lksdk.TrackPublicationOptions{Name: p.videoFile})
+				require.NoError(t, err)
+				sid := pub.SID()
+				t.Cleanup(func() { _ = p.lp.UnpublishTrack(sid) })
+				results <- pubResult{idx: p.idx, isAudio: false, pub: pub}
+			}(p)
+		}
+	}
+
+	for range total {
+		r := <-results
+		if r.isAudio {
+			mp.audioPubs = append(mp.audioPubs, r.pub)
+			if r.idx == 0 {
+				mp.AudioTrackID = r.pub.SID()
+			}
+		} else {
+			mp.videoPubs = append(mp.videoPubs, r.pub)
+			if r.idx == 0 {
+				mp.VideoTrackID = r.pub.SID()
 			}
 		}
 	}
@@ -281,9 +353,13 @@ func (mp *MultiPublisher) StartRotation(turnDuration time.Duration) {
 		return
 	}
 
-	for i, pub := range mp.audioPubs {
-		pub.SetMuted(i != 0)
+	// Mute all participants first, then unmute participant 0.
+	// This ensures participant 0 goes through the same mute→unmute
+	// propagation path as all other participants, giving consistent timing.
+	for _, pub := range mp.audioPubs {
+		pub.SetMuted(true)
 	}
+	mp.audioPubs[0].SetMuted(false)
 
 	go func() {
 		active := 0
