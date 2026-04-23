@@ -45,7 +45,7 @@ type SDKSource struct {
 	callbacks *gstreamer.Callbacks
 
 	room *lksdk.Room
-	sync *synchronizer.Synchronizer
+	sync synchronizer.Sync
 
 	mu                   deadlock.Mutex
 	initialized          core.Fuse
@@ -124,9 +124,19 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		logger.Debugw("audio tempo controller enabled", "adjustmentRate", p.AudioTempoController.AdjustmentRate)
 	}
 
-	s.sync = synchronizer.NewSynchronizerWithOptions(
-		opts...,
-	)
+	if p.EnableNewSyncEngine {
+		syncEngineOpts := []synchronizer.SyncEngineOption{
+			synchronizer.WithSyncEngineOnStarted(func() {
+				s.startRecording.Break()
+			}),
+		}
+		if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
+			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineStartGate())
+		}
+		s.sync = synchronizer.NewSyncEngine(syncEngineOpts...)
+	} else {
+		s.sync = synchronizer.NewSynchronizerWithOptions(opts...).AsSyncInterface()
+	}
 
 	if err := s.joinRoom(); err != nil {
 		s.disconnectRoom()

@@ -45,7 +45,7 @@ func testSDKSource(t *testing.T) *SDKSource {
 	return &SDKSource{
 		PipelineConfig:       pipelineConfig,
 		callbacks:            callbacks,
-		sync:                 synchronizer.NewSynchronizer(nil),
+		sync:                 synchronizer.NewSynchronizer(nil).AsSyncInterface(),
 		workers:              make(map[string]*trackWorker),
 		filenameReplacements: make(map[string]string),
 		active:               atomic.Int32{},

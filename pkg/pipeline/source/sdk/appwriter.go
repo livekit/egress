@@ -92,8 +92,8 @@ type AppWriter struct {
 	pliThrottle core.Throttle
 
 	// a/v sync
-	synchronizer *synchronizer.Synchronizer
-	*synchronizer.TrackSynchronizer
+	sync         synchronizer.Sync
+	trackSync    synchronizer.TrackSync
 	driftHandler DriftHandler
 
 	lastPTS              time.Duration
@@ -144,23 +144,23 @@ func NewAppWriter(
 	pub lksdk.TrackPublication,
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
-	synchronizer *synchronizer.Synchronizer,
+	syncEngine synchronizer.Sync,
 	driftHandler DriftHandler,
 	callbacks *gstreamer.Callbacks,
 ) (*AppWriter, error) {
 	w := &AppWriter{
-		conf:              conf,
-		logger:            logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
-		track:             track,
-		pub:               pub,
-		codec:             ts.MimeType,
-		src:               ts.AppSrc,
-		trackSource:       ts,
-		callbacks:         callbacks,
-		synchronizer:      synchronizer,
-		TrackSynchronizer: synchronizer.AddTrack(track, rp.Identity()),
-		driftHandler:      driftHandler,
-		timeProvider:      gstreamer.NopTimeProvider(),
+		conf:         conf,
+		logger:       logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
+		track:        track,
+		pub:          pub,
+		codec:        ts.MimeType,
+		src:          ts.AppSrc,
+		trackSource:  ts,
+		callbacks:    callbacks,
+		sync:         syncEngine,
+		trackSync:    syncEngine.AddTrack(track, rp.Identity()),
+		driftHandler: driftHandler,
+		timeProvider: gstreamer.NopTimeProvider(),
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
 
@@ -172,7 +172,7 @@ func NewAppWriter(
 			logger.Errorw("failed to create csv logger", err)
 		} else {
 			w.csvLogger = csvLogger
-			w.OnSenderReport(func(drift time.Duration) {
+			w.trackSync.OnSenderReport(func(drift time.Duration) {
 				logger.Debugw("received sender report", "drift", drift)
 				if w.driftHandler != nil {
 					// presence of the drift handler means that PTS updates on SRs are disabled
@@ -221,7 +221,7 @@ func NewAppWriter(
 		conf.Latency.JitterBufferLatency,
 		w.onPacket,
 		jitter.WithLogger(w.logger),
-		jitter.WithPacketLossHandler(w.sendPLI),
+		jitter.WithPacketLossHandler(func(uint64, uint64) { w.sendPLI() }),
 	)
 	go w.start()
 	return w, nil
@@ -297,7 +297,7 @@ func (w *AppWriter) readNext() {
 	receivedAt := time.Now()
 	var packets []jitter.ExtPacket
 	if !w.initialized {
-		ready, dropped, done := w.PrimeForStart(jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt})
+		ready, dropped, done := w.trackSync.PrimeForStart(jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt})
 		if dropped > 0 {
 			w.stats.packetsDropped.Add(uint64(dropped))
 			if w.sendPLI != nil {
@@ -538,7 +538,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	w.translator.Translate(pkt.Packet)
 
 	// get PTS
-	pts, err := w.GetPTS(pkt)
+	pts, err := w.trackSync.GetPTS(pkt)
 	if err != nil {
 		w.stats.packetsDropped.Inc()
 		return err
@@ -701,7 +701,7 @@ func (w *AppWriter) Drain(force bool) {
 
 	<-w.finished.Watch()
 	w.logger.Debugw("finished fuse broken")
-	w.synchronizer.RemoveTrack(w.track.ID())
+	w.sync.RemoveTrack(w.track.ID())
 }
 
 // OnUnsubscribed signals that the track was unsubscribed but allows the reader
