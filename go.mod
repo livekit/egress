@@ -34,6 +34,7 @@ require (
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.10.1
+	github.com/pion/rtp/v2 v2.0.0
 	github.com/pion/webrtc/v4 v4.2.7
 	github.com/prometheus/client_golang v1.23.0
 	github.com/prometheus/client_model v0.6.2
