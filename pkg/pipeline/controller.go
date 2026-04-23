@@ -30,6 +30,8 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
+	"go.opentelemetry.io/otel"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
@@ -42,7 +44,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
-	"go.opentelemetry.io/otel"
 )
 
 const (
@@ -211,7 +212,13 @@ func (c *Controller) BuildPipeline() error {
 		}
 	}
 	if c.VideoEnabled {
-		if err = builder.BuildVideoBin(p, c.PipelineConfig); err != nil {
+		var setDims func(string, int, int)
+		if c.Compositing {
+			if sdkSrc, ok := c.src.(*source.SDKSource); ok {
+				setDims = sdkSrc.UpdateTrackDimensions
+			}
+		}
+		if err = builder.BuildVideoBin(p, c.PipelineConfig, setDims); err != nil {
 			return err
 		}
 	}

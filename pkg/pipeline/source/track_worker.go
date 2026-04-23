@@ -462,12 +462,14 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 	}
 
 	ts := &config.TrackSource{
-		TrackID:         pub.SID(),
-		TrackKind:       pub.Kind(),
-		ParticipantKind: rp.Kind(),
-		MimeType:        types.MimeType(strings.ToLower(track.Codec().MimeType)),
-		PayloadType:     track.Codec().PayloadType,
-		ClockRate:       track.Codec().ClockRate,
+		TrackID:             pub.SID(),
+		TrackKind:           pub.Kind(),
+		ParticipantIdentity: rp.Identity(),
+		PublicationSource:   pub.Source(),
+		ParticipantKind:     rp.Kind(),
+		MimeType:            types.MimeType(strings.ToLower(track.Codec().MimeType)),
+		PayloadType:         track.Codec().PayloadType,
+		ClockRate:           track.Codec().ClockRate,
 	}
 
 	// Set audio channel from route match (RequestTypeMedia)
