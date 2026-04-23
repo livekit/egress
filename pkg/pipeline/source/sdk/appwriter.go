@@ -211,17 +211,19 @@ func NewAppWriter(
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
 
+	opts := []jitter.Option{jitter.WithLogger(w.logger)}
+
 	if track.Kind() == webrtc.RTPCodecTypeVideo {
 		w.pliThrottle = core.NewThrottle(time.Second)
 		w.sendPLI = func() { w.pliThrottle(func() { rp.WritePLI(track.SSRC()) }) }
+		opts = append(opts, jitter.WithPacketLossHandler(func(uint64, uint64) { w.sendPLI() }))
 	}
 
 	w.buffer = jitter.NewBuffer(
 		depacketizer,
 		conf.Latency.JitterBufferLatency,
 		w.onPacket,
-		jitter.WithLogger(w.logger),
-		jitter.WithPacketLossHandler(func(uint64, uint64) { w.sendPLI() }),
+		opts...,
 	)
 	go w.start()
 	return w, nil
