@@ -221,7 +221,7 @@ func NewAppWriter(
 		conf.Latency.JitterBufferLatency,
 		w.onPacket,
 		jitter.WithLogger(w.logger),
-		jitter.WithPacketLossHandler(w.sendPLI),
+		jitter.WithPacketLossHandler(func(uint64, uint64) { w.sendPLI() }),
 	)
 	go w.start()
 	return w, nil
