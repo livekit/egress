@@ -29,7 +29,7 @@ require (
 	github.com/livekit/media-sdk v0.0.0-20260422170315-2c3eed337496
 	github.com/livekit/protocol v1.45.4-0.20260414223210-8e21dbcaa110
 	github.com/livekit/psrpc v0.7.1
-	github.com/livekit/server-sdk-go/v2 v2.16.3-0.20260424173042-bd4b2e5d162a
+	github.com/livekit/server-sdk-go/v2 v2.16.3-0.20260424203417-cda9da0b38c4
 	github.com/livekit/storage v0.0.0-20251113154014-aa1f4d0ce057
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58

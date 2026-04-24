@@ -129,9 +129,13 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 			synchronizer.WithSyncEngineOnStarted(func() {
 				s.startRecording.Break()
 			}),
+			synchronizer.WithSyncEngineMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond),
 		}
 		if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
 			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineStartGate())
+		}
+		if p.Latency.OldPacketThreshold > 0 {
+			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineOldPacketThreshold(p.Latency.OldPacketThreshold))
 		}
 		s.sync = synchronizer.NewSyncEngine(syncEngineOpts...)
 	} else {
