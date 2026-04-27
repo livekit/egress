@@ -165,6 +165,8 @@ func NewRunner(t *testing.T) *Runner {
 	require.NoError(t, err)
 
 	conf.EnableSyncEngine = true
+	conf.AudioTempoController.Enabled = true
+	conf.AudioTempoController.AdjustmentRate = 0.05
 
 	r.ServiceConfig = conf
 

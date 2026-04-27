@@ -126,6 +126,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 
 	if p.EnableSyncEngine {
 		syncEngineOpts := []synchronizer.SyncEngineOption{
+			synchronizer.WithSyncEngineLogger(logger.GetLogger()),
 			synchronizer.WithSyncEngineOnStarted(func() {
 				s.startRecording.Break()
 			}),
@@ -136,6 +137,9 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		}
 		if p.Latency.OldPacketThreshold > 0 {
 			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineOldPacketThreshold(p.Latency.OldPacketThreshold))
+		}
+		if p.AudioTempoController.Enabled {
+			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineAudioDriftCompensated())
 		}
 		s.sync = synchronizer.NewSyncEngine(syncEngineOpts...)
 	} else {
