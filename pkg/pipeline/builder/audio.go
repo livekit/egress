@@ -661,7 +661,7 @@ func newAudioFloatCapsFilter(p *config.PipelineConfig, channel livekit.AudioChan
 		channelCaps = fmt.Sprintf("channels=1,channel-mask=(bitmask)0x%d", channel)
 	}
 	rate := 48000
-	if p.AudioOutCodec == types.MimeTypeAAC {
+	if p.AudioOutCodec == types.MimeTypeAAC || p.AudioOutCodec == types.MimeTypeMP3 {
 		rate = int(p.AudioFrequency)
 	}
 	caps := gst.NewCapsFromString(fmt.Sprintf("audio/x-raw,format=F32LE,layout=interleaved,rate=%d,%s", rate, channelCaps))

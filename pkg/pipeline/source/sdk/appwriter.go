@@ -97,7 +97,6 @@ type AppWriter struct {
 	driftHandler DriftHandler
 
 	lastPTS              time.Duration
-	lastDrift            time.Duration
 	lastPipelineCheckPTS time.Duration
 	initialized          bool
 
@@ -134,7 +133,7 @@ type appWriterStats struct {
 }
 
 type DriftHandler interface {
-	EnqueueDrift(t time.Duration)
+	SetDrift(t time.Duration)
 	Processed() time.Duration
 }
 
@@ -169,9 +168,7 @@ func NewAppWriter(
 	if conf.EnableSyncEngine {
 		w.trackSync.OnSenderReport(func(drift time.Duration) {
 			if w.driftHandler != nil {
-				d := drift - w.lastDrift
-				w.lastDrift = drift
-				w.driftHandler.EnqueueDrift(d)
+				w.driftHandler.SetDrift(drift)
 			}
 			w.updateDrift(drift)
 		})
@@ -190,9 +187,7 @@ func NewAppWriter(
 				w.trackSync.OnSenderReport(func(drift time.Duration) {
 					logger.Debugw("received sender report", "drift", drift)
 					if w.driftHandler != nil {
-						d := drift - w.lastDrift
-						w.lastDrift = drift
-						w.driftHandler.EnqueueDrift(d)
+						w.driftHandler.SetDrift(drift)
 					}
 					w.updateDrift(drift)
 				})
