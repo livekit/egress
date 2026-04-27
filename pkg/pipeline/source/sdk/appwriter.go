@@ -158,7 +158,7 @@ func NewAppWriter(
 		trackSource:  ts,
 		callbacks:    callbacks,
 		sync:         syncEngine,
-		trackSync:    syncEngine.AddTrack(track, rp.Identity()),
+		trackSync:    syncEngine.AddTrack(track, rp.SID()),
 		driftHandler: driftHandler,
 		timeProvider: gstreamer.NopTimeProvider(),
 	}
