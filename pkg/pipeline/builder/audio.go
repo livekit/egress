@@ -53,15 +53,24 @@ type AudioBin struct {
 }
 
 type driftProcessNotifier interface {
-	DriftProcessed()
+	DriftProcessed(actual time.Duration)
 }
 
 type audioPacer struct {
 	pitch               *gst.Element
 	active              atomic.Bool
-	remaining           time.Duration
 	tc                  driftProcessNotifier
 	tempoAdjustmentRate float64
+
+	// Continuous accumulators for measuring actual compensation.
+	// Compensation = outputAccum - inputAccum (relative to snapshots at start).
+	inputAccum  atomic.Int64 // cumulative input buffer durations (nanoseconds)
+	outputAccum atomic.Int64 // cumulative output buffer durations (nanoseconds)
+
+	// Snapshots at correction start.
+	inputAtStart  int64
+	outputAtStart int64
+	targetDrift   time.Duration
 }
 
 func (a *audioPacer) start(drift time.Duration) {
@@ -80,28 +89,14 @@ func (a *audioPacer) start(drift time.Duration) {
 	if drift > 0 {
 		rate = 1 - a.tempoAdjustmentRate
 	}
-	compensationFactor := 1 / a.tempoAdjustmentRate
-	driftNanoseconds := int64(drift)
-	compensationNanoseconds := int64(compensationFactor * float64(driftNanoseconds))
-	compensationDuration := time.Duration(compensationNanoseconds)
 
-	a.remaining = compensationDuration.Abs()
-	logger.Debugw("starting audio pacer", "remaining", a.remaining, "rate", rate)
+	a.inputAtStart = a.inputAccum.Load()
+	a.outputAtStart = a.outputAccum.Load()
+	a.targetDrift = drift
+
+	logger.Debugw("starting audio pacer", "targetDrift", drift, "rate", rate)
 	a.pitch.SetArg("tempo", fmt.Sprintf("%.2f", rate))
 	a.active.Store(true)
-
-}
-
-func (a *audioPacer) observeProcessedDuration(d time.Duration) {
-	if !a.active.Load() {
-		return
-	}
-	a.remaining -= d
-	if a.remaining <= 0 {
-		logger.Debugw("audio gap processed, stopping the pacer")
-		a.stop()
-		a.tc.DriftProcessed()
-	}
 }
 
 func (a *audioPacer) stop() {
@@ -110,7 +105,6 @@ func (a *audioPacer) stop() {
 	}
 	a.pitch.SetArg("tempo", fmt.Sprintf("%.1f", 1.0))
 	a.active.Store(false)
-	a.remaining = 0
 }
 
 func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
@@ -564,20 +558,41 @@ func (b *AudioBin) installPitchProbes() {
 	if b.audioPacer.pitch == nil {
 		return
 	}
+
+	// Sink pad: accumulate input buffer durations.
 	if sinkPad := b.audioPacer.pitch.GetStaticPad("sink"); sinkPad != nil {
 		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-			if !b.audioPacer.active.Load() {
-				return gst.PadProbeOK
-			}
 			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
-				b.audioPacer.observeProcessedDuration(*buf.Duration().AsDuration())
+				b.audioPacer.inputAccum.Add(int64(*buf.Duration().AsDuration()))
 			}
 			return gst.PadProbeOK
 		})
 	}
+
 	if srcPad := b.audioPacer.pitch.GetStaticPad("src"); srcPad != nil {
-		// pitch element min latency can go negative, so we need to normalize it
-		// to workaround the obvious issue with the element latency query handling
+		// Accumulate output buffer durations and check correction completion.
+		// Actual compensation = outputDelta - inputDelta (positive when slowing
+		// down, negative when speeding up — same sign as the target drift).
+		srcPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
+				b.audioPacer.outputAccum.Add(int64(*buf.Duration().AsDuration()))
+			}
+			if !b.audioPacer.active.Load() {
+				return gst.PadProbeOK
+			}
+			inputDelta := b.audioPacer.inputAccum.Load() - b.audioPacer.inputAtStart
+			outputDelta := b.audioPacer.outputAccum.Load() - b.audioPacer.outputAtStart
+			compensation := time.Duration(outputDelta - inputDelta)
+			if compensation.Abs() >= b.audioPacer.targetDrift.Abs() {
+				logger.Debugw("audio drift corrected", "target", b.audioPacer.targetDrift, "actual", compensation)
+				b.audioPacer.stop()
+				b.audioPacer.tc.DriftProcessed(compensation)
+			}
+			return gst.PadProbeOK
+		})
+
+		// Normalize pitch element latency query responses — min latency can go
+		// negative, which breaks downstream latency calculations.
 		srcPad.AddProbe(gst.PadProbeTypeQueryUpstream|gst.PadProbeTypePull,
 			func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 				q := info.GetQuery()
@@ -586,7 +601,6 @@ func (b *AudioBin) installPitchProbes() {
 				}
 
 				live, minimum, maximum := q.ParseLatency()
-				// Normalize: ensure min <= max
 				if minimum > maximum {
 					logger.Debugw("normalizing min latency to 0", "min", minimum)
 					minimum = 0

@@ -69,7 +69,7 @@ func TestDriftProcessedStartsNext(t *testing.T) {
 	tc.SetDrift(30 * time.Millisecond) // starts 30ms correction
 	tc.SetDrift(50 * time.Millisecond) // drift grew while correcting
 
-	tc.DriftProcessed() // finishes 30ms → effective = 50-30 = 20ms → starts 20ms
+	tc.DriftProcessed(30 * time.Millisecond) // finishes 30ms → effective = 50-30 = 20ms → starts 20ms
 
 	if len(calls) != 2 || calls[1] != 20*time.Millisecond {
 		t.Fatalf("second correction: got %v, want [30ms, 20ms]", calls)
@@ -87,7 +87,7 @@ func TestDriftProcessedNoFollowUp(t *testing.T) {
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
 
 	tc.SetDrift(30 * time.Millisecond)
-	tc.DriftProcessed() // effective = 30-30 = 0 → no follow-up
+	tc.DriftProcessed(30 * time.Millisecond) // effective = 30-30 = 0 → no follow-up
 
 	if len(calls) != 1 {
 		t.Fatalf("should not start follow-up at zero drift: got %v", calls)
@@ -119,13 +119,13 @@ func TestOngoingDriftCorrection(t *testing.T) {
 	tc.SetDrift(10 * time.Millisecond) // starts 10ms correction
 	tc.SetDrift(20 * time.Millisecond) // drift grew
 
-	tc.DriftProcessed() // effective = 20-10 = 10ms → starts 10ms
+	tc.DriftProcessed(10 * time.Millisecond) // effective = 20-10 = 10ms → starts 10ms
 	if len(calls) != 2 || calls[1] != 10*time.Millisecond {
 		t.Fatalf("second correction: got %v", calls)
 	}
 
 	tc.SetDrift(30 * time.Millisecond) // drift grew again
-	tc.DriftProcessed()                // effective = 30-20 = 10ms → starts 10ms
+	tc.DriftProcessed(10 * time.Millisecond) // effective = 30-20 = 10ms → starts 10ms
 	if len(calls) != 3 || calls[2] != 10*time.Millisecond {
 		t.Fatalf("third correction: got %v", calls)
 	}

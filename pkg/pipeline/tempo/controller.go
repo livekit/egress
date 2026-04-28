@@ -52,11 +52,12 @@ func (tc *Controller) SetDrift(drift time.Duration) {
 	}
 }
 
-// DriftProcessed marks the current correction as finished and may start
-// the next one if effective drift still exceeds the threshold.
-func (tc *Controller) DriftProcessed() {
+// DriftProcessed marks the current correction as finished with the given
+// actual compensation and may start the next correction if effective drift
+// still exceeds the threshold.
+func (tc *Controller) DriftProcessed(actual time.Duration) {
 	tc.mu.Lock()
-	tc.corrected += tc.current
+	tc.corrected += actual
 	tc.current = 0
 
 	var toStart time.Duration
