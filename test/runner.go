@@ -164,6 +164,10 @@ func NewRunner(t *testing.T) *Runner {
 	conf, err := config.NewServiceConfig(confString)
 	require.NoError(t, err)
 
+	conf.EnableSyncEngine = true
+	conf.AudioTempoController.Enabled = true
+	conf.AudioTempoController.AdjustmentRate = 0.05
+
 	r.ServiceConfig = conf
 
 	if conf.ApiKey == "" || conf.ApiSecret == "" || conf.WsUrl == "" {
