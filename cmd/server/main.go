@@ -36,6 +36,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	lkredis "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
+	_ "github.com/livekit/protocol/utils/hwstats/maxprocs"
 	"github.com/livekit/psrpc"
 )
 
