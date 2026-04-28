@@ -99,7 +99,7 @@ func EnsureMediaSamples() error {
 		return fmt.Errorf("missing %s: %w", script, err)
 	}
 
-	if err := mageutil.Run(ctx, script); err != nil {
+	if err := mageutil.Run(ctx, script+" avsync"); err != nil {
 		return err
 	}
 
@@ -124,6 +124,14 @@ func Integration(configFile string) error {
 		return err
 	}
 	return Retest(configFile)
+}
+
+func GenerateTests() error {
+	return mageutil.Run(context.Background(), "go run ./cmd/generate-tests/")
+}
+
+func ValidateCoverage() error {
+	return mageutil.Run(context.Background(), "go run ./cmd/generate-tests/ -validate")
 }
 
 func Retest(configFile string) error {
@@ -163,8 +171,16 @@ func Retest(configFile string) error {
 		return err
 	}
 
+	envFlags := fmt.Sprintf("-e EGRESS_CONFIG_FILE=%s", configFile)
+	if egressTest := os.Getenv("EGRESS_TEST"); egressTest != "" {
+		envFlags += fmt.Sprintf(" -e EGRESS_TEST=%s", egressTest)
+	}
+	if egressShard := os.Getenv("EGRESS_TEST_SHARD"); egressShard != "" {
+		envFlags += fmt.Sprintf(" -e EGRESS_TEST_SHARD=%s", egressShard)
+	}
+
 	return mageutil.Run(context.Background(),
-		fmt.Sprintf("docker run --rm -e EGRESS_CONFIG_FILE=%s -v %s/test:/out egress-test", configFile, dir),
+		fmt.Sprintf("docker run --rm %s -v %s/test:/out egress-test", envFlags, dir),
 	)
 }
 

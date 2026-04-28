@@ -23,6 +23,8 @@ import (
 	"io/fs"
 	"math/rand"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,6 +46,8 @@ type Runner struct {
 	svc             Server                   `yaml:"-"`
 	client          rpc.EgressClient         `yaml:"-"`
 	room            *lksdk.Room              `yaml:"-"`
+	p1Room          *lksdk.Room              `yaml:"-"`
+	p2Room          *lksdk.Room              `yaml:"-"`
 	updates         chan *livekit.EgressInfo `yaml:"-"`
 	sourceFramerate float64                  `yaml:"-"`
 	testNumber      int                      `yaml:"-"`
@@ -62,23 +66,10 @@ type Runner struct {
 	Dotfiles     bool   `yaml:"dot_files"`
 	Short        bool   `yaml:"short"`
 
-	// flagset used to determine which tests to run
-	shouldRun uint `yaml:"-"`
-
-	RoomTestsOnly           bool `yaml:"room_only"`
-	WebTestsOnly            bool `yaml:"web_only"`
-	ParticipantTestsOnly    bool `yaml:"participant_only"`
-	TrackCompositeTestsOnly bool `yaml:"track_composite_only"`
-	TrackTestsOnly          bool `yaml:"track_only"`
-	TemplateTestsOnly       bool `yaml:"template_only"`
-	MediaTestsOnly          bool `yaml:"media_only"`
-	EdgeCasesOnly           bool `yaml:"edge_cases_only"`
-
-	FileTestsOnly    bool `yaml:"file_only"`
-	StreamTestsOnly  bool `yaml:"stream_only"`
-	SegmentTestsOnly bool `yaml:"segments_only"`
-	ImageTestsOnly   bool `yaml:"images_only"`
-	MultiTestsOnly   bool `yaml:"multi_only"`
+	// Test selection
+	filter     string `yaml:"-"`
+	shardIndex int    `yaml:"-"`
+	shardTotal int    `yaml:"-"`
 }
 
 type Server interface {
@@ -106,59 +97,19 @@ func NewRunner(t *testing.T) *Runner {
 	err := yaml.Unmarshal([]byte(confString), r)
 	require.NoError(t, err)
 
-	switch os.Getenv("INTEGRATION_TYPE") {
-	case "room":
-		r.RoomTestsOnly = true
-		r.RoomName = fmt.Sprintf("room-integration-%d", rand.Intn(100))
-	case "web":
-		r.WebTestsOnly = true
-		r.RoomName = fmt.Sprintf("web-integration-%d", rand.Intn(100))
-	case "participant":
-		r.ParticipantTestsOnly = true
-		r.RoomName = fmt.Sprintf("participant-integration-%d", rand.Intn(100))
-	case "track_composite":
-		r.TrackCompositeTestsOnly = true
-		r.RoomName = fmt.Sprintf("track-composite-integration-%d", rand.Intn(100))
-	case "track":
-		r.TrackTestsOnly = true
-		r.RoomName = fmt.Sprintf("track-integration-%d", rand.Intn(100))
-	case "template":
-		r.TemplateTestsOnly = true
-		r.RoomName = fmt.Sprintf("template-integration-%d", rand.Intn(100))
-	case "media":
-		r.MediaTestsOnly = true
-		r.RoomName = fmt.Sprintf("media-integration-%d", rand.Intn(100))
-	case "file-room":
-		r.shouldRun = runFile | runRoom | runWeb | runTemplate
-		r.RoomName = fmt.Sprintf("file-room-integration-%d", rand.Intn(100))
-	case "file-track":
-		r.shouldRun = runFile | runTrackComposite | runTrack
-		r.RoomName = fmt.Sprintf("file-track-integration-%d", rand.Intn(100))
-	case "file-media":
-		r.shouldRun = runFile | runMedia | runParticipant
-		r.RoomName = fmt.Sprintf("file-media-integration-%d", rand.Intn(100))
-	case "file":
-		r.FileTestsOnly = true
-		r.RoomName = fmt.Sprintf("file-integration-%d", rand.Intn(100))
-	case "stream":
-		r.StreamTestsOnly = true
-		r.RoomName = fmt.Sprintf("stream-integration-%d", rand.Intn(100))
-	case "segments":
-		r.SegmentTestsOnly = true
-		r.RoomName = fmt.Sprintf("segments-integration-%d", rand.Intn(100))
-	case "images":
-		r.ImageTestsOnly = true
-		r.RoomName = fmt.Sprintf("images-integration-%d", rand.Intn(100))
-	case "multi":
-		r.MultiTestsOnly = true
-		r.RoomName = fmt.Sprintf("multi-integration-%d", rand.Intn(100))
-	case "edge":
-		r.EdgeCasesOnly = true
-		r.RoomName = fmt.Sprintf("edge-integration-%d", rand.Intn(100))
-	default:
-		if r.RoomName == "" {
-			r.RoomName = fmt.Sprintf("egress-integration-%d", rand.Intn(100))
+	if f := os.Getenv("EGRESS_TEST"); f != "" {
+		r.filter = f
+	}
+	if shard := os.Getenv("EGRESS_TEST_SHARD"); shard != "" {
+		parts := strings.SplitN(shard, "/", 2)
+		if len(parts) == 2 {
+			r.shardIndex, _ = strconv.Atoi(parts[0])
+			r.shardTotal, _ = strconv.Atoi(parts[1])
 		}
+	}
+
+	if r.RoomName == "" {
+		r.RoomName = fmt.Sprintf("egress-integration-%d", rand.Intn(100))
 	}
 
 	conf, err := config.NewServiceConfig(confString)
@@ -201,11 +152,42 @@ func NewRunner(t *testing.T) *Runner {
 		r.RoomBaseName = r.RoomName
 	}
 
-	if r.shouldRun == 0 {
-		r.updateFlagset()
-	}
-
 	return r
+}
+
+func (r *Runner) connectMultiParticipants(t *testing.T) {
+	p1, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "egress-p1",
+		ParticipantIdentity: fmt.Sprintf("p1-%d", rand.Intn(100)),
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	t.Cleanup(p1.Disconnect)
+	r.p1Room = p1
+
+	p2, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "egress-p2",
+		ParticipantIdentity: fmt.Sprintf("p2-%d", rand.Intn(100)),
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	t.Cleanup(p2.Disconnect)
+	r.p2Room = p2
+}
+
+func (r *Runner) disconnectMultiParticipants() {
+	if r.p1Room != nil {
+		r.p1Room.Disconnect()
+		r.p1Room = nil
+	}
+	if r.p2Room != nil {
+		r.p2Room.Disconnect()
+		r.p2Room = nil
+	}
 }
 
 func (r *Runner) connectRoom(t *testing.T, roomName string, codecs []livekit.Codec) {
@@ -270,4 +252,33 @@ func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, tem
 		require.Len(t, status, 1)
 		require.Contains(t, status, "CpuLoad")
 	}
+}
+
+func (r *Runner) shouldRunTest(index int, name string) bool {
+	if r.filter != "" {
+		if !strings.Contains(name, r.filter) {
+			return false
+		}
+	}
+	if r.shardTotal > 0 && index%r.shardTotal != r.shardIndex {
+		return false
+	}
+	return true
+}
+
+func (r *Runner) getUploadConfig() interface{} {
+	configs := make([]interface{}, 0)
+	if r.S3Upload != nil {
+		configs = append(configs, r.S3Upload)
+	}
+	if r.GCPUpload != nil {
+		configs = append(configs, r.GCPUpload)
+	}
+	if r.AzureUpload != nil {
+		configs = append(configs, r.AzureUpload)
+	}
+	if len(configs) == 0 {
+		return nil
+	}
+	return configs[r.testNumber%len(configs)]
 }

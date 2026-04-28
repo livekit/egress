@@ -1,4 +1,4 @@
-// Copyright 2023 LiveKit, Inc.
+// Copyright 2026 LiveKit, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,198 +29,188 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-func (r *Runner) testEdgeCases(t *testing.T) {
-	if !r.should(runEdge) {
-		return
-	}
-
-	t.Run("EdgeCases", func(t *testing.T) {
-		for _, test := range []*testCase{
-
-			// RoomComposite with a late-joining participant (audio only).
-			// Verifies that file duration reflects wall-clock time, not
-			// inflated by the late track's PTS offset.
-
-			{
-				name:        "RoomCompositeLateTrackDuration",
-				requestType: types.RequestTypeRoomComposite,
-				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					audioOnly:  true,
-				},
-				fileOptions: &fileOptions{
-					filename: "room_composite_late_track_{time}",
-					fileType: livekit.EncodedFileType_OGG,
-				},
-				custom: r.testRoomCompositeLateTrackDuration,
+var edgeTests = []*testCase{
+	{
+		name: "EdgeCase/RoomCompositeLateTrackDuration",
+		options: []Mutation{
+			RequestTypes.RoomCompositeAudioOnly.Apply,
+			func(tc *TestConfig) {
+				tc.FileOutputs = append(tc.FileOutputs, fileOutputConfig{
+					Filename: "room_composite_late_track_{time}",
+					FileType: livekit.EncodedFileType_OGG,
+				})
 			},
-
-			// Agents with room composite audio only
-
-			{
-				name:        "Agents",
-				requestType: types.RequestTypeRoomComposite,
-				fileOptions: &fileOptions{
-					filename: "agents_{time}",
-				},
-				custom: r.testAgents,
+		},
+		custom: (*Runner).testRoomCompositeLateTrackDuration,
+	},
+	{
+		name: "EdgeCase/Agents",
+		options: []Mutation{
+			func(tc *TestConfig) {
+				tc.RequestType = types.RequestTypeRoomComposite
 			},
-
-			// RoomComposite audio mixing
-
-			{
-				name:        "AudioMixing",
-				requestType: types.RequestTypeRoomComposite,
-				publishOptions: publishOptions{
-					audioOnly:   true,
-					audioMixing: livekit.AudioMixing_DUAL_CHANNEL_AGENT,
-				},
-				fileOptions: &fileOptions{
-					filename: "audio_mixing_{time}",
-				},
-				custom: r.testAudioMixing,
+			func(tc *TestConfig) {
+				tc.FileOutputs = append(tc.FileOutputs, fileOutputConfig{Filename: "agents_{time}"})
 			},
-
-			// ParticipantComposite where the participant never publishes
-
-			{
-				name:        "ParticipantNoPublish",
-				requestType: types.RequestTypeParticipant,
-				fileOptions: &fileOptions{
-					filename: "participant_no_publish_{time}.mp4",
-				},
-				custom: r.testParticipantNoPublish,
+		},
+		custom: (*Runner).testAgents,
+	},
+	{
+		name: "EdgeCase/AudioMixing",
+		options: []Mutation{
+			func(tc *TestConfig) {
+				tc.RequestType = types.RequestTypeRoomComposite
+				tc.AudioOnly = true
+				tc.AudioMixing = livekit.AudioMixing_DUAL_CHANNEL_AGENT
 			},
-
-			// Test that the egress continues if a user leaves
-
-			{
-				name:        "RoomCompositeStaysOpen",
-				requestType: types.RequestTypeRoomComposite,
-				fileOptions: &fileOptions{
-					filename: "room_composite_stays_open_{time}.mp4",
-				},
-				custom: r.testRoomCompositeStaysOpen,
+			func(tc *TestConfig) {
+				tc.FileOutputs = append(tc.FileOutputs, fileOutputConfig{Filename: "audio_mixing_{time}"})
 			},
-
-			// Room composite where all participants leave and the server
-			// eventually disconnects the egress. Verifies that the reported
-			// duration includes the silence tail between participant departure
-			// and server-initiated leave.
-
-			{
-				name:        "RoomCompositeDisconnectDuration",
-				requestType: types.RequestTypeRoomComposite,
-				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					audioOnly:  true,
-				},
-				fileOptions: &fileOptions{
-					filename: "room_composite_disconnect_duration_{time}",
-					fileType: livekit.EncodedFileType_OGG,
-				},
-				custom: r.testRoomCompositeDisconnectDuration,
+		},
+		custom: (*Runner).testAudioMixing,
+	},
+	{
+		name: "EdgeCase/ParticipantNoPublish",
+		options: []Mutation{
+			func(tc *TestConfig) {
+				tc.RequestType = types.RequestTypeParticipant
 			},
-
-			// RTMP output with no valid urls
-
-			{
-				name:        "RtmpFailure",
-				requestType: types.RequestTypeRoomComposite,
-				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeH264,
-				},
-				streamOptions: &streamOptions{
-					streamUrls: []string{badRtmpUrl1},
-					outputType: types.OutputTypeRTMP,
-				},
-				custom: r.testRtmpFailure,
+			func(tc *TestConfig) {
+				tc.FileOutputs = append(tc.FileOutputs, fileOutputConfig{
+					Filename: "participant_no_publish_{time}.mp4",
+					FileType: livekit.EncodedFileType_MP4,
+				})
 			},
-
-			// SRT output with no valid urls
-
-			{
-				name:        "SrtFailure",
-				requestType: types.RequestTypeWeb,
-				streamOptions: &streamOptions{
-					streamUrls: []string{badSrtUrl1},
-					outputType: types.OutputTypeSRT,
-				},
-				custom: r.testSrtFailure,
+		},
+		custom: (*Runner).testParticipantNoPublish,
+	},
+	{
+		name: "EdgeCase/RoomCompositeStaysOpen",
+		options: []Mutation{
+			func(tc *TestConfig) {
+				tc.RequestType = types.RequestTypeRoomComposite
 			},
-
-			// Track composite with data loss due to a disconnection
-
-			{
-				name:        "TrackDisconnection",
-				requestType: types.RequestTypeTrackComposite,
-				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-				},
-				fileOptions: &fileOptions{
-					filename: "track_disconnection_{time}.mp4",
-					fileType: livekit.EncodedFileType_MP4,
-				},
-				custom: r.testTrackDisconnection,
+			func(tc *TestConfig) {
+				tc.FileOutputs = append(tc.FileOutputs, fileOutputConfig{
+					Filename: "room_composite_stays_open_{time}.mp4",
+					FileType: livekit.EncodedFileType_MP4,
+				})
 			},
-
-			// Stream output with no urls
-
-			{
-				name:        "EmptyStreamBin",
-				requestType: types.RequestTypeRoomComposite,
-				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeVP8,
-				},
-				streamOptions: &streamOptions{
-					streamUrls: []string{rtmpUrl4, badRtmpUrl1},
-					outputType: types.OutputTypeRTMP,
-				},
-				segmentOptions: &segmentOptions{
-					prefix:   "empty_stream_{time}",
-					playlist: "empty_stream_{time}",
-				},
-				custom: r.testEmptyStreamBin,
+		},
+		custom: (*Runner).testRoomCompositeStaysOpen,
+	},
+	{
+		name: "EdgeCase/RoomCompositeDisconnectDuration",
+		options: []Mutation{
+			RequestTypes.RoomCompositeAudioOnly.Apply,
+			func(tc *TestConfig) {
+				tc.FileOutputs = append(tc.FileOutputs, fileOutputConfig{
+					Filename: "room_composite_disconnect_duration_{time}",
+					FileType: livekit.EncodedFileType_OGG,
+				})
 			},
-
-			// File storage limit reached
-
-			{
-				name:        "FileStorageLimit",
-				requestType: types.RequestTypeRoomComposite,
-				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeVP8,
-				},
-				fileOptions: &fileOptions{
-					filename: "storage_limit_{time}.mp4",
-					fileType: livekit.EncodedFileType_MP4,
-				},
-				custom: r.testStorageLimit,
+		},
+		custom: (*Runner).testRoomCompositeDisconnectDuration,
+	},
+	{
+		name: "EdgeCase/RtmpFailure",
+		options: []Mutation{
+			func(tc *TestConfig) {
+				tc.RequestType = types.RequestTypeRoomComposite
+				tc.AudioCodec = types.MimeTypeOpus
+				tc.VideoCodec = types.MimeTypeH264
 			},
-		} {
-			if !r.run(t, test, test.custom) {
-				return
-			}
-		}
-	})
+			func(tc *TestConfig) {
+				tc.StreamOutputs = append(tc.StreamOutputs, streamOutputConfig{
+					Protocol: livekit.StreamProtocol_RTMP,
+					Urls:     []string{badRtmpUrl1},
+				})
+			},
+		},
+		custom: (*Runner).testRtmpFailure,
+	},
+	{
+		name: "EdgeCase/SrtFailure",
+		options: []Mutation{
+			func(tc *TestConfig) {
+				tc.RequestType = types.RequestTypeWeb
+			},
+			func(tc *TestConfig) {
+				tc.StreamOutputs = append(tc.StreamOutputs, streamOutputConfig{
+					Protocol: livekit.StreamProtocol_SRT,
+					Urls:     []string{badSrtUrl1},
+				})
+			},
+		},
+		custom: (*Runner).testSrtFailure,
+	},
+	{
+		name: "EdgeCase/TrackDisconnection",
+		options: []Mutation{
+			func(tc *TestConfig) {
+				tc.RequestType = types.RequestTypeTrackComposite
+				tc.AudioCodec = types.MimeTypeOpus
+			},
+			func(tc *TestConfig) {
+				tc.FileOutputs = append(tc.FileOutputs, fileOutputConfig{
+					Filename: "track_disconnection_{time}.mp4",
+					FileType: livekit.EncodedFileType_MP4,
+				})
+			},
+		},
+		custom: (*Runner).testTrackDisconnection,
+	},
+	{
+		name: "EdgeCase/EmptyStreamBin",
+		options: []Mutation{
+			func(tc *TestConfig) {
+				tc.RequestType = types.RequestTypeRoomComposite
+				tc.AudioCodec = types.MimeTypeOpus
+				tc.VideoCodec = types.MimeTypeVP8
+			},
+			func(tc *TestConfig) {
+				tc.StreamOutputs = append(tc.StreamOutputs, streamOutputConfig{
+					Protocol: livekit.StreamProtocol_RTMP,
+					Urls:     []string{rtmpUrl4, badRtmpUrl1},
+				})
+				tc.SegmentOutputs = append(tc.SegmentOutputs, segmentOutputConfig{
+					Prefix:   "empty_stream_{time}",
+					Playlist: "empty_stream_{time}",
+				})
+			},
+		},
+		custom: (*Runner).testEmptyStreamBin,
+	},
+	{
+		name: "EdgeCase/FileStorageLimit",
+		options: []Mutation{
+			func(tc *TestConfig) {
+				tc.RequestType = types.RequestTypeRoomComposite
+				tc.AudioCodec = types.MimeTypeOpus
+				tc.VideoCodec = types.MimeTypeVP8
+			},
+			func(tc *TestConfig) {
+				tc.FileOutputs = append(tc.FileOutputs, fileOutputConfig{
+					Filename: "storage_limit_{time}.mp4",
+					FileType: livekit.EncodedFileType_MP4,
+				})
+			},
+		},
+		custom: (*Runner).testStorageLimit,
+	},
 }
 
-func (r *Runner) testRoomCompositeLateTrackDuration(t *testing.T, test *testCase) {
-	// First participant is already connected (r.room) and publishes audio immediately.
-	// Start egress, wait for it to become active, then connect a second participant
-	// after a delay. Stop egress and verify that the reported file duration is close
-	// to wall-clock time and not inflated by the late track's synchronizer offset.
-	req := r.build(test)
+// Edge case handler implementations.
+// Signatures: func(r *Runner) handler(t *testing.T, req *rpc.StartEgressRequest, cfg *TestConfig)
+
+func (r *Runner) testRoomCompositeLateTrackDuration(t *testing.T, req *rpc.StartEgressRequest, _ *TestConfig) {
 	testStart := time.Now()
 	egressID := r.startEgress(t, req)
 
-	// Second participant joins several seconds after egress is active
 	time.Sleep(time.Second * 5)
 
 	p2, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
@@ -234,10 +224,8 @@ func (r *Runner) testRoomCompositeLateTrackDuration(t *testing.T, test *testCase
 	t.Cleanup(p2.Disconnect)
 	r.publish(t, p2.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
 
-	// Let the late track record for a few seconds
 	time.Sleep(time.Second * 7)
 
-	// Stop and verify
 	res := r.stopEgress(t, egressID)
 	wallClock := time.Since(testStart)
 
@@ -248,17 +236,13 @@ func (r *Runner) testRoomCompositeLateTrackDuration(t *testing.T, test *testCase
 	}
 
 	reportedDuration := time.Duration(fileRes.Duration)
-	t.Logf("reported duration: %s, wall-clock: %s, startedAt: %d, endedAt: %d",
-		reportedDuration, wallClock, fileRes.StartedAt, fileRes.EndedAt)
+	t.Logf("reported duration: %s, wall-clock: %s", reportedDuration, wallClock)
 
-	// Reported duration must not exceed wall-clock time. It can legitimately be
-	// shorter (pipeline startup delay between testStart and first packet), but
-	// should never be longer.
 	require.LessOrEqual(t, reportedDuration.Seconds(), wallClock.Seconds()+3.0,
-		"file duration should not exceed wall-clock duration (inflated by late track offset)")
+		"file duration should not exceed wall-clock duration")
 }
 
-func (r *Runner) testAgents(t *testing.T, test *testCase) {
+func (r *Runner) testAgents(t *testing.T, req *rpc.StartEgressRequest, cfg *TestConfig) {
 	_, err := os.Stat("/agents/.env")
 	if err != nil {
 		t.Skip("skipping agents test; missing env file")
@@ -266,10 +250,10 @@ func (r *Runner) testAgents(t *testing.T, test *testCase) {
 
 	r.launchAgents(t)
 	time.Sleep(time.Second * 5)
-	r.runFileTest(t, test)
+	r.runStandardTest(t, cfg, req)
 }
 
-func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
+func (r *Runner) testAudioMixing(t *testing.T, req *rpc.StartEgressRequest, cfg *TestConfig) {
 	p1, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
@@ -279,38 +263,36 @@ func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(p1.Disconnect)
-	r.publish(t, p1.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	r.publishForParticipant(t, p1.LocalParticipant, "p1", types.MimeTypeOpus)
 
 	agent, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
 		RoomName:            r.RoomName,
-		ParticipantName:     "egress-sample",
+		ParticipantName:     "egress-sample-agent",
 		ParticipantIdentity: fmt.Sprintf("agent-%d", rand.Intn(100)),
 		ParticipantKind:     lksdk.ParticipantAgent,
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(agent.Disconnect)
-	r.publish(t, agent.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	r.publishForParticipant(t, agent.LocalParticipant, "p0", types.MimeTypeOpus)
 
 	p2, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
 		RoomName:            r.RoomName,
-		ParticipantName:     "egress-sample",
+		ParticipantName:     "egress-sample-2",
 		ParticipantIdentity: fmt.Sprintf("sample-2-%d", rand.Intn(100)),
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(p2.Disconnect)
-	r.publish(t, p2.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	r.publishForParticipant(t, p2.LocalParticipant, "p2", types.MimeTypeOpus)
 
-	r.runFileTest(t, test)
+	r.runStandardTest(t, cfg, req)
 }
 
-func (r *Runner) testParticipantNoPublish(t *testing.T, test *testCase) {
+func (r *Runner) testParticipantNoPublish(t *testing.T, req *rpc.StartEgressRequest, _ *TestConfig) {
 	identity := r.room.LocalParticipant.Identity()
-
-	req := r.build(test)
 
 	info := r.sendRequest(t, req)
 	time.Sleep(time.Second * 15)
@@ -319,7 +301,6 @@ func (r *Runner) testParticipantNoPublish(t *testing.T, test *testCase) {
 	info = r.getUpdate(t, info.EgressId)
 	require.Equal(t, livekit.EgressStatus_EGRESS_ABORTED.String(), info.Status.String())
 
-	// reconnect the publisher to the room
 	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
@@ -331,16 +312,13 @@ func (r *Runner) testParticipantNoPublish(t *testing.T, test *testCase) {
 	r.room = room
 }
 
-func (r *Runner) testRoomCompositeStaysOpen(t *testing.T, test *testCase) {
-	req := r.build(test)
-
+func (r *Runner) testRoomCompositeStaysOpen(t *testing.T, req *rpc.StartEgressRequest, _ *TestConfig) {
 	info := r.sendRequest(t, req)
 	time.Sleep(time.Second * 10)
 	identity := r.room.LocalParticipant.Identity()
 	r.room.Disconnect()
 	time.Sleep(time.Second * 10)
 
-	// reconnect the publisher to the room
 	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
@@ -360,15 +338,9 @@ func (r *Runner) testRoomCompositeStaysOpen(t *testing.T, test *testCase) {
 	r.stopEgress(t, info.EgressId)
 }
 
-func (r *Runner) testRoomCompositeDisconnectDuration(t *testing.T, test *testCase) {
-	// Start egress, record for a while, then disconnect all participants.
-	// The server will eventually disconnect the egress after departure_timeout.
-	// The file will contain silence during that gap, so endedAt must
-	// reflect the full file content including the silence tail.
-	const departureTimeout = 20 // seconds
+func (r *Runner) testRoomCompositeDisconnectDuration(t *testing.T, req *rpc.StartEgressRequest, _ *TestConfig) {
+	const departureTimeout = 20
 
-	// Create the room with an explicit departure_timeout so the silence
-	// gap is predictable regardless of server defaults.
 	roomClient := lksdk.NewRoomServiceClient(r.WsUrl, r.ApiKey, r.ApiSecret)
 	_, err := roomClient.CreateRoom(context.Background(), &livekit.CreateRoomRequest{
 		Name:             r.RoomName,
@@ -376,19 +348,14 @@ func (r *Runner) testRoomCompositeDisconnectDuration(t *testing.T, test *testCas
 	})
 	require.NoError(t, err)
 
-	req := r.build(test)
 	egressID := r.startEgress(t, req)
 
-	// Record with active audio for 10 seconds
 	time.Sleep(time.Second * 10)
 
-	// Disconnect all participants — the room becomes empty, but the
-	// egress stays connected until the server kicks it out.
 	disconnectTime := time.Now()
 	identity := r.room.LocalParticipant.Identity()
 	r.room.Disconnect()
 
-	// Reconnect the publisher on exit so subsequent tests have a room
 	defer func() {
 		room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 			APIKey:              r.ApiKey,
@@ -401,8 +368,6 @@ func (r *Runner) testRoomCompositeDisconnectDuration(t *testing.T, test *testCas
 		r.room = room
 	}()
 
-	// Wait for the egress to complete on its own (server-initiated leave).
-	// Drain updates until we see EGRESS_COMPLETE or EGRESS_FAILED.
 	var res *livekit.EgressInfo
 	deadline := time.After(90 * time.Second)
 	for res == nil {
@@ -432,26 +397,20 @@ func (r *Runner) testRoomCompositeDisconnectDuration(t *testing.T, test *testCas
 	}
 
 	reportedDuration := time.Duration(fileRes.Duration)
-	t.Logf("reported duration: %s, startedAt: %d, endedAt: %d",
-		reportedDuration, fileRes.StartedAt, fileRes.EndedAt)
+	t.Logf("reported duration: %s", reportedDuration)
 
-	// The reported duration should include the silence tail. The room was
-	// created with departure_timeout=20s, so the server disconnects the
-	// egress ~20s after the last participant leaves. We allow 5s of slack
-	// for pipeline startup/teardown.
 	minExpected := 10*time.Second + silenceGap - 5*time.Second
 	require.GreaterOrEqual(t, reportedDuration, minExpected,
 		"file duration should include silence tail after participants left")
 }
 
-func (r *Runner) testStorageLimit(t *testing.T, test *testCase) {
+func (r *Runner) testStorageLimit(t *testing.T, req *rpc.StartEgressRequest, _ *TestConfig) {
 	origLimit := r.FileOutputMaxSize
-	r.FileOutputMaxSize = 300000 // ~300KB to trigger quickly
+	r.FileOutputMaxSize = 300000
 	t.Cleanup(func() {
 		r.FileOutputMaxSize = origLimit
 	})
 
-	req := r.build(test)
 	info := r.sendRequest(t, req)
 	egressID := info.EgressId
 
@@ -464,11 +423,9 @@ func (r *Runner) testStorageLimit(t *testing.T, test *testCase) {
 		}
 
 		update := r.getUpdate(t, egressID)
-		switch update.Status { //nolint:revive // EGRESS_ACTIVE explicitly listed for readability
-		case livekit.EgressStatus_EGRESS_ACTIVE:
-			continue
+		switch update.Status {
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
-			file := update.GetFile() //nolint:staticcheck // keep deprecated field for older clients
+			file := update.GetFile() //nolint:staticcheck
 			if file == nil && len(update.FileResults) > 0 {
 				file = update.FileResults[0]
 			}
@@ -484,9 +441,7 @@ func (r *Runner) testStorageLimit(t *testing.T, test *testCase) {
 	}
 }
 
-func (r *Runner) testRtmpFailure(t *testing.T, test *testCase) {
-	req := r.build(test)
-
+func (r *Runner) testRtmpFailure(t *testing.T, req *rpc.StartEgressRequest, _ *TestConfig) {
 	info, err := r.StartEgress(context.Background(), req)
 	require.NoError(t, err)
 	require.Empty(t, info.Error)
@@ -494,7 +449,6 @@ func (r *Runner) testRtmpFailure(t *testing.T, test *testCase) {
 	require.Equal(t, r.RoomName, info.RoomName)
 	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
 
-	// check updates
 	time.Sleep(time.Second * 5)
 	info = r.getUpdate(t, info.EgressId)
 	streamFailed := false
@@ -503,7 +457,6 @@ func (r *Runner) testRtmpFailure(t *testing.T, test *testCase) {
 			streamFailed = true
 		}
 		if streamFailed {
-			// make sure this never reverts in subsequent updates
 			require.Equal(t, livekit.StreamInfo_FAILED, info.StreamResults[0].Status)
 		}
 		info = r.getUpdate(t, info.EgressId)
@@ -515,16 +468,13 @@ func (r *Runner) testRtmpFailure(t *testing.T, test *testCase) {
 	require.NotEmpty(t, info.StreamResults[0].Error)
 }
 
-func (r *Runner) testSrtFailure(t *testing.T, test *testCase) {
-	req := r.build(test)
-
+func (r *Runner) testSrtFailure(t *testing.T, req *rpc.StartEgressRequest, _ *TestConfig) {
 	info, err := r.StartEgress(context.Background(), req)
 	require.NoError(t, err)
 	require.Empty(t, info.Error)
 	require.NotEmpty(t, info.EgressId)
 	require.Equal(t, livekit.EgressStatus_EGRESS_STARTING, info.Status)
 
-	// check update
 	time.Sleep(time.Second * 5)
 	info = r.getUpdate(t, info.EgressId)
 	if info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
@@ -534,19 +484,27 @@ func (r *Runner) testSrtFailure(t *testing.T, test *testCase) {
 	}
 }
 
-func (r *Runner) testTrackDisconnection(t *testing.T, test *testCase) {
-	test.videoTrackID = r.publishSampleWithDisconnection(t, types.MimeTypeVP8)
-	r.runFileTest(t, test)
+func (r *Runner) testTrackDisconnection(t *testing.T, req *rpc.StartEgressRequest, cfg *TestConfig) {
+	// Publish VP8 with simulated disconnection, then inject track ID into request
+	pub := r.publish(t, r.room.LocalParticipant, types.MimeTypeVP8, make(chan struct{}))
+	videoTrackID := pub.SID()
+	time.AfterFunc(time.Second*10, func() {
+		pub.SimulateDisconnection(time.Second * 10)
+	})
+
+	// Inject into TrackComposite request
+	if tc := req.GetTrackComposite(); tc != nil {
+		tc.VideoTrackId = videoTrackID
+	}
+
+	r.runStandardTest(t, cfg, req)
 }
 
-func (r *Runner) testEmptyStreamBin(t *testing.T, test *testCase) {
-	req := r.build(test)
-
+func (r *Runner) testEmptyStreamBin(t *testing.T, req *rpc.StartEgressRequest, cfg *TestConfig) {
 	info := r.sendRequest(t, req)
 	egressID := info.EgressId
 	time.Sleep(time.Second * 15)
 
-	// get params
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 
@@ -566,5 +524,5 @@ func (r *Runner) testEmptyStreamBin(t *testing.T, test *testCase) {
 
 	time.Sleep(time.Second * 10)
 	res := r.stopEgress(t, egressID)
-	r.verifySegments(t, test, p, livekit.SegmentedFileSuffix_INDEX, res, false)
+	r.verifySegments(t, cfg, p, livekit.SegmentedFileSuffix_INDEX, res, false)
 }
