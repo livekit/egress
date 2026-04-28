@@ -18,7 +18,6 @@ package test
 
 import (
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
@@ -109,17 +108,6 @@ func (r *Runner) publishSample(t *testing.T, codec types.MimeType, publishAfter,
 		return <-trackID
 	}
 	return "TBD"
-}
-
-func (r *Runner) publishSampleWithDisconnection(t *testing.T, codec types.MimeType) string {
-	pub := r.publish(t, r.room.LocalParticipant, codec, make(chan struct{}))
-	trackID := pub.SID()
-
-	time.AfterFunc(time.Second*10, func() {
-		pub.SimulateDisconnection(time.Second * 10)
-	})
-
-	return trackID
 }
 
 func (r *Runner) publish(t *testing.T, p *lksdk.LocalParticipant, codec types.MimeType, done chan struct{}) *lksdk.LocalTrackPublication {
@@ -221,10 +209,16 @@ func (r *Runner) prepareTrack(t *testing.T, participantName string, codec types.
 	}
 }
 
+// multiPubResult holds published track info for multi-participant tests.
+type multiPubResult struct {
+	audioPubs    [3]*lksdk.LocalTrackPublication // for mute rotation
+	audioTrackID string                          // p0 audio track ID
+	videoTrackID string                          // p0 video track ID
+}
+
 // publishAllParticipants prepares all 6 tracks (h264 + opus per participant),
 // then publishes them simultaneously so all participants start at the same time.
-// Returns the 3 audio publications (for mute rotation).
-func (r *Runner) publishAllParticipants(t *testing.T) [3]*lksdk.LocalTrackPublication {
+func (r *Runner) publishAllParticipants(t *testing.T) multiPubResult {
 	r.connectMultiParticipants(t)
 
 	participants := [3]struct {
@@ -252,51 +246,74 @@ func (r *Runner) publishAllParticipants(t *testing.T) [3]*lksdk.LocalTrackPublic
 	}
 
 	// Publish all 6 tracks in parallel
-	var (
-		wg     sync.WaitGroup
-		pubs   [3]*lksdk.LocalTrackPublication // audio pubs for mute rotation
-		mu     sync.Mutex
-		errors []error
-	)
+	type pubResult struct {
+		index int
+		pub   *lksdk.LocalTrackPublication
+		err   error
+	}
+	audioCh := make(chan pubResult, 3)
+	videoCh := make(chan pubResult, 3)
 
 	for i := range tracks {
 		i := i
-		wg.Add(2)
 
 		go func() {
-			defer wg.Done()
 			pub, err := tracks[i].lp.PublishTrack(tracks[i].video.track, &tracks[i].video.opts)
 			if err != nil {
-				mu.Lock()
-				errors = append(errors, fmt.Errorf("publish video for p%d: %w", i, err))
-				mu.Unlock()
+				videoCh <- pubResult{index: i, err: fmt.Errorf("publish video for p%d: %w", i, err)}
 				return
 			}
 			trackID := pub.SID()
 			t.Cleanup(func() { _ = tracks[i].lp.UnpublishTrack(trackID) })
+			videoCh <- pubResult{index: i, pub: pub}
 		}()
 
 		go func() {
-			defer wg.Done()
 			pub, err := tracks[i].lp.PublishTrack(tracks[i].audio.track, &tracks[i].audio.opts)
 			if err != nil {
-				mu.Lock()
-				errors = append(errors, fmt.Errorf("publish audio for p%d: %w", i, err))
-				mu.Unlock()
+				audioCh <- pubResult{index: i, err: fmt.Errorf("publish audio for p%d: %w", i, err)}
 				return
 			}
-			mu.Lock()
-			pubs[i] = pub
-			mu.Unlock()
 			trackID := pub.SID()
 			t.Cleanup(func() { _ = tracks[i].lp.UnpublishTrack(trackID) })
+			audioCh <- pubResult{index: i, pub: pub}
 		}()
 	}
 
-	wg.Wait()
-	require.Empty(t, errors, "failed to publish tracks: %v", errors)
+	var audioPubs [3]*lksdk.LocalTrackPublication
+	var videoPubs [3]*lksdk.LocalTrackPublication
+	var errs []error
+	for range 6 {
+		select {
+		case r := <-videoCh:
+			if r.err != nil {
+				errs = append(errs, r.err)
+			} else {
+				videoPubs[r.index] = r.pub
+			}
+		case r := <-audioCh:
+			if r.err != nil {
+				errs = append(errs, r.err)
+			} else {
+				audioPubs[r.index] = r.pub
+			}
+		}
+	}
+	require.Empty(t, errs, "failed to publish tracks: %v", errs)
 
 	t.Cleanup(r.disconnectMultiParticipants)
 
-	return pubs
+	var p0Audio, p0Video string
+	if audioPubs[0] != nil {
+		p0Audio = audioPubs[0].SID()
+	}
+	if videoPubs[0] != nil {
+		p0Video = videoPubs[0].SID()
+	}
+
+	return multiPubResult{
+		audioPubs:    audioPubs,
+		audioTrackID: p0Audio,
+		videoTrackID: p0Video,
+	}
 }

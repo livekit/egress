@@ -39,7 +39,7 @@ jobs:
       - name: Fetch media-samples (with LFS)
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: build/test/fetch-media-samples.sh
+        run: build/test/fetch-media-samples.sh avsync
 
       - uses: actions/cache@v5
         with:
@@ -107,7 +107,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        integration_type: [file-room, file-track, file-media, stream, segments, images, multi, edge]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     runs-on: namespace-profile-8vcpu-cache
     steps:
       - uses: shogo82148/actions-setup-redis@v1
@@ -119,12 +119,13 @@ jobs:
       - name: Run tests
         env:
           IMAGE: ${{needs.build.outputs.image}}
+          SHARD: "${{ matrix.shard }}/8"
         run: |
           docker run --rm \
             --network host \
             -e GITHUB_WORKFLOW=1 \
             -e EGRESS_CONFIG_STRING="$(echo ${{ secrets.EGRESS_CONFIG_STRING }} | base64 -d)" \
-            -e INTEGRATION_TYPE="${{ matrix.integration_type }}" \
+            -e EGRESS_TEST_SHARD="$SHARD" \
             -e S3_UPLOAD="$(echo ${{ secrets.S3_UPLOAD }} | base64 -d)" \
             -e GCP_UPLOAD="$(echo ${{ secrets.GCP_UPLOAD }} | base64 -d)" \
             ${{ env.IMAGE }}
