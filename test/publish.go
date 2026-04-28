@@ -17,6 +17,8 @@
 package test
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,18 +28,31 @@ import (
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-var (
-	samples = map[types.MimeType]string{
-		types.MimeTypeOpus: "/media-samples/avsync_minmotion_livekit_audio_48k_120s.ogg",
-		types.MimeTypeH264: "/media-samples/avsync_minmotion_livekit_video_1080p25_120s.h264",
-		types.MimeTypeVP8:  "/media-samples/avsync_minmotion_livekit_1080p24_vp8.ivf",
-		types.MimeTypeVP9:  "/media-samples/avsync_minmotion_livekit_1080p24_vp9.ivf",
-		types.MimeTypePCMU: "/media-samples/avsync_minmotion_livekit_audio_8k_120s_pcmu.wav",
-		types.MimeTypePCMA: "/media-samples/avsync_minmotion_livekit_audio_8k_120s_pcma.wav",
-	}
+var participantSamples = map[string]map[types.MimeType]string{
+	"p0": {
+		types.MimeTypeOpus: "/media-samples/livekit_avsync_p0_audio_523hz_48k.ogg",
+		types.MimeTypeH264: "/media-samples/livekit_avsync_p0_video_white_1080p25.h264",
+		types.MimeTypeVP8:  "/media-samples/livekit_avsync_p0_video_white_1080p24.vp8.ivf",
+		types.MimeTypeVP9:  "/media-samples/livekit_avsync_p0_video_white_1080p24.vp9.ivf",
+		types.MimeTypePCMU: "/media-samples/livekit_avsync_p0_audio_523hz_8k.pcmu.wav",
+		types.MimeTypePCMA: "/media-samples/livekit_avsync_p0_audio_523hz_8k.pcma.wav",
+	},
+	"p1": {
+		types.MimeTypeOpus: "/media-samples/livekit_avsync_p1_audio_659hz_48k.ogg",
+		types.MimeTypeH264: "/media-samples/livekit_avsync_p1_video_cyan_1080p25.h264",
+	},
+	"p2": {
+		types.MimeTypeOpus: "/media-samples/livekit_avsync_p2_audio_784hz_48k.ogg",
+		types.MimeTypeH264: "/media-samples/livekit_avsync_p2_video_yellow_1080p25.h264",
+	},
+}
 
+// samples is the default (p0) sample set — used by existing single-participant publishing.
+var samples = participantSamples["p0"]
+
+var (
 	frameDurations = map[types.MimeType]time.Duration{
-		types.MimeTypeH264: time.Microsecond * 41667,
+		types.MimeTypeH264: time.Millisecond * 40,
 		types.MimeTypeVP8:  time.Microsecond * 41667,
 		types.MimeTypeVP9:  time.Microsecond * 41667,
 		types.MimeTypePCMU: time.Millisecond * 20,
@@ -137,4 +152,151 @@ func (r *Runner) publish(t *testing.T, p *lksdk.LocalParticipant, codec types.Mi
 	})
 
 	return pub
+}
+
+func (r *Runner) publishForParticipant(t *testing.T, p *lksdk.LocalParticipant, participantName string, codec types.MimeType) *lksdk.LocalTrackPublication {
+	sampleMap, ok := participantSamples[participantName]
+	require.True(t, ok, "no samples for participant %s", participantName)
+
+	filename, ok := sampleMap[codec]
+	require.True(t, ok, "no %s sample for participant %s", codec, participantName)
+
+	frameDuration := frameDurations[codec]
+
+	done := make(chan struct{})
+	var pub *lksdk.LocalTrackPublication
+	opts := []lksdk.ReaderSampleProviderOption{
+		lksdk.ReaderTrackWithOnWriteComplete(func() {
+			close(done)
+			if pub != nil {
+				_ = p.UnpublishTrack(pub.SID())
+			}
+		}),
+	}
+	if frameDuration != 0 {
+		opts = append(opts, lksdk.ReaderTrackWithFrameDuration(frameDuration))
+	}
+
+	track, err := lksdk.NewLocalFileTrack(filename, opts...)
+	require.NoError(t, err)
+
+	pub, err = p.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: filename})
+	require.NoError(t, err)
+
+	trackID := pub.SID()
+	t.Cleanup(func() {
+		_ = p.UnpublishTrack(trackID)
+	})
+
+	return pub
+}
+
+// pendingTrack holds a prepared track ready to be published.
+type pendingTrack struct {
+	track *lksdk.LocalTrack
+	opts  lksdk.TrackPublicationOptions
+}
+
+// prepareTrack creates a local file track without publishing it.
+func (r *Runner) prepareTrack(t *testing.T, participantName string, codec types.MimeType) *pendingTrack {
+	sampleMap, ok := participantSamples[participantName]
+	require.True(t, ok, "no samples for participant %s", participantName)
+
+	filename, ok := sampleMap[codec]
+	require.True(t, ok, "no %s sample for participant %s", codec, participantName)
+
+	frameDuration := frameDurations[codec]
+
+	var opts []lksdk.ReaderSampleProviderOption
+	if frameDuration != 0 {
+		opts = append(opts, lksdk.ReaderTrackWithFrameDuration(frameDuration))
+	}
+
+	track, err := lksdk.NewLocalFileTrack(filename, opts...)
+	require.NoError(t, err)
+
+	return &pendingTrack{
+		track: track,
+		opts:  lksdk.TrackPublicationOptions{Name: filename},
+	}
+}
+
+// publishAllParticipants prepares all 6 tracks (h264 + opus per participant),
+// then publishes them simultaneously so all participants start at the same time.
+// Returns the 3 audio publications (for mute rotation).
+func (r *Runner) publishAllParticipants(t *testing.T) [3]*lksdk.LocalTrackPublication {
+	r.connectMultiParticipants(t)
+
+	participants := [3]struct {
+		name string
+		lp   *lksdk.LocalParticipant
+	}{
+		{"p0", r.room.LocalParticipant},
+		{"p1", r.p1Room.LocalParticipant},
+		{"p2", r.p2Room.LocalParticipant},
+	}
+
+	// Prepare all 6 tracks (no media flowing yet)
+	type prepared struct {
+		lp    *lksdk.LocalParticipant
+		video *pendingTrack
+		audio *pendingTrack
+	}
+	var tracks [3]prepared
+	for i, p := range participants {
+		tracks[i] = prepared{
+			lp:    p.lp,
+			video: r.prepareTrack(t, p.name, types.MimeTypeH264),
+			audio: r.prepareTrack(t, p.name, types.MimeTypeOpus),
+		}
+	}
+
+	// Publish all 6 tracks in parallel
+	var (
+		wg     sync.WaitGroup
+		pubs   [3]*lksdk.LocalTrackPublication // audio pubs for mute rotation
+		mu     sync.Mutex
+		errors []error
+	)
+
+	for i := range tracks {
+		i := i
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			pub, err := tracks[i].lp.PublishTrack(tracks[i].video.track, &tracks[i].video.opts)
+			if err != nil {
+				mu.Lock()
+				errors = append(errors, fmt.Errorf("publish video for p%d: %w", i, err))
+				mu.Unlock()
+				return
+			}
+			trackID := pub.SID()
+			t.Cleanup(func() { _ = tracks[i].lp.UnpublishTrack(trackID) })
+		}()
+
+		go func() {
+			defer wg.Done()
+			pub, err := tracks[i].lp.PublishTrack(tracks[i].audio.track, &tracks[i].audio.opts)
+			if err != nil {
+				mu.Lock()
+				errors = append(errors, fmt.Errorf("publish audio for p%d: %w", i, err))
+				mu.Unlock()
+				return
+			}
+			mu.Lock()
+			pubs[i] = pub
+			mu.Unlock()
+			trackID := pub.SID()
+			t.Cleanup(func() { _ = tracks[i].lp.UnpublishTrack(trackID) })
+		}()
+	}
+
+	wg.Wait()
+	require.Empty(t, errors, "failed to publish tracks: %v", errors)
+
+	t.Cleanup(r.disconnectMultiParticipants)
+
+	return pubs
 }

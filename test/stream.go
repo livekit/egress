@@ -95,9 +95,10 @@ func (r *Runner) testStream(t *testing.T) {
 				name:        "RoomComposite",
 				requestType: types.RequestTypeRoomComposite,
 				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeVP8,
-					layout:     "speaker",
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeVP8,
+					layout:           layoutSpeaker,
+					multiParticipant: true,
 				},
 				streamOptions: &streamOptions{
 					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
@@ -108,9 +109,10 @@ func (r *Runner) testStream(t *testing.T) {
 				name:        "RoomCompositeFixedKeyframeInterval",
 				requestType: types.RequestTypeRoomComposite,
 				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeVP8,
-					layout:     "speaker",
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeVP8,
+					layout:           layoutSpeaker,
+					multiParticipant: true,
 				},
 				streamOptions: &streamOptions{
 					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
@@ -188,9 +190,10 @@ func (r *Runner) testStream(t *testing.T) {
 				name:        "Template",
 				requestType: types.RequestTypeTemplate,
 				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeVP8,
-					layout:     "speaker",
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeVP8,
+					layout:           layoutSpeaker,
+					multiParticipant: true,
 				},
 				streamOptions: &streamOptions{
 					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
@@ -324,8 +327,8 @@ func (r *Runner) runStreamTest(t *testing.T, test *testCase) {
 func (r *Runner) verifyStreams(t *testing.T, tc *testCase, p *config.PipelineConfig, urls ...string) {
 	for _, url := range urls {
 		info := verify(t, url, p, nil, types.EgressTypeStream, false, r.sourceFramerate, false)
-		if tc != nil && tc.contentCheck != nil && info != nil {
-			tc.contentCheck(t, url, info)
+		if tc != nil {
+			r.runContentCheck(t, tc, url, info)
 		}
 	}
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 var uploadPrefix = fmt.Sprintf("integration/%s", time.Now().Format("2006-01-02"))
@@ -71,13 +72,22 @@ func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)
 		audioMuting := r.Muting
 		videoMuting := r.Muting && test.audioCodec == ""
 
-		test.audioTrackID = r.publishSample(t, test.audioCodec, test.audioDelay, test.audioUnpublish, audioMuting)
-		if test.audioRepublish != 0 {
-			r.publishSample(t, test.audioCodec, test.audioRepublish, 0, audioMuting)
-		}
-		test.videoTrackID = r.publishSample(t, test.videoCodec, test.videoDelay, test.videoUnpublish, videoMuting)
-		if test.videoRepublish != 0 {
-			r.publishSample(t, test.videoCodec, test.videoRepublish, 0, videoMuting)
+		if !test.multiParticipant {
+			test.audioTrackID = r.publishSample(t, test.audioCodec, test.audioDelay, test.audioUnpublish, audioMuting)
+			if test.audioRepublish != 0 {
+				r.publishSample(t, test.audioCodec, test.audioRepublish, 0, audioMuting)
+			}
+			test.videoTrackID = r.publishSample(t, test.videoCodec, test.videoDelay, test.videoUnpublish, videoMuting)
+			if test.videoRepublish != 0 {
+				r.publishSample(t, test.videoCodec, test.videoRepublish, 0, videoMuting)
+			}
+		} else {
+			audioPubs := r.publishAllParticipants(t)
+
+			if test.layout == layoutSpeaker || test.layout == layoutSingleSpeaker {
+				cancelRotation := r.startMuteRotation(audioPubs)
+				t.Cleanup(cancelRotation)
+			}
 		}
 
 		logger.Infow("test publish summary",
@@ -249,6 +259,32 @@ func (r *Runner) createDotFile(t *testing.T, egressID string) {
 
 	_, err = f.WriteString(dot)
 	require.NoError(t, err)
+}
+
+func (r *Runner) startMuteRotation(pubs [3]*lksdk.LocalTrackPublication) context.CancelFunc {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start with p0 unmuted, p1/p2 muted
+	pubs[1].SetMuted(true)
+	pubs[2].SetMuted(true)
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		current := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				pubs[current].SetMuted(true)
+				current = (current + 1) % 3
+				pubs[current].SetMuted(false)
+			}
+		}
+	}()
+
+	return cancel
 }
 
 func (r *Runner) stopEgress(t *testing.T, egressID string) *livekit.EgressInfo {
