@@ -16,5 +16,5 @@ package version
 
 const (
 	Version         = "1.12.0"
-	TemplateVersion = "sha-594b3b1"
+	TemplateVersion = "sha-2608aec"
 )
