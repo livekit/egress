@@ -45,7 +45,7 @@ type SDKSource struct {
 	callbacks *gstreamer.Callbacks
 
 	room *lksdk.Room
-	sync *synchronizer.Synchronizer
+	sync synchronizer.Sync
 
 	mu                   deadlock.Mutex
 	initialized          core.Fuse
@@ -124,9 +124,27 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		logger.Debugw("audio tempo controller enabled", "adjustmentRate", p.AudioTempoController.AdjustmentRate)
 	}
 
-	s.sync = synchronizer.NewSynchronizerWithOptions(
-		opts...,
-	)
+	if p.EnableSyncEngine {
+		syncEngineOpts := []synchronizer.SyncEngineOption{
+			synchronizer.WithSyncEngineLogger(logger.GetLogger()),
+			synchronizer.WithSyncEngineOnStarted(func() {
+				s.startRecording.Break()
+			}),
+			synchronizer.WithSyncEngineMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond),
+		}
+		if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
+			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineStartGate())
+		}
+		if p.Latency.OldPacketThreshold > 0 {
+			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineOldPacketThreshold(p.Latency.OldPacketThreshold))
+		}
+		if p.AudioTempoController.Enabled {
+			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineAudioDriftCompensated())
+		}
+		s.sync = synchronizer.NewSyncEngine(syncEngineOpts...)
+	} else {
+		s.sync = synchronizer.NewSynchronizerWithOptions(opts...).AsSyncInterface()
+	}
 
 	if err := s.joinRoom(); err != nil {
 		s.disconnectRoom()
