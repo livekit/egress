@@ -71,7 +71,7 @@ jobs:
           mv -f version.go version/version.go
 
       - name: Commit version changes
-        uses: EndBug/add-and-commit@v9
+        uses: EndBug/add-and-commit@v10
         with:
           default_author: github_actions
           message: |
