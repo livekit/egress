@@ -32,10 +32,11 @@ jobs:
           fi
 
           CUTOFF=$(date -u -d "${RETENTION_DAYS} days ago" +%Y-%m-%dT%H:%M:%S.%NZ)
-          echo "Deleting tags last updated before ${CUTOFF}"
+          echo "Deleting tags and images last updated before ${CUTOFF}"
 
           DELETED=0
           RETAINED=0
+          DIGESTS_TO_DELETE=""
           PAGE=1
 
           while true; do
@@ -52,15 +53,21 @@ jobs:
               LAST_UPDATED=$(echo "$TAG_INFO" | jq -r '.last_updated')
 
               if [[ "$LAST_UPDATED" < "$CUTOFF" ]]; then
+                # Collect image digests before deleting the tag
+                TAG_DIGESTS=$(echo "$TAG_INFO" | jq -r '.images[]?.digest // empty' 2>/dev/null)
+                for D in $TAG_DIGESTS; do
+                  DIGESTS_TO_DELETE="${DIGESTS_TO_DELETE} ${D}"
+                done
+
                 STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
                   "https://hub.docker.com/v2/repositories/${REPO}/tags/${TAG_NAME}" \
                   -H "Authorization: Bearer ${TOKEN}")
 
                 if [ "$STATUS" = "204" ]; then
-                  echo "Deleted: ${TAG_NAME} (last updated: ${LAST_UPDATED})"
+                  echo "Deleted tag: ${TAG_NAME} (last updated: ${LAST_UPDATED})"
                   DELETED=$((DELETED + 1))
                 else
-                  echo "::warning::Failed to delete ${TAG_NAME}: HTTP ${STATUS}"
+                  echo "::warning::Failed to delete tag ${TAG_NAME}: HTTP ${STATUS}"
                 fi
 
                 sleep 0.5
@@ -76,5 +83,65 @@ jobs:
             PAGE=$((PAGE + 1))
           done
 
+          # Collect all active (tagged) digests to preserve
+          ACTIVE_DIGESTS=""
+          PAGE=1
+          while true; do
+            RESPONSE=$(curl -sf "https://hub.docker.com/v2/repositories/${REPO}/tags?page_size=100&page=${PAGE}" \
+              -H "Authorization: Bearer ${TOKEN}")
+            TAGS=$(echo "$RESPONSE" | jq -r '.results // empty')
+            if [ -z "$TAGS" ] || [ "$TAGS" = "[]" ]; then
+              break
+            fi
+            for D in $(echo "$TAGS" | jq -r '.[].images[]?.digest // empty' 2>/dev/null); do
+              ACTIVE_DIGESTS="${ACTIVE_DIGESTS} ${D}"
+            done
+            NEXT=$(echo "$RESPONSE" | jq -r '.next // empty')
+            if [ -z "$NEXT" ] || [ "$NEXT" = "null" ]; then
+              break
+            fi
+            PAGE=$((PAGE + 1))
+          done
+
+          # List all images in the repository and delete inactive ones
+          IMAGES_DELETED=0
+          PAGE=1
+          while true; do
+            RESPONSE=$(curl -sf "https://hub.docker.com/v2/repositories/${REPO}/images?page_size=100&page=${PAGE}&status=inactive" \
+              -H "Authorization: Bearer ${TOKEN}") || break
+
+            IMAGES=$(echo "$RESPONSE" | jq -r '.results // empty')
+            if [ -z "$IMAGES" ] || [ "$IMAGES" = "[]" ]; then
+              break
+            fi
+
+            for IMAGE_INFO in $(echo "$IMAGES" | jq -c '.[]'); do
+              DIGEST=$(echo "$IMAGE_INFO" | jq -r '.digest')
+
+              if echo "$ACTIVE_DIGESTS" | grep -qF "$DIGEST"; then
+                continue
+              fi
+
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+                "https://hub.docker.com/v2/repositories/${REPO}/images/${DIGEST}" \
+                -H "Authorization: Bearer ${TOKEN}")
+
+              if [ "$STATUS" = "202" ] || [ "$STATUS" = "204" ]; then
+                echo "Deleted image: ${DIGEST}"
+                IMAGES_DELETED=$((IMAGES_DELETED + 1))
+              else
+                echo "::warning::Failed to delete image ${DIGEST}: HTTP ${STATUS}"
+              fi
+
+              sleep 0.5
+            done
+
+            NEXT=$(echo "$RESPONSE" | jq -r '.next // empty')
+            if [ -z "$NEXT" ] || [ "$NEXT" = "null" ]; then
+              break
+            fi
+            PAGE=$((PAGE + 1))
+          done
+
           echo ""
-          echo "Summary: deleted=${DELETED} retained=${RETAINED}"
+          echo "Summary: tags_deleted=${DELETED} tags_retained=${RETAINED} images_deleted=${IMAGES_DELETED}"
