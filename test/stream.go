@@ -341,17 +341,22 @@ func (r *Runner) verifyStreams(t *testing.T, tc *testCase, p *config.PipelineCon
 	}
 }
 
+// mediamtxRecordingDir is hardcoded in build/test/Dockerfile via sed substitution
+// of mediamtx.yml's recordPath. It must match that path. The directory is created
+// by build/test/entrypoint.sh at startup so it exists in CI as well as local mage.
+const mediamtxRecordingDir = "/out/output"
+
 // verifyStreamRecording validates the mediamtx-written recording after the egress stops.
-// mediamtx records every published stream to r.FilePrefix/stream-<timestamp>.mp4 (see
-// build/test/Dockerfile). We pick the largest recording started after `since` (the test's
-// egress start) and run the standard content check against it.
+// mediamtx records every published stream to mediamtxRecordingDir/stream-<timestamp>.mp4.
+// We pick the largest recording started after `since` (the test's egress start) and run
+// the standard content check against it.
 func (r *Runner) verifyStreamRecording(t *testing.T, tc *testCase, since time.Time) {
 	if tc.contentCheck != nil {
 		// Already validated against the live URL during the test run.
 		return
 	}
 
-	entries, err := os.ReadDir(r.FilePrefix)
+	entries, err := os.ReadDir(mediamtxRecordingDir)
 	require.NoError(t, err)
 
 	var (
@@ -371,10 +376,10 @@ func (r *Runner) verifyStreamRecording(t *testing.T, tc *testCase, since time.Ti
 		}
 		if fi.Size() > bestSize {
 			bestSize = fi.Size()
-			recording = path.Join(r.FilePrefix, e.Name())
+			recording = path.Join(mediamtxRecordingDir, e.Name())
 		}
 	}
-	require.NotEmpty(t, recording, "no mediamtx recording found in %s after %s", r.FilePrefix, since)
+	require.NotEmpty(t, recording, "no mediamtx recording found in %s after %s", mediamtxRecordingDir, since)
 
 	info, err := ffprobe(recording)
 	require.NoError(t, err)
