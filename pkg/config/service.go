@@ -66,6 +66,12 @@ type ServiceConfig struct {
 	PrometheusPort   int `yaml:"prometheus_port"`    // prometheus handler port
 	DebugHandlerPort int `yaml:"debug_handler_port"` // egress debug handler port
 
+	// AffinityMode controls job distribution across pods.
+	//   "pack"       — busy pods win (default; preserves upstream behaviour)
+	//   "spread"     — CPU-proportional; use for TrackEgress-only fleets
+	//   "type_aware" — RoomComposite/Web prefer idle pods; Track/Participant spread by load
+	AffinityMode string `yaml:"affinity_mode"`
+
 	*CPUCostConfig `yaml:"cpu_cost"` // CPU costs for the different egress types
 }
 

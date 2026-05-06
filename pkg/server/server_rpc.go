@@ -198,18 +198,41 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 
 func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequest) float32 {
 	if s.IsDisabled() || !s.monitor.CanAcceptRequest(req) {
-		// cannot accept
 		return -1
 	}
 
-	if s.activeRequests.Load() == 0 {
-		// group multiple track and track composite requests.
-		// if this instance is idle and another is already handling some, the request will go to that server.
-		// this avoids having many instances with one track request each, taking availability from room composite.
-		return 0.5
+	switch s.conf.AffinityMode {
+
+	case "spread":
+		// Idle pods return 1.0 → MaximumAffinity short-circuit fires immediately.
+		// Busy pods return proportional score → least loaded wins after ShortCircuitTimeout.
+		return s.monitor.AvailableCPUFraction()
+
+	case "type_aware":
+		if isHeavyEgressRequest(req) {
+			// RoomComposite/Web need ~4 CPUs. Strongly prefer idle pods.
+			if s.activeRequests.Load() == 0 {
+				return 1.0
+			}
+			return 0.5
+		}
+		return s.monitor.AvailableCPUFraction()
+
+	default: // "pack" or empty — upstream behaviour unchanged
+		if s.activeRequests.Load() == 0 {
+			return 0.5
+		}
+		return 1
 	}
-	// already handling a request and has available cpu
-	return 1
+}
+
+func isHeavyEgressRequest(req *rpc.StartEgressRequest) bool {
+	switch req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite,
+		*rpc.StartEgressRequest_Web:
+		return true
+	}
+	return false
 }
 
 func (s *Server) ListActiveEgress(ctx context.Context, _ *rpc.ListActiveEgressRequest) (*rpc.ListActiveEgressResponse, error) {
