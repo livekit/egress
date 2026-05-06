@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/linkdata/deadlock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/types"
@@ -255,7 +256,7 @@ func (r *Runner) publishAllParticipants(t *testing.T) [3]*lksdk.LocalTrackPublic
 	var (
 		wg     sync.WaitGroup
 		pubs   [3]*lksdk.LocalTrackPublication // audio pubs for mute rotation
-		mu     sync.Mutex
+		mu     deadlock.Mutex
 		errors []error
 	)
 
