@@ -31,6 +31,8 @@ import (
 
 	"github.com/livekit/media-samples/avsync"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/egress/pkg/types"
 )
 
 const (
@@ -66,6 +68,12 @@ func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *
 	// Explicit override (used for stream keyframe checks)
 	if tc.contentCheck != nil {
 		tc.contentCheck(t, file, info)
+		return
+	}
+
+	// Web and WebV2 tests load arbitrary content from a URL, not the avsync
+	// test pattern, so beep/flash detection doesn't apply.
+	if tc.requestType == types.RequestTypeWeb {
 		return
 	}
 
