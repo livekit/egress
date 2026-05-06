@@ -26,16 +26,22 @@ import (
 
 const (
 	// gridGap is --grid-gap: 0.5rem = 8px at 16px base font size.
+	// Used between grid cells; the grid itself sits flush against the frame.
 	gridGap = 8
-	// regionInset is the margin applied to all sides of each region to avoid
-	// sampling at tile edges (compression artifacts, borders, etc.).
+	// regionInset is the margin applied to the sides and bottom of each region
+	// to avoid sampling at tile edges (compression artifacts, borders, etc.).
+	// The top is intentionally NOT inset: the test pattern's flash bar lives at
+	// the top of each tile, so insetting the top would cut it off — this is
+	// especially critical for carousel thumbnails where the scaled flash bar is
+	// only ~12px tall.
 	regionInset = 20
 )
 
-// insetRect shrinks r by margin on all four sides.
+// insetRect shrinks r by margin on the sides and bottom only. The top edge is
+// preserved so the flash strip remains within the region.
 func insetRect(r image.Rectangle, margin int) image.Rectangle {
 	return image.Rectangle{
-		Min: image.Pt(r.Min.X+margin, r.Min.Y+margin),
+		Min: image.Pt(r.Min.X+margin, r.Min.Y),
 		Max: image.Pt(r.Max.X-margin, r.Max.Y-margin),
 	}
 }
@@ -54,23 +60,18 @@ func insetRect(r image.Rectangle, margin int) image.Rectangle {
 // numParticipants is the total number of participants in the room (including
 // the dominant speaker).
 func SpeakerLayoutRegions(width, height, numParticipants int) []avsync.Region {
-	pad := gridGap // 8px padding around the whole grid
-
-	usableW := width - 2*pad
-	usableH := height - 2*pad
+	// CSS Grid only applies grid-gap between cells, not around the grid, so the
+	// rendered output has no outer page padding. Tiles start at the frame edge.
 
 	// Two columns: 1fr + 5fr = 6fr total, with one gap between them.
 	totalFr := 6
-	availableForCols := usableW - gridGap // subtract the single inter-column gap
+	availableForCols := width - gridGap // subtract the single inter-column gap
 	carouselW := availableForCols / totalFr
 	stageW := availableForCols - carouselW
 
-	stageX := pad + carouselW + gridGap
-	stageY := pad
-
 	stage := image.Rectangle{
-		Min: image.Pt(stageX, stageY),
-		Max: image.Pt(stageX+stageW, stageY+usableH),
+		Min: image.Pt(carouselW+gridGap, 0),
+		Max: image.Pt(carouselW+gridGap+stageW, height),
 	}
 
 	regions := []avsync.Region{
@@ -87,10 +88,10 @@ func SpeakerLayoutRegions(width, height, numParticipants int) []avsync.Region {
 	thumbW := carouselW
 	thumbH := thumbW * 10 / 16
 	for i := 0; i < numParticipants; i++ {
-		thumbY := pad + i*(thumbH+gridGap)
+		thumbY := i * (thumbH + gridGap)
 		thumb := image.Rectangle{
-			Min: image.Pt(pad, thumbY),
-			Max: image.Pt(pad+thumbW, thumbY+thumbH),
+			Min: image.Pt(0, thumbY),
+			Max: image.Pt(thumbW, thumbY+thumbH),
 		}
 		regions = append(regions, avsync.Region{
 			Name: fmt.Sprintf("thumb%d", i),
@@ -118,23 +119,17 @@ func GridLayoutRegions(width, height, numParticipants int) []avsync.Region {
 	cols := gridColumns(width, numParticipants)
 	rows := int(math.Ceil(float64(numParticipants) / float64(cols)))
 
-	pad := gridGap
-	usableW := width - 2*pad
-	usableH := height - 2*pad
-
-	// Each cell width: (usableW - (cols-1)*gap) / cols
-	cellW := (usableW - (cols-1)*gridGap) / cols
-	cellH := (usableH - (rows-1)*gridGap) / rows
+	// No outer page padding (see SpeakerLayoutRegions for rationale).
+	cellW := (width - (cols-1)*gridGap) / cols
+	cellH := (height - (rows-1)*gridGap) / rows
 
 	regions := make([]avsync.Region, 0, numParticipants)
 	for i := 0; i < numParticipants; i++ {
 		col := i % cols
 		row := i / cols
-		x := pad + col*(cellW+gridGap)
-		y := pad + row*(cellH+gridGap)
 		cell := image.Rectangle{
-			Min: image.Pt(x, y),
-			Max: image.Pt(x+cellW, y+cellH),
+			Min: image.Pt(col*(cellW+gridGap), row*(cellH+gridGap)),
+			Max: image.Pt(col*(cellW+gridGap)+cellW, row*(cellH+gridGap)+cellH),
 		}
 		regions = append(regions, avsync.Region{
 			Name: fmt.Sprintf("cell%d", i),

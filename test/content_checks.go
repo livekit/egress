@@ -48,7 +48,7 @@ const (
 	regionFull  = "full"
 
 	// Muting schedule constants (must match publishSample in publish.go)
-	muteStartDelay  = 15 * time.Second
+	muteStartDelay   = 15 * time.Second
 	muteTogglePeriod = 10 * time.Second
 )
 
@@ -105,6 +105,13 @@ func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *
 		Participants: participants,
 	})
 	require.NoError(t, err)
+
+	logger.Infow("avsync results",
+		"audio", result.Audio.Beeps,
+		"silence", result.Audio.Silence,
+		"video", result.Video.Flashes,
+		"regions", result.Video.Regions,
+	)
 
 	dur, _ := parseFFProbeDuration(info.Format.Duration)
 

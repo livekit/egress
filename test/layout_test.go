@@ -99,13 +99,14 @@ func TestSingleSpeakerLayoutRegions(t *testing.T) {
 	r := regions[0]
 	assert.Equal(t, "stage", r.Name)
 
-	// Region should cover nearly the full frame (only regionInset margin trimmed).
+	// Region covers the full frame minus regionInset on the sides and bottom.
+	// The top is preserved so the flash strip is included.
 	regionW := r.Rect.Max.X - r.Rect.Min.X
 	regionH := r.Rect.Max.Y - r.Rect.Min.Y
 	assert.Equal(t, w-2*regionInset, regionW, "single speaker region width")
-	assert.Equal(t, h-2*regionInset, regionH, "single speaker region height")
+	assert.Equal(t, h-regionInset, regionH, "single speaker region height")
 
-	// Anchored at (regionInset, regionInset).
+	// Anchored at (regionInset, 0): inset on the sides, flush with the top.
 	assert.Equal(t, regionInset, r.Rect.Min.X)
-	assert.Equal(t, regionInset, r.Rect.Min.Y)
+	assert.Equal(t, 0, r.Rect.Min.Y)
 }
