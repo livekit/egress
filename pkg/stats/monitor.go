@@ -567,6 +567,18 @@ func (m *Monitor) GetAvailableCPU() float64 {
 	return available
 }
 
+// AvailableCPUFraction returns the fraction of CPU budget remaining (0.0–1.0).
+// Returns 1.0 when the pod is idle. Used by StartEgressAffinity for spread/type_aware modes.
+func (m *Monitor) AvailableCPUFraction() float32 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	total, available, _, _ := m.getCPUUsageLocked()
+	if total == 0 {
+		return 1.0
+	}
+	return float32(available / total)
+}
+
 func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) {
 	total = m.cpuStats.NumCPU()
 	if m.requests.Load() == 0 {
