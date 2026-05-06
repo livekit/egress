@@ -95,9 +95,10 @@ func (r *Runner) testStream(t *testing.T) {
 				name:        "RoomComposite",
 				requestType: types.RequestTypeRoomComposite,
 				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeVP8,
-					layout:     "speaker",
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeVP8,
+					layout:           layoutSpeaker,
+					multiParticipant: true,
 				},
 				streamOptions: &streamOptions{
 					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
@@ -108,9 +109,10 @@ func (r *Runner) testStream(t *testing.T) {
 				name:        "RoomCompositeFixedKeyframeInterval",
 				requestType: types.RequestTypeRoomComposite,
 				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeVP8,
-					layout:     "speaker",
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeVP8,
+					layout:           layoutSpeaker,
+					multiParticipant: true,
 				},
 				streamOptions: &streamOptions{
 					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
@@ -188,9 +190,10 @@ func (r *Runner) testStream(t *testing.T) {
 				name:        "Template",
 				requestType: types.RequestTypeTemplate,
 				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeVP8,
-					layout:     "speaker",
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeVP8,
+					layout:           layoutSpeaker,
+					multiParticipant: true,
 				},
 				streamOptions: &streamOptions{
 					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
@@ -236,6 +239,7 @@ func (r *Runner) runStreamTest(t *testing.T, test *testCase) {
 
 	ctx := context.Background()
 	urls := streamUrls[test.streamOptions.outputType]
+	testStart := time.Now()
 	egressID := r.startEgress(t, req)
 
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
@@ -319,15 +323,67 @@ func (r *Runner) runStreamTest(t *testing.T, test *testCase) {
 			require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
 		}
 	}
+
+	// Validate the mediamtx-written recording (avsync analysis can't run on a live URL).
+	r.verifyStreamRecording(t, test, testStart)
 }
 
 func (r *Runner) verifyStreams(t *testing.T, tc *testCase, p *config.PipelineConfig, urls ...string) {
 	for _, url := range urls {
 		info := verify(t, url, p, nil, types.EgressTypeStream, false, r.sourceFramerate, false)
-		if tc != nil && tc.contentCheck != nil && info != nil {
-			tc.contentCheck(t, url, info)
+		// Default avsync content check requires ffmpeg to read the stream to EOF, which
+		// never happens for a live RTMP/SRT URL. Only the explicit override (e.g. keyframe
+		// check) is bounded and safe to run on a live URL; the avsync check runs against
+		// the mediamtx recording in verifyStreamRecording after the egress stops.
+		if tc != nil && tc.contentCheck != nil {
+			r.runContentCheck(t, tc, url, info)
 		}
 	}
+}
+
+// mediamtxRecordingDir is hardcoded in build/test/Dockerfile via sed substitution
+// of mediamtx.yml's recordPath. It must match that path. The directory is created
+// by build/test/entrypoint.sh at startup so it exists in CI as well as local mage.
+const mediamtxRecordingDir = "/out/output"
+
+// verifyStreamRecording validates the mediamtx-written recording after the egress stops.
+// mediamtx records every published stream to mediamtxRecordingDir/stream-<timestamp>.mp4.
+// We pick the largest recording started after `since` (the test's egress start) and run
+// the standard content check against it.
+func (r *Runner) verifyStreamRecording(t *testing.T, tc *testCase, since time.Time) {
+	if tc.contentCheck != nil {
+		// Already validated against the live URL during the test run.
+		return
+	}
+
+	entries, err := os.ReadDir(mediamtxRecordingDir)
+	require.NoError(t, err)
+
+	var (
+		recording string
+		bestSize  int64
+	)
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), "stream-") {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		if fi.ModTime().Before(since) {
+			continue
+		}
+		if fi.Size() > bestSize {
+			bestSize = fi.Size()
+			recording = path.Join(mediamtxRecordingDir, e.Name())
+		}
+	}
+	require.NotEmpty(t, recording, "no mediamtx recording found in %s after %s", mediamtxRecordingDir, since)
+
+	info, err := ffprobe(recording)
+	require.NoError(t, err)
+	r.runContentCheck(t, tc, recording, info)
 }
 
 func (r *Runner) runWebsocketTest(t *testing.T, test *testCase) {

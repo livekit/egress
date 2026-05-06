@@ -279,30 +279,30 @@ func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(p1.Disconnect)
-	r.publish(t, p1.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	r.publishForParticipant(t, p1.LocalParticipant, "p1", types.MimeTypeOpus)
 
 	agent, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
 		RoomName:            r.RoomName,
-		ParticipantName:     "egress-sample",
+		ParticipantName:     "egress-sample-agent",
 		ParticipantIdentity: fmt.Sprintf("agent-%d", rand.Intn(100)),
 		ParticipantKind:     lksdk.ParticipantAgent,
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(agent.Disconnect)
-	r.publish(t, agent.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	r.publishForParticipant(t, agent.LocalParticipant, "p0", types.MimeTypeOpus)
 
 	p2, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
 		RoomName:            r.RoomName,
-		ParticipantName:     "egress-sample",
+		ParticipantName:     "egress-sample-2",
 		ParticipantIdentity: fmt.Sprintf("sample-2-%d", rand.Intn(100)),
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(p2.Disconnect)
-	r.publish(t, p2.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	r.publishForParticipant(t, p2.LocalParticipant, "p2", types.MimeTypeOpus)
 
 	r.runFileTest(t, test)
 }

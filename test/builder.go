@@ -73,6 +73,8 @@ type publishOptions struct {
 
 	layout string
 
+	multiParticipant bool
+
 	// v2 Media source fields
 	mediaVideoTrackID     string
 	mediaParticipantVideo *livekit.ParticipantVideo

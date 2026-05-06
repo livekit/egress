@@ -15,7 +15,7 @@
 # syntax=docker/dockerfile:1.6
 ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
-ARG GO_VERSION=1.26.1
+ARG GO_VERSION=1.26.2
 ARG LINT_VERSION=v2.11.3
 
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template

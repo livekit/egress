@@ -45,7 +45,7 @@ func (r *Runner) testImages(t *testing.T) {
 				publishOptions: publishOptions{
 					audioCodec: types.MimeTypeOpus,
 					videoCodec: types.MimeTypeH264,
-					layout:     "speaker",
+					layout:     layoutSpeaker,
 				},
 				encodingOptions: &livekit.EncodingOptions{
 					Width:  640,

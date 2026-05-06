@@ -19,7 +19,8 @@ set -eo pipefail
 rm -rf /var/run/pulse /var/lib/pulse /home/egress/.config/pulse /home/egress/.cache/xdgr/pulse
 pulseaudio -D --verbose --exit-idle-time=-1 --disallow-exit > /dev/null 2>&1
 
-# Run RTSP server
+# Run RTSP server (mediamtx records to /out/output/stream-*)
+mkdir -p /out/output
 ./mediamtx > /dev/null 2>&1 &
 
 # Run tests
