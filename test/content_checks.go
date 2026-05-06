@@ -239,6 +239,12 @@ func (r *Runner) verifyFlashes(t *testing.T, result *avsync.Result, windows []ti
 	t.Helper()
 	for regionName, flashes := range result.Video.Flashes {
 		windowFlashes := filterByWindows(flashes, windows)
+
+		logger.Infow("verifyFlashes", "region", regionName,
+			"total", len(flashes), "inWindow", len(windowFlashes),
+			"flashes", flashes, "windowFlashes", windowFlashes,
+			"windows", formatWindows(windows))
+
 		require.Greater(t, len(windowFlashes), 0,
 			"no flashes in region %s during expected content windows", regionName)
 
@@ -261,9 +267,6 @@ func (r *Runner) verifyFlashes(t *testing.T, result *avsync.Result, windows []ti
 		outsideCount := countOutsideWindows(flashes, windows, 500*time.Millisecond)
 		require.LessOrEqual(t, outsideCount, 2,
 			"unexpected flashes outside content windows in region %s", regionName)
-
-		logger.Debugw("verifyFlashes", "region", regionName,
-			"total", len(flashes), "inWindow", len(windowFlashes))
 	}
 }
 
@@ -279,6 +282,12 @@ func (r *Runner) verifyBeeps(t *testing.T, result *avsync.Result, windows []time
 	for _, p := range participants {
 		beeps := beepsByParticipant[p.Name]
 		windowBeeps := filterByWindows(beeps, windows)
+
+		logger.Infow("verifyBeeps", "participant", p.Name,
+			"total", len(beeps), "inWindow", len(windowBeeps),
+			"beeps", beeps, "windowBeeps", windowBeeps,
+			"windows", formatWindows(windows))
+
 		require.Greater(t, len(windowBeeps), 0,
 			"no beeps detected for %s during expected content windows", p.Name)
 
@@ -294,9 +303,6 @@ func (r *Runner) verifyBeeps(t *testing.T, result *avsync.Result, windows []time
 		expectedSeconds := totalWindowDuration(windows).Seconds()
 		require.InDelta(t, expectedSeconds, float64(len(windowBeeps)), eventCountTolerance,
 			"beep count mismatch for %s", p.Name)
-
-		logger.Debugw("verifyBeeps", "participant", p.Name,
-			"total", len(beeps), "inWindow", len(windowBeeps))
 	}
 }
 
@@ -432,6 +438,15 @@ func sameWindow(a, b time.Duration, windows []timeWindow) bool {
 		}
 	}
 	return false
+}
+
+// formatWindows returns a slice of "[start..end]" strings for log output.
+func formatWindows(windows []timeWindow) []string {
+	out := make([]string, len(windows))
+	for i, w := range windows {
+		out[i] = fmt.Sprintf("[%s..%s]", w.start, w.end)
+	}
+	return out
 }
 
 // totalWindowDuration returns the sum of all window durations.
