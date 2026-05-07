@@ -199,8 +199,8 @@ func (pm *processManager) KillAll() {
 
 func (pm *processManager) AbortProcess(egressID string, err error) {
 	logger.Infow("aborting egress", err, "egressID", egressID)
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 
 	if h, ok := pm.activeHandlers[egressID]; ok {
 		logger.Warnw("aborting handler", err, "egressID", egressID)

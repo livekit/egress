@@ -346,7 +346,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		return errors.ErrEgressAlreadyExists
 	}
 	if _, ok := m.canAcceptRequestLocked(req); !ok {
-		logger.Debugw("can not accept request", nil)
+		logger.Debugw("can not accept request")
 		return errors.ErrNotEnoughCPU
 	}
 
@@ -423,6 +423,9 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.pendingPulseClients.Add(pulseClients)
 
 	time.AfterFunc(cpuHoldDuration, func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+
 		ps.pendingCPU = 0
 		m.pendingMemoryUsage.Add(-m.cpuCostConfig.MemoryCost)
 		m.pendingPulseClients.Add(-pulseClients)
