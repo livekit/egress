@@ -15,6 +15,7 @@
 package server
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,6 +23,53 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 )
+
+// TestConsumePendingClaim_FloorAtZero verifies the CAS loop never decrements below zero.
+func TestConsumePendingClaim_FloorAtZero(t *testing.T) {
+	s := &Server{}
+
+	// Counter starts at 0; extra consume calls must be no-ops.
+	s.consumePendingClaim()
+	s.consumePendingClaim()
+	require.Equal(t, int32(0), s.pendingClaims.Load())
+
+	// One increment; one consume; counter back to 0.
+	s.pendingClaims.Inc()
+	require.Equal(t, int32(1), s.pendingClaims.Load())
+	s.consumePendingClaim()
+	require.Equal(t, int32(0), s.pendingClaims.Load())
+
+	// Second consume after counter is already 0 is a no-op.
+	s.consumePendingClaim()
+	require.Equal(t, int32(0), s.pendingClaims.Load())
+}
+
+// TestConsumePendingClaim_NoDoubleDecrement verifies that concurrent consumptions
+// of the same claim (StartEgress + self-decay timer racing) each fire exactly once
+// and together decrement the counter by exactly N, not 2N.
+func TestConsumePendingClaim_NoDoubleDecrement(t *testing.T) {
+	const claims = 50
+	s := &Server{}
+
+	for i := 0; i < claims; i++ {
+		s.pendingClaims.Inc()
+	}
+	require.Equal(t, int32(claims), s.pendingClaims.Load())
+
+	// Simulate StartEgress and self-decay racing concurrently for all claims.
+	// Both sides try to decrement; together they must not go below zero.
+	var wg sync.WaitGroup
+	for i := 0; i < claims*2; i++ { // 2× concurrency, one genuine + one spurious per claim
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.consumePendingClaim()
+		}()
+	}
+	wg.Wait()
+
+	require.Equal(t, int32(0), s.pendingClaims.Load(), "counter must be exactly 0, not negative")
+}
 
 func TestIsHeavyEgressRequest(t *testing.T) {
 	for _, tc := range []struct {

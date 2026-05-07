@@ -579,6 +579,26 @@ func (m *Monitor) AvailableCPUFraction() float32 {
 	return float32(available / total)
 }
 
+// AvailableCPUFractionWithPending is like AvailableCPUFraction but deducts
+// pendingSlots extra track-cost units from the available budget. Used by
+// StartEgressAffinity in spread/type_aware modes to account for claimed-but-not-yet-accepted
+// requests during burst windows (where m.requests.Inc has not yet fired).
+func (m *Monitor) AvailableCPUFractionWithPending(pendingSlots int32) float32 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	total, available, _, _ := m.getCPUUsageLocked()
+	if total == 0 {
+		return 1.0
+	}
+	if pendingSlots > 0 {
+		available -= float64(pendingSlots) * m.cpuCostConfig.TrackCpuCost
+		if available < 0 {
+			available = 0
+		}
+	}
+	return float32(available / total)
+}
+
 func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) {
 	total = m.cpuStats.NumCPU()
 	if m.requests.Load() == 0 {

@@ -57,6 +57,7 @@ type Server struct {
 	ioClient         info.SessionReporter
 
 	activeRequests atomic.Int32
+	pendingClaims  atomic.Int32 // claimed-but-not-yet-accepted requests (spread/type_aware modes)
 	terminating    core.Fuse
 	shutdown       core.Fuse
 }

@@ -16,6 +16,7 @@ package server
 
 import (
 	"context"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -43,8 +44,25 @@ var (
 	tracer = otel.Tracer("github.com/livekit/egress/pkg/server")
 )
 
+// consumePendingClaim decrements pendingClaims by 1, floored at 0.
+// Called both from StartEgress (claim accepted) and the 2s self-decay timer
+// set in StartEgressAffinity. The CompareAndSwap loop ensures exactly one
+// decrement fires per increment even when both callers race.
+func (s *Server) consumePendingClaim() {
+	for {
+		n := s.pendingClaims.Load()
+		if n <= 0 {
+			return
+		}
+		if s.pendingClaims.CompareAndSwap(n, n-1) {
+			return
+		}
+	}
+}
+
 func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
 	s.activeRequests.Inc()
+	s.consumePendingClaim() // hand slot from pending to m.requests
 
 	ctx, span := tracer.Start(ctx, "Service.StartEgress")
 	defer span.End()
@@ -204,19 +222,33 @@ func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequ
 	switch s.conf.AffinityMode {
 
 	case "spread":
-		// Idle pods return 1.0 → MaximumAffinity short-circuit fires immediately.
-		// Busy pods return proportional score → least loaded wins after ShortCircuitTimeout.
-		return s.monitor.AvailableCPUFraction()
+		// Increment pendingClaims so subsequent affinity calls on this pod see a
+		// lower score before m.requests.Inc fires in StartEgress. The 2s self-decay
+		// guards against claims that are never accepted (lost RPCs, rejected requests).
+		// consumePendingClaim uses a CAS loop so exactly one of StartEgress or the
+		// timer decrements the counter — no double-decrement.
+		s.pendingClaims.Inc()
+		time.AfterFunc(2*time.Second, s.consumePendingClaim)
+		pending := s.pendingClaims.Load()
+		// Subtract rand jitter ≤ 0.001 to break equal-score ties in psrpc's strict->
+		// comparison (first-replier-wins). Idle pods land in [0.999, 1.0]; busy pods
+		// score ≤ 0.96 (4 CPU, TrackCpuCost=0.15) and never beat idle pods.
+		return s.monitor.AvailableCPUFractionWithPending(pending) - rand.Float32()*0.001
 
 	case "type_aware":
 		if isHeavyEgressRequest(req) {
 			// RoomComposite/Web need ~4 CPUs. Strongly prefer idle pods.
+			// Jitter breaks first-replier ties among equally-idle pods.
 			if s.activeRequests.Load() == 0 {
-				return 1.0
+				return 1.0 - rand.Float32()*0.001
 			}
 			return 0.5
 		}
-		return s.monitor.AvailableCPUFraction()
+		// Light requests use the same pending-counter + jitter logic as spread.
+		s.pendingClaims.Inc()
+		time.AfterFunc(2*time.Second, s.consumePendingClaim)
+		pending := s.pendingClaims.Load()
+		return s.monitor.AvailableCPUFractionWithPending(pending) - rand.Float32()*0.001
 
 	default: // "pack" or empty — upstream behaviour unchanged
 		if s.activeRequests.Load() == 0 {
