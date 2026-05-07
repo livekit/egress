@@ -274,6 +274,11 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 
 				logger.Infow("pipeline playing", "timeToPlaying", timeToPlaying)
 				c.updateStartTime(c.src.GetStartedAt())
+
+				// base_time is only valid after the pipeline reaches PLAYING
+				if timeAware, ok := c.src.(source.TimeAware); ok {
+					timeAware.SetTimeProvider(c.p)
+				}
 			})
 		}
 		return

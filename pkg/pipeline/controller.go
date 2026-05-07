@@ -234,9 +234,6 @@ func (c *Controller) BuildPipeline() error {
 	p.UpgradeState(gstreamer.StateStarted)
 
 	c.p = p
-	if timeAware, ok := c.src.(source.TimeAware); ok {
-		timeAware.SetTimeProvider(p)
-	}
 	close(c.callbacks.BuildReady)
 	return nil
 }
