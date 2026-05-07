@@ -8,6 +8,7 @@ linters:
   default: none
   enable:
     - asasalint
+    - depguard
     - dupl
     - errname
     - fatcontext
@@ -19,6 +20,12 @@ linters:
     - revive
     - staticcheck
   settings:
+    depguard:
+      rules:
+        protojson:
+          deny:
+            - pkg: google.golang.org/protobuf/encoding/protojson
+              desc: use github.com/livekit/protocol/utils/protojson instead — it sets DiscardUnknown by default to avoid schema-drift footguns
     forbidigo:
       forbid:
         - pattern: sync\.Mutex
@@ -65,7 +72,7 @@ linters:
         - name: unreachable-code 
         - name: empty-block
   exclusions:
-    generated: lax
+    generated: strict
     rules:
       - path: cmd/server/main.go
         text: 'pattern templates: no matching files found'

@@ -25,7 +25,6 @@ import (
 	"syscall"
 
 	"github.com/urfave/cli/v3"
-	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -37,6 +36,7 @@ import (
 	lkredis "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
 	_ "github.com/livekit/protocol/utils/hwstats/maxprocs"
+	"github.com/livekit/protocol/utils/protojson"
 	"github.com/livekit/psrpc"
 )
 

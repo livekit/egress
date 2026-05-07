@@ -23,16 +23,15 @@ import (
 	"syscall"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protojson"
-	"gopkg.in/yaml.v3"
-
 	"go.opentelemetry.io/otel"
+	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/protojson"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
