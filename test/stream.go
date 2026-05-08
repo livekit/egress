@@ -323,7 +323,7 @@ func (r *Runner) runStreamTest(t *testing.T, test *testCase) {
 
 func (r *Runner) verifyStreams(t *testing.T, tc *testCase, p *config.PipelineConfig, urls ...string) {
 	for _, url := range urls {
-		info := verify(t, url, p, nil, types.EgressTypeStream, false, r.sourceFramerate, false)
+		info := verify(t, url, p, nil, types.EgressTypeStream, r.sourceFramerate, false)
 		if tc != nil && tc.contentCheck != nil && info != nil {
 			tc.contentCheck(t, url, info)
 		}
@@ -350,7 +350,7 @@ func (r *Runner) runWebsocketTest(t *testing.T, test *testCase) {
 	time.Sleep(time.Second * 30)
 
 	res := r.stopEgress(t, egressID)
-	verify(t, filepath, p, res, types.EgressTypeWebsocket, r.Muting, r.sourceFramerate, false)
+	verify(t, filepath, p, res, types.EgressTypeWebsocket, r.sourceFramerate, false)
 }
 
 type websocketTestServer struct {

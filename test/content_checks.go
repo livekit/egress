@@ -31,11 +31,6 @@ import (
 )
 
 func (r *Runner) fullContentCheck(t *testing.T, file string, _ *FFProbeInfo) {
-	if r.Muting {
-		// TODO: support for content check on muted tracks to be added later
-		return
-	}
-
 	// TODO: enable after fixing the issue with missing beeps
 	// dur, err := parseFFProbeDuration(info.Format.Duration)
 	//require.NoError(t, err)
@@ -68,11 +63,6 @@ func (r *Runner) fullContentCheck(t *testing.T, file string, _ *FFProbeInfo) {
 }
 
 func (r *Runner) videoOnlyContentCheck(t *testing.T, file string, info *FFProbeInfo) {
-	if r.Muting {
-		// TODO: support for content check on muted tracks to be added later
-		return
-	}
-
 	flashes, err := extractFlashTimestamps(file, r.FilePrefix)
 	require.NoError(t, err)
 
@@ -87,11 +77,6 @@ func (r *Runner) videoOnlyContentCheck(t *testing.T, file string, info *FFProbeI
 }
 
 func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, _ *FFProbeInfo) {
-	if r.Muting {
-		// TODO: support for content check on muted tracks to be added later
-		return
-	}
-
 	//TODO: enable after fixing the issue with missing beeps
 	//dur, err := parseFFProbeDuration(info.Format.Duration)
 	//require.NoError(t, err)
@@ -118,11 +103,6 @@ func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, _ *FFProbeInfo
 }
 
 func (r *Runner) fullContentCheckWithVideoUnpublishAt10AndRepublishAt20(t *testing.T, file string, info *FFProbeInfo) {
-	if r.Muting {
-		// TODO: support for content check on muted to be added later
-		return
-	}
-
 	flashes, err := extractFlashTimestamps(file, r.FilePrefix)
 	require.NoError(t, err)
 

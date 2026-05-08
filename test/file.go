@@ -587,7 +587,7 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 	require.NotNil(t, manifest)
 
 	// verify
-	info := verify(t, localPath, p, res, types.EgressTypeFile, r.Muting, r.sourceFramerate, false)
+	info := verify(t, localPath, p, res, types.EgressTypeFile, r.sourceFramerate, false)
 
 	if tc.contentCheck != nil && info != nil {
 		tc.contentCheck(t, localPath, info)

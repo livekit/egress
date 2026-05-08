@@ -53,6 +53,10 @@ type testCase struct {
 	custom func(*testing.T, *testCase)
 
 	contentCheck func(t *testing.T, path string, info *FFProbeInfo)
+
+	plan       *publishPlan
+	publishers map[string]*publisherState
+	p0Identity string
 }
 
 type publishOptions struct {
@@ -71,7 +75,12 @@ type publishOptions struct {
 	videoOnly      bool
 	videoTrackID   string
 
+	disconnectAt       time.Duration
+	disconnectDuration time.Duration
+
 	layout string
+
+	multiParticipant bool
 
 	// v2 Media source fields
 	mediaVideoTrackID     string
@@ -183,7 +192,7 @@ func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
 	case types.RequestTypeParticipant:
 		participant := &livekit.ParticipantEgressRequest{
 			RoomName: r.RoomName,
-			Identity: r.room.LocalParticipant.Identity(),
+			Identity: test.p0Identity,
 		}
 		if test.encodingOptions != nil {
 			participant.Options = &livekit.ParticipantEgressRequest_Advanced{
@@ -527,7 +536,7 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 			pv := test.mediaParticipantVideo
 			if pv.Identity == setAtRuntime {
 				pv = &livekit.ParticipantVideo{
-					Identity:          string(r.room.LocalParticipant.Identity()),
+					Identity:          test.p0Identity,
 					PreferScreenShare: pv.PreferScreenShare,
 				}
 			}
@@ -549,7 +558,7 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 				}
 				if pi, ok := route.Match.(*livekit.AudioRoute_ParticipantIdentity); ok && pi.ParticipantIdentity == setAtRuntime {
 					routes[i] = &livekit.AudioRoute{
-						Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: string(r.room.LocalParticipant.Identity())},
+						Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: test.p0Identity},
 						Channel: route.Channel,
 					}
 				}

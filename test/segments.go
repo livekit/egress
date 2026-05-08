@@ -271,7 +271,7 @@ func (r *Runner) verifySegmentOutput(
 	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath, pl.playlistType)
 
 	// verify
-	info := verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.Muting, r.sourceFramerate, pl.playlistType == m3u8.PlaylistTypeLive)
+	info := verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.sourceFramerate, pl.playlistType == m3u8.PlaylistTypeLive)
 	if tc.contentCheck != nil && info != nil {
 		tc.contentCheck(t, localPlaylistPath, info)
 	}
