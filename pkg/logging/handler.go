@@ -17,6 +17,14 @@ const (
 	dropLogThrottle = 10 * time.Second
 )
 
+var sdkPrefixes = map[string]bool{
+	"turnc": true, // turnc ERROR
+	"ice E": true, // ice ERROR
+	"pc ER": true, // pc ERROR
+	"twcc_": true, // twcc_sender_interceptor ERROR
+	"SDK 2": true, // SDK default logger (year-prefixed timestamp)
+}
+
 type HandlerLogger struct {
 	ch          chan []byte
 	done        core.Fuse
@@ -134,6 +142,12 @@ func (h *HandlerLogger) processLine(line string, panicBuf *[]string) {
 			return
 		}
 		h.flushPanic(panicBuf)
+	}
+
+	// pion SDK stderr output
+	if len(line) > 5 && sdkPrefixes[line[:5]] {
+		h.l.Infow(line)
+		return
 	}
 
 	h.l.Errorw(line, nil)
