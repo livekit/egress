@@ -44,6 +44,8 @@ type Runner struct {
 	svc             Server                   `yaml:"-"`
 	client          rpc.EgressClient         `yaml:"-"`
 	room            *lksdk.Room              `yaml:"-"`
+	p1Room          *lksdk.Room              `yaml:"-"`
+	p2Room          *lksdk.Room              `yaml:"-"`
 	updates         chan *livekit.EgressInfo `yaml:"-"`
 	sourceFramerate float64                  `yaml:"-"`
 	testNumber      int                      `yaml:"-"`
@@ -58,7 +60,6 @@ type Runner struct {
 	FilePrefix   string `yaml:"file_prefix"`
 	RoomName     string `yaml:"room_name"`
 	RoomBaseName string `yaml:"-"`
-	Muting       bool   `yaml:"muting"`
 	Dotfiles     bool   `yaml:"dot_files"`
 	Short        bool   `yaml:"short"`
 
@@ -206,6 +207,41 @@ func NewRunner(t *testing.T) *Runner {
 	}
 
 	return r
+}
+
+// connectMultiParticipants opens p1/p2 connections; the caller registers
+// disconnectMultiParticipants as a t.Cleanup.
+func (r *Runner) connectMultiParticipants(t *testing.T) {
+	p1, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "egress-p1",
+		ParticipantIdentity: fmt.Sprintf("p1-%d", rand.Intn(100)),
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	r.p1Room = p1
+
+	p2, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "egress-p2",
+		ParticipantIdentity: fmt.Sprintf("p2-%d", rand.Intn(100)),
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	r.p2Room = p2
+}
+
+func (r *Runner) disconnectMultiParticipants() {
+	if r.p1Room != nil {
+		r.p1Room.Disconnect()
+		r.p1Room = nil
+	}
+	if r.p2Room != nil {
+		r.p2Room.Disconnect()
+		r.p2Room = nil
+	}
 }
 
 func (r *Runner) connectRoom(t *testing.T, roomName string, codecs []livekit.Codec) {

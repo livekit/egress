@@ -27,6 +27,10 @@ on:
       - test/**
       - go.mod
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build:
     runs-on: namespace-profile-8vcpu-cache
@@ -61,7 +65,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: 1.26.1
+          go-version: 1.26.2
 
       - name: Download Go modules
         run: go mod download
@@ -120,6 +124,7 @@ jobs:
         env:
           IMAGE: ${{needs.build.outputs.image}}
         run: |
+          set -o pipefail
           docker run --rm \
             --network host \
             -e GITHUB_WORKFLOW=1 \
@@ -127,4 +132,76 @@ jobs:
             -e INTEGRATION_TYPE="${{ matrix.integration_type }}" \
             -e S3_UPLOAD="$(echo ${{ secrets.S3_UPLOAD }} | base64 -d)" \
             -e GCP_UPLOAD="$(echo ${{ secrets.GCP_UPLOAD }} | base64 -d)" \
-            ${{ env.IMAGE }}
+            ${{ env.IMAGE }} \
+            2>&1 | tee /tmp/test-output.log
+
+      - name: Extract avsync stats
+        if: always()
+        run: |
+          # Extract the JSON block from sentinel markers; fall back to []
+          # so the artifact always exists.
+          awk '/===AVSYNC_STATS_BEGIN===/{flag=1; next} /===AVSYNC_STATS_END===/{flag=0} flag' \
+            /tmp/test-output.log > /tmp/avsync-stats.json
+          if [ ! -s /tmp/avsync-stats.json ]; then
+            echo "[]" > /tmp/avsync-stats.json
+          fi
+          echo "Stats rows: $(jq 'length' /tmp/avsync-stats.json)"
+
+      - name: Upload avsync stats artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: avsync-stats-${{ matrix.integration_type }}
+          path: /tmp/avsync-stats.json
+
+  summary:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download avsync stats artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: avsync-stats-*
+          path: stats/
+
+      - name: Render avsync summary
+        run: |
+          # Merge all per-job JSON arrays into one, sorted by score desc.
+          jq -s '[.[][]] | sort_by(-.score)' stats/*/avsync-stats.json \
+            > /tmp/merged.json || echo "[]" > /tmp/merged.json
+
+          if [ "$(jq 'length' /tmp/merged.json)" = "0" ]; then
+            {
+              echo "## avsync stats summary"
+              echo
+              echo "_no stats collected_"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "## avsync stats summary"
+            echo
+            echo "Sorted by score desc; \`N/A\` = metric doesn't apply. Full per-test detail in the per-job artifacts."
+            echo
+            echo "**Columns:**"
+            echo "- \`audioJitter\` — std dev of beep-to-beep spacing (1Hz cadence). Lower = steadier audio rate."
+            echo "- \`videoJitter\` — std dev of flash-to-flash spacing. Lower = steadier video rate."
+            echo "- \`stableAVSync\` — median offset between flashes and nearest beeps (signed; positive = video lags audio)."
+            echo "- \`avSyncStdDev\` — std dev of AV-sync offset across the recording. Lower = sync drifts less."
+            echo "- \`maxAVSync\` — largest single AV-sync offset seen."
+            echo "- \`missed\` — events the cadence dropped (gap ≥ 1.5s) on either track."
+            echo "- \`unmatched\` — flashes/beeps with no peer within the AV-sync tolerance."
+            echo
+            echo "| test | type | source | layout | score | audioJitter | videoJitter | stableAVSync | avSyncStdDev | maxAVSync | missed | unmatched |"
+            echo "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"
+            jq -r '
+              .[] |
+              # missed: per-side null falls back to 0. unmatched: N/A when AV-sync didn't apply.
+              ((.missedFlashes // 0) + (.missedBeeps // 0)) as $missed |
+              (if .unmatchedFlashes == null then "N/A"
+                else (.unmatchedFlashes + .unmatchedBeeps) | tostring end) as $unmatched |
+              "| \(.test) | \(.requestType) | \(.source // "") | \(.layout // "") | \(.score) | \(.spacingStdDevAudio // "N/A") | \(.spacingStdDevVideo // "N/A") | \(.stableAVSync // "N/A") | \(.avSyncStdDev // "N/A") | \(.maxAVSync // "N/A") | \($missed) | \($unmatched) |"
+            ' /tmp/merged.json
+          } >> "$GITHUB_STEP_SUMMARY"

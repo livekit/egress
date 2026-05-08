@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"os"
 	"testing"
 	"time"
 
@@ -58,17 +57,6 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				custom: r.testRoomCompositeLateTrackDuration,
 			},
 
-			// Agents with room composite audio only
-
-			{
-				name:        "Agents",
-				requestType: types.RequestTypeRoomComposite,
-				fileOptions: &fileOptions{
-					filename: "agents_{time}",
-				},
-				custom: r.testAgents,
-			},
-
 			// RoomComposite audio mixing
 
 			{
@@ -77,6 +65,9 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				publishOptions: publishOptions{
 					audioOnly:   true,
 					audioMixing: livekit.AudioMixing_DUAL_CHANNEL_AGENT,
+					expectedAudioChannels: map[string]livekit.AudioChannel{
+						"p0": livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+					},
 				},
 				fileOptions: &fileOptions{
 					filename: "audio_mixing_{time}",
@@ -159,13 +150,15 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				name:        "TrackDisconnection",
 				requestType: types.RequestTypeTrackComposite,
 				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
+					audioCodec:         types.MimeTypeOpus,
+					videoCodec:         types.MimeTypeVP8,
+					disconnectAt:       time.Second * 10,
+					disconnectDuration: time.Second * 10,
 				},
 				fileOptions: &fileOptions{
 					filename: "track_disconnection_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
-				custom: r.testTrackDisconnection,
 			},
 
 			// Stream output with no urls
@@ -232,7 +225,7 @@ func (r *Runner) testRoomCompositeLateTrackDuration(t *testing.T, test *testCase
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(p2.Disconnect)
-	r.publish(t, p2.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	r.publish(t, p2.LocalParticipant, types.MimeTypeOpus)
 
 	// Let the late track record for a few seconds
 	time.Sleep(time.Second * 7)
@@ -258,17 +251,6 @@ func (r *Runner) testRoomCompositeLateTrackDuration(t *testing.T, test *testCase
 		"file duration should not exceed wall-clock duration (inflated by late track offset)")
 }
 
-func (r *Runner) testAgents(t *testing.T, test *testCase) {
-	_, err := os.Stat("/agents/.env")
-	if err != nil {
-		t.Skip("skipping agents test; missing env file")
-	}
-
-	r.launchAgents(t)
-	time.Sleep(time.Second * 5)
-	r.runFileTest(t, test)
-}
-
 func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	p1, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
@@ -279,30 +261,30 @@ func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(p1.Disconnect)
-	r.publish(t, p1.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	r.publishForParticipant(t, p1.LocalParticipant, "p1", types.MimeTypeOpus)
 
 	agent, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
 		RoomName:            r.RoomName,
-		ParticipantName:     "egress-sample",
+		ParticipantName:     "egress-sample-agent",
 		ParticipantIdentity: fmt.Sprintf("agent-%d", rand.Intn(100)),
 		ParticipantKind:     lksdk.ParticipantAgent,
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(agent.Disconnect)
-	r.publish(t, agent.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	r.publishForParticipant(t, agent.LocalParticipant, "p0", types.MimeTypeOpus)
 
 	p2, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
 		RoomName:            r.RoomName,
-		ParticipantName:     "egress-sample",
+		ParticipantName:     "egress-sample-2",
 		ParticipantIdentity: fmt.Sprintf("sample-2-%d", rand.Intn(100)),
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(p2.Disconnect)
-	r.publish(t, p2.LocalParticipant, types.MimeTypeOpus, make(chan struct{}))
+	r.publishForParticipant(t, p2.LocalParticipant, "p2", types.MimeTypeOpus)
 
 	r.runFileTest(t, test)
 }
@@ -351,8 +333,8 @@ func (r *Runner) testRoomCompositeStaysOpen(t *testing.T, test *testCase) {
 	require.NoError(t, err)
 	r.room = room
 
-	r.publishSample(t, types.MimeTypeOpus, 0, 0, false)
-	r.publishSample(t, types.MimeTypeVP8, 0, 0, false)
+	r.publish(t, r.room.LocalParticipant, types.MimeTypeOpus)
+	r.publish(t, r.room.LocalParticipant, types.MimeTypeVP8)
 
 	time.Sleep(time.Second * 10)
 
@@ -532,11 +514,6 @@ func (r *Runner) testSrtFailure(t *testing.T, test *testCase) {
 	} else {
 		require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, info.Status)
 	}
-}
-
-func (r *Runner) testTrackDisconnection(t *testing.T, test *testCase) {
-	test.videoTrackID = r.publishSampleWithDisconnection(t, types.MimeTypeVP8)
-	r.runFileTest(t, test)
 }
 
 func (r *Runner) testEmptyStreamBin(t *testing.T, test *testCase) {

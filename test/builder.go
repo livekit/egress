@@ -31,6 +31,11 @@ import (
 const (
 	webUrl       = "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4"
 	setAtRuntime = "set-at-runtime"
+	// setP1Identity / setP2Identity are placeholder identity matchers replaced
+	// at runtime by the actual (random) p1 / p2 participant identities. Use
+	// them in audioRoutes to route a remote participant to a specific channel.
+	setP1Identity = "set-p1-identity"
+	setP2Identity = "set-p2-identity"
 )
 
 type testCase struct {
@@ -53,6 +58,8 @@ type testCase struct {
 	custom func(*testing.T, *testCase)
 
 	contentCheck func(t *testing.T, path string, info *FFProbeInfo)
+
+	plan *publishPlan
 }
 
 type publishOptions struct {
@@ -64,6 +71,9 @@ type publishOptions struct {
 	audioMixing    livekit.AudioMixing
 	audioTrackID   string
 
+	// identity (p0/p1/p2) -> expected channel
+	expectedAudioChannels map[string]livekit.AudioChannel
+
 	videoCodec     types.MimeType
 	videoDelay     time.Duration
 	videoUnpublish time.Duration
@@ -71,7 +81,12 @@ type publishOptions struct {
 	videoOnly      bool
 	videoTrackID   string
 
+	disconnectAt       time.Duration
+	disconnectDuration time.Duration
+
 	layout string
+
+	multiParticipant bool
 
 	// v2 Media source fields
 	mediaVideoTrackID     string
@@ -536,7 +551,10 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 			}
 		}
 
-		// audio - replace placeholder track IDs with actual published IDs
+		// audio - replace placeholder track IDs / identities with actual
+		// published values. setAtRuntime → p0 (the LocalParticipant);
+		// setP1Identity / setP2Identity → the random per-run identities of
+		// the p1 / p2 remote participants connected via connectMultiParticipants.
 		if len(test.audioRoutes) > 0 {
 			routes := make([]*livekit.AudioRoute, len(test.audioRoutes))
 			for i, route := range test.audioRoutes {
@@ -547,10 +565,25 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 						Channel: route.Channel,
 					}
 				}
-				if pi, ok := route.Match.(*livekit.AudioRoute_ParticipantIdentity); ok && pi.ParticipantIdentity == setAtRuntime {
-					routes[i] = &livekit.AudioRoute{
-						Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: string(r.room.LocalParticipant.Identity())},
-						Channel: route.Channel,
+				if pi, ok := route.Match.(*livekit.AudioRoute_ParticipantIdentity); ok {
+					var identity string
+					switch pi.ParticipantIdentity {
+					case setAtRuntime:
+						identity = string(r.room.LocalParticipant.Identity())
+					case setP1Identity:
+						if r.p1Room != nil {
+							identity = string(r.p1Room.LocalParticipant.Identity())
+						}
+					case setP2Identity:
+						if r.p2Room != nil {
+							identity = string(r.p2Room.LocalParticipant.Identity())
+						}
+					}
+					if identity != "" {
+						routes[i] = &livekit.AudioRoute{
+							Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: identity},
+							Channel: route.Channel,
+						}
 					}
 				}
 			}
