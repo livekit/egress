@@ -248,7 +248,11 @@ func (s *SDKSource) joinRoom() error {
 	}
 
 	logger.Debugw("connecting to room")
-	room, err := lksdk.ConnectToRoomWithToken(s.WsUrl, s.Token, cb, lksdk.WithAutoSubscribe(false))
+	connectOpts := []lksdk.ConnectOption{lksdk.WithAutoSubscribe(false)}
+	if s.DisableTURN {
+		connectOpts = append(connectOpts, lksdk.WithDisableTURN())
+	}
+	room, err := lksdk.ConnectToRoomWithToken(s.WsUrl, s.Token, cb, connectOpts...)
 	if err != nil {
 		return err
 	}
