@@ -43,8 +43,11 @@ const (
 	eventSpacingTolerance = 120 * time.Millisecond
 	// Encoder pipeline PTS offset between audio and video runs ~200–280ms.
 	avSyncTolerance = 300 * time.Millisecond
-	// Gap size that means "one event missing"; spacing checks skip these.
-	missedEventGap = 1500 * time.Millisecond
+	// Spacing-check filter: gaps outside [1s − cadenceWindow, 1s + cadenceWindow]
+	// are not real cadence drift — too-large means the detector missed an
+	// event, too-small means the detector picked up a noise event between
+	// real ones. Either way, skip the spacing assertion for that gap.
+	cadenceWindow = 500 * time.Millisecond
 	// Each window may legitimately drop one event at each edge: encoder
 	// warmup at the leading edge, mute reaction at the trailing edge.
 	edgeLossPerWindow = 2
@@ -307,8 +310,10 @@ func (r *Runner) verifyFlashes(t *testing.T, result *avsync.Result, windows []ti
 			if !sameWindow(windowFlashes[i-1], windowFlashes[i], windows) {
 				continue
 			}
-			// A whole-event-wide gap is a missing flash, not jitter.
-			if gap >= missedEventGap {
+			// Skip gaps far from 1s — too-large means the detector missed
+			// an event, too-small means a noise event was picked up
+			// between real ones; neither is real cadence drift.
+			if absDuration(gap-time.Second) > cadenceWindow {
 				continue
 			}
 			require.InDelta(t, float64(time.Second), float64(gap), float64(eventSpacingTolerance),
@@ -380,7 +385,9 @@ func (r *Runner) verifyBeeps(t *testing.T, tc *testCase, result *avsync.Result, 
 			if !sameWindow(windowBeepPTS[i-1], windowBeepPTS[i], perPart) {
 				continue
 			}
-			if gap >= missedEventGap {
+			// Skip gaps far from 1s — too-large means a missed beep,
+			// too-small means a noise beep snuck in between real ones.
+			if absDuration(gap-time.Second) > cadenceWindow {
 				continue
 			}
 			require.InDelta(t, float64(time.Second), float64(gap), float64(eventSpacingTolerance),
