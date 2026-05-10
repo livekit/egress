@@ -33,7 +33,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
-	lksdk "github.com/livekit/server-sdk-go/v2"
 
 	"github.com/livekit/egress/pkg/config"
 )
@@ -43,7 +42,6 @@ type Runner struct {
 
 	svc             Server                   `yaml:"-"`
 	client          rpc.EgressClient         `yaml:"-"`
-	room            *lksdk.Room              `yaml:"-"`
 	updates         chan *livekit.EgressInfo `yaml:"-"`
 	sourceFramerate float64                  `yaml:"-"`
 	testNumber      int                      `yaml:"-"`
@@ -58,7 +56,6 @@ type Runner struct {
 	FilePrefix   string `yaml:"file_prefix"`
 	RoomName     string `yaml:"room_name"`
 	RoomBaseName string `yaml:"-"`
-	Muting       bool   `yaml:"muting"`
 	Dotfiles     bool   `yaml:"dot_files"`
 	Short        bool   `yaml:"short"`
 
@@ -208,39 +205,11 @@ func NewRunner(t *testing.T) *Runner {
 	return r
 }
 
-func (r *Runner) connectRoom(t *testing.T, roomName string, codecs []livekit.Codec) {
-	if r.room != nil {
-		r.room.Disconnect()
-	}
-
-	opts := []lksdk.ConnectOption{}
-	if len(codecs) > 0 {
-		opts = append(opts, lksdk.WithCodecs(codecs))
-	}
-
-	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
-		APIKey:              r.ApiKey,
-		APISecret:           r.ApiSecret,
-		RoomName:            roomName,
-		ParticipantName:     "egress-sample",
-		ParticipantIdentity: fmt.Sprintf("sample-%d", rand.Intn(100)),
-	}, lksdk.NewRoomCallback(), opts...)
-	require.NoError(t, err)
-
-	r.room = room
-	r.RoomName = roomName
-}
-
 func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, templateFs fs.FS) {
 	r.svc = svc
 	t.Cleanup(func() {
-		if r.room != nil {
-			r.room.Disconnect()
-		}
 		r.svc.Shutdown(false, true)
 	})
-
-	r.connectRoom(t, r.RoomName, nil)
 
 	psrpcClient, err := rpc.NewEgressClient(rpc.ClientParams{Bus: bus})
 	require.NoError(t, err)

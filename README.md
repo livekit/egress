@@ -258,7 +258,6 @@ track_only: false
 file_only: false
 stream_only: false
 segments_only: false
-muting: false
 dot_files: false
 short: false
 ```
