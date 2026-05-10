@@ -17,6 +17,7 @@
 package test
 
 import (
+	"sort"
 	"time"
 
 	"github.com/livekit/egress/pkg/types"
@@ -50,7 +51,15 @@ type publishPlan struct {
 	publishers []*publisherPlan
 }
 
-const rotationSlot = 5 * time.Second
+const (
+	rotationSlot = 5 * time.Second
+	// transitionOffset is added to mute/unmute/unpublish/republish/
+	// disconnect event PTS so transitions fall between beeps and
+	// flashes (which are emitted at integer-second marks). Without
+	// this, a transition at the same moment as an event causes flaky
+	// detection — the partial event might or might not be picked up.
+	transitionOffset = 500 * time.Millisecond
+)
 
 func planTest(tc *testCase) *publishPlan {
 	if tc.multiParticipant {
@@ -70,11 +79,11 @@ func planSingleParticipant(tc *testCase) *publishPlan {
 		}
 		if tc.audioUnpublish != 0 {
 			p.audioEvents = append(p.audioEvents, event{
-				pts: tc.audioUnpublish, eventType: eventTypeUnpublish,
+				pts: tc.audioUnpublish + transitionOffset, eventType: eventTypeUnpublish,
 			})
 			if tc.audioRepublish != 0 {
 				p.audioEvents = append(p.audioEvents, event{
-					pts: tc.audioRepublish, eventType: eventTypePublish, codec: tc.audioCodec,
+					pts: tc.audioRepublish + transitionOffset, eventType: eventTypePublish, codec: tc.audioCodec,
 				})
 			}
 		}
@@ -86,11 +95,11 @@ func planSingleParticipant(tc *testCase) *publishPlan {
 		}
 		if tc.videoUnpublish != 0 {
 			p.videoEvents = append(p.videoEvents, event{
-				pts: tc.videoUnpublish, eventType: eventTypeUnpublish,
+				pts: tc.videoUnpublish + transitionOffset, eventType: eventTypeUnpublish,
 			})
 			if tc.videoRepublish != 0 {
 				p.videoEvents = append(p.videoEvents, event{
-					pts: tc.videoRepublish, eventType: eventTypePublish, codec: tc.videoCodec,
+					pts: tc.videoRepublish + transitionOffset, eventType: eventTypePublish, codec: tc.videoCodec,
 				})
 			}
 		}
@@ -98,7 +107,7 @@ func planSingleParticipant(tc *testCase) *publishPlan {
 
 	if tc.disconnectAt != 0 {
 		p.events = append(p.events, event{
-			pts:       tc.disconnectAt,
+			pts:       tc.disconnectAt + transitionOffset,
 			eventType: eventTypeDisconnect,
 			duration:  tc.disconnectDuration,
 		})
@@ -111,7 +120,7 @@ func planSingleParticipant(tc *testCase) *publishPlan {
 
 func planMultiParticipant(tc *testCase) *publishPlan {
 	participants := []string{"p0", "p1", "p2"}
-	rotates := tc.layout == "speaker" || tc.layout == "single-speaker"
+	rotates := tc.layout == layoutSpeaker || tc.layout == layoutSingleSpeaker
 
 	plan := &publishPlan{}
 	for i, name := range participants {
@@ -132,15 +141,161 @@ func planMultiParticipant(tc *testCase) *publishPlan {
 	return plan
 }
 
-// rotationEvents creates an N-way active-speaker rotation using muting
+// audioWindows returns the union of all publishers' audio windows
+// clipped to [0, end).
+func (p *publishPlan) audioWindows(end time.Duration) []timeWindow {
+	return p.unionWindows(trackAudio, end)
+}
+
+// videoWindows returns the union of all publishers' video windows
+// clipped to [0, end).
+func (p *publishPlan) videoWindows(end time.Duration) []timeWindow {
+	return p.unionWindows(trackVideo, end)
+}
+
+// audioWindowsFor returns the named publisher's audio windows.
+func (p *publishPlan) audioWindowsFor(participant string, end time.Duration) []timeWindow {
+	if pp := p.publisher(participant); pp != nil {
+		return pp.windowsFor(trackAudio, end)
+	}
+	return nil
+}
+
+// videoWindowsFor returns the named publisher's video windows.
+func (p *publishPlan) videoWindowsFor(participant string, end time.Duration) []timeWindow {
+	if pp := p.publisher(participant); pp != nil {
+		return pp.windowsFor(trackVideo, end)
+	}
+	return nil
+}
+
+func (p *publishPlan) publisher(name string) *publisherPlan {
+	for _, pp := range p.publishers {
+		if pp.participant == name {
+			return pp
+		}
+	}
+	return nil
+}
+
+func (p *publishPlan) unionWindows(track trackKind, end time.Duration) []timeWindow {
+	var all []timeWindow
+	for _, pp := range p.publishers {
+		all = append(all, pp.windowsFor(track, end)...)
+	}
+	return mergeWindows(all)
+}
+
+// windowsFor walks track and participant disconnect events to produce
+// the [start, end) intervals where the track is published, unmuted, and
+// the participant connected. Open intervals at the end are clipped to
+// `end`. Events past `end` are ignored.
+func (pp *publisherPlan) windowsFor(track trackKind, end time.Duration) []timeWindow {
+	var trackEvents []event
+	switch track {
+	case trackAudio:
+		trackEvents = pp.audioEvents
+	case trackVideo:
+		trackEvents = pp.videoEvents
+	}
+
+	type delta struct {
+		pts                            time.Duration
+		published, muted, disconnected int8
+	}
+	var stream []delta
+
+	for _, e := range trackEvents {
+		switch e.eventType {
+		case eventTypePublish:
+			stream = append(stream, delta{pts: e.pts, published: +1})
+		case eventTypeUnpublish:
+			stream = append(stream, delta{pts: e.pts, published: -1})
+		case eventTypeMute:
+			stream = append(stream, delta{pts: e.pts, muted: +1})
+		case eventTypeUnmute:
+			stream = append(stream, delta{pts: e.pts, muted: -1})
+		}
+	}
+	for _, e := range pp.events {
+		if e.eventType != eventTypeDisconnect {
+			continue
+		}
+		stream = append(stream, delta{pts: e.pts, disconnected: +1})
+		if e.duration > 0 {
+			stream = append(stream, delta{pts: e.pts + e.duration, disconnected: -1})
+		}
+	}
+	sort.SliceStable(stream, func(i, j int) bool { return stream[i].pts < stream[j].pts })
+
+	var windows []timeWindow
+	var open bool
+	var openSince time.Duration
+	var published, muted, disconnected int
+
+	flush := func(at time.Duration) {
+		want := published > 0 && muted == 0 && disconnected == 0
+		if want == open {
+			return
+		}
+		if want {
+			openSince = at
+		} else if at > openSince {
+			windows = append(windows, timeWindow{openSince, at})
+		}
+		open = want
+	}
+
+	for _, d := range stream {
+		if d.pts > end {
+			break
+		}
+		published += int(d.published)
+		muted += int(d.muted)
+		disconnected += int(d.disconnected)
+		flush(d.pts)
+	}
+	if open && end > openSince {
+		windows = append(windows, timeWindow{openSince, end})
+	}
+	return windows
+}
+
+// mergeWindows sorts and unions an arbitrary set of windows.
+func mergeWindows(in []timeWindow) []timeWindow {
+	if len(in) == 0 {
+		return nil
+	}
+	sort.Slice(in, func(i, j int) bool { return in[i].start < in[j].start })
+	out := []timeWindow{in[0]}
+	for _, w := range in[1:] {
+		last := &out[len(out)-1]
+		if w.start <= last.end {
+			if w.end > last.end {
+				last.end = w.end
+			}
+		} else {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// rotationEvents creates an N-way active-speaker rotation using muting.
+// Mute / unmute events are emitted at slot boundaries + transitionOffset
+// so the transition lands between 1Hz beeps rather than racing one.
 func rotationEvents(idx, n int, slot time.Duration) []event {
 	const maxCycles = 60
 	cycle := time.Duration(n) * slot
 	var events []event
 
-	// Non-leader participants start muted.
+	// Non-leader participants start muted. Offset the initial mute so it
+	// fires after the publish has settled — racing publish@0 with mute@0
+	// in the same goroutine sometimes leaves chrome subscribers in a
+	// state where the egress never transitions to ACTIVE (manifests as
+	// "subscriber requested backup codec but no track found" warnings).
 	if idx > 0 {
-		events = append(events, event{pts: 0, eventType: eventTypeMute})
+		events = append(events, event{pts: transitionOffset, eventType: eventTypeMute})
 	}
 
 	for c := 0; c < maxCycles; c++ {
@@ -150,9 +305,9 @@ func rotationEvents(idx, n int, slot time.Duration) []event {
 
 		// p0 in cycle 0 is already unmuted by default.
 		if c != 0 || idx != 0 {
-			events = append(events, event{pts: mySlotStart, eventType: eventTypeUnmute})
+			events = append(events, event{pts: mySlotStart + transitionOffset, eventType: eventTypeUnmute})
 		}
-		events = append(events, event{pts: mySlotEnd, eventType: eventTypeMute})
+		events = append(events, event{pts: mySlotEnd + transitionOffset, eventType: eventTypeMute})
 	}
 	return events
 }

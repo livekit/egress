@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"os"
 	"testing"
 	"time"
 
@@ -58,17 +57,6 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				custom: r.testRoomCompositeLateTrackDuration,
 			},
 
-			// Agents with room composite audio only
-
-			{
-				name:        "Agents",
-				requestType: types.RequestTypeRoomComposite,
-				fileOptions: &fileOptions{
-					filename: "agents_{time}",
-				},
-				custom: r.testAgents,
-			},
-
 			// RoomComposite audio mixing
 
 			{
@@ -77,6 +65,11 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				publishOptions: publishOptions{
 					audioOnly:   true,
 					audioMixing: livekit.AudioMixing_DUAL_CHANNEL_AGENT,
+					expectedAudioChannels: map[string]livekit.AudioChannel{
+						"p0": livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						"p1": livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+						"p2": livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+					},
 				},
 				fileOptions: &fileOptions{
 					filename: "audio_mixing_{time}",
@@ -261,17 +254,6 @@ func (r *Runner) testRoomCompositeLateTrackDuration(t *testing.T, test *testCase
 		"file duration should not exceed wall-clock duration (inflated by late track offset)")
 }
 
-func (r *Runner) testAgents(t *testing.T, test *testCase) {
-	_, err := os.Stat("/agents/.env")
-	if err != nil {
-		t.Skip("skipping agents test; missing env file")
-	}
-
-	r.launchAgents(t)
-	time.Sleep(time.Second * 5)
-	r.runFileTest(t, test)
-}
-
 func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	p1, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
@@ -282,30 +264,30 @@ func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(p1.Disconnect)
-	r.publish(t, p1.LocalParticipant, types.MimeTypeOpus)
+	r.publishForParticipant(t, p1.LocalParticipant, "p1", types.MimeTypeOpus)
 
 	agent, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
 		RoomName:            r.RoomName,
-		ParticipantName:     "egress-sample",
+		ParticipantName:     "egress-sample-agent",
 		ParticipantIdentity: fmt.Sprintf("agent-%d", rand.Intn(100)),
 		ParticipantKind:     lksdk.ParticipantAgent,
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(agent.Disconnect)
-	r.publish(t, agent.LocalParticipant, types.MimeTypeOpus)
+	r.publishForParticipant(t, agent.LocalParticipant, "p0", types.MimeTypeOpus)
 
 	p2, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
 		RoomName:            r.RoomName,
-		ParticipantName:     "egress-sample",
+		ParticipantName:     "egress-sample-2",
 		ParticipantIdentity: fmt.Sprintf("sample-2-%d", rand.Intn(100)),
 	}, lksdk.NewRoomCallback())
 	require.NoError(t, err)
 	t.Cleanup(p2.Disconnect)
-	r.publish(t, p2.LocalParticipant, types.MimeTypeOpus)
+	r.publishForParticipant(t, p2.LocalParticipant, "p2", types.MimeTypeOpus)
 
 	r.runFileTest(t, test)
 }

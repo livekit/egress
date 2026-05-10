@@ -438,7 +438,12 @@ func (r *Runner) publishTrack(lp *lksdk.LocalParticipant, participantName string
 
 // publish publishes a p0 sample for custom test functions that manage their own SDK connection (e.g. late-track tests).
 func (r *Runner) publish(t *testing.T, lp *lksdk.LocalParticipant, codec types.MimeType) *lksdk.LocalTrackPublication {
-	pub, err := r.publishTrack(lp, "p0", codec)
+	return r.publishForParticipant(t, lp, "p0", codec)
+}
+
+// publishForParticipant is like publish, but uses the named participant's sample set.
+func (r *Runner) publishForParticipant(t *testing.T, lp *lksdk.LocalParticipant, participantName string, codec types.MimeType) *lksdk.LocalTrackPublication {
+	pub, err := r.publishTrack(lp, participantName, codec)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = lp.UnpublishTrack(pub.SID()) })
 	return pub
