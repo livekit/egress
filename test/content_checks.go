@@ -377,7 +377,7 @@ func (r *Runner) verifyBeeps(t *testing.T, tc *testCase, result *avsync.Result, 
 		require.Greater(t, len(windowBeeps), 0,
 			"no beeps detected for %s during expected content windows", p.Name)
 
-		// Audio takes 5–7 beeps to stabilize after publish; skip until
+		// Audio takes a few beeps to stabilize after publish; skip until
 		// two consecutive gaps land near 1s.
 		startIdx := firstStableIndex(windowBeepPTS)
 		for i := startIdx; i < len(windowBeeps); i++ {

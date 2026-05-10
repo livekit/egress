@@ -19,7 +19,6 @@ package test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,22 +36,22 @@ func TestSpeakerLayoutRegions(t *testing.T) {
 	require.Len(t, regions, participants)
 
 	stage := regions[0]
-	assert.Equal(t, "stage", stage.Name)
+	require.Equal(t, "stage", stage.Name)
 
 	// Stage must be on the right side, well over 1500px wide.
 	stageW := stage.Rect.Max.X - stage.Rect.Min.X
-	assert.Greater(t, stageW, 1500, "stage width should exceed 1500px")
+	require.Greater(t, stageW, 1500, "stage width should exceed 1500px")
 
 	// Stage x origin must be beyond the carousel (> 300px from left).
-	assert.Greater(t, stage.Rect.Min.X, 300, "stage should start well to the right")
+	require.Greater(t, stage.Rect.Min.X, 300, "stage should start well to the right")
 
 	// All thumbnails must be on the left side (< 350px wide, x < 350).
 	for i := 1; i < participants; i++ {
 		thumb := regions[i]
-		assert.Equal(t, "thumb"+string(rune('0'+i-1)), thumb.Name)
+		require.Equal(t, "thumb"+string(rune('0'+i-1)), thumb.Name)
 		thumbW := thumb.Rect.Max.X - thumb.Rect.Min.X
-		assert.Less(t, thumbW, 350, "thumbnail %d width should be < 350px", i)
-		assert.Less(t, thumb.Rect.Max.X, 350, "thumbnail %d should be in carousel column", i)
+		require.Less(t, thumbW, 350, "thumbnail %d width should be < 350px", i)
+		require.Less(t, thumb.Rect.Max.X, 350, "thumbnail %d should be in carousel column", i)
 	}
 }
 
@@ -73,8 +72,8 @@ func TestGridLayoutRegions(t *testing.T) {
 	for i, r := range regions {
 		cellW := r.Rect.Max.X - r.Rect.Min.X
 		cellH := r.Rect.Max.Y - r.Rect.Min.Y
-		assert.Equal(t, refW, cellW, "cell %d width mismatch", i)
-		assert.Equal(t, refH, cellH, "cell %d height mismatch", i)
+		require.Equal(t, refW, cellW, "cell %d width mismatch", i)
+		require.Equal(t, refH, cellH, "cell %d height mismatch", i)
 	}
 
 	// Cells must not overlap.
@@ -83,7 +82,7 @@ func TestGridLayoutRegions(t *testing.T) {
 			ri := regions[i].Rect
 			rj := regions[j].Rect
 			overlap := ri.Intersect(rj)
-			assert.True(t, overlap.Empty(), "cells %d and %d must not overlap", i, j)
+			require.True(t, overlap.Empty(), "cells %d and %d must not overlap", i, j)
 		}
 	}
 }
@@ -98,16 +97,16 @@ func TestSingleSpeakerLayoutRegions(t *testing.T) {
 	require.Len(t, regions, 1)
 
 	r := regions[0]
-	assert.Equal(t, "stage", r.Name)
+	require.Equal(t, "stage", r.Name)
 
 	// Region covers the full frame minus regionInset on the sides and bottom.
 	// The top is preserved so the flash strip is included.
 	regionW := r.Rect.Max.X - r.Rect.Min.X
 	regionH := r.Rect.Max.Y - r.Rect.Min.Y
-	assert.Equal(t, w-2*regionInset, regionW, "single speaker region width")
-	assert.Equal(t, h-regionInset, regionH, "single speaker region height")
+	require.Equal(t, w-2*regionInset, regionW, "single speaker region width")
+	require.Equal(t, h-regionInset, regionH, "single speaker region height")
 
 	// Anchored at (regionInset, 0): inset on the sides, flush with the top.
-	assert.Equal(t, regionInset, r.Rect.Min.X)
-	assert.Equal(t, 0, r.Rect.Min.Y)
+	require.Equal(t, regionInset, r.Rect.Min.X)
+	require.Equal(t, 0, r.Rect.Min.Y)
 }

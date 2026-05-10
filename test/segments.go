@@ -268,7 +268,12 @@ func (r *Runner) verifySegmentOutput(
 
 	// verify
 	info := verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.sourceFramerate, pl.playlistType == m3u8.PlaylistTypeLive)
-	r.runContentCheck(t, tc, localPlaylistPath, info)
+	// Live playlists are a rolling subset of segments; their partial
+	// content isn't a fair representation of the full recording for
+	// avsync verification. Structure is already validated above.
+	if pl.playlistType != m3u8.PlaylistTypeLive {
+		r.runContentCheck(t, tc, localPlaylistPath, info)
+	}
 }
 
 func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.SegmentedFileSuffix, localPlaylistPath string, plType m3u8.PlaylistType) {
