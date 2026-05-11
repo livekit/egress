@@ -100,7 +100,7 @@ type AudioTempoController struct {
 	AdjustmentRate float64 `yaml:"adjustment_rate"` // rate at which to adjust the tempo to compensate for PTS drift
 }
 
-func (c *BaseConfig) initLogger(values ...interface{}) error {
+func (c *BaseConfig) InitLogger(serviceName string, values ...interface{}) error {
 	_, exists := os.LookupEnv("GST_DEBUG")
 
 	// If GST_DEBUG is not set, use pre-defined values based on logging level
@@ -131,7 +131,7 @@ func (c *BaseConfig) initLogger(values ...interface{}) error {
 
 	l := zl.WithValues(values...)
 
-	logger.SetLogger(l, "egress")
+	logger.SetLogger(l, serviceName)
 	lksdk.SetLogger(medialogutils.NewOverrideLogger(logger.GetLogger().WithComponent("lksdk")))
 	return nil
 }
