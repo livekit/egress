@@ -17,7 +17,7 @@ package source
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
@@ -59,7 +59,7 @@ func TestGetOrCreateWorker_ReturnsExistingWorker(t *testing.T) {
 	w1 := s.getOrCreateWorker("track-1")
 	w2 := s.getOrCreateWorker("track-1")
 
-	require.Equal(t, w1, w2, "should return same worker for same trackID")
+	assert.Equal(t, w1, w2, "should return same worker for same trackID")
 }
 
 func TestGetOrCreateWorker_ReturnsNilWhenClosing(t *testing.T) {
@@ -68,7 +68,7 @@ func TestGetOrCreateWorker_ReturnsNilWhenClosing(t *testing.T) {
 
 	w := s.getOrCreateWorker("track-1")
 
-	require.Nil(t, w, "should return nil when closing")
+	assert.Nil(t, w, "should return nil when closing")
 }
 
 func TestSubmitOp_DropsOpWhenClosing(t *testing.T) {
@@ -82,7 +82,7 @@ func TestSubmitOp_DropsOpWhenClosing(t *testing.T) {
 	_, exists := s.workers["track-1"]
 	s.workersMu.RUnlock()
 
-	require.False(t, exists)
+	assert.False(t, exists)
 }
 
 func TestStateTransitions_IdleState(t *testing.T) {
@@ -113,8 +113,8 @@ func TestStateTransitions_IdleState(t *testing.T) {
 
 			exit := s.processOp(w, "test-track", state, Operation{Type: tt.op})
 
-			require.Equal(t, tt.wantExit, exit, "exit mismatch")
-			require.Equal(t, tt.wantState, state.state, "state mismatch")
+			assert.Equal(t, tt.wantExit, exit, "exit mismatch")
+			assert.Equal(t, tt.wantState, state.state, "state mismatch")
 		})
 	}
 }
@@ -151,8 +151,8 @@ func TestStateTransitions_ActiveState(t *testing.T) {
 
 			exit := s.processOp(w, "test-track", state, Operation{Type: tt.op, Generation: 1})
 
-			require.Equal(t, tt.wantExit, exit, "exit mismatch")
-			require.Equal(t, tt.wantState, state.state, "state mismatch")
+			assert.Equal(t, tt.wantExit, exit, "exit mismatch")
+			assert.Equal(t, tt.wantState, state.state, "state mismatch")
 		})
 	}
 }
