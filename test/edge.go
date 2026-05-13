@@ -289,6 +289,19 @@ func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	t.Cleanup(p2.Disconnect)
 	r.publishForParticipant(t, p2.LocalParticipant, "p2", types.MimeTypeOpus)
 
+	// The default planSingleParticipant produces a p0 stub with no audio
+	// events (no audioCodec set on this test case). Replace it with a plan
+	// that reflects what we actually published — p0 (agent), p1, p2 each
+	// emitting Opus — so verifyContent doesn't flag every detected beep as
+	// "unexpected".
+	publish := func(name string) *Publisher {
+		return &Publisher{
+			name:  name,
+			audio: []Event{{kind: eventPublish, codec: types.MimeTypeOpus}},
+		}
+	}
+	test.plan = &Plan{publishers: []*Publisher{publish("p0"), publish("p1"), publish("p2")}}
+
 	r.runFileTest(t, test)
 }
 

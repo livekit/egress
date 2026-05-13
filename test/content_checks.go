@@ -44,25 +44,12 @@ const (
 	// Encoder pipeline PTS offset between audio and video runs ~200–280ms.
 	avSyncTolerance = 300 * time.Millisecond
 	// Spacing-check filter: gaps outside [1s − cadenceWindow, 1s + cadenceWindow]
-	// are not real cadence drift — too-large means the detector missed an
-	// event, too-small means the detector picked up a noise event between
-	// real ones. Either way, skip the spacing assertion for that gap.
+	// are treated as missed/extra detections, not real cadence drift; skip
+	// the spacing assertion for those.
 	cadenceWindow = 500 * time.Millisecond
-	// Each window may legitimately drop one event at each edge: encoder
-	// warmup at the leading edge, mute reaction at the trailing edge.
-	edgeLossPerWindow = 2
-	// Maximum offset detectRecordingLag will trust between plan time
-	// and recording time (Chrome warmup is ~3s; anything beyond is noise).
-	maxDetectableOffset = 5 * time.Second
-	// avsync's bandpass detector takes ~2s of stream to lock onto the
-	// 1Hz cadence after the first event. Events that fall in this
-	// window after the alignment offset are forgiven from per-window
-	// counts.
-	detectorSettlingDuration = 2 * time.Second
-	// Minimum post-settling window duration for the bandpass detector
-	// to plausibly lock and emit a beep. Windows shorter than this are
-	// dropped from per-participant checks.
-	minUsableWindow = 1 * time.Second
+	// Maximum offset the lag detector will trust between plan time and
+	// recording time (Chrome warmup is ~3s; anything beyond is noise).
+	maxRecordingDelay = 5 * time.Second
 
 	layoutSpeaker       = "speaker"
 	layoutSingleSpeaker = "single-speaker"
@@ -71,12 +58,6 @@ const (
 	regionStage = "stage"
 	regionFull  = "full"
 )
-
-// timeWindow represents an interval where content is expected.
-type timeWindow struct {
-	start time.Duration
-	end   time.Duration
-}
 
 // runContentCheck derives the appropriate content check from the test case
 // properties and runs it. If tc.contentCheck is set, it is used instead.
@@ -127,328 +108,377 @@ func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *
 
 	dur, _ := parseFFProbeDuration(info.Format.Duration)
 
-	var videoWindows, audioWindows []timeWindow
-	var recordingLag time.Duration
-	if tc.plan != nil {
-		videoWindows = tc.plan.videoWindows(dur)
-		audioWindows = tc.plan.audioWindows(dur)
-		recordingLag = detectRecordingLag(allBeepPTS(result), tc.plan, dur)
-		videoWindows = shiftWindows(videoWindows, -recordingLag, dur)
-		audioWindows = shiftWindows(audioWindows, -recordingLag, dur)
-		t.Logf("recording lag: %s (dur=%s)", recordingLag, dur)
+	plan := tc.plan
+	if plan == nil {
+		return
 	}
 
-	if !tc.audioOnly && len(videoWindows) > 0 {
-		r.verifyFlashes(t, result, videoWindows)
+	fracLag := fractionalLag(result)
+	obs := quantize(result, dur, fracLag)
 
-		if tc.multiParticipant {
-			r.verifyParticipantVisibility(t, result, tc, videoWindows)
-		}
+	expected := plan.expectedBeepsBySec(dur + maxRecordingDelay)
+	intLag := integerLag(expected, obs.seconds)
+	lag := time.Duration(intLag)*time.Second - fracLag
+	if lag > maxRecordingDelay {
+		intLag = 0
+		lag = -fracLag
 	}
+	t.Logf("recording lag: %s (dur=%s)", lag, dur)
 
-	if !tc.videoOnly && len(audioWindows) > 0 {
-		r.verifyBeeps(t, tc, result, audioWindows, participants, recordingLag, dur)
-	}
+	// Recording captures plan time [lag, lag+dur]. Skip checks for any
+	// planPTS within ~1s of the recording tail — the bucket may technically
+	// be inside the recording, but the integer-second beep expected at that
+	// planPTS often lands at the very edge and is unreliable.
+	maxPlanPTS := lag + dur - 1*time.Second
 
-	// Track-lifecycle disruptions (unpublish/disconnect) cause the
-	// encoder to lose sync alignment when the new track starts; skip
-	// verifyAVSync for those
-	if !tc.audioOnly && !tc.videoOnly && len(videoWindows) > 0 && len(audioWindows) > 0 && !planHasTrackLifecycleEvents(tc.plan) {
-		r.verifyAVSync(t, result, videoWindows, audioWindows)
-	}
+	r.verifyContent(t, tc, plan, obs, intLag, maxPlanPTS)
 }
 
-func planHasTrackLifecycleEvents(p *publishPlan) bool {
-	if p == nil {
-		return false
+// --- observation ------------------------------------------------------
+
+// observation bins detected beeps and flashes by integer second of
+// recording PTS, preserving the avsync.Beep / avsync.Flash payloads.
+type observation struct {
+	seconds []obsSecond
+}
+
+type obsSecond struct {
+	beeps   []avsync.Beep
+	flashes []avsync.Flash
+}
+
+func quantize(result *avsync.Result, dur time.Duration, fracLag time.Duration) *observation {
+	if result == nil {
+		return &observation{}
 	}
-	for _, pp := range p.publishers {
-		for _, e := range pp.events {
-			if e.eventType == eventTypeDisconnect {
-				return true
+	numSec := int64(dur/time.Second) + 2
+	if numSec < 1 {
+		numSec = 1
+	}
+	// floor((PTS - fracLag + 0.5)/1) is round-half-up on (PTS - fracLag).
+	bucket := func(t time.Duration) int64 {
+		adj := t - fracLag + 500*time.Millisecond
+		if adj < 0 {
+			return -1
+		}
+		return int64(adj / time.Second)
+	}
+	obs := &observation{seconds: make([]obsSecond, numSec)}
+	for _, b := range result.Beeps {
+		s := bucket(b.PTS)
+		if s < 0 || s >= numSec {
+			continue
+		}
+		obs.seconds[s].beeps = append(obs.seconds[s].beeps, b)
+	}
+	for _, f := range result.Flashes {
+		s := bucket(f.PTS)
+		if s < 0 || s >= numSec {
+			continue
+		}
+		obs.seconds[s].flashes = append(obs.seconds[s].flashes, f)
+	}
+	return obs
+}
+
+// --- lag detection ----------------------------------------------------
+
+// fractionalLag returns the sub-second component of the recording lag
+func fractionalLag(result *avsync.Result) time.Duration {
+	if result == nil || len(result.Beeps) == 0 {
+		return 0
+	}
+	const lockTolerance = 1 * time.Millisecond
+
+	pts := make(map[string][]time.Duration)
+	for _, b := range result.Beeps {
+		pts[b.Participant] = append(pts[b.Participant], b.PTS)
+	}
+	for _, beeps := range pts {
+		sort.Slice(beeps, func(i, j int) bool { return beeps[i] < beeps[j] })
+	}
+
+	best := time.Minute
+	for _, beeps := range pts {
+		for i := 1; i < len(beeps); i++ {
+			if diff := absDuration(beeps[i] - beeps[i-1] - time.Second); diff < best {
+				best = diff
 			}
 		}
-		if hasUnpublish(pp.audioEvents) || hasUnpublish(pp.videoEvents) {
-			return true
+	}
+
+	earliest := time.Duration(-1)
+	for _, beeps := range pts {
+		for i := 1; i < len(beeps); i++ {
+			diff := absDuration(beeps[i] - beeps[i-1] - time.Second)
+			if diff-best < lockTolerance {
+				if earliest < 0 || beeps[i-1] < earliest {
+					earliest = beeps[i-1]
+				}
+				break
+			}
 		}
 	}
-	return false
+	if earliest < 0 {
+		return 0
+	}
+	return earliest % time.Second
 }
 
-func hasUnpublish(events []event) bool {
-	for _, e := range events {
-		if e.eventType == eventTypeUnpublish {
-			return true
+// expectedBeepsBySec projects the plan timeline into per-integer-second
+// lists of participant names that may beep at that plan time — both
+// required slots and optional (grace) slots. Used as the alignment
+// target for lag detection: optional slots are part of the publisher's
+// footprint and must not be treated as "no content" or integerLag will
+// shift past them.
+func (pl *Plan) expectedBeepsBySec(end time.Duration) [][]string {
+	maxSec := int64(end/time.Second) + 1
+	out := make([][]string, maxSec)
+	for s := int64(0); s < maxSec; s++ {
+		t := time.Duration(s) * time.Second
+		for _, p := range pl.publishers {
+			if p.expectsBeep(t) != forbidden {
+				out[s] = append(out[s], p.name)
+			}
 		}
 	}
-	return false
+	return out
 }
 
-// detectRecordingLag estimates the time delay between plan time 0 and
-// recording PTS 0. The recording starts `lag` seconds into the plan
-// timeline — beeps and flashes the source emitted before then never
-// reach the file. Returns 0 if uncertain.
+// integerLag scores each candidate lag (0..maxIntLag) and returns the
+// best. Score is the count of buckets where actual and expected agree:
+//   - actual bucket has a beep whose participant is in expected[i+lag]
+//   - both actual bucket and expected[i+lag] are empty (silent matches
+//     silent — keeps the lag from drifting past long forbidden zones
+//     just because the remaining content fits more buckets at a higher
+//     lag)
 //
-// Two-part computation:
-//   - Frac part from the cadence phase: events fire at integer plan
-//     seconds, so frac(lag) = (1s - frac(first_stable_event_PTS)) mod 1s.
-//   - Integer part from the event count deficit: each beep that was
-//     emitted but landed before recording started is one second of
-//     integer lag. We compare total expected events (computed from
-//     per-participant windows so rotation mute/unmute doesn't inflate
-//     the count) to total detected events.
-//
-// SDK tests typically have lag < 500ms; Chrome-rendered tests
-// (RoomComposite / Template) can hit 2-3s while the page loads.
-func detectRecordingLag(eventPTS []time.Duration, plan *publishPlan, dur time.Duration) time.Duration {
-	if len(eventPTS) < 2 || plan == nil {
-		return 0
-	}
-
-	sorted := append([]time.Duration(nil), eventPTS...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
-
-	// Find first event that has a successor ~1s later — this is the
-	// first event we can trust as part of the source cadence (skips
-	// encoder keyframe artifacts and detector settling noise).
-	firstStable, ok := firstCadenceEvent(sorted)
-	if !ok {
-		return 0
-	}
-
-	rem := firstStable % time.Second
-	fracLag := time.Second - rem
-	if fracLag == time.Second {
-		fracLag = 0
-	}
-
-	// Sum expected events across per-participant windows (which respect
-	// mute/unmute). Using union audioWindows would over-count for
-	// rotation tests where only one participant emits at a time.
-	expectedTotal := 0
-	for _, pp := range plan.publishers {
-		for _, w := range pp.windowsFor(trackAudio, dur) {
-			expectedTotal += int((w.end - w.start) / time.Second)
-		}
-	}
-	var integerLag time.Duration
-	if expectedTotal > len(sorted) {
-		integerLag = time.Duration(expectedTotal-len(sorted)) * time.Second
-	}
-
-	lag := integerLag + fracLag
-	if lag > maxDetectableOffset {
-		return 0
-	}
-	return lag
-}
-
-// firstCadenceEvent returns the first event in `sorted` (which must be
-// pre-sorted ascending) that has a successor approximately 1s later —
-// signaling we've left the pre-cadence noise floor and entered the
-// steady 1Hz source pattern.
-func firstCadenceEvent(sorted []time.Duration) (time.Duration, bool) {
-	const tolerance = 100 * time.Millisecond
-	for i := 0; i < len(sorted)-1; i++ {
-		gap := sorted[i+1] - sorted[i]
-		if absDuration(gap-time.Second) < tolerance {
-			return sorted[i], true
-		}
-	}
-	return 0, false
-}
-
-// shiftWindows moves every window by `offset` (positive moves forward,
-// negative moves backward — used to convert plan time to recording PTS
-// when the recording starts `lag` seconds into the plan timeline).
-// Leading edges are clamped to 0, trailing edges to `end`; zero-length
-// results are dropped.
-func shiftWindows(windows []timeWindow, offset, end time.Duration) []timeWindow {
-	if offset == 0 {
-		return windows
-	}
-	out := make([]timeWindow, 0, len(windows))
-	for _, w := range windows {
-		s := w.start + offset
-		e := w.end + offset
-		if s < 0 {
-			s = 0
-		}
-		if e > end {
-			e = end
-		}
-		if s >= e {
-			continue
-		}
-		out = append(out, timeWindow{s, e})
-	}
-	return out
-}
-
-// allBeepPTS extracts every detected beep timestamp from result.
-func allBeepPTS(result *avsync.Result) []time.Duration {
-	out := make([]time.Duration, len(result.Audio.Beeps))
-	for i, b := range result.Audio.Beeps {
-		out[i] = b.PTS
-	}
-	return out
-}
-
-func (r *Runner) verifyFlashes(t *testing.T, result *avsync.Result, windows []timeWindow) {
-	t.Helper()
-	for regionName, flashes := range result.Video.Flashes {
-		windowFlashes := filterByWindows(flashes, windows)
-
-		require.Greater(t, len(windowFlashes), 0,
-			"no flashes in region %s during expected content windows", regionName)
-
-		// Skip startup transient (encoder keyframe / page-load splash) by
-		// finding where two consecutive gaps land within tolerance.
-		startIdx := firstStableIndex(windowFlashes)
-		for i := startIdx; i < len(windowFlashes); i++ {
-			gap := windowFlashes[i] - windowFlashes[i-1]
-			if !sameWindow(windowFlashes[i-1], windowFlashes[i], windows) {
+// Smallest lag wins ties.
+func integerLag(expected [][]string, actual []obsSecond) int64 {
+	const maxIntLag = int64(5)
+	var bestLag int64
+	bestScore := -1
+	for lag := int64(0); lag <= maxIntLag; lag++ {
+		score := 0
+		for i := int64(0); i < int64(len(actual)); i++ {
+			ei := i + lag
+			if ei >= int64(len(expected)) {
+				break
+			}
+			if len(actual[i].beeps) == 0 {
+				if len(expected[ei]) == 0 {
+					score++
+				}
 				continue
 			}
-			// Skip gaps far from 1s — too-large means the detector missed
-			// an event, too-small means a noise event was picked up
-			// between real ones; neither is real cadence drift.
-			if absDuration(gap-time.Second) > cadenceWindow {
-				continue
+			for _, b := range actual[i].beeps {
+				for _, name := range expected[ei] {
+					if b.Participant == name {
+						score++
+						break
+					}
+				}
 			}
-			require.InDelta(t, float64(time.Second), float64(gap), float64(eventSpacingTolerance),
-				"flash spacing irregular at index %d in region %s: gap=%s", i, regionName, gap)
 		}
-
-		requirePerWindowCount(t, fmt.Sprintf("flash count in region %s", regionName), windowFlashes, windows)
-
-		// After offset alignment, anything more than a small slack outside
-		// the expected windows is a real leak (mute reaction tail, etc.).
-		outsideCount := countOutsideWindows(flashes, windows, 500*time.Millisecond)
-		require.LessOrEqual(t, outsideCount, 2,
-			"unexpected flashes outside content windows in region %s", regionName)
+		if score > bestScore {
+			bestScore = score
+			bestLag = lag
+		}
 	}
+	return bestLag
 }
 
-func (r *Runner) verifyBeeps(t *testing.T, tc *testCase, result *avsync.Result, windows []timeWindow, participants []avsync.Participant, lag, dur time.Duration) {
+func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, intLag int64, maxPlanPTS time.Duration) {
 	t.Helper()
 
-	beepsByParticipant := make(map[string][]avsync.Beep)
-	for _, b := range result.Audio.Beeps {
-		beepsByParticipant[b.Participant] = append(beepsByParticipant[b.Participant], b)
+	var issues []string
+	addIssue := func(format string, args ...any) {
+		issues = append(issues, fmt.Sprintf(format, args...))
 	}
 
-	for _, p := range participants {
-		beeps := beepsByParticipant[p.Name]
+	var avSyncOffsets []time.Duration
+	lastBeepPTS := make(map[string]time.Duration)
+	lastFlashPTS := make(map[string]time.Duration)
+	seenInSecondary := make(map[string]bool)
 
-		// Per-participant windows for filter, spacing, and count: a leaked
-		// beep from a muted participant otherwise escapes the union filter.
-		// Apply the same lag that was used for the union windows.
-		perPart := windows
-		if tc.plan != nil {
-			if pp := tc.plan.audioWindowsFor(p.Name, dur); pp != nil {
-				perPart = shiftWindows(pp, -lag, dur)
-			} else if _, expected := tc.expectedAudioChannels[p.Name]; expected {
-				// Plan has no events for this participant but the test
-				// explicitly expects them in the output (e.g. audio
-				// mixing tests with manual publishers). Use a synthetic
-				// full-duration window so the routing check still runs.
-				perPart = shiftWindows([]timeWindow{{start: 0, end: dur}}, -lag, dur)
-			}
-		}
-		// Drop windows whose post-settling portion is too short for the
-		// bandpass detector to lock onto — e.g. p0's first slot in
-		// stream tests where mediamtx + chrome warmup eats most of the
-		// 5s slot before the recording even starts.
-		perPart = usableWindows(perPart)
+	isStageRegion := func(region string) bool {
+		return region == regionStage || region == regionFull
+	}
+	hasSecondaryRegions := tc.multiParticipant && (tc.layout == layoutSpeaker || tc.layout == layoutGrid)
 
-		windowBeeps := filterBeepsByWindows(beeps, perPart)
-		windowBeepPTS := beepPTS(windowBeeps)
+	warmupCutoff := time.Duration(intLag)*time.Second + publishSettling
 
-		expectedChannel, expectInOutput := resolveExpectedChannel(tc, p.Name)
-
-		// No route, or no plan intervals → expect zero beeps.
-		if !expectInOutput || len(perPart) == 0 {
-			require.Empty(t, beeps,
-				"expected no beeps for %s but got %d", p.Name, len(beeps))
+	for sec, secData := range obs.seconds {
+		// bucket sec holds beeps emitted at plan-time (sec + intLag).
+		planPTS := time.Duration(int64(sec)+intLag) * time.Second
+		if planPTS > maxPlanPTS {
 			continue
 		}
+		inWarmup := planPTS < warmupCutoff
 
-		require.Greater(t, len(windowBeeps), 0,
-			"no beeps detected for %s during expected content windows", p.Name)
-
-		// Audio takes a few beeps to stabilize after publish; skip until
-		// two consecutive gaps land near 1s.
-		startIdx := firstStableIndex(windowBeepPTS)
-		for i := startIdx; i < len(windowBeeps); i++ {
-			gap := windowBeepPTS[i] - windowBeepPTS[i-1]
-			if !sameWindow(windowBeepPTS[i-1], windowBeepPTS[i], perPart) {
-				continue
+		beepsByPub := make(map[string][]avsync.Beep)
+		for _, b := range secData.beeps {
+			beepsByPub[b.Participant] = append(beepsByPub[b.Participant], b)
+		}
+		flashesByPub := make(map[string][]avsync.Flash)
+		for _, f := range secData.flashes {
+			flashesByPub[f.Participant] = append(flashesByPub[f.Participant], f)
+			if !isStageRegion(f.Region) {
+				seenInSecondary[f.Participant] = true
 			}
-			// Skip gaps far from 1s — too-large means a missed beep,
-			// too-small means a noise beep snuck in between real ones.
-			if absDuration(gap-time.Second) > cadenceWindow {
-				continue
-			}
-			require.InDelta(t, float64(time.Second), float64(gap), float64(eventSpacingTolerance),
-				"beep spacing irregular for %s at index %d: gap=%s", p.Name, i, gap)
 		}
 
-		requirePerWindowCount(t, fmt.Sprintf("beep count for %s", p.Name), windowBeepPTS, perPart)
+		for _, pub := range plan.publishers {
+			gotBeeps := beepsByPub[pub.name]
+			beepVerdict := pub.expectsBeep(planPTS)
+			if inWarmup && beepVerdict == required {
+				beepVerdict = optional
+			}
+			switch beepVerdict {
+			case required:
+				if len(gotBeeps) == 0 {
+					addIssue("@%s missing beep from %s", planPTS, pub.name)
+				}
+			case forbidden:
+				if len(gotBeeps) > 0 {
+					addIssue("@%s unexpected beep from %s", planPTS, pub.name)
+				}
+			}
 
-		for i, b := range windowBeeps {
-			require.Equal(t, expectedChannel, b.Channel,
-				"beep channel mismatch for %s at index %d (PTS=%s): got %d, want %d",
-				p.Name, i, b.PTS, b.Channel, expectedChannel)
+			// Cadence: gap to previous required-and-observed beep should
+			// be ~1s. Drift outside tolerance is a real failure; gaps
+			// further than cadenceWindow imply a missed event (already
+			// flagged by the required-but-missing case above) and skip.
+			if beepVerdict == required && len(gotBeeps) > 0 {
+				if last, ok := lastBeepPTS[pub.name]; ok {
+					gap := gotBeeps[0].PTS - last
+					diff := absDuration(gap - time.Second)
+					if diff <= cadenceWindow && diff > eventSpacingTolerance {
+						addIssue("@%s beep cadence drift from %s: gap=%s", planPTS, pub.name, gap)
+					}
+				}
+				lastBeepPTS[pub.name] = gotBeeps[len(gotBeeps)-1].PTS
+			}
+
+			// Channel routing: detected beeps should match the test's
+			// expected channel for this participant.
+			if expCh, expIn := resolveExpectedChannel(tc, pub.name); expIn {
+				for _, b := range gotBeeps {
+					if b.Channel != expCh {
+						addIssue("@%s beep from %s on wrong channel: got %d, want %d",
+							planPTS, pub.name, b.Channel, expCh)
+					}
+				}
+			}
+
+			gotFlashes := flashesByPub[pub.name]
+			flashVerdict := pub.expectsFlash(planPTS)
+			if inWarmup && flashVerdict == required {
+				flashVerdict = optional
+			}
+			switch flashVerdict {
+			case required:
+				if len(gotFlashes) == 0 {
+					addIssue("@%s missing flash from %s", planPTS, pub.name)
+				}
+			case forbidden:
+				if len(gotFlashes) > 0 {
+					addIssue("@%s unexpected flash from %s", planPTS, pub.name)
+				}
+			}
+			if flashVerdict == required && len(gotFlashes) > 0 {
+				if last, ok := lastFlashPTS[pub.name]; ok {
+					gap := gotFlashes[0].PTS - last
+					diff := absDuration(gap - time.Second)
+					if diff <= cadenceWindow && diff > eventSpacingTolerance {
+						addIssue("@%s flash cadence drift from %s: gap=%s", planPTS, pub.name, gap)
+					}
+				}
+				lastFlashPTS[pub.name] = gotFlashes[len(gotFlashes)-1].PTS
+			}
+
+			// AV-sync: measure tight pair only when both flash and beep
+			// were strictly required this second — any grace would skew
+			// the offset.
+			if beepVerdict == required && flashVerdict == required &&
+				len(gotBeeps) > 0 && len(gotFlashes) > 0 {
+				minOff := absDuration(gotFlashes[0].PTS - gotBeeps[0].PTS)
+				for _, f := range gotFlashes {
+					for _, b := range gotBeeps {
+						if d := absDuration(f.PTS - b.PTS); d < minOff {
+							minOff = d
+						}
+					}
+				}
+				avSyncOffsets = append(avSyncOffsets, minOff)
+			}
 		}
+
+		// Stage attribution: in speaker / single-speaker layouts, the
+		// participant rendered on stage must match the active speaker
+		// (unless we're inside a transition window — activeSpeaker
+		// returns "" then, or inside the recording warmup before chrome
+		// has settled on a speaker).
+		if !inWarmup && (tc.layout == layoutSpeaker || tc.layout == layoutSingleSpeaker) {
+			if speaker := plan.activeSpeaker(planPTS); speaker != "" {
+				for _, f := range secData.flashes {
+					if isStageRegion(f.Region) && f.Participant != "" && f.Participant != speaker {
+						addIssue("@%s stage shows %s, expected %s", planPTS, f.Participant, speaker)
+					}
+				}
+			}
+		}
+	}
+
+	// Every publisher with video should have appeared in some secondary
+	// (thumb / cell) region at least once during the run.
+	if hasSecondaryRegions {
+		for _, pub := range plan.publishers {
+			hasVideo := false
+			for _, e := range pub.video {
+				if e.kind == eventPublish {
+					hasVideo = true
+					break
+				}
+			}
+			if hasVideo && !seenInSecondary[pub.name] {
+				addIssue("%s never visible in any %s region", pub.name, secondaryRegionLabel(tc.layout))
+			}
+		}
+	}
+
+	if len(avSyncOffsets) > 0 {
+		sort.Slice(avSyncOffsets, func(i, j int) bool { return avSyncOffsets[i] < avSyncOffsets[j] })
+		// Fewer than 10 samples makes p90 essentially the max, so a single
+		// outlier bucket can fail the check; fall back to p50.
+		pct := 90
+		label := "p90"
+		if len(avSyncOffsets) < 10 {
+			pct = 50
+			label = "p50"
+		}
+		idx := (len(avSyncOffsets) * pct) / 100
+		if idx >= len(avSyncOffsets) {
+			idx = len(avSyncOffsets) - 1
+		}
+		offset := avSyncOffsets[idx]
+		t.Logf("av-sync: %s=%s over %d strict-pair buckets", label, offset, len(avSyncOffsets))
+		if offset > avSyncTolerance {
+			addIssue("av-sync %s=%s exceeds %s tolerance", label, offset, avSyncTolerance)
+		}
+	}
+
+	if len(issues) > 0 {
+		require.Empty(t, issues, "content verification failed (%d issues):\n  %s",
+			len(issues), strings.Join(issues, "\n  "))
 	}
 }
 
-// usableWindows drops windows whose post-settling portion is shorter
-// than minUsableWindow — the detector can't reliably lock on in less
-// than a cadence cycle of clean signal.
-func usableWindows(windows []timeWindow) []timeWindow {
-	var out []timeWindow
-	for _, w := range windows {
-		useStart := w.start
-		if useStart < detectorSettlingDuration {
-			useStart = detectorSettlingDuration
-		}
-		if w.end-useStart >= minUsableWindow {
-			out = append(out, w)
-		}
+func secondaryRegionLabel(layout string) string {
+	if layout == layoutGrid {
+		return "cell"
 	}
-	return out
-}
-
-// requirePerWindowCount checks each window individually. Every window
-// expects roughly `floor(duration_seconds)` events; we forgive
-// edgeLossPerWindow events at the edges plus another
-// detectorSettlingDuration worth of events at the leading edge — the
-// avsync bandpass detector needs ~2s to re-lock after every mute or
-// publish boundary. Stricter than a global tolerance because a window
-// losing every event is no longer hidden behind a neighbor's surplus.
-func requirePerWindowCount(t *testing.T, label string, eventPTS []time.Duration, windows []timeWindow) {
-	t.Helper()
-	settlingLoss := int(detectorSettlingDuration / time.Second)
-	for _, w := range windows {
-		expected := int((w.end - w.start) / time.Second)
-		if expected <= 0 {
-			continue
-		}
-		inside := 0
-		for _, p := range eventPTS {
-			if p >= w.start && p < w.end {
-				inside++
-			}
-		}
-		minRequired := expected - edgeLossPerWindow - settlingLoss
-		if minRequired < 0 {
-			minRequired = 0
-		}
-		require.GreaterOrEqual(t, inside, minRequired,
-			"%s: window [%s, %s) expected ~%d events, got %d", label, w.start, w.end, expected, inside)
-	}
+	return "thumb"
 }
 
 // resolveExpectedChannel returns (channel, expectInOutput). With an empty
@@ -475,240 +505,6 @@ func hasNonP0Expectation(m map[string]livekit.AudioChannel) bool {
 		}
 	}
 	return false
-}
-
-func filterBeepsByWindows(beeps []avsync.Beep, windows []timeWindow) []avsync.Beep {
-	var result []avsync.Beep
-	for _, b := range beeps {
-		if inWindows(b.PTS, windows) {
-			result = append(result, b)
-		}
-	}
-	return result
-}
-
-func beepPTS(beeps []avsync.Beep) []time.Duration {
-	out := make([]time.Duration, len(beeps))
-	for i, b := range beeps {
-		out[i] = b.PTS
-	}
-	return out
-}
-
-// verifyAVSync bins audio beeps and video flashes by their nearest
-// integer second, then for each bucket containing both checks the
-// smallest |flash − beep| across all in-bucket pairs (the "tight pair"
-// in that second). Per-bucket counts and missing-event detection are
-// covered by verifyBeeps/verifyFlashes — this check is purely about
-// timing alignment between events that did make it into the recording.
-//
-// Two assertions:
-//   - every bucket's tight pair must be within avSyncTolerance
-//   - drift (max bucket offset − min) must be < avSyncTolerance/2 —
-//     audio and video should not gradually decouple as recording goes on
-//
-// Only events inside both audio and video windows are considered.
-func (r *Runner) verifyAVSync(t *testing.T, result *avsync.Result, videoWindows, audioWindows []timeWindow) {
-	t.Helper()
-
-	var allFlashes []time.Duration
-	for _, flashes := range result.Video.Flashes {
-		allFlashes = append(allFlashes, flashes...)
-	}
-	beepTimes := make([]time.Duration, len(result.Audio.Beeps))
-	for i, b := range result.Audio.Beeps {
-		beepTimes[i] = b.PTS
-	}
-
-	syncFlashes := filterByWindows(filterByWindows(allFlashes, videoWindows), audioWindows)
-	syncBeeps := filterByWindows(filterByWindows(beepTimes, videoWindows), audioWindows)
-
-	flashBuckets := bucketByNearestSecond(syncFlashes)
-	beepBuckets := bucketByNearestSecond(syncBeeps)
-
-	type bucketStat struct {
-		sec    int64
-		offset time.Duration // min |flash - beep| over all pairs in this bucket
-	}
-	var stats []bucketStat
-	for sec, flashes := range flashBuckets {
-		beeps, ok := beepBuckets[sec]
-		if !ok {
-			continue
-		}
-		min := absDuration(flashes[0] - beeps[0])
-		for _, f := range flashes {
-			for _, b := range beeps {
-				if d := absDuration(f - b); d < min {
-					min = d
-				}
-			}
-		}
-		stats = append(stats, bucketStat{sec, min})
-	}
-	if len(stats) == 0 {
-		return
-	}
-
-	sort.Slice(stats, func(i, j int) bool { return stats[i].sec < stats[j].sec })
-
-	// Drop buckets inside the bandpass detector's startup transient.
-	// Beep detection has variable extra lag during the first ~2s while
-	// the filter rings up; including those buckets makes max/drift
-	// reflect the detector ramp, not actual sync.
-	settledSec := int64(detectorSettlingDuration / time.Second)
-	settled := stats[:0:0]
-	for _, s := range stats {
-		if s.sec >= settledSec {
-			settled = append(settled, s)
-		}
-	}
-	if len(settled) == 0 {
-		t.Logf("av-sync: no buckets after detector settling — skipped")
-		return
-	}
-
-	offs := make([]time.Duration, len(settled))
-	for i, s := range settled {
-		offs[i] = s.offset
-	}
-	sort.Slice(offs, func(i, j int) bool { return offs[i] < offs[j] })
-	minOff := offs[0]
-	maxOff := offs[len(offs)-1]
-	medianOff := offs[len(offs)/2]
-	// 90th percentile — robust to single-bucket transients at rotation
-	// transitions and encoder hiccups. Wholesale sync drift would push
-	// most buckets out of tolerance, not just one.
-	p90Idx := int(float64(len(offs)) * 0.9)
-	if p90Idx >= len(offs) {
-		p90Idx = len(offs) - 1
-	}
-	p90Off := offs[p90Idx]
-
-	t.Logf("av-sync per-bucket offset (post-settling): min=%s median=%s p90=%s max=%s (%d/%d buckets)",
-		minOff, medianOff, p90Off, maxOff, len(settled), len(stats))
-
-	require.LessOrEqual(t, p90Off, avSyncTolerance,
-		"av-sync: 90th-percentile bucket offset exceeded %s (p90=%s, max=%s)", avSyncTolerance, p90Off, maxOff)
-}
-
-// bucketByNearestSecond groups times by their nearest integer second;
-// 1.5s rounds to 2s, 2.499s rounds to 2s, 2.5s rounds to 3s.
-func bucketByNearestSecond(times []time.Duration) map[int64][]time.Duration {
-	out := make(map[int64][]time.Duration)
-	for _, t := range times {
-		sec := int64((t + 500*time.Millisecond) / time.Second)
-		out[sec] = append(out[sec], t)
-	}
-	return out
-}
-
-// verifyParticipantVisibility: for speaker layouts we can't assert which
-// participant is on stage at recording-time T because the recording
-// starts an unknown delay after the publish-side rotation begins (egress
-// setup + Chrome warmup). We just check the stage region rendered
-// something. Grid layouts let us assert all 3 participants are present.
-func (r *Runner) verifyParticipantVisibility(t *testing.T, result *avsync.Result, tc *testCase, windows []timeWindow) {
-	t.Helper()
-
-	if tc.layout == layoutSpeaker || tc.layout == layoutSingleSpeaker {
-		stageFrames := result.Video.Regions[regionStage]
-		labeled := 0
-		for _, f := range stageFrames {
-			if f.Participant != "" && inWindows(f.PTS, windows) {
-				labeled++
-			}
-		}
-		require.Greater(t, labeled, 0,
-			"no labeled frames in stage region — egress not rendering active speaker?")
-		return
-	}
-
-	seen := make(map[string]bool)
-	for _, frames := range result.Video.Regions {
-		for _, f := range frames {
-			if f.Participant != "" && inWindows(f.PTS, windows) {
-				seen[f.Participant] = true
-			}
-		}
-	}
-	require.True(t, seen[avsync.P0.Name], "p0 not visible in any region")
-	require.True(t, seen[avsync.P1.Name], "p1 not visible in any region")
-	require.True(t, seen[avsync.P2.Name], "p2 not visible in any region")
-}
-
-// --- window helpers ---
-
-func filterByWindows(times []time.Duration, windows []timeWindow) []time.Duration {
-	var result []time.Duration
-	for _, t := range times {
-		if inWindows(t, windows) {
-			result = append(result, t)
-		}
-	}
-	return result
-}
-
-// Windows are half-open [start, end) — matches requirePerWindowCount and
-// the windowsFor derivation.
-func inWindows(t time.Duration, windows []timeWindow) bool {
-	for _, w := range windows {
-		if t >= w.start && t < w.end {
-			return true
-		}
-	}
-	return false
-}
-
-func sameWindow(a, b time.Duration, windows []timeWindow) bool {
-	for _, w := range windows {
-		if a >= w.start && a < w.end && b >= w.start && b < w.end {
-			return true
-		}
-	}
-	return false
-}
-
-// firstStableIndex returns the first index whose adjacent gaps are both
-// within tolerance — the start of the steady-state 1Hz cadence. Returns
-// len(times) when nothing is stable, so callers' loops do nothing.
-func firstStableIndex(times []time.Duration) int {
-	for i := 1; i < len(times)-1; i++ {
-		prevGap := times[i] - times[i-1]
-		nextGap := times[i+1] - times[i]
-		if isStableGap(prevGap) && isStableGap(nextGap) {
-			return i
-		}
-	}
-	if len(times) > 0 {
-		return len(times)
-	}
-	return 1
-}
-
-func isStableGap(gap time.Duration) bool {
-	delta := gap - time.Second
-	if delta < 0 {
-		delta = -delta
-	}
-	return delta <= eventSpacingTolerance
-}
-
-func countOutsideWindows(times []time.Duration, windows []timeWindow, tolerance time.Duration) int {
-	count := 0
-	for _, t := range times {
-		outside := true
-		for _, w := range windows {
-			if t >= w.start-tolerance && t <= w.end+tolerance {
-				outside = false
-				break
-			}
-		}
-		if outside {
-			count++
-		}
-	}
-	return count
 }
 
 // --- general helpers ---

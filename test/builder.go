@@ -56,7 +56,7 @@ type testCase struct {
 
 	contentCheck func(t *testing.T, path string, info *FFProbeInfo)
 
-	plan       *publishPlan
+	plan       *Plan
 	publishers map[string]*publisherState
 	p0Identity string
 }

@@ -36,19 +36,19 @@ var (
 	participantSamples = map[string]map[types.MimeType]string{
 		"p0": {
 			types.MimeTypeOpus: "/media-samples/livekit_avsync_p0_audio_523hz_48k.ogg",
-			types.MimeTypeH264: "/media-samples/livekit_avsync_p0_video_white_1080p25.h264",
-			types.MimeTypeVP8:  "/media-samples/livekit_avsync_p0_video_white_1080p24.vp8.ivf",
-			types.MimeTypeVP9:  "/media-samples/livekit_avsync_p0_video_white_1080p24.vp9.ivf",
+			types.MimeTypeH264: "/media-samples/livekit_avsync_p0_video_red_1080p25.h264",
+			types.MimeTypeVP8:  "/media-samples/livekit_avsync_p0_video_red_1080p24.vp8.ivf",
+			types.MimeTypeVP9:  "/media-samples/livekit_avsync_p0_video_red_1080p24.vp9.ivf",
 			types.MimeTypePCMU: "/media-samples/livekit_avsync_p0_audio_523hz_8k.pcmu.wav",
 			types.MimeTypePCMA: "/media-samples/livekit_avsync_p0_audio_523hz_8k.pcma.wav",
 		},
 		"p1": {
 			types.MimeTypeOpus: "/media-samples/livekit_avsync_p1_audio_659hz_48k.ogg",
-			types.MimeTypeH264: "/media-samples/livekit_avsync_p1_video_cyan_1080p25.h264",
+			types.MimeTypeH264: "/media-samples/livekit_avsync_p1_video_green_1080p25.h264",
 		},
 		"p2": {
 			types.MimeTypeOpus: "/media-samples/livekit_avsync_p2_audio_784hz_48k.ogg",
-			types.MimeTypeH264: "/media-samples/livekit_avsync_p2_video_yellow_1080p25.h264",
+			types.MimeTypeH264: "/media-samples/livekit_avsync_p2_video_blue_1080p25.h264",
 		},
 	}
 
@@ -112,11 +112,11 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 	// generate identities
 	for _, pp := range plan.publishers {
 		s := &publisherState{
-			name:      pp.participant,
-			identity:  fmt.Sprintf("%s-%d", pp.participant, rand.Intn(100)),
+			name:      pp.name,
+			identity:  fmt.Sprintf("%s-%d", pp.name, rand.Intn(100)),
 			connected: make(chan struct{}),
 		}
-		states[pp.participant] = s
+		states[pp.name] = s
 	}
 	test.publishers = states
 	if s, ok := states["p0"]; ok {
@@ -125,11 +125,11 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 
 	// connect publishers
 	for _, pp := range plan.publishers {
-		s := states[pp.participant]
+		s := states[pp.name]
 		if pp.delayConnection != 0 {
 			continue
 		}
-		rm, err := r.connectAs(pp.participant, s.identity, connectCodecs(pp))
+		rm, err := r.connectAs(pp.name, s.identity, connectCodecs(pp))
 		require.NoError(t, err)
 		s.room = rm
 		s.lp = rm.LocalParticipant
@@ -143,7 +143,7 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 
 	for _, pp := range plan.publishers {
 		pp := pp
-		s := states[pp.participant]
+		s := states[pp.name]
 
 		if pp.delayConnection > 0 {
 			wg.Add(1)
@@ -153,9 +153,9 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 				if !sleepUntilCtx(streamCtx, start, pp.delayConnection) {
 					return
 				}
-				rm, err := r.connectAs(pp.participant, s.identity, connectCodecs(pp))
+				rm, err := r.connectAs(pp.name, s.identity, connectCodecs(pp))
 				if err != nil {
-					errCh <- publisherErr{pp.participant, fmt.Errorf("connect: %w", err)}
+					errCh <- publisherErr{pp.name, fmt.Errorf("connect: %w", err)}
 					return
 				}
 				s.room = rm
@@ -163,17 +163,7 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 			}()
 		}
 
-		if hasDisconnects(pp.events) {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				if !waitConnected(streamCtx, s) {
-					return
-				}
-				runParticipantTimeline(streamCtx, pp, start, s)
-			}()
-		}
-		if len(pp.audioEvents) > 0 {
+		if len(pp.audio) > 0 {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -181,11 +171,11 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 					return
 				}
 				if err := r.runTrackTimeline(streamCtx, pp, start, s, trackAudio, audioTrackIDp0); err != nil {
-					errCh <- publisherErr{pp.participant, fmt.Errorf("audio: %w", err)}
+					errCh <- publisherErr{pp.name, fmt.Errorf("audio: %w", err)}
 				}
 			}()
 		}
-		if len(pp.videoEvents) > 0 {
+		if len(pp.video) > 0 {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -193,7 +183,7 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 					return
 				}
 				if err := r.runTrackTimeline(streamCtx, pp, start, s, trackVideo, videoTrackIDp0); err != nil {
-					errCh <- publisherErr{pp.participant, fmt.Errorf("video: %w", err)}
+					errCh <- publisherErr{pp.name, fmt.Errorf("video: %w", err)}
 				}
 			}()
 		}
@@ -222,15 +212,15 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 	}
 }
 
-func (r *Runner) runTrackTimeline(ctx context.Context, pp *publisherPlan, start time.Time, s *publisherState, kind trackKind, idChan chan<- string) error {
-	var events []event
+func (r *Runner) runTrackTimeline(ctx context.Context, pp *Publisher, start time.Time, s *publisherState, kind trackKind, idChan chan<- string) error {
+	var events []Event
 	var pubAtom *atomic.Pointer[lksdk.LocalTrackPublication]
 	switch kind {
 	case trackAudio:
-		events = pp.audioEvents
+		events = pp.audio
 		pubAtom = &s.audioPub
 	case trackVideo:
-		events = pp.videoEvents
+		events = pp.video
 		pubAtom = &s.videoPub
 	default:
 		return fmt.Errorf("invalid track kind %v", kind)
@@ -248,31 +238,35 @@ func (r *Runner) runTrackTimeline(ctx context.Context, pp *publisherPlan, start 
 		if !sleepUntilCtx(ctx, start, e.pts) {
 			return nil
 		}
-		switch e.eventType {
-		case eventTypePublish:
-			pub, err := r.publishTrack(s.lp, pp.participant, e.codec)
+		switch e.kind {
+		case eventPublish:
+			pub, err := r.publishTrack(s.lp, pp.name, e.codec)
 			if err != nil {
 				return fmt.Errorf("publish %s: %w", e.codec, err)
 			}
 			pubAtom.Store(pub)
-			if pp.participant == "p0" {
+			if pp.name == "p0" {
 				select {
 				case idChan <- pub.SID():
 				default:
 				}
 			}
-		case eventTypeUnpublish:
+		case eventUnpublish:
 			if pub := pubAtom.Load(); pub != nil {
 				_ = s.lp.UnpublishTrack(pub.SID())
 				pubAtom.Store(nilPub)
 			}
-		case eventTypeMute:
+		case eventMute:
 			if pub := pubAtom.Load(); pub != nil {
 				pub.SetMuted(true)
 			}
-		case eventTypeUnmute:
+		case eventUnmute:
 			if pub := pubAtom.Load(); pub != nil {
 				pub.SetMuted(false)
+			}
+		case eventDisconnect:
+			if pub := pubAtom.Load(); pub != nil {
+				pub.SimulateDisconnection(e.duration)
 			}
 		}
 	}
@@ -282,40 +276,23 @@ func (r *Runner) runTrackTimeline(ctx context.Context, pp *publisherPlan, start 
 	return nil
 }
 
-func runParticipantTimeline(ctx context.Context, pp *publisherPlan, start time.Time, s *publisherState) {
-	for _, e := range pp.events {
-		if !sleepUntilCtx(ctx, start, e.pts) {
-			return
-		}
-		if e.eventType != eventTypeDisconnect {
-			continue
-		}
-		if pub := s.audioPub.Load(); pub != nil {
-			pub.SimulateDisconnection(e.duration)
-		}
-		if pub := s.videoPub.Load(); pub != nil {
-			pub.SimulateDisconnection(e.duration)
-		}
-	}
-}
-
 // needsP0TrackID returns whether p0 has a publish event for this track,
 // and whether it's immediate (pts == 0). Delayed publishes use "TBD"
 // rather than blocking executePlan.
-func needsP0TrackID(plan *publishPlan, track trackKind) (need, immediate bool) {
+func needsP0TrackID(plan *Plan, track trackKind) (need, immediate bool) {
 	for _, pp := range plan.publishers {
-		if pp.participant != "p0" {
+		if pp.name != "p0" {
 			continue
 		}
-		var events []event
+		var events []Event
 		switch track {
 		case trackAudio:
-			events = pp.audioEvents
+			events = pp.audio
 		case trackVideo:
-			events = pp.videoEvents
+			events = pp.video
 		}
 		for _, e := range events {
-			if e.eventType == eventTypePublish {
+			if e.kind == eventPublish {
 				return true, e.pts == 0 && pp.delayConnection == 0
 			}
 		}
@@ -325,19 +302,19 @@ func needsP0TrackID(plan *publishPlan, track trackKind) (need, immediate bool) {
 
 // errChCapacity sizes errCh so no goroutine blocks on send. Only
 // publishTrack and the delayed connector return errors.
-func errChCapacity(plan *publishPlan) int {
+func errChCapacity(plan *Plan) int {
 	n := 0
 	for _, pp := range plan.publishers {
 		if pp.delayConnection > 0 {
 			n++
 		}
-		for _, e := range pp.audioEvents {
-			if e.eventType == eventTypePublish {
+		for _, e := range pp.audio {
+			if e.kind == eventPublish {
 				n++
 			}
 		}
-		for _, e := range pp.videoEvents {
-			if e.eventType == eventTypePublish {
+		for _, e := range pp.video {
+			if e.kind == eventPublish {
 				n++
 			}
 		}
@@ -356,20 +333,11 @@ func waitConnected(ctx context.Context, s *publisherState) bool {
 	return s.lp != nil
 }
 
-func hasDisconnects(events []event) bool {
-	for _, e := range events {
-		if e.eventType == eventTypeDisconnect {
-			return true
-		}
-	}
-	return false
-}
-
 // connectCodecs derives SDK codec preferences from a publisher's
 // events. Only PCMU/PCMA need explicit preferences.
-func connectCodecs(pp *publisherPlan) []livekit.Codec {
-	for _, e := range pp.audioEvents {
-		if e.eventType != eventTypePublish {
+func connectCodecs(pp *Publisher) []livekit.Codec {
+	for _, e := range pp.audio {
+		if e.kind != eventPublish {
 			continue
 		}
 		switch e.codec {
