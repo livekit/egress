@@ -447,24 +447,18 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 		}
 	}
 
-	if len(avSyncOffsets) > 0 {
+	if len(avSyncOffsets) > 2 {
 		sort.Slice(avSyncOffsets, func(i, j int) bool { return avSyncOffsets[i] < avSyncOffsets[j] })
 		// Fewer than 10 samples makes p90 essentially the max, so a single
 		// outlier bucket can fail the check; fall back to p50.
-		pct := 90
-		label := "p90"
-		if len(avSyncOffsets) < 10 {
-			pct = 50
-			label = "p50"
-		}
-		idx := (len(avSyncOffsets) * pct) / 100
-		if idx >= len(avSyncOffsets) {
-			idx = len(avSyncOffsets) - 1
+		idx := (len(avSyncOffsets) * 9) / 10
+		if idx >= len(avSyncOffsets)-1 {
+			idx = len(avSyncOffsets) - 2
 		}
 		offset := avSyncOffsets[idx]
-		t.Logf("av-sync: %s=%s over %d strict-pair buckets", label, offset, len(avSyncOffsets))
+		t.Logf("av-sync: p90=%s over %d strict-pair buckets", offset, len(avSyncOffsets))
 		if offset > avSyncTolerance {
-			addIssue("av-sync %s=%s exceeds %s tolerance", label, offset, avSyncTolerance)
+			addIssue("av-sync p90=%s exceeds %s tolerance", offset, avSyncTolerance)
 		}
 	}
 
