@@ -29,8 +29,10 @@ import (
 )
 
 const (
-	webUrl       = "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4"
-	setAtRuntime = "set-at-runtime"
+	webUrl        = "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4"
+	setAtRuntime  = "set-at-runtime"
+	setP1Identity = "set-p1-identity"
+	setP2Identity = "set-p2-identity"
 )
 
 type testCase struct {
@@ -54,7 +56,7 @@ type testCase struct {
 
 	contentCheck func(t *testing.T, path string, info *FFProbeInfo)
 
-	plan       *publishPlan
+	plan       *Plan
 	publishers map[string]*publisherState
 	p0Identity string
 }
@@ -67,6 +69,8 @@ type publishOptions struct {
 	audioOnly      bool
 	audioMixing    livekit.AudioMixing
 	audioTrackID   string
+
+	expectedAudioChannels map[string]livekit.AudioChannel
 
 	videoCodec     types.MimeType
 	videoDelay     time.Duration
@@ -545,7 +549,7 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 			}
 		}
 
-		// audio - replace placeholder track IDs with actual published IDs
+		// audio - replace placeholder track IDs / identities
 		if len(test.audioRoutes) > 0 {
 			routes := make([]*livekit.AudioRoute, len(test.audioRoutes))
 			for i, route := range test.audioRoutes {
@@ -556,10 +560,25 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 						Channel: route.Channel,
 					}
 				}
-				if pi, ok := route.Match.(*livekit.AudioRoute_ParticipantIdentity); ok && pi.ParticipantIdentity == setAtRuntime {
-					routes[i] = &livekit.AudioRoute{
-						Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: test.p0Identity},
-						Channel: route.Channel,
+				if pi, ok := route.Match.(*livekit.AudioRoute_ParticipantIdentity); ok {
+					var identity string
+					switch pi.ParticipantIdentity {
+					case setAtRuntime:
+						identity = test.p0Identity
+					case setP1Identity:
+						if s := test.publishers["p1"]; s != nil {
+							identity = s.identity
+						}
+					case setP2Identity:
+						if s := test.publishers["p2"]; s != nil {
+							identity = s.identity
+						}
+					}
+					if identity != "" {
+						routes[i] = &livekit.AudioRoute{
+							Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: identity},
+							Channel: route.Channel,
+						}
 					}
 				}
 			}
