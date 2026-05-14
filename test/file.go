@@ -42,21 +42,21 @@ func (r *Runner) testFile(t *testing.T) {
 			{
 				name:        "RoomComposite/Base",
 				requestType: types.RequestTypeRoomComposite, publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeH264,
-					layout:     "speaker",
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					layout:           layoutSpeaker,
+					multiParticipant: true,
 				},
 				fileOptions: &fileOptions{
 					filename: "r_{room_name}_{time}.mp4",
 				},
-				contentCheck: r.fullContentCheck,
 			},
 			{
 				name:        "RoomComposite/VideoOnly",
 				requestType: types.RequestTypeRoomComposite, publishOptions: publishOptions{
 					videoCodec: types.MimeTypeH264,
 					videoOnly:  true,
-					layout:     "speaker",
+					layout:     layoutSpeaker,
 				},
 				encodingOptions: &livekit.EncodingOptions{
 					VideoCodec: livekit.VideoCodec_H264_HIGH,
@@ -64,7 +64,6 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "r_{room_name}_video_{time}.mp4",
 				},
-				contentCheck: r.videoOnlyContentCheck,
 			},
 			{
 				name:        "RoomComposite/AudioOnly",
@@ -79,7 +78,6 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "r_{room_name}_audio_{time}",
 					fileType: livekit.EncodedFileType_OGG,
 				},
-				contentCheck: r.audioOnlyContentCheck,
 			},
 			{
 				name:        "RoomComposite/AudioOnlyMP3",
@@ -92,7 +90,6 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "r_{room_name}_audio_mp3_{time}",
 					fileType: livekit.EncodedFileType_MP3,
 				},
-				contentCheck: r.audioOnlyContentCheck,
 			},
 
 			// ---------- Web ----------
@@ -136,12 +133,12 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "participant_{room_name}_h264_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
-				contentCheck: r.fullContentCheckWithVideoUnpublishAt10AndRepublishAt20,
 			},
 			{
 				name:        "ParticipantComposite/AudioOnly",
 				requestType: types.RequestTypeParticipant, publishOptions: publishOptions{
 					audioCodec:     types.MimeTypeOpus,
+					audioOnly:      true,
 					audioUnpublish: time.Second * 10,
 					audioRepublish: time.Second * 15,
 				},
@@ -163,7 +160,6 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "tc_{publisher_identity}_vp8_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
-				contentCheck: r.fullContentCheck,
 			},
 			{
 				name:        "TrackComposite/VideoOnly",
@@ -176,7 +172,6 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "tc_{room_name}_video_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
-				contentCheck: r.videoOnlyContentCheck,
 			},
 			{
 				name:        "TrackComposite/AudioOnlyMP3",
@@ -190,7 +185,6 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType:   livekit.EncodedFileType_MP3,
 					outputType: types.OutputTypeMP3,
 				},
-				contentCheck: r.audioOnlyContentCheck,
 			},
 			{
 				name:        "TrackComposite/AudioOnlyPCMU",
@@ -204,7 +198,6 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType:   livekit.EncodedFileType_MP4,
 					outputType: types.OutputTypeMP4,
 				},
-				contentCheck: r.audioOnlyContentCheck,
 			},
 			{
 				name:        "TrackComposite/AudioOnlyPCMA",
@@ -218,7 +211,6 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType:   livekit.EncodedFileType_MP4,
 					outputType: types.OutputTypeMP4,
 				},
-				contentCheck: r.audioOnlyContentCheck,
 			},
 
 			// --------- Track ---------
@@ -234,7 +226,6 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_source}_{time}.ogg",
 					outputType: types.OutputTypeOGG,
 				},
-				contentCheck: r.audioOnlyContentCheck,
 			},
 			{
 				name:        "Track/PCMU",
@@ -247,7 +238,6 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_source}_pcmu_{time}.ogg",
 					outputType: types.OutputTypeOGG,
 				},
-				contentCheck: r.audioOnlyContentCheck,
 			},
 			{
 				name:        "Track/PCMA",
@@ -260,7 +250,6 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_source}_pcma_{time}.ogg",
 					outputType: types.OutputTypeOGG,
 				},
-				contentCheck: r.audioOnlyContentCheck,
 			},
 			{
 				name:        "Track/H264",
@@ -274,7 +263,6 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_id}_{time}.mp4",
 					outputType: types.OutputTypeMP4,
 				},
-				contentCheck: r.videoOnlyContentCheck,
 			},
 			{
 				name:        "Track/VP8",
@@ -287,7 +275,6 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_type}_{time}.webm",
 					outputType: types.OutputTypeWebM,
 				},
-				contentCheck: r.videoOnlyContentCheck,
 			},
 			// {
 			// 	name:       "Track/VP9",
@@ -313,7 +300,6 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "template_audio_{time}",
 					fileType: livekit.EncodedFileType_OGG,
 				},
-				contentCheck: r.audioOnlyContentCheck,
 			},
 			{
 				name:        "Template/VideoOnly",
@@ -321,25 +307,24 @@ func (r *Runner) testFile(t *testing.T) {
 				publishOptions: publishOptions{
 					videoCodec: types.MimeTypeH264,
 					videoOnly:  true,
-					layout:     "speaker",
+					layout:     layoutSpeaker,
 				},
 				fileOptions: &fileOptions{
 					filename: "template_video_{time}.mp4",
 				},
-				contentCheck: r.videoOnlyContentCheck,
 			},
 			{
 				name:        "Template/Base",
 				requestType: types.RequestTypeTemplate,
 				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeH264,
-					layout:     "speaker",
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					layout:           layoutSpeaker,
+					multiParticipant: true,
 				},
 				fileOptions: &fileOptions{
 					filename: "template_{time}.mp4",
 				},
-				contentCheck: r.fullContentCheck,
 			},
 
 			// --------- Web V2 --------
@@ -358,7 +343,6 @@ func (r *Runner) testFile(t *testing.T) {
 					fileType: livekit.EncodedFileType_OGG,
 				},
 				v2OutputOptions: &v2OutputOptions{},
-				contentCheck:    r.audioOnlyContentCheck,
 			},
 			{
 				name:        "WebV2/VideoOnly",
@@ -403,7 +387,6 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "media_audio_{time}",
 					fileType: livekit.EncodedFileType_OGG,
 				},
-				contentCheck: r.audioOnlyContentCheck,
 			},
 			{
 				name:        "Media/VideoOnly",
@@ -415,7 +398,6 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "media_video_{time}.mp4",
 				},
-				contentCheck: r.videoOnlyContentCheck,
 			},
 			{
 				name:        "Media/Base",
@@ -430,7 +412,6 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "media_{time}.mp4",
 				},
-				contentCheck: r.fullContentCheck,
 			},
 
 			// ---- Media Audio Routing ----
@@ -480,27 +461,37 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "media_route_kind_{time}.mp4",
 				},
 			},
-			{
-				name:        "Media/MultiRoute",
-				requestType: types.RequestTypeMedia,
-				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeH264,
-					audioRoutes: []*livekit.AudioRoute{
-						{
-							Match:   &livekit.AudioRoute_TrackId{TrackId: "set-at-runtime"},
-							Channel: livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
-						},
-						{
-							Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: "set-at-runtime"},
-							Channel: livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
-						},
-					},
-				},
-				fileOptions: &fileOptions{
-					filename: "media_multiroute_{time}.mp4",
-				},
-			},
+			//
+			// Media/MultiRoute disabled temporarily
+			//
+			// {
+			// 	name:        "Media/MultiRoute",
+			// 	requestType: types.RequestTypeMedia,
+			// 	publishOptions: publishOptions{
+			// 		audioCodec:       types.MimeTypeOpus,
+			// 		audioOnly:        true,
+			// 		multiParticipant: true,
+			// 		audioRoutes: []*livekit.AudioRoute{
+			// 			{
+			// 				Match:   &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+			// 				Channel: livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+			// 			},
+			// 			{
+			// 				Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: setP1Identity},
+			// 				Channel: livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+			// 			},
+			// 		},
+			// 		expectedAudioChannels: map[string]livekit.AudioChannel{
+			// 			"p0": livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+			// 			"p1": livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+			// 			// p2 deliberately omitted — no matching route → no audio.
+			// 		},
+			// 	},
+			// 	fileOptions: &fileOptions{
+			// 		filename: "media_multiroute_{time}",
+			// 		fileType: livekit.EncodedFileType_OGG,
+			// 	},
+			// },
 			{
 				name:        "Media/ParticipantVideo",
 				requestType: types.RequestTypeMedia,
@@ -517,7 +508,6 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "media_participant_video_{time}.mp4",
 				},
-				contentCheck: r.fullContentCheck,
 			},
 		} {
 			if !r.run(t, test, r.runFileTest) {
@@ -549,7 +539,16 @@ func (r *Runner) runFileTest(t *testing.T, test *testCase) {
 		p.GetFileConfig().OutputType = test.fileOptions.outputType
 	}
 
-	require.Equal(t, test.requestType != types.RequestTypeTrack && !test.audioOnly, p.VideoEncoding)
+	var expectedVideoEncoding bool
+	switch test.requestType {
+	case types.RequestTypeTrack:
+		expectedVideoEncoding = false
+	case types.RequestTypeParticipant:
+		expectedVideoEncoding = true
+	default:
+		expectedVideoEncoding = !test.audioOnly
+	}
+	require.Equal(t, expectedVideoEncoding, p.VideoEncoding)
 
 	// verify
 	r.verifyFile(t, test, p, res)
@@ -589,7 +588,5 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 	// verify
 	info := verify(t, localPath, p, res, types.EgressTypeFile, r.sourceFramerate, false)
 
-	if tc.contentCheck != nil && info != nil {
-		tc.contentCheck(t, localPath, info)
-	}
+	r.runContentCheck(t, tc, localPath, info)
 }

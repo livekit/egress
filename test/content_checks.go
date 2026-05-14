@@ -1,4 +1,4 @@
-// Copyright 2023 LiveKit, Inc.
+// Copyright 2026 LiveKit, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 //go:build integration
 
 package test
@@ -19,120 +20,506 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"image"
 	"io"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/media-samples/avsync"
+	"github.com/livekit/protocol/livekit"
+
+	"github.com/livekit/egress/pkg/types"
 )
 
-func (r *Runner) fullContentCheck(t *testing.T, file string, _ *FFProbeInfo) {
-	// TODO: enable after fixing the issue with missing beeps
-	// dur, err := parseFFProbeDuration(info.Format.Duration)
-	//require.NoError(t, err)
+const (
+	// 1Hz cadence jitter budget: 3-frame slip at 25fps is 120ms, observed
+	// up to 114ms at mute-rotation slot boundaries.
+	eventSpacingTolerance = 120 * time.Millisecond
+	// Encoder pipeline PTS offset between audio and video runs ~200–280ms.
+	avSyncTolerance = 300 * time.Millisecond
+	// Spacing-check filter: gaps outside [1s − cadenceWindow, 1s + cadenceWindow]
+	// are treated as missed/extra detections, not real cadence drift; skip
+	// the spacing assertion for those.
+	cadenceWindow = 500 * time.Millisecond
+	// Maximum offset the lag detector will trust between plan time and
+	// recording time (Chrome warmup is ~3s; anything beyond is noise).
+	maxRecordingDelay = 5 * time.Second
 
-	flashes, err := extractFlashTimestamps(file, r.FilePrefix)
-	require.NoError(t, err)
+	layoutSpeaker       = "speaker"
+	layoutSingleSpeaker = "single-speaker"
+	layoutGrid          = "grid"
 
-	beeps, err := extractBeepTimestamps(file, testSampleBeepLevel, r.FilePrefix)
-	require.NoError(t, err)
+	regionStage = "stage"
+	regionFull  = "full"
+)
 
-	silenceRanges, err := detectSilence(file, testSampleSilenceLevel, time.Millisecond*100)
-	if len(silenceRanges) > 0 || err != nil {
-		logger.Errorw("silence ranges not empty", err, "silenceRanges", silenceRanges)
+// runContentCheck derives the appropriate content check from the test case
+// properties and runs it. If tc.contentCheck is set, it is used instead.
+func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo) {
+	if info == nil {
+		return
 	}
 
-	// require.InDelta(t, len(flashes), len(beeps), 3)
-	// require.InDelta(t, len(flashes), dur.Round(time.Second).Seconds(), 3)
-
-	// avgFlashSpacing, err := averageSpacing(flashes)
-	// require.NoError(t, err)
-	// 200ms is still pretty generous, should be tighter
-	// requireDurationInDelta(t, avgFlashSpacing, time.Second, time.Millisecond*200)
-
-	// avgBeepSpacing, err := averageSpacing(beeps)
-	// require.NoError(t, err)
-	// requireDurationInDelta(t, avgBeepSpacing, time.Second, time.Millisecond*200)
-
-	logger.Debugw("beeps", "beeps", beeps)
-	logger.Debugw("flashes", "flashes", flashes)
-}
-
-func (r *Runner) videoOnlyContentCheck(t *testing.T, file string, info *FFProbeInfo) {
-	flashes, err := extractFlashTimestamps(file, r.FilePrefix)
-	require.NoError(t, err)
-
-	dur, err := parseFFProbeDuration(info.Format.Duration)
-	require.NoError(t, err)
-
-	require.InDelta(t, len(flashes), dur.Round(time.Second).Seconds(), 3)
-	avgFlashSpacing, err := averageSpacing(flashes)
-	require.NoError(t, err)
-	// 200ms is still pretty generous, should be tighter
-	requireDurationInDelta(t, avgFlashSpacing, time.Second, time.Millisecond*200)
-}
-
-func (r *Runner) audioOnlyContentCheck(t *testing.T, file string, _ *FFProbeInfo) {
-	//TODO: enable after fixing the issue with missing beeps
-	//dur, err := parseFFProbeDuration(info.Format.Duration)
-	//require.NoError(t, err)
-
-	beeps, err := extractBeepTimestamps(file, testSampleBeepLevel, r.FilePrefix)
-	require.NoError(t, err)
-
-	silenceRanges, err := detectSilence(file, testSampleSilenceLevel, time.Millisecond*100)
-	if len(silenceRanges) > 0 || err != nil {
-		logger.Errorw("silence ranges not empty", err, "silenceRanges", silenceRanges)
+	if tc.contentCheck != nil {
+		tc.contentCheck(t, file, info)
+		return
 	}
 
-	// require.NoError(t, err)
-	// // sometimes the silence range is at the end of the file, ignore it
-	// require.True(t, len(silenceRanges) == 0 || silenceRanges[0].start > dur-time.Second*2,
-	// 	fmt.Sprintf("unexpected silence ranges: %v", silenceRanges))
+	// Web/WebV2 load arbitrary content from a URL, not the avsync pattern.
+	if tc.requestType == types.RequestTypeWeb {
+		return
+	}
 
-	// require.InDelta(t, len(beeps), dur.Round(time.Second).Seconds(), 3)
+	participants := []avsync.Participant{avsync.P0}
+	if tc.multiParticipant || hasNonP0Expectation(tc.expectedAudioChannels) {
+		participants = avsync.AllParticipants
+	}
 
-	// avgBeepSpacing, err := averageSpacing(beeps)
-	// require.NoError(t, err)
-	// requireDurationInDelta(t, avgBeepSpacing, time.Second, time.Millisecond*200)
-	logger.Debugw("beeps", "beeps", beeps)
+	w, h := videoDimensions(info)
+	var regions []avsync.Region
+
+	switch {
+	case tc.audioOnly:
+		// no regions
+	case tc.multiParticipant && tc.layout == layoutSpeaker:
+		regions = SpeakerLayoutRegions(w, h, len(participants))
+	case tc.multiParticipant && tc.layout == layoutSingleSpeaker:
+		regions = SingleSpeakerLayoutRegions(w, h)
+	case tc.multiParticipant && tc.layout == layoutGrid:
+		regions = GridLayoutRegions(w, h, len(participants))
+	case tc.multiParticipant:
+		regions = GridLayoutRegions(w, h, len(participants))
+	default:
+		regions = []avsync.Region{{Name: regionFull, Rect: image.Rect(0, 0, w, h)}}
+	}
+
+	result, err := avsync.Analyze(avsync.Config{
+		FilePath:     file,
+		Regions:      regions,
+		Participants: participants,
+	})
+	require.NoError(t, err)
+
+	dur, _ := parseFFProbeDuration(info.Format.Duration)
+
+	plan := tc.plan
+	if plan == nil {
+		return
+	}
+
+	fracLag := fractionalLag(result)
+	obs := quantize(result, dur, fracLag)
+
+	expected := plan.expectedBeepsBySec(dur + maxRecordingDelay)
+	intLag := integerLag(expected, obs.seconds)
+	lag := time.Duration(intLag)*time.Second - fracLag
+	if lag > maxRecordingDelay {
+		intLag = 0
+		lag = -fracLag
+	}
+	t.Logf("recording lag: %s (dur=%s)", lag, dur)
+
+	// Recording captures plan time [lag, lag+dur]. Skip checks for any
+	// planPTS within ~1s of the recording tail — the bucket may technically
+	// be inside the recording, but the integer-second beep expected at that
+	// planPTS often lands at the very edge and is unreliable.
+	maxPlanPTS := lag + dur - 1*time.Second
+
+	r.verifyContent(t, tc, plan, obs, intLag, maxPlanPTS)
 }
 
-func (r *Runner) fullContentCheckWithVideoUnpublishAt10AndRepublishAt20(t *testing.T, file string, info *FFProbeInfo) {
-	flashes, err := extractFlashTimestamps(file, r.FilePrefix)
-	require.NoError(t, err)
+// --- observation ------------------------------------------------------
 
-	dur, err := parseFFProbeDuration(info.Format.Duration)
-	require.NoError(t, err)
+// observation bins detected beeps and flashes by integer second of
+// recording PTS, preserving the avsync.Beep / avsync.Flash payloads.
+type observation struct {
+	seconds []obsSecond
+}
 
-	gapLength := time.Second * 10
-	require.InDelta(
-		t,
-		float64(len(flashes))+gapLength.Seconds(),
-		dur.Round(time.Second).Seconds(),
-		5.0,
-		"flashes+gap ~= duration (±3s)",
-	)
+type obsSecond struct {
+	beeps   []avsync.Beep
+	flashes []avsync.Flash
+}
 
-	gapsFound := 0
-	for i := 1; i < len(flashes); i++ {
-		if flashes[i]-flashes[i-1] > gapLength-time.Millisecond*500 {
-			gapsFound++
-			requireDurationInDelta(t, flashes[i], time.Second*20, time.Second*2)
-		} else {
-			// all other flashes should be within 1 second of the previous flash
-			requireDurationInDelta(t, flashes[i], flashes[i-1], time.Second+time.Millisecond*200)
+func quantize(result *avsync.Result, dur time.Duration, fracLag time.Duration) *observation {
+	if result == nil {
+		return &observation{}
+	}
+	numSec := int64(dur/time.Second) + 2
+	if numSec < 1 {
+		numSec = 1
+	}
+	// floor((PTS - fracLag + 0.5)/1) is round-half-up on (PTS - fracLag).
+	bucket := func(t time.Duration) int64 {
+		adj := t - fracLag + 500*time.Millisecond
+		if adj < 0 {
+			return -1
+		}
+		return int64(adj / time.Second)
+	}
+	obs := &observation{seconds: make([]obsSecond, numSec)}
+	for _, b := range result.Beeps {
+		s := bucket(b.PTS)
+		if s < 0 || s >= numSec {
+			continue
+		}
+		obs.seconds[s].beeps = append(obs.seconds[s].beeps, b)
+	}
+	for _, f := range result.Flashes {
+		s := bucket(f.PTS)
+		if s < 0 || s >= numSec {
+			continue
+		}
+		obs.seconds[s].flashes = append(obs.seconds[s].flashes, f)
+	}
+	return obs
+}
+
+// --- lag detection ----------------------------------------------------
+
+// fractionalLag returns the sub-second component of the recording lag
+func fractionalLag(result *avsync.Result) time.Duration {
+	if result == nil || len(result.Beeps) == 0 {
+		return 0
+	}
+	const lockTolerance = 1 * time.Millisecond
+
+	pts := make(map[string][]time.Duration)
+	for _, b := range result.Beeps {
+		pts[b.Participant] = append(pts[b.Participant], b.PTS)
+	}
+	for _, beeps := range pts {
+		sort.Slice(beeps, func(i, j int) bool { return beeps[i] < beeps[j] })
+	}
+
+	best := time.Minute
+	for _, beeps := range pts {
+		for i := 1; i < len(beeps); i++ {
+			if diff := absDuration(beeps[i] - beeps[i-1] - time.Second); diff < best {
+				best = diff
+			}
 		}
 	}
-	require.Equal(t, gapsFound, 1)
 
-	r.audioOnlyContentCheck(t, file, info)
-
+	earliest := time.Duration(-1)
+	for _, beeps := range pts {
+		for i := 1; i < len(beeps); i++ {
+			diff := absDuration(beeps[i] - beeps[i-1] - time.Second)
+			if diff-best < lockTolerance {
+				if earliest < 0 || beeps[i-1] < earliest {
+					earliest = beeps[i-1]
+				}
+				break
+			}
+		}
+	}
+	if earliest < 0 {
+		return 0
+	}
+	return earliest % time.Second
 }
+
+// expectedBeepsBySec projects the plan timeline into per-integer-second
+// lists of participant names that may beep at that plan time — both
+// required slots and optional (grace) slots. Used as the alignment
+// target for lag detection: optional slots are part of the publisher's
+// footprint and must not be treated as "no content" or integerLag will
+// shift past them.
+func (pl *Plan) expectedBeepsBySec(end time.Duration) [][]string {
+	maxSec := int64(end/time.Second) + 1
+	out := make([][]string, maxSec)
+	for s := int64(0); s < maxSec; s++ {
+		t := time.Duration(s) * time.Second
+		for _, p := range pl.publishers {
+			if p.expectsBeep(t) != forbidden {
+				out[s] = append(out[s], p.name)
+			}
+		}
+	}
+	return out
+}
+
+// integerLag scores each candidate lag (0..maxIntLag) and returns the
+// best. Score is the count of buckets where actual and expected agree:
+//   - actual bucket has a beep whose participant is in expected[i+lag]
+//   - both actual bucket and expected[i+lag] are empty (silent matches
+//     silent — keeps the lag from drifting past long forbidden zones
+//     just because the remaining content fits more buckets at a higher
+//     lag)
+//
+// Smallest lag wins ties.
+func integerLag(expected [][]string, actual []obsSecond) int64 {
+	const maxIntLag = int64(5)
+	var bestLag int64
+	bestScore := -1
+	for lag := int64(0); lag <= maxIntLag; lag++ {
+		score := 0
+		for i := int64(0); i < int64(len(actual)); i++ {
+			ei := i + lag
+			if ei >= int64(len(expected)) {
+				break
+			}
+			if len(actual[i].beeps) == 0 {
+				if len(expected[ei]) == 0 {
+					score++
+				}
+				continue
+			}
+			for _, b := range actual[i].beeps {
+				for _, name := range expected[ei] {
+					if b.Participant == name {
+						score++
+						break
+					}
+				}
+			}
+		}
+		if score > bestScore {
+			bestScore = score
+			bestLag = lag
+		}
+	}
+	return bestLag
+}
+
+func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, intLag int64, maxPlanPTS time.Duration) {
+	t.Helper()
+
+	var issues []string
+	addIssue := func(format string, args ...any) {
+		issues = append(issues, fmt.Sprintf(format, args...))
+	}
+
+	var avSyncOffsets []time.Duration
+	lastBeepPTS := make(map[string]time.Duration)
+	lastFlashPTS := make(map[string]time.Duration)
+	seenInSecondary := make(map[string]bool)
+
+	isStageRegion := func(region string) bool {
+		return region == regionStage || region == regionFull
+	}
+	hasSecondaryRegions := tc.multiParticipant && (tc.layout == layoutSpeaker || tc.layout == layoutGrid)
+
+	warmupCutoff := time.Duration(intLag)*time.Second + publishSettling
+
+	for sec, secData := range obs.seconds {
+		// bucket sec holds beeps emitted at plan-time (sec + intLag).
+		planPTS := time.Duration(int64(sec)+intLag) * time.Second
+		if planPTS > maxPlanPTS {
+			continue
+		}
+		inWarmup := planPTS < warmupCutoff
+
+		beepsByPub := make(map[string][]avsync.Beep)
+		for _, b := range secData.beeps {
+			beepsByPub[b.Participant] = append(beepsByPub[b.Participant], b)
+		}
+		flashesByPub := make(map[string][]avsync.Flash)
+		for _, f := range secData.flashes {
+			flashesByPub[f.Participant] = append(flashesByPub[f.Participant], f)
+			if !isStageRegion(f.Region) {
+				seenInSecondary[f.Participant] = true
+			}
+		}
+
+		for _, pub := range plan.publishers {
+			gotBeeps := beepsByPub[pub.name]
+			beepVerdict := pub.expectsBeep(planPTS)
+			if inWarmup && beepVerdict == required {
+				beepVerdict = optional
+			}
+			switch beepVerdict {
+			case required:
+				if len(gotBeeps) == 0 {
+					addIssue("@%s missing beep from %s", planPTS, pub.name)
+				}
+			case forbidden:
+				if len(gotBeeps) > 0 {
+					addIssue("@%s unexpected beep from %s", planPTS, pub.name)
+				}
+			}
+
+			// Cadence: gap to previous required-and-observed beep should
+			// be ~1s. Drift outside tolerance is a real failure; gaps
+			// further than cadenceWindow imply a missed event (already
+			// flagged by the required-but-missing case above) and skip.
+			if beepVerdict == required && len(gotBeeps) > 0 {
+				if last, ok := lastBeepPTS[pub.name]; ok {
+					gap := gotBeeps[0].PTS - last
+					diff := absDuration(gap - time.Second)
+					if diff <= cadenceWindow && diff > eventSpacingTolerance {
+						addIssue("@%s beep cadence drift from %s: gap=%s", planPTS, pub.name, gap)
+					}
+				}
+				lastBeepPTS[pub.name] = gotBeeps[len(gotBeeps)-1].PTS
+			}
+
+			// Channel routing: detected beeps should match the test's
+			// expected channel for this participant.
+			if expCh, expIn := resolveExpectedChannel(tc, pub.name); expIn {
+				for _, b := range gotBeeps {
+					if b.Channel != expCh {
+						addIssue("@%s beep from %s on wrong channel: got %d, want %d",
+							planPTS, pub.name, b.Channel, expCh)
+					}
+				}
+			}
+
+			gotFlashes := flashesByPub[pub.name]
+			flashVerdict := pub.expectsFlash(planPTS)
+			if inWarmup && flashVerdict == required {
+				flashVerdict = optional
+			}
+			switch flashVerdict {
+			case required:
+				if len(gotFlashes) == 0 {
+					addIssue("@%s missing flash from %s", planPTS, pub.name)
+				}
+			case forbidden:
+				if len(gotFlashes) > 0 {
+					addIssue("@%s unexpected flash from %s", planPTS, pub.name)
+				}
+			}
+			if flashVerdict == required && len(gotFlashes) > 0 {
+				if last, ok := lastFlashPTS[pub.name]; ok {
+					gap := gotFlashes[0].PTS - last
+					diff := absDuration(gap - time.Second)
+					if diff <= cadenceWindow && diff > eventSpacingTolerance {
+						addIssue("@%s flash cadence drift from %s: gap=%s", planPTS, pub.name, gap)
+					}
+				}
+				lastFlashPTS[pub.name] = gotFlashes[len(gotFlashes)-1].PTS
+			}
+
+			// AV-sync: measure tight pair only when both flash and beep
+			// were strictly required this second — any grace would skew
+			// the offset.
+			if beepVerdict == required && flashVerdict == required &&
+				len(gotBeeps) > 0 && len(gotFlashes) > 0 {
+				minOff := absDuration(gotFlashes[0].PTS - gotBeeps[0].PTS)
+				for _, f := range gotFlashes {
+					for _, b := range gotBeeps {
+						if d := absDuration(f.PTS - b.PTS); d < minOff {
+							minOff = d
+						}
+					}
+				}
+				avSyncOffsets = append(avSyncOffsets, minOff)
+			}
+		}
+
+		// Stage attribution: in speaker / single-speaker layouts, the
+		// participant rendered on stage must match the active speaker
+		// (unless we're inside a transition window — activeSpeaker
+		// returns "" then, or inside the recording warmup before chrome
+		// has settled on a speaker).
+		if !inWarmup && (tc.layout == layoutSpeaker || tc.layout == layoutSingleSpeaker) {
+			if speaker := plan.activeSpeaker(planPTS); speaker != "" {
+				for _, f := range secData.flashes {
+					if isStageRegion(f.Region) && f.Participant != "" && f.Participant != speaker {
+						addIssue("@%s stage shows %s, expected %s", planPTS, f.Participant, speaker)
+					}
+				}
+			}
+		}
+	}
+
+	// Every publisher with video should have appeared in some secondary
+	// (thumb / cell) region at least once during the run.
+	if hasSecondaryRegions {
+		for _, pub := range plan.publishers {
+			hasVideo := false
+			for _, e := range pub.video {
+				if e.kind == eventPublish {
+					hasVideo = true
+					break
+				}
+			}
+			if hasVideo && !seenInSecondary[pub.name] {
+				addIssue("%s never visible in any %s region", pub.name, secondaryRegionLabel(tc.layout))
+			}
+		}
+	}
+
+	if len(avSyncOffsets) > 2 {
+		sort.Slice(avSyncOffsets, func(i, j int) bool { return avSyncOffsets[i] < avSyncOffsets[j] })
+		// Fewer than 10 samples makes p90 essentially the max, so a single
+		// outlier bucket can fail the check; fall back to p50.
+		idx := (len(avSyncOffsets) * 9) / 10
+		if idx >= len(avSyncOffsets)-1 {
+			idx = len(avSyncOffsets) - 2
+		}
+		offset := avSyncOffsets[idx]
+		t.Logf("av-sync: p90=%s over %d strict-pair buckets", offset, len(avSyncOffsets))
+		if offset > avSyncTolerance {
+			addIssue("av-sync p90=%s exceeds %s tolerance", offset, avSyncTolerance)
+		}
+	}
+
+	if len(issues) > 0 {
+		require.Empty(t, issues, "content verification failed (%d issues):\n  %s",
+			len(issues), strings.Join(issues, "\n  "))
+	}
+}
+
+func secondaryRegionLabel(layout string) string {
+	if layout == layoutGrid {
+		return "cell"
+	}
+	return "thumb"
+}
+
+// resolveExpectedChannel returns (channel, expectInOutput). With an empty
+// map every participant defaults to BOTH; otherwise only mapped
+// participants are expected in the output.
+func resolveExpectedChannel(tc *testCase, participant string) (avsync.BeepChannel, bool) {
+	if len(tc.expectedAudioChannels) == 0 {
+		return avsync.BeepChannelBoth, true
+	}
+	ch, ok := tc.expectedAudioChannels[participant]
+	if !ok {
+		return 0, false
+	}
+	return avsync.BeepChannel(ch), true
+}
+
+// hasNonP0Expectation returns true if expectedAudioChannels covers any
+// participant other than p0 — signals that the verifier should iterate
+// all three participants (e.g. dual-channel audio mixing tests).
+func hasNonP0Expectation(m map[string]livekit.AudioChannel) bool {
+	for name := range m {
+		if name != "p0" {
+			return true
+		}
+	}
+	return false
+}
+
+// --- general helpers ---
+
+func absDuration(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
+}
+
+func videoDimensions(info *FFProbeInfo) (width, height int) {
+	for _, s := range info.Streams {
+		if s.CodecType == "video" {
+			return int(s.Width), int(s.Height)
+		}
+	}
+	return 1920, 1080
+}
+
+// --- stream keyframe checks (kept as explicit contentCheck overrides) ---
 
 func (r *Runner) streamKeyframeContentCheck(expectedInterval float64) func(t *testing.T, target string, _ *FFProbeInfo) {
 	return func(t *testing.T, target string, _ *FFProbeInfo) {
@@ -140,7 +527,6 @@ func (r *Runner) streamKeyframeContentCheck(expectedInterval float64) func(t *te
 	}
 }
 
-// ensures input is read long enough to get sufficient keyframes for spacing check
 func requireKeyframeInterval(t *testing.T, input string, expectedInterval float64) {
 	t.Helper()
 	if expectedInterval <= 0 {
@@ -171,7 +557,6 @@ func ffprobeKeyframeTimestamps(input string, expectedInterval float64) ([]float6
 	timestamps := []float64{}
 	var err error
 
-	// ensure at least 3 keyframes are read
 	readSeconds := expectedInterval*4 + 1
 
 	args := []string{
@@ -205,7 +590,6 @@ func ffprobeKeyframeTimestamps(input string, expectedInterval float64) ([]float6
 	for {
 		record, e := csvReader.Read()
 		if e != nil {
-			// ignore context && EOF errors, we could be canceling the context after readSeconds
 			if ctx.Err() == nil && e != io.EOF {
 				err = fmt.Errorf("read csv: %w", e)
 			}
