@@ -97,12 +97,20 @@ func (m *Monitor) initPrometheus() {
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	})
 
+	m.promLoadRatio = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Name:        "load_ratio",
+		Help:        "Per-resource utilization ratio (0 = idle, can exceed 1 under overload)",
+		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+	}, []string{"type"})
+
 	prometheus.MustRegister(
 		promNodeAvailable, promCanAcceptRequest, promIsDisabled, promIsTerminating,
 		m.promCPULoad, m.requestGauge,
 		m.promCgroupMemory,
 		m.promCgroupReadSuccess, m.promProcRSS,
 		m.promWouldRejectCgroup,
+		m.promLoadRatio,
 	)
 }
 
