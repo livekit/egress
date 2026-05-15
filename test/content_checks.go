@@ -49,6 +49,10 @@ const (
 	// are treated as missed/extra detections, not real cadence drift; skip
 	// the spacing assertion for those.
 	cadenceWindow = 500 * time.Millisecond
+	// Chrome's WebRTC video jitter buffer can occasionally drop or delay
+	// a frame, causing a missing flash. Require this fraction of expected
+	// flashes to be present per publisher.
+	flashHitRate = 0.90
 	// Maximum offset the lag detector will trust between plan time and
 	// recording time (Chrome warmup is ~3s; anything beyond is noise).
 	maxRecordingDelay = 5 * time.Second
@@ -304,6 +308,8 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 	lastBeepPTS := make(map[string]time.Duration)
 	lastFlashPTS := make(map[string]time.Duration)
 	seenInSecondary := make(map[string]bool)
+	flashRequired := make(map[string]int)
+	flashMissing := make(map[string]int)
 
 	isStageRegion := func(region string) bool {
 		return region == regionStage || region == regionFull
@@ -384,8 +390,9 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 			}
 			switch flashVerdict {
 			case required:
+				flashRequired[pub.name]++
 				if len(gotFlashes) == 0 {
-					addIssue("@%s missing flash from %s", planPTS, pub.name)
+					flashMissing[pub.name]++
 				}
 			case forbidden:
 				if len(gotFlashes) > 0 {
@@ -464,6 +471,21 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 		t.Logf("beep-cadence: p80=%s over %d gaps", drift, len(beepCadenceDrifts))
 		if drift > eventSpacingTolerance {
 			addIssue("beep cadence p80=%s exceeds %s tolerance", drift, eventSpacingTolerance)
+		}
+	}
+
+	// Flash presence: require flashHitRate of expected flashes per publisher.
+	// Chrome's video jitter buffer can occasionally drop frames.
+	for _, pub := range plan.publishers {
+		req := flashRequired[pub.name]
+		miss := flashMissing[pub.name]
+		if req > 0 {
+			rate := float64(req-miss) / float64(req)
+			t.Logf("flash-presence %s: %d/%d (%.0f%%)", pub.name, req-miss, req, rate*100)
+			if rate < flashHitRate {
+				addIssue("flash hit rate for %s: %.0f%% < %.0f%% required (%d missing out of %d)",
+					pub.name, rate*100, flashHitRate*100, miss, req)
+			}
 		}
 	}
 
