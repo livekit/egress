@@ -479,25 +479,22 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 
 	// Beep/flash presence: require presenceHitRate of expected events per
 	// publisher. WebRTC jitter buffers can shift or drop individual events.
+	// With few samples the hit rate is too coarse (each miss is a large %
+	// swing), so allow up to 1 miss unconditionally.
+	checkPresence := func(kind, name string, req, miss int) {
+		if req == 0 {
+			return
+		}
+		rate := float64(req-miss) / float64(req)
+		t.Logf("%s-presence %s: %d/%d (%.0f%%)", kind, name, req-miss, req, rate*100)
+		if miss > 1 && rate < presenceHitRate {
+			addIssue("%s hit rate for %s: %.0f%% < %.0f%% required (%d missing out of %d)",
+				kind, name, rate*100, presenceHitRate*100, miss, req)
+		}
+	}
 	for _, pub := range plan.publishers {
-		if req := beepRequired[pub.name]; req > 0 {
-			miss := beepMissing[pub.name]
-			rate := float64(req-miss) / float64(req)
-			t.Logf("beep-presence %s: %d/%d (%.0f%%)", pub.name, req-miss, req, rate*100)
-			if rate < presenceHitRate {
-				addIssue("beep hit rate for %s: %.0f%% < %.0f%% required (%d missing out of %d)",
-					pub.name, rate*100, presenceHitRate*100, miss, req)
-			}
-		}
-		if req := flashRequired[pub.name]; req > 0 {
-			miss := flashMissing[pub.name]
-			rate := float64(req-miss) / float64(req)
-			t.Logf("flash-presence %s: %d/%d (%.0f%%)", pub.name, req-miss, req, rate*100)
-			if rate < presenceHitRate {
-				addIssue("flash hit rate for %s: %.0f%% < %.0f%% required (%d missing out of %d)",
-					pub.name, rate*100, presenceHitRate*100, miss, req)
-			}
-		}
+		checkPresence("beep", pub.name, beepRequired[pub.name], beepMissing[pub.name])
+		checkPresence("flash", pub.name, flashRequired[pub.name], flashMissing[pub.name])
 	}
 
 	// Flash cadence: same percentile approach.
