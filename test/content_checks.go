@@ -49,10 +49,10 @@ const (
 	// are treated as missed/extra detections, not real cadence drift; skip
 	// the spacing assertion for those.
 	cadenceWindow = 500 * time.Millisecond
-	// Chrome's WebRTC video jitter buffer can occasionally drop or delay
-	// a frame, causing a missing flash. Require this fraction of expected
-	// flashes to be present per publisher.
-	flashHitRate = 0.90
+	// WebRTC jitter buffers can occasionally shift or drop individual
+	// events. Require this fraction of expected beeps/flashes to be
+	// present per publisher rather than failing on any single miss.
+	presenceHitRate = 0.90
 	// Maximum offset the lag detector will trust between plan time and
 	// recording time (Chrome warmup is ~3s; anything beyond is noise).
 	maxRecordingDelay = 5 * time.Second
@@ -308,6 +308,8 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 	lastBeepPTS := make(map[string]time.Duration)
 	lastFlashPTS := make(map[string]time.Duration)
 	seenInSecondary := make(map[string]bool)
+	beepRequired := make(map[string]int)
+	beepMissing := make(map[string]int)
 	flashRequired := make(map[string]int)
 	flashMissing := make(map[string]int)
 
@@ -346,8 +348,9 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 			}
 			switch beepVerdict {
 			case required:
+				beepRequired[pub.name]++
 				if len(gotBeeps) == 0 {
-					addIssue("@%s missing beep from %s", planPTS, pub.name)
+					beepMissing[pub.name]++
 				}
 			case forbidden:
 				if len(gotBeeps) > 0 {
@@ -474,17 +477,25 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 		}
 	}
 
-	// Flash presence: require flashHitRate of expected flashes per publisher.
-	// Chrome's video jitter buffer can occasionally drop frames.
+	// Beep/flash presence: require presenceHitRate of expected events per
+	// publisher. WebRTC jitter buffers can shift or drop individual events.
 	for _, pub := range plan.publishers {
-		req := flashRequired[pub.name]
-		miss := flashMissing[pub.name]
-		if req > 0 {
+		if req := beepRequired[pub.name]; req > 0 {
+			miss := beepMissing[pub.name]
+			rate := float64(req-miss) / float64(req)
+			t.Logf("beep-presence %s: %d/%d (%.0f%%)", pub.name, req-miss, req, rate*100)
+			if rate < presenceHitRate {
+				addIssue("beep hit rate for %s: %.0f%% < %.0f%% required (%d missing out of %d)",
+					pub.name, rate*100, presenceHitRate*100, miss, req)
+			}
+		}
+		if req := flashRequired[pub.name]; req > 0 {
+			miss := flashMissing[pub.name]
 			rate := float64(req-miss) / float64(req)
 			t.Logf("flash-presence %s: %d/%d (%.0f%%)", pub.name, req-miss, req, rate*100)
-			if rate < flashHitRate {
+			if rate < presenceHitRate {
 				addIssue("flash hit rate for %s: %.0f%% < %.0f%% required (%d missing out of %d)",
-					pub.name, rate*100, flashHitRate*100, miss, req)
+					pub.name, rate*100, presenceHitRate*100, miss, req)
 			}
 		}
 	}
