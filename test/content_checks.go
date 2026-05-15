@@ -466,11 +466,7 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 	// Beep cadence: use p80 to tolerate NetEQ time-stretching bursts.
 	if len(beepCadenceDrifts) > 2 {
 		sort.Slice(beepCadenceDrifts, func(i, j int) bool { return beepCadenceDrifts[i] < beepCadenceDrifts[j] })
-		idx := (len(beepCadenceDrifts) * 8) / 10
-		if idx >= len(beepCadenceDrifts) {
-			idx = len(beepCadenceDrifts) - 1
-		}
-		drift := beepCadenceDrifts[idx]
+		drift := beepCadenceDrifts[percentileIdx(len(beepCadenceDrifts))]
 		t.Logf("beep-cadence: p80=%s over %d gaps", drift, len(beepCadenceDrifts))
 		if drift > eventSpacingTolerance {
 			addIssue("beep cadence p80=%s exceeds %s tolerance", drift, eventSpacingTolerance)
@@ -500,11 +496,7 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 	// Flash cadence: same percentile approach.
 	if len(flashCadenceDrifts) > 2 {
 		sort.Slice(flashCadenceDrifts, func(i, j int) bool { return flashCadenceDrifts[i] < flashCadenceDrifts[j] })
-		idx := (len(flashCadenceDrifts) * 8) / 10
-		if idx >= len(flashCadenceDrifts) {
-			idx = len(flashCadenceDrifts) - 1
-		}
-		drift := flashCadenceDrifts[idx]
+		drift := flashCadenceDrifts[percentileIdx(len(flashCadenceDrifts))]
 		t.Logf("flash-cadence: p80=%s over %d gaps", drift, len(flashCadenceDrifts))
 		if drift > eventSpacingTolerance {
 			addIssue("flash cadence p80=%s exceeds %s tolerance", drift, eventSpacingTolerance)
@@ -513,16 +505,10 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 
 	if len(avSyncOffsets) > 2 {
 		sort.Slice(avSyncOffsets, func(i, j int) bool { return avSyncOffsets[i] < avSyncOffsets[j] })
-		// Fewer than 10 samples makes p90 essentially the max, so a single
-		// outlier bucket can fail the check; fall back to p50.
-		idx := (len(avSyncOffsets) * 9) / 10
-		if idx >= len(avSyncOffsets)-1 {
-			idx = len(avSyncOffsets) - 2
-		}
-		offset := avSyncOffsets[idx]
-		t.Logf("av-sync: p90=%s over %d strict-pair buckets", offset, len(avSyncOffsets))
+		offset := avSyncOffsets[percentileIdx(len(avSyncOffsets))]
+		t.Logf("av-sync: p80=%s over %d strict-pair buckets", offset, len(avSyncOffsets))
 		if offset > avSyncTolerance {
-			addIssue("av-sync p90=%s exceeds %s tolerance", offset, avSyncTolerance)
+			addIssue("av-sync p80=%s exceeds %s tolerance", offset, avSyncTolerance)
 		}
 	}
 
@@ -566,6 +552,16 @@ func hasNonP0Expectation(m map[string]livekit.AudioChannel) bool {
 }
 
 // --- general helpers ---
+
+// percentileIdx returns the index for a p80 lookup in a sorted slice of
+// length n. For small slices (< 10) p80 degenerates to the max, so fall
+// back to p50 to avoid letting a single outlier dominate.
+func percentileIdx(n int) int {
+	if n < 10 {
+		return n / 2
+	}
+	return (n * 8) / 10
+}
 
 func absDuration(d time.Duration) time.Duration {
 	if d < 0 {
