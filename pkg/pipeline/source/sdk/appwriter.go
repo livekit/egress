@@ -117,6 +117,9 @@ type AppWriter struct {
 
 	// FlowFlushing recovery
 	flushingCount int // consecutive FlowFlushing returns from PushBuffer
+
+	// packet arrival diagnostics
+	pktCount int
 	srcResetCount int // number of source bin resets performed
 
 	// diagnostics, set on unexpected flushing when pushing packets to the pipeline
@@ -544,6 +547,17 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	if err != nil {
 		w.stats.packetsDropped.Inc()
 		return err
+	}
+
+	w.pktCount++
+	if w.pktCount <= 100 {
+		w.logger.Debugw("pkt-arrival",
+			"n", w.pktCount,
+			"rtp", pkt.Packet.Timestamp,
+			"seq", pkt.Packet.SequenceNumber,
+			"receivedAt", pkt.ReceivedAt,
+			"pts", pts,
+		)
 	}
 
 	if pts < 0 {
