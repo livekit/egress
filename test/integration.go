@@ -218,6 +218,8 @@ func (r *Runner) createDotFile(t *testing.T, egressID string) {
 	dot, err := r.svc.GetGstPipelineDotFile(egressID)
 	require.NoError(t, err)
 
+	t.Logf("DOT:%s", dot)
+
 	filename := strings.ReplaceAll(t.Name()[11:], "/", "_")
 	filepath := fmt.Sprintf("%s/%s.dot", r.FilePrefix, filename)
 	f, err := os.Create(filepath)
