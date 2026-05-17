@@ -119,7 +119,7 @@ func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *
 		return
 	}
 
-	normalizePTS(t, result, info)
+	logPTSContext(t, result, file)
 
 	fracLag := fractionalLag(result)
 	obs := quantize(result, dur, fracLag)
@@ -569,74 +569,35 @@ func percentileIdx(n int) int {
 	return (n * 8) / 10
 }
 
-func normalizePTS(t *testing.T, r *avsync.Result, info *FFProbeInfo) {
+func logPTSContext(t *testing.T, r *avsync.Result, file string) {
 	t.Helper()
-	if r == nil || info == nil || (len(r.Beeps) == 0 && len(r.Flashes) == 0) {
+	if r == nil {
 		return
 	}
-
-	base, ok := parseStartTime(info.Format.StartTime)
-	if !ok {
-		base, ok = minStreamStart(info)
-	}
-	if !ok {
-		return
-	}
-
-	audioOffset := streamOffset(info, "audio", base)
-	videoOffset := streamOffset(info, "video", base)
-	if audioOffset == 0 && videoOffset == 0 {
-		return
-	}
-
-	for i := range r.Beeps {
-		r.Beeps[i].PTS += audioOffset
-	}
-	for i := range r.Flashes {
-		r.Flashes[i].PTS += videoOffset
-	}
-
-	t.Logf("normalized stream PTS: base=%s audioOffset=%s videoOffset=%s",
-		base, audioOffset, videoOffset)
+	t.Logf("pts-context: file=%s beeps=%s flashes=%s",
+		file, firstBeepPTS(r.Beeps, 5), firstFlashPTS(r.Flashes, 5))
 }
 
-func streamOffset(info *FFProbeInfo, codecType string, base time.Duration) time.Duration {
-	for _, s := range info.Streams {
-		if s.CodecType != codecType {
-			continue
-		}
-		if start, ok := parseStartTime(s.StartTime); ok {
-			return start - base
-		}
+func firstBeepPTS(beeps []avsync.Beep, n int) []time.Duration {
+	if len(beeps) < n {
+		n = len(beeps)
 	}
-	return 0
+	out := make([]time.Duration, n)
+	for i := 0; i < n; i++ {
+		out[i] = beeps[i].PTS
+	}
+	return out
 }
 
-func minStreamStart(info *FFProbeInfo) (time.Duration, bool) {
-	var min time.Duration
-	var ok bool
-	for _, s := range info.Streams {
-		start, parsed := parseStartTime(s.StartTime)
-		if !parsed {
-			continue
-		}
-		if !ok || start < min {
-			min = start
-			ok = true
-		}
+func firstFlashPTS(flashes []avsync.Flash, n int) []time.Duration {
+	if len(flashes) < n {
+		n = len(flashes)
 	}
-	return min, ok
-}
-
-func parseStartTime(s string) (time.Duration, bool) {
-	if s == "" || s == "N/A" {
-		return 0, false
+	out := make([]time.Duration, n)
+	for i := 0; i < n; i++ {
+		out[i] = flashes[i].PTS
 	}
-	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-	if err != nil {
-		return 0, false
-	}
-	return time.Duration(f * float64(time.Second)), true
+	return out
 }
 
 func absDuration(d time.Duration) time.Duration {

@@ -53,8 +53,6 @@ type FFProbeInfo struct {
 		CodecName string `json:"codec_name"`
 		CodecType string `json:"codec_type"`
 		Profile   string `json:"profile"`
-		StartTime string `json:"start_time"`
-		Duration  string `json:"duration"`
 
 		// audio
 		SampleRate    string `json:"sample_rate"`
@@ -71,7 +69,6 @@ type FFProbeInfo struct {
 	Format struct {
 		Filename   string `json:"filename"`
 		FormatName string `json:"format_name"`
-		StartTime  string `json:"start_time"`
 		Duration   string `json:"duration"`
 		Size       string `json:"size"`
 		ProbeScore int    `json:"probe_score"`
