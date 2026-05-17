@@ -112,6 +112,11 @@ func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *
 	})
 	require.NoError(t, err)
 
+	// Normalize PTS so the timeline starts near zero regardless of
+	// container PTS epoch. MPEG-TS streams start at an arbitrary offset
+	// that varies by ffmpeg version.
+	normalizePTS(result)
+
 	dur, _ := parseFFProbeDuration(info.Format.Duration)
 
 	plan := tc.plan
@@ -561,6 +566,35 @@ func percentileIdx(n int) int {
 		return n / 2
 	}
 	return (n * 8) / 10
+}
+
+func normalizePTS(r *avsync.Result) {
+	if len(r.Beeps) == 0 && len(r.Flashes) == 0 {
+		return
+	}
+
+	var minPTS time.Duration = 1<<63 - 1
+	for _, b := range r.Beeps {
+		if b.PTS < minPTS {
+			minPTS = b.PTS
+		}
+	}
+	for _, f := range r.Flashes {
+		if f.PTS < minPTS {
+			minPTS = f.PTS
+		}
+	}
+
+	if minPTS <= 0 {
+		return
+	}
+
+	for i := range r.Beeps {
+		r.Beeps[i].PTS -= minPTS
+	}
+	for i := range r.Flashes {
+		r.Flashes[i].PTS -= minPTS
+	}
 }
 
 func absDuration(d time.Duration) time.Duration {
