@@ -112,17 +112,14 @@ func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *
 	})
 	require.NoError(t, err)
 
-	// Normalize PTS so the timeline starts near zero regardless of
-	// container PTS epoch. MPEG-TS streams start at an arbitrary offset
-	// that varies by ffmpeg version.
-	normalizePTS(result)
-
 	dur, _ := parseFFProbeDuration(info.Format.Duration)
 
 	plan := tc.plan
 	if plan == nil {
 		return
 	}
+
+	normalizePTS(t, result, info)
 
 	fracLag := fractionalLag(result)
 	obs := quantize(result, dur, fracLag)
@@ -572,33 +569,74 @@ func percentileIdx(n int) int {
 	return (n * 8) / 10
 }
 
-func normalizePTS(r *avsync.Result) {
-	if len(r.Beeps) == 0 && len(r.Flashes) == 0 {
+func normalizePTS(t *testing.T, r *avsync.Result, info *FFProbeInfo) {
+	t.Helper()
+	if r == nil || info == nil || (len(r.Beeps) == 0 && len(r.Flashes) == 0) {
 		return
 	}
 
-	var minPTS time.Duration = 1<<63 - 1
-	for _, b := range r.Beeps {
-		if b.PTS < minPTS {
-			minPTS = b.PTS
-		}
+	base, ok := parseStartTime(info.Format.StartTime)
+	if !ok {
+		base, ok = minStreamStart(info)
 	}
-	for _, f := range r.Flashes {
-		if f.PTS < minPTS {
-			minPTS = f.PTS
-		}
+	if !ok {
+		return
 	}
 
-	if minPTS <= 0 {
+	audioOffset := streamOffset(info, "audio", base)
+	videoOffset := streamOffset(info, "video", base)
+	if audioOffset == 0 && videoOffset == 0 {
 		return
 	}
 
 	for i := range r.Beeps {
-		r.Beeps[i].PTS -= minPTS
+		r.Beeps[i].PTS += audioOffset
 	}
 	for i := range r.Flashes {
-		r.Flashes[i].PTS -= minPTS
+		r.Flashes[i].PTS += videoOffset
 	}
+
+	t.Logf("normalized stream PTS: base=%s audioOffset=%s videoOffset=%s",
+		base, audioOffset, videoOffset)
+}
+
+func streamOffset(info *FFProbeInfo, codecType string, base time.Duration) time.Duration {
+	for _, s := range info.Streams {
+		if s.CodecType != codecType {
+			continue
+		}
+		if start, ok := parseStartTime(s.StartTime); ok {
+			return start - base
+		}
+	}
+	return 0
+}
+
+func minStreamStart(info *FFProbeInfo) (time.Duration, bool) {
+	var min time.Duration
+	var ok bool
+	for _, s := range info.Streams {
+		start, parsed := parseStartTime(s.StartTime)
+		if !parsed {
+			continue
+		}
+		if !ok || start < min {
+			min = start
+			ok = true
+		}
+	}
+	return min, ok
+}
+
+func parseStartTime(s string) (time.Duration, bool) {
+	if s == "" || s == "N/A" {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0, false
+	}
+	return time.Duration(f * float64(time.Second)), true
 }
 
 func absDuration(d time.Duration) time.Duration {
