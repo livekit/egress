@@ -424,13 +424,17 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 			if beepVerdict == required && flashVerdict == required &&
 				len(gotBeeps) > 0 && len(gotFlashes) > 0 {
 				minOff := absDuration(gotFlashes[0].PTS - gotBeeps[0].PTS)
+				bestB, bestF := gotBeeps[0], gotFlashes[0]
 				for _, f := range gotFlashes {
 					for _, b := range gotBeeps {
 						if d := absDuration(f.PTS - b.PTS); d < minOff {
 							minOff = d
+							bestB = b
+							bestF = f
 						}
 					}
 				}
+				t.Logf("av-detail @%s: beep=%s flash=%s off=%s", planPTS, bestB.PTS, bestF.PTS, minOff)
 				avSyncOffsets = append(avSyncOffsets, minOff)
 			}
 		}
