@@ -133,6 +133,9 @@ func (r *Runner) testSegments(t *testing.T) {
 					audioCodec: types.MimeTypeOpus,
 					videoCodec: types.MimeTypeH264,
 				},
+				fileOptions: &fileOptions{
+					filename: "tcs_{room_name}_h264_avsync_{time}.mp4",
+				},
 				segmentOptions: &segmentOptions{
 					prefix:       "tcs_{room_name}_h264_{time}",
 					playlist:     "tcs_{room_name}_h264_{time}.m3u8",
@@ -192,6 +195,10 @@ func (r *Runner) runSegmentsTest(t *testing.T, test *testCase) {
 	require.Equal(t, !test.audioOnly, p.VideoEncoding)
 
 	r.verifySegments(t, test, p, test.segmentOptions.suffix, res, test.livePlaylist != "")
+
+	if test.fileOptions != nil {
+		r.verifyFile(t, test, p, res)
+	}
 }
 
 func (r *Runner) verifySegments(
