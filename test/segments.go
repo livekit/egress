@@ -194,11 +194,10 @@ func (r *Runner) runSegmentsTest(t *testing.T, test *testCase) {
 
 	require.Equal(t, !test.audioOnly, p.VideoEncoding)
 
-	r.verifySegments(t, test, p, test.segmentOptions.suffix, res, test.livePlaylist != "")
-
 	if test.fileOptions != nil {
 		r.verifyFile(t, test, p, res)
 	}
+	r.verifySegments(t, test, p, test.segmentOptions.suffix, res, test.livePlaylist != "")
 }
 
 func (r *Runner) verifySegments(
