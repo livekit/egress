@@ -16,9 +16,11 @@ package service
 
 import (
 	"context"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
+	"slices"
 	"syscall"
 	"time"
 
@@ -190,10 +192,7 @@ func (pm *processManager) GetGRPCClient(egressID string) (ipc.EgressHandlerClien
 
 func (pm *processManager) KillAll() {
 	pm.mu.RLock()
-	handlers := make([]*Process, 0, len(pm.activeHandlers))
-	for _, h := range pm.activeHandlers {
-		handlers = append(handlers, h)
-	}
+	handlers := slices.Collect(maps.Values(pm.activeHandlers))
 	pm.mu.RUnlock()
 
 	for _, h := range handlers {
