@@ -469,7 +469,7 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 	// take an extra frame to settle after transitions.
 	if len(stageMismatches) > 1 {
 		for _, m := range stageMismatches {
-			addIssue(m)
+			addIssue("%s", m)
 		}
 	}
 
