@@ -190,9 +190,13 @@ func (pm *processManager) GetGRPCClient(egressID string) (ipc.EgressHandlerClien
 
 func (pm *processManager) KillAll() {
 	pm.mu.RLock()
-	defer pm.mu.RUnlock()
-
+	handlers := make([]*Process, 0, len(pm.activeHandlers))
 	for _, h := range pm.activeHandlers {
+		handlers = append(handlers, h)
+	}
+	pm.mu.RUnlock()
+
+	for _, h := range handlers {
 		h.kill(errors.ErrShuttingDown)
 	}
 }
@@ -200,13 +204,16 @@ func (pm *processManager) KillAll() {
 func (pm *processManager) AbortProcess(egressID string, err error) {
 	logger.Infow("aborting egress", err, "egressID", egressID)
 	pm.mu.Lock()
-	defer pm.mu.Unlock()
+	h, ok := pm.activeHandlers[egressID]
+	if ok {
+		delete(pm.activeHandlers, egressID)
+	}
+	pm.mu.Unlock()
 
-	if h, ok := pm.activeHandlers[egressID]; ok {
+	if ok {
 		logger.Warnw("aborting handler", err, "egressID", egressID)
 		h.kill(err)
 		h.ipcHandlerClient.Close()
-		delete(pm.activeHandlers, egressID)
 	}
 	logger.Infow("aborting egress completed", "egressID", egressID)
 }
@@ -214,9 +221,10 @@ func (pm *processManager) AbortProcess(egressID string, err error) {
 func (pm *processManager) KillProcess(egressID string, err error) {
 	logger.Infow("killing egress", err, "egressID", egressID)
 	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+	h, ok := pm.activeHandlers[egressID]
+	pm.mu.RUnlock()
 
-	if h, ok := pm.activeHandlers[egressID]; ok {
+	if ok {
 		logger.Errorw("killing handler", err, "egressID", egressID)
 		h.kill(err)
 	}
