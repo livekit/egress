@@ -249,21 +249,15 @@ func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequ
 	case "type_aware":
 		if isHeavyEgressRequest(req) {
 			// RoomComposite/Web need ~4 CPUs. Strongly prefer idle pods.
-			// Jitter added (not subtracted) so idle score stays ≥ MaximumAffinity=1.0.
 			if s.activeRequests.Load() == 0 {
-				return 1.0 + rand.Float32()*0.001
+				return 1.0 - rand.Float32()*0.001
 			}
 			return 0.5
 		}
-		// Light requests use the same pending-counter + idle-1.0 logic as spread.
+		// Light requests use the same pending-counter + jitter logic as spread.
 		s.pendingClaims.Inc()
 		time.AfterFunc(2*time.Second, s.consumePendingClaim)
 		pending := s.pendingClaims.Load()
-
-		if s.activeRequests.Load() == 0 && pending <= 1 {
-			return 1.0 + rand.Float32()*0.001
-		}
-
 		return s.monitor.AvailableCPUFractionWithPending(pending) - rand.Float32()*0.001
 
 	default: // "pack" or empty — upstream behaviour unchanged
