@@ -215,8 +215,12 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 }
 
 func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequest) float32 {
-	if s.IsDisabled() || !s.monitor.CanAcceptRequest(req) {
-		return -1
+	if s.IsDisabled() {
+		return -1 // pod is shutting down — always hard reject
+	}
+
+	if !s.monitor.CanAcceptRequest(req) {
+		return s.softRejectScore()
 	}
 
 	switch s.conf.AffinityMode {
@@ -230,24 +234,36 @@ func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequ
 		s.pendingClaims.Inc()
 		time.AfterFunc(2*time.Second, s.consumePendingClaim)
 		pending := s.pendingClaims.Load()
-		// Subtract rand jitter ≤ 0.001 to break equal-score ties in psrpc's strict->
-		// comparison (first-replier-wins). Idle pods land in [0.999, 1.0]; busy pods
-		// score ≤ 0.96 (4 CPU, TrackCpuCost=0.15) and never beat idle pods.
+
+		// An idle pod returns ≥ 1.0 to trigger psrpc's ShortCircuitTimeout (500ms
+		// fast path). Without this, AvailableCPUFractionWithPending returns ~0.6 for
+		// an idle pod (2.4/4.0), which never crosses MaximumAffinity=1.0, so every
+		// dispatch waits the full AffinityTimeout even when pods are completely free.
+		// Jitter is added (not subtracted) so the score stays ≥ 1.0.
+		if s.activeRequests.Load() == 0 && pending <= 1 {
+			return 1.0 + rand.Float32()*0.001
+		}
+
 		return s.monitor.AvailableCPUFractionWithPending(pending) - rand.Float32()*0.001
 
 	case "type_aware":
 		if isHeavyEgressRequest(req) {
 			// RoomComposite/Web need ~4 CPUs. Strongly prefer idle pods.
-			// Jitter breaks first-replier ties among equally-idle pods.
+			// Jitter added (not subtracted) so idle score stays ≥ MaximumAffinity=1.0.
 			if s.activeRequests.Load() == 0 {
-				return 1.0 - rand.Float32()*0.001
+				return 1.0 + rand.Float32()*0.001
 			}
 			return 0.5
 		}
-		// Light requests use the same pending-counter + jitter logic as spread.
+		// Light requests use the same pending-counter + idle-1.0 logic as spread.
 		s.pendingClaims.Inc()
 		time.AfterFunc(2*time.Second, s.consumePendingClaim)
 		pending := s.pendingClaims.Load()
+
+		if s.activeRequests.Load() == 0 && pending <= 1 {
+			return 1.0 + rand.Float32()*0.001
+		}
+
 		return s.monitor.AvailableCPUFractionWithPending(pending) - rand.Float32()*0.001
 
 	default: // "pack" or empty — upstream behaviour unchanged
@@ -256,6 +272,25 @@ func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequ
 		}
 		return 1
 	}
+}
+
+// softRejectScore returns the score to use when CanAcceptRequest is false.
+// If SoftRejectFloor is non-zero and the pod is below its hard capacity limit,
+// returns the floor so the pod still participates in dispatcher selection as a
+// last resort. Otherwise returns -1 (silent / hard reject).
+func (s *Server) softRejectScore() float32 {
+	floor := s.conf.SoftRejectFloor
+
+	if floor <= 0 {
+		return -1
+	}
+
+	maxActive := s.conf.MaxActiveRequests
+	if maxActive > 0 && s.activeRequests.Load() >= maxActive {
+		return -1
+	}
+
+	return floor
 }
 
 func isHeavyEgressRequest(req *rpc.StartEgressRequest) bool {
