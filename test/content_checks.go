@@ -305,6 +305,8 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 	var avSyncOffsets []time.Duration
 	var beepCadenceDrifts []time.Duration
 	var flashCadenceDrifts []time.Duration
+	var stageMismatches []string
+
 	lastBeepPTS := make(map[string]time.Duration)
 	lastFlashPTS := make(map[string]time.Duration)
 	seenInSecondary := make(map[string]bool)
@@ -439,7 +441,7 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 			if speaker := plan.activeSpeaker(planPTS); speaker != "" {
 				for _, f := range secData.flashes {
 					if isStageRegion(f.Region) && f.Participant != "" && f.Participant != speaker {
-						addIssue("@%s stage shows %s, expected %s", planPTS, f.Participant, speaker)
+						stageMismatches = append(stageMismatches, fmt.Sprintf("@%s stage shows %s, expected %s", planPTS, f.Participant, speaker))
 					}
 				}
 			}
@@ -460,6 +462,14 @@ func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *obse
 			if hasVideo && !seenInSecondary[pub.name] {
 				addIssue("%s never visible in any %s region", pub.name, secondaryRegionLabel(tc.layout))
 			}
+		}
+	}
+
+	// Stage attribution: allow 1 mismatch — Chrome's speaker layout can
+	// take an extra frame to settle after transitions.
+	if len(stageMismatches) > 1 {
+		for _, m := range stageMismatches {
+			addIssue(m)
 		}
 	}
 
