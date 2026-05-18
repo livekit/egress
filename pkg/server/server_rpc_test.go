@@ -22,6 +22,8 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
+
+	"github.com/livekit/egress/pkg/config"
 )
 
 // TestConsumePendingClaim_FloorAtZero verifies the CAS loop never decrements below zero.
@@ -70,6 +72,36 @@ func TestConsumePendingClaim_NoDoubleDecrement(t *testing.T) {
 
 	require.Equal(t, int32(0), s.pendingClaims.Load(), "counter must be exactly 0, not negative")
 }
+
+// --- Tests for softRejectScore (TASK-03) ---
+
+func TestSoftRejectFloorDisabled(t *testing.T) {
+	// SoftRejectFloor=0 → feature disabled → always return -1
+	s := &Server{conf: &config.ServiceConfig{SoftRejectFloor: 0}}
+	require.Equal(t, float32(-1), s.softRejectScore())
+}
+
+func TestSoftRejectFloorReturnedWhenBelowMax(t *testing.T) {
+	// Floor set, activeRequests < MaxActiveRequests → return floor
+	s := &Server{conf: &config.ServiceConfig{SoftRejectFloor: 0.01, MaxActiveRequests: 16}}
+	s.activeRequests.Store(8)
+	require.Equal(t, float32(0.01), s.softRejectScore())
+}
+
+func TestSoftRejectFloorHardRejectWhenAtMax(t *testing.T) {
+	// Floor set, activeRequests >= MaxActiveRequests → -1 (genuinely full)
+	s := &Server{conf: &config.ServiceConfig{SoftRejectFloor: 0.01, MaxActiveRequests: 16}}
+	s.activeRequests.Store(16)
+	require.Equal(t, float32(-1), s.softRejectScore())
+}
+
+func TestSoftRejectFloorNoGuardWhenMaxIsZero(t *testing.T) {
+	// MaxActiveRequests=0 → guard disabled → return floor regardless of load
+	s := &Server{conf: &config.ServiceConfig{SoftRejectFloor: 0.01, MaxActiveRequests: 0}}
+	s.activeRequests.Store(20)
+	require.Equal(t, float32(0.01), s.softRejectScore())
+}
+
 
 func TestIsHeavyEgressRequest(t *testing.T) {
 	for _, tc := range []struct {
