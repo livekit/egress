@@ -15,6 +15,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
@@ -41,10 +43,17 @@ import (
 	"github.com/livekit/egress/version"
 )
 
+const (
+	egressHeartbeatKeyPrefix = "lk:egress:pod:"
+	egressHeartbeatTTL       = 5 * time.Second
+	egressHeartbeatInterval  = 2 * time.Second
+)
+
 type Server struct {
 	ipc.UnimplementedEgressServiceServer
 
 	conf *config.ServiceConfig
+	rc   redis.Cmdable
 
 	service.ProcessManager
 	*service.MetricsService
@@ -62,11 +71,12 @@ type Server struct {
 	shutdown       core.Fuse
 }
 
-func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.SessionReporter) (*Server, error) {
+func NewServer(conf *config.ServiceConfig, rc redis.Cmdable, bus psrpc.MessageBus, ioClient info.SessionReporter) (*Server, error) {
 	pm := service.NewProcessManager()
 
 	s := &Server{
 		conf:             conf,
+		rc:               rc,
 		ProcessManager:   pm,
 		MetricsService:   service.NewMetricsService(pm),
 		DebugService:     service.NewDebugService(pm),
@@ -153,12 +163,54 @@ func (s *Server) Run() error {
 		return err
 	}
 
+	// Start heartbeat after PSRPC subscription is live so the key only appears
+	// when this pod can actually accept egress requests.
+	hbCtx, hbCancel := context.WithCancel(context.Background())
+	go s.startHeartbeat(hbCtx)
+
 	logger.Infow("service ready")
 	<-s.shutdown.Watch()
+	hbCancel() // triggers immediate DEL in startHeartbeat before draining
 	logger.Infow("draining")
 	s.Drain()
 	logger.Infow("service stopped")
 	return nil
+}
+
+func (s *Server) startHeartbeat(ctx context.Context) {
+	podID := os.Getenv("POD_NAME")
+	if podID == "" {
+		podID = "unknown"
+	}
+	key := egressHeartbeatKeyPrefix + podID
+
+	s.writeHeartbeat(ctx, key)
+
+	ticker := time.NewTicker(egressHeartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			s.rc.Del(context.Background(), key)
+			return
+		case <-ticker.C:
+			s.writeHeartbeat(ctx, key)
+		}
+	}
+}
+
+func (s *Server) writeHeartbeat(ctx context.Context, key string) {
+	if s.rc == nil {
+		return
+	}
+	active := s.activeRequests.Load()
+	max := s.conf.MaxActiveRequests
+	if max <= 0 {
+		max = 16
+	}
+	val := fmt.Sprintf("%d/%d", active, max)
+	s.rc.Set(ctx, key, val, egressHeartbeatTTL)
 }
 
 func (s *Server) Status() ([]byte, error) {
