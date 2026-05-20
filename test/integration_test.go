@@ -36,6 +36,7 @@ var (
 
 func TestEgress(t *testing.T) {
 	r := NewRunner(t)
+	t.Cleanup(DumpContentStats)
 
 	rfs, err := fs.Sub(templateEmbedFs, "templates")
 	require.NoError(t, err)

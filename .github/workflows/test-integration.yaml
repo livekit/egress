@@ -27,6 +27,10 @@ on:
       - test/**
       - go.mod
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build:
     runs-on: namespace-profile-8vcpu-cache
@@ -120,6 +124,7 @@ jobs:
         env:
           IMAGE: ${{needs.build.outputs.image}}
         run: |
+          set -o pipefail
           docker run --rm \
             --network host \
             -e GITHUB_WORKFLOW=1 \
@@ -127,4 +132,191 @@ jobs:
             -e INTEGRATION_TYPE="${{ matrix.integration_type }}" \
             -e S3_UPLOAD="$(echo ${{ secrets.S3_UPLOAD }} | base64 -d)" \
             -e GCP_UPLOAD="$(echo ${{ secrets.GCP_UPLOAD }} | base64 -d)" \
-            ${{ env.IMAGE }}
+            ${{ env.IMAGE }} \
+            2>&1 | tee /tmp/test-output.log
+
+      - name: Extract avsync stats
+        if: always()
+        run: |
+          # Extract the JSON block between sentinel markers; fall back to []
+          # so the artifact always exists for the summary job.
+          awk '/===AVSYNC_STATS_BEGIN===/{flag=1; next} /===AVSYNC_STATS_END===/{flag=0} flag' \
+            /tmp/test-output.log > /tmp/avsync-stats.json
+          if [ ! -s /tmp/avsync-stats.json ]; then
+            echo "[]" > /tmp/avsync-stats.json
+          fi
+          echo "Stats rows: $(jq 'length' /tmp/avsync-stats.json)"
+
+      - name: Upload avsync stats artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: avsync-stats-${{ matrix.integration_type }}
+          path: /tmp/avsync-stats.json
+
+  summary:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download avsync stats artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: avsync-stats-*
+          path: stats/
+
+      - name: Render avsync summary
+        run: |
+          # Merge all per-job arrays into one.
+          jq -s '[.[][]]' stats/*/avsync-stats.json > /tmp/merged.json || echo "[]" > /tmp/merged.json
+
+          if [ "$(jq 'length' /tmp/merged.json)" = "0" ]; then
+            {
+              echo "## avsync stats summary"
+              echo
+              echo "_no stats collected_"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Aggregate by requestType: median and worst per metric.
+          # "Worst" = min for score, max-abs for durations. avSync keeps sign of worst-magnitude value.
+          # Durations in the JSON are float seconds (see DumpContentStats); no parsing needed.
+          jq -r '
+            # ---- helpers ----
+            def fmtDur(seconds):
+              if seconds == null then "N/A"
+              else "\(seconds * 1000 | round)ms" end;
+
+            def fmtSigned(seconds):
+              if seconds == null then "N/A"
+              elif seconds >= 0 then "+\(seconds * 1000 | round)ms"
+              else "\(seconds * 1000 | round)ms" end;
+
+            def medianAbs(field):
+              [.[] | .[field] | select(. != null) | fabs] | sort as $v |
+              if ($v | length) == 0 then null
+              else $v[($v | length / 2 | floor)] end;
+
+            def maxAbs(field):
+              [.[] | .[field] | select(. != null) | fabs] | sort as $v |
+              if ($v | length) == 0 then null
+              else $v[-1] end;
+
+            def medianScore: [.[] | .score] | sort | .[(length / 2 | floor)];
+            def worstScore:  [.[] | .score] | min;
+
+            # Signed-median: pick the original-sign value whose abs equals the median abs.
+            def medianSigned(field):
+              [.[] | .[field] | select(. != null)] as $vs |
+              if ($vs | length) == 0 then null
+              else
+                ($vs | map(fabs) | sort | .[(length / 2 | floor)]) as $m |
+                ($vs | map(select((. | fabs) == $m)))[0]
+              end;
+
+            # Worst-signed: max-abs value with its sign preserved.
+            def worstSigned(field):
+              [.[] | .[field] | select(. != null)] as $vs |
+              if ($vs | length) == 0 then null
+              else
+                ($vs | map(fabs) | max) as $m |
+                ($vs | map(select((. | fabs) == $m)))[0]
+              end;
+
+            def tracksRange:
+              [.[] | .tracks] | unique as $u |
+              if ($u | length) == 1 then ($u[0] | tostring)
+              else "\($u | min)-\($u | max)" end;
+
+            # ---- per-requestType aggregate ----
+            group_by(.requestType) | map({
+              requestType: .[0].requestType,
+              source:      .[0].source,
+              outputs:     length,
+              tracks:      tracksRange,
+              medianScore: medianScore,
+              worstScore:  worstScore,
+              medianTimeToStable:      medianAbs("timeToStable"),
+              worstTimeToStable:       maxAbs("timeToStable"),
+              medianWarmupMaxAVSync:   medianAbs("warmupMaxAVSync"),
+              worstWarmupMaxAVSync:    maxAbs("warmupMaxAVSync"),
+              medianAudioJitter:       medianAbs("audioJitter"),
+              worstAudioJitter:        maxAbs("audioJitter"),
+              medianVideoJitter:       medianAbs("videoJitter"),
+              worstVideoJitter:        maxAbs("videoJitter"),
+              medianAVSync:            medianSigned("avSync"),
+              worstAVSync:             worstSigned("avSync"),
+              medianAVSyncStdDev:      medianAbs("avSyncStdDev"),
+              worstAVSyncStdDev:       maxAbs("avSyncStdDev"),
+              medianMaxAVSync:         medianAbs("maxAVSync"),
+              worstMaxAVSync:          maxAbs("maxAVSync"),
+            }) | sort_by(.worstScore) |
+            (
+              "| requestType | source | outputs | tracks | score | timeToStable | warmupMaxAVSync | audioJitter | videoJitter | avSync | avSyncStdDev | maxAVSync |",
+              "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+              (.[] |
+                "| \(.requestType) | \(.source) | \(.outputs) | \(.tracks) " +
+                "| \(.medianScore) / \(.worstScore) " +
+                "| \(fmtDur(.medianTimeToStable)) / \(fmtDur(.worstTimeToStable)) " +
+                "| \(fmtDur(.medianWarmupMaxAVSync)) / \(fmtDur(.worstWarmupMaxAVSync)) " +
+                "| \(fmtDur(.medianAudioJitter)) / \(fmtDur(.worstAudioJitter)) " +
+                "| \(fmtDur(.medianVideoJitter)) / \(fmtDur(.worstVideoJitter)) " +
+                "| \(fmtSigned(.medianAVSync)) / \(fmtSigned(.worstAVSync)) " +
+                "| \(fmtDur(.medianAVSyncStdDev)) / \(fmtDur(.worstAVSyncStdDev)) " +
+                "| \(fmtDur(.medianMaxAVSync)) / \(fmtDur(.worstMaxAVSync)) |"
+              )
+            )
+          ' /tmp/merged.json > /tmp/aggregate.md
+
+          # Per-output detail table.
+          jq -r '
+            def fmtDur:
+              if . == null then "N/A"
+              else "\(. * 1000 | round)ms" end;
+
+            def fmtSigned:
+              if . == null then "N/A"
+              elif . >= 0 then "+\(. * 1000 | round)ms"
+              else "\(. * 1000 | round)ms" end;
+
+            def cap: ascii_upcase[0:1] + .[1:];
+
+            def fmtOutput:
+              if .format == "" or .format == null then (.output | cap)
+              elif .output == "file" then "\(.output | cap) (.\(.format))"
+              else "\(.output | cap) (\(.format))"
+              end;
+
+            sort_by(.score) |
+            (
+              "| test | requestType | source | output | tracks | score | timeToStable | warmupMaxAVSync | audioJitter | videoJitter | avSync | avSyncStdDev | maxAVSync |",
+              "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+              (.[] |
+                "| \(.test) | \(.requestType) | \(.source) | \(fmtOutput) | \(.tracks) | \(.score) " +
+                "| \(.timeToStable | fmtDur) " +
+                "| \(.warmupMaxAVSync | fmtDur) " +
+                "| \(.audioJitter | fmtDur) " +
+                "| \(.videoJitter | fmtDur) " +
+                "| \(.avSync | fmtSigned) " +
+                "| \(.avSyncStdDev | fmtDur) " +
+                "| \(.maxAVSync | fmtDur) |"
+              )
+            )
+          ' /tmp/merged.json > /tmp/detail.md
+
+          rowCount=$(jq 'length' /tmp/merged.json)
+          {
+            echo "## avsync stats summary"
+            echo
+            echo "Aggregate by \`requestType\`. Each metric cell is \`median / worst\`; lower is better for all metrics except \`score\` (where worst = minimum). \`tracks\` is the input track count: participants × (audio + video). Sorted by worst score ascending."
+            echo
+            cat /tmp/aggregate.md
+            echo
+            echo "<details>"
+            echo "<summary>Per-output detail (${rowCount} rows)</summary>"
+            echo
+            cat /tmp/detail.md
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"

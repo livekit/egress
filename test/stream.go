@@ -329,7 +329,7 @@ func (r *Runner) verifyStreams(t *testing.T, tc *testCase, p *config.PipelineCon
 	for _, url := range urls {
 		info := verify(t, url, p, nil, types.EgressTypeStream, r.sourceFramerate, false)
 		if tc != nil && tc.contentCheck != nil {
-			r.runContentCheck(t, tc, url, info)
+			r.runContentCheck(t, tc, url, info, "stream", formatFromStreamURL(url))
 		}
 	}
 }

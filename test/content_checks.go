@@ -67,7 +67,7 @@ const (
 
 // runContentCheck derives the appropriate content check from the test case
 // properties and runs it. If tc.contentCheck is set, it is used instead.
-func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo) {
+func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo, output, format string) {
 	if info == nil {
 		return
 	}
@@ -77,8 +77,11 @@ func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *
 		return
 	}
 
-	// Web/WebV2 load arbitrary content from a URL, not the avsync pattern.
+	// Web/WebV2 load arbitrary content from a URL, not the avsync pattern;
+	// record a stats row with zero metrics so the output still appears in
+	// the summary table, then skip the verifier.
 	if tc.requestType == types.RequestTypeWeb {
+		recordContentStats(tc, nil, output, format)
 		return
 	}
 
@@ -111,6 +114,8 @@ func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *
 		Participants: participants,
 	})
 	require.NoError(t, err)
+
+	recordContentStats(tc, result, output, format)
 
 	dur, _ := parseFFProbeDuration(info.Format.Duration)
 
