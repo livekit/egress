@@ -31,7 +31,7 @@ require (
 	github.com/livekit/protocol v1.45.6
 	github.com/livekit/psrpc v0.7.1
 	github.com/livekit/server-sdk-go/v2 v2.16.2-0.20260401161108-50e969e2961f
-	github.com/livekit/storage v0.0.0-20251113154014-aa1f4d0ce057
+	github.com/livekit/storage v0.0.0-20260520160524-41a3aeace0bd
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.10.1
