@@ -181,6 +181,7 @@ func (r *Runner) testStream(t *testing.T) {
 					rawFileName: fmt.Sprintf("track-ws-%v.raw", time.Now().Unix()),
 					outputType:  types.OutputTypeRaw,
 				},
+				custom: r.runWebsocketTest,
 			},
 
 			// -------- Template --------

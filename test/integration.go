@@ -92,11 +92,6 @@ func (r *Runner) run(t *testing.T, test *testCase) bool {
 }
 
 func (r *Runner) executeTest(t *testing.T, test *testCase) {
-	if test.requestType == types.RequestTypeTrack {
-		r.runWebsocketTest(t, test)
-		return
-	}
-
 	// build request
 	req := r.buildRequest(test)
 
