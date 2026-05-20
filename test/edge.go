@@ -161,7 +161,6 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 					filename: "track_disconnection_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
-				custom: r.runFileTest,
 			},
 
 			// Stream output with no urls
@@ -200,7 +199,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				custom: r.testStorageLimit,
 			},
 		} {
-			if !r.run(t, test, test.custom) {
+			if !r.run(t, test) {
 				return
 			}
 		}
@@ -302,7 +301,7 @@ func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	}
 	test.plan = &Plan{publishers: []*Publisher{publish("p0"), publish("p1"), publish("p2")}}
 
-	r.runFileTest(t, test)
+	r.executeTest(t, test)
 }
 
 func (r *Runner) testParticipantNoPublish(t *testing.T, test *testCase) {

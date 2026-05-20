@@ -17,15 +17,10 @@
 package test
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
-	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/livekit"
 )
 
 func (r *Runner) testMulti(t *testing.T) {
@@ -109,59 +104,9 @@ func (r *Runner) testMulti(t *testing.T) {
 				multi: true,
 			},
 		} {
-			if !r.run(t, test, r.runMultiTest) {
+			if !r.run(t, test) {
 				return
 			}
 		}
 	})
-}
-
-func (r *Runner) runMultiTest(t *testing.T, test *testCase) {
-	req := r.build(test)
-
-	egressID := r.startEgress(t, req)
-	time.Sleep(time.Second * 10)
-
-	// get params
-	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
-	require.NoError(t, err)
-
-	if test.streamOptions != nil {
-		_, err = r.client.UpdateStream(context.Background(), egressID, &livekit.UpdateStreamRequest{
-			EgressId:      egressID,
-			AddOutputUrls: []string{rtmpUrl3},
-		})
-		require.NoError(t, err)
-
-		time.Sleep(time.Second * 10)
-		r.verifyStreams(t, nil, p, rtmpUrl3)
-		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-			rtmpUrl3Redacted: livekit.StreamInfo_ACTIVE,
-		})
-		time.Sleep(time.Second * 10)
-	} else {
-		time.Sleep(time.Second * 20)
-	}
-
-	res := r.stopEgress(t, egressID)
-	if test.fileOptions != nil {
-		r.verifyFile(t, test, p, res)
-	}
-	if test.segmentOptions != nil {
-		require.Len(t, res.GetSegmentResults(), 1)
-		segments := res.GetSegmentResults()[0]
-		require.Greater(t, segments.Size, int64(0))
-		require.NotContains(t, segments.PlaylistName, "{")
-		require.NotContains(t, segments.PlaylistLocation, "{")
-		if segments.LivePlaylistName != "" {
-			require.NotContains(t, segments.LivePlaylistName, "{")
-		}
-		if segments.LivePlaylistLocation != "" {
-			require.NotContains(t, segments.LivePlaylistLocation, "{")
-		}
-		r.verifySegments(t, test, p, test.segmentOptions.suffix, res, false)
-	}
-	if test.imageOptions != nil {
-		r.verifyImages(t, p, res)
-	}
 }
