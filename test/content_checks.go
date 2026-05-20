@@ -67,7 +67,7 @@ const (
 
 // runContentCheck derives the appropriate content check from the test case
 // properties and runs it. If tc.contentCheck is set, it is used instead.
-func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo, output, format string) {
+func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo, output, format string) {
 	if info == nil {
 		return
 	}
@@ -78,10 +78,8 @@ func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *
 	}
 
 	// Web/WebV2 load arbitrary content from a URL, not the avsync pattern;
-	// record a stats row with zero metrics so the output still appears in
-	// the summary table, then skip the verifier.
+	// no stats row to record.
 	if tc.requestType == types.RequestTypeWeb {
-		recordContentStats(tc, nil, output, format)
 		return
 	}
 
@@ -115,17 +113,16 @@ func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *
 	})
 	require.NoError(t, err)
 
-	recordContentStats(tc, result, output, format)
-
 	dur, _ := parseFFProbeDuration(info.Format.Duration)
+	fracLag, earliest := fractionalLag(result)
+	obs := quantize(result, dur, fracLag)
+
+	recordContentStats(tc, obs, fracLag, earliest, output, format)
 
 	plan := tc.plan
 	if plan == nil {
 		return
 	}
-
-	fracLag := fractionalLag(result)
-	obs := quantize(result, dur, fracLag)
 
 	expected := plan.expectedBeepsBySec(dur + maxRecordingDelay)
 	intLag := integerLag(expected, obs.seconds)
@@ -142,7 +139,7 @@ func (r *Runner) runContentCheck(t *testing.T, tc *testCase, file string, info *
 	// planPTS often lands at the very edge and is unreliable.
 	maxPlanPTS := lag + dur - 1*time.Second
 
-	r.verifyContent(t, tc, plan, obs, intLag, maxPlanPTS)
+	verifyContent(t, tc, plan, obs, intLag, maxPlanPTS)
 }
 
 // --- observation ------------------------------------------------------
@@ -195,45 +192,62 @@ func quantize(result *avsync.Result, dur time.Duration, fracLag time.Duration) *
 // --- lag detection ----------------------------------------------------
 
 // fractionalLag returns the sub-second component of the recording lag
-func fractionalLag(result *avsync.Result) time.Duration {
-	if result == nil || len(result.Beeps) == 0 {
-		return 0
+// (fracLag) and the PTS of the first event where the per-participant 1Hz
+// cadence locks (earliest). earliest serves as the recording's
+// "timeToStable" — all events at or after this point land at the same
+// fracLag once the sync engine has snapped tracks onto the NTP timeline.
+//
+// Prefers beeps; falls back to flashes for video-only recordings so they
+// still produce a meaningful lag and stabilization time.
+func fractionalLag(result *avsync.Result) (fracLag, earliest time.Duration) {
+	if result == nil {
+		return 0, 0
 	}
+
+	grouped := make(map[string][]time.Duration)
+	switch {
+	case len(result.Beeps) > 0:
+		for _, b := range result.Beeps {
+			grouped[b.Participant] = append(grouped[b.Participant], b.PTS)
+		}
+	case len(result.Flashes) > 0:
+		for _, f := range result.Flashes {
+			grouped[f.Participant] = append(grouped[f.Participant], f.PTS)
+		}
+	default:
+		return 0, 0
+	}
+	for _, ptsList := range grouped {
+		sort.Slice(ptsList, func(i, j int) bool { return ptsList[i] < ptsList[j] })
+	}
+
 	const lockTolerance = 1 * time.Millisecond
 
-	pts := make(map[string][]time.Duration)
-	for _, b := range result.Beeps {
-		pts[b.Participant] = append(pts[b.Participant], b.PTS)
-	}
-	for _, beeps := range pts {
-		sort.Slice(beeps, func(i, j int) bool { return beeps[i] < beeps[j] })
-	}
-
 	best := time.Minute
-	for _, beeps := range pts {
-		for i := 1; i < len(beeps); i++ {
-			if diff := absDuration(beeps[i] - beeps[i-1] - time.Second); diff < best {
+	for _, ptsList := range grouped {
+		for i := 1; i < len(ptsList); i++ {
+			if diff := absDuration(ptsList[i] - ptsList[i-1] - time.Second); diff < best {
 				best = diff
 			}
 		}
 	}
 
-	earliest := time.Duration(-1)
-	for _, beeps := range pts {
-		for i := 1; i < len(beeps); i++ {
-			diff := absDuration(beeps[i] - beeps[i-1] - time.Second)
+	earliest = -1
+	for _, ptsList := range grouped {
+		for i := 1; i < len(ptsList); i++ {
+			diff := absDuration(ptsList[i] - ptsList[i-1] - time.Second)
 			if diff-best < lockTolerance {
-				if earliest < 0 || beeps[i-1] < earliest {
-					earliest = beeps[i-1]
+				if earliest < 0 || ptsList[i-1] < earliest {
+					earliest = ptsList[i-1]
 				}
 				break
 			}
 		}
 	}
 	if earliest < 0 {
-		return 0
+		return 0, 0
 	}
-	return earliest % time.Second
+	return earliest % time.Second, earliest
 }
 
 // expectedBeepsBySec projects the plan timeline into per-integer-second
@@ -299,7 +313,7 @@ func integerLag(expected [][]string, actual []obsSecond) int64 {
 	return bestLag
 }
 
-func (r *Runner) verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, intLag int64, maxPlanPTS time.Duration) {
+func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, intLag int64, maxPlanPTS time.Duration) {
 	t.Helper()
 
 	var issues []string
@@ -598,7 +612,7 @@ func videoDimensions(info *FFProbeInfo) (width, height int) {
 
 // --- stream keyframe checks (kept as explicit contentCheck overrides) ---
 
-func (r *Runner) streamKeyframeContentCheck(expectedInterval float64) func(t *testing.T, target string, _ *FFProbeInfo) {
+func streamKeyframeContentCheck(expectedInterval float64) func(t *testing.T, target string, _ *FFProbeInfo) {
 	return func(t *testing.T, target string, _ *FFProbeInfo) {
 		requireKeyframeInterval(t, target, expectedInterval)
 	}

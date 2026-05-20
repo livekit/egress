@@ -34,20 +34,6 @@ import (
 	"github.com/livekit/egress/pkg/types"
 )
 
-// stableCadenceTolerance is the maximum allowed deviation from 1s between
-// consecutive events while the stream is considered "stable". 100ms matches
-// the existing per-event spacing tolerance in content_checks.go.
-const stableCadenceTolerance = 100 * time.Millisecond
-
-// stableRunLength is the number of consecutive in-tolerance gaps that must
-// follow an index for that index to count as the start of the stable region.
-const stableRunLength = 3
-
-// missingEventGap is the gap size that means "one or more events are missing"
-// in the post-stable region. Such gaps are dropped from jitter computation
-// instead of being scored as cadence drift.
-const missingEventGap = 1500 * time.Millisecond
-
 // contentStats holds the metrics published per output (file/stream/segments).
 // One row is appended to the global allStats slice per call to recordContentStats.
 type contentStats struct {
@@ -66,16 +52,14 @@ type contentStats struct {
 	tracks          int
 
 	// Sanity counters (in JSON/log only, not in summary tables).
-	flashes         int
-	beeps           int
+	flashCount      int
+	beepCount       int
 	expectedFlashes int
 	expectedBeeps   int
 
 	// Stabilization.
-	timeToStable      time.Duration
-	timeToStableVideo time.Duration
-	timeToStableAudio time.Duration
-	warmupMaxAVSync   time.Duration
+	timeToStable    time.Duration
+	warmupMaxAVSync time.Duration
 
 	// Post-stable steady state.
 	audioJitter  time.Duration
@@ -95,10 +79,11 @@ var (
 	allStatsMu deadlock.Mutex
 )
 
-// recordContentStats computes stats from result + identity, logs the row
-// (for Datadog), and appends to allStats. Safe for concurrent calls.
-func recordContentStats(tc *testCase, result *avsync.Result, output, format string) {
-	s := computeContentStats(result)
+// recordContentStats computes stats from the quantized observation and
+// recording-lag values produced upstream by fractionalLag/quantize, logs
+// the row (for Datadog), and appends to allStats. Safe for concurrent calls.
+func recordContentStats(tc *testCase, obs *observation, fracLag, earliest time.Duration, output, format string) {
+	s := computeContentStats(obs, fracLag, earliest, tc.audioOnly, tc.videoOnly)
 
 	s.integrationType = os.Getenv("INTEGRATION_TYPE")
 	s.test = tc.name
@@ -109,8 +94,6 @@ func recordContentStats(tc *testCase, result *avsync.Result, output, format stri
 	s.audioCodec = string(tc.audioCodec)
 	s.videoCodec = string(tc.videoCodec)
 	s.layout = tc.layout
-	s.audioOnly = tc.audioOnly
-	s.videoOnly = tc.videoOnly
 	s.tracks = inputTrackCount(tc)
 
 	logger.Infow("avsync stats",
@@ -126,13 +109,11 @@ func recordContentStats(tc *testCase, result *avsync.Result, output, format stri
 		"videoOnly", s.videoOnly,
 		"tracks", s.tracks,
 		"score", s.score,
-		"flashes", s.flashes,
-		"beeps", s.beeps,
+		"flashes", s.flashCount,
+		"beeps", s.beepCount,
 		"expectedFlashes", s.expectedFlashes,
 		"expectedBeeps", s.expectedBeeps,
 		"timeToStable", s.timeToStable,
-		"timeToStableVideo", s.timeToStableVideo,
-		"timeToStableAudio", s.timeToStableAudio,
 		"warmupMaxAVSync", s.warmupMaxAVSync,
 		"audioJitter", s.audioJitter,
 		"videoJitter", s.videoJitter,
@@ -146,103 +127,93 @@ func recordContentStats(tc *testCase, result *avsync.Result, output, format stri
 	allStatsMu.Unlock()
 }
 
-// computeContentStats turns a raw avsync.Result into the metric set defined
-// in the spec. Identity fields are left zero; recordContentStats populates them.
-func computeContentStats(result *avsync.Result) contentStats {
+// computeContentStats derives the metric set from the quantized
+// observation. fracLag is the recording's sub-second offset; earliest is
+// the PTS of the first event where the 1Hz cadence locked (= timeToStable).
+// Both come from fractionalLag.
+//
+// Within a bucket, every event's fracOffset is measured as
+// `event.PTS - (bucket*1s + fracLag)`. For a perfectly stable beep this
+// is 0 by construction (fracLag is inferred from the beep timeline);
+// flashes' fracOffsets relative to the same reference reveal the AV-sync
+// gap and its drift across the recording.
+func computeContentStats(obs *observation, fracLag, earliest time.Duration, audioOnly, videoOnly bool) contentStats {
 	var s contentStats
-	if result == nil {
+	s.audioOnly = audioOnly
+	s.videoOnly = videoOnly
+	s.timeToStable = earliest
+
+	if obs == nil {
+		s.score = math.Round(scoreContent(s)*10) / 10
 		return s
 	}
 
-	flashPTS := sortedFlashPTS(result.Flashes)
-	beepPTS := sortedBeepPTS(result.Beeps)
-	s.flashes = len(flashPTS)
-	s.beeps = len(beepPTS)
-
-	videoStableIdx := stableStartIndex(flashPTS)
-	audioStableIdx := stableStartIndex(beepPTS)
-	if videoStableIdx >= 0 {
-		s.timeToStableVideo = flashPTS[videoStableIdx]
+	for _, sec := range obs.seconds {
+		s.beepCount += len(sec.beeps)
+		s.flashCount += len(sec.flashes)
 	}
-	if audioStableIdx >= 0 {
-		s.timeToStableAudio = beepPTS[audioStableIdx]
+
+	if earliest == 0 {
+		// fractionalLag never found a locking gap — no stable region.
+		s.score = math.Round(scoreContent(s)*10) / 10
+		return s
 	}
-	s.timeToStable = maxDuration(s.timeToStableVideo, s.timeToStableAudio)
 
-	s.videoJitter = postStableJitter(flashPTS, videoStableIdx)
-	s.audioJitter = postStableJitter(beepPTS, audioStableIdx)
+	// stableBucket is the bucket containing `earliest`, computed with the
+	// same formula `quantize` uses so the boundary agrees.
+	stableBucket := int64((earliest - fracLag + 500*time.Millisecond) / time.Second)
 
-	// AV sync is only meaningful when both tracks produced events.
-	if videoStableIdx >= 0 && audioStableIdx >= 0 {
-		stableBoundary := s.timeToStable
-		var stableOffsets []time.Duration
-		var warmupMax time.Duration
-		var postStableMax time.Duration
-
-		for _, f := range flashPTS {
-			nearest := nearest(beepPTS, f)
-			off := f - nearest
-			abs := absDuration(off)
-			if f < stableBoundary {
-				if abs > warmupMax {
-					warmupMax = abs
-				}
-				continue
-			}
-			stableOffsets = append(stableOffsets, off)
-			if abs > postStableMax {
-				postStableMax = abs
-			}
+	var audioFracs, videoFracs []time.Duration
+	var stableDiffs, warmupDiffs []time.Duration
+	for i, sec := range obs.seconds {
+		if len(sec.beeps) == 0 && len(sec.flashes) == 0 {
+			continue
+		}
+		secStart := time.Duration(i)*time.Second + fracLag
+		var aFracs, vFracs []time.Duration
+		for _, b := range sec.beeps {
+			aFracs = append(aFracs, b.PTS-secStart)
+		}
+		for _, f := range sec.flashes {
+			vFracs = append(vFracs, f.PTS-secStart)
 		}
 
-		s.warmupMaxAVSync = warmupMax
-		s.maxAVSync = postStableMax
-		s.stableAVSync = medianDuration(stableOffsets)
-		s.avSyncStdDev = stdDevDuration(stableOffsets)
+		isStable := int64(i) >= stableBucket
+		if isStable {
+			audioFracs = append(audioFracs, aFracs...)
+			videoFracs = append(videoFracs, vFracs...)
+		}
+		if len(aFracs) > 0 && len(vFracs) > 0 {
+			diff := medianDuration(vFracs) - medianDuration(aFracs)
+			if isStable {
+				stableDiffs = append(stableDiffs, diff)
+			} else {
+				warmupDiffs = append(warmupDiffs, diff)
+			}
+		}
+	}
+
+	s.audioJitter = stdDevDuration(audioFracs)
+	s.videoJitter = stdDevDuration(videoFracs)
+	if len(audioFracs) > 0 && len(videoFracs) > 0 {
+		s.stableAVSync = medianDuration(videoFracs) - medianDuration(audioFracs)
+	}
+	if len(stableDiffs) > 0 {
+		s.avSyncStdDev = stdDevDuration(stableDiffs)
+		for _, d := range stableDiffs {
+			if a := absDuration(d); a > s.maxAVSync {
+				s.maxAVSync = a
+			}
+		}
+	}
+	for _, d := range warmupDiffs {
+		if a := absDuration(d); a > s.warmupMaxAVSync {
+			s.warmupMaxAVSync = a
+		}
 	}
 
 	s.score = math.Round(scoreContent(s)*10) / 10
 	return s
-}
-
-// stableStartIndex finds the earliest index i such that gaps [i, i+1), [i+1, i+2),
-// ... [i+stableRunLength-1, i+stableRunLength) are all within
-// stableCadenceTolerance of 1s. Returns -1 if no such index exists.
-func stableStartIndex(pts []time.Duration) int {
-	if len(pts) <= stableRunLength {
-		return -1
-	}
-	for i := 0; i+stableRunLength < len(pts); i++ {
-		ok := true
-		for k := 0; k < stableRunLength; k++ {
-			gap := pts[i+k+1] - pts[i+k]
-			if absDuration(gap-time.Second) > stableCadenceTolerance {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			return i
-		}
-	}
-	return -1
-}
-
-// postStableJitter returns the std dev of (gap - 1s) over the events
-// from stableIdx onward. Returns 0 if not enough events.
-func postStableJitter(pts []time.Duration, stableIdx int) time.Duration {
-	if stableIdx < 0 || stableIdx >= len(pts)-1 {
-		return 0
-	}
-	var devs []time.Duration
-	for i := stableIdx + 1; i < len(pts); i++ {
-		gap := pts[i] - pts[i-1]
-		if gap > missingEventGap {
-			continue
-		}
-		devs = append(devs, gap-time.Second)
-	}
-	return stdDevDuration(devs)
 }
 
 // scoreContent collapses contentStats into a 0–100 score. Weights and
@@ -253,16 +224,16 @@ func postStableJitter(pts []time.Duration, stableIdx int) time.Duration {
 // with zero events would silently score 100 and disappear from the
 // "worst score" column of the aggregate table.
 func scoreContent(s contentStats) float64 {
-	switch {
-	case s.audioOnly && s.timeToStableAudio == 0:
+	if s.timeToStable == 0 {
+		// Merged event stream never settled to a stable fracLag — no
+		// usable signal to score against.
 		return 0
-	case s.videoOnly && s.timeToStableVideo == 0:
-		return 0
-	case !s.audioOnly && !s.videoOnly && (s.timeToStableVideo == 0 || s.timeToStableAudio == 0):
-		// Both tracks were expected; if either never stabilized, the
-		// AV-sync penalties contribute 0 (they only run when both indices
-		// are valid), so the formula would score a half-broken recording
-		// implausibly well.
+	}
+	if !s.audioOnly && !s.videoOnly && (s.beepCount == 0 || s.flashCount == 0) {
+		// Both tracks expected but one produced no events; the AV-sync
+		// penalties contribute 0 (they only run when both sides have
+		// stable events), so the formula would score a half-broken
+		// recording implausibly well.
 		return 0
 	}
 
@@ -322,41 +293,6 @@ func inputTrackCount(tc *testCase) int {
 	return participants * perPart
 }
 
-func sortedFlashPTS(flashes []avsync.Flash) []time.Duration {
-	out := make([]time.Duration, 0, len(flashes))
-	for _, f := range flashes {
-		out = append(out, f.PTS)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
-	return out
-}
-
-func sortedBeepPTS(beeps []avsync.Beep) []time.Duration {
-	out := make([]time.Duration, 0, len(beeps))
-	for _, b := range beeps {
-		out = append(out, b.PTS)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
-	return out
-}
-
-// nearest returns the value in sorted that is closest to target.
-// sorted must be non-empty and ascending.
-func nearest(sorted []time.Duration, target time.Duration) time.Duration {
-	idx := sort.Search(len(sorted), func(i int) bool { return sorted[i] >= target })
-	switch {
-	case idx == 0:
-		return sorted[0]
-	case idx == len(sorted):
-		return sorted[len(sorted)-1]
-	default:
-		if target-sorted[idx-1] < sorted[idx]-target {
-			return sorted[idx-1]
-		}
-		return sorted[idx]
-	}
-}
-
 func medianDuration(v []time.Duration) time.Duration {
 	if len(v) == 0 {
 		return 0
@@ -389,13 +325,6 @@ func stdDevDuration(v []time.Duration) time.Duration {
 
 // absDuration is defined in content_checks.go.
 
-func maxDuration(a, b time.Duration) time.Duration {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func durMs(d time.Duration) float64 {
 	return float64(d) / float64(time.Millisecond)
 }
@@ -421,54 +350,50 @@ func DumpContentStats() {
 		// format (e.g., "1m30s"). The structured log line above keeps
 		// time.Duration values for human readability.
 		var (
-			flashes            any = s.flashes
-			timeToStableVideo  any = s.timeToStableVideo.Seconds()
-			videoJitter        any = s.videoJitter.Seconds()
-			beeps              any = s.beeps
-			timeToStableAudio  any = s.timeToStableAudio.Seconds()
-			audioJitter        any = s.audioJitter.Seconds()
-			warmupMaxAVSync    any = s.warmupMaxAVSync.Seconds()
-			stableAVSync       any = s.stableAVSync.Seconds()
-			avSyncStdDev       any = s.avSyncStdDev.Seconds()
-			maxAVSync          any = s.maxAVSync.Seconds()
+			flashes         any = s.flashCount
+			videoJitter     any = s.videoJitter.Seconds()
+			beeps           any = s.beepCount
+			audioJitter     any = s.audioJitter.Seconds()
+			warmupMaxAVSync any = s.warmupMaxAVSync.Seconds()
+			stableAVSync    any = s.stableAVSync.Seconds()
+			avSyncStdDev    any = s.avSyncStdDev.Seconds()
+			maxAVSync       any = s.maxAVSync.Seconds()
 		)
 		if s.audioOnly {
-			flashes, timeToStableVideo, videoJitter = nil, nil, nil
+			flashes, videoJitter = nil, nil
 		}
 		if s.videoOnly {
-			beeps, timeToStableAudio, audioJitter = nil, nil, nil
+			beeps, audioJitter = nil, nil
 		}
 		if s.audioOnly || s.videoOnly {
 			warmupMaxAVSync, stableAVSync, avSyncStdDev, maxAVSync = nil, nil, nil, nil
 		}
 
 		out = append(out, map[string]any{
-			"integrationType":   s.integrationType,
-			"test":              s.test,
-			"requestType":       s.requestType,
-			"source":            s.source,
-			"output":            s.output,
-			"format":            s.format,
-			"audioCodec":        s.audioCodec,
-			"videoCodec":        s.videoCodec,
-			"layout":            s.layout,
-			"audioOnly":         s.audioOnly,
-			"videoOnly":         s.videoOnly,
-			"tracks":            s.tracks,
-			"flashes":           flashes,
-			"beeps":             beeps,
-			"expectedFlashes":   s.expectedFlashes,
-			"expectedBeeps":     s.expectedBeeps,
-			"score":             s.score,
-			"timeToStable":      s.timeToStable.Seconds(),
-			"timeToStableVideo": timeToStableVideo,
-			"timeToStableAudio": timeToStableAudio,
-			"warmupMaxAVSync":   warmupMaxAVSync,
-			"audioJitter":       audioJitter,
-			"videoJitter":       videoJitter,
-			"avSync":            stableAVSync,
-			"avSyncStdDev":      avSyncStdDev,
-			"maxAVSync":         maxAVSync,
+			"integrationType": s.integrationType,
+			"test":            s.test,
+			"requestType":     s.requestType,
+			"source":          s.source,
+			"output":          s.output,
+			"format":          s.format,
+			"audioCodec":      s.audioCodec,
+			"videoCodec":      s.videoCodec,
+			"layout":          s.layout,
+			"audioOnly":       s.audioOnly,
+			"videoOnly":       s.videoOnly,
+			"tracks":          s.tracks,
+			"flashes":         flashes,
+			"beeps":           beeps,
+			"expectedFlashes": s.expectedFlashes,
+			"expectedBeeps":   s.expectedBeeps,
+			"score":           s.score,
+			"timeToStable":    s.timeToStable.Seconds(),
+			"warmupMaxAVSync": warmupMaxAVSync,
+			"audioJitter":     audioJitter,
+			"videoJitter":     videoJitter,
+			"avSync":          stableAVSync,
+			"avSyncStdDev":    avSyncStdDev,
+			"maxAVSync":       maxAVSync,
 		})
 	}
 

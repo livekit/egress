@@ -272,7 +272,7 @@ func (r *Runner) verifySegmentOutput(
 	// content isn't a fair representation of the full recording for
 	// avsync verification. Structure is already validated above.
 	if pl.playlistType != m3u8.PlaylistTypeLive {
-		r.runContentCheck(t, tc, localPlaylistPath, info, "segments", "hls")
+		runContentCheck(t, tc, localPlaylistPath, info, "segments", "hls")
 	}
 }
 

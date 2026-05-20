@@ -154,7 +154,7 @@ jobs:
           name: avsync-stats-${{ matrix.integration_type }}
           path: /tmp/avsync-stats.json
 
-  summary:
+  stats:
     needs: test
     if: always()
     runs-on: ubuntu-latest

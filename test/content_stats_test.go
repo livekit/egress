@@ -26,63 +26,25 @@ import (
 	"github.com/livekit/media-samples/avsync"
 )
 
-func TestStableStartIndex(t *testing.T) {
-	if os.Getenv("INTEGRATION_TYPE") != "" {
-		t.Skip()
+// statsFromResult runs the full pipeline (fractionalLag → quantize →
+// computeContentStats) so unit tests exercise the same code path as
+// runContentCheck. dur is inferred from the last event PTS + 2s of slack.
+func statsFromResult(result *avsync.Result, audioOnly, videoOnly bool) contentStats {
+	var last time.Duration
+	for _, b := range result.Beeps {
+		if b.PTS > last {
+			last = b.PTS
+		}
 	}
-	cases := []struct {
-		name string
-		pts  []time.Duration
-		want int // -1 means "never stable"
-	}{
-		{
-			name: "empty",
-			pts:  nil,
-			want: -1,
-		},
-		{
-			name: "too few events",
-			pts:  []time.Duration{1 * time.Second, 2 * time.Second},
-			want: -1,
-		},
-		{
-			name: "clean cadence from start",
-			pts: []time.Duration{
-				1 * time.Second, 2 * time.Second, 3 * time.Second,
-				4 * time.Second, 5 * time.Second,
-			},
-			want: 0,
-		},
-		{
-			name: "bumpy warmup then stable",
-			pts: []time.Duration{
-				100 * time.Millisecond,
-				300 * time.Millisecond,
-				1500 * time.Millisecond,
-				2500 * time.Millisecond,
-				3500 * time.Millisecond,
-				4500 * time.Millisecond,
-				5500 * time.Millisecond,
-			},
-			want: 2, // first index where next 3 gaps are all ~1s
-		},
-		{
-			name: "permanently erratic",
-			pts: []time.Duration{
-				100 * time.Millisecond,
-				900 * time.Millisecond,
-				2100 * time.Millisecond,
-				2400 * time.Millisecond,
-				4000 * time.Millisecond,
-			},
-			want: -1,
-		},
+	for _, f := range result.Flashes {
+		if f.PTS > last {
+			last = f.PTS
+		}
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, stableStartIndex(tc.pts))
-		})
-	}
+	dur := last + 2*time.Second
+	fracLag, earliest := fractionalLag(result)
+	obs := quantize(result, dur, fracLag)
+	return computeContentStats(obs, fracLag, earliest, audioOnly, videoOnly)
 }
 
 func TestNormalize(t *testing.T) {
@@ -101,15 +63,15 @@ func TestScoreContentPerfect(t *testing.T) {
 		t.Skip()
 	}
 	s := contentStats{
-		avSyncStdDev:      1 * time.Millisecond,
-		stableAVSync:      1 * time.Millisecond,
-		audioJitter:       1 * time.Millisecond,
-		videoJitter:       1 * time.Millisecond,
-		maxAVSync:         1 * time.Millisecond,
-		timeToStable:      100 * time.Millisecond,
-		timeToStableVideo: 100 * time.Millisecond,
-		timeToStableAudio: 100 * time.Millisecond,
-		warmupMaxAVSync:   100 * time.Millisecond,
+		beepCount:       10,
+		flashCount:      10,
+		avSyncStdDev:    1 * time.Millisecond,
+		stableAVSync:    1 * time.Millisecond,
+		audioJitter:     1 * time.Millisecond,
+		videoJitter:     1 * time.Millisecond,
+		maxAVSync:       1 * time.Millisecond,
+		timeToStable:    100 * time.Millisecond,
+		warmupMaxAVSync: 100 * time.Millisecond,
 	}
 	require.Equal(t, 100.0, scoreContent(s))
 }
@@ -119,15 +81,15 @@ func TestScoreContentTerrible(t *testing.T) {
 		t.Skip()
 	}
 	s := contentStats{
-		avSyncStdDev:      500 * time.Millisecond,
-		stableAVSync:      1 * time.Second,
-		audioJitter:       500 * time.Millisecond,
-		videoJitter:       500 * time.Millisecond,
-		maxAVSync:         2 * time.Second,
-		timeToStable:      30 * time.Second,
-		timeToStableVideo: 30 * time.Second,
-		timeToStableAudio: 30 * time.Second,
-		warmupMaxAVSync:   5 * time.Second,
+		beepCount:       10,
+		flashCount:      10,
+		avSyncStdDev:    500 * time.Millisecond,
+		stableAVSync:    1 * time.Second,
+		audioJitter:     500 * time.Millisecond,
+		videoJitter:     500 * time.Millisecond,
+		maxAVSync:       2 * time.Second,
+		timeToStable:    30 * time.Second,
+		warmupMaxAVSync: 5 * time.Second,
 	}
 	require.Equal(t, 0.0, scoreContent(s))
 }
@@ -136,8 +98,9 @@ func TestComputeContentStatsCleanCadence(t *testing.T) {
 	if os.Getenv("INTEGRATION_TYPE") != "" {
 		t.Skip()
 	}
-	// Synthetic clean recording: 10 beeps and 10 flashes, exactly 1s apart,
-	// 50ms video-after-audio offset (positive AV-sync).
+	// 10 beeps at integer seconds (fracLag=0), 10 flashes 50ms later
+	// (per-bucket fracOffset=50ms). fractionalLag locks on the first
+	// gap; jitter near 0; stableAVSync = ~50ms (video lags audio).
 	var beeps []avsync.Beep
 	var flashes []avsync.Flash
 	for i := 0; i < 10; i++ {
@@ -152,35 +115,95 @@ func TestComputeContentStatsCleanCadence(t *testing.T) {
 	}
 	result := &avsync.Result{Beeps: beeps, Flashes: flashes}
 
-	s := computeContentStats(result)
+	s := statsFromResult(result, false, false)
 
-	require.Equal(t, 10, s.flashes)
-	require.Equal(t, 10, s.beeps)
+	require.Equal(t, 10, s.flashCount)
+	require.Equal(t, 10, s.beepCount)
+	require.Greater(t, s.timeToStable, time.Duration(0), "should detect stable region")
 	require.Less(t, s.audioJitter, 5*time.Millisecond, "audio jitter should be ~0")
 	require.Less(t, s.videoJitter, 5*time.Millisecond, "video jitter should be ~0")
 	require.InDelta(t, float64(50*time.Millisecond), float64(s.stableAVSync), float64(5*time.Millisecond))
 	require.GreaterOrEqual(t, s.score, 90.0, "clean recording should score ≥90")
 }
 
+func TestComputeContentStatsMultiParticipantAligned(t *testing.T) {
+	if os.Getenv("INTEGRATION_TYPE") != "" {
+		t.Skip()
+	}
+	// Three participants flashing simultaneously at 1Hz, mixed audio.
+	// All events share the same fracLag (snapped to one NTP timeline).
+	const fracLag = 50 * time.Millisecond
+	var flashes []avsync.Flash
+	for i := 0; i < 10; i++ {
+		t := time.Duration(i+1)*time.Second + fracLag
+		flashes = append(flashes,
+			avsync.Flash{PTS: t, Participant: "p0"},
+			avsync.Flash{PTS: t, Participant: "p1"},
+			avsync.Flash{PTS: t, Participant: "p2"},
+		)
+	}
+	var beeps []avsync.Beep
+	for i := 0; i < 10; i++ {
+		beeps = append(beeps, avsync.Beep{
+			PTS:         time.Duration(i+1)*time.Second + fracLag,
+			Participant: "p0",
+		})
+	}
+	result := &avsync.Result{Beeps: beeps, Flashes: flashes}
+
+	s := statsFromResult(result, false, false)
+
+	require.Equal(t, 30, s.flashCount)
+	require.Equal(t, 10, s.beepCount)
+	require.Greater(t, s.timeToStable, time.Duration(0))
+	require.Less(t, s.audioJitter, 5*time.Millisecond)
+	require.Less(t, s.videoJitter, 5*time.Millisecond)
+	require.Less(t, absDuration(s.stableAVSync), 5*time.Millisecond, "audio and video share the same fracLag")
+	require.GreaterOrEqual(t, s.score, 90.0, "aligned multi-participant should score ≥90")
+}
+
+func TestComputeContentStatsVideoOnly(t *testing.T) {
+	if os.Getenv("INTEGRATION_TYPE") != "" {
+		t.Skip()
+	}
+	// Video-only: fractionalLag falls back to flashes for stabilization.
+	var flashes []avsync.Flash
+	for i := 0; i < 10; i++ {
+		flashes = append(flashes, avsync.Flash{
+			PTS:         time.Duration(i+1) * time.Second,
+			Participant: "p0",
+		})
+	}
+	result := &avsync.Result{Flashes: flashes}
+
+	s := statsFromResult(result, false, true)
+
+	require.Equal(t, 10, s.flashCount)
+	require.Equal(t, 0, s.beepCount)
+	require.Greater(t, s.timeToStable, time.Duration(0), "flash-only recording should still detect stable region")
+	require.GreaterOrEqual(t, s.score, 90.0)
+}
+
 func TestComputeContentStatsEmpty(t *testing.T) {
 	if os.Getenv("INTEGRATION_TYPE") != "" {
 		t.Skip()
 	}
-	s := computeContentStats(&avsync.Result{})
-	require.Equal(t, 0, s.flashes)
-	require.Equal(t, 0, s.beeps)
+	s := statsFromResult(&avsync.Result{}, false, false)
+	require.Equal(t, 0, s.flashCount)
+	require.Equal(t, 0, s.beepCount)
 	require.Equal(t, time.Duration(0), s.timeToStable)
+	require.Equal(t, 0.0, s.score)
 }
 
 func TestScoreContentBrokenRecording(t *testing.T) {
 	if os.Getenv("INTEGRATION_TYPE") != "" {
 		t.Skip()
 	}
-	// Both-track recording that never stabilized — score must be 0 so the
-	// row doesn't disappear from "worst score" in the aggregate.
+	// Recording that never produced a stable fracLag scores 0 so it doesn't
+	// disappear from "worst score" in the aggregate.
 	s := contentStats{
-		audioOnly:    false,
-		videoOnly:    false,
+		beepCount:    10,
+		flashCount:   10,
 		timeToStable: 0,
 	}
 	require.Equal(t, 0.0, scoreContent(s))
@@ -190,12 +213,11 @@ func TestScoreContentAudioOnlyStable(t *testing.T) {
 	if os.Getenv("INTEGRATION_TYPE") != "" {
 		t.Skip()
 	}
-	// Audio-only recording that did stabilize should not hit the broken guard.
 	s := contentStats{
-		audioOnly:         true,
-		timeToStable:      500 * time.Millisecond,
-		timeToStableAudio: 500 * time.Millisecond,
-		audioJitter:       1 * time.Millisecond,
+		audioOnly:    true,
+		beepCount:    10,
+		timeToStable: 500 * time.Millisecond,
+		audioJitter:  1 * time.Millisecond,
 	}
 	require.Greater(t, scoreContent(s), 90.0)
 }
@@ -204,16 +226,16 @@ func TestScoreContentHalfBrokenRecording(t *testing.T) {
 	if os.Getenv("INTEGRATION_TYPE") != "" {
 		t.Skip()
 	}
-	// Both-track recording where audio stabilized but video produced
-	// nothing. AV-sync penalties contribute 0 in this case, so without
-	// the per-side guard the score would be implausibly high.
+	// Both-track recording where audio produced events but video produced
+	// none. AV-sync penalties would contribute 0, so without a guard the
+	// score would be implausibly high.
 	s := contentStats{
-		audioOnly:         false,
-		videoOnly:         false,
-		timeToStableAudio: 500 * time.Millisecond,
-		timeToStableVideo: 0,
-		timeToStable:      500 * time.Millisecond,
-		audioJitter:       1 * time.Millisecond,
+		audioOnly:    false,
+		videoOnly:    false,
+		beepCount:    10,
+		flashCount:   0,
+		timeToStable: 500 * time.Millisecond,
+		audioJitter:  1 * time.Millisecond,
 	}
 	require.Equal(t, 0.0, scoreContent(s))
 }
