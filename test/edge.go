@@ -173,7 +173,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 					videoCodec: types.MimeTypeVP8,
 				},
 				streamOptions: &streamOptions{
-					streamUrls: []string{rtmpUrl4, badRtmpUrl1},
+					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
 					outputType: types.OutputTypeRTMP,
 				},
 				segmentOptions: &segmentOptions{
@@ -513,16 +513,16 @@ func (r *Runner) testEmptyStreamBin(t *testing.T, test *testCase) {
 	require.NoError(t, err)
 
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		rtmpUrl4Redacted:    livekit.StreamInfo_ACTIVE,
+		rtmpUrl1Redacted:    livekit.StreamInfo_ACTIVE,
 		badRtmpUrl1Redacted: livekit.StreamInfo_FAILED,
 	})
 	_, err = r.client.UpdateStream(context.Background(), egressID, &livekit.UpdateStreamRequest{
 		EgressId:         egressID,
-		RemoveOutputUrls: []string{rtmpUrl4},
+		RemoveOutputUrls: []string{rtmpUrl1},
 	})
 	require.NoError(t, err)
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		rtmpUrl4Redacted:    livekit.StreamInfo_FINISHED,
+		rtmpUrl1Redacted:    livekit.StreamInfo_FINISHED,
 		badRtmpUrl1Redacted: livekit.StreamInfo_FAILED,
 	})
 
