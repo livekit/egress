@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -52,18 +53,21 @@ type ProcessManager interface {
 	GetGRPCClient(egressID string) (ipc.EgressHandlerClient, error)
 	KillAll()
 	AbortProcess(egressID string, err error)
-	KillProcess(egressID string, err error)
+	KillProcess(egressID string, reason string, err error)
+	GetKillReason(egressID string) string
 	ProcessFinished(egressID string)
 }
 
 type processManager struct {
 	mu             deadlock.RWMutex
 	activeHandlers map[string]*Process
+	killReasons    map[string]string
 }
 
 func NewProcessManager() ProcessManager {
 	return &processManager{
 		activeHandlers: make(map[string]*Process),
+		killReasons:    make(map[string]string),
 	}
 }
 
@@ -191,9 +195,12 @@ func (pm *processManager) GetGRPCClient(egressID string) (ipc.EgressHandlerClien
 }
 
 func (pm *processManager) KillAll() {
-	pm.mu.RLock()
+	pm.mu.Lock()
 	handlers := slices.Collect(maps.Values(pm.activeHandlers))
-	pm.mu.RUnlock()
+	for _, h := range handlers {
+		pm.killReasons[h.req.EgressId] = stats.ResultKilledShutdown
+	}
+	pm.mu.Unlock()
 
 	for _, h := range handlers {
 		h.kill(errors.ErrShuttingDown)
@@ -205,6 +212,7 @@ func (pm *processManager) AbortProcess(egressID string, err error) {
 	pm.mu.Lock()
 	h, ok := pm.activeHandlers[egressID]
 	if ok {
+		pm.killReasons[egressID] = stats.ResultAborted
 		delete(pm.activeHandlers, egressID)
 	}
 	pm.mu.Unlock()
@@ -217,17 +225,30 @@ func (pm *processManager) AbortProcess(egressID string, err error) {
 	logger.Infow("aborting egress completed", "egressID", egressID)
 }
 
-func (pm *processManager) KillProcess(egressID string, err error) {
+func (pm *processManager) KillProcess(egressID string, reason string, err error) {
 	logger.Infow("killing egress", err, "egressID", egressID)
-	pm.mu.RLock()
+	pm.mu.Lock()
 	h, ok := pm.activeHandlers[egressID]
-	pm.mu.RUnlock()
+	if ok {
+		pm.killReasons[egressID] = reason
+	}
+	pm.mu.Unlock()
 
 	if ok {
 		logger.Errorw("killing handler", err, "egressID", egressID)
 		h.kill(err)
 	}
 	logger.Infow("killing egress completed", "egressID", egressID)
+}
+
+// GetKillReason returns and clears the kill reason for the given egress.
+func (pm *processManager) GetKillReason(egressID string) string {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	reason := pm.killReasons[egressID]
+	delete(pm.killReasons, egressID)
+	return reason
 }
 
 func (pm *processManager) ProcessFinished(egressID string) {
@@ -243,6 +264,7 @@ func (pm *processManager) ProcessFinished(egressID string) {
 	}
 
 	delete(pm.activeHandlers, egressID)
+	delete(pm.killReasons, egressID)
 	logger.Debugw("process finished, deleted from active handlers", "egressID", egressID)
 }
 

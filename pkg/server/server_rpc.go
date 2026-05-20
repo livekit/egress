@@ -37,6 +37,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/logging"
+	"github.com/livekit/egress/pkg/stats"
 )
 
 var (
@@ -157,6 +158,15 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	go func() {
 		err = cmd.Wait()
 		_ = l.Close()
+
+		if reason := s.GetKillReason(info.EgressId); reason != "" {
+			s.monitor.HandlerResult(info.EgressId, reason)
+		} else if err != nil {
+			s.monitor.HandlerResult(info.EgressId, stats.ResultProcessError)
+		} else {
+			s.monitor.HandlerResult(info.EgressId, stats.ResultCompleted)
+		}
+
 		s.processEnded(req, info, err)
 	}()
 	return nil
