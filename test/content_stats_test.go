@@ -42,9 +42,9 @@ func statsFromResult(result *avsync.Result, audioOnly, videoOnly bool) contentSt
 		}
 	}
 	dur := last + 2*time.Second
-	fracLag, earliest := fractionalLag(result)
+	fracLag, earliest, locked := fractionalLag(result)
 	obs := quantize(result, dur, fracLag)
-	return computeContentStats(obs, fracLag, earliest, audioOnly, videoOnly)
+	return computeContentStats(obs, fracLag, earliest, locked, audioOnly, videoOnly)
 }
 
 func TestNormalize(t *testing.T) {
@@ -63,6 +63,7 @@ func TestScoreContentPerfect(t *testing.T) {
 		t.Skip()
 	}
 	s := contentStats{
+		locked:          true,
 		beepCount:       10,
 		flashCount:      10,
 		avSyncStdDev:    1 * time.Millisecond,
@@ -81,6 +82,7 @@ func TestScoreContentTerrible(t *testing.T) {
 		t.Skip()
 	}
 	s := contentStats{
+		locked:          true,
 		beepCount:       10,
 		flashCount:      10,
 		avSyncStdDev:    500 * time.Millisecond,
@@ -214,6 +216,7 @@ func TestScoreContentAudioOnlyStable(t *testing.T) {
 		t.Skip()
 	}
 	s := contentStats{
+		locked:       true,
 		audioOnly:    true,
 		beepCount:    10,
 		timeToStable: 500 * time.Millisecond,
@@ -230,6 +233,7 @@ func TestScoreContentHalfBrokenRecording(t *testing.T) {
 	// none. AV-sync penalties would contribute 0, so without a guard the
 	// score would be implausibly high.
 	s := contentStats{
+		locked:       true,
 		audioOnly:    false,
 		videoOnly:    false,
 		beepCount:    10,
@@ -238,4 +242,22 @@ func TestScoreContentHalfBrokenRecording(t *testing.T) {
 		audioJitter:  1 * time.Millisecond,
 	}
 	require.Equal(t, 0.0, scoreContent(s))
+}
+
+func TestScoreContentLockedAtZero(t *testing.T) {
+	if os.Getenv("INTEGRATION_TYPE") != "" {
+		t.Skip()
+	}
+	// A recording that locks at PTS=0 (first event on integer second) must
+	// still score normally — the only signal for "no lock found" is the
+	// `locked` flag, not `timeToStable == 0`. Reproduces the H264 sample
+	// case (25fps, first flash on frame 0 → earliest=0).
+	s := contentStats{
+		locked:       true,
+		videoOnly:    true,
+		flashCount:   29,
+		timeToStable: 0,
+		videoJitter:  1 * time.Millisecond,
+	}
+	require.Greater(t, scoreContent(s), 90.0)
 }

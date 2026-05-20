@@ -52,12 +52,11 @@ type contentStats struct {
 	tracks          int
 
 	// Sanity counters (in JSON/log only, not in summary tables).
-	flashCount      int
-	beepCount       int
-	expectedFlashes int
-	expectedBeeps   int
+	flashCount int
+	beepCount  int
 
 	// Stabilization.
+	locked          bool // fractionalLag found a locking gap (a stable region exists)
 	timeToStable    time.Duration
 	warmupMaxAVSync time.Duration
 
@@ -82,8 +81,8 @@ var (
 // recordContentStats computes stats from the quantized observation and
 // recording-lag values produced upstream by fractionalLag/quantize, logs
 // the row (for Datadog), and appends to allStats. Safe for concurrent calls.
-func recordContentStats(tc *testCase, obs *observation, fracLag, earliest time.Duration, output, format string) {
-	s := computeContentStats(obs, fracLag, earliest, tc.audioOnly, tc.videoOnly)
+func recordContentStats(tc *testCase, obs *observation, fracLag, earliest time.Duration, locked bool, output, format string) {
+	s := computeContentStats(obs, fracLag, earliest, locked, tc.audioOnly, tc.videoOnly)
 
 	s.integrationType = os.Getenv("INTEGRATION_TYPE")
 	s.test = tc.name
@@ -111,8 +110,6 @@ func recordContentStats(tc *testCase, obs *observation, fracLag, earliest time.D
 		"score", s.score,
 		"flashes", s.flashCount,
 		"beeps", s.beepCount,
-		"expectedFlashes", s.expectedFlashes,
-		"expectedBeeps", s.expectedBeeps,
 		"timeToStable", s.timeToStable,
 		"warmupMaxAVSync", s.warmupMaxAVSync,
 		"audioJitter", s.audioJitter,
@@ -137,10 +134,11 @@ func recordContentStats(tc *testCase, obs *observation, fracLag, earliest time.D
 // is 0 by construction (fracLag is inferred from the beep timeline);
 // flashes' fracOffsets relative to the same reference reveal the AV-sync
 // gap and its drift across the recording.
-func computeContentStats(obs *observation, fracLag, earliest time.Duration, audioOnly, videoOnly bool) contentStats {
+func computeContentStats(obs *observation, fracLag, earliest time.Duration, locked, audioOnly, videoOnly bool) contentStats {
 	var s contentStats
 	s.audioOnly = audioOnly
 	s.videoOnly = videoOnly
+	s.locked = locked
 	s.timeToStable = earliest
 
 	if obs == nil {
@@ -153,8 +151,10 @@ func computeContentStats(obs *observation, fracLag, earliest time.Duration, audi
 		s.flashCount += len(sec.flashes)
 	}
 
-	if earliest == 0 {
+	if !locked {
 		// fractionalLag never found a locking gap — no stable region.
+		// (earliest == 0 with locked == true is legitimate — e.g., H264
+		// sample at 25fps with first flash on frame 0.)
 		s.score = math.Round(scoreContent(s)*10) / 10
 		return s
 	}
@@ -224,9 +224,11 @@ func computeContentStats(obs *observation, fracLag, earliest time.Duration, audi
 // with zero events would silently score 100 and disappear from the
 // "worst score" column of the aggregate table.
 func scoreContent(s contentStats) float64 {
-	if s.timeToStable == 0 {
-		// Merged event stream never settled to a stable fracLag — no
-		// usable signal to score against.
+	if !s.locked {
+		// fractionalLag never found a locking gap — no usable signal to
+		// score against. (timeToStable == 0 alone is NOT a broken signal:
+		// it can mean the recording locked from the very first event,
+		// e.g., H264 sample at 25fps with first flash on frame 0.)
 		return 0
 	}
 	if !s.audioOnly && !s.videoOnly && (s.beepCount == 0 || s.flashCount == 0) {
@@ -384,8 +386,6 @@ func DumpContentStats() {
 			"tracks":          s.tracks,
 			"flashes":         flashes,
 			"beeps":           beeps,
-			"expectedFlashes": s.expectedFlashes,
-			"expectedBeeps":   s.expectedBeeps,
 			"score":           s.score,
 			"timeToStable":    s.timeToStable.Seconds(),
 			"warmupMaxAVSync": warmupMaxAVSync,

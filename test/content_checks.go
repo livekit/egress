@@ -114,10 +114,10 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 	require.NoError(t, err)
 
 	dur, _ := parseFFProbeDuration(info.Format.Duration)
-	fracLag, earliest := fractionalLag(result)
+	fracLag, earliest, locked := fractionalLag(result)
 	obs := quantize(result, dur, fracLag)
 
-	recordContentStats(tc, obs, fracLag, earliest, output, format)
+	recordContentStats(tc, obs, fracLag, earliest, locked, output, format)
 
 	plan := tc.plan
 	if plan == nil {
@@ -196,12 +196,15 @@ func quantize(result *avsync.Result, dur time.Duration, fracLag time.Duration) *
 // cadence locks (earliest). earliest serves as the recording's
 // "timeToStable" — all events at or after this point land at the same
 // fracLag once the sync engine has snapped tracks onto the NTP timeline.
+// ok is false when no locking gap was found (broken recording); a true
+// ok with earliest == 0 is legitimate (e.g., H264 sample at 25fps with
+// its first flash on frame 0).
 //
 // Prefers beeps; falls back to flashes for video-only recordings so they
 // still produce a meaningful lag and stabilization time.
-func fractionalLag(result *avsync.Result) (fracLag, earliest time.Duration) {
+func fractionalLag(result *avsync.Result) (fracLag, earliest time.Duration, ok bool) {
 	if result == nil {
-		return 0, 0
+		return 0, 0, false
 	}
 
 	grouped := make(map[string][]time.Duration)
@@ -215,7 +218,7 @@ func fractionalLag(result *avsync.Result) (fracLag, earliest time.Duration) {
 			grouped[f.Participant] = append(grouped[f.Participant], f.PTS)
 		}
 	default:
-		return 0, 0
+		return 0, 0, false
 	}
 	for _, ptsList := range grouped {
 		sort.Slice(ptsList, func(i, j int) bool { return ptsList[i] < ptsList[j] })
@@ -245,9 +248,9 @@ func fractionalLag(result *avsync.Result) (fracLag, earliest time.Duration) {
 		}
 	}
 	if earliest < 0 {
-		return 0, 0
+		return 0, 0, false
 	}
-	return earliest % time.Second, earliest
+	return earliest % time.Second, earliest, true
 }
 
 // expectedBeepsBySec projects the plan timeline into per-integer-second
