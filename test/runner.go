@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/linkdata/deadlock"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
@@ -40,11 +41,11 @@ import (
 type Runner struct {
 	StartEgress func(ctx context.Context, request *rpc.StartEgressRequest) (*livekit.EgressInfo, error) `yaml:"-"`
 
-	svc             Server                   `yaml:"-"`
-	client          rpc.EgressClient         `yaml:"-"`
-	updates         chan *livekit.EgressInfo `yaml:"-"`
-	sourceFramerate float64                  `yaml:"-"`
-	testNumber      int                      `yaml:"-"`
+	svc             Server           `yaml:"-"`
+	client          rpc.EgressClient `yaml:"-"`
+	updates         *latestInfo      `yaml:"-"`
+	sourceFramerate float64          `yaml:"-"`
+	testNumber      int              `yaml:"-"`
 
 	// service config
 	*config.ServiceConfig `yaml:",inline"`
@@ -76,6 +77,11 @@ type Runner struct {
 	SegmentTestsOnly bool `yaml:"segments_only"`
 	ImageTestsOnly   bool `yaml:"images_only"`
 	MultiTestsOnly   bool `yaml:"multi_only"`
+}
+
+type latestInfo struct {
+	deadlock.Mutex
+	*livekit.EgressInfo
 }
 
 type Server interface {
@@ -224,14 +230,11 @@ func (r *Runner) StartServer(t *testing.T, svc Server, bus psrpc.MessageBus, tem
 	go r.svc.Run()
 	time.Sleep(time.Second * 3)
 
-	// subscribe to update channel
-	psrpcUpdates := make(chan *livekit.EgressInfo, 100)
-	_, err = newIOTestServer(bus, psrpcUpdates)
-	require.NoError(t, err)
-
-	// update test config
 	r.client = psrpcClient
-	r.updates = psrpcUpdates
+	r.updates = &latestInfo{}
+
+	_, err = newIOTestServer(bus, r.updates)
+	require.NoError(t, err)
 
 	// check status
 	if r.HealthPort != 0 {

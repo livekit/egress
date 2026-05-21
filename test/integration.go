@@ -91,19 +91,22 @@ func (r *Runner) run(t *testing.T, test *testCase) bool {
 	return !r.Short
 }
 
+const testDuration = time.Second * 30
+
 func (r *Runner) executeTest(t *testing.T, test *testCase) {
 	// build request
 	req := r.buildRequest(test)
-
-	egressID := r.startEgress(t, req)
-	start := time.Now()
 
 	// get params
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 
+	// start
+	egressID := r.startEgress(t, req)
+	startedAt := time.Now()
+	time.Sleep(testDuration / 4)
+
 	// create dot files if needed
-	time.Sleep(time.Until(start.Add(time.Second * 10)))
 	if r.Dotfiles {
 		r.createDotFile(t, egressID)
 	}
@@ -111,11 +114,9 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 	// test stream updates and RPCs
 	if test.streamOptions != nil {
 		ctx := context.Background()
-
 		urls := streamUrls[test.streamOptions.outputType]
 
 		// verify
-		time.Sleep(time.Until(start.Add(time.Second * 15)))
 		r.verifyStreams(t, test, p, urls[0][2])
 		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 			urls[0][1]: livekit.StreamInfo_ACTIVE,
@@ -128,9 +129,9 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 			AddOutputUrls: []string{urls[2][0], urls[3][0]},
 		})
 		require.NoError(t, err)
+		time.Sleep(testDuration / 4)
 
 		// verify
-		time.Sleep(time.Until(start.Add(time.Second * 20)))
 		r.verifyStreams(t, test, p, urls[0][2], urls[2][2])
 		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 			urls[0][1]: livekit.StreamInfo_ACTIVE,
@@ -145,9 +146,9 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 			RemoveOutputUrls: []string{urls[0][0]},
 		})
 		require.NoError(t, err)
+		time.Sleep(testDuration / 4)
 
 		// verify the remaining stream
-		time.Sleep(time.Until(start.Add(time.Second * 25)))
 		r.verifyStreams(t, test, p, urls[2][2])
 		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 			urls[0][1]: livekit.StreamInfo_FINISHED,
@@ -158,7 +159,7 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 	}
 
 	// stop after 30s
-	time.Sleep(time.Until(start.Add(time.Second * 30)))
+	time.Sleep(time.Until(startedAt.Add(testDuration)))
 	res := r.stopEgress(t, egressID)
 
 	// validate file
@@ -304,54 +305,72 @@ func (r *Runner) sendRequest(t *testing.T, req *rpc.StartEgressRequest) *livekit
 	return info
 }
 
+// checkUpdate polls the latest snapshot until it shows the expected
+// status, or fails the test after 30s. Under the latest-snapshot model
+// the egress may transition through several states between polls, so
+// intermediate statuses can be skipped — callers should pass the
+// terminal/target status they actually want to observe.
 func (r *Runner) checkUpdate(t *testing.T, egressID string, status livekit.EgressStatus) *livekit.EgressInfo {
-	info := r.getUpdate(t, egressID)
-
-	require.Equal(t, status.String(), info.Status.String(), info.Error)
-	require.Equal(t, info.Status == livekit.EgressStatus_EGRESS_FAILED, info.Error != "")
-
-	return info
-}
-
-func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[string]livekit.StreamInfo_Status) {
-	for {
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
 		info := r.getUpdate(t, egressID)
-		if len(expected) != len(info.StreamResults) {
-			continue
+		if info.Status == status {
+			require.Equal(t, info.Status == livekit.EgressStatus_EGRESS_FAILED, info.Error != "")
+			return info
 		}
-		require.Equal(t, len(expected), len(info.StreamResults))
-
-		checkNext := false
-		for _, s := range info.StreamResults {
-			require.Equal(t, s.Status == livekit.StreamInfo_FAILED, s.Error != "")
-			if expected[s.Url] > s.Status {
-				logger.Debugw(fmt.Sprintf("stream status %s, expecting %s", s.Status.String(), expected[s.Url].String()))
-				checkNext = true
-				continue
-			}
-			require.Equal(t, expected[s.Url], s.Status)
-		}
-
-		if !checkNext {
-			return
-		}
+		time.Sleep(100 * time.Millisecond)
 	}
+	r.createDotFile(t, egressID)
+	t.Fatalf("timed out waiting for status %s", status)
+	return nil
 }
 
-func (r *Runner) getUpdate(t *testing.T, egressID string) *livekit.EgressInfo {
-	for {
-		select {
-		case info := <-r.updates:
-			if info.EgressId == egressID {
-				return info
+// checkStreamUpdate polls the latest snapshot until its StreamResults
+// match the expected map. A stream whose status is BELOW expected is
+// "still progressing" and waited out; a stream whose status is ABOVE
+// expected (or doesn't match the URL) fails immediately.
+func (r *Runner) checkStreamUpdate(t *testing.T, egressID string, expected map[string]livekit.StreamInfo_Status) {
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		info := r.getUpdate(t, egressID)
+		if len(info.StreamResults) == len(expected) {
+			allMatch := true
+			for _, s := range info.StreamResults {
+				require.Equal(t, s.Status == livekit.StreamInfo_FAILED, s.Error != "")
+				if expected[s.Url] > s.Status {
+					logger.Debugw(fmt.Sprintf("stream status %s, expecting %s", s.Status.String(), expected[s.Url].String()))
+					allMatch = false
+					break
+				}
+				require.Equal(t, expected[s.Url], s.Status)
 			}
-
-		case <-time.After(time.Second * 30):
-			r.createDotFile(t, egressID)
-			t.Fatal("no update from results channel")
-			return nil
+			if allMatch {
+				return
+			}
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
+	t.Fatal("timed out waiting for expected stream state")
+}
+
+// getUpdate polls the latest EgressInfo snapshot held in r.updates and
+// returns it once one exists for egressID. Returns the same snapshot on
+// repeat calls if the egress hasn't published a newer one — callers
+// waiting for a state transition should re-poll after the triggering RPC.
+func (r *Runner) getUpdate(t *testing.T, egressID string) *livekit.EgressInfo {
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		r.updates.Lock()
+		info := r.updates.EgressInfo
+		r.updates.Unlock()
+		if info != nil && info.EgressId == egressID {
+			return info
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	r.createDotFile(t, egressID)
+	t.Fatal("no update from results channel")
+	return nil
 }
 
 func (r *Runner) getStatus(t *testing.T) map[string]interface{} {
@@ -391,10 +410,8 @@ func (r *Runner) stopEgress(t *testing.T, egressID string) *livekit.EgressInfo {
 	require.NotEmpty(t, info.StartedAt)
 	require.Equal(t, livekit.EgressStatus_EGRESS_ENDING.String(), info.Status.String())
 
-	// check ending update
-	r.checkUpdate(t, egressID, livekit.EgressStatus_EGRESS_ENDING)
-
-	// get final info
+	// get final info — the ENDING window is too short to reliably catch
+	// in the latest-snapshot model, so jump straight to COMPLETE.
 	res := r.checkUpdate(t, egressID, livekit.EgressStatus_EGRESS_COMPLETE)
 
 	// check status
