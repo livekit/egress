@@ -93,8 +93,6 @@ aggregate=$(jq -r '
     worstScore:  worstScore,
     medianTimeToStable:      medianAbs("timeToStable"),
     worstTimeToStable:       maxAbs("timeToStable"),
-    medianWarmupMaxAVSync:   medianAbs("warmupMaxAVSync"),
-    worstWarmupMaxAVSync:    maxAbs("warmupMaxAVSync"),
     medianAudioJitter:       medianAbs("audioJitter"),
     worstAudioJitter:        maxAbs("audioJitter"),
     medianVideoJitter:       medianAbs("videoJitter"),
@@ -107,13 +105,12 @@ aggregate=$(jq -r '
     worstMaxAVSync:          maxAbs("maxAVSync"),
   }) | sort_by(.worstScore) |
   (
-    "| requestType | source | outputs | tracks | score | timeToStable | warmupMaxAVSync | audioJitter | videoJitter | avSync | avSyncStdDev | maxAVSync |",
-    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    "| requestType | source | outputs | tracks | score | timeToStable | audioJitter | videoJitter | avSync | avSyncStdDev | maxAVSync |",
+    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     (.[] |
       "| \(.requestType) | \(.source) | \(.outputs) | \(.tracks) " +
       "| \(.medianScore) / \(.worstScore) " +
       "| \(fmtDur(.medianTimeToStable)) / \(fmtDur(.worstTimeToStable)) " +
-      "| \(fmtDur(.medianWarmupMaxAVSync)) / \(fmtDur(.worstWarmupMaxAVSync)) " +
       "| \(fmtDur(.medianAudioJitter)) / \(fmtDur(.worstAudioJitter)) " +
       "| \(fmtDur(.medianVideoJitter)) / \(fmtDur(.worstVideoJitter)) " +
       "| \(fmtSigned(.medianAVSync)) / \(fmtSigned(.worstAVSync)) " +
@@ -141,12 +138,11 @@ detail=$(jq -r '
 
   sort_by(.score) |
   (
-    "| test | requestType | source | output | tracks | score | timeToStable | warmupMaxAVSync | audioJitter | videoJitter | avSync | avSyncStdDev | maxAVSync |",
-    "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    "| test | requestType | source | output | tracks | score | timeToStable | audioJitter | videoJitter | avSync | avSyncStdDev | maxAVSync |",
+    "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     (.[] |
       "| \(.test) | \(.requestType) | \(.source) | \(fmtOutput) | \(.tracks) | \(.score) " +
       "| \(.timeToStable | fmtDur) " +
-      "| \(.warmupMaxAVSync | fmtDur) " +
       "| \(.audioJitter | fmtDur) " +
       "| \(.videoJitter | fmtDur) " +
       "| \(.avSync | fmtSigned) " +

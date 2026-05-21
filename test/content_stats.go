@@ -56,9 +56,8 @@ type contentStats struct {
 	beepCount  int
 
 	// Stabilization.
-	locked          bool // observation produced a stable region
-	timeToStable    time.Duration
-	warmupMaxAVSync time.Duration
+	locked       bool // observation produced a stable region
+	timeToStable time.Duration
 
 	// Post-stable steady state.
 	audioJitter  time.Duration
@@ -111,7 +110,6 @@ func recordContentStats(tc *testCase, obs *observation, output, format string) {
 		"flashes", s.flashCount,
 		"beeps", s.beepCount,
 		"timeToStable", s.timeToStable,
-		"warmupMaxAVSync", s.warmupMaxAVSync,
 		"audioJitter", s.audioJitter,
 		"videoJitter", s.videoJitter,
 		"avSync", s.stableAVSync,
@@ -162,8 +160,11 @@ func computeContentStats(obs *observation, audioOnly, videoOnly bool) contentSta
 	}
 
 	var audioFracs, videoFracs []time.Duration
-	var stableDiffs, warmupDiffs []time.Duration
+	var stableDiffs []time.Duration
 	for i, sec := range obs.buckets {
+		if i < stableBucket {
+			continue
+		}
 		if len(sec.beeps) == 0 && len(sec.flashes) == 0 {
 			continue
 		}
@@ -179,18 +180,10 @@ func computeContentStats(obs *observation, audioOnly, videoOnly bool) contentSta
 			}
 		}
 
-		isStable := i >= stableBucket
-		if isStable {
-			audioFracs = append(audioFracs, aFracs...)
-			videoFracs = append(videoFracs, vFracs...)
-		}
+		audioFracs = append(audioFracs, aFracs...)
+		videoFracs = append(videoFracs, vFracs...)
 		if len(aFracs) > 0 && len(vFracs) > 0 {
-			diff := medianDuration(vFracs) - medianDuration(aFracs)
-			if isStable {
-				stableDiffs = append(stableDiffs, diff)
-			} else {
-				warmupDiffs = append(warmupDiffs, diff)
-			}
+			stableDiffs = append(stableDiffs, medianDuration(vFracs)-medianDuration(aFracs))
 		}
 	}
 
@@ -205,11 +198,6 @@ func computeContentStats(obs *observation, audioOnly, videoOnly bool) contentSta
 			if a := absDuration(d); a > s.maxAVSync {
 				s.maxAVSync = a
 			}
-		}
-	}
-	for _, d := range warmupDiffs {
-		if a := absDuration(d); a > s.warmupMaxAVSync {
-			s.warmupMaxAVSync = a
 		}
 	}
 
@@ -242,18 +230,16 @@ func scoreContent(s contentStats) float64 {
 	}
 
 	score := 100.0
-
-	score -= 25.0 * normalize(durMs(s.avSyncStdDev), 10, 50)
+	score -= 20.0 * normalize(durMs(s.avSyncStdDev), 10, 50)
 	score -= 20.0 * normalize(durMs(absDuration(s.stableAVSync)), 50, 300)
-	score -= 10.0 * normalize(durMs(s.audioJitter), 5, 50)
-	score -= 10.0 * normalize(durMs(s.videoJitter), 5, 50)
+	score -= 20.0 * normalize(durMs(s.audioJitter), 5, 50)
+	score -= 20.0 * normalize(durMs(s.videoJitter), 5, 50)
 	score -= 10.0 * normalize(durMs(s.maxAVSync), 100, 500)
 	score -= 10.0 * normalize(durSec(s.timeToStable), 1, 10)
-	score -= 15.0 * normalize(durMs(s.warmupMaxAVSync), 500, 2000)
-
 	if score < 0 {
 		score = 0
 	}
+
 	return score
 }
 
@@ -270,14 +256,14 @@ func normalize(value, good, bad float64) float64 {
 // deriveSource buckets requestType into "web" or "sdk".
 func deriveSource(requestType string) string {
 	switch requestType {
-	case string(types.RequestTypeWeb),
-		string(types.RequestTypeRoomComposite),
-		string(types.RequestTypeTemplate):
+	case types.RequestTypeWeb,
+		types.RequestTypeRoomComposite,
+		types.RequestTypeTemplate:
 		return "web"
-	case string(types.RequestTypeParticipant),
-		string(types.RequestTypeTrackComposite),
-		string(types.RequestTypeTrack),
-		string(types.RequestTypeMedia):
+	case types.RequestTypeParticipant,
+		types.RequestTypeTrackComposite,
+		types.RequestTypeTrack,
+		types.RequestTypeMedia:
 		return "sdk"
 	}
 	return ""
@@ -354,14 +340,13 @@ func DumpContentStats() {
 		// format (e.g., "1m30s"). The structured log line above keeps
 		// time.Duration values for human readability.
 		var (
-			flashes         any = s.flashCount
-			videoJitter     any = s.videoJitter.Seconds()
-			beeps           any = s.beepCount
-			audioJitter     any = s.audioJitter.Seconds()
-			warmupMaxAVSync any = s.warmupMaxAVSync.Seconds()
-			stableAVSync    any = s.stableAVSync.Seconds()
-			avSyncStdDev    any = s.avSyncStdDev.Seconds()
-			maxAVSync       any = s.maxAVSync.Seconds()
+			flashes      any = s.flashCount
+			videoJitter  any = s.videoJitter.Seconds()
+			beeps        any = s.beepCount
+			audioJitter  any = s.audioJitter.Seconds()
+			stableAVSync any = s.stableAVSync.Seconds()
+			avSyncStdDev any = s.avSyncStdDev.Seconds()
+			maxAVSync    any = s.maxAVSync.Seconds()
 		)
 		if s.audioOnly {
 			flashes, videoJitter = nil, nil
@@ -370,7 +355,7 @@ func DumpContentStats() {
 			beeps, audioJitter = nil, nil
 		}
 		if s.audioOnly || s.videoOnly {
-			warmupMaxAVSync, stableAVSync, avSyncStdDev, maxAVSync = nil, nil, nil, nil
+			stableAVSync, avSyncStdDev, maxAVSync = nil, nil, nil
 		}
 
 		out = append(out, map[string]any{
@@ -390,7 +375,6 @@ func DumpContentStats() {
 			"beeps":           beeps,
 			"score":           s.score,
 			"timeToStable":    s.timeToStable.Seconds(),
-			"warmupMaxAVSync": warmupMaxAVSync,
 			"audioJitter":     audioJitter,
 			"videoJitter":     videoJitter,
 			"avSync":          stableAVSync,

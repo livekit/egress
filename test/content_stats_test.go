@@ -57,7 +57,6 @@ func TestScoreContentPerfect(t *testing.T) {
 		videoJitter:     1 * time.Millisecond,
 		maxAVSync:       1 * time.Millisecond,
 		timeToStable:    100 * time.Millisecond,
-		warmupMaxAVSync: 100 * time.Millisecond,
 	}
 	require.Equal(t, 100.0, scoreContent(s))
 }
@@ -76,7 +75,6 @@ func TestScoreContentTerrible(t *testing.T) {
 		videoJitter:     500 * time.Millisecond,
 		maxAVSync:       2 * time.Second,
 		timeToStable:    30 * time.Second,
-		warmupMaxAVSync: 5 * time.Second,
 	}
 	require.Equal(t, 0.0, scoreContent(s))
 }
