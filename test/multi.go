@@ -45,7 +45,6 @@ func (r *Runner) testMulti(t *testing.T) {
 				imageOptions: &imageOptions{
 					prefix: "rc_image",
 				},
-				multi: true,
 			},
 
 			// ---------- Web ----------
@@ -60,7 +59,6 @@ func (r *Runner) testMulti(t *testing.T) {
 					prefix:   "web_multiple_{time}",
 					playlist: "web_multiple_{time}.m3u8",
 				},
-				multi: true,
 			},
 
 			// ------ Participant ------
@@ -84,7 +82,6 @@ func (r *Runner) testMulti(t *testing.T) {
 					prefix:   "participant_{publisher_identity}_multi_{time}",
 					playlist: "participant_{publisher_identity}_multi_{time}.m3u8",
 				},
-				multi: true,
 			},
 
 			// ---- Track Composite ----
@@ -103,7 +100,6 @@ func (r *Runner) testMulti(t *testing.T) {
 					prefix:   "tc_multiple_{time}",
 					playlist: "tc_multiple_{time}.m3u8",
 				},
-				multi: true,
 			},
 		} {
 			if !r.run(t, test) {

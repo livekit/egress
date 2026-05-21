@@ -35,7 +35,6 @@ import (
 )
 
 const (
-	numWorkers                     = 5
 	maxBackoff                     = time.Minute * 1
 	unhealthyShutdownWatchdogDelay = 10 * time.Minute
 )

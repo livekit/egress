@@ -91,19 +91,22 @@ func (r *Runner) run(t *testing.T, test *testCase) bool {
 	return !r.Short
 }
 
+const testDuration = time.Second * 30
+
 func (r *Runner) executeTest(t *testing.T, test *testCase) {
 	// build request
 	req := r.buildRequest(test)
-
-	egressID := r.startEgress(t, req)
-	start := time.Now()
 
 	// get params
 	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
 	require.NoError(t, err)
 
+	// start
+	egressID := r.startEgress(t, req)
+	startedAt := time.Now()
+	time.Sleep(testDuration / 4)
+
 	// create dot files if needed
-	time.Sleep(time.Until(start.Add(time.Second * 10)))
 	if r.Dotfiles {
 		r.createDotFile(t, egressID)
 	}
@@ -111,11 +114,9 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 	// test stream updates and RPCs
 	if test.streamOptions != nil {
 		ctx := context.Background()
-
 		urls := streamUrls[test.streamOptions.outputType]
 
 		// verify
-		time.Sleep(time.Until(start.Add(time.Second * 15)))
 		r.verifyStreams(t, test, p, urls[0][2])
 		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 			urls[0][1]: livekit.StreamInfo_ACTIVE,
@@ -128,9 +129,9 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 			AddOutputUrls: []string{urls[2][0], urls[3][0]},
 		})
 		require.NoError(t, err)
+		time.Sleep(testDuration / 4)
 
 		// verify
-		time.Sleep(time.Until(start.Add(time.Second * 20)))
 		r.verifyStreams(t, test, p, urls[0][2], urls[2][2])
 		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 			urls[0][1]: livekit.StreamInfo_ACTIVE,
@@ -145,9 +146,9 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 			RemoveOutputUrls: []string{urls[0][0]},
 		})
 		require.NoError(t, err)
+		time.Sleep(testDuration / 4)
 
 		// verify the remaining stream
-		time.Sleep(time.Until(start.Add(time.Second * 25)))
 		r.verifyStreams(t, test, p, urls[2][2])
 		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
 			urls[0][1]: livekit.StreamInfo_FINISHED,
@@ -158,7 +159,7 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 	}
 
 	// stop after 30s
-	time.Sleep(time.Until(start.Add(time.Second * 30)))
+	time.Sleep(time.Until(startedAt.Add(testDuration)))
 	res := r.stopEgress(t, egressID)
 
 	// validate file
