@@ -19,6 +19,8 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
+
+	"github.com/livekit/egress/pkg/types"
 )
 
 func (m *Monitor) initPrometheus() {
@@ -97,6 +99,13 @@ func (m *Monitor) initPrometheus() {
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	})
 
+	m.handlerResults = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "handler_results_total",
+		Help:        "Total number of egress handler outcomes, by result",
+		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+	}, []string{"type", "result"})
 	m.promLoadRatio = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   "livekit",
 		Name:        "load_ratio",
@@ -110,8 +119,62 @@ func (m *Monitor) initPrometheus() {
 		m.promCgroupMemory,
 		m.promCgroupReadSuccess, m.promProcRSS,
 		m.promWouldRejectCgroup,
+		m.handlerResults,
 		m.promLoadRatio,
 	)
+}
+
+// Handler-level results (livekit_egress_handler_results_total)
+const (
+	ResultCompleted      = "completed"
+	ResultAborted        = "aborted"
+	ResultKilledCPU      = "killed_cpu"
+	ResultKilledOOM      = "killed_oom"
+	ResultKilledShutdown = "killed_shutdown"
+	ResultProcessError   = "process_error"
+)
+
+func requestTypeFromReq(req *rpc.StartEgressRequest) string {
+	switch r := req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite:
+		return types.RequestTypeRoomComposite
+	case *rpc.StartEgressRequest_Web:
+		return types.RequestTypeWeb
+	case *rpc.StartEgressRequest_Participant:
+		return types.RequestTypeParticipant
+	case *rpc.StartEgressRequest_TrackComposite:
+		return types.RequestTypeTrackComposite
+	case *rpc.StartEgressRequest_Track:
+		return types.RequestTypeTrack
+	case *rpc.StartEgressRequest_Replay:
+		switch r.Replay.Source.(type) {
+		case *livekit.ExportReplayRequest_Template:
+			return types.RequestTypeTemplate
+		case *livekit.ExportReplayRequest_Web:
+			return types.RequestTypeWeb
+		case *livekit.ExportReplayRequest_Media:
+			return types.RequestTypeMedia
+		}
+	}
+	return "unknown"
+}
+
+func (m *Monitor) HandlerResult(egressID string, result string) {
+	m.mu.Lock()
+	reqType := "unknown"
+	if ps := m.pending[egressID]; ps != nil {
+		reqType = ps.requestType
+	} else {
+		for _, s := range m.procStats {
+			if s.egressID == egressID {
+				reqType = s.requestType
+				break
+			}
+		}
+	}
+	m.mu.Unlock()
+
+	m.handlerResults.With(prometheus.Labels{"type": reqType, "result": result}).Inc()
 }
 
 func (m *Monitor) promIsIdle() float64 {

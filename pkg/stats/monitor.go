@@ -49,7 +49,7 @@ type Service interface {
 	IsIdle() bool
 	IsDisabled() bool
 	IsTerminating() bool
-	KillProcess(string, error)
+	KillProcess(egressID string, reason string, err error)
 }
 
 type Monitor struct {
@@ -63,6 +63,7 @@ type Monitor struct {
 	promProcRSS           prometheus.Gauge
 	promWouldRejectCgroup prometheus.Gauge
 	requestGauge          *prometheus.GaugeVec
+	handlerResults        *prometheus.CounterVec
 	promLoadRatio         *prometheus.GaugeVec
 
 	svc                 Service
@@ -87,7 +88,8 @@ type Monitor struct {
 }
 
 type processStats struct {
-	egressID string
+	egressID    string
+	requestType string
 
 	pendingCPU float64
 	lastCPU    float64
@@ -414,8 +416,10 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		}
 	}
 
+	reqType := requestTypeFromReq(req)
 	ps := &processStats{
 		egressID:     req.EgressId,
+		requestType:  reqType,
 		pendingCPU:   cpuHold,
 		allowedCPU:   cpuHold,
 		countedAsWeb: countedAsWeb,
@@ -650,7 +654,7 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 		if m.requests.Load() > 1 {
 			m.highCPUDuration++
 			if m.highCPUDuration >= minKillDuration {
-				m.svc.KillProcess(maxCPUEgress, errors.ErrCPUExhausted(maxCPU))
+				m.svc.KillProcess(maxCPUEgress, ResultKilledCPU, errors.ErrCPUExhausted(maxCPU))
 				m.highCPUDuration = 0
 			}
 		}
@@ -822,7 +826,7 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string, maxMemoryGroup *hwstat
 					"egressID", maxMemoryEgress, "processes", maxMemoryGroup.Procs)
 			}
 			// Report the actual memory that triggered the kill, not per-process max
-			m.svc.KillProcess(maxMemoryEgress, errors.ErrOOM(killTriggerGB))
+			m.svc.KillProcess(maxMemoryEgress, ResultKilledOOM, errors.ErrOOM(killTriggerGB))
 			m.highMemoryStart = time.Time{}
 		}
 	} else {
