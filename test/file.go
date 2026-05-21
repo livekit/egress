@@ -510,48 +510,11 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 			},
 		} {
-			if !r.run(t, test, r.runFileTest) {
+			if !r.run(t, test) {
 				return
 			}
 		}
 	})
-}
-
-func (r *Runner) runFileTest(t *testing.T, test *testCase) {
-	req := r.buildRequest(test)
-
-	// start
-	egressID := r.startEgress(t, req)
-
-	time.Sleep(time.Second * 10)
-	if r.Dotfiles {
-		r.createDotFile(t, egressID)
-	}
-
-	// stop
-	time.Sleep(time.Second * 15)
-	res := r.stopEgress(t, egressID)
-
-	// get params
-	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
-	require.NoError(t, err)
-	if p.GetFileConfig().OutputType == types.OutputTypeUnknownFile {
-		p.GetFileConfig().OutputType = test.fileOptions.outputType
-	}
-
-	var expectedVideoEncoding bool
-	switch test.requestType {
-	case types.RequestTypeTrack:
-		expectedVideoEncoding = false
-	case types.RequestTypeParticipant:
-		expectedVideoEncoding = true
-	default:
-		expectedVideoEncoding = !test.audioOnly
-	}
-	require.Equal(t, expectedVideoEncoding, p.VideoEncoding)
-
-	// verify
-	r.verifyFile(t, test, p, res)
 }
 
 func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig, res *livekit.EgressInfo) {

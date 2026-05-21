@@ -27,6 +27,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -45,7 +46,7 @@ func (r *Runner) RunTests(t *testing.T) {
 	r.testEdgeCases(t)
 }
 
-func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)) bool {
+func (r *Runner) run(t *testing.T, test *testCase) bool {
 	if !r.should(runRequestType[test.requestType]) {
 		return true
 	}
@@ -80,10 +81,160 @@ func (r *Runner) run(t *testing.T, test *testCase, f func(*testing.T, *testCase)
 			"videoTrackID", test.videoTrackID,
 		)
 
-		f(t, test)
+		if test.custom != nil {
+			test.custom(t, test)
+		} else {
+			r.executeTest(t, test)
+		}
 	})
 
 	return !r.Short
+}
+
+func (r *Runner) executeTest(t *testing.T, test *testCase) {
+	// build request
+	req := r.buildRequest(test)
+
+	egressID := r.startEgress(t, req)
+	start := time.Now()
+
+	// get params
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+
+	// create dot files if needed
+	time.Sleep(time.Until(start.Add(time.Second * 10)))
+	if r.Dotfiles {
+		r.createDotFile(t, egressID)
+	}
+
+	// test stream updates and RPCs
+	if test.streamOptions != nil {
+		ctx := context.Background()
+
+		urls := streamUrls[test.streamOptions.outputType]
+
+		// verify
+		time.Sleep(time.Until(start.Add(time.Second * 15)))
+		r.verifyStreams(t, test, p, urls[0][2])
+		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
+			urls[0][1]: livekit.StreamInfo_ACTIVE,
+			urls[1][1]: livekit.StreamInfo_FAILED,
+		})
+
+		// add one good stream url and one bad
+		_, err = r.client.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
+			EgressId:      egressID,
+			AddOutputUrls: []string{urls[2][0], urls[3][0]},
+		})
+		require.NoError(t, err)
+
+		// verify
+		time.Sleep(time.Until(start.Add(time.Second * 20)))
+		r.verifyStreams(t, test, p, urls[0][2], urls[2][2])
+		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
+			urls[0][1]: livekit.StreamInfo_ACTIVE,
+			urls[1][1]: livekit.StreamInfo_FAILED,
+			urls[2][1]: livekit.StreamInfo_ACTIVE,
+			urls[3][1]: livekit.StreamInfo_FAILED,
+		})
+
+		// remove one of the stream urls
+		_, err = r.client.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
+			EgressId:         egressID,
+			RemoveOutputUrls: []string{urls[0][0]},
+		})
+		require.NoError(t, err)
+
+		// verify the remaining stream
+		time.Sleep(time.Until(start.Add(time.Second * 25)))
+		r.verifyStreams(t, test, p, urls[2][2])
+		r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
+			urls[0][1]: livekit.StreamInfo_FINISHED,
+			urls[1][1]: livekit.StreamInfo_FAILED,
+			urls[2][1]: livekit.StreamInfo_ACTIVE,
+			urls[3][1]: livekit.StreamInfo_FAILED,
+		})
+	}
+
+	// stop after 30s
+	time.Sleep(time.Until(start.Add(time.Second * 30)))
+	res := r.stopEgress(t, egressID)
+
+	// validate file
+	if test.fileOptions != nil {
+		if p.GetFileConfig().OutputType == types.OutputTypeUnknownFile {
+			p.GetFileConfig().OutputType = test.fileOptions.outputType
+		}
+
+		var expectedVideoEncoding bool
+		switch test.requestType {
+		case types.RequestTypeTrack:
+			expectedVideoEncoding = false
+		case types.RequestTypeParticipant:
+			expectedVideoEncoding = true
+		default:
+			expectedVideoEncoding = !test.audioOnly
+		}
+		require.Equal(t, expectedVideoEncoding, p.VideoEncoding)
+
+		r.verifyFile(t, test, p, res)
+	}
+
+	// validate segments
+	if test.segmentOptions != nil {
+		require.Len(t, res.GetSegmentResults(), 1)
+		segments := res.GetSegmentResults()[0]
+
+		require.Greater(t, segments.Size, int64(0))
+		require.NotContains(t, segments.PlaylistName, "{")
+		require.NotContains(t, segments.PlaylistLocation, "{")
+		if segments.LivePlaylistName != "" {
+			require.NotContains(t, segments.LivePlaylistName, "{")
+		}
+		if segments.LivePlaylistLocation != "" {
+			require.NotContains(t, segments.LivePlaylistLocation, "{")
+		}
+
+		require.Equal(t, !test.audioOnly, p.VideoEncoding)
+
+		r.verifySegments(t, test, p, test.segmentOptions.suffix, res, false)
+	}
+
+	// validate stream
+	if test.streamOptions != nil {
+		urls := streamUrls[test.streamOptions.outputType]
+
+		// verify egress info
+		require.Empty(t, res.Error)
+		require.NotZero(t, res.StartedAt)
+		require.NotZero(t, res.EndedAt)
+
+		// check stream info
+		require.Len(t, res.StreamResults, 4)
+		for _, info := range res.StreamResults {
+			require.NotZero(t, info.StartedAt)
+			require.NotZero(t, info.EndedAt)
+
+			switch info.Url {
+			case urls[0][1]:
+				require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
+				require.Greater(t, float64(info.Duration)/1e9, 15.0)
+
+			case urls[2][1]:
+				require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
+				require.Greater(t, float64(info.Duration)/1e9, 10.0)
+
+			default:
+				require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
+			}
+		}
+	}
+
+	// validate images
+	if test.imageOptions != nil {
+		r.verifyImages(t, p, res)
+	}
 }
 
 func (r *Runner) setRoomNameForTest(test *testCase) {
