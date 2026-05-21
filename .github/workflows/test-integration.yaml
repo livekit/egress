@@ -159,14 +159,14 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+
       - name: Download avsync stats artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: avsync-stats-*
           path: stats/
-
-      - name: Checkout repo
-        uses: actions/checkout@v6
 
       - name: Render avsync summary
         run: .github/scripts/render-avsync-stats.sh stats/*/avsync-stats.json >> "$GITHUB_STEP_SUMMARY"
