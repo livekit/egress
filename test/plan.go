@@ -208,6 +208,26 @@ const (
 	stageSwitchGrace  = 2 * time.Second // stage may still show prior speaker
 )
 
+// expectedBeepsBySec projects the plan timeline into per-integer-second
+// lists of participant names that may beep at that plan time — both
+// required slots and optional (grace) slots. Used as the alignment
+// target for lag detection: optional slots are part of the publisher's
+// footprint and must not be treated as "no content" or cadence.IntegerLag
+// will shift past them.
+func (pl *Plan) expectedBeepsBySec(end time.Duration) [][]string {
+	maxSec := int64(end/time.Second) + 1
+	out := make([][]string, maxSec)
+	for s := int64(0); s < maxSec; s++ {
+		t := time.Duration(s) * time.Second
+		for _, p := range pl.publishers {
+			if p.expectsBeep(t) != forbidden {
+				out[s] = append(out[s], p.name)
+			}
+		}
+	}
+	return out
+}
+
 // activeSpeaker returns the publisher whose audio is unmuted at t, or
 // "" when within stageSwitchGrace of an audio mute/unmute on any
 // publisher (stage rendering may not have switched yet).

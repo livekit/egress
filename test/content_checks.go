@@ -23,7 +23,6 @@ import (
 	"image"
 	"io"
 	"os/exec"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +35,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/egress/test/cadence"
 )
 
 const (
@@ -114,7 +114,7 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 	})
 	require.NoError(t, err)
 
-	obs := quantize(result)
+	obs := cadence.Quantize(result)
 
 	recordContentStats(tc, obs, output, format)
 
@@ -125,11 +125,11 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 
 	dur, _ := parseFFProbeDuration(info.Format.Duration)
 	expected := plan.expectedBeepsBySec(dur + maxRecordingDelay)
-	intLag := integerLag(expected, obs.buckets)
-	lag := time.Duration(intLag)*time.Second - obs.offset
+	intLag := cadence.IntegerLag(expected, obs.Buckets)
+	lag := time.Duration(intLag)*time.Second - obs.Offset
 	if lag > maxRecordingDelay {
 		intLag = 0
-		lag = -obs.offset
+		lag = -obs.Offset
 	}
 	t.Logf("recording lag: %s (dur=%s)", lag, dur)
 
@@ -142,281 +142,7 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 	verifyContent(t, tc, plan, obs, intLag, maxPlanPTS)
 }
 
-// --- observation ------------------------------------------------------
-
-// observation bins detected beeps and flashes by integer second of
-// recording PTS, preserving the avsync.Beep / avsync.Flash payloads.
-//
-// offset is the global median fractional offset across all events; it
-// drives bucket assignment and the bucket.center used for av-sync diff
-// math. beepRefs/flashRefs hold per-participant median fractional
-// offsets, used by hasOutlier so that systematic cross-track or
-// cross-participant offsets do not block stabilization — they're
-// measured separately via the av-sync diff.
-type observation struct {
-	buckets   []*bucket
-	offset    time.Duration
-	beepRefs  map[string]time.Duration
-	flashRefs map[string]time.Duration
-}
-
-type bucket struct {
-	beeps   map[string][]avsync.Beep
-	flashes map[string][]avsync.Flash
-	center  time.Duration
-}
-
-func quantize(result *avsync.Result) *observation {
-	obs := &observation{}
-
-	if result == nil || len(result.Beeps)+len(result.Flashes) == 0 {
-		return obs
-	}
-
-	// result metadata
-	maxPTS := time.Duration(0)
-	fracs := make([]time.Duration, 0, len(result.Beeps)+len(result.Flashes))
-	for _, b := range result.Beeps {
-		fracs = append(fracs, b.PTS%time.Second)
-		if b.PTS > maxPTS {
-			maxPTS = b.PTS
-		}
-	}
-	for _, f := range result.Flashes {
-		fracs = append(fracs, f.PTS%time.Second)
-		if f.PTS > maxPTS {
-			maxPTS = f.PTS
-		}
-	}
-	slices.Sort(fracs)
-
-	// center buckets around the median fractional pts
-	obs.offset = fracs[len(fracs)/2]
-	getBucket := func(t time.Duration) int64 {
-		adj := t + 500*time.Millisecond
-		if obs.offset > 500*time.Millisecond {
-			adj += time.Second
-		}
-		return int64((adj - obs.offset) / time.Second)
-	}
-
-	// create/fill buckets
-	numBuckets := getBucket(maxPTS) + 1
-	for i := range numBuckets {
-		b := &bucket{
-			beeps:   make(map[string][]avsync.Beep),
-			flashes: make(map[string][]avsync.Flash),
-			center:  time.Duration(i)*time.Second + obs.offset,
-		}
-		if obs.offset > 500*time.Millisecond {
-			b.center -= time.Second
-		}
-
-		obs.buckets = append(obs.buckets, b)
-	}
-	beepFracs := make(map[string][]time.Duration)
-	flashFracs := make(map[string][]time.Duration)
-	for _, b := range result.Beeps {
-		s := obs.buckets[getBucket(b.PTS)]
-		s.beeps[b.Participant] = append(s.beeps[b.Participant], b)
-		beepFracs[b.Participant] = append(beepFracs[b.Participant], b.PTS%time.Second)
-	}
-	for _, f := range result.Flashes {
-		s := obs.buckets[getBucket(f.PTS)]
-		s.flashes[f.Participant] = append(s.flashes[f.Participant], f)
-		flashFracs[f.Participant] = append(flashFracs[f.Participant], f.PTS%time.Second)
-	}
-
-	// Per-participant fracOffset medians, used by hasOutlier. Assumes a
-	// single participant's recording PTS doesn't drift across the 0/1s
-	// boundary within a recording (it doesn't in practice; jitter is
-	// ms-scale, not ~1s).
-	obs.beepRefs = make(map[string]time.Duration, len(beepFracs))
-	for p, fs := range beepFracs {
-		obs.beepRefs[p] = medianDuration(fs)
-	}
-	obs.flashRefs = make(map[string]time.Duration, len(flashFracs))
-	for p, fs := range flashFracs {
-		obs.flashRefs[p] = medianDuration(fs)
-	}
-
-	return obs
-}
-
-// stableFracTolerance is the maximum allowed deviation from the median
-// fracOffset for an event to be in the "stable region." Beep/flash
-// detection latency varies by a few ms across codecs; 50ms tolerates
-// that without letting actually-misaligned events count as stable.
-const stableFracTolerance = 50 * time.Millisecond
-
-// timeToStabilize finds the first run of 3 consecutive non-empty
-// non-outlier buckets and returns the first one's index and earliest
-// event PTS. Empty buckets are skipped entirely — they don't reset
-// the run (so intentional silence in multi-participant recordings
-// doesn't break stability) but they also don't count toward it.
-// Returns (-1, 0) if no 3-bucket stable run exists.
-func (obs *observation) timeToStabilize() (int, time.Duration) {
-	if obs == nil || len(obs.buckets) == 0 {
-		return -1, 0
-	}
-
-	firstStableBucket := -1
-	firstPTS := time.Duration(0)
-	valid := 0
-	for i, b := range obs.buckets {
-		if obs.hasOutlier(b) {
-			firstStableBucket = -1
-			valid = 0
-			continue
-		}
-		pts, ok := earliestPTS(b)
-		if !ok {
-			continue
-		}
-		if firstStableBucket < 0 {
-			firstStableBucket = i
-			firstPTS = pts
-		}
-		valid++
-		if valid >= 3 {
-			return firstStableBucket, firstPTS
-		}
-	}
-
-	return -1, 0
-}
-
-// hasOutlier reports whether any event in this bucket deviates from its
-// own (participant, track-type) reference fracOffset by more than
-// stableFracTolerance. Using per-participant per-track-type references
-// means systematic offsets between audio and video, or between
-// different participants' streams, don't disqualify stable buckets —
-// only within-stream jitter does. Cross-stream offsets are measured
-// separately by computeContentStats via the av-sync diff.
-func (obs *observation) hasOutlier(b *bucket) bool {
-	for participant, beeps := range b.beeps {
-		ref := obs.beepRefs[participant]
-		for _, ev := range beeps {
-			if absDuration(wrappedFracDiff(ev.PTS%time.Second, ref)) > stableFracTolerance {
-				return true
-			}
-		}
-	}
-	for participant, flashes := range b.flashes {
-		ref := obs.flashRefs[participant]
-		for _, ev := range flashes {
-			if absDuration(wrappedFracDiff(ev.PTS%time.Second, ref)) > stableFracTolerance {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// wrappedFracDiff returns a - b, treating both as points on a
-// 1-second circle and returning the smallest signed difference in
-// (-500ms, 500ms]. For inputs in [0, 1s), a value like
-// wrappedFracDiff(950ms, 50ms) returns -100ms rather than +900ms.
-func wrappedFracDiff(a, b time.Duration) time.Duration {
-	d := a - b
-	if d > 500*time.Millisecond {
-		d -= time.Second
-	} else if d <= -500*time.Millisecond {
-		d += time.Second
-	}
-	return d
-}
-
-// earliestPTS returns the smallest PTS across all events in this bucket.
-// ok is false if the bucket is empty.
-func earliestPTS(b *bucket) (time.Duration, bool) {
-	var first time.Duration
-	found := false
-	for _, beeps := range b.beeps {
-		for _, ev := range beeps {
-			if !found || ev.PTS < first {
-				first = ev.PTS
-				found = true
-			}
-		}
-	}
-	for _, flashes := range b.flashes {
-		for _, ev := range flashes {
-			if !found || ev.PTS < first {
-				first = ev.PTS
-				found = true
-			}
-		}
-	}
-	return first, found
-}
-
-// expectedBeepsBySec projects the plan timeline into per-integer-second
-// lists of participant names that may beep at that plan time — both
-// required slots and optional (grace) slots. Used as the alignment
-// target for lag detection: optional slots are part of the publisher's
-// footprint and must not be treated as "no content" or integerLag will
-// shift past them.
-func (pl *Plan) expectedBeepsBySec(end time.Duration) [][]string {
-	maxSec := int64(end/time.Second) + 1
-	out := make([][]string, maxSec)
-	for s := int64(0); s < maxSec; s++ {
-		t := time.Duration(s) * time.Second
-		for _, p := range pl.publishers {
-			if p.expectsBeep(t) != forbidden {
-				out[s] = append(out[s], p.name)
-			}
-		}
-	}
-	return out
-}
-
-// integerLag scores each candidate lag (0..maxIntLag) and returns the
-// best. Score is the count of buckets where actual and expected agree:
-//   - actual bucket has a beep whose participant is in expected[i+lag]
-//   - both actual bucket and expected[i+lag] are empty (silent matches
-//     silent — keeps the lag from drifting past long forbidden zones
-//     just because the remaining content fits more buckets at a higher
-//     lag)
-//
-// Smallest lag wins ties.
-func integerLag(expected [][]string, actual []*bucket) int64 {
-	const maxIntLag = int64(5)
-	var bestLag int64
-	bestScore := -1
-	for lag := int64(0); lag <= maxIntLag; lag++ {
-		score := 0
-		for i := int64(0); i < int64(len(actual)); i++ {
-			ei := i + lag
-			if ei >= int64(len(expected)) {
-				break
-			}
-			if len(actual[i].beeps) == 0 {
-				if len(expected[ei]) == 0 {
-					score++
-				}
-				continue
-			}
-			for _, beeps := range actual[i].beeps {
-				for _, b := range beeps {
-					for _, name := range expected[ei] {
-						if b.Participant == name {
-							score++
-							break
-						}
-					}
-				}
-			}
-		}
-		if score > bestScore {
-			bestScore = score
-			bestLag = lag
-		}
-	}
-	return bestLag
-}
-
-func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, intLag int64, maxPlanPTS time.Duration) {
+func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observation, intLag int64, maxPlanPTS time.Duration) {
 	t.Helper()
 
 	var issues []string
@@ -444,7 +170,7 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, int
 
 	warmupCutoff := time.Duration(intLag)*time.Second + publishSettling
 
-	for sec, secData := range obs.buckets {
+	for sec, secData := range obs.Buckets {
 		// bucket sec holds beeps emitted at plan-time (sec + intLag).
 		planPTS := time.Duration(int64(sec)+intLag) * time.Second
 		if planPTS > maxPlanPTS {
@@ -452,7 +178,7 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, int
 		}
 		inWarmup := planPTS < warmupCutoff
 
-		for _, flashes := range secData.flashes {
+		for _, flashes := range secData.Flashes {
 			for _, f := range flashes {
 				if !isStageRegion(f.Region) {
 					seenInSecondary[f.Participant] = true
@@ -461,7 +187,7 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, int
 		}
 
 		for _, pub := range plan.publishers {
-			gotBeeps := secData.beeps[pub.name]
+			gotBeeps := secData.Beeps[pub.name]
 			beepVerdict := pub.expectsBeep(planPTS)
 			if inWarmup && beepVerdict == required {
 				beepVerdict = optional
@@ -506,7 +232,7 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, int
 				}
 			}
 
-			gotFlashes := secData.flashes[pub.name]
+			gotFlashes := secData.Flashes[pub.name]
 			flashVerdict := pub.expectsFlash(planPTS)
 			if inWarmup && flashVerdict == required {
 				flashVerdict = optional
@@ -557,7 +283,7 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, int
 		// has settled on a speaker).
 		if !inWarmup && (tc.layout == layoutSpeaker || tc.layout == layoutSingleSpeaker) {
 			if speaker := plan.activeSpeaker(planPTS); speaker != "" {
-				for _, flashes := range secData.flashes {
+				for _, flashes := range secData.Flashes {
 					for _, f := range flashes {
 						if isStageRegion(f.Region) && f.Participant != "" && f.Participant != speaker {
 							stageMismatches = append(stageMismatches, fmt.Sprintf("@%s stage shows %s, expected %s", planPTS, f.Participant, speaker))
