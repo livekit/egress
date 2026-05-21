@@ -164,34 +164,11 @@ func (r *Runner) testSegments(t *testing.T) {
 				v2OutputOptions: &v2OutputOptions{},
 			},
 		} {
-			if !r.run(t, test, r.runSegmentsTest) {
+			if !r.run(t, test) {
 				return
 			}
 		}
 	})
-}
-
-func (r *Runner) runSegmentsTest(t *testing.T, test *testCase) {
-	req := r.buildRequest(test)
-
-	egressID := r.startEgress(t, req)
-
-	time.Sleep(time.Second * 10)
-	if r.Dotfiles {
-		r.createDotFile(t, egressID)
-	}
-
-	// stop
-	time.Sleep(time.Second * 15)
-	res := r.stopEgress(t, egressID)
-
-	// get params
-	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
-	require.NoError(t, err)
-
-	require.Equal(t, !test.audioOnly, p.VideoEncoding)
-
-	r.verifySegments(t, test, p, test.segmentOptions.suffix, res, test.livePlaylist != "")
 }
 
 func (r *Runner) verifySegments(
