@@ -146,9 +146,18 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 
 // observation bins detected beeps and flashes by integer second of
 // recording PTS, preserving the avsync.Beep / avsync.Flash payloads.
+//
+// offset is the global median fractional offset across all events; it
+// drives bucket assignment and the bucket.center used for av-sync diff
+// math. beepRefs/flashRefs hold per-participant median fractional
+// offsets, used by hasOutlier so that systematic cross-track or
+// cross-participant offsets do not block stabilization — they're
+// measured separately via the av-sync diff.
 type observation struct {
-	buckets []*bucket
-	offset  time.Duration
+	buckets   []*bucket
+	offset    time.Duration
+	beepRefs  map[string]time.Duration
+	flashRefs map[string]time.Duration
 }
 
 type bucket struct {
@@ -205,13 +214,30 @@ func quantize(result *avsync.Result) *observation {
 
 		obs.buckets = append(obs.buckets, b)
 	}
+	beepFracs := make(map[string][]time.Duration)
+	flashFracs := make(map[string][]time.Duration)
 	for _, b := range result.Beeps {
 		s := obs.buckets[getBucket(b.PTS)]
 		s.beeps[b.Participant] = append(s.beeps[b.Participant], b)
+		beepFracs[b.Participant] = append(beepFracs[b.Participant], b.PTS%time.Second)
 	}
 	for _, f := range result.Flashes {
 		s := obs.buckets[getBucket(f.PTS)]
 		s.flashes[f.Participant] = append(s.flashes[f.Participant], f)
+		flashFracs[f.Participant] = append(flashFracs[f.Participant], f.PTS%time.Second)
+	}
+
+	// Per-participant fracOffset medians, used by hasOutlier. Assumes a
+	// single participant's recording PTS doesn't drift across the 0/1s
+	// boundary within a recording (it doesn't in practice; jitter is
+	// ms-scale, not ~1s).
+	obs.beepRefs = make(map[string]time.Duration, len(beepFracs))
+	for p, fs := range beepFracs {
+		obs.beepRefs[p] = medianDuration(fs)
+	}
+	obs.flashRefs = make(map[string]time.Duration, len(flashFracs))
+	for p, fs := range flashFracs {
+		obs.flashRefs[p] = medianDuration(fs)
 	}
 
 	return obs
@@ -228,6 +254,7 @@ const stableFracTolerance = 50 * time.Millisecond
 // event PTS. Empty buckets are skipped entirely — they don't reset
 // the run (so intentional silence in multi-participant recordings
 // doesn't break stability) but they also don't count toward it.
+// Returns (-1, 0) if no 3-bucket stable run exists.
 func (obs *observation) timeToStabilize() (int, time.Duration) {
 	if obs == nil || len(obs.buckets) == 0 {
 		return -1, 0
@@ -237,7 +264,7 @@ func (obs *observation) timeToStabilize() (int, time.Duration) {
 	firstPTS := time.Duration(0)
 	valid := 0
 	for i, b := range obs.buckets {
-		if hasOutlier(b) {
+		if obs.hasOutlier(b) {
 			firstStableBucket = -1
 			valid = 0
 			continue
@@ -256,28 +283,48 @@ func (obs *observation) timeToStabilize() (int, time.Duration) {
 		}
 	}
 
-	return firstStableBucket, firstPTS
+	return -1, 0
 }
 
-// hasOutlier reports whether any event in this bucket deviates from
-// b.center by more than stableFracTolerance. Empty buckets and buckets
-// whose events are all within tolerance both return false.
-func hasOutlier(b *bucket) bool {
-	for _, beeps := range b.beeps {
+// hasOutlier reports whether any event in this bucket deviates from its
+// own (participant, track-type) reference fracOffset by more than
+// stableFracTolerance. Using per-participant per-track-type references
+// means systematic offsets between audio and video, or between
+// different participants' streams, don't disqualify stable buckets —
+// only within-stream jitter does. Cross-stream offsets are measured
+// separately by computeContentStats via the av-sync diff.
+func (obs *observation) hasOutlier(b *bucket) bool {
+	for participant, beeps := range b.beeps {
+		ref := obs.beepRefs[participant]
 		for _, ev := range beeps {
-			if absDuration(ev.PTS-b.center) > stableFracTolerance {
+			if absDuration(wrappedFracDiff(ev.PTS%time.Second, ref)) > stableFracTolerance {
 				return true
 			}
 		}
 	}
-	for _, flashes := range b.flashes {
+	for participant, flashes := range b.flashes {
+		ref := obs.flashRefs[participant]
 		for _, ev := range flashes {
-			if absDuration(ev.PTS-b.center) > stableFracTolerance {
+			if absDuration(wrappedFracDiff(ev.PTS%time.Second, ref)) > stableFracTolerance {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// wrappedFracDiff returns a - b, treating both as points on a
+// 1-second circle and returning the smallest signed difference in
+// (-500ms, 500ms]. For inputs in [0, 1s), a value like
+// wrappedFracDiff(950ms, 50ms) returns -100ms rather than +900ms.
+func wrappedFracDiff(a, b time.Duration) time.Duration {
+	d := a - b
+	if d > 500*time.Millisecond {
+		d -= time.Second
+	} else if d <= -500*time.Millisecond {
+		d += time.Second
+	}
+	return d
 }
 
 // earliestPTS returns the smallest PTS across all events in this bucket.

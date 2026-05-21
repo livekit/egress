@@ -35,16 +35,21 @@ emit_avsync_stats() {
   fi
 }
 
-# Run tests
+# Run tests. Disable `set -e` around the test pipeline so a non-zero test
+# exit code doesn't kill the script before emit_avsync_stats runs.
 if [[ -z ${GITHUB_WORKFLOW+x} ]]; then
+  set +e
   ./test.test -test.v -test.timeout 30m
   status=$?
+  set -e
   emit_avsync_stats
   exit $status
 else
   go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest
+  set +e
   go tool test2json -p egress ./test.test -test.v -test.timeout 30m 2>&1 | "$HOME"/go/bin/gotestfmt
   status=${PIPESTATUS[0]}
+  set -e
   emit_avsync_stats
   exit $status
 fi
