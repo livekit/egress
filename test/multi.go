@@ -77,6 +77,7 @@ func (r *Runner) testMulti(t *testing.T) {
 					filename: "participant_{publisher_identity}_multi_{time}.mp4",
 				},
 				streamOptions: &streamOptions{
+					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
 					outputType: types.OutputTypeRTMP,
 				},
 				segmentOptions: &segmentOptions{
@@ -95,6 +96,7 @@ func (r *Runner) testMulti(t *testing.T) {
 					videoCodec: types.MimeTypeVP8,
 				},
 				streamOptions: &streamOptions{
+					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
 					outputType: types.OutputTypeRTMP,
 				},
 				segmentOptions: &segmentOptions{
