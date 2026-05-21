@@ -18,7 +18,7 @@ require (
 	github.com/linkdata/deadlock v0.5.5
 	github.com/livekit/livekit-server v1.9.12
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
-	github.com/livekit/media-samples/avsync v0.0.0-20260521191959-2197db03fcab
+	github.com/livekit/media-samples/avsync v0.0.0-20260521192629-c7fd88520778
 	github.com/livekit/media-sdk v0.0.0-20260422170315-2c3eed337496
 	github.com/livekit/protocol v1.45.6
 	github.com/livekit/psrpc v0.7.1
