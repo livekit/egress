@@ -22,6 +22,7 @@ import (
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 type EventKind int
@@ -40,6 +41,7 @@ type Plan struct {
 
 type Publisher struct {
 	name            string
+	kind            lksdk.ParticipantKind
 	delayConnection time.Duration
 	audio           []Event // sorted by pts ascending
 	video           []Event // sorted by pts ascending
@@ -134,10 +136,17 @@ func planSingleParticipant(tc *testCase) *Plan {
 func planMultiParticipant(tc *testCase) *Plan {
 	participants := []string{"p0", "p1", "p2"}
 	rotates := tc.layout == layoutSpeaker || tc.layout == layoutSingleSpeaker
+	p1Kind := lksdk.ParticipantStandard
+	if usesAgentRoute(tc) {
+		p1Kind = lksdk.ParticipantAgent
+	}
 
 	plan := &Plan{}
 	for i, name := range participants {
-		p := &Publisher{name: name}
+		p := &Publisher{name: name, kind: lksdk.ParticipantStandard}
+		if name == "p1" {
+			p.kind = p1Kind
+		}
 
 		if !tc.videoOnly && participantHasAudioInOutput(tc, name) {
 			p.audio = []Event{{pts: 0, kind: eventPublish, codec: types.MimeTypeOpus}}
@@ -155,10 +164,16 @@ func planMultiParticipant(tc *testCase) *Plan {
 	return plan
 }
 
-// participantHasAudioInOutput reports whether pN's audio is expected in
-// the encoded output. With no v2 audio routes, the legacy room-composite
-// behavior applies — every participant is mixed in. With routes, only
-// participants matched by at least one route appear.
+func usesAgentRoute(tc *testCase) bool {
+	for _, route := range tc.audioRoutes {
+		if m, ok := route.Match.(*livekit.AudioRoute_ParticipantKind); ok &&
+			m.ParticipantKind == livekit.ParticipantInfo_AGENT {
+			return true
+		}
+	}
+	return false
+}
+
 func participantHasAudioInOutput(tc *testCase, name string) bool {
 	if len(tc.audioRoutes) == 0 {
 		return true
@@ -174,8 +189,9 @@ func participantHasAudioInOutput(tc *testCase, name string) bool {
 				return true
 			}
 		case *livekit.AudioRoute_ParticipantKind:
-			// publish.go assigns p1 = AGENT, others = STANDARD.
-			isAgent := name == "p1"
+			// p1 only connects as AGENT when the test has an AGENT route
+			// (see usesAgentRoute); otherwise every publisher is STANDARD.
+			isAgent := name == "p1" && usesAgentRoute(tc)
 			if m.ParticipantKind == livekit.ParticipantInfo_AGENT && isAgent {
 				return true
 			}
@@ -187,10 +203,6 @@ func participantHasAudioInOutput(tc *testCase, name string) bool {
 	return false
 }
 
-// participantHasVideoInOutput reports whether pN's video is expected in
-// the encoded output. Without an explicit Media video source, all
-// participants contribute (room-composite layout); with one, only the
-// matched participant does.
 func participantHasVideoInOutput(tc *testCase, name string) bool {
 	if tc.mediaVideoTrackID == "" && tc.mediaParticipantVideo == nil {
 		return true
