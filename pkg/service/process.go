@@ -61,13 +61,11 @@ type ProcessManager interface {
 type processManager struct {
 	mu             deadlock.RWMutex
 	activeHandlers map[string]*Process
-	killReasons    map[string]string
 }
 
 func NewProcessManager() ProcessManager {
 	return &processManager{
 		activeHandlers: make(map[string]*Process),
-		killReasons:    make(map[string]string),
 	}
 }
 
@@ -198,7 +196,7 @@ func (pm *processManager) KillAll() {
 	pm.mu.Lock()
 	handlers := slices.Collect(maps.Values(pm.activeHandlers))
 	for _, h := range handlers {
-		pm.killReasons[h.req.EgressId] = stats.ResultKilledShutdown
+		h.killReason = stats.ResultKilledShutdown
 	}
 	pm.mu.Unlock()
 
@@ -212,8 +210,7 @@ func (pm *processManager) AbortProcess(egressID string, err error) {
 	pm.mu.Lock()
 	h, ok := pm.activeHandlers[egressID]
 	if ok {
-		pm.killReasons[egressID] = stats.ResultAborted
-		delete(pm.activeHandlers, egressID)
+		h.killReason = stats.ResultAborted
 	}
 	pm.mu.Unlock()
 
@@ -230,7 +227,7 @@ func (pm *processManager) KillProcess(egressID string, reason string, err error)
 	pm.mu.Lock()
 	h, ok := pm.activeHandlers[egressID]
 	if ok {
-		pm.killReasons[egressID] = reason
+		h.killReason = reason
 	}
 	pm.mu.Unlock()
 
@@ -241,14 +238,14 @@ func (pm *processManager) KillProcess(egressID string, reason string, err error)
 	logger.Infow("killing egress completed", "egressID", egressID)
 }
 
-// GetKillReason returns and clears the kill reason for the given egress.
 func (pm *processManager) GetKillReason(egressID string) string {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
 
-	reason := pm.killReasons[egressID]
-	delete(pm.killReasons, egressID)
-	return reason
+	if h, ok := pm.activeHandlers[egressID]; ok {
+		return h.killReason
+	}
+	return ""
 }
 
 func (pm *processManager) ProcessFinished(egressID string) {
@@ -264,7 +261,6 @@ func (pm *processManager) ProcessFinished(egressID string) {
 	}
 
 	delete(pm.activeHandlers, egressID)
-	delete(pm.killReasons, egressID)
 	logger.Debugw("process finished, deleted from active handlers", "egressID", egressID)
 }
 
@@ -277,6 +273,7 @@ type Process struct {
 	ipcHandlerClient *ipc.EgressHandlerClientWrapper
 	ready            chan struct{}
 	closed           core.Fuse
+	killReason       string
 }
 
 // Gather implements the prometheus.Gatherer interface on server-side to allow aggregation of handler ms
