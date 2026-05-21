@@ -223,36 +223,48 @@ func quantize(result *avsync.Result) *observation {
 // that without letting actually-misaligned events count as stable.
 const stableFracTolerance = 50 * time.Millisecond
 
+// timeToStabilize finds the first run of 3 consecutive non-empty
+// non-outlier buckets and returns the first one's index and earliest
+// event PTS. Empty buckets are skipped entirely — they don't reset
+// the run (so intentional silence in multi-participant recordings
+// doesn't break stability) but they also don't count toward it.
 func (obs *observation) timeToStabilize() (int, time.Duration) {
 	if obs == nil || len(obs.buckets) == 0 {
 		return -1, 0
 	}
 
+	firstStableBucket := -1
+	firstPTS := time.Duration(0)
 	valid := 0
 	for i, b := range obs.buckets {
 		if hasOutlier(b) {
+			firstStableBucket = -1
 			valid = 0
-		} else {
-			valid++
-			if valid >= 3 {
-				firstStable := i - 2
-				pts, ok := earliestPTS(obs.buckets[firstStable])
-				if ok {
-					return firstStable, pts
-				}
-				return firstStable, obs.buckets[firstStable].center
-			}
+			continue
+		}
+		pts, ok := earliestPTS(b)
+		if !ok {
+			continue
+		}
+		if firstStableBucket < 0 {
+			firstStableBucket = i
+			firstPTS = pts
+		}
+		valid++
+		if valid >= 3 {
+			return firstStableBucket, firstPTS
 		}
 	}
 
-	return -1, 0
+	return firstStableBucket, firstPTS
 }
 
+// hasOutlier reports whether any event in this bucket deviates from
+// b.center by more than stableFracTolerance. Empty buckets and buckets
+// whose events are all within tolerance both return false.
 func hasOutlier(b *bucket) bool {
-	isEmpty := true
 	for _, beeps := range b.beeps {
 		for _, ev := range beeps {
-			isEmpty = false
 			if absDuration(ev.PTS-b.center) > stableFracTolerance {
 				return true
 			}
@@ -260,13 +272,12 @@ func hasOutlier(b *bucket) bool {
 	}
 	for _, flashes := range b.flashes {
 		for _, ev := range flashes {
-			isEmpty = false
 			if absDuration(ev.PTS-b.center) > stableFracTolerance {
 				return true
 			}
 		}
 	}
-	return !isEmpty
+	return false
 }
 
 // earliestPTS returns the smallest PTS across all events in this bucket.
