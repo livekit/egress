@@ -204,10 +204,10 @@ func (r *Runner) testStream(t *testing.T) {
 					audioCodec: types.MimeTypeOpus,
 					videoCodec: types.MimeTypeVP8,
 					mediaParticipantVideo: &livekit.ParticipantVideo{
-						Identity: "set-at-runtime",
+						Identity: setAtRuntime,
 					},
 					audioRoutes: []*livekit.AudioRoute{{
-						Match: &livekit.AudioRoute_TrackId{TrackId: "set-at-runtime"},
+						Match: &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
 					}},
 				},
 				streamOptions: &streamOptions{

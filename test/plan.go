@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
 )
 
 type EventKind int
@@ -136,22 +137,85 @@ func planMultiParticipant(tc *testCase) *Plan {
 
 	plan := &Plan{}
 	for i, name := range participants {
-		p := &Publisher{
-			name: name,
-			audio: []Event{
-				{pts: 0, kind: eventPublish, codec: types.MimeTypeOpus},
-			},
-			video: []Event{
-				{pts: 0, kind: eventPublish, codec: types.MimeTypeH264},
-			},
+		p := &Publisher{name: name}
+
+		if !tc.videoOnly && participantHasAudioInOutput(tc, name) {
+			p.audio = []Event{{pts: 0, kind: eventPublish, codec: types.MimeTypeOpus}}
+			if rotates {
+				p.audio = append(p.audio, rotationEvents(i, len(participants), rotationSlot)...)
+			}
 		}
-		if rotates {
-			p.audio = append(p.audio, rotationEvents(i, len(participants), rotationSlot)...)
+		if !tc.audioOnly && participantHasVideoInOutput(tc, name) {
+			p.video = []Event{{pts: 0, kind: eventPublish, codec: types.MimeTypeH264}}
 		}
+
 		sortEvents(p)
 		plan.publishers = append(plan.publishers, p)
 	}
 	return plan
+}
+
+// participantHasAudioInOutput reports whether pN's audio is expected in
+// the encoded output. With no v2 audio routes, the legacy room-composite
+// behavior applies — every participant is mixed in. With routes, only
+// participants matched by at least one route appear.
+func participantHasAudioInOutput(tc *testCase, name string) bool {
+	if len(tc.audioRoutes) == 0 {
+		return true
+	}
+	for _, route := range tc.audioRoutes {
+		switch m := route.Match.(type) {
+		case *livekit.AudioRoute_TrackId:
+			if m.TrackId == setAtRuntime && name == "p0" {
+				return true
+			}
+		case *livekit.AudioRoute_ParticipantIdentity:
+			if matchesParticipantSentinel(m.ParticipantIdentity, name) {
+				return true
+			}
+		case *livekit.AudioRoute_ParticipantKind:
+			// publish.go assigns p1 = AGENT, others = STANDARD.
+			isAgent := name == "p1"
+			if m.ParticipantKind == livekit.ParticipantInfo_AGENT && isAgent {
+				return true
+			}
+			if m.ParticipantKind == livekit.ParticipantInfo_STANDARD && !isAgent {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// participantHasVideoInOutput reports whether pN's video is expected in
+// the encoded output. Without an explicit Media video source, all
+// participants contribute (room-composite layout); with one, only the
+// matched participant does.
+func participantHasVideoInOutput(tc *testCase, name string) bool {
+	if tc.mediaVideoTrackID == "" && tc.mediaParticipantVideo == nil {
+		return true
+	}
+	// mediaVideoTrackID always resolves to p0's video track in the harness.
+	if tc.mediaVideoTrackID != "" && name == "p0" {
+		return true
+	}
+	if tc.mediaParticipantVideo != nil &&
+		matchesParticipantSentinel(tc.mediaParticipantVideo.Identity, name) {
+		return true
+	}
+	return false
+}
+
+func matchesParticipantSentinel(sentinel, name string) bool {
+	switch sentinel {
+	case setAtRuntime:
+		return name == "p0"
+	case setP1Identity:
+		return name == "p1"
+	case setP2Identity:
+		return name == "p2"
+	}
+	return false
 }
 
 func sortEvents(p *Publisher) {

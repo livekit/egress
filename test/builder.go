@@ -528,7 +528,7 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 
 		// video - use explicit mediaVideoTrackID, or fall back to published videoTrackID
 		videoTrackID := test.mediaVideoTrackID
-		if videoTrackID == "" && test.videoCodec != "" {
+		if (videoTrackID == "" || videoTrackID == setAtRuntime) && test.videoCodec != "" {
 			videoTrackID = test.videoTrackID
 		}
 		if videoTrackID != "" {
@@ -537,9 +537,22 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 			}
 		} else if test.mediaParticipantVideo != nil {
 			pv := test.mediaParticipantVideo
-			if pv.Identity == setAtRuntime {
+			var identity string
+			switch pv.Identity {
+			case setAtRuntime:
+				identity = test.p0Identity
+			case setP1Identity:
+				if s := test.publishers["p1"]; s != nil {
+					identity = s.identity
+				}
+			case setP2Identity:
+				if s := test.publishers["p2"]; s != nil {
+					identity = s.identity
+				}
+			}
+			if identity != "" {
 				pv = &livekit.ParticipantVideo{
-					Identity:          test.p0Identity,
+					Identity:          identity,
 					PreferScreenShare: pv.PreferScreenShare,
 				}
 			}

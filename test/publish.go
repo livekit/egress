@@ -356,12 +356,20 @@ func (r *Runner) connectAs(name, identity string, codecs []livekit.Codec) (*lksd
 	if len(codecs) > 0 {
 		opts = append(opts, lksdk.WithCodecs(codecs))
 	}
+
+	// used for audio routing tests
+	pKind := lksdk.ParticipantStandard
+	if name == "p1" {
+		pKind = lksdk.ParticipantAgent
+	}
+
 	return lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
 		RoomName:            r.RoomName,
 		ParticipantName:     fmt.Sprintf("egress-%s", name),
 		ParticipantIdentity: identity,
+		ParticipantKind:     pKind,
 	}, lksdk.NewRoomCallback(), opts...)
 }
 
