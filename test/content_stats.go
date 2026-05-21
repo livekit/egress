@@ -167,16 +167,15 @@ func computeContentStats(obs *observation, audioOnly, videoOnly bool) contentSta
 		if len(sec.beeps) == 0 && len(sec.flashes) == 0 {
 			continue
 		}
-		secStart := time.Duration(i)*time.Second + obs.center
 		var aFracs, vFracs []time.Duration
 		for _, beeps := range sec.beeps {
 			for _, b := range beeps {
-				aFracs = append(aFracs, b.PTS-secStart)
+				aFracs = append(aFracs, b.PTS-sec.center)
 			}
 		}
 		for _, flashes := range sec.flashes {
 			for _, f := range flashes {
-				vFracs = append(vFracs, f.PTS-secStart)
+				vFracs = append(vFracs, f.PTS-sec.center)
 			}
 		}
 

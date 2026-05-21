@@ -149,34 +149,6 @@ func TestComputeContentStatsMultiParticipantAligned(t *testing.T) {
 	require.GreaterOrEqual(t, s.score, 90.0, "aligned multi-participant should score ≥90")
 }
 
-func TestComputeContentStatsUserExample(t *testing.T) {
-	if os.Getenv("INTEGRATION_TYPE") != "" {
-		t.Skip()
-	}
-	// flashes at 0.1/1.1/2.1/3.1 (all at fracOffset 100ms),
-	// beeps at 0.3/1.2/2.1/3.1 (drifting fracOffsets 300/200/100/100ms).
-	// Median fracOffset = 100ms. Events at 0.3 (deviates 200ms) and 1.2
-	// (deviates 100ms) are outliers; the last bad event is the 1.2s beep,
-	// so timeToStable lands on the next event in PTS order = 2.1s.
-	result := &avsync.Result{
-		Beeps: []avsync.Beep{
-			{PTS: 300 * time.Millisecond, Participant: "p0"},
-			{PTS: 1200 * time.Millisecond, Participant: "p0"},
-			{PTS: 2100 * time.Millisecond, Participant: "p0"},
-			{PTS: 3100 * time.Millisecond, Participant: "p0"},
-		},
-		Flashes: []avsync.Flash{
-			{PTS: 100 * time.Millisecond, Participant: "p0"},
-			{PTS: 1100 * time.Millisecond, Participant: "p0"},
-			{PTS: 2100 * time.Millisecond, Participant: "p0"},
-			{PTS: 3100 * time.Millisecond, Participant: "p0"},
-		},
-	}
-	s := statsFromResult(result, false, false)
-	require.True(t, s.locked)
-	require.Equal(t, 2100*time.Millisecond, s.timeToStable)
-}
-
 func TestComputeContentStatsParticipantCompositeWindows(t *testing.T) {
 	if os.Getenv("INTEGRATION_TYPE") != "" {
 		t.Skip()

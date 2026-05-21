@@ -126,10 +126,10 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 	dur, _ := parseFFProbeDuration(info.Format.Duration)
 	expected := plan.expectedBeepsBySec(dur + maxRecordingDelay)
 	intLag := integerLag(expected, obs.buckets)
-	lag := time.Duration(intLag)*time.Second - obs.center
+	lag := time.Duration(intLag)*time.Second - obs.offset
 	if lag > maxRecordingDelay {
 		intLag = 0
-		lag = -obs.center
+		lag = -obs.offset
 	}
 	t.Logf("recording lag: %s (dur=%s)", lag, dur)
 
@@ -148,12 +148,13 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 // recording PTS, preserving the avsync.Beep / avsync.Flash payloads.
 type observation struct {
 	buckets []*bucket
-	center  time.Duration
+	offset  time.Duration
 }
 
 type bucket struct {
 	beeps   map[string][]avsync.Beep
 	flashes map[string][]avsync.Flash
+	center  time.Duration
 }
 
 func quantize(result *avsync.Result) *observation {
@@ -181,22 +182,28 @@ func quantize(result *avsync.Result) *observation {
 	slices.Sort(fracs)
 
 	// center buckets around the median fractional pts
-	obs.center = fracs[len(fracs)/2]
+	obs.offset = fracs[len(fracs)/2]
 	getBucket := func(t time.Duration) int64 {
 		adj := t + 500*time.Millisecond
-		if obs.center > 500*time.Millisecond {
+		if obs.offset > 500*time.Millisecond {
 			adj += time.Second
 		}
-		return int64((adj - obs.center) / time.Second)
+		return int64((adj - obs.offset) / time.Second)
 	}
 
 	// create/fill buckets
 	numBuckets := getBucket(maxPTS) + 1
-	for range numBuckets {
-		obs.buckets = append(obs.buckets, &bucket{
+	for i := range numBuckets {
+		b := &bucket{
 			beeps:   make(map[string][]avsync.Beep),
 			flashes: make(map[string][]avsync.Flash),
-		})
+			center:  time.Duration(i)*time.Second + obs.offset,
+		}
+		if obs.offset > 500*time.Millisecond {
+			b.center -= time.Second
+		}
+
+		obs.buckets = append(obs.buckets, b)
 	}
 	for _, b := range result.Beeps {
 		s := obs.buckets[getBucket(b.PTS)]
@@ -223,8 +230,7 @@ func (obs *observation) timeToStabilize() (int, time.Duration) {
 
 	valid := 0
 	for i, b := range obs.buckets {
-		secStart := time.Duration(i)*time.Second + obs.center
-		if hasOutlier(b, secStart) {
+		if hasOutlier(b) {
 			valid = 0
 		} else {
 			valid++
@@ -234,7 +240,7 @@ func (obs *observation) timeToStabilize() (int, time.Duration) {
 				if ok {
 					return firstStable, pts
 				}
-				return firstStable, time.Duration(firstStable)*time.Second + obs.center
+				return firstStable, obs.buckets[firstStable].center
 			}
 		}
 	}
@@ -242,22 +248,25 @@ func (obs *observation) timeToStabilize() (int, time.Duration) {
 	return -1, 0
 }
 
-func hasOutlier(b *bucket, secStart time.Duration) bool {
+func hasOutlier(b *bucket) bool {
+	isEmpty := true
 	for _, beeps := range b.beeps {
 		for _, ev := range beeps {
-			if absDuration(ev.PTS-secStart) > stableFracTolerance {
+			isEmpty = false
+			if absDuration(ev.PTS-b.center) > stableFracTolerance {
 				return true
 			}
 		}
 	}
 	for _, flashes := range b.flashes {
 		for _, ev := range flashes {
-			if absDuration(ev.PTS-secStart) > stableFracTolerance {
+			isEmpty = false
+			if absDuration(ev.PTS-b.center) > stableFracTolerance {
 				return true
 			}
 		}
 	}
-	return false
+	return !isEmpty
 }
 
 // earliestPTS returns the smallest PTS across all events in this bucket.

@@ -40,11 +40,11 @@ fi
 # ---- aggregate by requestType (median / worst per metric) -------------
 aggregate=$(jq -r '
   def fmtDur(seconds):
-    if seconds == null then "N/A"
+    if seconds == null then "-"
     else "\(seconds * 1000 | round)ms" end;
 
   def fmtSigned(seconds):
-    if seconds == null then "N/A"
+    if seconds == null then "-"
     elif seconds >= 0 then "+\(seconds * 1000 | round)ms"
     else "\(seconds * 1000 | round)ms" end;
 
@@ -126,20 +126,17 @@ aggregate=$(jq -r '
 # ---- per-output detail table (sorted by score asc) --------------------
 detail=$(jq -r '
   def fmtDur:
-    if . == null then "N/A"
+    if . == null then "-"
     else "\(. * 1000 | round)ms" end;
 
   def fmtSigned:
-    if . == null then "N/A"
+    if . == null then "-"
     elif . >= 0 then "+\(. * 1000 | round)ms"
     else "\(. * 1000 | round)ms" end;
 
-  def cap: ascii_upcase[0:1] + .[1:];
-
   def fmtOutput:
-    if .format == "" or .format == null then (.output | cap)
-    elif .output == "file" then "\(.output | cap) (.\(.format))"
-    else "\(.output | cap) (\(.format))"
+    if .format == "" or .format == null then (.output | ascii_upcase)
+    else .format | ascii_upcase
     end;
 
   sort_by(.score) |
