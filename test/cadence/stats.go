@@ -22,9 +22,8 @@ import (
 	"github.com/livekit/egress/pkg/types"
 )
 
-// Stats holds the metrics published per output (file/stream/segments).
-// Identity fields are set by the caller (test glue); computed fields
-// are set by Compute.
+// Stats is one row of metrics per output (file/stream/segments).
+// Identity fields are set by the caller; Compute fills in the rest.
 type Stats struct {
 	// Identity
 	IntegrationType string
@@ -59,15 +58,9 @@ type Stats struct {
 	Score float64
 }
 
-// Compute derives the metric set from the quantized Observation.
-// audioOnly/videoOnly come from the recording's intended track set;
-// they shape Score (videos in audio-only outputs aren't penalized).
-//
-// Within a bucket, every event's fracOffset is measured as
-// `event.PTS - (bucket*1s + Offset)`. For a perfectly stable beep this
-// is 0 by construction (Offset is inferred from event PTS medians);
-// flashes' fracOffsets relative to the same reference reveal the
-// AV-sync gap and its drift across the recording.
+// Compute derives stats from the quantized Observation. audioOnly /
+// videoOnly come from the recording's intended track set and shape
+// the score (missing video isn't penalized in audio-only outputs).
 func Compute(obs *Observation, audioOnly, videoOnly bool) Stats {
 	var s Stats
 	s.AudioOnly = audioOnly
@@ -95,6 +88,9 @@ func Compute(obs *Observation, audioOnly, videoOnly bool) Stats {
 		return s
 	}
 
+	// fracOffset = event.PTS - bucket.Center. Beeps cluster near 0 by
+	// construction (Center is derived from event medians); flashes'
+	// offsets reveal the av-sync gap.
 	var audioFracs, videoFracs []time.Duration
 	var stableDiffs []time.Duration
 	for i, sec := range obs.Buckets {
@@ -141,33 +137,20 @@ func Compute(obs *Observation, audioOnly, videoOnly bool) Stats {
 	return s
 }
 
-// Score is the exported entry point — it rounds to 1 decimal so tests
-// and reports get the same value as Compute writes into Stats.Score.
+// Score collapses Stats into a 0–100 score, rounded to 1 decimal.
 func Score(s Stats) float64 {
 	return math.Round(score(s)*10) / 10
 }
 
-// score collapses Stats into a 0–100 score. Weights and thresholds
-// come from the design spec; see the spec for rationale.
-//
-// Returns 0 if the recording produced no usable cadence data (no
-// stable region in either track that was expected) — otherwise a
-// broken recording with zero events would silently score 100 and
-// disappear from the "worst score" column of the aggregate table.
+// score returns 0 for broken recordings (no stable region, or one
+// expected track produced no events) — otherwise the av-sync penalties
+// don't fire and the formula would score a half-broken recording too
+// well. Weights and thresholds come from the design spec.
 func score(s Stats) float64 {
 	if !s.Locked {
-		// Observation never produced a stable region. Score 0 so the row
-		// doesn't disappear from the aggregate's "worst score" column.
-		// (TimeToStable == 0 alone is NOT a broken signal: it can mean
-		// the recording locked from the very first event, e.g., H264
-		// sample at 25fps with first flash on frame 0.)
 		return 0
 	}
 	if !s.AudioOnly && !s.VideoOnly && (s.BeepCount == 0 || s.FlashCount == 0) {
-		// Both tracks expected but one produced no events; the AV-sync
-		// penalties contribute 0 (they only run when both sides have
-		// stable events), so the formula would score a half-broken
-		// recording implausibly well.
 		return 0
 	}
 
@@ -194,8 +177,7 @@ func normalize(value, good, bad float64) float64 {
 	return (value - good) / (bad - good)
 }
 
-// DeriveSource buckets a LiveKit requestType into "web" or "sdk".
-// Returns "" for unknown values.
+// DeriveSource buckets a requestType into "web" or "sdk", or "" if unknown.
 func DeriveSource(requestType string) string {
 	switch requestType {
 	case types.RequestTypeRoomComposite,

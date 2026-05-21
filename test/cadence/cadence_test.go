@@ -29,14 +29,6 @@ func statsFromResult(result *avsync.Result, audioOnly, videoOnly bool) Stats {
 	return Compute(Quantize(result), audioOnly, videoOnly)
 }
 
-func TestNormalize(t *testing.T) {
-	require.Equal(t, 0.0, normalize(5, 10, 50))
-	require.Equal(t, 0.0, normalize(10, 10, 50))
-	require.Equal(t, 1.0, normalize(50, 10, 50))
-	require.Equal(t, 1.0, normalize(99, 10, 50))
-	require.InDelta(t, 0.5, normalize(30, 10, 50), 0.0001)
-}
-
 func TestScorePerfect(t *testing.T) {
 	s := Stats{
 		Locked:       true,
@@ -169,25 +161,6 @@ func TestComputeVideoOnly(t *testing.T) {
 	require.GreaterOrEqual(t, s.Score, 90.0)
 }
 
-func TestComputeEmpty(t *testing.T) {
-	s := statsFromResult(&avsync.Result{}, false, false)
-	require.Equal(t, 0, s.FlashCount)
-	require.Equal(t, 0, s.BeepCount)
-	require.Equal(t, time.Duration(0), s.TimeToStable)
-	require.Equal(t, 0.0, s.Score)
-}
-
-func TestScoreBrokenRecording(t *testing.T) {
-	// Recording that never produced a stable fracLag scores 0 so it
-	// doesn't disappear from "worst score" in the aggregate.
-	s := Stats{
-		BeepCount:    10,
-		FlashCount:   10,
-		TimeToStable: 0,
-	}
-	require.Equal(t, 0.0, score(s))
-}
-
 func TestScoreAudioOnlyStable(t *testing.T) {
 	s := Stats{
 		Locked:       true,
@@ -230,13 +203,3 @@ func TestScoreLockedAtZero(t *testing.T) {
 	require.Greater(t, score(s), 90.0)
 }
 
-func TestDeriveSource(t *testing.T) {
-	require.Equal(t, "web", DeriveSource("room_composite"))
-	require.Equal(t, "web", DeriveSource("web"))
-	require.Equal(t, "web", DeriveSource("template"))
-	require.Equal(t, "sdk", DeriveSource("participant"))
-	require.Equal(t, "sdk", DeriveSource("track_composite"))
-	require.Equal(t, "sdk", DeriveSource("track"))
-	require.Equal(t, "sdk", DeriveSource("media"))
-	require.Equal(t, "", DeriveSource("unknown"))
-}

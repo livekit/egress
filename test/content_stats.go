@@ -27,10 +27,8 @@ import (
 	"github.com/livekit/egress/test/cadence"
 )
 
-// recordContentStats runs the pure cadence.Compute against the
-// quantized observation, layers on testCase-derived identity fields,
-// logs the row (for Datadog), and hands it to cadence.Record. Safe
-// for concurrent calls.
+// recordContentStats layers testCase identity onto a computed Stats
+// row, logs it (for Datadog), and hands it to cadence.Record.
 func recordContentStats(tc *testCase, obs *cadence.Observation, output, format string) {
 	s := cadence.Compute(obs, tc.audioOnly, tc.videoOnly)
 
@@ -71,8 +69,7 @@ func recordContentStats(tc *testCase, obs *cadence.Observation, output, format s
 	cadence.Record(s)
 }
 
-// inputTrackCount returns the input track count for a test case:
-// participants × (audio + video tracks per participant).
+// inputTrackCount returns participants × (audio + video tracks per participant).
 func inputTrackCount(tc *testCase) int {
 	participants := 1
 	if tc.multiParticipant {
@@ -85,15 +82,13 @@ func inputTrackCount(tc *testCase) int {
 	return participants * perPart
 }
 
-// formatFromFileName returns a lowercase extension without the leading
-// dot, e.g. "mp4" for "/tmp/recording.mp4". Used by file-output callers.
+// formatFromFileName returns "mp4" for "/tmp/recording.mp4".
 func formatFromFileName(name string) string {
 	ext := strings.TrimPrefix(path.Ext(name), ".")
 	return strings.ToLower(ext)
 }
 
-// formatFromStreamURL extracts the protocol from a stream URL, e.g.
-// "rtmp" from "rtmp://host/app/stream". Returns "" if unrecognized.
+// formatFromStreamURL returns "rtmp" for "rtmp://host/app/stream", or "" if unrecognized.
 func formatFromStreamURL(url string) string {
 	if i := strings.Index(url, "://"); i > 0 {
 		return strings.ToLower(url[:i])

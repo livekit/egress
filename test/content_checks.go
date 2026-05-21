@@ -39,23 +39,17 @@ import (
 )
 
 const (
-	// 1Hz cadence jitter budget. WebRTC playout (NetEQ) time-stretches
-	// audio to manage jitter buffer levels, so individual beep gaps can
-	// drift significantly. We collect per-gap drift and check a percentile
-	// rather than failing on any single gap.
+	// 1Hz cadence budget. NetEQ time-stretching makes individual beep
+	// gaps unreliable, so we check a percentile of per-gap drift.
 	eventSpacingTolerance = 120 * time.Millisecond
-	// Encoder pipeline PTS offset between audio and video runs ~200–280ms.
+	// Encoder pipeline PTS offset between audio and video is ~200–280ms.
 	avSyncTolerance = 300 * time.Millisecond
-	// Spacing-check filter: gaps outside [1s − cadenceWindow, 1s + cadenceWindow]
-	// are treated as missed/extra detections, not real cadence drift; skip
-	// the spacing assertion for those.
+	// Gaps outside [1s ± cadenceWindow] are missed/extra detections, not drift.
 	cadenceWindow = 500 * time.Millisecond
-	// WebRTC jitter buffers can occasionally shift or drop individual
-	// events. Require this fraction of expected beeps/flashes to be
-	// present per publisher rather than failing on any single miss.
+	// Allow this fraction of expected events per publisher; jitter buffers
+	// occasionally drop individual events.
 	presenceHitRate = 0.90
-	// Maximum offset the lag detector will trust between plan time and
-	// recording time (Chrome warmup is ~3s; anything beyond is noise).
+	// Chrome warmup is ~3s; lag beyond this is noise.
 	maxRecordingDelay = 5 * time.Second
 
 	layoutSpeaker       = "speaker"
@@ -66,8 +60,8 @@ const (
 	regionFull  = "full"
 )
 
-// runContentCheck derives the appropriate content check from the test case
-// properties and runs it. If tc.contentCheck is set, it is used instead.
+// runContentCheck picks a content check based on testCase properties.
+// tc.contentCheck overrides the default if set.
 func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo, output, format string) {
 	if info == nil {
 		return
@@ -78,8 +72,7 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 		return
 	}
 
-	// Web/WebV2 load arbitrary content from a URL, not the avsync pattern;
-	// no stats row to record.
+	// Web/WebV2 load arbitrary URLs, not the avsync pattern.
 	if tc.requestType == types.RequestTypeWeb {
 		return
 	}
@@ -133,10 +126,8 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 	}
 	t.Logf("recording lag: %s (dur=%s)", lag, dur)
 
-	// Recording captures plan time [lag, lag+dur]. Skip checks for any
-	// planPTS within ~1s of the recording tail — the bucket may technically
-	// be inside the recording, but the integer-second beep expected at that
-	// planPTS often lands at the very edge and is unreliable.
+	// Skip the last ~1s of the recording — integer-second beeps near
+	// the tail often land at the very edge and are unreliable.
 	maxPlanPTS := lag + dur - 1*time.Second
 
 	verifyContent(t, tc, plan, obs, intLag, maxPlanPTS)
@@ -204,12 +195,9 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 				}
 			}
 
-			// Cadence: gap to previous required-and-observed beep should
-			// be ~1s. Gaps outside cadenceWindow imply a missed event
-			// (already flagged above) and are skipped. Within the window,
-			// collect the drift for a percentile check at the end — NetEQ
-			// can time-stretch playout at any point, so individual gaps
-			// are unreliable.
+			// Collect gap drift for a percentile check at the end —
+			// individual NetEQ-stretched gaps are unreliable. Gaps outside
+			// cadenceWindow are missed events (already flagged).
 			if beepVerdict == required && len(gotBeeps) > 0 {
 				if last, ok := lastBeepPTS[pub.name]; ok {
 					gap := gotBeeps[0].PTS - last
@@ -221,8 +209,7 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 				lastBeepPTS[pub.name] = gotBeeps[len(gotBeeps)-1].PTS
 			}
 
-			// Channel routing: detected beeps should match the test's
-			// expected channel for this participant.
+			// Channel routing: detected beeps must match the expected channel.
 			if expCh, expIn := resolveExpectedChannel(tc, pub.name); expIn {
 				for _, b := range gotBeeps {
 					if b.Channel != expCh {
@@ -259,9 +246,7 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 				lastFlashPTS[pub.name] = gotFlashes[len(gotFlashes)-1].PTS
 			}
 
-			// AV-sync: measure tight pair only when both flash and beep
-			// were strictly required this second — any grace would skew
-			// the offset.
+			// Measure av-sync only on strict pairs — grace would skew the offset.
 			if beepVerdict == required && flashVerdict == required &&
 				len(gotBeeps) > 0 && len(gotFlashes) > 0 {
 				minOff := absDuration(gotFlashes[0].PTS - gotBeeps[0].PTS)
@@ -276,11 +261,8 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 			}
 		}
 
-		// Stage attribution: in speaker / single-speaker layouts, the
-		// participant rendered on stage must match the active speaker
-		// (unless we're inside a transition window — activeSpeaker
-		// returns "" then, or inside the recording warmup before chrome
-		// has settled on a speaker).
+		// Stage attribution: rendered participant must match the active
+		// speaker (activeSpeaker returns "" inside transition windows).
 		if !inWarmup && (tc.layout == layoutSpeaker || tc.layout == layoutSingleSpeaker) {
 			if speaker := plan.activeSpeaker(planPTS); speaker != "" {
 				for _, flashes := range secData.Flashes {
@@ -294,8 +276,7 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 		}
 	}
 
-	// Every publisher with video should have appeared in some secondary
-	// (thumb / cell) region at least once during the run.
+	// Every publisher with video should appear in some secondary region.
 	if hasSecondaryRegions {
 		for _, pub := range plan.publishers {
 			hasVideo := false
@@ -311,9 +292,8 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 		}
 	}
 
-	// Stage attribution: log mismatches for diagnostics but don't fail.
-	// Chrome's speaker layout rendering depends on WebRTC subscription
-	// order and active speaker detection timing, which vary between runs.
+	// Log stage mismatches but don't fail — Chrome's speaker rendering
+	// depends on WebRTC subscription order, which varies between runs.
 	if len(stageMismatches) > 0 {
 		t.Logf("stage-attribution: %d mismatches", len(stageMismatches))
 		for _, m := range stageMismatches {
@@ -331,10 +311,8 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 		}
 	}
 
-	// Beep/flash presence: require presenceHitRate of expected events per
-	// publisher. WebRTC jitter buffers can shift or drop individual events.
-	// With few samples the hit rate is too coarse (each miss is a large %
-	// swing), so allow up to 1 miss unconditionally.
+	// Require presenceHitRate per publisher. Allow 1 free miss to keep
+	// small-sample tests from failing on a single jitter-buffer drop.
 	checkPresence := func(kind, name string, req, miss int) {
 		if req == 0 {
 			return
@@ -383,9 +361,8 @@ func secondaryRegionLabel(layout string) string {
 	return "thumb"
 }
 
-// resolveExpectedChannel returns (channel, expectInOutput). With an empty
-// map every participant defaults to BOTH; otherwise only mapped
-// participants are expected in the output.
+// resolveExpectedChannel returns (channel, expectInOutput). Empty map
+// → every participant defaults to BOTH; otherwise only mapped ones.
 func resolveExpectedChannel(tc *testCase, participant string) (avsync.BeepChannel, bool) {
 	if len(tc.expectedAudioChannels) == 0 {
 		return avsync.BeepChannelBoth, true
@@ -397,9 +374,8 @@ func resolveExpectedChannel(tc *testCase, participant string) (avsync.BeepChanne
 	return avsync.BeepChannel(ch), true
 }
 
-// hasNonP0Expectation returns true if expectedAudioChannels covers any
-// participant other than p0 — signals that the verifier should iterate
-// all three participants (e.g. dual-channel audio mixing tests).
+// hasNonP0Expectation signals the verifier to iterate all three
+// participants (e.g. dual-channel audio mixing tests).
 func hasNonP0Expectation(m map[string]livekit.AudioChannel) bool {
 	for name := range m {
 		if name != "p0" {
@@ -411,9 +387,8 @@ func hasNonP0Expectation(m map[string]livekit.AudioChannel) bool {
 
 // --- general helpers ---
 
-// percentileIdx returns the index for a p80 lookup in a sorted slice of
-// length n. For small slices (< 10) p80 degenerates to the max, so fall
-// back to p50 to avoid letting a single outlier dominate.
+// percentileIdx returns the p80 index, falling back to p50 for small
+// slices so a single outlier doesn't dominate.
 func percentileIdx(n int) int {
 	if n < 10 {
 		return n / 2

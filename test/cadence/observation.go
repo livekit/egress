@@ -22,14 +22,10 @@ import (
 )
 
 // Observation bins detected beeps and flashes by integer second of
-// recording PTS, preserving the avsync.Beep / avsync.Flash payloads.
-//
-// Offset is the global median fractional offset across all events; it
-// drives bucket assignment and the Bucket.Center used for av-sync diff
-// math. beepRefs/flashRefs hold per-participant median fractional
-// offsets, used by hasOutlier so that systematic cross-track or
-// cross-participant offsets do not block stabilization — they're
-// measured separately via the av-sync diff.
+// recording PTS. Offset is the global median fractional offset;
+// beepRefs/flashRefs are per-participant medians used by hasOutlier
+// (so systematic cross-track/cross-participant offsets don't block
+// stabilization — those are measured separately as av-sync).
 type Observation struct {
 	Buckets []*Bucket
 	Offset  time.Duration
@@ -106,10 +102,8 @@ func Quantize(result *avsync.Result) *Observation {
 		flashFracs[f.Participant] = append(flashFracs[f.Participant], f.PTS%time.Second)
 	}
 
-	// Per-participant fracOffset medians, used by hasOutlier. Assumes a
-	// single participant's recording PTS doesn't drift across the 0/1s
-	// boundary within a recording (it doesn't in practice; jitter is
-	// ms-scale, not ~1s).
+	// Per-participant medians for hasOutlier. Assumes a participant's
+	// fracOffset doesn't drift across the 0/1s boundary within a recording.
 	obs.beepRefs = make(map[string]time.Duration, len(beepFracs))
 	for p, fs := range beepFracs {
 		obs.beepRefs[p] = medianDuration(fs)
@@ -122,18 +116,15 @@ func Quantize(result *avsync.Result) *Observation {
 	return obs
 }
 
-// stableFracTolerance is the maximum allowed deviation from the median
-// fracOffset for an event to be in the "stable region." Beep/flash
-// detection latency varies by a few ms across codecs; 50ms tolerates
-// that without letting actually-misaligned events count as stable.
+// 50ms tolerates per-codec detection latency variance without letting
+// actually-misaligned events count as stable.
 const stableFracTolerance = 50 * time.Millisecond
 
 // TimeToStabilize finds the first run of 3 consecutive non-empty
-// non-outlier buckets and returns the first one's index and earliest
-// event PTS. Empty buckets are skipped entirely — they don't reset
-// the run (so intentional silence in multi-participant recordings
-// doesn't break stability) but they also don't count toward it.
-// Returns (-1, 0) if no 3-bucket stable run exists.
+// non-outlier buckets and returns (bucketIndex, earliestPTS), or
+// (-1, 0) if no such run exists. Empty buckets are skipped entirely:
+// they don't count toward the run, but don't reset it either (so
+// intentional silence in multi-participant recordings is tolerated).
 func (obs *Observation) TimeToStabilize() (int, time.Duration) {
 	if obs == nil || len(obs.Buckets) == 0 {
 		return -1, 0
@@ -165,13 +156,9 @@ func (obs *Observation) TimeToStabilize() (int, time.Duration) {
 	return -1, 0
 }
 
-// hasOutlier reports whether any event in this bucket deviates from its
-// own (participant, track-type) reference fracOffset by more than
-// stableFracTolerance. Using per-participant per-track-type references
-// means systematic offsets between audio and video, or between
-// different participants' streams, don't disqualify stable buckets —
-// only within-stream jitter does. Cross-stream offsets are measured
-// separately by Compute via the av-sync diff.
+// hasOutlier checks each event against its own (participant, track-type)
+// reference fracOffset — systematic cross-track/cross-participant offsets
+// shouldn't disqualify a bucket, only within-stream jitter should.
 func (obs *Observation) hasOutlier(b *Bucket) bool {
 	for participant, beeps := range b.Beeps {
 		ref := obs.beepRefs[participant]
@@ -192,10 +179,8 @@ func (obs *Observation) hasOutlier(b *Bucket) bool {
 	return false
 }
 
-// wrappedFracDiff returns a - b, treating both as points on a
-// 1-second circle and returning the smallest signed difference in
-// (-500ms, 500ms]. For inputs in [0, 1s), a value like
-// wrappedFracDiff(950ms, 50ms) returns -100ms rather than +900ms.
+// wrappedFracDiff returns a - b on a 1-second circle, in (-500ms, 500ms].
+// e.g. wrappedFracDiff(950ms, 50ms) = -100ms, not +900ms.
 func wrappedFracDiff(a, b time.Duration) time.Duration {
 	d := a - b
 	if d > 500*time.Millisecond {
@@ -206,8 +191,8 @@ func wrappedFracDiff(a, b time.Duration) time.Duration {
 	return d
 }
 
-// earliestPTS returns the smallest PTS across all events in this bucket.
-// ok is false if the bucket is empty.
+// earliestPTS returns the smallest PTS across all events in the bucket;
+// ok is false for empty buckets.
 func earliestPTS(b *Bucket) (time.Duration, bool) {
 	var first time.Duration
 	found := false
@@ -230,15 +215,8 @@ func earliestPTS(b *Bucket) (time.Duration, bool) {
 	return first, found
 }
 
-// IntegerLag scores each candidate lag (0..maxIntLag) and returns the
-// best. Score is the count of buckets where actual and expected agree:
-//   - actual bucket has a beep whose participant is in expected[i+lag]
-//   - both actual bucket and expected[i+lag] are empty (silent matches
-//     silent — keeps the lag from drifting past long forbidden zones
-//     just because the remaining content fits more buckets at a higher
-//     lag)
-//
-// Smallest lag wins ties.
+// IntegerLag returns the candidate lag (0..maxIntLag) that best aligns
+// actual buckets to expected plan slots. Smallest lag wins ties.
 func IntegerLag(expected [][]string, actual []*Bucket) int64 {
 	const maxIntLag = int64(5)
 	var bestLag int64
@@ -251,6 +229,8 @@ func IntegerLag(expected [][]string, actual []*Bucket) int64 {
 				break
 			}
 			if len(actual[i].Beeps) == 0 {
+				// silent-matches-silent: prevents lag from drifting past
+				// long forbidden zones just because more buckets align further out.
 				if len(expected[ei]) == 0 {
 					score++
 				}

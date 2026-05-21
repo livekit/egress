@@ -22,39 +22,31 @@ import (
 	"github.com/linkdata/deadlock"
 )
 
-// allStats collects one row per Record call. Dump reads it at
-// end-of-test (registered via t.Cleanup in TestEgress).
 var (
 	allStats   []Stats
 	allStatsMu deadlock.Mutex
 )
 
-// Record appends a fully-populated Stats row to the global slice.
-// Safe for concurrent calls. Called by integration test glue once
-// per output verification.
+// Record appends a Stats row to the global slice. Safe for concurrent calls.
 func Record(s Stats) {
 	allStatsMu.Lock()
 	allStats = append(allStats, s)
 	allStatsMu.Unlock()
 }
 
-// Dump writes the collected stats to AVSYNC_STATS_PATH (default
-// /tmp/avsync-stats.json). Intended to be invoked from t.Cleanup in
-// TestEgress so it runs once after every output has been processed.
-//
-// Inapplicable metrics (e.g., video stats on audio-only outputs)
-// serialize as JSON null so the rendered table can show "-" instead
-// of misleading 0.
+// Dump writes the collected stats as JSON to AVSYNC_STATS_PATH
+// (default /tmp/avsync-stats.json), intended for t.Cleanup at the
+// end of TestEgress.
 func Dump() {
 	allStatsMu.Lock()
 	defer allStatsMu.Unlock()
 
 	out := make([]map[string]any, 0, len(allStats))
 	for _, s := range allStats {
-		// Durations are emitted as float64 seconds (not duration strings)
-		// so the jq renderer doesn't have to parse Go's multi-unit
-		// duration format (e.g., "1m30s"). Callers' log lines keep
-		// time.Duration values for human readability.
+		// Emit durations as float64 seconds so the jq renderer doesn't
+		// have to parse Go's "1m30s" format. Inapplicable metrics (e.g.
+		// video stats on audio-only outputs) serialize as null so the
+		// table shows "-" instead of a misleading 0.
 		var (
 			flashes      any = s.FlashCount
 			videoJitter  any = s.VideoJitter.Seconds()
