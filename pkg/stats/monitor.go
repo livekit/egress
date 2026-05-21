@@ -83,6 +83,7 @@ type Monitor struct {
 	cgroupUsageBytes  uint64
 	cgroupOK          bool
 	cgroupErrorLogged atomic.Bool
+	pulseErrorLogged  atomic.Bool
 }
 
 type processStats struct {
@@ -767,7 +768,6 @@ func (m *Monitor) updateLoadRatios(cpuLoad float64) {
 		m.promLoadRatio.WithLabelValues("cpu").Set(cpuLoad / m.cpuCostConfig.MaxCpuUtilization)
 	}
 
-	// Memory ratio: m.memoryUsage and m.cgroupUsageBytes already set by updateEgressStats/updateCgroupStats
 	if m.cpuCostConfig.MaxMemory > 0 {
 		if m.cpuCostConfig.MemorySource == config.MemorySourceCgroup && m.cgroupOK {
 			m.promLoadRatio.WithLabelValues("memory").Set(float64(m.cgroupUsageBytes) / gb / m.cpuCostConfig.MaxMemory)
@@ -779,7 +779,10 @@ func (m *Monitor) updateLoadRatios(cpuLoad float64) {
 	// PulseAudio ratio
 	if m.cpuCostConfig.MaxPulseClients > 0 {
 		if clients, err := pulse.Clients(); err == nil {
+			m.pulseErrorLogged.Store(false)
 			m.promLoadRatio.WithLabelValues("pulse").Set(float64(clients) / float64(m.cpuCostConfig.MaxPulseClients))
+		} else if m.pulseErrorLogged.CompareAndSwap(false, true) {
+			logger.Warnw("failed to read PulseAudio clients", err)
 		}
 	}
 }
