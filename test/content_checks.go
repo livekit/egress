@@ -23,6 +23,7 @@ import (
 	"image"
 	"io"
 	"os/exec"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -113,23 +114,22 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 	})
 	require.NoError(t, err)
 
-	dur, _ := parseFFProbeDuration(info.Format.Duration)
-	fracLag, earliest, locked := fractionalLag(result)
-	obs := quantize(result, dur, fracLag)
+	obs := quantize(result)
 
-	recordContentStats(tc, obs, fracLag, earliest, locked, output, format)
+	recordContentStats(tc, obs, output, format)
 
 	plan := tc.plan
 	if plan == nil {
 		return
 	}
 
+	dur, _ := parseFFProbeDuration(info.Format.Duration)
 	expected := plan.expectedBeepsBySec(dur + maxRecordingDelay)
-	intLag := integerLag(expected, obs.seconds)
-	lag := time.Duration(intLag)*time.Second - fracLag
+	intLag := integerLag(expected, obs.buckets)
+	lag := time.Duration(intLag)*time.Second - obs.center
 	if lag > maxRecordingDelay {
 		intLag = 0
-		lag = -fracLag
+		lag = -obs.center
 	}
 	t.Logf("recording lag: %s (dur=%s)", lag, dur)
 
@@ -147,110 +147,141 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 // observation bins detected beeps and flashes by integer second of
 // recording PTS, preserving the avsync.Beep / avsync.Flash payloads.
 type observation struct {
-	seconds []obsSecond
+	buckets []*bucket
+	center  time.Duration
 }
 
-type obsSecond struct {
-	beeps   []avsync.Beep
-	flashes []avsync.Flash
+type bucket struct {
+	beeps   map[string][]avsync.Beep
+	flashes map[string][]avsync.Flash
 }
 
-func quantize(result *avsync.Result, dur time.Duration, fracLag time.Duration) *observation {
-	if result == nil {
-		return &observation{}
+func quantize(result *avsync.Result) *observation {
+	obs := &observation{}
+
+	if result == nil || len(result.Beeps)+len(result.Flashes) == 0 {
+		return obs
 	}
-	numSec := int64(dur/time.Second) + 2
-	if numSec < 1 {
-		numSec = 1
-	}
-	// floor((PTS - fracLag + 0.5)/1) is round-half-up on (PTS - fracLag).
-	bucket := func(t time.Duration) int64 {
-		adj := t - fracLag + 500*time.Millisecond
-		if adj < 0 {
-			return -1
-		}
-		return int64(adj / time.Second)
-	}
-	obs := &observation{seconds: make([]obsSecond, numSec)}
+
+	// result metadata
+	maxPTS := time.Duration(0)
+	fracs := make([]time.Duration, 0, len(result.Beeps)+len(result.Flashes))
 	for _, b := range result.Beeps {
-		s := bucket(b.PTS)
-		if s < 0 || s >= numSec {
-			continue
+		fracs = append(fracs, b.PTS%time.Second)
+		if b.PTS > maxPTS {
+			maxPTS = b.PTS
 		}
-		obs.seconds[s].beeps = append(obs.seconds[s].beeps, b)
 	}
 	for _, f := range result.Flashes {
-		s := bucket(f.PTS)
-		if s < 0 || s >= numSec {
-			continue
+		fracs = append(fracs, f.PTS%time.Second)
+		if f.PTS > maxPTS {
+			maxPTS = f.PTS
 		}
-		obs.seconds[s].flashes = append(obs.seconds[s].flashes, f)
 	}
+	slices.Sort(fracs)
+
+	// center buckets around the median fractional pts
+	obs.center = fracs[len(fracs)/2]
+	getBucket := func(t time.Duration) int64 {
+		adj := t + 500*time.Millisecond
+		if obs.center > 500*time.Millisecond {
+			adj += time.Second
+		}
+		return int64((adj - obs.center) / time.Second)
+	}
+
+	// create/fill buckets
+	numBuckets := getBucket(maxPTS) + 1
+	for range numBuckets {
+		obs.buckets = append(obs.buckets, &bucket{
+			beeps:   make(map[string][]avsync.Beep),
+			flashes: make(map[string][]avsync.Flash),
+		})
+	}
+	for _, b := range result.Beeps {
+		s := obs.buckets[getBucket(b.PTS)]
+		s.beeps[b.Participant] = append(s.beeps[b.Participant], b)
+	}
+	for _, f := range result.Flashes {
+		s := obs.buckets[getBucket(f.PTS)]
+		s.flashes[f.Participant] = append(s.flashes[f.Participant], f)
+	}
+
 	return obs
 }
 
-// --- lag detection ----------------------------------------------------
+// stableFracTolerance is the maximum allowed deviation from the median
+// fracOffset for an event to be in the "stable region." Beep/flash
+// detection latency varies by a few ms across codecs; 50ms tolerates
+// that without letting actually-misaligned events count as stable.
+const stableFracTolerance = 50 * time.Millisecond
 
-// fractionalLag returns the sub-second component of the recording lag
-// (fracLag) and the PTS of the first event where the per-participant 1Hz
-// cadence locks (earliest). earliest serves as the recording's
-// "timeToStable" — all events at or after this point land at the same
-// fracLag once the sync engine has snapped tracks onto the NTP timeline.
-// ok is false when no locking gap was found (broken recording); a true
-// ok with earliest == 0 is legitimate (e.g., H264 sample at 25fps with
-// its first flash on frame 0).
-//
-// Prefers beeps; falls back to flashes for video-only recordings so they
-// still produce a meaningful lag and stabilization time.
-func fractionalLag(result *avsync.Result) (fracLag, earliest time.Duration, ok bool) {
-	if result == nil {
-		return 0, 0, false
+func (obs *observation) timeToStabilize() (int, time.Duration) {
+	if obs == nil || len(obs.buckets) == 0 {
+		return -1, 0
 	}
 
-	grouped := make(map[string][]time.Duration)
-	switch {
-	case len(result.Beeps) > 0:
-		for _, b := range result.Beeps {
-			grouped[b.Participant] = append(grouped[b.Participant], b.PTS)
-		}
-	case len(result.Flashes) > 0:
-		for _, f := range result.Flashes {
-			grouped[f.Participant] = append(grouped[f.Participant], f.PTS)
-		}
-	default:
-		return 0, 0, false
-	}
-	for _, ptsList := range grouped {
-		sort.Slice(ptsList, func(i, j int) bool { return ptsList[i] < ptsList[j] })
-	}
-
-	const lockTolerance = 1 * time.Millisecond
-
-	best := time.Minute
-	for _, ptsList := range grouped {
-		for i := 1; i < len(ptsList); i++ {
-			if diff := absDuration(ptsList[i] - ptsList[i-1] - time.Second); diff < best {
-				best = diff
-			}
-		}
-	}
-
-	earliest = -1
-	for _, ptsList := range grouped {
-		for i := 1; i < len(ptsList); i++ {
-			diff := absDuration(ptsList[i] - ptsList[i-1] - time.Second)
-			if diff-best < lockTolerance {
-				if earliest < 0 || ptsList[i-1] < earliest {
-					earliest = ptsList[i-1]
+	valid := 0
+	for i, b := range obs.buckets {
+		secStart := time.Duration(i)*time.Second + obs.center
+		if hasOutlier(b, secStart) {
+			valid = 0
+		} else {
+			valid++
+			if valid >= 3 {
+				firstStable := i - 2
+				pts, ok := earliestPTS(obs.buckets[firstStable])
+				if ok {
+					return firstStable, pts
 				}
-				break
+				return firstStable, time.Duration(firstStable)*time.Second + obs.center
 			}
 		}
 	}
-	if earliest < 0 {
-		return 0, 0, false
+
+	return -1, 0
+}
+
+func hasOutlier(b *bucket, secStart time.Duration) bool {
+	for _, beeps := range b.beeps {
+		for _, ev := range beeps {
+			if absDuration(ev.PTS-secStart) > stableFracTolerance {
+				return true
+			}
+		}
 	}
-	return earliest % time.Second, earliest, true
+	for _, flashes := range b.flashes {
+		for _, ev := range flashes {
+			if absDuration(ev.PTS-secStart) > stableFracTolerance {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// earliestPTS returns the smallest PTS across all events in this bucket.
+// ok is false if the bucket is empty.
+func earliestPTS(b *bucket) (time.Duration, bool) {
+	var first time.Duration
+	found := false
+	for _, beeps := range b.beeps {
+		for _, ev := range beeps {
+			if !found || ev.PTS < first {
+				first = ev.PTS
+				found = true
+			}
+		}
+	}
+	for _, flashes := range b.flashes {
+		for _, ev := range flashes {
+			if !found || ev.PTS < first {
+				first = ev.PTS
+				found = true
+			}
+		}
+	}
+	return first, found
 }
 
 // expectedBeepsBySec projects the plan timeline into per-integer-second
@@ -282,7 +313,7 @@ func (pl *Plan) expectedBeepsBySec(end time.Duration) [][]string {
 //     lag)
 //
 // Smallest lag wins ties.
-func integerLag(expected [][]string, actual []obsSecond) int64 {
+func integerLag(expected [][]string, actual []*bucket) int64 {
 	const maxIntLag = int64(5)
 	var bestLag int64
 	bestScore := -1
@@ -299,11 +330,13 @@ func integerLag(expected [][]string, actual []obsSecond) int64 {
 				}
 				continue
 			}
-			for _, b := range actual[i].beeps {
-				for _, name := range expected[ei] {
-					if b.Participant == name {
-						score++
-						break
+			for _, beeps := range actual[i].beeps {
+				for _, b := range beeps {
+					for _, name := range expected[ei] {
+						if b.Participant == name {
+							score++
+							break
+						}
 					}
 				}
 			}
@@ -344,7 +377,7 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, int
 
 	warmupCutoff := time.Duration(intLag)*time.Second + publishSettling
 
-	for sec, secData := range obs.seconds {
+	for sec, secData := range obs.buckets {
 		// bucket sec holds beeps emitted at plan-time (sec + intLag).
 		planPTS := time.Duration(int64(sec)+intLag) * time.Second
 		if planPTS > maxPlanPTS {
@@ -352,20 +385,16 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, int
 		}
 		inWarmup := planPTS < warmupCutoff
 
-		beepsByPub := make(map[string][]avsync.Beep)
-		for _, b := range secData.beeps {
-			beepsByPub[b.Participant] = append(beepsByPub[b.Participant], b)
-		}
-		flashesByPub := make(map[string][]avsync.Flash)
-		for _, f := range secData.flashes {
-			flashesByPub[f.Participant] = append(flashesByPub[f.Participant], f)
-			if !isStageRegion(f.Region) {
-				seenInSecondary[f.Participant] = true
+		for _, flashes := range secData.flashes {
+			for _, f := range flashes {
+				if !isStageRegion(f.Region) {
+					seenInSecondary[f.Participant] = true
+				}
 			}
 		}
 
 		for _, pub := range plan.publishers {
-			gotBeeps := beepsByPub[pub.name]
+			gotBeeps := secData.beeps[pub.name]
 			beepVerdict := pub.expectsBeep(planPTS)
 			if inWarmup && beepVerdict == required {
 				beepVerdict = optional
@@ -410,7 +439,7 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, int
 				}
 			}
 
-			gotFlashes := flashesByPub[pub.name]
+			gotFlashes := secData.flashes[pub.name]
 			flashVerdict := pub.expectsFlash(planPTS)
 			if inWarmup && flashVerdict == required {
 				flashVerdict = optional
@@ -461,9 +490,11 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *observation, int
 		// has settled on a speaker).
 		if !inWarmup && (tc.layout == layoutSpeaker || tc.layout == layoutSingleSpeaker) {
 			if speaker := plan.activeSpeaker(planPTS); speaker != "" {
-				for _, f := range secData.flashes {
-					if isStageRegion(f.Region) && f.Participant != "" && f.Participant != speaker {
-						stageMismatches = append(stageMismatches, fmt.Sprintf("@%s stage shows %s, expected %s", planPTS, f.Participant, speaker))
+				for _, flashes := range secData.flashes {
+					for _, f := range flashes {
+						if isStageRegion(f.Region) && f.Participant != "" && f.Participant != speaker {
+							stageMismatches = append(stageMismatches, fmt.Sprintf("@%s stage shows %s, expected %s", planPTS, f.Participant, speaker))
+						}
 					}
 				}
 			}

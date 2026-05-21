@@ -56,7 +56,7 @@ type contentStats struct {
 	beepCount  int
 
 	// Stabilization.
-	locked          bool // fractionalLag found a locking gap (a stable region exists)
+	locked          bool // observation produced a stable region
 	timeToStable    time.Duration
 	warmupMaxAVSync time.Duration
 
@@ -81,8 +81,8 @@ var (
 // recordContentStats computes stats from the quantized observation and
 // recording-lag values produced upstream by fractionalLag/quantize, logs
 // the row (for Datadog), and appends to allStats. Safe for concurrent calls.
-func recordContentStats(tc *testCase, obs *observation, fracLag, earliest time.Duration, locked bool, output, format string) {
-	s := computeContentStats(obs, fracLag, earliest, locked, tc.audioOnly, tc.videoOnly)
+func recordContentStats(tc *testCase, obs *observation, output, format string) {
+	s := computeContentStats(obs, tc.audioOnly, tc.videoOnly)
 
 	s.integrationType = os.Getenv("INTEGRATION_TYPE")
 	s.test = tc.name
@@ -134,51 +134,53 @@ func recordContentStats(tc *testCase, obs *observation, fracLag, earliest time.D
 // is 0 by construction (fracLag is inferred from the beep timeline);
 // flashes' fracOffsets relative to the same reference reveal the AV-sync
 // gap and its drift across the recording.
-func computeContentStats(obs *observation, fracLag, earliest time.Duration, locked, audioOnly, videoOnly bool) contentStats {
+func computeContentStats(obs *observation, audioOnly, videoOnly bool) contentStats {
 	var s contentStats
 	s.audioOnly = audioOnly
 	s.videoOnly = videoOnly
-	s.locked = locked
-	s.timeToStable = earliest
 
 	if obs == nil {
 		s.score = math.Round(scoreContent(s)*10) / 10
 		return s
 	}
 
-	for _, sec := range obs.seconds {
-		s.beepCount += len(sec.beeps)
-		s.flashCount += len(sec.flashes)
+	for _, sec := range obs.buckets {
+		for _, beeps := range sec.beeps {
+			s.beepCount += len(beeps)
+		}
+		for _, flashes := range sec.flashes {
+			s.flashCount += len(flashes)
+		}
 	}
 
-	if !locked {
-		// fractionalLag never found a locking gap — no stable region.
-		// (earliest == 0 with locked == true is legitimate — e.g., H264
-		// sample at 25fps with first flash on frame 0.)
+	stableBucket, timeToStable := obs.timeToStabilize()
+	s.locked = stableBucket >= 0
+	s.timeToStable = timeToStable
+	if !s.locked {
 		s.score = math.Round(scoreContent(s)*10) / 10
 		return s
 	}
 
-	// stableBucket is the bucket containing `earliest`, computed with the
-	// same formula `quantize` uses so the boundary agrees.
-	stableBucket := int64((earliest - fracLag + 500*time.Millisecond) / time.Second)
-
 	var audioFracs, videoFracs []time.Duration
 	var stableDiffs, warmupDiffs []time.Duration
-	for i, sec := range obs.seconds {
+	for i, sec := range obs.buckets {
 		if len(sec.beeps) == 0 && len(sec.flashes) == 0 {
 			continue
 		}
-		secStart := time.Duration(i)*time.Second + fracLag
+		secStart := time.Duration(i)*time.Second + obs.center
 		var aFracs, vFracs []time.Duration
-		for _, b := range sec.beeps {
-			aFracs = append(aFracs, b.PTS-secStart)
+		for _, beeps := range sec.beeps {
+			for _, b := range beeps {
+				aFracs = append(aFracs, b.PTS-secStart)
+			}
 		}
-		for _, f := range sec.flashes {
-			vFracs = append(vFracs, f.PTS-secStart)
+		for _, flashes := range sec.flashes {
+			for _, f := range flashes {
+				vFracs = append(vFracs, f.PTS-secStart)
+			}
 		}
 
-		isStable := int64(i) >= stableBucket
+		isStable := i >= stableBucket
 		if isStable {
 			audioFracs = append(audioFracs, aFracs...)
 			videoFracs = append(videoFracs, vFracs...)
@@ -225,10 +227,11 @@ func computeContentStats(obs *observation, fracLag, earliest time.Duration, lock
 // "worst score" column of the aggregate table.
 func scoreContent(s contentStats) float64 {
 	if !s.locked {
-		// fractionalLag never found a locking gap — no usable signal to
-		// score against. (timeToStable == 0 alone is NOT a broken signal:
-		// it can mean the recording locked from the very first event,
-		// e.g., H264 sample at 25fps with first flash on frame 0.)
+		// Observation never produced a stable region. Score 0 so the row
+		// doesn't disappear from the aggregate's "worst score" column.
+		// (timeToStable == 0 alone is NOT a broken signal: it can mean
+		// the recording locked from the very first event, e.g., H264
+		// sample at 25fps with first flash on frame 0.)
 		return 0
 	}
 	if !s.audioOnly && !s.videoOnly && (s.beepCount == 0 || s.flashCount == 0) {
