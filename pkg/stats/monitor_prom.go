@@ -106,6 +106,12 @@ func (m *Monitor) initPrometheus() {
 		Help:        "Total number of egress handler outcomes, by result",
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	}, []string{"type", "result"})
+	m.promLoadRatio = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Name:        "load_ratio",
+		Help:        "Per-resource utilization ratio (0 = idle, can exceed 1 under overload)",
+		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+	}, []string{"type"})
 
 	prometheus.MustRegister(
 		promNodeAvailable, promCanAcceptRequest, promIsDisabled, promIsTerminating,
@@ -114,6 +120,7 @@ func (m *Monitor) initPrometheus() {
 		m.promCgroupReadSuccess, m.promProcRSS,
 		m.promWouldRejectCgroup,
 		m.handlerResults,
+		m.promLoadRatio,
 	)
 }
 

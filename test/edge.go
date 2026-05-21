@@ -161,7 +161,6 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 					filename: "track_disconnection_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
-				custom: r.runFileTest,
 			},
 
 			// Stream output with no urls
@@ -174,7 +173,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 					videoCodec: types.MimeTypeVP8,
 				},
 				streamOptions: &streamOptions{
-					streamUrls: []string{rtmpUrl4, badRtmpUrl1},
+					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
 					outputType: types.OutputTypeRTMP,
 				},
 				segmentOptions: &segmentOptions{
@@ -200,7 +199,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				custom: r.testStorageLimit,
 			},
 		} {
-			if !r.run(t, test, test.custom) {
+			if !r.run(t, test) {
 				return
 			}
 		}
@@ -302,7 +301,7 @@ func (r *Runner) testAudioMixing(t *testing.T, test *testCase) {
 	}
 	test.plan = &Plan{publishers: []*Publisher{publish("p0"), publish("p1"), publish("p2")}}
 
-	r.runFileTest(t, test)
+	r.executeTest(t, test)
 }
 
 func (r *Runner) testParticipantNoPublish(t *testing.T, test *testCase) {
@@ -370,24 +369,27 @@ func (r *Runner) testRoomCompositeDisconnectDuration(t *testing.T, test *testCas
 	test.publishers["p0"].room.Disconnect()
 
 	// Wait for the egress to complete on its own (server-initiated leave).
-	// Drain updates until we see EGRESS_COMPLETE or EGRESS_FAILED.
+	// Poll the latest snapshot until we see EGRESS_COMPLETE or EGRESS_FAILED.
 	var res *livekit.EgressInfo
-	deadline := time.After(90 * time.Second)
-	for res == nil {
-		select {
-		case info := <-r.updates:
-			if info.EgressId != egressID {
-				continue
-			}
+	deadline := time.Now().Add(90 * time.Second)
+	for res == nil && time.Now().Before(deadline) {
+		r.updates.Lock()
+		info := r.updates.EgressInfo
+		r.updates.Unlock()
+		if info != nil && info.EgressId == egressID {
 			switch info.Status {
 			case livekit.EgressStatus_EGRESS_COMPLETE:
 				res = info
 			case livekit.EgressStatus_EGRESS_FAILED:
 				t.Fatalf("egress failed: %s", info.Error)
 			}
-		case <-deadline:
-			t.Fatal("timed out waiting for egress to complete after room disconnect")
 		}
+		if res == nil {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+	if res == nil {
+		t.Fatal("timed out waiting for egress to complete after room disconnect")
 	}
 
 	silenceGap := time.Since(disconnectTime)
@@ -423,17 +425,12 @@ func (r *Runner) testStorageLimit(t *testing.T, test *testCase) {
 	info := r.sendRequest(t, req)
 	egressID := info.EgressId
 
-	deadline := time.After(45 * time.Second)
-	for {
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for storage limit")
-		default:
-		}
-
+	deadline := time.Now().Add(45 * time.Second)
+	for time.Now().Before(deadline) {
 		update := r.getUpdate(t, egressID)
 		switch update.Status { //nolint:revive // EGRESS_ACTIVE explicitly listed for readability
 		case livekit.EgressStatus_EGRESS_ACTIVE:
+			time.Sleep(100 * time.Millisecond)
 			continue
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
 			file := update.GetFile() //nolint:staticcheck // keep deprecated field for older clients
@@ -447,9 +444,11 @@ func (r *Runner) testStorageLimit(t *testing.T, test *testCase) {
 		case livekit.EgressStatus_EGRESS_FAILED:
 			t.Fatalf("egress failed: %s", update.Error)
 		default:
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 	}
+	t.Fatal("timed out waiting for storage limit")
 }
 
 func (r *Runner) testRtmpFailure(t *testing.T, test *testCase) {
@@ -474,6 +473,7 @@ func (r *Runner) testRtmpFailure(t *testing.T, test *testCase) {
 			// make sure this never reverts in subsequent updates
 			require.Equal(t, livekit.StreamInfo_FAILED, info.StreamResults[0].Status)
 		}
+		time.Sleep(100 * time.Millisecond)
 		info = r.getUpdate(t, info.EgressId)
 	}
 
@@ -514,16 +514,16 @@ func (r *Runner) testEmptyStreamBin(t *testing.T, test *testCase) {
 	require.NoError(t, err)
 
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		rtmpUrl4Redacted:    livekit.StreamInfo_ACTIVE,
+		rtmpUrl1Redacted:    livekit.StreamInfo_ACTIVE,
 		badRtmpUrl1Redacted: livekit.StreamInfo_FAILED,
 	})
 	_, err = r.client.UpdateStream(context.Background(), egressID, &livekit.UpdateStreamRequest{
 		EgressId:         egressID,
-		RemoveOutputUrls: []string{rtmpUrl4},
+		RemoveOutputUrls: []string{rtmpUrl1},
 	})
 	require.NoError(t, err)
 	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		rtmpUrl4Redacted:    livekit.StreamInfo_FINISHED,
+		rtmpUrl1Redacted:    livekit.StreamInfo_FINISHED,
 		badRtmpUrl1Redacted: livekit.StreamInfo_FAILED,
 	})
 

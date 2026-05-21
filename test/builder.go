@@ -51,7 +51,6 @@ type testCase struct {
 	*imageOptions
 	*v2OutputOptions
 
-	multi  bool
 	custom func(*testing.T, *testCase)
 
 	contentCheck func(t *testing.T, path string, info *FFProbeInfo)

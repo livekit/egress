@@ -38,12 +38,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-const (
-	maxRetries = 5
-	minDelay   = time.Millisecond * 100
-	maxDelay   = time.Second * 5
-)
-
 var (
 	segmentTimeRegexp = regexp.MustCompile(`_(\d{14})(\d{3})\.ts`)
 )

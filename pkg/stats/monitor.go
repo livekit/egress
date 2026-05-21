@@ -64,6 +64,7 @@ type Monitor struct {
 	promWouldRejectCgroup prometheus.Gauge
 	requestGauge          *prometheus.GaugeVec
 	handlerResults        *prometheus.CounterVec
+	promLoadRatio         *prometheus.GaugeVec
 
 	svc                 Service
 	cpuStats            *hwstats.CPUStats
@@ -83,6 +84,7 @@ type Monitor struct {
 	cgroupUsageBytes  uint64
 	cgroupOK          bool
 	cgroupErrorLogged atomic.Bool
+	pulseErrorLogged  atomic.Bool
 }
 
 type processStats struct {
@@ -689,6 +691,8 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 
 	m.updateWouldRejectMetrics()
 
+	m.updateLoadRatios(load)
+
 	m.checkMemoryKill(maxMemoryEgress, maxMemoryGroup)
 }
 
@@ -757,6 +761,33 @@ func (m *Monitor) updateWouldRejectMetrics() {
 		m.promWouldRejectCgroup.Set(1)
 	} else {
 		m.promWouldRejectCgroup.Set(0)
+	}
+}
+
+// updateLoadRatios updates the per-resource utilization ratios (0 = idle, can exceed 1 under overload).
+// Called from updateEgressStats after CPU, memory, and cgroup stats are already computed.
+func (m *Monitor) updateLoadRatios(cpuLoad float64) {
+	// CPU ratio: actual CPU utilization / configured limit (same approach as SFU)
+	if m.cpuCostConfig.MaxCpuUtilization > 0 {
+		m.promLoadRatio.WithLabelValues("cpu").Set(cpuLoad / m.cpuCostConfig.MaxCpuUtilization)
+	}
+
+	if m.cpuCostConfig.MaxMemory > 0 {
+		if m.cpuCostConfig.MemorySource == config.MemorySourceCgroup && m.cgroupOK {
+			m.promLoadRatio.WithLabelValues("memory").Set(float64(m.cgroupUsageBytes) / gb / m.cpuCostConfig.MaxMemory)
+		} else {
+			m.promLoadRatio.WithLabelValues("memory").Set(m.memoryUsage / m.cpuCostConfig.MaxMemory)
+		}
+	}
+
+	// PulseAudio ratio
+	if m.cpuCostConfig.MaxPulseClients > 0 {
+		if clients, err := pulse.Clients(); err == nil {
+			m.pulseErrorLogged.Store(false)
+			m.promLoadRatio.WithLabelValues("pulse").Set(float64(clients) / float64(m.cpuCostConfig.MaxPulseClients))
+		} else if m.pulseErrorLogged.CompareAndSwap(false, true) {
+			logger.Warnw("failed to read PulseAudio clients", err)
+		}
 	}
 }
 

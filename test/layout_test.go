@@ -17,12 +17,16 @@
 package test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestSpeakerLayoutRegions(t *testing.T) {
+	if os.Getenv("INTEGRATION_TYPE") != "" {
+		t.Skip()
+	}
 	const (
 		w            = 1920
 		h            = 1080
@@ -56,6 +60,9 @@ func TestSpeakerLayoutRegions(t *testing.T) {
 }
 
 func TestGridLayoutRegions(t *testing.T) {
+	if os.Getenv("INTEGRATION_TYPE") != "" {
+		t.Skip()
+	}
 	const (
 		w            = 1920
 		h            = 1080
@@ -88,6 +95,9 @@ func TestGridLayoutRegions(t *testing.T) {
 }
 
 func TestSingleSpeakerLayoutRegions(t *testing.T) {
+	if os.Getenv("INTEGRATION_TYPE") != "" {
+		t.Skip()
+	}
 	const (
 		w = 1920
 		h = 1080
