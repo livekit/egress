@@ -327,7 +327,7 @@ func (r *Runner) testRoomCompositeStaysOpen(t *testing.T, test *testCase) {
 
 	// Reconnect with the same identity and republish so the egress can
 	// observe both the gap and the resumption.
-	rm, err := r.connectAs("p0", p0.identity, nil)
+	rm, err := r.connectAs(test.plan.publishers[0], p0.identity, nil)
 	require.NoError(t, err)
 	p0.room = rm
 	p0.lp = rm.LocalParticipant
