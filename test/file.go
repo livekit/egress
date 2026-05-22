@@ -371,29 +371,12 @@ func (r *Runner) testFile(t *testing.T) {
 			// -------- Media ----------
 
 			{
-				name:        "Media/AudioOnly",
-				requestType: types.RequestTypeMedia,
-				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					audioOnly:  true,
-					audioRoutes: []*livekit.AudioRoute{{
-						Match: &livekit.AudioRoute_TrackId{TrackId: "set-at-runtime"},
-					}},
-				},
-				encodingOptions: &livekit.EncodingOptions{
-					AudioCodec: livekit.AudioCodec_OPUS,
-				},
-				fileOptions: &fileOptions{
-					filename: "media_audio_{time}",
-					fileType: livekit.EncodedFileType_OGG,
-				},
-			},
-			{
 				name:        "Media/VideoOnly",
 				requestType: types.RequestTypeMedia,
 				publishOptions: publishOptions{
-					videoCodec: types.MimeTypeH264,
-					videoOnly:  true,
+					videoCodec:        types.MimeTypeH264,
+					videoOnly:         true,
+					mediaVideoTrackID: setAtRuntime,
 				},
 				fileOptions: &fileOptions{
 					filename: "media_video_{time}.mp4",
@@ -406,104 +389,105 @@ func (r *Runner) testFile(t *testing.T) {
 					audioCodec: types.MimeTypeOpus,
 					videoCodec: types.MimeTypeH264,
 					audioRoutes: []*livekit.AudioRoute{{
-						Match: &livekit.AudioRoute_TrackId{TrackId: "set-at-runtime"},
-					}},
-				},
-				fileOptions: &fileOptions{
-					filename: "media_{time}.mp4",
-				},
-			},
-
-			// ---- Media Audio Routing ----
-
-			{
-				name:        "Media/AudioRouteByTrackID",
-				requestType: types.RequestTypeMedia,
-				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeH264,
-					audioRoutes: []*livekit.AudioRoute{{
-						Match:   &livekit.AudioRoute_TrackId{TrackId: "set-at-runtime"},
+						Match:   &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
 						Channel: livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
 					}},
+					mediaVideoTrackID: setAtRuntime,
+					expectedAudioChannels: map[string]livekit.AudioChannel{
+						"p0": livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+					},
 				},
 				fileOptions: &fileOptions{
 					filename: "media_route_trackid_{time}.mp4",
 				},
 			},
 			{
-				name:        "Media/AudioRouteByParticipantIdentity",
+				name:        "Media/Identity",
 				requestType: types.RequestTypeMedia,
 				publishOptions: publishOptions{
 					audioCodec: types.MimeTypeOpus,
 					videoCodec: types.MimeTypeH264,
 					audioRoutes: []*livekit.AudioRoute{{
-						Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: "set-at-runtime"},
+						Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: setAtRuntime},
 						Channel: livekit.AudioChannel_AUDIO_CHANNEL_BOTH,
 					}},
+					mediaParticipantVideo: &livekit.ParticipantVideo{
+						Identity: setP2Identity,
+					},
 				},
 				fileOptions: &fileOptions{
 					filename: "media_route_identity_{time}.mp4",
 				},
 			},
 			{
-				name:        "Media/AudioRouteByParticipantKind",
+				name:        "Media/AudioKind",
 				requestType: types.RequestTypeMedia,
 				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeH264,
-					audioRoutes: []*livekit.AudioRoute{{
-						Match:   &livekit.AudioRoute_ParticipantKind{ParticipantKind: livekit.ParticipantInfo_STANDARD},
-						Channel: livekit.AudioChannel_AUDIO_CHANNEL_BOTH,
-					}},
+					audioCodec:       types.MimeTypeOpus,
+					audioOnly:        true,
+					multiParticipant: true,
+					audioRoutes: []*livekit.AudioRoute{
+						{
+							Match:   &livekit.AudioRoute_ParticipantKind{ParticipantKind: livekit.ParticipantInfo_STANDARD},
+							Channel: livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						},
+						{
+							Match:   &livekit.AudioRoute_ParticipantKind{ParticipantKind: livekit.ParticipantInfo_AGENT},
+							Channel: livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+						},
+					},
+					expectedAudioChannels: map[string]livekit.AudioChannel{
+						"p0": livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						"p1": livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+						"p2": livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+					},
 				},
 				fileOptions: &fileOptions{
-					filename: "media_route_kind_{time}.mp4",
+					filename: "media_agent_{time}",
+					fileType: livekit.EncodedFileType_OGG,
 				},
 			},
-			//
-			// Media/MultiRoute disabled temporarily
-			//
-			// {
-			// 	name:        "Media/MultiRoute",
-			// 	requestType: types.RequestTypeMedia,
-			// 	publishOptions: publishOptions{
-			// 		audioCodec:       types.MimeTypeOpus,
-			// 		audioOnly:        true,
-			// 		multiParticipant: true,
-			// 		audioRoutes: []*livekit.AudioRoute{
-			// 			{
-			// 				Match:   &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
-			// 				Channel: livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
-			// 			},
-			// 			{
-			// 				Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: setP1Identity},
-			// 				Channel: livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
-			// 			},
-			// 		},
-			// 		expectedAudioChannels: map[string]livekit.AudioChannel{
-			// 			"p0": livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
-			// 			"p1": livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
-			// 			// p2 deliberately omitted — no matching route → no audio.
-			// 		},
-			// 	},
-			// 	fileOptions: &fileOptions{
-			// 		filename: "media_multiroute_{time}",
-			// 		fileType: livekit.EncodedFileType_OGG,
-			// 	},
-			// },
+			{
+				name:        "Media/Full",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					multiParticipant: true,
+					audioRoutes: []*livekit.AudioRoute{
+						{
+							Match:   &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+							Channel: livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						},
+						{
+							Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: setP1Identity},
+							Channel: livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+						},
+					},
+					mediaParticipantVideo: &livekit.ParticipantVideo{
+						Identity: setP2Identity,
+					},
+					expectedAudioChannels: map[string]livekit.AudioChannel{
+						"p0": livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						"p1": livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+					},
+				},
+				fileOptions: &fileOptions{
+					filename: "media_full_{time}.mp4",
+				},
+			},
 			{
 				name:        "Media/ParticipantVideo",
 				requestType: types.RequestTypeMedia,
 				publishOptions: publishOptions{
 					audioCodec: types.MimeTypeOpus,
 					videoCodec: types.MimeTypeH264,
-					mediaParticipantVideo: &livekit.ParticipantVideo{
-						Identity: "set-at-runtime",
-					},
 					audioRoutes: []*livekit.AudioRoute{{
-						Match: &livekit.AudioRoute_TrackId{TrackId: "set-at-runtime"},
+						Match: &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
 					}},
+					mediaParticipantVideo: &livekit.ParticipantVideo{
+						Identity: setAtRuntime,
+					},
 				},
 				fileOptions: &fileOptions{
 					filename: "media_participant_video_{time}.mp4",

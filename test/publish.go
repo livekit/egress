@@ -129,7 +129,7 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 		if pp.delayConnection != 0 {
 			continue
 		}
-		rm, err := r.connectAs(pp.name, s.identity, connectCodecs(pp))
+		rm, err := r.connectAs(pp, s.identity, connectCodecs(pp))
 		require.NoError(t, err)
 		s.room = rm
 		s.lp = rm.LocalParticipant
@@ -153,7 +153,7 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 				if !sleepUntilCtx(streamCtx, start, pp.delayConnection) {
 					return
 				}
-				rm, err := r.connectAs(pp.name, s.identity, connectCodecs(pp))
+				rm, err := r.connectAs(pp, s.identity, connectCodecs(pp))
 				if err != nil {
 					errCh <- publisherErr{pp.name, fmt.Errorf("connect: %w", err)}
 					return
@@ -351,17 +351,19 @@ func connectCodecs(pp *Publisher) []livekit.Codec {
 	return nil
 }
 
-func (r *Runner) connectAs(name, identity string, codecs []livekit.Codec) (*lksdk.Room, error) {
+func (r *Runner) connectAs(pp *Publisher, identity string, codecs []livekit.Codec) (*lksdk.Room, error) {
 	opts := []lksdk.ConnectOption{}
 	if len(codecs) > 0 {
 		opts = append(opts, lksdk.WithCodecs(codecs))
 	}
+
 	return lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
 		APIKey:              r.ApiKey,
 		APISecret:           r.ApiSecret,
 		RoomName:            r.RoomName,
-		ParticipantName:     fmt.Sprintf("egress-%s", name),
+		ParticipantName:     fmt.Sprintf("egress-%s", pp.name),
 		ParticipantIdentity: identity,
+		ParticipantKind:     pp.kind,
 	}, lksdk.NewRoomCallback(), opts...)
 }
 
