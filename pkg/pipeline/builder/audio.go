@@ -48,8 +48,6 @@ type AudioBin struct {
 	nextID      int
 	nextChannel livekit.AudioChannel
 	names       map[string]string
-
-	audioPacer *audioPacer
 }
 
 type driftProcessNotifier interface {
@@ -331,27 +329,31 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 		return errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	addAudioConvertFunc := addAudioConverter
+	var pacer *audioPacer
 	if b.conf.AudioTempoController.Enabled {
-		addAudioConvertFunc = b.addAudioConvertWithPitch
-	}
-
-	if err := addAudioConvertFunc(appSrcBin, b.conf, b.getChannelLocked(ts), blockingQueue); err != nil {
-		return err
+		p, err := b.addAudioConvertWithPitch(appSrcBin, b.conf, b.getChannelLocked(ts), blockingQueue)
+		if err != nil {
+			return err
+		}
+		pacer = p
+	} else {
+		if err := addAudioConverter(appSrcBin, b.conf, b.getChannelLocked(ts), blockingQueue); err != nil {
+			return err
+		}
 	}
 
 	if err := b.bin.AddSourceBin(appSrcBin); err != nil {
 		return err
 	}
 
-	if ts.TempoController != nil {
+	if pacer != nil && ts.TempoController != nil {
 		ts.TempoController.OnDriftDetectedCallback(func(drift time.Duration) {
-			if b.audioPacer.pitch != nil {
+			if pacer.pitch != nil {
 				logger.Debugw("starting audio pacer to cover the drift", "drift", drift)
-				b.audioPacer.start(drift)
+				pacer.start(drift)
 			}
 		})
-		b.audioPacer.tc = ts.TempoController
+		pacer.tc = ts.TempoController
 	}
 
 	return nil
@@ -554,20 +556,31 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel livek
 	return b.AddElements(rate, audioQueue, audioConvert, audioResample, capsFilter)
 }
 
-func (b *AudioBin) installPitchProbes() {
-	if b.audioPacer.pitch == nil {
+func installPitchProbes(pacer *audioPacer) {
+	if pacer.pitch == nil {
 		return
 	}
+<<<<<<< HEAD
 
 	// Sink pad: accumulate input buffer durations.
 	if sinkPad := b.audioPacer.pitch.GetStaticPad("sink"); sinkPad != nil {
 		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
 				b.audioPacer.inputAccum.Add(int64(*buf.Duration().AsDuration()))
+=======
+	if sinkPad := pacer.pitch.GetStaticPad("sink"); sinkPad != nil {
+		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if !pacer.active.Load() {
+				return gst.PadProbeOK
+			}
+			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
+				pacer.observeProcessedDuration(*buf.Duration().AsDuration())
+>>>>>>> main
 			}
 			return gst.PadProbeOK
 		})
 	}
+<<<<<<< HEAD
 
 	if srcPad := b.audioPacer.pitch.GetStaticPad("src"); srcPad != nil {
 		// Accumulate output buffer durations and check correction completion.
@@ -593,6 +606,11 @@ func (b *AudioBin) installPitchProbes() {
 
 		// Normalize pitch element latency query responses — min latency can go
 		// negative, which breaks downstream latency calculations.
+=======
+	if srcPad := pacer.pitch.GetStaticPad("src"); srcPad != nil {
+		// pitch element min latency can go negative, so we need to normalize it
+		// to workaround the obvious issue with the element latency query handling
+>>>>>>> main
 		srcPad.AddProbe(gst.PadProbeTypeQueryUpstream|gst.PadProbeTypePull,
 			func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 				q := info.GetQuery()
@@ -612,58 +630,60 @@ func (b *AudioBin) installPitchProbes() {
 	}
 }
 
-func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.PipelineConfig, channel livekit.AudioChannel, isLeaky bool) error {
+func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.PipelineConfig, channel livekit.AudioChannel, isLeaky bool) (*audioPacer, error) {
 	// add audio rate element to handle discontinuities or codec DTX
 	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	q, err := gstreamer.BuildQueue(fmt.Sprintf("%s_input_queue", audioBinName), p.Latency.PipelineLatency, isLeaky)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	ac1, err := gst.NewElement("audioconvert")
 	if err != nil {
-		return errors.ErrGstPipelineError(err)
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	ar1, err := gst.NewElement("audioresample")
 	if err != nil {
-		return errors.ErrGstPipelineError(err)
+		return nil, errors.ErrGstPipelineError(err)
 	}
 
 	// go to float for pitch element
 	f32caps, err := newAudioFloatCapsFilter(p, channel)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	pitch, err := gst.NewElement("pitch")
 	if err != nil {
-		return errors.ErrGstPipelineError(err)
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	pitch.SetArg("tempo", fmt.Sprintf("%.1f", 1.0))
 
 	ac2, err := gst.NewElement("audioconvert")
 	if err != nil {
-		return errors.ErrGstPipelineError(err)
+		return nil, errors.ErrGstPipelineError(err)
 	}
 	// back to pipeline/native format
 	s16caps, err := newAudioCapsFilter(p, channel)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// keep a handle for pacer control
-	b.audioPacer = &audioPacer{
+	pacer := &audioPacer{
 		pitch:               pitch,
 		tempoAdjustmentRate: p.AudioTempoController.AdjustmentRate,
 	}
 
-	b.installPitchProbes()
+	installPitchProbes(pacer)
 
-	return bin.AddElements(rate, q, ac1, ar1, f32caps, pitch, ac2, s16caps)
+	if err := bin.AddElements(rate, q, ac1, ar1, f32caps, pitch, ac2, s16caps); err != nil {
+		return nil, err
+	}
+	return pacer, nil
 }
 
 // F32 caps used only around `pitch`

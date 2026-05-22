@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 type EventKind int
@@ -39,6 +41,7 @@ type Plan struct {
 
 type Publisher struct {
 	name            string
+	kind            lksdk.ParticipantKind
 	delayConnection time.Duration
 	audio           []Event // sorted by pts ascending
 	video           []Event // sorted by pts ascending
@@ -133,25 +136,98 @@ func planSingleParticipant(tc *testCase) *Plan {
 func planMultiParticipant(tc *testCase) *Plan {
 	participants := []string{"p0", "p1", "p2"}
 	rotates := tc.layout == layoutSpeaker || tc.layout == layoutSingleSpeaker
+	p1Kind := lksdk.ParticipantStandard
+	if usesAgentRoute(tc) {
+		p1Kind = lksdk.ParticipantAgent
+	}
 
 	plan := &Plan{}
 	for i, name := range participants {
-		p := &Publisher{
-			name: name,
-			audio: []Event{
-				{pts: 0, kind: eventPublish, codec: types.MimeTypeOpus},
-			},
-			video: []Event{
-				{pts: 0, kind: eventPublish, codec: types.MimeTypeH264},
-			},
+		p := &Publisher{name: name, kind: lksdk.ParticipantStandard}
+		if name == "p1" {
+			p.kind = p1Kind
 		}
-		if rotates {
-			p.audio = append(p.audio, rotationEvents(i, len(participants), rotationSlot)...)
+
+		if !tc.videoOnly && participantHasAudioInOutput(tc, name) {
+			p.audio = []Event{{pts: 0, kind: eventPublish, codec: types.MimeTypeOpus}}
+			if rotates {
+				p.audio = append(p.audio, rotationEvents(i, len(participants), rotationSlot)...)
+			}
 		}
+		if !tc.audioOnly && participantHasVideoInOutput(tc, name) {
+			p.video = []Event{{pts: 0, kind: eventPublish, codec: types.MimeTypeH264}}
+		}
+
 		sortEvents(p)
 		plan.publishers = append(plan.publishers, p)
 	}
 	return plan
+}
+
+func usesAgentRoute(tc *testCase) bool {
+	for _, route := range tc.audioRoutes {
+		if m, ok := route.Match.(*livekit.AudioRoute_ParticipantKind); ok &&
+			m.ParticipantKind == livekit.ParticipantInfo_AGENT {
+			return true
+		}
+	}
+	return false
+}
+
+func participantHasAudioInOutput(tc *testCase, name string) bool {
+	if len(tc.audioRoutes) == 0 {
+		return true
+	}
+	for _, route := range tc.audioRoutes {
+		switch m := route.Match.(type) {
+		case *livekit.AudioRoute_TrackId:
+			if m.TrackId == setAtRuntime && name == "p0" {
+				return true
+			}
+		case *livekit.AudioRoute_ParticipantIdentity:
+			if matchesParticipantSentinel(m.ParticipantIdentity, name) {
+				return true
+			}
+		case *livekit.AudioRoute_ParticipantKind:
+			// p1 only connects as AGENT when the test has an AGENT route
+			// (see usesAgentRoute); otherwise every publisher is STANDARD.
+			isAgent := name == "p1" && usesAgentRoute(tc)
+			if m.ParticipantKind == livekit.ParticipantInfo_AGENT && isAgent {
+				return true
+			}
+			if m.ParticipantKind == livekit.ParticipantInfo_STANDARD && !isAgent {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func participantHasVideoInOutput(tc *testCase, name string) bool {
+	if tc.mediaVideoTrackID == "" && tc.mediaParticipantVideo == nil {
+		return true
+	}
+	// mediaVideoTrackID always resolves to p0's video track in the harness.
+	if tc.mediaVideoTrackID != "" && name == "p0" {
+		return true
+	}
+	if tc.mediaParticipantVideo != nil &&
+		matchesParticipantSentinel(tc.mediaParticipantVideo.Identity, name) {
+		return true
+	}
+	return false
+}
+
+func matchesParticipantSentinel(sentinel, name string) bool {
+	switch sentinel {
+	case setAtRuntime:
+		return name == "p0"
+	case setP1Identity:
+		return name == "p1"
+	case setP2Identity:
+		return name == "p2"
+	}
+	return false
 }
 
 func sortEvents(p *Publisher) {
