@@ -121,7 +121,7 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 
 	rpc.InitPSRPCStats(prometheus.Labels{"node_id": conf.NodeID, "node_type": "EGRESS"})
 
-	if err := conf.initLogger("nodeID", conf.NodeID, "clusterID", conf.ClusterID); err != nil {
+	if err := conf.InitLogger("egress", "nodeID", conf.NodeID, "clusterID", conf.ClusterID); err != nil {
 		return nil, err
 	}
 

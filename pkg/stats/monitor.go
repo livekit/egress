@@ -49,7 +49,7 @@ type Service interface {
 	IsIdle() bool
 	IsDisabled() bool
 	IsTerminating() bool
-	KillProcess(string, error)
+	KillProcess(egressID string, reason string, err error)
 }
 
 type Monitor struct {
@@ -63,6 +63,8 @@ type Monitor struct {
 	promProcRSS           prometheus.Gauge
 	promWouldRejectCgroup prometheus.Gauge
 	requestGauge          *prometheus.GaugeVec
+	handlerResults        *prometheus.CounterVec
+	promLoadRatio         *prometheus.GaugeVec
 
 	svc                 Service
 	cpuStats            *hwstats.CPUStats
@@ -82,10 +84,12 @@ type Monitor struct {
 	cgroupUsageBytes  uint64
 	cgroupOK          bool
 	cgroupErrorLogged atomic.Bool
+	pulseErrorLogged  atomic.Bool
 }
 
 type processStats struct {
-	egressID string
+	egressID    string
+	requestType string
 
 	pendingCPU float64
 	lastCPU    float64
@@ -346,7 +350,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		return errors.ErrEgressAlreadyExists
 	}
 	if _, ok := m.canAcceptRequestLocked(req); !ok {
-		logger.Debugw("can not accept request", nil)
+		logger.Debugw("can not accept request")
 		return errors.ErrNotEnoughCPU
 	}
 
@@ -412,8 +416,10 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		}
 	}
 
+	reqType := requestTypeFromReq(req)
 	ps := &processStats{
 		egressID:     req.EgressId,
+		requestType:  reqType,
 		pendingCPU:   cpuHold,
 		allowedCPU:   cpuHold,
 		countedAsWeb: countedAsWeb,
@@ -423,6 +429,9 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.pendingPulseClients.Add(pulseClients)
 
 	time.AfterFunc(cpuHoldDuration, func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+
 		ps.pendingCPU = 0
 		m.pendingMemoryUsage.Add(-m.cpuCostConfig.MemoryCost)
 		m.pendingPulseClients.Add(-pulseClients)
@@ -645,7 +654,7 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 		if m.requests.Load() > 1 {
 			m.highCPUDuration++
 			if m.highCPUDuration >= minKillDuration {
-				m.svc.KillProcess(maxCPUEgress, errors.ErrCPUExhausted(maxCPU))
+				m.svc.KillProcess(maxCPUEgress, ResultKilledCPU, errors.ErrCPUExhausted(maxCPU))
 				m.highCPUDuration = 0
 			}
 		}
@@ -681,6 +690,8 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 	m.updateCgroupStats()
 
 	m.updateWouldRejectMetrics()
+
+	m.updateLoadRatios(load)
 
 	m.checkMemoryKill(maxMemoryEgress, maxMemoryGroup)
 }
@@ -753,6 +764,33 @@ func (m *Monitor) updateWouldRejectMetrics() {
 	}
 }
 
+// updateLoadRatios updates the per-resource utilization ratios (0 = idle, can exceed 1 under overload).
+// Called from updateEgressStats after CPU, memory, and cgroup stats are already computed.
+func (m *Monitor) updateLoadRatios(cpuLoad float64) {
+	// CPU ratio: actual CPU utilization / configured limit (same approach as SFU)
+	if m.cpuCostConfig.MaxCpuUtilization > 0 {
+		m.promLoadRatio.WithLabelValues("cpu").Set(cpuLoad / m.cpuCostConfig.MaxCpuUtilization)
+	}
+
+	if m.cpuCostConfig.MaxMemory > 0 {
+		if m.cpuCostConfig.MemorySource == config.MemorySourceCgroup && m.cgroupOK {
+			m.promLoadRatio.WithLabelValues("memory").Set(float64(m.cgroupUsageBytes) / gb / m.cpuCostConfig.MaxMemory)
+		} else {
+			m.promLoadRatio.WithLabelValues("memory").Set(m.memoryUsage / m.cpuCostConfig.MaxMemory)
+		}
+	}
+
+	// PulseAudio ratio
+	if m.cpuCostConfig.MaxPulseClients > 0 {
+		if clients, err := pulse.Clients(); err == nil {
+			m.pulseErrorLogged.Store(false)
+			m.promLoadRatio.WithLabelValues("pulse").Set(float64(clients) / float64(m.cpuCostConfig.MaxPulseClients))
+		} else if m.pulseErrorLogged.CompareAndSwap(false, true) {
+			logger.Warnw("failed to read PulseAudio clients", err)
+		}
+	}
+}
+
 // checkMemoryKill evaluates whether to kill a process based on memory usage.
 func (m *Monitor) checkMemoryKill(maxMemoryEgress string, maxMemoryGroup *hwstats.GroupMemory) {
 	if m.cpuCostConfig.MaxMemory == 0 {
@@ -788,7 +826,7 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string, maxMemoryGroup *hwstat
 					"egressID", maxMemoryEgress, "processes", maxMemoryGroup.Procs)
 			}
 			// Report the actual memory that triggered the kill, not per-process max
-			m.svc.KillProcess(maxMemoryEgress, errors.ErrOOM(killTriggerGB))
+			m.svc.KillProcess(maxMemoryEgress, ResultKilledOOM, errors.ErrOOM(killTriggerGB))
 			m.highMemoryStart = time.Time{}
 		}
 	} else {

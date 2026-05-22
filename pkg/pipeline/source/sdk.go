@@ -254,7 +254,7 @@ func (s *SDKSource) joinRoom() error {
 			OnTrackUnmuted:      s.onTrackUnmuted,
 			OnTrackUnsubscribed: s.onTrackUnsubscribed,
 		},
-		OnDisconnected: s.onDisconnected,
+		OnDisconnectedWithReason: s.onDisconnectedWithReason,
 	}
 
 	switch s.RequestType {
@@ -803,8 +803,10 @@ func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
 	}
 }
 
-func (s *SDKSource) onDisconnected() {
-	logger.Warnw("disconnected from room", nil)
+func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {
+	if reason != lksdk.RoomClosed {
+		logger.Warnw("disconnected from room", nil, "reason", reason)
+	}
 	s.finished()
 }
 

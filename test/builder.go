@@ -29,8 +29,10 @@ import (
 )
 
 const (
-	webUrl       = "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4"
-	setAtRuntime = "set-at-runtime"
+	webUrl        = "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4"
+	setAtRuntime  = "set-at-runtime"
+	setP1Identity = "set-p1-identity"
+	setP2Identity = "set-p2-identity"
 )
 
 type testCase struct {
@@ -49,10 +51,13 @@ type testCase struct {
 	*imageOptions
 	*v2OutputOptions
 
-	multi  bool
 	custom func(*testing.T, *testCase)
 
 	contentCheck func(t *testing.T, path string, info *FFProbeInfo)
+
+	plan       *Plan
+	publishers map[string]*publisherState
+	p0Identity string
 }
 
 type publishOptions struct {
@@ -64,6 +69,8 @@ type publishOptions struct {
 	audioMixing    livekit.AudioMixing
 	audioTrackID   string
 
+	expectedAudioChannels map[string]livekit.AudioChannel
+
 	videoCodec     types.MimeType
 	videoDelay     time.Duration
 	videoUnpublish time.Duration
@@ -71,7 +78,12 @@ type publishOptions struct {
 	videoOnly      bool
 	videoTrackID   string
 
+	disconnectAt       time.Duration
+	disconnectDuration time.Duration
+
 	layout string
+
+	multiParticipant bool
 
 	// v2 Media source fields
 	mediaVideoTrackID     string
@@ -183,7 +195,7 @@ func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
 	case types.RequestTypeParticipant:
 		participant := &livekit.ParticipantEgressRequest{
 			RoomName: r.RoomName,
-			Identity: r.room.LocalParticipant.Identity(),
+			Identity: test.p0Identity,
 		}
 		if test.encodingOptions != nil {
 			participant.Options = &livekit.ParticipantEgressRequest_Advanced{
@@ -527,7 +539,7 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 			pv := test.mediaParticipantVideo
 			if pv.Identity == setAtRuntime {
 				pv = &livekit.ParticipantVideo{
-					Identity:          string(r.room.LocalParticipant.Identity()),
+					Identity:          test.p0Identity,
 					PreferScreenShare: pv.PreferScreenShare,
 				}
 			}
@@ -536,7 +548,7 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 			}
 		}
 
-		// audio - replace placeholder track IDs with actual published IDs
+		// audio - replace placeholder track IDs / identities
 		if len(test.audioRoutes) > 0 {
 			routes := make([]*livekit.AudioRoute, len(test.audioRoutes))
 			for i, route := range test.audioRoutes {
@@ -547,10 +559,25 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 						Channel: route.Channel,
 					}
 				}
-				if pi, ok := route.Match.(*livekit.AudioRoute_ParticipantIdentity); ok && pi.ParticipantIdentity == setAtRuntime {
-					routes[i] = &livekit.AudioRoute{
-						Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: string(r.room.LocalParticipant.Identity())},
-						Channel: route.Channel,
+				if pi, ok := route.Match.(*livekit.AudioRoute_ParticipantIdentity); ok {
+					var identity string
+					switch pi.ParticipantIdentity {
+					case setAtRuntime:
+						identity = test.p0Identity
+					case setP1Identity:
+						if s := test.publishers["p1"]; s != nil {
+							identity = s.identity
+						}
+					case setP2Identity:
+						if s := test.publishers["p2"]; s != nil {
+							identity = s.identity
+						}
+					}
+					if identity != "" {
+						routes[i] = &livekit.AudioRoute{
+							Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: identity},
+							Channel: route.Channel,
+						}
 					}
 				}
 			}

@@ -75,6 +75,17 @@ type FakeProcessManager struct {
 	getGatherersReturnsOnCall map[int]struct {
 		result1 []prometheus.Gatherer
 	}
+	GetKillReasonStub        func(string) string
+	getKillReasonMutex       sync.RWMutex
+	getKillReasonArgsForCall []struct {
+		arg1 string
+	}
+	getKillReasonReturns struct {
+		result1 string
+	}
+	getKillReasonReturnsOnCall map[int]struct {
+		result1 string
+	}
 	GetStatusStub        func(map[string]interface{})
 	getStatusMutex       sync.RWMutex
 	getStatusArgsForCall []struct {
@@ -95,11 +106,12 @@ type FakeProcessManager struct {
 	killAllMutex       sync.RWMutex
 	killAllArgsForCall []struct {
 	}
-	KillProcessStub        func(string, error)
+	KillProcessStub        func(string, string, error)
 	killProcessMutex       sync.RWMutex
 	killProcessArgsForCall []struct {
 		arg1 string
-		arg2 error
+		arg2 string
+		arg3 error
 	}
 	LaunchStub        func(context.Context, string, *rpc.StartEgressRequest, *livekit.EgressInfo, *exec.Cmd) error
 	launchMutex       sync.RWMutex
@@ -450,6 +462,67 @@ func (fake *FakeProcessManager) GetGatherersReturnsOnCall(i int, result1 []prome
 	}{result1}
 }
 
+func (fake *FakeProcessManager) GetKillReason(arg1 string) string {
+	fake.getKillReasonMutex.Lock()
+	ret, specificReturn := fake.getKillReasonReturnsOnCall[len(fake.getKillReasonArgsForCall)]
+	fake.getKillReasonArgsForCall = append(fake.getKillReasonArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.GetKillReasonStub
+	fakeReturns := fake.getKillReasonReturns
+	fake.recordInvocation("GetKillReason", []interface{}{arg1})
+	fake.getKillReasonMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeProcessManager) GetKillReasonCallCount() int {
+	fake.getKillReasonMutex.RLock()
+	defer fake.getKillReasonMutex.RUnlock()
+	return len(fake.getKillReasonArgsForCall)
+}
+
+func (fake *FakeProcessManager) GetKillReasonCalls(stub func(string) string) {
+	fake.getKillReasonMutex.Lock()
+	defer fake.getKillReasonMutex.Unlock()
+	fake.GetKillReasonStub = stub
+}
+
+func (fake *FakeProcessManager) GetKillReasonArgsForCall(i int) string {
+	fake.getKillReasonMutex.RLock()
+	defer fake.getKillReasonMutex.RUnlock()
+	argsForCall := fake.getKillReasonArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeProcessManager) GetKillReasonReturns(result1 string) {
+	fake.getKillReasonMutex.Lock()
+	defer fake.getKillReasonMutex.Unlock()
+	fake.GetKillReasonStub = nil
+	fake.getKillReasonReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeProcessManager) GetKillReasonReturnsOnCall(i int, result1 string) {
+	fake.getKillReasonMutex.Lock()
+	defer fake.getKillReasonMutex.Unlock()
+	fake.GetKillReasonStub = nil
+	if fake.getKillReasonReturnsOnCall == nil {
+		fake.getKillReasonReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.getKillReasonReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
+}
+
 func (fake *FakeProcessManager) GetStatus(arg1 map[string]interface{}) {
 	fake.getStatusMutex.Lock()
 	fake.getStatusArgsForCall = append(fake.getStatusArgsForCall, struct {
@@ -567,17 +640,18 @@ func (fake *FakeProcessManager) KillAllCalls(stub func()) {
 	fake.KillAllStub = stub
 }
 
-func (fake *FakeProcessManager) KillProcess(arg1 string, arg2 error) {
+func (fake *FakeProcessManager) KillProcess(arg1 string, arg2 string, arg3 error) {
 	fake.killProcessMutex.Lock()
 	fake.killProcessArgsForCall = append(fake.killProcessArgsForCall, struct {
 		arg1 string
-		arg2 error
-	}{arg1, arg2})
+		arg2 string
+		arg3 error
+	}{arg1, arg2, arg3})
 	stub := fake.KillProcessStub
-	fake.recordInvocation("KillProcess", []interface{}{arg1, arg2})
+	fake.recordInvocation("KillProcess", []interface{}{arg1, arg2, arg3})
 	fake.killProcessMutex.Unlock()
 	if stub != nil {
-		fake.KillProcessStub(arg1, arg2)
+		fake.KillProcessStub(arg1, arg2, arg3)
 	}
 }
 
@@ -587,17 +661,17 @@ func (fake *FakeProcessManager) KillProcessCallCount() int {
 	return len(fake.killProcessArgsForCall)
 }
 
-func (fake *FakeProcessManager) KillProcessCalls(stub func(string, error)) {
+func (fake *FakeProcessManager) KillProcessCalls(stub func(string, string, error)) {
 	fake.killProcessMutex.Lock()
 	defer fake.killProcessMutex.Unlock()
 	fake.KillProcessStub = stub
 }
 
-func (fake *FakeProcessManager) KillProcessArgsForCall(i int) (string, error) {
+func (fake *FakeProcessManager) KillProcessArgsForCall(i int) (string, string, error) {
 	fake.killProcessMutex.RLock()
 	defer fake.killProcessMutex.RUnlock()
 	argsForCall := fake.killProcessArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeProcessManager) Launch(arg1 context.Context, arg2 string, arg3 *rpc.StartEgressRequest, arg4 *livekit.EgressInfo, arg5 *exec.Cmd) error {

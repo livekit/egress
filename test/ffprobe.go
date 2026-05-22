@@ -38,12 +38,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-const (
-	maxRetries = 5
-	minDelay   = time.Millisecond * 100
-	maxDelay   = time.Second * 5
-)
-
 var (
 	segmentTimeRegexp = regexp.MustCompile(`_(\d{14})(\d{3})\.ts`)
 )
@@ -114,7 +108,7 @@ func ffprobe(input string) (*FFProbeInfo, error) {
 	return info, err
 }
 
-func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.EgressInfo, egressType types.EgressType, withMuting bool, sourceFramerate float64, live bool) *FFProbeInfo {
+func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.EgressInfo, egressType types.EgressType, sourceFramerate float64, live bool) *FFProbeInfo {
 	info, err := ffprobe(in)
 	require.NoError(t, err)
 
@@ -151,9 +145,6 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 
 		case types.RequestTypeTrack:
 			if p.AudioEnabled {
-				if withMuting {
-					delta = 6
-				}
 				require.InDelta(t, expected, actual, delta)
 			}
 		}

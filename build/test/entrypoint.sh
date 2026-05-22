@@ -22,10 +22,34 @@ pulseaudio -D --verbose --exit-idle-time=-1 --disallow-exit > /dev/null 2>&1
 # Run RTSP server
 ./mediamtx > /dev/null 2>&1 &
 
-# Run tests
+# emit_avsync_stats prints the stats JSON between sentinels after go test
+# exits. Writing the file from inside the test process races zap's log flush
+# during testing.T cleanup, so we do it from the shell instead.
+emit_avsync_stats() {
+  local path="${AVSYNC_STATS_PATH:-/tmp/avsync-stats.json}"
+  if [[ -f "$path" ]]; then
+    echo "===AVSYNC_STATS_BEGIN==="
+    cat "$path"
+    echo
+    echo "===AVSYNC_STATS_END==="
+  fi
+}
+
+# Run tests. Disable `set -e` around the test pipeline so a non-zero test
+# exit code doesn't kill the script before emit_avsync_stats runs.
 if [[ -z ${GITHUB_WORKFLOW+x} ]]; then
-  exec ./test.test -test.v -test.timeout 30m
+  set +e
+  ./test.test -test.v -test.timeout 30m
+  status=$?
+  set -e
+  emit_avsync_stats
+  exit $status
 else
   go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest
-  exec go tool test2json -p egress ./test.test -test.v -test.timeout 30m 2>&1 | "$HOME"/go/bin/gotestfmt
+  set +e
+  go tool test2json -p egress ./test.test -test.v -test.timeout 30m 2>&1 | "$HOME"/go/bin/gotestfmt
+  status=${PIPESTATUS[0]}
+  set -e
+  emit_avsync_stats
+  exit $status
 fi

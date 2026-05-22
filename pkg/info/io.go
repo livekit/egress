@@ -35,9 +35,8 @@ import (
 )
 
 const (
-	numWorkers                     = 5
 	maxBackoff                     = time.Minute * 1
-	unhealthyShutdownWatchdogDelay = 20 * time.Second // TODO change to 10 min once we understand PSRPC failures
+	unhealthyShutdownWatchdogDelay = 10 * time.Minute
 )
 
 type SessionReporter interface {

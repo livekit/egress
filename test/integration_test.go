@@ -25,6 +25,7 @@ import (
 
 	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/server"
+	"github.com/livekit/egress/test/cadence"
 	"github.com/livekit/protocol/redis"
 	"github.com/livekit/psrpc"
 )
@@ -36,6 +37,7 @@ var (
 
 func TestEgress(t *testing.T) {
 	r := NewRunner(t)
+	t.Cleanup(cadence.Dump)
 
 	rfs, err := fs.Sub(templateEmbedFs, "templates")
 	require.NoError(t, err)

@@ -27,6 +27,11 @@ on:
       - test/**
       - go.mod
 
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+
 jobs:
   build:
     runs-on: namespace-profile-8vcpu-cache
@@ -61,7 +66,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: 1.26.1
+          go-version: 1.26.2
 
       - name: Download Go modules
         run: go mod download
@@ -120,6 +125,7 @@ jobs:
         env:
           IMAGE: ${{needs.build.outputs.image}}
         run: |
+          set -o pipefail
           docker run --rm \
             --network host \
             -e GITHUB_WORKFLOW=1 \
@@ -127,4 +133,61 @@ jobs:
             -e INTEGRATION_TYPE="${{ matrix.integration_type }}" \
             -e S3_UPLOAD="$(echo ${{ secrets.S3_UPLOAD }} | base64 -d)" \
             -e GCP_UPLOAD="$(echo ${{ secrets.GCP_UPLOAD }} | base64 -d)" \
-            ${{ env.IMAGE }}
+            ${{ env.IMAGE }} \
+            2>&1 | tee /tmp/test-output.log
+
+      - name: Extract avsync stats
+        if: always()
+        run: |
+          # Extract the JSON block between sentinel markers; fall back to []
+          # so the artifact always exists for the summary job.
+          awk '/===AVSYNC_STATS_BEGIN===/{flag=1; next} /===AVSYNC_STATS_END===/{flag=0} flag' \
+            /tmp/test-output.log > /tmp/avsync-stats.json
+          if [ ! -s /tmp/avsync-stats.json ]; then
+            echo "[]" > /tmp/avsync-stats.json
+          fi
+          echo "Stats rows: $(jq 'length' /tmp/avsync-stats.json)"
+
+      - name: Upload avsync stats artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: avsync-stats-${{ matrix.integration_type }}
+          path: /tmp/avsync-stats.json
+
+  stats:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+
+      - name: Download avsync stats artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: avsync-stats-*
+          path: stats/
+
+      - name: Render avsync summary
+        run: .github/scripts/render-avsync-stats.sh stats/*/avsync-stats.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post/update PR comment with summary link
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          marker='<!-- avsync-stats-comment -->'
+          body="${marker}"$'\n'"AV-sync stats summary: [view in run #${{ github.run_id }}](${RUN_URL})"
+
+          existing=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            --paginate --jq ".[] | select(.body | contains(\"${marker}\")) | .id" | head -1)
+
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/${REPO}/issues/comments/${existing}" -f body="$body"
+          else
+            gh api --method POST "repos/${REPO}/issues/${PR_NUMBER}/comments" -f body="$body"
+          fi
