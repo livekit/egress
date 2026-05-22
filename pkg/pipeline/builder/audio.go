@@ -560,57 +560,41 @@ func installPitchProbes(pacer *audioPacer) {
 	if pacer.pitch == nil {
 		return
 	}
-<<<<<<< HEAD
 
 	// Sink pad: accumulate input buffer durations.
-	if sinkPad := b.audioPacer.pitch.GetStaticPad("sink"); sinkPad != nil {
-		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
-				b.audioPacer.inputAccum.Add(int64(*buf.Duration().AsDuration()))
-=======
 	if sinkPad := pacer.pitch.GetStaticPad("sink"); sinkPad != nil {
 		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-			if !pacer.active.Load() {
-				return gst.PadProbeOK
-			}
 			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
-				pacer.observeProcessedDuration(*buf.Duration().AsDuration())
->>>>>>> main
+				pacer.inputAccum.Add(int64(*buf.Duration().AsDuration()))
 			}
 			return gst.PadProbeOK
 		})
 	}
-<<<<<<< HEAD
 
-	if srcPad := b.audioPacer.pitch.GetStaticPad("src"); srcPad != nil {
+	if srcPad := pacer.pitch.GetStaticPad("src"); srcPad != nil {
 		// Accumulate output buffer durations and check correction completion.
 		// Actual compensation = outputDelta - inputDelta (positive when slowing
 		// down, negative when speeding up — same sign as the target drift).
 		srcPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
-				b.audioPacer.outputAccum.Add(int64(*buf.Duration().AsDuration()))
+				pacer.outputAccum.Add(int64(*buf.Duration().AsDuration()))
 			}
-			if !b.audioPacer.active.Load() {
+			if !pacer.active.Load() {
 				return gst.PadProbeOK
 			}
-			inputDelta := b.audioPacer.inputAccum.Load() - b.audioPacer.inputAtStart
-			outputDelta := b.audioPacer.outputAccum.Load() - b.audioPacer.outputAtStart
+			inputDelta := pacer.inputAccum.Load() - pacer.inputAtStart
+			outputDelta := pacer.outputAccum.Load() - pacer.outputAtStart
 			compensation := time.Duration(outputDelta - inputDelta)
-			if compensation.Abs() >= b.audioPacer.targetDrift.Abs() {
-				logger.Debugw("audio drift corrected", "target", b.audioPacer.targetDrift, "actual", compensation)
-				b.audioPacer.stop()
-				b.audioPacer.tc.DriftProcessed(compensation)
+			if compensation.Abs() >= pacer.targetDrift.Abs() {
+				logger.Debugw("audio drift corrected", "target", pacer.targetDrift, "actual", compensation)
+				pacer.stop()
+				pacer.tc.DriftProcessed(compensation)
 			}
 			return gst.PadProbeOK
 		})
 
 		// Normalize pitch element latency query responses — min latency can go
 		// negative, which breaks downstream latency calculations.
-=======
-	if srcPad := pacer.pitch.GetStaticPad("src"); srcPad != nil {
-		// pitch element min latency can go negative, so we need to normalize it
-		// to workaround the obvious issue with the element latency query handling
->>>>>>> main
 		srcPad.AddProbe(gst.PadProbeTypeQueryUpstream|gst.PadProbeTypePull,
 			func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 				q := info.GetQuery()
