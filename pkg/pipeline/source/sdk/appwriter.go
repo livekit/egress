@@ -165,34 +165,26 @@ func NewAppWriter(
 
 	ts.OnKeyframeRequired = w.onKeyframeRequired
 
-	if conf.EnableSyncEngine {
-		w.trackSync.OnSenderReport(func(drift time.Duration) {
-			if w.driftHandler != nil {
-				w.driftHandler.SetDrift(drift)
-			}
-			w.updateDrift(drift)
-		})
-	}
-
 	if conf.Debug.EnableTrackLogging {
 		csvLogger, err := logging.NewCSVLogger[logging.TrackStats](track.ID())
 		if err != nil {
 			logger.Errorw("failed to create csv logger", err)
 		} else {
 			w.csvLogger = csvLogger
-			if !conf.EnableSyncEngine {
-				// Legacy path: OnSenderReport is only wired with track logging enabled.
-				// The drift handler, when present, means PTS updates from SRs are disabled
-				// in the legacy synchronizer — drift is routed to the tempo controller instead.
-				w.trackSync.OnSenderReport(func(drift time.Duration) {
-					logger.Debugw("received sender report", "drift", drift)
-					if w.driftHandler != nil {
-						w.driftHandler.SetDrift(drift)
-					}
-					w.updateDrift(drift)
-				})
-			}
 		}
+	}
+
+	// Wire OnSenderReport whenever any consumer needs it: the sync engine, the
+	// tempo controller's drift handler, or track logging. Registering it
+	// unconditionally for the legacy synchronizer is what routes drift to the
+	// tempo controller instead of letting the synchronizer rebase audio PTS.
+	if conf.EnableSyncEngine || w.driftHandler != nil || w.csvLogger != nil {
+		w.trackSync.OnSenderReport(func(drift time.Duration) {
+			if w.driftHandler != nil {
+				w.driftHandler.SetDrift(drift)
+			}
+			w.updateDrift(drift)
+		})
 	}
 
 	var depacketizer rtp.Depacketizer

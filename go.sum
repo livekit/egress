@@ -258,8 +258,8 @@ github.com/livekit/protocol v1.46.0 h1:onBkn2UEIX4qboVRtbdR1KZYNUoHfxHbgg7nqJ76e
 github.com/livekit/protocol v1.46.0/go.mod h1:KEPIJ/ZdMFQ9tmmfv/uT9TjQEuEcZupCZBabuRGEC1k=
 github.com/livekit/psrpc v0.7.1 h1:ms37az0QTD3UXIWuUC5D/SkmKOlRMVRsI261eBWu/Vw=
 github.com/livekit/psrpc v0.7.1/go.mod h1:bZ4iHFQptTkbPnB0LasvRNu/OBYXEu1NA6O5BMFo9kk=
-github.com/livekit/server-sdk-go/v2 v2.16.4-0.20260522182216-7b8a06f41739 h1:Rr3r/cK2HYGuGhvl//SVYZm8vNT8Fo/EqUvdZ1uh7i4=
-github.com/livekit/server-sdk-go/v2 v2.16.4-0.20260522182216-7b8a06f41739/go.mod h1:1+duFCDFpAvHqZ6mHQe7IwjecLIBFv/keJcexuFhD+0=
+github.com/livekit/server-sdk-go/v2 v2.16.4-0.20260527150446-0c1e91dd4b69 h1:ZcYmE+PU+X4Ql5q78X6DBq3epMpfrYFJQnWASDPXgVw=
+github.com/livekit/server-sdk-go/v2 v2.16.4-0.20260527150446-0c1e91dd4b69/go.mod h1:1+duFCDFpAvHqZ6mHQe7IwjecLIBFv/keJcexuFhD+0=
 github.com/livekit/storage v0.0.0-20260520160524-41a3aeace0bd h1:K4EGw/14T3WtF8kgiY3mOQ/zZgT3wHb8z9S3tYXd+vQ=
 github.com/livekit/storage v0.0.0-20260520160524-41a3aeace0bd/go.mod h1:m+EDdiNremMNJbggvfj5mY8w7nbzVGtZka5Jhj4pg0g=
 github.com/llehouerou/go-mp3 v1.2.0 h1:2WN/bjCGhfPZAQbSSF35DxNKS/+HPnJ76TakA7Kyscs=

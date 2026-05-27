@@ -20,9 +20,10 @@ require (
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/media-samples/avsync v0.0.0-20260522020019-07e27a016e72
 	github.com/livekit/media-sdk v0.0.0-20260424094251-1e21ae1138de
+	github.com/livekit/mediatransportutil v0.0.0-20260521171458-ef117e280447
 	github.com/livekit/protocol v1.46.0
 	github.com/livekit/psrpc v0.7.1
-	github.com/livekit/server-sdk-go/v2 v2.16.4-0.20260522182216-7b8a06f41739
+	github.com/livekit/server-sdk-go/v2 v2.16.4-0.20260527150446-0c1e91dd4b69
 	github.com/livekit/storage v0.0.0-20260520160524-41a3aeace0bd
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
@@ -115,7 +116,6 @@ require (
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lithammer/shortuuid/v4 v4.2.0 // indirect
-	github.com/livekit/mediatransportutil v0.0.0-20260521171458-ef117e280447 // indirect
 	github.com/mackerelio/go-osstat v0.2.7 // indirect
 	github.com/magefile/mage v1.17.0 // indirect
 	github.com/mattn/go-ieproxy v0.0.12 // indirect

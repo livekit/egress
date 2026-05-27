@@ -60,6 +60,13 @@ func (tc *Controller) DriftProcessed(actual time.Duration) {
 	tc.corrected += actual
 	tc.current = 0
 
+	// Clamp corrected if it overshot drift in the same direction as the just-
+	// applied correction. Without this, a per-buffer overshoot can flip the
+	// residual sign and immediately queue a phantom counter-correction.
+	if (actual > 0 && tc.corrected > tc.drift) || (actual < 0 && tc.corrected < tc.drift) {
+		tc.corrected = tc.drift
+	}
+
 	var toStart time.Duration
 	effective := tc.drift - tc.corrected
 	if effective.Abs() >= DefaultThreshold {
@@ -85,6 +92,27 @@ func (tc *Controller) OnDriftDetectedCallback(cb func(time.Duration)) {
 	if cb != nil && cur != 0 {
 		cb(cur)
 	}
+}
+
+// CancelInFlight clears the in-flight correction without crediting any
+// compensation toward `corrected`. Use when the audio pipeline downstream of
+// the pacer is about to be discarded (source bin reset, flush) and the
+// partial compensation already pushed downstream is being thrown away.
+//
+// Distinct from DriftProcessed(0): that path would race with the same
+// semantics here, but conceptually means "the pacer finished and applied
+// nothing." This path means "abandon the in-flight target; the next SR will
+// re-measure drift from scratch." A subsequent SetDrift / OnDriftDetectedCallback
+// will not re-fire the old target value (which would arm the new pacer with
+// the lost work) because current is cleared here.
+//
+// corrected is intentionally left untouched: prior completed corrections
+// remain on the books, since their audio is downstream of the dropped buffer
+// range.
+func (tc *Controller) CancelInFlight() {
+	tc.mu.Lock()
+	tc.current = 0
+	tc.mu.Unlock()
 }
 
 // Processed returns the total of already-applied corrections.

@@ -52,6 +52,19 @@ type AudioBin struct {
 
 type driftProcessNotifier interface {
 	DriftProcessed(actual time.Duration)
+	CancelInFlight()
+}
+
+// pacerSnapshot is the per-correction baseline captured at start(). It is
+// stored atomically as a unit so the probe never observes a torn snapshot
+// even if start() is mis-invoked while a correction is still active. The
+// active check in start() prevents this today, but treating the snapshot as
+// an atomic value removes the implicit ordering dependency between
+// active.Store and the snapshot field writes.
+type pacerSnapshot struct {
+	inputAtStart  int64
+	outputAtStart int64
+	targetDrift   time.Duration
 }
 
 type audioPacer struct {
@@ -65,10 +78,8 @@ type audioPacer struct {
 	inputAccum  atomic.Int64 // cumulative input buffer durations (nanoseconds)
 	outputAccum atomic.Int64 // cumulative output buffer durations (nanoseconds)
 
-	// Snapshots at correction start.
-	inputAtStart  int64
-	outputAtStart int64
-	targetDrift   time.Duration
+	// snapshot is the active correction's baseline. nil when idle.
+	snapshot atomic.Pointer[pacerSnapshot]
 }
 
 func (a *audioPacer) start(drift time.Duration) {
@@ -88,21 +99,51 @@ func (a *audioPacer) start(drift time.Duration) {
 		rate = 1 - a.tempoAdjustmentRate
 	}
 
-	a.inputAtStart = a.inputAccum.Load()
-	a.outputAtStart = a.outputAccum.Load()
-	a.targetDrift = drift
+	// Publish the snapshot before active=true so the probe — which reads
+	// active first, then snapshot — never sees active without a snapshot.
+	a.snapshot.Store(&pacerSnapshot{
+		inputAtStart:  a.inputAccum.Load(),
+		outputAtStart: a.outputAccum.Load(),
+		targetDrift:   drift,
+	})
 
 	logger.Debugw("starting audio pacer", "targetDrift", drift, "rate", rate)
 	a.pitch.SetArg("tempo", fmt.Sprintf("%.2f", rate))
 	a.active.Store(true)
 }
 
-func (a *audioPacer) stop() {
-	if a.pitch == nil || a.tc == nil {
-		return
+// stop is the success path used by the src-pad probe when the in-flight
+// correction has reached its target. Returns true if this call won the
+// transition from active to idle; the caller must then notify the controller
+// via DriftProcessed. Concurrent stop / cancelOnFlush calls coalesce: only
+// one wins the Swap, the others see false and do nothing.
+func (a *audioPacer) stop() bool {
+	if a.pitch == nil {
+		return false
+	}
+	if !a.active.Swap(false) {
+		return false
 	}
 	a.pitch.SetArg("tempo", fmt.Sprintf("%.1f", 1.0))
-	a.active.Store(false)
+	return true
+}
+
+// cancelOnFlush is the abort path used when downstream is about to discard
+// the audio the in-flight correction has been applying to. The measurement
+// in inputAccum / outputAccum cannot be trusted across the flush boundary,
+// so the correction is abandoned: tempo returns to 1.0, the controller's
+// in-flight target is cleared (without crediting any compensation), and the
+// next SR drives a fresh correction. Returns true if this call won the
+// transition.
+func (a *audioPacer) cancelOnFlush() bool {
+	if a.pitch == nil {
+		return false
+	}
+	if !a.active.Swap(false) {
+		return false
+	}
+	a.pitch.SetArg("tempo", fmt.Sprintf("%.1f", 1.0))
+	return true
 }
 
 func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
@@ -379,6 +420,21 @@ func (b *AudioBin) resetAudioAppSrcBin(ts *config.TrackSource) error {
 		return errors.New("pipeline stopping, cannot reset audio source bin")
 	}
 
+	// Detach the tempo controller callback so a concurrent SetDrift can't invoke
+	// the old pacer's closure on the soon-to-be-freed pitch element. The new
+	// callback is re-registered inside addAudioAppSrcBinLocked below.
+	//
+	// CancelInFlight clears the in-flight target so the immediate-callback fire
+	// inside the new OnDriftDetectedCallback registration does not arm the new
+	// pacer with the old pacer's target. The old pacer's partial compensation
+	// is downstream of the bin being discarded — re-applying it on the new
+	// pacer would double-correct. The next SR will surface any residual drift
+	// and the controller arms fresh against the current state.
+	if ts.TempoController != nil {
+		ts.TempoController.OnDriftDetectedCallback(nil)
+		ts.TempoController.CancelInFlight()
+	}
+
 	// Force-remove old bin (blocks on GLib main loop, safe to hold b.mu since
 	// ForceRemoveSourceBin only acquires gstreamer.Bin's internal mutex)
 	if err := b.bin.ForceRemoveSourceBin(oldName); err != nil {
@@ -569,6 +625,28 @@ func installPitchProbes(pacer *audioPacer) {
 			}
 			return gst.PadProbeOK
 		})
+
+		// A FlushStart upstream of pitch (e.g., the discontinuity flush in
+		// appwriter.shouldHandleDiscontinuity) causes pitch to drop buffered
+		// audio. The probe accumulators (inputAccum / outputAccum) keep
+		// growing across the flush, but the input/output samples are no
+		// longer aligned — outputDelta no longer reflects the actual
+		// compensation that survived to the mixer. Cancel any in-flight
+		// correction so the next SR re-arms from the post-flush state.
+		sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			event := info.GetEvent()
+			if event == nil || event.Type() != gst.EventTypeFlushStart {
+				return gst.PadProbeOK
+			}
+			if !pacer.cancelOnFlush() {
+				return gst.PadProbeOK
+			}
+			if pacer.tc != nil {
+				pacer.tc.CancelInFlight()
+			}
+			logger.Debugw("audio pacer cancelled due to upstream flush")
+			return gst.PadProbeOK
+		})
 	}
 
 	if srcPad := pacer.pitch.GetStaticPad("src"); srcPad != nil {
@@ -582,13 +660,25 @@ func installPitchProbes(pacer *audioPacer) {
 			if !pacer.active.Load() {
 				return gst.PadProbeOK
 			}
-			inputDelta := pacer.inputAccum.Load() - pacer.inputAtStart
-			outputDelta := pacer.outputAccum.Load() - pacer.outputAtStart
+			// Snapshot is published before active=true in start(); a non-nil
+			// load is guaranteed once active is observed true. The nil guard
+			// is defensive against pathological orderings on weak-memory
+			// platforms.
+			snap := pacer.snapshot.Load()
+			if snap == nil {
+				return gst.PadProbeOK
+			}
+			inputDelta := pacer.inputAccum.Load() - snap.inputAtStart
+			outputDelta := pacer.outputAccum.Load() - snap.outputAtStart
 			compensation := time.Duration(outputDelta - inputDelta)
-			if compensation.Abs() >= pacer.targetDrift.Abs() {
-				logger.Debugw("audio drift corrected", "target", pacer.targetDrift, "actual", compensation)
-				pacer.stop()
-				pacer.tc.DriftProcessed(compensation)
+			if compensation.Abs() >= snap.targetDrift.Abs() {
+				// stop() returns false if another probe (or a concurrent flush
+				// cancel) already won the transition; in that case, the
+				// controller has already been notified — do not double-notify.
+				if pacer.stop() {
+					logger.Debugw("audio drift corrected", "target", snap.targetDrift, "actual", compensation)
+					pacer.tc.DriftProcessed(compensation)
+				}
 			}
 			return gst.PadProbeOK
 		})
