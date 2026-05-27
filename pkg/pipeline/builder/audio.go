@@ -644,7 +644,7 @@ func installPitchProbes(pacer *audioPacer) {
 			if pacer.tc != nil {
 				pacer.tc.CancelInFlight()
 			}
-			logger.Debugw("audio pacer cancelled due to upstream flush")
+			logger.Debugw("audio pacer canceled due to upstream flush")
 			return gst.PadProbeOK
 		})
 	}
