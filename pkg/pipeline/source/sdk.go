@@ -804,7 +804,7 @@ func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
 }
 
 func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {
-	if reason != lksdk.RoomClosed {
+	if reason != lksdk.RoomClosed && reason != lksdk.LeaveRequested {
 		logger.Warnw("disconnected from room", nil, "reason", reason)
 	}
 	s.finished()
