@@ -24,7 +24,7 @@ on:
 
 jobs:
   docker:
-    runs-on: ubuntu-latest-8-cores
+    runs-on: ubuntu-latest-m
     steps:
       - uses: actions/checkout@v6
         # for pull requests, need to checkout head for EndBug/add-and-commit to work
@@ -79,4 +79,3 @@ jobs:
             Ref: https://github.com/${{ github.repository }}/tree/${{ github.ref_name }}
             By: ${{ github.actor }}
           push: true
-

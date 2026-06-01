@@ -23,7 +23,7 @@ on:
       - 'v*.*.*'
 jobs:
   docker:
-    runs-on: ubuntu-latest-8-cores
+    runs-on: ubuntu-latest-m
     steps:
       - uses: actions/checkout@v6
 
