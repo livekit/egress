@@ -24,7 +24,7 @@ on:
 
 jobs:
   docker:
-    runs-on: namespace-profile-8vcpu-cache
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v6
         # for pull requests, need to checkout head for EndBug/add-and-commit to work
