@@ -47,12 +47,7 @@ type audioPacer struct {
 	snapshot atomic.Pointer[pacerSnapshot]
 }
 
-// pacerSnapshot is the per-correction baseline captured at start(). It is
-// stored atomically as a unit so the probe never observes a torn snapshot
-// even if start() is mis-invoked while a correction is still active. The
-// active check in start() prevents this today, but treating the snapshot as
-// an atomic value removes the implicit ordering dependency between
-// active.Store and the snapshot field writes.
+// pacerSnapshot is the per-correction baseline captured at start()
 type pacerSnapshot struct {
 	inputAtStart  int64
 	outputAtStart int64

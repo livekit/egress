@@ -312,7 +312,7 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 				// Hard tier means the pacer cannot absorb drift fast enough even with
 				// boosting; downstream is approaching mixer alignment-threshold and
 				// will start dropping
-				logger.Errorw("audio drift exceeded hard budget",
+				logger.Warnw("audio drift exceeded hard budget",
 					errors.New("uncorrected drift above hard budget"),
 					"trackID", trackID, "tier", tier)
 				pacer.boost()
