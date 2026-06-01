@@ -17,7 +17,7 @@ git lfs install --local
 g() {
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     local b64
-    b64="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64)"
+    b64="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
     git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $b64" "$@"
   else
     git "$@"
