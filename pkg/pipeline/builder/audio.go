@@ -292,12 +292,8 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 	}
 
 	if pacer != nil && ts.TempoController != nil {
-		ts.TempoController.OnDriftDetectedCallback(func(drift time.Duration) {
-			if pacer.pitch != nil {
-				logger.Debugw("starting audio pacer to cover the drift", "drift", drift)
-				pacer.start(drift)
-			}
-		})
+		// tc must be set before callbacks: both replay current state synchronously.
+		pacer.tc = ts.TempoController
 		trackID := ts.TrackID
 		ts.TempoController.OnTierChange(func(tier tempo.Tier) {
 			switch tier {
@@ -318,7 +314,10 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 				pacer.boost()
 			}
 		})
-		pacer.tc = ts.TempoController
+		ts.TempoController.OnDriftDetectedCallback(func(drift time.Duration) {
+			logger.Debugw("starting audio pacer to cover the drift", "drift", drift)
+			pacer.start(drift)
+		})
 	}
 
 	return nil
@@ -538,10 +537,6 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel livek
 }
 
 func installPitchProbes(pacer *audioPacer) {
-	if pacer.pitch == nil {
-		return
-	}
-
 	// Sink pad: accumulate input buffer durations.
 	if sinkPad := pacer.pitch.GetStaticPad("sink"); sinkPad != nil {
 		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {

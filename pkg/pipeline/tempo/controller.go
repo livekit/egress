@@ -58,13 +58,17 @@ func (tc *Controller) Tier() Tier {
 	return tc.tier
 }
 
-// OnTierChange sets a callback fired whenever the tier transitions (up or down).
-// Independent of OnDriftDetectedCallback: tier transitions fire even when a
-// correction is already in flight, so the pacer can escalate without restart.
+// OnTierChange sets the callback. If the tier is already above TierNormal,
+// it's invoked immediately with the current tier.
 func (tc *Controller) OnTierChange(cb func(Tier)) {
 	tc.mu.Lock()
 	tc.tierCB = cb
+	cur := tc.tier
 	tc.mu.Unlock()
+
+	if cb != nil && cur != TierNormal {
+		cb(cur)
+	}
 }
 
 // tierFor returns the tier for the given effective drift. Caller-side helper;
