@@ -152,7 +152,7 @@ func requestTypeFromReq(req *rpc.StartEgressRequest) string {
 	case *rpc.StartEgressRequest_Egress:
 		return requestTypeFromInterface(r.Egress)
 	}
-	return "unknown"
+	return types.Unknown
 }
 
 func requestTypeFromInterface(request egress.EgressRequest) string {
@@ -164,13 +164,13 @@ func requestTypeFromInterface(request egress.EgressRequest) string {
 	case request.GetMedia() != nil:
 		return types.RequestTypeMedia
 	default:
-		return "unknown"
+		return types.Unknown
 	}
 }
 
 func (m *Monitor) HandlerResult(egressID string, result string) {
 	m.mu.Lock()
-	reqType := "unknown"
+	reqType := types.Unknown
 	if ps := m.pending[egressID]; ps != nil {
 		reqType = ps.requestType
 	} else {
