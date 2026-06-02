@@ -105,9 +105,9 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput, upload egre
 		if conf.Height == 0 {
 			conf.Height = p.Height
 		}
-	case *livekit.EgressInfo_Replay:
-		switch req.Replay.Source.(type) {
-		case *livekit.ExportReplayRequest_Template, *livekit.ExportReplayRequest_Web:
+	case *livekit.EgressInfo_Replay, *livekit.EgressInfo_Egress:
+		r := req.(egress.EgressRequest)
+		if r.GetTemplate() != nil || r.GetWeb() != nil {
 			if conf.Width == 0 {
 				conf.Width = p.Width
 			}

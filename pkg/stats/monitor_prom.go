@@ -17,6 +17,7 @@ package stats
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 
@@ -146,13 +147,14 @@ func requestTypeFromReq(req *rpc.StartEgressRequest) string {
 		return types.RequestTypeTrackComposite
 	case *rpc.StartEgressRequest_Track:
 		return types.RequestTypeTrack
-	case *rpc.StartEgressRequest_Replay:
-		switch r.Replay.Source.(type) {
-		case *livekit.ExportReplayRequest_Template:
+	case *rpc.StartEgressRequest_Replay, *rpc.StartEgressRequest_Egress:
+		request := r.(egress.EgressRequest)
+		switch {
+		case request.GetTemplate() != nil:
 			return types.RequestTypeTemplate
-		case *livekit.ExportReplayRequest_Web:
+		case request.GetWeb() != nil:
 			return types.RequestTypeWeb
-		case *livekit.ExportReplayRequest_Media:
+		case request.GetMedia() != nil:
 			return types.RequestTypeMedia
 		}
 	}

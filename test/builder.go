@@ -89,6 +89,7 @@ type publishOptions struct {
 	mediaVideoTrackID     string
 	mediaParticipantVideo *livekit.ParticipantVideo
 	audioRoutes           []*livekit.AudioRoute
+	captureAudioAll       bool
 
 	// v2 Template source fields
 	templateCustomBaseUrl string
@@ -497,15 +498,18 @@ func (r *Runner) buildV2Outputs(test *testCase) []*livekit.Output {
 }
 
 func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
-	replayReq := &livekit.ExportReplayRequest{
-		ReplayId: "test-replay-id",
-		Outputs:  r.buildV2Outputs(test),
+	egressReq := &livekit.StartEgressRequest{
+		Outputs: r.buildV2Outputs(test),
+	}
+	// Web source has no associated room; everything else (Template/Media) is live in a room.
+	if test.requestType != types.RequestTypeWeb {
+		egressReq.RoomName = r.RoomName
 	}
 
 	// Source
 	switch test.requestType {
 	case types.RequestTypeTemplate:
-		replayReq.Source = &livekit.ExportReplayRequest_Template{
+		egressReq.Source = &livekit.StartEgressRequest_Template{
 			Template: &livekit.TemplateSource{
 				Layout:        test.layout,
 				AudioOnly:     test.audioOnly,
@@ -515,7 +519,7 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 		}
 
 	case types.RequestTypeWeb:
-		replayReq.Source = &livekit.ExportReplayRequest_Web{
+		egressReq.Source = &livekit.StartEgressRequest_Web{
 			Web: &livekit.WebSource{
 				Url:       webUrl,
 				AudioOnly: test.audioOnly,
@@ -561,8 +565,10 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 			}
 		}
 
-		// audio - replace placeholder track IDs / identities
-		if len(test.audioRoutes) > 0 {
+		// audio - capture-all takes precedence; routes are mutually exclusive
+		if test.captureAudioAll {
+			media.Audio = &livekit.AudioConfig{CaptureAll: true}
+		} else if len(test.audioRoutes) > 0 {
 			routes := make([]*livekit.AudioRoute, len(test.audioRoutes))
 			for i, route := range test.audioRoutes {
 				routes[i] = route
@@ -597,34 +603,33 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 			media.Audio = &livekit.AudioConfig{Routes: routes}
 		}
 
-		replayReq.Source = &livekit.ExportReplayRequest_Media{
+		egressReq.Source = &livekit.StartEgressRequest_Media{
 			Media: media,
 		}
 	}
 
 	// Encoding
 	if test.encodingOptions != nil {
-		replayReq.Encoding = &livekit.ExportReplayRequest_Advanced{
+		egressReq.Encoding = &livekit.StartEgressRequest_Advanced{
 			Advanced: test.encodingOptions,
 		}
 	} else if test.encodingPreset != 0 {
-		replayReq.Encoding = &livekit.ExportReplayRequest_Preset{
+		egressReq.Encoding = &livekit.StartEgressRequest_Preset{
 			Preset: test.encodingPreset,
 		}
 	}
 
 	// Global storage
 	if test.v2OutputOptions != nil && test.storage != nil {
-		replayReq.Storage = test.storage
+		egressReq.Storage = test.storage
 	}
 
-	// build token since we don't pass a room name
 	egressID := utils.NewGuid(utils.EgressPrefix)
 	token, _ := egress.BuildEgressToken(egressID, r.ApiKey, r.ApiSecret, r.RoomName)
 
 	return &rpc.StartEgressRequest{
 		EgressId: egressID,
-		Request:  &rpc.StartEgressRequest_Replay{Replay: replayReq},
+		Request:  &rpc.StartEgressRequest_Egress{Egress: egressReq},
 		Token:    token,
 		WsUrl:    r.WsUrl,
 	}
