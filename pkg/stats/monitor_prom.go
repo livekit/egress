@@ -147,18 +147,25 @@ func requestTypeFromReq(req *rpc.StartEgressRequest) string {
 		return types.RequestTypeTrackComposite
 	case *rpc.StartEgressRequest_Track:
 		return types.RequestTypeTrack
-	case *rpc.StartEgressRequest_Replay, *rpc.StartEgressRequest_Egress:
-		request := r.(egress.EgressRequest)
-		switch {
-		case request.GetTemplate() != nil:
-			return types.RequestTypeTemplate
-		case request.GetWeb() != nil:
-			return types.RequestTypeWeb
-		case request.GetMedia() != nil:
-			return types.RequestTypeMedia
-		}
+	case *rpc.StartEgressRequest_Replay:
+		return requestTypeFromInterface(r.Replay)
+	case *rpc.StartEgressRequest_Egress:
+		return requestTypeFromInterface(r.Egress)
 	}
 	return "unknown"
+}
+
+func requestTypeFromInterface(request egress.EgressRequest) string {
+	switch {
+	case request.GetTemplate() != nil:
+		return types.RequestTypeTemplate
+	case request.GetWeb() != nil:
+		return types.RequestTypeWeb
+	case request.GetMedia() != nil:
+		return types.RequestTypeMedia
+	default:
+		return "unknown"
+	}
 }
 
 func (m *Monitor) HandlerResult(egressID string, result string) {

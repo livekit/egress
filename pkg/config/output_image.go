@@ -97,6 +97,17 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput, upload egre
 
 	// Set default dimensions for RoomComposite and Web. For all SDKs input, default will be
 	// set from the track dimensions
+	setDims := func(request egress.EgressRequest) {
+		if request.GetTemplate() != nil || request.GetWeb() != nil {
+			if conf.Width == 0 {
+				conf.Width = p.Width
+			}
+			if conf.Height == 0 {
+				conf.Height = p.Height
+			}
+		}
+	}
+
 	switch req := p.Info.Request.(type) {
 	case *livekit.EgressInfo_RoomComposite, *livekit.EgressInfo_Web:
 		if conf.Width == 0 {
@@ -105,16 +116,10 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput, upload egre
 		if conf.Height == 0 {
 			conf.Height = p.Height
 		}
-	case *livekit.EgressInfo_Replay, *livekit.EgressInfo_Egress:
-		r := req.(egress.EgressRequest)
-		if r.GetTemplate() != nil || r.GetWeb() != nil {
-			if conf.Width == 0 {
-				conf.Width = p.Width
-			}
-			if conf.Height == 0 {
-				conf.Height = p.Height
-			}
-		}
+	case *livekit.EgressInfo_Replay:
+		setDims(req.Replay)
+	case *livekit.EgressInfo_Egress:
+		setDims(req.Egress)
 	}
 
 	// filename
