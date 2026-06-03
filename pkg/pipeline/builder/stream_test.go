@@ -137,14 +137,14 @@ func TestApplyLiveness_RealProgressResetsRetryBudget(t *testing.T) {
 	now := time.Date(2026, 5, 31, 12, 0, 0, 0, time.UTC)
 
 	s := &Stream{}
-	s.lastProgressAt.Store(now.Add(-10 * time.Second))
+	s.lastProgressAt = now.Add(-10 * time.Second)
 	s.disconnectedAt.Store(now.Add(-5 * time.Second))
 	s.reconnections.Store(3)
 
 	s.applyLiveness(50_000, now)
 
-	require.Equal(t, uint64(50_000), s.lastOutBytesTotal.Load())
-	require.Equal(t, now.UnixNano(), s.lastProgressAt.Load().UnixNano())
+	require.Equal(t, uint64(50_000), s.lastOutBytesTotal)
+	require.Equal(t, now.UnixNano(), s.lastProgressAt.UnixNano())
 	require.True(t, s.disconnectedAt.Load().IsZero(), "disconnectedAt should be cleared")
 	require.Equal(t, int32(0), s.reconnections.Load(), "reconnections should be reset")
 	require.True(t, s.monitorObservedProgress.Load(), "real progress must set the observed-progress flag")
@@ -155,7 +155,7 @@ func TestApplyLiveness_HandshakeBytesDoNotResetRetryBudget(t *testing.T) {
 	now := time.Date(2026, 5, 31, 12, 0, 0, 0, time.UTC)
 
 	s := &Stream{}
-	s.lastProgressAt.Store(now.Add(-10 * time.Second))
+	s.lastProgressAt = now.Add(-10 * time.Second)
 	disconnected := now.Add(-5 * time.Second)
 	s.disconnectedAt.Store(disconnected)
 	s.reconnections.Store(3)
@@ -163,7 +163,7 @@ func TestApplyLiveness_HandshakeBytesDoNotResetRetryBudget(t *testing.T) {
 	// 300 bytes = typical RTMP handshake/control noise; must not look like progress.
 	s.applyLiveness(300, now)
 
-	require.Equal(t, uint64(300), s.lastOutBytesTotal.Load())
+	require.Equal(t, uint64(300), s.lastOutBytesTotal)
 	require.Equal(t, disconnected.UnixNano(), s.disconnectedAt.Load().UnixNano(),
 		"disconnectedAt must not be cleared by sub-threshold growth")
 	require.Equal(t, int32(3), s.reconnections.Load(),
@@ -178,14 +178,14 @@ func TestApplyLiveness_StatsResetDoesNotExtendClock(t *testing.T) {
 
 	s := &Stream{}
 	originalProgressAt := now.Add(-20 * time.Second)
-	s.lastProgressAt.Store(originalProgressAt)
-	s.lastOutBytesTotal.Store(50_000)
+	s.lastProgressAt = originalProgressAt
+	s.lastOutBytesTotal = 50_000
 
 	// Simulate SetState(NULL) clearing the sink stats.
 	s.applyLiveness(0, now)
 
-	require.Equal(t, uint64(0), s.lastOutBytesTotal.Load(), "baseline must follow the reset")
-	require.Equal(t, originalProgressAt.UnixNano(), s.lastProgressAt.Load().UnixNano(),
+	require.Equal(t, uint64(0), s.lastOutBytesTotal, "baseline must follow the reset")
+	require.Equal(t, originalProgressAt.UnixNano(), s.lastProgressAt.UnixNano(),
 		"lastProgressAt must not advance on a stats reset")
 	require.False(t, s.livenessFailed.Load())
 }
@@ -200,7 +200,7 @@ func TestApplyLiveness_ObservedProgressIsSticky(t *testing.T) {
 	now := time.Date(2026, 5, 31, 12, 0, 0, 0, time.UTC)
 
 	s := &Stream{}
-	s.lastProgressAt.Store(now.Add(-1 * time.Second))
+	s.lastProgressAt = now.Add(-1 * time.Second)
 
 	// Tick 1 — real growth → flag set.
 	s.applyLiveness(100_000, now)

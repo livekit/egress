@@ -76,8 +76,8 @@ type Stream struct {
 	// streaming is healthy. OutBytesTotal grows whenever rtmp2sink writes chunks to
 	// the socket; TCP backpressure ensures it stalls under the same failure modes we
 	// care about (TCP wedge, internal sink wedge, remote close).
-	lastOutBytesTotal atomic.Uint64
-	lastProgressAt    atomic.Time
+	lastOutBytesTotal uint64
+	lastProgressAt    time.Time
 	// monitorObservedProgress flips to true the first time the monitor sees byte
 	// growth above livenessProgressThreshold between two ticks — i.e. real
 	// streaming progress, not just RTMP chunk/control traffic from a single
@@ -360,7 +360,7 @@ func (s *Stream) Stats() (*logging.StreamStats, bool) {
 
 func (s *Stream) StartMonitor() {
 	s.monitorStarted.Once(func() {
-		s.lastProgressAt.Store(time.Now())
+		s.lastProgressAt = time.Now()
 		go s.runMonitor()
 	})
 }
@@ -425,12 +425,12 @@ func (s *Stream) checkLiveness() {
 }
 
 func (s *Stream) applyLiveness(current uint64, now time.Time) {
-	last := s.lastOutBytesTotal.Load()
-	s.lastOutBytesTotal.Store(current)
+	last := s.lastOutBytesTotal
+	s.lastOutBytesTotal = current
 
-	switch evaluateLiveness(current, last, s.lastProgressAt.Load(), now) {
+	switch evaluateLiveness(current, last, s.lastProgressAt, now) {
 	case livenessActionRealProgress:
-		s.lastProgressAt.Store(now)
+		s.lastProgressAt = now
 		s.monitorObservedProgress.Store(true)
 		s.reconnections.Store(0)
 		s.disconnectedAt.Store(time.Time{})
