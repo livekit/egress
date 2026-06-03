@@ -11,6 +11,16 @@ const (
 	DefaultThreshold = 10 * time.Millisecond
 )
 
+// Tier indicates how far effective drift has grown relative to the configured
+// budgets. The pacer / caller wires escalation behavior to tier transitions.
+type Tier int
+
+const (
+	TierNormal Tier = iota // |effective drift| < soft budget
+	TierSoft               // soft budget exceeded; pacer should boost
+	TierHard               // hard budget exceeded; caller should reset
+)
+
 // Controller tracks the current drift between a sender's clock and the
 // receiver's clock and drives tempo adjustments to close the gap.
 //
@@ -24,10 +34,68 @@ type Controller struct {
 	corrected time.Duration // sum of all corrections applied by the pacer
 	current   time.Duration // correction currently in progress (0 if idle)
 
-	cb func(time.Duration) // invoked with correction amount to apply
+	softCap    time.Duration
+	hardCap    time.Duration
+	maxLatency time.Duration
+	tier       Tier
+
+	cb     func(time.Duration) // invoked with correction amount to apply
+	tierCB func(Tier)          // invoked on tier transitions
 }
 
-func NewController() *Controller { return &Controller{} }
+func NewController(maxLatency time.Duration) *Controller {
+	return &Controller{
+		softCap:    maxLatency / 2,
+		hardCap:    maxLatency * 3 / 4,
+		maxLatency: maxLatency,
+	}
+}
+
+// Tier returns the current tier based on the latest observed effective drift.
+func (tc *Controller) Tier() Tier {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	return tc.tier
+}
+
+// OnTierChange sets the callback. If the tier is already above TierNormal,
+// it's invoked immediately with the current tier.
+func (tc *Controller) OnTierChange(cb func(Tier)) {
+	tc.mu.Lock()
+	tc.tierCB = cb
+	cur := tc.tier
+	tc.mu.Unlock()
+
+	if cb != nil && cur != TierNormal {
+		cb(cur)
+	}
+}
+
+// tierFor returns the tier for the given effective drift. Caller-side helper;
+// does not touch state.
+func (tc *Controller) tierFor(effective time.Duration) Tier {
+	abs := effective.Abs()
+	switch {
+	case abs >= tc.hardCap:
+		return TierHard
+	case abs >= tc.softCap:
+		return TierSoft
+	default:
+		return TierNormal
+	}
+}
+
+// updateTierLocked recomputes the tier from effective drift and returns
+// (changed, newTier, callback). Caller must hold tc.mu and invoke the callback
+// after releasing it.
+func (tc *Controller) updateTierLocked(effective time.Duration) (bool, Tier, func(Tier)) {
+	next := tc.tierFor(effective)
+	if next == tc.tier {
+		return false, next, nil
+	}
+	tc.tier = next
+	return true, next, tc.tierCB
+}
 
 // SetDrift updates the current observed drift. If no correction is active
 // and the effective (uncorrected) drift exceeds the threshold, a new
@@ -36,19 +104,24 @@ func (tc *Controller) SetDrift(drift time.Duration) {
 	tc.mu.Lock()
 	tc.drift = drift
 
+	effective := drift - tc.corrected
+
 	var toStart time.Duration
 	if tc.current == 0 {
-		effective := drift - tc.corrected
 		if effective.Abs() >= DefaultThreshold {
 			toStart = effective
 			tc.current = effective
 		}
 	}
+	tierChanged, newTier, tierCB := tc.updateTierLocked(effective)
 	cb := tc.cb
 	tc.mu.Unlock()
 
 	if toStart != 0 && cb != nil {
 		cb(toStart)
+	}
+	if tierChanged && tierCB != nil {
+		tierCB(newTier)
 	}
 }
 
@@ -73,11 +146,15 @@ func (tc *Controller) DriftProcessed(actual time.Duration) {
 		toStart = effective
 		tc.current = effective
 	}
+	tierChanged, newTier, tierCB := tc.updateTierLocked(effective)
 	cb := tc.cb
 	tc.mu.Unlock()
 
 	if toStart != 0 && cb != nil {
 		cb(toStart)
+	}
+	if tierChanged && tierCB != nil {
+		tierCB(newTier)
 	}
 }
 
