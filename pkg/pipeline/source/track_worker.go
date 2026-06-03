@@ -24,6 +24,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/frostbyte73/core"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
@@ -485,7 +486,7 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 	switch ts.MimeType {
 	case types.MimeTypeOpus, types.MimeTypePCMU, types.MimeTypePCMA:
 		if s.AudioTempoController.Enabled {
-			c := tempo.NewController()
+			c := tempo.NewController(s.Latency.AudioMixerLatency)
 			ts.TempoController = c
 			tc = c
 		}

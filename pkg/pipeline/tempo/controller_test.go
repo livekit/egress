@@ -6,7 +6,7 @@ import (
 )
 
 func TestSetDriftStartsAboveThreshold(t *testing.T) {
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
@@ -21,7 +21,7 @@ func TestSetDriftStartsAboveThreshold(t *testing.T) {
 }
 
 func TestBelowThresholdNoop(t *testing.T) {
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
@@ -33,7 +33,7 @@ func TestBelowThresholdNoop(t *testing.T) {
 }
 
 func TestThresholdCrossing(t *testing.T) {
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
@@ -47,7 +47,7 @@ func TestThresholdCrossing(t *testing.T) {
 }
 
 func TestNoNewCorrectionWhileActive(t *testing.T) {
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
@@ -61,7 +61,7 @@ func TestNoNewCorrectionWhileActive(t *testing.T) {
 }
 
 func TestDriftProcessedStartsNext(t *testing.T) {
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
@@ -81,7 +81,7 @@ func TestDriftProcessedStartsNext(t *testing.T) {
 }
 
 func TestDriftProcessedNoFollowUp(t *testing.T) {
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
@@ -98,7 +98,7 @@ func TestDriftProcessedNoFollowUp(t *testing.T) {
 }
 
 func TestNegativeDrift(t *testing.T) {
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
@@ -111,7 +111,7 @@ func TestNegativeDrift(t *testing.T) {
 
 func TestOngoingDriftCorrection(t *testing.T) {
 	// Simulate clock skew: drift grows by 10ms per SR
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
@@ -124,7 +124,7 @@ func TestOngoingDriftCorrection(t *testing.T) {
 		t.Fatalf("second correction: got %v", calls)
 	}
 
-	tc.SetDrift(30 * time.Millisecond) // drift grew again
+	tc.SetDrift(30 * time.Millisecond)       // drift grew again
 	tc.DriftProcessed(10 * time.Millisecond) // effective = 30-20 = 10ms → starts 10ms
 	if len(calls) != 3 || calls[2] != 10*time.Millisecond {
 		t.Fatalf("third correction: got %v", calls)
@@ -136,7 +136,7 @@ func TestOngoingDriftCorrection(t *testing.T) {
 }
 
 func TestImmediateCallbackOnRegister(t *testing.T) {
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	// Arm a correction before registering callback
 	tc.SetDrift(20 * time.Millisecond)
@@ -153,12 +153,12 @@ func TestImmediateCallbackOnRegister(t *testing.T) {
 func TestOvershootDoesNotFlipDirection(t *testing.T) {
 	// Probe trips at first buffer past target; reported actual will overshoot.
 	// Controller must not interpret that as a sign reversal and counter-correct.
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
 
-	tc.SetDrift(15 * time.Millisecond) // starts 15ms correction
+	tc.SetDrift(15 * time.Millisecond)       // starts 15ms correction
 	tc.DriftProcessed(25 * time.Millisecond) // overshoots target by 10ms
 
 	if len(calls) != 1 {
@@ -171,7 +171,7 @@ func TestOvershootDoesNotFlipDirection(t *testing.T) {
 
 func TestOvershootThenDriftReverses(t *testing.T) {
 	// After overshoot clamps corrected to drift, a real reversal must still fire.
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
@@ -186,7 +186,7 @@ func TestOvershootThenDriftReverses(t *testing.T) {
 }
 
 func TestNegativeOvershootDoesNotFlipDirection(t *testing.T) {
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
@@ -203,7 +203,7 @@ func TestNegativeOvershootDoesNotFlipDirection(t *testing.T) {
 }
 
 func TestZeroDriftNoop(t *testing.T) {
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
@@ -220,7 +220,7 @@ func TestCancelInFlightClearsCurrent(t *testing.T) {
 	// target. This is the load-bearing property for the source-bin-reset
 	// path: when the audio downstream of the pacer is discarded, the partial
 	// compensation cannot be re-applied by a fresh pacer with the same target.
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	cb1Calls := []time.Duration{}
 	tc.OnDriftDetectedCallback(func(d time.Duration) { cb1Calls = append(cb1Calls, d) })
@@ -259,7 +259,7 @@ func TestCancelInFlightClearsCurrent(t *testing.T) {
 func TestCancelInFlightWhenIdleIsNoop(t *testing.T) {
 	// Calling CancelInFlight when no correction is in flight must not corrupt
 	// state. resetAudioAppSrcBin calls it unconditionally.
-	tc := NewController()
+	tc := NewController(1200 * time.Millisecond)
 
 	tc.CancelInFlight()
 	if got := tc.Processed(); got != 0 {
@@ -271,5 +271,127 @@ func TestCancelInFlightWhenIdleIsNoop(t *testing.T) {
 	tc.SetDrift(20 * time.Millisecond)
 	if len(calls) != 1 || calls[0] != 20*time.Millisecond {
 		t.Fatalf("controller must still arm after idle CancelInFlight: got %v", calls)
+	}
+}
+
+func TestTierNormalBelowSoftBudget(t *testing.T) {
+	tc := NewController(1200 * time.Millisecond)
+
+	var tiers []Tier
+	tc.OnTierChange(func(tier Tier) { tiers = append(tiers, tier) })
+
+	tc.SetDrift(100 * time.Millisecond) // well below 500ms soft budget
+
+	if got := tc.Tier(); got != TierNormal {
+		t.Fatalf("tier: got %v, want TierNormal", got)
+	}
+	if len(tiers) != 0 {
+		t.Fatalf("no tier change expected, got %v", tiers)
+	}
+}
+
+func TestTierCrossSoftBudget(t *testing.T) {
+	tc := NewController(1200 * time.Millisecond)
+
+	var tiers []Tier
+	tc.OnTierChange(func(tier Tier) { tiers = append(tiers, tier) })
+
+	tc.SetDrift(600 * time.Millisecond) // above 500ms soft budget
+
+	if got := tc.Tier(); got != TierSoft {
+		t.Fatalf("tier: got %v, want TierSoft", got)
+	}
+	if len(tiers) != 1 || tiers[0] != TierSoft {
+		t.Fatalf("tier transitions: got %v, want [TierSoft]", tiers)
+	}
+}
+
+func TestTierCrossHardBudget(t *testing.T) {
+	tc := NewController(1200 * time.Millisecond)
+
+	var tiers []Tier
+	tc.OnTierChange(func(tier Tier) { tiers = append(tiers, tier) })
+
+	tc.SetDrift(2500 * time.Millisecond) // above 2s hard budget
+
+	if got := tc.Tier(); got != TierHard {
+		t.Fatalf("tier: got %v, want TierHard", got)
+	}
+	if len(tiers) == 0 || tiers[len(tiers)-1] != TierHard {
+		t.Fatalf("tier transitions should end at TierHard: got %v", tiers)
+	}
+}
+
+func TestTierDropsBackToNormalAfterCorrection(t *testing.T) {
+	tc := NewController(1200 * time.Millisecond)
+
+	var tiers []Tier
+	tc.OnTierChange(func(tier Tier) { tiers = append(tiers, tier) })
+
+	tc.SetDrift(600 * time.Millisecond)       // soft
+	tc.DriftProcessed(600 * time.Millisecond) // effective = 0, back to normal
+
+	if got := tc.Tier(); got != TierNormal {
+		t.Fatalf("tier after correction: got %v, want TierNormal", got)
+	}
+	if len(tiers) != 2 || tiers[0] != TierSoft || tiers[1] != TierNormal {
+		t.Fatalf("tier transitions: got %v, want [TierSoft, TierNormal]", tiers)
+	}
+}
+
+func TestTierFollowsEffectiveDrift(t *testing.T) {
+	// Tier depends on |drift - corrected|, not raw drift.
+	tc := NewController(1200 * time.Millisecond)
+
+	tc.SetDrift(600 * time.Millisecond)
+	tc.DriftProcessed(500 * time.Millisecond) // effective = 100ms, below soft
+
+	if got := tc.Tier(); got != TierNormal {
+		t.Fatalf("tier: got %v, want TierNormal (effective drift below budget)", got)
+	}
+}
+
+func TestTierNegativeDrift(t *testing.T) {
+	tc := NewController(1200 * time.Millisecond)
+
+	tc.SetDrift(-600 * time.Millisecond)
+	if got := tc.Tier(); got != TierSoft {
+		t.Fatalf("tier with negative drift: got %v, want TierSoft", got)
+	}
+}
+
+func TestTierChangeFiresMidCorrection(t *testing.T) {
+	// Drift growing past a budget while a correction is in flight must still
+	// fire OnTierChange — the pacer needs to escalate even though no new
+	// correction starts (current != 0 blocks the OnDriftDetectedCallback path).
+	tc := NewController(1200 * time.Millisecond)
+
+	var tiers []Tier
+	tc.OnTierChange(func(tier Tier) { tiers = append(tiers, tier) })
+
+	tc.SetDrift(50 * time.Millisecond)  // starts correction at normal tier
+	tc.SetDrift(600 * time.Millisecond) // grows past soft mid-flight
+
+	if got := tc.Tier(); got != TierSoft {
+		t.Fatalf("tier: got %v, want TierSoft", got)
+	}
+	if len(tiers) != 1 || tiers[0] != TierSoft {
+		t.Fatalf("tier transitions: got %v, want [TierSoft]", tiers)
+	}
+}
+
+func TestTierNoFireWhenStable(t *testing.T) {
+	// Repeated SetDrift calls at the same tier must not re-fire OnTierChange.
+	tc := NewController(1200 * time.Millisecond)
+
+	var tiers []Tier
+	tc.OnTierChange(func(tier Tier) { tiers = append(tiers, tier) })
+
+	tc.SetDrift(600 * time.Millisecond)
+	tc.SetDrift(700 * time.Millisecond)
+	tc.SetDrift(800 * time.Millisecond)
+
+	if len(tiers) != 1 || tiers[0] != TierSoft {
+		t.Fatalf("tier transitions: got %v, want [TierSoft] (no re-fire within same tier)", tiers)
 	}
 }

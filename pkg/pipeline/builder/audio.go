@@ -21,11 +21,11 @@ import (
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
 	"github.com/linkdata/deadlock"
-	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/pipeline/tempo"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -48,102 +48,6 @@ type AudioBin struct {
 	nextID      int
 	nextChannel livekit.AudioChannel
 	names       map[string]string
-}
-
-type driftProcessNotifier interface {
-	DriftProcessed(actual time.Duration)
-	CancelInFlight()
-}
-
-// pacerSnapshot is the per-correction baseline captured at start(). It is
-// stored atomically as a unit so the probe never observes a torn snapshot
-// even if start() is mis-invoked while a correction is still active. The
-// active check in start() prevents this today, but treating the snapshot as
-// an atomic value removes the implicit ordering dependency between
-// active.Store and the snapshot field writes.
-type pacerSnapshot struct {
-	inputAtStart  int64
-	outputAtStart int64
-	targetDrift   time.Duration
-}
-
-type audioPacer struct {
-	pitch               *gst.Element
-	active              atomic.Bool
-	tc                  driftProcessNotifier
-	tempoAdjustmentRate float64
-
-	// Continuous accumulators for measuring actual compensation.
-	// Compensation = outputAccum - inputAccum (relative to snapshots at start).
-	inputAccum  atomic.Int64 // cumulative input buffer durations (nanoseconds)
-	outputAccum atomic.Int64 // cumulative output buffer durations (nanoseconds)
-
-	// snapshot is the active correction's baseline. nil when idle.
-	snapshot atomic.Pointer[pacerSnapshot]
-}
-
-func (a *audioPacer) start(drift time.Duration) {
-	if a.pitch == nil || drift == 0 {
-		return
-	}
-	if a.active.Load() {
-		logger.Errorw(
-			"starting audio pacer, but it's already active",
-			errors.New("tempo controller bug"),
-		)
-		return
-	}
-
-	rate := 1 + a.tempoAdjustmentRate
-	if drift > 0 {
-		rate = 1 - a.tempoAdjustmentRate
-	}
-
-	// Publish the snapshot before active=true so the probe — which reads
-	// active first, then snapshot — never sees active without a snapshot.
-	a.snapshot.Store(&pacerSnapshot{
-		inputAtStart:  a.inputAccum.Load(),
-		outputAtStart: a.outputAccum.Load(),
-		targetDrift:   drift,
-	})
-
-	logger.Debugw("starting audio pacer", "targetDrift", drift, "rate", rate)
-	a.pitch.SetArg("tempo", fmt.Sprintf("%.2f", rate))
-	a.active.Store(true)
-}
-
-// stop is the success path used by the src-pad probe when the in-flight
-// correction has reached its target. Returns true if this call won the
-// transition from active to idle; the caller must then notify the controller
-// via DriftProcessed. Concurrent stop / cancelOnFlush calls coalesce: only
-// one wins the Swap, the others see false and do nothing.
-func (a *audioPacer) stop() bool {
-	if a.pitch == nil {
-		return false
-	}
-	if !a.active.Swap(false) {
-		return false
-	}
-	a.pitch.SetArg("tempo", fmt.Sprintf("%.1f", 1.0))
-	return true
-}
-
-// cancelOnFlush is the abort path used when downstream is about to discard
-// the audio the in-flight correction has been applying to. The measurement
-// in inputAccum / outputAccum cannot be trusted across the flush boundary,
-// so the correction is abandoned: tempo returns to 1.0, the controller's
-// in-flight target is cleared (without crediting any compensation), and the
-// next SR drives a fresh correction. Returns true if this call won the
-// transition.
-func (a *audioPacer) cancelOnFlush() bool {
-	if a.pitch == nil {
-		return false
-	}
-	if !a.active.Swap(false) {
-		return false
-	}
-	a.pitch.SetArg("tempo", fmt.Sprintf("%.1f", 1.0))
-	return true
 }
 
 func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
@@ -388,13 +292,32 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 	}
 
 	if pacer != nil && ts.TempoController != nil {
-		ts.TempoController.OnDriftDetectedCallback(func(drift time.Duration) {
-			if pacer.pitch != nil {
-				logger.Debugw("starting audio pacer to cover the drift", "drift", drift)
-				pacer.start(drift)
+		// tc must be set before callbacks: both replay current state synchronously.
+		pacer.tc = ts.TempoController
+		trackID := ts.TrackID
+		ts.TempoController.OnTierChange(func(tier tempo.Tier) {
+			switch tier {
+			case tempo.TierNormal:
+				logger.Infow("audio drift back inside soft budget", "trackID", trackID, "tier", tier)
+				pacer.brake()
+			case tempo.TierSoft:
+				logger.Warnw("audio drift exceeded soft budget, boosting pacer rate", nil,
+					"trackID", trackID, "tier", tier)
+				pacer.boost()
+			case tempo.TierHard:
+				// Hard tier means the pacer cannot absorb drift fast enough even with
+				// boosting; downstream is approaching mixer alignment-threshold and
+				// will start dropping
+				logger.Warnw("audio drift exceeded hard budget",
+					errors.New("uncorrected drift above hard budget"),
+					"trackID", trackID, "tier", tier)
+				pacer.boost()
 			}
 		})
-		pacer.tc = ts.TempoController
+		ts.TempoController.OnDriftDetectedCallback(func(drift time.Duration) {
+			logger.Debugw("starting audio pacer to cover the drift", "drift", drift)
+			pacer.start(drift)
+		})
 	}
 
 	return nil
@@ -432,6 +355,7 @@ func (b *AudioBin) resetAudioAppSrcBin(ts *config.TrackSource) error {
 	// and the controller arms fresh against the current state.
 	if ts.TempoController != nil {
 		ts.TempoController.OnDriftDetectedCallback(nil)
+		ts.TempoController.OnTierChange(nil)
 		ts.TempoController.CancelInFlight()
 	}
 
@@ -613,10 +537,6 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel livek
 }
 
 func installPitchProbes(pacer *audioPacer) {
-	if pacer.pitch == nil {
-		return
-	}
-
 	// Sink pad: accumulate input buffer durations.
 	if sinkPad := pacer.pitch.GetStaticPad("sink"); sinkPad != nil {
 		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
@@ -747,9 +667,17 @@ func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.Pipeli
 		return nil, err
 	}
 
+	// Boosted rate kicks in when the controller signals soft-budget exceeded.
+	// 2x the base rate, capped at the same 0.2 ceiling enforced for AdjustmentRate.
+	boostedRate := 2 * p.AudioTempoController.AdjustmentRate
+	if boostedRate > 0.2 {
+		boostedRate = 0.2
+	}
+
 	pacer := &audioPacer{
 		pitch:               pitch,
 		tempoAdjustmentRate: p.AudioTempoController.AdjustmentRate,
+		boostedRate:         boostedRate,
 	}
 
 	installPitchProbes(pacer)
