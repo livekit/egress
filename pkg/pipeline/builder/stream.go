@@ -16,9 +16,9 @@ package builder
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
+	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
 	"go.uber.org/atomic"
 
@@ -76,8 +76,8 @@ type Stream struct {
 	// streaming is healthy. OutBytesTotal grows whenever rtmp2sink writes chunks to
 	// the socket; TCP backpressure ensures it stalls under the same failure modes we
 	// care about (TCP wedge, internal sink wedge, remote close).
-	lastOutBytesTotal       atomic.Uint64
-	lastProgressAt          atomic.Time
+	lastOutBytesTotal atomic.Uint64
+	lastProgressAt    atomic.Time
 	// monitorObservedProgress flips to true the first time the monitor sees byte
 	// growth above livenessProgressThreshold between two ticks — i.e. real
 	// streaming progress, not just RTMP chunk/control traffic from a single
@@ -85,8 +85,8 @@ type Stream struct {
 	// Reset's bad-URL fast-fail check; once set, it stays set.
 	monitorObservedProgress atomic.Bool
 	livenessFailed          atomic.Bool
-	monitorOnce             sync.Once
-	stopMonitor             chan struct{}
+	monitorStarted          core.Fuse
+	monitorStop             core.Fuse
 }
 
 func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, o *config.StreamConfig) (*StreamBin, error) {
@@ -356,35 +356,30 @@ func (s *Stream) Stats() (*logging.StreamStats, bool) {
 // StartMonitor begins polling the sink for outbound progress. If OutBytesTotal
 // fails to grow beyond livenessProgressThreshold for livenessIdleTimeout, the
 // monitor posts a synthetic error on the sink element so the existing error
-// path tears the stream down. Safe to call multiple times; only the first call
-// has effect.
+// path tears the stream down.
+
 func (s *Stream) StartMonitor() {
-	s.monitorOnce.Do(func() {
-		s.stopMonitor = make(chan struct{})
+	s.monitorStarted.Once(func() {
 		s.lastProgressAt.Store(time.Now())
 		go s.runMonitor()
 	})
 }
 
-// StopMonitor signals the monitor goroutine to exit. Idempotent.
+// StopMonitor signals the monitor goroutine to exit. Idempotent and safe to
+// call before StartMonitor — runMonitor's first select observes the broken
+// fuse and returns.
 func (s *Stream) StopMonitor() {
-	if s.stopMonitor == nil {
-		return
-	}
-	select {
-	case <-s.stopMonitor:
-	default:
-		close(s.stopMonitor)
-	}
+	s.monitorStop.Break()
 }
 
 func (s *Stream) runMonitor() {
 	ticker := time.NewTicker(livenessPollInterval)
 	defer ticker.Stop()
 
+	stop := s.monitorStop.Watch()
 	for {
 		select {
-		case <-s.stopMonitor:
+		case <-stop:
 			return
 		case <-ticker.C:
 			if s.livenessFailed.Load() {
