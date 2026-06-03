@@ -58,14 +58,8 @@ type PipelineConfig struct {
 	Info            *livekit.EgressInfo `yaml:"-"`
 	Manifest        *Manifest           `yaml:"-"`
 	Live            bool                `yaml:"-"`
+	IsReplay        bool                `yaml:"-"`
 	StorageObserver StorageObserver     `yaml:"-"`
-}
-
-// IsReplay returns true when this is a replay/export pipeline. Use this for
-// replay-specific integration points (IPC calls, storage access). For generic
-// pipeline behavior (is-live, leaky queues, backpressure) use the Live field.
-func (p *PipelineConfig) IsReplay() bool {
-	return !p.Live
 }
 
 type StorageObserver interface {
@@ -435,6 +429,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			Replay: clone,
 		}
 		egress.RedactStartEgressRequest(clone)
+		p.IsReplay = true
 
 		switch source := replayReq.Source.(type) {
 		case *livekit.ExportReplayRequest_Template:
