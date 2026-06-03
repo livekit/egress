@@ -125,6 +125,12 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64v8; else ARCH=amd64
     sed -i 's_record: no_record: yes_g' mediamtx.yml && \
     sed -i 's_recordPath: ./recordings/%path/_recordPath: /out/output/stream-_g' mediamtx.yml
 
+# install toxiproxy (used by integration tests to simulate wedged RTMP outputs)
+RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64; else ARCH=amd64; fi && \
+    wget -O /usr/local/bin/toxiproxy-server \
+        https://github.com/Shopify/toxiproxy/releases/download/v2.12.0/toxiproxy-server-linux-${ARCH} && \
+    chmod +x /usr/local/bin/toxiproxy-server
+
 # create egress user
 RUN useradd -ms /bin/bash -g root -G sudo,pulse,pulse-access egress
 RUN mkdir -p home/egress/tmp home/egress/.cache/xdgr && \

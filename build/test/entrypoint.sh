@@ -22,6 +22,10 @@ pulseaudio -D --verbose --exit-idle-time=-1 --disallow-exit
 # Run RTSP server
 ./mediamtx > /dev/null 2>&1 &
 
+# Run toxiproxy (control API on :8474). Used by the RTMP-wedge integration tests
+# to simulate a sink that stops accepting bytes without emitting errors.
+toxiproxy-server -host 0.0.0.0 -port 8474 > /dev/null 2>&1 &
+
 # Run tests
 if [[ -z ${GITHUB_WORKFLOW+x} ]]; then
   exec ./test.test -test.v -test.timeout 30m
