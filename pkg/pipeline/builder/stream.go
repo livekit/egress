@@ -76,7 +76,7 @@ type Stream struct {
 	// streaming is healthy. OutBytesTotal grows whenever rtmp2sink writes chunks to
 	// the socket; TCP backpressure ensures it stalls under the same failure modes we
 	// care about (TCP wedge, internal sink wedge, remote close).
-	lastOutBytesTotal uint64
+	lastOutBytesTotal int64
 	lastProgressAt    time.Time
 	// monitorObservedProgress flips to true the first time the monitor sees byte
 	// growth above livenessProgressThreshold between two ticks — i.e. real
@@ -401,8 +401,8 @@ const (
 // evaluateLiveness returns the action a poll tick should take given the byte counters
 // and the timestamp of the last observed real progress. Pure so it can be unit-tested
 // without GStreamer.
-func evaluateLiveness(current, last uint64, lastProgressAt, now time.Time) livenessAction {
-	if current > last && current-last > livenessProgressThreshold {
+func evaluateLiveness(current, last int64, lastProgressAt, now time.Time) livenessAction {
+	if current-last > livenessProgressThreshold {
 		return livenessActionRealProgress
 	}
 	if current == 0 {
@@ -421,10 +421,10 @@ func (s *Stream) checkLiveness() {
 	if !ok {
 		return
 	}
-	s.applyLiveness(stats.OutBytesTotal, time.Now())
+	s.applyLiveness(int64(stats.OutBytesTotal), time.Now())
 }
 
-func (s *Stream) applyLiveness(current uint64, now time.Time) {
+func (s *Stream) applyLiveness(current int64, now time.Time) {
 	last := s.lastOutBytesTotal
 	s.lastOutBytesTotal = current
 

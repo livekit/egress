@@ -26,8 +26,8 @@ func TestEvaluateLiveness(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		current        uint64
-		last           uint64
+		current        int64
+		last           int64
 		lastProgressAt time.Time
 		want           livenessAction
 	}{
@@ -143,7 +143,7 @@ func TestApplyLiveness_RealProgressResetsRetryBudget(t *testing.T) {
 
 	s.applyLiveness(50_000, now)
 
-	require.Equal(t, uint64(50_000), s.lastOutBytesTotal)
+	require.Equal(t, int64(50_000), s.lastOutBytesTotal)
 	require.Equal(t, now.UnixNano(), s.lastProgressAt.UnixNano())
 	require.True(t, s.disconnectedAt.Load().IsZero(), "disconnectedAt should be cleared")
 	require.Equal(t, int32(0), s.reconnections.Load(), "reconnections should be reset")
@@ -163,7 +163,7 @@ func TestApplyLiveness_HandshakeBytesDoNotResetRetryBudget(t *testing.T) {
 	// 300 bytes = typical RTMP handshake/control noise; must not look like progress.
 	s.applyLiveness(300, now)
 
-	require.Equal(t, uint64(300), s.lastOutBytesTotal)
+	require.Equal(t, int64(300), s.lastOutBytesTotal)
 	require.Equal(t, disconnected.UnixNano(), s.disconnectedAt.Load().UnixNano(),
 		"disconnectedAt must not be cleared by sub-threshold growth")
 	require.Equal(t, int32(3), s.reconnections.Load(),
@@ -184,7 +184,7 @@ func TestApplyLiveness_StatsResetDoesNotExtendClock(t *testing.T) {
 	// Simulate SetState(NULL) clearing the sink stats.
 	s.applyLiveness(0, now)
 
-	require.Equal(t, uint64(0), s.lastOutBytesTotal, "baseline must follow the reset")
+	require.Equal(t, int64(0), s.lastOutBytesTotal, "baseline must follow the reset")
 	require.Equal(t, originalProgressAt.UnixNano(), s.lastProgressAt.UnixNano(),
 		"lastProgressAt must not advance on a stats reset")
 	require.False(t, s.livenessFailed.Load())
