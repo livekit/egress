@@ -17,7 +17,6 @@
 package test
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -49,16 +48,10 @@ const (
 var (
 	streamKey1          = utils.NewGuid("")
 	streamKey2          = utils.NewGuid("")
-	streamKey3          = utils.NewGuid("")
-	streamKey4          = utils.NewGuid("")
 	rtmpUrl1            = fmt.Sprintf("rtmp://localhost:1935/live/%s", streamKey1)
 	rtmpUrl2            = fmt.Sprintf("rtmp://localhost:1935/live/%s", streamKey2)
-	rtmpUrl3            = fmt.Sprintf("rtmp://localhost:1935/live/%s", streamKey3)
-	rtmpUrl4            = fmt.Sprintf("rtmp://localhost:1935/live/%s", streamKey4)
 	rtmpUrl1Redacted, _ = utils.RedactStreamKey(rtmpUrl1)
 	rtmpUrl2Redacted, _ = utils.RedactStreamKey(rtmpUrl2)
-	rtmpUrl3Redacted, _ = utils.RedactStreamKey(rtmpUrl3)
-	rtmpUrl4Redacted, _ = utils.RedactStreamKey(rtmpUrl4)
 	srtPublishUrl1      = fmt.Sprintf("srt://localhost:8890?streamid=publish:%s&pkt_size=1316", streamKey1)
 	srtReadUrl1         = fmt.Sprintf("srt://localhost:8890?streamid=read:%s", streamKey1)
 	srtPublishUrl2      = fmt.Sprintf("srt://localhost:8890?streamid=publish:%s&pkt_size=1316", streamKey2)
@@ -95,9 +88,10 @@ func (r *Runner) testStream(t *testing.T) {
 				name:        "RoomComposite",
 				requestType: types.RequestTypeRoomComposite,
 				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeVP8,
-					layout:     "speaker",
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeVP8,
+					layout:           layoutSpeaker,
+					multiParticipant: true,
 				},
 				streamOptions: &streamOptions{
 					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
@@ -108,9 +102,10 @@ func (r *Runner) testStream(t *testing.T) {
 				name:        "RoomCompositeFixedKeyframeInterval",
 				requestType: types.RequestTypeRoomComposite,
 				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeVP8,
-					layout:     "speaker",
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeVP8,
+					layout:           layoutSpeaker,
+					multiParticipant: true,
 				},
 				streamOptions: &streamOptions{
 					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
@@ -119,7 +114,7 @@ func (r *Runner) testStream(t *testing.T) {
 				encodingOptions: &livekit.EncodingOptions{
 					KeyFrameInterval: 2,
 				},
-				contentCheck: r.streamKeyframeContentCheck(2),
+				contentCheck: streamKeyframeContentCheck(2),
 			},
 
 			// ---------- Web ----------
@@ -180,121 +175,65 @@ func (r *Runner) testStream(t *testing.T) {
 					rawFileName: fmt.Sprintf("track-ws-%v.raw", time.Now().Unix()),
 					outputType:  types.OutputTypeRaw,
 				},
+				custom: r.runWebsocketTest,
+			},
+
+			// -------- Template --------
+
+			{
+				name:        "Template",
+				requestType: types.RequestTypeTemplate,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeVP8,
+					layout:           layoutSpeaker,
+					multiParticipant: true,
+				},
+				streamOptions: &streamOptions{
+					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
+					outputType: types.OutputTypeRTMP,
+				},
+			},
+
+			// -------- Media ----------
+
+			{
+				name:        "Media/ParticipantVideoStream",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+					mediaParticipantVideo: &livekit.ParticipantVideo{
+						Identity: setAtRuntime,
+					},
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+					}},
+				},
+				streamOptions: &streamOptions{
+					streamUrls: []string{rtmpUrl1, badRtmpUrl1},
+					outputType: types.OutputTypeRTMP,
+				},
 			},
 		} {
-			if !r.run(t, test, r.runStreamTest) {
+			if !r.run(t, test) {
 				return
 			}
 		}
 	})
 }
 
-func (r *Runner) runStreamTest(t *testing.T, test *testCase) {
-	if test.requestType == types.RequestTypeTrack {
-		r.runWebsocketTest(t, test)
-		return
-	}
-
-	req := r.build(test)
-
-	ctx := context.Background()
-	urls := streamUrls[test.streamOptions.outputType]
-	egressID := r.startEgress(t, req)
-
-	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
-	require.NoError(t, err)
-
-	if !test.audioOnly {
-		require.True(t, p.VideoEncoding)
-	}
-
-	// verify
-	time.Sleep(time.Second * 5)
-	r.verifyStreams(t, test, p, urls[0][2])
-	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		urls[0][1]: livekit.StreamInfo_ACTIVE,
-		urls[1][1]: livekit.StreamInfo_FAILED,
-	})
-
-	// add one good stream url and one bad
-	_, err = r.client.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
-		EgressId:      egressID,
-		AddOutputUrls: []string{urls[2][0], urls[3][0]},
-	})
-	require.NoError(t, err)
-	time.Sleep(time.Second * 5)
-
-	// verify
-	r.verifyStreams(t, test, p, urls[0][2], urls[2][2])
-	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		urls[0][1]: livekit.StreamInfo_ACTIVE,
-		urls[1][1]: livekit.StreamInfo_FAILED,
-		urls[2][1]: livekit.StreamInfo_ACTIVE,
-		urls[3][1]: livekit.StreamInfo_FAILED,
-	})
-
-	// remove one of the stream urls
-	_, err = r.client.UpdateStream(ctx, egressID, &livekit.UpdateStreamRequest{
-		EgressId:         egressID,
-		RemoveOutputUrls: []string{urls[0][0]},
-	})
-	require.NoError(t, err)
-
-	time.Sleep(time.Second * 5)
-	if r.Dotfiles {
-		r.createDotFile(t, egressID)
-	}
-
-	// verify the remaining stream
-	r.verifyStreams(t, test, p, urls[2][2])
-	r.checkStreamUpdate(t, egressID, map[string]livekit.StreamInfo_Status{
-		urls[0][1]: livekit.StreamInfo_FINISHED,
-		urls[1][1]: livekit.StreamInfo_FAILED,
-		urls[2][1]: livekit.StreamInfo_ACTIVE,
-		urls[3][1]: livekit.StreamInfo_FAILED,
-	})
-
-	// stop
-	time.Sleep(time.Second * 5)
-	res := r.stopEgress(t, egressID)
-
-	// verify egress info
-	require.Empty(t, res.Error)
-	require.NotZero(t, res.StartedAt)
-	require.NotZero(t, res.EndedAt)
-
-	// check stream info
-	require.Len(t, res.StreamResults, 4)
-	for _, info := range res.StreamResults {
-		require.NotZero(t, info.StartedAt)
-		require.NotZero(t, info.EndedAt)
-
-		switch info.Url {
-		case urls[0][1]:
-			require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
-			require.Greater(t, float64(info.Duration)/1e9, 15.0)
-
-		case urls[2][1]:
-			require.Equal(t, livekit.StreamInfo_FINISHED.String(), info.Status.String())
-			require.Greater(t, float64(info.Duration)/1e9, 10.0)
-
-		default:
-			require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
-		}
-	}
-}
-
 func (r *Runner) verifyStreams(t *testing.T, tc *testCase, p *config.PipelineConfig, urls ...string) {
 	for _, url := range urls {
-		info := verify(t, url, p, nil, types.EgressTypeStream, false, r.sourceFramerate, false)
-		if tc != nil && tc.contentCheck != nil && info != nil {
-			tc.contentCheck(t, url, info)
+		info := verify(t, url, p, nil, types.EgressTypeStream, r.sourceFramerate, false)
+		if tc != nil && tc.contentCheck != nil {
+			runContentCheck(t, tc, url, info, "stream", formatFromStreamURL(url))
 		}
 	}
 }
 
 func (r *Runner) runWebsocketTest(t *testing.T, test *testCase) {
-	filepath := path.Join(r.FilePrefix, test.streamOptions.rawFileName)
+	filepath := path.Join(r.FilePrefix, test.rawFileName)
 	wss := newTestWebsocketServer(filepath)
 	s := httptest.NewServer(http.HandlerFunc(wss.handleWebsocket))
 	test.websocketUrl = "ws" + strings.TrimPrefix(s.URL, "http")
@@ -313,7 +252,7 @@ func (r *Runner) runWebsocketTest(t *testing.T, test *testCase) {
 	time.Sleep(time.Second * 30)
 
 	res := r.stopEgress(t, egressID)
-	verify(t, filepath, p, res, types.EgressTypeWebsocket, r.Muting, r.sourceFramerate, false)
+	verify(t, filepath, p, res, types.EgressTypeWebsocket, r.sourceFramerate, false)
 }
 
 type websocketTestServer struct {

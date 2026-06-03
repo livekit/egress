@@ -13,14 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -euxo pipefail
+set -euo pipefail
 
 # Clean out tmp
 rm -rf /home/egress/tmp/*
 
 # Start pulseaudio
 rm -rf /var/run/pulse /var/lib/pulse /home/egress/.config/pulse /home/egress/.cache/xdgr/pulse
-pulseaudio -D --verbose --exit-idle-time=-1 --disallow-exit
+pulseaudio -D --verbose --exit-idle-time=-1 --disallow-exit > /dev/null 2>&1
 
 # Run egress service
 exec /tini -- egress

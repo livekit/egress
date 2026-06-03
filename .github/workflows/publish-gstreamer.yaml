@@ -13,7 +13,7 @@ jobs:
     uses: ./.github/workflows/publish-gstreamer-base.yaml
     with:
       version: ${{ inputs.version }}
-      buildjet-runs-on: buildjet-8vcpu-ubuntu-2204
+      buildjet-runs-on: ubuntu-latest-m
       arch: amd64
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -37,10 +37,10 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}

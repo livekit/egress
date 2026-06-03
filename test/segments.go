@@ -46,9 +46,10 @@ func (r *Runner) testSegments(t *testing.T) {
 				name:        "RoomComposite",
 				requestType: types.RequestTypeRoomComposite,
 				publishOptions: publishOptions{
-					audioCodec: types.MimeTypeOpus,
-					videoCodec: types.MimeTypeVP8,
-					layout:     "speaker",
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeVP8,
+					layout:           layoutSpeaker,
+					multiParticipant: true,
 				},
 				encodingOptions: &livekit.EncodingOptions{
 					AudioCodec:   livekit.AudioCodec_AAC,
@@ -63,7 +64,6 @@ func (r *Runner) testSegments(t *testing.T) {
 					livePlaylist: "r_live_{room_name}_{time}.m3u8",
 					suffix:       livekit.SegmentedFileSuffix_INDEX,
 				},
-				contentCheck: r.fullContentCheck,
 			},
 			{
 				name:        "RoomComposite/AudioOnly",
@@ -80,7 +80,6 @@ func (r *Runner) testSegments(t *testing.T) {
 					playlist: "r_{room_name}_audio_{time}.m3u8",
 					suffix:   livekit.SegmentedFileSuffix_TIMESTAMP,
 				},
-				contentCheck: r.audioOnlyContentCheck,
 			},
 
 			// ---------- Web ----------
@@ -109,7 +108,6 @@ func (r *Runner) testSegments(t *testing.T) {
 					prefix:   "participant_{publisher_identity}_vp8_{time}",
 					playlist: "participant_{publisher_identity}_vp8_{time}.m3u8",
 				},
-				contentCheck: r.fullContentCheck,
 			},
 			{
 				name:        "ParticipantComposite/H264",
@@ -140,7 +138,6 @@ func (r *Runner) testSegments(t *testing.T) {
 					playlist:     "tcs_{room_name}_h264_{time}.m3u8",
 					livePlaylist: "tcs_live_{room_name}_h264_{time}.m3u8",
 				},
-				contentCheck: r.fullContentCheck,
 			},
 			{
 				name:        "TrackComposite/AudioOnly",
@@ -153,37 +150,25 @@ func (r *Runner) testSegments(t *testing.T) {
 					prefix:   "tcs_{room_name}_audio_{time}",
 					playlist: "tcs_{room_name}_audio_{time}.m3u8",
 				},
-				contentCheck: r.audioOnlyContentCheck,
+			},
+
+			// --------- Web V2 --------
+
+			{
+				name:        "WebV2",
+				requestType: types.RequestTypeWeb,
+				segmentOptions: &segmentOptions{
+					prefix:   "webv2_{time}",
+					playlist: "webv2_{time}.m3u8",
+				},
+				v2OutputOptions: &v2OutputOptions{},
 			},
 		} {
-			if !r.run(t, test, r.runSegmentsTest) {
+			if !r.run(t, test) {
 				return
 			}
 		}
 	})
-}
-
-func (r *Runner) runSegmentsTest(t *testing.T, test *testCase) {
-	req := r.build(test)
-
-	egressID := r.startEgress(t, req)
-
-	time.Sleep(time.Second * 10)
-	if r.Dotfiles {
-		r.createDotFile(t, egressID)
-	}
-
-	// stop
-	time.Sleep(time.Second * 15)
-	res := r.stopEgress(t, egressID)
-
-	// get params
-	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
-	require.NoError(t, err)
-
-	require.Equal(t, !test.audioOnly, p.VideoEncoding)
-
-	r.verifySegments(t, test, p, test.segmentOptions.suffix, res, test.livePlaylist != "")
 }
 
 func (r *Runner) verifySegments(
@@ -259,9 +244,12 @@ func (r *Runner) verifySegmentOutput(
 	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath, pl.playlistType)
 
 	// verify
-	info := verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.Muting, r.sourceFramerate, pl.playlistType == m3u8.PlaylistTypeLive)
-	if tc.contentCheck != nil && info != nil {
-		tc.contentCheck(t, localPlaylistPath, info)
+	info := verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.sourceFramerate, pl.playlistType == m3u8.PlaylistTypeLive)
+	// Live playlists are a rolling subset of segments; their partial
+	// content isn't a fair representation of the full recording for
+	// avsync verification. Structure is already validated above.
+	if pl.playlistType != m3u8.PlaylistTypeLive {
+		runContentCheck(t, tc, localPlaylistPath, info, "segments", "hls")
 	}
 }
 

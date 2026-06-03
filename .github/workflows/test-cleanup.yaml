@@ -1,0 +1,80 @@
+name: Cleanup Integration Images
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old integration image tags
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_CLEANUP_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_CLEANUP_TOKEN }}
+          REPO: livekit/egress-integration
+          RETENTION_DAYS: 3
+        run: |
+          set -euo pipefail
+
+          # Authenticate with Docker Hub
+          TOKEN=$(curl -sf "https://hub.docker.com/v2/users/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"${DOCKERHUB_USERNAME}\",\"password\":\"${DOCKERHUB_TOKEN}\"}" \
+            | jq -r '.token')
+
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "::error::Failed to authenticate with Docker Hub"
+            exit 1
+          fi
+
+          CUTOFF=$(date -u -d "${RETENTION_DAYS} days ago" +%Y-%m-%dT%H:%M:%S.%NZ)
+          echo "Deleting tags last updated before ${CUTOFF}"
+
+          DELETED=0
+          RETAINED=0
+          PAGE=1
+
+          while true; do
+            RESPONSE=$(curl -sf "https://hub.docker.com/v2/repositories/${REPO}/tags?page_size=100&page=${PAGE}" \
+              -H "Authorization: Bearer ${TOKEN}")
+
+            TAGS=$(echo "$RESPONSE" | jq -r '.results // empty')
+            if [ -z "$TAGS" ] || [ "$TAGS" = "[]" ]; then
+              break
+            fi
+
+            for TAG_INFO in $(echo "$TAGS" | jq -c '.[]'); do
+              TAG_NAME=$(echo "$TAG_INFO" | jq -r '.name')
+              LAST_UPDATED=$(echo "$TAG_INFO" | jq -r '.last_updated')
+
+              if [[ "$LAST_UPDATED" < "$CUTOFF" ]]; then
+                STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+                  "https://hub.docker.com/v2/repositories/${REPO}/tags/${TAG_NAME}" \
+                  -H "Authorization: Bearer ${TOKEN}")
+
+                if [ "$STATUS" = "204" ]; then
+                  echo "Deleted: ${TAG_NAME} (last updated: ${LAST_UPDATED})"
+                  DELETED=$((DELETED + 1))
+                else
+                  echo "::warning::Failed to delete ${TAG_NAME}: HTTP ${STATUS}"
+                fi
+
+                sleep 0.5
+              else
+                RETAINED=$((RETAINED + 1))
+              fi
+            done
+
+            NEXT=$(echo "$RESPONSE" | jq -r '.next // empty')
+            if [ -z "$NEXT" ] || [ "$NEXT" = "null" ]; then
+              break
+            fi
+            PAGE=$((PAGE + 1))
+          done
+
+          echo ""
+          echo "Summary: deleted=${DELETED} retained=${RETAINED}"

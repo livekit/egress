@@ -21,22 +21,19 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
-	"github.com/go-gst/go-gst/gst"
-	"github.com/go-gst/go-gst/gst/app"
 	"github.com/linkdata/deadlock"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/gstreamer"
-	"github.com/livekit/egress/pkg/pipeline/source/sdk"
-	"github.com/livekit/egress/pkg/pipeline/tempo"
-	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/livekit/server-sdk-go/v2/pkg/synchronizer"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/types"
 )
 
 const (
@@ -48,22 +45,30 @@ type SDKSource struct {
 	callbacks *gstreamer.Callbacks
 
 	room *lksdk.Room
-	sync *synchronizer.Synchronizer
+	sync synchronizer.Sync
 
-	mu                   deadlock.RWMutex
+	mu                   deadlock.Mutex
 	initialized          core.Fuse
 	filenameReplacements map[string]string
-	subs                 chan *subscriptionResult
+	audioChannels        map[string]livekit.AudioChannel
 
-	writers map[string]*sdk.AppWriter
+	workersMu deadlock.RWMutex
+	workers   map[string]*trackWorker
+
+	// subLock prevents a race where a subscription starts during init completion.
+	// Without it, the subscription could see "not yet initialized", then init completes,
+	// leaving the track orphaned (missed by both pipeline build and dynamic add).
 	subLock deadlock.RWMutex
+
+	closing atomic.Bool
 	active  atomic.Int32
 	closed  core.Fuse
 
 	startRecording core.Fuse
 	endRecording   core.Fuse
 
-	timeProvider gstreamer.TimeProvider
+	timeProvider   atomic.Pointer[gstreamer.TimeProvider]
+	initResultChan atomic.Pointer[chan subscriptionResult]
 }
 
 type subscriptionResult struct {
@@ -79,8 +84,8 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		PipelineConfig:       p,
 		callbacks:            callbacks,
 		filenameReplacements: make(map[string]string),
-		subs:                 make(chan *subscriptionResult, 100),
-		writers:              make(map[string]*sdk.AppWriter),
+		audioChannels:        make(map[string]livekit.AudioChannel),
+		workers:              make(map[string]*trackWorker),
 	}
 	logger.Debugw("latency config", "latency", p.Latency)
 
@@ -94,35 +99,55 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		}),
 	}
 
-	if p.Latency.PreJitterBufferReceiveTimeEnabled {
-		opts = append(opts, synchronizer.WithPreJitterBufferReceiveTimeEnabled())
-	}
-	if p.Latency.RTCPSenderReportRebaseEnabled {
-		opts = append(opts, synchronizer.WithRTCPSenderReportRebaseEnabled())
-	}
-	if p.Latency.PacketBurstEstimatorEnabled {
+	if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
+		// Enable Packet Burst Estimator for Room Composite requests
 		opts = append(opts, synchronizer.WithStartGate())
 	}
-	if p.Latency.EnablePipelineTimeFeedback {
-		// time provider is not available yet, will be set later
-		// add some leeway to the mixer latency
-		opts = append(opts, synchronizer.WithMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond))
-	}
 
-	if p.RequestType == types.RequestTypeRoomComposite || p.AudioTempoController.Enabled {
-		// in case of room composite don't adjust audio timestamps on RTCP sender reports,
-		// to avoid gaps in the audio stream
+	// time provider is not available yet, will be set later
+	// add some leeway to the mixer latency
+	opts = append(opts, synchronizer.WithMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond))
+
+	if s.shouldEnableOneShotSenderReportSync() {
+		opts = append(opts, synchronizer.WithSenderReportSyncMode(synchronizer.SenderReportSyncModeOneShot))
+		opts = append(opts, synchronizer.WithOneShotDriftCorrectionThreshold(
+			time.Duration(float64(p.Latency.AudioMixerLatency)*0.8),
+		))
+	} else if s.shouldDisableAudioPTSAdjustment() {
+		opts = append(opts, synchronizer.WithSenderReportSyncMode(synchronizer.SenderReportSyncModeWithoutRebase))
 		opts = append(opts, synchronizer.WithAudioPTSAdjustmentDisabled())
-		if p.AudioTempoController.Enabled {
-			logger.Debugw("audio tempo controller enabled", "adjustmentRate", p.AudioTempoController.AdjustmentRate)
-		}
+	} else {
+		opts = append(opts, synchronizer.WithSenderReportSyncMode(synchronizer.SenderReportSyncModeRebase))
 	}
 
-	s.sync = synchronizer.NewSynchronizerWithOptions(
-		opts...,
-	)
+	if p.AudioTempoController.Enabled {
+		logger.Debugw("audio tempo controller enabled", "adjustmentRate", p.AudioTempoController.AdjustmentRate)
+	}
+
+	if p.EnableSyncEngine {
+		syncEngineOpts := []synchronizer.SyncEngineOption{
+			synchronizer.WithSyncEngineLogger(logger.GetLogger()),
+			synchronizer.WithSyncEngineOnStarted(func() {
+				s.startRecording.Break()
+			}),
+			synchronizer.WithSyncEngineMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond),
+		}
+		if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
+			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineStartGate())
+		}
+		if p.Latency.OldPacketThreshold > 0 {
+			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineOldPacketThreshold(p.Latency.OldPacketThreshold))
+		}
+		if p.AudioTempoController.Enabled {
+			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineAudioDriftCompensated())
+		}
+		s.sync = synchronizer.NewSyncEngine(syncEngineOpts...)
+	} else {
+		s.sync = synchronizer.NewSynchronizerWithOptions(opts...).AsSyncInterface()
+	}
 
 	if err := s.joinRoom(); err != nil {
+		s.disconnectRoom()
 		return nil, err
 	}
 
@@ -138,13 +163,16 @@ func (s *SDKSource) EndRecording() <-chan struct{} {
 }
 
 func (s *SDKSource) Playing(trackID string) {
-	s.mu.Lock()
-	writer := s.writers[trackID]
-	s.mu.Unlock()
+	s.workersMu.RLock()
+	w := s.workers[trackID]
+	s.workersMu.RUnlock()
 
-	if writer != nil {
-		writer.Playing()
+	if w == nil {
+		return
 	}
+
+	gen := w.generation.Load()
+	s.submitOp(trackID, Operation{Type: OpPlaying, Generation: gen})
 }
 
 func (s *SDKSource) GetStartedAt() int64 {
@@ -157,38 +185,63 @@ func (s *SDKSource) GetEndedAt() int64 {
 
 func (s *SDKSource) CloseWriters() {
 	s.closed.Once(func() {
+		s.closing.Store(true)
 		s.sync.End()
 
-		s.mu.Lock()
-		for _, w := range s.writers {
-			go func(writer *sdk.AppWriter) {
-				writer.Drain(false)
-			}(w)
+		s.workersMu.RLock()
+		workers := make([]*trackWorker, 0, len(s.workers))
+		for _, w := range s.workers {
+			workers = append(workers, w)
 		}
-		s.mu.Unlock()
+		s.workersMu.RUnlock()
+
+		for _, w := range workers {
+			select {
+			case w.opChan <- Operation{Type: OpClose}:
+			case <-w.done.Watch():
+				// already exited
+			}
+		}
 	})
 }
 
-func (s *SDKSource) StreamStopped(trackID string) {
-	s.onTrackFinished(trackID)
+func (s *SDKSource) StreamStopped(elementName string) {
+	trackID := strings.TrimPrefix(elementName, "app_")
+
+	// Only send finished if we have a worker for this track
+	s.workersMu.RLock()
+	_, exists := s.workers[trackID]
+	s.workersMu.RUnlock()
+
+	if !exists {
+		return // No worker for this track, nothing to clean up
+	}
+
+	s.submitOp(trackID, Operation{Type: OpFinished})
 }
 
 func (s *SDKSource) Close() {
-	s.room.Disconnect()
+	s.disconnectRoom()
 }
 
 func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
-	s.mu.Lock()
-	s.timeProvider = tp
-	if s.Latency.EnablePipelineTimeFeedback && tp != nil {
+	s.timeProvider.Store(&tp)
+
+	if tp != nil {
 		s.sync.SetMediaRunningTime(tp.RunningTime)
 	} else {
 		s.sync.SetMediaRunningTime(nil)
 	}
-	for _, w := range s.writers {
-		w.SetTimeProvider(tp)
+
+	s.workersMu.RLock()
+	for _, w := range s.workers {
+		select {
+		case w.opChan <- Operation{Type: OpSetTimeProvider, TimeProvider: tp}:
+		default:
+			logger.Warnw("failed to send SetTimeProvider, channel full", nil, "trackID", w.trackID)
+		}
 	}
-	s.mu.Unlock()
+	s.workersMu.RUnlock()
 }
 
 // ----- Subscriptions -----
@@ -201,15 +254,14 @@ func (s *SDKSource) joinRoom() error {
 			OnTrackUnmuted:      s.onTrackUnmuted,
 			OnTrackUnsubscribed: s.onTrackUnsubscribed,
 		},
-		OnDisconnected: s.onDisconnected,
+		OnDisconnectedWithReason: s.onDisconnectedWithReason,
 	}
 
-	if s.RequestType == types.RequestTypeRoomComposite {
-		cb.ParticipantCallback.OnTrackPublished = s.onTrackPublished
-	}
-
-	if s.RequestType == types.RequestTypeParticipant {
-		cb.ParticipantCallback.OnTrackPublished = s.onTrackPublished
+	switch s.RequestType {
+	case types.RequestTypeRoomComposite, types.RequestTypeTemplate, types.RequestTypeMedia:
+		cb.OnTrackPublished = s.onTrackPublished
+	case types.RequestTypeParticipant:
+		cb.OnTrackPublished = s.onTrackPublished
 		cb.OnParticipantDisconnected = s.onParticipantDisconnected
 	}
 
@@ -226,6 +278,15 @@ func (s *SDKSource) joinRoom() error {
 	case types.RequestTypeRoomComposite:
 		fileIdentifier = s.room.Name()
 		// room_name and room_id are already handled as replacements
+		err = s.awaitRoomTracks()
+
+	case types.RequestTypeTemplate:
+		if s.Info.RoomName != "" {
+			fileIdentifier = s.Info.RoomName
+		} else {
+			fileIdentifier = s.room.Name()
+			s.filenameReplacements["{room_name}"] = s.room.Name()
+		}
 
 		err = s.awaitRoomTracks()
 
@@ -248,6 +309,15 @@ func (s *SDKSource) joinRoom() error {
 	case types.RequestTypeTrack:
 		fileIdentifier = s.TrackID
 		w, h, err = s.awaitTracks(map[string]struct{}{s.TrackID: {}})
+
+	case types.RequestTypeMedia:
+		if s.Info.RoomName != "" {
+			fileIdentifier = s.Info.RoomName
+		} else {
+			fileIdentifier = s.room.Name()
+			s.filenameReplacements["{room_name}"] = s.room.Name()
+		}
+		w, h, err = s.awaitMediaTracks()
 	}
 	if err != nil {
 		return err
@@ -259,6 +329,43 @@ func (s *SDKSource) joinRoom() error {
 	}
 
 	return nil
+}
+
+func (s *SDKSource) startAwaitingTracks(expectedCount int) <-chan subscriptionResult {
+	ch := make(chan subscriptionResult, expectedCount)
+	s.initResultChan.Store(&ch)
+	return ch
+}
+
+// StopAwaitingTracks - called after init complete or timeout
+func (s *SDKSource) stopAwaitingTracks() {
+	s.initResultChan.Store(nil) // just nil out, don't close
+}
+
+func (s *SDKSource) completeInit() {
+	s.subLock.Lock()
+	defer s.subLock.Unlock()
+	s.initialized.Break()
+}
+
+// getInitResultChan returns the current init result channel (nil after init complete)
+func (s *SDKSource) getInitResultChan() chan<- subscriptionResult {
+	if ptr := s.initResultChan.Load(); ptr != nil {
+		return *ptr
+	}
+	return nil
+}
+
+// sendInitResult sends result to the init channel if non-nil (non-blocking to avoid deadlock)
+func (s *SDKSource) sendInitResult(ch chan<- subscriptionResult, trackID string, err error) {
+	if ch == nil {
+		return
+	}
+	select {
+	case ch <- subscriptionResult{trackID: trackID, err: err}:
+	default:
+		logger.Warnw("failed to send init result, channel full", nil, "trackID", trackID)
+	}
 }
 
 func (s *SDKSource) awaitRoomTracks() error {
@@ -276,27 +383,76 @@ func (s *SDKSource) awaitRoomTracks() error {
 		return err
 	}
 
-	// lock any incoming subscriptions
-	s.subLock.Lock()
-	defer s.subLock.Unlock()
+	s.completeInit()
+	return nil
+}
 
-	for {
-		select {
-		// check errors from any tracks published in the meantime
-		case sub := <-s.subs:
-			if sub.err != nil {
-				return sub.err
-			}
-		default:
-			// ready
-			s.initialized.Break()
-			return nil
+func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
+	// Phase 1: Collect prerequisites from config
+	requiredParticipants := make(map[string]struct{})
+	requiredTracks := make(map[string]struct{})
+
+	if s.Identity != "" {
+		requiredParticipants[s.Identity] = struct{}{}
+	}
+	if s.VideoTrackID != "" {
+		requiredTracks[s.VideoTrackID] = struct{}{}
+	}
+	for _, route := range s.AudioRoutes {
+		if route.Match.TrackID != "" {
+			requiredTracks[route.Match.TrackID] = struct{}{}
+		}
+		if route.Match.ParticipantIdentity != "" {
+			requiredParticipants[route.Match.ParticipantIdentity] = struct{}{}
 		}
 	}
+
+	// Phase 2: Wait for prerequisites with shared deadline
+	deadline := time.Now().Add(subscriptionTimeout)
+
+	for identity := range requiredParticipants {
+		if _, err := s.getParticipant(identity, deadline); err != nil {
+			return 0, 0, err
+		}
+	}
+	for trackID := range requiredTracks {
+		if err := s.awaitTrackPublication(trackID, deadline); err != nil {
+			return 0, 0, err
+		}
+	}
+
+	// Phase 3: Count all matching subscriptions and soft-wait
+	expected := 0
+	for _, rp := range s.room.GetRemoteParticipants() {
+		for _, pub := range rp.TrackPublications() {
+			if s.shouldSubscribeMedia(pub, rp) {
+				expected++
+			}
+		}
+	}
+	if err := s.awaitExpected(expected); err != nil {
+		return 0, 0, err
+	}
+
+	// Phase 4: Get video dimensions from subscribed tracks
+	var w, h uint32
+	for _, rp := range s.room.GetRemoteParticipants() {
+		for _, pub := range rp.TrackPublications() {
+			if pub.IsSubscribed() && pub.Kind() == lksdk.TrackKindVideo {
+				if info := pub.TrackInfo(); info != nil {
+					w = info.Width
+					h = info.Height
+				}
+			}
+		}
+	}
+
+	s.completeInit()
+	return w, h, nil
 }
 
 func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, error) {
-	rp, err := s.getParticipant(identity)
+	rp, err := s.getParticipant(identity, time.Now().Add(subscriptionTimeout))
 	if err != nil {
 		return 0, 0, err
 	}
@@ -313,59 +469,45 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 		return 0, 0, err
 	}
 
-	// lock any incoming subscriptions
-	s.subLock.Lock()
-	defer s.subLock.Unlock()
-
-	for {
-		select {
-		// check errors from any tracks published in the meantime
-		case sub := <-s.subs:
-			if sub.err != nil {
-				return 0, 0, sub.err
-			}
-		default:
-			// get dimensions after subscribing so that track info exists
-			var w, h uint32
-			for _, t := range pubs {
-				if t.TrackInfo().Type == livekit.TrackType_VIDEO && t.IsSubscribed() {
-					w = t.TrackInfo().Width
-					h = t.TrackInfo().Height
-				}
-			}
-
-			// ready
-			s.initialized.Break()
-			return w, h, nil
+	// get dimensions after subscribing so that track info exists
+	var w, h uint32
+	for _, t := range pubs {
+		if t.TrackInfo().Type == livekit.TrackType_VIDEO && t.IsSubscribed() {
+			w = t.TrackInfo().Width
+			h = t.TrackInfo().Height
 		}
 	}
+
+	s.completeInit()
+	return w, h, nil
 }
 
 func (s *SDKSource) awaitExpected(expected int) error {
-	subscribed := 0
-	deadline := make(chan struct{})
-	time.AfterFunc(time.Second*3, func() {
-		close(deadline)
-	})
+	if expected == 0 {
+		return nil
+	}
 
-	for {
+	resultChan := s.startAwaitingTracks(expected)
+	defer s.stopAwaitingTracks()
+
+	subscribed := 0
+	deadline := time.After(time.Second * 3)
+
+	for subscribed < expected {
 		select {
-		case sub := <-s.subs:
+		case sub := <-resultChan:
 			if sub.err != nil {
 				return sub.err
 			}
 			subscribed++
-			if subscribed == expected {
-				return nil
-			}
 		case <-deadline:
 			return nil
 		}
 	}
+	return nil
 }
 
-func (s *SDKSource) getParticipant(identity string) (*lksdk.RemoteParticipant, error) {
-	deadline := time.Now().Add(subscriptionTimeout)
+func (s *SDKSource) getParticipant(identity string, deadline time.Time) (*lksdk.RemoteParticipant, error) {
 	for time.Now().Before(deadline) {
 		for _, p := range s.room.GetRemoteParticipants() {
 			if p.Identity() == identity {
@@ -377,12 +519,35 @@ func (s *SDKSource) getParticipant(identity string) (*lksdk.RemoteParticipant, e
 	return nil, errors.ErrParticipantNotFound(identity)
 }
 
+func (s *SDKSource) awaitTrackPublication(trackID string, deadline time.Time) error {
+	for time.Now().Before(deadline) {
+		for _, p := range s.room.GetRemoteParticipants() {
+			for _, pub := range p.TrackPublications() {
+				if pub.SID() == trackID {
+					return nil
+				}
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return errors.ErrTrackNotFound(trackID)
+}
+
 func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, error) {
 	trackCount := len(expecting)
+	if trackCount == 0 {
+		s.completeInit()
+		return 0, 0, nil
+	}
+
 	waiting := make(map[string]struct{})
 	for trackID := range expecting {
 		waiting[trackID] = struct{}{}
 	}
+
+	// Set up init coordination - processIdleOp will send results here
+	resultChan := s.startAwaitingTracks(trackCount)
+	defer s.stopAwaitingTracks()
 
 	deadline := time.After(subscriptionTimeout)
 	tracks, err := s.subscribeToTracks(expecting, deadline)
@@ -392,11 +557,11 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, 
 
 	for i := 0; i < trackCount; i++ {
 		select {
-		case sub := <-s.subs:
-			if sub.err != nil {
-				return 0, 0, sub.err
+		case result := <-resultChan:
+			if result.err != nil {
+				return 0, 0, result.err
 			}
-			delete(waiting, sub.trackID)
+			delete(waiting, result.trackID)
 		case <-deadline:
 			for trackID := range waiting {
 				return 0, 0, errors.ErrTrackNotFound(trackID)
@@ -412,7 +577,7 @@ func (s *SDKSource) awaitTracks(expecting map[string]struct{}) (uint32, uint32, 
 		}
 	}
 
-	s.initialized.Break()
+	s.completeInit()
 	return w, h, nil
 }
 
@@ -473,166 +638,30 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 // ----- Callbacks -----
 
 func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-	s.subLock.RLock()
-
-	if s.initialized.IsBroken() && s.RequestType != types.RequestTypeParticipant && s.RequestType != types.RequestTypeRoomComposite {
-		s.subLock.RUnlock()
+	// After init, only participant and room composite requests accept new tracks
+	if s.shouldSkipTrackSubscriptions() {
 		return
 	}
 
-	var onSubscribeErr error
-	defer func() {
-		if s.initialized.IsBroken() {
-			if onSubscribeErr != nil {
-				s.callbacks.OnError(onSubscribeErr)
-			}
-		} else {
-			s.subs <- &subscriptionResult{
-				trackID: pub.SID(),
-				err:     onSubscribeErr,
-			}
-		}
-		s.subLock.RUnlock()
-	}()
+	trackID := pub.SID()
 
-	s.active.Inc()
-	ts := &config.TrackSource{
-		TrackID:         pub.SID(),
-		TrackKind:       pub.Kind(),
-		ParticipantKind: rp.Kind(),
-		MimeType:        types.MimeType(strings.ToLower(track.Codec().MimeType)),
-		PayloadType:     track.Codec().PayloadType,
-		ClockRate:       track.Codec().ClockRate,
-	}
+	// Capture result channel at submission time (nil after init complete)
+	resultChan := s.getInitResultChan()
 
-	<-s.callbacks.GstReady
-	switch ts.MimeType {
-	case types.MimeTypeOpus, types.MimeTypePCMU, types.MimeTypePCMA:
-		s.AudioEnabled = true
-		s.AudioInCodec = ts.MimeType
-		if s.AudioOutCodec == "" {
-			// PCMU/PCMA are input-only codecs, use Opus as default output
-			if ts.MimeType == types.MimeTypePCMU || ts.MimeType == types.MimeTypePCMA {
-				s.AudioOutCodec = types.MimeTypeOpus
-			} else {
-				s.AudioOutCodec = ts.MimeType
-			}
-		}
-		s.AudioTranscoding = true
-
-		var tc sdk.DriftHandler
-		if s.AudioTempoController.Enabled {
-			c := tempo.NewController()
-			ts.TempoController = c
-			tc = c
-		}
-		writer, err := s.createWriter(track, pub, rp, ts, tc)
-		if err != nil {
-			onSubscribeErr = err
-			return
-		}
-
-		s.mu.Lock()
-		s.writers[ts.TrackID] = writer
-		if !s.initialized.IsBroken() {
-			s.AudioTracks = append(s.AudioTracks, ts)
-		}
-		s.mu.Unlock()
-
-	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9:
-		s.VideoEnabled = true
-		s.VideoInCodec = ts.MimeType
-		if s.VideoOutCodec == "" {
-			s.VideoOutCodec = ts.MimeType
-		}
-		if s.VideoInCodec != s.VideoOutCodec {
-			s.VideoDecoding = true
-			if len(s.GetEncodedOutputs()) > 0 {
-				s.VideoEncoding = true
-			}
-		}
-
-		writer, err := s.createWriter(track, pub, rp, ts, nil)
-		if err != nil {
-			onSubscribeErr = err
-			return
-		}
-
-		s.mu.Lock()
-		s.writers[ts.TrackID] = writer
-		s.mu.Unlock()
-
-		if !s.initialized.IsBroken() {
-			s.VideoTrack = ts
-		}
-
-	default:
-		onSubscribeErr = errors.ErrNotSupported(string(ts.MimeType))
-		return
-	}
-
-	if s.initialized.IsBroken() {
-		<-s.callbacks.BuildReady
-		s.callbacks.OnTrackAdded(ts)
-	} else {
-		s.mu.Lock()
-		switch s.RequestType {
-		case types.RequestTypeTrackComposite:
-			if s.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
-				s.Identity = rp.Identity()
-				s.filenameReplacements["{publisher_identity}"] = s.Identity
-			}
-
-		case types.RequestTypeTrack:
-			s.Identity = rp.Identity()
-			s.TrackKind = pub.Kind().String()
-			if pub.Kind() == lksdk.TrackKindVideo && s.Outputs[types.EgressTypeWebsocket] != nil {
-				onSubscribeErr = errors.ErrIncompatible("websocket", ts.MimeType)
-				s.mu.Unlock()
-				return
-			}
-			s.TrackSource = strings.ToLower(pub.Source().String())
-			if o := s.GetFileConfig(); o != nil {
-				o.OutputType = types.TrackOutputTypes[ts.MimeType]
-			}
-
-			s.filenameReplacements["{track_id}"] = s.TrackID
-			s.filenameReplacements["{track_type}"] = s.TrackKind
-			s.filenameReplacements["{track_source}"] = s.TrackSource
-			s.filenameReplacements["{publisher_identity}"] = s.Identity
-		}
-		s.mu.Unlock()
-	}
-}
-
-func (s *SDKSource) createWriter(
-	track *webrtc.TrackRemote,
-	pub lksdk.TrackPublication,
-	rp *lksdk.RemoteParticipant,
-	ts *config.TrackSource,
-	tc sdk.DriftHandler,
-) (*sdk.AppWriter, error) {
-	src, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", track.ID()))
-	if err != nil {
-		return nil, errors.ErrGstPipelineError(err)
-	}
-
-	ts.AppSrc = app.SrcFromElement(src)
-
-	writer, err := sdk.NewAppWriter(s.PipelineConfig, track, pub, rp, ts, s.sync, tc, s.callbacks)
-	if err != nil {
-		return nil, err
-	}
-
-	s.mu.RLock()
-	writer.SetTimeProvider(s.timeProvider)
-	s.mu.RUnlock()
-
-	return writer, nil
+	s.submitOp(trackID, Operation{
+		Type:              OpSubscribe,
+		Track:             track,
+		Pub:               pub,
+		RemoteParticipant: rp,
+		ResultChan:        resultChan,
+	})
 }
 
 func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-	if s.RequestType != types.RequestTypeParticipant && s.RequestType != types.RequestTypeRoomComposite {
+	if s.RequestType != types.RequestTypeParticipant &&
+		s.RequestType != types.RequestTypeRoomComposite &&
+		s.RequestType != types.RequestTypeTemplate &&
+		s.RequestType != types.RequestTypeMedia {
 		return
 	}
 
@@ -640,7 +669,14 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 		return
 	}
 
-	if s.shouldSubscribe(pub) {
+	var shouldSub bool
+	if s.RequestType == types.RequestTypeMedia {
+		shouldSub = s.shouldSubscribeMedia(pub, rp)
+	} else {
+		shouldSub = s.shouldSubscribe(pub)
+	}
+
+	if shouldSub {
 		if err := s.subscribe(pub); err != nil {
 			logger.Errorw("failed to subscribe to track", err, "trackID", pub.SID())
 		}
@@ -658,7 +694,7 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 		default:
 			return s.ScreenShare
 		}
-	case types.RequestTypeRoomComposite:
+	case types.RequestTypeRoomComposite, types.RequestTypeTemplate:
 		switch pub.Kind() {
 		case lksdk.TrackKindAudio:
 			return s.AudioEnabled
@@ -670,61 +706,94 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 	return false
 }
 
+func (s *SDKSource) shouldSubscribeMedia(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
+	if s.matchesMediaVideo(pub, rp) {
+		return true
+	}
+	if route := s.matchesAudioRoute(pub, rp); route != nil {
+		s.mu.Lock()
+		s.audioChannels[pub.SID()] = route.Channel
+		s.mu.Unlock()
+		return true
+	}
+	return false
+}
+
+func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) *config.AudioRouteConfig {
+	if pub.Kind() != lksdk.TrackKindAudio {
+		return nil
+	}
+	for i := range s.AudioRoutes {
+		route := &s.AudioRoutes[i]
+		switch {
+		case route.Match.TrackID != "":
+			if pub.SID() == route.Match.TrackID {
+				return route
+			}
+		case route.Match.ParticipantIdentity != "":
+			if rp.Identity() == route.Match.ParticipantIdentity {
+				return route
+			}
+		case route.Match.ParticipantKind != nil:
+			if rp.Kind() == *route.Match.ParticipantKind {
+				return route
+			}
+		}
+	}
+	return nil
+}
+
+func (s *SDKSource) matchesMediaVideo(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
+	if pub.Kind() != lksdk.TrackKindVideo {
+		return false
+	}
+	if s.VideoTrackID != "" {
+		return pub.SID() == s.VideoTrackID
+	}
+	if s.Identity != "" {
+		if rp.Identity() != s.Identity {
+			return false
+		}
+		if s.ScreenShare {
+			return pub.Source() == livekit.TrackSource_SCREEN_SHARE
+		}
+		return pub.Source() == livekit.TrackSource_CAMERA
+	}
+	return false
+}
+
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	s.mu.RLock()
-	_, ok := s.writers[pub.SID()]
-	s.mu.RUnlock()
-	if ok {
+	s.workersMu.RLock()
+	_, exists := s.workers[pub.SID()]
+	s.workersMu.RUnlock()
+	if exists {
 		logger.Debugw("track muted", "trackID", pub.SID())
 	}
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
-	s.mu.RLock()
-	_, ok := s.writers[pub.SID()]
-	s.mu.RUnlock()
-	if ok {
+	s.workersMu.RLock()
+	_, exists := s.workers[pub.SID()]
+	s.workersMu.RUnlock()
+	if exists {
 		logger.Debugw("track unmuted", "trackID", pub.SID())
 	}
 }
 
 func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
-	logger.Debugw("track unsubscribed", "trackID", pub.SID())
-	s.onTrackFinished(pub.SID())
-}
+	trackID := pub.SID()
 
-func (s *SDKSource) onTrackFinished(trackID string) {
-	s.mu.Lock()
-	writer := s.writers[trackID]
-	delete(s.writers, trackID)
-	s.mu.Unlock()
+	// Only send unsubscribe if we have a worker (i.e., we subscribed to this track)
+	s.workersMu.RLock()
+	_, exists := s.workers[trackID]
+	s.workersMu.RUnlock()
 
-	if writer != nil {
-		active := s.active.Dec()
-		shouldContinue := s.RequestType == types.RequestTypeParticipant || s.RequestType == types.RequestTypeRoomComposite
-
-		if shouldContinue {
-			trackKind := writer.TrackKind()
-			if trackKind == webrtc.RTPCodecTypeAudio {
-				// drain for video tracks could set EOS for encoder which could lead to issues after switching
-				// to test videosrc if participant stays, so drain audio tracks at this point and only do that after
-				// removing the appsource for video tracks
-				writer.Drain(true)
-			}
-			s.sync.RemoveTrack(trackID)
-			<-s.callbacks.BuildReady
-			s.callbacks.OnTrackRemoved(trackID)
-
-			if trackKind == webrtc.RTPCodecTypeVideo {
-				writer.Drain(true)
-			}
-		} else {
-			writer.Drain(true)
-			if active == 0 {
-				s.finished()
-			}
-		}
+	if !exists {
+		return // Never subscribed to this track, nothing to do
 	}
+
+	logger.Debugw("track unsubscribed", "trackID", trackID)
+	s.submitOp(trackID, Operation{Type: OpUnsubscribe})
 }
 
 func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
@@ -734,11 +803,43 @@ func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
 	}
 }
 
-func (s *SDKSource) onDisconnected() {
-	logger.Warnw("disconnected from room", nil)
+func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {
+	if reason != lksdk.RoomClosed && reason != lksdk.LeaveRequested {
+		logger.Warnw("disconnected from room", nil, "reason", reason)
+	}
 	s.finished()
 }
 
 func (s *SDKSource) finished() {
 	s.endRecording.Break()
+}
+
+func (s *SDKSource) shouldSkipTrackSubscriptions() bool {
+	return s.initialized.IsBroken() &&
+		s.RequestType != types.RequestTypeParticipant &&
+		s.RequestType != types.RequestTypeRoomComposite &&
+		s.RequestType != types.RequestTypeTemplate &&
+		s.RequestType != types.RequestTypeMedia
+}
+
+func (s *SDKSource) disconnectRoom() {
+	if s.room != nil {
+		s.room.Disconnect()
+		s.room = nil
+	}
+}
+
+func (s *SDKSource) shouldUseOneShotSenderReportSync() bool {
+	return s.RequestType == types.RequestTypeRoomComposite // one-shot correction is only useful when the audio mixer can drop late audio
+}
+
+func (s *SDKSource) shouldEnableOneShotSenderReportSync() bool {
+	return s.EnableOneShotSenderReportSync && s.shouldUseOneShotSenderReportSync()
+}
+
+func (s *SDKSource) shouldDisableAudioPTSAdjustment() bool {
+	return s.RequestType == types.RequestTypeRoomComposite || // SDK room composites are audio only - no need to adjust audio timestamps
+		s.RequestType == types.RequestTypeTemplate || // SDK templates are audio only - same as room composite
+		s.RequestType == types.RequestTypeTrack || // no A/V sync needed for single track requests
+		s.AudioTempoController.Enabled
 }

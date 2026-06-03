@@ -32,7 +32,7 @@ import (
 const (
 	gstVersion      = "1.24.12"
 	libniceVersion  = "0.1.21"
-	chromiumVersion = "125.0.6422.141"
+	chromiumVersion = "146.0.7680.177-1"
 	dockerBuild     = "docker build"
 	dockerBuildX    = "docker buildx build --push --platform linux/amd64,linux/arm64"
 )
@@ -52,6 +52,15 @@ func Proto() error {
 	}
 	pi := packageInfo{}
 	if err = json.Unmarshal(pkgOut, &pi); err != nil {
+		return err
+	}
+
+	psrpcOut, err := mageutil.Out(ctx, "go list -json -m github.com/livekit/psrpc")
+	if err != nil {
+		return err
+	}
+	psrpcInfo := packageInfo{}
+	if err = json.Unmarshal(psrpcOut, &psrpcInfo); err != nil {
 		return err
 	}
 
@@ -77,8 +86,8 @@ func Proto() error {
 			" --go-grpc_opt=paths=source_relative"+
 			" --plugin=go=%s"+
 			" --plugin=go-grpc=%s"+
-			" -I%s -I=. ipc.proto",
-		protocGoPath, protocGrpcGoPath, pi.Dir+"/protobufs",
+			" -I%s -I%s -I=. ipc.proto",
+		protocGoPath, protocGrpcGoPath, pi.Dir+"/protobufs", psrpcInfo.Dir+"/protoc-gen-psrpc/options",
 	))
 }
 

@@ -16,12 +16,17 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"path"
+	"strings"
+	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"google.golang.org/grpc"
+
+	"go.opentelemetry.io/otel"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/ipc"
@@ -30,7 +35,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
-	"go.opentelemetry.io/otel"
 )
 
 type Handler struct {
@@ -59,6 +63,8 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 		return nil, err
 	}
 
+	conf.StorageObserver = &ipcStorageObserver{client: ipcClient}
+
 	h := &Handler{
 		conf:             conf,
 		ipcHandlerServer: grpc.NewServer(),
@@ -78,6 +84,9 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 		return nil, err
 	}
 	if err = rpcServer.RegisterStopEgressTopic(conf.Info.EgressId); err != nil {
+		return nil, err
+	}
+	if err = rpcServer.RegisterUpdateEgressTopic(conf.Info.EgressId); err != nil {
 		return nil, err
 	}
 	h.rpcServer = rpcServer
@@ -103,6 +112,17 @@ func (h *Handler) Run() {
 	var err error
 	egressID := h.conf.Info.EgressId
 
+	if h.shouldInjectEgressFailure() {
+		logger.Infow("injecting egress failure", "egressID", egressID)
+		err = errors.New("test failure injection")
+		h.conf.Info.SetFailed(err)
+		_, err = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
+		if err != nil {
+			logger.Errorw("egress update ipc call failed", err, "egressID", egressID)
+		}
+		return
+	}
+
 	h.controller, err = pipeline.New(context.Background(), h.conf, h.ipcServiceClient)
 	h.initialized.Break()
 	if err != nil {
@@ -112,6 +132,21 @@ func (h *Handler) Run() {
 			logger.Errorw("egress update ipc call failed", err, "egressID", egressID)
 		}
 		return
+	}
+
+	// Replay coordination: signal ready and get timing
+	if h.conf.IsReplay() {
+		rctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		resp, err := h.ipcServiceClient.ReplayReady(rctx, &rpc.EgressReadyRequest{
+			EgressId: h.conf.Info.EgressId,
+		})
+		cancel()
+		if err != nil {
+			h.conf.Info.SetFailed(err)
+			_, _ = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
+			return
+		}
+		h.controller.SetReplayTiming(resp.StartAt, resp.DurationMs)
 	}
 
 	// start egress
@@ -137,4 +172,31 @@ func (h *Handler) Kill() {
 		return
 	}
 	h.controller.SendEOS(context.Background(), livekit.EndReasonKilled)
+}
+
+func (h *Handler) shouldInjectEgressFailure() bool {
+	if h.conf.TestOverrides.FailureInjectionRoom == "" {
+		return false
+	}
+	if h.conf.Info.RetryCount > 0 {
+		return false
+	}
+	return strings.Contains(h.conf.Info.RoomName, h.conf.TestOverrides.FailureInjectionRoom)
+}
+
+type ipcStorageObserver struct {
+	client ipc.EgressServiceClient
+}
+
+func (o *ipcStorageObserver) OnStorageEvent(egressID, operation, path string, size, lifetimeDays int64) {
+	_, err := o.client.StorageEvent(context.Background(), &ipc.StorageEventRequest{
+		EgressId:     egressID,
+		Operation:    operation,
+		Path:         path,
+		Size:         size,
+		LifetimeDays: lifetimeDays,
+	})
+	if err != nil {
+		logger.Errorw("storage event ipc call failed", err, "egressID", egressID)
+	}
 }

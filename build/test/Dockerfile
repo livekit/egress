@@ -15,8 +15,8 @@
 # syntax=docker/dockerfile:1.6
 ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
-ARG GO_VERSION=1.24.5
-ARG LINT_VERSION=v1.64.2
+ARG GO_VERSION=1.26.2
+ARG LINT_VERSION=v2.11.3
 
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template
 
@@ -111,7 +111,8 @@ COPY --from=1 /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 # install chrome
-COPY --from=livekit/chrome-installer:125.0.6422.141 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:146.0.7680.177-1 /chrome-installer /chrome-installer
+
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 
 # clean up
@@ -135,16 +136,13 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64; else ARCH=amd64; 
 RUN useradd -ms /bin/bash -g root -G sudo,pulse,pulse-access egress
 RUN mkdir -p home/egress/tmp home/egress/.cache/xdgr && \
     chown -R egress /home/egress
+RUN mkdir -p /out/output && chown -R egress /out
 
 # copy files
-COPY test/agents/requirements.txt /agents/requirements.txt
-RUN pip install --break-system-packages --no-cache-dir -r /agents/requirements.txt
-
 COPY test/ /workspace/test/
 COPY --from=1 /workspace/egress /bin/
 COPY --from=1 /workspace/test.test .
 COPY media-samples /media-samples
-COPY --from=1 /workspace/test/agents /agents
 COPY build/test/entrypoint.sh .
 
 # Force lint stage to run successfully

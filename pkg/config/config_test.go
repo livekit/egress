@@ -80,11 +80,12 @@ func TestSegmentNaming(t *testing.T) {
 		},
 	} {
 		p := &PipelineConfig{Info: &livekit.EgressInfo{EgressId: "egress_ID"}}
-		o, err := p.getSegmentConfig(&livekit.SegmentedFileOutput{
+		seg := &livekit.SegmentedFileOutput{
 			FilenamePrefix:   test.filenamePrefix,
 			PlaylistName:     test.playlistName,
 			LivePlaylistName: test.livePlaylistName,
-		})
+		}
+		o, err := p.getSegmentConfig(seg, seg)
 		require.NoError(t, err)
 
 		require.Equal(t, test.expectedStorageDir, o.StorageDir)

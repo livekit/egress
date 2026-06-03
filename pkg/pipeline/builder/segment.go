@@ -109,7 +109,7 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 		if name == audioBinName {
 			return sink.GetRequestPad("audio_%u")
 		} else if h264ParseFixer != nil {
-			return h264ParseFixer.Element.GetStaticPad("sink")
+			return h264ParseFixer.GetStaticPad("sink")
 		}
 		// Should never happen
 		return nil

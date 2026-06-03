@@ -24,8 +24,10 @@ const (
 	runParticipant    = 0b1 << 2
 	runTrackComposite = 0b1 << 3
 	runTrack          = 0b1 << 4
+	runTemplate       = 0b1 << 5
+	runMedia          = 0b1 << 6
 
-	runAllRequests = 0b11111
+	runAllRequests = 0b1111111
 
 	runFile     = 0b1 << 31
 	runStream   = 0b1 << 30
@@ -43,6 +45,8 @@ var runRequestType = map[types.RequestType]uint{
 	types.RequestTypeParticipant:    runParticipant,
 	types.RequestTypeTrackComposite: runTrackComposite,
 	types.RequestTypeTrack:          runTrack,
+	types.RequestTypeTemplate:       runTemplate,
+	types.RequestTypeMedia:          runMedia,
 }
 
 func (r *Runner) updateFlagset() {
@@ -57,6 +61,10 @@ func (r *Runner) updateFlagset() {
 		r.shouldRun |= runTrackComposite
 	case r.TrackTestsOnly:
 		r.shouldRun |= runTrack
+	case r.TemplateTestsOnly:
+		r.shouldRun |= runTemplate
+	case r.MediaTestsOnly:
+		r.shouldRun |= runMedia
 	default:
 		r.shouldRun |= runAllRequests
 	}

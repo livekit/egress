@@ -19,6 +19,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/egress"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/storage"
 )
 
@@ -138,4 +139,14 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 
 func (c *StorageConfig) IsLocal() bool {
 	return c.S3 == nil && c.GCP == nil && c.Azure == nil && c.AliOSS == nil
+}
+
+// resolveStorageConfig returns the first non-nil StorageConfig from the chain:
+// per-output override -> request-level default.
+// Server config fallback is handled by getStorageConfig when result is nil.
+func resolveStorageConfig(outputStorage, requestStorage *livekit.StorageConfig) *livekit.StorageConfig {
+	if outputStorage != nil {
+		return outputStorage
+	}
+	return requestStorage
 }

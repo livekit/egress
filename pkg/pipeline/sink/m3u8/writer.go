@@ -60,10 +60,10 @@ func (p *basePlaylistWriter) createHeader(plType PlaylistType) string {
 	sb.WriteString("#EXTM3U\n")
 	sb.WriteString("#EXT-X-VERSION:4\n")
 	if plType != PlaylistTypeLive {
-		sb.WriteString(fmt.Sprintf("#EXT-X-PLAYLIST-TYPE:%s\n", plType))
+		fmt.Fprintf(&sb, "#EXT-X-PLAYLIST-TYPE:%s\n", plType)
 	}
 	sb.WriteString("#EXT-X-ALLOW-CACHE:NO\n")
-	sb.WriteString(fmt.Sprintf("#EXT-X-TARGETDURATION:%d\n", p.targetDuration))
+	fmt.Fprintf(&sb, "#EXT-X-TARGETDURATION:%d\n", p.targetDuration)
 	if plType != PlaylistTypeLive {
 		sb.WriteString("#EXT-X-MEDIA-SEQUENCE:0\n")
 	}
@@ -183,7 +183,7 @@ func (p *livePlaylistWriter) Close() error {
 func (p *livePlaylistWriter) generatePlaylist() string {
 	var sb strings.Builder
 	sb.WriteString(p.livePlaylistHeader)
-	sb.WriteString(fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d\n", p.mediaSeq))
+	fmt.Fprintf(&sb, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.mediaSeq)
 	for elem := p.livePlaylistSegments.Front(); elem != nil; elem = elem.Next() {
 		segmentStr := elem.Value.(string)
 		sb.WriteString(segmentStr)

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"path"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -70,33 +69,27 @@ func (r *Runner) testImages(t *testing.T) {
 					prefix: "tc_{publisher_identity}_h264",
 				},
 			},
+
+			// -------- Media ----------
+
+			{
+				name:        "Media",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					videoCodec: types.MimeTypeH264,
+					videoOnly:  true,
+				},
+				imageOptions: &imageOptions{
+					prefix: "media_{room_name}_{time}",
+					suffix: livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP,
+				},
+			},
 		} {
-			if !r.run(t, test, r.runImagesTest) {
+			if !r.run(t, test) {
 				return
 			}
 		}
 	})
-}
-
-func (r *Runner) runImagesTest(t *testing.T, test *testCase) {
-	req := r.build(test)
-
-	egressID := r.startEgress(t, req)
-
-	time.Sleep(time.Second * 10)
-	if r.Dotfiles {
-		r.createDotFile(t, egressID)
-	}
-
-	// stop
-	time.Sleep(time.Second * 15)
-	res := r.stopEgress(t, egressID)
-
-	// get params
-	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
-	require.NoError(t, err)
-
-	r.verifyImages(t, p, res)
 }
 
 func (r *Runner) verifyImages(t *testing.T, p *config.PipelineConfig, res *livekit.EgressInfo) {

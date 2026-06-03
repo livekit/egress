@@ -107,12 +107,12 @@ var (
 	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Unavailable, "failed to subscribe to track")
 	ErrNotEnoughCPU               = psrpc.NewErrorf(psrpc.Unavailable, "not enough CPU")
 	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
+	ErrNonRetryableOutput         = psrpc.NewErrorf(psrpc.FailedPrecondition, "output configuration does not support retry")
+	ErrHandlerFailedToStart       = psrpc.NewErrorf(psrpc.Internal, "handler failed to start")
 )
 
 func PageLoadError(err string) error {
-	if strings.HasPrefix(err, "page load error ") {
-		err = err[16:]
-	}
+	err = strings.TrimPrefix(err, "page load error ")
 	return psrpc.NewErrorf(psrpc.InvalidArgument, "page load error: %s", err)
 }
 

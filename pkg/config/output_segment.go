@@ -23,6 +23,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -51,17 +52,32 @@ func (p *PipelineConfig) GetSegmentConfig() *SegmentConfig {
 }
 
 // segments should always be added last, so we can check keyframe interval from file/stream
-func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput) (*SegmentConfig, error) {
-	sc, err := p.getStorageConfig(segments)
+func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput, upload egress.UploadRequest) (*SegmentConfig, error) {
+	sc, err := p.getStorageConfig(upload)
 	if err != nil {
 		return nil, err
 	}
 
+	prefix := clean(segments.FilenamePrefix)
+	playlist := clean(segments.PlaylistName)
+
+	// On retry, segment filenames are "{prefix}_{index}.ts" so prefix must contain {retry}
+	// to avoid overwriting. When prefix is empty it derives from playlist name, so playlist
+	// must contain {retry}. When both are empty, names are auto-generated with retry count.
+	if p.Info.RetryCount > 0 {
+		if prefix != "" && !strings.Contains(prefix, "{retry}") {
+			return nil, errors.ErrNonRetryableOutput
+		}
+		if prefix == "" && playlist != "" && !strings.Contains(playlist, "{retry}") {
+			return nil, errors.ErrNonRetryableOutput
+		}
+	}
+
 	conf := &SegmentConfig{
 		SegmentsInfo:         &livekit.SegmentsInfo{},
-		SegmentPrefix:        clean(segments.FilenamePrefix),
+		SegmentPrefix:        prefix,
 		SegmentSuffix:        segments.FilenameSuffix,
-		PlaylistFilename:     clean(segments.PlaylistName),
+		PlaylistFilename:     playlist,
 		LivePlaylistFilename: clean(segments.LivePlaylistName),
 		SegmentDuration:      int(segments.SegmentDuration),
 		DisableManifest:      segments.DisableManifest,
@@ -122,9 +138,10 @@ func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 
 	// only keep segmentDir if it is a subdirectory of playlistDir
 	if segmentDir != "" {
-		if playlistDir == segmentDir {
+		switch playlistDir {
+		case segmentDir:
 			segmentDir = ""
-		} else if playlistDir == "" {
+		case "":
 			playlistDir = segmentDir
 			segmentDir = ""
 		}
@@ -137,6 +154,9 @@ func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 			playlistName = segmentPrefix
 		} else {
 			playlistName = fmt.Sprintf("%s-%s", identifier, time.Now().Format("2006-01-02T150405"))
+			if p.Info.RetryCount > 0 {
+				playlistName = fmt.Sprintf("%s-%d", playlistName, p.Info.RetryCount)
+			}
 		}
 	}
 	// live playlist disabled by default

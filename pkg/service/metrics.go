@@ -33,7 +33,7 @@ import (
 )
 
 type MetricsService struct {
-	pm *ProcessManager
+	pm ProcessManager
 
 	mu             deadlock.Mutex
 	pendingMetrics []*dto.MetricFamily
@@ -43,7 +43,7 @@ var (
 	tracer = otel.Tracer("github.com/livekit/egress/pkg/service")
 )
 
-func NewMetricsService(pm *ProcessManager) *MetricsService {
+func NewMetricsService(pm ProcessManager) *MetricsService {
 	prometheus.Unregister(collectors.NewGoCollector())
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll)))
 

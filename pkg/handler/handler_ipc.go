@@ -130,7 +130,7 @@ func (h *Handler) KillEgress(ctx context.Context, req *ipc.KillEgressRequest) (*
 	}
 
 	h.controller.SendEOS(ctx, livekit.EndReasonKilled)
-	h.controller.Info.SetFailed(psrpc.NewErrorf(psrpc.PermissionDenied, req.Error))
+	h.controller.Info.SetFailed(psrpc.NewErrorf(psrpc.PermissionDenied, "%s", req.Error))
 
 	return &emptypb.Empty{}, nil
 }

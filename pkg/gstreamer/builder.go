@@ -40,6 +40,7 @@ func BuildQueue(name string, latency time.Duration, leaky bool) (*gst.Element, e
 	}
 	if leaky {
 		queue.SetArg("leaky", "downstream")
+		NewLeakyQueueMonitor(name, queue)
 	}
 
 	return queue, nil

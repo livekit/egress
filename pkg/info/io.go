@@ -35,9 +35,8 @@ import (
 )
 
 const (
-	numWorkers                     = 5
 	maxBackoff                     = time.Minute * 1
-	unhealthyShutdownWatchdogDelay = 20 * time.Second // TODO change to 10 min once we undrerstant PSRPC failures
+	unhealthyShutdownWatchdogDelay = 10 * time.Minute
 )
 
 type SessionReporter interface {
@@ -265,7 +264,11 @@ func (c *sessionReporter) handleUpdate(w *worker, egressID string) {
 		if !c.setHealthy(true) {
 			logger.Infow("io connection restored", "egressID", u.info.EgressId)
 		}
-		requestType, outputType := egress.GetTypes(u.info.Request)
+		var typesInput any = u.info.Request
+		if e, ok := u.info.Request.(*livekit.EgressInfo_Replay); ok {
+			typesInput = e.Replay
+		}
+		requestType, outputType := egress.GetTypes(typesInput)
 		logger.Infow(strings.ToLower(u.info.Status.String()),
 			"egressID", u.info.EgressId,
 			"requestType", requestType,

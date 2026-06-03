@@ -61,7 +61,7 @@ func newImageSink(
 	callbacks *gstreamer.Callbacks,
 	monitor *stats.HandlerMonitor,
 ) (*ImageSink, error) {
-	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.Info)
+	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.StorageObserver, conf.Info)
 	if err != nil {
 		return nil, err
 	}
@@ -120,11 +120,12 @@ func (s *ImageSink) handleNewImage(update *imageUpdate) error {
 	if s.ImageSuffix != livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX {
 		var newFilename string
 
-		if s.ImageSuffix == livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP {
+		switch s.ImageSuffix {
+		case livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP:
 			newFilename = fmt.Sprintf("%s_%s%03d%s", s.ImagePrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000, types.FileExtensionForOutputType[s.OutputType])
-		} else if s.ImageSuffix == livekit.ImageFileSuffix_IMAGE_SUFFIX_NONE_OVERWRITE {
+		case livekit.ImageFileSuffix_IMAGE_SUFFIX_NONE_OVERWRITE:
 			newFilename = fmt.Sprintf("%s%s", s.ImagePrefix, types.FileExtensionForOutputType[s.OutputType])
-		} else {
+		default:
 			return errors.ErrNotSupported(s.ImageSuffix.String())
 		}
 

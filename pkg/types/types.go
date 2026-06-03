@@ -24,8 +24,11 @@ type FileExtension string
 
 const (
 	// request types
+	RequestTypeTemplate = "template"
+	RequestTypeWeb      = "web"
+	RequestTypeMedia    = "media"
+
 	RequestTypeRoomComposite  = "room_composite"
-	RequestTypeWeb            = "web"
 	RequestTypeParticipant    = "participant"
 	RequestTypeTrackComposite = "track_composite"
 	RequestTypeTrack          = "track"

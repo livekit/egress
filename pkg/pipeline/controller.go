@@ -63,6 +63,10 @@ type Controller struct {
 	p         *gstreamer.Pipeline
 	sinks     map[types.EgressType][]sink.Sink
 
+	// replay timing
+	replayStartAt  int64 // wallclock unix nanos
+	replayDuration int64 // milliseconds
+
 	// internal
 	mu                   deadlock.Mutex
 	monitor              *stats.HandlerMonitor
@@ -75,16 +79,27 @@ type Controller struct {
 	eosReceived          core.Fuse
 	stopped              core.Fuse
 	storageLimitOnce     sync.Once
+	pipelineEndedAt      int64
 	stats                controllerStats
 	pipelineCreatedAt    time.Time
 }
 
 type controllerStats struct {
-	droppedAudioBuffers      atomic.Uint64
-	droppedAudioDuration     atomic.Duration
+	mixerDroppedAudioBuffers atomic.Uint64
 	droppedVideoBuffers      atomic.Uint64
+
+	mixerDroppedAudioDuration atomic.Duration
+
+	queuesDroppedAudioBuffers atomic.Uint64
+
+	droppedAudioBuffersByQueue map[string]uint64
 	droppedVideoBuffersByQueue map[string]uint64
 }
+
+// SourceBuilder constructs a pipeline source. It receives the controller's
+// callbacks so the source can synchronize on GstReady; custom sources that
+// don't need gst synchronization can ignore the argument.
+type SourceBuilder func(callbacks *gstreamer.Callbacks) (source.Source, error)
 
 var (
 	tracer = otel.Tracer("github.com/livekit/egress/pkg/pipeline")
@@ -94,7 +109,55 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
-	var err error
+	return NewWithSource(ctx, conf, ipcServiceClient, func(callbacks *gstreamer.Callbacks) (source.Source, error) {
+		return source.New(ctx, conf, callbacks)
+	})
+}
+
+// NewWithSource creates a Controller using the given SourceBuilder. The builder
+// runs after the controller has been constructed and receives the controller's
+// Callbacks, so the source can share GstReady with the pipeline. Use this when
+// the source isn't the standard source.New (testfeeder, replay export, etc.).
+func NewWithSource(
+	ctx context.Context,
+	conf *config.PipelineConfig,
+	ipcServiceClient ipc.EgressServiceClient,
+	srcBuilder SourceBuilder,
+) (*Controller, error) {
+	c := newController(conf, ipcServiceClient)
+
+	// initialize gst
+	go func() {
+		_, span := tracer.Start(ctx, "gst.Init")
+		defer span.End()
+		gst.Init(nil)
+		gst.SetLogFunction(c.gstLog)
+		close(c.callbacks.GstReady)
+	}()
+
+	src, err := srcBuilder(c.callbacks)
+	if err != nil {
+		return nil, err
+	}
+	c.src = src
+
+	// create pipeline
+	<-c.callbacks.GstReady
+	if err := c.BuildPipeline(); err != nil {
+		c.src.Close()
+		return nil, err
+	}
+
+	return c, nil
+}
+
+// Callbacks returns the pipeline callbacks. Sources that need to wait for
+// GstReady before creating appsrc elements can use this.
+func (c *Controller) Callbacks() *gstreamer.Callbacks {
+	return c.callbacks
+}
+
+func newController(conf *config.PipelineConfig, ipcServiceClient ipc.EgressServiceClient) *Controller {
 	c := &Controller{
 		PipelineConfig:   conf,
 		ipcServiceClient: ipcServiceClient,
@@ -107,6 +170,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
 		stats: controllerStats{
 			droppedVideoBuffersByQueue: make(map[string]uint64),
+			droppedAudioBuffersByQueue: make(map[string]uint64),
 		},
 	}
 	c.callbacks.SetOnError(c.OnError)
@@ -118,30 +182,7 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 		logger.Debugw("debug dot requested", "reason", reason)
 		c.generateDotFile(reason)
 	})
-
-	// initialize gst
-	go func() {
-		_, span := tracer.Start(ctx, "gst.Init")
-		defer span.End()
-		gst.Init(nil)
-		gst.SetLogFunction(c.gstLog)
-		close(c.callbacks.GstReady)
-	}()
-
-	// create source
-	c.src, err = source.New(ctx, conf, c.callbacks)
-	if err != nil {
-		return nil, err
-	}
-
-	// create pipeline
-	<-c.callbacks.GstReady
-	if err = c.BuildPipeline(); err != nil {
-		c.src.Close()
-		return nil, err
-	}
-
-	return c, nil
+	return c
 }
 
 func (c *Controller) BuildPipeline() error {
@@ -157,9 +198,9 @@ func (c *Controller) BuildPipeline() error {
 		c.stopped.Break()
 		return nil
 	})
-	if c.SourceType == types.SourceTypeSDK {
+	if sdkSrc, ok := c.src.(*source.SDKSource); ok {
 		p.SetEOSFunc(func() bool {
-			c.src.(*source.SDKSource).CloseWriters()
+			sdkSrc.CloseWriters()
 			return true
 		})
 	}
@@ -193,11 +234,13 @@ func (c *Controller) BuildPipeline() error {
 	p.UpgradeState(gstreamer.StateStarted)
 
 	c.p = p
-	if timeAware, ok := c.src.(source.TimeAware); ok {
-		timeAware.SetTimeProvider(p)
-	}
 	close(c.callbacks.BuildReady)
 	return nil
+}
+
+func (c *Controller) SetReplayTiming(startAt, durationMs int64) {
+	c.replayStartAt = startAt
+	c.replayDuration = durationMs
 }
 
 func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
@@ -217,10 +260,12 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 			)
 		}
 		if c.SourceType == types.SourceTypeSDK {
-			logger.Debugw(
+			logger.Infow(
 				"audio qos stats",
-				"audioBuffersDropped", c.stats.droppedAudioBuffers.Load(),
-				"totalAudioDurationDropped", c.stats.droppedAudioDuration.Load(),
+				"audioBuffersDropped", c.stats.mixerDroppedAudioBuffers.Load(),
+				"totalAudioDurationDropped", c.stats.mixerDroppedAudioDuration.Load(),
+				"queueDroppedAudioBuffers", c.stats.queuesDroppedAudioBuffers.Load(),
+				"droppedByQueue", c.stats.droppedAudioBuffersByQueue,
 				"requestType", c.RequestType,
 			)
 		}
@@ -249,6 +294,22 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		}
 	}
 
+	// Replay timing gate: wait until start_at
+	if c.replayStartAt > 0 {
+		waitDuration := time.Until(time.Unix(0, c.replayStartAt))
+		if waitDuration > 0 {
+			logger.Debugw("waiting for replay start time", "waitDuration", waitDuration)
+			select {
+			case <-c.stopped.Watch():
+				c.src.Close()
+				c.Info.SetAborted(livekit.MsgStartNotReceived)
+				return c.Info
+			case <-time.After(waitDuration):
+				// continue
+			}
+		}
+	}
+
 	for _, si := range c.sinks {
 		for _, s := range si {
 			if err := s.Start(); err != nil {
@@ -260,6 +321,13 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	}
 
 	c.startOutputSizeMonitor()
+
+	// Replay duration timer
+	if c.replayDuration > 0 {
+		time.AfterFunc(time.Duration(c.replayDuration)*time.Millisecond, func() {
+			c.SendEOS(ctx, livekit.EndReasonSrcClosed)
+		})
+	}
 
 	err := c.p.Run()
 	if err != nil {
@@ -341,6 +409,37 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 	}
 
 	c.streamUpdated(ctx)
+	return errs.ToError()
+}
+
+func (c *Controller) UpdateEgress(ctx context.Context, req *livekit.UpdateEgressRequest) error {
+	ctx, span := tracer.Start(ctx, "Pipeline.UpdateEgress")
+	defer span.End()
+
+	errs := errors.ErrArray{}
+
+	// update stream targets
+	if len(req.AddStreamUrls) > 0 || len(req.RemoveStreamUrls) > 0 {
+		streamReq := &livekit.UpdateStreamRequest{
+			EgressId:         req.EgressId,
+			AddOutputUrls:    req.AddStreamUrls,
+			RemoveOutputUrls: req.RemoveStreamUrls,
+		}
+		if err := c.UpdateStream(ctx, streamReq); err != nil {
+			errs.AppendErr(err)
+		}
+	}
+
+	// update layout — not yet supported
+	if req.Layout != "" {
+		errs.AppendErr(errors.ErrFeatureDisabled("layout update"))
+	}
+
+	// update URL — not yet supported
+	if req.Url != "" {
+		errs.AppendErr(errors.ErrFeatureDisabled("url update"))
+	}
+
 	return errs.ToError()
 }
 
@@ -447,11 +546,11 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ENDING)
-			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
+			c.sendHandlerUpdate(ctx, c.Info)
 			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_ENDING:
-			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
+			c.sendHandlerUpdate(ctx, c.Info)
 			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
@@ -511,6 +610,25 @@ func (c *Controller) OnError(err error) {
 }
 
 func (c *Controller) Close() {
+	const closeSlowThreshold = 1 * time.Hour
+	closeStart := time.Now()
+	closeDone := make(chan struct{})
+	defer close(closeDone)
+
+	go func() {
+		select {
+		case <-closeDone:
+			return
+		case <-time.After(closeSlowThreshold):
+			logger.Warnw("Close() taking longer than expected", nil,
+				"threshold", closeSlowThreshold,
+				"elapsed", time.Since(closeStart),
+				"egressID", c.Info.EgressId,
+				"sourceType", c.SourceType,
+			)
+		}
+	}()
+
 	c.stopOutputSizeMonitor()
 
 	if c.SourceType == types.SourceTypeSDK || !c.eosSent.IsBroken() {
@@ -765,7 +883,7 @@ func (c *Controller) updateStartTime(startedAt int64) {
 
 	if c.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
 		c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ACTIVE)
-		_, _ = c.ipcServiceClient.HandlerUpdate(context.Background(), c.Info)
+		c.sendHandlerUpdate(context.Background(), c.Info)
 	}
 }
 
@@ -803,11 +921,20 @@ func (c *Controller) streamUpdated(ctx context.Context) {
 		}
 	}
 
-	_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
+	c.sendHandlerUpdate(ctx, c.Info)
+}
+
+func (c *Controller) sendHandlerUpdate(ctx context.Context, info *livekit.EgressInfo) {
+	if c.ipcServiceClient != nil {
+		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, info)
+	}
 }
 
 func (c *Controller) updateEndTime() {
 	endedAt := c.src.GetEndedAt()
+	if c.pipelineEndedAt > endedAt {
+		endedAt = c.pipelineEndedAt
+	}
 
 	for egressType, o := range c.Outputs {
 		if len(o) == 0 {
@@ -882,7 +1009,11 @@ func (c *Controller) uploadManifest() {
 		for _, s := range si {
 			location, uploaded, err := s.UploadManifest(manifestPath)
 			if err != nil {
-				logger.Errorw("failed to upload manifest", err)
+				if c.Info.BackupStorageUsed {
+					logger.Errorw("failed to upload manifest", err)
+				} else {
+					logger.Warnw("failed to upload manifest", err)
+				}
 				continue
 			}
 
