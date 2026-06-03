@@ -84,7 +84,7 @@ func (r *Runner) testRtmpSilentWedge(t *testing.T, test *testCase) {
 
 	streamKey := utils.NewGuid("")
 	wedgeURL := fmt.Sprintf("rtmp://%s/live/%s", wedgeProxyListenAddr, streamKey)
-	test.streamOptions.streamUrls = []string{wedgeURL}
+	test.streamUrls = []string{wedgeURL}
 
 	req := r.build(test)
 	egressID := r.startEgress(t, req)
@@ -111,16 +111,18 @@ func (r *Runner) testRtmpSilentWedge(t *testing.T, test *testCase) {
 	})
 	require.NoError(t, err, "failed to apply wedge toxic")
 
-	// Consume updates until the egress stops reporting ACTIVE.
-	//
-	// Use a local consumer (not r.getUpdate) because retry updates are throttled
-	// to streamRetryUpdateInterval (1 minute) — so between the first retry
-	// update and the final FAILED update there's a quiet stretch longer than
-	// r.getUpdate's 30s channel timeout, which would call t.Fatal.
-	info := waitForEgressUpdate(t, r, egressID, wedgeFailureDeadline)
+	// Poll the latest egress snapshot until the egress stops reporting ACTIVE.
+	// r.getUpdate returns the current snapshot held by the test IO server; the
+	// inner sleep gives the egress time to publish state changes between polls.
+	deadline := time.Now().Add(wedgeFailureDeadline)
+	info := r.getUpdate(t, egressID)
 	streamFailed := hasFailedStream(info, wedgeRedacted)
 	for info.Status == livekit.EgressStatus_EGRESS_ACTIVE || info.Status == livekit.EgressStatus_EGRESS_STARTING {
-		info = waitForEgressUpdate(t, r, egressID, wedgeFailureDeadline)
+		if time.Now().After(deadline) {
+			t.Fatalf("egress did not leave EGRESS_ACTIVE within %s after wedge applied", wedgeFailureDeadline)
+		}
+		time.Sleep(100 * time.Millisecond)
+		info = r.getUpdate(t, egressID)
 		if hasFailedStream(info, wedgeRedacted) {
 			streamFailed = true
 		}
@@ -140,25 +142,4 @@ func hasFailedStream(info *livekit.EgressInfo, redactedURL string) bool {
 		}
 	}
 	return false
-}
-
-// waitForEgressUpdate consumes from the runner's update channel and returns the
-// next update for egressID, or fails the test if none arrives within timeout.
-// Unlike r.getUpdate it accepts a caller-supplied timeout so reconnect-storm
-// dry spells (longer than r.getUpdate's hardcoded 30s) don't abort the test.
-func waitForEgressUpdate(t *testing.T, r *Runner, egressID string, timeout time.Duration) *livekit.EgressInfo {
-	t.Helper()
-	deadline := time.NewTimer(timeout)
-	defer deadline.Stop()
-	for {
-		select {
-		case info := <-r.updates:
-			if info.EgressId == egressID {
-				return info
-			}
-		case <-deadline.C:
-			t.Fatalf("no egress update for %s within %s", egressID, timeout)
-			return nil
-		}
-	}
 }

@@ -63,20 +63,24 @@ func (r *Runner) testRtmpPublishReject(t *testing.T, test *testCase) {
 
 	streamKey := utils.NewGuid("")
 	rejectURL := fmt.Sprintf("rtmp://%s/live/%s", rejectServer.addr(), streamKey)
-	test.streamOptions.streamUrls = []string{rejectURL}
+	test.streamUrls = []string{rejectURL}
 
 	req := r.build(test)
 	egressID := r.startEgress(t, req)
 	rejectRedacted, _ := utils.RedactStreamKey(rejectURL)
 
-	// Consume updates until the egress stops reporting ACTIVE. waitForEgressUpdate
-	// is defined in rtmp_wedge.go; same rationale (retry updates are throttled
-	// to streamRetryUpdateInterval = 1 minute, so r.getUpdate's 30s timeout
-	// can hit during the give-up window).
-	info := waitForEgressUpdate(t, r, egressID, publishRejectDeadline)
+	// Poll the latest egress snapshot until the egress stops reporting ACTIVE.
+	// r.getUpdate returns the current snapshot held by the test IO server; the
+	// inner sleep gives the egress time to publish state changes between polls.
+	deadline := time.Now().Add(publishRejectDeadline)
+	info := r.getUpdate(t, egressID)
 	streamFailed := hasFailedStream(info, rejectRedacted)
 	for info.Status == livekit.EgressStatus_EGRESS_ACTIVE || info.Status == livekit.EgressStatus_EGRESS_STARTING {
-		info = waitForEgressUpdate(t, r, egressID, publishRejectDeadline)
+		if time.Now().After(deadline) {
+			t.Fatalf("egress did not leave EGRESS_ACTIVE within %s after publish-reject storm", publishRejectDeadline)
+		}
+		time.Sleep(100 * time.Millisecond)
+		info = r.getUpdate(t, egressID)
 		if hasFailedStream(info, rejectRedacted) {
 			streamFailed = true
 		}
