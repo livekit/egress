@@ -25,17 +25,28 @@ import (
 )
 
 const (
-	// gridGap is --grid-gap: 0.5rem = 8px at 16px base font size.
-	// Used between grid cells; the grid itself sits flush against the frame.
+	// gridGap is --grid-gap: 0.5rem = 8px; applied both as cell gap and outer padding.
 	gridGap = 8
-	// regionInset is the margin applied to the sides and bottom of each region
-	// to avoid sampling at tile edges (compression artifacts, borders, etc.).
-	// The top is intentionally NOT inset: the test pattern's flash bar lives at
-	// the top of each tile, so insetting the top would cut it off — this is
-	// especially critical for carousel thumbnails where the scaled flash bar is
-	// only ~12px tall.
+	// regionInset insets sampling regions to avoid edge compression artifacts.
+	// Top is intentionally not inset: the flash bar lives at the tile top and is
+	// only ~12px tall on carousel thumbnails.
 	regionInset = 20
+	// minCarouselTileHeight mirrors CarouselLayout.tsx MIN_HEIGHT.
+	minCarouselTileHeight = 130
 )
+
+// maxCarouselTiles mirrors CarouselLayout.tsx vertical sizing.
+func maxCarouselTiles(carouselW, innerH int) int {
+	tileSpan := carouselW * 6 / 10
+	if tileSpan < minCarouselTileHeight {
+		tileSpan = minCarouselTileHeight
+	}
+	n := (innerH + tileSpan/2) / tileSpan
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
 
 // insetRect shrinks r by margin on the sides and bottom only. The top edge is
 // preserved so the flash strip remains within the region.
@@ -60,18 +71,17 @@ func insetRect(r image.Rectangle, margin int) image.Rectangle {
 // numParticipants is the total number of participants in the room (including
 // the dominant speaker).
 func SpeakerLayoutRegions(width, height, numParticipants int) []avsync.Region {
-	// CSS Grid only applies grid-gap between cells, not around the grid, so the
-	// rendered output has no outer page padding. Tiles start at the frame edge.
-
-	// Two columns: 1fr + 5fr = 6fr total, with one gap between them.
 	totalFr := 6
-	availableForCols := width - gridGap // subtract the single inter-column gap
+	innerW := width - 2*gridGap
+	innerH := height - 2*gridGap
+	availableForCols := innerW - gridGap
 	carouselW := availableForCols / totalFr
 	stageW := availableForCols - carouselW
+	stageX := gridGap + carouselW + gridGap
 
 	stage := image.Rectangle{
-		Min: image.Pt(carouselW+gridGap, 0),
-		Max: image.Pt(carouselW+gridGap+stageW, height),
+		Min: image.Pt(stageX, gridGap),
+		Max: image.Pt(stageX+stageW, gridGap+innerH),
 	}
 
 	regions := []avsync.Region{
@@ -81,16 +91,18 @@ func SpeakerLayoutRegions(width, height, numParticipants int) []avsync.Region {
 		},
 	}
 
-	// Carousel renders numParticipants-1 thumbnails (the active speaker shows
-	// on stage, not in the carousel — see template-default/SpeakerLayout.tsx).
-	// Stacked vertically, no row gap (CSS grid-row-gap doesn't visibly apply).
+	maxTiles := maxCarouselTiles(carouselW, innerH)
+	thumbCount := numParticipants - 1
+	if thumbCount > maxTiles {
+		thumbCount = maxTiles
+	}
 	thumbW := carouselW
-	thumbH := thumbW * 10 / 16
-	for i := 0; i < numParticipants-1; i++ {
-		thumbY := i * thumbH
+	thumbH := (innerH - gridGap*(maxTiles-1)) / maxTiles
+	for i := 0; i < thumbCount; i++ {
+		thumbY := gridGap + i*(thumbH+gridGap)
 		thumb := image.Rectangle{
-			Min: image.Pt(0, thumbY),
-			Max: image.Pt(thumbW, thumbY+thumbH),
+			Min: image.Pt(gridGap, thumbY),
+			Max: image.Pt(gridGap+thumbW, thumbY+thumbH),
 		}
 		regions = append(regions, avsync.Region{
 			Name: fmt.Sprintf("thumb%d", i),
@@ -118,17 +130,20 @@ func GridLayoutRegions(width, height, numParticipants int) []avsync.Region {
 	cols := gridColumns(width, numParticipants)
 	rows := int(math.Ceil(float64(numParticipants) / float64(cols)))
 
-	// No outer page padding (see SpeakerLayoutRegions for rationale).
-	cellW := (width - (cols-1)*gridGap) / cols
-	cellH := (height - (rows-1)*gridGap) / rows
+	innerW := width - 2*gridGap
+	innerH := height - 2*gridGap
+	cellW := (innerW - (cols-1)*gridGap) / cols
+	cellH := (innerH - (rows-1)*gridGap) / rows
 
 	regions := make([]avsync.Region, 0, numParticipants)
 	for i := 0; i < numParticipants; i++ {
 		col := i % cols
 		row := i / cols
+		x := gridGap + col*(cellW+gridGap)
+		y := gridGap + row*(cellH+gridGap)
 		cell := image.Rectangle{
-			Min: image.Pt(col*(cellW+gridGap), row*(cellH+gridGap)),
-			Max: image.Pt(col*(cellW+gridGap)+cellW, row*(cellH+gridGap)+cellH),
+			Min: image.Pt(x, y),
+			Max: image.Pt(x+cellW, y+cellH),
 		}
 		regions = append(regions, avsync.Region{
 			Name: fmt.Sprintf("cell%d", i),

@@ -93,9 +93,10 @@ type SDKSourceParams struct {
 	TrackSource  string
 	TrackKind    string
 	ScreenShare  bool
+	Compositing  bool
 	VideoInCodec types.MimeType
 	AudioTracks  []*TrackSource
-	VideoTrack   *TrackSource
+	VideoTracks  []*TrackSource
 	AudioRoutes  []AudioRouteConfig
 }
 
@@ -111,16 +112,18 @@ type AudioRouteMatch struct {
 }
 
 type TrackSource struct {
-	TrackID            string
-	TrackKind          lksdk.TrackKind
-	ParticipantKind    lksdk.ParticipantKind
-	AudioChannel       *livekit.AudioChannel
-	AppSrc             *app.Source
-	MimeType           types.MimeType
-	PayloadType        webrtc.PayloadType
-	ClockRate          uint32
-	TempoController    *tempo.Controller
-	OnKeyframeRequired func()
+	TrackID             string
+	TrackKind           lksdk.TrackKind
+	ParticipantIdentity string
+	PublicationSource   livekit.TrackSource
+	ParticipantKind     lksdk.ParticipantKind
+	AudioChannel        *livekit.AudioChannel
+	AppSrc              *app.Source
+	MimeType            types.MimeType
+	PayloadType         webrtc.PayloadType
+	ClockRate           uint32
+	TempoController     *tempo.Controller
+	OnKeyframeRequired  func()
 }
 
 type AudioConfig struct {
@@ -227,7 +230,11 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 		egress.RedactEncodedOutputs(clone)
 
-		if ShouldUseSDKSource(req.RoomComposite) {
+		if p.EnableTemplateSDK && req.RoomComposite.CustomBaseUrl == "" {
+			p.AudioMixing = req.RoomComposite.AudioMixing
+			p.SourceType = types.SourceTypeSDK
+			p.Compositing = !req.RoomComposite.AudioOnly
+		} else if ShouldUseSDKSource(req.RoomComposite) {
 			p.AudioMixing = req.RoomComposite.AudioMixing
 			p.SourceType = types.SourceTypeSDK
 		} else {
@@ -435,8 +442,10 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		case *livekit.ExportReplayRequest_Template:
 			tmpl := source.Template
 			p.RequestType = types.RequestTypeTemplate
-
-			if ShouldUseSDKSource(tmpl) {
+			if p.EnableTemplateSDK && tmpl.CustomBaseUrl == "" {
+				p.SourceType = types.SourceTypeSDK
+				p.Compositing = !tmpl.AudioOnly
+			} else if ShouldUseSDKSource(tmpl) {
 				p.SourceType = types.SourceTypeSDK
 			} else {
 				p.SourceType = types.SourceTypeWeb

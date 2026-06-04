@@ -112,15 +112,15 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 	info, err := ffprobe(in)
 	require.NoError(t, err)
 
-	// Check source type
 	if res != nil {
-		if (p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate) && (p.VideoEnabled || p.Layout != "") {
-			require.Equal(t, livekit.EgressSourceType_EGRESS_SOURCE_TYPE_WEB, res.SourceType)
-		} else if p.RequestType == types.RequestTypeWeb {
-			require.Equal(t, livekit.EgressSourceType_EGRESS_SOURCE_TYPE_WEB, res.SourceType)
-		} else {
-			require.Equal(t, livekit.EgressSourceType_EGRESS_SOURCE_TYPE_SDK, res.SourceType)
+		var expected livekit.EgressSourceType
+		switch p.SourceType {
+		case types.SourceTypeWeb:
+			expected = livekit.EgressSourceType_EGRESS_SOURCE_TYPE_WEB
+		case types.SourceTypeSDK:
+			expected = livekit.EgressSourceType_EGRESS_SOURCE_TYPE_SDK
 		}
+		require.Equal(t, expected, res.SourceType)
 	}
 
 	switch egressType {

@@ -257,6 +257,10 @@ func (s *SDKSource) joinRoom() error {
 		OnDisconnectedWithReason: s.onDisconnectedWithReason,
 	}
 
+	if s.Compositing {
+		cb.OnActiveSpeakersChanged = s.onActiveSpeakersChanged
+	}
+
 	switch s.RequestType {
 	case types.RequestTypeRoomComposite, types.RequestTypeTemplate, types.RequestTypeMedia:
 		cb.OnTrackPublished = s.onTrackPublished
@@ -830,7 +834,9 @@ func (s *SDKSource) disconnectRoom() {
 }
 
 func (s *SDKSource) shouldUseOneShotSenderReportSync() bool {
-	return s.RequestType == types.RequestTypeRoomComposite // one-shot correction is only useful when the audio mixer can drop late audio
+	// one-shot correction is only useful when the audio mixer can drop late audio
+	return !s.Compositing &&
+		(s.RequestType == types.RequestTypeRoomComposite || s.RequestType == types.RequestTypeTemplate)
 }
 
 func (s *SDKSource) shouldEnableOneShotSenderReportSync() bool {
@@ -838,8 +844,30 @@ func (s *SDKSource) shouldEnableOneShotSenderReportSync() bool {
 }
 
 func (s *SDKSource) shouldDisableAudioPTSAdjustment() bool {
-	return s.RequestType == types.RequestTypeRoomComposite || // SDK room composites are audio only - no need to adjust audio timestamps
-		s.RequestType == types.RequestTypeTemplate || // SDK templates are audio only - same as room composite
+	return (s.RequestType == types.RequestTypeRoomComposite && !s.Compositing) || // SDK room composites are audio only unless compositing - no need to adjust audio timestamps
+		(s.RequestType == types.RequestTypeTemplate && !s.Compositing) || // SDK templates are audio only - same as room composite
 		s.RequestType == types.RequestTypeTrack || // no A/V sync needed for single track requests
 		s.AudioTempoController.Enabled
+}
+
+func (s *SDKSource) onActiveSpeakersChanged(speakers []lksdk.Participant) {
+	s.callbacks.OnActiveSpeakersChanged(speakers)
+}
+
+// UpdateTrackDimensions sets the preferred video dimensions for a track's publication.
+// Called when layout changes to request appropriate simulcast layers.
+func (s *SDKSource) UpdateTrackDimensions(trackID string, width, height int) {
+	if s.room == nil {
+		return
+	}
+	for _, rp := range s.room.GetRemoteParticipants() {
+		for _, pub := range rp.TrackPublications() {
+			if pub.SID() == trackID {
+				if remotePub, ok := pub.(*lksdk.RemoteTrackPublication); ok {
+					remotePub.SetVideoDimensions(uint32(width), uint32(height))
+				}
+				return
+			}
+		}
+	}
 }

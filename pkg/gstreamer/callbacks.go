@@ -19,6 +19,7 @@ import (
 	"github.com/linkdata/deadlock"
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 type Callbacks struct {
@@ -36,8 +37,9 @@ type Callbacks struct {
 	onTrackMuted     []func(string)
 	onTrackUnmuted   []func(string)
 	onTrackRemoved   []func(string)
-	onSourceBinReset []func(*config.TrackSource) error
-	onEOSSent        func()
+	onSourceBinReset        []func(*config.TrackSource) error
+	onActiveSpeakersChanged []func([]lksdk.Participant)
+	onEOSSent               func()
 
 	pipelinePaused core.Fuse
 }
@@ -185,6 +187,22 @@ func (c *Callbacks) OnSourceBinReset(ts *config.TrackSource) error {
 		}
 	}
 	return nil
+}
+
+func (c *Callbacks) AddOnActiveSpeakersChanged(f func([]lksdk.Participant)) {
+	c.mu.Lock()
+	c.onActiveSpeakersChanged = append(c.onActiveSpeakersChanged, f)
+	c.mu.Unlock()
+}
+
+func (c *Callbacks) OnActiveSpeakersChanged(speakers []lksdk.Participant) {
+	c.mu.RLock()
+	handlers := c.onActiveSpeakersChanged
+	c.mu.RUnlock()
+
+	for _, f := range handlers {
+		f(speakers)
+	}
 }
 
 func (c *Callbacks) SetOnEOSSent(f func()) {
