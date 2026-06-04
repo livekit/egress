@@ -25,12 +25,10 @@ func TestGridLayout_SingleParticipant(t *testing.T) {
 	pads := lm.AddTrack("track1", "alice", TrackSourceCamera)
 
 	require.Len(t, pads, 1)
-	// .lk-grid-layout has 8px outer padding on all sides → single cell is
-	// inset by 8 and sized 1904×1064.
 	require.Equal(t, PadLayout{
 		TrackID: "track1",
-		X:       8, Y: 8,
-		W: 1904, H: 1064,
+		X:       0, Y: 0,
+		W: 1920, H: 1080,
 		ZOrder: 1, Alpha: 1.0,
 	}, pads[0])
 }

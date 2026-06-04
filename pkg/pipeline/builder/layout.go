@@ -235,6 +235,17 @@ func (l *LayoutManager) calculateGridLayout() []PadLayout {
 		return nil
 	}
 
+	// Single participant fills the canvas: matches Chrome's single-tile render
+	// and keeps the avsync test pattern's top stripe at y=0.
+	if count == 1 {
+		return []PadLayout{{
+			TrackID: l.tracks[0].TrackID,
+			X:       0, Y: 0,
+			W: l.width, H: l.height,
+			ZOrder: 1, Alpha: 1.0,
+		}}
+	}
+
 	cols := l.gridColumns(count)
 	rows := (count + cols - 1) / cols
 	innerW := l.width - 2*gridGap

@@ -127,6 +127,12 @@ func SpeakerLayoutRegions(width, height, numParticipants int) []avsync.Region {
 // Rows are determined by ceil(numParticipants / cols).  All cells are equal in
 // size, separated by --grid-gap (8px), with 8px padding around the grid.
 func GridLayoutRegions(width, height, numParticipants int) []avsync.Region {
+	// Single participant fills the canvas (no padding); see calculateGridLayout.
+	if numParticipants == 1 {
+		full := image.Rectangle{Min: image.Pt(0, 0), Max: image.Pt(width, height)}
+		return []avsync.Region{{Name: "cell0", Rect: insetRect(full, regionInset)}}
+	}
+
 	cols := gridColumns(width, numParticipants)
 	rows := int(math.Ceil(float64(numParticipants) / float64(cols)))
 
