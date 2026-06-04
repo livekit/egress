@@ -498,11 +498,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			p.RequestType = types.RequestTypeMedia
 			p.SourceType = types.SourceTypeSDK
 
-			// data config not yet supported
-			if media.Data != nil {
-				return errors.ErrFeatureDisabled("data track egress")
-			}
-
 			// video
 			switch v := media.Video.(type) {
 			case *livekit.MediaSource_VideoTrackId:
