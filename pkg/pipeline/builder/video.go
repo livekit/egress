@@ -610,6 +610,12 @@ func (b *VideoBin) addCompositor() error {
 		return errors.ErrGstPipelineError(err)
 	}
 	compositor.SetArg("background", "black")
+	if err = compositor.SetProperty("latency", uint64(b.conf.Latency.JitterBufferLatency)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = compositor.SetProperty("min-upstream-latency", uint64(b.conf.Latency.JitterBufferLatency)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
 
 	videoRate, err := gst.NewElement("videorate")
 	if err != nil {
