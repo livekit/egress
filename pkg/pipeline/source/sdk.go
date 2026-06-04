@@ -18,12 +18,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/linkdata/deadlock"
 	"github.com/pion/webrtc/v4"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"

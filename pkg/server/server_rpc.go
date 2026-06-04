@@ -45,21 +45,21 @@ var (
 )
 
 func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
-	s.activeRequests.Add(1)
+	s.activeRequests.Inc()
 
 	ctx, span := tracer.Start(ctx, "Service.StartEgress")
 	defer span.End()
 
 	if s.IsDisabled() {
-		s.activeRequests.Add(-1)
+		s.activeRequests.Dec()
 		return nil, errors.ErrShuttingDown
 	}
 	if s.AlreadyExists(req.EgressId) {
-		s.activeRequests.Add(-1)
+		s.activeRequests.Dec()
 		return nil, errors.ErrEgressAlreadyExists
 	}
 	if err := s.monitor.AcceptRequest(req); err != nil {
-		s.activeRequests.Add(-1)
+		s.activeRequests.Dec()
 		return nil, err
 	}
 
@@ -68,7 +68,7 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 	p, err := config.GetValidatedPipelineConfig(s.conf, req)
 	if err != nil {
 		s.monitor.EgressAborted(req)
-		s.activeRequests.Add(-1)
+		s.activeRequests.Dec()
 		return nil, err
 	}
 
@@ -203,7 +203,7 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 	os.RemoveAll(tmpDir)
 
 	s.ProcessFinished(info.EgressId)
-	s.activeRequests.Add(-1)
+	s.activeRequests.Dec()
 }
 
 func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequest) float32 {

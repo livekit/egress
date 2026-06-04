@@ -15,9 +15,8 @@
 package gstreamer
 
 import (
-	"sync/atomic"
-
 	"github.com/go-gst/go-gst/gst"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/logger"
 )
@@ -44,7 +43,7 @@ func NewLeakyQueueMonitor(name string, queue *gst.Element) {
 	sinkPad := queue.GetStaticPad("sink")
 	if sinkPad != nil {
 		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-			m.inCount.Add(1)
+			m.inCount.Inc()
 			return gst.PadProbeOK
 		})
 	} else {
@@ -54,7 +53,7 @@ func NewLeakyQueueMonitor(name string, queue *gst.Element) {
 	srcPad := queue.GetStaticPad("src")
 	if srcPad != nil {
 		srcPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-			m.outCount.Add(1)
+			m.outCount.Inc()
 			return gst.PadProbeOK
 		})
 		srcPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {

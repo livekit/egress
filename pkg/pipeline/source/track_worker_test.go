@@ -17,9 +17,8 @@ package source
 import (
 	"testing"
 
-	"sync/atomic"
-
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/gstreamer"

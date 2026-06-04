@@ -16,14 +16,13 @@ package stats
 
 import (
 	"fmt"
-	"math"
 	"sort"
-	"sync/atomic"
 	"time"
 
 	"github.com/linkdata/deadlock"
 	"github.com/pbnjay/memory"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -73,7 +72,7 @@ type Monitor struct {
 	requests            atomic.Int32
 	webRequests         atomic.Int32
 	pendingPulseClients atomic.Int32
-	pendingMemoryUsage  atomicFloat64
+	pendingMemoryUsage  atomic.Float64
 
 	mu                deadlock.Mutex
 	highCPUDuration   int
@@ -355,7 +354,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		return errors.ErrNotEnoughCPU
 	}
 
-	m.requests.Add(1)
+	m.requests.Inc()
 	var cpuHold float64
 	var pulseClients int32
 	var countedAsWeb bool
@@ -364,7 +363,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	case *rpc.StartEgressRequest_RoomComposite:
 		useSDK := config.ShouldUseSDKSource(r.RoomComposite)
 		if !useSDK {
-			m.webRequests.Add(1)
+			m.webRequests.Inc()
 			countedAsWeb = true
 			pulseClients = pulseClientHold
 		}
@@ -375,7 +374,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		}
 	case *rpc.StartEgressRequest_Web:
 		pulseClients = pulseClientHold
-		m.webRequests.Add(1)
+		m.webRequests.Inc()
 		countedAsWeb = true
 		if r.Web.AudioOnly {
 			cpuHold = m.cpuCostConfig.AudioWebCpuCost
@@ -394,7 +393,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		case *livekit.ExportReplayRequest_Template:
 			useSDK := config.ShouldUseSDKSource(source.Template)
 			if !useSDK {
-				m.webRequests.Add(1)
+				m.webRequests.Inc()
 				countedAsWeb = true
 				pulseClients = pulseClientHold
 			}
@@ -405,7 +404,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 			}
 		case *livekit.ExportReplayRequest_Web:
 			pulseClients = pulseClientHold
-			m.webRequests.Add(1)
+			m.webRequests.Inc()
 			countedAsWeb = true
 			if source.Web.AudioOnly {
 				cpuHold = m.cpuCostConfig.AudioWebCpuCost
@@ -497,11 +496,11 @@ func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
 
 	ps := m.pending[req.EgressId]
 	delete(m.pending, req.EgressId)
-	m.requests.Add(-1)
+	m.requests.Dec()
 	switch req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite, *rpc.StartEgressRequest_Web, *rpc.StartEgressRequest_Replay:
 		if ps != nil && ps.countedAsWeb {
-			m.webRequests.Add(-1)
+			m.webRequests.Dec()
 		}
 	}
 }
@@ -526,11 +525,11 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64, in
 	case *rpc.StartEgressRequest_RoomComposite:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Sub(1)
 		if countedAsWeb {
-			m.webRequests.Add(-1)
+			m.webRequests.Dec()
 		}
 	case *rpc.StartEgressRequest_Web:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
-		m.webRequests.Add(-1)
+		m.webRequests.Dec()
 	case *rpc.StartEgressRequest_Participant:
 		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeParticipant}).Sub(1)
 	case *rpc.StartEgressRequest_TrackComposite:
@@ -543,18 +542,18 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64, in
 		case *livekit.ExportReplayRequest_Template:
 			m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTemplate}).Sub(1)
 			if countedAsWeb {
-				m.webRequests.Add(-1)
+				m.webRequests.Dec()
 			}
 		case *livekit.ExportReplayRequest_Web:
 			m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
-			m.webRequests.Add(-1)
+			m.webRequests.Dec()
 		case *livekit.ExportReplayRequest_Media:
 			m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeMedia}).Sub(1)
 		}
 	}
 
 	delete(m.pending, req.EgressId)
-	m.requests.Add(-1)
+	m.requests.Dec()
 
 	for pid, ps := range m.procStats {
 		if ps.egressID == req.EgressId {
@@ -832,28 +831,5 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string, maxMemoryGroup *hwstat
 		}
 	} else {
 		m.highMemoryStart = time.Time{}
-	}
-}
-
-// atomicFloat64 stores a float64 atomically via its IEEE-754 bit pattern.
-type atomicFloat64 struct {
-	v atomic.Uint64
-}
-
-func (a *atomicFloat64) Load() float64 {
-	return math.Float64frombits(a.v.Load())
-}
-
-func (a *atomicFloat64) Store(f float64) {
-	a.v.Store(math.Float64bits(f))
-}
-
-func (a *atomicFloat64) Add(delta float64) float64 {
-	for {
-		old := a.v.Load()
-		newV := math.Float64bits(math.Float64frombits(old) + delta)
-		if a.v.CompareAndSwap(old, newV) {
-			return math.Float64frombits(newV)
-		}
 	}
 }

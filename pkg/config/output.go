@@ -62,7 +62,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		}
 
 		p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
-		p.OutputCount.Add(1)
+		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 		if p.VideoEnabled {
 			p.VideoEncoding = true
@@ -159,7 +159,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		}
 
 		p.Outputs[types.EgressTypeSegments] = []OutputConfig{conf}
-		p.OutputCount.Add(1)
+		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 		if p.VideoEnabled {
 			p.VideoEncoding = true
@@ -203,7 +203,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 			}
 
 			p.Outputs[types.EgressTypeImages] = append(p.Outputs[types.EgressTypeImages], conf)
-			p.OutputCount.Add(1)
+			p.OutputCount.Inc()
 			p.FinalizationRequired = true
 
 			p.Info.ImageResults = append(p.Info.ImageResults, conf.ImagesInfo)
@@ -252,7 +252,7 @@ func (p *PipelineConfig) updateOutputs(req *livekit.ExportReplayRequest) error {
 			}
 
 			p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
-			p.OutputCount.Add(1)
+			p.OutputCount.Inc()
 			p.FinalizationRequired = true
 			if p.VideoEnabled {
 				p.VideoEncoding = true
@@ -341,7 +341,7 @@ func (p *PipelineConfig) updateOutputs(req *livekit.ExportReplayRequest) error {
 			}
 
 			p.Outputs[types.EgressTypeSegments] = []OutputConfig{conf}
-			p.OutputCount.Add(1)
+			p.OutputCount.Inc()
 			p.FinalizationRequired = true
 			if p.VideoEnabled {
 				p.VideoEncoding = true
@@ -360,7 +360,7 @@ func (p *PipelineConfig) updateOutputs(req *livekit.ExportReplayRequest) error {
 			}
 
 			p.Outputs[types.EgressTypeImages] = append(p.Outputs[types.EgressTypeImages], conf)
-			p.OutputCount.Add(1)
+			p.OutputCount.Inc()
 			p.FinalizationRequired = true
 
 			p.Info.ImageResults = append(p.Info.ImageResults, conf.ImagesInfo)
@@ -421,7 +421,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 		p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
 
 		p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
-		p.OutputCount.Add(1)
+		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 
 	case *livekit.TrackEgressRequest_WebsocketUrl:
@@ -440,7 +440,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 		p.Info.Result = &livekit.EgressInfo_Stream{Stream: &livekit.StreamInfoList{Info: streamInfoList}} //nolint:staticcheck // keep deprecated field for older clients
 
 		p.Outputs[types.EgressTypeWebsocket] = []OutputConfig{conf}
-		p.OutputCount.Add(1)
+		p.OutputCount.Inc()
 
 	default:
 		return errors.ErrInvalidInput("output")

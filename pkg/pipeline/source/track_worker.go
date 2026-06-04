@@ -17,11 +17,11 @@ package source
 import (
 	"fmt"
 	"strings"
-	"sync/atomic"
 
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
 	"github.com/pion/webrtc/v4"
+	"go.uber.org/atomic"
 
 	"github.com/frostbyte73/core"
 
@@ -342,7 +342,7 @@ func (s *SDKSource) processIdleOp(w *trackWorker, trackID string, state *workerS
 		if writer := s.handleSubscribe(w, trackID, state, op); writer != nil {
 			state.state = TrackStateActive
 			state.writer = writer
-			s.active.Add(1)
+			s.active.Inc()
 		}
 
 	case OpPlaying:
@@ -380,7 +380,7 @@ func (s *SDKSource) processActiveOp(_ *trackWorker, trackID string, state *worke
 		}
 		state.writer = nil
 		state.state = TrackStateIdle
-		s.active.Add(-1)
+		s.active.Dec()
 		return true // signal worker to exit
 
 	case OpUnsubscribe:
@@ -423,7 +423,7 @@ func (s *SDKSource) doCleanup(trackID string, state *workerState) {
 	state.writer = nil
 
 	// Blocking cleanup - only affects this track's worker
-	active := s.active.Add(-1)
+	active := s.active.Dec()
 	shouldContinue := s.RequestType == types.RequestTypeParticipant ||
 		s.RequestType == types.RequestTypeRoomComposite ||
 		s.RequestType == types.RequestTypeTemplate ||

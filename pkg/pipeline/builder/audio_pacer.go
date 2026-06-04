@@ -16,11 +16,11 @@ package builder
 
 import (
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
 	"github.com/linkdata/deadlock"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/pipeline/tempo"

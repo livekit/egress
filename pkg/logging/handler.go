@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/frostbyte73/core"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/logger"
 )
@@ -52,7 +52,7 @@ func (h *HandlerLogger) Write(p []byte) (int, error) {
 	select {
 	case h.ch <- cp:
 	default:
-		count := h.dropped.Add(1)
+		count := h.dropped.Inc()
 		now := time.Now().UnixNano()
 		last := h.lastDropLog.Load()
 		if now-last >= int64(dropLogThrottle) {

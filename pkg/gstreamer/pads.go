@@ -17,9 +17,9 @@ package gstreamer
 import (
 	"fmt"
 	"strings"
-	"sync/atomic"
 
 	"github.com/go-gst/go-gst/gst"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/logger"

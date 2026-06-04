@@ -16,10 +16,10 @@ package builder
 
 import (
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -45,7 +45,7 @@ type Stream struct {
 	sink           *gst.Element
 	keyframes      atomic.Uint64
 	reconnections  atomic.Int32
-	disconnectedAt atomic.Pointer[time.Time]
+	disconnectedAt atomic.Time
 	failed         atomic.Bool
 }
 
@@ -183,7 +183,7 @@ func (sb *StreamBin) BuildStream(stream *config.Stream, framerate int32) (*Strea
 
 				if uint64(buffer.Duration())-videoFrameDuration < 2 && !buffer.HasFlags(gst.BufferFlagDeltaUnit) {
 					// non-delta video frame
-					ss.keyframes.Add(1)
+					ss.keyframes.Inc()
 				}
 
 				links, _ := self.GetInternalLinks()
@@ -244,20 +244,13 @@ func (s *Stream) Reset(streamErr error) (bool, error) {
 
 	if outBytes > 0 {
 		// first disconnection
-		now := time.Now()
-		s.disconnectedAt.Store(&now)
+		s.disconnectedAt.Store(time.Now())
 		s.reconnections.Store(0)
-	} else {
-		var disconnectedAt time.Time
-		if d := s.disconnectedAt.Load(); d != nil {
-			disconnectedAt = *d
-		}
-		if time.Since(disconnectedAt) > time.Second*30 {
-			return false, nil
-		}
+	} else if time.Since(s.disconnectedAt.Load()) > time.Second*30 {
+		return false, nil
 	}
 
-	s.reconnections.Add(1)
+	s.reconnections.Inc()
 	logger.Warnw("resetting stream", streamErr, "url", s.Conf.RedactedUrl)
 
 	if err := s.Bin.SetState(gst.StateNull); err != nil {

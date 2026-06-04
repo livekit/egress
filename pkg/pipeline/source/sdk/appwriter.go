@@ -18,7 +18,6 @@ import (
 	"io"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -28,6 +27,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -68,8 +68,8 @@ type AppWriter struct {
 
 	logger    logger.Logger
 	csvLogger *logging.CSVLogger[logging.TrackStats]
-	drift     atomic.Int64 // nanoseconds
-	maxDrift  atomic.Int64 // nanoseconds
+	drift     atomic.Duration
+	maxDrift  atomic.Duration
 
 	pub         lksdk.TrackPublication
 	track       *webrtc.TrackRemote
@@ -103,8 +103,8 @@ type AppWriter struct {
 	// state
 	buildReady               core.Fuse
 	active                   atomic.Bool
-	lastReceived             atomic.Pointer[time.Time]
-	lastPushed               atomic.Pointer[time.Time]
+	lastReceived             atomic.Time
+	lastPushed               atomic.Time
 	playing                  core.Fuse
 	draining                 core.Fuse
 	unsubscribed             core.Fuse
@@ -261,8 +261,8 @@ func (w *AppWriter) start() {
 			"endStreamSourceProcessed", w.endStreamSourceProcessed.IsBroken(),
 			"playing", w.playing.IsBroken(),
 			"active", w.active.Load(),
-			"lastReceived", formatTimePtr(w.lastReceived.Load()),
-			"lastPushed", formatTimePtr(w.lastPushed.Load()),
+			"lastReceived", w.lastReceived.Load(),
+			"lastPushed", w.lastPushed.Load(),
 			"lastPTS", w.lastPTS,
 		)
 	}
@@ -313,10 +313,9 @@ func (w *AppWriter) readNext() {
 		}
 		w.initialized = true
 		packets = ready
-		lr := ready[len(ready)-1].ReceivedAt
-		w.lastReceived.Store(&lr)
+		w.lastReceived.Store(ready[len(ready)-1].ReceivedAt)
 	} else {
-		w.lastReceived.Store(&receivedAt)
+		w.lastReceived.Store(receivedAt)
 	}
 
 	if !w.active.Swap(true) {
@@ -353,10 +352,7 @@ func (w *AppWriter) handleReadError(err error) {
 		w.notifyPushSamples()
 
 	case errors.As(err, &netErr) && netErr.Timeout():
-		var lastRecv time.Time
-		if lr := w.lastReceived.Load(); lr != nil {
-			lastRecv = *lr
-		}
+		lastRecv := w.lastReceived.Load()
 		if lastRecv.IsZero() {
 			lastRecv = w.startTime
 		}
@@ -548,20 +544,20 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	// get PTS
 	pts, err := w.trackSync.GetPTS(pkt)
 	if err != nil {
-		w.stats.packetsDropped.Add(1)
+		w.stats.packetsDropped.Inc()
 		return err
 	}
 
 	if pts < 0 {
 		// TODO: handle it by sending new gst segment that will reflect the offset
 		w.logger.Debugw("negative packet pts, dropping", "pts", pts)
-		w.stats.packetsDropped.Add(1)
+		w.stats.packetsDropped.Inc()
 		return nil
 	}
 
 	p, err := pkt.Marshal()
 	if err != nil {
-		w.stats.packetsDropped.Add(1)
+		w.stats.packetsDropped.Inc()
 		w.logger.Errorw("could not marshal packet", err)
 		return err
 	}
@@ -585,7 +581,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	}
 
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
-		w.stats.packetsDropped.Add(1)
+		w.stats.packetsDropped.Inc()
 		if flow == gst.FlowFlushing {
 			w.flushingCount++
 			if w.flushingCount == 1 {
@@ -608,8 +604,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		w.flushingCount = 0
 	}
 
-	now := time.Now()
-	w.lastPushed.Store(&now)
+	w.lastPushed.Store(time.Now())
 	w.lastPTS = pts
 	w.maybeCheckPipelineLag(pts)
 	return nil
@@ -753,38 +748,24 @@ func (w *AppWriter) getStats() *logging.TrackStats {
 		Timestamp:       time.Now().Format(time.DateTime),
 		PacketsReceived: stats.PacketsPushed,
 		PaddingReceived: stats.PaddingPushed,
-		LastReceived:    formatTimePtr(w.lastReceived.Load()),
+		LastReceived:    w.lastReceived.Load().Format(time.DateTime),
 		PacketsDropped:  stats.PacketsDropped + w.stats.packetsDropped.Load(),
 		PacketsPushed:   stats.PacketsPopped,
 		SamplesPushed:   stats.SamplesPopped,
-		LastPushed:      formatTimePtr(w.lastPushed.Load()),
-		Drift:           time.Duration(w.drift.Load()),
-		MaxDrift:        time.Duration(w.maxDrift.Load()),
+		LastPushed:      w.lastPushed.Load().Format(time.DateTime),
+		Drift:           w.drift.Load(),
+		MaxDrift:        w.maxDrift.Load(),
 	}
-}
-
-func formatTimePtr(t *time.Time) string {
-	if t == nil {
-		return ""
-	}
-	return t.Format(time.DateTime)
-}
-
-func absDuration(d time.Duration) time.Duration {
-	if d < 0 {
-		return -d
-	}
-	return d
 }
 
 func (w *AppWriter) updateDrift(drift time.Duration) {
-	w.drift.Store(int64(drift))
+	w.drift.Store(drift)
 	for {
-		maxDrift := time.Duration(w.maxDrift.Load())
-		if absDuration(drift) <= absDuration(maxDrift) {
+		maxDrift := w.maxDrift.Load()
+		if drift.Abs() <= maxDrift.Abs() {
 			break
 		}
-		if w.maxDrift.CompareAndSwap(int64(maxDrift), int64(drift)) {
+		if w.maxDrift.CompareAndSwap(maxDrift, drift) {
 			break
 		}
 	}

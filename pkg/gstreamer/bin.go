@@ -18,12 +18,12 @@ import (
 	"fmt"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/linkdata/deadlock"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/logger"
@@ -543,7 +543,7 @@ func (b *Bin) AddOnEOSReceived(f func()) error {
 	for _, sinkPad := range sinkPads {
 		sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			if event := info.GetEvent(); event != nil && event.Type() == gst.EventTypeEOS {
-				if expecting.Add(-1) == 0 {
+				if expecting.Dec() == 0 {
 					f()
 				}
 				return gst.PadProbeRemove
