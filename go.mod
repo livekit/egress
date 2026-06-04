@@ -20,8 +20,8 @@ require (
 	github.com/livekit/media-samples/avsync v0.0.0-20260522020019-07e27a016e72
 	github.com/livekit/media-sdk v0.0.0-20260424094251-1e21ae1138de
 	github.com/livekit/mediatransportutil v0.0.0-20260521171458-ef117e280447
-	github.com/livekit/protocol v1.46.6-0.20260604204719-ab1b54f925cf
-	github.com/livekit/psrpc v0.7.1
+	github.com/livekit/protocol v1.46.6-0.20260604233857-6b0178b3af2a
+	github.com/livekit/psrpc v0.7.2-0.20260604225640-4bab4033deca
 	github.com/livekit/server-sdk-go/v2 v2.16.4-0.20260527150446-0c1e91dd4b69
 	github.com/livekit/storage v0.0.0-20260603163531-d499771c3b88
 	github.com/llehouerou/go-mp3 v1.2.0
@@ -150,10 +150,10 @@ require (
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.42.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.44.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
