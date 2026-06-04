@@ -22,12 +22,12 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/linkdata/deadlock"
-	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
 	"github.com/livekit/egress/pkg/config"
@@ -88,7 +88,7 @@ type controllerStats struct {
 	mixerDroppedAudioBuffers atomic.Uint64
 	droppedVideoBuffers      atomic.Uint64
 
-	mixerDroppedAudioDuration atomic.Duration
+	mixerDroppedAudioDuration atomic.Int64 // nanoseconds
 
 	queuesDroppedAudioBuffers atomic.Uint64
 
@@ -263,7 +263,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 			logger.Infow(
 				"audio qos stats",
 				"audioBuffersDropped", c.stats.mixerDroppedAudioBuffers.Load(),
-				"totalAudioDurationDropped", c.stats.mixerDroppedAudioDuration.Load(),
+				"totalAudioDurationDropped", time.Duration(c.stats.mixerDroppedAudioDuration.Load()),
 				"queueDroppedAudioBuffers", c.stats.queuesDroppedAudioBuffers.Load(),
 				"droppedByQueue", c.stats.droppedAudioBuffersByQueue,
 				"requestType", c.RequestType,
@@ -392,7 +392,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 			continue
 		}
 
-		c.OutputCount.Inc()
+		c.OutputCount.Add(1)
 	}
 
 	// remove stream outputs
@@ -450,7 +450,7 @@ func (c *Controller) streamFinished(ctx context.Context, stream *config.Stream) 
 	// remove output
 	o := c.GetStreamConfig()
 	o.Streams.Delete(stream.ParsedUrl)
-	c.OutputCount.Dec()
+	c.OutputCount.Add(-1)
 
 	// end egress if no outputs remaining
 	if c.OutputCount.Load() == 0 {
@@ -475,7 +475,7 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 	// remove output
 	o := c.GetStreamConfig()
 	o.Streams.Delete(stream.ParsedUrl)
-	c.OutputCount.Dec()
+	c.OutputCount.Add(-1)
 
 	// fail egress if no outputs remaining
 	if c.OutputCount.Load() == 0 {

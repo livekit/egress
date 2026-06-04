@@ -15,7 +15,7 @@
 package sink
 
 import (
-	"go.uber.org/atomic"
+	"sync/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"

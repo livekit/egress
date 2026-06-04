@@ -20,12 +20,12 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-gst/go-gst/gst/app"
 	"github.com/pion/webrtc/v4"
 	"go.opentelemetry.io/otel"
-	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
@@ -497,11 +497,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			media := source.Media
 			p.RequestType = types.RequestTypeMedia
 			p.SourceType = types.SourceTypeSDK
-
-			// data config not yet supported
-			if media.Data != nil {
-				return errors.ErrFeatureDisabled("data track egress")
-			}
 
 			// video
 			switch v := media.Video.(type) {

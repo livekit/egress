@@ -22,10 +22,10 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sync/atomic"
 	"time"
 
 	"github.com/frostbyte73/core"
-	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
 	"github.com/livekit/protocol/logger"
