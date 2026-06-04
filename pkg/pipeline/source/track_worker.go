@@ -473,12 +473,13 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 		ClockRate:           track.Codec().ClockRate,
 	}
 
-	// Set audio channel from route match (RequestTypeMedia)
-	s.mu.Lock()
-	if ch, ok := s.audioChannels[pub.SID()]; ok {
-		ts.AudioChannel = &ch
+	// Match here (not at subscribe time): rp.Kind() can race with OnTrackPublished but is settled by writer creation.
+	if s.RequestType == types.RequestTypeMedia {
+		if route := s.matchesAudioRoute(pub, rp); route != nil {
+			ch := route.Channel
+			ts.AudioChannel = &ch
+		}
 	}
-	s.mu.Unlock()
 
 	ts.AppSrc = app.SrcFromElement(src)
 

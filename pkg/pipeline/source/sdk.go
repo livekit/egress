@@ -50,7 +50,6 @@ type SDKSource struct {
 	mu                   deadlock.Mutex
 	initialized          core.Fuse
 	filenameReplacements map[string]string
-	audioChannels        map[string]livekit.AudioChannel
 
 	workersMu deadlock.RWMutex
 	workers   map[string]*trackWorker
@@ -84,7 +83,6 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		PipelineConfig:       p,
 		callbacks:            callbacks,
 		filenameReplacements: make(map[string]string),
-		audioChannels:        make(map[string]livekit.AudioChannel),
 		workers:              make(map[string]*trackWorker),
 	}
 	logger.Debugw("latency config", "latency", p.Latency)
@@ -714,13 +712,7 @@ func (s *SDKSource) shouldSubscribeMedia(pub lksdk.TrackPublication, rp *lksdk.R
 	if s.matchesMediaVideo(pub, rp) {
 		return true
 	}
-	if route := s.matchesAudioRoute(pub, rp); route != nil {
-		s.mu.Lock()
-		s.audioChannels[pub.SID()] = route.Channel
-		s.mu.Unlock()
-		return true
-	}
-	return false
+	return s.matchesAudioRoute(pub, rp) != nil
 }
 
 func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) *config.AudioRouteConfig {
