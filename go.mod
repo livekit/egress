@@ -18,11 +18,11 @@ require (
 	github.com/livekit/livekit-server v1.12.1-0.20260605183516-20871252d27d
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/media-samples/avsync v0.0.0-20260522020019-07e27a016e72
-	github.com/livekit/media-sdk v0.0.0-20260605182139-b8633b99de19
-	github.com/livekit/mediatransportutil v0.0.0-20260605182015-e79eb8d79819
-	github.com/livekit/protocol v1.46.6-0.20260605181725-7f0893ab5bf2
-	github.com/livekit/psrpc v0.7.2-0.20260604225640-4bab4033deca
-	github.com/livekit/server-sdk-go/v2 v2.16.7-0.20260605183249-c47ddccc5112
+	github.com/livekit/media-sdk v0.0.0-20260605212526-4c11a51d3c97
+	github.com/livekit/mediatransportutil v0.0.0-20260605212259-862d4a7bcb1e
+	github.com/livekit/protocol v1.46.7-0.20260605212020-c0615a2f6f84
+	github.com/livekit/psrpc v0.7.2
+	github.com/livekit/server-sdk-go/v2 v2.16.7-0.20260605213610-c2a481bfe315
 	github.com/livekit/storage v0.0.0-20260603163531-d499771c3b88
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
