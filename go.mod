@@ -15,19 +15,19 @@ require (
 	github.com/go-gst/go-gst v1.4.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/linkdata/deadlock v0.5.5
-	github.com/livekit/livekit-server v1.12.1-0.20260604084359-d290de8165cd
+	github.com/livekit/livekit-server v1.12.1-0.20260605183516-20871252d27d
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/media-samples/avsync v0.0.0-20260522020019-07e27a016e72
-	github.com/livekit/media-sdk v0.0.0-20260527095600-7962ebb29987
-	github.com/livekit/mediatransportutil v0.0.0-20260601042523-13d536af56d9
-	github.com/livekit/protocol v1.46.6-0.20260605012906-a7a83da5bb55
+	github.com/livekit/media-sdk v0.0.0-20260605182139-b8633b99de19
+	github.com/livekit/mediatransportutil v0.0.0-20260605182015-e79eb8d79819
+	github.com/livekit/protocol v1.46.6-0.20260605181725-7f0893ab5bf2
 	github.com/livekit/psrpc v0.7.2-0.20260604225640-4bab4033deca
-	github.com/livekit/server-sdk-go/v2 v2.16.6
+	github.com/livekit/server-sdk-go/v2 v2.16.7-0.20260605183249-c47ddccc5112
 	github.com/livekit/storage v0.0.0-20260603163531-d499771c3b88
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.10.2
-	github.com/pion/webrtc/v4 v4.2.14
+	github.com/pion/webrtc/v4 v4.2.11
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.68.1
@@ -132,7 +132,7 @@ require (
 	github.com/pion/mdns/v2 v2.1.0 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.16 // indirect
-	github.com/pion/sctp v1.10.0 // indirect
+	github.com/pion/sctp v1.9.5 // indirect
 	github.com/pion/sdp/v3 v3.0.18 // indirect
 	github.com/pion/srtp/v3 v3.0.11 // indirect
 	github.com/pion/stun/v3 v3.1.4 // indirect
