@@ -24,6 +24,66 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
+	makeReq := func(externalID string) *livekit.EncodedFileOutput {
+		return &livekit.EncodedFileOutput{
+			Output: &livekit.EncodedFileOutput_S3{
+				S3: &livekit.S3Upload{
+					AccessKey:            "ACCESS_KEY",
+					Secret:               "SECRET",
+					Bucket:               "bucket",
+					Region:               "us-east-1",
+					AssumeRoleArn:        "arn:aws:iam::123456789012:role/example",
+					AssumeRoleExternalId: externalID,
+				},
+			},
+		}
+	}
+
+	t.Run("rejects request external_id when flag is false", func(t *testing.T) {
+		p := &PipelineConfig{}
+		_, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.Error(t, err)
+		require.ErrorContains(t, err, "S3 AssumeRoleExternalId from request")
+	})
+
+	t.Run("allows request external_id when flag is true", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AllowRequestAssumeRoleExternalID = true
+		sc, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.NoError(t, err)
+		require.NotNil(t, sc.S3)
+		require.Equal(t, "EXT_ID", sc.S3.AssumeRoleExternalId)
+	})
+
+	t.Run("no rejection when request omits external_id", func(t *testing.T) {
+		p := &PipelineConfig{}
+		sc, err := p.getStorageConfig(makeReq(""))
+		require.NoError(t, err)
+		require.NotNil(t, sc.S3)
+		require.Equal(t, "", sc.S3.AssumeRoleExternalId)
+	})
+
+	t.Run("server-side default external_id still applies when request omits it", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AssumeRoleExternalID = "SERVER_SIDE_EXT_ID"
+		req := &livekit.EncodedFileOutput{
+			Output: &livekit.EncodedFileOutput_S3{
+				S3: &livekit.S3Upload{
+					AccessKey: "ACCESS_KEY",
+					Secret:    "SECRET",
+					Bucket:    "bucket",
+					Region:    "us-east-1",
+				},
+			},
+		}
+		sc, err := p.getStorageConfig(req)
+		require.NoError(t, err)
+		require.NotNil(t, sc.S3)
+		require.Equal(t, "SERVER_SIDE_EXT_ID", sc.S3.AssumeRoleExternalId)
+	})
+}
+
 func TestSegmentNaming(t *testing.T) {
 	t.Cleanup(func() {
 		_ = os.RemoveAll("conf_test/")

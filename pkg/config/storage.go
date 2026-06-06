@@ -17,10 +17,11 @@ package config
 import (
 	"time"
 
-	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/storage"
+
+	"github.com/livekit/egress/pkg/errors"
 )
 
 type StorageConfig struct {
@@ -41,6 +42,9 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 	}
 
 	if s3 := req.GetS3(); s3 != nil {
+		if s3.AssumeRoleExternalId != "" && !p.S3AllowRequestAssumeRoleExternalID {
+			return nil, errors.ErrNotSupported("S3 AssumeRoleExternalId from request is deprecated and unsupported")
+		}
 		sc.S3 = &storage.S3Config{
 			AccessKey:            s3.AccessKey,
 			Secret:               s3.Secret,
