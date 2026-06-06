@@ -121,6 +121,10 @@ func (s *StreamSink) AddStream(stream *config.Stream) error {
 
 	s.mu.Unlock()
 
+	if s.bin.OutputType == types.OutputTypeRTMP {
+		ss.StartMonitor()
+	}
+
 	return s.bin.Bin.AddSinkBin(ss.Bin)
 }
 
@@ -148,13 +152,15 @@ func (s *StreamSink) ResetStream(stream *config.Stream, streamErr error) (bool, 
 
 func (s *StreamSink) RemoveStream(stream *config.Stream) error {
 	s.mu.Lock()
-	_, ok := s.streams[stream.Name]
+	ss, ok := s.streams[stream.Name]
 	if !ok {
 		s.mu.Unlock()
 		return errors.ErrStreamNotFound(stream.RedactedUrl)
 	}
 	delete(s.streams, stream.Name)
 	s.mu.Unlock()
+
+	ss.StopMonitor()
 
 	return s.bin.Bin.RemoveSinkBin(stream.Name)
 }
@@ -168,6 +174,9 @@ func (s *StreamSink) Close() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
+		for _, ss := range s.streams {
+			ss.StopMonitor()
+		}
 		for _, l := range s.loggers {
 			l.Close()
 		}
