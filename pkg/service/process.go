@@ -53,6 +53,7 @@ type ProcessManager interface {
 	GetGRPCClient(egressID string) (ipc.EgressHandlerClient, error)
 	KillAll()
 	AbortProcess(egressID string, err error)
+	GracefulStop(egressID string)
 	KillProcess(egressID string, reason string, err error)
 	GetKillReason(egressID string) string
 	ProcessFinished(egressID string)
@@ -222,6 +223,16 @@ func (pm *processManager) AbortProcess(egressID string, err error) {
 	logger.Infow("aborting egress completed", "egressID", egressID)
 }
 
+func (pm *processManager) GracefulStop(egressID string) {
+	logger.Infow("gracefully stopping egress due to high CPU", "egressID", egressID)
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	if h, ok := pm.activeHandlers[egressID]; ok {
+		h.gracefulStop()
+	}
+}
+
 func (pm *processManager) KillProcess(egressID string, reason string, err error) {
 	logger.Infow("killing egress", err, "egressID", egressID)
 	pm.mu.Lock()
@@ -301,4 +312,12 @@ func (p *Process) kill(e error) {
 			}
 		}
 	})
+}
+
+// gracefulStop sends SIGTERM to the handler process, triggering a graceful pipeline drain
+// and upload before exit. The egress completes with status COMPLETE rather than FAILED.
+func (p *Process) gracefulStop() {
+	if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		logger.Errorw("failed to gracefully stop process", err, "egressID", p.req.EgressId)
+	}
 }
