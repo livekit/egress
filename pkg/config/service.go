@@ -79,6 +79,18 @@ const (
 	MemorySourceCgroup MemorySource = "cgroup"
 )
 
+// LoadDistribution controls how egress jobs are routed across server instances.
+type LoadDistribution string
+
+const (
+	// LoadDistributionConsolidate packs jobs onto already-busy servers, keeping idle
+	// servers free for heavier egress types (room composite, web). Default behavior.
+	LoadDistributionConsolidate LoadDistribution = "consolidate"
+	// LoadDistributionSpread routes each job to the server with the most available CPU,
+	// distributing load evenly. Recommended for track-only deployments.
+	LoadDistributionSpread LoadDistribution = "spread"
+)
+
 type CPUCostConfig struct {
 	MaxCpuUtilization         float64 `yaml:"max_cpu_utilization"` // maximum allowed CPU utilization when deciding to accept a request. Default to 80%
 	MaxMemory                 float64 `yaml:"max_memory"`          // maximum allowed memory usage in GB. 0 to disable
@@ -95,6 +107,11 @@ type CPUCostConfig struct {
 	// Memory source configuration (cgroup-aware memory accounting)
 	MemorySource       MemorySource `yaml:"memory_source"`         // memory measurement source: proc_rss, cgroup
 	MemoryKillGraceSec int          `yaml:"memory_kill_grace_sec"` // grace period in update cycles before kill (0 = immediate)
+
+	// Load distribution strategy across egress server instances.
+	// "consolidate" (default): packs jobs onto busy servers, keeps idle servers free for heavier egress types.
+	// "spread": routes to the server with the most available CPU. Recommended for track_only deployments.
+	LoadDistribution LoadDistribution `yaml:"load_distribution"`
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
@@ -194,6 +211,10 @@ func (c *ServiceConfig) InitDefaults() {
 
 	if c.MaxUploadQueue <= 0 {
 		c.MaxUploadQueue = maxUploadQueue
+	}
+
+	if c.LoadDistribution == "" {
+		c.LoadDistribution = LoadDistributionConsolidate
 	}
 
 	applyLatencyDefaults(&c.Latency)
