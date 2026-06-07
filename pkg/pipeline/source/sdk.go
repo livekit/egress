@@ -60,9 +60,10 @@ type SDKSource struct {
 	// leaving the track orphaned (missed by both pipeline build and dynamic add).
 	subLock deadlock.RWMutex
 
-	closing atomic.Bool
-	active  atomic.Int32
-	closed  core.Fuse
+	closing           atomic.Bool
+	active            atomic.Int32
+	closed            core.Fuse
+	duplicateIdentity atomic.Bool
 
 	startRecording core.Fuse
 	endRecording   core.Fuse
@@ -804,10 +805,17 @@ func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
 }
 
 func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {
+	if reason == lksdk.DuplicateIdentity {
+		s.duplicateIdentity.Store(true)
+	}
 	if reason != lksdk.RoomClosed && reason != lksdk.LeaveRequested {
 		logger.Warnw("disconnected from room", nil, "reason", reason)
 	}
 	s.finished()
+}
+
+func (s *SDKSource) IsDuplicateIdentity() bool {
+	return s.duplicateIdentity.Load()
 }
 
 func (s *SDKSource) finished() {

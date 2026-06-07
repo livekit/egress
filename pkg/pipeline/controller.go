@@ -930,6 +930,16 @@ func (c *Controller) sendHandlerUpdate(ctx context.Context, info *livekit.Egress
 	}
 }
 
+// IsDuplicateIdentity reports whether the pipeline's SDK source was evicted
+// from the room because another participant joined with the same identity.
+func (c *Controller) IsDuplicateIdentity() bool {
+	sdkSrc, ok := c.src.(*source.SDKSource)
+	if !ok {
+		return false
+	}
+	return sdkSrc.IsDuplicateIdentity()
+}
+
 func (c *Controller) updateEndTime() {
 	endedAt := c.src.GetEndedAt()
 	if c.pipelineEndedAt > endedAt {

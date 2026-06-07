@@ -233,6 +233,26 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				},
 				custom: r.testStorageLimit,
 			},
+
+			// Another participant joins the room with the egress's identity
+			// and evicts it (DisconnectReason_DUPLICATE_IDENTITY). The egress
+			// must exit silently — no terminal UpdateEgress reaches the io
+			// server, since another worker is presumed to still be running
+			// the same egressID.
+
+			{
+				name:        "DuplicateIdentitySilentExit",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename: "duplicate_identity_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				custom: r.testDuplicateIdentitySilentExit,
+			},
 		} {
 			if !r.run(t, test) {
 				return
@@ -565,4 +585,47 @@ func (r *Runner) testEmptyStreamBin(t *testing.T, test *testCase) {
 	time.Sleep(time.Second * 10)
 	res := r.stopEgress(t, egressID)
 	r.verifySegments(t, test, p, livekit.SegmentedFileSuffix_INDEX, res, false)
+}
+
+func (r *Runner) testDuplicateIdentitySilentExit(t *testing.T, test *testCase) {
+	req := r.build(test)
+	egressID := req.EgressId
+	r.startEgress(t, req)
+
+	// Snapshot the latest update before the duplicate joins. After the
+	// silent exit, there should be no terminal update,
+	// so the latest update should remain on this non-terminal status.
+	preEvictStatus := r.getUpdate(t, egressID).Status
+
+	// Join the room with the egress's own identity. The SFU evicts the
+	// older session with DisconnectReason_DUPLICATE_IDENTITY.
+	dup, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "duplicate-egress",
+		ParticipantIdentity: egressID,
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	t.Cleanup(dup.Disconnect)
+
+	// Wait for the handler subprocess to exit on its own (no KillAll —
+	// the eviction itself must drive the shutdown).
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if r.svc.IsIdle() {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	require.True(t, r.svc.IsIdle(), "egress handler should exit after duplicate-identity eviction")
+
+	// Give a small grace period for any in-flight UpdateEgress IPC to land.
+	time.Sleep(2 * time.Second)
+
+	last := r.getUpdate(t, egressID)
+	require.NotEqualf(t, livekit.EgressStatus_EGRESS_COMPLETE, last.Status,
+		"terminal COMPLETE update should be suppressed (pre-evict status was %s)", preEvictStatus)
+	require.NotEqualf(t, livekit.EgressStatus_EGRESS_FAILED, last.Status,
+		"terminal FAILED update should be suppressed (pre-evict status was %s)", preEvictStatus)
 }

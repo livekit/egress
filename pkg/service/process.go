@@ -54,6 +54,7 @@ type ProcessManager interface {
 	KillAll()
 	AbortProcess(egressID string, err error)
 	KillProcess(egressID string, reason string, err error)
+	SetExitReason(egressID string, reason string)
 	GetKillReason(egressID string) string
 	ProcessFinished(egressID string)
 }
@@ -236,6 +237,17 @@ func (pm *processManager) KillProcess(egressID string, reason string, err error)
 		h.kill(err)
 	}
 	logger.Infow("killing egress completed", "egressID", egressID)
+}
+
+// SetExitReason records the result the handler should be reported under when it
+// finishes on its own. Unlike KillProcess it does not terminate the subprocess.
+func (pm *processManager) SetExitReason(egressID string, reason string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if h, ok := pm.activeHandlers[egressID]; ok && h.killReason == "" {
+		h.killReason = reason
+	}
 }
 
 func (pm *processManager) GetKillReason(egressID string) string {
