@@ -590,12 +590,24 @@ func (r *Runner) testEmptyStreamBin(t *testing.T, test *testCase) {
 func (r *Runner) testDuplicateIdentitySilentExit(t *testing.T, test *testCase) {
 	req := r.build(test)
 	egressID := req.EgressId
+
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+
 	r.startEgress(t, req)
 
 	// Snapshot the latest update before the duplicate joins. After the
-	// silent exit, there should be no terminal update,
-	// so the latest update should remain on this non-terminal status.
-	preEvictStatus := r.getUpdate(t, egressID).Status
+	// silent exit, the egress instance must not emit any further updates —
+	// not COMPLETE, not FAILED, not even an intermediate ENDING — since
+	// another instance owns the recording.
+	startUpdate := r.getUpdate(t, egressID)
+	require.NotEmpty(t, startUpdate.FileResults)
+	storagePath := startUpdate.FileResults[0].Filename
+	require.NotEmpty(t, storagePath, "storage filename should be resolved at start")
+
+	preEvictStatus := startUpdate.Status
+	require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE, preEvictStatus,
+		"snapshot must be ACTIVE before the duplicate joins")
 
 	// Join the room with the egress's own identity. The SFU evicts the
 	// older session with DisconnectReason_DUPLICATE_IDENTITY.
@@ -624,8 +636,11 @@ func (r *Runner) testDuplicateIdentitySilentExit(t *testing.T, test *testCase) {
 	time.Sleep(2 * time.Second)
 
 	last := r.getUpdate(t, egressID)
-	require.NotEqualf(t, livekit.EgressStatus_EGRESS_COMPLETE, last.Status,
-		"terminal COMPLETE update should be suppressed (pre-evict status was %s)", preEvictStatus)
-	require.NotEqualf(t, livekit.EgressStatus_EGRESS_FAILED, last.Status,
-		"terminal FAILED update should be suppressed (pre-evict status was %s)", preEvictStatus)
+	require.Equalf(t, preEvictStatus, last.Status,
+		"no UpdateEgress should have moved status after duplicate-identity eviction (was %s, now %s)",
+		preEvictStatus, last.Status)
+
+	// And the output file must not have landed in storage — another
+	// egress instance is presumed to own the destination.
+	requireNotUploaded(t, p.GetFileConfig().StorageConfig, storagePath)
 }

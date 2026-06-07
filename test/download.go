@@ -19,6 +19,7 @@ package test
 import (
 	"encoding/json"
 	"os"
+	"path"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -42,9 +43,11 @@ func loadManifest(t *testing.T, c *config.StorageConfig, localFilepath, storageF
 	return m
 }
 
-func download(t *testing.T, c *config.StorageConfig, localFilepath, storageFilepath string, delete bool) {
+// getStorage returns a storage client for cloud-backed configs, or (nil, "")
+// when the config is nil or local — callers should skip in that case.
+func getStorage(t *testing.T, c *config.StorageConfig) (storage.Storage, string) {
 	if c == nil {
-		return
+		return nil, ""
 	}
 
 	var (
@@ -61,15 +64,36 @@ func download(t *testing.T, c *config.StorageConfig, localFilepath, storageFilep
 	case c.AliOSS != nil:
 		conf, provider = c.AliOSS, "alioss"
 	default:
+		return nil, ""
+	}
+
+	s, err := storage.New(conf)
+	require.NoError(t, err)
+	return s, provider
+}
+
+// requireNotUploaded fails the test if storageFilepath exists in storage.
+// Local/nil storage is skipped — there's nothing to probe.
+func requireNotUploaded(t *testing.T, c *config.StorageConfig, storageFilepath string) {
+	s, _ := getStorage(t, c)
+	if s == nil {
+		return
+	}
+
+	localPath := path.Join(t.TempDir(), path.Base(storageFilepath))
+	_, err := s.DownloadFile(localPath, storageFilepath)
+	require.Errorf(t, err, "file %s should not have been uploaded", storageFilepath)
+}
+
+func download(t *testing.T, c *config.StorageConfig, localFilepath, storageFilepath string, delete bool) {
+	s, provider := getStorage(t, c)
+	if s == nil {
 		return
 	}
 
 	logger.Debugw(provider+" download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
 
-	s, err := storage.New(conf)
-	require.NoError(t, err)
-
-	_, err = s.DownloadFile(localFilepath, storageFilepath)
+	_, err := s.DownloadFile(localFilepath, storageFilepath)
 	require.NoError(t, err)
 
 	if delete {
