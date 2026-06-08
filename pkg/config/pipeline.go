@@ -23,11 +23,9 @@ import (
 	"time"
 
 	"github.com/go-gst/go-gst/gst/app"
-	"github.com/pion/webrtc/v4"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
-	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
@@ -58,6 +56,7 @@ type PipelineConfig struct {
 	Info            *livekit.EgressInfo `yaml:"-"`
 	Manifest        *Manifest           `yaml:"-"`
 	Live            bool                `yaml:"-"`
+	IsReplay        bool                `yaml:"-"`
 	StorageObserver StorageObserver     `yaml:"-"`
 }
 
@@ -429,6 +428,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			Replay: clone,
 		}
 		egress.RedactStartEgressRequest(clone)
+		p.IsReplay = true
 
 		ci, err := p.applyV2Source(replayReq)
 		if err != nil {
@@ -852,10 +852,6 @@ func (p *PipelineConfig) GetEncodedOutputs() []OutputConfig {
 	}
 
 	return ret
-}
-
-func (p *PipelineConfig) IsReplay() bool {
-	return !p.Live
 }
 
 func isHttp(parsedUrl *url.URL) bool {

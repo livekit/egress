@@ -134,6 +134,41 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				custom: r.testRtmpFailure,
 			},
 
+			// RTMP output that goes silent mid-stream (network-level wedge).
+			// Uses toxiproxy to break the TCP socket while leaving handshake intact.
+
+			{
+				name:        "RtmpSilentWedge",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+				},
+				streamOptions: &streamOptions{
+					// streamUrls populated by testRtmpSilentWedge once toxiproxy is set up.
+					outputType: types.OutputTypeRTMP,
+				},
+				custom: r.testRtmpSilentWedge,
+			},
+
+			// RTMP output where the server rejects at the publish step
+			// (protocol-level reject). Reproduces the rapid-reject loop that
+			// can wedge rtmp2sink in prod.
+
+			{
+				name:        "RtmpPublishReject",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+				},
+				streamOptions: &streamOptions{
+					// streamUrls populated by testRtmpPublishReject.
+					outputType: types.OutputTypeRTMP,
+				},
+				custom: r.testRtmpPublishReject,
+			},
+
 			// SRT output with no valid urls
 
 			{
