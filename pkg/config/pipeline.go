@@ -23,9 +23,11 @@ import (
 	"time"
 
 	"github.com/go-gst/go-gst/gst/app"
+	"github.com/pion/webrtc/v4"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
+	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
