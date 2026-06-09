@@ -707,22 +707,24 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 }
 
 func (s *SDKSource) shouldSubscribeMedia(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
-	if s.matchesMediaVideo(pub, rp) {
-		return true
+	switch pub.Kind() {
+	case lksdk.TrackKindAudio:
+		if route := s.matchesAudioRoute(pub, rp); route != nil {
+			s.mu.Lock()
+			s.audioChannels[pub.SID()] = route.Channel
+			s.mu.Unlock()
+			return true
+		}
+		return s.CaptureAudioAll
+	case lksdk.TrackKindVideo:
+		return s.matchesMediaVideo(pub, rp)
+	default:
+		logger.Warnw("unknown track kind", nil)
+		return false
 	}
-	if route := s.matchesAudioRoute(pub, rp); route != nil {
-		s.mu.Lock()
-		s.audioChannels[pub.SID()] = route.Channel
-		s.mu.Unlock()
-		return true
-	}
-	return false
 }
 
 func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) *config.AudioRouteConfig {
-	if pub.Kind() != lksdk.TrackKindAudio {
-		return nil
-	}
 	for i := range s.AudioRoutes {
 		route := &s.AudioRoutes[i]
 		switch {
@@ -744,9 +746,6 @@ func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.Remo
 }
 
 func (s *SDKSource) matchesMediaVideo(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
-	if pub.Kind() != lksdk.TrackKindVideo {
-		return false
-	}
 	if s.VideoTrackID != "" {
 		return pub.SID() == s.VideoTrackID
 	}

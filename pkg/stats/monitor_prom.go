@@ -17,6 +17,7 @@ package stats
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 
@@ -147,21 +148,29 @@ func requestTypeFromReq(req *rpc.StartEgressRequest) string {
 	case *rpc.StartEgressRequest_Track:
 		return types.RequestTypeTrack
 	case *rpc.StartEgressRequest_Replay:
-		switch r.Replay.Source.(type) {
-		case *livekit.ExportReplayRequest_Template:
-			return types.RequestTypeTemplate
-		case *livekit.ExportReplayRequest_Web:
-			return types.RequestTypeWeb
-		case *livekit.ExportReplayRequest_Media:
-			return types.RequestTypeMedia
-		}
+		return requestTypeFromInterface(r.Replay)
+	case *rpc.StartEgressRequest_Egress:
+		return requestTypeFromInterface(r.Egress)
 	}
-	return "unknown"
+	return types.Unknown
+}
+
+func requestTypeFromInterface(request egress.EgressRequest) string {
+	switch {
+	case request.GetTemplate() != nil:
+		return types.RequestTypeTemplate
+	case request.GetWeb() != nil:
+		return types.RequestTypeWeb
+	case request.GetMedia() != nil:
+		return types.RequestTypeMedia
+	default:
+		return types.Unknown
+	}
 }
 
 func (m *Monitor) HandlerResult(egressID string, result string) {
 	m.mu.Lock()
-	reqType := "unknown"
+	reqType := types.Unknown
 	if ps := m.pending[egressID]; ps != nil {
 		reqType = ps.requestType
 	} else {

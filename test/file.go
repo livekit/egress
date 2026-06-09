@@ -477,6 +477,22 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 			},
 			{
+				name:        "Media/CaptureAll",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					multiParticipant: true,
+					captureAudioAll:  true,
+					mediaParticipantVideo: &livekit.ParticipantVideo{
+						Identity: setP2Identity,
+					},
+				},
+				fileOptions: &fileOptions{
+					filename: "media_capture_all_{time}.mp4",
+				},
+			},
+			{
 				name:        "Media/ParticipantVideo",
 				requestType: types.RequestTypeMedia,
 				publishOptions: publishOptions{
