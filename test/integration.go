@@ -297,6 +297,13 @@ func (r *Runner) sendRequest(t *testing.T, req *rpc.StartEgressRequest) *livekit
 		if _, ok := replayReq.Source.(*livekit.ExportReplayRequest_Web); ok {
 			require.Empty(t, info.RoomName)
 		}
+	case *rpc.StartEgressRequest_Egress:
+		egressReq := req.Request.(*rpc.StartEgressRequest_Egress).Egress
+		if _, ok := egressReq.Source.(*livekit.StartEgressRequest_Web); ok {
+			require.Empty(t, info.RoomName)
+		} else {
+			require.Equal(t, r.RoomName, info.RoomName)
+		}
 	default:
 		require.Equal(t, r.RoomName, info.RoomName)
 	}

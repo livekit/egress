@@ -86,18 +86,19 @@ type WebSourceParams struct {
 }
 
 type SDKSourceParams struct {
-	TrackID      string
-	AudioTrackID string
-	VideoTrackID string
-	Identity     string
-	TrackSource  string
-	TrackKind    string
-	ScreenShare  bool
-	Compositing  bool
-	VideoInCodec types.MimeType
-	AudioTracks  []*TrackSource
-	VideoTracks  []*TrackSource
-	AudioRoutes  []AudioRouteConfig
+	TrackID         string
+	AudioTrackID    string
+	VideoTrackID    string
+	Identity        string
+	TrackSource     string
+	TrackKind       string
+	ScreenShare     bool
+	Compositing     bool
+	VideoInCodec    types.MimeType
+	AudioTracks     []*TrackSource
+	VideoTracks     []*TrackSource
+	AudioRoutes     []AudioRouteConfig
+	CaptureAudioAll bool
 }
 
 type AudioRouteConfig struct {
@@ -507,11 +508,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			p.RequestType = types.RequestTypeMedia
 			p.SourceType = types.SourceTypeSDK
 
-			// data config not yet supported
-			if media.Data != nil {
-				return errors.ErrFeatureDisabled("data track egress")
-			}
-
 			// video
 			switch v := media.Video.(type) {
 			case *livekit.MediaSource_VideoTrackId:
@@ -527,22 +523,28 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 			// audio
 			if media.Audio != nil {
-				p.AudioEnabled = true
-				p.AudioTranscoding = true
-				for _, route := range media.Audio.Routes {
-					arc := AudioRouteConfig{
-						Channel: route.Channel,
+				if media.Audio.CaptureAll {
+					p.AudioEnabled = true
+					p.AudioTranscoding = true
+					p.CaptureAudioAll = true
+				} else if len(media.Audio.Routes) > 0 {
+					p.AudioEnabled = true
+					p.AudioTranscoding = true
+					for _, route := range media.Audio.Routes {
+						arc := AudioRouteConfig{
+							Channel: route.Channel,
+						}
+						switch m := route.Match.(type) {
+						case *livekit.AudioRoute_TrackId:
+							arc.Match.TrackID = m.TrackId
+						case *livekit.AudioRoute_ParticipantIdentity:
+							arc.Match.ParticipantIdentity = m.ParticipantIdentity
+						case *livekit.AudioRoute_ParticipantKind:
+							kind := lksdk.ParticipantKind(m.ParticipantKind)
+							arc.Match.ParticipantKind = &kind
+						}
+						p.AudioRoutes = append(p.AudioRoutes, arc)
 					}
-					switch m := route.Match.(type) {
-					case *livekit.AudioRoute_TrackId:
-						arc.Match.TrackID = m.TrackId
-					case *livekit.AudioRoute_ParticipantIdentity:
-						arc.Match.ParticipantIdentity = m.ParticipantIdentity
-					case *livekit.AudioRoute_ParticipantKind:
-						kind := lksdk.ParticipantKind(m.ParticipantKind)
-						arc.Match.ParticipantKind = &kind
-					}
-					p.AudioRoutes = append(p.AudioRoutes, arc)
 				}
 			}
 

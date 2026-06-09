@@ -217,15 +217,16 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 	return nil
 }
 
-func (p *PipelineConfig) updateOutputs(req *livekit.ExportReplayRequest) error {
-	if len(req.Outputs) == 0 {
+func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
+	outputs := req.GetOutputs()
+	if len(outputs) == 0 {
 		return errors.ErrInvalidInput("output")
 	}
 
 	// Non-live pipelines produce data faster than realtime. Stream outputs
 	// (RTMP, WebSocket) cannot ingest faster than 1x playback speed.
 	if !p.Live {
-		for _, output := range req.Outputs {
+		for _, output := range outputs {
 			if _, ok := output.Config.(*livekit.Output_Stream); ok {
 				return errors.ErrNotSupported("stream output for non-live pipeline")
 			}
@@ -235,8 +236,8 @@ func (p *PipelineConfig) updateOutputs(req *livekit.ExportReplayRequest) error {
 	var hasFile, hasStream, hasSegments bool
 	var fileCount, streamCount, segmentCount int
 
-	for _, output := range req.Outputs {
-		storage := resolveStorageConfig(output.Storage, req.Storage)
+	for _, output := range outputs {
+		storage := resolveStorageConfig(output.Storage, req.GetStorage())
 
 		switch o := output.Config.(type) {
 		case *livekit.Output_File:

@@ -88,6 +88,8 @@ const (
 	FileExtensionWebM = ".webm"
 	FileExtensionM3U8 = ".m3u8"
 	FileExtensionJPEG = ".jpeg"
+
+	Unknown = "unknown"
 )
 
 var (
