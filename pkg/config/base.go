@@ -64,6 +64,7 @@ type BaseConfig struct {
 	ChromeFlags                   map[string]interface{}              `yaml:"chrome_flags"`                       // additional flags to pass to Chrome
 	Latency                       LatencyConfig                       `yaml:"latency"`                            // gstreamer latencies, modifying these may break the service
 	LatencyOverrides              map[types.RequestType]LatencyConfig `yaml:"latency_overrides"`                  // latency overrides for different request types, experimental only, will be removed
+	EnableTemplateSDK             bool                                `yaml:"enable_template_sdk"`                // use GStreamer compositor instead of Chrome for default template layouts
 	EnableOneShotSenderReportSync bool                                `yaml:"enable_one_shot_sender_report_sync"` // temporary rollout flag enabling one-shot sender report correction for room composite / track requests that previously used audio PTS adjustment disabling
 	EnableSyncEngine              bool                                `yaml:"enable_sync_engine"`                 // use Chrome-inspired sync engine for improved cross-participant alignment and A/V sync
 	AudioTempoController          AudioTempoController                `yaml:"audio_tempo_controller"`             // audio tempo controller
