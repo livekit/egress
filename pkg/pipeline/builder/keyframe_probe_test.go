@@ -29,13 +29,15 @@ import (
 // newTestProbe constructs a keyframeProbe without attaching any real pad probe,
 // so processBuffer can be exercised directly with synthetic buffers.
 func newTestProbe(mimeType types.MimeType, onRequestPLI func()) *keyframeProbe {
-	return &keyframeProbe{
+	p := &keyframeProbe{
 		trackID:      "test-track",
 		mimeType:     mimeType,
 		onRequestPLI: onRequestPLI,
 		logger:       logger.GetLogger().WithValues("trackID", "test-track", "component", "keyframe_probe_test"),
 		keyframePTS:  make([]time.Duration, 0, keyframeHistorySize),
 	}
+	p.keyframePending.Store(true)
+	return p
 }
 
 // makeBuffer constructs an empty gst.Buffer with the given PTS (or

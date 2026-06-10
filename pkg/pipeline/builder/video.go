@@ -397,8 +397,6 @@ func (b *VideoBin) attachKeyframeProbe(ts *config.TrackSource, name string, elem
 	return nil
 }
 
-// closeProbeLocked detaches and forgets the probe for the given source-bin
-// name, if one exists. Acquires probesMu only — callers may hold b.mu.
 func (b *VideoBin) closeProbe(name string) {
 	b.probesMu.Lock()
 	probe, ok := b.probes[name]

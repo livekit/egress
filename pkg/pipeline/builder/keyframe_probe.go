@@ -56,7 +56,6 @@ type keyframeProbe struct {
 
 	logger logger.Logger
 
-	keyframeSeen          atomic.Bool
 	keyframePending       atomic.Bool
 	lastKeyframeRequestNS atomic.Int64
 
@@ -87,6 +86,7 @@ func newKeyframeProbe(trackID string, mimeType types.MimeType, element *gst.Elem
 		logger:       logger.GetLogger().WithValues("trackID", trackID, "component", "keyframe_probe", "mime", mimeType),
 		keyframePTS:  make([]time.Duration, 0, keyframeHistorySize),
 	}
+	p.keyframePending.Store(true)
 
 	p.srcProbeID = srcPad.AddProbe(gst.PadProbeTypeBuffer, p.onSrcBuffer)
 
@@ -136,8 +136,7 @@ func (p *keyframeProbe) processBuffer(buffer *gst.Buffer) gst.PadProbeReturn {
 		// Restore from the last good PTS so downstream stays monotonic. The
 		// buffer may turn out to be a keyframe that recovers the stream — in
 		// that case the keyframe branch below clears keyframePending and lets
-		// it through; otherwise the keyframePending/keyframeSeen checks at the
-		// bottom will drop it.
+		// it through; otherwise the keyframePending check below will drop it.
 		restored := gst.ClockTime(p.lastSrcPTS.Load())
 		buffer.SetPresentationTimestamp(restored)
 		pts = time.Duration(uint64(restored))
@@ -150,27 +149,16 @@ func (p *keyframeProbe) processBuffer(buffer *gst.Buffer) gst.PadProbeReturn {
 	isKeyframe := buffer.GetFlags()&gst.BufferFlagDeltaUnit == 0
 
 	if isKeyframe {
-		wasPending := p.keyframePending.Swap(false)
-		firstKeyframe := !p.keyframeSeen.Swap(true)
-		if wasPending || firstKeyframe {
+		if p.keyframePending.Swap(false) {
 			buffer.SetFlags(buffer.GetFlags() | gst.BufferFlagDiscont)
-			if wasPending {
-				p.logger.Debugw("keyframe pending, got one")
-			}
+			p.logger.Debugw("keyframe pending, got one")
 		}
 		p.trackKeyframe(pts)
 		return gst.PadProbeOK
 	}
 
-	if !p.keyframeSeen.Load() {
-		// pre-keyframe P-frame — drop and request a keyframe
-		p.keyframePending.Store(true)
-		p.requestKeyframeIfDue()
-		return gst.PadProbeDrop
-	}
-
 	if p.keyframePending.Load() {
-		// mid-stream stall (missing PTS observed) — drop until next keyframe
+		// pre-keyframe or mid-stream stall — drop until next keyframe
 		p.requestKeyframeIfDue()
 		return gst.PadProbeDrop
 	}
@@ -220,7 +208,7 @@ func (p *keyframeProbe) handleMissingPTS() {
 	if avg, count, ok := p.keyframeStats(); ok {
 		fields = append(fields, "avgKeyframeInterval", avg, "keyframesTracked", count)
 	}
-	p.logger.Warnw("parser buffer missing PTS", nil, fields...)
+	p.logger.Debugw("parser buffer missing PTS", fields...)
 	p.logKeyframeHistory("missing_pts")
 }
 
@@ -237,7 +225,8 @@ func (p *keyframeProbe) trackKeyframe(pts time.Duration) {
 
 	p.keyframePTS = append(p.keyframePTS, pts)
 	if len(p.keyframePTS) > keyframeHistorySize {
-		p.keyframePTS = p.keyframePTS[1:]
+		copy(p.keyframePTS, p.keyframePTS[1:])
+		p.keyframePTS = p.keyframePTS[:keyframeHistorySize]
 	}
 }
 
@@ -278,8 +267,8 @@ func (p *keyframeProbe) keyframeStats() (time.Duration, int, bool) {
 
 func (p *keyframeProbe) logKeyframeHistory(reason string) {
 	p.keyframeMu.Lock()
+	defer p.keyframeMu.Unlock()
 	if len(p.keyframePTS) == 0 {
-		p.keyframeMu.Unlock()
 		return
 	}
 
@@ -291,7 +280,6 @@ func (p *keyframeProbe) logKeyframeHistory(reason string) {
 		avg = p.totalIntervalSum / time.Duration(p.totalIntervals)
 		count = p.totalIntervals + 1
 	}
-	p.keyframeMu.Unlock()
 	p.logger.Debugw("keyframe history", "reason", reason, "history", history, "avgKeyframeInterval", avg, "keyframesTracked", count)
 }
 
