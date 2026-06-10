@@ -37,11 +37,7 @@ const (
 //   - throttled-requests a PLI from upstream while no keyframe is seen
 //   - marks the first accepted keyframe with the DISCONT flag so downstream
 //     elements reset their state on resume.
-//   - restores a missing PTS (GST_CLOCK_TIME_NONE) from the last good PTS so
-//     downstream stays monotonic across baseparse hiccups, and treats any
-//     missing-PTS event as a parser stall worth re-requesting a keyframe for
-//     (vp9parse in particular emits GST_CLOCK_TIME_NONE while waiting for a
-//     keyframe).
+//   - restores a missing PTS (GST_CLOCK_TIME_NONE) from the last good PTS
 type keyframeProbe struct {
 	trackID  string
 	mimeType types.MimeType
