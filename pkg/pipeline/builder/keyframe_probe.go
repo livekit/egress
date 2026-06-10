@@ -46,11 +46,8 @@ type keyframeProbe struct {
 	trackID  string
 	mimeType types.MimeType
 
-	srcPad  *gst.Pad
-	sinkPad *gst.Pad // optional, attached for VP9 diagnostics only
-
-	srcProbeID  uint64
-	sinkProbeID uint64
+	srcPad     *gst.Pad
+	srcProbeID uint64
 
 	onRequestPLI func()
 
@@ -59,12 +56,8 @@ type keyframeProbe struct {
 	keyframePending       atomic.Bool
 	lastKeyframeRequestNS atomic.Int64
 
-	// VP9 missing-PTS diagnostics
-	lastSrcPTS    atomic.Uint64
-	lastSrcValid  atomic.Bool
-	missingPTS    atomic.Bool
-	lastSinkPTS   atomic.Uint64
-	lastSinkValid atomic.Bool
+	lastSrcPTS   atomic.Uint64
+	lastSrcValid atomic.Bool
 
 	keyframeMu       deadlock.Mutex
 	keyframePTS      []time.Duration
@@ -90,16 +83,6 @@ func newKeyframeProbe(trackID string, mimeType types.MimeType, element *gst.Elem
 
 	p.srcProbeID = srcPad.AddProbe(gst.PadProbeTypeBuffer, p.onSrcBuffer)
 
-	// vp9parse emits buffers with GST_CLOCK_TIME_NONE when it stalls waiting
-	// for a keyframe; the sink-pad probe gives us a second timeline to log
-	// against and warn on backward-PTS jumps from vp9parse.
-	if mimeType == types.MimeTypeVP9 {
-		if sinkPad := element.GetStaticPad("sink"); sinkPad != nil {
-			p.sinkPad = sinkPad
-			p.sinkProbeID = sinkPad.AddProbe(gst.PadProbeTypeBuffer, p.onSinkBuffer)
-		}
-	}
-
 	return p, nil
 }
 
@@ -110,11 +93,6 @@ func (p *keyframeProbe) Close() {
 		p.srcPad.RemoveProbe(p.srcProbeID)
 		p.srcPad.Unref()
 		p.srcPad = nil
-	}
-	if p.sinkPad != nil {
-		p.sinkPad.RemoveProbe(p.sinkProbeID)
-		p.sinkPad.Unref()
-		p.sinkPad = nil
 	}
 }
 
@@ -129,21 +107,18 @@ func (p *keyframeProbe) onSrcBuffer(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadP
 func (p *keyframeProbe) processBuffer(buffer *gst.Buffer) gst.PadProbeReturn {
 	pts, ptsOK := clockTimeToDuration(buffer.PresentationTimestamp())
 	if !ptsOK {
-		p.handleMissingPTS()
 		if !p.lastSrcValid.Load() {
 			return gst.PadProbeDrop
 		}
-		// Restore from the last good PTS so downstream stays monotonic. The
-		// buffer may turn out to be a keyframe that recovers the stream — in
-		// that case the keyframe branch below clears keyframePending and lets
-		// it through; otherwise the keyframePending check below will drop it.
+		// Patch a missing PTS from the last good value so downstream stays
+		// monotonic. baseparse occasionally drops a PTS; the buffer content
+		// itself is fine.
 		restored := gst.ClockTime(p.lastSrcPTS.Load())
 		buffer.SetPresentationTimestamp(restored)
 		pts = time.Duration(uint64(restored))
 	} else {
 		p.lastSrcPTS.Store(uint64(pts))
 		p.lastSrcValid.Store(true)
-		p.missingPTS.Store(false)
 	}
 
 	isKeyframe := buffer.GetFlags()&gst.BufferFlagDeltaUnit == 0
@@ -164,52 +139,6 @@ func (p *keyframeProbe) processBuffer(buffer *gst.Buffer) gst.PadProbeReturn {
 	}
 
 	return gst.PadProbeOK
-}
-
-func (p *keyframeProbe) onSinkBuffer(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-	buffer := info.GetBuffer()
-	if buffer == nil {
-		return gst.PadProbeOK
-	}
-
-	pts, ok := clockTimeToDuration(buffer.PresentationTimestamp())
-	if !ok {
-		return gst.PadProbeOK
-	}
-
-	if !p.lastSinkValid.Load() {
-		p.lastSinkPTS.Store(uint64(pts))
-		p.lastSinkValid.Store(true)
-		return gst.PadProbeOK
-	}
-
-	prev := time.Duration(p.lastSinkPTS.Load())
-	if delta := pts - prev; delta < 0 {
-		p.logger.Warnw("parser sink pts moved backwards", nil, "delta", delta)
-		p.logKeyframeHistory("backward_pts")
-	}
-
-	p.lastSinkPTS.Store(uint64(pts))
-	return gst.PadProbeOK
-}
-
-func (p *keyframeProbe) handleMissingPTS() {
-	p.keyframePending.Store(true)
-	p.requestKeyframeIfDue()
-
-	if !p.missingPTS.CompareAndSwap(false, true) {
-		return
-	}
-
-	fields := []any{}
-	if p.lastSrcValid.Load() {
-		fields = append(fields, "lastValidPTS", time.Duration(p.lastSrcPTS.Load()))
-	}
-	if avg, count, ok := p.keyframeStats(); ok {
-		fields = append(fields, "avgKeyframeInterval", avg, "keyframesTracked", count)
-	}
-	p.logger.Debugw("parser buffer missing PTS", fields...)
-	p.logKeyframeHistory("missing_pts")
 }
 
 func (p *keyframeProbe) trackKeyframe(pts time.Duration) {
@@ -253,16 +182,6 @@ func clockTimeToDuration(ct gst.ClockTime) (time.Duration, bool) {
 		return 0, false
 	}
 	return time.Duration(uint64(ct)), true
-}
-
-func (p *keyframeProbe) keyframeStats() (time.Duration, int, bool) {
-	p.keyframeMu.Lock()
-	defer p.keyframeMu.Unlock()
-
-	if p.totalIntervals == 0 {
-		return 0, len(p.keyframePTS), false
-	}
-	return p.totalIntervalSum / time.Duration(p.totalIntervals), p.totalIntervals + 1, true
 }
 
 func (p *keyframeProbe) logKeyframeHistory(reason string) {

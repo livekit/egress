@@ -122,46 +122,29 @@ func TestKeyframeProbe_MissingPTSWithoutPriorValidDrops(t *testing.T) {
 	var pliCount atomic.Int32
 	p := newTestProbe(types.MimeTypeVP9, func() { pliCount.Add(1) })
 
+	// No prior valid PTS to restore from — drop, and don't request a PLI
+	// (missing-PTS is a parser hiccup, not a no-keyframe signal).
 	buf := makeBuffer(t, true, 0, false)
 	require.Equal(t, gst.PadProbeDrop, p.processBuffer(buf))
-	require.Equal(t, int32(1), pliCount.Load())
+	require.Equal(t, int32(0), pliCount.Load())
 }
 
-func TestKeyframeProbe_MissingPTSOnKeyframeRestoresPTSAndForwards(t *testing.T) {
+func TestKeyframeProbe_MissingPTSPostKeyframeRestoresPTSAndForwards(t *testing.T) {
 	initGStreamer(t)
 
 	var pliCount atomic.Int32
 	p := newTestProbe(types.MimeTypeVP9, func() { pliCount.Add(1) })
 
-	// Establish a prior valid PTS via a keyframe.
+	// Establish a prior valid PTS via a keyframe (also clears keyframePending).
 	lastPTS := 50 * time.Millisecond
 	kBuf := makeBuffer(t, false, lastPTS, true)
 	require.Equal(t, gst.PadProbeOK, p.processBuffer(kBuf))
-
-	// Wait past the throttle window so a new PLI can be issued.
-	time.Sleep(keyframeRequestInterval + 50*time.Millisecond)
 	pliBefore := pliCount.Load()
 
-	// Missing-PTS keyframe — PTS restored, forwarded, PLI requested.
-	mBuf := makeBuffer(t, true, 0, true)
+	// Missing-PTS P-frame post-keyframe — PTS patched from lastSrcPTS, buffer
+	// continues, no PLI (we know re-timestamping fixes the underlying issue).
+	mBuf := makeBuffer(t, true, 0, false)
 	require.Equal(t, gst.PadProbeOK, p.processBuffer(mBuf))
 	require.Equal(t, gst.ClockTime(uint64(lastPTS)), mBuf.PresentationTimestamp(), "PTS should be restored from last good value")
-	require.Greater(t, pliCount.Load(), pliBefore, "missing-PTS should request PLI")
-}
-
-func TestKeyframeProbe_MissingPTSPostKeyframeDeltaDropsAndRequestsPLI(t *testing.T) {
-	initGStreamer(t)
-
-	var pliCount atomic.Int32
-	p := newTestProbe(types.MimeTypeVP9, func() { pliCount.Add(1) })
-
-	kBuf := makeBuffer(t, false, 10*time.Millisecond, true)
-	require.Equal(t, gst.PadProbeOK, p.processBuffer(kBuf))
-
-	time.Sleep(keyframeRequestInterval + 50*time.Millisecond)
-	pliBefore := pliCount.Load()
-
-	mBuf := makeBuffer(t, true, 0, false)
-	require.Equal(t, gst.PadProbeDrop, p.processBuffer(mBuf))
-	require.Greater(t, pliCount.Load(), pliBefore, "missing-PTS post-keyframe should request PLI")
+	require.Equal(t, pliBefore, pliCount.Load(), "missing-PTS should not request PLI")
 }
