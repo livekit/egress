@@ -339,6 +339,16 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	logger.Debugw("closing source")
 	c.src.Close()
 
+	// Another egress instance is presumed to still be writing to the same
+	// output — don't race uploads with it.
+	if c.IsDuplicateIdentity() {
+		for _, si := range c.sinks {
+			for _, s := range si {
+				s.DisableUploads()
+			}
+		}
+	}
+
 	if c.playing.IsBroken() {
 		logger.Debugw("closing sinks")
 		for _, si := range c.sinks {
@@ -646,6 +656,8 @@ func (c *Controller) Close() {
 		}
 	}
 
+	duplicateIdentity := c.IsDuplicateIdentity()
+
 	// ensure egress ends with a final state
 	switch c.Info.Status {
 	case livekit.EgressStatus_EGRESS_STARTING:
@@ -658,12 +670,16 @@ func (c *Controller) Close() {
 
 	case livekit.EgressStatus_EGRESS_LIMIT_REACHED,
 		livekit.EgressStatus_EGRESS_COMPLETE:
-		// upload manifest and add location to egress info
-		c.uploadManifest()
+		if !duplicateIdentity {
+			// upload manifest and add location to egress info
+			c.uploadManifest()
+		}
 	}
 
-	// upload debug files
-	c.uploadDebugFiles()
+	if !duplicateIdentity {
+		// upload debug files
+		c.uploadDebugFiles()
+	}
 }
 
 func (c *Controller) startSessionLimitTimer(ctx context.Context) {
@@ -925,9 +941,24 @@ func (c *Controller) streamUpdated(ctx context.Context) {
 }
 
 func (c *Controller) sendHandlerUpdate(ctx context.Context, info *livekit.EgressInfo) {
+	// Once duplicate-identity eviction is detected, suppress all further
+	// updates — another egress instance owns the recording.
+	if c.IsDuplicateIdentity() {
+		return
+	}
 	if c.ipcServiceClient != nil {
 		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, info)
 	}
+}
+
+// IsDuplicateIdentity reports whether the pipeline's SDK source was evicted
+// from the room because another participant joined with the same identity.
+func (c *Controller) IsDuplicateIdentity() bool {
+	sdkSrc, ok := c.src.(*source.SDKSource)
+	if !ok {
+		return false
+	}
+	return sdkSrc.IsDuplicateIdentity()
 }
 
 func (c *Controller) updateEndTime() {

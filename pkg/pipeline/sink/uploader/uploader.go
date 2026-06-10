@@ -19,6 +19,8 @@ import (
 	"path"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/stats"
@@ -36,9 +38,15 @@ type Uploader struct {
 	primary         *store
 	backup          *store
 	primaryFailed   bool
+	disabled        atomic.Bool
 	info            *livekit.EgressInfo
 	monitor         *stats.HandlerMonitor
 	storageObserver config.StorageObserver
+}
+
+// DisableUploads makes subsequent Upload calls no-ops.
+func (u *Uploader) DisableUploads() {
+	u.disabled.Store(true)
 }
 
 type store struct {
@@ -115,6 +123,13 @@ func (u *Uploader) Upload(
 	outputType types.OutputType,
 	deleteAfterUpload bool,
 ) (string, int64, error) {
+
+	if u.disabled.Load() {
+		if deleteAfterUpload {
+			_ = os.Remove(localFilepath)
+		}
+		return "", 0, nil
+	}
 
 	var primaryErr error
 	if !u.primaryFailed {
