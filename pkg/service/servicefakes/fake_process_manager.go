@@ -133,6 +133,12 @@ type FakeProcessManager struct {
 	processFinishedArgsForCall []struct {
 		arg1 string
 	}
+	SetExitReasonStub        func(string, string)
+	setExitReasonMutex       sync.RWMutex
+	setExitReasonArgsForCall []struct {
+		arg1 string
+		arg2 string
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -769,6 +775,39 @@ func (fake *FakeProcessManager) ProcessFinishedArgsForCall(i int) string {
 	defer fake.processFinishedMutex.RUnlock()
 	argsForCall := fake.processFinishedArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeProcessManager) SetExitReason(arg1 string, arg2 string) {
+	fake.setExitReasonMutex.Lock()
+	fake.setExitReasonArgsForCall = append(fake.setExitReasonArgsForCall, struct {
+		arg1 string
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.SetExitReasonStub
+	fake.recordInvocation("SetExitReason", []interface{}{arg1, arg2})
+	fake.setExitReasonMutex.Unlock()
+	if stub != nil {
+		fake.SetExitReasonStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeProcessManager) SetExitReasonCallCount() int {
+	fake.setExitReasonMutex.RLock()
+	defer fake.setExitReasonMutex.RUnlock()
+	return len(fake.setExitReasonArgsForCall)
+}
+
+func (fake *FakeProcessManager) SetExitReasonCalls(stub func(string, string)) {
+	fake.setExitReasonMutex.Lock()
+	defer fake.setExitReasonMutex.Unlock()
+	fake.SetExitReasonStub = stub
+}
+
+func (fake *FakeProcessManager) SetExitReasonArgsForCall(i int) (string, string) {
+	fake.setExitReasonMutex.RLock()
+	defer fake.setExitReasonMutex.RUnlock()
+	argsForCall := fake.setExitReasonArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeProcessManager) Invocations() map[string][][]interface{} {

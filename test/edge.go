@@ -233,6 +233,26 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				},
 				custom: r.testStorageLimit,
 			},
+
+			// Another participant joins the room with the egress's identity
+			// and evicts it (DisconnectReason_DUPLICATE_IDENTITY). The egress
+			// must exit silently — no terminal UpdateEgress reaches the io
+			// server, since another worker is presumed to still be running
+			// the same egressID.
+
+			{
+				name:        "DuplicateIdentitySilentExit",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename: "duplicate_identity_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				custom: r.testDuplicateIdentitySilentExit,
+			},
 		} {
 			if !r.run(t, test) {
 				return
@@ -565,4 +585,62 @@ func (r *Runner) testEmptyStreamBin(t *testing.T, test *testCase) {
 	time.Sleep(time.Second * 10)
 	res := r.stopEgress(t, egressID)
 	r.verifySegments(t, test, p, livekit.SegmentedFileSuffix_INDEX, res, false)
+}
+
+func (r *Runner) testDuplicateIdentitySilentExit(t *testing.T, test *testCase) {
+	req := r.build(test)
+	egressID := req.EgressId
+
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+
+	r.startEgress(t, req)
+
+	// Snapshot the latest update before the duplicate joins. After the
+	// silent exit, the egress instance must not emit any further updates —
+	// not COMPLETE, not FAILED, not even an intermediate ENDING — since
+	// another instance owns the recording.
+	startUpdate := r.getUpdate(t, egressID)
+	require.NotEmpty(t, startUpdate.FileResults)
+	storagePath := startUpdate.FileResults[0].Filename
+	require.NotEmpty(t, storagePath, "storage filename should be resolved at start")
+
+	preEvictStatus := startUpdate.Status
+	require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE, preEvictStatus,
+		"snapshot must be ACTIVE before the duplicate joins")
+
+	// Join the room with the egress's own identity. The SFU evicts the
+	// older session with DisconnectReason_DUPLICATE_IDENTITY.
+	dup, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "duplicate-egress",
+		ParticipantIdentity: egressID,
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	t.Cleanup(dup.Disconnect)
+
+	// Wait for the handler subprocess to exit on its own (no KillAll —
+	// the eviction itself must drive the shutdown).
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if r.svc.IsIdle() {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	require.True(t, r.svc.IsIdle(), "egress handler should exit after duplicate-identity eviction")
+
+	// Give a small grace period for any in-flight UpdateEgress IPC to land.
+	time.Sleep(2 * time.Second)
+
+	last := r.getUpdate(t, egressID)
+	require.Equalf(t, preEvictStatus, last.Status,
+		"no UpdateEgress should have moved status after duplicate-identity eviction (was %s, now %s)",
+		preEvictStatus, last.Status)
+
+	// And the output file must not have landed in storage — another
+	// egress instance is presumed to own the destination.
+	requireNotUploaded(t, p.GetFileConfig().StorageConfig, storagePath)
 }

@@ -127,12 +127,13 @@ func (m *Monitor) initPrometheus() {
 
 // Handler-level results (livekit_egress_handler_results_total)
 const (
-	ResultCompleted      = "completed"
-	ResultAborted        = "aborted"
-	ResultKilledCPU      = "killed_cpu"
-	ResultKilledOOM      = "killed_oom"
-	ResultKilledShutdown = "killed_shutdown"
-	ResultProcessError   = "process_error"
+	ResultCompleted         = "completed"
+	ResultAborted           = "aborted"
+	ResultKilledCPU         = "killed_cpu"
+	ResultKilledOOM         = "killed_oom"
+	ResultKilledShutdown    = "killed_shutdown"
+	ResultProcessError      = "process_error"
+	ResultDuplicateIdentity = "duplicate_identity"
 )
 
 func requestTypeFromReq(req *rpc.StartEgressRequest) string {

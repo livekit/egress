@@ -156,11 +156,32 @@ func (h *Handler) Run() {
 		logger.Errorw("failed to generate handler metrics", err, "egressID", egressID)
 	}
 
-	_, err = h.ipcServiceClient.HandlerFinished(ctx, &ipc.HandlerFinishedRequest{
+	req := &ipc.HandlerFinishedRequest{
 		EgressId: egressID,
 		Metrics:  m,
 		Info:     res,
-	})
+	}
+
+	// If a duplicate participant joined with our identity and evicted us from
+	// the room, exit without writing a terminal update — another worker is
+	// running the same egress and still owns the session.
+	if h.controller.IsDuplicateIdentity() {
+		duration := time.Duration(0)
+		if startedAt := res.StartedAt; startedAt > 0 {
+			duration = time.Since(time.Unix(0, startedAt))
+		}
+		logger.Warnw("duplicate identity, suppressing terminal egress update", nil,
+			"egressID", egressID,
+			"room_name", h.conf.Info.RoomName,
+			"node_id", h.conf.NodeID,
+			"duration_ms", duration.Milliseconds(),
+			"disconnect_reason", "duplicate identity",
+		)
+		req.SilentExit = true
+		req.Info = nil
+	}
+
+	_, err = h.ipcServiceClient.HandlerFinished(ctx, req)
 	if err != nil {
 		logger.Errorw("egress finished ipc call failed", err, "egressID", egressID)
 	}
