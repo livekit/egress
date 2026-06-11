@@ -95,7 +95,7 @@ func TestKeyframeProbe_KeyframeAfterPendingIsForwarded(t *testing.T) {
 	// Keyframe arrives — must be forwarded.
 	kBuf := makeBuffer(t, false, 10*time.Millisecond, true)
 	require.Equal(t, gst.PadProbeOK, p.processBuffer(kBuf))
-	require.False(t, kBuf.HasFlags(gst.BufferFlagDiscont), "probe should not set DISCONT; rely on segment events for discontinuity signalling")
+	require.False(t, kBuf.HasFlags(gst.BufferFlagDiscont), "probe should not set DISCONT; rely on segment events for discontinuity signaling")
 }
 
 func TestKeyframeProbe_PostKeyframeDeltaUnitForwardedWithoutPLI(t *testing.T) {
