@@ -16,7 +16,6 @@ package builder
 
 import (
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
@@ -32,12 +31,18 @@ const (
 	keyframeRequestInterval = 200 * time.Millisecond
 )
 
-// keyframeProbe inspects buffers on a parser/depayloader src pad and:
-//   - drops buffers until a keyframe has been observed
-//   - throttled-requests a PLI from upstream while no keyframe is seen
-//   - marks the first accepted keyframe with the DISCONT flag so downstream
-//     elements reset their state on resume.
-//   - restores a missing PTS (GST_CLOCK_TIME_NONE) from the last good PTS
+// keyframeProbe gates a parser/depayloader's src pad until the first keyframe
+// arrives. It exists to recover from the case where the egress subscribes
+// mid-GOP (or the stream-start PLI is lost): packets keep flowing but none of
+// them is decodable, and no other component would ask the publisher for a
+// fresh keyframe.
+//
+// While waiting for the first keyframe it:
+//   - drops buffers (so the decoder doesn't error on orphaned P-frames), and
+//   - throttled-requests a PLI from upstream on each incoming buffer.
+//
+// After that it's mostly inert: it just patches the occasional baseparse
+// missing-PTS buffer from the last good value, so downstream stays monotonic.
 type keyframeProbe struct {
 	trackID  string
 	mimeType types.MimeType
@@ -49,11 +54,12 @@ type keyframeProbe struct {
 
 	logger logger.Logger
 
-	keyframePending       atomic.Bool
-	lastKeyframeRequestNS atomic.Int64
-
-	lastSrcPTS   atomic.Uint64
-	lastSrcValid atomic.Bool
+	// All probe state below is touched only from the upstream peer's streaming
+	// thread (via the buffer pad probe), so no synchronization is needed.
+	keyframePending       bool
+	lastKeyframeRequestNS int64
+	lastSrcPTS            time.Duration
+	lastSrcValid          bool
 
 	keyframeMu       deadlock.Mutex
 	keyframePTS      []time.Duration
@@ -75,7 +81,7 @@ func newKeyframeProbe(trackID string, mimeType types.MimeType, element *gst.Elem
 		logger:       logger.GetLogger().WithValues("trackID", trackID, "component", "keyframe_probe", "mime", mimeType),
 		keyframePTS:  make([]time.Duration, 0, keyframeHistorySize),
 	}
-	p.keyframePending.Store(true)
+	p.keyframePending = true
 
 	p.srcProbeID = srcPad.AddProbe(gst.PadProbeTypeBuffer, p.onSrcBuffer)
 
@@ -103,33 +109,33 @@ func (p *keyframeProbe) onSrcBuffer(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadP
 func (p *keyframeProbe) processBuffer(buffer *gst.Buffer) gst.PadProbeReturn {
 	pts, ptsOK := clockTimeToDuration(buffer.PresentationTimestamp())
 	if !ptsOK {
-		if !p.lastSrcValid.Load() {
+		if !p.lastSrcValid {
 			return gst.PadProbeDrop
 		}
 		// Patch a missing PTS from the last good value so downstream stays
 		// monotonic. baseparse occasionally drops a PTS; the buffer content
 		// itself is fine.
-		restored := gst.ClockTime(p.lastSrcPTS.Load())
+		restored := gst.ClockTime(uint64(p.lastSrcPTS))
 		buffer.SetPresentationTimestamp(restored)
-		pts = time.Duration(uint64(restored))
+		pts = p.lastSrcPTS
 	} else {
-		p.lastSrcPTS.Store(uint64(pts))
-		p.lastSrcValid.Store(true)
+		p.lastSrcPTS = pts
+		p.lastSrcValid = true
 	}
 
 	isKeyframe := buffer.GetFlags()&gst.BufferFlagDeltaUnit == 0
 
 	if isKeyframe {
-		if p.keyframePending.Swap(false) {
-			buffer.SetFlags(buffer.GetFlags() | gst.BufferFlagDiscont)
+		if p.keyframePending {
+			p.keyframePending = false
 			p.logger.Debugw("keyframe pending, got one")
 		}
 		p.trackKeyframe(pts)
 		return gst.PadProbeOK
 	}
 
-	if p.keyframePending.Load() {
-		// pre-keyframe or mid-stream stall — drop until next keyframe
+	if p.keyframePending {
+		// still waiting for the first keyframe — drop and PLI
 		p.requestKeyframeIfDue()
 		return gst.PadProbeDrop
 	}
@@ -159,18 +165,17 @@ func (p *keyframeProbe) requestKeyframeIfDue() {
 	if p.onRequestPLI == nil {
 		return
 	}
-	if !p.keyframePending.Load() {
+	if !p.keyframePending {
 		return
 	}
 
 	now := time.Now().UnixNano()
-	last := p.lastKeyframeRequestNS.Load()
-	if last != 0 && time.Duration(now-last) < keyframeRequestInterval {
+	if p.lastKeyframeRequestNS != 0 && time.Duration(now-p.lastKeyframeRequestNS) < keyframeRequestInterval {
 		return
 	}
 
 	p.onRequestPLI()
-	p.lastKeyframeRequestNS.Store(now)
+	p.lastKeyframeRequestNS = now
 }
 
 func clockTimeToDuration(ct gst.ClockTime) (time.Duration, bool) {

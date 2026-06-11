@@ -36,7 +36,7 @@ func newTestProbe(mimeType types.MimeType, onRequestPLI func()) *keyframeProbe {
 		logger:       logger.GetLogger().WithValues("trackID", "test-track", "component", "keyframe_probe_test"),
 		keyframePTS:  make([]time.Duration, 0, keyframeHistorySize),
 	}
-	p.keyframePending.Store(true)
+	p.keyframePending = true
 	return p
 }
 
@@ -82,7 +82,7 @@ func TestKeyframeProbe_ThrottlesPLIRequestsInBurst(t *testing.T) {
 	require.Equal(t, int32(1), pliCount.Load(), "burst within throttle window should yield a single PLI")
 }
 
-func TestKeyframeProbe_KeyframeAfterPendingIsForwardedAndMarkedDiscont(t *testing.T) {
+func TestKeyframeProbe_KeyframeAfterPendingIsForwarded(t *testing.T) {
 	initGStreamer(t)
 
 	var pliCount atomic.Int32
@@ -92,10 +92,10 @@ func TestKeyframeProbe_KeyframeAfterPendingIsForwardedAndMarkedDiscont(t *testin
 	pBuf := makeBuffer(t, false, 5*time.Millisecond, false)
 	require.Equal(t, gst.PadProbeDrop, p.processBuffer(pBuf))
 
-	// Keyframe arrives — must be forwarded and tagged DISCONT.
+	// Keyframe arrives — must be forwarded.
 	kBuf := makeBuffer(t, false, 10*time.Millisecond, true)
 	require.Equal(t, gst.PadProbeOK, p.processBuffer(kBuf))
-	require.True(t, kBuf.HasFlags(gst.BufferFlagDiscont), "first keyframe after pending should be marked DISCONT")
+	require.False(t, kBuf.HasFlags(gst.BufferFlagDiscont), "probe should not set DISCONT; rely on segment events for discontinuity signalling")
 }
 
 func TestKeyframeProbe_PostKeyframeDeltaUnitForwardedWithoutPLI(t *testing.T) {
