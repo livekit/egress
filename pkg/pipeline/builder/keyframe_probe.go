@@ -56,10 +56,10 @@ type keyframeProbe struct {
 
 	// All probe state below is touched only from the upstream peer's streaming
 	// thread (via the buffer pad probe), so no synchronization is needed.
-	keyframePending       bool
-	lastKeyframeRequestNS int64
-	lastSrcPTS            time.Duration
-	lastSrcValid          bool
+	keyframePending     bool
+	lastKeyframeRequest time.Time
+	lastSrcPTS          time.Duration
+	lastSrcValid        bool
 
 	keyframeMu       deadlock.Mutex
 	keyframePTS      []time.Duration
@@ -169,13 +169,12 @@ func (p *keyframeProbe) requestKeyframeIfDue() {
 		return
 	}
 
-	now := time.Now().UnixNano()
-	if p.lastKeyframeRequestNS != 0 && time.Duration(now-p.lastKeyframeRequestNS) < keyframeRequestInterval {
+	if !p.lastKeyframeRequest.IsZero() && time.Since(p.lastKeyframeRequest) < keyframeRequestInterval {
 		return
 	}
 
 	p.onRequestPLI()
-	p.lastKeyframeRequestNS = now
+	p.lastKeyframeRequest = time.Now()
 }
 
 func clockTimeToDuration(ct gst.ClockTime) (time.Duration, bool) {
