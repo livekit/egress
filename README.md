@@ -118,7 +118,7 @@ storage:
 # dev/debugging fields
 insecure: can be used to connect to an insecure websocket (default false) , Deprecated use secure
 secure:
-  insecure: can be used to connect to an insecure websocket (default false)
+  disable-web-security: can be used to connect to an insecure websocket (default false)
   ignore_certificate_errors: can be used to use self-signed certificates  (default false)
   allow_running_insecure_content:  can be used to allow load http content from https  (default false)
 
