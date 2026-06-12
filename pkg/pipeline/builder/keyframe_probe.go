@@ -118,6 +118,7 @@ func (p *keyframeProbe) processBuffer(buffer *gst.Buffer) gst.PadProbeReturn {
 		restored := gst.ClockTime(uint64(p.lastSrcPTS))
 		buffer.SetPresentationTimestamp(restored)
 		pts = p.lastSrcPTS
+		p.logger.Warnw("restored missing pts from previous buffer", nil, "pts", restored)
 	} else {
 		p.lastSrcPTS = pts
 		p.lastSrcValid = true
