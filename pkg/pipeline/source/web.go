@@ -263,8 +263,10 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 
 		// config
 		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", p.Width, p.Height)),
-		chromedp.Flag("disable-web-security", p.Insecure),
-		chromedp.Flag("allow-running-insecure-content", p.Insecure),
+		chromedp.Flag("disable-web-security", p.Insecure || p.Secure.DisableWebSecurity),
+		chromedp.Flag("allow-running-insecure-content", p.Insecure || p.Secure.AllowRunningInsecureContent),
+		chromedp.Flag("ignore-certificate-errors", p.Secure.IgnoreCertificateErrors),
+		chromedp.Flag("mute-audio", p.MuteAudio),
 		chromedp.Flag("no-sandbox", !p.EnableChromeSandbox),
 
 		// output

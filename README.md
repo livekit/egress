@@ -116,7 +116,15 @@ storage:
     bucket: bucket to upload files to
 
 # dev/debugging fields
-insecure: can be used to connect to an insecure websocket (default false)
+insecure: can be used to connect to an insecure websocket (default false) , Deprecated use secure
+secure:
+  insecure: can be used to connect to an insecure websocket (default false)
+  ignore_certificate_errors: can be used to use self-signed certificates  (default false)
+  allow_running_insecure_content:  can be used to allow load http content from https  (default false)
+
+mute_audio: disables all audio output from the browser instance.   (default false)
+  
+
 debug:
   enable_profiling: create and upload pipeline dot file and pprof file on pipeline failure
   s3: upload config for dotfiles (see above)
