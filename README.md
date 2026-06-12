@@ -181,14 +181,16 @@ Create a directory to mount. In this example, we will use `~/egress-test`.
 Create a config.yaml in the above directory.
 
 - `redis` and `ws_url` should use the above IP instead of `localhost`
-- `insecure` should be set to true
+- `secure.disable-web-security` and `secure.allow_running_insecure_content` should be set to true
 
 ```yaml
 log_level: debug
 api_key: your-api-key
 api_secret: your-api-secret
 ws_url: ws://192.168.65.2:7880
-insecure: true
+secure:
+  disable-web-security: true
+  allow_running_insecure_content: true
 redis:
   address: 192.168.65.2:6379
 ```
