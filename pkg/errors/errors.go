@@ -141,7 +141,7 @@ func ErrInvalidUrl(url string, reason string) error {
 }
 
 func ErrUploadFailed(location string, err error) error {
-	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s upload failed: %v", location, err)
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s upload failed: %w", location, err)
 }
 
 func ErrParticipantNotFound(identity string) error {
