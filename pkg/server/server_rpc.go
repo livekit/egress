@@ -204,17 +204,20 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 
 func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequest) float32 {
 	if s.IsDisabled() || !s.monitor.CanAcceptRequest(req) {
-		// cannot accept
 		return -1
 	}
 
+	if s.conf.LoadDistribution == config.LoadDistributionSpread {
+		// least-loaded: return available CPU ratio so the server with the most
+		// headroom wins each selection round, distributing load evenly.
+		return s.monitor.AvailableCPURatio()
+	}
+
+	// consolidate (default): pack jobs onto already-busy servers to keep idle
+	// servers free for heavier egress types (room composite, web).
 	if s.activeRequests.Load() == 0 {
-		// group multiple track and track composite requests.
-		// if this instance is idle and another is already handling some, the request will go to that server.
-		// this avoids having many instances with one track request each, taking availability from room composite.
 		return 0.5
 	}
-	// already handling a request and has available cpu
 	return 1
 }
 

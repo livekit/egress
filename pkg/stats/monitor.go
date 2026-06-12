@@ -594,6 +594,26 @@ func (m *Monitor) GetAvailableCPU() float64 {
 	return available
 }
 
+// AvailableCPURatio returns the fraction of total CPU that is currently available,
+// clamped to [0, 1]. Used by the least-loaded affinity scorer.
+func (m *Monitor) AvailableCPURatio() float32 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	total, available, _, _ := m.getCPUUsageLocked()
+	if total == 0 {
+		return 0
+	}
+	ratio := float32(available / total)
+	if ratio < 0 {
+		return 0
+	}
+	if ratio > 1 {
+		return 1
+	}
+	return ratio
+}
+
 func (m *Monitor) getCPUUsageLocked() (total, available, pending, used float64) {
 	total = m.cpuStats.NumCPU()
 	if m.requests.Load() == 0 {
