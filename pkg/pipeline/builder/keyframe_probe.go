@@ -93,7 +93,6 @@ func (p *keyframeProbe) Close() {
 
 	if p.srcPad != nil {
 		p.srcPad.RemoveProbe(p.srcProbeID)
-		p.srcPad.Unref()
 		p.srcPad = nil
 	}
 }
