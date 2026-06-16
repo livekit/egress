@@ -2,7 +2,7 @@ module github.com/livekit/egress
 
 replace github.com/go-gst/go-gst => github.com/livekit/gst-go v0.0.0-20250701011214-e7f61abd14cb
 
-replace github.com/liveit/storage => ../storage
+replace github.com/livekit/storage => ../storage
 
 go 1.26.2
 
