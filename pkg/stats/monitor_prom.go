@@ -129,12 +129,15 @@ func (m *Monitor) initPrometheus() {
 const (
 	ResultCompleted         = "completed"
 	ResultAborted           = "aborted"
+	ResultStoppedCPU        = "stopped_cpu"
 	ResultKilledCPU         = "killed_cpu"
 	ResultKilledOOM         = "killed_oom"
 	ResultKilledShutdown    = "killed_shutdown"
 	ResultProcessError      = "process_error"
 	ResultDuplicateIdentity = "duplicate_identity"
 )
+
+const EndReasonCPUExhausted = "CPU exhausted"
 
 func requestTypeFromReq(req *rpc.StartEgressRequest) string {
 	switch r := req.Request.(type) {

@@ -56,6 +56,8 @@ const (
 	defaultAudioTempoControllerAdjustmentRate = 0.05
 
 	defaultMaxPulseClients = 60
+
+	defaultCpuKillGraceSec = 20
 )
 
 type ServiceConfig struct {
@@ -95,6 +97,7 @@ type CPUCostConfig struct {
 	// Memory source configuration (cgroup-aware memory accounting)
 	MemorySource       MemorySource `yaml:"memory_source"`         // memory measurement source: proc_rss, cgroup
 	MemoryKillGraceSec int          `yaml:"memory_kill_grace_sec"` // grace period in update cycles before kill (0 = immediate)
+	CpuKillGraceSec    int          `yaml:"cpu_kill_grace_sec"`    // seconds to wait for a graceful EOS drain after sustained high CPU before hard kill (0 = use default)
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
@@ -177,6 +180,9 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.MaxPulseClients == 0 {
 		c.MaxPulseClients = defaultMaxPulseClients
+	}
+	if c.CpuKillGraceSec <= 0 {
+		c.CpuKillGraceSec = defaultCpuKillGraceSec
 	}
 
 	// Memory source defaults to proc_rss (preserves existing behavior)
