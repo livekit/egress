@@ -241,7 +241,7 @@ func (pm *processManager) StopProcess(egressID string, reason string, endReason 
 	if _, err := h.ipcHandlerClient.StopHandler(h.ctx, &ipc.StopHandlerRequest{
 		Reason: endReason,
 	}); err != nil {
-		logger.Warnw("failed to send graceful stop, will rely on escalation", err, "egressID", egressID)
+		logger.Warnw("failed to send graceful stop, escalating", err, "egressID", egressID)
 	}
 }
 
