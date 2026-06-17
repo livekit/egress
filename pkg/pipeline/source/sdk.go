@@ -808,7 +808,7 @@ func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {
 		s.duplicateIdentity.Store(true)
 	}
 	if reason != lksdk.RoomClosed && reason != lksdk.LeaveRequested {
-		logger.Warnw("disconnected from room", nil, "reason", reason)
+		logger.Warnw("disconnected from room", nil, "reason", reason, "protoReason", s.room.DisconnectReason().String())
 	}
 	s.finished()
 }
