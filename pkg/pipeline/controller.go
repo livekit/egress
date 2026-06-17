@@ -167,7 +167,7 @@ func newController(conf *config.PipelineConfig, ipcServiceClient ipc.EgressServi
 			BuildReady: make(chan struct{}),
 		},
 		sinks:   make(map[types.EgressType][]sink.Sink),
-		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
+		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID),
 		stats: controllerStats{
 			droppedVideoBuffersByQueue: make(map[string]uint64),
 			droppedAudioBuffersByQueue: make(map[string]uint64),
