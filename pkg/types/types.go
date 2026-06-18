@@ -23,6 +23,10 @@ type OutputType string
 type FileExtension string
 
 const (
+	// EndReasonCPULimit is the end reason set when egress is gracefully stopped due to high CPU.
+	// Distinct from EndReasonAPI ("StopEgress API") so webhooks can identify CPU-triggered stops.
+	EndReasonCPULimit = "CPU limit reached"
+
 	// request types
 	RequestTypeTemplate = "template"
 	RequestTypeWeb      = "web"

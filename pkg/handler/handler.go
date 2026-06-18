@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -193,6 +194,16 @@ func (h *Handler) Kill() {
 		return
 	}
 	h.controller.SendEOS(context.Background(), livekit.EndReasonKilled)
+}
+
+// GracefulStop sends EOS with EndReasonCPULimit without marking the egress as failed.
+// The pipeline drains, uploads complete, and the egress exits with status COMPLETE.
+func (h *Handler) GracefulStop() {
+	<-h.initialized.Watch()
+	if h.controller == nil {
+		return
+	}
+	h.controller.SendEOS(context.Background(), types.EndReasonCPULimit)
 }
 
 func (h *Handler) shouldInjectEgressFailure() bool {

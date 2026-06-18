@@ -39,6 +39,8 @@ const (
 	cpuHoldDuration         = time.Second * 15
 	defaultKillThreshold    = 0.95
 	minKillDuration         = 10
+	gracefulStopThreshold   = 0.85
+	minGracefulStopDuration = 5
 	gb                      = 1024.0 * 1024.0 * 1024.0
 	pulseClientHold         = 4
 	memoryHeadroomGB        = 1.0
@@ -49,6 +51,7 @@ type Service interface {
 	IsIdle() bool
 	IsDisabled() bool
 	IsTerminating() bool
+	GracefulStop(string)
 	KillProcess(egressID string, reason string, err error)
 }
 
@@ -74,17 +77,18 @@ type Monitor struct {
 	pendingPulseClients atomic.Int32
 	pendingMemoryUsage  atomic.Float64
 
-	mu                deadlock.Mutex
-	highCPUDuration   int
-	highMemoryStart   time.Time
-	lastMemoryDump    time.Time
-	pending           map[string]*processStats
-	procStats         map[int]*processStats
-	memoryUsage       float64
-	cgroupUsageBytes  uint64
-	cgroupOK          bool
-	cgroupErrorLogged atomic.Bool
-	pulseErrorLogged  atomic.Bool
+	mu                      deadlock.Mutex
+	highCPUDuration         int
+	highCPUGracefulDuration int
+	highMemoryStart         time.Time
+	lastMemoryDump          time.Time
+	pending                 map[string]*processStats
+	procStats               map[int]*processStats
+	memoryUsage             float64
+	cgroupUsageBytes        uint64
+	cgroupOK                bool
+	cgroupErrorLogged       atomic.Bool
+	pulseErrorLogged        atomic.Bool
 }
 
 type processStats struct {
@@ -675,10 +679,27 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 		if m.requests.Load() > 1 {
 			m.highCPUDuration++
 			if m.highCPUDuration >= minKillDuration {
-				m.svc.KillProcess(maxCPUEgress, ResultKilledCPU, errors.ErrCPUExhausted(maxCPU))
+				m.svc.GracefulStop(maxCPUEgress)
 				m.highCPUDuration = 0
+				m.highCPUGracefulDuration = 0
 			}
 		}
+	} else if load > gracefulStopThreshold {
+		logger.Warnw("cpu usage approaching limit, gracefully stopping one egress", nil,
+			"cpu", load,
+			"requests", m.requests.Load(),
+		)
+
+		if m.requests.Load() > 1 {
+			m.highCPUGracefulDuration++
+			if m.highCPUGracefulDuration >= minGracefulStopDuration {
+				m.svc.GracefulStop(maxCPUEgress)
+				m.highCPUGracefulDuration = 0
+			}
+		}
+	} else {
+		m.highCPUDuration = 0
+		m.highCPUGracefulDuration = 0
 	}
 
 	totalMemory := 0

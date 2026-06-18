@@ -190,6 +190,9 @@ func runHandler(_ context.Context, c *cli.Command) error {
 		return err
 	}
 
+	gracefulChan := make(chan os.Signal, 1)
+	signal.Notify(gracefulChan, syscall.SIGTERM)
+
 	killChan := make(chan os.Signal, 1)
 	signal.Notify(killChan, syscall.SIGINT)
 
@@ -202,9 +205,14 @@ func runHandler(_ context.Context, c *cli.Command) error {
 	}
 
 	go func() {
-		sig := <-killChan
-		logger.Infow("exit requested, stopping recording and shutting down", "signal", sig)
-		h.Kill()
+		select {
+		case <-gracefulChan:
+			logger.Infow("graceful stop requested (CPU limit), draining and uploading")
+			h.GracefulStop()
+		case sig := <-killChan:
+			logger.Infow("exit requested, stopping recording and shutting down", "signal", sig)
+			h.Kill()
+		}
 	}()
 
 	h.Run()

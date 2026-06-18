@@ -91,6 +91,11 @@ type FakeProcessManager struct {
 	getStatusArgsForCall []struct {
 		arg1 map[string]interface{}
 	}
+	GracefulStopStub        func(string)
+	gracefulStopMutex       sync.RWMutex
+	gracefulStopArgsForCall []struct {
+		arg1 string
+	}
 	HandlerStartedStub        func(string) error
 	handlerStartedMutex       sync.RWMutex
 	handlerStartedArgsForCall []struct {
@@ -644,6 +649,38 @@ func (fake *FakeProcessManager) KillAllCalls(stub func()) {
 	fake.killAllMutex.Lock()
 	defer fake.killAllMutex.Unlock()
 	fake.KillAllStub = stub
+}
+
+func (fake *FakeProcessManager) GracefulStop(arg1 string) {
+	fake.gracefulStopMutex.Lock()
+	fake.gracefulStopArgsForCall = append(fake.gracefulStopArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.GracefulStopStub
+	fake.recordInvocation("GracefulStop", []interface{}{arg1})
+	fake.gracefulStopMutex.Unlock()
+	if stub != nil {
+		fake.GracefulStopStub(arg1)
+	}
+}
+
+func (fake *FakeProcessManager) GracefulStopCallCount() int {
+	fake.gracefulStopMutex.RLock()
+	defer fake.gracefulStopMutex.RUnlock()
+	return len(fake.gracefulStopArgsForCall)
+}
+
+func (fake *FakeProcessManager) GracefulStopCalls(stub func(string)) {
+	fake.gracefulStopMutex.Lock()
+	defer fake.gracefulStopMutex.Unlock()
+	fake.GracefulStopStub = stub
+}
+
+func (fake *FakeProcessManager) GracefulStopArgsForCall(i int) string {
+	fake.gracefulStopMutex.RLock()
+	defer fake.gracefulStopMutex.RUnlock()
+	argsForCall := fake.gracefulStopArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeProcessManager) KillProcess(arg1 string, arg2 string, arg3 error) {
