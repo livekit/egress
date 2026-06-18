@@ -39,6 +39,7 @@ const (
 	cpuHoldDuration         = time.Second * 15
 	defaultKillThreshold    = 0.95
 	minKillDuration         = 10
+	lowCPUResetDuration     = 5
 	gb                      = 1024.0 * 1024.0 * 1024.0
 	pulseClientHold         = 4
 	memoryHeadroomGB        = 1.0
@@ -49,7 +50,7 @@ type Service interface {
 	IsIdle() bool
 	IsDisabled() bool
 	IsTerminating() bool
-	StopProcess(egressID string, reason string, endReason string)
+	StopProcess(egressID string, reason string)
 	KillProcess(egressID string, reason string, err error)
 }
 
@@ -77,6 +78,7 @@ type Monitor struct {
 
 	mu                 deadlock.Mutex
 	highCPUDuration    int
+	lowCPUDuration     int
 	cpuStopRequestedAt time.Time
 	cpuStopEgressID    string
 	highMemoryStart    time.Time
@@ -802,7 +804,7 @@ func (m *Monitor) updateLoadRatios(cpuLoad float64) {
 	}
 }
 
-// checkCPUKill stages a graceful EOS drain on sustained high CPU and escalates to a hard kill if the grace period elapses; sub-threshold ticks reset the accumulator so transient spikes don't pile up.
+// checkCPUKill stages a graceful EOS drain on sustained high CPU and escalates to a hard kill if the grace period elapses; the accumulator only clears after lowCPUResetDuration consecutive sub-threshold ticks so jittery loads still trip while transient spikes don't pile up.
 func (m *Monitor) checkCPUKill(load, maxCPU float64, maxCPUEgress string) {
 	cpuKillThreshold := defaultKillThreshold
 	if cpuKillThreshold <= m.cpuCostConfig.MaxCpuUtilization {
@@ -810,9 +812,13 @@ func (m *Monitor) checkCPUKill(load, maxCPU float64, maxCPUEgress string) {
 	}
 
 	if load <= cpuKillThreshold {
-		m.highCPUDuration = 0
+		m.lowCPUDuration++
+		if m.lowCPUDuration >= lowCPUResetDuration {
+			m.highCPUDuration = 0
+		}
 		return
 	}
+	m.lowCPUDuration = 0
 
 	logger.Warnw("high cpu usage", nil,
 		"cpu", load,
@@ -828,7 +834,7 @@ func (m *Monitor) checkCPUKill(load, maxCPU float64, maxCPUEgress string) {
 		if m.highCPUDuration < minKillDuration || maxCPUEgress == "" {
 			return
 		}
-		m.svc.StopProcess(maxCPUEgress, ResultStoppedCPU, EndReasonCPUExhausted)
+		m.svc.StopProcess(maxCPUEgress, ResultStoppedCPU)
 		m.cpuStopRequestedAt = time.Now()
 		m.cpuStopEgressID = maxCPUEgress
 		m.highCPUDuration = 0

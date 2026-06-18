@@ -57,7 +57,7 @@ const (
 
 	defaultMaxPulseClients = 60
 
-	defaultCpuKillGraceSec = 10
+	defaultCpuKillGraceSec = 30
 )
 
 type ServiceConfig struct {

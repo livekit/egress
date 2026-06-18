@@ -137,8 +137,6 @@ const (
 	ResultDuplicateIdentity = "duplicate_identity"
 )
 
-const EndReasonCPUExhausted = "CPU exhausted"
-
 func requestTypeFromReq(req *rpc.StartEgressRequest) string {
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
