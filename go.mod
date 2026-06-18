@@ -24,12 +24,12 @@ require (
 	github.com/livekit/mediatransportutil v0.0.0-20260605212259-862d4a7bcb1e
 	github.com/livekit/protocol v1.47.1-0.20260617182803-c68246e9a0a0
 	github.com/livekit/psrpc v0.7.2
-	github.com/livekit/server-sdk-go/v2 v2.16.7-0.20260605213610-c2a481bfe315
+	github.com/livekit/server-sdk-go/v2 v2.16.7-0.20260618140743-3776341a116e
 	github.com/livekit/storage v0.0.0-20260603163531-d499771c3b88
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.10.2
-	github.com/pion/webrtc/v4 v4.2.11
+	github.com/pion/webrtc/v4 v4.2.14
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.68.1
@@ -137,7 +137,7 @@ require (
 	github.com/pion/mdns/v2 v2.1.0 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.16 // indirect
-	github.com/pion/sctp v1.9.5 // indirect
+	github.com/pion/sctp v1.10.0 // indirect
 	github.com/pion/sdp/v3 v3.0.18 // indirect
 	github.com/pion/srtp/v3 v3.0.11 // indirect
 	github.com/pion/stun/v3 v3.1.4 // indirect
