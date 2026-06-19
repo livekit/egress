@@ -64,7 +64,6 @@ type Server struct {
 func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.SessionReporter) (*Server, error) {
 	pm := service.NewProcessManager()
 	ms := service.NewMetricsService(pm)
-	pm.SetOnProcessFinished(ms.OnProcessFinished)
 
 	s := &Server{
 		conf:             conf,

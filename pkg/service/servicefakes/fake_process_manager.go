@@ -144,11 +144,6 @@ type FakeProcessManager struct {
 		arg1 string
 		arg2 string
 	}
-	SetOnProcessFinishedStub        func(func(egressID string))
-	setOnProcessFinishedMutex       sync.RWMutex
-	setOnProcessFinishedArgsForCall []struct {
-		arg1 func(egressID string)
-	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -850,38 +845,6 @@ func (fake *FakeProcessManager) SetExitReasonArgsForCall(i int) (string, string)
 	defer fake.setExitReasonMutex.RUnlock()
 	argsForCall := fake.setExitReasonArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeProcessManager) SetOnProcessFinished(arg1 func(egressID string)) {
-	fake.setOnProcessFinishedMutex.Lock()
-	fake.setOnProcessFinishedArgsForCall = append(fake.setOnProcessFinishedArgsForCall, struct {
-		arg1 func(egressID string)
-	}{arg1})
-	stub := fake.SetOnProcessFinishedStub
-	fake.recordInvocation("SetOnProcessFinished", []interface{}{arg1})
-	fake.setOnProcessFinishedMutex.Unlock()
-	if stub != nil {
-		fake.SetOnProcessFinishedStub(arg1)
-	}
-}
-
-func (fake *FakeProcessManager) SetOnProcessFinishedCallCount() int {
-	fake.setOnProcessFinishedMutex.RLock()
-	defer fake.setOnProcessFinishedMutex.RUnlock()
-	return len(fake.setOnProcessFinishedArgsForCall)
-}
-
-func (fake *FakeProcessManager) SetOnProcessFinishedCalls(stub func(func(egressID string))) {
-	fake.setOnProcessFinishedMutex.Lock()
-	defer fake.setOnProcessFinishedMutex.Unlock()
-	fake.SetOnProcessFinishedStub = stub
-}
-
-func (fake *FakeProcessManager) SetOnProcessFinishedArgsForCall(i int) func(egressID string) {
-	fake.setOnProcessFinishedMutex.RLock()
-	defer fake.setOnProcessFinishedMutex.RUnlock()
-	argsForCall := fake.setOnProcessFinishedArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeProcessManager) Invocations() map[string][][]interface{} {

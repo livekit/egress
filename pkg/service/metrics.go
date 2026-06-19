@@ -36,10 +36,6 @@ type MetricsService struct {
 	pm ProcessManager
 
 	mu deadlock.Mutex
-	// Metrics reported by handlers via StoreProcessEndedMetrics, awaiting their
-	// process to be finalized. Keyed by egressID so we can move each set into
-	// the accumulator atomically when the corresponding process is removed.
-	endedPending map[string][]*dto.MetricFamily
 	// Running totals of counter/histogram metrics from finished handlers,
 	// merged by (family name, label set). Bounded by label cardinality, not
 	// by handler history.
@@ -55,8 +51,7 @@ func NewMetricsService(pm ProcessManager) *MetricsService {
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll)))
 
 	return &MetricsService{
-		pm:           pm,
-		endedPending: make(map[string][]*dto.MetricFamily),
+		pm: pm,
 	}
 }
 
@@ -80,10 +75,7 @@ func (s *MetricsService) CreateGatherer() prometheus.Gatherer {
 }
 
 // gatherHandlerMetrics produces a single set of merged metric families across
-// all live handlers, the accumulator of finished-handler totals, and any
-// per-egress staged metrics not yet folded into the accumulator. Including the
-// staged values here means correctness does not depend on the relative order
-// of StoreProcessEndedMetrics → OnProcessFinished → ProcessFinished.
+// all live handlers and the accumulator of finished-handler totals.
 func (s *MetricsService) gatherHandlerMetrics() ([]*dto.MetricFamily, error) {
 	live := s.pm.GetGatherers()
 
@@ -99,9 +91,6 @@ func (s *MetricsService) gatherHandlerMetrics() ([]*dto.MetricFamily, error) {
 
 	s.mu.Lock()
 	collected = append(collected, s.endedAccumulator...)
-	for _, fams := range s.endedPending {
-		collected = append(collected, fams...)
-	}
 	s.mu.Unlock()
 
 	return mergeFamilies(collected), nil
@@ -114,30 +103,15 @@ func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics strin
 	}
 
 	// Stop including this handler's live metrics in gather output before we
-	// stage its final tally, so we don't briefly double-count if the
-	// subprocess is still alive and answering IPC.
+	// fold its final tally into the accumulator, so we don't briefly
+	// double-count if the subprocess is still alive and answering IPC.
 	s.pm.MarkMetricsFinalized(egressID)
 
 	s.mu.Lock()
-	s.endedPending[egressID] = m
+	s.endedAccumulator = mergeFamilies(append(s.endedAccumulator, m...))
 	s.mu.Unlock()
 
 	return nil
-}
-
-// OnProcessFinished is called when the ProcessManager removes a handler from
-// its active set. It folds any staged metrics for that egress into the
-// persistent accumulator so subsequent scrapes report stable totals.
-func (s *MetricsService) OnProcessFinished(egressID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	staged, ok := s.endedPending[egressID]
-	if !ok {
-		return
-	}
-	delete(s.endedPending, egressID)
-	s.endedAccumulator = mergeFamilies(append(s.endedAccumulator, staged...))
 }
 
 func parseMetrics(egressID string, s string) ([]*dto.MetricFamily, error) {

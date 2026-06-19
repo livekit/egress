@@ -60,30 +60,20 @@ type ProcessManager interface {
 	ProcessFinished(egressID string)
 	// MarkMetricsFinalized signals that the handler has reported its final
 	// metric snapshot. The Process associated with egressID will return an
-	// empty metric set on subsequent Gather() calls, preventing live-IPC and
-	// staged values from being double-counted in the service's merged output.
+	// empty metric set on subsequent Gather() calls, preventing live-IPC
+	// values from being double-counted alongside the service's accumulator.
 	MarkMetricsFinalized(egressID string)
-	// SetOnProcessFinished registers a hook called atomically inside
-	// ProcessFinished, before the handler is removed from the active set.
-	SetOnProcessFinished(hook func(egressID string))
 }
 
 type processManager struct {
 	mu             deadlock.RWMutex
 	activeHandlers map[string]*Process
-	onFinished     func(egressID string)
 }
 
 func NewProcessManager() ProcessManager {
 	return &processManager{
 		activeHandlers: make(map[string]*Process),
 	}
-}
-
-func (pm *processManager) SetOnProcessFinished(hook func(egressID string)) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-	pm.onFinished = hook
 }
 
 func (pm *processManager) MarkMetricsFinalized(egressID string) {
@@ -290,13 +280,6 @@ func (pm *processManager) ProcessFinished(egressID string) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	if pm.onFinished != nil {
-		// Run the hook while still holding pm.mu so gather cannot observe a
-		// state where the handler has been removed from activeHandlers but its
-		// staged metrics have not yet been folded into the accumulator.
-		pm.onFinished(egressID)
-	}
-
 	p, ok := pm.activeHandlers[egressID]
 	if ok {
 		logger.Debugw("process finished, closing handler client", "egressID", egressID)
@@ -319,9 +302,8 @@ type Process struct {
 	closed           core.Fuse
 	killReason       string
 	// metricsFinalized is set once the handler has reported its final metric
-	// snapshot via StoreProcessEndedMetrics. After that, the service uses the
-	// staged values and the accumulator as the source of truth for this
-	// handler's counters/histograms.
+	// snapshot via StoreProcessEndedMetrics. After that, the accumulator is
+	// the source of truth for this handler's counters/histograms.
 	metricsFinalized atomic.Bool
 }
 
