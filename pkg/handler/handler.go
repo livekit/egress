@@ -28,13 +28,14 @@ import (
 
 	"go.opentelemetry.io/otel"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/ipc"
-	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/ipc"
+	"github.com/livekit/egress/pkg/pipeline"
 )
 
 type Handler struct {
@@ -54,7 +55,7 @@ var (
 )
 
 func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
-	// Register all GO process metrics
+	// Deregister all GO process metrics. These cannot be merged in the service gatherer
 	prometheus.Unregister(collectors.NewGoCollector())
 
 	ipcClient, err := ipc.NewServiceClient(path.Join(config.TmpDir, conf.NodeID))
