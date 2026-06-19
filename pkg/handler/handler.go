@@ -55,8 +55,13 @@ var (
 )
 
 func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
-	// Deregister all GO process metrics. These cannot be merged in the service gatherer
+	// Deregister Go runtime and process collectors. The service exposes its
+	// own copies of go_* / process_* via its DefaultGatherer; leaving the
+	// handler-side ones registered makes `prometheus.Gatherers.Gather()`
+	// reject the scrape with "collected before with the same name and label
+	// values".
 	prometheus.Unregister(collectors.NewGoCollector())
+	prometheus.Unregister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	ipcClient, err := ipc.NewServiceClient(path.Join(config.TmpDir, conf.NodeID))
 	if err != nil {

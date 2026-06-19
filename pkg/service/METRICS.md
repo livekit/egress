@@ -179,10 +179,15 @@ same behaviour as before this change and is handled correctly by `rate()`.
    `HandlerFinished` before returning from `main`. Killed-on-error
    handlers may lose a small tail of counter increments — acceptable, the
    alternative requires a sidecar pulling metrics out of `/proc`.
-3. **Handler subprocesses do not re-register the Go collector.** This keeps
-   `go_*` / `process_*` flowing only from the service's
-   `prometheus.DefaultRegisterer`, so the default gatherer does not collide
-   with the merged gatherer.
+3. **Handler subprocesses deregister the Go and process collectors.**
+   `client_golang` auto-registers `NewGoCollector` and
+   `NewProcessCollector` on the default registry; `pkg/handler/handler.go`
+   explicitly `Unregister`s both during `NewHandler`. This keeps `go_*` /
+   `process_*` flowing only from the service's own
+   `prometheus.DefaultRegisterer`, so `prometheus.Gatherers.Gather()`
+   (which rejects duplicate `(name, label set)` pairs across its child
+   gatherers) does not see the same series from both the service and one
+   or more live handlers.
 4. **All handler-side counters are pure counters.** The merge sums values
    within a family. For counters and histograms this is correct. Gauges
    are routed to `pendingMetrics` instead of `endedAccumulator` (see
