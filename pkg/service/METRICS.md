@@ -30,7 +30,9 @@ gauges keep their `egress_id` label.
                         ▼                              ▼
 ┌───────────────────── service process ────────────────────────┐
 │ MetricsService                                                │
-│   endedAccumulator []*MetricFamily                            │
+│   endedAccumulator []*MetricFamily   (persistent totals)      │
+│   pendingMetrics   []*MetricFamily   (one-shot, drained on    │
+│                                       next scrape)            │
 │                                                               │
 │ ProcessManager                                                │
 │   activeHandlers   map[egressID]*Process                      │
@@ -45,16 +47,24 @@ duplicates), which is why the service performs an explicit merge.
 
 ## Service-side gather
 
-`MetricsService.gatherHandlerMetrics` collects two pools of metrics on
+`MetricsService.gatherHandlerMetrics` collects three pools of metrics on
 every scrape and feeds them into `mergeFamilies`:
 
 1. **Live handlers** — each `Process.Gather()` returns whatever its IPC peer
    currently reports, or an empty slice if the handler has been marked
-   finalized (see below) or if its IPC call fails.
+   finalized (see below) or if its IPC call fails. Per-egress gauges
+   (`segments_uploads_channel_size`, `playlist_uploads_channel_size`)
+   appear here while the handler is alive.
 2. **Persistent accumulator** (`endedAccumulator`) — running totals of
    counter/histogram values from all handlers that have reported their
    final snapshot via `StoreProcessEndedMetrics`. Bounded in size by label
-   cardinality, not by handler history.
+   cardinality of *accumulator-eligible* families (no `egress_id`), which is
+   why we partition at the fold boundary — see "Accumulator partition" below.
+3. **One-shot pending buffer** (`pendingMetrics`) — the final snapshot of
+   any metric that is *not* accumulator-eligible (gauges, anything with
+   `egress_id`). Appended on `StoreProcessEndedMetrics`, drained and
+   nil'd by `gatherHandlerMetrics` under the same mutex, so each entry is
+   exposed on the first scrape after the handler exits and then gone.
 
 `mergeFamilies` groups by family name, then within each family groups
 metrics by their full label set, then aggregates:
@@ -62,7 +72,7 @@ metrics by their full label set, then aggregates:
 | Metric type | Aggregation                                              |
 |-------------|----------------------------------------------------------|
 | Counter     | sum values                                               |
-| Gauge       | sum values                                               |
+| Gauge       | **not addable** — colliding label sets return `ErrCannotMergeGauges` (first-write-wins so the output is still usable). Live-pool gauges use distinct `egress_id`s so they pass through unmerged in practice. |
 | Untyped     | sum values                                               |
 | Histogram   | sum `sample_count`, `sample_sum`, per-bucket `cumulative_count` matched by `upper_bound` |
 | Summary     | sum `sample_count` and `sample_sum`; drop quantiles      |
@@ -70,6 +80,34 @@ metrics by their full label set, then aggregates:
 `mergeFamilies` treats inputs as read-only and returns freshly-allocated
 families/metrics. This is what lets us safely re-merge the persistent
 accumulator on every gather without aliasing the accumulator's state.
+
+## Accumulator partition
+
+Before folding a finished handler's parsed families, `StoreProcessEndedMetrics`
+runs them through `splitForAccumulator`, which routes each metric to one of
+two destinations:
+
+- **Pending (one-shot)** — exposed on the next scrape via `pendingMetrics`:
+    - any family of type `GAUGE` (instantaneous level — has no meaning once
+      its handler is gone, and `mergeFamilies` refuses to merge colliding
+      gauges; routing them to pending sidesteps any future collision
+      entirely);
+    - any individual metric whose label set contains `egress_id` (unique
+      per handler — would grow `endedAccumulator` linearly with handler
+      history without ever merging).
+- **Accumulator** — everything else (non-gauge metrics with no `egress_id`
+  label) is folded into `endedAccumulator` as before.
+
+A family with a mix of `egress_id` and non-`egress_id` metrics is split: the
+non-`egress_id` metrics go to the accumulator, the `egress_id` ones go to
+pending. The two routing rules above are independent so the partition
+catches both gauges and any future per-egress counter/histogram.
+
+The pending buffer keeps the visibility property of the previous design —
+when a handler exits, its final per-egress values (e.g. depth of the
+upload queue at shutdown) show up on the next `/metrics` scrape and then
+disappear, matching the gauge semantics that no queue exists for a dead
+egress.
 
 The default Prometheus registry (the service's own `go_*`, `process_*`, and
 `promhttp_*` metrics) is folded in via `prometheus.Gatherers{...}.Gather()`
@@ -87,8 +125,10 @@ The ordering of events when a handler ends gracefully is:
    text) to the service
    └─ service.StoreProcessEndedMetrics(egressID, text)
         ├─ parses the text
+        ├─ splitForAccumulator: partition into accumulator-eligible vs pending
         ├─ pm.MarkMetricsFinalized(egressID)  → Process.metricsFinalized = true
-        └─ endedAccumulator = merge(endedAccumulator, parsed families)
+        ├─ endedAccumulator = merge(endedAccumulator, accumulator-eligible)
+        └─ pendingMetrics  = append(pendingMetrics, pending)
 
 2. handler subprocess exits
 
@@ -143,20 +183,32 @@ same behaviour as before this change and is handled correctly by `rate()`.
    `go_*` / `process_*` flowing only from the service's
    `prometheus.DefaultRegisterer`, so the default gatherer does not collide
    with the merged gatherer.
-4. **All handler-side counters are pure counters.** The merge sums all
-   counter and gauge values; for counters and the channel-size gauges this
-   is correct. A new gauge that represents an instantaneous level shared
-   across handlers (rather than a per-handler quantity) would need a
-   per-handler distinguishing label or a different aggregation rule.
+4. **All handler-side counters are pure counters.** The merge sums values
+   within a family. For counters and histograms this is correct. Gauges
+   are routed to `pendingMetrics` instead of `endedAccumulator` (see
+   "Accumulator partition"), so a new gauge does not need a per-handler
+   distinguishing label to stay safe across the start-end handover. On
+   the *live* side, two running handlers exposing the same gauge with the
+   same label set would no longer be silently summed — `mergeFamilies`
+   returns `ErrCannotMergeGauges` (the error is logged by
+   `gatherHandlerMetrics`, first-write-wins values are still returned).
+   Any new gauge that represents a shared (rather than per-egress)
+   instantaneous level still needs its own distinguishing label or a
+   different aggregation rule.
 5. **Quantiles on summaries are not consumed downstream.** `mergeFamilies`
    drops them since quantiles are not addable across handlers. The egress
    pipeline does not currently expose summaries, so this is a guard for
    future use.
-6. **`endedAccumulator` cardinality is bounded.** It scales with the
-   number of distinct label sets across families, not with handler
-   history. The current label set is at most `len(type) × len(status)`
-   for `pipeline_uploads` and similar small products for the others, so
-   total memory is negligible.
+6. **`endedAccumulator` cardinality is bounded.** Combined with the
+   accumulator partition above, the only metrics that enter the
+   accumulator are non-gauge metrics with no `egress_id` label, so
+   cardinality scales with the static label products (e.g.
+   `len(type) × len(status)` for `pipeline_uploads`) and not with handler
+   history. Total memory is negligible.
+7. **`pendingMetrics` is drained on every scrape.** Memory there is
+   bounded by the number of handler exits between two consecutive
+   scrapes. In normal operation that's a small number; the buffer is
+   nil'd under the mutex on each `gatherHandlerMetrics` call.
 
 ## Per-egress gauges
 
@@ -167,9 +219,16 @@ egresses is meaningful (total pending across the node), but the per-egress
 values are also useful for spotting one stuck egress, so we keep both
 options open by leaving the cardinality on the handler side.
 
-These gauges flow through `mergeFamilies` like everything else but, since
-each handler tags them with a distinct `egress_id`, they end up in
-distinct label-set buckets and pass through unsummed.
+Visibility over a gauge's lifecycle:
+
+- **Handler alive** — values flow from the live pool, one series per
+  egress_id, updated every scrape.
+- **Handler just exited** — `splitForAccumulator` routes the final
+  snapshot to `pendingMetrics`. The next scrape after exit shows that
+  final value exactly once.
+- **Subsequent scrapes** — `pendingMetrics` has been drained; the gauge
+  series for that egress is no longer reported. The accumulator never
+  carries it, so cardinality does not grow with handler history.
 
 ## Testing
 
@@ -182,4 +241,7 @@ distinct label-set buckets and pass through unsummed.
   `cumulative_count`;
 - single-family pass-through (no-op merge);
 - accumulator isolation — `mergeFamilies` must not mutate inputs, so the
-  same accumulator can be reused across consecutive scrapes.
+  same accumulator can be reused across consecutive scrapes;
+- accumulator partition — `splitForAccumulator` routes gauge families
+  and metrics with an `egress_id` label to `pendingMetrics` instead of
+  `endedAccumulator`, and splits mixed families correctly.

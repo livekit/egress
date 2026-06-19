@@ -16,6 +16,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"slices"
@@ -42,6 +44,10 @@ type MetricsService struct {
 	// merged by (family name, label set). Bounded by label cardinality, not
 	// by handler history.
 	endedAccumulator []*dto.MetricFamily
+	// One-shot buffer for metrics that can't safely live in the persistent
+	// accumulator (gauges, anything with egress_id). Drained on the next
+	// scrape so the final snapshot is visible exactly once, then disappears.
+	pendingMetrics []*dto.MetricFamily
 }
 
 var (
@@ -93,9 +99,15 @@ func (s *MetricsService) gatherHandlerMetrics() ([]*dto.MetricFamily, error) {
 
 	s.mu.Lock()
 	collected = append(collected, s.endedAccumulator...)
+	collected = append(collected, s.pendingMetrics...)
+	s.pendingMetrics = nil
 	s.mu.Unlock()
 
-	return mergeFamilies(collected), nil
+	merged, err := mergeFamilies(collected)
+	if err != nil {
+		logger.Warnw("metric merge error", err)
+	}
+	return merged, err
 }
 
 func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics string) error {
@@ -103,6 +115,15 @@ func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics strin
 	if err != nil {
 		return err
 	}
+
+	// Split the final snapshot into:
+	//   - accumulator-eligible: counters/histograms with no egress_id label,
+	//     which we fold into endedAccumulator as a running cross-handler total;
+	//   - pending: gauges (instantaneous, can't be summed across handlers) and
+	//     anything carrying egress_id (per-handler label sets that would grow
+	//     the accumulator without bound). These get a one-shot exposure on the
+	//     next scrape so consumers can see the final value once.
+	accumulable, pending := splitForAccumulator(m)
 
 	// Stop including this handler's live metrics in gather output before we
 	// fold its final tally into the accumulator, so we don't briefly
@@ -112,10 +133,76 @@ func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics strin
 	s.pm.MarkMetricsFinalized(egressID)
 
 	s.mu.Lock()
-	s.endedAccumulator = mergeFamilies(append(s.endedAccumulator, m...))
-	s.mu.Unlock()
+	defer s.mu.Unlock()
 
+	// pendingMetrics is updated unconditionally — the gauge / per-egress slice
+	// has nothing to merge and can't fail.
+	s.pendingMetrics = append(s.pendingMetrics, pending...)
+
+	merged, mergeErr := mergeFamilies(append(s.endedAccumulator, accumulable...))
+	if mergeErr != nil {
+		// Partitioning should keep gauges out of accumulable; if a merge error
+		// fires here it indicates a programming bug. Preserve the existing
+		// accumulator so a transient state mismatch doesn't lose long-running
+		// counter totals.
+		logger.Errorw("dropping ended-handler metrics due to accumulator merge error",
+			mergeErr, "egressID", egressID)
+		return mergeErr
+	}
+	s.endedAccumulator = merged
 	return nil
+}
+
+// splitForAccumulator partitions a handler's final metric snapshot into the
+// part that belongs in endedAccumulator (counters/histograms without an
+// egress_id label) and the part that must be one-shot exposed via
+// pendingMetrics (any gauge family, plus any individual metric whose label set
+// contains egress_id). A family that contains a mix of egress_id and
+// non-egress_id metrics is split between the two outputs.
+func splitForAccumulator(in []*dto.MetricFamily) (accumulable, pending []*dto.MetricFamily) {
+	for _, f := range in {
+		if f.GetType() == dto.MetricType_GAUGE {
+			pending = append(pending, f)
+			continue
+		}
+		var accMetrics, pendMetrics []*dto.Metric
+		for _, m := range f.Metric {
+			if hasLabel(m.Label, "egress_id") {
+				pendMetrics = append(pendMetrics, m)
+			} else {
+				accMetrics = append(accMetrics, m)
+			}
+		}
+		if len(accMetrics) > 0 {
+			accumulable = append(accumulable, familyWithMetrics(f, accMetrics))
+		}
+		if len(pendMetrics) > 0 {
+			pending = append(pending, familyWithMetrics(f, pendMetrics))
+		}
+	}
+	return accumulable, pending
+}
+
+// familyWithMetrics returns a shallow-copy of src with a different Metric
+// slice, freshly constructed to avoid copying the embedded proto MessageState.
+func familyWithMetrics(src *dto.MetricFamily, metrics []*dto.Metric) *dto.MetricFamily {
+	out := &dto.MetricFamily{
+		Name:   src.Name,
+		Type:   src.Type,
+		Help:   src.Help,
+		Unit:   src.Unit,
+		Metric: metrics,
+	}
+	return out
+}
+
+func hasLabel(labels []*dto.LabelPair, name string) bool {
+	for _, l := range labels {
+		if l.GetName() == name {
+			return true
+		}
+	}
+	return false
 }
 
 func deserializeMetrics(egressID string, s string) ([]*dto.MetricFamily, error) {
@@ -129,12 +216,24 @@ func deserializeMetrics(egressID string, s string) ([]*dto.MetricFamily, error) 
 	return slices.Collect(maps.Values(families)), nil
 }
 
+// ErrCannotMergeGauges is returned when mergeFamilies encounters two gauge
+// metrics that share a family name and full label set. Gauges represent
+// instantaneous level and have no meaningful sum across producers; this is a
+// hard invariant violation that should never happen in production (gauges
+// only reach the merge from the live pool, which tags each one with a
+// distinct egress_id, and the accumulator partition keeps them out of the
+// persistent path entirely).
+var ErrCannotMergeGauges = errors.New("cannot merge gauge metrics with identical labels")
+
 // mergeFamilies groups input families by name and, within each family, groups
-// metrics by their full label set. Counters, gauges, histograms, summaries and
+// metrics by their full label set. Counters, histograms, summaries and
 // untyped metrics with identical (family, label-set) keys are aggregated.
+// Gauges with colliding label sets cause mergeFamilies to return
+// ErrCannotMergeGauges; in that case the first occurrence is kept (so the
+// returned slice is still usable) and the error reports the offending family.
 // Inputs are treated as read-only; outputs are freshly allocated, so callers
-// can safely re-merge a returned slice without aliasing concerns.,c
-func mergeFamilies(in []*dto.MetricFamily) []*dto.MetricFamily {
+// can safely re-merge a returned slice without aliasing concerns.
+func mergeFamilies(in []*dto.MetricFamily) ([]*dto.MetricFamily, error) {
 	type group struct {
 		help     string
 		unit     string
@@ -145,6 +244,7 @@ func mergeFamilies(in []*dto.MetricFamily) []*dto.MetricFamily {
 
 	groups := make(map[string]*group)
 	famOrder := make([]string, 0)
+	var mergeErrs []error
 
 	for _, f := range in {
 		name := f.GetName()
@@ -162,7 +262,10 @@ func mergeFamilies(in []*dto.MetricFamily) []*dto.MetricFamily {
 		for _, m := range f.Metric {
 			key := labelSetKey(m.Label)
 			if existing, found := g.byLabels[key]; found {
-				accumulateInto(g.typ, existing, m)
+				if err := accumulateInto(g.typ, existing, m); err != nil {
+					mergeErrs = append(mergeErrs,
+						fmt.Errorf("family %q labels %q: %w", name, key, err))
+				}
 			} else {
 				g.byLabels[key] = cloneMetric(m)
 				g.order = append(g.order, key)
@@ -194,7 +297,7 @@ func mergeFamilies(in []*dto.MetricFamily) []*dto.MetricFamily {
 		}
 		out = append(out, family)
 	}
-	return out
+	return out, errors.Join(mergeErrs...)
 }
 
 func cloneMetric(in *dto.Metric) *dto.Metric {
@@ -243,29 +346,25 @@ func cloneMetric(in *dto.Metric) *dto.Metric {
 	return out
 }
 
-func accumulateInto(t dto.MetricType, dst, src *dto.Metric) {
+func accumulateInto(t dto.MetricType, dst, src *dto.Metric) error {
 	switch t {
 	case dto.MetricType_COUNTER:
 		if dst.Counter == nil || src.Counter == nil {
-			return
+			return nil
 		}
 		v := dst.Counter.GetValue() + src.Counter.GetValue()
 		dst.Counter.Value = &v
 	case dto.MetricType_GAUGE:
-		if dst.Gauge == nil || src.Gauge == nil {
-			return
-		}
-		v := dst.Gauge.GetValue() + src.Gauge.GetValue()
-		dst.Gauge.Value = &v
+		return ErrCannotMergeGauges
 	case dto.MetricType_UNTYPED:
 		if dst.Untyped == nil || src.Untyped == nil {
-			return
+			return nil
 		}
 		v := dst.Untyped.GetValue() + src.Untyped.GetValue()
 		dst.Untyped.Value = &v
 	case dto.MetricType_HISTOGRAM:
 		if dst.Histogram == nil || src.Histogram == nil {
-			return
+			return nil
 		}
 		sc := dst.Histogram.GetSampleCount() + src.Histogram.GetSampleCount()
 		ss := dst.Histogram.GetSampleSum() + src.Histogram.GetSampleSum()
@@ -283,13 +382,14 @@ func accumulateInto(t dto.MetricType, dst, src *dto.Metric) {
 		}
 	case dto.MetricType_SUMMARY:
 		if dst.Summary == nil || src.Summary == nil {
-			return
+			return nil
 		}
 		sc := dst.Summary.GetSampleCount() + src.Summary.GetSampleCount()
 		ss := dst.Summary.GetSampleSum() + src.Summary.GetSampleSum()
 		dst.Summary.SampleCount = &sc
 		dst.Summary.SampleSum = &ss
 	}
+	return nil
 }
 
 func labelSetKey(labels []*dto.LabelPair) string {
