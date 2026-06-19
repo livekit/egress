@@ -55,6 +55,7 @@ type ProcessManager interface {
 	GetGRPCClient(egressID string) (ipc.EgressHandlerClient, error)
 	KillAll()
 	AbortProcess(egressID string, err error)
+	StopProcess(egressID string, reason string)
 	KillProcess(egressID string, reason string, err error)
 	SetExitReason(egressID string, reason string)
 	GetKillReason(egressID string) string
@@ -237,6 +238,38 @@ func (pm *processManager) AbortProcess(egressID string, err error) {
 		h.ipcHandlerClient.Close()
 	}
 	logger.Infow("aborting egress completed", "egressID", egressID)
+}
+
+// endReasonFor maps the internal kill-reason metric label to the user-visible end reason sent via EOS.
+func endReasonFor(reason string) string {
+	switch reason {
+	case stats.ResultStoppedCPU:
+		return livekit.EndReasonCPUExhausted
+	default:
+		return livekit.EndReasonFailure
+	}
+}
+
+// StopProcess asks the handler to drain via EOS so the recording finalizes cleanly; callers must escalate to KillProcess if the handler doesn't exit.
+func (pm *processManager) StopProcess(egressID string, reason string) {
+	endReason := endReasonFor(reason)
+	logger.Infow("stopping egress", "egressID", egressID, "reason", reason, "endReason", endReason)
+	pm.mu.Lock()
+	h, ok := pm.activeHandlers[egressID]
+	if ok && h.killReason == "" {
+		h.killReason = reason
+	}
+	pm.mu.Unlock()
+
+	if !ok {
+		return
+	}
+
+	if _, err := h.ipcHandlerClient.StopHandler(h.ctx, &ipc.StopHandlerRequest{
+		Reason: endReason,
+	}); err != nil {
+		logger.Warnw("failed to send graceful stop, escalating", err, "egressID", egressID)
+	}
 }
 
 func (pm *processManager) KillProcess(egressID string, reason string, err error) {

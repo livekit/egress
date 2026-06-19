@@ -144,6 +144,12 @@ type FakeProcessManager struct {
 		arg1 string
 		arg2 string
 	}
+	StopProcessStub        func(string, string)
+	stopProcessMutex       sync.RWMutex
+	stopProcessArgsForCall []struct {
+		arg1 string
+		arg2 string
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -844,6 +850,39 @@ func (fake *FakeProcessManager) SetExitReasonArgsForCall(i int) (string, string)
 	fake.setExitReasonMutex.RLock()
 	defer fake.setExitReasonMutex.RUnlock()
 	argsForCall := fake.setExitReasonArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeProcessManager) StopProcess(arg1 string, arg2 string) {
+	fake.stopProcessMutex.Lock()
+	fake.stopProcessArgsForCall = append(fake.stopProcessArgsForCall, struct {
+		arg1 string
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.StopProcessStub
+	fake.recordInvocation("StopProcess", []interface{}{arg1, arg2})
+	fake.stopProcessMutex.Unlock()
+	if stub != nil {
+		fake.StopProcessStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeProcessManager) StopProcessCallCount() int {
+	fake.stopProcessMutex.RLock()
+	defer fake.stopProcessMutex.RUnlock()
+	return len(fake.stopProcessArgsForCall)
+}
+
+func (fake *FakeProcessManager) StopProcessCalls(stub func(string, string)) {
+	fake.stopProcessMutex.Lock()
+	defer fake.stopProcessMutex.Unlock()
+	fake.StopProcessStub = stub
+}
+
+func (fake *FakeProcessManager) StopProcessArgsForCall(i int) (string, string) {
+	fake.stopProcessMutex.RLock()
+	defer fake.stopProcessMutex.RUnlock()
+	argsForCall := fake.stopProcessArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
