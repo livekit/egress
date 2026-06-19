@@ -39,14 +39,9 @@ import (
 type MetricsService struct {
 	pm ProcessManager
 
-	mu deadlock.Mutex
-	// Running totals of counter/histogram metrics from finished handlers,
-	// merged by (family name, label set). Bounded by label cardinality, not
-	// by handler history.
+	mu               deadlock.Mutex
 	endedAccumulator []*dto.MetricFamily
-	// One-shot buffer for metrics that can't safely live in the persistent
-	// accumulator (gauges, anything with egress_id). Drained on the next
-	// scrape so the final snapshot is visible exactly once, then disappears.
+	// Drained on every scrape, so per-egress final snapshots show up once.
 	pendingMetrics []*dto.MetricFamily
 }
 
@@ -82,8 +77,6 @@ func (s *MetricsService) CreateGatherer() prometheus.Gatherer {
 	})
 }
 
-// gatherHandlerMetrics produces a single set of merged metric families across
-// all live handlers and the accumulator of finished-handler totals.
 func (s *MetricsService) gatherHandlerMetrics() ([]*dto.MetricFamily, error) {
 	live := s.pm.GetGatherers()
 
@@ -116,35 +109,19 @@ func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics strin
 		return err
 	}
 
-	// Split the final snapshot into:
-	//   - accumulator-eligible: counters/histograms with no egress_id label,
-	//     which we fold into endedAccumulator as a running cross-handler total;
-	//   - pending: gauges (instantaneous, can't be summed across handlers) and
-	//     anything carrying egress_id (per-handler label sets that would grow
-	//     the accumulator without bound). These get a one-shot exposure on the
-	//     next scrape so consumers can see the final value once.
 	accumulable, pending := splitForAccumulator(m)
 
-	// Stop including this handler's live metrics in gather output before we
-	// fold its final tally into the accumulator, so we don't briefly
-	// double-count if the subprocess is still alive and answering IPC.
-	// There is a small race here but addressing it would require gathering
-	// metric under the lock.
+	// Suppress live IPC values before folding the final tally so a concurrent
+	// scrape doesn't briefly double-count.
 	s.pm.MarkMetricsFinalized(egressID)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// pendingMetrics is updated unconditionally — the gauge / per-egress slice
-	// has nothing to merge and can't fail.
 	s.pendingMetrics = append(s.pendingMetrics, pending...)
 
 	merged, mergeErr := mergeFamilies(append(s.endedAccumulator, accumulable...))
 	if mergeErr != nil {
-		// Partitioning should keep gauges out of accumulable; if a merge error
-		// fires here it indicates a programming bug. Preserve the existing
-		// accumulator so a transient state mismatch doesn't lose long-running
-		// counter totals.
 		logger.Errorw("dropping ended-handler metrics due to accumulator merge error",
 			mergeErr, "egressID", egressID)
 		return mergeErr
@@ -153,12 +130,9 @@ func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics strin
 	return nil
 }
 
-// splitForAccumulator partitions a handler's final metric snapshot into the
-// part that belongs in endedAccumulator (counters/histograms without an
-// egress_id label) and the part that must be one-shot exposed via
-// pendingMetrics (any gauge family, plus any individual metric whose label set
-// contains egress_id). A family that contains a mix of egress_id and
-// non-egress_id metrics is split between the two outputs.
+// splitForAccumulator routes gauges and any metric carrying egress_id to
+// pending; everything else goes to accumulable. Mixed families are split
+// between the two outputs.
 func splitForAccumulator(in []*dto.MetricFamily) (accumulable, pending []*dto.MetricFamily) {
 	for _, f := range in {
 		if f.GetType() == dto.MetricType_GAUGE {
@@ -183,8 +157,8 @@ func splitForAccumulator(in []*dto.MetricFamily) (accumulable, pending []*dto.Me
 	return accumulable, pending
 }
 
-// familyWithMetrics returns a shallow-copy of src with a different Metric
-// slice, freshly constructed to avoid copying the embedded proto MessageState.
+// familyWithMetrics builds a fresh family rather than copying src to avoid
+// copying the embedded proto MessageState (sync.Mutex).
 func familyWithMetrics(src *dto.MetricFamily, metrics []*dto.Metric) *dto.MetricFamily {
 	out := &dto.MetricFamily{
 		Name:   src.Name,
@@ -216,23 +190,13 @@ func deserializeMetrics(egressID string, s string) ([]*dto.MetricFamily, error) 
 	return slices.Collect(maps.Values(families)), nil
 }
 
-// ErrCannotMergeGauges is returned when mergeFamilies encounters two gauge
-// metrics that share a family name and full label set. Gauges represent
-// instantaneous level and have no meaningful sum across producers; this is a
-// hard invariant violation that should never happen in production (gauges
-// only reach the merge from the live pool, which tags each one with a
-// distinct egress_id, and the accumulator partition keeps them out of the
-// persistent path entirely).
+// ErrCannotMergeGauges fires when two gauges share a family name and label
+// set — gauges have no meaningful sum, so this is treated as an invariant
+// violation. mergeFamilies keeps the first occurrence and returns the error.
 var ErrCannotMergeGauges = errors.New("cannot merge gauge metrics with identical labels")
 
-// mergeFamilies groups input families by name and, within each family, groups
-// metrics by their full label set. Counters, histograms, summaries and
-// untyped metrics with identical (family, label-set) keys are aggregated.
-// Gauges with colliding label sets cause mergeFamilies to return
-// ErrCannotMergeGauges; in that case the first occurrence is kept (so the
-// returned slice is still usable) and the error reports the offending family.
-// Inputs are treated as read-only; outputs are freshly allocated, so callers
-// can safely re-merge a returned slice without aliasing concerns.
+// mergeFamilies aggregates metrics with identical (family, label-set) keys.
+// Inputs are read-only; outputs are freshly allocated.
 func mergeFamilies(in []*dto.MetricFamily) ([]*dto.MetricFamily, error) {
 	type group struct {
 		help     string
@@ -334,8 +298,7 @@ func cloneMetric(in *dto.Metric) *dto.Metric {
 		out.Histogram = h
 	}
 	if in.Summary != nil {
-		// Quantiles are not meaningfully addable across handlers; we keep
-		// only count and sum so rate(_count) and rate(_sum) stay correct.
+		// Drop quantiles: not addable across handlers.
 		sc := in.Summary.GetSampleCount()
 		ss := in.Summary.GetSampleSum()
 		out.Summary = &dto.Summary{

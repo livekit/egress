@@ -60,10 +60,9 @@ type ProcessManager interface {
 	SetExitReason(egressID string, reason string)
 	GetKillReason(egressID string) string
 	ProcessFinished(egressID string)
-	// MarkMetricsFinalized signals that the handler has reported its final
-	// metric snapshot. The Process associated with egressID will return an
-	// empty metric set on subsequent Gather() calls, preventing live-IPC
-	// values from being double-counted alongside the service's accumulator.
+	// MarkMetricsFinalized makes Process.Gather() return empty, so live-IPC
+	// values stop double-counting once the service's accumulator carries the
+	// handler's final tally.
 	MarkMetricsFinalized(egressID string)
 }
 
@@ -335,9 +334,6 @@ type Process struct {
 	ready            chan struct{}
 	closed           core.Fuse
 	killReason       string
-	// metricsFinalized is set once the handler has reported its final metric
-	// snapshot via StoreProcessEndedMetrics. After that, the accumulator is
-	// the source of truth for this handler's counters/histograms.
 	metricsFinalized atomic.Bool
 }
 

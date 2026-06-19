@@ -55,11 +55,8 @@ var (
 )
 
 func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
-	// Deregister Go runtime and process collectors. The service exposes its
-	// own copies of go_* / process_* via its DefaultGatherer; leaving the
-	// handler-side ones registered makes `prometheus.Gatherers.Gather()`
-	// reject the scrape with "collected before with the same name and label
-	// values".
+	// The service already exposes go_* / process_* — leaving these registered
+	// causes prometheus.Gatherers.Gather to reject the scrape as duplicate.
 	prometheus.Unregister(collectors.NewGoCollector())
 	prometheus.Unregister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
