@@ -30,13 +30,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/stats"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/rpc"
 )
 
 const launchTimeout = 10 * time.Second
@@ -322,7 +323,7 @@ func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
 	}
 
-	return parseMetrics(p.info.EgressId, metricsResponse.Metrics)
+	return deserializeMetrics(p.info.EgressId, metricsResponse.Metrics)
 }
 
 func (p *Process) kill(e error) {

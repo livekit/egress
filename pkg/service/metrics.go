@@ -16,7 +16,9 @@ package service
 
 import (
 	"context"
+	"maps"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
@@ -97,7 +99,7 @@ func (s *MetricsService) gatherHandlerMetrics() ([]*dto.MetricFamily, error) {
 }
 
 func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics string) error {
-	m, err := parseMetrics(egressID, metrics)
+	m, err := deserializeMetrics(egressID, metrics)
 	if err != nil {
 		return err
 	}
@@ -105,6 +107,8 @@ func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics strin
 	// Stop including this handler's live metrics in gather output before we
 	// fold its final tally into the accumulator, so we don't briefly
 	// double-count if the subprocess is still alive and answering IPC.
+	// There is a small race here but addressing it would require gathering
+	// metric under the lock.
 	s.pm.MarkMetricsFinalized(egressID)
 
 	s.mu.Lock()
@@ -114,7 +118,7 @@ func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics strin
 	return nil
 }
 
-func parseMetrics(egressID string, s string) ([]*dto.MetricFamily, error) {
+func deserializeMetrics(egressID string, s string) ([]*dto.MetricFamily, error) {
 	parser := expfmt.NewTextParser(model.LegacyValidation)
 	families, err := parser.TextToMetricFamilies(strings.NewReader(s))
 	if err != nil {
@@ -122,18 +126,14 @@ func parseMetrics(egressID string, s string) ([]*dto.MetricFamily, error) {
 		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
 	}
 
-	out := make([]*dto.MetricFamily, 0, len(families))
-	for _, f := range families {
-		out = append(out, f)
-	}
-	return out, nil
+	return slices.Collect(maps.Values(families)), nil
 }
 
 // mergeFamilies groups input families by name and, within each family, groups
 // metrics by their full label set. Counters, gauges, histograms, summaries and
 // untyped metrics with identical (family, label-set) keys are aggregated.
 // Inputs are treated as read-only; outputs are freshly allocated, so callers
-// can safely re-merge a returned slice without aliasing concerns.
+// can safely re-merge a returned slice without aliasing concerns.,c
 func mergeFamilies(in []*dto.MetricFamily) []*dto.MetricFamily {
 	type group struct {
 		help     string
