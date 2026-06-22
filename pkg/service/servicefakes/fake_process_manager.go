@@ -11,6 +11,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/prometheus/client_golang/prometheus"
+	io_prometheus_client "github.com/prometheus/client_model/go"
 )
 
 type FakeProcessManager struct {
@@ -30,6 +31,17 @@ type FakeProcessManager struct {
 	}
 	alreadyExistsReturnsOnCall map[int]struct {
 		result1 bool
+	}
+	GetAccumulatableMetricsStub        func(string) []*io_prometheus_client.MetricFamily
+	getAccumulatableMetricsMutex       sync.RWMutex
+	getAccumulatableMetricsArgsForCall []struct {
+		arg1 string
+	}
+	getAccumulatableMetricsReturns struct {
+		result1 []*io_prometheus_client.MetricFamily
+	}
+	getAccumulatableMetricsReturnsOnCall map[int]struct {
+		result1 []*io_prometheus_client.MetricFamily
 	}
 	GetActiveEgressIDsStub        func() []string
 	getActiveEgressIDsMutex       sync.RWMutex
@@ -150,6 +162,12 @@ type FakeProcessManager struct {
 		arg1 string
 		arg2 string
 	}
+	StoreAccumulatableMetricsStub        func(string, []*io_prometheus_client.MetricFamily)
+	storeAccumulatableMetricsMutex       sync.RWMutex
+	storeAccumulatableMetricsArgsForCall []struct {
+		arg1 string
+		arg2 []*io_prometheus_client.MetricFamily
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -245,6 +263,67 @@ func (fake *FakeProcessManager) AlreadyExistsReturnsOnCall(i int, result1 bool) 
 	}
 	fake.alreadyExistsReturnsOnCall[i] = struct {
 		result1 bool
+	}{result1}
+}
+
+func (fake *FakeProcessManager) GetAccumulatableMetrics(arg1 string) []*io_prometheus_client.MetricFamily {
+	fake.getAccumulatableMetricsMutex.Lock()
+	ret, specificReturn := fake.getAccumulatableMetricsReturnsOnCall[len(fake.getAccumulatableMetricsArgsForCall)]
+	fake.getAccumulatableMetricsArgsForCall = append(fake.getAccumulatableMetricsArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.GetAccumulatableMetricsStub
+	fakeReturns := fake.getAccumulatableMetricsReturns
+	fake.recordInvocation("GetAccumulatableMetrics", []interface{}{arg1})
+	fake.getAccumulatableMetricsMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeProcessManager) GetAccumulatableMetricsCallCount() int {
+	fake.getAccumulatableMetricsMutex.RLock()
+	defer fake.getAccumulatableMetricsMutex.RUnlock()
+	return len(fake.getAccumulatableMetricsArgsForCall)
+}
+
+func (fake *FakeProcessManager) GetAccumulatableMetricsCalls(stub func(string) []*io_prometheus_client.MetricFamily) {
+	fake.getAccumulatableMetricsMutex.Lock()
+	defer fake.getAccumulatableMetricsMutex.Unlock()
+	fake.GetAccumulatableMetricsStub = stub
+}
+
+func (fake *FakeProcessManager) GetAccumulatableMetricsArgsForCall(i int) string {
+	fake.getAccumulatableMetricsMutex.RLock()
+	defer fake.getAccumulatableMetricsMutex.RUnlock()
+	argsForCall := fake.getAccumulatableMetricsArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeProcessManager) GetAccumulatableMetricsReturns(result1 []*io_prometheus_client.MetricFamily) {
+	fake.getAccumulatableMetricsMutex.Lock()
+	defer fake.getAccumulatableMetricsMutex.Unlock()
+	fake.GetAccumulatableMetricsStub = nil
+	fake.getAccumulatableMetricsReturns = struct {
+		result1 []*io_prometheus_client.MetricFamily
+	}{result1}
+}
+
+func (fake *FakeProcessManager) GetAccumulatableMetricsReturnsOnCall(i int, result1 []*io_prometheus_client.MetricFamily) {
+	fake.getAccumulatableMetricsMutex.Lock()
+	defer fake.getAccumulatableMetricsMutex.Unlock()
+	fake.GetAccumulatableMetricsStub = nil
+	if fake.getAccumulatableMetricsReturnsOnCall == nil {
+		fake.getAccumulatableMetricsReturnsOnCall = make(map[int]struct {
+			result1 []*io_prometheus_client.MetricFamily
+		})
+	}
+	fake.getAccumulatableMetricsReturnsOnCall[i] = struct {
+		result1 []*io_prometheus_client.MetricFamily
 	}{result1}
 }
 
@@ -883,6 +962,44 @@ func (fake *FakeProcessManager) StopProcessArgsForCall(i int) (string, string) {
 	fake.stopProcessMutex.RLock()
 	defer fake.stopProcessMutex.RUnlock()
 	argsForCall := fake.stopProcessArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeProcessManager) StoreAccumulatableMetrics(arg1 string, arg2 []*io_prometheus_client.MetricFamily) {
+	var arg2Copy []*io_prometheus_client.MetricFamily
+	if arg2 != nil {
+		arg2Copy = make([]*io_prometheus_client.MetricFamily, len(arg2))
+		copy(arg2Copy, arg2)
+	}
+	fake.storeAccumulatableMetricsMutex.Lock()
+	fake.storeAccumulatableMetricsArgsForCall = append(fake.storeAccumulatableMetricsArgsForCall, struct {
+		arg1 string
+		arg2 []*io_prometheus_client.MetricFamily
+	}{arg1, arg2Copy})
+	stub := fake.StoreAccumulatableMetricsStub
+	fake.recordInvocation("StoreAccumulatableMetrics", []interface{}{arg1, arg2Copy})
+	fake.storeAccumulatableMetricsMutex.Unlock()
+	if stub != nil {
+		fake.StoreAccumulatableMetricsStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeProcessManager) StoreAccumulatableMetricsCallCount() int {
+	fake.storeAccumulatableMetricsMutex.RLock()
+	defer fake.storeAccumulatableMetricsMutex.RUnlock()
+	return len(fake.storeAccumulatableMetricsArgsForCall)
+}
+
+func (fake *FakeProcessManager) StoreAccumulatableMetricsCalls(stub func(string, []*io_prometheus_client.MetricFamily)) {
+	fake.storeAccumulatableMetricsMutex.Lock()
+	defer fake.storeAccumulatableMetricsMutex.Unlock()
+	fake.StoreAccumulatableMetricsStub = stub
+}
+
+func (fake *FakeProcessManager) StoreAccumulatableMetricsArgsForCall(i int) (string, []*io_prometheus_client.MetricFamily) {
+	fake.storeAccumulatableMetricsMutex.RLock()
+	defer fake.storeAccumulatableMetricsMutex.RUnlock()
+	argsForCall := fake.storeAccumulatableMetricsArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 

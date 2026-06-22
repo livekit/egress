@@ -489,6 +489,103 @@ func TestAccumulateInto_NilFieldsAreNoOps(t *testing.T) {
 func float64Ptr(v float64) *float64 { return &v }
 func uint64Ptr(v uint64) *uint64    { return &v }
 
+// ---- ended-handler accumulation ----
+
+func newTestProcessManager(egressIDs ...string) *processManager {
+	pm := &processManager{activeHandlers: make(map[string]*Process)}
+	for _, id := range egressIDs {
+		pm.activeHandlers[id] = &Process{}
+	}
+	return pm
+}
+
+func TestStoreAndGetAccumulatableMetrics(t *testing.T) {
+	pm := newTestProcessManager("EG_a")
+	families := []*dto.MetricFamily{
+		counterFamily("uploads", counterMetric(3, "type", "file")),
+	}
+	pm.StoreAccumulatableMetrics("EG_a", families)
+
+	require.Equal(t, families, pm.GetAccumulatableMetrics("EG_a"))
+	// Unknown egress yields nil rather than panicking.
+	require.Nil(t, pm.GetAccumulatableMetrics("EG_unknown"))
+}
+
+func TestAccumulateEndedMetrics_FoldsStashedMetrics(t *testing.T) {
+	pm := newTestProcessManager("EG_a")
+	pm.StoreAccumulatableMetrics("EG_a", []*dto.MetricFamily{
+		counterFamily("uploads", counterMetric(3, "type", "file", "status", "success")),
+	})
+
+	s := &MetricsService{pm: pm}
+	s.AccumulateEndedMetrics("EG_a")
+
+	require.Len(t, s.endedAccumulator, 1)
+	require.Equal(t, "uploads", s.endedAccumulator[0].GetName())
+	require.Equal(t, 3.0, findMetric(t, s.endedAccumulator[0], "type", "file", "status", "success").Counter.GetValue())
+}
+
+func TestAccumulateEndedMetrics_NoStashedMetricsNoOp(t *testing.T) {
+	pm := newTestProcessManager("EG_a")
+	s := &MetricsService{pm: pm}
+
+	// Process exists but never stashed anything.
+	s.AccumulateEndedMetrics("EG_a")
+	require.Empty(t, s.endedAccumulator)
+
+	// Unknown egress is also a no-op.
+	s.AccumulateEndedMetrics("EG_unknown")
+	require.Empty(t, s.endedAccumulator)
+}
+
+func TestAccumulateEndedMetrics_SumsAcrossHandlers(t *testing.T) {
+	pm := newTestProcessManager("EG_a", "EG_b")
+	pm.StoreAccumulatableMetrics("EG_a", []*dto.MetricFamily{
+		counterFamily("uploads", counterMetric(3, "type", "file", "status", "success")),
+	})
+	pm.StoreAccumulatableMetrics("EG_b", []*dto.MetricFamily{
+		counterFamily("uploads", counterMetric(5, "type", "file", "status", "success")),
+	})
+
+	s := &MetricsService{pm: pm}
+	s.AccumulateEndedMetrics("EG_a")
+	s.AccumulateEndedMetrics("EG_b")
+
+	require.Len(t, s.endedAccumulator, 1)
+	require.Equal(t, 8.0, findMetric(t, s.endedAccumulator[0], "type", "file", "status", "success").Counter.GetValue())
+}
+
+func TestStoreProcessEndedMetrics_StashesAndDefersAccumulation(t *testing.T) {
+	pm := newTestProcessManager("EG_a")
+	s := &MetricsService{pm: pm}
+
+	const text = `# TYPE uploads counter
+uploads{type="file"} 3
+# TYPE queue_depth gauge
+queue_depth{egress_id="EG_a"} 2
+`
+	require.NoError(t, s.StoreProcessEndedMetrics("EG_a", text))
+
+	// The accumulatable counter is stashed on the process; accumulation is
+	// deferred to AccumulateEndedMetrics (called at process end).
+	require.Empty(t, s.endedAccumulator)
+	stashed := pm.GetAccumulatableMetrics("EG_a")
+	require.Len(t, stashed, 1)
+	require.Equal(t, "uploads", stashed[0].GetName())
+
+	// The per-egress gauge is routed to pending so the next scrape emits it once.
+	require.Len(t, s.pendingMetrics, 1)
+	require.Equal(t, "queue_depth", s.pendingMetrics[0].GetName())
+
+	// Live IPC values are suppressed once the final tally is stashed.
+	require.True(t, pm.activeHandlers["EG_a"].metricsFinalized.Load())
+
+	// Folding the stashed tally happens at process end.
+	s.AccumulateEndedMetrics("EG_a")
+	require.Len(t, s.endedAccumulator, 1)
+	require.Equal(t, 3.0, findMetric(t, s.endedAccumulator[0], "type", "file").Counter.GetValue())
+}
+
 // ---- splitForAccumulator edge cases ----
 
 func TestSplitForAccumulator_AllAccumulableEmptyPending(t *testing.T) {

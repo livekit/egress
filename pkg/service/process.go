@@ -64,6 +64,12 @@ type ProcessManager interface {
 	// values stop double-counting once the service's accumulator carries the
 	// handler's final tally.
 	MarkMetricsFinalized(egressID string)
+	// StoreAccumulatableMetrics records the accumulatable portion of a handler's
+	// final metrics tally on the corresponding process.
+	StoreAccumulatableMetrics(egressID string, metrics []*dto.MetricFamily)
+	// GetAccumulatableMetrics returns the last accumulatable metrics stashed on
+	// the corresponding process, or nil if the process is unknown.
+	GetAccumulatableMetrics(egressID string) []*dto.MetricFamily
 }
 
 type processManager struct {
@@ -84,6 +90,25 @@ func (pm *processManager) MarkMetricsFinalized(egressID string) {
 	if p, ok := pm.activeHandlers[egressID]; ok {
 		p.metricsFinalized.Store(true)
 	}
+}
+
+func (pm *processManager) StoreAccumulatableMetrics(egressID string, metrics []*dto.MetricFamily) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if p, ok := pm.activeHandlers[egressID]; ok {
+		p.lastAccumulatableMetrics = metrics
+	}
+}
+
+func (pm *processManager) GetAccumulatableMetrics(egressID string) []*dto.MetricFamily {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	if p, ok := pm.activeHandlers[egressID]; ok {
+		return p.lastAccumulatableMetrics
+	}
+	return nil
 }
 
 func (pm *processManager) Launch(
@@ -325,16 +350,17 @@ func (pm *processManager) ProcessFinished(egressID string) {
 }
 
 type Process struct {
-	ctx              context.Context
-	handlerID        string
-	req              *rpc.StartEgressRequest
-	info             *livekit.EgressInfo
-	cmd              *exec.Cmd
-	ipcHandlerClient *ipc.EgressHandlerClientWrapper
-	ready            chan struct{}
-	closed           core.Fuse
-	killReason       string
-	metricsFinalized atomic.Bool
+	ctx                      context.Context
+	handlerID                string
+	req                      *rpc.StartEgressRequest
+	info                     *livekit.EgressInfo
+	cmd                      *exec.Cmd
+	ipcHandlerClient         *ipc.EgressHandlerClientWrapper
+	ready                    chan struct{}
+	closed                   core.Fuse
+	killReason               string
+	metricsFinalized         atomic.Bool
+	lastAccumulatableMetrics []*dto.MetricFamily
 }
 
 // Gather implements the prometheus.Gatherer interface on server-side to allow aggregation of handler ms
@@ -352,7 +378,15 @@ func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
 	}
 
-	return deserializeMetrics(p.info.EgressId, metricsResponse.Metrics)
+	m, err := deserializeMetrics(p.info.EgressId, metricsResponse.Metrics)
+	if err != nil {
+		return m, err
+	}
+
+	accumulable, _ := splitForAccumulator(m)
+	p.lastAccumulatableMetrics = accumulable
+
+	return m, nil
 }
 
 func (p *Process) kill(e error) {

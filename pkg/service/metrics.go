@@ -110,8 +110,11 @@ func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics strin
 	}
 
 	accumulable, pending := splitForAccumulator(m)
+	// Stash the accumulatable tally on the process; it's folded into the
+	// accumulator when the process ends (see AccumulateEndedMetrics).
+	s.pm.StoreAccumulatableMetrics(egressID, accumulable)
 
-	// Suppress live IPC values before folding the final tally so a concurrent
+	// Suppress live IPC values once the final tally is stashed so a concurrent
 	// scrape doesn't briefly double-count.
 	s.pm.MarkMetricsFinalized(egressID)
 
@@ -119,15 +122,29 @@ func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics strin
 	defer s.mu.Unlock()
 
 	s.pendingMetrics = append(s.pendingMetrics, pending...)
+	return nil
+}
 
-	merged, mergeErr := mergeFamilies(append(s.endedAccumulator, accumulable...))
-	if mergeErr != nil {
+// AccumulateEndedMetrics folds a finished handler's last accumulatable metrics
+// into the long-lived accumulator. It must run before the process is removed
+// from the manager. Using the stashed lastAccumulatableMetrics means the tally
+// is captured even when the handler dies without reporting its final metrics.
+func (s *MetricsService) AccumulateEndedMetrics(egressID string) {
+	metrics := s.pm.GetAccumulatableMetrics(egressID)
+	if len(metrics) == 0 {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	merged, err := mergeFamilies(append(s.endedAccumulator, metrics...))
+	if err != nil {
 		logger.Errorw("dropping ended-handler metrics due to accumulator merge error",
-			mergeErr, "egressID", egressID)
-		return mergeErr
+			err, "egressID", egressID)
+		return
 	}
 	s.endedAccumulator = merged
-	return nil
 }
 
 // splitForAccumulator routes gauges and any metric carrying egress_id to
