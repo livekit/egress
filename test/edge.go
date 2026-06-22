@@ -121,7 +121,7 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 			// Room composite where the egress participant loses its room
 			// connection with a retryable reason. The partial recording must
 			// still be finalized and uploaded, and the egress reported FAILED
-			// so cloud can retry it.
+			// so it could be retried.
 
 			{
 				name:        "RoomCompositeRetryableDisconnect",
