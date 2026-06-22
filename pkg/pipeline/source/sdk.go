@@ -64,6 +64,7 @@ type SDKSource struct {
 	active            atomic.Int32
 	closed            core.Fuse
 	duplicateIdentity atomic.Bool
+	connectionFailed  atomic.Bool
 
 	startRecording core.Fuse
 	endRecording   core.Fuse
@@ -150,6 +151,10 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 	if err := s.joinRoom(); err != nil {
 		s.disconnectRoom()
 		return nil, err
+	}
+
+	if room := s.TestOverrides.DisconnectInjectionRoom; room != "" && strings.Contains(s.Info.RoomName, room) {
+		go s.injectDisconnectForTest()
 	}
 
 	return s, nil
@@ -809,12 +814,26 @@ func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {
 	}
 	if reason != lksdk.RoomClosed && reason != lksdk.LeaveRequested {
 		logger.Warnw("disconnected from room", nil, "reason", reason, "protoReason", s.room.DisconnectReason().String())
+
+		if reason == lksdk.Failed {
+			s.connectionFailed.Store(true)
+		}
 	}
 	s.finished()
 }
 
 func (s *SDKSource) IsDuplicateIdentity() bool {
 	return s.duplicateIdentity.Load()
+}
+
+// GetEndError returns a non-nil error when recording ended because the room
+// connection failed after the SDK exhausted its reconnect attempts. The partial
+// output should still be finalized and uploaded; the egress is marked failed.
+func (s *SDKSource) GetEndError() error {
+	if !s.connectionFailed.Load() {
+		return nil
+	}
+	return errors.ErrRoomConnectionFailed
 }
 
 func (s *SDKSource) finished() {

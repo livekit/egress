@@ -665,7 +665,11 @@ func (c *Controller) Close() {
 
 	case livekit.EgressStatus_EGRESS_ACTIVE,
 		livekit.EgressStatus_EGRESS_ENDING:
-		c.Info.SetComplete()
+		if err := c.endError(); err != nil {
+			c.Info.SetFailed(err)
+		} else {
+			c.Info.SetComplete()
+		}
 		fallthrough
 
 	case livekit.EgressStatus_EGRESS_LIMIT_REACHED,
@@ -959,6 +963,16 @@ func (c *Controller) IsDuplicateIdentity() bool {
 		return false
 	}
 	return sdkSrc.IsDuplicateIdentity()
+}
+
+// endError returns a non-nil error if the SDK source ended on a retryable room
+// disconnect, so the finalized partial output is reported failed.
+func (c *Controller) endError() error {
+	sdkSrc, ok := c.src.(*source.SDKSource)
+	if !ok {
+		return nil
+	}
+	return sdkSrc.GetEndError()
 }
 
 func (c *Controller) updateEndTime() {
