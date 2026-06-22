@@ -117,7 +117,7 @@ func runService(_ context.Context, c *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	svc, err := server.NewServer(conf, bus, ioClient)
+	svc, err := server.NewServer(conf, rc, bus, ioClient)
 	if err != nil {
 		return err
 	}
