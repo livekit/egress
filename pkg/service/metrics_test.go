@@ -349,8 +349,7 @@ func TestMergeFamilies_HistogramBucketAsymmetric(t *testing.T) {
 	// dst has bucket 50 that src doesn't have; src has bucket 100 that dst
 	// doesn't have. Only the matched buckets are merged; the dst-only bucket
 	// keeps its original cumulative count, and the src-only bucket is dropped
-	// (consistent with assumption #1 in METRICS.md that handlers register
-	// identical bucket boundaries).
+	// (handlers are assumed to register identical bucket boundaries).
 	in := []*dto.MetricFamily{
 		histogramFamily("response_time", histogramMetric(1, 5, map[float64]uint64{
 			10: 1, 50: 1,
