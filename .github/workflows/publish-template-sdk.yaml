@@ -25,8 +25,8 @@ jobs:
       run:
         working-directory: ./template-sdk
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
       - name: Use Node.js 18
