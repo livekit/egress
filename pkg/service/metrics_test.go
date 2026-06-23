@@ -499,46 +499,77 @@ func newTestProcessManager(egressIDs ...string) *processManager {
 	return pm
 }
 
-func TestStoreAndGetAccumulatableMetrics(t *testing.T) {
+func TestFinalizeMetrics_ReturnsCachedTallyThenSuppresses(t *testing.T) {
 	pm := newTestProcessManager("EG_a")
 	families := []*dto.MetricFamily{
 		counterFamily("uploads", counterMetric(3, "type", "file")),
 	}
 	pm.StoreAccumulatableMetrics("EG_a", families)
 
-	require.Equal(t, families, pm.GetAccumulatableMetrics("EG_a"))
-	// Unknown egress yields nil rather than panicking.
-	require.Nil(t, pm.GetAccumulatableMetrics("EG_unknown"))
+	// First call returns the cached tally and marks the handler finalized.
+	metrics, already := pm.FinalizeMetrics("EG_a")
+	require.False(t, already)
+	require.Equal(t, families, metrics)
+	require.True(t, pm.activeHandlers["EG_a"].metricsFinalized.Load())
+
+	// Second call reports already-finalized and returns nothing to fold again.
+	metrics, already = pm.FinalizeMetrics("EG_a")
+	require.True(t, already)
+	require.Nil(t, metrics)
+
+	// Unknown egress is treated as already-finalized so callers don't fold.
+	metrics, already = pm.FinalizeMetrics("EG_unknown")
+	require.True(t, already)
+	require.Nil(t, metrics)
 }
 
-func TestAccumulateEndedMetrics_FoldsStashedMetrics(t *testing.T) {
+func TestMergeInAccumulator_MergesCachedTally(t *testing.T) {
 	pm := newTestProcessManager("EG_a")
 	pm.StoreAccumulatableMetrics("EG_a", []*dto.MetricFamily{
 		counterFamily("uploads", counterMetric(3, "type", "file", "status", "success")),
 	})
 
 	s := &MetricsService{pm: pm}
-	s.AccumulateEndedMetrics("EG_a")
+	s.MergeInAccumulator("EG_a")
 
 	require.Len(t, s.endedAccumulator, 1)
 	require.Equal(t, "uploads", s.endedAccumulator[0].GetName())
 	require.Equal(t, 3.0, findMetric(t, s.endedAccumulator[0], "type", "file", "status", "success").Counter.GetValue())
+	require.True(t, pm.activeHandlers["EG_a"].metricsFinalized.Load())
 }
 
-func TestAccumulateEndedMetrics_NoStashedMetricsNoOp(t *testing.T) {
+func TestMergeInAccumulator_Idempotent(t *testing.T) {
+	pm := newTestProcessManager("EG_a")
+	pm.StoreAccumulatableMetrics("EG_a", []*dto.MetricFamily{
+		counterFamily("uploads", counterMetric(3, "type", "file", "status", "success")),
+	})
+
+	s := &MetricsService{pm: pm}
+	// Both the handler-finished path and process teardown promote; the tally
+	// must be folded exactly once, not doubled.
+	s.MergeInAccumulator("EG_a")
+	s.MergeInAccumulator("EG_a")
+
+	require.Len(t, s.endedAccumulator, 1)
+	require.Equal(t, 3.0, findMetric(t, s.endedAccumulator[0], "type", "file", "status", "success").Counter.GetValue())
+}
+
+func TestMergeInAccumulator_NoCacheStillSuppresses(t *testing.T) {
 	pm := newTestProcessManager("EG_a")
 	s := &MetricsService{pm: pm}
 
-	// Process exists but never stashed anything.
-	s.AccumulateEndedMetrics("EG_a")
+	// A handler that died without ever reporting metrics: nothing to fold, but
+	// it's still marked finalized so it drops out of the live scrape cleanly.
+	s.MergeInAccumulator("EG_a")
 	require.Empty(t, s.endedAccumulator)
+	require.True(t, pm.activeHandlers["EG_a"].metricsFinalized.Load())
 
-	// Unknown egress is also a no-op.
-	s.AccumulateEndedMetrics("EG_unknown")
+	// Unknown egress is a no-op.
+	s.MergeInAccumulator("EG_unknown")
 	require.Empty(t, s.endedAccumulator)
 }
 
-func TestAccumulateEndedMetrics_SumsAcrossHandlers(t *testing.T) {
+func TestMergeInAccumulator_SumsAcrossHandlers(t *testing.T) {
 	pm := newTestProcessManager("EG_a", "EG_b")
 	pm.StoreAccumulatableMetrics("EG_a", []*dto.MetricFamily{
 		counterFamily("uploads", counterMetric(3, "type", "file", "status", "success")),
@@ -548,14 +579,14 @@ func TestAccumulateEndedMetrics_SumsAcrossHandlers(t *testing.T) {
 	})
 
 	s := &MetricsService{pm: pm}
-	s.AccumulateEndedMetrics("EG_a")
-	s.AccumulateEndedMetrics("EG_b")
+	s.MergeInAccumulator("EG_a")
+	s.MergeInAccumulator("EG_b")
 
 	require.Len(t, s.endedAccumulator, 1)
 	require.Equal(t, 8.0, findMetric(t, s.endedAccumulator[0], "type", "file", "status", "success").Counter.GetValue())
 }
 
-func TestStoreProcessEndedMetrics_StashesAndDefersAccumulation(t *testing.T) {
+func TestStoreProcessEndedMetrics_MergesImmediately(t *testing.T) {
 	pm := newTestProcessManager("EG_a")
 	s := &MetricsService{pm: pm}
 
@@ -566,24 +597,46 @@ queue_depth{egress_id="EG_a"} 2
 `
 	require.NoError(t, s.StoreProcessEndedMetrics("EG_a", text))
 
-	// The accumulatable counter is stashed on the process; accumulation is
-	// deferred to AccumulateEndedMetrics (called at process end).
-	require.Empty(t, s.endedAccumulator)
-	stashed := pm.GetAccumulatableMetrics("EG_a")
-	require.Len(t, stashed, 1)
-	require.Equal(t, "uploads", stashed[0].GetName())
+	// The accumulatable counter is folded into the accumulator right away and
+	// live values are suppressed, so there's no window where it's missing.
+	require.Len(t, s.endedAccumulator, 1)
+	require.Equal(t, "uploads", s.endedAccumulator[0].GetName())
+	require.Equal(t, 3.0, findMetric(t, s.endedAccumulator[0], "type", "file").Counter.GetValue())
+	require.True(t, pm.activeHandlers["EG_a"].metricsFinalized.Load())
 
 	// The per-egress gauge is routed to pending so the next scrape emits it once.
 	require.Len(t, s.pendingMetrics, 1)
 	require.Equal(t, "queue_depth", s.pendingMetrics[0].GetName())
 
-	// Live IPC values are suppressed once the final tally is stashed.
-	require.True(t, pm.activeHandlers["EG_a"].metricsFinalized.Load())
-
-	// Folding the stashed tally happens at process end.
-	s.AccumulateEndedMetrics("EG_a")
-	require.Len(t, s.endedAccumulator, 1)
+	// Process teardown merges again, but it's idempotent — no double count.
+	s.MergeInAccumulator("EG_a")
 	require.Equal(t, 3.0, findMetric(t, s.endedAccumulator[0], "type", "file").Counter.GetValue())
+}
+
+func TestGatherHandlerMetrics_NoDoubleCountAfterMerge(t *testing.T) {
+	pm := newTestProcessManager("EG_a")
+	s := &MetricsService{pm: pm}
+
+	// Handler reports its final tally and is finalized.
+	const text = `# TYPE uploads counter
+uploads{type="file"} 3
+`
+	require.NoError(t, s.StoreProcessEndedMetrics("EG_a", text))
+
+	// The process is still live (not yet torn down). A scrape must not count it
+	// both live and in the accumulator: Gather returns empty once finalized, so
+	// the value appears exactly once. (finalized → Gather skips the IPC call.)
+	out, err := s.gatherHandlerMetrics()
+	require.NoError(t, err)
+
+	var uploads *dto.MetricFamily
+	for _, f := range out {
+		if f.GetName() == "uploads" {
+			uploads = f
+		}
+	}
+	require.NotNil(t, uploads)
+	require.Equal(t, 3.0, findMetric(t, uploads, "type", "file").Counter.GetValue())
 }
 
 // ---- splitForAccumulator edge cases ----

@@ -77,11 +77,15 @@ func (s *MetricsService) CreateGatherer() prometheus.Gatherer {
 	})
 }
 
+// gatherHandlerMetrics holds s.mu for the whole scrape — live gather included —
+// so a handler can't be promoted into the accumulator in between reading its
+// live value and reading the accumulator, which would count it twice.
 func (s *MetricsService) gatherHandlerMetrics() ([]*dto.MetricFamily, error) {
-	live := s.pm.GetGatherers()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	collected := make([]*dto.MetricFamily, 0)
-	for _, g := range live {
+	for _, g := range s.pm.GetGatherers() {
 		f, err := g.Gather()
 		if err != nil {
 			logger.Warnw("failed to gather metrics from handler", err)
@@ -89,12 +93,9 @@ func (s *MetricsService) gatherHandlerMetrics() ([]*dto.MetricFamily, error) {
 		}
 		collected = append(collected, f...)
 	}
-
-	s.mu.Lock()
 	collected = append(collected, s.endedAccumulator...)
 	collected = append(collected, s.pendingMetrics...)
 	s.pendingMetrics = nil
-	s.mu.Unlock()
 
 	merged, err := mergeFamilies(collected)
 	if err != nil {
@@ -110,33 +111,29 @@ func (s *MetricsService) StoreProcessEndedMetrics(egressID string, metrics strin
 	}
 
 	accumulable, pending := splitForAccumulator(m)
-	// Stash the accumulatable tally on the process; it's folded into the
-	// accumulator when the process ends (see AccumulateEndedMetrics).
-	s.pm.StoreAccumulatableMetrics(egressID, accumulable)
-
-	// Suppress live IPC values once the final tally is stashed so a concurrent
-	// scrape doesn't briefly double-count.
-	s.pm.MarkMetricsFinalized(egressID)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.pm.StoreAccumulatableMetrics(egressID, accumulable)
 	s.pendingMetrics = append(s.pendingMetrics, pending...)
+	s.mergeInAccumulatorLocked(egressID)
 	return nil
 }
 
-// AccumulateEndedMetrics folds a finished handler's last accumulatable metrics
-// into the long-lived accumulator. It must run before the process is removed
-// from the manager. Using the stashed lastAccumulatableMetrics means the tally
-// is captured even when the handler dies without reporting its final metrics.
-func (s *MetricsService) AccumulateEndedMetrics(egressID string) {
-	metrics := s.pm.GetAccumulatableMetrics(egressID)
-	if len(metrics) == 0 {
-		return
-	}
-
+// MergeInAccumulator folds a finished handler's cached accumulatable tally into
+// the accumulator and suppresses its live values.
+func (s *MetricsService) MergeInAccumulator(egressID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.mergeInAccumulatorLocked(egressID)
+}
+
+func (s *MetricsService) mergeInAccumulatorLocked(egressID string) {
+	metrics, alreadyFinalized := s.pm.FinalizeMetrics(egressID)
+	if alreadyFinalized || len(metrics) == 0 {
+		return
+	}
 
 	merged, err := mergeFamilies(append(s.endedAccumulator, metrics...))
 	if err != nil {

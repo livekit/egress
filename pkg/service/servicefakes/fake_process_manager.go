@@ -32,16 +32,18 @@ type FakeProcessManager struct {
 	alreadyExistsReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	GetAccumulatableMetricsStub        func(string) []*io_prometheus_client.MetricFamily
-	getAccumulatableMetricsMutex       sync.RWMutex
-	getAccumulatableMetricsArgsForCall []struct {
+	FinalizeMetricsStub        func(string) ([]*io_prometheus_client.MetricFamily, bool)
+	finalizeMetricsMutex       sync.RWMutex
+	finalizeMetricsArgsForCall []struct {
 		arg1 string
 	}
-	getAccumulatableMetricsReturns struct {
+	finalizeMetricsReturns struct {
 		result1 []*io_prometheus_client.MetricFamily
+		result2 bool
 	}
-	getAccumulatableMetricsReturnsOnCall map[int]struct {
+	finalizeMetricsReturnsOnCall map[int]struct {
 		result1 []*io_prometheus_client.MetricFamily
+		result2 bool
 	}
 	GetActiveEgressIDsStub        func() []string
 	getActiveEgressIDsMutex       sync.RWMutex
@@ -139,11 +141,6 @@ type FakeProcessManager struct {
 	}
 	launchReturnsOnCall map[int]struct {
 		result1 error
-	}
-	MarkMetricsFinalizedStub        func(string)
-	markMetricsFinalizedMutex       sync.RWMutex
-	markMetricsFinalizedArgsForCall []struct {
-		arg1 string
 	}
 	ProcessFinishedStub        func(string)
 	processFinishedMutex       sync.RWMutex
@@ -266,65 +263,68 @@ func (fake *FakeProcessManager) AlreadyExistsReturnsOnCall(i int, result1 bool) 
 	}{result1}
 }
 
-func (fake *FakeProcessManager) GetAccumulatableMetrics(arg1 string) []*io_prometheus_client.MetricFamily {
-	fake.getAccumulatableMetricsMutex.Lock()
-	ret, specificReturn := fake.getAccumulatableMetricsReturnsOnCall[len(fake.getAccumulatableMetricsArgsForCall)]
-	fake.getAccumulatableMetricsArgsForCall = append(fake.getAccumulatableMetricsArgsForCall, struct {
+func (fake *FakeProcessManager) FinalizeMetrics(arg1 string) ([]*io_prometheus_client.MetricFamily, bool) {
+	fake.finalizeMetricsMutex.Lock()
+	ret, specificReturn := fake.finalizeMetricsReturnsOnCall[len(fake.finalizeMetricsArgsForCall)]
+	fake.finalizeMetricsArgsForCall = append(fake.finalizeMetricsArgsForCall, struct {
 		arg1 string
 	}{arg1})
-	stub := fake.GetAccumulatableMetricsStub
-	fakeReturns := fake.getAccumulatableMetricsReturns
-	fake.recordInvocation("GetAccumulatableMetrics", []interface{}{arg1})
-	fake.getAccumulatableMetricsMutex.Unlock()
+	stub := fake.FinalizeMetricsStub
+	fakeReturns := fake.finalizeMetricsReturns
+	fake.recordInvocation("FinalizeMetrics", []interface{}{arg1})
+	fake.finalizeMetricsMutex.Unlock()
 	if stub != nil {
 		return stub(arg1)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
-func (fake *FakeProcessManager) GetAccumulatableMetricsCallCount() int {
-	fake.getAccumulatableMetricsMutex.RLock()
-	defer fake.getAccumulatableMetricsMutex.RUnlock()
-	return len(fake.getAccumulatableMetricsArgsForCall)
+func (fake *FakeProcessManager) FinalizeMetricsCallCount() int {
+	fake.finalizeMetricsMutex.RLock()
+	defer fake.finalizeMetricsMutex.RUnlock()
+	return len(fake.finalizeMetricsArgsForCall)
 }
 
-func (fake *FakeProcessManager) GetAccumulatableMetricsCalls(stub func(string) []*io_prometheus_client.MetricFamily) {
-	fake.getAccumulatableMetricsMutex.Lock()
-	defer fake.getAccumulatableMetricsMutex.Unlock()
-	fake.GetAccumulatableMetricsStub = stub
+func (fake *FakeProcessManager) FinalizeMetricsCalls(stub func(string) ([]*io_prometheus_client.MetricFamily, bool)) {
+	fake.finalizeMetricsMutex.Lock()
+	defer fake.finalizeMetricsMutex.Unlock()
+	fake.FinalizeMetricsStub = stub
 }
 
-func (fake *FakeProcessManager) GetAccumulatableMetricsArgsForCall(i int) string {
-	fake.getAccumulatableMetricsMutex.RLock()
-	defer fake.getAccumulatableMetricsMutex.RUnlock()
-	argsForCall := fake.getAccumulatableMetricsArgsForCall[i]
+func (fake *FakeProcessManager) FinalizeMetricsArgsForCall(i int) string {
+	fake.finalizeMetricsMutex.RLock()
+	defer fake.finalizeMetricsMutex.RUnlock()
+	argsForCall := fake.finalizeMetricsArgsForCall[i]
 	return argsForCall.arg1
 }
 
-func (fake *FakeProcessManager) GetAccumulatableMetricsReturns(result1 []*io_prometheus_client.MetricFamily) {
-	fake.getAccumulatableMetricsMutex.Lock()
-	defer fake.getAccumulatableMetricsMutex.Unlock()
-	fake.GetAccumulatableMetricsStub = nil
-	fake.getAccumulatableMetricsReturns = struct {
+func (fake *FakeProcessManager) FinalizeMetricsReturns(result1 []*io_prometheus_client.MetricFamily, result2 bool) {
+	fake.finalizeMetricsMutex.Lock()
+	defer fake.finalizeMetricsMutex.Unlock()
+	fake.FinalizeMetricsStub = nil
+	fake.finalizeMetricsReturns = struct {
 		result1 []*io_prometheus_client.MetricFamily
-	}{result1}
+		result2 bool
+	}{result1, result2}
 }
 
-func (fake *FakeProcessManager) GetAccumulatableMetricsReturnsOnCall(i int, result1 []*io_prometheus_client.MetricFamily) {
-	fake.getAccumulatableMetricsMutex.Lock()
-	defer fake.getAccumulatableMetricsMutex.Unlock()
-	fake.GetAccumulatableMetricsStub = nil
-	if fake.getAccumulatableMetricsReturnsOnCall == nil {
-		fake.getAccumulatableMetricsReturnsOnCall = make(map[int]struct {
+func (fake *FakeProcessManager) FinalizeMetricsReturnsOnCall(i int, result1 []*io_prometheus_client.MetricFamily, result2 bool) {
+	fake.finalizeMetricsMutex.Lock()
+	defer fake.finalizeMetricsMutex.Unlock()
+	fake.FinalizeMetricsStub = nil
+	if fake.finalizeMetricsReturnsOnCall == nil {
+		fake.finalizeMetricsReturnsOnCall = make(map[int]struct {
 			result1 []*io_prometheus_client.MetricFamily
+			result2 bool
 		})
 	}
-	fake.getAccumulatableMetricsReturnsOnCall[i] = struct {
+	fake.finalizeMetricsReturnsOnCall[i] = struct {
 		result1 []*io_prometheus_client.MetricFamily
-	}{result1}
+		result2 bool
+	}{result1, result2}
 }
 
 func (fake *FakeProcessManager) GetActiveEgressIDs() []string {
@@ -833,38 +833,6 @@ func (fake *FakeProcessManager) LaunchReturnsOnCall(i int, result1 error) {
 	fake.launchReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
-}
-
-func (fake *FakeProcessManager) MarkMetricsFinalized(arg1 string) {
-	fake.markMetricsFinalizedMutex.Lock()
-	fake.markMetricsFinalizedArgsForCall = append(fake.markMetricsFinalizedArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	stub := fake.MarkMetricsFinalizedStub
-	fake.recordInvocation("MarkMetricsFinalized", []interface{}{arg1})
-	fake.markMetricsFinalizedMutex.Unlock()
-	if stub != nil {
-		fake.MarkMetricsFinalizedStub(arg1)
-	}
-}
-
-func (fake *FakeProcessManager) MarkMetricsFinalizedCallCount() int {
-	fake.markMetricsFinalizedMutex.RLock()
-	defer fake.markMetricsFinalizedMutex.RUnlock()
-	return len(fake.markMetricsFinalizedArgsForCall)
-}
-
-func (fake *FakeProcessManager) MarkMetricsFinalizedCalls(stub func(string)) {
-	fake.markMetricsFinalizedMutex.Lock()
-	defer fake.markMetricsFinalizedMutex.Unlock()
-	fake.MarkMetricsFinalizedStub = stub
-}
-
-func (fake *FakeProcessManager) MarkMetricsFinalizedArgsForCall(i int) string {
-	fake.markMetricsFinalizedMutex.RLock()
-	defer fake.markMetricsFinalizedMutex.RUnlock()
-	argsForCall := fake.markMetricsFinalizedArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeProcessManager) ProcessFinished(arg1 string) {

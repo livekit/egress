@@ -40,7 +40,11 @@ import (
 	"github.com/livekit/egress/pkg/stats"
 )
 
-const launchTimeout = 10 * time.Second
+const (
+	launchTimeout = 10 * time.Second
+	// metricsGatherTimeout bounds the live-metrics IPC call
+	metricsGatherTimeout = 2 * time.Second
+)
 
 //go:generate go tool github.com/maxbrunsfeld/counterfeiter/v6  . ProcessManager
 
@@ -60,16 +64,11 @@ type ProcessManager interface {
 	SetExitReason(egressID string, reason string)
 	GetKillReason(egressID string) string
 	ProcessFinished(egressID string)
-	// MarkMetricsFinalized makes Process.Gather() return empty, so live-IPC
-	// values stop double-counting once the service's accumulator carries the
-	// handler's final tally.
-	MarkMetricsFinalized(egressID string)
-	// StoreAccumulatableMetrics records the accumulatable portion of a handler's
-	// final metrics tally on the corresponding process.
+	// StoreAccumulatableMetrics caches the accumulatable portion of a handler's metrics
 	StoreAccumulatableMetrics(egressID string, metrics []*dto.MetricFamily)
-	// GetAccumulatableMetrics returns the last accumulatable metrics stashed on
-	// the corresponding process, or nil if the process is unknown.
-	GetAccumulatableMetrics(egressID string) []*dto.MetricFamily
+	// FinalizeMetrics suppresses a handler's live values (Process.Gather returns
+	// empty afterwards) and returns its cached accumulatable tally.
+	FinalizeMetrics(egressID string) (metrics []*dto.MetricFamily, alreadyFinalized bool)
 }
 
 type processManager struct {
@@ -83,32 +82,24 @@ func NewProcessManager() ProcessManager {
 	}
 }
 
-func (pm *processManager) MarkMetricsFinalized(egressID string) {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
-
-	if p, ok := pm.activeHandlers[egressID]; ok {
-		p.metricsFinalized.Store(true)
-	}
-}
-
 func (pm *processManager) StoreAccumulatableMetrics(egressID string, metrics []*dto.MetricFamily) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	if p, ok := pm.activeHandlers[egressID]; ok {
-		p.lastAccumulatableMetrics = metrics
-	}
-}
-
-func (pm *processManager) GetAccumulatableMetrics(egressID string) []*dto.MetricFamily {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
 	if p, ok := pm.activeHandlers[egressID]; ok {
-		return p.lastAccumulatableMetrics
+		p.storeAccumulatableMetrics(metrics)
 	}
-	return nil
+}
+
+func (pm *processManager) FinalizeMetrics(egressID string) (metrics []*dto.MetricFamily, alreadyFinalized bool) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	p, ok := pm.activeHandlers[egressID]
+	if !ok || p.metricsFinalized.Swap(true) {
+		return nil, true
+	}
+	return p.getAccumulatableMetrics(), false
 }
 
 func (pm *processManager) Launch(
@@ -350,30 +341,48 @@ func (pm *processManager) ProcessFinished(egressID string) {
 }
 
 type Process struct {
-	ctx                      context.Context
-	handlerID                string
-	req                      *rpc.StartEgressRequest
-	info                     *livekit.EgressInfo
-	cmd                      *exec.Cmd
-	ipcHandlerClient         *ipc.EgressHandlerClientWrapper
-	ready                    chan struct{}
-	closed                   core.Fuse
-	killReason               string
-	metricsFinalized         atomic.Bool
+	ctx              context.Context
+	handlerID        string
+	req              *rpc.StartEgressRequest
+	info             *livekit.EgressInfo
+	cmd              *exec.Cmd
+	ipcHandlerClient *ipc.EgressHandlerClientWrapper
+	ready            chan struct{}
+	closed           core.Fuse
+	killReason       string
+	metricsFinalized atomic.Bool
+
+	metricsMu                deadlock.Mutex
 	lastAccumulatableMetrics []*dto.MetricFamily
 }
 
-// Gather implements the prometheus.Gatherer interface on server-side to allow aggregation of handler ms
+func (p *Process) storeAccumulatableMetrics(metrics []*dto.MetricFamily) {
+	p.metricsMu.Lock()
+	defer p.metricsMu.Unlock()
+	p.lastAccumulatableMetrics = metrics
+}
+
+func (p *Process) getAccumulatableMetrics() []*dto.MetricFamily {
+	p.metricsMu.Lock()
+	defer p.metricsMu.Unlock()
+	return p.lastAccumulatableMetrics
+}
+
+// Gather implements prometheus.Gatherer, pulling live metrics from the handler
+// over IPC. It returns empty once the handler's metrics are finalized so its
+// values aren't counted both live and in the service accumulator.
 func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 	if p.metricsFinalized.Load() {
 		return make([]*dto.MetricFamily, 0), nil
 	}
 
-	// Get the ms from the handler via IPC
-	metricsResponse, err := p.ipcHandlerClient.GetMetrics(context.Background(), &ipc.MetricsRequest{})
+	ctx, cancel := context.WithTimeout(context.Background(), metricsGatherTimeout)
+	defer cancel()
+
+	metricsResponse, err := p.ipcHandlerClient.GetMetrics(ctx, &ipc.MetricsRequest{})
 	if err != nil {
 		if !p.closed.IsBroken() {
-			logger.Warnw("failed to obtain ms from handler", err, "egressID", p.req.EgressId)
+			logger.Warnw("failed to obtain metrics from handler", err, "egressID", p.req.EgressId)
 		}
 		return make([]*dto.MetricFamily, 0), nil // don't return an error, just skip this handler
 	}
@@ -384,7 +393,7 @@ func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 	}
 
 	accumulable, _ := splitForAccumulator(m)
-	p.lastAccumulatableMetrics = accumulable
+	p.storeAccumulatableMetrics(accumulable)
 
 	return m, nil
 }
