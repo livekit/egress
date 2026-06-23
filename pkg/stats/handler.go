@@ -35,7 +35,7 @@ func NewHandlerMonitor(nodeID, clusterID string) *HandlerMonitor {
 		Name:        "pipeline_uploads",
 		Help:        "Number of uploads per pipeline with type and status labels",
 		ConstLabels: constantLabels,
-	}, []string{"type", "status"}) // type: file, manifest, segment, liveplaylist, playlist; status: success,failure
+	}, []string{"type", "status"}) // type: file, manifest, segment, liveplaylist, playlist; status: success, 4xx, 5xx, internal
 
 	m.uploadsResponseTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   "livekit",
@@ -65,8 +65,8 @@ func (m *HandlerMonitor) IncUploadCountSuccess(uploadType string, elapsed float6
 	m.uploadsResponseTime.With(labels).Observe(elapsed)
 }
 
-func (m *HandlerMonitor) IncUploadCountFailure(uploadType string, elapsed float64) {
-	labels := prometheus.Labels{"type": uploadType, "status": "failure"}
+func (m *HandlerMonitor) IncUploadCountFailure(uploadType string, status string, elapsed float64) {
+	labels := prometheus.Labels{"type": uploadType, "status": status}
 	m.uploadsCounter.With(labels).Add(1)
 	m.uploadsResponseTime.With(labels).Observe(elapsed)
 }

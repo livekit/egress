@@ -146,7 +146,7 @@ func (u *Uploader) Upload(
 			return location, size, nil
 		}
 		if u.monitor != nil {
-			u.monitor.IncUploadCountFailure(string(outputType), float64(elapsed.Milliseconds()))
+			u.monitor.IncUploadCountFailure(string(outputType), uploadErrorStatus(err), float64(elapsed.Milliseconds()))
 		}
 		u.primaryFailed = true
 		primaryErr = err
@@ -176,6 +176,19 @@ func (u *Uploader) Upload(
 	}
 
 	return "", 0, primaryErr
+}
+
+func uploadErrorStatus(err error) string {
+	var statusErr *storage.ErrorWithStatusCode
+	if errors.As(err, &statusErr) {
+		switch {
+		case statusErr.StatusCode >= 400 && statusErr.StatusCode < 500:
+			return "4xx"
+		case statusErr.StatusCode >= 500 && statusErr.StatusCode < 600:
+			return "5xx"
+		}
+	}
+	return "internal"
 }
 
 func (u *Uploader) upload(localFilepath string, storageFilepath string, outputType types.OutputType, primary bool) (location string, size int64, err error) {

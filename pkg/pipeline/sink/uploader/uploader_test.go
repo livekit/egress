@@ -3,6 +3,7 @@ package uploader
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -62,4 +63,45 @@ func TestUploader(t *testing.T) {
 	require.NoError(t, err)
 
 	require.True(t, strings.HasPrefix(string(b), "package uploader"))
+}
+
+func TestUploadErrorHasStatusCode(t *testing.T) {
+	cases := []struct {
+		name       string
+		statusCode int
+	}{
+		{"forbidden", http.StatusForbidden},
+		{"internal server error", http.StatusInternalServerError},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.statusCode)
+			}))
+			defer server.Close()
+
+			primary := &config.StorageConfig{
+				S3: &storage.S3Config{
+					AccessKey:      "test",
+					Secret:         "test",
+					Region:         "us-east-1",
+					Bucket:         "test-bucket",
+					Endpoint:       server.URL,
+					ForcePathStyle: true,
+					MaxRetries:     1,
+				},
+			}
+
+			u, err := New(primary, nil, nil, nil, &livekit.EgressInfo{})
+			require.NoError(t, err)
+
+			_, _, err = u.Upload("uploader_test.go", "uploader_test.go", "text/plain", false)
+			require.Error(t, err)
+
+			var statusErr *storage.ErrorWithStatusCode
+			require.ErrorAs(t, err, &statusErr)
+			require.Equal(t, tc.statusCode, statusErr.StatusCode)
+		})
+	}
 }
