@@ -109,6 +109,7 @@ var (
 	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
 	ErrNonRetryableOutput         = psrpc.NewErrorf(psrpc.FailedPrecondition, "output configuration does not support retry")
 	ErrHandlerFailedToStart       = psrpc.NewErrorf(psrpc.Internal, "handler failed to start")
+	ErrRoomConnectionFailed       = psrpc.NewErrorf(psrpc.Unavailable, "recording ended early: connection to room failed")
 )
 
 func PageLoadError(err string) error {

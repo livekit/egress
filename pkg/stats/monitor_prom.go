@@ -129,6 +129,7 @@ func (m *Monitor) initPrometheus() {
 const (
 	ResultCompleted         = "completed"
 	ResultAborted           = "aborted"
+	ResultStoppedCPU        = "stopped_cpu"
 	ResultKilledCPU         = "killed_cpu"
 	ResultKilledOOM         = "killed_oom"
 	ResultKilledShutdown    = "killed_shutdown"
