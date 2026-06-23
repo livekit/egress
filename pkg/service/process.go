@@ -376,6 +376,7 @@ func (p *Process) Gather() ([]*dto.MetricFamily, error) {
 		return make([]*dto.MetricFamily, 0), nil
 	}
 
+	// Avoid deadlock if the IPC doesn't return as the MetricsService lock is held when Gather is called
 	ctx, cancel := context.WithTimeout(context.Background(), metricsGatherTimeout)
 	defer cancel()
 

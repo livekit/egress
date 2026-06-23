@@ -77,9 +77,6 @@ func (s *MetricsService) CreateGatherer() prometheus.Gatherer {
 	})
 }
 
-// gatherHandlerMetrics holds s.mu for the whole scrape — live gather included —
-// so a handler can't be promoted into the accumulator in between reading its
-// live value and reading the accumulator, which would count it twice.
 func (s *MetricsService) gatherHandlerMetrics() ([]*dto.MetricFamily, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
