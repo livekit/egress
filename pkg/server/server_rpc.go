@@ -198,6 +198,7 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 	tmpDir := path.Join(config.TmpDir, req.EgressId)
 	os.RemoveAll(tmpDir)
 
+	s.MergeInAccumulator(info.EgressId)
 	s.ProcessFinished(info.EgressId)
 	s.activeRequests.Dec()
 }

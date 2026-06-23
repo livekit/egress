@@ -24,10 +24,10 @@ type HandlerMonitor struct {
 	backupCounter       *prometheus.CounterVec
 }
 
-func NewHandlerMonitor(nodeID, clusterID, egressID string) *HandlerMonitor {
+func NewHandlerMonitor(nodeID, clusterID string) *HandlerMonitor {
 	m := &HandlerMonitor{}
 
-	constantLabels := prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID, "egress_id": egressID}
+	constantLabels := prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID}
 
 	m.uploadsCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   "livekit",
