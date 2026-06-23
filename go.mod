@@ -2,8 +2,6 @@ module github.com/livekit/egress
 
 replace github.com/go-gst/go-gst => github.com/livekit/gst-go v0.0.0-20250701011214-e7f61abd14cb
 
-replace github.com/livekit/storage => ../storage
-
 go 1.26.2
 
 tool github.com/maxbrunsfeld/counterfeiter/v6
@@ -27,7 +25,7 @@ require (
 	github.com/livekit/protocol v1.47.1-0.20260617182803-c68246e9a0a0
 	github.com/livekit/psrpc v0.7.2
 	github.com/livekit/server-sdk-go/v2 v2.16.7-0.20260618140743-3776341a116e
-	github.com/livekit/storage v0.0.0-20260603163531-d499771c3b88
+	github.com/livekit/storage v0.0.0-20260623170515-1297cb15775f
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.10.2
