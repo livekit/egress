@@ -65,6 +65,53 @@ func TestUploader(t *testing.T) {
 	require.True(t, strings.HasPrefix(string(b), "package uploader"))
 }
 
+func TestHasCustomEndpoint(t *testing.T) {
+	cases := []struct {
+		name string
+		conf *config.StorageConfig
+		want bool
+	}{
+		{
+			name: "s3 without endpoint",
+			conf: &config.StorageConfig{S3: &storage.S3Config{Region: "us-east-1", Bucket: "b"}},
+			want: false,
+		},
+		{
+			name: "s3 with endpoint",
+			conf: &config.StorageConfig{S3: &storage.S3Config{Region: "us-east-1", Bucket: "b", Endpoint: "https://minio.example.com"}},
+			want: true,
+		},
+		{
+			name: "alioss without endpoint",
+			conf: &config.StorageConfig{AliOSS: &storage.AliOSSConfig{Bucket: "fake-bucket"}},
+			want: false,
+		},
+		{
+			name: "alioss with endpoint",
+			conf: &config.StorageConfig{AliOSS: &storage.AliOSSConfig{Bucket: "fake-bucket", Endpoint: "oss-cn-hangzhou.aliyuncs.com"}},
+			want: true,
+		},
+		{
+			name: "azure",
+			conf: &config.StorageConfig{Azure: &storage.AzureConfig{AccountName: "n", AccountKey: "a2V5", ContainerName: "c"}},
+			want: false,
+		},
+		{
+			name: "local",
+			conf: &config.StorageConfig{},
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := getUploader(tc.conf)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, s.hasCustomEndpoint)
+		})
+	}
+}
+
 func TestUploadErrorHasStatusCode(t *testing.T) {
 	cases := []struct {
 		name       string
