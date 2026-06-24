@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os/exec"
+	"strconv"
 
 	"github.com/livekit/egress/pkg/errors"
 )
@@ -14,6 +15,19 @@ func Clients() (int, error) {
 		return 0, err
 	}
 	return len(info.Clients), nil
+}
+
+// UnloadModule unloads a PulseAudio module by index (e.g. the owner module of an
+// orphaned null-sink). Unloading an already-removed module returns an error, which
+// callers may treat as benign.
+func UnloadModule(index int) error {
+	var e bytes.Buffer
+	cmd := exec.Command("pactl", "unload-module", strconv.Itoa(index))
+	cmd.Stderr = &e
+	if err := cmd.Run(); err != nil {
+		return errors.New(e.String())
+	}
+	return nil
 }
 
 func List() (*PulseInfo, error) {
