@@ -80,6 +80,7 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 		"outputType", outputType,
 		"room", p.Info.RoomName,
 		"request", p.Info.Request,
+		"syncEngine", p.EnableSyncEngine,
 	)
 
 	errChan := s.ioClient.CreateEgress(ctx, p.Info)
