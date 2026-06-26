@@ -45,9 +45,10 @@ func TestPlanSinkReaps_IgnoresActiveAndBaseSinks(t *testing.T) {
 	}
 
 	now := time.Now()
-	reaps := m.planSinkReapsLocked(sinks, now)
+	reaps, egressSinks := m.planSinkReapsLocked(sinks, now)
 	require.Empty(t, reaps, "no orphans should be reaped")
 	require.Empty(t, m.orphanedSinks, "active/base/foreign sinks should not be tracked")
+	require.Equal(t, 2, egressSinks, "only the two EG_ sinks count, not auto_null or foreign sinks")
 }
 
 func TestPlanSinkReaps_GracePeriodThenReap(t *testing.T) {
@@ -57,16 +58,16 @@ func TestPlanSinkReaps_GracePeriodThenReap(t *testing.T) {
 
 	// First sighting: start the grace timer, do not reap yet.
 	t0 := time.Now()
-	reaps := m.planSinkReapsLocked(orphan, t0)
+	reaps, _ := m.planSinkReapsLocked(orphan, t0)
 	require.Empty(t, reaps)
 	require.Contains(t, m.orphanedSinks, "EG_orphan")
 
 	// Within the grace window: still no reap.
-	reaps = m.planSinkReapsLocked(orphan, t0.Add(15*time.Second))
+	reaps, _ = m.planSinkReapsLocked(orphan, t0.Add(15*time.Second))
 	require.Empty(t, reaps)
 
 	// Past the grace window: reap the owning module.
-	reaps = m.planSinkReapsLocked(orphan, t0.Add(31*time.Second))
+	reaps, _ = m.planSinkReapsLocked(orphan, t0.Add(31*time.Second))
 	require.Len(t, reaps, 1)
 	require.Equal(t, "EG_orphan", reaps[0].name)
 	require.Equal(t, 7, reaps[0].module)
@@ -85,7 +86,7 @@ func TestPlanSinkReaps_RecoveryClearsTracking(t *testing.T) {
 	// Its egress becomes active again before the grace elapsed: tracking must clear so it is
 	// never reaped while in use.
 	m.pending["EG_flaky"] = &processStats{egressID: "EG_flaky"}
-	reaps := m.planSinkReapsLocked(orphan, t0.Add(10*time.Second))
+	reaps, _ := m.planSinkReapsLocked(orphan, t0.Add(10*time.Second))
 	require.Empty(t, reaps)
 	require.NotContains(t, m.orphanedSinks, "EG_flaky")
 }
@@ -99,7 +100,7 @@ func TestPlanSinkReaps_SinkDisappearsClearsTracking(t *testing.T) {
 	require.Contains(t, m.orphanedSinks, "EG_gone")
 
 	// Handler's own Close() unloaded the sink; it's no longer present. Tracking should be dropped.
-	reaps := m.planSinkReapsLocked(nil, t0.Add(5*time.Second))
+	reaps, _ := m.planSinkReapsLocked(nil, t0.Add(5*time.Second))
 	require.Empty(t, reaps)
 	require.Empty(t, m.orphanedSinks)
 }

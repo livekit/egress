@@ -67,6 +67,7 @@ type Monitor struct {
 	promCgroupReadSuccess prometheus.Gauge
 	promProcRSS           prometheus.Gauge
 	promWouldRejectCgroup prometheus.Gauge
+	promPulseSinks        prometheus.Gauge
 	requestGauge          *prometheus.GaugeVec
 	handlerResults        *prometheus.CounterVec
 	promLoadRatio         *prometheus.GaugeVec
@@ -731,7 +732,10 @@ func (m *Monitor) reapOrphanedPulseSinksLocked() {
 		return
 	}
 
-	for _, reap := range m.planSinkReapsLocked(info.Sinks, time.Now()) {
+	reaps, egressSinks := m.planSinkReapsLocked(info.Sinks, time.Now())
+	m.promPulseSinks.Set(float64(egressSinks))
+
+	for _, reap := range reaps {
 		module := reap.module
 		name := reap.name
 		go func() {
@@ -749,7 +753,9 @@ type sinkReap struct {
 	module int
 }
 
-func (m *Monitor) planSinkReapsLocked(sinks []pulse.Device, now time.Time) []sinkReap {
+// planSinkReapsLocked returns the orphaned egress null-sinks to unload and the total number of
+// egress null-sinks currently loaded (active or orphaned) for the pulse_sinks metric.
+func (m *Monitor) planSinkReapsLocked(sinks []pulse.Device, now time.Time) (reaps []sinkReap, egressSinks int) {
 	// Active egresses: admitted-but-not-yet-started (pending) plus running handlers (procStats).
 	active := make(map[string]struct{}, len(m.pending)+len(m.procStats))
 	for egressID := range m.pending {
@@ -761,7 +767,6 @@ func (m *Monitor) planSinkReapsLocked(sinks []pulse.Device, now time.Time) []sin
 
 	grace := time.Duration(m.pulseSinkReapGraceSec) * time.Second
 	present := make(map[string]struct{}, len(sinks))
-	var reaps []sinkReap
 
 	for _, sink := range sinks {
 		// Only egress-created null-sinks. The base daemon sink is "auto_null"; egress names
@@ -769,6 +774,7 @@ func (m *Monitor) planSinkReapsLocked(sinks []pulse.Device, now time.Time) []sin
 		if sink.Name == "" || sink.Name == "auto_null" || !strings.HasPrefix(sink.Name, utils.EgressPrefix) {
 			continue
 		}
+		egressSinks++
 		if _, ok := active[sink.Name]; ok {
 			delete(m.orphanedSinks, sink.Name)
 			continue
@@ -800,7 +806,7 @@ func (m *Monitor) planSinkReapsLocked(sinks []pulse.Device, now time.Time) []sin
 		}
 	}
 
-	return reaps
+	return reaps, egressSinks
 }
 
 // maybeLogMemoryUsage periodically logs per-group process RSS to aid memory leak diagnosis.
