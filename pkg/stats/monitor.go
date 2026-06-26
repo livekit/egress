@@ -57,9 +57,10 @@ type Service interface {
 }
 
 type Monitor struct {
-	nodeID        string
-	clusterID     string
-	cpuCostConfig *config.CPUCostConfig
+	nodeID                string
+	clusterID             string
+	cpuCostConfig         *config.CPUCostConfig
+	pulseSinkReapGraceSec int
 
 	promCPULoad           prometheus.Gauge
 	promCgroupMemory      prometheus.Gauge
@@ -112,14 +113,15 @@ type processStats struct {
 
 func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 	m := &Monitor{
-		nodeID:         conf.NodeID,
-		clusterID:      conf.ClusterID,
-		cpuCostConfig:  conf.CPUCostConfig,
-		svc:            svc,
-		pending:        make(map[string]*processStats),
-		procStats:      make(map[int]*processStats),
-		orphanedSinks:  make(map[string]time.Time),
-		lastMemoryDump: time.Now(),
+		nodeID:                conf.NodeID,
+		clusterID:             conf.ClusterID,
+		cpuCostConfig:         conf.CPUCostConfig,
+		pulseSinkReapGraceSec: conf.PulseSinkReapGraceSec,
+		svc:                   svc,
+		pending:               make(map[string]*processStats),
+		procStats:             make(map[int]*processStats),
+		orphanedSinks:         make(map[string]time.Time),
+		lastMemoryDump:        time.Now(),
 	}
 
 	m.initPrometheus()
@@ -716,16 +718,11 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 }
 
 // reapOrphanedPulseSinksLocked unloads PulseAudio null-sinks whose owning egress is no
-// longer active. Handlers create one module-null-sink per web/room-composite recording
-// (named after the EgressId) and only unload it in WebSource.Close(); a handler that dies
-// abnormally (crash/OOM/SIGKILL) never runs that cleanup, leaving the sink and its clients
-// loaded on the shared, pod-lifetime daemon. Left unchecked, the live client count climbs
-// until canAcceptWebLocked() permanently rejects with reason "pulse clients". This reaps
-// those orphans so a crashed recording self-heals instead of poisoning the pod.
+// longer active, recovering sinks leaked by handlers that died without running cleanup.
 //
 // Must be called with m.mu held. The pactl unloads are dispatched off-lock.
 func (m *Monitor) reapOrphanedPulseSinksLocked() {
-	if m.cpuCostConfig.ReapOrphanedPulseSinks == nil || !*m.cpuCostConfig.ReapOrphanedPulseSinks {
+	if m.pulseSinkReapGraceSec < 0 {
 		return
 	}
 
@@ -739,7 +736,7 @@ func (m *Monitor) reapOrphanedPulseSinksLocked() {
 		name := reap.name
 		go func() {
 			if err := pulse.UnloadModule(module); err != nil {
-				logger.Warnw("failed to reap orphaned pulse sink", err, "sink", name, "module", module)
+				logger.Debugw("failed to reap orphaned pulse sink", "error", err, "sink", name, "module", module)
 			} else {
 				logger.Infow("reaped orphaned pulse sink", "sink", name, "module", module)
 			}
@@ -752,11 +749,6 @@ type sinkReap struct {
 	module int
 }
 
-// planSinkReapsLocked decides which orphaned egress null-sinks are past the grace period and
-// should be unloaded, updating the orphaned-sink tracking map as a side effect. Split out from
-// reapOrphanedPulseSinksLocked so the decision logic is unit-testable without pactl.
-//
-// Must be called with m.mu held.
 func (m *Monitor) planSinkReapsLocked(sinks []pulse.Device, now time.Time) []sinkReap {
 	// Active egresses: admitted-but-not-yet-started (pending) plus running handlers (procStats).
 	active := make(map[string]struct{}, len(m.pending)+len(m.procStats))
@@ -767,7 +759,7 @@ func (m *Monitor) planSinkReapsLocked(sinks []pulse.Device, now time.Time) []sin
 		active[ps.egressID] = struct{}{}
 	}
 
-	grace := time.Duration(m.cpuCostConfig.PulseSinkReapGraceSec) * time.Second
+	grace := time.Duration(m.pulseSinkReapGraceSec) * time.Second
 	present := make(map[string]struct{}, len(sinks))
 	var reaps []sinkReap
 

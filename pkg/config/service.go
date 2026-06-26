@@ -70,6 +70,11 @@ type ServiceConfig struct {
 	PrometheusPort   int `yaml:"prometheus_port"`    // prometheus handler port
 	DebugHandlerPort int `yaml:"debug_handler_port"` // egress debug handler port
 
+	// Seconds a PulseAudio null-sink must be orphaned (its egress no longer active) before it
+	// is unloaded, reaping sinks leaked by handlers that died without running cleanup. 0 uses
+	// the default; a negative value disables reaping.
+	PulseSinkReapGraceSec int `yaml:"pulse_sink_reap_grace_sec"`
+
 	*CPUCostConfig `yaml:"cpu_cost"` // CPU costs for the different egress types
 }
 
@@ -95,13 +100,6 @@ type CPUCostConfig struct {
 	TrackCompositeCpuCost     float64 `yaml:"track_composite_cpu_cost"`
 	TrackCpuCost              float64 `yaml:"track_cpu_cost"`
 	MaxPulseClients           int     `yaml:"max_pulse_clients"` // pulse client limit for launching chrome
-
-	// Reaping of orphaned PulseAudio null-sinks left behind by handlers that died without
-	// running their normal cleanup (crash/OOM/SIGKILL). Without this, leaked sinks/clients
-	// accumulate on the shared daemon until canAcceptWebLocked() permanently rejects with
-	// reason "pulse clients". Enabled by default.
-	ReapOrphanedPulseSinks *bool `yaml:"reap_orphaned_pulse_sinks"`
-	PulseSinkReapGraceSec  int   `yaml:"pulse_sink_reap_grace_sec"` // seconds a sink must be orphaned before it is unloaded (0 = use default)
 
 	// Memory source configuration (cgroup-aware memory accounting)
 	MemorySource       MemorySource `yaml:"memory_source"`         // memory measurement source: proc_rss, cgroup
@@ -193,11 +191,8 @@ func (c *ServiceConfig) InitDefaults() {
 	if c.CpuKillGraceSec <= 0 {
 		c.CpuKillGraceSec = defaultCpuKillGraceSec
 	}
-	if c.ReapOrphanedPulseSinks == nil {
-		enabled := true
-		c.ReapOrphanedPulseSinks = &enabled
-	}
-	if c.PulseSinkReapGraceSec <= 0 {
+	// A negative value disables reaping; 0 falls back to the default grace period.
+	if c.PulseSinkReapGraceSec == 0 {
 		c.PulseSinkReapGraceSec = defaultPulseSinkReapGraceSec
 	}
 

@@ -20,20 +20,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/pipeline/source/pulse"
 )
 
 func newTestMonitorForReap(graceSec int) *Monitor {
-	enabled := true
 	return &Monitor{
-		cpuCostConfig: &config.CPUCostConfig{
-			ReapOrphanedPulseSinks: &enabled,
-			PulseSinkReapGraceSec:  graceSec,
-		},
-		pending:       make(map[string]*processStats),
-		procStats:     make(map[int]*processStats),
-		orphanedSinks: make(map[string]time.Time),
+		pulseSinkReapGraceSec: graceSec,
+		pending:               make(map[string]*processStats),
+		procStats:             make(map[int]*processStats),
+		orphanedSinks:         make(map[string]time.Time),
 	}
 }
 
@@ -109,12 +104,10 @@ func TestPlanSinkReaps_SinkDisappearsClearsTracking(t *testing.T) {
 	require.Empty(t, m.orphanedSinks)
 }
 
-func TestPlanSinkReaps_DisabledByConfig(t *testing.T) {
-	m := newTestMonitorForReap(30)
-	disabled := false
-	m.cpuCostConfig.ReapOrphanedPulseSinks = &disabled
+func TestReapOrphanedPulseSinks_DisabledByNegativeGrace(t *testing.T) {
+	m := newTestMonitorForReap(-1)
 
-	// reapOrphanedPulseSinksLocked short-circuits when disabled; planSinkReapsLocked is only
-	// reached when enabled, so here we assert the guard in the caller path by checking the flag.
-	require.False(t, *m.cpuCostConfig.ReapOrphanedPulseSinks)
+	// A negative grace disables reaping: reapOrphanedPulseSinksLocked must short-circuit before
+	// shelling out to pactl, so it is safe to call with no pulse daemon available.
+	require.NotPanics(t, m.reapOrphanedPulseSinksLocked)
 }
