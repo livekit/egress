@@ -46,7 +46,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: build/test/fetch-media-samples.sh
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: |
             ~/go/pkg/mod
