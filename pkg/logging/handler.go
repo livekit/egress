@@ -74,16 +74,10 @@ func (h *HandlerLogger) Close() error {
 
 func (h *HandlerLogger) drain() {
 	var buf []byte
-	var panicBuf []string
 
 	defer func() {
-		// flush remaining buffer
 		if len(buf) > 0 {
-			h.processLine(string(buf), &panicBuf)
-		}
-		// flush any accumulated panic
-		if len(panicBuf) > 0 {
-			h.l.Errorw(strings.Join(panicBuf, "\n"), nil)
+			h.processLine(string(buf))
 		}
 		h.done.Break()
 	}()
@@ -98,20 +92,17 @@ func (h *HandlerLogger) drain() {
 			}
 			line := string(buf[:idx])
 			buf = buf[idx+1:]
-			h.processLine(line, &panicBuf)
+			h.processLine(line)
 		}
 	}
 }
 
-func (h *HandlerLogger) processLine(line string, panicBuf *[]string) {
+func (h *HandlerLogger) processLine(line string) {
 	if len(line) == 0 {
 		return
 	}
 
 	if line[len(line)-1] == '}' {
-		if len(*panicBuf) > 0 {
-			h.flushPanic(panicBuf)
-		}
 		fmt.Println(line)
 		return
 	}
@@ -127,23 +118,6 @@ func (h *HandlerLogger) processLine(line string, panicBuf *[]string) {
 		return
 	}
 
-	// panic entry
-	if strings.HasPrefix(line, "panic:") ||
-		strings.HasPrefix(line, "fatal error:") ||
-		strings.HasPrefix(line, "goroutine ") {
-		*panicBuf = append(*panicBuf, line)
-		return
-	}
-
-	// panic accumulation
-	if len(*panicBuf) > 0 {
-		if h.isPanicContinuation(line) {
-			*panicBuf = append(*panicBuf, line)
-			return
-		}
-		h.flushPanic(panicBuf)
-	}
-
 	// pion SDK stderr output
 	if len(line) > 5 && sdkPrefixes[line[:5]] {
 		h.l.Infow(line)
@@ -151,24 +125,4 @@ func (h *HandlerLogger) processLine(line string, panicBuf *[]string) {
 	}
 
 	h.l.Errorw(line, nil)
-}
-
-func (h *HandlerLogger) isPanicContinuation(line string) bool {
-	if line[0] == '\t' {
-		return true
-	}
-	if strings.HasPrefix(line, "goroutine ") {
-		return true
-	}
-	if !strings.HasPrefix(line, "(") && strings.Contains(line, "(") {
-		return true
-	}
-	return false
-}
-
-func (h *HandlerLogger) flushPanic(panicBuf *[]string) {
-	if len(*panicBuf) > 0 {
-		h.l.Errorw(strings.Join(*panicBuf, "\n"), nil)
-		*panicBuf = nil
-	}
 }
