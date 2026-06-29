@@ -17,6 +17,7 @@ package stats
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/linkdata/deadlock"
@@ -27,6 +28,7 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/hwstats"
 
 	"github.com/livekit/egress/pkg/config"
@@ -90,6 +92,7 @@ type Monitor struct {
 	cgroupOK           bool
 	cgroupErrorLogged  atomic.Bool
 	pulseErrorLogged   atomic.Bool
+	orphanedSinks      map[string]time.Time // egress null-sink name -> first time seen without an active egress
 }
 
 type processStats struct {
@@ -115,6 +118,7 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 		svc:            svc,
 		pending:        make(map[string]*processStats),
 		procStats:      make(map[int]*processStats),
+		orphanedSinks:  make(map[string]time.Time),
 		lastMemoryDump: time.Now(),
 	}
 
@@ -706,7 +710,105 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 
 	m.updateLoadRatios(load)
 
+	m.reapOrphanedPulseSinksLocked()
+
 	m.checkMemoryKill(maxMemoryEgress, maxMemoryGroup)
+}
+
+// reapOrphanedPulseSinksLocked unloads PulseAudio null-sinks whose owning egress is no
+// longer active. Handlers create one module-null-sink per web/room-composite recording
+// (named after the EgressId) and only unload it in WebSource.Close(); a handler that dies
+// abnormally (crash/OOM/SIGKILL) never runs that cleanup, leaving the sink and its clients
+// loaded on the shared, pod-lifetime daemon. Left unchecked, the live client count climbs
+// until canAcceptWebLocked() permanently rejects with reason "pulse clients". This reaps
+// those orphans so a crashed recording self-heals instead of poisoning the pod.
+//
+// Must be called with m.mu held. The pactl unloads are dispatched off-lock.
+func (m *Monitor) reapOrphanedPulseSinksLocked() {
+	if m.cpuCostConfig.ReapOrphanedPulseSinks == nil || !*m.cpuCostConfig.ReapOrphanedPulseSinks {
+		return
+	}
+
+	info, err := pulse.List()
+	if err != nil {
+		return
+	}
+
+	for _, reap := range m.planSinkReapsLocked(info.Sinks, time.Now()) {
+		module := reap.module
+		name := reap.name
+		go func() {
+			if err := pulse.UnloadModule(module); err != nil {
+				logger.Warnw("failed to reap orphaned pulse sink", err, "sink", name, "module", module)
+			} else {
+				logger.Infow("reaped orphaned pulse sink", "sink", name, "module", module)
+			}
+		}()
+	}
+}
+
+type sinkReap struct {
+	name   string
+	module int
+}
+
+// planSinkReapsLocked decides which orphaned egress null-sinks are past the grace period and
+// should be unloaded, updating the orphaned-sink tracking map as a side effect. Split out from
+// reapOrphanedPulseSinksLocked so the decision logic is unit-testable without pactl.
+//
+// Must be called with m.mu held.
+func (m *Monitor) planSinkReapsLocked(sinks []pulse.Device, now time.Time) []sinkReap {
+	// Active egresses: admitted-but-not-yet-started (pending) plus running handlers (procStats).
+	active := make(map[string]struct{}, len(m.pending)+len(m.procStats))
+	for egressID := range m.pending {
+		active[egressID] = struct{}{}
+	}
+	for _, ps := range m.procStats {
+		active[ps.egressID] = struct{}{}
+	}
+
+	grace := time.Duration(m.cpuCostConfig.PulseSinkReapGraceSec) * time.Second
+	present := make(map[string]struct{}, len(sinks))
+	var reaps []sinkReap
+
+	for _, sink := range sinks {
+		// Only egress-created null-sinks. The base daemon sink is "auto_null"; egress names
+		// each recording's null-sink after its EgressId.
+		if sink.Name == "" || sink.Name == "auto_null" || !strings.HasPrefix(sink.Name, utils.EgressPrefix) {
+			continue
+		}
+		if _, ok := active[sink.Name]; ok {
+			delete(m.orphanedSinks, sink.Name)
+			continue
+		}
+
+		present[sink.Name] = struct{}{}
+		firstSeen, seen := m.orphanedSinks[sink.Name]
+		if !seen {
+			// First time we've seen this sink without an active egress; start the grace timer.
+			// Guards against reaping during the normal teardown window between EgressEnded and
+			// the handler's own unload.
+			m.orphanedSinks[sink.Name] = now
+			continue
+		}
+		if now.Sub(firstSeen) < grace {
+			continue
+		}
+
+		// Past the grace period and still orphaned: reap. Reset tracking so a failed unload is
+		// retried only after another full grace period rather than every tick.
+		delete(m.orphanedSinks, sink.Name)
+		reaps = append(reaps, sinkReap{name: sink.Name, module: sink.OwnerModule})
+	}
+
+	// Drop tracking for sinks that no longer exist (reaped, or unloaded by their handler).
+	for name := range m.orphanedSinks {
+		if _, ok := present[name]; !ok {
+			delete(m.orphanedSinks, name)
+		}
+	}
+
+	return reaps
 }
 
 // maybeLogMemoryUsage periodically logs per-group process RSS to aid memory leak diagnosis.
