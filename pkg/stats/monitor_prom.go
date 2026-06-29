@@ -100,6 +100,14 @@ func (m *Monitor) initPrometheus() {
 		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
 	})
 
+	m.promPulseSinks = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "pulse_sinks",
+		Help:        "Number of egress null-sinks currently loaded on the PulseAudio daemon",
+		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+	})
+
 	m.handlerResults = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   "livekit",
 		Subsystem:   "egress",
@@ -120,6 +128,7 @@ func (m *Monitor) initPrometheus() {
 		m.promCgroupMemory,
 		m.promCgroupReadSuccess, m.promProcRSS,
 		m.promWouldRejectCgroup,
+		m.promPulseSinks,
 		m.handlerResults,
 		m.promLoadRatio,
 	)

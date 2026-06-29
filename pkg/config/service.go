@@ -58,6 +58,8 @@ const (
 	defaultMaxPulseClients = 60
 
 	defaultCpuKillGraceSec = 30
+
+	defaultPulseSinkReapGraceSec = 30
 )
 
 type ServiceConfig struct {
@@ -67,6 +69,11 @@ type ServiceConfig struct {
 	TemplatePort     int `yaml:"template_port"`      // room composite template server port
 	PrometheusPort   int `yaml:"prometheus_port"`    // prometheus handler port
 	DebugHandlerPort int `yaml:"debug_handler_port"` // egress debug handler port
+
+	// Seconds a PulseAudio null-sink must be orphaned (its egress no longer active) before it
+	// is unloaded, reaping sinks leaked by handlers that died without running cleanup. 0 uses
+	// the default; a negative value disables reaping.
+	PulseSinkReapGraceSec int `yaml:"pulse_sink_reap_grace_sec"`
 
 	*CPUCostConfig `yaml:"cpu_cost"` // CPU costs for the different egress types
 }
@@ -183,6 +190,10 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.CpuKillGraceSec <= 0 {
 		c.CpuKillGraceSec = defaultCpuKillGraceSec
+	}
+	// A negative value disables reaping; 0 falls back to the default grace period.
+	if c.PulseSinkReapGraceSec == 0 {
+		c.PulseSinkReapGraceSec = defaultPulseSinkReapGraceSec
 	}
 
 	// Memory source defaults to proc_rss (preserves existing behavior)
