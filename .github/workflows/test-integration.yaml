@@ -38,7 +38,7 @@ jobs:
     outputs:
       image: ${{ steps.docker-md.outputs.tags }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           lfs: true
       - name: Fetch media-samples (with LFS)
@@ -46,7 +46,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: build/test/fetch-media-samples.sh
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: |
             ~/go/pkg/mod
@@ -150,7 +150,7 @@ jobs:
 
       - name: Upload avsync stats artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: avsync-stats-${{ matrix.integration_type }}
           path: /tmp/avsync-stats.json
@@ -161,10 +161,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Download avsync stats artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: avsync-stats-*
           path: stats/

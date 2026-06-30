@@ -26,14 +26,14 @@ jobs:
   docker:
     runs-on: ubuntu-latest-m
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         # for pull requests, need to checkout head for EndBug/add-and-commit to work
         if: github.event_name == 'pull_request'
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.ref }}
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: github.event_name != 'pull_request'
 
       - name: Docker metadata
@@ -71,7 +71,7 @@ jobs:
           mv -f version.go version/version.go
 
       - name: Commit version changes
-        uses: EndBug/add-and-commit@v9
+        uses: EndBug/add-and-commit@v10
         with:
           default_author: github_actions
           message: |

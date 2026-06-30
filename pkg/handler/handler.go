@@ -28,13 +28,14 @@ import (
 
 	"go.opentelemetry.io/otel"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/ipc"
-	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/ipc"
+	"github.com/livekit/egress/pkg/pipeline"
 )
 
 type Handler struct {
@@ -54,9 +55,10 @@ var (
 )
 
 func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
-	// Register all GO process metrics
+	// The service already exposes go_* / process_* — leaving these registered
+	// causes prometheus.Gatherers.Gather to reject the scrape as duplicate.
 	prometheus.Unregister(collectors.NewGoCollector())
-	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll)))
+	prometheus.Unregister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	ipcClient, err := ipc.NewServiceClient(path.Join(config.TmpDir, conf.NodeID))
 	if err != nil {

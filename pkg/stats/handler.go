@@ -15,6 +15,8 @@
 package stats
 
 import (
+	"strconv"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -24,10 +26,10 @@ type HandlerMonitor struct {
 	backupCounter       *prometheus.CounterVec
 }
 
-func NewHandlerMonitor(nodeID, clusterID, egressID string) *HandlerMonitor {
+func NewHandlerMonitor(nodeID, clusterID string) *HandlerMonitor {
 	m := &HandlerMonitor{}
 
-	constantLabels := prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID, "egress_id": egressID}
+	constantLabels := prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID}
 
 	m.uploadsCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   "livekit",
@@ -35,7 +37,7 @@ func NewHandlerMonitor(nodeID, clusterID, egressID string) *HandlerMonitor {
 		Name:        "pipeline_uploads",
 		Help:        "Number of uploads per pipeline with type and status labels",
 		ConstLabels: constantLabels,
-	}, []string{"type", "status"}) // type: file, manifest, segment, liveplaylist, playlist; status: success,failure
+	}, []string{"type", "status", "custom_endpoint"}) // type: file, manifest, segment, liveplaylist, playlist; status: success, 4xx, 5xx, internal
 
 	m.uploadsResponseTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   "livekit",
@@ -44,7 +46,7 @@ func NewHandlerMonitor(nodeID, clusterID, egressID string) *HandlerMonitor {
 		Help:        "A histogram of latencies for upload requests in milliseconds.",
 		Buckets:     []float64{10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 15000, 20000, 30000},
 		ConstLabels: constantLabels,
-	}, []string{"type", "status"})
+	}, []string{"type", "status", "custom_endpoint"})
 
 	m.backupCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   "livekit",
@@ -59,14 +61,14 @@ func NewHandlerMonitor(nodeID, clusterID, egressID string) *HandlerMonitor {
 	return m
 }
 
-func (m *HandlerMonitor) IncUploadCountSuccess(uploadType string, elapsed float64) {
-	labels := prometheus.Labels{"type": uploadType, "status": "success"}
+func (m *HandlerMonitor) IncUploadCountSuccess(uploadType string, hasCustomEndpoint bool, elapsed float64) {
+	labels := prometheus.Labels{"type": uploadType, "status": "success", "custom_endpoint": strconv.FormatBool(hasCustomEndpoint)}
 	m.uploadsCounter.With(labels).Add(1)
 	m.uploadsResponseTime.With(labels).Observe(elapsed)
 }
 
-func (m *HandlerMonitor) IncUploadCountFailure(uploadType string, elapsed float64) {
-	labels := prometheus.Labels{"type": uploadType, "status": "failure"}
+func (m *HandlerMonitor) IncUploadCountFailure(uploadType string, status string, hasCustomEndpoint bool, elapsed float64) {
+	labels := prometheus.Labels{"type": uploadType, "status": status, "custom_endpoint": strconv.FormatBool(hasCustomEndpoint)}
 	m.uploadsCounter.With(labels).Add(1)
 	m.uploadsResponseTime.With(labels).Observe(elapsed)
 }

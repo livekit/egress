@@ -89,9 +89,14 @@ COPY --from=1 /workspace/egress /bin/
 COPY --from=1 /tini /tini
 COPY build/egress/entrypoint.sh /
 
+# PulseAudio defaults to rlimit-nofile=256. Set it to a more sensible value to avoid
+# hitting a max Chrome instances bottleneck
+RUN echo "rlimit-nofile = -1" >> /etc/pulse/daemon.conf
+
 # run
 USER egress
 ENV PATH=${PATH}:/chrome
 ENV XDG_RUNTIME_DIR=/home/egress/.cache/xdgr
 ENV CHROME_DEVEL_SANDBOX=/usr/local/sbin/chrome-devel-sandbox
+
 ENTRYPOINT ["/entrypoint.sh"]

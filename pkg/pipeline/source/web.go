@@ -48,6 +48,7 @@ const (
 
 	chromeFailedToStart       = "chrome failed to start:"
 	chromeCertVerifierChanged = "net::ERR_CERT_VERIFIER_CHANGED"
+	chromeConnectionClosed    = "net::ERR_CONNECTION_CLOSED"
 
 	chromeTimeout = time.Second * 30
 	chromeRetries = 3
@@ -388,6 +389,10 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 		}
 		if strings.Contains(err.Error(), chromeCertVerifierChanged) {
 			logger.Warnw("chrome cert verifier changed, retrying", nil)
+			return errors.PageLoadError(err.Error()), true
+		}
+		if strings.Contains(err.Error(), chromeConnectionClosed) {
+			logger.Warnw("connection closed, retrying", nil)
 			return errors.PageLoadError(err.Error()), true
 		}
 		return errors.PageLoadError(err.Error()), false

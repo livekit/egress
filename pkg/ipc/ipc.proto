@@ -55,6 +55,7 @@ service EgressHandler {
   rpc GetPipelineDot(GstPipelineDebugDotRequest) returns (GstPipelineDebugDotResponse) {};
   rpc GetPProf(PProfRequest) returns (PProfResponse) {};
   rpc GetMetrics(MetricsRequest) returns (MetricsResponse) {};
+  rpc StopHandler(StopHandlerRequest) returns (google.protobuf.Empty) {};
   rpc KillEgress(KillEgressRequest) returns (google.protobuf.Empty) {};
 }
 
@@ -78,6 +79,10 @@ message MetricsRequest {}
 
 message MetricsResponse {
   string metrics = 1;
+}
+
+message StopHandlerRequest {
+  string reason = 1;
 }
 
 message KillEgressRequest {

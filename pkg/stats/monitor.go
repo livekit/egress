@@ -39,6 +39,7 @@ const (
 	cpuHoldDuration         = time.Second * 15
 	defaultKillThreshold    = 0.95
 	minKillDuration         = 10
+	lowCPUResetDuration     = 5
 	gb                      = 1024.0 * 1024.0 * 1024.0
 	pulseClientHold         = 4
 	memoryHeadroomGB        = 1.0
@@ -49,6 +50,7 @@ type Service interface {
 	IsIdle() bool
 	IsDisabled() bool
 	IsTerminating() bool
+	StopProcess(egressID string, reason string)
 	KillProcess(egressID string, reason string, err error)
 }
 
@@ -74,17 +76,20 @@ type Monitor struct {
 	pendingPulseClients atomic.Int32
 	pendingMemoryUsage  atomic.Float64
 
-	mu                deadlock.Mutex
-	highCPUDuration   int
-	highMemoryStart   time.Time
-	lastMemoryDump    time.Time
-	pending           map[string]*processStats
-	procStats         map[int]*processStats
-	memoryUsage       float64
-	cgroupUsageBytes  uint64
-	cgroupOK          bool
-	cgroupErrorLogged atomic.Bool
-	pulseErrorLogged  atomic.Bool
+	mu                 deadlock.Mutex
+	highCPUDuration    int
+	lowCPUDuration     int
+	cpuStopRequestedAt time.Time
+	cpuStopEgressID    string
+	highMemoryStart    time.Time
+	lastMemoryDump     time.Time
+	pending            map[string]*processStats
+	procStats          map[int]*processStats
+	memoryUsage        float64
+	cgroupUsageBytes   uint64
+	cgroupOK           bool
+	cgroupErrorLogged  atomic.Bool
+	pulseErrorLogged   atomic.Bool
 }
 
 type processStats struct {
@@ -525,6 +530,11 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64, in
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.cpuStopEgressID == req.EgressId {
+		m.cpuStopRequestedAt = time.Time{}
+		m.cpuStopEgressID = ""
+	}
+
 	var countedAsWeb bool
 	if ps := m.pending[req.EgressId]; ps != nil {
 		countedAsWeb = ps.countedAsWeb
@@ -661,25 +671,7 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 		}
 	}
 
-	cpuKillThreshold := defaultKillThreshold
-	if cpuKillThreshold <= m.cpuCostConfig.MaxCpuUtilization {
-		cpuKillThreshold = (1 + m.cpuCostConfig.MaxCpuUtilization) / 2
-	}
-
-	if load > cpuKillThreshold {
-		logger.Warnw("high cpu usage", nil,
-			"cpu", load,
-			"requests", m.requests.Load(),
-		)
-
-		if m.requests.Load() > 1 {
-			m.highCPUDuration++
-			if m.highCPUDuration >= minKillDuration {
-				m.svc.KillProcess(maxCPUEgress, ResultKilledCPU, errors.ErrCPUExhausted(maxCPU))
-				m.highCPUDuration = 0
-			}
-		}
-	}
+	m.checkCPUKill(load, maxCPU, maxCPUEgress)
 
 	totalMemory := 0
 	maxMemory := 0
@@ -810,6 +802,59 @@ func (m *Monitor) updateLoadRatios(cpuLoad float64) {
 			logger.Warnw("failed to read PulseAudio clients", err)
 		}
 	}
+}
+
+// checkCPUKill stages a graceful EOS drain on sustained high CPU and escalates to a hard kill if the grace period elapses; the accumulator only clears after lowCPUResetDuration consecutive sub-threshold ticks so jittery loads still trip while transient spikes don't pile up.
+func (m *Monitor) checkCPUKill(load, maxCPU float64, maxCPUEgress string) {
+	cpuKillThreshold := defaultKillThreshold
+	if cpuKillThreshold <= m.cpuCostConfig.MaxCpuUtilization {
+		cpuKillThreshold = (1 + m.cpuCostConfig.MaxCpuUtilization) / 2
+	}
+
+	if load <= cpuKillThreshold {
+		m.lowCPUDuration++
+		if m.lowCPUDuration >= lowCPUResetDuration {
+			m.highCPUDuration = 0
+		}
+		return
+	}
+	m.lowCPUDuration = 0
+
+	logger.Warnw("high cpu usage", nil,
+		"cpu", load,
+		"requests", m.requests.Load(),
+	)
+
+	if m.requests.Load() <= 1 {
+		return
+	}
+
+	if m.cpuStopRequestedAt.IsZero() {
+		m.highCPUDuration++
+		if m.highCPUDuration < minKillDuration || maxCPUEgress == "" {
+			return
+		}
+		m.svc.StopProcess(maxCPUEgress, ResultStoppedCPU)
+		m.cpuStopRequestedAt = time.Now()
+		m.cpuStopEgressID = maxCPUEgress
+		m.highCPUDuration = 0
+		logger.Warnw("requested graceful stop for high cpu", nil,
+			"egressID", maxCPUEgress,
+			"cpu", maxCPU,
+		)
+		return
+	}
+
+	if time.Since(m.cpuStopRequestedAt) < time.Duration(m.cpuCostConfig.CpuKillGraceSec)*time.Second {
+		return
+	}
+	logger.Warnw("graceful stop grace period exceeded, killing", nil,
+		"egressID", m.cpuStopEgressID,
+		"cpu", maxCPU,
+	)
+	m.svc.KillProcess(m.cpuStopEgressID, ResultKilledCPU, errors.ErrCPUExhausted(maxCPU))
+	m.cpuStopRequestedAt = time.Time{}
+	m.cpuStopEgressID = ""
 }
 
 // checkMemoryKill evaluates whether to kill a process based on memory usage.
