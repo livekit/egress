@@ -153,7 +153,7 @@ func (u *Uploader) Upload(
 		if u.monitor != nil {
 			u.monitor.IncUploadCountFailure(string(outputType), uploadErrorStatus(err), u.primary.hasCustomEndpoint, float64(elapsed.Milliseconds()))
 		}
-		u.primaryFailed = true
+		u.primaryFailed = u.backup != nil
 		primaryErr = err
 
 	}
