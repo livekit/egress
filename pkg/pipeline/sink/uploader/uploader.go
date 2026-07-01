@@ -180,9 +180,6 @@ func (u *Uploader) Upload(
 		return "", 0, psrpc.NewError(psrpc.InvalidArgument, backupErr)
 	}
 
-	if primaryErr == nil {
-		primaryErr = psrpc.NewErrorf(psrpc.Internal, "upload skipped: primary previously failed and no backup configured")
-	}
 	return "", 0, primaryErr
 }
 
