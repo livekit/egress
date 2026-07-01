@@ -44,7 +44,7 @@ type SDKSource struct {
 	*config.PipelineConfig
 	callbacks *gstreamer.Callbacks
 
-	room *lksdk.Room
+	room atomic.Pointer[lksdk.Room]
 	sync synchronizer.Sync
 
 	mu                   deadlock.Mutex
@@ -276,13 +276,13 @@ func (s *SDKSource) joinRoom() error {
 	if err != nil {
 		return err
 	}
-	s.room = room
+	s.room.Store(room)
 
 	var fileIdentifier string
 	var w, h uint32
 	switch s.RequestType {
 	case types.RequestTypeRoomComposite:
-		fileIdentifier = s.room.Name()
+		fileIdentifier = room.Name()
 		// room_name and room_id are already handled as replacements
 		err = s.awaitRoomTracks()
 
@@ -290,8 +290,8 @@ func (s *SDKSource) joinRoom() error {
 		if s.Info.RoomName != "" {
 			fileIdentifier = s.Info.RoomName
 		} else {
-			fileIdentifier = s.room.Name()
-			s.filenameReplacements["{room_name}"] = s.room.Name()
+			fileIdentifier = room.Name()
+			s.filenameReplacements["{room_name}"] = room.Name()
 		}
 
 		err = s.awaitRoomTracks()
@@ -320,8 +320,8 @@ func (s *SDKSource) joinRoom() error {
 		if s.Info.RoomName != "" {
 			fileIdentifier = s.Info.RoomName
 		} else {
-			fileIdentifier = s.room.Name()
-			s.filenameReplacements["{room_name}"] = s.room.Name()
+			fileIdentifier = room.Name()
+			s.filenameReplacements["{room_name}"] = room.Name()
 		}
 		w, h, err = s.awaitMediaTracks()
 	}
@@ -377,7 +377,8 @@ func (s *SDKSource) sendInitResult(ch chan<- subscriptionResult, trackID string,
 func (s *SDKSource) awaitRoomTracks() error {
 	// await expected subscriptions
 	expected := 0
-	for _, rp := range s.room.GetRemoteParticipants() {
+	// init-time, single-goroutine: room is non-nil here (cleared only by Close, which runs after Start returns)
+	for _, rp := range s.room.Load().GetRemoteParticipants() {
 		pubs := rp.TrackPublications()
 		for _, pub := range pubs {
 			if s.shouldSubscribe(pub) {
@@ -429,7 +430,7 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 
 	// Phase 3: Count all matching subscriptions and soft-wait
 	expected := 0
-	for _, rp := range s.room.GetRemoteParticipants() {
+	for _, rp := range s.room.Load().GetRemoteParticipants() {
 		for _, pub := range rp.TrackPublications() {
 			if s.shouldSubscribeMedia(pub, rp) {
 				expected++
@@ -442,7 +443,7 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 
 	// Phase 4: Get video dimensions from subscribed tracks
 	var w, h uint32
-	for _, rp := range s.room.GetRemoteParticipants() {
+	for _, rp := range s.room.Load().GetRemoteParticipants() {
 		for _, pub := range rp.TrackPublications() {
 			if pub.IsSubscribed() && pub.Kind() == lksdk.TrackKindVideo {
 				if info := pub.TrackInfo(); info != nil {
@@ -515,7 +516,7 @@ func (s *SDKSource) awaitExpected(expected int) error {
 
 func (s *SDKSource) getParticipant(identity string, deadline time.Time) (*lksdk.RemoteParticipant, error) {
 	for time.Now().Before(deadline) {
-		for _, p := range s.room.GetRemoteParticipants() {
+		for _, p := range s.room.Load().GetRemoteParticipants() {
 			if p.Identity() == identity {
 				return p, nil
 			}
@@ -527,7 +528,7 @@ func (s *SDKSource) getParticipant(identity string, deadline time.Time) (*lksdk.
 
 func (s *SDKSource) awaitTrackPublication(trackID string, deadline time.Time) error {
 	for time.Now().Before(deadline) {
-		for _, p := range s.room.GetRemoteParticipants() {
+		for _, p := range s.room.Load().GetRemoteParticipants() {
 			for _, pub := range p.TrackPublications() {
 				if pub.SID() == trackID {
 					return nil
@@ -597,7 +598,7 @@ func (s *SDKSource) subscribeToTracks(expecting map[string]struct{}, deadline <-
 				return nil, errors.ErrTrackNotFound(trackID)
 			}
 		default:
-			for _, p := range s.room.GetRemoteParticipants() {
+			for _, p := range s.room.Load().GetRemoteParticipants() {
 				for _, track := range p.TrackPublications() {
 					trackID := track.SID()
 					if _, ok := expecting[trackID]; ok {
@@ -813,7 +814,11 @@ func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {
 		s.duplicateIdentity.Store(true)
 	}
 	if reason != lksdk.RoomClosed && reason != lksdk.LeaveRequested {
-		logger.Warnw("disconnected from room", nil, "reason", reason, "protoReason", s.room.DisconnectReason().String())
+		protoReason := "unknown"
+		if room := s.room.Load(); room != nil {
+			protoReason = room.DisconnectReason().String()
+		}
+		logger.Warnw("disconnected from room", nil, "reason", reason, "protoReason", protoReason)
 
 		if reason == lksdk.Failed {
 			s.connectionFailed.Store(true)
@@ -849,9 +854,8 @@ func (s *SDKSource) shouldSkipTrackSubscriptions() bool {
 }
 
 func (s *SDKSource) disconnectRoom() {
-	if s.room != nil {
-		s.room.Disconnect()
-		s.room = nil
+	if room := s.room.Swap(nil); room != nil {
+		room.Disconnect()
 	}
 }
 
