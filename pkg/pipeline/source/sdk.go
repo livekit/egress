@@ -882,10 +882,11 @@ func (s *SDKSource) onActiveSpeakersChanged(speakers []lksdk.Participant) {
 // UpdateTrackDimensions sets the preferred video dimensions for a track's publication.
 // Called when layout changes to request appropriate simulcast layers.
 func (s *SDKSource) UpdateTrackDimensions(trackID string, width, height int) {
-	if s.room == nil {
+	room := s.room.Load()
+	if room == nil {
 		return
 	}
-	for _, rp := range s.room.GetRemoteParticipants() {
+	for _, rp := range room.GetRemoteParticipants() {
 		for _, pub := range rp.TrackPublications() {
 			if pub.SID() == trackID {
 				if remotePub, ok := pub.(*lksdk.RemoteTrackPublication); ok {
