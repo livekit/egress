@@ -42,10 +42,14 @@ type VideoBin struct {
 	nextID             int
 	pads               map[string]*gst.Pad
 	names              map[string]string
-	compositor         *gst.Element
+	selector           *gst.Element
 	rawVideoTee        *gst.Element
 	layout             *LayoutManager // nil when not compositing
 	setVideoDimensions func(trackID string, width, height int)
+
+	// input-selector state (only used when !Compositing)
+	selectedPad string
+	lastPTS     uint64
 }
 
 func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, setVideoDimensions func(string, int, int)) error {
@@ -152,6 +156,14 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	}
 	delete(b.names, trackID)
 	delete(b.pads, name)
+
+	if !b.conf.Compositing && b.selectedPad == name {
+		if err := b.setSelectorPadLocked(videoTestSrcName); err != nil {
+			b.mu.Unlock()
+			b.bin.OnError(err)
+			return
+		}
+	}
 	b.mu.Unlock()
 
 	if b.layout != nil {
@@ -391,8 +403,14 @@ func (b *VideoBin) buildSDKInput() error {
 	b.names = make(map[string]string)
 
 	if b.conf.VideoDecoding {
-		if err := b.addCompositor(); err != nil {
-			return err
+		if b.conf.Compositing {
+			if err := b.addCompositor(); err != nil {
+				return err
+			}
+		} else {
+			if err := b.addSelector(); err != nil {
+				return err
+			}
 		}
 		if err := b.addVideoTestSrcBin(); err != nil {
 			return err
@@ -421,6 +439,11 @@ func (b *VideoBin) buildSDKInput() error {
 		b.bin.SetGetSrcPad(b.getSrcPad)
 		if err := b.addDecodedVideoSink(); err != nil {
 			return err
+		}
+		if !b.conf.Compositing && len(b.conf.VideoTracks) == 0 {
+			if err := b.setSelectorPad(videoTestSrcName); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -634,7 +657,34 @@ func (b *VideoBin) addCompositor() error {
 		return err
 	}
 
-	b.compositor = compositor
+	b.selector = compositor
+	return nil
+}
+
+func (b *VideoBin) addSelector() error {
+	inputSelector, err := gst.NewElement("input-selector")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	videoRate, err := gst.NewElement("videorate")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	caps, err := b.newVideoCapsFilter(true)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	if err = b.bin.AddElements(inputSelector, videoRate, caps); err != nil {
+		return err
+	}
+
+	b.selector = inputSelector
 	return nil
 }
 
@@ -667,13 +717,27 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 		return err
 	}
 
-	pad := b.compositor.GetRequestPad("sink_%u")
-	pad.SetProperty("xpos", 0)
-	pad.SetProperty("ypos", 0)
-	pad.SetProperty("width", int(b.conf.Width))
-	pad.SetProperty("height", int(b.conf.Height))
-	pad.SetProperty("zorder", uint(0))
-	pad.SetProperty("alpha", 1.0)
+	pad := b.selector.GetRequestPad("sink_%u")
+	if b.conf.Compositing {
+		pad.SetProperty("xpos", 0)
+		pad.SetProperty("ypos", 0)
+		pad.SetProperty("width", int(b.conf.Width))
+		pad.SetProperty("height", int(b.conf.Height))
+		pad.SetProperty("zorder", uint(0))
+		pad.SetProperty("alpha", 1.0)
+	} else {
+		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			pts := uint64(info.GetBuffer().PresentationTimestamp())
+			b.mu.Lock()
+			if pts < b.lastPTS || b.selectedPad != videoTestSrcName {
+				b.mu.Unlock()
+				return gst.PadProbeDrop
+			}
+			b.lastPTS = pts
+			b.mu.Unlock()
+			return gst.PadProbeOK
+		})
+	}
 	b.pads[videoTestSrcName] = pad
 	return nil
 }
@@ -885,12 +949,26 @@ func (b *VideoBin) createSrcPad(trackID, name string) {
 func (b *VideoBin) createSrcPadLocked(trackID, name string) {
 	b.names[trackID] = name
 
-	pad := b.compositor.GetRequestPad("sink_%u")
-	pad.SetProperty("xpos", 0)
-	pad.SetProperty("ypos", 0)
-	pad.SetProperty("width", int(b.conf.Width))
-	pad.SetProperty("height", int(b.conf.Height))
-	pad.SetProperty("zorder", uint(1))
+	pad := b.selector.GetRequestPad("sink_%u")
+	if b.conf.Compositing {
+		pad.SetProperty("xpos", 0)
+		pad.SetProperty("ypos", 0)
+		pad.SetProperty("width", int(b.conf.Width))
+		pad.SetProperty("height", int(b.conf.Height))
+		pad.SetProperty("zorder", uint(1))
+	} else {
+		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			pts := uint64(info.GetBuffer().PresentationTimestamp())
+			b.mu.Lock()
+			if pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name) {
+				b.mu.Unlock()
+				return gst.PadProbeDrop
+			}
+			b.lastPTS = pts
+			b.mu.Unlock()
+			return gst.PadProbeOK
+		})
+	}
 
 	b.pads[name] = pad
 }
@@ -903,19 +981,59 @@ func (b *VideoBin) setTrackVisible(name string, visible bool) error {
 }
 
 func (b *VideoBin) setTrackVisibleLocked(name string, visible bool) error {
+	if b.conf.Compositing {
+		pad, ok := b.pads[name]
+		if !ok {
+			return errors.New("pad not found: " + name)
+		}
+
+		alpha := 0.0
+		if visible {
+			alpha = 1.0
+		}
+		if err := pad.SetProperty("alpha", alpha); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+
+		logger.Debugw("track visibility changed", "name", name, "visible", visible)
+		return nil
+	}
+
+	if visible {
+		return b.setSelectorPadLocked(name)
+	}
+	if b.selectedPad == name {
+		return b.setSelectorPadLocked(videoTestSrcName)
+	}
+	return nil
+}
+
+func (b *VideoBin) setSelectorPad(name string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.setSelectorPadLocked(name)
+}
+
+func (b *VideoBin) setSelectorPadLocked(name string) error {
 	pad, ok := b.pads[name]
 	if !ok {
 		return errors.New("pad not found: " + name)
 	}
 
-	alpha := 0.0
-	if visible {
-		alpha = 1.0
-	}
-	if err := pad.SetProperty("alpha", alpha); err != nil {
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		buffer := info.GetBuffer()
+		if buffer.HasFlags(gst.BufferFlagDeltaUnit) {
+			return gst.PadProbeDrop
+		}
+		logger.Debugw("active pad changed", "name", name)
+		return gst.PadProbeRemove
+	})
+
+	if err := b.selector.SetProperty("active-pad", pad); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	logger.Debugw("track visibility changed", "name", name, "visible", visible)
+	b.selectedPad = name
 	return nil
 }
