@@ -11,6 +11,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/prometheus/client_golang/prometheus"
+	io_prometheus_client "github.com/prometheus/client_model/go"
 )
 
 type FakeProcessManager struct {
@@ -30,6 +31,19 @@ type FakeProcessManager struct {
 	}
 	alreadyExistsReturnsOnCall map[int]struct {
 		result1 bool
+	}
+	FinalizeMetricsStub        func(string) ([]*io_prometheus_client.MetricFamily, bool)
+	finalizeMetricsMutex       sync.RWMutex
+	finalizeMetricsArgsForCall []struct {
+		arg1 string
+	}
+	finalizeMetricsReturns struct {
+		result1 []*io_prometheus_client.MetricFamily
+		result2 bool
+	}
+	finalizeMetricsReturnsOnCall map[int]struct {
+		result1 []*io_prometheus_client.MetricFamily
+		result2 bool
 	}
 	GetActiveEgressIDsStub        func() []string
 	getActiveEgressIDsMutex       sync.RWMutex
@@ -133,6 +147,24 @@ type FakeProcessManager struct {
 	processFinishedArgsForCall []struct {
 		arg1 string
 	}
+	SetExitReasonStub        func(string, string)
+	setExitReasonMutex       sync.RWMutex
+	setExitReasonArgsForCall []struct {
+		arg1 string
+		arg2 string
+	}
+	StopProcessStub        func(string, string)
+	stopProcessMutex       sync.RWMutex
+	stopProcessArgsForCall []struct {
+		arg1 string
+		arg2 string
+	}
+	StoreAccumulatableMetricsStub        func(string, []*io_prometheus_client.MetricFamily)
+	storeAccumulatableMetricsMutex       sync.RWMutex
+	storeAccumulatableMetricsArgsForCall []struct {
+		arg1 string
+		arg2 []*io_prometheus_client.MetricFamily
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -229,6 +261,70 @@ func (fake *FakeProcessManager) AlreadyExistsReturnsOnCall(i int, result1 bool) 
 	fake.alreadyExistsReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
+}
+
+func (fake *FakeProcessManager) FinalizeMetrics(arg1 string) ([]*io_prometheus_client.MetricFamily, bool) {
+	fake.finalizeMetricsMutex.Lock()
+	ret, specificReturn := fake.finalizeMetricsReturnsOnCall[len(fake.finalizeMetricsArgsForCall)]
+	fake.finalizeMetricsArgsForCall = append(fake.finalizeMetricsArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.FinalizeMetricsStub
+	fakeReturns := fake.finalizeMetricsReturns
+	fake.recordInvocation("FinalizeMetrics", []interface{}{arg1})
+	fake.finalizeMetricsMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeProcessManager) FinalizeMetricsCallCount() int {
+	fake.finalizeMetricsMutex.RLock()
+	defer fake.finalizeMetricsMutex.RUnlock()
+	return len(fake.finalizeMetricsArgsForCall)
+}
+
+func (fake *FakeProcessManager) FinalizeMetricsCalls(stub func(string) ([]*io_prometheus_client.MetricFamily, bool)) {
+	fake.finalizeMetricsMutex.Lock()
+	defer fake.finalizeMetricsMutex.Unlock()
+	fake.FinalizeMetricsStub = stub
+}
+
+func (fake *FakeProcessManager) FinalizeMetricsArgsForCall(i int) string {
+	fake.finalizeMetricsMutex.RLock()
+	defer fake.finalizeMetricsMutex.RUnlock()
+	argsForCall := fake.finalizeMetricsArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeProcessManager) FinalizeMetricsReturns(result1 []*io_prometheus_client.MetricFamily, result2 bool) {
+	fake.finalizeMetricsMutex.Lock()
+	defer fake.finalizeMetricsMutex.Unlock()
+	fake.FinalizeMetricsStub = nil
+	fake.finalizeMetricsReturns = struct {
+		result1 []*io_prometheus_client.MetricFamily
+		result2 bool
+	}{result1, result2}
+}
+
+func (fake *FakeProcessManager) FinalizeMetricsReturnsOnCall(i int, result1 []*io_prometheus_client.MetricFamily, result2 bool) {
+	fake.finalizeMetricsMutex.Lock()
+	defer fake.finalizeMetricsMutex.Unlock()
+	fake.FinalizeMetricsStub = nil
+	if fake.finalizeMetricsReturnsOnCall == nil {
+		fake.finalizeMetricsReturnsOnCall = make(map[int]struct {
+			result1 []*io_prometheus_client.MetricFamily
+			result2 bool
+		})
+	}
+	fake.finalizeMetricsReturnsOnCall[i] = struct {
+		result1 []*io_prometheus_client.MetricFamily
+		result2 bool
+	}{result1, result2}
 }
 
 func (fake *FakeProcessManager) GetActiveEgressIDs() []string {
@@ -769,6 +865,110 @@ func (fake *FakeProcessManager) ProcessFinishedArgsForCall(i int) string {
 	defer fake.processFinishedMutex.RUnlock()
 	argsForCall := fake.processFinishedArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeProcessManager) SetExitReason(arg1 string, arg2 string) {
+	fake.setExitReasonMutex.Lock()
+	fake.setExitReasonArgsForCall = append(fake.setExitReasonArgsForCall, struct {
+		arg1 string
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.SetExitReasonStub
+	fake.recordInvocation("SetExitReason", []interface{}{arg1, arg2})
+	fake.setExitReasonMutex.Unlock()
+	if stub != nil {
+		fake.SetExitReasonStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeProcessManager) SetExitReasonCallCount() int {
+	fake.setExitReasonMutex.RLock()
+	defer fake.setExitReasonMutex.RUnlock()
+	return len(fake.setExitReasonArgsForCall)
+}
+
+func (fake *FakeProcessManager) SetExitReasonCalls(stub func(string, string)) {
+	fake.setExitReasonMutex.Lock()
+	defer fake.setExitReasonMutex.Unlock()
+	fake.SetExitReasonStub = stub
+}
+
+func (fake *FakeProcessManager) SetExitReasonArgsForCall(i int) (string, string) {
+	fake.setExitReasonMutex.RLock()
+	defer fake.setExitReasonMutex.RUnlock()
+	argsForCall := fake.setExitReasonArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeProcessManager) StopProcess(arg1 string, arg2 string) {
+	fake.stopProcessMutex.Lock()
+	fake.stopProcessArgsForCall = append(fake.stopProcessArgsForCall, struct {
+		arg1 string
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.StopProcessStub
+	fake.recordInvocation("StopProcess", []interface{}{arg1, arg2})
+	fake.stopProcessMutex.Unlock()
+	if stub != nil {
+		fake.StopProcessStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeProcessManager) StopProcessCallCount() int {
+	fake.stopProcessMutex.RLock()
+	defer fake.stopProcessMutex.RUnlock()
+	return len(fake.stopProcessArgsForCall)
+}
+
+func (fake *FakeProcessManager) StopProcessCalls(stub func(string, string)) {
+	fake.stopProcessMutex.Lock()
+	defer fake.stopProcessMutex.Unlock()
+	fake.StopProcessStub = stub
+}
+
+func (fake *FakeProcessManager) StopProcessArgsForCall(i int) (string, string) {
+	fake.stopProcessMutex.RLock()
+	defer fake.stopProcessMutex.RUnlock()
+	argsForCall := fake.stopProcessArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeProcessManager) StoreAccumulatableMetrics(arg1 string, arg2 []*io_prometheus_client.MetricFamily) {
+	var arg2Copy []*io_prometheus_client.MetricFamily
+	if arg2 != nil {
+		arg2Copy = make([]*io_prometheus_client.MetricFamily, len(arg2))
+		copy(arg2Copy, arg2)
+	}
+	fake.storeAccumulatableMetricsMutex.Lock()
+	fake.storeAccumulatableMetricsArgsForCall = append(fake.storeAccumulatableMetricsArgsForCall, struct {
+		arg1 string
+		arg2 []*io_prometheus_client.MetricFamily
+	}{arg1, arg2Copy})
+	stub := fake.StoreAccumulatableMetricsStub
+	fake.recordInvocation("StoreAccumulatableMetrics", []interface{}{arg1, arg2Copy})
+	fake.storeAccumulatableMetricsMutex.Unlock()
+	if stub != nil {
+		fake.StoreAccumulatableMetricsStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeProcessManager) StoreAccumulatableMetricsCallCount() int {
+	fake.storeAccumulatableMetricsMutex.RLock()
+	defer fake.storeAccumulatableMetricsMutex.RUnlock()
+	return len(fake.storeAccumulatableMetricsArgsForCall)
+}
+
+func (fake *FakeProcessManager) StoreAccumulatableMetricsCalls(stub func(string, []*io_prometheus_client.MetricFamily)) {
+	fake.storeAccumulatableMetricsMutex.Lock()
+	defer fake.storeAccumulatableMetricsMutex.Unlock()
+	fake.StoreAccumulatableMetricsStub = stub
+}
+
+func (fake *FakeProcessManager) StoreAccumulatableMetricsArgsForCall(i int) (string, []*io_prometheus_client.MetricFamily) {
+	fake.storeAccumulatableMetricsMutex.RLock()
+	defer fake.storeAccumulatableMetricsMutex.RUnlock()
+	argsForCall := fake.storeAccumulatableMetricsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeProcessManager) Invocations() map[string][][]interface{} {

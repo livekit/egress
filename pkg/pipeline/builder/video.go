@@ -50,6 +50,9 @@ type VideoBin struct {
 	// input-selector state (only used when !Compositing)
 	selectedPad string
 	lastPTS     uint64
+
+	probesMu deadlock.Mutex
+	probes   map[string]*keyframeProbe
 }
 
 func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, setVideoDimensions func(string, int, int)) error {
@@ -57,6 +60,7 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, setVi
 		bin:                pipeline.NewBin("video"),
 		conf:               p,
 		setVideoDimensions: setVideoDimensions,
+		probes:             make(map[string]*keyframeProbe),
 	}
 
 	switch p.SourceType {
@@ -156,6 +160,7 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	}
 	delete(b.names, trackID)
 	delete(b.pads, name)
+	b.closeProbe(name)
 
 	if !b.conf.Compositing && b.selectedPad == name {
 		if err := b.setSelectorPadLocked(videoTestSrcName); err != nil {
@@ -301,6 +306,7 @@ func (b *VideoBin) resetVideoAppSrcBin(ts *config.TrackSource) error {
 	}
 
 	delete(b.pads, oldName)
+	b.closeProbe(oldName)
 
 	name := fmt.Sprintf("%s_%d", ts.TrackID, b.nextID)
 	b.nextID++
@@ -474,6 +480,29 @@ func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
 	return nil
 }
 
+func (b *VideoBin) attachKeyframeProbe(ts *config.TrackSource, name string, element *gst.Element) error {
+	probe, err := newKeyframeProbe(ts.TrackID, ts.MimeType, element, ts.OnKeyframeRequired)
+	if err != nil {
+		return err
+	}
+	b.probesMu.Lock()
+	b.probes[name] = probe
+	b.probesMu.Unlock()
+	return nil
+}
+
+func (b *VideoBin) closeProbe(name string) {
+	b.probesMu.Lock()
+	probe, ok := b.probes[name]
+	if ok {
+		delete(b.probes, name)
+	}
+	b.probesMu.Unlock()
+	if ok {
+		probe.Close()
+	}
+}
+
 func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstreamer.Bin, error) {
 	appSrcBin := b.bin.NewBin(name)
 	appSrcBin.SetEOSFunc(func() bool {
@@ -520,16 +549,19 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, err
 		}
 
+		h264Parse, err := gst.NewElement("h264parse")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = appSrcBin.AddElement(h264Parse); err != nil {
+			return nil, err
+		}
+
+		if err := b.attachKeyframeProbe(ts, name, h264Parse); err != nil {
+			return nil, err
+		}
+
 		if !b.conf.VideoDecoding {
-			h264ParseFixer, err := newPTSFixer("h264parse", fmt.Sprintf("track:%s", ts.TrackID))
-			if err != nil {
-				return nil, err
-			}
-
-			if err = appSrcBin.AddElement(h264ParseFixer.Element); err != nil {
-				return nil, err
-			}
-
 			return appSrcBin, nil
 		}
 
@@ -555,6 +587,10 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = appSrcBin.AddElement(rtpVP8Depay); err != nil {
+			return nil, err
+		}
+
+		if err := b.attachKeyframeProbe(ts, name, rtpVP8Depay); err != nil {
 			return nil, err
 		}
 
@@ -585,13 +621,19 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, err
 		}
 
-		if !b.conf.VideoDecoding {
-			vp9ParseFixer, err := newPTSFixer("vp9parse", fmt.Sprintf("track:%s", ts.TrackID))
-			if err != nil {
-				return nil, err
-			}
-			vp9Parse := vp9ParseFixer.Element
+		vp9Parse, err := gst.NewElement("vp9parse")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = appSrcBin.AddElement(vp9Parse); err != nil {
+			return nil, err
+		}
 
+		if err := b.attachKeyframeProbe(ts, name, vp9Parse); err != nil {
+			return nil, err
+		}
+
+		if !b.conf.VideoDecoding {
 			vp9Caps, err := gst.NewElement("capsfilter")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
@@ -602,7 +644,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 				return nil, errors.ErrGstPipelineError(err)
 			}
 
-			if err = appSrcBin.AddElements(vp9Parse, vp9Caps); err != nil {
+			if err = appSrcBin.AddElement(vp9Caps); err != nil {
 				return nil, err
 			}
 			return appSrcBin, nil

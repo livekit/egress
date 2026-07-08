@@ -215,6 +215,9 @@ func NewAppWriter(
 
 	opts := []jitter.Option{jitter.WithLogger(w.logger)}
 
+	// Audio tracks have no keyframe concept; sendPLI is a no-op for them so
+	// every call site can invoke it unconditionally.
+	w.sendPLI = func() {}
 	if track.Kind() == webrtc.RTPCodecTypeVideo {
 		w.pliThrottle = core.NewThrottle(time.Second)
 		w.sendPLI = func() { w.pliThrottle(func() { rp.WritePLI(track.SSRC()) }) }
@@ -304,11 +307,10 @@ func (w *AppWriter) readNext() {
 		ready, dropped, done := w.trackSync.PrimeForStart(jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt})
 		if dropped > 0 {
 			w.stats.packetsDropped.Add(uint64(dropped))
-			if w.sendPLI != nil {
-				w.sendPLI()
-			}
+			w.sendPLI()
 		}
-		if !done {
+		if !done || len(ready) == 0 {
+			// done with no packets means the track was closed during priming
 			return
 		}
 		w.initialized = true
@@ -324,9 +326,7 @@ func (w *AppWriter) readNext() {
 		if w.buildReady.IsBroken() {
 			w.callbacks.OnTrackUnmuted(w.track.ID())
 		}
-		if w.sendPLI != nil {
-			w.sendPLI()
-		}
+		w.sendPLI()
 	}
 	if len(packets) > 0 {
 		w.buffer.PushExtPacketBatch(packets)
@@ -444,7 +444,7 @@ func (w *AppWriter) logTrackState(event string) {
 }
 
 func (w *AppWriter) onKeyframeRequired() {
-	if w.finished.IsBroken() || w.sendPLI == nil {
+	if w.finished.IsBroken() {
 		return
 	}
 	w.sendPLI()
@@ -469,6 +469,7 @@ func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
 		w.samplesLen++
 	}
 	// drop old samples if queue is overflowing
+	dropped := false
 	for w.samplesLen > cSamplesQueueDepth {
 		if w.samplesHead != nil {
 			itemToDrop := w.samplesHead
@@ -476,6 +477,7 @@ func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
 			w.samplesLen--
 			w.stats.packetsDropped.Add(uint64(len(itemToDrop.sample)))
 			w.logger.Warnw("buffer full, dropping sample", nil, "numPackets", len(itemToDrop.sample))
+			dropped = true
 		}
 		if w.samplesHead == nil {
 			w.samplesTail = nil
@@ -484,6 +486,10 @@ func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
 	}
 	w.samplesCond.Broadcast()
 	w.samplesLock.Unlock()
+
+	if dropped {
+		w.sendPLI()
+	}
 }
 
 func (w *AppWriter) pushSamples() {
@@ -545,6 +551,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	pts, err := w.trackSync.GetPTS(pkt)
 	if err != nil {
 		w.stats.packetsDropped.Inc()
+		w.sendPLI()
 		return err
 	}
 
@@ -552,6 +559,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		// TODO: handle it by sending new gst segment that will reflect the offset
 		w.logger.Debugw("negative packet pts, dropping", "pts", pts)
 		w.stats.packetsDropped.Inc()
+		w.sendPLI()
 		return nil
 	}
 
@@ -559,6 +567,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	if err != nil {
 		w.stats.packetsDropped.Inc()
 		w.logger.Errorw("could not marshal packet", err)
+		w.sendPLI()
 		return err
 	}
 
@@ -582,6 +591,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.stats.packetsDropped.Inc()
+		w.sendPLI()
 		if flow == gst.FlowFlushing {
 			w.flushingCount++
 			if w.flushingCount == 1 {

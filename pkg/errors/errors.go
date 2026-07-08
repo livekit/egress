@@ -109,6 +109,7 @@ var (
 	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
 	ErrNonRetryableOutput         = psrpc.NewErrorf(psrpc.FailedPrecondition, "output configuration does not support retry")
 	ErrHandlerFailedToStart       = psrpc.NewErrorf(psrpc.Internal, "handler failed to start")
+	ErrRoomConnectionFailed       = psrpc.NewErrorf(psrpc.Unavailable, "recording ended early: connection to room failed")
 )
 
 func PageLoadError(err string) error {
@@ -141,7 +142,7 @@ func ErrInvalidUrl(url string, reason string) error {
 }
 
 func ErrUploadFailed(location string, err error) error {
-	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s upload failed: %v", location, err)
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s upload failed: %w", location, err)
 }
 
 func ErrParticipantNotFound(identity string) error {

@@ -19,6 +19,8 @@ import (
 	"path"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/stats"
@@ -36,15 +38,22 @@ type Uploader struct {
 	primary         *store
 	backup          *store
 	primaryFailed   bool
+	disabled        atomic.Bool
 	info            *livekit.EgressInfo
 	monitor         *stats.HandlerMonitor
 	storageObserver config.StorageObserver
 }
 
+// DisableUploads makes subsequent Upload calls no-ops.
+func (u *Uploader) DisableUploads() {
+	u.disabled.Store(true)
+}
+
 type store struct {
 	storage.Storage
-	conf *config.StorageConfig
-	name string
+	conf              *config.StorageConfig
+	name              string
+	hasCustomEndpoint bool
 }
 
 func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, storageObserver config.StorageObserver, info *livekit.EgressInfo) (*Uploader, error) {
@@ -78,14 +87,16 @@ func getUploader(conf *config.StorageConfig) (*store, error) {
 	}
 
 	var (
-		s    storage.Storage
-		err  error
-		name string
+		s                 storage.Storage
+		err               error
+		name              string
+		hasCustomEndpoint bool
 	)
 	switch {
 	case conf.S3 != nil:
 		s, err = storage.NewS3(conf.S3)
 		name = "S3"
+		hasCustomEndpoint = conf.S3.Endpoint != ""
 	case conf.GCP != nil:
 		s, err = storage.NewGCP(conf.GCP)
 		name = "GCP"
@@ -95,6 +106,7 @@ func getUploader(conf *config.StorageConfig) (*store, error) {
 	case conf.AliOSS != nil:
 		s, err = storage.NewAliOSS(conf.AliOSS)
 		name = "AliOSS"
+		hasCustomEndpoint = conf.AliOSS.Endpoint != ""
 	default:
 		s, err = storage.NewLocal(&storage.LocalConfig{})
 		name = "Local"
@@ -104,9 +116,10 @@ func getUploader(conf *config.StorageConfig) (*store, error) {
 	}
 
 	return &store{
-		Storage: s,
-		conf:    conf,
-		name:    name,
+		Storage:           s,
+		conf:              conf,
+		name:              name,
+		hasCustomEndpoint: hasCustomEndpoint,
 	}, nil
 }
 
@@ -116,6 +129,13 @@ func (u *Uploader) Upload(
 	deleteAfterUpload bool,
 ) (string, int64, error) {
 
+	if u.disabled.Load() {
+		if deleteAfterUpload {
+			_ = os.Remove(localFilepath)
+		}
+		return "", 0, nil
+	}
+
 	var primaryErr error
 	if !u.primaryFailed {
 		start := time.Now()
@@ -123,7 +143,7 @@ func (u *Uploader) Upload(
 		elapsed := time.Since(start)
 		if err == nil {
 			if u.monitor != nil {
-				u.monitor.IncUploadCountSuccess(string(outputType), float64(elapsed.Milliseconds()))
+				u.monitor.IncUploadCountSuccess(string(outputType), u.primary.hasCustomEndpoint, float64(elapsed.Milliseconds()))
 			}
 			if deleteAfterUpload {
 				_ = os.Remove(localFilepath)
@@ -131,9 +151,9 @@ func (u *Uploader) Upload(
 			return location, size, nil
 		}
 		if u.monitor != nil {
-			u.monitor.IncUploadCountFailure(string(outputType), float64(elapsed.Milliseconds()))
+			u.monitor.IncUploadCountFailure(string(outputType), uploadErrorStatus(err), u.primary.hasCustomEndpoint, float64(elapsed.Milliseconds()))
 		}
-		u.primaryFailed = true
+		u.primaryFailed = u.backup != nil
 		primaryErr = err
 
 	}
@@ -161,6 +181,19 @@ func (u *Uploader) Upload(
 	}
 
 	return "", 0, primaryErr
+}
+
+func uploadErrorStatus(err error) string {
+	var statusErr *storage.ErrorWithStatusCode
+	if errors.As(err, &statusErr) {
+		switch {
+		case statusErr.StatusCode >= 400 && statusErr.StatusCode < 500:
+			return "4xx"
+		case statusErr.StatusCode >= 500 && statusErr.StatusCode < 600:
+			return "5xx"
+		}
+	}
+	return "internal"
 }
 
 func (u *Uploader) upload(localFilepath string, storageFilepath string, outputType types.OutputType, primary bool) (location string, size int64, err error) {

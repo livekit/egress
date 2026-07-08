@@ -221,6 +221,8 @@ func (s *WebsocketSink) UploadManifest(_ string) (string, bool, error) {
 	return "", false, nil
 }
 
+func (s *WebsocketSink) DisableUploads() {}
+
 func (s *WebsocketSink) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

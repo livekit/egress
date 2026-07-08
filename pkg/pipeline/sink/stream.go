@@ -169,6 +169,8 @@ func (s *StreamSink) UploadManifest(_ string) (string, bool, error) {
 	return "", false, nil
 }
 
+func (s *StreamSink) DisableUploads() {}
+
 func (s *StreamSink) Close() error {
 	s.closed.Once(func() {
 		s.mu.Lock()
