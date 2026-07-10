@@ -58,6 +58,8 @@ const (
 	defaultMaxPulseClients = 60
 
 	defaultCpuKillGraceSec = 30
+
+	defaultPulseSinkReapGraceSec = 30
 )
 
 type ServiceConfig struct {
@@ -67,6 +69,8 @@ type ServiceConfig struct {
 	TemplatePort     int `yaml:"template_port"`      // room composite template server port
 	PrometheusPort   int `yaml:"prometheus_port"`    // prometheus handler port
 	DebugHandlerPort int `yaml:"debug_handler_port"` // egress debug handler port
+
+	PulseSinkReapGraceSec int `yaml:"pulse_sink_reap_grace_sec"` // seconds a leaked pulse sink must stay orphaned before it is unloaded (0 = use default, negative = disable reaping)
 
 	*CPUCostConfig `yaml:"cpu_cost"` // CPU costs for the different egress types
 }
@@ -183,6 +187,9 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.CpuKillGraceSec <= 0 {
 		c.CpuKillGraceSec = defaultCpuKillGraceSec
+	}
+	if c.PulseSinkReapGraceSec == 0 {
+		c.PulseSinkReapGraceSec = defaultPulseSinkReapGraceSec
 	}
 
 	// Memory source defaults to proc_rss (preserves existing behavior)
