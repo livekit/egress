@@ -148,6 +148,7 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	if err = s.Launch(context.Background(), handlerID, req, info, cmd); err != nil {
+		_ = l.Close()
 		return err
 	}
 
