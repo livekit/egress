@@ -23,7 +23,7 @@ on:
         required: true
 env:
   GST_VERSION: "${{ inputs.version }}"
-  IMAGE_TAG: "${{ inputs.image_tag != '' && inputs.image_tag || inputs.version }}"
+  IMAGE_TAG: "${{ inputs.image_tag || inputs.version }}"
   LIBNICE_VERSION: "0.1.21"
 
 jobs:

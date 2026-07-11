@@ -18,7 +18,7 @@ jobs:
     uses: ./.github/workflows/publish-gstreamer-base.yaml
     with:
       version: ${{ inputs.version }}
-      image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || inputs.version }}
+      image_tag: ${{ inputs.image_tag || inputs.version }}
       buildjet-runs-on: ubuntu-latest-m
       arch: amd64
     secrets:
@@ -29,7 +29,7 @@ jobs:
     uses: ./.github/workflows/publish-gstreamer-base.yaml
     with:
       version: ${{ inputs.version }}
-      image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || inputs.version }}
+      image_tag: ${{ inputs.image_tag || inputs.version }}
       buildjet-runs-on: namespace-profile-arm-16
       arch: arm64
     secrets:
@@ -53,4 +53,4 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Run tag script
-        run: ./build/gstreamer/tag.sh ${{ inputs.image_tag != '' && inputs.image_tag || inputs.version }}
+        run: ./build/gstreamer/tag.sh ${{ inputs.image_tag || inputs.version }}
