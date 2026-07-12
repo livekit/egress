@@ -648,7 +648,7 @@ func linkPeersLocked(src, sink *Bin) error {
 				return gst.PadProbeRemove
 			})
 			if !src.bin.SyncStateWithParent() {
-				return errors.New(fmt.Sprintf("failed to sync %s state with parent", src.bin.GetName()))
+				return fmt.Errorf("failed to sync %s state with parent", src.bin.GetName())
 			}
 			return nil
 		}
