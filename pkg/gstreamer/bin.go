@@ -647,7 +647,10 @@ func linkPeersLocked(src, sink *Bin) error {
 				}
 				return gst.PadProbeRemove
 			})
-			return src.SetState(gst.StatePlaying)
+			if !src.bin.SyncStateWithParent() {
+				return errors.New(fmt.Sprintf("failed to sync %s state with parent", src.bin.GetName()))
+			}
+			return nil
 		}
 
 		if sinkState == gst.StateNull {
