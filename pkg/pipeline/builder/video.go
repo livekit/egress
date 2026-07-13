@@ -387,7 +387,10 @@ func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
 }
 
 func (b *VideoBin) attachKeyframeProbe(ts *config.TrackSource, name string, element *gst.Element) error {
-	probe, err := newKeyframeProbe(ts.TrackID, ts.MimeType, element, ts.OnKeyframeRequired)
+	// without a local encoder, splitmuxsink keyframe requests must be bridged
+	// to a PLI to the publisher
+	forwardForceKeyUnit := !b.conf.VideoDecoding
+	probe, err := newKeyframeProbe(ts.TrackID, ts.MimeType, element, ts.OnKeyframeRequired, forwardForceKeyUnit)
 	if err != nil {
 		return err
 	}

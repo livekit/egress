@@ -220,7 +220,12 @@ func NewAppWriter(
 	w.sendPLI = func() {}
 	if track.Kind() == webrtc.RTPCodecTypeVideo {
 		w.pliThrottle = core.NewThrottle(time.Second)
-		w.sendPLI = func() { w.pliThrottle(func() { rp.WritePLI(track.SSRC()) }) }
+		w.sendPLI = func() {
+			w.pliThrottle(func() {
+				w.logger.Infow("sending PLI to publisher", "sentAt", time.Now().UnixNano(), "ssrc", track.SSRC())
+				rp.WritePLI(track.SSRC())
+			})
+		}
 		opts = append(opts, jitter.WithPacketLossHandler(func(uint64, uint64) { w.sendPLI() }))
 	}
 
