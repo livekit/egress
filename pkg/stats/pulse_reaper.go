@@ -30,17 +30,40 @@ const (
 	pulseReapCmdTimeout = 10 * time.Second
 )
 
+// SetPulseSinkReapGraceSec applies an updated reap grace, taking effect on the
+// reaper's next tick. A non-positive grace disables reaping.
+func (m *Monitor) SetPulseSinkReapGraceSec(graceSec int) {
+	m.pulseSinkReapGrace.Store(time.Duration(graceSec) * time.Second)
+}
+
+// a grace shorter than the default interval would otherwise be quantized back up to it
+func pulseReapTick(grace time.Duration) time.Duration {
+	if grace > 0 {
+		return min(pulseReapInterval, grace)
+	}
+	return pulseReapInterval
+}
+
 // runPulseSinkReaper unloads null-sinks left on the shared pulse daemon by handlers that
 // exited without cleanup, before they accumulate and hit the pulse client limit.
+// The grace is re-read every tick, so reaping can be reconfigured or disabled at runtime.
 func (m *Monitor) runPulseSinkReaper() {
 	firstOrphaned := make(map[string]time.Time)
 	listFailing := false
 
-	// a grace shorter than the default interval would otherwise be quantized back up to it
-	ticker := time.NewTicker(min(pulseReapInterval, m.pulseSinkReapGrace))
+	ticker := time.NewTicker(pulseReapTick(m.pulseSinkReapGrace.Load()))
 	defer ticker.Stop()
 
 	for range ticker.C {
+		grace := m.pulseSinkReapGrace.Load()
+		ticker.Reset(pulseReapTick(grace))
+
+		if grace <= 0 {
+			// re-enabling starts a fresh grace period instead of reaping instantly
+			clear(firstOrphaned)
+			continue
+		}
+
 		info, err := listPulse()
 		if err != nil {
 			if !listFailing {
@@ -51,7 +74,7 @@ func (m *Monitor) runPulseSinkReaper() {
 		}
 		listFailing = false
 
-		toReap, egressSinks := planPulseSinkReaps(info.Sinks, m.activeEgressIDs(), firstOrphaned, m.pulseSinkReapGrace, time.Now())
+		toReap, egressSinks := planPulseSinkReaps(info.Sinks, m.activeEgressIDs(), firstOrphaned, grace, time.Now())
 		m.promPulseSinks.Set(float64(egressSinks))
 
 		for _, sink := range toReap {
