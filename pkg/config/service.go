@@ -68,6 +68,26 @@ type ServiceConfig struct {
 	PrometheusPort   int `yaml:"prometheus_port"`    // prometheus handler port
 	DebugHandlerPort int `yaml:"debug_handler_port"` // egress debug handler port
 
+	// AffinityMode controls job distribution across pods.
+	//   "pack"       — busy pods win (default; preserves upstream behaviour)
+	//   "spread"     — CPU-proportional; use for TrackEgress-only fleets
+	//   "type_aware" — RoomComposite/Web prefer idle pods; Track/Participant spread by load
+	AffinityMode string `yaml:"affinity_mode"`
+
+	// SoftRejectFloor is the affinity score returned when CanAcceptRequest is
+	// false but the pod has not yet reached MaxActiveRequests. This prevents
+	// the pod from going completely silent during transient CPU spikes (e.g.
+	// Chrome cold-start), keeping it in the dispatcher's selection pool as a
+	// last resort. Set to 0 (default) to disable and preserve upstream -1 behaviour.
+	// Recommended production value: 0.01
+	SoftRejectFloor float32 `yaml:"soft_reject_floor"`
+
+	// MaxActiveRequests is the hard capacity limit for this pod. When the pod
+	// has this many active recording jobs, it returns -1 (hard reject) even if
+	// SoftRejectFloor is set. Set to 0 to disable this guard.
+	// Recommended value: 16 (= interviews_per_pod × 4 tracks per interview)
+	MaxActiveRequests int32 `yaml:"max_active_requests"`
+
 	*CPUCostConfig `yaml:"cpu_cost"` // CPU costs for the different egress types
 }
 

@@ -16,6 +16,7 @@ package server
 
 import (
 	"context"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -44,8 +45,25 @@ var (
 	tracer = otel.Tracer("github.com/livekit/egress/pkg/server")
 )
 
+// consumePendingClaim decrements pendingClaims by 1, floored at 0.
+// Called both from StartEgress (claim accepted) and the 2s self-decay timer
+// set in StartEgressAffinity. The CompareAndSwap loop ensures exactly one
+// decrement fires per increment even when both callers race.
+func (s *Server) consumePendingClaim() {
+	for {
+		n := s.pendingClaims.Load()
+		if n <= 0 {
+			return
+		}
+		if s.pendingClaims.CompareAndSwap(n, n-1) {
+			return
+		}
+	}
+}
+
 func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
 	s.activeRequests.Inc()
+	s.consumePendingClaim() // hand slot from pending to m.requests
 
 	ctx, span := tracer.Start(ctx, "Service.StartEgress")
 	defer span.End()
@@ -206,19 +224,85 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 }
 
 func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequest) float32 {
-	if s.IsDisabled() || !s.monitor.CanAcceptRequest(req) {
-		// cannot accept
+	if s.IsDisabled() {
+		return -1 // pod is shutting down — always hard reject
+	}
+
+	if !s.monitor.CanAcceptRequest(req) {
+		return s.softRejectScore()
+	}
+
+	switch s.conf.AffinityMode {
+
+	case "spread":
+		// Increment pendingClaims so subsequent affinity calls on this pod see a
+		// lower score before m.requests.Inc fires in StartEgress. The 2s self-decay
+		// guards against claims that are never accepted (lost RPCs, rejected requests).
+		// consumePendingClaim uses a CAS loop so exactly one of StartEgress or the
+		// timer decrements the counter — no double-decrement.
+		s.pendingClaims.Inc()
+		time.AfterFunc(2*time.Second, s.consumePendingClaim)
+		pending := s.pendingClaims.Load()
+
+		// An idle pod returns ≥ 1.0 to trigger psrpc's ShortCircuitTimeout (500ms
+		// fast path). Without this, AvailableCPUFractionWithPending returns ~0.6 for
+		// an idle pod (2.4/4.0), which never crosses MaximumAffinity=1.0, so every
+		// dispatch waits the full AffinityTimeout even when pods are completely free.
+		// Jitter is added (not subtracted) so the score stays ≥ 1.0.
+		if s.activeRequests.Load() == 0 && pending <= 1 {
+			return 1.0 + rand.Float32()*0.001
+		}
+
+		return s.monitor.AvailableCPUFractionWithPending(pending) - rand.Float32()*0.001
+
+	case "type_aware":
+		if isHeavyEgressRequest(req) {
+			// RoomComposite/Web need ~4 CPUs. Strongly prefer idle pods.
+			if s.activeRequests.Load() == 0 {
+				return 1.0 - rand.Float32()*0.001
+			}
+			return 0.5
+		}
+		// Light requests use the same pending-counter + jitter logic as spread.
+		s.pendingClaims.Inc()
+		time.AfterFunc(2*time.Second, s.consumePendingClaim)
+		pending := s.pendingClaims.Load()
+		return s.monitor.AvailableCPUFractionWithPending(pending) - rand.Float32()*0.001
+
+	default: // "pack" or empty — upstream behaviour unchanged
+		if s.activeRequests.Load() == 0 {
+			return 0.5
+		}
+		return 1
+	}
+}
+
+// softRejectScore returns the score to use when CanAcceptRequest is false.
+// If SoftRejectFloor is non-zero and the pod is below its hard capacity limit,
+// returns the floor so the pod still participates in dispatcher selection as a
+// last resort. Otherwise returns -1 (silent / hard reject).
+func (s *Server) softRejectScore() float32 {
+	floor := s.conf.SoftRejectFloor
+
+	if floor <= 0 {
 		return -1
 	}
 
-	if s.activeRequests.Load() == 0 {
-		// group multiple track and track composite requests.
-		// if this instance is idle and another is already handling some, the request will go to that server.
-		// this avoids having many instances with one track request each, taking availability from room composite.
-		return 0.5
+	maxActive := s.conf.MaxActiveRequests
+	if maxActive > 0 && s.activeRequests.Load() >= maxActive {
+		return -1
 	}
-	// already handling a request and has available cpu
-	return 1
+
+	return floor
+}
+
+func isHeavyEgressRequest(req *rpc.StartEgressRequest) bool {
+	switch req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite,
+		*rpc.StartEgressRequest_Web:
+		return true
+	}
+	return false
 }
 
 func (s *Server) ListActiveEgress(ctx context.Context, _ *rpc.ListActiveEgressRequest) (*rpc.ListActiveEgressResponse, error) {
