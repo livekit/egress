@@ -69,7 +69,8 @@ logging:
 template_base: can be used to host custom templates (default http://localhost:<template_port>/)
 backup_storage: files will be moved here when uploads fail. location must have write access granted for all users
 enable_chrome_sandbox: if true, egress will run Chrome with sandboxing enabled. This requires a specific Docker setup, see below.
-enable_video_passthrough: if true, track composite and participant egress with HLS segment output may skip video decoding/encoding when the published track is already H.264 and no encoding options were requested. Falls back to transcoding otherwise (default false)
+enable_video_passthrough: if true, track composite and participant egress with HLS segment output may skip video decoding/encoding when the published track is already H.264 and no encoding options were requested. Falls back to transcoding otherwise (default false).
+  Note on segment durations: in pass-through mode segment boundaries depend on the publisher's keyframe interval and the keyframe request (PLI) round trip, not on a local encoder, so real segment durations vary (typically nominal + up to one GOP + RTT). #EXTINF entries always carry the measured duration and EXT-X-TARGETDURATION is declared as 2x the nominal segment duration for spec compliance. Players that size their live window by segment count (e.g. hls.js liveSyncDurationCount) will see slightly variable display latency.
 cpu_cost: # optionally override cpu cost estimation, used when accepting or denying requests
   room_composite_cpu_cost: 3.0
   web_cpu_cost: 3.0
