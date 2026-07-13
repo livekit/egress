@@ -69,6 +69,7 @@ logging:
 template_base: can be used to host custom templates (default http://localhost:<template_port>/)
 backup_storage: files will be moved here when uploads fail. location must have write access granted for all users
 enable_chrome_sandbox: if true, egress will run Chrome with sandboxing enabled. This requires a specific Docker setup, see below.
+enable_video_passthrough: if true, track composite and participant egress with HLS segment output may skip video decoding/encoding when the published track is already H.264 and no encoding options were requested. Falls back to transcoding otherwise (default false)
 cpu_cost: # optionally override cpu cost estimation, used when accepting or denying requests
   room_composite_cpu_cost: 3.0
   web_cpu_cost: 3.0

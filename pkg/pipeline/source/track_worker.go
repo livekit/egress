@@ -226,10 +226,15 @@ func (s *SDKSource) updatePreInitStateLocked(op Operation, ts *config.TrackSourc
 			s.VideoOutCodec = ts.MimeType
 		}
 		if s.VideoInCodec != s.VideoOutCodec {
+			s.DisableVideoPassthrough(fmt.Sprintf("input codec %s does not match output codec %s", s.VideoInCodec, s.VideoOutCodec))
 			s.VideoDecoding = true
 			if len(s.GetEncodedOutputs()) > 0 {
 				s.VideoEncoding = true
 			}
+		} else if s.VideoPassthrough {
+			logger.Infow("video passthrough active",
+				"trackID", ts.TrackID,
+				"videoCodec", s.VideoInCodec)
 		}
 		s.VideoTrack = ts
 	}
