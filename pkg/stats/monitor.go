@@ -58,7 +58,7 @@ type Monitor struct {
 	nodeID             string
 	clusterID          string
 	cpuCostConfig      *config.CPUCostConfig
-	pulseSinkReapGrace time.Duration
+	pulseSinkReapGrace atomic.Duration
 
 	promCPULoad           prometheus.Gauge
 	promCgroupMemory      prometheus.Gauge
@@ -122,10 +122,8 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 
 	m.initPrometheus()
 
-	if conf.PulseSinkReapGraceSec > 0 {
-		m.pulseSinkReapGrace = time.Duration(conf.PulseSinkReapGraceSec) * time.Second
-		go m.runPulseSinkReaper()
-	}
+	m.SetPulseSinkReapGraceSec(conf.PulseSinkReapGraceSec)
+	go m.runPulseSinkReaper()
 
 	procStats, err := hwstats.NewProcMonitor(m.updateEgressStats)
 	if err != nil {
