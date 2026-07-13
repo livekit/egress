@@ -58,6 +58,7 @@ type keyframeProbe struct {
 	eventProbeID uint64
 
 	onRequestPLI func()
+	injector     *freezeInjector // pass-through only, nil otherwise
 
 	logger logger.Logger
 
@@ -167,6 +168,13 @@ func (p *keyframeProbe) processBuffer(buffer *gst.Buffer) gst.PadProbeReturn {
 	}
 
 	isKeyframe := buffer.GetFlags()&gst.BufferFlagDeltaUnit == 0
+
+	if p.injector != nil {
+		p.injector.OnRealBuffer()
+		if isKeyframe {
+			p.injector.CacheKeyframe(buffer, p.srcPad)
+		}
+	}
 
 	if isKeyframe {
 		if p.keyframePending {
