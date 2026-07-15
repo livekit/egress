@@ -135,12 +135,12 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 		return err
 	}
 
-	cmd := exec.Command("egress",
-		"run-handler",
-		"--config", string(confString),
-		"--request", string(reqString),
-	)
+	cmd := exec.Command("egress", "run-handler")
 	cmd.Dir = "/"
+	cmd.Env = append(os.Environ(),
+		"EGRESS_HANDLER_CONFIG_BODY="+string(confString),
+		"EGRESS_HANDLER_REQUEST="+string(reqString),
+	)
 
 	l := logging.NewHandlerLogger(handlerID, req.EgressId)
 	cmd.Stdout = l
