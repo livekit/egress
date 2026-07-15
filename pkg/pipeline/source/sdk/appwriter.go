@@ -309,7 +309,8 @@ func (w *AppWriter) readNext() {
 			w.stats.packetsDropped.Add(uint64(dropped))
 			w.sendPLI()
 		}
-		if !done {
+		if !done || len(ready) == 0 {
+			// done with no packets means the track was closed during priming
 			return
 		}
 		w.initialized = true

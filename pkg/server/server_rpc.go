@@ -148,6 +148,7 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	if err = s.Launch(context.Background(), handlerID, req, info, cmd); err != nil {
+		_ = l.Close()
 		return err
 	}
 
@@ -187,8 +188,12 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 
 	avgCPU, maxCPU, maxMemory := s.monitor.EgressEnded(req)
 	if maxCPU > 0 {
-		logger.Debugw("egress metrics",
+		requestType, outputType := egress.GetTypes(info.Request)
+		logger.Infow("egress metrics",
 			"egressID", info.EgressId,
+			"requestType", requestType,
+			"outputType", outputType,
+			"sdkSource", config.IsSDKSourceRequest(req),
 			"avgCPU", avgCPU,
 			"maxCPU", maxCPU,
 			"maxMemory", maxMemory,

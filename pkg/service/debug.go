@@ -115,13 +115,14 @@ func (s *DebugService) handlePProf(w http.ResponseWriter, r *http.Request) {
 
 	case 4:
 		egressID := pathElements[2]
-		c, err := s.pm.GetGRPCClient(egressID)
-		if err != nil {
+		c, clientErr := s.pm.GetGRPCClient(egressID)
+		if clientErr != nil {
 			http.Error(w, "handler not found", http.StatusNotFound)
 			return
 		}
 
-		res, err := c.GetPProf(context.Background(), &ipc.PProfRequest{
+		var res *ipc.PProfResponse
+		res, err = c.GetPProf(context.Background(), &ipc.PProfRequest{
 			ProfileName: pathElements[3],
 			Timeout:     int32(timeout),
 			Debug:       int32(debug),

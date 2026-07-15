@@ -55,15 +55,17 @@ type Service interface {
 }
 
 type Monitor struct {
-	nodeID        string
-	clusterID     string
-	cpuCostConfig *config.CPUCostConfig
+	nodeID             string
+	clusterID          string
+	cpuCostConfig      *config.CPUCostConfig
+	pulseSinkReapGrace atomic.Duration
 
 	promCPULoad           prometheus.Gauge
 	promCgroupMemory      prometheus.Gauge
 	promCgroupReadSuccess prometheus.Gauge
 	promProcRSS           prometheus.Gauge
 	promWouldRejectCgroup prometheus.Gauge
+	promPulseSinks        prometheus.Gauge
 	requestGauge          *prometheus.GaugeVec
 	handlerResults        *prometheus.CounterVec
 	promLoadRatio         *prometheus.GaugeVec
@@ -119,6 +121,9 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 	}
 
 	m.initPrometheus()
+
+	m.SetPulseSinkReapGraceSec(conf.PulseSinkReapGraceSec)
+	go m.runPulseSinkReaper()
 
 	procStats, err := hwstats.NewProcMonitor(m.updateEgressStats)
 	if err != nil {

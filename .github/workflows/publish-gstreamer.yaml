@@ -4,15 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "GStreamer version to publish (e.g. 1.24.4)"
+        description: "Upstream GStreamer version to build (e.g. 1.26.7)"
         required: true
         type: string
+      image_tag:
+        description: "Docker tag to publish under (e.g. 1.26.7-1). Defaults to version."
+        required: false
+        type: string
+        default: ""
 
 jobs:
   gstreamer-build-amd64:
     uses: ./.github/workflows/publish-gstreamer-base.yaml
     with:
       version: ${{ inputs.version }}
+      image_tag: ${{ inputs.image_tag || inputs.version }}
       buildjet-runs-on: ubuntu-latest-m
       arch: amd64
     secrets:
@@ -23,6 +29,7 @@ jobs:
     uses: ./.github/workflows/publish-gstreamer-base.yaml
     with:
       version: ${{ inputs.version }}
+      image_tag: ${{ inputs.image_tag || inputs.version }}
       buildjet-runs-on: namespace-profile-arm-16
       arch: arm64
     secrets:
@@ -46,4 +53,4 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Run tag script
-        run: ./build/gstreamer/tag.sh ${{ inputs.version }}
+        run: ./build/gstreamer/tag.sh ${{ inputs.image_tag || inputs.version }}

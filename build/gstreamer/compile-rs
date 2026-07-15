@@ -12,7 +12,9 @@ for repo in gst-plugins-rs; do
   sed s,'\[profile.release\]','[profile.release]\nstrip="debuginfo"', Cargo.toml.old > Cargo.toml
   cargo update -p time
 
-  opts="-D prefix=/usr -D tests=disabled -D doc=disabled"
+  # webrtc-livekit is disabled by default upstream; without it the rswebrtc
+  # plugin builds without the livekitwebrtcsrc/livekitwebrtcsink elements
+  opts="-D prefix=/usr -D tests=disabled -D doc=disabled -D webrtc-livekit=enabled"
 
   if [[ $DEBUG == 'true' ]]; then
     if [[ $OPTIMIZATIONS == 'true' ]]; then
@@ -40,3 +42,7 @@ for repo in gst-plugins-rs; do
 done
 
 gst-inspect-1.0
+
+# fail the build if the livekit signaller silently fell out of the webrtc plugin
+gst-inspect-1.0 livekitwebrtcsrc > /dev/null
+gst-inspect-1.0 livekitwebrtcsink > /dev/null
