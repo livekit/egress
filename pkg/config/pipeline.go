@@ -542,6 +542,33 @@ func ShouldUseSDKSource(req interface {
 	return req.GetAudioOnly() && req.GetLayout() == "" && req.GetCustomBaseUrl() == ""
 }
 
+func IsSDKSourceRequest(req *rpc.StartEgressRequest) bool {
+	switch r := req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite:
+		return ShouldUseSDKSource(r.RoomComposite)
+	case *rpc.StartEgressRequest_Web:
+		return false
+	case *rpc.StartEgressRequest_Egress:
+		return isV2SDKSource(r.Egress)
+	case *rpc.StartEgressRequest_Replay:
+		return isV2SDKSource(r.Replay)
+	}
+	return true
+}
+
+func isV2SDKSource(req egress.EgressRequest) bool {
+	if req == nil {
+		return true
+	}
+	if req.GetWeb() != nil {
+		return false
+	}
+	if t := req.GetTemplate(); t != nil {
+		return ShouldUseSDKSource(t)
+	}
+	return true
+}
+
 // applyV2Source handles the shared Template/Web/Media source switch for the v2
 // request shape. Satisfied by both *livekit.StartEgressRequest and *livekit.ExportReplayRequest.
 func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfoRequired bool, err error) {
