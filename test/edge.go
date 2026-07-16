@@ -807,7 +807,9 @@ func egressSinkLoaded(egressID string) (bool, error) {
 }
 
 // findHandlerPID locates the `egress run-handler` process for the given egress
-// by scanning /proc, since the ProcessManager doesn't expose handler PIDs.
+// by scanning /proc, since the ProcessManager doesn't expose handler PIDs. The
+// egress ID is passed to the handler via its environment (EGRESS_HANDLER_*),
+// not its command line, so match on /proc/<pid>/environ.
 func findHandlerPID(t *testing.T, egressID string) int {
 	entries, err := os.ReadDir("/proc")
 	require.NoError(t, err)
@@ -818,11 +820,14 @@ func findHandlerPID(t *testing.T, egressID string) int {
 			continue
 		}
 		cmdline, err := os.ReadFile(path.Join("/proc", e.Name(), "cmdline"))
+		if err != nil || !strings.Contains(string(cmdline), "run-handler") {
+			continue
+		}
+		environ, err := os.ReadFile(path.Join("/proc", e.Name(), "environ"))
 		if err != nil {
 			continue
 		}
-		args := string(cmdline)
-		if strings.Contains(args, "run-handler") && strings.Contains(args, egressID) {
+		if strings.Contains(string(environ), egressID) {
 			return pid
 		}
 	}

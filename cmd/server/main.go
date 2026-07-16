@@ -57,10 +57,12 @@ func main() {
 				Description: "runs a request in a new process",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name: "request",
+						Name:    "request",
+						Sources: cli.EnvVars("EGRESS_HANDLER_REQUEST"),
 					},
 					&cli.StringFlag{
-						Name: "config",
+						Name:    "config",
+						Sources: cli.EnvVars("EGRESS_HANDLER_CONFIG_BODY"),
 					},
 				},
 				Action: runHandler,
