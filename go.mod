@@ -8,37 +8,37 @@ tool github.com/maxbrunsfeld/counterfeiter/v6
 
 require (
 	github.com/Shopify/toxiproxy/v2 v2.12.0
-	github.com/aws/smithy-go v1.27.1
-	github.com/chromedp/cdproto v0.0.0-20260427013145-5737772c319b
-	github.com/chromedp/chromedp v0.15.1
+	github.com/aws/smithy-go v1.27.4
+	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
+	github.com/chromedp/chromedp v0.16.0
 	github.com/frostbyte73/core v0.1.1
-	github.com/go-gst/go-glib v1.4.1-0.20250303082535-35ebad1471fd
-	github.com/go-gst/go-gst v1.4.0
+	github.com/go-gst/go-glib v1.4.1
+	github.com/go-gst/go-gst v1.4.1
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/linkdata/deadlock v0.5.5
 	github.com/livekit/go-rtmp v0.0.0-20251031234730-75a652881771
-	github.com/livekit/livekit-server v1.12.1-0.20260606150610-6590570d7c6b
+	github.com/livekit/livekit-server v1.13.4
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/media-samples/avsync v0.0.0-20260522020019-07e27a016e72
-	github.com/livekit/media-sdk v0.0.0-20260605212526-4c11a51d3c97
-	github.com/livekit/mediatransportutil v0.0.0-20260605212259-862d4a7bcb1e
-	github.com/livekit/protocol v1.48.1-0.20260624204523-bd5703442db6
+	github.com/livekit/media-sdk v0.0.0-20260716231240-b9ae943039a0
+	github.com/livekit/mediatransportutil v0.0.0-20260608063931-a3417d38cda0
+	github.com/livekit/protocol v1.50.0
 	github.com/livekit/psrpc v0.7.2
-	github.com/livekit/server-sdk-go/v2 v2.16.7-0.20260625120102-b6d1838861e7
+	github.com/livekit/server-sdk-go/v2 v2.18.1
 	github.com/livekit/storage v0.0.0-20260623170515-1297cb15775f
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
-	github.com/pion/rtp v1.10.2
-	github.com/pion/webrtc/v4 v4.2.14
+	github.com/pion/rtp v1.10.4
+	github.com/pion/webrtc/v4 v4.2.17
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.68.1
+	github.com/prometheus/common v0.70.0
 	github.com/stretchr/testify v1.11.1
-	github.com/urfave/cli/v3 v3.9.0
+	github.com/urfave/cli/v3 v3.10.1
 	go.opentelemetry.io/otel v1.44.0
 	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.28.0
-	google.golang.org/grpc v1.81.1
+	google.golang.org/grpc v1.82.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
