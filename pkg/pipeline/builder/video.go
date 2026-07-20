@@ -47,9 +47,18 @@ type VideoBin struct {
 	names       map[string]string
 	selector    *gst.Element
 	rawVideoTee *gst.Element
+	freeze      *freezeInjector
 
 	probesMu deadlock.Mutex
 	probes   map[string]*keyframeProbe
+}
+
+// useSelector reports whether the input-selector fallback machinery is built:
+// always in the decoded path (videotestsrc fallback), and in pass-through mode
+// (freeze injector fallback). Track egress without pass-through keeps the bare
+// appsrc chain.
+func (b *VideoBin) useSelector() bool {
+	return b.conf.VideoDecoding || b.conf.VideoPassthrough
 }
 
 // buildVideoQueue creates a queue for the video pipeline. For live sources the
@@ -225,7 +234,7 @@ func (b *VideoBin) resetVideoAppSrcBin(ts *config.TrackSource) error {
 	}
 
 	// If the stuck bin is the currently selected pad, switch to test src first
-	if b.conf.VideoDecoding && b.selectedPad == oldName {
+	if b.useSelector() && b.selectedPad == oldName {
 		if err := b.setSelectorPadLocked(videoTestSrcName); err != nil {
 			return err
 		}
@@ -256,7 +265,7 @@ func (b *VideoBin) resetVideoAppSrcBin(ts *config.TrackSource) error {
 		return fmt.Errorf("failed to build new video source bin: %w", err)
 	}
 
-	if b.conf.VideoDecoding {
+	if b.useSelector() {
 		b.createSrcPadLocked(ts.TrackID, name)
 	}
 
@@ -264,7 +273,7 @@ func (b *VideoBin) resetVideoAppSrcBin(ts *config.TrackSource) error {
 		return fmt.Errorf("failed to add new video source bin: %w", err)
 	}
 
-	if b.conf.VideoDecoding {
+	if b.useSelector() {
 		if err := b.setSelectorPadLocked(name); err != nil {
 			return err
 		}
@@ -330,10 +339,21 @@ func (b *VideoBin) buildSDKInput() error {
 	b.pads = make(map[string]*gst.Pad)
 	b.names = make(map[string]string)
 
-	// add selector first so pads can be created
-	if b.conf.VideoDecoding {
+	// add selector and fallback source first so pads can be created
+	if b.useSelector() {
 		if err := b.addSelector(); err != nil {
 			return err
+		}
+		b.bin.SetGetSrcPad(b.getSrcPad)
+
+		if b.conf.VideoDecoding {
+			if err := b.addVideoTestSrcBin(); err != nil {
+				return err
+			}
+		} else {
+			if err := b.addFreezeSrcBin(); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -343,19 +363,16 @@ func (b *VideoBin) buildSDKInput() error {
 		}
 	}
 
-	if b.conf.VideoDecoding {
-		b.bin.SetGetSrcPad(b.getSrcPad)
-
-		if err := b.addVideoTestSrcBin(); err != nil {
-			return err
-		}
+	if b.useSelector() {
 		if b.conf.VideoTrack == nil {
 			if err := b.setSelectorPad(videoTestSrcName); err != nil {
 				return err
 			}
 		}
-		if err := b.addDecodedVideoSink(); err != nil {
-			return err
+		if b.conf.VideoDecoding {
+			if err := b.addDecodedVideoSink(); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -371,7 +388,7 @@ func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
 		return err
 	}
 
-	if b.conf.VideoDecoding {
+	if b.useSelector() {
 		b.createSrcPad(ts.TrackID, name)
 	}
 
@@ -379,7 +396,7 @@ func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
 		return err
 	}
 
-	if b.conf.VideoDecoding {
+	if b.useSelector() {
 		return b.setSelectorPad(name)
 	}
 
@@ -387,10 +404,15 @@ func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
 }
 
 func (b *VideoBin) attachKeyframeProbe(ts *config.TrackSource, name string, element *gst.Element) error {
-	probe, err := newKeyframeProbe(ts.TrackID, ts.MimeType, element, ts.OnKeyframeRequired)
+	// without a local encoder, splitmuxsink keyframe requests must be bridged
+	// to a PLI to the publisher
+	forwardForceKeyUnit := !b.conf.VideoDecoding
+	probe, err := newKeyframeProbe(ts.TrackID, ts.MimeType, element, ts.OnKeyframeRequired, forwardForceKeyUnit)
 	if err != nil {
 		return err
 	}
+	// feed the freeze injector's keyframe cache and stall detector
+	probe.injector = b.freeze
 	b.probesMu.Lock()
 	b.probes[name] = probe
 	b.probesMu.Unlock()
@@ -617,6 +639,16 @@ func (b *VideoBin) addSelector() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
+	// pass-through carries encoded H.264 through the selector - no rate or raw
+	// caps adjustment possible without decoding
+	if !b.conf.VideoDecoding {
+		if err = b.bin.AddElements(inputSelector); err != nil {
+			return err
+		}
+		b.selector = inputSelector
+		return nil
+	}
+
 	videoRate, err := gst.NewElement("videorate")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -635,6 +667,62 @@ func (b *VideoBin) addSelector() error {
 	}
 
 	b.selector = inputSelector
+	return nil
+}
+
+// addFreezeSrcBin is the pass-through counterpart of addVideoTestSrcBin: an
+// auxiliary appsrc that repeats the last cached keyframe while the fallback
+// pad is active (publisher muted or disconnected), so the HLS playlist keeps
+// advancing instead of stalling the player. It registers under the same
+// fallback pad name so all selector switching logic is shared with the
+// decoded path.
+func (b *VideoBin) addFreezeSrcBin() error {
+	freezeBin := b.bin.NewBin(videoTestSrcName)
+	if err := b.bin.AddSourceBin(freezeBin); err != nil {
+		return err
+	}
+
+	element, err := gst.NewElementWithName("appsrc", "video_freeze_src")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	freezeSrc := app.SrcFromElement(element)
+	freezeSrc.SetArg("format", "time")
+	if err = freezeSrc.SetProperty("is-live", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	// stamp injected frames with pipeline running time, keeping PTS monotonic
+	// with the real track's synchronizer-driven PTS
+	if err = freezeSrc.SetProperty("do-timestamp", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	queue, err := b.buildVideoQueue("video_freeze_queue")
+	if err != nil {
+		return err
+	}
+
+	if err = freezeBin.AddElements(element, queue); err != nil {
+		return err
+	}
+
+	// stall watchdog threshold: 2x segment duration
+	stallAfter := 8 * time.Second
+	if o := b.conf.GetSegmentConfig(); o != nil {
+		stallAfter = 2 * time.Duration(o.SegmentDuration) * time.Second
+	}
+	b.freeze = newFreezeInjector(freezeSrc, stallAfter, func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		return b.selectedPad == videoTestSrcName
+	})
+
+	freezeBin.SetEOSFunc(func() bool {
+		b.freeze.Stop(true)
+		return false
+	})
+
+	b.createTestSrcPad()
 	return nil
 }
 

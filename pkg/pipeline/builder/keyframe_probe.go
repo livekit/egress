@@ -43,14 +43,22 @@ const (
 //
 // After that it's mostly inert: it just patches the occasional baseparse
 // missing-PTS buffer from the last good value, so downstream stays monotonic.
+//
+// In video pass-through mode there is no local encoder, so upstream
+// GstForceKeyUnit events (sent by splitmuxsink at segment boundaries) would
+// otherwise die unanswered. When forwardForceKeyUnit is set, the probe bridges
+// them to a PLI to the publisher, reusing the same onRequestPLI callback (and
+// therefore the appwriter's existing 1s PLI throttle).
 type keyframeProbe struct {
 	trackID  string
 	mimeType types.MimeType
 
-	srcPad     *gst.Pad
-	srcProbeID uint64
+	srcPad       *gst.Pad
+	srcProbeID   uint64
+	eventProbeID uint64
 
 	onRequestPLI func()
+	injector     *freezeInjector // pass-through only, nil otherwise
 
 	logger logger.Logger
 
@@ -67,7 +75,7 @@ type keyframeProbe struct {
 	totalIntervals   int
 }
 
-func newKeyframeProbe(trackID string, mimeType types.MimeType, element *gst.Element, onRequestPLI func()) (*keyframeProbe, error) {
+func newKeyframeProbe(trackID string, mimeType types.MimeType, element *gst.Element, onRequestPLI func(), forwardForceKeyUnit bool) (*keyframeProbe, error) {
 	srcPad := element.GetStaticPad("src")
 	if srcPad == nil {
 		return nil, errors.ErrGstPipelineError(newMissingPadError(element.GetName(), "src"))
@@ -84,6 +92,9 @@ func newKeyframeProbe(trackID string, mimeType types.MimeType, element *gst.Elem
 	p.keyframePending = true
 
 	p.srcProbeID = srcPad.AddProbe(gst.PadProbeTypeBuffer, p.onSrcBuffer)
+	if forwardForceKeyUnit {
+		p.eventProbeID = srcPad.AddProbe(gst.PadProbeTypeEventUpstream, p.onUpstreamEvent)
+	}
 
 	return p, nil
 }
@@ -93,8 +104,41 @@ func (p *keyframeProbe) Close() {
 
 	if p.srcPad != nil {
 		p.srcPad.RemoveProbe(p.srcProbeID)
+		if p.eventProbeID != 0 {
+			p.srcPad.RemoveProbe(p.eventProbeID)
+		}
 		p.srcPad = nil
 	}
+}
+
+// onUpstreamEvent bridges splitmuxsink's GstForceKeyUnit requests to a PLI to
+// the publisher. onRequestPLI routes through the appwriter, whose existing 1s
+// throttle applies - no additional throttling here. Both the event receipt
+// (here) and the actual PLI send (appwriter) are logged with timestamps so the
+// egress->SFU->publisher keyframe delay can be measured.
+func (p *keyframeProbe) onUpstreamEvent(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	return p.processUpstreamEvent(info.GetEvent())
+}
+
+func (p *keyframeProbe) processUpstreamEvent(event *gst.Event) gst.PadProbeReturn {
+	if event == nil || event.Type() != gst.EventTypeCustomUpstream {
+		return gst.PadProbeOK
+	}
+	s := event.GetStructure()
+	if s == nil || s.Name() != "GstForceKeyUnit" {
+		return gst.PadProbeOK
+	}
+
+	fields := []any{"receivedAt", time.Now().UnixNano()}
+	if runningTime, err := s.GetValue("running-time"); err == nil {
+		fields = append(fields, "runningTime", runningTime)
+	}
+	p.logger.Infow("force key unit event received, requesting PLI", fields...)
+
+	if p.onRequestPLI != nil {
+		p.onRequestPLI()
+	}
+	return gst.PadProbeOK
 }
 
 func (p *keyframeProbe) onSrcBuffer(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
@@ -124,6 +168,13 @@ func (p *keyframeProbe) processBuffer(buffer *gst.Buffer) gst.PadProbeReturn {
 	}
 
 	isKeyframe := buffer.GetFlags()&gst.BufferFlagDeltaUnit == 0
+
+	if p.injector != nil {
+		p.injector.OnRealBuffer()
+		if isKeyframe {
+			p.injector.CacheKeyframe(buffer, p.srcPad)
+		}
+	}
 
 	if isKeyframe {
 		if p.keyframePending {

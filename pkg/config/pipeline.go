@@ -137,6 +137,7 @@ type VideoConfig struct {
 	VideoEnabled     bool
 	VideoDecoding    bool
 	VideoEncoding    bool
+	VideoPassthrough bool
 	VideoOutCodec    types.MimeType
 	VideoProfile     types.Profile
 	Width            int32
@@ -347,15 +348,21 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 		// encoding options
+		var hasPreset bool
+		var advanced *livekit.EncodingOptions
 		switch opts := req.Participant.Options.(type) {
 		case *livekit.ParticipantEgressRequest_Preset:
+			hasPreset = true
 			p.applyPreset(opts.Preset)
 
 		case *livekit.ParticipantEgressRequest_Advanced:
+			advanced = opts.Advanced
 			if err := p.applyAdvanced(opts.Advanced); err != nil {
 				return err
 			}
 		}
+
+		p.maybeEnableVideoPassthrough(hasPreset, advanced)
 
 		// output params
 		if err := p.updateEncodedOutputs(req.Participant); err != nil {
@@ -388,15 +395,21 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 
 		// encoding options
+		var hasPreset bool
+		var advanced *livekit.EncodingOptions
 		switch opts := req.TrackComposite.Options.(type) {
 		case *livekit.TrackCompositeEgressRequest_Preset:
+			hasPreset = true
 			p.applyPreset(opts.Preset)
 
 		case *livekit.TrackCompositeEgressRequest_Advanced:
+			advanced = opts.Advanced
 			if err := p.applyAdvanced(opts.Advanced); err != nil {
 				return err
 			}
 		}
+
+		p.maybeEnableVideoPassthrough(hasPreset, advanced)
 
 		// output params
 		if err := p.updateEncodedOutputs(req.TrackComposite); err != nil {

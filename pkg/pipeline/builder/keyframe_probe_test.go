@@ -129,6 +129,27 @@ func TestKeyframeProbe_MissingPTSWithoutPriorValidDrops(t *testing.T) {
 	require.Equal(t, int32(0), pliCount.Load())
 }
 
+func TestKeyframeProbe_ForceKeyUnitEventRequestsPLI(t *testing.T) {
+	initGStreamer(t)
+
+	var pliCount atomic.Int32
+	p := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
+
+	// splitmuxsink keyframe request must be bridged to a PLI and forwarded
+	ev := gst.NewCustomEvent(gst.EventTypeCustomUpstream, gst.NewStructure("GstForceKeyUnit"))
+	require.Equal(t, gst.PadProbeOK, p.processUpstreamEvent(ev))
+	require.Equal(t, int32(1), pliCount.Load())
+
+	// other custom upstream events are ignored
+	other := gst.NewCustomEvent(gst.EventTypeCustomUpstream, gst.NewStructure("SomethingElse"))
+	require.Equal(t, gst.PadProbeOK, p.processUpstreamEvent(other))
+	require.Equal(t, int32(1), pliCount.Load())
+
+	// nil events are ignored
+	require.Equal(t, gst.PadProbeOK, p.processUpstreamEvent(nil))
+	require.Equal(t, int32(1), pliCount.Load())
+}
+
 func TestKeyframeProbe_MissingPTSPostKeyframeRestoresPTSAndForwards(t *testing.T) {
 	initGStreamer(t)
 

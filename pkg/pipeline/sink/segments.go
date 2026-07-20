@@ -59,6 +59,7 @@ type SegmentSink struct {
 	startTime             time.Time
 	lastUpload            time.Time
 	outputType            types.OutputType
+	targetDuration        int
 	startRunningTime      uint64
 	openSegmentsStartTime map[string]uint64
 
@@ -85,8 +86,23 @@ func newSegmentSink(
 		return nil, err
 	}
 
+	// Segments are cut at keyframes, so real durations always vary around the
+	// nominal segment duration (#EXTINF entries already use the measured
+	// duration of each closed fragment). In pass-through mode the variance is
+	// larger: boundaries depend on the publisher's GOP and the
+	// GstForceKeyUnit->PLI round trip instead of a local encoder, so segments
+	// typically run one GOP + RTT over nominal. The HLS spec requires
+	// EXT-X-TARGETDURATION >= the rounded duration of every segment, so
+	// declare it with headroom. Players that size their live window by
+	// segment count (e.g. hls.js liveSyncDurationCount) will see slightly
+	// variable display latency - acceptable for this use case.
+	targetDuration := o.SegmentDuration
+	if conf.VideoPassthrough {
+		targetDuration *= 2
+	}
+
 	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
-	playlist, err := m3u8.NewEventPlaylistWriter(playlistName, o.SegmentDuration)
+	playlist, err := m3u8.NewEventPlaylistWriter(playlistName, targetDuration)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +110,7 @@ func newSegmentSink(
 	var livePlaylist m3u8.PlaylistWriter
 	if o.LivePlaylistFilename != "" {
 		playlistName = path.Join(o.LocalDir, o.LivePlaylistFilename)
-		livePlaylist, err = m3u8.NewLivePlaylistWriter(playlistName, o.SegmentDuration, defaultLivePlaylistWindow)
+		livePlaylist, err = m3u8.NewLivePlaylistWriter(playlistName, targetDuration, defaultLivePlaylistWindow)
 		if err != nil {
 			return nil, err
 		}
@@ -125,6 +141,7 @@ func newSegmentSink(
 		playlist:              playlist,
 		livePlaylist:          livePlaylist,
 		outputType:            outputType,
+		targetDuration:        targetDuration,
 		openSegmentsStartTime: make(map[string]uint64),
 		closedSegments:        make(chan SegmentUpdate, maxPendingUploads),
 		playlistUpdates:       make(chan SegmentUpdate, maxPendingUploads),
@@ -208,6 +225,14 @@ func (s *SegmentSink) handlePlaylistUpdates(update SegmentUpdate) error {
 
 	duration := float64(time.Duration(update.endTime-t)) / float64(time.Second)
 	segmentStartTime := s.startTime.Add(time.Duration(t - s.startRunningTime))
+
+	// a violation breaks spec-compliant players' buffering assumptions
+	if int(duration+0.5) > s.targetDuration {
+		logger.Warnw("segment duration exceeds declared EXT-X-TARGETDURATION", nil,
+			"filename", update.filename,
+			"duration", duration,
+			"targetDuration", s.targetDuration)
+	}
 
 	// do not update playlist until upload is complete
 	<-update.uploadComplete

@@ -65,6 +65,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 		if p.VideoEnabled {
+			p.DisableVideoPassthrough("file output")
 			p.VideoEncoding = true
 		}
 
@@ -120,6 +121,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		p.Outputs[types.EgressTypeStream] = []OutputConfig{conf}
 		p.OutputCount.Add(int32(len(stream.Urls)))
 		if p.VideoEnabled {
+			p.DisableVideoPassthrough("stream output")
 			p.VideoEncoding = true
 		}
 
@@ -161,7 +163,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		p.Outputs[types.EgressTypeSegments] = []OutputConfig{conf}
 		p.OutputCount.Inc()
 		p.FinalizationRequired = true
-		if p.VideoEnabled {
+		if p.VideoEnabled && !p.VideoPassthrough {
 			p.VideoEncoding = true
 		}
 
@@ -189,6 +191,8 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 			return errors.ErrInvalidInput("audio_only images")
 		}
 
+		p.DisableVideoPassthrough("image output")
+
 		if len(p.Outputs) == 0 {
 			// enforce video only
 			p.AudioEnabled = false
@@ -212,6 +216,12 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 
 	if p.OutputCount.Load() == 0 {
 		return errors.ErrInvalidInput("output")
+	}
+
+	// if passthrough was disabled after the segment output was parsed (e.g. by
+	// an image output), the segment encoder still needs to be enabled
+	if p.VideoEnabled && !p.VideoPassthrough && p.Outputs[types.EgressTypeSegments] != nil {
+		p.VideoEncoding = true
 	}
 
 	return nil
@@ -256,6 +266,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 			p.OutputCount.Inc()
 			p.FinalizationRequired = true
 			if p.VideoEnabled {
+				p.DisableVideoPassthrough("file output")
 				p.VideoEncoding = true
 			}
 
@@ -319,6 +330,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 			p.Outputs[egressType] = []OutputConfig{conf}
 			p.OutputCount.Add(int32(len(stream.Urls)))
 			if p.VideoEnabled {
+				p.DisableVideoPassthrough("stream output")
 				p.VideoEncoding = true
 			}
 
@@ -344,7 +356,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 			p.Outputs[types.EgressTypeSegments] = []OutputConfig{conf}
 			p.OutputCount.Inc()
 			p.FinalizationRequired = true
-			if p.VideoEnabled {
+			if p.VideoEnabled && !p.VideoPassthrough {
 				p.VideoEncoding = true
 			}
 
@@ -354,6 +366,8 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 			if !p.VideoEnabled {
 				return errors.ErrInvalidInput("audio_only images")
 			}
+
+			p.DisableVideoPassthrough("image output")
 
 			conf, err := p.getImageConfig(o.Images, storage)
 			if err != nil {
@@ -405,6 +419,12 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 		p.KeyFrameInterval = 0
 	} else if p.KeyFrameInterval == 0 && p.Outputs[types.EgressTypeStream] != nil {
 		p.KeyFrameInterval = StreamKeyframeInterval
+	}
+
+	// if passthrough was disabled after the segment output was parsed (outputs
+	// arrive in request order), the segment encoder still needs to be enabled
+	if p.VideoEnabled && !p.VideoPassthrough && hasSegments {
+		p.VideoEncoding = true
 	}
 
 	return nil
