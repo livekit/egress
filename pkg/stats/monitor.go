@@ -36,14 +36,14 @@ import (
 )
 
 const (
-	cpuHoldDuration         = time.Second * 15
-	defaultKillThreshold    = 0.95
-	minKillDuration         = 10
-	lowCPUResetDuration     = 5
-	gb                      = 1024.0 * 1024.0 * 1024.0
-	pulseClientHold         = 4
-	memoryHeadroomGB        = 1.0
-	memoryUsageDumpInterval = 10 * time.Minute
+	cpuHoldDuration        = time.Second * 15
+	defaultKillThreshold   = 0.95
+	minKillDuration        = 10
+	lowCPUResetDuration    = 5
+	gb                     = 1024.0 * 1024.0 * 1024.0
+	pulseClientHold        = 4
+	memoryHeadroomGB       = 1.0
+	hwResourceDumpInterval = 10 * time.Minute
 )
 
 type Service interface {
@@ -84,7 +84,7 @@ type Monitor struct {
 	cpuStopRequestedAt time.Time
 	cpuStopEgressID    string
 	highMemoryStart    time.Time
-	lastMemoryDump     time.Time
+	lastHWResourceDump time.Time
 	pending            map[string]*processStats
 	procStats          map[int]*processStats
 	memoryUsage        float64
@@ -111,13 +111,13 @@ type processStats struct {
 
 func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 	m := &Monitor{
-		nodeID:         conf.NodeID,
-		clusterID:      conf.ClusterID,
-		cpuCostConfig:  conf.CPUCostConfig,
-		svc:            svc,
-		pending:        make(map[string]*processStats),
-		procStats:      make(map[int]*processStats),
-		lastMemoryDump: time.Now(),
+		nodeID:             conf.NodeID,
+		clusterID:          conf.ClusterID,
+		cpuCostConfig:      conf.CPUCostConfig,
+		svc:                svc,
+		pending:            make(map[string]*processStats),
+		procStats:          make(map[int]*processStats),
+		lastHWResourceDump: time.Now(),
 	}
 
 	m.initPrometheus()
@@ -703,7 +703,7 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 	m.memoryUsage = float64(totalMemory) / gb
 	m.promProcRSS.Set(float64(totalMemory))
 
-	m.maybeLogMemoryUsage(stats.Memory)
+	m.maybeLogHWResourceUsage(stats.Memory)
 
 	m.updateCgroupStats()
 
@@ -714,24 +714,35 @@ func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
 	m.checkMemoryKill(maxMemoryEgress, maxMemoryGroup)
 }
 
-// maybeLogMemoryUsage periodically logs per-group process RSS to aid memory leak diagnosis.
-func (m *Monitor) maybeLogMemoryUsage(memory map[int]*hwstats.GroupMemory) {
+// maybeLogHWResourceUsage periodically logs per-group process RSS and CPU to aid resource leak diagnosis.
+func (m *Monitor) maybeLogHWResourceUsage(memory map[int]*hwstats.GroupMemory) {
 	now := time.Now()
-	if now.Sub(m.lastMemoryDump) < memoryUsageDumpInterval {
+	if now.Sub(m.lastHWResourceDump) < hwResourceDumpInterval {
 		return
 	}
-	m.lastMemoryDump = now
+	m.lastHWResourceDump = now
 
 	for groupPID, gm := range memory {
 		egressID := ""
+		var lastCPU, avgCPU, maxCPU, allowedCPU float64
 		if ps := m.procStats[groupPID]; ps != nil {
 			egressID = ps.egressID
+			lastCPU = ps.lastCPU
+			maxCPU = ps.maxCPU
+			allowedCPU = ps.allowedCPU
+			if ps.cpuCounter > 0 {
+				avgCPU = ps.totalCPU / float64(ps.cpuCounter)
+			}
 		}
-		logger.Infow("current memory usage",
+		logger.Infow("hw resources usage",
 			"egressID", egressID,
 			"groupPID", groupPID,
 			"totalRSSBytes", gm.Total,
 			"processes", gm.Procs,
+			"lastCPU", lastCPU,
+			"avgCPU", avgCPU,
+			"maxCPU", maxCPU,
+			"allowedCPU", allowedCPU,
 		)
 	}
 }
