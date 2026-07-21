@@ -99,7 +99,8 @@ storage:
     aws_log_level: (optional, default=LogOff) log level for aws sdk (LogDebugWithRequestRetries, LogDebug, ...) 
   azure:
     account_name: AZURE_STORAGE_ACCOUNT env can be used instead
-    account_key: AZURE_STORAGE_KEY env can be used instead
+    account_key: (optional) AZURE_STORAGE_KEY env can be used instead; omit when using sas_token
+    sas_token: (optional) Account or Service SAS query string (e.g. "?sv=...&sig=..."); preferred over account_key. When set, presigned URL generation returns the blob URL with the SAS appended; the returned URL's capabilities and lifetime are defined by the SAS itself
     container_name: container to upload files to
   gcp:
     credentials_json: GOOGLE_APPLICATION_CREDENTIALS env can be used instead
