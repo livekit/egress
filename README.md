@@ -69,11 +69,28 @@ logging:
 template_base: can be used to host custom templates (default http://localhost:<template_port>/)
 backup_storage: files will be moved here when uploads fail. location must have write access granted for all users
 enable_chrome_sandbox: if true, egress will run Chrome with sandboxing enabled. This requires a specific Docker setup, see below.
-cpu_cost: # optionally override cpu cost estimation, used when accepting or denying requests
-  room_composite_cpu_cost: 3.0
-  web_cpu_cost: 3.0
+cpu_cost:
+  # Optionally override CPU cost estimation, used when accepting or denying requests
+  # Example: with 4 CPUs and max_cpu_utilization=0.8, the node has a budget of 3.2 CPU cost units available for active egress jobs.
+  # RoomCompositeEgressRequest (video or audio+video)
+  room_composite_cpu_cost: 4.0
+  # RoomCompositeEgressRequest with audio_only=true
+  audio_room_composite_cpu_cost: 1.0
+  # WebEgressRequest (video or audio+video)
+  web_cpu_cost: 4.0
+  # WebEgressRequest with audio_only=true
+  audio_web_cpu_cost: 1.0
+  # TrackCompositeEgressRequest
   track_composite_cpu_cost: 2.0
+  # TrackEgressRequest
   track_cpu_cost: 1.0
+  # Maximum fraction of available CPUs that may be allocated to egress jobs.
+  # Example: 0.8 on a 4-CPU node allows up to 3.2 total CPU cost units.
+  max_cpu_utilization: 0.80
+  # Maximum number of PulseAudio clients before new requests are rejected.
+  # Primarily relevant for RoomComposite/Web egresses using PulseAudio.
+  max_pulse_clients: 100
+
 session_limits: # optional egress duration limits - once hit, egress will end with status EGRESS_LIMIT_REACHED
   file_output_max_duration: 1h
   stream_output_max_duration: 90m
