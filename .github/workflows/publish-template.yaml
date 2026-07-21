@@ -22,6 +22,10 @@ on:
       - template-default/**
       - template-sdk/**
 
+# EndBug/add-and-commit pushes the updated template version back to the branch
+permissions:
+  contents: write
+
 jobs:
   docker:
     runs-on: ubuntu-latest-m

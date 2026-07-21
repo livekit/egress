@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
-	"github.com/go-gst/go-gst/gst/app"
 	"github.com/linkdata/deadlock"
 
 	"github.com/livekit/egress/pkg/config"

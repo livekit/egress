@@ -49,11 +49,9 @@ const (
 	drainingTimeout         = time.Second * 3
 	unsubscribedGracePeriod = time.Second * 2
 
-	// FlowFlushing recovery: threshold of consecutive FlowFlushing returns before
-	// triggering source bin reset. ~2 seconds of 20ms audio packets.
+	// Threshold of consecutive FlowFlushing returns before the writer gives up
+	// and drains. ~2 seconds of 20ms audio packets.
 	flushingThreshold = 100
-	// Maximum number of source bin resets per writer lifetime.
-	maxSrcResets = 2
 )
 
 var errFlowFlushingThreshold = errors.New("persistent FlowFlushing detected")
@@ -114,9 +112,8 @@ type AppWriter struct {
 	finished                 core.Fuse
 	stats                    appWriterStats
 
-	// FlowFlushing recovery
-	flushingCount int // consecutive FlowFlushing returns from PushBuffer
-	srcResetCount int // number of source bin resets performed
+	// consecutive FlowFlushing returns from PushBuffer
+	flushingCount int
 
 	// diagnostics, set on unexpected flushing when pushing packets to the pipeline
 	flushDotRequested atomic.Bool
@@ -527,9 +524,7 @@ func (w *AppWriter) pushSamples() {
 		for _, pkt := range item.sample {
 			if err := w.pushPacket(pkt); err != nil {
 				if errors.Is(err, errFlowFlushingThreshold) {
-					if w.tryRecoverFromFlushing() {
-						continue
-					}
+					w.callbacks.OnError(errors.ErrPersistentFlushing)
 					w.draining.Break()
 					w.notifyPushSamples()
 					return
@@ -618,55 +613,6 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	w.lastPTS = pts
 	w.maybeCheckPipelineLag(pts)
 	return nil
-}
-
-// tryRecoverFromFlushing attempts to recover from persistent FlowFlushing by
-// removing the stuck source bin and replacing it with a new one.
-// Returns true if recovery succeeded and pushing can continue.
-func (w *AppWriter) tryRecoverFromFlushing() bool {
-	if w.draining.IsBroken() {
-		w.logger.Debugw("skipping FlowFlushing recovery: draining")
-		return false
-	}
-	if w.unsubscribed.IsBroken() {
-		w.logger.Debugw("skipping FlowFlushing recovery: unsubscribed")
-		return false
-	}
-	if w.endStreamSignaled.IsBroken() {
-		w.logger.Debugw("skipping FlowFlushing recovery: end stream signaled")
-		return false
-	}
-
-	if w.srcResetCount >= maxSrcResets {
-		w.logger.Warnw("max FlowFlushing recovery attempts reached, giving up", nil,
-			"attempts", w.srcResetCount)
-		return false
-	}
-
-	w.logger.Infow("attempting FlowFlushing recovery via source bin reset",
-		"flushingCount", w.flushingCount, "attempt", w.srcResetCount+1)
-
-	oldAppSrc := w.trackSource.AppSrc
-
-	// Call the builder layer to force-remove the old bin and add a new one.
-	// The callback updates ts.AppSrc to the new appsrc on success.
-	if err := w.callbacks.OnSourceBinReset(w.trackSource); err != nil {
-		w.logger.Errorw("FlowFlushing recovery failed", err)
-		return false
-	}
-
-	if w.trackSource.AppSrc == oldAppSrc {
-		w.logger.Errorw("FlowFlushing recovery: no handler replaced the appsrc", nil)
-		return false
-	}
-
-	w.src = w.trackSource.AppSrc
-	w.flushingCount = 0
-	w.srcResetCount++
-
-	w.logger.Infow("FlowFlushing recovery succeeded, continuing with new appsrc",
-		"totalResets", w.srcResetCount)
-	return true
 }
 
 func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {

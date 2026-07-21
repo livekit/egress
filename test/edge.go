@@ -20,12 +20,19 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
+	"path"
+	"strconv"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/pipeline/source/pulse"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
@@ -271,6 +278,23 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 					fileType: livekit.EncodedFileType_OGG,
 				},
 				custom: r.testDuplicateIdentitySilentExit,
+			},
+
+			// Handler killed without cleanup (crash, OOM-kill) leaks its
+			// null-sink on the shared pulse daemon. The monitor's reaper
+			// must unload it once the egress is no longer active.
+
+			{
+				name:        "PulseSinkReaper",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+				},
+				fileOptions: &fileOptions{
+					filename: "pulse_sink_reaper_{time}.mp4",
+				},
+				custom: r.testPulseSinkReaper,
 			},
 		} {
 			if !r.run(t, test) {
@@ -702,4 +726,112 @@ func (r *Runner) testRoomCompositeRetryableDisconnect(t *testing.T, test *testCa
 	// And it is downloadable from storage.
 	local := fmt.Sprintf("%s/retryable_disconnect_partial.ogg", r.FilePrefix)
 	download(t, p.GetFileConfig().StorageConfig, local, fileRes.Filename, true)
+}
+
+func (r *Runner) testPulseSinkReaper(t *testing.T, test *testCase) {
+	req := r.build(test)
+	egressID := r.startEgress(t, req)
+
+	// chrome records through a null-sink named after the egress
+	require.Eventually(t, func() bool {
+		loaded, err := egressSinkLoaded(egressID)
+		return err == nil && loaded
+	}, 30*time.Second, time.Second, "pulse sink should be loaded while the egress is running")
+
+	// the reaper's gauge picks up the loaded sink on its next tick
+	require.Eventually(t, func() bool {
+		return pulseSinksGauge(t) >= 1
+	}, 30*time.Second, time.Second, "pulse_sinks gauge should count the loaded sink")
+
+	// SIGKILL the handler so WebSource.Close never runs and the sink leaks
+	pid := findHandlerPID(t, egressID)
+	t.Cleanup(func() {
+		// sweep the orphaned chrome/xvfb the dead handler left behind
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+	})
+	require.NoError(t, syscall.Kill(pid, syscall.SIGKILL))
+
+	// the service notices the death, reports the egress failed, and drops it
+	// from the monitor, leaving the sink orphaned
+	deadline := time.Now().Add(30 * time.Second)
+	for r.getUpdate(t, egressID).Status != livekit.EgressStatus_EGRESS_FAILED {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the killed egress to be reported failed")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// the reaper unloads the orphaned sink after the grace period
+	require.Eventually(t, func() bool {
+		loaded, err := egressSinkLoaded(egressID)
+		return err == nil && !loaded
+	}, time.Minute, time.Second, "orphaned pulse sink should be reaped")
+
+	// and the gauge drops back to zero on the tick after the unload
+	require.Eventually(t, func() bool {
+		return pulseSinksGauge(t) == 0
+	}, 30*time.Second, time.Second, "pulse_sinks gauge should drop after the reap")
+}
+
+// pulseSinksGauge reads livekit_egress_pulse_sinks from the default prometheus
+// registry, which the in-process monitor registers into. Returns -1 if the
+// gauge isn't registered or gathering fails.
+func pulseSinksGauge(t *testing.T) float64 {
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Logf("prometheus gather failed: %v", err)
+		return -1
+	}
+
+	for _, family := range families {
+		if family.GetName() == "livekit_egress_pulse_sinks" {
+			for _, m := range family.GetMetric() {
+				return m.GetGauge().GetValue()
+			}
+		}
+	}
+	return -1
+}
+
+func egressSinkLoaded(egressID string) (bool, error) {
+	info, err := pulse.List()
+	if err != nil {
+		return false, err
+	}
+	for _, sink := range info.Sinks {
+		if sink.Name == egressID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// findHandlerPID locates the `egress run-handler` process for the given egress
+// by scanning /proc, since the ProcessManager doesn't expose handler PIDs. The
+// egress ID is passed to the handler via its environment (EGRESS_HANDLER_*),
+// not its command line, so match on /proc/<pid>/environ.
+func findHandlerPID(t *testing.T, egressID string) int {
+	entries, err := os.ReadDir("/proc")
+	require.NoError(t, err)
+
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		cmdline, err := os.ReadFile(path.Join("/proc", e.Name(), "cmdline"))
+		if err != nil || !strings.Contains(string(cmdline), "run-handler") {
+			continue
+		}
+		environ, err := os.ReadFile(path.Join("/proc", e.Name(), "environ"))
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(environ), egressID) {
+			return pid
+		}
+	}
+
+	t.Fatalf("no run-handler process found for %s", egressID)
+	return 0
 }

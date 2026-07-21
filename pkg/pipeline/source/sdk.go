@@ -812,17 +812,20 @@ func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {
 	if reason == lksdk.DuplicateIdentity {
 		s.duplicateIdentity.Store(true)
 	}
-	if reason != lksdk.RoomClosed && reason != lksdk.LeaveRequested {
-		protoReason := "unknown"
-		if room := s.room.Load(); room != nil {
-			protoReason = room.DisconnectReason().String()
-		}
-		logger.Warnw("disconnected from room", nil, "reason", reason, "protoReason", protoReason)
 
-		if reason == lksdk.Failed {
-			s.connectionFailed.Store(true)
-		}
+	protoReason := livekit.DisconnectReason_UNKNOWN_REASON
+	if room := s.room.Load(); room != nil {
+		protoReason = room.DisconnectReason()
 	}
+
+	if shouldWarnOnRoomDisconnect(reason, protoReason) {
+		logger.Warnw("disconnected from room", nil, "reason", reason, "protoReason", protoReason)
+	}
+
+	if reason == lksdk.Failed {
+		s.connectionFailed.Store(true)
+	}
+
 	s.finished()
 }
 
@@ -896,4 +899,10 @@ func (s *SDKSource) UpdateTrackDimensions(trackID string, width, height int) {
 			}
 		}
 	}
+}
+
+func shouldWarnOnRoomDisconnect(reason lksdk.DisconnectionReason, protoReason livekit.DisconnectReason) bool {
+	return reason != lksdk.RoomClosed &&
+		reason != lksdk.LeaveRequested &&
+		protoReason != livekit.DisconnectReason_ROOM_DELETED
 }

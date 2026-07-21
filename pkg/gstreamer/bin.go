@@ -16,7 +16,6 @@ package gstreamer
 
 import (
 	"fmt"
-	"slices"
 	"sync"
 	"time"
 
@@ -46,9 +45,6 @@ const (
 //     - Bin fields (`srcs`, `sinks`, `elements`, `pads`, etc.) under `b.mu`.
 //     Then unlock before scheduling the callback. Avoid holding these locks
 //     while waiting for the callback to run on the GLib loop.
-//     Exception: ForceRemoveSourceBin intentionally holds a shared state lock
-//     across the wait to prevent state-mutation races from concurrent Stop/
-//     state-transition calls while forced detach is in progress.
 //
 
 // Bin is designed to hold a single stream, with any number of sources and sinks
@@ -179,61 +175,6 @@ func (b *Bin) AddElements(elements ...*gst.Element) error {
 		return errors.ErrGstPipelineError(err)
 	}
 	return nil
-}
-
-// ForceRemoveSourceBin synchronously removes a source bin without waiting for EOS.
-// This is used for FlowFlushing recovery where EOS will never propagate from a stuck appsrc.
-// The removal runs on the GLib main loop thread via glib.IdleAdd and blocks until complete.
-func (b *Bin) ForceRemoveSourceBin(name string) error {
-	logger.Infow("force removing source bin", "src", name, "from", b.bin.GetName())
-
-	b.LockStateShared()
-	defer b.UnlockStateShared()
-
-	state := b.GetStateLocked()
-	if state > StateRunning {
-		return nil
-	}
-
-	b.mu.Lock()
-
-	idx := slices.IndexFunc(b.srcs, func(s *Bin) bool { return s.bin.GetName() == name })
-	if idx == -1 {
-		b.mu.Unlock()
-		return nil
-	}
-	src := b.srcs[idx]
-
-	src.mu.Lock()
-	srcGhostPad, sinkGhostPad, ok := deleteGhostPadsLocked(src, b)
-	src.mu.Unlock()
-	if !ok {
-		b.mu.Unlock()
-		return errors.New("ghost pads not found for force removal")
-	}
-
-	// Now safe to remove from the tracking slice
-	b.srcs = slices.Delete(b.srcs, idx, idx+1)
-
-	// Capture references before releasing the lock.
-	// These fields are set during construction and never modified, so safe to use after unlock.
-	peerElement := b.elements[0]
-	parentBin := b.bin
-	pipeline := b.pipeline
-
-	b.mu.Unlock()
-
-	// Execute removal synchronously on the GLib main loop thread
-	done := make(chan error, 1)
-	if _, err := glib.IdleAdd(func() bool {
-		logger.Debugw("force removing source bin on GLib thread", "bin", src.bin.GetName())
-		done <- detachSourceBin(src, srcGhostPad, sinkGhostPad, peerElement, parentBin, pipeline)
-		return false
-	}); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-
-	return <-done
 }
 
 func (b *Bin) RemoveSourceBin(name string) error {
@@ -647,7 +588,10 @@ func linkPeersLocked(src, sink *Bin) error {
 				}
 				return gst.PadProbeRemove
 			})
-			return src.SetState(gst.StatePlaying)
+			if !src.bin.SyncStateWithParent() {
+				return fmt.Errorf("failed to sync %s state with parent", src.bin.GetName())
+			}
+			return nil
 		}
 
 		if sinkState == gst.StateNull {
