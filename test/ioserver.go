@@ -63,3 +63,12 @@ func (s *ioTestServer) UpdateEgress(_ context.Context, info *livekit.EgressInfo)
 func (s *ioTestServer) UpdateMetrics(_ context.Context, _ *rpc.UpdateMetricsRequest) (*emptypb.Empty, error) {
 	return &emptypb.Empty{}, nil
 }
+
+func (s *ioTestServer) GetEgress(_ context.Context, req *rpc.GetEgressRequest) (*livekit.EgressInfo, error) {
+	s.updates.Lock()
+	defer s.updates.Unlock()
+	if s.updates.EgressInfo != nil && s.updates.EgressInfo.EgressId == req.EgressId {
+		return s.updates.EgressInfo, nil
+	}
+	return nil, nil
+}
