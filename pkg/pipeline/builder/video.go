@@ -77,7 +77,6 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, setVi
 		pipeline.AddOnTrackRemoved(b.onTrackRemoved)
 		pipeline.AddOnTrackMuted(b.onTrackMuted)
 		pipeline.AddOnTrackUnmuted(b.onTrackUnmuted)
-		pipeline.AddOnSourceBinReset(b.onSourceBinReset)
 		pipeline.AddOnActiveSpeakersChanged(b.onActiveSpeakersChanged)
 	}
 
@@ -274,81 +273,6 @@ func (b *VideoBin) applyLayoutLocked(pads []PadLayout) {
 			b.setVideoDimensions(pl.TrackID, pl.W, pl.H)
 		}
 	}
-}
-
-func (b *VideoBin) onSourceBinReset(ts *config.TrackSource) error {
-	if ts.TrackKind != lksdk.TrackKindVideo {
-		return nil
-	}
-	return b.resetVideoAppSrcBin(ts)
-}
-
-func (b *VideoBin) resetVideoAppSrcBin(ts *config.TrackSource) error {
-	b.mu.Lock()
-
-	oldName, ok := b.names[ts.TrackID]
-	if !ok {
-		b.mu.Unlock()
-		return errors.New("track already removed, cannot reset video source bin")
-	}
-
-	if b.bin.GetState() > gstreamer.StateRunning {
-		b.mu.Unlock()
-		return errors.New("pipeline stopping, cannot reset video source bin")
-	}
-
-	if b.conf.VideoDecoding {
-		if err := b.setTrackVisibleLocked(oldName, false); err != nil {
-			b.mu.Unlock()
-			return err
-		}
-	}
-
-	delete(b.pads, oldName)
-	b.closeProbe(oldName)
-
-	name := fmt.Sprintf("%s_%d", ts.TrackID, b.nextID)
-	b.nextID++
-
-	if b.conf.VideoDecoding {
-		b.createSrcPadLocked(ts.TrackID, name)
-	}
-
-	// AddSourceBin synchronously invokes the SetGetSrcPad callback, which locks b.mu.
-	b.mu.Unlock()
-
-	if err := b.bin.ForceRemoveSourceBin(oldName); err != nil {
-		return fmt.Errorf("failed to force remove video source bin: %w", err)
-	}
-
-	// Reuse the same appsrc element name so watch.go's PTSFixer keeps tracking.
-	newElement, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", ts.TrackID))
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	ts.AppSrc = app.SrcFromElement(newElement)
-
-	appSrcBin, err := b.buildAppSrcBin(ts, name)
-	if err != nil {
-		return fmt.Errorf("failed to build new video source bin: %w", err)
-	}
-
-	if err = b.bin.AddSourceBin(appSrcBin); err != nil {
-		return fmt.Errorf("failed to add new video source bin: %w", err)
-	}
-
-	if b.conf.VideoDecoding {
-		if err := b.setTrackVisible(name, true); err != nil {
-			return err
-		}
-	}
-
-	if b.layout != nil {
-		b.applyLayout(b.layout.Layout())
-	}
-
-	logger.Infow("video source bin reset complete", "trackID", ts.TrackID, "newBin", name)
-	return nil
 }
 
 func (b *VideoBin) buildWebInput() error {
