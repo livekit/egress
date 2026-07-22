@@ -67,7 +67,7 @@ func (s *ioTestServer) UpdateMetrics(_ context.Context, _ *rpc.UpdateMetricsRequ
 func (s *ioTestServer) GetEgress(_ context.Context, req *rpc.GetEgressRequest) (*livekit.EgressInfo, error) {
 	s.updates.Lock()
 	defer s.updates.Unlock()
-	if s.updates.EgressInfo != nil && s.updates.EgressInfo.EgressId == req.EgressId {
+	if s.updates.EgressInfo != nil && s.updates.EgressId == req.EgressId {
 		return s.updates.EgressInfo, nil
 	}
 	return nil, nil
