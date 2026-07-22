@@ -22,6 +22,9 @@ on:
       - template-default/**
       - template-sdk/**
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: template-default

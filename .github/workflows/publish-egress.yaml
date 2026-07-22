@@ -21,6 +21,10 @@ on:
     # only publish on version tags
     tags:
       - 'v*.*.*'
+
+permissions:
+  contents: read
+
 jobs:
   docker:
     runs-on: ubuntu-latest-m

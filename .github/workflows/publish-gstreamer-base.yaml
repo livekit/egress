@@ -21,6 +21,9 @@ on:
         required: true
       DOCKERHUB_TOKEN:
         required: true
+permissions:
+  contents: read
+
 env:
   GST_VERSION: "${{ inputs.version }}"
   IMAGE_TAG: "${{ inputs.image_tag || inputs.version }}"
