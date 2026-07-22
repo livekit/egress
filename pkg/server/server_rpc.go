@@ -58,6 +58,12 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 		s.activeRequests.Dec()
 		return nil, errors.ErrEgressAlreadyExists
 	}
+	// Dedup a retried start from sdk retry
+	if info, err := s.ioClient.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId}); err == nil && info != nil {
+		logger.Infow("egress already exists for request, skipping duplicate start", "egressID", req.EgressId)
+		s.activeRequests.Dec()
+		return info, nil
+	}
 	if err := s.monitor.AcceptRequest(req); err != nil {
 		s.activeRequests.Dec()
 		return nil, err

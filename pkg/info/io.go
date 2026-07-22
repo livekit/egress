@@ -41,6 +41,7 @@ const (
 
 type SessionReporter interface {
 	CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error
+	GetEgress(ctx context.Context, req *rpc.GetEgressRequest, opts ...psrpc.RequestOption) (*livekit.EgressInfo, error)
 	UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error
 	UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error
 	IsHealthy() bool
