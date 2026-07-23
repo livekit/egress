@@ -50,6 +50,10 @@ const (
 
 type ProcessManager interface {
 	Launch(ctx context.Context, handlerID string, req *rpc.StartEgressRequest, info *livekit.EgressInfo, cmd *exec.Cmd) error
+	// SetHandlerTopicHooks installs callbacks used to advertise and remove the
+	// per-egress handler RPC topics. Registration happens inside Launch, after
+	// the handler's IPC client exists; deregistration happens in ProcessFinished.
+	SetHandlerTopicHooks(register func(egressID string) error, deregister func(egressID string))
 	GetContext(egressID string) context.Context
 	AlreadyExists(egressID string) bool
 	HandlerStarted(egressID string) error
@@ -74,12 +78,20 @@ type ProcessManager interface {
 type processManager struct {
 	mu             deadlock.RWMutex
 	activeHandlers map[string]*Process
+
+	registerTopics   func(egressID string) error
+	deregisterTopics func(egressID string)
 }
 
 func NewProcessManager() ProcessManager {
 	return &processManager{
 		activeHandlers: make(map[string]*Process),
 	}
+}
+
+func (pm *processManager) SetHandlerTopicHooks(register func(egressID string) error, deregister func(egressID string)) {
+	pm.registerTopics = register
+	pm.deregisterTopics = deregister
 }
 
 func (pm *processManager) StoreAccumulatableMetrics(egressID string, metrics []*dto.MetricFamily) {
@@ -133,8 +145,19 @@ func (pm *processManager) Launch(
 	pm.activeHandlers[info.EgressId] = p
 	pm.mu.Unlock()
 
+	// advertise the handler RPC topics only once the IPC client can serve
+	// them; requests arriving during handler startup wait on the connection.
+	// The map entry is cleaned up by ProcessFinished on failure, same as the
+	// cmd.Start error path.
+	if pm.registerTopics != nil {
+		if err = pm.registerTopics(info.EgressId); err != nil {
+			logger.Errorw("could not register handler rpc topics", err, "egressID", info.EgressId)
+			return err
+		}
+	}
+
 	if err = cmd.Start(); err != nil {
-		logger.Errorw("could not launch process", err)
+		logger.Errorw("could not launch process", err, "egressID", info.EgressId)
 		return err
 	}
 
@@ -326,6 +349,11 @@ func (pm *processManager) GetKillReason(egressID string) string {
 
 func (pm *processManager) ProcessFinished(egressID string) {
 	logger.Debugw("process finished", "egressID", egressID)
+
+	if pm.deregisterTopics != nil {
+		pm.deregisterTopics(egressID)
+	}
+
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
