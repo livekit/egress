@@ -153,6 +153,12 @@ type FakeProcessManager struct {
 		arg1 string
 		arg2 string
 	}
+	SetHandlerTopicHooksStub        func(func(egressID string) error, func(egressID string))
+	setHandlerTopicHooksMutex       sync.RWMutex
+	setHandlerTopicHooksArgsForCall []struct {
+		arg1 func(egressID string) error
+		arg2 func(egressID string)
+	}
 	StopProcessStub        func(string, string)
 	stopProcessMutex       sync.RWMutex
 	stopProcessArgsForCall []struct {
@@ -897,6 +903,39 @@ func (fake *FakeProcessManager) SetExitReasonArgsForCall(i int) (string, string)
 	fake.setExitReasonMutex.RLock()
 	defer fake.setExitReasonMutex.RUnlock()
 	argsForCall := fake.setExitReasonArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeProcessManager) SetHandlerTopicHooks(arg1 func(egressID string) error, arg2 func(egressID string)) {
+	fake.setHandlerTopicHooksMutex.Lock()
+	fake.setHandlerTopicHooksArgsForCall = append(fake.setHandlerTopicHooksArgsForCall, struct {
+		arg1 func(egressID string) error
+		arg2 func(egressID string)
+	}{arg1, arg2})
+	stub := fake.SetHandlerTopicHooksStub
+	fake.recordInvocation("SetHandlerTopicHooks", []interface{}{arg1, arg2})
+	fake.setHandlerTopicHooksMutex.Unlock()
+	if stub != nil {
+		fake.SetHandlerTopicHooksStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeProcessManager) SetHandlerTopicHooksCallCount() int {
+	fake.setHandlerTopicHooksMutex.RLock()
+	defer fake.setHandlerTopicHooksMutex.RUnlock()
+	return len(fake.setHandlerTopicHooksArgsForCall)
+}
+
+func (fake *FakeProcessManager) SetHandlerTopicHooksCalls(stub func(func(egressID string) error, func(egressID string))) {
+	fake.setHandlerTopicHooksMutex.Lock()
+	defer fake.setHandlerTopicHooksMutex.Unlock()
+	fake.SetHandlerTopicHooksStub = stub
+}
+
+func (fake *FakeProcessManager) SetHandlerTopicHooksArgsForCall(i int) (func(egressID string) error, func(egressID string)) {
+	fake.setHandlerTopicHooksMutex.RLock()
+	defer fake.setHandlerTopicHooksMutex.RUnlock()
+	argsForCall := fake.setHandlerTopicHooksArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
