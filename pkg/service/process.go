@@ -53,9 +53,8 @@ type ProcessManager interface {
 	// SetHandlerTopicHooks installs callbacks used to advertise and remove the
 	// per-egress handler RPC topics. Registration happens inside Launch, after
 	// the handler's IPC client exists; deregistration happens in ProcessFinished.
-	// The hooks are stored without synchronization and read by Launch and
-	// ProcessFinished, so this must be called once during server construction,
-	// before any handler can be launched.
+	// The hooks are read without synchronization, so this must be called once
+	// during server construction, before any handler is launched.
 	SetHandlerTopicHooks(register func(egressID string) error, deregister func(egressID string))
 	GetContext(egressID string) context.Context
 	AlreadyExists(egressID string) bool
