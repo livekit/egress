@@ -50,7 +50,6 @@ type SDKSource struct {
 	mu                   deadlock.Mutex
 	initialized          core.Fuse
 	filenameReplacements map[string]string
-	audioChannels        map[string]livekit.AudioChannel
 
 	workersMu deadlock.RWMutex
 	workers   map[string]*trackWorker
@@ -86,7 +85,6 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		PipelineConfig:       p,
 		callbacks:            callbacks,
 		filenameReplacements: make(map[string]string),
-		audioChannels:        make(map[string]livekit.AudioChannel),
 		workers:              make(map[string]*trackWorker),
 	}
 	logger.Debugw("latency config", "latency", p.Latency)
@@ -261,6 +259,10 @@ func (s *SDKSource) joinRoom() error {
 			OnTrackUnsubscribed: s.onTrackUnsubscribed,
 		},
 		OnDisconnectedWithReason: s.onDisconnectedWithReason,
+	}
+
+	if s.Compositing {
+		cb.OnActiveSpeakersChanged = s.onActiveSpeakersChanged
 	}
 
 	switch s.RequestType {
@@ -716,13 +718,7 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 func (s *SDKSource) shouldSubscribeMedia(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
 	switch pub.Kind() {
 	case lksdk.TrackKindAudio:
-		if route := s.matchesAudioRoute(pub, rp); route != nil {
-			s.mu.Lock()
-			s.audioChannels[pub.SID()] = route.Channel
-			s.mu.Unlock()
-			return true
-		}
-		return s.CaptureAudioAll
+		return s.matchesAudioRoute(pub, rp) != nil
 	case lksdk.TrackKindVideo:
 		return s.matchesMediaVideo(pub, rp)
 	default:
@@ -748,6 +744,9 @@ func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.Remo
 				return route
 			}
 		}
+	}
+	if s.CaptureAudioAll {
+		return &config.AudioRouteConfig{}
 	}
 	return nil
 }
@@ -863,7 +862,9 @@ func (s *SDKSource) disconnectRoom() {
 }
 
 func (s *SDKSource) shouldUseOneShotSenderReportSync() bool {
-	return s.RequestType == types.RequestTypeRoomComposite // one-shot correction is only useful when the audio mixer can drop late audio
+	// one-shot correction is only useful when the audio mixer can drop late audio
+	return !s.Compositing &&
+		(s.RequestType == types.RequestTypeRoomComposite || s.RequestType == types.RequestTypeTemplate)
 }
 
 func (s *SDKSource) shouldEnableOneShotSenderReportSync() bool {
@@ -871,10 +872,33 @@ func (s *SDKSource) shouldEnableOneShotSenderReportSync() bool {
 }
 
 func (s *SDKSource) shouldDisableAudioPTSAdjustment() bool {
-	return s.RequestType == types.RequestTypeRoomComposite || // SDK room composites are audio only - no need to adjust audio timestamps
-		s.RequestType == types.RequestTypeTemplate || // SDK templates are audio only - same as room composite
+	return (s.RequestType == types.RequestTypeRoomComposite && !s.Compositing) || // SDK room composites are audio only unless compositing - no need to adjust audio timestamps
+		(s.RequestType == types.RequestTypeTemplate && !s.Compositing) || // SDK templates are audio only - same as room composite
 		s.RequestType == types.RequestTypeTrack || // no A/V sync needed for single track requests
 		s.AudioTempoController.Enabled
+}
+
+func (s *SDKSource) onActiveSpeakersChanged(speakers []lksdk.Participant) {
+	s.callbacks.OnActiveSpeakersChanged(speakers)
+}
+
+// UpdateTrackDimensions sets the preferred video dimensions for a track's publication.
+// Called when layout changes to request appropriate simulcast layers.
+func (s *SDKSource) UpdateTrackDimensions(trackID string, width, height int) {
+	room := s.room.Load()
+	if room == nil {
+		return
+	}
+	for _, rp := range room.GetRemoteParticipants() {
+		for _, pub := range rp.TrackPublications() {
+			if pub.SID() == trackID {
+				if remotePub, ok := pub.(*lksdk.RemoteTrackPublication); ok {
+					remotePub.SetVideoDimensions(uint32(width), uint32(height))
+				}
+				return
+			}
+		}
+	}
 }
 
 func shouldWarnOnRoomDisconnect(reason lksdk.DisconnectionReason, protoReason livekit.DisconnectReason) bool {
