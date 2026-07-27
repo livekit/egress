@@ -596,6 +596,9 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 					w.callbacks.OnDebugDotRequest("appsrc_flush_" + w.track.ID())
 				}
 			}
+			if w.flushingCount == flushingThreshold/2 {
+				w.recoverFromFlushing()
+			}
 			if w.flushingCount >= flushingThreshold {
 				return errFlowFlushingThreshold
 			}
@@ -613,6 +616,21 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	w.lastPTS = pts
 	w.maybeCheckPipelineLag(pts)
 	return nil
+}
+
+// recoverFromFlushing restarts an appsrc stranded with its internal flushing
+func (w *AppWriter) recoverFromFlushing() {
+	w.logger.Infow("attempting FlowFlushing recovery",
+		"flushingCount", w.flushingCount,
+		"appsrcState", w.src.Element.GetCurrentState().String())
+	if !w.src.SendEvent(gst.NewFlushStartEvent()) {
+		w.logger.Warnw("failed to send recovery flush start event", nil)
+		return
+	}
+	if !w.src.SendEvent(gst.NewFlushStopEvent(false)) {
+		w.logger.Warnw("failed to send recovery flush stop event", nil)
+	}
+	w.logger.Infow("FlowFlushing recovery successful")
 }
 
 func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {
