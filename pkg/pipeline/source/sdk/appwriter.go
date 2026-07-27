@@ -629,6 +629,7 @@ func (w *AppWriter) recoverFromFlushing() {
 	}
 	if !w.src.SendEvent(gst.NewFlushStopEvent(false)) {
 		w.logger.Warnw("failed to send recovery flush stop event", nil)
+		return
 	}
 	w.logger.Infow("FlowFlushing recovery successful")
 }
