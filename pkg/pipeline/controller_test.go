@@ -120,7 +120,7 @@ func TestUnsolicitedEOSBeforeSendEOS(t *testing.T) {
 
 	// As soon as the bus EOS is processed (before Close marks the egress
 	// complete), invoke the normal end path — mirroring the source-side
-	// shutdown that raced the unsolicited EOS in production.
+	// shutdown path.
 	sendEOSDone := make(chan struct{})
 	go func() {
 		defer close(sendEOSDone)
