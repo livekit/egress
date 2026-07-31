@@ -523,7 +523,7 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 	if err != nil {
 		return err
 	}
-	if err = queue.SetProperty("min-threshold-time", uint64(videoTestSrcDelay)); err != nil {
+	if err = queue.SetProperty("min-threshold-time", uint64(videoTestSrcDelay.Nanoseconds())); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
