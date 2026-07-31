@@ -129,10 +129,11 @@ type streamOptions struct {
 }
 
 type segmentOptions struct {
-	prefix       string
-	playlist     string
-	livePlaylist string
-	suffix       livekit.SegmentedFileSuffix
+	prefix          string
+	playlist        string
+	livePlaylist    string
+	suffix          livekit.SegmentedFileSuffix
+	segmentDuration uint32
 }
 
 type imageOptions struct {
@@ -354,6 +355,7 @@ func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFile
 			PlaylistName:     o.playlist,
 			LivePlaylistName: o.livePlaylist,
 			FilenameSuffix:   o.suffix,
+			SegmentDuration:  o.segmentDuration,
 		}
 
 		switch conf := u.(type) {
@@ -373,6 +375,7 @@ func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFile
 		PlaylistName:     o.playlist,
 		LivePlaylistName: o.livePlaylist,
 		FilenameSuffix:   o.suffix,
+		SegmentDuration:  o.segmentDuration,
 	}}
 }
 
@@ -494,6 +497,7 @@ func (r *Runner) buildV2Outputs(test *testCase) []*livekit.Output {
 					PlaylistName:     test.playlist,
 					LivePlaylistName: test.livePlaylist,
 					FilenameSuffix:   test.segmentOptions.suffix,
+					SegmentDuration:  test.segmentDuration,
 				},
 			},
 			Storage: storage,

@@ -80,7 +80,11 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 			return err
 		}
 	} else {
-		queue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_queue", audioBinName), p.Latency.PipelineLatency, p.Live)
+		latency := p.Latency.PipelineLatency
+		if p.SourceType == types.SourceTypeSDK && p.VideoEnabled {
+			latency += videoTestSrcDelay
+		}
+		queue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_queue", audioBinName), latency, p.Live)
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -320,7 +324,6 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 
 	return nil
 }
-
 
 func (b *AudioBin) getChannelLocked(ts *config.TrackSource) livekit.AudioChannel {
 	if ts.AudioChannel != nil {
