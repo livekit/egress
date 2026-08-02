@@ -8,7 +8,7 @@ tool github.com/maxbrunsfeld/counterfeiter/v6
 
 require (
 	github.com/Shopify/toxiproxy/v2 v2.12.0
-	github.com/aws/smithy-go v1.27.1
+	github.com/aws/smithy-go v1.27.4
 	github.com/chromedp/cdproto v0.0.0-20260719223732-95f6af754cfe
 	github.com/chromedp/chromedp v0.15.1
 	github.com/frostbyte73/core v0.1.1
