@@ -54,6 +54,20 @@ const EgressHelper = {
   },
 
   /**
+   * The audio mixing mode requested for the recording, e.g.
+   * `dual_channel_agent` or `dual_channel_alternate` (the lowercased
+   * [AudioMixing](https://github.com/livekit/protocol/blob/main/protobufs/livekit_egress.proto)
+   * enum name). For dual-channel modes, templates should play each
+   * participant's audio panned to a single stereo channel so the recording
+   * carries channel-separated audio. Empty for default mixing.
+   * @returns
+   */
+  getAudioMixing(): string {
+    const audioMixing = getURLParam('audioMixing');
+    return audioMixing ?? '';
+  },
+
+  /**
    * Call when successfully connected to the room
    * @param room
    */
