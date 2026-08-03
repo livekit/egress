@@ -28,14 +28,16 @@ import (
 func TestCostsForRequest(t *testing.T) {
 	m := &Monitor{
 		cpuCostConfig: &config.CPUCostConfig{
-			RoomCompositeCpuCost:      4,
-			AudioRoomCompositeCpuCost: 1,
-			WebCpuCost:                4.5,
-			AudioWebCpuCost:           1.5,
-			ParticipantCpuCost:        2,
-			TrackCompositeCpuCost:     2.5,
-			TrackCpuCost:              0.2,
-			MemoryCost:                3,
+			RoomCompositeCpuCost:            4,
+			AudioRoomCompositeCpuCost:       1,
+			SDKAudioRoomCompositeCpuCost:    0.5,
+			SDKAudioRoomCompositeMemoryCost: 1,
+			WebCpuCost:                      4.5,
+			AudioWebCpuCost:                 1.5,
+			ParticipantCpuCost:              2,
+			TrackCompositeCpuCost:           2.5,
+			TrackCpuCost:                    0.2,
+			MemoryCost:                      3,
 		},
 	}
 
@@ -63,7 +65,7 @@ func TestCostsForRequest(t *testing.T) {
 		{
 			name: "room composite audio sdk",
 			req:  roomComposite(&livekit.RoomCompositeEgressRequest{AudioOnly: true}),
-			cpu:  1, memory: 3, isWeb: false,
+			cpu:  0.5, memory: 1, isWeb: false,
 		},
 		{
 			name: "room composite audio with layout",
@@ -113,7 +115,7 @@ func TestCostsForRequest(t *testing.T) {
 		{
 			name: "v2 template audio sdk",
 			req:  v2Template(&livekit.TemplateSource{AudioOnly: true}),
-			cpu:  1, memory: 3, isWeb: false,
+			cpu:  0.5, memory: 1, isWeb: false,
 		},
 		{
 			name: "v2 template audio with layout",
@@ -151,7 +153,7 @@ func TestCostsForRequest(t *testing.T) {
 					Source: &livekit.ExportReplayRequest_Template{Template: &livekit.TemplateSource{AudioOnly: true}},
 				},
 			}},
-			cpu: 1, memory: 3, isWeb: false,
+			cpu: 0.5, memory: 1, isWeb: false,
 		},
 		{
 			name: "v2 no source",

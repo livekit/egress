@@ -149,6 +149,7 @@ func (m *Monitor) validateCPUConfig() error {
 	requirements := []float64{
 		m.cpuCostConfig.RoomCompositeCpuCost,
 		m.cpuCostConfig.AudioRoomCompositeCpuCost,
+		m.cpuCostConfig.SDKAudioRoomCompositeCpuCost,
 		m.cpuCostConfig.WebCpuCost,
 		m.cpuCostConfig.AudioWebCpuCost,
 		m.cpuCostConfig.ParticipantCpuCost,
@@ -259,7 +260,12 @@ func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 		if template := request.GetTemplate(); template != nil {
 			costs.isWeb = !config.ShouldUseSDKSource(template)
 			if template.AudioOnly {
-				costs.cpu = m.cpuCostConfig.AudioRoomCompositeCpuCost
+				if costs.isWeb {
+					costs.cpu = m.cpuCostConfig.AudioRoomCompositeCpuCost
+				} else {
+					costs.cpu = m.cpuCostConfig.SDKAudioRoomCompositeCpuCost
+					costs.memory = m.cpuCostConfig.SDKAudioRoomCompositeMemoryCost
+				}
 			} else {
 				costs.cpu = m.cpuCostConfig.RoomCompositeCpuCost
 			}
@@ -279,7 +285,12 @@ func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 	case *rpc.StartEgressRequest_RoomComposite:
 		costs.isWeb = !config.ShouldUseSDKSource(r.RoomComposite)
 		if r.RoomComposite.AudioOnly {
-			costs.cpu = m.cpuCostConfig.AudioRoomCompositeCpuCost
+			if costs.isWeb {
+				costs.cpu = m.cpuCostConfig.AudioRoomCompositeCpuCost
+			} else {
+				costs.cpu = m.cpuCostConfig.SDKAudioRoomCompositeCpuCost
+				costs.memory = m.cpuCostConfig.SDKAudioRoomCompositeMemoryCost
+			}
 		} else {
 			costs.cpu = m.cpuCostConfig.RoomCompositeCpuCost
 		}
