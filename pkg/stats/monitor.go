@@ -213,91 +213,22 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 		"memorySource", m.cpuCostConfig.MemorySource,
 	}
 
+	costs := m.costsForRequest(req)
+
 	// Memory admission check based on configured source
-	if reject, reason := m.checkMemoryAdmissionLocked(); reject {
+	if reject, reason := m.checkMemoryAdmissionLocked(costs.memory); reject {
 		fields = append(fields, "canAccept", false, "reason", reason)
 		return fields, false
 	}
 
-	required := req.EstimatedCpu
-
-	setRequired := func(request egress.EgressRequest) bool {
-		if template := request.GetTemplate(); template != nil {
-			useSDK := config.ShouldUseSDKSource(template)
-			if !useSDK && !m.canAcceptWebLocked() {
-				fields = append(fields, "canAccept", false, "reason", "pulse clients")
-				return false
-			}
-			if required == 0 {
-				if template.AudioOnly {
-					required = m.cpuCostConfig.AudioRoomCompositeCpuCost
-				} else {
-					required = m.cpuCostConfig.RoomCompositeCpuCost
-				}
-			}
-		} else if web := request.GetWeb(); web != nil {
-			if !m.canAcceptWebLocked() {
-				fields = append(fields, "canAccept", false, "reason", "pulse clients")
-				return false
-			}
-			if required == 0 {
-				if web.AudioOnly {
-					required = m.cpuCostConfig.AudioWebCpuCost
-				} else {
-					required = m.cpuCostConfig.WebCpuCost
-				}
-			}
-		} else if media := request.GetMedia(); media != nil {
-			if required == 0 {
-				required = m.cpuCostConfig.ParticipantCpuCost
-				return true
-			}
-		}
-		return false
+	if costs.isWeb && !m.canAcceptWebLocked() {
+		fields = append(fields, "canAccept", false, "reason", "pulse clients")
+		return fields, false
 	}
 
-	switch r := req.Request.(type) {
-	case *rpc.StartEgressRequest_RoomComposite:
-		useSDK := config.ShouldUseSDKSource(r.RoomComposite)
-		if !useSDK && !m.canAcceptWebLocked() {
-			fields = append(fields, "canAccept", false, "reason", "pulse clients")
-			return fields, false
-		}
-		if required == 0 {
-			if r.RoomComposite.AudioOnly {
-				required = m.cpuCostConfig.AudioRoomCompositeCpuCost
-			} else {
-				required = m.cpuCostConfig.RoomCompositeCpuCost
-			}
-		}
-	case *rpc.StartEgressRequest_Web:
-		if !m.canAcceptWebLocked() {
-			fields = append(fields, "canAccept", false, "reason", "pulse clients")
-			return fields, false
-		}
-		if required == 0 {
-			if r.Web.AudioOnly {
-				required = m.cpuCostConfig.AudioWebCpuCost
-			} else {
-				required = m.cpuCostConfig.WebCpuCost
-			}
-		}
-	case *rpc.StartEgressRequest_Participant:
-		if required == 0 {
-			required = m.cpuCostConfig.ParticipantCpuCost
-		}
-	case *rpc.StartEgressRequest_TrackComposite:
-		if required == 0 {
-			required = m.cpuCostConfig.TrackCompositeCpuCost
-		}
-	case *rpc.StartEgressRequest_Track:
-		if required == 0 {
-			required = m.cpuCostConfig.TrackCpuCost
-		}
-	case *rpc.StartEgressRequest_Replay:
-		setRequired(r.Replay)
-	case *rpc.StartEgressRequest_Egress:
-		setRequired(r.Egress)
+	required := req.EstimatedCpu
+	if required == 0 {
+		required = costs.cpu
 	}
 
 	accept := available >= required
@@ -312,6 +243,68 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 	return fields, accept
 }
 
+// requestCosts holds the static admission costs and source classification for a request.
+type requestCosts struct {
+	cpu    float64
+	memory float64
+	isWeb  bool
+}
+
+// costsForRequest is the single source of truth for per-request admission costs,
+// used by both the admission check and the reservation.
+func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
+	costs := requestCosts{memory: m.cpuCostConfig.MemoryCost}
+
+	setV2Costs := func(request egress.EgressRequest) {
+		if template := request.GetTemplate(); template != nil {
+			costs.isWeb = !config.ShouldUseSDKSource(template)
+			if template.AudioOnly {
+				costs.cpu = m.cpuCostConfig.AudioRoomCompositeCpuCost
+			} else {
+				costs.cpu = m.cpuCostConfig.RoomCompositeCpuCost
+			}
+		} else if web := request.GetWeb(); web != nil {
+			costs.isWeb = true
+			if web.AudioOnly {
+				costs.cpu = m.cpuCostConfig.AudioWebCpuCost
+			} else {
+				costs.cpu = m.cpuCostConfig.WebCpuCost
+			}
+		} else if request.GetMedia() != nil {
+			costs.cpu = m.cpuCostConfig.ParticipantCpuCost
+		}
+	}
+
+	switch r := req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite:
+		costs.isWeb = !config.ShouldUseSDKSource(r.RoomComposite)
+		if r.RoomComposite.AudioOnly {
+			costs.cpu = m.cpuCostConfig.AudioRoomCompositeCpuCost
+		} else {
+			costs.cpu = m.cpuCostConfig.RoomCompositeCpuCost
+		}
+	case *rpc.StartEgressRequest_Web:
+		costs.isWeb = true
+		if r.Web.AudioOnly {
+			costs.cpu = m.cpuCostConfig.AudioWebCpuCost
+		} else {
+			costs.cpu = m.cpuCostConfig.WebCpuCost
+		}
+	case *rpc.StartEgressRequest_Participant:
+		costs.cpu = m.cpuCostConfig.ParticipantCpuCost
+	case *rpc.StartEgressRequest_TrackComposite:
+		costs.cpu = m.cpuCostConfig.TrackCompositeCpuCost
+	case *rpc.StartEgressRequest_Track:
+		costs.cpu = m.cpuCostConfig.TrackCpuCost
+	case *rpc.StartEgressRequest_Replay:
+		setV2Costs(r.Replay)
+	case *rpc.StartEgressRequest_Egress:
+		setV2Costs(r.Egress)
+	}
+
+	return costs
+}
+
 func (m *Monitor) canAcceptWebLocked() bool {
 	clients, err := pulse.Clients()
 	if err != nil {
@@ -322,13 +315,12 @@ func (m *Monitor) canAcceptWebLocked() bool {
 
 // checkMemoryAdmissionLocked checks if a request should be rejected due to memory constraints.
 // Returns (reject, reason) where reject=true means the request should be rejected.
-func (m *Monitor) checkMemoryAdmissionLocked() (bool, string) {
+func (m *Monitor) checkMemoryAdmissionLocked(memoryCost float64) (bool, string) {
 	if m.cpuCostConfig.MaxMemory == 0 {
 		return false, ""
 	}
 
 	pendingMem := m.pendingMemoryUsage.Load()
-	memoryCost := m.cpuCostConfig.MemoryCost
 	headroom := memoryHeadroomGB
 	maxMem := m.cpuCostConfig.MaxMemory
 
@@ -372,81 +364,23 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	}
 
 	m.requests.Inc()
-	var cpuHold float64
+
+	costs := m.costsForRequest(req)
 	var pulseClients int32
-	var countedAsWeb bool
-
-	setCPUHold := func(request egress.EgressRequest) {
-		if template := request.GetTemplate(); template != nil {
-			useSDK := config.ShouldUseSDKSource(template)
-			if !useSDK {
-				m.webRequests.Inc()
-				countedAsWeb = true
-				pulseClients = pulseClientHold
-			}
-			if template.AudioOnly {
-				cpuHold = m.cpuCostConfig.AudioRoomCompositeCpuCost
-			} else {
-				cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
-			}
-		} else if web := request.GetWeb(); web != nil {
-			pulseClients = pulseClientHold
-			m.webRequests.Inc()
-			countedAsWeb = true
-			if web.AudioOnly {
-				cpuHold = m.cpuCostConfig.AudioWebCpuCost
-			} else {
-				cpuHold = m.cpuCostConfig.WebCpuCost
-			}
-		} else if request.GetMedia() != nil {
-			cpuHold = m.cpuCostConfig.ParticipantCpuCost
-		}
-	}
-
-	switch r := req.Request.(type) {
-	case *rpc.StartEgressRequest_RoomComposite:
-		useSDK := config.ShouldUseSDKSource(r.RoomComposite)
-		if !useSDK {
-			m.webRequests.Inc()
-			countedAsWeb = true
-			pulseClients = pulseClientHold
-		}
-		if r.RoomComposite.AudioOnly {
-			cpuHold = m.cpuCostConfig.AudioRoomCompositeCpuCost
-		} else {
-			cpuHold = m.cpuCostConfig.RoomCompositeCpuCost
-		}
-	case *rpc.StartEgressRequest_Web:
-		pulseClients = pulseClientHold
+	if costs.isWeb {
 		m.webRequests.Inc()
-		countedAsWeb = true
-		if r.Web.AudioOnly {
-			cpuHold = m.cpuCostConfig.AudioWebCpuCost
-		} else {
-			cpuHold = m.cpuCostConfig.WebCpuCost
-		}
-	case *rpc.StartEgressRequest_Participant:
-		cpuHold = m.cpuCostConfig.ParticipantCpuCost
-	case *rpc.StartEgressRequest_TrackComposite:
-		cpuHold = m.cpuCostConfig.TrackCompositeCpuCost
-	case *rpc.StartEgressRequest_Track:
-		cpuHold = m.cpuCostConfig.TrackCpuCost
-	case *rpc.StartEgressRequest_Replay:
-		setCPUHold(r.Replay)
-	case *rpc.StartEgressRequest_Egress:
-		setCPUHold(r.Egress)
+		pulseClients = pulseClientHold
 	}
 
-	reqType := requestTypeFromReq(req)
 	ps := &processStats{
 		egressID:     req.EgressId,
-		requestType:  reqType,
-		pendingCPU:   cpuHold,
-		allowedCPU:   cpuHold,
-		countedAsWeb: countedAsWeb,
+		requestType:  requestTypeFromReq(req),
+		pendingCPU:   costs.cpu,
+		allowedCPU:   costs.cpu,
+		countedAsWeb: costs.isWeb,
 	}
 
-	m.pendingMemoryUsage.Add(m.cpuCostConfig.MemoryCost)
+	m.pendingMemoryUsage.Add(costs.memory)
 	m.pendingPulseClients.Add(pulseClients)
 
 	time.AfterFunc(cpuHoldDuration, func() {
@@ -454,7 +388,7 @@ func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 		defer m.mu.Unlock()
 
 		ps.pendingCPU = 0
-		m.pendingMemoryUsage.Add(-m.cpuCostConfig.MemoryCost)
+		m.pendingMemoryUsage.Add(-costs.memory)
 		m.pendingPulseClients.Add(-pulseClients)
 	})
 	m.pending[req.EgressId] = ps
