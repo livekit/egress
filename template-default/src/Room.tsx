@@ -25,6 +25,7 @@ import {
 import EgressHelper from '@livekit/egress-sdk';
 import { ConnectionState, Track } from 'livekit-client';
 import { ReactElement, useEffect, useState } from 'react';
+import DualChannelAudioRenderer, { DualChannelMixing } from './DualChannelAudioRenderer';
 import SingleSpeakerLayout from './SingleSpeakerLayout';
 import SpeakerLayout from './SpeakerLayout';
 
@@ -34,9 +35,10 @@ interface RoomPageProps {
   url: string;
   token: string;
   layout: string;
+  audioMixing: string;
 }
 
-export default function RoomPage({ url, token, layout }: RoomPageProps) {
+export default function RoomPage({ url, token, layout, audioMixing }: RoomPageProps) {
   const [error, setError] = useState<Error>();
   if (!url || !token) {
     return <div className="error">missing required params url and token</div>;
@@ -44,16 +46,25 @@ export default function RoomPage({ url, token, layout }: RoomPageProps) {
 
   return (
     <LiveKitRoom serverUrl={url} token={token} onError={setError}>
-      {error ? <div className="error">{error.message}</div> : <CompositeTemplate layout={layout} />}
+      {error ? (
+        <div className="error">{error.message}</div>
+      ) : (
+        <CompositeTemplate layout={layout} audioMixing={audioMixing} />
+      )}
     </LiveKitRoom>
   );
 }
 
 interface CompositeTemplateProps {
   layout: string;
+  audioMixing: string;
 }
 
-function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
+function isDualChannelMixing(audioMixing: string): audioMixing is DualChannelMixing {
+  return audioMixing === 'dual_channel_agent' || audioMixing === 'dual_channel_alternate';
+}
+
+function CompositeTemplate({ layout: initialLayout, audioMixing }: CompositeTemplateProps) {
   const room = useRoomContext();
   const [layout] = useState(initialLayout);
   const [hasScreenShare, setHasScreenShare] = useState(false);
@@ -165,7 +176,11 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
   return (
     <div className={containerClass}>
       {main}
-      <RoomAudioRenderer />
+      {isDualChannelMixing(audioMixing) ? (
+        <DualChannelAudioRenderer mixing={audioMixing} />
+      ) : (
+        <RoomAudioRenderer />
+      )}
     </div>
   );
 }

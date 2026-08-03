@@ -92,6 +92,29 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 			},
 
+			// Web-sourced (chrome) room composite with dual-channel agent
+			// mixing: the template pans agents left and everyone else right,
+			// so the video recording carries channel-separated audio.
+
+			{
+				name:        "RoomComposite/DualChannelAgent",
+				requestType: types.RequestTypeRoomComposite, publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					layout:           layoutGrid,
+					multiParticipant: true,
+					audioMixing:      livekit.AudioMixing_DUAL_CHANNEL_AGENT,
+					expectedAudioChannels: map[string]livekit.AudioChannel{
+						"p0": livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+						"p1": livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						"p2": livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+					},
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_dual_channel_{time}.mp4",
+				},
+			},
+
 			// ---------- Web ----------
 
 			{

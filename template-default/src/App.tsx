@@ -28,6 +28,7 @@ function App() {
         url={EgressHelper.getLiveKitURL()}
         token={EgressHelper.getAccessToken()}
         layout={EgressHelper.getLayout()}
+        audioMixing={new URLSearchParams(window.location.search).get('audioMixing') ?? ''}
       />
     </div>
   );

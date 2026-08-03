@@ -215,6 +215,9 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 		values.Set("layout", p.Layout)
 		values.Set("url", p.WsUrl)
 		values.Set("token", p.Token)
+		if p.AudioMixing != livekit.AudioMixing_DEFAULT_MIXING {
+			values.Set("audioMixing", strings.ToLower(p.AudioMixing.String()))
+		}
 		inputUrl.RawQuery = values.Encode()
 		webUrl = inputUrl.String()
 	}

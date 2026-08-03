@@ -137,7 +137,7 @@ func planMultiParticipant(tc *testCase) *Plan {
 	participants := []string{"p0", "p1", "p2"}
 	rotates := tc.layout == layoutSpeaker || tc.layout == layoutSingleSpeaker
 	p1Kind := lksdk.ParticipantStandard
-	if usesAgentRoute(tc) {
+	if usesAgentRoute(tc) || tc.audioMixing == livekit.AudioMixing_DUAL_CHANNEL_AGENT {
 		p1Kind = lksdk.ParticipantAgent
 	}
 

@@ -228,8 +228,8 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 		egress.RedactEncodedOutputs(clone)
 
+		p.AudioMixing = req.RoomComposite.AudioMixing
 		if ShouldUseSDKSource(req.RoomComposite) {
-			p.AudioMixing = req.RoomComposite.AudioMixing
 			p.SourceType = types.SourceTypeSDK
 		} else {
 			p.SourceType = types.SourceTypeWeb
