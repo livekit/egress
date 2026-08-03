@@ -12,6 +12,11 @@
       "groupName": "github workflows"
     },
     {
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["!actions/**", "!livekit/**"],
+      "pinDigests": true
+    },
+    {
       "matchManagers": ["dockerfile"],
       "groupName": "docker deps"
     },
