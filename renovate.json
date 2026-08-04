@@ -35,6 +35,26 @@
     {
       "matchPackagePrefixes": ["github.com/grafov/m3u8"],
       "enabled": false
+    },
+    {
+      "description": "The go directive is the module minimum, owned by the go toolchain and dependency requirements; the build toolchain is pinned in .go-version instead",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["golang"],
+      "enabled": false
+    },
+    {
+      "description": "Build toolchain pin (.go-version): a patch bump (stays on the current minor) and a minor bump each get their own approvable PR",
+      "matchDatasources": ["golang-version"],
+      "separateMinorPatch": true
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)\\.go-version$"],
+      "matchStrings": ["^(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "datasourceTemplate": "golang-version",
+      "depNameTemplate": "golang"
     }
   ],
   "postUpdateOptions": [
