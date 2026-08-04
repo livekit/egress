@@ -238,6 +238,8 @@ github.com/livekit/media-samples/avsync v0.0.0-20260522020019-07e27a016e72 h1:sW
 github.com/livekit/media-samples/avsync v0.0.0-20260522020019-07e27a016e72/go.mod h1:ABnDYmOwSChrFXHj6F3dwNOlEAL45xR0S4uhSwRxOn0=
 github.com/livekit/media-samples/avsync v0.0.0-20260803170136-363bbd092cc2 h1:zYDnUBodkn8LjWObLzpCjkwcf593EiZIV7FXqLfw4/s=
 github.com/livekit/media-samples/avsync v0.0.0-20260803170136-363bbd092cc2/go.mod h1:ABnDYmOwSChrFXHj6F3dwNOlEAL45xR0S4uhSwRxOn0=
+github.com/livekit/media-samples/avsync v0.0.0-20260804064037-794748125298 h1:dZCYgEbVk86MXaISmhJNyWV5KACg57eFA9IKZtHVy7A=
+github.com/livekit/media-samples/avsync v0.0.0-20260804064037-794748125298/go.mod h1:ABnDYmOwSChrFXHj6F3dwNOlEAL45xR0S4uhSwRxOn0=
 github.com/livekit/media-sdk v0.0.0-20260605212526-4c11a51d3c97 h1:AyjUVuJuVd+5Kt+KEnIUoyZVAv8pejNDqs691I5e8jM=
 github.com/livekit/media-sdk v0.0.0-20260605212526-4c11a51d3c97/go.mod h1:uWrLXY4JeLYynX39htMG49Dl4BhFYY+RCeoXaLdU+Lw=
 github.com/livekit/mediatransportutil v0.0.0-20260605212259-862d4a7bcb1e h1:SkgQRcG2VYEhh80Qb/zYZo8rWKJzNfJcfUQnXe6su2M=
