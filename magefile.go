@@ -24,6 +24,7 @@ import (
 	"path"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/livekit/egress/version"
 	"github.com/livekit/mageutil"
@@ -118,8 +119,11 @@ func Integration(configFile string) error {
 	os.Setenv("DOCKER_BUILDKIT", "1")
 	defer os.Unsetenv("DOCKER_BUILDKIT")
 
+	// Date-only stamp so a local build refreshes security updates at most once a day.
+	securityRefresh := time.Now().UTC().Format("20060102")
+
 	if err := mageutil.Run(ctx,
-		fmt.Sprintf("docker build --build-arg TEMPLATE_TAG=%s --build-arg DEADLOCK=1 -t egress-test -f build/test/Dockerfile .", version.TemplateVersion),
+		fmt.Sprintf("docker build --build-arg TEMPLATE_TAG=%s --build-arg DEADLOCK=1 --build-arg SECURITY_REFRESH=%s -t egress-test -f build/test/Dockerfile .", version.TemplateVersion, securityRefresh),
 	); err != nil {
 		return err
 	}
@@ -169,10 +173,13 @@ func Retest(configFile string) error {
 }
 
 func Build() error {
+	// Date-only stamp so a local build refreshes security updates at most once a day.
+	securityRefresh := time.Now().UTC().Format("20060102")
+
 	return mageutil.Run(context.Background(),
 		fmt.Sprintf("docker pull livekit/chrome-installer:%s", chromiumVersion),
 		fmt.Sprintf("docker pull livekit/gstreamer:%s-dev", gstVersion),
-		fmt.Sprintf("docker build -t livekit/egress:latest --build-arg TEMPLATE_TAG=%s -f build/egress/Dockerfile .", version.TemplateVersion),
+		fmt.Sprintf("docker build -t livekit/egress:latest --build-arg TEMPLATE_TAG=%s --build-arg SECURITY_REFRESH=%s -f build/egress/Dockerfile .", version.TemplateVersion, securityRefresh),
 	)
 }
 
