@@ -52,7 +52,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: 1.26.5
+          go-version-file: .go-version
 
       - name: Download Go modules
         run: go mod download
@@ -86,3 +86,4 @@ jobs:
           labels: ${{ steps.docker-md.outputs.labels }}
           build-args: |
             TEMPLATE_TAG=${{ steps.template-tag.outputs.template_tag }}
+            SECURITY_REFRESH=${{ github.run_id }}-${{ github.run_attempt }}
