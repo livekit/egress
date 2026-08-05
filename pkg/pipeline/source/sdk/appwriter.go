@@ -270,8 +270,15 @@ func (w *AppWriter) start() {
 	// clean up
 	if w.playing.IsBroken() {
 		w.callbacks.OnEOSSent()
-		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
-			w.logger.Warnw("unexpected flow return", nil, "flowReturn", flow.String())
+		flow := w.src.EndStream()
+		if flow == gst.FlowFlushing {
+			// a stuck appsrc refuses EOS, blocking EOS aggregation in the
+			// mixer and freezing the shutdown - recover it and retry
+			w.recoverFromFlushing()
+			flow = w.src.EndStream()
+		}
+		if flow != gst.FlowOK {
+			w.logger.Warnw("appsrc rejected EOS, pipeline may not reach EOS", nil, "flowReturn", flow.String())
 		}
 		if w.driftHandler != nil {
 			w.logger.Debugw("processed drift", "drift", w.driftHandler.Processed())

@@ -31,7 +31,8 @@ import (
 )
 
 const (
-	videoTestSrcName = "video_test_src"
+	videoTestSrcName  = "video_test_src"
+	videoTestSrcDelay = 2 * time.Second
 )
 
 type VideoBin struct {
@@ -522,7 +523,7 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 	if err != nil {
 		return err
 	}
-	if err = queue.SetProperty("min-threshold-time", uint64(2e9)); err != nil {
+	if err = queue.SetProperty("min-threshold-time", uint64(videoTestSrcDelay.Nanoseconds())); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 

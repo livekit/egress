@@ -25,16 +25,31 @@ ENV TARGETPLATFORM=${TARGETPLATFORM}
 
 WORKDIR /workspace
 
-# install go
-RUN wget https://go.dev/dl/go1.26.2.linux-${TARGETARCH}.tar.gz && \
+COPY .go-version ./
+
+# Install Go: use the exact patch pinned in .go-version, which Renovate keeps current
+# via an approvable PR. It is decoupled from go.mod's "go" directive (the module
+# minimum, which the go toolchain may rewrite to bare major.minor). GOTOOLCHAIN=local
+# forces exactly this toolchain and fails the build if go.mod ever requires a newer
+# one, so a minor-version bump surfaces as a red CI check instead of a silent download.
+RUN GOVER=$(cat .go-version) && \
+    if [ -z "$GOVER" ]; then echo ".go-version is empty" >&2; exit 1; fi && \
+    echo "using Go $GOVER from .go-version" && \
+    wget -O /tmp/go.tar.gz https://go.dev/dl/go$GOVER.linux-${TARGETARCH}.tar.gz && \
     rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go1.26.2.linux-${TARGETARCH}.tar.gz
+    tar -C /usr/local -xzf /tmp/go.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOTOOLCHAIN=local
 
 # download go modules
 COPY go.mod .
 COPY go.sum .
 RUN go mod download
+
+# Get security updates in case the toolchain was updated.
+# SECURITY_REFRESH busts the cache so the upgrade re-runs on every build.
+ARG SECURITY_REFRESH
+RUN apt-get update && apt-get -y dist-upgrade && rm -rf /var/lib/apt/lists/*
 
 # copy source
 COPY cmd/ cmd/
@@ -59,8 +74,11 @@ FROM livekit/gstreamer:1.24.12-prod
 
 ARG TARGETPLATFORM
 
-# install deps
+# install deps, pulling in security updates from the base image.
+# SECURITY_REFRESH busts the cache so the upgrade re-runs on every build.
+ARG SECURITY_REFRESH
 RUN apt-get update && \
+    apt-get -y dist-upgrade && \
     apt-get install -y \
     curl \
     fonts-noto \
