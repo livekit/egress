@@ -37,12 +37,6 @@
       "minimumReleaseAge": null
     },
     {
-      "enabled": false,
-      "matchPackageNames": [
-        "github.com/grafov/m3u8{/,}**"
-      ]
-    },
-    {
       "description": "The go directive is the module minimum, owned by the go toolchain and dependency requirements; the build toolchain is pinned in .go-version instead",
       "matchManagers": ["gomod"],
       "matchDepTypes": ["golang"],
