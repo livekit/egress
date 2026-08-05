@@ -28,11 +28,13 @@
       "groupName": "npm deps"
     },
     {
+      "description": "First-party deps, no need to quarantine new releases",
       "matchManagers": ["gomod"],
       "groupName": "livekit deps",
       "matchPackageNames": [
         "github.com/livekit{/,}**"
-      ]
+      ],
+      "minimumReleaseAge": null
     },
     {
       "enabled": false,
