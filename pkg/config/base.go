@@ -19,11 +19,14 @@ import (
 	"strings"
 	"time"
 
+	goredis "github.com/redis/go-redis/v9"
+
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/medialogutils"
 	"github.com/livekit/protocol/redis"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 
+	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/types"
 )
 
@@ -133,6 +136,7 @@ func (c *BaseConfig) InitLogger(serviceName string, values ...interface{}) error
 	l := zl.WithValues(values...)
 
 	logger.SetLogger(l, serviceName)
+	goredis.SetLogger(logging.NewRedisLogger(logger.GetLogger().WithComponent("redis")))
 	lksdk.SetLogger(medialogutils.NewOverrideLogger(logger.GetLogger().WithComponent("lksdk")))
 	return nil
 }
