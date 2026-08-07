@@ -49,17 +49,19 @@ type BaseConfig struct {
 	IOUpdateTimeout      time.Duration  `yaml:"io_update_timeout"`      // timeout for UpdateEgress calls
 	IOSelectionTimeout   time.Duration  `yaml:"io_selection_timeout"`   // timeout for affinity stage of IO RPC
 	IOWorkers            int            `yaml:"io_workers"`             // number of IO update workers
+	MuteAudio            bool           `yaml:"mute_audio"`             // disables all audio output from the browser instance.
 
-	SessionLimits          `yaml:"session_limits"` // session duration limits
-	StorageConfig          *StorageConfig          `yaml:"storage,omitempty"`          // storage config
-	BackupConfig           *StorageConfig          `yaml:"backup,omitempty"`           // backup config, for storage failures
-	S3AssumeRoleKey        string                  `yaml:"s3_assume_role_key"`         // if set, this key is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
-	S3AssumeRoleSecret     string                  `yaml:"s3_assume_role_secret"`      // if set, this secret is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
-	S3AssumeRoleArn        string                  `yaml:"s3_assume_role_arn"`         // if set, this arn is used by default for S3 uploads
-	S3AssumeRoleExternalID string                  `yaml:"s3_assume_role_external_id"` // if set, this external ID is used by default for S3 uploads
+	SessionLimits          `yaml:"session_limits"`                            // session duration limits
+	StorageConfig          *StorageConfig `yaml:"storage,omitempty"`          // storage config
+	BackupConfig           *StorageConfig `yaml:"backup,omitempty"`           // backup config, for storage failures
+	S3AssumeRoleKey        string         `yaml:"s3_assume_role_key"`         // if set, this key is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
+	S3AssumeRoleSecret     string         `yaml:"s3_assume_role_secret"`      // if set, this secret is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
+	S3AssumeRoleArn        string         `yaml:"s3_assume_role_arn"`         // if set, this arn is used by default for S3 uploads
+	S3AssumeRoleExternalID string         `yaml:"s3_assume_role_external_id"` // if set, this external ID is used by default for S3 uploads
 
 	// advanced
 	Insecure                      bool                                `yaml:"insecure"`                           // allow chrome to connect to an insecure websocket, bypasses chrome LNA checks
+	Secure                        SecureConfig                        `yaml:"secure"`                             // secure config like --ignore-certificate-errors,--allow-running-insecure-content
 	Debug                         DebugConfig                         `yaml:"debug"`                              // create dot file on internal error
 	ChromeFlags                   map[string]interface{}              `yaml:"chrome_flags"`                       // additional flags to pass to Chrome
 	Latency                       LatencyConfig                       `yaml:"latency"`                            // gstreamer latencies, modifying these may break the service
@@ -79,11 +81,17 @@ type SessionLimits struct {
 }
 
 type DebugConfig struct {
-	EnableProfiling     bool             `yaml:"enable_profiling"`      // create dot file and pprof on internal error
-	EnableTrackLogging  bool             `yaml:"enable_track_logging"`  // log packets and keyframes for each track
-	EnableStreamLogging bool             `yaml:"enable_stream_logging"` // log bytes and keyframes for each stream
-	EnableChromeLogging bool             `yaml:"enable_chrome_logging"` // log all chrome console events
-	StorageConfig       `yaml:",inline"` // upload config (S3, Azure, GCP, or AliOSS)
+	EnableProfiling     bool `yaml:"enable_profiling"`      // create dot file and pprof on internal error
+	EnableTrackLogging  bool `yaml:"enable_track_logging"`  // log packets and keyframes for each track
+	EnableStreamLogging bool `yaml:"enable_stream_logging"` // log bytes and keyframes for each stream
+	EnableChromeLogging bool `yaml:"enable_chrome_logging"` // log all chrome console events
+	StorageConfig       `yaml:",inline"`                    // upload config (S3, Azure, GCP, or AliOSS)
+}
+
+type SecureConfig struct {
+	DisableWebSecurity          bool `yaml:"disable_web_security"`           //disable-web-security
+	IgnoreCertificateErrors     bool `yaml:"ignore_certificate_errors"`      // allow self-signed certificates
+	AllowRunningInsecureContent bool `yaml:"allow_running_insecure_content"` // allow Mixed Content,https load http
 }
 
 type LatencyConfig struct {
