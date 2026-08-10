@@ -240,12 +240,12 @@ github.com/livekit/media-sdk v0.0.0-20260605212526-4c11a51d3c97 h1:AyjUVuJuVd+5K
 github.com/livekit/media-sdk v0.0.0-20260605212526-4c11a51d3c97/go.mod h1:uWrLXY4JeLYynX39htMG49Dl4BhFYY+RCeoXaLdU+Lw=
 github.com/livekit/mediatransportutil v0.0.0-20260605212259-862d4a7bcb1e h1:SkgQRcG2VYEhh80Qb/zYZo8rWKJzNfJcfUQnXe6su2M=
 github.com/livekit/mediatransportutil v0.0.0-20260605212259-862d4a7bcb1e/go.mod h1:o8CFmAdrVwzJNOCsQCLUzXRjokkufNshnQHOe4fRaqU=
-github.com/livekit/protocol v1.49.0 h1:Q5nthDO1v7c0JHiWjMhgUQTlsKmCsBL/KCKxdHVaz00=
-github.com/livekit/protocol v1.49.0/go.mod h1:jO+y05AU9Ec4JswDyuzKCZ4bhziOS0CzMqgnbj60Dzs=
+github.com/livekit/protocol v1.50.1 h1:MOaLOFedKHQ1vteYjCFb+1Jypk3kQsV6h7gV4apgc+M=
+github.com/livekit/protocol v1.50.1/go.mod h1:jO+y05AU9Ec4JswDyuzKCZ4bhziOS0CzMqgnbj60Dzs=
 github.com/livekit/psrpc v0.7.2 h1:6oZ+NODJ2pLyaT6VqDq1F4Qc/3TpDUSpyphj/P9MhQc=
 github.com/livekit/psrpc v0.7.2/go.mod h1:rAI+m2+/cb4x9RXhLRtUx5ZwdfjjXOl4zi46IjEetaw=
-github.com/livekit/server-sdk-go/v2 v2.18.2-0.20260725144347-06b2b67cdd8d h1:5Md1abvbmQVvof7L9gnMApiOF5hqQkYEUj3h66g4IdQ=
-github.com/livekit/server-sdk-go/v2 v2.18.2-0.20260725144347-06b2b67cdd8d/go.mod h1:2yucMOntGsV5pasKIO/XGq45jAwjFtRJq+HWCqpSLj4=
+github.com/livekit/server-sdk-go/v2 v2.18.2-0.20260810195730-0511fae40717 h1:4TBZC5GyDgBhWw8M6bhi5fsGimViWjA02x5+VfQUSIA=
+github.com/livekit/server-sdk-go/v2 v2.18.2-0.20260810195730-0511fae40717/go.mod h1:QhzX0xHYP4dVsPD3LAc7Z1xCTZ9app2xfMyiZsuI4WM=
 github.com/livekit/storage v0.0.0-20260623170515-1297cb15775f h1:Dh+50htzSNMcE2VFn6KYK0yd8b7P2saxbN3+2fTFwvo=
 github.com/livekit/storage v0.0.0-20260623170515-1297cb15775f/go.mod h1:NhILSMqYrfqd1vIOYqzGJVm48AlTBUtT0gRDyZ0kEJg=
 github.com/llehouerou/go-mp3 v1.2.0 h1:2WN/bjCGhfPZAQbSSF35DxNKS/+HPnJ76TakA7Kyscs=
