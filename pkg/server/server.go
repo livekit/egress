@@ -52,6 +52,7 @@ type Server struct {
 	monitor *stats.Monitor
 
 	psrpcServer      rpc.EgressInternalServer
+	handlerProxy     *service.HandlerRPCProxy
 	ipcServiceServer *grpc.Server
 	promServer       *http.Server
 	ioClient         info.SessionReporter
@@ -121,6 +122,13 @@ func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.S
 		return nil, err
 	}
 	s.psrpcServer = psrpcServer
+
+	handlerProxy, err := service.NewHandlerRPCProxy(pm, bus)
+	if err != nil {
+		return nil, err
+	}
+	s.handlerProxy = handlerProxy
+	pm.SetHandlerTopicHooks(handlerProxy.RegisterEgress, handlerProxy.DeregisterEgress)
 
 	return s, nil
 }
@@ -198,6 +206,7 @@ func (s *Server) Drain() {
 	}
 
 	s.psrpcServer.Shutdown()
+	s.handlerProxy.Shutdown()
 	logger.Infow("draining io client")
 	s.ioClient.Drain()
 }

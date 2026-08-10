@@ -270,8 +270,15 @@ func (w *AppWriter) start() {
 	// clean up
 	if w.playing.IsBroken() {
 		w.callbacks.OnEOSSent()
-		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
-			w.logger.Warnw("unexpected flow return", nil, "flowReturn", flow.String())
+		flow := w.src.EndStream()
+		if flow == gst.FlowFlushing {
+			// a stuck appsrc refuses EOS, blocking EOS aggregation in the
+			// mixer and freezing the shutdown - recover it and retry
+			w.recoverFromFlushing()
+			flow = w.src.EndStream()
+		}
+		if flow != gst.FlowOK {
+			w.logger.Warnw("appsrc rejected EOS, pipeline may not reach EOS", nil, "flowReturn", flow.String())
 		}
 		if w.driftHandler != nil {
 			w.logger.Debugw("processed drift", "drift", w.driftHandler.Processed())
@@ -596,6 +603,9 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 					w.callbacks.OnDebugDotRequest("appsrc_flush_" + w.track.ID())
 				}
 			}
+			if w.flushingCount == flushingThreshold/2 {
+				w.recoverFromFlushing()
+			}
 			if w.flushingCount >= flushingThreshold {
 				return errFlowFlushingThreshold
 			}
@@ -613,6 +623,22 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	w.lastPTS = pts
 	w.maybeCheckPipelineLag(pts)
 	return nil
+}
+
+// recoverFromFlushing restarts an appsrc stranded with its internal flushing
+func (w *AppWriter) recoverFromFlushing() {
+	w.logger.Infow("attempting FlowFlushing recovery",
+		"flushingCount", w.flushingCount,
+		"appsrcState", w.src.Element.GetCurrentState().String())
+	if !w.src.SendEvent(gst.NewFlushStartEvent()) {
+		w.logger.Warnw("failed to send recovery flush start event", nil)
+		return
+	}
+	if !w.src.SendEvent(gst.NewFlushStopEvent(false)) {
+		w.logger.Warnw("failed to send recovery flush stop event", nil)
+		return
+	}
+	w.logger.Infow("FlowFlushing recovery successful")
 }
 
 func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {

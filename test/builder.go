@@ -17,7 +17,11 @@
 package test
 
 import (
+	"fmt"
+	"net"
+	"net/http"
 	"path"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,11 +33,27 @@ import (
 )
 
 const (
-	webUrl        = "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4"
 	setAtRuntime  = "set-at-runtime"
 	setP1Identity = "set-p1-identity"
 	setP2Identity = "set-p2-identity"
+
+	mediaSamplesDir = "/media-samples"
+	webFixture      = "BigBuckBunny_320x180.mp4"
 )
+
+// webURL serves the vendored Big Buck Bunny clip from a localhost file server
+// (rooted at the media-samples dir) and returns its URL, starting the server
+// once on first use. The web egress tests previously navigated Chrome to this
+// clip on download.blender.org, which now 404s (upstream removed the loose
+// .mp4); serving it locally removes that external dependency.
+var webURL = sync.OnceValue(func() string {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(fmt.Sprintf("failed to start web fixture server: %v", err))
+	}
+	go func() { _ = http.Serve(ln, http.FileServer(http.Dir(mediaSamplesDir))) }()
+	return fmt.Sprintf("http://%s/%s", ln.Addr(), webFixture)
+})
 
 type testCase struct {
 	name        string
@@ -109,10 +129,11 @@ type streamOptions struct {
 }
 
 type segmentOptions struct {
-	prefix       string
-	playlist     string
-	livePlaylist string
-	suffix       livekit.SegmentedFileSuffix
+	prefix          string
+	playlist        string
+	livePlaylist    string
+	suffix          livekit.SegmentedFileSuffix
+	segmentDuration uint32
 }
 
 type imageOptions struct {
@@ -163,7 +184,7 @@ func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
 
 	case types.RequestTypeWeb:
 		web := &livekit.WebEgressRequest{
-			Url:       webUrl,
+			Url:       webURL(),
 			AudioOnly: test.audioOnly,
 			VideoOnly: test.videoOnly,
 		}
@@ -334,6 +355,7 @@ func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFile
 			PlaylistName:     o.playlist,
 			LivePlaylistName: o.livePlaylist,
 			FilenameSuffix:   o.suffix,
+			SegmentDuration:  o.segmentDuration,
 		}
 
 		switch conf := u.(type) {
@@ -353,6 +375,7 @@ func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFile
 		PlaylistName:     o.playlist,
 		LivePlaylistName: o.livePlaylist,
 		FilenameSuffix:   o.suffix,
+		SegmentDuration:  o.segmentDuration,
 	}}
 }
 
@@ -474,6 +497,7 @@ func (r *Runner) buildV2Outputs(test *testCase) []*livekit.Output {
 					PlaylistName:     test.playlist,
 					LivePlaylistName: test.livePlaylist,
 					FilenameSuffix:   test.segmentOptions.suffix,
+					SegmentDuration:  test.segmentDuration,
 				},
 			},
 			Storage: storage,
@@ -521,7 +545,7 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 	case types.RequestTypeWeb:
 		egressReq.Source = &livekit.StartEgressRequest_Web{
 			Web: &livekit.WebSource{
-				Url:       webUrl,
+				Url:       webURL(),
 				AudioOnly: test.audioOnly,
 				VideoOnly: test.videoOnly,
 			},

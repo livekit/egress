@@ -48,10 +48,12 @@ import (
 
 const (
 	pipelineName = "pipeline"
-	eosTimeout   = time.Second * 30
 
 	streamRetryUpdateInterval = time.Minute
 )
+
+// var to allow tests to shorten it
+var eosTimeout = time.Second * 30
 
 type Controller struct {
 	*config.PipelineConfig
@@ -582,6 +584,10 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 }
 
 func (c *Controller) sendEOS() {
+	if c.eosReceived.IsBroken() {
+		return
+	}
+
 	for _, sinks := range c.sinks {
 		for _, s := range sinks {
 			s.AddEOSProbe()
@@ -594,7 +600,7 @@ func (c *Controller) sendEOS() {
 			switch egressType {
 			case types.EgressTypeFile, types.EgressTypeSegments, types.EgressTypeImages:
 				for _, s := range si {
-					if !s.EOSReceived() {
+					if !c.eosReceived.IsBroken() && !s.EOSReceived() {
 						c.OnError(errors.ErrPipelineFrozen)
 						return
 					}

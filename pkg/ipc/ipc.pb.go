@@ -622,7 +622,7 @@ const file_ipc_proto_rawDesc = "" +
 	"\rHandlerUpdate\x12\x13.livekit.EgressInfo\x1a\x16.google.protobuf.Empty\"\x00\x12H\n" +
 	"\x0fHandlerFinished\x12\x1b.ipc.HandlerFinishedRequest\x1a\x16.google.protobuf.Empty\"\x00\x12B\n" +
 	"\vReplayReady\x12\x17.rpc.EgressReadyRequest\x1a\x18.rpc.EgressReadyResponse\"\x00\x12B\n" +
-	"\fStorageEvent\x12\x18.ipc.StorageEventRequest\x1a\x16.google.protobuf.Empty\"\x002\xd8\x02\n" +
+	"\fStorageEvent\x12\x18.ipc.StorageEventRequest\x1a\x16.google.protobuf.Empty\"\x002\xa3\x04\n" +
 	"\rEgressHandler\x12U\n" +
 	"\x0eGetPipelineDot\x12\x1f.ipc.GstPipelineDebugDotRequest\x1a .ipc.GstPipelineDebugDotResponse\"\x00\x123\n" +
 	"\bGetPProf\x12\x11.ipc.PProfRequest\x1a\x12.ipc.PProfResponse\"\x00\x129\n" +
@@ -630,7 +630,11 @@ const file_ipc_proto_rawDesc = "" +
 	"GetMetrics\x12\x13.ipc.MetricsRequest\x1a\x14.ipc.MetricsResponse\"\x00\x12@\n" +
 	"\vStopHandler\x12\x17.ipc.StopHandlerRequest\x1a\x16.google.protobuf.Empty\"\x00\x12>\n" +
 	"\n" +
-	"KillEgress\x12\x16.ipc.KillEgressRequest\x1a\x16.google.protobuf.Empty\"\x00B#Z!github.com/livekit/egress/pkg/ipcb\x06proto3"
+	"KillEgress\x12\x16.ipc.KillEgressRequest\x1a\x16.google.protobuf.Empty\"\x00\x12C\n" +
+	"\fUpdateStream\x12\x1c.livekit.UpdateStreamRequest\x1a\x13.livekit.EgressInfo\"\x00\x12C\n" +
+	"\fUpdateEgress\x12\x1c.livekit.UpdateEgressRequest\x1a\x13.livekit.EgressInfo\"\x00\x12?\n" +
+	"\n" +
+	"StopEgress\x12\x1a.livekit.StopEgressRequest\x1a\x13.livekit.EgressInfo\"\x00B#Z!github.com/livekit/egress/pkg/ipcb\x06proto3"
 
 var (
 	file_ipc_proto_rawDescOnce sync.Once
@@ -659,8 +663,11 @@ var file_ipc_proto_goTypes = []any{
 	(*KillEgressRequest)(nil),           // 10: ipc.KillEgressRequest
 	(*livekit.EgressInfo)(nil),          // 11: livekit.EgressInfo
 	(*rpc.EgressReadyRequest)(nil),      // 12: rpc.EgressReadyRequest
-	(*emptypb.Empty)(nil),               // 13: google.protobuf.Empty
-	(*rpc.EgressReadyResponse)(nil),     // 14: rpc.EgressReadyResponse
+	(*livekit.UpdateStreamRequest)(nil), // 13: livekit.UpdateStreamRequest
+	(*livekit.UpdateEgressRequest)(nil), // 14: livekit.UpdateEgressRequest
+	(*livekit.StopEgressRequest)(nil),   // 15: livekit.StopEgressRequest
+	(*emptypb.Empty)(nil),               // 16: google.protobuf.Empty
+	(*rpc.EgressReadyResponse)(nil),     // 17: rpc.EgressReadyResponse
 }
 var file_ipc_proto_depIdxs = []int32{
 	11, // 0: ipc.HandlerFinishedRequest.info:type_name -> livekit.EgressInfo
@@ -674,18 +681,24 @@ var file_ipc_proto_depIdxs = []int32{
 	7,  // 8: ipc.EgressHandler.GetMetrics:input_type -> ipc.MetricsRequest
 	9,  // 9: ipc.EgressHandler.StopHandler:input_type -> ipc.StopHandlerRequest
 	10, // 10: ipc.EgressHandler.KillEgress:input_type -> ipc.KillEgressRequest
-	13, // 11: ipc.EgressService.HandlerReady:output_type -> google.protobuf.Empty
-	13, // 12: ipc.EgressService.HandlerUpdate:output_type -> google.protobuf.Empty
-	13, // 13: ipc.EgressService.HandlerFinished:output_type -> google.protobuf.Empty
-	14, // 14: ipc.EgressService.ReplayReady:output_type -> rpc.EgressReadyResponse
-	13, // 15: ipc.EgressService.StorageEvent:output_type -> google.protobuf.Empty
-	4,  // 16: ipc.EgressHandler.GetPipelineDot:output_type -> ipc.GstPipelineDebugDotResponse
-	6,  // 17: ipc.EgressHandler.GetPProf:output_type -> ipc.PProfResponse
-	8,  // 18: ipc.EgressHandler.GetMetrics:output_type -> ipc.MetricsResponse
-	13, // 19: ipc.EgressHandler.StopHandler:output_type -> google.protobuf.Empty
-	13, // 20: ipc.EgressHandler.KillEgress:output_type -> google.protobuf.Empty
-	11, // [11:21] is the sub-list for method output_type
-	1,  // [1:11] is the sub-list for method input_type
+	13, // 11: ipc.EgressHandler.UpdateStream:input_type -> livekit.UpdateStreamRequest
+	14, // 12: ipc.EgressHandler.UpdateEgress:input_type -> livekit.UpdateEgressRequest
+	15, // 13: ipc.EgressHandler.StopEgress:input_type -> livekit.StopEgressRequest
+	16, // 14: ipc.EgressService.HandlerReady:output_type -> google.protobuf.Empty
+	16, // 15: ipc.EgressService.HandlerUpdate:output_type -> google.protobuf.Empty
+	16, // 16: ipc.EgressService.HandlerFinished:output_type -> google.protobuf.Empty
+	17, // 17: ipc.EgressService.ReplayReady:output_type -> rpc.EgressReadyResponse
+	16, // 18: ipc.EgressService.StorageEvent:output_type -> google.protobuf.Empty
+	4,  // 19: ipc.EgressHandler.GetPipelineDot:output_type -> ipc.GstPipelineDebugDotResponse
+	6,  // 20: ipc.EgressHandler.GetPProf:output_type -> ipc.PProfResponse
+	8,  // 21: ipc.EgressHandler.GetMetrics:output_type -> ipc.MetricsResponse
+	16, // 22: ipc.EgressHandler.StopHandler:output_type -> google.protobuf.Empty
+	16, // 23: ipc.EgressHandler.KillEgress:output_type -> google.protobuf.Empty
+	11, // 24: ipc.EgressHandler.UpdateStream:output_type -> livekit.EgressInfo
+	11, // 25: ipc.EgressHandler.UpdateEgress:output_type -> livekit.EgressInfo
+	11, // 26: ipc.EgressHandler.StopEgress:output_type -> livekit.EgressInfo
+	14, // [14:27] is the sub-list for method output_type
+	1,  // [1:14] is the sub-list for method input_type
 	1,  // [1:1] is the sub-list for extension type_name
 	1,  // [1:1] is the sub-list for extension extendee
 	0,  // [0:1] is the sub-list for field type_name

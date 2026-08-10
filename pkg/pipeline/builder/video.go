@@ -31,7 +31,10 @@ import (
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-const videoTestSrcName = "video_test_src"
+const (
+	videoTestSrcName  = "video_test_src"
+	videoTestSrcDelay = 2 * time.Second
+)
 
 type VideoBin struct {
 	bin  *gstreamer.Bin

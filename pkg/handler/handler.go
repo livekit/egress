@@ -31,7 +31,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/psrpc"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/ipc"
@@ -43,7 +42,6 @@ type Handler struct {
 
 	conf             *config.PipelineConfig
 	controller       *pipeline.Controller
-	rpcServer        rpc.EgressHandlerServer
 	ipcHandlerServer *grpc.Server
 	ipcServiceClient ipc.EgressServiceClient
 	initialized      core.Fuse
@@ -54,7 +52,7 @@ var (
 	tracer = otel.Tracer("github.com/livekit/egress/pkg/handler")
 )
 
-func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
+func NewHandler(conf *config.PipelineConfig) (*Handler, error) {
 	// The service already exposes go_* / process_* — leaving these registered
 	// causes prometheus.Gatherers.Gather to reject the scrape as duplicate.
 	prometheus.Unregister(collectors.NewGoCollector())
@@ -78,21 +76,6 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 		return nil, err
 	}
 
-	rpcServer, err := rpc.NewEgressHandlerServer(h, bus)
-	if err != nil {
-		return nil, err
-	}
-	if err = rpcServer.RegisterUpdateStreamTopic(conf.Info.EgressId); err != nil {
-		return nil, err
-	}
-	if err = rpcServer.RegisterStopEgressTopic(conf.Info.EgressId); err != nil {
-		return nil, err
-	}
-	if err = rpcServer.RegisterUpdateEgressTopic(conf.Info.EgressId); err != nil {
-		return nil, err
-	}
-	h.rpcServer = rpcServer
-
 	_, err = h.ipcServiceClient.HandlerReady(context.Background(), &ipc.HandlerReadyRequest{EgressId: conf.Info.EgressId})
 	if err != nil {
 		logger.Errorw("failed to notify service", err)
@@ -106,10 +89,7 @@ func (h *Handler) Run() {
 	ctx, span := tracer.Start(context.Background(), "Handler.Run")
 	defer span.End()
 
-	defer func() {
-		h.rpcServer.Shutdown()
-		h.ipcHandlerServer.Stop()
-	}()
+	defer h.ipcHandlerServer.Stop()
 
 	var err error
 	egressID := h.conf.Info.EgressId

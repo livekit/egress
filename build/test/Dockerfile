@@ -15,7 +15,6 @@
 # syntax=docker/dockerfile:1.6
 ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
-ARG GO_VERSION=1.26.2
 ARG LINT_VERSION=v2.11.3
 
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template
@@ -28,14 +27,23 @@ ARG TARGETPLATFORM
 
 # Deadlock 0 = off, 1 = on
 ARG DEADLOCK=0
-ARG GO_VERSION
 
-# install go
+COPY .go-version ./
+
+# Install Go: use the exact patch pinned in .go-version, which Renovate keeps current
+# via an approvable PR. It is decoupled from go.mod's "go" directive (the module
+# minimum, which the go toolchain may rewrite to bare major.minor). GOTOOLCHAIN=local
+# forces exactly this toolchain and fails the build if go.mod ever requires a newer
+# one, so a minor-version bump surfaces as a red CI check instead of a silent download.
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    wget https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz && \
+    GOVER=$(cat .go-version) && \
+    if [ -z "$GOVER" ]; then echo ".go-version is empty" >&2; exit 1; fi && \
+    echo "using Go $GOVER from .go-version" && \
+    wget -O /tmp/go.tar.gz https://go.dev/dl/go$GOVER.linux-${GOARCH}.tar.gz && \
     rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go${GO_VERSION}.linux-${GOARCH}.tar.gz
+    tar -C /usr/local -xzf /tmp/go.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOTOOLCHAIN=local
 
 ENV GOMODCACHE=/go/pkg/mod \
     GOCACHE=/go/build-cache
@@ -46,6 +54,11 @@ COPY go.sum .
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/go/build-cache \
     go mod download
+
+# Get security updates in case the toolchain was updated.
+# SECURITY_REFRESH busts the cache so the upgrade re-runs on every build.
+ARG SECURITY_REFRESH
+RUN apt-get update && apt-get -y dist-upgrade && rm -rf /var/lib/apt/lists/*
 
 # copy source
 COPY cmd/ cmd/
@@ -91,8 +104,11 @@ FROM livekit/gstreamer:1.24.12-prod
 
 ARG TARGETPLATFORM
 
-# install deps
+# install deps, pulling in security updates from the base image.
+# SECURITY_REFRESH busts the cache so the upgrade re-runs on every build.
+ARG SECURITY_REFRESH
 RUN apt-get update && \
+    apt-get -y dist-upgrade && \
     apt-get install -y \
         curl \
         ffmpeg \
@@ -106,9 +122,10 @@ RUN apt-get update && \
         xvfb \
         gstreamer1.0-plugins-base-
 
-# install go
+# reuse the .go-version-pinned toolchain installed in the builder stage
 COPY --from=1 /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOTOOLCHAIN=local
 
 # install chrome
 COPY --from=livekit/chrome-installer:150.0.7871.46 /chrome-installer /chrome-installer

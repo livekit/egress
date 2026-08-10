@@ -187,16 +187,10 @@ func runHandler(_ context.Context, c *cli.Command) error {
 	defer os.RemoveAll(conf.TmpDir)
 	_ = os.Setenv("TMPDIR", conf.TmpDir)
 
-	rc, err := lkredis.GetRedisClient(conf.Redis)
-	if err != nil {
-		return err
-	}
-
 	killChan := make(chan os.Signal, 1)
 	signal.Notify(killChan, syscall.SIGINT)
 
-	bus := psrpc.NewRedisMessageBus(rc)
-	h, err := handler.NewHandler(conf, bus)
+	h, err := handler.NewHandler(conf)
 	if err != nil {
 		// service will send info update and shut down
 		logger.Errorw("failed to create handler", err)

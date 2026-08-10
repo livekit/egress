@@ -295,6 +295,9 @@ const (
 	EgressHandler_GetMetrics_FullMethodName     = "/ipc.EgressHandler/GetMetrics"
 	EgressHandler_StopHandler_FullMethodName    = "/ipc.EgressHandler/StopHandler"
 	EgressHandler_KillEgress_FullMethodName     = "/ipc.EgressHandler/KillEgress"
+	EgressHandler_UpdateStream_FullMethodName   = "/ipc.EgressHandler/UpdateStream"
+	EgressHandler_UpdateEgress_FullMethodName   = "/ipc.EgressHandler/UpdateEgress"
+	EgressHandler_StopEgress_FullMethodName     = "/ipc.EgressHandler/StopEgress"
 )
 
 // EgressHandlerClient is the client API for EgressHandler service.
@@ -306,6 +309,11 @@ type EgressHandlerClient interface {
 	GetMetrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsResponse, error)
 	StopHandler(ctx context.Context, in *StopHandlerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	KillEgress(ctx context.Context, in *KillEgressRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// proxied EgressHandler RPCs: the service owns the message bus subscription
+	// and forwards these to the handler over IPC
+	UpdateStream(ctx context.Context, in *livekit.UpdateStreamRequest, opts ...grpc.CallOption) (*livekit.EgressInfo, error)
+	UpdateEgress(ctx context.Context, in *livekit.UpdateEgressRequest, opts ...grpc.CallOption) (*livekit.EgressInfo, error)
+	StopEgress(ctx context.Context, in *livekit.StopEgressRequest, opts ...grpc.CallOption) (*livekit.EgressInfo, error)
 }
 
 type egressHandlerClient struct {
@@ -366,6 +374,36 @@ func (c *egressHandlerClient) KillEgress(ctx context.Context, in *KillEgressRequ
 	return out, nil
 }
 
+func (c *egressHandlerClient) UpdateStream(ctx context.Context, in *livekit.UpdateStreamRequest, opts ...grpc.CallOption) (*livekit.EgressInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(livekit.EgressInfo)
+	err := c.cc.Invoke(ctx, EgressHandler_UpdateStream_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *egressHandlerClient) UpdateEgress(ctx context.Context, in *livekit.UpdateEgressRequest, opts ...grpc.CallOption) (*livekit.EgressInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(livekit.EgressInfo)
+	err := c.cc.Invoke(ctx, EgressHandler_UpdateEgress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *egressHandlerClient) StopEgress(ctx context.Context, in *livekit.StopEgressRequest, opts ...grpc.CallOption) (*livekit.EgressInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(livekit.EgressInfo)
+	err := c.cc.Invoke(ctx, EgressHandler_StopEgress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EgressHandlerServer is the server API for EgressHandler service.
 // All implementations must embed UnimplementedEgressHandlerServer
 // for forward compatibility.
@@ -375,6 +413,11 @@ type EgressHandlerServer interface {
 	GetMetrics(context.Context, *MetricsRequest) (*MetricsResponse, error)
 	StopHandler(context.Context, *StopHandlerRequest) (*emptypb.Empty, error)
 	KillEgress(context.Context, *KillEgressRequest) (*emptypb.Empty, error)
+	// proxied EgressHandler RPCs: the service owns the message bus subscription
+	// and forwards these to the handler over IPC
+	UpdateStream(context.Context, *livekit.UpdateStreamRequest) (*livekit.EgressInfo, error)
+	UpdateEgress(context.Context, *livekit.UpdateEgressRequest) (*livekit.EgressInfo, error)
+	StopEgress(context.Context, *livekit.StopEgressRequest) (*livekit.EgressInfo, error)
 	mustEmbedUnimplementedEgressHandlerServer()
 }
 
@@ -399,6 +442,15 @@ func (UnimplementedEgressHandlerServer) StopHandler(context.Context, *StopHandle
 }
 func (UnimplementedEgressHandlerServer) KillEgress(context.Context, *KillEgressRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method KillEgress not implemented")
+}
+func (UnimplementedEgressHandlerServer) UpdateStream(context.Context, *livekit.UpdateStreamRequest) (*livekit.EgressInfo, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateStream not implemented")
+}
+func (UnimplementedEgressHandlerServer) UpdateEgress(context.Context, *livekit.UpdateEgressRequest) (*livekit.EgressInfo, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateEgress not implemented")
+}
+func (UnimplementedEgressHandlerServer) StopEgress(context.Context, *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
+	return nil, status.Error(codes.Unimplemented, "method StopEgress not implemented")
 }
 func (UnimplementedEgressHandlerServer) mustEmbedUnimplementedEgressHandlerServer() {}
 func (UnimplementedEgressHandlerServer) testEmbeddedByValue()                       {}
@@ -511,6 +563,60 @@ func _EgressHandler_KillEgress_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EgressHandler_UpdateStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(livekit.UpdateStreamRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EgressHandlerServer).UpdateStream(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EgressHandler_UpdateStream_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EgressHandlerServer).UpdateStream(ctx, req.(*livekit.UpdateStreamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EgressHandler_UpdateEgress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(livekit.UpdateEgressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EgressHandlerServer).UpdateEgress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EgressHandler_UpdateEgress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EgressHandlerServer).UpdateEgress(ctx, req.(*livekit.UpdateEgressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EgressHandler_StopEgress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(livekit.StopEgressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EgressHandlerServer).StopEgress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EgressHandler_StopEgress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EgressHandlerServer).StopEgress(ctx, req.(*livekit.StopEgressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // EgressHandler_ServiceDesc is the grpc.ServiceDesc for EgressHandler service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -537,6 +643,18 @@ var EgressHandler_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "KillEgress",
 			Handler:    _EgressHandler_KillEgress_Handler,
+		},
+		{
+			MethodName: "UpdateStream",
+			Handler:    _EgressHandler_UpdateStream_Handler,
+		},
+		{
+			MethodName: "UpdateEgress",
+			Handler:    _EgressHandler_UpdateEgress_Handler,
+		},
+		{
+			MethodName: "StopEgress",
+			Handler:    _EgressHandler_StopEgress_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
