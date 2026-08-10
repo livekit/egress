@@ -75,6 +75,9 @@ func newImageSink(
 	}
 
 	maxPendingUploads := (conf.MaxUploadQueue * 60) / int(o.CaptureInterval)
+	if maxPendingUploads < 1 {
+		maxPendingUploads = 1
+	}
 	return &ImageSink{
 		base: &base{
 			bin: imageBin,
@@ -91,19 +94,19 @@ func newImageSink(
 
 func (s *ImageSink) Start() error {
 	go func() {
-		var err error
-		defer func() {
-			if err != nil {
-				s.callbacks.OnError(err)
-			}
-			s.done.Break()
-		}()
+		defer s.done.Break()
 
+		// keep draining after a failure: NewImage sends from the pipeline's bus
+		// thread, and a send with no receiver would block it forever
+		var failed bool
 		for update := range s.createdImages {
-			err = s.handleNewImage(update)
-			if err != nil {
+			if failed {
+				continue
+			}
+			if err := s.handleNewImage(update); err != nil {
 				logger.Errorw("new image handling failed", err)
-				return
+				failed = true
+				s.callbacks.OnError(err)
 			}
 		}
 	}()
@@ -163,12 +166,16 @@ func (s *ImageSink) NewImage(filepath string, ts uint64) error {
 
 	filename := filepath[len(s.LocalDir)+1:]
 
-	s.createdImages <- &imageUpdate{
+	// never block: this is called from the pipeline's bus thread
+	select {
+	case s.createdImages <- &imageUpdate{
 		filename:  filename,
 		timestamp: ts,
+	}:
+		return nil
+	default:
+		return errors.ErrUploadQueueFull("image", cap(s.createdImages))
 	}
-
-	return nil
 }
 
 func (s *ImageSink) UploadManifest(filepath string) (string, bool, error) {
