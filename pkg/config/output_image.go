@@ -65,6 +65,14 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput, upload egre
 		return nil, err
 	}
 
+	switch images.FilenameSuffix {
+	case livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+		livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP,
+		livekit.ImageFileSuffix_IMAGE_SUFFIX_NONE_OVERWRITE:
+	default:
+		return nil, errors.ErrInvalidInput("filename_suffix")
+	}
+
 	sc, err := p.getStorageConfig(upload)
 	if err != nil {
 		return nil, err

@@ -146,6 +146,10 @@ func ErrUploadFailed(location string, err error) error {
 	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s upload failed: %w", location, err)
 }
 
+func ErrUploadQueueFull(sink string, pending int) error {
+	return psrpc.NewErrorf(psrpc.Internal, "%s upload queue full (%d pending): storage cannot keep up", sink, pending)
+}
+
 func ErrParticipantNotFound(identity string) error {
 	return psrpc.NewErrorf(psrpc.NotFound, "participant %s not found", identity)
 }
