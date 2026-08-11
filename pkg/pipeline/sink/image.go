@@ -54,6 +54,18 @@ type imageUpdate struct {
 	filename  string
 }
 
+// covers frame bursts that outpace the capture interval: videorate's
+// skip-to-first plus the first rate-aligned frame at startup, and the EOS flush
+const minPendingUploads = 4
+
+func imageQueueCapacity(maxUploadQueue int, captureInterval uint32) int {
+	capacity := (maxUploadQueue * 60) / int(captureInterval)
+	if capacity < minPendingUploads {
+		capacity = minPendingUploads
+	}
+	return capacity
+}
+
 func newImageSink(
 	p *gstreamer.Pipeline,
 	conf *config.PipelineConfig,
@@ -74,10 +86,6 @@ func newImageSink(
 		return nil, err
 	}
 
-	maxPendingUploads := (conf.MaxUploadQueue * 60) / int(o.CaptureInterval)
-	if maxPendingUploads < 1 {
-		maxPendingUploads = 1
-	}
 	return &ImageSink{
 		base: &base{
 			bin: imageBin,
@@ -88,7 +96,7 @@ func newImageSink(
 
 		conf:          conf,
 		callbacks:     callbacks,
-		createdImages: make(chan *imageUpdate, maxPendingUploads),
+		createdImages: make(chan *imageUpdate, imageQueueCapacity(conf.MaxUploadQueue, o.CaptureInterval)),
 	}, nil
 }
 
