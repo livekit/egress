@@ -162,3 +162,13 @@ func TestImageSinkCloseDrainsPendingUploads(t *testing.T) {
 	default:
 	}
 }
+
+// a capture interval of 3600s or more must not yield a queue too small to
+// absorb the startup frame burst
+func TestImageQueueCapacity(t *testing.T) {
+	require.Equal(t, 360, imageQueueCapacity(60, 10))
+	require.Equal(t, 60, imageQueueCapacity(60, 60))
+	require.Equal(t, minPendingUploads, imageQueueCapacity(60, 3600))
+	require.Equal(t, minPendingUploads, imageQueueCapacity(60, 7200))
+	require.Equal(t, minPendingUploads, imageQueueCapacity(0, 10))
+}
