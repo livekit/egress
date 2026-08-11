@@ -163,8 +163,8 @@ func TestImageSinkCloseDrainsPendingUploads(t *testing.T) {
 	}
 }
 
-// Regression: a capture interval of exactly 3600s used to yield a single-slot
-// queue, which the startup frame burst overflows, failing the egress.
+// a capture interval of 3600s or more must not yield a queue too small to
+// absorb the startup frame burst
 func TestImageQueueCapacity(t *testing.T) {
 	require.Equal(t, 360, imageQueueCapacity(60, 10))
 	require.Equal(t, 60, imageQueueCapacity(60, 60))

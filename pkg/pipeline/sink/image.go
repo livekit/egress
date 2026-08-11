@@ -59,11 +59,7 @@ type imageUpdate struct {
 const minPendingUploads = 4
 
 func imageQueueCapacity(maxUploadQueue int, captureInterval uint32) int {
-	capacity := (maxUploadQueue * 60) / int(captureInterval)
-	if capacity < minPendingUploads {
-		capacity = minPendingUploads
-	}
-	return capacity
+	return max((maxUploadQueue*60)/int(captureInterval), minPendingUploads)
 }
 
 func newImageSink(
