@@ -1,4 +1,4 @@
-// Copyright 2023 LiveKit, Inc.
+// Copyright 2026 LiveKit, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,9 +16,11 @@ package errors
 
 import (
 	"errors"
+	"net"
 	"strings"
 
 	"github.com/livekit/psrpc"
+	"github.com/livekit/storage"
 )
 
 func New(err string) error {
@@ -31,6 +33,46 @@ func Is(err, target error) bool {
 
 func As(err error, target any) bool {
 	return errors.As(err, target)
+}
+
+var errDestinationMarker = errors.New("destination error")
+
+type destinationError struct {
+	err error
+}
+
+func (e *destinationError) Error() string {
+	return e.err.Error()
+}
+
+func (e *destinationError) Unwrap() []error {
+	return []error{e.err, errDestinationMarker}
+}
+
+// MarkDestinationError tags err as caused by the user-configured destination,
+// preserving its message and unwrap chain.
+func MarkDestinationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &destinationError{err: err}
+}
+
+// IsDestinationError reports whether a failure was caused by the user-configured
+// destination rather than by the egress service: a marked error, a 4xx response
+// from storage, or a DNS resolution failure for a user-provided host.
+func IsDestinationError(err error) bool {
+	if errors.Is(err, errDestinationMarker) {
+		return true
+	}
+
+	var statusErr *storage.ErrorWithStatusCode
+	if errors.As(err, &statusErr) && statusErr.StatusCode >= 400 && statusErr.StatusCode < 500 {
+		return true
+	}
+
+	var dnsErr *net.DNSError
+	return errors.As(err, &dnsErr) && dnsErr.IsNotFound
 }
 
 type ErrArray struct {

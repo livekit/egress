@@ -491,7 +491,7 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 
 	// fail egress if no outputs remaining
 	if c.OutputCount.Load() == 0 {
-		return psrpc.NewError(psrpc.Unavailable, streamErr)
+		return psrpc.NewError(psrpc.Unavailable, errors.MarkDestinationError(streamErr))
 	}
 
 	logger.Infow("stream failed",
@@ -612,7 +612,11 @@ func (c *Controller) sendEOS() {
 }
 
 func (c *Controller) OnError(err error) {
-	logger.Errorw("controller onError invoked", err)
+	if errors.IsDestinationError(err) {
+		logger.Warnw("controller onError invoked", err)
+	} else {
+		logger.Errorw("controller onError invoked", err)
+	}
 	if errors.Is(err, errors.ErrPipelineFrozen) && c.Debug.EnableProfiling {
 		c.generateDotFile("error")
 		c.generatePProf()

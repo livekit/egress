@@ -99,7 +99,7 @@ func newWebsocketSink(
 				if err == io.EOF {
 					return gst.FlowEOS
 				}
-				callbacks.OnError(psrpc.NewError(psrpc.Unavailable, err))
+				callbacks.OnError(psrpc.NewError(psrpc.Unavailable, errors.MarkDestinationError(err)))
 			}
 
 			return gst.FlowOK
