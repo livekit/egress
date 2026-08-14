@@ -177,7 +177,7 @@ func (u *Uploader) Upload(
 			return "", 0, psrpc.NewErrorf(psrpc.InvalidArgument,
 				"primary: %s\nbackup: %s", primaryErr.Error(), backupErr.Error())
 		}
-		return "", 0, psrpc.NewError(psrpc.InvalidArgument, backupErr)
+		return "", 0, psrpc.NewErrorf(psrpc.InvalidArgument, "%s", backupErr.Error())
 	}
 
 	return "", 0, primaryErr

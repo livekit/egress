@@ -108,7 +108,11 @@ func (s *ImageSink) Start() error {
 				continue
 			}
 			if err := s.handleNewImage(update); err != nil {
-				logger.Errorw("new image handling failed", err)
+				if errors.IsDestinationError(err) {
+					logger.Warnw("new image handling failed", err)
+				} else {
+					logger.Errorw("new image handling failed", err)
+				}
 				failed = true
 				s.callbacks.OnError(err)
 			}
