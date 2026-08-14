@@ -22,14 +22,14 @@ require (
 	github.com/livekit/media-samples/avsync v0.0.0-20260522020019-07e27a016e72
 	github.com/livekit/media-sdk v0.0.0-20260605212526-4c11a51d3c97
 	github.com/livekit/mediatransportutil v0.0.0-20260605212259-862d4a7bcb1e
-	github.com/livekit/protocol v1.50.1
-	github.com/livekit/psrpc v0.7.2
+	github.com/livekit/protocol v1.50.5-0.20260814120900-8b1ab81c7d00
+	github.com/livekit/psrpc v0.7.3
 	github.com/livekit/server-sdk-go/v2 v2.18.2-0.20260810195730-0511fae40717
 	github.com/livekit/storage v0.0.0-20260623170515-1297cb15775f
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
-	github.com/pion/rtp v1.10.2
-	github.com/pion/webrtc/v4 v4.2.15
+	github.com/pion/rtp v1.10.4
+	github.com/pion/webrtc/v4 v4.2.17
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.68.1
@@ -119,7 +119,7 @@ require (
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lithammer/shortuuid/v4 v4.2.0 // indirect
-	github.com/mackerelio/go-osstat v0.2.7 // indirect
+	github.com/mackerelio/go-osstat v0.2.8 // indirect
 	github.com/magefile/mage v1.17.2 // indirect
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.12.2 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
@@ -127,27 +127,27 @@ require (
 	github.com/nats-io/nats.go v1.52.0 // indirect
 	github.com/nats-io/nkeys v0.4.16 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
-	github.com/petermattis/goid v0.0.0-20260330135022-df67b199bc81 // indirect
-	github.com/pion/datachannel v1.6.0 // indirect
-	github.com/pion/dtls/v3 v3.1.4 // indirect
-	github.com/pion/ice/v4 v4.2.7 // indirect
+	github.com/petermattis/goid v0.0.0-20260725062400-500c67a39b75 // indirect
+	github.com/pion/datachannel v1.6.2 // indirect
+	github.com/pion/dtls/v3 v3.1.5 // indirect
+	github.com/pion/ice/v4 v4.3.0 // indirect
 	github.com/pion/interceptor v0.1.45 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/mdns/v2 v2.1.0 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
-	github.com/pion/rtcp v1.2.16 // indirect
-	github.com/pion/sctp v1.10.0 // indirect
+	github.com/pion/rtcp v1.2.17 // indirect
+	github.com/pion/sctp v1.11.0 // indirect
 	github.com/pion/sdp/v3 v3.0.19 // indirect
-	github.com/pion/srtp/v3 v3.0.11 // indirect
-	github.com/pion/stun/v3 v3.1.5 // indirect
+	github.com/pion/srtp/v3 v3.0.12 // indirect
+	github.com/pion/stun/v3 v3.1.6 // indirect
 	github.com/pion/transport/v4 v4.0.2 // indirect
-	github.com/pion/turn/v5 v5.0.9 // indirect
+	github.com/pion/turn/v5 v5.0.12 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20250313105119-ba97887b0a25 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/procfs v0.20.1 // indirect
+	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
-	github.com/redis/go-redis/v9 v9.20.0 // indirect
+	github.com/redis/go-redis/v9 v9.21.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.7.0 // indirect
 	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
@@ -167,14 +167,14 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20260603202125-055de637280b // indirect
-	golang.org/x/mod v0.36.0 // indirect
-	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/mod v0.38.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.45.0 // indirect
+	golang.org/x/tools v0.47.0 // indirect
 	google.golang.org/api v0.283.0 // indirect
 	google.golang.org/genproto v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
