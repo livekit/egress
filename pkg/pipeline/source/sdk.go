@@ -758,6 +758,10 @@ func (s *SDKSource) matchesMediaVideo(pub lksdk.TrackPublication, rp *lksdk.Remo
 	if s.VideoTrackID != "" {
 		return pub.SID() == s.VideoTrackID
 	}
+	// passthrough sets Identity for {publisher_identity}, which must not widen the match
+	if s.Passthrough {
+		return false
+	}
 	if s.Identity != "" {
 		if rp.Identity() != s.Identity {
 			return false
