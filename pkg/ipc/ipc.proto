@@ -61,7 +61,6 @@ service EgressHandler {
   // proxied EgressHandler RPCs: the service owns the message bus subscription
   // and forwards these to the handler over IPC
   rpc UpdateStream(livekit.UpdateStreamRequest) returns (livekit.EgressInfo) {};
-  rpc UpdateEgress(livekit.UpdateEgressRequest) returns (livekit.EgressInfo) {};
   rpc StopEgress(livekit.StopEgressRequest) returns (livekit.EgressInfo) {};
 }
 

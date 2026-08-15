@@ -167,6 +167,9 @@ func requestTypeFromReq(req *rpc.StartEgressRequest) string {
 }
 
 func requestTypeFromInterface(request egress.EgressRequest) string {
+	if request.GetPassthrough() {
+		return types.RequestTypeTrack
+	}
 	switch {
 	case request.GetTemplate() != nil:
 		return types.RequestTypeTemplate

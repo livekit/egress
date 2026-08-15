@@ -277,7 +277,11 @@ func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 				costs.cpu = m.cpuCostConfig.WebCpuCost
 			}
 		} else if request.GetMedia() != nil {
-			costs.cpu = m.cpuCostConfig.ParticipantCpuCost
+			if request.GetPassthrough() {
+				costs.cpu = m.cpuCostConfig.TrackCpuCost
+			} else {
+				costs.cpu = m.cpuCostConfig.ParticipantCpuCost
+			}
 		}
 	}
 
@@ -451,14 +455,7 @@ func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 }
 
 func (m *Monitor) egressStarted(request egress.EgressRequest) {
-	switch {
-	case request.GetTemplate() != nil:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTemplate}).Add(1)
-	case request.GetWeb() != nil:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Add(1)
-	case request.GetMedia() != nil:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeMedia}).Add(1)
-	}
+	m.requestGauge.With(prometheus.Labels{"type": requestTypeFromInterface(request)}).Add(1)
 }
 
 func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
@@ -532,17 +529,15 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64, in
 }
 
 func (m *Monitor) egressEnded(request egress.EgressRequest, countedAsWeb bool) {
+	m.requestGauge.With(prometheus.Labels{"type": requestTypeFromInterface(request)}).Sub(1)
+
 	switch {
 	case request.GetTemplate() != nil:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTemplate}).Sub(1)
 		if countedAsWeb {
 			m.webRequests.Dec()
 		}
 	case request.GetWeb() != nil:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
 		m.webRequests.Dec()
-	case request.GetMedia() != nil:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeMedia}).Sub(1)
 	}
 }
 

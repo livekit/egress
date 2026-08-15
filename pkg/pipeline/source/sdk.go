@@ -317,7 +317,9 @@ func (s *SDKSource) joinRoom() error {
 		w, h, err = s.awaitTracks(map[string]struct{}{s.TrackID: {}})
 
 	case types.RequestTypeMedia:
-		if s.Info.RoomName != "" {
+		if s.Passthrough {
+			fileIdentifier = s.TrackID
+		} else if s.Info.RoomName != "" {
 			fileIdentifier = s.Info.RoomName
 		} else {
 			fileIdentifier = room.Name()
@@ -873,7 +875,7 @@ func (s *SDKSource) shouldEnableOneShotSenderReportSync() bool {
 func (s *SDKSource) shouldDisableAudioPTSAdjustment() bool {
 	return s.RequestType == types.RequestTypeRoomComposite || // SDK room composites are audio only - no need to adjust audio timestamps
 		s.RequestType == types.RequestTypeTemplate || // SDK templates are audio only - same as room composite
-		s.RequestType == types.RequestTypeTrack || // no A/V sync needed for single track requests
+		s.Passthrough || // no A/V sync needed for single track requests
 		s.AudioTempoController.Enabled
 }
 

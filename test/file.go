@@ -509,6 +509,85 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "media_participant_video_{time}.mp4",
 				},
 			},
+
+			// ---- Media passthrough ----
+
+			{
+				name:        "Media/PassthroughOpus",
+				requestType: types.RequestTypeMedia,
+				passthrough: true,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename:   "pt_{track_source}_{time}.ogg",
+					outputType: types.OutputTypeOGG,
+				},
+			},
+			{
+				name:        "Media/PassthroughPCMU",
+				requestType: types.RequestTypeMedia,
+				passthrough: true,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypePCMU,
+					audioOnly:  true,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename:   "pt_{track_source}_pcmu_{time}.ogg",
+					outputType: types.OutputTypeOGG,
+				},
+			},
+			{
+				name:        "Media/PassthroughPCMA",
+				requestType: types.RequestTypeMedia,
+				passthrough: true,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypePCMA,
+					audioOnly:  true,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename:   "pt_{track_source}_pcma_{time}.ogg",
+					outputType: types.OutputTypeOGG,
+				},
+			},
+			{
+				name:        "Media/PassthroughH264",
+				requestType: types.RequestTypeMedia,
+				passthrough: true,
+				publishOptions: publishOptions{
+					videoCodec:        types.MimeTypeH264,
+					videoOnly:         true,
+					mediaVideoTrackID: setAtRuntime,
+				},
+				fileOptions: &fileOptions{
+					filename:   "pt_{track_id}_{time}.mp4",
+					outputType: types.OutputTypeMP4,
+				},
+			},
+			{
+				name:        "Media/PassthroughVP8",
+				requestType: types.RequestTypeMedia,
+				passthrough: true,
+				publishOptions: publishOptions{
+					videoCodec:        types.MimeTypeVP8,
+					videoOnly:         true,
+					mediaVideoTrackID: setAtRuntime,
+				},
+				fileOptions: &fileOptions{
+					filename:   "pt_{track_type}_{time}.webm",
+					outputType: types.OutputTypeWebM,
+				},
+			},
 		} {
 			if !r.run(t, test) {
 				return

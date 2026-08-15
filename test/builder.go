@@ -64,6 +64,7 @@ type testCase struct {
 	// encoding options
 	encodingOptions *livekit.EncodingOptions
 	encodingPreset  livekit.EncodingOptionsPreset
+	passthrough     bool
 
 	*fileOptions
 	*streamOptions
@@ -633,7 +634,11 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 	}
 
 	// Encoding
-	if test.encodingOptions != nil {
+	if test.passthrough {
+		egressReq.Encoding = &livekit.StartEgressRequest_Passthrough{
+			Passthrough: true,
+		}
+	} else if test.encodingOptions != nil {
 		egressReq.Encoding = &livekit.StartEgressRequest_Advanced{
 			Advanced: test.encodingOptions,
 		}
