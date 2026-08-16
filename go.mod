@@ -13,7 +13,7 @@ require (
 	github.com/chromedp/chromedp v0.15.1
 	github.com/frostbyte73/core v0.1.1
 	github.com/go-gst/go-glib v1.4.1-0.20250303082535-35ebad1471fd
-	github.com/go-gst/go-gst v1.4.0
+	github.com/go-gst/go-gst v1.4.1
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/linkdata/deadlock v0.5.5
 	github.com/livekit/go-rtmp v0.0.0-20251031234730-75a652881771
