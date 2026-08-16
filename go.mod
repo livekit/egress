@@ -28,7 +28,7 @@ require (
 	github.com/livekit/storage v0.0.0-20260623170515-1297cb15775f
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
-	github.com/pion/rtp v1.10.4
+	github.com/pion/rtp v1.10.5
 	github.com/pion/webrtc/v4 v4.2.17
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
