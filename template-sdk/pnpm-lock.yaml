@@ -10,7 +10,7 @@ importers:
     devDependencies:
       livekit-client:
         specifier: ^2.12.0
-        version: 2.20.2(@types/dom-mediacapture-record@1.0.22)
+        version: 2.21.0(@types/dom-mediacapture-record@1.0.22)
       prettier:
         specifier: ^3.0.0
         version: 3.9.6
@@ -26,8 +26,8 @@ packages:
   '@livekit/mutex@1.1.1':
     resolution: {integrity: sha512-EsshAucklmpuUAfkABPxJNhzj9v2sG7JuzFDL4ML1oJQSV14sqrpTYnsaOudMAw9yOaW53NU3QQTlUQoRs4czw==}
 
-  '@livekit/protocol@1.46.6':
-    resolution: {integrity: sha512-upzlHP1vi/kZ/QqALZTFskQ0ifqc2f15RKucHYOsIHJsaXvEYanG75mAb7o+Yomfs4XhQ4BaRsdY+TFHXpaqrg==}
+  '@livekit/protocol@1.50.4':
+    resolution: {integrity: sha512-L1uggNQAqyY21smQY8AllyOYbcv9Me9TaxwuLytL1R8ck9nbYPmQLNwEDi3pOFGAMa5F8I2nUi2Jc59W5awxlA==}
 
   '@types/dom-mediacapture-record@1.0.22':
     resolution: {integrity: sha512-mUMZLK3NvwRLcAAT9qmcK+9p7tpU2FHdDsntR3YI4+GY88XrgG4XiE7u1Q2LAN2/FZOz/tdMDC3GQCR4T8nFuw==}
@@ -156,11 +156,11 @@ packages:
     resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
     engines: {node: '>=0.8.x'}
 
-  jose@6.2.7:
-    resolution: {integrity: sha512-hq1OB1bALKfydZNoViyg6hPVGV4i93ny9Op+n4zP5RSf7SCZEXa/TsG2O3IEr7+WlHRTPnpqDmHfMH6qXAD60w==}
+  jose@6.2.9:
+    resolution: {integrity: sha512-XrchZOFZUl/T3vTwRe8XK+cJrGtMF4th1ARnDfwbBXFKThGhlsxEE4Zu03AD/bjJSt/9jT/mxrOCkJWOg77aPA==}
 
-  livekit-client@2.20.2:
-    resolution: {integrity: sha512-rGV0Y+HgqI4yROq/4Get7wZ62DbYI55GumrI7FHJsUNFzPCl6xSqYBVlkVaCEvyOk14PdANLK/EHgMPJbvD68w==}
+  livekit-client@2.21.0:
+    resolution: {integrity: sha512-RBUhPkV/sl1nzl8lokVlK5uATPwn0AlsudCBZXissw/kDl9yz8ac4pNJ43iPpMVoHOeBYH/BZ3vUC1adqa/zFQ==}
     peerDependencies:
       '@types/dom-mediacapture-record': ^1
 
@@ -204,7 +204,7 @@ snapshots:
 
   '@livekit/mutex@1.1.1': {}
 
-  '@livekit/protocol@1.46.6':
+  '@livekit/protocol@1.50.4':
     dependencies:
       '@bufbuild/protobuf': 1.10.1
 
@@ -272,15 +272,15 @@ snapshots:
 
   events@3.3.0: {}
 
-  jose@6.2.7: {}
+  jose@6.2.9: {}
 
-  livekit-client@2.20.2(@types/dom-mediacapture-record@1.0.22):
+  livekit-client@2.21.0(@types/dom-mediacapture-record@1.0.22):
     dependencies:
       '@livekit/mutex': 1.1.1
-      '@livekit/protocol': 1.46.6
+      '@livekit/protocol': 1.50.4
       '@types/dom-mediacapture-record': 1.0.22
       events: 3.3.0
-      jose: 6.2.7
+      jose: 6.2.9
       loglevel: 1.9.2
       sdp-transform: 2.15.0
       tslib: 2.8.1
