@@ -317,13 +317,15 @@ func (s *SDKSource) joinRoom() error {
 		w, h, err = s.awaitTracks(map[string]struct{}{s.TrackID: {}})
 
 	case types.RequestTypeMedia:
+		if s.Info.RoomName == "" {
+			s.filenameReplacements["{room_name}"] = room.Name()
+		}
 		if s.Passthrough {
 			fileIdentifier = s.TrackID
 		} else if s.Info.RoomName != "" {
 			fileIdentifier = s.Info.RoomName
 		} else {
 			fileIdentifier = room.Name()
-			s.filenameReplacements["{room_name}"] = room.Name()
 		}
 		w, h, err = s.awaitMediaTracks()
 	}

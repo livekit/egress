@@ -635,8 +635,8 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 
 	// Encoding
 	if test.passthrough {
-		egressReq.Encoding = &livekit.StartEgressRequest_Passthrough{
-			Passthrough: true,
+		egressReq.Encoding = &livekit.StartEgressRequest_Preset{
+			Preset: livekit.EncodingOptionsPreset_PASSTHROUGH,
 		}
 	} else if test.encodingOptions != nil {
 		egressReq.Encoding = &livekit.StartEgressRequest_Advanced{

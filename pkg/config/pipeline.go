@@ -427,22 +427,12 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 	case *rpc.StartEgressRequest_Replay:
 		replayReq := req.Replay
-		if err := validatePassthrough(replayReq); err != nil {
-			return err
-		}
-		p.Passthrough = replayReq.GetPassthrough()
 		clone := proto.Clone(replayReq).(*livekit.ExportReplayRequest)
 		p.Info.Request = &livekit.EgressInfo_Replay{
 			Replay: clone,
 		}
 		egress.RedactStartEgressRequest(clone)
 		p.IsReplay = true
-
-		ci, err := p.applyV2Source(replayReq)
-		if err != nil {
-			return err
-		}
-		connectionInfoRequired = ci
 
 		// encoding options
 		switch opts := replayReq.Encoding.(type) {
@@ -454,6 +444,18 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			}
 		}
 
+		if p.Passthrough {
+			if err := validatePassthrough(replayReq); err != nil {
+				return err
+			}
+		}
+
+		ci, err := p.applyV2Source(replayReq)
+		if err != nil {
+			return err
+		}
+		connectionInfoRequired = ci
+
 		// output params
 		if err := p.updateOutputs(replayReq); err != nil {
 			return err
@@ -461,10 +463,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 	case *rpc.StartEgressRequest_Egress:
 		egressReq := req.Egress
-		if err := validatePassthrough(egressReq); err != nil {
-			return err
-		}
-		p.Passthrough = egressReq.GetPassthrough()
 		clone := proto.Clone(egressReq).(*livekit.StartEgressRequest)
 		p.Info.Request = &livekit.EgressInfo_Egress{
 			Egress: clone,
@@ -474,12 +472,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		if egressReq.RoomName != "" {
 			p.Info.RoomName = egressReq.RoomName
 		}
-
-		ci, err := p.applyV2Source(egressReq)
-		if err != nil {
-			return err
-		}
-		connectionInfoRequired = ci
 
 		// encoding options
 		switch opts := egressReq.Encoding.(type) {
@@ -491,6 +483,18 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			}
 		}
 
+		if p.Passthrough {
+			if err := validatePassthrough(egressReq); err != nil {
+				return err
+			}
+		}
+
+		ci, err := p.applyV2Source(egressReq)
+		if err != nil {
+			return err
+		}
+		connectionInfoRequired = ci
+
 		// output params
 		if err := p.updateOutputs(egressReq); err != nil {
 			return err
@@ -498,6 +502,11 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 	default:
 		return errors.ErrInvalidInput("request")
+	}
+
+	// the passthrough preset is shared with request types that always transcode
+	if p.Passthrough && p.RequestType != types.RequestTypeTrack && p.RequestType != types.RequestTypeMedia {
+		return errors.ErrInvalidInput("preset")
 	}
 
 	switch p.SourceType {
@@ -710,10 +719,6 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 
 // rejects shapes a remux cannot express — downgrading silently would return re-encoded media
 func validatePassthrough(req egress.EgressRequest) error {
-	if !req.GetPassthrough() {
-		return nil
-	}
-
 	media := req.GetMedia()
 	if media == nil {
 		return errors.ErrInvalidInput("passthrough source")

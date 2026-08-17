@@ -17,7 +17,6 @@ package stats
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 
@@ -166,8 +165,8 @@ func requestTypeFromReq(req *rpc.StartEgressRequest) string {
 	return types.Unknown
 }
 
-func requestTypeFromInterface(request egress.EgressRequest) string {
-	if request.GetPassthrough() {
+func requestTypeFromInterface(request v2Request) string {
+	if request.GetPreset() == livekit.EncodingOptionsPreset_PASSTHROUGH {
 		return types.RequestTypeTrack
 	}
 	switch {
