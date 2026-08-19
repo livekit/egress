@@ -83,13 +83,13 @@ RUN apt-get update && \
         libshout3 \
         libsndfile1 \
         libsoundtouch1 \
-        libsoup2.4-1 \
+        libsoup-3.0-0 \
         libspandsp2 \
         libspeex1 \
         libsrt1.5-openssl \
         libsrtp2-1 \
         libssl3t64 \
-        libtag1v5 \
+        libtag2 \
         libtheora0 \
         libtwolame0 \
         libunwind8 \
