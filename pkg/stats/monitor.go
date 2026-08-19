@@ -25,6 +25,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/egress"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils/hwstats"
@@ -244,6 +245,11 @@ func (m *Monitor) canAcceptRequestLocked(req *rpc.StartEgressRequest) ([]interfa
 	return fields, accept
 }
 
+type v2Request interface {
+	egress.EgressRequest
+	GetPreset() livekit.EncodingOptionsPreset
+}
+
 // requestCosts holds the static admission costs and source classification for a request.
 type requestCosts struct {
 	cpu    float64
@@ -256,7 +262,7 @@ type requestCosts struct {
 func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 	costs := requestCosts{memory: m.cpuCostConfig.MemoryCost}
 
-	setV2Costs := func(request egress.EgressRequest) {
+	setV2Costs := func(request v2Request) {
 		if template := request.GetTemplate(); template != nil {
 			costs.isWeb = !config.ShouldUseSDKSource(template)
 			if template.AudioOnly {
@@ -277,7 +283,11 @@ func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 				costs.cpu = m.cpuCostConfig.WebCpuCost
 			}
 		} else if request.GetMedia() != nil {
-			costs.cpu = m.cpuCostConfig.ParticipantCpuCost
+			if request.GetPreset() == livekit.EncodingOptionsPreset_PASSTHROUGH {
+				costs.cpu = m.cpuCostConfig.TrackCpuCost
+			} else {
+				costs.cpu = m.cpuCostConfig.ParticipantCpuCost
+			}
 		}
 	}
 
@@ -450,15 +460,8 @@ func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 	}
 }
 
-func (m *Monitor) egressStarted(request egress.EgressRequest) {
-	switch {
-	case request.GetTemplate() != nil:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTemplate}).Add(1)
-	case request.GetWeb() != nil:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Add(1)
-	case request.GetMedia() != nil:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeMedia}).Add(1)
-	}
+func (m *Monitor) egressStarted(request v2Request) {
+	m.requestGauge.With(prometheus.Labels{"type": requestTypeFromInterface(request)}).Add(1)
 }
 
 func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
@@ -531,18 +534,16 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64, in
 	return 0, 0, 0
 }
 
-func (m *Monitor) egressEnded(request egress.EgressRequest, countedAsWeb bool) {
+func (m *Monitor) egressEnded(request v2Request, countedAsWeb bool) {
+	m.requestGauge.With(prometheus.Labels{"type": requestTypeFromInterface(request)}).Sub(1)
+
 	switch {
 	case request.GetTemplate() != nil:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTemplate}).Sub(1)
 		if countedAsWeb {
 			m.webRequests.Dec()
 		}
 	case request.GetWeb() != nil:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
 		m.webRequests.Dec()
-	case request.GetMedia() != nil:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeMedia}).Sub(1)
 	}
 }
 

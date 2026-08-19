@@ -59,6 +59,7 @@ type PipelineConfig struct {
 	Manifest        *Manifest           `yaml:"-"`
 	Live            bool                `yaml:"-"`
 	IsReplay        bool                `yaml:"-"`
+	Passthrough     bool                `yaml:"-"`
 	StorageObserver StorageObserver     `yaml:"-"`
 }
 
@@ -405,6 +406,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 	case *rpc.StartEgressRequest_Track:
 		p.RequestType = types.RequestTypeTrack
+		p.Passthrough = true
 		clone := proto.Clone(req.Track).(*livekit.TrackEgressRequest)
 		p.Info.Request = &livekit.EgressInfo_Track{
 			Track: clone,
@@ -432,12 +434,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		egress.RedactStartEgressRequest(clone)
 		p.IsReplay = true
 
-		ci, err := p.applyV2Source(replayReq)
-		if err != nil {
-			return err
-		}
-		connectionInfoRequired = ci
-
 		// encoding options
 		switch opts := replayReq.Encoding.(type) {
 		case *livekit.ExportReplayRequest_Preset:
@@ -447,6 +443,18 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 				return err
 			}
 		}
+
+		if p.Passthrough {
+			if err := validatePassthrough(replayReq); err != nil {
+				return err
+			}
+		}
+
+		ci, err := p.applyV2Source(replayReq)
+		if err != nil {
+			return err
+		}
+		connectionInfoRequired = ci
 
 		// output params
 		if err := p.updateOutputs(replayReq); err != nil {
@@ -465,12 +473,6 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			p.Info.RoomName = egressReq.RoomName
 		}
 
-		ci, err := p.applyV2Source(egressReq)
-		if err != nil {
-			return err
-		}
-		connectionInfoRequired = ci
-
 		// encoding options
 		switch opts := egressReq.Encoding.(type) {
 		case *livekit.StartEgressRequest_Preset:
@@ -481,6 +483,18 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			}
 		}
 
+		if p.Passthrough {
+			if err := validatePassthrough(egressReq); err != nil {
+				return err
+			}
+		}
+
+		ci, err := p.applyV2Source(egressReq)
+		if err != nil {
+			return err
+		}
+		connectionInfoRequired = ci
+
 		// output params
 		if err := p.updateOutputs(egressReq); err != nil {
 			return err
@@ -488,6 +502,11 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 	default:
 		return errors.ErrInvalidInput("request")
+	}
+
+	// the passthrough preset is shared with request types that always transcode
+	if p.Passthrough && p.RequestType != types.RequestTypeTrack && p.RequestType != types.RequestTypeMedia {
+		return errors.ErrInvalidInput("preset")
 	}
 
 	switch p.SourceType {
@@ -523,7 +542,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	p.Latency = p.getLatencyConfig(p.RequestType)
 	applyLatencyDefaults(&p.Latency)
 
-	if p.RequestType != types.RequestTypeTrack {
+	if !p.Passthrough {
 		err := p.validateAndUpdateOutputParams()
 		if err != nil {
 			return err
@@ -645,8 +664,11 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 		switch v := media.Video.(type) {
 		case *livekit.MediaSource_VideoTrackId:
 			p.VideoEnabled = true
-			p.VideoDecoding = true
+			p.VideoDecoding = !p.Passthrough
 			p.VideoTrackID = v.VideoTrackId
+			if p.Passthrough {
+				p.TrackID = v.VideoTrackId
+			}
 		case *livekit.MediaSource_ParticipantVideo:
 			p.VideoEnabled = true
 			p.VideoDecoding = true
@@ -662,7 +684,7 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 				p.CaptureAudioAll = true
 			} else if len(media.Audio.Routes) > 0 {
 				p.AudioEnabled = true
-				p.AudioTranscoding = true
+				p.AudioTranscoding = !p.Passthrough
 				for _, route := range media.Audio.Routes {
 					arc := AudioRouteConfig{
 						Channel: route.Channel,
@@ -678,6 +700,9 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 					}
 					p.AudioRoutes = append(p.AudioRoutes, arc)
 				}
+				if p.Passthrough {
+					p.TrackID = p.AudioRoutes[0].Match.TrackID
+				}
 			}
 		}
 
@@ -690,6 +715,63 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 	}
 
 	return connectionInfoRequired, nil
+}
+
+// rejects shapes a remux cannot express — downgrading silently would return re-encoded media
+func validatePassthrough(req egress.EgressRequest) error {
+	media := req.GetMedia()
+	if media == nil {
+		return errors.ErrInvalidInput("passthrough source")
+	}
+
+	var videoTrackID string
+	switch v := media.Video.(type) {
+	case *livekit.MediaSource_VideoTrackId:
+		if v.VideoTrackId == "" {
+			return errors.ErrInvalidInput("passthrough video_track_id")
+		}
+		videoTrackID = v.VideoTrackId
+	case *livekit.MediaSource_ParticipantVideo:
+		return errors.ErrInvalidInput("passthrough participant_video")
+	}
+
+	var audioTrackID string
+	if media.Audio != nil {
+		switch {
+		case media.Audio.CaptureAll:
+			return errors.ErrInvalidInput("passthrough capture_all")
+		case len(media.Audio.Routes) > 1:
+			return errors.ErrInvalidInput("passthrough audio routes")
+		case len(media.Audio.Routes) == 1:
+			m, ok := media.Audio.Routes[0].Match.(*livekit.AudioRoute_TrackId)
+			if !ok {
+				return errors.ErrInvalidInput("passthrough audio route match")
+			}
+			if m.TrackId == "" {
+				return errors.ErrInvalidInput("passthrough audio route track_id")
+			}
+			audioTrackID = m.TrackId
+		}
+	}
+
+	if (videoTrackID == "") == (audioTrackID == "") {
+		return errors.ErrInvalidInput("passthrough track_id")
+	}
+
+	outputs := req.GetOutputs()
+	if len(outputs) != 1 {
+		return errors.ErrInvalidInput("passthrough outputs")
+	}
+	switch o := outputs[0].Config.(type) {
+	case *livekit.Output_File:
+		if o.File.FileType != livekit.EncodedFileType_DEFAULT_FILETYPE {
+			return errors.ErrInvalidInput("passthrough file_type")
+		}
+	default:
+		return errors.ErrInvalidInput("passthrough output")
+	}
+
+	return nil
 }
 
 func (p *PipelineConfig) validateAndUpdateOutputParams() error {

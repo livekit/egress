@@ -317,11 +317,17 @@ func (s *SDKSource) joinRoom() error {
 		w, h, err = s.awaitTracks(map[string]struct{}{s.TrackID: {}})
 
 	case types.RequestTypeMedia:
-		if s.Info.RoomName != "" {
+		if s.Info.RoomName == "" {
+			s.mu.Lock()
+			s.filenameReplacements["{room_name}"] = room.Name()
+			s.mu.Unlock()
+		}
+		if s.Passthrough {
+			fileIdentifier = s.TrackID
+		} else if s.Info.RoomName != "" {
 			fileIdentifier = s.Info.RoomName
 		} else {
 			fileIdentifier = room.Name()
-			s.filenameReplacements["{room_name}"] = room.Name()
 		}
 		w, h, err = s.awaitMediaTracks()
 	}
@@ -329,7 +335,14 @@ func (s *SDKSource) joinRoom() error {
 		return err
 	}
 
-	if err = s.UpdateInfoFromSDK(fileIdentifier, s.filenameReplacements, w, h); err != nil {
+	s.mu.Lock()
+	replacements := make(map[string]string, len(s.filenameReplacements))
+	for k, v := range s.filenameReplacements {
+		replacements[k] = v
+	}
+	s.mu.Unlock()
+
+	if err = s.UpdateInfoFromSDK(fileIdentifier, replacements, w, h); err != nil {
 		logger.Errorw("could not update file params", err)
 		return err
 	}
@@ -399,8 +412,12 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 	requiredParticipants := make(map[string]struct{})
 	requiredTracks := make(map[string]struct{})
 
-	if s.Identity != "" {
-		requiredParticipants[s.Identity] = struct{}{}
+	s.mu.Lock()
+	identity := s.Identity
+	s.mu.Unlock()
+
+	if identity != "" {
+		requiredParticipants[identity] = struct{}{}
 	}
 	if s.VideoTrackID != "" {
 		requiredTracks[s.VideoTrackID] = struct{}{}
@@ -756,6 +773,10 @@ func (s *SDKSource) matchesMediaVideo(pub lksdk.TrackPublication, rp *lksdk.Remo
 	if s.VideoTrackID != "" {
 		return pub.SID() == s.VideoTrackID
 	}
+	// passthrough sets Identity for {publisher_identity}, which must not widen the match
+	if s.Passthrough {
+		return false
+	}
 	if s.Identity != "" {
 		if rp.Identity() != s.Identity {
 			return false
@@ -873,7 +894,7 @@ func (s *SDKSource) shouldEnableOneShotSenderReportSync() bool {
 func (s *SDKSource) shouldDisableAudioPTSAdjustment() bool {
 	return s.RequestType == types.RequestTypeRoomComposite || // SDK room composites are audio only - no need to adjust audio timestamps
 		s.RequestType == types.RequestTypeTemplate || // SDK templates are audio only - same as room composite
-		s.RequestType == types.RequestTypeTrack || // no A/V sync needed for single track requests
+		s.Passthrough || // no A/V sync needed for single track requests
 		s.AudioTempoController.Enabled
 }
 
