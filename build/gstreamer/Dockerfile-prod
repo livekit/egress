@@ -40,7 +40,6 @@ RUN apt-get update && \
         libdw1 \
         libegl1 \
         libepoxy0 \
-        libfdk-aac2 \
         libfaad2 \
         libfdk-aac2 \
         libflite1 \
