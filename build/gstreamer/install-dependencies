@@ -114,6 +114,7 @@ apt-get install -y --no-install-recommends \
   ruby \
   wget \
   xdg-dbus-proxy \
+  xz-utils \
   meson
 
 apt-get clean
