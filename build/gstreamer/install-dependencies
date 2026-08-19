@@ -14,6 +14,7 @@ apt-get install -y --no-install-recommends \
   flex \
   flite1-dev \
   gcc \
+  g++ \
   gettext \
   git \
   gperf \
