@@ -318,7 +318,9 @@ func (s *SDKSource) joinRoom() error {
 
 	case types.RequestTypeMedia:
 		if s.Info.RoomName == "" {
+			s.mu.Lock()
 			s.filenameReplacements["{room_name}"] = room.Name()
+			s.mu.Unlock()
 		}
 		if s.Passthrough {
 			fileIdentifier = s.TrackID
@@ -333,7 +335,14 @@ func (s *SDKSource) joinRoom() error {
 		return err
 	}
 
-	if err = s.UpdateInfoFromSDK(fileIdentifier, s.filenameReplacements, w, h); err != nil {
+	s.mu.Lock()
+	replacements := make(map[string]string, len(s.filenameReplacements))
+	for k, v := range s.filenameReplacements {
+		replacements[k] = v
+	}
+	s.mu.Unlock()
+
+	if err = s.UpdateInfoFromSDK(fileIdentifier, replacements, w, h); err != nil {
 		logger.Errorw("could not update file params", err)
 		return err
 	}
@@ -403,8 +412,12 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 	requiredParticipants := make(map[string]struct{})
 	requiredTracks := make(map[string]struct{})
 
-	if s.Identity != "" {
-		requiredParticipants[s.Identity] = struct{}{}
+	s.mu.Lock()
+	identity := s.Identity
+	s.mu.Unlock()
+
+	if identity != "" {
+		requiredParticipants[identity] = struct{}{}
 	}
 	if s.VideoTrackID != "" {
 		requiredTracks[s.VideoTrackID] = struct{}{}

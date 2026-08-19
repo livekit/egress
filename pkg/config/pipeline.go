@@ -727,6 +727,9 @@ func validatePassthrough(req egress.EgressRequest) error {
 	var videoTrackID string
 	switch v := media.Video.(type) {
 	case *livekit.MediaSource_VideoTrackId:
+		if v.VideoTrackId == "" {
+			return errors.ErrInvalidInput("passthrough video_track_id")
+		}
 		videoTrackID = v.VideoTrackId
 	case *livekit.MediaSource_ParticipantVideo:
 		return errors.ErrInvalidInput("passthrough participant_video")
@@ -743,6 +746,9 @@ func validatePassthrough(req egress.EgressRequest) error {
 			m, ok := media.Audio.Routes[0].Match.(*livekit.AudioRoute_TrackId)
 			if !ok {
 				return errors.ErrInvalidInput("passthrough audio route match")
+			}
+			if m.TrackId == "" {
+				return errors.ErrInvalidInput("passthrough audio route track_id")
 			}
 			audioTrackID = m.TrackId
 		}
