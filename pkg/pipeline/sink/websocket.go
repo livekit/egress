@@ -36,7 +36,14 @@ import (
 	"github.com/livekit/psrpc"
 )
 
-const pingPeriod = time.Second * 30
+const (
+	pingPeriod = time.Second * 30
+
+	// writeTimeout bounds every websocket write; without it, a consumer that
+	// stops reading blocks the appsink callback and samples accumulate in the
+	// unbounded appsink queue for as long as the connection stays up.
+	writeTimeout = time.Second * 30
+)
 
 type WebsocketSink struct {
 	*base
@@ -125,7 +132,7 @@ func (s *WebsocketSink) Start() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
-		_ = s.conn.WriteMessage(websocket.PongMessage, []byte("pong"))
+		_ = s.writeMessageLocked(websocket.PongMessage, []byte("pong"))
 		return nil
 	})
 
@@ -166,7 +173,7 @@ func (s *WebsocketSink) Start() error {
 				s.mu.Unlock()
 				return
 			}
-			_ = s.conn.WriteMessage(websocket.PingMessage, []byte("ping"))
+			_ = s.writeMessageLocked(websocket.PingMessage, []byte("ping"))
 			s.mu.Unlock()
 		}
 	}()
@@ -181,7 +188,15 @@ func (s *WebsocketSink) Write(p []byte) (int, error) {
 		return 0, io.EOF
 	}
 
-	return len(p), s.conn.WriteMessage(websocket.BinaryMessage, p)
+	return len(p), s.writeMessageLocked(websocket.BinaryMessage, p)
+}
+
+// writeMessageLocked writes with writeTimeout as the deadline. s.mu must be held.
+func (s *WebsocketSink) writeMessageLocked(messageType int, data []byte) error {
+	if err := s.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		return err
+	}
+	return s.conn.WriteMessage(messageType, data)
 }
 
 func (s *WebsocketSink) OnTrackMuted(_ string) {
@@ -214,7 +229,7 @@ func (s *WebsocketSink) writeMutedMessage(muted bool) error {
 		return nil
 	}
 
-	return s.conn.WriteMessage(websocket.TextMessage, data)
+	return s.writeMessageLocked(websocket.TextMessage, data)
 }
 
 func (s *WebsocketSink) UploadManifest(_ string) (string, bool, error) {
@@ -230,7 +245,7 @@ func (s *WebsocketSink) Close() error {
 		logger.Debugw("closing websocket connection")
 
 		// write close message for graceful disconnection
-		_ = s.conn.WriteMessage(websocket.CloseMessage, nil)
+		_ = s.writeMessageLocked(websocket.CloseMessage, nil)
 
 		// terminate connection and close the `closed` channel
 		_ = s.conn.Close()
