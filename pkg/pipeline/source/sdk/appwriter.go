@@ -204,7 +204,7 @@ func NewAppWriter(
 
 	case types.MimeTypeVP9:
 		depacketizer = &codecs.VP9Packet{}
-		w.translator = NewNullTranslator()
+		w.translator = NewVP9Translator()
 
 	default:
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
