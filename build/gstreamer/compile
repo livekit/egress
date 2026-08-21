@@ -4,7 +4,7 @@ set -euxo pipefail
 for repo in gstreamer libnice gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav; do
   pushd $repo
 
-  opts="-D prefix=/usr"
+  opts="-D prefix=/usr -D libdir=lib"
 
   if [[ $repo != "libnice" ]]; then
     opts="$opts -D tests=disabled -D doc=disabled"

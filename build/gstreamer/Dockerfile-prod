@@ -9,7 +9,7 @@ COPY compile /
 
 RUN /compile
 
-FROM ubuntu:24.04
+FROM ubuntu:26.10
 
 RUN apt-get update && \
     apt-get dist-upgrade -y && \
@@ -22,10 +22,10 @@ RUN apt-get update && \
         libaa1 \
         libaom3 \
         libass9 \
-        libavcodec60 \
-        libavfilter9 \
-        libavformat60 \
-        libavutil58 \
+        libavcodec62 \
+        libavfilter11 \
+        libavformat62 \
+        libavutil60 \
         libbs2b0 \
         libbz2-1.0 \
         libcaca0 \
@@ -40,7 +40,6 @@ RUN apt-get update && \
         libdw1 \
         libegl1 \
         libepoxy0 \
-        libfaac0 \
         libfaad2 \
         libfdk-aac2 \
         libflite1 \
@@ -49,7 +48,7 @@ RUN apt-get update && \
         libgl1 \
         libgles1 \
         libgles2 \
-        libglib2.0-0 \
+        libglib2.0-0t64 \
         libgme0 \
         libgmp10 \
         libgsl27 \
@@ -83,13 +82,13 @@ RUN apt-get update && \
         libshout3 \
         libsndfile1 \
         libsoundtouch1 \
-        libsoup2.4-1 \
+        libsoup-3.0-0 \
         libspandsp2 \
         libspeex1 \
         libsrt1.5-openssl \
         libsrtp2-1 \
-        libssl3 \
-        libtag1v5 \
+        libssl3t64 \
+        libtag2 \
         libtheora0 \
         libtwolame0 \
         libunwind8 \
