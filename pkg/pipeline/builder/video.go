@@ -586,6 +586,12 @@ func (b *VideoBin) addEncoder() error {
 
 		x264Enc.SetArg("speed-preset", "veryfast")
 
+		if b.conf.VideoEncoderThreads > 0 {
+			if err = x264Enc.SetProperty("threads", b.conf.VideoEncoderThreads); err != nil {
+				return errors.ErrGstPipelineError(err)
+			}
+		}
+
 		var options []string
 		disabledSceneCut := false
 		// Streaming outputs always set KeyFrameInterval, so this effectively disables scenecut for RTMP/SRT.
