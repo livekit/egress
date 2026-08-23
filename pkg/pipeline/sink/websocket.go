@@ -92,6 +92,7 @@ func newWebsocketSink(
 
 			// map the buffer to READ operation
 			samples := buffer.Map(gst.MapRead).Bytes()
+			defer buffer.Unmap()
 
 			// send to writer
 			_, err = websocketSink.Write(samples)
