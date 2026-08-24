@@ -114,7 +114,7 @@ func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.S
 		return nil, err
 	}
 
-	psrpcServer, err := rpc.NewEgressInternalServer(s, bus)
+	psrpcServer, err := rpc.NewEgressInternalServer(s, bus, rpc.WithServerObservability(logger.GetLogger()))
 	if err != nil {
 		return nil, err
 	}
