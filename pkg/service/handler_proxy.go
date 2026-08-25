@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 )
@@ -34,7 +35,7 @@ type HandlerRPCProxy struct {
 
 func NewHandlerRPCProxy(pm ProcessManager, bus psrpc.MessageBus) (*HandlerRPCProxy, error) {
 	p := &HandlerRPCProxy{pm: pm}
-	server, err := rpc.NewEgressHandlerServer(p, bus)
+	server, err := rpc.NewEgressHandlerServer(p, bus, rpc.WithServerObservability(logger.GetLogger()))
 	if err != nil {
 		return nil, err
 	}
