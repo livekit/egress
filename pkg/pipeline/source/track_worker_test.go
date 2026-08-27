@@ -156,3 +156,76 @@ func TestStateTransitions_ActiveState(t *testing.T) {
 		})
 	}
 }
+
+// newIdleWorker registers a worker without starting its goroutine, so the test
+// can inspect exactly which operations were delivered to it.
+func newIdleWorker(s *SDKSource, trackID string) *trackWorker {
+	w := &trackWorker{
+		trackID:    trackID,
+		opChan:     make(chan Operation, 100),
+		generation: atomic.Uint64{},
+	}
+	w.generation.Store(1)
+
+	s.workersMu.Lock()
+	s.workers[trackID] = w
+	s.workersMu.Unlock()
+
+	return w
+}
+
+func delivered(w *trackWorker) []OpType {
+	var ops []OpType
+	for {
+		select {
+		case op := <-w.opChan:
+			ops = append(ops, op.Type)
+		default:
+			return ops
+		}
+	}
+}
+
+func contains(ops []OpType, t OpType) bool {
+	for _, op := range ops {
+		if op == t {
+			return true
+		}
+	}
+	return false
+}
+
+// TestPlayingLostAfterCloseWriters: once CloseWriters() sets closing, submitOp()
+// drops OpPlaying, so a writer whose appsrc was linked just before shutdown is
+// never told it reached PLAYING. This is why cleanup keys off addedToPipeline
+// rather than playing (CS-1547).
+func TestPlayingLostAfterCloseWriters(t *testing.T) {
+	s := testSDKSource(t)
+	w := newIdleWorker(s, "track-1")
+
+	// shutdown begins while the new appsrc is mid state-change
+	s.CloseWriters()
+
+	// GStreamer reports PLAYING only afterwards
+	s.Playing("track-1")
+
+	ops := delivered(w)
+	require.True(t, contains(ops, OpClose), "worker should have received OpClose, got %v", ops)
+	require.False(t, contains(ops, OpPlaying),
+		"OpPlaying is dropped by submitOp() once closing is set, so writer.Playing() "+
+			"is never called. ops=%v", ops)
+}
+
+// TestPlayingDeliveredBeforeClose is the control: with closing unset, OpPlaying
+// is delivered normally.
+func TestPlayingDeliveredBeforeClose(t *testing.T) {
+	s := testSDKSource(t)
+	w := newIdleWorker(s, "track-1")
+
+	s.Playing("track-1")
+	s.CloseWriters()
+
+	ops := delivered(w)
+	require.True(t, contains(ops, OpPlaying), "OpPlaying should be delivered before closing, got %v", ops)
+	require.True(t, contains(ops, OpClose), "worker should have received OpClose, got %v", ops)
+}

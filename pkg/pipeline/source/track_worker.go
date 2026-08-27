@@ -310,7 +310,22 @@ func (s *SDKSource) handleSubscribe(w *trackWorker, trackID string, state *worke
 	// For post-init subscriptions, notify pipeline to add track
 	if isPostInit {
 		<-s.callbacks.BuildReady
+		// Mark before linking: the writer runs on its own goroutine and must never
+		// find its appsrc in the pipeline without knowing it owes an EOS (CS-1547).
+		writer.MarkAddedToPipeline()
 		s.callbacks.OnTrackAdded(ts)
+	} else {
+		// Tracks present at startup are linked by BuildPipeline(). BuildReady closes
+		// once the pipeline is assigned, so cleanup can never reach a nil pipeline.
+		go func() {
+			select {
+			case <-s.callbacks.BuildReady:
+				writer.MarkAddedToPipeline()
+			case <-writer.Finished():
+				// Ended before the pipeline was built; doCleanup tears down its
+				// source bin, so no EOS is owed.
+			}
+		}()
 	}
 
 	return writer

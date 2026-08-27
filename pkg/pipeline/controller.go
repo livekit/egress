@@ -489,6 +489,15 @@ func (c *Controller) trackStreamRetry(ctx context.Context, stream *config.Stream
 }
 
 func (c *Controller) onEOSSent() {
+	// A track ending mid-build reaches this before BuildPipeline() assigns c.p:
+	// reading it would panic and would race with that write. BuildReady closes
+	// once c.p is set, so an open channel means there is no pipeline to stop.
+	select {
+	case <-c.callbacks.BuildReady:
+	default:
+		return
+	}
+
 	// for video-only track/track composite, EOS might have already
 	// made it through the pipeline by the time endRecording is closed
 	if (c.Passthrough || c.RequestType == types.RequestTypeTrackComposite) && !c.AudioEnabled {
