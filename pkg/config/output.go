@@ -255,7 +255,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 			p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
 			p.OutputCount.Inc()
 			p.FinalizationRequired = true
-			if p.VideoEnabled {
+			if p.VideoEnabled && !p.Passthrough {
 				p.VideoEncoding = true
 			}
 
@@ -318,7 +318,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 
 			p.Outputs[egressType] = []OutputConfig{conf}
 			p.OutputCount.Add(int32(len(stream.Urls)))
-			if p.VideoEnabled {
+			if p.VideoEnabled && !p.Passthrough {
 				p.VideoEncoding = true
 			}
 
@@ -344,7 +344,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 			p.Outputs[types.EgressTypeSegments] = []OutputConfig{conf}
 			p.OutputCount.Inc()
 			p.FinalizationRequired = true
-			if p.VideoEnabled {
+			if p.VideoEnabled && !p.Passthrough {
 				p.VideoEncoding = true
 			}
 

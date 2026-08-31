@@ -37,6 +37,15 @@
       "minimumReleaseAge": null
     },
     {
+      "description": "go-gst is overridden by a replace directive pointing at our fork, so its require line is only a version floor and bumping it changes nothing; go-glib is held at the version the fork builds against. Renovate keeps no link between a require line and the replace that overrides it, so this list is maintained by hand alongside go.mod; the fork itself is still updated.",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": [
+        "github.com/go-gst/go-gst",
+        "github.com/go-gst/go-glib"
+      ],
+      "enabled": false
+    },
+    {
       "description": "The go directive is the module minimum, owned by the go toolchain and dependency requirements; the build toolchain is pinned in .go-version instead",
       "matchManagers": ["gomod"],
       "matchDepTypes": ["golang"],

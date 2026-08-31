@@ -54,6 +54,14 @@ type imageUpdate struct {
 	filename  string
 }
 
+// covers frame bursts that outpace the capture interval: videorate's
+// skip-to-first plus the first rate-aligned frame at startup, and the EOS flush
+const minPendingUploads = 4
+
+func imageQueueCapacity(maxUploadQueue int, captureInterval uint32) int {
+	return max((maxUploadQueue*60)/int(captureInterval), minPendingUploads)
+}
+
 func newImageSink(
 	p *gstreamer.Pipeline,
 	conf *config.PipelineConfig,
@@ -74,7 +82,6 @@ func newImageSink(
 		return nil, err
 	}
 
-	maxPendingUploads := (conf.MaxUploadQueue * 60) / int(o.CaptureInterval)
 	return &ImageSink{
 		base: &base{
 			bin: imageBin,
@@ -85,25 +92,29 @@ func newImageSink(
 
 		conf:          conf,
 		callbacks:     callbacks,
-		createdImages: make(chan *imageUpdate, maxPendingUploads),
+		createdImages: make(chan *imageUpdate, imageQueueCapacity(conf.MaxUploadQueue, o.CaptureInterval)),
 	}, nil
 }
 
 func (s *ImageSink) Start() error {
 	go func() {
-		var err error
-		defer func() {
-			if err != nil {
-				s.callbacks.OnError(err)
-			}
-			s.done.Break()
-		}()
+		defer s.done.Break()
 
+		// keep draining after a failure: NewImage sends from the pipeline's bus
+		// thread, and a send with no receiver would block it forever
+		var failed bool
 		for update := range s.createdImages {
-			err = s.handleNewImage(update)
-			if err != nil {
-				logger.Errorw("new image handling failed", err)
-				return
+			if failed {
+				continue
+			}
+			if err := s.handleNewImage(update); err != nil {
+				if errors.IsDestinationError(err) {
+					logger.Warnw("new image handling failed", err)
+				} else {
+					logger.Errorw("new image handling failed", err)
+				}
+				failed = true
+				s.callbacks.OnError(err)
 			}
 		}
 	}()
@@ -163,12 +174,16 @@ func (s *ImageSink) NewImage(filepath string, ts uint64) error {
 
 	filename := filepath[len(s.LocalDir)+1:]
 
-	s.createdImages <- &imageUpdate{
+	// never block: this is called from the pipeline's bus thread
+	select {
+	case s.createdImages <- &imageUpdate{
 		filename:  filename,
 		timestamp: ts,
+	}:
+		return nil
+	default:
+		return errors.ErrUploadQueueFull("image", cap(s.createdImages))
 	}
-
-	return nil
 }
 
 func (s *ImageSink) UploadManifest(filepath string) (string, bool, error) {

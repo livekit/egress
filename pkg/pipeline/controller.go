@@ -431,37 +431,6 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 	return errs.ToError()
 }
 
-func (c *Controller) UpdateEgress(ctx context.Context, req *livekit.UpdateEgressRequest) error {
-	ctx, span := tracer.Start(ctx, "Pipeline.UpdateEgress")
-	defer span.End()
-
-	errs := errors.ErrArray{}
-
-	// update stream targets
-	if len(req.AddStreamUrls) > 0 || len(req.RemoveStreamUrls) > 0 {
-		streamReq := &livekit.UpdateStreamRequest{
-			EgressId:         req.EgressId,
-			AddOutputUrls:    req.AddStreamUrls,
-			RemoveOutputUrls: req.RemoveStreamUrls,
-		}
-		if err := c.UpdateStream(ctx, streamReq); err != nil {
-			errs.AppendErr(err)
-		}
-	}
-
-	// update layout — not yet supported
-	if req.Layout != "" {
-		errs.AppendErr(errors.ErrFeatureDisabled("layout update"))
-	}
-
-	// update URL — not yet supported
-	if req.Url != "" {
-		errs.AppendErr(errors.ErrFeatureDisabled("url update"))
-	}
-
-	return errs.ToError()
-}
-
 func (c *Controller) streamFinished(ctx context.Context, stream *config.Stream) error {
 	stream.StreamInfo.Status = livekit.StreamInfo_FINISHED
 	stream.UpdateEndTime(time.Now().UnixNano())
@@ -498,7 +467,7 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 
 	// fail egress if no outputs remaining
 	if c.OutputCount.Load() == 0 {
-		return psrpc.NewError(psrpc.Unavailable, streamErr)
+		return psrpc.NewError(psrpc.Unavailable, errors.MarkDestinationError(streamErr))
 	}
 
 	logger.Infow("stream failed",
@@ -529,7 +498,7 @@ func (c *Controller) trackStreamRetry(ctx context.Context, stream *config.Stream
 func (c *Controller) onEOSSent() {
 	// for video-only track/track composite, EOS might have already
 	// made it through the pipeline by the time endRecording is closed
-	if (c.RequestType == types.RequestTypeTrack || c.RequestType == types.RequestTypeTrackComposite) && !c.AudioEnabled {
+	if (c.Passthrough || c.RequestType == types.RequestTypeTrackComposite) && !c.AudioEnabled {
 		// this will not actually send a second EOS, but will make sure everything is in the correct state
 		c.SendEOS(context.Background(), livekit.EndReasonSrcClosed)
 	}
@@ -619,7 +588,11 @@ func (c *Controller) sendEOS() {
 }
 
 func (c *Controller) OnError(err error) {
-	logger.Errorw("controller onError invoked", err)
+	if errors.IsDestinationError(err) {
+		logger.Warnw("controller onError invoked", err)
+	} else {
+		logger.Errorw("controller onError invoked", err)
+	}
 	if errors.Is(err, errors.ErrPipelineFrozen) && c.Debug.EnableProfiling {
 		c.generateDotFile("error")
 		c.generatePProf()

@@ -169,10 +169,10 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 		}
 
 		var expectedVideoEncoding bool
-		switch test.requestType {
-		case types.RequestTypeTrack:
+		switch {
+		case test.requestType == types.RequestTypeTrack || test.passthrough:
 			expectedVideoEncoding = false
-		case types.RequestTypeParticipant:
+		case test.requestType == types.RequestTypeParticipant:
 			expectedVideoEncoding = true
 		default:
 			expectedVideoEncoding = !test.audioOnly

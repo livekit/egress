@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 )
@@ -34,7 +35,7 @@ type HandlerRPCProxy struct {
 
 func NewHandlerRPCProxy(pm ProcessManager, bus psrpc.MessageBus) (*HandlerRPCProxy, error) {
 	p := &HandlerRPCProxy{pm: pm}
-	server, err := rpc.NewEgressHandlerServer(p, bus)
+	server, err := rpc.NewEgressHandlerServer(p, bus, rpc.WithServerObservability(logger.GetLogger()))
 	if err != nil {
 		return nil, err
 	}
@@ -54,17 +55,12 @@ func (p *HandlerRPCProxy) RegisterEgress(egressID string) error {
 		p.DeregisterEgress(egressID)
 		return err
 	}
-	if err := p.server.RegisterUpdateEgressTopic(egressID); err != nil {
-		p.DeregisterEgress(egressID)
-		return err
-	}
 	return nil
 }
 
 func (p *HandlerRPCProxy) DeregisterEgress(egressID string) {
 	p.server.DeregisterUpdateStreamTopic(egressID)
 	p.server.DeregisterStopEgressTopic(egressID)
-	p.server.DeregisterUpdateEgressTopic(egressID)
 }
 
 func (p *HandlerRPCProxy) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) (*livekit.EgressInfo, error) {
@@ -73,14 +69,6 @@ func (p *HandlerRPCProxy) UpdateStream(ctx context.Context, req *livekit.UpdateS
 		return nil, err
 	}
 	return client.UpdateStream(ctx, req, grpc.WaitForReady(true))
-}
-
-func (p *HandlerRPCProxy) UpdateEgress(ctx context.Context, req *livekit.UpdateEgressRequest) (*livekit.EgressInfo, error) {
-	client, err := p.pm.GetGRPCClient(req.EgressId)
-	if err != nil {
-		return nil, err
-	}
-	return client.UpdateEgress(ctx, req, grpc.WaitForReady(true))
 }
 
 func (p *HandlerRPCProxy) StopEgress(ctx context.Context, req *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {

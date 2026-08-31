@@ -195,7 +195,7 @@ func (s *SDKSource) reportSubscribeError(isPostInit bool, resultChan chan<- subs
 
 func (s *SDKSource) validateSubscription(op Operation) error {
 	// Check websocket/video incompatibility for Track requests
-	if s.RequestType == types.RequestTypeTrack &&
+	if s.Passthrough &&
 		op.Pub.Kind() == lksdk.TrackKindVideo &&
 		s.Outputs[types.EgressTypeWebsocket] != nil {
 		mimeType := types.MimeType(strings.ToLower(op.Track.Codec().MimeType))
@@ -238,14 +238,7 @@ func (s *SDKSource) updatePreInitStateLocked(op Operation, ts *config.TrackSourc
 	track := op.Track
 	pub := op.Pub
 	rp := op.RemoteParticipant
-	switch s.RequestType {
-	case types.RequestTypeTrackComposite:
-		if s.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
-			s.Identity = rp.Identity()
-			s.filenameReplacements["{publisher_identity}"] = s.Identity
-		}
-
-	case types.RequestTypeTrack:
+	if s.Passthrough {
 		s.Identity = rp.Identity()
 		s.TrackKind = pub.Kind().String()
 		s.TrackSource = strings.ToLower(pub.Source().String())
@@ -256,6 +249,11 @@ func (s *SDKSource) updatePreInitStateLocked(op Operation, ts *config.TrackSourc
 		s.filenameReplacements["{track_type}"] = s.TrackKind
 		s.filenameReplacements["{track_source}"] = s.TrackSource
 		s.filenameReplacements["{publisher_identity}"] = s.Identity
+	} else if s.RequestType == types.RequestTypeTrackComposite {
+		if s.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
+			s.Identity = rp.Identity()
+			s.filenameReplacements["{publisher_identity}"] = s.Identity
+		}
 	}
 }
 
@@ -424,10 +422,11 @@ func (s *SDKSource) doCleanup(trackID string, state *workerState) {
 
 	// Blocking cleanup - only affects this track's worker
 	active := s.active.Dec()
-	shouldContinue := s.RequestType == types.RequestTypeParticipant ||
-		s.RequestType == types.RequestTypeRoomComposite ||
-		s.RequestType == types.RequestTypeTemplate ||
-		s.RequestType == types.RequestTypeMedia
+	shouldContinue := !s.Passthrough &&
+		(s.RequestType == types.RequestTypeParticipant ||
+			s.RequestType == types.RequestTypeRoomComposite ||
+			s.RequestType == types.RequestTypeTemplate ||
+			s.RequestType == types.RequestTypeMedia)
 
 	if shouldContinue {
 		trackKind := writer.TrackKind()
