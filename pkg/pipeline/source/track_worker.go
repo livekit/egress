@@ -311,7 +311,7 @@ func (s *SDKSource) handleSubscribe(w *trackWorker, trackID string, state *worke
 	if isPostInit {
 		<-s.callbacks.BuildReady
 		// Mark before linking: the writer runs on its own goroutine and must never
-		// find its appsrc in the pipeline without knowing it owes an EOS (CS-1547).
+		// find its appsrc in the pipeline without knowing it owes an EOS.
 		writer.MarkAddedToPipeline()
 		s.callbacks.OnTrackAdded(ts)
 	} else {

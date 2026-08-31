@@ -171,7 +171,7 @@ func TestUnsolicitedEOSBeforeSendEOS(t *testing.T) {
 
 // TestOnEOSSentBeforePipelineBuilt: a writer whose track EOFs during the build
 // phase reaches onEOSSent() before BuildPipeline() has assigned c.p. It must
-// neither dereference the pipeline nor start the EOS sequence (CS-1547).
+// neither dereference the pipeline nor start the EOS sequence.
 //
 // The config is the one combination that makes onEOSSent() forward to SendEOS():
 // passthrough / track composite with no audio.

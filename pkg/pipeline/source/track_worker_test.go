@@ -198,7 +198,7 @@ func contains(ops []OpType, t OpType) bool {
 // TestPlayingLostAfterCloseWriters: once CloseWriters() sets closing, submitOp()
 // drops OpPlaying, so a writer whose appsrc was linked just before shutdown is
 // never told it reached PLAYING. This is why cleanup keys off addedToPipeline
-// rather than playing (CS-1547).
+// rather than playing.
 func TestPlayingLostAfterCloseWriters(t *testing.T) {
 	s := testSDKSource(t)
 	w := newIdleWorker(s, "track-1")

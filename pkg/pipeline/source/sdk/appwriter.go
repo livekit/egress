@@ -273,7 +273,7 @@ func (w *AppWriter) start() {
 	if w.shouldSendEOS() {
 		if !w.playing.IsBroken() {
 			// Linked into the pipeline but never reported PLAYING: the CloseWriters
-			// race (CS-1547). Expect this to be rare and confined to shutdown.
+			// race. Expect this to be rare and confined to shutdown.
 			w.logger.Warnw("appsrc never reported PLAYING, sending EOS anyway", nil,
 				"active", w.active.Load(),
 				"draining", w.draining.IsBroken(),
@@ -693,7 +693,7 @@ func (w *AppWriter) MarkAddedToPipeline() {
 //
 // The test is whether the appsrc is linked into the pipeline, not whether it was
 // reported PLAYING: once CloseWriters() sets closing that notification is dropped,
-// while the pipeline still waits on the pad (CS-1547).
+// while the pipeline still waits on the pad.
 func (w *AppWriter) shouldSendEOS() bool {
 	return w.addedToPipeline.IsBroken()
 }
