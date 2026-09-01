@@ -145,6 +145,8 @@ func (c *ServiceConfig) InitDefaults() {
 	if c.TemplatePort == 0 {
 		c.TemplatePort = defaultTemplatePort
 	}
+	// must run before the default is applied below
+	c.CustomTemplateBase = c.TemplateBase != ""
 	if c.TemplateBase == "" {
 		c.TemplateBase = fmt.Sprintf(defaultTemplateBaseTemplate, c.TemplatePort)
 	}

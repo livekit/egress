@@ -45,6 +45,7 @@ type VideoBin struct {
 	pads               map[string]*gst.Pad
 	names              map[string]string
 	muted              map[string]bool // pad name -> muted; layout recalcs must not un-mute
+	crops              map[string]*gst.Element
 	lastDimensions     map[string]videoDimensions
 	selector           *gst.Element
 	rawVideoTee        *gst.Element
@@ -172,6 +173,7 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	delete(b.names, trackID)
 	delete(b.pads, name)
 	delete(b.muted, name)
+	delete(b.crops, name)
 	delete(b.lastDimensions, trackID)
 	b.closeProbe(name)
 
@@ -327,6 +329,10 @@ func (b *VideoBin) applyLayoutLocked(pads []PadLayout) ([]pendingDimensions, err
 			return nil, errors.ErrGstPipelineError(err)
 		}
 
+		if err := b.setCoverCrop(name, pl.W, pl.H); err != nil {
+			return nil, err
+		}
+
 		if b.setVideoDimensions != nil && pl.W > 0 && pl.H > 0 {
 			d := videoDimensions{width: pl.W, height: pl.H}
 			if b.lastDimensions[pl.TrackID] != d {
@@ -395,6 +401,7 @@ func (b *VideoBin) buildSDKInput() error {
 	b.pads = make(map[string]*gst.Pad)
 	b.names = make(map[string]string)
 	b.muted = make(map[string]bool)
+	b.crops = make(map[string]*gst.Element)
 	b.lastDimensions = make(map[string]videoDimensions)
 
 	if b.conf.VideoDecoding {
@@ -659,7 +666,58 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		return nil, err
 	}
 
+	if b.conf.Compositing {
+		// inputs arrive at canvas size, so without this the compositor stretches them into the cell
+		crop, err := gst.NewElement("videocrop")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = appSrcBin.AddElement(crop); err != nil {
+			return nil, err
+		}
+
+		b.mu.Lock()
+		b.crops[name] = crop
+		b.mu.Unlock()
+	}
+
 	return appSrcBin, nil
+}
+
+// setCoverCrop centers a crop of the canvas-sized frame at the cell's aspect ratio
+func (b *VideoBin) setCoverCrop(name string, cellW, cellH int) error {
+	crop, ok := b.crops[name]
+	if !ok || cellW <= 0 || cellH <= 0 {
+		return nil
+	}
+
+	srcW, srcH := int(b.conf.Width), int(b.conf.Height)
+	cellWiderThanSource := cellW*srcH > cellH*srcW
+
+	var left, right, top, bottom int
+	if cellWiderThanSource {
+		keep := srcW * cellH / cellW
+		top = (srcH - keep) / 2
+		bottom = srcH - keep - top
+	} else {
+		keep := srcH * cellW / cellH
+		left = (srcW - keep) / 2
+		right = srcW - keep - left
+	}
+
+	if err := crop.SetProperty("left", left); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err := crop.SetProperty("right", right); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err := crop.SetProperty("top", top); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err := crop.SetProperty("bottom", bottom); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	return nil
 }
 
 func (b *VideoBin) addCompositor() error {
