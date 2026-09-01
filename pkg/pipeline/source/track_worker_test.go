@@ -186,15 +186,6 @@ func delivered(w *trackWorker) []OpType {
 	}
 }
 
-func contains(ops []OpType, t OpType) bool {
-	for _, op := range ops {
-		if op == t {
-			return true
-		}
-	}
-	return false
-}
-
 // TestPlayingLostAfterCloseWriters: once CloseWriters() sets closing, submitOp()
 // drops OpPlaying, so a writer whose appsrc was linked just before shutdown is
 // never told it reached PLAYING. This is why cleanup keys off addedToPipeline
@@ -210,10 +201,9 @@ func TestPlayingLostAfterCloseWriters(t *testing.T) {
 	s.Playing("track-1")
 
 	ops := delivered(w)
-	require.True(t, contains(ops, OpClose), "worker should have received OpClose, got %v", ops)
-	require.False(t, contains(ops, OpPlaying),
-		"OpPlaying is dropped by submitOp() once closing is set, so writer.Playing() "+
-			"is never called. ops=%v", ops)
+	require.Contains(t, ops, OpClose)
+	require.NotContains(t, ops, OpPlaying,
+		"OpPlaying is dropped once closing is set, so writer.Playing() is never called")
 }
 
 // TestPlayingDeliveredBeforeClose is the control: with closing unset, OpPlaying
@@ -226,6 +216,6 @@ func TestPlayingDeliveredBeforeClose(t *testing.T) {
 	s.CloseWriters()
 
 	ops := delivered(w)
-	require.True(t, contains(ops, OpPlaying), "OpPlaying should be delivered before closing, got %v", ops)
-	require.True(t, contains(ops, OpClose), "worker should have received OpClose, got %v", ops)
+	require.Contains(t, ops, OpPlaying)
+	require.Contains(t, ops, OpClose)
 }
