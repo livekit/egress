@@ -44,6 +44,8 @@ type VideoBin struct {
 	nextID             int
 	pads               map[string]*gst.Pad
 	names              map[string]string
+	muted              map[string]bool // pad name -> muted; layout recalcs must not un-mute
+	lastDimensions     map[string]videoDimensions
 	selector           *gst.Element
 	rawVideoTee        *gst.Element
 	layout             *LayoutManager // nil when not compositing
@@ -55,6 +57,11 @@ type VideoBin struct {
 
 	probesMu deadlock.Mutex
 	probes   map[string]*keyframeProbe
+}
+
+type videoDimensions struct {
+	width  int
+	height int
 }
 
 func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, setVideoDimensions func(string, int, int)) error {
@@ -143,7 +150,10 @@ func (b *VideoBin) onTrackAdded(ts *config.TrackSource) {
 				source = TrackSourceScreenShare
 			}
 			pads := b.layout.AddTrack(ts.TrackID, ts.ParticipantIdentity, source)
-			b.applyLayout(pads)
+			if err := b.applyLayout(pads); err != nil {
+				b.bin.OnError(err)
+				return
+			}
 		}
 	}
 }
@@ -161,6 +171,8 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	}
 	delete(b.names, trackID)
 	delete(b.pads, name)
+	delete(b.muted, name)
+	delete(b.lastDimensions, trackID)
 	b.closeProbe(name)
 
 	if !b.conf.Compositing && b.selectedPad == name {
@@ -174,7 +186,10 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 
 	if b.layout != nil {
 		pads := b.layout.RemoveTrack(trackID)
-		b.applyLayout(pads)
+		if err := b.applyLayout(pads); err != nil {
+			b.bin.OnError(err)
+			return
+		}
 	}
 
 	if err := b.bin.RemoveSourceBin(name); err != nil {
@@ -244,18 +259,38 @@ func (b *VideoBin) onActiveSpeakersChanged(speakers []lksdk.Participant) {
 
 	pads := b.layout.UpdateSpeakers(speakerInfos)
 	if pads != nil {
-		b.applyLayout(pads)
+		if err := b.applyLayout(pads); err != nil {
+			b.bin.OnError(err)
+		}
 	}
 }
 
-func (b *VideoBin) applyLayout(pads []PadLayout) {
+func (b *VideoBin) applyLayout(pads []PadLayout) error {
 	b.mu.Lock()
-	defer b.mu.Unlock()
+	pending, err := b.applyLayoutLocked(pads)
+	b.mu.Unlock()
+	if err != nil {
+		return err
+	}
 
-	b.applyLayoutLocked(pads)
+	// UpdateTrackDimensions signals the publisher, so it must not run under b.mu
+	for _, d := range pending {
+		b.setVideoDimensions(d.trackID, d.width, d.height)
+	}
+	return nil
 }
 
-func (b *VideoBin) applyLayoutLocked(pads []PadLayout) {
+type pendingDimensions struct {
+	trackID string
+	width   int
+	height  int
+}
+
+// applyLayoutLocked writes the layout onto each pad and returns the dimension
+// updates the caller must send after releasing b.mu.
+func (b *VideoBin) applyLayoutLocked(pads []PadLayout) ([]pendingDimensions, error) {
+	var pending []pendingDimensions
+
 	for _, pl := range pads {
 		name, ok := b.names[pl.TrackID]
 		if !ok {
@@ -265,17 +300,43 @@ func (b *VideoBin) applyLayoutLocked(pads []PadLayout) {
 		if !ok {
 			continue
 		}
-		pad.SetProperty("xpos", pl.X)
-		pad.SetProperty("ypos", pl.Y)
-		pad.SetProperty("width", pl.W)
-		pad.SetProperty("height", pl.H)
-		pad.SetProperty("alpha", pl.Alpha)
-		pad.SetProperty("zorder", pl.ZOrder)
+
+		// the layout calculators are unaware of mute state - it lives only as the
+		// pad's alpha - so a muted track must stay hidden across a recalc
+		alpha := pl.Alpha
+		if b.muted[name] {
+			alpha = 0
+		}
+
+		if err := pad.SetProperty("xpos", pl.X); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err := pad.SetProperty("ypos", pl.Y); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err := pad.SetProperty("width", pl.W); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err := pad.SetProperty("height", pl.H); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err := pad.SetProperty("alpha", alpha); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err := pad.SetProperty("zorder", pl.ZOrder); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
 
 		if b.setVideoDimensions != nil && pl.W > 0 && pl.H > 0 {
-			b.setVideoDimensions(pl.TrackID, pl.W, pl.H)
+			d := videoDimensions{width: pl.W, height: pl.H}
+			if b.lastDimensions[pl.TrackID] != d {
+				b.lastDimensions[pl.TrackID] = d
+				pending = append(pending, pendingDimensions{trackID: pl.TrackID, width: pl.W, height: pl.H})
+			}
 		}
 	}
+
+	return pending, nil
 }
 
 func (b *VideoBin) buildWebInput() error {
@@ -333,6 +394,8 @@ func (b *VideoBin) buildWebInput() error {
 func (b *VideoBin) buildSDKInput() error {
 	b.pads = make(map[string]*gst.Pad)
 	b.names = make(map[string]string)
+	b.muted = make(map[string]bool)
+	b.lastDimensions = make(map[string]videoDimensions)
 
 	if b.conf.VideoDecoding {
 		if b.conf.Compositing {
@@ -363,7 +426,9 @@ func (b *VideoBin) buildSDKInput() error {
 				source = TrackSourceScreenShare
 			}
 			pads := b.layout.AddTrack(vt.TrackID, vt.ParticipantIdentity, source)
-			b.applyLayout(pads)
+			if err := b.applyLayout(pads); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -392,7 +457,9 @@ func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
 	}
 
 	if b.conf.VideoDecoding {
-		b.createSrcPad(ts.TrackID, name)
+		if err = b.createSrcPad(ts.TrackID, name); err != nil {
+			return err
+		}
 	}
 
 	if err = b.bin.AddSourceBin(appSrcBin); err != nil {
@@ -675,6 +742,14 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 	if err != nil {
 		return err
 	}
+	if !b.conf.Compositing {
+		// hold the test src behind a late-arriving real track so the monotonic PTS
+		// probe below doesn't drop the track's first frames. The compositor path
+		// doesn't need it - videotestsrc runs continuously underneath the stack.
+		if err = queue.SetProperty("min-threshold-time", uint64(videoTestSrcDelay)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+	}
 
 	caps, err := b.newVideoCapsFilter(true)
 	if err != nil {
@@ -687,12 +762,24 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 
 	pad := b.selector.GetRequestPad("sink_%u")
 	if b.conf.Compositing {
-		pad.SetProperty("xpos", 0)
-		pad.SetProperty("ypos", 0)
-		pad.SetProperty("width", int(b.conf.Width))
-		pad.SetProperty("height", int(b.conf.Height))
-		pad.SetProperty("zorder", uint(0))
-		pad.SetProperty("alpha", 1.0)
+		if err = pad.SetProperty("xpos", 0); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = pad.SetProperty("ypos", 0); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = pad.SetProperty("width", int(b.conf.Width)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = pad.SetProperty("height", int(b.conf.Height)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = pad.SetProperty("zorder", uint(0)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = pad.SetProperty("alpha", 1.0); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
 	} else {
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			pts := uint64(info.GetBuffer().PresentationTimestamp())
@@ -913,23 +1000,33 @@ func (b *VideoBin) getSrcPad(name string) *gst.Pad {
 	return b.pads[name]
 }
 
-func (b *VideoBin) createSrcPad(trackID, name string) {
+func (b *VideoBin) createSrcPad(trackID, name string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.createSrcPadLocked(trackID, name)
+	return b.createSrcPadLocked(trackID, name)
 }
 
-func (b *VideoBin) createSrcPadLocked(trackID, name string) {
+func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 	b.names[trackID] = name
 
 	pad := b.selector.GetRequestPad("sink_%u")
 	if b.conf.Compositing {
-		pad.SetProperty("xpos", 0)
-		pad.SetProperty("ypos", 0)
-		pad.SetProperty("width", int(b.conf.Width))
-		pad.SetProperty("height", int(b.conf.Height))
-		pad.SetProperty("zorder", uint(1))
+		if err := pad.SetProperty("xpos", 0); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err := pad.SetProperty("ypos", 0); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err := pad.SetProperty("width", int(b.conf.Width)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err := pad.SetProperty("height", int(b.conf.Height)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err := pad.SetProperty("zorder", uint(1)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
 	} else {
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			pts := uint64(info.GetBuffer().PresentationTimestamp())
@@ -945,6 +1042,7 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) {
 	}
 
 	b.pads[name] = pad
+	return nil
 }
 
 func (b *VideoBin) setTrackVisible(name string, visible bool) error {
@@ -968,6 +1066,8 @@ func (b *VideoBin) setTrackVisibleLocked(name string, visible bool) error {
 		if err := pad.SetProperty("alpha", alpha); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
+		// remembered so a later layout recalc doesn't un-mute the track
+		b.muted[name] = !visible
 
 		logger.Debugw("track visibility changed", "name", name, "visible", visible)
 		return nil
