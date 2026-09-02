@@ -454,11 +454,6 @@ func (b *AudioBin) addEncoder() error {
 }
 
 func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel livekit.AudioChannel, isLeaky bool) error {
-	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
-	if err != nil {
-		return err
-	}
-
 	audioQueue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_input_queue", audioBinName), p.Latency.PipelineLatency, isLeaky)
 	if err != nil {
 		return err
@@ -479,7 +474,12 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel livek
 		return err
 	}
 
-	return b.AddElements(rate, audioQueue, audioConvert, audioResample, capsFilter)
+	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
+	if err != nil {
+		return err
+	}
+
+	return b.AddElements(audioQueue, audioConvert, audioResample, capsFilter, rate)
 }
 
 func installPitchProbes(pacer *audioPacer) {
@@ -571,12 +571,6 @@ func installPitchProbes(pacer *audioPacer) {
 }
 
 func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.PipelineConfig, channel livekit.AudioChannel, isLeaky bool) (*audioPacer, error) {
-	// add audio rate element to handle discontinuities or codec DTX
-	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
-	if err != nil {
-		return nil, err
-	}
-
 	q, err := gstreamer.BuildQueue(fmt.Sprintf("%s_input_queue", audioBinName), p.Latency.PipelineLatency, isLeaky)
 	if err != nil {
 		return nil, err
@@ -593,6 +587,11 @@ func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.Pipeli
 
 	// go to float for pitch element
 	f32caps, err := newAudioFloatCapsFilter(p, channel)
+	if err != nil {
+		return nil, err
+	}
+
+	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
 	if err != nil {
 		return nil, err
 	}
@@ -628,7 +627,7 @@ func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.Pipeli
 
 	installPitchProbes(pacer)
 
-	if err := bin.AddElements(rate, q, ac1, ar1, f32caps, pitch, ac2, s16caps); err != nil {
+	if err := bin.AddElements(q, ac1, ar1, f32caps, rate, pitch, ac2, s16caps); err != nil {
 		return nil, err
 	}
 	return pacer, nil
