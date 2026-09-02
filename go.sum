@@ -152,8 +152,8 @@ github.com/fsnotify/fsnotify v1.10.1 h1:b0/UzAf9yR5rhf3RPm9gf3ehBPpf0oZKIjtpKrx5
 github.com/fsnotify/fsnotify v1.10.1/go.mod h1:TLheqan6HD6GBK6PrDWyDPBaEV8LspOxvPSjC+bVfgo=
 github.com/gammazero/deque v1.2.1 h1:9fnQVFCCZ9/NOc7ccTNqzoKd1tCWOqeI05/lPqFPMGQ=
 github.com/gammazero/deque v1.2.1/go.mod h1:5nSFkzVm+afG9+gy0VIowlqVAW4N8zNcMne+CMQVD2g=
-github.com/go-gst/go-glib v1.4.1-0.20250303082535-35ebad1471fd h1:mKnu0UUFvvDMEeK4HXxmX+haP6+qppIvCW0HgUOfwmk=
-github.com/go-gst/go-glib v1.4.1-0.20250303082535-35ebad1471fd/go.mod h1:ZWT4LXOO2PH8lSNu/dR5O2yoNQJKEgmijNa2d7nByK8=
+github.com/go-gst/go-glib v0.0.0-20250303082535-35ebad1471fd h1:gll1/7cD2T5m2AqStecI9lxL8LcSCDOOvZ5N8/dZkuk=
+github.com/go-gst/go-glib v0.0.0-20250303082535-35ebad1471fd/go.mod h1:ZWT4LXOO2PH8lSNu/dR5O2yoNQJKEgmijNa2d7nByK8=
 github.com/go-gst/go-pointer v0.0.0-20241127163939-ba766f075b4c h1:x8kKRVDmz5BRlolmDZGcsuZ1l+js6TRL3QWBJjGVctM=
 github.com/go-gst/go-pointer v0.0.0-20241127163939-ba766f075b4c/go.mod h1:qKw5ZZ0U58W6PU/7F/Lopv+14nKYmdXlOd7VnAZ17Mk=
 github.com/go-jose/go-jose/v4 v4.1.4 h1:moDMcTHmvE6Groj34emNPLs/qtYXRVcd6S7NHbHz3kA=
