@@ -41,7 +41,6 @@ type BaseConfig struct {
 	// optional
 	Logging              *logger.Config `yaml:"logging"`                // logging config
 	TemplateBase         string         `yaml:"template_base"`          // custom template base url
-	CustomTemplateBase   bool           `yaml:"custom_template_base"`   // derived at load, not operator-set
 	ClusterID            string         `yaml:"cluster_id"`             // cluster this instance belongs to
 	EnableChromeSandbox  bool           `yaml:"enable_chrome_sandbox"`  // enable Chrome sandbox, requires extra docker configuration
 	MaxUploadQueue       int            `yaml:"max_upload_queue"`       // maximum upload queue size, in minutes

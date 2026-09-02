@@ -570,7 +570,7 @@ func ShouldUseSDKSource(req interface {
 
 // UsesTemplateSDKCompositing reports whether a request takes the SDK compositor instead of Chrome
 func (c *BaseConfig) UsesTemplateSDKCompositing(customBaseUrl string) bool {
-	return c.EnableTemplateSDK && customBaseUrl == "" && !c.CustomTemplateBase
+	return c.EnableTemplateSDK && customBaseUrl == ""
 }
 
 // TemplateSourceIsSDK reports whether a request runs on the SDK source; routing and admission must agree or capacity is misbooked
