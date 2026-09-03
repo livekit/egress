@@ -729,6 +729,14 @@ func (r *Runner) testRoomCompositeRetryableDisconnect(t *testing.T, test *testCa
 }
 
 func (r *Runner) testPulseSinkReaper(t *testing.T, test *testCase) {
+	// This case is about the pulse null-sink chrome records through, so it has
+	// to run the web path. The runner enables EnableTemplateSDK globally, which
+	// would route this room composite to the SDK compositor instead - no chrome,
+	// no sink, nothing to reap. Restore it on cleanup to keep it to this test.
+	originalTemplateSDK := r.EnableTemplateSDK
+	r.EnableTemplateSDK = false
+	t.Cleanup(func() { r.EnableTemplateSDK = originalTemplateSDK })
+
 	req := r.build(test)
 	egressID := r.startEgress(t, req)
 
