@@ -81,6 +81,7 @@ session_limits: # optional egress duration limits - once hit, egress will end wi
   file_output_max_duration: 1h
   stream_output_max_duration: 90m
   segment_output_max_duration: 3h
+  await_start_signal_timeout: 5m # optional - max time to wait for the web start signal before aborting
 
 # file upload config - only one of the following. Can be overridden per request
 storage:

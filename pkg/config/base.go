@@ -77,6 +77,7 @@ type SessionLimits struct {
 	StreamOutputMaxDuration  time.Duration `yaml:"stream_output_max_duration"`
 	SegmentOutputMaxDuration time.Duration `yaml:"segment_output_max_duration"`
 	ImageOutputMaxDuration   time.Duration `yaml:"image_output_max_duration"`
+	AwaitStartSignalTimeout  time.Duration `yaml:"await_start_signal_timeout"` // max time to wait for the start signal (web egress); 0 to disable
 }
 
 type DebugConfig struct {
