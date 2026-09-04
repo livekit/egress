@@ -33,7 +33,6 @@ apt-get install -y --no-install-recommends \
   libchromaprint-dev \
   libcurl4-gnutls-dev \
   libdca-dev \
-  libde265-dev \
   libdrm-dev \
   libdv4-dev \
   libdvdnav-dev \
@@ -105,7 +104,6 @@ apt-get install -y --no-install-recommends \
   libwildmidi-dev \
   libwoff-dev \
   libx264-dev \
-  libx265-dev \
   libxkbcommon-dev \
   libxslt1-dev \
   libzbar-dev \
