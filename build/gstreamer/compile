@@ -1,20 +1,21 @@
 #!/bin/bash
 set -euxo pipefail
 
-# No egress pipeline handles H.265, so strip the elements that would advertise it.
-# gst-libav registers a decoder for every codec libavcodec exposes; add hevc to its
-# "we have a better alternative" skip list so that avdec_h265 is never registered
+# Adjust decoder list registered by gst-libav
 sed -i 's/        !strcmp (in_plugin->name, "av1")) {/        !strcmp (in_plugin->name, "av1") ||\n        !strcmp (in_plugin->name, "hevc")) {/' \
   gst-libav/ext/libav/gstavviddec.c
 grep -q '^        !strcmp (in_plugin->name, "hevc")) {$' gst-libav/ext/libav/gstavviddec.c
 
-# h265parse and rtph265depay live in plugins whose other elements we need, so drop
-# just their registration calls
+
+# Remove registration of some plugins we do not need
 grep -q 'GST_ELEMENT_REGISTER (h265parse, plugin)' gst-plugins-bad/gst/videoparsers/plugin.c
 sed -i '/GST_ELEMENT_REGISTER (h265parse, plugin)/d' gst-plugins-bad/gst/videoparsers/plugin.c
 
 grep -q 'GST_ELEMENT_REGISTER (rtph265depay, plugin)' gst-plugins-good/gst/rtp/gstrtp.c
 sed -i '/GST_ELEMENT_REGISTER (rtph265depay, plugin)/d' gst-plugins-good/gst/rtp/gstrtp.c
+
+grep -q 'GST_ELEMENT_REGISTER (rtph265pay, plugin)' gst-plugins-good/gst/rtp/gstrtp.c
+sed -i '/GST_ELEMENT_REGISTER (rtph265pay, plugin)/d' gst-plugins-good/gst/rtp/gstrtp.c
 
 for repo in gstreamer libnice gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav; do
   pushd $repo

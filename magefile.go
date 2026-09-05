@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	gstVersion      = "1.26.11"
+	gstVersion      = "1.24.12"
 	libniceVersion  = "0.1.21"
 	chromiumVersion = "150.0.7871.46"
 	dockerBuild     = "docker build"
