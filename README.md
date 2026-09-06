@@ -69,6 +69,11 @@ logging:
 template_base: can be used to host custom templates (default http://localhost:<template_port>/)
 backup_storage: files will be moved here when uploads fail. location must have write access granted for all users
 enable_chrome_sandbox: if true, egress will run Chrome with sandboxing enabled. This requires a specific Docker setup, see below.
+psrpc: # optional gzip compression of psrpc bus payloads, see the compatibility note below
+  compression:
+    quality: gzip level 1-9. 0, the default, disables compression
+    threshold: payload bytes below which compression is skipped (default 1024)
+    max_decompressed_size: cap on an inbound payload after decompression, 0 for unlimited
 cpu_cost: # optionally override cpu cost estimation, used when accepting or denying requests
   room_composite_cpu_cost: 3.0
   audio_room_composite_cpu_cost: 1.0
@@ -129,6 +134,19 @@ debug:
 ```
 
 The config file can be added to a mounted volume with its location passed in the EGRESS_CONFIG_FILE env var, or its body can be passed in the EGRESS_CONFIG_BODY env var.
+
+> **Compatibility note on `psrpc.compression`**
+>
+> Bus compression requires psrpc v0.7.6 or newer on **every** node sharing the redis bus. An older peer
+> ignores the compression marker and decodes the gzipped bytes as the message payload, so the message is
+> dropped without an error. Enabling it is therefore a two-stage operator action: roll a build with psrpc
+> v0.7.6+ out to livekit-server, egress, ingress, SIP and any agent workers first, then raise `quality` at
+> the publishers. It is off by default.
+>
+> `max_decompressed_size` only affects reading, so it can be set ahead of `quality`.
+>
+> The remaining `rpc.PSRPCConfig` keys (`max_attempts`, `timeout`, `backoff`, `buffer_size`) are accepted
+> under `psrpc:` for config parity with livekit-server, but egress does not read them.
 
 ### Filenames
 
