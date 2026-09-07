@@ -543,7 +543,12 @@ func (w *AppWriter) pushSamples() {
 		for _, pkt := range item.sample {
 			if err := w.pushPacket(pkt); err != nil {
 				if errors.Is(err, errFlowFlushingThreshold) {
-					w.callbacks.OnError(errors.ErrPersistentFlushing)
+					if w.draining.IsBroken() {
+						w.logger.Infow("appsrc rejected the remaining backlog while draining",
+							"flushingCount", w.flushingCount)
+					} else {
+						w.callbacks.OnError(errors.ErrPersistentFlushing)
+					}
 					w.draining.Break()
 					w.notifyPushSamples()
 					return
