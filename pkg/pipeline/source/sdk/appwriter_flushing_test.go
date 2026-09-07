@@ -51,9 +51,10 @@ func (fixedPTS) Close()                                         {}
 // flushingHarness runs pushSamples against a real appsrc inside a pipeline the
 // test can tear down mid-stream, the way Pipeline.Stop() does.
 type flushingHarness struct {
-	pipeline *gst.Pipeline
-	writer   *AppWriter
-	errs     chan error
+	pipeline  *gst.Pipeline
+	callbacks *gstreamer.Callbacks
+	writer    *AppWriter
+	errs      chan error
 }
 
 func newFlushingHarness(t *testing.T) *flushingHarness {
@@ -90,7 +91,7 @@ func newFlushingHarness(t *testing.T) *flushingHarness {
 	w.samplesCond = sync.NewCond(&w.samplesLock)
 	w.Playing()
 
-	return &flushingHarness{pipeline: pipeline, writer: w, errs: errs}
+	return &flushingHarness{pipeline: pipeline, callbacks: callbacks, writer: w, errs: errs}
 }
 
 // enqueue hands pushSamples one sample of n packets, as the jitter buffer does.
@@ -127,28 +128,33 @@ func (h *flushingHarness) reportedError() (error, bool) {
 }
 
 // TestPushSamplesFlushingThreshold pins how pushSamples reacts once the appsrc
-// has refused flushingThreshold consecutive buffers. A live track reports the
-// stall through OnError. A draining track does not: the pipeline being torn
-// down underneath it is the expected end of the stream, and the queued backlog
-// being refused must not turn the abort into a failed egress.
+// has refused flushingThreshold consecutive buffers. While the pipeline is
+// running, that is a stranded appsrc and is reported through OnError, whether
+// or not the track itself is ending. Once Pipeline.Stop has begun, the refused
+// backlog is the expected consequence of the teardown and must not turn an
+// abort into a failed egress.
 func TestPushSamplesFlushingThreshold(t *testing.T) {
-	run := func(t *testing.T, draining bool) (error, bool) {
+	run := func(t *testing.T, trackDraining, pipelineStopping bool) (error, bool) {
 		h := newFlushingHarness(t)
 		w := h.writer
 
 		go w.pushSamples()
 
 		// one buffer through the live pipeline proves pushSamples is past its
-		// start gates before the pipeline is stopped
+		// start gates before the appsrc starts refusing buffers
 		h.enqueue(1)
 		require.Eventually(t, func() bool { return !w.lastPushed.Load().IsZero() },
 			5*time.Second, 10*time.Millisecond)
 
+		if pipelineStopping {
+			// Pipeline.Stop runs OnStop before it sets the pipeline to NULL
+			require.NoError(t, h.callbacks.OnStop())
+		}
 		require.NoError(t, h.pipeline.SetState(gst.StateNull))
 		require.Equal(t, gst.FlowFlushing, w.src.PushBuffer(gst.NewBufferFromBytes([]byte{0})),
 			"precondition: a stopped appsrc refuses buffers with FlowFlushing")
 
-		if draining {
+		if trackDraining {
 			w.draining.Break()
 		}
 		for i := 0; i < 3; i++ {
@@ -161,15 +167,22 @@ func TestPushSamplesFlushingThreshold(t *testing.T) {
 		return h.reportedError()
 	}
 
-	t.Run("live track reports persistent flushing", func(t *testing.T) {
-		err, reported := run(t, false)
-		require.True(t, reported, "a live track whose appsrc refuses every buffer must fail the egress")
+	t.Run("live track in a running pipeline reports persistent flushing", func(t *testing.T) {
+		err, reported := run(t, false, false)
+		require.True(t, reported, "a stranded appsrc under a live track must fail the egress")
 		require.ErrorIs(t, err, errors.ErrPersistentFlushing)
 	})
 
-	t.Run("draining track ends without an error", func(t *testing.T) {
-		err, reported := run(t, true)
+	t.Run("ending track in a running pipeline still reports persistent flushing", func(t *testing.T) {
+		err, reported := run(t, true, false)
+		require.True(t, reported,
+			"a track draining into a stranded appsrc must still fail the egress, or its queued tail is silently lost")
+		require.ErrorIs(t, err, errors.ErrPersistentFlushing)
+	})
+
+	t.Run("stopping pipeline ends the track without an error", func(t *testing.T) {
+		err, reported := run(t, true, true)
 		require.False(t, reported,
-			"a track that is already draining must not fail the egress when the torn-down pipeline refuses its backlog, got %v", err)
+			"a pipeline being torn down must not fail the egress when it refuses the queued backlog, got %v", err)
 	})
 }
