@@ -185,7 +185,7 @@ func Build() error {
 
 func BuildTemplate() error {
 	return mageutil.Run(context.Background(),
-		"docker pull ubuntu:24.04",
+		"docker pull ubuntu:26.10",
 		"docker build -t livekit/egress-templates -f ./build/template/Dockerfile .",
 	)
 }
@@ -195,7 +195,7 @@ func BuildGStreamer() error {
 }
 
 func buildGstreamer(cmd string) error {
-	commands := []string{"docker pull ubuntu:23.10"}
+	commands := []string{"docker pull ubuntu:26.10"}
 	for _, build := range []string{"base", "dev", "prod", "prod-rs"} {
 		commands = append(commands, fmt.Sprintf("%s"+
 			" --build-arg GSTREAMER_VERSION=%s"+

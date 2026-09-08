@@ -420,7 +420,7 @@ func (b *AudioBin) addEncoder() error {
 		return b.bin.AddElement(opusEnc)
 
 	case types.MimeTypeAAC:
-		faac, err := gst.NewElement("faac")
+		faac, err := gst.NewElement("fdkaac")
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
