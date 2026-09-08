@@ -42,6 +42,14 @@ const (
 type SessionReporter interface {
 	CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error
 	UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error
+
+	// EnsureTerminal reports that an egress is over and that nothing will send
+	// another update for it, whatever its last update said. It is called once
+	// the handler process has exited, so an implementation holding per-egress
+	// state can finalize that state even when the egress' own terminal update
+	// never arrived -- a handler that exits without sending one, or whose send
+	// fails, would otherwise leave that state behind indefinitely.
+	EnsureTerminal(ctx context.Context, egressID string)
 	UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error
 	IsHealthy() bool
 	SetWatchdogHandler(w func())
@@ -165,6 +173,10 @@ func (c *sessionReporter) UpdateEgress(ctx context.Context, info *livekit.Egress
 		info: info,
 	})
 }
+
+// This forwards every update onward and holds no per-egress state of its own,
+// so there is nothing to finalize.
+func (c *sessionReporter) EnsureTerminal(_ context.Context, _ string) {}
 
 func (c *sessionReporter) UpdateMetrics(_ context.Context, _ *rpc.UpdateMetricsRequest) error {
 	return nil
