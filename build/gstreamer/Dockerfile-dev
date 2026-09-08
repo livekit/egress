@@ -2,6 +2,9 @@ ARG GSTREAMER_VERSION
 
 FROM livekit/gstreamer:${GSTREAMER_VERSION}-base-${TARGETARCH}
 
+# re-declared so compile-rs can gate options on the gstreamer version
+ARG GSTREAMER_VERSION
+
 ENV DEBUG=true
 ENV OPTIMIZATIONS=false
 
