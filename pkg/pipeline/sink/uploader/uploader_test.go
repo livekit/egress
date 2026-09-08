@@ -20,6 +20,9 @@ func TestUploader(t *testing.T) {
 	secret := os.Getenv("AWS_SECRET")
 	region := os.Getenv("AWS_REGION")
 	bucket := os.Getenv("AWS_BUCKET")
+	if key == "" || secret == "" || region == "" || bucket == "" {
+		t.Skip("uploads to a real bucket; set AWS_ACCESS_KEY, AWS_SECRET, AWS_REGION and AWS_BUCKET to run")
+	}
 
 	primary := &config.StorageConfig{
 		S3: &storage.S3Config{

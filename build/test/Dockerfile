@@ -99,6 +99,18 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
         --build-tags="${LINT_TAGS}"
 RUN echo ok >/lint_ok
 
+FROM builder AS unit
+
+ARG DEADLOCK=0
+
+# Package unit tests; the integration suite under test/ runs from the final image.
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/go/build-cache \
+    TAGS=""; \
+    if [ "${DEADLOCK:-0}" = "1" ]; then TAGS="deadlock"; fi; \
+    CGO_ENABLED=1 go test ${TAGS:+-tags} ${TAGS:+"$TAGS"} -count=1 -timeout 10m ./pkg/...
+RUN echo ok >/unit_ok
+
 
 FROM livekit/gstreamer:1.24.12-prod
 
@@ -162,8 +174,9 @@ COPY --from=1 /workspace/test.test .
 COPY media-samples /media-samples
 COPY build/test/entrypoint.sh .
 
-# Force lint stage to run successfully
+# Force lint and unit test stages to run successfully
 COPY --from=lint /lint_ok /__lint_ok
+COPY --from=unit /unit_ok /__unit_ok
 
 # run tests
 USER egress
