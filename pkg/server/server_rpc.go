@@ -206,6 +206,14 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 
 	s.MergeInAccumulator(info.EgressId)
 	s.ProcessFinished(info.EgressId)
+
+	// The handler is gone and its IPC client closed with it, so nothing can
+	// report this egress again. cmd.Wait returns however the handler died, and
+	// one that exited without sending its own terminal update -- or whose send
+	// was lost -- would otherwise leave a reporter holding per-egress state
+	// believing the egress is still running.
+	s.ioClient.EnsureTerminal(context.Background(), info.EgressId)
+
 	s.activeRequests.Dec()
 }
 
