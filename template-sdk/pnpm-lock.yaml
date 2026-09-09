@@ -10,7 +10,7 @@ importers:
     devDependencies:
       livekit-client:
         specifier: ^2.12.0
-        version: 2.21.0(@types/dom-mediacapture-record@1.0.22)
+        version: 2.22.0(@types/dom-mediacapture-record@1.0.22)
       prettier:
         specifier: ^3.0.0
         version: 3.9.6
@@ -159,8 +159,8 @@ packages:
   jose@6.2.9:
     resolution: {integrity: sha512-XrchZOFZUl/T3vTwRe8XK+cJrGtMF4th1ARnDfwbBXFKThGhlsxEE4Zu03AD/bjJSt/9jT/mxrOCkJWOg77aPA==}
 
-  livekit-client@2.21.0:
-    resolution: {integrity: sha512-RBUhPkV/sl1nzl8lokVlK5uATPwn0AlsudCBZXissw/kDl9yz8ac4pNJ43iPpMVoHOeBYH/BZ3vUC1adqa/zFQ==}
+  livekit-client@2.22.0:
+    resolution: {integrity: sha512-GLtYQfRh/RsvXaOX1x609bFZ17yyKmKWDqu9JmkMKn9vIFLi2GsapRv9gT8OJO/1R2dsitrkbGmloyUfxWQsaA==}
     peerDependencies:
       '@types/dom-mediacapture-record': ^1
 
@@ -274,7 +274,7 @@ snapshots:
 
   jose@6.2.9: {}
 
-  livekit-client@2.21.0(@types/dom-mediacapture-record@1.0.22):
+  livekit-client@2.22.0(@types/dom-mediacapture-record@1.0.22):
     dependencies:
       '@livekit/mutex': 1.1.1
       '@livekit/protocol': 1.50.4
