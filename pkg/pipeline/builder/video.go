@@ -44,7 +44,8 @@ type VideoBin struct {
 	nextID             int
 	pads               map[string]*gst.Pad
 	names              map[string]string
-	muted              map[string]bool // pad name -> muted; layout recalcs must not un-mute
+	muted              map[string]bool    // pad name -> muted; layout recalcs must not un-mute
+	layoutAlpha        map[string]float64 // pad name -> alpha the layout wants; un-muting must not exceed it
 	crops              map[string]*gst.Element
 	lastDimensions     map[string]videoDimensions
 	selector           *gst.Element
@@ -173,6 +174,7 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	delete(b.names, trackID)
 	delete(b.pads, name)
 	delete(b.muted, name)
+	delete(b.layoutAlpha, name)
 	delete(b.crops, name)
 	delete(b.lastDimensions, trackID)
 	b.closeProbe(name)
@@ -305,6 +307,7 @@ func (b *VideoBin) applyLayoutLocked(pads []PadLayout) ([]pendingDimensions, err
 
 		// the layout calculators are unaware of mute state - it lives only as the
 		// pad's alpha - so a muted track must stay hidden across a recalc
+		b.layoutAlpha[name] = pl.Alpha
 		alpha := pl.Alpha
 		if b.muted[name] {
 			alpha = 0
@@ -401,6 +404,7 @@ func (b *VideoBin) buildSDKInput() error {
 	b.pads = make(map[string]*gst.Pad)
 	b.names = make(map[string]string)
 	b.muted = make(map[string]bool)
+	b.layoutAlpha = make(map[string]float64)
 	b.crops = make(map[string]*gst.Element)
 	b.lastDimensions = make(map[string]videoDimensions)
 
@@ -1012,21 +1016,27 @@ func (b *VideoBin) addVideoConverter(bin *gstreamer.Bin) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	videoRate, err := gst.NewElement("videorate")
+	elements := []*gst.Element{videoQueue, videoConvert, videoScale}
+
+	// only the compositor needs framerate-locked inputs; the selector rate-locks downstream
+	if b.conf.Compositing {
+		videoRate, err := gst.NewElement("videorate")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err = videoRate.SetProperty("skip-to-first", true); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		elements = append(elements, videoRate)
+	}
+
+	caps, err := b.newVideoCapsFilter(b.conf.Compositing)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
+	elements = append(elements, caps)
 
-	// Compositor downstream requires framerate-locked inputs.
-	caps, err := b.newVideoCapsFilter(true)
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-
-	return bin.AddElements(videoQueue, videoConvert, videoScale, videoRate, caps)
+	return bin.AddElements(elements...)
 }
 
 func (b *VideoBin) newVideoCapsFilter(includeFramerate bool) (*gst.Element, error) {
@@ -1085,6 +1095,8 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 		if err := pad.SetProperty("zorder", uint(1)); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
+		// an unmute can arrive before the first layout, and the pad starts opaque
+		b.layoutAlpha[name] = 1.0
 	} else {
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			pts := uint64(info.GetBuffer().PresentationTimestamp())
@@ -1117,9 +1129,10 @@ func (b *VideoBin) setTrackVisibleLocked(name string, visible bool) error {
 			return errors.New("pad not found: " + name)
 		}
 
+		// a layout-hidden pad has width/height 0, which the compositor draws at full input size
 		alpha := 0.0
 		if visible {
-			alpha = 1.0
+			alpha = b.layoutAlpha[name]
 		}
 		if err := pad.SetProperty("alpha", alpha); err != nil {
 			return errors.ErrGstPipelineError(err)
