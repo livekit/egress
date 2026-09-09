@@ -17,9 +17,16 @@ ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
 ARG LINT_VERSION=v2.11.3
 
+# The GStreamer version is pinned in .gst-version, the single source of truth that
+# Renovate keeps current via an approvable PR. It has no default here on purpose: a
+# default would be a second copy of the version and would drift. The magefile and CI
+# read the file and pass it in, so build this by hand with
+# --build-arg GSTVERSION=$(cat .gst-version).
+ARG GSTVERSION
+
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template
 
-FROM livekit/gstreamer:1.24.12-dev AS builder
+FROM livekit/gstreamer:$GSTVERSION-dev AS builder
 
 WORKDIR /workspace
 
@@ -112,7 +119,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 RUN echo ok >/unit_ok
 
 
-FROM livekit/gstreamer:1.24.12-prod
+FROM livekit/gstreamer:$GSTVERSION-prod
 
 ARG TARGETPLATFORM
 

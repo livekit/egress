@@ -55,6 +55,13 @@
       "description": "Build toolchain pin (.go-version): a patch bump (stays on the current minor) and a minor bump each get their own approvable PR",
       "matchDatasources": ["golang-version"],
       "separateMinorPatch": true
+    },
+    {
+      "description": "GStreamer pin (.gst-version): livekit/gstreamer is our own image, so a new tag needs no quarantine. A patch bump (stays on the current minor) and a minor bump each get their own approvable PR",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["livekit/gstreamer"],
+      "minimumReleaseAge": null,
+      "separateMinorPatch": true
     }
   ],
   "customManagers": [
@@ -66,6 +73,18 @@
       "matchStrings": ["^(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
       "datasourceTemplate": "golang-version",
       "depNameTemplate": "golang"
+    },
+    {
+      "description": "GStreamer pin (.gst-version): the single source of truth for the livekit/gstreamer version this repo builds and builds against, read by the magefile and by CI, which pass it to docker build as GSTVERSION. Only the -dev tags are considered, and extractVersionTemplate strips the suffix so the file stays a bare version; the other variants of the same version are published alongside it.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.gst-version$/"
+      ],
+      "matchStrings": ["^(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)-dev$",
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "livekit/gstreamer",
+      "versioningTemplate": "semver"
     }
   ],
   "postUpdateOptions": [
