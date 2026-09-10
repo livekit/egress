@@ -15,7 +15,11 @@
 
 set -euo pipefail
 
-# Clean out tmp
+# Preserve any recordings from the previous session before cleanup
+if [ -d /home/egress/tmp ] && [ "$(ls -A /home/egress/tmp 2>/dev/null)" ]; then
+    mkdir -p /home/egress/recovered
+    cp -r /home/egress/tmp/. /home/egress/recovered/
+fi
 rm -rf /home/egress/tmp/*
 
 # Adjust max open file
