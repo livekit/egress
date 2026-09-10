@@ -44,7 +44,7 @@ func TestUploader(t *testing.T) {
 	}
 
 	info := &livekit.EgressInfo{}
-	u, err := New(primary, backup, nil, nil, info)
+	u, err := New(primary, backup, nil, nil, &config.PipelineConfig{Info: info})
 	require.NoError(t, err)
 
 	filepath := "uploader_test.go"
@@ -143,7 +143,7 @@ func TestUploadErrorHasStatusCode(t *testing.T) {
 				},
 			}
 
-			u, err := New(primary, nil, nil, nil, &livekit.EgressInfo{})
+			u, err := New(primary, nil, nil, nil, &config.PipelineConfig{Info: &livekit.EgressInfo{}})
 			require.NoError(t, err)
 
 			_, _, err = u.Upload("uploader_test.go", "uploader_test.go", "text/plain", false)

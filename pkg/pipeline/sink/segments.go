@@ -52,7 +52,6 @@ type SegmentSink struct {
 	livePlaylist m3u8.PlaylistWriter
 
 	segmentLock  deadlock.Mutex
-	infoLock     deadlock.Mutex
 	playlistLock deadlock.Mutex
 
 	initialized           bool
@@ -80,7 +79,7 @@ func newSegmentSink(
 	callbacks *gstreamer.Callbacks,
 	monitor *stats.HandlerMonitor,
 ) (*SegmentSink, error) {
-	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.StorageObserver, conf.Info)
+	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.StorageObserver, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -186,13 +185,13 @@ func (s *SegmentSink) handleClosedSegment(update SegmentUpdate) {
 		}
 
 		// lock segment info updates
-		s.infoLock.Lock()
+		s.conf.LockInfo()
 		s.SegmentsInfo.SegmentCount++
 		s.SegmentsInfo.Size += size
 		if s.manifestPlaylist != nil {
 			s.manifestPlaylist.AddSegment(segmentStoragePath, location)
 		}
-		s.infoLock.Unlock()
+		s.conf.UnlockInfo()
 	}()
 }
 
@@ -253,7 +252,9 @@ func (s *SegmentSink) uploadPlaylist() error {
 	}
 
 	s.lastUpload = time.Now()
+	s.conf.LockInfo()
 	s.SegmentsInfo.PlaylistLocation = playlistLocation
+	s.conf.UnlockInfo()
 	if s.manifestPlaylist != nil {
 		s.manifestPlaylist.Location = playlistLocation
 	}
@@ -265,7 +266,9 @@ func (s *SegmentSink) uploadLivePlaylist() error {
 	liveStoragePath := path.Join(s.StorageDir, s.LivePlaylistFilename)
 	livePlaylistLocation, _, err := s.Upload(liveLocalPath, liveStoragePath, s.OutputType, false)
 	if err == nil {
+		s.conf.LockInfo()
 		s.SegmentsInfo.LivePlaylistLocation = livePlaylistLocation
+		s.conf.UnlockInfo()
 	}
 	return err
 }

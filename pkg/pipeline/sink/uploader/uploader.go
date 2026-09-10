@@ -25,7 +25,6 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability/storageobs"
 	"github.com/livekit/psrpc"
@@ -39,7 +38,7 @@ type Uploader struct {
 	backup          *store
 	primaryFailed   bool
 	disabled        atomic.Bool
-	info            *livekit.EgressInfo
+	conf            *config.PipelineConfig
 	monitor         *stats.HandlerMonitor
 	storageObserver config.StorageObserver
 }
@@ -56,7 +55,7 @@ type store struct {
 	hasCustomEndpoint bool
 }
 
-func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, storageObserver config.StorageObserver, info *livekit.EgressInfo) (*Uploader, error) {
+func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, storageObserver config.StorageObserver, conf *config.PipelineConfig) (*Uploader, error) {
 	p, err := getUploader(primary)
 	if err != nil {
 		return nil, err
@@ -64,7 +63,7 @@ func New(primary, backup *config.StorageConfig, monitor *stats.HandlerMonitor, s
 
 	u := &Uploader{
 		primary:         p,
-		info:            info,
+		conf:            conf,
 		monitor:         monitor,
 		storageObserver: storageObserver,
 	}
@@ -161,8 +160,10 @@ func (u *Uploader) Upload(
 	if u.backup != nil {
 		location, size, backupErr := u.upload(localFilepath, storageFilepath, outputType, false)
 		if backupErr == nil {
-			if u.info != nil {
-				u.info.SetBackupUsed()
+			if u.conf != nil {
+				u.conf.LockInfo()
+				u.conf.Info.SetBackupUsed()
+				u.conf.UnlockInfo()
 			}
 			if u.monitor != nil {
 				u.monitor.IncBackupStorageWrites(string(outputType))
@@ -212,7 +213,7 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 	}
 
 	if !primary && u.storageObserver != nil {
-		u.storageObserver.OnStorageEvent(u.info.EgressId, string(storageobs.EventOperationUpload), location, size, int64(presignedExpiration/time.Hour/24))
+		u.storageObserver.OnStorageEvent(u.conf.Info.EgressId, string(storageobs.EventOperationUpload), location, size, int64(presignedExpiration/time.Hour/24))
 	}
 
 	if s.conf.GeneratePresignedUrl {
@@ -222,7 +223,7 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 		}
 
 		if !primary && u.storageObserver != nil {
-			u.storageObserver.OnStorageEvent(u.info.EgressId, string(storageobs.EventOperationDownload), location, size, 0)
+			u.storageObserver.OnStorageEvent(u.conf.Info.EgressId, string(storageobs.EventOperationDownload), location, size, 0)
 		}
 	}
 

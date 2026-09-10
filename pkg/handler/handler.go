@@ -124,8 +124,10 @@ func (h *Handler) Run() {
 		})
 		cancel()
 		if err != nil {
+			h.conf.LockInfo()
 			h.conf.Info.SetFailed(err)
-			_, _ = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
+			h.conf.UnlockInfo()
+			_, _ = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.InfoSnapshot())
 			return
 		}
 		h.controller.SetReplayTiming(resp.StartAt, resp.DurationMs)

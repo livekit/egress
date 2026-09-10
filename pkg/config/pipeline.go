@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-gst/go-gst/gst/app"
+	"github.com/linkdata/deadlock"
 	"github.com/pion/webrtc/v4"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
@@ -56,6 +57,7 @@ type PipelineConfig struct {
 	FinalizationRequired bool                                `yaml:"-"`
 
 	Info            *livekit.EgressInfo `yaml:"-"`
+	infoMu          deadlock.Mutex      `yaml:"-"`
 	Manifest        *Manifest           `yaml:"-"`
 	Live            bool                `yaml:"-"`
 	IsReplay        bool                `yaml:"-"`
@@ -974,4 +976,16 @@ func stringReplace(s string, replacements map[string]string) string {
 		s = strings.ReplaceAll(s, template, value)
 	}
 	return s
+}
+
+// LockInfo guards Info and the nested result messages it references. Hold it for every write and
+// release it before any IPC, GStreamer or upload call.
+func (p *PipelineConfig) LockInfo()   { p.infoMu.Lock() }
+func (p *PipelineConfig) UnlockInfo() { p.infoMu.Unlock() }
+
+// InfoSnapshot returns a copy of Info that is safe to read and marshal from any goroutine.
+func (p *PipelineConfig) InfoSnapshot() *livekit.EgressInfo {
+	p.infoMu.Lock()
+	defer p.infoMu.Unlock()
+	return proto.Clone(p.Info).(*livekit.EgressInfo)
 }
