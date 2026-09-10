@@ -41,7 +41,7 @@ func newFileSink(
 	o *config.FileConfig,
 	monitor *stats.HandlerMonitor,
 ) (*FileSink, error) {
-	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.StorageObserver, conf.Info)
+	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.StorageObserver, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -88,8 +88,10 @@ func (s *FileSink) Close() error {
 		return err
 	}
 
+	s.conf.LockInfo()
 	s.FileInfo.Location = location
 	s.FileInfo.Size = size
+	s.conf.UnlockInfo()
 	logger.Debugw("file upload completed",
 		"bytes", size,
 		"duration", time.Since(start))
