@@ -20,10 +20,10 @@ import (
 	"net/url"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-gst/go-gst/gst/app"
+	"github.com/linkdata/deadlock"
 	"github.com/pion/webrtc/v4"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
@@ -57,7 +57,7 @@ type PipelineConfig struct {
 	FinalizationRequired bool                                `yaml:"-"`
 
 	Info            *livekit.EgressInfo `yaml:"-"`
-	infoMu          sync.Mutex          `yaml:"-"`
+	infoMu          deadlock.Mutex      `yaml:"-"`
 	Manifest        *Manifest           `yaml:"-"`
 	Live            bool                `yaml:"-"`
 	IsReplay        bool                `yaml:"-"`
