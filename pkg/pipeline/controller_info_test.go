@@ -52,14 +52,14 @@ func TestInfoSnapshotUnderConcurrentWrites(t *testing.T) {
 		c.Info.SetComplete()
 	})
 	// UpdateStream: repeated field grows and is reset
-	writer(func(i int64) {
+	writer(func(_ int64) {
 		c.Info.StreamResults = append(c.Info.StreamResults, &livekit.StreamInfo{Url: "rtmp://x"})
 		if len(c.Info.StreamResults) > 64 {
 			c.Info.StreamResults = c.Info.StreamResults[:0]
 		}
 	})
 	// stream callbacks: nested message writes
-	writer(func(i int64) {
+	writer(func(_ int64) {
 		if len(c.Info.StreamResults) > 0 {
 			c.Info.StreamResults[0].Retries++
 			c.Info.StreamResults[0].LastRetryAt = int64(c.Info.StreamResults[0].Retries)
