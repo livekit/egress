@@ -39,6 +39,7 @@ func TestCostsForRequest(t *testing.T) {
 			TrackCpuCost:                    0.2,
 			MemoryCost:                      3,
 		},
+		baseConfig: &config.BaseConfig{},
 	}
 
 	roomComposite := func(r *livekit.RoomCompositeEgressRequest) *rpc.StartEgressRequest {

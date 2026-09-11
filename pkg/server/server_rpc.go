@@ -193,7 +193,7 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 			"egressID", info.EgressId,
 			"requestType", requestType,
 			"outputType", outputType,
-			"sdkSource", config.IsSDKSourceRequest(req),
+			"sdkSource", s.conf.IsSDKSourceRequest(req),
 			"avgCPU", avgCPU,
 			"maxCPU", maxCPU,
 			"maxMemory", maxMemory,
