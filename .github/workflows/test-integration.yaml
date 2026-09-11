@@ -18,6 +18,7 @@ on:
   pull_request:
     branches: [ main ]
     paths:
+      - .gst-version
       - build/chrome/**
       - build/egress/**
       - build/gstreamer/**
@@ -40,6 +41,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           lfs: true
+
+      - name: Resolve GStreamer version
+        id: gst-version
+        run: |
+          # Assign first so a failed read trips `set -e`; inside echo its exit
+          # status would be discarded and an empty version written.
+          version=$(cat .gst-version)
+          if [ -z "$version" ]; then echo ".gst-version is empty" >&2; exit 1; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Fetch media-samples (with LFS)
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -100,6 +111,7 @@ jobs:
           tags: ${{ steps.docker-md.outputs.tags }}
           labels: ${{ steps.docker-md.outputs.labels }}
           build-args: |
+            GSTVERSION=${{ steps.gst-version.outputs.version }}
             DEADLOCK=1
             TEMPLATE_TAG=${{ steps.template-tag.outputs.template_tag }}
             SECURITY_REFRESH=${{ github.run_id }}-${{ github.run_attempt }}

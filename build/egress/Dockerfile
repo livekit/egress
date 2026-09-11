@@ -12,11 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# The GStreamer version is pinned in .gst-version, the single source of truth that
+# Renovate keeps current via an approvable PR. It has no default here on purpose: a
+# default would be a second copy of the version and would drift. The magefile and CI
+# read the file and pass it in, so build this by hand with
+# --build-arg GSTVERSION=$(cat .gst-version).
+ARG GSTVERSION
+
 ARG TEMPLATE_TAG=latest
 
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template
 
-FROM livekit/gstreamer:1.24.12-dev
+FROM livekit/gstreamer:$GSTVERSION-dev
 
 ARG TARGETPLATFORM
 ARG TARGETARCH
@@ -70,7 +77,7 @@ ENV TINI_VERSION v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TARGETARCH} /tini
 RUN chmod +x /tini
 
-FROM livekit/gstreamer:1.24.12-prod
+FROM livekit/gstreamer:$GSTVERSION-prod
 
 ARG TARGETPLATFORM
 
