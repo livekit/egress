@@ -34,6 +34,14 @@ for repo in gst-plugins-rs; do
     opts="$opts -D webrtc-livekit=enabled"
   fi
 
+  # whisper needs libclang and validate needs gstreamer-validate-1.0 from
+  # gst-devtools; neither is available here, and an auto feature is still
+  # scheduled when its dependency probe fails. The options only exist from
+  # 1.28 on, and older versions error out on them.
+  if (( gst_major > 1 || (gst_major == 1 && gst_minor >= 28) )); then
+    opts="$opts -D whisper=disabled -D validate=disabled"
+  fi
+
   if [[ $DEBUG == 'true' ]]; then
     if [[ $OPTIMIZATIONS == 'true' ]]; then
       opts="$opts -D buildtype=debugoptimized"
