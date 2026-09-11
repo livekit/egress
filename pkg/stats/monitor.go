@@ -843,19 +843,28 @@ func (m *Monitor) checkMemoryKill(maxMemoryEgress string, maxMemoryGroup *hwstat
 		}
 		if time.Since(m.highMemoryStart) >= time.Duration(m.cpuCostConfig.MemoryKillGraceSec)*time.Second {
 			killTriggerGB := float64(killTriggerBytes) / gb
+			m.highMemoryStart = time.Time{}
+			if maxMemoryGroup == nil {
+				logger.Errorw("memory over limit with no handler to kill", errors.ErrOOM(killTriggerGB),
+					"source", m.cpuCostConfig.MemorySource,
+					"memoryGB", killTriggerGB,
+					"maxMemoryGB", m.cpuCostConfig.MaxMemory,
+					"requests", m.requests.Load(),
+					"hint", "usage is not from egress handlers: check the memory source scope or the service process",
+				)
+				return
+			}
 			logger.Warnw("high memory usage", nil,
 				"source", m.cpuCostConfig.MemorySource,
 				"memoryGB", killTriggerGB,
 				"maxMemoryGB", m.cpuCostConfig.MaxMemory,
 				"requests", m.requests.Load(),
+				"egressID", maxMemoryEgress,
 			)
-			if maxMemoryGroup != nil {
-				logger.Infow("killing egress process memory",
-					"egressID", maxMemoryEgress, "processes", maxMemoryGroup.Procs)
-			}
+			logger.Infow("killing egress process memory",
+				"egressID", maxMemoryEgress, "processes", maxMemoryGroup.Procs)
 			// Report the actual memory that triggered the kill, not per-process max
 			m.svc.KillProcess(maxMemoryEgress, ResultKilledOOM, errors.ErrOOM(killTriggerGB))
-			m.highMemoryStart = time.Time{}
 		}
 	} else {
 		m.highMemoryStart = time.Time{}
