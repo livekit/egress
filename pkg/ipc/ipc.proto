@@ -37,6 +37,10 @@ message HandlerFinishedRequest {
   string egress_id = 1;
   string metrics = 2;
   livekit.EgressInfo info = 3;
+  // When true, the handler is exiting without a terminal update to cloud-io
+  // (e.g. the room SDK disconnected with DuplicateIdentity). The server should
+  // suppress the terminal UpdateEgress so the surviving worker owns the recording.
+  bool silent_exit = 4;
 }
 
 message StorageEventRequest {
@@ -51,7 +55,13 @@ service EgressHandler {
   rpc GetPipelineDot(GstPipelineDebugDotRequest) returns (GstPipelineDebugDotResponse) {};
   rpc GetPProf(PProfRequest) returns (PProfResponse) {};
   rpc GetMetrics(MetricsRequest) returns (MetricsResponse) {};
+  rpc StopHandler(StopHandlerRequest) returns (google.protobuf.Empty) {};
   rpc KillEgress(KillEgressRequest) returns (google.protobuf.Empty) {};
+
+  // proxied EgressHandler RPCs: the service owns the message bus subscription
+  // and forwards these to the handler over IPC
+  rpc UpdateStream(livekit.UpdateStreamRequest) returns (livekit.EgressInfo) {};
+  rpc StopEgress(livekit.StopEgressRequest) returns (livekit.EgressInfo) {};
 }
 
 message GstPipelineDebugDotRequest {}
@@ -74,6 +84,10 @@ message MetricsRequest {}
 
 message MetricsResponse {
   string metrics = 1;
+}
+
+message StopHandlerRequest {
+  string reason = 1;
 }
 
 message KillEgressRequest {

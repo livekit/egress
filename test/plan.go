@@ -175,6 +175,9 @@ func usesAgentRoute(tc *testCase) bool {
 }
 
 func participantHasAudioInOutput(tc *testCase, name string) bool {
+	if tc.captureAudioAll {
+		return true
+	}
 	if len(tc.audioRoutes) == 0 {
 		return true
 	}

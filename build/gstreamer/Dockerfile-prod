@@ -33,7 +33,6 @@ RUN apt-get update && \
         libchromaprint1 \
         libcurl3-gnutls \
         libdca0 \
-        libde265-0 \
         libdv4 \
         libdvdnav4 \
         libdvdread8 \

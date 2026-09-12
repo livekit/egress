@@ -20,12 +20,19 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
+	"path"
+	"strconv"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/pipeline/source/pulse"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
@@ -118,6 +125,25 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				custom: r.testRoomCompositeDisconnectDuration,
 			},
 
+			// Room composite where the egress participant loses its room
+			// connection with a retryable reason. The partial recording must
+			// still be finalized and uploaded, and the egress reported FAILED
+			// so it could be retried.
+
+			{
+				name:        "RoomCompositeRetryableDisconnect",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename: "retryable_disconnect_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				custom: r.testRoomCompositeRetryableDisconnect,
+			},
+
 			// RTMP output with no valid urls
 
 			{
@@ -132,6 +158,41 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 					outputType: types.OutputTypeRTMP,
 				},
 				custom: r.testRtmpFailure,
+			},
+
+			// RTMP output that goes silent mid-stream (network-level wedge).
+			// Uses toxiproxy to break the TCP socket while leaving handshake intact.
+
+			{
+				name:        "RtmpSilentWedge",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+				},
+				streamOptions: &streamOptions{
+					// streamUrls populated by testRtmpSilentWedge once toxiproxy is set up.
+					outputType: types.OutputTypeRTMP,
+				},
+				custom: r.testRtmpSilentWedge,
+			},
+
+			// RTMP output where the server rejects at the publish step
+			// (protocol-level reject). Reproduces the rapid-reject loop that
+			// can wedge rtmp2sink in prod.
+
+			{
+				name:        "RtmpPublishReject",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeH264,
+				},
+				streamOptions: &streamOptions{
+					// streamUrls populated by testRtmpPublishReject.
+					outputType: types.OutputTypeRTMP,
+				},
+				custom: r.testRtmpPublishReject,
 			},
 
 			// SRT output with no valid urls
@@ -197,6 +258,43 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 					fileType: livekit.EncodedFileType_MP4,
 				},
 				custom: r.testStorageLimit,
+			},
+
+			// Another participant joins the room with the egress's identity
+			// and evicts it (DisconnectReason_DUPLICATE_IDENTITY). The egress
+			// must exit silently — no terminal UpdateEgress reaches the io
+			// server, since another worker is presumed to still be running
+			// the same egressID.
+
+			{
+				name:        "DuplicateIdentitySilentExit",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename: "duplicate_identity_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				custom: r.testDuplicateIdentitySilentExit,
+			},
+
+			// Handler killed without cleanup (crash, OOM-kill) leaks its
+			// null-sink on the shared pulse daemon. The monitor's reaper
+			// must unload it once the egress is no longer active.
+
+			{
+				name:        "PulseSinkReaper",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+				},
+				fileOptions: &fileOptions{
+					filename: "pulse_sink_reaper_{time}.mp4",
+				},
+				custom: r.testPulseSinkReaper,
 			},
 		} {
 			if !r.run(t, test) {
@@ -530,4 +628,210 @@ func (r *Runner) testEmptyStreamBin(t *testing.T, test *testCase) {
 	time.Sleep(time.Second * 10)
 	res := r.stopEgress(t, egressID)
 	r.verifySegments(t, test, p, livekit.SegmentedFileSuffix_INDEX, res, false)
+}
+
+func (r *Runner) testDuplicateIdentitySilentExit(t *testing.T, test *testCase) {
+	req := r.build(test)
+	egressID := req.EgressId
+
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+
+	r.startEgress(t, req)
+
+	// Snapshot the latest update before the duplicate joins. After the
+	// silent exit, the egress instance must not emit any further updates —
+	// not COMPLETE, not FAILED, not even an intermediate ENDING — since
+	// another instance owns the recording.
+	startUpdate := r.getUpdate(t, egressID)
+	require.NotEmpty(t, startUpdate.FileResults)
+	storagePath := startUpdate.FileResults[0].Filename
+	require.NotEmpty(t, storagePath, "storage filename should be resolved at start")
+
+	preEvictStatus := startUpdate.Status
+	require.Equal(t, livekit.EgressStatus_EGRESS_ACTIVE, preEvictStatus,
+		"snapshot must be ACTIVE before the duplicate joins")
+
+	// Join the room with the egress's own identity. The SFU evicts the
+	// older session with DisconnectReason_DUPLICATE_IDENTITY.
+	dup, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "duplicate-egress",
+		ParticipantIdentity: egressID,
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	t.Cleanup(dup.Disconnect)
+
+	// Wait for the handler subprocess to exit on its own (no KillAll —
+	// the eviction itself must drive the shutdown).
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if r.svc.IsIdle() {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	require.True(t, r.svc.IsIdle(), "egress handler should exit after duplicate-identity eviction")
+
+	// Give a small grace period for any in-flight UpdateEgress IPC to land.
+	time.Sleep(2 * time.Second)
+
+	last := r.getUpdate(t, egressID)
+	require.Equalf(t, preEvictStatus, last.Status,
+		"no UpdateEgress should have moved status after duplicate-identity eviction (was %s, now %s)",
+		preEvictStatus, last.Status)
+
+	// And the output file must not have landed in storage — another
+	// egress instance is presumed to own the destination.
+	requireNotUploaded(t, p.GetFileConfig().StorageConfig, storagePath)
+}
+
+func (r *Runner) testRoomCompositeRetryableDisconnect(t *testing.T, test *testCase) {
+	// Inject a retryable disconnect into this egress once it is active. Tests
+	// run serially, so scoping the override to the current room and clearing it
+	// on cleanup keeps it isolated to this test.
+	original := r.TestOverrides.DisconnectInjectionRoom
+	r.TestOverrides.DisconnectInjectionRoom = r.RoomName
+	t.Cleanup(func() { r.TestOverrides.DisconnectInjectionRoom = original })
+
+	req := r.build(test)
+	egressID := req.EgressId
+
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+
+	r.startEgress(t, req)
+
+	// The injected disconnect should drive the egress to finalize and exit.
+	require.Eventually(t, r.svc.IsIdle, 45*time.Second, 200*time.Millisecond,
+		"egress should finalize and exit after retryable disconnect")
+
+	// Give a small grace period for the terminal UpdateEgress to land.
+	time.Sleep(2 * time.Second)
+
+	res := r.getUpdate(t, egressID)
+
+	require.Equal(t, livekit.EgressStatus_EGRESS_FAILED, res.Status)
+	require.Contains(t, res.Error, "connection to room failed")
+
+	// But the partial recording is still finalized and uploaded.
+	require.Len(t, res.FileResults, 1)
+	fileRes := res.FileResults[0]
+	require.NotEmpty(t, fileRes.Location, "partial file should be uploaded despite FAILED status")
+	require.Greater(t, fileRes.Size, int64(0))
+	require.Greater(t, fileRes.Duration, int64(0))
+
+	// And it is downloadable from storage.
+	local := fmt.Sprintf("%s/retryable_disconnect_partial.ogg", r.FilePrefix)
+	download(t, p.GetFileConfig().StorageConfig, local, fileRes.Filename, true)
+}
+
+func (r *Runner) testPulseSinkReaper(t *testing.T, test *testCase) {
+	req := r.build(test)
+	egressID := r.startEgress(t, req)
+
+	// chrome records through a null-sink named after the egress
+	require.Eventually(t, func() bool {
+		loaded, err := egressSinkLoaded(egressID)
+		return err == nil && loaded
+	}, 30*time.Second, time.Second, "pulse sink should be loaded while the egress is running")
+
+	// the reaper's gauge picks up the loaded sink on its next tick
+	require.Eventually(t, func() bool {
+		return pulseSinksGauge(t) >= 1
+	}, 30*time.Second, time.Second, "pulse_sinks gauge should count the loaded sink")
+
+	// SIGKILL the handler so WebSource.Close never runs and the sink leaks
+	pid := findHandlerPID(t, egressID)
+	t.Cleanup(func() {
+		// sweep the orphaned chrome/xvfb the dead handler left behind
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+	})
+	require.NoError(t, syscall.Kill(pid, syscall.SIGKILL))
+
+	// the service notices the death, reports the egress failed, and drops it
+	// from the monitor, leaving the sink orphaned
+	deadline := time.Now().Add(30 * time.Second)
+	for r.getUpdate(t, egressID).Status != livekit.EgressStatus_EGRESS_FAILED {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the killed egress to be reported failed")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// the reaper unloads the orphaned sink after the grace period
+	require.Eventually(t, func() bool {
+		loaded, err := egressSinkLoaded(egressID)
+		return err == nil && !loaded
+	}, time.Minute, time.Second, "orphaned pulse sink should be reaped")
+
+	// and the gauge drops back to zero on the tick after the unload
+	require.Eventually(t, func() bool {
+		return pulseSinksGauge(t) == 0
+	}, 30*time.Second, time.Second, "pulse_sinks gauge should drop after the reap")
+}
+
+// pulseSinksGauge reads livekit_egress_pulse_sinks from the default prometheus
+// registry, which the in-process monitor registers into. Returns -1 if the
+// gauge isn't registered or gathering fails.
+func pulseSinksGauge(t *testing.T) float64 {
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Logf("prometheus gather failed: %v", err)
+		return -1
+	}
+
+	for _, family := range families {
+		if family.GetName() == "livekit_egress_pulse_sinks" {
+			for _, m := range family.GetMetric() {
+				return m.GetGauge().GetValue()
+			}
+		}
+	}
+	return -1
+}
+
+func egressSinkLoaded(egressID string) (bool, error) {
+	info, err := pulse.List()
+	if err != nil {
+		return false, err
+	}
+	for _, sink := range info.Sinks {
+		if sink.Name == egressID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// findHandlerPID locates the `egress run-handler` process for the given egress
+// by scanning /proc, since the ProcessManager doesn't expose handler PIDs. The
+// egress ID is passed to the handler via its environment (EGRESS_HANDLER_*),
+// not its command line, so match on /proc/<pid>/environ.
+func findHandlerPID(t *testing.T, egressID string) int {
+	entries, err := os.ReadDir("/proc")
+	require.NoError(t, err)
+
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		cmdline, err := os.ReadFile(path.Join("/proc", e.Name(), "cmdline"))
+		if err != nil || !strings.Contains(string(cmdline), "run-handler") {
+			continue
+		}
+		environ, err := os.ReadFile(path.Join("/proc", e.Name(), "environ"))
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(environ), egressID) {
+			return pid
+		}
+	}
+
+	t.Fatalf("no run-handler process found for %s", egressID)
+	return 0
 }

@@ -28,13 +28,13 @@ import (
 
 	"go.opentelemetry.io/otel"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/ipc"
-	"github.com/livekit/egress/pkg/pipeline"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/psrpc"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/ipc"
+	"github.com/livekit/egress/pkg/pipeline"
 )
 
 type Handler struct {
@@ -42,7 +42,6 @@ type Handler struct {
 
 	conf             *config.PipelineConfig
 	controller       *pipeline.Controller
-	rpcServer        rpc.EgressHandlerServer
 	ipcHandlerServer *grpc.Server
 	ipcServiceClient ipc.EgressServiceClient
 	initialized      core.Fuse
@@ -53,10 +52,11 @@ var (
 	tracer = otel.Tracer("github.com/livekit/egress/pkg/handler")
 )
 
-func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
-	// Register all GO process metrics
+func NewHandler(conf *config.PipelineConfig) (*Handler, error) {
+	// The service already exposes go_* / process_* — leaving these registered
+	// causes prometheus.Gatherers.Gather to reject the scrape as duplicate.
 	prometheus.Unregister(collectors.NewGoCollector())
-	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll)))
+	prometheus.Unregister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	ipcClient, err := ipc.NewServiceClient(path.Join(config.TmpDir, conf.NodeID))
 	if err != nil {
@@ -76,21 +76,6 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 		return nil, err
 	}
 
-	rpcServer, err := rpc.NewEgressHandlerServer(h, bus)
-	if err != nil {
-		return nil, err
-	}
-	if err = rpcServer.RegisterUpdateStreamTopic(conf.Info.EgressId); err != nil {
-		return nil, err
-	}
-	if err = rpcServer.RegisterStopEgressTopic(conf.Info.EgressId); err != nil {
-		return nil, err
-	}
-	if err = rpcServer.RegisterUpdateEgressTopic(conf.Info.EgressId); err != nil {
-		return nil, err
-	}
-	h.rpcServer = rpcServer
-
 	_, err = h.ipcServiceClient.HandlerReady(context.Background(), &ipc.HandlerReadyRequest{EgressId: conf.Info.EgressId})
 	if err != nil {
 		logger.Errorw("failed to notify service", err)
@@ -104,10 +89,7 @@ func (h *Handler) Run() {
 	ctx, span := tracer.Start(context.Background(), "Handler.Run")
 	defer span.End()
 
-	defer func() {
-		h.rpcServer.Shutdown()
-		h.ipcHandlerServer.Stop()
-	}()
+	defer h.ipcHandlerServer.Stop()
 
 	var err error
 	egressID := h.conf.Info.EgressId
@@ -156,11 +138,32 @@ func (h *Handler) Run() {
 		logger.Errorw("failed to generate handler metrics", err, "egressID", egressID)
 	}
 
-	_, err = h.ipcServiceClient.HandlerFinished(ctx, &ipc.HandlerFinishedRequest{
+	req := &ipc.HandlerFinishedRequest{
 		EgressId: egressID,
 		Metrics:  m,
 		Info:     res,
-	})
+	}
+
+	// If a duplicate participant joined with our identity and evicted us from
+	// the room, exit without writing a terminal update — another worker is
+	// running the same egress and still owns the session.
+	if h.controller.IsDuplicateIdentity() {
+		duration := time.Duration(0)
+		if startedAt := res.StartedAt; startedAt > 0 {
+			duration = time.Since(time.Unix(0, startedAt))
+		}
+		logger.Warnw("duplicate identity, suppressing terminal egress update", nil,
+			"egressID", egressID,
+			"room_name", h.conf.Info.RoomName,
+			"node_id", h.conf.NodeID,
+			"duration_ms", duration.Milliseconds(),
+			"disconnect_reason", "duplicate identity",
+		)
+		req.SilentExit = true
+		req.Info = nil
+	}
+
+	_, err = h.ipcServiceClient.HandlerFinished(ctx, req)
 	if err != nil {
 		logger.Errorw("egress finished ipc call failed", err, "egressID", egressID)
 	}

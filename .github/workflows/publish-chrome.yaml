@@ -1,323 +1,151 @@
 name: Publish Chrome
 
 on:
+  schedule:
+    - cron: '0 6 * * 6'
   workflow_dispatch:
     inputs:
       chrome_version:
-        description: "Version of Chrome to build"
-        required: true
+        description: "Version of Chrome to build (defaults to current stable if empty)"
+        required: false
         type: string
       image_tag:
         description: "Docker image tag (defaults to chrome_version if empty)"
         required: false
         type: string
 
+permissions:
+  contents: read
+
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      should_build: ${{ steps.resolve.outputs.should_build }}
+
+    steps:
+      - name: Resolve Chrome version and decide whether to build
+        id: resolve
+        shell: bash
+        env:
+          CHROME_VERSION: ${{ inputs.chrome_version }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+
+          apt_version() {
+            local packages
+            if ! packages="$(curl -fsSL --retry 3 --retry-delay 5 \
+              "https://dl.google.com/linux/chrome/deb/dists/stable/main/binary-$1/Packages")"; then
+              echo "::error::Failed to fetch the Chrome apt index for $1" >&2
+              return 1
+            fi
+
+            awk '/^Package: google-chrome-stable$/{p=1} p&&/^Version:/{print $2; exit}' <<<"$packages"
+          }
+
+          version="$CHROME_VERSION"
+          resolved=false
+
+          if [ -z "$version" ]; then
+            resolved=true
+
+            amd64_version="$(apt_version amd64)"
+            arm64_version="$(apt_version arm64)"
+
+            if [ "$amd64_version" != "$arm64_version" ]; then
+              echo "::error::Chrome stable differs by architecture (amd64=$amd64_version, arm64=$arm64_version); refusing to publish a mismatched image."
+              exit 1
+            fi
+
+            version="${amd64_version%-*}"
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+            echo "::error::Unusable Chrome version: '$version'"
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          if [ "$resolved" = false ] || [ -n "$IMAGE_TAG" ]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "Explicit request for $version - building unconditionally." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Without -f, curl reports a 429 or 5xx as a successful transfer, so --retry
+          # never fires; with -f the 404 we need to detect becomes a generic error.
+          status=000
+          for attempt in 1 2 3; do
+            status="$(curl -s -o /dev/null -w '%{http_code}' \
+              "https://hub.docker.com/v2/repositories/livekit/chrome-installer/tags/$version")" || status=000
+            case "$status" in 200|404) break ;; esac
+            echo "Docker Hub returned HTTP $status (attempt $attempt/3); retrying..."
+            sleep $((attempt * 10))
+          done
+
+          if [ "$status" = 200 ]; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "Chrome stable is $version; livekit/chrome-installer:$version already exists - nothing to do." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            if [ "$status" = 404 ]; then
+              echo "Chrome stable is $version; livekit/chrome-installer:$version is not published - building." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::warning::Docker Hub check inconclusive (HTTP $status) for $version; building rather than risk skipping a release."
+              echo "Docker Hub check inconclusive (HTTP $status) for $version - building anyway." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+
   build:
+    needs: resolve
+    if: needs.resolve.outputs.should_build == 'true'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install the Linode CLI
-        uses: linode/action-linode-cli@v1
-        with:
-          token: ${{ secrets.LINODE_PAT }}
-
-      - name: Get firewall id
-        id: firewall
+      - name: Download Chrome debs
         shell: bash
         env:
-          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
+          CHROME_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
 
-          firewall_id="$(linode-cli firewalls list --label chrome-builder --json | jq -r '.[0].id // empty')"
+          rm -rf build/chrome/output
 
-          if [ -z "$firewall_id" ]; then
-            echo "Firewall with label chrome-builder not found"
-            exit 1
-          fi
+          for arch in amd64 arm64; do
+            mkdir -p "build/chrome/output/$arch"
+            deb="build/chrome/output/$arch/google-chrome-stable.deb"
 
-          echo "firewall_id=$firewall_id" >> "$GITHUB_OUTPUT"
-          echo "Using firewall_id=$firewall_id"
+            curl -fsSL --retry 3 --retry-delay 5 -o "$deb" \
+              "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}-1_${arch}.deb"
 
-      - name: Build cloud-init user-data
-        id: userdata
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cat > cloud-init.yaml <<'EOF'
-          #cloud-config
-          package_update: true
-          package_upgrade: false
-
-          packages:
-            - sudo
-            - zip
-            - unzip
-            - curl
-            - git
-            - netcat-openbsd
-
-          users:
-            - name: chrome
-              gecos: Chrome Builder
-              shell: /bin/bash
-              groups: [sudo]
-              sudo: ALL=(ALL) NOPASSWD:ALL
-              lock_passwd: true
-              ssh_authorized_keys:
-                - ${LINODE_SSH_PUBLIC_KEY}
-
-          write_files:
-            - path: /etc/ssh/sshd_config.d/99-github-actions.conf
-              permissions: '0644'
-              content: |
-                PasswordAuthentication no
-                ClientAliveInterval 60
-                ClientAliveCountMax 3
-
-          runcmd:
-            - mkdir -p /home/chrome/.ssh
-            - chmod 700 /home/chrome/.ssh
-            - printf '%s\n' "${LINODE_SSH_PUBLIC_KEY}" > /home/chrome/.ssh/authorized_keys
-            - chmod 600 /home/chrome/.ssh/authorized_keys
-            - chown -R chrome:chrome /home/chrome/.ssh
-            - systemctl restart ssh || systemctl restart sshd || true
-          EOF
-
-          sed "s|\${LINODE_SSH_PUBLIC_KEY}|${{ secrets.LINODE_SSH_PUBLIC_KEY }}|g" cloud-init.yaml > cloud-init.rendered.yaml
-
-          user_data_b64="$(base64 -w 0 cloud-init.rendered.yaml)"
-          echo "user_data_b64=$user_data_b64" >> "$GITHUB_OUTPUT"
-
-      - name: Get or create builder
-        id: builder
-        shell: bash
-        env:
-          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
-        run: |
-          set -euo pipefail
-
-          builder_json="$(linode-cli linodes list --label chrome-builder --json)"
-          builder_id="$(echo "$builder_json" | jq -r '.[0].id // empty')"
-
-          if [ -n "$builder_id" ]; then
-            echo "Reusing existing builder: $builder_id"
-
-            builder_ip="$(echo "$builder_json" | jq -r '.[0].ipv4[0] // empty')"
-            builder_status="$(echo "$builder_json" | jq -r '.[0].status // empty')"
-
-            if [ "$builder_status" = "offline" ]; then
-              echo "Booting existing builder"
-              linode-cli linodes boot "$builder_id"
+            got="$(dpkg-deb --field "$deb" Version)"
+            if [ "$got" != "${CHROME_VERSION}-1" ]; then
+              echo "::error::$arch deb reports version $got, expected ${CHROME_VERSION}-1"
+              exit 1
             fi
-
-            echo "builder_created=false" >> "$GITHUB_OUTPUT"
-            echo "builder_id=$builder_id" >> "$GITHUB_OUTPUT"
-            echo "builder_ip=$builder_ip" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "No existing builder found, creating a new one"
-
-          builder_info="$(linode-cli linodes create \
-            --backups_enabled false \
-            --booted true \
-            --image linode/ubuntu22.04 \
-            --label chrome-builder \
-            --private_ip false \
-            --region us-west \
-            --root_pass "${{ secrets.LINODE_ROOT_PASS }}" \
-            --type g6-dedicated-56 \
-            --authorized_keys "${{ secrets.LINODE_SSH_PUBLIC_KEY }}" \
-            --firewall_id "${{ steps.firewall.outputs.firewall_id }}" \
-            --metadata.user_data "${{ steps.userdata.outputs.user_data_b64 }}" \
-            --json)"
-
-          echo "$builder_info"
-
-          builder_id="$(echo "$builder_info" | jq -r '.[0].id')"
-          builder_ip="$(echo "$builder_info" | jq -r '.[0].ipv4[0]')"
-
-          echo "builder_created=true" >> "$GITHUB_OUTPUT"
-          echo "builder_id=$builder_id" >> "$GITHUB_OUTPUT"
-          echo "builder_ip=$builder_ip" >> "$GITHUB_OUTPUT"
-
-      - name: Wait for Builder status
-        shell: bash
-        env:
-          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
-        run: |
-          set -euo pipefail
-
-          status="$(linode-cli linodes view "${{ steps.builder.outputs.builder_id }}" --json | jq -r '.[0].status')"
-
-          while [ "$status" = "provisioning" ] || [ "$status" = "booting" ]; do
-            echo "Builder status: $status"
-            sleep 5
-            status="$(linode-cli linodes view "${{ steps.builder.outputs.builder_id }}" --json | jq -r '.[0].status')"
           done
-
-          echo "Builder status: $status"
-
-          if [ "$status" != "running" ]; then
-            echo "Builder failed to reach running state"
-            exit 1
-          fi
-
-      - name: Write SSH keys
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.LINODE_SSH_PRIVATE_KEY }}" > ~/.ssh/linode_ed25519
-          printf '%s\n' "${{ secrets.LINODE_SSH_PUBLIC_KEY }}" > ~/.ssh/linode_ed25519.pub
-          chmod 600 ~/.ssh/linode_ed25519 ~/.ssh/linode_ed25519.pub
-
-      - name: Wait for SSH and cloud-init if needed
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ip="${{ steps.builder.outputs.builder_ip }}"
-
-          for i in $(seq 1 180); do
-            if [ "${{ steps.builder.outputs.builder_created }}" = "true" ]; then
-              remote_cmd='cloud-init status --wait >/dev/null 2>&1 || true; echo ready'
-            else
-              remote_cmd='echo ready'
-            fi
-
-            if ssh -i ~/.ssh/linode_ed25519 \
-              -o BatchMode=yes \
-              -o PasswordAuthentication=no \
-              -o StrictHostKeyChecking=accept-new \
-              -o ConnectTimeout=5 \
-              root@"$ip" \
-              "$remote_cmd" >/tmp/ssh-ready.txt 2>/tmp/ssh-ready.err; then
-              echo "SSH is ready"
-              break
-            fi
-
-            echo "Waiting for SSH on $ip..."
-            cat /tmp/ssh-ready.err || true
-            sleep 2
-          done
-
-          grep -q ready /tmp/ssh-ready.txt
-
-      - name: Verify chrome user
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ssh -i ~/.ssh/linode_ed25519 \
-            -o BatchMode=yes \
-            -o PasswordAuthentication=no \
-            -o StrictHostKeyChecking=yes \
-            root@${{ steps.builder.outputs.builder_ip }} \
-            'id chrome && sudo -iu chrome whoami'
-
-      - name: Amd64
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ssh -i ~/.ssh/linode_ed25519 \
-            -o BatchMode=yes \
-            -o PasswordAuthentication=no \
-            -o StrictHostKeyChecking=yes \
-            -o ServerAliveInterval=60 \
-            root@${{ steps.builder.outputs.builder_ip }} \
-            "sudo -iu chrome bash -s -- '${{ inputs.chrome_version }}'" \
-            < ./build/chrome/scripts/amd64.sh
-
-      - name: Arm64
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ssh -i ~/.ssh/linode_ed25519 \
-            -o BatchMode=yes \
-            -o PasswordAuthentication=no \
-            -o StrictHostKeyChecking=yes \
-            -o ServerAliveInterval=60 \
-            root@${{ steps.builder.outputs.builder_ip }} \
-            "sudo -iu chrome bash -s -- '${{ inputs.chrome_version }}'" \
-            < ./build/chrome/scripts/arm64.sh
-
-      - name: Drivers
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ssh -i ~/.ssh/linode_ed25519 \
-            -o BatchMode=yes \
-            -o PasswordAuthentication=no \
-            -o StrictHostKeyChecking=yes \
-            -o ServerAliveInterval=60 \
-            root@${{ steps.builder.outputs.builder_ip }} \
-            "sudo -iu chrome bash -s -- '${{ inputs.chrome_version }}'" \
-            < ./build/chrome/scripts/driver.sh
-
-      - name: Prepare artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ssh -i ~/.ssh/linode_ed25519 \
-            -o BatchMode=yes \
-            -o PasswordAuthentication=no \
-            -o StrictHostKeyChecking=yes \
-            root@${{ steps.builder.outputs.builder_ip }} \
-            'sudo -iu chrome bash -lc "cd /home/chrome && rm -f output.zip && zip -r output.zip ./output"'
-
-      - name: Download artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          rm -rf "${{ github.workspace }}/build/chrome/output"
-          mkdir -p "${{ github.workspace }}/build/chrome"
-
-          scp -i ~/.ssh/linode_ed25519 \
-            -o BatchMode=yes \
-            -o PasswordAuthentication=no \
-            -o StrictHostKeyChecking=yes \
-            root@${{ steps.builder.outputs.builder_ip }}:/home/chrome/output.zip \
-            "${{ github.workspace }}/build/chrome/output.zip"
-
-          unzip -o "${{ github.workspace }}/build/chrome/output.zip" -d "${{ github.workspace }}/build/chrome"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Login to DockerHub
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: ./build/chrome
           file: ./build/chrome/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: livekit/chrome-installer:${{ inputs.image_tag || inputs.chrome_version }}
-
-      - name: Delete created builder on success
-        if: success()
-        shell: bash
-        env:
-          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
-        run: |
-          set -euo pipefail
-          linode-cli linodes delete "${{ steps.builder.outputs.builder_id }}"
+          tags: livekit/chrome-installer:${{ inputs.image_tag || needs.resolve.outputs.version }}

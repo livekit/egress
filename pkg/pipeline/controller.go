@@ -47,10 +47,12 @@ import (
 
 const (
 	pipelineName = "pipeline"
-	eosTimeout   = time.Second * 30
 
 	streamRetryUpdateInterval = time.Minute
 )
+
+// var to allow tests to shorten it
+var eosTimeout = time.Second * 30
 
 type Controller struct {
 	*config.PipelineConfig
@@ -167,7 +169,7 @@ func newController(conf *config.PipelineConfig, ipcServiceClient ipc.EgressServi
 			BuildReady: make(chan struct{}),
 		},
 		sinks:   make(map[types.EgressType][]sink.Sink),
-		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
+		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID),
 		stats: controllerStats{
 			droppedVideoBuffersByQueue: make(map[string]uint64),
 			droppedAudioBuffersByQueue: make(map[string]uint64),
@@ -339,6 +341,16 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	logger.Debugw("closing source")
 	c.src.Close()
 
+	// Another egress instance is presumed to still be writing to the same
+	// output — don't race uploads with it.
+	if c.IsDuplicateIdentity() {
+		for _, si := range c.sinks {
+			for _, s := range si {
+				s.DisableUploads()
+			}
+		}
+	}
+
 	if c.playing.IsBroken() {
 		logger.Debugw("closing sinks")
 		for _, si := range c.sinks {
@@ -412,37 +424,6 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 	return errs.ToError()
 }
 
-func (c *Controller) UpdateEgress(ctx context.Context, req *livekit.UpdateEgressRequest) error {
-	ctx, span := tracer.Start(ctx, "Pipeline.UpdateEgress")
-	defer span.End()
-
-	errs := errors.ErrArray{}
-
-	// update stream targets
-	if len(req.AddStreamUrls) > 0 || len(req.RemoveStreamUrls) > 0 {
-		streamReq := &livekit.UpdateStreamRequest{
-			EgressId:         req.EgressId,
-			AddOutputUrls:    req.AddStreamUrls,
-			RemoveOutputUrls: req.RemoveStreamUrls,
-		}
-		if err := c.UpdateStream(ctx, streamReq); err != nil {
-			errs.AppendErr(err)
-		}
-	}
-
-	// update layout — not yet supported
-	if req.Layout != "" {
-		errs.AppendErr(errors.ErrFeatureDisabled("layout update"))
-	}
-
-	// update URL — not yet supported
-	if req.Url != "" {
-		errs.AppendErr(errors.ErrFeatureDisabled("url update"))
-	}
-
-	return errs.ToError()
-}
-
 func (c *Controller) streamFinished(ctx context.Context, stream *config.Stream) error {
 	stream.StreamInfo.Status = livekit.StreamInfo_FINISHED
 	stream.UpdateEndTime(time.Now().UnixNano())
@@ -479,7 +460,7 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 
 	// fail egress if no outputs remaining
 	if c.OutputCount.Load() == 0 {
-		return psrpc.NewError(psrpc.Unavailable, streamErr)
+		return psrpc.NewError(psrpc.Unavailable, errors.MarkDestinationError(streamErr))
 	}
 
 	logger.Infow("stream failed",
@@ -508,9 +489,18 @@ func (c *Controller) trackStreamRetry(ctx context.Context, stream *config.Stream
 }
 
 func (c *Controller) onEOSSent() {
+	// A track ending mid-build reaches this before BuildPipeline() assigns c.p:
+	// reading it would panic and would race with that write. BuildReady closes
+	// once c.p is set, so an open channel means there is no pipeline to stop.
+	select {
+	case <-c.callbacks.BuildReady:
+	default:
+		return
+	}
+
 	// for video-only track/track composite, EOS might have already
 	// made it through the pipeline by the time endRecording is closed
-	if (c.RequestType == types.RequestTypeTrack || c.RequestType == types.RequestTypeTrackComposite) && !c.AudioEnabled {
+	if (c.Passthrough || c.RequestType == types.RequestTypeTrackComposite) && !c.AudioEnabled {
 		// this will not actually send a second EOS, but will make sure everything is in the correct state
 		c.SendEOS(context.Background(), livekit.EndReasonSrcClosed)
 	}
@@ -565,6 +555,10 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 }
 
 func (c *Controller) sendEOS() {
+	if c.eosReceived.IsBroken() {
+		return
+	}
+
 	for _, sinks := range c.sinks {
 		for _, s := range sinks {
 			s.AddEOSProbe()
@@ -577,7 +571,7 @@ func (c *Controller) sendEOS() {
 			switch egressType {
 			case types.EgressTypeFile, types.EgressTypeSegments, types.EgressTypeImages:
 				for _, s := range si {
-					if !s.EOSReceived() {
+					if !c.eosReceived.IsBroken() && !s.EOSReceived() {
 						c.OnError(errors.ErrPipelineFrozen)
 						return
 					}
@@ -596,7 +590,11 @@ func (c *Controller) sendEOS() {
 }
 
 func (c *Controller) OnError(err error) {
-	logger.Errorw("controller onError invoked", err)
+	if errors.IsDestinationError(err) {
+		logger.Warnw("controller onError invoked", err)
+	} else {
+		logger.Errorw("controller onError invoked", err)
+	}
 	if errors.Is(err, errors.ErrPipelineFrozen) && c.Debug.EnableProfiling {
 		c.generateDotFile("error")
 		c.generatePProf()
@@ -646,6 +644,8 @@ func (c *Controller) Close() {
 		}
 	}
 
+	duplicateIdentity := c.IsDuplicateIdentity()
+
 	// ensure egress ends with a final state
 	switch c.Info.Status {
 	case livekit.EgressStatus_EGRESS_STARTING:
@@ -653,17 +653,25 @@ func (c *Controller) Close() {
 
 	case livekit.EgressStatus_EGRESS_ACTIVE,
 		livekit.EgressStatus_EGRESS_ENDING:
-		c.Info.SetComplete()
+		if err := c.endError(); err != nil {
+			c.Info.SetFailed(err)
+		} else {
+			c.Info.SetComplete()
+		}
 		fallthrough
 
 	case livekit.EgressStatus_EGRESS_LIMIT_REACHED,
 		livekit.EgressStatus_EGRESS_COMPLETE:
-		// upload manifest and add location to egress info
-		c.uploadManifest()
+		if !duplicateIdentity {
+			// upload manifest and add location to egress info
+			c.uploadManifest()
+		}
 	}
 
-	// upload debug files
-	c.uploadDebugFiles()
+	if !duplicateIdentity {
+		// upload debug files
+		c.uploadDebugFiles()
+	}
 }
 
 func (c *Controller) startSessionLimitTimer(ctx context.Context) {
@@ -925,9 +933,34 @@ func (c *Controller) streamUpdated(ctx context.Context) {
 }
 
 func (c *Controller) sendHandlerUpdate(ctx context.Context, info *livekit.EgressInfo) {
+	// Once duplicate-identity eviction is detected, suppress all further
+	// updates — another egress instance owns the recording.
+	if c.IsDuplicateIdentity() {
+		return
+	}
 	if c.ipcServiceClient != nil {
 		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, info)
 	}
+}
+
+// IsDuplicateIdentity reports whether the pipeline's SDK source was evicted
+// from the room because another participant joined with the same identity.
+func (c *Controller) IsDuplicateIdentity() bool {
+	sdkSrc, ok := c.src.(*source.SDKSource)
+	if !ok {
+		return false
+	}
+	return sdkSrc.IsDuplicateIdentity()
+}
+
+// endError returns a non-nil error if the SDK source ended on a retryable room
+// disconnect, so the finalized partial output is reported failed.
+func (c *Controller) endError() error {
+	sdkSrc, ok := c.src.(*source.SDKSource)
+	if !ok {
+		return nil
+	}
+	return sdkSrc.GetEndError()
 }
 
 func (c *Controller) updateEndTime() {

@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
-	"github.com/go-gst/go-gst/gst/app"
 	"github.com/linkdata/deadlock"
 
 	"github.com/livekit/egress/pkg/config"
@@ -32,7 +31,8 @@ import (
 )
 
 const (
-	videoTestSrcName = "video_test_src"
+	videoTestSrcName  = "video_test_src"
+	videoTestSrcDelay = 2 * time.Second
 )
 
 type VideoBin struct {
@@ -47,6 +47,9 @@ type VideoBin struct {
 	names       map[string]string
 	selector    *gst.Element
 	rawVideoTee *gst.Element
+
+	probesMu deadlock.Mutex
+	probes   map[string]*keyframeProbe
 }
 
 // buildVideoQueue creates a queue for the video pipeline. For live sources the
@@ -62,8 +65,9 @@ func (b *VideoBin) buildVideoQueue(name string) (*gst.Element, error) {
 
 func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error {
 	b := &VideoBin{
-		bin:  pipeline.NewBin("video"),
-		conf: p,
+		bin:    pipeline.NewBin("video"),
+		conf:   p,
+		probes: make(map[string]*keyframeProbe),
 	}
 
 	switch p.SourceType {
@@ -81,7 +85,6 @@ func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 		pipeline.AddOnTrackRemoved(b.onTrackRemoved)
 		pipeline.AddOnTrackMuted(b.onTrackMuted)
 		pipeline.AddOnTrackUnmuted(b.onTrackUnmuted)
-		pipeline.AddOnSourceBinReset(b.onSourceBinReset)
 	}
 
 	var getPad func() *gst.Pad
@@ -152,6 +155,7 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	}
 	delete(b.names, trackID)
 	delete(b.pads, name)
+	b.closeProbe(name)
 
 	if b.selectedPad == name {
 		if err := b.setSelectorPadLocked(videoTestSrcName); err != nil {
@@ -197,75 +201,6 @@ func (b *VideoBin) onTrackUnmuted(trackID string) {
 		}
 	}
 	b.mu.Unlock()
-}
-
-func (b *VideoBin) onSourceBinReset(ts *config.TrackSource) error {
-	if ts.TrackKind != lksdk.TrackKindVideo {
-		return nil
-	}
-	return b.resetVideoAppSrcBin(ts)
-}
-
-func (b *VideoBin) resetVideoAppSrcBin(ts *config.TrackSource) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	oldName, ok := b.names[ts.TrackID]
-	if !ok {
-		return errors.New("track already removed, cannot reset video source bin")
-	}
-
-	if b.bin.GetState() > gstreamer.StateRunning {
-		return errors.New("pipeline stopping, cannot reset video source bin")
-	}
-
-	// If the stuck bin is the currently selected pad, switch to test src first
-	if b.conf.VideoDecoding && b.selectedPad == oldName {
-		if err := b.setSelectorPadLocked(videoTestSrcName); err != nil {
-			return err
-		}
-	}
-
-	// Clean up old pad reference before force-remove
-	delete(b.pads, oldName)
-
-	// Force-remove old bin (blocks on GLib main loop, safe to hold b.mu since
-	// ForceRemoveSourceBin only acquires gstreamer.Bin's internal mutex)
-	if err := b.bin.ForceRemoveSourceBin(oldName); err != nil {
-		return fmt.Errorf("failed to force remove video source bin: %w", err)
-	}
-
-	// Create new appsrc element (reuse the same element name so watch.go works)
-	newElement, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", ts.TrackID))
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	ts.AppSrc = app.SrcFromElement(newElement)
-
-	name := fmt.Sprintf("%s_%d", ts.TrackID, b.nextID)
-	b.nextID++
-
-	appSrcBin, err := b.buildAppSrcBin(ts, name)
-	if err != nil {
-		return fmt.Errorf("failed to build new video source bin: %w", err)
-	}
-
-	if b.conf.VideoDecoding {
-		b.createSrcPadLocked(ts.TrackID, name)
-	}
-
-	if err = b.bin.AddSourceBin(appSrcBin); err != nil {
-		return fmt.Errorf("failed to add new video source bin: %w", err)
-	}
-
-	if b.conf.VideoDecoding {
-		if err := b.setSelectorPadLocked(name); err != nil {
-			return err
-		}
-	}
-
-	logger.Infow("video source bin reset complete", "trackID", ts.TrackID, "newBin", name)
-	return nil
 }
 
 func (b *VideoBin) buildWebInput() error {
@@ -380,6 +315,29 @@ func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
 	return nil
 }
 
+func (b *VideoBin) attachKeyframeProbe(ts *config.TrackSource, name string, element *gst.Element) error {
+	probe, err := newKeyframeProbe(ts.TrackID, ts.MimeType, element, ts.OnKeyframeRequired)
+	if err != nil {
+		return err
+	}
+	b.probesMu.Lock()
+	b.probes[name] = probe
+	b.probesMu.Unlock()
+	return nil
+}
+
+func (b *VideoBin) closeProbe(name string) {
+	b.probesMu.Lock()
+	probe, ok := b.probes[name]
+	if ok {
+		delete(b.probes, name)
+	}
+	b.probesMu.Unlock()
+	if ok {
+		probe.Close()
+	}
+}
+
 func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstreamer.Bin, error) {
 	appSrcBin := b.bin.NewBin(name)
 	appSrcBin.SetEOSFunc(func() bool {
@@ -426,16 +384,19 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, err
 		}
 
+		h264Parse, err := gst.NewElement("h264parse")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = appSrcBin.AddElement(h264Parse); err != nil {
+			return nil, err
+		}
+
+		if err := b.attachKeyframeProbe(ts, name, h264Parse); err != nil {
+			return nil, err
+		}
+
 		if !b.conf.VideoDecoding {
-			h264ParseFixer, err := newPTSFixer("h264parse", fmt.Sprintf("track:%s", ts.TrackID))
-			if err != nil {
-				return nil, err
-			}
-
-			if err = appSrcBin.AddElement(h264ParseFixer.Element); err != nil {
-				return nil, err
-			}
-
 			return appSrcBin, nil
 		}
 
@@ -461,6 +422,10 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err = appSrcBin.AddElement(rtpVP8Depay); err != nil {
+			return nil, err
+		}
+
+		if err := b.attachKeyframeProbe(ts, name, rtpVP8Depay); err != nil {
 			return nil, err
 		}
 
@@ -491,13 +456,19 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, err
 		}
 
-		if !b.conf.VideoDecoding {
-			vp9ParseFixer, err := newPTSFixer("vp9parse", fmt.Sprintf("track:%s", ts.TrackID))
-			if err != nil {
-				return nil, err
-			}
-			vp9Parse := vp9ParseFixer.Element
+		vp9Parse, err := gst.NewElement("vp9parse")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = appSrcBin.AddElement(vp9Parse); err != nil {
+			return nil, err
+		}
 
+		if err := b.attachKeyframeProbe(ts, name, vp9Parse); err != nil {
+			return nil, err
+		}
+
+		if !b.conf.VideoDecoding {
 			vp9Caps, err := gst.NewElement("capsfilter")
 			if err != nil {
 				return nil, errors.ErrGstPipelineError(err)
@@ -508,7 +479,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 				return nil, errors.ErrGstPipelineError(err)
 			}
 
-			if err = appSrcBin.AddElements(vp9Parse, vp9Caps); err != nil {
+			if err = appSrcBin.AddElement(vp9Caps); err != nil {
 				return nil, err
 			}
 			return appSrcBin, nil
@@ -552,7 +523,7 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 	if err != nil {
 		return err
 	}
-	if err = queue.SetProperty("min-threshold-time", uint64(2e9)); err != nil {
+	if err = queue.SetProperty("min-threshold-time", uint64(videoTestSrcDelay.Nanoseconds())); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
@@ -614,6 +585,12 @@ func (b *VideoBin) addEncoder() error {
 		}
 
 		x264Enc.SetArg("speed-preset", "veryfast")
+
+		if b.conf.VideoEncoderThreads > 0 {
+			if err = x264Enc.SetProperty("threads", b.conf.VideoEncoderThreads); err != nil {
+				return errors.ErrGstPipelineError(err)
+			}
+		}
 
 		var options []string
 		disabledSceneCut := false

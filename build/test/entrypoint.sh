@@ -22,6 +22,11 @@ pulseaudio -D --verbose --exit-idle-time=-1 --disallow-exit > /dev/null 2>&1
 # Run RTSP server
 ./mediamtx > /dev/null 2>&1 &
 
+# Run toxiproxy (control API on :8474). Used by the RTMP-wedge integration tests
+# to simulate a sink that stops accepting bytes without emitting errors.
+toxiproxy-server -host 0.0.0.0 -port 8474 > /dev/null 2>&1 &
+
+# Run tests
 # emit_avsync_stats prints the stats JSON between sentinels after go test
 # exits. Writing the file from inside the test process races zap's log flush
 # during testing.T cleanup, so we do it from the shell instead.

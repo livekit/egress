@@ -12,11 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# The GStreamer version is pinned in .gst-version, the single source of truth that
+# Renovate keeps current via an approvable PR. It has no default here on purpose: a
+# default would be a second copy of the version and would drift. The magefile and CI
+# read the file and pass it in, so build this by hand with
+# --build-arg GSTVERSION=$(cat .gst-version).
+ARG GSTVERSION
+
 ARG TEMPLATE_TAG=latest
 
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template
 
-FROM livekit/gstreamer:1.24.12-dev
+FROM livekit/gstreamer:$GSTVERSION-dev
 
 ARG TARGETPLATFORM
 ARG TARGETARCH
@@ -25,16 +32,31 @@ ENV TARGETPLATFORM=${TARGETPLATFORM}
 
 WORKDIR /workspace
 
-# install go
-RUN wget https://go.dev/dl/go1.26.2.linux-${TARGETARCH}.tar.gz && \
+COPY .go-version ./
+
+# Install Go: use the exact patch pinned in .go-version, which Renovate keeps current
+# via an approvable PR. It is decoupled from go.mod's "go" directive (the module
+# minimum, which the go toolchain may rewrite to bare major.minor). GOTOOLCHAIN=local
+# forces exactly this toolchain and fails the build if go.mod ever requires a newer
+# one, so a minor-version bump surfaces as a red CI check instead of a silent download.
+RUN GOVER=$(cat .go-version) && \
+    if [ -z "$GOVER" ]; then echo ".go-version is empty" >&2; exit 1; fi && \
+    echo "using Go $GOVER from .go-version" && \
+    wget -O /tmp/go.tar.gz https://go.dev/dl/go$GOVER.linux-${TARGETARCH}.tar.gz && \
     rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go1.26.2.linux-${TARGETARCH}.tar.gz
+    tar -C /usr/local -xzf /tmp/go.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOTOOLCHAIN=local
 
 # download go modules
 COPY go.mod .
 COPY go.sum .
 RUN go mod download
+
+# Get security updates in case the toolchain was updated.
+# SECURITY_REFRESH busts the cache so the upgrade re-runs on every build.
+ARG SECURITY_REFRESH
+RUN apt-get update && apt-get -y dist-upgrade && rm -rf /var/lib/apt/lists/*
 
 # copy source
 COPY cmd/ cmd/
@@ -55,12 +77,15 @@ ENV TINI_VERSION v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TARGETARCH} /tini
 RUN chmod +x /tini
 
-FROM livekit/gstreamer:1.24.12-prod
+FROM livekit/gstreamer:$GSTVERSION-prod
 
 ARG TARGETPLATFORM
 
-# install deps
+# install deps, pulling in security updates from the base image.
+# SECURITY_REFRESH busts the cache so the upgrade re-runs on every build.
+ARG SECURITY_REFRESH
 RUN apt-get update && \
+    apt-get -y dist-upgrade && \
     apt-get install -y \
     curl \
     fonts-noto \
@@ -72,7 +97,7 @@ RUN apt-get update && \
     gstreamer1.0-plugins-base-
 
 # install chrome
-COPY --from=livekit/chrome-installer:146.0.7680.177-1 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:153.0.8010.36 /chrome-installer /chrome-installer
 
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 
@@ -89,9 +114,14 @@ COPY --from=1 /workspace/egress /bin/
 COPY --from=1 /tini /tini
 COPY build/egress/entrypoint.sh /
 
+# PulseAudio defaults to rlimit-nofile=256. Set it to a more sensible value to avoid
+# hitting a max Chrome instances bottleneck
+RUN echo "rlimit-nofile = -1" >> /etc/pulse/daemon.conf
+
 # run
 USER egress
 ENV PATH=${PATH}:/chrome
 ENV XDG_RUNTIME_DIR=/home/egress/.cache/xdgr
 ENV CHROME_DEVEL_SANDBOX=/usr/local/sbin/chrome-devel-sandbox
-ENTRYPOINT ["/entrypoint.sh"]
+
+ENTRYPOINT ["/tini", "--", "/entrypoint.sh"]

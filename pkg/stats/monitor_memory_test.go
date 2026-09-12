@@ -33,12 +33,12 @@ func TestCheckMemoryAdmissionLocked_Legacy(t *testing.T) {
 	}
 
 	// 5 + 0 (pending) + 1 (cost) + 1 (headroom) = 7 < 10, should accept
-	reject, _ := m.checkMemoryAdmissionLocked()
+	reject, _ := m.checkMemoryAdmissionLocked(m.cpuCostConfig.MemoryCost)
 	require.False(t, reject)
 
 	// Increase usage to trigger rejection
 	m.memoryUsage = 8 // 8 + 0 + 1 + 1 = 10 >= 10, should reject
-	reject, reason := m.checkMemoryAdmissionLocked()
+	reject, reason := m.checkMemoryAdmissionLocked(m.cpuCostConfig.MemoryCost)
 	require.True(t, reject)
 	require.Equal(t, "memory", reason)
 }
@@ -55,12 +55,12 @@ func TestCheckMemoryAdmissionLocked_CgroupWorkingSet(t *testing.T) {
 	}
 
 	// Working set is 5 GB, should accept
-	reject, _ := m.checkMemoryAdmissionLocked()
+	reject, _ := m.checkMemoryAdmissionLocked(m.cpuCostConfig.MemoryCost)
 	require.False(t, reject)
 
 	// Increase working set to trigger rejection
 	m.cgroupUsageBytes = 8 * gb
-	reject, reason := m.checkMemoryAdmissionLocked()
+	reject, reason := m.checkMemoryAdmissionLocked(m.cpuCostConfig.MemoryCost)
 	require.True(t, reject)
 	require.Equal(t, "memory_cgroup", reason)
 }
@@ -77,11 +77,11 @@ func TestCheckMemoryAdmissionLocked_FallbackToProcRSS(t *testing.T) {
 	}
 
 	// Should fall back to proc_rss
-	reject, _ := m.checkMemoryAdmissionLocked()
+	reject, _ := m.checkMemoryAdmissionLocked(m.cpuCostConfig.MemoryCost)
 	require.False(t, reject) // 5 + 0 + 1 + 1 = 7 < 10
 
 	m.memoryUsage = 8
-	reject, reason := m.checkMemoryAdmissionLocked()
+	reject, reason := m.checkMemoryAdmissionLocked(m.cpuCostConfig.MemoryCost)
 	require.True(t, reject)
 	require.Equal(t, "memory", reason) // proc_rss reason
 }
@@ -96,7 +96,7 @@ func TestCheckMemoryAdmissionLocked_NoMaxMemory(t *testing.T) {
 	}
 
 	// Should not reject when MaxMemory is 0
-	reject, _ := m.checkMemoryAdmissionLocked()
+	reject, _ := m.checkMemoryAdmissionLocked(m.cpuCostConfig.MemoryCost)
 	require.False(t, reject)
 }
 
@@ -112,11 +112,11 @@ func TestCheckMemoryAdmissionLocked_WithPendingMemory(t *testing.T) {
 
 	// Add pending memory
 	m.pendingMemoryUsage.Store(2) // 5 + 2 + 1 + 1 = 9 < 10
-	reject, _ := m.checkMemoryAdmissionLocked()
+	reject, _ := m.checkMemoryAdmissionLocked(m.cpuCostConfig.MemoryCost)
 	require.False(t, reject)
 
 	m.pendingMemoryUsage.Store(3) // 5 + 3 + 1 + 1 = 10 >= 10
-	reject, reason := m.checkMemoryAdmissionLocked()
+	reject, reason := m.checkMemoryAdmissionLocked(m.cpuCostConfig.MemoryCost)
 	require.True(t, reject)
 	require.Equal(t, "memory", reason)
 }

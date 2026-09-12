@@ -169,10 +169,10 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 		}
 
 		var expectedVideoEncoding bool
-		switch test.requestType {
-		case types.RequestTypeTrack:
+		switch {
+		case test.requestType == types.RequestTypeTrack || test.passthrough:
 			expectedVideoEncoding = false
-		case types.RequestTypeParticipant:
+		case test.requestType == types.RequestTypeParticipant:
 			expectedVideoEncoding = true
 		default:
 			expectedVideoEncoding = !test.audioOnly
@@ -296,6 +296,13 @@ func (r *Runner) sendRequest(t *testing.T, req *rpc.StartEgressRequest) *livekit
 		replayReq := req.Request.(*rpc.StartEgressRequest_Replay).Replay
 		if _, ok := replayReq.Source.(*livekit.ExportReplayRequest_Web); ok {
 			require.Empty(t, info.RoomName)
+		}
+	case *rpc.StartEgressRequest_Egress:
+		egressReq := req.Request.(*rpc.StartEgressRequest_Egress).Egress
+		if _, ok := egressReq.Source.(*livekit.StartEgressRequest_Web); ok {
+			require.Empty(t, info.RoomName)
+		} else {
+			require.Equal(t, r.RoomName, info.RoomName)
 		}
 	default:
 		require.Equal(t, r.RoomName, info.RoomName)

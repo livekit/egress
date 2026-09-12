@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
 	"go.uber.org/atomic"
 
@@ -28,6 +29,25 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+)
+
+const (
+	livenessPollInterval = 5 * time.Second
+	livenessIdleTimeout  = 30 * time.Second
+	// Minimum OutBytesTotal growth between two polls to count as real streaming
+	// progress. This filters RTMP chunk and control-message traffic that a single
+	// connect/publish/reconnect attempt produces (a few hundred to ~1 KB of
+	// WindowAckSize, SetPeerBandwidth, connect, releaseStream, FCPublish,
+	// createStream, publish chunks) — without it, a rapid publish-reject loop
+	// could occasionally cross the threshold across a poll boundary and falsely
+	// reset disconnectedAt. Note that rtmp2sink's OutBytesTotal does not count
+	// the raw RTMP handshake (C0/C1/C2), so the noise we filter here is the
+	// chunk-control floor of an attempt, not the handshake itself.
+	//
+	// 4 KiB sits comfortably above typical per-attempt control bytes (~500B–1.5KB)
+	// and well below even a 32 kbps audio-only stream's per-poll growth (~20 KB),
+	// keeping margin on both sides without eating into low-bitrate headroom.
+	livenessProgressThreshold = 4 * 1024
 )
 
 type StreamBin struct {
@@ -47,6 +67,26 @@ type Stream struct {
 	reconnections  atomic.Int32
 	disconnectedAt atomic.Time
 	failed         atomic.Bool
+
+	// liveness monitor — detects silently-wedged sinks that stop emitting both data and errors.
+	//
+	// We track OutBytesTotal (not OutBytesAcked) because the latter only advances when
+	// the peer sends RTMP Acknowledgement messages, which is peer-dependent: a server
+	// with a large ack window (e.g. some CDNs) may not ack for many seconds even when
+	// streaming is healthy. OutBytesTotal grows whenever rtmp2sink writes chunks to
+	// the socket; TCP backpressure ensures it stalls under the same failure modes we
+	// care about (TCP wedge, internal sink wedge, remote close).
+	lastOutBytesTotal int64
+	lastProgressAt    time.Time
+	// monitorObservedProgress flips to true the first time the monitor sees byte
+	// growth above livenessProgressThreshold between two ticks — i.e. real
+	// streaming progress, not just RTMP chunk/control traffic from a single
+	// connect/publish/reconnect attempt. It is the historical signal used in
+	// Reset's bad-URL fast-fail check; once set, it stays set.
+	monitorObservedProgress atomic.Bool
+	livenessFailed          atomic.Bool
+	monitorStarted          core.Fuse
+	monitorStop             core.Fuse
 }
 
 func BuildStreamBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, o *config.StreamConfig) (*StreamBin, error) {
@@ -232,21 +272,32 @@ func (sb *StreamBin) BuildStream(stream *config.Stream, framerate int32) (*Strea
 }
 
 func (s *Stream) Reset(streamErr error) (bool, error) {
-	var outBytes uint64
-	if stats, ok := s.Stats(); ok {
-		outBytes = stats.OutBytesAcked
-	}
-
-	if s.reconnections.Load() == 0 && outBytes == 0 {
-		// unable to connect, probably a bad stream key or url
+	if s.livenessFailed.Load() {
 		return false, nil
 	}
 
-	if outBytes > 0 {
-		// first disconnection
+	var outBytesAcked uint64
+	if stats, ok := s.Stats(); ok {
+		outBytesAcked = stats.OutBytesAcked
+	}
+
+	// First-error fast-fail for bad URL / bad key. Requires *both* signals to
+	// agree that no real communication happened: the peer hasn't acked anything,
+	// and the liveness monitor has never observed a real-progress tick.
+	//
+	// Note: this still has a small blind spot — a stream that flows healthy
+	// media but is disconnected *before* the monitor's first 5s tick will hit
+	// this fast-fail path if the peer also hasn't acked yet. That's acceptable;
+	// the alternative (use OutBytesTotal > threshold at reset time) would
+	// misclassify bad-URL cases that get past handshake before the publish
+	// command is rejected.
+	if s.reconnections.Load() == 0 && outBytesAcked == 0 && !s.monitorObservedProgress.Load() {
+		return false, nil
+	}
+
+	if s.disconnectedAt.Load().IsZero() {
 		s.disconnectedAt.Store(time.Now())
-		s.reconnections.Store(0)
-	} else if time.Since(s.disconnectedAt.Load()) > time.Second*30 {
+	} else if time.Since(s.disconnectedAt.Load()) > livenessIdleTimeout {
 		return false, nil
 	}
 
@@ -300,6 +351,95 @@ func (s *Stream) Stats() (*logging.StreamStats, bool) {
 	}
 
 	return streamStats, true
+}
+
+// StartMonitor begins polling the sink for outbound progress. If OutBytesTotal
+// fails to grow beyond livenessProgressThreshold for livenessIdleTimeout, the
+// monitor posts a synthetic error on the sink element so the existing error
+// path tears the stream down.
+
+func (s *Stream) StartMonitor() {
+	s.monitorStarted.Once(func() {
+		s.lastProgressAt = time.Now()
+		go s.runMonitor()
+	})
+}
+
+// StopMonitor signals the monitor goroutine to exit. Idempotent and safe to
+// call before StartMonitor — runMonitor's first select observes the broken
+// fuse and returns.
+func (s *Stream) StopMonitor() {
+	s.monitorStop.Break()
+}
+
+func (s *Stream) runMonitor() {
+	ticker := time.NewTicker(livenessPollInterval)
+	defer ticker.Stop()
+
+	stop := s.monitorStop.Watch()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			if s.livenessFailed.Load() {
+				return
+			}
+			s.checkLiveness()
+		}
+	}
+}
+
+type livenessAction int
+
+const (
+	livenessActionNone livenessAction = iota
+	livenessActionRealProgress
+	livenessActionFail
+)
+
+// evaluateLiveness returns the action a poll tick should take given the byte counters
+// and the timestamp of the last observed real progress. Pure so it can be unit-tested
+// without GStreamer.
+func evaluateLiveness(current, last int64, lastProgressAt, now time.Time) livenessAction {
+	if current-last > livenessProgressThreshold {
+		return livenessActionRealProgress
+	}
+	if current == 0 {
+		// rtmp2sink hasn't connected yet (or stats just got reset by a SetState(NULL));
+		// leave the liveness clock alone so the error-driven path owns startup failures.
+		return livenessActionNone
+	}
+	if now.Sub(lastProgressAt) > livenessIdleTimeout {
+		return livenessActionFail
+	}
+	return livenessActionNone
+}
+
+func (s *Stream) checkLiveness() {
+	stats, ok := s.Stats()
+	if !ok {
+		return
+	}
+	s.applyLiveness(int64(stats.OutBytesTotal), time.Now())
+}
+
+func (s *Stream) applyLiveness(current int64, now time.Time) {
+	last := s.lastOutBytesTotal
+	s.lastOutBytesTotal = current
+
+	switch evaluateLiveness(current, last, s.lastProgressAt, now) {
+	case livenessActionRealProgress:
+		s.lastProgressAt = now
+		s.monitorObservedProgress.Store(true)
+		s.reconnections.Store(0)
+		s.disconnectedAt.Store(time.Time{})
+	case livenessActionFail:
+		s.livenessFailed.Store(true)
+		err := fmt.Errorf("no outbound progress for %s", livenessIdleTimeout)
+		logger.Warnw("stream liveness check failed", err, "url", s.Conf.RedactedUrl)
+		s.sink.Error("stream wedged", err)
+	}
 }
 
 // sink stats sometimes returns strings instead of uint64

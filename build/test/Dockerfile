@@ -15,12 +15,18 @@
 # syntax=docker/dockerfile:1.6
 ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
-ARG GO_VERSION=1.26.2
 ARG LINT_VERSION=v2.11.3
+
+# The GStreamer version is pinned in .gst-version, the single source of truth that
+# Renovate keeps current via an approvable PR. It has no default here on purpose: a
+# default would be a second copy of the version and would drift. The magefile and CI
+# read the file and pass it in, so build this by hand with
+# --build-arg GSTVERSION=$(cat .gst-version).
+ARG GSTVERSION
 
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template
 
-FROM livekit/gstreamer:1.24.12-dev AS builder
+FROM livekit/gstreamer:$GSTVERSION-dev AS builder
 
 WORKDIR /workspace
 
@@ -28,14 +34,23 @@ ARG TARGETPLATFORM
 
 # Deadlock 0 = off, 1 = on
 ARG DEADLOCK=0
-ARG GO_VERSION
 
-# install go
+COPY .go-version ./
+
+# Install Go: use the exact patch pinned in .go-version, which Renovate keeps current
+# via an approvable PR. It is decoupled from go.mod's "go" directive (the module
+# minimum, which the go toolchain may rewrite to bare major.minor). GOTOOLCHAIN=local
+# forces exactly this toolchain and fails the build if go.mod ever requires a newer
+# one, so a minor-version bump surfaces as a red CI check instead of a silent download.
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    wget https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz && \
+    GOVER=$(cat .go-version) && \
+    if [ -z "$GOVER" ]; then echo ".go-version is empty" >&2; exit 1; fi && \
+    echo "using Go $GOVER from .go-version" && \
+    wget -O /tmp/go.tar.gz https://go.dev/dl/go$GOVER.linux-${GOARCH}.tar.gz && \
     rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go${GO_VERSION}.linux-${GOARCH}.tar.gz
+    tar -C /usr/local -xzf /tmp/go.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOTOOLCHAIN=local
 
 ENV GOMODCACHE=/go/pkg/mod \
     GOCACHE=/go/build-cache
@@ -46,6 +61,11 @@ COPY go.sum .
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/go/build-cache \
     go mod download
+
+# Get security updates in case the toolchain was updated.
+# SECURITY_REFRESH busts the cache so the upgrade re-runs on every build.
+ARG SECURITY_REFRESH
+RUN apt-get update && apt-get -y dist-upgrade && rm -rf /var/lib/apt/lists/*
 
 # copy source
 COPY cmd/ cmd/
@@ -86,13 +106,28 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
         --build-tags="${LINT_TAGS}"
 RUN echo ok >/lint_ok
 
+FROM builder AS unit
 
-FROM livekit/gstreamer:1.24.12-prod
+ARG DEADLOCK=0
+
+# Package unit tests; the integration suite under test/ runs from the final image.
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/go/build-cache \
+    TAGS=""; \
+    if [ "${DEADLOCK:-0}" = "1" ]; then TAGS="deadlock"; fi; \
+    CGO_ENABLED=1 go test ${TAGS:+-tags} ${TAGS:+"$TAGS"} -count=1 -timeout 10m ./pkg/...
+RUN echo ok >/unit_ok
+
+
+FROM livekit/gstreamer:$GSTVERSION-prod
 
 ARG TARGETPLATFORM
 
-# install deps
+# install deps, pulling in security updates from the base image.
+# SECURITY_REFRESH busts the cache so the upgrade re-runs on every build.
+ARG SECURITY_REFRESH
 RUN apt-get update && \
+    apt-get -y dist-upgrade && \
     apt-get install -y \
         curl \
         ffmpeg \
@@ -106,12 +141,13 @@ RUN apt-get update && \
         xvfb \
         gstreamer1.0-plugins-base-
 
-# install go
+# reuse the .go-version-pinned toolchain installed in the builder stage
 COPY --from=1 /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOTOOLCHAIN=local
 
 # install chrome
-COPY --from=livekit/chrome-installer:146.0.7680.177-1 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:153.0.8010.36 /chrome-installer /chrome-installer
 
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 
@@ -126,6 +162,12 @@ RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64v8; else ARCH=amd64
     sed -i 's_record: no_record: yes_g' mediamtx.yml && \
     sed -i 's_recordPath: ./recordings/%path/_recordPath: /out/output/stream-_g' mediamtx.yml
 
+# install toxiproxy (used by integration tests to simulate wedged RTMP outputs)
+RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64; else ARCH=amd64; fi && \
+    wget -O /usr/local/bin/toxiproxy-server \
+        https://github.com/Shopify/toxiproxy/releases/download/v2.12.0/toxiproxy-server-linux-${ARCH} && \
+    chmod +x /usr/local/bin/toxiproxy-server
+
 # create egress user
 RUN useradd -ms /bin/bash -g root -G sudo,pulse,pulse-access egress
 RUN mkdir -p home/egress/tmp home/egress/.cache/xdgr && \
@@ -139,8 +181,9 @@ COPY --from=1 /workspace/test.test .
 COPY media-samples /media-samples
 COPY build/test/entrypoint.sh .
 
-# Force lint stage to run successfully
+# Force lint and unit test stages to run successfully
 COPY --from=lint /lint_ok /__lint_ok
+COPY --from=unit /unit_ok /__unit_ok
 
 # run tests
 USER egress

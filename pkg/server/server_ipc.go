@@ -22,6 +22,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -31,6 +32,8 @@ func (s *Server) HandlerReady(_ context.Context, req *ipc.HandlerReadyRequest) (
 	if err := s.HandlerStarted(req.EgressId); err != nil {
 		return nil, err
 	}
+
+	s.ioClient.SessionStarted(context.Background(), req.EgressId)
 
 	logger.Debugw("handler ready completed", "egressID", req.EgressId)
 	return &emptypb.Empty{}, nil
@@ -53,7 +56,10 @@ func (s *Server) HandlerUpdate(_ context.Context, info *livekit.EgressInfo) (*em
 
 func (s *Server) HandlerFinished(_ context.Context, req *ipc.HandlerFinishedRequest) (*emptypb.Empty, error) {
 	logger.Debugw("handler finished", "egressID", req.EgressId)
-	if err := s.ioClient.UpdateEgress(context.Background(), req.Info); err != nil {
+
+	if req.SilentExit {
+		s.SetExitReason(req.EgressId, stats.ResultDuplicateIdentity)
+	} else if err := s.ioClient.UpdateEgress(context.Background(), req.Info); err != nil {
 		logger.Errorw("failed to update egress", err, "egressID", req.EgressId)
 	}
 

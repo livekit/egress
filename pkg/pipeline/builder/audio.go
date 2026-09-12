@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
-	"github.com/go-gst/go-gst/gst/app"
 	"github.com/linkdata/deadlock"
 
 	"github.com/livekit/egress/pkg/config"
@@ -70,7 +69,6 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 
 		pipeline.AddOnTrackAdded(b.onTrackAdded)
 		pipeline.AddOnTrackRemoved(b.onTrackRemoved)
-		pipeline.AddOnSourceBinReset(b.onSourceBinReset)
 	}
 
 	if len(p.GetEncodedOutputs()) > 1 {
@@ -82,7 +80,11 @@ func BuildAudioBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) error
 			return err
 		}
 	} else {
-		queue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_queue", audioBinName), p.Latency.PipelineLatency, p.Live)
+		latency := p.Latency.PipelineLatency
+		if p.SourceType == types.SourceTypeSDK && p.VideoEnabled {
+			latency += videoTestSrcDelay
+		}
+		queue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_queue", audioBinName), latency, p.Live)
 		if err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -323,62 +325,6 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 	return nil
 }
 
-func (b *AudioBin) onSourceBinReset(ts *config.TrackSource) error {
-	if ts.TrackKind != lksdk.TrackKindAudio {
-		return nil
-	}
-	return b.resetAudioAppSrcBin(ts)
-}
-
-func (b *AudioBin) resetAudioAppSrcBin(ts *config.TrackSource) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	oldName, ok := b.names[ts.TrackID]
-	if !ok {
-		return errors.New("track already removed, cannot reset audio source bin")
-	}
-
-	if b.bin.GetState() > gstreamer.StateRunning {
-		return errors.New("pipeline stopping, cannot reset audio source bin")
-	}
-
-	// Detach the tempo controller callback so a concurrent SetDrift can't invoke
-	// the old pacer's closure on the soon-to-be-freed pitch element. The new
-	// callback is re-registered inside addAudioAppSrcBinLocked below.
-	//
-	// CancelInFlight clears the in-flight target so the immediate-callback fire
-	// inside the new OnDriftDetectedCallback registration does not arm the new
-	// pacer with the old pacer's target. The old pacer's partial compensation
-	// is downstream of the bin being discarded — re-applying it on the new
-	// pacer would double-correct. The next SR will surface any residual drift
-	// and the controller arms fresh against the current state.
-	if ts.TempoController != nil {
-		ts.TempoController.OnDriftDetectedCallback(nil)
-		ts.TempoController.OnTierChange(nil)
-		ts.TempoController.CancelInFlight()
-	}
-
-	// Force-remove old bin (blocks on GLib main loop, safe to hold b.mu since
-	// ForceRemoveSourceBin only acquires gstreamer.Bin's internal mutex)
-	if err := b.bin.ForceRemoveSourceBin(oldName); err != nil {
-		return fmt.Errorf("failed to force remove audio source bin: %w", err)
-	}
-
-	newElement, err := gst.NewElementWithName("appsrc", fmt.Sprintf("app_%s", ts.TrackID))
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	ts.AppSrc = app.SrcFromElement(newElement)
-
-	if err := b.addAudioAppSrcBinLocked(ts); err != nil {
-		return fmt.Errorf("failed to add new audio source bin: %w", err)
-	}
-
-	logger.Infow("audio source bin reset complete", "trackID", ts.TrackID, "newBin", b.names[ts.TrackID])
-	return nil
-}
-
 func (b *AudioBin) getChannelLocked(ts *config.TrackSource) livekit.AudioChannel {
 	if ts.AudioChannel != nil {
 		return *ts.AudioChannel
@@ -508,11 +454,6 @@ func (b *AudioBin) addEncoder() error {
 }
 
 func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel livekit.AudioChannel, isLeaky bool) error {
-	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
-	if err != nil {
-		return err
-	}
-
 	audioQueue, err := gstreamer.BuildQueue(fmt.Sprintf("%s_input_queue", audioBinName), p.Latency.PipelineLatency, isLeaky)
 	if err != nil {
 		return err
@@ -533,7 +474,12 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel livek
 		return err
 	}
 
-	return b.AddElements(rate, audioQueue, audioConvert, audioResample, capsFilter)
+	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
+	if err != nil {
+		return err
+	}
+
+	return b.AddElements(audioQueue, audioConvert, audioResample, capsFilter, rate)
 }
 
 func installPitchProbes(pacer *audioPacer) {
@@ -625,12 +571,6 @@ func installPitchProbes(pacer *audioPacer) {
 }
 
 func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.PipelineConfig, channel livekit.AudioChannel, isLeaky bool) (*audioPacer, error) {
-	// add audio rate element to handle discontinuities or codec DTX
-	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
-	if err != nil {
-		return nil, err
-	}
-
 	q, err := gstreamer.BuildQueue(fmt.Sprintf("%s_input_queue", audioBinName), p.Latency.PipelineLatency, isLeaky)
 	if err != nil {
 		return nil, err
@@ -647,6 +587,11 @@ func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.Pipeli
 
 	// go to float for pitch element
 	f32caps, err := newAudioFloatCapsFilter(p, channel)
+	if err != nil {
+		return nil, err
+	}
+
+	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
 	if err != nil {
 		return nil, err
 	}
@@ -682,7 +627,7 @@ func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.Pipeli
 
 	installPitchProbes(pacer)
 
-	if err := bin.AddElements(rate, q, ac1, ar1, f32caps, pitch, ac2, s16caps); err != nil {
+	if err := bin.AddElements(q, ac1, ar1, f32caps, rate, pitch, ac2, s16caps); err != nil {
 		return nil, err
 	}
 	return pacer, nil

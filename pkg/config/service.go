@@ -56,6 +56,10 @@ const (
 	defaultAudioTempoControllerAdjustmentRate = 0.05
 
 	defaultMaxPulseClients = 60
+
+	defaultCpuKillGraceSec = 30
+
+	defaultPulseSinkReapGraceSec = 30
 )
 
 type ServiceConfig struct {
@@ -65,6 +69,10 @@ type ServiceConfig struct {
 	TemplatePort     int `yaml:"template_port"`      // room composite template server port
 	PrometheusPort   int `yaml:"prometheus_port"`    // prometheus handler port
 	DebugHandlerPort int `yaml:"debug_handler_port"` // egress debug handler port
+
+	PulseSinkReapGraceSec int `yaml:"pulse_sink_reap_grace_sec"` // seconds a leaked pulse sink must stay orphaned before it is unloaded (0 = use default, negative = disable reaping)
+
+	PSRPC rpc.PSRPCConfig `yaml:"psrpc,omitempty"`
 
 	*CPUCostConfig `yaml:"cpu_cost"` // CPU costs for the different egress types
 }
@@ -80,21 +88,24 @@ const (
 )
 
 type CPUCostConfig struct {
-	MaxCpuUtilization         float64 `yaml:"max_cpu_utilization"` // maximum allowed CPU utilization when deciding to accept a request. Default to 80%
-	MaxMemory                 float64 `yaml:"max_memory"`          // maximum allowed memory usage in GB. 0 to disable
-	MemoryCost                float64 `yaml:"memory_cost"`         // minimum memory in GB
-	RoomCompositeCpuCost      float64 `yaml:"room_composite_cpu_cost"`
-	AudioRoomCompositeCpuCost float64 `yaml:"audio_room_composite_cpu_cost"`
-	WebCpuCost                float64 `yaml:"web_cpu_cost"`
-	AudioWebCpuCost           float64 `yaml:"audio_web_cpu_cost"`
-	ParticipantCpuCost        float64 `yaml:"participant_cpu_cost"`
-	TrackCompositeCpuCost     float64 `yaml:"track_composite_cpu_cost"`
-	TrackCpuCost              float64 `yaml:"track_cpu_cost"`
-	MaxPulseClients           int     `yaml:"max_pulse_clients"` // pulse client limit for launching chrome
+	MaxCpuUtilization               float64 `yaml:"max_cpu_utilization"` // maximum allowed CPU utilization when deciding to accept a request. Default to 80%
+	MaxMemory                       float64 `yaml:"max_memory"`          // maximum allowed memory usage in GB. 0 to disable
+	MemoryCost                      float64 `yaml:"memory_cost"`         // minimum memory in GB
+	RoomCompositeCpuCost            float64 `yaml:"room_composite_cpu_cost"`
+	AudioRoomCompositeCpuCost       float64 `yaml:"audio_room_composite_cpu_cost"`
+	SDKAudioRoomCompositeCpuCost    float64 `yaml:"sdk_audio_room_composite_cpu_cost"`
+	SDKAudioRoomCompositeMemoryCost float64 `yaml:"sdk_audio_room_composite_memory_cost"`
+	WebCpuCost                      float64 `yaml:"web_cpu_cost"`
+	AudioWebCpuCost                 float64 `yaml:"audio_web_cpu_cost"`
+	ParticipantCpuCost              float64 `yaml:"participant_cpu_cost"`
+	TrackCompositeCpuCost           float64 `yaml:"track_composite_cpu_cost"`
+	TrackCpuCost                    float64 `yaml:"track_cpu_cost"`
+	MaxPulseClients                 int     `yaml:"max_pulse_clients"` // pulse client limit for launching chrome
 
 	// Memory source configuration (cgroup-aware memory accounting)
 	MemorySource       MemorySource `yaml:"memory_source"`         // memory measurement source: proc_rss, cgroup
 	MemoryKillGraceSec int          `yaml:"memory_kill_grace_sec"` // grace period in update cycles before kill (0 = immediate)
+	CpuKillGraceSec    int          `yaml:"cpu_kill_grace_sec"`    // seconds to wait for a graceful EOS drain after sustained high CPU before hard kill (0 = use default)
 }
 
 func NewServiceConfig(confString string) (*ServiceConfig, error) {
@@ -107,6 +118,7 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 			ApiSecret: os.Getenv("LIVEKIT_API_SECRET"),
 			WsUrl:     os.Getenv("LIVEKIT_WS_URL"),
 		},
+		PSRPC:         rpc.DefaultPSRPCConfig,
 		CPUCostConfig: &CPUCostConfig{},
 	}
 	if confString != "" {
@@ -160,6 +172,12 @@ func (c *ServiceConfig) InitDefaults() {
 	if c.AudioRoomCompositeCpuCost <= 0 {
 		c.AudioRoomCompositeCpuCost = audioRoomCompositeCpuCost
 	}
+	if c.SDKAudioRoomCompositeCpuCost <= 0 {
+		c.SDKAudioRoomCompositeCpuCost = c.AudioRoomCompositeCpuCost
+	}
+	if c.SDKAudioRoomCompositeMemoryCost <= 0 {
+		c.SDKAudioRoomCompositeMemoryCost = c.MemoryCost
+	}
 	if c.WebCpuCost <= 0 {
 		c.WebCpuCost = webCpuCost
 	}
@@ -177,6 +195,12 @@ func (c *ServiceConfig) InitDefaults() {
 	}
 	if c.MaxPulseClients == 0 {
 		c.MaxPulseClients = defaultMaxPulseClients
+	}
+	if c.CpuKillGraceSec <= 0 {
+		c.CpuKillGraceSec = defaultCpuKillGraceSec
+	}
+	if c.PulseSinkReapGraceSec == 0 {
+		c.PulseSinkReapGraceSec = defaultPulseSinkReapGraceSec
 	}
 
 	// Memory source defaults to proc_rss (preserves existing behavior)

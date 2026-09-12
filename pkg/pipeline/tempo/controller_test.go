@@ -217,9 +217,9 @@ func TestZeroDriftNoop(t *testing.T) {
 func TestCancelInFlightClearsCurrent(t *testing.T) {
 	// CancelInFlight must clear `current` so a subsequent
 	// OnDriftDetectedCallback registration does not re-fire the abandoned
-	// target. This is the load-bearing property for the source-bin-reset
-	// path: when the audio downstream of the pacer is discarded, the partial
-	// compensation cannot be re-applied by a fresh pacer with the same target.
+	// target. This is the load-bearing property for pacer teardown: when the
+	// audio downstream of the pacer is discarded, the partial compensation
+	// cannot be re-applied by a fresh pacer with the same target.
 	tc := NewController(1200 * time.Millisecond)
 
 	cb1Calls := []time.Duration{}
@@ -230,8 +230,7 @@ func TestCancelInFlightClearsCurrent(t *testing.T) {
 		t.Fatalf("expected initial arm: got %v", cb1Calls)
 	}
 
-	// Detach and cancel — simulates resetAudioAppSrcBin tearing down the old
-	// pacer mid-correction.
+	// Detach and cancel — simulates a pacer teardown mid-correction.
 	tc.OnDriftDetectedCallback(nil)
 	tc.CancelInFlight()
 
@@ -258,7 +257,7 @@ func TestCancelInFlightClearsCurrent(t *testing.T) {
 
 func TestCancelInFlightWhenIdleIsNoop(t *testing.T) {
 	// Calling CancelInFlight when no correction is in flight must not corrupt
-	// state. resetAudioAppSrcBin calls it unconditionally.
+	// state. Callers may invoke it unconditionally.
 	tc := NewController(1200 * time.Millisecond)
 
 	tc.CancelInFlight()

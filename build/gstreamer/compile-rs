@@ -4,6 +4,19 @@ set -euxo pipefail
 : "${CARGO_BUILD_JOBS:=4}"
 export CARGO_BUILD_JOBS
 
+# rustup installs the current stable, which denies lints that gst-plugins-rs
+# releases before 1.26 trip over (audiofx, raw pointer autoref)
+export RUSTFLAGS="${RUSTFLAGS:-} -A dangerous_implicit_autorefs"
+
+gst_major=${GSTREAMER_VERSION%%.*}
+gst_minor=${GSTREAMER_VERSION#*.}
+gst_minor=${gst_minor%%.*}
+if (( gst_major > 1 || (gst_major == 1 && gst_minor >= 25) )); then
+  LIVEKIT_WEBRTC=true
+else
+  LIVEKIT_WEBRTC=false
+fi
+
 for repo in gst-plugins-rs; do
   pushd $repo
 
@@ -13,6 +26,13 @@ for repo in gst-plugins-rs; do
   cargo update -p time
 
   opts="-D prefix=/usr -D tests=disabled -D doc=disabled"
+
+  # webrtc-livekit is disabled by default upstream; without it the rswebrtc
+  # plugin builds without the livekitwebrtcsrc/livekitwebrtcsink elements.
+  # The option only exists from 1.25 on, older versions error out on it
+  if [[ $LIVEKIT_WEBRTC == 'true' ]]; then
+    opts="$opts -D webrtc-livekit=enabled"
+  fi
 
   if [[ $DEBUG == 'true' ]]; then
     if [[ $OPTIMIZATIONS == 'true' ]]; then
@@ -40,3 +60,7 @@ for repo in gst-plugins-rs; do
 done
 
 gst-inspect-1.0
+
+# fail the build if the livekit signaller silently fell out of the webrtc plugin
+gst-inspect-1.0 livekitwebrtcsrc > /dev/null
+gst-inspect-1.0 livekitwebrtcsink > /dev/null

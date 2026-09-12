@@ -110,6 +110,18 @@ func (r *Runner) testSegments(t *testing.T) {
 				},
 			},
 			{
+				name:        "ParticipantComposite/AudioOnlyPublisher",
+				requestType: types.RequestTypeParticipant,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+				},
+				segmentOptions: &segmentOptions{
+					prefix:          "participant_{publisher_identity}_audio_only_{time}",
+					playlist:        "participant_{publisher_identity}_audio_only_{time}.m3u8",
+					segmentDuration: 6,
+				},
+			},
+			{
 				name:        "ParticipantComposite/H264",
 				requestType: types.RequestTypeParticipant,
 				publishOptions: publishOptions{
