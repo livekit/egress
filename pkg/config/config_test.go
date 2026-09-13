@@ -44,7 +44,7 @@ func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
 		p := &PipelineConfig{}
 		_, err := p.getStorageConfig(makeReq("EXT_ID"))
 		require.Error(t, err)
-		require.ErrorContains(t, err, "S3 AssumeRoleExternalId from request")
+		require.ErrorContains(t, err, "setting assume_role_external_id in the request is disabled for this account")
 	})
 
 	t.Run("allows request external_id when flag is true", func(t *testing.T) {

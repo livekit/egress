@@ -43,7 +43,7 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 
 	if s3 := req.GetS3(); s3 != nil {
 		if s3.AssumeRoleExternalId != "" && !p.S3AllowRequestAssumeRoleExternalID {
-			return nil, errors.ErrNotSupported("S3 AssumeRoleExternalId from request is deprecated and unsupported")
+			return nil, errors.ErrFeatureDisabled("setting assume_role_external_id in the request")
 		}
 		sc.S3 = &storage.S3Config{
 			AccessKey:            s3.AccessKey,
