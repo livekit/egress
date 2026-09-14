@@ -26,7 +26,6 @@ import (
 
 	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
-	"github.com/linkdata/deadlock"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
@@ -70,7 +69,6 @@ type Controller struct {
 	replayDuration int64 // milliseconds
 
 	// internal
-	mu                   deadlock.Mutex
 	monitor              *stats.HandlerMonitor
 	limitTimer           *time.Timer
 	storageMonitorCancel context.CancelFunc
@@ -249,8 +247,12 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	ctx, span := tracer.Start(ctx, "Pipeline.Run")
 	defer span.End()
 
-	defer c.Close()
+	c.run(ctx)
+	c.Close()
+	return c.InfoSnapshot()
+}
 
+func (c *Controller) run(ctx context.Context) {
 	defer func() {
 		if c.VideoEnabled {
 			logger.Infow(
@@ -289,8 +291,8 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		select {
 		case <-c.stopped.Watch():
 			c.src.Close()
-			c.Info.SetAborted(livekit.MsgStartNotReceived)
-			return c.Info
+			c.updateInfo(func() { c.Info.SetAborted(livekit.MsgStartNotReceived) })
+			return
 		case <-start:
 			// continue
 		}
@@ -304,8 +306,8 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 			select {
 			case <-c.stopped.Watch():
 				c.src.Close()
-				c.Info.SetAborted(livekit.MsgStartNotReceived)
-				return c.Info
+				c.updateInfo(func() { c.Info.SetAborted(livekit.MsgStartNotReceived) })
+				return
 			case <-time.After(waitDuration):
 				// continue
 			}
@@ -316,8 +318,8 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		for _, s := range si {
 			if err := s.Start(); err != nil {
 				c.src.Close()
-				c.Info.SetFailed(err)
-				return c.Info
+				c.updateInfo(func() { c.Info.SetFailed(err) })
+				return
 			}
 		}
 	}
@@ -334,8 +336,8 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	err := c.p.Run()
 	if err != nil {
 		c.src.Close()
-		c.Info.SetFailed(err)
-		return c.Info
+		c.updateInfo(func() { c.Info.SetFailed(err) })
+		return
 	}
 
 	logger.Debugw("closing source")
@@ -356,15 +358,17 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		for _, si := range c.sinks {
 			for _, s := range si {
 				if c.eosReceived.IsBroken() || s.EOSReceived() {
-					if err := s.Close(); err != nil && c.Info.Status != livekit.EgressStatus_EGRESS_FAILED {
-						c.Info.SetFailed(err)
+					if err := s.Close(); err != nil {
+						c.updateInfo(func() {
+							if c.Info.Status != livekit.EgressStatus_EGRESS_FAILED {
+								c.Info.SetFailed(err)
+							}
+						})
 					}
 				}
 			}
 		}
 	}
-
-	return c.Info
 }
 
 func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) error {
@@ -388,18 +392,20 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 		}
 
 		// add stream info to results
-		c.mu.Lock()
-		c.Info.StreamResults = append(c.Info.StreamResults, stream.StreamInfo)
-		if list := c.Info.GetStream(); list != nil { //nolint:staticcheck // keep deprecated field for older clients
-			list.Info = append(list.Info, stream.StreamInfo)
-		}
-		c.mu.Unlock()
+		c.updateInfo(func() {
+			c.Info.StreamResults = append(c.Info.StreamResults, stream.StreamInfo)
+			if list := c.Info.GetStream(); list != nil { //nolint:staticcheck // keep deprecated field for older clients
+				list.Info = append(list.Info, stream.StreamInfo)
+			}
+		})
 
 		// add stream
 		if err = c.getStreamSink().AddStream(stream); err != nil {
-			stream.StreamInfo.Status = livekit.StreamInfo_FAILED
-			stream.StreamInfo.Error = err.Error()
-			stream.UpdateEndTime(time.Now().UnixNano())
+			c.updateInfo(func() {
+				stream.StreamInfo.Status = livekit.StreamInfo_FAILED
+				stream.StreamInfo.Error = err.Error()
+				stream.UpdateEndTime(time.Now().UnixNano())
+			})
 			errs.AppendErr(err)
 			continue
 		}
@@ -425,8 +431,10 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 }
 
 func (c *Controller) streamFinished(ctx context.Context, stream *config.Stream) error {
-	stream.StreamInfo.Status = livekit.StreamInfo_FINISHED
-	stream.UpdateEndTime(time.Now().UnixNano())
+	c.updateInfo(func() {
+		stream.StreamInfo.Status = livekit.StreamInfo_FINISHED
+		stream.UpdateEndTime(time.Now().UnixNano())
+	})
 
 	// remove output
 	o := c.GetStreamConfig()
@@ -449,9 +457,11 @@ func (c *Controller) streamFinished(ctx context.Context, stream *config.Stream) 
 }
 
 func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, streamErr error) error {
-	stream.StreamInfo.Status = livekit.StreamInfo_FAILED
-	stream.StreamInfo.Error = streamErr.Error()
-	stream.UpdateEndTime(time.Now().UnixNano())
+	c.updateInfo(func() {
+		stream.StreamInfo.Status = livekit.StreamInfo_FAILED
+		stream.StreamInfo.Error = streamErr.Error()
+		stream.UpdateEndTime(time.Now().UnixNano())
+	})
 
 	// remove output
 	o := c.GetStreamConfig()
@@ -475,8 +485,10 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 
 func (c *Controller) trackStreamRetry(ctx context.Context, stream *config.Stream) {
 	now := time.Now()
-	stream.StreamInfo.LastRetryAt = now.UnixNano()
-	stream.StreamInfo.Retries++
+	c.updateInfo(func() {
+		stream.StreamInfo.LastRetryAt = now.UnixNano()
+		stream.StreamInfo.Retries++
+	})
 	if !stream.ShouldSendRetryUpdate(now, streamRetryUpdateInterval) {
 		return
 	}
@@ -508,7 +520,7 @@ func (c *Controller) onEOSSent() {
 
 func (c *Controller) onStorageLimitReached() {
 	c.storageLimitOnce.Do(func() {
-		c.Info.SetLimitReached()
+		c.updateInfo(func() { c.Info.SetLimitReached() })
 		c.SendEOS(context.Background(), livekit.EndReasonLimitReached)
 	})
 }
@@ -522,25 +534,28 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 			c.limitTimer.Stop()
 		}
 
-		c.Info.SetEndReason(reason)
+		var status livekit.EgressStatus
+		c.updateInfo(func() {
+			c.Info.SetEndReason(reason)
+			status = c.Info.Status
+			switch status {
+			case livekit.EgressStatus_EGRESS_STARTING:
+				c.Info.SetAborted(livekit.MsgStoppedBeforeStarted)
+			case livekit.EgressStatus_EGRESS_ACTIVE:
+				c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ENDING)
+			}
+		})
 		logger.Debugw("stopping pipeline", "reason", reason)
 
-		switch c.Info.Status {
-		case livekit.EgressStatus_EGRESS_STARTING:
-			c.Info.SetAborted(livekit.MsgStoppedBeforeStarted)
-			c.p.Stop()
-
-		case livekit.EgressStatus_EGRESS_ABORTED,
+		switch status {
+		case livekit.EgressStatus_EGRESS_STARTING,
+			livekit.EgressStatus_EGRESS_ABORTED,
 			livekit.EgressStatus_EGRESS_FAILED:
 			c.p.Stop()
 
-		case livekit.EgressStatus_EGRESS_ACTIVE:
-			c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ENDING)
-			c.sendHandlerUpdate(ctx, c.Info)
-			c.sendEOS()
-
-		case livekit.EgressStatus_EGRESS_ENDING:
-			c.sendHandlerUpdate(ctx, c.Info)
+		case livekit.EgressStatus_EGRESS_ACTIVE,
+			livekit.EgressStatus_EGRESS_ENDING:
+			c.sendHandlerUpdate(ctx)
 			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
@@ -600,9 +615,11 @@ func (c *Controller) OnError(err error) {
 		c.generatePProf()
 	}
 
-	if c.Info.Status != livekit.EgressStatus_EGRESS_FAILED && (!c.eosSent.IsBroken() || c.FinalizationRequired) {
-		c.Info.SetFailed(err)
-	}
+	c.updateInfo(func() {
+		if c.Info.Status != livekit.EgressStatus_EGRESS_FAILED && (!c.eosSent.IsBroken() || c.FinalizationRequired) {
+			c.Info.SetFailed(err)
+		}
+	})
 
 	go c.p.Stop()
 }
@@ -634,33 +651,38 @@ func (c *Controller) Close() {
 		c.updateEndTime()
 	}
 
-	// update status
-	if c.Info.Status == livekit.EgressStatus_EGRESS_FAILED {
-		if o := c.GetStreamConfig(); o != nil {
-			o.Streams.Range(func(_, stream any) bool {
-				stream.(*config.Stream).StreamInfo.Status = livekit.StreamInfo_FAILED
-				return true
-			})
-		}
-	}
-
 	duplicateIdentity := c.IsDuplicateIdentity()
 
 	// ensure egress ends with a final state
-	switch c.Info.Status {
-	case livekit.EgressStatus_EGRESS_STARTING:
-		c.Info.SetAborted(livekit.MsgStoppedBeforeStarted)
+	var status livekit.EgressStatus
+	c.updateInfo(func() {
+		status = c.Info.Status
+		switch status {
+		case livekit.EgressStatus_EGRESS_FAILED:
+			if o := c.GetStreamConfig(); o != nil {
+				o.Streams.Range(func(_, stream any) bool {
+					stream.(*config.Stream).StreamInfo.Status = livekit.StreamInfo_FAILED
+					return true
+				})
+			}
 
-	case livekit.EgressStatus_EGRESS_ACTIVE,
-		livekit.EgressStatus_EGRESS_ENDING:
-		if err := c.endError(); err != nil {
-			c.Info.SetFailed(err)
-		} else {
-			c.Info.SetComplete()
+		case livekit.EgressStatus_EGRESS_STARTING:
+			c.Info.SetAborted(livekit.MsgStoppedBeforeStarted)
+
+		case livekit.EgressStatus_EGRESS_ACTIVE,
+			livekit.EgressStatus_EGRESS_ENDING:
+			if err := c.endError(); err != nil {
+				c.Info.SetFailed(err)
+			} else {
+				c.Info.SetComplete()
+			}
 		}
-		fallthrough
+	})
 
-	case livekit.EgressStatus_EGRESS_LIMIT_REACHED,
+	switch status {
+	case livekit.EgressStatus_EGRESS_ACTIVE,
+		livekit.EgressStatus_EGRESS_ENDING,
+		livekit.EgressStatus_EGRESS_LIMIT_REACHED,
 		livekit.EgressStatus_EGRESS_COMPLETE:
 		if !duplicateIdentity {
 			// upload manifest and add location to egress info
@@ -695,12 +717,14 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 
 	if timeout > 0 {
 		c.limitTimer = time.AfterFunc(timeout, func() {
-			switch c.Info.Status {
-			case livekit.EgressStatus_EGRESS_STARTING:
-				c.Info.SetAborted(livekit.MsgLimitReachedWithoutStart)
-			case livekit.EgressStatus_EGRESS_ACTIVE:
-				c.Info.SetLimitReached()
-			}
+			c.updateInfo(func() {
+				switch c.Info.Status {
+				case livekit.EgressStatus_EGRESS_STARTING:
+					c.Info.SetAborted(livekit.MsgLimitReachedWithoutStart)
+				case livekit.EgressStatus_EGRESS_ACTIVE:
+					c.Info.SetLimitReached()
+				}
+			})
 
 			if c.playing.IsBroken() {
 				c.SendEOS(ctx, livekit.EndReasonLimitReached)
@@ -859,6 +883,7 @@ func (c *Controller) logOutputFileSizes(files []outputFileStat, limit int) {
 }
 
 func (c *Controller) updateStartTime(startedAt int64) {
+	c.LockInfo()
 	for egressType, o := range c.Outputs {
 		if len(o) == 0 {
 			continue
@@ -889,52 +914,77 @@ func (c *Controller) updateStartTime(startedAt int64) {
 		}
 	}
 
-	if c.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
+	activated := c.Info.Status == livekit.EgressStatus_EGRESS_STARTING
+	if activated {
 		c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ACTIVE)
-		c.sendHandlerUpdate(context.Background(), c.Info)
+	}
+	c.UnlockInfo()
+
+	if activated {
+		c.sendHandlerUpdate(context.Background())
 	}
 }
 
 func (c *Controller) updateStreamStartTime(streamID string) {
-	if o := c.GetStreamConfig(); o != nil {
+	o := c.GetStreamConfig()
+	if o == nil {
+		return
+	}
+
+	started := false
+	c.updateInfo(func() {
 		o.Streams.Range(func(_, s any) bool {
 			if stream := s.(*config.Stream); stream.StreamID == streamID && stream.StreamInfo.StartedAt == 0 {
 				logger.Debugw("stream started", "url", stream.RedactedUrl)
 				stream.StreamInfo.StartedAt = time.Now().UnixNano()
-				c.Info.UpdatedAt = time.Now().UnixNano()
-				c.streamUpdated(context.Background())
+				started = true
 				return false
 			}
 			return true
 		})
+	})
+
+	if started {
+		c.streamUpdated(context.Background())
 	}
 }
 
 func (c *Controller) streamUpdated(ctx context.Context) {
-	c.Info.UpdatedAt = time.Now().UnixNano()
+	skipUpdate := false
+	c.updateInfo(func() {
+		c.Info.UpdatedAt = time.Now().UnixNano()
 
-	if o := c.GetStreamConfig(); o != nil {
-		skipUpdate := false
-		// when adding streams, wait until they've all either started or failed before sending the update
-		o.Streams.Range(func(_, stream any) bool {
-			streamInfo := stream.(*config.Stream).StreamInfo
-			if streamInfo.Status == livekit.StreamInfo_ACTIVE && streamInfo.StartedAt == 0 {
-				skipUpdate = true
-				return false
-			}
-			return true
-		})
-		if skipUpdate {
-			return
+		if o := c.GetStreamConfig(); o != nil {
+			// when adding streams, wait until they've all either started or failed before sending the update
+			o.Streams.Range(func(_, stream any) bool {
+				streamInfo := stream.(*config.Stream).StreamInfo
+				if streamInfo.Status == livekit.StreamInfo_ACTIVE && streamInfo.StartedAt == 0 {
+					skipUpdate = true
+					return false
+				}
+				return true
+			})
 		}
+	})
+	if skipUpdate {
+		return
 	}
 
-	c.sendHandlerUpdate(ctx, c.Info)
+	c.sendHandlerUpdate(ctx)
 }
 
-func (c *Controller) sendHandlerUpdate(ctx context.Context, info *livekit.EgressInfo) {
+// updateInfo runs fn while holding the Info lock. fn must not block on IPC, GStreamer or uploads.
+func (c *Controller) updateInfo(fn func()) {
+	c.LockInfo()
+	defer c.UnlockInfo()
+	fn()
+}
+
+// sendHandlerUpdate forwards a snapshot of the current egress state to the service.
+func (c *Controller) sendHandlerUpdate(ctx context.Context) {
+	info := c.InfoSnapshot()
 	// Once duplicate-identity eviction is detected, suppress all further
-	// updates — another egress instance owns the recording.
+	// updates: another egress instance owns the recording.
 	if c.IsDuplicateIdentity() {
 		return
 	}
@@ -964,6 +1014,9 @@ func (c *Controller) endError() error {
 }
 
 func (c *Controller) updateEndTime() {
+	c.LockInfo()
+	defer c.UnlockInfo()
+
 	endedAt := c.src.GetEndedAt()
 	if c.pipelineEndedAt > endedAt {
 		endedAt = c.pipelineEndedAt
@@ -1051,7 +1104,7 @@ func (c *Controller) uploadManifest() {
 			}
 
 			if !infoUpdated && uploaded {
-				c.Info.ManifestLocation = location
+				c.updateInfo(func() { c.Info.ManifestLocation = location })
 				infoUpdated = true
 			}
 		}
