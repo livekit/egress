@@ -286,8 +286,21 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	start := c.src.StartRecording()
 	if start != nil {
 		logger.Debugw("waiting for start signal")
+
+		var timeout <-chan time.Time
+		if c.AwaitStartSignalTimeout > 0 {
+			timer := time.NewTimer(c.AwaitStartSignalTimeout)
+			defer timer.Stop()
+			timeout = timer.C
+		}
+
 		select {
 		case <-c.stopped.Watch():
+			c.src.Close()
+			c.Info.SetAborted(livekit.MsgStartNotReceived)
+			return c.Info
+		case <-timeout:
+			logger.Warnw("timed out waiting for start signal", nil)
 			c.src.Close()
 			c.Info.SetAborted(livekit.MsgStartNotReceived)
 			return c.Info
