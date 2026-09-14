@@ -16,9 +16,29 @@ package stats
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
+
+// HandlerMetricPrefix is the family-name prefix of every metric a handler
+// exports to the service. Families outside it belong to linked libraries and
+// stay inside the handler process.
+const HandlerMetricPrefix = "livekit_egress_"
+
+// FilterHandlerFamilies keeps the families a handler owns. The service merges
+// handler families across processes and cannot merge foreign gauges that share
+// a label set, so nothing outside HandlerMetricPrefix is exported.
+func FilterHandlerFamilies(in []*dto.MetricFamily) []*dto.MetricFamily {
+	out := make([]*dto.MetricFamily, 0, len(in))
+	for _, f := range in {
+		if strings.HasPrefix(f.GetName(), HandlerMetricPrefix) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
 
 type HandlerMonitor struct {
 	uploadsCounter      *prometheus.CounterVec

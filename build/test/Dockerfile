@@ -17,9 +17,16 @@ ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
 ARG LINT_VERSION=v2.11.3
 
+# The GStreamer version is pinned in .gst-version, the single source of truth that
+# Renovate keeps current via an approvable PR. It has no default here on purpose: a
+# default would be a second copy of the version and would drift. The magefile and CI
+# read the file and pass it in, so build this by hand with
+# --build-arg GSTVERSION=$(cat .gst-version).
+ARG GSTVERSION
+
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template
 
-FROM livekit/gstreamer:1.24.12-dev AS builder
+FROM livekit/gstreamer:$GSTVERSION-dev AS builder
 
 WORKDIR /workspace
 
@@ -99,8 +106,20 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
         --build-tags="${LINT_TAGS}"
 RUN echo ok >/lint_ok
 
+FROM builder AS unit
 
-FROM livekit/gstreamer:1.24.12-prod
+ARG DEADLOCK=0
+
+# Package unit tests; the integration suite under test/ runs from the final image.
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/go/build-cache \
+    TAGS=""; \
+    if [ "${DEADLOCK:-0}" = "1" ]; then TAGS="deadlock"; fi; \
+    CGO_ENABLED=1 go test ${TAGS:+-tags} ${TAGS:+"$TAGS"} -count=1 -timeout 10m ./pkg/...
+RUN echo ok >/unit_ok
+
+
+FROM livekit/gstreamer:$GSTVERSION-prod
 
 ARG TARGETPLATFORM
 
@@ -128,7 +147,7 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOTOOLCHAIN=local
 
 # install chrome
-COPY --from=livekit/chrome-installer:150.0.7871.46 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:153.0.8010.36 /chrome-installer /chrome-installer
 
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 
@@ -162,8 +181,9 @@ COPY --from=1 /workspace/test.test .
 COPY media-samples /media-samples
 COPY build/test/entrypoint.sh .
 
-# Force lint stage to run successfully
+# Force lint and unit test stages to run successfully
 COPY --from=lint /lint_ok /__lint_ok
+COPY --from=unit /unit_ok /__unit_ok
 
 # run tests
 USER egress
