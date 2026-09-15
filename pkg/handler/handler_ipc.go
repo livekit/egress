@@ -25,6 +25,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/pprof"
@@ -92,7 +93,7 @@ func (h *Handler) GenerateMetrics(_ context.Context) (string, error) {
 		return "", err
 	}
 
-	metricsAsString, err := renderMetrics(metrics)
+	metricsAsString, err := renderMetrics(stats.FilterHandlerFamilies(metrics))
 	if err != nil {
 		return "", err
 	}

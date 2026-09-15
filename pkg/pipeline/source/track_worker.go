@@ -307,6 +307,12 @@ func (s *SDKSource) handleSubscribe(w *trackWorker, trackID string, state *worke
 	// Release subLock before transitioning to ACTIVE - we're done with pre-init work
 	s.subLock.RUnlock()
 
+	// The pipeline links this appsrc, either here or during the build, so cleanup
+	// owes it an EOS. Mark before the link rather than after: the writer runs on
+	// its own goroutine, and an EOS sent before the element is linked is still
+	// delivered once the pipeline starts it.
+	writer.MarkAddedToPipeline()
+
 	// For post-init subscriptions, notify pipeline to add track
 	if isPostInit {
 		<-s.callbacks.BuildReady

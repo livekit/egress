@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euxo pipefail
 
+# Adjust decoder list registered by gst-libav
+sed -i 's/        !strcmp (in_plugin->name, "av1")) {/        !strcmp (in_plugin->name, "av1") ||\n        !strcmp (in_plugin->name, "hevc")) {/' \
+  gst-libav/ext/libav/gstavviddec.c
+grep -q '^        !strcmp (in_plugin->name, "hevc")) {$' gst-libav/ext/libav/gstavviddec.c
+
 for repo in gstreamer libnice gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav; do
   pushd $repo
 

@@ -2,6 +2,8 @@ module github.com/livekit/egress
 
 replace github.com/go-gst/go-gst => github.com/livekit/gst-go v0.0.0-20250701011214-e7f61abd14cb
 
+replace github.com/go-gst/go-glib => github.com/go-gst/go-glib v0.0.0-20250303082535-35ebad1471fd
+
 go 1.26.3
 
 tool github.com/maxbrunsfeld/counterfeiter/v6
@@ -9,7 +11,7 @@ tool github.com/maxbrunsfeld/counterfeiter/v6
 require (
 	github.com/Shopify/toxiproxy/v2 v2.12.0
 	github.com/aws/smithy-go v1.27.6
-	github.com/chromedp/cdproto v0.0.0-20260719223732-95f6af754cfe
+	github.com/chromedp/cdproto v0.0.0-20260804232424-e85f50dbfd32
 	github.com/chromedp/chromedp v0.16.0
 	github.com/frostbyte73/core v0.1.1
 	github.com/go-gst/go-glib v1.4.1-0.20250303082535-35ebad1471fd
@@ -22,8 +24,8 @@ require (
 	github.com/livekit/media-samples/avsync v0.0.0-20260804064037-794748125298
 	github.com/livekit/media-sdk v0.0.0-20260828235137-cb2363a4cb4f
 	github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095
-	github.com/livekit/protocol v1.50.5-0.20260829123501-a469dd43727b
-	github.com/livekit/psrpc v0.7.5
+	github.com/livekit/protocol v1.51.1-0.20260907133634-94a0a8d87b06
+	github.com/livekit/psrpc v0.7.6
 	github.com/livekit/server-sdk-go/v2 v2.18.2-0.20260831001713-a41bea984454
 	github.com/livekit/storage v0.0.0-20260623170515-1297cb15775f
 	github.com/llehouerou/go-mp3 v1.2.0
@@ -38,7 +40,7 @@ require (
 	go.opentelemetry.io/otel v1.45.0
 	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.28.0
-	google.golang.org/grpc v1.83.0
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -166,7 +168,7 @@ require (
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
 	golang.org/x/mod v0.38.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect

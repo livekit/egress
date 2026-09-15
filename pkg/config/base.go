@@ -50,13 +50,14 @@ type BaseConfig struct {
 	IOSelectionTimeout   time.Duration  `yaml:"io_selection_timeout"`   // timeout for affinity stage of IO RPC
 	IOWorkers            int            `yaml:"io_workers"`             // number of IO update workers
 
-	SessionLimits          `yaml:"session_limits"` // session duration limits
-	StorageConfig          *StorageConfig          `yaml:"storage,omitempty"`          // storage config
-	BackupConfig           *StorageConfig          `yaml:"backup,omitempty"`           // backup config, for storage failures
-	S3AssumeRoleKey        string                  `yaml:"s3_assume_role_key"`         // if set, this key is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
-	S3AssumeRoleSecret     string                  `yaml:"s3_assume_role_secret"`      // if set, this secret is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
-	S3AssumeRoleArn        string                  `yaml:"s3_assume_role_arn"`         // if set, this arn is used by default for S3 uploads
-	S3AssumeRoleExternalID string                  `yaml:"s3_assume_role_external_id"` // if set, this external ID is used by default for S3 uploads
+	SessionLimits                      `yaml:"session_limits"` // session duration limits
+	StorageConfig                      *StorageConfig          `yaml:"storage,omitempty"`                        // storage config
+	BackupConfig                       *StorageConfig          `yaml:"backup,omitempty"`                         // backup config, for storage failures
+	S3AssumeRoleKey                    string                  `yaml:"s3_assume_role_key"`                       // if set, this key is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
+	S3AssumeRoleSecret                 string                  `yaml:"s3_assume_role_secret"`                    // if set, this secret is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
+	S3AssumeRoleArn                    string                  `yaml:"s3_assume_role_arn"`                       // if set, this arn is used by default for S3 uploads
+	S3AssumeRoleExternalID             string                  `yaml:"s3_assume_role_external_id"`               // if set, this external ID is used by default for S3 uploads
+	S3AllowRequestAssumeRoleExternalID bool                    `yaml:"s3_allow_request_assume_role_external_id"` // DEPRECATED: allow the assume_role_external_id field on S3 upload requests
 
 	// advanced
 	Insecure                      bool                                `yaml:"insecure"`                           // allow chrome to connect to an insecure websocket, bypasses chrome LNA checks
