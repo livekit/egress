@@ -288,7 +288,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		logger.Debugw("waiting for start signal")
 
 		var timeout <-chan time.Time
-		if c.AwaitStartSignalTimeout > 0 {
+		if c.SourceType == types.SourceTypeWeb && c.AwaitStartSignalTimeout > 0 {
 			timer := time.NewTimer(c.AwaitStartSignalTimeout)
 			defer timer.Stop()
 			timeout = timer.C
