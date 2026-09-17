@@ -32,13 +32,14 @@ type Callbacks struct {
 	onDebugDotRequest func(string)
 
 	// source callbacks
-	onTrackAdded     []func(*config.TrackSource)
-	onTrackMuted     []func(string)
-	onTrackUnmuted   []func(string)
-	onTrackRemoved   []func(string)
-	onEOSSent        func()
+	onTrackAdded   []func(*config.TrackSource)
+	onTrackMuted   []func(string)
+	onTrackUnmuted []func(string)
+	onTrackRemoved []func(string)
+	onEOSSent      func()
 
-	pipelinePaused core.Fuse
+	pipelinePaused   core.Fuse
+	pipelineStopping core.Fuse
 }
 
 func (c *Callbacks) SetOnError(f func(error)) {
@@ -87,7 +88,14 @@ func (c *Callbacks) AddOnStop(f func() error) {
 	c.mu.Unlock()
 }
 
+// PipelineStopping reports whether Pipeline.Stop has begun tearing the pipeline down.
+func (c *Callbacks) PipelineStopping() bool {
+	return c.pipelineStopping.IsBroken()
+}
+
 func (c *Callbacks) OnStop() error {
+	c.pipelineStopping.Break()
+
 	c.mu.RLock()
 	onStop := c.onStop
 	c.mu.RUnlock()

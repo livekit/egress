@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM ubuntu:24.04
+FROM scratch
 
-RUN mkdir /chrome-installer
-COPY output/arm64 /chrome-installer/arm64
-COPY output/amd64 /chrome-installer/amd64
+ARG TARGETARCH
+
+COPY output/$TARGETARCH/google-chrome-stable.deb /chrome-installer/google-chrome-stable.deb
 COPY install-chrome /chrome-installer/install-chrome

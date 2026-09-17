@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline/source"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 )
@@ -165,4 +167,28 @@ func TestUnsolicitedEOSBeforeSendEOS(t *testing.T) {
 	if stat.Size() == 0 {
 		t.Fatal("output file is empty")
 	}
+}
+
+// TestOnEOSSentBeforePipelineBuilt: a writer whose track EOFs during the build
+// phase reaches onEOSSent() before BuildPipeline() has assigned c.p. It must
+// neither dereference the pipeline nor start the EOS sequence.
+//
+// The config is the one combination that makes onEOSSent() forward to SendEOS():
+// passthrough / track composite with no audio.
+func TestOnEOSSentBeforePipelineBuilt(t *testing.T) {
+	c := &Controller{
+		PipelineConfig: &config.PipelineConfig{
+			RequestType: types.RequestTypeTrackComposite,
+			Passthrough: true,
+			AudioConfig: config.AudioConfig{AudioEnabled: false},
+		},
+		// BuildReady still open and p still nil: the pipeline is mid-build
+		callbacks: &gstreamer.Callbacks{BuildReady: make(chan struct{})},
+	}
+
+	require.NotPanics(t, c.onEOSSent,
+		"cleanup running during the build phase must not dereference the pipeline")
+	require.False(t, c.eosSent.IsBroken(),
+		"onEOSSent must not start the EOS sequence before the pipeline exists")
+	require.Nil(t, c.p, "sanity: the test covers the pre-build window")
 }

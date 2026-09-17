@@ -72,6 +72,8 @@ type ServiceConfig struct {
 
 	PulseSinkReapGraceSec int `yaml:"pulse_sink_reap_grace_sec"` // seconds a leaked pulse sink must stay orphaned before it is unloaded (0 = use default, negative = disable reaping)
 
+	PSRPC rpc.PSRPCConfig `yaml:"psrpc,omitempty"`
+
 	*CPUCostConfig `yaml:"cpu_cost"` // CPU costs for the different egress types
 }
 
@@ -116,6 +118,7 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 			ApiSecret: os.Getenv("LIVEKIT_API_SECRET"),
 			WsUrl:     os.Getenv("LIVEKIT_WS_URL"),
 		},
+		PSRPC:         rpc.DefaultPSRPCConfig,
 		CPUCostConfig: &CPUCostConfig{},
 	}
 	if confString != "" {
