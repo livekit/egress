@@ -59,6 +59,7 @@ type Monitor struct {
 	nodeID             string
 	clusterID          string
 	cpuCostConfig      *config.CPUCostConfig
+	baseConfig         *config.BaseConfig
 	pulseSinkReapGrace atomic.Duration
 
 	promCPULoad           prometheus.Gauge
@@ -115,6 +116,7 @@ func NewMonitor(conf *config.ServiceConfig, svc Service) (*Monitor, error) {
 		nodeID:             conf.NodeID,
 		clusterID:          conf.ClusterID,
 		cpuCostConfig:      conf.CPUCostConfig,
+		baseConfig:         &conf.BaseConfig,
 		svc:                svc,
 		pending:            make(map[string]*processStats),
 		procStats:          make(map[int]*processStats),
@@ -264,7 +266,7 @@ func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 
 	setV2Costs := func(request v2Request) {
 		if template := request.GetTemplate(); template != nil {
-			costs.isWeb = !config.ShouldUseSDKSource(template)
+			costs.isWeb = !m.baseConfig.TemplateSourceIsSDK(template)
 			if template.AudioOnly {
 				if costs.isWeb {
 					costs.cpu = m.cpuCostConfig.AudioRoomCompositeCpuCost
@@ -293,7 +295,7 @@ func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		costs.isWeb = !config.ShouldUseSDKSource(r.RoomComposite)
+		costs.isWeb = !m.baseConfig.TemplateSourceIsSDK(r.RoomComposite)
 		if r.RoomComposite.AudioOnly {
 			if costs.isWeb {
 				costs.cpu = m.cpuCostConfig.AudioRoomCompositeCpuCost
