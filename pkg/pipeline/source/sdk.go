@@ -22,9 +22,11 @@ import (
 
 	"github.com/frostbyte73/core"
 	"github.com/linkdata/deadlock"
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
@@ -651,12 +653,42 @@ func (s *SDKSource) subscribe(track lksdk.TrackPublication) error {
 
 		logger.Infow("subscribing to track", "trackID", track.SID())
 
-		pub.OnRTCP(s.sync.OnRTCP)
+		pub.OnRTCP(func(pkt rtcp.Packet) {
+			logSenderReport(track, pkt)
+			s.sync.OnRTCP(pkt)
+		})
 
 		return pub.SetSubscribed(true)
 	}
 
 	return errors.ErrSubscriptionFailed
+}
+
+// logSenderReport records the raw NTP/RTP pair carried by each sender report.
+// The synchronizer only reports the drift it derives from these, which cannot
+// tell a sender report whose own pairing is offset apart from a regression that
+// anchored badly on an early sample.
+func logSenderReport(track lksdk.TrackPublication, pkt rtcp.Packet) {
+	sr, ok := pkt.(*rtcp.SenderReport)
+	if !ok {
+		return
+	}
+
+	receivedAt := time.Now()
+	ntpTime := mediatransportutil.NtpTime(sr.NTPTime).Time()
+
+	logger.Infow("sender report received",
+		"trackID", track.SID(),
+		"kind", track.Kind().String(),
+		"mime", track.MimeType(),
+		"ssrc", sr.SSRC,
+		"rtpTime", sr.RTPTime,
+		"ntpTime", ntpTime,
+		"receivedAt", receivedAt,
+		"ntpMinusReceived", ntpTime.Sub(receivedAt),
+		"packetCount", sr.PacketCount,
+		"octetCount", sr.OctetCount,
+	)
 }
 
 // ----- Callbacks -----
