@@ -44,7 +44,7 @@ const (
 	gateBacklog = gateBurstFrames * (gateFrameDuration - gateBurstArrival)
 )
 
-// TestStartGateAnchorsPastTheBurst pins the behaviour the request types in
+// TestStartGateAnchorsPastTheBurst pins the behavior the request types in
 // shouldEnableStartGate depend on. A track anchored on the first packet of a
 // buffered handover emits PTS short by the width of that handover for the rest
 // of the session, which is what lands as an A/V offset when one track is
