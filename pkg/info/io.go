@@ -95,8 +95,6 @@ type worker struct {
 type update struct {
 	ctx  context.Context
 	info *livekit.EgressInfo
-	// zero retries forever
-	deadline time.Time
 }
 
 func NewSessionReporter(conf *config.BaseConfig, bus psrpc.MessageBus) (SessionReporter, error) {
@@ -170,7 +168,6 @@ func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.Egress
 
 func (c *sessionReporter) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error {
 	ctx = context.WithoutCancel(ctx)
-	deadline := c.retryDeadline()
 
 	w := c.getWorker(info.EgressId)
 
@@ -184,22 +181,13 @@ func (c *sessionReporter) UpdateEgress(ctx context.Context, info *livekit.Egress
 	if u != nil {
 		u.ctx = ctx
 		u.info = info
-		u.deadline = deadline
 		return nil
 	}
 
 	return w.submit(&update{
-		ctx:      ctx,
-		info:     info,
-		deadline: deadline,
+		ctx:  ctx,
+		info: info,
 	})
-}
-
-func (c *sessionReporter) retryDeadline() time.Time {
-	if c.updateRetryDeadline <= 0 {
-		return time.Time{}
-	}
-	return time.Now().Add(c.updateRetryDeadline)
 }
 
 // This forwards every update onward and holds no per-egress state of its own,
@@ -264,6 +252,7 @@ func (c *sessionReporter) handleUpdate(w *worker, egressID string) {
 	}
 
 	d := time.Millisecond * 250
+	var deadline time.Time
 	for {
 		if _, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info, psrpc.WithRequestTimeout(c.updateTimeout)); err != nil {
 			if isRetryableError(err) {
@@ -273,10 +262,12 @@ func (c *sessionReporter) handleUpdate(w *worker, egressID string) {
 				}
 				logger.Debugw("psrpc IO request failed", "error", err, "egressID", u.info.EgressId)
 
-				d = min(d*2, maxBackoff)
-				time.Sleep(d)
+				if deadline.IsZero() && c.updateRetryDeadline > 0 {
+					deadline = time.Now().Add(c.updateRetryDeadline)
+				}
 
-				if !u.deadline.IsZero() && time.Now().After(u.deadline) {
+				d = min(d*2, maxBackoff)
+				if !deadline.IsZero() && time.Now().Add(d).After(deadline) {
 					c.ioUpdateFailures.WithLabelValues(ioUpdateAbandoned).Inc()
 					logger.Errorw("dropping egress update after retry deadline", err,
 						"egressID", u.info.EgressId,
@@ -284,6 +275,8 @@ func (c *sessionReporter) handleUpdate(w *worker, egressID string) {
 					)
 					return
 				}
+
+				time.Sleep(d)
 				continue
 			}
 
