@@ -163,6 +163,8 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 		return nil, errors.ErrCouldNotParseConfig(err)
 	}
 
+	p.forceSyncDebugOverrides()
+
 	if err := p.InitLogger("egress",
 		"nodeID", p.NodeID,
 		"handlerID", p.HandlerID,
@@ -171,6 +173,11 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 	); err != nil {
 		return nil, err
 	}
+
+	logger.Infow("sync debug overrides applied",
+		"enableSyncEngine", p.EnableSyncEngine,
+		"audioTempoController", p.AudioTempoController.Enabled,
+	)
 
 	return p, p.Update(req)
 }

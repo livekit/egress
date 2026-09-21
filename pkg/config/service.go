@@ -127,6 +127,8 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 		}
 	}
 
+	conf.forceSyncDebugOverrides()
+
 	// always create a new node ID
 	conf.NodeID = utils.NewGuid("NE_")
 	conf.InitDefaults()
@@ -136,6 +138,11 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	if err := conf.InitLogger("egress", "nodeID", conf.NodeID, "clusterID", conf.ClusterID); err != nil {
 		return nil, err
 	}
+
+	logger.Infow("sync debug overrides applied",
+		"enableSyncEngine", conf.EnableSyncEngine,
+		"audioTempoController", conf.AudioTempoController.Enabled,
+	)
 
 	return conf, nil
 }

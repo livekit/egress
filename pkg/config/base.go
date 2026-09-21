@@ -103,6 +103,15 @@ type AudioTempoController struct {
 	AdjustmentRate float64 `yaml:"adjustment_rate"` // rate at which to adjust the tempo to compensate for PTS drift
 }
 
+// forceSyncDebugOverrides pins the A/V sync configuration for the av-sync
+// investigation. SDK sources run on the classic synchronizer with audio PTS
+// adjustment instead of the sync engine's wall-clock audio path, whatever the
+// deployed config asks for.
+func (c *BaseConfig) forceSyncDebugOverrides() {
+	c.EnableSyncEngine = false
+	c.AudioTempoController.Enabled = false
+}
+
 func (c *BaseConfig) InitLogger(serviceName string, values ...interface{}) error {
 	_, exists := os.LookupEnv("GST_DEBUG")
 
