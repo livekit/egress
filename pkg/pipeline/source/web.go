@@ -177,7 +177,9 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 	_, span := tracer.Start(ctx, "WebInput.launchXvfb")
 	defer span.End()
 
-	dims := fmt.Sprintf("%dx%dx%d", p.Width, p.Height, p.Depth)
+	// chrome shrinks its window by a pixel when it would exactly fill the screen, so give it a
+	// pixel of slack - the ximagesrc crops it back out
+	dims := fmt.Sprintf("%dx%dx%d", p.Width+1, p.Height+1, p.Depth)
 	logger.Debugw("creating X display", "display", p.Display, "dims", dims)
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
 	if err := xvfb.Start(); err != nil {

@@ -217,6 +217,13 @@ func (b *VideoBin) buildWebInput() error {
 	if err = xImageSrc.SetProperty("show-pointer", false); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
+	// the display is a pixel larger than the output in each dimension, see launchXvfb
+	if err = xImageSrc.SetProperty("endx", uint(b.conf.Width-1)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = xImageSrc.SetProperty("endy", uint(b.conf.Height-1)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
 
 	videoQueue, err := b.buildVideoQueue("video_input_queue")
 	if err != nil {
