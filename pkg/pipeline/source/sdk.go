@@ -103,8 +103,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		}),
 	}
 
-	if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
-		// Enable Packet Burst Estimator for Room Composite requests
+	if shouldEnableStartGate(p.RequestType) {
 		opts = append(opts, synchronizer.WithStartGate())
 	}
 
@@ -136,7 +135,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 			}),
 			synchronizer.WithSyncEngineMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond),
 		}
-		if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
+		if shouldEnableStartGate(p.RequestType) {
 			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineStartGate())
 		}
 		if p.Latency.OldPacketThreshold > 0 {
@@ -912,6 +911,22 @@ func (s *SDKSource) shouldSkipTrackSubscriptions() bool {
 func (s *SDKSource) disconnectRoom() {
 	if room := s.room.Swap(nil); room != nil {
 		room.Disconnect()
+	}
+}
+
+// shouldEnableStartGate reports whether the burst-estimation start gate runs
+// for this request type. A track's wall-clock timeline is anchored on its first
+// packet, so a buffered handover at subscribe time lands in the emitted PTS
+// unless the gate waits for the arrival cadence to match the RTP spacing.
+func shouldEnableStartGate(requestType types.RequestType) bool {
+	switch requestType {
+	case types.RequestTypeRoomComposite,
+		types.RequestTypeTemplate,
+		types.RequestTypeTrackComposite,
+		types.RequestTypeParticipant:
+		return true
+	default:
+		return false
 	}
 }
 
