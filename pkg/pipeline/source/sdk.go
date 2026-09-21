@@ -101,8 +101,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		}),
 	}
 
-	if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
-		// Enable Packet Burst Estimator for Room Composite requests
+	if shouldEnableStartGate(p) {
 		opts = append(opts, synchronizer.WithStartGate())
 	}
 
@@ -134,7 +133,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 			}),
 			synchronizer.WithSyncEngineMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond),
 		}
-		if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
+		if shouldEnableStartGate(p) {
 			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineStartGate())
 		}
 		if p.Latency.OldPacketThreshold > 0 {
@@ -880,6 +879,30 @@ func (s *SDKSource) shouldSkipTrackSubscriptions() bool {
 func (s *SDKSource) disconnectRoom() {
 	if room := s.room.Swap(nil); room != nil {
 		room.Disconnect()
+	}
+}
+
+// shouldEnableStartGate reports whether the burst-estimation start gate runs
+// for this request. A track anchors its timeline on the first packet to arrive,
+// so when the server hands over a backlog of buffered media at subscribe time,
+// that anchor lands mid-burst and every PTS the track emits afterwards is short
+// by the width of the backlog. It surfaces wherever one timeline is anchored
+// that way and another it is synced against is not, so a passthrough request,
+// which carries exactly one track, has nothing to desync from.
+func shouldEnableStartGate(p *config.PipelineConfig) bool {
+	if p.Passthrough {
+		return false
+	}
+
+	switch p.RequestType {
+	case types.RequestTypeRoomComposite,
+		types.RequestTypeTemplate,
+		types.RequestTypeTrackComposite,
+		types.RequestTypeParticipant,
+		types.RequestTypeMedia:
+		return true
+	default:
+		return false
 	}
 }
 
