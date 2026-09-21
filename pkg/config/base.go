@@ -39,16 +39,17 @@ type BaseConfig struct {
 	WsUrl     string             `yaml:"ws_url"`     // (env LIVEKIT_WS_URL)
 
 	// optional
-	Logging              *logger.Config `yaml:"logging"`                // logging config
-	TemplateBase         string         `yaml:"template_base"`          // custom template base url
-	ClusterID            string         `yaml:"cluster_id"`             // cluster this instance belongs to
-	EnableChromeSandbox  bool           `yaml:"enable_chrome_sandbox"`  // enable Chrome sandbox, requires extra docker configuration
-	MaxUploadQueue       int            `yaml:"max_upload_queue"`       // maximum upload queue size, in minutes
-	DisallowLocalStorage bool           `yaml:"disallow_local_storage"` // require an upload config for all requests
-	IOCreateTimeout      time.Duration  `yaml:"io_create_timeout"`      // timeout for CreateEgress calls
-	IOUpdateTimeout      time.Duration  `yaml:"io_update_timeout"`      // timeout for UpdateEgress calls
-	IOSelectionTimeout   time.Duration  `yaml:"io_selection_timeout"`   // timeout for affinity stage of IO RPC
-	IOWorkers            int            `yaml:"io_workers"`             // number of IO update workers
+	Logging               *logger.Config `yaml:"logging"`                  // logging config
+	TemplateBase          string         `yaml:"template_base"`            // custom template base url
+	ClusterID             string         `yaml:"cluster_id"`               // cluster this instance belongs to
+	EnableChromeSandbox   bool           `yaml:"enable_chrome_sandbox"`    // enable Chrome sandbox, requires extra docker configuration
+	MaxUploadQueue        int            `yaml:"max_upload_queue"`         // maximum upload queue size, in minutes
+	DisallowLocalStorage  bool           `yaml:"disallow_local_storage"`   // require an upload config for all requests
+	IOCreateTimeout       time.Duration  `yaml:"io_create_timeout"`        // timeout for CreateEgress calls
+	IOUpdateTimeout       time.Duration  `yaml:"io_update_timeout"`        // timeout for UpdateEgress calls
+	IOSelectionTimeout    time.Duration  `yaml:"io_selection_timeout"`     // timeout for affinity stage of IO RPC
+	IOWorkers             int            `yaml:"io_workers"`               // number of IO update workers
+	IOUpdateRetryDeadline time.Duration  `yaml:"io_update_retry_deadline"` // how long to retry a failed UpdateEgress before dropping it; negative to retry forever
 
 	SessionLimits                      `yaml:"session_limits"` // session duration limits
 	StorageConfig                      *StorageConfig          `yaml:"storage,omitempty"`                        // storage config

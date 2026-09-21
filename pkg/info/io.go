@@ -17,12 +17,13 @@ package info
 import (
 	"context"
 	"hash/fnv"
-	"math"
 	"strings"
 	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/linkdata/deadlock"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
@@ -34,9 +35,13 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 )
 
+const maxBackoff = time.Minute * 1
+
+// UpdateEgress failure outcomes (livekit_egress_io_update_failures_total)
 const (
-	maxBackoff                     = time.Minute * 1
-	unhealthyShutdownWatchdogDelay = 10 * time.Minute
+	ioUpdateRetried   = "retried"
+	ioUpdateAbandoned = "abandoned"
+	ioUpdateFailed    = "failed"
 )
 
 type SessionReporter interface {
@@ -59,23 +64,22 @@ type SessionReporter interface {
 	// this has to tolerate being called more than once.
 	SessionEnded(ctx context.Context, egressID string)
 	UpdateMetrics(ctx context.Context, req *rpc.UpdateMetricsRequest) error
-	IsHealthy() bool
-	SetWatchdogHandler(w func())
 	Drain()
 }
 
 type sessionReporter struct {
 	rpc.IOInfoClient
 
-	createTimeout time.Duration
-	updateTimeout time.Duration
+	createTimeout       time.Duration
+	updateTimeout       time.Duration
+	updateRetryDeadline time.Duration
 
 	workers []*worker
 
-	healthyLock            deadlock.Mutex
-	healthy                bool
-	healthyWatchdogHandler func()
-	healthyTimer           *time.Timer
+	// log dedup only -- io health does not gate routability
+	ioFailing atomic.Bool
+
+	ioUpdateFailures *prometheus.CounterVec
 
 	draining core.Fuse
 	done     core.Fuse
@@ -100,23 +104,13 @@ func NewSessionReporter(conf *config.BaseConfig, bus psrpc.MessageBus) (SessionR
 	}
 
 	c := &sessionReporter{
-		IOInfoClient:  client,
-		createTimeout: conf.IOCreateTimeout,
-		updateTimeout: conf.IOUpdateTimeout,
-		workers:       make([]*worker, conf.IOWorkers),
+		IOInfoClient:        client,
+		createTimeout:       conf.IOCreateTimeout,
+		updateTimeout:       conf.IOUpdateTimeout,
+		updateRetryDeadline: conf.IOUpdateRetryDeadline,
+		workers:             make([]*worker, conf.IOWorkers),
+		ioUpdateFailures:    newIOUpdateFailures(conf),
 	}
-	c.healthy = true
-	c.healthyTimer = time.AfterFunc(time.Duration(math.MaxInt64), func() {
-		c.healthyLock.Lock()
-		defer c.healthyLock.Unlock()
-
-		logger.Errorw("io client watchdog triggered", errors.New("io client unhealthy"))
-		if c.healthyWatchdogHandler != nil {
-			c.healthyWatchdogHandler()
-		}
-		// Do not wait for the event queue to drain
-		c.done.Break()
-	})
 
 	for i := 0; i < conf.IOWorkers; i++ {
 		c.workers[i] = &worker{
@@ -128,6 +122,20 @@ func NewSessionReporter(conf *config.BaseConfig, bus psrpc.MessageBus) (SessionR
 	}
 
 	return c, nil
+}
+
+func newIOUpdateFailures(conf *config.BaseConfig) *prometheus.CounterVec {
+	c := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "io_update_failures_total",
+		Help:        "Total number of failed UpdateEgress calls, by outcome",
+		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
+	}, []string{"outcome"})
+
+	prometheus.MustRegister(c)
+
+	return c
 }
 
 func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error {
@@ -191,20 +199,6 @@ func (c *sessionReporter) UpdateMetrics(_ context.Context, _ *rpc.UpdateMetricsR
 	return nil
 }
 
-func (c *sessionReporter) SetWatchdogHandler(w func()) {
-	c.healthyLock.Lock()
-	defer c.healthyLock.Unlock()
-
-	c.healthyWatchdogHandler = w
-}
-
-func (c *sessionReporter) IsHealthy() bool {
-	c.healthyLock.Lock()
-	defer c.healthyLock.Unlock()
-
-	return c.healthy
-}
-
 func (c *sessionReporter) Drain() {
 	c.draining.Break()
 	<-c.done.Watch()
@@ -258,31 +252,40 @@ func (c *sessionReporter) handleUpdate(w *worker, egressID string) {
 	}
 
 	d := time.Millisecond * 250
+	var deadline time.Time
 	for {
 		if _, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info, psrpc.WithRequestTimeout(c.updateTimeout)); err != nil {
 			if isRetryableError(err) {
-				if c.setHealthy(false) {
+				c.ioUpdateFailures.WithLabelValues(ioUpdateRetried).Inc()
+				if !c.ioFailing.Swap(true) {
 					logger.Warnw("io connection unhealthy", err, "egressID", u.info.EgressId)
 				}
 				logger.Debugw("psrpc IO request failed", "error", err, "egressID", u.info.EgressId)
 
-				d = min(d*2, maxBackoff)
-				time.Sleep(d)
-
-				select {
-				case <-u.ctx.Done():
-					logger.Infow("failed to update egress on expired context", "egressID", u.info.EgressId)
-					return
-				default:
-					continue
+				if deadline.IsZero() && c.updateRetryDeadline > 0 {
+					deadline = time.Now().Add(c.updateRetryDeadline)
 				}
+
+				d = min(d*2, maxBackoff)
+				if !deadline.IsZero() && time.Now().Add(d).After(deadline) {
+					c.ioUpdateFailures.WithLabelValues(ioUpdateAbandoned).Inc()
+					logger.Errorw("dropping egress update after retry deadline", err,
+						"egressID", u.info.EgressId,
+						"retryDeadline", c.updateRetryDeadline,
+					)
+					return
+				}
+
+				time.Sleep(d)
+				continue
 			}
 
+			c.ioUpdateFailures.WithLabelValues(ioUpdateFailed).Inc()
 			logger.Errorw("failed to update egress", err, "egressID", u.info.EgressId)
 			return
 		}
 
-		if !c.setHealthy(true) {
+		if c.ioFailing.Swap(false) {
 			logger.Infow("io connection restored", "egressID", u.info.EgressId)
 		}
 		requestType, outputType := egress.GetTypes(u.info.Request)
@@ -296,28 +299,6 @@ func (c *sessionReporter) handleUpdate(w *worker, egressID string) {
 		)
 		return
 	}
-}
-
-func (c *sessionReporter) setHealthy(isHealthy bool) bool {
-	c.healthyLock.Lock()
-	defer c.healthyLock.Unlock()
-
-	oldHealthy := c.healthy
-
-	switch c.healthy {
-	case true:
-		if !isHealthy {
-			c.healthyTimer.Reset(unhealthyShutdownWatchdogDelay)
-		}
-	case false:
-		if isHealthy {
-			c.healthyTimer.Reset(time.Duration(math.MaxInt64))
-		}
-	}
-
-	c.healthy = isHealthy
-
-	return oldHealthy
 }
 
 func isRetryableError(err error) bool {
