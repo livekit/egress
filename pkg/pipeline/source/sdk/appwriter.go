@@ -61,6 +61,42 @@ type sampleItem struct {
 	next   *sampleItem
 }
 
+// arrivalTracker measures how far a track's media arrival drifts from its own
+// RTP timeline, independent of the synchronizer. Positive lateness means
+// packets arrive later than their own timestamps say they should.
+type arrivalTracker struct {
+	clockRate uint32
+	startTS   uint32
+	startTime time.Time
+	started   bool
+	nextLogAt time.Time
+}
+
+// observe returns the current lateness and whether this sample is due to be
+// logged, at most one per second.
+func (a *arrivalTracker) observe(clockRate, ts uint32, receivedAt time.Time) (lateness, mediaElapsed, wallElapsed time.Duration, report bool) {
+	if clockRate == 0 {
+		return 0, 0, 0, false
+	}
+	if !a.started {
+		a.clockRate = clockRate
+		a.startTS = ts
+		a.startTime = receivedAt
+		a.started = true
+		a.nextLogAt = receivedAt.Add(time.Second)
+		return 0, 0, 0, false
+	}
+
+	mediaElapsed = time.Duration(int32(ts-a.startTS)) * time.Second / time.Duration(a.clockRate)
+	wallElapsed = receivedAt.Sub(a.startTime)
+	lateness = wallElapsed - mediaElapsed
+	if receivedAt.Before(a.nextLogAt) {
+		return lateness, mediaElapsed, wallElapsed, false
+	}
+	a.nextLogAt = receivedAt.Add(time.Second)
+	return lateness, mediaElapsed, wallElapsed, true
+}
+
 type AppWriter struct {
 	conf *config.PipelineConfig
 
@@ -97,6 +133,9 @@ type AppWriter struct {
 	lastPTS              time.Duration
 	lastPipelineCheckPTS time.Duration
 	initialized          bool
+
+	// arrival lateness, measured without the synchronizer
+	arrival arrivalTracker
 
 	// state
 	buildReady               core.Fuse
@@ -318,6 +357,17 @@ func (w *AppWriter) readNext() {
 	}
 
 	receivedAt := time.Now()
+
+	if lateness, mediaElapsed, wallElapsed, report := w.arrival.observe(
+		w.track.Codec().ClockRate, pkt.Timestamp, receivedAt,
+	); report {
+		w.logger.Infow("arrival lateness",
+			"lateness", lateness,
+			"mediaElapsed", mediaElapsed,
+			"wallElapsed", wallElapsed,
+		)
+	}
+
 	var packets []jitter.ExtPacket
 	if !w.initialized {
 		ready, dropped, done := w.trackSync.PrimeForStart(jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt})
