@@ -882,13 +882,6 @@ func (s *SDKSource) disconnectRoom() {
 	}
 }
 
-// shouldEnableStartGate reports whether the burst-estimation start gate runs
-// for this request. A track anchors its timeline on the first packet to arrive,
-// so when the server hands over a backlog of buffered media at subscribe time,
-// that anchor lands mid-burst and every PTS the track emits afterwards is short
-// by the width of the backlog. It surfaces wherever one timeline is anchored
-// that way and another it is synced against is not, so a passthrough request,
-// which carries exactly one track, has nothing to desync from.
 func shouldEnableStartGate(p *config.PipelineConfig) bool {
 	if p.Passthrough {
 		return false
