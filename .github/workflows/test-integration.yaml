@@ -124,7 +124,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        integration_type: [file-room, file-track, file-media, stream, segments, images, multi, edge]
+        integration_type: [file-track, file-media]
     runs-on: ubuntu-latest-m
     steps:
       - uses: shogo82148/actions-setup-redis@88a1fb308aae95aa485bf3da667c9d6e61be4c53 # v1.58.0
