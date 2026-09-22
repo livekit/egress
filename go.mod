@@ -24,8 +24,8 @@ require (
 	github.com/livekit/media-samples/avsync v0.0.0-20260804064037-794748125298
 	github.com/livekit/media-sdk v0.0.0-20260828235137-cb2363a4cb4f
 	github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095
-	github.com/livekit/protocol v1.52.1-0.20260922072557-d77b4a5b1c25
-	github.com/livekit/psrpc v0.7.7
+	github.com/livekit/protocol v1.52.1-0.20260922162639-efea8680276b
+	github.com/livekit/psrpc v0.8.0
 	github.com/livekit/server-sdk-go/v2 v2.18.2-0.20260831001713-a41bea984454
 	github.com/livekit/storage v0.0.0-20260623170515-1297cb15775f
 	github.com/llehouerou/go-mp3 v1.2.0
@@ -33,7 +33,7 @@ require (
 	github.com/pion/rtp v1.10.5
 	github.com/pion/webrtc/v4 v4.2.18
 	github.com/prometheus/client_golang v1.24.1
-	github.com/prometheus/client_model v0.6.2
+	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.70.1
 	github.com/stretchr/testify v1.12.1
 	github.com/urfave/cli/v3 v3.10.1
@@ -125,9 +125,6 @@ require (
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.12.2 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/nats-io/nats.go v1.52.0 // indirect
-	github.com/nats-io/nkeys v0.4.16 // indirect
-	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/petermattis/goid v0.0.0-20260820044319-269ab09b5261 // indirect
 	github.com/pion/datachannel v1.6.2 // indirect
 	github.com/pion/dtls/v3 v3.1.5 // indirect
