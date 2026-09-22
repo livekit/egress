@@ -37,7 +37,7 @@ import (
 	lkredis "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
 	_ "github.com/livekit/protocol/utils/hwstats/maxprocs"
-	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/bus/redisbus"
 )
 
 var (
@@ -114,7 +114,7 @@ func runService(_ context.Context, c *cli.Command) error {
 		return err
 	}
 
-	bus := psrpc.NewRedisMessageBus(rc, conf.PSRPC.BusOptions()...)
+	bus := redisbus.New(rc, conf.PSRPC.BusOptions()...)
 	ioClient, err := info.NewSessionReporter(&conf.BaseConfig, bus)
 	if err != nil {
 		return err

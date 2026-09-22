@@ -31,15 +31,25 @@ type HandlerLogger struct {
 	dropped     atomic.Int64
 	lastDropLog atomic.Int64 // unix nanos
 	l           logger.Logger
+	// sink takes the handler's own structured lines. Read on the drain
+	// goroutine, so it is fixed at construction.
+	sink func(line string)
 }
 
 func NewHandlerLogger(handlerID, egressID string) *HandlerLogger {
+	return NewHandlerLoggerWithSink(handlerID, egressID, nil)
+}
+
+// NewHandlerLoggerWithSink sends the handler's own structured lines to sink. A
+// nil sink writes them to stdout.
+func NewHandlerLoggerWithSink(handlerID, egressID string, sink func(line string)) *HandlerLogger {
 	h := &HandlerLogger{
 		ch: make(chan []byte, channelSize),
 		l: logger.GetLogger().WithValues(
 			"handlerID", handlerID,
 			"egressID", egressID,
 		),
+		sink: sink,
 	}
 	go h.drain()
 	return h
@@ -103,7 +113,11 @@ func (h *HandlerLogger) processLine(line string) {
 	}
 
 	if line[len(line)-1] == '}' {
-		fmt.Println(line)
+		if h.sink != nil {
+			h.sink(line)
+		} else {
+			fmt.Println(line)
+		}
 		return
 	}
 
