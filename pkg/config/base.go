@@ -133,14 +133,7 @@ func (c *BaseConfig) InitLogger(serviceName string, values ...interface{}) error
 		}
 	}
 
-	// A copy, because the logger locks the config it resolves component levels
-	// from, and the server reflects over c.Logging to marshal it for the handler.
-	loggingConf := &logger.Config{}
-	if err := loggingConf.Update(c.Logging); err != nil {
-		return err
-	}
-
-	zl, err := logger.NewZapLogger(loggingConf, logger.WithTee(c.LoggerTee))
+	zl, err := logger.NewZapLogger(c.Logging, logger.WithTee(c.LoggerTee))
 	if err != nil {
 		return err
 	}

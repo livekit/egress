@@ -24,8 +24,8 @@ require (
 	github.com/livekit/media-samples/avsync v0.0.0-20260804064037-794748125298
 	github.com/livekit/media-sdk v0.0.0-20260828235137-cb2363a4cb4f
 	github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095
-	github.com/livekit/protocol v1.51.1-0.20260910121219-271d9cde3897
-	github.com/livekit/psrpc v0.7.6
+	github.com/livekit/protocol v1.52.1-0.20260922072557-d77b4a5b1c25
+	github.com/livekit/psrpc v0.7.7
 	github.com/livekit/server-sdk-go/v2 v2.18.2-0.20260831001713-a41bea984454
 	github.com/livekit/storage v0.0.0-20260623170515-1297cb15775f
 	github.com/llehouerou/go-mp3 v1.2.0
@@ -35,7 +35,7 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.70.1
-	github.com/stretchr/testify v1.12.0
+	github.com/stretchr/testify v1.12.1
 	github.com/urfave/cli/v3 v3.10.1
 	go.opentelemetry.io/otel v1.45.0
 	go.uber.org/atomic v1.11.0
@@ -117,9 +117,9 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/jellydator/ttlcache/v3 v3.4.1 // indirect
 	github.com/jxskiss/base62 v1.1.0 // indirect
-	github.com/klauspost/compress v1.19.1 // indirect
+	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
-	github.com/lithammer/shortuuid/v4 v4.2.0 // indirect
+	github.com/lithammer/shortuuid/v4 v4.3.0 // indirect
 	github.com/mackerelio/go-osstat v0.2.8 // indirect
 	github.com/magefile/mage v1.17.2 // indirect
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.12.2 // indirect
@@ -128,7 +128,7 @@ require (
 	github.com/nats-io/nats.go v1.52.0 // indirect
 	github.com/nats-io/nkeys v0.4.16 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
-	github.com/petermattis/goid v0.0.0-20260725062400-500c67a39b75 // indirect
+	github.com/petermattis/goid v0.0.0-20260820044319-269ab09b5261 // indirect
 	github.com/pion/datachannel v1.6.2 // indirect
 	github.com/pion/dtls/v3 v3.1.5 // indirect
 	github.com/pion/ice/v4 v4.4.0 // indirect
