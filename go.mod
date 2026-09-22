@@ -14,6 +14,7 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20260804232424-e85f50dbfd32
 	github.com/chromedp/chromedp v0.16.0
 	github.com/frostbyte73/core v0.1.1
+	github.com/foxglove/mcap/go/mcap v1.9.0
 	github.com/go-gst/go-glib v1.4.1-0.20250303082535-35ebad1471fd
 	github.com/go-gst/go-gst v1.4.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
@@ -128,6 +129,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/oracle/oci-go-sdk/v65 v65.100.0 // indirect
 	github.com/petermattis/goid v0.0.0-20260820044319-269ab09b5261 // indirect
+	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pion/datachannel v1.6.2 // indirect
 	github.com/pion/dtls/v3 v3.1.8 // indirect
 	github.com/pion/ice/v4 v4.4.0 // indirect

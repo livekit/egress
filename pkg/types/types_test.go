@@ -62,3 +62,10 @@ func TestGetOutputTypesCompatibleWithCodecs(t *testing.T) {
 	res = GetOutputTypeCompatibleWithCodecs(outputTypes, audioCodecs, videoCodecs)
 	require.Equal(t, OutputTypeMP4, res)
 }
+
+func TestMCAPCodecCompatibility(t *testing.T) {
+	require.True(t, CodecCompatibility[OutputTypeMCAP][MimeTypeOpus])
+	require.True(t, CodecCompatibility[OutputTypeMCAP][MimeTypeH264])
+	require.False(t, CodecCompatibility[OutputTypeMCAP][MimeTypeAAC])
+	require.False(t, CodecCompatibility[OutputTypeMCAP][MimeTypeVP8])
+}

@@ -970,6 +970,14 @@ func (b *VideoBin) addEncoder() error {
 		}
 
 		x264Enc.SetArg("speed-preset", "veryfast")
+		// Foxglove CompressedVideo requires H264 access units in presentation
+		// order. Disable B-frames when an MCAP sink is present so decode order
+		// and presentation order remain identical.
+		if file := b.conf.GetFileConfig(); file != nil && file.OutputType == types.OutputTypeMCAP {
+			if err = x264Enc.SetProperty("bframes", uint(0)); err != nil {
+				return errors.ErrGstPipelineError(err)
+			}
+		}
 
 		if b.conf.VideoEncoderThreads > 0 {
 			if err = x264Enc.SetProperty("threads", b.conf.VideoEncoderThreads); err != nil {

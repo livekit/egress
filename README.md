@@ -30,14 +30,44 @@ Irrespective of method used, when moving between protocols, containers or encodi
 
 ## Supported Output
 
-| Egress Type     | MP4 File | OGG File | WebM File | HLS (TS Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
-|-----------------|----------|----------|-----------|-------------------|----------------|------------------|------------------|--------------------|
-| Room Composite  | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |
-| Web             | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |
-| Track Composite | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |
-| Track           | ✅        | ✅        | ✅         |                   |                |               | ✅                |                    |
+| Egress Type     | MP4 File | OGG File | MCAP File (POC) | WebM File | HLS (TS Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
+|-----------------|----------|----------|-----------------|-----------|-------------------|----------------|------------|------------------|--------------------|
+| Room Composite  | ✅        | ✅        | ✅               |           | ✅                 | ✅              | ✅          |                  | ✅                  |
+| Web             | ✅        | ✅        | ✅               |           | ✅                 | ✅              | ✅          |                  | ✅                  |
+| Track Composite | ✅        | ✅        | ✅               |           | ✅                 | ✅              | ✅          |                  | ✅                  |
+| Track           | ✅        | ✅        |                 | ✅         |                   |                |            | ✅                |                    |
 
 Files can be uploaded to any S3 compatible storage, Azure, or GCP.
+
+### MCAP proof of concept
+
+MCAP file output stores encoded H264 video as `foxglove.CompressedVideo` on `/video` and encoded Opus audio as
+`foxglove.CompressedAudio` on `/audio`. The file includes protobuf schemas, chunk indexes, CRCs, and LiveKit egress
+metadata, and follows the same local/cloud upload path as other file outputs.
+
+This branch temporarily reserves numeric `EncodedFileType` value `4` for MCAP. A production implementation requires
+adding `MCAP = 4` to `livekit/protocol` before exposing a named enum through SDKs and the CLI. Until then, submit the
+numeric value in JSON. For example, with a participant named `jetson-camera` already publishing in `mcap-test`, save
+the following as `request.json`:
+
+```json
+{
+  "room_name": "mcap-test",
+  "identity": "jetson-camera",
+  "file_outputs": [{
+    "file_type": 4,
+    "filepath": "/out/jetson-test.mcap",
+    "disable_manifest": true
+  }]
+}
+```
+
+```shell
+lk --dev --url http://127.0.0.1:7880 egress start --type participant request.json
+```
+
+The current POC supports participant, track-composite, room-composite, and web egress because those paths provide
+encoded output. Direct single-track egress remains passthrough and is not routed through the MCAP writer.
 
 ## Documentation
 

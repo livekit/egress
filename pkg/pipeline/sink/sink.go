@@ -50,6 +50,9 @@ func NewSink(
 
 	switch egressType {
 	case types.EgressTypeFile:
+		if o.GetOutputType() == types.OutputTypeMCAP {
+			return newMCAPSink(p, conf, o.(*config.FileConfig), callbacks, monitor)
+		}
 		return newFileSink(p, conf, o.(*config.FileConfig), monitor)
 
 	case types.EgressTypeSegments:

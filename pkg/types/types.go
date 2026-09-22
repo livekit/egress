@@ -77,6 +77,7 @@ const (
 	OutputTypeHLS         OutputType = "application/x-mpegurl"
 	OutputTypeJSON        OutputType = "application/json"
 	OutputTypeBlob        OutputType = "application/octet-stream"
+	OutputTypeMCAP        OutputType = "application/mcap"
 
 	// file extensions
 	FileExtensionRaw  = ".raw"
@@ -88,6 +89,7 @@ const (
 	FileExtensionWebM = ".webm"
 	FileExtensionM3U8 = ".m3u8"
 	FileExtensionJPEG = ".jpeg"
+	FileExtensionMCAP = ".mcap"
 
 	Unknown = "unknown"
 )
@@ -103,6 +105,7 @@ var (
 		OutputTypeRTMP: MimeTypeAAC,
 		OutputTypeSRT:  MimeTypeAAC,
 		OutputTypeHLS:  MimeTypeAAC,
+		OutputTypeMCAP: MimeTypeOpus,
 	}
 
 	DefaultVideoCodecs = map[OutputType]MimeType{
@@ -113,6 +116,7 @@ var (
 		OutputTypeRTMP: MimeTypeH264,
 		OutputTypeSRT:  MimeTypeH264,
 		OutputTypeHLS:  MimeTypeH264,
+		OutputTypeMCAP: MimeTypeH264,
 	}
 
 	FileExtensions = map[FileExtension]struct{}{
@@ -125,6 +129,7 @@ var (
 		FileExtensionWebM: {},
 		FileExtensionM3U8: {},
 		FileExtensionJPEG: {},
+		FileExtensionMCAP: {},
 	}
 
 	FileExtensionForOutputType = map[OutputType]FileExtension{
@@ -137,6 +142,7 @@ var (
 		OutputTypeWebM: FileExtensionWebM,
 		OutputTypeHLS:  FileExtensionM3U8,
 		OutputTypeJPEG: FileExtensionJPEG,
+		OutputTypeMCAP: FileExtensionMCAP,
 	}
 
 	CodecCompatibility = map[OutputType]map[MimeType]bool{
@@ -182,6 +188,10 @@ var (
 			MimeTypeOpus:     true,
 			MimeTypeAAC:      true,
 			MimeTypeRawAudio: true,
+		},
+		OutputTypeMCAP: {
+			MimeTypeOpus: true,
+			MimeTypeH264: true,
 		},
 		OutputTypeUnknownFile: {
 			MimeTypeAAC:  true,

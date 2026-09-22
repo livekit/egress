@@ -26,6 +26,11 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+// encodedFileTypeMCAP is the wire value reserved for MCAP while the public
+// livekit/protocol enum change lands. Proto3 preserves unknown enum values, so
+// existing servers and clients can submit this as numeric file_type 4.
+const encodedFileTypeMCAP = livekit.EncodedFileType(4)
+
 type FileConfig struct {
 	outputConfig
 
@@ -61,6 +66,8 @@ func fileTypeToOutputType(ft livekit.EncodedFileType) types.OutputType {
 		return types.OutputTypeOGG
 	case livekit.EncodedFileType_MP3:
 		return types.OutputTypeMP3
+	case encodedFileTypeMCAP:
+		return types.OutputTypeMCAP
 	default:
 		return types.OutputTypeUnknownFile
 	}
