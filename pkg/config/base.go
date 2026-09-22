@@ -21,6 +21,7 @@ import (
 
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/medialogutils"
+	"github.com/livekit/protocol/logger/zaputil"
 	"github.com/livekit/protocol/redis"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 
@@ -71,6 +72,10 @@ type BaseConfig struct {
 	EnableSyncEngine              bool                                `yaml:"enable_sync_engine"`                 // use Chrome-inspired sync engine for improved cross-participant alignment and A/V sync
 	AudioTempoController          AudioTempoController                `yaml:"audio_tempo_controller"`             // audio tempo controller
 	TestOverrides                 TestOverrides                       `yaml:"test_overrides"`                     // set of config overrides for testing purposes
+
+	// LoggerTee duplicates the log stream InitLogger builds. Set it before
+	// InitLogger; the zero value is a no-op.
+	LoggerTee zaputil.Tee `yaml:"-"`
 }
 
 type SessionLimits struct {
@@ -128,7 +133,7 @@ func (c *BaseConfig) InitLogger(serviceName string, values ...interface{}) error
 		}
 	}
 
-	zl, err := logger.NewZapLogger(c.Logging)
+	zl, err := logger.NewZapLogger(c.Logging, logger.WithTee(c.LoggerTee))
 	if err != nil {
 		return err
 	}
