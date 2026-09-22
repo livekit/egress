@@ -286,7 +286,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 	var retryable bool
 	for i := range chromeRetries {
 		if i > 0 {
-			logger.Debugw("navigation timed out, reloading")
+			logger.Debugw("relaunching chrome", "attempt", i+1)
 		}
 
 		chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
@@ -382,10 +382,15 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 			}`, &errString),
 	); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			logger.Warnw("navigation timed out, retrying", nil)
 			return errors.PageLoadError("timed out"), true
 		}
 		if strings.HasPrefix(err.Error(), chromeFailedToStart) {
-			return errors.ChromeError(err), false
+			// Usually the X display losing the race with chrome's launch. The
+			// allocator holds no per-process state, so the next attempt spawns a
+			// fresh browser against a fresh user-data-dir.
+			logger.Warnw("chrome failed to start, retrying", nil)
+			return errors.ChromeError(err), true
 		}
 		if strings.Contains(err.Error(), chromeCertVerifierChanged) {
 			logger.Warnw("chrome cert verifier changed, retrying", nil)
