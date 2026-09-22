@@ -52,6 +52,9 @@ const (
 
 	chromeTimeout = time.Second * 30
 	chromeRetries = 3
+	// chrome and Xvfb are started in the same millisecond, so back-to-back
+	// attempts would all land before a slow display is listening
+	chromeRetryDelay = time.Millisecond * 500
 )
 
 type WebSource struct {
@@ -286,7 +289,8 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 	var retryable bool
 	for i := range chromeRetries {
 		if i > 0 {
-			logger.Debugw("relaunching chrome", "attempt", i+1)
+			logger.Debugw("relaunching chrome", "attempt", i+1, "after", chromeRetryDelay)
+			time.Sleep(chromeRetryDelay)
 		}
 
 		chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
