@@ -27,7 +27,7 @@ import (
 	"github.com/livekit/egress/pkg/server"
 	"github.com/livekit/egress/test/cadence"
 	"github.com/livekit/protocol/redis"
-	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/bus/redisbus"
 )
 
 var (
@@ -45,7 +45,7 @@ func TestEgress(t *testing.T) {
 	// rpc client and server
 	rc, err := redis.GetRedisClient(r.Redis)
 	require.NoError(t, err)
-	bus := psrpc.NewRedisMessageBus(rc, r.PSRPC.BusOptions()...)
+	bus := redisbus.New(rc, r.PSRPC.BusOptions()...)
 
 	ioClient, err := info.NewSessionReporter(&r.BaseConfig, bus)
 	require.NoError(t, err)
