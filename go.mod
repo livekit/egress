@@ -26,7 +26,7 @@ require (
 	github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095
 	github.com/livekit/protocol v1.52.1-0.20260922162639-efea8680276b
 	github.com/livekit/psrpc v0.8.0
-	github.com/livekit/server-sdk-go/v2 v2.18.2-0.20260923195954-3473ce323852
+	github.com/livekit/server-sdk-go/v2 v2.18.2-0.20260924203949-34edb5522fd9
 	github.com/livekit/storage v0.0.0-20260924145434-4c1385486c82
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58

@@ -25,6 +25,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -63,9 +64,10 @@ type WebSource struct {
 	closeChrome  context.CancelFunc
 	chromeLogger *lumberjack.Logger
 
-	startRecording core.Fuse
-	endRecording   core.Fuse
-	closed         core.Fuse
+	startRecording       core.Fuse
+	startRecordingLogged atomic.Bool
+	endRecording         core.Fuse
+	closed               core.Fuse
 
 	info *livekit.EgressInfo
 }
@@ -327,7 +329,9 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 
 				switch fmt.Sprint(val) {
 				case startRecordingLog:
-					logger.Infow("chrome: START_RECORDING")
+					if s.startRecordingLogged.CompareAndSwap(false, true) {
+						logger.Infow("chrome: START_RECORDING")
+					}
 					s.startRecording.Break()
 
 				case endRecordingLog:
