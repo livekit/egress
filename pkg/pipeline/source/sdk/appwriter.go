@@ -297,7 +297,7 @@ func (w *AppWriter) start() {
 		}
 	}
 
-	w.logger.Infow("writer finished")
+	w.logger.Infow("writer finished", "stats", w.getStats(), "requestType", w.conf.RequestType)
 	if w.csvLogger != nil {
 		w.csvLogger.Close()
 	}
@@ -746,7 +746,6 @@ func (w *AppWriter) logStats() {
 			stats := w.getStats()
 			w.csvLogger.Write(stats)
 			w.csvLogger.Close()
-			w.logger.Infow("appwriter stats ", "stats", stats, "requestType", w.conf.RequestType)
 			return
 
 		case <-ticker.C:

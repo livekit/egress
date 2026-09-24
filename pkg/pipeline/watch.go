@@ -260,7 +260,7 @@ func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
 	if s == pipelineName {
 		if newState == gst.StatePaused {
 			c.paused.Once(func() {
-				logger.Infow("pipeline paused")
+				logger.Debugw("pipeline paused")
 				c.callbacks.OnPipelinePaused()
 			})
 		}

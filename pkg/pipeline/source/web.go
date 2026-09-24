@@ -327,7 +327,9 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 
 				switch fmt.Sprint(val) {
 				case startRecordingLog:
-					logger.Infow("chrome: START_RECORDING")
+					if !s.startRecording.IsBroken() {
+						logger.Infow("chrome: START_RECORDING")
+					}
 					s.startRecording.Break()
 
 				case endRecordingLog:
