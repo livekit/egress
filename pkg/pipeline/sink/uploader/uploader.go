@@ -107,6 +107,10 @@ func getUploader(conf *config.StorageConfig) (*store, error) {
 		s, err = storage.NewAliOSS(conf.AliOSS)
 		name = "AliOSS"
 		hasCustomEndpoint = conf.AliOSS.Endpoint != ""
+	case conf.OCI != nil:
+		s, err = storage.NewOCI(conf.OCI)
+		name = "OCI"
+		hasCustomEndpoint = conf.OCI.Endpoint != ""
 	default:
 		s, err = storage.NewLocal(&storage.LocalConfig{})
 		name = "Local"
