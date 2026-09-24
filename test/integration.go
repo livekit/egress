@@ -69,6 +69,12 @@ func (r *Runner) run(t *testing.T, test *testCase) bool {
 
 	r.testNumber++
 	t.Run(fmt.Sprintf("%d/%s", r.testNumber, test.name), func(t *testing.T) {
+		if test.chromeCompositing {
+			original := r.EnableTemplateSDK
+			r.EnableTemplateSDK = false
+			t.Cleanup(func() { r.EnableTemplateSDK = original })
+		}
+
 		test.plan = planTest(test)
 		r.executePlan(t, test)
 

@@ -92,6 +92,70 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 			},
 
+			// --- Room Composite, chrome ---
+			//
+			// prod defaults to enable_template_sdk: false, so keep one case per
+			// layout plus audio-only on the chrome path.
+
+			{
+				name:        "RoomComposite/Chrome/Speaker",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec:        types.MimeTypeOpus,
+					videoCodec:        types.MimeTypeH264,
+					layout:            layoutSpeaker,
+					multiParticipant:  true,
+					chromeCompositing: true,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_chrome_speaker_{time}.mp4",
+				},
+			},
+			{
+				name:        "RoomComposite/Chrome/Grid",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec:        types.MimeTypeOpus,
+					videoCodec:        types.MimeTypeH264,
+					layout:            layoutGrid,
+					multiParticipant:  true,
+					chromeCompositing: true,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_chrome_grid_{time}.mp4",
+				},
+			},
+			{
+				name:        "RoomComposite/Chrome/SingleSpeaker",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec:        types.MimeTypeOpus,
+					videoCodec:        types.MimeTypeH264,
+					layout:            layoutSingleSpeaker,
+					multiParticipant:  true,
+					chromeCompositing: true,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_chrome_single_speaker_{time}.mp4",
+				},
+			},
+			{
+				name:        "RoomComposite/Chrome/AudioOnly",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec:        types.MimeTypeOpus,
+					audioOnly:         true,
+					chromeCompositing: true,
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					AudioCodec: livekit.AudioCodec_OPUS,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_chrome_audio_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+			},
+
 			// ---------- Web ----------
 
 			{

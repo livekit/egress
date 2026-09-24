@@ -159,6 +159,76 @@ func GridLayoutRegions(width, height, numParticipants int) []avsync.Region {
 	return regions
 }
 
+// ChromeSpeakerLayoutRegions returns the expected sampling regions for the
+// speaker layout as chrome renders it.
+//
+// Chrome renders the template's CSS grid with no outer page padding, so tiles
+// start at the frame edge, and the carousel stacks unbounded 16:10 thumbnails
+// with no row gap. The SDK compositor pads the canvas and caps the carousel
+// instead — see SpeakerLayoutRegions.
+func ChromeSpeakerLayoutRegions(width, height, numParticipants int) []avsync.Region {
+	totalFr := 6
+	availableForCols := width - gridGap
+	carouselW := availableForCols / totalFr
+	stageW := availableForCols - carouselW
+
+	stage := image.Rectangle{
+		Min: image.Pt(carouselW+gridGap, 0),
+		Max: image.Pt(carouselW+gridGap+stageW, height),
+	}
+
+	regions := []avsync.Region{
+		{
+			Name: "stage",
+			Rect: insetRect(stage, regionInset),
+		},
+	}
+
+	thumbW := carouselW
+	thumbH := thumbW * 10 / 16
+	for i := 0; i < numParticipants-1; i++ {
+		thumbY := i * thumbH
+		thumb := image.Rectangle{
+			Min: image.Pt(0, thumbY),
+			Max: image.Pt(thumbW, thumbY+thumbH),
+		}
+		regions = append(regions, avsync.Region{
+			Name: fmt.Sprintf("thumb%d", i),
+			Rect: insetRect(thumb, regionInset),
+		})
+	}
+
+	return regions
+}
+
+// ChromeGridLayoutRegions returns the expected sampling regions for the grid
+// layout as chrome renders it: the same column algorithm as
+// GridLayoutRegions, but flush to the frame with no outer padding.
+func ChromeGridLayoutRegions(width, height, numParticipants int) []avsync.Region {
+	cols := gridColumns(width, numParticipants)
+	rows := int(math.Ceil(float64(numParticipants) / float64(cols)))
+
+	cellW := (width - (cols-1)*gridGap) / cols
+	cellH := (height - (rows-1)*gridGap) / rows
+
+	regions := make([]avsync.Region, 0, numParticipants)
+	for i := 0; i < numParticipants; i++ {
+		col := i % cols
+		row := i / cols
+		x := col * (cellW + gridGap)
+		y := row * (cellH + gridGap)
+		cell := image.Rectangle{
+			Min: image.Pt(x, y),
+			Max: image.Pt(x+cellW, y+cellH),
+		}
+		regions = append(regions, avsync.Region{
+			Name: fmt.Sprintf("cell%d", i),
+			Rect: insetRect(cell, regionInset),
+		})
+	}
+	return regions
+}
+
 // SingleSpeakerLayoutRegions returns the expected sampling region for the
 // single-speaker layout: essentially full-frame with an inset margin.
 func SingleSpeakerLayoutRegions(width, height int) []avsync.Region {
