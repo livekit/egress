@@ -52,6 +52,9 @@ const (
 
 	chromeTimeout = time.Second * 30
 	chromeRetries = 3
+	// chrome and Xvfb are started in the same millisecond, so back-to-back
+	// attempts would all land before a slow display is listening
+	chromeRetryDelay = time.Millisecond * 500
 )
 
 type WebSource struct {
@@ -177,7 +180,9 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 	_, span := tracer.Start(ctx, "WebInput.launchXvfb")
 	defer span.End()
 
-	dims := fmt.Sprintf("%dx%dx%d", p.Width, p.Height, p.Depth)
+	// chrome shrinks its window by a pixel when it would exactly fill the screen, so give it a
+	// pixel of slack - the ximagesrc crops it back out
+	dims := fmt.Sprintf("%dx%dx%d", p.Width+1, p.Height+1, p.Depth)
 	logger.Debugw("creating X display", "display", p.Display, "dims", dims)
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
 	if err := xvfb.Start(); err != nil {
@@ -284,7 +289,8 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 	var retryable bool
 	for i := range chromeRetries {
 		if i > 0 {
-			logger.Debugw("navigation timed out, reloading")
+			logger.Debugw("relaunching chrome", "attempt", i+1, "after", chromeRetryDelay)
+			time.Sleep(chromeRetryDelay)
 		}
 
 		chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
@@ -380,10 +386,15 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 			}`, &errString),
 	); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			logger.Warnw("navigation timed out, retrying", nil)
 			return errors.PageLoadError("timed out"), true
 		}
 		if strings.HasPrefix(err.Error(), chromeFailedToStart) {
-			return errors.ChromeError(err), false
+			// Usually the X display losing the race with chrome's launch. The
+			// allocator holds no per-process state, so the next attempt spawns a
+			// fresh browser against a fresh user-data-dir.
+			logger.Warnw("chrome failed to start, retrying", nil)
+			return errors.ChromeError(err), true
 		}
 		if strings.Contains(err.Error(), chromeCertVerifierChanged) {
 			logger.Warnw("chrome cert verifier changed, retrying", nil)

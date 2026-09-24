@@ -99,8 +99,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		}),
 	}
 
-	if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
-		// Enable Packet Burst Estimator for Room Composite requests
+	if shouldEnableStartGate(p) {
 		opts = append(opts, synchronizer.WithStartGate())
 	}
 
@@ -132,7 +131,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 			}),
 			synchronizer.WithSyncEngineMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond),
 		}
-		if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
+		if shouldEnableStartGate(p) {
 			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineStartGate())
 		}
 		if p.Latency.OldPacketThreshold > 0 {
@@ -879,6 +878,23 @@ func (s *SDKSource) shouldSkipTrackSubscriptions() bool {
 func (s *SDKSource) disconnectRoom() {
 	if room := s.room.Swap(nil); room != nil {
 		room.Disconnect()
+	}
+}
+
+func shouldEnableStartGate(p *config.PipelineConfig) bool {
+	if p.Passthrough {
+		return false
+	}
+
+	switch p.RequestType {
+	case types.RequestTypeRoomComposite,
+		types.RequestTypeTemplate,
+		types.RequestTypeTrackComposite,
+		types.RequestTypeParticipant,
+		types.RequestTypeMedia:
+		return true
+	default:
+		return false
 	}
 }
 
