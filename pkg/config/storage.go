@@ -32,6 +32,7 @@ type StorageConfig struct {
 	Azure  *storage.AzureConfig  `yaml:"azure"`  // upload to azure
 	GCP    *storage.GCPConfig    `yaml:"gcp"`    // upload to gcp
 	AliOSS *storage.AliOSSConfig `yaml:"alioss"` // upload to aliyun
+	OCI    *storage.OCIConfig    `yaml:"oci"`    // upload to oracle
 }
 
 func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageConfig, error) {
@@ -142,7 +143,7 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 }
 
 func (c *StorageConfig) IsLocal() bool {
-	return c.S3 == nil && c.GCP == nil && c.Azure == nil && c.AliOSS == nil
+	return c.S3 == nil && c.GCP == nil && c.Azure == nil && c.AliOSS == nil && c.OCI == nil
 }
 
 // resolveStorageConfig returns the first non-nil StorageConfig from the chain:

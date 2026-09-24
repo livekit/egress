@@ -91,7 +91,7 @@ type DebugConfig struct {
 	EnableTrackLogging  bool             `yaml:"enable_track_logging"`  // log packets and keyframes for each track
 	EnableStreamLogging bool             `yaml:"enable_stream_logging"` // log bytes and keyframes for each stream
 	EnableChromeLogging bool             `yaml:"enable_chrome_logging"` // log all chrome console events
-	StorageConfig       `yaml:",inline"` // upload config (S3, Azure, GCP, or AliOSS)
+	StorageConfig       `yaml:",inline"` // upload config (S3, Azure, GCP, AliOSS, or OCI)
 }
 
 type LatencyConfig struct {

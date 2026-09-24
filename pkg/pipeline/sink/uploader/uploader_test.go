@@ -1,6 +1,10 @@
 package uploader
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -69,6 +73,21 @@ func TestUploader(t *testing.T) {
 }
 
 func TestHasCustomEndpoint(t *testing.T) {
+	ociKey := ociPrivateKeyPEM(t)
+	// Namespace and the api key fields keep NewOCI off the network and off ~/.oci/config.
+	ociConf := func(endpoint string) *storage.OCIConfig {
+		return &storage.OCIConfig{
+			TenancyOCID: "ocid1.tenancy.oc1..tenancy",
+			UserOCID:    "ocid1.user.oc1..user",
+			Fingerprint: "aa:bb:cc",
+			PrivateKey:  ociKey,
+			Region:      "us-ashburn-1",
+			Namespace:   "testnamespace",
+			Bucket:      "fake-bucket",
+			Endpoint:    endpoint,
+		}
+	}
+
 	cases := []struct {
 		name string
 		conf *config.StorageConfig
@@ -95,6 +114,16 @@ func TestHasCustomEndpoint(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "oci without endpoint",
+			conf: &config.StorageConfig{OCI: ociConf("")},
+			want: false,
+		},
+		{
+			name: "oci with endpoint",
+			conf: &config.StorageConfig{OCI: ociConf("objectstorage.us-ashburn-1.oraclecloud.com")},
+			want: true,
+		},
+		{
 			name: "azure",
 			conf: &config.StorageConfig{Azure: &storage.AzureConfig{AccountName: "n", AccountKey: "a2V5", ContainerName: "c"}},
 			want: false,
@@ -113,6 +142,19 @@ func TestHasCustomEndpoint(t *testing.T) {
 			require.Equal(t, tc.want, s.hasCustomEndpoint)
 		})
 	}
+}
+
+// NewOCI parses the key while building the client, so a placeholder PEM won't do.
+func ociPrivateKeyPEM(t *testing.T) string {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	return string(pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	}))
 }
 
 func TestUploadErrorHasStatusCode(t *testing.T) {
