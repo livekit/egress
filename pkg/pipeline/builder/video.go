@@ -34,6 +34,9 @@ import (
 const (
 	videoTestSrcName  = "video_test_src"
 	videoTestSrcDelay = 2 * time.Second
+
+	// what a layout-hidden track scales to, even because I420 requires it
+	hiddenCellSize = 2
 )
 
 type VideoBin struct {
@@ -331,7 +334,7 @@ func (b *VideoBin) applyLayoutLocked(pads []PadLayout) ([]pendingDimensions, err
 		// a zero-sized pad composites at full input size
 		w, h := pl.W, pl.H
 		if w <= 0 || h <= 0 {
-			w, h = 2, 2
+			w, h = hiddenCellSize, hiddenCellSize
 		}
 
 		if err := pad.SetProperty("xpos", pl.X); err != nil {
@@ -707,10 +710,19 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 
 // setCellTargetLocked aims an input's crop and scale at the cell it occupies
 func (b *VideoBin) setCellTargetLocked(name string) error {
-	src, haveSrc := b.srcDims[name]
+	caps, ok := b.inputCaps[name]
 	cell, haveCell := b.cellDims[name]
-	if !haveSrc || !haveCell ||
-		src.width <= 0 || src.height <= 0 || cell.width <= 0 || cell.height <= 0 {
+	if !ok || !haveCell {
+		return nil
+	}
+
+	// a hidden track runs the same chain as a visible one, so leave it nothing to convert
+	if cell.width <= 0 || cell.height <= 0 {
+		return b.setInputSize(caps, hiddenCellSize, hiddenCellSize)
+	}
+
+	src, haveSrc := b.srcDims[name]
+	if !haveSrc || src.width <= 0 || src.height <= 0 {
 		return nil
 	}
 
@@ -718,15 +730,14 @@ func (b *VideoBin) setCellTargetLocked(name string) error {
 		return err
 	}
 
-	caps, ok := b.inputCaps[name]
-	if !ok {
-		return nil
-	}
-
 	// I420 needs even dimensions; the compositor pad absorbs the half pixel
+	return b.setInputSize(caps, roundUpToEven(cell.width), roundUpToEven(cell.height))
+}
+
+func (b *VideoBin) setInputSize(caps *gst.Element, width, height int) error {
 	if err := caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
 		"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
-		b.conf.Framerate, roundUpToEven(cell.width), roundUpToEven(cell.height),
+		b.conf.Framerate, width, height,
 	))); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
