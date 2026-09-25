@@ -238,6 +238,12 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 			if inWarmup && flashVerdict == required {
 				flashVerdict = optional
 			}
+			// single-speaker renders only the active speaker, so everyone
+			// else is off-frame and has no flash to find
+			if tc.layout == layoutSingleSpeaker && flashVerdict == required &&
+				plan.activeSpeaker(planPTS) != pub.name {
+				flashVerdict = optional
+			}
 			switch flashVerdict {
 			case required:
 				flashRequired[pub.name]++
