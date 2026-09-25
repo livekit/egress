@@ -53,6 +53,7 @@ type VideoBin struct {
 	cellDims           map[string]videoDimensions // pad name -> cell the layout gave it
 	crops              map[string]*gst.Element    // pad name -> cover crop, applied before the scale
 	inputCaps          map[string]*gst.Element    // pad name -> scale target, re-aimed on every layout change
+	screenShares       map[string]bool            // pad name -> screen share, which the template fits inside its cell
 	lastDimensions     map[string]videoDimensions
 	selector           *gst.Element
 	rawVideoTee        *gst.Element
@@ -186,6 +187,7 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	delete(b.cellDims, name)
 	delete(b.crops, name)
 	delete(b.inputCaps, name)
+	delete(b.screenShares, name)
 	delete(b.lastDimensions, trackID)
 	b.closeProbe(name)
 
@@ -441,6 +443,7 @@ func (b *VideoBin) buildSDKInput() error {
 	b.cellDims = make(map[string]videoDimensions)
 	b.crops = make(map[string]*gst.Element)
 	b.inputCaps = make(map[string]*gst.Element)
+	b.screenShares = make(map[string]bool)
 	b.lastDimensions = make(map[string]videoDimensions)
 
 	if b.conf.VideoDecoding {
@@ -701,7 +704,7 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	if err := b.addVideoConverter(appSrcBin, name); err != nil {
+	if err := b.addVideoConverter(appSrcBin, name, ts.PublicationSource == livekit.TrackSource_SCREEN_SHARE); err != nil {
 		return nil, err
 	}
 
@@ -718,6 +721,10 @@ func (b *VideoBin) setCellTargetLocked(name string) error {
 
 	// a hidden track runs the same chain as a visible one, so leave it nothing to convert
 	if cell.width <= 0 || cell.height <= 0 {
+		// a crop measured against a larger source would reject the next smaller one
+		if err := b.setCropLocked(name, 0, 0, 0, 0); err != nil {
+			return err
+		}
 		return b.setInputSize(caps, hiddenCellSize, hiddenCellSize)
 	}
 
@@ -726,12 +733,11 @@ func (b *VideoBin) setCellTargetLocked(name string) error {
 		return nil
 	}
 
-	if err := b.setCoverCropLocked(name, src, cell); err != nil {
+	if err := b.setFitLocked(name, src, cell); err != nil {
 		return err
 	}
 
-	// I420 needs even dimensions; the compositor pad absorbs the half pixel
-	return b.setInputSize(caps, roundUpToEven(cell.width), roundUpToEven(cell.height))
+	return b.setInputSize(caps, cell.width, cell.height)
 }
 
 func (b *VideoBin) setInputSize(caps *gst.Element, width, height int) error {
@@ -744,11 +750,11 @@ func (b *VideoBin) setInputSize(caps *gst.Element, width, height int) error {
 	return nil
 }
 
-// setCoverCropLocked trims the source to the cell's aspect ratio so the scale can't distort it
-func (b *VideoBin) setCoverCropLocked(name string, src, cell videoDimensions) error {
-	crop, ok := b.crops[name]
-	if !ok {
-		return nil
+// setFitLocked matches the template - portrait cameras and screen shares sit inside the
+// cell, everything else fills it
+func (b *VideoBin) setFitLocked(name string, src, cell videoDimensions) error {
+	if b.screenShares[name] || src.height > src.width {
+		return b.setCropLocked(name, 0, 0, 0, 0)
 	}
 
 	var left, right, top, bottom int
@@ -760,6 +766,15 @@ func (b *VideoBin) setCoverCropLocked(name string, src, cell videoDimensions) er
 		keep := src.height * cell.width / cell.height
 		left = (src.width - keep) / 2
 		right = src.width - keep - left
+	}
+
+	return b.setCropLocked(name, left, right, top, bottom)
+}
+
+func (b *VideoBin) setCropLocked(name string, left, right, top, bottom int) error {
+	crop, ok := b.crops[name]
+	if !ok {
+		return nil
 	}
 
 	if err := crop.SetProperty("left", left); err != nil {
@@ -775,10 +790,6 @@ func (b *VideoBin) setCoverCropLocked(name string, src, cell videoDimensions) er
 		return errors.ErrGstPipelineError(err)
 	}
 	return nil
-}
-
-func roundUpToEven(v int) int {
-	return v + v%2
 }
 
 func (b *VideoBin) addCompositor() error {
@@ -1062,14 +1073,14 @@ func (b *VideoBin) addDecodedVideoSink() error {
 	return nil
 }
 
-func (b *VideoBin) addVideoConverter(bin *gstreamer.Bin, name string) error {
+func (b *VideoBin) addVideoConverter(bin *gstreamer.Bin, name string, screenShare bool) error {
 	videoQueue, err := b.buildVideoQueue("video_input_queue")
 	if err != nil {
 		return err
 	}
 
 	if b.conf.Compositing {
-		return b.addCompositorInput(bin, videoQueue, name)
+		return b.addCompositorInput(bin, videoQueue, name, screenShare)
 	}
 
 	videoConvert, err := gst.NewElement("videoconvert")
@@ -1091,7 +1102,7 @@ func (b *VideoBin) addVideoConverter(bin *gstreamer.Bin, name string) error {
 }
 
 // addCompositorInput scales to the cell before converting - color conversion costs frame size
-func (b *VideoBin) addCompositorInput(bin *gstreamer.Bin, videoQueue *gst.Element, name string) error {
+func (b *VideoBin) addCompositorInput(bin *gstreamer.Bin, videoQueue *gst.Element, name string, screenShare bool) error {
 	crop, err := gst.NewElement("videocrop")
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -1099,6 +1110,10 @@ func (b *VideoBin) addCompositorInput(bin *gstreamer.Bin, videoQueue *gst.Elemen
 
 	videoScale, err := gst.NewElement("videoscale")
 	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	// an uncropped source is letterboxed into its cell rather than stretched
+	if err = videoScale.SetProperty("add-borders", true); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
@@ -1126,6 +1141,7 @@ func (b *VideoBin) addCompositorInput(bin *gstreamer.Bin, videoQueue *gst.Elemen
 	b.mu.Lock()
 	b.crops[name] = crop
 	b.inputCaps[name] = caps
+	b.screenShares[name] = screenShare
 	b.mu.Unlock()
 
 	// the crop's sink pad is the last place the frame is still at source resolution
