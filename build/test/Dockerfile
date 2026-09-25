@@ -154,13 +154,15 @@ RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 # clean up
 RUN rm -rf /var/lib/apt/lists/*
 
-# install rtsp server
+# install rtsp server. %path in recordPath keeps each stream key in its own
+# directory, so the integration suite can find the recording for a given output
+# url; test/stream_recording.go reads from the same location.
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64v8; else ARCH=amd64; fi && \
     wget https://github.com/bluenviron/mediamtx/releases/download/v1.8.1/mediamtx_v1.8.1_linux_${ARCH}.tar.gz && \
     tar -zxvf mediamtx_v1.8.1_linux_${ARCH}.tar.gz && \
     rm mediamtx_v1.8.1_linux_${ARCH}.tar.gz && \
     sed -i 's_record: no_record: yes_g' mediamtx.yml && \
-    sed -i 's_recordPath: ./recordings/%path/_recordPath: /out/output/stream-_g' mediamtx.yml
+    sed -i 's_recordPath: ./recordings/%path/_recordPath: /out/output/rec/%path/_g' mediamtx.yml
 
 # install toxiproxy (used by integration tests to simulate wedged RTMP outputs)
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64; else ARCH=amd64; fi && \

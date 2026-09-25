@@ -72,6 +72,16 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 		return
 	}
 
+	runAVSyncCheck(t, tc, file, info, output, format)
+}
+
+// runAVSyncCheck analyses the avsync pattern in a recorded file. Callers that
+// already have their own contentCheck reach it through runContentCheck.
+func runAVSyncCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo, output, format string) {
+	if info == nil {
+		return
+	}
+
 	// Web/WebV2 load arbitrary URLs, not the avsync pattern.
 	if tc.requestType == types.RequestTypeWeb {
 		return

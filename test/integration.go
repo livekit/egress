@@ -236,6 +236,8 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 				require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
 			}
 		}
+
+		r.verifyStreamRecording(t, test, p, res, urls[0], startedAt)
 	}
 
 	// validate images
