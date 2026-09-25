@@ -92,6 +92,20 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 			},
 
+			{
+				name:        "RoomComposite/SingleSpeaker",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					layout:           layoutSingleSpeaker,
+					multiParticipant: true,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_single_speaker_{time}.mp4",
+				},
+			},
+
 			// --- Room Composite, chrome ---
 			//
 			// prod defaults to enable_template_sdk: false, so keep one case per

@@ -34,6 +34,8 @@ import (
 const (
 	videoTestSrcName  = "video_test_src"
 	videoTestSrcDelay = 2 * time.Second
+
+	hiddenCellSize = 2
 )
 
 type VideoBin struct {
@@ -46,7 +48,11 @@ type VideoBin struct {
 	names              map[string]string
 	muted              map[string]bool    // pad name -> muted; layout recalcs must not un-mute
 	layoutAlpha        map[string]float64 // pad name -> alpha the layout wants; un-muting must not exceed it
+	srcDims            map[string]videoDimensions
+	cellDims           map[string]videoDimensions
 	crops              map[string]*gst.Element
+	inputCaps          map[string]*gst.Element
+	screenShares       map[string]bool
 	lastDimensions     map[string]videoDimensions
 	selector           *gst.Element
 	rawVideoTee        *gst.Element
@@ -176,7 +182,11 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	delete(b.pads, name)
 	delete(b.muted, name)
 	delete(b.layoutAlpha, name)
+	delete(b.srcDims, name)
+	delete(b.cellDims, name)
 	delete(b.crops, name)
+	delete(b.inputCaps, name)
+	delete(b.screenShares, name)
 	delete(b.lastDimensions, trackID)
 	b.closeProbe(name)
 
@@ -322,16 +332,22 @@ func (b *VideoBin) applyLayoutLocked(pads []PadLayout) ([]pendingDimensions, err
 			alpha = 0
 		}
 
+		// a zero-sized pad composites at full input size
+		w, h := pl.W, pl.H
+		if w <= 0 || h <= 0 {
+			w, h = hiddenCellSize, hiddenCellSize
+		}
+
 		if err := pad.SetProperty("xpos", pl.X); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err := pad.SetProperty("ypos", pl.Y); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
-		if err := pad.SetProperty("width", pl.W); err != nil {
+		if err := pad.SetProperty("width", w); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
-		if err := pad.SetProperty("height", pl.H); err != nil {
+		if err := pad.SetProperty("height", h); err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
 		if err := pad.SetProperty("alpha", alpha); err != nil {
@@ -341,7 +357,8 @@ func (b *VideoBin) applyLayoutLocked(pads []PadLayout) ([]pendingDimensions, err
 			return nil, errors.ErrGstPipelineError(err)
 		}
 
-		if err := b.setCoverCrop(name, pl.W, pl.H); err != nil {
+		b.cellDims[name] = videoDimensions{width: pl.W, height: pl.H}
+		if err := b.setCellTargetLocked(name); err != nil {
 			return nil, err
 		}
 
@@ -421,7 +438,11 @@ func (b *VideoBin) buildSDKInput() error {
 	b.names = make(map[string]string)
 	b.muted = make(map[string]bool)
 	b.layoutAlpha = make(map[string]float64)
+	b.srcDims = make(map[string]videoDimensions)
+	b.cellDims = make(map[string]videoDimensions)
 	b.crops = make(map[string]*gst.Element)
+	b.inputCaps = make(map[string]*gst.Element)
+	b.screenShares = make(map[string]bool)
 	b.lastDimensions = make(map[string]videoDimensions)
 
 	if b.conf.VideoDecoding {
@@ -682,47 +703,98 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	if err := b.addVideoConverter(appSrcBin); err != nil {
+	if err := b.addVideoConverter(appSrcBin, name, ts.PublicationSource == livekit.TrackSource_SCREEN_SHARE); err != nil {
 		return nil, err
-	}
-
-	if b.conf.Compositing {
-		// inputs arrive at canvas size, so without this the compositor stretches them into the cell
-		crop, err := gst.NewElement("videocrop")
-		if err != nil {
-			return nil, errors.ErrGstPipelineError(err)
-		}
-		if err = appSrcBin.AddElement(crop); err != nil {
-			return nil, err
-		}
-
-		b.mu.Lock()
-		b.crops[name] = crop
-		b.mu.Unlock()
 	}
 
 	return appSrcBin, nil
 }
 
-// setCoverCrop centers a crop of the canvas-sized frame at the cell's aspect ratio
-func (b *VideoBin) setCoverCrop(name string, cellW, cellH int) error {
-	crop, ok := b.crops[name]
-	if !ok || cellW <= 0 || cellH <= 0 {
+func (b *VideoBin) setCellTargetLocked(name string) error {
+	caps, ok := b.inputCaps[name]
+	cell, haveCell := b.cellDims[name]
+	if !ok || !haveCell {
 		return nil
 	}
 
-	srcW, srcH := int(b.conf.Width), int(b.conf.Height)
-	cellWiderThanSource := cellW*srcH > cellH*srcW
+	if cell.width <= 0 || cell.height <= 0 {
+		// a crop measured against a larger source would reject the next smaller one
+		if err := b.setCropLocked(name, 0, 0, 0, 0); err != nil {
+			return err
+		}
+		return b.setInputSize(caps, hiddenCellSize, hiddenCellSize)
+	}
 
-	var left, right, top, bottom int
-	if cellWiderThanSource {
-		keep := srcW * cellH / cellW
-		top = (srcH - keep) / 2
-		bottom = srcH - keep - top
+	src, haveSrc := b.srcDims[name]
+	if !haveSrc || src.width <= 0 || src.height <= 0 {
+		return nil
+	}
+
+	if b.screenShares[name] || src.height > src.width {
+		return b.fitInsideCellLocked(name, caps, src, cell)
+	}
+	return b.fillCellLocked(name, caps, src, cell)
+}
+
+func (b *VideoBin) fitInsideCellLocked(name string, caps *gst.Element, src, cell videoDimensions) error {
+	if err := b.setCropLocked(name, 0, 0, 0, 0); err != nil {
+		return err
+	}
+	b.setSizingPolicyLocked(name, "keep-aspect-ratio")
+
+	width, height := cell.width, cell.height
+	if src.width*cell.height > src.height*cell.width {
+		height = max(1, src.height*cell.width/src.width)
 	} else {
-		keep := srcH * cellW / cellH
-		left = (srcW - keep) / 2
-		right = srcW - keep - left
+		width = max(1, src.width*cell.height/src.height)
+	}
+	return b.setInputSize(caps, width, height)
+}
+
+func (b *VideoBin) fillCellLocked(name string, caps *gst.Element, src, cell videoDimensions) error {
+	if err := b.setCoverCropLocked(name, src, cell); err != nil {
+		return err
+	}
+	b.setSizingPolicyLocked(name, "none")
+
+	return b.setInputSize(caps, cell.width, cell.height)
+}
+
+func (b *VideoBin) setSizingPolicyLocked(name, policy string) {
+	if pad, ok := b.pads[name]; ok {
+		pad.SetArg("sizing-policy", policy)
+	}
+}
+
+func (b *VideoBin) setInputSize(caps *gst.Element, width, height int) error {
+	if err := caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+		b.conf.Framerate, width, height,
+	))); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	return nil
+}
+
+func (b *VideoBin) setCoverCropLocked(name string, src, cell videoDimensions) error {
+	var left, right, top, bottom int
+	if cell.width*src.height > cell.height*src.width {
+		keep := src.width * cell.height / cell.width
+		top = (src.height - keep) / 2
+		bottom = src.height - keep - top
+	} else {
+		keep := src.height * cell.width / cell.height
+		left = (src.width - keep) / 2
+		right = src.width - keep - left
+	}
+
+	return b.setCropLocked(name, left, right, top, bottom)
+}
+
+func (b *VideoBin) setCropLocked(name string, left, right, top, bottom int) error {
+	crop, ok := b.crops[name]
+	if !ok {
+		return nil
 	}
 
 	if err := crop.SetProperty("left", left); err != nil {
@@ -1021,10 +1093,14 @@ func (b *VideoBin) addDecodedVideoSink() error {
 	return nil
 }
 
-func (b *VideoBin) addVideoConverter(bin *gstreamer.Bin) error {
+func (b *VideoBin) addVideoConverter(bin *gstreamer.Bin, name string, screenShare bool) error {
 	videoQueue, err := b.buildVideoQueue("video_input_queue")
 	if err != nil {
 		return err
+	}
+
+	if b.conf.Compositing {
+		return b.addCompositorInput(bin, videoQueue, name, screenShare)
 	}
 
 	videoConvert, err := gst.NewElement("videoconvert")
@@ -1037,27 +1113,60 @@ func (b *VideoBin) addVideoConverter(bin *gstreamer.Bin) error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	elements := []*gst.Element{videoQueue, videoConvert, videoScale}
-
-	// only the compositor needs framerate-locked inputs; the selector rate-locks downstream
-	if b.conf.Compositing {
-		videoRate, err := gst.NewElement("videorate")
-		if err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if err = videoRate.SetProperty("skip-to-first", true); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		elements = append(elements, videoRate)
-	}
-
-	caps, err := b.newVideoCapsFilter(b.conf.Compositing)
+	caps, err := b.newVideoCapsFilter(false)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	elements = append(elements, caps)
 
-	return bin.AddElements(elements...)
+	return bin.AddElements(videoQueue, videoConvert, videoScale, caps)
+}
+
+// addCompositorInput scales to the cell before converting - color conversion costs frame size
+func (b *VideoBin) addCompositorInput(bin *gstreamer.Bin, videoQueue *gst.Element, name string, screenShare bool) error {
+	crop, err := gst.NewElement("videocrop")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	videoScale, err := gst.NewElement("videoscale")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	// borders here would paint black over what the compositor background should show
+	if err = videoScale.SetProperty("add-borders", false); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	videoConvert, err := gst.NewElement("videoconvert")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	videoRate, err := gst.NewElement("videorate")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = videoRate.SetProperty("skip-to-first", true); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	caps, err := b.newVideoCapsFilter(true)
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	// without the grace period, frames in flight when the layout moves fail to negotiate
+	caps.SetArg("caps-change-mode", "delayed")
+
+	b.mu.Lock()
+	b.crops[name] = crop
+	b.inputCaps[name] = caps
+	b.screenShares[name] = screenShare
+	b.mu.Unlock()
+
+	// the crop's sink pad is the last place the frame is still at source resolution
+	b.watchSrcDimensions(crop.GetStaticPad("sink"), name)
+
+	return bin.AddElements(videoQueue, crop, videoScale, videoConvert, videoRate, caps)
 }
 
 func (b *VideoBin) newVideoCapsFilter(includeFramerate bool) (*gst.Element, error) {
@@ -1134,6 +1243,59 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 
 	b.pads[name] = pad
 	return nil
+}
+
+func (b *VideoBin) watchSrcDimensions(pad *gst.Pad, name string) {
+	pad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		event := info.GetEvent()
+		if event == nil || event.Type() != gst.EventTypeCaps {
+			return gst.PadProbeOK
+		}
+
+		dims, ok := dimensionsFromCaps(event.ParseCaps())
+		if !ok {
+			return gst.PadProbeOK
+		}
+
+		b.mu.Lock()
+		defer b.mu.Unlock()
+
+		if b.srcDims[name] == dims {
+			return gst.PadProbeOK
+		}
+		b.srcDims[name] = dims
+		if err := b.setCellTargetLocked(name); err != nil {
+			logger.Warnw("failed to update scale target", err, "name", name)
+		}
+		return gst.PadProbeOK
+	})
+}
+
+func dimensionsFromCaps(caps *gst.Caps) (videoDimensions, bool) {
+	if caps == nil || caps.GetSize() == 0 {
+		return videoDimensions{}, false
+	}
+
+	s := caps.GetStructureAt(0)
+	if s == nil {
+		return videoDimensions{}, false
+	}
+
+	width, err := s.GetValue("width")
+	if err != nil {
+		return videoDimensions{}, false
+	}
+	height, err := s.GetValue("height")
+	if err != nil {
+		return videoDimensions{}, false
+	}
+
+	w, wOK := width.(int)
+	h, hOK := height.(int)
+	if !wOK || !hOK {
+		return videoDimensions{}, false
+	}
+	return videoDimensions{width: w, height: h}, true
 }
 
 func (b *VideoBin) setTrackVisible(name string, visible bool) error {
