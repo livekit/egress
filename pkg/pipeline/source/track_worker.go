@@ -431,6 +431,7 @@ func (s *SDKSource) doCleanup(trackID string, state *workerState) {
 	shouldContinue := !s.Passthrough &&
 		(s.RequestType == types.RequestTypeParticipant ||
 			s.RequestType == types.RequestTypeRoomComposite ||
+			s.RequestType == types.RequestTypeRoomTracks ||
 			s.RequestType == types.RequestTypeTemplate ||
 			s.RequestType == types.RequestTypeMedia)
 
@@ -469,6 +470,7 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 
 	ts := &config.TrackSource{
 		TrackID:             pub.SID(),
+		TrackName:           pub.Name(),
 		TrackKind:           pub.Kind(),
 		ParticipantIdentity: rp.Identity(),
 		PublicationSource:   pub.Source(),

@@ -29,6 +29,7 @@ const (
 	RequestTypeMedia    = "media"
 
 	RequestTypeRoomComposite  = "room_composite"
+	RequestTypeRoomTracks     = "room_tracks"
 	RequestTypeParticipant    = "participant"
 	RequestTypeTrackComposite = "track_composite"
 	RequestTypeTrack          = "track"
@@ -36,6 +37,11 @@ const (
 	// source types
 	SourceTypeWeb SourceType = "web"
 	SourceTypeSDK SourceType = "sdk"
+
+	// RoomTracksLayout is the explicit POC request selector for a track-preserving
+	// room source. It uses the existing room-composite request envelope until the
+	// public protocol grows a dedicated RoomTracksSource message.
+	RoomTracksLayout = "room-tracks"
 
 	// egress types
 	EgressTypeStream    EgressType = "stream"

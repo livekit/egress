@@ -18,7 +18,27 @@ import (
 
 func TestMCAPEncodedFileType(t *testing.T) {
 	require.Equal(t, types.OutputTypeMCAP, fileTypeToOutputType(encodedFileTypeMCAP))
-	require.Equal(t, types.FileExtensionMCAP, types.FileExtensionForOutputType[types.OutputTypeMCAP])
+	require.Equal(t, types.FileExtensionMCAP, string(types.FileExtensionForOutputType[types.OutputTypeMCAP]))
 	require.Equal(t, types.MimeTypeOpus, types.DefaultAudioCodecs[types.OutputTypeMCAP])
 	require.Equal(t, types.MimeTypeH264, types.DefaultVideoCodecs[types.OutputTypeMCAP])
+}
+
+func TestValidateRoomTracksOutput(t *testing.T) {
+	valid := &PipelineConfig{Outputs: map[types.EgressType][]OutputConfig{
+		types.EgressTypeFile: {&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMCAP}}},
+	}}
+	require.NoError(t, valid.validateRoomTracksOutput())
+
+	wrongType := &PipelineConfig{Outputs: map[types.EgressType][]OutputConfig{
+		types.EgressTypeFile: {&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMP4}}},
+	}}
+	require.Error(t, wrongType.validateRoomTracksOutput())
+
+	multiple := &PipelineConfig{Outputs: map[types.EgressType][]OutputConfig{
+		types.EgressTypeFile: {
+			&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMCAP}},
+			&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMCAP}},
+		},
+	}}
+	require.Error(t, multiple.validateRoomTracksOutput())
 }

@@ -69,9 +69,24 @@ type Options struct {
 	VideoTopic string
 	AudioTopic string
 	Metadata   map[string]string
+	// DynamicTracks allows channels to be registered lazily as LiveKit tracks
+	// are published after the MCAP file has been opened.
+	DynamicTracks bool
 	// StartTime maps media PTS zero to wall-clock time. If zero, it is derived
 	// from the first sample as time.Now() - PTS.
 	StartTime time.Time
+}
+
+type Track struct {
+	ID       string
+	Topic    string
+	FrameID  string
+	Metadata map[string]string
+}
+
+type channelState struct {
+	id       uint16
+	sequence uint32
 }
 
 // Writer serializes writes because GStreamer audio and video appsinks invoke
@@ -79,18 +94,21 @@ type Options struct {
 type Writer struct {
 	mu sync.Mutex
 
-	w         *mcapgo.Writer
-	startTime time.Time
-	videoSeq  uint32
-	audioSeq  uint32
-	queue     messageHeap
-	maxTime   time.Time
-	order     uint64
-	closed    bool
+	w                  *mcapgo.Writer
+	startTime          time.Time
+	channels           map[string]*channelState
+	nextID             uint16
+	videoSchemaWritten bool
+	audioSchemaWritten bool
+	descriptors        []byte
+	queue              messageHeap
+	maxTime            time.Time
+	order              uint64
+	closed             bool
 }
 
 func NewWriter(dst io.Writer, opts Options) (*Writer, error) {
-	if !opts.Video && !opts.Audio {
+	if !opts.Video && !opts.Audio && !opts.DynamicTracks {
 		return nil, fmt.Errorf("at least one MCAP media channel is required")
 	}
 
@@ -111,19 +129,15 @@ func NewWriter(dst io.Writer, opts Options) (*Writer, error) {
 	if err != nil {
 		return nil, err
 	}
+	result := &Writer{
+		w: w, startTime: opts.StartTime, descriptors: descriptors,
+		channels: make(map[string]*channelState), nextID: 3,
+	}
 	if opts.Video {
 		if opts.VideoTopic == "" {
 			opts.VideoTopic = defaultVideoTopic
 		}
-		if err = w.WriteSchema(&mcapgo.Schema{
-			ID: videoSchemaID, Name: "foxglove.CompressedVideo", Encoding: "protobuf", Data: descriptors,
-		}); err != nil {
-			return nil, err
-		}
-		if err = w.WriteChannel(&mcapgo.Channel{
-			ID: videoChannelID, SchemaID: videoSchemaID, Topic: opts.VideoTopic, MessageEncoding: "protobuf",
-			Metadata: map[string]string{"codec": "h264"},
-		}); err != nil {
+		if _, err = result.registerVideoLocked(Track{ID: defaultVideoTopic, Topic: opts.VideoTopic}, videoChannelID); err != nil {
 			return nil, err
 		}
 	}
@@ -131,15 +145,7 @@ func NewWriter(dst io.Writer, opts Options) (*Writer, error) {
 		if opts.AudioTopic == "" {
 			opts.AudioTopic = defaultAudioTopic
 		}
-		if err = w.WriteSchema(&mcapgo.Schema{
-			ID: audioSchemaID, Name: "foxglove.CompressedAudio", Encoding: "protobuf", Data: descriptors,
-		}); err != nil {
-			return nil, err
-		}
-		if err = w.WriteChannel(&mcapgo.Channel{
-			ID: audioChannelID, SchemaID: audioSchemaID, Topic: opts.AudioTopic, MessageEncoding: "protobuf",
-			Metadata: map[string]string{"codec": "opus"},
-		}); err != nil {
+		if _, err = result.registerAudioLocked(Track{ID: defaultAudioTopic, Topic: opts.AudioTopic}, audioChannelID); err != nil {
 			return nil, err
 		}
 	}
@@ -149,41 +155,99 @@ func NewWriter(dst io.Writer, opts Options) (*Writer, error) {
 		}
 	}
 
-	return &Writer{w: w, startTime: opts.StartTime}, nil
+	return result, nil
 }
 
 func (w *Writer) WriteVideo(pts time.Duration, frameID string, data []byte) error {
+	return w.WriteVideoTrack(pts, Track{ID: defaultVideoTopic, Topic: defaultVideoTopic, FrameID: frameID}, data)
+}
+
+func (w *Writer) WriteVideoTrack(pts time.Duration, track Track, data []byte) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if w.closed {
 		return fmt.Errorf("MCAP writer is closed")
 	}
+	channel, err := w.registerVideoLocked(track, 0)
+	if err != nil {
+		return err
+	}
 	ts := w.timestampLocked(pts)
-	msg := encodeCompressedVideo(ts, frameID, data)
+	msg := encodeCompressedVideo(ts, track.FrameID, data)
 	w.enqueueLocked(ts, &mcapgo.Message{
-		ChannelID: videoChannelID, Sequence: w.videoSeq, LogTime: uint64(ts.UnixNano()),
+		ChannelID: channel.id, Sequence: channel.sequence, LogTime: uint64(ts.UnixNano()),
 		PublishTime: uint64(ts.UnixNano()), Data: msg,
 	})
-	w.videoSeq++
+	channel.sequence++
 	return w.flushReadyLocked(w.maxTime.Add(-reorderWindow))
 }
 
 func (w *Writer) WriteAudio(pts time.Duration, data []byte) error {
+	return w.WriteAudioTrack(pts, Track{ID: defaultAudioTopic, Topic: defaultAudioTopic}, data)
+}
+
+func (w *Writer) WriteAudioTrack(pts time.Duration, track Track, data []byte) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if w.closed {
 		return fmt.Errorf("MCAP writer is closed")
 	}
+	channel, err := w.registerAudioLocked(track, 0)
+	if err != nil {
+		return err
+	}
 	ts := w.timestampLocked(pts)
 	msg := encodeCompressedAudio(ts, data)
 	w.enqueueLocked(ts, &mcapgo.Message{
-		ChannelID: audioChannelID, Sequence: w.audioSeq, LogTime: uint64(ts.UnixNano()),
+		ChannelID: channel.id, Sequence: channel.sequence, LogTime: uint64(ts.UnixNano()),
 		PublishTime: uint64(ts.UnixNano()), Data: msg,
 	})
-	w.audioSeq++
+	channel.sequence++
 	return w.flushReadyLocked(w.maxTime.Add(-reorderWindow))
+}
+
+func (w *Writer) registerVideoLocked(track Track, forcedID uint16) (*channelState, error) {
+	return w.registerTrackLocked(track, forcedID, videoSchemaID, "foxglove.CompressedVideo", "h264", &w.videoSchemaWritten)
+}
+
+func (w *Writer) registerAudioLocked(track Track, forcedID uint16) (*channelState, error) {
+	return w.registerTrackLocked(track, forcedID, audioSchemaID, "foxglove.CompressedAudio", "opus", &w.audioSchemaWritten)
+}
+
+func (w *Writer) registerTrackLocked(track Track, forcedID, schemaID uint16, schemaName, codec string, schemaWritten *bool) (*channelState, error) {
+	if track.ID == "" || track.Topic == "" {
+		return nil, fmt.Errorf("MCAP track ID and topic are required")
+	}
+	if channel, ok := w.channels[track.ID]; ok {
+		return channel, nil
+	}
+	if !*schemaWritten {
+		if err := w.w.WriteSchema(&mcapgo.Schema{ID: schemaID, Name: schemaName, Encoding: "protobuf", Data: w.descriptors}); err != nil {
+			return nil, err
+		}
+		*schemaWritten = true
+	}
+	channelID := forcedID
+	if channelID == 0 {
+		channelID = w.nextID
+		w.nextID++
+	}
+	metadata := make(map[string]string, len(track.Metadata)+1)
+	for key, value := range track.Metadata {
+		metadata[key] = value
+	}
+	metadata["codec"] = codec
+	if err := w.w.WriteChannel(&mcapgo.Channel{
+		ID: channelID, SchemaID: schemaID, Topic: track.Topic,
+		MessageEncoding: "protobuf", Metadata: metadata,
+	}); err != nil {
+		return nil, err
+	}
+	channel := &channelState{id: channelID}
+	w.channels[track.ID] = channel
+	return channel, nil
 }
 
 func (w *Writer) enqueueLocked(timestamp time.Time, message *mcapgo.Message) {

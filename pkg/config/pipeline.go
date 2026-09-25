@@ -115,6 +115,7 @@ type AudioRouteMatch struct {
 
 type TrackSource struct {
 	TrackID             string
+	TrackName           string
 	TrackKind           lksdk.TrackKind
 	ParticipantIdentity string
 	PublicationSource   livekit.TrackSource
@@ -225,14 +226,21 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	connectionInfoRequired := true
 	switch req := request.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		p.RequestType = types.RequestTypeRoomComposite
+		roomTracks := req.RoomComposite.Layout == types.RoomTracksLayout
+		if roomTracks {
+			p.RequestType = types.RequestTypeRoomTracks
+		} else {
+			p.RequestType = types.RequestTypeRoomComposite
+		}
 		clone := proto.Clone(req.RoomComposite).(*livekit.RoomCompositeEgressRequest)
 		p.Info.Request = &livekit.EgressInfo_RoomComposite{
 			RoomComposite: clone,
 		}
 		egress.RedactEncodedOutputs(clone)
 
-		if p.UsesTemplateSDKCompositing(req.RoomComposite.CustomBaseUrl) {
+		if roomTracks {
+			p.SourceType = types.SourceTypeSDK
+		} else if p.UsesTemplateSDKCompositing(req.RoomComposite.CustomBaseUrl) {
 			p.AudioMixing = req.RoomComposite.AudioMixing
 			p.SourceType = types.SourceTypeSDK
 			p.Compositing = !req.RoomComposite.AudioOnly
@@ -247,14 +255,20 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		p.Info.RoomName = req.RoomComposite.RoomName
 		p.Layout = req.RoomComposite.Layout
-		if req.RoomComposite.CustomBaseUrl != "" {
+		if roomTracks {
+			// RoomTracksSource subscribes through the SDK and does not use a
+			// browser/template URL.
+			p.BaseUrl = ""
+		} else if req.RoomComposite.CustomBaseUrl != "" {
 			p.BaseUrl = req.RoomComposite.CustomBaseUrl
 		} else {
 			p.BaseUrl = p.TemplateBase
 		}
-		baseUrl, err := url.Parse(p.BaseUrl)
-		if err != nil || !isHttp(baseUrl) {
-			return errors.ErrInvalidInput("template base url")
+		if !roomTracks {
+			baseUrl, err := url.Parse(p.BaseUrl)
+			if err != nil || !isHttp(baseUrl) {
+				return errors.ErrInvalidInput("template base url")
+			}
 		}
 
 		if !req.RoomComposite.VideoOnly {
@@ -276,13 +290,13 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			p.applyPreset(opts.Preset)
 
 		case *livekit.RoomCompositeEgressRequest_Advanced:
-			if err = p.applyAdvanced(opts.Advanced); err != nil {
+			if err := p.applyAdvanced(opts.Advanced); err != nil {
 				return err
 			}
 		}
 
 		// output params
-		if err = p.updateEncodedOutputs(req.RoomComposite); err != nil {
+		if err := p.updateEncodedOutputs(req.RoomComposite); err != nil {
 			return err
 		}
 
@@ -510,6 +524,11 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	default:
 		return errors.ErrInvalidInput("request")
 	}
+	if p.RequestType == types.RequestTypeRoomTracks {
+		if err := p.validateRoomTracksOutput(); err != nil {
+			return err
+		}
+	}
 
 	// the passthrough preset is shared with request types that always transcode
 	if p.Passthrough && p.RequestType != types.RequestTypeTrack && p.RequestType != types.RequestTypeMedia {
@@ -579,7 +598,8 @@ func (c *BaseConfig) TemplateSourceIsSDK(req interface {
 	GetAudioOnly() bool
 	GetCustomBaseUrl() string
 }) bool {
-	return c.UsesTemplateSDKCompositing(req.GetCustomBaseUrl()) || ShouldUseSDKSource(req)
+	return req.GetLayout() == types.RoomTracksLayout ||
+		c.UsesTemplateSDKCompositing(req.GetCustomBaseUrl()) || ShouldUseSDKSource(req)
 }
 
 func (c *BaseConfig) IsSDKSourceRequest(req *rpc.StartEgressRequest) bool {
@@ -617,9 +637,16 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 	switch {
 	case req.GetTemplate() != nil:
 		tmpl := req.GetTemplate()
-		p.RequestType = types.RequestTypeTemplate
+		roomTracks := tmpl.Layout == types.RoomTracksLayout
+		if roomTracks {
+			p.RequestType = types.RequestTypeRoomTracks
+		} else {
+			p.RequestType = types.RequestTypeTemplate
+		}
 
-		if p.UsesTemplateSDKCompositing(tmpl.CustomBaseUrl) {
+		if roomTracks {
+			p.SourceType = types.SourceTypeSDK
+		} else if p.UsesTemplateSDKCompositing(tmpl.CustomBaseUrl) {
 			p.SourceType = types.SourceTypeSDK
 			p.Compositing = !tmpl.AudioOnly
 		} else if ShouldUseSDKSource(tmpl) {
@@ -630,14 +657,18 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 		p.AwaitStartSignal = true
 
 		p.Layout = tmpl.Layout
-		if tmpl.CustomBaseUrl != "" {
+		if roomTracks {
+			p.BaseUrl = ""
+		} else if tmpl.CustomBaseUrl != "" {
 			p.BaseUrl = tmpl.CustomBaseUrl
 		} else {
 			p.BaseUrl = p.TemplateBase
 		}
-		baseUrl, perr := url.Parse(p.BaseUrl)
-		if perr != nil || !isHttp(baseUrl) {
-			return connectionInfoRequired, errors.ErrInvalidInput("template base url")
+		if !roomTracks {
+			baseUrl, perr := url.Parse(p.BaseUrl)
+			if perr != nil || !isHttp(baseUrl) {
+				return connectionInfoRequired, errors.ErrInvalidInput("template base url")
+			}
 		}
 
 		if !tmpl.VideoOnly {

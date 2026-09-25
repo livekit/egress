@@ -265,7 +265,7 @@ func (s *SDKSource) joinRoom() error {
 	}
 
 	switch s.RequestType {
-	case types.RequestTypeRoomComposite, types.RequestTypeTemplate, types.RequestTypeMedia:
+	case types.RequestTypeRoomComposite, types.RequestTypeRoomTracks, types.RequestTypeTemplate, types.RequestTypeMedia:
 		cb.OnTrackPublished = s.onTrackPublished
 	case types.RequestTypeParticipant:
 		cb.OnTrackPublished = s.onTrackPublished
@@ -282,7 +282,7 @@ func (s *SDKSource) joinRoom() error {
 	var fileIdentifier string
 	var w, h uint32
 	switch s.RequestType {
-	case types.RequestTypeRoomComposite:
+	case types.RequestTypeRoomComposite, types.RequestTypeRoomTracks:
 		fileIdentifier = room.Name()
 		// room_name and room_id are already handled as replacements
 		err = s.awaitRoomTracks()
@@ -685,6 +685,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 	if s.RequestType != types.RequestTypeParticipant &&
 		s.RequestType != types.RequestTypeRoomComposite &&
+		s.RequestType != types.RequestTypeRoomTracks &&
 		s.RequestType != types.RequestTypeTemplate &&
 		s.RequestType != types.RequestTypeMedia {
 		return
@@ -719,7 +720,7 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 		default:
 			return s.ScreenShare
 		}
-	case types.RequestTypeRoomComposite, types.RequestTypeTemplate:
+	case types.RequestTypeRoomComposite, types.RequestTypeRoomTracks, types.RequestTypeTemplate:
 		switch pub.Kind() {
 		case lksdk.TrackKindAudio:
 			return s.AudioEnabled
@@ -871,6 +872,7 @@ func (s *SDKSource) shouldSkipTrackSubscriptions() bool {
 	return s.initialized.IsBroken() &&
 		s.RequestType != types.RequestTypeParticipant &&
 		s.RequestType != types.RequestTypeRoomComposite &&
+		s.RequestType != types.RequestTypeRoomTracks &&
 		s.RequestType != types.RequestTypeTemplate &&
 		s.RequestType != types.RequestTypeMedia
 }
@@ -888,6 +890,7 @@ func shouldEnableStartGate(p *config.PipelineConfig) bool {
 
 	switch p.RequestType {
 	case types.RequestTypeRoomComposite,
+		types.RequestTypeRoomTracks,
 		types.RequestTypeTemplate,
 		types.RequestTypeTrackComposite,
 		types.RequestTypeParticipant,
