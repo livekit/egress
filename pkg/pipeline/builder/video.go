@@ -171,6 +171,7 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 		b.mu.Unlock()
 		return
 	}
+	departed := b.pads[name]
 	delete(b.names, trackID)
 	delete(b.pads, name)
 	delete(b.muted, name)
@@ -187,6 +188,14 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 		}
 	}
 	b.mu.Unlock()
+
+	// the pad detaches asynchronously, so hide it before the survivors reflow
+	// into the cell it still occupies
+	if departed != nil && b.conf.Compositing {
+		if err := departed.SetProperty("alpha", 0.0); err != nil {
+			logger.Warnw("failed to hide departed pad", err, "name", name)
+		}
+	}
 
 	if b.layout != nil {
 		pads := b.layout.RemoveTrack(trackID)
@@ -736,7 +745,12 @@ func (b *VideoBin) addCompositor() error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	compositor.SetArg("background", "black")
+	// the gaps between tiles are the template's background, not the compositor's own
+	background := "black"
+	if isLightLayout(b.conf.Layout) {
+		background = "white"
+	}
+	compositor.SetArg("background", background)
 	if err = compositor.SetProperty("latency", uint64(b.conf.Latency.JitterBufferLatency)); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}

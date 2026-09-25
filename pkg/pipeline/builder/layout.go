@@ -172,6 +172,10 @@ func isGridLayout(layout string) bool {
 	return layout == LayoutGrid || layout == LayoutGridLight || layout == LayoutGridDark
 }
 
+func isLightLayout(layout string) bool {
+	return layout == LayoutGridLight || layout == LayoutSpeakerLight || layout == LayoutSingleSpeakerLight
+}
+
 func gridToSpeaker(layout string) string {
 	switch layout {
 	case LayoutGridLight:
