@@ -35,7 +35,6 @@ const (
 	videoTestSrcName  = "video_test_src"
 	videoTestSrcDelay = 2 * time.Second
 
-	// what a layout-hidden track scales to, even because I420 requires it
 	hiddenCellSize = 2
 )
 
@@ -47,13 +46,13 @@ type VideoBin struct {
 	nextID             int
 	pads               map[string]*gst.Pad
 	names              map[string]string
-	muted              map[string]bool            // pad name -> muted; layout recalcs must not un-mute
-	layoutAlpha        map[string]float64         // pad name -> alpha the layout wants; un-muting must not exceed it
-	srcDims            map[string]videoDimensions // pad name -> incoming frame size, from the pad's caps
-	cellDims           map[string]videoDimensions // pad name -> cell the layout gave it
-	crops              map[string]*gst.Element    // pad name -> cover crop, applied before the scale
-	inputCaps          map[string]*gst.Element    // pad name -> scale target, re-aimed on every layout change
-	screenShares       map[string]bool            // pad name -> screen share, which the template fits inside its cell
+	muted              map[string]bool    // pad name -> muted; layout recalcs must not un-mute
+	layoutAlpha        map[string]float64 // pad name -> alpha the layout wants; un-muting must not exceed it
+	srcDims            map[string]videoDimensions
+	cellDims           map[string]videoDimensions
+	crops              map[string]*gst.Element
+	inputCaps          map[string]*gst.Element
+	screenShares       map[string]bool
 	lastDimensions     map[string]videoDimensions
 	selector           *gst.Element
 	rawVideoTee        *gst.Element
@@ -711,7 +710,6 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 	return appSrcBin, nil
 }
 
-// setCellTargetLocked aims an input's crop and scale at the cell it occupies
 func (b *VideoBin) setCellTargetLocked(name string) error {
 	caps, ok := b.inputCaps[name]
 	cell, haveCell := b.cellDims[name]
@@ -719,7 +717,6 @@ func (b *VideoBin) setCellTargetLocked(name string) error {
 		return nil
 	}
 
-	// a hidden track runs the same chain as a visible one, so leave it nothing to convert
 	if cell.width <= 0 || cell.height <= 0 {
 		// a crop measured against a larger source would reject the next smaller one
 		if err := b.setCropLocked(name, 0, 0, 0, 0); err != nil {
@@ -733,11 +730,40 @@ func (b *VideoBin) setCellTargetLocked(name string) error {
 		return nil
 	}
 
-	if err := b.setFitLocked(name, src, cell); err != nil {
+	if b.screenShares[name] || src.height > src.width {
+		return b.fitInsideCellLocked(name, caps, src, cell)
+	}
+	return b.fillCellLocked(name, caps, src, cell)
+}
+
+func (b *VideoBin) fitInsideCellLocked(name string, caps *gst.Element, src, cell videoDimensions) error {
+	if err := b.setCropLocked(name, 0, 0, 0, 0); err != nil {
 		return err
 	}
+	b.setSizingPolicyLocked(name, "keep-aspect-ratio")
+
+	width, height := cell.width, cell.height
+	if src.width*cell.height > src.height*cell.width {
+		height = max(1, src.height*cell.width/src.width)
+	} else {
+		width = max(1, src.width*cell.height/src.height)
+	}
+	return b.setInputSize(caps, width, height)
+}
+
+func (b *VideoBin) fillCellLocked(name string, caps *gst.Element, src, cell videoDimensions) error {
+	if err := b.setCoverCropLocked(name, src, cell); err != nil {
+		return err
+	}
+	b.setSizingPolicyLocked(name, "none")
 
 	return b.setInputSize(caps, cell.width, cell.height)
+}
+
+func (b *VideoBin) setSizingPolicyLocked(name, policy string) {
+	if pad, ok := b.pads[name]; ok {
+		pad.SetArg("sizing-policy", policy)
+	}
 }
 
 func (b *VideoBin) setInputSize(caps *gst.Element, width, height int) error {
@@ -750,13 +776,7 @@ func (b *VideoBin) setInputSize(caps *gst.Element, width, height int) error {
 	return nil
 }
 
-// setFitLocked matches the template - portrait cameras and screen shares sit inside the
-// cell, everything else fills it
-func (b *VideoBin) setFitLocked(name string, src, cell videoDimensions) error {
-	if b.screenShares[name] || src.height > src.width {
-		return b.setCropLocked(name, 0, 0, 0, 0)
-	}
-
+func (b *VideoBin) setCoverCropLocked(name string, src, cell videoDimensions) error {
 	var left, right, top, bottom int
 	if cell.width*src.height > cell.height*src.width {
 		keep := src.width * cell.height / cell.width
@@ -1112,8 +1132,8 @@ func (b *VideoBin) addCompositorInput(bin *gstreamer.Bin, videoQueue *gst.Elemen
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	// an uncropped source is letterboxed into its cell rather than stretched
-	if err = videoScale.SetProperty("add-borders", true); err != nil {
+	// borders here would paint black over what the compositor background should show
+	if err = videoScale.SetProperty("add-borders", false); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
@@ -1130,7 +1150,6 @@ func (b *VideoBin) addCompositorInput(bin *gstreamer.Bin, videoQueue *gst.Elemen
 		return errors.ErrGstPipelineError(err)
 	}
 
-	// starts at canvas size; the first layout re-aims it at the cell
 	caps, err := b.newVideoCapsFilter(true)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
@@ -1226,7 +1245,6 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 	return nil
 }
 
-// watchSrcDimensions realigns the crop when the publisher switches layers
 func (b *VideoBin) watchSrcDimensions(pad *gst.Pad, name string) {
 	pad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		event := info.GetEvent()
