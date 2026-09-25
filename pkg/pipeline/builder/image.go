@@ -122,6 +122,13 @@ func BuildImageBin(c *config.ImageConfig, pipeline *gstreamer.Pipeline, p *confi
 	if err != nil {
 		return nil, err
 	}
+	// async=true here would gate pipeline preroll on the first composited frame, stalling PAUSED→PLAYING.
+	if err = sink.SetProperty("sync", false); err != nil {
+		return nil, err
+	}
+	if err = sink.SetProperty("async", false); err != nil {
+		return nil, err
+	}
 
 	// File will be renamed if the TS prefix is configured
 	location := fmt.Sprintf("%s_%%05d%s", path.Join(c.LocalDir, c.ImagePrefix), types.FileExtensionForOutputType[c.OutputType])

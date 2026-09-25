@@ -290,6 +290,9 @@ func (r *Runner) testEdgeCases(t *testing.T) {
 				publishOptions: publishOptions{
 					audioCodec: types.MimeTypeOpus,
 					videoCodec: types.MimeTypeVP8,
+					// this case is about the pulse null-sink chrome records
+					// through, so it has to run the web path
+					chromeCompositing: true,
 				},
 				fileOptions: &fileOptions{
 					filename: "pulse_sink_reaper_{time}.mp4",

@@ -88,14 +88,8 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 	switch {
 	case tc.audioOnly:
 		// no regions
-	case tc.multiParticipant && tc.layout == layoutSpeaker:
-		regions = SpeakerLayoutRegions(w, h, len(participants))
-	case tc.multiParticipant && tc.layout == layoutSingleSpeaker:
-		regions = SingleSpeakerLayoutRegions(w, h)
-	case tc.multiParticipant && tc.layout == layoutGrid:
-		regions = GridLayoutRegions(w, h, len(participants))
 	case tc.multiParticipant:
-		regions = GridLayoutRegions(w, h, len(participants))
+		regions = layoutRegions(tc, w, h, len(participants))
 	default:
 		regions = []avsync.Region{{Name: regionFull, Rect: image.Rect(0, 0, w, h)}}
 	}
@@ -131,6 +125,26 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 	maxPlanPTS := lag + dur - 1*time.Second
 
 	verifyContent(t, tc, plan, obs, intLag, maxPlanPTS)
+}
+
+// layoutRegions returns the expected sampling regions for tc's layout. Chrome
+// and the SDK compositor render the same template to different geometry, so
+// each has its own region math; single-speaker is full-frame either way.
+func layoutRegions(tc *testCase, w, h, numParticipants int) []avsync.Region {
+	switch tc.layout {
+	case layoutSingleSpeaker:
+		return SingleSpeakerLayoutRegions(w, h)
+	case layoutSpeaker:
+		if tc.chromeCompositing {
+			return ChromeSpeakerLayoutRegions(w, h, numParticipants)
+		}
+		return SpeakerLayoutRegions(w, h, numParticipants)
+	default:
+		if tc.chromeCompositing {
+			return ChromeGridLayoutRegions(w, h, numParticipants)
+		}
+		return GridLayoutRegions(w, h, numParticipants)
+	}
 }
 
 func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observation, intLag int64, maxPlanPTS time.Duration) {
@@ -222,6 +236,12 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 			gotFlashes := secData.Flashes[pub.name]
 			flashVerdict := pub.expectsFlash(planPTS)
 			if inWarmup && flashVerdict == required {
+				flashVerdict = optional
+			}
+			// single-speaker renders only the active speaker, so everyone
+			// else is off-frame and has no flash to find
+			if tc.layout == layoutSingleSpeaker && flashVerdict == required &&
+				plan.activeSpeaker(planPTS) != pub.name {
 				flashVerdict = optional
 			}
 			switch flashVerdict {
