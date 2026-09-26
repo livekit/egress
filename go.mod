@@ -13,8 +13,8 @@ require (
 	github.com/aws/smithy-go v1.27.6
 	github.com/chromedp/cdproto v0.0.0-20260804232424-e85f50dbfd32
 	github.com/chromedp/chromedp v0.16.0
-	github.com/frostbyte73/core v0.1.1
 	github.com/foxglove/mcap/go/mcap v1.9.0
+	github.com/frostbyte73/core v0.1.1
 	github.com/go-gst/go-glib v1.4.1-0.20250303082535-35ebad1471fd
 	github.com/go-gst/go-gst v1.4.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
@@ -25,7 +25,7 @@ require (
 	github.com/livekit/media-samples/avsync v0.0.0-20260804064037-794748125298
 	github.com/livekit/media-sdk v0.1.1
 	github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095
-	github.com/livekit/protocol v1.52.1-0.20260922162639-efea8680276b
+	github.com/livekit/protocol v1.52.2-0.20260926012843-bdf7a57f203c
 	github.com/livekit/psrpc v0.8.0
 	github.com/livekit/server-sdk-go/v2 v2.18.2-0.20260924203949-34edb5522fd9
 	github.com/livekit/storage v0.0.0-20260924145434-4c1385486c82
