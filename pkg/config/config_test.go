@@ -24,6 +24,37 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+func TestApplyRoomTracksSource(t *testing.T) {
+	p := &PipelineConfig{}
+	req := &livekit.StartEgressRequest{
+		Source: &livekit.StartEgressRequest_RoomTracks{
+			RoomTracks: &livekit.RoomTracksSource{},
+		},
+	}
+
+	connectionInfoRequired, err := p.applyV2Source(req)
+	require.NoError(t, err)
+	require.True(t, connectionInfoRequired)
+	require.Equal(t, types.RequestType(types.RequestTypeRoomTracks), p.RequestType)
+	require.Equal(t, types.SourceTypeSDK, p.SourceType)
+	require.True(t, p.AudioEnabled)
+	require.True(t, p.VideoEnabled)
+	require.True(t, p.AwaitStartSignal)
+	require.Empty(t, p.BaseUrl)
+}
+
+func TestApplyRoomTracksSourceRejectsNoMedia(t *testing.T) {
+	p := &PipelineConfig{}
+	req := &livekit.StartEgressRequest{
+		Source: &livekit.StartEgressRequest_RoomTracks{
+			RoomTracks: &livekit.RoomTracksSource{AudioOnly: true, VideoOnly: true},
+		},
+	}
+
+	_, err := p.applyV2Source(req)
+	require.ErrorContains(t, err, "audio_only and video_only")
+}
+
 func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
 	makeReq := func(externalID string) *livekit.EncodedFileOutput {
 		return &livekit.EncodedFileOutput{

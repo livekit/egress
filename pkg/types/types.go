@@ -38,11 +38,6 @@ const (
 	SourceTypeWeb SourceType = "web"
 	SourceTypeSDK SourceType = "sdk"
 
-	// RoomTracksLayout is the explicit POC request selector for a track-preserving
-	// room source. It uses the existing room-composite request envelope until the
-	// public protocol grows a dedicated RoomTracksSource message.
-	RoomTracksLayout = "room-tracks"
-
 	// egress types
 	EgressTypeStream    EgressType = "stream"
 	EgressTypeWebsocket EgressType = "websocket"

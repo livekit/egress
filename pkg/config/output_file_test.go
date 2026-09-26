@@ -14,10 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
 )
 
 func TestMCAPEncodedFileType(t *testing.T) {
-	require.Equal(t, types.OutputTypeMCAP, fileTypeToOutputType(encodedFileTypeMCAP))
+	require.Equal(t, types.OutputTypeMCAP, fileTypeToOutputType(livekit.EncodedFileType_MCAP))
 	require.Equal(t, types.FileExtensionMCAP, string(types.FileExtensionForOutputType[types.OutputTypeMCAP]))
 	require.Equal(t, types.MimeTypeOpus, types.DefaultAudioCodecs[types.OutputTypeMCAP])
 	require.Equal(t, types.MimeTypeH264, types.DefaultVideoCodecs[types.OutputTypeMCAP])
