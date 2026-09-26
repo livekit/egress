@@ -252,9 +252,11 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		} else {
 			p.BaseUrl = p.TemplateBase
 		}
-		baseUrl, err := url.Parse(p.BaseUrl)
-		if err != nil || !isHttp(baseUrl) {
-			return errors.ErrInvalidInput("template base url")
+		if p.SourceType == types.SourceTypeWeb {
+			baseUrl, err := url.Parse(p.BaseUrl)
+			if err != nil || !isHttp(baseUrl) {
+				return errors.ErrInvalidInput("template base url")
+			}
 		}
 
 		if !req.RoomComposite.VideoOnly {
@@ -276,13 +278,13 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			p.applyPreset(opts.Preset)
 
 		case *livekit.RoomCompositeEgressRequest_Advanced:
-			if err = p.applyAdvanced(opts.Advanced); err != nil {
+			if err := p.applyAdvanced(opts.Advanced); err != nil {
 				return err
 			}
 		}
 
 		// output params
-		if err = p.updateEncodedOutputs(req.RoomComposite); err != nil {
+		if err := p.updateEncodedOutputs(req.RoomComposite); err != nil {
 			return err
 		}
 
@@ -635,9 +637,11 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 		} else {
 			p.BaseUrl = p.TemplateBase
 		}
-		baseUrl, perr := url.Parse(p.BaseUrl)
-		if perr != nil || !isHttp(baseUrl) {
-			return connectionInfoRequired, errors.ErrInvalidInput("template base url")
+		if p.SourceType == types.SourceTypeWeb {
+			baseUrl, perr := url.Parse(p.BaseUrl)
+			if perr != nil || !isHttp(baseUrl) {
+				return connectionInfoRequired, errors.ErrInvalidInput("template base url")
+			}
 		}
 
 		if !tmpl.VideoOnly {

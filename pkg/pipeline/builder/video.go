@@ -888,7 +888,7 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if err = videoTestSrc.SetProperty("is-live", true); err != nil {
+	if err = videoTestSrc.SetProperty("is-live", b.conf.Live); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 	videoTestSrc.SetArg("pattern", "black")
