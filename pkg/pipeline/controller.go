@@ -52,8 +52,11 @@ const (
 	streamRetryUpdateInterval = time.Minute
 )
 
-// var to allow tests to shorten it
-var eosTimeout = time.Second * 30
+// vars to allow tests to shorten them
+var (
+	eosTimeout     = time.Second * 30
+	prerollTimeout = time.Second * 30
+)
 
 type Controller struct {
 	*config.PipelineConfig
@@ -284,10 +287,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	c.startSessionLimitTimer(ctx)
 
 	// close when room ends
-	go func() {
-		<-c.src.EndRecording()
-		c.SendEOS(ctx, livekit.EndReasonSrcClosed)
-	}()
+	go c.watchEndRecording(ctx)
 
 	// wait until room is ready
 	start := c.src.StartRecording()
@@ -324,6 +324,8 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 			if err := s.Start(); err != nil {
 				c.src.Close()
 				c.Info.SetFailed(err)
+				// nothing else stops the pipeline here, and a non-live watchEndRecording parks on stopped
+				go c.p.Stop()
 				return c.Info
 			}
 		}
@@ -342,6 +344,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	if err != nil {
 		c.src.Close()
 		c.Info.SetFailed(err)
+		go c.p.Stop()
 		return c.Info
 	}
 
@@ -372,6 +375,25 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	}
 
 	return c.Info
+}
+
+// a non-live source can finish before PLAYING, where SendEOS aborts a healthy egress
+func (c *Controller) watchEndRecording(ctx context.Context) {
+	<-c.src.EndRecording()
+
+	if !c.Live {
+		select {
+		// the fuse releases only after the status has left STARTING, so SendEOS can't abort
+		case <-c.playing.Watch():
+		// Close still sets the aborted status, and SendEOS has nothing left to stop
+		case <-c.stopped.Watch():
+			return
+		case <-time.After(prerollTimeout):
+			logger.Warnw("non-live pipeline did not reach playing", nil, "timeout", prerollTimeout)
+		}
+	}
+
+	c.SendEOS(ctx, livekit.EndReasonSrcClosed)
 }
 
 func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) error {

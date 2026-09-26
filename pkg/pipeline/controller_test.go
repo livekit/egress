@@ -56,11 +56,12 @@ func (nopIPCClient) StorageEvent(context.Context, *ipc.StorageEventRequest, ...g
 // staticSource satisfies source.Source without connecting to a room. The
 // pipeline input is the audio bin's silence generator (audiotestsrc).
 type staticSource struct {
-	startedAt int64
+	startedAt    int64
+	endRecording chan struct{}
 }
 
 func (s *staticSource) StartRecording() <-chan struct{} { return nil }
-func (s *staticSource) EndRecording() <-chan struct{}   { return nil }
+func (s *staticSource) EndRecording() <-chan struct{}   { return s.endRecording }
 func (s *staticSource) GetStartedAt() int64             { return s.startedAt }
 func (s *staticSource) GetEndedAt() int64               { return time.Now().UnixNano() }
 func (s *staticSource) Close()                          {}
@@ -191,4 +192,99 @@ func TestOnEOSSentBeforePipelineBuilt(t *testing.T) {
 	require.False(t, c.eosSent.IsBroken(),
 		"onEOSSent must not start the EOS sequence before the pipeline exists")
 	require.Nil(t, c.p, "sanity: the test covers the pre-build window")
+}
+
+// a replay small enough to fit the appsrc queues closes before the pipeline plays
+func TestWatchEndRecording(t *testing.T) {
+	// EGRESS_COMPLETE matches no arm of SendEOS's switch, so it never touches the nil pipeline
+	newTestController := func(live bool) (*Controller, chan struct{}) {
+		ended := make(chan struct{})
+		c := &Controller{
+			PipelineConfig: &config.PipelineConfig{
+				Live: live,
+				Info: &livekit.EgressInfo{Status: livekit.EgressStatus_EGRESS_COMPLETE},
+			},
+			src: &staticSource{endRecording: ended},
+		}
+		return c, ended
+	}
+
+	watch := func(c *Controller) <-chan struct{} {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			c.watchEndRecording(context.Background())
+		}()
+		return done
+	}
+
+	// an unbuffered send completes only once the watcher has received
+	release := func(t *testing.T, ended chan struct{}) {
+		select {
+		case ended <- struct{}{}:
+		case <-time.After(10 * time.Second):
+			t.Fatal("watcher never read EndRecording")
+		}
+	}
+
+	t.Run("live sends EOS without waiting for playing", func(t *testing.T) {
+		c, ended := newTestController(true)
+		done := watch(c)
+		release(t, ended)
+
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("live pipeline blocked instead of sending EOS")
+		}
+		require.True(t, c.eosSent.IsBroken())
+	})
+
+	t.Run("non-live waits for playing", func(t *testing.T) {
+		c, ended := newTestController(false)
+		done := watch(c)
+		release(t, ended)
+
+		time.Sleep(100 * time.Millisecond)
+		require.False(t, c.eosSent.IsBroken(), "EOS before playing aborts the egress")
+
+		c.playing.Break()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("playing did not release the EOS")
+		}
+		require.True(t, c.eosSent.IsBroken())
+	})
+
+	t.Run("non-live returns without EOS when stopped first", func(t *testing.T) {
+		c, ended := newTestController(false)
+		c.stopped.Break()
+		done := watch(c)
+		release(t, ended)
+
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("stopped pipeline left the watcher blocked")
+		}
+		require.False(t, c.eosSent.IsBroken())
+	})
+
+	t.Run("non-live aborts when the pipeline never plays", func(t *testing.T) {
+		prev := prerollTimeout
+		prerollTimeout = 50 * time.Millisecond
+		t.Cleanup(func() { prerollTimeout = prev })
+
+		c, ended := newTestController(false)
+		done := watch(c)
+		release(t, ended)
+
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("preroll timeout did not release the watcher")
+		}
+		require.True(t, c.eosSent.IsBroken())
+	})
 }
