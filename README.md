@@ -49,8 +49,7 @@ The POC also includes `RoomTracksSource`, selected temporarily with the room-com
 the SDK source instead of Chrome and preserves every subscribed room track as its own MCAP channel:
 
 ```text
-/livekit/{participant_identity}/video/{track_name}
-/livekit/{participant_identity}/audio/{track_name}
+/livekit/{participant_identity}/{track_name}
 ```
 
 Video inputs (H264, VP8, or VP9) are normalized to H264, while Opus is preserved and PCMU/PCMA audio is normalized to

@@ -131,7 +131,7 @@ func NewWriter(dst io.Writer, opts Options) (*Writer, error) {
 	}
 	result := &Writer{
 		w: w, startTime: opts.StartTime, descriptors: descriptors,
-		channels: make(map[string]*channelState), nextID: 3,
+		channels: make(map[string]*channelState), nextID: 1,
 	}
 	if opts.Video {
 		if opts.VideoTopic == "" {
@@ -233,6 +233,10 @@ func (w *Writer) registerTrackLocked(track Track, forcedID, schemaID uint16, sch
 	if channelID == 0 {
 		channelID = w.nextID
 		w.nextID++
+	} else if channelID >= w.nextID {
+		// Fixed channels are used only by the original composite writer. Keep
+		// subsequent dynamic IDs clear without reserving them in room-track files.
+		w.nextID = channelID + 1
 	}
 	metadata := make(map[string]string, len(track.Metadata)+1)
 	for key, value := range track.Metadata {

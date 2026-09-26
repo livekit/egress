@@ -220,7 +220,7 @@ func (s *RoomTracksMCAPSink) buildVideoTrack(track *config.TrackSource, name str
 	if err != nil {
 		return nil, nil, err
 	}
-	mediaTrack := s.mcapTrack(track, "video")
+	mediaTrack := s.mcapTrack(track)
 	appSink, err := app.NewAppSink()
 	if err != nil {
 		return nil, nil, errors.ErrGstPipelineError(err)
@@ -265,7 +265,7 @@ func (s *RoomTracksMCAPSink) buildAudioTrack(track *config.TrackSource, name str
 		}
 		elements = append(elements, element)
 	}
-	mediaTrack := s.mcapTrack(track, "audio")
+	mediaTrack := s.mcapTrack(track)
 	appSink, err := app.NewAppSink()
 	if err != nil {
 		return nil, nil, errors.ErrGstPipelineError(err)
@@ -330,13 +330,13 @@ func capsFilter(value string) (*gst.Element, error) {
 	return caps, nil
 }
 
-func (s *RoomTracksMCAPSink) mcapTrack(track *config.TrackSource, kind string) mcapwriter.Track {
+func (s *RoomTracksMCAPSink) mcapTrack(track *config.TrackSource) mcapwriter.Track {
 	identity := sanitizeTopicSegment(track.ParticipantIdentity)
 	name := sanitizeTopicSegment(track.TrackName)
 	if name == "" {
 		name = sanitizeTopicSegment(track.TrackID)
 	}
-	topic := fmt.Sprintf("/livekit/%s/%s/%s", identity, kind, name)
+	topic := fmt.Sprintf("/livekit/%s/%s", identity, name)
 	return mcapwriter.Track{
 		ID: track.TrackID, Topic: topic, FrameID: strings.TrimPrefix(topic, "/"),
 		Metadata: map[string]string{

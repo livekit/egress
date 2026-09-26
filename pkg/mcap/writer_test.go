@@ -87,9 +87,9 @@ func TestWriterRegistersDynamicTrackChannels(t *testing.T) {
 	w, err := NewWriter(&dst, Options{DynamicTracks: true, StartTime: time.Unix(100, 0)})
 	require.NoError(t, err)
 
-	camera0 := Track{ID: "TR_0", Topic: "/livekit/jetson-camera/video/jetson-csi-camera-0", FrameID: "jetson-camera/camera-0"}
-	camera1 := Track{ID: "TR_1", Topic: "/livekit/jetson-camera/video/jetson-csi-camera-1", FrameID: "jetson-camera/camera-1"}
-	microphone := Track{ID: "TR_A", Topic: "/livekit/jetson-camera/audio/microphone"}
+	camera0 := Track{ID: "TR_0", Topic: "/livekit/jetson-camera/jetson-csi-camera-0", FrameID: "jetson-camera/camera-0"}
+	camera1 := Track{ID: "TR_1", Topic: "/livekit/jetson-camera/jetson-csi-camera-1", FrameID: "jetson-camera/camera-1"}
+	microphone := Track{ID: "TR_A", Topic: "/livekit/jetson-camera/microphone"}
 	require.NoError(t, w.WriteVideoTrack(0, camera0, []byte{0, 0, 0, 1, 0x65}))
 	require.NoError(t, w.WriteVideoTrack(time.Millisecond, camera1, []byte{0, 0, 0, 1, 0x65}))
 	require.NoError(t, w.WriteAudioTrack(2*time.Millisecond, microphone, []byte{0xf8, 0xff}))
@@ -104,6 +104,9 @@ func TestWriterRegistersDynamicTrackChannels(t *testing.T) {
 	for _, channel := range info.Channels {
 		topics[channel.Topic] = struct{}{}
 	}
+	require.Contains(t, info.Channels, uint16(1))
+	require.Contains(t, info.Channels, uint16(2))
+	require.Contains(t, info.Channels, uint16(3))
 	require.Contains(t, topics, camera0.Topic)
 	require.Contains(t, topics, camera1.Topic)
 	require.Contains(t, topics, microphone.Topic)
