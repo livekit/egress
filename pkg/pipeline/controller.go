@@ -530,6 +530,10 @@ func (c *Controller) onEOSSent() {
 	// for video-only track/track composite, EOS might have already
 	// made it through the pipeline by the time endRecording is closed
 	if (c.Passthrough || c.RequestType == types.RequestTypeTrackComposite) && !c.AudioEnabled {
+		// watchEndRecording sends it once playing; sending here would abort a STARTING egress
+		if !c.Live && !c.playing.IsBroken() {
+			return
+		}
 		// this will not actually send a second EOS, but will make sure everything is in the correct state
 		c.SendEOS(context.Background(), livekit.EndReasonSrcClosed)
 	}

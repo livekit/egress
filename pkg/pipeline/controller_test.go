@@ -194,6 +194,43 @@ func TestOnEOSSentBeforePipelineBuilt(t *testing.T) {
 	require.Nil(t, c.p, "sanity: the test covers the pre-build window")
 }
 
+// a non-live writer finishes before PLAYING, where this path would abort the egress
+func TestOnEOSSentNonLive(t *testing.T) {
+	// EGRESS_COMPLETE matches no arm of SendEOS's switch, so it never touches the nil pipeline
+	newTestController := func(live bool) *Controller {
+		c := &Controller{
+			PipelineConfig: &config.PipelineConfig{
+				Passthrough: true,
+				Live:        live,
+				AudioConfig: config.AudioConfig{AudioEnabled: false},
+				Info:        &livekit.EgressInfo{Status: livekit.EgressStatus_EGRESS_COMPLETE},
+			},
+			callbacks: &gstreamer.Callbacks{BuildReady: make(chan struct{})},
+		}
+		close(c.callbacks.BuildReady)
+		return c
+	}
+
+	t.Run("defers to the end recording watcher before playing", func(t *testing.T) {
+		c := newTestController(false)
+		c.onEOSSent()
+		require.False(t, c.eosSent.IsBroken())
+	})
+
+	t.Run("sends once playing", func(t *testing.T) {
+		c := newTestController(false)
+		c.playing.Break()
+		c.onEOSSent()
+		require.True(t, c.eosSent.IsBroken())
+	})
+
+	t.Run("live sends without waiting", func(t *testing.T) {
+		c := newTestController(true)
+		c.onEOSSent()
+		require.True(t, c.eosSent.IsBroken())
+	})
+}
+
 // a replay small enough to fit the appsrc queues closes before the pipeline plays
 func TestWatchEndRecording(t *testing.T) {
 	// EGRESS_COMPLETE matches no arm of SendEOS's switch, so it never touches the nil pipeline
