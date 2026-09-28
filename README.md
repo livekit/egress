@@ -67,7 +67,6 @@ logging:
   level: debug, info, warn, or error (default info)
   json: true
 template_base: can be used to host custom templates (default http://localhost:<template_port>/)
-backup_storage: files will be moved here when uploads fail. location must have write access granted for all users
 enable_chrome_sandbox: if true, egress will run Chrome with sandboxing enabled. This requires a specific Docker setup, see below.
 psrpc: # optional gzip compression of psrpc bus payloads, see the compatibility note below
   compression:
@@ -122,6 +121,16 @@ storage:
     region: Ali OSS region
     endpoint: (optional) custom endpoint
     bucket: bucket to upload files to
+
+# backup upload config, used when an upload to the primary storage fails. Same fields as storage.
+# after the first failed upload, the remaining files for that output go to backup storage.
+# with no provider set, files are written to the local filesystem under prefix (resolved from /).
+backup:
+  prefix: (optional) prefix applied to all filenames. with no provider set, this is a local directory, e.g. /backup, which must be writable by the egress user
+  s3: (optional) same as storage.s3 above
+  azure: (optional) same as storage.azure above
+  gcp: (optional) same as storage.gcp above
+  alioss: (optional) same as storage.alioss above
 
 # dev/debugging fields
 insecure: can be used to connect to an insecure websocket (default false)
