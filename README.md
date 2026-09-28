@@ -123,10 +123,10 @@ storage:
     bucket: bucket to upload files to
 
 # backup upload config, used when an upload to the primary storage fails. Same fields as storage.
-# after the first failed upload, all remaining files for that egress go to backup storage.
-# with no provider set, files are written to the local filesystem, relative to the working directory.
+# after the first failed upload, the remaining files for that output go to backup storage.
+# with no provider set, files are written to the local filesystem under prefix (resolved from /).
 backup:
-  prefix: (optional) prefix applied to all filenames, e.g. /backup (must be writable by the egress user)
+  prefix: (optional) prefix applied to all filenames. with no provider set, this is a local directory, e.g. /backup, which must be writable by the egress user
   s3: (optional) same as storage.s3 above
   azure: (optional) same as storage.azure above
   gcp: (optional) same as storage.gcp above
