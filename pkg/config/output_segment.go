@@ -108,7 +108,6 @@ func removeKnownExtension(filename string) string {
 		if _, ok := types.FileExtensions[existingExt]; ok {
 			filename = filename[:extIdx]
 		}
-		filename = filename[:extIdx]
 	}
 
 	return filename

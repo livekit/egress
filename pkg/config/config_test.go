@@ -193,3 +193,33 @@ func TestValidateAndUpdateOutputParamsRejectsVideoFileMP3(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "format audio/mpeg incompatible with codec video/h264")
 }
+
+func TestRemoveKnownExtension(t *testing.T) {
+	for _, tc := range []struct {
+		in, out string
+	}{
+		{"playlist.m3u8", "playlist"},
+		{"playlist.mp4", "playlist"},
+		{"playlist", "playlist"},
+		{"event.2026-09-29", "event.2026-09-29"},
+		{"session.v2", "session.v2"},
+		{"session.v2.m3u8", "session.v2"},
+	} {
+		require.Equal(t, tc.out, removeKnownExtension(tc.in), tc.in)
+	}
+}
+
+func TestSegmentPlaylistNameKeepsUnknownExtension(t *testing.T) {
+	p := &PipelineConfig{}
+	p.TmpDir = t.TempDir()
+	p.Info = &livekit.EgressInfo{RoomName: "room"}
+
+	conf := &SegmentConfig{
+		outputConfig:     outputConfig{OutputType: types.OutputTypeHLS},
+		SegmentsInfo:     &livekit.SegmentsInfo{},
+		PlaylistFilename: "dir/session.v2",
+	}
+	require.NoError(t, conf.updatePrefixAndPlaylist(p))
+	require.Equal(t, "session.v2.m3u8", conf.PlaylistFilename)
+	require.Equal(t, "session.v2", conf.SegmentPrefix)
+}
