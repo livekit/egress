@@ -104,7 +104,7 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, filepath str
 
 func (p *PipelineConfig) getFilenameInfo() (string, map[string]string) {
 	now := time.Now()
-	utc := fmt.Sprintf("%s%03d", now.Format("20060102150405"), now.UnixMilli()%1000)
+	utc := fmt.Sprintf("%s%03d", now.UTC().Format("20060102150405"), now.UnixMilli()%1000)
 
 	replacements := make(map[string]string)
 	if p.Info.RetryCount > 0 {

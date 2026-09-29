@@ -17,6 +17,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -192,4 +193,20 @@ func TestValidateAndUpdateOutputParamsRejectsVideoFileMP3(t *testing.T) {
 	err := p.validateAndUpdateOutputParams()
 	require.Error(t, err)
 	require.ErrorContains(t, err, "format audio/mpeg incompatible with codec video/h264")
+}
+
+func TestFilenameUTCReplacementIgnoresLocalTimezone(t *testing.T) {
+	local := time.Local
+	time.Local = time.FixedZone("test", 5*60*60)
+	t.Cleanup(func() { time.Local = local })
+
+	p := &PipelineConfig{}
+	p.Info = &livekit.EgressInfo{RoomName: "room"}
+	_, replacements := p.getFilenameInfo()
+
+	utc := replacements["{utc}"]
+	require.Len(t, utc, len("20060102150405000"))
+	parsed, err := time.ParseInLocation("20060102150405", utc[:14], time.UTC)
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now(), parsed, 10*time.Second)
 }
