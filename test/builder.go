@@ -135,11 +135,14 @@ type streamOptions struct {
 }
 
 type segmentOptions struct {
-	prefix          string
-	playlist        string
-	livePlaylist    string
-	suffix          livekit.SegmentedFileSuffix
-	segmentDuration uint32
+	prefix       string
+	playlist     string
+	livePlaylist string
+	suffix       livekit.SegmentedFileSuffix
+	// segmentDuration exercises the deprecated whole-second field,
+	// segmentDurationSeconds the fractional one that replaces it
+	segmentDuration        uint32
+	segmentDurationSeconds float64
 }
 
 type imageOptions struct {
@@ -357,11 +360,12 @@ func (r *Runner) buildStreamOutputs(o *streamOptions) []*livekit.StreamOutput {
 func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFileOutput {
 	if u := r.getUploadConfig(); u != nil {
 		output := &livekit.SegmentedFileOutput{
-			FilenamePrefix:   path.Join(uploadPrefix, o.prefix),
-			PlaylistName:     o.playlist,
-			LivePlaylistName: o.livePlaylist,
-			FilenameSuffix:   o.suffix,
-			SegmentDuration:  o.segmentDuration,
+			FilenamePrefix:         path.Join(uploadPrefix, o.prefix),
+			PlaylistName:           o.playlist,
+			LivePlaylistName:       o.livePlaylist,
+			FilenameSuffix:         o.suffix,
+			SegmentDuration:        o.segmentDuration, //nolint:staticcheck // deprecated, still supported
+			SegmentDurationSeconds: o.segmentDurationSeconds,
 		}
 
 		switch conf := u.(type) {
@@ -377,11 +381,12 @@ func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFile
 	}
 
 	return []*livekit.SegmentedFileOutput{{
-		FilenamePrefix:   path.Join(r.FilePrefix, o.prefix),
-		PlaylistName:     o.playlist,
-		LivePlaylistName: o.livePlaylist,
-		FilenameSuffix:   o.suffix,
-		SegmentDuration:  o.segmentDuration,
+		FilenamePrefix:         path.Join(r.FilePrefix, o.prefix),
+		PlaylistName:           o.playlist,
+		LivePlaylistName:       o.livePlaylist,
+		FilenameSuffix:         o.suffix,
+		SegmentDuration:        o.segmentDuration, //nolint:staticcheck // deprecated, still supported
+		SegmentDurationSeconds: o.segmentDurationSeconds,
 	}}
 }
 
@@ -499,11 +504,12 @@ func (r *Runner) buildV2Outputs(test *testCase) []*livekit.Output {
 		outputs = append(outputs, &livekit.Output{
 			Config: &livekit.Output_Segments{
 				Segments: &livekit.SegmentedFileOutput{
-					FilenamePrefix:   path.Join(prefix, test.segmentOptions.prefix),
-					PlaylistName:     test.playlist,
-					LivePlaylistName: test.livePlaylist,
-					FilenameSuffix:   test.segmentOptions.suffix,
-					SegmentDuration:  test.segmentDuration,
+					FilenamePrefix:         path.Join(prefix, test.segmentOptions.prefix),
+					PlaylistName:           test.playlist,
+					LivePlaylistName:       test.livePlaylist,
+					FilenameSuffix:         test.segmentOptions.suffix,
+					SegmentDuration:        test.segmentDuration, //nolint:staticcheck // deprecated, still supported
+					SegmentDurationSeconds: test.segmentDurationSeconds,
 				},
 			},
 			Storage: storage,

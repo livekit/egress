@@ -18,6 +18,7 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/livekit/psrpc"
 	"github.com/livekit/storage"
@@ -178,6 +179,10 @@ func ErrIncompatible(format, codec interface{}) error {
 
 func ErrInvalidInput(field string) error {
 	return psrpc.NewErrorf(psrpc.InvalidArgument, "request has missing or invalid field: %s", field)
+}
+
+func ErrBelowMinimum(field string, value, min time.Duration) error {
+	return psrpc.NewErrorf(psrpc.InvalidArgument, "%s is %s, below the %s minimum", field, value, min)
 }
 
 func ErrInvalidUrl(url string, reason string) error {

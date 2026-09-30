@@ -996,7 +996,7 @@ func (b *VideoBin) addEncoder() error {
 				options = append(options, "scenecut=0")
 				disabledSceneCut = true
 			}
-			bufCapacity = uint(time.Duration(b.conf.GetSegmentConfig().SegmentDuration) * (time.Second / time.Millisecond))
+			bufCapacity = uint(b.conf.GetSegmentConfig().SegmentDuration.Milliseconds())
 		}
 		if bufCapacity > 10000 {
 			// Max value allowed by gstreamer

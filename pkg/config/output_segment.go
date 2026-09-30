@@ -16,6 +16,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"strings"
@@ -25,6 +26,14 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
+)
+
+const (
+	defaultSegmentDuration = 4 * time.Second
+	// minSegmentDuration bounds how fast segments, playlist rewrites and uploads are
+	// produced. The keyframe interval shares it, since segments start on a keyframe and
+	// so can never outlast it.
+	minSegmentDuration = 300 * time.Millisecond
 )
 
 type SegmentConfig struct {
@@ -37,7 +46,7 @@ type SegmentConfig struct {
 	LivePlaylistFilename string
 	SegmentPrefix        string
 	SegmentSuffix        livekit.SegmentedFileSuffix
-	SegmentDuration      int
+	SegmentDuration      time.Duration
 
 	DisableManifest bool
 	StorageConfig   *StorageConfig
@@ -54,6 +63,11 @@ func (p *PipelineConfig) GetSegmentConfig() *SegmentConfig {
 // segments should always be added last, so we can check keyframe interval from file/stream
 func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput, upload egress.UploadRequest) (*SegmentConfig, error) {
 	sc, err := p.getStorageConfig(upload)
+	if err != nil {
+		return nil, err
+	}
+
+	segmentDuration, err := getSegmentDuration(segments)
 	if err != nil {
 		return nil, err
 	}
@@ -79,13 +93,9 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput,
 		SegmentSuffix:        segments.FilenameSuffix,
 		PlaylistFilename:     playlist,
 		LivePlaylistFilename: clean(segments.LivePlaylistName),
-		SegmentDuration:      int(segments.SegmentDuration),
+		SegmentDuration:      segmentDuration,
 		DisableManifest:      segments.DisableManifest,
 		StorageConfig:        sc,
-	}
-
-	if conf.SegmentDuration == 0 {
-		conf.SegmentDuration = 4
 	}
 
 	switch segments.Protocol {
@@ -100,6 +110,36 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput,
 	}
 
 	return conf, nil
+}
+
+// getSegmentDuration returns the requested segment duration, preferring the fractional
+// SegmentDurationSeconds over the deprecated whole-second SegmentDuration.
+func getSegmentDuration(segments *livekit.SegmentedFileOutput) (time.Duration, error) {
+	switch {
+	case segments.SegmentDurationSeconds != 0:
+		return durationFromSeconds("segment_duration_seconds", segments.SegmentDurationSeconds)
+
+	case segments.SegmentDuration != 0: //nolint:staticcheck // deprecated, still supported
+		return durationFromSeconds("segment_duration", float64(segments.SegmentDuration)) //nolint:staticcheck // deprecated, still supported
+
+	default:
+		return defaultSegmentDuration, nil
+	}
+}
+
+// durationFromSeconds converts a request field given in fractional seconds, rejecting
+// anything below minSegmentDuration.
+func durationFromSeconds(field string, seconds float64) (time.Duration, error) {
+	if math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+		return 0, errors.ErrInvalidInput(field)
+	}
+
+	d := time.Duration(seconds * float64(time.Second))
+	if d < minSegmentDuration {
+		return 0, errors.ErrBelowMinimum(field, d, minSegmentDuration)
+	}
+
+	return d, nil
 }
 
 func removeKnownExtension(filename string) string {
