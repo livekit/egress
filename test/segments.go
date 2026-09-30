@@ -425,32 +425,33 @@ type Segment struct {
 	Filename        string
 }
 
+// tagValue returns the value of an m3u8 tag, or an empty string when it is absent.
+func tagValue(lines []string, tag string) string {
+	for _, line := range lines {
+		if strings.HasPrefix(line, tag+":") {
+			return strings.TrimPrefix(line, tag+":")
+		}
+	}
+	return ""
+}
+
 func readPlaylist(filename string) (*Playlist, error) {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
 
-	var i = 1
-
 	lines := strings.Split(string(b), "\n")
-	version, _ := strconv.Atoi(strings.Split(lines[i], ":")[1])
-	i++
-	var mediaType string
-	if strings.Contains(string(b), "#EXT-X-PLAYLIST-TYPE") {
-		mediaType = strings.Split(lines[i], ":")[1]
-		i++
-	}
-	i++ // #EXT-X-ALLOW-CACHE:NO hardcoded
-	targetDuration, _ := strconv.Atoi(strings.Split(lines[i], ":")[1])
 
-	// fmp4 playlists carry an EXT-X-MAP, so find the segments rather than counting header lines
-	var initSegment string
+	// the header varies with the version, so look tags up rather than count lines:
+	// fmp4 playlists carry an EXT-X-MAP and drop the EXT-X-ALLOW-CACHE removed in v7
+	version, _ := strconv.Atoi(tagValue(lines, "#EXT-X-VERSION"))
+	mediaType := tagValue(lines, "#EXT-X-PLAYLIST-TYPE")
+	targetDuration, _ := strconv.Atoi(tagValue(lines, "#EXT-X-TARGETDURATION"))
+	initSegment := strings.Trim(strings.TrimPrefix(tagValue(lines, "#EXT-X-MAP"), "URI="), `"`)
+
 	segmentLineStart := len(lines)
 	for i, line := range lines {
-		if strings.HasPrefix(line, "#EXT-X-MAP:") {
-			initSegment = strings.Trim(strings.TrimPrefix(line, "#EXT-X-MAP:URI="), `"`)
-		}
 		if strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") {
 			segmentLineStart = i
 			break
@@ -465,7 +466,7 @@ func readPlaylist(filename string) (*Playlist, error) {
 		Segments:       make([]*Segment, 0),
 	}
 
-	for i = segmentLineStart; i < len(lines)-3; i += 3 {
+	for i := segmentLineStart; i < len(lines)-3; i += 3 {
 		startTime, _ := time.Parse("2006-01-02T15:04:05.999Z07:00", strings.SplitN(lines[i], ":", 2)[1])
 		durStr := strings.Split(lines[i+1], ":")[1]
 		durStr = durStr[:len(durStr)-1] // remove trailing comma
