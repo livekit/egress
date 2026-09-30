@@ -273,6 +273,16 @@ func (r *Runner) verifySegmentOutput(
 				localPath := path.Join(r.FilePrefix, path.Base(segment.Filename))
 				download(t, p.GetSegmentConfig().StorageConfig, localPath, segment.Filename, false)
 			}
+
+			// the init segment is not one of the segments, but a consumer copying what
+			// the manifest lists still needs it to play them
+			if o := p.GetSegmentConfig(); o.InitSegmentFilename != "" {
+				require.NotNil(t, playlist.InitSegment)
+				require.Equal(t, path.Join(o.StorageDir, o.InitSegmentFilename), playlist.InitSegment.Filename)
+				require.NotEmpty(t, playlist.InitSegment.Location)
+			} else {
+				require.Nil(t, playlist.InitSegment)
+			}
 		}
 	}
 

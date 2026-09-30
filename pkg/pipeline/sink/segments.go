@@ -66,6 +66,7 @@ type SegmentSink struct {
 
 	initialized           bool
 	initSegmentWritten    bool
+	initSegmentBackedUp   bool
 	startTime             time.Time
 	lastUpload            time.Time
 	outputType            types.OutputType
@@ -221,7 +222,7 @@ func (s *SegmentSink) handleClosedSegment(update SegmentUpdate) {
 func (s *SegmentSink) splitInitSegment(segmentPath string, writeInit bool) error {
 	var initPath string
 	if writeInit {
-		initPath = path.Join(s.LocalDir, s.InitSegmentFilename)
+		initPath = s.initSegmentPath()
 	}
 
 	if err := stripInitSegment(segmentPath, initPath); err != nil {
@@ -231,14 +232,30 @@ func (s *SegmentSink) splitInitSegment(segmentPath string, writeInit bool) error
 		return nil
 	}
 
+	return s.uploadInitSegment()
+}
+
+func (s *SegmentSink) initSegmentPath() string {
+	return path.Join(s.LocalDir, s.InitSegmentFilename)
+}
+
+// uploadInitSegment uploads the initialization segment and records it in the manifest.
+// The local copy is kept: the uploader sends everything to backup storage once primary
+// fails, and a playlist that lands there needs the init segment beside it.
+func (s *SegmentSink) uploadInitSegment() error {
 	storagePath := path.Join(s.StorageDir, s.InitSegmentFilename)
-	_, size, err := s.Upload(initPath, storagePath, types.OutputTypeMP4, false)
+
+	location, size, err := s.Upload(s.initSegmentPath(), storagePath, types.OutputTypeMP4, false)
 	if err != nil {
 		return err
 	}
 
 	s.infoLock.Lock()
 	s.SegmentsInfo.Size += size
+	if s.manifestPlaylist != nil {
+		s.manifestPlaylist.SetInitSegment(storagePath, location)
+	}
+	s.initSegmentBackedUp = s.conf.Info.BackupStorageUsed
 	s.infoLock.Unlock()
 
 	return nil
@@ -365,6 +382,10 @@ func (s *SegmentSink) shouldUploadPlaylist() bool {
 }
 
 func (s *SegmentSink) uploadPlaylist() error {
+	if err := s.ensureInitSegmentInBackup(); err != nil {
+		return err
+	}
+
 	playlistLocalPath := path.Join(s.LocalDir, s.PlaylistFilename)
 	playlistStoragePath := path.Join(s.StorageDir, s.PlaylistFilename)
 	playlistLocation, _, err := s.Upload(playlistLocalPath, playlistStoragePath, s.OutputType, false)
@@ -378,6 +399,25 @@ func (s *SegmentSink) uploadPlaylist() error {
 		s.manifestPlaylist.Location = playlistLocation
 	}
 	return nil
+}
+
+// ensureInitSegmentInBackup re-uploads the initialization segment once the uploader has
+// fallen back to backup storage, so that a playlist uploaded there resolves its
+// EXT-X-MAP. The path is relative to the playlist, so the two have to share a bucket.
+// It is a no-op until the fallback happens, and once per fallback after that.
+func (s *SegmentSink) ensureInitSegmentInBackup() error {
+	if s.InitSegmentFilename == "" {
+		return nil
+	}
+
+	s.infoLock.Lock()
+	pending := s.initSegmentWritten && !s.initSegmentBackedUp && s.conf.Info.BackupStorageUsed
+	s.infoLock.Unlock()
+
+	if !pending {
+		return nil
+	}
+	return s.uploadInitSegment()
 }
 
 func (s *SegmentSink) uploadLivePlaylist() error {
