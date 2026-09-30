@@ -62,7 +62,7 @@ type VideoBin struct {
 	// input-selector state (only used when !Compositing)
 	selectedPad string
 	// pendingPad is the track awaiting handover; a mute or removal clears it so a
-	// keyframe arriving afterwards cannot hand the selector to a track that left.
+	// frame arriving afterwards cannot hand the selector to a track that left.
 	pendingPad string
 	lastPTS    uint64
 
@@ -956,9 +956,9 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 		})
 	}
 	b.pads[videoTestSrcName] = pad
-	// The filler holds the selector until a track has a keyframe to hand over to,
-	// so it is the selected pad from the moment it exists. Leaving this empty
-	// closes every gate and the pipeline never prerolls.
+	// The filler holds the selector until a track has a frame to hand over to, so
+	// it is the selected pad from the moment it exists. Leaving this empty closes
+	// every gate and the pipeline never prerolls.
 	if b.selectedPad == "" {
 		b.selectedPad = videoTestSrcName
 	}
