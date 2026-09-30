@@ -61,7 +61,10 @@ type VideoBin struct {
 
 	// input-selector state (only used when !Compositing)
 	selectedPad string
-	lastPTS     uint64
+	// pendingPad is the track awaiting handover; a mute or removal clears it so a
+	// keyframe arriving afterwards cannot hand the selector to a track that left.
+	pendingPad string
+	lastPTS    uint64
 
 	probesMu deadlock.Mutex
 	probes   map[string]*keyframeProbe
@@ -189,6 +192,10 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	delete(b.screenShares, name)
 	delete(b.lastDimensions, trackID)
 	b.closeProbe(name)
+
+	if b.pendingPad == name {
+		b.pendingPad = ""
+	}
 
 	if !b.conf.Compositing && b.selectedPad == name {
 		if err := b.setSelectorPadLocked(videoTestSrcName); err != nil {
@@ -949,6 +956,12 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 		})
 	}
 	b.pads[videoTestSrcName] = pad
+	// The filler holds the selector until a track has a keyframe to hand over to,
+	// so it is the selected pad from the moment it exists. Leaving this empty
+	// closes every gate and the pipeline never prerolls.
+	if b.selectedPad == "" {
+		b.selectedPad = videoTestSrcName
+	}
 	return nil
 }
 
@@ -1330,6 +1343,9 @@ func (b *VideoBin) setTrackVisibleLocked(name string, visible bool) error {
 	if visible {
 		return b.setSelectorPadLocked(name)
 	}
+	if b.pendingPad == name {
+		b.pendingPad = ""
+	}
 	if b.selectedPad == name {
 		return b.setSelectorPadLocked(videoTestSrcName)
 	}
@@ -1349,19 +1365,45 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 		return errors.New("pad not found: " + name)
 	}
 
+	// The filler is what covers a gap, so it takes over immediately. Deferring it
+	// would deadlock: its own probe drops every buffer until it is the selected
+	// pad, so the switch would wait on data the switch itself has to unblock.
+	if name == videoTestSrcName {
+		if err := b.selector.SetProperty("active-pad", pad); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		b.selectedPad = name
+		b.pendingPad = ""
+		return nil
+	}
+
+	// A track pad is handed the selector only once it has a keyframe to show.
+	// Switching on the subscribe event alone silences the filler for as long as
+	// the track takes to produce one, and nothing feeds the selector meanwhile.
+	b.pendingPad = name
 	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		buffer := info.GetBuffer()
 		if buffer.HasFlags(gst.BufferFlagDeltaUnit) {
 			return gst.PadProbeDrop
 		}
+
+		b.mu.Lock()
+		if b.pendingPad != name {
+			b.mu.Unlock()
+			return gst.PadProbeRemove
+		}
+		if err := b.selector.SetProperty("active-pad", pad); err != nil {
+			b.mu.Unlock()
+			b.bin.OnError(errors.ErrGstPipelineError(err))
+			return gst.PadProbeRemove
+		}
+		b.selectedPad = name
+		b.pendingPad = ""
+		b.mu.Unlock()
+
 		logger.Debugw("active pad changed", "name", name)
 		return gst.PadProbeRemove
 	})
 
-	if err := b.selector.SetProperty("active-pad", pad); err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-
-	b.selectedPad = name
 	return nil
 }
