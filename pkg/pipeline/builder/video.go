@@ -954,14 +954,15 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 			b.mu.Unlock()
 			return gst.PadProbeOK
 		})
+
+		// The filler holds the selector until a track has a frame to hand over to,
+		// so it is the selected pad from the moment it exists. Leaving this empty
+		// closes every gate and the pipeline never prerolls.
+		if b.selectedPad == "" {
+			b.selectedPad = videoTestSrcName
+		}
 	}
 	b.pads[videoTestSrcName] = pad
-	// The filler holds the selector until a track has a frame to hand over to, so
-	// it is the selected pad from the moment it exists. Leaving this empty closes
-	// every gate and the pipeline never prerolls.
-	if b.selectedPad == "" {
-		b.selectedPad = videoTestSrcName
-	}
 	return nil
 }
 
@@ -1374,6 +1375,10 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 			return errors.ErrGstPipelineError(err)
 		}
 		b.selectedPad = name
+		return nil
+	}
+
+	if b.pendingPad == name {
 		return nil
 	}
 
