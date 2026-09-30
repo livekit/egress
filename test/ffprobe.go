@@ -312,20 +312,22 @@ const (
 	// A recording's video timeline should be continuous. A clean recording's
 	// largest frame gap is under 100ms, so anything past this is a hole.
 	maxFrameGap = 500 * time.Millisecond
-	// A republished track costs timeline while the filler covers the gap, because
-	// the filler runs videoTestSrcDelay behind through the test src queue's
-	// min-threshold-time. Tighten once the filler no longer lags.
-	republishFrameGap = 2500 * time.Millisecond
+	// Any stretch the filler covers alone costs timeline, because the filler runs
+	// videoTestSrcDelay behind through the test src queue's min-threshold-time and
+	// stalls whenever its level drops below that. Measured at 2.08s on a republish
+	// and 2.07s on a delayed first publish. Tighten once the filler no longer lags.
+	fillerFrameGap = 2500 * time.Millisecond
 )
 
 // frameGapAllowance returns the largest gap this test can legitimately produce.
+// Video arriving late, leaving, or coming back all hand a stretch to the filler.
 func frameGapAllowance(tc *testCase) time.Duration {
 	allowance := maxFrameGap
-	if tc.videoRepublish != 0 {
-		allowance = republishFrameGap
+	if tc.videoDelay != 0 || tc.videoUnpublish != 0 || tc.videoRepublish != 0 {
+		allowance = fillerFrameGap
 	}
 	if tc.disconnectDuration != 0 {
-		if d := tc.disconnectDuration + republishFrameGap; d > allowance {
+		if d := tc.disconnectDuration + fillerFrameGap; d > allowance {
 			allowance = d
 		}
 	}

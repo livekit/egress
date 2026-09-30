@@ -1373,13 +1373,15 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 			return errors.ErrGstPipelineError(err)
 		}
 		b.selectedPad = name
-		b.pendingPad = ""
 		return nil
 	}
 
-	// A track pad is handed the selector only once it has a keyframe to show.
-	// Switching on the subscribe event alone silences the filler for as long as
-	// the track takes to produce one, and nothing feeds the selector meanwhile.
+	// A track pad is handed the selector on its first decoded frame. Selector pads
+	// only exist when decoding, so every pad sits behind a video decoder and the
+	// delta-unit flag is always clear here; the keyframe probe upstream is what
+	// holds the track back until a sync point. Switching on the subscribe event
+	// alone silences the filler for as long as that takes, and nothing feeds the
+	// selector meanwhile.
 	b.pendingPad = name
 	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		buffer := info.GetBuffer()
