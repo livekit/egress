@@ -1365,10 +1365,11 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 		return errors.New("pad not found: " + name)
 	}
 
-	// The filler is what covers a gap, so it takes over immediately. Deferring it
-	// would deadlock: its own probe drops every buffer until it is the selected
-	// pad, so the switch would wait on data the switch itself has to unblock.
-	if name == videoTestSrcName {
+	// Only a handover from the filler waits. The filler itself takes over
+	// immediately, and so does one track replacing another: a pad's own buffer
+	// gate drops everything unless the filler or that same pad is selected, so a
+	// deferred switch would wait on data the switch itself has to release.
+	if name == videoTestSrcName || b.selectedPad != videoTestSrcName {
 		if err := b.selector.SetProperty("active-pad", pad); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -1376,12 +1377,12 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 		return nil
 	}
 
-	// A track pad is handed the selector on its first decoded frame. Selector pads
-	// only exist when decoding, so every pad sits behind a video decoder and the
-	// delta-unit flag is always clear here; the keyframe probe upstream is what
-	// holds the track back until a sync point. Switching on the subscribe event
-	// alone silences the filler for as long as that takes, and nothing feeds the
-	// selector meanwhile.
+	// Coming off the filler, a track takes the selector on its first decoded
+	// frame. Selector pads only exist when decoding, so every pad sits behind a
+	// video decoder and the delta-unit flag is already clear; the keyframe probe
+	// upstream is what holds a track to a sync point. Switching on the subscribe
+	// event alone silences the filler for as long as the track takes to produce,
+	// and nothing feeds the selector meanwhile.
 	b.pendingPad = name
 	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		buffer := info.GetBuffer()
