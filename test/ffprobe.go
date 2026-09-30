@@ -39,7 +39,7 @@ import (
 )
 
 var (
-	segmentTimeRegexp = regexp.MustCompile(`_(\d{14})(\d{3})\.ts`)
+	segmentTimeRegexp = regexp.MustCompile(`_(\d{14})(\d{3})\.(?:ts|m4s)`)
 )
 
 type FFProbeInfo struct {

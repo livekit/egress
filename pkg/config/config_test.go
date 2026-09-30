@@ -156,6 +156,48 @@ func TestSegmentNaming(t *testing.T) {
 	}
 }
 
+func TestSegmentProtocol(t *testing.T) {
+	for _, test := range []struct {
+		protocol                  livekit.SegmentedFileProtocol
+		expectedSegmentOutputType types.OutputType
+		expectedInitSegment       string
+		expectedErr               bool
+	}{
+		{
+			protocol:                  livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL,
+			expectedSegmentOutputType: types.OutputTypeTS,
+		},
+		{
+			protocol:                  livekit.SegmentedFileProtocol_HLS_PROTOCOL,
+			expectedSegmentOutputType: types.OutputTypeTS,
+		},
+		{
+			protocol:                  livekit.SegmentedFileProtocol_HLS_FMP4_PROTOCOL,
+			expectedSegmentOutputType: types.OutputTypeM4S, expectedInitSegment: "playlist_init.mp4",
+		},
+		{
+			protocol: livekit.SegmentedFileProtocol(99), expectedErr: true,
+		},
+	} {
+		p := &PipelineConfig{Info: &livekit.EgressInfo{EgressId: "egress_ID"}}
+		seg := &livekit.SegmentedFileOutput{
+			PlaylistName: "playlist",
+			Protocol:     test.protocol,
+		}
+
+		o, err := p.getSegmentConfig(seg, seg)
+		if test.expectedErr {
+			require.Error(t, err)
+			continue
+		}
+		require.NoError(t, err)
+
+		require.Equal(t, types.OutputTypeHLS, o.OutputType)
+		require.Equal(t, test.expectedSegmentOutputType, o.SegmentOutputType)
+		require.Equal(t, test.expectedInitSegment, o.InitSegmentFilename)
+	}
+}
+
 func TestValidateAndUpdateOutputParamsRejectsHLSMP3(t *testing.T) {
 	p := &PipelineConfig{
 		Outputs: map[types.EgressType][]OutputConfig{

@@ -15,7 +15,10 @@
 package sink
 
 import (
+	"encoding/binary"
 	"fmt"
+	"io"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -36,6 +39,12 @@ import (
 
 const (
 	defaultLivePlaylistWindow = 5
+
+	// an fmp4 initialization segment is a ftyp and a moov box, a few kB at most
+	maxInitSegmentSize = 1 << 20
+
+	// chunk size used to shift a segment over the initialization boxes it starts with
+	segmentShiftSize = 1 << 20
 )
 
 type SegmentSink struct {
@@ -56,6 +65,7 @@ type SegmentSink struct {
 	playlistLock deadlock.Mutex
 
 	initialized           bool
+	initSegmentWritten    bool
 	startTime             time.Time
 	lastUpload            time.Time
 	outputType            types.OutputType
@@ -86,7 +96,7 @@ func newSegmentSink(
 	}
 
 	playlistName := path.Join(o.LocalDir, o.PlaylistFilename)
-	playlist, err := m3u8.NewEventPlaylistWriter(playlistName, o.SegmentDuration)
+	playlist, err := m3u8.NewEventPlaylistWriter(playlistName, o.SegmentDuration, o.InitSegmentFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -94,15 +104,10 @@ func newSegmentSink(
 	var livePlaylist m3u8.PlaylistWriter
 	if o.LivePlaylistFilename != "" {
 		playlistName = path.Join(o.LocalDir, o.LivePlaylistFilename)
-		livePlaylist, err = m3u8.NewLivePlaylistWriter(playlistName, o.SegmentDuration, defaultLivePlaylistWindow)
+		livePlaylist, err = m3u8.NewLivePlaylistWriter(playlistName, o.SegmentDuration, defaultLivePlaylistWindow, o.InitSegmentFilename)
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	outputType := o.OutputType
-	if outputType == types.OutputTypeHLS {
-		outputType = types.OutputTypeTS
 	}
 
 	segmentBin, err := builder.BuildSegmentBin(p, conf)
@@ -124,7 +129,7 @@ func newSegmentSink(
 		callbacks:             callbacks,
 		playlist:              playlist,
 		livePlaylist:          livePlaylist,
-		outputType:            outputType,
+		outputType:            o.SegmentOutputType,
 		openSegmentsStartTime: make(map[string]uint64),
 		closedSegments:        make(chan SegmentUpdate, maxPendingUploads),
 		playlistUpdates:       make(chan SegmentUpdate, maxPendingUploads),
@@ -175,9 +180,22 @@ func (s *SegmentSink) handleClosedSegment(update SegmentUpdate) {
 	segmentLocalPath := path.Join(s.LocalDir, update.filename)
 	segmentStoragePath := path.Join(s.StorageDir, update.filename)
 
+	// this runs on a single goroutine, so only the first segment keeps its init boxes
+	writeInitSegment := s.InitSegmentFilename != "" && !s.initSegmentWritten
+	s.initSegmentWritten = s.initSegmentWritten || writeInitSegment
+
 	// upload in parallel
 	go func() {
 		defer close(update.uploadComplete)
+
+		// playlist updates wait on uploadComplete, so the init segment is in storage
+		// before any playlist referencing it is uploaded
+		if s.InitSegmentFilename != "" {
+			if err := s.splitInitSegment(segmentLocalPath, writeInitSegment); err != nil {
+				s.callbacks.OnError(err)
+				return
+			}
+		}
 
 		location, size, err := s.Upload(segmentLocalPath, segmentStoragePath, s.outputType, true)
 		if err != nil {
@@ -194,6 +212,108 @@ func (s *SegmentSink) handleClosedSegment(update SegmentUpdate) {
 		}
 		s.infoLock.Unlock()
 	}()
+}
+
+// splitInitSegment removes the initialization boxes an fmp4 segment starts with, and on
+// the first segment keeps them as the initialization segment the playlist's EXT-X-MAP
+// points at. splitmuxsink resets the muxer on every fragment, so every segment repeats
+// them; only the first copy is worth keeping.
+func (s *SegmentSink) splitInitSegment(segmentPath string, writeInit bool) error {
+	var initPath string
+	if writeInit {
+		initPath = path.Join(s.LocalDir, s.InitSegmentFilename)
+	}
+
+	if err := stripInitSegment(segmentPath, initPath); err != nil {
+		return err
+	}
+	if !writeInit {
+		return nil
+	}
+
+	storagePath := path.Join(s.StorageDir, s.InitSegmentFilename)
+	_, size, err := s.Upload(initPath, storagePath, types.OutputTypeMP4, false)
+	if err != nil {
+		return err
+	}
+
+	s.infoLock.Lock()
+	s.SegmentsInfo.Size += size
+	s.infoLock.Unlock()
+
+	return nil
+}
+
+// stripInitSegment removes the initialization boxes at the head of an fmp4 segment,
+// writing them to initPath first when it is set.
+func stripInitSegment(filename string, initPath string) error {
+	f, err := os.OpenFile(filename, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	head := make([]byte, maxInitSegmentSize)
+	n, err := io.ReadFull(f, head)
+	if err != nil && err != io.ErrUnexpectedEOF {
+		return err
+	}
+
+	initLen, err := initSegmentLen(head[:n], filename)
+	if err != nil {
+		return err
+	}
+
+	if initPath != "" {
+		if err = os.WriteFile(initPath, head[:initLen], 0644); err != nil {
+			return err
+		}
+	}
+
+	// shift the media fragment over the initialization boxes
+	buf := make([]byte, segmentShiftSize)
+	read, written := int64(initLen), int64(0)
+	for {
+		n, err := f.ReadAt(buf, read)
+		if n > 0 {
+			if _, err = f.WriteAt(buf[:n], written); err != nil {
+				return err
+			}
+			read += int64(n)
+			written += int64(n)
+			continue
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	return f.Truncate(written)
+}
+
+// initSegmentLen returns the length of the initialization boxes at the head of an fmp4
+// segment: every top level box up to the first one belonging to a media fragment.
+func initSegmentLen(head []byte, filename string) (int, error) {
+	for i := 0; i+8 <= len(head); {
+		size := int(binary.BigEndian.Uint32(head[i : i+4]))
+		switch string(head[i+4 : i+8]) {
+		case "styp", "moof", "mdat":
+			if i == 0 {
+				return 0, fmt.Errorf("%s has no initialization segment", filename)
+			}
+			return i, nil
+		}
+		// sizes of 0 (box extends to EOF) and 1 (64 bit size) are not expected here
+		if size < 8 || i+size > len(head) {
+			return 0, fmt.Errorf("invalid box in %s", filename)
+		}
+		i += size
+	}
+
+	return 0, fmt.Errorf("no media fragment found in %s", filename)
 }
 
 func (s *SegmentSink) handlePlaylistUpdates(update SegmentUpdate) error {
