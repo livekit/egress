@@ -308,6 +308,95 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 	return info
 }
 
+const (
+	// A recording's video timeline should be continuous. A clean recording's
+	// largest frame gap is under 100ms, so anything past this is a hole.
+	maxFrameGap = 500 * time.Millisecond
+	// A republished track costs timeline while the filler covers the gap, because
+	// the filler runs videoTestSrcDelay behind through the test src queue's
+	// min-threshold-time. Tighten once the filler no longer lags.
+	republishFrameGap = 2500 * time.Millisecond
+)
+
+// frameGapAllowance returns the largest gap this test can legitimately produce.
+func frameGapAllowance(tc *testCase) time.Duration {
+	allowance := maxFrameGap
+	if tc.videoRepublish != 0 {
+		allowance = republishFrameGap
+	}
+	if tc.disconnectDuration != 0 {
+		if d := tc.disconnectDuration + republishFrameGap; d > allowance {
+			allowance = d
+		}
+	}
+	return allowance
+}
+
+// verifyFrameContinuity fails on a hole in the video timeline. The content
+// checks look for frames that should not be there, so a stretch with no frames
+// at all passes them: there is nothing left to be wrong.
+func verifyFrameContinuity(t *testing.T, in string, tc *testCase) {
+	t.Helper()
+
+	if tc.audioOnly {
+		return
+	}
+
+	times, err := ffprobeFrameTimes(in)
+	require.NoError(t, err)
+	if len(times) < 2 {
+		return
+	}
+
+	var worst time.Duration
+	var worstAt float64
+	for i := 1; i < len(times); i++ {
+		if gap := time.Duration((times[i] - times[i-1]) * float64(time.Second)); gap > worst {
+			worst, worstAt = gap, times[i-1]
+		}
+	}
+
+	allowance := frameGapAllowance(tc)
+	t.Logf("largest frame gap: %s at %.3fs (allowance %s, %d frames)", worst, worstAt, allowance, len(times))
+	require.LessOrEqual(t, worst, allowance,
+		"%s of video missing at %.3fs, the timeline should be continuous", worst, worstAt)
+}
+
+// ffprobeFrameTimes returns the presentation timestamp of every video frame.
+func ffprobeFrameTimes(input string) ([]float64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffprobe",
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "frame=pts_time",
+		"-of", "csv=p=0",
+		input,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("ffprobe timeout listing frames")
+		}
+		return nil, err
+	}
+
+	var times []float64
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSuffix(strings.TrimSpace(line), ",")
+		if line == "" {
+			continue
+		}
+		f, err := strconv.ParseFloat(line, 64)
+		if err != nil {
+			continue
+		}
+		times = append(times, f)
+	}
+	return times, nil
+}
+
 // parseFFProbeDuration supports either "123.456" (seconds) or "HH:MM:SS.mmm"
 func parseFFProbeDuration(s string) (time.Duration, error) {
 	s = strings.TrimSpace(s)
