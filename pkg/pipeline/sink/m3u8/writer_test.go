@@ -99,6 +99,6 @@ func TestFMP4PlaylistWriter(t *testing.T) {
 	b, err := os.ReadFile(playlistName)
 	require.NoError(t, err)
 
-	expected := "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-ALLOW-CACHE:NO\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-MAP:URI=\"playlist_init.mp4\"\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:04.814Z\n#EXTINF:5.994,\nplaylist_00000.m4s\n#EXT-X-ENDLIST\n"
+	expected := "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-MAP:URI=\"playlist_init.mp4\"\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:04.814Z\n#EXTINF:5.994,\nplaylist_00000.m4s\n#EXT-X-ENDLIST\n"
 	require.Equal(t, expected, string(b))
 }

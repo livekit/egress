@@ -31,6 +31,14 @@ const (
 	PlaylistTypeEvent PlaylistType = "EVENT"
 )
 
+const (
+	playlistVersion = 4
+
+	// fmp4 segments need an EXT-X-MAP, which a playlist without EXT-X-I-FRAMES-ONLY
+	// may only carry from version 6 on, and fmp4 itself is a version 7 feature
+	fmp4PlaylistVersion = 7
+)
+
 type PlaylistWriter interface {
 	Append(dateTime time.Time, duration float64, filename string) error
 	Close() error
@@ -57,11 +65,9 @@ type livePlaylistWriter struct {
 }
 
 func (p *basePlaylistWriter) createHeader(plType PlaylistType) string {
-	// EXT-X-MAP, which fmp4 segments need, was introduced in version 6 and is only
-	// allowed on playlists without EXT-X-I-FRAMES-ONLY from version 7 on
-	version := 4
+	version := playlistVersion
 	if p.initSegment != "" {
-		version = 7
+		version = fmp4PlaylistVersion
 	}
 
 	var sb strings.Builder
@@ -70,7 +76,10 @@ func (p *basePlaylistWriter) createHeader(plType PlaylistType) string {
 	if plType != PlaylistTypeLive {
 		fmt.Fprintf(&sb, "#EXT-X-PLAYLIST-TYPE:%s\n", plType)
 	}
-	sb.WriteString("#EXT-X-ALLOW-CACHE:NO\n")
+	// EXT-X-ALLOW-CACHE was removed in version 7
+	if version < fmp4PlaylistVersion {
+		sb.WriteString("#EXT-X-ALLOW-CACHE:NO\n")
+	}
 	fmt.Fprintf(&sb, "#EXT-X-TARGETDURATION:%d\n", p.targetDuration)
 	if plType != PlaylistTypeLive {
 		sb.WriteString("#EXT-X-MEDIA-SEQUENCE:0\n")
