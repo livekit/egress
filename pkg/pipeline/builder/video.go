@@ -1366,11 +1366,14 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 		return errors.New("pad not found: " + name)
 	}
 
-	// Only a handover from the filler waits. The filler itself takes over
+	// Only a live handover from the filler waits. The filler itself takes over
 	// immediately, and so does one track replacing another: a pad's own buffer
 	// gate drops everything unless the filler or that same pad is selected, so a
 	// deferred switch would wait on data the switch itself has to release.
-	if name == videoTestSrcName || b.selectedPad != videoTestSrcName {
+	// Without a live pipeline videotestsrc is unpaced, so leaving it selected
+	// runs the monotonic watermark past the incoming track and the gate drops
+	// the frames the handover is waiting for.
+	if name == videoTestSrcName || b.selectedPad != videoTestSrcName || !b.conf.Live {
 		if err := b.selector.SetProperty("active-pad", pad); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
