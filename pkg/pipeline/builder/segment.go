@@ -34,6 +34,11 @@ type FirstSampleMetadata struct {
 	StartDate int64 // Real time date of the first media sample
 }
 
+const (
+	tsMuxerFactory   = "mpegtsmux"
+	fmp4MuxerFactory = "isofmp4mux"
+)
+
 // fmp4FragmentDuration keeps isofmp4mux from ending a fragment on its own: splitmuxsink
 // ends each segment with EOS, and a duration far beyond any segment leaves that as the
 // only boundary, so every segment holds exactly one fragment.
@@ -44,13 +49,13 @@ const fmp4FragmentDuration = 24 * time.Hour
 // splitmuxsink only applies when finalizing asynchronously.
 func setSegmentMuxer(sink *gst.Element, o *config.SegmentConfig) error {
 	if o.SegmentOutputType != types.OutputTypeM4S {
-		if err := sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
+		if err := sink.SetProperty("muxer-factory", tsMuxerFactory); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 		return nil
 	}
 
-	if err := sink.SetProperty("muxer-factory", "isofmp4mux"); err != nil {
+	if err := sink.SetProperty("muxer-factory", fmp4MuxerFactory); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 

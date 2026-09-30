@@ -32,8 +32,8 @@ func TestSetSegmentMuxer(t *testing.T) {
 		outputType types.OutputType
 		factory    string
 	}{
-		{outputType: types.OutputTypeTS, factory: "mpegtsmux"},
-		{outputType: types.OutputTypeM4S, factory: "isofmp4mux"},
+		{outputType: types.OutputTypeTS, factory: tsMuxerFactory},
+		{outputType: types.OutputTypeM4S, factory: fmp4MuxerFactory},
 	} {
 		t.Run(string(test.outputType), func(t *testing.T) {
 			sink, err := gst.NewElement("splitmuxsink")
@@ -57,7 +57,7 @@ func TestSetSegmentMuxer(t *testing.T) {
 func TestConfigureFMP4Muxer(t *testing.T) {
 	initGStreamer(t)
 
-	muxer, err := gst.NewElement("isofmp4mux")
+	muxer, err := gst.NewElement(fmp4MuxerFactory)
 	require.NoError(t, err)
 
 	require.NoError(t, configureFMP4Muxer(muxer))
@@ -65,4 +65,35 @@ func TestConfigureFMP4Muxer(t *testing.T) {
 	fragmentDuration, err := muxer.GetProperty("fragment-duration")
 	require.NoError(t, err)
 	require.Equal(t, uint64(24*time.Hour), fragmentDuration)
+}
+
+// TestSegmentElementProperties fails if an element the segment bin configures loses a
+// property it sets. The fmp4 muxers come from gst-plugins-rs, so they move faster than
+// the rest of the image.
+func TestSegmentElementProperties(t *testing.T) {
+	initGStreamer(t)
+
+	for _, test := range []struct {
+		element    string
+		properties []string
+	}{
+		{
+			element:    "splitmuxsink",
+			properties: []string{"max-size-time", "send-keyframe-requests", "muxer-factory", "async-finalize"},
+		},
+		{
+			element:    fmp4MuxerFactory,
+			properties: []string{"fragment-duration"},
+		},
+	} {
+		t.Run(test.element, func(t *testing.T) {
+			e, err := gst.NewElement(test.element)
+			require.NoError(t, err)
+
+			for _, property := range test.properties {
+				_, err = e.GetProperty(property)
+				require.NoError(t, err, "%s has no %s property", test.element, property)
+			}
+		})
+	}
 }
