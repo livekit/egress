@@ -49,8 +49,11 @@ type File struct {
 
 type Playlist struct {
 	mu       deadlock.Mutex
-	Location string     `json:"location,omitempty"`
-	Segments []*Segment `json:"segments,omitempty"`
+	Location string `json:"location,omitempty"`
+	// InitSegment is only set for containers whose segments need one. It is kept out
+	// of Segments: it holds no media, and every segment depends on it.
+	InitSegment *Segment   `json:"init_segment,omitempty"`
+	Segments    []*Segment `json:"segments,omitempty"`
 }
 
 type Segment struct {
@@ -122,6 +125,15 @@ func (m *Manifest) AddPlaylist() *Playlist {
 func (p *Playlist) UpdateLocation(location string) {
 	p.mu.Lock()
 	p.Location = location
+	p.mu.Unlock()
+}
+
+func (p *Playlist) SetInitSegment(filename, location string) {
+	p.mu.Lock()
+	p.InitSegment = &Segment{
+		Filename: filename,
+		Location: location,
+	}
 	p.mu.Unlock()
 }
 

@@ -70,6 +70,7 @@ const (
 	OutputTypeIVF         OutputType = "video/x-ivf"
 	OutputTypeMP4         OutputType = "video/mp4"
 	OutputTypeTS          OutputType = "video/mp2t"
+	OutputTypeM4S         OutputType = "video/iso.segment"
 	OutputTypeWebM        OutputType = "video/webm"
 	OutputTypeJPEG        OutputType = "image/jpeg"
 	OutputTypeRTMP        OutputType = "rtmp"
@@ -85,6 +86,7 @@ const (
 	FileExtensionIVF  = ".ivf"
 	FileExtensionMP4  = ".mp4"
 	FileExtensionTS   = ".ts"
+	FileExtensionM4S  = ".m4s"
 	FileExtensionWebM = ".webm"
 	FileExtensionM3U8 = ".m3u8"
 	FileExtensionJPEG = ".jpeg"
@@ -122,6 +124,7 @@ var (
 		FileExtensionIVF:  {},
 		FileExtensionMP4:  {},
 		FileExtensionTS:   {},
+		FileExtensionM4S:  {},
 		FileExtensionWebM: {},
 		FileExtensionM3U8: {},
 		FileExtensionJPEG: {},
@@ -134,6 +137,7 @@ var (
 		OutputTypeIVF:  FileExtensionIVF,
 		OutputTypeMP4:  FileExtensionMP4,
 		OutputTypeTS:   FileExtensionTS,
+		OutputTypeM4S:  FileExtensionM4S,
 		OutputTypeWebM: FileExtensionWebM,
 		OutputTypeHLS:  FileExtensionM3U8,
 		OutputTypeJPEG: FileExtensionJPEG,

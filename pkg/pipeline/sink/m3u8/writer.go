@@ -31,6 +31,14 @@ const (
 	PlaylistTypeEvent PlaylistType = "EVENT"
 )
 
+const (
+	playlistVersion = 4
+
+	// fmp4 segments need an EXT-X-MAP, which a playlist without EXT-X-I-FRAMES-ONLY
+	// may only carry from version 6 on, and fmp4 itself is a version 7 feature
+	fmp4PlaylistVersion = 7
+)
+
 type PlaylistWriter interface {
 	Append(dateTime time.Time, duration float64, filename string) error
 	Close() error
@@ -39,6 +47,7 @@ type PlaylistWriter interface {
 type basePlaylistWriter struct {
 	filename       string
 	targetDuration int
+	initSegment    string
 }
 
 type eventPlaylistWriter struct {
@@ -56,16 +65,27 @@ type livePlaylistWriter struct {
 }
 
 func (p *basePlaylistWriter) createHeader(plType PlaylistType) string {
+	version := playlistVersion
+	if p.initSegment != "" {
+		version = fmp4PlaylistVersion
+	}
+
 	var sb strings.Builder
 	sb.WriteString("#EXTM3U\n")
-	sb.WriteString("#EXT-X-VERSION:4\n")
+	fmt.Fprintf(&sb, "#EXT-X-VERSION:%d\n", version)
 	if plType != PlaylistTypeLive {
 		fmt.Fprintf(&sb, "#EXT-X-PLAYLIST-TYPE:%s\n", plType)
 	}
-	sb.WriteString("#EXT-X-ALLOW-CACHE:NO\n")
+	// EXT-X-ALLOW-CACHE was removed in version 7
+	if version < fmp4PlaylistVersion {
+		sb.WriteString("#EXT-X-ALLOW-CACHE:NO\n")
+	}
 	fmt.Fprintf(&sb, "#EXT-X-TARGETDURATION:%d\n", p.targetDuration)
 	if plType != PlaylistTypeLive {
 		sb.WriteString("#EXT-X-MEDIA-SEQUENCE:0\n")
+	}
+	if p.initSegment != "" {
+		fmt.Fprintf(&sb, "#EXT-X-MAP:URI=%q\n", p.initSegment)
 	}
 
 	return sb.String()
@@ -85,11 +105,14 @@ func (p *basePlaylistWriter) createSegmentEntry(dateTime time.Time, duration flo
 	return sb.String()
 }
 
-func NewEventPlaylistWriter(filename string, targetDuration int) (PlaylistWriter, error) {
+// NewEventPlaylistWriter creates an event playlist. initSegment names the
+// initialization segment for fmp4 output, and is empty for self-contained segments.
+func NewEventPlaylistWriter(filename string, targetDuration int, initSegment string) (PlaylistWriter, error) {
 	p := &eventPlaylistWriter{
 		basePlaylistWriter: basePlaylistWriter{
 			filename:       filename,
 			targetDuration: targetDuration,
+			initSegment:    initSegment,
 		},
 	}
 
@@ -130,11 +153,14 @@ func (p *eventPlaylistWriter) Close() error {
 	return err
 }
 
-func NewLivePlaylistWriter(filename string, targetDuration int, windowSize int) (PlaylistWriter, error) {
+// NewLivePlaylistWriter creates a sliding window playlist. initSegment names the
+// initialization segment for fmp4 output, and is empty for self-contained segments.
+func NewLivePlaylistWriter(filename string, targetDuration int, windowSize int, initSegment string) (PlaylistWriter, error) {
 	p := &livePlaylistWriter{
 		basePlaylistWriter: basePlaylistWriter{
 			filename:       filename,
 			targetDuration: targetDuration,
+			initSegment:    initSegment,
 		},
 		windowSize:           windowSize,
 		livePlaylistSegments: list.New(),

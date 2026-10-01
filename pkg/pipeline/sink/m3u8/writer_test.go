@@ -26,7 +26,7 @@ import (
 func TestEventPlaylistWriter(t *testing.T) {
 	playlistName := "playlist.m3u8"
 
-	w, err := NewEventPlaylistWriter(playlistName, 6)
+	w, err := NewEventPlaylistWriter(playlistName, 6, "")
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = os.Remove(playlistName) })
@@ -51,7 +51,7 @@ func TestEventPlaylistWriter(t *testing.T) {
 func TestLivePlaylistWriter(t *testing.T) {
 	playlistName := "playlist.m3u8"
 
-	w, err := NewLivePlaylistWriter(playlistName, 6, 3)
+	w, err := NewLivePlaylistWriter(playlistName, 6, 3, "")
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = os.Remove(playlistName) })
@@ -81,5 +81,24 @@ func TestLivePlaylistWriter(t *testing.T) {
 	require.NoError(t, err)
 
 	expected = "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-ALLOW-CACHE:NO\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:1\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:10.808Z\n#EXTINF:5.994,\nplaylist_00001.ts\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:16.802Z\n#EXTINF:5.994,\nplaylist_00002.ts\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:22.796Z\n#EXTINF:5.994,\nplaylist_00003.ts\n#EXT-X-ENDLIST\n"
+	require.Equal(t, expected, string(b))
+}
+
+func TestFMP4PlaylistWriter(t *testing.T) {
+	playlistName := "playlist.m3u8"
+
+	w, err := NewEventPlaylistWriter(playlistName, 6, "playlist_init.mp4")
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = os.Remove(playlistName) })
+
+	now := time.Unix(0, 1683154504814142000)
+	require.NoError(t, w.Append(now, 5.994, "playlist_00000.m4s"))
+	require.NoError(t, w.Close())
+
+	b, err := os.ReadFile(playlistName)
+	require.NoError(t, err)
+
+	expected := "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-MAP:URI=\"playlist_init.mp4\"\n#EXT-X-PROGRAM-DATE-TIME:2023-05-03T22:55:04.814Z\n#EXTINF:5.994,\nplaylist_00000.m4s\n#EXT-X-ENDLIST\n"
 	require.Equal(t, expected, string(b))
 }

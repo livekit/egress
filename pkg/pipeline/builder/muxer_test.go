@@ -19,7 +19,7 @@ func initGStreamer(t *testing.T) {
 func TestNewMuxer_KnownMuxers(t *testing.T) {
 	initGStreamer(t)
 
-	for _, name := range []string{"oggmux", "avmux_ivf", "mp4mux", "webmmux", "mpegtsmux"} {
+	for _, name := range []string{"oggmux", "avmux_ivf", "mp4mux", "webmmux", tsMuxerFactory, fmp4MuxerFactory} {
 		t.Run(name, func(t *testing.T) {
 			m, err := newMuxer(name)
 			require.NoError(t, err)
