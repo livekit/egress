@@ -297,6 +297,11 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 		if !retryable {
 			break
 		}
+
+		// tear down this Chrome before retrying. Otherwise it stays alive on its
+		// error page, auto-reloads the URL ~1s later, and rejoins the room with the
+		// same identity as the retry's Chrome, which is evicted as a duplicate identity.
+		chromeCancel()
 	}
 
 	return err
