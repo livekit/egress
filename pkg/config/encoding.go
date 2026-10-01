@@ -136,6 +136,9 @@ func (p *PipelineConfig) applyAdvanced(advanced *livekit.EncodingOptions) error 
 		p.VideoBitrate = advanced.VideoBitrate
 	}
 	if advanced.KeyFrameInterval != 0 {
+		if _, err := durationFromSeconds("key_frame_interval", advanced.KeyFrameInterval); err != nil {
+			return err
+		}
 		p.KeyFrameInterval = advanced.KeyFrameInterval
 	}
 

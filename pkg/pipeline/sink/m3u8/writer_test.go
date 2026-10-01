@@ -26,7 +26,7 @@ import (
 func TestEventPlaylistWriter(t *testing.T) {
 	playlistName := "playlist.m3u8"
 
-	w, err := NewEventPlaylistWriter(playlistName, 6)
+	w, err := NewEventPlaylistWriter(playlistName, 6*time.Second)
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = os.Remove(playlistName) })
@@ -51,7 +51,7 @@ func TestEventPlaylistWriter(t *testing.T) {
 func TestLivePlaylistWriter(t *testing.T) {
 	playlistName := "playlist.m3u8"
 
-	w, err := NewLivePlaylistWriter(playlistName, 6, 3)
+	w, err := NewLivePlaylistWriter(playlistName, 6*time.Second, 3)
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = os.Remove(playlistName) })

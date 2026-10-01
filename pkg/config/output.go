@@ -16,6 +16,7 @@ package config
 
 import (
 	"net/url"
+	"time"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
@@ -24,6 +25,15 @@ import (
 )
 
 const StreamKeyframeInterval = 4.0
+
+// applyKeyFrameInterval lowers the segment duration to the keyframe interval, which
+// segments have to start on. Both are validated against minSegmentDuration on their way
+// in, so the result cannot fall below it.
+func (p *PipelineConfig) applyKeyFrameInterval(conf *SegmentConfig) {
+	if keyFrameInterval := time.Duration(p.KeyFrameInterval * float64(time.Second)); keyFrameInterval < conf.SegmentDuration {
+		conf.SegmentDuration = keyFrameInterval
+	}
+}
 
 type OutputConfig interface {
 	GetOutputType() types.OutputType
@@ -174,8 +184,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 	if segmentConf := p.Outputs[types.EgressTypeSegments]; segmentConf != nil {
 		if stream != nil && p.KeyFrameInterval > 0 {
 			// segment duration must match keyframe interval - use the lower of the two
-			conf := segmentConf[0].(*SegmentConfig)
-			conf.SegmentDuration = min(int(p.KeyFrameInterval), conf.SegmentDuration)
+			p.applyKeyFrameInterval(segmentConf[0].(*SegmentConfig))
 		}
 		p.KeyFrameInterval = 0
 	} else if p.KeyFrameInterval == 0 && p.Outputs[types.EgressTypeStream] != nil {
@@ -399,8 +408,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 	// keyframe interval handling
 	if segmentConf := p.Outputs[types.EgressTypeSegments]; segmentConf != nil {
 		if hasStream && p.KeyFrameInterval > 0 {
-			conf := segmentConf[0].(*SegmentConfig)
-			conf.SegmentDuration = min(int(p.KeyFrameInterval), conf.SegmentDuration)
+			p.applyKeyFrameInterval(segmentConf[0].(*SegmentConfig))
 		}
 		p.KeyFrameInterval = 0
 	} else if p.KeyFrameInterval == 0 && p.Outputs[types.EgressTypeStream] != nil {

@@ -18,6 +18,7 @@ import (
 	"container/list"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -38,7 +39,7 @@ type PlaylistWriter interface {
 
 type basePlaylistWriter struct {
 	filename       string
-	targetDuration int
+	targetDuration time.Duration
 }
 
 type eventPlaylistWriter struct {
@@ -63,7 +64,9 @@ func (p *basePlaylistWriter) createHeader(plType PlaylistType) string {
 		fmt.Fprintf(&sb, "#EXT-X-PLAYLIST-TYPE:%s\n", plType)
 	}
 	sb.WriteString("#EXT-X-ALLOW-CACHE:NO\n")
-	fmt.Fprintf(&sb, "#EXT-X-TARGETDURATION:%d\n", p.targetDuration)
+	// EXT-X-TARGETDURATION is a whole number of seconds and no segment may exceed it,
+	// so round fractional durations up
+	fmt.Fprintf(&sb, "#EXT-X-TARGETDURATION:%d\n", int(math.Ceil(p.targetDuration.Seconds())))
 	if plType != PlaylistTypeLive {
 		sb.WriteString("#EXT-X-MEDIA-SEQUENCE:0\n")
 	}
@@ -85,7 +88,7 @@ func (p *basePlaylistWriter) createSegmentEntry(dateTime time.Time, duration flo
 	return sb.String()
 }
 
-func NewEventPlaylistWriter(filename string, targetDuration int) (PlaylistWriter, error) {
+func NewEventPlaylistWriter(filename string, targetDuration time.Duration) (PlaylistWriter, error) {
 	p := &eventPlaylistWriter{
 		basePlaylistWriter: basePlaylistWriter{
 			filename:       filename,
@@ -130,7 +133,7 @@ func (p *eventPlaylistWriter) Close() error {
 	return err
 }
 
-func NewLivePlaylistWriter(filename string, targetDuration int, windowSize int) (PlaylistWriter, error) {
+func NewLivePlaylistWriter(filename string, targetDuration time.Duration, windowSize int) (PlaylistWriter, error) {
 	p := &livePlaylistWriter{
 		basePlaylistWriter: basePlaylistWriter{
 			filename:       filename,
