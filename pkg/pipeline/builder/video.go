@@ -61,8 +61,8 @@ type VideoBin struct {
 
 	// input-selector state (only used when !Compositing)
 	selectedPad string
-	// pendingPad is the track awaiting handover; a mute or removal clears it so a
-	// frame arriving afterwards cannot hand the selector to a track that left.
+	// pendingPad is the track awaiting handover. Mute and removal clear it so a
+	// later frame cannot hand the selector to a track that left.
 	pendingPad string
 	lastPTS    uint64
 
@@ -955,9 +955,7 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 			return gst.PadProbeOK
 		})
 
-		// The filler holds the selector until a track has a frame to hand over to,
-		// so it is the selected pad from the moment it exists. Leaving this empty
-		// closes every gate and the pipeline never prerolls.
+		// An empty selectedPad closes every gate, so the filler starts selected.
 		if b.selectedPad == "" {
 			b.selectedPad = videoTestSrcName
 		}
@@ -1244,13 +1242,32 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 	} else {
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			pts := uint64(info.GetBuffer().PresentationTimestamp())
+
 			b.mu.Lock()
-			if pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name) {
-				b.mu.Unlock()
+			// A pending handover is taken here rather than in a probe of its own,
+			// which would sit behind this one and never see a buffer this one drops.
+			switched := b.pendingPad == name
+			if switched {
+				if err := b.selector.SetProperty("active-pad", pad); err != nil {
+					b.mu.Unlock()
+					b.bin.OnError(errors.ErrGstPipelineError(err))
+					return gst.PadProbeDrop
+				}
+				b.selectedPad = name
+				b.pendingPad = ""
+			}
+			drop := pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name)
+			if !drop {
+				b.lastPTS = pts
+			}
+			b.mu.Unlock()
+
+			if switched {
+				logger.Debugw("active pad changed", "name", name)
+			}
+			if drop {
 				return gst.PadProbeDrop
 			}
-			b.lastPTS = pts
-			b.mu.Unlock()
 			return gst.PadProbeOK
 		})
 	}
@@ -1366,13 +1383,8 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 		return errors.New("pad not found: " + name)
 	}
 
-	// Only a live handover from the filler waits. The filler itself takes over
-	// immediately, and so does one track replacing another: a pad's own buffer
-	// gate drops everything unless the filler or that same pad is selected, so a
-	// deferred switch would wait on data the switch itself has to release.
-	// Without a live pipeline videotestsrc is unpaced, so leaving it selected
-	// runs the monotonic watermark past the incoming track and the gate drops
-	// the frames the handover is waiting for.
+	// Only a live handover off the filler waits; deferring any other switch would
+	// wait on data that the switch itself has to release.
 	if name == videoTestSrcName || b.selectedPad != videoTestSrcName || !b.conf.Live {
 		if err := b.selector.SetProperty("active-pad", pad); err != nil {
 			return errors.ErrGstPipelineError(err)
@@ -1381,40 +1393,8 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 		return nil
 	}
 
-	if b.pendingPad == name {
-		return nil
-	}
-
-	// Coming off the filler, a track takes the selector on its first decoded
-	// frame. Selector pads only exist when decoding, so every pad sits behind a
-	// video decoder and the delta-unit flag is already clear; the keyframe probe
-	// upstream is what holds a track to a sync point. Switching on the subscribe
-	// event alone silences the filler for as long as the track takes to produce,
-	// and nothing feeds the selector meanwhile.
+	// Switching on subscribe silences the filler until the track produces, so the
+	// track's own gate takes the selector when its first buffer arrives.
 	b.pendingPad = name
-	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		buffer := info.GetBuffer()
-		if buffer.HasFlags(gst.BufferFlagDeltaUnit) {
-			return gst.PadProbeDrop
-		}
-
-		b.mu.Lock()
-		if b.pendingPad != name {
-			b.mu.Unlock()
-			return gst.PadProbeRemove
-		}
-		if err := b.selector.SetProperty("active-pad", pad); err != nil {
-			b.mu.Unlock()
-			b.bin.OnError(errors.ErrGstPipelineError(err))
-			return gst.PadProbeRemove
-		}
-		b.selectedPad = name
-		b.pendingPad = ""
-		b.mu.Unlock()
-
-		logger.Debugw("active pad changed", "name", name)
-		return gst.PadProbeRemove
-	})
-
 	return nil
 }
