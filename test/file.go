@@ -240,6 +240,17 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 			},
 			{
+				name:        "TrackComposite/AV1",
+				requestType: types.RequestTypeTrackComposite, publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeAV1,
+				},
+				fileOptions: &fileOptions{
+					filename: "tc_{publisher_identity}_av1_{time}.mp4",
+					fileType: livekit.EncodedFileType_MP4,
+				},
+			},
+			{
 				name:        "TrackComposite/VideoOnly",
 				requestType: types.RequestTypeTrackComposite,
 				publishOptions: publishOptions{
@@ -352,6 +363,18 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename:   "t_{track_type}_{time}.webm",
 					outputType: types.OutputTypeWebM,
+				},
+			},
+			{
+				name:        "Track/AV1",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					videoCodec: types.MimeTypeAV1,
+					videoOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "t_{track_id}_av1_{time}.mp4",
+					outputType: types.OutputTypeMP4,
 				},
 			},
 			// {
@@ -704,6 +727,11 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 	manifestStorage := path.Join(path.Dir(storagePath), res.EgressId+".json")
 	manifest := loadManifest(t, p.GetFileConfig().StorageConfig, manifestLocal, manifestStorage)
 	require.NotNil(t, manifest)
+
+	// passthrough resolves the output codec from the published track at runtime
+	if p.Passthrough && p.VideoOutCodec == "" && tc.videoCodec != "" {
+		p.VideoOutCodec = tc.videoCodec
+	}
 
 	// verify
 	info := verify(t, localPath, p, res, types.EgressTypeFile, r.sourceFramerate, false)

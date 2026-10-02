@@ -51,6 +51,7 @@ const (
 	MimeTypeH264     MimeType = "video/h264"
 	MimeTypeVP8      MimeType = "video/vp8"
 	MimeTypeVP9      MimeType = "video/vp9"
+	MimeTypeAV1      MimeType = "video/av1"
 	MimeTypeJPEG     MimeType = "image/jpeg"
 	MimeTypeRawVideo MimeType = "video/x-raw"
 	MimeTypeMP3      MimeType = "audio/mpeg"
@@ -149,11 +150,13 @@ var (
 		OutputTypeIVF: {
 			MimeTypeVP8: true,
 			MimeTypeVP9: true,
+			MimeTypeAV1: true,
 		},
 		OutputTypeMP4: {
 			MimeTypeAAC:  true,
 			MimeTypeOpus: true,
 			MimeTypeH264: true,
+			MimeTypeAV1:  true,
 		},
 		OutputTypeTS: {
 			MimeTypeAAC:  true,
@@ -164,6 +167,7 @@ var (
 			MimeTypeOpus: true,
 			MimeTypeVP8:  true,
 			MimeTypeVP9:  true,
+			MimeTypeAV1:  true,
 		},
 		OutputTypeRTMP: {
 			MimeTypeAAC:  true,
@@ -190,6 +194,7 @@ var (
 			MimeTypeH264: true,
 			MimeTypeVP8:  true,
 			MimeTypeVP9:  true,
+			MimeTypeAV1:  true,
 		},
 	}
 
@@ -223,6 +228,7 @@ var (
 		MimeTypeH264: OutputTypeMP4,
 		MimeTypeVP8:  OutputTypeWebM,
 		MimeTypeVP9:  OutputTypeWebM,
+		MimeTypeAV1:  OutputTypeMP4,
 	}
 
 	StreamOutputTypes = map[string]OutputType{

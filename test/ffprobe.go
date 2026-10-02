@@ -248,6 +248,8 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 				require.Equal(t, "vp8", stream.CodecName)
 			case types.MimeTypeVP9:
 				require.Equal(t, "vp9", stream.CodecName)
+			case types.MimeTypeAV1:
+				require.Equal(t, "av1", stream.CodecName)
 			}
 
 			if p.VideoEncoding {
@@ -261,7 +263,9 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 				require.Equal(t, "vp8", stream.CodecName)
 
 			case types.OutputTypeMP4:
-				require.Equal(t, "h264", stream.CodecName)
+				if p.VideoOutCodec == "" {
+					require.Equal(t, "h264", stream.CodecName)
+				}
 
 				if p.VideoEncoding {
 					// bitrate, not available for HLS or WebM

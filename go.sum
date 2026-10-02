@@ -238,6 +238,8 @@ github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 h1:9x+U2HGLrSw5AT
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/media-samples/avsync v0.0.0-20260804064037-794748125298 h1:dZCYgEbVk86MXaISmhJNyWV5KACg57eFA9IKZtHVy7A=
 github.com/livekit/media-samples/avsync v0.0.0-20260804064037-794748125298/go.mod h1:ABnDYmOwSChrFXHj6F3dwNOlEAL45xR0S4uhSwRxOn0=
+github.com/livekit/media-samples/avsync v0.0.0-20261002191638-79d3aa2fd27d h1:tjXjQkZbWRCAgC8uYJutnLix0bQvvjpzUSrRvgnVMRg=
+github.com/livekit/media-samples/avsync v0.0.0-20261002191638-79d3aa2fd27d/go.mod h1:ABnDYmOwSChrFXHj6F3dwNOlEAL45xR0S4uhSwRxOn0=
 github.com/livekit/media-sdk v0.1.1 h1:d0glitmWU5ncIgsW/6wG4Q4iOEcpwINGl85mQjwnKuM=
 github.com/livekit/media-sdk v0.1.1/go.mod h1:TuYRjSepaakL6ATsM9V2VMuksewW1PlhA32BG7Pxty0=
 github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095 h1:BcliKAXoMhl/nWmzQweQ5kmh4Qqagxl4s3Z5pvM/7AY=
