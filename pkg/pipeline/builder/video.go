@@ -61,7 +61,10 @@ type VideoBin struct {
 
 	// input-selector state (only used when !Compositing)
 	selectedPad string
-	lastPTS     uint64
+	// pendingPad is the track awaiting handover. Mute and removal clear it so a
+	// later frame cannot hand the selector to a track that left.
+	pendingPad string
+	lastPTS    uint64
 
 	probesMu deadlock.Mutex
 	probes   map[string]*keyframeProbe
@@ -189,6 +192,10 @@ func (b *VideoBin) onTrackRemoved(trackID string) {
 	delete(b.screenShares, name)
 	delete(b.lastDimensions, trackID)
 	b.closeProbe(name)
+
+	if b.pendingPad == name {
+		b.pendingPad = ""
+	}
 
 	if !b.conf.Compositing && b.selectedPad == name {
 		if err := b.setSelectorPadLocked(videoTestSrcName); err != nil {
@@ -947,6 +954,11 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 			b.mu.Unlock()
 			return gst.PadProbeOK
 		})
+
+		// An empty selectedPad closes every gate, so the filler starts selected.
+		if b.selectedPad == "" {
+			b.selectedPad = videoTestSrcName
+		}
 	}
 	b.pads[videoTestSrcName] = pad
 	return nil
@@ -1230,13 +1242,33 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 	} else {
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			pts := uint64(info.GetBuffer().PresentationTimestamp())
+
 			b.mu.Lock()
-			if pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name) {
-				b.mu.Unlock()
+			// A pending handover is taken here rather than in a probe of its own,
+			// which would sit behind this one and never see a buffer this one drops.
+			switched := b.pendingPad == name
+			if switched {
+				if err := b.selector.SetProperty("active-pad", pad); err != nil {
+					b.pendingPad = ""
+					b.mu.Unlock()
+					b.bin.OnError(errors.ErrGstPipelineError(err))
+					return gst.PadProbeDrop
+				}
+				b.selectedPad = name
+				b.pendingPad = ""
+			}
+			drop := pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name)
+			if !drop {
+				b.lastPTS = pts
+			}
+			b.mu.Unlock()
+
+			if switched {
+				logger.Debugw("active pad changed", "name", name)
+			}
+			if drop {
 				return gst.PadProbeDrop
 			}
-			b.lastPTS = pts
-			b.mu.Unlock()
 			return gst.PadProbeOK
 		})
 	}
@@ -1330,6 +1362,9 @@ func (b *VideoBin) setTrackVisibleLocked(name string, visible bool) error {
 	if visible {
 		return b.setSelectorPadLocked(name)
 	}
+	if b.pendingPad == name {
+		b.pendingPad = ""
+	}
 	if b.selectedPad == name {
 		return b.setSelectorPadLocked(videoTestSrcName)
 	}
@@ -1349,19 +1384,18 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 		return errors.New("pad not found: " + name)
 	}
 
-	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		buffer := info.GetBuffer()
-		if buffer.HasFlags(gst.BufferFlagDeltaUnit) {
-			return gst.PadProbeDrop
+	// The filler takes over at once: its own gate drops every buffer until it is
+	// selected. Non-live runs it unpaced, where it would outrun any track.
+	if name == videoTestSrcName || !b.conf.Live {
+		if err := b.selector.SetProperty("active-pad", pad); err != nil {
+			return errors.ErrGstPipelineError(err)
 		}
-		logger.Debugw("active pad changed", "name", name)
-		return gst.PadProbeRemove
-	})
-
-	if err := b.selector.SetProperty("active-pad", pad); err != nil {
-		return errors.ErrGstPipelineError(err)
+		b.selectedPad = name
+		return nil
 	}
 
-	b.selectedPad = name
+	// Switching on subscribe silences what is on screen before the incoming track
+	// produces, so that track's own gate takes the selector on its first buffer.
+	b.pendingPad = name
 	return nil
 }

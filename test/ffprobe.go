@@ -308,6 +308,105 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 	return info
 }
 
+const (
+	// A recording's video timeline should be continuous. A clean recording's
+	// largest frame gap is under 100ms, so anything past this is a hole.
+	maxFrameGap = 500 * time.Millisecond
+	// Any stretch the filler covers alone costs timeline, because the filler runs
+	// videoTestSrcDelay behind through the test src queue's min-threshold-time and
+	// stalls whenever its level drops below that. Measured at 2.08s on a republish
+	// and 2.07s on a delayed first publish. Tighten once the filler no longer lags.
+	fillerFrameGap = 2500 * time.Millisecond
+	// mpdecimate and blackdetect time their spans independently, so the edges of
+	// a filler stretch do not line up exactly.
+	frozenBlackGrace = 100 * time.Millisecond
+	// Held frames further apart than this belong to separate stretches. One frame
+	// interval is 33ms at 30fps and 42ms at 24fps.
+	frozenRunGap = 50 * time.Millisecond
+)
+
+// frameGapAllowance returns the largest gap this test can legitimately produce.
+// Video arriving late, leaving, or coming back all hand a stretch to the filler.
+func frameGapAllowance(tc *testCase) time.Duration {
+	allowance := maxFrameGap
+	if tc.videoDelay != 0 || tc.videoUnpublish != 0 || tc.videoRepublish != 0 {
+		allowance = fillerFrameGap
+	}
+	if tc.disconnectDuration != 0 {
+		if d := tc.disconnectDuration + fillerFrameGap; d > allowance {
+			allowance = d
+		}
+	}
+	return allowance
+}
+
+// verifyFrameContinuity fails on a hole in the video timeline. The content
+// checks look for frames that should not be there, so a stretch with no frames
+// at all passes them: there is nothing left to be wrong.
+func verifyFrameContinuity(t *testing.T, in string, tc *testCase) {
+	t.Helper()
+
+	if tc.audioOnly {
+		return
+	}
+
+	times, err := ffprobeFrameTimes(in)
+	require.NoError(t, err)
+	if len(times) < 2 {
+		return
+	}
+
+	var worst time.Duration
+	var worstAt float64
+	for i := 1; i < len(times); i++ {
+		if gap := time.Duration((times[i] - times[i-1]) * float64(time.Second)); gap > worst {
+			worst, worstAt = gap, times[i-1]
+		}
+	}
+
+	allowance := frameGapAllowance(tc)
+	t.Logf("largest frame gap: %s at %.3fs (allowance %s, %d frames)", worst, worstAt, allowance, len(times))
+	require.LessOrEqual(t, worst, allowance,
+		"%s of video missing at %.3fs, the timeline should be continuous", worst, worstAt)
+
+	verifyNoFreeze(t, in, allowance)
+}
+
+// ffprobeFrameTimes returns the presentation timestamp of every video frame.
+func ffprobeFrameTimes(input string) ([]float64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffprobe",
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "frame=pts_time",
+		"-of", "csv=p=0",
+		input,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("ffprobe timeout listing frames")
+		}
+		return nil, err
+	}
+
+	var times []float64
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSuffix(strings.TrimSpace(line), ",")
+		if line == "" {
+			continue
+		}
+		f, err := strconv.ParseFloat(line, 64)
+		if err != nil {
+			continue
+		}
+		times = append(times, f)
+	}
+	return times, nil
+}
+
 // parseFFProbeDuration supports either "123.456" (seconds) or "HH:MM:SS.mmm"
 func parseFFProbeDuration(s string) (time.Duration, error) {
 	s = strings.TrimSpace(s)
@@ -369,4 +468,130 @@ func verifyXingHeader(t *testing.T, filepath string, sampleRate int, ffprobeDura
 	require.InDelta(t, ffprobeDuration, xingDuration, 0.1,
 		"Xing duration (%0.3fs from %d frames) does not match ffprobe duration (%0.3fs)",
 		xingDuration, xi.FrameCount, ffprobeDuration)
+}
+
+var (
+	dropRe  = regexp.MustCompile(`drop pts:\d+ pts_time:([0-9.]+)`)
+	blackRe = regexp.MustCompile(`black_start:([0-9.]+) black_end:([0-9.]+)`)
+)
+
+type timeSpan struct{ start, end float64 }
+
+// verifyNoFreeze fails on a stretch of held frames outside the black filler.
+// A hole that videorate pads with duplicates keeps the timeline continuous, so
+// the gap check cannot see it. Both are the same lost stretch, so they share an
+// allowance.
+func verifyNoFreeze(t *testing.T, in string, allowance time.Duration) {
+	t.Helper()
+
+	held, err := ffmpegHeldFrameTimes(in)
+	require.NoError(t, err)
+	black, err := ffmpegBlackSpans(in)
+	require.NoError(t, err)
+
+	// The filler is a still image and so is held by definition. Discard those
+	// frames before merging, or one run spans the filler and what follows it.
+	grace := frozenBlackGrace.Seconds()
+	var outside []float64
+	for _, h := range held {
+		covered := false
+		for _, b := range black {
+			if h >= b.start-grace && h <= b.end+grace {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			outside = append(outside, h)
+		}
+	}
+
+	worst, worstAt := longestHeldRun(outside, frozenRunGap.Seconds())
+	d := time.Duration(worst * float64(time.Second))
+	t.Logf("longest freeze outside the filler: %s at %.3fs (allowance %s)", d, worstAt, allowance)
+	require.LessOrEqual(t, d, allowance,
+		"video held the same frame for %s at %.3fs, content should keep advancing", d, worstAt)
+}
+
+// longestHeldRun returns the duration and start of the longest run of held
+// frames, treating frames further apart than gap as separate runs.
+func longestHeldRun(times []float64, gap float64) (float64, float64) {
+	if len(times) == 0 {
+		return 0, 0
+	}
+	var worst, worstAt float64
+	runStart, runEnd := times[0], times[0]
+	flush := func() {
+		if runEnd-runStart > worst {
+			worst, worstAt = runEnd-runStart, runStart
+		}
+	}
+	for _, t := range times[1:] {
+		if t-runEnd <= gap {
+			runEnd = t
+			continue
+		}
+		flush()
+		runStart, runEnd = t, t
+	}
+	flush()
+	return worst, worstAt
+}
+
+// ffmpegHeldFrameTimes returns the timestamp of every frame mpdecimate found to
+// be a near-duplicate of the one before it.
+func ffmpegHeldFrameTimes(input string) ([]float64, error) {
+	out, err := runFFmpegFilter(input, "mpdecimate", "debug")
+	if err != nil {
+		return nil, err
+	}
+
+	var times []float64
+	for _, m := range dropRe.FindAllStringSubmatch(out, -1) {
+		if f, err := strconv.ParseFloat(m[1], 64); err == nil {
+			times = append(times, f)
+		}
+	}
+	return times, nil
+}
+
+// ffmpegBlackSpans returns the spans where the recording is black, which is the
+// filler covering a gap.
+func ffmpegBlackSpans(input string) ([]timeSpan, error) {
+	out, err := runFFmpegFilter(input, "blackdetect=d=0.2:pix_th=0.10", "info")
+	if err != nil {
+		return nil, err
+	}
+
+	var spans []timeSpan
+	for _, m := range blackRe.FindAllStringSubmatch(out, -1) {
+		start, serr := strconv.ParseFloat(m[1], 64)
+		end, eerr := strconv.ParseFloat(m[2], 64)
+		if serr == nil && eerr == nil {
+			spans = append(spans, timeSpan{start: start, end: end})
+		}
+	}
+	return spans, nil
+}
+
+// runFFmpegFilter runs one filter over the input and returns what it reported.
+// Both filters write to stderr.
+func runFFmpegFilter(input, filter, level string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-v", level,
+		"-i", input,
+		"-vf", filter,
+		"-f", "null", "-",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return "", fmt.Errorf("ffmpeg timeout running %s", filter)
+		}
+		return "", fmt.Errorf("ffmpeg %s: %w", filter, err)
+	}
+	return string(out), nil
 }
