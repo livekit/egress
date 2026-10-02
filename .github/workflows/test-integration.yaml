@@ -54,6 +54,8 @@ jobs:
       - name: Fetch media-samples (with LFS)
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # TODO: drop once livekit/media-samples AV1 sample PR is merged to main
+          MEDIA_SAMPLES_REF: milos/av1-avsync-sample
         run: build/test/fetch-media-samples.sh
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
