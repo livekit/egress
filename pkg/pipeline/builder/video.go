@@ -1249,6 +1249,7 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 			switched := b.pendingPad == name
 			if switched {
 				if err := b.selector.SetProperty("active-pad", pad); err != nil {
+					b.pendingPad = ""
 					b.mu.Unlock()
 					b.bin.OnError(errors.ErrGstPipelineError(err))
 					return gst.PadProbeDrop
@@ -1383,9 +1384,9 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 		return errors.New("pad not found: " + name)
 	}
 
-	// Only a live handover off the filler waits; deferring any other switch would
-	// wait on data that the switch itself has to release.
-	if name == videoTestSrcName || b.selectedPad != videoTestSrcName || !b.conf.Live {
+	// The filler takes over at once: its own gate drops every buffer until it is
+	// selected. Non-live runs it unpaced, where it would outrun any track.
+	if name == videoTestSrcName || !b.conf.Live {
 		if err := b.selector.SetProperty("active-pad", pad); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
@@ -1393,8 +1394,8 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 		return nil
 	}
 
-	// Switching on subscribe silences the filler until the track produces, so the
-	// track's own gate takes the selector when its first buffer arrives.
+	// Switching on subscribe silences what is on screen before the incoming track
+	// produces, so that track's own gate takes the selector on its first buffer.
 	b.pendingPad = name
 	return nil
 }
