@@ -40,6 +40,9 @@ const (
 	initialBackoff    = time.Millisecond * 500
 	maxBackoff        = time.Minute * 1
 	drainPollInterval = time.Millisecond * 100
+
+	// createFailedTTL outlives an aborted handler, including one whose pipeline is slow to stop
+	createFailedTTL = time.Hour
 )
 
 // UpdateEgress failure outcomes (livekit_egress_io_update_failures_total)
@@ -47,6 +50,7 @@ const (
 	ioUpdateRetried   = "retried"
 	ioUpdateAbandoned = "abandoned"
 	ioUpdateFailed    = "failed"
+	ioUpdateUnowned   = "unowned"
 )
 
 type SessionReporter interface {
@@ -96,7 +100,11 @@ type worker struct {
 	creating map[string]*egressUpdates
 	// pending holds an entry for every egress that is queued, in flight or waiting out a retry backoff
 	pending map[string]*egressUpdates
-	queue   chan string
+	// createFailed marks egresses whose CreateEgress call failed; their updates are discarded. A mark outlives
+	// SessionEnded, since a HandlerFinished in flight at exit still reports after it, and is cleared by a new
+	// CreateEgress or after createFailedTTL (a straggler arriving after a same-node relaunch is still sent).
+	createFailed map[string]time.Time
+	queue        chan string
 }
 
 // egressUpdates holds one egress' unsent updates, oldest first; every update is sent, none replace another.
@@ -135,9 +143,10 @@ func newSessionReporter(conf *config.BaseConfig, client rpc.IOInfoClient, ioUpda
 
 	for i := 0; i < conf.IOWorkers; i++ {
 		c.workers[i] = &worker{
-			creating: make(map[string]*egressUpdates),
-			pending:  make(map[string]*egressUpdates),
-			queue:    make(chan string, 500),
+			creating:     make(map[string]*egressUpdates),
+			pending:      make(map[string]*egressUpdates),
+			createFailed: make(map[string]time.Time),
+			queue:        make(chan string, 500),
 		}
 		go c.runWorker(c.workers[i])
 	}
@@ -161,6 +170,7 @@ func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.Egress
 
 	w.mu.Lock()
 	w.creating[info.EgressId] = e
+	delete(w.createFailed, info.EgressId)
 	w.mu.Unlock()
 
 	errChan := make(chan error, 1)
@@ -172,6 +182,8 @@ func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.Egress
 		switch existing := w.pending[info.EgressId]; {
 		case err != nil:
 			logger.Errorw("failed to create egress", err, "egressID", info.EgressId)
+			// marked before errChan is sent, since the caller aborts the handler as soon as it reads it
+			w.markCreateFailed(info.EgressId)
 		case len(e.updates) == 0:
 		case existing != nil:
 			// an earlier instance of this egress still has updates scheduled; these go after them
@@ -202,6 +214,11 @@ func (c *sessionReporter) UpdateEgress(ctx context.Context, info *livekit.Egress
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	if _, ok := w.createFailed[info.EgressId]; ok {
+		c.ioUpdateFailures.WithLabelValues(ioUpdateUnowned).Inc()
+		logger.Debugw("discarding update for egress whose create failed", "egressID", info.EgressId, "status", info.Status.String())
+		return nil
+	}
 	if e := w.creating[info.EgressId]; e != nil {
 		e.updates = append(e.updates, u)
 		return nil
@@ -215,8 +232,8 @@ func (c *sessionReporter) UpdateEgress(ctx context.Context, info *livekit.Egress
 	return w.schedule(info.EgressId)
 }
 
-// This forwards every update onward and holds no per-egress state of its own,
-// so there is nothing to track.
+// Unsent updates are released as they are delivered or given up, and create-failure marks outlive
+// SessionEnded by design, so there is nothing to do here.
 func (c *sessionReporter) SessionStarted(_ context.Context, _ string) {}
 func (c *sessionReporter) SessionEnded(_ context.Context, _ string)   {}
 
@@ -260,6 +277,17 @@ func (c *sessionReporter) getWorker(egressID string) *worker {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(egressID))
 	return c.workers[int(h.Sum32())%len(c.workers)]
+}
+
+// markCreateFailed records a failed CreateEgress and drops marks older than createFailedTTL.
+func (w *worker) markCreateFailed(egressID string) {
+	now := time.Now()
+	for id, at := range w.createFailed {
+		if now.Sub(at) > createFailedTTL {
+			delete(w.createFailed, id)
+		}
+	}
+	w.createFailed[egressID] = now
 }
 
 // schedule queues an egress whose entry is in pending; on a full queue the entry and its updates are dropped.

@@ -16,10 +16,10 @@ package info
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
+	"github.com/linkdata/deadlock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -30,9 +30,9 @@ import (
 	"github.com/livekit/egress/pkg/config"
 )
 
-// serverDeadlineExceeded is what the client sees when the IOInfo server gives up on its own deadline,
+// errServerDeadlineExceeded is what the client sees when the IOInfo server gives up on its own deadline,
 // e.g. while waiting for a database connection.
-var serverDeadlineExceeded = psrpc.NewErrorf(psrpc.DeadlineExceeded, "deadline exceeded")
+var errServerDeadlineExceeded = psrpc.NewErrorf(psrpc.DeadlineExceeded, "deadline exceeded")
 
 type fakeIOInfo struct {
 	rpc.IOInfoClient
@@ -40,10 +40,11 @@ type fakeIOInfo struct {
 	// before runs ahead of each attempt, outside the lock, so a test can hold an attempt in flight
 	before func(info *livekit.EgressInfo)
 
-	mu       sync.Mutex
-	fail     func(info *livekit.EgressInfo, attempt int) error
-	attempts map[string]int
-	received []*livekit.EgressInfo
+	mu        deadlock.Mutex
+	createErr error
+	fail      func(info *livekit.EgressInfo, attempt int) error
+	attempts  map[string]int
+	received  []*livekit.EgressInfo
 }
 
 func newFakeIOInfo(fail func(info *livekit.EgressInfo, attempt int) error) *fakeIOInfo {
@@ -51,6 +52,21 @@ func newFakeIOInfo(fail func(info *livekit.EgressInfo, attempt int) error) *fake
 		fail:     fail,
 		attempts: make(map[string]int),
 	}
+}
+
+func (f *fakeIOInfo) CreateEgress(_ context.Context, _ *livekit.EgressInfo, _ ...psrpc.RequestOption) (*emptypb.Empty, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (f *fakeIOInfo) setCreateErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.createErr = err
 }
 
 func (f *fakeIOInfo) UpdateEgress(_ context.Context, info *livekit.EgressInfo, _ ...psrpc.RequestOption) (*emptypb.Empty, error) {
@@ -108,7 +124,7 @@ func egressInfo(egressID string, status livekit.EgressStatus) *livekit.EgressInf
 func TestUpdateEgressRetriesServerDeadlineExceeded(t *testing.T) {
 	io := newFakeIOInfo(func(_ *livekit.EgressInfo, attempt int) error {
 		if attempt <= 2 {
-			return serverDeadlineExceeded
+			return errServerDeadlineExceeded
 		}
 		return nil
 	})
@@ -141,7 +157,7 @@ func TestNonRetryableErrorDropsUpdate(t *testing.T) {
 func TestAbandonedUpdateDoesNotBlockNextUpdate(t *testing.T) {
 	io := newFakeIOInfo(func(info *livekit.EgressInfo, _ int) error {
 		if info.Status == livekit.EgressStatus_EGRESS_ACTIVE {
-			return serverDeadlineExceeded
+			return errServerDeadlineExceeded
 		}
 		return nil
 	})
@@ -165,7 +181,7 @@ func TestAbandonedUpdateDoesNotBlockNextUpdate(t *testing.T) {
 func TestFailingUpdateDoesNotBlockOtherEgresses(t *testing.T) {
 	io := newFakeIOInfo(func(info *livekit.EgressInfo, _ int) error {
 		if info.EgressId == "EG_A" {
-			return serverDeadlineExceeded
+			return errServerDeadlineExceeded
 		}
 		return nil
 	})
@@ -190,7 +206,7 @@ func TestFailingUpdateDoesNotBlockOtherEgresses(t *testing.T) {
 func TestUpdatesQueuedBehindRetryAreDeliveredInOrder(t *testing.T) {
 	io := newFakeIOInfo(func(_ *livekit.EgressInfo, attempt int) error {
 		if attempt == 1 {
-			return serverDeadlineExceeded
+			return errServerDeadlineExceeded
 		}
 		return nil
 	})
@@ -247,7 +263,7 @@ func TestUpdatesQueuedWhileInFlightAreAllDelivered(t *testing.T) {
 func TestDrainWaitsForPendingRetry(t *testing.T) {
 	io := newFakeIOInfo(func(_ *livekit.EgressInfo, attempt int) error {
 		if attempt == 1 {
-			return serverDeadlineExceeded
+			return errServerDeadlineExceeded
 		}
 		return nil
 	})
@@ -259,5 +275,73 @@ func TestDrainWaitsForPendingRetry(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 
 	c.Drain()
+	require.Equal(t, []livekit.EgressStatus{livekit.EgressStatus_EGRESS_COMPLETE}, io.receivedFor("EG_A"))
+}
+
+func TestFailedCreateDiscardsLaterUpdates(t *testing.T) {
+	io := newFakeIOInfo(func(_ *livekit.EgressInfo, _ int) error {
+		return nil
+	})
+	io.setCreateErr(errServerDeadlineExceeded)
+	c := newTestReporter(io, 1)
+
+	require.Error(t, <-c.CreateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_STARTING)))
+
+	// the aborted handler reports FAILED, which is never sent
+	require.NoError(t, c.UpdateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_FAILED)))
+	time.Sleep(2 * initialBackoff)
+	require.Zero(t, io.attemptsFor("EG_A"))
+}
+
+func TestLaunchFailureAfterCreateIsRetried(t *testing.T) {
+	io := newFakeIOInfo(func(_ *livekit.EgressInfo, attempt int) error {
+		if attempt == 1 {
+			return errServerDeadlineExceeded
+		}
+		return nil
+	})
+	c := newTestReporter(io, 1)
+
+	require.NoError(t, <-c.CreateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_STARTING)))
+	require.NoError(t, c.UpdateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_FAILED)))
+
+	require.Eventually(t, func() bool {
+		return len(io.receivedFor("EG_A")) == 1
+	}, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, []livekit.EgressStatus{livekit.EgressStatus_EGRESS_FAILED}, io.receivedFor("EG_A"))
+}
+
+func TestUpdateAfterSessionEndedForFailedCreateIsDiscarded(t *testing.T) {
+	io := newFakeIOInfo(func(_ *livekit.EgressInfo, _ int) error {
+		return nil
+	})
+	io.setCreateErr(errServerDeadlineExceeded)
+	c := newTestReporter(io, 1)
+
+	require.Error(t, <-c.CreateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_STARTING)))
+
+	// a HandlerFinished in flight when the handler died abnormally reports after SessionEnded
+	c.SessionEnded(context.Background(), "EG_A")
+	require.NoError(t, c.UpdateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_FAILED)))
+	time.Sleep(2 * initialBackoff)
+	require.Zero(t, io.attemptsFor("EG_A"))
+}
+
+func TestNewCreateClearsFailedCreateMark(t *testing.T) {
+	io := newFakeIOInfo(func(_ *livekit.EgressInfo, _ int) error {
+		return nil
+	})
+	io.setCreateErr(errServerDeadlineExceeded)
+	c := newTestReporter(io, 1)
+
+	require.Error(t, <-c.CreateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_STARTING)))
+
+	io.setCreateErr(nil)
+	require.NoError(t, <-c.CreateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_STARTING)))
+	require.NoError(t, c.UpdateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_COMPLETE)))
+
+	require.Eventually(t, func() bool {
+		return len(io.receivedFor("EG_A")) == 1
+	}, 5*time.Second, 10*time.Millisecond)
 	require.Equal(t, []livekit.EgressStatus{livekit.EgressStatus_EGRESS_COMPLETE}, io.receivedFor("EG_A"))
 }
