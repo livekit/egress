@@ -159,7 +159,7 @@ func newIOUpdateFailures(conf *config.BaseConfig) *prometheus.CounterVec {
 		Namespace:   "livekit",
 		Subsystem:   "egress",
 		Name:        "io_update_failures_total",
-		Help:        "Total number of failed UpdateEgress calls, by outcome",
+		Help:        "Total number of UpdateEgress failures and undelivered updates, by outcome",
 		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
 	}, []string{"outcome"})
 }
@@ -184,6 +184,7 @@ func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.Egress
 			logger.Errorw("failed to create egress", err, "egressID", info.EgressId)
 			// marked before errChan is sent, since the caller aborts the handler as soon as it reads it
 			w.markCreateFailed(info.EgressId)
+			c.ioUpdateFailures.WithLabelValues(ioUpdateUnowned).Add(float64(len(e.updates)))
 		case len(e.updates) == 0:
 		case existing != nil:
 			// an earlier instance of this egress still has updates scheduled; these go after them
