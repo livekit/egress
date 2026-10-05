@@ -155,7 +155,7 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 	p := &PipelineConfig{
 		BaseConfig: BaseConfig{
 			Logging: &logger.Config{
-				Level: "info",
+				Level: defaultLogLevel,
 			},
 		},
 		Outputs: make(map[types.EgressType][]OutputConfig),
