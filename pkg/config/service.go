@@ -113,7 +113,7 @@ func NewServiceConfig(confString string) (*ServiceConfig, error) {
 	conf := &ServiceConfig{
 		BaseConfig: BaseConfig{
 			Logging: &logger.Config{
-				Level: defaultLogLevel,
+				Level: logLevelInfo,
 			},
 			ApiKey:    os.Getenv("LIVEKIT_API_KEY"),
 			ApiSecret: os.Getenv("LIVEKIT_API_SECRET"),
