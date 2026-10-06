@@ -181,10 +181,10 @@ func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.Egress
 		if err != nil {
 			logger.Errorw("failed to create egress", err, "egressID", info.EgressId)
 			// marked before errChan is sent, since the caller aborts the handler as soon as it reads it
-			w.markCreateFailed(info.EgressId)
+			w.markCreateFailedLocked(info.EgressId)
 			c.ioUpdateFailures.WithLabelValues(ioUpdateUnowned).Add(float64(len(e.updates)))
 		} else if len(e.updates) > 0 {
-			err = w.enqueue(info.EgressId, e.updates...)
+			err = w.enqueueLocked(info.EgressId, e.updates...)
 		}
 		w.mu.Unlock()
 
@@ -218,7 +218,7 @@ func (c *sessionReporter) UpdateEgress(ctx context.Context, info *livekit.Egress
 		return nil
 	}
 
-	return w.enqueue(info.EgressId, u)
+	return w.enqueueLocked(info.EgressId, u)
 }
 
 // Unsent updates are released as they are delivered or given up, and create-failure marks outlive
@@ -268,8 +268,8 @@ func (c *sessionReporter) getWorker(egressID string) *worker {
 	return c.workers[int(h.Sum32())%len(c.workers)]
 }
 
-// markCreateFailed records a failed CreateEgress and drops marks older than createFailedTTL.
-func (w *worker) markCreateFailed(egressID string) {
+// markCreateFailedLocked records a failed CreateEgress and drops marks older than createFailedTTL.
+func (w *worker) markCreateFailedLocked(egressID string) {
 	now := time.Now()
 	for id, at := range w.createFailed {
 		if now.Sub(at) > createFailedTTL {
@@ -279,18 +279,18 @@ func (w *worker) markCreateFailed(egressID string) {
 	w.createFailed[egressID] = now
 }
 
-// enqueue appends updates to the egress' pending entry, scheduling it if it had none.
-func (w *worker) enqueue(egressID string, updates ...*update) error {
+// enqueueLocked appends updates to the egress' pending entry, scheduling it if it had none.
+func (w *worker) enqueueLocked(egressID string, updates ...*update) error {
 	if e := w.pending[egressID]; e != nil {
 		e.updates = append(e.updates, updates...)
 		return nil
 	}
 	w.pending[egressID] = &egressUpdates{updates: updates}
-	return w.schedule(egressID)
+	return w.scheduleLocked(egressID)
 }
 
-// schedule queues an egress whose entry is in pending; on a full queue the entry and its updates are dropped.
-func (w *worker) schedule(egressID string) error {
+// scheduleLocked queues an egress whose entry is in pending; on a full queue the entry and its updates are dropped.
+func (w *worker) scheduleLocked(egressID string) error {
 	select {
 	case w.queue <- egressID:
 		return nil
@@ -355,7 +355,7 @@ func (c *sessionReporter) advance(w *worker, egressID string, e *egressUpdates) 
 		return
 	}
 
-	c.scheduleOrDrop(w, egressID, e)
+	c.scheduleOrDropLocked(w, egressID, e)
 }
 
 // retryLater schedules the egress to be queued again after a backoff, so the worker moves on to
@@ -398,13 +398,13 @@ func (c *sessionReporter) requeue(w *worker, egressID string) {
 	defer w.mu.Unlock()
 
 	if e := w.pending[egressID]; e != nil {
-		c.scheduleOrDrop(w, egressID, e)
+		c.scheduleOrDropLocked(w, egressID, e)
 	}
 }
 
-func (c *sessionReporter) scheduleOrDrop(w *worker, egressID string, e *egressUpdates) {
+func (c *sessionReporter) scheduleOrDropLocked(w *worker, egressID string, e *egressUpdates) {
 	dropped := len(e.updates)
-	if err := w.schedule(egressID); err != nil {
+	if err := w.scheduleLocked(egressID); err != nil {
 		c.ioUpdateFailures.WithLabelValues(ioUpdateAbandoned).Add(float64(dropped))
 		logger.Errorw("dropping egress updates", err, "egressID", egressID, "count", dropped)
 	}
