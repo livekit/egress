@@ -100,9 +100,8 @@ type worker struct {
 	creating map[string]*egressUpdates
 	// pending holds an entry for every egress that is queued, in flight or waiting out a retry backoff
 	pending map[string]*egressUpdates
-	// createFailed marks egresses whose CreateEgress call failed; their updates are discarded. A mark outlives
-	// SessionEnded, since a HandlerFinished in flight at exit still reports after it, and is cleared by a new
-	// CreateEgress or after createFailedTTL (a straggler arriving after a same-node relaunch is still sent).
+	// createFailed holds egresses whose CreateEgress failed; their updates are dropped until a new
+	// CreateEgress or createFailedTTL (kept past SessionEnded, a late HandlerFinished can still report)
 	createFailed map[string]time.Time
 	queue        chan string
 }
