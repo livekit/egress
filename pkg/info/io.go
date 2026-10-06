@@ -255,7 +255,6 @@ func (c *sessionReporter) runWorker(w *worker) {
 	}
 }
 
-// idle reports whether the worker has no egress queued, in flight or waiting out a retry backoff.
 func (w *worker) idle() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
