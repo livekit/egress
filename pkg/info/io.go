@@ -169,7 +169,7 @@ func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.Egress
 
 	w.mu.Lock()
 	w.creating[info.EgressId] = e
-	delete(w.createFailed, info.EgressId)
+	w.sweepCreateFailedLocked(info.EgressId)
 	w.mu.Unlock()
 
 	errChan := make(chan error, 1)
@@ -268,15 +268,19 @@ func (c *sessionReporter) getWorker(egressID string) *worker {
 	return c.workers[int(h.Sum32())%len(c.workers)]
 }
 
-// markCreateFailedLocked records a failed CreateEgress and drops marks older than createFailedTTL.
 func (w *worker) markCreateFailedLocked(egressID string) {
+	w.createFailed[egressID] = time.Now()
+}
+
+// sweepCreateFailedLocked clears the mark of an egress being created again and marks older than createFailedTTL.
+func (w *worker) sweepCreateFailedLocked(egressID string) {
+	delete(w.createFailed, egressID)
 	now := time.Now()
 	for id, at := range w.createFailed {
 		if now.Sub(at) > createFailedTTL {
 			delete(w.createFailed, id)
 		}
 	}
-	w.createFailed[egressID] = now
 }
 
 // enqueueLocked appends updates to the egress' pending entry, scheduling it if it had none.

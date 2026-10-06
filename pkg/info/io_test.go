@@ -399,3 +399,23 @@ func TestCreateReportedAsFailedOnFullQueueDiscardsLaterUpdates(t *testing.T) {
 	require.False(t, pending)
 	require.Zero(t, io.attemptsFor("EG_A"))
 }
+
+func TestCreateSweepsExpiredFailedCreateMarks(t *testing.T) {
+	io := newFakeIOInfo(func(_ *livekit.EgressInfo, _ int) error {
+		return nil
+	})
+	c := newTestReporter(io, 1)
+	w := c.workers[0]
+
+	w.mu.Lock()
+	w.createFailed["EG_OLD"] = time.Now().Add(-2 * createFailedTTL)
+	w.mu.Unlock()
+
+	// any create sweeps marks past createFailedTTL, so updates for EG_OLD are sent again
+	require.NoError(t, <-c.CreateEgress(context.Background(), egressInfo("EG_NEW", livekit.EgressStatus_EGRESS_STARTING)))
+	require.NoError(t, c.UpdateEgress(context.Background(), egressInfo("EG_OLD", livekit.EgressStatus_EGRESS_COMPLETE)))
+
+	require.Eventually(t, func() bool {
+		return len(io.receivedFor("EG_OLD")) == 1
+	}, 5*time.Second, 10*time.Millisecond)
+}
