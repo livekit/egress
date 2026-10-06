@@ -110,7 +110,8 @@ type worker struct {
 	queue        chan string
 }
 
-// egressUpdates holds one egress' unsent updates, oldest first; every update is sent, none replace another.
+// egressUpdates holds one egress' unsent updates, oldest first; below maxPendingUpdates every update is sent,
+// above it a same-status update replaces the last unsent one.
 type egressUpdates struct {
 	updates []*update
 	backoff time.Duration
