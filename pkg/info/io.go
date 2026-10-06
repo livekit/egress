@@ -179,19 +179,13 @@ func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.Egress
 
 		w.mu.Lock()
 		delete(w.creating, info.EgressId)
-		switch existing := w.pending[info.EgressId]; {
-		case err != nil:
+		if err != nil {
 			logger.Errorw("failed to create egress", err, "egressID", info.EgressId)
 			// marked before errChan is sent, since the caller aborts the handler as soon as it reads it
 			w.markCreateFailed(info.EgressId)
 			c.ioUpdateFailures.WithLabelValues(ioUpdateUnowned).Add(float64(len(e.updates)))
-		case len(e.updates) == 0:
-		case existing != nil:
-			// an earlier instance of this egress still has updates scheduled; these go after them
-			existing.updates = append(existing.updates, e.updates...)
-		default:
-			w.pending[info.EgressId] = e
-			err = w.schedule(info.EgressId)
+		} else if len(e.updates) > 0 {
+			err = w.enqueue(info.EgressId, e.updates...)
 		}
 		w.mu.Unlock()
 
@@ -224,13 +218,8 @@ func (c *sessionReporter) UpdateEgress(ctx context.Context, info *livekit.Egress
 		e.updates = append(e.updates, u)
 		return nil
 	}
-	if e := w.pending[info.EgressId]; e != nil {
-		e.updates = append(e.updates, u)
-		return nil
-	}
 
-	w.pending[info.EgressId] = &egressUpdates{updates: []*update{u}}
-	return w.schedule(info.EgressId)
+	return w.enqueue(info.EgressId, u)
 }
 
 // Unsent updates are released as they are delivered or given up, and create-failure marks outlive
@@ -289,6 +278,16 @@ func (w *worker) markCreateFailed(egressID string) {
 		}
 	}
 	w.createFailed[egressID] = now
+}
+
+// enqueue appends updates to the egress' pending entry, scheduling it if it had none.
+func (w *worker) enqueue(egressID string, updates ...*update) error {
+	if e := w.pending[egressID]; e != nil {
+		e.updates = append(e.updates, updates...)
+		return nil
+	}
+	w.pending[egressID] = &egressUpdates{updates: updates}
+	return w.schedule(egressID)
 }
 
 // schedule queues an egress whose entry is in pending; on a full queue the entry and its updates are dropped.
