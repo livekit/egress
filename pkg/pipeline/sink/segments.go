@@ -245,7 +245,7 @@ func (s *SegmentSink) initSegmentPath() string {
 func (s *SegmentSink) uploadInitSegment() error {
 	storagePath := path.Join(s.StorageDir, s.InitSegmentFilename)
 
-	location, size, err := s.Upload(s.initSegmentPath(), storagePath, types.OutputTypeMP4, false)
+	location, size, backup, err := s.UploadWithDestination(s.initSegmentPath(), storagePath, types.OutputTypeMP4, false)
 	if err != nil {
 		return err
 	}
@@ -255,7 +255,7 @@ func (s *SegmentSink) uploadInitSegment() error {
 	if s.manifestPlaylist != nil {
 		s.manifestPlaylist.SetInitSegment(storagePath, location)
 	}
-	s.initSegmentBackedUp = s.conf.Info.BackupStorageUsed
+	s.initSegmentBackedUp = backup
 	s.infoLock.Unlock()
 
 	return nil
@@ -411,7 +411,7 @@ func (s *SegmentSink) ensureInitSegmentInBackup() error {
 	}
 
 	s.infoLock.Lock()
-	pending := s.initSegmentWritten && !s.initSegmentBackedUp && s.conf.Info.BackupStorageUsed
+	pending := s.initSegmentWritten && !s.initSegmentBackedUp && s.PrimaryFailed()
 	s.infoLock.Unlock()
 
 	if !pending {
@@ -421,6 +421,10 @@ func (s *SegmentSink) ensureInitSegmentInBackup() error {
 }
 
 func (s *SegmentSink) uploadLivePlaylist() error {
+	if err := s.ensureInitSegmentInBackup(); err != nil {
+		return err
+	}
+
 	liveLocalPath := path.Join(s.LocalDir, s.LivePlaylistFilename)
 	liveStoragePath := path.Join(s.StorageDir, s.LivePlaylistFilename)
 	livePlaylistLocation, _, err := s.Upload(liveLocalPath, liveStoragePath, s.OutputType, false)
