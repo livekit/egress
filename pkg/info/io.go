@@ -199,7 +199,6 @@ func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.Egress
 		}
 		if err != nil {
 			logger.Errorw("failed to create egress", err, "egressID", info.EgressId)
-			// any error fails the start and aborts the handler, so mark before errChan is sent
 			w.markCreateFailedLocked(info.EgressId)
 			c.ioUpdateFailures.WithLabelValues(ioUpdateUnowned).Add(float64(len(e.updates)))
 		}
