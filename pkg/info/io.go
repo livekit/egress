@@ -43,6 +43,9 @@ const (
 
 	// createFailedTTL outlives an aborted handler, including one whose pipeline is slow to stop
 	createFailedTTL = time.Hour
+
+	// beyond maxPendingUpdates, an update replaces the last unsent one when both have the same status
+	maxPendingUpdates = 100
 )
 
 // UpdateEgress failure outcomes (livekit_egress_io_update_failures_total)
@@ -51,6 +54,7 @@ const (
 	ioUpdateAbandoned = "abandoned"
 	ioUpdateFailed    = "failed"
 	ioUpdateUnowned   = "unowned"
+	ioUpdateCoalesced = "coalesced"
 )
 
 type SessionReporter interface {
@@ -110,6 +114,17 @@ type worker struct {
 type egressUpdates struct {
 	updates []*update
 	backoff time.Duration
+}
+
+// add appends u, or replaces the last update when over maxPendingUpdates and the status matches;
+// it reports whether it replaced one. The first update is never replaced, since it may be in flight.
+func (e *egressUpdates) add(u *update) bool {
+	if n := len(e.updates); n >= maxPendingUpdates && e.updates[n-1].info.Status == u.info.Status {
+		e.updates[n-1] = u
+		return true
+	}
+	e.updates = append(e.updates, u)
+	return false
 }
 
 type update struct {
@@ -179,7 +194,7 @@ func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.Egress
 		w.mu.Lock()
 		delete(w.creating, info.EgressId)
 		if err == nil && len(e.updates) > 0 {
-			err = w.enqueueLocked(info.EgressId, e.updates...)
+			err = c.enqueueLocked(w, info.EgressId, e.updates...)
 		}
 		if err != nil {
 			logger.Errorw("failed to create egress", err, "egressID", info.EgressId)
@@ -215,11 +230,13 @@ func (c *sessionReporter) UpdateEgress(ctx context.Context, info *livekit.Egress
 		return nil
 	}
 	if e := w.creating[info.EgressId]; e != nil {
-		e.updates = append(e.updates, u)
+		if e.add(u) {
+			c.ioUpdateFailures.WithLabelValues(ioUpdateCoalesced).Inc()
+		}
 		return nil
 	}
 
-	return w.enqueueLocked(info.EgressId, u)
+	return c.enqueueLocked(w, info.EgressId, u)
 }
 
 // Unsent updates are released as they are delivered or given up, and create-failure marks outlive
@@ -283,10 +300,14 @@ func (w *worker) sweepCreateFailedLocked(egressID string) {
 	}
 }
 
-// enqueueLocked appends updates to the egress' pending entry, scheduling it if it had none.
-func (w *worker) enqueueLocked(egressID string, updates ...*update) error {
+// enqueueLocked adds updates to the egress' pending entry, scheduling it if it had none.
+func (c *sessionReporter) enqueueLocked(w *worker, egressID string, updates ...*update) error {
 	if e := w.pending[egressID]; e != nil {
-		e.updates = append(e.updates, updates...)
+		for _, u := range updates {
+			if e.add(u) {
+				c.ioUpdateFailures.WithLabelValues(ioUpdateCoalesced).Inc()
+			}
+		}
 		return nil
 	}
 	w.pending[egressID] = &egressUpdates{updates: updates}

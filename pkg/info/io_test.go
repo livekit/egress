@@ -419,3 +419,41 @@ func TestCreateSweepsExpiredFailedCreateMarks(t *testing.T) {
 		return len(io.receivedFor("EG_OLD")) == 1
 	}, 5*time.Second, 10*time.Millisecond)
 }
+
+func TestUpdatesBeyondCapCoalesceWithinStatus(t *testing.T) {
+	io := newFakeIOInfo(func(_ *livekit.EgressInfo, attempt int) error {
+		if attempt == 1 {
+			return errServerDeadlineExceeded
+		}
+		return nil
+	})
+	c := newTestReporter(io, 1)
+
+	withDetails := func(status livekit.EgressStatus, details string) *livekit.EgressInfo {
+		info := egressInfo("EG_A", status)
+		info.Details = details
+		return info
+	}
+
+	require.NoError(t, c.UpdateEgress(context.Background(), withDetails(livekit.EgressStatus_EGRESS_ACTIVE, "0")))
+	require.Eventually(t, func() bool {
+		return io.attemptsFor("EG_A") == 1
+	}, time.Second, 10*time.Millisecond)
+
+	// queued while the first update waits out its backoff
+	for i := 1; i < maxPendingUpdates+50; i++ {
+		require.NoError(t, c.UpdateEgress(context.Background(), withDetails(livekit.EgressStatus_EGRESS_ACTIVE, fmt.Sprint(i))))
+	}
+	require.NoError(t, c.UpdateEgress(context.Background(), withDetails(livekit.EgressStatus_EGRESS_COMPLETE, "final")))
+
+	// updates past the cap replace the last ACTIVE, and the status change is still delivered
+	require.Eventually(t, func() bool {
+		return len(io.receivedFor("EG_A")) == maxPendingUpdates+1
+	}, 5*time.Second, 10*time.Millisecond)
+
+	io.mu.Lock()
+	defer io.mu.Unlock()
+	n := len(io.received)
+	require.Equal(t, fmt.Sprint(maxPendingUpdates+49), io.received[n-2].Details)
+	require.Equal(t, livekit.EgressStatus_EGRESS_COMPLETE, io.received[n-1].Status)
+}
