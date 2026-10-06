@@ -446,15 +446,15 @@ func (m *Monitor) UpdatePID(egressID string, pid int) {
 func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Add(1)
+		m.requestGauge.With(prometheus.Labels{labelType: types.RequestTypeRoomComposite}).Add(1)
 	case *rpc.StartEgressRequest_Web:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Add(1)
+		m.requestGauge.With(prometheus.Labels{labelType: types.RequestTypeWeb}).Add(1)
 	case *rpc.StartEgressRequest_Participant:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeParticipant}).Add(1)
+		m.requestGauge.With(prometheus.Labels{labelType: types.RequestTypeParticipant}).Add(1)
 	case *rpc.StartEgressRequest_TrackComposite:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Add(1)
+		m.requestGauge.With(prometheus.Labels{labelType: types.RequestTypeTrackComposite}).Add(1)
 	case *rpc.StartEgressRequest_Track:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrack}).Add(1)
+		m.requestGauge.With(prometheus.Labels{labelType: types.RequestTypeTrack}).Add(1)
 	case *rpc.StartEgressRequest_Replay:
 		m.egressStarted(r.Replay)
 	case *rpc.StartEgressRequest_Egress:
@@ -463,7 +463,7 @@ func (m *Monitor) EgressStarted(req *rpc.StartEgressRequest) {
 }
 
 func (m *Monitor) egressStarted(request v2Request) {
-	m.requestGauge.With(prometheus.Labels{"type": requestTypeFromInterface(request)}).Add(1)
+	m.requestGauge.With(prometheus.Labels{labelType: requestTypeFromInterface(request)}).Add(1)
 }
 
 func (m *Monitor) EgressAborted(req *rpc.StartEgressRequest) {
@@ -504,19 +504,19 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64, in
 
 	switch r := req.Request.(type) {
 	case *rpc.StartEgressRequest_RoomComposite:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeRoomComposite}).Sub(1)
+		m.requestGauge.With(prometheus.Labels{labelType: types.RequestTypeRoomComposite}).Sub(1)
 		if countedAsWeb {
 			m.webRequests.Dec()
 		}
 	case *rpc.StartEgressRequest_Web:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeWeb}).Sub(1)
+		m.requestGauge.With(prometheus.Labels{labelType: types.RequestTypeWeb}).Sub(1)
 		m.webRequests.Dec()
 	case *rpc.StartEgressRequest_Participant:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeParticipant}).Sub(1)
+		m.requestGauge.With(prometheus.Labels{labelType: types.RequestTypeParticipant}).Sub(1)
 	case *rpc.StartEgressRequest_TrackComposite:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrackComposite}).Sub(1)
+		m.requestGauge.With(prometheus.Labels{labelType: types.RequestTypeTrackComposite}).Sub(1)
 	case *rpc.StartEgressRequest_Track:
-		m.requestGauge.With(prometheus.Labels{"type": types.RequestTypeTrack}).Sub(1)
+		m.requestGauge.With(prometheus.Labels{labelType: types.RequestTypeTrack}).Sub(1)
 	case *rpc.StartEgressRequest_Replay:
 		m.egressEnded(r.Replay, countedAsWeb)
 	case *rpc.StartEgressRequest_Egress:
@@ -537,7 +537,7 @@ func (m *Monitor) EgressEnded(req *rpc.StartEgressRequest) (float64, float64, in
 }
 
 func (m *Monitor) egressEnded(request v2Request, countedAsWeb bool) {
-	m.requestGauge.With(prometheus.Labels{"type": requestTypeFromInterface(request)}).Sub(1)
+	m.requestGauge.With(prometheus.Labels{labelType: requestTypeFromInterface(request)}).Sub(1)
 
 	switch {
 	case request.GetTemplate() != nil:

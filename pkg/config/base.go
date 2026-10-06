@@ -28,7 +28,14 @@ import (
 	"github.com/livekit/egress/pkg/types"
 )
 
-const TmpDir = "/home/egress/tmp"
+const (
+	TmpDir = "/home/egress/tmp"
+
+	logLevelDebug = "debug"
+	logLevelInfo  = "info"
+	logLevelWarn  = "warn"
+	logLevelError = "error"
+)
 
 type BaseConfig struct {
 	NodeID string // do not supply - will be overwritten
@@ -117,11 +124,11 @@ func (c *BaseConfig) InitLogger(serviceName string, values ...interface{}) error
 	if !exists {
 		var gstDebug []string
 		switch c.Logging.Level {
-		case "debug":
+		case logLevelDebug:
 			gstDebug = []string{"3"}
-		case "info", "warn":
+		case logLevelInfo, logLevelWarn:
 			gstDebug = []string{"2"}
-		case "error":
+		case logLevelError:
 			gstDebug = []string{"1"}
 		}
 		gstDebug = append(gstDebug,
