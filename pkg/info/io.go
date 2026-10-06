@@ -409,7 +409,6 @@ func (c *sessionReporter) scheduleOrDropLocked(w *worker, egressID string, e *eg
 	}
 }
 
-// jitter spreads retries over [d/2, d) so egresses that failed together do not retry together.
 func jitter(d time.Duration) time.Duration {
 	return d/2 + rand.N(d/2)
 }
