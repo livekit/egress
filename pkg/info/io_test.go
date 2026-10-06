@@ -16,6 +16,7 @@ package info
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -40,6 +41,9 @@ type fakeIOInfo struct {
 	// before runs ahead of each attempt, outside the lock, so a test can hold an attempt in flight
 	before func(info *livekit.EgressInfo)
 
+	// createBefore runs ahead of CreateEgress, outside the lock, so a test can hold a create in flight
+	createBefore func()
+
 	mu        deadlock.Mutex
 	createErr error
 	fail      func(info *livekit.EgressInfo, attempt int) error
@@ -55,6 +59,10 @@ func newFakeIOInfo(fail func(info *livekit.EgressInfo, attempt int) error) *fake
 }
 
 func (f *fakeIOInfo) CreateEgress(_ context.Context, _ *livekit.EgressInfo, _ ...psrpc.RequestOption) (*emptypb.Empty, error) {
+	if f.createBefore != nil {
+		f.createBefore()
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.createErr != nil {
@@ -344,4 +352,50 @@ func TestNewCreateClearsFailedCreateMark(t *testing.T) {
 		return len(io.receivedFor("EG_A")) == 1
 	}, 5*time.Second, 10*time.Millisecond)
 	require.Equal(t, []livekit.EgressStatus{livekit.EgressStatus_EGRESS_COMPLETE}, io.receivedFor("EG_A"))
+}
+
+func TestCreateReportedAsFailedOnFullQueueDiscardsLaterUpdates(t *testing.T) {
+	blockInFlight := make(chan struct{})
+	releaseBlock := make(chan struct{})
+	t.Cleanup(func() { close(releaseBlock) })
+	createInFlight := make(chan struct{})
+	releaseCreate := make(chan struct{})
+
+	io := newFakeIOInfo(func(_ *livekit.EgressInfo, _ int) error {
+		return nil
+	})
+	io.before = func(info *livekit.EgressInfo) {
+		if info.EgressId == "EG_BLOCK" {
+			close(blockInFlight)
+			<-releaseBlock
+		}
+	}
+	io.createBefore = func() {
+		close(createInFlight)
+		<-releaseCreate
+	}
+	c := newTestReporter(io, 1)
+	w := c.workers[0]
+
+	// hold the worker and fill its queue
+	require.NoError(t, c.UpdateEgress(context.Background(), egressInfo("EG_BLOCK", livekit.EgressStatus_EGRESS_ACTIVE)))
+	<-blockInFlight
+	for i := 0; i < cap(w.queue); i++ {
+		w.queue <- fmt.Sprintf("EG_FILL_%d", i)
+	}
+
+	// the create succeeds, but its buffered update cannot be queued, so the start is reported as failed
+	errChan := c.CreateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_STARTING))
+	<-createInFlight
+	require.NoError(t, c.UpdateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_ACTIVE)))
+	close(releaseCreate)
+	require.Error(t, <-errChan)
+
+	// the aborted handler's FAILED is discarded
+	require.NoError(t, c.UpdateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_FAILED)))
+	w.mu.Lock()
+	_, pending := w.pending["EG_A"]
+	w.mu.Unlock()
+	require.False(t, pending)
+	require.Zero(t, io.attemptsFor("EG_A"))
 }

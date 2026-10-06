@@ -178,13 +178,14 @@ func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.Egress
 
 		w.mu.Lock()
 		delete(w.creating, info.EgressId)
+		if err == nil && len(e.updates) > 0 {
+			err = w.enqueueLocked(info.EgressId, e.updates...)
+		}
 		if err != nil {
 			logger.Errorw("failed to create egress", err, "egressID", info.EgressId)
-			// marked before errChan is sent, since the caller aborts the handler as soon as it reads it
+			// any error fails the start and aborts the handler, so mark before errChan is sent
 			w.markCreateFailedLocked(info.EgressId)
 			c.ioUpdateFailures.WithLabelValues(ioUpdateUnowned).Add(float64(len(e.updates)))
-		} else if len(e.updates) > 0 {
-			err = w.enqueueLocked(info.EgressId, e.updates...)
 		}
 		w.mu.Unlock()
 
