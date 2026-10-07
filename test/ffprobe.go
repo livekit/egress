@@ -584,8 +584,11 @@ func runFFmpegFilter(input, filter, level string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
+	// Single-threaded decode: ffmpeg 6.1 (Ubuntu 24.04) aborts with
+	// "Assertion pkt failed at ffmpeg_dec.c" on threaded libdav1d (AV1) input.
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-v", level,
+		"-threads", "1",
 		"-i", input,
 		"-vf", filter,
 		"-f", "null", "-",

@@ -749,9 +749,10 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		}
 
 		// dav1d decodes several times faster than libaom; images without the plugin use av1dec.
-		av1Decoder := "av1dec"
-		if gst.Find("dav1ddec") != nil {
-			av1Decoder = "dav1ddec"
+		av1Decoder := "dav1ddec"
+		if gst.Find(av1Decoder) == nil {
+			av1Decoder = "av1dec"
+			logger.Warnw("dav1ddec not available, decoding AV1 with libaom av1dec", nil, "trackID", ts.TrackID)
 		}
 		av1Dec, err := gst.NewElement(av1Decoder)
 		if err != nil {
