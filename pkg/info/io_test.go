@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/linkdata/deadlock"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -390,6 +391,7 @@ func TestCreateReportedAsFailedOnFullQueueDiscardsLaterUpdates(t *testing.T) {
 	require.NoError(t, c.UpdateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_ACTIVE)))
 	close(releaseCreate)
 	require.Error(t, <-errChan)
+	require.Equal(t, 1.0, testutil.ToFloat64(c.ioUpdateFailures.WithLabelValues(ioUpdateAbandoned)))
 
 	// the aborted handler's FAILED is discarded
 	require.NoError(t, c.UpdateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_FAILED)))
@@ -398,6 +400,7 @@ func TestCreateReportedAsFailedOnFullQueueDiscardsLaterUpdates(t *testing.T) {
 	w.mu.Unlock()
 	require.False(t, pending)
 	require.Zero(t, io.attemptsFor("EG_A"))
+	require.Equal(t, 1.0, testutil.ToFloat64(c.ioUpdateFailures.WithLabelValues(ioUpdateUnowned)))
 }
 
 func TestCreateSweepsExpiredFailedCreateMarks(t *testing.T) {
