@@ -211,8 +211,16 @@ func buildGstreamer(cmd string) error {
 		return err
 	}
 
+	// The base stage downloads upstream sources, so it needs the upstream release without the
+	// image revision suffix; the later stages only use the value in FROM lines and take the full tag.
+	upstreamVersion, _, _ := strings.Cut(gstVersion, "-")
+
 	commands := []string{}
 	for _, build := range []string{"base", "dev", "prod", "prod-rs"} {
+		buildArgVersion := gstVersion
+		if build == "base" {
+			buildArgVersion = upstreamVersion
+		}
 		commands = append(commands, fmt.Sprintf("%s"+
 			" --build-arg GSTREAMER_VERSION=%s"+
 			" --build-arg LIBNICE_VERSION=%s"+
@@ -220,7 +228,7 @@ func buildGstreamer(cmd string) error {
 			" -t livekit/gstreamer:%s-%s-%s"+
 			" -f build/gstreamer/Dockerfile-%s"+
 			" ./build/gstreamer",
-			cmd, gstVersion, libniceVersion, gstVersion, build, gstVersion, build, runtime.GOARCH, build,
+			cmd, buildArgVersion, libniceVersion, gstVersion, build, gstVersion, build, runtime.GOARCH, build,
 		))
 	}
 
