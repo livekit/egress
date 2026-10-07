@@ -758,6 +758,14 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		if err != nil {
 			return nil, errors.ErrGstPipelineError(err)
 		}
+		if av1Decoder == "dav1ddec" && b.conf.Live {
+			// A live pipeline caps dav1d at one frame in flight, so threads beyond
+			// tile parallelism add CPU without throughput; the default spawns one per
+			// logical core. Non-live pipelines keep the default for faster-than-realtime.
+			if err = av1Dec.SetProperty("n-threads", uint(2)); err != nil {
+				return nil, errors.ErrGstPipelineError(err)
+			}
+		}
 		if err = appSrcBin.AddElement(av1Dec); err != nil {
 			return nil, err
 		}
