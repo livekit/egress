@@ -21,7 +21,8 @@ import (
 	"time"
 
 	"github.com/linkdata/deadlock"
-	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -111,6 +112,12 @@ func (f *fakeIOInfo) receivedFor(egressID string) []livekit.EgressStatus {
 		}
 	}
 	return statuses
+}
+
+func counterValue(c prometheus.Counter) float64 {
+	m := &dto.Metric{}
+	_ = c.Write(m)
+	return m.GetCounter().GetValue()
 }
 
 func newTestReporter(client rpc.IOInfoClient, workers int) *sessionReporter {
@@ -391,7 +398,7 @@ func TestCreateReportedAsFailedOnFullQueueDiscardsLaterUpdates(t *testing.T) {
 	require.NoError(t, c.UpdateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_ACTIVE)))
 	close(releaseCreate)
 	require.Error(t, <-errChan)
-	require.Equal(t, 1.0, testutil.ToFloat64(c.ioUpdateFailures.WithLabelValues(ioUpdateAbandoned)))
+	require.Equal(t, 1.0, counterValue(c.ioUpdateFailures.WithLabelValues(ioUpdateAbandoned)))
 
 	// the aborted handler's FAILED is discarded
 	require.NoError(t, c.UpdateEgress(context.Background(), egressInfo("EG_A", livekit.EgressStatus_EGRESS_FAILED)))
@@ -400,7 +407,7 @@ func TestCreateReportedAsFailedOnFullQueueDiscardsLaterUpdates(t *testing.T) {
 	w.mu.Unlock()
 	require.False(t, pending)
 	require.Zero(t, io.attemptsFor("EG_A"))
-	require.Equal(t, 1.0, testutil.ToFloat64(c.ioUpdateFailures.WithLabelValues(ioUpdateUnowned)))
+	require.Equal(t, 1.0, counterValue(c.ioUpdateFailures.WithLabelValues(ioUpdateUnowned)))
 }
 
 func TestCreateSweepsExpiredFailedCreateMarks(t *testing.T) {
