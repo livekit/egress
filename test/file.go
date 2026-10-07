@@ -736,5 +736,7 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 	// verify
 	info := verify(t, localPath, p, res, types.EgressTypeFile, r.sourceFramerate, false)
 
+	verifyFrameContinuity(t, localPath, tc)
+
 	runContentCheck(t, tc, localPath, info, "file", formatFromFileName(localPath))
 }
