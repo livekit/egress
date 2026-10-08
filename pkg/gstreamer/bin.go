@@ -63,13 +63,14 @@ type Bin struct {
 	getSrcPad  func(string) *gst.Pad
 	getSinkPad func(string) *gst.Pad
 
-	added    bool
-	srcs     []*Bin                   // source bins
-	elements []*gst.Element           // elements within this bin
-	queues   map[string]*gst.Element  // used with BinTypeMultiStream
-	pads     map[string]*gst.GhostPad // ghost pads by bin name
-	eosSeen  map[string]*atomic.Bool  // downstream EOS seen per peer bin name
-	sinks    []*Bin                   // sink bins
+	added       bool
+	srcs        []*Bin                   // source bins
+	independent []*Bin                   // self-contained bins with no peer pads
+	elements    []*gst.Element           // elements within this bin
+	queues      map[string]*gst.Element  // used with BinTypeMultiStream
+	pads        map[string]*gst.GhostPad // ghost pads by bin name
+	eosSeen     map[string]*atomic.Bool  // downstream EOS seen per peer bin name
+	sinks       []*Bin                   // sink bins
 }
 
 func (b *Bin) NewBin(name string) *Bin {
@@ -97,6 +98,49 @@ func (b *Bin) AddSourceBin(src *Bin) error {
 func (b *Bin) AddSinkBin(sink *Bin) error {
 	logger.Debugw(fmt.Sprintf("adding sink %s to %s", sink.bin.GetName(), b.bin.GetName()))
 	return b.addBin(sink, gst.PadDirectionSink)
+}
+
+// AddIndependentBin adds a self-contained child graph that does not expose a
+// source or sink pad. This is used for branches that begin with an appsrc and
+// terminate in an appsink, so linking the child to its logical parent would be
+// incorrect.
+func (b *Bin) AddIndependentBin(child *Bin) error {
+	logger.Debugw(fmt.Sprintf("adding independent bin %s to %s", child.bin.GetName(), b.bin.GetName()))
+
+	child.mu.Lock()
+	alreadyAdded := child.added
+	child.added = true
+	child.mu.Unlock()
+	if alreadyAdded {
+		return errors.ErrBinAlreadyAdded
+	}
+
+	b.LockStateShared()
+	defer b.UnlockStateShared()
+
+	state := b.GetStateLocked()
+	if state > StateRunning {
+		return nil
+	}
+
+	b.mu.Lock()
+	b.independent = append(b.independent, child)
+	if err := b.pipeline.Add(child.bin.Element); err != nil {
+		b.mu.Unlock()
+		return errors.ErrGstPipelineError(err)
+	}
+	b.mu.Unlock()
+
+	if state == StateBuilding {
+		return nil
+	}
+	if err := child.link(); err != nil {
+		return err
+	}
+	if !child.bin.SyncStateWithParent() {
+		return fmt.Errorf("failed to sync %s state with parent", child.bin.GetName())
+	}
+	return nil
 }
 
 func (b *Bin) addBin(bin *Bin, direction gst.PadDirection) error {
@@ -185,6 +229,60 @@ func (b *Bin) RemoveSourceBin(name string) error {
 func (b *Bin) RemoveSinkBin(name string) error {
 	logger.Debugw(fmt.Sprintf("removing sink %s from %s", name, b.bin.GetName()))
 	return b.removeBin(name, gst.PadDirectionSink)
+}
+
+// RemoveIndependentBin removes a child previously added with AddIndependentBin.
+func (b *Bin) RemoveIndependentBin(name string) error {
+	logger.Debugw(fmt.Sprintf("removing independent bin %s from %s", name, b.bin.GetName()))
+
+	b.LockStateShared()
+	state := b.GetStateLocked()
+	if state > StateRunning {
+		b.UnlockStateShared()
+		return nil
+	}
+
+	b.mu.Lock()
+	var child *Bin
+	for i, candidate := range b.independent {
+		if candidate.bin.GetName() == name {
+			child = candidate
+			b.independent = append(b.independent[:i], b.independent[i+1:]...)
+			break
+		}
+	}
+	b.mu.Unlock()
+	b.UnlockStateShared()
+	if child == nil {
+		return nil
+	}
+
+	remove := func() error {
+		if err := b.pipeline.Remove(child.bin.Element); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err := child.bin.SetState(gst.StateNull); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		return nil
+	}
+	if state == StateBuilding {
+		return remove()
+	}
+
+	done := make(chan error, 1)
+	if _, err := glib.IdleAdd(func() bool {
+		done <- remove()
+		return false
+	}); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(removeSourceBinTimeout):
+		return errors.ErrPipelineFrozen
+	}
 }
 
 func (b *Bin) removeSourceLocked(name string) *Bin {
@@ -441,17 +539,17 @@ func (b *Bin) SetEOSFunc(f func() bool) {
 func (b *Bin) sendEOS() {
 	b.mu.Lock()
 	eosFunc := b.eosFunc
-	srcs := b.srcs
+	children := append(append([]*Bin(nil), b.srcs...), b.independent...)
 	b.mu.Unlock()
 
 	if eosFunc != nil && !eosFunc() {
 		return
 	}
 
-	if len(srcs) > 0 {
+	if len(children) > 0 {
 		var wg sync.WaitGroup
-		wg.Add(len(b.srcs))
-		for _, src := range srcs {
+		wg.Add(len(children))
+		for _, src := range children {
 			go func(s *Bin) {
 				s.sendEOS()
 				wg.Done()
@@ -509,6 +607,11 @@ func (b *Bin) link() error {
 	}
 	for _, sink := range b.sinks {
 		if err := sink.link(); err != nil {
+			return err
+		}
+	}
+	for _, independent := range b.independent {
+		if err := independent.link(); err != nil {
 			return err
 		}
 	}

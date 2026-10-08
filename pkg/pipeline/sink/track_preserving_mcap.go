@@ -140,7 +140,7 @@ func (s *TrackPreservingMCAPSink) addTrack(track *config.TrackSource) error {
 	if err != nil {
 		return err
 	}
-	if err = s.bin.AddSourceBin(bin); err != nil {
+	if err = s.bin.AddIndependentBin(bin); err != nil {
 		return err
 	}
 	s.paths[track.TrackID] = name
@@ -155,7 +155,7 @@ func (s *TrackPreservingMCAPSink) removeTrack(trackID string) {
 	delete(s.appSinks, trackID)
 	s.mu.Unlock()
 	if name != "" {
-		if err := s.bin.RemoveSourceBin(name); err != nil {
+		if err := s.bin.RemoveIndependentBin(name); err != nil {
 			s.callbacks.OnError(err)
 		}
 	}
