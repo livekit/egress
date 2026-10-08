@@ -17,6 +17,7 @@ package info
 import (
 	"context"
 	"hash/fnv"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -35,13 +36,25 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 )
 
-const maxBackoff = time.Minute * 1
+const (
+	initialBackoff    = time.Millisecond * 500
+	maxBackoff        = time.Minute * 1
+	drainPollInterval = time.Millisecond * 100
+
+	// createFailedTTL outlives an aborted handler, including one whose pipeline is slow to stop
+	createFailedTTL = time.Hour
+
+	// beyond maxPendingUpdates, an update replaces the last unsent one when both have the same status
+	maxPendingUpdates = 100
+)
 
 // UpdateEgress failure outcomes (livekit_egress_io_update_failures_total)
 const (
 	ioUpdateRetried   = "retried"
 	ioUpdateAbandoned = "abandoned"
 	ioUpdateFailed    = "failed"
+	ioUpdateUnowned   = "unowned"
+	ioUpdateCoalesced = "coalesced"
 )
 
 type SessionReporter interface {
@@ -86,15 +99,39 @@ type sessionReporter struct {
 }
 
 type worker struct {
-	mu       deadlock.Mutex
-	creating map[string]*update
-	updates  map[string]*update
-	queue    chan string
+	mu deadlock.Mutex
+	// creating buffers updates that arrive while CreateEgress is in flight
+	creating map[string]*egressUpdates
+	// pending holds an entry for every egress that is queued, in flight or waiting out a retry backoff
+	pending map[string]*egressUpdates
+	// createFailed holds egresses whose CreateEgress failed; their updates are dropped until a new
+	// CreateEgress or createFailedTTL (kept past SessionEnded, a late HandlerFinished can still report)
+	createFailed map[string]time.Time
+	queue        chan string
+}
+
+// egressUpdates holds one egress' unsent updates, oldest first; below maxPendingUpdates every update is sent,
+// above it a same-status update replaces the last unsent one.
+type egressUpdates struct {
+	updates []*update
+	backoff time.Duration
+}
+
+// add appends u, or replaces the last update when over maxPendingUpdates and the status matches;
+// it reports whether it replaced one. The first update is never replaced, since it may be in flight.
+func (e *egressUpdates) add(u *update) bool {
+	if n := len(e.updates); n >= maxPendingUpdates && e.updates[n-1].info.Status == u.info.Status {
+		e.updates[n-1] = u
+		return true
+	}
+	e.updates = append(e.updates, u)
+	return false
 }
 
 type update struct {
-	ctx  context.Context
-	info *livekit.EgressInfo
+	ctx      context.Context
+	info     *livekit.EgressInfo
+	deadline time.Time
 }
 
 func NewSessionReporter(conf *config.BaseConfig, bus psrpc.MessageBus) (SessionReporter, error) {
@@ -103,60 +140,70 @@ func NewSessionReporter(conf *config.BaseConfig, bus psrpc.MessageBus) (SessionR
 		return nil, err
 	}
 
+	ioUpdateFailures := newIOUpdateFailures(conf)
+	prometheus.MustRegister(ioUpdateFailures)
+
+	return newSessionReporter(conf, client, ioUpdateFailures), nil
+}
+
+func newSessionReporter(conf *config.BaseConfig, client rpc.IOInfoClient, ioUpdateFailures *prometheus.CounterVec) *sessionReporter {
 	c := &sessionReporter{
 		IOInfoClient:        client,
 		createTimeout:       conf.IOCreateTimeout,
 		updateTimeout:       conf.IOUpdateTimeout,
 		updateRetryDeadline: conf.IOUpdateRetryDeadline,
 		workers:             make([]*worker, conf.IOWorkers),
-		ioUpdateFailures:    newIOUpdateFailures(conf),
+		ioUpdateFailures:    ioUpdateFailures,
 	}
 
 	for i := 0; i < conf.IOWorkers; i++ {
 		c.workers[i] = &worker{
-			creating: make(map[string]*update),
-			updates:  make(map[string]*update),
-			queue:    make(chan string, 500),
+			creating:     make(map[string]*egressUpdates),
+			pending:      make(map[string]*egressUpdates),
+			createFailed: make(map[string]time.Time),
+			queue:        make(chan string, 500),
 		}
 		go c.runWorker(c.workers[i])
 	}
 
-	return c, nil
-}
-
-func newIOUpdateFailures(conf *config.BaseConfig) *prometheus.CounterVec {
-	c := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
-		Name:        "io_update_failures_total",
-		Help:        "Total number of failed UpdateEgress calls, by outcome",
-		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
-	}, []string{"outcome"})
-
-	prometheus.MustRegister(c)
-
 	return c
 }
 
+func newIOUpdateFailures(conf *config.BaseConfig) *prometheus.CounterVec {
+	return prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   "livekit",
+		Subsystem:   "egress",
+		Name:        "io_update_failures_total",
+		Help:        "Total number of UpdateEgress failures and undelivered updates, by outcome",
+		ConstLabels: prometheus.Labels{"node_id": conf.NodeID, "cluster_id": conf.ClusterID},
+	}, []string{"outcome"})
+}
+
 func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.EgressInfo) chan error {
-	u := &update{}
+	e := &egressUpdates{}
 	w := c.getWorker(info.EgressId)
 
 	w.mu.Lock()
-	w.creating[info.EgressId] = u
+	w.creating[info.EgressId] = e
+	w.sweepCreateFailedLocked(info.EgressId)
 	w.mu.Unlock()
 
 	errChan := make(chan error, 1)
 	go func() {
-		_, err := c.IOInfoClient.CreateEgress(ctx, info, psrpc.WithRequestTimeout(c.createTimeout))
+		_, createErr := c.IOInfoClient.CreateEgress(ctx, info, psrpc.WithRequestTimeout(c.createTimeout))
 
 		w.mu.Lock()
 		delete(w.creating, info.EgressId)
+		err := createErr
+		if err == nil && len(e.updates) > 0 {
+			err = c.enqueueLocked(w, info.EgressId, e.updates...)
+		}
 		if err != nil {
 			logger.Errorw("failed to create egress", err, "egressID", info.EgressId)
-			delete(w.updates, info.EgressId)
-		} else if u.info != nil {
-			err = w.submit(u)
+			w.markCreateFailedLocked(info.EgressId)
+			if createErr != nil {
+				c.ioUpdateFailures.WithLabelValues(ioUpdateUnowned).Add(float64(len(e.updates)))
+			}
 		}
 		w.mu.Unlock()
 
@@ -167,31 +214,36 @@ func (c *sessionReporter) CreateEgress(ctx context.Context, info *livekit.Egress
 }
 
 func (c *sessionReporter) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error {
-	ctx = context.WithoutCancel(ctx)
+	u := &update{
+		ctx:  context.WithoutCancel(ctx),
+		info: info,
+	}
+	if c.updateRetryDeadline > 0 {
+		u.deadline = time.Now().Add(c.updateRetryDeadline)
+	}
 
 	w := c.getWorker(info.EgressId)
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	u := w.creating[info.EgressId]
-	if u == nil {
-		u = w.updates[info.EgressId]
+	if _, ok := w.createFailed[info.EgressId]; ok {
+		c.ioUpdateFailures.WithLabelValues(ioUpdateUnowned).Inc()
+		logger.Debugw("discarding update for egress whose create failed", "egressID", info.EgressId, "status", info.Status.String())
+		return nil
 	}
-	if u != nil {
-		u.ctx = ctx
-		u.info = info
+	if e := w.creating[info.EgressId]; e != nil {
+		if e.add(u) {
+			c.ioUpdateFailures.WithLabelValues(ioUpdateCoalesced).Inc()
+		}
 		return nil
 	}
 
-	return w.submit(&update{
-		ctx:  ctx,
-		info: info,
-	})
+	return c.enqueueLocked(w, info.EgressId, u)
 }
 
-// This forwards every update onward and holds no per-egress state of its own,
-// so there is nothing to track.
+// Unsent updates are released as they are delivered or given up, and create-failure marks outlive
+// SessionEnded by design, so there is nothing to do here.
 func (c *sessionReporter) SessionStarted(_ context.Context, _ string) {}
 func (c *sessionReporter) SessionEnded(_ context.Context, _ string)   {}
 
@@ -211,17 +263,23 @@ func (c *sessionReporter) runWorker(w *worker) {
 		case egressID := <-w.queue:
 			c.handleUpdate(w, egressID)
 		case <-draining:
-			for {
+			for !w.idle() {
 				select {
 				case egressID := <-w.queue:
 					c.handleUpdate(w, egressID)
-				default:
-					c.done.Break()
-					return
+				case <-time.After(drainPollInterval):
 				}
 			}
+			c.done.Break()
+			return
 		}
 	}
+}
+
+func (w *worker) idle() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.pending) == 0
 }
 
 func (c *sessionReporter) getWorker(egressID string) *worker {
@@ -230,77 +288,164 @@ func (c *sessionReporter) getWorker(egressID string) *worker {
 	return c.workers[int(h.Sum32())%len(c.workers)]
 }
 
-func (w *worker) submit(u *update) error {
-	w.updates[u.info.EgressId] = u
+func (w *worker) markCreateFailedLocked(egressID string) {
+	w.createFailed[egressID] = time.Now()
+}
 
-	select {
-	case w.queue <- u.info.EgressId:
-		return nil
-	default:
-		delete(w.updates, u.info.EgressId)
-		return errors.New("queue is full")
+// sweepCreateFailedLocked clears the mark of an egress being created again and marks older than createFailedTTL.
+func (w *worker) sweepCreateFailedLocked(egressID string) {
+	delete(w.createFailed, egressID)
+	now := time.Now()
+	for id, at := range w.createFailed {
+		if now.Sub(at) > createFailedTTL {
+			delete(w.createFailed, id)
+		}
 	}
 }
 
+// enqueueLocked adds updates to the egress' pending entry, scheduling it if it had none.
+func (c *sessionReporter) enqueueLocked(w *worker, egressID string, updates ...*update) error {
+	if e := w.pending[egressID]; e != nil {
+		for _, u := range updates {
+			if e.add(u) {
+				c.ioUpdateFailures.WithLabelValues(ioUpdateCoalesced).Inc()
+			}
+		}
+		return nil
+	}
+	e := &egressUpdates{updates: updates}
+	w.pending[egressID] = e
+	return c.scheduleLocked(w, egressID, e)
+}
+
+// scheduleLocked queues an egress whose entry e is in pending; on a full queue the entry is dropped and
+// its updates are counted as abandoned.
+func (c *sessionReporter) scheduleLocked(w *worker, egressID string, e *egressUpdates) error {
+	select {
+	case w.queue <- egressID:
+		return nil
+	default:
+		delete(w.pending, egressID)
+		err := errors.New("queue is full")
+		c.ioUpdateFailures.WithLabelValues(ioUpdateAbandoned).Add(float64(len(e.updates)))
+		logger.Errorw("dropping egress updates", err, "egressID", egressID, "count", len(e.updates))
+		return err
+	}
+}
+
+// handleUpdate sends the egress' oldest unsent update; the next one is only sent after it succeeds or is given up.
 func (c *sessionReporter) handleUpdate(w *worker, egressID string) {
 	w.mu.Lock()
-	u := w.updates[egressID]
-	delete(w.updates, egressID)
+	e := w.pending[egressID]
+	var u *update
+	if e != nil && len(e.updates) > 0 {
+		u = e.updates[0]
+	}
 	w.mu.Unlock()
 	if u == nil {
 		return
 	}
 
-	d := time.Millisecond * 250
-	var deadline time.Time
-	for {
-		if _, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info, psrpc.WithRequestTimeout(c.updateTimeout)); err != nil {
-			if isRetryableError(err) {
-				c.ioUpdateFailures.WithLabelValues(ioUpdateRetried).Inc()
-				if !c.ioFailing.Swap(true) {
-					logger.Warnw("io connection unhealthy", err, "egressID", u.info.EgressId)
-				}
-				logger.Debugw("psrpc IO request failed", "error", err, "egressID", u.info.EgressId)
-
-				if deadline.IsZero() && c.updateRetryDeadline > 0 {
-					deadline = time.Now().Add(c.updateRetryDeadline)
-				}
-
-				d = min(d*2, maxBackoff)
-				if !deadline.IsZero() && time.Now().Add(d).After(deadline) {
-					c.ioUpdateFailures.WithLabelValues(ioUpdateAbandoned).Inc()
-					logger.Errorw("dropping egress update after retry deadline", err,
-						"egressID", u.info.EgressId,
-						"retryDeadline", c.updateRetryDeadline,
-					)
-					return
-				}
-
-				time.Sleep(d)
-				continue
-			}
-
-			c.ioUpdateFailures.WithLabelValues(ioUpdateFailed).Inc()
-			logger.Errorw("failed to update egress", err, "egressID", u.info.EgressId)
-			return
-		}
-
+	_, err := c.IOInfoClient.UpdateEgress(u.ctx, u.info, psrpc.WithRequestTimeout(c.updateTimeout))
+	switch {
+	case err == nil:
 		if c.ioFailing.Swap(false) {
-			logger.Infow("io connection restored", "egressID", u.info.EgressId)
+			logger.Infow("egress updates succeeding again", "egressID", egressID)
 		}
 		requestType, outputType := egress.GetTypes(u.info.Request)
 		logger.Infow(strings.ToLower(u.info.Status.String()),
-			"egressID", u.info.EgressId,
+			"egressID", egressID,
 			"requestType", requestType,
 			"outputType", outputType,
 			"error", u.info.Error,
 			"code", u.info.ErrorCode,
 			"details", u.info.Details,
 		)
+
+	case isRetryableError(err):
+		if c.retryLater(w, egressID, e, u, err) {
+			return
+		}
+
+	default:
+		c.ioUpdateFailures.WithLabelValues(ioUpdateFailed).Inc()
+		logger.Errorw("failed to update egress", err, "egressID", egressID)
+	}
+
+	c.advance(w, egressID, e)
+}
+
+// advance removes the oldest update and queues the egress again if more are waiting.
+func (c *sessionReporter) advance(w *worker, egressID string, e *egressUpdates) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	e.updates[0] = nil
+	e.updates = e.updates[1:]
+	e.backoff = 0
+	if len(e.updates) == 0 {
+		delete(w.pending, egressID)
 		return
+	}
+
+	_ = c.scheduleLocked(w, egressID, e)
+}
+
+// retryLater schedules the egress to be queued again after a backoff, so the worker moves on to
+// other egresses instead of blocking on this one. It returns false when the update is given up.
+func (c *sessionReporter) retryLater(w *worker, egressID string, e *egressUpdates, u *update, err error) bool {
+	c.ioUpdateFailures.WithLabelValues(ioUpdateRetried).Inc()
+	if !c.ioFailing.Swap(true) {
+		logger.Warnw("egress update failed, retrying", err, "egressID", egressID)
+	}
+	logger.Debugw("psrpc IO request failed", "error", err, "egressID", egressID)
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if e.backoff == 0 {
+		e.backoff = initialBackoff
+	} else {
+		e.backoff = min(e.backoff*2, maxBackoff)
+	}
+	delay := jitter(e.backoff)
+
+	if !u.deadline.IsZero() && time.Now().Add(delay).After(u.deadline) {
+		c.ioUpdateFailures.WithLabelValues(ioUpdateAbandoned).Inc()
+		logger.Errorw("dropping egress update after retry deadline", err,
+			"egressID", egressID,
+			"status", u.info.Status.String(),
+			"retryDeadline", c.updateRetryDeadline,
+		)
+		return false
+	}
+
+	time.AfterFunc(delay, func() {
+		c.requeue(w, egressID)
+	})
+	return true
+}
+
+func (c *sessionReporter) requeue(w *worker, egressID string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if e := w.pending[egressID]; e != nil {
+		_ = c.scheduleLocked(w, egressID, e)
 	}
 }
 
+func jitter(d time.Duration) time.Duration {
+	return d/2 + rand.N(d/2)
+}
+
 func isRetryableError(err error) bool {
-	return errors.Is(err, psrpc.ErrRequestTimedOut) || errors.Is(err, psrpc.ErrNoResponse)
+	var e psrpc.Error
+	if errors.As(err, &e) {
+		switch e.Code() {
+		case psrpc.DeadlineExceeded, psrpc.Unavailable:
+			return true
+		}
+	}
+	return false
 }
