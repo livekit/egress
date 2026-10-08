@@ -32,6 +32,7 @@ apt-get install -y --no-install-recommends \
   libcap-dev \
   libchromaprint-dev \
   libcurl4-gnutls-dev \
+  libdav1d-dev \
   libdca-dev \
   libdrm-dev \
   libdv4-dev \
