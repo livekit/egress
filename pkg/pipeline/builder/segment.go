@@ -54,7 +54,7 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if err = sink.SetProperty("max-size-time", uint64(time.Duration(o.SegmentDuration)*time.Second)); err != nil {
+	if err = sink.SetProperty("max-size-time", uint64(o.SegmentDuration)); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 	if err = sink.SetProperty("send-keyframe-requests", true); err != nil {
