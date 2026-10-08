@@ -70,7 +70,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
 		if len(streams)+len(segments)+len(images) == 0 {
-			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
+			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo} //nolint:staticcheck // keep deprecated field for older clients
 		}
 	}
 
@@ -167,7 +167,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 
 		p.Info.SegmentResults = []*livekit.SegmentsInfo{conf.SegmentsInfo}
 		if len(streams)+len(files)+len(images) == 0 {
-			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
+			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo} //nolint:staticcheck // keep deprecated field for older clients
 		}
 	}
 
@@ -384,7 +384,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 	// populate deprecated single-result field for older clients
 	if hasFile && !hasStream && !hasSegments && len(p.Outputs[types.EgressTypeImages]) == 0 {
 		if fc := p.GetFileConfig(); fc != nil {
-			p.Info.Result = &livekit.EgressInfo_File{File: fc.FileInfo}
+			p.Info.Result = &livekit.EgressInfo_File{File: fc.FileInfo} //nolint:staticcheck // keep deprecated field for older clients
 		}
 	} else if hasStream && !hasFile && !hasSegments && len(p.Outputs[types.EgressTypeImages]) == 0 {
 		if len(p.Info.StreamResults) > 0 {
@@ -392,7 +392,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 		}
 	} else if hasSegments && !hasFile && !hasStream && len(p.Outputs[types.EgressTypeImages]) == 0 {
 		if sc := p.GetSegmentConfig(); sc != nil {
-			p.Info.Result = &livekit.EgressInfo_Segments{Segments: sc.SegmentsInfo}
+			p.Info.Result = &livekit.EgressInfo_Segments{Segments: sc.SegmentsInfo} //nolint:staticcheck // keep deprecated field for older clients
 		}
 	}
 
@@ -419,7 +419,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 		}
 
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
-		p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
+		p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo} //nolint:staticcheck // keep deprecated field for older clients
 
 		p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
 		p.OutputCount.Inc()

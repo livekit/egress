@@ -15,7 +15,7 @@
 # syntax=docker/dockerfile:1.6
 ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
-ARG LINT_VERSION=v2.11.3
+ARG LINT_VERSION=v2.13.2
 
 # The GStreamer version is pinned in .gst-version, the single source of truth that
 # Renovate keeps current via an approvable PR. It has no default here on purpose: a
@@ -147,7 +147,7 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOTOOLCHAIN=local
 
 # install chrome
-COPY --from=livekit/chrome-installer:153.0.8010.36 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:154.0.8037.97 /chrome-installer /chrome-installer
 
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 

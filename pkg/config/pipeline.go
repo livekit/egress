@@ -156,7 +156,7 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 	p := &PipelineConfig{
 		BaseConfig: BaseConfig{
 			Logging: &logger.Config{
-				Level: "info",
+				Level: logLevelInfo,
 			},
 		},
 		Outputs: make(map[types.EgressType][]OutputConfig),
@@ -253,9 +253,11 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		} else {
 			p.BaseUrl = p.TemplateBase
 		}
-		baseUrl, err := url.Parse(p.BaseUrl)
-		if err != nil || !isHttp(baseUrl) {
-			return errors.ErrInvalidInput("template base url")
+		if p.SourceType == types.SourceTypeWeb {
+			baseUrl, err := url.Parse(p.BaseUrl)
+			if err != nil || !isHttp(baseUrl) {
+				return errors.ErrInvalidInput("template base url")
+			}
 		}
 
 		if !req.RoomComposite.VideoOnly {
@@ -672,9 +674,11 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 		} else {
 			p.BaseUrl = p.TemplateBase
 		}
-		baseUrl, perr := url.Parse(p.BaseUrl)
-		if perr != nil || !isHttp(baseUrl) {
-			return connectionInfoRequired, errors.ErrInvalidInput("template base url")
+		if p.SourceType == types.SourceTypeWeb {
+			baseUrl, perr := url.Parse(p.BaseUrl)
+			if perr != nil || !isHttp(baseUrl) {
+				return connectionInfoRequired, errors.ErrInvalidInput("template base url")
+			}
 		}
 
 		if !tmpl.VideoOnly {

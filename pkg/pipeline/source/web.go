@@ -206,6 +206,19 @@ func newChromeLogger(tmpDir string) *lumberjack.Logger {
 	return writer
 }
 
+// chromedpErrorf logs node events chromedp does not track at debug, since egress never reads its DOM mirror.
+func chromedpErrorf(format string, args ...any) {
+	msg := fmt.Sprintf("chromedp: "+format, args...)
+	switch {
+	case strings.HasPrefix(format, "unhandled node event"):
+		logger.Debugw(msg)
+	case strings.HasPrefix(format, "unhandled page event"):
+		logger.Warnw(msg, nil)
+	default:
+		logger.Errorw(msg, nil)
+	}
+}
+
 // launches chrome and navigates to the url
 func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) error {
 	_, span := tracer.Start(ctx, "WebInput.launchChrome")
@@ -295,7 +308,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 			time.Sleep(chromeRetryDelay)
 		}
 
-		chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
+		chromeCtx, chromeCancel := chromedp.NewContext(allocCtx, chromedp.WithErrorf(chromedpErrorf))
 		s.closeChrome = func() {
 			chromeCancel()
 			allocCancel()
@@ -305,6 +318,11 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 		if !retryable {
 			break
 		}
+
+		// tear down this Chrome before retrying. Otherwise it stays alive on its
+		// error page, auto-reloads the URL ~1s later, and rejoins the room with the
+		// same identity as the retry's Chrome, which is evicted as a duplicate identity.
+		chromeCancel()
 	}
 
 	return err
