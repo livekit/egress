@@ -119,7 +119,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 RUN echo ok >/unit_ok
 
 
-FROM livekit/gstreamer:$GSTVERSION-prod
+FROM livekit/gstreamer:$GSTVERSION-prod-rs
 
 ARG TARGETPLATFORM
 

@@ -706,6 +706,70 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 			return nil, err
 		}
 
+	case types.MimeTypeAV1:
+		if err := ts.AppSrc.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+			"application/x-rtp,media=video,payload=%d,encoding-name=AV1,clock-rate=%d",
+			ts.PayloadType, ts.ClockRate,
+		))); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+
+		rtpAV1Depay, err := gst.NewElement("rtpav1depay")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+
+		// rtpav1depay emits OBU-aligned buffers; av1parse regroups them into
+		// temporal units, the alignment av1dec and the muxers accept.
+		av1Parse, err := gst.NewElement("av1parse")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+
+		av1Caps, err := gst.NewElement("capsfilter")
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if err = av1Caps.SetProperty("caps", gst.NewCapsFromString(
+			"video/x-av1,stream-format=obu-stream,alignment=tu",
+		)); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+
+		if err = appSrcBin.AddElements(rtpAV1Depay, av1Parse, av1Caps); err != nil {
+			return nil, err
+		}
+
+		if err := b.attachKeyframeProbe(ts, name, av1Parse); err != nil {
+			return nil, err
+		}
+
+		if !b.conf.VideoDecoding {
+			return appSrcBin, nil
+		}
+
+		// dav1d decodes several times faster than libaom; images without the plugin use av1dec.
+		av1Decoder := "dav1ddec"
+		if gst.Find(av1Decoder) == nil {
+			av1Decoder = "av1dec"
+			logger.Warnw("dav1ddec not available, decoding AV1 with libaom av1dec", nil, "trackID", ts.TrackID)
+		}
+		av1Dec, err := gst.NewElement(av1Decoder)
+		if err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+		if av1Decoder == "dav1ddec" && b.conf.Live {
+			// A live pipeline caps dav1d at one frame in flight, so threads beyond
+			// tile parallelism add CPU without throughput; the default spawns one per
+			// logical core. Non-live pipelines keep the default for faster-than-realtime.
+			if err = av1Dec.SetProperty("n-threads", uint(2)); err != nil {
+				return nil, errors.ErrGstPipelineError(err)
+			}
+		}
+		if err = appSrcBin.AddElement(av1Dec); err != nil {
+			return nil, err
+		}
+
 	default:
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}

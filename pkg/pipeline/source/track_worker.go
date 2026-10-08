@@ -219,7 +219,7 @@ func (s *SDKSource) updatePreInitStateLocked(op Operation, ts *config.TrackSourc
 		s.AudioTranscoding = true
 		s.AudioTracks = append(s.AudioTracks, ts)
 
-	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9:
+	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9, types.MimeTypeAV1:
 		s.VideoEnabled = true
 		s.VideoInCodec = ts.MimeType
 		if s.VideoOutCodec == "" {
@@ -499,7 +499,7 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 			tc = c
 		}
 
-	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9:
+	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9, types.MimeTypeAV1:
 		// Video codecs - no special setup needed here
 
 	default:
