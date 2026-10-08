@@ -33,10 +33,10 @@ import (
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-// RoomTracksMCAPSink owns a self-contained GStreamer branch per subscribed
+// TrackPreservingMCAPSink owns a self-contained GStreamer branch per subscribed
 // LiveKit track. Unlike the regular media bins, these branches never meet at a
 // selector, compositor, or audio mixer.
-type RoomTracksMCAPSink struct {
+type TrackPreservingMCAPSink struct {
 	*config.FileConfig
 	*uploader.Uploader
 
@@ -54,23 +54,23 @@ type RoomTracksMCAPSink struct {
 	eosReceived atomic.Bool
 }
 
-func newRoomTracksMCAPSink(
+func newTrackPreservingMCAPSink(
 	p *gstreamer.Pipeline,
 	conf *config.PipelineConfig,
 	o *config.FileConfig,
 	callbacks *gstreamer.Callbacks,
 	monitor *stats.HandlerMonitor,
-) (*RoomTracksMCAPSink, error) {
+) (*TrackPreservingMCAPSink, error) {
 	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.StorageObserver, conf.Info)
 	if err != nil {
 		return nil, err
 	}
-	s := &RoomTracksMCAPSink{
+	s := &TrackPreservingMCAPSink{
 		FileConfig: o,
 		Uploader:   u,
 		conf:       conf,
 		callbacks:  callbacks,
-		bin:        p.NewBin("room_tracks_mcap"),
+		bin:        p.NewBin("track_preserving_mcap"),
 		paths:      make(map[string]string),
 		appSinks:   make(map[string]*gst.Element),
 	}
@@ -96,7 +96,7 @@ func newRoomTracksMCAPSink(
 	return s, nil
 }
 
-func (s *RoomTracksMCAPSink) Start() error {
+func (s *TrackPreservingMCAPSink) Start() error {
 	f, err := os.Create(s.LocalFilepath)
 	if err != nil {
 		return errors.MarkDestinationError(err)
@@ -105,7 +105,7 @@ func (s *RoomTracksMCAPSink) Start() error {
 		DynamicTracks: true,
 		Metadata: map[string]string{
 			"egress_id": s.conf.Info.EgressId, "room_id": s.conf.Info.RoomId,
-			"room_name": s.conf.Info.RoomName, "source_type": string(types.RequestTypeRoomTracks),
+			"room_name": s.conf.Info.RoomName, "source_type": string(types.RequestTypeMediaTracks),
 		},
 	})
 	if err != nil {
@@ -117,7 +117,7 @@ func (s *RoomTracksMCAPSink) Start() error {
 	return nil
 }
 
-func (s *RoomTracksMCAPSink) addTrack(track *config.TrackSource) error {
+func (s *TrackPreservingMCAPSink) addTrack(track *config.TrackSource) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.paths[track.TrackID]; ok {
@@ -148,7 +148,7 @@ func (s *RoomTracksMCAPSink) addTrack(track *config.TrackSource) error {
 	return nil
 }
 
-func (s *RoomTracksMCAPSink) removeTrack(trackID string) {
+func (s *TrackPreservingMCAPSink) removeTrack(trackID string) {
 	s.mu.Lock()
 	name := s.paths[trackID]
 	delete(s.paths, trackID)
@@ -161,7 +161,7 @@ func (s *RoomTracksMCAPSink) removeTrack(trackID string) {
 	}
 }
 
-func (s *RoomTracksMCAPSink) buildVideoTrack(track *config.TrackSource, name string) (*gstreamer.Bin, *app.Sink, error) {
+func (s *TrackPreservingMCAPSink) buildVideoTrack(track *config.TrackSource, name string) (*gstreamer.Bin, *app.Sink, error) {
 	bin := s.bin.NewBin(name)
 	bin.SetEOSFunc(func() bool { return false })
 	if err := configureRoomTrackAppSrc(track, s.conf.Live); err != nil {
@@ -240,7 +240,7 @@ func (s *RoomTracksMCAPSink) buildVideoTrack(track *config.TrackSource, name str
 	return bin, appSink, nil
 }
 
-func (s *RoomTracksMCAPSink) buildAudioTrack(track *config.TrackSource, name string) (*gstreamer.Bin, *app.Sink, error) {
+func (s *TrackPreservingMCAPSink) buildAudioTrack(track *config.TrackSource, name string) (*gstreamer.Bin, *app.Sink, error) {
 	bin := s.bin.NewBin(name)
 	bin.SetEOSFunc(func() bool { return false })
 	if err := configureRoomTrackAppSrc(track, s.conf.Live); err != nil {
@@ -330,7 +330,7 @@ func capsFilter(value string) (*gst.Element, error) {
 	return caps, nil
 }
 
-func (s *RoomTracksMCAPSink) mcapTrack(track *config.TrackSource) mcapwriter.Track {
+func (s *TrackPreservingMCAPSink) mcapTrack(track *config.TrackSource) mcapwriter.Track {
 	identity := sanitizeTopicSegment(track.ParticipantIdentity)
 	name := sanitizeTopicSegment(track.TrackName)
 	if name == "" {
@@ -361,7 +361,7 @@ func sanitizeElementName(value string) string {
 	return strings.ReplaceAll(sanitizeTopicSegment(value), "-", "_")
 }
 
-func (s *RoomTracksMCAPSink) onSample(appSink *app.Sink, write func(time.Duration, []byte) error) gst.FlowReturn {
+func (s *TrackPreservingMCAPSink) onSample(appSink *app.Sink, write func(time.Duration, []byte) error) gst.FlowReturn {
 	sample := appSink.PullSample()
 	if sample == nil {
 		return gst.FlowOK
@@ -373,22 +373,22 @@ func (s *RoomTracksMCAPSink) onSample(appSink *app.Sink, write func(time.Duratio
 	pts := buffer.PresentationTimestamp()
 	segment := sample.GetSegment()
 	if pts == gst.ClockTimeNone || segment == nil {
-		s.fail(fmt.Errorf("room-tracks MCAP sample has no presentation timestamp or segment"))
+		s.fail(fmt.Errorf("track-preserving MCAP sample has no presentation timestamp or segment"))
 		return gst.FlowError
 	}
 	runningTime := gst.ClockTime(segment.ToRunningTime(gst.FormatTime, uint64(pts))).AsDuration()
 	if runningTime == nil {
-		s.fail(fmt.Errorf("room-tracks MCAP sample timestamp is outside its segment"))
+		s.fail(fmt.Errorf("track-preserving MCAP sample timestamp is outside its segment"))
 		return gst.FlowError
 	}
 	mapped := buffer.Map(gst.MapRead)
 	if mapped == nil {
-		s.fail(fmt.Errorf("failed to map room-tracks MCAP sample"))
+		s.fail(fmt.Errorf("failed to map track-preserving MCAP sample"))
 		return gst.FlowError
 	}
 	defer buffer.Unmap()
 	if s.writer == nil {
-		s.fail(fmt.Errorf("room-tracks MCAP writer is not initialized"))
+		s.fail(fmt.Errorf("track-preserving MCAP writer is not initialized"))
 		return gst.FlowError
 	}
 	if err := write(*runningTime, mapped.Bytes()); err != nil {
@@ -398,11 +398,11 @@ func (s *RoomTracksMCAPSink) onSample(appSink *app.Sink, write func(time.Duratio
 	return gst.FlowOK
 }
 
-func (s *RoomTracksMCAPSink) fail(err error) {
+func (s *TrackPreservingMCAPSink) fail(err error) {
 	s.callbacks.OnError(psrpc.NewError(psrpc.Unavailable, errors.MarkDestinationError(err)))
 }
 
-func (s *RoomTracksMCAPSink) AddEOSProbe() {
+func (s *TrackPreservingMCAPSink) AddEOSProbe() {
 	s.mu.Lock()
 	sinks := make([]*gst.Element, 0, len(s.appSinks))
 	for _, sink := range s.appSinks {
@@ -429,9 +429,9 @@ func (s *RoomTracksMCAPSink) AddEOSProbe() {
 	}
 }
 
-func (s *RoomTracksMCAPSink) EOSReceived() bool { return s.eosReceived.Load() }
+func (s *TrackPreservingMCAPSink) EOSReceived() bool { return s.eosReceived.Load() }
 
-func (s *RoomTracksMCAPSink) UploadManifest(filepath string) (string, bool, error) {
+func (s *TrackPreservingMCAPSink) UploadManifest(filepath string) (string, bool, error) {
 	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
 		return "", false, nil
 	}
@@ -440,7 +440,7 @@ func (s *RoomTracksMCAPSink) UploadManifest(filepath string) (string, bool, erro
 	return location, true, err
 }
 
-func (s *RoomTracksMCAPSink) Close() error {
+func (s *TrackPreservingMCAPSink) Close() error {
 	if s.writer == nil || s.file == nil {
 		return nil
 	}
@@ -453,7 +453,7 @@ func (s *RoomTracksMCAPSink) Close() error {
 	}
 	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
 	if err != nil {
-		logger.Debugw("room-tracks MCAP upload failed", err)
+		logger.Debugw("track-preserving MCAP upload failed", err)
 		return err
 	}
 	s.FileInfo.Location = location

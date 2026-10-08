@@ -45,13 +45,13 @@ func (p *PipelineConfig) GetFileConfig() *FileConfig {
 	return o[0].(*FileConfig)
 }
 
-func (p *PipelineConfig) validateRoomTracksOutput() error {
+func (p *PipelineConfig) validateMediaTracksOutput() error {
 	if len(p.Outputs) != 1 {
-		return errors.ErrInvalidInput("room-tracks requires one MCAP file output")
+		return errors.ErrInvalidInput("media.room_tracks requires one MCAP file output")
 	}
 	files := p.Outputs[types.EgressTypeFile]
 	if len(files) != 1 || files[0].GetOutputType() != types.OutputTypeMCAP {
-		return errors.ErrInvalidInput("room-tracks requires one MCAP file output")
+		return errors.ErrInvalidInput("media.room_tracks requires one MCAP file output")
 	}
 	return nil
 }

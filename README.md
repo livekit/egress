@@ -31,40 +31,44 @@ Irrespective of method used, when moving between protocols, containers or encodi
 
 ## Supported Output
 
-| Egress Type     | MP4 File | OGG File | MCAP File (POC) | WebM File | HLS (TS Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
+| Egress Type     | MP4 File | OGG File | MCAP File | WebM File | HLS (TS Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
 |-----------------|----------|----------|-----------------|-----------|-------------------|----------------|------------|------------------|--------------------|
 | Room Composite  | ✅        | ✅        | ✅               |           | ✅                 | ✅              | ✅          |                  | ✅                  |
-| Room Tracks     |          |          | ✅               |           |                   |                |            |                  |                    |
+| Media room tracks |        |          | ✅               |           |                   |                |            |                  |                    |
 | Web             | ✅        | ✅        | ✅               |           | ✅                 | ✅              | ✅          |                  | ✅                  |
 | Track Composite | ✅        | ✅        | ✅               |           | ✅                 | ✅              | ✅          |                  | ✅                  |
 | Track           | ✅        | ✅        |                 | ✅         |                   |                |            | ✅                |                    |
 
 Files can be uploaded to any S3 compatible storage, Azure, or GCP.
 
-### MCAP proof of concept
+### MCAP output
 
 MCAP file output stores encoded H264 video as `foxglove.CompressedVideo` and encoded Opus audio as
 `foxglove.CompressedAudio`. The file includes protobuf schemas, chunk indexes, CRCs, and LiveKit egress metadata, and
 follows the same local/cloud upload path as other file outputs.
 
-`RoomTracksSource` uses the SDK source instead of Chrome and preserves every subscribed room track as its own MCAP
-channel:
+`MediaSource.room_tracks` uses the SDK source instead of Chrome and preserves every subscribed room track of the
+selected kinds as its own MCAP channel:
 
 ```text
 /livekit/{participant_identity}/{track_name}
 ```
 
 Video inputs (H264, VP8, or VP9) are normalized to H264, while Opus is preserved and PCMU/PCMA audio is normalized to
-Opus. Tracks published after the export starts are added dynamically. This POC mode currently permits exactly one
-MCAP file output.
+Opus. Tracks published after the export starts are added dynamically. This mode currently permits exactly one MCAP
+file output.
 
-`RoomTracksSource` is intentionally MCAP-only. With a participant named `jetson-camera` already publishing in
-`mcap-test`, save the following as `request.json` (set `video_only` to `true` for a camera-only run):
+`MediaSource.room_tracks` is intentionally MCAP-only and live-only. With a participant named `jetson-camera`
+already publishing in `mcap-test`, save the following as `request.json`:
 
 ```json
 {
   "room_name": "mcap-test",
-  "room_tracks": {},
+  "media": {
+    "room_tracks": {
+      "kinds": ["ROOM_TRACK_KIND_AUDIO", "ROOM_TRACK_KIND_VIDEO"]
+    }
+  },
   "outputs": [{
     "file": {
       "file_type": "MCAP",

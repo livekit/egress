@@ -24,16 +24,16 @@ func TestMCAPEncodedFileType(t *testing.T) {
 	require.Equal(t, types.MimeTypeH264, types.DefaultVideoCodecs[types.OutputTypeMCAP])
 }
 
-func TestValidateRoomTracksOutput(t *testing.T) {
+func TestValidateMediaTracksOutput(t *testing.T) {
 	valid := &PipelineConfig{Outputs: map[types.EgressType][]OutputConfig{
 		types.EgressTypeFile: {&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMCAP}}},
 	}}
-	require.NoError(t, valid.validateRoomTracksOutput())
+	require.NoError(t, valid.validateMediaTracksOutput())
 
 	wrongType := &PipelineConfig{Outputs: map[types.EgressType][]OutputConfig{
 		types.EgressTypeFile: {&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMP4}}},
 	}}
-	require.Error(t, wrongType.validateRoomTracksOutput())
+	require.Error(t, wrongType.validateMediaTracksOutput())
 
 	multiple := &PipelineConfig{Outputs: map[types.EgressType][]OutputConfig{
 		types.EgressTypeFile: {
@@ -41,5 +41,5 @@ func TestValidateRoomTracksOutput(t *testing.T) {
 			&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMCAP}},
 		},
 	}}
-	require.Error(t, multiple.validateRoomTracksOutput())
+	require.Error(t, multiple.validateMediaTracksOutput())
 }
