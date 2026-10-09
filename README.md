@@ -23,7 +23,7 @@ universal export of your LiveKit sessions and tracks.
 2. **Web egress** for recordings that aren't attached to a single LiveKit room.
 3. **Track composite** for exporting synchronized tracks of a single participant.
 4. **Track egress** for exporting individual tracks.
-5. **Room tracks** for exporting every room track as an independent MCAP channel.
+5. **Data source** for exporting every room track as an independent MCAP channel.
 
 Depending on your request type, the egress service will either launch Chrome using a web template
 (room composite requests) or a supplied url (web requests), or it will use the Go SDK directly (track and track composite requests).
@@ -34,7 +34,7 @@ Irrespective of method used, when moving between protocols, containers or encodi
 | Egress Type     | MP4 File | OGG File | MCAP File | WebM File | HLS (TS Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
 |-----------------|----------|----------|-----------------|-----------|-------------------|----------------|------------|------------------|--------------------|
 | Room Composite  | ✅        | ✅        | ✅               |           | ✅                 | ✅              | ✅          |                  | ✅                  |
-| Media room tracks |        |          | ✅               |           |                   |                |            |                  |                    |
+| Data Source       |        |          | ✅               |           |                   |                |            |                  |                    |
 | Web             | ✅        | ✅        | ✅               |           | ✅                 | ✅              | ✅          |                  | ✅                  |
 | Track Composite | ✅        | ✅        | ✅               |           | ✅                 | ✅              | ✅          |                  | ✅                  |
 | Track           | ✅        | ✅        |                 | ✅         |                   |                |            | ✅                |                    |
@@ -47,32 +47,28 @@ MCAP file output stores encoded H264 video as `foxglove.CompressedVideo` and enc
 `foxglove.CompressedAudio`. The file includes protobuf schemas, chunk indexes, CRCs, and LiveKit egress metadata, and
 follows the same local/cloud upload path as other file outputs.
 
-`MediaSource.room_tracks` uses the SDK source instead of Chrome and preserves every subscribed room track of the
-selected kinds as its own MCAP channel:
+`DataSource` uses the SDK source instead of Chrome and preserves every matching room track as its own MCAP channel:
 
 ```text
 /livekit/{participant_identity}/{track_name}
 ```
 
 Video inputs (H264, VP8, or VP9) are normalized to H264, while Opus is preserved and PCMU/PCMA audio is normalized to
-Opus. Tracks published after the export starts are added dynamically. This mode currently permits exactly one MCAP
-file output.
+Opus. Tracks published after the export starts are added dynamically. An empty `track_names` allowlist captures every
+audio and video track; a non-empty list matches track names exactly across all participants. This source currently
+permits exactly one MCAP file output. Data tracks are reserved for a future extension of the same selection model.
 
-`MediaSource.room_tracks` is intentionally MCAP-only and live-only. With a participant named `jetson-camera`
+`DataSource` is intentionally MCAP-only and live-only. With a participant named `jetson-camera`
 already publishing in `mcap-test`, save the following as `request.json`:
 
 ```json
 {
   "room_name": "mcap-test",
-  "media": {
-    "room_tracks": {
-      "kinds": ["ROOM_TRACK_KIND_AUDIO", "ROOM_TRACK_KIND_VIDEO"]
-    }
-  },
+  "data": {},
   "outputs": [{
     "file": {
       "file_type": "MCAP",
-      "filepath": "/out/room-tracks-demo.mcap",
+      "filepath": "/out/tracks-demo.mcap",
       "disable_manifest": true
     }
   }]
@@ -82,8 +78,8 @@ already publishing in `mcap-test`, save the following as `request.json`:
 ```shell
 lk --dev --url http://127.0.0.1:7880 egress start request.json
 lk --dev --url http://127.0.0.1:7880 egress stop --id EG_xxx
-mcap doctor ~/tmp-egress-mcap/room-tracks-demo.mcap
-mcap info ~/tmp-egress-mcap/room-tracks-demo.mcap
+mcap doctor ~/tmp-egress-mcap/tracks-demo.mcap
+mcap info ~/tmp-egress-mcap/tracks-demo.mcap
 ```
 
 MCAP output also supports the original participant, track-composite, composite room, and web paths, which write

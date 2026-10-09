@@ -29,7 +29,7 @@ const (
 	RequestTypeMedia    = "media"
 
 	RequestTypeRoomComposite  = "room_composite"
-	RequestTypeMediaTracks    = "media_tracks"
+	RequestTypeData           = "data"
 	RequestTypeParticipant    = "participant"
 	RequestTypeTrackComposite = "track_composite"
 	RequestTypeTrack          = "track"

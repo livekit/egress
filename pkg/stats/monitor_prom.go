@@ -181,6 +181,8 @@ func requestTypeFromInterface(request v2Request) string {
 		return types.RequestTypeTrack
 	}
 	switch {
+	case getDataSource(request) != nil:
+		return types.RequestTypeData
 	case request.GetTemplate() != nil:
 		return types.RequestTypeTemplate
 	case request.GetWeb() != nil:
@@ -190,6 +192,14 @@ func requestTypeFromInterface(request v2Request) string {
 	default:
 		return types.Unknown
 	}
+}
+
+func getDataSource(request v2Request) *livekit.DataSource {
+	r, ok := request.(interface{ GetData() *livekit.DataSource })
+	if !ok {
+		return nil
+	}
+	return r.GetData()
 }
 
 func (m *Monitor) HandlerResult(egressID string, result string) {

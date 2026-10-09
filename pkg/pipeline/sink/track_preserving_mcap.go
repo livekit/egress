@@ -36,6 +36,8 @@ import (
 // TrackPreservingMCAPSink owns a self-contained GStreamer branch per subscribed
 // LiveKit track. Unlike the regular media bins, these branches never meet at a
 // selector, compositor, or audio mixer.
+// TODO(data tracks): register data schemas/channels directly with the MCAP
+// writer; data messages do not need an independent GStreamer branch.
 type TrackPreservingMCAPSink struct {
 	*config.FileConfig
 	*uploader.Uploader
@@ -105,7 +107,7 @@ func (s *TrackPreservingMCAPSink) Start() error {
 		DynamicTracks: true,
 		Metadata: map[string]string{
 			"egress_id": s.conf.Info.EgressId, "room_id": s.conf.Info.RoomId,
-			"room_name": s.conf.Info.RoomName, "source_type": string(types.RequestTypeMediaTracks),
+			"room_name": s.conf.Info.RoomName, "source_type": string(types.RequestTypeData),
 		},
 	})
 	if err != nil {

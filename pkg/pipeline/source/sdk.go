@@ -250,6 +250,9 @@ func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
 // ----- Subscriptions -----
 
 func (s *SDKSource) joinRoom() error {
+	// TODO(data tracks): for RequestTypeData, attach the SDK data-packet
+	// callback here and apply the same TrackNames allowlist before forwarding
+	// schema and payload messages directly to the MCAP sink.
 	cb := &lksdk.RoomCallback{
 		ParticipantCallback: lksdk.ParticipantCallback{
 			OnTrackSubscribed:   s.onTrackSubscribed,
@@ -265,7 +268,7 @@ func (s *SDKSource) joinRoom() error {
 	}
 
 	switch s.RequestType {
-	case types.RequestTypeRoomComposite, types.RequestTypeMediaTracks, types.RequestTypeTemplate, types.RequestTypeMedia:
+	case types.RequestTypeRoomComposite, types.RequestTypeData, types.RequestTypeTemplate, types.RequestTypeMedia:
 		cb.OnTrackPublished = s.onTrackPublished
 	case types.RequestTypeParticipant:
 		cb.OnTrackPublished = s.onTrackPublished
@@ -282,7 +285,7 @@ func (s *SDKSource) joinRoom() error {
 	var fileIdentifier string
 	var w, h uint32
 	switch s.RequestType {
-	case types.RequestTypeRoomComposite, types.RequestTypeMediaTracks:
+	case types.RequestTypeRoomComposite, types.RequestTypeData:
 		fileIdentifier = room.Name()
 		// room_name and room_id are already handled as replacements
 		err = s.awaitRoomTracks()
@@ -685,7 +688,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 	if s.RequestType != types.RequestTypeParticipant &&
 		s.RequestType != types.RequestTypeRoomComposite &&
-		s.RequestType != types.RequestTypeMediaTracks &&
+		s.RequestType != types.RequestTypeData &&
 		s.RequestType != types.RequestTypeTemplate &&
 		s.RequestType != types.RequestTypeMedia {
 		return
@@ -720,7 +723,15 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 		default:
 			return s.ScreenShare
 		}
-	case types.RequestTypeRoomComposite, types.RequestTypeMediaTracks, types.RequestTypeTemplate:
+	case types.RequestTypeData:
+		if !s.matchesTrackName(pub.Name()) {
+			return false
+		}
+		// Data publications will be matched by the same name allowlist once the
+		// SDK exposes them through the egress source. For now, only A/V tracks
+		// have GStreamer branches.
+		fallthrough
+	case types.RequestTypeRoomComposite, types.RequestTypeTemplate:
 		switch pub.Kind() {
 		case lksdk.TrackKindAudio:
 			return s.AudioEnabled
@@ -729,6 +740,18 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 		}
 	}
 
+	return false
+}
+
+func (s *SDKSource) matchesTrackName(name string) bool {
+	if len(s.TrackNames) == 0 {
+		return true
+	}
+	for _, allowed := range s.TrackNames {
+		if name == allowed {
+			return true
+		}
+	}
 	return false
 }
 
@@ -872,7 +895,7 @@ func (s *SDKSource) shouldSkipTrackSubscriptions() bool {
 	return s.initialized.IsBroken() &&
 		s.RequestType != types.RequestTypeParticipant &&
 		s.RequestType != types.RequestTypeRoomComposite &&
-		s.RequestType != types.RequestTypeMediaTracks &&
+		s.RequestType != types.RequestTypeData &&
 		s.RequestType != types.RequestTypeTemplate &&
 		s.RequestType != types.RequestTypeMedia
 }
@@ -890,7 +913,7 @@ func shouldEnableStartGate(p *config.PipelineConfig) bool {
 
 	switch p.RequestType {
 	case types.RequestTypeRoomComposite,
-		types.RequestTypeMediaTracks,
+		types.RequestTypeData,
 		types.RequestTypeTemplate,
 		types.RequestTypeTrackComposite,
 		types.RequestTypeParticipant,

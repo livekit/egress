@@ -23,7 +23,15 @@ import (
 	"github.com/livekit/protocol/rpc"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/types"
 )
+
+func TestRequestTypeFromData(t *testing.T) {
+	req := &rpc.StartEgressRequest{Request: &rpc.StartEgressRequest_Egress{
+		Egress: &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{Data: &livekit.DataSource{}}},
+	}}
+	require.Equal(t, types.RequestTypeData, requestTypeFromReq(req))
+}
 
 func TestCostsForRequest(t *testing.T) {
 	m := &Monitor{
@@ -144,6 +152,13 @@ func TestCostsForRequest(t *testing.T) {
 			name: "v2 media",
 			req: &rpc.StartEgressRequest{Request: &rpc.StartEgressRequest_Egress{
 				Egress: &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Media{Media: &livekit.MediaSource{}}},
+			}},
+			cpu: 2, memory: 3, isWeb: false,
+		},
+		{
+			name: "v2 data",
+			req: &rpc.StartEgressRequest{Request: &rpc.StartEgressRequest_Egress{
+				Egress: &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{Data: &livekit.DataSource{}}},
 			}},
 			cpu: 2, memory: 3, isWeb: false,
 		},

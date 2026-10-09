@@ -265,7 +265,11 @@ func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 	costs := requestCosts{memory: m.cpuCostConfig.MemoryCost}
 
 	setV2Costs := func(request v2Request) {
-		if template := request.GetTemplate(); template != nil {
+		if getDataSource(request) != nil {
+			// Track-preserving MCAP is an SDK source. Keep the same admission
+			// baseline as MediaSource until per-track cost accounting is available.
+			costs.cpu = m.cpuCostConfig.ParticipantCpuCost
+		} else if template := request.GetTemplate(); template != nil {
 			costs.isWeb = !m.baseConfig.TemplateSourceIsSDK(template)
 			if template.AudioOnly {
 				if costs.isWeb {

@@ -25,23 +25,18 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func TestApplyMediaRoomTracksSource(t *testing.T) {
+func TestApplyDataSource(t *testing.T) {
 	p := &PipelineConfig{}
 	req := &livekit.StartEgressRequest{
-		Source: &livekit.StartEgressRequest_Media{
-			Media: &livekit.MediaSource{
-				RoomTracks: &livekit.RoomTracksSelection{Kinds: []livekit.RoomTrackKind{
-					livekit.RoomTrackKind_ROOM_TRACK_KIND_AUDIO,
-					livekit.RoomTrackKind_ROOM_TRACK_KIND_VIDEO,
-				}},
-			},
+		Source: &livekit.StartEgressRequest_Data{
+			Data: &livekit.DataSource{},
 		},
 	}
 
 	connectionInfoRequired, err := p.applyV2Source(req)
 	require.NoError(t, err)
 	require.True(t, connectionInfoRequired)
-	require.Equal(t, types.RequestType(types.RequestTypeMediaTracks), p.RequestType)
+	require.Equal(t, types.RequestType(types.RequestTypeData), p.RequestType)
 	require.Equal(t, types.SourceTypeSDK, p.SourceType)
 	require.True(t, p.AudioEnabled)
 	require.True(t, p.VideoEnabled)
@@ -49,49 +44,25 @@ func TestApplyMediaRoomTracksSource(t *testing.T) {
 	require.Empty(t, p.BaseUrl)
 }
 
-func TestApplyMediaRoomTracksSourceValidation(t *testing.T) {
-	tests := []struct {
-		name   string
-		media  *livekit.MediaSource
-		replay bool
-		err    string
-	}{
-		{name: "requires a kind", media: &livekit.MediaSource{RoomTracks: &livekit.RoomTracksSelection{}}, err: "media.room_tracks kinds"},
-		{name: "rejects unspecified", media: &livekit.MediaSource{RoomTracks: &livekit.RoomTracksSelection{Kinds: []livekit.RoomTrackKind{livekit.RoomTrackKind_ROOM_TRACK_KIND_UNSPECIFIED}}}, err: "media.room_tracks kind"},
-		{name: "rejects duplicate", media: &livekit.MediaSource{RoomTracks: &livekit.RoomTracksSelection{Kinds: []livekit.RoomTrackKind{livekit.RoomTrackKind_ROOM_TRACK_KIND_AUDIO, livekit.RoomTrackKind_ROOM_TRACK_KIND_AUDIO}}}, err: "duplicate media.room_tracks kind"},
-		{name: "rejects selector conflict", media: &livekit.MediaSource{RoomTracks: &livekit.RoomTracksSelection{Kinds: []livekit.RoomTrackKind{livekit.RoomTrackKind_ROOM_TRACK_KIND_VIDEO}}, Video: &livekit.MediaSource_VideoTrackId{VideoTrackId: "track"}}, err: "cannot be combined"},
-		{name: "rejects replay", media: &livekit.MediaSource{RoomTracks: &livekit.RoomTracksSelection{Kinds: []livekit.RoomTrackKind{livekit.RoomTrackKind_ROOM_TRACK_KIND_AUDIO}}}, replay: true, err: "not supported for replay"},
-	}
+func TestApplyDataSourceAllowlist(t *testing.T) {
+	p := &PipelineConfig{}
+	req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{
+		Data: &livekit.DataSource{TrackNames: []string{"camera", "microphone"}},
+	}}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			p := &PipelineConfig{IsReplay: test.replay}
-			req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Media{Media: test.media}}
-			_, err := p.applyV2Source(req)
-			require.ErrorContains(t, err, test.err)
-		})
-	}
+	_, err := p.applyV2Source(req)
+	require.NoError(t, err)
+	require.Equal(t, []string{"camera", "microphone"}, p.TrackNames)
 }
 
-func TestApplyMediaRoomTracksSourceSingleKind(t *testing.T) {
-	for _, test := range []struct {
-		name         string
-		kind         livekit.RoomTrackKind
-		audio, video bool
-	}{
-		{name: "audio", kind: livekit.RoomTrackKind_ROOM_TRACK_KIND_AUDIO, audio: true},
-		{name: "video", kind: livekit.RoomTrackKind_ROOM_TRACK_KIND_VIDEO, video: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			p := &PipelineConfig{}
-			req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Media{Media: &livekit.MediaSource{
-				RoomTracks: &livekit.RoomTracksSelection{Kinds: []livekit.RoomTrackKind{test.kind}},
-			}}}
-			_, err := p.applyV2Source(req)
-			require.NoError(t, err)
-			require.Equal(t, test.audio, p.AudioEnabled)
-			require.Equal(t, test.video, p.VideoEnabled)
-		})
+func TestApplyDataSourceRejectsInvalidAllowlist(t *testing.T) {
+	for _, names := range [][]string{{""}, {"camera", "camera"}} {
+		p := &PipelineConfig{}
+		req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{
+			Data: &livekit.DataSource{TrackNames: names},
+		}}
+		_, err := p.applyV2Source(req)
+		require.Error(t, err)
 	}
 }
 

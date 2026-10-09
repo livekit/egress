@@ -100,6 +100,7 @@ type SDKSourceParams struct {
 	VideoTracks     []*TrackSource
 	AudioRoutes     []AudioRouteConfig
 	CaptureAudioAll bool
+	TrackNames      []string
 }
 
 type AudioRouteConfig struct {
@@ -513,8 +514,8 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	default:
 		return errors.ErrInvalidInput("request")
 	}
-	if p.RequestType == types.RequestTypeMediaTracks {
-		if err := p.validateMediaTracksOutput(); err != nil {
+	if p.RequestType == types.RequestTypeData {
+		if err := p.validateDataOutput(); err != nil {
 			return err
 		}
 	}
@@ -617,12 +618,47 @@ func (c *BaseConfig) isV2SDKSource(req egress.EgressRequest) bool {
 	return true
 }
 
-// applyV2Source handles the shared v2 source switch. media.room_tracks is live-only;
+type dataRequest interface {
+	GetData() *livekit.DataSource
+}
+
+func getDataSource(req egress.EgressRequest) *livekit.DataSource {
+	r, ok := req.(dataRequest)
+	if !ok {
+		return nil
+	}
+	return r.GetData()
+}
+
+// applyV2Source handles the shared v2 source switch. DataSource is live-only;
 // the remaining source types are also supported by ExportReplayRequest.
 func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfoRequired bool, err error) {
 	connectionInfoRequired = true
 
 	switch {
+	case getDataSource(req) != nil:
+		data := getDataSource(req)
+		p.RequestType = types.RequestTypeData
+		p.SourceType = types.SourceTypeSDK
+		p.AwaitStartSignal = true
+		p.AudioEnabled = true
+		p.AudioTranscoding = true
+		p.VideoEnabled = true
+		p.VideoInCodec = types.MimeTypeRawVideo
+		p.VideoDecoding = true
+
+		seen := make(map[string]struct{}, len(data.TrackNames))
+		for _, name := range data.TrackNames {
+			if name == "" {
+				return connectionInfoRequired, errors.ErrInvalidInput("data.track_names")
+			}
+			if _, ok := seen[name]; ok {
+				return connectionInfoRequired, errors.ErrInvalidInput("duplicate data.track_names")
+			}
+			seen[name] = struct{}{}
+			p.TrackNames = append(p.TrackNames, name)
+		}
+
 	case req.GetTemplate() != nil:
 		tmpl := req.GetTemplate()
 		p.RequestType = types.RequestTypeTemplate
@@ -691,18 +727,6 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 
 	case req.GetMedia() != nil:
 		media := req.GetMedia()
-		if media.RoomTracks != nil {
-			if p.IsReplay {
-				return connectionInfoRequired, errors.ErrInvalidInput("media.room_tracks is not supported for replay")
-			}
-			if media.Video != nil || media.Audio != nil {
-				return connectionInfoRequired, errors.ErrInvalidInput("media.room_tracks cannot be combined with video or audio selectors")
-			}
-			if err = p.applyRoomTrackSelection(media.RoomTracks); err != nil {
-				return connectionInfoRequired, err
-			}
-			return connectionInfoRequired, nil
-		}
 		p.RequestType = types.RequestTypeMedia
 		p.SourceType = types.SourceTypeSDK
 
@@ -761,36 +785,6 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 	}
 
 	return connectionInfoRequired, nil
-}
-
-func (p *PipelineConfig) applyRoomTrackSelection(selection *livekit.RoomTracksSelection) error {
-	p.RequestType = types.RequestTypeMediaTracks
-	p.SourceType = types.SourceTypeSDK
-	p.AwaitStartSignal = true
-
-	seen := make(map[livekit.RoomTrackKind]struct{}, len(selection.Kinds))
-	for _, kind := range selection.Kinds {
-		if _, ok := seen[kind]; ok {
-			return errors.ErrInvalidInput("duplicate media.room_tracks kind")
-		}
-		seen[kind] = struct{}{}
-
-		switch kind {
-		case livekit.RoomTrackKind_ROOM_TRACK_KIND_AUDIO:
-			p.AudioEnabled = true
-			p.AudioTranscoding = true
-		case livekit.RoomTrackKind_ROOM_TRACK_KIND_VIDEO:
-			p.VideoEnabled = true
-			p.VideoInCodec = types.MimeTypeRawVideo
-			p.VideoDecoding = true
-		default:
-			return errors.ErrInvalidInput("media.room_tracks kind")
-		}
-	}
-	if !p.AudioEnabled && !p.VideoEnabled {
-		return errors.ErrInvalidInput("media.room_tracks kinds")
-	}
-	return nil
 }
 
 // rejects shapes a remux cannot express — downgrading silently would return re-encoded media
