@@ -103,6 +103,7 @@ type Writer struct {
 	descriptors        []byte
 	queue              messageHeap
 	maxTime            time.Time
+	lastLogTime        uint64
 	order              uint64
 	closed             bool
 }
@@ -273,10 +274,19 @@ func (w *Writer) flushReadyLocked(cutoff time.Time) error {
 
 func (w *Writer) flushNextLocked() error {
 	queued := heap.Pop(&w.queue).(*queuedMessage)
+	// The reorder window bounds memory use, so a sufficiently late sample can
+	// arrive after newer records have already been written. MCAP requires log
+	// times to be nondecreasing in file order. Preserve the synchronized media
+	// time in PublishTime and the Foxglove payload, but clamp the physical record
+	// time to the latest value already written.
+	if queued.message.LogTime < w.lastLogTime {
+		queued.message.LogTime = w.lastLogTime
+	}
 	if err := w.w.WriteMessage(queued.message); err != nil {
 		heap.Push(&w.queue, queued)
 		return err
 	}
+	w.lastLogTime = queued.message.LogTime
 	return nil
 }
 

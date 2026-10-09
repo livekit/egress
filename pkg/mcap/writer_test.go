@@ -112,6 +112,50 @@ func TestWriterRegistersDynamicTrackChannels(t *testing.T) {
 	require.Contains(t, topics, microphone.Topic)
 }
 
+func TestWriterClampsLateMessageLogTime(t *testing.T) {
+	var dst bytes.Buffer
+	start := time.Unix(100, 0)
+	w, err := NewWriter(&dst, Options{DynamicTracks: true, StartTime: start})
+	require.NoError(t, err)
+
+	camera0 := Track{ID: "TR_0", Topic: "/camera-0"}
+	camera1 := Track{ID: "TR_1", Topic: "/camera-1"}
+	require.NoError(t, w.WriteVideoTrack(0, camera0, []byte{0}))
+	require.NoError(t, w.WriteVideoTrack(4*time.Second, camera0, []byte{1}))
+	require.NoError(t, w.WriteVideoTrack(8*time.Second, camera0, []byte{2}))
+
+	// This arrives after the four-second message has crossed the reorder
+	// watermark and been written, but its synchronized media time is older.
+	lateTime := start.Add(3800 * time.Millisecond)
+	require.NoError(t, w.WriteVideoTrack(3800*time.Millisecond, camera1, []byte{3}))
+	require.NoError(t, w.Close())
+
+	r, err := mcapgo.NewReader(bytes.NewReader(dst.Bytes()))
+	require.NoError(t, err)
+	it, err := r.Messages(mcapgo.InOrder(mcapgo.FileOrder))
+	require.NoError(t, err)
+
+	var lastLogTime uint64
+	var lateMessage *mcapgo.Message
+	for {
+		_, channel, message, nextErr := it.NextInto(nil)
+		if nextErr == io.EOF {
+			break
+		}
+		require.NoError(t, nextErr)
+		require.GreaterOrEqual(t, message.LogTime, lastLogTime)
+		lastLogTime = message.LogTime
+		if channel.Topic == camera1.Topic {
+			lateMessage = message
+		}
+	}
+
+	require.NotNil(t, lateMessage)
+	require.Equal(t, uint64(start.Add(4*time.Second).UnixNano()), lateMessage.LogTime)
+	require.Equal(t, uint64(lateTime.UnixNano()), lateMessage.PublishTime)
+	require.Equal(t, encodeTimestamp(lateTime), protobufBytesField(t, lateMessage.Data, 1))
+}
+
 func protobufBytesField(t *testing.T, message []byte, wanted protowire.Number) []byte {
 	t.Helper()
 	for len(message) > 0 {
