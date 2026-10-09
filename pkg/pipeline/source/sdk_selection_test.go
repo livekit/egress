@@ -18,21 +18,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/livekit/egress/pkg/config"
 )
 
-func TestMatchesTrackName(t *testing.T) {
+func TestMatchesAllowlist(t *testing.T) {
 	t.Run("empty allowlist matches everything", func(t *testing.T) {
-		s := &SDKSource{PipelineConfig: &config.PipelineConfig{}}
-		require.True(t, s.matchesTrackName("camera"))
+		require.True(t, matchesAllowlist("camera", nil))
 	})
 
 	t.Run("non-empty allowlist is exact", func(t *testing.T) {
-		s := &SDKSource{PipelineConfig: &config.PipelineConfig{}}
-		s.TrackNames = []string{"camera", "microphone"}
-		require.True(t, s.matchesTrackName("camera"))
-		require.False(t, s.matchesTrackName("Camera"))
-		require.False(t, s.matchesTrackName("camera-wide"))
+		allowlist := []string{"camera", "microphone"}
+		require.True(t, matchesAllowlist("camera", allowlist))
+		require.False(t, matchesAllowlist("Camera", allowlist))
+		require.False(t, matchesAllowlist("camera-wide", allowlist))
 	})
 }

@@ -42,27 +42,71 @@ func TestApplyDataSource(t *testing.T) {
 	require.True(t, p.VideoEnabled)
 	require.True(t, p.AwaitStartSignal)
 	require.Empty(t, p.BaseUrl)
+	require.Empty(t, p.ParticipantIdentities)
+	require.Empty(t, p.VideoTrackNames)
+	require.Empty(t, p.AudioTrackNames)
 }
 
-func TestApplyDataSourceAllowlist(t *testing.T) {
+func TestApplyDataSourceSelectors(t *testing.T) {
 	p := &PipelineConfig{}
 	req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{
-		Data: &livekit.DataSource{TrackNames: []string{"camera", "microphone"}},
+		Data: &livekit.DataSource{
+			Participants: &livekit.ParticipantSelection{Identities: []string{"jetson-camera", "operator"}},
+			VideoTracks:  &livekit.TrackSelection{TrackNames: []string{"camera-0", "camera-1"}},
+			AudioTracks:  &livekit.TrackSelection{TrackNames: []string{"microphone"}},
+		},
 	}}
 
 	_, err := p.applyV2Source(req)
 	require.NoError(t, err)
-	require.Equal(t, []string{"camera", "microphone"}, p.TrackNames)
+	require.True(t, p.VideoEnabled)
+	require.True(t, p.AudioEnabled)
+	require.Equal(t, []string{"jetson-camera", "operator"}, p.ParticipantIdentities)
+	require.Equal(t, []string{"camera-0", "camera-1"}, p.VideoTrackNames)
+	require.Equal(t, []string{"microphone"}, p.AudioTrackNames)
 }
 
-func TestApplyDataSourceRejectsInvalidAllowlist(t *testing.T) {
-	for _, names := range [][]string{{""}, {"camera", "camera"}} {
+func TestApplyDataSourceModalitySelection(t *testing.T) {
+	t.Run("video only", func(t *testing.T) {
 		p := &PipelineConfig{}
 		req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{
-			Data: &livekit.DataSource{TrackNames: names},
+			Data: &livekit.DataSource{VideoTracks: &livekit.TrackSelection{}},
 		}}
 		_, err := p.applyV2Source(req)
-		require.Error(t, err)
+		require.NoError(t, err)
+		require.True(t, p.VideoEnabled)
+		require.False(t, p.AudioEnabled)
+	})
+
+	t.Run("audio only", func(t *testing.T) {
+		p := &PipelineConfig{}
+		req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{
+			Data: &livekit.DataSource{AudioTracks: &livekit.TrackSelection{}},
+		}}
+		_, err := p.applyV2Source(req)
+		require.NoError(t, err)
+		require.False(t, p.VideoEnabled)
+		require.True(t, p.AudioEnabled)
+	})
+}
+
+func TestApplyDataSourceRejectsInvalidSelectors(t *testing.T) {
+	tests := map[string]*livekit.DataSource{
+		"empty participant":       {Participants: &livekit.ParticipantSelection{Identities: []string{""}}},
+		"duplicate participant":   {Participants: &livekit.ParticipantSelection{Identities: []string{"jetson", "jetson"}}},
+		"empty video name":        {VideoTracks: &livekit.TrackSelection{TrackNames: []string{""}}},
+		"duplicate video name":    {VideoTracks: &livekit.TrackSelection{TrackNames: []string{"camera", "camera"}}},
+		"empty audio name":        {AudioTracks: &livekit.TrackSelection{TrackNames: []string{""}}},
+		"duplicate audio name":    {AudioTracks: &livekit.TrackSelection{TrackNames: []string{"microphone", "microphone"}}},
+		"data tracks unsupported": {DataTracks: &livekit.TrackSelection{}},
+	}
+	for name, data := range tests {
+		t.Run(name, func(t *testing.T) {
+			p := &PipelineConfig{}
+			req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{Data: data}}
+			_, err := p.applyV2Source(req)
+			require.Error(t, err)
+		})
 	}
 }
 

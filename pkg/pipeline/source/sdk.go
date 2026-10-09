@@ -251,8 +251,8 @@ func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
 
 func (s *SDKSource) joinRoom() error {
 	// TODO(data tracks): for RequestTypeData, attach the SDK data-packet
-	// callback here and apply the same TrackNames allowlist before forwarding
-	// schema and payload messages directly to the MCAP sink.
+	// callback here and apply ParticipantIdentities and the DataTracks selector
+	// before forwarding schema and payload messages directly to the MCAP sink.
 	cb := &lksdk.RoomCallback{
 		ParticipantCallback: lksdk.ParticipantCallback{
 			OnTrackSubscribed:   s.onTrackSubscribed,
@@ -398,7 +398,7 @@ func (s *SDKSource) awaitRoomTracks() error {
 	for _, rp := range s.room.Load().GetRemoteParticipants() {
 		pubs := rp.TrackPublications()
 		for _, pub := range pubs {
-			if s.shouldSubscribe(pub) {
+			if s.shouldSubscribe(pub, rp) {
 				expected++
 			}
 		}
@@ -489,7 +489,7 @@ func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, err
 	pubs := rp.TrackPublications()
 	expected := 0
 	for _, pub := range pubs {
-		if s.shouldSubscribe(pub) {
+		if s.shouldSubscribe(pub, rp) {
 			expected++
 		}
 	}
@@ -702,7 +702,7 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 	if s.RequestType == types.RequestTypeMedia {
 		shouldSub = s.shouldSubscribeMedia(pub, rp)
 	} else {
-		shouldSub = s.shouldSubscribe(pub)
+		shouldSub = s.shouldSubscribe(pub, rp)
 	}
 
 	if shouldSub {
@@ -714,7 +714,7 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 	}
 }
 
-func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
+func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
 	switch s.RequestType {
 	case types.RequestTypeParticipant:
 		switch pub.Source() {
@@ -724,13 +724,15 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 			return s.ScreenShare
 		}
 	case types.RequestTypeData:
-		if !s.matchesTrackName(pub.Name()) {
+		if !matchesAllowlist(string(rp.Identity()), s.ParticipantIdentities) {
 			return false
 		}
-		// Data publications will be matched by the same name allowlist once the
-		// SDK exposes them through the egress source. For now, only A/V tracks
-		// have GStreamer branches.
-		fallthrough
+		switch pub.Kind() {
+		case lksdk.TrackKindAudio:
+			return s.AudioEnabled && matchesAllowlist(pub.Name(), s.AudioTrackNames)
+		case lksdk.TrackKindVideo:
+			return s.VideoEnabled && matchesAllowlist(pub.Name(), s.VideoTrackNames)
+		}
 	case types.RequestTypeRoomComposite, types.RequestTypeTemplate:
 		switch pub.Kind() {
 		case lksdk.TrackKindAudio:
@@ -743,12 +745,12 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 	return false
 }
 
-func (s *SDKSource) matchesTrackName(name string) bool {
-	if len(s.TrackNames) == 0 {
+func matchesAllowlist(value string, allowlist []string) bool {
+	if len(allowlist) == 0 {
 		return true
 	}
-	for _, allowed := range s.TrackNames {
-		if name == allowed {
+	for _, allowed := range allowlist {
+		if value == allowed {
 			return true
 		}
 	}

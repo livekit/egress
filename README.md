@@ -54,9 +54,13 @@ follows the same local/cloud upload path as other file outputs.
 ```
 
 Video inputs (H264, VP8, or VP9) are normalized to H264, while Opus is preserved and PCMU/PCMA audio is normalized to
-Opus. Tracks published after the export starts are added dynamically. An empty `track_names` allowlist captures every
-audio and video track; a non-empty list matches track names exactly across all participants. This source currently
-permits exactly one MCAP file output. Data tracks are reserved for a future extension of the same selection model.
+Opus. Tracks published after the export starts are added dynamically. An empty `data` object captures every audio and
+video track from every participant. Participant and modality selectors are exact, case-sensitive allowlists and are
+combined by intersection. An omitted or empty selector means "all". Once any modality selector is present, omitted
+modalities are disabled. This source currently permits exactly one MCAP file output.
+
+The API reserves `data_tracks` for the same selection model, but egress currently rejects requests that include it
+rather than silently omitting data. Data packet capture and schema forwarding are a future extension.
 
 `DataSource` is intentionally MCAP-only and live-only. With a participant named `jetson-camera`
 already publishing in `mcap-test`, save the following as `request.json`:
@@ -69,6 +73,32 @@ already publishing in `mcap-test`, save the following as `request.json`:
     "file": {
       "file_type": "MCAP",
       "filepath": "/out/tracks-demo.mcap",
+      "disable_manifest": true
+    }
+  }]
+}
+```
+
+To capture only the Jetson's two cameras and the operator's microphone:
+
+```json
+{
+  "room_name": "mcap-test",
+  "data": {
+    "participants": {
+      "identities": ["jetson-camera", "operator"]
+    },
+    "video_tracks": {
+      "track_names": ["jetson-csi-camera-0", "jetson-csi-camera-1"]
+    },
+    "audio_tracks": {
+      "track_names": ["microphone"]
+    }
+  },
+  "outputs": [{
+    "file": {
+      "file_type": "MCAP",
+      "filepath": "/out/tracks-demo-filtered.mcap",
       "disable_manifest": true
     }
   }]

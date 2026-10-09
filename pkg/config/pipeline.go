@@ -87,20 +87,22 @@ type WebSourceParams struct {
 }
 
 type SDKSourceParams struct {
-	TrackID         string
-	AudioTrackID    string
-	VideoTrackID    string
-	Identity        string
-	TrackSource     string
-	TrackKind       string
-	ScreenShare     bool
-	Compositing     bool
-	VideoInCodec    types.MimeType
-	AudioTracks     []*TrackSource
-	VideoTracks     []*TrackSource
-	AudioRoutes     []AudioRouteConfig
-	CaptureAudioAll bool
-	TrackNames      []string
+	TrackID               string
+	AudioTrackID          string
+	VideoTrackID          string
+	Identity              string
+	TrackSource           string
+	TrackKind             string
+	ScreenShare           bool
+	Compositing           bool
+	VideoInCodec          types.MimeType
+	AudioTracks           []*TrackSource
+	VideoTracks           []*TrackSource
+	AudioRoutes           []AudioRouteConfig
+	CaptureAudioAll       bool
+	ParticipantIdentities []string
+	VideoTrackNames       []string
+	AudioTrackNames       []string
 }
 
 type AudioRouteConfig struct {
@@ -641,22 +643,39 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 		p.RequestType = types.RequestTypeData
 		p.SourceType = types.SourceTypeSDK
 		p.AwaitStartSignal = true
-		p.AudioEnabled = true
-		p.AudioTranscoding = true
-		p.VideoEnabled = true
-		p.VideoInCodec = types.MimeTypeRawVideo
-		p.VideoDecoding = true
 
-		seen := make(map[string]struct{}, len(data.TrackNames))
-		for _, name := range data.TrackNames {
-			if name == "" {
-				return connectionInfoRequired, errors.ErrInvalidInput("data.track_names")
+		if data.DataTracks != nil {
+			return connectionInfoRequired, errors.ErrInvalidInput("data.data_tracks is not supported yet")
+		}
+
+		explicitModalities := data.VideoTracks != nil || data.AudioTracks != nil
+		p.VideoEnabled = !explicitModalities || data.VideoTracks != nil
+		p.AudioEnabled = !explicitModalities || data.AudioTracks != nil
+		if p.VideoEnabled {
+			p.VideoInCodec = types.MimeTypeRawVideo
+			p.VideoDecoding = true
+		}
+		if p.AudioEnabled {
+			p.AudioTranscoding = true
+		}
+
+		if data.Participants != nil {
+			p.ParticipantIdentities, err = validateDataAllowlist(data.Participants.Identities, "data.participants.identities")
+			if err != nil {
+				return connectionInfoRequired, err
 			}
-			if _, ok := seen[name]; ok {
-				return connectionInfoRequired, errors.ErrInvalidInput("duplicate data.track_names")
+		}
+		if data.VideoTracks != nil {
+			p.VideoTrackNames, err = validateDataAllowlist(data.VideoTracks.TrackNames, "data.video_tracks.track_names")
+			if err != nil {
+				return connectionInfoRequired, err
 			}
-			seen[name] = struct{}{}
-			p.TrackNames = append(p.TrackNames, name)
+		}
+		if data.AudioTracks != nil {
+			p.AudioTrackNames, err = validateDataAllowlist(data.AudioTracks.TrackNames, "data.audio_tracks.track_names")
+			if err != nil {
+				return connectionInfoRequired, err
+			}
 		}
 
 	case req.GetTemplate() != nil:
@@ -785,6 +804,22 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 	}
 
 	return connectionInfoRequired, nil
+}
+
+func validateDataAllowlist(values []string, field string) ([]string, error) {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			return nil, errors.ErrInvalidInput(field)
+		}
+		if _, ok := seen[value]; ok {
+			return nil, errors.ErrInvalidInput("duplicate " + field)
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result, nil
 }
 
 // rejects shapes a remux cannot express — downgrading silently would return re-encoded media
