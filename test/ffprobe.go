@@ -248,6 +248,8 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 				require.Equal(t, "vp8", stream.CodecName)
 			case types.MimeTypeVP9:
 				require.Equal(t, "vp9", stream.CodecName)
+			case types.MimeTypeAV1:
+				require.Equal(t, "av1", stream.CodecName)
 			}
 
 			if p.VideoEncoding {
@@ -261,7 +263,9 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 				require.Equal(t, "vp8", stream.CodecName)
 
 			case types.OutputTypeMP4:
-				require.Equal(t, "h264", stream.CodecName)
+				if p.VideoOutCodec == "" {
+					require.Equal(t, "h264", stream.CodecName)
+				}
 
 				if p.VideoEncoding {
 					// bitrate, not available for HLS or WebM
@@ -580,8 +584,11 @@ func runFFmpegFilter(input, filter, level string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
+	// Single-threaded decode: ffmpeg 6.1 (Ubuntu 24.04) aborts with
+	// "Assertion pkt failed at ffmpeg_dec.c" on threaded libdav1d (AV1) input.
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-v", level,
+		"-threads", "1",
 		"-i", input,
 		"-vf", filter,
 		"-f", "null", "-",

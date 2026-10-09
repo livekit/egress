@@ -39,6 +39,7 @@ var (
 			types.MimeTypeH264: "/media-samples/livekit_avsync_p0_video_red_1080p25.h264",
 			types.MimeTypeVP8:  "/media-samples/livekit_avsync_p0_video_red_1080p24.vp8.ivf",
 			types.MimeTypeVP9:  "/media-samples/livekit_avsync_p0_video_red_1080p24.vp9.ivf",
+			types.MimeTypeAV1:  "/media-samples/livekit_avsync_p0_video_red_1080p24.av1.ivf",
 			types.MimeTypePCMU: "/media-samples/livekit_avsync_p0_audio_523hz_8k.pcmu.wav",
 			types.MimeTypePCMA: "/media-samples/livekit_avsync_p0_audio_523hz_8k.pcma.wav",
 		},
@@ -56,6 +57,7 @@ var (
 		types.MimeTypeH264: time.Millisecond * 40,
 		types.MimeTypeVP8:  time.Microsecond * 41667,
 		types.MimeTypeVP9:  time.Microsecond * 41667,
+		types.MimeTypeAV1:  time.Microsecond * 41667,
 		types.MimeTypePCMU: time.Millisecond * 20,
 		types.MimeTypePCMA: time.Millisecond * 20,
 	}

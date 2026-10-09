@@ -22,7 +22,7 @@ require (
 	github.com/livekit/go-rtmp v0.0.0-20251031234730-75a652881771
 	github.com/livekit/livekit-server v1.13.7
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
-	github.com/livekit/media-samples/avsync v0.0.0-20260804064037-794748125298
+	github.com/livekit/media-samples/avsync v0.0.0-20261008082729-48c99b65fa6d
 	github.com/livekit/media-sdk v0.1.1
 	github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095
 	github.com/livekit/protocol v1.52.2-0.20261009183135-8c550b03441f
