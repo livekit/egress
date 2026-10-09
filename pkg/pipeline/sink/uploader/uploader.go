@@ -37,7 +37,7 @@ const presignedExpiration = time.Hour * 24 * 7 // 7 days
 type Uploader struct {
 	primary         *store
 	backup          *store
-	primaryFailed   bool
+	primaryFailed   atomic.Bool
 	disabled        atomic.Bool
 	info            *livekit.EgressInfo
 	monitor         *stats.HandlerMonitor
@@ -132,16 +132,26 @@ func (u *Uploader) Upload(
 	outputType types.OutputType,
 	deleteAfterUpload bool,
 ) (string, int64, error) {
+	location, size, _, err := u.UploadWithDestination(localFilepath, storageFilepath, outputType, deleteAfterUpload)
+	return location, size, err
+}
+
+// UploadWithDestination is Upload, also reporting whether the file went to backup storage.
+func (u *Uploader) UploadWithDestination(
+	localFilepath, storageFilepath string,
+	outputType types.OutputType,
+	deleteAfterUpload bool,
+) (string, int64, bool, error) {
 
 	if u.disabled.Load() {
 		if deleteAfterUpload {
 			_ = os.Remove(localFilepath)
 		}
-		return "", 0, nil
+		return "", 0, false, nil
 	}
 
 	var primaryErr error
-	if !u.primaryFailed {
+	if !u.primaryFailed.Load() {
 		start := time.Now()
 		location, size, err := u.upload(localFilepath, storageFilepath, outputType, true)
 		elapsed := time.Since(start)
@@ -152,12 +162,14 @@ func (u *Uploader) Upload(
 			if deleteAfterUpload {
 				_ = os.Remove(localFilepath)
 			}
-			return location, size, nil
+			return location, size, false, nil
 		}
 		if u.monitor != nil {
 			u.monitor.IncUploadCountFailure(string(outputType), uploadErrorStatus(err), u.primary.hasCustomEndpoint, float64(elapsed.Milliseconds()))
 		}
-		u.primaryFailed = u.backup != nil
+		if u.backup != nil {
+			u.primaryFailed.Store(true)
+		}
 		primaryErr = err
 
 	}
@@ -174,17 +186,22 @@ func (u *Uploader) Upload(
 			if deleteAfterUpload {
 				_ = os.Remove(localFilepath)
 			}
-			return location, size, nil
+			return location, size, true, nil
 		}
 
 		if primaryErr != nil {
-			return "", 0, psrpc.NewErrorf(psrpc.InvalidArgument,
+			return "", 0, false, psrpc.NewErrorf(psrpc.InvalidArgument,
 				"primary: %s\nbackup: %s", primaryErr.Error(), backupErr.Error())
 		}
-		return "", 0, psrpc.NewErrorf(psrpc.InvalidArgument, "%s", backupErr.Error())
+		return "", 0, false, psrpc.NewErrorf(psrpc.InvalidArgument, "%s", backupErr.Error())
 	}
 
-	return "", 0, primaryErr
+	return "", 0, false, primaryErr
+}
+
+// PrimaryFailed reports whether this uploader has fallen back to backup storage.
+func (u *Uploader) PrimaryFailed() bool {
+	return u.primaryFailed.Load()
 }
 
 func uploadErrorStatus(err error) string {

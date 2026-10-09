@@ -39,6 +39,12 @@ type SegmentConfig struct {
 	SegmentSuffix        livekit.SegmentedFileSuffix
 	SegmentDuration      int
 
+	// SegmentOutputType is the container of the segments themselves, as opposed to
+	// OutputType, which describes the playlist. InitSegmentFilename is only set for
+	// containers that need a separate initialization segment.
+	SegmentOutputType   types.OutputType
+	InitSegmentFilename string
+
 	DisableManifest bool
 	StorageConfig   *StorageConfig
 }
@@ -92,6 +98,12 @@ func (p *PipelineConfig) getSegmentConfig(segments *livekit.SegmentedFileOutput,
 	case livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL,
 		livekit.SegmentedFileProtocol_HLS_PROTOCOL:
 		conf.OutputType = types.OutputTypeHLS
+		conf.SegmentOutputType = types.OutputTypeTS
+	case livekit.SegmentedFileProtocol_HLS_FMP4_PROTOCOL:
+		conf.OutputType = types.OutputTypeHLS
+		conf.SegmentOutputType = types.OutputTypeM4S
+	default:
+		return nil, errors.ErrInvalidInput("segment protocol")
 	}
 
 	// filename
@@ -173,6 +185,12 @@ func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 		o.LivePlaylistFilename = fmt.Sprintf("%s%s", livePlaylistName, ext)
 	}
 	o.SegmentPrefix = fmt.Sprintf("%s%s", segmentDir, segmentPrefix)
+
+	// fmp4 segments are preceded by an initialization segment, referenced from the
+	// playlist with EXT-X-MAP. It sits next to the segments it initializes.
+	if o.SegmentOutputType == types.OutputTypeM4S {
+		o.InitSegmentFilename = fmt.Sprintf("%s_init%s", o.SegmentPrefix, types.FileExtensionMP4)
+	}
 
 	if o.PlaylistFilename == o.LivePlaylistFilename {
 		return errors.ErrInvalidInput("live_playlist_name cannot be identical to playlist_name")
