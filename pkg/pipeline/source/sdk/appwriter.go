@@ -42,11 +42,19 @@ import (
 )
 
 const (
-	errBufferTooSmall      = "buffer too small"
-	discontinuityTolerance = 500 * time.Millisecond
-	pipelineCheckInterval  = 5 * time.Second
-	cSamplesQueueDepth     = 100
+	errBufferTooSmall       = "buffer too small"
+	discontinuityTolerance  = 500 * time.Millisecond
+	pipelineCheckInterval   = 5 * time.Second
+	cSamplesQueueDepth      = 100
+	drainingTimeout         = time.Second * 3
+	unsubscribedGracePeriod = time.Second * 2
+
+	// Threshold of consecutive FlowFlushing returns before the writer gives up
+	// and drains. ~2 seconds of 20ms audio packets.
+	flushingThreshold = 100
 )
+
+var errFlowFlushingThreshold = errors.New("persistent FlowFlushing detected")
 
 type sampleItem struct {
 	sample []jitter.ExtPacket
@@ -82,28 +90,37 @@ type AppWriter struct {
 	pliThrottle core.Throttle
 
 	// a/v sync
-	synchronizer *synchronizer.Synchronizer
-	*synchronizer.TrackSynchronizer
+	sync         synchronizer.Sync
+	trackSync    synchronizer.TrackSync
 	driftHandler DriftHandler
 
 	lastPTS              time.Duration
-	lastDrift            time.Duration
 	lastPipelineCheckPTS time.Duration
 	initialized          bool
 
 	// state
-	buildReady   core.Fuse
-	active       atomic.Bool
-	lastReceived atomic.Time
-	lastPushed   atomic.Time
-	playing      core.Fuse
-	draining     core.Fuse
-	endStream    core.Fuse
-	finished     core.Fuse
-	stats        appWriterStats
+	buildReady               core.Fuse
+	active                   atomic.Bool
+	lastReceived             atomic.Time
+	lastPushed               atomic.Time
+	playing                  core.Fuse
+	addedToPipeline          core.Fuse
+	draining                 core.Fuse
+	unsubscribed             core.Fuse
+	endStreamSignaled        core.Fuse
+	endStreamSourceProcessed core.Fuse
+	endStreamProcessed       core.Fuse
+	finished                 core.Fuse
+	stats                    appWriterStats
+
+	// consecutive FlowFlushing returns from PushBuffer
+	flushingCount int
 
 	// diagnostics, set on unexpected flushing when pushing packets to the pipeline
 	flushDotRequested atomic.Bool
+
+	// ensure selector/bin removal is only triggered once on terminal read errors
+	removalRequested atomic.Bool
 
 	tpLock       deadlock.RWMutex
 	timeProvider gstreamer.TimeProvider
@@ -114,7 +131,7 @@ type appWriterStats struct {
 }
 
 type DriftHandler interface {
-	EnqueueDrift(t time.Duration)
+	SetDrift(t time.Duration)
 	Processed() time.Duration
 }
 
@@ -124,23 +141,23 @@ func NewAppWriter(
 	pub lksdk.TrackPublication,
 	rp *lksdk.RemoteParticipant,
 	ts *config.TrackSource,
-	synchronizer *synchronizer.Synchronizer,
+	syncEngine synchronizer.Sync,
 	driftHandler DriftHandler,
 	callbacks *gstreamer.Callbacks,
 ) (*AppWriter, error) {
 	w := &AppWriter{
-		conf:              conf,
-		logger:            logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
-		track:             track,
-		pub:               pub,
-		codec:             ts.MimeType,
-		src:               ts.AppSrc,
-		trackSource:       ts,
-		callbacks:         callbacks,
-		synchronizer:      synchronizer,
-		TrackSynchronizer: synchronizer.AddTrack(track, rp.Identity()),
-		driftHandler:      driftHandler,
-		timeProvider:      gstreamer.NopTimeProvider(),
+		conf:         conf,
+		logger:       logger.GetLogger().WithValues("trackID", track.ID(), "kind", track.Kind().String()),
+		track:        track,
+		pub:          pub,
+		codec:        ts.MimeType,
+		src:          ts.AppSrc,
+		trackSource:  ts,
+		callbacks:    callbacks,
+		sync:         syncEngine,
+		trackSync:    syncEngine.AddTrack(track, rp.SID()),
+		driftHandler: driftHandler,
+		timeProvider: gstreamer.NopTimeProvider(),
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
 
@@ -152,23 +169,30 @@ func NewAppWriter(
 			logger.Errorw("failed to create csv logger", err)
 		} else {
 			w.csvLogger = csvLogger
-			w.TrackSynchronizer.OnSenderReport(func(drift time.Duration) {
-				logger.Debugw("received sender report", "drift", drift)
-				if w.driftHandler != nil {
-					// presence of the drift handler means that PTS updates on SRs are disabled
-					d := drift - w.lastDrift
-					w.lastDrift = drift
-					w.driftHandler.EnqueueDrift(d)
-				}
-				w.updateDrift(drift)
-			})
 		}
+	}
+
+	// Wire OnSenderReport whenever any consumer needs it: the sync engine, the
+	// tempo controller's drift handler, or track logging. Registering it
+	// unconditionally for the legacy synchronizer is what routes drift to the
+	// tempo controller instead of letting the synchronizer rebase audio PTS.
+	if conf.EnableSyncEngine || w.driftHandler != nil || w.csvLogger != nil {
+		w.trackSync.OnSenderReport(func(drift time.Duration) {
+			if w.driftHandler != nil {
+				w.driftHandler.SetDrift(drift)
+			}
+			w.updateDrift(drift)
+		})
 	}
 
 	var depacketizer rtp.Depacketizer
 	switch ts.MimeType {
 	case types.MimeTypeOpus:
 		depacketizer = &codecs.OpusPacket{}
+		w.translator = NewNullTranslator()
+
+	case types.MimeTypePCMU, types.MimeTypePCMA:
+		depacketizer = &G711Packet{}
 		w.translator = NewNullTranslator()
 
 	case types.MimeTypeH264:
@@ -183,21 +207,30 @@ func NewAppWriter(
 		depacketizer = &codecs.VP9Packet{}
 		w.translator = NewNullTranslator()
 
+	case types.MimeTypeAV1:
+		depacketizer = &codecs.AV1Depacketizer{}
+		w.translator = NewNullTranslator()
+
 	default:
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
 
+	opts := []jitter.Option{jitter.WithLogger(w.logger)}
+
+	// Audio tracks have no keyframe concept; sendPLI is a no-op for them so
+	// every call site can invoke it unconditionally.
+	w.sendPLI = func() {}
 	if track.Kind() == webrtc.RTPCodecTypeVideo {
 		w.pliThrottle = core.NewThrottle(time.Second)
 		w.sendPLI = func() { w.pliThrottle(func() { rp.WritePLI(track.SSRC()) }) }
+		opts = append(opts, jitter.WithPacketLossHandler(func(uint64, uint64) { w.sendPLI() }))
 	}
 
 	w.buffer = jitter.NewBuffer(
 		depacketizer,
 		conf.Latency.JitterBufferLatency,
 		w.onPacket,
-		jitter.WithLogger(w.logger),
-		jitter.WithPacketLossHandler(w.sendPLI),
+		opts...,
 	)
 	go w.start()
 	return w, nil
@@ -220,22 +253,55 @@ func (w *AppWriter) start() {
 	}()
 
 	go w.pushSamples()
-	for !w.endStream.IsBroken() {
+	for !w.endStreamSignaled.IsBroken() {
 		w.readNext()
+	}
+	w.drainJitterBuffer()
+
+	select {
+	case <-w.endStreamProcessed.Watch():
+		w.logger.Debugw("endStreamProcessed fuse broken")
+	case <-time.After(drainingTimeout):
+		w.logger.Errorw("endStreamProcessed not broken after 3 seconds, bug in the draining logic!", nil,
+			"endStreamSourceProcessed", w.endStreamSourceProcessed.IsBroken(),
+			"playing", w.playing.IsBroken(),
+			"addedToPipeline", w.addedToPipeline.IsBroken(),
+			"active", w.active.Load(),
+			"lastReceived", w.lastReceived.Load(),
+			"lastPushed", w.lastPushed.Load(),
+			"lastPTS", w.lastPTS,
+		)
 	}
 
 	// clean up
-	if w.playing.IsBroken() {
+	if w.shouldSendEOS() {
+		if !w.playing.IsBroken() {
+			// Linked into the pipeline but never reported PLAYING. Expect this to be
+			// rare and confined to shutdown.
+			w.logger.Warnw("appsrc never reported PLAYING, sending EOS anyway", nil,
+				"active", w.active.Load(),
+				"draining", w.draining.IsBroken(),
+				"unsubscribed", w.unsubscribed.IsBroken(),
+				"lastReceived", w.lastReceived.Load(),
+			)
+		}
 		w.callbacks.OnEOSSent()
-		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
-			w.logger.Errorw("unexpected flow return", nil, "flowReturn", flow.String())
+		flow := w.src.EndStream()
+		if flow == gst.FlowFlushing {
+			// a stuck appsrc refuses EOS, blocking EOS aggregation in the
+			// mixer and freezing the shutdown - recover it and retry
+			w.recoverFromFlushing()
+			flow = w.src.EndStream()
+		}
+		if flow != gst.FlowOK {
+			w.logger.Warnw("appsrc rejected EOS, pipeline may not reach EOS", nil, "flowReturn", flow.String())
 		}
 		if w.driftHandler != nil {
 			w.logger.Debugw("processed drift", "drift", w.driftHandler.Processed())
 		}
 	}
 
-	w.logger.Infow("writer finished")
+	w.logger.Infow("writer finished", "stats", w.getStats(), "requestType", w.conf.RequestType)
 	if w.csvLogger != nil {
 		w.csvLogger.Close()
 	}
@@ -258,14 +324,13 @@ func (w *AppWriter) readNext() {
 	receivedAt := time.Now()
 	var packets []jitter.ExtPacket
 	if !w.initialized {
-		ready, dropped, done := w.PrimeForStart(jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt})
+		ready, dropped, done := w.trackSync.PrimeForStart(jitter.ExtPacket{ReceivedAt: receivedAt, Packet: pkt})
 		if dropped > 0 {
 			w.stats.packetsDropped.Add(uint64(dropped))
-			if w.sendPLI != nil {
-				w.sendPLI()
-			}
+			w.sendPLI()
 		}
-		if !done {
+		if !done || len(ready) == 0 {
+			// done with no packets means the track was closed during priming
 			return
 		}
 		w.initialized = true
@@ -281,9 +346,7 @@ func (w *AppWriter) readNext() {
 		if w.buildReady.IsBroken() {
 			w.callbacks.OnTrackUnmuted(w.track.ID())
 		}
-		if w.sendPLI != nil {
-			w.sendPLI()
-		}
+		w.sendPLI()
 	}
 	if len(packets) > 0 {
 		w.buffer.PushExtPacketBatch(packets)
@@ -296,19 +359,36 @@ func (w *AppWriter) handleReadError(err error) {
 	var netErr net.Error
 	switch {
 	case w.draining.IsBroken():
-		w.endStream.Break()
-
-		w.samplesLock.Lock()
-		w.samplesCond.Broadcast()
-		w.samplesLock.Unlock()
+		if !w.endStreamSignaled.IsBroken() {
+			// Delayed drain in progress (Drain(false) was called, timer pending)
+			if (errors.As(err, &netErr) && netErr.Timeout()) || err.Error() == errBufferTooSmall {
+				// Keep reading until timer fires to preserve pipeline latency timeout
+				return
+			}
+		}
+		w.logger.Debugw("handleReadError, breaking endStreamSignaled", "error", err)
+		// connection closed or EOF - no point in trying to read anymore
+		w.endStreamSignaled.Break()
+		w.notifyPushSamples()
 
 	case errors.As(err, &netErr) && netErr.Timeout():
-		if !w.active.Load() {
-			return
-		}
 		lastRecv := w.lastReceived.Load()
 		if lastRecv.IsZero() {
 			lastRecv = w.startTime
+		}
+
+		// If track was unsubscribed and grace period elapsed, end the stream
+		if w.unsubscribed.IsBroken() && time.Since(lastRecv) > unsubscribedGracePeriod {
+			w.logger.Debugw("unsubscribed grace period elapsed, ending stream")
+			w.ensureRemovedBeforeDrain()
+			w.draining.Break()
+			w.endStreamSignaled.Break()
+			w.notifyPushSamples()
+			return
+		}
+
+		if !w.active.Load() {
+			return
 		}
 		if w.pub.IsMuted() || time.Since(lastRecv) > w.conf.Latency.JitterBufferLatency {
 			// set track inactive
@@ -323,15 +403,17 @@ func (w *AppWriter) handleReadError(err error) {
 		w.logger.Warnw("read error", err)
 
 	default:
+		// ensure selector switches before EOS propagation to avoid encoder errors
+		w.ensureRemovedBeforeDrain()
+
 		if !errors.Is(err, io.EOF) {
 			w.logger.Errorw("could not read packet", err)
+		} else {
+			w.logger.Debugw("read EOF, signaling end of stream")
 		}
 		w.draining.Break()
-		w.endStream.Break()
-
-		w.samplesLock.Lock()
-		w.samplesCond.Broadcast()
-		w.samplesLock.Unlock()
+		w.endStreamSignaled.Break()
+		w.notifyPushSamples()
 	}
 }
 
@@ -382,10 +464,16 @@ func (w *AppWriter) logTrackState(event string) {
 }
 
 func (w *AppWriter) onKeyframeRequired() {
-	if w.finished.IsBroken() || w.sendPLI == nil {
+	if w.finished.IsBroken() {
 		return
 	}
 	w.sendPLI()
+}
+
+func (w *AppWriter) notifyPushSamples() {
+	w.samplesLock.Lock()
+	w.samplesCond.Broadcast()
+	w.samplesLock.Unlock()
 }
 
 func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
@@ -401,6 +489,7 @@ func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
 		w.samplesLen++
 	}
 	// drop old samples if queue is overflowing
+	dropped := false
 	for w.samplesLen > cSamplesQueueDepth {
 		if w.samplesHead != nil {
 			itemToDrop := w.samplesHead
@@ -408,6 +497,7 @@ func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
 			w.samplesLen--
 			w.stats.packetsDropped.Add(uint64(len(itemToDrop.sample)))
 			w.logger.Warnw("buffer full, dropping sample", nil, "numPackets", len(itemToDrop.sample))
+			dropped = true
 		}
 		if w.samplesHead == nil {
 			w.samplesTail = nil
@@ -416,9 +506,18 @@ func (w *AppWriter) onPacket(sample []jitter.ExtPacket) {
 	}
 	w.samplesCond.Broadcast()
 	w.samplesLock.Unlock()
+
+	if dropped {
+		w.sendPLI()
+	}
 }
 
 func (w *AppWriter) pushSamples() {
+	defer func() {
+		w.endStreamSignaled.Break()
+		w.endStreamProcessed.Break()
+		w.logger.Debugw("pushSamples finished")
+	}()
 	if !w.waitFor(w.callbacks.PipelinePaused()) {
 		return
 	}
@@ -429,10 +528,10 @@ func (w *AppWriter) pushSamples() {
 
 	for {
 		w.samplesLock.Lock()
-		for w.samplesHead == nil && !w.endStream.IsBroken() {
+		for w.samplesHead == nil && !w.endStreamSourceProcessed.IsBroken() {
 			w.samplesCond.Wait()
 		}
-		if w.endStream.IsBroken() {
+		if w.endStreamSourceProcessed.IsBroken() && w.samplesHead == nil {
 			w.samplesLock.Unlock()
 			return
 		}
@@ -447,15 +546,21 @@ func (w *AppWriter) pushSamples() {
 
 		for _, pkt := range item.sample {
 			if err := w.pushPacket(pkt); err != nil {
+				if errors.Is(err, errFlowFlushingThreshold) {
+					if w.callbacks.PipelineStopping() {
+						w.logger.Infow("appsrc rejected the remaining backlog during pipeline stop",
+							"flushingCount", w.flushingCount)
+					} else {
+						w.callbacks.OnError(errors.ErrPersistentFlushing)
+					}
+					w.draining.Break()
+					w.notifyPushSamples()
+					return
+				}
 				if !utils.ErrorIsOneOf(err, synchronizer.ErrPacketOutOfOrder, synchronizer.ErrPacketTooOld) {
 					w.draining.Break()
-					w.endStream.Break()
-
-					// wake any waiter
-					w.samplesLock.Lock()
-					w.samplesCond.Broadcast()
-					w.samplesLock.Unlock()
-					break
+					w.notifyPushSamples()
+					return
 				}
 			}
 		}
@@ -466,9 +571,10 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	w.translator.Translate(pkt.Packet)
 
 	// get PTS
-	pts, err := w.GetPTS(pkt)
+	pts, err := w.trackSync.GetPTS(pkt)
 	if err != nil {
 		w.stats.packetsDropped.Inc()
+		w.sendPLI()
 		return err
 	}
 
@@ -476,13 +582,15 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		// TODO: handle it by sending new gst segment that will reflect the offset
 		w.logger.Debugw("negative packet pts, dropping", "pts", pts)
 		w.stats.packetsDropped.Inc()
+		w.sendPLI()
 		return nil
 	}
 
-	p, err := pkt.Packet.Marshal()
+	p, err := pkt.Marshal()
 	if err != nil {
 		w.stats.packetsDropped.Inc()
 		w.logger.Errorw("could not marshal packet", err)
+		w.sendPLI()
 		return err
 	}
 
@@ -506,16 +614,52 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 
 	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
 		w.stats.packetsDropped.Inc()
-		w.logger.Infow("unexpected flow return", "flow", flow)
-		if flow == gst.FlowFlushing && w.flushDotRequested.CompareAndSwap(false, true) {
-			w.callbacks.OnDebugDotRequest("appsrc_flush_" + w.track.ID())
+		w.sendPLI()
+		if flow == gst.FlowFlushing {
+			w.flushingCount++
+			if w.flushingCount == 1 {
+				w.logger.Infow("FlowFlushing detected",
+					"appsrcState", w.src.Element.GetCurrentState().String())
+				if w.flushDotRequested.CompareAndSwap(false, true) {
+					w.callbacks.OnDebugDotRequest("appsrc_flush_" + w.track.ID())
+				}
+			}
+			if w.flushingCount == flushingThreshold/2 {
+				w.recoverFromFlushing()
+			}
+			if w.flushingCount >= flushingThreshold {
+				return errFlowFlushingThreshold
+			}
+		} else {
+			w.logger.Infow("unexpected flow return", "flow", flow,
+				"appsrcState", w.src.Element.GetCurrentState().String())
 		}
+	} else if w.flushingCount > 0 {
+		w.logger.Infow("FlowFlushing cleared after successful push",
+			"previousCount", w.flushingCount)
+		w.flushingCount = 0
 	}
 
 	w.lastPushed.Store(time.Now())
 	w.lastPTS = pts
 	w.maybeCheckPipelineLag(pts)
 	return nil
+}
+
+// recoverFromFlushing restarts an appsrc stranded with its internal flushing
+func (w *AppWriter) recoverFromFlushing() {
+	w.logger.Infow("attempting FlowFlushing recovery",
+		"flushingCount", w.flushingCount,
+		"appsrcState", w.src.Element.GetCurrentState().String())
+	if !w.src.SendEvent(gst.NewFlushStartEvent()) {
+		w.logger.Warnw("failed to send recovery flush start event", nil)
+		return
+	}
+	if !w.src.SendEvent(gst.NewFlushStopEvent(false)) {
+		w.logger.Warnw("failed to send recovery flush stop event", nil)
+		return
+	}
+	w.logger.Infow("FlowFlushing recovery successful")
 }
 
 func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {
@@ -532,7 +676,7 @@ func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {
 	}
 
 	if pts < pipelineTime-w.conf.Latency.AudioMixerLatency {
-		w.logger.Errorw(
+		w.logger.Warnw(
 			"packet PTS too far in the past compared to the pipeline, mixer will drop the buffer!",
 			nil,
 			"pts", pts,
@@ -542,20 +686,32 @@ func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {
 }
 
 func (w *AppWriter) Playing() {
+	// Reaching PLAYING implies the appsrc is linked.
+	w.addedToPipeline.Break()
 	w.playing.Break()
+}
+
+func (w *AppWriter) MarkAddedToPipeline() {
+	w.addedToPipeline.Break()
+}
+
+// shouldSendEOS reports whether cleanup must push EOS into this writer's appsrc.
+//
+// The test is whether the pipeline links the appsrc, not whether it was reported
+// PLAYING: that notification is not delivered during shutdown, while the pipeline
+// still waits on the pad.
+func (w *AppWriter) shouldSendEOS() bool {
+	return w.addedToPipeline.IsBroken()
 }
 
 // Drain blocks until finished
 func (w *AppWriter) Drain(force bool) {
 	w.draining.Once(func() {
-		w.logger.Debugw("draining")
+		w.logger.Debugw("draining", "force", force)
 
 		endStream := func() {
-			w.endStream.Break()
-
-			w.samplesLock.Lock()
-			w.samplesCond.Broadcast()
-			w.samplesLock.Unlock()
+			w.endStreamSignaled.Break()
+			w.notifyPushSamples()
 		}
 
 		if force || !w.active.Load() {
@@ -565,13 +721,26 @@ func (w *AppWriter) Drain(force bool) {
 		}
 	})
 
-	// wait until finished
 	<-w.finished.Watch()
-	w.synchronizer.RemoveTrack(w.track.ID())
+	w.logger.Debugw("finished fuse broken")
+	w.sync.RemoveTrack(w.track.ID())
+}
+
+// OnUnsubscribed signals that the track was unsubscribed but allows the reader
+// to continue reading until an error occurs or grace period elapses.
+// This allows any remaining buffers in flight from the SFU to be processed.
+func (w *AppWriter) OnUnsubscribed() {
+	w.unsubscribed.Break()
+	w.logger.Debugw("track unsubscribed, continuing to read until error or grace period")
+}
+
+// Finished returns a channel that is closed when the writer has finished.
+func (w *AppWriter) Finished() <-chan struct{} {
+	return w.finished.Watch()
 }
 
 func (w *AppWriter) logStats() {
-	ended := w.endStream.Watch()
+	ended := w.endStreamSignaled.Watch()
 	ticker := time.NewTicker(time.Second * 10)
 	defer ticker.Stop()
 
@@ -581,7 +750,6 @@ func (w *AppWriter) logStats() {
 			stats := w.getStats()
 			w.csvLogger.Write(stats)
 			w.csvLogger.Close()
-			w.logger.Debugw("appwriter stats ", "stats", stats, "requestType", w.conf.RequestType)
 			return
 
 		case <-ticker.C:
@@ -624,6 +792,49 @@ func (w *AppWriter) shouldHandleDiscontinuity() bool {
 	return w.track.Kind() == webrtc.RTPCodecTypeAudio && w.conf.AudioTempoController.Enabled
 }
 
+func (w *AppWriter) TrackKind() webrtc.RTPCodecType {
+	return w.track.Kind()
+}
+
+func (w *AppWriter) drainJitterBuffer() {
+	w.logger.Debugw("draining jitter buffer")
+	w.buffer.Close()
+	w.buffer.Flush()
+	w.logger.Debugw("jitter buffer flushed")
+
+	w.endStreamSourceProcessed.Break()
+	w.notifyPushSamples()
+}
+
 func isDiscontinuity(lastPTS time.Duration, pts time.Duration) bool {
 	return pts > lastPTS+discontinuityTolerance
+}
+
+func (w *AppWriter) shouldRemoveBeforeDrain() bool {
+	return w.track.Kind() == webrtc.RTPCodecTypeVideo && !w.conf.Passthrough &&
+		(w.conf.RequestType == types.RequestTypeParticipant || w.conf.RequestType == types.RequestTypeRoomComposite || w.conf.RequestType == types.RequestTypeTemplate || w.conf.RequestType == types.RequestTypeMedia)
+}
+
+func (w *AppWriter) ensureRemovedBeforeDrain() {
+	if w.shouldRemoveBeforeDrain() && w.removalRequested.CompareAndSwap(false, true) {
+		w.callbacks.OnTrackRemoved(w.track.ID())
+	}
+}
+
+type G711Packet struct{}
+
+func (p *G711Packet) Unmarshal(packet []byte) ([]byte, error) {
+	// G.711 payload is just the raw samples, return as-is (same as OpusPacket)
+	if packet == nil {
+		return nil, errors.New("nil packet")
+	}
+	return packet, nil
+}
+
+func (p *G711Packet) IsPartitionHead(_ []byte) bool {
+	return true
+}
+
+func (p *G711Packet) IsPartitionTail(_ bool, _ []byte) bool {
+	return true
 }

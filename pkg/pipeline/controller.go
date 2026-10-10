@@ -19,6 +19,9 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -26,6 +29,8 @@ import (
 	"github.com/linkdata/deadlock"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
+
+	"go.opentelemetry.io/otel"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -38,15 +43,19 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/psrpc"
 )
 
 const (
 	pipelineName = "pipeline"
-	eosTimeout   = time.Second * 30
 
 	streamRetryUpdateInterval = time.Minute
+)
+
+// vars to allow tests to shorten them
+var (
+	eosTimeout     = time.Second * 30
+	prerollTimeout = time.Second * 30
 )
 
 type Controller struct {
@@ -60,49 +69,68 @@ type Controller struct {
 	p         *gstreamer.Pipeline
 	sinks     map[types.EgressType][]sink.Sink
 
+	// replay timing
+	replayStartAt  int64 // wallclock unix nanos
+	replayDuration int64 // milliseconds
+
 	// internal
-	mu          deadlock.Mutex
-	monitor     *stats.HandlerMonitor
-	limitTimer  *time.Timer
-	paused      core.Fuse
-	playing     core.Fuse
-	eosSent     core.Fuse
-	eosTimer    *time.Timer
-	eosReceived core.Fuse
-	stopped     core.Fuse
-	stats       controllerStats
+	mu                   deadlock.Mutex
+	monitor              *stats.HandlerMonitor
+	limitTimer           *time.Timer
+	storageMonitorCancel context.CancelFunc
+	paused               core.Fuse
+	playing              core.Fuse
+	eosSent              core.Fuse
+	eosTimer             *time.Timer
+	eosReceived          core.Fuse
+	stopped              core.Fuse
+	storageLimitOnce     sync.Once
+	pipelineEndedAt      int64
+	stats                controllerStats
+	pipelineCreatedAt    time.Time
 }
 
 type controllerStats struct {
-	droppedAudioBuffers  atomic.Uint64
-	droppedAudioDuration atomic.Duration
+	mixerDroppedAudioBuffers atomic.Uint64
+	droppedVideoBuffers      atomic.Uint64
+
+	mixerDroppedAudioDuration atomic.Duration
+
+	queuesDroppedAudioBuffers atomic.Uint64
+
+	droppedAudioBuffersByQueue map[string]uint64
+	droppedVideoBuffersByQueue map[string]uint64
 }
+
+// SourceBuilder constructs a pipeline source. It receives the controller's
+// callbacks so the source can synchronize on GstReady; custom sources that
+// don't need gst synchronization can ignore the argument.
+type SourceBuilder func(callbacks *gstreamer.Callbacks) (source.Source, error)
+
+var (
+	tracer = otel.Tracer("github.com/livekit/egress/pkg/pipeline")
+)
 
 func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.EgressServiceClient) (*Controller, error) {
 	ctx, span := tracer.Start(ctx, "Pipeline.New")
 	defer span.End()
 
-	var err error
-	c := &Controller{
-		PipelineConfig:   conf,
-		ipcServiceClient: ipcServiceClient,
-		gstLogger:        logger.GetLogger().(logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
-		callbacks: &gstreamer.Callbacks{
-			GstReady:   make(chan struct{}),
-			BuildReady: make(chan struct{}),
-		},
-		sinks:   make(map[types.EgressType][]sink.Sink),
-		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID, conf.Info.EgressId),
-	}
-	c.callbacks.SetOnError(c.OnError)
-	c.callbacks.SetOnEOSSent(c.onEOSSent)
-	c.callbacks.SetOnDebugDotRequest(func(reason string) {
-		if !c.Debug.EnableProfiling {
-			return
-		}
-		logger.Debugw("debug dot requested", "reason", reason)
-		c.generateDotFile(reason)
+	return NewWithSource(ctx, conf, ipcServiceClient, func(callbacks *gstreamer.Callbacks) (source.Source, error) {
+		return source.New(ctx, conf, callbacks)
 	})
+}
+
+// NewWithSource creates a Controller using the given SourceBuilder. The builder
+// runs after the controller has been constructed and receives the controller's
+// Callbacks, so the source can share GstReady with the pipeline. Use this when
+// the source isn't the standard source.New (testfeeder, replay export, etc.).
+func NewWithSource(
+	ctx context.Context,
+	conf *config.PipelineConfig,
+	ipcServiceClient ipc.EgressServiceClient,
+	srcBuilder SourceBuilder,
+) (*Controller, error) {
+	c := newController(conf, ipcServiceClient)
 
 	// initialize gst
 	go func() {
@@ -113,20 +141,54 @@ func New(ctx context.Context, conf *config.PipelineConfig, ipcServiceClient ipc.
 		close(c.callbacks.GstReady)
 	}()
 
-	// create source
-	c.src, err = source.New(ctx, conf, c.callbacks)
+	src, err := srcBuilder(c.callbacks)
 	if err != nil {
 		return nil, err
 	}
+	c.src = src
 
 	// create pipeline
 	<-c.callbacks.GstReady
-	if err = c.BuildPipeline(); err != nil {
+	if err := c.BuildPipeline(); err != nil {
 		c.src.Close()
 		return nil, err
 	}
 
 	return c, nil
+}
+
+// Callbacks returns the pipeline callbacks. Sources that need to wait for
+// GstReady before creating appsrc elements can use this.
+func (c *Controller) Callbacks() *gstreamer.Callbacks {
+	return c.callbacks
+}
+
+func newController(conf *config.PipelineConfig, ipcServiceClient ipc.EgressServiceClient) *Controller {
+	c := &Controller{
+		PipelineConfig:   conf,
+		ipcServiceClient: ipcServiceClient,
+		gstLogger:        logger.GetLogger().(logger.ZapLogger).ToZap().WithOptions(zap.WithCaller(false)),
+		callbacks: &gstreamer.Callbacks{
+			GstReady:   make(chan struct{}),
+			BuildReady: make(chan struct{}),
+		},
+		sinks:   make(map[types.EgressType][]sink.Sink),
+		monitor: stats.NewHandlerMonitor(conf.NodeID, conf.ClusterID),
+		stats: controllerStats{
+			droppedVideoBuffersByQueue: make(map[string]uint64),
+			droppedAudioBuffersByQueue: make(map[string]uint64),
+		},
+	}
+	c.callbacks.SetOnError(c.OnError)
+	c.callbacks.SetOnEOSSent(c.onEOSSent)
+	c.callbacks.SetOnDebugDotRequest(func(reason string) {
+		if !c.Debug.EnableProfiling {
+			return
+		}
+		logger.Debugw("debug dot requested", "reason", reason)
+		c.generateDotFile(reason)
+	})
+	return c
 }
 
 func (c *Controller) BuildPipeline() error {
@@ -135,14 +197,16 @@ func (c *Controller) BuildPipeline() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
+	c.pipelineCreatedAt = time.Now()
+
 	p.SetWatch(c.messageWatch)
 	p.AddOnStop(func() error {
 		c.stopped.Break()
 		return nil
 	})
-	if c.SourceType == types.SourceTypeSDK {
+	if sdkSrc, ok := c.src.(*source.SDKSource); ok {
 		p.SetEOSFunc(func() bool {
-			c.src.(*source.SDKSource).CloseWriters()
+			sdkSrc.CloseWriters()
 			return true
 		})
 	}
@@ -153,7 +217,13 @@ func (c *Controller) BuildPipeline() error {
 		}
 	}
 	if c.VideoEnabled {
-		if err = builder.BuildVideoBin(p, c.PipelineConfig); err != nil {
+		var setDims func(string, int, int)
+		if c.Compositing {
+			if sdkSrc, ok := c.src.(*source.SDKSource); ok {
+				setDims = sdkSrc.UpdateTrackDimensions
+			}
+		}
+		if err = builder.BuildVideoBin(p, c.PipelineConfig, setDims); err != nil {
 			return err
 		}
 	}
@@ -176,11 +246,13 @@ func (c *Controller) BuildPipeline() error {
 	p.UpgradeState(gstreamer.StateStarted)
 
 	c.p = p
-	if timeAware, ok := c.src.(source.TimeAware); ok {
-		timeAware.SetTimeProvider(p)
-	}
 	close(c.callbacks.BuildReady)
 	return nil
+}
+
+func (c *Controller) SetReplayTiming(startAt, durationMs int64) {
+	c.replayStartAt = startAt
+	c.replayDuration = durationMs
 }
 
 func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
@@ -190,11 +262,22 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	defer c.Close()
 
 	defer func() {
+		if c.VideoEnabled {
+			logger.Infow(
+				"video input queue stats",
+				"videoBuffersDropped", c.stats.droppedVideoBuffers.Load(),
+				"requestType", c.RequestType,
+				"sourceType", c.SourceType,
+				"droppedByQueue", c.stats.droppedVideoBuffersByQueue,
+			)
+		}
 		if c.SourceType == types.SourceTypeSDK {
-			logger.Debugw(
+			logger.Infow(
 				"audio qos stats",
-				"audioBuffersDropped", c.stats.droppedAudioBuffers.Load(),
-				"totalAudioDurationDropped", c.stats.droppedAudioDuration.Load(),
+				"audioBuffersDropped", c.stats.mixerDroppedAudioBuffers.Load(),
+				"totalAudioDurationDropped", c.stats.mixerDroppedAudioDuration.Load(),
+				"queueDroppedAudioBuffers", c.stats.queuesDroppedAudioBuffers.Load(),
+				"droppedByQueue", c.stats.droppedAudioBuffersByQueue,
 				"requestType", c.RequestType,
 			)
 		}
@@ -204,10 +287,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	c.startSessionLimitTimer(ctx)
 
 	// close when room ends
-	go func() {
-		<-c.src.EndRecording()
-		c.SendEOS(ctx, livekit.EndReasonSrcClosed)
-	}()
+	go c.watchEndRecording(ctx)
 
 	// wait until room is ready
 	start := c.src.StartRecording()
@@ -223,25 +303,63 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 		}
 	}
 
+	// Replay timing gate: wait until start_at
+	if c.replayStartAt > 0 {
+		waitDuration := time.Until(time.Unix(0, c.replayStartAt))
+		if waitDuration > 0 {
+			logger.Debugw("waiting for replay start time", "waitDuration", waitDuration)
+			select {
+			case <-c.stopped.Watch():
+				c.src.Close()
+				c.Info.SetAborted(livekit.MsgStartNotReceived)
+				return c.Info
+			case <-time.After(waitDuration):
+				// continue
+			}
+		}
+	}
+
 	for _, si := range c.sinks {
 		for _, s := range si {
 			if err := s.Start(); err != nil {
 				c.src.Close()
 				c.Info.SetFailed(err)
+				// nothing else stops the pipeline here, and a non-live watchEndRecording parks on stopped
+				go c.p.Stop()
 				return c.Info
 			}
 		}
+	}
+
+	c.startOutputSizeMonitor()
+
+	// Replay duration timer
+	if c.replayDuration > 0 {
+		time.AfterFunc(time.Duration(c.replayDuration)*time.Millisecond, func() {
+			c.SendEOS(ctx, livekit.EndReasonSrcClosed)
+		})
 	}
 
 	err := c.p.Run()
 	if err != nil {
 		c.src.Close()
 		c.Info.SetFailed(err)
+		go c.p.Stop()
 		return c.Info
 	}
 
 	logger.Debugw("closing source")
 	c.src.Close()
+
+	// Another egress instance is presumed to still be writing to the same
+	// output — don't race uploads with it.
+	if c.IsDuplicateIdentity() {
+		for _, si := range c.sinks {
+			for _, s := range si {
+				s.DisableUploads()
+			}
+		}
+	}
 
 	if c.playing.IsBroken() {
 		logger.Debugw("closing sinks")
@@ -257,6 +375,25 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	}
 
 	return c.Info
+}
+
+// a non-live source can finish before PLAYING, where SendEOS aborts a healthy egress
+func (c *Controller) watchEndRecording(ctx context.Context) {
+	<-c.src.EndRecording()
+
+	if !c.Live {
+		select {
+		// the fuse releases only after the status has left STARTING, so SendEOS can't abort
+		case <-c.playing.Watch():
+		// Close still sets the aborted status, and SendEOS has nothing left to stop
+		case <-c.stopped.Watch():
+			return
+		case <-time.After(prerollTimeout):
+			logger.Warnw("non-live pipeline did not reach playing", nil, "timeout", prerollTimeout)
+		}
+	}
+
+	c.SendEOS(ctx, livekit.EndReasonSrcClosed)
 }
 
 func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) error {
@@ -282,7 +419,7 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 		// add stream info to results
 		c.mu.Lock()
 		c.Info.StreamResults = append(c.Info.StreamResults, stream.StreamInfo)
-		if list := c.Info.GetStream(); list != nil {
+		if list := c.Info.GetStream(); list != nil { //nolint:staticcheck // keep deprecated field for older clients
 			list.Info = append(list.Info, stream.StreamInfo)
 		}
 		c.mu.Unlock()
@@ -352,7 +489,7 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 
 	// fail egress if no outputs remaining
 	if c.OutputCount.Load() == 0 {
-		return psrpc.NewError(psrpc.Unavailable, streamErr)
+		return psrpc.NewError(psrpc.Unavailable, errors.MarkDestinationError(streamErr))
 	}
 
 	logger.Infow("stream failed",
@@ -381,12 +518,32 @@ func (c *Controller) trackStreamRetry(ctx context.Context, stream *config.Stream
 }
 
 func (c *Controller) onEOSSent() {
+	// A track ending mid-build reaches this before BuildPipeline() assigns c.p:
+	// reading it would panic and would race with that write. BuildReady closes
+	// once c.p is set, so an open channel means there is no pipeline to stop.
+	select {
+	case <-c.callbacks.BuildReady:
+	default:
+		return
+	}
+
 	// for video-only track/track composite, EOS might have already
 	// made it through the pipeline by the time endRecording is closed
-	if (c.RequestType == types.RequestTypeTrack || c.RequestType == types.RequestTypeTrackComposite) && !c.AudioEnabled {
+	if (c.Passthrough || c.RequestType == types.RequestTypeTrackComposite) && !c.AudioEnabled {
+		// watchEndRecording sends it once playing; sending here would abort a STARTING egress
+		if !c.Live && !c.playing.IsBroken() {
+			return
+		}
 		// this will not actually send a second EOS, but will make sure everything is in the correct state
 		c.SendEOS(context.Background(), livekit.EndReasonSrcClosed)
 	}
+}
+
+func (c *Controller) onStorageLimitReached() {
+	c.storageLimitOnce.Do(func() {
+		c.Info.SetLimitReached()
+		c.SendEOS(context.Background(), livekit.EndReasonLimitReached)
+	})
 }
 
 func (c *Controller) SendEOS(ctx context.Context, reason string) {
@@ -412,11 +569,11 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
 			c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ENDING)
-			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
+			c.sendHandlerUpdate(ctx, c.Info)
 			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_ENDING:
-			_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
+			c.sendHandlerUpdate(ctx, c.Info)
 			c.sendEOS()
 
 		case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
@@ -431,6 +588,10 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 }
 
 func (c *Controller) sendEOS() {
+	if c.eosReceived.IsBroken() {
+		return
+	}
+
 	for _, sinks := range c.sinks {
 		for _, s := range sinks {
 			s.AddEOSProbe()
@@ -443,7 +604,7 @@ func (c *Controller) sendEOS() {
 			switch egressType {
 			case types.EgressTypeFile, types.EgressTypeSegments, types.EgressTypeImages:
 				for _, s := range si {
-					if !s.EOSReceived() {
+					if !c.eosReceived.IsBroken() && !s.EOSReceived() {
 						c.OnError(errors.ErrPipelineFrozen)
 						return
 					}
@@ -462,7 +623,11 @@ func (c *Controller) sendEOS() {
 }
 
 func (c *Controller) OnError(err error) {
-	logger.Errorw("controller onError invoked", err)
+	if errors.IsDestinationError(err) {
+		logger.Warnw("controller onError invoked", err)
+	} else {
+		logger.Errorw("controller onError invoked", err)
+	}
 	if errors.Is(err, errors.ErrPipelineFrozen) && c.Debug.EnableProfiling {
 		c.generateDotFile("error")
 		c.generatePProf()
@@ -476,6 +641,27 @@ func (c *Controller) OnError(err error) {
 }
 
 func (c *Controller) Close() {
+	const closeSlowThreshold = 1 * time.Hour
+	closeStart := time.Now()
+	closeDone := make(chan struct{})
+	defer close(closeDone)
+
+	go func() {
+		select {
+		case <-closeDone:
+			return
+		case <-time.After(closeSlowThreshold):
+			logger.Warnw("Close() taking longer than expected", nil,
+				"threshold", closeSlowThreshold,
+				"elapsed", time.Since(closeStart),
+				"egressID", c.Info.EgressId,
+				"sourceType", c.SourceType,
+			)
+		}
+	}()
+
+	c.stopOutputSizeMonitor()
+
 	if c.SourceType == types.SourceTypeSDK || !c.eosSent.IsBroken() {
 		// sdk source will use the timestamp of the last packet pushed to the pipeline
 		c.updateEndTime()
@@ -491,6 +677,8 @@ func (c *Controller) Close() {
 		}
 	}
 
+	duplicateIdentity := c.IsDuplicateIdentity()
+
 	// ensure egress ends with a final state
 	switch c.Info.Status {
 	case livekit.EgressStatus_EGRESS_STARTING:
@@ -498,17 +686,25 @@ func (c *Controller) Close() {
 
 	case livekit.EgressStatus_EGRESS_ACTIVE,
 		livekit.EgressStatus_EGRESS_ENDING:
-		c.Info.SetComplete()
+		if err := c.endError(); err != nil {
+			c.Info.SetFailed(err)
+		} else {
+			c.Info.SetComplete()
+		}
 		fallthrough
 
 	case livekit.EgressStatus_EGRESS_LIMIT_REACHED,
 		livekit.EgressStatus_EGRESS_COMPLETE:
-		// upload manifest and add location to egress info
-		c.uploadManifest()
+		if !duplicateIdentity {
+			// upload manifest and add location to egress info
+			c.uploadManifest()
+		}
 	}
 
-	// upload debug files
-	c.uploadDebugFiles()
+	if !duplicateIdentity {
+		// upload debug files
+		c.uploadDebugFiles()
+	}
 }
 
 func (c *Controller) startSessionLimitTimer(ctx context.Context) {
@@ -548,6 +744,153 @@ func (c *Controller) startSessionLimitTimer(ctx context.Context) {
 	}
 }
 
+func (c *Controller) startOutputSizeMonitor() {
+	ctx, cancel := context.WithCancel(context.Background())
+	c.storageMonitorCancel = cancel
+
+	c.p.AddOnStop(func() error {
+		cancel()
+		return nil
+	})
+
+	go c.monitorOutputDirSize(ctx)
+}
+
+func (c *Controller) stopOutputSizeMonitor() {
+	if c.storageMonitorCancel != nil {
+		c.storageMonitorCancel()
+		c.storageMonitorCancel = nil
+	}
+}
+
+func (c *Controller) monitorOutputDirSize(ctx context.Context) {
+	thresholds := []int64{
+		1 << 30,  // 1GB
+		3 << 30,  // 3GB
+		5 << 30,  // 5GB
+		10 << 30, // 10GB
+		20 << 30, // 20GB
+		50 << 30, // 50GB
+	}
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	nextThreshold := 0
+	statErrorLogged := false
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		size, files, err := c.getOutputDirStats()
+		if err != nil {
+			if !statErrorLogged {
+				logger.Debugw("failed to stat output directory", err, "dir", c.TmpDir)
+				statErrorLogged = true
+			}
+			continue
+		}
+		statErrorLogged = false
+
+		if c.FileOutputMaxSize > 0 && size >= c.FileOutputMaxSize {
+			c.logOutputFileSizes(files, 10)
+			logger.Warnw(
+				"output storage limit reached",
+				nil,
+				"dir", c.TmpDir,
+				"bytesWritten", size,
+				"limitBytes", c.FileOutputMaxSize,
+			)
+			c.onStorageLimitReached()
+			return
+		}
+
+		thresholdTriggered := false
+		for nextThreshold < len(thresholds) && size >= thresholds[nextThreshold] {
+			logger.Debugw(
+				"output size threshold exceeded",
+				"dir", c.TmpDir,
+				"bytesWritten", size,
+				"thresholdBytes", thresholds[nextThreshold],
+			)
+			thresholdTriggered = true
+			nextThreshold++
+		}
+		if thresholdTriggered {
+			c.logOutputFileSizes(files, 10)
+		}
+	}
+}
+
+type outputFileStat struct {
+	path string
+	size int64
+}
+
+func (c *Controller) getOutputDirStats() (int64, []outputFileStat, error) {
+	if c.TmpDir == "" {
+		return 0, nil, nil
+	}
+
+	var files []outputFileStat
+
+	var total int64
+
+	err := filepath.Walk(c.TmpDir, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		total += info.Size()
+
+		rel, relErr := filepath.Rel(c.TmpDir, p)
+		if relErr != nil {
+			rel = p
+		}
+
+		files = append(files, outputFileStat{
+			path: rel,
+			size: info.Size(),
+		})
+
+		return nil
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].size > files[j].size
+	})
+
+	return total, files, nil
+}
+
+func (c *Controller) logOutputFileSizes(files []outputFileStat, limit int) {
+	if files == nil {
+		return
+	}
+
+	if limit > 0 && len(files) > limit {
+		files = files[:limit]
+	}
+
+	for _, f := range files {
+		logger.Infow("output file size", "file", f.path, "bytes", f.size)
+	}
+}
+
 func (c *Controller) updateStartTime(startedAt int64) {
 	for egressType, o := range c.Outputs {
 		if len(o) == 0 {
@@ -581,7 +924,7 @@ func (c *Controller) updateStartTime(startedAt int64) {
 
 	if c.Info.Status == livekit.EgressStatus_EGRESS_STARTING {
 		c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ACTIVE)
-		_, _ = c.ipcServiceClient.HandlerUpdate(context.Background(), c.Info)
+		c.sendHandlerUpdate(context.Background(), c.Info)
 	}
 }
 
@@ -619,11 +962,45 @@ func (c *Controller) streamUpdated(ctx context.Context) {
 		}
 	}
 
-	_, _ = c.ipcServiceClient.HandlerUpdate(ctx, c.Info)
+	c.sendHandlerUpdate(ctx, c.Info)
+}
+
+func (c *Controller) sendHandlerUpdate(ctx context.Context, info *livekit.EgressInfo) {
+	// Once duplicate-identity eviction is detected, suppress all further
+	// updates — another egress instance owns the recording.
+	if c.IsDuplicateIdentity() {
+		return
+	}
+	if c.ipcServiceClient != nil {
+		_, _ = c.ipcServiceClient.HandlerUpdate(ctx, info)
+	}
+}
+
+// IsDuplicateIdentity reports whether the pipeline's SDK source was evicted
+// from the room because another participant joined with the same identity.
+func (c *Controller) IsDuplicateIdentity() bool {
+	sdkSrc, ok := c.src.(*source.SDKSource)
+	if !ok {
+		return false
+	}
+	return sdkSrc.IsDuplicateIdentity()
+}
+
+// endError returns a non-nil error if the SDK source ended on a retryable room
+// disconnect, so the finalized partial output is reported failed.
+func (c *Controller) endError() error {
+	sdkSrc, ok := c.src.(*source.SDKSource)
+	if !ok {
+		return nil
+	}
+	return sdkSrc.GetEndError()
 }
 
 func (c *Controller) updateEndTime() {
 	endedAt := c.src.GetEndedAt()
+	if c.pipelineEndedAt > endedAt {
+		endedAt = c.pipelineEndedAt
+	}
 
 	for egressType, o := range c.Outputs {
 		if len(o) == 0 {
@@ -698,7 +1075,11 @@ func (c *Controller) uploadManifest() {
 		for _, s := range si {
 			location, uploaded, err := s.UploadManifest(manifestPath)
 			if err != nil {
-				logger.Errorw("failed to upload manifest", err)
+				if c.Info.BackupStorageUsed {
+					logger.Errorw("failed to upload manifest", err)
+				} else {
+					logger.Warnw("failed to upload manifest", err)
+				}
 				continue
 			}
 

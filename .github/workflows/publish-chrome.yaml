@@ -1,150 +1,151 @@
 name: Publish Chrome
 
 on:
+  schedule:
+    - cron: '0 6 * * 6'
   workflow_dispatch:
     inputs:
       chrome_version:
-        description: "Version of Chrome to build"
-        required: true
+        description: "Version of Chrome to build (defaults to current stable if empty)"
+        required: false
+        type: string
+      image_tag:
+        description: "Docker image tag (defaults to chrome_version if empty)"
+        required: false
         type: string
 
+permissions:
+  contents: read
+
 jobs:
-  build:
+  resolve:
     runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      should_build: ${{ steps.resolve.outputs.should_build }}
+
+    steps:
+      - name: Resolve Chrome version and decide whether to build
+        id: resolve
+        shell: bash
+        env:
+          CHROME_VERSION: ${{ inputs.chrome_version }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+
+          apt_version() {
+            local packages
+            if ! packages="$(curl -fsSL --retry 3 --retry-delay 5 \
+              "https://dl.google.com/linux/chrome/deb/dists/stable/main/binary-$1/Packages")"; then
+              echo "::error::Failed to fetch the Chrome apt index for $1" >&2
+              return 1
+            fi
+
+            awk '/^Package: google-chrome-stable$/{p=1} p&&/^Version:/{print $2; exit}' <<<"$packages"
+          }
+
+          version="$CHROME_VERSION"
+          resolved=false
+
+          if [ -z "$version" ]; then
+            resolved=true
+
+            amd64_version="$(apt_version amd64)"
+            arm64_version="$(apt_version arm64)"
+
+            if [ "$amd64_version" != "$arm64_version" ]; then
+              echo "::error::Chrome stable differs by architecture (amd64=$amd64_version, arm64=$arm64_version); refusing to publish a mismatched image."
+              exit 1
+            fi
+
+            version="${amd64_version%-*}"
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+            echo "::error::Unusable Chrome version: '$version'"
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          if [ "$resolved" = false ] || [ -n "$IMAGE_TAG" ]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "Explicit request for $version - building unconditionally." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Without -f, curl reports a 429 or 5xx as a successful transfer, so --retry
+          # never fires; with -f the 404 we need to detect becomes a generic error.
+          status=000
+          for attempt in 1 2 3; do
+            status="$(curl -s -o /dev/null -w '%{http_code}' \
+              "https://hub.docker.com/v2/repositories/livekit/chrome-installer/tags/$version")" || status=000
+            case "$status" in 200|404) break ;; esac
+            echo "Docker Hub returned HTTP $status (attempt $attempt/3); retrying..."
+            sleep $((attempt * 10))
+          done
+
+          if [ "$status" = 200 ]; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "Chrome stable is $version; livekit/chrome-installer:$version already exists - nothing to do." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            if [ "$status" = 404 ]; then
+              echo "Chrome stable is $version; livekit/chrome-installer:$version is not published - building." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::warning::Docker Hub check inconclusive (HTTP $status) for $version; building rather than risk skipping a release."
+              echo "Docker Hub check inconclusive (HTTP $status) for $version - building anyway." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install the Linode CLI
-        uses: linode/action-linode-cli@v1
-        with:
-          token: ${{ secrets.LINODE_PAT }}
-
-#      For some reason, Linodes created via linode-cli do not work with ssh,
-#      so we have to create the Linode manually and then pull the Linode ID
-#
-#      - name: Create Builder
-#        id: create_builder
-#        run: |
-#          builder_info="$(linode-cli linodes create \
-#            --authorized_users dclivekit \
-#            --backups_enabled false \
-#            --booted true \
-#            --image linode/ubuntu22.04 \
-#            --label chrome-builder \
-#            --private_ip false \
-#            --region us-west \
-#            --root_pass '${{ secrets.LINODE_ROOT_PASS }}' \
-#            --type g6-dedicated-4 \
-#            --json)"
-#          builder_id="$(echo $builder_info | jq -r '.[0].id')"
-#          builder_ip="$(echo $builder_info | jq -r '.[0].ipv4[0]')"
-#          echo "builder_id: $builder_id"
-#          echo "builder_ip: $builder_ip"
-#          echo "builder_id=$builder_id" >> $GITHUB_OUTPUT
-#          echo "builder_ip=$builder_ip" >> $GITHUB_OUTPUT
-#        env:
-#          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
-
-      - name: Get Builder
-        id: get_builder
-        run: |
-          builder_info="$(linode-cli linodes list --label chrome-builder --json)"
-          builder_id="$(echo $builder_info | jq -r '.[0].id')"
-          builder_ip="$(echo $builder_info | jq -r '.[0].ipv4[0]')"
-          echo "builder_id: $builder_id"
-          echo "builder_ip: $builder_ip"
-          echo "builder_id=$builder_id" >> $GITHUB_OUTPUT
-          echo "builder_ip=$builder_ip" >> $GITHUB_OUTPUT
+      - name: Download Chrome debs
+        shell: bash
         env:
-          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
-
-      - name: Wait for Builder
+          CHROME_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
-          status=$(linode-cli linodes view ${{ steps.get_builder.outputs.builder_id }} --json | jq -r '.[0].status')
-          while [ "$status" == "provisioning" ] || [ "$status" == "booting" ]; do \
-              echo "Builder status: $status"; \
-              sleep 5; \
-              status=$(linode-cli linodes view ${{ steps.get_builder.outputs.builder_id }} --json | jq -r '.[0].status'); \
+          set -euo pipefail
+
+          rm -rf build/chrome/output
+
+          for arch in amd64 arm64; do
+            mkdir -p "build/chrome/output/$arch"
+            deb="build/chrome/output/$arch/google-chrome-stable.deb"
+
+            curl -fsSL --retry 3 --retry-delay 5 -o "$deb" \
+              "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}-1_${arch}.deb"
+
+            got="$(dpkg-deb --field "$deb" Version)"
+            if [ "$got" != "${CHROME_VERSION}-1" ]; then
+              echo "::error::$arch deb reports version $got, expected ${CHROME_VERSION}-1"
+              exit 1
+            fi
           done
-          echo "Builder status: $status"
-        env:
-          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
-
-      - name: Write SSH keys
-        run: |
-          mkdir ~/.ssh
-          chmod 700 ~/.ssh
-          echo "${{ secrets.LINODE_SSH_PUBLIC_KEY }}" > ~/.ssh/linode_ed25519.pub
-          chmod 600 ~/.ssh/linode_ed25519.pub
-          echo "${{ secrets.LINODE_SSH_PRIVATE_KEY }}" > ~/.ssh/linode_ed25519
-          chmod 600 ~/.ssh/linode_ed25519
-          ssh-keyscan -H ${{ steps.get_builder.outputs.builder_ip }} > ~/.ssh/known_hosts
-
-      - name: Setup
-        run: |
-          ssh -i ~/.ssh/linode_ed25519 \
-              -o PasswordAuthentication=no \
-              -t root@${{ steps.get_builder.outputs.builder_ip }} \
-              'bash -s' < ./build/chrome/scripts/setup.sh
-
-      - name: Amd64
-        run: |
-          ssh -i ~/.ssh/linode_ed25519 \
-              -o PasswordAuthentication=no \
-              -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
-              'bash -s ${{ inputs.chrome_version }}' < ./build/chrome/scripts/amd64.sh
-
-      - name: Arm64
-        run: |
-          ssh -i ~/.ssh/linode_ed25519 \
-              -o PasswordAuthentication=no \
-              -o ServerAliveInterval=60 \
-              -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
-              'bash -s ${{ inputs.chrome_version }}' < ./build/chrome/scripts/arm64.sh
-
-      - name: Drivers
-        run: |
-          ssh -i ~/.ssh/linode_ed25519 \
-              -o PasswordAuthentication=no \
-              -o ServerAliveInterval=60 \
-              -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
-              'bash -s ${{ inputs.chrome_version }}' < ./build/chrome/scripts/driver.sh
-
-      - name: Prepare artifacts
-        run: |
-          ssh -i ~/.ssh/linode_ed25519 \
-              -o PasswordAuthentication=no \
-              -t chrome@${{ steps.get_builder.outputs.builder_ip }} \
-              'zip -r output.zip ./output'
-
-      - name: Download artifacts
-        run: |
-          scp -i ~/.ssh/linode_ed25519 \
-              -o PasswordAuthentication=no \
-              chrome@${{ steps.get_builder.outputs.builder_ip }}:/home/chrome/output.zip \
-              ${{ github.workspace }}/build/chrome/output.zip
-          unzip ${{ github.workspace }}/build/chrome/output.zip -d ${{ github.workspace }}/build/chrome
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Login to DockerHub
-        uses: docker/login-action@v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./build/chrome
           file: ./build/chrome/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: livekit/chrome-installer:${{ inputs.chrome_version }}
-
-      - name: Delete Linode
-        run: linode-cli linodes delete ${{ steps.get_builder.outputs.builder_id }}
-        env:
-          LINODE_CLI_TOKEN: ${{ secrets.LINODE_PAT }}
+          tags: livekit/chrome-installer:${{ inputs.image_tag || needs.resolve.outputs.version }}

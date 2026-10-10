@@ -32,8 +32,8 @@ RUN apt-get update && \
         libcap2 \
         libchromaprint1 \
         libcurl3-gnutls \
+        libdav1d7 \
         libdca0 \
-        libde265-0 \
         libdv4 \
         libdvdnav4 \
         libdvdread8 \

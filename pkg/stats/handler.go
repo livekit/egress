@@ -15,8 +15,30 @@
 package stats
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
+
+// HandlerMetricPrefix is the family-name prefix of every metric a handler
+// exports to the service. Families outside it belong to linked libraries and
+// stay inside the handler process.
+const HandlerMetricPrefix = "livekit_egress_"
+
+// FilterHandlerFamilies keeps the families a handler owns. The service merges
+// handler families across processes and cannot merge foreign gauges that share
+// a label set, so nothing outside HandlerMetricPrefix is exported.
+func FilterHandlerFamilies(in []*dto.MetricFamily) []*dto.MetricFamily {
+	out := make([]*dto.MetricFamily, 0, len(in))
+	for _, f := range in {
+		if strings.HasPrefix(f.GetName(), HandlerMetricPrefix) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
 
 type HandlerMonitor struct {
 	uploadsCounter      *prometheus.CounterVec
@@ -24,31 +46,31 @@ type HandlerMonitor struct {
 	backupCounter       *prometheus.CounterVec
 }
 
-func NewHandlerMonitor(nodeID, clusterID, egressID string) *HandlerMonitor {
+func NewHandlerMonitor(nodeID, clusterID string) *HandlerMonitor {
 	m := &HandlerMonitor{}
 
-	constantLabels := prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID, "egress_id": egressID}
+	constantLabels := prometheus.Labels{labelNodeID: nodeID, labelClusterID: clusterID}
 
 	m.uploadsCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
 		Name:        "pipeline_uploads",
 		Help:        "Number of uploads per pipeline with type and status labels",
 		ConstLabels: constantLabels,
-	}, []string{"type", "status"}) // type: file, manifest, segment, liveplaylist, playlist; status: success,failure
+	}, []string{labelType, labelStatus, labelCustomEndpoint}) // type: file, manifest, segment, liveplaylist, playlist; status: success, 4xx, 5xx, internal
 
 	m.uploadsResponseTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
 		Name:        "pipline_upload_response_time_ms",
 		Help:        "A histogram of latencies for upload requests in milliseconds.",
 		Buckets:     []float64{10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 15000, 20000, 30000},
 		ConstLabels: constantLabels,
-	}, []string{"type", "status"})
+	}, []string{labelType, labelStatus, labelCustomEndpoint})
 
 	m.backupCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
 		Name:        "backup_storage_writes",
 		Help:        "number of writes to backup storage location by output type",
 		ConstLabels: constantLabels,
@@ -59,14 +81,14 @@ func NewHandlerMonitor(nodeID, clusterID, egressID string) *HandlerMonitor {
 	return m
 }
 
-func (m *HandlerMonitor) IncUploadCountSuccess(uploadType string, elapsed float64) {
-	labels := prometheus.Labels{"type": uploadType, "status": "success"}
+func (m *HandlerMonitor) IncUploadCountSuccess(uploadType string, hasCustomEndpoint bool, elapsed float64) {
+	labels := prometheus.Labels{labelType: uploadType, labelStatus: "success", labelCustomEndpoint: strconv.FormatBool(hasCustomEndpoint)}
 	m.uploadsCounter.With(labels).Add(1)
 	m.uploadsResponseTime.With(labels).Observe(elapsed)
 }
 
-func (m *HandlerMonitor) IncUploadCountFailure(uploadType string, elapsed float64) {
-	labels := prometheus.Labels{"type": uploadType, "status": "failure"}
+func (m *HandlerMonitor) IncUploadCountFailure(uploadType string, status string, hasCustomEndpoint bool, elapsed float64) {
+	labels := prometheus.Labels{labelType: uploadType, labelStatus: status, labelCustomEndpoint: strconv.FormatBool(hasCustomEndpoint)}
 	m.uploadsCounter.With(labels).Add(1)
 	m.uploadsResponseTime.With(labels).Observe(elapsed)
 }
@@ -78,11 +100,11 @@ func (m *HandlerMonitor) IncBackupStorageWrites(outputType string) {
 func (m *HandlerMonitor) RegisterSegmentsChannelSizeGauge(nodeID, clusterID, egressID string, channelSizeFunction func() float64) {
 	segmentsUploadsGauge := prometheus.NewGaugeFunc(
 		prometheus.GaugeOpts{
-			Namespace:   "livekit",
-			Subsystem:   "egress",
+			Namespace:   promNamespace,
+			Subsystem:   promSubsystem,
 			Name:        "segments_uploads_channel_size",
 			Help:        "number of segment uploads pending in channel",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID, "egress_id": egressID},
+			ConstLabels: prometheus.Labels{labelNodeID: nodeID, labelClusterID: clusterID, "egress_id": egressID},
 		}, channelSizeFunction)
 	prometheus.MustRegister(segmentsUploadsGauge)
 }
@@ -90,11 +112,11 @@ func (m *HandlerMonitor) RegisterSegmentsChannelSizeGauge(nodeID, clusterID, egr
 func (m *HandlerMonitor) RegisterPlaylistChannelSizeGauge(nodeID, clusterID, egressID string, channelSizeFunction func() float64) {
 	playlistUploadsGauge := prometheus.NewGaugeFunc(
 		prometheus.GaugeOpts{
-			Namespace:   "livekit",
-			Subsystem:   "egress",
+			Namespace:   promNamespace,
+			Subsystem:   promSubsystem,
 			Name:        "playlist_uploads_channel_size",
 			Help:        "number of playlist updates pending in channel",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "cluster_id": clusterID, "egress_id": egressID},
+			ConstLabels: prometheus.Labels{labelNodeID: nodeID, labelClusterID: clusterID, "egress_id": egressID},
 		}, channelSizeFunction)
 	prometheus.MustRegister(playlistUploadsGauge)
 }

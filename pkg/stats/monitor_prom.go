@@ -19,52 +19,195 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
+
+	"github.com/livekit/egress/pkg/types"
+)
+
+const (
+	promNamespace = "livekit"
+	promSubsystem = "egress"
+
+	labelNodeID         = "node_id"
+	labelClusterID      = "cluster_id"
+	labelType           = "type"
+	labelStatus         = "status"
+	labelCustomEndpoint = "custom_endpoint"
 )
 
 func (m *Monitor) initPrometheus() {
 	promNodeAvailable := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
 		Name:        "available",
-		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, labelClusterID: m.clusterID},
 	}, m.promIsIdle)
 
 	promCanAcceptRequest := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
 		Name:        "can_accept_request",
-		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, labelClusterID: m.clusterID},
 	}, m.promCanAcceptRequest)
 
 	promIsDisabled := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
 		Name:        "is_disabled",
-		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, labelClusterID: m.clusterID},
 	}, m.promIsDisabled)
 
 	promIsTerminating := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
 		Name:        "is_terminating",
-		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, labelClusterID: m.clusterID},
 	}, m.promIsTerminating)
 
 	m.promCPULoad = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace:   "livekit",
+		Namespace:   promNamespace,
 		Subsystem:   "node",
 		Name:        "cpu_load",
-		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "node_type": "EGRESS", "cluster_id": m.clusterID},
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, "node_type": "EGRESS", labelClusterID: m.clusterID},
 	})
 
 	m.requestGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace:   "livekit",
-		Subsystem:   "egress",
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
 		Name:        "requests",
-		ConstLabels: prometheus.Labels{"node_id": m.nodeID, "cluster_id": m.clusterID},
-	}, []string{"type"})
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, labelClusterID: m.clusterID},
+	}, []string{labelType})
 
-	prometheus.MustRegister(promNodeAvailable, promCanAcceptRequest, promIsDisabled, promIsTerminating, m.promCPULoad, m.requestGauge)
+	// Cgroup memory metrics
+	m.promCgroupMemory = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
+		Name:        "cgroup_memory_bytes",
+		Help:        "Cgroup memory usage in bytes",
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, labelClusterID: m.clusterID},
+	})
+
+	m.promCgroupReadSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
+		Name:        "cgroup_read_success",
+		Help:        "Whether cgroup memory read succeeded (1) or failed (0)",
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, labelClusterID: m.clusterID},
+	})
+
+	m.promProcRSS = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
+		Name:        "proc_rss_bytes",
+		Help:        "Per-process RSS sum in bytes",
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, labelClusterID: m.clusterID},
+	})
+
+	m.promWouldRejectCgroup = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
+		Name:        "would_reject_cgroup",
+		Help:        "Whether request would be rejected using cgroup mode (1) or not (0)",
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, labelClusterID: m.clusterID},
+	})
+
+	m.promPulseSinks = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
+		Name:        "pulse_sinks",
+		Help:        "Number of egress-owned null-sinks loaded on the pulse daemon",
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, labelClusterID: m.clusterID},
+	})
+
+	m.handlerResults = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
+		Name:        "handler_results_total",
+		Help:        "Total number of egress handler outcomes, by result",
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, labelClusterID: m.clusterID},
+	}, []string{labelType, "result"})
+	m.promLoadRatio = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace:   promNamespace,
+		Name:        "load_ratio",
+		Help:        "Per-resource utilization ratio (0 = idle, can exceed 1 under overload)",
+		ConstLabels: prometheus.Labels{labelNodeID: m.nodeID, labelClusterID: m.clusterID},
+	}, []string{labelType})
+
+	prometheus.MustRegister(
+		promNodeAvailable, promCanAcceptRequest, promIsDisabled, promIsTerminating,
+		m.promCPULoad, m.requestGauge,
+		m.promCgroupMemory,
+		m.promCgroupReadSuccess, m.promProcRSS,
+		m.promWouldRejectCgroup,
+		m.promPulseSinks,
+		m.handlerResults,
+		m.promLoadRatio,
+	)
+}
+
+// Handler-level results (livekit_egress_handler_results_total)
+const (
+	ResultCompleted         = "completed"
+	ResultAborted           = "aborted"
+	ResultStoppedCPU        = "stopped_cpu"
+	ResultKilledCPU         = "killed_cpu"
+	ResultKilledOOM         = "killed_oom"
+	ResultKilledShutdown    = "killed_shutdown"
+	ResultProcessError      = "process_error"
+	ResultDuplicateIdentity = "duplicate_identity"
+)
+
+func requestTypeFromReq(req *rpc.StartEgressRequest) string {
+	switch r := req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite:
+		return types.RequestTypeRoomComposite
+	case *rpc.StartEgressRequest_Web:
+		return types.RequestTypeWeb
+	case *rpc.StartEgressRequest_Participant:
+		return types.RequestTypeParticipant
+	case *rpc.StartEgressRequest_TrackComposite:
+		return types.RequestTypeTrackComposite
+	case *rpc.StartEgressRequest_Track:
+		return types.RequestTypeTrack
+	case *rpc.StartEgressRequest_Replay:
+		return requestTypeFromInterface(r.Replay)
+	case *rpc.StartEgressRequest_Egress:
+		return requestTypeFromInterface(r.Egress)
+	}
+	return types.Unknown
+}
+
+func requestTypeFromInterface(request v2Request) string {
+	if request.GetPreset() == livekit.EncodingOptionsPreset_PASSTHROUGH {
+		return types.RequestTypeTrack
+	}
+	switch {
+	case request.GetTemplate() != nil:
+		return types.RequestTypeTemplate
+	case request.GetWeb() != nil:
+		return types.RequestTypeWeb
+	case request.GetMedia() != nil:
+		return types.RequestTypeMedia
+	default:
+		return types.Unknown
+	}
+}
+
+func (m *Monitor) HandlerResult(egressID string, result string) {
+	m.mu.Lock()
+	reqType := types.Unknown
+	if ps := m.pending[egressID]; ps != nil {
+		reqType = ps.requestType
+	} else {
+		for _, s := range m.procStats {
+			if s.egressID == egressID {
+				reqType = s.requestType
+				break
+			}
+		}
+	}
+	m.mu.Unlock()
+
+	m.handlerResults.With(prometheus.Labels{labelType: reqType, "result": result}).Inc()
 }
 
 func (m *Monitor) promIsIdle() float64 {

@@ -17,9 +17,11 @@ package config
 import (
 	"time"
 
-	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/egress"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/storage"
+
+	"github.com/livekit/egress/pkg/errors"
 )
 
 type StorageConfig struct {
@@ -30,6 +32,7 @@ type StorageConfig struct {
 	Azure  *storage.AzureConfig  `yaml:"azure"`  // upload to azure
 	GCP    *storage.GCPConfig    `yaml:"gcp"`    // upload to gcp
 	AliOSS *storage.AliOSSConfig `yaml:"alioss"` // upload to aliyun
+	OCI    *storage.OCIConfig    `yaml:"oci"`    // upload to oracle
 }
 
 func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageConfig, error) {
@@ -40,6 +43,9 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 	}
 
 	if s3 := req.GetS3(); s3 != nil {
+		if s3.AssumeRoleExternalId != "" && !p.S3AllowRequestAssumeRoleExternalID {
+			return nil, errors.ErrFeatureDisabled("setting assume_role_external_id in the request")
+		}
 		sc.S3 = &storage.S3Config{
 			AccessKey:            s3.AccessKey,
 			Secret:               s3.Secret,
@@ -137,5 +143,15 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 }
 
 func (c *StorageConfig) IsLocal() bool {
-	return c.S3 == nil && c.GCP == nil && c.Azure == nil && c.AliOSS == nil
+	return c.S3 == nil && c.GCP == nil && c.Azure == nil && c.AliOSS == nil && c.OCI == nil
+}
+
+// resolveStorageConfig returns the first non-nil StorageConfig from the chain:
+// per-output override -> request-level default.
+// Server config fallback is handled by getStorageConfig when result is nil.
+func resolveStorageConfig(outputStorage, requestStorage *livekit.StorageConfig) *livekit.StorageConfig {
+	if outputStorage != nil {
+		return outputStorage
+	}
+	return requestStorage
 }

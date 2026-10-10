@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO="livekit/media-samples"
 DEST="media-samples"
-REF="${1:-main}"
+REF="${1:-${MEDIA_SAMPLES_REF:-main}}"
 
 export GIT_TERMINAL_PROMPT=0
 
@@ -17,7 +17,7 @@ git lfs install --local
 g() {
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     local b64
-    b64="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64)"
+    b64="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
     git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $b64" "$@"
   else
     git "$@"

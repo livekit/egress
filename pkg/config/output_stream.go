@@ -72,11 +72,7 @@ func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []str
 	}
 
 	switch outputType {
-	case types.OutputTypeRTMP:
-		p.AudioOutCodec = types.MimeTypeAAC
-		p.VideoOutCodec = types.MimeTypeH264
-
-	case types.OutputTypeSRT:
+	case types.OutputTypeRTMP, types.OutputTypeSRT:
 		p.AudioOutCodec = types.MimeTypeAAC
 		p.VideoOutCodec = types.MimeTypeH264
 

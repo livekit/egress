@@ -31,6 +31,7 @@ type Sink interface {
 	EOSReceived() bool
 	Close() error
 	UploadManifest(string) (string, bool, error)
+	DisableUploads()
 }
 
 type base struct {

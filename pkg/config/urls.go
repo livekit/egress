@@ -15,14 +15,13 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/go-jose/go-jose/v4/json"
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
@@ -32,8 +31,8 @@ import (
 
 // rtmp urls must be of format rtmp(s)://{host}(/{path})/{app}/{stream_key}( live=1)
 var (
-	rtmpRegexp     = regexp.MustCompile("^(rtmps?:\\/\\/)(.*\\/)(.*\\/)(\\S*)( live=1)?$")
-	twitchEndpoint = regexp.MustCompile("^rtmps?://.*\\.contribute\\.live-video\\.net/app/(.*)( live=1)?$")
+	rtmpRegexp     = regexp.MustCompile(`^(rtmps?://)(.*/)(.*/)(\S*)( live=1)?$`)
+	twitchEndpoint = regexp.MustCompile(`^rtmps?://.*\.contribute\.live-video\.net/app/(.*)( live=1)?$`)
 )
 
 func (o *StreamConfig) AddStream(rawUrl string, outputType types.OutputType) (*Stream, error) {
@@ -96,12 +95,7 @@ func (o *StreamConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (
 		}
 		return
 
-	case types.OutputTypeSRT:
-		parsed = rawUrl
-		redacted = rawUrl
-		return
-
-	case types.OutputTypeRaw:
+	case types.OutputTypeSRT, types.OutputTypeRaw:
 		parsed = rawUrl
 		redacted = rawUrl
 		return

@@ -17,12 +17,73 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 )
+
+func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
+	makeReq := func(externalID string) *livekit.EncodedFileOutput {
+		return &livekit.EncodedFileOutput{
+			Output: &livekit.EncodedFileOutput_S3{
+				S3: &livekit.S3Upload{
+					AccessKey:            "ACCESS_KEY",
+					Secret:               "SECRET",
+					Bucket:               "bucket",
+					Region:               "us-east-1",
+					AssumeRoleArn:        "arn:aws:iam::123456789012:role/example",
+					AssumeRoleExternalId: externalID,
+				},
+			},
+		}
+	}
+
+	t.Run("rejects request external_id when flag is false", func(t *testing.T) {
+		p := &PipelineConfig{}
+		_, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.Error(t, err)
+		require.ErrorContains(t, err, "setting assume_role_external_id in the request is disabled for this account")
+	})
+
+	t.Run("allows request external_id when flag is true", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AllowRequestAssumeRoleExternalID = true
+		sc, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.NoError(t, err)
+		require.NotNil(t, sc.S3)
+		require.Equal(t, "EXT_ID", sc.S3.AssumeRoleExternalId)
+	})
+
+	t.Run("no rejection when request omits external_id", func(t *testing.T) {
+		p := &PipelineConfig{}
+		sc, err := p.getStorageConfig(makeReq(""))
+		require.NoError(t, err)
+		require.NotNil(t, sc.S3)
+		require.Equal(t, "", sc.S3.AssumeRoleExternalId)
+	})
+
+	t.Run("server-side default external_id still applies when request omits it", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AssumeRoleExternalID = "SERVER_SIDE_EXT_ID"
+		req := &livekit.EncodedFileOutput{
+			Output: &livekit.EncodedFileOutput_S3{
+				S3: &livekit.S3Upload{
+					AccessKey: "ACCESS_KEY",
+					Secret:    "SECRET",
+					Bucket:    "bucket",
+					Region:    "us-east-1",
+				},
+			},
+		}
+		sc, err := p.getStorageConfig(req)
+		require.NoError(t, err)
+		require.NotNil(t, sc.S3)
+		require.Equal(t, "SERVER_SIDE_EXT_ID", sc.S3.AssumeRoleExternalId)
+	})
+}
 
 func TestSegmentNaming(t *testing.T) {
 	t.Cleanup(func() {
@@ -80,11 +141,12 @@ func TestSegmentNaming(t *testing.T) {
 		},
 	} {
 		p := &PipelineConfig{Info: &livekit.EgressInfo{EgressId: "egress_ID"}}
-		o, err := p.getSegmentConfig(&livekit.SegmentedFileOutput{
+		seg := &livekit.SegmentedFileOutput{
 			FilenamePrefix:   test.filenamePrefix,
 			PlaylistName:     test.playlistName,
 			LivePlaylistName: test.livePlaylistName,
-		})
+		}
+		o, err := p.getSegmentConfig(seg, seg)
 		require.NoError(t, err)
 
 		require.Equal(t, test.expectedStorageDir, o.StorageDir)
@@ -131,4 +193,20 @@ func TestValidateAndUpdateOutputParamsRejectsVideoFileMP3(t *testing.T) {
 	err := p.validateAndUpdateOutputParams()
 	require.Error(t, err)
 	require.ErrorContains(t, err, "format audio/mpeg incompatible with codec video/h264")
+}
+
+func TestFilenameUTCReplacementIgnoresLocalTimezone(t *testing.T) {
+	local := time.Local
+	time.Local = time.FixedZone("test", 5*60*60)
+	t.Cleanup(func() { time.Local = local })
+
+	p := &PipelineConfig{}
+	p.Info = &livekit.EgressInfo{RoomName: "room"}
+	_, replacements := p.getFilenameInfo()
+
+	utc := replacements["{utc}"]
+	require.Len(t, utc, len("20060102150405000"))
+	parsed, err := time.ParseInLocation("20060102150405", utc[:14], time.UTC)
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now(), parsed, 10*time.Second)
 }

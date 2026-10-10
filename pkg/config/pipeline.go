@@ -16,6 +16,7 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"path"
 	"strings"
@@ -23,19 +24,20 @@ import (
 
 	"github.com/go-gst/go-gst/gst/app"
 	"github.com/pion/webrtc/v4"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/pipeline/tempo"
-	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/tracer"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/pipeline/tempo"
+	"github.com/livekit/egress/pkg/types"
 )
 
 type PipelineConfig struct {
@@ -53,9 +55,21 @@ type PipelineConfig struct {
 	OutputCount          atomic.Int32                        `yaml:"-"`
 	FinalizationRequired bool                                `yaml:"-"`
 
-	Info     *livekit.EgressInfo `yaml:"-"`
-	Manifest *Manifest           `yaml:"-"`
+	Info            *livekit.EgressInfo `yaml:"-"`
+	Manifest        *Manifest           `yaml:"-"`
+	Live            bool                `yaml:"-"`
+	IsReplay        bool                `yaml:"-"`
+	Passthrough     bool                `yaml:"-"`
+	StorageObserver StorageObserver     `yaml:"-"`
 }
+
+type StorageObserver interface {
+	OnStorageEvent(egressID, operation, path string, size, lifetimeDays int64)
+}
+
+var (
+	tracer = otel.Tracer("github.com/livekit/egress/pkg/config")
+)
 
 type SourceConfig struct {
 	SourceType types.SourceType
@@ -73,29 +87,45 @@ type WebSourceParams struct {
 }
 
 type SDKSourceParams struct {
-	TrackID      string
-	AudioTrackID string
-	VideoTrackID string
-	Identity     string
-	TrackSource  string
-	TrackKind    string
-	ScreenShare  bool
-	AudioInCodec types.MimeType
-	VideoInCodec types.MimeType
-	AudioTracks  []*TrackSource
-	VideoTrack   *TrackSource
+	TrackID         string
+	AudioTrackID    string
+	VideoTrackID    string
+	Identity        string
+	TrackSource     string
+	TrackKind       string
+	ScreenShare     bool
+	Compositing     bool
+	VideoInCodec    types.MimeType
+	AudioTracks     []*TrackSource
+	VideoTracks     []*TrackSource
+	AudioRoutes     []AudioRouteConfig
+	CaptureAudioAll bool
+}
+
+type AudioRouteConfig struct {
+	Match   AudioRouteMatch
+	Channel livekit.AudioChannel
+}
+
+type AudioRouteMatch struct {
+	TrackID             string
+	ParticipantIdentity string
+	ParticipantKind     *lksdk.ParticipantKind
 }
 
 type TrackSource struct {
-	TrackID            string
-	TrackKind          lksdk.TrackKind
-	ParticipantKind    lksdk.ParticipantKind
-	AppSrc             *app.Source
-	MimeType           types.MimeType
-	PayloadType        webrtc.PayloadType
-	ClockRate          uint32
-	TempoController    *tempo.Controller
-	OnKeyframeRequired func()
+	TrackID             string
+	TrackKind           lksdk.TrackKind
+	ParticipantIdentity string
+	PublicationSource   livekit.TrackSource
+	ParticipantKind     lksdk.ParticipantKind
+	AudioChannel        *livekit.AudioChannel
+	AppSrc              *app.Source
+	MimeType            types.MimeType
+	PayloadType         webrtc.PayloadType
+	ClockRate           uint32
+	TempoController     *tempo.Controller
+	OnKeyframeRequired  func()
 }
 
 type AudioConfig struct {
@@ -125,17 +155,18 @@ func NewPipelineConfig(confString string, req *rpc.StartEgressRequest) (*Pipelin
 	p := &PipelineConfig{
 		BaseConfig: BaseConfig{
 			Logging: &logger.Config{
-				Level: "info",
+				Level: logLevelInfo,
 			},
 		},
 		Outputs: make(map[types.EgressType][]OutputConfig),
+		Live:    true,
 	}
 
 	if err := yaml.Unmarshal([]byte(confString), p); err != nil {
 		return nil, errors.ErrCouldNotParseConfig(err)
 	}
 
-	if err := p.initLogger(
+	if err := p.InitLogger("egress",
 		"nodeID", p.NodeID,
 		"handlerID", p.HandlerID,
 		"clusterID", p.ClusterID,
@@ -155,6 +186,7 @@ func GetValidatedPipelineConfig(conf *ServiceConfig, req *rpc.StartEgressRequest
 		BaseConfig: conf.BaseConfig,
 		TmpDir:     path.Join(TmpDir, req.EgressId),
 		Outputs:    make(map[types.EgressType][]OutputConfig),
+		Live:       true,
 	}
 
 	return p, p.Update(req)
@@ -168,12 +200,15 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	// start with defaults
 	now := time.Now().UnixNano()
 	p.Info = &livekit.EgressInfo{
-		EgressId:  request.EgressId,
-		RoomId:    request.RoomId,
-		Status:    livekit.EgressStatus_EGRESS_STARTING,
-		StartedAt: now,
-		UpdatedAt: now,
+		EgressId:   request.EgressId,
+		RoomId:     request.RoomId,
+		RoomName:   request.RoomName,
+		Status:     livekit.EgressStatus_EGRESS_STARTING,
+		StartedAt:  now,
+		UpdatedAt:  now,
+		RetryCount: request.RetryCount,
 	}
+
 	p.AudioConfig = AudioConfig{
 		AudioBitrate:   128,
 		AudioFrequency: 44100,
@@ -197,7 +232,17 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		}
 		egress.RedactEncodedOutputs(clone)
 
-		p.SourceType = p.getRoomCompositeRequestType(req.RoomComposite)
+		if p.UsesTemplateSDKCompositing(req.RoomComposite.CustomBaseUrl) {
+			p.AudioMixing = req.RoomComposite.AudioMixing
+			p.SourceType = types.SourceTypeSDK
+			p.Compositing = !req.RoomComposite.AudioOnly
+		} else if ShouldUseSDKSource(req.RoomComposite) {
+			p.AudioMixing = req.RoomComposite.AudioMixing
+			p.SourceType = types.SourceTypeSDK
+		} else {
+			p.SourceType = types.SourceTypeWeb
+		}
+
 		p.AwaitStartSignal = true
 
 		p.Info.RoomName = req.RoomComposite.RoomName
@@ -207,14 +252,15 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 		} else {
 			p.BaseUrl = p.TemplateBase
 		}
-		baseUrl, err := url.Parse(p.BaseUrl)
-		if err != nil || (baseUrl.Scheme != "http" && baseUrl.Scheme != "https") {
-			return errors.ErrInvalidInput("template base url")
+		if p.SourceType == types.SourceTypeWeb {
+			baseUrl, err := url.Parse(p.BaseUrl)
+			if err != nil || !isHttp(baseUrl) {
+				return errors.ErrInvalidInput("template base url")
+			}
 		}
 
 		if !req.RoomComposite.VideoOnly {
 			p.AudioEnabled = true
-			p.AudioInCodec = types.MimeTypeRawAudio
 			p.AudioTranscoding = true
 		}
 		if !req.RoomComposite.AudioOnly {
@@ -232,13 +278,13 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			p.applyPreset(opts.Preset)
 
 		case *livekit.RoomCompositeEgressRequest_Advanced:
-			if err = p.applyAdvanced(opts.Advanced); err != nil {
+			if err := p.applyAdvanced(opts.Advanced); err != nil {
 				return err
 			}
 		}
 
 		// output params
-		if err = p.updateEncodedOutputs(req.RoomComposite); err != nil {
+		if err := p.updateEncodedOutputs(req.RoomComposite); err != nil {
 			return err
 		}
 
@@ -256,13 +302,12 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 		p.WebUrl = req.Web.Url
 		webUrl, err := url.Parse(p.WebUrl)
-		if err != nil || (webUrl.Scheme != "http" && webUrl.Scheme != "https") {
+		if err != nil || !isHttp(webUrl) {
 			return errors.ErrInvalidInput("web url")
 		}
 
 		if !req.Web.VideoOnly {
 			p.AudioEnabled = true
-			p.AudioInCodec = types.MimeTypeRawAudio
 			p.AudioTranscoding = true
 		}
 		if !req.Web.AudioOnly {
@@ -370,6 +415,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 	case *rpc.StartEgressRequest_Track:
 		p.RequestType = types.RequestTypeTrack
+		p.Passthrough = true
 		clone := proto.Clone(req.Track).(*livekit.TrackEgressRequest)
 		p.Info.Request = &livekit.EgressInfo_Track{
 			Track: clone,
@@ -388,8 +434,88 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			return err
 		}
 
+	case *rpc.StartEgressRequest_Replay:
+		replayReq := req.Replay
+		clone := proto.Clone(replayReq).(*livekit.ExportReplayRequest)
+		p.Info.Request = &livekit.EgressInfo_Replay{
+			Replay: clone,
+		}
+		egress.RedactStartEgressRequest(clone)
+		p.IsReplay = true
+
+		// encoding options
+		switch opts := replayReq.Encoding.(type) {
+		case *livekit.ExportReplayRequest_Preset:
+			p.applyPreset(opts.Preset)
+		case *livekit.ExportReplayRequest_Advanced:
+			if err := p.applyAdvanced(opts.Advanced); err != nil {
+				return err
+			}
+		}
+
+		if p.Passthrough {
+			if err := validatePassthrough(replayReq); err != nil {
+				return err
+			}
+		}
+
+		ci, err := p.applyV2Source(replayReq)
+		if err != nil {
+			return err
+		}
+		connectionInfoRequired = ci
+
+		// output params
+		if err := p.updateOutputs(replayReq); err != nil {
+			return err
+		}
+
+	case *rpc.StartEgressRequest_Egress:
+		egressReq := req.Egress
+		clone := proto.Clone(egressReq).(*livekit.StartEgressRequest)
+		p.Info.Request = &livekit.EgressInfo_Egress{
+			Egress: clone,
+		}
+		egress.RedactStartEgressRequest(clone)
+
+		if egressReq.RoomName != "" {
+			p.Info.RoomName = egressReq.RoomName
+		}
+
+		// encoding options
+		switch opts := egressReq.Encoding.(type) {
+		case *livekit.StartEgressRequest_Preset:
+			p.applyPreset(opts.Preset)
+		case *livekit.StartEgressRequest_Advanced:
+			if err := p.applyAdvanced(opts.Advanced); err != nil {
+				return err
+			}
+		}
+
+		if p.Passthrough {
+			if err := validatePassthrough(egressReq); err != nil {
+				return err
+			}
+		}
+
+		ci, err := p.applyV2Source(egressReq)
+		if err != nil {
+			return err
+		}
+		connectionInfoRequired = ci
+
+		// output params
+		if err := p.updateOutputs(egressReq); err != nil {
+			return err
+		}
+
 	default:
 		return errors.ErrInvalidInput("request")
+	}
+
+	// the passthrough preset is shared with request types that always transcode
+	if p.Passthrough && p.RequestType != types.RequestTypeTrack && p.RequestType != types.RequestTypeMedia {
+		return errors.ErrInvalidInput("preset")
 	}
 
 	switch p.SourceType {
@@ -401,14 +527,10 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 	// connection info
 	if connectionInfoRequired {
-		if p.Info.RoomName == "" {
-			return errors.ErrInvalidInput("room_name")
-		}
-
 		// token
 		if request.Token != "" {
 			p.Token = request.Token
-		} else if p.ApiKey != "" && p.ApiSecret != "" {
+		} else if p.ApiKey != "" && p.ApiSecret != "" && p.Info.RoomName != "" {
 			token, err := egress.BuildEgressToken(p.Info.EgressId, p.ApiKey, p.ApiSecret, p.Info.RoomName)
 			if err != nil {
 				return err
@@ -429,7 +551,7 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	p.Latency = p.getLatencyConfig(p.RequestType)
 	applyLatencyDefaults(&p.Latency)
 
-	if p.RequestType != types.RequestTypeTrack {
+	if !p.Passthrough {
 		err := p.validateAndUpdateOutputParams()
 		if err != nil {
 			return err
@@ -437,6 +559,246 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	}
 
 	p.initManifest()
+	return nil
+}
+
+func ShouldUseSDKSource(req interface {
+	GetLayout() string
+	GetAudioOnly() bool
+	GetCustomBaseUrl() string
+}) bool {
+	return req.GetAudioOnly() && req.GetLayout() == "" && req.GetCustomBaseUrl() == ""
+}
+
+// UsesTemplateSDKCompositing reports whether a request takes the SDK compositor instead of Chrome
+func (c *BaseConfig) UsesTemplateSDKCompositing(customBaseUrl string) bool {
+	return c.EnableTemplateSDK && customBaseUrl == ""
+}
+
+// TemplateSourceIsSDK reports whether a request runs on the SDK source; routing and admission must agree or capacity is misbooked
+func (c *BaseConfig) TemplateSourceIsSDK(req interface {
+	GetLayout() string
+	GetAudioOnly() bool
+	GetCustomBaseUrl() string
+}) bool {
+	return c.UsesTemplateSDKCompositing(req.GetCustomBaseUrl()) || ShouldUseSDKSource(req)
+}
+
+func (c *BaseConfig) IsSDKSourceRequest(req *rpc.StartEgressRequest) bool {
+	switch r := req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite:
+		return c.TemplateSourceIsSDK(r.RoomComposite)
+	case *rpc.StartEgressRequest_Web:
+		return false
+	case *rpc.StartEgressRequest_Egress:
+		return c.isV2SDKSource(r.Egress)
+	case *rpc.StartEgressRequest_Replay:
+		return c.isV2SDKSource(r.Replay)
+	}
+	return true
+}
+
+func (c *BaseConfig) isV2SDKSource(req egress.EgressRequest) bool {
+	if req == nil {
+		return true
+	}
+	if req.GetWeb() != nil {
+		return false
+	}
+	if t := req.GetTemplate(); t != nil {
+		return c.TemplateSourceIsSDK(t)
+	}
+	return true
+}
+
+// applyV2Source handles the shared Template/Web/Media source switch for the v2
+// request shape. Satisfied by both *livekit.StartEgressRequest and *livekit.ExportReplayRequest.
+func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfoRequired bool, err error) {
+	connectionInfoRequired = true
+
+	switch {
+	case req.GetTemplate() != nil:
+		tmpl := req.GetTemplate()
+		p.RequestType = types.RequestTypeTemplate
+
+		if p.UsesTemplateSDKCompositing(tmpl.CustomBaseUrl) {
+			p.SourceType = types.SourceTypeSDK
+			p.Compositing = !tmpl.AudioOnly
+		} else if ShouldUseSDKSource(tmpl) {
+			p.SourceType = types.SourceTypeSDK
+		} else {
+			p.SourceType = types.SourceTypeWeb
+		}
+		p.AwaitStartSignal = true
+
+		p.Layout = tmpl.Layout
+		if tmpl.CustomBaseUrl != "" {
+			p.BaseUrl = tmpl.CustomBaseUrl
+		} else {
+			p.BaseUrl = p.TemplateBase
+		}
+		if p.SourceType == types.SourceTypeWeb {
+			baseUrl, perr := url.Parse(p.BaseUrl)
+			if perr != nil || !isHttp(baseUrl) {
+				return connectionInfoRequired, errors.ErrInvalidInput("template base url")
+			}
+		}
+
+		if !tmpl.VideoOnly {
+			p.AudioEnabled = true
+			p.AudioTranscoding = true
+		}
+		if !tmpl.AudioOnly {
+			p.VideoEnabled = true
+			p.VideoInCodec = types.MimeTypeRawVideo
+			p.VideoDecoding = true
+		}
+		if !p.AudioEnabled && !p.VideoEnabled {
+			return connectionInfoRequired, errors.ErrInvalidInput("audio_only and video_only")
+		}
+
+	case req.GetWeb() != nil:
+		web := req.GetWeb()
+		p.RequestType = types.RequestTypeWeb
+		connectionInfoRequired = false
+		p.SourceType = types.SourceTypeWeb
+		p.AwaitStartSignal = web.AwaitStartSignal
+
+		p.WebUrl = web.Url
+		webUrl, perr := url.Parse(p.WebUrl)
+		if perr != nil || !isHttp(webUrl) {
+			return connectionInfoRequired, errors.ErrInvalidInput("web url")
+		}
+
+		if !web.VideoOnly {
+			p.AudioEnabled = true
+			p.AudioTranscoding = true
+		}
+		if !web.AudioOnly {
+			p.VideoEnabled = true
+			p.VideoInCodec = types.MimeTypeRawVideo
+			p.VideoDecoding = true
+		}
+		if !p.AudioEnabled && !p.VideoEnabled {
+			return connectionInfoRequired, errors.ErrInvalidInput("audio_only and video_only")
+		}
+
+	case req.GetMedia() != nil:
+		media := req.GetMedia()
+		p.RequestType = types.RequestTypeMedia
+		p.SourceType = types.SourceTypeSDK
+
+		// video
+		switch v := media.Video.(type) {
+		case *livekit.MediaSource_VideoTrackId:
+			p.VideoEnabled = true
+			p.VideoDecoding = !p.Passthrough
+			p.VideoTrackID = v.VideoTrackId
+			if p.Passthrough {
+				p.TrackID = v.VideoTrackId
+			}
+		case *livekit.MediaSource_ParticipantVideo:
+			p.VideoEnabled = true
+			p.VideoDecoding = true
+			p.Identity = v.ParticipantVideo.Identity
+			p.ScreenShare = v.ParticipantVideo.PreferScreenShare
+		}
+
+		// audio
+		if media.Audio != nil {
+			if media.Audio.CaptureAll {
+				p.AudioEnabled = true
+				p.AudioTranscoding = true
+				p.CaptureAudioAll = true
+			} else if len(media.Audio.Routes) > 0 {
+				p.AudioEnabled = true
+				p.AudioTranscoding = !p.Passthrough
+				for _, route := range media.Audio.Routes {
+					arc := AudioRouteConfig{
+						Channel: route.Channel,
+					}
+					switch m := route.Match.(type) {
+					case *livekit.AudioRoute_TrackId:
+						arc.Match.TrackID = m.TrackId
+					case *livekit.AudioRoute_ParticipantIdentity:
+						arc.Match.ParticipantIdentity = m.ParticipantIdentity
+					case *livekit.AudioRoute_ParticipantKind:
+						kind := lksdk.ParticipantKind(m.ParticipantKind)
+						arc.Match.ParticipantKind = &kind
+					}
+					p.AudioRoutes = append(p.AudioRoutes, arc)
+				}
+				if p.Passthrough {
+					p.TrackID = p.AudioRoutes[0].Match.TrackID
+				}
+			}
+		}
+
+		if !p.AudioEnabled && !p.VideoEnabled {
+			return connectionInfoRequired, errors.ErrInvalidInput("audio or video")
+		}
+
+	default:
+		return connectionInfoRequired, errors.ErrInvalidInput("source")
+	}
+
+	return connectionInfoRequired, nil
+}
+
+// rejects shapes a remux cannot express — downgrading silently would return re-encoded media
+func validatePassthrough(req egress.EgressRequest) error {
+	media := req.GetMedia()
+	if media == nil {
+		return errors.ErrInvalidInput("passthrough source")
+	}
+
+	var videoTrackID string
+	switch v := media.Video.(type) {
+	case *livekit.MediaSource_VideoTrackId:
+		if v.VideoTrackId == "" {
+			return errors.ErrInvalidInput("passthrough video_track_id")
+		}
+		videoTrackID = v.VideoTrackId
+	case *livekit.MediaSource_ParticipantVideo:
+		return errors.ErrInvalidInput("passthrough participant_video")
+	}
+
+	var audioTrackID string
+	if media.Audio != nil {
+		switch {
+		case media.Audio.CaptureAll:
+			return errors.ErrInvalidInput("passthrough capture_all")
+		case len(media.Audio.Routes) > 1:
+			return errors.ErrInvalidInput("passthrough audio routes")
+		case len(media.Audio.Routes) == 1:
+			m, ok := media.Audio.Routes[0].Match.(*livekit.AudioRoute_TrackId)
+			if !ok {
+				return errors.ErrInvalidInput("passthrough audio route match")
+			}
+			if m.TrackId == "" {
+				return errors.ErrInvalidInput("passthrough audio route track_id")
+			}
+			audioTrackID = m.TrackId
+		}
+	}
+
+	if (videoTrackID == "") == (audioTrackID == "") {
+		return errors.ErrInvalidInput("passthrough track_id")
+	}
+
+	outputs := req.GetOutputs()
+	if len(outputs) != 1 {
+		return errors.ErrInvalidInput("passthrough outputs")
+	}
+	switch o := outputs[0].Config.(type) {
+	case *livekit.Output_File:
+		if o.File.FileType != livekit.EncodedFileType_DEFAULT_FILETYPE {
+			return errors.ErrInvalidInput("passthrough file_type")
+		}
+	default:
+		return errors.ErrInvalidInput("passthrough output")
+	}
+
 	return nil
 }
 
@@ -569,29 +931,11 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 	return nil
 }
 
-func (p *PipelineConfig) getRoomCompositeRequestType(req *livekit.RoomCompositeEgressRequest) types.SourceType {
-	// Test for possible chrome-less room composition for audio only
-	if !p.EnableRoomCompositeSDKSource {
-		return types.SourceTypeWeb
-	}
-	if req.Layout != "" {
-		return types.SourceTypeWeb
-	}
-	if !req.AudioOnly {
-		return types.SourceTypeWeb
-	}
-	if req.CustomBaseUrl != "" {
-		return types.SourceTypeWeb
-	}
-
-	// apply audio mixing option
-	p.AudioMixing = req.AudioMixing
-
-	return types.SourceTypeSDK
-}
-
-// used for sdk input source
+// UpdateInfoFromSDK - updates the pipeline config with the identifier, replacements, width, and height
 func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string, w, h uint32) error {
+	if p.Info.RetryCount > 0 {
+		replacements["{retry}"] = fmt.Sprintf("%d", p.Info.RetryCount)
+	}
 	var err error
 	for egressType, c := range p.Outputs {
 		if len(c) == 0 {
@@ -622,14 +966,14 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 					if w != 0 {
 						o.Width = int32(w)
 					} else {
-						o.Width = p.VideoConfig.Width
+						o.Width = p.Width
 					}
 				}
 				if o.Height == 0 {
 					if h != 0 {
 						o.Height = int32(h)
 					} else {
-						o.Height = p.VideoConfig.Height
+						o.Height = p.Height
 					}
 				}
 			}
@@ -649,9 +993,13 @@ func (p *PipelineConfig) GetEncodedOutputs() []OutputConfig {
 	return ret
 }
 
+func isHttp(parsedUrl *url.URL) bool {
+	return parsedUrl.Scheme == "http" || parsedUrl.Scheme == "https"
+}
+
 func stringReplace(s string, replacements map[string]string) string {
 	for template, value := range replacements {
-		s = strings.Replace(s, template, value, -1)
+		s = strings.ReplaceAll(s, template, value)
 	}
 	return s
 }

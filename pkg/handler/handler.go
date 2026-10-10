@@ -16,21 +16,25 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"path"
+	"strings"
+	"time"
 
 	"github.com/frostbyte73/core"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"google.golang.org/grpc"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/ipc"
-	"github.com/livekit/egress/pkg/pipeline"
+	"go.opentelemetry.io/otel"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/tracer"
-	"github.com/livekit/psrpc"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/ipc"
+	"github.com/livekit/egress/pkg/pipeline"
 )
 
 type Handler struct {
@@ -38,22 +42,28 @@ type Handler struct {
 
 	conf             *config.PipelineConfig
 	controller       *pipeline.Controller
-	rpcServer        rpc.EgressHandlerServer
 	ipcHandlerServer *grpc.Server
 	ipcServiceClient ipc.EgressServiceClient
 	initialized      core.Fuse
 	kill             core.Fuse
 }
 
-func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
-	// Register all GO process metrics
-	prometheus.Unregister(prometheus.NewGoCollector())
-	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll)))
+var (
+	tracer = otel.Tracer("github.com/livekit/egress/pkg/handler")
+)
+
+func NewHandler(conf *config.PipelineConfig) (*Handler, error) {
+	// The service already exposes go_* / process_* — leaving these registered
+	// causes prometheus.Gatherers.Gather to reject the scrape as duplicate.
+	prometheus.Unregister(collectors.NewGoCollector())
+	prometheus.Unregister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	ipcClient, err := ipc.NewServiceClient(path.Join(config.TmpDir, conf.NodeID))
 	if err != nil {
 		return nil, err
 	}
+
+	conf.StorageObserver = &ipcStorageObserver{client: ipcClient}
 
 	h := &Handler{
 		conf:             conf,
@@ -65,18 +75,6 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 	if err = ipc.StartHandlerListener(h.ipcHandlerServer, path.Join(config.TmpDir, conf.HandlerID)); err != nil {
 		return nil, err
 	}
-
-	rpcServer, err := rpc.NewEgressHandlerServer(h, bus)
-	if err != nil {
-		return nil, err
-	}
-	if err = rpcServer.RegisterUpdateStreamTopic(conf.Info.EgressId); err != nil {
-		return nil, err
-	}
-	if err = rpcServer.RegisterStopEgressTopic(conf.Info.EgressId); err != nil {
-		return nil, err
-	}
-	h.rpcServer = rpcServer
 
 	_, err = h.ipcServiceClient.HandlerReady(context.Background(), &ipc.HandlerReadyRequest{EgressId: conf.Info.EgressId})
 	if err != nil {
@@ -91,13 +89,21 @@ func (h *Handler) Run() {
 	ctx, span := tracer.Start(context.Background(), "Handler.Run")
 	defer span.End()
 
-	defer func() {
-		h.rpcServer.Shutdown()
-		h.ipcHandlerServer.Stop()
-	}()
+	defer h.ipcHandlerServer.Stop()
 
 	var err error
 	egressID := h.conf.Info.EgressId
+
+	if h.shouldInjectEgressFailure() {
+		logger.Infow("injecting egress failure", "egressID", egressID)
+		err = errors.New("test failure injection")
+		h.conf.Info.SetFailed(err)
+		_, err = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
+		if err != nil {
+			logger.Errorw("egress update ipc call failed", err, "egressID", egressID)
+		}
+		return
+	}
 
 	h.controller, err = pipeline.New(context.Background(), h.conf, h.ipcServiceClient)
 	h.initialized.Break()
@@ -110,6 +116,21 @@ func (h *Handler) Run() {
 		return
 	}
 
+	// Replay coordination: signal ready and get timing
+	if h.conf.IsReplay && h.conf.Live {
+		rctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		resp, err := h.ipcServiceClient.ReplayReady(rctx, &rpc.EgressReadyRequest{
+			EgressId: h.conf.Info.EgressId,
+		})
+		cancel()
+		if err != nil {
+			h.conf.Info.SetFailed(err)
+			_, _ = h.ipcServiceClient.HandlerUpdate(context.Background(), h.conf.Info)
+			return
+		}
+		h.controller.SetReplayTiming(resp.StartAt, resp.DurationMs)
+	}
+
 	// start egress
 	res := h.controller.Run(ctx)
 	m, err := h.GenerateMetrics(ctx)
@@ -117,11 +138,32 @@ func (h *Handler) Run() {
 		logger.Errorw("failed to generate handler metrics", err, "egressID", egressID)
 	}
 
-	_, err = h.ipcServiceClient.HandlerFinished(ctx, &ipc.HandlerFinishedRequest{
+	req := &ipc.HandlerFinishedRequest{
 		EgressId: egressID,
 		Metrics:  m,
 		Info:     res,
-	})
+	}
+
+	// If a duplicate participant joined with our identity and evicted us from
+	// the room, exit without writing a terminal update — another worker is
+	// running the same egress and still owns the session.
+	if h.controller.IsDuplicateIdentity() {
+		duration := time.Duration(0)
+		if startedAt := res.StartedAt; startedAt > 0 {
+			duration = time.Since(time.Unix(0, startedAt))
+		}
+		logger.Warnw("duplicate identity, suppressing terminal egress update", nil,
+			"egressID", egressID,
+			"room_name", h.conf.Info.RoomName,
+			"node_id", h.conf.NodeID,
+			"duration_ms", duration.Milliseconds(),
+			"disconnect_reason", "duplicate identity",
+		)
+		req.SilentExit = true
+		req.Info = nil
+	}
+
+	_, err = h.ipcServiceClient.HandlerFinished(ctx, req)
 	if err != nil {
 		logger.Errorw("egress finished ipc call failed", err, "egressID", egressID)
 	}
@@ -133,4 +175,31 @@ func (h *Handler) Kill() {
 		return
 	}
 	h.controller.SendEOS(context.Background(), livekit.EndReasonKilled)
+}
+
+func (h *Handler) shouldInjectEgressFailure() bool {
+	if h.conf.TestOverrides.FailureInjectionRoom == "" {
+		return false
+	}
+	if h.conf.Info.RetryCount > 0 {
+		return false
+	}
+	return strings.Contains(h.conf.Info.RoomName, h.conf.TestOverrides.FailureInjectionRoom)
+}
+
+type ipcStorageObserver struct {
+	client ipc.EgressServiceClient
+}
+
+func (o *ipcStorageObserver) OnStorageEvent(egressID, operation, path string, size, lifetimeDays int64) {
+	_, err := o.client.StorageEvent(context.Background(), &ipc.StorageEventRequest{
+		EgressId:     egressID,
+		Operation:    operation,
+		Path:         path,
+		Size:         size,
+		LifetimeDays: lifetimeDays,
+	})
+	if err != nil {
+		logger.Errorw("storage event ipc call failed", err, "egressID", egressID)
+	}
 }

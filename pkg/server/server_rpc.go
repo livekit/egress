@@ -26,15 +26,22 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"gopkg.in/yaml.v3"
 
-	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
-	"github.com/livekit/egress/pkg/logging"
+	"go.opentelemetry.io/otel"
+
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/protocol/utils"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/logging"
+	"github.com/livekit/egress/pkg/stats"
+)
+
+var (
+	tracer = otel.Tracer("github.com/livekit/egress/pkg/server")
 )
 
 func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
@@ -73,6 +80,7 @@ func (s *Server) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (
 		"outputType", outputType,
 		"room", p.Info.RoomName,
 		"request", p.Info.Request,
+		"syncEngine", p.EnableSyncEngine,
 	)
 
 	errChan := s.ioClient.CreateEgress(ctx, p.Info)
@@ -127,12 +135,12 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 		return err
 	}
 
-	cmd := exec.Command("egress",
-		"run-handler",
-		"--config", string(confString),
-		"--request", string(reqString),
-	)
+	cmd := exec.Command("egress", "run-handler")
 	cmd.Dir = "/"
+	cmd.Env = append(os.Environ(),
+		"EGRESS_HANDLER_CONFIG_BODY="+string(confString),
+		"EGRESS_HANDLER_REQUEST="+string(reqString),
+	)
 
 	l := logging.NewHandlerLogger(handlerID, req.EgressId)
 	cmd.Stdout = l
@@ -140,12 +148,23 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	if err = s.Launch(context.Background(), handlerID, req, info, cmd); err != nil {
+		_ = l.Close()
 		return err
 	}
 
 	s.monitor.UpdatePID(info.EgressId, cmd.Process.Pid)
 	go func() {
 		err = cmd.Wait()
+		_ = l.Close()
+
+		if reason := s.GetKillReason(info.EgressId); reason != "" {
+			s.monitor.HandlerResult(info.EgressId, reason)
+		} else if err != nil {
+			s.monitor.HandlerResult(info.EgressId, stats.ResultProcessError)
+		} else {
+			s.monitor.HandlerResult(info.EgressId, stats.ResultCompleted)
+		}
+
 		s.processEnded(req, info, err)
 	}()
 	return nil
@@ -169,8 +188,12 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 
 	avgCPU, maxCPU, maxMemory := s.monitor.EgressEnded(req)
 	if maxCPU > 0 {
-		logger.Debugw("egress metrics",
+		requestType, outputType := egress.GetTypes(info.Request)
+		logger.Infow("egress metrics",
 			"egressID", info.EgressId,
+			"requestType", requestType,
+			"outputType", outputType,
+			"sdkSource", s.conf.IsSDKSourceRequest(req),
 			"avgCPU", avgCPU,
 			"maxCPU", maxCPU,
 			"maxMemory", maxMemory,
@@ -181,7 +204,16 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 	tmpDir := path.Join(config.TmpDir, req.EgressId)
 	os.RemoveAll(tmpDir)
 
+	s.MergeInAccumulator(info.EgressId)
 	s.ProcessFinished(info.EgressId)
+
+	// The handler is gone and its IPC client closed with it, so nothing can
+	// report this egress again. cmd.Wait returns however the handler died, and
+	// one that exited without sending its own terminal update -- or whose send
+	// was lost -- would otherwise leave a reporter holding per-egress state
+	// believing the egress is still running.
+	s.ioClient.SessionEnded(context.Background(), info.EgressId)
+
 	s.activeRequests.Dec()
 }
 
@@ -202,7 +234,7 @@ func (s *Server) StartEgressAffinity(_ context.Context, req *rpc.StartEgressRequ
 }
 
 func (s *Server) ListActiveEgress(ctx context.Context, _ *rpc.ListActiveEgressRequest) (*rpc.ListActiveEgressResponse, error) {
-	ctx, span := tracer.Start(ctx, "Service.ListActiveEgress")
+	_, span := tracer.Start(ctx, "Service.ListActiveEgress")
 	defer span.End()
 
 	return &rpc.ListActiveEgressResponse{

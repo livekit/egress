@@ -1,11 +1,20 @@
 package logging
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/frostbyte73/core"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/logger/medialogutils"
+)
+
+const (
+	channelSize     = 4096
+	dropLogThrottle = 10 * time.Second
 )
 
 var sdkPrefixes = map[string]bool{
@@ -13,52 +22,121 @@ var sdkPrefixes = map[string]bool{
 	"ice E": true, // ice ERROR
 	"pc ER": true, // pc ERROR
 	"twcc_": true, // twcc_sender_interceptor ERROR
-	"SDK 2": true, // SDK 2025
+	"SDK 2": true, // SDK default logger (year-prefixed timestamp)
 }
 
-func NewHandlerLogger(handlerID, egressID string) *medialogutils.CmdLogger {
-	l := logger.GetLogger().WithValues("handlerID", handlerID, "egressID", egressID)
-	return medialogutils.NewCmdLogger(func(s string) {
-		lines := strings.Split(s, "\n")
-		for i, line := range lines {
-			switch {
-			case strings.HasSuffix(line, "}"):
-				fmt.Println(line)
+type HandlerLogger struct {
+	ch          chan []byte
+	done        core.Fuse
+	dropped     atomic.Int64
+	lastDropLog atomic.Int64 // unix nanos
+	l           logger.Logger
+	// sink takes the handler's own structured lines. Read on the drain
+	// goroutine, so it is fixed at construction.
+	sink func(line string)
+}
 
-			case len(line) == 0:
-				continue
+func NewHandlerLogger(handlerID, egressID string) *HandlerLogger {
+	return NewHandlerLoggerWithSink(handlerID, egressID, nil)
+}
 
-			case len(line) > 5 && sdkPrefixes[line[:5]]:
-				l.Infow(line)
+// NewHandlerLoggerWithSink sends the handler's own structured lines to sink. A
+// nil sink writes them to stdout.
+func NewHandlerLoggerWithSink(handlerID, egressID string, sink func(line string)) *HandlerLogger {
+	h := &HandlerLogger{
+		ch: make(chan []byte, channelSize),
+		l: logger.GetLogger().WithValues(
+			"handlerID", handlerID,
+			"egressID", egressID,
+		),
+		sink: sink,
+	}
+	go h.drain()
+	return h
+}
 
-			case strings.HasPrefix(line, "{\"level\":"):
-				// should have ended with "}", probably got split
-				var next string
-				for j := i + 1; j < len(lines); j++ {
-					next = lines[j]
-					if len(next) > 0 && strings.HasSuffix(next, "}") {
-						line += next
-						i = j
-						break
-					}
-				}
-				fmt.Println(line)
+func (h *HandlerLogger) Write(p []byte) (int, error) {
+	cp := make([]byte, len(p))
+	copy(cp, p)
 
-			case strings.HasPrefix(line, "(egress:"),
-				strings.Contains(line, "before 'caps'"),
-				strings.Contains(line, "' of type '"):
-				logger.Warnw(line, nil)
-
-			case strings.Contains(line, "unmarshal JSON string into Go network.CookiePartitionKey"),
-				strings.HasPrefix(line, "0:00:"),
-				strings.HasSuffix(line, "is not mapped"),
-				strings.HasSuffix(line, "load cuda library"),
-				strings.Contains(line, "libcuda.so.1"):
-				continue
-
-			default:
-				l.Errorw(line, nil)
+	select {
+	case h.ch <- cp:
+	default:
+		count := h.dropped.Inc()
+		now := time.Now().UnixNano()
+		last := h.lastDropLog.Load()
+		if now-last >= int64(dropLogThrottle) {
+			if h.lastDropLog.CompareAndSwap(last, now) {
+				h.l.Warnw(fmt.Sprintf("handler logger dropped %d messages", count), nil)
+				h.dropped.Store(0)
 			}
 		}
-	})
+	}
+
+	return len(p), nil
+}
+
+func (h *HandlerLogger) Close() error {
+	close(h.ch)
+	<-h.done.Watch()
+	return nil
+}
+
+func (h *HandlerLogger) drain() {
+	var buf []byte
+
+	defer func() {
+		if len(buf) > 0 {
+			h.processLine(string(buf))
+		}
+		h.done.Break()
+	}()
+
+	for chunk := range h.ch {
+		buf = append(buf, chunk...)
+
+		for {
+			idx := bytes.IndexByte(buf, '\n')
+			if idx < 0 {
+				break
+			}
+			line := string(buf[:idx])
+			buf = buf[idx+1:]
+			h.processLine(line)
+		}
+	}
+}
+
+func (h *HandlerLogger) processLine(line string) {
+	if len(line) == 0 {
+		return
+	}
+
+	if line[len(line)-1] == '}' {
+		if h.sink != nil {
+			h.sink(line)
+		} else {
+			fmt.Println(line)
+		}
+		return
+	}
+
+	// gstreamer stderr (timestamp-prefixed)
+	if strings.HasPrefix(line, "0:00:0") {
+		return
+	}
+
+	// glib/gobject warnings from gstreamer
+	if strings.HasPrefix(line, "(egress:") {
+		h.l.Warnw(line, nil)
+		return
+	}
+
+	// pion SDK stderr output
+	if len(line) > 5 && sdkPrefixes[line[:5]] {
+		h.l.Infow(line)
+		return
+	}
+
+	h.l.Errorw(line, nil)
 }

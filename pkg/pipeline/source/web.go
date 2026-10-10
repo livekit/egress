@@ -23,11 +23,16 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/chromedp/cdproto/inspector"
 	"github.com/chromedp/cdproto/runtime"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/frostbyte73/core"
 
@@ -36,33 +41,35 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/medialogutils"
-	"github.com/livekit/protocol/tracer"
 )
 
 const (
 	startRecordingLog = "START_RECORDING"
 	endRecordingLog   = "END_RECORDING"
 
-	chromeFailedToStart = "chrome failed to start:"
-	chromeTimeout       = time.Second * 30
-	chromeRetries       = 3
+	chromeFailedToStart       = "chrome failed to start:"
+	chromeCertVerifierChanged = "net::ERR_CERT_VERIFIER_CHANGED"
+	chromeConnectionClosed    = "net::ERR_CONNECTION_CLOSED"
+
+	chromeTimeout = time.Second * 30
+	chromeRetries = 3
+	// chrome and Xvfb are started in the same millisecond, so back-to-back
+	// attempts would all land before a slow display is listening
+	chromeRetryDelay = time.Millisecond * 500
 )
 
 type WebSource struct {
-	pulseSink   string
-	xvfb        *exec.Cmd
-	closeChrome context.CancelFunc
-	chromeLog   *os.File
+	pulseSink    string
+	xvfb         *exec.Cmd
+	closeChrome  context.CancelFunc
+	chromeLogger *lumberjack.Logger
 
-	startRecording core.Fuse
-	endRecording   core.Fuse
-	closed         core.Fuse
+	startRecording       core.Fuse
+	startRecordingLogged atomic.Bool
+	endRecording         core.Fuse
+	closed               core.Fuse
 
 	info *livekit.EgressInfo
-}
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
 }
 
 func NewWebSource(ctx context.Context, p *config.PipelineConfig) (*WebSource, error) {
@@ -122,10 +129,6 @@ func (s *WebSource) Close() {
 			s.closeChrome()
 		}
 
-		if s.chromeLog != nil {
-			_ = s.chromeLog.Close()
-		}
-
 		if s.xvfb != nil {
 			logger.Debugw("closing X display")
 			_ = s.xvfb.Process.Kill()
@@ -138,12 +141,16 @@ func (s *WebSource) Close() {
 				logger.Errorw("failed to unload pulse sink", err)
 			}
 		}
+		if s.chromeLogger != nil {
+			_ = s.chromeLogger.Close()
+			s.chromeLogger = nil
+		}
 	})
 }
 
 // creates a new pulse audio sink
 func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfig) error {
-	ctx, span := tracer.Start(ctx, "WebInput.createPulseSink")
+	_, span := tracer.Start(ctx, "WebInput.createPulseSink")
 	defer span.End()
 
 	logger.Debugw("creating pulse sink")
@@ -172,10 +179,12 @@ func (s *WebSource) createPulseSink(ctx context.Context, p *config.PipelineConfi
 
 // creates a new xvfb display
 func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) error {
-	ctx, span := tracer.Start(ctx, "WebInput.launchXvfb")
+	_, span := tracer.Start(ctx, "WebInput.launchXvfb")
 	defer span.End()
 
-	dims := fmt.Sprintf("%dx%dx%d", p.Width, p.Height, p.Depth)
+	// chrome shrinks its window by a pixel when it would exactly fill the screen, so give it a
+	// pixel of slack - the ximagesrc crops it back out
+	dims := fmt.Sprintf("%dx%dx%d", p.Width+1, p.Height+1, p.Depth)
 	logger.Debugw("creating X display", "display", p.Display, "dims", dims)
 	xvfb := exec.Command("Xvfb", p.Display, "-screen", "0", dims, "-ac", "-nolisten", "tcp", "-nolisten", "unix")
 	if err := xvfb.Start(); err != nil {
@@ -186,9 +195,33 @@ func (s *WebSource) launchXvfb(ctx context.Context, p *config.PipelineConfig) er
 	return nil
 }
 
+func newChromeLogger(tmpDir string) *lumberjack.Logger {
+	writer := &lumberjack.Logger{
+		Filename:   filepath.Join(tmpDir, "chrome.log"),
+		MaxSize:    100, // MB per file (smallest unit)
+		MaxBackups: 1,   // current + 1 backup = 2 files total
+		MaxAge:     7,   // days
+		Compress:   false,
+	}
+	return writer
+}
+
+// chromedpErrorf logs node events chromedp does not track at debug, since egress never reads its DOM mirror.
+func chromedpErrorf(format string, args ...any) {
+	msg := fmt.Sprintf("chromedp: "+format, args...)
+	switch {
+	case strings.HasPrefix(format, "unhandled node event"):
+		logger.Debugw(msg)
+	case strings.HasPrefix(format, "unhandled page event"):
+		logger.Warnw(msg, nil)
+	default:
+		logger.Errorw(msg, nil)
+	}
+}
+
 // launches chrome and navigates to the url
 func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) error {
-	ctx, span := tracer.Start(ctx, "WebInput.launchChrome")
+	_, span := tracer.Start(ctx, "WebInput.launchChrome")
 	defer span.End()
 
 	webUrl := p.WebUrl
@@ -207,12 +240,7 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 	}
 
 	if p.Debug.EnableChromeLogging {
-		f, err := os.Create(path.Join(os.TempDir(), "chrome.log"))
-		if err != nil {
-			logger.Errorw("failed to create chrome log file", err)
-		} else {
-			s.chromeLog = f
-		}
+		s.chromeLogger = newChromeLogger(os.TempDir())
 	}
 
 	logger.Debugw("launching chrome", "url", webUrl, "sandbox", p.EnableChromeSandbox, "insecure", p.Insecure)
@@ -276,10 +304,11 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 	var retryable bool
 	for i := range chromeRetries {
 		if i > 0 {
-			logger.Debugw("navigation timed out, reloading")
+			logger.Debugw("relaunching chrome", "attempt", i+1, "after", chromeRetryDelay)
+			time.Sleep(chromeRetryDelay)
 		}
 
-		chromeCtx, chromeCancel := chromedp.NewContext(allocCtx)
+		chromeCtx, chromeCancel := chromedp.NewContext(allocCtx, chromedp.WithErrorf(chromedpErrorf))
 		s.closeChrome = func() {
 			chromeCancel()
 			allocCancel()
@@ -289,6 +318,11 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 		if !retryable {
 			break
 		}
+
+		// tear down this Chrome before retrying. Otherwise it stays alive on its
+		// error page, auto-reloads the URL ~1s later, and rejoins the room with the
+		// same identity as the retry's Chrome, which is evicted as a duplicate identity.
+		chromeCancel()
 	}
 
 	return err
@@ -298,9 +332,9 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *runtime.EventConsoleAPICalled:
-			if s.chromeLog != nil {
+			if s.chromeLogger != nil {
 				if b, err := json.Marshal(ev); err == nil {
-					_, _ = s.chromeLog.Write(append(b, '\n'))
+					_, _ = s.chromeLogger.Write(append(b, '\n'))
 				}
 			}
 
@@ -313,7 +347,9 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 
 				switch fmt.Sprint(val) {
 				case startRecordingLog:
-					logger.Infow("chrome: START_RECORDING")
+					if s.startRecordingLogged.CompareAndSwap(false, true) {
+						logger.Infow("chrome: START_RECORDING")
+					}
 					s.startRecording.Break()
 
 				case endRecordingLog:
@@ -323,13 +359,18 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 			}
 
 		case *runtime.EventExceptionThrown:
-			if s.chromeLog != nil {
+			if s.chromeLogger != nil {
 				if b, err := json.Marshal(ev); err == nil {
-					_, _ = s.chromeLog.Write(append(b, '\n'))
+					_, _ = s.chromeLogger.Write(append(b, '\n'))
 				}
 			}
-
 			logger.Debugw("chrome exception", "err", ev.ExceptionDetails.Error())
+
+		case *target.EventTargetCrashed:
+			logger.Errorw("chrome crashed", nil, "targetId", ev.TargetID, "status", ev.Status, "errorCode", ev.ErrorCode)
+
+		case *inspector.EventTargetCrashed:
+			logger.Errorw("chrome crashed", nil)
 		}
 	})
 
@@ -343,7 +384,17 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 			timeout = time.AfterFunc(chromeTimeout, chromeCancel)
 			return nil
 		}),
-		chromedp.Navigate(webUrl),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			// use RunResponse wrapped in ActionFunc to get the response details
+			r, err := chromedp.RunResponse(ctx, chromedp.Navigate(webUrl))
+			if err != nil {
+				return err
+			}
+			if r.Status >= 400 {
+				return errors.PageLoadError(r.StatusText)
+			}
+			return nil
+		}),
 		chromedp.ActionFunc(func(_ context.Context) error {
 			// cancel timer
 			timeout.Stop()
@@ -357,10 +408,23 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 			}`, &errString),
 	); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			logger.Warnw("navigation timed out, retrying", nil)
 			return errors.PageLoadError("timed out"), true
 		}
 		if strings.HasPrefix(err.Error(), chromeFailedToStart) {
-			return errors.ChromeError(err), false
+			// Usually the X display losing the race with chrome's launch. The
+			// allocator holds no per-process state, so the next attempt spawns a
+			// fresh browser against a fresh user-data-dir.
+			logger.Warnw("chrome failed to start, retrying", nil)
+			return errors.ChromeError(err), true
+		}
+		if strings.Contains(err.Error(), chromeCertVerifierChanged) {
+			logger.Warnw("chrome cert verifier changed, retrying", nil)
+			return errors.PageLoadError(err.Error()), true
+		}
+		if strings.Contains(err.Error(), chromeConnectionClosed) {
+			logger.Warnw("connection closed, retrying", nil)
+			return errors.PageLoadError(err.Error()), true
 		}
 		return errors.PageLoadError(err.Error()), false
 	} else if errString != "" {

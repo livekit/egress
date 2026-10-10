@@ -21,6 +21,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -54,7 +55,7 @@ func (t *VP8Translator) Translate(pkt *rtp.Packet) {
 		return
 	}
 
-	vp8Packet := buffer.VP8{}
+	vp8Packet := codec.VP8{}
 	if err := vp8Packet.Unmarshal(pkt.Payload); err != nil {
 		t.logger.Warnw("could not unmarshal VP8 packet", err)
 		return
@@ -64,7 +65,7 @@ func (t *VP8Translator) Translate(pkt *rtp.Packet) {
 		Packet:   pkt,
 		Arrival:  time.Now().UnixNano(),
 		Payload:  vp8Packet,
-		KeyFrame: vp8Packet.IsKeyFrame,
+		IsKeyFrame: vp8Packet.IsKeyFrame,
 		VideoLayer: buffer.VideoLayer{
 			Spatial:  -1,
 			Temporal: int32(vp8Packet.TID),

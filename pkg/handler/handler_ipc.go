@@ -25,15 +25,15 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/ipc"
+	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/pprof"
-	"github.com/livekit/protocol/tracer"
 	"github.com/livekit/psrpc"
 )
 
 func (h *Handler) GetPipelineDot(ctx context.Context, _ *ipc.GstPipelineDebugDotRequest) (*ipc.GstPipelineDebugDotResponse, error) {
-	ctx, span := tracer.Start(ctx, "Handler.GetPipelineDot")
+	_, span := tracer.Start(ctx, "Handler.GetPipelineDot")
 	defer span.End()
 
 	<-h.initialized.Watch()
@@ -93,7 +93,7 @@ func (h *Handler) GenerateMetrics(_ context.Context) (string, error) {
 		return "", err
 	}
 
-	metricsAsString, err := renderMetrics(metrics)
+	metricsAsString, err := renderMetrics(stats.FilterHandlerFamilies(metrics))
 	if err != nil {
 		return "", err
 	}
@@ -119,6 +119,20 @@ func renderMetrics(metrics []*dto.MetricFamily) (string, error) {
 	return writer.String(), nil
 }
 
+// StopHandler triggers a graceful EOS drain with the caller-supplied end reason; unlike KillEgress it leaves the egress status untouched so the recording finalizes as a normal completion.
+func (h *Handler) StopHandler(ctx context.Context, req *ipc.StopHandlerRequest) (*emptypb.Empty, error) {
+	ctx, span := tracer.Start(ctx, "Handler.StopHandler")
+	defer span.End()
+
+	<-h.initialized.Watch()
+	if h.controller == nil {
+		return &emptypb.Empty{}, nil
+	}
+
+	h.controller.SendEOS(ctx, req.Reason)
+	return &emptypb.Empty{}, nil
+}
+
 func (h *Handler) KillEgress(ctx context.Context, req *ipc.KillEgressRequest) (*emptypb.Empty, error) {
 	ctx, span := tracer.Start(ctx, "Handler.KillEgress")
 	defer span.End()
@@ -131,7 +145,7 @@ func (h *Handler) KillEgress(ctx context.Context, req *ipc.KillEgressRequest) (*
 	}
 
 	h.controller.SendEOS(ctx, livekit.EndReasonKilled)
-	h.controller.Info.SetFailed(psrpc.NewErrorf(psrpc.PermissionDenied, req.Error))
+	h.controller.Info.SetFailed(psrpc.NewErrorf(psrpc.PermissionDenied, "%s", req.Error))
 
 	return &emptypb.Empty{}, nil
 }

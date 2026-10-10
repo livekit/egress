@@ -22,6 +22,7 @@ import (
 
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
@@ -48,7 +49,7 @@ type ImageConfig struct {
 }
 
 func (p *PipelineConfig) GetImageConfigs() []*ImageConfig {
-	o, _ := p.Outputs[types.EgressTypeImages]
+	o := p.Outputs[types.EgressTypeImages]
 
 	var configs []*ImageConfig
 	for _, c := range o {
@@ -58,13 +59,21 @@ func (p *PipelineConfig) GetImageConfigs() []*ImageConfig {
 	return configs
 }
 
-func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput) (*ImageConfig, error) {
+func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput, upload egress.UploadRequest) (*ImageConfig, error) {
 	outCodec, outputType, err := getMimeTypes(images.ImageCodec)
 	if err != nil {
 		return nil, err
 	}
 
-	sc, err := p.getStorageConfig(images)
+	switch images.FilenameSuffix {
+	case livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+		livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP,
+		livekit.ImageFileSuffix_IMAGE_SUFFIX_NONE_OVERWRITE:
+	default:
+		return nil, errors.ErrInvalidInput("filename_suffix")
+	}
+
+	sc, err := p.getStorageConfig(upload)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +105,18 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput) (*ImageConf
 
 	// Set default dimensions for RoomComposite and Web. For all SDKs input, default will be
 	// set from the track dimensions
-	switch p.Info.Request.(type) {
+	setDims := func(request egress.EgressRequest) {
+		if request.GetTemplate() != nil || request.GetWeb() != nil {
+			if conf.Width == 0 {
+				conf.Width = p.Width
+			}
+			if conf.Height == 0 {
+				conf.Height = p.Height
+			}
+		}
+	}
+
+	switch req := p.Info.Request.(type) {
 	case *livekit.EgressInfo_RoomComposite, *livekit.EgressInfo_Web:
 		if conf.Width == 0 {
 			conf.Width = p.Width
@@ -104,6 +124,10 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput) (*ImageConf
 		if conf.Height == 0 {
 			conf.Height = p.Height
 		}
+	case *livekit.EgressInfo_Replay:
+		setDims(req.Replay)
+	case *livekit.EgressInfo_Egress:
+		setDims(req.Egress)
 	}
 
 	// filename
@@ -128,6 +152,9 @@ func (o *ImageConfig) updatePrefix(p *PipelineConfig) error {
 	// ensure playlistName
 	if imagesPrefix == "" {
 		imagesPrefix = fmt.Sprintf("%s-%s", identifier, time.Now().Format("2006-01-02T150405"))
+		if p.Info.RetryCount > 0 {
+			imagesPrefix = fmt.Sprintf("%s-%d", imagesPrefix, p.Info.RetryCount)
+		}
 	}
 
 	// update config

@@ -23,10 +23,12 @@ import (
 
 	"github.com/go-gst/go-gst/gst"
 
+	"github.com/livekit/protocol/logger"
+
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/source"
-	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -40,6 +42,10 @@ const (
 	msgInputDisappeared            = "Can't copy metadata because input buffer disappeared"
 	msgSkippingSegment             = "error reading data -1 (reason: Success), skipping segment"
 	fnGstAudioResampleCheckDiscont = "gst_audio_resample_check_discont"
+
+	// noisy colorimetry warnings from decoders that omit VUI color info
+	msgColorMatrix        = "Need to specify a color matrix when using YUV format (I420)"
+	msgInvalidColorimetry = "invalid colorimetry, using default"
 
 	// noisy gst fixmes
 	msgStreamStart       = "stream-start event without group-id. Consider implementing group-id handling in the upstream elements"
@@ -71,6 +77,8 @@ var (
 		msgInputDisappeared:            true,
 		msgSkippingSegment:             true,
 		fnGstAudioResampleCheckDiscont: true,
+		msgColorMatrix:                 true,
+		msgInvalidColorimetry:          true,
 		msgStreamStart:                 true,
 		msgCreatingStream:              true,
 		msgAggregateSubclass:           true,
@@ -105,7 +113,8 @@ func (c *Controller) gstLog(
 	} else {
 		msg = fmt.Sprintf("[%s %s] %s", category, lvl, message)
 	}
-	c.gstLogger.Debugw(msg, "caller", fmt.Sprintf("%s:%d", file, line))
+	caller := fmt.Sprintf("%s:%d", file, line)
+	c.gstLogger.Infow(msg, "caller", caller)
 }
 
 func (c *Controller) messageWatch(msg *gst.Message) bool {
@@ -115,6 +124,13 @@ func (c *Controller) messageWatch(msg *gst.Message) bool {
 		logger.Infow("pipeline received EOS")
 		if c.eosTimer != nil {
 			c.eosTimer.Stop()
+		}
+		// Capture pipeline running time at EOS — all content has been flushed
+		// to sinks at this point, so this reflects the actual file duration.
+		// Used as a floor for endedAt to account for pipeline-generated content
+		// beyond the last RTP packet (e.g. mixer silence after all tracks leave).
+		if rt, ok := c.p.RunningTime(); ok {
+			c.pipelineEndedAt = c.src.GetStartedAt() + rt.Nanoseconds()
 		}
 		c.eosReceived.Break()
 		c.p.Stop()
@@ -179,8 +195,8 @@ const (
 func (c *Controller) handleMessageError(gErr *gst.GError) error {
 	element, name, message := parseDebugInfo(gErr)
 
-	switch {
-	case element == elementGstRtmp2Sink:
+	switch element {
+	case elementGstRtmp2Sink:
 		streamSink := c.getStreamSink()
 
 		streamName := strings.Split(name, "_")[1]
@@ -203,7 +219,7 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 		// remove sink
 		return c.streamFailed(context.Background(), stream, gErr)
 
-	case element == elementGstSrtSink:
+	case elementGstSrtSink:
 		streamName := strings.Split(name, "_")[1]
 		stream, err := c.getStreamSink().GetStream(streamName)
 		if err != nil {
@@ -212,15 +228,17 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 
 		return c.streamFailed(context.Background(), stream, gErr)
 
-	case element == elementGstAppSrc:
+	case elementGstAppSrc:
 		if message == msgStreamingNotNegotiated {
 			// send eosSent to app src
 			logger.Debugw("streaming stopped", "name", name)
-			c.src.(*source.SDKSource).StreamStopped(name)
+			if sdkSrc, ok := c.src.(*source.SDKSource); ok {
+				sdkSrc.StreamStopped(name)
+			}
 			return nil
 		}
 
-	case element == elementGstSplitMuxSink:
+	case elementGstSplitMuxSink:
 		// We sometimes get GstSplitMuxSink errors if EOS was received before any data
 		if message == msgMuxer {
 			if c.eosSent.IsBroken() {
@@ -237,32 +255,44 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 }
 
 func (c *Controller) handleMessageStateChanged(msg *gst.Message) {
-	_, newState := msg.ParseStateChanged()
+	oldState, newState := msg.ParseStateChanged()
 	s := msg.Source()
 	if s == pipelineName {
 		if newState == gst.StatePaused {
 			c.paused.Once(func() {
-				logger.Infow("pipeline paused")
+				logger.Debugw("pipeline paused")
 				c.callbacks.OnPipelinePaused()
 			})
 		}
 		if newState == gst.StatePlaying {
 			c.playing.Once(func() {
-				logger.Infow("pipeline playing")
+				var timeToPlaying time.Duration
+
+				if !c.pipelineCreatedAt.IsZero() {
+					timeToPlaying = time.Since(c.pipelineCreatedAt)
+				}
+
+				logger.Infow("pipeline playing", "timeToPlaying", timeToPlaying)
 				c.updateStartTime(c.src.GetStartedAt())
+
+				// base_time is only valid after the pipeline reaches PLAYING
+				if timeAware, ok := c.src.(source.TimeAware); ok {
+					timeAware.SetTimeProvider(c.p)
+				}
 			})
 		}
 		return
 	}
 
-	if newState != gst.StatePlaying {
-		return
-	}
-
 	if strings.HasPrefix(s, "app_") {
 		trackID := s[4:]
-		logger.Infow(fmt.Sprintf("%s playing", trackID))
-		c.src.(*source.SDKSource).Playing(trackID)
+		logger.Debugw("appsrc state change", "trackID", trackID, "oldState", oldState.String(), "newState", newState.String())
+		if newState == gst.StatePlaying {
+			if sdkSrc, ok := c.src.(*source.SDKSource); ok {
+				sdkSrc.Playing(trackID)
+			}
+		}
+		return
 	}
 }
 
@@ -277,6 +307,21 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 	s := msg.GetStructure()
 	if s != nil {
 		switch s.Name() {
+		case gstreamer.LeakyQueueStatsMessage:
+			queueName, dropped, err := parseLeakyQueueStats(s)
+			if err != nil {
+				logger.Debugw("failed to parse leaky queue stats message", err)
+				return nil
+			}
+			if strings.HasPrefix(queueName, "video") {
+				c.stats.droppedVideoBuffers.Add(dropped)
+				c.stats.droppedVideoBuffersByQueue[queueName] = dropped
+			}
+			if strings.HasPrefix(queueName, "audio") {
+				c.stats.queuesDroppedAudioBuffers.Add(dropped)
+				c.stats.droppedAudioBuffersByQueue[queueName] = dropped
+			}
+
 		case msgFirstSampleMetadata:
 			startDate, err := getFirstSampleMetadataFromGstStructure(s)
 			if err != nil {
@@ -334,6 +379,45 @@ func (c *Controller) handleMessageElement(msg *gst.Message) error {
 	return nil
 }
 
+func parseLeakyQueueStats(s *gst.Structure) (queue string, dropped uint64, err error) {
+	queueValue, err := s.GetValue("queue")
+	if err != nil {
+		return "", 0, err
+	}
+	queue, _ = queueValue.(string)
+
+	droppedValue, err := s.GetValue("dropped")
+	if err != nil {
+		return queue, 0, err
+	}
+	dropped = normalizeUint64(droppedValue)
+	return queue, dropped, nil
+}
+
+func normalizeUint64(value interface{}) uint64 {
+	switch v := value.(type) {
+	case uint64:
+		return v
+	case uint:
+		return uint64(v)
+	case uint32:
+		return uint64(v)
+	case int:
+		if v > 0 {
+			return uint64(v)
+		}
+	case int64:
+		if v > 0 {
+			return uint64(v)
+		}
+	case int32:
+		if v > 0 {
+			return uint64(v)
+		}
+	}
+	return 0
+}
+
 func (c *Controller) handleMessageQoS(msg *gst.Message) {
 	if isQosForAudioMixer(msg) {
 		qos := msg.ParseQoS()
@@ -347,8 +431,8 @@ func (c *Controller) handleMessageQoS(msg *gst.Message) {
 }
 
 func (c *Controller) handleAudioMixerQoS(qosValues *gst.QoSValues) {
-	c.stats.droppedAudioBuffers.Inc()
-	c.stats.droppedAudioDuration.Add(qosValues.Duration)
+	c.stats.mixerDroppedAudioBuffers.Inc()
+	c.stats.mixerDroppedAudioDuration.Add(qosValues.Duration)
 }
 
 // Debug info comes in the following format:
@@ -357,6 +441,10 @@ var gstDebug = regexp.MustCompile("(?s)(.*?)GstPipeline:pipeline/GstBin:(.*?)/(.
 
 func parseDebugInfo(gErr *gst.GError) (element, name, message string) {
 	match := gstDebug.FindStringSubmatch(gErr.DebugString())
+
+	if len(match) == 0 {
+		return
+	}
 
 	element = match[3]
 	name = match[4]

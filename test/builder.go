@@ -17,17 +17,43 @@
 package test
 
 import (
+	"fmt"
+	"net"
+	"net/http"
 	"path"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 )
 
-const webUrl = "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+const (
+	setAtRuntime  = "set-at-runtime"
+	setP1Identity = "set-p1-identity"
+	setP2Identity = "set-p2-identity"
+
+	mediaSamplesDir = "/media-samples"
+	webFixture      = "BigBuckBunny_320x180.mp4"
+)
+
+// webURL serves the vendored Big Buck Bunny clip from a localhost file server
+// (rooted at the media-samples dir) and returns its URL, starting the server
+// once on first use. The web egress tests previously navigated Chrome to this
+// clip on download.blender.org, which now 404s (upstream removed the loose
+// .mp4); serving it locally removes that external dependency.
+var webURL = sync.OnceValue(func() string {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(fmt.Sprintf("failed to start web fixture server: %v", err))
+	}
+	go func() { _ = http.Serve(ln, http.FileServer(http.Dir(mediaSamplesDir))) }()
+	return fmt.Sprintf("http://%s/%s", ln.Addr(), webFixture)
+})
 
 type testCase struct {
 	name        string
@@ -38,16 +64,21 @@ type testCase struct {
 	// encoding options
 	encodingOptions *livekit.EncodingOptions
 	encodingPreset  livekit.EncodingOptionsPreset
+	passthrough     bool
 
 	*fileOptions
 	*streamOptions
 	*segmentOptions
 	*imageOptions
+	*v2OutputOptions
 
-	multi  bool
 	custom func(*testing.T, *testCase)
 
 	contentCheck func(t *testing.T, path string, info *FFProbeInfo)
+
+	plan       *Plan
+	publishers map[string]*publisherState
+	p0Identity string
 }
 
 type publishOptions struct {
@@ -59,6 +90,8 @@ type publishOptions struct {
 	audioMixing    livekit.AudioMixing
 	audioTrackID   string
 
+	expectedAudioChannels map[string]livekit.AudioChannel
+
 	videoCodec     types.MimeType
 	videoDelay     time.Duration
 	videoUnpublish time.Duration
@@ -66,7 +99,26 @@ type publishOptions struct {
 	videoOnly      bool
 	videoTrackID   string
 
+	disconnectAt       time.Duration
+	disconnectDuration time.Duration
+
 	layout string
+
+	// chromeCompositing runs this case through chrome instead of the SDK
+	// compositor. The runner enables EnableTemplateSDK globally, so without
+	// this the shipped default (enable_template_sdk: false) has no coverage.
+	chromeCompositing bool
+
+	multiParticipant bool
+
+	// v2 Media source fields
+	mediaVideoTrackID     string
+	mediaParticipantVideo *livekit.ParticipantVideo
+	audioRoutes           []*livekit.AudioRoute
+	captureAudioAll       bool
+
+	// v2 Template source fields
+	templateCustomBaseUrl string
 }
 
 type fileOptions struct {
@@ -83,15 +135,21 @@ type streamOptions struct {
 }
 
 type segmentOptions struct {
-	prefix       string
-	playlist     string
-	livePlaylist string
-	suffix       livekit.SegmentedFileSuffix
+	prefix          string
+	playlist        string
+	livePlaylist    string
+	suffix          livekit.SegmentedFileSuffix
+	segmentDuration uint32
 }
 
 type imageOptions struct {
 	prefix string
 	suffix livekit.ImageFileSuffix
+}
+
+type v2OutputOptions struct {
+	outputs []*livekit.Output
+	storage *livekit.StorageConfig
 }
 
 func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
@@ -132,7 +190,7 @@ func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
 
 	case types.RequestTypeWeb:
 		web := &livekit.WebEgressRequest{
-			Url:       webUrl,
+			Url:       webURL(),
 			AudioOnly: test.audioOnly,
 			VideoOnly: test.videoOnly,
 		}
@@ -165,7 +223,7 @@ func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
 	case types.RequestTypeParticipant:
 		participant := &livekit.ParticipantEgressRequest{
 			RoomName: r.RoomName,
-			Identity: r.room.LocalParticipant.Identity(),
+			Identity: test.p0Identity,
 		}
 		if test.encodingOptions != nil {
 			participant.Options = &livekit.ParticipantEgressRequest_Advanced{
@@ -237,12 +295,12 @@ func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
 		if test.fileOptions != nil {
 			track.Output = &livekit.TrackEgressRequest_File{
 				File: &livekit.DirectFileOutput{
-					Filepath: path.Join(r.FilePrefix, test.fileOptions.filename),
+					Filepath: path.Join(r.FilePrefix, test.filename),
 				},
 			}
 		} else if test.streamOptions != nil {
 			track.Output = &livekit.TrackEgressRequest_WebsocketUrl{
-				WebsocketUrl: test.streamOptions.websocketUrl,
+				WebsocketUrl: test.websocketUrl,
 			}
 		}
 		return &rpc.StartEgressRequest{
@@ -303,6 +361,7 @@ func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFile
 			PlaylistName:     o.playlist,
 			LivePlaylistName: o.livePlaylist,
 			FilenameSuffix:   o.suffix,
+			SegmentDuration:  o.segmentDuration,
 		}
 
 		switch conf := u.(type) {
@@ -322,6 +381,7 @@ func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFile
 		PlaylistName:     o.playlist,
 		LivePlaylistName: o.livePlaylist,
 		FilenameSuffix:   o.suffix,
+		SegmentDuration:  o.segmentDuration,
 	}}
 }
 
@@ -350,4 +410,261 @@ func (r *Runner) getUploadConfig() interface{} {
 		return nil
 	}
 	return configs[r.testNumber%len(configs)]
+}
+
+func (test *testCase) isV2() bool {
+	switch test.requestType {
+	case types.RequestTypeTemplate, types.RequestTypeMedia:
+		return true
+	case types.RequestTypeWeb:
+		return test.v2OutputOptions != nil
+	default:
+		return false
+	}
+}
+
+func (r *Runner) buildRequest(test *testCase) *rpc.StartEgressRequest {
+	if test.isV2() {
+		return r.buildV2(test)
+	}
+	return r.build(test)
+}
+
+func (r *Runner) getV2StorageConfig() *livekit.StorageConfig {
+	u := r.getUploadConfig()
+	if u == nil {
+		return nil
+	}
+	switch conf := u.(type) {
+	case *livekit.S3Upload:
+		return &livekit.StorageConfig{Provider: &livekit.StorageConfig_S3{S3: conf}}
+	case *livekit.GCPUpload:
+		return &livekit.StorageConfig{Provider: &livekit.StorageConfig_Gcp{Gcp: conf}}
+	case *livekit.AzureBlobUpload:
+		return &livekit.StorageConfig{Provider: &livekit.StorageConfig_Azure{Azure: conf}}
+	case *livekit.AliOSSUpload:
+		return &livekit.StorageConfig{Provider: &livekit.StorageConfig_AliOSS{AliOSS: conf}}
+	}
+	return nil
+}
+
+func (r *Runner) buildV2Outputs(test *testCase) []*livekit.Output {
+	if test.v2OutputOptions != nil && len(test.outputs) > 0 {
+		return test.outputs
+	}
+
+	storage := r.getV2StorageConfig()
+	var prefix string
+	if storage != nil {
+		prefix = uploadPrefix
+	} else {
+		prefix = r.FilePrefix
+	}
+
+	var outputs []*livekit.Output
+
+	if test.fileOptions != nil {
+		outputs = append(outputs, &livekit.Output{
+			Config: &livekit.Output_File{
+				File: &livekit.FileOutput{
+					FileType: test.fileType,
+					Filepath: path.Join(prefix, test.filename),
+				},
+			},
+			Storage: storage,
+		})
+	}
+
+	if test.streamOptions != nil {
+		var protocol livekit.StreamProtocol
+		switch test.streamOptions.outputType {
+		case types.OutputTypeRTMP:
+			protocol = livekit.StreamProtocol_RTMP
+		case types.OutputTypeSRT:
+			protocol = livekit.StreamProtocol_SRT
+		default:
+			protocol = livekit.StreamProtocol_DEFAULT_PROTOCOL
+		}
+		outputs = append(outputs, &livekit.Output{
+			Config: &livekit.Output_Stream{
+				Stream: &livekit.StreamOutput{
+					Protocol: protocol,
+					Urls:     test.streamUrls,
+				},
+			},
+		})
+	}
+
+	if test.segmentOptions != nil {
+		outputs = append(outputs, &livekit.Output{
+			Config: &livekit.Output_Segments{
+				Segments: &livekit.SegmentedFileOutput{
+					FilenamePrefix:   path.Join(prefix, test.segmentOptions.prefix),
+					PlaylistName:     test.playlist,
+					LivePlaylistName: test.livePlaylist,
+					FilenameSuffix:   test.segmentOptions.suffix,
+					SegmentDuration:  test.segmentDuration,
+				},
+			},
+			Storage: storage,
+		})
+	}
+
+	if test.imageOptions != nil {
+		outputs = append(outputs, &livekit.Output{
+			Config: &livekit.Output_Images{
+				Images: &livekit.ImageOutput{
+					CaptureInterval: 5,
+					Width:           1280,
+					Height:          720,
+					FilenamePrefix:  path.Join(r.FilePrefix, test.imageOptions.prefix),
+					FilenameSuffix:  test.imageOptions.suffix,
+				},
+			},
+		})
+	}
+
+	return outputs
+}
+
+func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
+	egressReq := &livekit.StartEgressRequest{
+		Outputs: r.buildV2Outputs(test),
+	}
+	// Web source has no associated room; everything else (Template/Media) is live in a room.
+	if test.requestType != types.RequestTypeWeb {
+		egressReq.RoomName = r.RoomName
+	}
+
+	// Source
+	switch test.requestType {
+	case types.RequestTypeTemplate:
+		egressReq.Source = &livekit.StartEgressRequest_Template{
+			Template: &livekit.TemplateSource{
+				Layout:        test.layout,
+				AudioOnly:     test.audioOnly,
+				VideoOnly:     test.videoOnly,
+				CustomBaseUrl: test.templateCustomBaseUrl,
+			},
+		}
+
+	case types.RequestTypeWeb:
+		egressReq.Source = &livekit.StartEgressRequest_Web{
+			Web: &livekit.WebSource{
+				Url:       webURL(),
+				AudioOnly: test.audioOnly,
+				VideoOnly: test.videoOnly,
+			},
+		}
+
+	case types.RequestTypeMedia:
+		media := &livekit.MediaSource{}
+
+		// video - use explicit mediaVideoTrackID, or fall back to published videoTrackID
+		videoTrackID := test.mediaVideoTrackID
+		if (videoTrackID == "" || videoTrackID == setAtRuntime) && test.videoCodec != "" {
+			videoTrackID = test.videoTrackID
+		}
+		if videoTrackID != "" {
+			media.Video = &livekit.MediaSource_VideoTrackId{
+				VideoTrackId: videoTrackID,
+			}
+		} else if test.mediaParticipantVideo != nil {
+			pv := test.mediaParticipantVideo
+			var identity string
+			switch pv.Identity {
+			case setAtRuntime:
+				identity = test.p0Identity
+			case setP1Identity:
+				if s := test.publishers["p1"]; s != nil {
+					identity = s.identity
+				}
+			case setP2Identity:
+				if s := test.publishers["p2"]; s != nil {
+					identity = s.identity
+				}
+			}
+			if identity != "" {
+				pv = &livekit.ParticipantVideo{
+					Identity:          identity,
+					PreferScreenShare: pv.PreferScreenShare,
+				}
+			}
+			media.Video = &livekit.MediaSource_ParticipantVideo{
+				ParticipantVideo: pv,
+			}
+		}
+
+		// audio - capture-all takes precedence; routes are mutually exclusive
+		if test.captureAudioAll {
+			media.Audio = &livekit.AudioConfig{CaptureAll: true}
+		} else if len(test.audioRoutes) > 0 {
+			routes := make([]*livekit.AudioRoute, len(test.audioRoutes))
+			for i, route := range test.audioRoutes {
+				routes[i] = route
+				if tr, ok := route.Match.(*livekit.AudioRoute_TrackId); ok && tr.TrackId == setAtRuntime {
+					routes[i] = &livekit.AudioRoute{
+						Match:   &livekit.AudioRoute_TrackId{TrackId: test.audioTrackID},
+						Channel: route.Channel,
+					}
+				}
+				if pi, ok := route.Match.(*livekit.AudioRoute_ParticipantIdentity); ok {
+					var identity string
+					switch pi.ParticipantIdentity {
+					case setAtRuntime:
+						identity = test.p0Identity
+					case setP1Identity:
+						if s := test.publishers["p1"]; s != nil {
+							identity = s.identity
+						}
+					case setP2Identity:
+						if s := test.publishers["p2"]; s != nil {
+							identity = s.identity
+						}
+					}
+					if identity != "" {
+						routes[i] = &livekit.AudioRoute{
+							Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: identity},
+							Channel: route.Channel,
+						}
+					}
+				}
+			}
+			media.Audio = &livekit.AudioConfig{Routes: routes}
+		}
+
+		egressReq.Source = &livekit.StartEgressRequest_Media{
+			Media: media,
+		}
+	}
+
+	// Encoding
+	if test.passthrough {
+		egressReq.Encoding = &livekit.StartEgressRequest_Preset{
+			Preset: livekit.EncodingOptionsPreset_PASSTHROUGH,
+		}
+	} else if test.encodingOptions != nil {
+		egressReq.Encoding = &livekit.StartEgressRequest_Advanced{
+			Advanced: test.encodingOptions,
+		}
+	} else if test.encodingPreset != 0 {
+		egressReq.Encoding = &livekit.StartEgressRequest_Preset{
+			Preset: test.encodingPreset,
+		}
+	}
+
+	// Global storage
+	if test.v2OutputOptions != nil && test.storage != nil {
+		egressReq.Storage = test.storage
+	}
+
+	egressID := utils.NewGuid(utils.EgressPrefix)
+	token, _ := egress.BuildEgressToken(egressID, r.ApiKey, r.ApiSecret, r.RoomName)
+
+	return &rpc.StartEgressRequest{
+		EgressId: egressID,
+		Request:  &rpc.StartEgressRequest_Egress{Egress: egressReq},
+		Token:    token,
+		WsUrl:    r.WsUrl,
+	}
 }

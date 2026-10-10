@@ -18,6 +18,9 @@ on:
     tags:
       - "template*"
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -25,14 +28,14 @@ jobs:
       run:
         working-directory: ./template-sdk
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
-          version: 8
+          version: 12
       - name: Use Node.js 18
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: 18
+          node-version: 24
           cache: "pnpm"
           cache-dependency-path: ./template-sdk/pnpm-lock.yaml
 

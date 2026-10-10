@@ -28,7 +28,26 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-// Bins are designed to hold a single stream, with any number of sources and sinks
+const (
+	removeSourceBinTimeout = 3 * time.Second
+)
+
+// Locking rules for Bin/StateManager (maintainer reference):
+//  1. if both state and bin data are needed, take StateManager lock first
+//     (LockState/LockStateShared), then Bin.mu.
+//  2. for multi-bin operations, take the "owner"/parent bin mutex before peer
+//     bin mutexes (for example: b.mu -> src.mu -> sink.mu).
+//  3. do not introduce paths that acquire locks in the reverse order
+//     (peer/child -> parent), or AB-BA deadlocks are possible.
+//  4. for work executed later on the GLib loop (IdleAdd callbacks), snapshot
+//     fields while holding the lock that protects them:
+//     - State under StateManager lock.
+//     - Bin fields (`srcs`, `sinks`, `elements`, `pads`, etc.) under `b.mu`.
+//     Then unlock before scheduling the callback. Avoid holding these locks
+//     while waiting for the callback to run on the GLib loop.
+//
+
+// Bin is designed to hold a single stream, with any number of sources and sinks
 type Bin struct {
 	*Callbacks
 	*StateManager
@@ -49,6 +68,7 @@ type Bin struct {
 	elements []*gst.Element           // elements within this bin
 	queues   map[string]*gst.Element  // used with BinTypeMultiStream
 	pads     map[string]*gst.GhostPad // ghost pads by bin name
+	eosSeen  map[string]*atomic.Bool  // downstream EOS seen per peer bin name
 	sinks    []*Bin                   // sink bins
 }
 
@@ -59,6 +79,7 @@ func (b *Bin) NewBin(name string) *Bin {
 		pipeline:     b.pipeline,
 		bin:          gst.NewBin(name),
 		pads:         make(map[string]*gst.GhostPad),
+		eosSeen:      make(map[string]*atomic.Bool),
 	}
 }
 
@@ -66,13 +87,13 @@ func (b *Bin) GetName() string {
 	return b.bin.GetName()
 }
 
-// Add src as a source of b. This should only be called once for each source bin
+// AddSourceBin - adds src as a source of b. This should only be called once for each source bin
 func (b *Bin) AddSourceBin(src *Bin) error {
 	logger.Debugw(fmt.Sprintf("adding src %s to %s", src.bin.GetName(), b.bin.GetName()))
 	return b.addBin(src, gst.PadDirectionSource)
 }
 
-// Add src as a sink of b. This should only be called once for each sink bin
+// AddSinkBin - adds sink as a sink of b. This should only be called once for each sink bin
 func (b *Bin) AddSinkBin(sink *Bin) error {
 	logger.Debugw(fmt.Sprintf("adding sink %s to %s", sink.bin.GetName(), b.bin.GetName()))
 	return b.addBin(sink, gst.PadDirectionSink)
@@ -131,7 +152,7 @@ func (b *Bin) addBin(bin *Bin, direction gst.PadDirection) error {
 	return nil
 }
 
-// Elements will be linked in the order they are added
+// AddElement - adds element to the bin. Elements will be linked in the order they are added
 func (b *Bin) AddElement(e *gst.Element) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -144,7 +165,7 @@ func (b *Bin) AddElement(e *gst.Element) error {
 	return nil
 }
 
-// Elements will be linked in the order they are added
+// AddElements - adds elements to the bin. Elements will be linked in the order they are added
 func (b *Bin) AddElements(elements ...*gst.Element) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -166,6 +187,16 @@ func (b *Bin) RemoveSinkBin(name string) error {
 	return b.removeBin(name, gst.PadDirectionSink)
 }
 
+func (b *Bin) removeSourceLocked(name string) *Bin {
+	for i, s := range b.srcs {
+		if s.bin.GetName() == name {
+			b.srcs = append(b.srcs[:i], b.srcs[i+1:]...)
+			return s
+		}
+	}
+	return nil
+}
+
 func (b *Bin) removeBin(name string, direction gst.PadDirection) error {
 	b.LockStateShared()
 	defer b.UnlockStateShared()
@@ -180,13 +211,7 @@ func (b *Bin) removeBin(name string, direction gst.PadDirection) error {
 
 	var bin *Bin
 	if direction == gst.PadDirectionSource {
-		for i, s := range b.srcs {
-			if s.bin.GetName() == name {
-				bin = s
-				b.srcs = append(b.srcs[:i], b.srcs[i+1:]...)
-				break
-			}
-		}
+		bin = b.removeSourceLocked(name)
 	} else {
 		for i, s := range b.sinks {
 			if s.bin.GetName() == name {
@@ -225,38 +250,67 @@ func (b *Bin) probeRemoveSource(src *Bin) {
 	}
 
 	var removed atomic.Bool
+	var removalScheduled atomic.Bool
 	srcPad := srcGhostPad.GetTarget()
-	srcPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-		if removed.Load() {
-			return gst.PadProbeRemove
-		}
-		return gst.PadProbeDrop
-	})
 	sinkPad := sinkGhostPad.GetTarget()
-	sinkPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+
+	var eosSeen *atomic.Bool
+	src.mu.Lock()
+	if seen, ok := src.eosSeen[b.bin.GetName()]; ok {
+		eosSeen = seen
+	}
+	src.mu.Unlock()
+
+	scheduleRemoval := func(reason string) {
+		if !removalScheduled.CompareAndSwap(false, true) {
+			return
+		}
+
+		if _, err := glib.IdleAdd(func() bool {
+			removed.Store(true)
+			logger.Debugw("removing source bin", "bin", src.bin.GetName(), "reason", reason)
+			if err := detachSourceBin(src, srcGhostPad, sinkGhostPad, b.elements[0], b.bin, b.pipeline); err != nil {
+				logger.Errorw("failed to detach source bin", err, "bin", src.bin.GetName())
+			}
+			return false
+		}); err != nil {
+			logger.Errorw("failed to schedule source bin removal", err, "bin", src.bin.GetName())
+		}
+	}
+
+	probe := func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		if removed.Load() {
 			return gst.PadProbeRemove
 		}
-		return gst.PadProbeDrop
-	})
 
-	if _, err := glib.IdleAdd(func() bool {
-		b.elements[0].ReleaseRequestPad(sinkPad)
-		srcGhostPad.Unlink(sinkGhostPad.Pad)
-		b.bin.RemovePad(sinkGhostPad.Pad)
-		removed.Store(true)
-		if err := b.pipeline.Remove(src.bin.Element); err != nil {
-			logger.Warnw("failed to remove bin", err, "bin", src.bin.GetName())
-			return false
+		if info.Type()&gst.PadProbeTypeEventDownstream != 0 {
+			if event := info.GetEvent(); event != nil && event.Type() == gst.EventTypeEOS {
+				logger.Debugw("received EOS", "bin", src.bin.GetName())
+				if eosSeen != nil {
+					eosSeen.Store(true)
+				}
+				scheduleRemoval("eos")
+			}
 		}
-		if err := src.bin.SetState(gst.StateNull); err != nil {
-			logger.Warnw("failed to change bin state", err, "bin", src.bin.GetName())
-			return false
-		}
-		return false
-	}); err != nil {
-		logger.Errorw("failed to remove bin", err, "bin", src.bin.GetName())
+
+		return gst.PadProbeOK
 	}
+	srcPad.AddProbe(gst.PadProbeTypeEventDownstream, probe)
+	sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, probe)
+
+	if eosSeen != nil && eosSeen.Load() {
+		logger.Debugw("eos already seen, removing source bin", "bin", src.bin.GetName(), "reason", "eos-seen-after-probe")
+		scheduleRemoval("eos-seen-after-probe")
+		return
+	}
+
+	time.AfterFunc(removeSourceBinTimeout, func() {
+		if removalScheduled.Load() {
+			return
+		}
+		logger.Warnw("timeout waiting for EOS before removing source bin", nil, "bin", src.bin.GetName())
+		scheduleRemoval("timeout")
+	})
 }
 
 func (b *Bin) probeRemoveSink(sink *Bin) {
@@ -269,7 +323,7 @@ func (b *Bin) probeRemoveSink(sink *Bin) {
 
 	srcGhostPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
 		srcGhostPad.Unlink(sinkGhostPad.Pad)
-		sinkGhostPad.Pad.SendEvent(gst.NewEOSEvent())
+		sinkGhostPad.SendEvent(gst.NewEOSEvent())
 
 		b.mu.Lock()
 		err := b.pipeline.Remove(sink.bin.Element)
@@ -290,12 +344,35 @@ func (b *Bin) probeRemoveSink(sink *Bin) {
 	})
 }
 
+// detachSourceBin performs the GStreamer operations to disconnect and remove a source bin.
+// Must be called on the GLib main loop thread.
+func detachSourceBin(src *Bin, srcGhostPad, sinkGhostPad *gst.GhostPad, peerElement *gst.Element, parentBin *gst.Bin, pipeline *gst.Pipeline) error {
+	sinkPad := sinkGhostPad.GetTarget()
+
+	peerElement.ReleaseRequestPad(sinkPad)
+	srcGhostPad.Unlink(sinkGhostPad.Pad)
+	parentBin.RemovePad(sinkGhostPad.Pad)
+
+	if err := pipeline.Remove(src.bin.Element); err != nil {
+		logger.Warnw("failed to remove bin", err, "bin", src.bin.GetName())
+		return errors.ErrGstPipelineError(err)
+	}
+
+	if err := src.bin.SetState(gst.StateNull); err != nil {
+		logger.Warnw("failed to change bin state", err, "bin", src.bin.GetName())
+		return errors.ErrGstPipelineError(err)
+	}
+
+	return nil
+}
+
 func deleteGhostPadsLocked(src, sink *Bin) (*gst.GhostPad, *gst.GhostPad, bool) {
 	srcPad, srcOK := src.pads[sink.bin.GetName()]
 	if !srcOK {
 		logger.Errorw("source pad missing", nil, "bin", src.bin.GetName())
 	}
 	delete(src.pads, sink.bin.GetName())
+	// keep eosSeen so probeRemoveSource can still detect prior EOS when called after pad deletion
 
 	sinkPad, sinkOK := sink.pads[src.bin.GetName()]
 	if !sinkOK {
@@ -322,7 +399,7 @@ func (b *Bin) SetState(state gst.State) error {
 	return nil
 }
 
-// Set a custom linking function for this bin's elements (used when you need to modify chain functions)
+// SetLinkFunc - sets a custom linking function for this bin's elements (used when you need to modify chain functions)
 func (b *Bin) SetLinkFunc(f func([]*gst.Element) error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -337,7 +414,7 @@ func (b *Bin) SetShouldLink(f func(string) bool) {
 	b.shouldLink = f
 }
 
-// Set a custom linking function which returns a pad for the named src bin
+// SetGetSrcPad - sets a custom linking function which returns a pad for the named src bin
 func (b *Bin) SetGetSrcPad(f func(srcName string) *gst.Pad) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -345,7 +422,7 @@ func (b *Bin) SetGetSrcPad(f func(srcName string) *gst.Pad) {
 	b.getSrcPad = f
 }
 
-// Set a custom linking function which returns a pad for the named sink bin
+// SetGetSinkPad - sets a custom linking function which returns a pad for the named sink bin
 func (b *Bin) SetGetSinkPad(f func(sinkName string) *gst.Pad) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -353,7 +430,7 @@ func (b *Bin) SetGetSinkPad(f func(sinkName string) *gst.Pad) {
 	b.getSinkPad = f
 }
 
-// Set a custom EOS function (used for appsrc, input-selector). If it returns true, EOS will also be sent to src bins
+// SetEOSFunc - sets a custom EOS function (used for appsrc, input-selector). If it returns true, EOS will also be sent to src bins
 func (b *Bin) SetEOSFunc(f func() bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -511,7 +588,10 @@ func linkPeersLocked(src, sink *Bin) error {
 				}
 				return gst.PadProbeRemove
 			})
-			return src.SetState(gst.StatePlaying)
+			if !src.bin.SyncStateWithParent() {
+				return fmt.Errorf("failed to sync %s state with parent", src.bin.GetName())
+			}
+			return nil
 		}
 
 		if sinkState == gst.StateNull {

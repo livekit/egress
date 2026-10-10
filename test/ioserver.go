@@ -30,10 +30,10 @@ import (
 type ioTestServer struct {
 	rpc.IOInfoServerImpl
 	server  rpc.IOInfoServer
-	updates chan *livekit.EgressInfo
+	updates *latestInfo
 }
 
-func newIOTestServer(bus psrpc.MessageBus, updates chan *livekit.EgressInfo) (*ioTestServer, error) {
+func newIOTestServer(bus psrpc.MessageBus, updates *latestInfo) (*ioTestServer, error) {
 	s := &ioTestServer{
 		updates: updates,
 	}
@@ -41,6 +41,7 @@ func newIOTestServer(bus psrpc.MessageBus, updates chan *livekit.EgressInfo) (*i
 	if err != nil {
 		return nil, err
 	}
+
 	s.server = server
 	return s, nil
 }
@@ -51,8 +52,11 @@ func (s *ioTestServer) CreateEgress(_ context.Context, info *livekit.EgressInfo)
 }
 
 func (s *ioTestServer) UpdateEgress(_ context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
+	s.updates.Lock()
+	s.updates.EgressInfo = info
 	logger.Infow("egress updated", "egressID", info.EgressId, "status", info.Status)
-	s.updates <- info
+	s.updates.Unlock()
+
 	return &emptypb.Empty{}, nil
 }
 

@@ -33,7 +33,6 @@ import (
 	"github.com/livekit/psrpc"
 
 	"github.com/livekit/egress/pkg/config"
-	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/info"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/service"
@@ -46,22 +45,23 @@ type Server struct {
 
 	conf *config.ServiceConfig
 
-	*service.ProcessManager
+	service.ProcessManager
 	*service.MetricsService
 	*service.DebugService
 	monitor *stats.Monitor
 
 	psrpcServer      rpc.EgressInternalServer
+	handlerProxy     *service.HandlerRPCProxy
 	ipcServiceServer *grpc.Server
 	promServer       *http.Server
-	ioClient         info.IOClient
+	ioClient         info.SessionReporter
 
 	activeRequests atomic.Int32
 	terminating    core.Fuse
 	shutdown       core.Fuse
 }
 
-func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.IOClient) (*Server, error) {
+func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.SessionReporter) (*Server, error) {
 	pm := service.NewProcessManager()
 
 	s := &Server{
@@ -72,11 +72,6 @@ func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.I
 		ipcServiceServer: grpc.NewServer(),
 		ioClient:         ioClient,
 	}
-
-	ioClient.SetWatchdogHandler(func() {
-		logger.Errorw("shutting down server on io client watchdog trigger", errors.New("io client failure"))
-		s.Shutdown(false, false)
-	})
 
 	monitor, err := stats.NewMonitor(conf, s)
 	if err != nil {
@@ -113,7 +108,7 @@ func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.I
 		return nil, err
 	}
 
-	psrpcServer, err := rpc.NewEgressInternalServer(s, bus)
+	psrpcServer, err := rpc.NewEgressInternalServer(s, bus, rpc.WithServerObservability(logger.GetLogger()))
 	if err != nil {
 		return nil, err
 	}
@@ -121,6 +116,13 @@ func NewServer(conf *config.ServiceConfig, bus psrpc.MessageBus, ioClient info.I
 		return nil, err
 	}
 	s.psrpcServer = psrpcServer
+
+	handlerProxy, err := service.NewHandlerRPCProxy(pm, bus)
+	if err != nil {
+		return nil, err
+	}
+	s.handlerProxy = handlerProxy
+	pm.SetHandlerTopicHooks(handlerProxy.RegisterEgress, handlerProxy.DeregisterEgress)
 
 	return s, nil
 }
@@ -174,7 +176,7 @@ func (s *Server) IsIdle() bool {
 }
 
 func (s *Server) IsDisabled() bool {
-	return s.shutdown.IsBroken() || !s.ioClient.IsHealthy()
+	return s.shutdown.IsBroken()
 }
 
 func (s *Server) IsTerminating() bool {
@@ -199,6 +201,7 @@ func (s *Server) Drain() {
 	}
 
 	s.psrpcServer.Shutdown()
+	s.handlerProxy.Shutdown()
 	logger.Infow("draining io client")
 	s.ioClient.Drain()
 }

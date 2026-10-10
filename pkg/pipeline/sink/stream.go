@@ -56,6 +56,10 @@ func newStreamSink(p *gstreamer.Pipeline, conf *config.PipelineConfig, o *config
 		streams: make(map[string]*builder.Stream),
 		loggers: make(map[string]*logging.CSVLogger[logging.StreamStats]),
 	}
+	p.AddOnStop(func() error {
+		ss.stopMonitors()
+		return nil
+	})
 
 	o.Streams.Range(func(_, stream any) bool {
 		err = ss.AddStream(stream.(*config.Stream))
@@ -121,6 +125,10 @@ func (s *StreamSink) AddStream(stream *config.Stream) error {
 
 	s.mu.Unlock()
 
+	if s.bin.OutputType == types.OutputTypeRTMP {
+		ss.StartMonitor()
+	}
+
 	return s.bin.Bin.AddSinkBin(ss.Bin)
 }
 
@@ -148,13 +156,15 @@ func (s *StreamSink) ResetStream(stream *config.Stream, streamErr error) (bool, 
 
 func (s *StreamSink) RemoveStream(stream *config.Stream) error {
 	s.mu.Lock()
-	_, ok := s.streams[stream.Name]
+	ss, ok := s.streams[stream.Name]
 	if !ok {
 		s.mu.Unlock()
 		return errors.ErrStreamNotFound(stream.RedactedUrl)
 	}
 	delete(s.streams, stream.Name)
 	s.mu.Unlock()
+
+	ss.StopMonitor()
 
 	return s.bin.Bin.RemoveSinkBin(stream.Name)
 }
@@ -163,11 +173,23 @@ func (s *StreamSink) UploadManifest(_ string) (string, bool, error) {
 	return "", false, nil
 }
 
+func (s *StreamSink) DisableUploads() {}
+
+func (s *StreamSink) stopMonitors() {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, ss := range s.streams {
+		ss.StopMonitor()
+	}
+}
+
 func (s *StreamSink) Close() error {
 	s.closed.Once(func() {
+		s.stopMonitors()
+
 		s.mu.Lock()
 		defer s.mu.Unlock()
-
 		for _, l := range s.loggers {
 			l.Close()
 		}
