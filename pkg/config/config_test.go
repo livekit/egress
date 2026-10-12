@@ -195,6 +195,25 @@ func TestValidateAndUpdateOutputParamsRejectsVideoFileMP3(t *testing.T) {
 	require.ErrorContains(t, err, "format audio/mpeg incompatible with codec video/h264")
 }
 
+func TestValidateAndUpdateOutputParamsRejectsVideoCodecWithoutAudioCodec(t *testing.T) {
+	p := &PipelineConfig{
+		Outputs: map[types.EgressType][]OutputConfig{
+			types.EgressTypeFile: {
+				&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeWebM}},
+			},
+		},
+	}
+
+	p.AudioEnabled = false
+	p.VideoEnabled = true
+	p.VideoOutCodec = types.MimeTypeH264
+	p.Info = &livekit.EgressInfo{}
+
+	err := p.validateAndUpdateOutputParams()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "format video/webm incompatible with codec video/h264")
+}
+
 func TestFilenameUTCReplacementIgnoresLocalTimezone(t *testing.T) {
 	local := time.Local
 	time.Local = time.FixedZone("test", 5*60*60)

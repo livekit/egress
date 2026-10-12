@@ -884,7 +884,7 @@ func (p *PipelineConfig) validateAndUpdateOutputCodecs() (compatibleAudioCodecs 
 		for _, o := range p.GetEncodedOutputs() {
 			compatibleVideoCodecs = types.GetMapIntersection(compatibleVideoCodecs, types.CodecCompatibility[o.GetOutputType()])
 			if len(compatibleVideoCodecs) == 0 {
-				if p.AudioOutCodec == "" {
+				if p.VideoOutCodec == "" {
 					return nil, nil, errors.ErrNoCompatibleCodec
 				}
 				// Return a more specific error if a codec was provided
