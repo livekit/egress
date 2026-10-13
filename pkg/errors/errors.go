@@ -151,6 +151,7 @@ var (
 	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
 	ErrNonRetryableOutput         = psrpc.NewErrorf(psrpc.FailedPrecondition, "output configuration does not support retry")
 	ErrHandlerFailedToStart       = psrpc.NewErrorf(psrpc.Internal, "handler failed to start")
+	ErrHandlerExitedBeforeReady   = psrpc.NewErrorf(psrpc.FailedPrecondition, "handler exited before ready")
 	ErrRoomConnectionFailed       = psrpc.NewErrorf(psrpc.Unavailable, "recording ended early: connection to room failed")
 	ErrPersistentFlushing         = psrpc.NewErrorf(psrpc.Internal, "recording ended early: track stuck in persistent FlowFlushing")
 )

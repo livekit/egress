@@ -49,7 +49,7 @@ const (
 //go:generate go tool github.com/maxbrunsfeld/counterfeiter/v6  . ProcessManager
 
 type ProcessManager interface {
-	Launch(ctx context.Context, handlerID string, req *rpc.StartEgressRequest, info *livekit.EgressInfo, cmd *exec.Cmd) error
+	Launch(ctx context.Context, handlerID string, req *rpc.StartEgressRequest, info *livekit.EgressInfo, cmd *exec.Cmd) (func() error, error)
 	// SetHandlerTopicHooks installs callbacks used to advertise and remove the
 	// per-egress handler RPC topics. Registration happens inside Launch, after
 	// the handler's IPC client exists; deregistration happens in ProcessFinished.
@@ -122,15 +122,15 @@ func (pm *processManager) Launch(
 	req *rpc.StartEgressRequest,
 	info *livekit.EgressInfo,
 	cmd *exec.Cmd,
-) error {
+) (func() error, error) {
 	ipcHandlerDir := path.Join(config.TmpDir, handlerID)
 	if err := os.MkdirAll(ipcHandlerDir, 0755); err != nil {
-		return err
+		return nil, err
 	}
 
 	ipcClient, err := ipc.NewHandlerClient(ipcHandlerDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	p := &Process{
@@ -141,6 +141,7 @@ func (pm *processManager) Launch(
 		cmd:              cmd,
 		ipcHandlerClient: ipcClient,
 		ready:            make(chan struct{}),
+		exited:           make(chan struct{}),
 	}
 
 	pm.mu.Lock()
@@ -154,24 +155,39 @@ func (pm *processManager) Launch(
 	if pm.registerTopics != nil {
 		if err = pm.registerTopics(info.EgressId); err != nil {
 			logger.Errorw("could not register handler rpc topics", err, "egressID", info.EgressId)
-			return err
+			return nil, err
 		}
 	}
 
 	if err = cmd.Start(); err != nil {
 		logger.Errorw("could not launch process", err, "egressID", info.EgressId)
-		return err
+		return nil, err
 	}
+
+	go func() {
+		p.exitErr = cmd.Wait()
+		close(p.exited)
+	}()
 
 	select {
 	case <-p.ready:
-		return nil
+		return p.wait, nil
+
+	case <-p.exited:
+		// a handler that readied and then exited before this select ran still started
+		select {
+		case <-p.ready:
+			return p.wait, nil
+		default:
+		}
+		logger.Warnw("handler exited before ready", p.exitErr, "egressID", info.EgressId)
+		return nil, errors.ErrHandlerExitedBeforeReady
 
 	case <-time.After(launchTimeout):
 		logger.Warnw("no response from handler", nil, "egressID", info.EgressId)
 		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		return errors.ErrHandlerFailedToStart
+		<-p.exited
+		return nil, errors.ErrHandlerFailedToStart
 	}
 }
 
@@ -378,12 +394,19 @@ type Process struct {
 	cmd              *exec.Cmd
 	ipcHandlerClient *ipc.EgressHandlerClientWrapper
 	ready            chan struct{}
+	exited           chan struct{}
+	exitErr          error
 	closed           core.Fuse
 	killReason       string
 	metricsFinalized atomic.Bool
 
 	metricsMu                deadlock.Mutex
 	lastAccumulatableMetrics []*dto.MetricFamily
+}
+
+func (p *Process) wait() error {
+	<-p.exited
+	return p.exitErr
 }
 
 func (p *Process) storeAccumulatableMetrics(metrics []*dto.MetricFamily) {

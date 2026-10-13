@@ -127,7 +127,7 @@ type FakeProcessManager struct {
 		arg2 string
 		arg3 error
 	}
-	LaunchStub        func(context.Context, string, *rpc.StartEgressRequest, *livekit.EgressInfo, *exec.Cmd) error
+	LaunchStub        func(context.Context, string, *rpc.StartEgressRequest, *livekit.EgressInfo, *exec.Cmd) (func() error, error)
 	launchMutex       sync.RWMutex
 	launchArgsForCall []struct {
 		arg1 context.Context
@@ -137,10 +137,12 @@ type FakeProcessManager struct {
 		arg5 *exec.Cmd
 	}
 	launchReturns struct {
-		result1 error
+		result1 func() error
+		result2 error
 	}
 	launchReturnsOnCall map[int]struct {
-		result1 error
+		result1 func() error
+		result2 error
 	}
 	ProcessFinishedStub        func(string)
 	processFinishedMutex       sync.RWMutex
@@ -776,7 +778,7 @@ func (fake *FakeProcessManager) KillProcessArgsForCall(i int) (string, string, e
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeProcessManager) Launch(arg1 context.Context, arg2 string, arg3 *rpc.StartEgressRequest, arg4 *livekit.EgressInfo, arg5 *exec.Cmd) error {
+func (fake *FakeProcessManager) Launch(arg1 context.Context, arg2 string, arg3 *rpc.StartEgressRequest, arg4 *livekit.EgressInfo, arg5 *exec.Cmd) (func() error, error) {
 	fake.launchMutex.Lock()
 	ret, specificReturn := fake.launchReturnsOnCall[len(fake.launchArgsForCall)]
 	fake.launchArgsForCall = append(fake.launchArgsForCall, struct {
@@ -794,9 +796,9 @@ func (fake *FakeProcessManager) Launch(arg1 context.Context, arg2 string, arg3 *
 		return stub(arg1, arg2, arg3, arg4, arg5)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeProcessManager) LaunchCallCount() int {
@@ -805,7 +807,7 @@ func (fake *FakeProcessManager) LaunchCallCount() int {
 	return len(fake.launchArgsForCall)
 }
 
-func (fake *FakeProcessManager) LaunchCalls(stub func(context.Context, string, *rpc.StartEgressRequest, *livekit.EgressInfo, *exec.Cmd) error) {
+func (fake *FakeProcessManager) LaunchCalls(stub func(context.Context, string, *rpc.StartEgressRequest, *livekit.EgressInfo, *exec.Cmd) (func() error, error)) {
 	fake.launchMutex.Lock()
 	defer fake.launchMutex.Unlock()
 	fake.LaunchStub = stub
@@ -818,27 +820,30 @@ func (fake *FakeProcessManager) LaunchArgsForCall(i int) (context.Context, strin
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
 }
 
-func (fake *FakeProcessManager) LaunchReturns(result1 error) {
+func (fake *FakeProcessManager) LaunchReturns(result1 func() error, result2 error) {
 	fake.launchMutex.Lock()
 	defer fake.launchMutex.Unlock()
 	fake.LaunchStub = nil
 	fake.launchReturns = struct {
-		result1 error
-	}{result1}
+		result1 func() error
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeProcessManager) LaunchReturnsOnCall(i int, result1 error) {
+func (fake *FakeProcessManager) LaunchReturnsOnCall(i int, result1 func() error, result2 error) {
 	fake.launchMutex.Lock()
 	defer fake.launchMutex.Unlock()
 	fake.LaunchStub = nil
 	if fake.launchReturnsOnCall == nil {
 		fake.launchReturnsOnCall = make(map[int]struct {
-			result1 error
+			result1 func() error
+			result2 error
 		})
 	}
 	fake.launchReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+		result1 func() error
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeProcessManager) ProcessFinished(arg1 string) {
