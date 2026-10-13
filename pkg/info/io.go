@@ -360,6 +360,7 @@ func (c *sessionReporter) handleUpdate(w *worker, egressID string) {
 			"error", u.info.Error,
 			"code", u.info.ErrorCode,
 			"details", u.info.Details,
+			"backupStorageUsed", u.info.BackupStorageUsed,
 		)
 
 	case isRetryableError(err):

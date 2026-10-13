@@ -159,7 +159,13 @@ func (u *Uploader) Upload(
 		}
 		u.primaryFailed = u.backup != nil
 		primaryErr = err
-
+		if u.primaryFailed {
+			logger.Warnw("primary upload failed, switching to backup storage", err,
+				"storage", u.primary.name,
+				"outputType", outputType,
+				"storageFilepath", storageFilepath,
+			)
+		}
 	}
 
 	if u.backup != nil {
