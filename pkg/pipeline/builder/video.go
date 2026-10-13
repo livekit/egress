@@ -894,8 +894,10 @@ func (b *VideoBin) addCompositor() error {
 		background = "white"
 	}
 	compositor.SetArg("background", background)
-	// below the mixer latency to leave headroom for x264 frame delay at low fps; match the mixer once encoder threads are reduced
-	if err = compositor.SetProperty("latency", uint64(b.conf.Latency.AudioMixerLatency*3/4)); err != nil {
+	// below the mixer latency to leave headroom for x264 frame delay at low fps, never below the jitter buffer latency;
+	// match the mixer once encoder threads are reduced
+	compositorLatency := max(b.conf.Latency.JitterBufferLatency, b.conf.Latency.AudioMixerLatency*3/4)
+	if err = compositor.SetProperty("latency", uint64(compositorLatency)); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
 
