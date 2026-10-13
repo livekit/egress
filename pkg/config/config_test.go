@@ -25,18 +25,18 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func TestApplyDataSource(t *testing.T) {
+func TestApplyRoboticsSource(t *testing.T) {
 	p := &PipelineConfig{}
 	req := &livekit.StartEgressRequest{
-		Source: &livekit.StartEgressRequest_Data{
-			Data: &livekit.DataSource{},
+		Source: &livekit.StartEgressRequest_Robotics{
+			Robotics: &livekit.RoboticsSource{},
 		},
 	}
 
 	connectionInfoRequired, err := p.applyV2Source(req)
 	require.NoError(t, err)
 	require.True(t, connectionInfoRequired)
-	require.Equal(t, types.RequestType(types.RequestTypeData), p.RequestType)
+	require.Equal(t, types.RequestType(types.RequestTypeRobotics), p.RequestType)
 	require.Equal(t, types.SourceTypeSDK, p.SourceType)
 	require.True(t, p.AudioEnabled)
 	require.True(t, p.VideoEnabled)
@@ -47,10 +47,10 @@ func TestApplyDataSource(t *testing.T) {
 	require.Empty(t, p.AudioTrackNames)
 }
 
-func TestApplyDataSourceSelectors(t *testing.T) {
+func TestApplyRoboticsSourceSelectors(t *testing.T) {
 	p := &PipelineConfig{}
-	req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{
-		Data: &livekit.DataSource{
+	req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Robotics{
+		Robotics: &livekit.RoboticsSource{
 			Participants: &livekit.ParticipantSelection{Identities: []string{"jetson-camera", "operator"}},
 			VideoTracks:  &livekit.TrackSelection{TrackNames: []string{"camera-0", "camera-1"}},
 			AudioTracks:  &livekit.TrackSelection{TrackNames: []string{"microphone"}},
@@ -66,11 +66,11 @@ func TestApplyDataSourceSelectors(t *testing.T) {
 	require.Equal(t, []string{"microphone"}, p.AudioTrackNames)
 }
 
-func TestApplyDataSourceModalitySelection(t *testing.T) {
+func TestApplyRoboticsSourceModalitySelection(t *testing.T) {
 	t.Run("video only", func(t *testing.T) {
 		p := &PipelineConfig{}
-		req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{
-			Data: &livekit.DataSource{VideoTracks: &livekit.TrackSelection{}},
+		req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Robotics{
+			Robotics: &livekit.RoboticsSource{VideoTracks: &livekit.TrackSelection{}},
 		}}
 		_, err := p.applyV2Source(req)
 		require.NoError(t, err)
@@ -80,8 +80,8 @@ func TestApplyDataSourceModalitySelection(t *testing.T) {
 
 	t.Run("audio only", func(t *testing.T) {
 		p := &PipelineConfig{}
-		req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{
-			Data: &livekit.DataSource{AudioTracks: &livekit.TrackSelection{}},
+		req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Robotics{
+			Robotics: &livekit.RoboticsSource{AudioTracks: &livekit.TrackSelection{}},
 		}}
 		_, err := p.applyV2Source(req)
 		require.NoError(t, err)
@@ -90,8 +90,8 @@ func TestApplyDataSourceModalitySelection(t *testing.T) {
 	})
 }
 
-func TestApplyDataSourceRejectsInvalidSelectors(t *testing.T) {
-	tests := map[string]*livekit.DataSource{
+func TestApplyRoboticsSourceRejectsInvalidSelectors(t *testing.T) {
+	tests := map[string]*livekit.RoboticsSource{
 		"empty participant":       {Participants: &livekit.ParticipantSelection{Identities: []string{""}}},
 		"duplicate participant":   {Participants: &livekit.ParticipantSelection{Identities: []string{"jetson", "jetson"}}},
 		"empty video name":        {VideoTracks: &livekit.TrackSelection{TrackNames: []string{""}}},
@@ -100,10 +100,10 @@ func TestApplyDataSourceRejectsInvalidSelectors(t *testing.T) {
 		"duplicate audio name":    {AudioTracks: &livekit.TrackSelection{TrackNames: []string{"microphone", "microphone"}}},
 		"data tracks unsupported": {DataTracks: &livekit.TrackSelection{}},
 	}
-	for name, data := range tests {
+	for name, robotics := range tests {
 		t.Run(name, func(t *testing.T) {
 			p := &PipelineConfig{}
-			req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{Data: data}}
+			req := &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Robotics{Robotics: robotics}}
 			_, err := p.applyV2Source(req)
 			require.Error(t, err)
 		})

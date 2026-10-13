@@ -516,8 +516,8 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	default:
 		return errors.ErrInvalidInput("request")
 	}
-	if p.RequestType == types.RequestTypeData {
-		if err := p.validateDataOutput(); err != nil {
+	if p.RequestType == types.RequestTypeRobotics {
+		if err := p.validateRoboticsOutput(); err != nil {
 			return err
 		}
 	}
@@ -620,37 +620,37 @@ func (c *BaseConfig) isV2SDKSource(req egress.EgressRequest) bool {
 	return true
 }
 
-type dataRequest interface {
-	GetData() *livekit.DataSource
+type roboticsRequest interface {
+	GetRobotics() *livekit.RoboticsSource
 }
 
-func getDataSource(req egress.EgressRequest) *livekit.DataSource {
-	r, ok := req.(dataRequest)
+func getRoboticsSource(req egress.EgressRequest) *livekit.RoboticsSource {
+	r, ok := req.(roboticsRequest)
 	if !ok {
 		return nil
 	}
-	return r.GetData()
+	return r.GetRobotics()
 }
 
-// applyV2Source handles the shared v2 source switch. DataSource is live-only;
+// applyV2Source handles the shared v2 source switch. RoboticsSource is live-only;
 // the remaining source types are also supported by ExportReplayRequest.
 func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfoRequired bool, err error) {
 	connectionInfoRequired = true
 
 	switch {
-	case getDataSource(req) != nil:
-		data := getDataSource(req)
-		p.RequestType = types.RequestTypeData
+	case getRoboticsSource(req) != nil:
+		robotics := getRoboticsSource(req)
+		p.RequestType = types.RequestTypeRobotics
 		p.SourceType = types.SourceTypeSDK
 		p.AwaitStartSignal = true
 
-		if data.DataTracks != nil {
-			return connectionInfoRequired, errors.ErrInvalidInput("data.data_tracks is not supported yet")
+		if robotics.DataTracks != nil {
+			return connectionInfoRequired, errors.ErrInvalidInput("robotics.data_tracks is not supported yet")
 		}
 
-		explicitModalities := data.VideoTracks != nil || data.AudioTracks != nil
-		p.VideoEnabled = !explicitModalities || data.VideoTracks != nil
-		p.AudioEnabled = !explicitModalities || data.AudioTracks != nil
+		explicitModalities := robotics.VideoTracks != nil || robotics.AudioTracks != nil
+		p.VideoEnabled = !explicitModalities || robotics.VideoTracks != nil
+		p.AudioEnabled = !explicitModalities || robotics.AudioTracks != nil
 		if p.VideoEnabled {
 			p.VideoInCodec = types.MimeTypeRawVideo
 			p.VideoDecoding = true
@@ -659,20 +659,20 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 			p.AudioTranscoding = true
 		}
 
-		if data.Participants != nil {
-			p.ParticipantIdentities, err = validateDataAllowlist(data.Participants.Identities, "data.participants.identities")
+		if robotics.Participants != nil {
+			p.ParticipantIdentities, err = validateRoboticsAllowlist(robotics.Participants.Identities, "robotics.participants.identities")
 			if err != nil {
 				return connectionInfoRequired, err
 			}
 		}
-		if data.VideoTracks != nil {
-			p.VideoTrackNames, err = validateDataAllowlist(data.VideoTracks.TrackNames, "data.video_tracks.track_names")
+		if robotics.VideoTracks != nil {
+			p.VideoTrackNames, err = validateRoboticsAllowlist(robotics.VideoTracks.TrackNames, "robotics.video_tracks.track_names")
 			if err != nil {
 				return connectionInfoRequired, err
 			}
 		}
-		if data.AudioTracks != nil {
-			p.AudioTrackNames, err = validateDataAllowlist(data.AudioTracks.TrackNames, "data.audio_tracks.track_names")
+		if robotics.AudioTracks != nil {
+			p.AudioTrackNames, err = validateRoboticsAllowlist(robotics.AudioTracks.TrackNames, "robotics.audio_tracks.track_names")
 			if err != nil {
 				return connectionInfoRequired, err
 			}
@@ -806,7 +806,7 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 	return connectionInfoRequired, nil
 }
 
-func validateDataAllowlist(values []string, field string) ([]string, error) {
+func validateRoboticsAllowlist(values []string, field string) ([]string, error) {
 	seen := make(map[string]struct{}, len(values))
 	result := make([]string, 0, len(values))
 	for _, value := range values {

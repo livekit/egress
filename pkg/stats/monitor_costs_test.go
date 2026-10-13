@@ -26,11 +26,11 @@ import (
 	"github.com/livekit/egress/pkg/types"
 )
 
-func TestRequestTypeFromData(t *testing.T) {
+func TestRequestTypeFromRobotics(t *testing.T) {
 	req := &rpc.StartEgressRequest{Request: &rpc.StartEgressRequest_Egress{
-		Egress: &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{Data: &livekit.DataSource{}}},
+		Egress: &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Robotics{Robotics: &livekit.RoboticsSource{}}},
 	}}
-	require.Equal(t, types.RequestTypeData, requestTypeFromReq(req))
+	require.Equal(t, types.RequestTypeRobotics, requestTypeFromReq(req))
 }
 
 func TestCostsForRequest(t *testing.T) {
@@ -156,9 +156,9 @@ func TestCostsForRequest(t *testing.T) {
 			cpu: 2, memory: 3, isWeb: false,
 		},
 		{
-			name: "v2 data",
+			name: "v2 robotics",
 			req: &rpc.StartEgressRequest{Request: &rpc.StartEgressRequest_Egress{
-				Egress: &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Data{Data: &livekit.DataSource{}}},
+				Egress: &livekit.StartEgressRequest{Source: &livekit.StartEgressRequest_Robotics{Robotics: &livekit.RoboticsSource{}}},
 			}},
 			cpu: 2, memory: 3, isWeb: false,
 		},

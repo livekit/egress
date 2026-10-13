@@ -45,13 +45,13 @@ func (p *PipelineConfig) GetFileConfig() *FileConfig {
 	return o[0].(*FileConfig)
 }
 
-func (p *PipelineConfig) validateDataOutput() error {
+func (p *PipelineConfig) validateRoboticsOutput() error {
 	if len(p.Outputs) != 1 {
-		return errors.ErrInvalidInput("data source requires one MCAP file output")
+		return errors.ErrInvalidInput("robotics source requires one MCAP file output")
 	}
 	files := p.Outputs[types.EgressTypeFile]
 	if len(files) != 1 || files[0].GetOutputType() != types.OutputTypeMCAP {
-		return errors.ErrInvalidInput("data source requires one MCAP file output")
+		return errors.ErrInvalidInput("robotics source requires one MCAP file output")
 	}
 	return nil
 }

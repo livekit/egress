@@ -431,7 +431,7 @@ func (s *SDKSource) doCleanup(trackID string, state *workerState) {
 	shouldContinue := !s.Passthrough &&
 		(s.RequestType == types.RequestTypeParticipant ||
 			s.RequestType == types.RequestTypeRoomComposite ||
-			s.RequestType == types.RequestTypeData ||
+			s.RequestType == types.RequestTypeRobotics ||
 			s.RequestType == types.RequestTypeTemplate ||
 			s.RequestType == types.RequestTypeMedia)
 

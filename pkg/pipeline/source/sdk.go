@@ -250,7 +250,7 @@ func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
 // ----- Subscriptions -----
 
 func (s *SDKSource) joinRoom() error {
-	// TODO(data tracks): for RequestTypeData, attach the SDK data-packet
+	// TODO(data tracks): for RequestTypeRobotics, attach the SDK data-packet
 	// callback here and apply ParticipantIdentities and the DataTracks selector
 	// before forwarding schema and payload messages directly to the MCAP sink.
 	cb := &lksdk.RoomCallback{
@@ -268,7 +268,7 @@ func (s *SDKSource) joinRoom() error {
 	}
 
 	switch s.RequestType {
-	case types.RequestTypeRoomComposite, types.RequestTypeData, types.RequestTypeTemplate, types.RequestTypeMedia:
+	case types.RequestTypeRoomComposite, types.RequestTypeRobotics, types.RequestTypeTemplate, types.RequestTypeMedia:
 		cb.OnTrackPublished = s.onTrackPublished
 	case types.RequestTypeParticipant:
 		cb.OnTrackPublished = s.onTrackPublished
@@ -285,7 +285,7 @@ func (s *SDKSource) joinRoom() error {
 	var fileIdentifier string
 	var w, h uint32
 	switch s.RequestType {
-	case types.RequestTypeRoomComposite, types.RequestTypeData:
+	case types.RequestTypeRoomComposite, types.RequestTypeRobotics:
 		fileIdentifier = room.Name()
 		// room_name and room_id are already handled as replacements
 		err = s.awaitRoomTracks()
@@ -688,7 +688,7 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 	if s.RequestType != types.RequestTypeParticipant &&
 		s.RequestType != types.RequestTypeRoomComposite &&
-		s.RequestType != types.RequestTypeData &&
+		s.RequestType != types.RequestTypeRobotics &&
 		s.RequestType != types.RequestTypeTemplate &&
 		s.RequestType != types.RequestTypeMedia {
 		return
@@ -723,7 +723,7 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication, rp *lksdk.Remote
 		default:
 			return s.ScreenShare
 		}
-	case types.RequestTypeData:
+	case types.RequestTypeRobotics:
 		if !matchesAllowlist(string(rp.Identity()), s.ParticipantIdentities) {
 			return false
 		}
@@ -897,7 +897,7 @@ func (s *SDKSource) shouldSkipTrackSubscriptions() bool {
 	return s.initialized.IsBroken() &&
 		s.RequestType != types.RequestTypeParticipant &&
 		s.RequestType != types.RequestTypeRoomComposite &&
-		s.RequestType != types.RequestTypeData &&
+		s.RequestType != types.RequestTypeRobotics &&
 		s.RequestType != types.RequestTypeTemplate &&
 		s.RequestType != types.RequestTypeMedia
 }
@@ -915,7 +915,7 @@ func shouldEnableStartGate(p *config.PipelineConfig) bool {
 
 	switch p.RequestType {
 	case types.RequestTypeRoomComposite,
-		types.RequestTypeData,
+		types.RequestTypeRobotics,
 		types.RequestTypeTemplate,
 		types.RequestTypeTrackComposite,
 		types.RequestTypeParticipant,

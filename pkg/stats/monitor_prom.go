@@ -181,8 +181,8 @@ func requestTypeFromInterface(request v2Request) string {
 		return types.RequestTypeTrack
 	}
 	switch {
-	case getDataSource(request) != nil:
-		return types.RequestTypeData
+	case getRoboticsSource(request) != nil:
+		return types.RequestTypeRobotics
 	case request.GetTemplate() != nil:
 		return types.RequestTypeTemplate
 	case request.GetWeb() != nil:
@@ -194,12 +194,14 @@ func requestTypeFromInterface(request v2Request) string {
 	}
 }
 
-func getDataSource(request v2Request) *livekit.DataSource {
-	r, ok := request.(interface{ GetData() *livekit.DataSource })
+func getRoboticsSource(request v2Request) *livekit.RoboticsSource {
+	r, ok := request.(interface {
+		GetRobotics() *livekit.RoboticsSource
+	})
 	if !ok {
 		return nil
 	}
-	return r.GetData()
+	return r.GetRobotics()
 }
 
 func (m *Monitor) HandlerResult(egressID string, result string) {

@@ -211,12 +211,12 @@ func (c *Controller) BuildPipeline() error {
 		})
 	}
 
-	if c.AudioEnabled && c.RequestType != types.RequestTypeData {
+	if c.AudioEnabled && c.RequestType != types.RequestTypeRobotics {
 		if err = builder.BuildAudioBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
-	if c.VideoEnabled && c.RequestType != types.RequestTypeData {
+	if c.VideoEnabled && c.RequestType != types.RequestTypeRobotics {
 		var setDims func(string, int, int)
 		if c.Compositing {
 			if sdkSrc, ok := c.src.(*source.SDKSource); ok {

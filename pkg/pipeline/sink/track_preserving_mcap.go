@@ -107,7 +107,7 @@ func (s *TrackPreservingMCAPSink) Start() error {
 		DynamicTracks: true,
 		Metadata: map[string]string{
 			"egress_id": s.conf.Info.EgressId, "room_id": s.conf.Info.RoomId,
-			"room_name": s.conf.Info.RoomName, "source_type": string(types.RequestTypeData),
+			"room_name": s.conf.Info.RoomName, "source_type": string(types.RequestTypeRobotics),
 		},
 	})
 	if err != nil {

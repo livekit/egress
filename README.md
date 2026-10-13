@@ -23,7 +23,7 @@ universal export of your LiveKit sessions and tracks.
 2. **Web egress** for recordings that aren't attached to a single LiveKit room.
 3. **Track composite** for exporting synchronized tracks of a single participant.
 4. **Track egress** for exporting individual tracks.
-5. **Data source** for exporting every room track as an independent MCAP channel.
+5. **Robotics source** for exporting every room track as an independent MCAP channel.
 
 Depending on your request type, the egress service will either launch Chrome using a web template
 (room composite requests) or a supplied url (web requests), or it will use the Go SDK directly (track and track composite requests).
@@ -47,7 +47,7 @@ MCAP file output stores encoded H264 video as `foxglove.CompressedVideo` and enc
 `foxglove.CompressedAudio`. The file includes protobuf schemas, chunk indexes, CRCs, and LiveKit egress metadata, and
 follows the same local/cloud upload path as other file outputs.
 
-`DataSource` uses the SDK source instead of Chrome and preserves every matching room track as its own MCAP channel:
+`RoboticsSource` uses the SDK source instead of Chrome and preserves every matching room track as its own MCAP channel:
 
 ```text
 /livekit/{participant_identity}/{track_name}
@@ -62,13 +62,13 @@ modalities are disabled. This source currently permits exactly one MCAP file out
 The API reserves `data_tracks` for the same selection model, but egress currently rejects requests that include it
 rather than silently omitting data. Data packet capture and schema forwarding are a future extension.
 
-`DataSource` is intentionally MCAP-only and live-only. With a participant named `jetson-camera`
+`RoboticsSource` is intentionally MCAP-only and live-only. With a participant named `jetson-camera`
 already publishing in `mcap-test`, save the following as `request.json`:
 
 ```json
 {
   "room_name": "mcap-test",
-  "data": {},
+  "robotics": {},
   "outputs": [{
     "file": {
       "file_type": "MCAP",
@@ -84,7 +84,7 @@ To capture only the Jetson's two cameras and the operator's microphone:
 ```json
 {
   "room_name": "mcap-test",
-  "data": {
+  "robotics": {
     "participants": {
       "identities": ["jetson-camera", "operator"]
     },

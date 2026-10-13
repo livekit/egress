@@ -51,7 +51,7 @@ func NewSink(
 	switch egressType {
 	case types.EgressTypeFile:
 		if o.GetOutputType() == types.OutputTypeMCAP {
-			if conf.RequestType == types.RequestTypeData {
+			if conf.RequestType == types.RequestTypeRobotics {
 				return newTrackPreservingMCAPSink(p, conf, o.(*config.FileConfig), callbacks, monitor)
 			}
 			return newMCAPSink(p, conf, o.(*config.FileConfig), callbacks, monitor)
