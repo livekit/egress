@@ -157,9 +157,9 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 		segments := res.GetSegmentResults()[0]
 
 		if live {
-			require.InDelta(t, float64(5*p.GetSegmentConfig().SegmentDuration), actual, float64(p.GetSegmentConfig().SegmentDuration))
+			require.InDelta(t, 5*p.GetSegmentConfig().SegmentDuration.Seconds(), actual, p.GetSegmentConfig().SegmentDuration.Seconds())
 		} else {
-			expected := int64(math.Ceil(actual / float64(p.GetSegmentConfig().SegmentDuration)))
+			expected := int64(math.Ceil(actual / p.GetSegmentConfig().SegmentDuration.Seconds()))
 			require.InDelta(t, expected, segments.SegmentCount, 1)
 		}
 

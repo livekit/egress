@@ -113,7 +113,7 @@ func newSegmentSink(
 		return nil, err
 	}
 
-	maxPendingUploads := (conf.MaxUploadQueue * 60) / o.SegmentDuration
+	maxPendingUploads := max(int(time.Duration(conf.MaxUploadQueue)*time.Minute/o.SegmentDuration), minPendingUploads)
 	segmentSink := &SegmentSink{
 		base: &base{
 			bin: segmentBin,
