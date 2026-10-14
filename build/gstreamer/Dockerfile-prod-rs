@@ -17,15 +17,6 @@ COPY compile-rs /
 
 RUN /compile-rs 
 
-COPY egress-rs-elements trim-rs-plugins /
-
-RUN /trim-rs-plugins /egress-rs-elements
-
 FROM livekit/gstreamer:${GSTREAMER_VERSION}-prod-${TARGETARCH}
 
 COPY --from=1 /compiled-binaries /
-
-# fail the build if a listed element does not load in this image
-RUN --mount=type=bind,source=egress-rs-elements,target=/egress-rs-elements \
-    grep -v -e '^#' -e '^$' /egress-rs-elements | xargs -n1 gst-inspect-1.0 > /dev/null && \
-    rm -rf /root/.cache
