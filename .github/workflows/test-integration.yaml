@@ -124,7 +124,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        integration_type: [file-track, file-media]
+        integration_type: [file-room, file-track, file-media, stream, segments, images, multi, edge]
     runs-on: ubuntu-latest-m
     steps:
       - uses: shogo82148/actions-setup-redis@88a1fb308aae95aa485bf3da667c9d6e61be4c53 # v1.58.0
@@ -141,7 +141,6 @@ jobs:
           docker run --rm \
             --network host \
             -e GITHUB_WORKFLOW=1 \
-            -e GST_DEBUG=2,rtmpclient:4,input-selector:6,videorate:5 \
             -e EGRESS_CONFIG_STRING="$(echo ${{ secrets.EGRESS_CONFIG_STRING }} | base64 -d)" \
             -e INTEGRATION_TYPE="${{ matrix.integration_type }}" \
             -e S3_UPLOAD="$(echo ${{ secrets.S3_UPLOAD }} | base64 -d)" \
