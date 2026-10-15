@@ -537,6 +537,7 @@ func (w *AppWriter) pushSamples() {
 		}
 		if w.endStreamSourceProcessed.IsBroken() && w.samplesHead == nil {
 			w.samplesLock.Unlock()
+			w.fillOpusToEnd()
 			return
 		}
 
@@ -567,6 +568,22 @@ func (w *AppWriter) pushSamples() {
 					return
 				}
 			}
+		}
+	}
+}
+
+// fillOpusToEnd extends a live passthrough track with silence up to the stop time
+func (w *AppWriter) fillOpusToEnd() {
+	if !w.opusPassthrough || !w.conf.Live {
+		return
+	}
+	end, ok := w.pipelineRunningTime()
+	if !ok {
+		return
+	}
+	for _, fill := range w.gapFiller.fill(end) {
+		if err := w.pushBuffer(fill.payload, fill.pts, w.gapFiller.frame); err != nil {
+			return
 		}
 	}
 }

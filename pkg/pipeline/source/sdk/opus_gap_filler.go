@@ -34,7 +34,7 @@ func (f *opusGapFiller) fill(pts time.Duration) []opusFill {
 	if !f.started {
 		return nil
 	}
-	n := int((pts - f.nextPTS + f.frame/2) / f.frame)
+	n := int((pts - f.nextPTS) / f.frame)
 	if n < 1 {
 		return nil
 	}
