@@ -1007,9 +1007,15 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 			return errors.ErrGstPipelineError(err)
 		}
 	} else {
+		tempDebugN := 0
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			pts := uint64(info.GetBuffer().PresentationTimestamp())
 			b.mu.Lock()
+			tempDebugN++
+			if tempDebugN <= 150 {
+				logger.Infow("TEMP selector probe", "pad", videoTestSrcName, "n", tempDebugN, "pts", time.Duration(pts), "lastPTS", time.Duration(b.lastPTS),
+					"selectedPad", b.selectedPad, "pendingPad", b.pendingPad, "drop", pts < b.lastPTS || b.selectedPad != videoTestSrcName)
+			}
 			if pts < b.lastPTS || b.selectedPad != videoTestSrcName {
 				b.mu.Unlock()
 				return gst.PadProbeDrop
@@ -1304,6 +1310,7 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 		// an unmute can arrive before the first layout, and the pad starts opaque
 		b.layoutAlpha[name] = 1.0
 	} else {
+		tempDebugN := 0
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			pts := uint64(info.GetBuffer().PresentationTimestamp())
 
@@ -1322,6 +1329,11 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 				b.pendingPad = ""
 			}
 			drop := pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name)
+			tempDebugN++
+			if tempDebugN <= 150 {
+				logger.Infow("TEMP selector probe", "pad", name, "n", tempDebugN, "pts", time.Duration(pts), "lastPTS", time.Duration(b.lastPTS),
+					"selectedPad", b.selectedPad, "pendingPad", b.pendingPad, "switched", switched, "drop", drop)
+			}
 			if !drop {
 				b.lastPTS = pts
 			}
