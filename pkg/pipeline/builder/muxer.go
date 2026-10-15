@@ -41,7 +41,6 @@ func newMuxer(elementName string) (*muxerImpl, error) {
 	}
 	if factory := element.GetFactory(); factory != nil {
 		if klass := factory.GetMetadata("klass"); !strings.Contains(klass, "Muxer") {
-			element.Unref()
 			return nil, fmt.Errorf("element %s is not a muxer", elementName)
 		}
 	}

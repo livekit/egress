@@ -27,7 +27,6 @@ func newPTSFixer(elementName, context string) (*ptsFixer, error) {
 
 	pad := element.GetStaticPad("src")
 	if pad == nil {
-		element.Unref()
 		return nil, errors.ErrGstPipelineError(newMissingPadError(elementName, "src"))
 	}
 
