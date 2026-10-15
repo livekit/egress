@@ -230,8 +230,8 @@ github.com/lithammer/shortuuid/v4 v4.3.0 h1:XRr80OYPOlqxgnCv2/iuElkl/ZtXtPtLKk2A
 github.com/lithammer/shortuuid/v4 v4.3.0/go.mod h1:D5noHZ2oFw/YaKCfGy0YxyE7M0wMbezmMjPdhyEFe6Y=
 github.com/livekit/go-rtmp v0.0.0-20251031234730-75a652881771 h1:B7KbsLsIf6tGHnkpYpeB9IoHSyGLjsRylfS8wZumc8o=
 github.com/livekit/go-rtmp v0.0.0-20251031234730-75a652881771/go.mod h1:8ozE8WyeW9yd3PHbVOHcyZ6ArGB2i6t+1hEcA9lTdtc=
-github.com/livekit/gst-go v0.0.0-20250701011214-e7f61abd14cb h1:1Vjk6NaXJZQiCvXGlKv38ossk4mNKHy5ob+eZygewdw=
-github.com/livekit/gst-go v0.0.0-20250701011214-e7f61abd14cb/go.mod h1:pyCgY9XFSG0CAnJzoJ84R5XWn8rEj849EYJOwnAdB8k=
+github.com/livekit/gst-go v0.0.0-20261015120717-e0fc4e6af2ac h1:CaX3/bqcpcj39BCzymYexShY7EPoqvhXeKt0o+f5JwM=
+github.com/livekit/gst-go v0.0.0-20261015120717-e0fc4e6af2ac/go.mod h1:pyCgY9XFSG0CAnJzoJ84R5XWn8rEj849EYJOwnAdB8k=
 github.com/livekit/livekit-server v1.13.7 h1:PqXwz9vbVPjDqUkhNvwxTc082+/h01mbZCBJ4zRmPh4=
 github.com/livekit/livekit-server v1.13.7/go.mod h1:rp907ziqxmkAx0TcK3jXLNLKHJKYamN77bGLXuhMPho=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 h1:9x+U2HGLrSw5ATTo469PQPkqzdoU7be46ryiCDO3boc=
