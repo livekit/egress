@@ -243,9 +243,7 @@ func TestSelectorHandover_TrackTrailingRunningTime(t *testing.T) {
 // early filler frame and holds a frame across the gap.
 func TestSelectorHandover_FillerReleasedBeforeThreshold(t *testing.T) {
 	h := newSelectorHarness(t)
-	h.b.mu.Lock()
-	h.b.fillerReady = false
-	h.b.mu.Unlock()
+	h.b.fillerReady.Store(false)
 
 	h.push(h.filler, fillerBufSize, 0)
 	require.NoError(t, h.b.setTrackVisible(selectorTestTrackName, true))

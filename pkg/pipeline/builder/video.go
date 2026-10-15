@@ -17,8 +17,10 @@ package builder
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/linkdata/deadlock"
 
@@ -65,8 +67,10 @@ type VideoBin struct {
 	// later frame cannot hand the selector to a track that left.
 	pendingPad string
 	lastPTS    uint64
-	// fillerReady is set once the test src queue has reached its min-threshold-time.
-	fillerReady bool
+	// fillerReady is set once the test src queue has reached its
+	// min-threshold-time. Latched one way, and read on the filler's streaming
+	// thread, so it is not guarded by mu.
+	fillerReady atomic.Bool
 
 	probesMu deadlock.Mutex
 	probes   map[string]*keyframeProbe
@@ -956,9 +960,7 @@ func (b *VideoBin) onFillerQueueLevel(level uint64) {
 	if level < uint64(videoTestSrcDelay) {
 		return
 	}
-	b.mu.Lock()
-	b.fillerReady = true
-	b.mu.Unlock()
+	b.fillerReady.Store(true)
 }
 
 func (b *VideoBin) addVideoTestSrcBin() error {
@@ -987,9 +989,13 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 		if err = queue.SetProperty("min-threshold-time", uint64(videoTestSrcDelay)); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		// A serialized query at the queue's tail releases data before the threshold,
-		// so the gate below opens only once the queue has actually filled.
-		if _, err = queue.Connect("pushing", func(q *gst.Element) {
+		// A serialized query at the tail counts as data, so the queue can start
+		// pushing below min-threshold-time; "pushing" marks only that transition.
+		// Watching the level catches the threshold whenever it is reached.
+		if err = queue.SetProperty("notify-levels", true); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if _, err = queue.Connect("notify::current-level-time", func(q *gst.Element, _ *glib.ParamSpec) {
 			level, levelErr := q.GetProperty("current-level-time")
 			if levelErr != nil {
 				return
@@ -1035,7 +1041,7 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			pts := uint64(info.GetBuffer().PresentationTimestamp())
 			b.mu.Lock()
-			if !b.fillerReady || pts < b.lastPTS || b.selectedPad != videoTestSrcName {
+			if !b.fillerReady.Load() || pts < b.lastPTS || b.selectedPad != videoTestSrcName {
 				b.mu.Unlock()
 				return gst.PadProbeDrop
 			}
