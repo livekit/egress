@@ -16,6 +16,7 @@ package builder
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -92,6 +93,8 @@ func newSelectorHarness(t *testing.T) *selectorHarness {
 	// the filler's elements stay unlinked in the holder; its selector pad and
 	// gate are the production ones, fed by the harness instead of videotestsrc
 	require.NoError(t, b.addVideoTestSrcBin())
+	// the unlinked queue never signals, and the harness feeds the filler as if it had filled
+	b.onFillerQueueLevel(uint64(videoTestSrcDelay))
 	require.NoError(t, b.setSelectorPad(videoTestSrcName))
 	require.NoError(t, b.createSrcPad("TR_test", selectorTestTrackName))
 	require.NoError(t, b.createSrcPad("TR_test2", selectorTestTrack2Name))
@@ -235,6 +238,27 @@ func TestSelectorHandover_TrackTrailingRunningTime(t *testing.T) {
 	}
 }
 
+// The filler queue releases its first buffer before min-threshold-time when a
+// serialized query lands behind it. A track that arrives before the queue fills
+// must still be the first thing out of the selector, or videorate anchors on the
+// early filler frame and holds a frame across the gap.
+func TestSelectorHandover_FillerReleasedBeforeThreshold(t *testing.T) {
+	h := newSelectorHarness(t)
+	h.b.fillerReady.Store(false)
+
+	h.push(h.filler, fillerBufSize, 0)
+	require.NoError(t, h.b.setTrackVisible(selectorTestTrackName, true))
+	for tick := range 30 {
+		h.push(h.track, trackBufSize, time.Second+time.Duration(tick)*selectorTestFrame)
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	require.NotEmpty(t, h.output, "no buffer reached the selector output")
+	require.True(t, h.output[0].track,
+		"filler frame at %s left the selector before the track, released ahead of the queue threshold", h.output[0].pts)
+}
+
 // A second video track subscribing while the first is on screen is a
 // track-to-track handover. The outgoing track keeps feeding until the incoming
 // one has a frame, so the timeline has no hole whatever the incoming track's
@@ -327,4 +351,54 @@ func TestSelectorHandover_TrackToTrack(t *testing.T) {
 				trackBTicks-bShown, maxLost)
 		})
 	}
+}
+
+// A serialized query at the queue's tail counts as data, so the queue starts
+// pushing below min-threshold-time. The gate has to recognize the threshold from
+// a level that excludes the buffer it is being asked about, or the filler stays
+// suppressed and every filler frame is dropped.
+func TestFillerGate_OpensAfterEarlyRelease(t *testing.T) {
+	gst.Init(nil)
+	const threshold = 500 * time.Millisecond
+
+	src, _ := gst.NewElement("videotestsrc")
+	_ = src.SetProperty("is-live", true)
+	queue, _ := gst.NewElementWithName("queue", "q")
+	_ = queue.SetProperty("min-threshold-time", uint64(threshold))
+	_ = queue.SetProperty("max-size-buffers", uint(0))
+	_ = queue.SetProperty("max-size-bytes", uint(0))
+	_ = queue.SetProperty("max-size-time", uint64(30*time.Second))
+	sink, _ := gst.NewElement("fakesink")
+	_ = sink.SetProperty("sync", false)
+
+	var open atomic.Bool
+	var openedAt atomic.Int64
+	start := time.Now()
+	srcPad := queue.GetStaticPad("src")
+	require.NotNil(t, srcPad)
+	srcPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		if !open.Load() {
+			buf := info.GetBuffer()
+			if level, lerr := queue.GetProperty("current-level-time"); lerr == nil {
+				if lv, ok := level.(uint64); ok && lv+uint64(buf.Duration()) >= uint64(threshold) {
+					open.Store(true)
+					openedAt.Store(int64(time.Since(start)))
+				}
+			}
+		}
+		return gst.PadProbeOK
+	})
+
+	pipeline, _ := gst.NewPipeline("")
+	require.NoError(t, pipeline.AddMany(src, queue, sink))
+	require.NoError(t, gst.ElementLinkMany(src, queue, sink))
+	require.NoError(t, pipeline.SetState(gst.StatePlaying))
+	defer pipeline.SetState(gst.StateNull)
+
+	// serialized query landing below the threshold
+	time.Sleep(300 * time.Millisecond)
+	queue.GetStaticPad("sink").Query(gst.NewDrainQuery())
+
+	require.Eventually(t, open.Load, 8*time.Second, 20*time.Millisecond, "gate never opened")
+	t.Logf("gate opened at +%s", time.Duration(openedAt.Load()).Round(time.Millisecond))
 }
