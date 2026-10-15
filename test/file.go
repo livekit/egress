@@ -17,7 +17,10 @@
 package test
 
 import (
+	"fmt"
+	"math/rand"
 	"path"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +30,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 func (r *Runner) testFile(t *testing.T) {
@@ -630,6 +634,22 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 			},
 			{
+				name:        "Media/PassthroughOpusDTX",
+				requestType: types.RequestTypeMedia,
+				passthrough: true,
+				publishOptions: publishOptions{
+					audioOnly: true,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename:   "pt_dtx_{time}.ogg",
+					outputType: types.OutputTypeOGG,
+				},
+				custom: r.testPassthroughOpusDTX,
+			},
+			{
 				name:        "Media/PassthroughPCMU",
 				requestType: types.RequestTypeMedia,
 				passthrough: true,
@@ -697,6 +717,40 @@ func (r *Runner) testFile(t *testing.T) {
 	})
 }
 
+// testPassthroughOpusDTX checks a passthrough Opus file keeps real-time duration across DTX silence
+func (r *Runner) testPassthroughOpusDTX(t *testing.T, test *testCase) {
+	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "egress-dtx",
+		ParticipantIdentity: fmt.Sprintf("dtx-%d", rand.Intn(100)),
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	t.Cleanup(room.Disconnect)
+
+	// 5s of speech, then 4.8s of DTX, then speech until the egress stops
+	pub := publishOpusWithDTX(t, room.LocalParticipant, 250, 240)
+	test.audioTrackID = pub.SID()
+
+	req := r.buildRequest(test)
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+	p.GetFileConfig().OutputType = test.fileOptions.outputType
+
+	egressID := r.startEgress(t, req)
+	time.Sleep(testDuration / 2)
+	res := r.stopEgress(t, egressID)
+
+	test.contentCheck = func(t *testing.T, _ string, info *FFProbeInfo) {
+		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
+		require.NoError(t, err)
+		expected := time.Duration(res.FileResults[0].Duration).Seconds()
+		require.InDelta(t, expected, actual, 2.0, "file timeline was compressed across DTX")
+	}
+	r.verifyFile(t, test, p, res)
+}
+
 func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig, res *livekit.EgressInfo) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
@@ -735,8 +789,28 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 
 	// verify
 	info := verify(t, localPath, p, res, types.EgressTypeFile, r.sourceFramerate, false)
+	if p.Passthrough && tc.audioCodec == types.MimeTypeOpus {
+		verifyOpusPassthrough(t, info)
+	}
 
 	verifyFrameContinuity(t, localPath, tc)
 
 	runContentCheck(t, tc, localPath, info, "file", formatFromFileName(localPath))
+}
+
+// verifyOpusPassthrough checks the publisher's packets were written as-is rather than re-encoded to stereo
+func verifyOpusPassthrough(t *testing.T, info *FFProbeInfo) {
+	for _, stream := range info.Streams {
+		if stream.CodecType == "audio" {
+			require.Equal(t, 1, stream.Channels)
+		}
+	}
+
+	source, err := ffprobe(participantSamples["p0"][types.MimeTypeOpus])
+	require.NoError(t, err)
+	expected, err := strconv.ParseFloat(source.Format.BitRate, 64)
+	require.NoError(t, err)
+	actual, err := strconv.ParseFloat(info.Format.BitRate, 64)
+	require.NoError(t, err)
+	require.InEpsilon(t, expected, actual, 0.2)
 }

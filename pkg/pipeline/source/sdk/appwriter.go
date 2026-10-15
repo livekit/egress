@@ -94,6 +94,9 @@ type AppWriter struct {
 	trackSync    synchronizer.TrackSync
 	driftHandler DriftHandler
 
+	opusPassthrough bool
+	gapFiller       opusGapFiller
+
 	lastPTS              time.Duration
 	lastPipelineCheckPTS time.Duration
 	initialized          bool
@@ -160,6 +163,7 @@ func NewAppWriter(
 		timeProvider: gstreamer.NopTimeProvider(),
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
+	w.opusPassthrough = conf.OpusPassthrough(ts.MimeType)
 
 	ts.OnKeyframeRequired = w.onKeyframeRequired
 
@@ -586,6 +590,10 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		return nil
 	}
 
+	if w.opusPassthrough {
+		return w.pushOpus(pkt.Payload, pts)
+	}
+
 	p, err := pkt.Marshal()
 	if err != nil {
 		w.stats.packetsDropped.Inc()
@@ -594,8 +602,28 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		return err
 	}
 
-	b := gst.NewBufferFromBytes(p)
+	return w.pushBuffer(p, pts, 0)
+}
+
+func (w *AppWriter) pushOpus(payload []byte, pts time.Duration) error {
+	if len(payload) == 0 {
+		return nil
+	}
+
+	for _, fill := range w.gapFiller.fill(pts) {
+		if err := w.pushBuffer(fill.payload, fill.pts, w.gapFiller.frame); err != nil {
+			return err
+		}
+	}
+	return w.pushBuffer(payload, pts, w.gapFiller.advance(pts, payload))
+}
+
+func (w *AppWriter) pushBuffer(data []byte, pts, duration time.Duration) error {
+	b := gst.NewBufferFromBytes(data)
 	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
+	if duration > 0 {
+		b.SetDuration(gst.ClockTime(uint64(duration)))
+	}
 
 	if isDiscontinuity(w.lastPTS, pts) {
 		if w.shouldHandleDiscontinuity() {
@@ -789,7 +817,7 @@ func (w *AppWriter) updateDrift(drift time.Duration) {
 }
 
 func (w *AppWriter) shouldHandleDiscontinuity() bool {
-	return w.track.Kind() == webrtc.RTPCodecTypeAudio && w.conf.AudioTempoController.Enabled
+	return w.track.Kind() == webrtc.RTPCodecTypeAudio && w.conf.AudioTempoController.Enabled && !w.opusPassthrough
 }
 
 func (w *AppWriter) TrackKind() webrtc.RTPCodecType {

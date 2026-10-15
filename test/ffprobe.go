@@ -65,6 +65,7 @@ type FFProbeInfo struct {
 		FormatName string `json:"format_name"`
 		Duration   string `json:"duration"`
 		Size       string `json:"size"`
+		BitRate    string `json:"bit_rate"`
 		ProbeScore int    `json:"probe_score"`
 		Tags       struct {
 			Encoder string `json:"encoder"`
@@ -217,7 +218,9 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 			}
 
 			// channels
-			require.Equal(t, 2, stream.Channels)
+			if !p.Passthrough {
+				require.Equal(t, 2, stream.Channels)
+			}
 
 			// audio bitrate
 			if p.Outputs[egressType][0].GetOutputType() == types.OutputTypeMP4 {

@@ -16,6 +16,7 @@ package source
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/go-gst/go-gst/gst"
@@ -31,6 +32,7 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
 	"github.com/livekit/egress/pkg/pipeline/tempo"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
@@ -216,7 +218,7 @@ func (s *SDKSource) updatePreInitStateLocked(op Operation, ts *config.TrackSourc
 				s.AudioOutCodec = ts.MimeType
 			}
 		}
-		s.AudioTranscoding = true
+		s.AudioTranscoding = !s.OpusPassthrough(ts.MimeType)
 		s.AudioTracks = append(s.AudioTracks, ts)
 
 	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9, types.MimeTypeAV1:
@@ -476,6 +478,8 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 		MimeType:            types.MimeType(strings.ToLower(track.Codec().MimeType)),
 		PayloadType:         track.Codec().PayloadType,
 		ClockRate:           track.Codec().ClockRate,
+		// replay carries no stereo metadata, and two channels is lossless for mono-coded packets
+		Stereo: s.IsReplay || isStereo(pub.TrackInfo()),
 	}
 
 	// Match here (not at subscribe time): rp.Kind() can race with OnTrackPublished but is settled by writer creation.
@@ -493,7 +497,7 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 	// Handle codec-specific setup (tempo controller for audio)
 	switch ts.MimeType {
 	case types.MimeTypeOpus, types.MimeTypePCMU, types.MimeTypePCMA:
-		if s.AudioTempoController.Enabled {
+		if s.AudioTempoController.Enabled && !s.OpusPassthrough(ts.MimeType) {
 			c := tempo.NewController(s.Latency.AudioMixerLatency)
 			ts.TempoController = c
 			tc = c
@@ -516,6 +520,10 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 	}
 
 	return writer, ts, nil
+}
+
+func isStereo(info *livekit.TrackInfo) bool {
+	return info.GetStereo() || slices.Contains(info.GetAudioFeatures(), livekit.AudioTrackFeature_TF_STEREO)
 }
 
 func (s *SDKSource) handleOrphanedWriter(trackID string, writer *sdk.AppWriter) {
