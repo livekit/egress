@@ -1,0 +1,6 @@
+# gst-plugins-rs elements egress pipelines use. The egress images are built on
+# prod and get only the gst-plugins-rs plugins that provide one of these;
+# elements from C plugins are always present and need no entry.
+dav1ddec
+isofmp4mux
+rtpav1depay
