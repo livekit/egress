@@ -20,7 +20,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/linkdata/deadlock"
 
@@ -989,23 +988,6 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 		if err = queue.SetProperty("min-threshold-time", uint64(videoTestSrcDelay)); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
-		// A serialized query at the tail counts as data, so the queue can start
-		// pushing below min-threshold-time; "pushing" marks only that transition.
-		// Watching the level catches the threshold whenever it is reached.
-		if err = queue.SetProperty("notify-levels", true); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if _, err = queue.Connect("notify::current-level-time", func(q *gst.Element, _ *glib.ParamSpec) {
-			level, levelErr := q.GetProperty("current-level-time")
-			if levelErr != nil {
-				return
-			}
-			if t, ok := level.(uint64); ok {
-				b.onFillerQueueLevel(t)
-			}
-		}); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
 	}
 
 	caps, err := b.newVideoCapsFilter(true)
@@ -1039,7 +1021,19 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 		}
 	} else {
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-			pts := uint64(info.GetBuffer().PresentationTimestamp())
+			buf := info.GetBuffer()
+			pts := uint64(buf.PresentationTimestamp())
+			// A serialized query at the tail counts as data, so the queue can
+			// start pushing below min-threshold-time, and "pushing" marks only
+			// that transition. The level here excludes this buffer, already
+			// dequeued, so add it back to see what the queue held.
+			if !b.fillerReady.Load() {
+				if level, levelErr := queue.GetProperty("current-level-time"); levelErr == nil {
+					if t, ok := level.(uint64); ok {
+						b.onFillerQueueLevel(t + uint64(buf.Duration()))
+					}
+				}
+			}
 			b.mu.Lock()
 			if !b.fillerReady.Load() || pts < b.lastPTS || b.selectedPad != videoTestSrcName {
 				b.mu.Unlock()

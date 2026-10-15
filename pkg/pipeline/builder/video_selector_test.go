@@ -16,6 +16,7 @@ package builder
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -350,4 +351,54 @@ func TestSelectorHandover_TrackToTrack(t *testing.T) {
 				trackBTicks-bShown, maxLost)
 		})
 	}
+}
+
+// A serialized query at the queue's tail counts as data, so the queue starts
+// pushing below min-threshold-time. The gate has to recognize the threshold from
+// a level that excludes the buffer it is being asked about, or the filler stays
+// suppressed and every filler frame is dropped.
+func TestFillerGate_OpensAfterEarlyRelease(t *testing.T) {
+	gst.Init(nil)
+	const threshold = 500 * time.Millisecond
+
+	src, _ := gst.NewElement("videotestsrc")
+	_ = src.SetProperty("is-live", true)
+	queue, _ := gst.NewElementWithName("queue", "q")
+	_ = queue.SetProperty("min-threshold-time", uint64(threshold))
+	_ = queue.SetProperty("max-size-buffers", uint(0))
+	_ = queue.SetProperty("max-size-bytes", uint(0))
+	_ = queue.SetProperty("max-size-time", uint64(30*time.Second))
+	sink, _ := gst.NewElement("fakesink")
+	_ = sink.SetProperty("sync", false)
+
+	var open atomic.Bool
+	var openedAt atomic.Int64
+	start := time.Now()
+	srcPad := queue.GetStaticPad("src")
+	require.NotNil(t, srcPad)
+	srcPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		if !open.Load() {
+			buf := info.GetBuffer()
+			if level, lerr := queue.GetProperty("current-level-time"); lerr == nil {
+				if lv, ok := level.(uint64); ok && lv+uint64(buf.Duration()) >= uint64(threshold) {
+					open.Store(true)
+					openedAt.Store(int64(time.Since(start)))
+				}
+			}
+		}
+		return gst.PadProbeOK
+	})
+
+	pipeline, _ := gst.NewPipeline("")
+	require.NoError(t, pipeline.AddMany(src, queue, sink))
+	require.NoError(t, gst.ElementLinkMany(src, queue, sink))
+	require.NoError(t, pipeline.SetState(gst.StatePlaying))
+	defer pipeline.SetState(gst.StateNull)
+
+	// serialized query landing below the threshold
+	time.Sleep(300 * time.Millisecond)
+	queue.GetStaticPad("sink").Query(gst.NewDrainQuery())
+
+	require.Eventually(t, open.Load, 8*time.Second, 20*time.Millisecond, "gate never opened")
+	t.Logf("gate opened at +%s", time.Duration(openedAt.Load()).Round(time.Millisecond))
 }
