@@ -92,6 +92,8 @@ func newSelectorHarness(t *testing.T) *selectorHarness {
 	// the filler's elements stay unlinked in the holder; its selector pad and
 	// gate are the production ones, fed by the harness instead of videotestsrc
 	require.NoError(t, b.addVideoTestSrcBin())
+	// the unlinked queue never signals, and the harness feeds the filler as if it had filled
+	b.onFillerQueueLevel(uint64(videoTestSrcDelay))
 	require.NoError(t, b.setSelectorPad(videoTestSrcName))
 	require.NoError(t, b.createSrcPad("TR_test", selectorTestTrackName))
 	require.NoError(t, b.createSrcPad("TR_test2", selectorTestTrack2Name))
@@ -233,6 +235,29 @@ func TestSelectorHandover_TrackTrailingRunningTime(t *testing.T) {
 				"lost %d track frames, more than the %d the lag forces", trackTicks-out.trackShown, maxLost)
 		})
 	}
+}
+
+// The filler queue releases its first buffer before min-threshold-time when a
+// serialized query lands behind it. A track that arrives before the queue fills
+// must still be the first thing out of the selector, or videorate anchors on the
+// early filler frame and holds a frame across the gap.
+func TestSelectorHandover_FillerReleasedBeforeThreshold(t *testing.T) {
+	h := newSelectorHarness(t)
+	h.b.mu.Lock()
+	h.b.fillerReady = false
+	h.b.mu.Unlock()
+
+	h.push(h.filler, fillerBufSize, 0)
+	require.NoError(t, h.b.setTrackVisible(selectorTestTrackName, true))
+	for tick := range 30 {
+		h.push(h.track, trackBufSize, time.Second+time.Duration(tick)*selectorTestFrame)
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	require.NotEmpty(t, h.output, "no buffer reached the selector output")
+	require.True(t, h.output[0].track,
+		"filler frame at %s left the selector before the track, released ahead of the queue threshold", h.output[0].pts)
 }
 
 // A second video track subscribing while the first is on screen is a

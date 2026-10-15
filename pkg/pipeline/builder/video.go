@@ -65,6 +65,8 @@ type VideoBin struct {
 	// later frame cannot hand the selector to a track that left.
 	pendingPad string
 	lastPTS    uint64
+	// fillerReady is set once the test src queue has reached its min-threshold-time.
+	fillerReady bool
 
 	probesMu deadlock.Mutex
 	probes   map[string]*keyframeProbe
@@ -949,6 +951,16 @@ func (b *VideoBin) addSelector() error {
 	return nil
 }
 
+// onFillerQueueLevel opens the filler's gate once its queue holds videoTestSrcDelay.
+func (b *VideoBin) onFillerQueueLevel(level uint64) {
+	if level < uint64(videoTestSrcDelay) {
+		return
+	}
+	b.mu.Lock()
+	b.fillerReady = true
+	b.mu.Unlock()
+}
+
 func (b *VideoBin) addVideoTestSrcBin() error {
 	testSrcBin := b.bin.NewBin(videoTestSrcName)
 	if err := b.bin.AddSourceBin(testSrcBin); err != nil {
@@ -973,6 +985,19 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 		// probe below doesn't drop the track's first frames. The compositor path
 		// doesn't need it - videotestsrc runs continuously underneath the stack.
 		if err = queue.SetProperty("min-threshold-time", uint64(videoTestSrcDelay)); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		// A serialized query at the queue's tail releases data before the threshold,
+		// so the gate below opens only once the queue has actually filled.
+		if _, err = queue.Connect("pushing", func(q *gst.Element) {
+			level, levelErr := q.GetProperty("current-level-time")
+			if levelErr != nil {
+				return
+			}
+			if t, ok := level.(uint64); ok {
+				b.onFillerQueueLevel(t)
+			}
+		}); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
 	}
@@ -1011,12 +1036,13 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			pts := uint64(info.GetBuffer().PresentationTimestamp())
 			b.mu.Lock()
+			drop := !b.fillerReady || pts < b.lastPTS || b.selectedPad != videoTestSrcName
 			tempDebugN++
 			if tempDebugN <= 150 {
 				logger.Infow("TEMP selector probe", "pad", videoTestSrcName, "n", tempDebugN, "pts", time.Duration(pts), "lastPTS", time.Duration(b.lastPTS),
-					"selectedPad", b.selectedPad, "pendingPad", b.pendingPad, "drop", pts < b.lastPTS || b.selectedPad != videoTestSrcName)
+					"selectedPad", b.selectedPad, "pendingPad", b.pendingPad, "fillerReady", b.fillerReady, "drop", drop)
 			}
-			if pts < b.lastPTS || b.selectedPad != videoTestSrcName {
+			if drop {
 				b.mu.Unlock()
 				return gst.PadProbeDrop
 			}
