@@ -189,6 +189,25 @@ func TestAudioPacerHoldsArmingUntilPitchReanchors(t *testing.T) {
 	require.Equal(t, []float64{0.95, 1.0, 0.95}, *tempos)
 }
 
+func TestAudioPacerHoldsArmingUntilPitchAnchorsFirstBuffer(t *testing.T) {
+	p := newAudioPacer(nil, 0.05, 0.1)
+	var tempos []float64
+	p.setTempo = func(rate float64) { tempos = append(tempos, rate) }
+	notifier := &fakeDriftNotifier{}
+	p.tc = notifier
+
+	// a track joining late anchors pitch at its first timestamp divided by the tempo in force
+	p.start(12 * time.Millisecond)
+	require.False(t, p.active.Load(), "no buffer has reached pitch yet")
+	require.Equal(t, 1, notifier.canceled)
+
+	p.onInput(20 * time.Millisecond)
+	p.onInput(20 * time.Millisecond)
+	p.start(12 * time.Millisecond)
+	require.True(t, p.active.Load())
+	require.Equal(t, []float64{0.95}, tempos)
+}
+
 // pitchHarness runs appsrc → pitch → appsink with the pacer's probes on pitch. The pacer is
 // armed from a sink pad probe that runs before the pacer's, as the buffer after armAfter
 // arrives, so that buffer is both credited and processed at the new tempo.
