@@ -525,8 +525,9 @@ func installPitchProbes(pacer *audioPacer) {
 		// appwriter.shouldHandleDiscontinuity) causes pitch to drop buffered
 		// audio, so part of the credited stretch never reaches the mixer.
 		// Cancel any in-flight correction so the next SR re-arms from the
-		// post-flush state.
-		sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		// post-flush state. Flush events reach only probes that set the flush
+		// flag; EventDownstream alone does not include them.
+		sinkPad.AddProbe(gst.PadProbeTypeEventDownstream|gst.PadProbeTypeEventFlush, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			event := info.GetEvent()
 			if event == nil || event.Type() != gst.EventTypeFlushStart {
 				return gst.PadProbeOK

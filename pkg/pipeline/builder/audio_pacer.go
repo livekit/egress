@@ -124,23 +124,31 @@ func (a *audioPacer) applyTempoLocked(rate float64) {
 	a.setTempo(rate)
 }
 
-// onInput credits the stretch pitch applies to an input buffer of duration d while a
-// correction is active, and completes the correction once the stretch covers the target.
+// onInput runs on pitch's sink pad before pitch processes the buffer, so the buffer is
+// stretched at whatever tempo is set when onInput returns. Buffers already credited were
+// processed at the pacer's tempo; once they cover the target, the correction completes
+// before this buffer is processed, and this buffer counts toward a correction the
+// controller starts from DriftProcessed.
 func (a *audioPacer) onInput(d time.Duration) {
 	if !a.active.Load() {
 		return
 	}
+	if a.compensation.Load().Abs() >= a.target.Load().Abs() {
+		a.complete()
+		if !a.active.Load() {
+			return
+		}
+	}
+
 	rate := a.rate.Load()
 	if rate <= 0 {
 		return
 	}
+	a.compensation.Add(time.Duration(float64(d) * (1/rate - 1)))
+}
 
-	compensation := a.compensation.Add(time.Duration(float64(d) * (1/rate - 1)))
-	target := a.target.Load()
-	if compensation.Abs() < target.Abs() {
-		return
-	}
-
+func (a *audioPacer) complete() {
+	target, compensation := a.target.Load(), a.compensation.Load()
 	// stop() returns false if a concurrent flush cancel already won the transition;
 	// in that case the controller has already been notified.
 	if a.stop() {
