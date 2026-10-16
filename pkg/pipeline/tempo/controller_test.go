@@ -174,55 +174,41 @@ func TestSmallOvershootCarriesIntoNextCorrection(t *testing.T) {
 	}
 }
 
-func TestOvershootDoesNotFlipDirection(t *testing.T) {
-	// An overshoot of at least the threshold (a long buffer credited whole) is
-	// clamped, so it is not taken as a sign reversal and counter-corrected.
-	tc := NewController(1200 * time.Millisecond)
+func TestLargeOvershootStartsCounterCorrection(t *testing.T) {
+	// a long buffer credited whole (e.g. a silence fill) overshoots by at least the threshold;
+	// the stretch was applied, so the controller corrects it back
+	for _, sign := range []time.Duration{1, -1} {
+		tc := NewController(1200 * time.Millisecond)
 
-	var calls []time.Duration
-	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
+		var calls []time.Duration
+		tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
 
-	tc.SetDrift(15 * time.Millisecond)       // starts 15ms correction
-	tc.DriftProcessed(25 * time.Millisecond) // overshoots target by 10ms
+		tc.SetDrift(sign * 15 * time.Millisecond)
+		tc.DriftProcessed(sign * 25 * time.Millisecond) // overshoots by 10ms
 
-	if len(calls) != 1 {
-		t.Fatalf("overshoot must not trigger counter-correction: got %v", calls)
-	}
-	if got := tc.Processed(); got != 15*time.Millisecond {
-		t.Fatalf("corrected should be clamped to drift on overshoot: got %v, want 15ms", got)
+		if len(calls) != 2 || calls[1] != sign*-10*time.Millisecond {
+			t.Fatalf("counter-correction: got %v, want [%v, %v]", calls, sign*15*time.Millisecond, sign*-10*time.Millisecond)
+		}
+		if got := tc.Processed(); got != sign*25*time.Millisecond {
+			t.Fatalf("corrected is the applied stretch: got %v, want %v", got, sign*25*time.Millisecond)
+		}
 	}
 }
 
 func TestOvershootThenDriftReverses(t *testing.T) {
-	// After overshoot clamps corrected to drift, a real reversal must still fire.
+	// after an overshoot is corrected back, a real reversal must still fire
 	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
 	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
 
 	tc.SetDrift(15 * time.Millisecond)
-	tc.DriftProcessed(25 * time.Millisecond) // overshoot, clamped
-	tc.SetDrift(-20 * time.Millisecond)      // real reversal
+	tc.DriftProcessed(25 * time.Millisecond)  // overshoot, starts a -10ms counter-correction
+	tc.DriftProcessed(-10 * time.Millisecond) // counter-correction done, corrected back at 15ms
+	tc.SetDrift(-20 * time.Millisecond)       // real reversal
 
-	if len(calls) != 2 || calls[1] != -35*time.Millisecond {
-		t.Fatalf("reversal after overshoot: got %v, want [15ms, -35ms]", calls)
-	}
-}
-
-func TestNegativeOvershootDoesNotFlipDirection(t *testing.T) {
-	tc := NewController(1200 * time.Millisecond)
-
-	var calls []time.Duration
-	tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
-
-	tc.SetDrift(-15 * time.Millisecond)
-	tc.DriftProcessed(-25 * time.Millisecond) // overshoot in negative direction
-
-	if len(calls) != 1 {
-		t.Fatalf("negative overshoot must not trigger counter-correction: got %v", calls)
-	}
-	if got := tc.Processed(); got != -15*time.Millisecond {
-		t.Fatalf("corrected should be clamped to drift on overshoot: got %v, want -15ms", got)
+	if len(calls) != 3 || calls[2] != -35*time.Millisecond {
+		t.Fatalf("reversal after overshoot: got %v, want [15ms, -10ms, -35ms]", calls)
 	}
 }
 
