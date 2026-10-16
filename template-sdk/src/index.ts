@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { ParticipantEvent, Room, RoomEvent } from 'livekit-client';
+import { ConnectionState, ParticipantEvent, Room, RoomEvent } from 'livekit-client';
 
 const EgressHelper = {
   /**
@@ -66,6 +66,7 @@ const EgressHelper = {
     currentRoom.localParticipant.on(ParticipantEvent.ParticipantMetadataChanged, onMetadataChanged);
     currentRoom.on(RoomEvent.Disconnected, EgressHelper.endRecording);
     onMetadataChanged();
+    watchRoomInfo(room);
   },
 
   /**
@@ -101,6 +102,88 @@ let state: TemplateState = {
 
 interface TemplateState {
   layout: string;
+}
+
+// RoomEvent.RoomSidChanged, missing from older livekit-client versions
+const roomSidChanged = 'roomSidChanged';
+const hasRoomSidChanged = 'RoomSidChanged' in RoomEvent;
+// without it, fall back to the engine event carrying room updates, not exported by livekit-client
+const engineRoomUpdate = 'roomUpdate';
+
+interface Events {
+  on(event: string, listener: () => void): void;
+  off(event: string, listener: () => void): void;
+}
+
+let watchedRoom: Room | undefined;
+let watchedEngine: Events | undefined;
+let reportedRoomInfo = '';
+
+/**
+ * Logs the room's name and session ID for egress whenever they change. The server can
+ * start a new session for a live room, changing its ID without disconnecting.
+ */
+function watchRoomInfo(room: Room) {
+  if (room === watchedRoom) {
+    return;
+  }
+  if (watchedRoom) {
+    watchedRoom
+      .off(RoomEvent.Connected, onRoomConnected)
+      .off(RoomEvent.Reconnected, onRoomConnected)
+      .off(RoomEvent.Moved, reportRoomInfo);
+    if (hasRoomSidChanged) {
+      (watchedRoom as unknown as Events).off(roomSidChanged, reportRoomInfo);
+    }
+  }
+
+  watchedRoom = room;
+  room
+    .on(RoomEvent.Connected, onRoomConnected)
+    .on(RoomEvent.Reconnected, onRoomConnected)
+    .on(RoomEvent.Moved, reportRoomInfo);
+  if (hasRoomSidChanged) {
+    (room as unknown as Events).on(roomSidChanged, reportRoomInfo);
+  }
+  if (room.state === ConnectionState.Connected) {
+    onRoomConnected();
+  }
+}
+
+function onRoomConnected() {
+  // the room replaces its engine when it reconnects
+  const engine = hasRoomSidChanged
+    ? undefined
+    : (watchedRoom?.engine as unknown as Events | undefined);
+  if (engine !== watchedEngine) {
+    watchedEngine?.off(engineRoomUpdate, reportRoomInfo);
+    engine?.on(engineRoomUpdate, reportRoomInfo);
+    watchedEngine = engine;
+  }
+  reportRoomInfo();
+}
+
+async function reportRoomInfo() {
+  const room = watchedRoom;
+  if (!room) {
+    return;
+  }
+
+  let sid: string;
+  try {
+    sid = await room.getSid();
+  } catch {
+    return;
+  }
+  if (!sid || room !== watchedRoom) {
+    return;
+  }
+
+  const info = JSON.stringify({ name: room.name, sid });
+  if (info !== reportedRoomInfo) {
+    reportedRoomInfo = info;
+    console.log(`ROOM_INFO:${info}`);
+  }
 }
 
 function onMetadataChanged() {

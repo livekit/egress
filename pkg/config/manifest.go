@@ -100,6 +100,13 @@ func (p *PipelineConfig) shouldCreateManifest() bool {
 	return false
 }
 
+func (m *Manifest) UpdateRoom(name, id string) {
+	m.mu.Lock()
+	m.RoomName = name
+	m.RoomID = id
+	m.mu.Unlock()
+}
+
 func (m *Manifest) AddFile(filename, location string) {
 	m.mu.Lock()
 	m.Files = append(m.Files, &File{

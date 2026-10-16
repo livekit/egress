@@ -24,6 +24,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/egress/pkg/config"
@@ -323,5 +324,71 @@ func TestWatchEndRecording(t *testing.T) {
 			t.Fatal("preroll timeout did not release the watcher")
 		}
 		require.True(t, c.eosSent.IsBroken())
+	})
+}
+
+type updateRecorder struct {
+	nopIPCClient
+	updates []*livekit.EgressInfo
+}
+
+func (r *updateRecorder) HandlerUpdate(_ context.Context, info *livekit.EgressInfo, _ ...grpc.CallOption) (*emptypb.Empty, error) {
+	r.updates = append(r.updates, proto.Clone(info).(*livekit.EgressInfo))
+	return &emptypb.Empty{}, nil
+}
+
+func TestOnRoomChanged(t *testing.T) {
+	newTestController := func(status livekit.EgressStatus) (*Controller, *updateRecorder) {
+		ipcClient := &updateRecorder{}
+		c := &Controller{
+			PipelineConfig: &config.PipelineConfig{
+				Info: &livekit.EgressInfo{
+					RoomId:   "RM_request",
+					RoomName: "room",
+					Status:   status,
+				},
+				Manifest: &config.Manifest{RoomID: "RM_request", RoomName: "room"},
+			},
+			ipcServiceClient: ipcClient,
+		}
+		return c, ipcClient
+	}
+
+	t.Run("records the room before the egress is active", func(t *testing.T) {
+		c, ipcClient := newTestController(livekit.EgressStatus_EGRESS_STARTING)
+		c.onRoomChanged("room", "RM_connected")
+		require.Equal(t, "RM_connected", c.Info.RoomId)
+		require.Equal(t, "RM_connected", c.Manifest.RoomID)
+		require.Empty(t, ipcClient.updates, "the update activating the egress carries the room")
+	})
+
+	t.Run("sends an update while active", func(t *testing.T) {
+		c, ipcClient := newTestController(livekit.EgressStatus_EGRESS_ACTIVE)
+		c.onRoomChanged("room", "RM_restarted")
+		require.Len(t, ipcClient.updates, 1)
+		require.Equal(t, "RM_restarted", ipcClient.updates[0].RoomId)
+		require.Equal(t, "room", ipcClient.updates[0].RoomName)
+
+		// an unchanged room is not reported again
+		c.onRoomChanged("room", "RM_restarted")
+		require.Len(t, ipcClient.updates, 1)
+	})
+
+	t.Run("keeps the recorded room on a replay", func(t *testing.T) {
+		c, ipcClient := newTestController(livekit.EgressStatus_EGRESS_ACTIVE)
+		c.IsReplay = true
+		c.onRoomChanged("playback-room", "RM_playback")
+		require.Equal(t, "RM_request", c.Info.RoomId)
+		require.Equal(t, "room", c.Info.RoomName)
+		require.Empty(t, ipcClient.updates)
+	})
+
+	t.Run("updates the room name on a move", func(t *testing.T) {
+		c, ipcClient := newTestController(livekit.EgressStatus_EGRESS_ACTIVE)
+		c.onRoomChanged("other-room", "RM_other")
+		require.Len(t, ipcClient.updates, 1)
+		require.Equal(t, "other-room", c.Info.RoomName)
+		require.Equal(t, "other-room", c.Manifest.RoomName)
+		require.Equal(t, "RM_other", c.Manifest.RoomID)
 	})
 }
