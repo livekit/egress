@@ -133,21 +133,8 @@ func (tc *Controller) DriftProcessed(actual time.Duration) {
 	tc.corrected += actual
 	tc.current = 0
 
-	// An overshoot past drift, in the direction of the correction, that is below the
-	// threshold is the rest of the correction's last input buffer: corrected keeps it,
-	// so the next correction is that much smaller. A larger one (a long buffer, such as
-	// a silence fill, credited whole) is clamped to drift so it cannot queue a
-	// counter-correction.
-	if actual != 0 {
-		overshoot := tc.corrected - tc.drift
-		if actual < 0 {
-			overshoot = -overshoot
-		}
-		if overshoot >= DefaultThreshold {
-			tc.corrected = tc.drift
-		}
-	}
-
+	// actual is the stretch the pacer applied, so an overshoot past drift makes the
+	// next correction smaller, or starts a counter-correction once it reaches the threshold.
 	var toStart time.Duration
 	effective := tc.drift - tc.corrected
 	if effective.Abs() >= DefaultThreshold {

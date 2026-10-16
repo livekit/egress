@@ -332,3 +332,34 @@ func TestAudioPacerTracksDriftOverLongExport(t *testing.T) {
 	// drift reaches 14.4s; what pitch applied stays within the threshold plus one buffer's stretch of it
 	require.Less(t, worst, tempo.DefaultThreshold+2*time.Millisecond, "worst gap between measured drift and applied stretch")
 }
+
+func TestAudioPacerCorrectsOvershootFromLongBuffer(t *testing.T) {
+	// a 1s silence fill passes mid-correction and is stretched whole
+	tc := tempo.NewController(2750 * time.Millisecond)
+	p := &audioPacer{setTempo: func(float64) {}, tempoAdjustmentRate: 0.05, boostedRate: 0.1}
+	p.tc = tc
+	var targets []time.Duration
+	tc.OnDriftDetectedCallback(func(d time.Duration) { targets = append(targets, d); p.start(d) })
+
+	var applied time.Duration
+	process := func(d time.Duration) {
+		p.onInput(d)
+		if p.active.Load() {
+			applied += time.Duration(float64(d) * (1/p.rate.Load() - 1))
+		}
+	}
+
+	const drift = 12 * time.Millisecond
+	tc.SetDrift(drift)
+	process(20 * time.Millisecond)
+	process(time.Second)
+	for range 100 {
+		process(20 * time.Millisecond)
+	}
+
+	require.Len(t, targets, 2, "the overshoot starts a counter-correction")
+	require.Equal(t, drift, targets[0])
+	require.Less(t, targets[1], -30*time.Millisecond)
+	require.Less(t, (drift - applied).Abs(), tempo.DefaultThreshold, "applied stretch ends within the threshold of the drift")
+	require.Equal(t, applied, tc.Processed(), "the controller's books match what pitch applied")
+}
