@@ -159,6 +159,9 @@ func (b *AudioBin) buildSDKInput() error {
 			return err
 		}
 	}
+	if !b.conf.AudioTranscoding {
+		return nil
+	}
 	if b.conf.Live {
 		if err := b.addAudioTestSrcBin(); err != nil {
 			return err
@@ -203,6 +206,10 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 	}
 	if err := appSrcBin.AddElement(ts.AppSrc.Element); err != nil {
 		return err
+	}
+
+	if !b.conf.AudioTranscoding {
+		return b.addOpusPassthroughLocked(appSrcBin, ts)
 	}
 
 	switch ts.MimeType {
@@ -323,6 +330,28 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 	}
 
 	return nil
+}
+
+func (b *AudioBin) addOpusPassthroughLocked(appSrcBin *gstreamer.Bin, ts *config.TrackSource) error {
+	channels := 1
+	if ts.Stereo {
+		channels = 2
+	}
+	if err := ts.AppSrc.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
+		"audio/x-opus,rate=48000,channels=%d,channel-mapping-family=0", channels,
+	))); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	opusParse, err := gst.NewElement("opusparse")
+	if err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err = appSrcBin.AddElement(opusParse); err != nil {
+		return err
+	}
+
+	return b.bin.AddSourceBin(appSrcBin)
 }
 
 func (b *AudioBin) getChannelLocked(ts *config.TrackSource) livekit.AudioChannel {

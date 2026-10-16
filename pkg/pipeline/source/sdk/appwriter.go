@@ -48,13 +48,18 @@ const (
 	cSamplesQueueDepth      = 100
 	drainingTimeout         = time.Second * 3
 	unsubscribedGracePeriod = time.Second * 2
+	// ends the tail silence fill before drainingTimeout lets start() send EOS mid-push
+	tailFillBudget = time.Second * 2
 
 	// Threshold of consecutive FlowFlushing returns before the writer gives up
 	// and drains. ~2 seconds of 20ms audio packets.
 	flushingThreshold = 100
 )
 
-var errFlowFlushingThreshold = errors.New("persistent FlowFlushing detected")
+var (
+	errFlowFlushingThreshold = errors.New("persistent FlowFlushing detected")
+	errTailFillBudget        = errors.New("tail fill budget exceeded")
+)
 
 type sampleItem struct {
 	sample []jitter.ExtPacket
@@ -93,6 +98,9 @@ type AppWriter struct {
 	sync         synchronizer.Sync
 	trackSync    synchronizer.TrackSync
 	driftHandler DriftHandler
+
+	opusPassthrough bool
+	gapFiller       opusGapFiller
 
 	lastPTS              time.Duration
 	lastPipelineCheckPTS time.Duration
@@ -160,6 +168,7 @@ func NewAppWriter(
 		timeProvider: gstreamer.NopTimeProvider(),
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
+	w.opusPassthrough = conf.OpusPassthrough(ts.MimeType)
 
 	ts.OnKeyframeRequired = w.onKeyframeRequired
 
@@ -533,6 +542,7 @@ func (w *AppWriter) pushSamples() {
 		}
 		if w.endStreamSourceProcessed.IsBroken() && w.samplesHead == nil {
 			w.samplesLock.Unlock()
+			w.fillOpusToEnd()
 			return
 		}
 
@@ -567,6 +577,27 @@ func (w *AppWriter) pushSamples() {
 	}
 }
 
+// fillOpusToEnd extends a live passthrough track with silence up to the stop time
+func (w *AppWriter) fillOpusToEnd() {
+	if !w.opusPassthrough || !w.conf.Live {
+		return
+	}
+	end, ok := w.pipelineRunningTime()
+	if !ok {
+		return
+	}
+	deadline := time.Now().Add(tailFillBudget)
+	err := w.gapFiller.fill(end, func(data []byte, pts, duration time.Duration) error {
+		if time.Now().After(deadline) {
+			return errTailFillBudget
+		}
+		return w.pushBuffer(data, pts, duration)
+	})
+	if errors.Is(err, errTailFillBudget) {
+		w.logger.Warnw("silence fill truncated at drain deadline", err, "end", end)
+	}
+}
+
 func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	w.translator.Translate(pkt.Packet)
 
@@ -586,6 +617,10 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		return nil
 	}
 
+	if w.opusPassthrough {
+		return w.pushOpus(pkt.Payload, pts)
+	}
+
 	p, err := pkt.Marshal()
 	if err != nil {
 		w.stats.packetsDropped.Inc()
@@ -594,8 +629,26 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		return err
 	}
 
-	b := gst.NewBufferFromBytes(p)
+	return w.pushBuffer(p, pts, 0)
+}
+
+func (w *AppWriter) pushOpus(payload []byte, pts time.Duration) error {
+	if len(payload) == 0 {
+		return nil
+	}
+
+	if err := w.gapFiller.fill(pts, w.pushBuffer); err != nil {
+		return err
+	}
+	return w.pushBuffer(payload, pts, w.gapFiller.advance(pts, payload))
+}
+
+func (w *AppWriter) pushBuffer(data []byte, pts, duration time.Duration) error {
+	b := gst.NewBufferFromBytes(data)
 	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
+	if duration > 0 {
+		b.SetDuration(gst.ClockTime(uint64(duration)))
+	}
 
 	if isDiscontinuity(w.lastPTS, pts) {
 		if w.shouldHandleDiscontinuity() {
@@ -789,7 +842,7 @@ func (w *AppWriter) updateDrift(drift time.Duration) {
 }
 
 func (w *AppWriter) shouldHandleDiscontinuity() bool {
-	return w.track.Kind() == webrtc.RTPCodecTypeAudio && w.conf.AudioTempoController.Enabled
+	return w.track.Kind() == webrtc.RTPCodecTypeAudio && w.conf.AudioTempoController.Enabled && !w.opusPassthrough
 }
 
 func (w *AppWriter) TrackKind() webrtc.RTPCodecType {

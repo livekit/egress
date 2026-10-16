@@ -229,3 +229,26 @@ func TestFilenameUTCReplacementIgnoresLocalTimezone(t *testing.T) {
 	require.NoError(t, err)
 	require.WithinDuration(t, time.Now(), parsed, 10*time.Second)
 }
+
+func TestOpusPassthrough(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		mimeType types.MimeType
+		output   types.EgressType
+		expected bool
+	}{
+		{"opus file", types.MimeTypeOpus, types.EgressTypeFile, true},
+		{"opus websocket needs pcm", types.MimeTypeOpus, types.EgressTypeWebsocket, false},
+		{"pcmu file is encoded to opus", types.MimeTypePCMU, types.EgressTypeFile, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := &PipelineConfig{Passthrough: true, Outputs: map[types.EgressType][]OutputConfig{}}
+			if test.output == types.EgressTypeFile {
+				p.Outputs[test.output] = []OutputConfig{&FileConfig{}}
+			} else {
+				p.Outputs[test.output] = []OutputConfig{&StreamConfig{}}
+			}
+			require.Equal(t, test.expected, p.OpusPassthrough(test.mimeType))
+		})
+	}
+}
