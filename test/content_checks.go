@@ -144,7 +144,7 @@ func runAVSyncCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo, 
 	return newRecordingAlignment(obs, intLag)
 }
 
-// newRecordingAlignment reads the lag off bucket centres, which Quantize shifts back 1s when Offset > 500ms
+// newRecordingAlignment reads the lag off bucket centers, which Quantize shifts back 1s when Offset > 500ms
 func newRecordingAlignment(obs *cadence.Observation, intLag int64) *recordingAlignment {
 	if len(obs.Buckets) == 0 {
 		return nil
