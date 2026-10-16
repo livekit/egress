@@ -793,9 +793,8 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 		verifyOpusPassthrough(t, info)
 	}
 
-	verifyFrameContinuity(t, localPath, tc)
-
-	runContentCheck(t, tc, localPath, info, "file", formatFromFileName(localPath))
+	align := runContentCheck(t, tc, localPath, info, "file", formatFromFileName(localPath))
+	verifyFrameContinuity(t, localPath, tc, align)
 }
 
 // verifyOpusPassthrough checks the publisher's packets were written as-is rather than re-encoded to stereo
