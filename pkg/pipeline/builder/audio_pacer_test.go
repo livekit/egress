@@ -299,3 +299,36 @@ func TestAudioPacerPitchFlushCancelsCorrection(t *testing.T) {
 	require.Equal(t, 1, h.notifier.canceled)
 	require.Empty(t, h.notifier.processed)
 }
+
+func TestAudioPacerTracksDriftOverLongExport(t *testing.T) {
+	// a publisher clock 0.2% fast for two hours, sender reports every second, 20ms input buffers
+	const skew = 0.002
+	tc := tempo.NewController(2750 * time.Millisecond)
+	p := &audioPacer{setTempo: func(float64) {}, tempoAdjustmentRate: 0.05, boostedRate: 0.1}
+	p.tc = tc
+	tc.OnTierChange(func(tier tempo.Tier) {
+		if tier == tempo.TierNormal {
+			p.brake()
+		} else {
+			p.boost()
+		}
+	})
+	tc.OnDriftDetectedCallback(p.start)
+
+	var applied, worst time.Duration
+	for now := time.Duration(0); now < 2*time.Hour; now += 20 * time.Millisecond {
+		if now > 0 && now%time.Second == 0 {
+			drift := time.Duration(float64(now) * skew)
+			tc.SetDrift(drift)
+			worst = max(worst, (drift - applied).Abs())
+		}
+		// pitch processes the buffer after the probe, at the tempo set when the probe returns
+		p.onInput(20 * time.Millisecond)
+		if p.active.Load() {
+			applied += time.Duration(float64(20*time.Millisecond) * (1/p.rate.Load() - 1))
+		}
+	}
+
+	// drift reaches 14.4s; what pitch applied stays within the threshold plus one buffer's stretch of it
+	require.Less(t, worst, tempo.DefaultThreshold+2*time.Millisecond, "worst gap between measured drift and applied stretch")
+}
