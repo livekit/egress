@@ -332,7 +332,7 @@ func TestAudioPacerGapEventBecomesSilenceBeforePitch(t *testing.T) {
 	h := newPitchHarness(t, 0.05, 0, 0)
 	h.push(50)
 
-	// a 1.3s mute signalled as a GAP event, as the replay source does, between two runs of audio
+	// a 1.3s mute signaled as a GAP event, as the replay source does, between two runs of audio
 	srcPad := h.src.GetStaticPad("src")
 	require.True(t, srcPad.PushEvent(gst.NewGapEvent(gst.ClockTime(time.Second), gst.ClockTime(1300*time.Millisecond))))
 	h.push(50)
