@@ -53,12 +53,12 @@ type audioPacer struct {
 	rate         atomic.Float64 // tempo currently applied
 	compensation atomic.Duration
 
-	// buffers that pass at tempo 1.0 after a flush, until pitch has re-anchored
+	// buffers that pass at tempo 1.0 after start or a flush, until pitch has anchored
 	reanchorBuffers atomic.Int32
 }
 
 func newAudioPacer(pitch *gst.Element, adjustmentRate, boostedRate float64) *audioPacer {
-	return &audioPacer{
+	a := &audioPacer{
 		pitch: pitch,
 		setTempo: func(rate float64) {
 			pitch.SetArg("tempo", fmt.Sprintf("%.2f", rate))
@@ -66,6 +66,9 @@ func newAudioPacer(pitch *gst.Element, adjustmentRate, boostedRate float64) *aud
 		tempoAdjustmentRate: adjustmentRate,
 		boostedRate:         boostedRate,
 	}
+	// pitch anchors its output timeline on its first buffer as it does after a flush
+	a.reanchorBuffers.Store(2)
+	return a
 }
 
 func (a *audioPacer) start(drift time.Duration) {
