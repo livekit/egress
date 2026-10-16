@@ -124,14 +124,14 @@ func TestRTPGapFillerConcealmentDecodesExactly(t *testing.T) {
 					}
 					pkt := packet(i, uint16(i), ts)
 					pts := time.Duration(ts) * time.Second / 48000
-					require.NoError(t, f.fill(pkt, pts, func(s *rtp.Packet, spts time.Duration) error {
+					require.NoError(t, f.Fill(pkt, pts, func(s *rtp.Packet, spts time.Duration) error {
 						frame, count := opusFrameInfo(s.Payload)
 						synthetic += int64(frame*48000/time.Second) * int64(count)
 						pushRTP(t, src, s, spts)
 						return nil
 					}))
 					pushRTP(t, src, pkt, pts)
-					f.advance(pkt, pts)
+					f.Advance(pkt, pts)
 				}
 			})
 			require.Equal(t, int64(gapSamples), synthetic)

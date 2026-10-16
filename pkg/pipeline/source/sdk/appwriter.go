@@ -101,7 +101,7 @@ type AppWriter struct {
 
 	opusPassthrough bool
 	gapFiller       opusGapFiller
-	rtpFiller       *rtpGapFiller // set when the tempo pacer resamples this track
+	rtpFiller       *RTPGapFiller // set when the tempo pacer resamples this track
 
 	lastPTS              time.Duration
 	lastPipelineCheckPTS time.Duration
@@ -205,18 +205,14 @@ func NewAppWriter(
 		depacketizer = &codecs.OpusPacket{}
 		w.translator = NewNullTranslator()
 		if w.shouldHandleDiscontinuity() {
-			w.rtpFiller = newRTPGapFiller(ts.ClockRate, opusGapCodec)
+			w.rtpFiller = NewRTPGapFiller(ts.MimeType, ts.ClockRate)
 		}
 
 	case types.MimeTypePCMU, types.MimeTypePCMA:
 		depacketizer = &G711Packet{}
 		w.translator = NewNullTranslator()
 		if w.shouldHandleDiscontinuity() {
-			silence := byte(0xff) // PCMU
-			if ts.MimeType == types.MimeTypePCMA {
-				silence = 0xd5
-			}
-			w.rtpFiller = newRTPGapFiller(ts.ClockRate, g711GapCodec(silence))
+			w.rtpFiller = NewRTPGapFiller(ts.MimeType, ts.ClockRate)
 		}
 
 	case types.MimeTypeH264:
@@ -639,9 +635,9 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	if w.rtpFiller != nil {
 		if isDiscontinuity(w.lastPTS, pts) {
 			// the flush below re-anchors pitch; nothing to fill
-			w.rtpFiller.reset()
+			w.rtpFiller.Reset()
 		}
-		if err := w.rtpFiller.fill(pkt.Packet, pts, w.pushConcealment); err != nil {
+		if err := w.rtpFiller.Fill(pkt.Packet, pts, w.pushConcealment); err != nil {
 			// drop the packet too; the filler keeps its position and the next fill covers both
 			w.stats.packetsDropped.Inc()
 			if errors.Is(err, errFlowFlushingThreshold) {
@@ -667,7 +663,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		return err
 	}
 	if pushed && w.rtpFiller != nil {
-		w.rtpFiller.advance(pkt.Packet, pts)
+		w.rtpFiller.Advance(pkt.Packet, pts)
 	}
 	return nil
 }
