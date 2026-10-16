@@ -159,10 +159,34 @@ func TestAudioPacerFlushCancelsWithoutCredit(t *testing.T) {
 	p.onInput(20 * time.Millisecond)
 	require.Empty(t, notifier.processed)
 
+	// two buffers pass at tempo 1.0 before the pacer arms again
+	p.onInput(20 * time.Millisecond)
 	p.start(-12 * time.Millisecond)
 	require.Equal(t, 14, feed(p, 1000))
 	require.Len(t, notifier.processed, 1)
 	require.Less(t, notifier.processed[0], time.Duration(0), "a new correction starts from zero")
+}
+
+func TestAudioPacerHoldsArmingUntilPitchReanchors(t *testing.T) {
+	p, notifier, tempos := newTestPacer()
+	p.start(12 * time.Millisecond)
+	require.True(t, p.cancelOnFlush())
+
+	// pitch re-anchors on the first buffer after the flush, at its timestamp divided by
+	// the tempo in force; a start before then is refused and the controller re-arms later
+	p.start(12 * time.Millisecond)
+	require.False(t, p.active.Load())
+	require.Equal(t, 1, notifier.canceled)
+
+	p.onInput(20 * time.Millisecond)
+	p.start(12 * time.Millisecond)
+	require.False(t, p.active.Load(), "the first buffer is still being processed when its probe returns")
+	require.Equal(t, 2, notifier.canceled)
+
+	p.onInput(20 * time.Millisecond)
+	p.start(12 * time.Millisecond)
+	require.True(t, p.active.Load())
+	require.Equal(t, []float64{0.95, 1.0, 0.95}, *tempos)
 }
 
 // pitchHarness runs appsrc → pitch → appsink with the pacer's probes on pitch. The pacer is
@@ -206,13 +230,17 @@ func newPitchHarness(t *testing.T, adjustmentRate float64, armAfter int64, drift
 	h := &pitchHarness{t: t, pipeline: pipeline, src: src, sink: sink, pitch: pitch, notifier: &fakeDriftNotifier{}}
 	h.pacer = newAudioPacer(pitch, adjustmentRate, 2*adjustmentRate)
 	h.pacer.tc = h.notifier
-	pitch.GetStaticPad("sink").AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+	pitch.GetStaticPad("sink").AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		if buf := info.GetBuffer(); buf != nil && buf.GetFlags()&gst.BufferFlagGap != 0 {
+			return gst.PadProbeOK // silence chained in for a GAP event, not one of ours
+		}
 		if h.seen.Add(1) == armAfter+1 && drift != 0 {
 			h.pacer.start(drift)
 		}
 		return gst.PadProbeOK
 	})
 	installPitchProbes(h.pacer)
+	installGapFill(pitch.GetStaticPad("sink"), 48000, 2)
 
 	require.NoError(t, pipeline.SetState(gst.StatePlaying))
 	t.Cleanup(func() { _ = pipeline.SetState(gst.StateNull) })
@@ -298,6 +326,19 @@ func TestAudioPacerPitchFlushCancelsCorrection(t *testing.T) {
 	require.False(t, h.pacer.active.Load(), "a flush reaching pitch cancels the correction")
 	require.Equal(t, 1, h.notifier.canceled)
 	require.Empty(t, h.notifier.processed)
+}
+
+func TestAudioPacerGapEventBecomesSilenceBeforePitch(t *testing.T) {
+	h := newPitchHarness(t, 0.05, 0, 0)
+	h.push(50)
+
+	// a 1.3s mute signalled as a GAP event, as the replay source does, between two runs of audio
+	srcPad := h.src.GetStaticPad("src")
+	require.True(t, srcPad.PushEvent(gst.NewGapEvent(gst.ClockTime(time.Second), gst.ClockTime(1300*time.Millisecond))))
+	h.push(50)
+
+	require.InDelta(t, float64(1300*time.Millisecond), float64(h.finish()), float64(100*time.Microsecond),
+		"pitch emits the gap as audio, so later audio keeps its place")
 }
 
 func TestAudioPacerTracksDriftOverLongExport(t *testing.T) {
