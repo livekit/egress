@@ -42,18 +42,23 @@ func TestOpusGapFiller(t *testing.T) {
 
 	var f opusGapFiller
 	var end time.Duration
-	var fills int
+	var fillPackets, fillFrames int
+	push := func(data []byte, pts, duration time.Duration) error {
+		require.Equal(t, byte(0xff), data[0])
+		require.Equal(t, end, pts)
+		require.Equal(t, time.Duration(data[1])*f.frame, duration)
+		end += duration
+		fillPackets++
+		fillFrames += int(data[1])
+		return nil
+	}
 	for i, p := range pts {
-		for _, fill := range f.fill(p) {
-			require.Equal(t, []byte{0xfc}, fill.payload)
-			require.Equal(t, end, fill.pts)
-			end += f.frame
-			fills++
-		}
+		require.NoError(t, f.fill(p, push))
 		if i > 0 {
 			require.Equal(t, end, p, "packet %d is not contiguous with what was emitted before it", i)
 		}
 		end = p + f.advance(p, pkt)
 	}
-	require.Equal(t, 3*18+4, fills)
+	require.Equal(t, 3*18+4, fillFrames)
+	require.Equal(t, 3*3+1, fillPackets)
 }

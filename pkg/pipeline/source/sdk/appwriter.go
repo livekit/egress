@@ -48,13 +48,18 @@ const (
 	cSamplesQueueDepth      = 100
 	drainingTimeout         = time.Second * 3
 	unsubscribedGracePeriod = time.Second * 2
+	// ends the tail silence fill before drainingTimeout lets start() send EOS mid-push
+	tailFillBudget = time.Second * 2
 
 	// Threshold of consecutive FlowFlushing returns before the writer gives up
 	// and drains. ~2 seconds of 20ms audio packets.
 	flushingThreshold = 100
 )
 
-var errFlowFlushingThreshold = errors.New("persistent FlowFlushing detected")
+var (
+	errFlowFlushingThreshold = errors.New("persistent FlowFlushing detected")
+	errTailFillBudget        = errors.New("tail fill budget exceeded")
+)
 
 type sampleItem struct {
 	sample []jitter.ExtPacket
@@ -581,10 +586,15 @@ func (w *AppWriter) fillOpusToEnd() {
 	if !ok {
 		return
 	}
-	for _, fill := range w.gapFiller.fill(end) {
-		if err := w.pushBuffer(fill.payload, fill.pts, w.gapFiller.frame); err != nil {
-			return
+	deadline := time.Now().Add(tailFillBudget)
+	err := w.gapFiller.fill(end, func(data []byte, pts, duration time.Duration) error {
+		if time.Now().After(deadline) {
+			return errTailFillBudget
 		}
+		return w.pushBuffer(data, pts, duration)
+	})
+	if errors.Is(err, errTailFillBudget) {
+		w.logger.Warnw("silence fill truncated at drain deadline", err, "end", end)
 	}
 }
 
@@ -627,10 +637,8 @@ func (w *AppWriter) pushOpus(payload []byte, pts time.Duration) error {
 		return nil
 	}
 
-	for _, fill := range w.gapFiller.fill(pts) {
-		if err := w.pushBuffer(fill.payload, fill.pts, w.gapFiller.frame); err != nil {
-			return err
-		}
+	if err := w.gapFiller.fill(pts, w.pushBuffer); err != nil {
+		return err
 	}
 	return w.pushBuffer(payload, pts, w.gapFiller.advance(pts, payload))
 }

@@ -523,7 +523,7 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 }
 
 func isStereo(info *livekit.TrackInfo) bool {
-	return slices.Contains(info.GetAudioFeatures(), livekit.AudioTrackFeature_TF_STEREO)
+	return info.GetStereo() || slices.Contains(info.GetAudioFeatures(), livekit.AudioTrackFeature_TF_STEREO) //nolint:staticcheck // keep deprecated field for older clients
 }
 
 func (s *SDKSource) handleOrphanedWriter(trackID string, writer *sdk.AppWriter) {

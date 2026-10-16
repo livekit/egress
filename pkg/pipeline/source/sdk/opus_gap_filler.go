@@ -16,6 +16,8 @@ package sdk
 
 import "time"
 
+const maxOpusPacketDuration = 120 * time.Millisecond
+
 // opusGapFiller keeps Opus packets contiguous across DTX and loss so Ogg granules track real time
 type opusGapFiller struct {
 	started bool
@@ -24,28 +26,27 @@ type opusGapFiller struct {
 	frame   time.Duration
 }
 
-type opusFill struct {
-	pts     time.Duration
-	payload []byte
-}
-
-// fill returns one TOC-only packet per frame missing before a packet at pts
-func (f *opusGapFiller) fill(pts time.Duration) []opusFill {
+// fill pushes packets of empty frames covering every frame missing before a packet at pts
+func (f *opusGapFiller) fill(pts time.Duration, push func(data []byte, pts, duration time.Duration) error) error {
 	if !f.started {
 		return nil
 	}
-	n := int((pts - f.nextPTS) / f.frame)
-	if n < 1 {
-		return nil
-	}
 
-	// a zero-length code-0 frame is decoded as packet loss concealment (RFC 6716 §3.2.1)
-	payload := []byte{f.toc &^ 0x03}
-	fills := make([]opusFill, n)
-	for i := range fills {
-		fills[i] = opusFill{pts: f.nextPTS + time.Duration(i)*f.frame, payload: payload}
+	missing := int((pts - f.nextPTS) / f.frame)
+	perPacket := int(maxOpusPacketDuration / f.frame)
+	at := f.nextPTS
+	for missing > 0 {
+		m := min(missing, perPacket)
+		// a code-3 CBR packet of zero-length frames is decoded as packet loss concealment (RFC 6716 §3.2.1, §3.2.5)
+		payload := []byte{f.toc | 0x03, byte(m)}
+		duration := time.Duration(m) * f.frame
+		if err := push(payload, at, duration); err != nil {
+			return err
+		}
+		at += duration
+		missing -= m
 	}
-	return fills
+	return nil
 }
 
 // advance records a real packet at pts and returns its duration, or 0 if it can't be parsed
