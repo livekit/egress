@@ -133,11 +133,19 @@ func (tc *Controller) DriftProcessed(actual time.Duration) {
 	tc.corrected += actual
 	tc.current = 0
 
-	// Clamp corrected if it overshot drift in the same direction as the just-
-	// applied correction. Without this, a per-buffer overshoot can flip the
-	// residual sign and immediately queue a phantom counter-correction.
-	if (actual > 0 && tc.corrected > tc.drift) || (actual < 0 && tc.corrected < tc.drift) {
-		tc.corrected = tc.drift
+	// An overshoot past drift, in the direction of the correction, that is below the
+	// threshold is the rest of the correction's last input buffer: corrected keeps it,
+	// so the next correction is that much smaller. A larger one (a long buffer, such as
+	// a silence fill, credited whole) is clamped to drift so it cannot queue a
+	// counter-correction.
+	if actual != 0 {
+		overshoot := tc.corrected - tc.drift
+		if actual < 0 {
+			overshoot = -overshoot
+		}
+		if overshoot >= DefaultThreshold {
+			tc.corrected = tc.drift
+		}
 	}
 
 	var toStart time.Duration

@@ -150,9 +150,33 @@ func TestImmediateCallbackOnRegister(t *testing.T) {
 	}
 }
 
+func TestSmallOvershootCarriesIntoNextCorrection(t *testing.T) {
+	// a correction ends on a whole input buffer, so it overshoots by less than one buffer's stretch
+	for _, sign := range []time.Duration{1, -1} {
+		tc := NewController(1200 * time.Millisecond)
+
+		var calls []time.Duration
+		tc.OnDriftDetectedCallback(func(d time.Duration) { calls = append(calls, d) })
+
+		tc.SetDrift(sign * 12 * time.Millisecond)
+		tc.DriftProcessed(sign * 12630 * time.Microsecond)
+		if len(calls) != 1 {
+			t.Fatalf("a small overshoot must not trigger a counter-correction: got %v", calls)
+		}
+		if got := tc.Processed(); got != sign*12630*time.Microsecond {
+			t.Fatalf("corrected keeps a small overshoot: got %v, want %v", got, sign*12630*time.Microsecond)
+		}
+
+		tc.SetDrift(sign * 24 * time.Millisecond)
+		if len(calls) != 2 || calls[1] != sign*11370*time.Microsecond {
+			t.Fatalf("next correction is smaller by the overshoot: got %v, want [%v, %v]", calls, sign*12*time.Millisecond, sign*11370*time.Microsecond)
+		}
+	}
+}
+
 func TestOvershootDoesNotFlipDirection(t *testing.T) {
-	// Probe trips at first buffer past target; reported actual will overshoot.
-	// Controller must not interpret that as a sign reversal and counter-correct.
+	// An overshoot of at least the threshold (a long buffer credited whole) is
+	// clamped, so it is not taken as a sign reversal and counter-corrected.
 	tc := NewController(1200 * time.Millisecond)
 
 	var calls []time.Duration
