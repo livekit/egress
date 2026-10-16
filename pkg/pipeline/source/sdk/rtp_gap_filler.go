@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/pion/rtp"
+
+	"github.com/livekit/egress/pkg/types"
 )
 
 const (
@@ -111,11 +113,11 @@ func g711GapCodec(silence byte) gapCodec {
 	}
 }
 
-// rtpGapFiller keeps a track contiguous across DTX pauses and loss by inserting
+// RTPGapFiller keeps a track contiguous across DTX pauses and loss by inserting
 // concealment packets, so the pacer's resampling is the only change to the sample count.
 // Gaps are measured on RTP timestamps: PTS differ from the sample count by the clock
 // skew the pacer absorbs.
-type rtpGapFiller struct {
+type RTPGapFiller struct {
 	clockRate uint32
 	codec     gapCodec
 
@@ -128,16 +130,30 @@ type rtpGapFiller struct {
 	lastPTS   time.Duration
 }
 
-func newRTPGapFiller(clockRate uint32, codec gapCodec) *rtpGapFiller {
-	return &rtpGapFiller{clockRate: clockRate, codec: codec}
+// NewRTPGapFiller returns a filler for an Opus or G.711 track, or nil for other codecs
+func NewRTPGapFiller(mimeType types.MimeType, clockRate uint32) *RTPGapFiller {
+	switch mimeType {
+	case types.MimeTypeOpus:
+		return newRTPGapFiller(clockRate, opusGapCodec)
+	case types.MimeTypePCMU:
+		return newRTPGapFiller(clockRate, g711GapCodec(0xff))
+	case types.MimeTypePCMA:
+		return newRTPGapFiller(clockRate, g711GapCodec(0xd5))
+	default:
+		return nil
+	}
 }
 
-// fill pushes concealment for the frames missing before pkt, a shorter frame for any
+func newRTPGapFiller(clockRate uint32, codec gapCodec) *RTPGapFiller {
+	return &RTPGapFiller{clockRate: clockRate, codec: codec}
+}
+
+// Fill pushes concealment for the frames missing before pkt, a shorter frame for any
 // remainder the codec can express, and shifts pkt's sequence number past earlier
 // synthetic packets. Lost packets' numbers are reused first. pts is pkt's PTS; an RTP gap
 // far beyond the real time since the last accepted packet is a timestamp jump and starts
 // a new run.
-func (f *rtpGapFiller) fill(pkt *rtp.Packet, pts time.Duration, push func(*rtp.Packet, time.Duration) error) error {
+func (f *RTPGapFiller) Fill(pkt *rtp.Packet, pts time.Duration, push func(*rtp.Packet, time.Duration) error) error {
 	pkt.SequenceNumber += f.seqOffset
 	if !f.started {
 		return nil
@@ -148,7 +164,7 @@ func (f *rtpGapFiller) fill(pkt *rtp.Packet, pts time.Duration, push func(*rtp.P
 		return nil
 	}
 	if f.duration(uint32(gap)) > pts-f.lastPTS+maxGapLead {
-		f.reset()
+		f.Reset()
 		return nil
 	}
 	lost := int(int16(pkt.SequenceNumber - f.next.SequenceNumber))
@@ -188,8 +204,8 @@ func (f *rtpGapFiller) fill(pkt *rtp.Packet, pts time.Duration, push func(*rtp.P
 	return nil
 }
 
-// advance records a real packet once it has been pushed with pts
-func (f *rtpGapFiller) advance(pkt *rtp.Packet, pts time.Duration) {
+// Advance records a real packet once it has been pushed with pts
+func (f *RTPGapFiller) Advance(pkt *rtp.Packet, pts time.Duration) {
 	samples, count := f.codec.frames(pkt.Payload, f.clockRate)
 	if count == 0 || samples == 0 {
 		f.started = false
@@ -209,11 +225,20 @@ func (f *rtpGapFiller) advance(pkt *rtp.Packet, pts time.Duration) {
 	}
 }
 
-// reset starts a new run at the next packet; the sequence shift is kept
-func (f *rtpGapFiller) reset() {
+// Reset starts a new run at the next packet; the sequence shift is kept
+func (f *RTPGapFiller) Reset() {
 	f.started = false
 }
 
-func (f *rtpGapFiller) duration(samples uint32) time.Duration {
+// Skip moves the expected position past d of audio that reached the pipeline without
+// packets, such as a GAP event, so the next Fill conceals only what remains of the gap
+func (f *RTPGapFiller) Skip(d time.Duration) {
+	if !f.started || d <= 0 {
+		return
+	}
+	f.next.Timestamp += uint32(d * time.Duration(f.clockRate) / time.Second)
+}
+
+func (f *RTPGapFiller) duration(samples uint32) time.Duration {
 	return time.Duration(samples) * time.Second / time.Duration(f.clockRate)
 }
