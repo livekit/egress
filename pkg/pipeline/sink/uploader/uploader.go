@@ -15,6 +15,7 @@
 package uploader
 
 import (
+	"context"
 	"os"
 	"path"
 	"time"
@@ -226,7 +227,7 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 	}
 
 	if s.conf.GeneratePresignedUrl {
-		location, err = s.GeneratePresignedUrl(storageFilepath, presignedExpiration)
+		location, err = s.GeneratePresignedUrl(context.Background(), storageFilepath, presignedExpiration)
 		if err != nil {
 			return "", 0, errors.ErrUploadFailed(s.name, err)
 		}
