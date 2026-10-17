@@ -38,7 +38,7 @@ type TimeAware interface {
 func New(ctx context.Context, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (Source, error) {
 	switch p.SourceType {
 	case types.SourceTypeWeb:
-		return NewWebSource(ctx, p)
+		return NewWebSource(ctx, p, callbacks)
 
 	case types.SourceTypeSDK:
 		return NewSDKSource(ctx, p, callbacks)

@@ -38,6 +38,7 @@ type Callbacks struct {
 	onTrackUnmuted          []func(string)
 	onTrackRemoved          []func(string)
 	onActiveSpeakersChanged []func([]lksdk.Participant)
+	onRoomChanged           func(name, id string)
 	onEOSSent               func()
 
 	pipelinePaused   core.Fuse
@@ -186,6 +187,24 @@ func (c *Callbacks) OnActiveSpeakersChanged(speakers []lksdk.Participant) {
 
 	for _, f := range handlers {
 		f(speakers)
+	}
+}
+
+func (c *Callbacks) SetOnRoomChanged(f func(name, id string)) {
+	c.mu.Lock()
+	c.onRoomChanged = f
+	c.mu.Unlock()
+}
+
+// OnRoomChanged reports the room the source is connected to. It is called once the
+// room's session ID is known and again whenever the session ID or room name changes.
+func (c *Callbacks) OnRoomChanged(name, id string) {
+	c.mu.RLock()
+	onRoomChanged := c.onRoomChanged
+	c.mu.RUnlock()
+
+	if onRoomChanged != nil {
+		onRoomChanged(name, id)
 	}
 }
 

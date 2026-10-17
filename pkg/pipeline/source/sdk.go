@@ -44,8 +44,9 @@ type SDKSource struct {
 	*config.PipelineConfig
 	callbacks *gstreamer.Callbacks
 
-	room atomic.Pointer[lksdk.Room]
-	sync synchronizer.Sync
+	room        atomic.Pointer[lksdk.Room]
+	roomChanged chan struct{}
+	sync        synchronizer.Sync
 
 	mu                   deadlock.Mutex
 	initialized          core.Fuse
@@ -86,6 +87,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		callbacks:            callbacks,
 		filenameReplacements: make(map[string]string),
 		workers:              make(map[string]*trackWorker),
+		roomChanged:          make(chan struct{}, 1),
 	}
 	logger.Debugw("latency config", "latency", p.Latency)
 
@@ -258,6 +260,7 @@ func (s *SDKSource) joinRoom() error {
 			OnTrackUnsubscribed: s.onTrackUnsubscribed,
 		},
 		OnDisconnectedWithReason: s.onDisconnectedWithReason,
+		OnRoomSIDChanged:         s.onRoomSIDChanged,
 	}
 
 	if s.Compositing {
@@ -272,12 +275,17 @@ func (s *SDKSource) joinRoom() error {
 		cb.OnParticipantDisconnected = s.onParticipantDisconnected
 	}
 
+	// reportRoom can update Info.RoomName once connected
+	requestRoomName := s.Info.RoomName
+
 	logger.Debugw("connecting to room")
 	room, err := lksdk.ConnectToRoomWithToken(s.WsUrl, s.Token, cb, lksdk.WithAutoSubscribe(false))
 	if err != nil {
 		return err
 	}
 	s.room.Store(room)
+	// the session ID may have changed since the request was sent
+	go s.reportRoom()
 
 	var fileIdentifier string
 	var w, h uint32
@@ -288,8 +296,8 @@ func (s *SDKSource) joinRoom() error {
 		err = s.awaitRoomTracks()
 
 	case types.RequestTypeTemplate:
-		if s.Info.RoomName != "" {
-			fileIdentifier = s.Info.RoomName
+		if requestRoomName != "" {
+			fileIdentifier = requestRoomName
 		} else {
 			fileIdentifier = room.Name()
 			s.filenameReplacements["{room_name}"] = room.Name()
@@ -303,7 +311,7 @@ func (s *SDKSource) joinRoom() error {
 		w, h, err = s.awaitParticipantTracks(s.Identity)
 
 	case types.RequestTypeTrackComposite:
-		fileIdentifier = s.Info.RoomName
+		fileIdentifier = requestRoomName
 		tracks := make(map[string]struct{})
 		if s.AudioEnabled {
 			tracks[s.AudioTrackID] = struct{}{}
@@ -318,15 +326,15 @@ func (s *SDKSource) joinRoom() error {
 		w, h, err = s.awaitTracks(map[string]struct{}{s.TrackID: {}})
 
 	case types.RequestTypeMedia:
-		if s.Info.RoomName == "" {
+		if requestRoomName == "" {
 			s.mu.Lock()
 			s.filenameReplacements["{room_name}"] = room.Name()
 			s.mu.Unlock()
 		}
 		if s.Passthrough {
 			fileIdentifier = s.TrackID
-		} else if s.Info.RoomName != "" {
-			fileIdentifier = s.Info.RoomName
+		} else if requestRoomName != "" {
+			fileIdentifier = requestRoomName
 		} else {
 			fileIdentifier = room.Name()
 		}
@@ -847,6 +855,37 @@ func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {
 	}
 
 	s.finished()
+}
+
+// onRoomSIDChanged only signals reportRoom, so SDK callbacks never wait on the report.
+func (s *SDKSource) onRoomSIDChanged(_ string) {
+	select {
+	case s.roomChanged <- struct{}{}:
+	default:
+	}
+}
+
+func (s *SDKSource) reportRoom() {
+	for {
+		room := s.room.Load()
+		if room == nil {
+			return
+		}
+		// blocks until the session ID is known, or the room disconnects
+		sid := room.SID()
+		if sid == "" {
+			return
+		}
+		s.callbacks.OnRoomChanged(room.Name(), sid)
+
+		select {
+		case <-s.roomChanged:
+		case <-s.endRecording.Watch():
+			return
+		case <-s.closed.Watch():
+			return
+		}
+	}
 }
 
 func (s *SDKSource) IsDuplicateIdentity() bool {

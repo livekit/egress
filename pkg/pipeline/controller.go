@@ -181,6 +181,7 @@ func newController(conf *config.PipelineConfig, ipcServiceClient ipc.EgressServi
 	}
 	c.callbacks.SetOnError(c.OnError)
 	c.callbacks.SetOnEOSSent(c.onEOSSent)
+	c.callbacks.SetOnRoomChanged(c.onRoomChanged)
 	c.callbacks.SetOnDebugDotRequest(func(reason string) {
 		if !c.Debug.EnableProfiling {
 			return
@@ -963,6 +964,45 @@ func (c *Controller) streamUpdated(ctx context.Context) {
 	}
 
 	c.sendHandlerUpdate(ctx, c.Info)
+}
+
+// onRoomChanged records the room the source is connected to. The server can start a new
+// session for a live room, which changes its ID without disconnecting the egress.
+func (c *Controller) onRoomChanged(name, id string) {
+	if c.IsReplay {
+		// the source plays back a recorded session, which keeps the request's room
+		return
+	}
+
+	c.mu.Lock()
+	changed := false
+	if id != "" && id != c.Info.RoomId {
+		c.Info.RoomId = id
+		changed = true
+	}
+	if name != "" && name != c.Info.RoomName {
+		c.Info.RoomName = name
+		changed = true
+	}
+	if changed {
+		c.Info.UpdatedAt = time.Now().UnixNano()
+		if c.Manifest != nil {
+			c.Manifest.UpdateRoom(c.Info.RoomName, c.Info.RoomId)
+		}
+	}
+	status := c.Info.Status
+	c.mu.Unlock()
+
+	if !changed {
+		return
+	}
+	logger.Infow("room updated", "roomName", name, "roomID", id)
+
+	// before the egress is active, the update that activates it carries the room
+	switch status {
+	case livekit.EgressStatus_EGRESS_ACTIVE, livekit.EgressStatus_EGRESS_ENDING:
+		c.sendHandlerUpdate(context.Background(), c.Info)
+	}
 }
 
 func (c *Controller) sendHandlerUpdate(ctx context.Context, info *livekit.EgressInfo) {

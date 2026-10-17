@@ -38,6 +38,8 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/medialogutils"
@@ -46,6 +48,7 @@ import (
 const (
 	startRecordingLog = "START_RECORDING"
 	endRecordingLog   = "END_RECORDING"
+	roomInfoLogPrefix = "ROOM_INFO:"
 
 	chromeFailedToStart       = "chrome failed to start:"
 	chromeCertVerifierChanged = "net::ERR_CERT_VERIFIER_CHANGED"
@@ -69,17 +72,33 @@ type WebSource struct {
 	endRecording         core.Fuse
 	closed               core.Fuse
 
-	info *livekit.EgressInfo
+	info      *livekit.EgressInfo
+	callbacks *gstreamer.Callbacks
+	// only room composite templates join the egress room
+	reportRoom  bool
+	roomInfo    atomic.Pointer[webRoomInfo]
+	roomChanged chan struct{}
 }
 
-func NewWebSource(ctx context.Context, p *config.PipelineConfig) (*WebSource, error) {
+type webRoomInfo struct {
+	Name string `json:"name"`
+	SID  string `json:"sid"`
+}
+
+func NewWebSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstreamer.Callbacks) (*WebSource, error) {
 	ctx, span := tracer.Start(ctx, "WebInput.New")
 	defer span.End()
 
 	p.Display = fmt.Sprintf(":%d", 10+rand.Intn(2147483637))
 
 	s := &WebSource{
-		info: p.Info,
+		info:        p.Info,
+		callbacks:   callbacks,
+		reportRoom:  p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate,
+		roomChanged: make(chan struct{}, 1),
+	}
+	if s.reportRoom {
+		go s.reportRoomInfo()
 	}
 	if !p.AwaitStartSignal {
 		s.startRecording.Break()
@@ -345,7 +364,8 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 					continue
 				}
 
-				switch fmt.Sprint(val) {
+				msg := fmt.Sprint(val)
+				switch msg {
 				case startRecordingLog:
 					if s.startRecordingLogged.CompareAndSwap(false, true) {
 						logger.Infow("chrome: START_RECORDING")
@@ -355,6 +375,11 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 				case endRecordingLog:
 					logger.Infow("chrome: END_RECORDING")
 					s.endRecording.Break()
+
+				default:
+					if roomInfo, ok := strings.CutPrefix(msg, roomInfoLogPrefix); ok && s.reportRoom {
+						s.onRoomInfo(roomInfo)
+					}
 				}
 			}
 
@@ -432,4 +457,35 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 	}
 
 	return nil, false
+}
+
+// onRoomInfo handles the room info logged by the template, {"name":"...","sid":"..."}.
+// It runs on chromedp's event goroutine, so it only signals reportRoomInfo.
+func (s *WebSource) onRoomInfo(msg string) {
+	info := &webRoomInfo{}
+	if err := json.Unmarshal([]byte(msg), info); err != nil {
+		logger.Debugw("could not parse room info", err, "msg", msg)
+		return
+	}
+	if info.SID == "" {
+		return
+	}
+
+	s.roomInfo.Store(info)
+	select {
+	case s.roomChanged <- struct{}{}:
+	default:
+	}
+}
+
+func (s *WebSource) reportRoomInfo() {
+	for {
+		select {
+		case <-s.roomChanged:
+			info := s.roomInfo.Load()
+			s.callbacks.OnRoomChanged(info.Name, info.SID)
+		case <-s.closed.Watch():
+			return
+		}
+	}
 }
