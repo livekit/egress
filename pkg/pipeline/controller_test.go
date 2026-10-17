@@ -368,6 +368,7 @@ func TestOnRoomChanged(t *testing.T) {
 		require.Len(t, ipcClient.updates, 1)
 		require.Equal(t, "RM_restarted", ipcClient.updates[0].RoomId)
 		require.Equal(t, "room", ipcClient.updates[0].RoomName)
+		require.NotZero(t, ipcClient.updates[0].UpdatedAt, "the update must be newer than the last stored one")
 
 		// an unchanged room is not reported again
 		c.onRoomChanged("room", "RM_restarted")

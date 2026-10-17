@@ -984,8 +984,11 @@ func (c *Controller) onRoomChanged(name, id string) {
 		c.Info.RoomName = name
 		changed = true
 	}
-	if changed && c.Manifest != nil {
-		c.Manifest.UpdateRoom(c.Info.RoomName, c.Info.RoomId)
+	if changed {
+		c.Info.UpdatedAt = time.Now().UnixNano()
+		if c.Manifest != nil {
+			c.Manifest.UpdateRoom(c.Info.RoomName, c.Info.RoomId)
+		}
 	}
 	status := c.Info.Status
 	c.mu.Unlock()
