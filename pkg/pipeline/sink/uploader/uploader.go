@@ -217,7 +217,7 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 
 	storageFilepath = path.Join(s.conf.Prefix, storageFilepath)
 
-	location, size, err = s.UploadFile(context.Background(), localFilepath, storageFilepath, string(outputType))
+	location, size, err = s.UploadFile(context.Background(), storageFilepath, localFilepath, storage.PutOptions{ContentType: string(outputType)})
 	if err != nil {
 		return "", 0, errors.ErrUploadFailed(s.name, err)
 	}

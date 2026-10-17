@@ -81,7 +81,7 @@ func requireNotUploaded(t *testing.T, c *config.StorageConfig, storageFilepath s
 	}
 
 	localPath := path.Join(t.TempDir(), path.Base(storageFilepath))
-	_, err := s.DownloadFile(t.Context(), localPath, storageFilepath)
+	_, err := s.DownloadFile(t.Context(), storageFilepath, localPath)
 	require.Errorf(t, err, "file %s should not have been uploaded", storageFilepath)
 }
 
@@ -93,7 +93,7 @@ func download(t *testing.T, c *config.StorageConfig, localFilepath, storageFilep
 
 	logger.Debugw(provider+" download", "localFilepath", localFilepath, "storageFilepath", storageFilepath)
 
-	_, err := s.DownloadFile(t.Context(), localFilepath, storageFilepath)
+	_, err := s.DownloadFile(t.Context(), storageFilepath, localFilepath)
 	require.NoError(t, err)
 
 	if delete {
