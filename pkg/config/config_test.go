@@ -54,7 +54,7 @@ func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
 		sc, err := p.getStorageConfig(makeReq("EXT_ID"))
 		require.NoError(t, err)
 		require.NotNil(t, sc.S3)
-		require.Equal(t, "EXT_ID", sc.S3.AssumeRoleExternalId)
+		require.Equal(t, "EXT_ID", sc.S3.AssumeRoleExternalID)
 	})
 
 	t.Run("no rejection when request omits external_id", func(t *testing.T) {
@@ -62,7 +62,7 @@ func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
 		sc, err := p.getStorageConfig(makeReq(""))
 		require.NoError(t, err)
 		require.NotNil(t, sc.S3)
-		require.Equal(t, "", sc.S3.AssumeRoleExternalId)
+		require.Equal(t, "", sc.S3.AssumeRoleExternalID)
 	})
 
 	t.Run("server-side default external_id still applies when request omits it", func(t *testing.T) {
@@ -81,7 +81,7 @@ func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
 		sc, err := p.getStorageConfig(req)
 		require.NoError(t, err)
 		require.NotNil(t, sc.S3)
-		require.Equal(t, "SERVER_SIDE_EXT_ID", sc.S3.AssumeRoleExternalId)
+		require.Equal(t, "SERVER_SIDE_EXT_ID", sc.S3.AssumeRoleExternalID)
 	})
 }
 

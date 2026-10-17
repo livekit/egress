@@ -50,8 +50,8 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 			AccessKey:            s3.AccessKey,
 			Secret:               s3.Secret,
 			SessionToken:         s3.SessionToken,
-			AssumeRoleArn:        s3.AssumeRoleArn,
-			AssumeRoleExternalId: s3.AssumeRoleExternalId,
+			AssumeRoleARN:        s3.AssumeRoleArn,
+			AssumeRoleExternalID: s3.AssumeRoleExternalId,
 			Region:               s3.Region,
 			Endpoint:             s3.Endpoint,
 			Bucket:               s3.Bucket,
@@ -66,12 +66,12 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 			sc.S3.MinRetryDelay = p.StorageConfig.S3.MinRetryDelay
 		}
 
-		if sc.S3.AssumeRoleArn == "" {
-			sc.S3.AssumeRoleArn = p.S3AssumeRoleArn
-			sc.S3.AssumeRoleExternalId = p.S3AssumeRoleExternalID
+		if sc.S3.AssumeRoleARN == "" {
+			sc.S3.AssumeRoleARN = p.S3AssumeRoleArn
+			sc.S3.AssumeRoleExternalID = p.S3AssumeRoleExternalID
 		}
 
-		if sc.S3.AssumeRoleArn != "" && sc.S3.AccessKey == "" {
+		if sc.S3.AssumeRoleARN != "" && sc.S3.AccessKey == "" {
 			if p.S3AssumeRoleKey == "" {
 				return nil, errors.ErrFeatureDisabled("S3 upload using AssumeRole")
 			}
@@ -83,7 +83,7 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 
 		if s3.Proxy != nil {
 			sc.S3.ProxyConfig = &storage.ProxyConfig{
-				Url:      s3.Proxy.Url,
+				URL:      s3.Proxy.Url,
 				Username: s3.Proxy.Username,
 				Password: s3.Proxy.Password,
 			}
@@ -107,7 +107,7 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 		}
 		if gcp.Proxy != nil {
 			sc.GCP.ProxyConfig = &storage.ProxyConfig{
-				Url:      gcp.Proxy.Url,
+				URL:      gcp.Proxy.Url,
 				Username: gcp.Proxy.Username,
 				Password: gcp.Proxy.Password,
 			}
