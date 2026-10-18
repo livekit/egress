@@ -27,7 +27,7 @@ require (
 	github.com/livekit/protocol v1.52.1
 	github.com/livekit/psrpc v0.8.0
 	github.com/livekit/server-sdk-go/v2 v2.19.1-0.20261015082611-33f5e62a8fe4
-	github.com/livekit/storage v0.0.0-20261018034421-ceb53a4f715d
+	github.com/livekit/storage v0.0.0-20261018042902-9c1b445416f4
 	github.com/llehouerou/go-mp3 v1.2.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.10.5
@@ -125,6 +125,7 @@ require (
 	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/lithammer/shortuuid/v4 v4.3.0 // indirect
+	github.com/livekit/storage/objects v0.0.0-20261018042631-42ef441ca5be // indirect
 	github.com/mackerelio/go-osstat v0.2.8 // indirect
 	github.com/magefile/mage v1.17.2 // indirect
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.14.0 // indirect
