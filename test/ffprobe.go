@@ -389,7 +389,7 @@ func freezeExcusals(plan *Plan, align *recordingAlignment) []timeSpan {
 	for _, p := range plan.publishers {
 		for _, e := range p.audio {
 			if e.kind == eventMute || e.kind == eventUnmute {
-				spans = append(spans, timeSpan{toFile(e.pts - muteEdgeGrace), toFile(e.pts + stageSwitchGrace)})
+				spans = append(spans, timeSpan{toFile(e.pts), toFile(e.pts + stageSwitchGrace)})
 			}
 		}
 	}
