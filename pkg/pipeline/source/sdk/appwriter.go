@@ -632,9 +632,10 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		return w.pushOpus(pkt.Payload, pts)
 	}
 
+	discont := isDiscontinuity(w.lastPTS, pts)
 	if w.rtpFiller != nil {
 		if w.exceedsFillBudget(pts) {
-			// the flush below re-anchors pitch; nothing to fill
+			// too long to conceal; the flush below re-anchors pitch instead
 			w.rtpFiller.Reset()
 		}
 		if err := w.rtpFiller.Fill(pkt.Packet, pts, w.pushConcealment); err != nil {
@@ -646,6 +647,8 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 			w.logger.Warnw("could not fill audio gap, dropping packet", err)
 			return nil
 		}
+		// a bridged pause is continuous audio; an unbridged one re-anchors pitch
+		discont = discont && !w.rtpFiller.Bridged()
 	}
 
 	p, err := pkt.Marshal()
@@ -658,7 +661,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 
 	b := gst.NewBufferFromBytes(p)
 	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
-	pushed, err := w.push(b, pts)
+	pushed, err := w.push(b, pts, discont)
 	if err != nil {
 		return err
 	}
@@ -703,15 +706,16 @@ func (w *AppWriter) pushBuffer(data []byte, pts, duration time.Duration) error {
 	if duration > 0 {
 		b.SetDuration(gst.ClockTime(uint64(duration)))
 	}
-	_, err := w.push(b, pts)
+	_, err := w.push(b, pts, isDiscontinuity(w.lastPTS, pts))
 	return err
 }
 
-// push sends b into appsrc, flushing the pipeline first on a discontinuity; false when
-// appsrc did not accept it
-func (w *AppWriter) push(b *gst.Buffer, pts time.Duration) (bool, error) {
-	if isDiscontinuity(w.lastPTS, pts) {
-		if w.shouldHandleDiscontinuity() && w.exceedsFillBudget(pts) {
+// push sends b into appsrc; a discontinuous buffer is flagged and, on a tempo-corrected
+// track, flushes the pipeline first so pitch re-anchors on it. Returns false when appsrc
+// did not accept the buffer.
+func (w *AppWriter) push(b *gst.Buffer, pts time.Duration, discont bool) (bool, error) {
+	if discont {
+		if w.shouldHandleDiscontinuity() {
 			w.logger.Debugw("discontinuity detected", "pts", pts, "lastPTS", w.lastPTS)
 			ok := w.src.SendEvent(gst.NewFlushStartEvent())
 			if !ok {

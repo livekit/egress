@@ -128,7 +128,8 @@ type RTPGapFiller struct {
 	last      []byte     // payload of the last real packet
 	lastTS    uint32
 	lastPTS   time.Duration
-	behind    int // consecutive packets timestamped at or before the last one
+	behind    int  // consecutive packets timestamped at or before the last one
+	bridged   bool // the last Fill left its packet contiguous with the position
 }
 
 // behindPacketsToReanchor is how many consecutive packets timestamped behind the last one
@@ -160,18 +161,21 @@ func newRTPGapFiller(clockRate uint32, codec gapCodec) *RTPGapFiller {
 // a new run.
 func (f *RTPGapFiller) Fill(pkt *rtp.Packet, pts time.Duration, push func(*rtp.Packet, time.Duration) error) error {
 	pkt.SequenceNumber += f.seqOffset
+	f.bridged = false
 	if !f.started {
 		return nil
 	}
 
 	gap := int32(pkt.Timestamp - f.next.Timestamp)
 	if gap <= 0 {
+		f.bridged = true
 		return nil
 	}
 	if f.duration(uint32(gap)) > pts-f.lastPTS+maxGapLead {
 		f.Reset()
 		return nil
 	}
+	f.bridged = true
 	lost := int(int16(pkt.SequenceNumber - f.next.SequenceNumber))
 
 	emit := func(count int, samples uint32) error {
@@ -240,9 +244,17 @@ func (f *RTPGapFiller) Advance(pkt *rtp.Packet, pts time.Duration) {
 	}
 }
 
+// Bridged reports whether the last Fill left its packet contiguous with the audio before
+// it, by concealment or because there was no gap. False after a reset, a timestamp jump
+// or before the first packet: the pipeline then has to re-anchor on the packet itself.
+func (f *RTPGapFiller) Bridged() bool {
+	return f.bridged
+}
+
 // Reset starts a new run at the next packet; the sequence shift is kept
 func (f *RTPGapFiller) Reset() {
 	f.started = false
+	f.bridged = false
 	f.behind = 0
 }
 

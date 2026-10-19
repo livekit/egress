@@ -220,6 +220,38 @@ func TestOpusConcealTOC(t *testing.T) {
 	}
 }
 
+func TestRTPGapFillerBridgedReportsWhetherThePacketIsContiguous(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 0, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	require.False(t, f.Bridged(), "nothing to bridge to before the first packet")
+	f.Advance(p1, time.Second)
+
+	p2 := opusPacket(11, 960, toc20ms)
+	require.NoError(t, fillPaused(f, p2, collectPushes(&pushes)))
+	require.True(t, f.Bridged(), "contiguous")
+	f.Advance(p2, time.Second+20*time.Millisecond)
+
+	p3 := opusPacket(12, 960*2+960*40, toc20ms)
+	require.NoError(t, fillPaused(f, p3, collectPushes(&pushes)))
+	require.True(t, f.Bridged(), "an 800ms pause was concealed")
+	require.NotEmpty(t, pushes)
+	f.Advance(p3, time.Second+840*time.Millisecond)
+
+	// RTP jumps 4s while 1s of real time passed: not concealed, so not bridged
+	jump := opusPacket(13, p3.Timestamp+960+48000*4, toc20ms)
+	require.NoError(t, f.Fill(jump, time.Second+1840*time.Millisecond, collectPushes(&pushes)))
+	require.False(t, f.Bridged())
+
+	f.Advance(jump, time.Second+1840*time.Millisecond)
+	f.Reset()
+	p5 := opusPacket(14, jump.Timestamp+960, toc20ms)
+	require.NoError(t, fillPaused(f, p5, collectPushes(&pushes)))
+	require.False(t, f.Bridged(), "after a reset the packet starts a new run")
+}
+
 func TestRTPGapFillerStrayBackwardPacketDoesNotRewind(t *testing.T) {
 	f := newRTPGapFiller(48000, opusGapCodec)
 	var pushes []pushedPacket
