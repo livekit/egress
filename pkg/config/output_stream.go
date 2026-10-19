@@ -59,14 +59,22 @@ func (p *PipelineConfig) GetWebsocketConfig() *StreamConfig {
 	return o[0].(*StreamConfig)
 }
 
-func (p *PipelineConfig) getStreamConfig(outputType types.OutputType, urls []string) (*StreamConfig, error) {
+func (p *PipelineConfig) getStreamConfig(
+	outputType types.OutputType,
+	urls []string,
+	destinations []*livekit.StreamDestination,
+) (*StreamConfig, error) {
 	conf := &StreamConfig{
 		outputConfig: outputConfig{OutputType: outputType},
 	}
 
 	for _, rawUrl := range urls {
-		_, err := conf.AddStream(rawUrl, outputType)
-		if err != nil {
+		if _, err := conf.AddStream("", rawUrl, outputType); err != nil {
+			return nil, err
+		}
+	}
+	for _, d := range destinations {
+		if _, err := conf.AddDestination(d, outputType); err != nil {
 			return nil, err
 		}
 	}

@@ -24,7 +24,7 @@ require (
 	github.com/livekit/media-samples/avsync v0.0.0-20261008082729-48c99b65fa6d
 	github.com/livekit/media-sdk v0.1.1
 	github.com/livekit/mediatransportutil v0.0.0-20261019043604-882ba4fb8ce4
-	github.com/livekit/protocol v1.52.2-0.20261017062747-c45251b06f46
+	github.com/livekit/protocol v1.53.1-0.20261019210311-624ea315a05e
 	github.com/livekit/psrpc v0.8.2
 	github.com/livekit/server-sdk-go/v2 v2.19.1-0.20261019060208-2c3d72081bb4
 	github.com/livekit/storage v0.0.0-20261019155627-3f0e2d3e75c5
