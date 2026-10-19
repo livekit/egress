@@ -360,6 +360,26 @@ func TestAudioPacerGapEventBecomesSilenceBeforePitch(t *testing.T) {
 		"pitch emits the gap as audio, so later audio keeps its place")
 }
 
+func TestAudioPacerGapBeforeAudioPassesThrough(t *testing.T) {
+	// a replay track that starts muted sends its GAP before any audio; pitch has no caps yet,
+	// so the GAP must reach the mixer as an event rather than vanish
+	h := newPitchHarness(t, 0.05, 0, 0)
+	var forwarded atomic.Int64
+	h.pitch.GetStaticPad("src").AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		if ev := info.GetEvent(); ev != nil && ev.Type() == gst.EventTypeGap {
+			forwarded.Add(1)
+		}
+		return gst.PadProbeOK
+	})
+
+	srcPad := h.src.GetStaticPad("src")
+	require.True(t, srcPad.PushEvent(gst.NewGapEvent(0, gst.ClockTime(time.Second))))
+	h.push(50)
+
+	require.Eventually(t, func() bool { return forwarded.Load() == 1 }, time.Second, time.Millisecond, "the GAP is forwarded, not dropped")
+	require.InDelta(t, 0, float64(h.finish()), float64(100*time.Microsecond), "no silence was chained for it")
+}
+
 func TestAudioPacerCorrectionCompletesOnGapSilence(t *testing.T) {
 	// a 12ms correction arms on the 51st buffer, right before a 1.3s mute
 	h := newPitchHarness(t, 0.05, 50, 12*time.Millisecond)

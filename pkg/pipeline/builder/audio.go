@@ -567,12 +567,17 @@ func installPitchProbes(pacer *audioPacer) {
 
 // installGapFill turns GAP events at pitch's sink pad into silence: pitch advances its
 // timeline only by the samples it receives. The silence goes in buffers the size of a
-// packet so a correction in progress completes on it as precisely as on speech.
+// packet so a correction in progress completes on it as precisely as on speech. A GAP
+// that cannot be converted, before the pad has caps or when pitch refuses the silence,
+// passes through unchanged so the mixer still learns about the pause.
 func installGapFill(sinkPad *gst.Pad, rate, channels int) {
 	const maxChunk = 20 * time.Millisecond
 	sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		event := info.GetEvent()
 		if event == nil || event.Type() != gst.EventTypeGap {
+			return gst.PadProbeOK
+		}
+		if pad.GetCurrentCaps() == nil {
 			return gst.PadProbeOK
 		}
 		start, remaining := event.ParseGap()
@@ -588,8 +593,8 @@ func installGapFill(sinkPad *gst.Pad, rate, channels int) {
 			buf.SetFlags(gst.BufferFlagGap)
 			// recursive stream lock: the silence enters pitch in order
 			if flow := pad.Chain(buf); flow != gst.FlowOK {
-				logger.Debugw("could not fill audio gap before pitch", "flow", flow)
-				break
+				logger.Debugw("could not fill audio gap before pitch, forwarding the gap", "flow", flow, "filled", start)
+				return gst.PadProbeOK
 			}
 			start += chunk
 			remaining -= chunk
