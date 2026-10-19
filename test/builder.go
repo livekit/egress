@@ -140,6 +140,7 @@ type segmentOptions struct {
 	livePlaylist    string
 	suffix          livekit.SegmentedFileSuffix
 	segmentDuration uint32
+	protocol        livekit.SegmentedFileProtocol
 }
 
 type imageOptions struct {
@@ -362,6 +363,7 @@ func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFile
 			LivePlaylistName: o.livePlaylist,
 			FilenameSuffix:   o.suffix,
 			SegmentDuration:  o.segmentDuration,
+			Protocol:         o.protocol,
 		}
 
 		switch conf := u.(type) {
@@ -382,6 +384,7 @@ func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFile
 		LivePlaylistName: o.livePlaylist,
 		FilenameSuffix:   o.suffix,
 		SegmentDuration:  o.segmentDuration,
+		Protocol:         o.protocol,
 	}}
 }
 
