@@ -128,7 +128,12 @@ type RTPGapFiller struct {
 	last      []byte     // payload of the last real packet
 	lastTS    uint32
 	lastPTS   time.Duration
+	behind    int // consecutive packets timestamped at or before the last one
 }
+
+// behindPacketsToReanchor is how many consecutive packets timestamped behind the last one
+// mean the sender restarted its clock rather than sent a stray packet
+const behindPacketsToReanchor = 3
 
 // NewRTPGapFiller returns a filler for an Opus or G.711 track, or nil for other codecs
 func NewRTPGapFiller(mimeType types.MimeType, clockRate uint32) *RTPGapFiller {
@@ -204,13 +209,23 @@ func (f *RTPGapFiller) Fill(pkt *rtp.Packet, pts time.Duration, push func(*rtp.P
 	return nil
 }
 
-// Advance records a real packet once it has been pushed with pts
+// Advance records a real packet once it has been pushed with pts. A packet timestamped
+// at or before the last one does not move the position: a stray or duplicate packet
+// would otherwise rewind it and the next in-order packet would be concealed twice. Only a
+// run of such packets, a clock restart, re-anchors.
 func (f *RTPGapFiller) Advance(pkt *rtp.Packet, pts time.Duration) {
 	samples, count := f.codec.frames(pkt.Payload, f.clockRate)
 	if count == 0 || samples == 0 {
 		f.started = false
 		return
 	}
+	if f.started && int32(pkt.Timestamp-f.lastTS) <= 0 {
+		f.behind++
+		if f.behind < behindPacketsToReanchor {
+			return
+		}
+	}
+	f.behind = 0
 	f.started = true
 	f.frame = samples
 	f.last = pkt.Payload
@@ -228,6 +243,7 @@ func (f *RTPGapFiller) Advance(pkt *rtp.Packet, pts time.Duration) {
 // Reset starts a new run at the next packet; the sequence shift is kept
 func (f *RTPGapFiller) Reset() {
 	f.started = false
+	f.behind = 0
 }
 
 // Skip moves the expected position past d of audio that reached the pipeline without

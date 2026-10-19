@@ -220,6 +220,49 @@ func TestOpusConcealTOC(t *testing.T) {
 	}
 }
 
+func TestRTPGapFillerStrayBackwardPacketDoesNotRewind(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 960*5, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, 100*time.Millisecond)
+
+	// a packet with a newer number but an older timestamp is pushed, but leaves the position alone
+	stray := opusPacket(11, 960*2, toc20ms)
+	require.NoError(t, fillPaused(f, stray, collectPushes(&pushes)))
+	f.Advance(stray, 40*time.Millisecond)
+	require.Empty(t, pushes)
+
+	// the next in-order packet is contiguous with p1, so nothing is concealed twice
+	p3 := opusPacket(12, 960*6, toc20ms)
+	require.NoError(t, fillPaused(f, p3, collectPushes(&pushes)))
+	require.Empty(t, pushes)
+}
+
+func TestRTPGapFillerClockRestartReanchorsAfterARun(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 960*500, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, 10*time.Second)
+
+	// the sender's clock restarts near zero; three packets in a row re-anchor the filler there
+	for i, ts := range []uint32{0, 960, 1920} {
+		p := opusPacket(uint16(11+i), ts, toc20ms)
+		require.NoError(t, fillPaused(f, p, collectPushes(&pushes)))
+		f.Advance(p, 10*time.Second+time.Duration(i+1)*20*time.Millisecond)
+	}
+	require.Empty(t, pushes)
+
+	// from here the new timeline is contiguous, and a pause on it is concealed
+	p5 := opusPacket(14, 2880+960, toc20ms)
+	require.NoError(t, fillPaused(f, p5, collectPushes(&pushes)))
+	require.Len(t, pushes, 1)
+	require.Equal(t, uint32(2880), pushes[0].pkt.Timestamp)
+}
+
 func TestRTPGapFillerReusesLostPacketsSequenceNumbers(t *testing.T) {
 	f := newRTPGapFiller(48000, opusGapCodec)
 	var pushes []pushedPacket

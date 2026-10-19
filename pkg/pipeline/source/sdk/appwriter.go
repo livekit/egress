@@ -633,7 +633,7 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 	}
 
 	if w.rtpFiller != nil {
-		if isDiscontinuity(w.lastPTS, pts) {
+		if w.exceedsFillBudget(pts) {
 			// the flush below re-anchors pitch; nothing to fill
 			w.rtpFiller.Reset()
 		}
@@ -711,7 +711,7 @@ func (w *AppWriter) pushBuffer(data []byte, pts, duration time.Duration) error {
 // appsrc did not accept it
 func (w *AppWriter) push(b *gst.Buffer, pts time.Duration) (bool, error) {
 	if isDiscontinuity(w.lastPTS, pts) {
-		if w.shouldHandleDiscontinuity() {
+		if w.shouldHandleDiscontinuity() && w.exceedsFillBudget(pts) {
 			w.logger.Debugw("discontinuity detected", "pts", pts, "lastPTS", w.lastPTS)
 			ok := w.src.SendEvent(gst.NewFlushStartEvent())
 			if !ok {
@@ -935,6 +935,17 @@ func (w *AppWriter) drainJitterBuffer() {
 
 func isDiscontinuity(lastPTS time.Duration, pts time.Duration) bool {
 	return pts > lastPTS+discontinuityTolerance
+}
+
+// exceedsFillBudget reports whether the pause before pts is too long to conceal: the
+// fill arrives when the pause ends and must still land inside the mixer's latency
+// window, so longer pauses flush and re-anchor pitch instead
+func (w *AppWriter) exceedsFillBudget(pts time.Duration) bool {
+	return pts > w.lastPTS+pauseFillBudget(w.conf.Latency.AudioMixerLatency)
+}
+
+func pauseFillBudget(mixerLatency time.Duration) time.Duration {
+	return max(discontinuityTolerance, mixerLatency)
 }
 
 func (w *AppWriter) shouldRemoveBeforeDrain() bool {
