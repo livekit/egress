@@ -21,15 +21,52 @@ import (
 
 	"github.com/go-gst/go-gst/gst"
 
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
+	"github.com/livekit/egress/pkg/types"
 )
 
 type FirstSampleMetadata struct {
 	StartDate int64 // Real time date of the first media sample
+}
+
+// fmp4FragmentDuration keeps isofmp4mux from ending a fragment on its own: splitmuxsink
+// ends each segment with EOS, and a duration far beyond any segment leaves that as the
+// only boundary, so every segment holds exactly one fragment.
+const fmp4FragmentDuration = 24 * time.Hour
+
+// setSegmentMuxer picks the muxer splitmuxsink instantiates for each segment. fmp4
+// segments are configured through muxer-added rather than muxer-properties, which
+// splitmuxsink only applies when finalizing asynchronously.
+func setSegmentMuxer(sink *gst.Element, o *config.SegmentConfig) error {
+	if o.SegmentOutputType != types.OutputTypeM4S {
+		if err := sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		return nil
+	}
+
+	if err := sink.SetProperty("muxer-factory", "isofmp4mux"); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	if _, err := sink.Connect("muxer-added", func(_ *gst.Element, muxer *gst.Element) {
+		if err := configureFMP4Muxer(muxer); err != nil {
+			logger.Errorw("failed to configure fmp4 muxer", err)
+		}
+	}); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+
+	return nil
+}
+
+func configureFMP4Muxer(muxer *gst.Element) error {
+	return muxer.SetProperty("fragment-duration", uint64(fmp4FragmentDuration))
 }
 
 func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*gstreamer.Bin, error) {
@@ -61,9 +98,11 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 		return nil, errors.ErrGstPipelineError(err)
 	}
 
-	if err = sink.SetProperty("muxer-factory", "mpegtsmux"); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
+	if err = setSegmentMuxer(sink, o); err != nil {
+		return nil, err
 	}
+
+	segmentExt := string(types.FileExtensionForOutputType[o.SegmentOutputType])
 
 	var startDate time.Time
 	_, err = sink.Connect("format-location-full", func(_ *gst.Element, fragmentId uint, firstSample *gst.Sample) string {
@@ -86,14 +125,13 @@ func BuildSegmentBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig) (*g
 			msg := gst.NewElementMessage(sink, str)
 			sink.GetBus().Post(msg)
 		}
-
 		var segmentName string
 		switch o.SegmentSuffix {
 		case livekit.SegmentedFileSuffix_TIMESTAMP:
 			ts := startDate.Add(pts)
-			segmentName = fmt.Sprintf("%s_%s%03d.ts", o.SegmentPrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000)
+			segmentName = fmt.Sprintf("%s_%s%03d%s", o.SegmentPrefix, ts.Format("20060102150405"), ts.UnixMilli()%1000, segmentExt)
 		default:
-			segmentName = fmt.Sprintf("%s_%05d.ts", o.SegmentPrefix, fragmentId)
+			segmentName = fmt.Sprintf("%s_%05d%s", o.SegmentPrefix, fragmentId, segmentExt)
 		}
 		return path.Join(o.LocalDir, segmentName)
 	})

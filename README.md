@@ -30,7 +30,7 @@ Irrespective of method used, when moving between protocols, containers or encodi
 
 ## Supported Output
 
-| Egress Type     | MP4 File | OGG File | WebM File | HLS (TS Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
+| Egress Type     | MP4 File | OGG File | WebM File | HLS (TS or fMP4 Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
 |-----------------|----------|----------|-----------|-------------------|----------------|------------------|------------------|--------------------|
 | Room Composite  | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |
 | Web             | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |

@@ -17,6 +17,7 @@
 package test
 
 import (
+	"encoding/binary"
 	"os"
 	"path"
 	"strconv"
@@ -63,6 +64,28 @@ func (r *Runner) testSegments(t *testing.T) {
 					playlist:     "r_{room_name}_{time}.m3u8",
 					livePlaylist: "r_live_{room_name}_{time}.m3u8",
 					suffix:       livekit.SegmentedFileSuffix_INDEX,
+				},
+			},
+			{
+				name:        "RoomComposite/FMP4",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeVP8,
+					layout:     layoutSpeaker,
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					AudioCodec:   livekit.AudioCodec_AAC,
+					VideoCodec:   livekit.VideoCodec_H264_BASELINE,
+					Width:        1280,
+					Height:       720,
+					VideoBitrate: 3000,
+				},
+				segmentOptions: &segmentOptions{
+					prefix:   "r_{room_name}_fmp4_{time}",
+					playlist: "r_{room_name}_fmp4_{time}.m3u8",
+					suffix:   livekit.SegmentedFileSuffix_INDEX,
+					protocol: livekit.SegmentedFileProtocol_HLS_FMP4_PROTOCOL,
 				},
 			},
 			{
@@ -255,6 +278,20 @@ func (r *Runner) verifySegmentOutput(
 
 	verifyPlaylistProgramDateTime(t, filenameSuffix, localPlaylistPath, pl.playlistType)
 
+	// fmp4 segments are not playable without the init segment the playlist points at,
+	// and it is not listed in the manifest, so fetch it before ffprobe reads the playlist
+	if initSegment := readInitSegmentName(t, localPlaylistPath); initSegment != "" {
+		require.Equal(t, types.OutputTypeM4S, p.GetSegmentConfig().SegmentOutputType)
+
+		localInitPath := path.Join(path.Dir(localPlaylistPath), initSegment)
+		download(t, p.GetSegmentConfig().StorageConfig, localInitPath,
+			path.Join(path.Dir(storedPlaylistPath), initSegment), false)
+
+		verifyFMP4Structure(t, localPlaylistPath, localInitPath, pl.playlistType)
+	} else {
+		require.Equal(t, types.OutputTypeTS, p.GetSegmentConfig().SegmentOutputType)
+	}
+
 	// verify
 	info := verify(t, localPlaylistPath, p, res, types.EgressTypeSegments, r.sourceFramerate, pl.playlistType == m3u8.PlaylistTypeLive)
 	// Live playlists are a rolling subset of segments; their partial
@@ -263,6 +300,76 @@ func (r *Runner) verifySegmentOutput(
 	if pl.playlistType != m3u8.PlaylistTypeLive {
 		runContentCheck(t, tc, localPlaylistPath, info, "segments", "hls")
 	}
+}
+
+// verifyFMP4Structure checks that the initialization segment carries the boxes that
+// initialize playback and the media segments carry none of them: splitmuxsink builds a
+// fresh muxer per segment, so each one is written with a copy that has to be removed.
+func verifyFMP4Structure(t *testing.T, localPlaylistPath, localInitPath string, plType m3u8.PlaylistType) {
+	require.Equal(t, []string{"ftyp", "moov"}, topLevelBoxes(t, localInitPath),
+		"init segment should hold the initialization boxes and nothing else")
+
+	pl, err := readPlaylist(localPlaylistPath)
+	require.NoError(t, err)
+	require.NotEmpty(t, pl.Segments)
+
+	for _, segment := range pl.Segments {
+		// only the event playlist downloads every segment it lists
+		localPath := path.Join(path.Dir(localPlaylistPath), segment.Filename)
+		if plType == m3u8.PlaylistTypeLive {
+			if _, err = os.Stat(localPath); err != nil {
+				continue
+			}
+		}
+
+		boxes := topLevelBoxes(t, localPath)
+		require.NotEmpty(t, boxes, segment.Filename)
+		require.Equal(t, "styp", boxes[0], "%s should start with a segment type box", segment.Filename)
+		require.NotContains(t, boxes, "ftyp", "%s should not repeat the init segment", segment.Filename)
+		require.NotContains(t, boxes, "moov", "%s should not repeat the init segment", segment.Filename)
+
+		// splitmuxsink ends the segment, and the muxer is configured not to split it further
+		var moofs int
+		for _, box := range boxes {
+			if box == "moof" {
+				moofs++
+			}
+		}
+		require.Equal(t, 1, moofs, "%s should hold a single fragment", segment.Filename)
+	}
+}
+
+// topLevelBoxes returns the type of each top level box of an ISO base media file.
+func topLevelBoxes(t *testing.T, filename string) []string {
+	b, err := os.ReadFile(filename)
+	require.NoError(t, err)
+
+	var boxes []string
+	for i := 0; i+8 <= len(b); {
+		size := int(binary.BigEndian.Uint32(b[i : i+4]))
+		boxes = append(boxes, string(b[i+4:i+8]))
+
+		switch size {
+		case 0:
+			// box extends to the end of the file
+			return boxes
+		case 1:
+			require.LessOrEqual(t, i+16, len(b), "truncated large box in %s", filename)
+			size = int(binary.BigEndian.Uint64(b[i+8 : i+16]))
+		}
+
+		require.GreaterOrEqual(t, size, 8, "invalid box size in %s", filename)
+		require.LessOrEqual(t, i+size, len(b), "box overruns %s", filename)
+		i += size
+	}
+
+	return boxes
+}
+
+func readInitSegmentName(t *testing.T, localPlaylistPath string) string {
+	p, err := readPlaylist(localPlaylistPath)
+	require.NoError(t, err)
+	return p.InitSegment
 }
 
 func verifyPlaylistProgramDateTime(t *testing.T, filenameSuffix livekit.SegmentedFileSuffix, localPlaylistPath string, plType m3u8.PlaylistType) {
@@ -307,6 +414,7 @@ type Playlist struct {
 	Version        int
 	MediaType      string
 	TargetDuration int
+	InitSegment    string
 	Segments       []*Segment
 	Closed         bool
 }
@@ -323,7 +431,6 @@ func readPlaylist(filename string) (*Playlist, error) {
 		return nil, err
 	}
 
-	var segmentLineStart = 5
 	var i = 1
 
 	lines := strings.Split(string(b), "\n")
@@ -332,16 +439,29 @@ func readPlaylist(filename string) (*Playlist, error) {
 	var mediaType string
 	if strings.Contains(string(b), "#EXT-X-PLAYLIST-TYPE") {
 		mediaType = strings.Split(lines[i], ":")[1]
-		segmentLineStart++
 		i++
 	}
 	i++ // #EXT-X-ALLOW-CACHE:NO hardcoded
 	targetDuration, _ := strconv.Atoi(strings.Split(lines[i], ":")[1])
 
+	// fmp4 playlists carry an EXT-X-MAP, so find the segments rather than counting header lines
+	var initSegment string
+	segmentLineStart := len(lines)
+	for i, line := range lines {
+		if strings.HasPrefix(line, "#EXT-X-MAP:") {
+			initSegment = strings.Trim(strings.TrimPrefix(line, "#EXT-X-MAP:URI="), `"`)
+		}
+		if strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") {
+			segmentLineStart = i
+			break
+		}
+	}
+
 	p := &Playlist{
 		Version:        version,
 		MediaType:      mediaType,
 		TargetDuration: targetDuration,
+		InitSegment:    initSegment,
 		Segments:       make([]*Segment, 0),
 	}
 
