@@ -360,6 +360,25 @@ func TestAudioPacerGapEventBecomesSilenceBeforePitch(t *testing.T) {
 		"pitch emits the gap as audio, so later audio keeps its place")
 }
 
+func TestAudioPacerCorrectionCompletesOnGapSilence(t *testing.T) {
+	// a 12ms correction arms on the 51st buffer, right before a 1.3s mute
+	h := newPitchHarness(t, 0.05, 50, 12*time.Millisecond)
+	h.push(51)
+
+	srcPad := h.src.GetStaticPad("src")
+	require.True(t, srcPad.PushEvent(gst.NewGapEvent(gst.ClockTime(1020*time.Millisecond), gst.ClockTime(1300*time.Millisecond))))
+	h.push(50)
+	applied := h.finish() - 1300*time.Millisecond
+
+	// the silence is stretched like speech, but in packet-sized buffers, so the correction
+	// overshoots by less than one buffer's stretch instead of crediting the whole mute
+	require.Len(t, h.notifier.processed, 1)
+	actual := h.notifier.processed[0]
+	require.GreaterOrEqual(t, actual, 12*time.Millisecond)
+	require.Less(t, actual, 12*time.Millisecond+1100*time.Microsecond)
+	require.InDelta(t, float64(actual), float64(applied), float64(100*time.Microsecond))
+}
+
 func TestAudioPacerTracksDriftOverLongExport(t *testing.T) {
 	// a publisher clock 0.2% fast for two hours, sender reports every second, 20ms input buffers
 	const skew = 0.002

@@ -566,9 +566,10 @@ func installPitchProbes(pacer *audioPacer) {
 }
 
 // installGapFill turns GAP events at pitch's sink pad into silence: pitch advances its
-// timeline only by the samples it receives.
+// timeline only by the samples it receives. The silence goes in buffers the size of a
+// packet so a correction in progress completes on it as precisely as on speech.
 func installGapFill(sinkPad *gst.Pad, rate, channels int) {
-	const maxChunk = time.Second
+	const maxChunk = 20 * time.Millisecond
 	sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		event := info.GetEvent()
 		if event == nil || event.Type() != gst.EventTypeGap {

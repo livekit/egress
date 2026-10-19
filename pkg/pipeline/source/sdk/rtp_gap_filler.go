@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	// audio per synthetic packet
-	maxConcealmentPacket = 120 * time.Millisecond
+	// audio per synthetic packet: the decoder emits a packet as one buffer, and the pacer
+	// credits a buffer whole, so this bounds how far a correction can overshoot
+	maxConcealmentPacket = 60 * time.Millisecond
 
 	// an RTP gap this far beyond elapsed real time is a timestamp jump, not a pause
 	maxGapLead = 500 * time.Millisecond

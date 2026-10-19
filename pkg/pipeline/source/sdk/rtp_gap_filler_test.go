@@ -76,25 +76,27 @@ func TestRTPGapFillerFillsMissingFramesBeforeThePacket(t *testing.T) {
 	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
 	f.Advance(p1, time.Second)
 
-	// 100ms of silence between p1 and p2
+	// 100ms of silence between p1 and p2: a 60ms and a 40ms packet of zero-length frames
 	p2 := opusPacket(11, 960*6, toc20ms)
 	require.NoError(t, fillPaused(f, p2, collectPushes(&pushes)))
 
-	require.Len(t, pushes, 1)
+	require.Len(t, pushes, 2)
 	synth := pushes[0].pkt
 	require.Equal(t, uint16(11), synth.SequenceNumber)
 	require.Equal(t, uint32(960), synth.Timestamp)
 	require.Equal(t, uint8(111), synth.PayloadType)
 	require.Equal(t, uint32(7), synth.SSRC)
-	require.Equal(t, []byte{toc20ms | 0x03, 5}, synth.Payload, "a code-3 packet of 5 zero-length frames")
+	require.Equal(t, []byte{toc20ms | 0x03, 3}, synth.Payload, "a code-3 packet of 3 zero-length frames")
 	require.Equal(t, time.Second+20*time.Millisecond, pushes[0].pts, "PTS extrapolated from the last real packet")
-	require.Equal(t, uint16(12), p2.SequenceNumber, "the real packet is shifted past the synthetic one")
+	require.Equal(t, []byte{toc20ms | 0x03, 2}, pushes[1].pkt.Payload)
+	require.Equal(t, uint32(960*4), pushes[1].pkt.Timestamp)
+	require.Equal(t, uint16(13), p2.SequenceNumber, "the real packet is shifted past the synthetic ones")
 
 	f.Advance(p2, time.Second+120*time.Millisecond)
 	p3 := opusPacket(12, 960*7, toc20ms)
 	require.NoError(t, fillPaused(f, p3, collectPushes(&pushes)))
-	require.Len(t, pushes, 1)
-	require.Equal(t, uint16(13), p3.SequenceNumber, "the shift persists")
+	require.Len(t, pushes, 2)
+	require.Equal(t, uint16(14), p3.SequenceNumber, "the shift persists")
 }
 
 func TestRTPGapFillerSkipConcealsOnlyWhatRemains(t *testing.T) {
@@ -131,11 +133,11 @@ func TestRTPGapFillerChunksLongGaps(t *testing.T) {
 	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
 	f.Advance(p1, 0)
 
-	// 2s of silence: 100 frames, at most 120ms per synthetic packet
+	// 2s of silence: 100 frames, at most 60ms per synthetic packet
 	p2 := opusPacket(11, 960+100*960, toc20ms)
 	require.NoError(t, fillPaused(f, p2, collectPushes(&pushes)))
 
-	require.Len(t, pushes, 17)
+	require.Len(t, pushes, 34)
 	var frames int
 	for i, p := range pushes {
 		require.Equal(t, uint16(11+i), p.pkt.SequenceNumber)
@@ -144,7 +146,7 @@ func TestRTPGapFillerChunksLongGaps(t *testing.T) {
 		frames += int(p.pkt.Payload[1])
 	}
 	require.Equal(t, 100, frames)
-	require.Equal(t, uint16(28), p2.SequenceNumber)
+	require.Equal(t, uint16(45), p2.SequenceNumber)
 }
 
 func TestRTPGapFillerConcealsSubFrameRemainderWithAShorterFrame(t *testing.T) {
@@ -312,15 +314,15 @@ func TestRTPGapFillerReusesLostPacketsSequenceNumbers(t *testing.T) {
 	require.Equal(t, uint16(0), f.seqOffset)
 	f.Advance(p3, 40*time.Millisecond)
 
-	// packets 13 and 14 are lost across a 2s DTX pause: 17 synthetic packets, two take the
+	// packets 13 and 14 are lost across a 2s DTX pause: 34 synthetic packets, two take the
 	// lost numbers and the rest shift the real packet
 	p5 := opusPacket(15, p3.Timestamp+960+100*960, toc20ms)
 	require.NoError(t, fillPaused(f, p5, collectPushes(&pushes)))
-	require.Len(t, pushes, 18)
+	require.Len(t, pushes, 35)
 	require.Equal(t, uint16(13), pushes[1].pkt.SequenceNumber)
-	require.Equal(t, uint16(29), pushes[17].pkt.SequenceNumber)
-	require.Equal(t, uint16(30), p5.SequenceNumber)
-	require.Equal(t, uint16(15), f.seqOffset)
+	require.Equal(t, uint16(46), pushes[34].pkt.SequenceNumber)
+	require.Equal(t, uint16(47), p5.SequenceNumber)
+	require.Equal(t, uint16(32), f.seqOffset)
 }
 
 func TestRTPGapFillerFollowsTheLastPacketsFrameSize(t *testing.T) {
@@ -414,11 +416,12 @@ func TestRTPGapFillerG711Silence(t *testing.T) {
 	f.Advance(p1, 0)
 	require.Equal(t, uint32(160), f.frame)
 
-	// 100ms gap: five 20ms frames, within the 120ms packet bound
+	// 100ms gap: five 20ms frames, in packets of at most 60ms
 	p2 := &rtp.Packet{Header: rtp.Header{Version: 2, PayloadType: 0, SequenceNumber: 2, Timestamp: 160 + 800}, Payload: payload}
 	require.NoError(t, fillPaused(f, p2, collectPushes(&pushes)))
-	require.Len(t, pushes, 1)
-	require.Len(t, pushes[0].pkt.Payload, 800)
+	require.Len(t, pushes, 2)
+	require.Len(t, pushes[0].pkt.Payload, 480)
+	require.Len(t, pushes[1].pkt.Payload, 320)
 	for _, b := range pushes[0].pkt.Payload {
 		require.Equal(t, byte(0xff), b)
 	}
