@@ -15,7 +15,7 @@
 # syntax=docker/dockerfile:1.6
 ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
-ARG LINT_VERSION=v2.13.2
+ARG LINT_VERSION=v2.14.0
 
 # The GStreamer version is pinned in .gst-version, the single source of truth that
 # Renovate keeps current via an approvable PR. It has no default here on purpose: a
