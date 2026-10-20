@@ -15,10 +15,10 @@
 package gstreamer
 
 import (
-	"sync"
 	"testing"
 
 	"github.com/go-gst/go-gst/gst"
+	"github.com/linkdata/deadlock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +27,7 @@ type sinkRemovalFixture struct {
 	parent   *Bin
 	sinks    map[string]*Bin
 
-	mu   sync.Mutex
+	mu   deadlock.Mutex
 	errs []error
 }
 
