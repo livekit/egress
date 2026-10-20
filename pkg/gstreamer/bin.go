@@ -321,27 +321,37 @@ func (b *Bin) probeRemoveSink(sink *Bin) {
 		return
 	}
 
+	// the probe fires on every buffer, event and query, on more than one thread
+	var detached atomic.Bool
 	srcGhostPad.AddProbe(gst.PadProbeTypeAllBoth, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
-		srcGhostPad.Unlink(sinkGhostPad.Pad)
-		sinkGhostPad.SendEvent(gst.NewEOSEvent())
-
-		b.mu.Lock()
-		err := b.pipeline.Remove(sink.bin.Element)
-		b.mu.Unlock()
-
-		if err != nil {
-			b.OnError(errors.ErrGstPipelineError(err))
-			return gst.PadProbeRemove
+		if detached.CompareAndSwap(false, true) {
+			b.detachSinkBin(sink, srcGhostPad, sinkGhostPad)
 		}
-
-		if err = sink.SetState(gst.StateNull); err != nil {
-			logger.Warnw(fmt.Sprintf("failed to change %s state", sink.bin.GetName()), err)
-		}
-
-		b.elements[len(b.elements)-1].ReleaseRequestPad(srcGhostPad.GetTarget())
-		b.bin.RemovePad(srcGhostPad.Pad)
-		return gst.PadProbeOK
+		return gst.PadProbeRemove
 	})
+}
+
+// detachSinkBin performs the GStreamer operations to disconnect and remove a sink bin.
+func (b *Bin) detachSinkBin(sink *Bin, srcGhostPad, sinkGhostPad *gst.GhostPad) {
+	srcGhostPad.Unlink(sinkGhostPad.Pad)
+	sinkGhostPad.SendEvent(gst.NewEOSEvent())
+
+	b.mu.Lock()
+	err := b.pipeline.Remove(sink.bin.Element)
+	b.mu.Unlock()
+
+	if err != nil {
+		// one output's teardown is never a reason to fail the egress, and the rest of
+		// the detach still has to run or the bin and its request pad stay live
+		logger.Warnw("failed to remove sink bin", err, "bin", sink.bin.GetName())
+	}
+
+	if err = sink.SetState(gst.StateNull); err != nil {
+		logger.Warnw(fmt.Sprintf("failed to change %s state", sink.bin.GetName()), err)
+	}
+
+	b.elements[len(b.elements)-1].ReleaseRequestPad(srcGhostPad.GetTarget())
+	b.bin.RemovePad(srcGhostPad.Pad)
 }
 
 // detachSourceBin performs the GStreamer operations to disconnect and remove a source bin.

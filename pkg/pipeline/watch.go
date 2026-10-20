@@ -25,6 +25,7 @@ import (
 
 	"github.com/livekit/protocol/logger"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/pipeline/builder"
@@ -168,10 +169,9 @@ func (c *Controller) handleMessageWarning(gErr *gst.GError) error {
 	}
 
 	if element == elementGstSrtSink {
-		streamName := strings.Split(name, "_")[1]
-		stream, err := c.getStreamSink().GetStream(streamName)
-		if err != nil {
-			return err
+		stream, found := c.lookupStream(name)
+		if !found {
+			return nil
 		}
 
 		return c.streamFailed(context.Background(), stream, gErr)
@@ -179,6 +179,20 @@ func (c *Controller) handleMessageWarning(gErr *gst.GError) error {
 
 	logger.Warnw(gErr.Message(), errors.New(message), "element", element)
 	return nil
+}
+
+// lookupStream resolves the stream behind a sink element named "<factory>_<streamName>".
+// A stream that is no longer registered has already been torn down, and its sink keeps
+// posting messages until it leaves the pipeline.
+func (c *Controller) lookupStream(name string) (*config.Stream, bool) {
+	streamName := strings.Split(name, "_")[1]
+	stream, err := c.getStreamSink().GetStream(streamName)
+	if err != nil {
+		logger.Debugw("ignoring message from removed stream", "name", name)
+		return nil, false
+	}
+
+	return stream, true
 }
 
 const (
@@ -199,10 +213,9 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 	case elementGstRtmp2Sink:
 		streamSink := c.getStreamSink()
 
-		streamName := strings.Split(name, "_")[1]
-		stream, err := streamSink.GetStream(streamName)
-		if err != nil {
-			return err
+		stream, found := c.lookupStream(name)
+		if !found {
+			return nil
 		}
 
 		if !c.eosSent.IsBroken() {
@@ -220,10 +233,9 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 		return c.streamFailed(context.Background(), stream, gErr)
 
 	case elementGstSrtSink:
-		streamName := strings.Split(name, "_")[1]
-		stream, err := c.getStreamSink().GetStream(streamName)
-		if err != nil {
-			return err
+		stream, found := c.lookupStream(name)
+		if !found {
+			return nil
 		}
 
 		return c.streamFailed(context.Background(), stream, gErr)
