@@ -30,6 +30,9 @@ type StreamConfig struct {
 	// url -> Stream
 	Streams sync.Map
 
+	// ids of every destination ever added, so a removed stream's id is never reused
+	destinationIDs sync.Map
+
 	twitchTemplate string
 }
 

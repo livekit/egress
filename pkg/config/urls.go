@@ -43,20 +43,17 @@ func (o *StreamConfig) AddDestination(d *livekit.StreamDestination, outputType t
 }
 
 func (o *StreamConfig) AddStream(id, rawUrl string, outputType types.OutputType) (*Stream, error) {
-	if id != "" {
-		var duplicate bool
-		o.Streams.Range(func(_, s any) bool {
-			duplicate = s.(*Stream).StreamInfo.Id == id
-			return !duplicate
-		})
-		if duplicate {
-			return nil, errors.ErrInvalidInput("stream destination id")
-		}
-	}
-
 	parsed, redacted, streamID, err := o.ValidateUrl(rawUrl, outputType)
 	if err != nil {
 		return nil, err
+	}
+	if _, ok := o.Streams.Load(parsed); ok {
+		return nil, errors.ErrInvalidInput("stream url")
+	}
+	if id != "" {
+		if _, loaded := o.destinationIDs.LoadOrStore(id, struct{}{}); loaded {
+			return nil, errors.ErrInvalidInput("stream destination id")
+		}
 	}
 
 	stream := &Stream{
