@@ -169,8 +169,8 @@ func (c *Controller) handleMessageWarning(gErr *gst.GError) error {
 	}
 
 	if element == elementGstSrtSink {
-		stream, ok := c.lookupStream(name)
-		if !ok {
+		stream, found := c.lookupStream(name)
+		if !found {
 			return nil
 		}
 
@@ -233,8 +233,8 @@ func (c *Controller) handleMessageError(gErr *gst.GError) error {
 		return c.streamFailed(context.Background(), stream, gErr)
 
 	case elementGstSrtSink:
-		stream, ok := c.lookupStream(name)
-		if !ok {
+		stream, found := c.lookupStream(name)
+		if !found {
 			return nil
 		}
 
