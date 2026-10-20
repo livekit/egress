@@ -16,7 +16,6 @@ package builder
 
 import (
 	"fmt"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -353,52 +352,58 @@ func TestSelectorHandover_TrackToTrack(t *testing.T) {
 	}
 }
 
-// A serialized query at the queue's tail counts as data, so the queue starts
-// pushing below min-threshold-time. The gate has to recognize the threshold from
-// a level that excludes the buffer it is being asked about, or the filler stays
-// suppressed and every filler frame is dropped.
-func TestFillerGate_OpensAfterEarlyRelease(t *testing.T) {
-	gst.Init(nil)
-	const threshold = 500 * time.Millisecond
+// fillerGateThreshold caps the gate at the queue's max-size-time, which a full
+// queue stops exceeding.
+func TestFillerGateThreshold(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		maxSizeTime time.Duration
+		want        time.Duration
+	}{
+		{"a longer max-size-time leaves the delay", 3 * time.Second, videoTestSrcDelay},
+		{"a shorter max-size-time caps the delay", time.Second, time.Second},
+		{"an unlimited queue leaves the delay", 0, videoTestSrcDelay},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, uint64(tc.want), fillerGateThreshold(uint64(tc.maxSizeTime)))
+		})
+	}
+}
 
-	src, _ := gst.NewElement("videotestsrc")
-	_ = src.SetProperty("is-live", true)
-	queue, _ := gst.NewElementWithName("queue", "q")
-	_ = queue.SetProperty("min-threshold-time", uint64(threshold))
-	_ = queue.SetProperty("max-size-buffers", uint(0))
-	_ = queue.SetProperty("max-size-bytes", uint(0))
-	_ = queue.SetProperty("max-size-time", uint64(30*time.Second))
-	sink, _ := gst.NewElement("fakesink")
-	_ = sink.SetProperty("sync", false)
+// onFillerQueueLevel latches the gate once, and only once the queue has
+// reached the resolved threshold.
+func TestFillerGate_Latch(t *testing.T) {
+	newBin := func() *VideoBin {
+		return &VideoBin{fillerThreshold: uint64(videoTestSrcDelay)}
+	}
 
-	var open atomic.Bool
-	var openedAt atomic.Int64
-	start := time.Now()
-	srcPad := queue.GetStaticPad("src")
-	require.NotNil(t, srcPad)
-	srcPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		if !open.Load() {
-			buf := info.GetBuffer()
-			if level, lerr := queue.GetProperty("current-level-time"); lerr == nil {
-				if lv, ok := level.(uint64); ok && lv+uint64(buf.Duration()) >= uint64(threshold) {
-					open.Store(true)
-					openedAt.Store(int64(time.Since(start)))
-				}
-			}
-		}
-		return gst.PadProbeOK
+	for _, tc := range []struct {
+		name  string
+		level time.Duration
+		ready bool
+	}{
+		{"below the threshold stays closed", videoTestSrcDelay - time.Millisecond, false},
+		{"at the threshold opens", videoTestSrcDelay, true},
+		{"above the threshold opens", videoTestSrcDelay + time.Second, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := newBin()
+			b.onFillerQueueLevel(uint64(tc.level))
+			require.Equal(t, tc.ready, b.fillerReady.Load())
+		})
+	}
+
+	t.Run("a later drain does not close the gate", func(t *testing.T) {
+		b := newBin()
+		b.onFillerQueueLevel(uint64(videoTestSrcDelay))
+		b.onFillerQueueLevel(0)
+		require.True(t, b.fillerReady.Load())
 	})
+}
 
-	pipeline, _ := gst.NewPipeline("")
-	require.NoError(t, pipeline.AddMany(src, queue, sink))
-	require.NoError(t, gst.ElementLinkMany(src, queue, sink))
-	require.NoError(t, pipeline.SetState(gst.StatePlaying))
-	defer pipeline.SetState(gst.StateNull)
-
-	// serialized query landing below the threshold
-	time.Sleep(300 * time.Millisecond)
-	queue.GetStaticPad("sink").Query(gst.NewDrainQuery())
-
-	require.Eventually(t, open.Load, 8*time.Second, 20*time.Millisecond, "gate never opened")
-	t.Logf("gate opened at +%s", time.Duration(openedAt.Load()).Round(time.Millisecond))
+// The production queue's max-size-time comes from the pipeline latency, so the
+// bin resolves its own threshold when it is built.
+func TestFillerGate_ThresholdFromQueue(t *testing.T) {
+	h := newSelectorHarness(t)
+	require.Equal(t, uint64(videoTestSrcDelay), h.b.fillerThreshold)
 }
