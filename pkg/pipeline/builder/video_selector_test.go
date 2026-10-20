@@ -92,6 +92,8 @@ func newSelectorHarness(t *testing.T) *selectorHarness {
 	// the filler's elements stay unlinked in the holder; its selector pad and
 	// gate are the production ones, fed by the harness instead of videotestsrc
 	require.NoError(t, b.addVideoTestSrcBin())
+	// the unlinked queue never signals, and the harness feeds the filler as if it had filled
+	b.onFillerQueueLevel(uint64(videoTestSrcDelay))
 	require.NoError(t, b.setSelectorPad(videoTestSrcName))
 	require.NoError(t, b.createSrcPad("TR_test", selectorTestTrackName))
 	require.NoError(t, b.createSrcPad("TR_test2", selectorTestTrack2Name))
@@ -235,6 +237,27 @@ func TestSelectorHandover_TrackTrailingRunningTime(t *testing.T) {
 	}
 }
 
+// The filler queue releases its first buffer before min-threshold-time when a
+// serialized query lands behind it. A track that arrives before the queue fills
+// must still be the first thing out of the selector, or videorate anchors on the
+// early filler frame and holds a frame across the gap.
+func TestSelectorHandover_FillerReleasedBeforeThreshold(t *testing.T) {
+	h := newSelectorHarness(t)
+	h.b.fillerReady.Store(false)
+
+	h.push(h.filler, fillerBufSize, 0)
+	require.NoError(t, h.b.setTrackVisible(selectorTestTrackName, true))
+	for tick := range 30 {
+		h.push(h.track, trackBufSize, time.Second+time.Duration(tick)*selectorTestFrame)
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	require.NotEmpty(t, h.output, "no buffer reached the selector output")
+	require.True(t, h.output[0].track,
+		"filler frame at %s left the selector before the track, released ahead of the queue threshold", h.output[0].pts)
+}
+
 // A second video track subscribing while the first is on screen is a
 // track-to-track handover. The outgoing track keeps feeding until the incoming
 // one has a frame, so the timeline has no hole whatever the incoming track's
@@ -327,4 +350,60 @@ func TestSelectorHandover_TrackToTrack(t *testing.T) {
 				trackBTicks-bShown, maxLost)
 		})
 	}
+}
+
+// fillerGateThreshold caps the gate at the queue's max-size-time, which a full
+// queue stops exceeding.
+func TestFillerGateThreshold(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		maxSizeTime time.Duration
+		want        time.Duration
+	}{
+		{"a longer max-size-time leaves the delay", 3 * time.Second, videoTestSrcDelay},
+		{"a shorter max-size-time caps the delay", time.Second, time.Second},
+		{"an unlimited queue leaves the delay", 0, videoTestSrcDelay},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, uint64(tc.want), fillerGateThreshold(uint64(tc.maxSizeTime)))
+		})
+	}
+}
+
+// onFillerQueueLevel latches the gate once, and only once the queue has
+// reached the resolved threshold.
+func TestFillerGate_Latch(t *testing.T) {
+	newBin := func() *VideoBin {
+		return &VideoBin{fillerThreshold: uint64(videoTestSrcDelay)}
+	}
+
+	for _, tc := range []struct {
+		name  string
+		level time.Duration
+		ready bool
+	}{
+		{"below the threshold stays closed", videoTestSrcDelay - time.Millisecond, false},
+		{"at the threshold opens", videoTestSrcDelay, true},
+		{"above the threshold opens", videoTestSrcDelay + time.Second, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := newBin()
+			b.onFillerQueueLevel(uint64(tc.level))
+			require.Equal(t, tc.ready, b.fillerReady.Load())
+		})
+	}
+
+	t.Run("a later drain does not close the gate", func(t *testing.T) {
+		b := newBin()
+		b.onFillerQueueLevel(uint64(videoTestSrcDelay))
+		b.onFillerQueueLevel(0)
+		require.True(t, b.fillerReady.Load())
+	})
+}
+
+// The production queue's max-size-time comes from the pipeline latency, so the
+// bin resolves its own threshold when it is built.
+func TestFillerGate_ThresholdFromQueue(t *testing.T) {
+	h := newSelectorHarness(t)
+	require.Equal(t, uint64(videoTestSrcDelay), h.b.fillerThreshold)
 }

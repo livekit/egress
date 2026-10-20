@@ -17,6 +17,7 @@ package builder
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
@@ -65,6 +66,13 @@ type VideoBin struct {
 	// later frame cannot hand the selector to a track that left.
 	pendingPad string
 	lastPTS    uint64
+	// fillerReady is set once the test src queue has reached
+	// fillerThreshold. Latched one way, and read on the filler's streaming
+	// thread, so it is not guarded by mu.
+	fillerReady atomic.Bool
+	// fillerThreshold is the queue level that opens the gate, resolved from
+	// the queue when the test src bin is built.
+	fillerThreshold uint64
 
 	probesMu deadlock.Mutex
 	probes   map[string]*keyframeProbe
@@ -949,6 +957,25 @@ func (b *VideoBin) addSelector() error {
 	return nil
 }
 
+// fillerGateThreshold is the queue level that opens the filler's gate. A full
+// queue stops honoring min-threshold-time, so its level plateaus at
+// max-size-time and never reaches anything above it. A max-size-time of zero
+// means no limit, so nothing caps the wait.
+func fillerGateThreshold(maxSizeTime uint64) uint64 {
+	if maxSizeTime > 0 && maxSizeTime < uint64(videoTestSrcDelay) {
+		return maxSizeTime
+	}
+	return uint64(videoTestSrcDelay)
+}
+
+// onFillerQueueLevel opens the filler's gate once its queue has filled.
+func (b *VideoBin) onFillerQueueLevel(level uint64) {
+	if level < b.fillerThreshold {
+		return
+	}
+	b.fillerReady.Store(true)
+}
+
 func (b *VideoBin) addVideoTestSrcBin() error {
 	testSrcBin := b.bin.NewBin(videoTestSrcName)
 	if err := b.bin.AddSourceBin(testSrcBin); err != nil {
@@ -975,6 +1002,16 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 		if err = queue.SetProperty("min-threshold-time", uint64(videoTestSrcDelay)); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
+
+		maxSizeTime, err := queue.GetProperty("max-size-time")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		mst, ok := maxSizeTime.(uint64)
+		if !ok {
+			return errors.ErrGstPipelineError(fmt.Errorf("queue max-size-time is %T, not uint64", maxSizeTime))
+		}
+		b.fillerThreshold = fillerGateThreshold(mst)
 	}
 
 	caps, err := b.newVideoCapsFilter(true)
@@ -1008,9 +1045,22 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 		}
 	} else {
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-			pts := uint64(info.GetBuffer().PresentationTimestamp())
+			buf := info.GetBuffer()
+			pts := uint64(buf.PresentationTimestamp())
+			// A serialized query at the tail counts as data, so the queue can
+			// start pushing below min-threshold-time. The level excludes this
+			// buffer, already dequeued, so add it back to see what the queue
+			// held. An unset duration reads as ClockTimeNone and would wrap
+			// the sum.
+			if !b.fillerReady.Load() && buf.Duration() != gst.ClockTimeNone {
+				if level, levelErr := queue.GetProperty("current-level-time"); levelErr == nil {
+					if t, ok := level.(uint64); ok {
+						b.onFillerQueueLevel(t + uint64(buf.Duration()))
+					}
+				}
+			}
 			b.mu.Lock()
-			if pts < b.lastPTS || b.selectedPad != videoTestSrcName {
+			if !b.fillerReady.Load() || pts < b.lastPTS || b.selectedPad != videoTestSrcName {
 				b.mu.Unlock()
 				return gst.PadProbeDrop
 			}
