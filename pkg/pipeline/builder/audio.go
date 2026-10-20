@@ -544,7 +544,7 @@ func installPitchProbes(pacer *audioPacer) {
 	}
 
 	if srcPad := pacer.pitch.GetStaticPad("src"); srcPad != nil {
-		// Normalize pitch element latency query responses — min latency can go
+		// Normalize pitch element latency query responses: min latency can go
 		// negative, which breaks downstream latency calculations.
 		srcPad.AddProbe(gst.PadProbeTypeQueryUpstream|gst.PadProbeTypePull,
 			func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
@@ -563,6 +563,57 @@ func installPitchProbes(pacer *audioPacer) {
 			},
 		)
 	}
+}
+
+// installGapFill turns GAP events at pitch's sink pad into silence: pitch advances its
+// timeline only by the samples it receives. The silence goes in buffers the size of a
+// packet so a correction in progress completes on it as precisely as on speech. A GAP
+// that cannot be converted, before the pad has caps or when pitch refuses the silence,
+// passes through unchanged so the mixer still learns about the pause.
+func installGapFill(sinkPad *gst.Pad, rate, channels int) {
+	const maxChunk = 20 * time.Millisecond
+	sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		event := info.GetEvent()
+		if event == nil || event.Type() != gst.EventTypeGap {
+			return gst.PadProbeOK
+		}
+		if pad.GetCurrentCaps() == nil {
+			return gst.PadProbeOK
+		}
+		start, remaining := event.ParseGap()
+		for remaining > 0 {
+			chunk := min(remaining, maxChunk)
+			samples := int64(chunk) * int64(rate) / int64(time.Second)
+			if samples <= 0 {
+				break
+			}
+			buf := gst.NewBufferFromBytes(make([]byte, samples*int64(channels)*4))
+			buf.SetPresentationTimestamp(gst.ClockTime(start))
+			buf.SetDuration(gst.ClockTime(chunk))
+			buf.SetFlags(gst.BufferFlagGap)
+			// recursive stream lock: the silence enters pitch in order
+			if flow := pad.Chain(buf); flow != gst.FlowOK {
+				logger.Debugw("could not fill audio gap before pitch, forwarding the gap", "flow", flow, "filled", start)
+				return gst.PadProbeOK
+			}
+			start += chunk
+			remaining -= chunk
+		}
+		return gst.PadProbeDrop
+	})
+}
+
+// audioFloatFormat is the sample rate and channel count of the F32 audio around pitch
+func audioFloatFormat(p *config.PipelineConfig, channel livekit.AudioChannel) (rate, channels int) {
+	rate = 48000
+	if p.AudioOutCodec == types.MimeTypeAAC || p.AudioOutCodec == types.MimeTypeMP3 {
+		rate = int(p.AudioFrequency)
+	}
+	channels = 1
+	if channel == livekit.AudioChannel_AUDIO_CHANNEL_BOTH {
+		channels = 2
+	}
+	return rate, channels
 }
 
 func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.PipelineConfig, channel livekit.AudioChannel, isLeaky bool) (*audioPacer, error) {
@@ -586,11 +637,7 @@ func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.Pipeli
 		return nil, err
 	}
 
-	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
-	if err != nil {
-		return nil, err
-	}
-
+	// no audiorate here: it would delete or insert samples before pitch could resample them
 	pitch, err := gst.NewElement("pitch")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
@@ -617,8 +664,12 @@ func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.Pipeli
 	pacer := newAudioPacer(pitch, p.AudioTempoController.AdjustmentRate, boostedRate)
 
 	installPitchProbes(pacer)
+	if sinkPad := pitch.GetStaticPad("sink"); sinkPad != nil {
+		rate, channels := audioFloatFormat(p, channel)
+		installGapFill(sinkPad, rate, channels)
+	}
 
-	if err := bin.AddElements(q, ac1, ar1, f32caps, rate, pitch, ac2, s16caps); err != nil {
+	if err := bin.AddElements(q, ac1, ar1, f32caps, pitch, ac2, s16caps); err != nil {
 		return nil, err
 	}
 	return pacer, nil
@@ -632,10 +683,7 @@ func newAudioFloatCapsFilter(p *config.PipelineConfig, channel livekit.AudioChan
 	} else {
 		channelCaps = fmt.Sprintf("channels=1,channel-mask=(bitmask)0x%d", channel)
 	}
-	rate := 48000
-	if p.AudioOutCodec == types.MimeTypeAAC || p.AudioOutCodec == types.MimeTypeMP3 {
-		rate = int(p.AudioFrequency)
-	}
+	rate, _ := audioFloatFormat(p, channel)
 	caps := gst.NewCapsFromString(fmt.Sprintf("audio/x-raw,format=F32LE,layout=interleaved,rate=%d,%s", rate, channelCaps))
 
 	cf, err := gst.NewElement("capsfilter")
