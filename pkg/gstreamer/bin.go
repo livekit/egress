@@ -341,9 +341,9 @@ func (b *Bin) detachSinkBin(sink *Bin, srcGhostPad, sinkGhostPad *gst.GhostPad) 
 	b.mu.Unlock()
 
 	if err != nil {
-		// leaves an orphaned bin rather than failing the egress; the other sinks are unaffected
+		// one output's teardown is never a reason to fail the egress, and the rest of
+		// the detach still has to run or the bin and its request pad stay live
 		logger.Warnw("failed to remove sink bin", err, "bin", sink.bin.GetName())
-		return
 	}
 
 	if err = sink.SetState(gst.StateNull); err != nil {

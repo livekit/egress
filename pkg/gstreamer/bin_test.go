@@ -87,6 +87,16 @@ func (f *sinkRemovalFixture) ghostPad(t *testing.T, sinkName string) *gst.GhostP
 	return pad
 }
 
+// teePads counts the pads on the tee the sinks hang off, so a released request pad
+// is visible to the test.
+func (f *sinkRemovalFixture) teePads(t *testing.T) int {
+	t.Helper()
+
+	pads, err := f.parent.elements[len(f.parent.elements)-1].GetPads()
+	require.NoError(t, err)
+	return len(pads)
+}
+
 func (f *sinkRemovalFixture) inPipeline(sinkName string) bool {
 	_, err := f.pipeline.bin.GetElementByName(sinkName)
 	return err == nil
@@ -105,6 +115,7 @@ func (f *sinkRemovalFixture) errors() []error {
 func TestRemoveSinkBinDetachesOnce(t *testing.T) {
 	f := newSinkRemovalFixture(t, "failing_sink", "healthy_sink")
 	pad := f.ghostPad(t, "failing_sink")
+	teePads := f.teePads(t)
 
 	require.NoError(t, f.parent.RemoveSinkBin("failing_sink"))
 
@@ -113,6 +124,7 @@ func TestRemoveSinkBinDetachesOnce(t *testing.T) {
 	}
 
 	require.False(t, f.inPipeline("failing_sink"), "probe never detached the sink bin")
+	require.Equal(t, teePads-1, f.teePads(t), "tee request pad left allocated")
 	require.True(t, f.inPipeline("healthy_sink"), "removing one sink detached the other")
 	require.Empty(t, f.errors(), "sink removal reported an error to the pipeline")
 }
@@ -130,6 +142,26 @@ func TestRemoveOnlySinkBinDetachesOnce(t *testing.T) {
 
 	require.False(t, f.inPipeline("only_sink"), "probe never detached the sink bin")
 	require.Empty(t, f.errors(), "sink removal reported an error to the pipeline")
+}
+
+// A sink bin the pipeline has already let go of still gets the rest of its detach, so
+// neither it nor its request pad stays live, and the egress is not failed over it.
+func TestRemoveSinkBinDetachesAfterFailedRemove(t *testing.T) {
+	f := newSinkRemovalFixture(t, "failing_sink", "healthy_sink")
+	sink := f.sinks["failing_sink"]
+	pad := f.ghostPad(t, "failing_sink")
+	padName := pad.GetName()
+
+	require.NoError(t, f.parent.RemoveSinkBin("failing_sink"))
+	require.NoError(t, f.pipeline.bin.Remove(sink.bin.Element), "precondition: drop the bin before the probe runs")
+	teePads := f.teePads(t)
+
+	pad.Query(gst.NewLatencyQuery())
+
+	require.Equal(t, teePads-1, f.teePads(t), "tee request pad left allocated")
+	require.Nil(t, f.parent.bin.GetStaticPad(padName), "ghost pad left on the parent bin")
+	require.True(t, f.inPipeline("healthy_sink"))
+	require.Empty(t, f.errors(), "a failed removal must not reach the pipeline")
 }
 
 // RemoveSinkBin is a no-op for a name the bin does not hold, and leaves the
