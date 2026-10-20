@@ -16,11 +16,14 @@ package builder
 
 import (
 	"fmt"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
 	"github.com/linkdata/deadlock"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
@@ -47,6 +50,9 @@ type selectorHarness struct {
 	track    *gst.Pad
 	track2   *gst.Pad
 
+	// encoderQueue sits between the selector and the sink when requested.
+	encoderQueue *gst.Element
+
 	mu     deadlock.Mutex
 	output []outputFrame
 }
@@ -58,6 +64,18 @@ type outputFrame struct {
 }
 
 func newSelectorHarness(t *testing.T) *selectorHarness {
+	t.Helper()
+	return buildSelectorHarness(t, false)
+}
+
+// newEncoderQueueHarness adds the production video_encoder_queue behind the
+// selector, so the queue's own handling of EOS, queries and STREAM_START runs.
+func newEncoderQueueHarness(t *testing.T) *selectorHarness {
+	t.Helper()
+	return buildSelectorHarness(t, true)
+}
+
+func buildSelectorHarness(t *testing.T, withEncoderQueue bool) *selectorHarness {
 	t.Helper()
 	initGStreamer(t)
 
@@ -78,7 +96,16 @@ func newSelectorHarness(t *testing.T) *selectorHarness {
 	pipeline, err := gst.NewPipeline("selector_test")
 	require.NoError(t, err)
 	require.NoError(t, pipeline.AddMany(selector, sink))
-	require.NoError(t, selector.Link(sink))
+	var encoderQueue *gst.Element
+	if withEncoderQueue {
+		encoderQueue, err = gstreamer.BuildQueue("video_encoder_queue", conf.Latency.PipelineLatency, false)
+		require.NoError(t, err)
+		require.NoError(t, pipeline.Add(encoderQueue))
+		require.NoError(t, selector.Link(encoderQueue))
+		require.NoError(t, encoderQueue.Link(sink))
+	} else {
+		require.NoError(t, selector.Link(sink))
+	}
 
 	b := &VideoBin{
 		bin:    holder.NewBin("video"),
@@ -98,7 +125,7 @@ func newSelectorHarness(t *testing.T) *selectorHarness {
 	require.NoError(t, b.createSrcPad("TR_test", selectorTestTrackName))
 	require.NoError(t, b.createSrcPad("TR_test2", selectorTestTrack2Name))
 
-	h := &selectorHarness{t: t, b: b, pipeline: pipeline}
+	h := &selectorHarness{t: t, b: b, pipeline: pipeline, encoderQueue: encoderQueue}
 	selector.GetStaticPad("src").AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		h.mu.Lock()
 		buf := info.GetBuffer()
@@ -125,7 +152,11 @@ func (h *selectorHarness) feed(name string, selectorPad *gst.Pad) *gst.Pad {
 	src := gst.NewPad(name+"_src", gst.PadDirectionSource)
 	require.True(h.t, src.SetActive(true))
 	require.Equal(h.t, gst.PadLinkOK, src.Link(selectorPad))
-	require.True(h.t, src.PushEvent(gst.NewStreamStartEvent(name)))
+	// with group ids on every input, as in production, the selector forwards the
+	// new input's stream-start on each switch
+	streamStart := gst.NewStreamStartEvent(name)
+	streamStart.SetGroupID(gst.NextGroupID())
+	require.True(h.t, src.PushEvent(streamStart))
 	require.True(h.t, src.PushEvent(gst.NewCapsEvent(gst.NewCapsFromString(
 		"video/x-raw,format=I420,width=16,height=16,framerate=30/1"))))
 	require.True(h.t, src.PushEvent(gst.NewSegmentEvent(gst.NewFormattedSegment(gst.FormatTime))))
@@ -406,4 +437,113 @@ func TestFillerGate_Latch(t *testing.T) {
 func TestFillerGate_ThresholdFromQueue(t *testing.T) {
 	h := newSelectorHarness(t)
 	require.Equal(t, uint64(videoTestSrcDelay), h.b.fillerThreshold)
+}
+
+// Every phase of an egress ending while a track is pending, against the
+// production gates, a real input-selector and the production
+// video_encoder_queue:
+//  1. the filler is on screen
+//  2. a track comes back and is pending
+//  3. the egress ends: markEnding runs, then the filler's EOS leaves through the
+//     selector and is held past the encoder queue, as while the encoder drains it
+//  4. the track's first frame arrives, behind the filler's last PTS
+//  5. the track's ALLOCATION query is sent, the drain finishes, and the query's
+//     sender frees it
+//  6. later track frames arrive
+//
+// The track must not take the selector or have a frame leave it, no query may
+// be queued behind that EOS, and the encoder queue must keep accepting data. A
+// handover taken in step 4 queues the step 5 query behind the EOS; the
+// STREAM_START from step 6 then restarts the queue onto the freed query
+// ("refcounting problem?"), and every later push fails.
+func TestSelectorHandover_EncoderQueueSurvivesEnding(t *testing.T) {
+	h := newEncoderQueueHarness(t)
+
+	eosHeld := make(chan struct{})
+	release := make(chan struct{})
+	var heldOnce, releaseOnce sync.Once
+	releaseEOS := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseEOS)
+	h.encoderQueue.GetStaticPad("src").AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		if info.GetEvent().Type() == gst.EventTypeEOS {
+			heldOnce.Do(func() {
+				close(eosHeld)
+				<-release
+			})
+		}
+		return gst.PadProbeOK
+	})
+
+	pushTrack := func(pts time.Duration) gst.FlowReturn {
+		buf := gst.NewBufferWithSize(trackBufSize)
+		buf.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
+		buf.SetDuration(gst.ClockTime(uint64(selectorTestFrame)))
+		return h.track.Push(buf)
+	}
+
+	// 1
+	const fillerTicks = 30
+	for tick := 0; tick < fillerTicks; tick++ {
+		h.push(h.filler, fillerBufSize, time.Duration(tick)*selectorTestFrame)
+	}
+
+	// 2
+	require.NoError(t, h.b.setTrackVisible(selectorTestTrackName, true))
+
+	// 3: the filler's pad waits in the selector after its EOS until every input
+	// has EOS, so it is pushed from its own goroutine
+	require.True(t, h.b.markEnding())
+	go h.filler.PushEvent(gst.NewEOSEvent())
+	select {
+	case <-eosHeld:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the filler's EOS never reached the encoder queue's output")
+	}
+
+	// 4
+	pushTrack(10 * selectorTestFrame)
+
+	// 5: a query queued behind the held EOS blocks its sender until the drain ends
+	query := gst.NewAllocationQuery(gst.NewCapsFromString(
+		"video/x-raw,format=I420,width=16,height=16,framerate=30/1"), true)
+	answered := make(chan bool, 1)
+	go func() { answered <- h.track.PeerQuery(query) }()
+	queuedBehindEOS := false
+	select {
+	case <-answered:
+	case <-time.After(2 * time.Second):
+		queuedBehindEOS = true
+	}
+	releaseEOS()
+	if queuedBehindEOS {
+		select {
+		case <-answered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the ALLOCATION query's sender never woke after the drain")
+		}
+	}
+	// the sender owns the query and frees it once answered
+	runtime.SetFinalizer(query, nil)
+	query.Unref()
+
+	// 6
+	var failed []gst.FlowReturn
+	for i := 0; i < 10; i++ {
+		if flow := pushTrack(time.Duration(fillerTicks+10+i) * selectorTestFrame); flow != gst.FlowOK {
+			failed = append(failed, flow)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	h.b.mu.Lock()
+	selected := h.b.selectedPad
+	h.b.mu.Unlock()
+	assert.Equal(t, videoTestSrcName, selected,
+		"the track took the selector after the egress began ending")
+	assert.Zero(t, h.summarize().trackShown,
+		"track frames left the selector after the filler's EOS")
+	assert.False(t, queuedBehindEOS,
+		"the track's ALLOCATION query was queued behind the filler's EOS in video_encoder_queue")
+	assert.Empty(t, failed,
+		"pushes into video_encoder_queue failed after the egress began ending")
 }

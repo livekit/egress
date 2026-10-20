@@ -73,6 +73,9 @@ type VideoBin struct {
 	// fillerThreshold is the queue level that opens the gate, resolved from
 	// the queue when the test src bin is built.
 	fillerThreshold uint64
+	// ending is set before the filler is sent EOS. After it, no handover is
+	// taken and only the selected pad feeds the selector.
+	ending bool
 
 	probesMu deadlock.Mutex
 	probes   map[string]*keyframeProbe
@@ -469,6 +472,7 @@ func (b *VideoBin) buildSDKInput() error {
 			if err := b.addSelector(); err != nil {
 				return err
 			}
+			b.bin.SetEOSFunc(b.markEnding)
 		}
 		if err := b.addVideoTestSrcBin(); err != nil {
 			return err
@@ -1360,7 +1364,9 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 			b.mu.Lock()
 			// A pending handover is taken here rather than in a probe of its own,
 			// which would sit behind this one and never see a buffer this one drops.
-			switched := b.pendingPad == name
+			// After ending, the filler's EOS may already be past the selector and a
+			// handover would put this track behind it.
+			switched := b.pendingPad == name && !b.ending
 			if switched {
 				if err := b.selector.SetProperty("active-pad", pad); err != nil {
 					b.pendingPad = ""
@@ -1371,7 +1377,8 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 				b.selectedPad = name
 				b.pendingPad = ""
 			}
-			drop := pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name)
+			drop := pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name) ||
+				(b.ending && b.selectedPad != name)
 			if !drop {
 				b.lastPTS = pts
 			}
@@ -1483,6 +1490,16 @@ func (b *VideoBin) setTrackVisibleLocked(name string, visible bool) error {
 		return b.setSelectorPadLocked(videoTestSrcName)
 	}
 	return nil
+}
+
+// markEnding is the video bin's EOS function. sendEOS runs it before it pushes
+// EOS into the filler, so a handover either completes before the filler's EOS
+// exists or is not taken.
+func (b *VideoBin) markEnding() bool {
+	b.mu.Lock()
+	b.ending = true
+	b.mu.Unlock()
+	return true
 }
 
 func (b *VideoBin) setSelectorPad(name string) error {
