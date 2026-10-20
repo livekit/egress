@@ -512,23 +512,22 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel livek
 }
 
 func installPitchProbes(pacer *audioPacer) {
-	// Sink pad: accumulate input buffer durations.
+	// Sink pad: credit the stretch applied to each input buffer.
 	if sinkPad := pacer.pitch.GetStaticPad("sink"); sinkPad != nil {
 		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
-				pacer.inputAccum.Add(int64(*buf.Duration().AsDuration()))
+				pacer.onInput(*buf.Duration().AsDuration())
 			}
 			return gst.PadProbeOK
 		})
 
 		// A FlushStart upstream of pitch (e.g., the discontinuity flush in
 		// appwriter.shouldHandleDiscontinuity) causes pitch to drop buffered
-		// audio. The probe accumulators (inputAccum / outputAccum) keep
-		// growing across the flush, but the input/output samples are no
-		// longer aligned — outputDelta no longer reflects the actual
-		// compensation that survived to the mixer. Cancel any in-flight
-		// correction so the next SR re-arms from the post-flush state.
-		sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		// audio, so part of the credited stretch never reaches the mixer.
+		// Cancel any in-flight correction so the next SR re-arms from the
+		// post-flush state. Flush events reach only probes that set the flush
+		// flag; EventDownstream alone does not include them.
+		sinkPad.AddProbe(gst.PadProbeTypeEventDownstream|gst.PadProbeTypeEventFlush, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			event := info.GetEvent()
 			if event == nil || event.Type() != gst.EventTypeFlushStart {
 				return gst.PadProbeOK
@@ -545,40 +544,7 @@ func installPitchProbes(pacer *audioPacer) {
 	}
 
 	if srcPad := pacer.pitch.GetStaticPad("src"); srcPad != nil {
-		// Accumulate output buffer durations and check correction completion.
-		// Actual compensation = outputDelta - inputDelta (positive when slowing
-		// down, negative when speeding up — same sign as the target drift).
-		srcPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
-				pacer.outputAccum.Add(int64(*buf.Duration().AsDuration()))
-			}
-			if !pacer.active.Load() {
-				return gst.PadProbeOK
-			}
-			// Snapshot is published before active=true in start(); a non-nil
-			// load is guaranteed once active is observed true. The nil guard
-			// is defensive against pathological orderings on weak-memory
-			// platforms.
-			snap := pacer.snapshot.Load()
-			if snap == nil {
-				return gst.PadProbeOK
-			}
-			inputDelta := pacer.inputAccum.Load() - snap.inputAtStart
-			outputDelta := pacer.outputAccum.Load() - snap.outputAtStart
-			compensation := time.Duration(outputDelta - inputDelta)
-			if compensation.Abs() >= snap.targetDrift.Abs() {
-				// stop() returns false if another probe (or a concurrent flush
-				// cancel) already won the transition; in that case, the
-				// controller has already been notified — do not double-notify.
-				if pacer.stop() {
-					logger.Debugw("audio drift corrected", "target", snap.targetDrift, "actual", compensation)
-					pacer.tc.DriftProcessed(compensation)
-				}
-			}
-			return gst.PadProbeOK
-		})
-
-		// Normalize pitch element latency query responses — min latency can go
+		// Normalize pitch element latency query responses: min latency can go
 		// negative, which breaks downstream latency calculations.
 		srcPad.AddProbe(gst.PadProbeTypeQueryUpstream|gst.PadProbeTypePull,
 			func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
@@ -597,6 +563,57 @@ func installPitchProbes(pacer *audioPacer) {
 			},
 		)
 	}
+}
+
+// installGapFill turns GAP events at pitch's sink pad into silence: pitch advances its
+// timeline only by the samples it receives. The silence goes in buffers the size of a
+// packet so a correction in progress completes on it as precisely as on speech. A GAP
+// that cannot be converted, before the pad has caps or when pitch refuses the silence,
+// passes through unchanged so the mixer still learns about the pause.
+func installGapFill(sinkPad *gst.Pad, rate, channels int) {
+	const maxChunk = 20 * time.Millisecond
+	sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		event := info.GetEvent()
+		if event == nil || event.Type() != gst.EventTypeGap {
+			return gst.PadProbeOK
+		}
+		if pad.GetCurrentCaps() == nil {
+			return gst.PadProbeOK
+		}
+		start, remaining := event.ParseGap()
+		for remaining > 0 {
+			chunk := min(remaining, maxChunk)
+			samples := int64(chunk) * int64(rate) / int64(time.Second)
+			if samples <= 0 {
+				break
+			}
+			buf := gst.NewBufferFromBytes(make([]byte, samples*int64(channels)*4))
+			buf.SetPresentationTimestamp(gst.ClockTime(start))
+			buf.SetDuration(gst.ClockTime(chunk))
+			buf.SetFlags(gst.BufferFlagGap)
+			// recursive stream lock: the silence enters pitch in order
+			if flow := pad.Chain(buf); flow != gst.FlowOK {
+				logger.Debugw("could not fill audio gap before pitch, forwarding the gap", "flow", flow, "filled", start)
+				return gst.PadProbeOK
+			}
+			start += chunk
+			remaining -= chunk
+		}
+		return gst.PadProbeDrop
+	})
+}
+
+// audioFloatFormat is the sample rate and channel count of the F32 audio around pitch
+func audioFloatFormat(p *config.PipelineConfig, channel livekit.AudioChannel) (rate, channels int) {
+	rate = 48000
+	if p.AudioOutCodec == types.MimeTypeAAC || p.AudioOutCodec == types.MimeTypeMP3 {
+		rate = int(p.AudioFrequency)
+	}
+	channels = 1
+	if channel == livekit.AudioChannel_AUDIO_CHANNEL_BOTH {
+		channels = 2
+	}
+	return rate, channels
 }
 
 func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.PipelineConfig, channel livekit.AudioChannel, isLeaky bool) (*audioPacer, error) {
@@ -620,11 +637,7 @@ func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.Pipeli
 		return nil, err
 	}
 
-	rate, err := gstreamer.BuildAudioRate("audio_rate", audioRateTolerance)
-	if err != nil {
-		return nil, err
-	}
-
+	// no audiorate here: it would delete or insert samples before pitch could resample them
 	pitch, err := gst.NewElement("pitch")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
@@ -648,15 +661,15 @@ func (b *AudioBin) addAudioConvertWithPitch(bin *gstreamer.Bin, p *config.Pipeli
 		boostedRate = 0.2
 	}
 
-	pacer := &audioPacer{
-		pitch:               pitch,
-		tempoAdjustmentRate: p.AudioTempoController.AdjustmentRate,
-		boostedRate:         boostedRate,
-	}
+	pacer := newAudioPacer(pitch, p.AudioTempoController.AdjustmentRate, boostedRate)
 
 	installPitchProbes(pacer)
+	if sinkPad := pitch.GetStaticPad("sink"); sinkPad != nil {
+		rate, channels := audioFloatFormat(p, channel)
+		installGapFill(sinkPad, rate, channels)
+	}
 
-	if err := bin.AddElements(q, ac1, ar1, f32caps, rate, pitch, ac2, s16caps); err != nil {
+	if err := bin.AddElements(q, ac1, ar1, f32caps, pitch, ac2, s16caps); err != nil {
 		return nil, err
 	}
 	return pacer, nil
@@ -670,10 +683,7 @@ func newAudioFloatCapsFilter(p *config.PipelineConfig, channel livekit.AudioChan
 	} else {
 		channelCaps = fmt.Sprintf("channels=1,channel-mask=(bitmask)0x%d", channel)
 	}
-	rate := 48000
-	if p.AudioOutCodec == types.MimeTypeAAC || p.AudioOutCodec == types.MimeTypeMP3 {
-		rate = int(p.AudioFrequency)
-	}
+	rate, _ := audioFloatFormat(p, channel)
 	caps := gst.NewCapsFromString(fmt.Sprintf("audio/x-raw,format=F32LE,layout=interleaved,rate=%d,%s", rate, channelCaps))
 
 	cf, err := gst.NewElement("capsfilter")
