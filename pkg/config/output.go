@@ -90,19 +90,20 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		var outputType types.OutputType
 		switch stream.Protocol {
 		case livekit.StreamProtocol_DEFAULT_PROTOCOL:
-			if len(stream.Urls) == 0 {
+			rawUrl := firstStreamUrl(stream)
+			if rawUrl == "" {
 				return errors.ErrInvalidInput("stream protocol")
 			}
 
-			parsed, err := url.Parse(stream.Urls[0])
+			parsed, err := url.Parse(rawUrl)
 			if err != nil {
-				return errors.ErrInvalidUrl(stream.Urls[0], err.Error())
+				return errors.ErrInvalidUrl(rawUrl, err.Error())
 			}
 
 			var ok bool
 			outputType, ok = types.StreamOutputTypes[parsed.Scheme]
 			if !ok {
-				return errors.ErrInvalidUrl(stream.Urls[0], "invalid protocol")
+				return errors.ErrInvalidUrl(rawUrl, "invalid protocol")
 			}
 
 		case livekit.StreamProtocol_RTMP:
@@ -112,18 +113,19 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 			outputType = types.OutputTypeSRT
 		}
 
-		conf, err := p.getStreamConfig(outputType, stream.Urls)
+		conf, err := p.getStreamConfig(outputType, stream.Urls, stream.Destinations)
 		if err != nil {
 			return err
 		}
 
+		numStreams := len(stream.Urls) + len(stream.Destinations)
 		p.Outputs[types.EgressTypeStream] = []OutputConfig{conf}
-		p.OutputCount.Add(int32(len(stream.Urls)))
+		p.OutputCount.Add(int32(numStreams))
 		if p.VideoEnabled {
 			p.VideoEncoding = true
 		}
 
-		streamInfoList := make([]*livekit.StreamInfo, 0, len(stream.Urls))
+		streamInfoList := make([]*livekit.StreamInfo, 0, numStreams)
 		conf.Streams.Range(func(_, stream any) bool {
 			streamInfoList = append(streamInfoList, stream.(*Stream).StreamInfo)
 			return true
@@ -132,7 +134,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 
 		if len(files)+len(segments)+len(images) == 0 {
 			// empty stream output only valid in combination with other outputs
-			if len(stream.Urls) == 0 {
+			if numStreams == 0 {
 				return errors.ErrInvalidInput("stream url")
 			}
 
@@ -274,17 +276,18 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 
 			switch stream.Protocol {
 			case livekit.StreamProtocol_DEFAULT_PROTOCOL:
-				if len(stream.Urls) == 0 {
+				rawUrl := firstStreamUrl(stream)
+				if rawUrl == "" {
 					return errors.ErrInvalidInput("stream protocol")
 				}
-				parsed, err := url.Parse(stream.Urls[0])
+				parsed, err := url.Parse(rawUrl)
 				if err != nil {
-					return errors.ErrInvalidUrl(stream.Urls[0], err.Error())
+					return errors.ErrInvalidUrl(rawUrl, err.Error())
 				}
 				var ok bool
 				outputType, ok = types.StreamOutputTypes[parsed.Scheme]
 				if !ok {
-					return errors.ErrInvalidUrl(stream.Urls[0], "invalid protocol")
+					return errors.ErrInvalidUrl(rawUrl, "invalid protocol")
 				}
 				if parsed.Scheme == "ws" || parsed.Scheme == "wss" {
 					egressType = types.EgressTypeWebsocket
@@ -311,18 +314,19 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 				p.VideoDecoding = false
 			}
 
-			conf, err := p.getStreamConfig(outputType, stream.Urls)
+			conf, err := p.getStreamConfig(outputType, stream.Urls, stream.Destinations)
 			if err != nil {
 				return err
 			}
 
+			numStreams := len(stream.Urls) + len(stream.Destinations)
 			p.Outputs[egressType] = []OutputConfig{conf}
-			p.OutputCount.Add(int32(len(stream.Urls)))
+			p.OutputCount.Add(int32(numStreams))
 			if p.VideoEnabled && !p.Passthrough {
 				p.VideoEncoding = true
 			}
 
-			streamInfoList := make([]*livekit.StreamInfo, 0, len(stream.Urls))
+			streamInfoList := make([]*livekit.StreamInfo, 0, numStreams)
 			conf.Streams.Range(func(_, s any) bool {
 				streamInfoList = append(streamInfoList, s.(*Stream).StreamInfo)
 				return true
@@ -426,7 +430,7 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 		p.FinalizationRequired = true
 
 	case *livekit.TrackEgressRequest_WebsocketUrl:
-		conf, err := p.getStreamConfig(types.OutputTypeRaw, []string{o.WebsocketUrl})
+		conf, err := p.getStreamConfig(types.OutputTypeRaw, []string{o.WebsocketUrl}, nil)
 		if err != nil {
 			return err
 		}
@@ -448,4 +452,14 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 	}
 
 	return nil
+}
+
+func firstStreamUrl(stream *livekit.StreamOutput) string {
+	if len(stream.Urls) > 0 {
+		return stream.Urls[0]
+	}
+	if len(stream.Destinations) > 0 {
+		return stream.Destinations[0].Url
+	}
+	return ""
 }

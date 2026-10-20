@@ -35,10 +35,25 @@ var (
 	twitchEndpoint = regexp.MustCompile(`^rtmps?://.*\.contribute\.live-video\.net/app/(.*)( live=1)?$`)
 )
 
-func (o *StreamConfig) AddStream(rawUrl string, outputType types.OutputType) (*Stream, error) {
+func (o *StreamConfig) AddDestination(d *livekit.StreamDestination, outputType types.OutputType) (*Stream, error) {
+	if d.Id == "" {
+		return nil, errors.ErrInvalidInput("stream destination id")
+	}
+	return o.AddStream(d.Id, d.Url, outputType)
+}
+
+func (o *StreamConfig) AddStream(id, rawUrl string, outputType types.OutputType) (*Stream, error) {
 	parsed, redacted, streamID, err := o.ValidateUrl(rawUrl, outputType)
 	if err != nil {
 		return nil, err
+	}
+	if _, ok := o.Streams.Load(parsed); ok {
+		return nil, errors.ErrInvalidInput("duplicate stream url")
+	}
+	if id != "" {
+		if _, loaded := o.destinationIDs.LoadOrStore(id, struct{}{}); loaded {
+			return nil, errors.ErrInvalidInput("duplicate stream destination id")
+		}
 	}
 
 	stream := &Stream{
@@ -46,6 +61,7 @@ func (o *StreamConfig) AddStream(rawUrl string, outputType types.OutputType) (*S
 		RedactedUrl: redacted,
 		StreamID:    streamID,
 		StreamInfo: &livekit.StreamInfo{
+			Id:     id,
 			Url:    redacted,
 			Status: livekit.StreamInfo_ACTIVE,
 		},

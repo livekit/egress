@@ -87,7 +87,7 @@ func TestGetUrl(t *testing.T) {
 	}
 
 	for _, url := range []string{urls[0], urls[1], urls[3]} {
-		_, err := o.AddStream(url, types.OutputTypeRTMP)
+		_, err := o.AddStream("", url, types.OutputTypeRTMP)
 		require.NoError(t, err)
 	}
 
