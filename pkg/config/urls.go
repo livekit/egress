@@ -48,11 +48,11 @@ func (o *StreamConfig) AddStream(id, rawUrl string, outputType types.OutputType)
 		return nil, err
 	}
 	if _, ok := o.Streams.Load(parsed); ok {
-		return nil, errors.ErrInvalidInput("stream url")
+		return nil, errors.ErrInvalidInput("duplicate stream url")
 	}
 	if id != "" {
 		if _, loaded := o.destinationIDs.LoadOrStore(id, struct{}{}); loaded {
-			return nil, errors.ErrInvalidInput("stream destination id")
+			return nil, errors.ErrInvalidInput("duplicate stream destination id")
 		}
 	}
 
