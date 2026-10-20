@@ -258,8 +258,8 @@ github.com/livekit/storage v0.0.0-20261019155627-3f0e2d3e75c5 h1:2AR10EHtm05ZEbD
 github.com/livekit/storage v0.0.0-20261019155627-3f0e2d3e75c5/go.mod h1:wSjGDwPb2/qSgKhuOjo5mj4SzIgJvLaxEwimj60aJTM=
 github.com/livekit/storage/objects v0.1.0 h1:NTMGd2miRyb5iohxNN845rEzm3Hg+8K+ANdlbhLUKuI=
 github.com/livekit/storage/objects v0.1.0/go.mod h1:S3+jo6fCZ+A7Z9N6VGTQoffHRGZyNBHn/Jlb/06pXuM=
-github.com/llehouerou/go-mp3 v1.2.0 h1:2WN/bjCGhfPZAQbSSF35DxNKS/+HPnJ76TakA7Kyscs=
-github.com/llehouerou/go-mp3 v1.2.0/go.mod h1:/Rl7E/VQpWTQDTJgr69iYVSkS1BZEh4X/ABV1XvIpHA=
+github.com/llehouerou/go-mp3 v1.5.0 h1:wl35rz+bc1ZrqFFcrEzMIYoc4XFbJUj3FwsaUHLDTrI=
+github.com/llehouerou/go-mp3 v1.5.0/go.mod h1:/Rl7E/VQpWTQDTJgr69iYVSkS1BZEh4X/ABV1XvIpHA=
 github.com/mackerelio/go-osstat v0.2.8 h1:I2duicTaCGWoM53XwAwA9OIe1inu0xnVs8/pqOWWVr4=
 github.com/mackerelio/go-osstat v0.2.8/go.mod h1:SyS3XxKdoSKJnTGTkN5Yrh6VUQVuAURACfE6y+2DN4k=
 github.com/magefile/mage v1.17.2 h1:fyXVu1eadI8Ap1HCCNgEhJ5McIWiYhLR8uol64ZZc40=
