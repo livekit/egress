@@ -119,7 +119,7 @@ RUN apt-get update && \
     gstreamer1.0-plugins-base-
 
 # install chrome
-COPY --from=livekit/chrome-installer:155.0.8059.84 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:156.0.8078.47 /chrome-installer /chrome-installer
 
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 
