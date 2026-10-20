@@ -1377,8 +1377,7 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 				b.selectedPad = name
 				b.pendingPad = ""
 			}
-			drop := pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name) ||
-				(b.ending && b.selectedPad != name)
+			drop := pts < b.lastPTS || !b.trackFeedsSelectorLocked(name)
 			if !drop {
 				b.lastPTS = pts
 			}
@@ -1396,6 +1395,16 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 
 	b.pads[name] = pad
 	return nil
+}
+
+// trackFeedsSelectorLocked reports whether frames from the named track may enter
+// the selector: the selected track's always may, and the others only while the
+// filler is selected and the egress is not ending.
+func (b *VideoBin) trackFeedsSelectorLocked(name string) bool {
+	if b.selectedPad == name {
+		return true
+	}
+	return b.selectedPad == videoTestSrcName && !b.ending
 }
 
 func (b *VideoBin) watchSrcDimensions(pad *gst.Pad, name string) {
