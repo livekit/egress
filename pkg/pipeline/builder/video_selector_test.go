@@ -547,3 +547,159 @@ func TestSelectorHandover_EncoderQueueSurvivesEnding(t *testing.T) {
 	assert.Empty(t, failed,
 		"pushes into video_encoder_queue failed after the egress began ending")
 }
+
+// A selected track's own EOS while the egress runs, as when its appsrc stops on
+// a negotiation error, against the production gates, a real input-selector and
+// the production video_encoder_queue:
+//  1. the filler is on screen
+//  2. the track takes the selector
+//  3. the track's EOS arrives at the selector; if it is forwarded, it is held
+//     past the encoder queue, as while the encoder drains it
+//  4. the track's removal switches to the filler
+//  5. the filler's ALLOCATION query is sent, the drain finishes, and the query's
+//     sender frees it
+//  6. later filler frames arrive
+//
+// The track's EOS must not reach the encoder queue, no query may be queued
+// behind it, and the filler must keep the output going.
+func TestSelectorHandover_SelectedTrackEOSWhileRunning(t *testing.T) {
+	h := newEncoderQueueHarness(t)
+
+	eosHeld := make(chan struct{})
+	release := make(chan struct{})
+	var heldOnce, releaseOnce sync.Once
+	releaseEOS := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseEOS)
+	h.encoderQueue.GetStaticPad("src").AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		if info.GetEvent().Type() == gst.EventTypeEOS {
+			heldOnce.Do(func() {
+				close(eosHeld)
+				<-release
+			})
+		}
+		return gst.PadProbeOK
+	})
+
+	pushFiller := func(pts time.Duration) gst.FlowReturn {
+		buf := gst.NewBufferWithSize(fillerBufSize)
+		buf.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
+		buf.SetDuration(gst.ClockTime(uint64(selectorTestFrame)))
+		return h.filler.Push(buf)
+	}
+
+	// 1
+	for tick := 0; tick < 30; tick++ {
+		h.push(h.filler, fillerBufSize, time.Duration(tick)*selectorTestFrame)
+	}
+
+	// 2
+	require.NoError(t, h.b.setTrackVisible(selectorTestTrackName, true))
+	for tick := 30; tick < 40; tick++ {
+		h.push(h.track, trackBufSize, time.Duration(tick)*selectorTestFrame)
+	}
+	h.b.mu.Lock()
+	require.Equal(t, selectorTestTrackName, h.b.selectedPad)
+	h.b.mu.Unlock()
+
+	// 3: the selector holds an input's EOS until every input has one, so it is
+	// pushed from its own goroutine
+	go h.track.PushEvent(gst.NewEOSEvent())
+	forwarded := false
+	select {
+	case <-eosHeld:
+		forwarded = true
+	case <-time.After(time.Second):
+	}
+
+	// 4
+	require.NoError(t, h.b.setTrackVisible(selectorTestTrackName, false))
+
+	// 5: a query queued behind the held EOS blocks its sender until the drain ends
+	query := gst.NewAllocationQuery(gst.NewCapsFromString(
+		"video/x-raw,format=I420,width=16,height=16,framerate=30/1"), true)
+	answered := make(chan bool, 1)
+	go func() { answered <- h.filler.PeerQuery(query) }()
+	queuedBehindEOS := false
+	select {
+	case <-answered:
+	case <-time.After(2 * time.Second):
+		queuedBehindEOS = true
+	}
+	releaseEOS()
+	if queuedBehindEOS {
+		select {
+		case <-answered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the ALLOCATION query's sender never woke after the drain")
+		}
+	}
+	// the sender owns the query and frees it once answered
+	runtime.SetFinalizer(query, nil)
+	query.Unref()
+
+	// 6
+	const fillerAfter = 10
+	var failed []gst.FlowReturn
+	for i := 0; i < fillerAfter; i++ {
+		if flow := pushFiller(time.Duration(40+i) * selectorTestFrame); flow != gst.FlowOK {
+			failed = append(failed, flow)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	h.mu.Lock()
+	fillerShown := 0
+	for _, f := range h.output {
+		if !f.track && f.pts >= 40*selectorTestFrame {
+			fillerShown++
+		}
+	}
+	h.mu.Unlock()
+
+	assert.False(t, forwarded,
+		"the selected track's EOS reached video_encoder_queue while the egress was running")
+	assert.False(t, queuedBehindEOS,
+		"the filler's ALLOCATION query was queued behind the track's EOS in video_encoder_queue")
+	assert.Empty(t, failed,
+		"pushes into video_encoder_queue failed after the track's EOS")
+	assert.Equal(t, fillerAfter, fillerShown,
+		"filler frames did not leave the selector after the track's EOS")
+}
+
+// Once the egress is ending, a selected track's EOS is part of shutdown: it
+// must leave the selector and the track must stay selected.
+func TestSelectorHandover_SelectedTrackEOSAtShutdown(t *testing.T) {
+	h := newSelectorHarness(t)
+
+	eosOut := make(chan struct{})
+	var eosOnce sync.Once
+	h.b.selector.GetStaticPad("src").AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		if info.GetEvent().Type() == gst.EventTypeEOS {
+			eosOnce.Do(func() { close(eosOut) })
+		}
+		return gst.PadProbeOK
+	})
+
+	for tick := 0; tick < 30; tick++ {
+		h.push(h.filler, fillerBufSize, time.Duration(tick)*selectorTestFrame)
+	}
+	require.NoError(t, h.b.setTrackVisible(selectorTestTrackName, true))
+	for tick := 30; tick < 40; tick++ {
+		h.push(h.track, trackBufSize, time.Duration(tick)*selectorTestFrame)
+	}
+
+	_, ok := h.b.bin.UpgradeState(gstreamer.StateEOS)
+	require.True(t, ok)
+	go h.track.PushEvent(gst.NewEOSEvent())
+
+	select {
+	case <-eosOut:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the selected track's EOS did not leave the selector during shutdown")
+	}
+	h.b.mu.Lock()
+	selected := h.b.selectedPad
+	h.b.mu.Unlock()
+	require.Equal(t, selectorTestTrackName, selected,
+		"the selector left the track on its shutdown EOS")
+}
