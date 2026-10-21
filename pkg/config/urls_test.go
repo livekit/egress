@@ -15,6 +15,8 @@
 package config
 
 import (
+	"errors"
+	"net/http"
 	"regexp"
 	"strings"
 	"testing"
@@ -101,4 +103,34 @@ func TestGetUrl(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, urls[i], stream.ParsedUrl)
 	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestTwitchEndpointWithoutIngestList(t *testing.T) {
+	transport := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("ingest list unavailable")
+	})
+	t.Cleanup(func() { http.DefaultTransport = transport })
+
+	o := &StreamConfig{}
+	rawUrl := "rtmp://fake.contribute.live-video.net/app/streamkey"
+
+	parsed, redacted, streamID, err := o.ValidateUrl(rawUrl, types.OutputTypeRTMP)
+	require.NoError(t, err)
+	require.Equal(t, rawUrl, parsed)
+	require.Equal(t, "rtmp://fake.contribute.live-video.net/app/{str...key}", redacted)
+	require.Equal(t, "streamkey", streamID)
+
+	_, err = o.AddStream("", rawUrl, types.OutputTypeRTMP)
+	require.NoError(t, err)
+
+	stream, err := o.GetStream(rawUrl)
+	require.NoError(t, err)
+	require.Equal(t, rawUrl, stream.ParsedUrl)
 }

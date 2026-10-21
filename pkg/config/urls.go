@@ -97,6 +97,8 @@ func (o *StreamConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (
 				return
 			}
 		} else if match := twitchEndpoint.FindStringSubmatch(rawUrl); len(match) > 0 {
+			// keep the url as given if the ingest list can't be fetched
+			parsed = rawUrl
 			if updated, err := o.updateTwitchURL(match[1]); err == nil {
 				parsed = updated
 			}
@@ -137,9 +139,9 @@ func (o *StreamConfig) GetStream(rawUrl string) (*Stream, error) {
 			return nil, err
 		}
 	} else if match := twitchEndpoint.FindStringSubmatch(rawUrl); len(match) > 0 {
-		parsed, err = o.updateTwitchURL(match[1])
-		if err != nil {
-			return nil, err
+		parsed = rawUrl
+		if updated, err := o.updateTwitchURL(match[1]); err == nil {
+			parsed = updated
 		}
 	} else {
 		parsed = rawUrl
