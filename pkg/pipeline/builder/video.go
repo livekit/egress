@@ -1391,6 +1391,12 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 			}
 			return gst.PadProbeOK
 		})
+		pad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if info.GetEvent().Type() == gst.EventTypeEOS {
+				b.onTrackEOS(name)
+			}
+			return gst.PadProbeOK
+		})
 	}
 
 	b.pads[name] = pad
@@ -1458,6 +1464,34 @@ func dimensionsFromCaps(caps *gst.Caps) (videoDimensions, bool) {
 		return videoDimensions{}, false
 	}
 	return videoDimensions{width: w, height: h}, true
+}
+
+// onTrackEOS runs before a track's EOS reaches the selector. The selector
+// forwards the active pad's EOS, so while the egress runs the filler takes over
+// first and the selector holds this EOS instead.
+func (b *VideoBin) onTrackEOS(name string) {
+	// shutdown EOS arrives only after the pipeline leaves StateRunning
+	if b.bin.GetState() > gstreamer.StateRunning {
+		return
+	}
+
+	b.mu.Lock()
+	if b.pendingPad == name {
+		b.pendingPad = ""
+	}
+	selected := b.selectedPad == name
+	var err error
+	if selected {
+		err = b.setSelectorPadLocked(videoTestSrcName)
+	}
+	b.mu.Unlock()
+
+	switch {
+	case err != nil:
+		b.bin.OnError(err)
+	case selected:
+		logger.Debugw("selected track ended, switched to filler", "name", name)
+	}
 }
 
 func (b *VideoBin) setTrackVisible(name string, visible bool) error {
