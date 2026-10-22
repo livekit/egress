@@ -276,9 +276,15 @@ func (r *Runner) verifySegmentOutput(
 
 			// the init segment is not one of the segments, but a consumer copying what
 			// the manifest lists still needs it to play them
-			if o := p.GetSegmentConfig(); o.InitSegmentFilename != "" {
+			if p.GetSegmentConfig().InitSegmentFilename != "" {
 				require.NotNil(t, playlist.InitSegment)
-				require.Equal(t, path.Join(o.StorageDir, o.InitSegmentFilename), playlist.InitSegment.Filename)
+				require.NotEmpty(t, playlist.Segments)
+
+				// segments are named <prefix>_<suffix> and the init segment <prefix>_init.mp4 beside them
+				segmentName := playlist.Segments[0].Filename
+				sep := strings.LastIndex(segmentName, "_")
+				require.Positive(t, sep, "unexpected segment name %s", segmentName)
+				require.Equal(t, segmentName[:sep]+"_init"+types.FileExtensionMP4, playlist.InitSegment.Filename)
 				require.NotEmpty(t, playlist.InitSegment.Location)
 			} else {
 				require.Nil(t, playlist.InitSegment)

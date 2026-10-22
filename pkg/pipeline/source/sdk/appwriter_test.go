@@ -16,9 +16,17 @@ package sdk
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+// a pause up to the mixer latency is concealed; the discontinuity flush covers longer ones
+func TestPauseFillBudget(t *testing.T) {
+	require.Equal(t, 2750*time.Millisecond, pauseFillBudget(2750*time.Millisecond))
+	require.Equal(t, discontinuityTolerance, pauseFillBudget(0), "never below the discontinuity flush threshold")
+	require.Equal(t, discontinuityTolerance, pauseFillBudget(200*time.Millisecond))
+}
 
 // TestShouldSendEOS pins the cleanup decision in AppWriter.start(): EOS is owed
 // by any appsrc linked into the pipeline, reported PLAYING or not. The two differ

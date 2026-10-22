@@ -73,6 +73,9 @@ type VideoBin struct {
 	// fillerThreshold is the queue level that opens the gate, resolved from
 	// the queue when the test src bin is built.
 	fillerThreshold uint64
+	// ending is set before the filler is sent EOS. After it, no handover is
+	// taken and only the selected pad feeds the selector.
+	ending bool
 
 	probesMu deadlock.Mutex
 	probes   map[string]*keyframeProbe
@@ -469,6 +472,7 @@ func (b *VideoBin) buildSDKInput() error {
 			if err := b.addSelector(); err != nil {
 				return err
 			}
+			b.bin.SetEOSFunc(b.markEnding)
 		}
 		if err := b.addVideoTestSrcBin(); err != nil {
 			return err
@@ -1360,7 +1364,9 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 			b.mu.Lock()
 			// A pending handover is taken here rather than in a probe of its own,
 			// which would sit behind this one and never see a buffer this one drops.
-			switched := b.pendingPad == name
+			// After ending, the filler's EOS may already be past the selector and a
+			// handover would put this track behind it.
+			switched := b.pendingPad == name && !b.ending
 			if switched {
 				if err := b.selector.SetProperty("active-pad", pad); err != nil {
 					b.pendingPad = ""
@@ -1371,7 +1377,7 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 				b.selectedPad = name
 				b.pendingPad = ""
 			}
-			drop := pts < b.lastPTS || (b.selectedPad != videoTestSrcName && b.selectedPad != name)
+			drop := pts < b.lastPTS || !b.trackFeedsSelectorLocked(name)
 			if !drop {
 				b.lastPTS = pts
 			}
@@ -1385,10 +1391,26 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 			}
 			return gst.PadProbeOK
 		})
+		pad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if info.GetEvent().Type() == gst.EventTypeEOS {
+				b.onTrackEOS(name)
+			}
+			return gst.PadProbeOK
+		})
 	}
 
 	b.pads[name] = pad
 	return nil
+}
+
+// trackFeedsSelectorLocked reports whether frames from the named track may enter
+// the selector: the selected track's always may, and the others only while the
+// filler is selected and the egress is not ending.
+func (b *VideoBin) trackFeedsSelectorLocked(name string) bool {
+	if b.selectedPad == name {
+		return true
+	}
+	return b.selectedPad == videoTestSrcName && !b.ending
 }
 
 func (b *VideoBin) watchSrcDimensions(pad *gst.Pad, name string) {
@@ -1444,6 +1466,34 @@ func dimensionsFromCaps(caps *gst.Caps) (videoDimensions, bool) {
 	return videoDimensions{width: w, height: h}, true
 }
 
+// onTrackEOS runs before a track's EOS reaches the selector. The selector
+// forwards the active pad's EOS, so while the egress runs the filler takes over
+// first and the selector holds this EOS instead.
+func (b *VideoBin) onTrackEOS(name string) {
+	// shutdown EOS arrives only after the pipeline leaves StateRunning
+	if b.bin.GetState() > gstreamer.StateRunning {
+		return
+	}
+
+	b.mu.Lock()
+	if b.pendingPad == name {
+		b.pendingPad = ""
+	}
+	selected := b.selectedPad == name
+	var err error
+	if selected {
+		err = b.setSelectorPadLocked(videoTestSrcName)
+	}
+	b.mu.Unlock()
+
+	switch {
+	case err != nil:
+		b.bin.OnError(err)
+	case selected:
+		logger.Debugw("selected track ended, switched to filler", "name", name)
+	}
+}
+
 func (b *VideoBin) setTrackVisible(name string, visible bool) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -1483,6 +1533,16 @@ func (b *VideoBin) setTrackVisibleLocked(name string, visible bool) error {
 		return b.setSelectorPadLocked(videoTestSrcName)
 	}
 	return nil
+}
+
+// markEnding is the video bin's EOS function. sendEOS runs it before it pushes
+// EOS into the filler, so a handover either completes before the filler's EOS
+// exists or is not taken.
+func (b *VideoBin) markEnding() bool {
+	b.mu.Lock()
+	b.ending = true
+	b.mu.Unlock()
+	return true
 }
 
 func (b *VideoBin) setSelectorPad(name string) error {

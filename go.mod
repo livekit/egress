@@ -24,11 +24,11 @@ require (
 	github.com/livekit/media-samples/avsync v0.0.0-20261008082729-48c99b65fa6d
 	github.com/livekit/media-sdk v0.1.1
 	github.com/livekit/mediatransportutil v0.0.0-20261019043604-882ba4fb8ce4
-	github.com/livekit/protocol v1.53.1-0.20261019181710-166233bdf755
+	github.com/livekit/protocol v1.53.1-0.20261019210311-624ea315a05e
 	github.com/livekit/psrpc v0.8.2
 	github.com/livekit/server-sdk-go/v2 v2.19.1-0.20261019060208-2c3d72081bb4
 	github.com/livekit/storage v0.0.0-20261019155627-3f0e2d3e75c5
-	github.com/llehouerou/go-mp3 v1.2.0
+	github.com/llehouerou/go-mp3 v1.5.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.10.5
 	github.com/pion/webrtc/v4 v4.2.24
