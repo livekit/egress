@@ -148,6 +148,10 @@ func (o *StreamConfig) GetStream(rawUrl string) (*Stream, error) {
 	}
 
 	stream, ok := o.Streams.Load(parsed)
+	if !ok && parsed != rawUrl {
+		// the stream may have been added while the ingest list was unavailable
+		stream, ok = o.Streams.Load(rawUrl)
+	}
 	if !ok {
 		return nil, errors.ErrStreamNotFound(rawUrl)
 	}

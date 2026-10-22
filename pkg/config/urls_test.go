@@ -134,3 +134,24 @@ func TestTwitchEndpointWithoutIngestList(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, rawUrl, stream.ParsedUrl)
 }
+
+func TestTwitchStreamAddedBeforeIngestListRecovers(t *testing.T) {
+	transport := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = transport })
+
+	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("ingest list unavailable")
+	})
+
+	o := &StreamConfig{}
+	rawUrl := "rtmp://fake.contribute.live-video.net/app/streamkey"
+	_, err := o.AddStream("", rawUrl, types.OutputTypeRTMP)
+	require.NoError(t, err)
+
+	// the ingest list recovers after the stream was added
+	o.twitchTemplate = "rtmps://other.contribute.live-video.net/app/{stream_key}"
+
+	stream, err := o.GetStream(rawUrl)
+	require.NoError(t, err)
+	require.Equal(t, rawUrl, stream.ParsedUrl)
+}
