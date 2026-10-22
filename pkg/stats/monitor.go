@@ -260,8 +260,7 @@ type requestCosts struct {
 }
 
 // costsForRequest is the single source of truth for per-request admission costs,
-// used by both the admission check and the reservation. The v2 Media classification
-// is mirrored by cloud-io getFiltersV2, which sets EstimatedCpu.
+// used by both the admission check and the reservation.
 func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 	costs := requestCosts{memory: m.cpuCostConfig.MemoryCost}
 
