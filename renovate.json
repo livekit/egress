@@ -82,6 +82,11 @@
       "separateMinorPatch": true
     },
     {
+      "description": "CI Node pin (.node-version): a patch bump (stays on the current minor) and a minor bump each get their own approvable PR",
+      "matchDatasources": ["node-version"],
+      "separateMinorPatch": true
+    },
+    {
       "description": "GStreamer pin (.gst-version): livekit/gstreamer is our own image, so a new tag needs no quarantine. A patch bump (stays on the current minor) and a minor bump each get their own approvable PR",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["livekit/gstreamer"],
