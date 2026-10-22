@@ -260,7 +260,8 @@ type requestCosts struct {
 }
 
 // costsForRequest is the single source of truth for per-request admission costs,
-// used by both the admission check and the reservation.
+// used by both the admission check and the reservation. The v2 Media classification
+// is mirrored by cloud-io getFiltersV2, which sets EstimatedCpu.
 func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 	costs := requestCosts{memory: m.cpuCostConfig.MemoryCost}
 
@@ -284,11 +285,17 @@ func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 			} else {
 				costs.cpu = m.cpuCostConfig.WebCpuCost
 			}
-		} else if request.GetMedia() != nil {
-			if request.GetPreset() == livekit.EncodingOptionsPreset_PASSTHROUGH {
+		} else if media := request.GetMedia(); media != nil {
+			switch {
+			case request.GetPreset() == livekit.EncodingOptionsPreset_PASSTHROUGH:
 				costs.cpu = m.cpuCostConfig.TrackCpuCost
-			} else {
+			case media.GetVideo() == nil:
+				costs.cpu = m.cpuCostConfig.SDKAudioRoomCompositeCpuCost
+				costs.memory = m.cpuCostConfig.SDKAudioRoomCompositeMemoryCost
+			case media.GetParticipantVideo() != nil:
 				costs.cpu = m.cpuCostConfig.ParticipantCpuCost
+			default:
+				costs.cpu = m.cpuCostConfig.TrackCompositeCpuCost
 			}
 		}
 	}
