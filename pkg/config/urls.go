@@ -50,6 +50,12 @@ func (o *StreamConfig) AddStream(id, rawUrl string, outputType types.OutputType)
 	if _, ok := o.Streams.Load(parsed); ok {
 		return nil, errors.ErrInvalidInput("duplicate stream url")
 	}
+	if parsed != rawUrl {
+		// the stream may have been added while the ingest list was unavailable
+		if _, ok := o.Streams.Load(rawUrl); ok {
+			return nil, errors.ErrInvalidInput("duplicate stream url")
+		}
+	}
 	if id != "" {
 		if _, loaded := o.destinationIDs.LoadOrStore(id, struct{}{}); loaded {
 			return nil, errors.ErrInvalidInput("duplicate stream destination id")
