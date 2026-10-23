@@ -19,6 +19,7 @@ import (
 
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/storage"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -43,8 +44,20 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 	}
 
 	if s3 := req.GetS3(); s3 != nil {
-		if s3.AssumeRoleExternalId != "" && !p.S3AllowRequestAssumeRoleExternalID {
-			return nil, errors.ErrFeatureDisabled("setting assume_role_external_id in the request")
+		if s3.AssumeRoleExternalId != "" {
+			// a matching external ID is only accepted for the configured role, so it can't be paired with an arbitrary ARN
+			idMatches := s3.AssumeRoleExternalId == p.S3AssumeRoleExternalID
+			arnMatches := s3.AssumeRoleArn == "" || s3.AssumeRoleArn == p.S3AssumeRoleArn
+			if !(idMatches && arnMatches) && !p.S3AllowRequestAssumeRoleExternalID {
+				return nil, errors.ErrFeatureDisabled("setting assume_role_external_id in the request")
+			}
+			if !idMatches || !arnMatches {
+				logger.Infow("request assume_role_external_id or assume_role_arn differs from configured default",
+					"egressID", p.Info.GetEgressId(),
+					"externalIDDiffers", !idMatches,
+					"arnDiffers", !arnMatches,
+				)
+			}
 		}
 		sc.S3 = &storage.S3Config{
 			AccessKey:            s3.AccessKey,
