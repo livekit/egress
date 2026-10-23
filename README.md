@@ -76,8 +76,8 @@ psrpc: # optional gzip compression of psrpc bus payloads, see the compatibility 
 cpu_cost: # optionally override cpu cost estimation, used when accepting or denying requests
   room_composite_cpu_cost: 3.0
   audio_room_composite_cpu_cost: 1.0
-  sdk_audio_room_composite_cpu_cost: 0.5 # audio-only room composites without layout or custom_base_url (no chrome). Defaults to audio_room_composite_cpu_cost
-  sdk_audio_room_composite_memory_cost: 1.0 # memory in GB. Defaults to memory_cost
+  sdk_audio_room_composite_cpu_cost: 0.5 # audio-only room composites without layout or custom_base_url (no chrome), and audio-only media egress. Defaults to audio_room_composite_cpu_cost
+  sdk_audio_room_composite_memory_cost: 1.0 # memory in GB, same request types as above. Defaults to memory_cost
   web_cpu_cost: 3.0
   track_composite_cpu_cost: 2.0
   track_cpu_cost: 1.0
