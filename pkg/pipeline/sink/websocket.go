@@ -129,11 +129,11 @@ func newWebsocketSink(
 
 func (s *WebsocketSink) Start() error {
 	// override default ping handler to include locking
-	s.conn.SetPingHandler(func(_ string) error {
+	s.conn.SetPingHandler(func(appData string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
-		_ = s.writeMessageLocked(websocket.PongMessage, []byte("pong"))
+		_ = s.writeMessageLocked(websocket.PongMessage, []byte(appData))
 		return nil
 	})
 
