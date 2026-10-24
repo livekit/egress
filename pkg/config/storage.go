@@ -48,10 +48,10 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 			// a matching external ID is only accepted for the configured role, so it can't be paired with an arbitrary ARN
 			idMatches := s3.AssumeRoleExternalId == p.S3AssumeRoleExternalID
 			arnMatches := s3.AssumeRoleArn == "" || s3.AssumeRoleArn == p.S3AssumeRoleArn
-			if !(idMatches && arnMatches) && !p.S3AllowRequestAssumeRoleExternalID {
-				return nil, errors.ErrFeatureDisabled("setting assume_role_external_id in the request")
-			}
 			if !idMatches || !arnMatches {
+				if !p.S3AllowRequestAssumeRoleExternalID {
+					return nil, errors.ErrFeatureDisabled("setting assume_role_external_id in the request")
+				}
 				logger.Infow("request assume_role_external_id or assume_role_arn differs from configured default",
 					"egressID", p.Info.GetEgressId(),
 					"externalIDDiffers", !idMatches,
