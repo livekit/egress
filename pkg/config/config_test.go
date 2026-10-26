@@ -57,6 +57,31 @@ func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
 		require.Equal(t, "EXT_ID", sc.S3.AssumeRoleExternalID)
 	})
 
+	t.Run("allows request external_id matching the server default when flag is false", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AssumeRoleArn = "arn:aws:iam::123456789012:role/example"
+		p.S3AssumeRoleExternalID = "EXT_ID"
+		sc, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.NoError(t, err)
+		require.NotNil(t, sc.S3)
+		require.Equal(t, "EXT_ID", sc.S3.AssumeRoleExternalID)
+	})
+
+	t.Run("rejects request external_id matching the server default with a different ARN when flag is false", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AssumeRoleArn = "arn:aws:iam::123456789012:role/configured"
+		p.S3AssumeRoleExternalID = "EXT_ID"
+		_, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.ErrorContains(t, err, "setting assume_role_external_id in the request is disabled for this account")
+	})
+
+	t.Run("rejects request external_id differing from the server default when flag is false", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AssumeRoleExternalID = "SERVER_SIDE_EXT_ID"
+		_, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.ErrorContains(t, err, "setting assume_role_external_id in the request is disabled for this account")
+	})
+
 	t.Run("no rejection when request omits external_id", func(t *testing.T) {
 		p := &PipelineConfig{}
 		sc, err := p.getStorageConfig(makeReq(""))
