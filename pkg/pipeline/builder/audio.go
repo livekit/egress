@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-gst/go-gst/gst"
 	"github.com/linkdata/deadlock"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -572,13 +573,46 @@ func installPitchProbes(pacer *audioPacer) {
 // passes through unchanged so the mixer still learns about the pause.
 func installGapFill(sinkPad *gst.Pad, rate, channels int) {
 	const maxChunk = 20 * time.Millisecond
-	sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	var padHasGapSegment atomic.Bool
+	sinkPad.AddProbe(gst.PadProbeTypeEventDownstream|gst.PadProbeTypeEventFlush, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		event := info.GetEvent()
-		if event == nil || event.Type() != gst.EventTypeGap {
+		if event == nil {
+			return gst.PadProbeOK
+		}
+		switch event.Type() {
+		case gst.EventTypeFlushStop:
+			padHasGapSegment.Store(false)
+			return gst.PadProbeOK
+		case gst.EventTypeSegment:
+			received := event.ParseSegment()
+			current := pad.GetStickyEvent(gst.EventTypeSegment, 0)
+			same := current != nil && sameSegment(current.ParseSegment(), received)
+			if padHasGapSegment.Swap(false) && !same {
+				logger.Warnw("segment differs from the one sent for an audio gap", nil,
+					"start", received.GetStart(), "base", received.GetBase(), "time", received.GetTime(), "rate", received.GetRate())
+			}
+			// pitch discards the audio it holds on every segment, so one that changes nothing is dropped
+			if same {
+				return gst.PadProbeDrop
+			}
+			return gst.PadProbeOK
+		case gst.EventTypeGap:
+		default:
 			return gst.PadProbeOK
 		}
 		if pad.GetCurrentCaps() == nil {
 			return gst.PadProbeOK
+		}
+		// a track's first GAP precedes any segment: the RTP depayloader sends its own, a default TIME one, with its first packet
+		if pad.GetStickyEvent(gst.EventTypeSegment, 0) == nil {
+			segment := gst.NewFormattedSegment(gst.FormatTime)
+			sent := pad.SendEvent(gst.NewSegmentEvent(segment))
+			segment.Free()
+			if !sent {
+				logger.Warnw("could not send pitch a segment for an audio gap, forwarding the gap", nil)
+				return gst.PadProbeOK
+			}
+			padHasGapSegment.Store(true)
 		}
 		start, remaining := event.ParseGap()
 		for remaining > 0 {
@@ -601,6 +635,15 @@ func installGapFill(sinkPad *gst.Pad, rate, channels int) {
 		}
 		return gst.PadProbeDrop
 	})
+}
+
+// sameSegment reports whether two segments differ at most in position, which only records progress
+func sameSegment(a, b *gst.Segment) bool {
+	return a.GetFormat() == b.GetFormat() && a.GetFlags() == b.GetFlags() &&
+		a.GetRate() == b.GetRate() && a.GetAppliedRate() == b.GetAppliedRate() &&
+		a.GetBase() == b.GetBase() && a.GetOffset() == b.GetOffset() &&
+		a.GetStart() == b.GetStart() && a.GetStop() == b.GetStop() &&
+		a.GetTime() == b.GetTime() && a.GetDuration() == b.GetDuration()
 }
 
 // audioFloatFormat is the sample rate and channel count of the F32 audio around pitch
