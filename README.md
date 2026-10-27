@@ -30,14 +30,68 @@ Irrespective of method used, when moving between protocols, containers or encodi
 
 ## Supported Output
 
-| Egress Type     | MP4 File | OGG File | WebM File | HLS (TS or fMP4 Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
-|-----------------|----------|----------|-----------|-------------------|----------------|------------------|------------------|--------------------|
-| Room Composite  | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |
-| Web             | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |
-| Track Composite | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |
-| Track           | ✅        | ✅        | ✅         |                   |                |               | ✅                |                    |
+| Egress Type     | MP4 File | OGG File | MCAP File | WebM File | HLS (TS or fMP4 Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
+|-----------------|----------|----------|-----------|-----------|----------------------------|----------------|------------|------------------|--------------------|
+| Room Composite  | ✅        | ✅        | ✅         |           | ✅                          | ✅              | ✅          |                  | ✅                  |
+| Web             | ✅        | ✅        | ✅         |           | ✅                          | ✅              | ✅          |                  | ✅                  |
+| Media Source    | ✅        | ✅        | ✅         |           |                            |                |            |                  |                    |
+| Track Composite | ✅        | ✅        | ✅         |           | ✅                          | ✅              | ✅          |                  | ✅                  |
+| Track           | ✅        | ✅        |           | ✅         |                            |                |            | ✅                |                    |
 
 Files can be uploaded to any S3 compatible storage, Azure, or GCP.
+
+### MCAP media export
+
+An MCAP `MediaSource` preserves each selected audio or video publication as an independent channel named
+`/livekit/{participant_identity}/{track_name}`. Video selectors and audio routes are unioned within their modality;
+an `exclude` match takes precedence over `capture_all` and positive matches. Multiple-video selection is MCAP-only,
+and a MediaSource MCAP request permits exactly one output.
+
+```json
+{
+  "room_name": "mcap-test",
+  "media": {
+    "videos": { "capture_all": true },
+    "audio": { "capture_all": true }
+  },
+  "outputs": [{
+    "file": {
+      "file_type": "MCAP",
+      "filepath": "/out/tracks-demo.mcap",
+      "disable_manifest": true
+    }
+  }]
+}
+```
+
+Selectors can match a track ID, participant identity, or track name. For example, this captures video from
+`robot-a` except its debug camera and captures audio tracks named `microphone`:
+
+```json
+{
+  "room_name": "mcap-test",
+  "media": {
+    "videos": {
+      "selectors": [
+        { "participant_identity": "robot-a" },
+        { "track_name": "camera-debug", "exclude": true }
+      ]
+    },
+    "audio": {
+      "routes": [{ "track_name": "microphone" }]
+    }
+  },
+  "outputs": [{
+    "file": {
+      "file_type": "MCAP",
+      "filepath": "/out/tracks-filtered.mcap",
+      "disable_manifest": true
+    }
+  }]
+}
+```
+
+`MediaSource.data` is reserved by the protocol but rejected by egress until data-track capture is implemented.
 
 ## Documentation
 

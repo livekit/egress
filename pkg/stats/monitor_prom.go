@@ -181,8 +181,6 @@ func requestTypeFromInterface(request v2Request) string {
 		return types.RequestTypeTrack
 	}
 	switch {
-	case getRoboticsSource(request) != nil:
-		return types.RequestTypeRobotics
 	case request.GetTemplate() != nil:
 		return types.RequestTypeTemplate
 	case request.GetWeb() != nil:
@@ -192,16 +190,6 @@ func requestTypeFromInterface(request v2Request) string {
 	default:
 		return types.Unknown
 	}
-}
-
-func getRoboticsSource(request v2Request) *livekit.RoboticsSource {
-	r, ok := request.(interface {
-		GetRobotics() *livekit.RoboticsSource
-	})
-	if !ok {
-		return nil
-	}
-	return r.GetRobotics()
 }
 
 func (m *Monitor) HandlerResult(egressID string, result string) {

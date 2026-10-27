@@ -954,7 +954,7 @@ func pauseFillBudget(mixerLatency time.Duration) time.Duration {
 
 func (w *AppWriter) shouldRemoveBeforeDrain() bool {
 	return w.track.Kind() == webrtc.RTPCodecTypeVideo && !w.conf.Passthrough &&
-		(w.conf.RequestType == types.RequestTypeParticipant || w.conf.RequestType == types.RequestTypeRoomComposite || w.conf.RequestType == types.RequestTypeRobotics || w.conf.RequestType == types.RequestTypeTemplate || w.conf.RequestType == types.RequestTypeMedia)
+		(w.conf.RequestType == types.RequestTypeParticipant || w.conf.RequestType == types.RequestTypeRoomComposite || w.conf.RequestType == types.RequestTypeTemplate || w.conf.RequestType == types.RequestTypeMedia)
 }
 
 func (w *AppWriter) ensureRemovedBeforeDrain() {

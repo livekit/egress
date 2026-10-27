@@ -60,6 +60,7 @@ type PipelineConfig struct {
 	Live            bool                `yaml:"-"`
 	IsReplay        bool                `yaml:"-"`
 	Passthrough     bool                `yaml:"-"`
+	TrackPreserving bool                `yaml:"-"`
 	StorageObserver StorageObserver     `yaml:"-"`
 }
 
@@ -87,33 +88,42 @@ type WebSourceParams struct {
 }
 
 type SDKSourceParams struct {
-	TrackID               string
-	AudioTrackID          string
-	VideoTrackID          string
-	Identity              string
-	TrackSource           string
-	TrackKind             string
-	ScreenShare           bool
-	Compositing           bool
-	VideoInCodec          types.MimeType
-	AudioTracks           []*TrackSource
-	VideoTracks           []*TrackSource
-	AudioRoutes           []AudioRouteConfig
-	CaptureAudioAll       bool
-	ParticipantIdentities []string
-	VideoTrackNames       []string
-	AudioTrackNames       []string
+	TrackID         string
+	AudioTrackID    string
+	VideoTrackID    string
+	Identity        string
+	TrackSource     string
+	TrackKind       string
+	ScreenShare     bool
+	Compositing     bool
+	VideoInCodec    types.MimeType
+	AudioTracks     []*TrackSource
+	VideoTracks     []*TrackSource
+	AudioRoutes     []AudioRouteConfig
+	CaptureAudioAll bool
+	CaptureVideoAll bool
+	VideoSelectors  []TrackSelectorConfig
+	MultiVideo      bool
 }
 
 type AudioRouteConfig struct {
 	Match   AudioRouteMatch
 	Channel livekit.AudioChannel
+	Exclude bool
 }
 
 type AudioRouteMatch struct {
 	TrackID             string
 	ParticipantIdentity string
 	ParticipantKind     *lksdk.ParticipantKind
+	TrackName           string
+}
+
+type TrackSelectorConfig struct {
+	TrackID             string
+	ParticipantIdentity string
+	TrackName           string
+	Exclude             bool
 }
 
 type TrackSource struct {
@@ -517,9 +527,15 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	default:
 		return errors.ErrInvalidInput("request")
 	}
-	if p.RequestType == types.RequestTypeRobotics {
-		if err := p.validateRoboticsOutput(); err != nil {
-			return err
+	if p.RequestType == types.RequestTypeMedia {
+		if p.MultiVideo && !p.hasAnyMCAPOutput() {
+			return errors.ErrInvalidInput("media.videos requires one MCAP file output")
+		}
+		if p.hasAnyMCAPOutput() {
+			p.TrackPreserving = true
+			if err := p.validateTrackPreservingOutput(); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -621,64 +637,12 @@ func (c *BaseConfig) isV2SDKSource(req egress.EgressRequest) bool {
 	return true
 }
 
-type roboticsRequest interface {
-	GetRobotics() *livekit.RoboticsSource
-}
-
-func getRoboticsSource(req egress.EgressRequest) *livekit.RoboticsSource {
-	r, ok := req.(roboticsRequest)
-	if !ok {
-		return nil
-	}
-	return r.GetRobotics()
-}
-
-// applyV2Source handles the shared v2 source switch. RoboticsSource is live-only;
-// the remaining source types are also supported by ExportReplayRequest.
+// applyV2Source handles the shared Template/Web/Media source switch for live and
+// replay requests.
 func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfoRequired bool, err error) {
 	connectionInfoRequired = true
 
 	switch {
-	case getRoboticsSource(req) != nil:
-		robotics := getRoboticsSource(req)
-		p.RequestType = types.RequestTypeRobotics
-		p.SourceType = types.SourceTypeSDK
-		p.AwaitStartSignal = true
-
-		if robotics.DataTracks != nil {
-			return connectionInfoRequired, errors.ErrInvalidInput("robotics.data_tracks is not supported yet")
-		}
-
-		explicitModalities := robotics.VideoTracks != nil || robotics.AudioTracks != nil
-		p.VideoEnabled = !explicitModalities || robotics.VideoTracks != nil
-		p.AudioEnabled = !explicitModalities || robotics.AudioTracks != nil
-		if p.VideoEnabled {
-			p.VideoInCodec = types.MimeTypeRawVideo
-			p.VideoDecoding = true
-		}
-		if p.AudioEnabled {
-			p.AudioTranscoding = true
-		}
-
-		if robotics.Participants != nil {
-			p.ParticipantIdentities, err = validateRoboticsAllowlist(robotics.Participants.Identities, "robotics.participants.identities")
-			if err != nil {
-				return connectionInfoRequired, err
-			}
-		}
-		if robotics.VideoTracks != nil {
-			p.VideoTrackNames, err = validateRoboticsAllowlist(robotics.VideoTracks.TrackNames, "robotics.video_tracks.track_names")
-			if err != nil {
-				return connectionInfoRequired, err
-			}
-		}
-		if robotics.AudioTracks != nil {
-			p.AudioTrackNames, err = validateRoboticsAllowlist(robotics.AudioTracks.TrackNames, "robotics.audio_tracks.track_names")
-			if err != nil {
-				return connectionInfoRequired, err
-			}
-		}
-
 	case req.GetTemplate() != nil:
 		tmpl := req.GetTemplate()
 		p.RequestType = types.RequestTypeTemplate
@@ -764,6 +728,25 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 			p.VideoDecoding = true
 			p.Identity = v.ParticipantVideo.Identity
 			p.ScreenShare = v.ParticipantVideo.PreferScreenShare
+		case *livekit.MediaSource_Videos:
+			if v.Videos == nil {
+				return connectionInfoRequired, errors.ErrInvalidInput("media.videos")
+			}
+			p.VideoEnabled = true
+			p.VideoDecoding = true
+			p.VideoInCodec = types.MimeTypeRawVideo
+			p.MultiVideo = true
+			p.CaptureVideoAll = v.Videos.CaptureAll
+			for _, selector := range v.Videos.Selectors {
+				if selector == nil {
+					return connectionInfoRequired, errors.ErrInvalidInput("media.videos.selectors")
+				}
+				parsed, perr := parseVideoSelector(selector)
+				if perr != nil {
+					return connectionInfoRequired, perr
+				}
+				p.VideoSelectors = append(p.VideoSelectors, parsed)
+			}
 		}
 
 		// audio
@@ -776,17 +759,34 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 				p.AudioEnabled = true
 				p.AudioTranscoding = !p.Passthrough
 				for _, route := range media.Audio.Routes {
+					if route == nil {
+						return connectionInfoRequired, errors.ErrInvalidInput("media.audio.routes")
+					}
 					arc := AudioRouteConfig{
 						Channel: route.Channel,
+						Exclude: route.Exclude,
 					}
 					switch m := route.Match.(type) {
 					case *livekit.AudioRoute_TrackId:
+						if m.TrackId == "" {
+							return connectionInfoRequired, errors.ErrInvalidInput("media.audio.routes.track_id")
+						}
 						arc.Match.TrackID = m.TrackId
 					case *livekit.AudioRoute_ParticipantIdentity:
+						if m.ParticipantIdentity == "" {
+							return connectionInfoRequired, errors.ErrInvalidInput("media.audio.routes.participant_identity")
+						}
 						arc.Match.ParticipantIdentity = m.ParticipantIdentity
 					case *livekit.AudioRoute_ParticipantKind:
 						kind := lksdk.ParticipantKind(m.ParticipantKind)
 						arc.Match.ParticipantKind = &kind
+					case *livekit.AudioRoute_TrackName:
+						if m.TrackName == "" {
+							return connectionInfoRequired, errors.ErrInvalidInput("media.audio.routes.track_name")
+						}
+						arc.Match.TrackName = m.TrackName
+					default:
+						return connectionInfoRequired, errors.ErrInvalidInput("media.audio.routes.match")
 					}
 					p.AudioRoutes = append(p.AudioRoutes, arc)
 				}
@@ -794,6 +794,9 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 					p.TrackID = p.AudioRoutes[0].Match.TrackID
 				}
 			}
+		}
+		if media.Data != nil {
+			return connectionInfoRequired, errors.ErrInvalidInput("media.data is not supported yet")
 		}
 
 		if !p.AudioEnabled && !p.VideoEnabled {
@@ -807,20 +810,28 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 	return connectionInfoRequired, nil
 }
 
-func validateRoboticsAllowlist(values []string, field string) ([]string, error) {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if value == "" {
-			return nil, errors.ErrInvalidInput(field)
+func parseVideoSelector(selector *livekit.VideoSelector) (TrackSelectorConfig, error) {
+	parsed := TrackSelectorConfig{Exclude: selector.Exclude}
+	switch match := selector.Match.(type) {
+	case *livekit.VideoSelector_TrackId:
+		if match.TrackId == "" {
+			return TrackSelectorConfig{}, errors.ErrInvalidInput("media.videos.selectors.track_id")
 		}
-		if _, ok := seen[value]; ok {
-			return nil, errors.ErrInvalidInput("duplicate " + field)
+		parsed.TrackID = match.TrackId
+	case *livekit.VideoSelector_ParticipantIdentity:
+		if match.ParticipantIdentity == "" {
+			return TrackSelectorConfig{}, errors.ErrInvalidInput("media.videos.selectors.participant_identity")
 		}
-		seen[value] = struct{}{}
-		result = append(result, value)
+		parsed.ParticipantIdentity = match.ParticipantIdentity
+	case *livekit.VideoSelector_TrackName:
+		if match.TrackName == "" {
+			return TrackSelectorConfig{}, errors.ErrInvalidInput("media.videos.selectors.track_name")
+		}
+		parsed.TrackName = match.TrackName
+	default:
+		return TrackSelectorConfig{}, errors.ErrInvalidInput("media.videos.selectors.match")
 	}
-	return result, nil
+	return parsed, nil
 }
 
 // rejects shapes a remux cannot express — downgrading silently would return re-encoded media
@@ -849,6 +860,9 @@ func validatePassthrough(req egress.EgressRequest) error {
 		case len(media.Audio.Routes) > 1:
 			return errors.ErrInvalidInput("passthrough audio routes")
 		case len(media.Audio.Routes) == 1:
+			if media.Audio.Routes[0].Exclude {
+				return errors.ErrInvalidInput("passthrough audio route exclude")
+			}
 			m, ok := media.Audio.Routes[0].Match.(*livekit.AudioRoute_TrackId)
 			if !ok {
 				return errors.ErrInvalidInput("passthrough audio route match")

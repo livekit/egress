@@ -29,7 +29,6 @@ const (
 	RequestTypeMedia    = "media"
 
 	RequestTypeRoomComposite  = "room_composite"
-	RequestTypeRobotics       = "robotics"
 	RequestTypeParticipant    = "participant"
 	RequestTypeTrackComposite = "track_composite"
 	RequestTypeTrack          = "track"

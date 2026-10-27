@@ -250,8 +250,8 @@ func (s *SDKSource) SetTimeProvider(tp gstreamer.TimeProvider) {
 // ----- Subscriptions -----
 
 func (s *SDKSource) joinRoom() error {
-	// TODO(data tracks): for RequestTypeRobotics, attach the SDK data-packet
-	// callback here and apply ParticipantIdentities and the DataTracks selector
+	// TODO(data tracks): attach the SDK data-packet callback here and apply the
+	// MediaSource DataConfig selectors
 	// before forwarding schema and payload messages directly to the MCAP sink.
 	cb := &lksdk.RoomCallback{
 		ParticipantCallback: lksdk.ParticipantCallback{
@@ -268,7 +268,7 @@ func (s *SDKSource) joinRoom() error {
 	}
 
 	switch s.RequestType {
-	case types.RequestTypeRoomComposite, types.RequestTypeRobotics, types.RequestTypeTemplate, types.RequestTypeMedia:
+	case types.RequestTypeRoomComposite, types.RequestTypeTemplate, types.RequestTypeMedia:
 		cb.OnTrackPublished = s.onTrackPublished
 	case types.RequestTypeParticipant:
 		cb.OnTrackPublished = s.onTrackPublished
@@ -285,7 +285,7 @@ func (s *SDKSource) joinRoom() error {
 	var fileIdentifier string
 	var w, h uint32
 	switch s.RequestType {
-	case types.RequestTypeRoomComposite, types.RequestTypeRobotics:
+	case types.RequestTypeRoomComposite:
 		fileIdentifier = room.Name()
 		// room_name and room_id are already handled as replacements
 		err = s.awaitRoomTracks()
@@ -426,7 +426,21 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 	if s.VideoTrackID != "" {
 		requiredTracks[s.VideoTrackID] = struct{}{}
 	}
+	for _, selector := range s.VideoSelectors {
+		if selector.Exclude {
+			continue
+		}
+		if selector.TrackID != "" {
+			requiredTracks[selector.TrackID] = struct{}{}
+		}
+		if selector.ParticipantIdentity != "" {
+			requiredParticipants[selector.ParticipantIdentity] = struct{}{}
+		}
+	}
 	for _, route := range s.AudioRoutes {
+		if route.Exclude {
+			continue
+		}
 		if route.Match.TrackID != "" {
 			requiredTracks[route.Match.TrackID] = struct{}{}
 		}
@@ -688,7 +702,6 @@ func (s *SDKSource) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Remo
 func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 	if s.RequestType != types.RequestTypeParticipant &&
 		s.RequestType != types.RequestTypeRoomComposite &&
-		s.RequestType != types.RequestTypeRobotics &&
 		s.RequestType != types.RequestTypeTemplate &&
 		s.RequestType != types.RequestTypeMedia {
 		return
@@ -723,16 +736,6 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication, rp *lksdk.Remote
 		default:
 			return s.ScreenShare
 		}
-	case types.RequestTypeRobotics:
-		if !matchesAllowlist(string(rp.Identity()), s.ParticipantIdentities) {
-			return false
-		}
-		switch pub.Kind() {
-		case lksdk.TrackKindAudio:
-			return s.AudioEnabled && matchesAllowlist(pub.Name(), s.AudioTrackNames)
-		case lksdk.TrackKindVideo:
-			return s.VideoEnabled && matchesAllowlist(pub.Name(), s.VideoTrackNames)
-		}
 	case types.RequestTypeRoomComposite, types.RequestTypeTemplate:
 		switch pub.Kind() {
 		case lksdk.TrackKindAudio:
@@ -742,18 +745,6 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication, rp *lksdk.Remote
 		}
 	}
 
-	return false
-}
-
-func matchesAllowlist(value string, allowlist []string) bool {
-	if len(allowlist) == 0 {
-		return true
-	}
-	for _, allowed := range allowlist {
-		if value == allowed {
-			return true
-		}
-	}
 	return false
 }
 
@@ -770,30 +761,47 @@ func (s *SDKSource) shouldSubscribeMedia(pub lksdk.TrackPublication, rp *lksdk.R
 }
 
 func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) *config.AudioRouteConfig {
-	for i := range s.AudioRoutes {
-		route := &s.AudioRoutes[i]
-		switch {
-		case route.Match.TrackID != "":
-			if pub.SID() == route.Match.TrackID {
-				return route
-			}
-		case route.Match.ParticipantIdentity != "":
-			if rp.Identity() == route.Match.ParticipantIdentity {
-				return route
-			}
-		case route.Match.ParticipantKind != nil:
-			if rp.Kind() == *route.Match.ParticipantKind {
-				return route
-			}
+	return matchingAudioRoute(s.AudioRoutes, s.CaptureAudioAll, pub.SID(), pub.Name(), rp.Identity(), rp.Kind())
+}
+
+func matchingAudioRoute(routes []config.AudioRouteConfig, captureAll bool, trackID, trackName, participantIdentity string, participantKind lksdk.ParticipantKind) *config.AudioRouteConfig {
+	for i := range routes {
+		route := &routes[i]
+		if route.Exclude && audioRouteMatchesValues(route, trackID, trackName, participantIdentity, participantKind) {
+			return nil
 		}
 	}
-	if s.CaptureAudioAll {
+	for i := range routes {
+		route := &routes[i]
+		if !route.Exclude && audioRouteMatchesValues(route, trackID, trackName, participantIdentity, participantKind) {
+			return route
+		}
+	}
+	if captureAll {
 		return &config.AudioRouteConfig{}
 	}
 	return nil
 }
 
+func audioRouteMatchesValues(route *config.AudioRouteConfig, trackID, trackName, participantIdentity string, participantKind lksdk.ParticipantKind) bool {
+	switch {
+	case route.Match.TrackID != "":
+		return trackID == route.Match.TrackID
+	case route.Match.ParticipantIdentity != "":
+		return participantIdentity == route.Match.ParticipantIdentity
+	case route.Match.ParticipantKind != nil:
+		return participantKind == *route.Match.ParticipantKind
+	case route.Match.TrackName != "":
+		return trackName == route.Match.TrackName
+	default:
+		return false
+	}
+}
+
 func (s *SDKSource) matchesMediaVideo(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
+	if s.MultiVideo {
+		return matchesVideoSelectors(s.VideoSelectors, s.CaptureVideoAll, pub.SID(), pub.Name(), rp.Identity())
+	}
 	if s.VideoTrackID != "" {
 		return pub.SID() == s.VideoTrackID
 	}
@@ -811,6 +819,38 @@ func (s *SDKSource) matchesMediaVideo(pub lksdk.TrackPublication, rp *lksdk.Remo
 		return pub.Source() == livekit.TrackSource_CAMERA
 	}
 	return false
+}
+
+func matchesVideoSelectors(selectors []config.TrackSelectorConfig, captureAll bool, trackID, trackName, participantIdentity string) bool {
+	for i := range selectors {
+		selector := &selectors[i]
+		if selector.Exclude && trackSelectorMatchesValues(selector, trackID, trackName, participantIdentity) {
+			return false
+		}
+	}
+	if captureAll {
+		return true
+	}
+	for i := range selectors {
+		selector := &selectors[i]
+		if !selector.Exclude && trackSelectorMatchesValues(selector, trackID, trackName, participantIdentity) {
+			return true
+		}
+	}
+	return false
+}
+
+func trackSelectorMatchesValues(selector *config.TrackSelectorConfig, trackID, trackName, participantIdentity string) bool {
+	switch {
+	case selector.TrackID != "":
+		return trackID == selector.TrackID
+	case selector.ParticipantIdentity != "":
+		return participantIdentity == selector.ParticipantIdentity
+	case selector.TrackName != "":
+		return trackName == selector.TrackName
+	default:
+		return false
+	}
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
@@ -897,7 +937,6 @@ func (s *SDKSource) shouldSkipTrackSubscriptions() bool {
 	return s.initialized.IsBroken() &&
 		s.RequestType != types.RequestTypeParticipant &&
 		s.RequestType != types.RequestTypeRoomComposite &&
-		s.RequestType != types.RequestTypeRobotics &&
 		s.RequestType != types.RequestTypeTemplate &&
 		s.RequestType != types.RequestTypeMedia
 }
@@ -915,7 +954,6 @@ func shouldEnableStartGate(p *config.PipelineConfig) bool {
 
 	switch p.RequestType {
 	case types.RequestTypeRoomComposite,
-		types.RequestTypeRobotics,
 		types.RequestTypeTemplate,
 		types.RequestTypeTrackComposite,
 		types.RequestTypeParticipant,

@@ -18,17 +18,66 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/protocol/livekit"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-func TestMatchesAllowlist(t *testing.T) {
-	t.Run("empty allowlist matches everything", func(t *testing.T) {
-		require.True(t, matchesAllowlist("camera", nil))
-	})
+func TestTrackSelectorMatchesValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		selector config.TrackSelectorConfig
+		expected bool
+	}{
+		{name: "track id", selector: config.TrackSelectorConfig{TrackID: "TR_camera"}, expected: true},
+		{name: "participant", selector: config.TrackSelectorConfig{ParticipantIdentity: "robot-a"}, expected: true},
+		{name: "track name", selector: config.TrackSelectorConfig{TrackName: "camera"}, expected: true},
+		{name: "track name is exact", selector: config.TrackSelectorConfig{TrackName: "Camera"}, expected: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.expected, trackSelectorMatchesValues(&test.selector, "TR_camera", "camera", "robot-a"))
+		})
+	}
+}
 
-	t.Run("non-empty allowlist is exact", func(t *testing.T) {
-		allowlist := []string{"camera", "microphone"}
-		require.True(t, matchesAllowlist("camera", allowlist))
-		require.False(t, matchesAllowlist("Camera", allowlist))
-		require.False(t, matchesAllowlist("camera-wide", allowlist))
-	})
+func TestAudioRouteMatchesValues(t *testing.T) {
+	kind := lksdk.ParticipantKind(livekit.ParticipantInfo_AGENT)
+	tests := []struct {
+		name     string
+		route    config.AudioRouteConfig
+		expected bool
+	}{
+		{name: "track name", route: config.AudioRouteConfig{Match: config.AudioRouteMatch{TrackName: "microphone"}}, expected: true},
+		{name: "participant kind", route: config.AudioRouteConfig{Match: config.AudioRouteMatch{ParticipantKind: &kind}}, expected: true},
+		{name: "different participant", route: config.AudioRouteConfig{Match: config.AudioRouteMatch{ParticipantIdentity: "robot-b"}}, expected: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.expected, audioRouteMatchesValues(&test.route, "TR_mic", "microphone", "robot-a", kind))
+		})
+	}
+}
+
+func TestVideoSelectorPrecedence(t *testing.T) {
+	selectors := []config.TrackSelectorConfig{
+		{ParticipantIdentity: "robot-a"},
+		{TrackName: "camera-debug", Exclude: true},
+	}
+	require.True(t, matchesVideoSelectors(selectors, false, "TR_main", "camera-main", "robot-a"))
+	require.False(t, matchesVideoSelectors(selectors, false, "TR_debug", "camera-debug", "robot-a"))
+	require.False(t, matchesVideoSelectors(selectors, false, "TR_other", "camera-main", "robot-b"))
+	require.True(t, matchesVideoSelectors(selectors[1:], true, "TR_main", "camera-main", "robot-b"))
+}
+
+func TestAudioExcludeOverridesCaptureAllAndPositiveRoute(t *testing.T) {
+	routes := []config.AudioRouteConfig{
+		{Match: config.AudioRouteMatch{ParticipantIdentity: "robot-a"}},
+		{Match: config.AudioRouteMatch{TrackName: "microphone-debug"}, Exclude: true},
+	}
+	kind := lksdk.ParticipantKind(livekit.ParticipantInfo_STANDARD)
+	require.NotNil(t, matchingAudioRoute(routes, false, "TR_main", "microphone", "robot-a", kind))
+	require.Nil(t, matchingAudioRoute(routes, true, "TR_debug", "microphone-debug", "robot-a", kind))
+	require.NotNil(t, matchingAudioRoute(routes[1:], true, "TR_other", "microphone", "robot-b", kind))
 }
