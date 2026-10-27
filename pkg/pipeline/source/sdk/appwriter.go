@@ -794,6 +794,10 @@ func (w *AppWriter) recoverFromFlushing() {
 }
 
 func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {
+	// Passthrough Opus is written straight to the file with no mixer, so no need to check for late packets.
+	if w.opusPassthrough {
+		return
+	}
 	if pts-w.lastPipelineCheckPTS < pipelineCheckInterval {
 		return
 	}
