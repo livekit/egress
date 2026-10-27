@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/storage"
 )
@@ -164,6 +165,7 @@ func TestUploadErrorHasStatusCode(t *testing.T) {
 	}{
 		{"forbidden", http.StatusForbidden},
 		{"internal server error", http.StatusInternalServerError},
+		{"unknown origin error", 520},
 	}
 
 	for _, tc := range cases {
@@ -194,6 +196,53 @@ func TestUploadErrorHasStatusCode(t *testing.T) {
 			var statusErr *storage.ErrorWithStatusCode
 			require.ErrorAs(t, err, &statusErr)
 			require.Equal(t, tc.statusCode, statusErr.StatusCode)
+			require.True(t, errors.IsDestinationError(err))
 		})
 	}
+}
+
+// Backup storage is operator-owned, so its failures are never destination errors.
+func TestBackupUploadErrorIsNotDestinationError(t *testing.T) {
+	newStatusServer := func(statusCode int) *httptest.Server {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(statusCode)
+		}))
+		t.Cleanup(server.Close)
+		return server
+	}
+	s3Config := func(endpoint string) *config.StorageConfig {
+		return &config.StorageConfig{
+			S3: &storage.S3Config{
+				AccessKey:      "test",
+				Secret:         "test",
+				Region:         "us-east-1",
+				Bucket:         "test-bucket",
+				Endpoint:       endpoint,
+				ForcePathStyle: true,
+				MaxRetries:     1,
+			},
+		}
+	}
+
+	primary := s3Config(newStatusServer(http.StatusServiceUnavailable).URL)
+	backup := s3Config(newStatusServer(http.StatusInternalServerError).URL)
+
+	t.Run("primary and backup fail", func(t *testing.T) {
+		u, err := New(primary, backup, nil, nil, &livekit.EgressInfo{})
+		require.NoError(t, err)
+
+		_, _, err = u.Upload("uploader_test.go", "uploader_test.go", "text/plain", false)
+		require.Error(t, err)
+		require.False(t, errors.IsDestinationError(err))
+	})
+
+	t.Run("backup fails after primary failover", func(t *testing.T) {
+		u, err := New(primary, backup, nil, nil, &livekit.EgressInfo{})
+		require.NoError(t, err)
+		u.primaryFailed.Store(true)
+
+		_, _, err = u.Upload("uploader_test.go", "uploader_test.go", "text/plain", false)
+		require.Error(t, err)
+		require.False(t, errors.IsDestinationError(err))
+	})
 }
