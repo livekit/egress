@@ -996,7 +996,7 @@ func (p *PipelineConfig) GetEncodedOutputs() []OutputConfig {
 
 // OpusPassthrough reports whether a track of this codec is written to the file without decoding
 func (p *PipelineConfig) OpusPassthrough(mimeType types.MimeType) bool {
-	return p.Passthrough && mimeType == types.MimeTypeOpus && p.GetFileConfig() != nil
+	return p.Passthrough && p.RequestType == types.RequestTypeMedia && mimeType == types.MimeTypeOpus && p.GetFileConfig() != nil
 }
 
 func isHttp(parsedUrl *url.URL) bool {
