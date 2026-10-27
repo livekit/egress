@@ -139,7 +139,32 @@ func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
 		sc, err := p.getStorageConfig(makeReq("EXT_ID"))
 		require.NoError(t, err)
 		require.NotNil(t, sc.S3)
-		require.Equal(t, "EXT_ID", sc.S3.AssumeRoleExternalId)
+		require.Equal(t, "EXT_ID", sc.S3.AssumeRoleExternalID)
+	})
+
+	t.Run("allows request external_id matching the server default when flag is false", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AssumeRoleArn = "arn:aws:iam::123456789012:role/example"
+		p.S3AssumeRoleExternalID = "EXT_ID"
+		sc, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.NoError(t, err)
+		require.NotNil(t, sc.S3)
+		require.Equal(t, "EXT_ID", sc.S3.AssumeRoleExternalID)
+	})
+
+	t.Run("rejects request external_id matching the server default with a different ARN when flag is false", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AssumeRoleArn = "arn:aws:iam::123456789012:role/configured"
+		p.S3AssumeRoleExternalID = "EXT_ID"
+		_, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.ErrorContains(t, err, "setting assume_role_external_id in the request is disabled for this account")
+	})
+
+	t.Run("rejects request external_id differing from the server default when flag is false", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AssumeRoleExternalID = "SERVER_SIDE_EXT_ID"
+		_, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.ErrorContains(t, err, "setting assume_role_external_id in the request is disabled for this account")
 	})
 
 	t.Run("no rejection when request omits external_id", func(t *testing.T) {
@@ -147,7 +172,7 @@ func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
 		sc, err := p.getStorageConfig(makeReq(""))
 		require.NoError(t, err)
 		require.NotNil(t, sc.S3)
-		require.Equal(t, "", sc.S3.AssumeRoleExternalId)
+		require.Equal(t, "", sc.S3.AssumeRoleExternalID)
 	})
 
 	t.Run("server-side default external_id still applies when request omits it", func(t *testing.T) {
@@ -166,7 +191,7 @@ func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
 		sc, err := p.getStorageConfig(req)
 		require.NoError(t, err)
 		require.NotNil(t, sc.S3)
-		require.Equal(t, "SERVER_SIDE_EXT_ID", sc.S3.AssumeRoleExternalId)
+		require.Equal(t, "SERVER_SIDE_EXT_ID", sc.S3.AssumeRoleExternalID)
 	})
 }
 
@@ -238,6 +263,48 @@ func TestSegmentNaming(t *testing.T) {
 		require.Equal(t, test.expectedPlaylistFilename, o.PlaylistFilename)
 		require.Equal(t, test.expectedLivePlaylistFilename, o.LivePlaylistFilename)
 		require.Equal(t, test.expectedSegmentPrefix, o.SegmentPrefix)
+	}
+}
+
+func TestSegmentProtocol(t *testing.T) {
+	for _, test := range []struct {
+		protocol                  livekit.SegmentedFileProtocol
+		expectedSegmentOutputType types.OutputType
+		expectedInitSegment       string
+		expectedErr               bool
+	}{
+		{
+			protocol:                  livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL,
+			expectedSegmentOutputType: types.OutputTypeTS,
+		},
+		{
+			protocol:                  livekit.SegmentedFileProtocol_HLS_PROTOCOL,
+			expectedSegmentOutputType: types.OutputTypeTS,
+		},
+		{
+			protocol:                  livekit.SegmentedFileProtocol_HLS_FMP4_PROTOCOL,
+			expectedSegmentOutputType: types.OutputTypeM4S, expectedInitSegment: "playlist_init.mp4",
+		},
+		{
+			protocol: livekit.SegmentedFileProtocol(99), expectedErr: true,
+		},
+	} {
+		p := &PipelineConfig{Info: &livekit.EgressInfo{EgressId: "egress_ID"}}
+		seg := &livekit.SegmentedFileOutput{
+			PlaylistName: "playlist",
+			Protocol:     test.protocol,
+		}
+
+		o, err := p.getSegmentConfig(seg, seg)
+		if test.expectedErr {
+			require.Error(t, err)
+			continue
+		}
+		require.NoError(t, err)
+
+		require.Equal(t, types.OutputTypeHLS, o.OutputType)
+		require.Equal(t, test.expectedSegmentOutputType, o.SegmentOutputType)
+		require.Equal(t, test.expectedInitSegment, o.InitSegmentFilename)
 	}
 }
 
@@ -313,4 +380,27 @@ func TestFilenameUTCReplacementIgnoresLocalTimezone(t *testing.T) {
 	parsed, err := time.ParseInLocation("20060102150405", utc[:14], time.UTC)
 	require.NoError(t, err)
 	require.WithinDuration(t, time.Now(), parsed, 10*time.Second)
+}
+
+func TestOpusPassthrough(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		mimeType types.MimeType
+		output   types.EgressType
+		expected bool
+	}{
+		{"opus file", types.MimeTypeOpus, types.EgressTypeFile, true},
+		{"opus websocket needs pcm", types.MimeTypeOpus, types.EgressTypeWebsocket, false},
+		{"pcmu file is encoded to opus", types.MimeTypePCMU, types.EgressTypeFile, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := &PipelineConfig{Passthrough: true, Outputs: map[types.EgressType][]OutputConfig{}}
+			if test.output == types.EgressTypeFile {
+				p.Outputs[test.output] = []OutputConfig{&FileConfig{}}
+			} else {
+				p.Outputs[test.output] = []OutputConfig{&StreamConfig{}}
+			}
+			require.Equal(t, test.expected, p.OpusPassthrough(test.mimeType))
+		})
+	}
 }

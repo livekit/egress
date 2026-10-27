@@ -409,31 +409,20 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
-		// validate and redact url
-		stream, err := o.AddStream(rawUrl, o.OutputType)
+		stream, err := o.AddStream("", rawUrl, o.OutputType)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
 		}
-
-		// add stream info to results
-		c.mu.Lock()
-		c.Info.StreamResults = append(c.Info.StreamResults, stream.StreamInfo)
-		if list := c.Info.GetStream(); list != nil { //nolint:staticcheck // keep deprecated field for older clients
-			list.Info = append(list.Info, stream.StreamInfo)
-		}
-		c.mu.Unlock()
-
-		// add stream
-		if err = c.getStreamSink().AddStream(stream); err != nil {
-			stream.StreamInfo.Status = livekit.StreamInfo_FAILED
-			stream.StreamInfo.Error = err.Error()
-			stream.UpdateEndTime(time.Now().UnixNano())
+		c.addStream(stream, &errs)
+	}
+	for _, d := range req.AddDestinations {
+		stream, err := o.AddDestination(d, o.OutputType)
+		if err != nil {
 			errs.AppendErr(err)
 			continue
 		}
-
-		c.OutputCount.Inc()
+		c.addStream(stream, &errs)
 	}
 
 	// remove stream outputs
@@ -451,6 +440,26 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	c.streamUpdated(ctx)
 	return errs.ToError()
+}
+
+func (c *Controller) addStream(stream *config.Stream, errs *errors.ErrArray) {
+	c.mu.Lock()
+	c.Info.StreamResults = append(c.Info.StreamResults, stream.StreamInfo)
+	if list := c.Info.GetStream(); list != nil { //nolint:staticcheck // keep deprecated field for older clients
+		list.Info = append(list.Info, stream.StreamInfo)
+	}
+	c.mu.Unlock()
+
+	if err := c.getStreamSink().AddStream(stream); err != nil {
+		stream.StreamInfo.Status = livekit.StreamInfo_FAILED
+		stream.StreamInfo.Error = err.Error()
+		stream.UpdateEndTime(time.Now().UnixNano())
+		c.GetStreamConfig().Streams.Delete(stream.ParsedUrl)
+		errs.AppendErr(err)
+		return
+	}
+
+	c.OutputCount.Inc()
 }
 
 func (c *Controller) streamFinished(ctx context.Context, stream *config.Stream) error {

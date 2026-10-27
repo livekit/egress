@@ -288,11 +288,17 @@ func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 			} else {
 				costs.cpu = m.cpuCostConfig.WebCpuCost
 			}
-		} else if request.GetMedia() != nil {
-			if request.GetPreset() == livekit.EncodingOptionsPreset_PASSTHROUGH {
+		} else if media := request.GetMedia(); media != nil {
+			switch {
+			case request.GetPreset() == livekit.EncodingOptionsPreset_PASSTHROUGH:
 				costs.cpu = m.cpuCostConfig.TrackCpuCost
-			} else {
+			case media.GetVideo() == nil:
+				costs.cpu = m.cpuCostConfig.SDKAudioRoomCompositeCpuCost
+				costs.memory = m.cpuCostConfig.SDKAudioRoomCompositeMemoryCost
+			case media.GetParticipantVideo() != nil:
 				costs.cpu = m.cpuCostConfig.ParticipantCpuCost
+			default:
+				costs.cpu = m.cpuCostConfig.TrackCompositeCpuCost
 			}
 		}
 	}

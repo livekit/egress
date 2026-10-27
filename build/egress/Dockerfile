@@ -77,9 +77,31 @@ ENV TINI_VERSION v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TARGETARCH} /tini
 RUN chmod +x /tini
 
-FROM livekit/gstreamer:$GSTVERSION-prod-rs
+FROM livekit/gstreamer:$GSTVERSION-prod-rs AS rs-plugins
+
+RUN --mount=type=bind,source=build/egress,target=/build \
+    /build/copy-rs-plugins /build/egress-rs-elements /rs-plugins
+
+FROM livekit/gstreamer:$GSTVERSION-prod
+
+# gst-plugins-rs plugins listed in build/egress/egress-rs-elements
+COPY --from=rs-plugins /rs-plugins/ /
+
+# fail the build if a listed element does not load in this image
+RUN --mount=type=bind,source=build/egress/egress-rs-elements,target=/egress-rs-elements \
+    grep -v -e '^#' -e '^$' /egress-rs-elements | xargs -n1 gst-inspect-1.0 > /dev/null && \
+    rm -rf /root/.cache
 
 ARG TARGETPLATFORM
+
+# Our GStreamer build is not owned by any package, so distro GStreamer packages
+# (a pulseaudio dependency) would overwrite its files. Keep dpkg from writing them.
+# The distro helper directory stays: libgstreamer1.0-0's postinst fails without gst-ptp-helper.
+RUN printf '%s\n' \
+        'path-exclude=/usr/lib/*/gstreamer-1.0/*' \
+        'path-exclude=/usr/lib/*/libgst*' \
+        'path-include=/usr/lib/*/gstreamer1.0/*' \
+    > /etc/dpkg/dpkg.cfg.d/exclude-distro-gstreamer
 
 # install deps, pulling in security updates from the base image.
 # SECURITY_REFRESH busts the cache so the upgrade re-runs on every build.
@@ -97,9 +119,14 @@ RUN apt-get update && \
     gstreamer1.0-plugins-base-
 
 # install chrome
-COPY --from=livekit/chrome-installer:154.0.8037.97 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:156.0.8078.47 /chrome-installer /chrome-installer
 
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
+
+# fail the build if the core elements are not from our GStreamer build
+ARG GSTVERSION
+RUN gst-inspect-1.0 coreelements | grep -q "Version *${GSTVERSION%-*}$" || \
+    { echo "coreelements is not GStreamer ${GSTVERSION%-*}" >&2; exit 1; }
 
 # clean up
 RUN rm -rf /var/lib/apt/lists/*

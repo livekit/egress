@@ -23,7 +23,6 @@ universal export of your LiveKit sessions and tracks.
 2. **Web egress** for recordings that aren't attached to a single LiveKit room.
 3. **Track composite** for exporting synchronized tracks of a single participant.
 4. **Track egress** for exporting individual tracks.
-5. **Robotics source** for exporting every room track as an independent MCAP channel.
 
 Depending on your request type, the egress service will either launch Chrome using a web template
 (room composite requests) or a supplied url (web requests), or it will use the Go SDK directly (track and track composite requests).
@@ -31,90 +30,14 @@ Irrespective of method used, when moving between protocols, containers or encodi
 
 ## Supported Output
 
-| Egress Type     | MP4 File | OGG File | MCAP File | WebM File | HLS (TS Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
-|-----------------|----------|----------|-----------------|-----------|-------------------|----------------|------------|------------------|--------------------|
-| Room Composite  | ✅        | ✅        | ✅               |           | ✅                 | ✅              | ✅          |                  | ✅                  |
-| Data Source       |        |          | ✅               |           |                   |                |            |                  |                    |
-| Web             | ✅        | ✅        | ✅               |           | ✅                 | ✅              | ✅          |                  | ✅                  |
-| Track Composite | ✅        | ✅        | ✅               |           | ✅                 | ✅              | ✅          |                  | ✅                  |
-| Track           | ✅        | ✅        |                 | ✅         |                   |                |            | ✅                |                    |
+| Egress Type     | MP4 File | OGG File | WebM File | HLS (TS or fMP4 Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
+|-----------------|----------|----------|-----------|-------------------|----------------|------------------|------------------|--------------------|
+| Room Composite  | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |
+| Web             | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |
+| Track Composite | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |
+| Track           | ✅        | ✅        | ✅         |                   |                |               | ✅                |                    |
 
 Files can be uploaded to any S3 compatible storage, Azure, or GCP.
-
-### MCAP output
-
-MCAP file output stores encoded H264 video as `foxglove.CompressedVideo` and encoded Opus audio as
-`foxglove.CompressedAudio`. The file includes protobuf schemas, chunk indexes, CRCs, and LiveKit egress metadata, and
-follows the same local/cloud upload path as other file outputs.
-
-`RoboticsSource` uses the SDK source instead of Chrome and preserves every matching room track as its own MCAP channel:
-
-```text
-/livekit/{participant_identity}/{track_name}
-```
-
-Video inputs (H264, VP8, or VP9) are normalized to H264, while Opus is preserved and PCMU/PCMA audio is normalized to
-Opus. Tracks published after the export starts are added dynamically. An empty `data` object captures every audio and
-video track from every participant. Participant and modality selectors are exact, case-sensitive allowlists and are
-combined by intersection. An omitted or empty selector means "all". Once any modality selector is present, omitted
-modalities are disabled. This source currently permits exactly one MCAP file output.
-
-The API reserves `data_tracks` for the same selection model, but egress currently rejects requests that include it
-rather than silently omitting data. Data packet capture and schema forwarding are a future extension.
-
-`RoboticsSource` is intentionally MCAP-only and live-only. With a participant named `jetson-camera`
-already publishing in `mcap-test`, save the following as `request.json`:
-
-```json
-{
-  "room_name": "mcap-test",
-  "robotics": {},
-  "outputs": [{
-    "file": {
-      "file_type": "MCAP",
-      "filepath": "/out/tracks-demo.mcap",
-      "disable_manifest": true
-    }
-  }]
-}
-```
-
-To capture only the Jetson's two cameras and the operator's microphone:
-
-```json
-{
-  "room_name": "mcap-test",
-  "robotics": {
-    "participants": {
-      "identities": ["jetson-camera", "operator"]
-    },
-    "video_tracks": {
-      "track_names": ["jetson-csi-camera-0", "jetson-csi-camera-1"]
-    },
-    "audio_tracks": {
-      "track_names": ["microphone"]
-    }
-  },
-  "outputs": [{
-    "file": {
-      "file_type": "MCAP",
-      "filepath": "/out/tracks-demo-filtered.mcap",
-      "disable_manifest": true
-    }
-  }]
-}
-```
-
-```shell
-lk --dev --url http://127.0.0.1:7880 egress start request.json
-lk --dev --url http://127.0.0.1:7880 egress stop --id EG_xxx
-mcap doctor ~/tmp-egress-mcap/tracks-demo.mcap
-mcap info ~/tmp-egress-mcap/tracks-demo.mcap
-```
-
-MCAP output also supports the original participant, track-composite, composite room, and web paths, which write
-fixed `/video` and `/audio` channels. Direct single-track egress remains passthrough and is not routed through the
-MCAP writer.
 
 ## Documentation
 
@@ -153,8 +76,8 @@ psrpc: # optional gzip compression of psrpc bus payloads, see the compatibility 
 cpu_cost: # optionally override cpu cost estimation, used when accepting or denying requests
   room_composite_cpu_cost: 3.0
   audio_room_composite_cpu_cost: 1.0
-  sdk_audio_room_composite_cpu_cost: 0.5 # audio-only room composites without layout or custom_base_url (no chrome). Defaults to audio_room_composite_cpu_cost
-  sdk_audio_room_composite_memory_cost: 1.0 # memory in GB. Defaults to memory_cost
+  sdk_audio_room_composite_cpu_cost: 0.5 # audio-only room composites without layout or custom_base_url (no chrome), and audio-only media egress. Defaults to audio_room_composite_cpu_cost
+  sdk_audio_room_composite_memory_cost: 1.0 # memory in GB, same request types as above. Defaults to memory_cost
   web_cpu_cost: 3.0
   track_composite_cpu_cost: 2.0
   track_cpu_cost: 1.0

@@ -15,7 +15,7 @@
 # syntax=docker/dockerfile:1.6
 ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
-ARG LINT_VERSION=v2.13.2
+ARG LINT_VERSION=v2.14.0
 
 # The GStreamer version is pinned in .gst-version, the single source of truth that
 # Renovate keeps current via an approvable PR. It has no default here on purpose: a
@@ -119,9 +119,31 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 RUN echo ok >/unit_ok
 
 
-FROM livekit/gstreamer:$GSTVERSION-prod-rs
+FROM livekit/gstreamer:$GSTVERSION-prod-rs AS rs-plugins
+
+RUN --mount=type=bind,source=build/egress,target=/build \
+    /build/copy-rs-plugins /build/egress-rs-elements /rs-plugins
+
+FROM livekit/gstreamer:$GSTVERSION-prod
+
+# gst-plugins-rs plugins listed in build/egress/egress-rs-elements
+COPY --from=rs-plugins /rs-plugins/ /
+
+# fail the build if a listed element does not load in this image
+RUN --mount=type=bind,source=build/egress/egress-rs-elements,target=/egress-rs-elements \
+    grep -v -e '^#' -e '^$' /egress-rs-elements | xargs -n1 gst-inspect-1.0 > /dev/null && \
+    rm -rf /root/.cache
 
 ARG TARGETPLATFORM
+
+# Our GStreamer build is not owned by any package, so distro GStreamer packages
+# (a pulseaudio dependency) would overwrite its files. Keep dpkg from writing them.
+# The distro helper directory stays: libgstreamer1.0-0's postinst fails without gst-ptp-helper.
+RUN printf '%s\n' \
+        'path-exclude=/usr/lib/*/gstreamer-1.0/*' \
+        'path-exclude=/usr/lib/*/libgst*' \
+        'path-include=/usr/lib/*/gstreamer1.0/*' \
+    > /etc/dpkg/dpkg.cfg.d/exclude-distro-gstreamer
 
 # install deps, pulling in security updates from the base image.
 # SECURITY_REFRESH busts the cache so the upgrade re-runs on every build.
@@ -147,9 +169,14 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOTOOLCHAIN=local
 
 # install chrome
-COPY --from=livekit/chrome-installer:154.0.8037.97 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:156.0.8078.47 /chrome-installer /chrome-installer
 
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
+
+# fail the build if the core elements are not from our GStreamer build
+ARG GSTVERSION
+RUN gst-inspect-1.0 coreelements | grep -q "Version *${GSTVERSION%-*}$" || \
+    { echo "coreelements is not GStreamer ${GSTVERSION%-*}" >&2; exit 1; }
 
 # clean up
 RUN rm -rf /var/lib/apt/lists/*

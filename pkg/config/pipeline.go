@@ -128,6 +128,7 @@ type TrackSource struct {
 	MimeType            types.MimeType
 	PayloadType         webrtc.PayloadType
 	ClockRate           uint32
+	Stereo              bool
 	TempoController     *tempo.Controller
 	OnKeyframeRequired  func()
 }
@@ -1068,6 +1069,11 @@ func (p *PipelineConfig) GetEncodedOutputs() []OutputConfig {
 	}
 
 	return ret
+}
+
+// OpusPassthrough reports whether a track of this codec is written to the file without decoding
+func (p *PipelineConfig) OpusPassthrough(mimeType types.MimeType) bool {
+	return p.Passthrough && mimeType == types.MimeTypeOpus && p.GetFileConfig() != nil
 }
 
 func isHttp(parsedUrl *url.URL) bool {

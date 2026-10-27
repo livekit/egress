@@ -24,6 +24,7 @@ import (
 	"github.com/frostbyte73/core"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/grpc"
 
 	"go.opentelemetry.io/otel"
@@ -35,6 +36,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
+	"github.com/livekit/egress/pkg/stats"
 )
 
 type Handler struct {
@@ -46,13 +48,36 @@ type Handler struct {
 	ipcServiceClient ipc.EgressServiceClient
 	initialized      core.Fuse
 	kill             core.Fuse
+
+	newPipeline   PipelineFactory
+	filterMetrics func([]*dto.MetricFamily) []*dto.MetricFamily
 }
 
 var (
 	tracer = otel.Tracer("github.com/livekit/egress/pkg/handler")
 )
 
-func NewHandler(conf *config.PipelineConfig) (*Handler, error) {
+// PipelineFactory builds the pipeline controller the handler runs
+type PipelineFactory func(ctx context.Context, conf *config.PipelineConfig, ipcClient ipc.EgressServiceClient) (*pipeline.Controller, error)
+
+// Option configures a Handler
+type Option func(*Handler)
+
+// WithPipeline replaces pipeline.New as the handler's pipeline constructor
+func WithPipeline(f PipelineFactory) Option {
+	return func(h *Handler) {
+		h.newPipeline = f
+	}
+}
+
+// WithMetricsFilter replaces stats.FilterHandlerFamilies as the filter applied to scraped handler metrics
+func WithMetricsFilter(f func([]*dto.MetricFamily) []*dto.MetricFamily) Option {
+	return func(h *Handler) {
+		h.filterMetrics = f
+	}
+}
+
+func NewHandler(conf *config.PipelineConfig, opts ...Option) (*Handler, error) {
 	// The service already exposes go_* / process_* — leaving these registered
 	// causes prometheus.Gatherers.Gather to reject the scrape as duplicate.
 	prometheus.Unregister(collectors.NewGoCollector())
@@ -69,6 +94,11 @@ func NewHandler(conf *config.PipelineConfig) (*Handler, error) {
 		conf:             conf,
 		ipcHandlerServer: grpc.NewServer(),
 		ipcServiceClient: ipcClient,
+		newPipeline:      pipeline.New,
+		filterMetrics:    stats.FilterHandlerFamilies,
+	}
+	for _, opt := range opts {
+		opt(h)
 	}
 
 	ipc.RegisterEgressHandlerServer(h.ipcHandlerServer, h)
@@ -105,7 +135,7 @@ func (h *Handler) Run() {
 		return
 	}
 
-	h.controller, err = pipeline.New(context.Background(), h.conf, h.ipcServiceClient)
+	h.controller, err = h.newPipeline(context.Background(), h.conf, h.ipcServiceClient)
 	h.initialized.Break()
 	if err != nil {
 		h.conf.Info.SetFailed(err)

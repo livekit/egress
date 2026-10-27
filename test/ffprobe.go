@@ -39,7 +39,7 @@ import (
 )
 
 var (
-	segmentTimeRegexp = regexp.MustCompile(`_(\d{14})(\d{3})\.ts`)
+	segmentTimeRegexp = regexp.MustCompile(`_(\d{14})(\d{3})\.(?:ts|m4s)`)
 )
 
 type FFProbeInfo struct {
@@ -65,6 +65,7 @@ type FFProbeInfo struct {
 		FormatName string `json:"format_name"`
 		Duration   string `json:"duration"`
 		Size       string `json:"size"`
+		BitRate    string `json:"bit_rate"`
 		ProbeScore int    `json:"probe_score"`
 		Tags       struct {
 			Encoder string `json:"encoder"`
@@ -217,7 +218,9 @@ func verify(t *testing.T, in string, p *config.PipelineConfig, res *livekit.Egre
 			}
 
 			// channels
-			require.Equal(t, 2, stream.Channels)
+			if !p.Passthrough {
+				require.Equal(t, 2, stream.Channels)
+			}
 
 			// audio bitrate
 			if p.Outputs[egressType][0].GetOutputType() == types.OutputTypeMP4 {
@@ -347,7 +350,7 @@ func frameGapAllowance(tc *testCase) time.Duration {
 // verifyFrameContinuity fails on a hole in the video timeline. The content
 // checks look for frames that should not be there, so a stretch with no frames
 // at all passes them: there is nothing left to be wrong.
-func verifyFrameContinuity(t *testing.T, in string, tc *testCase) {
+func verifyFrameContinuity(t *testing.T, in string, tc *testCase, align *recordingAlignment) {
 	t.Helper()
 
 	if tc.audioOnly {
@@ -373,7 +376,24 @@ func verifyFrameContinuity(t *testing.T, in string, tc *testCase) {
 	require.LessOrEqual(t, worst, allowance,
 		"%s of video missing at %.3fs, the timeline should be continuous", worst, worstAt)
 
-	verifyNoFreeze(t, in, allowance)
+	verifyNoFreeze(t, in, allowance, freezeExcusals(tc.plan, align))
+}
+
+// freezeExcusals returns the file-time spans where held frames are expected: warmup and speaker switches
+func freezeExcusals(plan *Plan, align *recordingAlignment) []timeSpan {
+	if align == nil {
+		return []timeSpan{{0, publishSettling.Seconds()}}
+	}
+	toFile := func(planPTS time.Duration) float64 { return (planPTS - align.lag).Seconds() }
+	spans := []timeSpan{{0, toFile(time.Duration(align.intLag)*time.Second + publishSettling)}}
+	for _, p := range plan.publishers {
+		for _, e := range p.audio {
+			if e.kind == eventMute || e.kind == eventUnmute {
+				spans = append(spans, timeSpan{toFile(e.pts), toFile(e.pts + stageSwitchGrace)})
+			}
+		}
+	}
+	return spans
 }
 
 // ffprobeFrameTimes returns the presentation timestamp of every video frame.
@@ -481,11 +501,11 @@ var (
 
 type timeSpan struct{ start, end float64 }
 
-// verifyNoFreeze fails on a stretch of held frames outside the black filler.
+// verifyNoFreeze fails on a stretch of held frames outside the black filler and the excused spans.
 // A hole that videorate pads with duplicates keeps the timeline continuous, so
 // the gap check cannot see it. Both are the same lost stretch, so they share an
 // allowance.
-func verifyNoFreeze(t *testing.T, in string, allowance time.Duration) {
+func verifyNoFreeze(t *testing.T, in string, allowance time.Duration, excused []timeSpan) {
 	t.Helper()
 
 	held, err := ffmpegHeldFrameTimes(in)
@@ -497,6 +517,7 @@ func verifyNoFreeze(t *testing.T, in string, allowance time.Duration) {
 	// frames before merging, or one run spans the filler and what follows it.
 	grace := frozenBlackGrace.Seconds()
 	var outside []float64
+	var excusedFrames int
 	for _, h := range held {
 		covered := false
 		for _, b := range black {
@@ -506,13 +527,23 @@ func verifyNoFreeze(t *testing.T, in string, allowance time.Duration) {
 			}
 		}
 		if !covered {
+			for _, s := range excused {
+				if h >= s.start && h <= s.end {
+					covered = true
+					excusedFrames++
+					break
+				}
+			}
+		}
+		if !covered {
 			outside = append(outside, h)
 		}
 	}
 
 	worst, worstAt := longestHeldRun(outside, frozenRunGap.Seconds())
 	d := time.Duration(worst * float64(time.Second))
-	t.Logf("longest freeze outside the filler: %s at %.3fs (allowance %s)", d, worstAt, allowance)
+	t.Logf("longest freeze outside the filler: %s at %.3fs (allowance %s, %d held frames excused by warmup/speaker switch)",
+		d, worstAt, allowance, excusedFrames)
 	require.LessOrEqual(t, d, allowance,
 		"video held the same frame for %s at %.3fs, content should keep advancing", d, worstAt)
 }
