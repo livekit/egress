@@ -527,16 +527,14 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	default:
 		return errors.ErrInvalidInput("request")
 	}
-	if p.RequestType == types.RequestTypeMedia {
-		if p.MultiVideo && !p.hasAnyMCAPOutput() {
-			return errors.ErrInvalidInput("media.videos requires one MCAP file output")
+	if p.MultiVideo && !p.hasAnyMCAPOutput() {
+		return errors.ErrInvalidInput("media.videos requires one MCAP file output")
+	}
+	if p.hasAnyMCAPOutput() {
+		if err := p.validateMCAPOutput(); err != nil {
+			return err
 		}
-		if p.hasAnyMCAPOutput() {
-			p.TrackPreserving = true
-			if err := p.validateTrackPreservingOutput(); err != nil {
-				return err
-			}
-		}
+		p.TrackPreserving = true
 	}
 
 	// the passthrough preset is shared with request types that always transcode

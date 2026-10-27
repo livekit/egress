@@ -18,7 +18,10 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
+	"sync"
 	"time"
+	"unicode"
 
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
@@ -28,24 +31,30 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	mcapwriter "github.com/livekit/egress/pkg/mcap"
-	"github.com/livekit/egress/pkg/pipeline/builder"
 	"github.com/livekit/egress/pkg/pipeline/sink/uploader"
 	"github.com/livekit/egress/pkg/stats"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-// MCAPSink terminates encoded Opus and H264 branches in appsinks and writes
-// both streams into one MCAP file. The writer owns synchronization between the
-// independent GStreamer streaming threads.
+// MCAPSink owns a self-contained GStreamer branch per subscribed
+// LiveKit track. Unlike the regular media bins, these branches never meet at a
+// selector, compositor, or audio mixer.
+// TODO(data tracks): register data schemas/channels directly with the MCAP
+// writer; data messages do not need an independent GStreamer branch.
 type MCAPSink struct {
 	*config.FileConfig
 	*uploader.Uploader
 
 	conf      *config.PipelineConfig
 	callbacks *gstreamer.Callbacks
-	bin       *builder.MCAPBin
+	bin       *gstreamer.Bin
+
+	mu       sync.Mutex
+	paths    map[string]string
+	appSinks map[string]*gst.Element
 
 	file   *os.File
 	writer *mcapwriter.Writer
@@ -64,24 +73,34 @@ func newMCAPSink(
 	if err != nil {
 		return nil, err
 	}
-
 	s := &MCAPSink{
 		FileConfig: o,
 		Uploader:   u,
 		conf:       conf,
 		callbacks:  callbacks,
+		bin:        p.NewBin("media_source_mcap"),
+		paths:      make(map[string]string),
+		appSinks:   make(map[string]*gst.Element),
 	}
-
-	audioCallbacks := &app.SinkCallbacks{NewSampleFunc: s.onAudioSample}
-	videoCallbacks := &app.SinkCallbacks{NewSampleFunc: s.onVideoSample}
-	s.bin, err = builder.BuildMCAPBin(p, conf, audioCallbacks, videoCallbacks)
-	if err != nil {
+	for _, track := range conf.VideoTracks {
+		if err = s.addTrack(track); err != nil {
+			return nil, err
+		}
+	}
+	for _, track := range conf.AudioTracks {
+		if err = s.addTrack(track); err != nil {
+			return nil, err
+		}
+	}
+	callbacks.AddOnTrackAdded(func(track *config.TrackSource) {
+		if err := s.addTrack(track); err != nil {
+			callbacks.OnError(err)
+		}
+	})
+	callbacks.AddOnTrackRemoved(s.removeTrack)
+	if err = p.AddSourceBin(s.bin); err != nil {
 		return nil, err
 	}
-	if err = p.AddSinkBin(s.bin.Bin); err != nil {
-		return nil, err
-	}
-
 	return s, nil
 }
 
@@ -90,38 +109,264 @@ func (s *MCAPSink) Start() error {
 	if err != nil {
 		return errors.MarkDestinationError(err)
 	}
-
-	metadata := map[string]string{
-		"egress_id":   s.conf.Info.EgressId,
-		"room_id":     s.conf.Info.RoomId,
-		"room_name":   s.conf.Info.RoomName,
-		"source_type": string(s.conf.SourceType),
-	}
 	w, err := mcapwriter.NewWriter(f, mcapwriter.Options{
-		Audio:    s.conf.AudioEnabled,
-		Video:    s.conf.VideoEnabled,
-		Metadata: metadata,
+		DynamicTracks: true,
+		Metadata: map[string]string{
+			"egress_id": s.conf.Info.EgressId, "room_id": s.conf.Info.RoomId,
+			"room_name": s.conf.Info.RoomName, "source_type": string(types.RequestTypeMedia),
+		},
 	})
 	if err != nil {
 		_ = f.Close()
 		return errors.MarkDestinationError(err)
 	}
-
 	s.file = f
 	s.writer = w
 	return nil
 }
 
-func (s *MCAPSink) onAudioSample(appSink *app.Sink) gst.FlowReturn {
-	return s.onSample(appSink, func(pts time.Duration, data []byte) error {
-		return s.writer.WriteAudio(pts, data)
-	})
+func (s *MCAPSink) addTrack(track *config.TrackSource) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.paths[track.TrackID]; ok {
+		return nil
+	}
+	name := "room_track_" + sanitizeElementName(track.TrackID)
+	var (
+		bin     *gstreamer.Bin
+		appSink *app.Sink
+		err     error
+	)
+	switch track.TrackKind {
+	case lksdk.TrackKindAudio:
+		bin, appSink, err = s.buildAudioTrack(track, name)
+	case lksdk.TrackKindVideo:
+		bin, appSink, err = s.buildVideoTrack(track, name)
+	default:
+		return errors.ErrNotSupported(track.TrackKind.String())
+	}
+	if err != nil {
+		return err
+	}
+	if err = s.bin.AddIndependentBin(bin); err != nil {
+		return err
+	}
+	s.paths[track.TrackID] = name
+	s.appSinks[track.TrackID] = appSink.Element
+	return nil
 }
 
-func (s *MCAPSink) onVideoSample(appSink *app.Sink) gst.FlowReturn {
-	return s.onSample(appSink, func(pts time.Duration, data []byte) error {
-		return s.writer.WriteVideo(pts, "livekit_video", data)
-	})
+func (s *MCAPSink) removeTrack(trackID string) {
+	s.mu.Lock()
+	name := s.paths[trackID]
+	delete(s.paths, trackID)
+	delete(s.appSinks, trackID)
+	s.mu.Unlock()
+	if name != "" {
+		if err := s.bin.RemoveIndependentBin(name); err != nil {
+			s.callbacks.OnError(err)
+		}
+	}
+}
+
+func (s *MCAPSink) buildVideoTrack(track *config.TrackSource, name string) (*gstreamer.Bin, *app.Sink, error) {
+	bin := s.bin.NewBin(name)
+	bin.SetEOSFunc(func() bool { return false })
+	if err := configureRoomTrackAppSrc(track, s.conf.Live); err != nil {
+		return nil, nil, err
+	}
+	elements := []*gst.Element{track.AppSrc.Element}
+
+	var names []string
+	switch track.MimeType {
+	case types.MimeTypeH264:
+		names = []string{"rtph264depay", "h264parse", "avdec_h264"}
+	case types.MimeTypeVP8:
+		names = []string{"rtpvp8depay", "vp8dec"}
+	case types.MimeTypeVP9:
+		names = []string{"rtpvp9depay", "vp9dec"}
+	default:
+		return nil, nil, errors.ErrNotSupported(string(track.MimeType))
+	}
+	for _, elementName := range names {
+		element, err := gst.NewElement(elementName)
+		if err != nil {
+			return nil, nil, errors.ErrGstPipelineError(err)
+		}
+		elements = append(elements, element)
+	}
+	videoConvert, err := gst.NewElement("videoconvert")
+	if err != nil {
+		return nil, nil, errors.ErrGstPipelineError(err)
+	}
+	x264Enc, err := gst.NewElement("x264enc")
+	if err != nil {
+		return nil, nil, errors.ErrGstPipelineError(err)
+	}
+	x264Enc.SetArg("speed-preset", "veryfast")
+	if err = x264Enc.SetProperty("bframes", uint(0)); err != nil {
+		return nil, nil, errors.ErrGstPipelineError(err)
+	}
+	if err = x264Enc.SetProperty("bitrate", uint(s.conf.VideoBitrate)); err != nil {
+		return nil, nil, errors.ErrGstPipelineError(err)
+	}
+	if err = x264Enc.SetProperty("key-int-max", uint(max(s.conf.Framerate, 1))); err != nil {
+		return nil, nil, errors.ErrGstPipelineError(err)
+	}
+	profileCaps, err := capsFilter("video/x-h264,profile=baseline")
+	if err != nil {
+		return nil, nil, err
+	}
+	h264Parse, err := gst.NewElement("h264parse")
+	if err != nil {
+		return nil, nil, errors.ErrGstPipelineError(err)
+	}
+	if err = h264Parse.SetProperty("config-interval", -1); err != nil {
+		return nil, nil, errors.ErrGstPipelineError(err)
+	}
+	outputCaps, err := capsFilter("video/x-h264,stream-format=byte-stream,alignment=au")
+	if err != nil {
+		return nil, nil, err
+	}
+	mediaTrack := s.mcapTrack(track)
+	appSink, err := app.NewAppSink()
+	if err != nil {
+		return nil, nil, errors.ErrGstPipelineError(err)
+	}
+	appSink.SetCallbacks(&app.SinkCallbacks{NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
+		return s.onSample(appSink, func(pts time.Duration, data []byte) error {
+			return s.writer.WriteVideoTrack(pts, mediaTrack, data)
+		})
+	}})
+	if err = configureRoomTrackAppSink(appSink); err != nil {
+		return nil, nil, err
+	}
+	elements = append(elements, videoConvert, x264Enc, profileCaps, h264Parse, outputCaps, appSink.Element)
+	if err = bin.AddElements(elements...); err != nil {
+		return nil, nil, err
+	}
+	return bin, appSink, nil
+}
+
+func (s *MCAPSink) buildAudioTrack(track *config.TrackSource, name string) (*gstreamer.Bin, *app.Sink, error) {
+	bin := s.bin.NewBin(name)
+	bin.SetEOSFunc(func() bool { return false })
+	if err := configureRoomTrackAppSrc(track, s.conf.Live); err != nil {
+		return nil, nil, err
+	}
+	elements := []*gst.Element{track.AppSrc.Element}
+	var names []string
+	switch track.MimeType {
+	case types.MimeTypeOpus:
+		names = []string{"rtpopusdepay", "opusparse"}
+	case types.MimeTypePCMU:
+		names = []string{"rtppcmudepay", "mulawdec", "audioconvert", "audioresample", "opusenc", "opusparse"}
+	case types.MimeTypePCMA:
+		names = []string{"rtppcmadepay", "alawdec", "audioconvert", "audioresample", "opusenc", "opusparse"}
+	default:
+		return nil, nil, errors.ErrNotSupported(string(track.MimeType))
+	}
+	for _, elementName := range names {
+		element, err := gst.NewElement(elementName)
+		if err != nil {
+			return nil, nil, errors.ErrGstPipelineError(err)
+		}
+		elements = append(elements, element)
+	}
+	mediaTrack := s.mcapTrack(track)
+	appSink, err := app.NewAppSink()
+	if err != nil {
+		return nil, nil, errors.ErrGstPipelineError(err)
+	}
+	appSink.SetCallbacks(&app.SinkCallbacks{NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
+		return s.onSample(appSink, func(pts time.Duration, data []byte) error {
+			return s.writer.WriteAudioTrack(pts, mediaTrack, data)
+		})
+	}})
+	if err = configureRoomTrackAppSink(appSink); err != nil {
+		return nil, nil, err
+	}
+	elements = append(elements, appSink.Element)
+	if err = bin.AddElements(elements...); err != nil {
+		return nil, nil, err
+	}
+	return bin, appSink, nil
+}
+
+func configureRoomTrackAppSrc(track *config.TrackSource, live bool) error {
+	track.AppSrc.SetArg("format", "time")
+	if err := track.AppSrc.SetProperty("is-live", live); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	media := "video"
+	encoding := strings.TrimPrefix(strings.ToUpper(string(track.MimeType)), "VIDEO/")
+	if track.TrackKind.String() == "audio" {
+		media = "audio"
+		encoding = strings.TrimPrefix(strings.ToUpper(string(track.MimeType)), "AUDIO/")
+	}
+	caps := fmt.Sprintf("application/x-rtp,media=%s,payload=%d,encoding-name=%s,clock-rate=%d", media, track.PayloadType, encoding, track.ClockRate)
+	if err := track.AppSrc.SetProperty("caps", gst.NewCapsFromString(caps)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	return nil
+}
+
+func configureRoomTrackAppSink(sink *app.Sink) error {
+	// AppWriter waits for the appsrc PLAYING notification before pushing RTP.
+	// Do not make pipeline preroll wait for this sink's first sample, or the two
+	// sides form a PAUSED -> PLAYING deadlock.
+	if err := sink.SetProperty("async", false); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err := sink.SetProperty("sync", false); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err := sink.SetProperty("enable-last-sample", false); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	return nil
+}
+
+func capsFilter(value string) (*gst.Element, error) {
+	caps, err := gst.NewElement("capsfilter")
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+	if err = caps.SetProperty("caps", gst.NewCapsFromString(value)); err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+	return caps, nil
+}
+
+func (s *MCAPSink) mcapTrack(track *config.TrackSource) mcapwriter.Track {
+	identity := sanitizeTopicSegment(track.ParticipantIdentity)
+	name := sanitizeTopicSegment(track.TrackName)
+	if name == "" {
+		name = sanitizeTopicSegment(track.TrackID)
+	}
+	topic := fmt.Sprintf("/livekit/%s/%s", identity, name)
+	return mcapwriter.Track{
+		ID: track.TrackID, Topic: topic, FrameID: strings.TrimPrefix(topic, "/"),
+		Metadata: map[string]string{
+			"livekit.track_id": track.TrackID, "livekit.track_name": track.TrackName,
+			"livekit.participant_identity": track.ParticipantIdentity,
+			"livekit.source":               strings.ToLower(track.PublicationSource.String()),
+			"livekit.input_codec":          string(track.MimeType),
+		},
+	}
+}
+
+func sanitizeTopicSegment(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
+			return r
+		}
+		return '_'
+	}, value)
+}
+
+func sanitizeElementName(value string) string {
+	return strings.ReplaceAll(sanitizeTopicSegment(value), "-", "_")
 }
 
 func (s *MCAPSink) onSample(appSink *app.Sink, write func(time.Duration, []byte) error) gst.FlowReturn {
@@ -134,13 +379,9 @@ func (s *MCAPSink) onSample(appSink *app.Sink, write func(time.Duration, []byte)
 		return gst.FlowOK
 	}
 	pts := buffer.PresentationTimestamp()
-	if pts == gst.ClockTimeNone {
-		s.fail(fmt.Errorf("MCAP sample has no presentation timestamp"))
-		return gst.FlowError
-	}
 	segment := sample.GetSegment()
-	if segment == nil {
-		s.fail(fmt.Errorf("MCAP sample has no segment"))
+	if pts == gst.ClockTimeNone || segment == nil {
+		s.fail(fmt.Errorf("MCAP sample has no presentation timestamp or segment"))
 		return gst.FlowError
 	}
 	runningTime := gst.ClockTime(segment.ToRunningTime(gst.FormatTime, uint64(pts))).AsDuration()
@@ -148,14 +389,12 @@ func (s *MCAPSink) onSample(appSink *app.Sink, write func(time.Duration, []byte)
 		s.fail(fmt.Errorf("MCAP sample timestamp is outside its segment"))
 		return gst.FlowError
 	}
-
 	mapped := buffer.Map(gst.MapRead)
 	if mapped == nil {
 		s.fail(fmt.Errorf("failed to map MCAP sample"))
 		return gst.FlowError
 	}
 	defer buffer.Unmap()
-
 	if s.writer == nil {
 		s.fail(fmt.Errorf("MCAP writer is not initialized"))
 		return gst.FlowError
@@ -171,31 +410,24 @@ func (s *MCAPSink) fail(err error) {
 	s.callbacks.OnError(psrpc.NewError(psrpc.Unavailable, errors.MarkDestinationError(err)))
 }
 
-// AddEOSProbe waits for EOS at every appsink. A single-bin probe would only
-// observe the last branch, while MCAP has independent audio and video branches.
 func (s *MCAPSink) AddEOSProbe() {
-	pads := make([]*gst.Pad, 0, len(s.bin.SinkElements))
-	for _, element := range s.bin.SinkElements {
-		pad := element.GetStaticPad("sink")
-		if pad == nil {
-			logger.Errorw("failed to add MCAP EOS probe", nil, "element", element.GetName())
-			continue
-		}
-		pads = append(pads, pad)
+	s.mu.Lock()
+	sinks := make([]*gst.Element, 0, len(s.appSinks))
+	for _, sink := range s.appSinks {
+		sinks = append(sinks, sink)
 	}
-
-	var expecting atomic.Int32
-	expecting.Store(int32(len(pads)))
-	if len(pads) == 0 {
+	s.mu.Unlock()
+	if len(sinks) == 0 {
 		s.eosReceived.Store(true)
 		return
 	}
-
-	for _, pad := range pads {
+	var expecting atomic.Int32
+	expecting.Store(int32(len(sinks)))
+	for _, element := range sinks {
+		pad := element.GetStaticPad("sink")
 		pad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			if event := info.GetEvent(); event != nil && event.Type() == gst.EventTypeEOS {
 				if expecting.Dec() == 0 {
-					logger.Debugw("eos received", "sink", s.bin.GetName())
 					s.eosReceived.Store(true)
 				}
 				return gst.PadProbeRemove
@@ -205,21 +437,15 @@ func (s *MCAPSink) AddEOSProbe() {
 	}
 }
 
-func (s *MCAPSink) EOSReceived() bool {
-	return s.eosReceived.Load()
-}
+func (s *MCAPSink) EOSReceived() bool { return s.eosReceived.Load() }
 
 func (s *MCAPSink) UploadManifest(filepath string) (string, bool, error) {
 	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
 		return "", false, nil
 	}
-
 	storagePath := path.Join(path.Dir(s.StorageFilepath), path.Base(filepath))
 	location, _, err := s.Upload(filepath, storagePath, types.OutputTypeJSON, false)
-	if err != nil {
-		return "", false, err
-	}
-	return location, true, nil
+	return location, true, err
 }
 
 func (s *MCAPSink) Close() error {
@@ -233,8 +459,6 @@ func (s *MCAPSink) Close() error {
 	if err := s.file.Close(); err != nil {
 		return errors.MarkDestinationError(err)
 	}
-
-	start := time.Now()
 	location, size, err := s.Upload(s.LocalFilepath, s.StorageFilepath, s.OutputType, false)
 	if err != nil {
 		logger.Debugw("MCAP upload failed", err)
@@ -242,8 +466,6 @@ func (s *MCAPSink) Close() error {
 	}
 	s.FileInfo.Location = location
 	s.FileInfo.Size = size
-	logger.Debugw("MCAP upload completed", "bytes", size, "duration", time.Since(start))
-
 	if s.conf.Manifest != nil {
 		s.conf.Manifest.AddFile(s.StorageFilepath, location)
 	}

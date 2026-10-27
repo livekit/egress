@@ -55,7 +55,10 @@ func (p *PipelineConfig) hasAnyMCAPOutput() bool {
 	return false
 }
 
-func (p *PipelineConfig) validateTrackPreservingOutput() error {
+func (p *PipelineConfig) validateMCAPOutput() error {
+	if p.RequestType != types.RequestTypeMedia {
+		return errors.ErrInvalidInput("MCAP output requires a media source")
+	}
 	if len(p.Outputs) != 1 {
 		return errors.ErrInvalidInput("media source MCAP export requires one MCAP file output")
 	}

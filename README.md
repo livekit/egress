@@ -32,17 +32,17 @@ Irrespective of method used, when moving between protocols, containers or encodi
 
 | Egress Type     | MP4 File | OGG File | MCAP File | WebM File | HLS (TS or fMP4 Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
 |-----------------|----------|----------|-----------|-----------|----------------------------|----------------|------------|------------------|--------------------|
-| Room Composite  | ✅        | ✅        | ✅         |           | ✅                          | ✅              | ✅          |                  | ✅                  |
-| Web             | ✅        | ✅        | ✅         |           | ✅                          | ✅              | ✅          |                  | ✅                  |
+| Room Composite  | ✅        | ✅        |           |           | ✅                          | ✅              | ✅          |                  | ✅                  |
+| Web             | ✅        | ✅        |           |           | ✅                          | ✅              | ✅          |                  | ✅                  |
 | Media Source    | ✅        | ✅        | ✅         |           |                            |                |            |                  |                    |
-| Track Composite | ✅        | ✅        | ✅         |           | ✅                          | ✅              | ✅          |                  | ✅                  |
+| Track Composite | ✅        | ✅        |           |           | ✅                          | ✅              | ✅          |                  | ✅                  |
 | Track           | ✅        | ✅        |           | ✅         |                            |                |            | ✅                |                    |
 
 Files can be uploaded to any S3 compatible storage, Azure, or GCP.
 
 ### MCAP media export
 
-An MCAP `MediaSource` preserves each selected audio or video publication as an independent channel named
+MCAP output is available only for `MediaSource`. It preserves each selected audio or video publication as an independent channel named
 `/livekit/{participant_identity}/{track_name}`. Video selectors and audio routes are unioned within their modality;
 an `exclude` match takes precedence over `capture_all` and positive matches. Multiple-video selection is MCAP-only,
 and a MediaSource MCAP request permits exactly one output.

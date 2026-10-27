@@ -24,22 +24,27 @@ func TestMCAPEncodedFileType(t *testing.T) {
 	require.Equal(t, types.MimeTypeH264, types.DefaultVideoCodecs[types.OutputTypeMCAP])
 }
 
-func TestValidateTrackPreservingOutput(t *testing.T) {
-	valid := &PipelineConfig{Outputs: map[types.EgressType][]OutputConfig{
+func TestValidateMCAPOutput(t *testing.T) {
+	valid := &PipelineConfig{RequestType: types.RequestTypeMedia, Outputs: map[types.EgressType][]OutputConfig{
 		types.EgressTypeFile: {&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMCAP}}},
 	}}
-	require.NoError(t, valid.validateTrackPreservingOutput())
+	require.NoError(t, valid.validateMCAPOutput())
 
-	wrongType := &PipelineConfig{Outputs: map[types.EgressType][]OutputConfig{
+	wrongType := &PipelineConfig{RequestType: types.RequestTypeMedia, Outputs: map[types.EgressType][]OutputConfig{
 		types.EgressTypeFile: {&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMP4}}},
 	}}
-	require.Error(t, wrongType.validateTrackPreservingOutput())
+	require.Error(t, wrongType.validateMCAPOutput())
 
-	multiple := &PipelineConfig{Outputs: map[types.EgressType][]OutputConfig{
+	multiple := &PipelineConfig{RequestType: types.RequestTypeMedia, Outputs: map[types.EgressType][]OutputConfig{
 		types.EgressTypeFile: {
 			&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMCAP}},
 			&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMCAP}},
 		},
 	}}
-	require.Error(t, multiple.validateTrackPreservingOutput())
+	require.Error(t, multiple.validateMCAPOutput())
+
+	wrongSource := &PipelineConfig{RequestType: types.RequestTypeRoomComposite, Outputs: map[types.EgressType][]OutputConfig{
+		types.EgressTypeFile: {&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMCAP}}},
+	}}
+	require.ErrorContains(t, wrongSource.validateMCAPOutput(), "requires a media source")
 }
