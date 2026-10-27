@@ -17,12 +17,14 @@ package builder
 import (
 	"encoding/binary"
 	"math"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
+	"github.com/pion/rtp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/pipeline/tempo"
@@ -378,6 +380,112 @@ func TestAudioPacerGapBeforeAudioPassesThrough(t *testing.T) {
 
 	require.Eventually(t, func() bool { return forwarded.Load() == 1 }, time.Second, time.Millisecond, "the GAP is forwarded, not dropped")
 	require.InDelta(t, 0, float64(h.finish()), float64(100*time.Microsecond), "no silence was chained for it")
+}
+
+func TestAudioPacerGapBeforeSegmentBecomesSilence(t *testing.T) {
+	// a replay track that starts muted: its first GAP reaches pitch with caps opusdec negotiated
+	// for it but no segment, and the depayloader's segment arrives with the first packet, equal
+	// to a default one except for its position
+	initGStreamer(t)
+	const frames = 50
+	packets := opusRTPPackets(t, frames)
+	run := func(gap time.Duration) (out time.Duration, segments int32, segmentBeforeData bool) {
+		p, err := gst.NewPipelineFromString("appsrc name=src format=time caps=application/x-rtp,media=audio,encoding-name=OPUS,clock-rate=48000,payload=111 ! " +
+			"rtpopusdepay ! opusdec ! audioconvert ! audioresample ! " + pitchTestCaps + " ! pitch name=pitch ! appsink name=out sync=false")
+		if err != nil {
+			t.Skip("rtpopusdepay, opusdec or pitch not available")
+		}
+		srcEl, err := p.GetElementByName("src")
+		require.NoError(t, err)
+		pitchEl, err := p.GetElementByName("pitch")
+		require.NoError(t, err)
+		outEl, err := p.GetElementByName("out")
+		require.NoError(t, err)
+		src, sink := app.SrcFromElement(srcEl), app.SinkFromElement(outEl)
+		installGapFill(pitchEl.GetStaticPad("sink"), 48000, 2)
+
+		var segmentCount, firstOutput atomic.Int32
+		pitchSrc := pitchEl.GetStaticPad("src")
+		pitchSrc.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if ev := info.GetEvent(); ev != nil && ev.Type() == gst.EventTypeSegment {
+				segmentCount.Add(1)
+			}
+			return gst.PadProbeOK
+		})
+		pitchSrc.AddProbe(gst.PadProbeTypeBuffer, func(pad *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+			if firstOutput.Load() == 0 {
+				if pad.GetStickyEvent(gst.EventTypeSegment, 0) != nil {
+					firstOutput.Store(1)
+				} else {
+					firstOutput.Store(-1)
+				}
+			}
+			return gst.PadProbeOK
+		})
+
+		require.NoError(t, p.SetState(gst.StatePlaying))
+		defer func() { _ = p.SetState(gst.StateNull) }()
+
+		if gap > 0 {
+			require.True(t, src.SendEvent(gst.NewGapEvent(0, gst.ClockTime(gap))))
+		}
+		for i, pkt := range packets {
+			data, err := pkt.Marshal()
+			require.NoError(t, err)
+			buf := gst.NewBufferFromBytes(data)
+			buf.SetPresentationTimestamp(gst.ClockTime(gap + time.Duration(i)*20*time.Millisecond))
+			require.Equal(t, gst.FlowOK, src.PushBuffer(buf))
+		}
+		src.EndStream()
+
+		for {
+			sample := sink.PullSample()
+			if sample == nil {
+				break
+			}
+			if d := sample.GetBuffer().Duration(); d != gst.ClockTimeNone {
+				out += *d.AsDuration()
+			}
+		}
+		return out, segmentCount.Load(), firstOutput.Load() == 1
+	}
+
+	baseline, _, _ := run(0)
+	require.Greater(t, baseline, time.Duration(0))
+
+	out, segments, segmentBeforeData := run(time.Second)
+	require.InDelta(t, float64(baseline+time.Second), float64(out), float64(100*time.Microsecond),
+		"the GAP became a second of silence and none of it was discarded")
+	require.True(t, segmentBeforeData, "the silence left pitch inside a segment")
+	require.Equal(t, int32(1), segments, "the depayloader's segment, differing only in position, never reached pitch")
+}
+
+// opusRTPPackets returns n RTP packets of 20ms mono Opus frames, 960 samples apart
+func opusRTPPackets(t *testing.T, n int) []*rtp.Packet {
+	t.Helper()
+	// the encoder pads the stream with one more frame at EOS
+	p, err := gst.NewPipelineFromString("audiotestsrc num-buffers=" + strconv.Itoa(n) + " samplesperbuffer=960 wave=sine ! audioconvert ! audioresample ! " +
+		"audio/x-raw,rate=48000,channels=1 ! opusenc frame-size=20 ! appsink name=enc sync=false")
+	if err != nil {
+		t.Skip("opusenc not available")
+	}
+	encEl, err := p.GetElementByName("enc")
+	require.NoError(t, err)
+	enc := app.SinkFromElement(encEl)
+	require.NoError(t, p.SetState(gst.StatePlaying))
+	defer func() { _ = p.SetState(gst.StateNull) }()
+
+	var packets []*rtp.Packet
+	for len(packets) < n {
+		sample := enc.PullSample()
+		require.NotNil(t, sample, "opusenc produced fewer frames than requested")
+		i := len(packets)
+		packets = append(packets, &rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 111, SSRC: 1, SequenceNumber: uint16(i), Timestamp: uint32(i * 960)},
+			Payload: append([]byte(nil), sample.GetBuffer().Bytes()...),
+		})
+	}
+	return packets
 }
 
 func TestAudioPacerCorrectionCompletesOnGapSilence(t *testing.T) {
