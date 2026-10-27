@@ -309,7 +309,7 @@ func TestOpusPassthrough(t *testing.T) {
 		{"pcmu file is encoded to opus", types.MimeTypePCMU, types.EgressTypeFile, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			p := &PipelineConfig{Passthrough: true, Outputs: map[types.EgressType][]OutputConfig{}}
+			p := &PipelineConfig{Passthrough: true, RequestType: types.RequestTypeMedia, Outputs: map[types.EgressType][]OutputConfig{}}
 			if test.output == types.EgressTypeFile {
 				p.Outputs[test.output] = []OutputConfig{&FileConfig{}}
 			} else {

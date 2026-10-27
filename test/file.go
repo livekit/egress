@@ -789,7 +789,7 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 
 	// verify
 	info := verify(t, localPath, p, res, types.EgressTypeFile, r.sourceFramerate, false)
-	if p.Passthrough && tc.audioCodec == types.MimeTypeOpus {
+	if p.OpusPassthrough(tc.audioCodec) {
 		verifyOpusPassthrough(t, info)
 	}
 
