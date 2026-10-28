@@ -89,10 +89,10 @@ type AppWriter struct {
 	samplesLock deadlock.Mutex
 	samplesCond *sync.Cond
 
-	translator  Translator
-	callbacks   *gstreamer.Callbacks
-	sendPLI     func()
-	pliThrottle core.Throttle
+	translator Translator
+	callbacks  *gstreamer.Callbacks
+	sendPLI    func()
+	keyframes  *keyframeRequester
 
 	// a/v sync
 	sync         synchronizer.Sync
@@ -172,6 +172,7 @@ func NewAppWriter(
 	w.opusPassthrough = conf.OpusPassthrough(ts.MimeType)
 
 	ts.OnKeyframeRequired = w.onKeyframeRequired
+	ts.OnKeyframeReceived = w.onKeyframeReceived
 
 	if conf.Debug.EnableTrackLogging {
 		csvLogger, err := logging.NewCSVLogger[logging.TrackStats](track.ID())
@@ -241,8 +242,8 @@ func NewAppWriter(
 	// every call site can invoke it unconditionally.
 	w.sendPLI = func() {}
 	if track.Kind() == webrtc.RTPCodecTypeVideo {
-		w.pliThrottle = core.NewThrottle(time.Second)
-		w.sendPLI = func() { w.pliThrottle(func() { rp.WritePLI(track.SSRC()) }) }
+		w.keyframes = newKeyframeRequester(time.Second, func() { rp.WritePLI(track.SSRC()) })
+		w.sendPLI = w.keyframes.RequestPLI
 		opts = append(opts, jitter.WithPacketLossHandler(func(uint64, uint64) { w.sendPLI() }))
 	}
 
@@ -328,6 +329,10 @@ func (w *AppWriter) start() {
 
 	if w.trackSource != nil {
 		w.trackSource.OnKeyframeRequired = nil
+		w.trackSource.OnKeyframeReceived = nil
+	}
+	if w.keyframes != nil {
+		w.keyframes.Close()
 	}
 
 	w.finished.Break()
@@ -484,10 +489,16 @@ func (w *AppWriter) logTrackState(event string) {
 }
 
 func (w *AppWriter) onKeyframeRequired() {
-	if w.finished.IsBroken() {
+	if w.finished.IsBroken() || w.keyframes == nil {
 		return
 	}
-	w.sendPLI()
+	w.keyframes.RequestKeyframe()
+}
+
+func (w *AppWriter) onKeyframeReceived() {
+	if w.keyframes != nil {
+		w.keyframes.KeyframeReceived()
+	}
 }
 
 func (w *AppWriter) notifyPushSamples() {
