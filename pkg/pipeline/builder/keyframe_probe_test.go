@@ -28,13 +28,13 @@ import (
 
 // newTestProbe constructs a keyframeProbe without attaching any real pad probe,
 // so processBuffer can be exercised directly with synthetic buffers.
-func newTestProbe(mimeType types.MimeType, onRequestPLI func()) *keyframeProbe {
+func newTestProbe(mimeType types.MimeType, onKeyframeReceived func()) *keyframeProbe {
 	p := &keyframeProbe{
-		trackID:      "test-track",
-		mimeType:     mimeType,
-		onRequestPLI: onRequestPLI,
-		logger:       logger.GetLogger().WithValues("trackID", "test-track", "component", "keyframe_probe_test"),
-		keyframePTS:  make([]time.Duration, 0, keyframeHistorySize),
+		trackID:            "test-track",
+		mimeType:           mimeType,
+		onKeyframeReceived: onKeyframeReceived,
+		logger:             logger.GetLogger().WithValues("trackID", "test-track", "component", "keyframe_probe_test"),
+		keyframePTS:        make([]time.Duration, 0, keyframeHistorySize),
 	}
 	p.keyframePending = true
 	return p
@@ -58,93 +58,75 @@ func makeBuffer(t *testing.T, ptsNone bool, pts time.Duration, isKeyframe bool) 
 	return buf
 }
 
-func TestKeyframeProbe_DropsPreKeyframePFrameAndRequestsPLI(t *testing.T) {
+func TestKeyframeProbe_DropsPreKeyframePFrames(t *testing.T) {
 	initGStreamer(t)
 
-	var pliCount atomic.Int32
-	p := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
-
-	buf := makeBuffer(t, false, 10*time.Millisecond, false)
-	require.Equal(t, gst.PadProbeDrop, p.processBuffer(buf))
-	require.Equal(t, int32(1), pliCount.Load())
-}
-
-func TestKeyframeProbe_ThrottlesPLIRequestsInBurst(t *testing.T) {
-	initGStreamer(t)
-
-	var pliCount atomic.Int32
-	p := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
+	var received atomic.Int32
+	p := newTestProbe(types.MimeTypeH264, func() { received.Add(1) })
 
 	for i := 0; i < 5; i++ {
 		buf := makeBuffer(t, false, time.Duration(i)*time.Millisecond, false)
 		require.Equal(t, gst.PadProbeDrop, p.processBuffer(buf))
 	}
-	require.Equal(t, int32(1), pliCount.Load(), "burst within throttle window should yield a single PLI")
+	require.Equal(t, int32(0), received.Load())
 }
 
-func TestKeyframeProbe_KeyframeAfterPendingIsForwarded(t *testing.T) {
+func TestKeyframeProbe_FirstKeyframeIsForwardedAndReported(t *testing.T) {
 	initGStreamer(t)
 
-	var pliCount atomic.Int32
-	p := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
+	var received atomic.Int32
+	p := newTestProbe(types.MimeTypeH264, func() { received.Add(1) })
 
-	// Establish pending state via a pre-keyframe P-frame.
 	pBuf := makeBuffer(t, false, 5*time.Millisecond, false)
 	require.Equal(t, gst.PadProbeDrop, p.processBuffer(pBuf))
 
-	// Keyframe arrives — must be forwarded.
 	kBuf := makeBuffer(t, false, 10*time.Millisecond, true)
 	require.Equal(t, gst.PadProbeOK, p.processBuffer(kBuf))
 	require.False(t, kBuf.HasFlags(gst.BufferFlagDiscont), "probe should not set DISCONT; rely on segment events for discontinuity signaling")
+	require.Equal(t, int32(1), received.Load())
+
+	// later keyframes are not reported again
+	require.Equal(t, gst.PadProbeOK, p.processBuffer(makeBuffer(t, false, 20*time.Millisecond, true)))
+	require.Equal(t, int32(1), received.Load())
 }
 
-func TestKeyframeProbe_PostKeyframeDeltaUnitForwardedWithoutPLI(t *testing.T) {
+func TestKeyframeProbe_PostKeyframeDeltaUnitForwarded(t *testing.T) {
 	initGStreamer(t)
 
-	var pliCount atomic.Int32
-	p := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
+	p := newTestProbe(types.MimeTypeH264, nil)
 
 	kBuf := makeBuffer(t, false, 10*time.Millisecond, true)
 	require.Equal(t, gst.PadProbeOK, p.processBuffer(kBuf))
-
-	pliBefore := pliCount.Load()
 
 	for i := 0; i < 5; i++ {
 		buf := makeBuffer(t, false, time.Duration(20+i)*time.Millisecond, false)
 		require.Equal(t, gst.PadProbeOK, p.processBuffer(buf))
 	}
-	require.Equal(t, pliBefore, pliCount.Load(), "post-keyframe P-frames should not request PLI")
 }
 
 func TestKeyframeProbe_MissingPTSWithoutPriorValidDrops(t *testing.T) {
 	initGStreamer(t)
 
-	var pliCount atomic.Int32
-	p := newTestProbe(types.MimeTypeVP9, func() { pliCount.Add(1) })
+	p := newTestProbe(types.MimeTypeVP9, nil)
 
-	// No prior valid PTS to restore from — drop, and don't request a PLI
-	// (missing-PTS is a parser hiccup, not a no-keyframe signal).
+	// No prior valid PTS to restore from — drop.
 	buf := makeBuffer(t, true, 0, false)
 	require.Equal(t, gst.PadProbeDrop, p.processBuffer(buf))
-	require.Equal(t, int32(0), pliCount.Load())
 }
 
 func TestKeyframeProbe_MissingPTSPostKeyframeRestoresPTSAndForwards(t *testing.T) {
 	initGStreamer(t)
 
-	var pliCount atomic.Int32
-	p := newTestProbe(types.MimeTypeVP9, func() { pliCount.Add(1) })
+	p := newTestProbe(types.MimeTypeVP9, nil)
 
 	// Establish a prior valid PTS via a keyframe (also clears keyframePending).
 	lastPTS := 50 * time.Millisecond
 	kBuf := makeBuffer(t, false, lastPTS, true)
 	require.Equal(t, gst.PadProbeOK, p.processBuffer(kBuf))
-	pliBefore := pliCount.Load()
 
 	// Missing-PTS P-frame post-keyframe — PTS patched from lastSrcPTS, buffer
-	// continues, no PLI (we know re-timestamping fixes the underlying issue).
+	// continues.
 	mBuf := makeBuffer(t, true, 0, false)
 	require.Equal(t, gst.PadProbeOK, p.processBuffer(mBuf))
 	require.Equal(t, gst.ClockTime(uint64(lastPTS)), mBuf.PresentationTimestamp(), "PTS should be restored from last good value")
-	require.Equal(t, pliBefore, pliCount.Load(), "missing-PTS should not request PLI")
 }

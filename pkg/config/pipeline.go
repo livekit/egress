@@ -127,6 +127,7 @@ type TrackSource struct {
 	Stereo              bool
 	TempoController     *tempo.Controller
 	OnKeyframeRequired  func()
+	OnKeyframeReceived  func()
 }
 
 type AudioConfig struct {
