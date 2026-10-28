@@ -22,6 +22,7 @@ import (
 	"github.com/go-gst/go-gst/gst"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 )
@@ -191,22 +192,23 @@ func TestKeyframeProbe_WatchdogStopsOnClose(t *testing.T) {
 	p.Close() // idempotent
 }
 
-func TestKeyframeProbe_WatchdogStopsOnEOS(t *testing.T) {
+func TestVideoBin_PipelineStopClosesKeyframeProbes(t *testing.T) {
 	initGStreamer(t)
 
-	// The video bin only closes probes for removed tracks, so the watchdog
-	// must also stop when the stream ends.
+	// Pipeline.Stop sets the pipeline to NULL without sending EOS, and the
+	// video bin otherwise closes probes only for removed tracks.
 	var pliCount atomic.Int32
 	p := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
 	p.startKeyframeWatchdog(10 * time.Millisecond)
+	b := &VideoBin{probes: map[string]*keyframeProbe{"TR_test": p}}
+
+	callbacks := &gstreamer.Callbacks{}
+	callbacks.AddOnStop(b.closeAllProbes)
 	require.Eventually(t, func() bool { return pliCount.Load() >= 1 }, time.Second, 5*time.Millisecond)
 
-	p.processEvent(gst.NewFlushStartEvent())
-	time.Sleep(50 * time.Millisecond)
-	require.Greater(t, pliCount.Load(), int32(1), "only EOS stops the watchdog")
-
-	p.processEvent(gst.NewEOSEvent())
+	require.NoError(t, callbacks.OnStop())
 	stopped := pliCount.Load()
 	time.Sleep(100 * time.Millisecond)
-	require.LessOrEqual(t, pliCount.Load(), stopped+1, "at most one tick can race EOS")
+	require.LessOrEqual(t, pliCount.Load(), stopped+1, "at most one tick can race the stop")
+	require.Empty(t, b.probes)
 }

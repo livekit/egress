@@ -86,13 +86,21 @@ type videoDimensions struct {
 	height int
 }
 
-func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, setVideoDimensions func(string, int, int)) error {
+func BuildVideoBin(pipeline *gstreamer.Pipeline, p *config.PipelineConfig, setVideoDimensions func(string, int, int)) (err error) {
 	b := &VideoBin{
 		bin:                pipeline.NewBin("video"),
 		conf:               p,
 		setVideoDimensions: setVideoDimensions,
 		probes:             make(map[string]*keyframeProbe),
 	}
+	// Pipeline.Stop doesn't send EOS, and probes stay open until their track
+	// is removed, so close the remaining ones on stop or a failed build.
+	pipeline.AddOnStop(b.closeAllProbes)
+	defer func() {
+		if err != nil {
+			_ = b.closeAllProbes()
+		}
+	}()
 
 	switch p.SourceType {
 	case types.SourceTypeWeb:
@@ -561,6 +569,17 @@ func (b *VideoBin) closeProbe(name string) {
 	if ok {
 		probe.Close()
 	}
+}
+
+func (b *VideoBin) closeAllProbes() error {
+	b.probesMu.Lock()
+	probes := b.probes
+	b.probes = make(map[string]*keyframeProbe)
+	b.probesMu.Unlock()
+	for _, probe := range probes {
+		probe.Close()
+	}
+	return nil
 }
 
 func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstreamer.Bin, error) {
