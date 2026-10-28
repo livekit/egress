@@ -77,8 +77,9 @@ type VideoBin struct {
 	// taken and only the selected pad feeds the selector.
 	ending bool
 
-	probesMu deadlock.Mutex
-	probes   map[string]*keyframeProbe
+	probesMu      deadlock.Mutex
+	probes        map[string]*keyframeProbe
+	probesStopped bool // set once the pipeline stops; later probes are closed right away
 }
 
 type videoDimensions struct {
@@ -553,10 +554,27 @@ func (b *VideoBin) attachKeyframeProbe(ts *config.TrackSource, name string, elem
 	if err != nil {
 		return err
 	}
-	b.probesMu.Lock()
-	b.probes[name] = probe
-	b.probesMu.Unlock()
+	b.registerProbe(name, probe)
 	return nil
+}
+
+// registerProbe closes the probe instead when the pipeline already stopped,
+// and closes any probe it replaces.
+func (b *VideoBin) registerProbe(name string, probe *keyframeProbe) {
+	b.probesMu.Lock()
+	stopped := b.probesStopped
+	replaced := b.probes[name]
+	if !stopped {
+		b.probes[name] = probe
+	}
+	b.probesMu.Unlock()
+
+	if replaced != nil {
+		replaced.Close()
+	}
+	if stopped {
+		probe.Close()
+	}
 }
 
 func (b *VideoBin) closeProbe(name string) {
@@ -573,6 +591,7 @@ func (b *VideoBin) closeProbe(name string) {
 
 func (b *VideoBin) closeAllProbes() error {
 	b.probesMu.Lock()
+	b.probesStopped = true
 	probes := b.probes
 	b.probes = make(map[string]*keyframeProbe)
 	b.probesMu.Unlock()

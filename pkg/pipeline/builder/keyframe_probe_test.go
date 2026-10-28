@@ -212,3 +212,59 @@ func TestVideoBin_PipelineStopClosesKeyframeProbes(t *testing.T) {
 	require.LessOrEqual(t, pliCount.Load(), stopped+1, "at most one tick can race the stop")
 	require.Empty(t, b.probes)
 }
+
+func TestVideoBin_ProbeRegisteredAfterStopIsClosed(t *testing.T) {
+	initGStreamer(t)
+
+	// A track addition can pass its state check just before the pipeline stops
+	// and register its probe after the stop callback emptied the map.
+	b := &VideoBin{probes: make(map[string]*keyframeProbe)}
+	require.NoError(t, b.closeAllProbes())
+
+	var pliCount atomic.Int32
+	p := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
+	p.startKeyframeWatchdog(10 * time.Millisecond)
+	b.registerProbe("TR_late", p)
+
+	stopped := pliCount.Load()
+	time.Sleep(100 * time.Millisecond)
+	require.LessOrEqual(t, pliCount.Load(), stopped+1, "at most one tick can race the registration")
+	require.Empty(t, b.probes)
+}
+
+func TestVideoBin_ReplacedProbeIsClosed(t *testing.T) {
+	initGStreamer(t)
+
+	var pliCount atomic.Int32
+	old := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
+	old.startKeyframeWatchdog(10 * time.Millisecond)
+	b := &VideoBin{probes: make(map[string]*keyframeProbe)}
+	b.registerProbe("TR_test", old)
+
+	b.registerProbe("TR_test", newTestProbe(types.MimeTypeH264, nil))
+
+	stopped := pliCount.Load()
+	time.Sleep(100 * time.Millisecond)
+	require.LessOrEqual(t, pliCount.Load(), stopped+1, "at most one tick can race the replacement")
+}
+
+func TestKeyframeProbe_WatchdogStopsOnEOS(t *testing.T) {
+	initGStreamer(t)
+
+	// In a track composite, video can end before its first keyframe while
+	// audio keeps the pipeline running for minutes.
+	var pliCount atomic.Int32
+	p := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
+	p.startKeyframeWatchdog(10 * time.Millisecond)
+	defer p.Close()
+	require.Eventually(t, func() bool { return pliCount.Load() >= 1 }, time.Second, 5*time.Millisecond)
+
+	p.processEvent(gst.NewFlushStartEvent())
+	time.Sleep(50 * time.Millisecond)
+	require.Greater(t, pliCount.Load(), int32(1), "only EOS stops the watchdog")
+
+	p.processEvent(gst.NewEOSEvent())
+	stopped := pliCount.Load()
+	time.Sleep(100 * time.Millisecond)
+	require.LessOrEqual(t, pliCount.Load(), stopped+1, "at most one tick can race EOS")
+}

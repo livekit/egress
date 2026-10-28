@@ -46,7 +46,7 @@ const (
 //   - throttled-requests a PLI from upstream on each incoming buffer, and
 //   - requests one every second from a watchdog, because a parser in front of
 //     the probe discards non-keyframes and may leave it with no buffers at all.
-//     The watchdog stops at the first keyframe or when the probe closes.
+//     The watchdog stops at the first keyframe, at EOS, or when the probe closes.
 //
 // After that it's mostly inert: it just patches the occasional baseparse
 // missing-PTS buffer from the last good value, so downstream stays monotonic.
@@ -54,8 +54,9 @@ type keyframeProbe struct {
 	trackID  string
 	mimeType types.MimeType
 
-	srcPad     *gst.Pad
-	srcProbeID uint64
+	srcPad       *gst.Pad
+	srcProbeID   uint64
+	eventProbeID uint64
 
 	onRequestPLI func()
 
@@ -95,6 +96,7 @@ func newKeyframeProbe(trackID string, mimeType types.MimeType, element *gst.Elem
 	p.keyframePending.Store(true)
 
 	p.srcProbeID = srcPad.AddProbe(gst.PadProbeTypeBuffer, p.onSrcBuffer)
+	p.eventProbeID = srcPad.AddProbe(gst.PadProbeTypeEventDownstream, p.onSrcEvent)
 	p.startKeyframeWatchdog(keyframeWatchdogInterval)
 
 	return p, nil
@@ -139,7 +141,23 @@ func (p *keyframeProbe) Close() {
 
 	if p.srcPad != nil {
 		p.srcPad.RemoveProbe(p.srcProbeID)
+		p.srcPad.RemoveProbe(p.eventProbeID)
 		p.srcPad = nil
+	}
+}
+
+func (p *keyframeProbe) onSrcEvent(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	if event := info.GetEvent(); event != nil {
+		p.processEvent(event)
+	}
+	return gst.PadProbeOK
+}
+
+// processEvent stops the watchdog when the track ends. In a track composite
+// the pipeline, and so the probe, can outlive an ended video track.
+func (p *keyframeProbe) processEvent(event *gst.Event) {
+	if event.Type() == gst.EventTypeEOS {
+		p.stopKeyframeWatchdog()
 	}
 }
 
