@@ -36,7 +36,7 @@ func newTestProbe(mimeType types.MimeType, onRequestPLI func()) *keyframeProbe {
 		logger:       logger.GetLogger().WithValues("trackID", "test-track", "component", "keyframe_probe_test"),
 		keyframePTS:  make([]time.Duration, 0, keyframeHistorySize),
 	}
-	p.keyframePending = true
+	p.keyframePending.Store(true)
 	return p
 }
 
@@ -147,4 +147,66 @@ func TestKeyframeProbe_MissingPTSPostKeyframeRestoresPTSAndForwards(t *testing.T
 	require.Equal(t, gst.PadProbeOK, p.processBuffer(mBuf))
 	require.Equal(t, gst.ClockTime(uint64(lastPTS)), mBuf.PresentationTimestamp(), "PTS should be restored from last good value")
 	require.Equal(t, pliBefore, pliCount.Load(), "missing-PTS should not request PLI")
+}
+
+func TestKeyframeProbe_WatchdogRequestsPLIWithoutBuffers(t *testing.T) {
+	initGStreamer(t)
+
+	// The parser in front of the probe discards everything until it sees a
+	// keyframe, so the probe may never receive a buffer to react to.
+	var pliCount atomic.Int32
+	p := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
+	p.startKeyframeWatchdog(10 * time.Millisecond)
+	defer p.Close()
+
+	require.Eventually(t, func() bool { return pliCount.Load() >= 3 }, time.Second, 5*time.Millisecond)
+}
+
+func TestKeyframeProbe_WatchdogStopsAfterFirstKeyframe(t *testing.T) {
+	initGStreamer(t)
+
+	var pliCount atomic.Int32
+	p := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
+	p.startKeyframeWatchdog(10 * time.Millisecond)
+	defer p.Close()
+
+	require.Equal(t, gst.PadProbeOK, p.processBuffer(makeBuffer(t, false, 0, true)))
+	settled := pliCount.Load()
+	time.Sleep(100 * time.Millisecond)
+	require.LessOrEqual(t, pliCount.Load(), settled+1, "at most one tick can race the keyframe")
+}
+
+func TestKeyframeProbe_WatchdogStopsOnClose(t *testing.T) {
+	initGStreamer(t)
+
+	var pliCount atomic.Int32
+	p := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
+	p.startKeyframeWatchdog(10 * time.Millisecond)
+	require.Eventually(t, func() bool { return pliCount.Load() >= 1 }, time.Second, 5*time.Millisecond)
+
+	p.Close()
+	closed := pliCount.Load()
+	time.Sleep(100 * time.Millisecond)
+	require.LessOrEqual(t, pliCount.Load(), closed+1, "at most one tick can race Close")
+	p.Close() // idempotent
+}
+
+func TestKeyframeProbe_WatchdogStopsOnEOS(t *testing.T) {
+	initGStreamer(t)
+
+	// The video bin only closes probes for removed tracks, so the watchdog
+	// must also stop when the stream ends.
+	var pliCount atomic.Int32
+	p := newTestProbe(types.MimeTypeH264, func() { pliCount.Add(1) })
+	p.startKeyframeWatchdog(10 * time.Millisecond)
+	require.Eventually(t, func() bool { return pliCount.Load() >= 1 }, time.Second, 5*time.Millisecond)
+
+	p.processEvent(gst.NewFlushStartEvent())
+	time.Sleep(50 * time.Millisecond)
+	require.Greater(t, pliCount.Load(), int32(1), "only EOS stops the watchdog")
+
+	p.processEvent(gst.NewEOSEvent())
+	stopped := pliCount.Load()
+	time.Sleep(100 * time.Millisecond)
+	require.LessOrEqual(t, pliCount.Load(), stopped+1, "at most one tick can race EOS")
 }

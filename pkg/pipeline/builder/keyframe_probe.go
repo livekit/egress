@@ -16,6 +16,8 @@ package builder
 
 import (
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
@@ -29,6 +31,8 @@ import (
 const (
 	keyframeHistorySize     = 10
 	keyframeRequestInterval = 200 * time.Millisecond
+	// keyframeWatchdogInterval matches the PLI throttle in the app writer.
+	keyframeWatchdogInterval = time.Second
 )
 
 // keyframeProbe gates a parser/depayloader's src pad until the first keyframe
@@ -39,7 +43,10 @@ const (
 //
 // While waiting for the first keyframe it:
 //   - drops buffers (so the decoder doesn't error on orphaned P-frames), and
-//   - throttled-requests a PLI from upstream on each incoming buffer.
+//   - throttled-requests a PLI from upstream on each incoming buffer, and
+//   - requests one every second from a watchdog, because a parser in front of
+//     the probe discards non-keyframes and may leave it with no buffers at all.
+//     The watchdog stops at the first keyframe, at EOS, or when the probe closes.
 //
 // After that it's mostly inert: it just patches the occasional baseparse
 // missing-PTS buffer from the last good value, so downstream stays monotonic.
@@ -47,16 +54,21 @@ type keyframeProbe struct {
 	trackID  string
 	mimeType types.MimeType
 
-	srcPad     *gst.Pad
-	srcProbeID uint64
+	srcPad       *gst.Pad
+	srcProbeID   uint64
+	eventProbeID uint64
 
 	onRequestPLI func()
 
 	logger logger.Logger
 
-	// All probe state below is touched only from the upstream peer's streaming
+	// keyframePending is shared with the watchdog goroutine.
+	keyframePending atomic.Bool
+	stopWatchdog    chan struct{}
+	closeOnce       sync.Once
+
+	// The probe state below is touched only from the upstream peer's streaming
 	// thread (via the buffer pad probe), so no synchronization is needed.
-	keyframePending     bool
 	lastKeyframeRequest time.Time
 	lastSrcPTS          time.Duration
 	lastSrcValid        bool
@@ -81,19 +93,71 @@ func newKeyframeProbe(trackID string, mimeType types.MimeType, element *gst.Elem
 		logger:       logger.GetLogger().WithValues("trackID", trackID, "component", "keyframe_probe", "mime", mimeType),
 		keyframePTS:  make([]time.Duration, 0, keyframeHistorySize),
 	}
-	p.keyframePending = true
+	p.keyframePending.Store(true)
 
 	p.srcProbeID = srcPad.AddProbe(gst.PadProbeTypeBuffer, p.onSrcBuffer)
+	p.eventProbeID = srcPad.AddProbe(gst.PadProbeTypeEventDownstream, p.onSrcEvent)
+	p.startKeyframeWatchdog(keyframeWatchdogInterval)
 
 	return p, nil
 }
 
+// startKeyframeWatchdog requests a keyframe every interval until the first one
+// passes the probe or the probe is closed.
+func (p *keyframeProbe) startKeyframeWatchdog(interval time.Duration) {
+	if p.onRequestPLI == nil {
+		return
+	}
+	p.stopWatchdog = make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-p.stopWatchdog:
+				return
+			case <-ticker.C:
+				if !p.keyframePending.Load() {
+					return
+				}
+				p.logger.Debugw("still waiting for the first keyframe, requesting one")
+				p.onRequestPLI()
+			}
+		}
+	}()
+}
+
+func (p *keyframeProbe) stopKeyframeWatchdog() {
+	p.closeOnce.Do(func() {
+		if p.stopWatchdog != nil {
+			close(p.stopWatchdog)
+		}
+	})
+}
+
 func (p *keyframeProbe) Close() {
+	p.stopKeyframeWatchdog()
 	p.logKeyframeHistory("probe_closed")
 
 	if p.srcPad != nil {
 		p.srcPad.RemoveProbe(p.srcProbeID)
+		p.srcPad.RemoveProbe(p.eventProbeID)
 		p.srcPad = nil
+	}
+}
+
+func (p *keyframeProbe) onSrcEvent(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+	if event := info.GetEvent(); event != nil {
+		p.processEvent(event)
+	}
+	return gst.PadProbeOK
+}
+
+// processEvent stops the watchdog at EOS: the video bin only closes probes
+// for removed tracks, not when the pipeline shuts down.
+func (p *keyframeProbe) processEvent(event *gst.Event) {
+	if event.Type() == gst.EventTypeEOS {
+		p.stopKeyframeWatchdog()
 	}
 }
 
@@ -126,15 +190,14 @@ func (p *keyframeProbe) processBuffer(buffer *gst.Buffer) gst.PadProbeReturn {
 	isKeyframe := buffer.GetFlags()&gst.BufferFlagDeltaUnit == 0
 
 	if isKeyframe {
-		if p.keyframePending {
-			p.keyframePending = false
+		if p.keyframePending.CompareAndSwap(true, false) {
 			p.logger.Debugw("keyframe pending, got one")
 		}
 		p.trackKeyframe(pts)
 		return gst.PadProbeOK
 	}
 
-	if p.keyframePending {
+	if p.keyframePending.Load() {
 		// still waiting for the first keyframe — drop and PLI
 		p.requestKeyframeIfDue()
 		return gst.PadProbeDrop
@@ -165,7 +228,7 @@ func (p *keyframeProbe) requestKeyframeIfDue() {
 	if p.onRequestPLI == nil {
 		return
 	}
-	if !p.keyframePending {
+	if !p.keyframePending.Load() {
 		return
 	}
 
