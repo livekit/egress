@@ -48,8 +48,8 @@ func (r *keyframeRequester) RequestPLI() {
 	r.throttle(r.send)
 }
 
-// RequestKeyframe sends PLIs until KeyframeReceived or Close is called.
-func (r *keyframeRequester) RequestKeyframe() {
+// RequirePLI sends PLIs until KeyframeReceived or Close is called.
+func (r *keyframeRequester) RequirePLI() {
 	r.pending.Store(true)
 	r.RequestPLI()
 }

@@ -614,6 +614,67 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "media_participant_video_{time}.mp4",
 				},
 			},
+			{
+				name:        "Media/MCAP/CaptureAll",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					multiParticipant: true,
+					captureAudioAll:  true,
+					mediaVideos:      &livekit.VideoConfig{CaptureAll: true},
+				},
+				fileOptions: &fileOptions{
+					filename:     "media_mcap_capture_all_{time}.mcap",
+					fileType:     livekit.EncodedFileType_MCAP,
+					mcapChannels: 6,
+				},
+			},
+			{
+				name:        "Media/MCAP/Selectors",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					multiParticipant: true,
+					captureAudioAll:  true,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: setP1Identity},
+						Exclude: true,
+					}},
+					mediaVideos: &livekit.VideoConfig{
+						CaptureAll: true,
+						Selectors: []*livekit.VideoSelector{{
+							Match:   &livekit.VideoSelector_ParticipantIdentity{ParticipantIdentity: setP1Identity},
+							Exclude: true,
+						}},
+					},
+				},
+				fileOptions: &fileOptions{
+					filename:     "media_mcap_selectors_{time}.mcap",
+					fileType:     livekit.EncodedFileType_MCAP,
+					mcapChannels: 4,
+					mcapExcluded: "p1",
+				},
+			},
+			{
+				name:        "Media/MCAP/Republish",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:      types.MimeTypeOpus,
+					videoCodec:      types.MimeTypeAV1,
+					videoUnpublish:  time.Second * 10,
+					videoRepublish:  time.Second * 20,
+					captureAudioAll: true,
+					mediaVideos:     &livekit.VideoConfig{CaptureAll: true},
+				},
+				fileOptions: &fileOptions{
+					filename:         "media_mcap_republish_{time}.mcap",
+					fileType:         livekit.EncodedFileType_MCAP,
+					mcapChannels:     3,
+					mcapSharedTopics: 1,
+				},
+			},
 
 			// ---- Media passthrough ----
 
@@ -781,6 +842,11 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 	manifestStorage := path.Join(path.Dir(storagePath), res.EgressId+".json")
 	manifest := loadManifest(t, p.GetFileConfig().StorageConfig, manifestLocal, manifestStorage)
 	require.NotNil(t, manifest)
+
+	if p.GetFileConfig().OutputType == types.OutputTypeMCAP {
+		verifyMCAP(t, tc, localPath, fileRes)
+		return
+	}
 
 	// passthrough resolves the output codec from the published track at runtime
 	if p.Passthrough && p.VideoOutCodec == "" && tc.videoCodec != "" {

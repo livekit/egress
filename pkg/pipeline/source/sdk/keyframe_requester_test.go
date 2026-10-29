@@ -46,7 +46,7 @@ func TestKeyframeRequester_RepeatsUntilKeyframe(t *testing.T) {
 	r, count := newTestRequester()
 	defer r.Close()
 
-	r.RequestKeyframe()
+	r.RequirePLI()
 	require.Equal(t, int32(1), count.Load(), "first PLI should be sent immediately")
 	require.Eventually(t, func() bool { return count.Load() >= 4 }, time.Second, time.Millisecond)
 
@@ -59,7 +59,7 @@ func TestKeyframeRequester_RepeatsUntilKeyframe(t *testing.T) {
 func TestKeyframeRequester_CloseStopsRequests(t *testing.T) {
 	r, count := newTestRequester()
 
-	r.RequestKeyframe()
+	r.RequirePLI()
 	require.Eventually(t, func() bool { return count.Load() >= 2 }, time.Second, time.Millisecond)
 
 	r.Close()
@@ -67,7 +67,7 @@ func TestKeyframeRequester_CloseStopsRequests(t *testing.T) {
 	time.Sleep(10 * testPLIPeriod)
 	require.Equal(t, closed, count.Load())
 
-	r.RequestKeyframe()
+	r.RequirePLI()
 	r.RequestPLI()
 	time.Sleep(5 * testPLIPeriod)
 	require.Equal(t, closed, count.Load())

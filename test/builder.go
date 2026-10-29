@@ -25,6 +25,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
@@ -116,6 +118,7 @@ type publishOptions struct {
 	mediaParticipantVideo *livekit.ParticipantVideo
 	audioRoutes           []*livekit.AudioRoute
 	captureAudioAll       bool
+	mediaVideos           *livekit.VideoConfig
 
 	// v2 Template source fields
 	templateCustomBaseUrl string
@@ -125,6 +128,10 @@ type fileOptions struct {
 	filename   string
 	fileType   livekit.EncodedFileType
 	outputType types.OutputType
+
+	mcapChannels     int
+	mcapSharedTopics int    // topics carried by more than one channel, as after a republish
+	mcapExcluded     string // publisher (p0/p1/p2) whose identity must not appear in any topic
 }
 
 type streamOptions struct {
@@ -568,26 +575,23 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 		if (videoTrackID == "" || videoTrackID == setAtRuntime) && test.videoCodec != "" {
 			videoTrackID = test.videoTrackID
 		}
-		if videoTrackID != "" {
+		if test.mediaVideos != nil {
+			videos := proto.Clone(test.mediaVideos).(*livekit.VideoConfig)
+			for _, sel := range videos.Selectors {
+				if pi, ok := sel.Match.(*livekit.VideoSelector_ParticipantIdentity); ok {
+					if identity := test.resolveIdentity(pi.ParticipantIdentity); identity != "" {
+						pi.ParticipantIdentity = identity
+					}
+				}
+			}
+			media.Video = &livekit.MediaSource_Videos{Videos: videos}
+		} else if videoTrackID != "" {
 			media.Video = &livekit.MediaSource_VideoTrackId{
 				VideoTrackId: videoTrackID,
 			}
 		} else if test.mediaParticipantVideo != nil {
 			pv := test.mediaParticipantVideo
-			var identity string
-			switch pv.Identity {
-			case setAtRuntime:
-				identity = test.p0Identity
-			case setP1Identity:
-				if s := test.publishers["p1"]; s != nil {
-					identity = s.identity
-				}
-			case setP2Identity:
-				if s := test.publishers["p2"]; s != nil {
-					identity = s.identity
-				}
-			}
-			if identity != "" {
+			if identity := test.resolveIdentity(pv.Identity); identity != "" {
 				pv = &livekit.ParticipantVideo{
 					Identity:          identity,
 					PreferScreenShare: pv.PreferScreenShare,
@@ -598,42 +602,23 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 			}
 		}
 
-		// audio - capture-all takes precedence; routes are mutually exclusive
-		if test.captureAudioAll {
-			media.Audio = &livekit.AudioConfig{CaptureAll: true}
-		} else if len(test.audioRoutes) > 0 {
+		// audio - routes apply alongside capture-all
+		if test.captureAudioAll || len(test.audioRoutes) > 0 {
 			routes := make([]*livekit.AudioRoute, len(test.audioRoutes))
 			for i, route := range test.audioRoutes {
-				routes[i] = route
-				if tr, ok := route.Match.(*livekit.AudioRoute_TrackId); ok && tr.TrackId == setAtRuntime {
-					routes[i] = &livekit.AudioRoute{
-						Match:   &livekit.AudioRoute_TrackId{TrackId: test.audioTrackID},
-						Channel: route.Channel,
+				routes[i] = proto.Clone(route).(*livekit.AudioRoute)
+				switch m := routes[i].Match.(type) {
+				case *livekit.AudioRoute_TrackId:
+					if m.TrackId == setAtRuntime {
+						m.TrackId = test.audioTrackID
 					}
-				}
-				if pi, ok := route.Match.(*livekit.AudioRoute_ParticipantIdentity); ok {
-					var identity string
-					switch pi.ParticipantIdentity {
-					case setAtRuntime:
-						identity = test.p0Identity
-					case setP1Identity:
-						if s := test.publishers["p1"]; s != nil {
-							identity = s.identity
-						}
-					case setP2Identity:
-						if s := test.publishers["p2"]; s != nil {
-							identity = s.identity
-						}
-					}
-					if identity != "" {
-						routes[i] = &livekit.AudioRoute{
-							Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: identity},
-							Channel: route.Channel,
-						}
+				case *livekit.AudioRoute_ParticipantIdentity:
+					if identity := test.resolveIdentity(m.ParticipantIdentity); identity != "" {
+						m.ParticipantIdentity = identity
 					}
 				}
 			}
-			media.Audio = &livekit.AudioConfig{Routes: routes}
+			media.Audio = &livekit.AudioConfig{CaptureAll: test.captureAudioAll, Routes: routes}
 		}
 
 		egressReq.Source = &livekit.StartEgressRequest_Media{
@@ -670,4 +655,20 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 		Token:    token,
 		WsUrl:    r.WsUrl,
 	}
+}
+
+func (tc *testCase) resolveIdentity(sentinel string) string {
+	switch sentinel {
+	case setAtRuntime:
+		return tc.p0Identity
+	case setP1Identity:
+		if s := tc.publishers["p1"]; s != nil {
+			return s.identity
+		}
+	case setP2Identity:
+		if s := tc.publishers["p2"]; s != nil {
+			return s.identity
+		}
+	}
+	return ""
 }

@@ -80,7 +80,7 @@ func Proto() error {
 	}
 
 	// generate grpc-related protos
-	return mageutil.RunDir(ctx, "pkg/ipc", fmt.Sprintf(
+	if err = mageutil.RunDir(ctx, "pkg/ipc", fmt.Sprintf(
 		"protoc"+
 			" --go_out ."+
 			" --go-grpc_out ."+
@@ -90,6 +90,20 @@ func Proto() error {
 			" --plugin=go-grpc=%s"+
 			" -I%s -I%s -I=. ipc.proto",
 		protocGoPath, protocGrpcGoPath, pi.Dir+"/protobufs", psrpcInfo.Dir+"/protoc-gen-psrpc/options",
+	)); err != nil {
+		return err
+	}
+
+	// generate foxglove schemas for mcap output
+	return mageutil.RunDir(ctx, "pkg/mcap/foxglove", fmt.Sprintf(
+		"protoc"+
+			" --go_out ."+
+			" --go_opt=paths=source_relative"+
+			" --go_opt=MCompressedVideo.proto=github.com/livekit/egress/pkg/mcap/foxglove"+
+			" --go_opt=MCompressedAudio.proto=github.com/livekit/egress/pkg/mcap/foxglove"+
+			" --plugin=go=%s"+
+			" -I=. CompressedVideo.proto CompressedAudio.proto",
+		protocGoPath,
 	))
 }
 

@@ -15,6 +15,7 @@
 package gstreamer
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -35,6 +36,7 @@ type Pipeline struct {
 	loop          *glib.MainLoop
 	binsAdded     bool
 	elementsAdded bool
+	siblings      []*Bin // source-through-sink bins sharing only the bus and clock
 }
 
 // A pipeline can have either elements or src and sink bins. If you add both you will get a wrong hierarchy error
@@ -75,6 +77,114 @@ func (p *Pipeline) AddSinkBin(sink *Bin) error {
 	return p.Bin.AddSinkBin(sink)
 }
 
+// AddSiblingBin adds a self-contained bin that is never linked to the pipeline's other bins; false once the pipeline is past running
+func (p *Pipeline) AddSiblingBin(sibling *Bin) (bool, error) {
+	if p.elementsAdded {
+		return false, errors.ErrWrongHierarchy
+	}
+	logger.Debugw(fmt.Sprintf("adding sibling %s", sibling.bin.GetName()))
+
+	sibling.mu.Lock()
+	alreadyAdded := sibling.added
+	sibling.added = true
+	sibling.mu.Unlock()
+	if alreadyAdded {
+		return false, errors.ErrBinAlreadyAdded
+	}
+
+	p.LockStateShared()
+	defer p.UnlockStateShared()
+
+	state := p.GetStateLocked()
+	if state > StateRunning {
+		return false, nil
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if err := p.pipeline.Add(sibling.bin.Element); err != nil {
+		return false, errors.ErrGstPipelineError(err)
+	}
+	if state == StateBuilding {
+		p.siblings = append(p.siblings, sibling)
+		p.binsAdded = true
+		return true, nil
+	}
+
+	err := sibling.link()
+	if err == nil && !sibling.bin.SyncStateWithParent() {
+		err = errors.ErrGstPipelineError(fmt.Errorf("failed to sync %s state with parent", sibling.bin.GetName()))
+	}
+	if err != nil {
+		// best-effort: the returned error fails the egress
+		_ = sibling.bin.SetState(gst.StateNull)
+		_ = p.pipeline.Remove(sibling.bin.Element)
+		return false, err
+	}
+	p.siblings = append(p.siblings, sibling)
+	return true, nil
+}
+
+// RemoveSiblingBin stops and removes a bin added with AddSiblingBin, including while the pipeline drains to EOS
+func (p *Pipeline) RemoveSiblingBin(name string) error {
+	logger.Debugw(fmt.Sprintf("removing sibling %s", name))
+
+	p.LockStateShared()
+	state := p.GetStateLocked()
+	if state > StateEOS {
+		p.UnlockStateShared()
+		return nil
+	}
+
+	p.mu.Lock()
+	var sibling *Bin
+	for i, s := range p.siblings {
+		if s.bin.GetName() == name {
+			sibling = s
+			p.siblings = append(p.siblings[:i], p.siblings[i+1:]...)
+			break
+		}
+	}
+	p.mu.Unlock()
+	p.UnlockStateShared()
+	if sibling == nil {
+		return nil
+	}
+
+	remove := func() error {
+		if err := sibling.bin.SetState(gst.StateNull); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		if err := p.pipeline.Remove(sibling.bin.Element); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		return nil
+	}
+	if state == StateBuilding {
+		return remove()
+	}
+
+	done := make(chan error, 1)
+	if _, err := glib.IdleAdd(func() bool {
+		done <- remove()
+		return false
+	}); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(removeSourceBinTimeout):
+		return errors.ErrPipelineFrozen
+	}
+}
+
+// PostEOS posts EOS on the bus, for a pipeline with no sink left to post it
+func (p *Pipeline) PostEOS() {
+	p.pipeline.GetBus().Post(gst.NewEOSMessage(p.pipeline))
+}
+
 func (p *Pipeline) AddElement(e *gst.Element) error {
 	if p.binsAdded {
 		return errors.ErrWrongHierarchy
@@ -92,7 +202,18 @@ func (p *Pipeline) AddElements(elements ...*gst.Element) error {
 }
 
 func (p *Pipeline) Link() error {
-	return p.link()
+	if err := p.link(); err != nil {
+		return err
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, sibling := range p.siblings {
+		if err := sibling.link(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (p *Pipeline) SetWatch(watch func(msg *gst.Message) bool) {

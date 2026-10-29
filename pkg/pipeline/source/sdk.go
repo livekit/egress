@@ -423,12 +423,24 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 	if s.VideoTrackID != "" {
 		requiredTracks[s.VideoTrackID] = struct{}{}
 	}
-	for _, route := range s.AudioRoutes {
-		if route.Match.TrackID != "" {
-			requiredTracks[route.Match.TrackID] = struct{}{}
+	required := func(m config.TrackMatch) {
+		if m.TrackID != "" {
+			requiredTracks[m.TrackID] = struct{}{}
 		}
-		if route.Match.ParticipantIdentity != "" {
-			requiredParticipants[route.Match.ParticipantIdentity] = struct{}{}
+		if m.ParticipantIdentity != "" {
+			requiredParticipants[m.ParticipantIdentity] = struct{}{}
+		}
+	}
+	for _, route := range s.AudioRoutes {
+		if !route.Exclude {
+			required(route.Match)
+		}
+	}
+	if s.VideoSelection != nil {
+		for _, sel := range s.VideoSelection.Selectors {
+			if !sel.Exclude {
+				required(sel.Match)
+			}
 		}
 	}
 
@@ -744,30 +756,13 @@ func (s *SDKSource) shouldSubscribeMedia(pub lksdk.TrackPublication, rp *lksdk.R
 }
 
 func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) *config.AudioRouteConfig {
-	for i := range s.AudioRoutes {
-		route := &s.AudioRoutes[i]
-		switch {
-		case route.Match.TrackID != "":
-			if pub.SID() == route.Match.TrackID {
-				return route
-			}
-		case route.Match.ParticipantIdentity != "":
-			if rp.Identity() == route.Match.ParticipantIdentity {
-				return route
-			}
-		case route.Match.ParticipantKind != nil:
-			if rp.Kind() == *route.Match.ParticipantKind {
-				return route
-			}
-		}
-	}
-	if s.CaptureAudioAll {
-		return &config.AudioRouteConfig{}
-	}
-	return nil
+	return config.MatchAudioRoute(s.AudioRoutes, s.CaptureAudioAll, pub.SID(), pub.Name(), rp.Identity(), rp.Kind())
 }
 
 func (s *SDKSource) matchesMediaVideo(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
+	if s.VideoSelection != nil {
+		return s.VideoSelection.Includes(pub.SID(), pub.Name(), rp.Identity(), rp.Kind())
+	}
 	if s.VideoTrackID != "" {
 		return pub.SID() == s.VideoTrackID
 	}

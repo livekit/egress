@@ -39,6 +39,37 @@ Irrespective of method used, when moving between protocols, containers or encodi
 
 Files can be uploaded to any S3 compatible storage, Azure, or GCP.
 
+### MCAP export
+
+A media source and a single `MCAP` file output writes a [Foxglove](https://foxglove.dev)-compatible MCAP file
+with one channel per track. `video_track_id` and `participant_video` select one video track; use `videos` for more:
+
+```json
+{
+  "room_name": "my-room",
+  "media": {
+    "videos": { "capture_all": true },
+    "audio": { "capture_all": true }
+  },
+  "outputs": [{ "file": { "file_type": "MCAP", "filepath": "{room_name}-{time}.mcap" } }]
+}
+```
+
+- **Selection.** A video selector or audio route matches on `track_id`, `participant_identity` (or, for audio,
+  `participant_kind`), and `track_name` narrows that match. `track_name` alone matches the name from any
+  participant. A matching `exclude` drops the track, overriding `capture_all` and every other match.
+  Audio routes follow these rules for every media egress, not just MCAP.
+- **Topics.** Each track is written to `/livekit/<participant identity>/<track name>`, as
+  `foxglove.CompressedVideo` (H.264, VP9 or AV1) or `foxglove.CompressedAudio` (Opus).
+  A track republished under a new track ID gets a new channel on the same topic.
+- **Encoding.** Video is written as published, without transcoding, so encoding presets (including `PASSTHROUGH`)
+  and options other than `key_frame_interval` don't apply to it. Egress requests a keyframe from each publisher every
+  `key_frame_interval` seconds (1 by default) so the file stays seekable; requests are throttled to one per second, so
+  a shorter interval behaves as 1s. Opus audio is written as published; PCMU/PCMA is transcoded to Opus.
+- **Limits.** The MCAP file must be the only output, `videos` requires an MCAP output, and audio routes must use
+  `AUDIO_CHANNEL_BOTH`. VP8 video can't be stored in `CompressedVideo`, so capturing a VP8 track fails the egress.
+  Data tracks are not supported yet.
+
 ## Documentation
 
 Full docs available [here](https://docs.livekit.io/guides/egress/)

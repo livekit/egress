@@ -293,6 +293,8 @@ func (m *Monitor) costsForRequest(req *rpc.StartEgressRequest) requestCosts {
 				costs.memory = m.cpuCostConfig.SDKAudioRoomCompositeMemoryCost
 			case media.GetParticipantVideo() != nil:
 				costs.cpu = m.cpuCostConfig.ParticipantCpuCost
+			case media.GetVideos() != nil:
+				costs.cpu = m.cpuCostConfig.TrackCompositeCpuCost
 			default:
 				costs.cpu = m.cpuCostConfig.TrackCompositeCpuCost
 			}
