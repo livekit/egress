@@ -76,6 +76,7 @@ type BaseConfig struct {
 	LatencyOverrides              map[types.RequestType]LatencyConfig `yaml:"latency_overrides"`                  // latency overrides for different request types, experimental only, will be removed
 	EnableTemplateSDK             bool                                `yaml:"enable_template_sdk"`                // use GStreamer compositor instead of Chrome for default template layouts
 	VideoEncoderThreads           uint                                `yaml:"video_encoder_threads"`              // x264enc thread count, 0 = x264 auto (1.5x host cores)
+	ImageKeyframeDecoding         bool                                `yaml:"image_keyframe_decoding"`            // image-only egresses decode one keyframe per capture interval instead of every frame
 	EnableOneShotSenderReportSync bool                                `yaml:"enable_one_shot_sender_report_sync"` // temporary rollout flag enabling one-shot sender report correction for room composite / track requests that previously used audio PTS adjustment disabling
 	EnableSyncEngine              bool                                `yaml:"enable_sync_engine"`                 // use Chrome-inspired sync engine for improved cross-participant alignment and A/V sync
 	AudioTempoController          AudioTempoController                `yaml:"audio_tempo_controller"`             // audio tempo controller
