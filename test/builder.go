@@ -657,16 +657,16 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 	}
 }
 
-func (tc *testCase) resolveIdentity(sentinel string) string {
+func (test *testCase) resolveIdentity(sentinel string) string {
 	switch sentinel {
 	case setAtRuntime:
-		return tc.p0Identity
+		return test.p0Identity
 	case setP1Identity:
-		if s := tc.publishers["p1"]; s != nil {
+		if s := test.publishers["p1"]; s != nil {
 			return s.identity
 		}
 	case setP2Identity:
-		if s := tc.publishers["p2"]; s != nil {
+		if s := test.publishers["p2"]; s != nil {
 			return s.identity
 		}
 	}

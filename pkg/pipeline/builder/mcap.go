@@ -289,16 +289,16 @@ func (b *MCAPBin) buildAudioBranch(ts *config.TrackSource, name string) (*gstrea
 			channels = 2
 		}
 		caps = fmt.Sprintf("audio/x-opus,rate=48000,channels=%d,channel-mapping-family=0", channels)
-		names = []string{"opusparse"}
 	case ts.MimeType == types.MimeTypePCMU:
 		caps = fmt.Sprintf("application/x-rtp,media=audio,payload=%d,encoding-name=PCMU,clock-rate=%d", ts.PayloadType, ts.ClockRate)
-		names = []string{"rtppcmudepay", "mulawdec", "audioconvert", "audioresample", "opusenc", "opusparse"}
+		names = []string{"rtppcmudepay", "mulawdec", "audioconvert", "audioresample", "opusenc"}
 	case ts.MimeType == types.MimeTypePCMA:
 		caps = fmt.Sprintf("application/x-rtp,media=audio,payload=%d,encoding-name=PCMA,clock-rate=%d", ts.PayloadType, ts.ClockRate)
-		names = []string{"rtppcmadepay", "alawdec", "audioconvert", "audioresample", "opusenc", "opusparse"}
+		names = []string{"rtppcmadepay", "alawdec", "audioconvert", "audioresample", "opusenc"}
 	default:
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
+	names = append(names, "opusparse")
 	if err := ts.AppSrc.SetProperty("caps", gst.NewCapsFromString(caps)); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
