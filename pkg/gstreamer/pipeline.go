@@ -17,6 +17,8 @@ package gstreamer
 import (
 	"fmt"
 	"math"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/go-gst/go-glib/glib"
@@ -82,6 +84,7 @@ func (p *Pipeline) AddSiblingBin(sibling *Bin) (bool, error) {
 	if p.elementsAdded {
 		return false, errors.ErrWrongHierarchy
 	}
+	p.binsAdded = true
 	logger.Debugw(fmt.Sprintf("adding sibling %s", sibling.bin.GetName()))
 
 	sibling.mu.Lock()
@@ -108,7 +111,6 @@ func (p *Pipeline) AddSiblingBin(sibling *Bin) (bool, error) {
 	}
 	if state == StateBuilding {
 		p.siblings = append(p.siblings, sibling)
-		p.binsAdded = true
 		return true, nil
 	}
 
@@ -161,7 +163,8 @@ func (p *Pipeline) RemoveSiblingBin(name string) error {
 		}
 		return nil
 	}
-	if state == StateBuilding {
+	// the GLib loop isn't running before StateRunning, so an idle removal would outlast the timeout below
+	if state < StateRunning {
 		return remove()
 	}
 
@@ -257,6 +260,15 @@ func (p *Pipeline) SendEOS() {
 	if ok {
 		if old >= StateRunning {
 			p.sendEOS()
+
+			p.mu.Lock()
+			siblings := slices.Clone(p.siblings)
+			p.mu.Unlock()
+			var wg sync.WaitGroup
+			for _, sibling := range siblings {
+				wg.Go(sibling.sendEOS)
+			}
+			wg.Wait()
 		} else {
 			p.Stop()
 		}
