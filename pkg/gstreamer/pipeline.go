@@ -84,7 +84,6 @@ func (p *Pipeline) AddSiblingBin(sibling *Bin) (bool, error) {
 	if p.elementsAdded {
 		return false, errors.ErrWrongHierarchy
 	}
-	p.binsAdded = true
 	logger.Debugw(fmt.Sprintf("adding sibling %s", sibling.bin.GetName()))
 
 	sibling.mu.Lock()
@@ -109,22 +108,20 @@ func (p *Pipeline) AddSiblingBin(sibling *Bin) (bool, error) {
 	if err := p.pipeline.Add(sibling.bin.Element); err != nil {
 		return false, errors.ErrGstPipelineError(err)
 	}
-	if state == StateBuilding {
-		p.siblings = append(p.siblings, sibling)
-		return true, nil
-	}
-
-	err := sibling.link()
-	if err == nil && !sibling.bin.SyncStateWithParent() {
-		err = errors.ErrGstPipelineError(fmt.Errorf("failed to sync %s state with parent", sibling.bin.GetName()))
-	}
-	if err != nil {
-		// best-effort: the returned error fails the egress
-		_ = sibling.bin.SetState(gst.StateNull)
-		_ = p.pipeline.Remove(sibling.bin.Element)
-		return false, err
+	if state != StateBuilding {
+		err := sibling.link()
+		if err == nil && !sibling.bin.SyncStateWithParent() {
+			err = errors.ErrGstPipelineError(fmt.Errorf("failed to sync %s state with parent", sibling.bin.GetName()))
+		}
+		if err != nil {
+			// best-effort: the returned error fails the egress
+			_ = sibling.bin.SetState(gst.StateNull)
+			_ = p.pipeline.Remove(sibling.bin.Element)
+			return false, err
+		}
 	}
 	p.siblings = append(p.siblings, sibling)
+	p.binsAdded = true
 	return true, nil
 }
 
