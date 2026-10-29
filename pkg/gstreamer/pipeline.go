@@ -39,6 +39,7 @@ type Pipeline struct {
 	binsAdded     bool
 	elementsAdded bool
 	siblings      []*Bin // source-through-sink bins sharing only the bus and clock
+	linked        bool
 }
 
 // A pipeline can have either elements or src and sink bins. If you add both you will get a wrong hierarchy error
@@ -64,25 +65,23 @@ func NewPipeline(name string, latency time.Duration, callbacks *Callbacks) (*Pip
 }
 
 func (p *Pipeline) AddSourceBin(src *Bin) error {
-	if p.elementsAdded {
-		return errors.ErrWrongHierarchy
+	if err := p.claimHierarchy(true); err != nil {
+		return err
 	}
-	p.binsAdded = true
 	return p.Bin.AddSourceBin(src)
 }
 
 func (p *Pipeline) AddSinkBin(sink *Bin) error {
-	if p.elementsAdded {
-		return errors.ErrWrongHierarchy
+	if err := p.claimHierarchy(true); err != nil {
+		return err
 	}
-	p.binsAdded = true
 	return p.Bin.AddSinkBin(sink)
 }
 
 // AddSiblingBin adds a self-contained bin that is never linked to the pipeline's other bins; false once the pipeline is past running
 func (p *Pipeline) AddSiblingBin(sibling *Bin) (bool, error) {
-	if p.elementsAdded {
-		return false, errors.ErrWrongHierarchy
+	if err := p.claimHierarchy(true); err != nil {
+		return false, err
 	}
 	logger.Debugw(fmt.Sprintf("adding sibling %s", sibling.bin.GetName()))
 
@@ -95,33 +94,36 @@ func (p *Pipeline) AddSiblingBin(sibling *Bin) (bool, error) {
 	}
 
 	p.LockStateShared()
-	defer p.UnlockStateShared()
-
-	state := p.GetStateLocked()
-	if state > StateRunning {
+	if p.GetStateLocked() > StateRunning {
+		p.UnlockStateShared()
 		return false, nil
 	}
 
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	if err := p.pipeline.Add(sibling.bin.Element); err != nil {
+		p.mu.Unlock()
+		p.UnlockStateShared()
 		return false, errors.ErrGstPipelineError(err)
 	}
-	if state != StateBuilding {
-		err := sibling.link()
+	var err error
+	if p.linked {
+		err = sibling.link()
 		if err == nil && !sibling.bin.SyncStateWithParent() {
 			err = errors.ErrGstPipelineError(fmt.Errorf("failed to sync %s state with parent", sibling.bin.GetName()))
 		}
-		if err != nil {
-			// best-effort: the returned error fails the egress
-			_ = sibling.bin.SetState(gst.StateNull)
-			_ = p.pipeline.Remove(sibling.bin.Element)
-			return false, err
-		}
 	}
-	p.siblings = append(p.siblings, sibling)
-	p.binsAdded = true
+	if err == nil {
+		p.siblings = append(p.siblings, sibling)
+	}
+	p.mu.Unlock()
+	p.UnlockStateShared()
+
+	if err != nil {
+		// unlocked first: stopping a partly started sibling waits on its streaming thread
+		_ = sibling.bin.SetState(gst.StateNull)
+		_ = p.pipeline.Remove(sibling.bin.Element)
+		return false, err
+	}
 	return true, nil
 }
 
@@ -176,28 +178,32 @@ func (p *Pipeline) RemoveSiblingBin(name string) error {
 	case err := <-done:
 		return err
 	case <-time.After(removeSourceBinTimeout):
+		// Stop quits the loop before the callback runs, and the pipeline going to NULL removes the need
+		if p.GetState() > StateEOS {
+			return nil
+		}
 		return errors.ErrPipelineFrozen
 	}
 }
 
 // PostEOS posts EOS on the bus, for a pipeline with no sink left to post it
 func (p *Pipeline) PostEOS() {
-	p.pipeline.GetBus().Post(gst.NewEOSMessage(p.pipeline))
+	if !p.pipeline.GetBus().Post(gst.NewEOSMessage(p.pipeline)) {
+		logger.Warnw("failed to post EOS", nil)
+	}
 }
 
 func (p *Pipeline) AddElement(e *gst.Element) error {
-	if p.binsAdded {
-		return errors.ErrWrongHierarchy
+	if err := p.claimHierarchy(false); err != nil {
+		return err
 	}
-	p.elementsAdded = true
 	return p.Bin.AddElement(e)
 }
 
 func (p *Pipeline) AddElements(elements ...*gst.Element) error {
-	if p.binsAdded {
-		return errors.ErrWrongHierarchy
+	if err := p.claimHierarchy(false); err != nil {
+		return err
 	}
-	p.elementsAdded = true
 	return p.Bin.AddElements(elements...)
 }
 
@@ -213,6 +219,7 @@ func (p *Pipeline) Link() error {
 			return err
 		}
 	}
+	p.linked = true
 	return nil
 }
 
@@ -337,4 +344,20 @@ func (p *Pipeline) PlayheadPosition() (time.Duration, bool) {
 	}
 
 	return time.Duration(position), true
+}
+
+// claimHierarchy commits the pipeline to holding bins or elements, never both; a failed add keeps the claim since it fails the egress
+func (p *Pipeline) claimHierarchy(bins bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if (bins && p.elementsAdded) || (!bins && p.binsAdded) {
+		return errors.ErrWrongHierarchy
+	}
+	if bins {
+		p.binsAdded = true
+	} else {
+		p.elementsAdded = true
+	}
+	return nil
 }
