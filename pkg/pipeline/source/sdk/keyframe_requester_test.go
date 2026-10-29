@@ -53,7 +53,7 @@ func TestKeyframeRequester_RepeatsUntilKeyframe(t *testing.T) {
 	r.KeyframeReceived()
 	settled := count.Load()
 	time.Sleep(10 * testPLIPeriod)
-	require.LessOrEqual(t, count.Load(), settled+1, "at most one queued PLI can follow the keyframe")
+	require.LessOrEqual(t, count.Load(), settled+1, "a repeat already being sent can still follow the keyframe")
 }
 
 func TestKeyframeRequester_CloseStopsRequests(t *testing.T) {
@@ -71,4 +71,18 @@ func TestKeyframeRequester_CloseStopsRequests(t *testing.T) {
 	r.RequestPLI()
 	time.Sleep(5 * testPLIPeriod)
 	require.Equal(t, closed, count.Load())
+}
+
+func TestKeyframeRequester_NoPLIAfterKeyframe(t *testing.T) {
+	r, count := newTestRequester()
+	defer r.Close()
+
+	// Image captures request a keyframe every interval, so a repeat queued
+	// before the keyframe arrived would cost a second keyframe each time.
+	r.RequestKeyframe()
+	require.Equal(t, int32(1), count.Load())
+	r.KeyframeReceived()
+
+	time.Sleep(5 * testPLIPeriod)
+	require.Equal(t, int32(1), count.Load(), "the queued repeat is dropped once the keyframe arrived")
 }
