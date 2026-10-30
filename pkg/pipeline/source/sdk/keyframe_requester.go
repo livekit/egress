@@ -68,6 +68,14 @@ func (r *keyframeRequester) send() {
 	}
 	r.writePLI()
 	if r.pending.Load() {
-		r.throttle(r.send)
+		r.throttle(r.repeat)
+	}
+}
+
+// repeat is the queued follow-up PLI. It is dropped when the keyframe arrived
+// in the meantime, so a request that succeeds costs a single keyframe.
+func (r *keyframeRequester) repeat() {
+	if r.pending.Load() {
+		r.send()
 	}
 }

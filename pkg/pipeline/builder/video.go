@@ -541,7 +541,7 @@ func (b *VideoBin) addAppSrcBin(ts *config.TrackSource) error {
 }
 
 func (b *VideoBin) attachKeyframeProbe(ts *config.TrackSource, name string, element *gst.Element) error {
-	probe, err := newKeyframeProbe(ts.TrackID, ts.MimeType, element, ts.OnKeyframeRequired, ts.OnKeyframeReceived)
+	probe, err := newKeyframeProbe(ts.TrackID, ts.MimeType, element, ts.OnKeyframeRequired, ts.OnKeyframeReceived, b.conf.ImageKeyframeInterval())
 	if err != nil {
 		return err
 	}
