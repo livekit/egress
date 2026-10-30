@@ -23,10 +23,10 @@ require (
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/media-samples/avsync v0.0.0-20261008082729-48c99b65fa6d
 	github.com/livekit/media-sdk v0.1.1
-	github.com/livekit/mediatransportutil v0.0.0-20261020100523-e0b22b120fb1
-	github.com/livekit/protocol v1.53.1-0.20261023205916-b20af9b45249
+	github.com/livekit/mediatransportutil v0.0.0-20261028051829-725c5cc4266d
+	github.com/livekit/protocol v1.53.1
 	github.com/livekit/psrpc v0.8.2
-	github.com/livekit/server-sdk-go/v2 v2.19.1-0.20261021005524-743ab2d6b12f
+	github.com/livekit/server-sdk-go/v2 v2.19.1-0.20261027164600-4b61063da83b
 	github.com/livekit/storage v0.0.0-20261023160903-126285636eee
 	github.com/llehouerou/go-mp3 v1.5.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
@@ -36,7 +36,7 @@ require (
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.72.1
 	github.com/stretchr/testify v1.12.1
-	github.com/urfave/cli/v3 v3.11.0
+	github.com/urfave/cli/v3 v3.14.0
 	go.opentelemetry.io/otel v1.47.0
 	go.uber.org/atomic v1.12.0
 	go.uber.org/zap v1.28.0
