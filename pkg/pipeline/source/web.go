@@ -329,64 +329,19 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 }
 
 func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.CancelFunc, webUrl string) (error, bool) {
-	chromedp.ListenTarget(chromeCtx, func(ev interface{}) {
-		switch ev := ev.(type) {
-		case *runtime.EventConsoleAPICalled:
-			if s.chromeLogger != nil {
-				if b, err := json.Marshal(ev); err == nil {
-					_, _ = s.chromeLogger.Write(append(b, '\n'))
-				}
-			}
-
-			for _, arg := range ev.Args {
-				var val interface{}
-				err := json.Unmarshal(arg.Value, &val)
-				if err != nil {
-					continue
-				}
-
-				switch fmt.Sprint(val) {
-				case startRecordingLog:
-					if s.startRecordingLogged.CompareAndSwap(false, true) {
-						logger.Infow("chrome: START_RECORDING")
-					}
-					s.startRecording.Break()
-
-				case endRecordingLog:
-					logger.Infow("chrome: END_RECORDING")
-					s.endRecording.Break()
-				}
-			}
-
-		case *runtime.EventExceptionThrown:
-			if s.chromeLogger != nil {
-				if b, err := json.Marshal(ev); err == nil {
-					_, _ = s.chromeLogger.Write(append(b, '\n'))
-				}
-			}
-			logger.Debugw("chrome exception", "err", ev.ExceptionDetails.Error())
-
-		case *target.EventTargetCrashed:
-			logger.Errorw("chrome crashed", nil, "targetId", ev.TargetID, "status", ev.Status, "errorCode", ev.ErrorCode)
-
-		case *inspector.EventTargetCrashed:
-			logger.Errorw("chrome crashed", nil)
-		}
-	})
-
 	// navigate
 	var timeout *time.Timer
 	var errString string
-	if err := chromedp.Run(chromeCtx,
-		chromedp.ActionFunc(func(_ context.Context) error {
+	if err := chromedp.Do(chromeCtx,
+		chromedp.Func(func(ctx context.Context, _ *chromedp.Target) error {
 			logger.Debugw("chrome initialized")
+			s.listen(ctx)
 			// set page load timeout
 			timeout = time.AfterFunc(chromeTimeout, chromeCancel)
 			return nil
 		}),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			// use RunResponse wrapped in ActionFunc to get the response details
-			r, err := chromedp.RunResponse(ctx, chromedp.Navigate(webUrl))
+		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+			r, err := chromedp.NavigateResponse(webUrl)(ctx, t)
 			if err != nil {
 				return err
 			}
@@ -395,17 +350,21 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 			}
 			return nil
 		}),
-		chromedp.ActionFunc(func(_ context.Context) error {
+		chromedp.Func(func(_ context.Context, _ *chromedp.Target) error {
 			// cancel timer
 			timeout.Stop()
 			return nil
 		}),
-		chromedp.Evaluate(`
-			if (document.querySelector('div.error')) {
-				document.querySelector('div.error').innerText;
-			} else {
-				''
-			}`, &errString),
+		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+			var err error
+			errString, err = chromedp.Evaluate[string](`
+				if (document.querySelector('div.error')) {
+					document.querySelector('div.error').innerText;
+				} else {
+					''
+				}`)(ctx, t)
+			return err
+		}),
 	); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			logger.Warnw("navigation timed out, retrying", nil)
@@ -432,4 +391,76 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 	}
 
 	return nil, false
+}
+
+func (s *WebSource) listen(chromeCtx context.Context) {
+	consoleEvents := chromedp.Events(chromeCtx, runtime.ConsoleAPICalled)
+	exceptionEvents := chromedp.Events(chromeCtx, runtime.ExceptionThrown)
+	inspectorCrashEvents := chromedp.Events(chromeCtx, inspector.TargetCrashed)
+	targetCrashEvents := chromedp.BrowserEvents(chromeCtx, target.TargetCrashed)
+
+	go func() {
+		for ev, err := range consoleEvents {
+			if err != nil {
+				return
+			}
+			if s.chromeLogger != nil {
+				if b, err := json.Marshal(ev); err == nil {
+					_, _ = s.chromeLogger.Write(append(b, '\n'))
+				}
+			}
+
+			for _, arg := range ev.Args {
+				var val interface{}
+				err := json.Unmarshal(arg.Value, &val)
+				if err != nil {
+					continue
+				}
+
+				switch fmt.Sprint(val) {
+				case startRecordingLog:
+					if s.startRecordingLogged.CompareAndSwap(false, true) {
+						logger.Infow("chrome: START_RECORDING")
+					}
+					s.startRecording.Break()
+
+				case endRecordingLog:
+					logger.Infow("chrome: END_RECORDING")
+					s.endRecording.Break()
+				}
+			}
+		}
+	}()
+
+	go func() {
+		for ev, err := range exceptionEvents {
+			if err != nil {
+				return
+			}
+			if s.chromeLogger != nil {
+				if b, err := json.Marshal(ev); err == nil {
+					_, _ = s.chromeLogger.Write(append(b, '\n'))
+				}
+			}
+			logger.Debugw("chrome exception", "err", &chromedp.ExceptionError{ExceptionDetails: ev.ExceptionDetails})
+		}
+	}()
+
+	go func() {
+		for ev, err := range targetCrashEvents {
+			if err != nil {
+				return
+			}
+			logger.Errorw("chrome crashed", nil, "targetId", ev.TargetID, "status", ev.Status, "errorCode", ev.ErrorCode)
+		}
+	}()
+
+	go func() {
+		for _, err := range inspectorCrashEvents {
+			if err != nil {
+				return
+			}
+			logger.Errorw("chrome crashed", nil)
+		}
+	}()
 }
