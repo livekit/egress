@@ -15,8 +15,6 @@
 package builder
 
 import (
-	"sync/atomic"
-
 	"github.com/go-gst/go-gst/gst"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -36,10 +34,12 @@ func newPixelAspectLock(parser *gst.Element) (*gst.Element, error) {
 		return nil, errors.ErrGstPipelineError(newMissingPadError(parser.GetName(), "src"))
 	}
 
-	var locked atomic.Bool
+	// caps events on one pad are serialized, so the probe state needs no locking
+	var lockedPAR string
+	var changeLogged bool
 	srcPad.AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		event := info.GetEvent()
-		if event == nil || event.Type() != gst.EventTypeCaps || locked.Load() {
+		if event == nil || event.Type() != gst.EventTypeCaps {
 			return gst.PadProbeOK
 		}
 
@@ -52,11 +52,19 @@ func newPixelAspectLock(parser *gst.Element) (*gst.Element, error) {
 			}
 		}
 
+		if lockedPAR != "" {
+			if par != lockedPAR && !changeLogged {
+				changeLogged = true
+				logger.Infow("holding pixel aspect ratio", "parser", parser.GetName(), "locked", lockedPAR, "incoming", par)
+			}
+			return gst.PadProbeOK
+		}
+
 		if err := setter.SetProperty("caps", gst.NewCapsFromString("video/x-h264,pixel-aspect-ratio=(fraction)"+par)); err != nil {
 			logger.Warnw("could not lock pixel aspect ratio", err, "parser", parser.GetName())
 			return gst.PadProbeOK
 		}
-		locked.Store(true)
+		lockedPAR = par
 		return gst.PadProbeOK
 	})
 
