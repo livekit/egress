@@ -16,12 +16,13 @@ package builder
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
-	"github.com/frostbyte73/core"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
 	"github.com/linkdata/deadlock"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
@@ -31,38 +32,38 @@ import (
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-// the track worker drains a removed video track only after OnTrackRemoved returns, so its EOS arrives late
-const mcapBranchEOSTimeout = 5 * time.Second
-
-type branchExit int
-
 const (
-	exitEOS        branchExit = iota // final EOS reaches the appsink, which posts it on the bus
-	exitDetach                       // removed from the running pipeline
-	exitNeverAdded                   // the pipeline was past running when the branch was built
+	mcapBinName       = "mcap"
+	mcapKeepaliveName = "mcap_keepalive"
+	mcapTrackField    = "track-id"
+
+	// matches the source bin removal timeout, after which no more samples can arrive from the track
+	mcapTrackEndTimeout = 3 * time.Second
 )
 
-// MCAPBin runs one self-contained appsrc → appsink branch per track, so tracks are never mixed
+// MCAPBin funnels one passthrough source bin per track into a single appsink, tagging each with its track
 type MCAPBin struct {
+	*gstreamer.Bin
+
 	pipeline    *gstreamer.Pipeline
 	conf        *config.PipelineConfig
 	writeSample func(ts *config.TrackSource, runningTime time.Duration, data []byte) error
 	trackEnded  func(trackID string)
 
-	mu        deadlock.Mutex
-	nextID    int
-	names     map[string]string
-	branches  map[string]*mcapBranch
-	detaching int
-	ending    bool
-	eosPassed bool // some appsink received the final EOS, so the bus will post EOS itself
-	drained   core.Fuse
+	mu     deadlock.Mutex
+	nextID int
+	names  map[string]string // track ID -> live source bin name
+	tracks map[string]*mcapTrack
 }
 
-type mcapBranch struct {
+type mcapTrack struct {
 	ts            *config.TrackSource
 	probe         *keyframeProbe
 	stopKeyframes func()
+	stopOnce      sync.Once
+	removed       atomic.Bool
+	eosPassed     atomic.Bool
+	endOnce       sync.Once
 }
 
 func BuildMCAPBin(
@@ -72,16 +73,47 @@ func BuildMCAPBin(
 	trackEnded func(string),
 ) (*MCAPBin, error) {
 	b := &MCAPBin{
+		Bin:         p.NewBin(mcapBinName),
 		pipeline:    p,
 		conf:        conf,
 		writeSample: writeSample,
 		trackEnded:  trackEnded,
 		names:       make(map[string]string),
-		branches:    make(map[string]*mcapBranch),
+		tracks:      make(map[string]*mcapTrack),
+	}
+
+	funnel, err := gst.NewElement("funnel")
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+	appSink, err := app.NewAppSink()
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+	for prop, value := range map[string]bool{"sync": false, "async": false, "enable-last-sample": false} {
+		if err = appSink.SetProperty(prop, value); err != nil {
+			return nil, errors.ErrGstPipelineError(err)
+		}
+	}
+	appSink.SetCallbacks(&app.SinkCallbacks{NewSampleFunc: b.onSample})
+	// the funnel must come first: source bin removal releases its request pad on the bin's first element
+	if err = b.AddElements(funnel, appSink.Element); err != nil {
+		return nil, err
+	}
+
+	keepalive, err := buildKeepalive(p)
+	if err != nil {
+		return nil, err
+	}
+	if err = p.AddSourceBin(keepalive); err != nil {
+		return nil, err
+	}
+	if err = p.AddSinkBin(b.Bin); err != nil {
+		return nil, err
 	}
 
 	for _, ts := range append(append([]*config.TrackSource(nil), conf.VideoTracks...), conf.AudioTracks...) {
-		if err := b.addBranch(ts); err != nil {
+		if err = b.addTrack(ts); err != nil {
 			return nil, err
 		}
 	}
@@ -91,25 +123,45 @@ func BuildMCAPBin(
 	return b, nil
 }
 
-// MarkEnding makes Drained report true once every branch has seen EOS and been removed
-func (b *MCAPBin) MarkEnding() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+// buildKeepalive holds one funnel pad open so a departing last track can't end the file; it only ends with the pipeline
+func buildKeepalive(p *gstreamer.Pipeline) (*gstreamer.Bin, error) {
+	appSrc, err := app.NewAppSrc()
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+	appSrc.SetArg("format", "time")
 
-	b.ending = true
-	b.drainLocked()
+	keepalive := p.NewBin(mcapKeepaliveName)
+	keepalive.SetEOSFunc(func() bool {
+		appSrc.EndStream()
+		return false
+	})
+	if err = keepalive.AddElement(appSrc.Element); err != nil {
+		return nil, err
+	}
+	return keepalive, nil
 }
 
-func (b *MCAPBin) Drained() bool {
-	return b.drained.IsBroken()
+// Close stops every track's keyframe requests
+func (b *MCAPBin) Close() {
+	b.mu.Lock()
+	tracks := make([]*mcapTrack, 0, len(b.tracks))
+	for _, t := range b.tracks {
+		tracks = append(tracks, t)
+	}
+	b.mu.Unlock()
+
+	for _, t := range tracks {
+		t.stop()
+	}
 }
 
 func (b *MCAPBin) onTrackAdded(ts *config.TrackSource) {
 	if b.pipeline.GetState() > gstreamer.StateRunning {
 		return
 	}
-	if err := b.addBranch(ts); err != nil {
-		logger.Errorw("failed to add mcap branch", err, "trackID", ts.TrackID)
+	if err := b.addTrack(ts); err != nil {
+		logger.Errorw("failed to add mcap track", err, "trackID", ts.TrackID)
 		b.pipeline.OnError(err)
 	}
 }
@@ -118,130 +170,140 @@ func (b *MCAPBin) onTrackRemoved(trackID string) {
 	b.mu.Lock()
 	name, ok := b.names[trackID]
 	delete(b.names, trackID)
+	t := b.tracks[name]
 	b.mu.Unlock()
-	if ok {
-		time.AfterFunc(mcapBranchEOSTimeout, func() { b.removeBranch(name, exitDetach) })
+	if !ok {
+		return
 	}
+
+	t.stop()
+	// the track drains toward the final EOS, so its remaining samples must still route
+	if b.pipeline.GetState() > gstreamer.StateRunning {
+		return
+	}
+
+	// audio drains before it is removed, so its EOS may already have passed
+	t.removed.Store(true)
+	if t.eosPassed.Load() {
+		b.endTrack(name, t)
+	}
+	if err := b.RemoveSourceBin(name); err != nil {
+		b.pipeline.OnError(err)
+	}
+	time.AfterFunc(mcapTrackEndTimeout, func() { b.endTrack(name, t) })
 }
 
-func (b *MCAPBin) addBranch(ts *config.TrackSource) error {
+// endTrack runs once the removed track's last sample has passed, so a republish can take over its topic
+func (b *MCAPBin) endTrack(name string, t *mcapTrack) {
+	t.endOnce.Do(func() {
+		b.mu.Lock()
+		delete(b.tracks, name)
+		b.mu.Unlock()
+		b.trackEnded(t.ts.TrackID)
+	})
+}
+
+func (b *MCAPBin) addTrack(ts *config.TrackSource) error {
 	b.mu.Lock()
 	name := fmt.Sprintf("mcap_%s_%d", ts.TrackID, b.nextID)
 	b.nextID++
 	b.mu.Unlock()
 
-	appSink, err := app.NewAppSink()
-	if err != nil {
-		return errors.ErrGstPipelineError(err)
-	}
-	for prop, value := range map[string]bool{"sync": false, "async": false, "enable-last-sample": false} {
-		if err = appSink.SetProperty(prop, value); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-	}
-	appSink.SetCallbacks(&app.SinkCallbacks{
-		NewSampleFunc: func(sink *app.Sink) gst.FlowReturn {
-			return b.onSample(sink, ts)
-		},
-	})
-	appSink.GetStaticPad("sink").AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		if event := info.GetEvent(); event == nil || event.Type() != gst.EventTypeEOS {
-			return gst.PadProbeOK
-		}
-
-		b.mu.Lock()
-		ending := b.ending
-		b.mu.Unlock()
-		if ending {
-			b.removeBranch(name, exitEOS)
-			return gst.PadProbeOK
-		}
-		go b.removeBranch(name, exitDetach)
-		// an appsink that sees EOS counts toward pipeline EOS, which would end the egress when this was the last track
-		return gst.PadProbeDrop
-	})
-
 	var (
 		bin   *gstreamer.Bin
 		probe *keyframeProbe
+		caps  string
+		err   error
 	)
 	switch ts.TrackKind {
 	case lksdk.TrackKindVideo:
-		bin, probe, err = b.buildVideoBranch(ts, name)
+		bin, probe, caps, err = b.buildVideoTrack(ts, name)
 	case lksdk.TrackKindAudio:
-		bin, err = b.buildAudioBranch(ts, name)
+		bin, caps, err = b.buildAudioTrack(ts, name)
 	default:
 		err = errors.ErrNotSupported(ts.TrackKind.String())
 	}
 	if err != nil {
 		return err
 	}
-	if err = bin.AddElement(appSink.Element); err != nil {
+	tag, err := newTrackCapsFilter(caps, name)
+	if err != nil {
+		return err
+	}
+	if err = bin.AddElement(tag); err != nil {
 		return err
 	}
 
-	branch := &mcapBranch{ts: ts, probe: probe}
+	t := &mcapTrack{ts: ts, probe: probe}
+	tag.GetStaticPad("src").AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		if event := info.GetEvent(); event != nil && event.Type() == gst.EventTypeEOS {
+			t.eosPassed.Store(true)
+			if t.removed.Load() {
+				b.endTrack(name, t)
+			}
+		}
+		return gst.PadProbeOK
+	})
+
+	// samples can arrive as soon as the bin links
+	b.mu.Lock()
+	b.tracks[name] = t
+	b.mu.Unlock()
+
+	if err = b.AddSourceBin(bin); err != nil {
+		b.mu.Lock()
+		delete(b.tracks, name)
+		b.mu.Unlock()
+		t.stop()
+		return err
+	}
 	if ts.TrackKind == lksdk.TrackKindVideo {
 		interval := time.Second
 		if b.conf.KeyFrameInterval > 0 {
 			interval = time.Duration(b.conf.KeyFrameInterval * float64(time.Second))
 		}
-		branch.stopKeyframes = requestKeyframes(interval, ts.OnKeyframeRequested)
+		t.stopKeyframes = requestKeyframes(interval, ts.OnKeyframeRequested)
 	}
 
 	b.mu.Lock()
 	b.names[ts.TrackID] = name
-	b.branches[name] = branch
 	b.mu.Unlock()
-
-	added, err := b.pipeline.AddSiblingBin(bin)
-	if !added {
-		b.removeBranch(name, exitNeverAdded)
-	}
-	return err
+	return nil
 }
 
-func (b *MCAPBin) buildVideoBranch(ts *config.TrackSource, name string) (*gstreamer.Bin, *keyframeProbe, error) {
-	switch ts.MimeType {
-	case types.MimeTypeH264, types.MimeTypeVP9, types.MimeTypeAV1:
-	default:
-		// foxglove CompressedVideo has no VP8 format
-		return nil, nil, errors.ErrNotSupported(string(ts.MimeType))
-	}
-
-	bin, probe, err := buildVideoAppSrcBin(b.pipeline.Bin, b.conf, ts, name, false)
-	if err != nil {
-		return nil, nil, err
-	}
-
+func (b *MCAPBin) buildVideoTrack(ts *config.TrackSource, name string) (*gstreamer.Bin, *keyframeProbe, string, error) {
+	var caps string
 	switch ts.MimeType {
 	case types.MimeTypeH264:
+		caps = "video/x-h264,stream-format=byte-stream,alignment=au"
+	case types.MimeTypeVP9:
+		// SVC layers arrive as separate frames, but each message must hold a whole picture
+		caps = "video/x-vp9,alignment=super-frame"
+	case types.MimeTypeAV1:
+		caps = "video/x-av1"
+	default:
+		// foxglove CompressedVideo has no VP8 format
+		return nil, nil, "", errors.ErrNotSupported(string(ts.MimeType))
+	}
+
+	bin, probe, err := buildVideoAppSrcBin(b.Bin, b.conf, ts, name, false)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if ts.MimeType == types.MimeTypeH264 {
 		h264Parse, err := gst.NewElement("h264parse")
 		if err != nil {
-			return nil, nil, errors.ErrGstPipelineError(err)
+			return nil, nil, "", errors.ErrGstPipelineError(err)
 		}
 		// SPS/PPS on every IDR lets playback start at any keyframe
 		if err = h264Parse.SetProperty("config-interval", -1); err != nil {
-			return nil, nil, errors.ErrGstPipelineError(err)
+			return nil, nil, "", errors.ErrGstPipelineError(err)
 		}
-		outputCaps, err := newCapsFilter("video/x-h264,stream-format=byte-stream,alignment=au")
-		if err != nil {
-			return nil, nil, err
-		}
-		if err = bin.AddElements(h264Parse, outputCaps); err != nil {
-			return nil, nil, err
-		}
-	case types.MimeTypeVP9:
-		// SVC layers arrive as separate frames, but each message must hold a whole picture
-		superFrames, err := newCapsFilter("video/x-vp9,alignment=super-frame")
-		if err != nil {
-			return nil, nil, err
-		}
-		if err = bin.AddElement(superFrames); err != nil {
-			return nil, nil, err
+		if err = bin.AddElement(h264Parse); err != nil {
+			return nil, nil, "", err
 		}
 	}
-	return bin, probe, nil
+	return bin, probe, caps, nil
 }
 
 // requestKeyframes asks the publisher for a keyframe every interval until stopped, so passthrough video stays seekable
@@ -262,22 +324,22 @@ func requestKeyframes(interval time.Duration, request func()) (stop func()) {
 	return func() { close(done) }
 }
 
-func (b *MCAPBin) buildAudioBranch(ts *config.TrackSource, name string) (*gstreamer.Bin, error) {
-	bin := b.pipeline.NewBin(name)
+func (b *MCAPBin) buildAudioTrack(ts *config.TrackSource, name string) (*gstreamer.Bin, string, error) {
+	bin := b.NewBin(name)
 	bin.SetEOSFunc(func() bool {
 		return false
 	})
 	ts.AppSrc.SetArg("format", "time")
 	if err := ts.AppSrc.SetProperty("is-live", b.conf.Live); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
+		return nil, "", errors.ErrGstPipelineError(err)
 	}
 	if !b.conf.Live {
 		if err := ts.AppSrc.SetProperty("block", true); err != nil {
-			return nil, errors.ErrGstPipelineError(err)
+			return nil, "", errors.ErrGstPipelineError(err)
 		}
 	}
 	if err := bin.AddElement(ts.AppSrc.Element); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	var caps string
@@ -296,32 +358,37 @@ func (b *MCAPBin) buildAudioBranch(ts *config.TrackSource, name string) (*gstrea
 		caps = fmt.Sprintf("application/x-rtp,media=audio,payload=%d,encoding-name=PCMA,clock-rate=%d", ts.PayloadType, ts.ClockRate)
 		names = []string{"rtppcmadepay", "alawdec", "audioconvert", "audioresample", "opusenc"}
 	default:
-		return nil, errors.ErrNotSupported(string(ts.MimeType))
+		return nil, "", errors.ErrNotSupported(string(ts.MimeType))
 	}
 	names = append(names, "opusparse")
 	if err := ts.AppSrc.SetProperty("caps", gst.NewCapsFromString(caps)); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
+		return nil, "", errors.ErrGstPipelineError(err)
 	}
 	for _, elementName := range names {
 		element, err := gst.NewElement(elementName)
 		if err != nil {
-			return nil, errors.ErrGstPipelineError(err)
+			return nil, "", errors.ErrGstPipelineError(err)
 		}
 		if err = bin.AddElement(element); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
-	return bin, nil
+	return bin, "audio/x-opus", nil
 }
 
-func (b *MCAPBin) onSample(sink *app.Sink, ts *config.TrackSource) gst.FlowReturn {
+func (b *MCAPBin) onSample(sink *app.Sink) gst.FlowReturn {
 	sample := sink.PullSample()
+	ts, ok := b.sampleTrack(sample)
+	if !ok {
+		return gst.FlowOK
+	}
+
 	buffer := sample.GetBuffer()
 	pts := buffer.PresentationTimestamp()
 	if pts == gst.ClockTimeNone {
 		return gst.FlowOK
 	}
-	// a buffer before the segment start has no running time
+	// the funnel re-sends each track's segment when it switches pads, so this is the sample's own track segment
 	runningTime := gst.ClockTime(sample.GetSegment().ToRunningTime(gst.FormatTime, uint64(pts))).AsDuration()
 	if runningTime == nil {
 		return gst.FlowOK
@@ -336,67 +403,39 @@ func (b *MCAPBin) onSample(sink *app.Sink, ts *config.TrackSource) gst.FlowRetur
 	return gst.FlowOK
 }
 
-func (b *MCAPBin) removeBranch(name string, exit branchExit) {
+// sampleTrack is false for a straggler from a track that already ended on its timeout
+func (b *MCAPBin) sampleTrack(sample *gst.Sample) (*config.TrackSource, bool) {
+	value, _ := sample.GetCaps().GetStructureAt(0).GetValue(mcapTrackField)
+	name, _ := value.(string)
+
 	b.mu.Lock()
-	branch, ok := b.branches[name]
+	defer b.mu.Unlock()
+	t, ok := b.tracks[name]
 	if !ok {
-		b.mu.Unlock()
-		return
+		return nil, false
 	}
-	delete(b.branches, name)
-	switch exit {
-	case exitEOS:
-		b.eosPassed = true
-	case exitDetach:
-		b.detaching++
-	}
-	b.mu.Unlock()
+	return t.ts, true
+}
 
-	if branch.probe != nil {
-		branch.probe.Close()
-	}
-	if branch.stopKeyframes != nil {
-		branch.stopKeyframes()
-	}
-	if exit == exitDetach {
-		if err := b.pipeline.RemoveSiblingBin(name); err != nil {
-			b.pipeline.OnError(err)
+func (t *mcapTrack) stop() {
+	t.stopOnce.Do(func() {
+		if t.probe != nil {
+			t.probe.Close()
 		}
-	}
-
-	b.mu.Lock()
-	if exit == exitDetach {
-		b.detaching--
-	}
-	trackLive := false
-	for _, other := range b.branches {
-		trackLive = trackLive || other.ts.TrackID == branch.ts.TrackID
-	}
-	b.drainLocked()
-	b.mu.Unlock()
-
-	if !trackLive {
-		b.trackEnded(branch.ts.TrackID)
-	}
+		if t.stopKeyframes != nil {
+			t.stopKeyframes()
+		}
+	})
 }
 
-// drainLocked must wait for in-flight detaches: a bus EOS stops the GLib loop before their removal callbacks run
-func (b *MCAPBin) drainLocked() {
-	if !b.ending || len(b.branches) > 0 || b.detaching > 0 || b.drained.IsBroken() {
-		return
-	}
-	b.drained.Break()
-	if !b.eosPassed {
-		b.pipeline.PostEOS()
-	}
-}
-
-func newCapsFilter(caps string) (*gst.Element, error) {
+// newTrackCapsFilter adds the track's source bin name to its caps, which the funnel forwards whenever it switches tracks
+func newTrackCapsFilter(caps, name string) (*gst.Element, error) {
 	capsFilter, err := gst.NewElement("capsfilter")
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if err = capsFilter.SetProperty("caps", gst.NewCapsFromString(caps)); err != nil {
+	tagged := fmt.Sprintf("%s,%s=(string)%q", caps, mcapTrackField, name)
+	if err = capsFilter.SetProperty("caps", gst.NewCapsFromString(tagged)); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 	return capsFilter, nil

@@ -40,12 +40,13 @@ import (
 )
 
 type MCAPSink struct {
+	*base
 	*config.FileConfig
 	*uploader.Uploader
 
 	conf     *config.PipelineConfig
 	pipeline *gstreamer.Pipeline
-	bin      *builder.MCAPBin
+	mcapBin  *builder.MCAPBin
 
 	mu       deadlock.Mutex
 	file     *os.File
@@ -74,9 +75,10 @@ func newMCAPSink(
 		topics:     make(map[string]string),
 		channels:   make(map[string]string),
 	}
-	if s.bin, err = builder.BuildMCAPBin(p, conf, s.writeSample, s.trackEnded); err != nil {
+	if s.mcapBin, err = builder.BuildMCAPBin(p, conf, s.writeSample, s.trackEnded); err != nil {
 		return nil, err
 	}
+	s.base = &base{bin: s.mcapBin.Bin}
 	return s, nil
 }
 
@@ -188,14 +190,6 @@ func (s *MCAPSink) trackEnded(trackID string) {
 	}
 }
 
-func (s *MCAPSink) AddEOSProbe() {
-	s.bin.MarkEnding()
-}
-
-func (s *MCAPSink) EOSReceived() bool {
-	return s.bin.Drained()
-}
-
 func (s *MCAPSink) UploadManifest(filepath string) (string, bool, error) {
 	if s.DisableManifest && !s.conf.Info.BackupStorageUsed {
 		return "", false, nil
@@ -210,6 +204,8 @@ func (s *MCAPSink) UploadManifest(filepath string) (string, bool, error) {
 }
 
 func (s *MCAPSink) Close() error {
+	s.mcapBin.Close()
+
 	s.mu.Lock()
 	err := s.writer.Close()
 	if closeErr := s.file.Close(); err == nil {
