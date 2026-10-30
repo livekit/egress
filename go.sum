@@ -175,8 +175,8 @@ github.com/go-gst/go-glib v0.0.0-20250303082535-35ebad1471fd h1:gll1/7cD2T5m2AqS
 github.com/go-gst/go-glib v0.0.0-20250303082535-35ebad1471fd/go.mod h1:ZWT4LXOO2PH8lSNu/dR5O2yoNQJKEgmijNa2d7nByK8=
 github.com/go-gst/go-pointer v0.0.0-20241127163939-ba766f075b4c h1:x8kKRVDmz5BRlolmDZGcsuZ1l+js6TRL3QWBJjGVctM=
 github.com/go-gst/go-pointer v0.0.0-20241127163939-ba766f075b4c/go.mod h1:qKw5ZZ0U58W6PU/7F/Lopv+14nKYmdXlOd7VnAZ17Mk=
-github.com/go-jose/go-jose/v4 v4.1.5 h1:RjgjO2LOtWOJKUC5wpwY9LR3B3vwVAz6JS2YHfYU6eA=
-github.com/go-jose/go-jose/v4 v4.1.5/go.mod h1:x4oUasVrzR7071A4TnHLGSPpNOm2a21K9Kf04k1rs08=
+github.com/go-jose/go-jose/v4 v4.1.6 h1:sNRkftxFJxwsILiQukqp5z83QBSmntVwmgRY7AqBDO4=
+github.com/go-jose/go-jose/v4 v4.1.6/go.mod h1:x4oUasVrzR7071A4TnHLGSPpNOm2a21K9Kf04k1rs08=
 github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68 h1:KZaTBSyshWX3MP5jukJcNSuXDQTO+rNpt0J564dX/eg=
 github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68/go.mod h1:tphK2c80bpPhMOI4v6bIc2xWywPfbqi1Z06+RcrMkDg=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
