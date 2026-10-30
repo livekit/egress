@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"math/rand"
 	"net/url"
 	"os"
@@ -30,6 +31,8 @@ import (
 
 	"gopkg.in/natefinch/lumberjack.v2"
 
+	"github.com/chromedp/cdproto/cdp"
+	jsonv2 "github.com/chromedp/cdproto/cdp/jsonv2"
 	"github.com/chromedp/cdproto/inspector"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/cdproto/target"
@@ -394,73 +397,74 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 }
 
 func (s *WebSource) listen(chromeCtx context.Context) {
-	consoleEvents := chromedp.Events(chromeCtx, runtime.ConsoleAPICalled)
-	exceptionEvents := chromedp.Events(chromeCtx, runtime.ExceptionThrown)
-	inspectorCrashEvents := chromedp.Events(chromeCtx, inspector.TargetCrashed)
-	targetCrashEvents := chromedp.BrowserEvents(chromeCtx, target.TargetCrashed)
-
-	go func() {
-		for ev, err := range consoleEvents {
-			if err != nil {
-				return
-			}
-			if s.chromeLogger != nil {
-				if b, err := json.Marshal(ev); err == nil {
-					_, _ = s.chromeLogger.Write(append(b, '\n'))
-				}
-			}
-
-			for _, arg := range ev.Args {
-				var val interface{}
-				err := json.Unmarshal(arg.Value, &val)
-				if err != nil {
-					continue
-				}
-
-				switch fmt.Sprint(val) {
-				case startRecordingLog:
-					if s.startRecordingLogged.CompareAndSwap(false, true) {
-						logger.Infow("chrome: START_RECORDING")
-					}
-					s.startRecording.Break()
-
-				case endRecordingLog:
-					logger.Infow("chrome: END_RECORDING")
-					s.endRecording.Break()
-				}
+	handleEvents(chromeCtx, chromedp.Events[jsonv2.Value], runtime.ConsoleAPICalled, func(ev runtime.EventConsoleAPICalled) {
+		if s.chromeLogger != nil {
+			if b, err := json.Marshal(ev); err == nil {
+				_, _ = s.chromeLogger.Write(append(b, '\n'))
 			}
 		}
-	}()
 
-	go func() {
-		for ev, err := range exceptionEvents {
+		for _, arg := range ev.Args {
+			var val interface{}
+			err := json.Unmarshal(arg.Value, &val)
 			if err != nil {
-				return
+				continue
 			}
-			if s.chromeLogger != nil {
-				if b, err := json.Marshal(ev); err == nil {
-					_, _ = s.chromeLogger.Write(append(b, '\n'))
+
+			switch fmt.Sprint(val) {
+			case startRecordingLog:
+				if s.startRecordingLogged.CompareAndSwap(false, true) {
+					logger.Infow("chrome: START_RECORDING")
 				}
-			}
-			logger.Debugw("chrome exception", "err", &chromedp.ExceptionError{ExceptionDetails: ev.ExceptionDetails})
-		}
-	}()
+				s.startRecording.Break()
 
+			case endRecordingLog:
+				logger.Infow("chrome: END_RECORDING")
+				s.endRecording.Break()
+			}
+		}
+	})
+
+	handleEvents(chromeCtx, chromedp.Events[jsonv2.Value], runtime.ExceptionThrown, func(ev runtime.EventExceptionThrown) {
+		if s.chromeLogger != nil {
+			if b, err := json.Marshal(ev); err == nil {
+				_, _ = s.chromeLogger.Write(append(b, '\n'))
+			}
+		}
+		logger.Debugw("chrome exception", "err", &chromedp.ExceptionError{ExceptionDetails: ev.ExceptionDetails})
+	})
+
+	handleEvents(chromeCtx, chromedp.BrowserEvents[jsonv2.Value], target.TargetCrashed, func(ev target.EventTargetCrashed) {
+		logger.Errorw("chrome crashed", nil, "targetId", ev.TargetID, "status", ev.Status, "errorCode", ev.ErrorCode)
+	})
+
+	handleEvents(chromeCtx, chromedp.Events[jsonv2.Value], inspector.TargetCrashed, func(_ inspector.EventTargetCrashed) {
+		logger.Errorw("chrome crashed", nil)
+	})
+}
+
+// handleEvents subscribes to the raw payloads of ev and decodes each one itself, so a payload
+// that fails to decode is logged and skipped rather than ending the subscription. The
+// subscription is in place when handleEvents returns, and the goroutine exits when the
+// context ends or the session closes.
+func handleEvents[E any](
+	ctx context.Context,
+	subscribe func(context.Context, cdp.Event[jsonv2.Value]) iter.Seq2[jsonv2.Value, error],
+	ev cdp.Event[E],
+	handle func(E),
+) {
+	events := subscribe(ctx, cdp.Event[jsonv2.Value](ev))
 	go func() {
-		for ev, err := range targetCrashEvents {
+		for raw, err := range events {
 			if err != nil {
 				return
 			}
-			logger.Errorw("chrome crashed", nil, "targetId", ev.TargetID, "status", ev.Status, "errorCode", ev.ErrorCode)
-		}
-	}()
-
-	go func() {
-		for _, err := range inspectorCrashEvents {
-			if err != nil {
-				return
+			var v E
+			if err = jsonv2.Unmarshal(raw, &v); err != nil {
+				logger.Warnw("failed to decode chrome event", err, "method", ev.Method)
+				continue
 			}
-			logger.Errorw("chrome crashed", nil)
+			handle(v)
 		}
 	}()
 }
