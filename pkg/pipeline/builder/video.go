@@ -622,6 +622,13 @@ func (b *VideoBin) buildAppSrcBin(ts *config.TrackSource, name string) (*gstream
 		}
 
 		if !b.conf.VideoDecoding {
+			pixelAspectLock, err := newPixelAspectLock(h264Parse)
+			if err != nil {
+				return nil, err
+			}
+			if err = appSrcBin.AddElement(pixelAspectLock); err != nil {
+				return nil, err
+			}
 			return appSrcBin, nil
 		}
 
