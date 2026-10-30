@@ -1024,6 +1024,7 @@ func (p *PipelineConfig) updateOutputType(compatibleAudioCodecs map[types.MimeTy
 
 // UpdateInfoFromSDK - updates the pipeline config with the identifier, replacements, width, and height
 func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[string]string, w, h uint32) error {
+	identifier = strings.ReplaceAll(identifier, "/", "_")
 	if p.Info.RetryCount > 0 {
 		replacements["{retry}"] = fmt.Sprintf("%d", p.Info.RetryCount)
 	}
@@ -1038,21 +1039,21 @@ func (p *PipelineConfig) UpdateInfoFromSDK(identifier string, replacements map[s
 
 		case types.EgressTypeSegments:
 			o := c[0].(*SegmentConfig)
-			o.LocalDir = stringReplace(o.LocalDir, replacements)
-			o.StorageDir = stringReplace(o.StorageDir, replacements)
-			o.PlaylistFilename = stringReplace(o.PlaylistFilename, replacements)
-			o.LivePlaylistFilename = stringReplace(o.LivePlaylistFilename, replacements)
-			o.SegmentPrefix = stringReplace(o.SegmentPrefix, replacements)
-			o.SegmentsInfo.PlaylistName = stringReplace(o.SegmentsInfo.PlaylistName, replacements)
-			o.SegmentsInfo.LivePlaylistName = stringReplace(o.SegmentsInfo.LivePlaylistName, replacements)
+			o.LocalDir = replaceAndClean(o.LocalDir, replacements)
+			o.StorageDir = replaceAndClean(o.StorageDir, replacements)
+			o.PlaylistFilename = replaceAndClean(o.PlaylistFilename, replacements)
+			o.LivePlaylistFilename = replaceAndClean(o.LivePlaylistFilename, replacements)
+			o.SegmentPrefix = replaceAndClean(o.SegmentPrefix, replacements)
+			o.SegmentsInfo.PlaylistName = replaceAndClean(o.SegmentsInfo.PlaylistName, replacements)
+			o.SegmentsInfo.LivePlaylistName = replaceAndClean(o.SegmentsInfo.LivePlaylistName, replacements)
 
 		case types.EgressTypeImages:
 			for _, ci := range c {
 				o := ci.(*ImageConfig)
-				o.LocalDir = stringReplace(o.LocalDir, replacements)
-				o.StorageDir = stringReplace(o.StorageDir, replacements)
-				o.ImagePrefix = stringReplace(o.ImagePrefix, replacements)
-				o.ImagesInfo.FilenamePrefix = stringReplace(o.ImagesInfo.FilenamePrefix, replacements)
+				o.LocalDir = replaceAndClean(o.LocalDir, replacements)
+				o.StorageDir = replaceAndClean(o.StorageDir, replacements)
+				o.ImagePrefix = replaceAndClean(o.ImagePrefix, replacements)
+				o.ImagesInfo.FilenamePrefix = replaceAndClean(o.ImagesInfo.FilenamePrefix, replacements)
 				if o.Width == 0 {
 					if w != 0 {
 						o.Width = int32(w)
@@ -1102,9 +1103,10 @@ func isHttp(parsedUrl *url.URL) bool {
 	return parsedUrl.Scheme == "http" || parsedUrl.Scheme == "https"
 }
 
-func stringReplace(s string, replacements map[string]string) string {
+// replacement values come from room and participant names, so traversal is cleaned again after substituting
+func replaceAndClean(s string, replacements map[string]string) string {
 	for template, value := range replacements {
 		s = strings.ReplaceAll(s, template, value)
 	}
-	return s
+	return clean(s)
 }

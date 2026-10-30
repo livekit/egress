@@ -129,9 +129,9 @@ func removeKnownExtension(filename string) string {
 func (o *SegmentConfig) updatePrefixAndPlaylist(p *PipelineConfig) error {
 	identifier, replacements := p.getFilenameInfo()
 
-	o.SegmentPrefix = stringReplace(o.SegmentPrefix, replacements)
-	o.PlaylistFilename = stringReplace(o.PlaylistFilename, replacements)
-	o.LivePlaylistFilename = stringReplace(o.LivePlaylistFilename, replacements)
+	o.SegmentPrefix = replaceAndClean(o.SegmentPrefix, replacements)
+	o.PlaylistFilename = replaceAndClean(o.PlaylistFilename, replacements)
+	o.LivePlaylistFilename = replaceAndClean(o.LivePlaylistFilename, replacements)
 
 	ext := types.FileExtensionForOutputType[o.OutputType]
 
