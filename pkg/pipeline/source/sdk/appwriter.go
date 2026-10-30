@@ -172,6 +172,7 @@ func NewAppWriter(
 	w.opusPassthrough = conf.OpusPassthrough(ts.MimeType)
 
 	ts.OnKeyframeRequired = w.onKeyframeRequired
+	ts.OnKeyframeRequested = w.onKeyframeRequested
 	ts.OnKeyframeReceived = w.onKeyframeReceived
 
 	if conf.Debug.EnableTrackLogging {
@@ -329,6 +330,7 @@ func (w *AppWriter) start() {
 
 	if w.trackSource != nil {
 		w.trackSource.OnKeyframeRequired = nil
+		w.trackSource.OnKeyframeRequested = nil
 		w.trackSource.OnKeyframeReceived = nil
 	}
 	if w.keyframes != nil {
@@ -493,6 +495,13 @@ func (w *AppWriter) onKeyframeRequired() {
 		return
 	}
 	w.keyframes.RequirePLI()
+}
+
+func (w *AppWriter) onKeyframeRequested() {
+	if w.finished.IsBroken() || w.keyframes == nil {
+		return
+	}
+	w.keyframes.RequestPLI()
 }
 
 func (w *AppWriter) onKeyframeReceived() {

@@ -471,6 +471,7 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 
 	ts := &config.TrackSource{
 		TrackID:             pub.SID(),
+		TrackName:           pub.Name(),
 		TrackKind:           pub.Kind(),
 		ParticipantIdentity: rp.Identity(),
 		PublicationSource:   pub.Source(),

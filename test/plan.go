@@ -207,6 +207,10 @@ func participantHasAudioInOutput(tc *testCase, name string) bool {
 }
 
 func participantHasVideoInOutput(tc *testCase, name string) bool {
+	// every publisher publishes so the egress-side selection is what gets tested
+	if tc.mediaVideos != nil {
+		return true
+	}
 	if tc.mediaVideoTrackID == "" && tc.mediaParticipantVideo == nil {
 		return true
 	}
