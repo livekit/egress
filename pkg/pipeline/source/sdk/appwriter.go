@@ -492,7 +492,7 @@ func (w *AppWriter) onKeyframeRequired() {
 	if w.finished.IsBroken() || w.keyframes == nil {
 		return
 	}
-	w.keyframes.RequestKeyframe()
+	w.keyframes.RequirePLI()
 }
 
 func (w *AppWriter) onKeyframeReceived() {
