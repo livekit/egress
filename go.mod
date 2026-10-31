@@ -13,6 +13,7 @@ require (
 	github.com/aws/smithy-go v1.28.5
 	github.com/chromedp/cdproto v0.0.0-20260804232424-e85f50dbfd32
 	github.com/chromedp/chromedp v0.16.0
+	github.com/foxglove/mcap/go/mcap v1.9.0
 	github.com/frostbyte73/core v0.1.1
 	github.com/go-gst/go-glib v1.4.1-0.20250303082535-35ebad1471fd
 	github.com/go-gst/go-gst v1.4.0
