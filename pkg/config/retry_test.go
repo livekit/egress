@@ -239,6 +239,27 @@ func TestImageOutputRetrySafety(t *testing.T) {
 			expectErr:  false,
 		},
 		{
+			name:       "retry where path cleaning drops the {retry} directory",
+			retryCount: 1,
+			prefix:     "images/{retry}/../shot",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+			expectErr:  true,
+		},
+		{
+			name:       "retry with prefix that cleans to nothing (dot)",
+			retryCount: 1,
+			prefix:     ".",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+			expectErr:  false,
+		},
+		{
+			name:       "retry with prefix that cleans to nothing (images/..)",
+			retryCount: 1,
+			prefix:     "images/..",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+			expectErr:  false,
+		},
+		{
 			name:       "retry with explicit prefix and timestamp suffix",
 			retryCount: 1,
 			prefix:     "images/my-stream",
