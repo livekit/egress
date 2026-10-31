@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/known/apipb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/egress/pkg/mcap/foxglove"
@@ -39,6 +40,9 @@ func TestWriterRoundTrip(t *testing.T) {
 	require.NoError(t, w.AddChannel("v1", "/video/a", &foxglove.CompressedVideo{}, nil))
 	require.NoError(t, w.AddChannel("v2", "/video/b", &foxglove.CompressedVideo{}, nil))
 	require.NoError(t, w.AddChannel("a1", "/audio/a", &foxglove.CompressedAudio{}, nil))
+	require.NoError(t, w.AddChannel("api", "/api", &apipb.Api{}, nil))
+	require.Error(t, w.AddChannel("v1", "/video/c", &foxglove.CompressedVideo{}, nil))
+	require.Error(t, w.Write("missing", time.Now(), &foxglove.CompressedVideo{}))
 
 	start := time.Unix(1700000000, 0)
 	for i := 0; i < 3; i++ {
@@ -54,8 +58,8 @@ func TestWriterRoundTrip(t *testing.T) {
 	info, err := r.Info()
 	require.NoError(t, err)
 
-	require.Len(t, info.Schemas, 2)
-	require.Len(t, info.Channels, 3)
+	require.Len(t, info.Schemas, 3)
+	require.Len(t, info.Channels, 4)
 	require.Len(t, info.MetadataIndexes, 1)
 	require.EqualValues(t, 7, info.Statistics.MessageCount)
 
@@ -69,8 +73,9 @@ func TestWriterRoundTrip(t *testing.T) {
 	it, err := r.Messages()
 	require.NoError(t, err)
 	sequences := make(map[string][]uint32)
+	var msg mcap.Message
 	for {
-		_, c, m, err := it.Next(nil)
+		_, c, m, err := it.NextInto(&msg)
 		if errors.Is(err, io.EOF) {
 			break
 		}

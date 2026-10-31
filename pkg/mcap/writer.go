@@ -15,23 +15,25 @@
 package mcap
 
 import (
+	"fmt"
 	"io"
 	"time"
 
 	"github.com/foxglove/mcap/go/mcap"
+	"github.com/linkdata/deadlock"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/egress/version"
 )
 
 const chunkSize = 4 << 20
 
-// Writer writes protobuf messages to a chunked, indexed MCAP file; it is not safe for concurrent use
+// Writer writes protobuf messages to a chunked, indexed MCAP file
 type Writer struct {
+	mu       deadlock.Mutex
 	w        *mcap.Writer
 	schemas  map[protoreflect.FullName]uint16
 	channels map[string]*channel
@@ -70,13 +72,17 @@ func NewWriter(dst io.Writer, metadata map[string]string) (*Writer, error) {
 
 // AddChannel registers a channel under key carrying messages of msg's type, writing its schema on first use
 func (w *Writer) AddChannel(key, topic string, msg proto.Message, metadata map[string]string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if _, ok := w.channels[key]; ok {
+		return fmt.Errorf("mcap channel %q already registered", key)
+	}
+
 	desc := msg.ProtoReflect().Descriptor()
 	schemaID, ok := w.schemas[desc.FullName()]
 	if !ok {
-		data, err := proto.Marshal(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{
-			protodesc.ToFileDescriptorProto(timestamppb.File_google_protobuf_timestamp_proto),
-			protodesc.ToFileDescriptorProto(desc.ParentFile()),
-		}})
+		data, err := proto.Marshal(&descriptorpb.FileDescriptorSet{File: fileWithDeps(desc.ParentFile(), make(map[string]bool), nil)})
 		if err != nil {
 			return err
 		}
@@ -102,12 +108,31 @@ func (w *Writer) AddChannel(key, topic string, msg proto.Message, metadata map[s
 	return nil
 }
 
+func fileWithDeps(fd protoreflect.FileDescriptor, seen map[string]bool, files []*descriptorpb.FileDescriptorProto) []*descriptorpb.FileDescriptorProto {
+	if seen[fd.Path()] {
+		return files
+	}
+	seen[fd.Path()] = true
+	imports := fd.Imports()
+	for i := 0; i < imports.Len(); i++ {
+		files = fileWithDeps(imports.Get(i).FileDescriptor, seen, files)
+	}
+	return append(files, protodesc.ToFileDescriptorProto(fd))
+}
+
 // Write appends msg to the channel registered under key, logged and published at ts
 func (w *Writer) Write(key string, ts time.Time, msg proto.Message) error {
-	c := w.channels[key]
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		return err
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	c, ok := w.channels[key]
+	if !ok {
+		return fmt.Errorf("unknown mcap channel %q", key)
 	}
 	if err = w.w.WriteMessage(&mcap.Message{
 		ChannelID:   c.id,
@@ -124,5 +149,8 @@ func (w *Writer) Write(key string, ts time.Time, msg proto.Message) error {
 
 // Close writes the summary section and footer
 func (w *Writer) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	return w.w.Close()
 }
