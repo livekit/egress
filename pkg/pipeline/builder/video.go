@@ -770,16 +770,18 @@ func buildVideoAppSrcBin(parent *gstreamer.Bin, conf *config.PipelineConfig, ts 
 			if err != nil {
 				return nil, nil, errors.ErrGstPipelineError(err)
 			}
-			if av1Decoder == "dav1ddec" && conf.Live {
-				// A live pipeline caps dav1d at one frame in flight, so threads beyond
-				// tile parallelism add CPU without throughput; the default spawns one per
-				// logical core. Non-live pipelines keep the default for faster-than-realtime.
-				if err = av1Dec.SetProperty("n-threads", uint(2)); err != nil {
-					return nil, nil, errors.ErrGstPipelineError(err)
+			if av1Decoder == "dav1ddec" {
+				if conf.Live {
+					// A live pipeline caps dav1d at one frame in flight, so threads beyond
+					// tile parallelism add CPU without throughput; the default spawns one per
+					// logical core. Non-live pipelines keep the default for faster-than-realtime.
+					if err = av1Dec.SetProperty("n-threads", uint(2)); err != nil {
+						return nil, nil, errors.ErrGstPipelineError(err)
+					}
+				} else {
+					// a frame delay holds decoded frames, and a GAP behind them, until the next input
+					av1Dec.SetArg("max-frame-delay", "1")
 				}
-			} else if av1Decoder == "dav1ddec" {
-				// a frame delay holds decoded frames, and a GAP behind them, until the next input
-				av1Dec.SetArg("max-frame-delay", "1")
 			}
 			if err = appSrcBin.AddElement(av1Dec); err != nil {
 				return nil, nil, err
