@@ -632,7 +632,7 @@ func buildVideoAppSrcBin(parent *gstreamer.Bin, conf *config.PipelineConfig, ts 
 			if err != nil {
 				return nil, nil, errors.ErrGstPipelineError(err)
 			}
-			if !conf.Live {
+			if !conf.Live && conf.Compositing {
 				// frame threading holds decoded frames, and a GAP behind them, until the next input
 				avDecH264.SetArg("thread-type", "slice")
 			}
@@ -770,16 +770,14 @@ func buildVideoAppSrcBin(parent *gstreamer.Bin, conf *config.PipelineConfig, ts 
 			if err != nil {
 				return nil, nil, errors.ErrGstPipelineError(err)
 			}
-			if av1Decoder == "dav1ddec" {
-				if conf.Live {
-					// A live pipeline caps dav1d at one frame in flight, so threads beyond
-					// tile parallelism add CPU without throughput; the default spawns one per
-					// logical core. Non-live pipelines keep the default thread count.
-					if err = av1Dec.SetProperty("n-threads", uint(2)); err != nil {
-						return nil, nil, errors.ErrGstPipelineError(err)
-					}
-				} else {
-					// a frame delay holds decoded frames, and a GAP behind them, until the next input
+			if av1Decoder == "dav1ddec" && (conf.Live || conf.Compositing) {
+				// One frame in flight (a live pipeline resolves it, a non-live compositor input sets it
+				// so a GAP is not held behind decoded frames), so threads beyond tile parallelism add
+				// CPU without throughput; the default spawns one per logical core.
+				if err = av1Dec.SetProperty("n-threads", uint(2)); err != nil {
+					return nil, nil, errors.ErrGstPipelineError(err)
+				}
+				if !conf.Live {
 					av1Dec.SetArg("max-frame-delay", "1")
 				}
 			}
