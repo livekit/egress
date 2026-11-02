@@ -142,8 +142,8 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput, upload egre
 func (o *ImageConfig) updatePrefix(p *PipelineConfig) error {
 	identifier, replacements := p.getFilenameInfo()
 
-	o.ImagePrefix = stringReplace(o.ImagePrefix, replacements)
-	o.ImagesInfo.FilenamePrefix = stringReplace(o.ImagesInfo.FilenamePrefix, replacements)
+	o.ImagePrefix = replaceAndClean(o.ImagePrefix, replacements)
+	o.ImagesInfo.FilenamePrefix = replaceAndClean(o.ImagesInfo.FilenamePrefix, replacements)
 	o.ImageExtension = types.FileExtensionForOutputType[o.OutputType]
 
 	imagesDir, imagesPrefix := path.Split(o.ImagePrefix)

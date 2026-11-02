@@ -246,3 +246,15 @@ func TestBackupUploadErrorIsNotDestinationError(t *testing.T) {
 		require.False(t, errors.IsDestinationError(err))
 	})
 }
+
+func TestUploadRefusesKeyOutsidePrefix(t *testing.T) {
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.WriteFile("local", []byte("x"), 0644))
+
+	u, err := New(&config.StorageConfig{Prefix: "p"}, nil, nil, nil, nil)
+	require.NoError(t, err)
+
+	_, _, err = u.Upload("local", "../p_other/x", "text/plain", false)
+	require.Error(t, err)
+	require.NoFileExists(t, "p_other/x")
+}
