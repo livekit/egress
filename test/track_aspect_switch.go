@@ -46,9 +46,6 @@ const (
 
 // testTrackH264AspectSwitch checks a passthrough H.264 track egress survives a layer switch that changes the pixel aspect ratio
 func (r *Runner) testTrackH264AspectSwitch(t *testing.T, test *testCase) {
-	// mp4mux refuses a pixel-aspect-ratio change on caps renegotiation, so the egress fails at the switch
-	t.Skip("passthrough MP4 does not survive a pixel-aspect-ratio change yet")
-
 	aspectSwitchLow, err := os.ReadFile(path.Join(mediaSamplesDir, aspectSwitchLowSample))
 	require.NoError(t, err)
 	aspectSwitchHigh, err := os.ReadFile(path.Join(mediaSamplesDir, aspectSwitchHighSample))

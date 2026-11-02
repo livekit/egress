@@ -635,6 +635,14 @@ func buildVideoAppSrcBin(parent *gstreamer.Bin, conf *config.PipelineConfig, ts 
 			if err = appSrcBin.AddElement(avDecH264); err != nil {
 				return nil, nil, err
 			}
+		} else {
+			pixelAspectLock, err := newPixelAspectLock(h264Parse)
+			if err != nil {
+				return nil, nil, err
+			}
+			if err = appSrcBin.AddElement(pixelAspectLock); err != nil {
+				return nil, nil, err
+			}
 		}
 
 	case types.MimeTypeVP8:
