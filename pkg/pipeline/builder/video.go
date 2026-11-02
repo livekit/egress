@@ -774,7 +774,7 @@ func buildVideoAppSrcBin(parent *gstreamer.Bin, conf *config.PipelineConfig, ts 
 				if conf.Live {
 					// A live pipeline caps dav1d at one frame in flight, so threads beyond
 					// tile parallelism add CPU without throughput; the default spawns one per
-					// logical core. Non-live pipelines keep the default for faster-than-realtime.
+					// logical core. Non-live pipelines keep the default thread count.
 					if err = av1Dec.SetProperty("n-threads", uint(2)); err != nil {
 						return nil, nil, errors.ErrGstPipelineError(err)
 					}
