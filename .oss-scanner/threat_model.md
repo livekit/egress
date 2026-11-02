@@ -117,8 +117,7 @@ repositories.
 - **Low / not a finding:** behaviour that needs operator config (`insecure`,
   debug and Prometheus ports, local storage on a single-tenant host), or the
   API secret used within its own project and storage. Not a finding either: a
-  caller exhausting its own resources, bugs in generated or test code, or an
-  upstream Chrome or GStreamer bug that reproduces without this code.
+  caller exhausting its own resources, or bugs in generated or test code.
 
 ## Testing
 
