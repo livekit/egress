@@ -16,6 +16,8 @@ package config
 
 import (
 	"os"
+	"path"
+	"strings"
 	"testing"
 	"time"
 
@@ -295,6 +297,57 @@ func TestFilenameUTCReplacementIgnoresLocalTimezone(t *testing.T) {
 	parsed, err := time.ParseInLocation("20060102150405", utc[:14], time.UTC)
 	require.NoError(t, err)
 	require.WithinDuration(t, time.Now(), parsed, 10*time.Second)
+}
+
+func TestPlaceholderValuesStayUnderPrefix(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		keys func(p *PipelineConfig) ([]string, error)
+	}{
+		{
+			name: "file template",
+			keys: func(p *PipelineConfig) ([]string, error) {
+				o, err := p.getEncodedFileConfig(&livekit.EncodedFileOutput{FileType: livekit.EncodedFileType_MP4, Filepath: "{room_name}"})
+				if err != nil {
+					return nil, err
+				}
+				return []string{o.StorageFilepath}, nil
+			},
+		},
+		{
+			name: "file default name",
+			keys: func(p *PipelineConfig) ([]string, error) {
+				o, err := p.getEncodedFileConfig(&livekit.EncodedFileOutput{FileType: livekit.EncodedFileType_MP4})
+				if err != nil {
+					return nil, err
+				}
+				return []string{o.StorageFilepath}, nil
+			},
+		},
+		{
+			name: "segment playlist template",
+			keys: func(p *PipelineConfig) ([]string, error) {
+				seg := &livekit.SegmentedFileOutput{PlaylistName: "{room_name}"}
+				o, err := p.getSegmentConfig(seg, seg)
+				if err != nil {
+					return nil, err
+				}
+				return []string{path.Join(o.StorageDir, o.PlaylistFilename), path.Join(o.StorageDir, o.SegmentPrefix)}, nil
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := &PipelineConfig{Info: &livekit.EgressInfo{
+				EgressId: "egress_ID",
+				RoomName: "../../p_victim/EG_victim/recording",
+			}}
+			keys, err := test.keys(p)
+			require.NoError(t, err)
+			for _, key := range keys {
+				require.True(t, strings.HasPrefix(path.Join("p_attacker", key), "p_attacker/"), key)
+			}
+		})
+	}
 }
 
 func TestOpusPassthrough(t *testing.T) {

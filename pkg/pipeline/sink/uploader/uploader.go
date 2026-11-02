@@ -18,6 +18,7 @@ import (
 	"context"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"go.uber.org/atomic"
@@ -230,7 +231,12 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 		s = u.backup
 	}
 
-	storageFilepath = path.Join(s.conf.Prefix, storageFilepath)
+	key := path.Join(s.conf.Prefix, storageFilepath)
+	// the prefix is the only boundary between projects sharing a bucket
+	if base := path.Clean(s.conf.Prefix); s.conf.Prefix != "" && base != "/" && base != "." && !strings.HasPrefix(key, base+"/") {
+		return "", 0, errors.ErrInvalidInput("storage filepath")
+	}
+	storageFilepath = key
 
 	location, size, err = s.UploadFile(context.Background(), storageFilepath, localFilepath, storage.PutOptions{ContentType: string(outputType)})
 	if err != nil {

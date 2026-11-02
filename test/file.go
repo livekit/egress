@@ -381,6 +381,18 @@ func (r *Runner) testFile(t *testing.T) {
 					outputType: types.OutputTypeMP4,
 				},
 			},
+			{
+				name:        "Track/H264AspectSwitch",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					videoOnly: true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "t_{track_id}_aspect_switch_{time}.mp4",
+					outputType: types.OutputTypeMP4,
+				},
+				custom: r.testTrackH264AspectSwitch,
+			},
 			// {
 			// 	name:       "Track/VP9",
 			// 	videoOnly:  true,
