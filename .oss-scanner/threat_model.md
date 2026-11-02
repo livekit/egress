@@ -39,11 +39,7 @@ Audit the code on `main`. Prioritise:
   composites, which hold a room token and read their parameters from the URL.
 
 Out of scope: generated code (`pkg/ipc/*.pb.go`, `pkg/service/servicefakes`),
-the integration harness under `test/`, `build/`, and `magefile.go`. Out of
-scope also are bugs inside upstream dependencies: Chrome, GStreamer and its
-plugins, pion, the Go SDK, and `livekit/storage`. Report how this repository
-uses them, for example a Chrome flag or a storage key it should not pass, but
-not a bug that reproduces without this code.
+the integration harness under `test/`, `build/`, and `magefile.go`.
 
 Untrusted input:
 
