@@ -79,6 +79,20 @@ repositories.
   must not give the page local file reads, control of Chrome beyond the page,
   or a way to read or change state through the egress host's own listeners
   (template server, health, Prometheus, debug handler, IPC sockets).
+- **Web content blast radius:** treat a caller's page as hostile script with a
+  plausible Chrome renderer exploit in hand. Chrome runs without its sandbox
+  by default, with site isolation disabled (`site-per-process` is in
+  `disable-features`), as the same user as the handler. Assess and report what
+  such a page, or a compromised renderer, can reach: the handler's and
+  Chrome's environment and command line, the config file and storage
+  credentials, other handlers' temporary directories and outputs, IPC sockets,
+  localhost and private or link-local addresses (including cloud metadata),
+  redis, and the recording itself. Also cover page-driven behaviour that needs
+  no exploit: redirects, `window.open` (popup blocking is disabled),
+  downloads, non-`http(s)` schemes reached after the first navigation, DNS
+  that resolves to an internal address after URL validation, WebRTC or other
+  APIs that expose host addresses, and the `START_RECORDING`/`END_RECORDING`
+  console signals.
 - **File paths:** a caller's file path or filename template, after
   substitution of room names and participant identities, must stay inside the
   configured storage prefix, and inside the local storage directory when no
@@ -118,6 +132,12 @@ repositories.
   debug and Prometheus ports, local storage on a single-tenant host), or the
   API secret used within its own project and storage. Not a finding either: a
   caller exhausting its own resources, or bugs in generated or test code.
+
+For web content, missing defence in depth is worth reporting even without a
+full exploit chain: say which hardening (Chrome's sandbox, site isolation, a
+separate user or namespace, a scrubbed environment, request interception or
+network egress rules, download and scheme blocking) would have contained it.
+Rate it by the impact it would contain.
 
 ## Testing
 
