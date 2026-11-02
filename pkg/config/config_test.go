@@ -23,6 +23,7 @@ import (
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 )
 
 func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
@@ -316,6 +317,49 @@ func TestOpusPassthrough(t *testing.T) {
 				p.Outputs[test.output] = []OutputConfig{&StreamConfig{}}
 			}
 			require.Equal(t, test.expected, p.OpusPassthrough(test.mimeType))
+		})
+	}
+}
+
+func TestMediaAudioValidation(t *testing.T) {
+	tmpDir := t.TempDir()
+	defaultOut := &livekit.Output{Config: &livekit.Output_File{File: &livekit.FileOutput{Filepath: tmpDir + "/out"}}}
+
+	audioAll := &livekit.AudioConfig{CaptureAll: true}
+	trackRoute := func(mod func(*livekit.AudioRoute)) *livekit.AudioConfig {
+		route := &livekit.AudioRoute{Match: &livekit.AudioRoute_TrackId{TrackId: "TR_audio"}}
+		mod(route)
+		return &livekit.AudioConfig{Routes: []*livekit.AudioRoute{route}}
+	}
+	passthrough := &livekit.StartEgressRequest_Preset{Preset: livekit.EncodingOptionsPreset_PASSTHROUGH}
+
+	for _, test := range []struct {
+		name     string
+		media    *livekit.MediaSource
+		preset   *livekit.StartEgressRequest_Preset
+		expected string
+	}{
+		{name: "passthrough route with track name", media: &livekit.MediaSource{Audio: trackRoute(func(r *livekit.AudioRoute) { r.TrackName = "mic" })}, preset: passthrough, expected: "passthrough audio route"},
+		{name: "passthrough route with exclude", media: &livekit.MediaSource{Audio: trackRoute(func(r *livekit.AudioRoute) { r.Exclude = true })}, preset: passthrough, expected: "passthrough audio route"},
+		{name: "data tracks", media: &livekit.MediaSource{Audio: audioAll, Data: &livekit.DataConfig{CaptureAll: true}}, expected: "media.data"},
+		{name: "audio with only excludes", media: &livekit.MediaSource{Audio: trackRoute(func(r *livekit.AudioRoute) { r.Exclude = true })}, expected: "media.audio"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := &livekit.StartEgressRequest{
+				RoomName: "room",
+				Source:   &livekit.StartEgressRequest_Media{Media: test.media},
+				Outputs:  []*livekit.Output{defaultOut},
+			}
+			if test.preset != nil {
+				req.Encoding = test.preset
+			}
+			_, err := NewPipelineConfig("tmp_dir: "+tmpDir, &rpc.StartEgressRequest{
+				EgressId: "EG_mediaAudioTest",
+				Token:    "token",
+				WsUrl:    "wss://test",
+				Request:  &rpc.StartEgressRequest_Egress{Egress: req},
+			})
+			require.ErrorContains(t, err, test.expected)
 		})
 	}
 }

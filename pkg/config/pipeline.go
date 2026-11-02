@@ -103,18 +103,14 @@ type SDKSourceParams struct {
 }
 
 type AudioRouteConfig struct {
-	Match   AudioRouteMatch
+	Match   TrackMatch
 	Channel livekit.AudioChannel
-}
-
-type AudioRouteMatch struct {
-	TrackID             string
-	ParticipantIdentity string
-	ParticipantKind     *lksdk.ParticipantKind
+	Exclude bool
 }
 
 type TrackSource struct {
 	TrackID             string
+	TrackName           string
 	TrackKind           lksdk.TrackKind
 	ParticipantIdentity string
 	PublicationSource   livekit.TrackSource
@@ -704,36 +700,43 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 			p.VideoDecoding = true
 			p.Identity = v.ParticipantVideo.Identity
 			p.ScreenShare = v.ParticipantVideo.PreferScreenShare
+		case *livekit.MediaSource_Videos:
+			return connectionInfoRequired, errors.ErrInvalidInput("media.videos is not supported yet")
 		}
 
 		// audio
-		if media.Audio != nil {
-			if media.Audio.CaptureAll {
-				p.AudioEnabled = true
-				p.AudioTranscoding = true
-				p.CaptureAudioAll = true
-			} else if len(media.Audio.Routes) > 0 {
-				p.AudioEnabled = true
-				p.AudioTranscoding = !p.Passthrough
-				for _, route := range media.Audio.Routes {
-					arc := AudioRouteConfig{
-						Channel: route.Channel,
-					}
-					switch m := route.Match.(type) {
-					case *livekit.AudioRoute_TrackId:
-						arc.Match.TrackID = m.TrackId
-					case *livekit.AudioRoute_ParticipantIdentity:
-						arc.Match.ParticipantIdentity = m.ParticipantIdentity
-					case *livekit.AudioRoute_ParticipantKind:
-						kind := lksdk.ParticipantKind(m.ParticipantKind)
-						arc.Match.ParticipantKind = &kind
-					}
-					p.AudioRoutes = append(p.AudioRoutes, arc)
+		if media.Audio != nil && (media.Audio.CaptureAll || len(media.Audio.Routes) > 0) {
+			p.AudioEnabled = true
+			p.AudioTranscoding = media.Audio.CaptureAll || !p.Passthrough
+			p.CaptureAudioAll = media.Audio.CaptureAll
+			capturesAny := media.Audio.CaptureAll
+			for _, route := range media.Audio.Routes {
+				capturesAny = capturesAny || !route.Exclude
+				arc := AudioRouteConfig{
+					Match: TrackMatch{
+						TrackID:             route.GetTrackId(),
+						ParticipantIdentity: route.GetParticipantIdentity(),
+						TrackName:           route.TrackName,
+					},
+					Channel: route.Channel,
+					Exclude: route.Exclude,
 				}
-				if p.Passthrough {
-					p.TrackID = p.AudioRoutes[0].Match.TrackID
+				if m, ok := route.Match.(*livekit.AudioRoute_ParticipantKind); ok {
+					kind := lksdk.ParticipantKind(m.ParticipantKind)
+					arc.Match.ParticipantKind = &kind
 				}
+				p.AudioRoutes = append(p.AudioRoutes, arc)
 			}
+			if !capturesAny {
+				return connectionInfoRequired, errors.ErrInvalidInput("media.audio")
+			}
+			if p.Passthrough {
+				p.TrackID = p.AudioRoutes[0].Match.TrackID
+			}
+		}
+
+		if media.Data != nil {
+			return connectionInfoRequired, errors.ErrInvalidInput("media.data is not supported yet")
 		}
 
 		if !p.AudioEnabled && !p.VideoEnabled {
@@ -773,6 +776,9 @@ func validatePassthrough(req egress.EgressRequest) error {
 		case len(media.Audio.Routes) > 1:
 			return errors.ErrInvalidInput("passthrough audio routes")
 		case len(media.Audio.Routes) == 1:
+			if media.Audio.Routes[0].Exclude || media.Audio.Routes[0].TrackName != "" {
+				return errors.ErrInvalidInput("passthrough audio route")
+			}
 			m, ok := media.Audio.Routes[0].Match.(*livekit.AudioRoute_TrackId)
 			if !ok {
 				return errors.ErrInvalidInput("passthrough audio route match")
