@@ -8,6 +8,10 @@ import (
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/egress/pkg/config"
+	"github.com/livekit/egress/pkg/gstreamer"
+	"github.com/livekit/egress/pkg/types"
 )
 
 const (
@@ -27,38 +31,33 @@ type gapTestOutput struct {
 	white bool
 }
 
-// gapTestCodec encodes white frames to RTP and decodes them the way a non-live compositor input does
+// gapTestCodec encodes white frames to RTP, which buildVideoAppSrcBin decodes as a non-live compositor input
 type gapTestCodec struct {
-	name    string
-	encode  string
-	decode  string
-	rtpName string
+	name   string
+	encode string
+	mime   types.MimeType
 }
 
 var gapTestCodecs = []gapTestCodec{
 	{
-		name:    "H264",
-		encode:  "x264enc tune=zerolatency speed-preset=ultrafast key-int-max=30 ! rtph264pay config-interval=-1 pt=96",
-		decode:  "rtph264depay ! h264parse ! avdec_h264 thread-type=slice",
-		rtpName: "H264",
+		name:   "H264",
+		encode: "x264enc tune=zerolatency speed-preset=ultrafast key-int-max=30 ! rtph264pay config-interval=-1 pt=96",
+		mime:   types.MimeTypeH264,
 	},
 	{
-		name:    "VP8",
-		encode:  "vp8enc deadline=1 keyframe-max-dist=30 ! rtpvp8pay pt=96",
-		decode:  "rtpvp8depay ! vp8dec",
-		rtpName: "VP8",
+		name:   "VP8",
+		encode: "vp8enc deadline=1 keyframe-max-dist=30 ! rtpvp8pay pt=96",
+		mime:   types.MimeTypeVP8,
 	},
 	{
-		name:    "VP9",
-		encode:  "vp9enc deadline=1 keyframe-max-dist=30 ! rtpvp9pay pt=96",
-		decode:  "rtpvp9depay ! vp9parse ! vp9dec",
-		rtpName: "VP9",
+		name:   "VP9",
+		encode: "vp9enc deadline=1 keyframe-max-dist=30 ! rtpvp9pay pt=96",
+		mime:   types.MimeTypeVP9,
 	},
 	{
-		name:    "AV1",
-		encode:  "svtav1enc preset=12 intra-period-length=29 ! av1parse ! rtpav1pay pt=96",
-		decode:  "rtpav1depay ! av1parse ! video/x-av1,stream-format=obu-stream,alignment=tu ! dav1ddec max-frame-delay=1",
-		rtpName: "AV1",
+		name:   "AV1",
+		encode: "svtav1enc preset=12 intra-period-length=29 ! av1parse ! rtpav1pay pt=96",
+		mime:   types.MimeTypeAV1,
 	},
 }
 
@@ -105,26 +104,49 @@ type videoGapHarness struct {
 	out  []gapTestOutput
 }
 
-// newVideoGapHarness builds a compositor input: RTP through the decoder, videorate and caps into a non-live compositor
+// newVideoGapHarness builds a compositor input: buildVideoAppSrcBin's decoder for a non-live compositing
+// pipeline, then videorate and caps into a non-live compositor
 func newVideoGapHarness(t *testing.T, codec gapTestCodec) *videoGapHarness {
-	p, err := gst.NewPipelineFromString(fmt.Sprintf(
-		"appsrc name=src format=time caps=application/x-rtp,media=video,encoding-name=%s,clock-rate=90000,payload=96 ! "+
-			"%s ! videoconvert ! videoscale ! videorate name=rate skip-to-first=true ! %s ! "+
-			"compositor background=black ! %s ! appsink name=out sync=false", codec.rtpName, codec.decode, gapTestRawCaps, gapTestRawCaps))
-	if err != nil {
-		t.Skipf("%s decoding elements not available", codec.name)
-	}
-	srcEl, err := p.GetElementByName("src")
+	p, err := gstreamer.NewPipeline("video_gap_test", 0, &gstreamer.Callbacks{})
 	require.NoError(t, err)
-	rateEl, err := p.GetElementByName("rate")
-	require.NoError(t, err)
-	outEl, err := p.GetElementByName("out")
-	require.NoError(t, err)
-	installVideoGapFill(rateEl.GetStaticPad("sink"))
 
+	srcEl, err := gst.NewElement("appsrc")
+	require.NoError(t, err)
+	src := app.SrcFromElement(srcEl)
+	conf := &config.PipelineConfig{Live: false}
+	conf.Compositing = true
+	ts := &config.TrackSource{TrackID: "TR_gap_test", MimeType: codec.mime, PayloadType: 96, ClockRate: 90000, AppSrc: src}
+	srcBin, probe, err := buildVideoAppSrcBin(p.Bin, conf, ts, "track", true)
+	if err != nil {
+		t.Skipf("%s decoding elements not available: %v", codec.name, err)
+	}
+	t.Cleanup(probe.Close)
+
+	sinkBin := p.NewBin("compositor_input")
+	add := func(factory string, args ...string) *gst.Element {
+		el, err := gst.NewElement(factory)
+		require.NoError(t, err)
+		for i := 0; i+1 < len(args); i += 2 {
+			el.SetArg(args[i], args[i+1])
+		}
+		require.NoError(t, sinkBin.AddElement(el))
+		return el
+	}
+	add("videoconvert")
+	add("videoscale")
+	rate := add("videorate", "skip-to-first", "true")
+	add("capsfilter", "caps", gapTestRawCaps)
+	add("compositor", "background", "black")
+	add("capsfilter", "caps", gapTestRawCaps)
+	out := add("appsink", "sync", "false")
+	installVideoGapFill(rate.GetStaticPad("sink"))
+
+	require.NoError(t, p.AddSourceBin(srcBin))
+	require.NoError(t, p.AddSinkBin(sinkBin))
+	require.NoError(t, p.Link())
 	require.NoError(t, p.SetState(gst.StatePlaying))
 	t.Cleanup(func() { _ = p.SetState(gst.StateNull) })
-	return &videoGapHarness{t: t, src: app.SrcFromElement(srcEl), sink: app.SinkFromElement(outEl)}
+	return &videoGapHarness{t: t, src: src, sink: app.SinkFromElement(out)}
 }
 
 func (h *videoGapHarness) gap(start, duration time.Duration) {
