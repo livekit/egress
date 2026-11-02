@@ -27,7 +27,7 @@ type gapTestOutput struct {
 	white bool
 }
 
-// gapTestCodec encodes white frames to RTP and decodes them the way a non-live replay input does
+// gapTestCodec encodes white frames to RTP and decodes them the way a non-live compositor input does
 type gapTestCodec struct {
 	name    string
 	encode  string
@@ -63,7 +63,7 @@ var gapTestCodecs = []gapTestCodec{
 }
 
 func TestVideoGapFillKeepsCompositorFed(t *testing.T) {
-	// a replay camera that is muted: the reader sends a GAP and nothing more until the unmute, and the
+	// a muted camera: its source sends a GAP and nothing more until the unmute, and the
 	// non-live compositor keeps producing frames through the gap, with nothing drawn for that input
 	initGStreamer(t)
 	for _, codec := range gapTestCodecs {
@@ -105,7 +105,7 @@ type videoGapHarness struct {
 	out  []gapTestOutput
 }
 
-// newVideoGapHarness builds a replay compositor input: RTP through the decoder, videorate and caps into a non-live compositor
+// newVideoGapHarness builds a compositor input: RTP through the decoder, videorate and caps into a non-live compositor
 func newVideoGapHarness(t *testing.T, codec gapTestCodec) *videoGapHarness {
 	p, err := gst.NewPipelineFromString(fmt.Sprintf(
 		"appsrc name=src format=time caps=application/x-rtp,media=video,encoding-name=%s,clock-rate=90000,payload=96 ! "+
