@@ -632,6 +632,10 @@ func buildVideoAppSrcBin(parent *gstreamer.Bin, conf *config.PipelineConfig, ts 
 			if err != nil {
 				return nil, nil, errors.ErrGstPipelineError(err)
 			}
+			if !conf.Live && conf.Compositing {
+				// frame threading holds decoded frames, and a GAP behind them, until the next input
+				avDecH264.SetArg("thread-type", "slice")
+			}
 			if err = appSrcBin.AddElement(avDecH264); err != nil {
 				return nil, nil, err
 			}
@@ -766,12 +770,15 @@ func buildVideoAppSrcBin(parent *gstreamer.Bin, conf *config.PipelineConfig, ts 
 			if err != nil {
 				return nil, nil, errors.ErrGstPipelineError(err)
 			}
-			if av1Decoder == "dav1ddec" && conf.Live {
-				// A live pipeline caps dav1d at one frame in flight, so threads beyond
-				// tile parallelism add CPU without throughput; the default spawns one per
-				// logical core. Non-live pipelines keep the default for faster-than-realtime.
+			if av1Decoder == "dav1ddec" && (conf.Live || conf.Compositing) {
+				// One frame in flight (a live pipeline resolves it, a non-live compositor input sets it
+				// so a GAP is not held behind decoded frames), so threads beyond tile parallelism add
+				// CPU without throughput; the default spawns one per logical core.
 				if err = av1Dec.SetProperty("n-threads", uint(2)); err != nil {
 					return nil, nil, errors.ErrGstPipelineError(err)
+				}
+				if !conf.Live {
+					av1Dec.SetArg("max-frame-delay", "1")
 				}
 			}
 			if err = appSrcBin.AddElement(av1Dec); err != nil {
@@ -1293,7 +1300,63 @@ func (b *VideoBin) addCompositorInput(bin *gstreamer.Bin, videoQueue *gst.Elemen
 	// the crop's sink pad is the last place the frame is still at source resolution
 	b.watchSrcDimensions(crop.GetStaticPad("sink"), name)
 
+	if !b.conf.Live {
+		installVideoGapFill(videoRate.GetStaticPad("sink"))
+	}
+
 	return bin.AddElements(videoQueue, crop, videoScale, videoConvert, videoRate, caps)
+}
+
+// installVideoGapFill turns GAP events at videorate's sink pad into empty gap buffers at the gap's start and end.
+// videorate repeats them at the output rate, so a non-live compositor keeps getting buffers it draws nothing for.
+func installVideoGapFill(sinkPad *gst.Pad) {
+	sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		event := info.GetEvent()
+		if event == nil {
+			return gst.PadProbeOK
+		}
+		switch event.Type() {
+		case gst.EventTypeSegment:
+			// videorate restarts its output timeline on every segment that differs, so one that changes nothing is dropped
+			current := pad.GetStickyEvent(gst.EventTypeSegment, 0)
+			if current != nil && sameSegment(current.ParseSegment(), event.ParseSegment()) {
+				return gst.PadProbeDrop
+			}
+			return gst.PadProbeOK
+		case gst.EventTypeGap:
+		default:
+			return gst.PadProbeOK
+		}
+		if pad.GetCurrentCaps() == nil {
+			return gst.PadProbeOK
+		}
+		// a track's first GAP precedes any segment: the RTP depayloader sends its own with its first packet
+		if pad.GetStickyEvent(gst.EventTypeSegment, 0) == nil {
+			segment := gst.NewFormattedSegment(gst.FormatTime)
+			sent := pad.SendEvent(gst.NewSegmentEvent(segment))
+			segment.Free()
+			if !sent {
+				logger.Warnw("could not send videorate a segment for a video gap", nil)
+				return gst.PadProbeOK
+			}
+		}
+		start, duration := event.ParseGap()
+		marks := []time.Duration{start}
+		if duration > 0 {
+			marks = append(marks, start+duration)
+		}
+		for _, pts := range marks {
+			buf := gst.NewEmptyBuffer()
+			buf.SetPresentationTimestamp(gst.ClockTime(pts))
+			buf.SetFlags(gst.BufferFlagGap | gst.BufferFlagDroppable)
+			// recursive stream lock: the marks enter videorate in order
+			if flow := pad.Chain(buf); flow != gst.FlowOK {
+				logger.Debugw("could not fill video gap", "flow", flow, "filled", pts)
+				break
+			}
+		}
+		return gst.PadProbeDrop
+	})
 }
 
 func (b *VideoBin) newVideoCapsFilter(includeFramerate bool) (*gst.Element, error) {
