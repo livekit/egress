@@ -594,6 +594,24 @@ func (r *Runner) testFile(t *testing.T) {
 				custom: r.testMediaIdentityLateJoin,
 			},
 			{
+				name:        "Media/AudioKindLateTrack",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+					audioDelay: time.Second * 10,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match:   &livekit.AudioRoute_ParticipantKind{ParticipantKind: livekit.ParticipantInfo_STANDARD},
+						Channel: livekit.AudioChannel_AUDIO_CHANNEL_BOTH,
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename: "media_kind_late_track_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				custom: r.testMediaAudioKindLateTrack,
+			},
+			{
 				name:        "Media/Full",
 				requestType: types.RequestTypeMedia,
 				publishOptions: publishOptions{
@@ -807,6 +825,29 @@ func (r *Runner) testMediaIdentityLateJoin(t *testing.T, test *testCase) {
 
 	time.Sleep(testDuration)
 	res := r.stopEgress(t, egressID)
+	r.verifyFile(t, test, p, res)
+}
+
+// testMediaAudioKindLateTrack checks a MediaSource egress doesn't start recording until its first matching track arrives
+func (r *Runner) testMediaAudioKindLateTrack(t *testing.T, test *testCase) {
+	req := r.buildRequest(test)
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+
+	info := r.sendRequest(t, req)
+	time.Sleep(time.Second * 5)
+	r.updates.Lock()
+	update := r.updates.EgressInfo
+	r.updates.Unlock()
+	require.False(t, update != nil && update.EgressId == info.EgressId && update.Status == livekit.EgressStatus_EGRESS_ACTIVE,
+		"egress became active before any matching track was published")
+
+	r.checkUpdate(t, info.EgressId, livekit.EgressStatus_EGRESS_ACTIVE)
+	time.Sleep(testDuration)
+	res := r.stopEgress(t, info.EgressId)
+
+	// the recording starts at p0's publish, so plan time starts there too
+	test.plan = &Plan{publishers: []*Publisher{{name: "p0", audio: []Event{{kind: eventPublish, codec: types.MimeTypeOpus}}}}}
 	r.verifyFile(t, test, p, res)
 }
 
