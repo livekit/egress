@@ -423,7 +423,7 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 	if s.VideoTrackID != "" {
 		requiredTracks[s.VideoTrackID] = struct{}{}
 	}
-	// identity and kind routes match late joiners in onTrackPublished, so they aren't prerequisites
+	// identity and kind routes also match late joiners in onTrackPublished, so only track routes gate the start
 	for _, route := range s.AudioRoutes {
 		if route.Match.TrackID != "" {
 			requiredTracks[route.Match.TrackID] = struct{}{}
@@ -444,7 +444,7 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 		}
 	}
 
-	// Phase 3: Count all matching subscriptions and soft-wait, or wait for the first one to arrive
+	// Phase 3: Count all matching subscriptions and soft-wait
 	expected := 0
 	for _, rp := range s.room.Load().GetRemoteParticipants() {
 		for _, pub := range rp.TrackPublications() {
@@ -453,11 +453,7 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 			}
 		}
 	}
-	if expected == 0 {
-		if err := s.awaitFirstMediaSubscription(time.Now().Add(subscriptionTimeout)); err != nil {
-			return 0, 0, err
-		}
-	} else if err := s.awaitExpected(expected); err != nil {
+	if err := s.awaitExpected(expected); err != nil {
 		return 0, 0, err
 	}
 
@@ -476,20 +472,6 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 
 	s.completeInit()
 	return w, h, nil
-}
-
-func (s *SDKSource) awaitFirstMediaSubscription(deadline time.Time) error {
-	for time.Now().Before(deadline) {
-		for _, rp := range s.room.Load().GetRemoteParticipants() {
-			for _, pub := range rp.TrackPublications() {
-				if pub.IsSubscribed() && s.shouldSubscribeMedia(pub, rp) {
-					return nil
-				}
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return errors.ErrNoMatchingTracks
 }
 
 func (s *SDKSource) awaitParticipantTracks(identity string) (uint32, uint32, error) {

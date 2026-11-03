@@ -147,7 +147,6 @@ var (
 	ErrEgressNotFound             = psrpc.NewErrorf(psrpc.NotFound, "egress not found")
 	ErrEgressAlreadyExists        = psrpc.NewErrorf(psrpc.AlreadyExists, "egress already exists")
 	ErrSubscriptionFailed         = psrpc.NewErrorf(psrpc.Unavailable, "failed to subscribe to track")
-	ErrNoMatchingTracks           = psrpc.NewErrorf(psrpc.NotFound, "no tracks matched the requested media")
 	ErrNotEnoughCPU               = psrpc.NewErrorf(psrpc.Unavailable, "not enough CPU")
 	ErrShuttingDown               = psrpc.NewErrorf(psrpc.Unavailable, "server is shutting down")
 	ErrNonRetryableOutput         = psrpc.NewErrorf(psrpc.FailedPrecondition, "output configuration does not support retry")
