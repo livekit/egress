@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euxo pipefail
 
+# patches are keyed by upstream release; GSTREAMER_VERSION may carry an image revision suffix
+patches=/patches/${GSTREAMER_VERSION%%-*}
+
 # Adjust decoder list registered by gst-libav
 sed -i 's/        !strcmp (in_plugin->name, "av1")) {/        !strcmp (in_plugin->name, "av1") ||\n        !strcmp (in_plugin->name, "hevc")) {/' \
   gst-libav/ext/libav/gstavviddec.c
@@ -8,6 +11,12 @@ grep -q '^        !strcmp (in_plugin->name, "hevc")) {$' gst-libav/ext/libav/gst
 
 for repo in gstreamer libnice gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav; do
   pushd $repo
+
+  if [[ -d $patches/$repo ]]; then
+    for p in $patches/$repo/*.patch; do
+      git apply -p3 "$p"
+    done
+  fi
 
   opts="-D prefix=/usr"
 
