@@ -9,6 +9,7 @@ ENV DEBUG=true
 ENV OPTIMIZATIONS=false
 
 COPY compile /
+COPY patches /patches
 COPY compile-rs /
 
 RUN /compile

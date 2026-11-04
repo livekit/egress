@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -239,7 +240,11 @@ func (pm *processManager) GetStatus(info map[string]interface{}) {
 	defer pm.mu.RUnlock()
 
 	for _, h := range pm.activeHandlers {
-		info[h.req.EgressId] = h.req.Request
+		requestType, outputType := egress.GetTypes(h.info.Request)
+		info[h.req.EgressId] = map[string]string{
+			"requestType": requestType,
+			"outputType":  outputType,
+		}
 	}
 }
 

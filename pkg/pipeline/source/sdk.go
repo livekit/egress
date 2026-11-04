@@ -430,7 +430,7 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 		}
 	}
 	for _, route := range s.AudioRoutes {
-		if !route.Exclude {
+		if !route.Exclude && !s.CaptureAudioAll {
 			required(route.Match)
 		}
 	}
