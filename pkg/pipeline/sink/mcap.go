@@ -173,11 +173,18 @@ func (s *MCAPSink) allocateTopic(ts *config.TrackSource) string {
 	if name == "" {
 		name = ts.TrackID
 	}
-	topic := fmt.Sprintf("/livekit/%s/%s", sanitizeTopicSegment(ts.ParticipantIdentity), sanitizeTopicSegment(name))
-	if _, ok := s.owners[topic]; ok {
-		topic = fmt.Sprintf("%s_%s", topic, sanitizeTopicSegment(ts.TrackID))
+	base := fmt.Sprintf("/livekit/%s/%s", sanitizeTopicSegment(ts.ParticipantIdentity), sanitizeTopicSegment(name))
+	topic := base
+	for i := 1; ; i++ {
+		if _, ok := s.owners[topic]; !ok {
+			return topic
+		}
+		// another live track's name can equal a fallback, so every candidate is checked
+		topic = fmt.Sprintf("%s_%s", base, sanitizeTopicSegment(ts.TrackID))
+		if i > 1 {
+			topic = fmt.Sprintf("%s_%d", topic, i)
+		}
 	}
-	return topic
 }
 
 func sanitizeTopicSegment(value string) string {

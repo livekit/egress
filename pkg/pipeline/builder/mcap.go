@@ -60,7 +60,8 @@ type mcapTrack struct {
 	ts            *config.TrackSource
 	probe         *keyframeProbe
 	stopKeyframes func()
-	stopOnce      sync.Once
+	keyframesOnce sync.Once
+	probeOnce     sync.Once
 	removed       atomic.Bool
 	eosPassed     atomic.Bool
 	endOnce       sync.Once
@@ -177,7 +178,8 @@ func (b *MCAPBin) onTrackRemoved(trackID string) {
 		return
 	}
 
-	t.stop()
+	// the keyframe probe stays until endTrack, since the worker drains video after removing it
+	t.stopRequests()
 	// the track drains toward the final EOS, so its remaining samples must still route
 	if b.pipeline.GetState() > gstreamer.StateRunning {
 		return
@@ -200,6 +202,7 @@ func (b *MCAPBin) endTrack(name string, t *mcapTrack) {
 		b.mu.Lock()
 		delete(b.tracks, name)
 		b.mu.Unlock()
+		t.stop()
 		b.trackEnded(t.ts.TrackID)
 	})
 }
@@ -419,13 +422,19 @@ func (b *MCAPBin) sampleTrack(sample *gst.Sample) (*config.TrackSource, bool) {
 	return t.ts, true
 }
 
-func (t *mcapTrack) stop() {
-	t.stopOnce.Do(func() {
-		if t.probe != nil {
-			t.probe.Close()
-		}
+func (t *mcapTrack) stopRequests() {
+	t.keyframesOnce.Do(func() {
 		if t.stopKeyframes != nil {
 			t.stopKeyframes()
+		}
+	})
+}
+
+func (t *mcapTrack) stop() {
+	t.stopRequests()
+	t.probeOnce.Do(func() {
+		if t.probe != nil {
+			t.probe.Close()
 		}
 	})
 }
