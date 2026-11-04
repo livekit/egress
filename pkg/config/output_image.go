@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -78,7 +79,19 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput, upload egre
 		return nil, err
 	}
 
+	// Normalize first: path cleaning can drop a {retry} directory (images/{retry}/../shot) or reduce the
+	// prefix to nothing (. or images/..), so the guard has to look at what is actually used.
 	filenamePrefix := clean(images.FilenamePrefix)
+
+	// On retry, an explicit prefix must include {retry} to avoid overwriting images of the
+	// previous attempt. Only the index suffix restarts at 0 and collides; timestamps differ
+	// and NONE_OVERWRITE replaces the same file by design.
+	if p.Info.RetryCount > 0 && images.FilenameSuffix == livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX &&
+		filenamePrefix != "" && !strings.HasSuffix(filenamePrefix, "/") &&
+		!strings.Contains(filenamePrefix, "{retry}") {
+		return nil, errors.ErrNonRetryableOutput
+	}
+
 	conf := &ImageConfig{
 		outputConfig: outputConfig{
 			OutputType: outputType,

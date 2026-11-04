@@ -112,6 +112,7 @@ type publishOptions struct {
 	chromeCompositing bool
 
 	multiParticipant bool
+	p1ConnectDelay   time.Duration
 
 	// v2 Media source fields
 	mediaVideoTrackID     string

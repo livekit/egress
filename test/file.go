@@ -565,6 +565,35 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 			},
 			{
+				name:        "Media/IdentityLateJoin",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					audioOnly:        true,
+					multiParticipant: true,
+					p1ConnectDelay:   time.Second * 15,
+					audioRoutes: []*livekit.AudioRoute{
+						{
+							Match:   &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+							Channel: livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						},
+						{
+							Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: setP1Identity},
+							Channel: livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+						},
+					},
+					expectedAudioChannels: map[string]livekit.AudioChannel{
+						"p0": livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						"p1": livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+					},
+				},
+				fileOptions: &fileOptions{
+					filename: "media_identity_late_join_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				custom: r.testMediaIdentityLateJoin,
+			},
+			{
 				name:        "Media/Full",
 				requestType: types.RequestTypeMedia,
 				publishOptions: publishOptions{
@@ -821,6 +850,24 @@ func (r *Runner) testPassthroughOpusDTX(t *testing.T, test *testCase) {
 		expected := time.Duration(res.FileResults[0].Duration).Seconds()
 		require.InDelta(t, expected, actual, 2.0, "file timeline was compressed across DTX")
 	}
+	r.verifyFile(t, test, p, res)
+}
+
+// testMediaIdentityLateJoin checks an identity audio route doesn't hold the start for a participant who joins later
+func (r *Runner) testMediaIdentityLateJoin(t *testing.T, test *testCase) {
+	req := r.buildRequest(test)
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+
+	egressID := r.startEgress(t, req)
+	select {
+	case <-test.publishers["p1"].connected:
+		require.FailNow(t, "egress became active only after the identity-routed participant joined")
+	default:
+	}
+
+	time.Sleep(testDuration)
+	res := r.stopEgress(t, egressID)
 	r.verifyFile(t, test, p, res)
 }
 

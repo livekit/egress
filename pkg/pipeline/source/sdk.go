@@ -423,12 +423,10 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 	if s.VideoTrackID != "" {
 		requiredTracks[s.VideoTrackID] = struct{}{}
 	}
+	// identity and kind matches also catch late joiners in onTrackPublished, so only track matches gate the start
 	required := func(m config.TrackMatch) {
 		if m.TrackID != "" {
 			requiredTracks[m.TrackID] = struct{}{}
-		}
-		if m.ParticipantIdentity != "" {
-			requiredParticipants[m.ParticipantIdentity] = struct{}{}
 		}
 	}
 	for _, route := range s.AudioRoutes {
