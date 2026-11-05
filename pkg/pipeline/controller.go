@@ -231,7 +231,7 @@ func (c *Controller) BuildPipeline() error {
 
 	for egressType, outputs := range c.Outputs {
 		for _, o := range outputs {
-			s, err := sink.NewSink(p, c.PipelineConfig, egressType, o, c.callbacks, c.monitor)
+			s, err := sink.NewSink(p, c.PipelineConfig, egressType, o, c.callbacks, c.monitor, c.src.GetStartedAt)
 			if err != nil {
 				return err
 			}

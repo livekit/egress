@@ -44,9 +44,9 @@ type MCAPSink struct {
 	*config.FileConfig
 	*uploader.Uploader
 
-	conf     *config.PipelineConfig
-	pipeline *gstreamer.Pipeline
-	mcapBin  *builder.MCAPBin
+	conf      *config.PipelineConfig
+	startedAt func() int64
+	mcapBin   *builder.MCAPBin
 
 	mu     deadlock.Mutex
 	file   *os.File
@@ -62,6 +62,7 @@ func newMCAPSink(
 	conf *config.PipelineConfig,
 	o *config.FileConfig,
 	monitor *stats.HandlerMonitor,
+	startedAt func() int64,
 ) (*MCAPSink, error) {
 	u, err := uploader.New(o.StorageConfig, conf.BackupConfig, monitor, conf.StorageObserver, conf.Info)
 	if err != nil {
@@ -72,7 +73,7 @@ func newMCAPSink(
 		FileConfig: o,
 		Uploader:   u,
 		conf:       conf,
-		pipeline:   p,
+		startedAt:  startedAt,
 		topics:     make(map[string]string),
 		owners:     make(map[string]string),
 		opened:     make(map[string]struct{}),
@@ -112,12 +113,8 @@ func (s *MCAPSink) writeSample(ts *config.TrackSource, runningTime time.Duration
 	defer s.mu.Unlock()
 
 	if s.anchor.IsZero() {
-		// samples carry pipeline running time; one shared anchor keeps every channel on the same clock
-		if now, ok := s.pipeline.RunningTime(); ok {
-			s.anchor = time.Now().Add(-now)
-		} else {
-			s.anchor = time.Now().Add(-runningTime)
-		}
+		// running time zero is the synchronizer start, the same instant as FileInfo.StartedAt
+		s.anchor = time.Unix(0, s.startedAt())
 	}
 
 	topic, ok := s.topics[ts.TrackID]
