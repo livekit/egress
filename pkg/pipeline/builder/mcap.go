@@ -383,6 +383,9 @@ func (b *MCAPBin) buildAudioTrack(ts *config.TrackSource, name string) (*gstream
 
 func (b *MCAPBin) onSample(sink *app.Sink) gst.FlowReturn {
 	sample := sink.PullSample()
+	if sample == nil {
+	    return gst.FlowOK
+	}
 	ts, ok := b.sampleTrack(sample)
 	if !ok {
 		return gst.FlowOK
