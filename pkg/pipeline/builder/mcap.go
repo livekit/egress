@@ -45,13 +45,14 @@ const (
 type MCAPBin struct {
 	*gstreamer.Bin
 
-	pipeline    *gstreamer.Pipeline
-	conf        *config.PipelineConfig
-	writeSample func(ts *config.TrackSource, runningTime time.Duration, data []byte) error
-	trackEnded  func(trackID string)
+	pipeline     *gstreamer.Pipeline
+	conf         *config.PipelineConfig
+	writeSample  func(ts *config.TrackSource, runningTime time.Duration, data []byte) error
+	trackRemoved func(trackID string)
+	trackEnded   func(trackID string)
+	nextID       atomic.Int64
 
 	mu     deadlock.Mutex
-	nextID int
 	names  map[string]string // track ID -> live source bin name
 	tracks map[string]*mcapTrack
 }
@@ -72,16 +73,18 @@ func BuildMCAPBin(
 	p *gstreamer.Pipeline,
 	conf *config.PipelineConfig,
 	writeSample func(*config.TrackSource, time.Duration, []byte) error,
+	trackRemoved func(string),
 	trackEnded func(string),
 ) (*MCAPBin, error) {
 	b := &MCAPBin{
-		Bin:         p.NewBin(mcapBinName),
-		pipeline:    p,
-		conf:        conf,
-		writeSample: writeSample,
-		trackEnded:  trackEnded,
-		names:       make(map[string]string),
-		tracks:      make(map[string]*mcapTrack),
+		Bin:          p.NewBin(mcapBinName),
+		pipeline:     p,
+		conf:         conf,
+		writeSample:  writeSample,
+		trackRemoved: trackRemoved,
+		trackEnded:   trackEnded,
+		names:        make(map[string]string),
+		tracks:       make(map[string]*mcapTrack),
 	}
 
 	funnel, err := gst.NewElement("funnel")
@@ -180,6 +183,7 @@ func (b *MCAPBin) onTrackRemoved(trackID string) {
 
 	// the keyframe probe stays until endTrack, since the worker drains video after removing it
 	t.stopRequests()
+	b.trackRemoved(trackID)
 	// the track drains toward the final EOS, so its remaining samples must still route
 	if b.pipeline.GetState() > gstreamer.StateRunning {
 		return
@@ -208,10 +212,7 @@ func (b *MCAPBin) endTrack(name string, t *mcapTrack) {
 }
 
 func (b *MCAPBin) addTrack(ts *config.TrackSource) error {
-	b.mu.Lock()
-	name := fmt.Sprintf("mcap_%s_%d", ts.TrackID, b.nextID)
-	b.nextID++
-	b.mu.Unlock()
+	name := fmt.Sprintf("mcap_%s_%d", ts.TrackID, b.nextID.Inc())
 
 	var (
 		bin   *gstreamer.Bin
@@ -295,19 +296,6 @@ func (b *MCAPBin) buildVideoTrack(ts *config.TrackSource, name string) (*gstream
 	if err != nil {
 		return nil, nil, "", err
 	}
-	if ts.MimeType == types.MimeTypeH264 {
-		h264Parse, err := gst.NewElement("h264parse")
-		if err != nil {
-			return nil, nil, "", errors.ErrGstPipelineError(err)
-		}
-		// SPS/PPS on every IDR lets playback start at any keyframe
-		if err = h264Parse.SetProperty("config-interval", -1); err != nil {
-			return nil, nil, "", errors.ErrGstPipelineError(err)
-		}
-		if err = bin.AddElement(h264Parse); err != nil {
-			return nil, nil, "", err
-		}
-	}
 	return bin, probe, caps, nil
 }
 
@@ -384,7 +372,7 @@ func (b *MCAPBin) buildAudioTrack(ts *config.TrackSource, name string) (*gstream
 func (b *MCAPBin) onSample(sink *app.Sink) gst.FlowReturn {
 	sample := sink.PullSample()
 	if sample == nil {
-	    return gst.FlowOK
+		return gst.FlowOK
 	}
 	ts, ok := b.sampleTrack(sample)
 	if !ok {

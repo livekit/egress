@@ -753,10 +753,17 @@ func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.Remo
 }
 
 func (s *SDKSource) matchesMediaVideo(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
+	if !s.selectsMediaVideo(pub, rp) {
+		return false
+	}
 	if s.TrackPreserving() && types.MimeType(strings.ToLower(pub.MimeType())) == types.MimeTypeVP8 {
 		logger.Warnw("skipping vp8 track, mcap has no vp8 format", nil, "trackID", pub.SID())
 		return false
 	}
+	return true
+}
+
+func (s *SDKSource) selectsMediaVideo(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
 	if s.VideoSelection != nil {
 		return s.VideoSelection.Includes(pub.SID(), pub.Name(), rp.Identity(), rp.Kind())
 	}

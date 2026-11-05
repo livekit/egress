@@ -78,7 +78,7 @@ func newMCAPSink(
 		owners:     make(map[string]string),
 		opened:     make(map[string]struct{}),
 	}
-	if s.mcapBin, err = builder.BuildMCAPBin(p, conf, s.writeSample, s.trackEnded); err != nil {
+	if s.mcapBin, err = builder.BuildMCAPBin(p, conf, s.writeSample, s.trackRemoved, s.trackEnded); err != nil {
 		return nil, err
 	}
 	s.base = &base{bin: s.mcapBin.Bin}
@@ -193,15 +193,25 @@ func sanitizeTopicSegment(value string) string {
 	}, value)
 }
 
+// trackRemoved frees the topic for a republish while the removed track's last samples keep their channel
+func (s *MCAPSink) trackRemoved(trackID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.releaseTopic(trackID)
+}
+
 func (s *MCAPSink) trackEnded(trackID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if topic, ok := s.topics[trackID]; ok {
-		delete(s.topics, trackID)
-		if s.owners[topic] == trackID {
-			delete(s.owners, topic)
-		}
+	s.releaseTopic(trackID)
+	delete(s.topics, trackID)
+}
+
+func (s *MCAPSink) releaseTopic(trackID string) {
+	if topic, ok := s.topics[trackID]; ok && s.owners[topic] == trackID {
+		delete(s.owners, topic)
 	}
 }
 
