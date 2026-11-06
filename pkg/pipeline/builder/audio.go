@@ -450,12 +450,9 @@ func (b *AudioBin) addEncoder() error {
 		return b.bin.AddElement(opusEnc)
 
 	case types.MimeTypeAAC:
-		faac, err := gst.NewElement("faac")
+		faac, err := newAACEncoder(b.conf.AudioBitrate)
 		if err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if err = faac.SetProperty("bitrate", int(b.conf.AudioBitrate*1000)); err != nil {
-			return errors.ErrGstPipelineError(err)
+			return err
 		}
 		return b.bin.AddElement(faac)
 
@@ -481,6 +478,18 @@ func (b *AudioBin) addEncoder() error {
 	default:
 		return errors.ErrNotSupported(string(b.conf.AudioOutCodec))
 	}
+}
+
+func newAACEncoder(bitrateKbps int32) (*gst.Element, error) {
+	faac, err := gst.NewElement("faac")
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+	faac.SetArg("rate-control", "ABR")
+	if err = faac.SetProperty("bitrate", int(bitrateKbps*1000)); err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+	return faac, nil
 }
 
 func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel livekit.AudioChannel, isLeaky bool) error {
