@@ -790,7 +790,7 @@ func buildVideoAppSrcBin(parent *gstreamer.Bin, conf *config.PipelineConfig, ts 
 		return nil, nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
 
-	probe, err := newKeyframeProbe(ts.TrackID, ts.MimeType, probeElement, ts.OnKeyframeRequired, ts.OnKeyframeReceived)
+	probe, err := newKeyframeProbe(ts.TrackID, ts.MimeType, probeElement, ts.OnKeyframeRequired, ts.OnKeyframeReceived, conf.ImageKeyframeInterval())
 	if err != nil {
 		return nil, nil, err
 	}

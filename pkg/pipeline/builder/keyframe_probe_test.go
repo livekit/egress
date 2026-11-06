@@ -130,3 +130,45 @@ func TestKeyframeProbe_MissingPTSPostKeyframeRestoresPTSAndForwards(t *testing.T
 	require.Equal(t, gst.PadProbeOK, p.processBuffer(mBuf))
 	require.Equal(t, gst.ClockTime(uint64(lastPTS)), mBuf.PresentationTimestamp(), "PTS should be restored from last good value")
 }
+
+func TestKeyframeProbe_CaptureGateDecodesOneKeyframePerInterval(t *testing.T) {
+	initGStreamer(t)
+
+	var requested, received atomic.Int32
+	p := newTestProbe(types.MimeTypeH264, func() { received.Add(1) })
+	p.onKeyframeRequired = func() { requested.Add(1) }
+	p.gate = newCaptureGate(5 * time.Second)
+
+	// keyframe, its two trailing deltas, then deltas until the 5 s capture is due
+	require.Equal(t, gst.PadProbeOK, p.processBuffer(makeBuffer(t, false, 0, true)))
+	require.Equal(t, int32(1), received.Load())
+	require.Equal(t, gst.PadProbeOK, p.processBuffer(makeBuffer(t, false, 33*time.Millisecond, false)))
+	require.Equal(t, gst.PadProbeOK, p.processBuffer(makeBuffer(t, false, 66*time.Millisecond, false)))
+	for pts := 99 * time.Millisecond; pts < 5*time.Second; pts += 33 * time.Millisecond {
+		require.Equal(t, gst.PadProbeDrop, p.processBuffer(makeBuffer(t, false, pts, false)), "pts %v", pts)
+	}
+	require.Zero(t, requested.Load(), "no keyframe is needed before the capture is due")
+
+	// capture due, still only deltas: dropped, and a keyframe is requested once
+	require.Equal(t, gst.PadProbeDrop, p.processBuffer(makeBuffer(t, false, 5016*time.Millisecond, false)))
+	require.Equal(t, gst.PadProbeDrop, p.processBuffer(makeBuffer(t, false, 5049*time.Millisecond, false)))
+	require.Equal(t, int32(1), requested.Load())
+
+	// the requested keyframe is decoded and reported, which stops the requests
+	require.Equal(t, gst.PadProbeOK, p.processBuffer(makeBuffer(t, false, 5115*time.Millisecond, true)))
+	require.Equal(t, int32(2), received.Load())
+}
+
+func TestKeyframeProbe_CaptureGateStillRestoresMissingPTS(t *testing.T) {
+	initGStreamer(t)
+
+	p := newTestProbe(types.MimeTypeH264, nil)
+	p.gate = newCaptureGate(5 * time.Second)
+
+	require.Equal(t, gst.PadProbeOK, p.processBuffer(makeBuffer(t, false, 50*time.Millisecond, true)))
+
+	// the trailing delta arrives without a PTS: restored, then forwarded
+	buf := makeBuffer(t, true, 0, false)
+	require.Equal(t, gst.PadProbeOK, p.processBuffer(buf))
+	require.Equal(t, gst.ClockTime(uint64(50*time.Millisecond)), buf.PresentationTimestamp())
+}
