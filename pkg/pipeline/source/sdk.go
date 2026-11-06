@@ -429,6 +429,13 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 			requiredTracks[route.Match.TrackID] = struct{}{}
 		}
 	}
+	if s.VideoSelection != nil && !s.VideoSelection.CaptureAll {
+		for _, sel := range s.VideoSelection.Selectors {
+			if sel.Match.TrackID != "" && !sel.Exclude {
+				requiredTracks[sel.Match.TrackID] = struct{}{}
+			}
+		}
+	}
 
 	// Phase 2: Wait for prerequisites with shared deadline
 	deadline := time.Now().Add(subscriptionTimeout)
@@ -746,6 +753,20 @@ func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.Remo
 }
 
 func (s *SDKSource) matchesMediaVideo(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
+	if !s.selectsMediaVideo(pub, rp) {
+		return false
+	}
+	if s.TrackPreserving() && types.MimeType(strings.ToLower(pub.MimeType())) == types.MimeTypeVP8 {
+		logger.Warnw("skipping vp8 track, mcap has no vp8 format", nil, "trackID", pub.SID())
+		return false
+	}
+	return true
+}
+
+func (s *SDKSource) selectsMediaVideo(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
+	if s.VideoSelection != nil {
+		return s.VideoSelection.Includes(pub.SID(), pub.Name(), rp.Identity(), rp.Kind())
+	}
 	if s.VideoTrackID != "" {
 		return pub.SID() == s.VideoTrackID
 	}

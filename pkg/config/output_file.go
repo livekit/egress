@@ -61,6 +61,8 @@ func fileTypeToOutputType(ft livekit.EncodedFileType) types.OutputType {
 		return types.OutputTypeOGG
 	case livekit.EncodedFileType_MP3:
 		return types.OutputTypeMP3
+	case livekit.EncodedFileType_MCAP:
+		return types.OutputTypeMCAP
 	default:
 		return types.OutputTypeUnknownFile
 	}

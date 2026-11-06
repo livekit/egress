@@ -119,6 +119,7 @@ type publishOptions struct {
 	mediaParticipantVideo *livekit.ParticipantVideo
 	audioRoutes           []*livekit.AudioRoute
 	captureAudioAll       bool
+	mediaVideos           *livekit.VideoConfig
 
 	// v2 Template source fields
 	templateCustomBaseUrl string
@@ -128,6 +129,9 @@ type fileOptions struct {
 	filename   string
 	fileType   livekit.EncodedFileType
 	outputType types.OutputType
+
+	mcapChannels int
+	mcapExcluded string // publisher (p0/p1/p2) whose identity must not appear in any topic
 }
 
 type streamOptions struct {
@@ -571,7 +575,17 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 		if (videoTrackID == "" || videoTrackID == setAtRuntime) && test.videoCodec != "" {
 			videoTrackID = test.videoTrackID
 		}
-		if videoTrackID != "" {
+		if test.mediaVideos != nil {
+			videos := proto.Clone(test.mediaVideos).(*livekit.VideoConfig)
+			for _, sel := range videos.Selectors {
+				if pi, ok := sel.Match.(*livekit.VideoSelector_ParticipantIdentity); ok {
+					if identity := test.resolveIdentity(pi.ParticipantIdentity); identity != "" {
+						pi.ParticipantIdentity = identity
+					}
+				}
+			}
+			media.Video = &livekit.MediaSource_Videos{Videos: videos}
+		} else if videoTrackID != "" {
 			media.Video = &livekit.MediaSource_VideoTrackId{
 				VideoTrackId: videoTrackID,
 			}
