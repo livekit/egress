@@ -76,6 +76,9 @@ type VideoBin struct {
 	// ending is set before the filler is sent EOS. After it, no handover is
 	// taken and only the selected pad feeds the selector.
 	ending bool
+	// coordinatedFiller is set when the filler is VideoFillerSrc rather than videotestsrc: it is timed by the
+	// source's GAPs, so a track takes the selector on its first frame instead of on subscribe
+	coordinatedFiller bool
 
 	probesMu deadlock.Mutex
 	probes   map[string]*keyframeProbe
@@ -474,7 +477,12 @@ func (b *VideoBin) buildSDKInput() error {
 			}
 			b.bin.SetEOSFunc(b.markEnding)
 		}
-		if err := b.addVideoTestSrcBin(); err != nil {
+		b.coordinatedFiller = b.conf.VideoFillerSrc != nil && !b.conf.Live && !b.conf.Compositing
+		if b.coordinatedFiller {
+			if err := b.addVideoFillerSrcBin(); err != nil {
+				return err
+			}
+		} else if err := b.addVideoTestSrcBin(); err != nil {
 			return err
 		}
 	}
@@ -638,7 +646,7 @@ func buildVideoAppSrcBin(parent *gstreamer.Bin, conf *config.PipelineConfig, ts 
 			if err != nil {
 				return nil, nil, errors.ErrGstPipelineError(err)
 			}
-			if !conf.Live && conf.Compositing {
+			if !conf.Live {
 				// frame threading holds decoded frames, and a GAP behind them, until the next input
 				avDecH264.SetArg("thread-type", "slice")
 			}
@@ -776,9 +784,9 @@ func buildVideoAppSrcBin(parent *gstreamer.Bin, conf *config.PipelineConfig, ts 
 			if err != nil {
 				return nil, nil, errors.ErrGstPipelineError(err)
 			}
-			if av1Decoder == "dav1ddec" && (conf.Live || conf.Compositing) {
-				// One frame in flight (a live pipeline resolves it, a non-live compositor input sets it
-				// so a GAP is not held behind decoded frames), so threads beyond tile parallelism add
+			if av1Decoder == "dav1ddec" {
+				// One frame in flight (a live pipeline resolves it, a non-live input sets it so a GAP
+				// is not held behind decoded frames), so threads beyond tile parallelism add
 				// CPU without throughput; the default spawns one per logical core.
 				if err = av1Dec.SetProperty("n-threads", uint(2)); err != nil {
 					return nil, nil, errors.ErrGstPipelineError(err)
@@ -1092,6 +1100,62 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 	return nil
 }
 
+// addVideoFillerSrcBin adds the non-live filler: the source's appsrc, whose GAP events become black frames
+// for the spans with no video track
+func (b *VideoBin) addVideoFillerSrcBin() error {
+	fillerBin := b.bin.NewBin(videoTestSrcName)
+	if err := b.bin.AddSourceBin(fillerBin); err != nil {
+		return err
+	}
+
+	src := b.conf.VideoFillerSrc
+	src.SetArg("format", "time")
+	if err := src.SetProperty("is-live", false); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	if err := src.SetProperty("caps", b.newVideoCaps(true)); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	caps, err := b.newVideoCapsFilter(true)
+	if err != nil {
+		return err
+	}
+	if err = fillerBin.AddElements(src.Element, caps); err != nil {
+		return err
+	}
+
+	pad := b.selector.GetRequestPad("sink_%u")
+	installVideoGapFill(pad, newBlackFrame, false)
+	// an unselected mark passes, waits in the selector and is pushed on the switch; only stale ones are dropped
+	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		pts := uint64(info.GetBuffer().PresentationTimestamp())
+		b.mu.Lock()
+		drop := pts < b.lastPTS
+		b.mu.Unlock()
+		if drop {
+			return gst.PadProbeDrop
+		}
+		return gst.PadProbeOK
+	})
+	// marks advance lastPTS as they leave the selector, so one held through a switch does not run ahead of it
+	b.selector.GetStaticPad("src").AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		pts := uint64(info.GetBuffer().PresentationTimestamp())
+		b.mu.Lock()
+		if pts > b.lastPTS {
+			b.lastPTS = pts
+		}
+		b.mu.Unlock()
+		return gst.PadProbeOK
+	})
+
+	// An empty selectedPad closes every gate, so the filler starts selected.
+	if b.selectedPad == "" {
+		b.selectedPad = videoTestSrcName
+	}
+	b.pads[videoTestSrcName] = pad
+	return nil
+}
+
 func (b *VideoBin) addEncoder() error {
 	videoQueue, err := gstreamer.BuildQueue("video_encoder_queue", b.conf.Latency.PipelineLatency, false)
 	if err != nil {
@@ -1307,62 +1371,10 @@ func (b *VideoBin) addCompositorInput(bin *gstreamer.Bin, videoQueue *gst.Elemen
 	b.watchSrcDimensions(crop.GetStaticPad("sink"), name)
 
 	if !b.conf.Live {
-		installVideoGapFill(videoRate.GetStaticPad("sink"))
+		installVideoGapFill(videoRate.GetStaticPad("sink"), newEmptyGapBuffer, false)
 	}
 
 	return bin.AddElements(videoQueue, crop, videoScale, videoConvert, videoRate, caps)
-}
-
-// installVideoGapFill turns GAP events at videorate's sink pad into empty gap buffers at the gap's start and end.
-// videorate repeats them at the output rate, so a non-live compositor keeps getting buffers it draws nothing for.
-func installVideoGapFill(sinkPad *gst.Pad) {
-	sinkPad.AddProbe(gst.PadProbeTypeEventDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		event := info.GetEvent()
-		if event == nil {
-			return gst.PadProbeOK
-		}
-		switch event.Type() {
-		case gst.EventTypeSegment:
-			// videorate restarts its output timeline on every segment that differs, so one that changes nothing is dropped
-			current := pad.GetStickyEvent(gst.EventTypeSegment, 0)
-			if current != nil && sameSegment(current.ParseSegment(), event.ParseSegment()) {
-				return gst.PadProbeDrop
-			}
-			return gst.PadProbeOK
-		case gst.EventTypeGap:
-		default:
-			return gst.PadProbeOK
-		}
-		if pad.GetCurrentCaps() == nil {
-			return gst.PadProbeOK
-		}
-		// a track's first GAP precedes any segment: the RTP depayloader sends its own with its first packet
-		if pad.GetStickyEvent(gst.EventTypeSegment, 0) == nil {
-			segment := gst.NewFormattedSegment(gst.FormatTime)
-			sent := pad.SendEvent(gst.NewSegmentEvent(segment))
-			segment.Free()
-			if !sent {
-				logger.Warnw("could not send videorate a segment for a video gap", nil)
-				return gst.PadProbeOK
-			}
-		}
-		start, duration := event.ParseGap()
-		marks := []time.Duration{start}
-		if duration > 0 {
-			marks = append(marks, start+duration)
-		}
-		for _, pts := range marks {
-			buf := gst.NewEmptyBuffer()
-			buf.SetPresentationTimestamp(gst.ClockTime(pts))
-			buf.SetFlags(gst.BufferFlagGap | gst.BufferFlagDroppable)
-			// recursive stream lock: the marks enter videorate in order
-			if flow := pad.Chain(buf); flow != gst.FlowOK {
-				logger.Debugw("could not fill video gap", "flow", flow, "filled", pts)
-				break
-			}
-		}
-		return gst.PadProbeDrop
-	})
 }
 
 func (b *VideoBin) newVideoCapsFilter(includeFramerate bool) (*gst.Element, error) {
@@ -1370,21 +1382,23 @@ func (b *VideoBin) newVideoCapsFilter(includeFramerate bool) (*gst.Element, erro
 	if err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
-	if includeFramerate {
-		err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
-			"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
-			b.conf.Framerate, b.conf.Width, b.conf.Height,
-		)))
-	} else {
-		err = caps.SetProperty("caps", gst.NewCapsFromString(fmt.Sprintf(
-			"video/x-raw,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
-			b.conf.Width, b.conf.Height,
-		)))
-	}
-	if err != nil {
+	if err = caps.SetProperty("caps", b.newVideoCaps(includeFramerate)); err != nil {
 		return nil, errors.ErrGstPipelineError(err)
 	}
 	return caps, nil
+}
+
+func (b *VideoBin) newVideoCaps(includeFramerate bool) *gst.Caps {
+	if includeFramerate {
+		return gst.NewCapsFromString(fmt.Sprintf(
+			"video/x-raw,framerate=%d/1,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+			b.conf.Framerate, b.conf.Width, b.conf.Height,
+		))
+	}
+	return gst.NewCapsFromString(fmt.Sprintf(
+		"video/x-raw,format=I420,width=%d,height=%d,colorimetry=bt709,chroma-site=mpeg2,pixel-aspect-ratio=1/1",
+		b.conf.Width, b.conf.Height,
+	))
 }
 
 func (b *VideoBin) getSrcPad(name string) *gst.Pad {
@@ -1424,6 +1438,9 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 		// an unmute can arrive before the first layout, and the pad starts opaque
 		b.layoutAlpha[name] = 1.0
 	} else {
+		if !b.conf.Live {
+			installVideoGapFill(pad, newBlackFrame, b.coordinatedFiller)
+		}
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			pts := uint64(info.GetBuffer().PresentationTimestamp())
 
@@ -1625,8 +1642,8 @@ func (b *VideoBin) setSelectorPadLocked(name string) error {
 	}
 
 	// The filler takes over at once: its own gate drops every buffer until it is
-	// selected. Non-live runs it unpaced, where it would outrun any track.
-	if name == videoTestSrcName || !b.conf.Live {
+	// selected. Non-live runs the test source unpaced, where it would outrun any track.
+	if name == videoTestSrcName || (!b.conf.Live && !b.coordinatedFiller) {
 		if err := b.selector.SetProperty("active-pad", pad); err != nil {
 			return errors.ErrGstPipelineError(err)
 		}
