@@ -1109,6 +1109,11 @@ func (b *VideoBin) addVideoFillerSrcBin() error {
 	}
 
 	src := b.conf.VideoFillerSrc
+	// an EOS event sent to the appsrc flushes its queue, dropping GAPs still in it; end_of_stream drains it first
+	fillerBin.SetEOSFunc(func() bool {
+		src.EndStream()
+		return false
+	})
 	src.SetArg("format", "time")
 	if err := src.SetProperty("is-live", false); err != nil {
 		return errors.ErrGstPipelineError(err)
