@@ -737,53 +737,7 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 }
 
 func (s *SDKSource) shouldSubscribeMedia(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
-	switch pub.Kind() {
-	case lksdk.TrackKindAudio:
-		return s.matchesAudioRoute(pub, rp) != nil
-	case lksdk.TrackKindVideo:
-		return s.matchesMediaVideo(pub, rp)
-	default:
-		logger.Warnw("unknown track kind", nil)
-		return false
-	}
-}
-
-func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) *config.AudioRouteConfig {
-	return config.MatchAudioRoute(s.AudioRoutes, s.CaptureAudioAll, pub.SID(), pub.Name(), rp.Identity(), rp.Kind())
-}
-
-func (s *SDKSource) matchesMediaVideo(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
-	if !s.selectsMediaVideo(pub, rp) {
-		return false
-	}
-	if s.TrackPreserving() && types.MimeType(strings.ToLower(pub.MimeType())) == types.MimeTypeVP8 {
-		logger.Warnw("skipping vp8 track, mcap has no vp8 format", nil, "trackID", pub.SID())
-		return false
-	}
-	return true
-}
-
-func (s *SDKSource) selectsMediaVideo(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
-	if s.VideoSelection != nil {
-		return s.VideoSelection.Includes(pub.SID(), pub.Name(), rp.Identity(), rp.Kind())
-	}
-	if s.VideoTrackID != "" {
-		return pub.SID() == s.VideoTrackID
-	}
-	// passthrough sets Identity for {publisher_identity}, which must not widen the match
-	if s.Passthrough {
-		return false
-	}
-	if s.Identity != "" {
-		if rp.Identity() != s.Identity {
-			return false
-		}
-		if s.ScreenShare {
-			return pub.Source() == livekit.TrackSource_SCREEN_SHARE
-		}
-		return pub.Source() == livekit.TrackSource_CAMERA
-	}
-	return false
+	return s.MatchesMedia(pub.TrackInfo(), rp.Identity(), rp.Kind())
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
