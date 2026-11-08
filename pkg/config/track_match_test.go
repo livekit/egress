@@ -235,3 +235,35 @@ func TestMatchesMediaVideo(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchesMedia(t *testing.T) {
+	standard := lksdk.ParticipantKind(livekit.ParticipantInfo_STANDARD)
+	agent := lksdk.ParticipantKind(livekit.ParticipantInfo_AGENT)
+	left := livekit.AudioChannel_AUDIO_CHANNEL_LEFT
+	mic := &livekit.TrackInfo{Sid: "TR_mic", Name: "microphone", Type: livekit.TrackType_AUDIO, Source: livekit.TrackSource_MICROPHONE}
+	camera := &livekit.TrackInfo{Sid: "TR_cam", Name: "camera", Type: livekit.TrackType_VIDEO, Source: livekit.TrackSource_CAMERA}
+	conf := &PipelineConfig{SourceConfig: SourceConfig{SDKSourceParams: SDKSourceParams{
+		VideoTrackID: "TR_cam",
+		AudioRoutes: []AudioRouteConfig{
+			{Match: TrackMatch{ParticipantKind: &agent}, Channel: left},
+			{Match: TrackMatch{ParticipantIdentity: "bob"}, Exclude: true},
+		},
+		CaptureAudioAll: true,
+	}}}
+
+	route := conf.MatchMediaAudio(mic, "agent", agent)
+	require.NotNil(t, route)
+	require.Equal(t, left, route.Channel, "the matched route sets the channel")
+	route = conf.MatchMediaAudio(mic, "alice", standard)
+	require.NotNil(t, route, "capture all takes an unrouted track")
+	require.Equal(t, livekit.AudioChannel_AUDIO_CHANNEL_BOTH, route.Channel)
+	require.Nil(t, conf.MatchMediaAudio(mic, "bob", standard), "an exclude drops the track")
+	require.Nil(t, conf.MatchMediaAudio(nil, "alice", standard))
+
+	require.True(t, conf.MatchesMedia(mic, "alice", standard))
+	require.False(t, conf.MatchesMedia(mic, "bob", standard))
+	require.True(t, conf.MatchesMedia(camera, "alice", standard))
+	require.False(t, conf.MatchesMedia(&livekit.TrackInfo{Sid: "TR_screen", Type: livekit.TrackType_VIDEO}, "alice", standard))
+	require.False(t, conf.MatchesMedia(&livekit.TrackInfo{Sid: "TR_data", Type: livekit.TrackType_DATA}, "alice", standard))
+	require.False(t, conf.MatchesMedia(nil, "alice", standard))
+}

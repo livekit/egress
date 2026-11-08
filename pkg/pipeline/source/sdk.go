@@ -737,19 +737,7 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 }
 
 func (s *SDKSource) shouldSubscribeMedia(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
-	switch pub.Kind() {
-	case lksdk.TrackKindAudio:
-		return s.matchesAudioRoute(pub, rp) != nil
-	case lksdk.TrackKindVideo:
-		return s.MatchesMediaVideo(pub.TrackInfo(), rp.Identity(), rp.Kind())
-	default:
-		logger.Warnw("unknown track kind", nil)
-		return false
-	}
-}
-
-func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) *config.AudioRouteConfig {
-	return config.MatchAudioRoute(s.AudioRoutes, s.CaptureAudioAll, pub.SID(), pub.Name(), rp.Identity(), rp.Kind())
+	return s.MatchesMedia(pub.TrackInfo(), rp.Identity(), rp.Kind())
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {

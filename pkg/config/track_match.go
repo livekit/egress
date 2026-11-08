@@ -87,6 +87,30 @@ func MatchAudioRoute(routes []AudioRouteConfig, captureAll bool, trackID, trackN
 	return matched
 }
 
+// MatchesMedia reports whether a media request takes a track published by a participant with identity and kind
+func (p *PipelineConfig) MatchesMedia(ti *livekit.TrackInfo, identity string, kind lksdk.ParticipantKind) bool {
+	if ti == nil {
+		return false
+	}
+	switch ti.Type {
+	case livekit.TrackType_AUDIO:
+		return p.MatchMediaAudio(ti, identity, kind) != nil
+	case livekit.TrackType_VIDEO:
+		return p.MatchesMediaVideo(ti, identity, kind)
+	default:
+		logger.Warnw("unknown track kind", nil, "trackID", ti.Sid, "type", ti.Type)
+		return false
+	}
+}
+
+// MatchMediaAudio returns the route a media request applies to an audio track; nil when it does not take it
+func (p *PipelineConfig) MatchMediaAudio(ti *livekit.TrackInfo, identity string, kind lksdk.ParticipantKind) *AudioRouteConfig {
+	if ti == nil {
+		return nil
+	}
+	return MatchAudioRoute(p.AudioRoutes, p.CaptureAudioAll, ti.Sid, ti.Name, identity, kind)
+}
+
 // MatchesMediaVideo reports whether a media request takes a video track published by a participant with identity and kind
 func (p *PipelineConfig) MatchesMediaVideo(ti *livekit.TrackInfo, identity string, kind lksdk.ParticipantKind) bool {
 	if ti == nil || !p.selectsMediaVideo(ti, identity, kind) {
