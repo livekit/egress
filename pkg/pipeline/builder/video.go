@@ -77,7 +77,8 @@ type VideoBin struct {
 	// taken and only the selected pad feeds the selector.
 	ending bool
 	// coordinatedFiller is set when the filler is VideoFillerSrc rather than videotestsrc: it is timed by the
-	// source's GAPs, so a track takes the selector on its first frame instead of on subscribe
+	// source's GAPs, so a track takes the selector on its first frame instead of on subscribe, and a compositor's
+	// background ends where the source does
 	coordinatedFiller bool
 
 	probesMu deadlock.Mutex
@@ -477,7 +478,7 @@ func (b *VideoBin) buildSDKInput() error {
 			}
 			b.bin.SetEOSFunc(b.markEnding)
 		}
-		b.coordinatedFiller = b.conf.VideoFillerSrc != nil && !b.conf.Live && !b.conf.Compositing
+		b.coordinatedFiller = b.conf.VideoFillerSrc != nil && !b.conf.Live
 		if b.coordinatedFiller {
 			if err := b.addVideoFillerSrcBin(); err != nil {
 				return err
@@ -1047,23 +1048,8 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 
 	pad := b.selector.GetRequestPad("sink_%u")
 	if b.conf.Compositing {
-		if err = pad.SetProperty("xpos", 0); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if err = pad.SetProperty("ypos", 0); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if err = pad.SetProperty("width", int(b.conf.Width)); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if err = pad.SetProperty("height", int(b.conf.Height)); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if err = pad.SetProperty("zorder", uint(0)); err != nil {
-			return errors.ErrGstPipelineError(err)
-		}
-		if err = pad.SetProperty("alpha", 1.0); err != nil {
-			return errors.ErrGstPipelineError(err)
+		if err = b.setBackgroundPad(pad); err != nil {
+			return err
 		}
 	} else {
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
@@ -1100,8 +1086,24 @@ func (b *VideoBin) addVideoTestSrcBin() error {
 	return nil
 }
 
-// addVideoFillerSrcBin adds the non-live filler: the source's appsrc, whose GAP events become black frames
-// for the spans with no video track
+// setBackgroundPad places a compositor input over the whole frame, under every track
+func (b *VideoBin) setBackgroundPad(pad *gst.Pad) error {
+	for _, p := range []struct {
+		name  string
+		value any
+	}{
+		{"xpos", 0}, {"ypos", 0}, {"width", int(b.conf.Width)}, {"height", int(b.conf.Height)},
+		{"zorder", uint(0)}, {"alpha", 1.0},
+	} {
+		if err := pad.SetProperty(p.name, p.value); err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+	}
+	return nil
+}
+
+// addVideoFillerSrcBin adds the non-live filler: the source's appsrc, whose GAP events become black frames,
+// for the spans with no video track in a selector and as the background of a compositor
 func (b *VideoBin) addVideoFillerSrcBin() error {
 	fillerBin := b.bin.NewBin(videoTestSrcName)
 	if err := b.bin.AddSourceBin(fillerBin); err != nil {
@@ -1125,10 +1127,28 @@ func (b *VideoBin) addVideoFillerSrcBin() error {
 	if err != nil {
 		return err
 	}
+
+	if b.conf.Compositing {
+		// as on a track input, videorate repeats each mark up to the next, so the compositor gets a frame per slot
+		videoRate, err := gst.NewElement("videorate")
+		if err != nil {
+			return errors.ErrGstPipelineError(err)
+		}
+		installVideoGapFill(videoRate.GetStaticPad("sink"), newBlackFrame, false)
+		if err = fillerBin.AddElements(src.Element, videoRate, caps); err != nil {
+			return err
+		}
+		pad := b.selector.GetRequestPad("sink_%u")
+		if err = b.setBackgroundPad(pad); err != nil {
+			return err
+		}
+		b.pads[videoTestSrcName] = pad
+		return nil
+	}
+
 	if err = fillerBin.AddElements(src.Element, caps); err != nil {
 		return err
 	}
-
 	pad := b.selector.GetRequestPad("sink_%u")
 	installVideoGapFill(pad, newBlackFrame, false)
 	// an unselected mark passes, waits in the selector and is pushed on the switch; only stale ones are dropped

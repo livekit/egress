@@ -71,6 +71,39 @@ func TestCoordinatedFillerCoversNoTrackSpans(t *testing.T) {
 	}
 }
 
+func TestCoordinatedFillerIsCompositorBackground(t *testing.T) {
+	// a non-live compositor whose background is the source's filler: the source covers the whole output, under the
+	// track while it is live, so the output runs as far as the background is covered and ends where it does, with the
+	// track drawn over it and black after the track's EOS
+	initGStreamer(t)
+	for _, codec := range gapTestCodecs {
+		t.Run(codec.name, func(t *testing.T) {
+			packets := gapTestRTPPackets(t, codec, 2*gapTestFPS)
+			firstSecond, _ := splitAt(packets, time.Second)
+			held := 3 * gapTestFrame
+
+			h := newCompositedFillerHarness(t, codec)
+			h.push(firstSecond, 0)
+			h.endTrack()
+			h.fillerGap(0, 2*time.Second)
+			h.requireOutputThrough(2*time.Second - held)
+
+			// the compositor waits on its background, so nothing comes out past the cover
+			if sample := h.sink.TryPullSample(gst.ClockTime(500 * time.Millisecond)); sample != nil {
+				h.out = append(h.out, gapTestFrameOf(sample))
+				require.Less(t, h.lastPTS(), 2*time.Second, "the output ran past the background's cover")
+			}
+
+			h.fillerGap(2*time.Second, time.Second)
+			out := h.finish()
+			requireColor(t, out, 0, time.Second-held, true)
+			requireColor(t, out, time.Second+held, 3*time.Second-2*gapTestFrame, false)
+			require.InDelta(t, float64(3*time.Second), float64(out[len(out)-1].pts), float64(2*gapTestFrame),
+				"the output did not end where the background's last GAP did")
+		})
+	}
+}
+
 type coordinatedFillerHarness struct {
 	*videoGapHarness
 	pipeline  *gstreamer.Pipeline
@@ -82,6 +115,15 @@ type coordinatedFillerHarness struct {
 // newCoordinatedFillerHarness builds the video bin of a non-live, non-composited pipeline whose filler is an appsrc
 // the test sends GAPs to, with one track at build when withTrack is set, and a raw video sink in place of the encoder
 func newCoordinatedFillerHarness(t *testing.T, codec gapTestCodec, withTrack bool) *coordinatedFillerHarness {
+	return newFillerHarness(t, codec, withTrack, false)
+}
+
+// newCompositedFillerHarness is newCoordinatedFillerHarness for a compositing pipeline with one track at build
+func newCompositedFillerHarness(t *testing.T, codec gapTestCodec) *coordinatedFillerHarness {
+	return newFillerHarness(t, codec, true, true)
+}
+
+func newFillerHarness(t *testing.T, codec gapTestCodec, withTrack, compositing bool) *coordinatedFillerHarness {
 	callbacks := &gstreamer.Callbacks{}
 	p, err := gstreamer.NewPipeline("coordinated_filler_test", 0, callbacks)
 	require.NoError(t, err)
@@ -95,6 +137,10 @@ func newCoordinatedFillerHarness(t *testing.T, codec gapTestCodec, withTrack boo
 	conf.Width, conf.Height, conf.Framerate = 64, 64, gapTestFPS
 	conf.Latency.PipelineLatency = 3 * time.Second
 	conf.VideoFillerSrc = filler
+	if compositing {
+		conf.Compositing = true
+		conf.Layout = "grid"
+	}
 
 	h := &coordinatedFillerHarness{
 		videoGapHarness: &videoGapHarness{t: t},
