@@ -19,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
@@ -120,6 +121,117 @@ func TestTrackResolution(t *testing.T) {
 			if test.channel != nil {
 				require.Equal(t, *test.channel, route.Channel)
 			}
+		})
+	}
+}
+
+func TestMatchesMediaVideo(t *testing.T) {
+	standard := lksdk.ParticipantKind(livekit.ParticipantInfo_STANDARD)
+	camera := &livekit.TrackInfo{Sid: "TR_cam", Name: "camera", Source: livekit.TrackSource_CAMERA, MimeType: "video/H264"}
+	screen := &livekit.TrackInfo{Sid: "TR_screen", Name: "screen", Source: livekit.TrackSource_SCREEN_SHARE, MimeType: "video/H264"}
+	// before publish only the codecs carry a mime type
+	vp8 := &livekit.TrackInfo{Sid: "TR_vp8", Name: "camera", Source: livekit.TrackSource_CAMERA,
+		Codecs: []*livekit.SimulcastCodecInfo{{MimeType: "video/VP8"}}}
+	mcap := map[types.EgressType][]OutputConfig{types.EgressTypeFile: {&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeMCAP}}}}
+
+	for _, test := range []struct {
+		name     string
+		conf     *PipelineConfig
+		ti       *livekit.TrackInfo
+		identity string
+		expected bool
+	}{
+		{
+			name:     "video track id",
+			conf:     &PipelineConfig{SourceConfig: SourceConfig{SDKSourceParams: SDKSourceParams{VideoTrackID: "TR_cam"}}},
+			ti:       camera,
+			identity: "alice",
+			expected: true,
+		},
+		{
+			name:     "video track id does not take another track",
+			conf:     &PipelineConfig{SourceConfig: SourceConfig{SDKSourceParams: SDKSourceParams{VideoTrackID: "TR_cam"}}},
+			ti:       screen,
+			identity: "alice",
+		},
+		{
+			name:     "identity takes the camera",
+			conf:     &PipelineConfig{SourceConfig: SourceConfig{SDKSourceParams: SDKSourceParams{Identity: "alice"}}},
+			ti:       camera,
+			identity: "alice",
+			expected: true,
+		},
+		{
+			name:     "identity does not take another participant's camera",
+			conf:     &PipelineConfig{SourceConfig: SourceConfig{SDKSourceParams: SDKSourceParams{Identity: "alice"}}},
+			ti:       camera,
+			identity: "bob",
+		},
+		{
+			name:     "identity without screen share does not take the screen share",
+			conf:     &PipelineConfig{SourceConfig: SourceConfig{SDKSourceParams: SDKSourceParams{Identity: "alice"}}},
+			ti:       screen,
+			identity: "alice",
+		},
+		{
+			name:     "screen share takes only the screen share",
+			conf:     &PipelineConfig{SourceConfig: SourceConfig{SDKSourceParams: SDKSourceParams{Identity: "alice", ScreenShare: true}}},
+			ti:       camera,
+			identity: "alice",
+		},
+		{
+			name:     "screen share",
+			conf:     &PipelineConfig{SourceConfig: SourceConfig{SDKSourceParams: SDKSourceParams{Identity: "alice", ScreenShare: true}}},
+			ti:       screen,
+			identity: "alice",
+			expected: true,
+		},
+		{
+			name: "passthrough identity does not select video",
+			conf: &PipelineConfig{
+				Passthrough:  true,
+				SourceConfig: SourceConfig{SDKSourceParams: SDKSourceParams{Identity: "alice"}},
+			},
+			ti:       camera,
+			identity: "alice",
+		},
+		{
+			name: "video selection",
+			conf: &PipelineConfig{SourceConfig: SourceConfig{SDKSourceParams: SDKSourceParams{
+				VideoSelection: &TrackSelection{Selectors: []TrackSelector{{Match: TrackMatch{ParticipantIdentity: "alice"}}}},
+			}}},
+			ti:       screen,
+			identity: "alice",
+			expected: true,
+		},
+		{
+			name: "mcap skips vp8",
+			conf: &PipelineConfig{
+				SourceConfig: SourceConfig{SDKSourceParams: SDKSourceParams{VideoSelection: &TrackSelection{CaptureAll: true}}},
+				Outputs:      mcap,
+			},
+			ti:       vp8,
+			identity: "alice",
+		},
+		{
+			name: "mcap takes h264",
+			conf: &PipelineConfig{
+				SourceConfig: SourceConfig{SDKSourceParams: SDKSourceParams{VideoSelection: &TrackSelection{CaptureAll: true}}},
+				Outputs:      mcap,
+			},
+			ti:       camera,
+			identity: "alice",
+			expected: true,
+		},
+		{
+			name:     "no video source selects nothing",
+			conf:     &PipelineConfig{},
+			ti:       camera,
+			identity: "alice",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.expected, test.conf.MatchesMediaVideo(test.ti, test.identity, standard))
 		})
 	}
 }

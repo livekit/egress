@@ -15,6 +15,11 @@
 package config
 
 import (
+	"strings"
+
+	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
@@ -80,4 +85,52 @@ func MatchAudioRoute(routes []AudioRouteConfig, captureAll bool, trackID, trackN
 		return &AudioRouteConfig{}
 	}
 	return matched
+}
+
+// MatchesMediaVideo reports whether a media request takes a video track published by a participant with identity and kind
+func (p *PipelineConfig) MatchesMediaVideo(ti *livekit.TrackInfo, identity string, kind lksdk.ParticipantKind) bool {
+	if ti == nil || !p.selectsMediaVideo(ti, identity, kind) {
+		return false
+	}
+	if p.TrackPreserving() && types.MimeType(strings.ToLower(trackMimeType(ti))) == types.MimeTypeVP8 {
+		logger.Warnw("skipping vp8 track, mcap has no vp8 format", nil, "trackID", ti.Sid)
+		return false
+	}
+	return true
+}
+
+func (p *PipelineConfig) selectsMediaVideo(ti *livekit.TrackInfo, identity string, kind lksdk.ParticipantKind) bool {
+	if p.VideoSelection != nil {
+		return p.VideoSelection.Includes(ti.Sid, ti.Name, identity, kind)
+	}
+	if p.VideoTrackID != "" {
+		return ti.Sid == p.VideoTrackID
+	}
+	// passthrough sets Identity for {publisher_identity}, which must not widen the match
+	if p.Passthrough {
+		return false
+	}
+	if p.Identity != "" {
+		if identity != p.Identity {
+			return false
+		}
+		if p.ScreenShare {
+			return ti.Source == livekit.TrackSource_SCREEN_SHARE
+		}
+		return ti.Source == livekit.TrackSource_CAMERA
+	}
+	return false
+}
+
+// trackMimeType is the track's mime type, else its first codec's, which is all a track has before it is published
+func trackMimeType(ti *livekit.TrackInfo) string {
+	if ti.MimeType != "" {
+		return ti.MimeType
+	}
+	for _, c := range ti.Codecs {
+		if c.MimeType != "" {
+			return c.MimeType
+		}
+	}
+	return ""
 }
