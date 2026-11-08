@@ -34,7 +34,7 @@ import (
 const (
 	gstVersionFile  = ".gst-version"
 	libniceVersion  = "0.1.21"
-	chromiumVersion = "156.0.8078.47"
+	chromiumVersion = "157.0.8103.38"
 	dockerBuild     = "docker build"
 	dockerBuildX    = "docker buildx build --push --platform linux/amd64,linux/arm64"
 )

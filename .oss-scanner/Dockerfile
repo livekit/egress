@@ -39,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # The installer image is multi-arch and carries Google's official deb for amd64 and arm64.
-COPY --from=livekit/chrome-installer:156.0.8078.47 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:157.0.8103.38 /chrome-installer /chrome-installer
 RUN /chrome-installer/install-chrome "linux/${TARGETARCH}" && rm -rf /var/lib/apt/lists/*
 ENV CHROME_DEVEL_SANDBOX=/usr/local/sbin/chrome-devel-sandbox
 
