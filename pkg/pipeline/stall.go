@@ -39,10 +39,9 @@ func (c *Controller) startStallMonitor() {
 	for egressType := range c.Outputs {
 		outputs = append(outputs, string(egressType))
 		switch egressType {
-		case types.EgressTypeSegments:
-			// splitmuxsink's position restarts with every fragment (mpegtsmux) or is never reported (isofmp4mux)
-		case types.EgressTypeImages:
-			// multifilesink's position only moves once per capture interval, which can be far above the threshold
+		case types.EgressTypeSegments, types.EgressTypeImages:
+			// splitmuxsink's position restarts with every fragment (mpegtsmux) or is never reported (isofmp4mux),
+			// and multifilesink's only moves once per capture interval, which can be far above the threshold
 		default:
 			reportsPosition = true
 		}
