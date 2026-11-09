@@ -38,14 +38,18 @@ func (c *Controller) startStallMonitor() {
 	reportsPosition := false
 	for egressType := range c.Outputs {
 		outputs = append(outputs, string(egressType))
-		// splitmuxsink answers a position query per fragment, or not at all
-		if egressType != types.EgressTypeSegments {
+		switch egressType {
+		case types.EgressTypeSegments:
+			// splitmuxsink's position restarts with every fragment (mpegtsmux) or is never reported (isofmp4mux)
+		case types.EgressTypeImages:
+			// multifilesink's position only moves once per capture interval, which can be far above the threshold
+		default:
 			reportsPosition = true
 		}
 	}
 	sort.Strings(outputs)
 	if !reportsPosition {
-		logger.Debugw("stall monitor disabled, no output reports a position", "outputs", outputs)
+		logger.Debugw("stall monitor disabled, no output reports a continuous position", "outputs", outputs)
 		return
 	}
 
