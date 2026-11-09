@@ -102,6 +102,10 @@ type SDKSourceParams struct {
 	AudioRoutes     []AudioRouteConfig
 	CaptureAudioAll bool
 	VideoSelection  *TrackSelection
+	// VideoFillerSrc, when set, is a non-live pipeline's filler in place of videotestsrc: the source sends it a GAP
+	// event for each span to show as black, the spans with no video track for a selector and the whole output for a
+	// compositor, which draws the tracks over it
+	VideoFillerSrc *app.Source
 }
 
 type AudioRouteConfig struct {
