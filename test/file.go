@@ -565,6 +565,35 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 			},
 			{
+				name:        "Media/IdentityLateJoin",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					audioOnly:        true,
+					multiParticipant: true,
+					p1ConnectDelay:   time.Second * 15,
+					audioRoutes: []*livekit.AudioRoute{
+						{
+							Match:   &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+							Channel: livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						},
+						{
+							Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: setP1Identity},
+							Channel: livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+						},
+					},
+					expectedAudioChannels: map[string]livekit.AudioChannel{
+						"p0": livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						"p1": livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+					},
+				},
+				fileOptions: &fileOptions{
+					filename: "media_identity_late_join_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				custom: r.testMediaIdentityLateJoin,
+			},
+			{
 				name:        "Media/Full",
 				requestType: types.RequestTypeMedia,
 				publishOptions: publishOptions{
@@ -624,6 +653,66 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 				fileOptions: &fileOptions{
 					filename: "media_participant_video_{time}.mp4",
+				},
+			},
+			{
+				name:        "Media/MCAP/CaptureAll",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					multiParticipant: true,
+					captureAudioAll:  true,
+					mediaVideos:      &livekit.VideoConfig{CaptureAll: true},
+				},
+				fileOptions: &fileOptions{
+					filename:     "media_mcap_capture_all_{time}.mcap",
+					fileType:     livekit.EncodedFileType_MCAP,
+					mcapChannels: 6,
+				},
+			},
+			{
+				name:        "Media/MCAP/Selectors",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					multiParticipant: true,
+					captureAudioAll:  true,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: setP1Identity},
+						Exclude: true,
+					}},
+					mediaVideos: &livekit.VideoConfig{
+						CaptureAll: true,
+						Selectors: []*livekit.VideoSelector{{
+							Match:   &livekit.VideoSelector_ParticipantIdentity{ParticipantIdentity: setP1Identity},
+							Exclude: true,
+						}},
+					},
+				},
+				fileOptions: &fileOptions{
+					filename:     "media_mcap_selectors_{time}.mcap",
+					fileType:     livekit.EncodedFileType_MCAP,
+					mcapChannels: 4,
+					mcapExcluded: "p1",
+				},
+			},
+			{
+				name:        "Media/MCAP/Republish",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:      types.MimeTypeOpus,
+					videoCodec:      types.MimeTypeAV1,
+					videoUnpublish:  time.Second * 10,
+					videoRepublish:  time.Second * 20,
+					captureAudioAll: true,
+					mediaVideos:     &livekit.VideoConfig{CaptureAll: true},
+				},
+				fileOptions: &fileOptions{
+					filename:     "media_mcap_republish_{time}.mcap",
+					fileType:     livekit.EncodedFileType_MCAP,
+					mcapChannels: 2,
 				},
 			},
 
@@ -763,6 +852,24 @@ func (r *Runner) testPassthroughOpusDTX(t *testing.T, test *testCase) {
 	r.verifyFile(t, test, p, res)
 }
 
+// testMediaIdentityLateJoin checks an identity audio route doesn't hold the start for a participant who joins later
+func (r *Runner) testMediaIdentityLateJoin(t *testing.T, test *testCase) {
+	req := r.buildRequest(test)
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+
+	egressID := r.startEgress(t, req)
+	select {
+	case <-test.publishers["p1"].connected:
+		require.FailNow(t, "egress became active only after the identity-routed participant joined")
+	default:
+	}
+
+	time.Sleep(testDuration)
+	res := r.stopEgress(t, egressID)
+	r.verifyFile(t, test, p, res)
+}
+
 func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig, res *livekit.EgressInfo) {
 	// egress info
 	require.Equal(t, res.Error == "", res.Status != livekit.EgressStatus_EGRESS_FAILED)
@@ -793,6 +900,11 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 	manifestStorage := path.Join(path.Dir(storagePath), res.EgressId+".json")
 	manifest := loadManifest(t, p.GetFileConfig().StorageConfig, manifestLocal, manifestStorage)
 	require.NotNil(t, manifest)
+
+	if p.GetFileConfig().OutputType == types.OutputTypeMCAP {
+		verifyMCAP(t, tc, localPath, fileRes)
+		return
+	}
 
 	// passthrough resolves the output codec from the published track at runtime
 	if p.Passthrough && p.VideoOutCodec == "" && tc.videoCodec != "" {

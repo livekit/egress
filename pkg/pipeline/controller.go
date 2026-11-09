@@ -211,12 +211,13 @@ func (c *Controller) BuildPipeline() error {
 		})
 	}
 
-	if c.AudioEnabled {
+	trackPreserving := c.TrackPreserving()
+	if c.AudioEnabled && !trackPreserving {
 		if err = builder.BuildAudioBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
-	if c.VideoEnabled {
+	if c.VideoEnabled && !trackPreserving {
 		var setDims func(string, int, int)
 		if c.Compositing {
 			if sdkSrc, ok := c.src.(*source.SDKSource); ok {
@@ -230,7 +231,7 @@ func (c *Controller) BuildPipeline() error {
 
 	for egressType, outputs := range c.Outputs {
 		for _, o := range outputs {
-			s, err := sink.NewSink(p, c.PipelineConfig, egressType, o, c.callbacks, c.monitor)
+			s, err := sink.NewSink(p, c.PipelineConfig, egressType, o, c.callbacks, c.monitor, c.src.GetStartedAt)
 			if err != nil {
 				return err
 			}

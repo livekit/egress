@@ -113,16 +113,16 @@
       "depNameTemplate": "golang"
     },
     {
-      "description": "GStreamer pin (.gst-version): the single source of truth for the livekit/gstreamer version this repo builds and builds against, read by the magefile and by CI, which pass it to docker build as GSTVERSION. Only the -dev tags are considered, and extractVersionTemplate strips the suffix so the file stays a bare version; the other variants of the same version are published alongside it.",
+      "description": "GStreamer pin (.gst-version): the single source of truth for the livekit/gstreamer version this repo builds and builds against, read by the magefile and by CI, which pass it to docker build as GSTVERSION. Only the -dev tags are considered, and extractVersionTemplate strips the suffix so the file holds the version alone; the other variants of the same version are published alongside it. A rebuild of the same GStreamer release is tagged with a revision (1.28.7-2-dev), so the version is X.Y.Z with an optional -N, and the regex versioning reads N as a build number: semver would read it as a prerelease and rank 1.28.7-2 below 1.28.7.",
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.gst-version$/"
       ],
-      "matchStrings": ["^(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
-      "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)-dev$",
+      "matchStrings": ["^(?<currentValue>\\d+\\.\\d+\\.\\d+(?:-\\d+)?)"],
+      "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+(?:-\\d+)?)-dev$",
       "datasourceTemplate": "docker",
       "depNameTemplate": "livekit/gstreamer",
-      "versioningTemplate": "semver"
+      "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?:-(?<build>\\d+))?$"
     },
     {
       "customType": "regex",

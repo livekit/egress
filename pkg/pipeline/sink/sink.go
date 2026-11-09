@@ -46,10 +46,14 @@ func NewSink(
 	o config.OutputConfig,
 	callbacks *gstreamer.Callbacks,
 	monitor *stats.HandlerMonitor,
+	startedAt func() int64,
 ) (Sink, error) {
 
 	switch egressType {
 	case types.EgressTypeFile:
+		if o.GetOutputType() == types.OutputTypeMCAP {
+			return newMCAPSink(p, conf, o.(*config.FileConfig), monitor, startedAt)
+		}
 		return newFileSink(p, conf, o.(*config.FileConfig), monitor)
 
 	case types.EgressTypeSegments:

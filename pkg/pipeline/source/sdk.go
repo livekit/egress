@@ -423,12 +423,17 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 	if s.VideoTrackID != "" {
 		requiredTracks[s.VideoTrackID] = struct{}{}
 	}
+	// identity and kind routes also match late joiners in onTrackPublished, so only track routes gate the start
 	for _, route := range s.AudioRoutes {
-		if route.Match.TrackID != "" {
+		if route.Match.TrackID != "" && !route.Exclude && !s.CaptureAudioAll {
 			requiredTracks[route.Match.TrackID] = struct{}{}
 		}
-		if route.Match.ParticipantIdentity != "" {
-			requiredParticipants[route.Match.ParticipantIdentity] = struct{}{}
+	}
+	if s.VideoSelection != nil && !s.VideoSelection.CaptureAll {
+		for _, sel := range s.VideoSelection.Selectors {
+			if sel.Match.TrackID != "" && !sel.Exclude {
+				requiredTracks[sel.Match.TrackID] = struct{}{}
+			}
 		}
 	}
 
@@ -732,59 +737,7 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 }
 
 func (s *SDKSource) shouldSubscribeMedia(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
-	switch pub.Kind() {
-	case lksdk.TrackKindAudio:
-		return s.matchesAudioRoute(pub, rp) != nil
-	case lksdk.TrackKindVideo:
-		return s.matchesMediaVideo(pub, rp)
-	default:
-		logger.Warnw("unknown track kind", nil)
-		return false
-	}
-}
-
-func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) *config.AudioRouteConfig {
-	for i := range s.AudioRoutes {
-		route := &s.AudioRoutes[i]
-		switch {
-		case route.Match.TrackID != "":
-			if pub.SID() == route.Match.TrackID {
-				return route
-			}
-		case route.Match.ParticipantIdentity != "":
-			if rp.Identity() == route.Match.ParticipantIdentity {
-				return route
-			}
-		case route.Match.ParticipantKind != nil:
-			if rp.Kind() == *route.Match.ParticipantKind {
-				return route
-			}
-		}
-	}
-	if s.CaptureAudioAll {
-		return &config.AudioRouteConfig{}
-	}
-	return nil
-}
-
-func (s *SDKSource) matchesMediaVideo(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
-	if s.VideoTrackID != "" {
-		return pub.SID() == s.VideoTrackID
-	}
-	// passthrough sets Identity for {publisher_identity}, which must not widen the match
-	if s.Passthrough {
-		return false
-	}
-	if s.Identity != "" {
-		if rp.Identity() != s.Identity {
-			return false
-		}
-		if s.ScreenShare {
-			return pub.Source() == livekit.TrackSource_SCREEN_SHARE
-		}
-		return pub.Source() == livekit.TrackSource_CAMERA
-	}
-	return false
+	return s.MatchesMedia(pub.TrackInfo(), rp.Identity(), rp.Kind())
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {

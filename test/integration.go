@@ -29,6 +29,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -277,7 +278,11 @@ func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {
 	// check status
 	if r.HealthPort != 0 {
 		status := r.getStatus(t)
-		require.Contains(t, status, info.EgressId)
+		requestType, outputType := egress.GetTypes(info.Request)
+		require.Equal(t, map[string]interface{}{
+			"requestType": requestType,
+			"outputType":  outputType,
+		}, status[info.EgressId])
 	}
 
 	// wait

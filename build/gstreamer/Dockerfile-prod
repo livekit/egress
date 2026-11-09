@@ -2,10 +2,14 @@ ARG GSTREAMER_VERSION
 
 FROM livekit/gstreamer:${GSTREAMER_VERSION}-base-${TARGETARCH}
 
+# re-declared so compile can pick the patches for this release
+ARG GSTREAMER_VERSION
+
 ENV DEBUG=false
 ENV OPTIMIZATIONS=true
 
 COPY compile /
+COPY patches /patches
 
 RUN /compile
 

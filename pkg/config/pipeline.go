@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -100,21 +101,18 @@ type SDKSourceParams struct {
 	VideoTracks     []*TrackSource
 	AudioRoutes     []AudioRouteConfig
 	CaptureAudioAll bool
+	VideoSelection  *TrackSelection
 }
 
 type AudioRouteConfig struct {
-	Match   AudioRouteMatch
+	Match   TrackMatch
 	Channel livekit.AudioChannel
-}
-
-type AudioRouteMatch struct {
-	TrackID             string
-	ParticipantIdentity string
-	ParticipantKind     *lksdk.ParticipantKind
+	Exclude bool
 }
 
 type TrackSource struct {
 	TrackID             string
+	TrackName           string
 	TrackKind           lksdk.TrackKind
 	ParticipantIdentity string
 	PublicationSource   livekit.TrackSource
@@ -126,7 +124,10 @@ type TrackSource struct {
 	ClockRate           uint32
 	Stereo              bool
 	TempoController     *tempo.Controller
-	OnKeyframeRequired  func()
+	// OnKeyframeRequired repeats PLIs until OnKeyframeReceived is called
+	OnKeyframeRequired func()
+	// OnKeyframeRequested sends a single throttled PLI
+	OnKeyframeRequested func()
 	OnKeyframeReceived  func()
 }
 
@@ -455,10 +456,8 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			}
 		}
 
-		if p.Passthrough {
-			if err := validatePassthrough(replayReq); err != nil {
-				return err
-			}
+		if err := p.applyPassthrough(replayReq); err != nil {
+			return err
 		}
 
 		ci, err := p.applyV2Source(replayReq)
@@ -494,10 +493,8 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 			}
 		}
 
-		if p.Passthrough {
-			if err := validatePassthrough(egressReq); err != nil {
-				return err
-			}
+		if err := p.applyPassthrough(egressReq); err != nil {
+			return err
 		}
 
 		ci, err := p.applyV2Source(egressReq)
@@ -513,6 +510,10 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 
 	default:
 		return errors.ErrInvalidInput("request")
+	}
+
+	if err := p.validateTrackPreserving(); err != nil {
+		return err
 	}
 
 	// the passthrough preset is shared with request types that always transcode
@@ -561,6 +562,34 @@ func (p *PipelineConfig) Update(request *rpc.StartEgressRequest) error {
 	}
 
 	p.initManifest()
+	return nil
+}
+
+func (p *PipelineConfig) validateTrackPreserving() error {
+	hasMCAP := false
+	outputs := 0
+	for _, o := range p.Outputs {
+		outputs += len(o)
+	}
+	for _, o := range p.Outputs[types.EgressTypeFile] {
+		hasMCAP = hasMCAP || o.GetOutputType() == types.OutputTypeMCAP
+	}
+
+	switch {
+	case p.VideoSelection != nil && !hasMCAP:
+		return errors.ErrInvalidInput("media.videos requires an MCAP file output")
+	case !hasMCAP:
+		return nil
+	case p.RequestType != types.RequestTypeMedia:
+		return errors.ErrInvalidInput("MCAP requires a media source")
+	case outputs != 1:
+		return errors.ErrInvalidInput("MCAP must be the only output")
+	}
+	for _, r := range p.AudioRoutes {
+		if r.Channel != livekit.AudioChannel_AUDIO_CHANNEL_BOTH {
+			return errors.ErrInvalidInput("MCAP audio route channel")
+		}
+	}
 	return nil
 }
 
@@ -690,6 +719,10 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 		p.RequestType = types.RequestTypeMedia
 		p.SourceType = types.SourceTypeSDK
 
+		if media.Data != nil {
+			return connectionInfoRequired, errors.ErrInvalidInput("media.data is not supported yet")
+		}
+
 		// video
 		switch v := media.Video.(type) {
 		case *livekit.MediaSource_VideoTrackId:
@@ -704,36 +737,17 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 			p.VideoDecoding = true
 			p.Identity = v.ParticipantVideo.Identity
 			p.ScreenShare = v.ParticipantVideo.PreferScreenShare
+		case *livekit.MediaSource_Videos:
+			selection, err := parseVideoSelection(v.Videos)
+			if err != nil {
+				return connectionInfoRequired, err
+			}
+			p.VideoEnabled = true
+			p.VideoSelection = selection
 		}
 
-		// audio
-		if media.Audio != nil {
-			if media.Audio.CaptureAll {
-				p.AudioEnabled = true
-				p.AudioTranscoding = true
-				p.CaptureAudioAll = true
-			} else if len(media.Audio.Routes) > 0 {
-				p.AudioEnabled = true
-				p.AudioTranscoding = !p.Passthrough
-				for _, route := range media.Audio.Routes {
-					arc := AudioRouteConfig{
-						Channel: route.Channel,
-					}
-					switch m := route.Match.(type) {
-					case *livekit.AudioRoute_TrackId:
-						arc.Match.TrackID = m.TrackId
-					case *livekit.AudioRoute_ParticipantIdentity:
-						arc.Match.ParticipantIdentity = m.ParticipantIdentity
-					case *livekit.AudioRoute_ParticipantKind:
-						kind := lksdk.ParticipantKind(m.ParticipantKind)
-						arc.Match.ParticipantKind = &kind
-					}
-					p.AudioRoutes = append(p.AudioRoutes, arc)
-				}
-				if p.Passthrough {
-					p.TrackID = p.AudioRoutes[0].Match.TrackID
-				}
-			}
+		if err := p.applyMediaAudio(media.Audio); err != nil {
+			return connectionInfoRequired, err
 		}
 
 		if !p.AudioEnabled && !p.VideoEnabled {
@@ -745,6 +759,87 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 	}
 
 	return connectionInfoRequired, nil
+}
+
+func (p *PipelineConfig) applyMediaAudio(audio *livekit.AudioConfig) error {
+	if audio == nil || (!audio.CaptureAll && len(audio.Routes) == 0) {
+		return nil
+	}
+	if !audio.CaptureAll && !slices.ContainsFunc(audio.Routes, func(r *livekit.AudioRoute) bool { return !r.Exclude }) {
+		return errors.ErrInvalidInput("media.audio")
+	}
+
+	p.AudioEnabled = true
+	p.AudioTranscoding = !p.Passthrough
+	p.CaptureAudioAll = audio.CaptureAll
+	for _, route := range audio.Routes {
+		p.AudioRoutes = append(p.AudioRoutes, AudioRouteConfig{
+			Match:   newAudioTrackMatch(route),
+			Channel: route.Channel,
+			Exclude: route.Exclude,
+		})
+	}
+	if p.Passthrough {
+		p.TrackID = p.AudioRoutes[0].Match.TrackID
+	}
+	return nil
+}
+
+func newAudioTrackMatch(route *livekit.AudioRoute) TrackMatch {
+	m := TrackMatch{TrackName: route.TrackName}
+	switch v := route.Match.(type) {
+	case *livekit.AudioRoute_TrackId:
+		m.TrackID = v.TrackId
+	case *livekit.AudioRoute_ParticipantIdentity:
+		m.ParticipantIdentity = v.ParticipantIdentity
+	case *livekit.AudioRoute_ParticipantKind:
+		kind := lksdk.ParticipantKind(v.ParticipantKind)
+		m.ParticipantKind = &kind
+	}
+	return m
+}
+
+func parseVideoSelection(videos *livekit.VideoConfig) (*TrackSelection, error) {
+	if videos == nil {
+		return nil, errors.ErrInvalidInput("media.videos")
+	}
+	selection := &TrackSelection{CaptureAll: videos.CaptureAll}
+	capturesAny := videos.CaptureAll
+	for _, s := range videos.Selectors {
+		if s == nil {
+			return nil, errors.ErrInvalidInput("media.videos.selectors")
+		}
+		m := TrackMatch{TrackName: s.TrackName}
+		switch v := s.Match.(type) {
+		case *livekit.VideoSelector_TrackId:
+			m.TrackID = v.TrackId
+		case *livekit.VideoSelector_ParticipantIdentity:
+			m.ParticipantIdentity = v.ParticipantIdentity
+		}
+		if m == (TrackMatch{}) {
+			return nil, errors.ErrInvalidInput("media.videos.selectors")
+		}
+		capturesAny = capturesAny || !s.Exclude
+		selection.Selectors = append(selection.Selectors, TrackSelector{Match: m, Exclude: s.Exclude})
+	}
+	if !capturesAny {
+		return nil, errors.ErrInvalidInput("media.videos")
+	}
+	return selection, nil
+}
+
+// MCAP is passthrough by construction, so the preset's single-track remux doesn't apply to it
+func (p *PipelineConfig) applyPassthrough(req egress.EgressRequest) error {
+	if !p.Passthrough {
+		return nil
+	}
+	for _, o := range req.GetOutputs() {
+		if f := o.GetFile(); f != nil && f.FileType == livekit.EncodedFileType_MCAP {
+			p.Passthrough = false
+			return nil
+		}
+	}
+	return validatePassthrough(req)
 }
 
 // rejects shapes a remux cannot express — downgrading silently would return re-encoded media
@@ -763,6 +858,8 @@ func validatePassthrough(req egress.EgressRequest) error {
 		videoTrackID = v.VideoTrackId
 	case *livekit.MediaSource_ParticipantVideo:
 		return errors.ErrInvalidInput("passthrough participant_video")
+	case *livekit.MediaSource_Videos:
+		return errors.ErrInvalidInput("media.videos requires an MCAP file output")
 	}
 
 	var audioTrackID string
@@ -773,6 +870,9 @@ func validatePassthrough(req egress.EgressRequest) error {
 		case len(media.Audio.Routes) > 1:
 			return errors.ErrInvalidInput("passthrough audio routes")
 		case len(media.Audio.Routes) == 1:
+			if media.Audio.Routes[0].Exclude || media.Audio.Routes[0].TrackName != "" {
+				return errors.ErrInvalidInput("passthrough audio route")
+			}
 			m, ok := media.Audio.Routes[0].Match.(*livekit.AudioRoute_TrackId)
 			if !ok {
 				return errors.ErrInvalidInput("passthrough audio route match")
@@ -998,7 +1098,16 @@ func (p *PipelineConfig) GetEncodedOutputs() []OutputConfig {
 
 // OpusPassthrough reports whether a track of this codec is written to the file without decoding
 func (p *PipelineConfig) OpusPassthrough(mimeType types.MimeType) bool {
-	return p.Passthrough && p.RequestType == types.RequestTypeMedia && mimeType == types.MimeTypeOpus && p.GetFileConfig() != nil
+	if mimeType != types.MimeTypeOpus {
+		return false
+	}
+	return p.TrackPreserving() || p.Passthrough && p.RequestType == types.RequestTypeMedia && p.GetFileConfig() != nil
+}
+
+// TrackPreserving reports whether each track is written to its own MCAP channel instead of being mixed
+func (p *PipelineConfig) TrackPreserving() bool {
+	fc := p.GetFileConfig()
+	return fc != nil && fc.OutputType == types.OutputTypeMCAP
 }
 
 func isHttp(parsedUrl *url.URL) bool {

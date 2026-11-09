@@ -471,6 +471,7 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 
 	ts := &config.TrackSource{
 		TrackID:             pub.SID(),
+		TrackName:           pub.Name(),
 		TrackKind:           pub.Kind(),
 		ParticipantIdentity: rp.Identity(),
 		PublicationSource:   pub.Source(),
@@ -484,7 +485,7 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 
 	// Match here (not at subscribe time): rp.Kind() can race with OnTrackPublished but is settled by writer creation.
 	if s.RequestType == types.RequestTypeMedia {
-		if route := s.matchesAudioRoute(pub, rp); route != nil {
+		if route := s.MatchMediaAudio(pub.TrackInfo(), rp.Identity(), rp.Kind()); route != nil {
 			ch := route.Channel
 			ts.AudioChannel = &ch
 		}

@@ -622,6 +622,12 @@ func buildVideoAppSrcBin(parent *gstreamer.Bin, conf *config.PipelineConfig, ts 
 		if err != nil {
 			return nil, nil, errors.ErrGstPipelineError(err)
 		}
+		if conf.TrackPreserving() {
+			// SPS/PPS on every IDR lets playback start at any keyframe
+			if err = h264Parse.SetProperty("config-interval", -1); err != nil {
+				return nil, nil, errors.ErrGstPipelineError(err)
+			}
+		}
 		if err = appSrcBin.AddElement(h264Parse); err != nil {
 			return nil, nil, err
 		}

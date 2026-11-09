@@ -169,7 +169,7 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOTOOLCHAIN=local
 
 # install chrome
-COPY --from=livekit/chrome-installer:156.0.8078.47 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:157.0.8103.38 /chrome-installer /chrome-installer
 
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
 
