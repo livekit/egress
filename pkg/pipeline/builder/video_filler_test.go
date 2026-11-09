@@ -25,7 +25,7 @@ func TestCoordinatedFillerCoversNoTrackSpans(t *testing.T) {
 	for _, codec := range gapTestCodecs {
 		t.Run(codec.name, func(t *testing.T) {
 			packets := gapTestRTPPackets(t, codec, 2*gapTestFPS)
-			firstSecond, _ := splitAt(packets, time.Second)
+			firstSecond, secondSecond := splitAt(packets, time.Second)
 			// a decoder may hold the last frame until its next input, and videorate the last frame it got
 			held := 3 * gapTestFrame
 
@@ -37,6 +37,19 @@ func TestCoordinatedFillerCoversNoTrackSpans(t *testing.T) {
 
 				require.Equal(t, time.Duration(0), h.out[0].pts, "the track's first frame was dropped")
 				requireColor(t, h.out, 0, time.Second-held, true)
+			})
+
+			t.Run("MuteCallbackKeepsTrack", func(t *testing.T) {
+				// a mute callback leaves the selector on the track, whose own GAP shows a mute, so the unfed filler
+				// never takes over from a track that keeps sending frames
+				h := newCoordinatedFillerHarness(t, codec, true)
+				h.push(firstSecond, 0)
+				h.requireOutputThrough(time.Second - held)
+				h.callbacks.OnTrackMuted("TR_filler_test")
+				h.push(secondSecond, time.Second)
+				h.requireOutputThrough(2*time.Second - held)
+
+				requireColor(t, h.out, 0, 2*time.Second-held, true)
 			})
 
 			t.Run("LatePublishAndEOS", func(t *testing.T) {
@@ -69,6 +82,18 @@ func TestCoordinatedFillerCoversNoTrackSpans(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestNonLiveVideoRequiresFiller(t *testing.T) {
+	// without a filler a non-live pipeline would fall back to an unpaced videotestsrc, so the video bin refuses it
+	initGStreamer(t)
+	p, err := gstreamer.NewPipeline("no_filler_test", 0, &gstreamer.Callbacks{})
+	require.NoError(t, err)
+	conf := &config.PipelineConfig{Live: false}
+	conf.SourceType = types.SourceTypeSDK
+	conf.VideoDecoding = true
+	conf.Width, conf.Height, conf.Framerate = 64, 64, gapTestFPS
+	require.Error(t, BuildVideoBin(p, conf, func(string, int, int) {}))
 }
 
 func TestCoordinatedFillerIsCompositorBackground(t *testing.T) {

@@ -157,8 +157,8 @@ type videoGapHarness struct {
 	out  []gapTestOutput
 }
 
-// newSelectorGapHarness builds the video bin of a non-live, non-composited pipeline with one track, whose decoded
-// output a raw video sink pulls in place of the encoder
+// newSelectorGapHarness builds the video bin of a non-live, non-composited pipeline with one track and a filler the
+// test never feeds, whose decoded output a raw video sink pulls in place of the encoder
 func newSelectorGapHarness(t *testing.T, codec gapTestCodec) *videoGapHarness {
 	p, err := gstreamer.NewPipeline("selector_gap_test", 0, &gstreamer.Callbacks{})
 	require.NoError(t, err)
@@ -166,7 +166,10 @@ func newSelectorGapHarness(t *testing.T, codec gapTestCodec) *videoGapHarness {
 	srcEl, err := gst.NewElement("appsrc")
 	require.NoError(t, err)
 	src := app.SrcFromElement(srcEl)
+	fillerEl, err := gst.NewElement("appsrc")
+	require.NoError(t, err)
 	conf := &config.PipelineConfig{Live: false}
+	conf.VideoFillerSrc = app.SrcFromElement(fillerEl)
 	conf.SourceType = types.SourceTypeSDK
 	conf.VideoDecoding = true
 	conf.Width, conf.Height, conf.Framerate = 64, 64, gapTestFPS

@@ -250,8 +250,9 @@ func (b *VideoBin) buildVideoQueue(name string) (*gst.Element, error) {
 	return queue, nil
 }
 
+// onTrackMuted hides a live track; a non-live source shows a mute with the track's own GAP, at its media time
 func (b *VideoBin) onTrackMuted(trackID string) {
-	if b.bin.GetState() > gstreamer.StateRunning {
+	if !b.conf.Live || b.bin.GetState() > gstreamer.StateRunning {
 		return
 	}
 
@@ -267,8 +268,9 @@ func (b *VideoBin) onTrackMuted(trackID string) {
 	}
 }
 
+// onTrackUnmuted shows a live track again; a non-live track's next frame does that on its own
 func (b *VideoBin) onTrackUnmuted(trackID string) {
-	if b.bin.GetState() > gstreamer.StateRunning {
+	if !b.conf.Live || b.bin.GetState() > gstreamer.StateRunning {
 		return
 	}
 
@@ -468,6 +470,10 @@ func (b *VideoBin) buildSDKInput() error {
 	b.lastDimensions = make(map[string]videoDimensions)
 
 	if b.conf.VideoDecoding {
+		// a non-live pipeline would run videotestsrc unpaced, ahead of every track
+		if !b.conf.Live && b.conf.VideoFillerSrc == nil {
+			return errors.New("non-live video decoding requires VideoFillerSrc")
+		}
 		if b.conf.Compositing {
 			if err := b.addCompositor(); err != nil {
 				return err
@@ -1150,8 +1156,10 @@ func (b *VideoBin) addVideoFillerSrcBin() error {
 		return err
 	}
 	pad := b.selector.GetRequestPad("sink_%u")
+	// the pad's first buffer probe, so the probe below sees the fills it chains
 	installVideoGapFill(pad, newBlackFrame, false)
-	// an unselected mark passes, waits in the selector and is pushed on the switch; only stale ones are dropped
+	// only stale marks are dropped here; an unselected mark waits in the selector, which pushes it if the switch
+	// comes while it waits and drops it once the active pad's running time passes it
 	pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		pts := uint64(info.GetBuffer().PresentationTimestamp())
 		b.mu.Lock()
@@ -1464,6 +1472,7 @@ func (b *VideoBin) createSrcPadLocked(trackID, name string) error {
 		b.layoutAlpha[name] = 1.0
 	} else {
 		if !b.conf.Live {
+			// the pad's first buffer probe, so the probe below sees the fills it chains
 			installVideoGapFill(pad, newBlackFrame, b.coordinatedFiller)
 		}
 		pad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
