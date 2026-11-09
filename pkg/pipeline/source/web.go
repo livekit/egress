@@ -222,6 +222,15 @@ func chromedpErrorf(format string, args ...any) {
 	}
 }
 
+// insecureChromeFlags returns the chrome flags controlled by the `insecure` config entry
+func insecureChromeFlags(insecure bool) map[string]interface{} {
+	return map[string]interface{}{
+		"disable-web-security":           insecure,
+		"allow-running-insecure-content": insecure,
+		"ignore-certificate-errors":      insecure,
+	}
+}
+
 // launches chrome and navigates to the url
 func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) error {
 	_, span := tracer.Start(ctx, "WebInput.launchChrome")
@@ -287,13 +296,16 @@ func (s *WebSource) launchChrome(ctx context.Context, p *config.PipelineConfig) 
 
 		// config
 		chromedp.Flag("window-size", fmt.Sprintf("%d,%d", p.Width, p.Height)),
-		chromedp.Flag("disable-web-security", p.Insecure),
-		chromedp.Flag("allow-running-insecure-content", p.Insecure),
 		chromedp.Flag("no-sandbox", !p.EnableChromeSandbox),
 
 		// output
 		chromedp.Env(fmt.Sprintf("PULSE_SINK=%s", p.Info.EgressId)),
 		chromedp.Flag("display", p.Display),
+	}
+
+	// insecure mode
+	for k, v := range insecureChromeFlags(p.Insecure) {
+		opts = append(opts, chromedp.Flag(k, v))
 	}
 
 	// custom
