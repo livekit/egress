@@ -35,6 +35,7 @@ import (
 	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/media-sdk/jitter"
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go/v2"
@@ -54,6 +55,9 @@ const (
 	// Threshold of consecutive FlowFlushing returns before the writer gives up
 	// and drains. ~2 seconds of 20ms audio packets.
 	flushingThreshold = 100
+
+	// mp4mux and webmmux refuse video narrower or shorter than this
+	minMuxedVideoDimension = 16
 )
 
 var (
@@ -99,9 +103,10 @@ type AppWriter struct {
 	trackSync    synchronizer.TrackSync
 	driftHandler DriftHandler
 
-	opusPassthrough bool
-	gapFiller       opusGapFiller
-	rtpFiller       *RTPGapFiller // set when the tempo pacer resamples this track
+	opusPassthrough  bool
+	videoPassthrough bool // set once the pipeline is playing
+	gapFiller        opusGapFiller
+	rtpFiller        *RTPGapFiller // set when the tempo pacer resamples this track
 
 	lastPTS              time.Duration
 	lastPipelineCheckPTS time.Duration
@@ -565,6 +570,7 @@ func (w *AppWriter) pushSamples() {
 	if !w.waitFor(w.playing.Watch()) {
 		return
 	}
+	w.videoPassthrough = !w.conf.VideoDecoding && (w.codec == types.MimeTypeH264 || w.codec == types.MimeTypeVP8)
 
 	for {
 		w.samplesLock.Lock()
@@ -584,6 +590,13 @@ func (w *AppWriter) pushSamples() {
 			w.samplesTail = nil
 		}
 		w.samplesLock.Unlock()
+
+		// Drop undersized keyframes which may otherwise stop the muxer
+		if w.videoPassthrough && isUndersizedKeyframe(w.codec, item.sample) {
+			w.stats.packetsDropped.Add(uint64(len(item.sample)))
+			w.logger.Debugw("dropping keyframe below the muxer's minimum size")
+			continue
+		}
 
 		for _, pkt := range item.sample {
 			if err := w.pushPacket(pkt); err != nil {
@@ -606,6 +619,39 @@ func (w *AppWriter) pushSamples() {
 			}
 		}
 	}
+}
+
+// isUndersizedKeyframe reports whether sample is a keyframe whose declared size the muxers refuse
+func isUndersizedKeyframe(mimeType types.MimeType, sample []jitter.ExtPacket) bool {
+	if len(sample) == 0 {
+		return false
+	}
+
+	var size codec.VideoSize
+	switch mimeType {
+	case types.MimeTypeH264:
+		// the SPS can follow other NAL units, such as an access unit delimiter
+		for _, pkt := range sample {
+			if codec.IsH264KeyFrame(pkt.Payload) {
+				size = codec.ExtractH264VideoSize(pkt.Payload)
+				break
+			}
+		}
+	case types.MimeTypeVP8:
+		payload := sample[0].Payload
+		var vp8 codec.VP8
+		if err := vp8.Unmarshal(payload); err != nil {
+			return false
+		}
+		size = codec.ExtractVP8VideoSize(&vp8, payload)
+	default:
+		return false
+	}
+
+	if size.Width == 0 && size.Height == 0 {
+		return false
+	}
+	return size.Width < minMuxedVideoDimension || size.Height < minMuxedVideoDimension
 }
 
 // fillOpusToEnd extends a live passthrough track with silence up to the stop time

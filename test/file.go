@@ -393,6 +393,30 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 				custom: r.testTrackH264AspectSwitch,
 			},
+			{
+				name:        "Track/H264BlankFrames",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					videoOnly: true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "t_{track_id}_blank_frames_{time}.mp4",
+					outputType: types.OutputTypeMP4,
+				},
+				custom: r.testTrackBlankFrames(types.MimeTypeH264),
+			},
+			{
+				name:        "Track/VP8BlankFrames",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					videoOnly: true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "t_{track_id}_blank_frames_{time}.webm",
+					outputType: types.OutputTypeWebM,
+				},
+				custom: r.testTrackBlankFrames(types.MimeTypeVP8),
+			},
 			// {
 			// 	name:       "Track/VP9",
 			// 	videoOnly:  true,
