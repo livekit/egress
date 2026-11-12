@@ -42,6 +42,10 @@ const keyframeHistorySize = 10
 //
 // After that it's mostly inert: it just patches the occasional baseparse
 // missing-PTS buffer from the last good value, so downstream stays monotonic.
+//
+// With a capture gate (image-only egresses with image_keyframe_decoding), the
+// gate decides instead which frames reach the decoder, before and after the
+// first keyframe, and the probe requests and reports one keyframe per capture.
 type keyframeProbe struct {
 	trackID  string
 	mimeType types.MimeType
@@ -49,7 +53,9 @@ type keyframeProbe struct {
 	srcPad     *gst.Pad
 	srcProbeID uint64
 
+	onKeyframeRequired func()
 	onKeyframeReceived func()
+	gate               *captureGate // nil unless only image outputs consume the decoded frames
 
 	logger logger.Logger
 
@@ -65,12 +71,15 @@ type keyframeProbe struct {
 	totalIntervals   int
 }
 
+// newKeyframeProbe attaches the probe to element's src pad. A non-zero
+// captureInterval gates the decoder to one keyframe per interval.
 func newKeyframeProbe(
 	trackID string,
 	mimeType types.MimeType,
 	element *gst.Element,
 	onKeyframeRequired func(),
 	onKeyframeReceived func(),
+	captureInterval time.Duration,
 ) (*keyframeProbe, error) {
 	srcPad := element.GetStaticPad("src")
 	if srcPad == nil {
@@ -81,9 +90,13 @@ func newKeyframeProbe(
 		trackID:            trackID,
 		mimeType:           mimeType,
 		srcPad:             srcPad,
+		onKeyframeRequired: onKeyframeRequired,
 		onKeyframeReceived: onKeyframeReceived,
 		logger:             logger.GetLogger().WithValues("trackID", trackID, "component", "keyframe_probe", "mime", mimeType),
 		keyframePTS:        make([]time.Duration, 0, keyframeHistorySize),
+	}
+	if captureInterval > 0 {
+		p.gate = newCaptureGate(captureInterval)
 	}
 	p.keyframePending = true
 
@@ -132,6 +145,10 @@ func (p *keyframeProbe) processBuffer(buffer *gst.Buffer) gst.PadProbeReturn {
 
 	isKeyframe := buffer.GetFlags()&gst.BufferFlagDeltaUnit == 0
 
+	if p.gate != nil {
+		return p.processGated(pts, isKeyframe)
+	}
+
 	if isKeyframe {
 		if p.keyframePending {
 			p.keyframePending = false
@@ -149,6 +166,27 @@ func (p *keyframeProbe) processBuffer(buffer *gst.Buffer) gst.PadProbeReturn {
 		return gst.PadProbeDrop
 	}
 
+	return gst.PadProbeOK
+}
+
+// processGated lets the capture gate pick the frames to decode. Each captured
+// keyframe is reported, so the app writer stops repeating its request.
+func (p *keyframeProbe) processGated(pts time.Duration, isKeyframe bool) gst.PadProbeReturn {
+	forward, requestKeyframe := p.gate.decide(pts, isKeyframe)
+	if requestKeyframe && p.onKeyframeRequired != nil {
+		p.logger.Debugw("capture due without a keyframe, requesting one", "pts", pts)
+		p.onKeyframeRequired()
+	}
+	if !forward {
+		return gst.PadProbeDrop
+	}
+	if isKeyframe {
+		p.keyframePending = false
+		if p.onKeyframeReceived != nil {
+			p.onKeyframeReceived()
+		}
+		p.trackKeyframe(pts)
+	}
 	return gst.PadProbeOK
 }
 
