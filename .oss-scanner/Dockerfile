@@ -16,7 +16,7 @@
 # hardcoded: keep them in sync with .gst-version and version.TemplateVersion.
 FROM livekit/egress-templates:sha-94e7807 AS template
 
-FROM livekit/gstreamer:1.28.7-1-dev
+FROM livekit/gstreamer:1.28.9-dev
 
 ARG TARGETARCH
 
