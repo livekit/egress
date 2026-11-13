@@ -34,10 +34,13 @@ type StorageConfig struct {
 	GCP    *storage.GCPConfig    `yaml:"gcp"`    // upload to gcp
 	AliOSS *storage.AliOSSConfig `yaml:"alioss"` // upload to aliyun
 	OCI    *storage.OCIConfig    `yaml:"oci"`    // upload to oracle
+
+	// FromRequest is set for storage supplied in the egress request; storage from the config file belongs to the operator.
+	FromRequest bool `yaml:"-"`
 }
 
 func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageConfig, error) {
-	sc := &StorageConfig{}
+	sc := &StorageConfig{FromRequest: true}
 	if p.StorageConfig != nil {
 		sc.Prefix = p.StorageConfig.Prefix
 		sc.GeneratePresignedUrl = p.StorageConfig.GeneratePresignedUrl
