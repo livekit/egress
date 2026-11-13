@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/storage"
 )
 
 func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
@@ -111,6 +112,22 @@ func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
 		require.NotNil(t, sc.S3)
 		require.Equal(t, "SERVER_SIDE_EXT_ID", sc.S3.AssumeRoleExternalID)
 	})
+}
+
+func TestStorageConfigFromRequest(t *testing.T) {
+	operator := &StorageConfig{S3: &storage.S3Config{Bucket: "operator-bucket"}}
+	p := &PipelineConfig{BaseConfig: BaseConfig{StorageConfig: operator}}
+
+	sc, err := p.getStorageConfig(&livekit.EncodedFileOutput{
+		Output: &livekit.EncodedFileOutput_Gcp{Gcp: &livekit.GCPUpload{Bucket: "request-bucket"}},
+	})
+	require.NoError(t, err)
+	require.True(t, sc.FromRequest)
+
+	sc, err = p.getStorageConfig(&livekit.EncodedFileOutput{})
+	require.NoError(t, err)
+	require.False(t, sc.FromRequest)
+	require.False(t, operator.FromRequest)
 }
 
 func TestSegmentNaming(t *testing.T) {
