@@ -118,7 +118,7 @@ func getUploader(conf *config.StorageConfig) (*store, error) {
 		name = "Local"
 	}
 	if err != nil {
-		return nil, uploadFailed(conf, name, err)
+		return nil, psrpc.NewErrorf(failureCode(conf), "%s storage setup failed: %w", name, err)
 	}
 
 	return &store{
