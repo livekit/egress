@@ -25,6 +25,7 @@ import {
 import EgressHelper from '@livekit/egress-sdk';
 import { ConnectionState, Track } from 'livekit-client';
 import { ReactElement, useEffect, useState } from 'react';
+import { startInboundStatsLogging } from './inboundStats';
 import SingleSpeakerLayout from './SingleSpeakerLayout';
 import SpeakerLayout from './SpeakerLayout';
 
@@ -111,6 +112,8 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
     }, 100);
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
+
+  useEffect(() => startInboundStatsLogging(room), [room]);
 
   useEffect(() => {
     if (screenshareTracks.length > 0 && screenshareTracks[0].publication) {
