@@ -451,9 +451,11 @@ func (b *AudioBin) addAudioFillerSrcBin() error {
 	if err = src.SetProperty("caps", caps); err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
-	if srcPad := src.GetStaticPad("src"); srcPad != nil {
-		installFillerSilence(srcPad)
+	srcPad := src.GetStaticPad("src")
+	if srcPad == nil {
+		return errors.New("audio filler appsrc has no src pad")
 	}
+	installFillerSilence(srcPad)
 
 	return fillerBin.AddElement(src.Element)
 }
