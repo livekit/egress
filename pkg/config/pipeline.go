@@ -106,6 +106,9 @@ type SDKSourceParams struct {
 	// event for each span to show as black, the spans with no video track for a selector and the whole output for a
 	// compositor, which draws the tracks over it
 	VideoFillerSrc *app.Source
+	// AudioFillerSrc, when set, is a non-live mixing pipeline's silence in place of audiotestsrc: the source sends it a
+	// GAP event for each span of the output it covers, so the mixer runs to the end of the output with or without tracks
+	AudioFillerSrc *app.Source
 }
 
 type AudioRouteConfig struct {
