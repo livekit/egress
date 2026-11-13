@@ -38,10 +38,12 @@ export function startInboundStatsLogging(room: Room): () => void {
 
   const sample = async () => {
     const reads = [];
+    const present = new Set<string>();
     for (const p of Array.from(room.remoteParticipants.values())) {
       for (const pub of Array.from(p.trackPublications.values())) {
         if (pub.track) {
           const identity = p.identity;
+          present.add(pub.trackSid);
           reads.push(
             pub.track
               .getRTCStatsReport()
@@ -53,14 +55,12 @@ export function startInboundStatsLogging(room: Room): () => void {
     }
     const results = await Promise.all(reads);
 
-    const seen = new Set<string>();
     for (const { identity, pub, report } of results) {
       report?.forEach((s) => {
         if (s.type !== 'inbound-rtp') {
           return;
         }
         const stats = s as RTCInboundRtpStreamStats;
-        seen.add(pub.trackSid);
 
         const zero = { delay: 0, targetDelay: 0, minimumDelay: 0, emitted: 0 };
         let prev = previous.get(pub.trackSid) ?? zero;
@@ -104,7 +104,7 @@ export function startInboundStatsLogging(room: Room): () => void {
     }
 
     for (const sid of Array.from(previous.keys())) {
-      if (!seen.has(sid)) {
+      if (!present.has(sid)) {
         previous.delete(sid);
       }
     }
