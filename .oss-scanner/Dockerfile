@@ -14,7 +14,7 @@
 
 # Build image for Anthropic's OSS Scanner. The scanner passes no build args, so the tags are
 # hardcoded: keep them in sync with .gst-version and version.TemplateVersion.
-FROM livekit/egress-templates:sha-94e7807 AS template
+FROM livekit/egress-templates:sha-d4505b5 AS template
 
 FROM livekit/gstreamer:1.28.9-dev
 
