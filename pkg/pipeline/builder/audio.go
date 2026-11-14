@@ -15,10 +15,12 @@
 package builder
 
 import (
+	"bytes"
 	"fmt"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
+	"github.com/go-gst/go-gst/gst/audio"
 	"github.com/linkdata/deadlock"
 	"go.uber.org/atomic"
 
@@ -165,6 +167,14 @@ func (b *AudioBin) buildSDKInput() error {
 	}
 	if b.conf.Live {
 		if err := b.addAudioTestSrcBin(); err != nil {
+			return err
+		}
+	} else {
+		// a non-live mixer with only track pads stops at the last track's end and outputs nothing before the first
+		if b.conf.AudioFillerSrc == nil {
+			return errors.New("non-live audio mixing requires AudioFillerSrc")
+		}
+		if err := b.addAudioFillerSrcBin(); err != nil {
 			return err
 		}
 	}
@@ -413,6 +423,108 @@ func (b *AudioBin) addAudioTestSrcBin() error {
 	}
 
 	return testSrcBin.AddElements(audioTestSrc, audioCaps)
+}
+
+// addAudioFillerSrcBin adds the non-live filler: the source's appsrc on a mixer pad of its own, whose GAP events become
+// silence, so the mixer's output reaches the filler's last GAP whether any track's pad is open or not
+func (b *AudioBin) addAudioFillerSrcBin() error {
+	fillerBin := b.bin.NewBin(fmt.Sprintf("%s_filler_src", audioBinName))
+	if err := b.bin.AddSourceBin(fillerBin); err != nil {
+		return err
+	}
+
+	src := b.conf.AudioFillerSrc
+	// an EOS event sent to the appsrc flushes its queue, dropping GAPs still in it; end_of_stream drains it first
+	fillerBin.SetEOSFunc(func() bool {
+		src.EndStream()
+		return false
+	})
+	src.SetArg("format", "time")
+	if err := src.SetProperty("is-live", false); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	// with caps set, the appsrc sends them and a default segment ahead of its first GAP
+	caps, err := newAudioCaps(b.conf, livekit.AudioChannel_AUDIO_CHANNEL_BOTH)
+	if err != nil {
+		return err
+	}
+	if err = src.SetProperty("caps", caps); err != nil {
+		return errors.ErrGstPipelineError(err)
+	}
+	srcPad := src.GetStaticPad("src")
+	if srcPad == nil {
+		return errors.New("audio filler appsrc has no src pad")
+	}
+	installFillerSilence(srcPad)
+
+	return fillerBin.AddElement(src.Element)
+}
+
+// installFillerSilence turns the filler's GAP events into silence in the format of the pad's last caps: the mixer
+// drops a GAP buffer whole after mixing a single block of it, then waits on the pad for more data, so its output
+// would trail the filler's cover. A GAP with no raw audio caps to size it passes through unchanged.
+func installFillerSilence(srcPad *gst.Pad) {
+	const maxChunk = 100 * time.Millisecond
+	// set from each CAPS event; the appsrc's streaming thread sends both the caps and the GAPs
+	var (
+		rate, channels int
+		silence        []byte
+		warned         bool
+	)
+	srcPad.AddProbe(gst.PadProbeTypeEventDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		event := info.GetEvent()
+		if event == nil {
+			return gst.PadProbeOK
+		}
+		switch event.Type() {
+		case gst.EventTypeCaps:
+			rate, channels, silence = 0, 0, nil
+			caps := event.ParseCaps()
+			if audioInfo, ok := audio.InfoFromCaps(caps); ok {
+				rate, channels, silence = audioInfo.Rate(), audioInfo.Channels(), audioInfo.FormatInfo().Silence()
+			} else {
+				logger.Warnw("audio filler caps are not raw audio", nil, "caps", caps.String())
+			}
+			return gst.PadProbeOK
+		case gst.EventTypeGap:
+		default:
+			return gst.PadProbeOK
+		}
+		if rate <= 0 || channels <= 0 || len(silence) == 0 {
+			if !warned {
+				warned = true
+				logger.Warnw("audio filler gap without raw audio caps, forwarding gaps", nil)
+			}
+			return gst.PadProbeOK
+		}
+
+		start, duration := event.ParseGap()
+		end := start + duration
+		// samples are counted from the timeline's origin so consecutive GAPs join without rounding drift; splitting at
+		// whole seconds keeps every product within int64
+		toSample := func(pts time.Duration) int64 {
+			return int64(pts/time.Second)*int64(rate) + int64(pts%time.Second)*int64(rate)/int64(time.Second)
+		}
+		toPTS := func(sample int64) time.Duration {
+			return time.Duration(sample/int64(rate))*time.Second +
+				time.Duration(sample%int64(rate))*time.Second/time.Duration(rate)
+		}
+		for from := start; from < end; {
+			to := min(from+maxChunk, end)
+			samples := toSample(to) - toSample(from)
+			if samples > 0 {
+				buf := gst.NewBufferFromBytes(bytes.Repeat(silence, int(samples)*channels))
+				buf.SetPresentationTimestamp(gst.ClockTime(toPTS(toSample(from))))
+				buf.SetDuration(gst.ClockTime(toPTS(toSample(to)) - toPTS(toSample(from))))
+				if flow := pad.Push(buf); flow != gst.FlowOK {
+					logger.Debugw("audio filler silence refused", "flow", flow, "pts", from)
+					return gst.PadProbeDrop
+				}
+			}
+			from = to
+		}
+		return gst.PadProbeDrop
+	})
 }
 
 func (b *AudioBin) addMixer() error {
@@ -749,6 +861,24 @@ func newAudioFloatCapsFilter(p *config.PipelineConfig, channel livekit.AudioChan
 }
 
 func newAudioCapsFilter(p *config.PipelineConfig, channel livekit.AudioChannel) (*gst.Element, error) {
+	caps, err := newAudioCaps(p, channel)
+	if err != nil {
+		return nil, err
+	}
+
+	capsFilter, err := gst.NewElement("capsfilter")
+	if err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+	if err = capsFilter.SetProperty("caps", caps); err != nil {
+		return nil, errors.ErrGstPipelineError(err)
+	}
+
+	return capsFilter, nil
+}
+
+// newAudioCaps is the raw S16 format the mixer runs in, for the given channel
+func newAudioCaps(p *config.PipelineConfig, channel livekit.AudioChannel) (*gst.Caps, error) {
 	var channelCaps string
 	if channel == livekit.AudioChannel_AUDIO_CHANNEL_BOTH {
 		channelCaps = "channels=2"
@@ -772,15 +902,7 @@ func newAudioCapsFilter(p *config.PipelineConfig, channel livekit.AudioChannel) 
 		return nil, errors.ErrNotSupported(string(p.AudioOutCodec))
 	}
 
-	capsFilter, err := gst.NewElement("capsfilter")
-	if err != nil {
-		return nil, errors.ErrGstPipelineError(err)
-	}
-	if err = capsFilter.SetProperty("caps", caps); err != nil {
-		return nil, errors.ErrGstPipelineError(err)
-	}
-
-	return capsFilter, nil
+	return caps, nil
 }
 
 func subscribeForQoS(mixer *gst.Element) {
