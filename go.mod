@@ -4,6 +4,11 @@ replace github.com/go-gst/go-gst => github.com/livekit/gst-go v0.0.0-20261015120
 
 replace github.com/go-gst/go-glib => github.com/go-gst/go-glib v0.0.0-20250303082535-35ebad1471fd
 
+// keep in step with server-sdk-go's go.mod: its transport uses the dtls/v4 API these forks add
+replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.25-warp.1
+
+replace github.com/pion/ice/v4 => github.com/livekit/ice/v4 v4.4.8-warp.2
+
 go 1.26.8
 
 tool github.com/maxbrunsfeld/counterfeiter/v6
