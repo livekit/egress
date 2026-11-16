@@ -404,3 +404,68 @@ func TestTierNoFireWhenStable(t *testing.T) {
 		t.Fatalf("tier transitions: got %v, want [TierSoft] (no re-fire within same tier)", tiers)
 	}
 }
+
+func TestControllerResetStateMachine(t *testing.T) {
+	// warn at 400ms, act at 600ms
+	tc := NewController(1200 * time.Millisecond)
+
+	var armed []time.Duration
+	tc.OnDriftDetectedCallback(func(d time.Duration) { armed = append(armed, d) })
+
+	// without a reset callback (legacy synchronizer) nothing resets
+	tc.SetDrift(50 * time.Millisecond)
+	tc.DriftProcessed(50 * time.Millisecond)
+	tc.ObserveOutputShift(700 * time.Millisecond)
+	tc.ResetHardTier()
+	if got := tc.Processed(); got != 50*time.Millisecond {
+		t.Fatalf("processed without reset callback: got %v, want 50ms", got)
+	}
+
+	resets := 0
+	tc.OnReset(func() {
+		resets++
+		_ = tc.Stats() // the callback runs outside the lock
+	})
+
+	tc.ObserveOutputShift(500 * time.Millisecond)
+	if resets != 0 {
+		t.Fatalf("shift inside the warn band reset the controller")
+	}
+
+	tc.ObserveOutputShift(700 * time.Millisecond)
+	if resets != 1 || tc.Processed() != 0 || tc.Stats().Disabled {
+		t.Fatalf("first reset: resets=%d processed=%v stats=%+v", resets, tc.Processed(), tc.Stats())
+	}
+
+	// one shift episode is one reset: nothing acts again until pitch sees the flush
+	armed = nil
+	tc.ObserveOutputShift(700 * time.Millisecond)
+	tc.ResetHardTier()
+	tc.SetDrift(900 * time.Millisecond)
+	if resets != 1 || len(armed) != 0 {
+		t.Fatalf("acted before the flush: resets=%d armed=%v", resets, armed)
+	}
+	tc.Flushed()
+
+	tc.ObserveOutputShift(-700 * time.Millisecond)
+	if resets != 2 || !tc.Stats().Disabled {
+		t.Fatalf("second reset should disable tempo: resets=%d stats=%+v", resets, tc.Stats())
+	}
+	tc.Flushed()
+
+	tc.SetDrift(200 * time.Millisecond)
+	if len(armed) != 0 {
+		t.Fatalf("disabled controller armed a correction: %v", armed)
+	}
+
+	// shift resets keep re-anchoring a disabled track; hard tier no longer does
+	tc.ObserveOutputShift(700 * time.Millisecond)
+	tc.Flushed()
+	tc.ResetHardTier()
+	if resets != 3 {
+		t.Fatalf("resets after disable: got %d, want 3", resets)
+	}
+	if s := tc.Stats(); s.Applied != 50*time.Millisecond || s.Corrections != 1 || s.Resets != 3 {
+		t.Fatalf("stats: got %+v", s)
+	}
+}

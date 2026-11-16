@@ -43,8 +43,10 @@ func (f *fakeDriftNotifier) DriftProcessed(actual time.Duration) {
 		f.onProcessed()
 	}
 }
-func (f *fakeDriftNotifier) CancelInFlight()  { f.canceled++ }
-func (f *fakeDriftNotifier) Tier() tempo.Tier { return f.tier }
+func (f *fakeDriftNotifier) CancelInFlight()                  { f.canceled++ }
+func (f *fakeDriftNotifier) Tier() tempo.Tier                 { return f.tier }
+func (f *fakeDriftNotifier) ObserveOutputShift(time.Duration) {}
+func (f *fakeDriftNotifier) Flushed()                         {}
 
 func newTestPacer() (*audioPacer, *fakeDriftNotifier, *[]float64) {
 	tc := &fakeDriftNotifier{}

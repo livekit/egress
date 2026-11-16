@@ -500,6 +500,7 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 	case types.MimeTypeOpus, types.MimeTypePCMU, types.MimeTypePCMA:
 		if s.AudioTempoController.Enabled && !s.OpusPassthrough(ts.MimeType) {
 			c := tempo.NewController(s.Latency.AudioMixerLatency)
+			c.SetLogger(logger.GetLogger().WithValues("trackID", ts.TrackID))
 			ts.TempoController = c
 			tc = c
 		}

@@ -315,13 +315,11 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 					"trackID", trackID, "tier", tier)
 				pacer.boost()
 			case tempo.TierHard:
-				// Hard tier means the pacer cannot absorb drift fast enough even with
-				// boosting; downstream is approaching mixer alignment-threshold and
-				// will start dropping
 				logger.Warnw("audio drift exceeded hard budget",
 					errors.New("uncorrected drift above hard budget"),
 					"trackID", trackID, "tier", tier)
 				pacer.boost()
+				ts.TempoController.ResetHardTier()
 			}
 		})
 		ts.TempoController.OnDriftDetectedCallback(func(drift time.Duration) {
@@ -526,7 +524,11 @@ func installPitchProbes(pacer *audioPacer) {
 	if sinkPad := pacer.pitch.GetStaticPad("sink"); sinkPad != nil {
 		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
-				pacer.onInput(*buf.Duration().AsDuration())
+				dur := *buf.Duration().AsDuration()
+				if buf.PresentationTimestamp() != gst.ClockTimeNone {
+					pacer.lastInEnd.Store(*buf.PresentationTimestamp().AsDuration() + dur)
+				}
+				pacer.onInput(dur)
 			}
 			return gst.PadProbeOK
 		})
@@ -542,7 +544,11 @@ func installPitchProbes(pacer *audioPacer) {
 			if event == nil || event.Type() != gst.EventTypeFlushStart {
 				return gst.PadProbeOK
 			}
-			if !pacer.cancelOnFlush() {
+			canceled := pacer.cancelOnFlush()
+			if pacer.tc != nil {
+				pacer.tc.Flushed()
+			}
+			if !canceled {
 				return gst.PadProbeOK
 			}
 			if pacer.tc != nil {
@@ -554,6 +560,20 @@ func installPitchProbes(pacer *audioPacer) {
 	}
 
 	if srcPad := pacer.pitch.GetStaticPad("src"); srcPad != nil {
+		srcPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			buf := info.GetBuffer()
+			if buf == nil || pacer.tc == nil || pacer.reanchorBuffers.Load() > 0 {
+				return gst.PadProbeOK
+			}
+			in := pacer.lastInEnd.Load()
+			if in == 0 || buf.PresentationTimestamp() == gst.ClockTimeNone || buf.Duration() == gst.ClockTimeNone {
+				return gst.PadProbeOK
+			}
+			out := *buf.PresentationTimestamp().AsDuration() + *buf.Duration().AsDuration()
+			pacer.tc.ObserveOutputShift(out - in)
+			return gst.PadProbeOK
+		})
+
 		// Normalize pitch element latency query responses: min latency can go
 		// negative, which breaks downstream latency calculations.
 		srcPad.AddProbe(gst.PadProbeTypeQueryUpstream|gst.PadProbeTypePull,

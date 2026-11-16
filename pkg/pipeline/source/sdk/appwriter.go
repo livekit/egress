@@ -33,6 +33,7 @@ import (
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
 	"github.com/livekit/egress/pkg/logging"
+	"github.com/livekit/egress/pkg/pipeline/tempo"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/media-sdk/jitter"
 	"github.com/livekit/mediatransportutil/pkg/codec"
@@ -99,9 +100,11 @@ type AppWriter struct {
 	keyframes  *keyframeRequester
 
 	// a/v sync
-	sync         synchronizer.Sync
-	trackSync    synchronizer.TrackSync
-	driftHandler DriftHandler
+	sync            synchronizer.Sync
+	trackSync       synchronizer.TrackSync
+	driftHandler    DriftHandler
+	driftReanchorer synchronizer.DriftBaselineReanchorer
+	resetRequested  atomic.Bool
 
 	opusPassthrough  bool
 	videoPassthrough bool // set once the pipeline is playing
@@ -147,6 +150,8 @@ type appWriterStats struct {
 type DriftHandler interface {
 	SetDrift(t time.Duration)
 	Processed() time.Duration
+	OnReset(cb func())
+	Stats() tempo.Stats
 }
 
 func NewAppWriter(
@@ -204,6 +209,10 @@ func NewAppWriter(
 				w.driftHandler.SetDrift(drift)
 			}
 		})
+	}
+	if r, ok := w.trackSync.(synchronizer.DriftBaselineReanchorer); ok && w.driftHandler != nil {
+		w.driftReanchorer = r
+		w.driftHandler.OnReset(func() { w.resetRequested.Store(true) })
 	}
 
 	var depacketizer rtp.Depacketizer
@@ -698,10 +707,11 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		return w.pushOpus(pkt.Payload, pts)
 	}
 
+	reset := w.driftReanchorer != nil && w.resetRequested.Load()
 	discont := isDiscontinuity(w.lastPTS, pts)
 	if w.rtpFiller != nil {
-		if w.exceedsFillBudget(pts) {
-			// too long to conceal; the flush below re-anchors pitch instead
+		if reset || w.exceedsFillBudget(pts) {
+			// the flush below re-anchors pitch, so there is nothing to conceal
 			w.rtpFiller.Reset()
 		}
 		if err := w.rtpFiller.Fill(pkt.Packet, pts, w.pushConcealment); err != nil {
@@ -727,6 +737,12 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 
 	b := gst.NewBufferFromBytes(p)
 	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
+	if reset {
+		w.resetRequested.Store(false)
+		discont = true
+		// only here: ordinary discontinuity flushes keep corrected, so re-anchoring would counter-correct it
+		w.driftReanchorer.ReanchorDriftBaseline()
+	}
 	pushed, err := w.push(b, pts, discont)
 	if err != nil {
 		return err
@@ -962,7 +978,7 @@ func (w *AppWriter) logStats() {
 
 func (w *AppWriter) getStats() *logging.TrackStats {
 	stats := w.buffer.Stats()
-	return &logging.TrackStats{
+	ts := &logging.TrackStats{
 		Timestamp:       time.Now().Format(time.DateTime),
 		PacketsReceived: stats.PacketsPushed,
 		PaddingReceived: stats.PaddingPushed,
@@ -974,6 +990,14 @@ func (w *AppWriter) getStats() *logging.TrackStats {
 		Drift:           w.drift.Load(),
 		MaxDrift:        w.maxDrift.Load(),
 	}
+	if w.driftHandler != nil {
+		tempoStats := w.driftHandler.Stats()
+		ts.TempoApplied = tempoStats.Applied
+		ts.TempoCorrections = tempoStats.Corrections
+		ts.TempoResets = tempoStats.Resets
+		ts.TempoDisabled = tempoStats.Disabled
+	}
+	return ts
 }
 
 func (w *AppWriter) updateDrift(drift time.Duration) {

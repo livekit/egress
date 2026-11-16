@@ -32,6 +32,8 @@ type driftProcessNotifier interface {
 	DriftProcessed(actual time.Duration)
 	CancelInFlight()
 	Tier() tempo.Tier
+	ObserveOutputShift(shift time.Duration)
+	Flushed()
 }
 
 // audioPacer corrects drift by changing the tempo of the pitch element until the
@@ -55,6 +57,8 @@ type audioPacer struct {
 
 	// buffers that pass at tempo 1.0 after start or a flush, until pitch has anchored
 	reanchorBuffers atomic.Int32
+
+	lastInEnd atomic.Duration // 0 after a flush
 }
 
 func newAudioPacer(pitch *gst.Element, adjustmentRate, boostedRate float64) *audioPacer {
@@ -197,6 +201,7 @@ func (a *audioPacer) cancelOnFlush() bool {
 	defer a.mu.Unlock()
 
 	a.reanchorBuffers.Store(2)
+	a.lastInEnd.Store(0)
 	if !a.active.Swap(false) {
 		return false
 	}
