@@ -400,38 +400,7 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 }
 
 func (s *WebSource) listen(chromeCtx context.Context) {
-	handleEvents(chromeCtx, chromedp.Events[jsonv2.Value], runtime.ConsoleAPICalled, func(ev runtime.EventConsoleAPICalled) {
-		if s.chromeLogger != nil {
-			if b, err := json.Marshal(ev); err == nil {
-				_, _ = s.chromeLogger.Write(append(b, '\n'))
-			}
-		}
-
-		if fields, ok := inboundStatsFields(ev.Args); ok {
-			logger.Debugw("chrome: inbound rtp stats", fields...)
-			return
-		}
-
-		for _, arg := range ev.Args {
-			var val interface{}
-			err := json.Unmarshal(arg.Value, &val)
-			if err != nil {
-				continue
-			}
-
-			switch fmt.Sprint(val) {
-			case startRecordingLog:
-				if s.startRecordingLogged.CompareAndSwap(false, true) {
-					logger.Infow("chrome: START_RECORDING")
-				}
-				s.startRecording.Break()
-
-			case endRecordingLog:
-				logger.Infow("chrome: END_RECORDING")
-				s.endRecording.Break()
-			}
-		}
-	})
+	handleEvents(chromeCtx, chromedp.Events[jsonv2.Value], runtime.ConsoleAPICalled, s.handleConsoleEvent)
 
 	handleEvents(chromeCtx, chromedp.Events[jsonv2.Value], runtime.ExceptionThrown, func(ev runtime.EventExceptionThrown) {
 		if s.chromeLogger != nil {
@@ -449,6 +418,39 @@ func (s *WebSource) listen(chromeCtx context.Context) {
 	handleEvents(chromeCtx, chromedp.Events[jsonv2.Value], inspector.TargetCrashed, func(_ inspector.EventTargetCrashed) {
 		logger.Errorw("chrome crashed", nil)
 	})
+}
+
+func (s *WebSource) handleConsoleEvent(ev runtime.EventConsoleAPICalled) {
+	if fields, ok := inboundStatsFields(ev.Args); ok {
+		logger.Debugw("chrome: inbound rtp stats", fields...)
+		return
+	}
+
+	if s.chromeLogger != nil {
+		if b, err := json.Marshal(ev); err == nil {
+			_, _ = s.chromeLogger.Write(append(b, '\n'))
+		}
+	}
+
+	for _, arg := range ev.Args {
+		var val interface{}
+		err := json.Unmarshal(arg.Value, &val)
+		if err != nil {
+			continue
+		}
+
+		switch fmt.Sprint(val) {
+		case startRecordingLog:
+			if s.startRecordingLogged.CompareAndSwap(false, true) {
+				logger.Infow("chrome: START_RECORDING")
+			}
+			s.startRecording.Break()
+
+		case endRecordingLog:
+			logger.Infow("chrome: END_RECORDING")
+			s.endRecording.Break()
+		}
+	}
 }
 
 // inboundStatsFields returns the key/value pairs of a console.log(inboundStatsLog, JSON.stringify(stats)) call.

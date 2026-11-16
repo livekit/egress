@@ -15,6 +15,8 @@
 package source
 
 import (
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -59,4 +61,20 @@ func TestInboundStatsFields(t *testing.T) {
 		_, ok := inboundStatsFields(consoleEvent(t, args).Args)
 		require.False(t, ok, name)
 	}
+}
+
+func TestInboundStatsSkipChromeLog(t *testing.T) {
+	dir := t.TempDir()
+	s := &WebSource{chromeLogger: newChromeLogger(dir)}
+
+	stats := `{"trackSid":"TR_video","kind":"video"}`
+	s.handleConsoleEvent(consoleEvent(t, `[`+stringArg(inboundStatsLog)+`,`+stringArg(stats)+`]`))
+	s.handleConsoleEvent(consoleEvent(t, `[`+stringArg(startRecordingLog)+`]`))
+	require.NoError(t, s.chromeLogger.Close())
+
+	b, err := os.ReadFile(filepath.Join(dir, "chrome.log"))
+	require.NoError(t, err)
+	require.Contains(t, string(b), startRecordingLog)
+	require.NotContains(t, string(b), inboundStatsLog)
+	require.True(t, s.startRecording.IsBroken())
 }
