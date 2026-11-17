@@ -50,7 +50,6 @@ type SDKSource struct {
 	mu                   deadlock.Mutex
 	initialized          core.Fuse
 	filenameReplacements map[string]string
-	audioChannels        map[string]livekit.AudioChannel
 
 	workersMu deadlock.RWMutex
 	workers   map[string]*trackWorker
@@ -86,7 +85,6 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		PipelineConfig:       p,
 		callbacks:            callbacks,
 		filenameReplacements: make(map[string]string),
-		audioChannels:        make(map[string]livekit.AudioChannel),
 		workers:              make(map[string]*trackWorker),
 	}
 	logger.Debugw("latency config", "latency", p.Latency)
@@ -101,8 +99,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		}),
 	}
 
-	if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
-		// Enable Packet Burst Estimator for Room Composite requests
+	if shouldEnableStartGate(p) {
 		opts = append(opts, synchronizer.WithStartGate())
 	}
 
@@ -134,7 +131,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 			}),
 			synchronizer.WithSyncEngineMediaRunningTime(nil, p.Latency.AudioMixerLatency+200*time.Millisecond),
 		}
-		if p.RequestType == types.RequestTypeRoomComposite || p.RequestType == types.RequestTypeTemplate {
+		if shouldEnableStartGate(p) {
 			syncEngineOpts = append(syncEngineOpts, synchronizer.WithSyncEngineStartGate())
 		}
 		if p.Latency.OldPacketThreshold > 0 {
@@ -263,6 +260,10 @@ func (s *SDKSource) joinRoom() error {
 		OnDisconnectedWithReason: s.onDisconnectedWithReason,
 	}
 
+	if s.Compositing {
+		cb.OnActiveSpeakersChanged = s.onActiveSpeakersChanged
+	}
+
 	switch s.RequestType {
 	case types.RequestTypeRoomComposite, types.RequestTypeTemplate, types.RequestTypeMedia:
 		cb.OnTrackPublished = s.onTrackPublished
@@ -317,11 +318,17 @@ func (s *SDKSource) joinRoom() error {
 		w, h, err = s.awaitTracks(map[string]struct{}{s.TrackID: {}})
 
 	case types.RequestTypeMedia:
-		if s.Info.RoomName != "" {
+		if s.Info.RoomName == "" {
+			s.mu.Lock()
+			s.filenameReplacements["{room_name}"] = room.Name()
+			s.mu.Unlock()
+		}
+		if s.Passthrough {
+			fileIdentifier = s.TrackID
+		} else if s.Info.RoomName != "" {
 			fileIdentifier = s.Info.RoomName
 		} else {
 			fileIdentifier = room.Name()
-			s.filenameReplacements["{room_name}"] = room.Name()
 		}
 		w, h, err = s.awaitMediaTracks()
 	}
@@ -329,7 +336,14 @@ func (s *SDKSource) joinRoom() error {
 		return err
 	}
 
-	if err = s.UpdateInfoFromSDK(fileIdentifier, s.filenameReplacements, w, h); err != nil {
+	s.mu.Lock()
+	replacements := make(map[string]string, len(s.filenameReplacements))
+	for k, v := range s.filenameReplacements {
+		replacements[k] = v
+	}
+	s.mu.Unlock()
+
+	if err = s.UpdateInfoFromSDK(fileIdentifier, replacements, w, h); err != nil {
 		logger.Errorw("could not update file params", err)
 		return err
 	}
@@ -399,18 +413,27 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 	requiredParticipants := make(map[string]struct{})
 	requiredTracks := make(map[string]struct{})
 
-	if s.Identity != "" {
-		requiredParticipants[s.Identity] = struct{}{}
+	s.mu.Lock()
+	identity := s.Identity
+	s.mu.Unlock()
+
+	if identity != "" {
+		requiredParticipants[identity] = struct{}{}
 	}
 	if s.VideoTrackID != "" {
 		requiredTracks[s.VideoTrackID] = struct{}{}
 	}
+	// identity and kind routes also match late joiners in onTrackPublished, so only track routes gate the start
 	for _, route := range s.AudioRoutes {
-		if route.Match.TrackID != "" {
+		if route.Match.TrackID != "" && !route.Exclude && !s.CaptureAudioAll {
 			requiredTracks[route.Match.TrackID] = struct{}{}
 		}
-		if route.Match.ParticipantIdentity != "" {
-			requiredParticipants[route.Match.ParticipantIdentity] = struct{}{}
+	}
+	if s.VideoSelection != nil && !s.VideoSelection.CaptureAll {
+		for _, sel := range s.VideoSelection.Selectors {
+			if sel.Match.TrackID != "" && !sel.Exclude {
+				requiredTracks[sel.Match.TrackID] = struct{}{}
+			}
 		}
 	}
 
@@ -714,58 +737,7 @@ func (s *SDKSource) shouldSubscribe(pub lksdk.TrackPublication) bool {
 }
 
 func (s *SDKSource) shouldSubscribeMedia(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
-	switch pub.Kind() {
-	case lksdk.TrackKindAudio:
-		if route := s.matchesAudioRoute(pub, rp); route != nil {
-			s.mu.Lock()
-			s.audioChannels[pub.SID()] = route.Channel
-			s.mu.Unlock()
-			return true
-		}
-		return s.CaptureAudioAll
-	case lksdk.TrackKindVideo:
-		return s.matchesMediaVideo(pub, rp)
-	default:
-		logger.Warnw("unknown track kind", nil)
-		return false
-	}
-}
-
-func (s *SDKSource) matchesAudioRoute(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) *config.AudioRouteConfig {
-	for i := range s.AudioRoutes {
-		route := &s.AudioRoutes[i]
-		switch {
-		case route.Match.TrackID != "":
-			if pub.SID() == route.Match.TrackID {
-				return route
-			}
-		case route.Match.ParticipantIdentity != "":
-			if rp.Identity() == route.Match.ParticipantIdentity {
-				return route
-			}
-		case route.Match.ParticipantKind != nil:
-			if rp.Kind() == *route.Match.ParticipantKind {
-				return route
-			}
-		}
-	}
-	return nil
-}
-
-func (s *SDKSource) matchesMediaVideo(pub lksdk.TrackPublication, rp *lksdk.RemoteParticipant) bool {
-	if s.VideoTrackID != "" {
-		return pub.SID() == s.VideoTrackID
-	}
-	if s.Identity != "" {
-		if rp.Identity() != s.Identity {
-			return false
-		}
-		if s.ScreenShare {
-			return pub.Source() == livekit.TrackSource_SCREEN_SHARE
-		}
-		return pub.Source() == livekit.TrackSource_CAMERA
-	}
-	return false
+	return s.MatchesMedia(pub.TrackInfo(), rp.Identity(), rp.Kind())
 }
 
 func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
@@ -813,17 +785,20 @@ func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {
 	if reason == lksdk.DuplicateIdentity {
 		s.duplicateIdentity.Store(true)
 	}
-	if reason != lksdk.RoomClosed && reason != lksdk.LeaveRequested {
-		protoReason := "unknown"
-		if room := s.room.Load(); room != nil {
-			protoReason = room.DisconnectReason().String()
-		}
-		logger.Warnw("disconnected from room", nil, "reason", reason, "protoReason", protoReason)
 
-		if reason == lksdk.Failed {
-			s.connectionFailed.Store(true)
-		}
+	protoReason := livekit.DisconnectReason_UNKNOWN_REASON
+	if room := s.room.Load(); room != nil {
+		protoReason = room.DisconnectReason()
 	}
+
+	if shouldWarnOnRoomDisconnect(reason, protoReason) {
+		logger.Warnw("disconnected from room", nil, "reason", reason, "protoReason", protoReason)
+	}
+
+	if reason == lksdk.Failed {
+		s.connectionFailed.Store(true)
+	}
+
 	s.finished()
 }
 
@@ -859,8 +834,27 @@ func (s *SDKSource) disconnectRoom() {
 	}
 }
 
+func shouldEnableStartGate(p *config.PipelineConfig) bool {
+	if p.Passthrough {
+		return false
+	}
+
+	switch p.RequestType {
+	case types.RequestTypeRoomComposite,
+		types.RequestTypeTemplate,
+		types.RequestTypeTrackComposite,
+		types.RequestTypeParticipant,
+		types.RequestTypeMedia:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *SDKSource) shouldUseOneShotSenderReportSync() bool {
-	return s.RequestType == types.RequestTypeRoomComposite // one-shot correction is only useful when the audio mixer can drop late audio
+	// one-shot correction is only useful when the audio mixer can drop late audio
+	return !s.Compositing &&
+		(s.RequestType == types.RequestTypeRoomComposite || s.RequestType == types.RequestTypeTemplate)
 }
 
 func (s *SDKSource) shouldEnableOneShotSenderReportSync() bool {
@@ -868,8 +862,37 @@ func (s *SDKSource) shouldEnableOneShotSenderReportSync() bool {
 }
 
 func (s *SDKSource) shouldDisableAudioPTSAdjustment() bool {
-	return s.RequestType == types.RequestTypeRoomComposite || // SDK room composites are audio only - no need to adjust audio timestamps
-		s.RequestType == types.RequestTypeTemplate || // SDK templates are audio only - same as room composite
-		s.RequestType == types.RequestTypeTrack || // no A/V sync needed for single track requests
+	return (s.RequestType == types.RequestTypeRoomComposite && !s.Compositing) || // SDK room composites are audio only unless compositing - no need to adjust audio timestamps
+		(s.RequestType == types.RequestTypeTemplate && !s.Compositing) || // SDK templates are audio only - same as room composite
+		s.Passthrough || // no A/V sync needed for single track requests
 		s.AudioTempoController.Enabled
+}
+
+func (s *SDKSource) onActiveSpeakersChanged(speakers []lksdk.Participant) {
+	s.callbacks.OnActiveSpeakersChanged(speakers)
+}
+
+// UpdateTrackDimensions sets the preferred video dimensions for a track's publication.
+// Called when layout changes to request appropriate simulcast layers.
+func (s *SDKSource) UpdateTrackDimensions(trackID string, width, height int) {
+	room := s.room.Load()
+	if room == nil {
+		return
+	}
+	for _, rp := range room.GetRemoteParticipants() {
+		for _, pub := range rp.TrackPublications() {
+			if pub.SID() == trackID {
+				if remotePub, ok := pub.(*lksdk.RemoteTrackPublication); ok {
+					remotePub.SetVideoDimensions(uint32(width), uint32(height))
+				}
+				return
+			}
+		}
+	}
+}
+
+func shouldWarnOnRoomDisconnect(reason lksdk.DisconnectionReason, protoReason livekit.DisconnectReason) bool {
+	return reason != lksdk.RoomClosed &&
+		reason != lksdk.LeaveRequested &&
+		protoReason != livekit.DisconnectReason_ROOM_DELETED
 }

@@ -144,18 +144,21 @@ func planMultiParticipant(tc *testCase) *Plan {
 	plan := &Plan{}
 	for i, name := range participants {
 		p := &Publisher{name: name, kind: lksdk.ParticipantStandard}
+		var publishAt time.Duration
 		if name == "p1" {
 			p.kind = p1Kind
+			p.delayConnection = tc.p1ConnectDelay
+			publishAt = tc.p1ConnectDelay
 		}
 
 		if !tc.videoOnly && participantHasAudioInOutput(tc, name) {
-			p.audio = []Event{{pts: 0, kind: eventPublish, codec: types.MimeTypeOpus}}
+			p.audio = []Event{{pts: publishAt, kind: eventPublish, codec: types.MimeTypeOpus}}
 			if rotates {
 				p.audio = append(p.audio, rotationEvents(i, len(participants), rotationSlot)...)
 			}
 		}
 		if !tc.audioOnly && participantHasVideoInOutput(tc, name) {
-			p.video = []Event{{pts: 0, kind: eventPublish, codec: types.MimeTypeH264}}
+			p.video = []Event{{pts: publishAt, kind: eventPublish, codec: types.MimeTypeH264}}
 		}
 
 		sortEvents(p)

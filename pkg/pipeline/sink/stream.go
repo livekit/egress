@@ -56,6 +56,10 @@ func newStreamSink(p *gstreamer.Pipeline, conf *config.PipelineConfig, o *config
 		streams: make(map[string]*builder.Stream),
 		loggers: make(map[string]*logging.CSVLogger[logging.StreamStats]),
 	}
+	p.AddOnStop(func() error {
+		ss.stopMonitors()
+		return nil
+	})
 
 	o.Streams.Range(func(_, stream any) bool {
 		err = ss.AddStream(stream.(*config.Stream))
@@ -171,14 +175,21 @@ func (s *StreamSink) UploadManifest(_ string) (string, bool, error) {
 
 func (s *StreamSink) DisableUploads() {}
 
+func (s *StreamSink) stopMonitors() {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, ss := range s.streams {
+		ss.StopMonitor()
+	}
+}
+
 func (s *StreamSink) Close() error {
 	s.closed.Once(func() {
+		s.stopMonitors()
+
 		s.mu.Lock()
 		defer s.mu.Unlock()
-
-		for _, ss := range s.streams {
-			ss.StopMonitor()
-		}
 		for _, l := range s.loggers {
 			l.Close()
 		}

@@ -15,8 +15,10 @@
 package uploader
 
 import (
+	"context"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"go.uber.org/atomic"
@@ -37,7 +39,7 @@ const presignedExpiration = time.Hour * 24 * 7 // 7 days
 type Uploader struct {
 	primary         *store
 	backup          *store
-	primaryFailed   bool
+	primaryFailed   atomic.Bool
 	disabled        atomic.Bool
 	info            *livekit.EgressInfo
 	monitor         *stats.HandlerMonitor
@@ -107,6 +109,10 @@ func getUploader(conf *config.StorageConfig) (*store, error) {
 		s, err = storage.NewAliOSS(conf.AliOSS)
 		name = "AliOSS"
 		hasCustomEndpoint = conf.AliOSS.Endpoint != ""
+	case conf.OCI != nil:
+		s, err = storage.NewOCI(conf.OCI)
+		name = "OCI"
+		hasCustomEndpoint = conf.OCI.Endpoint != ""
 	default:
 		s, err = storage.NewLocal(&storage.LocalConfig{})
 		name = "Local"
@@ -128,16 +134,26 @@ func (u *Uploader) Upload(
 	outputType types.OutputType,
 	deleteAfterUpload bool,
 ) (string, int64, error) {
+	location, size, _, err := u.UploadWithDestination(localFilepath, storageFilepath, outputType, deleteAfterUpload)
+	return location, size, err
+}
+
+// UploadWithDestination is Upload, also reporting whether the file went to backup storage.
+func (u *Uploader) UploadWithDestination(
+	localFilepath, storageFilepath string,
+	outputType types.OutputType,
+	deleteAfterUpload bool,
+) (string, int64, bool, error) {
 
 	if u.disabled.Load() {
 		if deleteAfterUpload {
 			_ = os.Remove(localFilepath)
 		}
-		return "", 0, nil
+		return "", 0, false, nil
 	}
 
 	var primaryErr error
-	if !u.primaryFailed {
+	if !u.primaryFailed.Load() {
 		start := time.Now()
 		location, size, err := u.upload(localFilepath, storageFilepath, outputType, true)
 		elapsed := time.Since(start)
@@ -148,14 +164,20 @@ func (u *Uploader) Upload(
 			if deleteAfterUpload {
 				_ = os.Remove(localFilepath)
 			}
-			return location, size, nil
+			return location, size, false, nil
 		}
 		if u.monitor != nil {
 			u.monitor.IncUploadCountFailure(string(outputType), uploadErrorStatus(err), u.primary.hasCustomEndpoint, float64(elapsed.Milliseconds()))
 		}
-		u.primaryFailed = true
 		primaryErr = err
-
+		if u.backup != nil {
+			u.primaryFailed.Store(true)
+			logger.Warnw("primary upload failed, switching to backup storage", err,
+				"storage", u.primary.name,
+				"outputType", outputType,
+				"storageFilepath", storageFilepath,
+			)
+		}
 	}
 
 	if u.backup != nil {
@@ -170,17 +192,22 @@ func (u *Uploader) Upload(
 			if deleteAfterUpload {
 				_ = os.Remove(localFilepath)
 			}
-			return location, size, nil
+			return location, size, true, nil
 		}
 
 		if primaryErr != nil {
-			return "", 0, psrpc.NewErrorf(psrpc.InvalidArgument,
+			return "", 0, false, psrpc.NewErrorf(psrpc.InvalidArgument,
 				"primary: %s\nbackup: %s", primaryErr.Error(), backupErr.Error())
 		}
-		return "", 0, psrpc.NewError(psrpc.InvalidArgument, backupErr)
+		return "", 0, false, psrpc.NewErrorf(psrpc.InvalidArgument, "%s", backupErr.Error())
 	}
 
-	return "", 0, primaryErr
+	return "", 0, false, primaryErr
+}
+
+// PrimaryFailed reports whether this uploader has fallen back to backup storage.
+func (u *Uploader) PrimaryFailed() bool {
+	return u.primaryFailed.Load()
 }
 
 func uploadErrorStatus(err error) string {
@@ -204,9 +231,14 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 		s = u.backup
 	}
 
-	storageFilepath = path.Join(s.conf.Prefix, storageFilepath)
+	key := path.Join(s.conf.Prefix, storageFilepath)
+	// the prefix is the only boundary between projects sharing a bucket
+	if base := path.Clean(s.conf.Prefix); s.conf.Prefix != "" && base != "/" && base != "." && !strings.HasPrefix(key, base+"/") {
+		return "", 0, errors.ErrInvalidInput("storage filepath")
+	}
+	storageFilepath = key
 
-	location, size, err = s.UploadFile(localFilepath, storageFilepath, string(outputType))
+	location, size, err = s.UploadFile(context.Background(), storageFilepath, localFilepath, storage.PutOptions{ContentType: string(outputType)})
 	if err != nil {
 		return "", 0, errors.ErrUploadFailed(s.name, err)
 	}
@@ -216,7 +248,7 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 	}
 
 	if s.conf.GeneratePresignedUrl {
-		location, err = s.GeneratePresignedUrl(storageFilepath, presignedExpiration)
+		location, err = s.PresignedURL(context.Background(), storageFilepath, presignedExpiration)
 		if err != nil {
 			return "", 0, errors.ErrUploadFailed(s.name, err)
 		}

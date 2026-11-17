@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO="livekit/media-samples"
 DEST="media-samples"
-REF="${1:-main}"
+REF="${1:-${MEDIA_SAMPLES_REF:-main}}"
 
 export GIT_TERMINAL_PROMPT=0
 

@@ -194,3 +194,104 @@ func TestSegmentOutputRetrySafety(t *testing.T) {
 		})
 	}
 }
+
+func TestImageOutputRetrySafety(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		retryCount int32
+		prefix     string
+		suffix     livekit.ImageFileSuffix
+		expectErr  bool
+	}{
+		{
+			name:       "first attempt with explicit prefix",
+			retryCount: 0,
+			prefix:     "images/my-stream",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+			expectErr:  false,
+		},
+		{
+			name:       "retry with empty prefix (auto-generated)",
+			retryCount: 1,
+			prefix:     "",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+			expectErr:  false,
+		},
+		{
+			name:       "retry with {retry} in prefix",
+			retryCount: 1,
+			prefix:     "images/my-stream-{retry}",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+			expectErr:  false,
+		},
+		{
+			name:       "retry with explicit prefix missing {retry} and index suffix",
+			retryCount: 1,
+			prefix:     "images/my-stream",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+			expectErr:  true,
+		},
+		{
+			name:       "retry with directory-only prefix (auto-generated name)",
+			retryCount: 1,
+			prefix:     "images/",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+			expectErr:  false,
+		},
+		{
+			name:       "retry where path cleaning drops the {retry} directory",
+			retryCount: 1,
+			prefix:     "images/{retry}/../shot",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+			expectErr:  true,
+		},
+		{
+			name:       "retry with prefix that cleans to nothing (dot)",
+			retryCount: 1,
+			prefix:     ".",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+			expectErr:  false,
+		},
+		{
+			name:       "retry with prefix that cleans to nothing (images/..)",
+			retryCount: 1,
+			prefix:     "images/..",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+			expectErr:  false,
+		},
+		{
+			name:       "retry with explicit prefix and timestamp suffix",
+			retryCount: 1,
+			prefix:     "images/my-stream",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP,
+			expectErr:  false,
+		},
+		{
+			name:       "retry with explicit prefix and overwrite suffix",
+			retryCount: 1,
+			prefix:     "images/my-stream",
+			suffix:     livekit.ImageFileSuffix_IMAGE_SUFFIX_NONE_OVERWRITE,
+			expectErr:  false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := &PipelineConfig{
+				Info:    &livekit.EgressInfo{EgressId: "test_egress", RoomName: "test-room", RetryCount: test.retryCount},
+				TmpDir:  t.TempDir(),
+				Outputs: make(map[types.EgressType][]OutputConfig),
+			}
+
+			img := &livekit.ImageOutput{
+				FilenamePrefix: test.prefix,
+				FilenameSuffix: test.suffix,
+			}
+			_, err := p.getImageConfig(img, img)
+
+			if test.expectErr {
+				require.ErrorIs(t, err, errors.ErrNonRetryableOutput)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

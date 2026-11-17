@@ -60,21 +60,37 @@ const (
 	regionFull  = "full"
 )
 
+// recordingAlignment maps the recording onto the plan: planPTS = filePTS + lag
+type recordingAlignment struct {
+	intLag int64
+	lag    time.Duration
+}
+
 // runContentCheck picks a content check based on testCase properties.
 // tc.contentCheck overrides the default if set.
-func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo, output, format string) {
+func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo, output, format string) *recordingAlignment {
 	if info == nil {
-		return
+		return nil
 	}
 
 	if tc.contentCheck != nil {
 		tc.contentCheck(t, file, info)
-		return
+		return nil
+	}
+
+	return runAVSyncCheck(t, tc, file, info, output, format)
+}
+
+// runAVSyncCheck analyses the avsync pattern in a recorded file. Callers that
+// already have their own contentCheck reach it through runContentCheck.
+func runAVSyncCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo, output, format string) *recordingAlignment {
+	if info == nil {
+		return nil
 	}
 
 	// Web/WebV2 load arbitrary URLs, not the avsync pattern.
 	if tc.requestType == types.RequestTypeWeb {
-		return
+		return nil
 	}
 
 	participants := []avsync.Participant{avsync.P0}
@@ -88,14 +104,8 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 	switch {
 	case tc.audioOnly:
 		// no regions
-	case tc.multiParticipant && tc.layout == layoutSpeaker:
-		regions = SpeakerLayoutRegions(w, h, len(participants))
-	case tc.multiParticipant && tc.layout == layoutSingleSpeaker:
-		regions = SingleSpeakerLayoutRegions(w, h)
-	case tc.multiParticipant && tc.layout == layoutGrid:
-		regions = GridLayoutRegions(w, h, len(participants))
 	case tc.multiParticipant:
-		regions = GridLayoutRegions(w, h, len(participants))
+		regions = layoutRegions(tc, w, h, len(participants))
 	default:
 		regions = []avsync.Region{{Name: regionFull, Rect: image.Rect(0, 0, w, h)}}
 	}
@@ -113,7 +123,7 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 
 	plan := tc.plan
 	if plan == nil {
-		return
+		return nil
 	}
 
 	dur, _ := parseFFProbeDuration(info.Format.Duration)
@@ -131,6 +141,35 @@ func runContentCheck(t *testing.T, tc *testCase, file string, info *FFProbeInfo,
 	maxPlanPTS := lag + dur - 1*time.Second
 
 	verifyContent(t, tc, plan, obs, intLag, maxPlanPTS)
+	return newRecordingAlignment(obs, intLag)
+}
+
+// newRecordingAlignment reads the lag off bucket centers, which Quantize shifts back 1s when Offset > 500ms
+func newRecordingAlignment(obs *cadence.Observation, intLag int64) *recordingAlignment {
+	if len(obs.Buckets) == 0 {
+		return nil
+	}
+	return &recordingAlignment{intLag: intLag, lag: time.Duration(intLag)*time.Second - obs.Buckets[0].Center}
+}
+
+// layoutRegions returns the expected sampling regions for tc's layout. Chrome
+// and the SDK compositor render the same template to different geometry, so
+// each has its own region math; single-speaker is full-frame either way.
+func layoutRegions(tc *testCase, w, h, numParticipants int) []avsync.Region {
+	switch tc.layout {
+	case layoutSingleSpeaker:
+		return SingleSpeakerLayoutRegions(w, h)
+	case layoutSpeaker:
+		if tc.chromeCompositing {
+			return ChromeSpeakerLayoutRegions(w, h, numParticipants)
+		}
+		return SpeakerLayoutRegions(w, h, numParticipants)
+	default:
+		if tc.chromeCompositing {
+			return ChromeGridLayoutRegions(w, h, numParticipants)
+		}
+		return GridLayoutRegions(w, h, numParticipants)
+	}
 }
 
 func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observation, intLag int64, maxPlanPTS time.Duration) {
@@ -150,9 +189,9 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 	lastFlashPTS := make(map[string]time.Duration)
 	seenInSecondary := make(map[string]bool)
 	beepRequired := make(map[string]int)
-	beepMissing := make(map[string]int)
+	beepMissing := make(map[string][]time.Duration)
 	flashRequired := make(map[string]int)
-	flashMissing := make(map[string]int)
+	flashMissing := make(map[string][]time.Duration)
 
 	isStageRegion := func(region string) bool {
 		return region == regionStage || region == regionFull
@@ -187,7 +226,7 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 			case required:
 				beepRequired[pub.name]++
 				if len(gotBeeps) == 0 {
-					beepMissing[pub.name]++
+					beepMissing[pub.name] = append(beepMissing[pub.name], planPTS)
 				}
 			case forbidden:
 				if len(gotBeeps) > 0 {
@@ -224,11 +263,17 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 			if inWarmup && flashVerdict == required {
 				flashVerdict = optional
 			}
+			// single-speaker renders only the active speaker, so everyone
+			// else is off-frame and has no flash to find
+			if tc.layout == layoutSingleSpeaker && flashVerdict == required &&
+				plan.activeSpeaker(planPTS) != pub.name {
+				flashVerdict = optional
+			}
 			switch flashVerdict {
 			case required:
 				flashRequired[pub.name]++
 				if len(gotFlashes) == 0 {
-					flashMissing[pub.name]++
+					flashMissing[pub.name] = append(flashMissing[pub.name], planPTS)
 				}
 			case forbidden:
 				if len(gotFlashes) > 0 {
@@ -313,20 +358,37 @@ func verifyContent(t *testing.T, tc *testCase, plan *Plan, obs *cadence.Observat
 
 	// Require presenceHitRate per publisher. Allow 1 free miss to keep
 	// small-sample tests from failing on a single jitter-buffer drop.
-	checkPresence := func(kind, name string, req, miss int) {
+	checkPresence := func(kind, name string, req int, missing []time.Duration) bool {
 		if req == 0 {
-			return
+			return false
 		}
+		miss := len(missing)
 		rate := float64(req-miss) / float64(req)
-		t.Logf("%s-presence %s: %d/%d (%.0f%%)", kind, name, req-miss, req, rate*100)
-		if miss > 1 && rate < presenceHitRate {
-			addIssue("%s hit rate for %s: %.0f%% < %.0f%% required (%d missing out of %d)",
-				kind, name, rate*100, presenceHitRate*100, miss, req)
+		var missingAt string
+		if miss > 0 {
+			missingAt = fmt.Sprintf(", missing at %v", missing)
 		}
+		t.Logf("%s-presence %s: %d/%d (%.0f%%)%s", kind, name, req-miss, req, rate*100, missingAt)
+		if miss > 1 && rate < presenceHitRate {
+			start, end, n := longestMissRun(missing)
+			addIssue("%s hit rate for %s: %.0f%% < %.0f%% required (%d missing out of %d, longest run %d from %s to %s)",
+				kind, name, rate*100, presenceHitRate*100, miss, req, n, start, end)
+			return true
+		}
+		return false
 	}
 	for _, pub := range plan.publishers {
-		checkPresence("beep", pub.name, beepRequired[pub.name], beepMissing[pub.name])
-		checkPresence("flash", pub.name, flashRequired[pub.name], flashMissing[pub.name])
+		beepFailed := checkPresence("beep", pub.name, beepRequired[pub.name], beepMissing[pub.name])
+		flashFailed := checkPresence("flash", pub.name, flashRequired[pub.name], flashMissing[pub.name])
+		if !beepFailed && !flashFailed {
+			continue
+		}
+		bs, be, bn := longestMissRun(beepMissing[pub.name])
+		fs, fe, fn := longestMissRun(flashMissing[pub.name])
+		if bn >= 2 && fn >= 2 && bs <= fe && fs <= be {
+			addIssue("beep and flash both missing %s to %s for %s, suspected pipeline stall",
+				min(bs, fs), max(be, fe), pub.name)
+		}
 	}
 
 	// Flash cadence: same percentile approach.
@@ -394,6 +456,26 @@ func percentileIdx(n int) int {
 		return n / 2
 	}
 	return (n * 8) / 10
+}
+
+// longestMissRun returns the longest run of misses at most 1s apart
+func longestMissRun(missing []time.Duration) (start, end time.Duration, n int) {
+	if len(missing) == 0 {
+		return 0, 0, 0
+	}
+	runStart, runN := 0, 1
+	bestStart, bestN := 0, 1
+	for i := 1; i < len(missing); i++ {
+		if missing[i]-missing[i-1] <= time.Second {
+			runN++
+		} else {
+			runStart, runN = i, 1
+		}
+		if runN > bestN {
+			bestStart, bestN = runStart, runN
+		}
+	}
+	return missing[bestStart], missing[bestStart+bestN-1], bestN
 }
 
 func absDuration(d time.Duration) time.Duration {

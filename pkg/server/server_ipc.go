@@ -33,6 +33,8 @@ func (s *Server) HandlerReady(_ context.Context, req *ipc.HandlerReadyRequest) (
 		return nil, err
 	}
 
+	s.ioClient.SessionStarted(context.Background(), req.EgressId)
+
 	logger.Debugw("handler ready completed", "egressID", req.EgressId)
 	return &emptypb.Empty{}, nil
 }

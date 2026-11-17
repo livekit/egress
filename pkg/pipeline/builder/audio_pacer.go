@@ -16,6 +16,7 @@ package builder
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/go-gst/go-gst/gst"
@@ -32,25 +33,42 @@ type driftProcessNotifier interface {
 	CancelInFlight()
 	Tier() tempo.Tier
 }
+
+// audioPacer corrects drift by changing the tempo of the pitch element until the
+// stretch it has applied covers the target. Pitch stretches each input buffer by
+// (1/tempo - 1) of its duration, so the stretch is accumulated from input buffers:
+// pitch emits output in chunks of several input buffers, so durations measured at
+// its output swing by tens of milliseconds regardless of tempo.
 type audioPacer struct {
 	pitch               *gst.Element
+	setTempo            func(rate float64)
 	tc                  driftProcessNotifier
 	tempoAdjustmentRate float64
 	boostedRate         float64
 
-	// mu serializes writers; probe reads active/snapshot without it.
-	mu       deadlock.Mutex
-	active   atomic.Bool
-	snapshot atomic.Pointer[pacerSnapshot]
+	// mu serializes writers; the input probe reads active/target/rate without it.
+	mu           deadlock.Mutex
+	active       atomic.Bool
+	target       atomic.Duration
+	rate         atomic.Float64 // tempo currently applied
+	compensation atomic.Duration
 
-	inputAccum  atomic.Int64 // cumulative input buffer durations (nanoseconds)
-	outputAccum atomic.Int64 // cumulative output buffer durations (nanoseconds)
+	// buffers that pass at tempo 1.0 after start or a flush, until pitch has anchored
+	reanchorBuffers atomic.Int32
 }
 
-type pacerSnapshot struct {
-	inputAtStart  int64
-	outputAtStart int64
-	targetDrift   time.Duration
+func newAudioPacer(pitch *gst.Element, adjustmentRate, boostedRate float64) *audioPacer {
+	a := &audioPacer{
+		pitch: pitch,
+		setTempo: func(rate float64) {
+			pitch.SetArg("tempo", fmt.Sprintf("%.2f", rate))
+		},
+		tempoAdjustmentRate: adjustmentRate,
+		boostedRate:         boostedRate,
+	}
+	// pitch anchors its output timeline on its first buffer as it does after a flush
+	a.reanchorBuffers.Store(2)
+	return a
 }
 
 func (a *audioPacer) start(drift time.Duration) {
@@ -68,6 +86,14 @@ func (a *audioPacer) start(drift time.Duration) {
 		)
 		return
 	}
+	if a.reanchorBuffers.Load() > 0 {
+		// pitch re-anchors at timestamp / tempo; the next sender report arms again
+		logger.Debugw("audio pacer not armed until pitch re-anchors after flush", "targetDrift", drift)
+		if a.tc != nil {
+			a.tc.CancelInFlight()
+		}
+		return
+	}
 
 	// OnTierChange fires only on transitions; check Tier() to start boosted on a stable elevated state.
 	adjustment := a.tempoAdjustmentRate
@@ -76,15 +102,12 @@ func (a *audioPacer) start(drift time.Duration) {
 	}
 	rate := pacerRate(drift, adjustment)
 
-	// snapshot before active: probe reads active first.
-	a.snapshot.Store(&pacerSnapshot{
-		inputAtStart:  a.inputAccum.Load(),
-		outputAtStart: a.outputAccum.Load(),
-		targetDrift:   drift,
-	})
+	// state before active: the input probe reads active first.
+	a.target.Store(drift)
+	a.compensation.Store(0)
+	a.applyTempoLocked(rate)
 
 	logger.Debugw("starting audio pacer", "targetDrift", drift, "rate", rate)
-	a.pitch.SetArg("tempo", fmt.Sprintf("%.2f", rate))
 	a.active.Store(true)
 }
 
@@ -95,13 +118,7 @@ func (a *audioPacer) boost() {
 	if !a.active.Load() {
 		return
 	}
-
-	snap := a.snapshot.Load()
-	if snap == nil {
-		return
-	}
-	rate := pacerRate(snap.targetDrift, a.boostedRate)
-	a.pitch.SetArg("tempo", fmt.Sprintf("%.2f", rate))
+	a.applyTempoLocked(pacerRate(a.target.Load(), a.boostedRate))
 }
 
 func (a *audioPacer) brake() {
@@ -111,13 +128,54 @@ func (a *audioPacer) brake() {
 	if !a.active.Load() {
 		return
 	}
+	a.applyTempoLocked(pacerRate(a.target.Load(), a.tempoAdjustmentRate))
+}
 
-	snap := a.snapshot.Load()
-	if snap == nil {
+// applyTempoLocked sets the tempo and records it as pitch applies it, to two decimals.
+func (a *audioPacer) applyTempoLocked(rate float64) {
+	rate = math.Round(rate*100) / 100
+	a.rate.Store(rate)
+	a.setTempo(rate)
+}
+
+// onInput runs on pitch's sink pad before pitch processes the buffer, so the buffer is
+// stretched at whatever tempo is set when onInput returns. Buffers already credited were
+// processed at the pacer's tempo; once they cover the target, the correction completes
+// before this buffer is processed, and this buffer counts toward a correction the
+// controller starts from DriftProcessed.
+func (a *audioPacer) onInput(d time.Duration) {
+	if n := a.reanchorBuffers.Load(); n > 0 {
+		// the buffer re-anchors pitch after this probe returns
+		a.reanchorBuffers.Store(n - 1)
 		return
 	}
-	rate := pacerRate(snap.targetDrift, a.tempoAdjustmentRate)
-	a.pitch.SetArg("tempo", fmt.Sprintf("%.2f", rate))
+	if !a.active.Load() {
+		return
+	}
+	if a.compensation.Load().Abs() >= a.target.Load().Abs() {
+		a.complete()
+		if !a.active.Load() {
+			return
+		}
+	}
+
+	rate := a.rate.Load()
+	if rate <= 0 {
+		return
+	}
+	a.compensation.Add(time.Duration(float64(d) * (1/rate - 1)))
+}
+
+func (a *audioPacer) complete() {
+	target, compensation := a.target.Load(), a.compensation.Load()
+	// stop() returns false if a concurrent flush cancel already won the transition;
+	// in that case the controller has already been notified.
+	if a.stop() {
+		logger.Debugw("audio drift corrected", "target", target, "actual", compensation)
+		if a.tc != nil {
+			a.tc.DriftProcessed(compensation)
+		}
+	}
 }
 
 // Returns true on the active→idle transition; caller then notifies the controller.
@@ -128,23 +186,26 @@ func (a *audioPacer) stop() bool {
 	if !a.active.Swap(false) {
 		return false
 	}
-	a.pitch.SetArg("tempo", fmt.Sprintf("%.1f", 1.0))
+	a.applyTempoLocked(1.0)
 	return true
 }
 
-// Accumulators can't be trusted across the flush boundary; abandon without crediting compensation.
+// Pitch drops its buffered audio on flush, so part of the credited stretch never
+// reaches the mixer; abandon the correction without crediting it.
 func (a *audioPacer) cancelOnFlush() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	a.reanchorBuffers.Store(2)
 	if !a.active.Swap(false) {
 		return false
 	}
-	a.pitch.SetArg("tempo", fmt.Sprintf("%.1f", 1.0))
+	a.applyTempoLocked(1.0)
 	return true
 }
 
-// drift>0 → audio ahead → tempo<1 (slow); drift<0 → tempo>1 (speed up).
+// drift = sender-report time minus RTP-derived time (the legacy synchronizer's sign):
+// drift>0 → publisher clock slow → tempo<1 adds samples; drift<0 → tempo>1 removes them.
 func pacerRate(drift time.Duration, adjustment float64) float64 {
 	if drift > 0 {
 		return 1 - adjustment

@@ -17,9 +17,15 @@
 package test
 
 import (
+	"fmt"
+	"net"
+	"net/http"
 	"path"
+	"sync"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/egress"
@@ -29,11 +35,27 @@ import (
 )
 
 const (
-	webUrl        = "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4"
 	setAtRuntime  = "set-at-runtime"
 	setP1Identity = "set-p1-identity"
 	setP2Identity = "set-p2-identity"
+
+	mediaSamplesDir = "/media-samples"
+	webFixture      = "BigBuckBunny_320x180.mp4"
 )
+
+// webURL serves the vendored Big Buck Bunny clip from a localhost file server
+// (rooted at the media-samples dir) and returns its URL, starting the server
+// once on first use. The web egress tests previously navigated Chrome to this
+// clip on download.blender.org, which now 404s (upstream removed the loose
+// .mp4); serving it locally removes that external dependency.
+var webURL = sync.OnceValue(func() string {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(fmt.Sprintf("failed to start web fixture server: %v", err))
+	}
+	go func() { _ = http.Serve(ln, http.FileServer(http.Dir(mediaSamplesDir))) }()
+	return fmt.Sprintf("http://%s/%s", ln.Addr(), webFixture)
+})
 
 type testCase struct {
 	name        string
@@ -44,6 +66,7 @@ type testCase struct {
 	// encoding options
 	encodingOptions *livekit.EncodingOptions
 	encodingPreset  livekit.EncodingOptionsPreset
+	passthrough     bool
 
 	*fileOptions
 	*streamOptions
@@ -83,13 +106,20 @@ type publishOptions struct {
 
 	layout string
 
+	// chromeCompositing runs this case through chrome instead of the SDK
+	// compositor. The runner enables EnableTemplateSDK globally, so without
+	// this the shipped default (enable_template_sdk: false) has no coverage.
+	chromeCompositing bool
+
 	multiParticipant bool
+	p1ConnectDelay   time.Duration
 
 	// v2 Media source fields
 	mediaVideoTrackID     string
 	mediaParticipantVideo *livekit.ParticipantVideo
 	audioRoutes           []*livekit.AudioRoute
 	captureAudioAll       bool
+	mediaVideos           *livekit.VideoConfig
 
 	// v2 Template source fields
 	templateCustomBaseUrl string
@@ -99,6 +129,9 @@ type fileOptions struct {
 	filename   string
 	fileType   livekit.EncodedFileType
 	outputType types.OutputType
+
+	mcapChannels int
+	mcapExcluded string // publisher (p0/p1/p2) whose identity must not appear in any topic
 }
 
 type streamOptions struct {
@@ -109,10 +142,12 @@ type streamOptions struct {
 }
 
 type segmentOptions struct {
-	prefix       string
-	playlist     string
-	livePlaylist string
-	suffix       livekit.SegmentedFileSuffix
+	prefix          string
+	playlist        string
+	livePlaylist    string
+	suffix          livekit.SegmentedFileSuffix
+	segmentDuration uint32
+	protocol        livekit.SegmentedFileProtocol
 }
 
 type imageOptions struct {
@@ -163,7 +198,7 @@ func (r *Runner) build(test *testCase) *rpc.StartEgressRequest {
 
 	case types.RequestTypeWeb:
 		web := &livekit.WebEgressRequest{
-			Url:       webUrl,
+			Url:       webURL(),
 			AudioOnly: test.audioOnly,
 			VideoOnly: test.videoOnly,
 		}
@@ -334,6 +369,8 @@ func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFile
 			PlaylistName:     o.playlist,
 			LivePlaylistName: o.livePlaylist,
 			FilenameSuffix:   o.suffix,
+			SegmentDuration:  o.segmentDuration,
+			Protocol:         o.protocol,
 		}
 
 		switch conf := u.(type) {
@@ -353,6 +390,8 @@ func (r *Runner) buildSegmentOutputs(o *segmentOptions) []*livekit.SegmentedFile
 		PlaylistName:     o.playlist,
 		LivePlaylistName: o.livePlaylist,
 		FilenameSuffix:   o.suffix,
+		SegmentDuration:  o.segmentDuration,
+		Protocol:         o.protocol,
 	}}
 }
 
@@ -474,6 +513,7 @@ func (r *Runner) buildV2Outputs(test *testCase) []*livekit.Output {
 					PlaylistName:     test.playlist,
 					LivePlaylistName: test.livePlaylist,
 					FilenameSuffix:   test.segmentOptions.suffix,
+					SegmentDuration:  test.segmentDuration,
 				},
 			},
 			Storage: storage,
@@ -521,7 +561,7 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 	case types.RequestTypeWeb:
 		egressReq.Source = &livekit.StartEgressRequest_Web{
 			Web: &livekit.WebSource{
-				Url:       webUrl,
+				Url:       webURL(),
 				AudioOnly: test.audioOnly,
 				VideoOnly: test.videoOnly,
 			},
@@ -535,26 +575,23 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 		if (videoTrackID == "" || videoTrackID == setAtRuntime) && test.videoCodec != "" {
 			videoTrackID = test.videoTrackID
 		}
-		if videoTrackID != "" {
+		if test.mediaVideos != nil {
+			videos := proto.Clone(test.mediaVideos).(*livekit.VideoConfig)
+			for _, sel := range videos.Selectors {
+				if pi, ok := sel.Match.(*livekit.VideoSelector_ParticipantIdentity); ok {
+					if identity := test.resolveIdentity(pi.ParticipantIdentity); identity != "" {
+						pi.ParticipantIdentity = identity
+					}
+				}
+			}
+			media.Video = &livekit.MediaSource_Videos{Videos: videos}
+		} else if videoTrackID != "" {
 			media.Video = &livekit.MediaSource_VideoTrackId{
 				VideoTrackId: videoTrackID,
 			}
 		} else if test.mediaParticipantVideo != nil {
 			pv := test.mediaParticipantVideo
-			var identity string
-			switch pv.Identity {
-			case setAtRuntime:
-				identity = test.p0Identity
-			case setP1Identity:
-				if s := test.publishers["p1"]; s != nil {
-					identity = s.identity
-				}
-			case setP2Identity:
-				if s := test.publishers["p2"]; s != nil {
-					identity = s.identity
-				}
-			}
-			if identity != "" {
+			if identity := test.resolveIdentity(pv.Identity); identity != "" {
 				pv = &livekit.ParticipantVideo{
 					Identity:          identity,
 					PreferScreenShare: pv.PreferScreenShare,
@@ -565,42 +602,23 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 			}
 		}
 
-		// audio - capture-all takes precedence; routes are mutually exclusive
-		if test.captureAudioAll {
-			media.Audio = &livekit.AudioConfig{CaptureAll: true}
-		} else if len(test.audioRoutes) > 0 {
+		// audio - routes apply alongside capture-all
+		if test.captureAudioAll || len(test.audioRoutes) > 0 {
 			routes := make([]*livekit.AudioRoute, len(test.audioRoutes))
 			for i, route := range test.audioRoutes {
-				routes[i] = route
-				if tr, ok := route.Match.(*livekit.AudioRoute_TrackId); ok && tr.TrackId == setAtRuntime {
-					routes[i] = &livekit.AudioRoute{
-						Match:   &livekit.AudioRoute_TrackId{TrackId: test.audioTrackID},
-						Channel: route.Channel,
+				routes[i] = proto.Clone(route).(*livekit.AudioRoute)
+				switch m := routes[i].Match.(type) {
+				case *livekit.AudioRoute_TrackId:
+					if m.TrackId == setAtRuntime {
+						m.TrackId = test.audioTrackID
 					}
-				}
-				if pi, ok := route.Match.(*livekit.AudioRoute_ParticipantIdentity); ok {
-					var identity string
-					switch pi.ParticipantIdentity {
-					case setAtRuntime:
-						identity = test.p0Identity
-					case setP1Identity:
-						if s := test.publishers["p1"]; s != nil {
-							identity = s.identity
-						}
-					case setP2Identity:
-						if s := test.publishers["p2"]; s != nil {
-							identity = s.identity
-						}
-					}
-					if identity != "" {
-						routes[i] = &livekit.AudioRoute{
-							Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: identity},
-							Channel: route.Channel,
-						}
+				case *livekit.AudioRoute_ParticipantIdentity:
+					if identity := test.resolveIdentity(m.ParticipantIdentity); identity != "" {
+						m.ParticipantIdentity = identity
 					}
 				}
 			}
-			media.Audio = &livekit.AudioConfig{Routes: routes}
+			media.Audio = &livekit.AudioConfig{CaptureAll: test.captureAudioAll, Routes: routes}
 		}
 
 		egressReq.Source = &livekit.StartEgressRequest_Media{
@@ -609,7 +627,11 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 	}
 
 	// Encoding
-	if test.encodingOptions != nil {
+	if test.passthrough {
+		egressReq.Encoding = &livekit.StartEgressRequest_Preset{
+			Preset: livekit.EncodingOptionsPreset_PASSTHROUGH,
+		}
+	} else if test.encodingOptions != nil {
 		egressReq.Encoding = &livekit.StartEgressRequest_Advanced{
 			Advanced: test.encodingOptions,
 		}
@@ -633,4 +655,20 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 		Token:    token,
 		WsUrl:    r.WsUrl,
 	}
+}
+
+func (test *testCase) resolveIdentity(sentinel string) string {
+	switch sentinel {
+	case setAtRuntime:
+		return test.p0Identity
+	case setP1Identity:
+		if s := test.publishers["p1"]; s != nil {
+			return s.identity
+		}
+	case setP2Identity:
+		if s := test.publishers["p2"]; s != nil {
+			return s.identity
+		}
+	}
+	return ""
 }

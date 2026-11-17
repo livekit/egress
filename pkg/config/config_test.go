@@ -16,13 +16,102 @@ package config
 
 import (
 	"os"
+	"path"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 )
+
+func TestS3RequestAssumeRoleExternalIDGate(t *testing.T) {
+	makeReq := func(externalID string) *livekit.EncodedFileOutput {
+		return &livekit.EncodedFileOutput{
+			Output: &livekit.EncodedFileOutput_S3{
+				S3: &livekit.S3Upload{
+					AccessKey:            "ACCESS_KEY",
+					Secret:               "SECRET",
+					Bucket:               "bucket",
+					Region:               "us-east-1",
+					AssumeRoleArn:        "arn:aws:iam::123456789012:role/example",
+					AssumeRoleExternalId: externalID,
+				},
+			},
+		}
+	}
+
+	t.Run("rejects request external_id when flag is false", func(t *testing.T) {
+		p := &PipelineConfig{}
+		_, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.Error(t, err)
+		require.ErrorContains(t, err, "setting assume_role_external_id in the request is disabled for this account")
+	})
+
+	t.Run("allows request external_id when flag is true", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AllowRequestAssumeRoleExternalID = true
+		sc, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.NoError(t, err)
+		require.NotNil(t, sc.S3)
+		require.Equal(t, "EXT_ID", sc.S3.AssumeRoleExternalID)
+	})
+
+	t.Run("allows request external_id matching the server default when flag is false", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AssumeRoleArn = "arn:aws:iam::123456789012:role/example"
+		p.S3AssumeRoleExternalID = "EXT_ID"
+		sc, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.NoError(t, err)
+		require.NotNil(t, sc.S3)
+		require.Equal(t, "EXT_ID", sc.S3.AssumeRoleExternalID)
+	})
+
+	t.Run("rejects request external_id matching the server default with a different ARN when flag is false", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AssumeRoleArn = "arn:aws:iam::123456789012:role/configured"
+		p.S3AssumeRoleExternalID = "EXT_ID"
+		_, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.ErrorContains(t, err, "setting assume_role_external_id in the request is disabled for this account")
+	})
+
+	t.Run("rejects request external_id differing from the server default when flag is false", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AssumeRoleExternalID = "SERVER_SIDE_EXT_ID"
+		_, err := p.getStorageConfig(makeReq("EXT_ID"))
+		require.ErrorContains(t, err, "setting assume_role_external_id in the request is disabled for this account")
+	})
+
+	t.Run("no rejection when request omits external_id", func(t *testing.T) {
+		p := &PipelineConfig{}
+		sc, err := p.getStorageConfig(makeReq(""))
+		require.NoError(t, err)
+		require.NotNil(t, sc.S3)
+		require.Equal(t, "", sc.S3.AssumeRoleExternalID)
+	})
+
+	t.Run("server-side default external_id still applies when request omits it", func(t *testing.T) {
+		p := &PipelineConfig{}
+		p.S3AssumeRoleExternalID = "SERVER_SIDE_EXT_ID"
+		req := &livekit.EncodedFileOutput{
+			Output: &livekit.EncodedFileOutput_S3{
+				S3: &livekit.S3Upload{
+					AccessKey: "ACCESS_KEY",
+					Secret:    "SECRET",
+					Bucket:    "bucket",
+					Region:    "us-east-1",
+				},
+			},
+		}
+		sc, err := p.getStorageConfig(req)
+		require.NoError(t, err)
+		require.NotNil(t, sc.S3)
+		require.Equal(t, "SERVER_SIDE_EXT_ID", sc.S3.AssumeRoleExternalID)
+	})
+}
 
 func TestSegmentNaming(t *testing.T) {
 	t.Cleanup(func() {
@@ -95,6 +184,48 @@ func TestSegmentNaming(t *testing.T) {
 	}
 }
 
+func TestSegmentProtocol(t *testing.T) {
+	for _, test := range []struct {
+		protocol                  livekit.SegmentedFileProtocol
+		expectedSegmentOutputType types.OutputType
+		expectedInitSegment       string
+		expectedErr               bool
+	}{
+		{
+			protocol:                  livekit.SegmentedFileProtocol_DEFAULT_SEGMENTED_FILE_PROTOCOL,
+			expectedSegmentOutputType: types.OutputTypeTS,
+		},
+		{
+			protocol:                  livekit.SegmentedFileProtocol_HLS_PROTOCOL,
+			expectedSegmentOutputType: types.OutputTypeTS,
+		},
+		{
+			protocol:                  livekit.SegmentedFileProtocol_HLS_FMP4_PROTOCOL,
+			expectedSegmentOutputType: types.OutputTypeM4S, expectedInitSegment: "playlist_init.mp4",
+		},
+		{
+			protocol: livekit.SegmentedFileProtocol(99), expectedErr: true,
+		},
+	} {
+		p := &PipelineConfig{Info: &livekit.EgressInfo{EgressId: "egress_ID"}}
+		seg := &livekit.SegmentedFileOutput{
+			PlaylistName: "playlist",
+			Protocol:     test.protocol,
+		}
+
+		o, err := p.getSegmentConfig(seg, seg)
+		if test.expectedErr {
+			require.Error(t, err)
+			continue
+		}
+		require.NoError(t, err)
+
+		require.Equal(t, types.OutputTypeHLS, o.OutputType)
+		require.Equal(t, test.expectedSegmentOutputType, o.SegmentOutputType)
+		require.Equal(t, test.expectedInitSegment, o.InitSegmentFilename)
+	}
+}
+
 func TestValidateAndUpdateOutputParamsRejectsHLSMP3(t *testing.T) {
 	p := &PipelineConfig{
 		Outputs: map[types.EgressType][]OutputConfig{
@@ -132,4 +263,218 @@ func TestValidateAndUpdateOutputParamsRejectsVideoFileMP3(t *testing.T) {
 	err := p.validateAndUpdateOutputParams()
 	require.Error(t, err)
 	require.ErrorContains(t, err, "format audio/mpeg incompatible with codec video/h264")
+}
+
+func TestValidateAndUpdateOutputParamsRejectsVideoCodecWithoutAudioCodec(t *testing.T) {
+	p := &PipelineConfig{
+		Outputs: map[types.EgressType][]OutputConfig{
+			types.EgressTypeFile: {
+				&FileConfig{outputConfig: outputConfig{OutputType: types.OutputTypeWebM}},
+			},
+		},
+	}
+
+	p.AudioEnabled = false
+	p.VideoEnabled = true
+	p.VideoOutCodec = types.MimeTypeH264
+	p.Info = &livekit.EgressInfo{}
+
+	err := p.validateAndUpdateOutputParams()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "format video/webm incompatible with codec video/h264")
+}
+
+func TestFilenameUTCReplacementIgnoresLocalTimezone(t *testing.T) {
+	local := time.Local
+	time.Local = time.FixedZone("test", 5*60*60)
+	t.Cleanup(func() { time.Local = local })
+
+	p := &PipelineConfig{}
+	p.Info = &livekit.EgressInfo{RoomName: "room"}
+	_, replacements := p.getFilenameInfo()
+
+	utc := replacements["{utc}"]
+	require.Len(t, utc, len("20060102150405000"))
+	parsed, err := time.ParseInLocation("20060102150405", utc[:14], time.UTC)
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now(), parsed, 10*time.Second)
+}
+
+func TestPlaceholderValuesStayUnderPrefix(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		keys func(p *PipelineConfig) ([]string, error)
+	}{
+		{
+			name: "file template",
+			keys: func(p *PipelineConfig) ([]string, error) {
+				o, err := p.getEncodedFileConfig(&livekit.EncodedFileOutput{FileType: livekit.EncodedFileType_MP4, Filepath: "{room_name}"})
+				if err != nil {
+					return nil, err
+				}
+				return []string{o.StorageFilepath}, nil
+			},
+		},
+		{
+			name: "file default name",
+			keys: func(p *PipelineConfig) ([]string, error) {
+				o, err := p.getEncodedFileConfig(&livekit.EncodedFileOutput{FileType: livekit.EncodedFileType_MP4})
+				if err != nil {
+					return nil, err
+				}
+				return []string{o.StorageFilepath}, nil
+			},
+		},
+		{
+			name: "segment playlist template",
+			keys: func(p *PipelineConfig) ([]string, error) {
+				seg := &livekit.SegmentedFileOutput{PlaylistName: "{room_name}"}
+				o, err := p.getSegmentConfig(seg, seg)
+				if err != nil {
+					return nil, err
+				}
+				return []string{path.Join(o.StorageDir, o.PlaylistFilename), path.Join(o.StorageDir, o.SegmentPrefix)}, nil
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := &PipelineConfig{Info: &livekit.EgressInfo{
+				EgressId: "egress_ID",
+				RoomName: "../../p_victim/EG_victim/recording",
+			}}
+			keys, err := test.keys(p)
+			require.NoError(t, err)
+			for _, key := range keys {
+				require.True(t, strings.HasPrefix(path.Join("p_attacker", key), "p_attacker/"), key)
+			}
+		})
+	}
+}
+
+func TestOpusPassthrough(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		mimeType types.MimeType
+		output   types.EgressType
+		expected bool
+	}{
+		{"opus file", types.MimeTypeOpus, types.EgressTypeFile, true},
+		{"opus websocket needs pcm", types.MimeTypeOpus, types.EgressTypeWebsocket, false},
+		{"pcmu file is encoded to opus", types.MimeTypePCMU, types.EgressTypeFile, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := &PipelineConfig{Passthrough: true, RequestType: types.RequestTypeMedia, Outputs: map[types.EgressType][]OutputConfig{}}
+			if test.output == types.EgressTypeFile {
+				p.Outputs[test.output] = []OutputConfig{&FileConfig{}}
+			} else {
+				p.Outputs[test.output] = []OutputConfig{&StreamConfig{}}
+			}
+			require.Equal(t, test.expected, p.OpusPassthrough(test.mimeType))
+		})
+	}
+}
+
+func TestMediaAudioValidation(t *testing.T) {
+	tmpDir := t.TempDir()
+	defaultOut := &livekit.Output{Config: &livekit.Output_File{File: &livekit.FileOutput{Filepath: tmpDir + "/out"}}}
+
+	audioAll := &livekit.AudioConfig{CaptureAll: true}
+	trackRoute := func(mod func(*livekit.AudioRoute)) *livekit.AudioConfig {
+		route := &livekit.AudioRoute{Match: &livekit.AudioRoute_TrackId{TrackId: "TR_audio"}}
+		mod(route)
+		return &livekit.AudioConfig{Routes: []*livekit.AudioRoute{route}}
+	}
+	passthrough := &livekit.StartEgressRequest_Preset{Preset: livekit.EncodingOptionsPreset_PASSTHROUGH}
+
+	for _, test := range []struct {
+		name     string
+		media    *livekit.MediaSource
+		preset   *livekit.StartEgressRequest_Preset
+		expected string
+	}{
+		{name: "passthrough route with track name", media: &livekit.MediaSource{Audio: trackRoute(func(r *livekit.AudioRoute) { r.TrackName = "mic" })}, preset: passthrough, expected: "passthrough audio route"},
+		{name: "passthrough route with exclude", media: &livekit.MediaSource{Audio: trackRoute(func(r *livekit.AudioRoute) { r.Exclude = true })}, preset: passthrough, expected: "passthrough audio route"},
+		{name: "data tracks", media: &livekit.MediaSource{Audio: audioAll, Data: &livekit.DataConfig{CaptureAll: true}}, expected: "media.data"},
+		{name: "audio with only excludes", media: &livekit.MediaSource{Audio: trackRoute(func(r *livekit.AudioRoute) { r.Exclude = true })}, expected: "media.audio"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := &livekit.StartEgressRequest{
+				RoomName: "room",
+				Source:   &livekit.StartEgressRequest_Media{Media: test.media},
+				Outputs:  []*livekit.Output{defaultOut},
+			}
+			if test.preset != nil {
+				req.Encoding = test.preset
+			}
+			_, err := NewPipelineConfig("tmp_dir: "+tmpDir, &rpc.StartEgressRequest{
+				EgressId: "EG_mediaAudioTest",
+				Token:    "token",
+				WsUrl:    "wss://test",
+				Request:  &rpc.StartEgressRequest_Egress{Egress: req},
+			})
+			require.ErrorContains(t, err, test.expected)
+		})
+	}
+}
+
+func TestMCAPRequestValidation(t *testing.T) {
+	tmpDir := t.TempDir()
+	mcapOut := &livekit.Output{Config: &livekit.Output_File{File: &livekit.FileOutput{FileType: livekit.EncodedFileType_MCAP, Filepath: tmpDir + "/out.mcap"}}}
+	mp4Out := &livekit.Output{Config: &livekit.Output_File{File: &livekit.FileOutput{FileType: livekit.EncodedFileType_MP4, Filepath: tmpDir + "/out.mp4"}}}
+	defaultOut := &livekit.Output{Config: &livekit.Output_File{File: &livekit.FileOutput{Filepath: tmpDir + "/out"}}}
+	streamOut := &livekit.Output{Config: &livekit.Output_Stream{Stream: &livekit.StreamOutput{Urls: []string{"rtmp://localhost/live/key"}}}}
+
+	videosAll := &livekit.MediaSource_Videos{Videos: &livekit.VideoConfig{CaptureAll: true}}
+	audioAll := &livekit.AudioConfig{CaptureAll: true}
+	trackRoute := func(mod func(*livekit.AudioRoute)) *livekit.AudioConfig {
+		route := &livekit.AudioRoute{Match: &livekit.AudioRoute_TrackId{TrackId: "TR_audio"}}
+		mod(route)
+		return &livekit.AudioConfig{Routes: []*livekit.AudioRoute{route}}
+	}
+	passthrough := &livekit.StartEgressRequest_Preset{Preset: livekit.EncodingOptionsPreset_PASSTHROUGH}
+
+	for _, test := range []struct {
+		name     string
+		media    *livekit.MediaSource
+		preset   *livekit.StartEgressRequest_Preset
+		outputs  []*livekit.Output
+		expected string
+	}{
+		{name: "videos and audio to mcap", media: &livekit.MediaSource{Video: videosAll, Audio: audioAll}, outputs: []*livekit.Output{mcapOut}},
+		{name: "videos with both-channel routes", media: &livekit.MediaSource{Video: videosAll, Audio: trackRoute(func(*livekit.AudioRoute) {})}, outputs: []*livekit.Output{mcapOut}},
+		{name: "videos to mp4", media: &livekit.MediaSource{Video: videosAll}, outputs: []*livekit.Output{mp4Out}, expected: "requires an MCAP file output"},
+		{name: "mcap with a second output", media: &livekit.MediaSource{Video: videosAll}, outputs: []*livekit.Output{mcapOut, streamOut}, expected: "MCAP must be the only output"},
+		{name: "mcap with a single video track", media: &livekit.MediaSource{Video: &livekit.MediaSource_VideoTrackId{VideoTrackId: "TR_video"}}, outputs: []*livekit.Output{mcapOut}},
+		{name: "mcap with a left route", media: &livekit.MediaSource{Audio: trackRoute(func(r *livekit.AudioRoute) { r.Channel = livekit.AudioChannel_AUDIO_CHANNEL_LEFT })}, outputs: []*livekit.Output{mcapOut}, expected: "MCAP audio route channel"},
+		{name: "passthrough route to mcap", media: &livekit.MediaSource{Audio: trackRoute(func(*livekit.AudioRoute) {})}, preset: passthrough, outputs: []*livekit.Output{mcapOut}},
+		{name: "passthrough videos to mcap", media: &livekit.MediaSource{Video: videosAll, Audio: audioAll}, preset: passthrough, outputs: []*livekit.Output{mcapOut}},
+		{name: "videos with only excludes", media: &livekit.MediaSource{Video: &livekit.MediaSource_Videos{Videos: &livekit.VideoConfig{Selectors: []*livekit.VideoSelector{{TrackName: "camera", Exclude: true}}}}}, outputs: []*livekit.Output{mcapOut}, expected: "media.videos"},
+		{name: "audio with only excludes", media: &livekit.MediaSource{Video: videosAll, Audio: trackRoute(func(r *livekit.AudioRoute) { r.Exclude = true })}, outputs: []*livekit.Output{mcapOut}, expected: "media.audio"},
+		{name: "videos selector without a match", media: &livekit.MediaSource{Video: &livekit.MediaSource_Videos{Videos: &livekit.VideoConfig{CaptureAll: true, Selectors: []*livekit.VideoSelector{{Exclude: true}}}}}, outputs: []*livekit.Output{mcapOut}, expected: "media.videos.selectors"},
+		{name: "passthrough videos", media: &livekit.MediaSource{Video: videosAll}, preset: passthrough, outputs: []*livekit.Output{defaultOut}, expected: "requires an MCAP file output"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := &livekit.StartEgressRequest{
+				RoomName: "room",
+				Source:   &livekit.StartEgressRequest_Media{Media: test.media},
+				Outputs:  test.outputs,
+			}
+			if test.preset != nil {
+				req.Encoding = test.preset
+			}
+			conf, err := NewPipelineConfig("tmp_dir: "+tmpDir, &rpc.StartEgressRequest{
+				EgressId: "EG_mcapTest",
+				Token:    "token",
+				WsUrl:    "wss://test",
+				Request:  &rpc.StartEgressRequest_Egress{Egress: req},
+			})
+			if test.expected == "" {
+				require.NoError(t, err)
+				// a passthrough flag left set would rewrite the MCAP output type per track
+				require.False(t, conf.Passthrough)
+			} else {
+				require.ErrorContains(t, err, test.expected)
+			}
+		})
+	}
 }

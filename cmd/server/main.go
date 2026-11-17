@@ -37,7 +37,7 @@ import (
 	lkredis "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
 	_ "github.com/livekit/protocol/utils/hwstats/maxprocs"
-	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/bus/redisbus"
 )
 
 var (
@@ -57,10 +57,12 @@ func main() {
 				Description: "runs a request in a new process",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name: "request",
+						Name:    "request",
+						Sources: cli.EnvVars("EGRESS_HANDLER_REQUEST"),
 					},
 					&cli.StringFlag{
-						Name: "config",
+						Name:    "config",
+						Sources: cli.EnvVars("EGRESS_HANDLER_CONFIG_BODY"),
 					},
 				},
 				Action: runHandler,
@@ -112,7 +114,7 @@ func runService(_ context.Context, c *cli.Command) error {
 		return err
 	}
 
-	bus := psrpc.NewRedisMessageBus(rc)
+	bus := redisbus.New(rc, conf.PSRPC.BusOptions()...)
 	ioClient, err := info.NewSessionReporter(&conf.BaseConfig, bus)
 	if err != nil {
 		return err
@@ -185,16 +187,10 @@ func runHandler(_ context.Context, c *cli.Command) error {
 	defer os.RemoveAll(conf.TmpDir)
 	_ = os.Setenv("TMPDIR", conf.TmpDir)
 
-	rc, err := lkredis.GetRedisClient(conf.Redis)
-	if err != nil {
-		return err
-	}
-
 	killChan := make(chan os.Signal, 1)
 	signal.Notify(killChan, syscall.SIGINT)
 
-	bus := psrpc.NewRedisMessageBus(rc)
-	h, err := handler.NewHandler(conf, bus)
+	h, err := handler.NewHandler(conf)
 	if err != nil {
 		// service will send info update and shut down
 		logger.Errorw("failed to create handler", err)

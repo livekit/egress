@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -49,7 +50,13 @@ const (
 //go:generate go tool github.com/maxbrunsfeld/counterfeiter/v6  . ProcessManager
 
 type ProcessManager interface {
-	Launch(ctx context.Context, handlerID string, req *rpc.StartEgressRequest, info *livekit.EgressInfo, cmd *exec.Cmd) error
+	Launch(ctx context.Context, handlerID string, req *rpc.StartEgressRequest, info *livekit.EgressInfo, cmd *exec.Cmd) (func() error, error)
+	// SetHandlerTopicHooks installs callbacks used to advertise and remove the
+	// per-egress handler RPC topics. Registration happens inside Launch, after
+	// the handler's IPC client exists; deregistration happens in ProcessFinished.
+	// The hooks are read without synchronization, so this must be called once
+	// during server construction, before any handler is launched.
+	SetHandlerTopicHooks(register func(egressID string) error, deregister func(egressID string))
 	GetContext(egressID string) context.Context
 	AlreadyExists(egressID string) bool
 	HandlerStarted(egressID string) error
@@ -74,12 +81,20 @@ type ProcessManager interface {
 type processManager struct {
 	mu             deadlock.RWMutex
 	activeHandlers map[string]*Process
+
+	registerTopics   func(egressID string) error
+	deregisterTopics func(egressID string)
 }
 
 func NewProcessManager() ProcessManager {
 	return &processManager{
 		activeHandlers: make(map[string]*Process),
 	}
+}
+
+func (pm *processManager) SetHandlerTopicHooks(register func(egressID string) error, deregister func(egressID string)) {
+	pm.registerTopics = register
+	pm.deregisterTopics = deregister
 }
 
 func (pm *processManager) StoreAccumulatableMetrics(egressID string, metrics []*dto.MetricFamily) {
@@ -108,15 +123,15 @@ func (pm *processManager) Launch(
 	req *rpc.StartEgressRequest,
 	info *livekit.EgressInfo,
 	cmd *exec.Cmd,
-) error {
+) (func() error, error) {
 	ipcHandlerDir := path.Join(config.TmpDir, handlerID)
 	if err := os.MkdirAll(ipcHandlerDir, 0755); err != nil {
-		return err
+		return nil, err
 	}
 
 	ipcClient, err := ipc.NewHandlerClient(ipcHandlerDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	p := &Process{
@@ -127,26 +142,53 @@ func (pm *processManager) Launch(
 		cmd:              cmd,
 		ipcHandlerClient: ipcClient,
 		ready:            make(chan struct{}),
+		exited:           make(chan struct{}),
 	}
 
 	pm.mu.Lock()
 	pm.activeHandlers[info.EgressId] = p
 	pm.mu.Unlock()
 
-	if err = cmd.Start(); err != nil {
-		logger.Errorw("could not launch process", err)
-		return err
+	// advertise the handler RPC topics only once the IPC client can serve
+	// them; requests arriving during handler startup wait on the connection.
+	// The map entry is cleaned up by ProcessFinished on failure, same as the
+	// cmd.Start error path.
+	if pm.registerTopics != nil {
+		if err = pm.registerTopics(info.EgressId); err != nil {
+			logger.Errorw("could not register handler rpc topics", err, "egressID", info.EgressId)
+			return nil, err
+		}
 	}
+
+	if err = cmd.Start(); err != nil {
+		logger.Errorw("could not launch process", err, "egressID", info.EgressId)
+		return nil, err
+	}
+
+	go func() {
+		p.exitErr = cmd.Wait()
+		close(p.exited)
+	}()
 
 	select {
 	case <-p.ready:
-		return nil
+		return p.wait, nil
+
+	case <-p.exited:
+		// a handler that readied and then exited before this select ran still started
+		select {
+		case <-p.ready:
+			return p.wait, nil
+		default:
+		}
+		logger.Warnw("handler exited before ready", p.exitErr, "egressID", info.EgressId)
+		return nil, errors.ErrHandlerExitedBeforeReady
 
 	case <-time.After(launchTimeout):
 		logger.Warnw("no response from handler", nil, "egressID", info.EgressId)
 		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		return errors.ErrHandlerFailedToStart
+		<-p.exited
+		return nil, errors.ErrHandlerFailedToStart
 	}
 }
 
@@ -198,7 +240,11 @@ func (pm *processManager) GetStatus(info map[string]interface{}) {
 	defer pm.mu.RUnlock()
 
 	for _, h := range pm.activeHandlers {
-		info[h.req.EgressId] = h.req.Request
+		requestType, outputType := egress.GetTypes(h.info.Request)
+		info[h.req.EgressId] = map[string]string{
+			"requestType": requestType,
+			"outputType":  outputType,
+		}
 	}
 }
 
@@ -326,6 +372,11 @@ func (pm *processManager) GetKillReason(egressID string) string {
 
 func (pm *processManager) ProcessFinished(egressID string) {
 	logger.Debugw("process finished", "egressID", egressID)
+
+	if pm.deregisterTopics != nil {
+		pm.deregisterTopics(egressID)
+	}
+
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -348,12 +399,19 @@ type Process struct {
 	cmd              *exec.Cmd
 	ipcHandlerClient *ipc.EgressHandlerClientWrapper
 	ready            chan struct{}
+	exited           chan struct{}
+	exitErr          error
 	closed           core.Fuse
 	killReason       string
 	metricsFinalized atomic.Bool
 
 	metricsMu                deadlock.Mutex
 	lastAccumulatableMetrics []*dto.MetricFamily
+}
+
+func (p *Process) wait() error {
+	<-p.exited
+	return p.exitErr
 }
 
 func (p *Process) storeAccumulatableMetrics(metrics []*dto.MetricFamily) {

@@ -69,6 +69,9 @@ func (p *PipelineConfig) applyPreset(preset livekit.EncodingOptionsPreset) {
 		p.Height = 1920
 		p.Framerate = 60
 		p.VideoBitrate = 6000
+
+	case livekit.EncodingOptionsPreset_PASSTHROUGH:
+		p.Passthrough = true
 	}
 }
 

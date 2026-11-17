@@ -30,7 +30,7 @@ Irrespective of method used, when moving between protocols, containers or encodi
 
 ## Supported Output
 
-| Egress Type     | MP4 File | OGG File | WebM File | HLS (TS Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
+| Egress Type     | MP4 File | OGG File | WebM File | HLS (TS or fMP4 Segments) | RTMP(s) Stream | SRT Stream | WebSocket Stream | Thumbnails (JPEGs) |
 |-----------------|----------|----------|-----------|-------------------|----------------|------------------|------------------|--------------------|
 | Room Composite  | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |
 | Web             | ✅        | ✅        |           | ✅                 | ✅              | ✅              |                  | ✅                  |
@@ -38,6 +38,39 @@ Irrespective of method used, when moving between protocols, containers or encodi
 | Track           | ✅        | ✅        | ✅         |                   |                |               | ✅                |                    |
 
 Files can be uploaded to any S3 compatible storage, Azure, or GCP.
+
+### MCAP export
+
+A media source and a single `MCAP` file output writes a [Foxglove](https://foxglove.dev)-compatible MCAP file
+with one channel per track. `video_track_id` and `participant_video` select one video track; use `videos` for more:
+
+```json
+{
+  "room_name": "my-room",
+  "media": {
+    "videos": { "capture_all": true },
+    "audio": { "capture_all": true }
+  },
+  "outputs": [{ "file": { "file_type": "MCAP", "filepath": "{room_name}-{time}.mcap" } }]
+}
+```
+
+- **Selection.** A video selector or audio route matches on `track_id`, `participant_identity` (or, for audio,
+  `participant_kind`), and `track_name` narrows that match. `track_name` alone matches the name from any
+  participant. A matching `exclude` drops the track, overriding `capture_all` and every other match.
+  Audio routes follow these rules for every media egress, not just MCAP.
+- **Topics.** Each track is written to `/livekit/<participant identity>/<track name>`, as
+  `foxglove.CompressedVideo` (H.264, VP9 or AV1) or `foxglove.CompressedAudio` (Opus).
+  A track republished under the same name continues its channel; a codec change starts a new channel on the same topic.
+  Each channel's metadata carries `codec` and the `livekit.track_id`, `livekit.track_name`,
+  `livekit.participant_identity`, `livekit.source` and `livekit.input_codec` of the track that opened it.
+- **Encoding.** Video is written as published, without transcoding, so encoding presets (including `PASSTHROUGH`)
+  and options other than `key_frame_interval` don't apply to it. Egress requests a keyframe from each publisher every
+  `key_frame_interval` seconds (1 by default) so the file stays seekable; requests are throttled to one per second, so
+  a shorter interval behaves as 1s. Opus audio is written as published; PCMU/PCMA is transcoded to Opus.
+- **Limits.** The MCAP file must be the only output, `videos` requires an MCAP output, and audio routes must use
+  `AUDIO_CHANNEL_BOTH`. VP8 tracks can't be stored in `CompressedVideo` and are skipped with a warning.
+  Data tracks are not supported yet.
 
 ## Documentation
 
@@ -67,10 +100,17 @@ logging:
   level: debug, info, warn, or error (default info)
   json: true
 template_base: can be used to host custom templates (default http://localhost:<template_port>/)
-backup_storage: files will be moved here when uploads fail. location must have write access granted for all users
 enable_chrome_sandbox: if true, egress will run Chrome with sandboxing enabled. This requires a specific Docker setup, see below.
+psrpc: # optional gzip compression of psrpc bus payloads, see the compatibility note below
+  compression:
+    quality: gzip level 1-9. 0, the default, disables compression
+    threshold: payload bytes below which compression is skipped (default 1024)
+    max_decompressed_size: cap on an inbound payload after decompression, 0 for unlimited
 cpu_cost: # optionally override cpu cost estimation, used when accepting or denying requests
   room_composite_cpu_cost: 3.0
+  audio_room_composite_cpu_cost: 1.0
+  sdk_audio_room_composite_cpu_cost: 0.5 # audio-only room composites without layout or custom_base_url (no chrome), and audio-only media egress. Defaults to audio_room_composite_cpu_cost
+  sdk_audio_room_composite_memory_cost: 1.0 # memory in GB, same request types as above. Defaults to memory_cost
   web_cpu_cost: 3.0
   track_composite_cpu_cost: 2.0
   track_cpu_cost: 1.0
@@ -115,6 +155,16 @@ storage:
     endpoint: (optional) custom endpoint
     bucket: bucket to upload files to
 
+# backup upload config, used when an upload to the primary storage fails. Same fields as storage.
+# after the first failed upload, the remaining files for that output go to backup storage.
+# with no provider set, files are written to the local filesystem under prefix (resolved from /).
+backup:
+  prefix: (optional) prefix applied to all filenames. with no provider set, this is a local directory, e.g. /backup, which must be writable by the egress user
+  s3: (optional) same as storage.s3 above
+  azure: (optional) same as storage.azure above
+  gcp: (optional) same as storage.gcp above
+  alioss: (optional) same as storage.alioss above
+
 # dev/debugging fields
 insecure: can be used to connect to an insecure websocket (default false) , Deprecated use secure
 secure:
@@ -134,6 +184,19 @@ debug:
 ```
 
 The config file can be added to a mounted volume with its location passed in the EGRESS_CONFIG_FILE env var, or its body can be passed in the EGRESS_CONFIG_BODY env var.
+
+> **Compatibility note on `psrpc.compression`**
+>
+> Bus compression requires psrpc v0.7.6 or newer on **every** node sharing the redis bus. An older peer
+> ignores the compression marker and decodes the gzipped bytes as the message payload, so the message is
+> dropped without an error. Enabling it is therefore a two-stage operator action: roll a build with psrpc
+> v0.7.6+ out to livekit-server, egress, ingress, SIP and any agent workers first, then raise `quality` at
+> the publishers. It is off by default.
+>
+> `max_decompressed_size` only affects reading, so it can be set ahead of `quality`.
+>
+> The remaining `rpc.PSRPCConfig` keys (`max_attempts`, `timeout`, `backoff`, `buffer_size`) are accepted
+> under `psrpc:` for config parity with livekit-server, but egress does not read them.
 
 ### Filenames
 

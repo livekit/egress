@@ -1,0 +1,429 @@
+// Copyright 2026 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package sdk
+
+import (
+	"testing"
+	"time"
+
+	"github.com/pion/rtp"
+	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/egress/pkg/types"
+)
+
+const (
+	toc20ms = 0x08 // config 1 (SILK, 20ms), mono, code 0
+	toc60ms = 0x18 // config 3 (SILK, 60ms), mono, code 0
+)
+
+func opusPacket(seq uint16, ts uint32, toc byte) *rtp.Packet {
+	return &rtp.Packet{
+		Header:  rtp.Header{Version: 2, PayloadType: 111, SSRC: 7, SequenceNumber: seq, Timestamp: ts},
+		Payload: []byte{toc, 0xaa, 0xbb},
+	}
+}
+
+type pushedPacket struct {
+	pkt *rtp.Packet
+	pts time.Duration
+}
+
+func collectPushes(into *[]pushedPacket) func(*rtp.Packet, time.Duration) error {
+	return func(p *rtp.Packet, pts time.Duration) error {
+		*into = append(*into, pushedPacket{p, pts})
+		return nil
+	}
+}
+
+// fillPaused fills before pkt as if real time had passed in step with its RTP timestamp
+func fillPaused(f *RTPGapFiller, pkt *rtp.Packet, push func(*rtp.Packet, time.Duration) error) error {
+	pts := f.lastPTS + time.Duration(int32(pkt.Timestamp-f.lastTS))*time.Second/time.Duration(f.clockRate)
+	return f.Fill(pkt, pts, push)
+}
+
+func TestRTPGapFillerContiguousPacketsPassUntouched(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 0, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, time.Second)
+
+	p2 := opusPacket(11, 960, toc20ms)
+	require.NoError(t, fillPaused(f, p2, collectPushes(&pushes)))
+	require.Empty(t, pushes)
+	require.Equal(t, uint16(11), p2.SequenceNumber)
+}
+
+func TestRTPGapFillerFillsMissingFramesBeforeThePacket(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 0, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, time.Second)
+
+	// 100ms of silence between p1 and p2: a 60ms and a 40ms packet of zero-length frames
+	p2 := opusPacket(11, 960*6, toc20ms)
+	require.NoError(t, fillPaused(f, p2, collectPushes(&pushes)))
+
+	require.Len(t, pushes, 2)
+	synth := pushes[0].pkt
+	require.Equal(t, uint16(11), synth.SequenceNumber)
+	require.Equal(t, uint32(960), synth.Timestamp)
+	require.Equal(t, uint8(111), synth.PayloadType)
+	require.Equal(t, uint32(7), synth.SSRC)
+	require.Equal(t, []byte{toc20ms | 0x03, 3}, synth.Payload, "a code-3 packet of 3 zero-length frames")
+	require.Equal(t, time.Second+20*time.Millisecond, pushes[0].pts, "PTS extrapolated from the last real packet")
+	require.Equal(t, []byte{toc20ms | 0x03, 2}, pushes[1].pkt.Payload)
+	require.Equal(t, uint32(960*4), pushes[1].pkt.Timestamp)
+	require.Equal(t, uint16(13), p2.SequenceNumber, "the real packet is shifted past the synthetic ones")
+
+	f.Advance(p2, time.Second+120*time.Millisecond)
+	p3 := opusPacket(12, 960*7, toc20ms)
+	require.NoError(t, fillPaused(f, p3, collectPushes(&pushes)))
+	require.Len(t, pushes, 2)
+	require.Equal(t, uint16(14), p3.SequenceNumber, "the shift persists")
+}
+
+func TestRTPGapFillerSkipConcealsOnlyWhatRemains(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 0, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, time.Second)
+
+	// a 200ms pause of which a GAP event covered the first 140ms
+	f.Skip(140 * time.Millisecond)
+	p2 := opusPacket(11, 960+9600, toc20ms)
+	require.NoError(t, f.Fill(p2, time.Second+220*time.Millisecond, collectPushes(&pushes)))
+
+	require.Len(t, pushes, 1)
+	require.Equal(t, uint32(960+6720), pushes[0].pkt.Timestamp)
+	require.Equal(t, []byte{toc20ms | 0x03, 3}, pushes[0].pkt.Payload, "3 frames for the 60ms left after the GAP")
+	require.Equal(t, time.Second+160*time.Millisecond, pushes[0].pts)
+}
+
+func TestNewRTPGapFillerCodecs(t *testing.T) {
+	require.NotNil(t, NewRTPGapFiller(types.MimeTypeOpus, 48000))
+	require.NotNil(t, NewRTPGapFiller(types.MimeTypePCMU, 8000))
+	require.NotNil(t, NewRTPGapFiller(types.MimeTypePCMA, 8000))
+	require.Nil(t, NewRTPGapFiller(types.MimeTypeVP8, 90000))
+}
+
+func TestRTPGapFillerChunksLongGaps(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 0, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, 0)
+
+	// 2s of silence: 100 frames, at most 60ms per synthetic packet
+	p2 := opusPacket(11, 960+100*960, toc20ms)
+	require.NoError(t, fillPaused(f, p2, collectPushes(&pushes)))
+
+	require.Len(t, pushes, 34)
+	var frames int
+	for i, p := range pushes {
+		require.Equal(t, uint16(11+i), p.pkt.SequenceNumber)
+		require.Equal(t, uint32(960+frames*960), p.pkt.Timestamp)
+		require.Equal(t, time.Duration(1+frames)*20*time.Millisecond, p.pts)
+		frames += int(p.pkt.Payload[1])
+	}
+	require.Equal(t, 100, frames)
+	require.Equal(t, uint16(45), p2.SequenceNumber)
+}
+
+func TestRTPGapFillerConcealsSubFrameRemainderWithAShorterFrame(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 0, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, 0)
+
+	// a 30ms gap: one 20ms frame, then a 10ms frame of the same SILK band
+	p2 := opusPacket(11, 960+1440, toc20ms)
+	require.NoError(t, fillPaused(f, p2, collectPushes(&pushes)))
+	require.Len(t, pushes, 2)
+	require.Equal(t, []byte{toc20ms | 0x03, 1}, pushes[0].pkt.Payload)
+	require.Equal(t, []byte{0x03, 1}, pushes[1].pkt.Payload, "config 0 is SILK NB 10ms")
+	require.Equal(t, uint32(960+960), pushes[1].pkt.Timestamp)
+	require.Equal(t, uint16(13), p2.SequenceNumber)
+	f.Advance(p2, 50*time.Millisecond)
+
+	// two successive 10ms gaps each get their own 10ms frame
+	prev := p2
+	for i, seq := range []uint16{12, 13} {
+		p := opusPacket(seq, prev.Timestamp+960+480, toc20ms)
+		require.NoError(t, fillPaused(f, p, collectPushes(&pushes)))
+		require.Len(t, pushes, 3+i)
+		require.Equal(t, []byte{0x03, 1}, pushes[2+i].pkt.Payload)
+		f.Advance(p, 0)
+		prev = p
+	}
+}
+
+func TestRTPGapFillerFillsARunOfRejectedPackets(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 0, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, time.Second)
+
+	// 30 packets were rejected by appsrc: real time moved 620ms, the filler did not
+	p := opusPacket(41, 960*31, toc20ms)
+	require.NoError(t, f.Fill(p, time.Second+620*time.Millisecond, collectPushes(&pushes)))
+	var frames int
+	for _, push := range pushes {
+		frames += int(push.pkt.Payload[1])
+	}
+	require.Equal(t, 30, frames)
+	require.Equal(t, uint16(41), p.SequenceNumber, "the rejected packets' numbers are reused")
+}
+
+func TestOpusConcealTOC(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		last  byte
+		frame time.Duration
+		toc   byte
+		ok    bool
+	}{
+		{"silk wb 20ms keeps its config", 0x48, 20 * time.Millisecond, 0x4b, true},
+		{"silk wb 10ms", 0x48, 10 * time.Millisecond, 0x43, true},
+		{"silk wb stereo 60ms", 0x4c, 60 * time.Millisecond, 0x5f, true},
+		{"silk has no 5ms, celt fullband does", 0x48, 5 * time.Millisecond, 0xeb, true},
+		{"hybrid fb 10ms", 0x78, 10 * time.Millisecond, 0x73, true},
+		{"celt fb 2.5ms", 0xf8, 2500 * time.Microsecond, 0xe3, true},
+		{"no 15ms frame", 0xf8, 15 * time.Millisecond, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			toc, ok := opusConcealTOC(tc.last, tc.frame)
+			require.Equal(t, tc.ok, ok)
+			require.Equal(t, tc.toc, toc)
+		})
+	}
+}
+
+func TestRTPGapFillerBridgedReportsWhetherThePacketIsContiguous(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 0, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	require.False(t, f.Bridged(), "nothing to bridge to before the first packet")
+	f.Advance(p1, time.Second)
+
+	p2 := opusPacket(11, 960, toc20ms)
+	require.NoError(t, fillPaused(f, p2, collectPushes(&pushes)))
+	require.True(t, f.Bridged(), "contiguous")
+	f.Advance(p2, time.Second+20*time.Millisecond)
+
+	p3 := opusPacket(12, 960*2+960*40, toc20ms)
+	require.NoError(t, fillPaused(f, p3, collectPushes(&pushes)))
+	require.True(t, f.Bridged(), "an 800ms pause was concealed")
+	require.NotEmpty(t, pushes)
+	f.Advance(p3, time.Second+840*time.Millisecond)
+
+	// RTP jumps 4s while 1s of real time passed: not concealed, so not bridged
+	jump := opusPacket(13, p3.Timestamp+960+48000*4, toc20ms)
+	require.NoError(t, f.Fill(jump, time.Second+1840*time.Millisecond, collectPushes(&pushes)))
+	require.False(t, f.Bridged())
+
+	f.Advance(jump, time.Second+1840*time.Millisecond)
+	f.Reset()
+	p5 := opusPacket(14, jump.Timestamp+960, toc20ms)
+	require.NoError(t, fillPaused(f, p5, collectPushes(&pushes)))
+	require.False(t, f.Bridged(), "after a reset the packet starts a new run")
+}
+
+func TestRTPGapFillerStrayBackwardPacketDoesNotRewind(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 960*5, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, 100*time.Millisecond)
+
+	// a packet with a newer number but an older timestamp is pushed, but leaves the position alone
+	stray := opusPacket(11, 960*2, toc20ms)
+	require.NoError(t, fillPaused(f, stray, collectPushes(&pushes)))
+	f.Advance(stray, 40*time.Millisecond)
+	require.Empty(t, pushes)
+
+	// the next in-order packet is contiguous with p1, so nothing is concealed twice
+	p3 := opusPacket(12, 960*6, toc20ms)
+	require.NoError(t, fillPaused(f, p3, collectPushes(&pushes)))
+	require.Empty(t, pushes)
+}
+
+func TestRTPGapFillerClockRestartReanchorsAfterARun(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 960*500, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, 10*time.Second)
+
+	// the sender's clock restarts near zero; three packets in a row re-anchor the filler there
+	for i, ts := range []uint32{0, 960, 1920} {
+		p := opusPacket(uint16(11+i), ts, toc20ms)
+		require.NoError(t, fillPaused(f, p, collectPushes(&pushes)))
+		f.Advance(p, 10*time.Second+time.Duration(i+1)*20*time.Millisecond)
+	}
+	require.Empty(t, pushes)
+
+	// from here the new timeline is contiguous, and a pause on it is concealed
+	p5 := opusPacket(14, 2880+960, toc20ms)
+	require.NoError(t, fillPaused(f, p5, collectPushes(&pushes)))
+	require.Len(t, pushes, 1)
+	require.Equal(t, uint32(2880), pushes[0].pkt.Timestamp)
+}
+
+func TestRTPGapFillerReusesLostPacketsSequenceNumbers(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 0, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, 0)
+
+	// packet 11 is lost: its concealment takes its number and packet 12 keeps its own
+	p3 := opusPacket(12, 960*2, toc20ms)
+	require.NoError(t, fillPaused(f, p3, collectPushes(&pushes)))
+	require.Len(t, pushes, 1)
+	require.Equal(t, uint16(11), pushes[0].pkt.SequenceNumber)
+	require.Equal(t, uint16(12), p3.SequenceNumber)
+	require.Equal(t, uint16(0), f.seqOffset)
+	f.Advance(p3, 40*time.Millisecond)
+
+	// packets 13 and 14 are lost across a 2s DTX pause: 34 synthetic packets, two take the
+	// lost numbers and the rest shift the real packet
+	p5 := opusPacket(15, p3.Timestamp+960+100*960, toc20ms)
+	require.NoError(t, fillPaused(f, p5, collectPushes(&pushes)))
+	require.Len(t, pushes, 35)
+	require.Equal(t, uint16(13), pushes[1].pkt.SequenceNumber)
+	require.Equal(t, uint16(46), pushes[34].pkt.SequenceNumber)
+	require.Equal(t, uint16(47), p5.SequenceNumber)
+	require.Equal(t, uint16(32), f.seqOffset)
+}
+
+func TestRTPGapFillerFollowsTheLastPacketsFrameSize(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 0, toc60ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, 0)
+	require.Equal(t, uint32(2880), f.frame)
+
+	p2 := opusPacket(11, 2880, toc20ms)
+	require.NoError(t, fillPaused(f, p2, collectPushes(&pushes)))
+	require.Empty(t, pushes)
+	f.Advance(p2, 60*time.Millisecond)
+	require.Equal(t, uint32(960), f.frame)
+
+	p3 := opusPacket(12, 2880+960+960, toc20ms)
+	require.NoError(t, fillPaused(f, p3, collectPushes(&pushes)))
+	require.Len(t, pushes, 1)
+	require.Equal(t, []byte{toc20ms | 0x03, 1}, pushes[0].pkt.Payload)
+}
+
+func TestRTPGapFillerIgnoresReorderedPackets(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 960, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, 20*time.Millisecond)
+
+	late := opusPacket(9, 0, toc20ms)
+	require.NoError(t, fillPaused(f, late, collectPushes(&pushes)))
+	require.Empty(t, pushes)
+}
+
+func TestRTPGapFillerResetKeepsTheSequenceShift(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 0, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, 0)
+	p2 := opusPacket(11, 960*3, toc20ms)
+	require.NoError(t, fillPaused(f, p2, collectPushes(&pushes)))
+	require.Len(t, pushes, 1)
+	f.Advance(p2, 60*time.Millisecond)
+
+	f.Reset()
+	// a packet far ahead after a reset is not filled, but still keeps its number past the synthetic one
+	p3 := opusPacket(12, 960*500, toc20ms)
+	require.NoError(t, fillPaused(f, p3, collectPushes(&pushes)))
+	require.Len(t, pushes, 1)
+	require.Equal(t, uint16(13), p3.SequenceNumber)
+
+	f.Advance(p3, 10*time.Second)
+	p4 := opusPacket(13, 960*502, toc20ms)
+	require.NoError(t, fillPaused(f, p4, collectPushes(&pushes)))
+	require.Len(t, pushes, 2, "filling resumes from the first packet after the reset")
+}
+
+func TestRTPGapFillerIgnoresTimestampJumpsWithoutAPause(t *testing.T) {
+	f := newRTPGapFiller(48000, opusGapCodec)
+	var pushes []pushedPacket
+
+	p1 := opusPacket(10, 0, toc20ms)
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, time.Second)
+
+	// RTP jumps 10s while only one frame of real time passed: a restart, not a pause
+	p2 := opusPacket(11, 960+48000*10, toc20ms)
+	require.NoError(t, f.Fill(p2, 20*time.Millisecond, collectPushes(&pushes)))
+	require.Empty(t, pushes)
+	require.Equal(t, uint16(11), p2.SequenceNumber)
+	f.Advance(p2, time.Second+20*time.Millisecond)
+
+	// filling resumes on the new run
+	p3 := opusPacket(12, p2.Timestamp+960*3, toc20ms)
+	require.NoError(t, fillPaused(f, p3, collectPushes(&pushes)))
+	require.Len(t, pushes, 1)
+	require.Equal(t, uint8(2), pushes[0].pkt.Payload[1])
+}
+
+func TestRTPGapFillerG711Silence(t *testing.T) {
+	f := newRTPGapFiller(8000, g711GapCodec(0xff))
+	var pushes []pushedPacket
+
+	payload := make([]byte, 160)
+	p1 := &rtp.Packet{Header: rtp.Header{Version: 2, PayloadType: 0, SequenceNumber: 1, Timestamp: 0}, Payload: payload}
+	require.NoError(t, fillPaused(f, p1, collectPushes(&pushes)))
+	f.Advance(p1, 0)
+	require.Equal(t, uint32(160), f.frame)
+
+	// 100ms gap: five 20ms frames, in packets of at most 60ms
+	p2 := &rtp.Packet{Header: rtp.Header{Version: 2, PayloadType: 0, SequenceNumber: 2, Timestamp: 160 + 800}, Payload: payload}
+	require.NoError(t, fillPaused(f, p2, collectPushes(&pushes)))
+	require.Len(t, pushes, 2)
+	require.Len(t, pushes[0].pkt.Payload, 480)
+	require.Len(t, pushes[1].pkt.Payload, 320)
+	for _, b := range pushes[0].pkt.Payload {
+		require.Equal(t, byte(0xff), b)
+	}
+	require.Equal(t, 20*time.Millisecond, pushes[0].pts, "the fill starts one frame after the last real packet")
+}

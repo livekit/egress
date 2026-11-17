@@ -17,7 +17,10 @@
 package test
 
 import (
+	"fmt"
+	"math/rand"
 	"path"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +30,7 @@ import (
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 func (r *Runner) testFile(t *testing.T) {
@@ -89,6 +93,84 @@ func (r *Runner) testFile(t *testing.T) {
 				fileOptions: &fileOptions{
 					filename: "r_{room_name}_audio_mp3_{time}",
 					fileType: livekit.EncodedFileType_MP3,
+				},
+			},
+
+			{
+				name:        "RoomComposite/SingleSpeaker",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					layout:           layoutSingleSpeaker,
+					multiParticipant: true,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_single_speaker_{time}.mp4",
+				},
+			},
+
+			// --- Room Composite, chrome ---
+			//
+			// prod defaults to enable_template_sdk: false, so keep one case per
+			// layout plus audio-only on the chrome path.
+
+			{
+				name:        "RoomComposite/Chrome/Speaker",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec:        types.MimeTypeOpus,
+					videoCodec:        types.MimeTypeH264,
+					layout:            layoutSpeaker,
+					multiParticipant:  true,
+					chromeCompositing: true,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_chrome_speaker_{time}.mp4",
+				},
+			},
+			{
+				name:        "RoomComposite/Chrome/Grid",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec:        types.MimeTypeOpus,
+					videoCodec:        types.MimeTypeH264,
+					layout:            layoutGrid,
+					multiParticipant:  true,
+					chromeCompositing: true,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_chrome_grid_{time}.mp4",
+				},
+			},
+			{
+				name:        "RoomComposite/Chrome/SingleSpeaker",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec:        types.MimeTypeOpus,
+					videoCodec:        types.MimeTypeH264,
+					layout:            layoutSingleSpeaker,
+					multiParticipant:  true,
+					chromeCompositing: true,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_chrome_single_speaker_{time}.mp4",
+				},
+			},
+			{
+				name:        "RoomComposite/Chrome/AudioOnly",
+				requestType: types.RequestTypeRoomComposite,
+				publishOptions: publishOptions{
+					audioCodec:        types.MimeTypeOpus,
+					audioOnly:         true,
+					chromeCompositing: true,
+				},
+				encodingOptions: &livekit.EncodingOptions{
+					AudioCodec: livekit.AudioCodec_OPUS,
+				},
+				fileOptions: &fileOptions{
+					filename: "r_{room_name}_chrome_audio_{time}",
+					fileType: livekit.EncodedFileType_OGG,
 				},
 			},
 
@@ -158,6 +240,17 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 				fileOptions: &fileOptions{
 					filename: "tc_{publisher_identity}_vp8_{time}.mp4",
+					fileType: livekit.EncodedFileType_MP4,
+				},
+			},
+			{
+				name:        "TrackComposite/AV1",
+				requestType: types.RequestTypeTrackComposite, publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					videoCodec: types.MimeTypeAV1,
+				},
+				fileOptions: &fileOptions{
+					filename: "tc_{publisher_identity}_av1_{time}.mp4",
 					fileType: livekit.EncodedFileType_MP4,
 				},
 			},
@@ -275,6 +368,54 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:   "t_{track_type}_{time}.webm",
 					outputType: types.OutputTypeWebM,
 				},
+			},
+			{
+				name:        "Track/AV1",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					videoCodec: types.MimeTypeAV1,
+					videoOnly:  true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "t_{track_id}_av1_{time}.mp4",
+					outputType: types.OutputTypeMP4,
+				},
+			},
+			{
+				name:        "Track/H264AspectSwitch",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					videoOnly: true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "t_{track_id}_aspect_switch_{time}.mp4",
+					outputType: types.OutputTypeMP4,
+				},
+				custom: r.testTrackH264AspectSwitch,
+			},
+			{
+				name:        "Track/H264BlankFrames",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					videoOnly: true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "t_{track_id}_blank_frames_{time}.mp4",
+					outputType: types.OutputTypeMP4,
+				},
+				custom: r.testTrackBlankFrames(types.MimeTypeH264),
+			},
+			{
+				name:        "Track/VP8BlankFrames",
+				requestType: types.RequestTypeTrack,
+				publishOptions: publishOptions{
+					videoOnly: true,
+				},
+				fileOptions: &fileOptions{
+					filename:   "t_{track_id}_blank_frames_{time}.webm",
+					outputType: types.OutputTypeWebM,
+				},
+				custom: r.testTrackBlankFrames(types.MimeTypeVP8),
 			},
 			// {
 			// 	name:       "Track/VP9",
@@ -448,6 +589,35 @@ func (r *Runner) testFile(t *testing.T) {
 				},
 			},
 			{
+				name:        "Media/IdentityLateJoin",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					audioOnly:        true,
+					multiParticipant: true,
+					p1ConnectDelay:   time.Second * 15,
+					audioRoutes: []*livekit.AudioRoute{
+						{
+							Match:   &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+							Channel: livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						},
+						{
+							Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: setP1Identity},
+							Channel: livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+						},
+					},
+					expectedAudioChannels: map[string]livekit.AudioChannel{
+						"p0": livekit.AudioChannel_AUDIO_CHANNEL_LEFT,
+						"p1": livekit.AudioChannel_AUDIO_CHANNEL_RIGHT,
+					},
+				},
+				fileOptions: &fileOptions{
+					filename: "media_identity_late_join_{time}",
+					fileType: livekit.EncodedFileType_OGG,
+				},
+				custom: r.testMediaIdentityLateJoin,
+			},
+			{
 				name:        "Media/Full",
 				requestType: types.RequestTypeMedia,
 				publishOptions: publishOptions{
@@ -509,12 +679,219 @@ func (r *Runner) testFile(t *testing.T) {
 					filename: "media_participant_video_{time}.mp4",
 				},
 			},
+			{
+				name:        "Media/MCAP/CaptureAll",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					multiParticipant: true,
+					captureAudioAll:  true,
+					mediaVideos:      &livekit.VideoConfig{CaptureAll: true},
+				},
+				fileOptions: &fileOptions{
+					filename:     "media_mcap_capture_all_{time}.mcap",
+					fileType:     livekit.EncodedFileType_MCAP,
+					mcapChannels: 6,
+				},
+			},
+			{
+				name:        "Media/MCAP/Selectors",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:       types.MimeTypeOpus,
+					videoCodec:       types.MimeTypeH264,
+					multiParticipant: true,
+					captureAudioAll:  true,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match:   &livekit.AudioRoute_ParticipantIdentity{ParticipantIdentity: setP1Identity},
+						Exclude: true,
+					}},
+					mediaVideos: &livekit.VideoConfig{
+						CaptureAll: true,
+						Selectors: []*livekit.VideoSelector{{
+							Match:   &livekit.VideoSelector_ParticipantIdentity{ParticipantIdentity: setP1Identity},
+							Exclude: true,
+						}},
+					},
+				},
+				fileOptions: &fileOptions{
+					filename:     "media_mcap_selectors_{time}.mcap",
+					fileType:     livekit.EncodedFileType_MCAP,
+					mcapChannels: 4,
+					mcapExcluded: "p1",
+				},
+			},
+			{
+				name:        "Media/MCAP/Republish",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					audioCodec:      types.MimeTypeOpus,
+					videoCodec:      types.MimeTypeAV1,
+					videoUnpublish:  time.Second * 10,
+					videoRepublish:  time.Second * 20,
+					captureAudioAll: true,
+					mediaVideos:     &livekit.VideoConfig{CaptureAll: true},
+				},
+				fileOptions: &fileOptions{
+					filename:     "media_mcap_republish_{time}.mcap",
+					fileType:     livekit.EncodedFileType_MCAP,
+					mcapChannels: 2,
+				},
+			},
+
+			// ---- Media passthrough ----
+
+			{
+				name:        "Media/PassthroughOpus",
+				requestType: types.RequestTypeMedia,
+				passthrough: true,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypeOpus,
+					audioOnly:  true,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename:   "pt_{track_source}_{time}.ogg",
+					outputType: types.OutputTypeOGG,
+				},
+			},
+			{
+				name:        "Media/PassthroughOpusDTX",
+				requestType: types.RequestTypeMedia,
+				passthrough: true,
+				publishOptions: publishOptions{
+					audioOnly: true,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename:   "pt_dtx_{time}.ogg",
+					outputType: types.OutputTypeOGG,
+				},
+				custom: r.testPassthroughOpusDTX,
+			},
+			{
+				name:        "Media/PassthroughPCMU",
+				requestType: types.RequestTypeMedia,
+				passthrough: true,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypePCMU,
+					audioOnly:  true,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename:   "pt_{track_source}_pcmu_{time}.ogg",
+					outputType: types.OutputTypeOGG,
+				},
+			},
+			{
+				name:        "Media/PassthroughPCMA",
+				requestType: types.RequestTypeMedia,
+				passthrough: true,
+				publishOptions: publishOptions{
+					audioCodec: types.MimeTypePCMA,
+					audioOnly:  true,
+					audioRoutes: []*livekit.AudioRoute{{
+						Match: &livekit.AudioRoute_TrackId{TrackId: setAtRuntime},
+					}},
+				},
+				fileOptions: &fileOptions{
+					filename:   "pt_{track_source}_pcma_{time}.ogg",
+					outputType: types.OutputTypeOGG,
+				},
+			},
+			{
+				name:        "Media/PassthroughH264",
+				requestType: types.RequestTypeMedia,
+				passthrough: true,
+				publishOptions: publishOptions{
+					videoCodec:        types.MimeTypeH264,
+					videoOnly:         true,
+					mediaVideoTrackID: setAtRuntime,
+				},
+				fileOptions: &fileOptions{
+					filename:   "pt_{track_id}_{time}.mp4",
+					outputType: types.OutputTypeMP4,
+				},
+			},
+			{
+				name:        "Media/PassthroughVP8",
+				requestType: types.RequestTypeMedia,
+				passthrough: true,
+				publishOptions: publishOptions{
+					videoCodec:        types.MimeTypeVP8,
+					videoOnly:         true,
+					mediaVideoTrackID: setAtRuntime,
+				},
+				fileOptions: &fileOptions{
+					filename:   "pt_{track_type}_{time}.webm",
+					outputType: types.OutputTypeWebM,
+				},
+			},
 		} {
 			if !r.run(t, test) {
 				return
 			}
 		}
 	})
+}
+
+// testPassthroughOpusDTX checks a passthrough Opus file keeps real-time duration across DTX silence
+func (r *Runner) testPassthroughOpusDTX(t *testing.T, test *testCase) {
+	room, err := lksdk.ConnectToRoom(r.WsUrl, lksdk.ConnectInfo{
+		APIKey:              r.ApiKey,
+		APISecret:           r.ApiSecret,
+		RoomName:            r.RoomName,
+		ParticipantName:     "egress-dtx",
+		ParticipantIdentity: fmt.Sprintf("dtx-%d", rand.Intn(100)),
+	}, lksdk.NewRoomCallback())
+	require.NoError(t, err)
+	t.Cleanup(room.Disconnect)
+
+	// 5s of speech, then 4.8s of DTX, then speech until the egress stops
+	pub := publishOpusWithDTX(t, room.LocalParticipant, 250, 240)
+	test.audioTrackID = pub.SID()
+
+	req := r.buildRequest(test)
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+	p.GetFileConfig().OutputType = test.fileOptions.outputType
+
+	egressID := r.startEgress(t, req)
+	time.Sleep(testDuration / 2)
+	res := r.stopEgress(t, egressID)
+
+	test.contentCheck = func(t *testing.T, _ string, info *FFProbeInfo) {
+		actual, err := strconv.ParseFloat(info.Format.Duration, 64)
+		require.NoError(t, err)
+		expected := time.Duration(res.FileResults[0].Duration).Seconds()
+		require.InDelta(t, expected, actual, 2.0, "file timeline was compressed across DTX")
+	}
+	r.verifyFile(t, test, p, res)
+}
+
+// testMediaIdentityLateJoin checks an identity audio route doesn't hold the start for a participant who joins later
+func (r *Runner) testMediaIdentityLateJoin(t *testing.T, test *testCase) {
+	req := r.buildRequest(test)
+	p, err := config.GetValidatedPipelineConfig(r.ServiceConfig, req)
+	require.NoError(t, err)
+
+	egressID := r.startEgress(t, req)
+	select {
+	case <-test.publishers["p1"].connected:
+		require.FailNow(t, "egress became active only after the identity-routed participant joined")
+	default:
+	}
+
+	time.Sleep(testDuration)
+	res := r.stopEgress(t, egressID)
+	r.verifyFile(t, test, p, res)
 }
 
 func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig, res *livekit.EgressInfo) {
@@ -548,8 +925,39 @@ func (r *Runner) verifyFile(t *testing.T, tc *testCase, p *config.PipelineConfig
 	manifest := loadManifest(t, p.GetFileConfig().StorageConfig, manifestLocal, manifestStorage)
 	require.NotNil(t, manifest)
 
+	if p.GetFileConfig().OutputType == types.OutputTypeMCAP {
+		verifyMCAP(t, tc, localPath, fileRes)
+		return
+	}
+
+	// passthrough resolves the output codec from the published track at runtime
+	if p.Passthrough && p.VideoOutCodec == "" && tc.videoCodec != "" {
+		p.VideoOutCodec = tc.videoCodec
+	}
+
 	// verify
 	info := verify(t, localPath, p, res, types.EgressTypeFile, r.sourceFramerate, false)
+	if p.OpusPassthrough(tc.audioCodec) {
+		verifyOpusPassthrough(t, info)
+	}
 
-	runContentCheck(t, tc, localPath, info, "file", formatFromFileName(localPath))
+	align := runContentCheck(t, tc, localPath, info, "file", formatFromFileName(localPath))
+	verifyFrameContinuity(t, localPath, tc, align)
+}
+
+// verifyOpusPassthrough checks the publisher's packets were written as-is rather than re-encoded to stereo
+func verifyOpusPassthrough(t *testing.T, info *FFProbeInfo) {
+	for _, stream := range info.Streams {
+		if stream.CodecType == "audio" {
+			require.Equal(t, 1, stream.Channels)
+		}
+	}
+
+	source, err := ffprobe(participantSamples["p0"][types.MimeTypeOpus])
+	require.NoError(t, err)
+	expected, err := strconv.ParseFloat(source.Format.BitRate, 64)
+	require.NoError(t, err)
+	actual, err := strconv.ParseFloat(info.Format.BitRate, 64)
+	require.NoError(t, err)
+	require.InEpsilon(t, expected, actual, 0.2)
 }

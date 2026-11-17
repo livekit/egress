@@ -92,7 +92,7 @@ func (h *Handler) GenerateMetrics(_ context.Context) (string, error) {
 		return "", err
 	}
 
-	metricsAsString, err := renderMetrics(metrics)
+	metricsAsString, err := renderMetrics(h.filterMetrics(metrics))
 	if err != nil {
 		return "", err
 	}

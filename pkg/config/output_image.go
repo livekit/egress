@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/livekit/egress/pkg/errors"
@@ -65,12 +66,32 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput, upload egre
 		return nil, err
 	}
 
+	switch images.FilenameSuffix {
+	case livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX,
+		livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP,
+		livekit.ImageFileSuffix_IMAGE_SUFFIX_NONE_OVERWRITE:
+	default:
+		return nil, errors.ErrInvalidInput("filename_suffix")
+	}
+
 	sc, err := p.getStorageConfig(upload)
 	if err != nil {
 		return nil, err
 	}
 
+	// Normalize first: path cleaning can drop a {retry} directory (images/{retry}/../shot) or reduce the
+	// prefix to nothing (. or images/..), so the guard has to look at what is actually used.
 	filenamePrefix := clean(images.FilenamePrefix)
+
+	// On retry, an explicit prefix must include {retry} to avoid overwriting images of the
+	// previous attempt. Only the index suffix restarts at 0 and collides; timestamps differ
+	// and NONE_OVERWRITE replaces the same file by design.
+	if p.Info.RetryCount > 0 && images.FilenameSuffix == livekit.ImageFileSuffix_IMAGE_SUFFIX_INDEX &&
+		filenamePrefix != "" && !strings.HasSuffix(filenamePrefix, "/") &&
+		!strings.Contains(filenamePrefix, "{retry}") {
+		return nil, errors.ErrNonRetryableOutput
+	}
+
 	conf := &ImageConfig{
 		outputConfig: outputConfig{
 			OutputType: outputType,
@@ -134,8 +155,8 @@ func (p *PipelineConfig) getImageConfig(images *livekit.ImageOutput, upload egre
 func (o *ImageConfig) updatePrefix(p *PipelineConfig) error {
 	identifier, replacements := p.getFilenameInfo()
 
-	o.ImagePrefix = stringReplace(o.ImagePrefix, replacements)
-	o.ImagesInfo.FilenamePrefix = stringReplace(o.ImagesInfo.FilenamePrefix, replacements)
+	o.ImagePrefix = replaceAndClean(o.ImagePrefix, replacements)
+	o.ImagesInfo.FilenamePrefix = replaceAndClean(o.ImagesInfo.FilenamePrefix, replacements)
 	o.ImageExtension = types.FileExtensionForOutputType[o.OutputType]
 
 	imagesDir, imagesPrefix := path.Split(o.ImagePrefix)

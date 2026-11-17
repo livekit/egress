@@ -1,51 +1,12 @@
 #!/bin/bash
 set -euxo pipefail
 
-if [ "$1" = "linux/arm64" ]
-then
-  apt-get update
-  apt-get install -y \
-    ca-certificates \
-    fonts-liberation \
-    libasound2t64 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libc6 \
-    libcairo2 \
-    libcups2 \
-    libdbus-1-3 \
-    libexpat1 \
-    libfontconfig1 \
-    libgbm1 \
-    libglib2.0-0 \
-    libnspr4 \
-    libnss3 \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libx11-6 \
-    libx11-xcb1 \
-    libxcb1 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxi6 \
-    libxrandr2 \
-    libxrender1 \
-    libxss1 \
-    libxtst6 \
-    xdg-utils
-  chmod +x /chrome-installer/arm64/chromedriver-mac-arm64/chromedriver
-  mv -f /chrome-installer/arm64/chromedriver-mac-arm64/chromedriver /usr/local/bin/chromedriver
-  mv /chrome-installer/arm64/ /chrome
-  cp /chrome/chrome_sandbox /usr/local/sbin/chrome-devel-sandbox
-  chown root:root /usr/local/sbin/chrome-devel-sandbox
-  chmod 4755 /usr/local/sbin/chrome-devel-sandbox
-else
-  apt-get install -y /chrome-installer/amd64/google-chrome-stable_amd64.deb
-  chmod +x /chrome-installer/amd64/chromedriver-linux64/chromedriver
-  mv -f /chrome-installer/amd64/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
-fi
+apt-get update
+apt-get install -y /chrome-installer/google-chrome-stable.deb
+
+# Chrome's SUID sandbox helper, for deployments that set enable_chrome_sandbox
+cp /opt/google/chrome/chrome-sandbox /usr/local/sbin/chrome-devel-sandbox
+chown root:root /usr/local/sbin/chrome-devel-sandbox
+chmod 4755 /usr/local/sbin/chrome-devel-sandbox
 
 rm -rf /chrome-installer

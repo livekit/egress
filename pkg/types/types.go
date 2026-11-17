@@ -51,6 +51,7 @@ const (
 	MimeTypeH264     MimeType = "video/h264"
 	MimeTypeVP8      MimeType = "video/vp8"
 	MimeTypeVP9      MimeType = "video/vp9"
+	MimeTypeAV1      MimeType = "video/av1"
 	MimeTypeJPEG     MimeType = "image/jpeg"
 	MimeTypeRawVideo MimeType = "video/x-raw"
 	MimeTypeMP3      MimeType = "audio/mpeg"
@@ -70,6 +71,7 @@ const (
 	OutputTypeIVF         OutputType = "video/x-ivf"
 	OutputTypeMP4         OutputType = "video/mp4"
 	OutputTypeTS          OutputType = "video/mp2t"
+	OutputTypeM4S         OutputType = "video/iso.segment"
 	OutputTypeWebM        OutputType = "video/webm"
 	OutputTypeJPEG        OutputType = "image/jpeg"
 	OutputTypeRTMP        OutputType = "rtmp"
@@ -77,6 +79,7 @@ const (
 	OutputTypeHLS         OutputType = "application/x-mpegurl"
 	OutputTypeJSON        OutputType = "application/json"
 	OutputTypeBlob        OutputType = "application/octet-stream"
+	OutputTypeMCAP        OutputType = "application/mcap"
 
 	// file extensions
 	FileExtensionRaw  = ".raw"
@@ -85,9 +88,11 @@ const (
 	FileExtensionIVF  = ".ivf"
 	FileExtensionMP4  = ".mp4"
 	FileExtensionTS   = ".ts"
+	FileExtensionM4S  = ".m4s"
 	FileExtensionWebM = ".webm"
 	FileExtensionM3U8 = ".m3u8"
 	FileExtensionJPEG = ".jpeg"
+	FileExtensionMCAP = ".mcap"
 
 	Unknown = "unknown"
 )
@@ -103,6 +108,7 @@ var (
 		OutputTypeRTMP: MimeTypeAAC,
 		OutputTypeSRT:  MimeTypeAAC,
 		OutputTypeHLS:  MimeTypeAAC,
+		OutputTypeMCAP: MimeTypeOpus,
 	}
 
 	DefaultVideoCodecs = map[OutputType]MimeType{
@@ -113,6 +119,7 @@ var (
 		OutputTypeRTMP: MimeTypeH264,
 		OutputTypeSRT:  MimeTypeH264,
 		OutputTypeHLS:  MimeTypeH264,
+		OutputTypeMCAP: MimeTypeH264,
 	}
 
 	FileExtensions = map[FileExtension]struct{}{
@@ -122,9 +129,11 @@ var (
 		FileExtensionIVF:  {},
 		FileExtensionMP4:  {},
 		FileExtensionTS:   {},
+		FileExtensionM4S:  {},
 		FileExtensionWebM: {},
 		FileExtensionM3U8: {},
 		FileExtensionJPEG: {},
+		FileExtensionMCAP: {},
 	}
 
 	FileExtensionForOutputType = map[OutputType]FileExtension{
@@ -134,9 +143,11 @@ var (
 		OutputTypeIVF:  FileExtensionIVF,
 		OutputTypeMP4:  FileExtensionMP4,
 		OutputTypeTS:   FileExtensionTS,
+		OutputTypeM4S:  FileExtensionM4S,
 		OutputTypeWebM: FileExtensionWebM,
 		OutputTypeHLS:  FileExtensionM3U8,
 		OutputTypeJPEG: FileExtensionJPEG,
+		OutputTypeMCAP: FileExtensionMCAP,
 	}
 
 	CodecCompatibility = map[OutputType]map[MimeType]bool{
@@ -149,11 +160,13 @@ var (
 		OutputTypeIVF: {
 			MimeTypeVP8: true,
 			MimeTypeVP9: true,
+			MimeTypeAV1: true,
 		},
 		OutputTypeMP4: {
 			MimeTypeAAC:  true,
 			MimeTypeOpus: true,
 			MimeTypeH264: true,
+			MimeTypeAV1:  true,
 		},
 		OutputTypeTS: {
 			MimeTypeAAC:  true,
@@ -164,6 +177,7 @@ var (
 			MimeTypeOpus: true,
 			MimeTypeVP8:  true,
 			MimeTypeVP9:  true,
+			MimeTypeAV1:  true,
 		},
 		OutputTypeRTMP: {
 			MimeTypeAAC:  true,
@@ -183,6 +197,12 @@ var (
 			MimeTypeAAC:      true,
 			MimeTypeRawAudio: true,
 		},
+		OutputTypeMCAP: {
+			MimeTypeOpus: true,
+			MimeTypeH264: true,
+			MimeTypeVP9:  true,
+			MimeTypeAV1:  true,
+		},
 		OutputTypeUnknownFile: {
 			MimeTypeAAC:  true,
 			MimeTypeOpus: true,
@@ -190,6 +210,7 @@ var (
 			MimeTypeH264: true,
 			MimeTypeVP8:  true,
 			MimeTypeVP9:  true,
+			MimeTypeAV1:  true,
 		},
 	}
 
@@ -223,6 +244,7 @@ var (
 		MimeTypeH264: OutputTypeMP4,
 		MimeTypeVP8:  OutputTypeWebM,
 		MimeTypeVP9:  OutputTypeWebM,
+		MimeTypeAV1:  OutputTypeMP4,
 	}
 
 	StreamOutputTypes = map[string]OutputType{

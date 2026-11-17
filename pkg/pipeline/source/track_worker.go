@@ -16,6 +16,7 @@ package source
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/go-gst/go-gst/gst"
@@ -31,6 +32,7 @@ import (
 	"github.com/livekit/egress/pkg/pipeline/source/sdk"
 	"github.com/livekit/egress/pkg/pipeline/tempo"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
@@ -195,7 +197,7 @@ func (s *SDKSource) reportSubscribeError(isPostInit bool, resultChan chan<- subs
 
 func (s *SDKSource) validateSubscription(op Operation) error {
 	// Check websocket/video incompatibility for Track requests
-	if s.RequestType == types.RequestTypeTrack &&
+	if s.Passthrough &&
 		op.Pub.Kind() == lksdk.TrackKindVideo &&
 		s.Outputs[types.EgressTypeWebsocket] != nil {
 		mimeType := types.MimeType(strings.ToLower(op.Track.Codec().MimeType))
@@ -216,10 +218,10 @@ func (s *SDKSource) updatePreInitStateLocked(op Operation, ts *config.TrackSourc
 				s.AudioOutCodec = ts.MimeType
 			}
 		}
-		s.AudioTranscoding = true
+		s.AudioTranscoding = !s.OpusPassthrough(ts.MimeType)
 		s.AudioTracks = append(s.AudioTracks, ts)
 
-	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9:
+	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9, types.MimeTypeAV1:
 		s.VideoEnabled = true
 		s.VideoInCodec = ts.MimeType
 		if s.VideoOutCodec == "" {
@@ -231,21 +233,14 @@ func (s *SDKSource) updatePreInitStateLocked(op Operation, ts *config.TrackSourc
 				s.VideoEncoding = true
 			}
 		}
-		s.VideoTrack = ts
+		s.VideoTracks = append(s.VideoTracks, ts)
 	}
 
 	// Set identity and filename replacements based on request type
 	track := op.Track
 	pub := op.Pub
 	rp := op.RemoteParticipant
-	switch s.RequestType {
-	case types.RequestTypeTrackComposite:
-		if s.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
-			s.Identity = rp.Identity()
-			s.filenameReplacements["{publisher_identity}"] = s.Identity
-		}
-
-	case types.RequestTypeTrack:
+	if s.Passthrough {
 		s.Identity = rp.Identity()
 		s.TrackKind = pub.Kind().String()
 		s.TrackSource = strings.ToLower(pub.Source().String())
@@ -256,6 +251,11 @@ func (s *SDKSource) updatePreInitStateLocked(op Operation, ts *config.TrackSourc
 		s.filenameReplacements["{track_type}"] = s.TrackKind
 		s.filenameReplacements["{track_source}"] = s.TrackSource
 		s.filenameReplacements["{publisher_identity}"] = s.Identity
+	} else if s.RequestType == types.RequestTypeTrackComposite {
+		if s.Identity == "" || track.Kind() == webrtc.RTPCodecTypeVideo {
+			s.Identity = rp.Identity()
+			s.filenameReplacements["{publisher_identity}"] = s.Identity
+		}
 	}
 }
 
@@ -308,6 +308,12 @@ func (s *SDKSource) handleSubscribe(w *trackWorker, trackID string, state *worke
 
 	// Release subLock before transitioning to ACTIVE - we're done with pre-init work
 	s.subLock.RUnlock()
+
+	// The pipeline links this appsrc, either here or during the build, so cleanup
+	// owes it an EOS. Mark before the link rather than after: the writer runs on
+	// its own goroutine, and an EOS sent before the element is linked is still
+	// delivered once the pipeline starts it.
+	writer.MarkAddedToPipeline()
 
 	// For post-init subscriptions, notify pipeline to add track
 	if isPostInit {
@@ -424,10 +430,11 @@ func (s *SDKSource) doCleanup(trackID string, state *workerState) {
 
 	// Blocking cleanup - only affects this track's worker
 	active := s.active.Dec()
-	shouldContinue := s.RequestType == types.RequestTypeParticipant ||
-		s.RequestType == types.RequestTypeRoomComposite ||
-		s.RequestType == types.RequestTypeTemplate ||
-		s.RequestType == types.RequestTypeMedia
+	shouldContinue := !s.Passthrough &&
+		(s.RequestType == types.RequestTypeParticipant ||
+			s.RequestType == types.RequestTypeRoomComposite ||
+			s.RequestType == types.RequestTypeTemplate ||
+			s.RequestType == types.RequestTypeMedia)
 
 	if shouldContinue {
 		trackKind := writer.TrackKind()
@@ -463,20 +470,26 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 	}
 
 	ts := &config.TrackSource{
-		TrackID:         pub.SID(),
-		TrackKind:       pub.Kind(),
-		ParticipantKind: rp.Kind(),
-		MimeType:        types.MimeType(strings.ToLower(track.Codec().MimeType)),
-		PayloadType:     track.Codec().PayloadType,
-		ClockRate:       track.Codec().ClockRate,
+		TrackID:             pub.SID(),
+		TrackName:           pub.Name(),
+		TrackKind:           pub.Kind(),
+		ParticipantIdentity: rp.Identity(),
+		PublicationSource:   pub.Source(),
+		ParticipantKind:     rp.Kind(),
+		MimeType:            types.MimeType(strings.ToLower(track.Codec().MimeType)),
+		PayloadType:         track.Codec().PayloadType,
+		ClockRate:           track.Codec().ClockRate,
+		// replay carries no stereo metadata, and two channels is lossless for mono-coded packets
+		Stereo: s.IsReplay || isStereo(pub.TrackInfo()),
 	}
 
-	// Set audio channel from route match (RequestTypeMedia)
-	s.mu.Lock()
-	if ch, ok := s.audioChannels[pub.SID()]; ok {
-		ts.AudioChannel = &ch
+	// Match here (not at subscribe time): rp.Kind() can race with OnTrackPublished but is settled by writer creation.
+	if s.RequestType == types.RequestTypeMedia {
+		if route := s.MatchMediaAudio(pub.TrackInfo(), rp.Identity(), rp.Kind()); route != nil {
+			ch := route.Channel
+			ts.AudioChannel = &ch
+		}
 	}
-	s.mu.Unlock()
 
 	ts.AppSrc = app.SrcFromElement(src)
 
@@ -485,13 +498,13 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 	// Handle codec-specific setup (tempo controller for audio)
 	switch ts.MimeType {
 	case types.MimeTypeOpus, types.MimeTypePCMU, types.MimeTypePCMA:
-		if s.AudioTempoController.Enabled {
+		if s.AudioTempoController.Enabled && !s.OpusPassthrough(ts.MimeType) {
 			c := tempo.NewController(s.Latency.AudioMixerLatency)
 			ts.TempoController = c
 			tc = c
 		}
 
-	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9:
+	case types.MimeTypeH264, types.MimeTypeVP8, types.MimeTypeVP9, types.MimeTypeAV1:
 		// Video codecs - no special setup needed here
 
 	default:
@@ -508,6 +521,10 @@ func (s *SDKSource) createWriterForOp(op Operation) (*sdk.AppWriter, *config.Tra
 	}
 
 	return writer, ts, nil
+}
+
+func isStereo(info *livekit.TrackInfo) bool {
+	return info.GetStereo() || slices.Contains(info.GetAudioFeatures(), livekit.AudioTrackFeature_TF_STEREO) //nolint:staticcheck // keep deprecated field for older clients
 }
 
 func (s *SDKSource) handleOrphanedWriter(trackID string, writer *sdk.AppWriter) {

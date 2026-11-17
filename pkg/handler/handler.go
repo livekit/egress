@@ -24,6 +24,7 @@ import (
 	"github.com/frostbyte73/core"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/grpc"
 
 	"go.opentelemetry.io/otel"
@@ -31,11 +32,11 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/psrpc"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/ipc"
 	"github.com/livekit/egress/pkg/pipeline"
+	"github.com/livekit/egress/pkg/stats"
 )
 
 type Handler struct {
@@ -43,18 +44,40 @@ type Handler struct {
 
 	conf             *config.PipelineConfig
 	controller       *pipeline.Controller
-	rpcServer        rpc.EgressHandlerServer
 	ipcHandlerServer *grpc.Server
 	ipcServiceClient ipc.EgressServiceClient
 	initialized      core.Fuse
 	kill             core.Fuse
+
+	newPipeline   PipelineFactory
+	filterMetrics func([]*dto.MetricFamily) []*dto.MetricFamily
 }
 
 var (
 	tracer = otel.Tracer("github.com/livekit/egress/pkg/handler")
 )
 
-func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, error) {
+// PipelineFactory builds the pipeline controller the handler runs
+type PipelineFactory func(ctx context.Context, conf *config.PipelineConfig, ipcClient ipc.EgressServiceClient) (*pipeline.Controller, error)
+
+// Option configures a Handler
+type Option func(*Handler)
+
+// WithPipeline replaces pipeline.New as the handler's pipeline constructor
+func WithPipeline(f PipelineFactory) Option {
+	return func(h *Handler) {
+		h.newPipeline = f
+	}
+}
+
+// WithMetricsFilter replaces stats.FilterHandlerFamilies as the filter applied to scraped handler metrics
+func WithMetricsFilter(f func([]*dto.MetricFamily) []*dto.MetricFamily) Option {
+	return func(h *Handler) {
+		h.filterMetrics = f
+	}
+}
+
+func NewHandler(conf *config.PipelineConfig, opts ...Option) (*Handler, error) {
 	// The service already exposes go_* / process_* — leaving these registered
 	// causes prometheus.Gatherers.Gather to reject the scrape as duplicate.
 	prometheus.Unregister(collectors.NewGoCollector())
@@ -71,27 +94,17 @@ func NewHandler(conf *config.PipelineConfig, bus psrpc.MessageBus) (*Handler, er
 		conf:             conf,
 		ipcHandlerServer: grpc.NewServer(),
 		ipcServiceClient: ipcClient,
+		newPipeline:      pipeline.New,
+		filterMetrics:    stats.FilterHandlerFamilies,
+	}
+	for _, opt := range opts {
+		opt(h)
 	}
 
 	ipc.RegisterEgressHandlerServer(h.ipcHandlerServer, h)
 	if err = ipc.StartHandlerListener(h.ipcHandlerServer, path.Join(config.TmpDir, conf.HandlerID)); err != nil {
 		return nil, err
 	}
-
-	rpcServer, err := rpc.NewEgressHandlerServer(h, bus)
-	if err != nil {
-		return nil, err
-	}
-	if err = rpcServer.RegisterUpdateStreamTopic(conf.Info.EgressId); err != nil {
-		return nil, err
-	}
-	if err = rpcServer.RegisterStopEgressTopic(conf.Info.EgressId); err != nil {
-		return nil, err
-	}
-	if err = rpcServer.RegisterUpdateEgressTopic(conf.Info.EgressId); err != nil {
-		return nil, err
-	}
-	h.rpcServer = rpcServer
 
 	_, err = h.ipcServiceClient.HandlerReady(context.Background(), &ipc.HandlerReadyRequest{EgressId: conf.Info.EgressId})
 	if err != nil {
@@ -106,10 +119,7 @@ func (h *Handler) Run() {
 	ctx, span := tracer.Start(context.Background(), "Handler.Run")
 	defer span.End()
 
-	defer func() {
-		h.rpcServer.Shutdown()
-		h.ipcHandlerServer.Stop()
-	}()
+	defer h.ipcHandlerServer.Stop()
 
 	var err error
 	egressID := h.conf.Info.EgressId
@@ -125,7 +135,7 @@ func (h *Handler) Run() {
 		return
 	}
 
-	h.controller, err = pipeline.New(context.Background(), h.conf, h.ipcServiceClient)
+	h.controller, err = h.newPipeline(context.Background(), h.conf, h.ipcServiceClient)
 	h.initialized.Break()
 	if err != nil {
 		h.conf.Info.SetFailed(err)

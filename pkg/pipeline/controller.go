@@ -30,6 +30,8 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
+	"go.opentelemetry.io/otel"
+
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/egress/pkg/gstreamer"
@@ -42,14 +44,18 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
-	"go.opentelemetry.io/otel"
 )
 
 const (
 	pipelineName = "pipeline"
-	eosTimeout   = time.Second * 30
 
 	streamRetryUpdateInterval = time.Minute
+)
+
+// vars to allow tests to shorten them
+var (
+	eosTimeout     = time.Second * 30
+	prerollTimeout = time.Second * 30
 )
 
 type Controller struct {
@@ -205,20 +211,27 @@ func (c *Controller) BuildPipeline() error {
 		})
 	}
 
-	if c.AudioEnabled {
+	trackPreserving := c.TrackPreserving()
+	if c.AudioEnabled && !trackPreserving {
 		if err = builder.BuildAudioBin(p, c.PipelineConfig); err != nil {
 			return err
 		}
 	}
-	if c.VideoEnabled {
-		if err = builder.BuildVideoBin(p, c.PipelineConfig); err != nil {
+	if c.VideoEnabled && !trackPreserving {
+		var setDims func(string, int, int)
+		if c.Compositing {
+			if sdkSrc, ok := c.src.(*source.SDKSource); ok {
+				setDims = sdkSrc.UpdateTrackDimensions
+			}
+		}
+		if err = builder.BuildVideoBin(p, c.PipelineConfig, setDims); err != nil {
 			return err
 		}
 	}
 
 	for egressType, outputs := range c.Outputs {
 		for _, o := range outputs {
-			s, err := sink.NewSink(p, c.PipelineConfig, egressType, o, c.callbacks, c.monitor)
+			s, err := sink.NewSink(p, c.PipelineConfig, egressType, o, c.callbacks, c.monitor, c.src.GetStartedAt)
 			if err != nil {
 				return err
 			}
@@ -275,10 +288,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	c.startSessionLimitTimer(ctx)
 
 	// close when room ends
-	go func() {
-		<-c.src.EndRecording()
-		c.SendEOS(ctx, livekit.EndReasonSrcClosed)
-	}()
+	go c.watchEndRecording(ctx)
 
 	// wait until room is ready
 	start := c.src.StartRecording()
@@ -315,12 +325,15 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 			if err := s.Start(); err != nil {
 				c.src.Close()
 				c.Info.SetFailed(err)
+				// nothing else stops the pipeline here, and a non-live watchEndRecording parks on stopped
+				go c.p.Stop()
 				return c.Info
 			}
 		}
 	}
 
 	c.startOutputSizeMonitor()
+	c.startStallMonitor()
 
 	// Replay duration timer
 	if c.replayDuration > 0 {
@@ -333,6 +346,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	if err != nil {
 		c.src.Close()
 		c.Info.SetFailed(err)
+		go c.p.Stop()
 		return c.Info
 	}
 
@@ -365,6 +379,25 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	return c.Info
 }
 
+// a non-live source can finish before PLAYING, where SendEOS aborts a healthy egress
+func (c *Controller) watchEndRecording(ctx context.Context) {
+	<-c.src.EndRecording()
+
+	if !c.Live {
+		select {
+		// the fuse releases only after the status has left STARTING, so SendEOS can't abort
+		case <-c.playing.Watch():
+		// Close still sets the aborted status, and SendEOS has nothing left to stop
+		case <-c.stopped.Watch():
+			return
+		case <-time.After(prerollTimeout):
+			logger.Warnw("non-live pipeline did not reach playing", nil, "timeout", prerollTimeout)
+		}
+	}
+
+	c.SendEOS(ctx, livekit.EndReasonSrcClosed)
+}
+
 func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) error {
 	ctx, span := tracer.Start(ctx, "Pipeline.UpdateStream")
 	defer span.End()
@@ -378,31 +411,20 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 
 	// add stream outputs first
 	for _, rawUrl := range req.AddOutputUrls {
-		// validate and redact url
-		stream, err := o.AddStream(rawUrl, o.OutputType)
+		stream, err := o.AddStream("", rawUrl, o.OutputType)
 		if err != nil {
 			errs.AppendErr(err)
 			continue
 		}
-
-		// add stream info to results
-		c.mu.Lock()
-		c.Info.StreamResults = append(c.Info.StreamResults, stream.StreamInfo)
-		if list := c.Info.GetStream(); list != nil { //nolint:staticcheck // keep deprecated field for older clients
-			list.Info = append(list.Info, stream.StreamInfo)
-		}
-		c.mu.Unlock()
-
-		// add stream
-		if err = c.getStreamSink().AddStream(stream); err != nil {
-			stream.StreamInfo.Status = livekit.StreamInfo_FAILED
-			stream.StreamInfo.Error = err.Error()
-			stream.UpdateEndTime(time.Now().UnixNano())
+		c.addStream(stream, &errs)
+	}
+	for _, d := range req.AddDestinations {
+		stream, err := o.AddDestination(d, o.OutputType)
+		if err != nil {
 			errs.AppendErr(err)
 			continue
 		}
-
-		c.OutputCount.Inc()
+		c.addStream(stream, &errs)
 	}
 
 	// remove stream outputs
@@ -422,35 +444,24 @@ func (c *Controller) UpdateStream(ctx context.Context, req *livekit.UpdateStream
 	return errs.ToError()
 }
 
-func (c *Controller) UpdateEgress(ctx context.Context, req *livekit.UpdateEgressRequest) error {
-	ctx, span := tracer.Start(ctx, "Pipeline.UpdateEgress")
-	defer span.End()
+func (c *Controller) addStream(stream *config.Stream, errs *errors.ErrArray) {
+	c.mu.Lock()
+	c.Info.StreamResults = append(c.Info.StreamResults, stream.StreamInfo)
+	if list := c.Info.GetStream(); list != nil { //nolint:staticcheck // keep deprecated field for older clients
+		list.Info = append(list.Info, stream.StreamInfo)
+	}
+	c.mu.Unlock()
 
-	errs := errors.ErrArray{}
-
-	// update stream targets
-	if len(req.AddStreamUrls) > 0 || len(req.RemoveStreamUrls) > 0 {
-		streamReq := &livekit.UpdateStreamRequest{
-			EgressId:         req.EgressId,
-			AddOutputUrls:    req.AddStreamUrls,
-			RemoveOutputUrls: req.RemoveStreamUrls,
-		}
-		if err := c.UpdateStream(ctx, streamReq); err != nil {
-			errs.AppendErr(err)
-		}
+	if err := c.getStreamSink().AddStream(stream); err != nil {
+		stream.StreamInfo.Status = livekit.StreamInfo_FAILED
+		stream.StreamInfo.Error = err.Error()
+		stream.UpdateEndTime(time.Now().UnixNano())
+		c.GetStreamConfig().Streams.Delete(stream.ParsedUrl)
+		errs.AppendErr(err)
+		return
 	}
 
-	// update layout — not yet supported
-	if req.Layout != "" {
-		errs.AppendErr(errors.ErrFeatureDisabled("layout update"))
-	}
-
-	// update URL — not yet supported
-	if req.Url != "" {
-		errs.AppendErr(errors.ErrFeatureDisabled("url update"))
-	}
-
-	return errs.ToError()
+	c.OutputCount.Inc()
 }
 
 func (c *Controller) streamFinished(ctx context.Context, stream *config.Stream) error {
@@ -489,7 +500,7 @@ func (c *Controller) streamFailed(ctx context.Context, stream *config.Stream, st
 
 	// fail egress if no outputs remaining
 	if c.OutputCount.Load() == 0 {
-		return psrpc.NewError(psrpc.Unavailable, streamErr)
+		return psrpc.NewError(psrpc.Unavailable, errors.MarkDestinationError(streamErr))
 	}
 
 	logger.Infow("stream failed",
@@ -518,9 +529,22 @@ func (c *Controller) trackStreamRetry(ctx context.Context, stream *config.Stream
 }
 
 func (c *Controller) onEOSSent() {
+	// A track ending mid-build reaches this before BuildPipeline() assigns c.p:
+	// reading it would panic and would race with that write. BuildReady closes
+	// once c.p is set, so an open channel means there is no pipeline to stop.
+	select {
+	case <-c.callbacks.BuildReady:
+	default:
+		return
+	}
+
 	// for video-only track/track composite, EOS might have already
 	// made it through the pipeline by the time endRecording is closed
-	if (c.RequestType == types.RequestTypeTrack || c.RequestType == types.RequestTypeTrackComposite) && !c.AudioEnabled {
+	if (c.Passthrough || c.RequestType == types.RequestTypeTrackComposite) && !c.AudioEnabled {
+		// watchEndRecording sends it once playing; sending here would abort a STARTING egress
+		if !c.Live && !c.playing.IsBroken() {
+			return
+		}
 		// this will not actually send a second EOS, but will make sure everything is in the correct state
 		c.SendEOS(context.Background(), livekit.EndReasonSrcClosed)
 	}
@@ -575,6 +599,10 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 }
 
 func (c *Controller) sendEOS() {
+	if c.eosReceived.IsBroken() {
+		return
+	}
+
 	for _, sinks := range c.sinks {
 		for _, s := range sinks {
 			s.AddEOSProbe()
@@ -587,7 +615,7 @@ func (c *Controller) sendEOS() {
 			switch egressType {
 			case types.EgressTypeFile, types.EgressTypeSegments, types.EgressTypeImages:
 				for _, s := range si {
-					if !s.EOSReceived() {
+					if !c.eosReceived.IsBroken() && !s.EOSReceived() {
 						c.OnError(errors.ErrPipelineFrozen)
 						return
 					}
@@ -606,7 +634,11 @@ func (c *Controller) sendEOS() {
 }
 
 func (c *Controller) OnError(err error) {
-	logger.Errorw("controller onError invoked", err)
+	if errors.IsDestinationError(err) {
+		logger.Warnw("controller onError invoked", err)
+	} else {
+		logger.Errorw("controller onError invoked", err)
+	}
 	if errors.Is(err, errors.ErrPipelineFrozen) && c.Debug.EnableProfiling {
 		c.generateDotFile("error")
 		c.generatePProf()

@@ -21,13 +21,21 @@ import (
 
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/medialogutils"
+	"github.com/livekit/protocol/logger/zaputil"
 	"github.com/livekit/protocol/redis"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 
 	"github.com/livekit/egress/pkg/types"
 )
 
-const TmpDir = "/home/egress/tmp"
+const (
+	TmpDir = "/home/egress/tmp"
+
+	logLevelDebug = "debug"
+	logLevelInfo  = "info"
+	logLevelWarn  = "warn"
+	logLevelError = "error"
+)
 
 type BaseConfig struct {
 	NodeID string // do not supply - will be overwritten
@@ -39,25 +47,27 @@ type BaseConfig struct {
 	WsUrl     string             `yaml:"ws_url"`     // (env LIVEKIT_WS_URL)
 
 	// optional
-	Logging              *logger.Config `yaml:"logging"`                // logging config
-	TemplateBase         string         `yaml:"template_base"`          // custom template base url
-	ClusterID            string         `yaml:"cluster_id"`             // cluster this instance belongs to
-	EnableChromeSandbox  bool           `yaml:"enable_chrome_sandbox"`  // enable Chrome sandbox, requires extra docker configuration
-	MaxUploadQueue       int            `yaml:"max_upload_queue"`       // maximum upload queue size, in minutes
-	DisallowLocalStorage bool           `yaml:"disallow_local_storage"` // require an upload config for all requests
-	IOCreateTimeout      time.Duration  `yaml:"io_create_timeout"`      // timeout for CreateEgress calls
-	IOUpdateTimeout      time.Duration  `yaml:"io_update_timeout"`      // timeout for UpdateEgress calls
-	IOSelectionTimeout   time.Duration  `yaml:"io_selection_timeout"`   // timeout for affinity stage of IO RPC
-	IOWorkers            int            `yaml:"io_workers"`             // number of IO update workers
-	MuteAudio            bool           `yaml:"mute_audio"`             // disables all audio output from the browser instance.
+	Logging               *logger.Config `yaml:"logging"`                  // logging config
+	TemplateBase          string         `yaml:"template_base"`            // custom template base url
+	ClusterID             string         `yaml:"cluster_id"`               // cluster this instance belongs to
+	EnableChromeSandbox   bool           `yaml:"enable_chrome_sandbox"`    // enable Chrome sandbox, requires extra docker configuration
+	MaxUploadQueue        int            `yaml:"max_upload_queue"`         // maximum upload queue size, in minutes
+	DisallowLocalStorage  bool           `yaml:"disallow_local_storage"`   // require an upload config for all requests
+	IOCreateTimeout       time.Duration  `yaml:"io_create_timeout"`        // timeout for CreateEgress calls
+	IOUpdateTimeout       time.Duration  `yaml:"io_update_timeout"`        // timeout for UpdateEgress calls
+	IOSelectionTimeout    time.Duration  `yaml:"io_selection_timeout"`     // timeout for affinity stage of IO RPC
+	IOWorkers             int            `yaml:"io_workers"`               // number of IO update workers
+	IOUpdateRetryDeadline time.Duration  `yaml:"io_update_retry_deadline"` // how long to retry a failed UpdateEgress before dropping it; negative to retry forever
+	MuteAudio             bool           `yaml:"mute_audio"`               // disables all audio output from the browser instance.
 
-	SessionLimits          `yaml:"session_limits"`                            // session duration limits
-	StorageConfig          *StorageConfig `yaml:"storage,omitempty"`          // storage config
-	BackupConfig           *StorageConfig `yaml:"backup,omitempty"`           // backup config, for storage failures
-	S3AssumeRoleKey        string         `yaml:"s3_assume_role_key"`         // if set, this key is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
-	S3AssumeRoleSecret     string         `yaml:"s3_assume_role_secret"`      // if set, this secret is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
-	S3AssumeRoleArn        string         `yaml:"s3_assume_role_arn"`         // if set, this arn is used by default for S3 uploads
-	S3AssumeRoleExternalID string         `yaml:"s3_assume_role_external_id"` // if set, this external ID is used by default for S3 uploads
+	SessionLimits                      `yaml:"session_limits"` // session duration limits
+	StorageConfig                      *StorageConfig          `yaml:"storage,omitempty"`                        // storage config
+	BackupConfig                       *StorageConfig          `yaml:"backup,omitempty"`                         // backup config, for storage failures
+	S3AssumeRoleKey                    string                  `yaml:"s3_assume_role_key"`                       // if set, this key is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
+	S3AssumeRoleSecret                 string                  `yaml:"s3_assume_role_secret"`                    // if set, this secret is used for S3 uploads to assume the role defined in the assume_role_arn field of the S3 config
+	S3AssumeRoleArn                    string                  `yaml:"s3_assume_role_arn"`                       // if set, this arn is used by default for S3 uploads
+	S3AssumeRoleExternalID             string                  `yaml:"s3_assume_role_external_id"`               // if set, this external ID is used by default for S3 uploads
+	S3AllowRequestAssumeRoleExternalID bool                    `yaml:"s3_allow_request_assume_role_external_id"` // DEPRECATED: allow the assume_role_external_id field on S3 upload requests
 
 	// advanced
 	Insecure                      bool                                `yaml:"insecure"`                           // allow chrome to connect to an insecure websocket, bypasses chrome LNA checks
@@ -66,10 +76,16 @@ type BaseConfig struct {
 	ChromeFlags                   map[string]interface{}              `yaml:"chrome_flags"`                       // additional flags to pass to Chrome
 	Latency                       LatencyConfig                       `yaml:"latency"`                            // gstreamer latencies, modifying these may break the service
 	LatencyOverrides              map[types.RequestType]LatencyConfig `yaml:"latency_overrides"`                  // latency overrides for different request types, experimental only, will be removed
+	EnableTemplateSDK             bool                                `yaml:"enable_template_sdk"`                // use GStreamer compositor instead of Chrome for default template layouts
+	VideoEncoderThreads           uint                                `yaml:"video_encoder_threads"`              // x264enc thread count, 0 = x264 auto (1.5x host cores)
 	EnableOneShotSenderReportSync bool                                `yaml:"enable_one_shot_sender_report_sync"` // temporary rollout flag enabling one-shot sender report correction for room composite / track requests that previously used audio PTS adjustment disabling
 	EnableSyncEngine              bool                                `yaml:"enable_sync_engine"`                 // use Chrome-inspired sync engine for improved cross-participant alignment and A/V sync
 	AudioTempoController          AudioTempoController                `yaml:"audio_tempo_controller"`             // audio tempo controller
 	TestOverrides                 TestOverrides                       `yaml:"test_overrides"`                     // set of config overrides for testing purposes
+
+	// LoggerTee duplicates the log stream InitLogger builds. Set it before
+	// InitLogger; the zero value is a no-op.
+	LoggerTee zaputil.Tee `yaml:"-"`
 }
 
 type SessionLimits struct {
@@ -81,11 +97,11 @@ type SessionLimits struct {
 }
 
 type DebugConfig struct {
-	EnableProfiling     bool `yaml:"enable_profiling"`      // create dot file and pprof on internal error
-	EnableTrackLogging  bool `yaml:"enable_track_logging"`  // log packets and keyframes for each track
-	EnableStreamLogging bool `yaml:"enable_stream_logging"` // log bytes and keyframes for each stream
-	EnableChromeLogging bool `yaml:"enable_chrome_logging"` // log all chrome console events
-	StorageConfig       `yaml:",inline"`                    // upload config (S3, Azure, GCP, or AliOSS)
+	EnableProfiling     bool             `yaml:"enable_profiling"`      // create dot file and pprof on internal error
+	EnableTrackLogging  bool             `yaml:"enable_track_logging"`  // log packets and keyframes for each track
+	EnableStreamLogging bool             `yaml:"enable_stream_logging"` // log bytes and keyframes for each stream
+	EnableChromeLogging bool             `yaml:"enable_chrome_logging"` // log all chrome console events
+	StorageConfig       `yaml:",inline"` // upload config (S3, Azure, GCP, AliOSS, or OCI)
 }
 
 type SecureConfig struct {
@@ -116,11 +132,11 @@ func (c *BaseConfig) InitLogger(serviceName string, values ...interface{}) error
 	if !exists {
 		var gstDebug []string
 		switch c.Logging.Level {
-		case "debug":
+		case logLevelDebug:
 			gstDebug = []string{"3"}
-		case "info", "warn":
+		case logLevelInfo, logLevelWarn:
 			gstDebug = []string{"2"}
-		case "error":
+		case logLevelError:
 			gstDebug = []string{"1"}
 		}
 		gstDebug = append(gstDebug,
@@ -133,7 +149,7 @@ func (c *BaseConfig) InitLogger(serviceName string, values ...interface{}) error
 		}
 	}
 
-	zl, err := logger.NewZapLogger(c.Logging)
+	zl, err := logger.NewZapLogger(c.Logging, logger.WithTee(c.LoggerTee))
 	if err != nil {
 		return err
 	}

@@ -2,8 +2,10 @@ package pulse
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os/exec"
+	"strconv"
 
 	"github.com/livekit/egress/pkg/errors"
 )
@@ -17,16 +19,37 @@ func Clients() (int, error) {
 }
 
 func List() (*PulseInfo, error) {
-	cmd := exec.Command("pactl", "--format", "json", "list")
+	return ListContext(context.Background())
+}
+
+func ListContext(ctx context.Context) (*PulseInfo, error) {
+	cmd := exec.CommandContext(ctx, "pactl", "--format", "json", "list")
 	var b, e bytes.Buffer
 	cmd.Stdout = &b
 	cmd.Stderr = &e
-	if cmd.Run() != nil {
-		return nil, errors.New(e.String())
+	if err := cmd.Run(); err != nil {
+		if e.Len() > 0 {
+			return nil, errors.New(e.String())
+		}
+		return nil, err
 	}
 
 	info := &PulseInfo{}
 	return info, json.Unmarshal(b.Bytes(), info)
+}
+
+// UnloadModule unloads a module from the pulse daemon, e.g. the null-sink owned by an egress.
+func UnloadModule(ctx context.Context, module int) error {
+	cmd := exec.CommandContext(ctx, "pactl", "unload-module", strconv.Itoa(module))
+	var e bytes.Buffer
+	cmd.Stderr = &e
+	if err := cmd.Run(); err != nil {
+		if e.Len() > 0 {
+			return errors.New(e.String())
+		}
+		return err
+	}
+	return nil
 }
 
 type PulseInfo struct {

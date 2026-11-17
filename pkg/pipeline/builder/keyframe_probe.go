@@ -26,10 +26,7 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-const (
-	keyframeHistorySize     = 10
-	keyframeRequestInterval = 200 * time.Millisecond
-)
+const keyframeHistorySize = 10
 
 // keyframeProbe gates a parser/depayloader's src pad until the first keyframe
 // arrives. It exists to recover from the case where the egress subscribes
@@ -37,9 +34,11 @@ const (
 // them is decodable, and no other component would ask the publisher for a
 // fresh keyframe.
 //
-// While waiting for the first keyframe it:
-//   - drops buffers (so the decoder doesn't error on orphaned P-frames), and
-//   - throttled-requests a PLI from upstream on each incoming buffer.
+// On creation it asks upstream to keep requesting keyframes, and it reports the
+// first keyframe that passes so those requests stop. Requests are driven by the
+// caller rather than by buffers reaching the probe, because a parser in front
+// of it can discard everything until a keyframe. Until then it drops buffers so
+// the decoder doesn't error on orphaned P-frames.
 //
 // After that it's mostly inert: it just patches the occasional baseparse
 // missing-PTS buffer from the last good value, so downstream stays monotonic.
@@ -50,16 +49,15 @@ type keyframeProbe struct {
 	srcPad     *gst.Pad
 	srcProbeID uint64
 
-	onRequestPLI func()
+	onKeyframeReceived func()
 
 	logger logger.Logger
 
 	// All probe state below is touched only from the upstream peer's streaming
 	// thread (via the buffer pad probe), so no synchronization is needed.
-	keyframePending     bool
-	lastKeyframeRequest time.Time
-	lastSrcPTS          time.Duration
-	lastSrcValid        bool
+	keyframePending bool
+	lastSrcPTS      time.Duration
+	lastSrcValid    bool
 
 	keyframeMu       deadlock.Mutex
 	keyframePTS      []time.Duration
@@ -67,23 +65,32 @@ type keyframeProbe struct {
 	totalIntervals   int
 }
 
-func newKeyframeProbe(trackID string, mimeType types.MimeType, element *gst.Element, onRequestPLI func()) (*keyframeProbe, error) {
+func newKeyframeProbe(
+	trackID string,
+	mimeType types.MimeType,
+	element *gst.Element,
+	onKeyframeRequired func(),
+	onKeyframeReceived func(),
+) (*keyframeProbe, error) {
 	srcPad := element.GetStaticPad("src")
 	if srcPad == nil {
 		return nil, errors.ErrGstPipelineError(newMissingPadError(element.GetName(), "src"))
 	}
 
 	p := &keyframeProbe{
-		trackID:      trackID,
-		mimeType:     mimeType,
-		srcPad:       srcPad,
-		onRequestPLI: onRequestPLI,
-		logger:       logger.GetLogger().WithValues("trackID", trackID, "component", "keyframe_probe", "mime", mimeType),
-		keyframePTS:  make([]time.Duration, 0, keyframeHistorySize),
+		trackID:            trackID,
+		mimeType:           mimeType,
+		srcPad:             srcPad,
+		onKeyframeReceived: onKeyframeReceived,
+		logger:             logger.GetLogger().WithValues("trackID", trackID, "component", "keyframe_probe", "mime", mimeType),
+		keyframePTS:        make([]time.Duration, 0, keyframeHistorySize),
 	}
 	p.keyframePending = true
 
 	p.srcProbeID = srcPad.AddProbe(gst.PadProbeTypeBuffer, p.onSrcBuffer)
+	if onKeyframeRequired != nil {
+		onKeyframeRequired()
+	}
 
 	return p, nil
 }
@@ -129,14 +136,16 @@ func (p *keyframeProbe) processBuffer(buffer *gst.Buffer) gst.PadProbeReturn {
 		if p.keyframePending {
 			p.keyframePending = false
 			p.logger.Debugw("keyframe pending, got one")
+			if p.onKeyframeReceived != nil {
+				p.onKeyframeReceived()
+			}
 		}
 		p.trackKeyframe(pts)
 		return gst.PadProbeOK
 	}
 
 	if p.keyframePending {
-		// still waiting for the first keyframe — drop and PLI
-		p.requestKeyframeIfDue()
+		// still waiting for the first keyframe
 		return gst.PadProbeDrop
 	}
 
@@ -159,22 +168,6 @@ func (p *keyframeProbe) trackKeyframe(pts time.Duration) {
 		copy(p.keyframePTS, p.keyframePTS[1:])
 		p.keyframePTS = p.keyframePTS[:keyframeHistorySize]
 	}
-}
-
-func (p *keyframeProbe) requestKeyframeIfDue() {
-	if p.onRequestPLI == nil {
-		return
-	}
-	if !p.keyframePending {
-		return
-	}
-
-	if !p.lastKeyframeRequest.IsZero() && time.Since(p.lastKeyframeRequest) < keyframeRequestInterval {
-		return
-	}
-
-	p.onRequestPLI()
-	p.lastKeyframeRequest = time.Now()
 }
 
 func clockTimeToDuration(ct gst.ClockTime) (time.Duration, bool) {

@@ -19,6 +19,7 @@ import (
 	"github.com/linkdata/deadlock"
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 type Callbacks struct {
@@ -32,14 +33,15 @@ type Callbacks struct {
 	onDebugDotRequest func(string)
 
 	// source callbacks
-	onTrackAdded     []func(*config.TrackSource)
-	onTrackMuted     []func(string)
-	onTrackUnmuted   []func(string)
-	onTrackRemoved   []func(string)
-	onSourceBinReset []func(*config.TrackSource) error
-	onEOSSent        func()
+	onTrackAdded            []func(*config.TrackSource)
+	onTrackMuted            []func(string)
+	onTrackUnmuted          []func(string)
+	onTrackRemoved          []func(string)
+	onActiveSpeakersChanged []func([]lksdk.Participant)
+	onEOSSent               func()
 
-	pipelinePaused core.Fuse
+	pipelinePaused   core.Fuse
+	pipelineStopping core.Fuse
 }
 
 func (c *Callbacks) SetOnError(f func(error)) {
@@ -88,7 +90,14 @@ func (c *Callbacks) AddOnStop(f func() error) {
 	c.mu.Unlock()
 }
 
+// PipelineStopping reports whether Pipeline.Stop has begun tearing the pipeline down.
+func (c *Callbacks) PipelineStopping() bool {
+	return c.pipelineStopping.IsBroken()
+}
+
 func (c *Callbacks) OnStop() error {
+	c.pipelineStopping.Break()
+
 	c.mu.RLock()
 	onStop := c.onStop
 	c.mu.RUnlock()
@@ -164,27 +173,20 @@ func (c *Callbacks) OnTrackRemoved(trackID string) {
 	}
 }
 
-func (c *Callbacks) AddOnSourceBinReset(f func(*config.TrackSource) error) {
+func (c *Callbacks) AddOnActiveSpeakersChanged(f func([]lksdk.Participant)) {
 	c.mu.Lock()
-	c.onSourceBinReset = append(c.onSourceBinReset, f)
+	c.onActiveSpeakersChanged = append(c.onActiveSpeakersChanged, f)
 	c.mu.Unlock()
 }
 
-// OnSourceBinReset calls registered handlers to force-remove a stuck source bin and
-// replace it with a new one. Each handler checks the track kind and returns nil if
-// not applicable. The first handler that returns a non-nil error aborts the operation.
-// On success, ts.AppSrc is updated to the new appsrc by the handler.
-func (c *Callbacks) OnSourceBinReset(ts *config.TrackSource) error {
+func (c *Callbacks) OnActiveSpeakersChanged(speakers []lksdk.Participant) {
 	c.mu.RLock()
-	handlers := c.onSourceBinReset
+	handlers := c.onActiveSpeakersChanged
 	c.mu.RUnlock()
 
 	for _, f := range handlers {
-		if err := f(ts); err != nil {
-			return err
-		}
+		f(speakers)
 	}
-	return nil
 }
 
 func (c *Callbacks) SetOnEOSSent(f func()) {

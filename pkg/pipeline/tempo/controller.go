@@ -133,13 +133,8 @@ func (tc *Controller) DriftProcessed(actual time.Duration) {
 	tc.corrected += actual
 	tc.current = 0
 
-	// Clamp corrected if it overshot drift in the same direction as the just-
-	// applied correction. Without this, a per-buffer overshoot can flip the
-	// residual sign and immediately queue a phantom counter-correction.
-	if (actual > 0 && tc.corrected > tc.drift) || (actual < 0 && tc.corrected < tc.drift) {
-		tc.corrected = tc.drift
-	}
-
+	// actual is the stretch the pacer applied, so an overshoot past drift makes the
+	// next correction smaller, or starts a counter-correction once it reaches the threshold.
 	var toStart time.Duration
 	effective := tc.drift - tc.corrected
 	if effective.Abs() >= DefaultThreshold {

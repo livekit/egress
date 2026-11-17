@@ -135,25 +135,27 @@ func (s *Server) launchProcess(req *rpc.StartEgressRequest, info *livekit.Egress
 		return err
 	}
 
-	cmd := exec.Command("egress",
-		"run-handler",
-		"--config", string(confString),
-		"--request", string(reqString),
-	)
+	cmd := exec.Command("egress", "run-handler")
 	cmd.Dir = "/"
+	cmd.Env = append(os.Environ(),
+		"EGRESS_HANDLER_CONFIG_BODY="+string(confString),
+		"EGRESS_HANDLER_REQUEST="+string(reqString),
+	)
 
 	l := logging.NewHandlerLogger(handlerID, req.EgressId)
 	cmd.Stdout = l
 	cmd.Stderr = l
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
-	if err = s.Launch(context.Background(), handlerID, req, info, cmd); err != nil {
+	wait, err := s.Launch(context.Background(), handlerID, req, info, cmd)
+	if err != nil {
+		_ = l.Close()
 		return err
 	}
 
 	s.monitor.UpdatePID(info.EgressId, cmd.Process.Pid)
 	go func() {
-		err = cmd.Wait()
+		err = wait()
 		_ = l.Close()
 
 		if reason := s.GetKillReason(info.EgressId); reason != "" {
@@ -187,8 +189,12 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 
 	avgCPU, maxCPU, maxMemory := s.monitor.EgressEnded(req)
 	if maxCPU > 0 {
-		logger.Debugw("egress metrics",
+		requestType, outputType := egress.GetTypes(info.Request)
+		logger.Infow("egress metrics",
 			"egressID", info.EgressId,
+			"requestType", requestType,
+			"outputType", outputType,
+			"sdkSource", s.conf.IsSDKSourceRequest(req),
 			"avgCPU", avgCPU,
 			"maxCPU", maxCPU,
 			"maxMemory", maxMemory,
@@ -201,6 +207,14 @@ func (s *Server) processEnded(req *rpc.StartEgressRequest, info *livekit.EgressI
 
 	s.MergeInAccumulator(info.EgressId)
 	s.ProcessFinished(info.EgressId)
+
+	// The handler is gone and its IPC client closed with it, so nothing can
+	// report this egress again. cmd.Wait returns however the handler died, and
+	// one that exited without sending its own terminal update -- or whose send
+	// was lost -- would otherwise leave a reporter holding per-egress state
+	// believing the egress is still running.
+	s.ioClient.SessionEnded(context.Background(), info.EgressId)
+
 	s.activeRequests.Dec()
 }
 

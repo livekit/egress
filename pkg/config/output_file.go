@@ -61,6 +61,8 @@ func fileTypeToOutputType(ft livekit.EncodedFileType) types.OutputType {
 		return types.OutputTypeOGG
 	case livekit.EncodedFileType_MP3:
 		return types.OutputTypeMP3
+	case livekit.EncodedFileType_MCAP:
+		return types.OutputTypeMCAP
 	default:
 		return types.OutputTypeUnknownFile
 	}
@@ -96,7 +98,7 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, filepath str
 			return nil, err
 		}
 	} else {
-		conf.StorageFilepath = stringReplace(conf.StorageFilepath, replacements)
+		conf.StorageFilepath = replaceAndClean(conf.StorageFilepath, replacements)
 	}
 
 	return conf, nil
@@ -104,7 +106,7 @@ func (p *PipelineConfig) getFileConfig(outputType types.OutputType, filepath str
 
 func (p *PipelineConfig) getFilenameInfo() (string, map[string]string) {
 	now := time.Now()
-	utc := fmt.Sprintf("%s%03d", now.Format("20060102150405"), now.UnixMilli()%1000)
+	utc := fmt.Sprintf("%s%03d", now.UTC().Format("20060102150405"), now.UnixMilli()%1000)
 
 	replacements := make(map[string]string)
 	if p.Info.RetryCount > 0 {
@@ -115,7 +117,7 @@ func (p *PipelineConfig) getFilenameInfo() (string, map[string]string) {
 		replacements["{room_id}"] = p.Info.RoomId
 		replacements["{time}"] = now.Format("2006-01-02T150405")
 		replacements["{utc}"] = utc
-		return p.Info.RoomName, replacements
+		return strings.ReplaceAll(p.Info.RoomName, "/", "_"), replacements
 	}
 
 	replacements["{time}"] = now.Format("2006-01-02T150405")
@@ -125,7 +127,7 @@ func (p *PipelineConfig) getFilenameInfo() (string, map[string]string) {
 }
 
 func (o *FileConfig) updateFilepath(p *PipelineConfig, identifier string, replacements map[string]string) error {
-	o.StorageFilepath = stringReplace(o.StorageFilepath, replacements)
+	o.StorageFilepath = replaceAndClean(o.StorageFilepath, replacements)
 
 	// get file extension
 	ext := types.FileExtensionForOutputType[o.OutputType]
@@ -171,7 +173,7 @@ func clean(filepath string) string {
 	if filepath == "" || filepath == "." || filepath == ".." {
 		return ""
 	}
-	if hasEndingSlash {
+	if hasEndingSlash && filepath != "/" {
 		return filepath + "/"
 	}
 	return filepath

@@ -35,10 +35,31 @@ var (
 	twitchEndpoint = regexp.MustCompile(`^rtmps?://.*\.contribute\.live-video\.net/app/(.*)( live=1)?$`)
 )
 
-func (o *StreamConfig) AddStream(rawUrl string, outputType types.OutputType) (*Stream, error) {
+func (o *StreamConfig) AddDestination(d *livekit.StreamDestination, outputType types.OutputType) (*Stream, error) {
+	if d.Id == "" {
+		return nil, errors.ErrInvalidInput("stream destination id")
+	}
+	return o.AddStream(d.Id, d.Url, outputType)
+}
+
+func (o *StreamConfig) AddStream(id, rawUrl string, outputType types.OutputType) (*Stream, error) {
 	parsed, redacted, streamID, err := o.ValidateUrl(rawUrl, outputType)
 	if err != nil {
 		return nil, err
+	}
+	if _, ok := o.Streams.Load(parsed); ok {
+		return nil, errors.ErrInvalidInput("duplicate stream url")
+	}
+	if parsed != rawUrl {
+		// the stream may have been added while the ingest list was unavailable
+		if _, ok := o.Streams.Load(rawUrl); ok {
+			return nil, errors.ErrInvalidInput("duplicate stream url")
+		}
+	}
+	if id != "" {
+		if _, loaded := o.destinationIDs.LoadOrStore(id, struct{}{}); loaded {
+			return nil, errors.ErrInvalidInput("duplicate stream destination id")
+		}
 	}
 
 	stream := &Stream{
@@ -46,6 +67,7 @@ func (o *StreamConfig) AddStream(rawUrl string, outputType types.OutputType) (*S
 		RedactedUrl: redacted,
 		StreamID:    streamID,
 		StreamInfo: &livekit.StreamInfo{
+			Id:     id,
 			Url:    redacted,
 			Status: livekit.StreamInfo_ACTIVE,
 		},
@@ -81,6 +103,8 @@ func (o *StreamConfig) ValidateUrl(rawUrl string, outputType types.OutputType) (
 				return
 			}
 		} else if match := twitchEndpoint.FindStringSubmatch(rawUrl); len(match) > 0 {
+			// keep the url as given if the ingest list can't be fetched
+			parsed = rawUrl
 			if updated, err := o.updateTwitchURL(match[1]); err == nil {
 				parsed = updated
 			}
@@ -121,15 +145,19 @@ func (o *StreamConfig) GetStream(rawUrl string) (*Stream, error) {
 			return nil, err
 		}
 	} else if match := twitchEndpoint.FindStringSubmatch(rawUrl); len(match) > 0 {
-		parsed, err = o.updateTwitchURL(match[1])
-		if err != nil {
-			return nil, err
+		parsed = rawUrl
+		if updated, err := o.updateTwitchURL(match[1]); err == nil {
+			parsed = updated
 		}
 	} else {
 		parsed = rawUrl
 	}
 
 	stream, ok := o.Streams.Load(parsed)
+	if !ok && parsed != rawUrl {
+		// the stream may have been added while the ingest list was unavailable
+		stream, ok = o.Streams.Load(rawUrl)
+	}
 	if !ok {
 		return nil, errors.ErrStreamNotFound(rawUrl)
 	}

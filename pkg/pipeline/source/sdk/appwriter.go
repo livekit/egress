@@ -35,6 +35,7 @@ import (
 	"github.com/livekit/egress/pkg/logging"
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/media-sdk/jitter"
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	lksdk "github.com/livekit/server-sdk-go/v2"
@@ -48,15 +49,21 @@ const (
 	cSamplesQueueDepth      = 100
 	drainingTimeout         = time.Second * 3
 	unsubscribedGracePeriod = time.Second * 2
+	// ends the tail silence fill before drainingTimeout lets start() send EOS mid-push
+	tailFillBudget = time.Second * 2
 
-	// FlowFlushing recovery: threshold of consecutive FlowFlushing returns before
-	// triggering source bin reset. ~2 seconds of 20ms audio packets.
+	// Threshold of consecutive FlowFlushing returns before the writer gives up
+	// and drains. ~2 seconds of 20ms audio packets.
 	flushingThreshold = 100
-	// Maximum number of source bin resets per writer lifetime.
-	maxSrcResets = 2
+
+	// mp4mux and webmmux refuse video narrower or shorter than this
+	minMuxedVideoDimension = 16
 )
 
-var errFlowFlushingThreshold = errors.New("persistent FlowFlushing detected")
+var (
+	errFlowFlushingThreshold = errors.New("persistent FlowFlushing detected")
+	errTailFillBudget        = errors.New("tail fill budget exceeded")
+)
 
 type sampleItem struct {
 	sample []jitter.ExtPacket
@@ -86,15 +93,20 @@ type AppWriter struct {
 	samplesLock deadlock.Mutex
 	samplesCond *sync.Cond
 
-	translator  Translator
-	callbacks   *gstreamer.Callbacks
-	sendPLI     func()
-	pliThrottle core.Throttle
+	translator Translator
+	callbacks  *gstreamer.Callbacks
+	sendPLI    func()
+	keyframes  *keyframeRequester
 
 	// a/v sync
 	sync         synchronizer.Sync
 	trackSync    synchronizer.TrackSync
 	driftHandler DriftHandler
+
+	opusPassthrough  bool
+	videoPassthrough bool // set once the pipeline is playing
+	gapFiller        opusGapFiller
+	rtpFiller        *RTPGapFiller // set when the tempo pacer resamples this track
 
 	lastPTS              time.Duration
 	lastPipelineCheckPTS time.Duration
@@ -106,6 +118,7 @@ type AppWriter struct {
 	lastReceived             atomic.Time
 	lastPushed               atomic.Time
 	playing                  core.Fuse
+	addedToPipeline          core.Fuse
 	draining                 core.Fuse
 	unsubscribed             core.Fuse
 	endStreamSignaled        core.Fuse
@@ -114,9 +127,8 @@ type AppWriter struct {
 	finished                 core.Fuse
 	stats                    appWriterStats
 
-	// FlowFlushing recovery
-	flushingCount int // consecutive FlowFlushing returns from PushBuffer
-	srcResetCount int // number of source bin resets performed
+	// consecutive FlowFlushing returns from PushBuffer
+	flushingCount int
 
 	// diagnostics, set on unexpected flushing when pushing packets to the pipeline
 	flushDotRequested atomic.Bool
@@ -162,8 +174,11 @@ func NewAppWriter(
 		timeProvider: gstreamer.NopTimeProvider(),
 	}
 	w.samplesCond = sync.NewCond(&w.samplesLock)
+	w.opusPassthrough = conf.OpusPassthrough(ts.MimeType)
 
 	ts.OnKeyframeRequired = w.onKeyframeRequired
+	ts.OnKeyframeRequested = w.onKeyframeRequested
+	ts.OnKeyframeReceived = w.onKeyframeReceived
 
 	if conf.Debug.EnableTrackLogging {
 		csvLogger, err := logging.NewCSVLogger[logging.TrackStats](track.ID())
@@ -180,10 +195,14 @@ func NewAppWriter(
 	// tempo controller instead of letting the synchronizer rebase audio PTS.
 	if conf.EnableSyncEngine || w.driftHandler != nil || w.csvLogger != nil {
 		w.trackSync.OnSenderReport(func(drift time.Duration) {
+			w.updateDrift(drift)
 			if w.driftHandler != nil {
+				// the controller takes the legacy synchronizer's sign; the sync engine reports the opposite difference
+				if conf.EnableSyncEngine {
+					drift = -drift
+				}
 				w.driftHandler.SetDrift(drift)
 			}
-			w.updateDrift(drift)
 		})
 	}
 
@@ -192,10 +211,16 @@ func NewAppWriter(
 	case types.MimeTypeOpus:
 		depacketizer = &codecs.OpusPacket{}
 		w.translator = NewNullTranslator()
+		if w.shouldHandleDiscontinuity() {
+			w.rtpFiller = NewRTPGapFiller(ts.MimeType, ts.ClockRate)
+		}
 
 	case types.MimeTypePCMU, types.MimeTypePCMA:
 		depacketizer = &G711Packet{}
 		w.translator = NewNullTranslator()
+		if w.shouldHandleDiscontinuity() {
+			w.rtpFiller = NewRTPGapFiller(ts.MimeType, ts.ClockRate)
+		}
 
 	case types.MimeTypeH264:
 		depacketizer = &codecs.H264Packet{}
@@ -209,6 +234,10 @@ func NewAppWriter(
 		depacketizer = &codecs.VP9Packet{}
 		w.translator = NewNullTranslator()
 
+	case types.MimeTypeAV1:
+		depacketizer = &codecs.AV1Depacketizer{}
+		w.translator = NewNullTranslator()
+
 	default:
 		return nil, errors.ErrNotSupported(string(ts.MimeType))
 	}
@@ -219,8 +248,8 @@ func NewAppWriter(
 	// every call site can invoke it unconditionally.
 	w.sendPLI = func() {}
 	if track.Kind() == webrtc.RTPCodecTypeVideo {
-		w.pliThrottle = core.NewThrottle(time.Second)
-		w.sendPLI = func() { w.pliThrottle(func() { rp.WritePLI(track.SSRC()) }) }
+		w.keyframes = newKeyframeRequester(time.Second, func() { rp.WritePLI(track.SSRC()) })
+		w.sendPLI = w.keyframes.RequestPLI
 		opts = append(opts, jitter.WithPacketLossHandler(func(uint64, uint64) { w.sendPLI() }))
 	}
 
@@ -263,6 +292,7 @@ func (w *AppWriter) start() {
 		w.logger.Errorw("endStreamProcessed not broken after 3 seconds, bug in the draining logic!", nil,
 			"endStreamSourceProcessed", w.endStreamSourceProcessed.IsBroken(),
 			"playing", w.playing.IsBroken(),
+			"addedToPipeline", w.addedToPipeline.IsBroken(),
 			"active", w.active.Load(),
 			"lastReceived", w.lastReceived.Load(),
 			"lastPushed", w.lastPushed.Load(),
@@ -271,23 +301,45 @@ func (w *AppWriter) start() {
 	}
 
 	// clean up
-	if w.playing.IsBroken() {
+	if w.shouldSendEOS() {
+		if !w.playing.IsBroken() {
+			// Linked into the pipeline but never reported PLAYING. Expect this to be
+			// rare and confined to shutdown.
+			w.logger.Warnw("appsrc never reported PLAYING, sending EOS anyway", nil,
+				"active", w.active.Load(),
+				"draining", w.draining.IsBroken(),
+				"unsubscribed", w.unsubscribed.IsBroken(),
+				"lastReceived", w.lastReceived.Load(),
+			)
+		}
 		w.callbacks.OnEOSSent()
-		if flow := w.src.EndStream(); flow != gst.FlowOK && flow != gst.FlowFlushing {
-			w.logger.Warnw("unexpected flow return", nil, "flowReturn", flow.String())
+		flow := w.src.EndStream()
+		if flow == gst.FlowFlushing {
+			// a stuck appsrc refuses EOS, blocking EOS aggregation in the
+			// mixer and freezing the shutdown - recover it and retry
+			w.recoverFromFlushing()
+			flow = w.src.EndStream()
+		}
+		if flow != gst.FlowOK {
+			w.logger.Warnw("appsrc rejected EOS, pipeline may not reach EOS", nil, "flowReturn", flow.String())
 		}
 		if w.driftHandler != nil {
 			w.logger.Debugw("processed drift", "drift", w.driftHandler.Processed())
 		}
 	}
 
-	w.logger.Infow("writer finished")
+	w.logger.Infow("writer finished", "stats", w.getStats(), "requestType", w.conf.RequestType)
 	if w.csvLogger != nil {
 		w.csvLogger.Close()
 	}
 
 	if w.trackSource != nil {
 		w.trackSource.OnKeyframeRequired = nil
+		w.trackSource.OnKeyframeRequested = nil
+		w.trackSource.OnKeyframeReceived = nil
+	}
+	if w.keyframes != nil {
+		w.keyframes.Close()
 	}
 
 	w.finished.Break()
@@ -309,7 +361,8 @@ func (w *AppWriter) readNext() {
 			w.stats.packetsDropped.Add(uint64(dropped))
 			w.sendPLI()
 		}
-		if !done {
+		if !done || len(ready) == 0 {
+			// done with no packets means the track was closed during priming
 			return
 		}
 		w.initialized = true
@@ -443,10 +496,23 @@ func (w *AppWriter) logTrackState(event string) {
 }
 
 func (w *AppWriter) onKeyframeRequired() {
-	if w.finished.IsBroken() {
+	if w.finished.IsBroken() || w.keyframes == nil {
 		return
 	}
-	w.sendPLI()
+	w.keyframes.RequirePLI()
+}
+
+func (w *AppWriter) onKeyframeRequested() {
+	if w.finished.IsBroken() || w.keyframes == nil {
+		return
+	}
+	w.keyframes.RequestPLI()
+}
+
+func (w *AppWriter) onKeyframeReceived() {
+	if w.keyframes != nil {
+		w.keyframes.KeyframeReceived()
+	}
 }
 
 func (w *AppWriter) notifyPushSamples() {
@@ -504,6 +570,7 @@ func (w *AppWriter) pushSamples() {
 	if !w.waitFor(w.playing.Watch()) {
 		return
 	}
+	w.videoPassthrough = !w.conf.VideoDecoding && (w.codec == types.MimeTypeH264 || w.codec == types.MimeTypeVP8)
 
 	for {
 		w.samplesLock.Lock()
@@ -512,6 +579,7 @@ func (w *AppWriter) pushSamples() {
 		}
 		if w.endStreamSourceProcessed.IsBroken() && w.samplesHead == nil {
 			w.samplesLock.Unlock()
+			w.fillOpusToEnd()
 			return
 		}
 
@@ -523,11 +591,21 @@ func (w *AppWriter) pushSamples() {
 		}
 		w.samplesLock.Unlock()
 
+		// Drop undersized keyframes which may otherwise stop the muxer
+		if w.videoPassthrough && isUndersizedKeyframe(w.codec, item.sample) {
+			w.stats.packetsDropped.Add(uint64(len(item.sample)))
+			w.logger.Debugw("dropping keyframe below the muxer's minimum size")
+			continue
+		}
+
 		for _, pkt := range item.sample {
 			if err := w.pushPacket(pkt); err != nil {
 				if errors.Is(err, errFlowFlushingThreshold) {
-					if w.tryRecoverFromFlushing() {
-						continue
+					if w.callbacks.PipelineStopping() {
+						w.logger.Infow("appsrc rejected the remaining backlog during pipeline stop",
+							"flushingCount", w.flushingCount)
+					} else {
+						w.callbacks.OnError(errors.ErrPersistentFlushing)
 					}
 					w.draining.Break()
 					w.notifyPushSamples()
@@ -540,6 +618,60 @@ func (w *AppWriter) pushSamples() {
 				}
 			}
 		}
+	}
+}
+
+// isUndersizedKeyframe reports whether sample is a keyframe whose declared size the muxers refuse
+func isUndersizedKeyframe(mimeType types.MimeType, sample []jitter.ExtPacket) bool {
+	if len(sample) == 0 {
+		return false
+	}
+
+	var size codec.VideoSize
+	switch mimeType {
+	case types.MimeTypeH264:
+		// the SPS can follow other NAL units, such as an access unit delimiter
+		for _, pkt := range sample {
+			if codec.IsH264KeyFrame(pkt.Payload) {
+				size = codec.ExtractH264VideoSize(pkt.Payload)
+				break
+			}
+		}
+	case types.MimeTypeVP8:
+		payload := sample[0].Payload
+		var vp8 codec.VP8
+		if err := vp8.Unmarshal(payload); err != nil {
+			return false
+		}
+		size = codec.ExtractVP8VideoSize(&vp8, payload)
+	default:
+		return false
+	}
+
+	if size.Width == 0 && size.Height == 0 {
+		return false
+	}
+	return size.Width < minMuxedVideoDimension || size.Height < minMuxedVideoDimension
+}
+
+// fillOpusToEnd extends a live passthrough track with silence up to the stop time
+func (w *AppWriter) fillOpusToEnd() {
+	if !w.opusPassthrough || !w.conf.Live {
+		return
+	}
+	end, ok := w.pipelineRunningTime()
+	if !ok {
+		return
+	}
+	deadline := time.Now().Add(tailFillBudget)
+	err := w.gapFiller.fill(end, func(data []byte, pts, duration time.Duration) error {
+		if time.Now().After(deadline) {
+			return errTailFillBudget
+		}
+		return w.pushBuffer(data, pts, duration)
+	})
+	if errors.Is(err, errTailFillBudget) {
+		w.logger.Warnw("silence fill truncated at drain deadline", err, "end", end)
 	}
 }
 
@@ -562,6 +694,29 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		return nil
 	}
 
+	if w.opusPassthrough {
+		return w.pushOpus(pkt.Payload, pts)
+	}
+
+	discont := isDiscontinuity(w.lastPTS, pts)
+	if w.rtpFiller != nil {
+		if w.exceedsFillBudget(pts) {
+			// too long to conceal; the flush below re-anchors pitch instead
+			w.rtpFiller.Reset()
+		}
+		if err := w.rtpFiller.Fill(pkt.Packet, pts, w.pushConcealment); err != nil {
+			// drop the packet too; the filler keeps its position and the next fill covers both
+			w.stats.packetsDropped.Inc()
+			if errors.Is(err, errFlowFlushingThreshold) {
+				return err
+			}
+			w.logger.Warnw("could not fill audio gap, dropping packet", err)
+			return nil
+		}
+		// a bridged pause is continuous audio; an unbridged one re-anchors pitch
+		discont = discont && !w.rtpFiller.Bridged()
+	}
+
 	p, err := pkt.Marshal()
 	if err != nil {
 		w.stats.packetsDropped.Inc()
@@ -572,8 +727,60 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 
 	b := gst.NewBufferFromBytes(p)
 	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
+	pushed, err := w.push(b, pts, discont)
+	if err != nil {
+		return err
+	}
+	if pushed && w.rtpFiller != nil {
+		w.rtpFiller.Advance(pkt.Packet, pts)
+	}
+	return nil
+}
 
-	if isDiscontinuity(w.lastPTS, pts) {
+// pushConcealment pushes a synthetic packet for audio the publisher never sent
+func (w *AppWriter) pushConcealment(pkt *rtp.Packet, pts time.Duration) error {
+	p, err := pkt.Marshal()
+	if err != nil {
+		return err
+	}
+	b := gst.NewBufferFromBytes(p)
+	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
+	pushed, err := w.pushToSource(b)
+	if err != nil {
+		return err
+	}
+	if !pushed {
+		return errors.New("concealment packet not accepted")
+	}
+	return nil
+}
+
+func (w *AppWriter) pushOpus(payload []byte, pts time.Duration) error {
+	if len(payload) == 0 {
+		return nil
+	}
+
+	if err := w.gapFiller.fill(pts, w.pushBuffer); err != nil {
+		return err
+	}
+	return w.pushBuffer(payload, pts, w.gapFiller.advance(pts, payload))
+}
+
+func (w *AppWriter) pushBuffer(data []byte, pts, duration time.Duration) error {
+	b := gst.NewBufferFromBytes(data)
+	b.SetPresentationTimestamp(gst.ClockTime(uint64(pts)))
+	if duration > 0 {
+		b.SetDuration(gst.ClockTime(uint64(duration)))
+	}
+	_, err := w.push(b, pts, isDiscontinuity(w.lastPTS, pts))
+	return err
+}
+
+// push sends b into appsrc; a discontinuous buffer is flagged and, on a tempo-corrected
+// track, flushes the pipeline first so pitch re-anchors on it. Returns false when appsrc
+// did not accept the buffer.
+func (w *AppWriter) push(b *gst.Buffer, pts time.Duration, discont bool) (bool, error) {
+	if discont {
 		if w.shouldHandleDiscontinuity() {
 			w.logger.Debugw("discontinuity detected", "pts", pts, "lastPTS", w.lastPTS)
 			ok := w.src.SendEvent(gst.NewFlushStartEvent())
@@ -588,87 +795,75 @@ func (w *AppWriter) pushPacket(pkt jitter.ExtPacket) error {
 		b.SetFlags(b.GetFlags() | gst.BufferFlagDiscont)
 	}
 
-	if flow := w.src.PushBuffer(b); flow != gst.FlowOK {
-		w.stats.packetsDropped.Inc()
-		w.sendPLI()
-		if flow == gst.FlowFlushing {
-			w.flushingCount++
-			if w.flushingCount == 1 {
-				w.logger.Infow("FlowFlushing detected",
-					"appsrcState", w.src.Element.GetCurrentState().String())
-				if w.flushDotRequested.CompareAndSwap(false, true) {
-					w.callbacks.OnDebugDotRequest("appsrc_flush_" + w.track.ID())
-				}
-			}
-			if w.flushingCount >= flushingThreshold {
-				return errFlowFlushingThreshold
-			}
-		} else {
-			w.logger.Infow("unexpected flow return", "flow", flow,
-				"appsrcState", w.src.Element.GetCurrentState().String())
-		}
-	} else if w.flushingCount > 0 {
-		w.logger.Infow("FlowFlushing cleared after successful push",
-			"previousCount", w.flushingCount)
-		w.flushingCount = 0
+	pushed, err := w.pushToSource(b)
+	if err != nil {
+		return false, err
 	}
 
 	w.lastPushed.Store(time.Now())
 	w.lastPTS = pts
 	w.maybeCheckPipelineLag(pts)
-	return nil
+	return pushed, nil
 }
 
-// tryRecoverFromFlushing attempts to recover from persistent FlowFlushing by
-// removing the stuck source bin and replacing it with a new one.
-// Returns true if recovery succeeded and pushing can continue.
-func (w *AppWriter) tryRecoverFromFlushing() bool {
-	if w.draining.IsBroken() {
-		w.logger.Debugw("skipping FlowFlushing recovery: draining")
-		return false
-	}
-	if w.unsubscribed.IsBroken() {
-		w.logger.Debugw("skipping FlowFlushing recovery: unsubscribed")
-		return false
-	}
-	if w.endStreamSignaled.IsBroken() {
-		w.logger.Debugw("skipping FlowFlushing recovery: end stream signaled")
-		return false
+// pushToSource pushes into appsrc and tracks FlowFlushing runs: false when not accepted,
+// an error once flushing has persisted past the threshold
+func (w *AppWriter) pushToSource(b *gst.Buffer) (bool, error) {
+	flow := w.src.PushBuffer(b)
+	if flow == gst.FlowOK {
+		if w.flushingCount > 0 {
+			w.logger.Infow("FlowFlushing cleared after successful push",
+				"previousCount", w.flushingCount)
+			w.flushingCount = 0
+		}
+		return true, nil
 	}
 
-	if w.srcResetCount >= maxSrcResets {
-		w.logger.Warnw("max FlowFlushing recovery attempts reached, giving up", nil,
-			"attempts", w.srcResetCount)
-		return false
+	w.stats.packetsDropped.Inc()
+	w.sendPLI()
+	if flow == gst.FlowFlushing {
+		w.flushingCount++
+		if w.flushingCount == 1 {
+			w.logger.Infow("FlowFlushing detected",
+				"appsrcState", w.src.Element.GetCurrentState().String())
+			if w.flushDotRequested.CompareAndSwap(false, true) {
+				w.callbacks.OnDebugDotRequest("appsrc_flush_" + w.track.ID())
+			}
+		}
+		if w.flushingCount == flushingThreshold/2 {
+			w.recoverFromFlushing()
+		}
+		if w.flushingCount >= flushingThreshold {
+			return false, errFlowFlushingThreshold
+		}
+	} else {
+		w.logger.Infow("unexpected flow return", "flow", flow,
+			"appsrcState", w.src.Element.GetCurrentState().String())
 	}
+	return false, nil
+}
 
-	w.logger.Infow("attempting FlowFlushing recovery via source bin reset",
-		"flushingCount", w.flushingCount, "attempt", w.srcResetCount+1)
-
-	oldAppSrc := w.trackSource.AppSrc
-
-	// Call the builder layer to force-remove the old bin and add a new one.
-	// The callback updates ts.AppSrc to the new appsrc on success.
-	if err := w.callbacks.OnSourceBinReset(w.trackSource); err != nil {
-		w.logger.Errorw("FlowFlushing recovery failed", err)
-		return false
+// recoverFromFlushing restarts an appsrc stranded with its internal flushing
+func (w *AppWriter) recoverFromFlushing() {
+	w.logger.Infow("attempting FlowFlushing recovery",
+		"flushingCount", w.flushingCount,
+		"appsrcState", w.src.Element.GetCurrentState().String())
+	if !w.src.SendEvent(gst.NewFlushStartEvent()) {
+		w.logger.Warnw("failed to send recovery flush start event", nil)
+		return
 	}
-
-	if w.trackSource.AppSrc == oldAppSrc {
-		w.logger.Errorw("FlowFlushing recovery: no handler replaced the appsrc", nil)
-		return false
+	if !w.src.SendEvent(gst.NewFlushStopEvent(false)) {
+		w.logger.Warnw("failed to send recovery flush stop event", nil)
+		return
 	}
-
-	w.src = w.trackSource.AppSrc
-	w.flushingCount = 0
-	w.srcResetCount++
-
-	w.logger.Infow("FlowFlushing recovery succeeded, continuing with new appsrc",
-		"totalResets", w.srcResetCount)
-	return true
+	w.logger.Infow("FlowFlushing recovery successful")
 }
 
 func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {
+	// Passthrough Opus is written straight to the file with no mixer, so no need to check for late packets.
+	if w.opusPassthrough {
+		return
+	}
 	if pts-w.lastPipelineCheckPTS < pipelineCheckInterval {
 		return
 	}
@@ -692,7 +887,22 @@ func (w *AppWriter) maybeCheckPipelineLag(pts time.Duration) {
 }
 
 func (w *AppWriter) Playing() {
+	// Reaching PLAYING implies the appsrc is linked.
+	w.addedToPipeline.Break()
 	w.playing.Break()
+}
+
+func (w *AppWriter) MarkAddedToPipeline() {
+	w.addedToPipeline.Break()
+}
+
+// shouldSendEOS reports whether cleanup must push EOS into this writer's appsrc.
+//
+// The test is whether the pipeline links the appsrc, not whether it was reported
+// PLAYING: that notification is not delivered during shutdown, while the pipeline
+// still waits on the pad.
+func (w *AppWriter) shouldSendEOS() bool {
+	return w.addedToPipeline.IsBroken()
 }
 
 // Drain blocks until finished
@@ -741,7 +951,6 @@ func (w *AppWriter) logStats() {
 			stats := w.getStats()
 			w.csvLogger.Write(stats)
 			w.csvLogger.Close()
-			w.logger.Infow("appwriter stats ", "stats", stats, "requestType", w.conf.RequestType)
 			return
 
 		case <-ticker.C:
@@ -781,7 +990,7 @@ func (w *AppWriter) updateDrift(drift time.Duration) {
 }
 
 func (w *AppWriter) shouldHandleDiscontinuity() bool {
-	return w.track.Kind() == webrtc.RTPCodecTypeAudio && w.conf.AudioTempoController.Enabled
+	return w.track.Kind() == webrtc.RTPCodecTypeAudio && w.conf.AudioTempoController.Enabled && !w.opusPassthrough
 }
 
 func (w *AppWriter) TrackKind() webrtc.RTPCodecType {
@@ -802,9 +1011,20 @@ func isDiscontinuity(lastPTS time.Duration, pts time.Duration) bool {
 	return pts > lastPTS+discontinuityTolerance
 }
 
+// exceedsFillBudget reports whether the pause before pts is too long to conceal: the
+// fill arrives when the pause ends and must still land inside the mixer's latency
+// window, so longer pauses flush and re-anchor pitch instead
+func (w *AppWriter) exceedsFillBudget(pts time.Duration) bool {
+	return pts > w.lastPTS+pauseFillBudget(w.conf.Latency.AudioMixerLatency)
+}
+
+func pauseFillBudget(mixerLatency time.Duration) time.Duration {
+	return max(discontinuityTolerance, mixerLatency)
+}
+
 func (w *AppWriter) shouldRemoveBeforeDrain() bool {
-	return w.track.Kind() == webrtc.RTPCodecTypeVideo &&
-		(w.conf.RequestType == types.RequestTypeParticipant || w.conf.RequestType == types.RequestTypeRoomComposite || w.conf.RequestType == types.RequestTypeMedia)
+	return w.track.Kind() == webrtc.RTPCodecTypeVideo && !w.conf.Passthrough &&
+		(w.conf.RequestType == types.RequestTypeParticipant || w.conf.RequestType == types.RequestTypeRoomComposite || w.conf.RequestType == types.RequestTypeTemplate || w.conf.RequestType == types.RequestTypeMedia)
 }
 
 func (w *AppWriter) ensureRemovedBeforeDrain() {

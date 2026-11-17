@@ -20,16 +20,20 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/pion/webrtc/v4"
+	"github.com/pion/webrtc/v4/pkg/media"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+	"github.com/livekit/server-sdk-go/v2/pkg/oggreader"
 )
 
 var (
@@ -39,6 +43,7 @@ var (
 			types.MimeTypeH264: "/media-samples/livekit_avsync_p0_video_red_1080p25.h264",
 			types.MimeTypeVP8:  "/media-samples/livekit_avsync_p0_video_red_1080p24.vp8.ivf",
 			types.MimeTypeVP9:  "/media-samples/livekit_avsync_p0_video_red_1080p24.vp9.ivf",
+			types.MimeTypeAV1:  "/media-samples/livekit_avsync_p0_video_red_1080p24.av1.ivf",
 			types.MimeTypePCMU: "/media-samples/livekit_avsync_p0_audio_523hz_8k.pcmu.wav",
 			types.MimeTypePCMA: "/media-samples/livekit_avsync_p0_audio_523hz_8k.pcma.wav",
 		},
@@ -56,6 +61,7 @@ var (
 		types.MimeTypeH264: time.Millisecond * 40,
 		types.MimeTypeVP8:  time.Microsecond * 41667,
 		types.MimeTypeVP9:  time.Microsecond * 41667,
+		types.MimeTypeAV1:  time.Microsecond * 41667,
 		types.MimeTypePCMU: time.Millisecond * 20,
 		types.MimeTypePCMA: time.Millisecond * 20,
 	}
@@ -417,6 +423,71 @@ func (r *Runner) publishForParticipant(t *testing.T, lp *lksdk.LocalParticipant,
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = lp.UnpublishTrack(pub.SID()) })
 	return pub
+}
+
+// publishOpusWithDTX publishes the p0 Opus sample in real time, sending one packet in 20 for dtxPackets packets from dtxFrom
+func publishOpusWithDTX(t *testing.T, lp *lksdk.LocalParticipant, dtxFrom, dtxPackets int) *lksdk.LocalTrackPublication {
+	track, err := webrtc.NewTrackLocalStaticSample(
+		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2},
+		"audio", "dtx",
+	)
+	require.NoError(t, err)
+	pub, err := lp.PublishTrack(track, &lksdk.TrackPublicationOptions{Name: "dtx"})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go writeOpusWithDTX(ctx, track, dtxFrom, dtxPackets)
+	return pub
+}
+
+func writeOpusWithDTX(ctx context.Context, track *webrtc.TrackLocalStaticSample, dtxFrom, dtxPackets int) {
+	const dtxInterval = 20
+
+	start := time.Now()
+	var elapsed time.Duration
+	for idx := 0; ; {
+		f, err := os.Open(participantSamples["p0"][types.MimeTypeOpus])
+		if err != nil {
+			return
+		}
+		reader, _, err := oggreader.NewOggReader(f)
+		if err != nil {
+			_ = f.Close()
+			return
+		}
+
+		passStart := idx
+		for {
+			payload, err := reader.ReadPacket()
+			if err != nil {
+				break
+			}
+			d, err := oggreader.ParsePacketDuration(payload)
+			if err != nil {
+				break
+			}
+
+			// a DTX packet's duration covers the frames skipped after it, so RTP timestamps jump while sequence numbers stay contiguous
+			switch dtx := idx - dtxFrom; {
+			case dtx < 0 || dtx >= dtxPackets:
+				_ = track.WriteSample(media.Sample{Data: payload, Duration: d})
+			case dtx%dtxInterval == 0:
+				_ = track.WriteSample(media.Sample{Data: payload, Duration: d * dtxInterval})
+			}
+			idx++
+			elapsed += d
+
+			if !sleepUntilCtx(ctx, start, elapsed) {
+				_ = f.Close()
+				return
+			}
+		}
+		_ = f.Close()
+		if idx == passStart {
+			return
+		}
+	}
 }
 
 // sleepUntilCtx sleeps until from+d. Returns false if ctx canceled first.

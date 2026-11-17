@@ -15,12 +15,18 @@
 # syntax=docker/dockerfile:1.6
 ARG TARGETPLATFORM
 ARG TEMPLATE_TAG=latest
-ARG GO_VERSION=1.26.2
-ARG LINT_VERSION=v2.11.3
+ARG LINT_VERSION=v2.14.0
+
+# The GStreamer version is pinned in .gst-version, the single source of truth that
+# Renovate keeps current via an approvable PR. It has no default here on purpose: a
+# default would be a second copy of the version and would drift. The magefile and CI
+# read the file and pass it in, so build this by hand with
+# --build-arg GSTVERSION=$(cat .gst-version).
+ARG GSTVERSION
 
 FROM livekit/egress-templates:$TEMPLATE_TAG AS template
 
-FROM livekit/gstreamer:1.24.12-dev AS builder
+FROM livekit/gstreamer:$GSTVERSION-dev AS builder
 
 WORKDIR /workspace
 
@@ -28,14 +34,23 @@ ARG TARGETPLATFORM
 
 # Deadlock 0 = off, 1 = on
 ARG DEADLOCK=0
-ARG GO_VERSION
 
-# install go
+COPY .go-version ./
+
+# Install Go: use the exact patch pinned in .go-version, which Renovate keeps current
+# via an approvable PR. It is decoupled from go.mod's "go" directive (the module
+# minimum, which the go toolchain may rewrite to bare major.minor). GOTOOLCHAIN=local
+# forces exactly this toolchain and fails the build if go.mod ever requires a newer
+# one, so a minor-version bump surfaces as a red CI check instead of a silent download.
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then GOARCH=arm64; else GOARCH=amd64; fi && \
-    wget https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz && \
+    GOVER=$(cat .go-version) && \
+    if [ -z "$GOVER" ]; then echo ".go-version is empty" >&2; exit 1; fi && \
+    echo "using Go $GOVER from .go-version" && \
+    wget -O /tmp/go.tar.gz https://go.dev/dl/go$GOVER.linux-${GOARCH}.tar.gz && \
     rm -rf /usr/local/go && \
-    tar -C /usr/local -xzf go${GO_VERSION}.linux-${GOARCH}.tar.gz
+    tar -C /usr/local -xzf /tmp/go.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOTOOLCHAIN=local
 
 ENV GOMODCACHE=/go/pkg/mod \
     GOCACHE=/go/build-cache
@@ -46,6 +61,11 @@ COPY go.sum .
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/go/build-cache \
     go mod download
+
+# Get security updates in case the toolchain was updated.
+# SECURITY_REFRESH busts the cache so the upgrade re-runs on every build.
+ARG SECURITY_REFRESH
+RUN apt-get update && apt-get -y dist-upgrade && rm -rf /var/lib/apt/lists/*
 
 # copy source
 COPY cmd/ cmd/
@@ -86,13 +106,50 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
         --build-tags="${LINT_TAGS}"
 RUN echo ok >/lint_ok
 
+FROM builder AS unit
 
-FROM livekit/gstreamer:1.24.12-prod
+ARG DEADLOCK=0
+
+# Package unit tests; the integration suite under test/ runs from the final image.
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/go/build-cache \
+    TAGS=""; \
+    if [ "${DEADLOCK:-0}" = "1" ]; then TAGS="deadlock"; fi; \
+    CGO_ENABLED=1 go test ${TAGS:+-tags} ${TAGS:+"$TAGS"} -count=1 -timeout 10m ./pkg/...
+RUN echo ok >/unit_ok
+
+
+FROM livekit/gstreamer:$GSTVERSION-prod-rs AS rs-plugins
+
+RUN --mount=type=bind,source=build/egress,target=/build \
+    /build/copy-rs-plugins /build/egress-rs-elements /rs-plugins
+
+FROM livekit/gstreamer:$GSTVERSION-prod
+
+# gst-plugins-rs plugins listed in build/egress/egress-rs-elements
+COPY --from=rs-plugins /rs-plugins/ /
+
+# fail the build if a listed element does not load in this image
+RUN --mount=type=bind,source=build/egress/egress-rs-elements,target=/egress-rs-elements \
+    grep -v -e '^#' -e '^$' /egress-rs-elements | xargs -n1 gst-inspect-1.0 > /dev/null && \
+    rm -rf /root/.cache
 
 ARG TARGETPLATFORM
 
-# install deps
+# Our GStreamer build is not owned by any package, so distro GStreamer packages
+# (a pulseaudio dependency) would overwrite its files. Keep dpkg from writing them.
+# The distro helper directory stays: libgstreamer1.0-0's postinst fails without gst-ptp-helper.
+RUN printf '%s\n' \
+        'path-exclude=/usr/lib/*/gstreamer-1.0/*' \
+        'path-exclude=/usr/lib/*/libgst*' \
+        'path-include=/usr/lib/*/gstreamer1.0/*' \
+    > /etc/dpkg/dpkg.cfg.d/exclude-distro-gstreamer
+
+# install deps, pulling in security updates from the base image.
+# SECURITY_REFRESH busts the cache so the upgrade re-runs on every build.
+ARG SECURITY_REFRESH
 RUN apt-get update && \
+    apt-get -y dist-upgrade && \
     apt-get install -y \
         curl \
         ffmpeg \
@@ -106,25 +163,33 @@ RUN apt-get update && \
         xvfb \
         gstreamer1.0-plugins-base-
 
-# install go
+# reuse the .go-version-pinned toolchain installed in the builder stage
 COPY --from=1 /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOTOOLCHAIN=local
 
 # install chrome
-COPY --from=livekit/chrome-installer:146.0.7680.177-1 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:157.0.8103.78 /chrome-installer /chrome-installer
 
 RUN /chrome-installer/install-chrome "$TARGETPLATFORM"
+
+# fail the build if the core elements are not from our GStreamer build
+ARG GSTVERSION
+RUN gst-inspect-1.0 coreelements | grep -q "Version *${GSTVERSION%-*}$" || \
+    { echo "coreelements is not GStreamer ${GSTVERSION%-*}" >&2; exit 1; }
 
 # clean up
 RUN rm -rf /var/lib/apt/lists/*
 
-# install rtsp server
+# install rtsp server. %path in recordPath keeps each stream key in its own
+# directory, so the integration suite can find the recording for a given output
+# url; test/stream_recording.go reads from the same location.
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64v8; else ARCH=amd64; fi && \
     wget https://github.com/bluenviron/mediamtx/releases/download/v1.8.1/mediamtx_v1.8.1_linux_${ARCH}.tar.gz && \
     tar -zxvf mediamtx_v1.8.1_linux_${ARCH}.tar.gz && \
     rm mediamtx_v1.8.1_linux_${ARCH}.tar.gz && \
     sed -i 's_record: no_record: yes_g' mediamtx.yml && \
-    sed -i 's_recordPath: ./recordings/%path/_recordPath: /out/output/stream-_g' mediamtx.yml
+    sed -i 's_recordPath: ./recordings/%path/_recordPath: /out/output/rec/%path/_g' mediamtx.yml
 
 # install toxiproxy (used by integration tests to simulate wedged RTMP outputs)
 RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then ARCH=arm64; else ARCH=amd64; fi && \
@@ -145,8 +210,9 @@ COPY --from=1 /workspace/test.test .
 COPY media-samples /media-samples
 COPY build/test/entrypoint.sh .
 
-# Force lint stage to run successfully
+# Force lint and unit test stages to run successfully
 COPY --from=lint /lint_ok /__lint_ok
+COPY --from=unit /unit_ok /__unit_ok
 
 # run tests
 USER egress

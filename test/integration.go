@@ -29,6 +29,7 @@ import (
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/types"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -69,6 +70,12 @@ func (r *Runner) run(t *testing.T, test *testCase) bool {
 
 	r.testNumber++
 	t.Run(fmt.Sprintf("%d/%s", r.testNumber, test.name), func(t *testing.T) {
+		if test.chromeCompositing {
+			original := r.EnableTemplateSDK
+			r.EnableTemplateSDK = false
+			t.Cleanup(func() { r.EnableTemplateSDK = original })
+		}
+
 		test.plan = planTest(test)
 		r.executePlan(t, test)
 
@@ -169,10 +176,10 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 		}
 
 		var expectedVideoEncoding bool
-		switch test.requestType {
-		case types.RequestTypeTrack:
+		switch {
+		case test.requestType == types.RequestTypeTrack || test.passthrough:
 			expectedVideoEncoding = false
-		case types.RequestTypeParticipant:
+		case test.requestType == types.RequestTypeParticipant:
 			expectedVideoEncoding = true
 		default:
 			expectedVideoEncoding = !test.audioOnly
@@ -230,6 +237,8 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 				require.Equal(t, livekit.StreamInfo_FAILED.String(), info.Status.String())
 			}
 		}
+
+		r.verifyStreamRecording(t, test, p, res, urls[0], startedAt)
 	}
 
 	// validate images
@@ -269,7 +278,11 @@ func (r *Runner) startEgress(t *testing.T, req *rpc.StartEgressRequest) string {
 	// check status
 	if r.HealthPort != 0 {
 		status := r.getStatus(t)
-		require.Contains(t, status, info.EgressId)
+		requestType, outputType := egress.GetTypes(info.Request)
+		require.Equal(t, map[string]interface{}{
+			"requestType": requestType,
+			"outputType":  outputType,
+		}, status[info.EgressId])
 	}
 
 	// wait

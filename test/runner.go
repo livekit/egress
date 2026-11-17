@@ -168,8 +168,11 @@ func NewRunner(t *testing.T) *Runner {
 	require.NoError(t, err)
 
 	conf.EnableSyncEngine = true
+	conf.EnableTemplateSDK = true
 	conf.AudioTempoController.Enabled = true
 	conf.AudioTempoController.AdjustmentRate = 0.05
+	// short grace so the pulse sink reaper edge case completes quickly
+	conf.PulseSinkReapGraceSec = 3
 
 	r.ServiceConfig = conf
 

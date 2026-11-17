@@ -70,7 +70,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
 		if len(streams)+len(segments)+len(images) == 0 {
-			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
+			p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo} //nolint:staticcheck // keep deprecated field for older clients
 		}
 	}
 
@@ -90,19 +90,20 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 		var outputType types.OutputType
 		switch stream.Protocol {
 		case livekit.StreamProtocol_DEFAULT_PROTOCOL:
-			if len(stream.Urls) == 0 {
+			rawUrl := firstStreamUrl(stream)
+			if rawUrl == "" {
 				return errors.ErrInvalidInput("stream protocol")
 			}
 
-			parsed, err := url.Parse(stream.Urls[0])
+			parsed, err := url.Parse(rawUrl)
 			if err != nil {
-				return errors.ErrInvalidUrl(stream.Urls[0], err.Error())
+				return errors.ErrInvalidUrl(rawUrl, err.Error())
 			}
 
 			var ok bool
 			outputType, ok = types.StreamOutputTypes[parsed.Scheme]
 			if !ok {
-				return errors.ErrInvalidUrl(stream.Urls[0], "invalid protocol")
+				return errors.ErrInvalidUrl(rawUrl, "invalid protocol")
 			}
 
 		case livekit.StreamProtocol_RTMP:
@@ -112,18 +113,19 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 			outputType = types.OutputTypeSRT
 		}
 
-		conf, err := p.getStreamConfig(outputType, stream.Urls)
+		conf, err := p.getStreamConfig(outputType, stream.Urls, stream.Destinations)
 		if err != nil {
 			return err
 		}
 
+		numStreams := len(stream.Urls) + len(stream.Destinations)
 		p.Outputs[types.EgressTypeStream] = []OutputConfig{conf}
-		p.OutputCount.Add(int32(len(stream.Urls)))
+		p.OutputCount.Add(int32(numStreams))
 		if p.VideoEnabled {
 			p.VideoEncoding = true
 		}
 
-		streamInfoList := make([]*livekit.StreamInfo, 0, len(stream.Urls))
+		streamInfoList := make([]*livekit.StreamInfo, 0, numStreams)
 		conf.Streams.Range(func(_, stream any) bool {
 			streamInfoList = append(streamInfoList, stream.(*Stream).StreamInfo)
 			return true
@@ -132,7 +134,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 
 		if len(files)+len(segments)+len(images) == 0 {
 			// empty stream output only valid in combination with other outputs
-			if len(stream.Urls) == 0 {
+			if numStreams == 0 {
 				return errors.ErrInvalidInput("stream url")
 			}
 
@@ -167,7 +169,7 @@ func (p *PipelineConfig) updateEncodedOutputs(req egress.EncodedOutput) error {
 
 		p.Info.SegmentResults = []*livekit.SegmentsInfo{conf.SegmentsInfo}
 		if len(streams)+len(files)+len(images) == 0 {
-			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo}
+			p.Info.Result = &livekit.EgressInfo_Segments{Segments: conf.SegmentsInfo} //nolint:staticcheck // keep deprecated field for older clients
 		}
 	}
 
@@ -255,7 +257,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 			p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
 			p.OutputCount.Inc()
 			p.FinalizationRequired = true
-			if p.VideoEnabled {
+			if p.VideoEnabled && !p.Passthrough {
 				p.VideoEncoding = true
 			}
 
@@ -274,17 +276,18 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 
 			switch stream.Protocol {
 			case livekit.StreamProtocol_DEFAULT_PROTOCOL:
-				if len(stream.Urls) == 0 {
+				rawUrl := firstStreamUrl(stream)
+				if rawUrl == "" {
 					return errors.ErrInvalidInput("stream protocol")
 				}
-				parsed, err := url.Parse(stream.Urls[0])
+				parsed, err := url.Parse(rawUrl)
 				if err != nil {
-					return errors.ErrInvalidUrl(stream.Urls[0], err.Error())
+					return errors.ErrInvalidUrl(rawUrl, err.Error())
 				}
 				var ok bool
 				outputType, ok = types.StreamOutputTypes[parsed.Scheme]
 				if !ok {
-					return errors.ErrInvalidUrl(stream.Urls[0], "invalid protocol")
+					return errors.ErrInvalidUrl(rawUrl, "invalid protocol")
 				}
 				if parsed.Scheme == "ws" || parsed.Scheme == "wss" {
 					egressType = types.EgressTypeWebsocket
@@ -311,18 +314,19 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 				p.VideoDecoding = false
 			}
 
-			conf, err := p.getStreamConfig(outputType, stream.Urls)
+			conf, err := p.getStreamConfig(outputType, stream.Urls, stream.Destinations)
 			if err != nil {
 				return err
 			}
 
+			numStreams := len(stream.Urls) + len(stream.Destinations)
 			p.Outputs[egressType] = []OutputConfig{conf}
-			p.OutputCount.Add(int32(len(stream.Urls)))
-			if p.VideoEnabled {
+			p.OutputCount.Add(int32(numStreams))
+			if p.VideoEnabled && !p.Passthrough {
 				p.VideoEncoding = true
 			}
 
-			streamInfoList := make([]*livekit.StreamInfo, 0, len(stream.Urls))
+			streamInfoList := make([]*livekit.StreamInfo, 0, numStreams)
 			conf.Streams.Range(func(_, s any) bool {
 				streamInfoList = append(streamInfoList, s.(*Stream).StreamInfo)
 				return true
@@ -344,7 +348,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 			p.Outputs[types.EgressTypeSegments] = []OutputConfig{conf}
 			p.OutputCount.Inc()
 			p.FinalizationRequired = true
-			if p.VideoEnabled {
+			if p.VideoEnabled && !p.Passthrough {
 				p.VideoEncoding = true
 			}
 
@@ -384,7 +388,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 	// populate deprecated single-result field for older clients
 	if hasFile && !hasStream && !hasSegments && len(p.Outputs[types.EgressTypeImages]) == 0 {
 		if fc := p.GetFileConfig(); fc != nil {
-			p.Info.Result = &livekit.EgressInfo_File{File: fc.FileInfo}
+			p.Info.Result = &livekit.EgressInfo_File{File: fc.FileInfo} //nolint:staticcheck // keep deprecated field for older clients
 		}
 	} else if hasStream && !hasFile && !hasSegments && len(p.Outputs[types.EgressTypeImages]) == 0 {
 		if len(p.Info.StreamResults) > 0 {
@@ -392,7 +396,7 @@ func (p *PipelineConfig) updateOutputs(req egress.EgressRequest) error {
 		}
 	} else if hasSegments && !hasFile && !hasStream && len(p.Outputs[types.EgressTypeImages]) == 0 {
 		if sc := p.GetSegmentConfig(); sc != nil {
-			p.Info.Result = &livekit.EgressInfo_Segments{Segments: sc.SegmentsInfo}
+			p.Info.Result = &livekit.EgressInfo_Segments{Segments: sc.SegmentsInfo} //nolint:staticcheck // keep deprecated field for older clients
 		}
 	}
 
@@ -419,14 +423,14 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 		}
 
 		p.Info.FileResults = []*livekit.FileInfo{conf.FileInfo}
-		p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo}
+		p.Info.Result = &livekit.EgressInfo_File{File: conf.FileInfo} //nolint:staticcheck // keep deprecated field for older clients
 
 		p.Outputs[types.EgressTypeFile] = []OutputConfig{conf}
 		p.OutputCount.Inc()
 		p.FinalizationRequired = true
 
 	case *livekit.TrackEgressRequest_WebsocketUrl:
-		conf, err := p.getStreamConfig(types.OutputTypeRaw, []string{o.WebsocketUrl})
+		conf, err := p.getStreamConfig(types.OutputTypeRaw, []string{o.WebsocketUrl}, nil)
 		if err != nil {
 			return err
 		}
@@ -448,4 +452,14 @@ func (p *PipelineConfig) updateDirectOutput(req *livekit.TrackEgressRequest) err
 	}
 
 	return nil
+}
+
+func firstStreamUrl(stream *livekit.StreamOutput) string {
+	if len(stream.Urls) > 0 {
+		return stream.Urls[0]
+	}
+	if len(stream.Destinations) > 0 {
+		return stream.Destinations[0].Url
+	}
+	return ""
 }

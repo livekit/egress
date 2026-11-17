@@ -1,0 +1,18 @@
+#!/bin/bash
+set -euo pipefail
+
+# Copies the plugin files providing each element listed in $1 into $2, keeping
+# their absolute paths. Fails if any listed element is not installed.
+elements=$1
+dest=$2
+
+while read -r element; do
+  if ! info=$(gst-inspect-1.0 "$element" 2>&1); then
+    echo "element not found: $element" >&2
+    exit 1
+  fi
+  file=$(awk '/^  Filename/ {print $2}' <<< "$info")
+  mkdir -p "$dest$(dirname "$file")"
+  cp "$file" "$dest$file"
+  echo "$element: $file"
+done < <(grep -v -e '^#' -e '^$' "$elements")
