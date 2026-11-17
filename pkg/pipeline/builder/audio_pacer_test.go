@@ -537,10 +537,9 @@ func (h *pitchHarness) finish() time.Duration {
 	if h.drained != nil {
 		<-h.drained
 	}
-	for {
-		if h.sink.PullSample() == nil {
-			break
-		}
+	sample := h.sink.PullSample()
+	for sample != nil {
+		sample = h.sink.PullSample()
 	}
 	return time.Duration(h.out.Load()) - time.Duration(h.pushed)*20*time.Millisecond
 }
