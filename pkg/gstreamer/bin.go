@@ -152,6 +152,11 @@ func (b *Bin) addBin(bin *Bin, direction gst.PadDirection) error {
 	return nil
 }
 
+// GetElementByName returns the element with the given name from this bin or any bin inside it.
+func (b *Bin) GetElementByName(name string) (*gst.Element, error) {
+	return b.bin.GetElementByName(name)
+}
+
 // AddElement - adds element to the bin. Elements will be linked in the order they are added
 func (b *Bin) AddElement(e *gst.Element) error {
 	b.mu.Lock()

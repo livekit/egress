@@ -131,7 +131,7 @@ func (b *AudioBin) onTrackRemoved(trackID string) {
 }
 
 func (b *AudioBin) buildWebInput() error {
-	pulseSrc, err := gst.NewElement("pulsesrc")
+	pulseSrc, err := gst.NewElementWithName("pulsesrc", webAudioSrcName)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}

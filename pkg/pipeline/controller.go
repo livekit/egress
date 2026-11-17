@@ -246,6 +246,10 @@ func (c *Controller) BuildPipeline() error {
 	// initial graph is fully wired; from now on, dynamic additions must be linked immediately
 	p.UpgradeState(gstreamer.StateStarted)
 
+	if c.SourceType == types.SourceTypeWeb && c.Logging != nil && c.Logging.Level == "debug" {
+		builder.WatchCaptureContinuity(p)
+	}
+
 	c.p = p
 	close(c.callbacks.BuildReady)
 	return nil
