@@ -51,14 +51,15 @@ type Controller struct {
 	maxLatency time.Duration
 	tier       Tier
 
-	warnShift    time.Duration
-	actShift     time.Duration
-	shiftWarned  bool
-	resetPending bool // until pitch sees the flush, shift and drift still describe the discarded timeline
-	resets       int
-	disabled     bool
-	applied      time.Duration // lifetime net correction; reset leaves it
-	corrections  int
+	warnShift     time.Duration
+	actShift      time.Duration
+	shiftWarned   bool
+	resetPending  bool // until pitch sees the flush, shift and drift still describe the discarded timeline
+	dropNextDrift bool // the SDK can deliver a report sampled before the re-anchor after the flush
+	resets        int
+	disabled      bool
+	applied       time.Duration // lifetime net correction; reset leaves it
+	corrections   int
 
 	cb      func(time.Duration) // invoked with correction amount to apply
 	tierCB  func(Tier)          // invoked on tier transitions
@@ -129,7 +130,8 @@ func (tc *Controller) updateTierLocked(effective time.Duration) (bool, Tier, fun
 // correction is started.
 func (tc *Controller) SetDrift(drift time.Duration) {
 	tc.mu.Lock()
-	if tc.resetPending {
+	if tc.resetPending || tc.dropNextDrift {
+		tc.dropNextDrift = false
 		tc.mu.Unlock()
 		return
 	}
@@ -262,7 +264,10 @@ func (tc *Controller) ResetHardTier() {
 // Flushed tells the controller that pitch has seen a flush, ending any pending reset.
 func (tc *Controller) Flushed() {
 	tc.mu.Lock()
-	tc.resetPending = false
+	if tc.resetPending {
+		tc.resetPending = false
+		tc.dropNextDrift = true
+	}
 	tc.mu.Unlock()
 }
 

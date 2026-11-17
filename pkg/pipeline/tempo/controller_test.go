@@ -447,12 +447,24 @@ func TestControllerResetStateMachine(t *testing.T) {
 	}
 	tc.Flushed()
 
+	// a report sampled before the re-anchor can still arrive after the flush
+	tc.SetDrift(900 * time.Millisecond)
+	if len(armed) != 0 {
+		t.Fatalf("first report after the flush armed a correction: %v", armed)
+	}
+	tc.SetDrift(30 * time.Millisecond)
+	if len(armed) != 1 {
+		t.Fatalf("report after the dropped one should arm: %v", armed)
+	}
+
 	tc.ObserveOutputShift(-700 * time.Millisecond)
 	if resets != 2 || !tc.Stats().Disabled {
 		t.Fatalf("second reset should disable tempo: resets=%d stats=%+v", resets, tc.Stats())
 	}
 	tc.Flushed()
 
+	armed = nil
+	tc.SetDrift(200 * time.Millisecond)
 	tc.SetDrift(200 * time.Millisecond)
 	if len(armed) != 0 {
 		t.Fatalf("disabled controller armed a correction: %v", armed)
