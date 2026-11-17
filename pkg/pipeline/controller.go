@@ -333,6 +333,7 @@ func (c *Controller) Run(ctx context.Context) *livekit.EgressInfo {
 	}
 
 	c.startOutputSizeMonitor()
+	c.startStallMonitor()
 
 	// Replay duration timer
 	if c.replayDuration > 0 {

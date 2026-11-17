@@ -97,11 +97,100 @@ func TestVideoGapFillKeepsCompositorFed(t *testing.T) {
 	}
 }
 
+func TestVideoGapFillKeepsSelectorFed(t *testing.T) {
+	// a muted camera on a non-live input-selector: its source sends a GAP and nothing more until the unmute, with no
+	// mute callback, and the output keeps going through the gap with black frames from the gap's start until the
+	// track's next frame
+	initGStreamer(t)
+	for _, codec := range gapTestCodecs {
+		t.Run(codec.name, func(t *testing.T) {
+			packets := gapTestRTPPackets(t, codec, 2*gapTestFPS)
+			firstSecond, secondSecond := splitAt(packets, time.Second)
+			// a decoder may hold the last frame until its next input, and videorate the last frame it got
+			held := 3 * gapTestFrame
+
+			t.Run("StartsMuted", func(t *testing.T) {
+				h := newSelectorGapHarness(t, codec)
+				h.gap(0, time.Second)
+				h.requireOutputThrough(time.Second - held)
+				h.push(firstSecond, time.Second)
+				h.requireOutputThrough(2*time.Second - held)
+
+				requireColor(t, h.out, 0, time.Second-gapTestFrame, false)
+				requireColor(t, h.out, time.Second, 2*time.Second-held, true)
+			})
+
+			t.Run("MutedMidStream", func(t *testing.T) {
+				h := newSelectorGapHarness(t, codec)
+				h.push(firstSecond, 0)
+				h.gap(time.Second, time.Second)
+				h.requireOutputThrough(2*time.Second - held)
+				h.push(secondSecond, 2*time.Second)
+				h.requireOutputThrough(3*time.Second - held)
+
+				requireColor(t, h.out, 0, time.Second-gapTestFrame, true)
+				requireColor(t, h.out, time.Second, 2*time.Second-gapTestFrame, false)
+				requireColor(t, h.out, 2*time.Second, 3*time.Second-held, true)
+			})
+
+			t.Run("NextFrameAfterGapEnd", func(t *testing.T) {
+				// the track's first frame after the gap comes half a second after the gap's end, as a keyframe
+				// after a mid-GOP unmute does, and the black lasts until it
+				h := newSelectorGapHarness(t, codec)
+				h.push(firstSecond, 0)
+				h.gap(time.Second, time.Second/2)
+				h.requireOutputThrough(1500*time.Millisecond - held)
+				h.push(secondSecond, 2*time.Second)
+				h.requireOutputThrough(3*time.Second - held)
+
+				requireColor(t, h.out, time.Second, 2*time.Second-gapTestFrame, false)
+				requireColor(t, h.out, 2*time.Second, 3*time.Second-held, true)
+			})
+		})
+	}
+}
+
 type videoGapHarness struct {
 	t    *testing.T
 	src  *app.Source
 	sink *app.Sink
 	out  []gapTestOutput
+}
+
+// newSelectorGapHarness builds the video bin of a non-live, non-composited pipeline with one track and a filler the
+// test never feeds, whose decoded output a raw video sink pulls in place of the encoder
+func newSelectorGapHarness(t *testing.T, codec gapTestCodec) *videoGapHarness {
+	p, err := gstreamer.NewPipeline("selector_gap_test", 0, &gstreamer.Callbacks{})
+	require.NoError(t, err)
+
+	srcEl, err := gst.NewElement("appsrc")
+	require.NoError(t, err)
+	src := app.SrcFromElement(srcEl)
+	fillerEl, err := gst.NewElement("appsrc")
+	require.NoError(t, err)
+	conf := &config.PipelineConfig{Live: false}
+	conf.VideoFillerSrc = app.SrcFromElement(fillerEl)
+	conf.SourceType = types.SourceTypeSDK
+	conf.VideoDecoding = true
+	conf.Width, conf.Height, conf.Framerate = 64, 64, gapTestFPS
+	conf.Latency.PipelineLatency = 3 * time.Second
+	conf.VideoTracks = []*config.TrackSource{{TrackID: "TR_gap_test", MimeType: codec.mime, PayloadType: 96, ClockRate: 90000, AppSrc: src}}
+	if err = BuildVideoBin(p, conf, func(string, int, int) {}); err != nil {
+		t.Skipf("%s decoding elements not available: %v", codec.name, err)
+	}
+
+	// the video bin hands sink bins named image_* its raw video
+	sinkBin := p.NewBin("image_gap_test")
+	out, err := gst.NewElement("appsink")
+	require.NoError(t, err)
+	out.SetArg("sync", "false")
+	require.NoError(t, sinkBin.AddElement(out))
+
+	require.NoError(t, p.AddSinkBin(sinkBin))
+	require.NoError(t, p.Link())
+	require.NoError(t, p.SetState(gst.StatePlaying))
+	t.Cleanup(func() { _ = p.SetState(gst.StateNull) })
+	return &videoGapHarness{t: t, src: src, sink: app.SinkFromElement(out)}
 }
 
 // newVideoGapHarness builds a compositor input: buildVideoAppSrcBin's decoder for a non-live compositing
@@ -139,7 +228,7 @@ func newVideoGapHarness(t *testing.T, codec gapTestCodec) *videoGapHarness {
 	add("compositor", "background", "black")
 	add("capsfilter", "caps", gapTestRawCaps)
 	out := add("appsink", "sync", "false")
-	installVideoGapFill(rate.GetStaticPad("sink"))
+	installVideoGapFill(rate.GetStaticPad("sink"), newEmptyGapBuffer, false)
 
 	require.NoError(t, p.AddSourceBin(srcBin))
 	require.NoError(t, p.AddSinkBin(sinkBin))
@@ -165,7 +254,7 @@ func (h *videoGapHarness) push(packets []timedRTP, offset time.Duration) {
 func (h *videoGapHarness) requireOutputThrough(pts time.Duration) {
 	for len(h.out) == 0 || h.out[len(h.out)-1].pts < pts {
 		sample := h.sink.TryPullSample(gst.ClockTime(5 * time.Second))
-		require.NotNil(h.t, sample, "the compositor stopped at %v waiting on the muted input", h.lastPTS())
+		require.NotNil(h.t, sample, "the output stopped at %v waiting on the muted input", h.lastPTS())
 		h.out = append(h.out, gapTestFrameOf(sample))
 	}
 }
@@ -179,7 +268,7 @@ func (h *videoGapHarness) finish() []gapTestOutput {
 		}
 		h.out = append(h.out, gapTestFrameOf(sample))
 	}
-	require.True(h.t, h.sink.IsEOS(), "the compositor stopped at %v", h.lastPTS())
+	require.True(h.t, h.sink.IsEOS(), "the output stopped at %v", h.lastPTS())
 	return h.out
 }
 

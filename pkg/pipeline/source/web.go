@@ -20,11 +20,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"maps"
 	"math/rand"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -49,6 +51,7 @@ import (
 const (
 	startRecordingLog = "START_RECORDING"
 	endRecordingLog   = "END_RECORDING"
+	inboundStatsLog   = "INBOUND_RTP_STATS"
 
 	chromeFailedToStart       = "chrome failed to start:"
 	chromeCertVerifierChanged = "net::ERR_CERT_VERIFIER_CHANGED"
@@ -409,33 +412,7 @@ func (s *WebSource) navigate(chromeCtx context.Context, chromeCancel context.Can
 }
 
 func (s *WebSource) listen(chromeCtx context.Context) {
-	handleEvents(chromeCtx, chromedp.Events[jsonv2.Value], runtime.ConsoleAPICalled, func(ev runtime.EventConsoleAPICalled) {
-		if s.chromeLogger != nil {
-			if b, err := json.Marshal(ev); err == nil {
-				_, _ = s.chromeLogger.Write(append(b, '\n'))
-			}
-		}
-
-		for _, arg := range ev.Args {
-			var val interface{}
-			err := json.Unmarshal(arg.Value, &val)
-			if err != nil {
-				continue
-			}
-
-			switch fmt.Sprint(val) {
-			case startRecordingLog:
-				if s.startRecordingLogged.CompareAndSwap(false, true) {
-					logger.Infow("chrome: START_RECORDING")
-				}
-				s.startRecording.Break()
-
-			case endRecordingLog:
-				logger.Infow("chrome: END_RECORDING")
-				s.endRecording.Break()
-			}
-		}
-	})
+	handleEvents(chromeCtx, chromedp.Events[jsonv2.Value], runtime.ConsoleAPICalled, s.handleConsoleEvent)
 
 	handleEvents(chromeCtx, chromedp.Events[jsonv2.Value], runtime.ExceptionThrown, func(ev runtime.EventExceptionThrown) {
 		if s.chromeLogger != nil {
@@ -453,6 +430,63 @@ func (s *WebSource) listen(chromeCtx context.Context) {
 	handleEvents(chromeCtx, chromedp.Events[jsonv2.Value], inspector.TargetCrashed, func(_ inspector.EventTargetCrashed) {
 		logger.Errorw("chrome crashed", nil)
 	})
+}
+
+func (s *WebSource) handleConsoleEvent(ev runtime.EventConsoleAPICalled) {
+	if fields, ok := inboundStatsFields(ev.Args); ok {
+		logger.Debugw("chrome: inbound rtp stats", fields...)
+		return
+	}
+
+	if s.chromeLogger != nil {
+		if b, err := json.Marshal(ev); err == nil {
+			_, _ = s.chromeLogger.Write(append(b, '\n'))
+		}
+	}
+
+	for _, arg := range ev.Args {
+		var val interface{}
+		err := json.Unmarshal(arg.Value, &val)
+		if err != nil {
+			continue
+		}
+
+		switch fmt.Sprint(val) {
+		case startRecordingLog:
+			if s.startRecordingLogged.CompareAndSwap(false, true) {
+				logger.Infow("chrome: START_RECORDING")
+			}
+			s.startRecording.Break()
+
+		case endRecordingLog:
+			logger.Infow("chrome: END_RECORDING")
+			s.endRecording.Break()
+		}
+	}
+}
+
+// inboundStatsFields returns the key/value pairs of a console.log(inboundStatsLog, JSON.stringify(stats)) call.
+func inboundStatsFields(args []*runtime.RemoteObject) ([]any, bool) {
+	if len(args) != 2 || args[0] == nil || args[1] == nil {
+		return nil, false
+	}
+	var tag, body string
+	if json.Unmarshal(args[0].Value, &tag) != nil || tag != inboundStatsLog {
+		return nil, false
+	}
+	if json.Unmarshal(args[1].Value, &body) != nil {
+		return nil, false
+	}
+	var stats map[string]any
+	if json.Unmarshal([]byte(body), &stats) != nil {
+		return nil, false
+	}
+
+	fields := make([]any, 0, 2*len(stats))
+	for _, k := range slices.Sorted(maps.Keys(stats)) {
+		fields = append(fields, k, stats[k])
+	}
+	return fields, true
 }
 
 // handleEvents subscribes to the raw payloads of ev and decodes each one itself, so a payload
