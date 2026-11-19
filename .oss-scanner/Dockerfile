@@ -14,7 +14,7 @@
 
 # Build image for Anthropic's OSS Scanner. The scanner passes no build args, so the tags are
 # hardcoded: keep them in sync with .gst-version and version.TemplateVersion.
-FROM livekit/egress-templates:sha-94e7807 AS template
+FROM livekit/egress-templates:sha-d4505b5 AS template
 
 FROM livekit/gstreamer:1.28.9-dev
 
@@ -39,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # The installer image is multi-arch and carries Google's official deb for amd64 and arm64.
-COPY --from=livekit/chrome-installer:157.0.8103.38 /chrome-installer /chrome-installer
+COPY --from=livekit/chrome-installer:157.0.8103.78 /chrome-installer /chrome-installer
 RUN /chrome-installer/install-chrome "linux/${TARGETARCH}" && rm -rf /var/lib/apt/lists/*
 ENV CHROME_DEVEL_SANDBOX=/usr/local/sbin/chrome-devel-sandbox
 
