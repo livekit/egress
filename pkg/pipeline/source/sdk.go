@@ -829,6 +829,12 @@ func (s *SDKSource) onParticipantConnected(rp *lksdk.RemoteParticipant) {
 }
 
 func (s *SDKSource) onMediaParticipantDisconnected(rp *lksdk.RemoteParticipant) {
+	// a reconnect's disconnect goroutine can run after the same session is restored
+	if room := s.room.Load(); room != nil {
+		if current := room.GetParticipantByIdentity(rp.Identity()); current != nil && current.SID() == rp.SID() {
+			return
+		}
+	}
 	s.events.participantLeft(participantOf(rp), rp.DisconnectReason())
 }
 
