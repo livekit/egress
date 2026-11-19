@@ -37,6 +37,9 @@ const (
 	chromiumVersion = "157.0.8103.78"
 	dockerBuild     = "docker build"
 	dockerBuildX    = "docker buildx build --push --platform linux/amd64,linux/arm64"
+
+	// not a Go import, so it's fetched by version instead of through go.mod
+	foxgloveSchemas = "github.com/foxglove/schemas@v0.0.0-20261014190305-8af1390b71ae"
 )
 
 type packageInfo struct {
@@ -63,6 +66,15 @@ func Proto() error {
 	}
 	psrpcInfo := packageInfo{}
 	if err = json.Unmarshal(psrpcOut, &psrpcInfo); err != nil {
+		return err
+	}
+
+	foxgloveOut, err := mageutil.Out(ctx, "go mod download -json "+foxgloveSchemas)
+	if err != nil {
+		return err
+	}
+	foxgloveInfo := packageInfo{}
+	if err = json.Unmarshal(foxgloveOut, &foxgloveInfo); err != nil {
 		return err
 	}
 
@@ -95,15 +107,15 @@ func Proto() error {
 	}
 
 	// generate foxglove schemas for mcap output
-	return mageutil.RunDir(ctx, "pkg/mcap/foxglove", fmt.Sprintf(
+	return mageutil.RunDir(ctx, "pkg/mcap", fmt.Sprintf(
 		"protoc"+
 			" --go_out ."+
 			" --go_opt=paths=source_relative"+
-			" --go_opt=MCompressedVideo.proto=github.com/livekit/egress/pkg/mcap/foxglove"+
-			" --go_opt=MCompressedAudio.proto=github.com/livekit/egress/pkg/mcap/foxglove"+
+			" --go_opt=Mfoxglove/CompressedVideo.proto=github.com/livekit/egress/pkg/mcap/foxglove"+
+			" --go_opt=Mfoxglove/CompressedAudio.proto=github.com/livekit/egress/pkg/mcap/foxglove"+
 			" --plugin=go=%s"+
-			" -I=. CompressedVideo.proto CompressedAudio.proto",
-		protocGoPath,
+			" -I%s foxglove/CompressedVideo.proto foxglove/CompressedAudio.proto",
+		protocGoPath, foxgloveInfo.Dir+"/schemas/proto",
 	))
 }
 
