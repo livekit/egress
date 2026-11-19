@@ -70,13 +70,13 @@ func NewWriter(dst io.Writer, metadata map[string]string) (*Writer, error) {
 	}, nil
 }
 
-// AddChannel registers a channel under key carrying messages of msg's type, writing its schema on first use
-func (w *Writer) AddChannel(key, topic string, msg proto.Message, metadata map[string]string) error {
+// AddChannel registers a channel under key carrying messages of msg's type, writing its schema on first use, and returns the channel id
+func (w *Writer) AddChannel(key, topic string, msg proto.Message, metadata map[string]string) (uint16, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if _, ok := w.channels[key]; ok {
-		return fmt.Errorf("mcap channel %q already registered", key)
+		return 0, fmt.Errorf("mcap channel %q already registered", key)
 	}
 
 	desc := msg.ProtoReflect().Descriptor()
@@ -84,11 +84,11 @@ func (w *Writer) AddChannel(key, topic string, msg proto.Message, metadata map[s
 	if !ok {
 		data, err := proto.Marshal(&descriptorpb.FileDescriptorSet{File: fileWithDeps(desc.ParentFile(), make(map[string]bool), nil)})
 		if err != nil {
-			return err
+			return 0, err
 		}
 		schemaID = uint16(len(w.schemas) + 1)
 		if err = w.w.WriteSchema(&mcap.Schema{ID: schemaID, Name: string(desc.FullName()), Encoding: "protobuf", Data: data}); err != nil {
-			return err
+			return 0, err
 		}
 		w.schemas[desc.FullName()] = schemaID
 	}
@@ -101,11 +101,11 @@ func (w *Writer) AddChannel(key, topic string, msg proto.Message, metadata map[s
 		MessageEncoding: "protobuf",
 		Metadata:        metadata,
 	}); err != nil {
-		return err
+		return 0, err
 	}
 	w.nextID++
 	w.channels[key] = c
-	return nil
+	return c.id, nil
 }
 
 func fileWithDeps(fd protoreflect.FileDescriptor, seen map[string]bool, files []*descriptorpb.FileDescriptorProto) []*descriptorpb.FileDescriptorProto {

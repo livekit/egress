@@ -1,0 +1,14 @@
+// Schema from github.com/foxglove/schemas (MIT License, Copyright (c) Foxglove Technologies Inc)
+
+syntax = "proto3";
+
+package foxglove;
+
+import "KeyValuePair.proto";
+import "google/protobuf/timestamp.proto";
+
+message Event {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+  repeated foxglove.KeyValuePair metadata = 3;
+}
