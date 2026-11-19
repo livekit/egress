@@ -30,7 +30,6 @@ type roomEventEmitter struct {
 	emit         func(types.RoomEvent)
 	participants map[string]roomParticipant // identity -> latest info, so a reconnect with a new SID is not a new join
 	tracks       map[string]emittedTrack    // track SID -> published track
-	left         map[string]struct{}        // participant SIDs that have left, so a late connect goroutine can't rejoin them
 }
 
 type roomParticipant struct {
@@ -47,7 +46,6 @@ func newRoomEventEmitter(emit func(types.RoomEvent)) *roomEventEmitter {
 		emit:         emit,
 		participants: make(map[string]roomParticipant),
 		tracks:       make(map[string]emittedTrack),
-		left:         make(map[string]struct{}),
 	}
 }
 
@@ -63,25 +61,18 @@ func (e *roomEventEmitter) participantJoined(p roomParticipant) {
 }
 
 // the SDK dispatches OnParticipantConnected on a goroutine, so a track can arrive first and join on its behalf
-func (e *roomEventEmitter) join(p roomParticipant) bool {
-	if _, ok := e.left[p.sid]; ok {
-		return false
-	}
-	if _, ok := e.participants[p.identity]; ok {
-		e.participants[p.identity] = p
-		return true
-	}
+func (e *roomEventEmitter) join(p roomParticipant) {
+	_, known := e.participants[p.identity]
 	e.participants[p.identity] = p
-	e.send(types.RoomEventParticipantJoined, p, nil, livekit.DisconnectReason_UNKNOWN_REASON)
-	return true
+	if !known {
+		e.send(types.RoomEventParticipantJoined, p, nil, livekit.DisconnectReason_UNKNOWN_REASON)
+	}
 }
 
 // participantLeft unpublishes the session's tracks first, since the SDK never fires OnTrackUnpublished on disconnect
 func (e *roomEventEmitter) participantLeft(p roomParticipant, reason livekit.DisconnectReason) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
-	e.left[p.sid] = struct{}{}
 
 	for sid, t := range e.tracks {
 		if t.participant.sid == p.sid {
@@ -102,9 +93,7 @@ func (e *roomEventEmitter) trackPublished(p roomParticipant, ti *livekit.TrackIn
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if !e.join(p) {
-		return
-	}
+	e.join(p)
 	if _, ok := e.tracks[ti.Sid]; ok {
 		return
 	}
