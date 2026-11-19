@@ -37,7 +37,6 @@ type TrackStats struct {
 	TempoApplied     time.Duration
 	TempoCorrections int
 	TempoResets      int
-	TempoDisabled    bool
 }
 
 type StreamStats struct {

@@ -433,8 +433,8 @@ func TestControllerResetStateMachine(t *testing.T) {
 	}
 
 	tc.ObserveOutputShift(700 * time.Millisecond)
-	if resets != 1 || tc.Processed() != 0 || tc.Stats().Disabled {
-		t.Fatalf("first reset: resets=%d processed=%v stats=%+v", resets, tc.Processed(), tc.Stats())
+	if resets != 1 || tc.Processed() != 0 {
+		t.Fatalf("first reset: resets=%d processed=%v", resets, tc.Processed())
 	}
 
 	// one shift episode is one reset: nothing acts again until pitch sees the flush
@@ -452,32 +452,27 @@ func TestControllerResetStateMachine(t *testing.T) {
 	if len(armed) != 0 {
 		t.Fatalf("first report after the flush armed a correction: %v", armed)
 	}
-	tc.SetDrift(30 * time.Millisecond)
-	if len(armed) != 1 {
-		t.Fatalf("report after the dropped one should arm: %v", armed)
-	}
-
-	tc.ObserveOutputShift(-700 * time.Millisecond)
-	if resets != 2 || !tc.Stats().Disabled {
-		t.Fatalf("second reset should disable tempo: resets=%d stats=%+v", resets, tc.Stats())
-	}
-	tc.Flushed()
-
-	armed = nil
-	tc.SetDrift(200 * time.Millisecond)
-	tc.SetDrift(200 * time.Millisecond)
+	// the next report is the baseline the post-reset timeline starts from
+	tc.SetDrift(900 * time.Millisecond)
 	if len(armed) != 0 {
-		t.Fatalf("disabled controller armed a correction: %v", armed)
+		t.Fatalf("baseline report armed a correction: %v", armed)
+	}
+	tc.SetDrift(900*time.Millisecond + DefaultThreshold)
+	if len(armed) != 1 || armed[0] != DefaultThreshold {
+		t.Fatalf("drift past the baseline: armed %v, want [%v]", armed, DefaultThreshold)
 	}
 
-	// shift resets keep re-anchoring a disabled track; hard tier no longer does
-	tc.ObserveOutputShift(700 * time.Millisecond)
+	// tempo stays on after repeated resets
+	tc.ObserveOutputShift(-700 * time.Millisecond)
 	tc.Flushed()
-	tc.ResetHardTier()
-	if resets != 3 {
-		t.Fatalf("resets after disable: got %d, want 3", resets)
+	armed = nil
+	tc.SetDrift(0)
+	tc.SetDrift(200 * time.Millisecond)
+	tc.SetDrift(200*time.Millisecond + DefaultThreshold)
+	if resets != 2 || len(armed) != 1 {
+		t.Fatalf("after second reset: resets=%d armed=%v", resets, armed)
 	}
-	if s := tc.Stats(); s.Applied != 50*time.Millisecond || s.Corrections != 1 || s.Resets != 3 {
+	if s := tc.Stats(); s.Applied != 50*time.Millisecond || s.Corrections != 1 || s.Resets != 2 {
 		t.Fatalf("stats: got %+v", s)
 	}
 }

@@ -11,8 +11,6 @@ import (
 const (
 	// DefaultThreshold is the minimum effective drift before a correction starts.
 	DefaultThreshold = 10 * time.Millisecond
-
-	maxResets = 2
 )
 
 // Tier indicates how far effective drift has grown relative to the configured
@@ -30,7 +28,6 @@ type Stats struct {
 	Applied     time.Duration
 	Corrections int
 	Resets      int
-	Disabled    bool
 }
 
 // Controller tracks the current drift between a sender's clock and the
@@ -56,10 +53,12 @@ type Controller struct {
 	shiftWarned   bool
 	resetPending  bool // until pitch sees the flush, shift and drift still describe the discarded timeline
 	dropNextDrift bool // the SDK can deliver a report sampled before the re-anchor after the flush
-	resets        int
-	disabled      bool
-	applied       time.Duration // lifetime net correction; reset leaves it
-	corrections   int
+	// after a reset, drift measures arrival against sender reports; correcting that would chase bad reports
+	captureBaseline bool
+	baseline        time.Duration
+	resets          int
+	applied         time.Duration // lifetime net correction; reset leaves it
+	corrections     int
 
 	cb      func(time.Duration) // invoked with correction amount to apply
 	tierCB  func(Tier)          // invoked on tier transitions
@@ -136,12 +135,14 @@ func (tc *Controller) SetDrift(drift time.Duration) {
 		return
 	}
 	tc.drift = drift
-	if tc.disabled {
+	if tc.captureBaseline {
+		tc.captureBaseline = false
+		tc.baseline = drift
 		tc.mu.Unlock()
 		return
 	}
 
-	effective := drift - tc.corrected
+	effective := tc.effectiveLocked()
 
 	var toStart time.Duration
 	if tc.current == 0 {
@@ -175,15 +176,11 @@ func (tc *Controller) DriftProcessed(actual time.Duration) {
 		return
 	}
 	tc.corrected += actual
-	if tc.disabled {
-		tc.mu.Unlock()
-		return
-	}
 
 	// actual is the stretch the pacer applied, so an overshoot past drift makes the
 	// next correction smaller, or starts a counter-correction once it reaches the threshold.
 	var toStart time.Duration
-	effective := tc.drift - tc.corrected
+	effective := tc.effectiveLocked()
 	if effective.Abs() >= DefaultThreshold {
 		toStart = effective
 		tc.current = effective
@@ -254,11 +251,11 @@ func (tc *Controller) ObserveOutputShift(shift time.Duration) {
 // ResetHardTier discards the corrections when effective drift reaches the hard budget.
 func (tc *Controller) ResetHardTier() {
 	tc.mu.Lock()
-	if tc.resetCB == nil || tc.disabled || tc.resetPending {
+	if tc.resetCB == nil || tc.resetPending {
 		tc.mu.Unlock()
 		return
 	}
-	tc.resetLocked("hard tier", tc.drift-tc.corrected)
+	tc.resetLocked("hard tier", tc.effectiveLocked())
 }
 
 // Flushed tells the controller that pitch has seen a flush, ending any pending reset.
@@ -267,6 +264,7 @@ func (tc *Controller) Flushed() {
 	if tc.resetPending {
 		tc.resetPending = false
 		tc.dropNextDrift = true
+		tc.captureBaseline = true
 	}
 	tc.mu.Unlock()
 }
@@ -279,7 +277,6 @@ func (tc *Controller) Stats() Stats {
 		Applied:     tc.applied,
 		Corrections: tc.corrections,
 		Resets:      tc.resets,
-		Disabled:    tc.disabled,
 	}
 }
 
@@ -315,16 +312,14 @@ func (tc *Controller) Processed() time.Duration {
 func (tc *Controller) resetLocked(reason string, measured time.Duration) {
 	discarded := tc.corrected
 	tc.drift = 0
+	tc.baseline = 0
 	tc.corrected = 0
 	tc.current = 0
 	tc.tier = TierNormal
 	tc.shiftWarned = false
 	tc.resetPending = true
 	tc.resets++
-	if tc.resets >= maxResets {
-		tc.disabled = true
-	}
-	resets, disabled, cb, l := tc.resets, tc.disabled, tc.resetCB, tc.logger
+	resets, cb, l := tc.resets, tc.resetCB, tc.logger
 	tc.mu.Unlock()
 
 	l.Warnw("resetting audio tempo correction", nil,
@@ -332,7 +327,10 @@ func (tc *Controller) resetLocked(reason string, measured time.Duration) {
 		"measured", measured,
 		"discardedCorrection", discarded,
 		"resets", resets,
-		"tempoDisabled", disabled,
 	)
 	cb()
+}
+
+func (tc *Controller) effectiveLocked() time.Duration {
+	return tc.drift - tc.baseline - tc.corrected
 }

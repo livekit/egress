@@ -995,7 +995,6 @@ func (w *AppWriter) getStats() *logging.TrackStats {
 		ts.TempoApplied = tempoStats.Applied
 		ts.TempoCorrections = tempoStats.Corrections
 		ts.TempoResets = tempoStats.Resets
-		ts.TempoDisabled = tempoStats.Disabled
 	}
 	return ts
 }
