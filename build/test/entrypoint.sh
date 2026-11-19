@@ -50,7 +50,7 @@ if [[ -z ${GITHUB_WORKFLOW+x} ]]; then
   emit_avsync_stats
   exit $status
 else
-  go install github.com/mfridman/tparse@v0.18.0
+  go install github.com/mfridman/tparse@ba2512e7be150bfcbd6f6220d517d3741f8f2f75 # v0.18.0
   set +e
   # stderr stays out of the pipe: tparse rejects the whole stream if a
   # non-JSON line follows the first JSON event.
