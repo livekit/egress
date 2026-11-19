@@ -469,7 +469,9 @@ func installFillerSilence(srcPad *gst.Pad) {
 	var (
 		rate, channels int
 		silence        []byte
-		warned         bool
+		// the largest chunk of silence sent so far, reused for every chunk: each buffer copies the bytes it wraps
+		chunk  []byte
+		warned bool
 	)
 	srcPad.AddProbe(gst.PadProbeTypeEventDownstream, func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		event := info.GetEvent()
@@ -478,7 +480,7 @@ func installFillerSilence(srcPad *gst.Pad) {
 		}
 		switch event.Type() {
 		case gst.EventTypeCaps:
-			rate, channels, silence = 0, 0, nil
+			rate, channels, silence, chunk = 0, 0, nil, nil
 			caps := event.ParseCaps()
 			if audioInfo, ok := audio.InfoFromCaps(caps); ok {
 				rate, channels, silence = audioInfo.Rate(), audioInfo.Channels(), audioInfo.FormatInfo().Silence()
@@ -513,9 +515,14 @@ func installFillerSilence(srcPad *gst.Pad) {
 			to := min(from+maxChunk, end)
 			samples := toSample(to) - toSample(from)
 			if samples > 0 {
-				buf := gst.NewBufferFromBytes(bytes.Repeat(silence, int(samples)*channels))
+				size := int(samples) * channels * len(silence)
+				if size > len(chunk) {
+					chunk = bytes.Repeat(silence, int(samples)*channels)
+				}
+				buf := gst.NewBufferFromBytes(chunk[:size])
 				buf.SetPresentationTimestamp(gst.ClockTime(toPTS(toSample(from))))
 				buf.SetDuration(gst.ClockTime(toPTS(toSample(to)) - toPTS(toSample(from))))
+				// pushed from the GAP's own probe on the streaming thread, so the silence takes the GAP's place in stream order
 				if flow := pad.Push(buf); flow != gst.FlowOK {
 					logger.Debugw("audio filler silence refused", "flow", flow, "pts", from)
 					return gst.PadProbeDrop
