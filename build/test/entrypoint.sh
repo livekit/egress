@@ -50,9 +50,11 @@ if [[ -z ${GITHUB_WORKFLOW+x} ]]; then
   emit_avsync_stats
   exit $status
 else
-  go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest
+  go install github.com/mfridman/tparse@ba2512e7be150bfcbd6f6220d517d3741f8f2f75 # v0.18.0
   set +e
-  go tool test2json -p egress ./test.test -test.v -test.timeout 30m 2>&1 | "$HOME"/go/bin/gotestfmt
+  # stderr stays out of the pipe: tparse rejects the whole stream if a
+  # non-JSON line follows the first JSON event.
+  go tool test2json -p egress ./test.test -test.v -test.timeout 30m | "$HOME"/go/bin/tparse -progress
   status=${PIPESTATUS[0]}
   set -e
   emit_avsync_stats
