@@ -48,173 +48,326 @@ func (f *fakeDriftNotifier) Tier() tempo.Tier                 { return f.tier }
 func (f *fakeDriftNotifier) ObserveOutputShift(time.Duration) {}
 func (f *fakeDriftNotifier) Flushed()                         {}
 
-func newTestPacer() (*audioPacer, *fakeDriftNotifier, *[]float64) {
-	tc := &fakeDriftNotifier{}
-	tempos := &[]float64{}
-	return &audioPacer{
-		setTempo:            func(rate float64) { *tempos = append(*tempos, rate) },
-		tc:                  tc,
-		tempoAdjustmentRate: 0.05,
-		boostedRate:         0.1,
-	}, tc, tempos
+// modelPitch stands in for the pitch element: an input buffer passes the pacer's sink
+// probe, is processed at the tempo set by then and leaves as one output buffer.
+type modelPitch struct {
+	pacer   *audioPacer
+	tempo   float64
+	tempos  []float64     // every tempo set, in order
+	stretch time.Duration // output minus input
 }
 
-// feed pushes 20ms input buffers until the correction completes and returns how many it took,
-// including the buffer whose arrival completes it
-func feed(p *audioPacer, max int) int {
+func newModelPitch(pacer *audioPacer) *modelPitch {
+	m := &modelPitch{pacer: pacer, tempo: 1.0}
+	pacer.setTempo = func(rate float64) {
+		m.tempo = rate
+		m.tempos = append(m.tempos, rate)
+	}
+	return m
+}
+
+func newTestPacer() (*modelPitch, *fakeDriftNotifier) {
+	tc := &fakeDriftNotifier{}
+	return newModelPitch(&audioPacer{tc: tc, tempoAdjustmentRate: 0.05, boostedRate: 0.1}), tc
+}
+
+func (m *modelPitch) process(d time.Duration) {
+	m.pacer.onInput()
+	out := time.Duration(float64(d) / m.tempo)
+	m.stretch += out - d
+	m.pacer.onOutput(out)
+}
+
+// run processes 20ms buffers until no correction is in progress and returns how many it took
+func (m *modelPitch) run(max int) int {
 	for i := 1; i <= max; i++ {
-		p.onInput(20 * time.Millisecond)
-		if !p.active.Load() {
+		m.process(20 * time.Millisecond)
+		if !m.pacer.active.Load() {
 			return i
 		}
 	}
 	return max
 }
 
-func TestAudioPacerCorrectsTargetFromInput(t *testing.T) {
+// stretchPerBuffer is how much longer than its 20ms of input an output buffer is at a tempo
+func stretchPerBuffer(rate float64) time.Duration {
+	return time.Duration(float64(20*time.Millisecond) * (1/rate - 1))
+}
+
+const creditPrecision = float64(time.Microsecond)
+
+func TestAudioPacerCreditsStretchFromOutput(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		drift    time.Duration
-		tempo    float64
-		credited int
+		name    string
+		drift   time.Duration
+		tempo   float64
+		buffers int
 	}{
-		// 20ms × (1/0.95 − 1) ≈ 1.053ms per buffer
+		// an output buffer at 0.95 is ≈ 1.053ms longer than its input
 		{"audio ahead slows down", 12 * time.Millisecond, 0.95, 12},
-		// 20ms × (1/1.05 − 1) ≈ −0.952ms per buffer
+		// an output buffer at 1.05 is ≈ 0.952ms shorter than its input
 		{"audio behind speeds up", -12 * time.Millisecond, 1.05, 13},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p, notifier, tempos := newTestPacer()
-			p.start(tc.drift)
+			m, notifier := newTestPacer()
 
-			// the buffer after the last credited one completes the correction and is processed at tempo 1.0
-			require.Equal(t, tc.credited+1, feed(p, 1000))
-			require.Equal(t, []float64{tc.tempo, 1.0}, *tempos)
+			m.pacer.onOutput(time.Second)
+			require.Empty(t, notifier.processed, "output without a correction credits nothing")
+
+			m.pacer.start(tc.drift)
+			require.False(t, m.pacer.active.Load(), "a request waits for the next input buffer")
+			require.Empty(t, m.tempos)
+
+			m.process(20 * time.Millisecond)
+			require.True(t, m.pacer.active.Load())
+			require.Equal(t, []float64{tc.tempo}, m.tempos, "the buffer that arms the correction is processed at its tempo")
+
+			// the correction completes on the output buffer that covers the target
+			require.Equal(t, tc.buffers-1, m.run(1000))
+			require.Equal(t, []float64{tc.tempo, 1.0}, m.tempos)
 			require.Len(t, notifier.processed, 1)
 
 			actual := notifier.processed[0]
-			perBuffer := time.Duration(float64(20*time.Millisecond) * (1/tc.tempo - 1))
-			require.Equal(t, time.Duration(tc.credited)*perBuffer, actual, "only buffers processed at the pacer's tempo are credited")
+			perBuffer := stretchPerBuffer(tc.tempo)
+			require.InDelta(t, float64(time.Duration(tc.buffers)*perBuffer), float64(actual), creditPrecision)
+			require.InDelta(t, float64(m.stretch), float64(actual), creditPrecision, "the pacer reports the stretch pitch produced")
 			require.GreaterOrEqual(t, actual.Abs(), tc.drift.Abs())
-			require.Less(t, actual.Abs()-tc.drift.Abs(), perBuffer.Abs(), "overshoot is less than one input buffer's stretch")
+			require.Less(t, actual.Abs()-tc.drift.Abs(), perBuffer.Abs(), "overshoot is less than one output buffer's stretch")
 
-			p.onInput(20 * time.Millisecond)
-			require.Len(t, notifier.processed, 1, "input after completion credits nothing")
+			for range 10 {
+				m.process(20 * time.Millisecond)
+			}
+			require.Len(t, notifier.processed, 1)
+			require.InDelta(t, float64(actual), float64(m.stretch), creditPrecision, "output after completion is produced at tempo 1.0")
 		})
 	}
 }
 
-func TestAudioPacerCreditsBoostedTempo(t *testing.T) {
-	p, notifier, tempos := newTestPacer()
-	p.start(12 * time.Millisecond)
+func TestAudioPacerCreditsOnlyOutput(t *testing.T) {
+	m, notifier := newTestPacer()
+	m.pacer.start(3 * time.Millisecond)
 
-	// 5 buffers at 0.95 credit ≈ 5.26ms, then 0.9 credits ≈ 2.22ms per buffer, so 4 more cover 12ms
+	// pitch takes five buffers in before it produces anything
 	for range 5 {
-		p.onInput(20 * time.Millisecond)
+		m.pacer.onInput()
 	}
-	p.boost()
-	require.Equal(t, 5, feed(p, 1000))
+	require.True(t, m.pacer.active.Load())
+	require.Zero(t, m.pacer.compensation.Load(), "input credits nothing")
+	require.Empty(t, notifier.processed)
 
-	require.Equal(t, []float64{0.95, 0.9, 1.0}, *tempos)
+	// one output buffer carries all of it and completes the correction past its target
+	in := 100 * time.Millisecond
+	out := in + 5*stretchPerBuffer(0.95)
+	m.pacer.onOutput(out)
 	require.Len(t, notifier.processed, 1)
-	require.InDelta(t, float64(5*20*time.Millisecond/19+4*20*time.Millisecond/9), float64(notifier.processed[0]), float64(time.Microsecond))
+	require.InDelta(t, float64(out-in), float64(notifier.processed[0]), creditPrecision)
+	require.Equal(t, []float64{0.95, 1.0}, m.tempos)
 }
 
-func TestAudioPacerChainedCorrectionCreditsCompletingBuffer(t *testing.T) {
-	p, notifier, tempos := newTestPacer()
-	rate := 0.95
-	perBuffer := time.Duration(float64(20*time.Millisecond) * (1/rate - 1))
+func TestAudioPacerAppliesRateRequestOnNextInput(t *testing.T) {
+	t.Run("boost and brake during a correction", func(t *testing.T) {
+		m, notifier := newTestPacer()
+		m.pacer.start(12 * time.Millisecond)
+		for range 5 {
+			m.process(20 * time.Millisecond)
+		}
 
-	// the controller starts the next correction from DriftProcessed, before the completing buffer is processed
+		m.pacer.boost()
+		require.Equal(t, []float64{0.95}, m.tempos, "a boost waits for the next input buffer")
+		for range 2 {
+			m.process(20 * time.Millisecond)
+		}
+
+		m.pacer.brake()
+		require.Equal(t, []float64{0.95, 0.9}, m.tempos, "a brake waits for the next input buffer")
+
+		// 5 buffers at 0.95 and 2 at 0.9 produce ≈ 9.71ms, so 3 more at 0.95 cover 12ms
+		require.Equal(t, 3, m.run(1000))
+		require.Equal(t, []float64{0.95, 0.9, 0.95, 1.0}, m.tempos)
+		require.Len(t, notifier.processed, 1)
+		require.InDelta(t, float64(8*stretchPerBuffer(0.95)+2*stretchPerBuffer(0.9)), float64(notifier.processed[0]), creditPrecision,
+			"each output buffer is credited at the tempo it was produced at")
+		require.InDelta(t, float64(m.stretch), float64(notifier.processed[0]), creditPrecision)
+	})
+
+	t.Run("boost without a correction", func(t *testing.T) {
+		m, _ := newTestPacer()
+		m.pacer.boost()
+		m.process(20 * time.Millisecond)
+		require.Empty(t, m.tempos)
+	})
+
+	t.Run("correction requested above the soft budget", func(t *testing.T) {
+		m, notifier := newTestPacer()
+		notifier.tier = tempo.TierSoft
+		m.pacer.start(12 * time.Millisecond)
+		m.process(20 * time.Millisecond)
+		require.Equal(t, []float64{0.9}, m.tempos)
+	})
+}
+
+func TestAudioPacerChainedCorrectionsCreditEveryBuffer(t *testing.T) {
+	m, notifier := newTestPacer()
+
+	// the controller requests the next correction from DriftProcessed, as the completing buffer leaves pitch
 	remaining := 2
 	notifier.onProcessed = func() {
 		if remaining > 0 {
 			remaining--
-			p.start(3 * time.Millisecond)
+			m.pacer.start(3 * time.Millisecond)
 		}
 	}
-	p.start(3 * time.Millisecond)
+	m.pacer.start(3 * time.Millisecond)
 
-	pushed := 0
-	for p.active.Load() {
-		p.onInput(20 * time.Millisecond)
-		pushed++
+	buffers := 0
+	for len(notifier.processed) < 3 && buffers < 100 {
+		m.process(20 * time.Millisecond)
+		buffers++
 	}
 
-	require.Len(t, notifier.processed, 3)
+	// each correction takes three buffers, and the next one is armed before the following buffer is processed
+	require.Equal(t, 9, buffers)
+	require.Equal(t, []float64{0.95, 1.0, 0.95, 1.0, 0.95, 1.0}, m.tempos)
 	var total time.Duration
 	for _, actual := range notifier.processed {
-		require.Equal(t, 3*perBuffer, actual)
+		require.InDelta(t, float64(3*stretchPerBuffer(0.95)), float64(actual), creditPrecision)
 		total += actual
 	}
-	// every buffer but the one that completed the last correction was processed at 0.95 and credited
-	require.Equal(t, time.Duration(pushed-1)*perBuffer, total)
-	require.Equal(t, []float64{0.95, 1.0, 0.95, 1.0, 0.95, 1.0}, *tempos)
+	require.InDelta(t, float64(m.stretch), float64(total), creditPrecision, "no buffer was stretched without credit")
 }
 
 func TestAudioPacerFlushCancelsWithoutCredit(t *testing.T) {
-	p, notifier, tempos := newTestPacer()
-	p.start(12 * time.Millisecond)
-	p.onInput(20 * time.Millisecond)
+	t.Run("correction in progress", func(t *testing.T) {
+		m, notifier := newTestPacer()
+		m.pacer.start(12 * time.Millisecond)
+		m.process(20 * time.Millisecond)
 
-	require.True(t, p.cancelOnFlush())
-	require.Equal(t, []float64{0.95, 1.0}, *tempos)
+		require.True(t, m.pacer.cancelOnFlush())
+		require.False(t, m.pacer.active.Load())
+		require.Equal(t, []float64{0.95, 1.0}, m.tempos)
 
-	p.onInput(20 * time.Millisecond)
-	require.Empty(t, notifier.processed)
+		for range reanchorHold {
+			m.process(20 * time.Millisecond)
+		}
+		require.Empty(t, notifier.processed)
 
-	// two buffers pass at tempo 1.0 before the pacer arms again
-	p.onInput(20 * time.Millisecond)
-	p.start(-12 * time.Millisecond)
-	require.Equal(t, 14, feed(p, 1000))
-	require.Len(t, notifier.processed, 1)
-	require.Less(t, notifier.processed[0], time.Duration(0), "a new correction starts from zero")
+		// the next correction starts from zero
+		before := m.stretch
+		m.pacer.start(-12 * time.Millisecond)
+		require.Equal(t, 13, m.run(1000))
+		require.Len(t, notifier.processed, 1)
+		require.InDelta(t, float64(m.stretch-before), float64(notifier.processed[0]), creditPrecision)
+	})
+
+	t.Run("correction requested", func(t *testing.T) {
+		m, notifier := newTestPacer()
+		m.pacer.start(12 * time.Millisecond)
+
+		require.True(t, m.pacer.cancelOnFlush(), "the caller hands the request back to the controller")
+		for range 10 {
+			m.process(20 * time.Millisecond)
+		}
+		require.Empty(t, m.tempos, "the request is never armed")
+		require.Empty(t, notifier.processed)
+	})
+
+	t.Run("nothing to cancel", func(t *testing.T) {
+		m, _ := newTestPacer()
+		require.False(t, m.pacer.cancelOnFlush())
+		require.Empty(t, m.tempos)
+	})
 }
 
-func TestAudioPacerHoldsArmingUntilPitchReanchors(t *testing.T) {
-	p, notifier, tempos := newTestPacer()
-	p.start(12 * time.Millisecond)
-	require.True(t, p.cancelOnFlush())
+func TestAudioPacerHoldsArmingUntilPitchAnchors(t *testing.T) {
+	// pitch anchors its output timeline at a buffer's timestamp divided by the tempo in force;
+	// a request that arrives before it has is handed back, and the controller asks again
+	requireHeld := func(t *testing.T, m *modelPitch, notifier *fakeDriftNotifier, tempos []float64) {
+		for i := range reanchorHold {
+			m.pacer.start(12 * time.Millisecond)
+			m.process(20 * time.Millisecond)
+			require.False(t, m.pacer.active.Load())
+			require.Equal(t, i+1, notifier.canceled)
+			require.Equal(t, tempos, m.tempos)
+		}
 
-	// pitch re-anchors on the first buffer after the flush, at its timestamp divided by
-	// the tempo in force; a start before then is refused and the controller re-arms later
-	p.start(12 * time.Millisecond)
-	require.False(t, p.active.Load())
-	require.Equal(t, 1, notifier.canceled)
+		m.pacer.start(12 * time.Millisecond)
+		m.process(20 * time.Millisecond)
+		require.True(t, m.pacer.active.Load())
+		require.Equal(t, reanchorHold, notifier.canceled)
+		require.Equal(t, append(tempos, 0.95), m.tempos)
+	}
 
-	p.onInput(20 * time.Millisecond)
-	p.start(12 * time.Millisecond)
-	require.False(t, p.active.Load(), "the first buffer is still being processed when its probe returns")
-	require.Equal(t, 2, notifier.canceled)
+	t.Run("after a flush", func(t *testing.T) {
+		m, notifier := newTestPacer()
+		m.pacer.start(12 * time.Millisecond)
+		m.process(20 * time.Millisecond)
+		require.True(t, m.pacer.cancelOnFlush())
 
-	p.onInput(20 * time.Millisecond)
-	p.start(12 * time.Millisecond)
-	require.True(t, p.active.Load())
-	require.Equal(t, []float64{0.95, 1.0, 0.95}, *tempos)
+		requireHeld(t, m, notifier, []float64{0.95, 1.0})
+	})
+
+	t.Run("from the first buffer", func(t *testing.T) {
+		notifier := &fakeDriftNotifier{}
+		p := newAudioPacer(nil, 0.05, 0.1)
+		p.tc = notifier
+
+		requireHeld(t, newModelPitch(p), notifier, nil)
+	})
 }
 
-func TestAudioPacerHoldsArmingUntilPitchAnchorsFirstBuffer(t *testing.T) {
-	p := newAudioPacer(nil, 0.05, 0.1)
-	var tempos []float64
-	p.setTempo = func(rate float64) { tempos = append(tempos, rate) }
-	notifier := &fakeDriftNotifier{}
-	p.tc = notifier
+func TestAudioPacerTracksDriftOverLongExport(t *testing.T) {
+	// a publisher clock 0.2% fast for two hours, sender reports every second, 20ms input buffers
+	const skew = 0.002
+	tc := tempo.NewController(2750 * time.Millisecond)
+	m := newModelPitch(&audioPacer{tc: tc, tempoAdjustmentRate: 0.05, boostedRate: 0.1})
+	tc.OnTierChange(func(tier tempo.Tier) {
+		if tier == tempo.TierNormal {
+			m.pacer.brake()
+		} else {
+			m.pacer.boost()
+		}
+	})
+	tc.OnDriftDetectedCallback(m.pacer.start)
 
-	// a track joining late anchors pitch at its first timestamp divided by the tempo in force
-	p.start(12 * time.Millisecond)
-	require.False(t, p.active.Load(), "no buffer has reached pitch yet")
-	require.Equal(t, 1, notifier.canceled)
+	var worst time.Duration
+	for now := time.Duration(0); now < 2*time.Hour; now += 20 * time.Millisecond {
+		if now > 0 && now%time.Second == 0 {
+			drift := time.Duration(float64(now) * skew)
+			tc.SetDrift(drift)
+			worst = max(worst, (drift - m.stretch).Abs())
+		}
+		m.process(20 * time.Millisecond)
+	}
 
-	p.onInput(20 * time.Millisecond)
-	p.onInput(20 * time.Millisecond)
-	p.start(12 * time.Millisecond)
-	require.True(t, p.active.Load())
-	require.Equal(t, []float64{0.95}, tempos)
+	// drift reaches 14.4s; what pitch produced stays within the threshold plus one buffer's stretch of it
+	require.Less(t, worst, tempo.DefaultThreshold+2*time.Millisecond, "worst gap between measured drift and produced stretch")
+	require.InDelta(t, float64(m.stretch), float64(tc.Processed()), float64(100*time.Microsecond), "the controller's books match what pitch produced")
 }
 
-// pitchHarness runs appsrc → pitch → appsink with the pacer's probes on pitch. The pacer is
-// armed from a sink pad probe that runs before the pacer's, as the buffer after armAfter
-// arrives, so that buffer is both credited and processed at the new tempo.
+func TestAudioPacerCorrectsOvershootFromLongBuffer(t *testing.T) {
+	// a 1s buffer leaves pitch mid-correction and is credited whole
+	tc := tempo.NewController(2750 * time.Millisecond)
+	m := newModelPitch(&audioPacer{tc: tc, tempoAdjustmentRate: 0.05, boostedRate: 0.1})
+	var targets []time.Duration
+	tc.OnDriftDetectedCallback(func(d time.Duration) { targets = append(targets, d); m.pacer.start(d) })
+
+	const drift = 12 * time.Millisecond
+	tc.SetDrift(drift)
+	m.process(20 * time.Millisecond)
+	m.process(time.Second)
+	for range 100 {
+		m.process(20 * time.Millisecond)
+	}
+
+	require.Len(t, targets, 2, "the overshoot starts a counter-correction")
+	require.Equal(t, drift, targets[0])
+	require.Less(t, targets[1], -30*time.Millisecond)
+	require.Less(t, (drift - m.stretch).Abs(), tempo.DefaultThreshold, "produced stretch ends within the threshold of the drift")
+	require.InDelta(t, float64(m.stretch), float64(tc.Processed()), creditPrecision, "the controller's books match what pitch produced")
+}
+
+// pitchHarness runs appsrc → pitch → appsink with the pacer's probes on pitch, and counts
+// the audio entering and leaving pitch on its pads. The sink discards what it receives.
 type pitchHarness struct {
 	t        *testing.T
 	pipeline *gst.Pipeline
@@ -223,13 +376,26 @@ type pitchHarness struct {
 	pitch    *gst.Element
 	pacer    *audioPacer
 	notifier *fakeDriftNotifier
-	seen     atomic.Int64 // input buffers that reached pitch's sink pad
+	seen     atomic.Int64 // pushed buffers that reached pitch's sink pad
+	in, out  atomic.Int64 // audio into and out of pitch, in ns
+	produced atomic.Int64 // out minus in as the latest output buffer left pitch
+	longest  atomic.Int64 // longest output buffer, in ns
 	pushed   int
+	ahead    bool          // push returns without waiting for pitch
+	drained  chan struct{} // closed when a throttled sink has seen EOS
 }
 
 const pitchTestCaps = "audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved"
 
-func newPitchHarness(t *testing.T, adjustmentRate float64, armAfter int64, drift time.Duration) *pitchHarness {
+// Pitch processes audio a window at a time. Fed 20ms buffers at tempo 1.0, it holds 18ms to
+// 38ms of them right after it produces an output buffer, and produces under 80ms at a time.
+const (
+	pitchHoldMin   = 10 * time.Millisecond
+	pitchHoldMax   = 45 * time.Millisecond
+	pitchOutputMax = 80 * time.Millisecond
+)
+
+func newPitchHarness(t *testing.T, adjustmentRate float64) *pitchHarness {
 	t.Helper()
 	initGStreamer(t)
 
@@ -244,6 +410,8 @@ func newPitchHarness(t *testing.T, adjustmentRate float64, armAfter int64, drift
 	src.SetCaps(gst.NewCapsFromString(pitchTestCaps))
 	src.SetArg("format", "time")
 	require.NoError(t, sink.SetProperty("sync", false))
+	sink.SetDrop(true)
+	sink.SetMaxBuffers(1)
 
 	pipeline, err := gst.NewPipeline("")
 	require.NoError(t, err)
@@ -254,61 +422,135 @@ func newPitchHarness(t *testing.T, adjustmentRate float64, armAfter int64, drift
 	h.pacer = newAudioPacer(pitch, adjustmentRate, 2*adjustmentRate)
 	h.pacer.tc = h.notifier
 	pitch.GetStaticPad("sink").AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		if buf := info.GetBuffer(); buf != nil && buf.GetFlags()&gst.BufferFlagGap != 0 {
-			return gst.PadProbeOK // silence chained in for a GAP event, not one of ours
+		buf := info.GetBuffer()
+		if buf == nil || buf.Duration() == gst.ClockTimeNone {
+			return gst.PadProbeOK
 		}
-		if h.seen.Add(1) == armAfter+1 && drift != 0 {
-			h.pacer.start(drift)
+		h.in.Add(int64(*buf.Duration().AsDuration()))
+		if buf.GetFlags()&gst.BufferFlagGap == 0 {
+			// silence chained in for a GAP event is not one of the pushed buffers
+			h.seen.Add(1)
 		}
 		return gst.PadProbeOK
 	})
 	installPitchProbes(h.pacer)
 	installGapFill(pitch.GetStaticPad("sink"), 48000, 2)
+	pitch.GetStaticPad("src").AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
+			d := int64(*buf.Duration().AsDuration())
+			h.produced.Store(h.out.Add(d) - h.in.Load())
+			h.longest.Store(max(h.longest.Load(), d))
+		}
+		return gst.PadProbeOK
+	})
 
 	require.NoError(t, pipeline.SetState(gst.StatePlaying))
 	t.Cleanup(func() { _ = pipeline.SetState(gst.StateNull) })
 	return h
 }
 
-// push sends n 20ms buffers of a 440Hz tone and waits until pitch has received them
-func (h *pitchHarness) push(n int) {
+// toneBuffer returns the nth 20ms buffer of a 440Hz tone in pitchTestCaps, without a timestamp
+func toneBuffer(n int) *gst.Buffer {
 	const frames = 960
+	data := make([]byte, frames*2*4)
+	for f := range frames {
+		v := float32(0.3 * math.Sin(2*math.Pi*440*float64(n*frames+f)/48000))
+		binary.LittleEndian.PutUint32(data[f*8:], math.Float32bits(v))
+		binary.LittleEndian.PutUint32(data[f*8+4:], math.Float32bits(v))
+	}
+	buf := gst.NewBufferFromBytes(data)
+	buf.SetDuration(gst.ClockTime(20 * time.Millisecond))
+	return buf
+}
+
+// push sends n 20ms buffers of tone and waits until pitch has received them
+func (h *pitchHarness) push(n int) {
 	for range n {
-		data := make([]byte, frames*2*4)
-		for f := range frames {
-			v := float32(0.3 * math.Sin(2*math.Pi*440*float64(h.pushed*frames+f)/48000))
-			binary.LittleEndian.PutUint32(data[f*8:], math.Float32bits(v))
-			binary.LittleEndian.PutUint32(data[f*8+4:], math.Float32bits(v))
-		}
-		buf := gst.NewBufferFromBytes(data)
+		buf := toneBuffer(h.pushed)
 		buf.SetPresentationTimestamp(gst.ClockTime(time.Duration(h.pushed) * 20 * time.Millisecond))
-		buf.SetDuration(gst.ClockTime(20 * time.Millisecond))
 		require.Equal(h.t, gst.FlowOK, h.src.PushBuffer(buf))
 		h.pushed++
 	}
-	require.Eventually(h.t, func() bool { return h.seen.Load() == int64(h.pushed) }, 5*time.Second, time.Millisecond)
+	if !h.ahead {
+		h.settle()
+	}
 }
 
-// finish ends the stream and returns output minus input duration
+// settle waits until pitch has received every pushed buffer
+func (h *pitchHarness) settle() {
+	require.Eventually(h.t, func() bool { return h.seen.Load() == int64(h.pushed) }, 2*time.Minute, time.Millisecond)
+}
+
+// feedAhead lets push run ahead of pitch by up to backlog of audio, held in the appsrc
+func (h *pitchHarness) feedAhead(backlog time.Duration) {
+	h.ahead = true
+	require.NoError(h.t, h.src.SetProperty("block", true))
+	require.NoError(h.t, h.src.SetProperty("max-bytes", uint64(backlog/(20*time.Millisecond))*960*2*4))
+}
+
+// throttle makes the sink take one output buffer per interval, so pitch spends its time
+// blocked pushing downstream
+func (h *pitchHarness) throttle(interval time.Duration) {
+	h.sink.SetDrop(false)
+	h.drained = make(chan struct{})
+	go func() {
+		defer close(h.drained)
+		for h.sink.PullSample() != nil {
+			time.Sleep(interval)
+		}
+	}()
+}
+
+// requireProduced checks, before EOS, that pitch has produced the credited stretch: with it
+// accounted for, pitch's output trails its input by the audio pitch holds at tempo 1.0
+func (h *pitchHarness) requireProduced(credited time.Duration) {
+	h.t.Helper()
+	held := credited - time.Duration(h.produced.Load())
+	require.GreaterOrEqual(h.t, held, pitchHoldMin, "pitch produced more stretch than was credited")
+	require.LessOrEqual(h.t, held, pitchHoldMax, "pitch produced less stretch than was credited")
+}
+
+// requireCorrected checks that one correction completed on the output buffer that covered
+// the target, and returns what the pacer reported
+func (h *pitchHarness) requireCorrected(target time.Duration, rate float64) time.Duration {
+	h.t.Helper()
+	require.Len(h.t, h.notifier.processed, 1)
+	require.False(h.t, h.pacer.active.Load())
+	require.InDelta(h.t, 1.0, h.tempo(), 1e-6)
+	actual := h.notifier.processed[0]
+	require.GreaterOrEqual(h.t, actual.Abs(), target.Abs())
+	require.Less(h.t, time.Duration(h.longest.Load()), pitchOutputMax)
+	require.Less(h.t, actual.Abs()-target.Abs(), time.Duration(float64(pitchOutputMax)*rate), "overshoot is less than one output buffer's stretch")
+	return actual
+}
+
+// tempo is the tempo set on the pitch element
+func (h *pitchHarness) tempo() float64 {
+	v, err := h.pitch.GetProperty("tempo")
+	require.NoError(h.t, err)
+	return float64(v.(float32))
+}
+
+// finish ends the stream and returns output minus pushed input. Pitch completes its output
+// at EOS from the tempo and the input it was given, so this measures only a stream that
+// stayed at tempo 1.0.
 func (h *pitchHarness) finish() time.Duration {
 	h.src.EndStream()
-	var out time.Duration
-	for {
-		sample := h.sink.PullSample()
-		if sample == nil {
-			break
-		}
-		if d := sample.GetBuffer().Duration(); d != gst.ClockTimeNone {
-			out += *d.AsDuration()
-		}
+	if h.drained != nil {
+		<-h.drained
 	}
-	return out - time.Duration(h.pushed)*20*time.Millisecond
+	sample := h.sink.PullSample()
+	for sample != nil {
+		sample = h.sink.PullSample()
+	}
+	return time.Duration(h.out.Load()) - time.Duration(h.pushed)*20*time.Millisecond
 }
 
-func TestAudioPacerPitchAppliesCreditedStretch(t *testing.T) {
+func TestAudioPacerPitchProducesCreditedStretch(t *testing.T) {
 	t.Run("no correction", func(t *testing.T) {
-		h := newPitchHarness(t, 0.05, 0, 0)
+		h := newPitchHarness(t, 0.05)
 		h.push(150)
+		h.requireProduced(0)
 		require.InDelta(t, 0, float64(h.finish()), float64(100*time.Microsecond), "pitch at tempo 1.0 adds nothing")
 	})
 
@@ -321,38 +563,58 @@ func TestAudioPacerPitchAppliesCreditedStretch(t *testing.T) {
 		{"speed up", 0.05, -12 * time.Millisecond},
 		{"slow down at boosted rate", 0.1, 12 * time.Millisecond},
 		{"speed up at boosted rate", 0.1, -12 * time.Millisecond},
-		{"long correction", 0.05, 200 * time.Millisecond},
+		{"long slow down", 0.05, 200 * time.Millisecond},
+		{"long speed up", 0.05, -200 * time.Millisecond},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// armed mid-stream, with pitch holding audio from the warm-up
-			h := newPitchHarness(t, tc.rate, 53, tc.drift)
-			h.push(453)
-			applied := h.finish()
+			// requested mid-stream from another thread, as a sender report does, with pitch holding audio
+			h := newPitchHarness(t, tc.rate)
+			h.push(53)
+			h.pacer.start(tc.drift)
+			h.push(400)
 
-			require.Len(t, h.notifier.processed, 1)
-			require.InDelta(t, float64(h.notifier.processed[0]), float64(applied), float64(100*time.Microsecond),
-				"the stretch pitch applied matches what the pacer reported")
-			require.GreaterOrEqual(t, applied.Abs(), tc.drift.Abs()-100*time.Microsecond)
+			h.requireProduced(h.requireCorrected(tc.drift, tc.rate))
 		})
 	}
 }
 
 func TestAudioPacerPitchFlushCancelsCorrection(t *testing.T) {
-	h := newPitchHarness(t, 0.05, 20, 200*time.Millisecond)
-	h.push(30)
-	require.True(t, h.pacer.active.Load())
+	flush := func(t *testing.T, h *pitchHarness) {
+		srcPad := h.src.GetStaticPad("src")
+		require.True(t, srcPad.PushEvent(gst.NewFlushStartEvent()))
+		require.True(t, srcPad.PushEvent(gst.NewFlushStopEvent(false)))
+	}
 
-	srcPad := h.src.GetStaticPad("src")
-	require.True(t, srcPad.PushEvent(gst.NewFlushStartEvent()))
-	require.True(t, srcPad.PushEvent(gst.NewFlushStopEvent(false)))
+	t.Run("correction in progress", func(t *testing.T) {
+		h := newPitchHarness(t, 0.05)
+		h.push(20)
+		h.pacer.start(200 * time.Millisecond)
+		h.push(10)
+		require.True(t, h.pacer.active.Load())
+		require.InDelta(t, 0.95, h.tempo(), 1e-6)
 
-	require.False(t, h.pacer.active.Load(), "a flush reaching pitch cancels the correction")
-	require.Equal(t, 1, h.notifier.canceled)
-	require.Empty(t, h.notifier.processed)
+		flush(t, h)
+		require.False(t, h.pacer.active.Load(), "a flush reaching pitch cancels the correction")
+		require.InDelta(t, 1.0, h.tempo(), 1e-6)
+		require.Equal(t, 1, h.notifier.canceled)
+		require.Empty(t, h.notifier.processed)
+	})
+
+	t.Run("correction requested", func(t *testing.T) {
+		// no input buffer follows the request, so the flush finds it waiting
+		h := newPitchHarness(t, 0.05)
+		h.push(20)
+		h.pacer.start(200 * time.Millisecond)
+
+		flush(t, h)
+		require.Zero(t, h.pacer.pending.Load(), "a flush reaching pitch drops the request")
+		require.Equal(t, 1, h.notifier.canceled, "the request is handed back to the controller")
+		require.InDelta(t, 1.0, h.tempo(), 1e-6)
+	})
 }
 
 func TestAudioPacerGapEventBecomesSilenceBeforePitch(t *testing.T) {
-	h := newPitchHarness(t, 0.05, 0, 0)
+	h := newPitchHarness(t, 0.05)
 	h.push(50)
 
 	// a 1.3s mute signaled as a GAP event, as the replay source does, between two runs of audio
@@ -367,7 +629,7 @@ func TestAudioPacerGapEventBecomesSilenceBeforePitch(t *testing.T) {
 func TestAudioPacerGapBeforeAudioPassesThrough(t *testing.T) {
 	// a replay track that starts muted sends its GAP before any audio; pitch has no caps yet,
 	// so the GAP must reach the mixer as an event rather than vanish
-	h := newPitchHarness(t, 0.05, 0, 0)
+	h := newPitchHarness(t, 0.05)
 	var forwarded atomic.Int64
 	h.pitch.GetStaticPad("src").AddProbe(gst.PadProbeTypeEventDownstream, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 		if ev := info.GetEvent(); ev != nil && ev.Type() == gst.EventTypeGap {
@@ -491,84 +753,61 @@ func opusRTPPackets(t *testing.T, n int) []*rtp.Packet {
 }
 
 func TestAudioPacerCorrectionCompletesOnGapSilence(t *testing.T) {
-	// a 12ms correction arms on the 51st buffer, right before a 1.3s mute
-	h := newPitchHarness(t, 0.05, 50, 12*time.Millisecond)
-	h.push(51)
+	// a 12ms correction is armed on the 51st buffer, right before a 1.3s mute
+	h := newPitchHarness(t, 0.05)
+	h.push(50)
+	h.pacer.start(12 * time.Millisecond)
+	h.push(1)
 
 	srcPad := h.src.GetStaticPad("src")
 	require.True(t, srcPad.PushEvent(gst.NewGapEvent(gst.ClockTime(1020*time.Millisecond), gst.ClockTime(1300*time.Millisecond))))
 	h.push(50)
-	applied := h.finish() - 1300*time.Millisecond
 
-	// the silence is stretched like speech, but in packet-sized buffers, so the correction
-	// overshoots by less than one buffer's stretch instead of crediting the whole mute
-	require.Len(t, h.notifier.processed, 1)
-	actual := h.notifier.processed[0]
-	require.GreaterOrEqual(t, actual, 12*time.Millisecond)
-	require.Less(t, actual, 12*time.Millisecond+1100*time.Microsecond)
-	require.InDelta(t, float64(actual), float64(applied), float64(100*time.Microsecond))
+	// the silence is stretched like speech and reaches pitch in packet-sized buffers, so it
+	// leaves pitch in buffers no longer than speech does and the mute is not credited whole
+	h.requireProduced(h.requireCorrected(12*time.Millisecond, 0.05))
 }
 
-func TestAudioPacerTracksDriftOverLongExport(t *testing.T) {
-	// a publisher clock 0.2% fast for two hours, sender reports every second, 20ms input buffers
-	const skew = 0.002
-	tc := tempo.NewController(2750 * time.Millisecond)
-	p := &audioPacer{setTempo: func(float64) {}, tempoAdjustmentRate: 0.05, boostedRate: 0.1}
-	p.tc = tc
-	tc.OnTierChange(func(tier tempo.Tier) {
-		if tier == tempo.TierNormal {
-			p.brake()
-		} else {
-			p.boost()
-		}
-	})
-	tc.OnDriftDetectedCallback(p.start)
+// A publisher clock 0.3% off for 20 minutes with a sender report every second, the tempo
+// controller driving a real pitch element. Hundreds of corrections end with audio still
+// inside pitch, and what pitch has produced before EOS is what the controller credited.
+func TestAudioPacerPitchTracksDriftOverLongStream(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		skew float64
+		// the feeder runs 14s ahead of pitch and the sink takes its time, as when a
+		// recording is processed faster than real time
+		ahead bool
+	}{
+		{"slow clock", 0.003, false},
+		{"fast clock", -0.003, false},
+		{"slow clock, feeder ahead of pitch, slow sink", 0.003, true},
+		{"fast clock, feeder ahead of pitch, slow sink", -0.003, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := tempo.NewController(2750 * time.Millisecond)
+			h := newPitchHarness(t, 0.05)
+			h.pacer.tc = ctrl
+			ctrl.OnDriftDetectedCallback(h.pacer.start)
+			if tc.ahead {
+				h.feedAhead(14 * time.Second)
+				h.throttle(200 * time.Microsecond)
+			}
 
-	var applied, worst time.Duration
-	for now := time.Duration(0); now < 2*time.Hour; now += 20 * time.Millisecond {
-		if now > 0 && now%time.Second == 0 {
-			drift := time.Duration(float64(now) * skew)
-			tc.SetDrift(drift)
-			worst = max(worst, (drift - applied).Abs())
-		}
-		// pitch processes the buffer after the probe, at the tempo set when the probe returns
-		p.onInput(20 * time.Millisecond)
-		if p.active.Load() {
-			applied += time.Duration(float64(20*time.Millisecond) * (1/p.rate.Load() - 1))
-		}
+			const seconds = 20 * 60
+			var drift time.Duration
+			for s := 1; s <= seconds; s++ {
+				h.push(50)
+				drift = time.Duration(float64(time.Duration(s)*time.Second) * tc.skew)
+				ctrl.SetDrift(drift)
+			}
+			h.push(100)
+			h.settle()
+
+			require.False(t, h.pacer.active.Load())
+			credited := ctrl.Processed()
+			require.InDelta(t, float64(drift), float64(credited), float64(15*time.Millisecond), "the controller credits the drift")
+			h.requireProduced(credited)
+		})
 	}
-
-	// drift reaches 14.4s; what pitch applied stays within the threshold plus one buffer's stretch of it
-	require.Less(t, worst, tempo.DefaultThreshold+2*time.Millisecond, "worst gap between measured drift and applied stretch")
-}
-
-func TestAudioPacerCorrectsOvershootFromLongBuffer(t *testing.T) {
-	// a 1s silence fill passes mid-correction and is stretched whole
-	tc := tempo.NewController(2750 * time.Millisecond)
-	p := &audioPacer{setTempo: func(float64) {}, tempoAdjustmentRate: 0.05, boostedRate: 0.1}
-	p.tc = tc
-	var targets []time.Duration
-	tc.OnDriftDetectedCallback(func(d time.Duration) { targets = append(targets, d); p.start(d) })
-
-	var applied time.Duration
-	process := func(d time.Duration) {
-		p.onInput(d)
-		if p.active.Load() {
-			applied += time.Duration(float64(d) * (1/p.rate.Load() - 1))
-		}
-	}
-
-	const drift = 12 * time.Millisecond
-	tc.SetDrift(drift)
-	process(20 * time.Millisecond)
-	process(time.Second)
-	for range 100 {
-		process(20 * time.Millisecond)
-	}
-
-	require.Len(t, targets, 2, "the overshoot starts a counter-correction")
-	require.Equal(t, drift, targets[0])
-	require.Less(t, targets[1], -30*time.Millisecond)
-	require.Less(t, (drift - applied).Abs(), tempo.DefaultThreshold, "applied stretch ends within the threshold of the drift")
-	require.Equal(t, applied, tc.Processed(), "the controller's books match what pitch applied")
 }

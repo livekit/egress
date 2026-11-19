@@ -37,10 +37,11 @@ type driftProcessNotifier interface {
 }
 
 // audioPacer corrects drift by changing the tempo of the pitch element until the
-// stretch it has applied covers the target. Pitch stretches each input buffer by
-// (1/tempo - 1) of its duration, so the stretch is accumulated from input buffers:
-// pitch emits output in chunks of several input buffers, so durations measured at
-// its output swing by tens of milliseconds regardless of tempo.
+// stretch pitch has produced covers the target. Pitch applies a tempo to the audio it
+// processes, a window at a time, so an output buffer produced at tempo t is (1 - t) of
+// its duration longer than the audio it consumed; the stretch is accumulated from output
+// buffers. A correction starts, changes rate and completes on pitch's streaming thread,
+// between buffers, so every output buffer is produced at one tempo.
 type audioPacer struct {
 	pitch               *gst.Element
 	setTempo            func(rate float64)
@@ -48,18 +49,34 @@ type audioPacer struct {
 	tempoAdjustmentRate float64
 	boostedRate         float64
 
-	// mu serializes writers; the input probe reads active/target/rate without it.
+	// mu serializes the streaming thread with a flush cancel; the output probe reads active/target/rate without it.
 	mu           deadlock.Mutex
 	active       atomic.Bool
 	target       atomic.Duration
 	rate         atomic.Float64 // tempo currently applied
 	compensation atomic.Duration
 
-	// buffers that pass at tempo 1.0 after start or a flush, until pitch has anchored
+	// requests, taken on the streaming thread as the next input buffer arrives
+	pending atomic.Duration
+	adjust  atomic.Int32
+
+	// input buffers still to pass before a correction can be armed
 	reanchorBuffers atomic.Int32
 
 	lastInEnd atomic.Duration // 0 after a flush
 }
+
+const (
+	adjustNone int32 = iota
+	adjustBoost
+	adjustBrake
+)
+
+// reanchorHold is the number of input buffers that pass at tempo 1.0 once the pacer is
+// created or pitch is flushed. Pitch anchors its output timeline on the first buffer it
+// processes, at the buffer's timestamp divided by the tempo; a buffer that reached the
+// sink pad as the flush started is processed before pitch resets, and takes one.
+const reanchorHold = 2
 
 func newAudioPacer(pitch *gst.Element, adjustmentRate, boostedRate float64) *audioPacer {
 	a := &audioPacer{
@@ -70,16 +87,19 @@ func newAudioPacer(pitch *gst.Element, adjustmentRate, boostedRate float64) *aud
 		tempoAdjustmentRate: adjustmentRate,
 		boostedRate:         boostedRate,
 	}
-	// pitch anchors its output timeline on its first buffer as it does after a flush
-	a.reanchorBuffers.Store(2)
+	a.reanchorBuffers.Store(reanchorHold)
 	return a
 }
 
+// start requests a correction, which is armed as the next input buffer reaches pitch.
 func (a *audioPacer) start(drift time.Duration) {
 	if drift == 0 {
 		return
 	}
+	a.pending.Store(drift)
+}
 
+func (a *audioPacer) arm(drift time.Duration) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -91,8 +111,8 @@ func (a *audioPacer) start(drift time.Duration) {
 		return
 	}
 	if a.reanchorBuffers.Load() > 0 {
-		// pitch re-anchors at timestamp / tempo; the next sender report arms again
-		logger.Debugw("audio pacer not armed until pitch re-anchors after flush", "targetDrift", drift)
+		// the next sender report requests the correction again
+		logger.Debugw("audio pacer not armed until pitch anchors its output", "targetDrift", drift)
 		if a.tc != nil {
 			a.tc.CancelInFlight()
 		}
@@ -106,7 +126,6 @@ func (a *audioPacer) start(drift time.Duration) {
 	}
 	rate := pacerRate(drift, adjustment)
 
-	// state before active: the input probe reads active first.
 	a.target.Store(drift)
 	a.compensation.Store(0)
 	a.applyTempoLocked(rate)
@@ -115,24 +134,28 @@ func (a *audioPacer) start(drift time.Duration) {
 	a.active.Store(true)
 }
 
+// boost and brake request a rate for the correction in progress, applied as the next
+// input buffer reaches pitch.
 func (a *audioPacer) boost() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	if !a.active.Load() {
-		return
-	}
-	a.applyTempoLocked(pacerRate(a.target.Load(), a.boostedRate))
+	a.adjust.Store(adjustBoost)
 }
 
 func (a *audioPacer) brake() {
+	a.adjust.Store(adjustBrake)
+}
+
+func (a *audioPacer) applyAdjust(adjust int32) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if !a.active.Load() {
 		return
 	}
-	a.applyTempoLocked(pacerRate(a.target.Load(), a.tempoAdjustmentRate))
+	adjustment := a.tempoAdjustmentRate
+	if adjust == adjustBoost {
+		adjustment = a.boostedRate
+	}
+	a.applyTempoLocked(pacerRate(a.target.Load(), adjustment))
 }
 
 // applyTempoLocked sets the tempo and records it as pitch applies it, to two decimals.
@@ -142,32 +165,32 @@ func (a *audioPacer) applyTempoLocked(rate float64) {
 	a.setTempo(rate)
 }
 
-// onInput runs on pitch's sink pad before pitch processes the buffer, so the buffer is
-// stretched at whatever tempo is set when onInput returns. Buffers already credited were
-// processed at the pacer's tempo; once they cover the target, the correction completes
-// before this buffer is processed, and this buffer counts toward a correction the
-// controller starts from DriftProcessed.
-func (a *audioPacer) onInput(d time.Duration) {
-	if n := a.reanchorBuffers.Load(); n > 0 {
-		// the buffer re-anchors pitch after this probe returns
-		a.reanchorBuffers.Store(n - 1)
-		return
+// onInput runs on pitch's sink pad before pitch processes the buffer, so the buffer and
+// the audio pitch holds are processed at the tempo set when it returns.
+func (a *audioPacer) onInput() {
+	if drift := a.pending.Swap(0); drift != 0 {
+		a.arm(drift)
 	}
+	if adjust := a.adjust.Swap(adjustNone); adjust != adjustNone {
+		a.applyAdjust(adjust)
+	}
+	if n := a.reanchorBuffers.Load(); n > 0 {
+		// a flush that restarts the hold meanwhile keeps its count
+		a.reanchorBuffers.CompareAndSwap(n, n-1)
+	}
+}
+
+// onOutput runs on pitch's src pad for each buffer pitch produces and credits the stretch
+// in it. The correction completes on the buffer that covers the target, so it can exceed the
+// target by one buffer's stretch; the controller is told what was produced.
+func (a *audioPacer) onOutput(d time.Duration) {
 	if !a.active.Load() {
 		return
 	}
-	if a.compensation.Load().Abs() >= a.target.Load().Abs() {
+	produced := a.compensation.Add(time.Duration(float64(d) * (1 - a.rate.Load())))
+	if produced.Abs() >= a.target.Load().Abs() {
 		a.complete()
-		if !a.active.Load() {
-			return
-		}
 	}
-
-	rate := a.rate.Load()
-	if rate <= 0 {
-		return
-	}
-	a.compensation.Add(time.Duration(float64(d) * (1/rate - 1)))
 }
 
 func (a *audioPacer) complete() {
@@ -194,16 +217,18 @@ func (a *audioPacer) stop() bool {
 	return true
 }
 
-// Pitch drops its buffered audio on flush, so part of the credited stretch never
-// reaches the mixer; abandon the correction without crediting it.
+// Pitch drops its buffered audio on flush and anchors its output again on the next buffer;
+// a requested or active correction is abandoned without credit. Returns whether there was one.
 func (a *audioPacer) cancelOnFlush() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	a.reanchorBuffers.Store(2)
+	a.reanchorBuffers.Store(reanchorHold)
 	a.lastInEnd.Store(0)
+	a.adjust.Store(adjustNone)
+	requested := a.pending.Swap(0) != 0
 	if !a.active.Swap(false) {
-		return false
+		return requested
 	}
 	a.applyTempoLocked(1.0)
 	return true
