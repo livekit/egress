@@ -522,21 +522,20 @@ func addAudioConverter(b *gstreamer.Bin, p *config.PipelineConfig, channel livek
 }
 
 func installPitchProbes(pacer *audioPacer) {
-	// Sink pad: credit the stretch applied to each input buffer.
+	// Sink pad: the pacer starts a correction and changes its rate here, before pitch
+	// processes the buffer.
 	if sinkPad := pacer.pitch.GetStaticPad("sink"); sinkPad != nil {
-		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
-				pacer.onInput(*buf.Duration().AsDuration())
-			}
+		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+			pacer.onInput()
 			return gst.PadProbeOK
 		})
 
 		// A FlushStart upstream of pitch (e.g., the discontinuity flush in
 		// appwriter.shouldHandleDiscontinuity) causes pitch to drop buffered
-		// audio, so part of the credited stretch never reaches the mixer.
-		// Cancel any in-flight correction so the next SR re-arms from the
-		// post-flush state. Flush events reach only probes that set the flush
-		// flag; EventDownstream alone does not include them.
+		// audio and anchor its output timeline again. Cancel a requested or
+		// in-flight correction so the next SR re-arms from the post-flush
+		// state. Flush events reach only probes that set the flush flag;
+		// EventDownstream alone does not include them.
 		sinkPad.AddProbe(gst.PadProbeTypeEventDownstream|gst.PadProbeTypeEventFlush, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
 			event := info.GetEvent()
 			if event == nil || event.Type() != gst.EventTypeFlushStart {
@@ -554,6 +553,14 @@ func installPitchProbes(pacer *audioPacer) {
 	}
 
 	if srcPad := pacer.pitch.GetStaticPad("src"); srcPad != nil {
+		// Src pad: the pacer credits the stretch in each buffer pitch produces.
+		srcPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
+				pacer.onOutput(*buf.Duration().AsDuration())
+			}
+			return gst.PadProbeOK
+		})
+
 		// Normalize pitch element latency query responses: min latency can go
 		// negative, which breaks downstream latency calculations.
 		srcPad.AddProbe(gst.PadProbeTypeQueryUpstream|gst.PadProbeTypePull,
