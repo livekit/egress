@@ -166,7 +166,7 @@ backup:
   alioss: (optional) same as storage.alioss above
 
 # dev/debugging fields
-insecure: can be used to connect to an insecure websocket (default false)
+insecure: can be used to connect to an insecure websocket and ignores TLS certificate errors in the web egress Chrome (default false)
 debug:
   enable_profiling: create and upload pipeline dot file and pprof file on pipeline failure
   s3: upload config for dotfiles (see above)

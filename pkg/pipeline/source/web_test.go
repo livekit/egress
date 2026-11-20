@@ -78,3 +78,16 @@ func TestInboundStatsSkipChromeLog(t *testing.T) {
 	require.NotContains(t, string(b), inboundStatsLog)
 	require.True(t, s.startRecording.IsBroken())
 }
+
+func TestInsecureChromeFlags(t *testing.T) {
+	for _, insecure := range []bool{true, false} {
+		flags := insecureChromeFlags(insecure)
+		for _, name := range []string{
+			"disable-web-security",
+			"allow-running-insecure-content",
+			"ignore-certificate-errors",
+		} {
+			require.Equal(t, insecure, flags[name], name)
+		}
+	}
+}
