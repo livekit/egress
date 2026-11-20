@@ -118,7 +118,7 @@ func getUploader(conf *config.StorageConfig) (*store, error) {
 		name = "Local"
 	}
 	if err != nil {
-		return nil, err
+		return nil, psrpc.NewErrorf(failureCode(conf), "%s storage setup failed: %w", name, err)
 	}
 
 	return &store{
@@ -196,10 +196,10 @@ func (u *Uploader) UploadWithDestination(
 		}
 
 		if primaryErr != nil {
-			return "", 0, false, psrpc.NewErrorf(psrpc.InvalidArgument,
+			return "", 0, false, psrpc.NewErrorf(failureCode(u.backup.conf),
 				"primary: %s\nbackup: %s", primaryErr.Error(), backupErr.Error())
 		}
-		return "", 0, false, psrpc.NewErrorf(psrpc.InvalidArgument, "%s", backupErr.Error())
+		return "", 0, false, psrpc.NewErrorf(failureCode(u.backup.conf), "%s", backupErr.Error())
 	}
 
 	return "", 0, false, primaryErr
@@ -223,6 +223,19 @@ func uploadErrorStatus(err error) string {
 	return "internal"
 }
 
+// failureCode blames the requester for request-supplied storage and the service otherwise.
+// Not Internal: a 500 from the handler shuts the server down.
+func failureCode(conf *config.StorageConfig) psrpc.ErrorCode {
+	if conf.FromRequest {
+		return psrpc.InvalidArgument
+	}
+	return psrpc.Unavailable
+}
+
+func uploadFailed(conf *config.StorageConfig, name string, err error) error {
+	return psrpc.NewErrorf(failureCode(conf), "%s upload failed: %w", name, err)
+}
+
 func (u *Uploader) upload(localFilepath string, storageFilepath string, outputType types.OutputType, primary bool) (location string, size int64, err error) {
 	var s *store
 	if primary {
@@ -240,7 +253,7 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 
 	location, size, err = s.UploadFile(context.Background(), storageFilepath, localFilepath, storage.PutOptions{ContentType: string(outputType)})
 	if err != nil {
-		return "", 0, errors.ErrUploadFailed(s.name, err)
+		return "", 0, uploadFailed(s.conf, s.name, err)
 	}
 
 	if !primary && u.storageObserver != nil {
@@ -250,7 +263,7 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 	if s.conf.GeneratePresignedUrl {
 		location, err = s.PresignedURL(context.Background(), storageFilepath, presignedExpiration)
 		if err != nil {
-			return "", 0, errors.ErrUploadFailed(s.name, err)
+			return "", 0, uploadFailed(s.conf, s.name, err)
 		}
 
 		if !primary && u.storageObserver != nil {
