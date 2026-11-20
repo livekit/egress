@@ -19,6 +19,7 @@ import (
 	"github.com/linkdata/deadlock"
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
+	"github.com/livekit/egress/pkg/types"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
@@ -39,6 +40,11 @@ type Callbacks struct {
 	onTrackRemoved          []func(string)
 	onActiveSpeakersChanged []func([]lksdk.Participant)
 	onEOSSent               func()
+
+	// held across delivery so a backlog replay can't be overtaken by a live event
+	roomEventMu      deadlock.Mutex
+	onRoomEvent      []func(types.RoomEvent)
+	roomEventBacklog []types.RoomEvent
 
 	pipelinePaused   core.Fuse
 	pipelineStopping core.Fuse
@@ -186,6 +192,31 @@ func (c *Callbacks) OnActiveSpeakersChanged(speakers []lksdk.Participant) {
 
 	for _, f := range handlers {
 		f(speakers)
+	}
+}
+
+// AddOnRoomEvent registers f and replays to it every room event raised before the first handler was added
+func (c *Callbacks) AddOnRoomEvent(f func(types.RoomEvent)) {
+	c.roomEventMu.Lock()
+	defer c.roomEventMu.Unlock()
+
+	for _, ev := range c.roomEventBacklog {
+		f(ev)
+	}
+	c.roomEventBacklog = nil
+	c.onRoomEvent = append(c.onRoomEvent, f)
+}
+
+func (c *Callbacks) OnRoomEvent(ev types.RoomEvent) {
+	c.roomEventMu.Lock()
+	defer c.roomEventMu.Unlock()
+
+	if len(c.onRoomEvent) == 0 {
+		c.roomEventBacklog = append(c.roomEventBacklog, ev)
+		return
+	}
+	for _, f := range c.onRoomEvent {
+		f(ev)
 	}
 }
 
