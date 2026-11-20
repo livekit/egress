@@ -33,9 +33,12 @@ type HandlerRPCProxy struct {
 	server rpc.EgressHandlerServer
 }
 
-func NewHandlerRPCProxy(pm ProcessManager, bus psrpc.MessageBus) (*HandlerRPCProxy, error) {
+// NewHandlerRPCProxy applies opts after the default server options, so
+// interceptors passed by the embedder run before a request reaches a handler.
+func NewHandlerRPCProxy(pm ProcessManager, bus psrpc.MessageBus, opts ...psrpc.ServerOption) (*HandlerRPCProxy, error) {
 	p := &HandlerRPCProxy{pm: pm}
-	server, err := rpc.NewEgressHandlerServer(p, bus, rpc.WithServerObservability(logger.GetLogger()))
+	serverOpts := append([]psrpc.ServerOption{rpc.WithServerObservability(logger.GetLogger())}, opts...)
+	server, err := rpc.NewEgressHandlerServer(p, bus, serverOpts...)
 	if err != nil {
 		return nil, err
 	}
