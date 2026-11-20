@@ -33,6 +33,9 @@ import (
 func TestHandlerRPCProxyServerOptions(t *testing.T) {
 	const egressID = "EG_proxy_options"
 
+	// the proxy's default observability options report to the psrpc stats
+	rpc.InitPSRPCStats(nil)
+
 	stop := func(t *testing.T, interceptorErr error) (*servicefakes.FakeProcessManager, psrpc.ErrorCode) {
 		bus := psrpc.NewLocalMessageBus()
 		pm := &servicefakes.FakeProcessManager{}
