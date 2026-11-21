@@ -58,6 +58,7 @@ type BaseConfig struct {
 	IOSelectionTimeout    time.Duration  `yaml:"io_selection_timeout"`     // timeout for affinity stage of IO RPC
 	IOWorkers             int            `yaml:"io_workers"`               // number of IO update workers
 	IOUpdateRetryDeadline time.Duration  `yaml:"io_update_retry_deadline"` // how long to retry a failed UpdateEgress before dropping it; negative to retry forever
+	MuteAudio             bool           `yaml:"mute_audio"`               // disables all audio output from the browser instance.
 
 	SessionLimits                      `yaml:"session_limits"` // session duration limits
 	StorageConfig                      *StorageConfig          `yaml:"storage,omitempty"`                        // storage config
@@ -70,6 +71,7 @@ type BaseConfig struct {
 
 	// advanced
 	Insecure                      bool                                `yaml:"insecure"`                           // allow chrome to connect to an insecure websocket, bypasses chrome LNA checks
+	Secure                        SecureConfig                        `yaml:"secure"`                             // secure config like --ignore-certificate-errors,--allow-running-insecure-content
 	Debug                         DebugConfig                         `yaml:"debug"`                              // create dot file on internal error
 	ChromeFlags                   map[string]interface{}              `yaml:"chrome_flags"`                       // additional flags to pass to Chrome
 	Latency                       LatencyConfig                       `yaml:"latency"`                            // gstreamer latencies, modifying these may break the service
@@ -100,6 +102,12 @@ type DebugConfig struct {
 	EnableStreamLogging bool             `yaml:"enable_stream_logging"` // log bytes and keyframes for each stream
 	EnableChromeLogging bool             `yaml:"enable_chrome_logging"` // log all chrome console events
 	StorageConfig       `yaml:",inline"` // upload config (S3, Azure, GCP, AliOSS, or OCI)
+}
+
+type SecureConfig struct {
+	DisableWebSecurity          bool `yaml:"disable_web_security"`           //disable-web-security
+	IgnoreCertificateErrors     bool `yaml:"ignore_certificate_errors"`      // allow self-signed certificates
+	AllowRunningInsecureContent bool `yaml:"allow_running_insecure_content"` // allow Mixed Content,https load http
 }
 
 type LatencyConfig struct {
