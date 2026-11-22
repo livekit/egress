@@ -11,8 +11,8 @@ tool github.com/maxbrunsfeld/counterfeiter/v6
 require (
 	github.com/Shopify/toxiproxy/v2 v2.12.0
 	github.com/aws/smithy-go v1.28.5
-	github.com/chromedp/cdproto v0.158.4
-	github.com/chromedp/chromedp v0.21.0
+	github.com/chromedp/cdproto v0.159.0
+	github.com/chromedp/chromedp v0.23.0
 	github.com/foxglove/mcap/go/mcap v1.9.0
 	github.com/frostbyte73/core v0.1.1
 	github.com/go-gst/go-glib v1.4.1-0.20250303082535-35ebad1471fd
