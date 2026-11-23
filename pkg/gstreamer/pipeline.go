@@ -163,8 +163,10 @@ func (p *Pipeline) Stop() {
 	p.UpgradeState(StateFinished)
 }
 
+// DebugBinToDotData is the pipeline's graph, without the stream keys and
+// passphrases its sinks hold.
 func (p *Pipeline) DebugBinToDotData(details gst.DebugGraphDetails) string {
-	return p.pipeline.DebugBinToDotData(details)
+	return redactDot(p.pipeline.DebugBinToDotData(details))
 }
 
 // RunningTime returns the running time of the gst pipeline
