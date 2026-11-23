@@ -63,18 +63,19 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 			}
 		}
 		sc.S3 = &storage.S3Config{
-			AccessKey:            s3.AccessKey,
-			Secret:               s3.Secret,
-			SessionToken:         s3.SessionToken,
-			AssumeRoleARN:        s3.AssumeRoleArn,
-			AssumeRoleExternalID: s3.AssumeRoleExternalId,
-			Region:               s3.Region,
-			Endpoint:             s3.Endpoint,
-			Bucket:               s3.Bucket,
-			ForcePathStyle:       s3.ForcePathStyle,
-			Metadata:             s3.Metadata,
-			Tagging:              s3.Tagging,
-			ContentDisposition:   s3.ContentDisposition,
+			AccessKey:             s3.AccessKey,
+			Secret:                s3.Secret,
+			SessionToken:          s3.SessionToken,
+			AssumeRoleARN:         s3.AssumeRoleArn,
+			AssumeRoleExternalID:  s3.AssumeRoleExternalId,
+			Region:                s3.Region,
+			Endpoint:              s3.Endpoint,
+			Bucket:                s3.Bucket,
+			ForcePathStyle:        s3.ForcePathStyle,
+			Metadata:              s3.Metadata,
+			Tagging:               s3.Tagging,
+			ContentDisposition:    s3.ContentDisposition,
+			BlockPrivateAddresses: p.BlockPrivateStorageAddresses,
 		}
 		if p.StorageConfig != nil && p.StorageConfig.S3 != nil {
 			sc.S3.MaxRetries = p.StorageConfig.S3.MaxRetries
@@ -97,6 +98,11 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 			sc.S3.Secret = p.S3AssumeRoleSecret
 		}
 
+		// Without both, the SDK would use this host's own credentials.
+		if p.BlockPrivateStorageAddresses && (sc.S3.AccessKey == "" || sc.S3.Secret == "") {
+			return nil, errors.ErrInvalidInput("s3 access_key and secret")
+		}
+
 		if s3.Proxy != nil {
 			sc.S3.ProxyConfig = &storage.ProxyConfig{
 				URL:      s3.Proxy.Url,
@@ -117,9 +123,14 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 	}
 
 	if gcp := req.GetGcp(); gcp != nil {
+		// Without credentials, the SDK would use this host's own.
+		if p.BlockPrivateStorageAddresses && gcp.Credentials == "" {
+			return nil, errors.ErrInvalidInput("gcp credentials")
+		}
 		sc.GCP = &storage.GCPConfig{
-			CredentialsJSON: gcp.Credentials,
-			Bucket:          gcp.Bucket,
+			CredentialsJSON:       gcp.Credentials,
+			Bucket:                gcp.Bucket,
+			BlockPrivateAddresses: p.BlockPrivateStorageAddresses,
 		}
 		if gcp.Proxy != nil {
 			sc.GCP.ProxyConfig = &storage.ProxyConfig{
@@ -133,19 +144,21 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 
 	if azure := req.GetAzure(); azure != nil {
 		sc.Azure = &storage.AzureConfig{
-			AccountName:   azure.AccountName,
-			AccountKey:    azure.AccountKey,
-			ContainerName: azure.ContainerName,
+			AccountName:           azure.AccountName,
+			AccountKey:            azure.AccountKey,
+			ContainerName:         azure.ContainerName,
+			BlockPrivateAddresses: p.BlockPrivateStorageAddresses,
 		}
 		return sc, nil
 	}
 
 	if ali := req.GetAliOSS(); ali != nil {
 		sc.AliOSS = &storage.AliOSSConfig{
-			AccessKey: ali.AccessKey,
-			Secret:    ali.Secret,
-			Endpoint:  ali.Endpoint,
-			Bucket:    ali.Bucket,
+			AccessKey:             ali.AccessKey,
+			Secret:                ali.Secret,
+			Endpoint:              ali.Endpoint,
+			Bucket:                ali.Bucket,
+			BlockPrivateAddresses: p.BlockPrivateStorageAddresses,
 		}
 		return sc, nil
 	}
