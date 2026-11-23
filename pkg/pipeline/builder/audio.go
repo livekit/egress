@@ -325,13 +325,11 @@ func (b *AudioBin) addAudioAppSrcBinLocked(ts *config.TrackSource) error {
 					"trackID", trackID, "tier", tier)
 				pacer.boost()
 			case tempo.TierHard:
-				// Hard tier means the pacer cannot absorb drift fast enough even with
-				// boosting; downstream is approaching mixer alignment-threshold and
-				// will start dropping
 				logger.Warnw("audio drift exceeded hard budget",
 					errors.New("uncorrected drift above hard budget"),
 					"trackID", trackID, "tier", tier)
 				pacer.boost()
+				ts.TempoController.ResetHardTier()
 			}
 		})
 		ts.TempoController.OnDriftDetectedCallback(func(drift time.Duration) {
@@ -644,7 +642,10 @@ func installPitchProbes(pacer *audioPacer) {
 	// Sink pad: the pacer starts a correction and changes its rate here, before pitch
 	// processes the buffer.
 	if sinkPad := pacer.pitch.GetStaticPad("sink"); sinkPad != nil {
-		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn {
+		sinkPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+			if buf := info.GetBuffer(); buf != nil && buf.PresentationTimestamp() != gst.ClockTimeNone && buf.Duration() != gst.ClockTimeNone {
+				pacer.lastInEnd.Store(*buf.PresentationTimestamp().AsDuration() + *buf.Duration().AsDuration())
+			}
 			pacer.onInput()
 			return gst.PadProbeOK
 		})
@@ -660,7 +661,11 @@ func installPitchProbes(pacer *audioPacer) {
 			if event == nil || event.Type() != gst.EventTypeFlushStart {
 				return gst.PadProbeOK
 			}
-			if !pacer.cancelOnFlush() {
+			canceled := pacer.cancelOnFlush()
+			if pacer.tc != nil {
+				pacer.tc.Flushed()
+			}
+			if !canceled {
 				return gst.PadProbeOK
 			}
 			if pacer.tc != nil {
@@ -674,9 +679,20 @@ func installPitchProbes(pacer *audioPacer) {
 	if srcPad := pacer.pitch.GetStaticPad("src"); srcPad != nil {
 		// Src pad: the pacer credits the stretch in each buffer pitch produces.
 		srcPad.AddProbe(gst.PadProbeTypeBuffer, func(_ *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-			if buf := info.GetBuffer(); buf != nil && buf.Duration() != gst.ClockTimeNone {
-				pacer.onOutput(*buf.Duration().AsDuration())
+			buf := info.GetBuffer()
+			if buf == nil || buf.Duration() == gst.ClockTimeNone {
+				return gst.PadProbeOK
 			}
+			pacer.onOutput(*buf.Duration().AsDuration())
+			if pacer.tc == nil || pacer.reanchorBuffers.Load() > 0 {
+				return gst.PadProbeOK
+			}
+			in := pacer.lastInEnd.Load()
+			if in == 0 || buf.PresentationTimestamp() == gst.ClockTimeNone {
+				return gst.PadProbeOK
+			}
+			out := *buf.PresentationTimestamp().AsDuration() + *buf.Duration().AsDuration()
+			pacer.tc.ObserveOutputShift(out - in)
 			return gst.PadProbeOK
 		})
 

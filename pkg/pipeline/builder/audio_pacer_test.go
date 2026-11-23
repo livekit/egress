@@ -43,8 +43,10 @@ func (f *fakeDriftNotifier) DriftProcessed(actual time.Duration) {
 		f.onProcessed()
 	}
 }
-func (f *fakeDriftNotifier) CancelInFlight()  { f.canceled++ }
-func (f *fakeDriftNotifier) Tier() tempo.Tier { return f.tier }
+func (f *fakeDriftNotifier) CancelInFlight()                  { f.canceled++ }
+func (f *fakeDriftNotifier) Tier() tempo.Tier                 { return f.tier }
+func (f *fakeDriftNotifier) ObserveOutputShift(time.Duration) {}
+func (f *fakeDriftNotifier) Flushed()                         {}
 
 // modelPitch stands in for the pitch element: an input buffer passes the pacer's sink
 // probe, is processed at the tempo set by then and leaves as one output buffer.

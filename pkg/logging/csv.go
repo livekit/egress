@@ -24,16 +24,19 @@ import (
 )
 
 type TrackStats struct {
-	Timestamp       string
-	PacketsReceived uint64
-	PaddingReceived uint64
-	LastReceived    string
-	PacketsDropped  uint64
-	PacketsPushed   uint64
-	SamplesPushed   uint64
-	LastPushed      string
-	Drift           time.Duration
-	MaxDrift        time.Duration
+	Timestamp        string
+	PacketsReceived  uint64
+	PaddingReceived  uint64
+	LastReceived     string
+	PacketsDropped   uint64
+	PacketsPushed    uint64
+	SamplesPushed    uint64
+	LastPushed       string
+	Drift            time.Duration
+	MaxDrift         time.Duration
+	TempoApplied     time.Duration
+	TempoCorrections int
+	TempoResets      int
 }
 
 type StreamStats struct {
