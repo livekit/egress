@@ -113,7 +113,6 @@ func NetworkFailure(err error) string {
 		urlErr      *url.Error
 		certErr     *tls.CertificateVerificationError
 		recordErr   tls.RecordHeaderError
-		alertErr    tls.AlertError
 		authority   x509.UnknownAuthorityError
 		hostname    x509.HostnameError
 		certificate x509.CertificateInvalidError
@@ -124,7 +123,7 @@ func NetworkFailure(err error) string {
 			return "host not found"
 		}
 		return "DNS lookup failed"
-	case errors.As(err, &certErr), errors.As(err, &recordErr), errors.As(err, &alertErr),
+	case errors.As(err, &certErr), errors.As(err, &recordErr), isTLSAlert(err),
 		errors.As(err, &authority), errors.As(err, &hostname), errors.As(err, &certificate):
 		return "TLS handshake failed"
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, os.ErrDeadlineExceeded),
@@ -136,6 +135,13 @@ func NetworkFailure(err error) string {
 		return "connection failed"
 	}
 	return ""
+}
+
+// isTLSAlert reports whether err is a TLS alert, which crypto/tls returns as
+// a net.OpError named "remote error" or "local error".
+func isTLSAlert(err error) bool {
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && (opErr.Op == "remote error" || opErr.Op == "local error")
 }
 
 type ErrArray struct {
