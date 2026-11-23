@@ -121,19 +121,38 @@ func TestCheckMemoryAdmissionLocked_WithPendingMemory(t *testing.T) {
 	require.Equal(t, "memory", reason)
 }
 
-func TestCheckProcRSSMemoryAdmission(t *testing.T) {
-	m := &Monitor{
-		memoryUsage: 5,
+// GetAdmissibleMemory reports what AcceptRequest compares a request's memory cost with, so a
+// request fits the reported value exactly when the node would admit it.
+func TestGetAdmissibleMemory(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		source config.MemorySource
+		cgroup bool
+	}{
+		{"proc rss", config.MemorySourceProcRSS, false},
+		{"cgroup", config.MemorySourceCgroup, true},
+		{"cgroup unreadable", config.MemorySourceCgroup, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := &Monitor{
+				cpuCostConfig:    &config.CPUCostConfig{MaxMemory: 10, MemorySource: c.source},
+				memoryUsage:      4,
+				cgroupUsageBytes: 5 * gb,
+				cgroupOK:         c.cgroup,
+			}
+			m.pendingMemoryUsage.Store(2)
+
+			inUse := 4.0
+			if c.cgroup {
+				inUse = 5
+			}
+			admissible := m.GetAdmissibleMemory()
+			require.Equal(t, 10-inUse-2-memoryHeadroomGB, admissible)
+
+			for _, cost := range []float64{0.5, admissible - 0.01, admissible, admissible + 0.5} {
+				reject, _ := m.checkMemoryAdmissionLocked(cost)
+				require.Equal(t, cost >= admissible, reject, "cost %v", cost)
+			}
+		})
 	}
-
-	// Various scenarios
-	reject, _ := m.checkProcRSSMemoryAdmission(0, 1, 1, 10)
-	require.False(t, reject) // 5 + 0 + 1 + 1 = 7 < 10
-
-	reject, _ = m.checkProcRSSMemoryAdmission(2, 1, 1, 10)
-	require.False(t, reject) // 5 + 2 + 1 + 1 = 9 < 10
-
-	reject, reason := m.checkProcRSSMemoryAdmission(3, 1, 1, 10)
-	require.True(t, reject) // 5 + 3 + 1 + 1 = 10 >= 10
-	require.Equal(t, "memory", reason)
 }

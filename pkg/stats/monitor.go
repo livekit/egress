@@ -349,35 +349,30 @@ func (m *Monitor) checkMemoryAdmissionLocked(memoryCost float64) (bool, string) 
 		return false, ""
 	}
 
-	pendingMem := m.pendingMemoryUsage.Load()
-	headroom := memoryHeadroomGB
-	maxMem := m.cpuCostConfig.MaxMemory
-
-	switch m.cpuCostConfig.MemorySource {
-	case config.MemorySourceCgroup:
-		if !m.cgroupOK {
-			// Fallback to proc_rss
-			return m.checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
-		}
-		cgroupGB := float64(m.cgroupUsageBytes) / gb
-		if cgroupGB+pendingMem+memoryCost+headroom >= maxMem {
+	if memoryCost >= m.admissibleMemoryLocked() {
+		if _, cgroup := m.memoryInUseLocked(); cgroup {
 			return true, "memory_cgroup"
 		}
-
-	default: // proc_rss
-		return m.checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
-	}
-
-	return false, ""
-}
-
-// checkProcRSSMemoryAdmission implements the original per-process RSS based admission.
-func (m *Monitor) checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem float64) (bool, string) {
-	memoryUsage := m.memoryUsage + pendingMem
-	if memoryUsage+memoryCost+headroom >= maxMem {
 		return true, "memory"
 	}
 	return false, ""
+}
+
+// memoryInUseLocked returns the memory in use that admission counts, in GB, and whether it is
+// the cgroup working set (MemorySource cgroup, when readable) rather than the sum of process RSS.
+func (m *Monitor) memoryInUseLocked() (float64, bool) {
+	if m.cpuCostConfig.MemorySource == config.MemorySourceCgroup && m.cgroupOK {
+		return float64(m.cgroupUsageBytes) / gb, true
+	}
+	return m.memoryUsage, false
+}
+
+// admissibleMemoryLocked is the memory a new request's cost is compared with: MaxMemory less the
+// memory in use, the memory held for pending requests, and headroom. A request is admitted while
+// its memory cost is below it.
+func (m *Monitor) admissibleMemoryLocked() float64 {
+	inUse, _ := m.memoryInUseLocked()
+	return m.cpuCostConfig.MaxMemory - inUse - m.pendingMemoryUsage.Load() - memoryHeadroomGB
 }
 
 func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
@@ -600,6 +595,20 @@ func (m *Monitor) GetAvailableMemory() float64 {
 	}
 
 	return m.cpuCostConfig.MaxMemory - m.memoryUsage
+}
+
+// GetAdmissibleMemory returns the memory, in GB, that a new request can be admitted against:
+// the value AcceptRequest compares a request's memory cost with, counting memory held for
+// pending requests and headroom. A scheduler that reads it sees the node as AcceptRequest does.
+// Without MaxMemory, memory does not limit admission, and it returns free memory.
+func (m *Monitor) GetAdmissibleMemory() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.cpuCostConfig.MaxMemory == 0 {
+		return float64(memory.FreeMemory()) / gb
+	}
+	return m.admissibleMemoryLocked()
 }
 
 func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
