@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/psrpc"
 	"github.com/livekit/storage"
@@ -26,8 +27,8 @@ import (
 
 // uploadFailed reports a failed upload by its status and error code. The
 // SDK's error stays in the chain.
-func uploadFailed(storageName string, err error) error {
-	return psrpc.NewError(psrpc.InvalidArgument,
+func uploadFailed(conf *config.StorageConfig, storageName string, err error) error {
+	return psrpc.NewError(failureCode(conf),
 		errors.WithReportedMessage(err, storageName+" upload failed: "+uploadFailure(err)))
 }
 
