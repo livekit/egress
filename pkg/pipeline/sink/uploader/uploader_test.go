@@ -247,6 +247,100 @@ func TestBackupUploadErrorIsNotDestinationError(t *testing.T) {
 	})
 }
 
+// The egress error code decides who a failure is charged to: 4xx to the requester, 5xx to the service.
+func TestStorageFailureErrorCode(t *testing.T) {
+	statusServer := func(statusCode int) string {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(statusCode)
+		}))
+		t.Cleanup(server.Close)
+		return server.URL
+	}
+	s3Config := func(endpoint string, fromRequest bool) *config.StorageConfig {
+		return &config.StorageConfig{
+			FromRequest: fromRequest,
+			S3: &storage.S3Config{
+				AccessKey:      "test",
+				Secret:         "test",
+				Region:         "us-east-1",
+				Bucket:         "test-bucket",
+				Endpoint:       endpoint,
+				ForcePathStyle: true,
+				MaxRetries:     1,
+			},
+		}
+	}
+	// NewGCP rejects credentials JSON with no type without touching the network.
+	badGCPConfig := func(fromRequest bool) *config.StorageConfig {
+		return &config.StorageConfig{
+			FromRequest: fromRequest,
+			GCP:         &storage.GCPConfig{Bucket: "test-bucket", CredentialsJSON: "{}"},
+		}
+	}
+
+	cases := []struct {
+		name          string
+		primary       *config.StorageConfig
+		backup        *config.StorageConfig
+		primaryFailed bool
+		want          int32
+	}{
+		{
+			name:    "request storage rejects upload",
+			primary: s3Config(statusServer(http.StatusForbidden), true),
+			want:    http.StatusBadRequest,
+		},
+		{
+			name:    "request storage provider outage",
+			primary: s3Config(statusServer(http.StatusServiceUnavailable), true),
+			want:    http.StatusBadRequest,
+		},
+		{
+			name:    "operator storage rejects upload",
+			primary: s3Config(statusServer(http.StatusForbidden), false),
+			want:    http.StatusServiceUnavailable,
+		},
+		{
+			name:    "backup fails after request storage fails",
+			primary: s3Config(statusServer(http.StatusForbidden), true),
+			backup:  s3Config(statusServer(http.StatusInternalServerError), false),
+			want:    http.StatusServiceUnavailable,
+		},
+		{
+			name:          "backup fails after failover",
+			primary:       s3Config(statusServer(http.StatusForbidden), true),
+			backup:        s3Config(statusServer(http.StatusInternalServerError), false),
+			primaryFailed: true,
+			want:          http.StatusServiceUnavailable,
+		},
+		{
+			name:    "request storage client setup fails",
+			primary: badGCPConfig(true),
+			want:    http.StatusBadRequest,
+		},
+		{
+			name:    "operator storage client setup fails",
+			primary: badGCPConfig(false),
+			want:    http.StatusServiceUnavailable,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			u, err := New(tc.primary, tc.backup, nil, nil, &livekit.EgressInfo{})
+			if err == nil {
+				u.primaryFailed.Store(tc.primaryFailed)
+				_, _, err = u.Upload("uploader_test.go", "uploader_test.go", "text/plain", false)
+			}
+			require.Error(t, err)
+
+			info := &livekit.EgressInfo{}
+			info.SetFailed(err)
+			require.Equal(t, tc.want, info.ErrorCode, "error: %v", err)
+		})
+	}
+}
+
 func TestUploadRefusesKeyOutsidePrefix(t *testing.T) {
 	t.Chdir(t.TempDir())
 	require.NoError(t, os.WriteFile("local", []byte("x"), 0644))
