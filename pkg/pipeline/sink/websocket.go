@@ -16,6 +16,7 @@ package sink
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -71,9 +72,11 @@ func newWebsocketSink(
 		return false
 	})
 
-	conn, _, err := websocket.DefaultDialer.Dial(wsUrl, header)
+	conn, resp, err := websocket.DefaultDialer.Dial(wsUrl, header)
 	if err != nil {
-		return nil, psrpc.NewError(psrpc.InvalidArgument, err)
+		// The dial error is logged; the egress reports a summary of it.
+		logger.Warnw("websocket connection failed", err)
+		return nil, psrpc.NewError(psrpc.InvalidArgument, errors.WithReportedMessage(err, websocketDialFailure(resp, err)))
 	}
 
 	websocketSink := &WebsocketSink{
@@ -107,7 +110,8 @@ func newWebsocketSink(
 				if err == io.EOF {
 					return gst.FlowEOS
 				}
-				callbacks.OnError(psrpc.NewError(psrpc.Unavailable, errors.MarkDestinationError(err)))
+				callbacks.OnError(psrpc.NewError(psrpc.Unavailable, errors.MarkDestinationError(
+					errors.WithReportedMessage(err, "websocket write failed: "+networkFailure(err)))))
 			}
 
 			return gst.FlowOK
@@ -125,6 +129,22 @@ func newWebsocketSink(
 	}
 
 	return websocketSink, nil
+}
+
+// websocketDialFailure reports a failed dial by the handshake's status, or by
+// how the connection failed.
+func websocketDialFailure(resp *http.Response, err error) string {
+	if resp != nil {
+		return fmt.Sprintf("websocket connection failed: handshake refused with status %d", resp.StatusCode)
+	}
+	return "websocket connection failed: " + networkFailure(err)
+}
+
+func networkFailure(err error) string {
+	if reason := errors.NetworkFailure(err); reason != "" {
+		return reason
+	}
+	return "connection failed"
 }
 
 func (s *WebsocketSink) Start() error {

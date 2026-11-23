@@ -15,8 +15,14 @@
 package errors
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
+	"io"
 	"net"
+	"net/url"
+	"os"
 	"strings"
 
 	"github.com/livekit/psrpc"
@@ -73,6 +79,63 @@ func IsDestinationError(err error) bool {
 
 	var dnsErr *net.DNSError
 	return errors.As(err, &dnsErr) && dnsErr.IsNotFound
+}
+
+type reportedError struct {
+	msg string
+	err error
+}
+
+func (e *reportedError) Error() string {
+	return e.msg
+}
+
+func (e *reportedError) Unwrap() error {
+	return e.err
+}
+
+// WithReportedMessage is err with msg as its text. The original stays in the
+// chain for errors.As.
+func WithReportedMessage(err error, msg string) error {
+	if err == nil {
+		return nil
+	}
+	return &reportedError{msg: msg, err: err}
+}
+
+// NetworkFailure names the kind of connection failure err is, such as
+// "timed out". It is empty for any other error.
+func NetworkFailure(err error) string {
+	var (
+		dnsErr      *net.DNSError
+		netErr      net.Error
+		opErr       *net.OpError
+		urlErr      *url.Error
+		certErr     *tls.CertificateVerificationError
+		recordErr   tls.RecordHeaderError
+		alertErr    tls.AlertError
+		authority   x509.UnknownAuthorityError
+		hostname    x509.HostnameError
+		certificate x509.CertificateInvalidError
+	)
+	switch {
+	case errors.As(err, &dnsErr):
+		if dnsErr.IsNotFound {
+			return "host not found"
+		}
+		return "DNS lookup failed"
+	case errors.As(err, &certErr), errors.As(err, &recordErr), errors.As(err, &alertErr),
+		errors.As(err, &authority), errors.As(err, &hostname), errors.As(err, &certificate):
+		return "TLS handshake failed"
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, os.ErrDeadlineExceeded),
+		errors.As(err, &netErr) && netErr.Timeout():
+		return "timed out"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.As(err, &opErr), errors.As(err, &urlErr), errors.Is(err, io.ErrUnexpectedEOF):
+		return "connection failed"
+	}
+	return ""
 }
 
 type ErrArray struct {

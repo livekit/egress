@@ -240,7 +240,9 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 
 	location, size, err = s.UploadFile(context.Background(), storageFilepath, localFilepath, storage.PutOptions{ContentType: string(outputType)})
 	if err != nil {
-		return "", 0, errors.ErrUploadFailed(s.name, err)
+		// The SDK's error is logged; the egress reports a summary of it.
+		logger.Warnw("upload failed", err, "storage", s.name, "storageFilepath", storageFilepath)
+		return "", 0, uploadFailed(s.name, err)
 	}
 
 	if !primary && u.storageObserver != nil {
@@ -250,7 +252,8 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 	if s.conf.GeneratePresignedUrl {
 		location, err = s.PresignedURL(context.Background(), storageFilepath, presignedExpiration)
 		if err != nil {
-			return "", 0, errors.ErrUploadFailed(s.name, err)
+			logger.Warnw("presigned url failed", err, "storage", s.name, "storageFilepath", storageFilepath)
+			return "", 0, uploadFailed(s.name, err)
 		}
 
 		if !primary && u.storageObserver != nil {
