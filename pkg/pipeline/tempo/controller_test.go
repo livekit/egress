@@ -404,3 +404,75 @@ func TestTierNoFireWhenStable(t *testing.T) {
 		t.Fatalf("tier transitions: got %v, want [TierSoft] (no re-fire within same tier)", tiers)
 	}
 }
+
+func TestControllerResetStateMachine(t *testing.T) {
+	// warn at 400ms, act at 600ms
+	tc := NewController(1200 * time.Millisecond)
+
+	var armed []time.Duration
+	tc.OnDriftDetectedCallback(func(d time.Duration) { armed = append(armed, d) })
+
+	// without a reset callback (legacy synchronizer) nothing resets
+	tc.SetDrift(50 * time.Millisecond)
+	tc.DriftProcessed(50 * time.Millisecond)
+	tc.ObserveOutputShift(700 * time.Millisecond)
+	tc.ResetHardTier()
+	if got := tc.Processed(); got != 50*time.Millisecond {
+		t.Fatalf("processed without reset callback: got %v, want 50ms", got)
+	}
+
+	resets := 0
+	tc.OnReset(func() {
+		resets++
+		_ = tc.Stats() // the callback runs outside the lock
+	})
+
+	tc.ObserveOutputShift(500 * time.Millisecond)
+	if resets != 0 {
+		t.Fatalf("shift inside the warn band reset the controller")
+	}
+
+	tc.ObserveOutputShift(700 * time.Millisecond)
+	if resets != 1 || tc.Processed() != 0 {
+		t.Fatalf("first reset: resets=%d processed=%v", resets, tc.Processed())
+	}
+
+	// one shift episode is one reset: nothing acts again until pitch sees the flush
+	armed = nil
+	tc.ObserveOutputShift(700 * time.Millisecond)
+	tc.ResetHardTier()
+	tc.SetDrift(900 * time.Millisecond)
+	if resets != 1 || len(armed) != 0 {
+		t.Fatalf("acted before the flush: resets=%d armed=%v", resets, armed)
+	}
+	tc.Flushed()
+
+	// a report sampled before the re-anchor can still arrive after the flush
+	tc.SetDrift(900 * time.Millisecond)
+	if len(armed) != 0 {
+		t.Fatalf("first report after the flush armed a correction: %v", armed)
+	}
+	// the next report is the baseline the post-reset timeline starts from
+	tc.SetDrift(900 * time.Millisecond)
+	if len(armed) != 0 {
+		t.Fatalf("baseline report armed a correction: %v", armed)
+	}
+	tc.SetDrift(900*time.Millisecond + DefaultThreshold)
+	if len(armed) != 1 || armed[0] != DefaultThreshold {
+		t.Fatalf("drift past the baseline: armed %v, want [%v]", armed, DefaultThreshold)
+	}
+
+	// tempo stays on after repeated resets
+	tc.ObserveOutputShift(-700 * time.Millisecond)
+	tc.Flushed()
+	armed = nil
+	tc.SetDrift(0)
+	tc.SetDrift(200 * time.Millisecond)
+	tc.SetDrift(200*time.Millisecond + DefaultThreshold)
+	if resets != 2 || len(armed) != 1 {
+		t.Fatalf("after second reset: resets=%d armed=%v", resets, armed)
+	}
+	if s := tc.Stats(); s.Applied != 50*time.Millisecond || s.Corrections != 1 || s.Resets != 2 {
+		t.Fatalf("stats: got %+v", s)
+	}
+}

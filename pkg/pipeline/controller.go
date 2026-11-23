@@ -100,6 +100,7 @@ type controllerStats struct {
 
 	droppedAudioBuffersByQueue map[string]uint64
 	droppedVideoBuffersByQueue map[string]uint64
+	mixerDropsByPad            map[string]*padDrops
 }
 
 // SourceBuilder constructs a pipeline source. It receives the controller's
@@ -177,6 +178,7 @@ func newController(conf *config.PipelineConfig, ipcServiceClient ipc.EgressServi
 		stats: controllerStats{
 			droppedVideoBuffersByQueue: make(map[string]uint64),
 			droppedAudioBuffersByQueue: make(map[string]uint64),
+			mixerDropsByPad:            make(map[string]*padDrops),
 		},
 	}
 	c.callbacks.SetOnError(c.OnError)

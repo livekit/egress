@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/linkdata/deadlock"
+
+	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -20,6 +22,13 @@ const (
 	TierSoft               // soft budget exceeded; pacer should boost
 	TierHard               // hard budget exceeded; caller should reset
 )
+
+// Stats summarizes a track's tempo correction over the whole egress.
+type Stats struct {
+	Applied     time.Duration
+	Corrections int
+	Resets      int
+}
 
 // Controller tracks the current drift between a sender's clock and the
 // receiver's clock and drives tempo adjustments to close the gap.
@@ -39,8 +48,23 @@ type Controller struct {
 	maxLatency time.Duration
 	tier       Tier
 
-	cb     func(time.Duration) // invoked with correction amount to apply
-	tierCB func(Tier)          // invoked on tier transitions
+	warnShift     time.Duration
+	actShift      time.Duration
+	shiftWarned   bool
+	resetPending  bool // until pitch sees the flush, shift and drift still describe the discarded timeline
+	dropNextDrift bool // the SDK can deliver a report sampled before the re-anchor after the flush
+	// after a reset, drift measures arrival against sender reports; correcting that would chase bad reports
+	captureBaseline bool
+	baseline        time.Duration
+	resets          int
+	applied         time.Duration // lifetime net correction; reset leaves it
+	corrections     int
+
+	cb      func(time.Duration) // invoked with correction amount to apply
+	tierCB  func(Tier)          // invoked on tier transitions
+	resetCB func()
+
+	logger logger.Logger
 }
 
 func NewController(maxLatency time.Duration) *Controller {
@@ -48,6 +72,9 @@ func NewController(maxLatency time.Duration) *Controller {
 		softCap:    maxLatency / 2,
 		hardCap:    maxLatency * 3 / 4,
 		maxLatency: maxLatency,
+		warnShift:  maxLatency / 3,
+		actShift:   maxLatency / 2,
+		logger:     logger.GetLogger(),
 	}
 }
 
@@ -102,9 +129,20 @@ func (tc *Controller) updateTierLocked(effective time.Duration) (bool, Tier, fun
 // correction is started.
 func (tc *Controller) SetDrift(drift time.Duration) {
 	tc.mu.Lock()
+	if tc.resetPending || tc.dropNextDrift {
+		tc.dropNextDrift = false
+		tc.mu.Unlock()
+		return
+	}
 	tc.drift = drift
+	if tc.captureBaseline {
+		tc.captureBaseline = false
+		tc.baseline = drift
+		tc.mu.Unlock()
+		return
+	}
 
-	effective := drift - tc.corrected
+	effective := tc.effectiveLocked()
 
 	var toStart time.Duration
 	if tc.current == 0 {
@@ -130,13 +168,19 @@ func (tc *Controller) SetDrift(drift time.Duration) {
 // still exceeds the threshold.
 func (tc *Controller) DriftProcessed(actual time.Duration) {
 	tc.mu.Lock()
-	tc.corrected += actual
+	tc.applied += actual
+	tc.corrections++
 	tc.current = 0
+	if tc.resetPending {
+		tc.mu.Unlock()
+		return
+	}
+	tc.corrected += actual
 
 	// actual is the stretch the pacer applied, so an overshoot past drift makes the
 	// next correction smaller, or starts a counter-correction once it reaches the threshold.
 	var toStart time.Duration
-	effective := tc.drift - tc.corrected
+	effective := tc.effectiveLocked()
 	if effective.Abs() >= DefaultThreshold {
 		toStart = effective
 		tc.current = effective
@@ -166,6 +210,76 @@ func (tc *Controller) OnDriftDetectedCallback(cb func(time.Duration)) {
 	}
 }
 
+// SetLogger sets the logger used for drift warnings and resets.
+func (tc *Controller) SetLogger(l logger.Logger) {
+	tc.mu.Lock()
+	tc.logger = l
+	tc.mu.Unlock()
+}
+
+// OnReset sets the callback fired after a reset; without one the controller never resets.
+func (tc *Controller) OnReset(cb func()) {
+	tc.mu.Lock()
+	tc.resetCB = cb
+	tc.mu.Unlock()
+}
+
+// ObserveOutputShift takes pitch's output end minus its input end, warning past warnShift and resetting past actShift.
+func (tc *Controller) ObserveOutputShift(shift time.Duration) {
+	tc.mu.Lock()
+	// on the legacy synchronizer, input PTS are on the publisher clock, so the shift is the correction itself
+	if tc.resetCB == nil || tc.resetPending || shift.Abs() < tc.warnShift {
+		tc.mu.Unlock()
+		return
+	}
+	if shift.Abs() >= tc.actShift {
+		tc.resetLocked("output shift", shift)
+		return
+	}
+
+	warn := !tc.shiftWarned
+	tc.shiftWarned = true
+	corrected, resets, l := tc.corrected, tc.resets, tc.logger
+	tc.mu.Unlock()
+
+	if warn {
+		l.Warnw("audio output drifting from its input timeline", nil,
+			"shift", shift, "corrected", corrected, "resets", resets)
+	}
+}
+
+// ResetHardTier discards the corrections when effective drift reaches the hard budget.
+func (tc *Controller) ResetHardTier() {
+	tc.mu.Lock()
+	if tc.resetCB == nil || tc.resetPending {
+		tc.mu.Unlock()
+		return
+	}
+	tc.resetLocked("hard tier", tc.effectiveLocked())
+}
+
+// Flushed tells the controller that pitch has seen a flush, ending any pending reset.
+func (tc *Controller) Flushed() {
+	tc.mu.Lock()
+	if tc.resetPending {
+		tc.resetPending = false
+		tc.dropNextDrift = true
+		tc.captureBaseline = true
+	}
+	tc.mu.Unlock()
+}
+
+// Stats returns the correction summary for the track's end stats.
+func (tc *Controller) Stats() Stats {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	return Stats{
+		Applied:     tc.applied,
+		Corrections: tc.corrections,
+		Resets:      tc.resets,
+	}
+}
+
 // CancelInFlight clears the in-flight correction without crediting any
 // compensation toward `corrected`. Use when the audio pipeline downstream of
 // the pacer is about to be discarded (source bin reset, flush) and the
@@ -192,4 +306,31 @@ func (tc *Controller) Processed() time.Duration {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 	return tc.corrected
+}
+
+// resetLocked must be called with tc.mu held; it releases it before logging and firing the callback.
+func (tc *Controller) resetLocked(reason string, measured time.Duration) {
+	discarded := tc.corrected
+	tc.drift = 0
+	tc.baseline = 0
+	tc.corrected = 0
+	tc.current = 0
+	tc.tier = TierNormal
+	tc.shiftWarned = false
+	tc.resetPending = true
+	tc.resets++
+	resets, cb, l := tc.resets, tc.resetCB, tc.logger
+	tc.mu.Unlock()
+
+	l.Warnw("resetting audio tempo correction", nil,
+		"reason", reason,
+		"measured", measured,
+		"discardedCorrection", discarded,
+		"resets", resets,
+	)
+	cb()
+}
+
+func (tc *Controller) effectiveLocked() time.Duration {
+	return tc.drift - tc.baseline - tc.corrected
 }

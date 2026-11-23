@@ -437,14 +437,48 @@ func (c *Controller) handleMessageQoS(msg *gst.Message) {
 			logger.Debugw("failed to parse audio mixer QoS message")
 			return
 		}
-		c.handleAudioMixerQoS(qos)
+		c.handleAudioMixerQoS(msg, qos)
 		return
 	}
 }
 
-func (c *Controller) handleAudioMixerQoS(qosValues *gst.QoSValues) {
+type padDrops struct {
+	track   string
+	dropped time.Duration
+	lastLog time.Time
+}
+
+func (c *Controller) handleAudioMixerQoS(msg *gst.Message, qosValues *gst.QoSValues) {
 	c.stats.mixerDroppedAudioBuffers.Inc()
 	c.stats.mixerDroppedAudioDuration.Add(qosValues.Duration)
+
+	pad := msg.SourceObject().GetName()
+	drops := c.stats.mixerDropsByPad[pad]
+	if drops == nil {
+		drops = &padDrops{track: padTrackLabel(msg)}
+		c.stats.mixerDropsByPad[pad] = drops
+	}
+	drops.dropped += qosValues.Duration
+	if drops.dropped < 5*time.Second || time.Since(drops.lastLog) < time.Minute {
+		return
+	}
+	drops.lastLog = time.Now()
+	logger.Warnw("audio mixer dropping a track's audio", nil,
+		"pad", pad,
+		"track", drops.track,
+		"droppedTotal", drops.dropped,
+	)
+}
+
+// padTrackLabel names the source bin feeding the mixer pad, which is <trackID>_<n> for track sources
+func padTrackLabel(msg *gst.Message) string {
+	src := msg.SourceObject()
+	if peer := gst.FromGstPadUnsafeNone(src.Unsafe()).GetPeer(); peer != nil {
+		if parent := peer.GetParentElement(); parent != nil {
+			return parent.GetName()
+		}
+	}
+	return src.GetName()
 }
 
 // Debug info comes in the following format:
