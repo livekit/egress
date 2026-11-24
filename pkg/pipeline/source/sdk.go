@@ -71,7 +71,8 @@ type SDKSource struct {
 	timeProvider   atomic.Pointer[gstreamer.TimeProvider]
 	initResultChan atomic.Pointer[chan subscriptionResult]
 
-	events *roomEventEmitter
+	events       *roomEventEmitter
+	reconnecting atomic.Bool
 }
 
 type subscriptionResult struct {
@@ -278,6 +279,8 @@ func (s *SDKSource) joinRoom() error {
 			cb.OnTrackUnpublished = s.onTrackUnpublished
 			cb.OnParticipantConnected = s.onParticipantConnected
 			cb.OnParticipantDisconnected = s.onMediaParticipantDisconnected
+			cb.OnReconnecting = s.onReconnecting
+			cb.OnReconnected = s.onReconnected
 		}
 	case types.RequestTypeParticipant:
 		cb.OnTrackPublished = s.onTrackPublished
@@ -829,18 +832,39 @@ func (s *SDKSource) onParticipantConnected(rp *lksdk.RemoteParticipant) {
 }
 
 func (s *SDKSource) onMediaParticipantDisconnected(rp *lksdk.RemoteParticipant) {
-	// a reconnect's disconnect goroutine can run after the same session is restored
+	// a restart disconnects every participant before restoring them, so reconcile once it completes instead
+	if s.reconnecting.Load() {
+		return
+	}
+	s.syncRoomEvents(rp.Identity(), rp.DisconnectReason())
+}
+
+func (s *SDKSource) onReconnecting() {
+	s.reconnecting.Store(true)
+}
+
+func (s *SDKSource) onReconnected() {
+	s.reconnecting.Store(false)
+	for _, identity := range s.events.identities() {
+		s.syncRoomEvents(identity, livekit.DisconnectReason_UNKNOWN_REASON)
+	}
+}
+
+// syncRoomEvents compares the room's session for an identity, rather than the callback's, since SIDs can change in place
+func (s *SDKSource) syncRoomEvents(identity string, reason livekit.DisconnectReason) {
+	var current *roomParticipant
+	var liveTracks map[string]struct{}
 	if room := s.room.Load(); room != nil {
-		if current := room.GetParticipantByIdentity(rp.Identity()); current != nil && current.SID() == rp.SID() {
-			live := make(map[string]struct{})
-			for _, pub := range current.TrackPublications() {
-				live[pub.SID()] = struct{}{}
+		if rp := room.GetParticipantByIdentity(identity); rp != nil {
+			p := participantOf(rp)
+			current = &p
+			liveTracks = make(map[string]struct{})
+			for _, pub := range rp.TrackPublications() {
+				liveTracks[pub.SID()] = struct{}{}
 			}
-			s.events.retainTracks(rp.SID(), live)
-			return
 		}
 	}
-	s.events.participantLeft(participantOf(rp), rp.DisconnectReason())
+	s.events.sync(identity, current, liveTracks, reason)
 }
 
 func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {

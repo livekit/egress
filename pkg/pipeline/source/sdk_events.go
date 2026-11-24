@@ -69,35 +69,38 @@ func (e *roomEventEmitter) join(p roomParticipant) {
 	}
 }
 
-// participantLeft unpublishes the session's tracks first, since the SDK never fires OnTrackUnpublished on disconnect
-func (e *roomEventEmitter) participantLeft(p roomParticipant, reason livekit.DisconnectReason) {
+func (e *roomEventEmitter) identities() []string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	for sid, t := range e.tracks {
-		if t.participant.sid == p.sid {
-			e.send(types.RoomEventTrackUnpublished, p, t.info, livekit.DisconnectReason_UNKNOWN_REASON)
-			delete(e.tracks, sid)
-		}
+	identities := make([]string, 0, len(e.participants))
+	for identity := range e.participants {
+		identities = append(identities, identity)
 	}
-
-	// a disconnect goroutine can run after the same identity has already rejoined with a new SID
-	if current, ok := e.participants[p.identity]; !ok || current.sid != p.sid {
-		return
-	}
-	delete(e.participants, p.identity)
-	e.send(types.RoomEventParticipantLeft, p, nil, reason)
+	return identities
 }
 
-func (e *roomEventEmitter) retainTracks(participantSID string, live map[string]struct{}) {
+// sync reconciles an identity with the room's current session for it, which is nil once the identity has left
+func (e *roomEventEmitter) sync(identity string, current *roomParticipant, liveTracks map[string]struct{}, reason livekit.DisconnectReason) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	// the SDK never fires OnTrackUnpublished on disconnect
 	for sid, t := range e.tracks {
-		if _, ok := live[sid]; !ok && t.participant.sid == participantSID {
+		if _, live := liveTracks[sid]; !live && t.participant.identity == identity {
 			e.send(types.RoomEventTrackUnpublished, t.participant, t.info, livekit.DisconnectReason_UNKNOWN_REASON)
 			delete(e.tracks, sid)
 		}
+	}
+
+	p, known := e.participants[identity]
+	switch {
+	case !known:
+	case current != nil:
+		e.participants[identity] = *current
+	default:
+		delete(e.participants, identity)
+		e.send(types.RoomEventParticipantLeft, p, nil, reason)
 	}
 }
 
