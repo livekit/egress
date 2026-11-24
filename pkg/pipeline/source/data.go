@@ -35,6 +35,12 @@ func (s *SDKSource) initDataTracks() {
 func (s *SDKSource) onDataTrackPublished(track *datatrack.RemoteTrack, _ *lksdk.RemoteParticipant) {
 	info := track.Info()
 	identity := track.PublisherIdentity()
+
+	s.dataMu.Lock()
+	defer s.dataMu.Unlock()
+
+	// recorded before filtering so a required track_id that a selector excludes doesn't stall startup
+	s.publishedDataTracks[string(info.SID)] = struct{}{}
 	if !s.MatchesMediaData(string(info.SID), info.Name, identity) {
 		return
 	}
@@ -42,15 +48,10 @@ func (s *SDKSource) onDataTrackPublished(track *datatrack.RemoteTrack, _ *lksdk.
 		logger.Warnw("skipping e2ee data track", nil, "trackID", info.SID)
 		return
 	}
-
-	s.dataMu.Lock()
-	defer s.dataMu.Unlock()
-
 	// checked under dataMu so no reader starts after closeDataTracks begins waiting
 	if s.dataCtx.Err() != nil {
 		return
 	}
-	s.publishedDataTracks[string(info.SID)] = struct{}{}
 	s.dataWG.Add(1)
 	go s.recordDataTrack(track, identity, info)
 }

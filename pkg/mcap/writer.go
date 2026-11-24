@@ -47,7 +47,11 @@ type Schema struct {
 	Data     []byte
 }
 
-type schemaKey struct{ name, encoding string }
+// raw keeps caller-supplied schemas from satisfying generated-descriptor lookups of the same name
+type schemaKey struct {
+	name, encoding string
+	raw            bool
+}
 
 type channel struct {
 	id       uint16
@@ -114,7 +118,7 @@ func (w *Writer) AddRawChannel(key, topic, messageEncoding string, schema *Schem
 
 	var schemaID uint16
 	if schema != nil {
-		sk := schemaKey{name: schema.Name, encoding: schema.Encoding}
+		sk := schemaKey{name: schema.Name, encoding: schema.Encoding, raw: true}
 		var ok bool
 		if schemaID, ok = w.schemas[sk]; !ok {
 			var err error
