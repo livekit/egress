@@ -27,7 +27,7 @@ import (
 )
 
 func (s *SDKSource) initDataTracks() {
-	s.publishedDataTracks = make(map[string]struct{})
+	s.publishedDataTracks = make(map[string]error)
 	s.dataCtx, s.dataCancel = context.WithCancel(context.Background())
 }
 
@@ -39,15 +39,17 @@ func (s *SDKSource) onDataTrackPublished(track *datatrack.RemoteTrack, _ *lksdk.
 	s.dataMu.Lock()
 	defer s.dataMu.Unlock()
 
-	// recorded before filtering so a required track_id that a selector excludes doesn't stall startup
-	s.publishedDataTracks[string(info.SID)] = struct{}{}
-	if !s.MatchesMediaData(string(info.SID), info.Name, identity) {
+	trackID := string(info.SID)
+	if !s.MatchesMediaData(trackID, info.Name, identity) {
+		s.publishedDataTracks[trackID] = errors.ErrInvalidInput("media.data excludes " + trackID)
 		return
 	}
 	if info.UsesE2EE {
-		logger.Warnw("skipping e2ee data track", nil, "trackID", info.SID)
+		logger.Warnw("skipping e2ee data track", nil, "trackID", trackID)
+		s.publishedDataTracks[trackID] = errors.ErrNotSupported("e2ee data track " + trackID)
 		return
 	}
+	s.publishedDataTracks[trackID] = nil
 	// checked under dataMu so no reader starts after closeDataTracks begins waiting
 	if s.dataCtx.Err() != nil {
 		return
@@ -104,10 +106,10 @@ func (s *SDKSource) startDataRecording() {
 func (s *SDKSource) awaitDataTrackPublication(trackID string, deadline time.Time) error {
 	for time.Now().Before(deadline) {
 		s.dataMu.Lock()
-		_, ok := s.publishedDataTracks[trackID]
+		err, ok := s.publishedDataTracks[trackID]
 		s.dataMu.Unlock()
 		if ok {
-			return nil
+			return err
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

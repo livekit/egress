@@ -76,7 +76,7 @@ type SDKSource struct {
 	reconnecting atomic.Bool
 
 	dataMu              deadlock.Mutex
-	publishedDataTracks map[string]struct{}
+	publishedDataTracks map[string]error // nil when the track will be recorded
 	dataCtx             context.Context
 	dataCancel          context.CancelFunc
 	dataWG              sync.WaitGroup
