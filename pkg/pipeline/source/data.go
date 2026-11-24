@@ -40,8 +40,8 @@ func (s *SDKSource) onDataTrackPublished(track *datatrack.RemoteTrack, _ *lksdk.
 	defer s.dataMu.Unlock()
 
 	trackID := string(info.SID)
+	s.publishedDataTracks[trackID] = nil
 	if !s.MatchesMediaData(trackID, info.Name, identity) {
-		s.publishedDataTracks[trackID] = errors.ErrInvalidInput("media.data excludes " + trackID)
 		return
 	}
 	if info.UsesE2EE {
@@ -49,7 +49,6 @@ func (s *SDKSource) onDataTrackPublished(track *datatrack.RemoteTrack, _ *lksdk.
 		s.publishedDataTracks[trackID] = errors.ErrNotSupported("e2ee data track " + trackID)
 		return
 	}
-	s.publishedDataTracks[trackID] = nil
 	// checked under dataMu so no reader starts after closeDataTracks begins waiting
 	if s.dataCtx.Err() != nil {
 		return
