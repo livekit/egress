@@ -175,9 +175,11 @@ func TestBlockPrivateStorageAddresses(t *testing.T) {
 	}
 }
 
-// Storage from a request without credentials would use the host's own.
-func TestBlockPrivateStorageAddressesRequiresCredentials(t *testing.T) {
-	keyless := map[string]struct {
+// Storage from a request without credentials would use the host's own, and
+// through a proxy only the proxy's address is checked.
+func TestBlockPrivateStorageAddressesRefuses(t *testing.T) {
+	proxy := &livekit.ProxyConfig{Url: "http://proxy.example.com:3128"}
+	refused := map[string]struct {
 		field string
 		req   *livekit.EncodedFileOutput
 	}{
@@ -190,12 +192,20 @@ func TestBlockPrivateStorageAddressesRequiresCredentials(t *testing.T) {
 		"GCP without credentials": {"gcp credentials", &livekit.EncodedFileOutput{
 			Output: &livekit.EncodedFileOutput_Gcp{Gcp: &livekit.GCPUpload{Bucket: "bucket"}},
 		}},
+		"S3 with a proxy": {"s3 proxy", &livekit.EncodedFileOutput{
+			Output: &livekit.EncodedFileOutput_S3{S3: &livekit.S3Upload{
+				AccessKey: "key", Secret: "secret", Bucket: "bucket", Proxy: proxy,
+			}},
+		}},
+		"GCP with a proxy": {"gcp proxy", &livekit.EncodedFileOutput{
+			Output: &livekit.EncodedFileOutput_Gcp{Gcp: &livekit.GCPUpload{Credentials: "{}", Bucket: "bucket", Proxy: proxy}},
+		}},
 	}
-	for name, c := range keyless {
+	for name, c := range refused {
 		field, req := c.field, c.req
 		p := &PipelineConfig{BaseConfig: BaseConfig{BlockPrivateStorageAddresses: true}}
 		_, err := p.getStorageConfig(req)
-		require.ErrorContains(t, err, "missing or invalid field: "+field)
+		require.ErrorContains(t, err, "missing or invalid field: "+field, name)
 
 		p.BlockPrivateStorageAddresses = false
 		_, err = p.getStorageConfig(req)

@@ -102,6 +102,10 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 		if p.BlockPrivateStorageAddresses && (sc.S3.AccessKey == "" || sc.S3.Secret == "") {
 			return nil, errors.ErrInvalidInput("s3 access_key and secret")
 		}
+		// Only the proxy's own address would be checked, not where it connects.
+		if p.BlockPrivateStorageAddresses && s3.GetProxy().GetUrl() != "" {
+			return nil, errors.ErrInvalidInput("s3 proxy")
+		}
 
 		if s3.Proxy != nil {
 			sc.S3.ProxyConfig = &storage.ProxyConfig{
@@ -126,6 +130,9 @@ func (p *PipelineConfig) getStorageConfig(req egress.UploadRequest) (*StorageCon
 		// Without credentials, the SDK would use this host's own.
 		if p.BlockPrivateStorageAddresses && gcp.Credentials == "" {
 			return nil, errors.ErrInvalidInput("gcp credentials")
+		}
+		if p.BlockPrivateStorageAddresses && gcp.GetProxy().GetUrl() != "" {
+			return nil, errors.ErrInvalidInput("gcp proxy")
 		}
 		sc.GCP = &storage.GCPConfig{
 			CredentialsJSON:       gcp.Credentials,
