@@ -1,4 +1,5 @@
 .github
 node_modules
 tsconfig.json
+tsconfig.esm.json
 .prettierrc
