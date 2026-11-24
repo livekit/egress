@@ -30,14 +30,14 @@ require (
 	github.com/livekit/media-samples/avsync v0.0.0-20261030142945-16e8865b2517
 	github.com/livekit/media-sdk v0.1.1
 	github.com/livekit/mediatransportutil v0.0.0-20261031130836-5b63b1f53a6c
-	github.com/livekit/protocol v1.53.3-0.20261104162546-4f5a18f3bdb3
+	github.com/livekit/protocol v1.54.2-0.20261121011508-fb74d2fd0aec
 	github.com/livekit/psrpc v0.8.2
 	github.com/livekit/server-sdk-go/v2 v2.19.1-0.20261112154422-d28786dd4099
-	github.com/livekit/storage v0.0.0-20261123151050-e9436d51324f
+	github.com/livekit/storage v0.0.0-20261123215119-c5ec8ae10ffe
 	github.com/llehouerou/go-mp3 v1.5.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/pion/rtp v1.10.6
-	github.com/pion/webrtc/v4 v4.2.24
+	github.com/pion/webrtc/v4 v4.2.26
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.72.1
@@ -105,9 +105,9 @@ require (
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/florianl/go-tc v0.4.8 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
-	github.com/gammazero/deque v1.2.2 // indirect
+	github.com/gammazero/deque v1.2.3 // indirect
 	github.com/go-gst/go-pointer v0.0.0-20241127163939-ba766f075b4c // indirect
-	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.8 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -145,7 +145,7 @@ require (
 	github.com/pion/dtls/v3 v3.1.15 // indirect
 	github.com/pion/dtls/v4 v4.0.0-rc.8 // indirect
 	github.com/pion/ice/v4 v4.4.8 // indirect
-	github.com/pion/interceptor v0.1.49 // indirect
+	github.com/pion/interceptor v0.1.51 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/mdns/v2 v2.2.2 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
@@ -156,12 +156,12 @@ require (
 	github.com/pion/stun/v4 v4.0.1 // indirect
 	github.com/pion/transport/v4 v4.1.1 // indirect
 	github.com/pion/transport/v5 v5.1.4 // indirect
-	github.com/pion/turn/v5 v5.1.2 // indirect
+	github.com/pion/turn/v5 v5.1.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20250313105119-ba97887b0a25 // indirect
-	github.com/prometheus/procfs v0.22.0 // indirect
+	github.com/prometheus/procfs v0.23.0 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
-	github.com/redis/go-redis/v9 v9.22.0 // indirect
+	github.com/redis/go-redis/v9 v9.23.0 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/sony/gobreaker/v2 v2.4.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.8.1 // indirect

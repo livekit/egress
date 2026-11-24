@@ -10,13 +10,16 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/egress/pkg/config"
 	"github.com/livekit/egress/pkg/errors"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils/netguard"
 	"github.com/livekit/storage"
 )
 
@@ -339,6 +342,41 @@ func TestStorageFailureErrorCode(t *testing.T) {
 			require.Equal(t, tc.want, info.ErrorCode, "error: %v", err)
 		})
 	}
+}
+
+// Request storage on an internal address is refused at once, as the requester's
+// error.
+func TestUploadToBlockedRequestStorage(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+	}))
+	t.Cleanup(server.Close)
+
+	u, err := New(&config.StorageConfig{
+		FromRequest: true,
+		S3: &storage.S3Config{
+			AccessKey:             "test",
+			Secret:                "test",
+			Region:                "us-east-1",
+			Bucket:                "test-bucket",
+			Endpoint:              server.URL,
+			ForcePathStyle:        true,
+			MaxRetries:            5,
+			BlockPrivateAddresses: true,
+		},
+	}, nil, nil, nil, &livekit.EgressInfo{})
+	require.NoError(t, err)
+
+	start := time.Now()
+	_, _, err = u.Upload("uploader_test.go", "uploader_test.go", "text/plain", false)
+	require.ErrorIs(t, err, netguard.ErrBlockedAddress)
+	require.Less(t, time.Since(start), 2*time.Second, "the refusal was retried")
+	require.Zero(t, requests.Load(), "a request reached the server")
+
+	info := &livekit.EgressInfo{}
+	info.SetFailed(err)
+	require.EqualValues(t, http.StatusBadRequest, info.ErrorCode, "error: %v", err)
 }
 
 func TestUploadRefusesKeyOutsidePrefix(t *testing.T) {

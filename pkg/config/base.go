@@ -68,6 +68,10 @@ type BaseConfig struct {
 	S3AssumeRoleExternalID             string                  `yaml:"s3_assume_role_external_id"`               // if set, this external ID is used by default for S3 uploads
 	S3AllowRequestAssumeRoleExternalID bool                    `yaml:"s3_allow_request_assume_role_external_id"` // DEPRECATED: allow the assume_role_external_id field on S3 upload requests
 
+	// BlockPrivateStorageAddresses refuses storage from a request that connects to
+	// internal addresses, or that has no credentials and would use this host's.
+	BlockPrivateStorageAddresses bool `yaml:"block_private_storage_addresses"`
+
 	// advanced
 	Insecure                      bool                                `yaml:"insecure"`                           // allow chrome to connect to an insecure websocket, bypasses chrome LNA checks
 	Debug                         DebugConfig                         `yaml:"debug"`                              // create dot file on internal error

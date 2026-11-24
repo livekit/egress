@@ -130,6 +130,79 @@ func TestStorageConfigFromRequest(t *testing.T) {
 	require.False(t, operator.FromRequest)
 }
 
+func TestBlockPrivateStorageAddresses(t *testing.T) {
+	outputs := map[string]*livekit.EncodedFileOutput{
+		"S3": {Output: &livekit.EncodedFileOutput_S3{S3: &livekit.S3Upload{AccessKey: "key", Secret: "secret", Bucket: "bucket"}}},
+		"S3 operator assume role key": {Output: &livekit.EncodedFileOutput_S3{S3: &livekit.S3Upload{
+			Bucket: "bucket", AssumeRoleArn: "arn:aws:iam::123456789012:role/example",
+		}}},
+		"GCP":    {Output: &livekit.EncodedFileOutput_Gcp{Gcp: &livekit.GCPUpload{Credentials: "{}", Bucket: "bucket"}}},
+		"Azure":  {Output: &livekit.EncodedFileOutput_Azure{Azure: &livekit.AzureBlobUpload{AccountName: "account", AccountKey: "key"}}},
+		"AliOSS": {Output: &livekit.EncodedFileOutput_AliOSS{AliOSS: &livekit.AliOSSUpload{AccessKey: "key", Secret: "secret", Bucket: "bucket"}}},
+	}
+	blocked := func(sc *StorageConfig) bool {
+		switch {
+		case sc.S3 != nil:
+			return sc.S3.BlockPrivateAddresses
+		case sc.GCP != nil:
+			return sc.GCP.BlockPrivateAddresses
+		case sc.Azure != nil:
+			return sc.Azure.BlockPrivateAddresses
+		case sc.AliOSS != nil:
+			return sc.AliOSS.BlockPrivateAddresses
+		}
+		t.Fatal("no storage")
+		return false
+	}
+
+	for _, on := range []bool{true, false} {
+		operator := &StorageConfig{S3: &storage.S3Config{Bucket: "operator-bucket"}}
+		p := &PipelineConfig{BaseConfig: BaseConfig{
+			StorageConfig:                operator,
+			S3AssumeRoleKey:              "operator-key",
+			S3AssumeRoleSecret:           "operator-secret",
+			BlockPrivateStorageAddresses: on,
+		}}
+		for name, req := range outputs {
+			sc, err := p.getStorageConfig(req)
+			require.NoError(t, err, name)
+			require.Equal(t, on, blocked(sc), name)
+		}
+
+		sc, err := p.getStorageConfig(&livekit.EncodedFileOutput{})
+		require.NoError(t, err)
+		require.False(t, blocked(sc), "operator storage")
+	}
+}
+
+// Storage from a request without credentials would use the host's own.
+func TestBlockPrivateStorageAddressesRequiresCredentials(t *testing.T) {
+	keyless := map[string]struct {
+		field string
+		req   *livekit.EncodedFileOutput
+	}{
+		"S3 without keys": {"s3 access_key and secret", &livekit.EncodedFileOutput{
+			Output: &livekit.EncodedFileOutput_S3{S3: &livekit.S3Upload{Bucket: "bucket"}},
+		}},
+		"S3 without a secret": {"s3 access_key and secret", &livekit.EncodedFileOutput{
+			Output: &livekit.EncodedFileOutput_S3{S3: &livekit.S3Upload{AccessKey: "key", Bucket: "bucket"}},
+		}},
+		"GCP without credentials": {"gcp credentials", &livekit.EncodedFileOutput{
+			Output: &livekit.EncodedFileOutput_Gcp{Gcp: &livekit.GCPUpload{Bucket: "bucket"}},
+		}},
+	}
+	for name, c := range keyless {
+		field, req := c.field, c.req
+		p := &PipelineConfig{BaseConfig: BaseConfig{BlockPrivateStorageAddresses: true}}
+		_, err := p.getStorageConfig(req)
+		require.ErrorContains(t, err, "missing or invalid field: "+field)
+
+		p.BlockPrivateStorageAddresses = false
+		_, err = p.getStorageConfig(req)
+		require.NoError(t, err, name)
+	}
+}
+
 func TestSegmentNaming(t *testing.T) {
 	t.Cleanup(func() {
 		_ = os.RemoveAll("conf_test/")
