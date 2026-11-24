@@ -70,6 +70,9 @@ type SDKSource struct {
 
 	timeProvider   atomic.Pointer[gstreamer.TimeProvider]
 	initResultChan atomic.Pointer[chan subscriptionResult]
+
+	events       *roomEventEmitter
+	reconnecting atomic.Bool
 }
 
 type subscriptionResult struct {
@@ -86,6 +89,9 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		callbacks:            callbacks,
 		filenameReplacements: make(map[string]string),
 		workers:              make(map[string]*trackWorker),
+	}
+	if p.RequestType == types.RequestTypeMedia && p.TrackPreserving() {
+		s.events = newRoomEventEmitter(callbacks.OnRoomEvent)
 	}
 	logger.Debugw("latency config", "latency", p.Latency)
 
@@ -265,8 +271,17 @@ func (s *SDKSource) joinRoom() error {
 	}
 
 	switch s.RequestType {
-	case types.RequestTypeRoomComposite, types.RequestTypeTemplate, types.RequestTypeMedia:
+	case types.RequestTypeRoomComposite, types.RequestTypeTemplate:
 		cb.OnTrackPublished = s.onTrackPublished
+	case types.RequestTypeMedia:
+		cb.OnTrackPublished = s.onTrackPublished
+		if s.events != nil {
+			cb.OnTrackUnpublished = s.onTrackUnpublished
+			cb.OnParticipantConnected = s.onParticipantConnected
+			cb.OnParticipantDisconnected = s.onMediaParticipantDisconnected
+			cb.OnReconnecting = s.onReconnecting
+			cb.OnReconnected = s.onReconnected
+		}
 	case types.RequestTypeParticipant:
 		cb.OnTrackPublished = s.onTrackPublished
 		cb.OnParticipantDisconnected = s.onParticipantDisconnected
@@ -278,6 +293,9 @@ func (s *SDKSource) joinRoom() error {
 		return err
 	}
 	s.room.Store(room)
+	if s.events != nil {
+		s.snapshotRoomEvents(room)
+	}
 
 	var fileIdentifier string
 	var w, h uint32
@@ -349,6 +367,13 @@ func (s *SDKSource) joinRoom() error {
 	}
 
 	return nil
+}
+
+// snapshotRoomEvents joins participants already in the room, which get no OnParticipantConnected
+func (s *SDKSource) snapshotRoomEvents(room *lksdk.Room) {
+	for _, rp := range room.GetRemoteParticipants() {
+		s.events.participantJoined(participantOf(rp))
+	}
 }
 
 func (s *SDKSource) startAwaitingTracks(expectedCount int) <-chan subscriptionResult {
@@ -707,6 +732,9 @@ func (s *SDKSource) onTrackPublished(pub *lksdk.RemoteTrackPublication, rp *lksd
 	}
 
 	if shouldSub {
+		if s.events != nil {
+			s.events.trackPublished(participantOf(rp), pub.TrackInfo(), pub.IsMuted())
+		}
 		if err := s.subscribe(pub); err != nil {
 			logger.Errorw("failed to subscribe to track", err, "trackID", pub.SID())
 		}
@@ -747,6 +775,9 @@ func (s *SDKSource) onTrackMuted(pub lksdk.TrackPublication, _ lksdk.Participant
 	if exists {
 		logger.Debugw("track muted", "trackID", pub.SID())
 	}
+	if s.events != nil {
+		s.events.trackMuted(pub.SID(), true)
+	}
 }
 
 func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participant) {
@@ -755,6 +786,9 @@ func (s *SDKSource) onTrackUnmuted(pub lksdk.TrackPublication, _ lksdk.Participa
 	s.workersMu.RUnlock()
 	if exists {
 		logger.Debugw("track unmuted", "trackID", pub.SID())
+	}
+	if s.events != nil {
+		s.events.trackMuted(pub.SID(), false)
 	}
 }
 
@@ -774,11 +808,64 @@ func (s *SDKSource) onTrackUnsubscribed(_ *webrtc.TrackRemote, pub *lksdk.Remote
 	s.submitOp(trackID, Operation{Type: OpUnsubscribe})
 }
 
+func (s *SDKSource) onTrackUnpublished(pub *lksdk.RemoteTrackPublication, _ *lksdk.RemoteParticipant) {
+	s.events.trackUnpublished(pub.SID())
+}
+
 func (s *SDKSource) onParticipantDisconnected(rp *lksdk.RemoteParticipant) {
 	if rp.Identity() == s.Identity {
 		logger.Debugw("participant disconnected")
 		s.finished()
 	}
+}
+
+func (s *SDKSource) onParticipantConnected(rp *lksdk.RemoteParticipant) {
+	room := s.room.Load()
+	if room == nil {
+		return
+	}
+	// the connect goroutine can run after the same identity has rejoined with a new SID
+	if current := room.GetParticipantByIdentity(rp.Identity()); current == nil || current.SID() != rp.SID() {
+		return
+	}
+	s.events.participantJoined(participantOf(rp))
+}
+
+func (s *SDKSource) onMediaParticipantDisconnected(rp *lksdk.RemoteParticipant) {
+	// a restart disconnects every participant before restoring them, so reconcile once it completes instead
+	if s.reconnecting.Load() {
+		return
+	}
+	s.syncRoomEvents(rp.Identity(), rp.DisconnectReason())
+}
+
+func (s *SDKSource) onReconnecting() {
+	s.reconnecting.Store(true)
+}
+
+func (s *SDKSource) onReconnected() {
+	s.reconnecting.Store(false)
+	for _, identity := range s.events.identities() {
+		s.syncRoomEvents(identity, livekit.DisconnectReason_UNKNOWN_REASON)
+	}
+}
+
+// syncRoomEvents compares the room's session for an identity, rather than the callback's, since SIDs can change in place
+func (s *SDKSource) syncRoomEvents(identity string, reason livekit.DisconnectReason) {
+	publishCount := s.events.publishCount()
+	var current *roomParticipant
+	var liveTracks map[string]struct{}
+	if room := s.room.Load(); room != nil {
+		if rp := room.GetParticipantByIdentity(identity); rp != nil {
+			p := participantOf(rp)
+			current = &p
+			liveTracks = make(map[string]struct{})
+			for _, pub := range rp.TrackPublications() {
+				liveTracks[pub.SID()] = struct{}{}
+			}
+		}
+	}
+	s.events.sync(identity, current, liveTracks, publishCount, reason)
 }
 
 func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {

@@ -54,15 +54,23 @@ func verifyMCAP(t *testing.T, tc *testCase, localPath string, fileRes *livekit.F
 	require.Equal(t, "media_source", fileMetadata.Metadata["source_type"])
 
 	for _, schema := range info.Schemas {
-		require.Contains(t, []string{"foxglove.CompressedVideo", "foxglove.CompressedAudio"}, schema.Name)
+		require.Contains(t, []string{"foxglove.CompressedVideo", "foxglove.CompressedAudio", "foxglove.Event"}, schema.Name)
 	}
-	require.Len(t, info.Channels, tc.mcapChannels)
 
 	channelsByTopic := make(map[string]int)
+	var eventsChannel *mcap.Channel
 	for id, channel := range info.Channels {
 		require.Greater(t, info.Statistics.ChannelMessageCounts[id], uint64(0), "no messages on %s", channel.Topic)
+		if channel.Topic == "/livekit/events" {
+			require.Nil(t, eventsChannel, "events split across channels")
+			require.Equal(t, "foxglove.Event", info.Schemas[channel.SchemaID].Name)
+			eventsChannel = channel
+			continue
+		}
 		channelsByTopic[channel.Topic]++
 	}
+	require.NotNil(t, eventsChannel, "no /livekit/events channel")
+	require.Len(t, channelsByTopic, tc.mcapChannels)
 	for topic, count := range channelsByTopic {
 		require.Equal(t, 1, count, "topic %s split across channels", topic)
 	}
@@ -75,7 +83,8 @@ func verifyMCAP(t *testing.T, tc *testCase, localPath string, fileRes *livekit.F
 
 	it, err := reader.Messages(mcap.UsingIndex(true), mcap.InOrder(mcap.LogTimeOrder))
 	require.NoError(t, err)
-	var first, last uint64
+	var first, last, prev uint64
+	var events []*foxglove.Event
 	sawFirst := make(map[uint16]bool)
 	for {
 		schema, channel, msg, err := it.NextInto(nil)
@@ -83,7 +92,16 @@ func verifyMCAP(t *testing.T, tc *testCase, localPath string, fileRes *livekit.F
 			break
 		}
 		require.NoError(t, err)
-		require.GreaterOrEqual(t, msg.LogTime, last)
+		require.GreaterOrEqual(t, msg.LogTime, prev)
+		prev = msg.LogTime
+
+		if channel.ID == eventsChannel.ID {
+			ev := &foxglove.Event{}
+			require.NoError(t, proto.Unmarshal(msg.Data, ev))
+			events = append(events, ev)
+			continue
+		}
+
 		if first == 0 {
 			first = msg.LogTime
 		}
@@ -110,6 +128,34 @@ func verifyMCAP(t *testing.T, tc *testCase, localPath string, fileRes *livekit.F
 		}
 	}
 	require.InDelta(t, time.Duration(fileRes.Duration).Seconds(), time.Duration(last-first).Seconds(), 2.0)
+
+	publishers := make([]string, 0, len(tc.publishers))
+	for _, p := range tc.publishers {
+		publishers = append(publishers, p.identity)
+	}
+	require.NotEmpty(t, events)
+	require.Equal(t, "participant_joined", eventValue(events[0], "event_type"))
+	require.Contains(t, publishers, eventValue(events[0], "participant_identity"))
+
+	publishedTopics := make(map[string]bool)
+	for _, ev := range events {
+		require.Equal(t, "event_type", ev.Metadata[0].Key)
+		if eventValue(ev, "event_type") == "track_published" {
+			publishedTopics[eventValue(ev, "mcap_channel_topic")] = true
+		}
+	}
+	for topic := range channelsByTopic {
+		require.True(t, publishedTopics[topic], "no track_published event for %s", topic)
+	}
+}
+
+func eventValue(ev *foxglove.Event, key string) string {
+	for _, kv := range ev.Metadata {
+		if kv.Key == key {
+			return kv.Value
+		}
+	}
+	return ""
 }
 
 func hasNALType(annexB []byte, nalType byte) bool {

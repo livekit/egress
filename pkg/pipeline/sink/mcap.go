@@ -45,6 +45,7 @@ type MCAPSink struct {
 	*uploader.Uploader
 
 	conf      *config.PipelineConfig
+	callbacks *gstreamer.Callbacks
 	startedAt func() int64
 	mcapBin   *builder.MCAPBin
 
@@ -52,15 +53,17 @@ type MCAPSink struct {
 	file   *os.File
 	writer *mcap.Writer
 	anchor time.Time
-	topics map[string]string   // track ID -> topic
-	owners map[string]string   // topic -> live track ID
-	opened map[string]struct{} // channel keys registered with the writer
+	topics map[string]string      // track ID -> topic
+	owners map[string]string      // topic -> live track ID
+	opened map[string]mcapChannel // channel key -> channel registered with the writer
+	events mcapEventLog
 }
 
 func newMCAPSink(
 	p *gstreamer.Pipeline,
 	conf *config.PipelineConfig,
 	o *config.FileConfig,
+	callbacks *gstreamer.Callbacks,
 	monitor *stats.HandlerMonitor,
 	startedAt func() int64,
 ) (*MCAPSink, error) {
@@ -73,10 +76,12 @@ func newMCAPSink(
 		FileConfig: o,
 		Uploader:   u,
 		conf:       conf,
+		callbacks:  callbacks,
 		startedAt:  startedAt,
 		topics:     make(map[string]string),
 		owners:     make(map[string]string),
-		opened:     make(map[string]struct{}),
+		opened:     make(map[string]mcapChannel),
+		events:     newMCAPEventLog(),
 	}
 	if s.mcapBin, err = builder.BuildMCAPBin(p, conf, s.writeSample, s.trackRemoved, s.trackEnded); err != nil {
 		return nil, err
@@ -104,8 +109,19 @@ func (s *MCAPSink) Start() error {
 	s.mu.Lock()
 	s.file = f
 	s.writer = w
+	s.events.writer = w
 	s.mu.Unlock()
+
+	// registered unlocked: the backlog replays synchronously into handleRoomEvent, which takes s.mu
+	s.callbacks.AddOnRoomEvent(s.handleRoomEvent)
 	return nil
+}
+
+func (s *MCAPSink) handleRoomEvent(ev types.RoomEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.events.handle(ev)
 }
 
 func (s *MCAPSink) writeSample(ts *config.TrackSource, runningTime time.Duration, data []byte) error {
@@ -146,19 +162,23 @@ func (s *MCAPSink) writeSample(ts *config.TrackSource, runningTime time.Duration
 
 	// a republish with the same codec continues its channel; a codec change opens a new one on the same topic
 	key := topic + " " + format
-	if _, ok := s.opened[key]; !ok {
-		if err := s.writer.AddChannel(key, topic, msg, map[string]string{
+	ch, ok := s.opened[key]
+	if !ok {
+		id, err := s.writer.AddChannel(key, topic, msg, map[string]string{
 			"codec":                        format,
 			"livekit.track_id":             ts.TrackID,
 			"livekit.track_name":           ts.TrackName,
 			"livekit.participant_identity": ts.ParticipantIdentity,
 			"livekit.source":               strings.ToLower(ts.PublicationSource.String()),
 			"livekit.input_codec":          string(ts.MimeType),
-		}); err != nil {
+		})
+		if err != nil {
 			return errors.MarkDestinationError(err)
 		}
-		s.opened[key] = struct{}{}
+		ch = mcapChannel{id: id, topic: topic, schema: string(msg.ProtoReflect().Descriptor().FullName()), format: format}
+		s.opened[key] = ch
 	}
+	s.events.trackOpened(ts.TrackID, ch)
 	if err := s.writer.Write(key, t, msg); err != nil {
 		return errors.MarkDestinationError(err)
 	}
@@ -170,7 +190,12 @@ func (s *MCAPSink) allocateTopic(ts *config.TrackSource) string {
 	if name == "" {
 		name = ts.TrackID
 	}
-	base := fmt.Sprintf("/livekit/%s/%s", sanitizeTopicSegment(ts.ParticipantIdentity), sanitizeTopicSegment(name))
+	identity := sanitizeTopicSegment(ts.ParticipantIdentity)
+	if identity == "events" {
+		logger.Warnw("participant identity collides with reserved mcap topic", nil, "identity", ts.ParticipantIdentity)
+		identity = "events_"
+	}
+	base := fmt.Sprintf("/livekit/%s/%s", identity, sanitizeTopicSegment(name))
 	topic := base
 	for i := 1; ; i++ {
 		if _, ok := s.owners[topic]; !ok {
@@ -232,6 +257,7 @@ func (s *MCAPSink) Close() error {
 	s.mcapBin.Close()
 
 	s.mu.Lock()
+	s.events.close()
 	err := s.writer.Close()
 	if closeErr := s.file.Close(); err == nil {
 		err = closeErr

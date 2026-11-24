@@ -101,8 +101,10 @@ func Proto() error {
 			" --go_opt=paths=source_relative"+
 			" --go_opt=MCompressedVideo.proto=github.com/livekit/egress/pkg/mcap/foxglove"+
 			" --go_opt=MCompressedAudio.proto=github.com/livekit/egress/pkg/mcap/foxglove"+
+			" --go_opt=MEvent.proto=github.com/livekit/egress/pkg/mcap/foxglove"+
+			" --go_opt=MKeyValuePair.proto=github.com/livekit/egress/pkg/mcap/foxglove"+
 			" --plugin=go=%s"+
-			" -I=. CompressedVideo.proto CompressedAudio.proto",
+			" -I=. CompressedVideo.proto CompressedAudio.proto Event.proto KeyValuePair.proto",
 		protocGoPath,
 	))
 }

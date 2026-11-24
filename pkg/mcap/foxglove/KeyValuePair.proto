@@ -1,0 +1,10 @@
+// Schema from github.com/foxglove/schemas (MIT License, Copyright (c) Foxglove Technologies Inc)
+
+syntax = "proto3";
+
+package foxglove;
+
+message KeyValuePair {
+  string key = 1;
+  string value = 2;
+}
