@@ -69,8 +69,7 @@ type BaseConfig struct {
 	S3AllowRequestAssumeRoleExternalID bool                    `yaml:"s3_allow_request_assume_role_external_id"` // DEPRECATED: allow the assume_role_external_id field on S3 upload requests
 
 	// BlockPrivateStorageAddresses refuses storage from a request that connects to
-	// internal addresses, that has no credentials and would use this host's, or
-	// that sets a proxy.
+	// internal addresses, or that has no credentials and would use this host's.
 	BlockPrivateStorageAddresses bool `yaml:"block_private_storage_addresses"`
 
 	// advanced
