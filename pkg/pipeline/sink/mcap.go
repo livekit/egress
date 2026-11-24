@@ -37,6 +37,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/logger"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+	"github.com/livekit/server-sdk-go/v2/datatrack"
 )
 
 type MCAPSink struct {
@@ -114,6 +115,8 @@ func (s *MCAPSink) Start() error {
 
 	// registered unlocked: the backlog replays synchronously into handleRoomEvent, which takes s.mu
 	s.callbacks.AddOnRoomEvent(s.handleRoomEvent)
+	s.callbacks.SetOnDataFrame(s.writeData)
+	s.callbacks.SetOnDataTrackEnded(s.trackEnded)
 	return nil
 }
 
@@ -133,13 +136,7 @@ func (s *MCAPSink) writeSample(ts *config.TrackSource, runningTime time.Duration
 		s.anchor = time.Unix(0, s.startedAt())
 	}
 
-	topic, ok := s.topics[ts.TrackID]
-	if !ok {
-		topic = s.allocateTopic(ts)
-		s.topics[ts.TrackID] = topic
-		s.owners[topic] = ts.TrackID
-	}
-
+	topic := s.topicFor(ts.TrackID, ts.TrackName, ts.ParticipantIdentity)
 	t := s.anchor.Add(runningTime)
 	var msg proto.Message
 	var format string
@@ -185,14 +182,84 @@ func (s *MCAPSink) writeSample(ts *config.TrackSource, runningTime time.Duration
 	return nil
 }
 
-func (s *MCAPSink) allocateTopic(ts *config.TrackSource) string {
-	name := ts.TrackName
-	if name == "" {
-		name = ts.TrackID
+func (s *MCAPSink) writeData(df types.DataFrame) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.anchor.IsZero() {
+		startedAt := s.startedAt()
+		if startedAt == 0 {
+			return nil
+		}
+		s.anchor = time.Unix(0, startedAt)
 	}
-	identity := sanitizeTopicSegment(ts.ParticipantIdentity)
+	if df.Time.Before(s.anchor) {
+		return nil
+	}
+
+	trackID := string(df.Info.SID)
+	topic := s.topicFor(trackID, df.Info.Name, df.ParticipantIdentity)
+	messageEncoding, schema := mcapDataEncoding(df.Info)
+
+	// a republish with the same encoding and schema continues its channel
+	key := topic + " data " + messageEncoding
+	if schema != nil {
+		key += " " + schema.Name + "/" + schema.Encoding
+	}
+	if _, ok := s.opened[key]; !ok {
+		id, err := s.writer.AddRawChannel(key, topic, messageEncoding, schema, map[string]string{
+			"livekit.kind":                 "data",
+			"livekit.track_id":             trackID,
+			"livekit.track_name":           df.Info.Name,
+			"livekit.participant_identity": df.ParticipantIdentity,
+		})
+		if err != nil {
+			return errors.MarkDestinationError(err)
+		}
+		s.opened[key] = mcapChannel{id: id, topic: topic}
+	}
+
+	publishTime := df.Time
+	if df.Frame.UserTimestamp != nil {
+		publishTime = time.UnixMilli(int64(*df.Frame.UserTimestamp))
+	}
+	if err := s.writer.WriteRaw(key, df.Time, publishTime, df.Frame.Payload); err != nil {
+		return errors.MarkDestinationError(err)
+	}
+	return nil
+}
+
+// mcapDataEncoding maps a data track's declared encodings onto MCAP's, whose registry names they share
+func mcapDataEncoding(info datatrack.Info) (string, *mcap.Schema) {
+	if info.FrameEncoding == nil || info.FrameEncoding == datatrack.FrameEncodingOther {
+		return "", nil
+	}
+	messageEncoding := info.FrameEncoding.String()
+	if info.Schema == nil || info.Schema.Encoding == nil || info.Schema.Encoding == datatrack.SchemaEncodingOther {
+		return messageEncoding, nil
+	}
+	// the definition lives in a room data blob, which the SDK has no API to fetch yet
+	return messageEncoding, &mcap.Schema{Name: info.Schema.Name, Encoding: info.Schema.Encoding.String()}
+}
+
+func (s *MCAPSink) topicFor(trackID, trackName, identity string) string {
+	topic, ok := s.topics[trackID]
+	if !ok {
+		topic = s.allocateTopic(trackID, trackName, identity)
+		s.topics[trackID] = topic
+		s.owners[topic] = trackID
+	}
+	return topic
+}
+
+func (s *MCAPSink) allocateTopic(trackID, trackName, participantIdentity string) string {
+	name := trackName
+	if name == "" {
+		name = trackID
+	}
+	identity := sanitizeTopicSegment(participantIdentity)
 	if identity == "events" {
-		logger.Warnw("participant identity collides with reserved mcap topic", nil, "identity", ts.ParticipantIdentity)
+		logger.Warnw("participant identity collides with reserved mcap topic", nil, "identity", participantIdentity)
 		identity = "events_"
 	}
 	base := fmt.Sprintf("/livekit/%s/%s", identity, sanitizeTopicSegment(name))
@@ -202,7 +269,7 @@ func (s *MCAPSink) allocateTopic(ts *config.TrackSource) string {
 			return topic
 		}
 		// another live track's name can equal a fallback, so every candidate is checked
-		topic = fmt.Sprintf("%s_%s", base, sanitizeTopicSegment(ts.TrackID))
+		topic = fmt.Sprintf("%s_%s", base, sanitizeTopicSegment(trackID))
 		if i > 1 {
 			topic = fmt.Sprintf("%s_%d", topic, i)
 		}

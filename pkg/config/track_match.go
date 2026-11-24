@@ -123,6 +123,11 @@ func (p *PipelineConfig) MatchesMediaVideo(ti *livekit.TrackInfo, identity strin
 	return true
 }
 
+// MatchesMediaData reports whether a media request takes a data track published by identity
+func (p *PipelineConfig) MatchesMediaData(trackID, trackName, identity string) bool {
+	return p.DataSelection != nil && p.DataSelection.Includes(trackID, trackName, identity, lksdk.ParticipantStandard)
+}
+
 func (p *PipelineConfig) selectsMediaVideo(ti *livekit.TrackInfo, identity string, kind lksdk.ParticipantKind) bool {
 	if p.VideoSelection != nil {
 		return p.VideoSelection.Includes(ti.Sid, ti.Name, identity, kind)

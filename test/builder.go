@@ -120,6 +120,9 @@ type publishOptions struct {
 	audioRoutes           []*livekit.AudioRoute
 	captureAudioAll       bool
 	mediaVideos           *livekit.VideoConfig
+	mediaData             *livekit.DataConfig
+	// p0 publishes a JSON data track
+	dataTrack bool
 
 	// v2 Template source fields
 	templateCustomBaseUrl string
@@ -619,6 +622,10 @@ func (r *Runner) buildV2(test *testCase) *rpc.StartEgressRequest {
 				}
 			}
 			media.Audio = &livekit.AudioConfig{CaptureAll: test.captureAudioAll, Routes: routes}
+		}
+
+		if test.mediaData != nil {
+			media.Data = proto.Clone(test.mediaData).(*livekit.DataConfig)
 		}
 
 		egressReq.Source = &livekit.StartEgressRequest_Media{

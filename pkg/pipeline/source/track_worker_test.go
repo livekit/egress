@@ -42,7 +42,7 @@ func testSDKSource(t *testing.T) *SDKSource {
 		RequestType: types.RequestTypeRoomComposite,
 	}
 
-	return &SDKSource{
+	s := &SDKSource{
 		PipelineConfig:       pipelineConfig,
 		callbacks:            callbacks,
 		sync:                 synchronizer.NewSynchronizer(nil).AsSyncInterface(),
@@ -51,6 +51,8 @@ func testSDKSource(t *testing.T) *SDKSource {
 		active:               atomic.Int32{},
 		closing:              atomic.Bool{},
 	}
+	s.initDataTracks()
+	return s
 }
 
 func TestGetOrCreateWorker_ReturnsExistingWorker(t *testing.T) {

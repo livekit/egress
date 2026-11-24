@@ -516,6 +516,7 @@ func TestMCAPRequestValidation(t *testing.T) {
 
 	videosAll := &livekit.MediaSource_Videos{Videos: &livekit.VideoConfig{CaptureAll: true}}
 	audioAll := &livekit.AudioConfig{CaptureAll: true}
+	dataAll := &livekit.DataConfig{CaptureAll: true}
 	trackRoute := func(mod func(*livekit.AudioRoute)) *livekit.AudioConfig {
 		route := &livekit.AudioRoute{Match: &livekit.AudioRoute_TrackId{TrackId: "TR_audio"}}
 		mod(route)
@@ -530,6 +531,11 @@ func TestMCAPRequestValidation(t *testing.T) {
 		outputs  []*livekit.Output
 		expected string
 	}{
+		{name: "data and videos to mcap", media: &livekit.MediaSource{Video: videosAll, Data: dataAll}, outputs: []*livekit.Output{mcapOut}},
+		{name: "data only to mcap", media: &livekit.MediaSource{Data: dataAll}, outputs: []*livekit.Output{mcapOut}},
+		{name: "data to mp4", media: &livekit.MediaSource{Data: dataAll}, outputs: []*livekit.Output{mp4Out}, expected: "requires an MCAP file output"},
+		{name: "data with only excludes", media: &livekit.MediaSource{Data: &livekit.DataConfig{Selectors: []*livekit.DataSelector{{TrackName: "imu", Exclude: true}}}}, outputs: []*livekit.Output{mcapOut}, expected: "media.data"},
+		{name: "passthrough data", media: &livekit.MediaSource{Video: &livekit.MediaSource_VideoTrackId{VideoTrackId: "TR_video"}, Data: dataAll}, preset: passthrough, outputs: []*livekit.Output{defaultOut}, expected: "requires an MCAP file output"},
 		{name: "videos and audio to mcap", media: &livekit.MediaSource{Video: videosAll, Audio: audioAll}, outputs: []*livekit.Output{mcapOut}},
 		{name: "videos with both-channel routes", media: &livekit.MediaSource{Video: videosAll, Audio: trackRoute(func(*livekit.AudioRoute) {})}, outputs: []*livekit.Output{mcapOut}},
 		{name: "videos to mp4", media: &livekit.MediaSource{Video: videosAll}, outputs: []*livekit.Output{mp4Out}, expected: "requires an MCAP file output"},
