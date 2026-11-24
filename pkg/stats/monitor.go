@@ -349,8 +349,9 @@ func (m *Monitor) checkMemoryAdmissionLocked(memoryCost float64) (bool, string) 
 		return false, ""
 	}
 
-	if memoryCost >= m.admissibleMemoryLocked() {
-		if _, cgroup := m.memoryInUseLocked(); cgroup {
+	inUse, cgroup := m.memoryInUseLocked()
+	if inUse+m.pendingMemoryUsage.Load()+memoryCost+memoryHeadroomGB >= m.cpuCostConfig.MaxMemory {
+		if cgroup {
 			return true, "memory_cgroup"
 		}
 		return true, "memory"
@@ -367,9 +368,10 @@ func (m *Monitor) memoryInUseLocked() (float64, bool) {
 	return m.memoryUsage, false
 }
 
-// admissibleMemoryLocked is the memory a new request's cost is compared with: MaxMemory less the
-// memory in use, the memory held for pending requests, and headroom. A request is admitted while
-// its memory cost is below it.
+// admissibleMemoryLocked is MaxMemory less the memory in use, the memory held for pending
+// requests, and headroom: the request memory cost checkMemoryAdmissionLocked admits up to.
+// checkMemoryAdmissionLocked sums the terms instead, so the two can disagree by floating-point
+// rounding for a cost at the threshold.
 func (m *Monitor) admissibleMemoryLocked() float64 {
 	inUse, _ := m.memoryInUseLocked()
 	return m.cpuCostConfig.MaxMemory - inUse - m.pendingMemoryUsage.Load() - memoryHeadroomGB
@@ -598,8 +600,9 @@ func (m *Monitor) GetAvailableMemory() float64 {
 }
 
 // GetAdmissibleMemory returns the memory, in GB, that a new request can be admitted against:
-// the value AcceptRequest compares a request's memory cost with, counting memory held for
-// pending requests and headroom. A scheduler that reads it sees the node as AcceptRequest does.
+// MaxMemory less the memory in use, the memory held for pending requests, and headroom. A request
+// whose memory cost is below it passes AcceptRequest's memory check, up to floating-point rounding
+// at the threshold, so a scheduler that reads it sees the node as AcceptRequest does.
 // Without MaxMemory, memory does not limit admission, and it returns free memory.
 func (m *Monitor) GetAdmissibleMemory() float64 {
 	m.mu.Lock()

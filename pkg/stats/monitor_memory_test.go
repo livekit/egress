@@ -149,10 +149,32 @@ func TestGetAdmissibleMemory(t *testing.T) {
 			admissible := m.GetAdmissibleMemory()
 			require.Equal(t, 10-inUse-2-memoryHeadroomGB, admissible)
 
-			for _, cost := range []float64{0.5, admissible - 0.01, admissible, admissible + 0.5} {
+			for _, cost := range []float64{0.5, admissible - 0.01, admissible + 0.5} {
 				reject, _ := m.checkMemoryAdmissionLocked(cost)
 				require.Equal(t, cost >= admissible, reject, "cost %v", cost)
 			}
 		})
+	}
+}
+
+// The memory check sums usage, pending memory, the request's cost and headroom, as it always has,
+// so a fractional limit rounds the same way: rearranging the sum rounds differently at the limit.
+func TestCheckMemoryAdmissionLockedRoundsAsSum(t *testing.T) {
+	for _, c := range []struct {
+		inUse, pending, cost, max float64
+		reject                    bool
+	}{
+		// 1.5 + 0 + 1.7 + 1 reaches 4.2, but 4.2 - 1.5 - 0 - 1 is 1.7000000000000002.
+		{inUse: 1.5, cost: 1.7, max: 4.2, reject: true},
+		// 1.25 + 0.8 + 0.8 + 1 rounds below 3.85, but 3.85 - 1.25 - 0.8 - 1 is exactly 0.8.
+		{inUse: 1.25, pending: 0.8, cost: 0.8, max: 3.85, reject: false},
+	} {
+		m := &Monitor{
+			cpuCostConfig: &config.CPUCostConfig{MaxMemory: c.max, MemorySource: config.MemorySourceProcRSS},
+			memoryUsage:   c.inUse,
+		}
+		m.pendingMemoryUsage.Store(c.pending)
+		reject, _ := m.checkMemoryAdmissionLocked(c.cost)
+		require.Equal(t, c.reject, reject, "%+v", c)
 	}
 }
