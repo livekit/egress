@@ -30,6 +30,7 @@ type roomEventEmitter struct {
 	emit         func(types.RoomEvent)
 	participants map[string]roomParticipant // identity -> latest info, so a reconnect with a new SID is not a new join
 	tracks       map[string]emittedTrack    // track SID -> published track
+	published    uint64
 }
 
 type roomParticipant struct {
@@ -39,6 +40,8 @@ type roomParticipant struct {
 type emittedTrack struct {
 	participant roomParticipant
 	info        *livekit.TrackInfo
+	muted       bool
+	published   uint64
 }
 
 func newRoomEventEmitter(emit func(types.RoomEvent)) *roomEventEmitter {
@@ -80,14 +83,21 @@ func (e *roomEventEmitter) identities() []string {
 	return identities
 }
 
-// sync reconciles an identity with the room's current session for it, which is nil once the identity has left
-func (e *roomEventEmitter) sync(identity string, current *roomParticipant, liveTracks map[string]struct{}, reason livekit.DisconnectReason) {
+func (e *roomEventEmitter) publishCount() uint64 {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// the SDK never fires OnTrackUnpublished on disconnect
+	return e.published
+}
+
+// sync reconciles an identity with a room snapshot taken after publishCount, current being nil once the identity has left
+func (e *roomEventEmitter) sync(identity string, current *roomParticipant, liveTracks map[string]struct{}, publishCount uint64, reason livekit.DisconnectReason) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// the SDK never fires OnTrackUnpublished on disconnect; tracks published after the snapshot are missing from it
 	for sid, t := range e.tracks {
-		if _, live := liveTracks[sid]; !live && t.participant.identity == identity {
+		if _, live := liveTracks[sid]; !live && t.participant.identity == identity && t.published <= publishCount {
 			e.send(types.RoomEventTrackUnpublished, t.participant, t.info, livekit.DisconnectReason_UNKNOWN_REASON)
 			delete(e.tracks, sid)
 		}
@@ -109,14 +119,15 @@ func (e *roomEventEmitter) trackPublished(p roomParticipant, ti *livekit.TrackIn
 	defer e.mu.Unlock()
 
 	e.join(p)
+	// a full reconnect republishes known tracks with their current mute state and no mute callback
 	if _, ok := e.tracks[ti.Sid]; ok {
+		e.setMuted(ti.Sid, muted)
 		return
 	}
-	e.tracks[ti.Sid] = emittedTrack{participant: p, info: ti}
+	e.published++
+	e.tracks[ti.Sid] = emittedTrack{participant: p, info: ti, published: e.published}
 	e.send(types.RoomEventTrackPublished, p, ti, livekit.DisconnectReason_UNKNOWN_REASON)
-	if muted {
-		e.send(types.RoomEventTrackMuted, p, ti, livekit.DisconnectReason_UNKNOWN_REASON)
-	}
+	e.setMuted(ti.Sid, muted)
 }
 
 func (e *roomEventEmitter) trackUnpublished(trackSID string) {
@@ -135,10 +146,16 @@ func (e *roomEventEmitter) trackMuted(trackSID string, muted bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	e.setMuted(trackSID, muted)
+}
+
+func (e *roomEventEmitter) setMuted(trackSID string, muted bool) {
 	t, ok := e.tracks[trackSID]
-	if !ok {
+	if !ok || t.muted == muted {
 		return
 	}
+	t.muted = muted
+	e.tracks[trackSID] = t
 	typ := types.RoomEventTrackUnmuted
 	if muted {
 		typ = types.RoomEventTrackMuted

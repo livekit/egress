@@ -852,6 +852,7 @@ func (s *SDKSource) onReconnected() {
 
 // syncRoomEvents compares the room's session for an identity, rather than the callback's, since SIDs can change in place
 func (s *SDKSource) syncRoomEvents(identity string, reason livekit.DisconnectReason) {
+	publishCount := s.events.publishCount()
 	var current *roomParticipant
 	var liveTracks map[string]struct{}
 	if room := s.room.Load(); room != nil {
@@ -864,7 +865,7 @@ func (s *SDKSource) syncRoomEvents(identity string, reason livekit.DisconnectRea
 			}
 		}
 	}
-	s.events.sync(identity, current, liveTracks, reason)
+	s.events.sync(identity, current, liveTracks, publishCount, reason)
 }
 
 func (s *SDKSource) onDisconnectedWithReason(reason lksdk.DisconnectionReason) {
