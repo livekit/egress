@@ -232,10 +232,6 @@ func failureCode(conf *config.StorageConfig) psrpc.ErrorCode {
 	return psrpc.Unavailable
 }
 
-func uploadFailed(conf *config.StorageConfig, name string, err error) error {
-	return psrpc.NewErrorf(failureCode(conf), "%s upload failed: %w", name, err)
-}
-
 func (u *Uploader) upload(localFilepath string, storageFilepath string, outputType types.OutputType, primary bool) (location string, size int64, err error) {
 	var s *store
 	if primary {
@@ -253,6 +249,8 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 
 	location, size, err = s.UploadFile(context.Background(), storageFilepath, localFilepath, storage.PutOptions{ContentType: string(outputType)})
 	if err != nil {
+		// The SDK's error is logged; the egress reports a summary of it.
+		logger.Warnw("upload failed", err, "storage", s.name, "storageFilepath", storageFilepath)
 		return "", 0, uploadFailed(s.conf, s.name, err)
 	}
 
@@ -263,6 +261,7 @@ func (u *Uploader) upload(localFilepath string, storageFilepath string, outputTy
 	if s.conf.GeneratePresignedUrl {
 		location, err = s.PresignedURL(context.Background(), storageFilepath, presignedExpiration)
 		if err != nil {
+			logger.Warnw("presigned url failed", err, "storage", s.name, "storageFilepath", storageFilepath)
 			return "", 0, uploadFailed(s.conf, s.name, err)
 		}
 
