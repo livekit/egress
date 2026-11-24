@@ -832,6 +832,11 @@ func (s *SDKSource) onMediaParticipantDisconnected(rp *lksdk.RemoteParticipant) 
 	// a reconnect's disconnect goroutine can run after the same session is restored
 	if room := s.room.Load(); room != nil {
 		if current := room.GetParticipantByIdentity(rp.Identity()); current != nil && current.SID() == rp.SID() {
+			live := make(map[string]struct{})
+			for _, pub := range current.TrackPublications() {
+				live[pub.SID()] = struct{}{}
+			}
+			s.events.retainTracks(rp.SID(), live)
 			return
 		}
 	}

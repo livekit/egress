@@ -89,6 +89,18 @@ func (e *roomEventEmitter) participantLeft(p roomParticipant, reason livekit.Dis
 	e.send(types.RoomEventParticipantLeft, p, nil, reason)
 }
 
+func (e *roomEventEmitter) retainTracks(participantSID string, live map[string]struct{}) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	for sid, t := range e.tracks {
+		if _, ok := live[sid]; !ok && t.participant.sid == participantSID {
+			e.send(types.RoomEventTrackUnpublished, t.participant, t.info, livekit.DisconnectReason_UNKNOWN_REASON)
+			delete(e.tracks, sid)
+		}
+	}
+}
+
 func (e *roomEventEmitter) trackPublished(p roomParticipant, ti *livekit.TrackInfo, muted bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
