@@ -349,35 +349,23 @@ func (m *Monitor) checkMemoryAdmissionLocked(memoryCost float64) (bool, string) 
 		return false, ""
 	}
 
-	pendingMem := m.pendingMemoryUsage.Load()
-	headroom := memoryHeadroomGB
-	maxMem := m.cpuCostConfig.MaxMemory
-
-	switch m.cpuCostConfig.MemorySource {
-	case config.MemorySourceCgroup:
-		if !m.cgroupOK {
-			// Fallback to proc_rss
-			return m.checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
-		}
-		cgroupGB := float64(m.cgroupUsageBytes) / gb
-		if cgroupGB+pendingMem+memoryCost+headroom >= maxMem {
+	inUse, cgroup := m.memoryInUseLocked()
+	if inUse+m.pendingMemoryUsage.Load()+memoryCost+memoryHeadroomGB >= m.cpuCostConfig.MaxMemory {
+		if cgroup {
 			return true, "memory_cgroup"
 		}
-
-	default: // proc_rss
-		return m.checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem)
-	}
-
-	return false, ""
-}
-
-// checkProcRSSMemoryAdmission implements the original per-process RSS based admission.
-func (m *Monitor) checkProcRSSMemoryAdmission(pendingMem, memoryCost, headroom, maxMem float64) (bool, string) {
-	memoryUsage := m.memoryUsage + pendingMem
-	if memoryUsage+memoryCost+headroom >= maxMem {
 		return true, "memory"
 	}
 	return false, ""
+}
+
+// memoryInUseLocked returns the memory in use that admission counts, in GB, and whether it is
+// the cgroup working set (MemorySource cgroup, when readable) rather than the sum of process RSS.
+func (m *Monitor) memoryInUseLocked() (float64, bool) {
+	if m.cpuCostConfig.MemorySource == config.MemorySourceCgroup && m.cgroupOK {
+		return float64(m.cgroupUsageBytes) / gb, true
+	}
+	return m.memoryUsage, false
 }
 
 func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
@@ -600,6 +588,19 @@ func (m *Monitor) GetAvailableMemory() float64 {
 	}
 
 	return m.cpuCostConfig.MaxMemory - m.memoryUsage
+}
+
+// GetAdmissibleMemory returns the memory, in GB, a new request can be admitted against: MaxMemory
+// less the memory in use, pending memory and headroom. Without MaxMemory, it returns free memory.
+func (m *Monitor) GetAdmissibleMemory() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.cpuCostConfig.MaxMemory == 0 {
+		return float64(memory.FreeMemory()) / gb
+	}
+	inUse, _ := m.memoryInUseLocked()
+	return m.cpuCostConfig.MaxMemory - inUse - m.pendingMemoryUsage.Load() - memoryHeadroomGB
 }
 
 func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {

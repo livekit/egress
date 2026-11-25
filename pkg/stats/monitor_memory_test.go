@@ -121,19 +121,60 @@ func TestCheckMemoryAdmissionLocked_WithPendingMemory(t *testing.T) {
 	require.Equal(t, "memory", reason)
 }
 
-func TestCheckProcRSSMemoryAdmission(t *testing.T) {
-	m := &Monitor{
-		memoryUsage: 5,
+// GetAdmissibleMemory reports what AcceptRequest compares a request's memory cost with, so a
+// request fits the reported value exactly when the node would admit it.
+func TestGetAdmissibleMemory(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		source config.MemorySource
+		cgroup bool
+	}{
+		{"proc rss", config.MemorySourceProcRSS, false},
+		{"cgroup", config.MemorySourceCgroup, true},
+		{"cgroup unreadable", config.MemorySourceCgroup, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := &Monitor{
+				cpuCostConfig:    &config.CPUCostConfig{MaxMemory: 10, MemorySource: c.source},
+				memoryUsage:      4,
+				cgroupUsageBytes: 5 * gb,
+				cgroupOK:         c.cgroup,
+			}
+			m.pendingMemoryUsage.Store(2)
+
+			inUse := 4.0
+			if c.cgroup {
+				inUse = 5
+			}
+			admissible := m.GetAdmissibleMemory()
+			require.Equal(t, 10-inUse-2-memoryHeadroomGB, admissible)
+
+			for _, cost := range []float64{0.5, admissible - 0.01, admissible + 0.5} {
+				reject, _ := m.checkMemoryAdmissionLocked(cost)
+				require.Equal(t, cost >= admissible, reject, "cost %v", cost)
+			}
+		})
 	}
+}
 
-	// Various scenarios
-	reject, _ := m.checkProcRSSMemoryAdmission(0, 1, 1, 10)
-	require.False(t, reject) // 5 + 0 + 1 + 1 = 7 < 10
-
-	reject, _ = m.checkProcRSSMemoryAdmission(2, 1, 1, 10)
-	require.False(t, reject) // 5 + 2 + 1 + 1 = 9 < 10
-
-	reject, reason := m.checkProcRSSMemoryAdmission(3, 1, 1, 10)
-	require.True(t, reject) // 5 + 3 + 1 + 1 = 10 >= 10
-	require.Equal(t, "memory", reason)
+// The memory check compares the sum of usage, pending memory, the request's cost and headroom with
+// MaxMemory. Rearranging the sum rounds differently at a fractional limit.
+func TestCheckMemoryAdmissionLockedRoundsAsSum(t *testing.T) {
+	for _, c := range []struct {
+		inUse, pending, cost, max float64
+		reject                    bool
+	}{
+		// 1.5 + 0 + 1.7 + 1 reaches 4.2, but 4.2 - 1.5 - 0 - 1 is 1.7000000000000002.
+		{inUse: 1.5, cost: 1.7, max: 4.2, reject: true},
+		// 1.25 + 0.8 + 0.8 + 1 rounds below 3.85, but 3.85 - 1.25 - 0.8 - 1 is exactly 0.8.
+		{inUse: 1.25, pending: 0.8, cost: 0.8, max: 3.85, reject: false},
+	} {
+		m := &Monitor{
+			cpuCostConfig: &config.CPUCostConfig{MaxMemory: c.max, MemorySource: config.MemorySourceProcRSS},
+			memoryUsage:   c.inUse,
+		}
+		m.pendingMemoryUsage.Store(c.pending)
+		reject, _ := m.checkMemoryAdmissionLocked(c.cost)
+		require.Equal(t, c.reject, reject, "%+v", c)
+	}
 }
