@@ -157,8 +157,8 @@ func TestGetAdmissibleMemory(t *testing.T) {
 	}
 }
 
-// The memory check sums usage, pending memory, the request's cost and headroom, as it always has,
-// so a fractional limit rounds the same way: rearranging the sum rounds differently at the limit.
+// The memory check compares the sum of usage, pending memory, the request's cost and headroom with
+// MaxMemory. Rearranging the sum rounds differently at a fractional limit.
 func TestCheckMemoryAdmissionLockedRoundsAsSum(t *testing.T) {
 	for _, c := range []struct {
 		inUse, pending, cost, max float64
