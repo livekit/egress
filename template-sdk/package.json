@@ -1,15 +1,29 @@
 {
   "name": "@livekit/egress-sdk",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A lightweight SDK for developing RoomComposite templates",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "module": "dist/esm/index.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "sideEffects": false,
   "source": "src/index.ts",
   "repository": "https://github.com/livekit/egress",
   "author": "David Zhao <dz@livekit.io>",
   "license": "Apache-2.0",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc && tsc -p tsconfig.esm.json && node -e \"require('fs').writeFileSync('dist/esm/package.json', JSON.stringify({type: 'module'}))\""
   },
   "devDependencies": {
     "livekit-client": "^2.12.0",
