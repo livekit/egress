@@ -368,15 +368,6 @@ func (m *Monitor) memoryInUseLocked() (float64, bool) {
 	return m.memoryUsage, false
 }
 
-// admissibleMemoryLocked is MaxMemory less the memory in use, the memory held for pending
-// requests, and headroom: the request memory cost checkMemoryAdmissionLocked admits up to.
-// checkMemoryAdmissionLocked sums the terms instead, so the two can disagree by floating-point
-// rounding for a cost at the threshold.
-func (m *Monitor) admissibleMemoryLocked() float64 {
-	inUse, _ := m.memoryInUseLocked()
-	return m.cpuCostConfig.MaxMemory - inUse - m.pendingMemoryUsage.Load() - memoryHeadroomGB
-}
-
 func (m *Monitor) AcceptRequest(req *rpc.StartEgressRequest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -599,11 +590,8 @@ func (m *Monitor) GetAvailableMemory() float64 {
 	return m.cpuCostConfig.MaxMemory - m.memoryUsage
 }
 
-// GetAdmissibleMemory returns the memory, in GB, that a new request can be admitted against:
-// MaxMemory less the memory in use, the memory held for pending requests, and headroom. A request
-// whose memory cost is below it passes AcceptRequest's memory check, up to floating-point rounding
-// at the threshold, so a scheduler that reads it sees the node as AcceptRequest does.
-// Without MaxMemory, memory does not limit admission, and it returns free memory.
+// GetAdmissibleMemory returns the memory, in GB, a new request can be admitted against: MaxMemory
+// less the memory in use, pending memory and headroom. Without MaxMemory, it returns free memory.
 func (m *Monitor) GetAdmissibleMemory() float64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -611,7 +599,8 @@ func (m *Monitor) GetAdmissibleMemory() float64 {
 	if m.cpuCostConfig.MaxMemory == 0 {
 		return float64(memory.FreeMemory()) / gb
 	}
-	return m.admissibleMemoryLocked()
+	inUse, _ := m.memoryInUseLocked()
+	return m.cpuCostConfig.MaxMemory - inUse - m.pendingMemoryUsage.Load() - memoryHeadroomGB
 }
 
 func (m *Monitor) updateEgressStats(stats *hwstats.ProcStats) {
