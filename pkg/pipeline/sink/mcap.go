@@ -58,6 +58,7 @@ type MCAPSink struct {
 	owners map[string]string      // topic -> live track ID
 	opened map[string]mcapChannel // channel key -> channel registered with the writer
 	events mcapEventLog
+	closed bool
 }
 
 func newMCAPSink(
@@ -186,6 +187,9 @@ func (s *MCAPSink) writeData(df types.DataFrame) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.closed {
+		return nil
+	}
 	if s.anchor.IsZero() {
 		startedAt := s.startedAt()
 		if startedAt == 0 {
@@ -199,20 +203,25 @@ func (s *MCAPSink) writeData(df types.DataFrame) error {
 
 	trackID := string(df.Info.SID)
 	topic := s.topicFor(trackID, df.Info.Name, df.ParticipantIdentity)
-	messageEncoding, schema := mcapDataEncoding(df.Info)
+	messageEncoding, schemaName, schemaEncoding := mcapDataEncoding(df.Info)
 
 	// a republish with the same encoding and schema continues its channel
 	key := topic + " data " + messageEncoding
-	if schema != nil {
-		key += " " + schema.Name + "/" + schema.Encoding
+	if schemaEncoding != "" {
+		key += " " + schemaName + "/" + schemaEncoding
 	}
 	if _, ok := s.opened[key]; !ok {
-		id, err := s.writer.AddRawChannel(key, topic, messageEncoding, schema, map[string]string{
+		metadata := map[string]string{
 			"livekit.kind":                 "data",
 			"livekit.track_id":             trackID,
 			"livekit.track_name":           df.Info.Name,
 			"livekit.participant_identity": df.ParticipantIdentity,
-		})
+		}
+		if schemaEncoding != "" {
+			metadata["livekit.schema_name"] = schemaName
+			metadata["livekit.schema_encoding"] = schemaEncoding
+		}
+		id, err := s.writer.AddRawChannel(key, topic, messageEncoding, metadata)
 		if err != nil {
 			return errors.MarkDestinationError(err)
 		}
@@ -230,16 +239,16 @@ func (s *MCAPSink) writeData(df types.DataFrame) error {
 }
 
 // mcapDataEncoding maps a data track's declared encodings onto MCAP's, whose registry names they share
-func mcapDataEncoding(info datatrack.Info) (string, *mcap.Schema) {
+func mcapDataEncoding(info datatrack.Info) (messageEncoding, schemaName, schemaEncoding string) {
 	if info.FrameEncoding == nil || info.FrameEncoding == datatrack.FrameEncodingOther {
-		return "", nil
+		return "", "", ""
 	}
-	messageEncoding := info.FrameEncoding.String()
+	messageEncoding = info.FrameEncoding.String()
 	if info.Schema == nil || info.Schema.Encoding == nil || info.Schema.Encoding == datatrack.SchemaEncodingOther {
-		return messageEncoding, nil
+		return messageEncoding, "", ""
 	}
-	// the definition lives in a room data blob, which the SDK has no API to fetch yet
-	return messageEncoding, &mcap.Schema{Name: info.Schema.Name, Encoding: info.Schema.Encoding.String()}
+	// the definition lives in a room data blob the SDK can't fetch yet, so no MCAP schema record is written
+	return messageEncoding, info.Schema.Name, info.Schema.Encoding.String()
 }
 
 func (s *MCAPSink) topicFor(trackID, trackName, identity string) string {
@@ -297,6 +306,9 @@ func (s *MCAPSink) trackEnded(trackID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.closed {
+		return
+	}
 	s.releaseTopic(trackID)
 	delete(s.topics, trackID)
 }
@@ -324,6 +336,7 @@ func (s *MCAPSink) Close() error {
 	s.mcapBin.Close()
 
 	s.mu.Lock()
+	s.closed = true
 	s.events.close()
 	err := s.writer.Close()
 	if closeErr := s.file.Close(); err == nil {

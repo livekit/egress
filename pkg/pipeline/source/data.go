@@ -88,7 +88,7 @@ func (s *SDKSource) recordDataTrack(track *datatrack.RemoteTrack, identity strin
 	s.callbacks.OnDataTrackEnded(trackID)
 }
 
-// data tracks carry no sender reports yet (CS-2297), so frames are timed on receipt
+// data tracks carry no sender reports yet, so frames are timed on receipt
 func dataFrameTime(_ datatrack.Frame, receivedAt time.Time) time.Time {
 	return receivedAt
 }
