@@ -108,7 +108,7 @@ type AppWriter struct {
 
 	opusPassthrough  bool
 	videoPassthrough bool // set once the pipeline is playing
-	gapFiller        opusGapFiller
+	gapFiller        OpusGapFiller
 	rtpFiller        *RTPGapFiller // set when the tempo pacer resamples this track
 
 	lastPTS              time.Duration
@@ -673,7 +673,7 @@ func (w *AppWriter) fillOpusToEnd() {
 		return
 	}
 	deadline := time.Now().Add(tailFillBudget)
-	err := w.gapFiller.fill(end, func(data []byte, pts, duration time.Duration) error {
+	err := w.gapFiller.Fill(end, func(data []byte, pts, duration time.Duration) error {
 		if time.Now().After(deadline) {
 			return errTailFillBudget
 		}
@@ -776,10 +776,10 @@ func (w *AppWriter) pushOpus(payload []byte, pts time.Duration) error {
 		return nil
 	}
 
-	if err := w.gapFiller.fill(pts, w.pushBuffer); err != nil {
+	if err := w.gapFiller.Fill(pts, w.pushBuffer); err != nil {
 		return err
 	}
-	return w.pushBuffer(payload, pts, w.gapFiller.advance(pts, payload))
+	return w.pushBuffer(payload, pts, w.gapFiller.Advance(pts, payload))
 }
 
 func (w *AppWriter) pushBuffer(data []byte, pts, duration time.Duration) error {

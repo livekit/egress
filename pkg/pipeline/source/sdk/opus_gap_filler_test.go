@@ -40,7 +40,7 @@ func TestOpusGapFiller(t *testing.T) {
 	at += 80 * time.Millisecond  // four lost 20ms frames
 	add(5, packet)
 
-	var f opusGapFiller
+	var f OpusGapFiller
 	var end time.Duration
 	var fillPackets, fillFrames int
 	push := func(data []byte, pts, duration time.Duration) error {
@@ -53,11 +53,11 @@ func TestOpusGapFiller(t *testing.T) {
 		return nil
 	}
 	for i, p := range pts {
-		require.NoError(t, f.fill(p, push))
+		require.NoError(t, f.Fill(p, push))
 		if i > 0 {
 			require.Equal(t, end, p, "packet %d is not contiguous with what was emitted before it", i)
 		}
-		end = p + f.advance(p, pkt)
+		end = p + f.Advance(p, pkt)
 	}
 	require.Equal(t, 3*18+4, fillFrames)
 	require.Equal(t, 3*3+1, fillPackets)
