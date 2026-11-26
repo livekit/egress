@@ -18,16 +18,16 @@ import "time"
 
 const maxOpusPacketDuration = 120 * time.Millisecond
 
-// opusGapFiller keeps Opus packets contiguous across DTX and loss so Ogg granules track real time
-type opusGapFiller struct {
+// OpusGapFiller keeps Opus packets contiguous across DTX, loss and mutes so Ogg granules track real time
+type OpusGapFiller struct {
 	started bool
 	nextPTS time.Duration
 	toc     byte
 	frame   time.Duration
 }
 
-// fill pushes packets of empty frames covering every frame missing before a packet at pts
-func (f *opusGapFiller) fill(pts time.Duration, push func(data []byte, pts, duration time.Duration) error) error {
+// Fill pushes packets of empty frames covering every frame missing before a packet at pts
+func (f *OpusGapFiller) Fill(pts time.Duration, push func(data []byte, pts, duration time.Duration) error) error {
 	if !f.started {
 		return nil
 	}
@@ -49,8 +49,8 @@ func (f *opusGapFiller) fill(pts time.Duration, push func(data []byte, pts, dura
 	return nil
 }
 
-// advance records a real packet at pts and returns its duration, or 0 if it can't be parsed
-func (f *opusGapFiller) advance(pts time.Duration, pkt []byte) time.Duration {
+// Advance records a real packet at pts and returns its duration, or 0 if it can't be parsed
+func (f *OpusGapFiller) Advance(pts time.Duration, pkt []byte) time.Duration {
 	frame, count := opusFrameInfo(pkt)
 	if count == 0 {
 		return 0
