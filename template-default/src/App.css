@@ -53,3 +53,45 @@ body {
 .lk-participant-metadata {
   display: none;
 }
+
+
+/* auto / auto-light: switches between pip, grid and stage as the room changes.
+   Tile position/size come from inline styles (autoLayoutMath.ts boxStyle), which
+   beat .lk-participant-tile's position: relative without needing !important. */
+.auto-layout {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.auto-layout .auto-tile {
+  border-radius: 0.5rem;
+  overflow: hidden;
+  transition:
+    left 0.35s ease,
+    top 0.35s ease,
+    width 0.35s ease,
+    height 0.35s ease;
+}
+
+/* full-frame tile in pip mode has no rounding */
+.auto-pip .auto-tile:not(.auto-inset) {
+  border-radius: 0;
+}
+
+.auto-layout .auto-inset {
+  border-radius: 0.75rem;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+
+.light .auto-layout .auto-inset {
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+}
+
+/* never crop a screen share */
+.auto-layout .lk-participant-tile[data-lk-source='screen_share'] video {
+  object-fit: contain;
+}

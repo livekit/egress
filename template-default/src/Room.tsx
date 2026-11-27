@@ -25,6 +25,7 @@ import {
 import EgressHelper from '@livekit/egress-sdk';
 import { ConnectionState, Track } from 'livekit-client';
 import { ReactElement, useEffect, useState } from 'react';
+import AutoLayout from './AutoLayout';
 import { startInboundStatsLogging } from './inboundStats';
 import SingleSpeakerLayout from './SingleSpeakerLayout';
 import SpeakerLayout from './SpeakerLayout';
@@ -56,12 +57,18 @@ interface CompositeTemplateProps {
 
 function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
   const room = useRoomContext();
-  const [layout] = useState(initialLayout);
+  const [layout, setLayout] = useState(initialLayout);
   const [hasScreenShare, setHasScreenShare] = useState(false);
   const screenshareTracks = useTracks([Track.Source.ScreenShare], {
     onlySubscribed: true,
   });
 
+  // UpdateLayout (sfu EgressService.UpdateLayout) sets the recorder's metadata to
+  // {"layout": "..."}; egress-sdk calls this callback so the layout switches live.
+  // Register before setRoom: setRoom fires the callback if metadata is already set.
+  EgressHelper.onLayoutChanged((newLayout) => {
+    if (newLayout) setLayout(newLayout);
+  });
   EgressHelper.setRoom(room);
 
   useEffect(() => {
@@ -152,7 +159,9 @@ function CompositeTemplate({ layout: initialLayout }: CompositeTemplateProps) {
     effectiveLayout = layout.replace('grid', 'speaker');
   }
   if (room.state !== ConnectionState.Disconnected) {
-    if (effectiveLayout.startsWith('speaker')) {
+    if (effectiveLayout.startsWith('auto')) {
+      main = <AutoLayout tracks={filteredTracks} />;
+    } else if (effectiveLayout.startsWith('speaker')) {
       main = <SpeakerLayout tracks={filteredTracks} />;
     } else if (effectiveLayout.startsWith('single-speaker')) {
       main = <SingleSpeakerLayout tracks={filteredTracks} />;
