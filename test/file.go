@@ -688,11 +688,13 @@ func (r *Runner) testFile(t *testing.T) {
 					multiParticipant: true,
 					captureAudioAll:  true,
 					mediaVideos:      &livekit.VideoConfig{CaptureAll: true},
+					mediaData:        &livekit.DataConfig{CaptureAll: true},
+					dataTrack:        true,
 				},
 				fileOptions: &fileOptions{
 					filename:     "media_mcap_capture_all_{time}.mcap",
 					fileType:     livekit.EncodedFileType_MCAP,
-					mcapChannels: 6,
+					mcapChannels: 7,
 				},
 			},
 			{
@@ -737,6 +739,19 @@ func (r *Runner) testFile(t *testing.T) {
 					filename:     "media_mcap_republish_{time}.mcap",
 					fileType:     livekit.EncodedFileType_MCAP,
 					mcapChannels: 2,
+				},
+			},
+			{
+				name:        "Media/MCAP/DataOnly",
+				requestType: types.RequestTypeMedia,
+				publishOptions: publishOptions{
+					mediaData: &livekit.DataConfig{CaptureAll: true},
+					dataTrack: true,
+				},
+				fileOptions: &fileOptions{
+					filename:     "media_mcap_data_only_{time}.mcap",
+					fileType:     livekit.EncodedFileType_MCAP,
+					mcapChannels: 1,
 				},
 			},
 

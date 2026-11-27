@@ -18,6 +18,7 @@ package test
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -58,6 +59,7 @@ func verifyMCAP(t *testing.T, tc *testCase, localPath string, fileRes *livekit.F
 	}
 
 	channelsByTopic := make(map[string]int)
+	dataTopics := make(map[string]bool)
 	var eventsChannel *mcap.Channel
 	for id, channel := range info.Channels {
 		require.Greater(t, info.Statistics.ChannelMessageCounts[id], uint64(0), "no messages on %s", channel.Topic)
@@ -67,8 +69,12 @@ func verifyMCAP(t *testing.T, tc *testCase, localPath string, fileRes *livekit.F
 			eventsChannel = channel
 			continue
 		}
+		if channel.Metadata["livekit.kind"] == "data" {
+			dataTopics[channel.Topic] = true
+		}
 		channelsByTopic[channel.Topic]++
 	}
+	require.Equal(t, tc.dataTrack, len(dataTopics) > 0, "data track channel")
 	require.NotNil(t, eventsChannel, "no /livekit/events channel")
 	require.Len(t, channelsByTopic, tc.mcapChannels)
 	for topic, count := range channelsByTopic {
@@ -106,6 +112,13 @@ func verifyMCAP(t *testing.T, tc *testCase, localPath string, fileRes *livekit.F
 			first = msg.LogTime
 		}
 		last = msg.LogTime
+
+		if dataTopics[channel.Topic] {
+			require.Equal(t, "json", channel.MessageEncoding)
+			require.True(t, json.Valid(msg.Data), "data frame on %s is not json", channel.Topic)
+			require.Zero(t, msg.PublishTime%uint64(time.Millisecond), "data frame on %s has no user timestamp", channel.Topic)
+			continue
+		}
 
 		if sawFirst[channel.ID] {
 			continue
@@ -145,6 +158,10 @@ func verifyMCAP(t *testing.T, tc *testCase, localPath string, fileRes *livekit.F
 		}
 	}
 	for topic := range channelsByTopic {
+		// room events don't cover data tracks yet
+		if dataTopics[topic] {
+			continue
+		}
 		require.True(t, publishedTopics[topic], "no track_published event for %s", topic)
 	}
 }

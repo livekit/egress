@@ -18,6 +18,7 @@ package test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -33,6 +34,7 @@ import (
 	"github.com/livekit/egress/pkg/types"
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+	"github.com/livekit/server-sdk-go/v2/datatrack"
 	"github.com/livekit/server-sdk-go/v2/pkg/oggreader"
 )
 
@@ -98,7 +100,11 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 	states := make(map[string]*publisherState, len(plan.publishers))
 	streamCtx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	errCh := make(chan publisherErr, errChCapacity(plan))
+	capacity := errChCapacity(plan)
+	if test.dataTrack {
+		capacity++
+	}
+	errCh := make(chan publisherErr, capacity)
 
 	// register cleanup
 	t.Cleanup(func() {
@@ -193,6 +199,18 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 				}
 			}()
 		}
+		if test.dataTrack && pp.name == "p0" {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if !waitConnected(streamCtx, s) {
+					return
+				}
+				if err := publishDataTrack(streamCtx, s); err != nil {
+					errCh <- publisherErr{pp.name, fmt.Errorf("data: %w", err)}
+				}
+			}()
+		}
 	}
 
 	// Block until p0's immediate-publish track IDs are live
@@ -215,6 +233,31 @@ func (r *Runner) executePlan(t *testing.T, test *testCase) {
 	}
 	if needVideo {
 		test.videoTrackID = "TBD"
+	}
+}
+
+func publishDataTrack(ctx context.Context, s *publisherState) error {
+	track, err := s.lp.PublishDataTrack(ctx, "telemetry", datatrack.WithFrameEncoding(datatrack.FrameEncodingJSON))
+	if err != nil {
+		return err
+	}
+	defer track.Unpublish()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for seq := 0; ; seq++ {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+		err = track.TryPush(datatrack.Frame{
+			Payload:       []byte(fmt.Sprintf(`{"seq":%d}`, seq)),
+			UserTimestamp: datatrack.UserTimestampNow(),
+		})
+		if err != nil && !errors.Is(err, datatrack.ErrQueueFull) {
+			return err
+		}
 	}
 }
 

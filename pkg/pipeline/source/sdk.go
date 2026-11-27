@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
@@ -73,6 +74,13 @@ type SDKSource struct {
 
 	events       *roomEventEmitter
 	reconnecting atomic.Bool
+
+	dataMu              deadlock.Mutex
+	publishedDataTracks map[string]error // non-nil when a required track_id can never be recorded
+	dataCtx             context.Context
+	dataCancel          context.CancelFunc
+	dataWG              sync.WaitGroup
+	dataStartedAt       atomic.Int64
 }
 
 type subscriptionResult struct {
@@ -90,6 +98,7 @@ func NewSDKSource(ctx context.Context, p *config.PipelineConfig, callbacks *gstr
 		filenameReplacements: make(map[string]string),
 		workers:              make(map[string]*trackWorker),
 	}
+	s.initDataTracks()
 	if p.RequestType == types.RequestTypeMedia && p.TrackPreserving() {
 		s.events = newRoomEventEmitter(callbacks.OnRoomEvent)
 	}
@@ -185,7 +194,10 @@ func (s *SDKSource) Playing(trackID string) {
 }
 
 func (s *SDKSource) GetStartedAt() int64 {
-	return s.sync.GetStartedAt()
+	if startedAt := s.sync.GetStartedAt(); startedAt != 0 {
+		return startedAt
+	}
+	return s.dataStartedAt.Load()
 }
 
 func (s *SDKSource) GetEndedAt() int64 {
@@ -196,6 +208,7 @@ func (s *SDKSource) CloseWriters() {
 	s.closed.Once(func() {
 		s.closing.Store(true)
 		s.sync.End()
+		s.closeDataTracks()
 
 		s.workersMu.RLock()
 		workers := make([]*trackWorker, 0, len(s.workers))
@@ -230,6 +243,7 @@ func (s *SDKSource) StreamStopped(elementName string) {
 }
 
 func (s *SDKSource) Close() {
+	s.closeDataTracks()
 	s.disconnectRoom()
 }
 
@@ -275,6 +289,9 @@ func (s *SDKSource) joinRoom() error {
 		cb.OnTrackPublished = s.onTrackPublished
 	case types.RequestTypeMedia:
 		cb.OnTrackPublished = s.onTrackPublished
+		if s.DataSelection != nil {
+			cb.OnDataTrackPublished = s.onDataTrackPublished
+		}
 		if s.events != nil {
 			cb.OnTrackUnpublished = s.onTrackUnpublished
 			cb.OnParticipantConnected = s.onParticipantConnected
@@ -461,6 +478,14 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 			}
 		}
 	}
+	requiredDataTracks := make(map[string]struct{})
+	if s.DataSelection != nil && !s.DataSelection.CaptureAll {
+		for _, sel := range s.DataSelection.Selectors {
+			if sel.Match.TrackID != "" && !sel.Exclude {
+				requiredDataTracks[sel.Match.TrackID] = struct{}{}
+			}
+		}
+	}
 
 	// Phase 2: Wait for prerequisites with shared deadline
 	deadline := time.Now().Add(subscriptionTimeout)
@@ -472,6 +497,11 @@ func (s *SDKSource) awaitMediaTracks() (uint32, uint32, error) {
 	}
 	for trackID := range requiredTracks {
 		if err := s.awaitTrackPublication(trackID, deadline); err != nil {
+			return 0, 0, err
+		}
+	}
+	for trackID := range requiredDataTracks {
+		if err := s.awaitDataTrackPublication(trackID, deadline); err != nil {
 			return 0, 0, err
 		}
 	}

@@ -31,7 +31,7 @@ import (
 
 const chunkSize = 4 << 20
 
-// Writer writes protobuf messages to a chunked, indexed MCAP file
+// Writer writes messages to a chunked, indexed MCAP file
 type Writer struct {
 	mu       deadlock.Mutex
 	w        *mcap.Writer
@@ -92,13 +92,27 @@ func (w *Writer) AddChannel(key, topic string, msg proto.Message, metadata map[s
 		}
 		w.schemas[desc.FullName()] = schemaID
 	}
+	return w.addChannelLocked(key, topic, schemaID, "protobuf", metadata)
+}
 
+// AddRawChannel registers a schemaless channel under key carrying pre-encoded messages and returns the channel id
+func (w *Writer) AddRawChannel(key, topic, messageEncoding string, metadata map[string]string) (uint16, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if _, ok := w.channels[key]; ok {
+		return 0, fmt.Errorf("mcap channel %q already registered", key)
+	}
+	return w.addChannelLocked(key, topic, 0, messageEncoding, metadata)
+}
+
+func (w *Writer) addChannelLocked(key, topic string, schemaID uint16, messageEncoding string, metadata map[string]string) (uint16, error) {
 	c := &channel{id: w.nextID}
 	if err := w.w.WriteChannel(&mcap.Channel{
 		ID:              c.id,
 		SchemaID:        schemaID,
 		Topic:           topic,
-		MessageEncoding: "protobuf",
+		MessageEncoding: messageEncoding,
 		Metadata:        metadata,
 	}); err != nil {
 		return 0, err
@@ -126,7 +140,11 @@ func (w *Writer) Write(key string, ts time.Time, msg proto.Message) error {
 	if err != nil {
 		return err
 	}
+	return w.WriteRaw(key, ts, ts, data)
+}
 
+// WriteRaw appends pre-encoded data to the channel registered under key
+func (w *Writer) WriteRaw(key string, logTime, publishTime time.Time, data []byte) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -134,11 +152,11 @@ func (w *Writer) Write(key string, ts time.Time, msg proto.Message) error {
 	if !ok {
 		return fmt.Errorf("unknown mcap channel %q", key)
 	}
-	if err = w.w.WriteMessage(&mcap.Message{
+	if err := w.w.WriteMessage(&mcap.Message{
 		ChannelID:   c.id,
 		Sequence:    c.sequence,
-		LogTime:     uint64(ts.UnixNano()),
-		PublishTime: uint64(ts.UnixNano()),
+		LogTime:     uint64(logTime.UnixNano()),
+		PublishTime: uint64(publishTime.UnixNano()),
 		Data:        data,
 	}); err != nil {
 		return err

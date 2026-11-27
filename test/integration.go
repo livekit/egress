@@ -179,6 +179,8 @@ func (r *Runner) executeTest(t *testing.T, test *testCase) {
 		switch {
 		case test.requestType == types.RequestTypeTrack || test.passthrough:
 			expectedVideoEncoding = false
+		case test.mediaData != nil && test.videoCodec == "":
+			expectedVideoEncoding = false
 		case test.requestType == types.RequestTypeParticipant:
 			expectedVideoEncoding = true
 		default:

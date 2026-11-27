@@ -102,6 +102,7 @@ type SDKSourceParams struct {
 	AudioRoutes     []AudioRouteConfig
 	CaptureAudioAll bool
 	VideoSelection  *TrackSelection
+	DataSelection   *TrackSelection
 	// VideoFillerSrc, when set, is a non-live pipeline's filler in place of videotestsrc: the source sends it a GAP
 	// event for each span to show as black, the spans with no video track for a selector and the whole output for a
 	// compositor, which draws the tracks over it
@@ -583,6 +584,8 @@ func (p *PipelineConfig) validateTrackPreserving() error {
 	}
 
 	switch {
+	case p.DataSelection != nil && !hasMCAP:
+		return errors.ErrInvalidInput("media.data requires an MCAP file output")
 	case p.VideoSelection != nil && !hasMCAP:
 		return errors.ErrInvalidInput("media.videos requires an MCAP file output")
 	case !hasMCAP:
@@ -727,7 +730,14 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 		p.SourceType = types.SourceTypeSDK
 
 		if media.Data != nil {
-			return connectionInfoRequired, errors.ErrInvalidInput("media.data is not supported yet")
+			if p.IsReplay {
+				return connectionInfoRequired, errors.ErrInvalidInput("media.data replay")
+			}
+			selection, err := parseDataSelection(media.Data)
+			if err != nil {
+				return connectionInfoRequired, err
+			}
+			p.DataSelection = selection
 		}
 
 		// video
@@ -757,8 +767,8 @@ func (p *PipelineConfig) applyV2Source(req egress.EgressRequest) (connectionInfo
 			return connectionInfoRequired, err
 		}
 
-		if !p.AudioEnabled && !p.VideoEnabled {
-			return connectionInfoRequired, errors.ErrInvalidInput("audio or video")
+		if !p.AudioEnabled && !p.VideoEnabled && p.DataSelection == nil {
+			return connectionInfoRequired, errors.ErrInvalidInput("audio, video or data")
 		}
 
 	default:
@@ -835,6 +845,32 @@ func parseVideoSelection(videos *livekit.VideoConfig) (*TrackSelection, error) {
 	return selection, nil
 }
 
+func parseDataSelection(data *livekit.DataConfig) (*TrackSelection, error) {
+	selection := &TrackSelection{CaptureAll: data.CaptureAll}
+	capturesAny := data.CaptureAll
+	for _, s := range data.Selectors {
+		if s == nil {
+			return nil, errors.ErrInvalidInput("media.data.selectors")
+		}
+		m := TrackMatch{TrackName: s.TrackName}
+		switch v := s.Match.(type) {
+		case *livekit.DataSelector_TrackId:
+			m.TrackID = v.TrackId
+		case *livekit.DataSelector_ParticipantIdentity:
+			m.ParticipantIdentity = v.ParticipantIdentity
+		}
+		if m == (TrackMatch{}) {
+			return nil, errors.ErrInvalidInput("media.data.selectors")
+		}
+		capturesAny = capturesAny || !s.Exclude
+		selection.Selectors = append(selection.Selectors, TrackSelector{Match: m, Exclude: s.Exclude})
+	}
+	if !capturesAny {
+		return nil, errors.ErrInvalidInput("media.data")
+	}
+	return selection, nil
+}
+
 // MCAP is passthrough by construction, so the preset's single-track remux doesn't apply to it
 func (p *PipelineConfig) applyPassthrough(req egress.EgressRequest) error {
 	if !p.Passthrough {
@@ -867,6 +903,9 @@ func validatePassthrough(req egress.EgressRequest) error {
 		return errors.ErrInvalidInput("passthrough participant_video")
 	case *livekit.MediaSource_Videos:
 		return errors.ErrInvalidInput("media.videos requires an MCAP file output")
+	}
+	if media.Data != nil {
+		return errors.ErrInvalidInput("media.data requires an MCAP file output")
 	}
 
 	var audioTrackID string

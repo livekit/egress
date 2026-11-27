@@ -40,6 +40,8 @@ type Callbacks struct {
 	onTrackRemoved          []func(string)
 	onActiveSpeakersChanged []func([]lksdk.Participant)
 	onEOSSent               func()
+	onDataFrame             func(types.DataFrame) error
+	onDataTrackEnded        func(string)
 
 	// held across delivery so a backlog replay can't be overtaken by a live event
 	roomEventMu      deadlock.Mutex
@@ -217,6 +219,40 @@ func (c *Callbacks) OnRoomEvent(ev types.RoomEvent) {
 	}
 	for _, f := range c.onRoomEvent {
 		f(ev)
+	}
+}
+
+// SetOnDataFrame sets the data track frame handler; frames raised before it is set are dropped
+func (c *Callbacks) SetOnDataFrame(f func(types.DataFrame) error) {
+	c.mu.Lock()
+	c.onDataFrame = f
+	c.mu.Unlock()
+}
+
+func (c *Callbacks) OnDataFrame(frame types.DataFrame) error {
+	c.mu.RLock()
+	onDataFrame := c.onDataFrame
+	c.mu.RUnlock()
+
+	if onDataFrame != nil {
+		return onDataFrame(frame)
+	}
+	return nil
+}
+
+func (c *Callbacks) SetOnDataTrackEnded(f func(string)) {
+	c.mu.Lock()
+	c.onDataTrackEnded = f
+	c.mu.Unlock()
+}
+
+func (c *Callbacks) OnDataTrackEnded(trackID string) {
+	c.mu.RLock()
+	onDataTrackEnded := c.onDataTrackEnded
+	c.mu.RUnlock()
+
+	if onDataTrackEnded != nil {
+		onDataTrackEnded(trackID)
 	}
 }
 
