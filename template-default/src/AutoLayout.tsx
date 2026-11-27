@@ -27,7 +27,7 @@ const AutoLayout = ({ tracks }: LayoutProps) => {
   // muted speaker never takes the main frame; see visibleCameras.
   const cams = visibleCameras(
     tracks.filter((t) => t.source !== Track.Source.ScreenShare),
-    shares.length,
+    shares.filter((t) => !t.publication.isMuted).length,
   );
 
   // hooks must run unconditionally
