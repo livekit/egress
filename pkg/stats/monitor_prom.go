@@ -32,6 +32,7 @@ const (
 	labelType           = "type"
 	labelStatus         = "status"
 	labelCustomEndpoint = "custom_endpoint"
+	labelOutputs        = "outputs"
 )
 
 func (m *Monitor) initPrometheus() {

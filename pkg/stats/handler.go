@@ -17,6 +17,7 @@ package stats
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -41,12 +42,18 @@ func FilterHandlerFamilies(in []*dto.MetricFamily) []*dto.MetricFamily {
 }
 
 type HandlerMonitor struct {
-	uploadsCounter      *prometheus.CounterVec
-	uploadsResponseTime *prometheus.HistogramVec
-	backupCounter       *prometheus.CounterVec
+	uploadsCounter       *prometheus.CounterVec
+	uploadsResponseTime  *prometheus.HistogramVec
+	backupCounter        *prometheus.CounterVec
+	finalizationDuration *prometheus.HistogramVec
+	streamReconnects     *prometheus.CounterVec
 }
 
 func NewHandlerMonitor(nodeID, clusterID string) *HandlerMonitor {
+	return newHandlerMonitor(nodeID, clusterID, prometheus.DefaultRegisterer)
+}
+
+func newHandlerMonitor(nodeID, clusterID string, reg prometheus.Registerer) *HandlerMonitor {
 	m := &HandlerMonitor{}
 
 	constantLabels := prometheus.Labels{labelNodeID: nodeID, labelClusterID: clusterID}
@@ -76,7 +83,24 @@ func NewHandlerMonitor(nodeID, clusterID string) *HandlerMonitor {
 		ConstLabels: constantLabels,
 	}, []string{"output_type"})
 
-	prometheus.MustRegister(m.uploadsCounter, m.uploadsResponseTime, m.backupCounter)
+	m.finalizationDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
+		Name:        "finalization_seconds",
+		Help:        "Seconds from ENDING to COMPLETE by request type and output kinds; failed and limit-reached endings are not observed.",
+		Buckets:     []float64{1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800},
+		ConstLabels: constantLabels,
+	}, []string{labelType, labelOutputs}) // type: request type; outputs: sorted output kinds joined by "+", e.g. file+stream
+
+	m.streamReconnects = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   promNamespace,
+		Subsystem:   promSubsystem,
+		Name:        "stream_reconnects_total",
+		Help:        "Number of stream destination reconnect attempts by request type.",
+		ConstLabels: constantLabels,
+	}, []string{labelType})
+
+	reg.MustRegister(m.uploadsCounter, m.uploadsResponseTime, m.backupCounter, m.finalizationDuration, m.streamReconnects)
 
 	return m
 }
@@ -95,6 +119,14 @@ func (m *HandlerMonitor) IncUploadCountFailure(uploadType string, status string,
 
 func (m *HandlerMonitor) IncBackupStorageWrites(outputType string) {
 	m.backupCounter.With(prometheus.Labels{"output_type": outputType}).Add(1)
+}
+
+func (m *HandlerMonitor) ObserveFinalization(requestType, outputs string, elapsed time.Duration) {
+	m.finalizationDuration.With(prometheus.Labels{labelType: requestType, labelOutputs: outputs}).Observe(elapsed.Seconds())
+}
+
+func (m *HandlerMonitor) IncStreamReconnects(requestType string) {
+	m.streamReconnects.With(prometheus.Labels{labelType: requestType}).Inc()
 }
 
 func (m *HandlerMonitor) RegisterSegmentsChannelSizeGauge(nodeID, clusterID, egressID string, channelSizeFunction func() float64) {
