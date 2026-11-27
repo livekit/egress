@@ -46,6 +46,37 @@ export function visibleCameras<T extends { publication?: { isMuted?: boolean } }
   return live.length > 0 || shareCount > 0 ? live : cams;
 }
 
+interface SpeakerSortable {
+  participant: {
+    isSpeaking: boolean;
+    audioLevel: number;
+    lastSpokeAt?: Date;
+    joinedAt?: Date;
+  };
+}
+
+/**
+ * Orders camera tiles by speaker activity, for useVisualStableUpdate's
+ * customSortFunction. The default sorter only ranks Track.Source.Camera video by
+ * speaking and puts video without a source label (Track.Source.Unknown, e.g. a raw
+ * track published through the SDK) after it, in input order, so such a speaker
+ * would never reach the main frame. This ranks every non-share video the same way
+ * the default ranks remote cameras: speaking first (louder first), then most
+ * recently spoke, then earliest joined. The original references are returned, and
+ * ties keep their input order (Array.prototype.sort is stable).
+ */
+export function sortCamerasBySpeaker<T extends SpeakerSortable>(cams: T[]): T[] {
+  return [...cams].sort(({ participant: a }, { participant: b }) => {
+    if (a.isSpeaking && b.isSpeaking) return b.audioLevel - a.audioLevel;
+    if (a.isSpeaking !== b.isSpeaking) return a.isSpeaking ? -1 : 1;
+    if (a.lastSpokeAt !== undefined || b.lastSpokeAt !== undefined) {
+      const diff = (b.lastSpokeAt?.getTime() ?? 0) - (a.lastSpokeAt?.getTime() ?? 0);
+      if (diff !== 0) return diff;
+    }
+    return (a.joinedAt?.getTime() ?? 0) - (b.joinedAt?.getTime() ?? 0);
+  });
+}
+
 export interface AutoLayoutResult {
   mode: AutoMode;
   boxes: Box[];

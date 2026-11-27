@@ -7,6 +7,7 @@ import {
   MAX_GRID_TILES,
   MAX_SHARES,
   MAX_STRIP_TILES,
+  sortCamerasBySpeaker,
   visibleCameras,
 } from './autoLayoutMath';
 import { LayoutProps } from './common';
@@ -30,14 +31,17 @@ const AutoLayout = ({ tracks }: LayoutProps) => {
   );
 
   // hooks must run unconditionally
+  // Cameras use their own speaker sort so video without a source label is ranked
+  // like a camera instead of always after it; see sortCamerasBySpeaker.
+  const camSort = { customSortFunction: sortCamerasBySpeaker };
   // first item = current active speaker (used for the full-frame speaker in case 2)
-  const camsBySpeaker = useVisualStableUpdate(cams, 1) as TrackReference[];
+  const camsBySpeaker = useVisualStableUpdate(cams, 1, camSort) as TrackReference[];
   // stable positions for grid / filmstrip, speakers promoted onto the visible page
-  const camsGrid = useVisualStableUpdate(cams, MAX_GRID_TILES) as TrackReference[];
+  const camsGrid = useVisualStableUpdate(cams, MAX_GRID_TILES, camSort) as TrackReference[];
   // filmstrip under a share is smaller, so speakers must be promoted into its 6 slots
-  const camsStrip = useVisualStableUpdate(cams, MAX_STRIP_TILES) as TrackReference[];
-  // shares are filtered out before ordering, so a share started after the cameras
-  // is never stuck behind them (the bug fixed in PipLayout in 645f1e3)
+  const camsStrip = useVisualStableUpdate(cams, MAX_STRIP_TILES, camSort) as TrackReference[];
+  // shares are split from cameras before ordering, so a share started after the
+  // cameras is never stuck behind them
   const sharesStable = useVisualStableUpdate(shares, MAX_SHARES) as TrackReference[];
 
   let camsOrdered: TrackReference[];
