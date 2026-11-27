@@ -7,6 +7,7 @@ import {
   MAX_GRID_TILES,
   MAX_SHARES,
   MAX_STRIP_TILES,
+  visibleCameras,
 } from './autoLayoutMath';
 import { LayoutProps } from './common';
 
@@ -21,7 +22,12 @@ import { LayoutProps } from './common';
  */
 const AutoLayout = ({ tracks }: LayoutProps) => {
   const shares = tracks.filter((t) => t.source === Track.Source.ScreenShare);
-  const cams = tracks.filter((t) => t.source !== Track.Source.ScreenShare);
+  // Muted (turned-off) cameras are left out before ordering and counting, so a
+  // muted speaker never takes the main frame; see visibleCameras.
+  const cams = visibleCameras(
+    tracks.filter((t) => t.source !== Track.Source.ScreenShare),
+    shares.length,
+  );
 
   // hooks must run unconditionally
   // first item = current active speaker (used for the full-frame speaker in case 2)

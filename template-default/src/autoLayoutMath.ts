@@ -28,6 +28,24 @@ export interface Box {
   inset?: boolean;
 }
 
+/**
+ * Cameras that get a tile. LiveKit's camera toggle mutes the publication rather
+ * than unpublishing it, so a camera that was turned off is still subscribed and
+ * would otherwise be ordered (by speaking) and counted like a live one: a muted
+ * speaker could take the full frame as a placeholder while the only live camera
+ * shrinks to the inset. Muted cameras are left out, so muting and unmuting
+ * re-compute the arrangement. When nothing at all is live (no unmuted camera and
+ * no share), the muted cameras are kept so the frame shows placeholders rather
+ * than nothing, like the other layouts.
+ */
+export function visibleCameras<T extends { publication?: { isMuted?: boolean } }>(
+  cams: T[],
+  shareCount: number,
+): T[] {
+  const live = cams.filter((t) => !t.publication?.isMuted);
+  return live.length > 0 || shareCount > 0 ? live : cams;
+}
+
 export interface AutoLayoutResult {
   mode: AutoMode;
   boxes: Box[];
