@@ -21,6 +21,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -85,6 +86,7 @@ type Controller struct {
 	eosReceived          core.Fuse
 	stopped              core.Fuse
 	storageLimitOnce     sync.Once
+	endingAt             time.Time
 	pipelineEndedAt      int64
 	stats                controllerStats
 	pipelineCreatedAt    time.Time
@@ -519,6 +521,7 @@ func (c *Controller) trackStreamRetry(ctx context.Context, stream *config.Stream
 	now := time.Now()
 	stream.StreamInfo.LastRetryAt = now.UnixNano()
 	stream.StreamInfo.Retries++
+	c.monitor.IncStreamReconnects(string(c.RequestType))
 	if !stream.ShouldSendRetryUpdate(now, streamRetryUpdateInterval) {
 		return
 	}
@@ -581,6 +584,7 @@ func (c *Controller) SendEOS(ctx context.Context, reason string) {
 			c.p.Stop()
 
 		case livekit.EgressStatus_EGRESS_ACTIVE:
+			c.endingAt = time.Now()
 			c.Info.UpdateStatus(livekit.EgressStatus_EGRESS_ENDING)
 			c.sendHandlerUpdate(ctx, c.Info)
 			c.sendEOS()
@@ -717,7 +721,26 @@ func (c *Controller) Close() {
 	if !duplicateIdentity {
 		// upload debug files
 		c.uploadDebugFiles()
+		c.observeFinalization()
 	}
+}
+
+func (c *Controller) observeFinalization() {
+	if c.endingAt.IsZero() || c.Info.Status != livekit.EgressStatus_EGRESS_COMPLETE {
+		return
+	}
+	c.monitor.ObserveFinalization(string(c.RequestType), c.outputsLabel(), time.Since(c.endingAt))
+}
+
+// outputsLabel is the sorted combination of the pipeline's output kinds,
+// e.g. "file", "file+stream", "segments".
+func (c *Controller) outputsLabel() string {
+	kinds := make([]string, 0, len(c.Outputs))
+	for egressType := range c.Outputs {
+		kinds = append(kinds, string(egressType))
+	}
+	sort.Strings(kinds)
+	return strings.Join(kinds, "+")
 }
 
 func (c *Controller) startSessionLimitTimer(ctx context.Context) {
