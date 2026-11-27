@@ -73,7 +73,7 @@ type BaseConfig struct {
 	BlockPrivateStorageAddresses bool `yaml:"block_private_storage_addresses"`
 
 	// advanced
-	Insecure                      bool                                `yaml:"insecure"`                           // allow chrome to connect to an insecure websocket, bypasses chrome LNA checks
+	Insecure                      bool                                `yaml:"insecure"`                           // allow chrome to connect to an insecure websocket, ignore certificate errors, bypasses chrome LNA checks
 	Debug                         DebugConfig                         `yaml:"debug"`                              // create dot file on internal error
 	ChromeFlags                   map[string]interface{}              `yaml:"chrome_flags"`                       // additional flags to pass to Chrome
 	Latency                       LatencyConfig                       `yaml:"latency"`                            // gstreamer latencies, modifying these may break the service
