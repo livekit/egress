@@ -28,22 +28,34 @@ export interface Box {
   inset?: boolean;
 }
 
+interface Mutable {
+  publication?: { isMuted?: boolean };
+}
+
 /**
- * Cameras that get a tile. LiveKit's camera toggle mutes the publication rather
- * than unpublishing it, so a camera that was turned off is still subscribed and
- * would otherwise be ordered (by speaking) and counted like a live one: a muted
- * speaker could take the full frame as a placeholder while the only live camera
- * shrinks to the inset. Muted cameras are left out, so muting and unmuting
- * re-compute the arrangement. When nothing at all is live (no unmuted camera and
- * no share), the muted cameras are kept so the frame shows placeholders rather
- * than nothing, like the other layouts.
+ * Shares and cameras that get a tile. LiveKit's camera toggle mutes the
+ * publication rather than unpublishing it, so a turned-off camera (or a muted
+ * share) is still subscribed and would otherwise be ordered and counted like a
+ * live one: a muted speaker could take the full frame as a placeholder while the
+ * only live camera shrinks to the inset, and a muted share could hold the main
+ * frame or stage while live cameras are pushed to the inset or filmstrip. Muted
+ * tracks of both kinds are left out, so muting and unmuting re-compute the
+ * arrangement.
+ *
+ * When nothing at all is live, placeholders are shown rather than an empty
+ * frame, like the other layouts: the cameras, which identify who is there, or a
+ * muted share only when there is no camera at all.
  */
-export function visibleCameras<T extends { publication?: { isMuted?: boolean } }>(
-  cams: T[],
-  shareCount: number,
-): T[] {
-  const live = cams.filter((t) => !t.publication?.isMuted);
-  return live.length > 0 || shareCount > 0 ? live : cams;
+export function visibleTracks<S extends Mutable, C extends Mutable>(
+  shares: S[],
+  cams: C[],
+): { shares: S[]; cams: C[] } {
+  const liveShares = shares.filter((t) => !t.publication?.isMuted);
+  const liveCams = cams.filter((t) => !t.publication?.isMuted);
+  if (liveShares.length > 0 || liveCams.length > 0) {
+    return { shares: liveShares, cams: liveCams };
+  }
+  return cams.length > 0 ? { shares: [], cams } : { shares, cams: [] };
 }
 
 interface SpeakerSortable {

@@ -8,7 +8,7 @@ import {
   MAX_SHARES,
   MAX_STRIP_TILES,
   sortCamerasBySpeaker,
-  visibleCameras,
+  visibleTracks,
 } from './autoLayoutMath';
 import { LayoutProps } from './common';
 
@@ -22,12 +22,12 @@ import { LayoutProps } from './common';
  * CSS transition animates the switch.
  */
 const AutoLayout = ({ tracks }: LayoutProps) => {
-  const shares = tracks.filter((t) => t.source === Track.Source.ScreenShare);
-  // Muted (turned-off) cameras are left out before ordering and counting, so a
-  // muted speaker never takes the main frame; see visibleCameras.
-  const cams = visibleCameras(
+  // Muted (turned-off) cameras and muted shares are left out before ordering and
+  // counting, so neither takes the main frame or stage as a placeholder; see
+  // visibleTracks.
+  const { shares, cams } = visibleTracks(
+    tracks.filter((t) => t.source === Track.Source.ScreenShare),
     tracks.filter((t) => t.source !== Track.Source.ScreenShare),
-    shares.filter((t) => !t.publication.isMuted).length,
   );
 
   // hooks must run unconditionally
