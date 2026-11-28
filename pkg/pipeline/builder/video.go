@@ -399,7 +399,7 @@ func (b *VideoBin) applyLayoutLocked(pads []PadLayout) ([]pendingDimensions, err
 }
 
 func (b *VideoBin) buildWebInput() error {
-	xImageSrc, err := gst.NewElement("ximagesrc")
+	xImageSrc, err := gst.NewElementWithName("ximagesrc", webVideoSrcName)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
@@ -430,7 +430,7 @@ func (b *VideoBin) buildWebInput() error {
 		return errors.ErrGstPipelineError(err)
 	}
 
-	videoRate, err := gst.NewElement("videorate")
+	videoRate, err := gst.NewElementWithName("videorate", webVideoRateName)
 	if err != nil {
 		return errors.ErrGstPipelineError(err)
 	}
